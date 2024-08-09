@@ -4,19 +4,23 @@
 
 use alloc::{vec, vec::Vec};
 
-#[cfg(feature = "intel_tdx")]
-use ::tdx_guest::tdx_is_enabled;
 use acpi::PlatformInfo;
 use bit_field::BitField;
+use cfg_if::cfg_if;
 use log::info;
 use spin::Once;
 
-#[cfg(feature = "intel_tdx")]
-use crate::arch::tdx_guest;
 use crate::{
     arch::x86::kernel::acpi::ACPI_TABLES, mm::paddr_to_vaddr, sync::SpinLock, trap::IrqLine, Error,
     Result,
 };
+
+cfg_if! {
+    if #[cfg(feature = "intel_tdx")] {
+        use ::tdx_guest::tdx_is_enabled;
+        use crate::arch::tdx_guest;
+    }
+}
 
 /// I/O Advanced Programmable Interrupt Controller. It is used to distribute external interrupts
 /// in a more advanced manner than that of the standard 8259 PIC.

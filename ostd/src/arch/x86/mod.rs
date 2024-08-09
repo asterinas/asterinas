@@ -14,10 +14,21 @@ pub(crate) mod pci;
 pub mod qemu;
 pub mod serial;
 pub mod task;
-#[cfg(feature = "intel_tdx")]
-pub(crate) mod tdx_guest;
 pub mod timer;
 pub mod trap;
+
+use cfg_if::cfg_if;
+
+cfg_if! {
+    if #[cfg(feature = "intel_tdx")] {
+        pub(crate) mod tdx_guest;
+
+        use {
+            crate::early_println,
+            ::tdx_guest::{init_tdx, tdcall::InitError, tdx_is_enabled},
+        };
+    }
+}
 
 use core::{
     arch::x86_64::{_rdrand64_step, _rdtsc},
@@ -26,11 +37,6 @@ use core::{
 
 use kernel::apic::ioapic;
 use log::{info, warn};
-#[cfg(feature = "intel_tdx")]
-use {
-    crate::early_println,
-    ::tdx_guest::{init_tdx, tdcall::InitError, tdx_is_enabled},
-};
 
 #[cfg(feature = "intel_tdx")]
 pub(crate) fn check_tdx_init() {
@@ -79,18 +85,22 @@ pub(crate) fn init_on_bsp() {
 
     timer::init();
 
-    #[cfg(feature = "intel_tdx")]
-    if !tdx_is_enabled() {
-        match iommu::init() {
-            Ok(_) => {}
-            Err(err) => warn!("IOMMU initialization error:{:?}", err),
+    cfg_if! {
+        if #[cfg(feature = "intel_tdx")] {
+            if !tdx_is_enabled() {
+                match iommu::init() {
+                    Ok(_) => {}
+                    Err(err) => warn!("IOMMU initialization error:{:?}", err),
+                }
+            }
+        } else {
+            match iommu::init() {
+                Ok(_) => {}
+                Err(err) => warn!("IOMMU initialization error:{:?}", err),
+            }
         }
     }
-    #[cfg(not(feature = "intel_tdx"))]
-    match iommu::init() {
-        Ok(_) => {}
-        Err(err) => warn!("IOMMU initialization error:{:?}", err),
-    }
+
     // Some driver like serial may use PIC
     kernel::pic::init();
 }

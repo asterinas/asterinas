@@ -3,12 +3,9 @@
 use alloc::sync::Arc;
 use core::ops::Deref;
 
-#[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))]
-use ::tdx_guest::tdx_is_enabled;
+use cfg_if::cfg_if;
 
 use super::{check_and_insert_dma_mapping, remove_dma_mapping, DmaError, HasDaddr};
-#[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))]
-use crate::arch::tdx_guest;
 use crate::{
     arch::{iommu, mm::tlb_flush_addr_range},
     mm::{
@@ -20,6 +17,13 @@ use crate::{
     },
     prelude::*,
 };
+
+cfg_if! {
+    if #[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))] {
+        use ::tdx_guest::tdx_is_enabled;
+        use crate::arch::tdx_guest;
+    }
+}
 
 /// A coherent (or consistent) DMA mapping,
 /// which guarantees that the device and the CPU can

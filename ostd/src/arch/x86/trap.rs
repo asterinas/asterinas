@@ -3,14 +3,11 @@
 //! Handles trap.
 
 use align_ext::AlignExt;
+use cfg_if::cfg_if;
 use log::debug;
-#[cfg(feature = "intel_tdx")]
-use tdx_guest::{tdcall, tdx_is_enabled};
 use trapframe::TrapFrame;
 
 use super::ex_table::ExTable;
-#[cfg(feature = "intel_tdx")]
-use crate::arch::{cpu::VIRTUALIZATION_EXCEPTION, tdx_guest::handle_virtual_exception};
 use crate::{
     cpu::{CpuException, CpuExceptionInfo, PageFaultErrorCode, PAGE_FAULT},
     cpu_local_cell,
@@ -22,6 +19,13 @@ use crate::{
     task::Task,
     trap::call_irq_callback_functions,
 };
+
+cfg_if! {
+    if #[cfg(feature = "intel_tdx")] {
+        use tdx_guest::{tdcall, tdx_is_enabled};
+        use crate::arch::{cpu::VIRTUALIZATION_EXCEPTION, tdx_guest::handle_virtual_exception};
+    }
+}
 
 cpu_local_cell! {
     static IS_KERNEL_INTERRUPTED: bool = false;
@@ -134,14 +138,18 @@ fn handle_kernel_page_fault(f: &TrapFrame, page_fault_vaddr: u64) {
     let vaddr = (page_fault_vaddr as usize).align_down(PAGE_SIZE);
     let paddr = vaddr - LINEAR_MAPPING_BASE_VADDR;
 
-    #[cfg(not(feature = "intel_tdx"))]
-    let priv_flags = PrivFlags::GLOBAL;
-    #[cfg(feature = "intel_tdx")]
-    let priv_flags = if tdx_is_enabled() {
-        PrivFlags::SHARED | PrivFlags::GLOBAL
-    } else {
-        PrivFlags::GLOBAL
-    };
+    cfg_if! {
+        if #[cfg(feature = "intel_tdx")] {
+            let priv_flags = if tdx_is_enabled() {
+                PrivFlags::SHARED | PrivFlags::GLOBAL
+            } else {
+                PrivFlags::GLOBAL
+            };
+        } else {
+            let priv_flags = PrivFlags::GLOBAL;
+        }
+    }
+
     // SAFETY:
     // 1. We have checked that the page fault address falls within the address range of the direct
     //    mapping of physical memory.

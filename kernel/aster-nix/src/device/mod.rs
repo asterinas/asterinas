@@ -1,20 +1,26 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use cfg_if::cfg_if;
+
 mod null;
 mod pty;
 mod random;
-#[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))]
-mod tdxguest;
 pub mod tty;
 mod urandom;
 mod zero;
 
+cfg_if! {
+    if #[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))] {
+        mod tdxguest;
+
+        use tdx_guest::tdx_is_enabled;
+
+        pub use tdxguest::TdxGuest;
+    }
+}
+
 pub use pty::{new_pty_pair, PtyMaster, PtySlave};
 pub use random::Random;
-#[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))]
-use tdx_guest::tdx_is_enabled;
-#[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))]
-pub use tdxguest::TdxGuest;
 pub use urandom::Urandom;
 
 use self::tty::get_n_tty;
@@ -34,11 +40,14 @@ pub fn init() -> Result<()> {
     add_node(console, "console")?;
     let tty = Arc::new(tty::TtyDevice);
     add_node(tty, "tty")?;
-    #[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))]
-    let tdx_guest = Arc::new(tdxguest::TdxGuest);
-    #[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))]
-    if tdx_is_enabled() {
-        add_node(tdx_guest, "tdx_guest")?;
+    cfg_if! {
+        if #[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))] {
+            let tdx_guest = Arc::new(tdxguest::TdxGuest);
+
+            if tdx_is_enabled() {
+                add_node(tdx_guest, "tdx_guest")?;
+            }
+        }
     }
     let random = Arc::new(random::Random);
     add_node(random, "random")?;

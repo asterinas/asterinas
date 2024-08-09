@@ -7,11 +7,8 @@
 
 use alloc::{sync::Arc, vec::Vec};
 
-#[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))]
-use ::tdx_guest::tdx_is_enabled;
+use cfg_if::cfg_if;
 
-#[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))]
-use crate::arch::tdx_guest;
 use crate::{
     bus::pci::{
         cfg_space::{Bar, Command, MemoryBar},
@@ -21,6 +18,13 @@ use crate::{
     mm::VmIo,
     trap::IrqLine,
 };
+
+cfg_if! {
+    if #[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))] {
+        use ::tdx_guest::tdx_is_enabled;
+        use crate::arch::tdx_guest;
+    }
+}
 
 /// MSI-X capability. It will set the BAR space it uses to be hidden.
 #[derive(Debug)]

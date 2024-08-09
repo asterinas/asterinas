@@ -3,12 +3,9 @@
 use alloc::sync::Arc;
 use core::ops::Range;
 
-#[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))]
-use ::tdx_guest::tdx_is_enabled;
+use cfg_if::cfg_if;
 
 use super::{check_and_insert_dma_mapping, remove_dma_mapping, DmaError, HasDaddr};
-#[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))]
-use crate::arch::tdx_guest;
 use crate::{
     arch::iommu,
     error::Error,
@@ -17,6 +14,13 @@ use crate::{
         HasPaddr, Paddr, Segment, VmIo, VmReader, VmWriter, PAGE_SIZE,
     },
 };
+
+cfg_if! {
+    if #[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))] {
+        use ::tdx_guest::tdx_is_enabled;
+        use crate::arch::tdx_guest;
+    }
+}
 
 /// A streaming DMA mapping. Users must synchronize data
 /// before reading or after writing to ensure consistency.
