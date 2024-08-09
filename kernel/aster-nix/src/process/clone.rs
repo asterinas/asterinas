@@ -4,10 +4,8 @@
 
 use core::sync::atomic::Ordering;
 
-use aster_rights::Full;
 use ostd::{
     cpu::UserContext,
-    mm::VmIo,
     user::{UserContextApi, UserSpace},
 };
 
@@ -25,8 +23,6 @@ use crate::{
     fs::{file_table::FileTable, fs_resolver::FsResolver, utils::FileCreationMask},
     prelude::*,
     thread::{allocate_tid, thread_table, Thread, Tid},
-    util::write_val_to_user,
-    vm::vmar::Vmar,
 };
 
 bitflags! {
@@ -199,12 +195,7 @@ fn clone_child_thread(parent_context: &UserContext, clone_args: CloneArgs) -> Re
     let child_posix_thread = child_thread.as_posix_thread().unwrap();
     clone_parent_settid(child_tid, clone_args.parent_tidptr, clone_flags)?;
     clone_child_cleartid(child_posix_thread, clone_args.child_tidptr, clone_flags)?;
-    clone_child_settid(
-        child_root_vmar,
-        child_tid,
-        clone_args.child_tidptr,
-        clone_flags,
-    )?;
+    clone_child_settid(child_posix_thread, clone_args.child_tidptr, clone_flags)?;
     Ok(child_thread)
 }
 
@@ -303,14 +294,7 @@ fn clone_child_process(
     let child_posix_thread = child_thread.as_posix_thread().unwrap();
     clone_parent_settid(child_tid, clone_args.parent_tidptr, clone_flags)?;
     clone_child_cleartid(child_posix_thread, clone_args.child_tidptr, clone_flags)?;
-
-    let child_root_vmar = child.root_vmar();
-    clone_child_settid(
-        child_root_vmar,
-        child_tid,
-        clone_args.child_tidptr,
-        clone_flags,
-    )?;
+    clone_child_settid(child_posix_thread, clone_args.child_tidptr, clone_flags)?;
 
     // Sets parent process and group for child process.
     set_parent_and_group(&current, &child);
@@ -324,20 +308,18 @@ fn clone_child_cleartid(
     clone_flags: CloneFlags,
 ) -> Result<()> {
     if clone_flags.contains(CloneFlags::CLONE_CHILD_CLEARTID) {
-        let mut clear_tid = child_posix_thread.clear_child_tid().lock();
-        *clear_tid = child_tidptr;
+        *child_posix_thread.clear_child_tid().lock() = child_tidptr;
     }
     Ok(())
 }
 
 fn clone_child_settid(
-    child_root_vmar: &Vmar<Full>,
-    child_tid: Tid,
+    child_posix_thread: &PosixThread,
     child_tidptr: Vaddr,
     clone_flags: CloneFlags,
 ) -> Result<()> {
     if clone_flags.contains(CloneFlags::CLONE_CHILD_SETTID) {
-        child_root_vmar.write_val(child_tidptr, &child_tid)?;
+        *child_posix_thread.set_child_tid().lock() = child_tidptr;
     }
     Ok(())
 }
@@ -348,7 +330,7 @@ fn clone_parent_settid(
     clone_flags: CloneFlags,
 ) -> Result<()> {
     if clone_flags.contains(CloneFlags::CLONE_PARENT_SETTID) {
-        write_val_to_user(parent_tidptr, &child_tid)?;
+        CurrentUserSpace::get().write_val(parent_tidptr, &child_tid)?;
     }
     Ok(())
 }

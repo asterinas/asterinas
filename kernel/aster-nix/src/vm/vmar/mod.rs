@@ -143,6 +143,11 @@ impl VmarInner {
 pub const ROOT_VMAR_LOWEST_ADDR: Vaddr = 0x001_0000; // 64 KiB is the Linux configurable default
 const ROOT_VMAR_CAP_ADDR: Vaddr = MAX_USERSPACE_VADDR;
 
+/// Returns whether the input `vaddr` is a legal user space virtual address.
+pub fn is_userspace_vaddr(vaddr: Vaddr) -> bool {
+    (ROOT_VMAR_LOWEST_ADDR..ROOT_VMAR_CAP_ADDR).contains(&vaddr)
+}
+
 impl Interval<usize> for Arc<Vmar_> {
     fn range(&self) -> Range<usize> {
         self.base..(self.base + self.size)
