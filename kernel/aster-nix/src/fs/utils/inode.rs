@@ -2,7 +2,7 @@
 
 #![allow(unused_variables)]
 
-use core::time::Duration;
+use core::{any::TypeId, time::Duration};
 
 use aster_rights::Full;
 use core2::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, Write};
@@ -381,6 +381,11 @@ pub trait Inode: Any + Sync + Send {
     fn is_dentry_cacheable(&self) -> bool {
         true
     }
+
+    /// Get the extension of this inode
+    fn extension(&self) -> Option<&Extension> {
+        None
+    }
 }
 
 impl dyn Inode {
@@ -448,5 +453,76 @@ impl Debug for dyn Inode {
             .field("metadata", &self.metadata())
             .field("fs", &self.fs())
             .finish()
+    }
+}
+
+/// An extension is a set of objects that is attached to
+/// an inode.
+///
+/// Each objects of an extension is of different types.
+/// In other words, types are used as the keys to get and
+/// set the objects in an extension.
+#[derive(Debug)]
+pub struct Extension {
+    data: RwLock<BTreeMap<TypeId, Arc<dyn Any + Send + Sync>>>,
+}
+
+impl Extension {
+    pub fn new() -> Self {
+        Self {
+            data: RwLock::new(BTreeMap::new()),
+        }
+    }
+
+    /// Get an object of `Arc<T>`.
+    pub fn get<T: Any + Send + Sync>(&self) -> Option<Arc<T>> {
+        let read_guard = self.data.read();
+        read_guard
+            .get(&TypeId::of::<T>())
+            .and_then(|arc_any| Arc::downcast::<T>(arc_any.clone()).ok())
+    }
+
+    /// Try to get an object of `Arc<T>`. If no object of the type exists,
+    /// put the default value for the type, then return it.
+    pub fn get_or_put_default<T: Any + Send + Sync + Default>(&self) -> Arc<T> {
+        let mut write_guard = self.data.write();
+        let type_id = TypeId::of::<T>();
+        let arc_any = write_guard.entry(type_id).or_insert_with(|| {
+            let obj = T::default();
+            Arc::new(obj) as Arc<dyn Any + Send + Sync>
+        });
+        Arc::downcast::<T>(arc_any.clone()).unwrap()
+    }
+
+    /// Put an object of `Arc<T>`. If there exists one object of the type,
+    /// then the old one is returned.
+    pub fn put<T: Any + Send + Sync>(&self, obj: Arc<T>) -> Option<Arc<T>> {
+        let mut write_guard = self.data.write();
+        write_guard
+            .insert(TypeId::of::<T>(), obj as Arc<dyn Any + Send + Sync>)
+            .and_then(|arc_any| Arc::downcast::<T>(arc_any).ok())
+    }
+
+    /// Delete an object of `Arc<T>`. If there exists one object of the type,
+    /// then the old one is returned.
+    pub fn del<T: Any + Send + Sync>(&self) -> Option<Arc<T>> {
+        let mut write_guard = self.data.write();
+        write_guard
+            .remove(&TypeId::of::<T>())
+            .and_then(|arc_any| Arc::downcast::<T>(arc_any).ok())
+    }
+}
+
+impl Clone for Extension {
+    fn clone(&self) -> Self {
+        Self {
+            data: RwLock::new(self.data.read().clone()),
+        }
+    }
+}
+
+impl Default for Extension {
+    fn default() -> Self {
+        Self::new()
     }
 }
