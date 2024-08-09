@@ -8,7 +8,6 @@ use crate::{
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
-    util::read_cstring_from_user,
 };
 
 pub fn sys_rmdir(path_addr: Vaddr) -> Result<SyscallReturn> {
@@ -16,7 +15,7 @@ pub fn sys_rmdir(path_addr: Vaddr) -> Result<SyscallReturn> {
 }
 
 pub(super) fn sys_rmdirat(dirfd: FileDesc, path_addr: Vaddr) -> Result<SyscallReturn> {
-    let path_addr = read_cstring_from_user(path_addr, MAX_FILENAME_LEN)?;
+    let path_addr = CurrentUserSpace::get().read_cstring(path_addr, MAX_FILENAME_LEN)?;
     debug!("dirfd = {}, path_addr = {:?}", dirfd, path_addr);
 
     let current = current!();

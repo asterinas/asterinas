@@ -8,7 +8,6 @@ use crate::{
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
-    util::{read_cstring_from_user, write_bytes_to_user},
 };
 
 pub fn sys_readlinkat(
@@ -17,7 +16,8 @@ pub fn sys_readlinkat(
     usr_buf_addr: Vaddr,
     usr_buf_len: usize,
 ) -> Result<SyscallReturn> {
-    let path = read_cstring_from_user(path_addr, MAX_FILENAME_LEN)?;
+    let user_space = CurrentUserSpace::get();
+    let path = user_space.read_cstring(path_addr, MAX_FILENAME_LEN)?;
     debug!(
         "dirfd = {}, path = {:?}, usr_buf_addr = 0x{:x}, usr_buf_len = 0x{:x}",
         dirfd, path, usr_buf_addr, usr_buf_len
@@ -35,7 +35,7 @@ pub fn sys_readlinkat(
     let linkpath = dentry.inode().read_link()?;
     let bytes = linkpath.as_bytes();
     let write_len = bytes.len().min(usr_buf_len);
-    write_bytes_to_user(usr_buf_addr, &mut VmReader::from(&bytes[..write_len]))?;
+    user_space.write_bytes(usr_buf_addr, &mut VmReader::from(&bytes[..write_len]))?;
     Ok(SyscallReturn::Return(write_len as _))
 }
 

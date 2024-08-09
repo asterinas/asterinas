@@ -8,7 +8,6 @@ use crate::{
         sig_mask::SigMask,
         Pauser,
     },
-    util::read_val_from_user,
 };
 
 pub fn sys_rt_sigsuspend(sigmask_addr: Vaddr, sigmask_size: usize) -> Result<SyscallReturn> {
@@ -23,7 +22,7 @@ pub fn sys_rt_sigsuspend(sigmask_addr: Vaddr, sigmask_size: usize) -> Result<Sys
     }
 
     let sigmask = {
-        let mut mask: SigMask = read_val_from_user(sigmask_addr)?;
+        let mut mask: SigMask = CurrentUserSpace::get().read_val(sigmask_addr)?;
         // It is not possible to block SIGKILL or SIGSTOP,
         // specifying these signals in mask has no effect.
         mask -= SIGKILL;

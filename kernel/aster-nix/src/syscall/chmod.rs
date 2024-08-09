@@ -8,7 +8,6 @@ use crate::{
         utils::{InodeMode, PATH_MAX},
     },
     prelude::*,
-    util::read_cstring_from_user,
 };
 
 pub fn sys_fchmod(fd: FileDesc, mode: u16) -> Result<SyscallReturn> {
@@ -32,7 +31,7 @@ pub fn sys_fchmodat(
     mode: u16,
     /* flags: u32, */
 ) -> Result<SyscallReturn> {
-    let path = read_cstring_from_user(path_ptr, PATH_MAX)?;
+    let path = CurrentUserSpace::get().read_cstring(path_ptr, PATH_MAX)?;
     debug!("dirfd = {}, path = {:?}, mode = 0o{:o}", dirfd, path, mode,);
 
     let current = current!();

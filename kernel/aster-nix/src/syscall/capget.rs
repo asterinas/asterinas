@@ -7,12 +7,12 @@ use crate::{
         credentials,
         credentials::c_types::{cap_user_data_t, cap_user_header_t, LINUX_CAPABILITY_VERSION_3},
     },
-    util::{read_val_from_user, write_val_to_user},
 };
 
 pub fn sys_capget(cap_user_header_addr: Vaddr, cap_user_data_addr: Vaddr) -> Result<SyscallReturn> {
+    let user_space = CurrentUserSpace::get();
     let cap_user_header: cap_user_header_t =
-        read_val_from_user::<cap_user_header_t>(cap_user_header_addr)?;
+        user_space.read_val::<cap_user_header_t>(cap_user_header_addr)?;
 
     if cap_user_header.version != LINUX_CAPABILITY_VERSION_3 {
         return_errno_with_message!(Errno::EINVAL, "not supported (capability version is not 3)");
@@ -42,6 +42,6 @@ pub fn sys_capget(cap_user_header_addr: Vaddr, cap_user_data_addr: Vaddr) -> Res
         inheritable: inheritable_capset.as_u32(),
     };
 
-    write_val_to_user(cap_user_data_addr, &result)?;
+    user_space.write_val(cap_user_data_addr, &result)?;
     Ok(SyscallReturn::Return(0))
 }

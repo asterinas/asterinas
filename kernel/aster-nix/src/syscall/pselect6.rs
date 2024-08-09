@@ -8,7 +8,6 @@ use crate::{
     prelude::*,
     process::{posix_thread::PosixThreadExt, signal::sig_mask::SigMask},
     time::timespec_t,
-    util::read_val_from_user,
 };
 
 pub fn sys_pselect6(
@@ -22,8 +21,9 @@ pub fn sys_pselect6(
     let current_thread = current_thread!();
     let posix_thread = current_thread.as_posix_thread().unwrap();
 
+    let user_space = CurrentUserSpace::get();
     let old_simask = if sigmask_addr != 0 {
-        let sigmask_with_size: SigMaskWithSize = read_val_from_user(sigmask_addr)?;
+        let sigmask_with_size: SigMaskWithSize = user_space.read_val(sigmask_addr)?;
 
         if !sigmask_with_size.is_valid() {
             return_errno_with_message!(Errno::EINVAL, "sigmask size is invalid")
@@ -38,7 +38,7 @@ pub fn sys_pselect6(
     };
 
     let timeout = if timespec_addr != 0 {
-        let time_spec: timespec_t = read_val_from_user(timespec_addr)?;
+        let time_spec: timespec_t = user_space.read_val(timespec_addr)?;
         Some(Duration::try_from(time_spec)?)
     } else {
         None

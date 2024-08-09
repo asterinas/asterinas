@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::SyscallReturn;
-use crate::{prelude::*, util::read_bytes_from_user};
+use crate::prelude::*;
 
 pub fn sys_madvise(start: Vaddr, len: usize, behavior: i32) -> Result<SyscallReturn> {
     let behavior = MadviseBehavior::try_from(behavior)?;
@@ -15,7 +15,8 @@ pub fn sys_madvise(start: Vaddr, len: usize, behavior: i32) -> Result<SyscallRet
         | MadviseBehavior::MADV_WILLNEED => {
             // perform a read at first
             let mut buffer = vec![0u8; len];
-            read_bytes_from_user(start, &mut VmWriter::from(buffer.as_mut_slice()))?;
+            CurrentUserSpace::get()
+                .read_bytes(start, &mut VmWriter::from(buffer.as_mut_slice()))?;
         }
         MadviseBehavior::MADV_DONTNEED => {
             warn!("MADV_DONTNEED isn't implemented, do nothing for now.");

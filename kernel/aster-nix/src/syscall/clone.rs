@@ -6,7 +6,6 @@ use super::SyscallReturn;
 use crate::{
     prelude::*,
     process::{clone_child, signal::constants::SIGCHLD, CloneArgs, CloneFlags},
-    util::read_val_from_user,
 };
 
 // The order of arguments for clone differs in different architecture.
@@ -41,7 +40,7 @@ pub fn sys_clone3(
     }
 
     let clone_args = {
-        let args: Clone3Args = read_val_from_user(clong_args_addr)?;
+        let args: Clone3Args = CurrentUserSpace::get().read_val(clong_args_addr)?;
         trace!("clone3 args = {:x?}", args);
         CloneArgs::from(args)
     };

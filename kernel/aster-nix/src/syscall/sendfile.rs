@@ -1,11 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::SyscallReturn;
-use crate::{
-    fs::file_table::FileDesc,
-    prelude::*,
-    util::{read_val_from_user, write_val_to_user},
-};
+use crate::{fs::file_table::FileDesc, prelude::*};
 
 pub fn sys_sendfile(
     out_fd: FileDesc,
@@ -18,7 +14,7 @@ pub fn sys_sendfile(
     let offset = if offset_ptr == 0 {
         None
     } else {
-        let offset: isize = read_val_from_user(offset_ptr)?;
+        let offset: isize = CurrentUserSpace::get().read_val(offset_ptr)?;
         if offset < 0 {
             return_errno_with_message!(Errno::EINVAL, "offset cannot be negative");
         }
@@ -113,7 +109,7 @@ pub fn sys_sendfile(
     }
 
     if let Some(offset) = offset {
-        write_val_to_user(offset_ptr, &(offset as isize))?;
+        CurrentUserSpace::get().write_val(offset_ptr, &(offset as isize))?;
     }
 
     Ok(SyscallReturn::Return(total_len as _))

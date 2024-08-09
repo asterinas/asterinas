@@ -18,7 +18,6 @@ use crate::{
         },
         timespec_t, Clock,
     },
-    util::write_val_to_user,
 };
 
 pub fn sys_clock_gettime(clockid: clockid_t, timespec_addr: Vaddr) -> Result<SyscallReturn> {
@@ -27,7 +26,7 @@ pub fn sys_clock_gettime(clockid: clockid_t, timespec_addr: Vaddr) -> Result<Sys
     let time_duration = read_clock(clockid)?;
 
     let timespec = timespec_t::from(time_duration);
-    write_val_to_user(timespec_addr, &timespec)?;
+    CurrentUserSpace::get().write_val(timespec_addr, &timespec)?;
 
     Ok(SyscallReturn::Return(0))
 }

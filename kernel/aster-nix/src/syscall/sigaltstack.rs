@@ -9,7 +9,6 @@ use crate::{
         posix_thread::PosixThreadExt,
         signal::{SigStack, SigStackFlags},
     },
-    util::{read_val_from_user, write_val_to_user},
 };
 
 pub fn sys_sigaltstack(sig_stack_addr: Vaddr, old_sig_stack_addr: Vaddr) -> Result<SyscallReturn> {
@@ -43,7 +42,7 @@ fn get_old_stack(old_sig_stack_addr: Vaddr, old_stack: Option<&SigStack>) -> Res
     debug!("old stack = {:?}", old_stack);
 
     let stack = stack_t::from(old_stack.clone());
-    write_val_to_user(old_sig_stack_addr, &stack)
+    CurrentUserSpace::get().write_val(old_sig_stack_addr, &stack)
 }
 
 fn set_new_stack(sig_stack_addr: Vaddr, old_stack: Option<&SigStack>) -> Result<()> {
@@ -58,7 +57,7 @@ fn set_new_stack(sig_stack_addr: Vaddr, old_stack: Option<&SigStack>) -> Result<
     }
 
     let new_stack = {
-        let stack = read_val_from_user::<stack_t>(sig_stack_addr)?;
+        let stack = CurrentUserSpace::get().read_val::<stack_t>(sig_stack_addr)?;
         SigStack::try_from(stack)?
     };
 

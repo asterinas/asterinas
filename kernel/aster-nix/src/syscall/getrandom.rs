@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::SyscallReturn;
-use crate::{device, prelude::*, util::write_bytes_to_user};
+use crate::{device, prelude::*};
 
 pub fn sys_getrandom(buf: Vaddr, count: usize, flags: u32) -> Result<SyscallReturn> {
     let flags = GetRandomFlags::from_bits_truncate(flags);
@@ -17,7 +17,7 @@ pub fn sys_getrandom(buf: Vaddr, count: usize, flags: u32) -> Result<SyscallRetu
     } else {
         device::Urandom::getrandom(&mut buffer)?
     };
-    write_bytes_to_user(buf, &mut VmReader::from(buffer.as_slice()))?;
+    CurrentUserSpace::get().write_bytes(buf, &mut VmReader::from(buffer.as_slice()))?;
     Ok(SyscallReturn::Return(read_len as isize))
 }
 

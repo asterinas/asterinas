@@ -9,7 +9,6 @@ use crate::{
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
-    util::read_cstring_from_user,
 };
 
 pub fn sys_symlinkat(
@@ -17,8 +16,9 @@ pub fn sys_symlinkat(
     dirfd: FileDesc,
     linkpath_addr: Vaddr,
 ) -> Result<SyscallReturn> {
-    let target = read_cstring_from_user(target_addr, MAX_FILENAME_LEN)?;
-    let linkpath = read_cstring_from_user(linkpath_addr, MAX_FILENAME_LEN)?;
+    let user_space = CurrentUserSpace::get();
+    let target = user_space.read_cstring(target_addr, MAX_FILENAME_LEN)?;
+    let linkpath = user_space.read_cstring(linkpath_addr, MAX_FILENAME_LEN)?;
     debug!(
         "target = {:?}, dirfd = {}, linkpath = {:?}",
         target, dirfd, linkpath

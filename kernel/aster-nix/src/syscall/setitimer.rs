@@ -7,7 +7,6 @@ use super::SyscallReturn;
 use crate::{
     prelude::*,
     time::{itimerval_t, timer::Timeout, timeval_t},
-    util::{read_val_from_user, write_val_to_user},
 };
 
 /// `ItimerType` is used to differ the target timer for some timer-related syscalls.
@@ -33,7 +32,8 @@ pub fn sys_setitimer(
         return_errno_with_message!(Errno::EINVAL, "invalid pointer to new value");
     }
     let current = current!();
-    let new_itimerval = read_val_from_user::<itimerval_t>(new_itimerval_addr)?;
+    let user_space = CurrentUserSpace::get();
+    let new_itimerval = user_space.read_val::<itimerval_t>(new_itimerval_addr)?;
     let interval = Duration::from(new_itimerval.it_interval);
     let expire_time = Duration::from(new_itimerval.it_value);
 
@@ -51,7 +51,7 @@ pub fn sys_setitimer(
             it_interval: old_interval,
             it_value: remain,
         };
-        write_val_to_user(old_itimerval_addr, &old_itimerval)?;
+        user_space.write_val(old_itimerval_addr, &old_itimerval)?;
     }
 
     timer.set_interval(interval);
@@ -89,7 +89,7 @@ pub fn sys_getitimer(itimer_type: i32, itimerval_addr: Vaddr) -> Result<SyscallR
         it_interval: interval,
         it_value: remain,
     };
-    write_val_to_user(itimerval_addr, &itimerval)?;
+    CurrentUserSpace::get().write_val(itimerval_addr, &itimerval)?;
 
     Ok(SyscallReturn::Return(0))
 }

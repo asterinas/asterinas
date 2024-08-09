@@ -5,11 +5,10 @@ use crate::{
     fs::{file_table::FileDesc, fs_resolver::FsPath, inode_handle::InodeHandle, utils::InodeType},
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
-    util::read_cstring_from_user,
 };
 
 pub fn sys_chdir(path_ptr: Vaddr) -> Result<SyscallReturn> {
-    let path = read_cstring_from_user(path_ptr, MAX_FILENAME_LEN)?;
+    let path = CurrentUserSpace::get().read_cstring(path_ptr, MAX_FILENAME_LEN)?;
     debug!("path = {:?}", path);
 
     let current = current!();

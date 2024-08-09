@@ -5,9 +5,7 @@
 use int_to_c_enum::TryFromInt;
 
 use super::SyscallReturn;
-use crate::{
-    prelude::*, process::posix_thread::PosixThreadExt, time::timeval_t, util::write_val_to_user,
-};
+use crate::{prelude::*, process::posix_thread::PosixThreadExt, time::timeval_t};
 
 #[derive(Debug, Copy, Clone, TryFromInt, PartialEq)]
 #[repr(i32)]
@@ -53,7 +51,7 @@ pub fn sys_getrusage(target: i32, rusage_addr: Vaddr) -> Result<SyscallReturn> {
             }
         };
 
-        write_val_to_user(rusage_addr, &rusage)?;
+        CurrentUserSpace::get().write_val(rusage_addr, &rusage)?;
     }
 
     Ok(SyscallReturn::Return(0))

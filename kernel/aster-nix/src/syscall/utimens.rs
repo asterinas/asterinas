@@ -11,7 +11,6 @@ use crate::{
     },
     prelude::*,
     time::{clocks::RealTimeCoarseClock, timespec_t, timeval_t},
-    util::{read_cstring_from_user, read_val_from_user},
 };
 
 /// The 'sys_utimensat' system call sets the access and modification times of a file.
@@ -77,7 +76,7 @@ pub fn sys_utime(pathname_ptr: Vaddr, utimbuf_ptr: Vaddr) -> Result<SyscallRetur
         pathname_ptr, utimbuf_ptr
     );
     let times = if utimbuf_ptr != 0 {
-        let utimbuf = read_val_from_user::<Utimbuf>(utimbuf_ptr)?;
+        let utimbuf = CurrentUserSpace::get().read_val::<Utimbuf>(utimbuf_ptr)?;
         let atime = timespec_t {
             sec: utimbuf.actime,
             nsec: 0,
@@ -158,7 +157,7 @@ fn do_utimes(
     let pathname = if pathname_ptr == 0 {
         String::new()
     } else {
-        let cstring = read_cstring_from_user(pathname_ptr, MAX_FILENAME_LEN)?;
+        let cstring = CurrentUserSpace::get().read_cstring(pathname_ptr, MAX_FILENAME_LEN)?;
         cstring.to_string_lossy().into_owned()
     };
     let current = current!();
@@ -197,9 +196,10 @@ fn do_futimesat(dirfd: FileDesc, pathname_ptr: Vaddr, timeval_ptr: Vaddr) -> Res
 
 fn read_time_from_user<T: Pod>(time_ptr: Vaddr) -> Result<(T, T)> {
     let mut time_addr = time_ptr;
-    let autime = read_val_from_user::<T>(time_addr)?;
+    let user_space = CurrentUserSpace::get();
+    let autime = user_space.read_val::<T>(time_addr)?;
     time_addr += core::mem::size_of::<T>();
-    let mutime = read_val_from_user::<T>(time_addr)?;
+    let mutime = user_space.read_val::<T>(time_addr)?;
     Ok((autime, mutime))
 }
 

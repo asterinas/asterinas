@@ -4,7 +4,6 @@ use super::SyscallReturn;
 use crate::{
     prelude::*,
     process::{credentials_mut, Gid},
-    util::read_val_from_user,
 };
 
 pub fn sys_setgroups(size: usize, group_list_addr: Vaddr) -> Result<SyscallReturn> {
@@ -19,7 +18,7 @@ pub fn sys_setgroups(size: usize, group_list_addr: Vaddr) -> Result<SyscallRetur
     let mut new_groups = BTreeSet::new();
     for idx in 0..size {
         let addr = group_list_addr + idx * core::mem::size_of::<Gid>();
-        let gid = read_val_from_user(addr)?;
+        let gid = CurrentUserSpace::get().read_val(addr)?;
         new_groups.insert(gid);
     }
 

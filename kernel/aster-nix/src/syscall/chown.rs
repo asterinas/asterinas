@@ -9,7 +9,6 @@ use crate::{
     },
     prelude::*,
     process::{Gid, Uid},
-    util::read_cstring_from_user,
 };
 
 pub fn sys_fchown(fd: FileDesc, uid: i32, gid: i32) -> Result<SyscallReturn> {
@@ -54,7 +53,7 @@ pub fn sys_fchownat(
     gid: i32,
     flags: u32,
 ) -> Result<SyscallReturn> {
-    let path = read_cstring_from_user(path_ptr, PATH_MAX)?;
+    let path = CurrentUserSpace::get().read_cstring(path_ptr, PATH_MAX)?;
     let flags = ChownFlags::from_bits(flags)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
     debug!(

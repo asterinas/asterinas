@@ -10,7 +10,6 @@ use crate::{
         posix_thread::{PosixThreadExt, MAX_THREAD_NAME_LEN},
         signal::sig_num::SigNum,
     },
-    util::{read_cstring_from_user, write_bytes_to_user, write_val_to_user},
 };
 
 pub fn sys_prctl(option: i32, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> Result<SyscallReturn> {
@@ -33,7 +32,7 @@ pub fn sys_prctl(option: i32, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> Res
                 }
             };
 
-            write_val_to_user(write_to_addr, &write_val)?;
+            CurrentUserSpace::get().write_val(write_to_addr, &write_val)?;
         }
         PrctlCmd::PR_GET_DUMPABLE => {
             // TODO: when coredump is supported, return the actual value
@@ -50,7 +49,7 @@ pub fn sys_prctl(option: i32, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> Res
             let thread_name = posix_thread.thread_name().lock();
             if let Some(thread_name) = &*thread_name {
                 if let Some(thread_name) = thread_name.name()? {
-                    write_bytes_to_user(
+                    CurrentUserSpace::get().write_bytes(
                         write_to_addr,
                         &mut VmReader::from(thread_name.to_bytes_with_nul()),
                     )?;
@@ -60,7 +59,8 @@ pub fn sys_prctl(option: i32, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> Res
         PrctlCmd::PR_SET_NAME(read_addr) => {
             let mut thread_name = posix_thread.thread_name().lock();
             if let Some(thread_name) = &mut *thread_name {
-                let new_thread_name = read_cstring_from_user(read_addr, MAX_THREAD_NAME_LEN)?;
+                let new_thread_name =
+                    CurrentUserSpace::get().read_cstring(read_addr, MAX_THREAD_NAME_LEN)?;
                 thread_name.set_name(&new_thread_name)?;
             }
         }

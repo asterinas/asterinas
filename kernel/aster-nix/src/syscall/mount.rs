@@ -11,7 +11,6 @@ use crate::{
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
-    util::read_cstring_from_user,
 };
 
 /// The `data` argument is interpreted by the different filesystems.
@@ -25,8 +24,9 @@ pub fn sys_mount(
     flags: u64,
     data: Vaddr,
 ) -> Result<SyscallReturn> {
-    let devname = read_cstring_from_user(devname_addr, MAX_FILENAME_LEN)?;
-    let dirname = read_cstring_from_user(dirname_addr, MAX_FILENAME_LEN)?;
+    let user_space = CurrentUserSpace::get();
+    let devname = user_space.read_cstring(devname_addr, MAX_FILENAME_LEN)?;
+    let dirname = user_space.read_cstring(dirname_addr, MAX_FILENAME_LEN)?;
     let mount_flags = MountFlags::from_bits_truncate(flags as u32);
     debug!(
         "devname = {:?}, dirname = {:?}, fstype = 0x{:x}, flags = {:?}, data = 0x{:x}",
@@ -133,7 +133,7 @@ fn do_new_mount(devname: CString, fs_type: Vaddr, target_dentry: Arc<Dentry>) ->
         return_errno_with_message!(Errno::ENOTDIR, "mountpoint must be directory");
     };
 
-    let fs_type = read_cstring_from_user(fs_type, MAX_FILENAME_LEN)?;
+    let fs_type = CurrentUserSpace::get().read_cstring(fs_type, MAX_FILENAME_LEN)?;
     if fs_type.is_empty() {
         return_errno_with_message!(Errno::EINVAL, "fs_type is empty");
     }

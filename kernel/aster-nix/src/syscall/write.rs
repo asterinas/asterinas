@@ -3,7 +3,7 @@
 #![allow(dead_code)]
 
 use super::SyscallReturn;
-use crate::{fs::file_table::FileDesc, prelude::*, util::read_bytes_from_user};
+use crate::{fs::file_table::FileDesc, prelude::*};
 
 const STDOUT: u64 = 1;
 const STDERR: u64 = 2;
@@ -25,7 +25,8 @@ pub fn sys_write(fd: FileDesc, user_buf_ptr: Vaddr, user_buf_len: usize) -> Resu
     // the file discriptor. If no errors detected, return 0 successfully.
     let write_len = if user_buf_len != 0 {
         let mut buffer = vec![0u8; user_buf_len];
-        read_bytes_from_user(user_buf_ptr, &mut VmWriter::from(buffer.as_mut_slice()))?;
+        CurrentUserSpace::get()
+            .read_bytes(user_buf_ptr, &mut VmWriter::from(buffer.as_mut_slice()))?;
         debug!("write content = {:?}", buffer);
         file.write(&buffer)?
     } else {

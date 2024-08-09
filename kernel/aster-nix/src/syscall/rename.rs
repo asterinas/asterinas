@@ -9,7 +9,6 @@ use crate::{
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
-    util::read_cstring_from_user,
 };
 
 pub fn sys_renameat(
@@ -18,8 +17,9 @@ pub fn sys_renameat(
     new_dirfd: FileDesc,
     new_path_addr: Vaddr,
 ) -> Result<SyscallReturn> {
-    let old_path = read_cstring_from_user(old_path_addr, MAX_FILENAME_LEN)?;
-    let new_path = read_cstring_from_user(new_path_addr, MAX_FILENAME_LEN)?;
+    let user_space = CurrentUserSpace::get();
+    let old_path = user_space.read_cstring(old_path_addr, MAX_FILENAME_LEN)?;
+    let new_path = user_space.read_cstring(new_path_addr, MAX_FILENAME_LEN)?;
     debug!(
         "old_dirfd = {}, old_path = {:?}, new_dirfd = {}, new_path = {:?}",
         old_dirfd, old_path, new_dirfd, new_path

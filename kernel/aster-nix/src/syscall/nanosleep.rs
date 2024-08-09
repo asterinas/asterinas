@@ -7,7 +7,6 @@ use crate::{
     prelude::*,
     process::signal::Pauser,
     time::{clockid_t, timespec_t, TIMER_ABSTIME},
-    util::{read_val_from_user, write_val_to_user},
 };
 
 pub fn sys_nanosleep(
@@ -53,7 +52,7 @@ fn do_clock_nanosleep(
     remain_timespec_addr: Vaddr,
 ) -> Result<SyscallReturn> {
     let request_time = {
-        let timespec = read_val_from_user::<timespec_t>(request_timespec_addr)?;
+        let timespec = CurrentUserSpace::get().read_val::<timespec_t>(request_timespec_addr)?;
         Duration::try_from(timespec)?
     };
 
@@ -90,7 +89,7 @@ fn do_clock_nanosleep(
             if remain_timespec_addr != 0 && !is_abs_time {
                 let remaining_duration = (start_time + timeout) - end_time;
                 let remaining_timespec = timespec_t::from(remaining_duration);
-                write_val_to_user(remain_timespec_addr, &remaining_timespec)?;
+                CurrentUserSpace::get().write_val(remain_timespec_addr, &remaining_timespec)?;
             }
 
             return_errno_with_message!(Errno::EINTR, "sleep was interrupted");

@@ -4,7 +4,6 @@ use super::SyscallReturn;
 use crate::{
     prelude::*,
     process::posix_thread::{PosixThreadExt, RobustListHead},
-    util::read_val_from_user,
 };
 
 pub fn sys_set_robust_list(robust_list_head_ptr: Vaddr, len: usize) -> Result<SyscallReturn> {
@@ -18,7 +17,8 @@ pub fn sys_set_robust_list(robust_list_head_ptr: Vaddr, len: usize) -> Result<Sy
             "The len is not equal to the size of robust list head"
         );
     }
-    let robust_list_head: RobustListHead = read_val_from_user(robust_list_head_ptr)?;
+    let robust_list_head: RobustListHead =
+        CurrentUserSpace::get().read_val(robust_list_head_ptr)?;
     debug!("{:x?}", robust_list_head);
     let current_thread = current_thread!();
     let posix_thread = current_thread.as_posix_thread().unwrap();

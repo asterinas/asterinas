@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::SyscallReturn;
-use crate::{fs::file_table::FileDesc, prelude::*, util::read_bytes_from_user};
+use crate::{fs::file_table::FileDesc, prelude::*};
 
 pub fn sys_pwrite64(
     fd: FileDesc,
@@ -30,7 +30,7 @@ pub fn sys_pwrite64(
     }
 
     let mut buffer = vec![0u8; user_buf_len];
-    read_bytes_from_user(user_buf_ptr, &mut VmWriter::from(buffer.as_mut_slice()))?;
+    CurrentUserSpace::get().read_bytes(user_buf_ptr, &mut VmWriter::from(buffer.as_mut_slice()))?;
     let write_len = file.write_at(offset as _, &buffer)?;
     Ok(SyscallReturn::Return(write_len as _))
 }

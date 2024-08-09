@@ -5,10 +5,7 @@ use crate::{
     fs::file_table::{FdFlags, FileDesc},
     net::socket::unix::UnixStreamSocket,
     prelude::*,
-    util::{
-        net::{CSocketAddrFamily, Protocol, SockFlags, SockType, SOCK_TYPE_MASK},
-        write_val_to_user,
-    },
+    util::net::{CSocketAddrFamily, Protocol, SockFlags, SockType, SOCK_TYPE_MASK},
 };
 
 pub fn sys_socketpair(domain: i32, type_: i32, protocol: i32, sv: Vaddr) -> Result<SyscallReturn> {
@@ -46,7 +43,7 @@ pub fn sys_socketpair(domain: i32, type_: i32, protocol: i32, sv: Vaddr) -> Resu
         SocketFds(fd_a, fd_b)
     };
 
-    write_val_to_user(sv, &socket_fds)?;
+    CurrentUserSpace::get().write_val(sv, &socket_fds)?;
     Ok(SyscallReturn::Return(0))
 }
 
