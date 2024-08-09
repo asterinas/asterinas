@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::SyscallReturn;
+use super::{CurrentInfo, SyscallReturn};
 use crate::{
     fs::{
         file_table::{FdFlags, FileDesc},
@@ -14,10 +14,11 @@ pub fn sys_accept(
     sockfd: FileDesc,
     sockaddr_ptr: Vaddr,
     addrlen_ptr: Vaddr,
+    current: CurrentInfo,
 ) -> Result<SyscallReturn> {
     debug!("sockfd = {sockfd}, sockaddr_ptr = 0x{sockaddr_ptr:x}, addrlen_ptr = 0x{addrlen_ptr:x}");
 
-    let fd = do_accept(sockfd, sockaddr_ptr, addrlen_ptr, Flags::empty())?;
+    let fd = do_accept(sockfd, sockaddr_ptr, addrlen_ptr, Flags::empty(), current)?;
     Ok(SyscallReturn::Return(fd as _))
 }
 
@@ -26,6 +27,7 @@ pub fn sys_accept4(
     sockaddr_ptr: Vaddr,
     addrlen_ptr: Vaddr,
     flags: u32,
+    current: CurrentInfo,
 ) -> Result<SyscallReturn> {
     trace!("raw flags = 0x{:x}", flags);
     let flags = Flags::from_bits_truncate(flags);
@@ -34,7 +36,7 @@ pub fn sys_accept4(
         sockfd, sockaddr_ptr, addrlen_ptr, flags
     );
 
-    let fd = do_accept(sockfd, sockaddr_ptr, addrlen_ptr, flags)?;
+    let fd = do_accept(sockfd, sockaddr_ptr, addrlen_ptr, flags, current)?;
     Ok(SyscallReturn::Return(fd as _))
 }
 
@@ -43,6 +45,7 @@ fn do_accept(
     sockaddr_ptr: Vaddr,
     addrlen_ptr: Vaddr,
     flags: Flags,
+    current: CurrentInfo,
 ) -> Result<FileDesc> {
     let (connected_socket, socket_addr) = {
         let socket = get_socket_from_fd(sockfd)?;
@@ -64,8 +67,7 @@ fn do_accept(
     }
 
     let fd = {
-        let current = current!();
-        let mut file_table = current.file_table().lock();
+        let mut file_table = current.process.file_table().lock();
         file_table.insert(connected_socket, fd_flags)
     };
 

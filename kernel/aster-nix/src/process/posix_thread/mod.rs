@@ -80,6 +80,10 @@ impl PosixThread {
         self.process.upgrade().unwrap()
     }
 
+    pub fn weak_process(&self) -> Weak<Process> {
+        Weak::clone(&self.process)
+    }
+
     pub fn thread_name(&self) -> &Mutex<Option<ThreadName>> {
         &self.name
     }

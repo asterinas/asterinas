@@ -1,22 +1,21 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-
-use super::SyscallReturn;
+use super::{CurrentInfo, SyscallReturn};
 use crate::{fs::file_table::FileDesc, prelude::*};
 
-const STDOUT: u64 = 1;
-const STDERR: u64 = 2;
-
-pub fn sys_write(fd: FileDesc, user_buf_ptr: Vaddr, user_buf_len: usize) -> Result<SyscallReturn> {
+pub fn sys_write(
+    fd: FileDesc,
+    user_buf_ptr: Vaddr,
+    user_buf_len: usize,
+    current: CurrentInfo,
+) -> Result<SyscallReturn> {
     debug!(
         "fd = {}, user_buf_ptr = 0x{:x}, user_buf_len = 0x{:x}",
         fd, user_buf_ptr, user_buf_len
     );
 
     let file = {
-        let current = current!();
-        let file_table = current.file_table().lock();
+        let file_table = current.process.file_table().lock();
         file_table.get_file(fd)?.clone()
     };
 

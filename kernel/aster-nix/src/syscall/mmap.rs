@@ -7,7 +7,7 @@
 use align_ext::AlignExt;
 use aster_rights::Rights;
 
-use super::SyscallReturn;
+use super::{CurrentInfo, SyscallReturn};
 use crate::{
     fs::file_table::FileDesc,
     prelude::*,
@@ -24,6 +24,7 @@ pub fn sys_mmap(
     flags: u64,
     fd: u64,
     offset: u64,
+    current: CurrentInfo,
 ) -> Result<SyscallReturn> {
     let perms = VmPerms::from_posix_prot_bits(perms as u32).unwrap();
     let option = MMapOptions::try_from(flags as u32)?;
@@ -34,6 +35,7 @@ pub fn sys_mmap(
         option,
         fd as _,
         offset as usize,
+        current,
     )?;
     Ok(SyscallReturn::Return(res as _))
 }
@@ -45,6 +47,7 @@ fn do_sys_mmap(
     option: MMapOptions,
     fd: FileDesc,
     offset: usize,
+    current: CurrentInfo,
 ) -> Result<Vaddr> {
     debug!(
         "addr = 0x{:x}, len = 0x{:x}, perms = {:?}, option = {:?}, fd = {}, offset = 0x{:x}",
@@ -68,8 +71,7 @@ fn do_sys_mmap(
         alloc_filebacked_vmo(fd, len, offset, &option)?
     };
 
-    let current = current!();
-    let root_vmar = current.root_vmar();
+    let root_vmar = current.process.root_vmar();
     let vm_map_options = {
         let mut options = root_vmar.new_map(vmo.to_dyn(), vm_perms)?;
         let flags = option.flags;

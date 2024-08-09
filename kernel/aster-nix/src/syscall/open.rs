@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::SyscallReturn;
+use super::{CurrentInfo, SyscallReturn};
 use crate::{
     fs::{
         file_table::{FdFlags, FileDesc},
@@ -16,6 +16,7 @@ pub fn sys_openat(
     path_addr: Vaddr,
     flags: u32,
     mode: u16,
+    current: CurrentInfo,
 ) -> Result<SyscallReturn> {
     let path = CurrentUserSpace::get().read_cstring(path_addr, MAX_FILENAME_LEN)?;
     debug!(
@@ -23,7 +24,7 @@ pub fn sys_openat(
         dirfd, path, flags, mode
     );
 
-    let current = current!();
+    let current = current.process;
     let file_handle = {
         let path = path.to_string_lossy();
         let fs_path = FsPath::new(dirfd, path.as_ref())?;
@@ -44,12 +45,17 @@ pub fn sys_openat(
     Ok(SyscallReturn::Return(fd as _))
 }
 
-pub fn sys_open(path_addr: Vaddr, flags: u32, mode: u16) -> Result<SyscallReturn> {
-    self::sys_openat(AT_FDCWD, path_addr, flags, mode)
+pub fn sys_open(
+    path_addr: Vaddr,
+    flags: u32,
+    mode: u16,
+    current: CurrentInfo,
+) -> Result<SyscallReturn> {
+    self::sys_openat(AT_FDCWD, path_addr, flags, mode, current)
 }
 
-pub fn sys_creat(path_addr: Vaddr, mode: u16) -> Result<SyscallReturn> {
+pub fn sys_creat(path_addr: Vaddr, mode: u16, current: CurrentInfo) -> Result<SyscallReturn> {
     let flags =
         AccessMode::O_WRONLY as u32 | CreationFlags::O_CREAT.bits() | CreationFlags::O_TRUNC.bits();
-    self::sys_openat(AT_FDCWD, path_addr, flags, mode)
+    self::sys_openat(AT_FDCWD, path_addr, flags, mode, current)
 }

@@ -2,7 +2,7 @@
 
 #![allow(dead_code)]
 
-use super::SyscallReturn;
+use super::{CurrentInfo, SyscallReturn};
 use crate::{
     fs::{
         file_table::FileDesc,
@@ -14,27 +14,35 @@ use crate::{
     time::timespec_t,
 };
 
-pub fn sys_fstat(fd: FileDesc, stat_buf_ptr: Vaddr) -> Result<SyscallReturn> {
+pub fn sys_fstat(fd: FileDesc, stat_buf_ptr: Vaddr, current: CurrentInfo) -> Result<SyscallReturn> {
     debug!("fd = {}, stat_buf_addr = 0x{:x}", fd, stat_buf_ptr);
 
-    let current = current!();
-    let file_table = current.file_table().lock();
+    let file_table = current.process.file_table().lock();
     let file = file_table.get_file(fd)?;
     let stat = Stat::from(file.metadata());
     CurrentUserSpace::get().write_val(stat_buf_ptr, &stat)?;
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_stat(filename_ptr: Vaddr, stat_buf_ptr: Vaddr) -> Result<SyscallReturn> {
-    self::sys_fstatat(AT_FDCWD, filename_ptr, stat_buf_ptr, 0)
+pub fn sys_stat(
+    filename_ptr: Vaddr,
+    stat_buf_ptr: Vaddr,
+    current: CurrentInfo,
+) -> Result<SyscallReturn> {
+    self::sys_fstatat(AT_FDCWD, filename_ptr, stat_buf_ptr, 0, current)
 }
 
-pub fn sys_lstat(filename_ptr: Vaddr, stat_buf_ptr: Vaddr) -> Result<SyscallReturn> {
+pub fn sys_lstat(
+    filename_ptr: Vaddr,
+    stat_buf_ptr: Vaddr,
+    current: CurrentInfo,
+) -> Result<SyscallReturn> {
     self::sys_fstatat(
         AT_FDCWD,
         filename_ptr,
         stat_buf_ptr,
         StatFlags::AT_SYMLINK_NOFOLLOW.bits(),
+        current,
     )
 }
 
@@ -43,6 +51,7 @@ pub fn sys_fstatat(
     filename_ptr: Vaddr,
     stat_buf_ptr: Vaddr,
     flags: u32,
+    current: CurrentInfo,
 ) -> Result<SyscallReturn> {
     let user_space = CurrentUserSpace::get();
     let filename = user_space.read_cstring(filename_ptr, MAX_FILENAME_LEN)?;
@@ -58,14 +67,13 @@ pub fn sys_fstatat(
             return_errno_with_message!(Errno::ENOENT, "path is empty");
         }
         // In this case, the behavior of fstatat() is similar to that of fstat().
-        return self::sys_fstat(dirfd, stat_buf_ptr);
+        return self::sys_fstat(dirfd, stat_buf_ptr, current);
     }
 
-    let current = current!();
     let dentry = {
         let filename = filename.to_string_lossy();
         let fs_path = FsPath::new(dirfd, filename.as_ref())?;
-        let fs = current.fs().read();
+        let fs = current.process.fs().read();
         if flags.contains(StatFlags::AT_SYMLINK_NOFOLLOW) {
             fs.lookup_no_follow(&fs_path)?
         } else {
