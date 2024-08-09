@@ -122,7 +122,7 @@ impl InputDevice {
         let input_prop = InputProp::from_bits(prop[0]).unwrap();
         debug!("input device prop:{:?}", input_prop);
 
-        let mut transport = device.transport.lock_irq_disabled();
+        let mut transport = device.transport.disable_irq().lock();
         fn config_space_change(_: &TrapFrame) {
             debug!("input device config space change");
         }
@@ -148,7 +148,7 @@ impl InputDevice {
 
     /// Pop the pending event.
     fn pop_pending_events(&self, handle_event: &impl Fn(&EventBuf) -> bool) {
-        let mut event_queue = self.event_queue.lock_irq_disabled();
+        let mut event_queue = self.event_queue.disable_irq().lock();
 
         // one interrupt may contain several input events, so it should loop
         while let Ok((token, _)) = event_queue.pop_used() {

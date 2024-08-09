@@ -101,7 +101,7 @@ impl IrqLine {
         self.irq_num
     }
 
-    pub fn callback_list(&self) -> SpinLockGuard<alloc::vec::Vec<CallbackElement>> {
+    pub fn callback_list(&self) -> SpinLockGuard<alloc::vec::Vec<CallbackElement>, G> {
         self.callback_list.lock()
     }
 

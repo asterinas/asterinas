@@ -57,7 +57,7 @@ pub fn register_device(name: String, device: Arc<SpinLock<dyn AnyNetworkDevice>>
         .get()
         .unwrap()
         .network_device_table
-        .lock_irq_disabled()
+        .disable_irq().lock()
         .insert(name, (Arc::new(SpinLock::new(Vec::new())), device));
 }
 
@@ -66,7 +66,7 @@ pub fn get_device(str: &str) -> Option<Arc<SpinLock<dyn AnyNetworkDevice>>> {
         .get()
         .unwrap()
         .network_device_table
-        .lock_irq_disabled();
+        .disable_irq().lock();
     let (_, device) = table.get(str)?;
     Some(device.clone())
 }
@@ -80,11 +80,11 @@ pub fn register_recv_callback(name: &str, callback: impl NetDeviceIrqHandler) {
         .get()
         .unwrap()
         .network_device_table
-        .lock_irq_disabled();
+        .disable_irq().lock();
     let Some((callbacks, _)) = device_table.get(name) else {
         return;
     };
-    callbacks.lock_irq_disabled().push(Arc::new(callback));
+    callbacks.disable_irq().lock().push(Arc::new(callback));
 }
 
 pub fn handle_recv_irq(name: &str) {
@@ -92,11 +92,11 @@ pub fn handle_recv_irq(name: &str) {
         .get()
         .unwrap()
         .network_device_table
-        .lock_irq_disabled();
+        .disable_irq().lock();
     let Some((callbacks, _)) = device_table.get(name) else {
         return;
     };
-    let callbacks = callbacks.lock_irq_disabled();
+    let callbacks = callbacks.disable_irq().lock();
     for callback in callbacks.iter() {
         callback();
     }
@@ -107,7 +107,7 @@ pub fn all_devices() -> Vec<(String, NetworkDeviceRef)> {
         .get()
         .unwrap()
         .network_device_table
-        .lock_irq_disabled();
+        .disable_irq().lock();
     network_devs
         .iter()
         .map(|(name, (_, device))| (name.clone(), device.clone()))

@@ -87,10 +87,10 @@ impl Worker {
                 if self.is_destroying() {
                     break;
                 }
-                self.inner.lock_irq_disabled().worker_status = WorkerStatus::Idle;
+                self.inner.disable_irq().lock().worker_status = WorkerStatus::Idle;
                 worker_pool.idle_current_worker(self.bound_cpu, self.clone());
                 if !self.is_destroying() {
-                    self.inner.lock_irq_disabled().worker_status = WorkerStatus::Running;
+                    self.inner.disable_irq().lock().worker_status = WorkerStatus::Running;
                 }
             }
         }
@@ -102,22 +102,22 @@ impl Worker {
     }
 
     pub(super) fn is_idle(&self) -> bool {
-        self.inner.lock_irq_disabled().worker_status == WorkerStatus::Idle
+        self.inner.disable_irq().lock().worker_status == WorkerStatus::Idle
     }
 
     pub(super) fn is_destroying(&self) -> bool {
-        self.inner.lock_irq_disabled().worker_status == WorkerStatus::Destroying
+        self.inner.disable_irq().lock().worker_status == WorkerStatus::Destroying
     }
 
     pub(super) fn destroy(&self) {
-        self.inner.lock_irq_disabled().worker_status = WorkerStatus::Destroying;
+        self.inner.disable_irq().lock().worker_status = WorkerStatus::Destroying;
     }
 
     fn exit(&self) {
-        self.inner.lock_irq_disabled().worker_status = WorkerStatus::Exited;
+        self.inner.disable_irq().lock().worker_status = WorkerStatus::Exited;
     }
 
     pub(super) fn is_exit(&self) -> bool {
-        self.inner.lock_irq_disabled().worker_status == WorkerStatus::Exited
+        self.inner.disable_irq().lock().worker_status == WorkerStatus::Exited
     }
 }

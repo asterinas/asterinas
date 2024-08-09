@@ -142,8 +142,8 @@ impl Task {
     }
 
     /// Gets inner
-    pub(crate) fn inner_exclusive_access(&self) -> SpinLockGuard<TaskInner> {
-        self.task_inner.lock_irq_disabled()
+    pub(crate) fn inner_exclusive_access(&self) -> SpinLockGuard<TaskInner, G> {
+        self.task_inner.disable_irq().lock()
     }
 
     pub(super) fn ctx(&self) -> &UnsafeCell<TaskContext> {
@@ -166,7 +166,7 @@ impl Task {
 
     /// Returns the task status.
     pub fn status(&self) -> TaskStatus {
-        self.task_inner.lock_irq_disabled().task_status
+        self.task_inner.disable_irq().lock().task_status
     }
 
     /// Returns the task data.

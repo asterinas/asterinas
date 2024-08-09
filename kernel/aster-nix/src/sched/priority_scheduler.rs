@@ -36,21 +36,21 @@ impl PreemptScheduler {
 impl Scheduler for PreemptScheduler {
     fn enqueue(&self, task: Arc<Task>) {
         if task.is_real_time() {
-            self.real_time_tasks.lock_irq_disabled().push_back(task);
+            self.real_time_tasks.disable_irq().lock().push_back(task);
         } else {
-            self.normal_tasks.lock_irq_disabled().push_back(task);
+            self.normal_tasks.disable_irq().lock().push_back(task);
         }
     }
 
     fn dequeue(&self) -> Option<Arc<Task>> {
-        if !self.real_time_tasks.lock_irq_disabled().is_empty() {
-            self.real_time_tasks.lock_irq_disabled().pop_front()
+        if !self.real_time_tasks.disable_irq().lock().is_empty() {
+            self.real_time_tasks.disable_irq().lock().pop_front()
         } else {
-            self.normal_tasks.lock_irq_disabled().pop_front()
+            self.normal_tasks.disable_irq().lock().pop_front()
         }
     }
 
     fn should_preempt(&self, task: &Arc<Task>) -> bool {
-        !task.is_real_time() && !self.real_time_tasks.lock_irq_disabled().is_empty()
+        !task.is_real_time() && !self.real_time_tasks.disable_irq().lock().is_empty()
     }
 }

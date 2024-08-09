@@ -37,7 +37,7 @@ impl RcuMonitor {
         // on the current CPU. If GP is complete, take the callbacks of the current
         // GP.
         let callbacks = {
-            let mut state = self.state.lock_irq_disabled();
+            let mut state = self.state.disable_irq().lock();
             if state.current_gp.is_complete() {
                 return;
             }
@@ -71,7 +71,7 @@ impl RcuMonitor {
     where
         F: FnOnce() -> () + Send + 'static,
     {
-        let mut state = self.state.lock_irq_disabled();
+        let mut state = self.state.disable_irq().lock();
 
         state.next_callbacks.push_back(Box::new(f));
 

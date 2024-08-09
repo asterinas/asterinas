@@ -97,7 +97,7 @@ impl DmaPool {
     pub fn alloc_segment(self: &Arc<Self>) -> Result<DmaSegment, ostd::Error> {
         // Lock order: pool.avail_pages -> pool.all_pages
         //             pool.avail_pages -> page.allocated_segments
-        let mut avail_pages = self.avail_pages.lock_irq_disabled();
+        let mut avail_pages = self.avail_pages.disable_irq().lock();
         if avail_pages.is_empty() {
             /// Allocate a new page
             let new_page = {
@@ -109,7 +109,7 @@ impl DmaPool {
                     pool,
                 )?)
             };
-            let mut all_pages = self.all_pages.lock_irq_disabled();
+            let mut all_pages = self.all_pages.disable_irq().lock();
             avail_pages.push_back(new_page.clone());
             all_pages.push_back(new_page);
         }
@@ -124,7 +124,7 @@ impl DmaPool {
 
     /// Returns the number of pages in pool
     fn num_pages(&self) -> usize {
-        self.all_pages.lock_irq_disabled().len()
+        self.all_pages.disable_irq().lock().len()
     }
 
     /// Return segment size in pool
@@ -166,7 +166,7 @@ impl DmaPage {
     }
 
     fn alloc_segment(self: &Arc<Self>) -> Option<DmaSegment> {
-        let mut segments = self.allocated_segments.lock_irq_disabled();
+        let mut segments = self.allocated_segments.disable_irq().lock();
         let free_segment_index = get_next_free_index(&segments, self.nr_blocks_per_page())?;
         segments.set(free_segment_index, true);
 
@@ -189,7 +189,7 @@ impl DmaPage {
     }
 
     fn is_full(&self) -> bool {
-        let segments = self.allocated_segments.lock_irq_disabled();
+        let segments = self.allocated_segments.disable_irq().lock();
         get_next_free_index(&segments, self.nr_blocks_per_page()).is_none()
     }
 }
@@ -257,10 +257,10 @@ impl Drop for DmaSegment {
 
         // Keep the same lock order as `pool.alloc_segment`
         // Lock order: pool.avail_pages -> pool.all_pages -> page.allocated_segments
-        let mut avail_pages = pool.avail_pages.lock_irq_disabled();
-        let mut all_pages = pool.all_pages.lock_irq_disabled();
+        let mut avail_pages = pool.avail_pages.disable_irq().lock();
+        let mut all_pages = pool.all_pages.disable_irq().lock();
 
-        let mut allocated_segments = page.allocated_segments.lock_irq_disabled();
+        let mut allocated_segments = page.allocated_segments.disable_irq().lock();
 
         let nr_blocks_per_page = PAGE_SIZE / self.size;
         let became_avail = get_next_free_index(&allocated_segments, nr_blocks_per_page).is_none();

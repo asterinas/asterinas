@@ -54,19 +54,19 @@ impl GlobalScheduler {
 ///
 /// This must be called before invoking `Task::spawn`.
 pub fn set_scheduler(scheduler: &'static dyn Scheduler) {
-    let mut global_scheduler = GLOBAL_SCHEDULER.lock_irq_disabled();
+    let mut global_scheduler = GLOBAL_SCHEDULER.disable_irq().lock();
     // When setting a new scheduler, the old scheduler should be empty
     assert!(global_scheduler.dequeue().is_none());
     global_scheduler.scheduler = scheduler;
 }
 
 pub fn fetch_task() -> Option<Arc<Task>> {
-    GLOBAL_SCHEDULER.lock_irq_disabled().dequeue()
+    GLOBAL_SCHEDULER.disable_irq().lock().dequeue()
 }
 
 /// Adds a task to the global scheduler.
 pub fn add_task(task: Arc<Task>) {
-    GLOBAL_SCHEDULER.lock_irq_disabled().enqueue(task);
+    GLOBAL_SCHEDULER.disable_irq().lock().enqueue(task);
 }
 
 /// A simple FIFO (First-In-First-Out) task scheduler.
@@ -93,11 +93,11 @@ impl Default for FifoScheduler {
 impl Scheduler for FifoScheduler {
     /// Enqueues a task to the end of the queue.
     fn enqueue(&self, task: Arc<Task>) {
-        self.task_queue.lock_irq_disabled().push_back(task);
+        self.task_queue.disable_irq().lock().push_back(task);
     }
     /// Dequeues a task from the front of the queue, if any.
     fn dequeue(&self) -> Option<Arc<Task>> {
-        self.task_queue.lock_irq_disabled().pop_front()
+        self.task_queue.disable_irq().lock().pop_front()
     }
     /// In this simple implementation, task preemption is not supported.
     /// Once a task starts running, it will continue to run until completion.

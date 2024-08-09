@@ -123,7 +123,7 @@ impl WaitQueue {
         }
 
         loop {
-            let mut wakers = self.wakers.lock_irq_disabled();
+            let mut wakers = self.wakers.disable_irq().lock();
             let Some(waker) = wakers.pop_front() else {
                 return false;
             };
@@ -147,7 +147,7 @@ impl WaitQueue {
         let mut num_woken = 0;
 
         loop {
-            let mut wakers = self.wakers.lock_irq_disabled();
+            let mut wakers = self.wakers.disable_irq().lock();
             let Some(waker) = wakers.pop_front() else {
                 break;
             };
@@ -171,7 +171,7 @@ impl WaitQueue {
     }
 
     fn enqueue(&self, waker: Arc<Waker>) {
-        let mut wakers = self.wakers.lock_irq_disabled();
+        let mut wakers = self.wakers.disable_irq().lock();
         wakers.push_back(waker);
         self.num_wakers.fetch_add(1, Ordering::Acquire);
     }
