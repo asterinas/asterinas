@@ -83,6 +83,29 @@ impl<M: PageMeta> Page<M> {
         }
     }
 
+    /// Check whether the page described by paddr is allocated.
+    /// true if the page is allocated, false otherwise.
+    ///
+    /// # Panics
+    ///
+    /// The function panics if:
+    ///
+    /// - the physical address is out of bound or not aligned.
+    pub fn check_page_status(paddr: Paddr) -> bool {
+        assert!(paddr % PAGE_SIZE == 0);
+        assert!(paddr < MAX_PADDR.load(Ordering::Relaxed) as Paddr);
+        let vaddr = mapping::page_to_meta::<PagingConsts>(paddr);
+        let ptr = vaddr as *const MetaSlot;
+
+        // SAFETY: The aligned pointer points to a initialized `MetaSlot`.
+        let usage = unsafe { &(*ptr).usage };
+
+        if let 0 = usage.load(Ordering::SeqCst) {
+            return false;
+        }
+        true
+    }
+
     /// Forget the handle to the page.
     ///
     /// This will result in the page being leaked without calling the custom dropper.
@@ -324,6 +347,9 @@ impl Drop for DynPage {
                     }
                     PageUsage::PageTable => {
                         meta::drop_as_last::<meta::PageTablePageMeta>(self.ptr);
+                    }
+                    PageUsage::BootPageTable => {
+                        meta::drop_as_last::<meta::BootPageTableMeta>(self.ptr);
                     }
                     // The following pages don't have metadata and can't be dropped.
                     PageUsage::Unused

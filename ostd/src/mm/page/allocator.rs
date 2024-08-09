@@ -5,147 +5,188 @@
 //! TODO: Decouple it with the frame allocator in [`crate::mm::frame::options`] by
 //! allocating pages rather untyped memory from this module.
 
-use alloc::vec::Vec;
+use alloc::boxed::Box;
+use core::alloc::Layout;
 
 use align_ext::AlignExt;
-use buddy_system_allocator::FrameAllocator;
-use log::info;
+use log::{info, warn};
 use spin::Once;
 
-use super::{cont_pages::ContPages, meta::PageMeta, Page};
 use crate::{
-    boot::memory_region::MemoryRegionType,
     mm::{Paddr, PAGE_SIZE},
     sync::SpinLock,
 };
 
-/// FrameAllocator with a counter for allocated memory
-pub(in crate::mm) struct CountingFrameAllocator {
-    allocator: FrameAllocator,
-    total: usize,
-    allocated: usize,
+pub trait PageAlloc: Sync + Send {
+    /// Add a range of **frame number** [start, end) to the allocator
+    ///
+    /// Warning! May lead to panic when afterwards allocation while using
+    /// out-of `ostd`
+    fn add_frame(&mut self, start: usize, end: usize);
+
+    /// Allocates a contiguous range of pages described by the layout.
+    ///
+    /// # Panics
+    ///
+    /// The function panics if the layout.size is not base-page-aligned or
+    /// if the layout.align is less than the PAGE_SIZE.
+    fn alloc(&mut self, layout: Layout) -> Option<Paddr>;
+
+    /// Allocates one page with specific alignment
+    ///
+    /// # Panics
+    ///
+    /// The function panics if the align is not a power-of-two
+    fn alloc_page(&mut self, align: usize) -> Option<Paddr> {
+        // CHeck whether the align is always a power-of-two
+        assert!(align.is_power_of_two());
+        let alignment = core::cmp::max(align, PAGE_SIZE);
+        self.alloc(Layout::from_size_align(PAGE_SIZE, alignment).unwrap())
+    }
+
+    /// Deallocates a specified number of consecutive pages.
+    ///
+    /// Warning! May lead to panic when afterwards allocation while using
+    /// out-of `ostd`
+    fn dealloc(&mut self, addr: Paddr, nr_pages: usize);
+
+    /// Returns the total memory size in **bytes** that is
+    /// available for allocation.
+    fn total_mem(&self) -> usize;
+
+    /// Returns the free memory size in **bytes** that is
+    /// available for allocation.
+    fn free_mem(&self) -> usize;
 }
 
-impl CountingFrameAllocator {
-    pub fn new(allocator: FrameAllocator, total: usize) -> Self {
-        CountingFrameAllocator {
-            allocator,
-            total,
-            allocated: 0,
-        }
-    }
-
-    pub fn alloc(&mut self, count: usize) -> Option<usize> {
-        match self.allocator.alloc(count) {
-            Some(value) => {
-                self.allocated += count * PAGE_SIZE;
-                Some(value)
-            }
-            None => None,
-        }
-    }
-
-    pub fn dealloc(&mut self, start_frame: usize, count: usize) {
-        self.allocator.dealloc(start_frame, count);
-        self.allocated -= count * PAGE_SIZE;
-    }
-
-    pub fn mem_total(&self) -> usize {
-        self.total
-    }
-
-    pub fn mem_available(&self) -> usize {
-        self.total - self.allocated
-    }
-}
-
-pub(in crate::mm) static PAGE_ALLOCATOR: Once<SpinLock<CountingFrameAllocator>> = Once::new();
-
-/// Allocate a single page.
-///
-/// The metadata of the page is initialized with the given metadata.
-pub(crate) fn alloc_single<M: PageMeta>(metadata: M) -> Option<Page<M>> {
-    PAGE_ALLOCATOR.get().unwrap().lock().alloc(1).map(|idx| {
-        let paddr = idx * PAGE_SIZE;
-        Page::from_unused(paddr, metadata)
-    })
-}
-
-/// Allocate a contiguous range of pages of a given length in bytes.
-///
-/// The caller must provide a closure to initialize metadata for all the pages.
-/// The closure receives the physical address of the page and returns the
-/// metadata, which is similar to [`core::array::from_fn`].
-///
-/// # Panics
-///
-/// The function panics if the length is not base-page-aligned.
-pub(crate) fn alloc_contiguous<M: PageMeta, F>(len: usize, metadata_fn: F) -> Option<ContPages<M>>
-where
-    F: FnMut(Paddr) -> M,
-{
-    assert!(len % PAGE_SIZE == 0);
-    PAGE_ALLOCATOR
-        .get()
-        .unwrap()
-        .lock()
-        .alloc(len / PAGE_SIZE)
-        .map(|start| {
-            ContPages::from_unused(start * PAGE_SIZE..start * PAGE_SIZE + len, metadata_fn)
-        })
-}
-
-/// Allocate pages.
-///
-/// The allocated pages are not guarenteed to be contiguous.
-/// The total length of the allocated pages is `len`.
-///
-/// The caller must provide a closure to initialize metadata for all the pages.
-/// The closure receives the physical address of the page and returns the
-/// metadata, which is similar to [`core::array::from_fn`].
-///
-/// # Panics
-///
-/// The function panics if the length is not base-page-aligned.
-pub(crate) fn alloc<M: PageMeta, F>(len: usize, mut metadata_fn: F) -> Option<Vec<Page<M>>>
-where
-    F: FnMut(Paddr) -> M,
-{
-    assert!(len % PAGE_SIZE == 0);
-    let nframes = len / PAGE_SIZE;
-    let mut allocator = PAGE_ALLOCATOR.get().unwrap().lock();
-    let mut vector = Vec::new();
-    for _ in 0..nframes {
-        let paddr = allocator.alloc(1)? * PAGE_SIZE;
-        let page = Page::<M>::from_unused(paddr, metadata_fn(paddr));
-        vector.push(page);
-    }
-    Some(vector)
-}
+#[export_name = "PAGE_ALLOCATOR"]
+pub(in crate) static PAGE_ALLOCATOR: Once<SpinLock<Box<dyn PageAlloc>>> = Once::new();
 
 pub(crate) fn init() {
-    let regions = crate::boot::memory_regions();
-    let mut total: usize = 0;
-    let mut allocator = FrameAllocator::<32>::new();
-    for region in regions.iter() {
-        if region.typ() == MemoryRegionType::Usable {
-            // Make the memory region page-aligned, and skip if it is too small.
-            let start = region.base().align_up(PAGE_SIZE) / PAGE_SIZE;
-            let region_end = region.base().checked_add(region.len()).unwrap();
-            let end = region_end.align_down(PAGE_SIZE) / PAGE_SIZE;
-            if end <= start {
-                continue;
+    let allocator: Box<dyn PageAlloc>;
+    unsafe {
+        extern "Rust" {
+            fn __ostd_page_allocator_init() -> Box<dyn PageAlloc>;
+        }
+        allocator = __ostd_page_allocator_init();
+    }
+    PAGE_ALLOCATOR.call_once(|| SpinLock::new(allocator));
+}
+
+pub(crate) struct BootstrapFrameAllocator {
+    // memory region idx: The index for the global memory region indicates the
+    // current memory region in use, facilitating rapid boot page allocation.
+    mem_region_idx: usize,
+    // frame cursor: The cursor for the frame which is the next frame to be
+    // allocated.
+    frame_cursor: usize,
+}
+
+#[export_name = "BOOTSTRAP_PAGE_ALLOCATOR"]
+pub(in crate::mm) static BOOTSTRAP_PAGE_ALLOCATOR: Once<SpinLock<BootstrapFrameAllocator>> =
+    Once::new();
+
+impl BootstrapFrameAllocator {
+    pub fn new() -> Self {
+        // Get the first frame for allocation
+        let mut first_idx = 0;
+        let mut first_frame = 0;
+        let regions = crate::boot::memory_regions();
+        for i in 0..regions.len() {
+            if regions[i].typ() == crate::boot::memory_region::MemoryRegionType::Usable {
+                // Make the memory region page-aligned, and skip if it is too small.
+                let start = regions[i].base().align_up(PAGE_SIZE) / PAGE_SIZE;
+                let end = regions[i]
+                    .base()
+                    .checked_add(regions[i].len())
+                    .unwrap()
+                    .align_down(PAGE_SIZE)
+                    / PAGE_SIZE;
+                log::debug!(
+                    "Found usable region, start:{:x}, end:{:x}",
+                    regions[i].base(),
+                    regions[i].base() + regions[i].len()
+                );
+                if end <= start {
+                    continue;
+                } else {
+                    first_idx = i;
+                    first_frame = start;
+                    break;
+                }
             }
-            // Add global free pages to the frame allocator.
-            allocator.add_frame(start, end);
-            total += (end - start) * PAGE_SIZE;
-            info!(
-                "Found usable region, start:{:x}, end:{:x}",
-                region.base(),
-                region.base() + region.len()
-            );
+        }
+        Self {
+            mem_region_idx: first_idx,
+            frame_cursor: first_frame,
         }
     }
-    let counting_allocator = CountingFrameAllocator::new(allocator, total);
-    PAGE_ALLOCATOR.call_once(|| SpinLock::new(counting_allocator));
+}
+
+impl PageAlloc for BootstrapFrameAllocator {
+    fn add_frame(&mut self, _start: usize, _end: usize) {
+        warn!("BootstrapFrameAllocator does not need to add frames");
+    }
+
+    fn alloc(&mut self, _layout: Layout) -> Option<Paddr> {
+        warn!("BootstrapFrameAllocator does not support to allocate memory described by range");
+        None
+    }
+
+    fn alloc_page(&mut self, _align: usize) -> Option<Paddr> {
+        let frame = self.frame_cursor;
+        // debug!("allocating frame: {:#x}", frame * PAGE_SIZE,);
+        // Update idx and cursor
+        let regions = crate::boot::memory_regions();
+        self.frame_cursor += 1;
+        loop {
+            let region = regions[self.mem_region_idx];
+            if region.typ() == crate::boot::memory_region::MemoryRegionType::Usable {
+                let start = region.base().align_up(PAGE_SIZE) / PAGE_SIZE;
+                let end = region
+                    .base()
+                    .checked_add(region.len())
+                    .unwrap()
+                    .align_down(PAGE_SIZE)
+                    / PAGE_SIZE;
+                if end <= start {
+                    self.mem_region_idx += 1;
+                    continue;
+                }
+                if self.frame_cursor < start {
+                    self.frame_cursor = start;
+                }
+                if self.frame_cursor >= end {
+                    self.mem_region_idx += 1;
+                } else {
+                    break;
+                }
+            } else {
+                self.mem_region_idx += 1;
+            }
+            if self.mem_region_idx >= regions.len() {
+                panic!("no more usable memory regions for boot page table");
+            }
+        }
+        Some(frame * PAGE_SIZE)
+    }
+
+    fn dealloc(&mut self, _addr: Paddr, _nr_pages: usize) {
+        panic!("BootstrapFrameAllocator does support frames deallocation!");
+    }
+
+    fn total_mem(&self) -> usize {
+        warn!("BootstrapFrameAllocator does not support to calculate total memory");
+        0
+    }
+
+    fn free_mem(&self) -> usize {
+        warn!("BootstrapFrameAllocator does not support to calculate free memory");
+        0
+    }
+}
+
+pub(crate) fn bootstrap_init() {
+    info!("Initializing the bootstrap page allocator");
+    BOOTSTRAP_PAGE_ALLOCATOR.call_once(|| SpinLock::new(BootstrapFrameAllocator::new()));
 }

@@ -44,6 +44,7 @@ use core::{
     sync::atomic::{AtomicU32, AtomicU8, Ordering},
 };
 
+use allocator::{PageAlloc, BOOTSTRAP_PAGE_ALLOCATOR};
 use log::info;
 use num_derive::FromPrimitive;
 use static_assertions::const_assert_eq;
@@ -79,6 +80,8 @@ pub enum PageUsage {
     Meta = 65,
     /// The page stores the kernel such as kernel code, data, etc.
     Kernel = 66,
+    /// The page is used by the boot page table.
+    BootPageTable = 67,
 }
 
 #[repr(C)]
@@ -149,10 +152,11 @@ pub(super) unsafe fn drop_as_last<M: PageMeta>(ptr: *const MetaSlot) {
     // It would return the page to the allocator for further use. This would be done
     // after the release of the metadata to avoid re-allocation before the metadata
     // is reset.
-    allocator::PAGE_ALLOCATOR.get().unwrap().lock().dealloc(
-        mapping::meta_to_page::<PagingConsts>(ptr as Vaddr) / PAGE_SIZE,
-        1,
-    );
+    allocator::PAGE_ALLOCATOR
+        .get()
+        .unwrap()
+        .lock()
+        .dealloc(mapping::meta_to_page::<PagingConsts>(ptr as Vaddr), 1);
 }
 
 mod private {
@@ -246,6 +250,18 @@ impl PageMeta for KernelMeta {
     }
 }
 
+#[derive(Debug, Default)]
+#[repr(C)]
+pub struct BootPageTableMeta {}
+
+impl Sealed for BootPageTableMeta {}
+impl PageMeta for BootPageTableMeta {
+    const USAGE: PageUsage = PageUsage::BootPageTable;
+    fn on_drop(_page: &mut Page<Self>) {
+        // Do noting.
+    }
+}
+
 // ======== End of all the specific metadata structures definitions ===========
 
 /// Initializes the metadata of all physical pages.
@@ -282,6 +298,10 @@ pub(crate) fn init() -> Vec<Page<MetaPageMeta>> {
         // SAFETY: we are doing the metadata mappings for the kernel.
         unsafe { boot_pt.map_base_page(vaddr, frame_paddr / PAGE_SIZE, prop) };
     }
+
+    // add pages used by boot page table to the metadata
+    boot_pt.from_paddr_to_meta();
+
     // Now the metadata pages are mapped, we can initialize the metadata.
     meta_pages
         .into_iter()
@@ -291,19 +311,15 @@ pub(crate) fn init() -> Vec<Page<MetaPageMeta>> {
 
 fn alloc_meta_pages(nframes: usize) -> Vec<Paddr> {
     let mut meta_pages = Vec::new();
-    let start_frame = allocator::PAGE_ALLOCATOR
-        .get()
-        .unwrap()
-        .lock()
-        .alloc(nframes)
-        .unwrap()
-        * PAGE_SIZE;
-    // Zero them out as initialization.
-    let vaddr = paddr_to_vaddr(start_frame) as *mut u8;
-    unsafe { core::ptr::write_bytes(vaddr, 0, PAGE_SIZE * nframes) };
-    for i in 0..nframes {
-        let paddr = start_frame + i * PAGE_SIZE;
-        meta_pages.push(paddr);
+    let mut allocator = BOOTSTRAP_PAGE_ALLOCATOR.get().unwrap().lock();
+    for _ in 0..nframes {
+        let frame_paddr = allocator
+            .alloc_page(PAGE_SIZE)
+            .unwrap_or_else(|| panic!("Failed to allocate metadata pages"));
+        // Zero them out as initialization.
+        let vaddr = paddr_to_vaddr(frame_paddr) as *mut u8;
+        unsafe { core::ptr::write_bytes(vaddr, 0, PAGE_SIZE) };
+        meta_pages.push(frame_paddr);
     }
     meta_pages
 }

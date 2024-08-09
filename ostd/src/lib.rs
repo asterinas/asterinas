@@ -45,6 +45,7 @@ pub mod trap;
 pub mod user;
 
 pub use ostd_macros::main;
+pub use ostd_macros::page_allocator_init;
 pub use ostd_pod::Pod;
 
 pub use self::{error::Error, prelude::Result};
@@ -74,9 +75,11 @@ pub fn init() {
     boot::init();
     logger::init();
 
-    mm::page::allocator::init();
+    mm::page::allocator::bootstrap_init();
     mm::kspace::init_boot_page_table();
-    mm::kspace::init_kernel_page_table(mm::init_page_meta());
+    let meta_vec = mm::init_page_meta();
+    mm::page::allocator::init();
+    mm::kspace::init_kernel_page_table(meta_vec);
     mm::misc_init();
 
     trap::init();

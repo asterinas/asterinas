@@ -113,7 +113,19 @@ pub unsafe fn init_on_bsp() {
     for cpu_i in 1..num_cpus {
         let ap_pages = {
             let nbytes = (bsp_end_va - bsp_base_va).align_up(PAGE_SIZE);
-            page::allocator::alloc_contiguous(nbytes, |_| KernelMeta::default()).unwrap()
+            page::allocator::PAGE_ALLOCATOR
+                .get()
+                .unwrap()
+                .lock()
+                .alloc(core::alloc::Layout::from_size_align(nbytes, PAGE_SIZE).unwrap())
+                .map(|begin_paddr| {
+                    ContPages::from_unused(begin_paddr..begin_paddr + nbytes, |_| {
+                        KernelMeta::default()
+                    })
+                })
+                .unwrap_or_else(|| {
+                    panic!("Failed to allocate CPU-local storage for AP {}", cpu_i);
+                })
         };
         let ap_pages_ptr = paddr_to_vaddr(ap_pages.start_paddr()) as *mut u8;
 

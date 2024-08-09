@@ -231,8 +231,13 @@ where
     /// set the lock bit for performance as it is exclusive and unlocking is an
     /// extra unnecessary expensive operation.
     pub(super) fn alloc(level: PagingLevel) -> Self {
-        let meta = PageTablePageMeta::new_locked(level);
-        let page = page::allocator::alloc_single::<PageTablePageMeta<E, C>>(meta).unwrap();
+        let page = page::allocator::PAGE_ALLOCATOR
+            .get()
+            .unwrap()
+            .lock()
+            .alloc_page(PAGE_SIZE)
+            .map(|paddr| Page::<PageTablePageMeta<E, C>>::from_unused(paddr, PageTablePageMeta::new_locked(level)))
+            .unwrap_or_else(|| panic!("Failed to allocate a page for a page table node"));
 
         // Zero out the page table node.
         let ptr = paddr_to_vaddr(page.paddr()) as *mut u8;

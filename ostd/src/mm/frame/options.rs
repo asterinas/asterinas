@@ -2,10 +2,14 @@
 
 //! Options for allocating frames
 
+use core::alloc::Layout;
+
+use page::allocator::PAGE_ALLOCATOR;
+
 use super::{Frame, Segment};
 use crate::{
     mm::{
-        page::{self, meta::FrameMeta},
+        page::{self, cont_pages, meta::FrameMeta},
         PAGE_SIZE,
     },
     prelude::*,
@@ -56,13 +60,27 @@ impl FrameAllocOptions {
 
     /// Allocates a collection of page frames according to the given options.
     pub fn alloc(&self) -> Result<Vec<Frame>> {
+        let size = self.nframes * PAGE_SIZE;
         let pages = if self.is_contiguous {
-            page::allocator::alloc(self.nframes * PAGE_SIZE, |_| FrameMeta::default())
-                .ok_or(Error::NoMemory)?
-        } else {
-            page::allocator::alloc_contiguous(self.nframes * PAGE_SIZE, |_| FrameMeta::default())
+            PAGE_ALLOCATOR
+                .get()
+                .unwrap()
+                .lock()
+                .alloc(Layout::from_size_align(size, PAGE_SIZE).unwrap())
+                .map(|begin_paddr| {
+                    cont_pages::ContPages::from_unused(begin_paddr..begin_paddr + size, |_|FrameMeta::default())
+                })
                 .ok_or(Error::NoMemory)?
                 .into()
+        } else {
+            let mut allocator = PAGE_ALLOCATOR.get().unwrap().lock();
+            let mut vector = Vec::new();
+            for _ in 0..self.nframes {
+                let paddr = allocator.alloc_page(PAGE_SIZE).ok_or(Error::NoMemory)? * PAGE_SIZE;
+                let page = page::Page::from_unused(paddr, FrameMeta::default());
+                vector.push(page);
+            }
+            vector
         };
         let frames: Vec<_> = pages.into_iter().map(|page| Frame { page }).collect();
         if !self.uninit {
@@ -80,7 +98,13 @@ impl FrameAllocOptions {
             return Err(Error::InvalidArgs);
         }
 
-        let page = page::allocator::alloc_single(FrameMeta::default()).ok_or(Error::NoMemory)?;
+        let page = PAGE_ALLOCATOR
+            .get()
+            .unwrap()
+            .lock()
+            .alloc_page(PAGE_SIZE)
+            .map(|paddr| page::Page::from_unused(paddr, FrameMeta::default()))
+            .ok_or(Error::NoMemory)?;
         let frame = Frame { page };
         if !self.uninit {
             frame.writer().fill(0);
@@ -98,10 +122,15 @@ impl FrameAllocOptions {
             return Err(Error::InvalidArgs);
         }
 
-        let segment: Segment =
-            page::allocator::alloc_contiguous(self.nframes * PAGE_SIZE, |_| FrameMeta::default())
-                .ok_or(Error::NoMemory)?
-                .into();
+        let size = self.nframes * PAGE_SIZE;
+        let segment: Segment = PAGE_ALLOCATOR
+            .get()
+            .unwrap()
+            .lock()
+            .alloc(Layout::from_size_align(size, PAGE_SIZE).unwrap())
+            .map(|begin_paddr| cont_pages::ContPages::from_unused(begin_paddr..begin_paddr + size, |_|FrameMeta::default()))
+            .ok_or(Error::NoMemory)?
+            .into();
         if !self.uninit {
             segment.writer().fill(0);
         }

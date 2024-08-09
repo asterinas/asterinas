@@ -10,12 +10,22 @@ use super::{pte_index, PageTableEntryTrait};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     mm::{
-        nr_subpage_per_huge, paddr_to_vaddr, page::allocator::PAGE_ALLOCATOR, PageProperty,
-        PagingConstsTrait, Vaddr, PAGE_SIZE,
+        nr_subpage_per_huge, paddr_to_vaddr,
+        page::{
+            allocator::{PageAlloc, BOOTSTRAP_PAGE_ALLOCATOR},
+            meta::BootPageTableMeta,
+            Page,
+        },
+        PageProperty, PagingConstsTrait, Vaddr, PAGE_SIZE,
     },
 };
 
 type FrameNumber = usize;
+
+enum BootPageTableFrame {
+    Number(FrameNumber),
+    Page(Page<BootPageTableMeta>),
+}
 
 /// A simple boot page table for boot stage mapping management.
 /// If applicable, the boot page table could track the lifetime of page table
@@ -25,10 +35,9 @@ pub struct BootPageTable<
     C: PagingConstsTrait = PagingConsts,
 > {
     root_pt: FrameNumber,
-    // The frames allocated for this page table are not tracked with
-    // metadata [`crate::mm::frame::meta`]. Here is a record of it
-    // for deallocation.
-    frames: Vec<FrameNumber>,
+    // Hold the ownership of the frames, tracked with
+    // metadata[`crate::mm::frame::meta`].
+    frames: Vec<BootPageTableFrame>,
     _pretend_to_use: core::marker::PhantomData<(E, C)>,
 }
 
@@ -144,20 +153,31 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
     }
 
     fn alloc_frame(&mut self) -> FrameNumber {
-        let frame = PAGE_ALLOCATOR.get().unwrap().lock().alloc(1).unwrap();
-        self.frames.push(frame);
+        let frame = BOOTSTRAP_PAGE_ALLOCATOR
+            .get()
+            .unwrap()
+            .lock()
+            .alloc_page(PAGE_SIZE)
+            .unwrap()
+            / PAGE_SIZE;
+        self.frames.push(BootPageTableFrame::Number(frame));
         // Zero it out.
         let vaddr = paddr_to_vaddr(frame * PAGE_SIZE) as *mut u8;
         unsafe { core::ptr::write_bytes(vaddr, 0, PAGE_SIZE) };
         frame
     }
-}
 
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for BootPageTable<E, C> {
-    fn drop(&mut self) {
-        for frame in &self.frames {
-            PAGE_ALLOCATOR.get().unwrap().lock().dealloc(*frame, 1);
-        }
+    pub fn from_paddr_to_meta(&mut self) {
+        self.frames = self.frames.iter().map(|frame| {
+            match frame {
+                BootPageTableFrame::Number(frame) => {
+                    BootPageTableFrame::Page(Page::<BootPageTableMeta>::from_unused(*frame * PAGE_SIZE, BootPageTableMeta::default()))
+                }
+                BootPageTableFrame::Page(_) => {
+                    panic!("Should not convert frame number to page while pages are already in the boot page table");
+                }
+            }
+        }).collect::<Vec<BootPageTableFrame>>();
     }
 }
 
