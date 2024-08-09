@@ -138,7 +138,8 @@ impl WorkQueue {
             return false;
         }
         self.inner
-            .lock_irq_disabled()
+            .disable_irq()
+            .lock()
             .pending_work_items
             .push(work_item);
         if let Some(worker_pool) = self.worker_pool.upgrade() {
@@ -150,7 +151,7 @@ impl WorkQueue {
     /// Request a pending work item. The `request_cpu` indicates the CPU where
     /// the calling worker is located.
     fn dequeue(&self, request_cpu: u32) -> Option<Arc<WorkItem>> {
-        let mut inner = self.inner.lock_irq_disabled();
+        let mut inner = self.inner.disable_irq().lock();
         let index = inner
             .pending_work_items
             .iter()
@@ -161,7 +162,8 @@ impl WorkQueue {
 
     fn has_pending_work_items(&self, request_cpu: u32) -> bool {
         self.inner
-            .lock_irq_disabled()
+            .disable_irq()
+            .lock()
             .pending_work_items
             .iter()
             .any(|item| item.is_valid_cpu(request_cpu))

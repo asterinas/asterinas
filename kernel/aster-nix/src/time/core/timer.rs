@@ -57,12 +57,12 @@ impl Timer {
     /// Set the interval time for this timer.
     /// The timer will be reset with the interval time upon expiration.
     pub fn set_interval(&self, interval: Duration) {
-        *self.interval.lock_irq_disabled() = interval;
+        *self.interval.disable_irq().lock() = interval;
     }
 
     /// Cancel the current timer's set timeout callback.
     pub fn cancel(&self) {
-        let timer_callback = self.timer_callback.lock_irq_disabled();
+        let timer_callback = self.timer_callback.disable_irq().lock();
         if let Some(timer_callback) = timer_callback.upgrade() {
             timer_callback.cancel();
         }
@@ -88,7 +88,7 @@ impl Timer {
             Box::new(move || interval_timer_callback(&timer_weak)),
         ));
 
-        let mut timer_callback = self.timer_callback.lock_irq_disabled();
+        let mut timer_callback = self.timer_callback.disable_irq().lock();
         if let Some(timer_callback) = timer_callback.upgrade() {
             timer_callback.cancel();
         }
@@ -98,7 +98,7 @@ impl Timer {
 
     /// Return the current expired time of this timer.
     pub fn expired_time(&self) -> Duration {
-        let timer_callback = self.timer_callback.lock_irq_disabled().upgrade();
+        let timer_callback = self.timer_callback.disable_irq().lock().upgrade();
         timer_callback.map_or(Duration::ZERO, |timer_callback| timer_callback.expired_time)
     }
 
@@ -124,7 +124,7 @@ impl Timer {
 
     /// Returns the interval time of the current timer.
     pub fn interval(&self) -> Duration {
-        *self.interval.lock_irq_disabled()
+        *self.interval.disable_irq().lock()
     }
 }
 
@@ -134,7 +134,7 @@ fn interval_timer_callback(timer: &Weak<Timer>) {
     };
 
     (timer.registered_callback)();
-    let interval = timer.interval.lock_irq_disabled();
+    let interval = timer.interval.disable_irq().lock();
     if *interval != Duration::ZERO {
         timer.set_timeout(Timeout::After(*interval));
     }
@@ -161,7 +161,8 @@ impl TimerManager {
 
     fn insert(&self, timer_callback: Arc<TimerCallback>) {
         self.timer_callbacks
-            .lock_irq_disabled()
+            .disable_irq()
+            .lock()
             .push(timer_callback);
     }
 
@@ -169,7 +170,7 @@ impl TimerManager {
     /// call the corresponding callback functions.
     pub fn process_expired_timers(&self) {
         let callbacks = {
-            let mut timeout_list = self.timer_callbacks.lock_irq_disabled();
+            let mut timeout_list = self.timer_callbacks.disable_irq().lock();
             if timeout_list.len() == 0 {
                 return;
             }

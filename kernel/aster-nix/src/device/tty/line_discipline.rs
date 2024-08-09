@@ -106,7 +106,7 @@ impl LineDiscipline {
 
     /// Push char to line discipline.
     pub fn push_char<F2: FnMut(&str)>(&self, ch: u8, echo_callback: F2) {
-        let termios = self.termios.lock_irq_disabled();
+        let termios = self.termios.disable_irq().lock();
 
         let ch = if termios.contains_icrnl() && ch == b'\r' {
             b'\n'
@@ -127,7 +127,7 @@ impl LineDiscipline {
 
         // Raw mode
         if !termios.is_canonical_mode() {
-            self.read_buffer.lock_irq_disabled().push_overwrite(ch);
+            self.read_buffer.disable_irq().lock().push_overwrite(ch);
             self.update_readable_state();
             return;
         }
@@ -136,12 +136,12 @@ impl LineDiscipline {
 
         if ch == *termios.get_special_char(CC_C_CHAR::VKILL) {
             // Erase current line
-            self.current_line.lock_irq_disabled().drain();
+            self.current_line.disable_irq().lock().drain();
         }
 
         if ch == *termios.get_special_char(CC_C_CHAR::VERASE) {
             // Type backspace
-            let mut current_line = self.current_line.lock_irq_disabled();
+            let mut current_line = self.current_line.disable_irq().lock();
             if !current_line.is_empty() {
                 current_line.backspace();
             }
@@ -149,17 +149,17 @@ impl LineDiscipline {
 
         if is_line_terminator(ch, &termios) {
             // If a new line is met, all bytes in current_line will be moved to read_buffer
-            let mut current_line = self.current_line.lock_irq_disabled();
+            let mut current_line = self.current_line.disable_irq().lock();
             current_line.push_char(ch);
             let current_line_chars = current_line.drain();
             for char in current_line_chars {
-                self.read_buffer.lock_irq_disabled().push_overwrite(char);
+                self.read_buffer.disable_irq().lock().push_overwrite(char);
             }
         }
 
         if is_printable_char(ch) {
             // Printable character
-            self.current_line.lock_irq_disabled().push_char(ch);
+            self.current_line.disable_irq().lock().push_char(ch);
         }
 
         self.update_readable_state();
@@ -178,7 +178,7 @@ impl LineDiscipline {
 
         if in_interrupt_context() {
             // `kernel_signal()` may cause sleep, so only construct parameters here.
-            self.work_item_para.lock_irq_disabled().kernel_signal = Some(signal);
+            self.work_item_para.disable_irq().lock().kernel_signal = Some(signal);
         } else {
             (self.send_signal)(signal);
         }
@@ -187,14 +187,14 @@ impl LineDiscipline {
     }
 
     pub fn update_readable_state(&self) {
-        let buffer = self.read_buffer.lock_irq_disabled();
+        let buffer = self.read_buffer.disable_irq().lock();
 
         if in_interrupt_context() {
             // Add/Del events may sleep, so only construct parameters here.
             if !buffer.is_empty() {
-                self.work_item_para.lock_irq_disabled().pollee_type = Some(PolleeType::Add);
+                self.work_item_para.disable_irq().lock().pollee_type = Some(PolleeType::Add);
             } else {
-                self.work_item_para.lock_irq_disabled().pollee_type = Some(PolleeType::Del);
+                self.work_item_para.disable_irq().lock().pollee_type = Some(PolleeType::Del);
             }
             submit_work_item(self.work_item.clone(), WorkPriority::High);
             return;
@@ -209,10 +209,16 @@ impl LineDiscipline {
 
     /// include all operations that may cause sleep, and processes by a work queue.
     fn update_readable_state_after(&self) {
-        if let Some(signal) = self.work_item_para.lock_irq_disabled().kernel_signal.take() {
+        if let Some(signal) = self
+            .work_item_para
+            .disable_irq()
+            .lock()
+            .kernel_signal
+            .take()
+        {
             (self.send_signal)(signal);
         };
-        if let Some(pollee_type) = self.work_item_para.lock_irq_disabled().pollee_type.take() {
+        if let Some(pollee_type) = self.work_item_para.disable_irq().lock().pollee_type.take() {
             match pollee_type {
                 PolleeType::Add => {
                     self.pollee.add_events(IoEvents::IN);
@@ -262,13 +268,13 @@ impl LineDiscipline {
     /// read all bytes buffered to dst, return the actual read length.
     fn try_read(&self, dst: &mut [u8]) -> Result<usize> {
         let (vmin, vtime) = {
-            let termios = self.termios.lock_irq_disabled();
+            let termios = self.termios.disable_irq().lock();
             let vmin = *termios.get_special_char(CC_C_CHAR::VMIN);
             let vtime = *termios.get_special_char(CC_C_CHAR::VTIME);
             (vmin, vtime)
         };
         let read_len = {
-            let len = self.read_buffer.lock_irq_disabled().len();
+            let len = self.read_buffer.disable_irq().lock().len();
             let max_read_len = len.min(dst.len());
             if vmin == 0 && vtime == 0 {
                 // poll read
@@ -295,7 +301,7 @@ impl LineDiscipline {
     /// returns immediately with the lesser of the number of bytes available or the number of bytes requested.
     /// If no bytes are available, completes immediately, returning 0.
     fn poll_read(&self, dst: &mut [u8]) -> usize {
-        let mut buffer = self.read_buffer.lock_irq_disabled();
+        let mut buffer = self.read_buffer.disable_irq().lock();
         let len = buffer.len();
         let max_read_len = len.min(dst.len());
         if max_read_len == 0 {
@@ -304,7 +310,7 @@ impl LineDiscipline {
         let mut read_len = 0;
         for dst_i in dst.iter_mut().take(max_read_len) {
             if let Some(next_char) = buffer.pop() {
-                let termios = self.termios.lock_irq_disabled();
+                let termios = self.termios.disable_irq().lock();
                 if termios.is_canonical_mode() {
                     // canonical mode, read until meet new line
                     if is_line_terminator(next_char, &termios) {
@@ -353,15 +359,15 @@ impl LineDiscipline {
 
     /// whether there is buffered data
     pub fn is_empty(&self) -> bool {
-        self.read_buffer.lock_irq_disabled().len() == 0
+        self.read_buffer.disable_irq().lock().len() == 0
     }
 
     pub fn termios(&self) -> KernelTermios {
-        *self.termios.lock_irq_disabled()
+        *self.termios.disable_irq().lock()
     }
 
     pub fn set_termios(&self, termios: KernelTermios) {
-        *self.termios.lock_irq_disabled() = termios;
+        *self.termios.disable_irq().lock() = termios;
     }
 
     pub fn drain_input(&self) {

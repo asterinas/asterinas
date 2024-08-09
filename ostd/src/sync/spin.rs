@@ -6,6 +6,7 @@ use alloc::sync::Arc;
 use core::{
     cell::UnsafeCell,
     fmt,
+    marker::PhantomData,
     ops::{Deref, DerefMut},
     sync::atomic::{AtomicBool, Ordering},
 };
@@ -16,65 +17,104 @@ use crate::{
 };
 
 /// A spin lock.
-pub struct SpinLock<T: ?Sized> {
+///
+/// # Guard behavior
+///
+/// The type `G' specifies the guard behavior of the spin lock. While holding the lock,
+/// - if `G` is [`PreemptDisabled`], preemption is disabled;
+/// - if `G` is [`LocalIrqDisabled`], local IRQs are disabled.
+///
+/// The guard behavior can be temporarily upgraded from [`PreemptDisabled`] to
+/// [`LocalIrqDisabled`] using the [`disable_irq`] method.
+///
+/// [`disable_irq`]: Self::disable_irq
+#[repr(transparent)]
+pub struct SpinLock<T: ?Sized, G = PreemptDisabled> {
+    phantom: PhantomData<G>,
+    /// Only the last field of a struct may have a dynamically sized type.
+    /// That's why SpinLockInner is put in the last field.
+    inner: SpinLockInner<T>,
+}
+
+struct SpinLockInner<T: ?Sized> {
     lock: AtomicBool,
     val: UnsafeCell<T>,
 }
 
-impl<T> SpinLock<T> {
+/// A guardian that denotes the guard behavior for holding the spin lock.
+pub trait Guardian {
+    /// The guard type.
+    type Guard;
+
+    /// Creates a new guard.
+    fn guard() -> Self::Guard;
+}
+
+/// A guardian that disables preemption while holding the spin lock.
+pub struct PreemptDisabled;
+
+impl Guardian for PreemptDisabled {
+    type Guard = DisablePreemptGuard;
+
+    fn guard() -> Self::Guard {
+        disable_preempt()
+    }
+}
+
+/// A guardian that disables IRQs while holding the spin lock.
+///
+/// This guardian would incur a certain time overhead over
+/// [`PreemptDisabled']. So prefer avoiding using this guardian when
+/// IRQ handlers are allowed to get executed while holding the
+/// lock. For example, if a lock is never used in the interrupt
+/// context, then it is ok not to use this guardian in the process context.
+pub struct LocalIrqDisabled;
+
+impl Guardian for LocalIrqDisabled {
+    type Guard = DisabledLocalIrqGuard;
+
+    fn guard() -> Self::Guard {
+        disable_local()
+    }
+}
+
+impl<T, G: Guardian> SpinLock<T, G> {
     /// Creates a new spin lock.
     pub const fn new(val: T) -> Self {
-        Self {
+        let lock_inner = SpinLockInner {
             lock: AtomicBool::new(false),
             val: UnsafeCell::new(val),
+        };
+        Self {
+            phantom: PhantomData,
+            inner: lock_inner,
         }
     }
 }
 
-impl<T: ?Sized> SpinLock<T> {
-    /// Acquires the spin lock with disabling the local IRQs. This is the most secure
-    /// locking way.
-    ///
-    /// This method runs in a busy loop until the lock can be acquired.
-    /// After acquiring the spin lock, all interrupts are disabled.
-    pub fn lock_irq_disabled(&self) -> SpinLockGuard<T> {
-        let guard = disable_local();
+impl<T: ?Sized> SpinLock<T, PreemptDisabled> {
+    /// Converts the guard behavior from disabling preemption to disabling IRQs.
+    pub fn disable_irq(&self) -> &SpinLock<T, LocalIrqDisabled> {
+        let ptr = self as *const SpinLock<T, PreemptDisabled>;
+        let ptr = ptr as *const SpinLock<T, LocalIrqDisabled>;
+        // SAFETY:
+        // 1. The types `SpinLock<T, PreemptDisabled>`, `SpinLockInner<T>` and `SpinLock<T,
+        //    IrqDisabled>` have the same memory layout guaranteed by `#[repr(transparent)]`.
+        // 2. The specified memory location can be borrowed as an immutable reference for the
+        //    specified lifetime.
+        unsafe { &*ptr }
+    }
+}
+
+impl<T: ?Sized, G: Guardian> SpinLock<T, G> {
+    /// Acquires the spin lock.
+    pub fn lock(&self) -> SpinLockGuard<T, G> {
+        // Notice the guard must be created before acquiring the lock.
+        let inner_guard = G::guard();
         self.acquire_lock();
         SpinLockGuard_ {
             lock: self,
-            inner_guard: InnerGuard::IrqGuard(guard),
-        }
-    }
-
-    /// Tries acquiring the spin lock immedidately with disabling the local IRQs.
-    pub fn try_lock_irq_disabled(&self) -> Option<SpinLockGuard<T>> {
-        let irq_guard = disable_local();
-        if self.try_acquire_lock() {
-            let lock_guard = SpinLockGuard_ {
-                lock: self,
-                inner_guard: InnerGuard::IrqGuard(irq_guard),
-            };
-            return Some(lock_guard);
-        }
-        None
-    }
-
-    /// Acquires the spin lock without disabling local IRQs.
-    ///
-    /// This method is twice as fast as the [`lock_irq_disabled`] method.
-    /// So prefer using this method over the [`lock_irq_disabled`] method
-    /// when IRQ handlers are allowed to get executed while
-    /// holding this lock. For example, if a lock is never used
-    /// in the interrupt context, then it is ok to use this method
-    /// in the process context.
-    ///
-    /// [`lock_irq_disabled`]: Self::lock_irq_disabled
-    pub fn lock(&self) -> SpinLockGuard<T> {
-        let guard = disable_preempt();
-        self.acquire_lock();
-        SpinLockGuard_ {
-            lock: self,
-            inner_guard: InnerGuard::PreemptGuard(guard),
+            guard: inner_guard,
         }
     }
 
@@ -84,22 +124,22 @@ impl<T: ?Sized> SpinLock<T> {
     /// for compile-time checked lifetimes of the lock guard.
     ///
     /// [`lock`]: Self::lock
-    pub fn lock_arc(self: &Arc<Self>) -> ArcSpinLockGuard<T> {
-        let guard = disable_preempt();
+    pub fn lock_arc(self: &Arc<Self>) -> ArcSpinLockGuard<T, G> {
+        let inner_guard = G::guard();
         self.acquire_lock();
         SpinLockGuard_ {
             lock: self.clone(),
-            inner_guard: InnerGuard::PreemptGuard(guard),
+            guard: inner_guard,
         }
     }
 
-    /// Tries acquiring the spin lock immedidately without disabling the local IRQs.
-    pub fn try_lock(&self) -> Option<SpinLockGuard<T>> {
-        let guard = disable_preempt();
+    /// Tries acquiring the spin lock immedidately.
+    pub fn try_lock(&self) -> Option<SpinLockGuard<T, G>> {
+        let inner_guard = G::guard();
         if self.try_acquire_lock() {
             let lock_guard = SpinLockGuard_ {
                 lock: self,
-                inner_guard: InnerGuard::PreemptGuard(guard),
+                guard: inner_guard,
             };
             return Some(lock_guard);
         }
@@ -114,72 +154,75 @@ impl<T: ?Sized> SpinLock<T> {
     }
 
     fn try_acquire_lock(&self) -> bool {
-        self.lock
+        self.inner
+            .lock
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_ok()
     }
 
     fn release_lock(&self) {
-        self.lock.store(false, Ordering::Release);
+        self.inner.lock.store(false, Ordering::Release);
     }
 }
 
-impl<T: ?Sized + fmt::Debug> fmt::Debug for SpinLock<T> {
+impl<T: ?Sized + fmt::Debug, G> fmt::Debug for SpinLock<T, G> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Debug::fmt(&self.val, f)
+        fmt::Debug::fmt(&self.inner.val, f)
     }
 }
 
 // SAFETY: Only a single lock holder is permitted to access the inner data of Spinlock.
-unsafe impl<T: ?Sized + Send> Send for SpinLock<T> {}
-unsafe impl<T: ?Sized + Send> Sync for SpinLock<T> {}
-
-enum InnerGuard {
-    IrqGuard(DisabledLocalIrqGuard),
-    PreemptGuard(DisablePreemptGuard),
-}
+unsafe impl<T: ?Sized + Send, G> Send for SpinLock<T, G> {}
+unsafe impl<T: ?Sized + Send, G> Sync for SpinLock<T, G> {}
 
 /// A guard that provides exclusive access to the data protected by a [`SpinLock`].
-pub type SpinLockGuard<'a, T> = SpinLockGuard_<T, &'a SpinLock<T>>;
+pub type SpinLockGuard<'a, T, G> = SpinLockGuard_<T, &'a SpinLock<T, G>, G>;
 /// A guard that provides exclusive access to the data protected by a `Arc<SpinLock>`.
-pub type ArcSpinLockGuard<T> = SpinLockGuard_<T, Arc<SpinLock<T>>>;
+pub type ArcSpinLockGuard<T, G> = SpinLockGuard_<T, Arc<SpinLock<T, G>>, G>;
 
-/// The guard of a spin lock that disables the local IRQs.
+/// The guard of a spin lock.
 #[clippy::has_significant_drop]
 #[must_use]
-pub struct SpinLockGuard_<T: ?Sized, R: Deref<Target = SpinLock<T>>> {
-    inner_guard: InnerGuard,
+pub struct SpinLockGuard_<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: Guardian> {
+    guard: G::Guard,
     lock: R,
 }
 
-impl<T: ?Sized, R: Deref<Target = SpinLock<T>>> Deref for SpinLockGuard_<T, R> {
+impl<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: Guardian> Deref for SpinLockGuard_<T, R, G> {
     type Target = T;
 
     fn deref(&self) -> &T {
-        unsafe { &*self.lock.val.get() }
+        unsafe { &*self.lock.inner.val.get() }
     }
 }
 
-impl<T: ?Sized, R: Deref<Target = SpinLock<T>>> DerefMut for SpinLockGuard_<T, R> {
+impl<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: Guardian> DerefMut
+    for SpinLockGuard_<T, R, G>
+{
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *self.lock.val.get() }
+        unsafe { &mut *self.lock.inner.val.get() }
     }
 }
 
-impl<T: ?Sized, R: Deref<Target = SpinLock<T>>> Drop for SpinLockGuard_<T, R> {
+impl<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: Guardian> Drop for SpinLockGuard_<T, R, G> {
     fn drop(&mut self) {
         self.lock.release_lock();
     }
 }
 
-impl<T: ?Sized + fmt::Debug, R: Deref<Target = SpinLock<T>>> fmt::Debug for SpinLockGuard_<T, R> {
+impl<T: ?Sized + fmt::Debug, R: Deref<Target = SpinLock<T, G>>, G: Guardian> fmt::Debug
+    for SpinLockGuard_<T, R, G>
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
     }
 }
 
-impl<T: ?Sized, R: Deref<Target = SpinLock<T>>> !Send for SpinLockGuard_<T, R> {}
+impl<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: Guardian> !Send for SpinLockGuard_<T, R, G> {}
 
 // SAFETY: `SpinLockGuard_` can be shared between tasks/threads in same CPU.
 // As `lock()` is only called when there are no race conditions caused by interrupts.
-unsafe impl<T: ?Sized + Sync, R: Deref<Target = SpinLock<T>> + Sync> Sync for SpinLockGuard_<T, R> {}
+unsafe impl<T: ?Sized + Sync, R: Deref<Target = SpinLock<T, G>> + Sync, G: Guardian> Sync
+    for SpinLockGuard_<T, R, G>
+{
+}

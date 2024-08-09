@@ -56,7 +56,7 @@ impl<T: Sync + Send + PreemptSchedInfo> Scheduler<T> for PreemptScheduler<T> {
             cpu_id
         };
 
-        let mut rq = self.rq[target_cpu as usize].lock_irq_disabled();
+        let mut rq = self.rq[target_cpu as usize].disable_irq().lock();
         if still_in_rq && let Err(_) = runnable.cpu().set_if_is_none(target_cpu) {
             return None;
         }
@@ -71,13 +71,13 @@ impl<T: Sync + Send + PreemptSchedInfo> Scheduler<T> for PreemptScheduler<T> {
     }
 
     fn local_rq_with(&self, f: &mut dyn FnMut(&dyn LocalRunQueue<T>)) {
-        let local_rq: &PreemptRunQueue<T> = &self.rq[this_cpu() as usize].lock_irq_disabled();
+        let local_rq: &PreemptRunQueue<T> = &self.rq[this_cpu() as usize].disable_irq().lock();
         f(local_rq);
     }
 
     fn local_mut_rq_with(&self, f: &mut dyn FnMut(&mut dyn LocalRunQueue<T>)) {
         let local_rq: &mut PreemptRunQueue<T> =
-            &mut self.rq[this_cpu() as usize].lock_irq_disabled();
+            &mut self.rq[this_cpu() as usize].disable_irq().lock();
         f(local_rq);
     }
 }

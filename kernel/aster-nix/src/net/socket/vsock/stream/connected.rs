@@ -51,7 +51,7 @@ impl Connected {
     }
 
     pub fn try_recv(&self, buf: &mut [u8]) -> Result<usize> {
-        let mut connection = self.connection.lock_irq_disabled();
+        let mut connection = self.connection.disable_irq().lock();
         let bytes_read = connection.buffer.len().min(buf.len());
         connection.buffer.pop_slice(&mut buf[..bytes_read]);
         connection.info.done_forwarding(bytes_read);
@@ -69,7 +69,7 @@ impl Connected {
     }
 
     pub fn send(&self, packet: &[u8], flags: SendRecvFlags) -> Result<usize> {
-        let mut connection = self.connection.lock_irq_disabled();
+        let mut connection = self.connection.disable_irq().lock();
         debug_assert!(flags.is_all_supported());
         let buf_len = packet.len();
         VSOCK_GLOBAL
@@ -81,21 +81,21 @@ impl Connected {
     }
 
     pub fn should_close(&self) -> bool {
-        let connection = self.connection.lock_irq_disabled();
+        let connection = self.connection.disable_irq().lock();
         // If buffer is now empty and the peer requested shutdown, finish shutting down the
         // connection.
         connection.is_peer_requested_shutdown() && connection.buffer.is_empty()
     }
 
     pub fn is_closed(&self) -> bool {
-        let connection = self.connection.lock_irq_disabled();
+        let connection = self.connection.disable_irq().lock();
         connection.is_local_shutdown()
     }
 
     pub fn shutdown(&self, _cmd: SockShutdownCmd) -> Result<()> {
         // TODO: deal with cmd
         if self.should_close() {
-            let mut connection = self.connection.lock_irq_disabled();
+            let mut connection = self.connection.disable_irq().lock();
             if connection.is_local_shutdown() {
                 return Ok(());
             }
@@ -106,23 +106,24 @@ impl Connected {
         Ok(())
     }
     pub fn update_info(&self, event: &VsockEvent) {
-        let mut connection = self.connection.lock_irq_disabled();
+        let mut connection = self.connection.disable_irq().lock();
         connection.update_for_event(event)
     }
 
     pub fn get_info(&self) -> ConnectionInfo {
-        let connection = self.connection.lock_irq_disabled();
+        let connection = self.connection.disable_irq().lock();
         connection.info.clone()
     }
 
     pub fn add_connection_buffer(&self, bytes: &[u8]) -> bool {
-        let mut connection = self.connection.lock_irq_disabled();
+        let mut connection = self.connection.disable_irq().lock();
         connection.add(bytes)
     }
 
     pub fn set_peer_requested_shutdown(&self) {
         self.connection
-            .lock_irq_disabled()
+            .disable_irq()
+            .lock()
             .set_peer_requested_shutdown()
     }
 
@@ -131,7 +132,7 @@ impl Connected {
     }
 
     pub fn update_io_events(&self) {
-        let connection = self.connection.lock_irq_disabled();
+        let connection = self.connection.disable_irq().lock();
         // receive
         if !connection.buffer.is_empty() {
             self.pollee.add_events(IoEvents::IN);

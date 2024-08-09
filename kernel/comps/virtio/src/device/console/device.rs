@@ -32,7 +32,7 @@ pub struct ConsoleDevice {
 
 impl AnyConsoleDevice for ConsoleDevice {
     fn send(&self, value: &[u8]) {
-        let mut transmit_queue = self.transmit_queue.lock_irq_disabled();
+        let mut transmit_queue = self.transmit_queue.disable_irq().lock();
         let mut reader = VmReader::from(value);
 
         while reader.remain() > 0 {
@@ -106,10 +106,10 @@ impl ConsoleDevice {
             callbacks: RwLock::new(Vec::new()),
         });
 
-        device.activate_receive_buffer(&mut device.receive_queue.lock_irq_disabled());
+        device.activate_receive_buffer(&mut device.receive_queue.disable_irq().lock());
 
         // Register irq callbacks
-        let mut transport = device.transport.lock_irq_disabled();
+        let mut transport = device.transport.disable_irq().lock();
         let handle_console_input = {
             let device = device.clone();
             move |_: &TrapFrame| device.handle_recv_irq()
@@ -129,7 +129,7 @@ impl ConsoleDevice {
     }
 
     fn handle_recv_irq(&self) {
-        let mut receive_queue = self.receive_queue.lock_irq_disabled();
+        let mut receive_queue = self.receive_queue.disable_irq().lock();
 
         let Ok((_, len)) = receive_queue.pop_used() else {
             return;

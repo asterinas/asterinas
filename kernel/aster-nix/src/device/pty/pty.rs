@@ -62,7 +62,7 @@ impl PtyMaster {
     }
 
     pub(super) fn slave_push_char(&self, ch: u8) {
-        let mut input = self.input.lock_irq_disabled();
+        let mut input = self.input.disable_irq().lock();
         input.push_overwrite(ch);
         self.update_state(&input);
     }
@@ -107,7 +107,7 @@ impl FileIo for PtyMaster {
 
         let mut poller = Poller::new();
         loop {
-            let mut input = self.input.lock_irq_disabled();
+            let mut input = self.input.disable_irq().lock();
 
             if input.is_empty() {
                 let events = self.pollee.poll(IoEvents::IN, Some(&mut poller));

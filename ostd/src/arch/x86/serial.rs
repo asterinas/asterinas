@@ -26,7 +26,10 @@ pub type InputCallback = dyn Fn(u8) + Send + Sync + 'static;
 
 /// Registers a callback function to be called when there is console input.
 pub fn register_console_input_callback(f: &'static InputCallback) {
-    SERIAL_INPUT_CALLBACKS.lock_irq_disabled().push(Arc::new(f));
+    SERIAL_INPUT_CALLBACKS
+        .disable_irq()
+        .lock()
+        .push(Arc::new(f));
 }
 
 struct Stdout;
@@ -77,7 +80,8 @@ where
     CONSOLE_IRQ_CALLBACK
         .get()
         .unwrap()
-        .lock_irq_disabled()
+        .disable_irq()
+        .lock()
         .on_active(callback);
 }
 

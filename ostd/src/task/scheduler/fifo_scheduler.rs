@@ -51,7 +51,7 @@ impl<T: FifoSchedInfo + Send + Sync> Scheduler<T> for FifoScheduler<T> {
             cpu_id
         };
 
-        let mut rq = self.rq[target_cpu as usize].lock_irq_disabled();
+        let mut rq = self.rq[target_cpu as usize].disable_irq().lock();
         if still_in_rq && let Err(_) = runnable.cpu().set_if_is_none(target_cpu) {
             return None;
         }
@@ -61,12 +61,12 @@ impl<T: FifoSchedInfo + Send + Sync> Scheduler<T> for FifoScheduler<T> {
     }
 
     fn local_rq_with(&self, f: &mut dyn FnMut(&dyn LocalRunQueue<T>)) {
-        let local_rq: &FifoRunQueue<T> = &self.rq[this_cpu() as usize].lock_irq_disabled();
+        let local_rq: &FifoRunQueue<T> = &self.rq[this_cpu() as usize].disable_irq().lock();
         f(local_rq);
     }
 
     fn local_mut_rq_with(&self, f: &mut dyn FnMut(&mut dyn LocalRunQueue<T>)) {
-        let local_rq: &mut FifoRunQueue<T> = &mut self.rq[this_cpu() as usize].lock_irq_disabled();
+        let local_rq: &mut FifoRunQueue<T> = &mut self.rq[this_cpu() as usize].disable_irq().lock();
         f(local_rq);
     }
 }
