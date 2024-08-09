@@ -31,7 +31,7 @@ use crate::{
         device::Device,
         exfat::{dentry::ExfatDentryIterator, fat::ExfatChain, fs::ExfatFS},
         utils::{
-            DirentVisitor, Inode, InodeMode, InodeType, IoctlCmd, Metadata, PageCache,
+            DirentVisitor, Extension, Inode, InodeMode, InodeType, IoctlCmd, Metadata, PageCache,
             PageCacheBackend,
         },
     },
@@ -79,6 +79,7 @@ impl FatAttr {
 #[derive(Debug)]
 pub struct ExfatInode {
     inner: RwMutex<ExfatInodeInner>,
+    extension: Extension,
 }
 
 #[derive(Debug)]
@@ -667,6 +668,7 @@ impl ExfatInode {
                 fs: fs_weak,
                 page_cache: PageCache::with_capacity(size, weak_self.clone() as _).unwrap(),
             }),
+            extension: Extension::new(),
         });
 
         let inner = inode.inner.upread();
@@ -776,6 +778,7 @@ impl ExfatInode {
                 fs: fs_weak,
                 page_cache: PageCache::with_capacity(size, weak_self.clone() as _).unwrap(),
             }),
+            extension: Extension::new(),
         });
 
         if matches!(inode_type, InodeType::Dir) {
@@ -1702,5 +1705,9 @@ impl Inode for ExfatInode {
 
     fn is_dentry_cacheable(&self) -> bool {
         true
+    }
+
+    fn extension(&self) -> Option<&Extension> {
+        Some(&self.extension)
     }
 }

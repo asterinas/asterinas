@@ -11,7 +11,8 @@ use crate::{
         device::Device,
         ext2::{FilePerm, FileType, Inode as Ext2Inode},
         utils::{
-            DirentVisitor, FallocMode, FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
+            DirentVisitor, Extension, FallocMode, FileSystem, Inode, InodeMode, InodeType,
+            IoctlCmd, Metadata,
         },
     },
     prelude::*,
@@ -192,6 +193,10 @@ impl Inode for Ext2Inode {
 
     fn fs(&self) -> Arc<dyn FileSystem> {
         self.fs()
+    }
+
+    fn extension(&self) -> Option<&Extension> {
+        Some(self.extension())
     }
 }
 

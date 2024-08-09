@@ -16,7 +16,7 @@ use super::{
     prelude::*,
     utils::now,
 };
-use crate::fs::utils::FallocMode;
+use crate::fs::utils::{Extension, FallocMode};
 
 /// Max length of file name.
 pub const MAX_FNAME_LEN: usize = 255;
@@ -30,6 +30,7 @@ pub struct Inode {
     block_group_idx: usize,
     inner: RwMutex<Inner>,
     fs: Weak<Ext2>,
+    extension: Extension,
 }
 
 impl Inode {
@@ -44,6 +45,7 @@ impl Inode {
             block_group_idx,
             inner: RwMutex::new(Inner::new(desc, weak_self.clone(), fs.clone())),
             fs,
+            extension: Extension::new(),
         })
     }
 
@@ -734,6 +736,10 @@ impl Inode {
         let mut inner = self.inner.write();
         inner.set_gid(gid);
         inner.set_ctime(now());
+    }
+
+    pub fn extension(&self) -> &Extension {
+        &self.extension
     }
 
     pub fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
