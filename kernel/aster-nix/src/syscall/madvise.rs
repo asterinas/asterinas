@@ -18,9 +18,22 @@ pub fn sys_madvise(start: Vaddr, len: usize, behavior: i32) -> Result<SyscallRet
             read_bytes_from_user(start, &mut VmWriter::from(buffer.as_mut_slice()))?;
         }
         MadviseBehavior::MADV_DONTNEED => madv_dontneed(start, len)?,
+        MadviseBehavior::MADV_FREE => madv_free(start, len)?,
         _ => todo!(),
     }
     Ok(SyscallReturn::Return(0))
+}
+
+fn madv_free(start: Vaddr, len: usize) -> Result<()> {
+    debug_assert!(start % PAGE_SIZE == 0);
+    debug_assert!(len % PAGE_SIZE == 0);
+
+    let current = current!();
+    let root_vmar = current.root_vmar();
+    let advised_range = start..start + len;
+    let _ = root_vmar.destroy(advised_range);
+
+    Ok(())
 }
 
 fn madv_dontneed(start: Vaddr, len: usize) -> Result<()> {
