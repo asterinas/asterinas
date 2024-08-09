@@ -23,8 +23,9 @@ use crate::{
 
 cfg_if! {
     if #[cfg(feature = "cvm_guest")] {
-        use tdx_guest::tdcall;
-        use crate::arch::tdx_guest::{handle_virtual_exception, TdxTrapFrame};
+        mod tdx;
+
+        use tdx::handle_virtualization_exception;
     }
 }
 
@@ -47,106 +48,6 @@ pub struct CpuExceptionInfo {
     pub error_code: usize,
     /// The virtual address where a page fault occurred.
     pub page_fault_addr: usize,
-}
-
-#[cfg(feature = "cvm_guest")]
-impl TdxTrapFrame for RawGeneralRegs {
-    fn rax(&self) -> usize {
-        self.rax
-    }
-    fn set_rax(&mut self, rax: usize) {
-        self.rax = rax;
-    }
-    fn rbx(&self) -> usize {
-        self.rbx
-    }
-    fn set_rbx(&mut self, rbx: usize) {
-        self.rbx = rbx;
-    }
-    fn rcx(&self) -> usize {
-        self.rcx
-    }
-    fn set_rcx(&mut self, rcx: usize) {
-        self.rcx = rcx;
-    }
-    fn rdx(&self) -> usize {
-        self.rdx
-    }
-    fn set_rdx(&mut self, rdx: usize) {
-        self.rdx = rdx;
-    }
-    fn rsi(&self) -> usize {
-        self.rsi
-    }
-    fn set_rsi(&mut self, rsi: usize) {
-        self.rsi = rsi;
-    }
-    fn rdi(&self) -> usize {
-        self.rdi
-    }
-    fn set_rdi(&mut self, rdi: usize) {
-        self.rdi = rdi;
-    }
-    fn rip(&self) -> usize {
-        self.rip
-    }
-    fn set_rip(&mut self, rip: usize) {
-        self.rip = rip;
-    }
-    fn r8(&self) -> usize {
-        self.r8
-    }
-    fn set_r8(&mut self, r8: usize) {
-        self.r8 = r8;
-    }
-    fn r9(&self) -> usize {
-        self.r9
-    }
-    fn set_r9(&mut self, r9: usize) {
-        self.r9 = r9;
-    }
-    fn r10(&self) -> usize {
-        self.r10
-    }
-    fn set_r10(&mut self, r10: usize) {
-        self.r10 = r10;
-    }
-    fn r11(&self) -> usize {
-        self.r11
-    }
-    fn set_r11(&mut self, r11: usize) {
-        self.r11 = r11;
-    }
-    fn r12(&self) -> usize {
-        self.r12
-    }
-    fn set_r12(&mut self, r12: usize) {
-        self.r12 = r12;
-    }
-    fn r13(&self) -> usize {
-        self.r13
-    }
-    fn set_r13(&mut self, r13: usize) {
-        self.r13 = r13;
-    }
-    fn r14(&self) -> usize {
-        self.r14
-    }
-    fn set_r14(&mut self, r14: usize) {
-        self.r14 = r14;
-    }
-    fn r15(&self) -> usize {
-        self.r15
-    }
-    fn set_r15(&mut self, r15: usize) {
-        self.r15 = r15;
-    }
-    fn rbp(&self) -> usize {
-        self.rbp
-    }
-    fn set_rbp(&mut self, rbp: usize) {
-        self.rbp = rbp;
-    }
 }
 
 /// User Preemption.
@@ -222,9 +123,7 @@ impl UserContextApiInternal for UserContext {
                 Some(exception) => {
                     #[cfg(feature = "cvm_guest")]
                     if *exception == VIRTUALIZATION_EXCEPTION {
-                        let ve_info =
-                            tdcall::get_veinfo().expect("#VE handler: fail to get VE info\n");
-                        handle_virtual_exception(self.general_regs_mut(), &ve_info);
+                        handle_virtualization_exception(self);
                         continue;
                     }
                     if exception.typ == CpuExceptionType::FaultOrTrap
