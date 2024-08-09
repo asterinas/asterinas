@@ -15,4 +15,4 @@ aster-time = { path = "comps/time" }
 aster-framebuffer = { path = "comps/framebuffer" }
 
 [features]
-intel_tdx = ["ostd/intel_tdx", "aster-nix/intel_tdx"]
+cvm_guest = ["ostd/cvm_guest", "aster-nix/cvm_guest"]

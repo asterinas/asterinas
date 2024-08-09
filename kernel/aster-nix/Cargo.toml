@@ -75,4 +75,4 @@ version = "1.0"
 features = ["spin_no_std"]
 
 [features]
-intel_tdx = ["dep:tdx-guest"]
+cvm_guest = ["dep:tdx-guest"]

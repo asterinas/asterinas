@@ -20,7 +20,7 @@ use crate::{
 };
 
 cfg_if! {
-    if #[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))] {
+    if #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))] {
         use ::tdx_guest::tdx_is_enabled;
         use crate::arch::tdx_guest;
     }
@@ -104,7 +104,7 @@ impl CapabilityMsixData {
 
         // Set message address 0xFEE0_0000
         for i in 0..table_size {
-            #[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))]
+            #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
             // SAFETY:
             // This is safe because we are ensuring that the physical address of the MSI-X table is valid before this operation.
             // We are also ensuring that we are only unprotecting a single page.

@@ -20,7 +20,7 @@ use crate::{
 };
 
 cfg_if! {
-    if #[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))] {
+    if #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))] {
         use ::tdx_guest::tdx_is_enabled;
         use crate::arch::tdx_guest;
     }
@@ -33,7 +33,7 @@ pub static MMIO_BUS: SpinLock<MmioBus> = SpinLock::new(MmioBus::new());
 static IRQS: SpinLock<Vec<IrqLine>> = SpinLock::new(Vec::new());
 
 pub(crate) fn init() {
-    #[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))]
+    #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
     // SAFETY:
     // This is safe because we are ensuring that the address range 0xFEB0_0000 to 0xFEB0_4000 is valid before this operation.
     // The address range is page-aligned and falls within the MMIO range, which is a requirement for the `unprotect_gpa_range` function.

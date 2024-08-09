@@ -58,7 +58,6 @@ ifeq ($(INTEL_TDX), 1)
 BOOT_METHOD = grub-qcow2
 BOOT_PROTOCOL = linux-efi-handover64
 CARGO_OSDK_ARGS += --scheme tdx
-CARGO_OSDK_ARGS += --features intel_tdx
 endif
 
 ifneq ($(SCHEME), "")

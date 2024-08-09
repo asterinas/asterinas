@@ -63,7 +63,7 @@ pub fn init() {
     arch::enable_cpu_features();
     arch::serial::init();
 
-    #[cfg(feature = "intel_tdx")]
+    #[cfg(feature = "cvm_guest")]
     arch::check_tdx_init();
 
     // SAFETY: This function is called only once and only on the BSP.

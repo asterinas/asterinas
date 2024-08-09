@@ -19,7 +19,7 @@ use crate::{
 };
 
 cfg_if! {
-    if #[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))] {
+    if #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))] {
         use ::tdx_guest::tdx_is_enabled;
         use crate::arch::tdx_guest;
     }
@@ -78,7 +78,7 @@ impl DmaCoherent {
         }
         let start_daddr = match dma_type() {
             DmaType::Direct => {
-                #[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))]
+                #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
                 // SAFETY:
                 // This is safe because we are ensuring that the physical address range specified by `start_paddr` and `frame_count` is valid before these operations.
                 // The `check_and_insert_dma_mapping` function checks if the physical address range is already mapped.
@@ -133,7 +133,7 @@ impl Drop for DmaCoherentInner {
         start_paddr.checked_add(frame_count * PAGE_SIZE).unwrap();
         match dma_type() {
             DmaType::Direct => {
-                #[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))]
+                #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
                 // SAFETY:
                 // This is safe because we are ensuring that the physical address range specified by `start_paddr` and `frame_count` is valid before these operations.
                 // The `start_paddr()` ensures the `start_paddr` is page-aligned.

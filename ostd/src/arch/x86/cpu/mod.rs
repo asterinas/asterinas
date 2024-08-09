@@ -22,7 +22,7 @@ use crate::{
 };
 
 cfg_if! {
-    if #[cfg(feature = "intel_tdx")] {
+    if #[cfg(feature = "cvm_guest")] {
         use tdx_guest::tdcall;
         use crate::arch::tdx_guest::{handle_virtual_exception, TdxTrapFrame};
     }
@@ -49,7 +49,7 @@ pub struct CpuExceptionInfo {
     pub page_fault_addr: usize,
 }
 
-#[cfg(feature = "intel_tdx")]
+#[cfg(feature = "cvm_guest")]
 impl TdxTrapFrame for RawGeneralRegs {
     fn rax(&self) -> usize {
         self.rax
@@ -220,7 +220,7 @@ impl UserContextApiInternal for UserContext {
             self.user_context.run();
             match CpuException::to_cpu_exception(self.user_context.trap_num as u16) {
                 Some(exception) => {
-                    #[cfg(feature = "intel_tdx")]
+                    #[cfg(feature = "cvm_guest")]
                     if *exception == VIRTUALIZATION_EXCEPTION {
                         let ve_info =
                             tdcall::get_veinfo().expect("#VE handler: fail to get VE info\n");

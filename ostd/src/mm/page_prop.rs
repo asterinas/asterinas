@@ -128,7 +128,7 @@ bitflags! {
 
         /// (TEE only) If the page is shared with the host.
         /// Otherwise the page is ensured confidential and not visible outside the guest.
-        #[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))]
+        #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
         const SHARED    = 0b10000000;
     }
 }

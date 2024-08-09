@@ -484,7 +484,7 @@ pub unsafe fn protect_gpa_range(gpa: Paddr, page_num: usize) -> Result<(), PageC
     Ok(())
 }
 
-#[cfg(feature = "intel_tdx")]
+#[cfg(feature = "cvm_guest")]
 impl TdxTrapFrame for TrapFrame {
     fn rax(&self) -> usize {
         self.rax

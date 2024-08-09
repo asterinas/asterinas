@@ -21,7 +21,7 @@ use crate::{
 };
 
 cfg_if! {
-    if #[cfg(feature = "intel_tdx")] {
+    if #[cfg(feature = "cvm_guest")] {
         use tdx_guest::{tdcall, tdx_is_enabled};
         use crate::arch::{cpu::VIRTUALIZATION_EXCEPTION, tdx_guest::handle_virtual_exception};
     }
@@ -43,7 +43,7 @@ pub fn is_kernel_interrupted() -> bool {
 extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
     if CpuException::is_cpu_exception(f.trap_num as u16) {
         match CpuException::to_cpu_exception(f.trap_num as u16).unwrap() {
-            #[cfg(feature = "intel_tdx")]
+            #[cfg(feature = "cvm_guest")]
             &VIRTUALIZATION_EXCEPTION => {
                 let ve_info = tdcall::get_veinfo().expect("#VE handler: fail to get VE info\n");
                 handle_virtual_exception(f, &ve_info);
@@ -139,7 +139,7 @@ fn handle_kernel_page_fault(f: &TrapFrame, page_fault_vaddr: u64) {
     let paddr = vaddr - LINEAR_MAPPING_BASE_VADDR;
 
     cfg_if! {
-        if #[cfg(feature = "intel_tdx")] {
+        if #[cfg(feature = "cvm_guest")] {
             let priv_flags = if tdx_is_enabled() {
                 PrivFlags::SHARED | PrivFlags::GLOBAL
             } else {

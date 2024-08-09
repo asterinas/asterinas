@@ -44,7 +44,7 @@ qemu.args = "$(./tools/qemu_args.sh iommu)"
 
 [scheme."tdx"]
 supported_archs = ["x86_64"]
-build.features = ["intel_tdx"]
+build.features = ["cvm_guest"]
 boot.method = "grub-qcow2"
 grub.protocol = "linux"
 qemu.args = """\

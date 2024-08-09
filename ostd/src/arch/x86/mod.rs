@@ -20,7 +20,7 @@ pub mod trap;
 use cfg_if::cfg_if;
 
 cfg_if! {
-    if #[cfg(feature = "intel_tdx")] {
+    if #[cfg(feature = "cvm_guest")] {
         pub(crate) mod tdx_guest;
 
         use {
@@ -38,7 +38,7 @@ use core::{
 use kernel::apic::ioapic;
 use log::{info, warn};
 
-#[cfg(feature = "intel_tdx")]
+#[cfg(feature = "cvm_guest")]
 pub(crate) fn check_tdx_init() {
     match init_tdx() {
         Ok(td_info) => {
@@ -86,7 +86,7 @@ pub(crate) fn init_on_bsp() {
     timer::init();
 
     cfg_if! {
-        if #[cfg(feature = "intel_tdx")] {
+        if #[cfg(feature = "cvm_guest")] {
             if !tdx_is_enabled() {
                 match iommu::init() {
                     Ok(_) => {}

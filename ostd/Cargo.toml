@@ -60,6 +60,7 @@ iced-x86 = { version = "1.21.0", default-features = false, features = [
 tdx-guest = { version = "0.1.5", optional = true }
 
 [features]
-default = ["intel_tdx", "log_color"]
+default = ["cvm_guest", "log_color"]
 log_color = ["dep:owo-colors"]
-intel_tdx = ["dep:tdx-guest", "dep:iced-x86"]
+# The guest OS support for Confidential VMs (CVMs), e.g., Intel TDX
+cvm_guest = ["dep:tdx-guest", "dep:iced-x86"]
