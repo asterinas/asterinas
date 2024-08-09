@@ -16,12 +16,16 @@ use crate::{
     trap::{disable_local, DisabledLocalIrqGuard},
 };
 
-/// A spin lock.
-#[repr(C)]
-pub struct SpinLock<T: ?Sized, G = PreemptDisabled> {
-    phantom: PhantomData<G>,
+struct SpinLockInner<T: ?Sized> {
     lock: AtomicBool,
     val: UnsafeCell<T>,
+}
+
+/// A spin lock.
+#[repr(transparent)]
+pub struct SpinLock<T: ?Sized, G = PreemptDisabled> {
+    phantom: PhantomData<G>,
+    inner: SpinLockInner<T>,
 }
 
 pub trait Guardian {
@@ -66,10 +70,13 @@ impl Guardian for LocalIrqDisabled {
 impl<T, G: Guardian> SpinLock<T, G> {
     /// Creates a new spin lock.
     pub const fn new(val: T) -> Self {
-        Self {
+        let lock_inner = SpinLockInner {
             lock: AtomicBool::new(false),
             val: UnsafeCell::new(val),
+        };
+        Self {
             phantom: PhantomData,
+            inner: lock_inner,
         }
     }
 }
@@ -136,19 +143,19 @@ impl<T: ?Sized, G: Guardian> SpinLock<T, G> {
     }
 
     fn try_acquire_lock(&self) -> bool {
-        self.lock
+        self.inner.lock
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_ok()
     }
 
     fn release_lock(&self) {
-        self.lock.store(false, Ordering::Release);
+        self.inner.lock.store(false, Ordering::Release);
     }
 }
 
 impl<T: ?Sized + fmt::Debug, G> fmt::Debug for SpinLock<T, G> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Debug::fmt(&self.val, f)
+        fmt::Debug::fmt(&self.inner.val, f)
     }
 }
 
@@ -178,7 +185,7 @@ impl<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: Guardian> Deref for SpinLo
     type Target = T;
 
     fn deref(&self) -> &T {
-        unsafe { &*self.lock.val.get() }
+        unsafe { &*self.lock.inner.val.get() }
     }
 }
 
@@ -186,7 +193,7 @@ impl<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: Guardian> DerefMut
     for SpinLockGuard_<T, R, G>
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *self.lock.val.get() }
+        unsafe { &mut *self.lock.inner.val.get() }
     }
 }
 
