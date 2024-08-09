@@ -171,7 +171,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
         self.frames = self.frames.iter().map(|frame| {
             match frame {
                 BootPageTableFrame::Number(frame) => {
-                    BootPageTableFrame::Page(Page::<BootPageTableMeta>::from_unused(*frame * PAGE_SIZE))
+                    BootPageTableFrame::Page(Page::<BootPageTableMeta>::from_unused(*frame * PAGE_SIZE, BootPageTableMeta::default()))
                 }
                 BootPageTableFrame::Page(_) => {
                     panic!("Should not convert frame number to page while pages are already in the boot page table");

@@ -60,7 +60,7 @@ pub trait PageAlloc: Sync + Send {
 }
 
 #[export_name = "PAGE_ALLOCATOR"]
-pub(in crate::mm) static PAGE_ALLOCATOR: Once<SpinLock<Box<dyn PageAlloc>>> = Once::new();
+pub(in crate) static PAGE_ALLOCATOR: Once<SpinLock<Box<dyn PageAlloc>>> = Once::new();
 
 pub(crate) fn init() {
     let allocator: Box<dyn PageAlloc>;

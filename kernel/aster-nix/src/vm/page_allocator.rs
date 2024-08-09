@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 extern crate ostd;
 use alloc::{boxed::Box, collections::btree_set::BTreeSet};
 use core::{alloc::Layout, array, cmp::min};

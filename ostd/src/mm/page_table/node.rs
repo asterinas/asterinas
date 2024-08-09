@@ -236,15 +236,8 @@ where
             .unwrap()
             .lock()
             .alloc_page(PAGE_SIZE)
-            .map(|paddr| Page::<PageTablePageMeta<E, C>>::from_unused(paddr))
+            .map(|paddr| Page::<PageTablePageMeta<E, C>>::from_unused(paddr, PageTablePageMeta::new_locked(level)))
             .unwrap_or_else(|| panic!("Failed to allocate a page for a page table node"));
-
-        // The lock is initialized as held.
-        page.meta().lock.store(1, Ordering::Relaxed);
-
-        // SAFETY: here the page exclusively owned by the newly created handle.
-        let inner = unsafe { &mut *page.meta().inner.get() };
-        inner.level = level;
 
         // Zero out the page table node.
         let ptr = paddr_to_vaddr(page.paddr()) as *mut u8;

@@ -9,7 +9,7 @@ use page::allocator::PAGE_ALLOCATOR;
 use super::{Frame, Segment};
 use crate::{
     mm::{
-        page::{self, cont_pages},
+        page::{self, cont_pages, meta::FrameMeta},
         PAGE_SIZE,
     },
     prelude::*,
@@ -68,7 +68,7 @@ impl FrameAllocOptions {
                 .lock()
                 .alloc(Layout::from_size_align(size, PAGE_SIZE).unwrap())
                 .map(|begin_paddr| {
-                    cont_pages::ContPages::from_unused(begin_paddr..begin_paddr + size)
+                    cont_pages::ContPages::from_unused(begin_paddr..begin_paddr + size, |_|FrameMeta::default())
                 })
                 .ok_or(Error::NoMemory)?
                 .into()
@@ -77,7 +77,7 @@ impl FrameAllocOptions {
             let mut vector = Vec::new();
             for _ in 0..self.nframes {
                 let paddr = allocator.alloc_page(PAGE_SIZE).ok_or(Error::NoMemory)? * PAGE_SIZE;
-                let page = page::Page::from_unused(paddr);
+                let page = page::Page::from_unused(paddr, FrameMeta::default());
                 vector.push(page);
             }
             vector
@@ -103,7 +103,7 @@ impl FrameAllocOptions {
             .unwrap()
             .lock()
             .alloc_page(PAGE_SIZE)
-            .map(|paddr| page::Page::from_unused(paddr))
+            .map(|paddr| page::Page::from_unused(paddr, FrameMeta::default()))
             .ok_or(Error::NoMemory)?;
         let frame = Frame { page };
         if !self.uninit {
@@ -128,7 +128,7 @@ impl FrameAllocOptions {
             .unwrap()
             .lock()
             .alloc(Layout::from_size_align(size, PAGE_SIZE).unwrap())
-            .map(|begin_paddr| cont_pages::ContPages::from_unused(begin_paddr..begin_paddr + size))
+            .map(|begin_paddr| cont_pages::ContPages::from_unused(begin_paddr..begin_paddr + size, |_|FrameMeta::default()))
             .ok_or(Error::NoMemory)?
             .into();
         if !self.uninit {
