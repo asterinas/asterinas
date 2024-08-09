@@ -60,19 +60,20 @@ extern "C" {
 }
 
 cpu_local_cell! {
-    /// The count of the preempt lock.
+    /// A 4-byte preemption information consisting of a should_preempt flag at
+    /// the highest bit and a preemption counter in the lower 31 bits.
     ///
-    /// We need to access the preemption count before we can copy the section
-    /// for application processors. So, the preemption count is not copied from
+    /// We need to access the preemption info before we can copy the section
+    /// for application processors. So, the preemption info is not copied from
     /// bootstrap processor's section as the initialization. Instead it is
     /// initialized to zero for application processors.
-    pub(crate) static PREEMPT_LOCK_COUNT: u32 = 0;
+    pub(crate) static PREEMPT_INFO: u32 = 0;
 }
 
 /// Sets the base address of the CPU-local storage for the bootstrap processor.
 ///
 /// It should be called early to let [`crate::task::disable_preempt`] work,
-/// which needs to update a CPU-local preempt lock count. Otherwise it may
+/// which needs to update a CPU-local preemption info. Otherwise it may
 /// panic when calling [`crate::task::disable_preempt`].
 ///
 /// # Safety
@@ -133,16 +134,16 @@ pub unsafe fn init_on_bsp() {
             (ap_pages_ptr as *mut u32).write(cpu_i);
         }
 
-        // SAFETY: the `PREEMPT_LOCK_COUNT` may be dirty on the BSP, so we need
+        // SAFETY: the `PREEMPT_INFO` may be dirty on the BSP, so we need
         // to ensure that it is initialized to zero for APs. The safety
         // requirements are met since the static is defined in the `.cpu_local`
         // section and the pointer to that static is the offset in the CPU-
         // local area. It is a `usize` so it is safe to be overwritten.
         unsafe {
-            let preempt_count_ptr = &PREEMPT_LOCK_COUNT as *const _ as usize;
-            let preempt_count_offset = preempt_count_ptr - __cpu_local_start as usize;
-            let ap_preempt_count_ptr = ap_pages_ptr.add(preempt_count_offset) as *mut usize;
-            ap_preempt_count_ptr.write(0);
+            let preempt_info_ptr = &PREEMPT_INFO as *const _ as usize;
+            let preempt_info_offset = preempt_info_ptr - __cpu_local_start as usize;
+            let ap_preempt_info_ptr = ap_pages_ptr.add(preempt_info_offset) as *mut usize;
+            ap_preempt_info_ptr.write(0);
         }
 
         // SAFETY: bytes `8:16` are reserved for storing the pointer to the

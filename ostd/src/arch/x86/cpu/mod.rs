@@ -17,6 +17,7 @@ use trapframe::UserContext as RawUserContext;
 use x86_64::registers::rflags::RFlags;
 
 use crate::{
+    task::scheduler,
     trap::call_irq_callback_functions,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
@@ -149,32 +150,6 @@ impl TdxTrapFrame for RawGeneralRegs {
     }
 }
 
-/// User Preemption.
-pub struct UserPreemption {
-    count: u32,
-}
-
-impl UserPreemption {
-    const PREEMPTION_INTERVAL: u32 = 100;
-
-    /// Creates a new instance of `UserPreemption`.
-    #[allow(clippy::new_without_default)]
-    pub const fn new() -> Self {
-        UserPreemption { count: 0 }
-    }
-
-    /// Checks if preemption might occur and takes necessary actions.
-    pub fn might_preempt(&mut self) {
-        self.count = (self.count + 1) % Self::PREEMPTION_INTERVAL;
-
-        if self.count == 0 {
-            crate::arch::irq::enable_local();
-            crate::task::schedule();
-            crate::arch::irq::disable_local();
-        }
-    }
-}
-
 impl UserContext {
     /// Returns a reference to the general registers.
     pub fn general_regs(&self) -> &RawGeneralRegs {
@@ -214,9 +189,9 @@ impl UserContextApiInternal for UserContext {
         let return_reason: ReturnReason;
         const SYSCALL_TRAPNUM: u16 = 0x100;
 
-        let mut user_preemption = UserPreemption::new();
         // return when it is syscall or cpu exception type is Fault or Trap.
         loop {
+            scheduler::preempt();
             self.user_context.run();
             match CpuException::to_cpu_exception(self.user_context.trap_num as u16) {
                 Some(exception) => {
@@ -247,8 +222,6 @@ impl UserContextApiInternal for UserContext {
                 return_reason = ReturnReason::KernelEvent;
                 break;
             }
-
-            user_preemption.might_preempt();
         }
 
         crate::arch::irq::enable_local();
