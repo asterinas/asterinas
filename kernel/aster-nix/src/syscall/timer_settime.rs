@@ -20,8 +20,8 @@ pub fn sys_timer_settime(
     }
 
     let new_itimerspec = read_val_from_user::<itimerspec_t>(new_itimerspec_addr)?;
-    let interval = Duration::from(new_itimerspec.it_interval);
-    let expire_time = Duration::from(new_itimerspec.it_value);
+    let interval = Duration::try_from(new_itimerspec.it_interval)?;
+    let expire_time = Duration::try_from(new_itimerspec.it_value)?;
 
     let current_process = current!();
     let Some(timer) = current_process.timer_manager().find_posix_timer(timer_id) else {

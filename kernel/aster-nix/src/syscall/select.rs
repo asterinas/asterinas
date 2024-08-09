@@ -23,6 +23,23 @@ pub fn sys_select(
     exceptfds_addr: Vaddr,
     timeval_addr: Vaddr,
 ) -> Result<SyscallReturn> {
+    let timeout = if timeval_addr == 0 {
+        None
+    } else {
+        let timeval = read_val_from_user::<timeval_t>(timeval_addr)?;
+        Some(Duration::from(timeval))
+    };
+
+    do_sys_select(nfds, readfds_addr, writefds_addr, exceptfds_addr, timeout)
+}
+
+pub fn do_sys_select(
+    nfds: FileDesc,
+    readfds_addr: Vaddr,
+    writefds_addr: Vaddr,
+    exceptfds_addr: Vaddr,
+    timeout: Option<Duration>,
+) -> Result<SyscallReturn> {
     if nfds < 0 || nfds as usize > FD_SETSIZE {
         return_errno_with_message!(Errno::EINVAL, "nfds is negative or exceeds the FD_SETSIZE");
     }
@@ -39,13 +56,6 @@ pub fn sys_select(
     let mut readfds = get_fdset(readfds_addr)?;
     let mut writefds = get_fdset(writefds_addr)?;
     let mut exceptfds = get_fdset(exceptfds_addr)?;
-
-    let timeout = if timeval_addr == 0 {
-        None
-    } else {
-        let timeval = read_val_from_user::<timeval_t>(timeval_addr)?;
-        Some(Duration::from(timeval))
-    };
 
     debug!(
         "nfds = {}, readfds = {:?}, writefds = {:?}, exceptfds = {:?}, timeout = {:?}",
