@@ -120,14 +120,14 @@ fn vfs_utimes(dentry: &Arc<Dentry>, times: Option<TimeSpecPair>) -> Result<Sysca
             } else if times.atime.is_utime_now() {
                 now
             } else {
-                Duration::from(times.atime)
+                Duration::try_from(times.atime)?
             };
             let mtime = if times.mtime.is_utime_omit() {
                 dentry.mtime()
             } else if times.mtime.is_utime_now() {
                 now
             } else {
-                Duration::from(times.mtime)
+                Duration::try_from(times.mtime)?
             };
             (atime, mtime, now)
         }

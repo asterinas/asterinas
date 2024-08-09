@@ -52,9 +52,21 @@ impl From<timeval_t> for timespec_t {
     }
 }
 
-impl From<timespec_t> for Duration {
-    fn from(timespec: timespec_t) -> Self {
-        Duration::new(timespec.sec as u64, timespec.nsec as u32)
+impl TryFrom<timespec_t> for Duration {
+    type Error = crate::Error;
+
+    fn try_from(value: timespec_t) -> Result<Self> {
+        if value.sec < 0 || value.nsec < 0 {
+            return_errno_with_message!(Errno::EINVAL, "timesepc_t cannot be negative");
+        }
+
+        if value.nsec > 1_000_000_000 {
+            // The value of nanoseconds cannot exceed 10^9,
+            // otherwise the value for seconds should be set.
+            return_errno_with_message!(Errno::EINVAL, "nsec is not normalized");
+        }
+
+        Ok(Duration::new(value.sec as u64, value.nsec as u32))
     }
 }
 

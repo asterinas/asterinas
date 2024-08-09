@@ -54,7 +54,7 @@ fn do_clock_nanosleep(
 ) -> Result<SyscallReturn> {
     let request_time = {
         let timespec = read_val_from_user::<timespec_t>(request_timespec_addr)?;
-        Duration::from(timespec)
+        Duration::try_from(timespec)?
     };
 
     debug!(

@@ -28,6 +28,7 @@ TESTS ?= \
 	open_test \
 	pread64_test \
 	preadv2_test \
+	pselect_test \
 	pwrite64_test \
 	pwritev2_test \
 	pty_test \
