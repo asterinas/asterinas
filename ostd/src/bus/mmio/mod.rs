@@ -63,8 +63,8 @@ fn iter_range(range: Range<usize>) {
     while current > range.start {
         current -= 0x100;
         // SAFETY: It only read the value and judge if the magic value fit 0x74726976
-        let value = unsafe { *(paddr_to_vaddr(current) as *const u32) };
-        if value == VIRTIO_MMIO_MAGIC {
+        let magic = unsafe { core::ptr::read_volatile(paddr_to_vaddr(current) as *const u32) };
+        if magic == VIRTIO_MMIO_MAGIC {
             // SAFETY: It only read the device id
             let device_id = unsafe { *(paddr_to_vaddr(current + 8) as *const u32) };
             device_count += 1;

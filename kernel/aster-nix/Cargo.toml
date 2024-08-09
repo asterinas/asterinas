@@ -41,7 +41,7 @@ smoltcp = { version = "0.9.1", default-features = false, features = [
     "socket-raw",
     "socket-dhcpv4",
 ] }
-tdx-guest = { version = "0.1.5", optional = true }
+tdx-guest = { version = "0.1.7", optional = true }
 
 # parse elf file
 xmas-elf = "0.8.0"
