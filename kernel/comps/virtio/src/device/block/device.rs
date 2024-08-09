@@ -339,7 +339,8 @@ impl DeviceInner {
             // Records the submitted request
             let submitted_request = SubmittedRequest::new(id as u16, bio_request, dma_streams);
             self.submitted_requests
-                .disable_irq().lock()
+                .disable_irq()
+                .lock()
                 .insert(token, submitted_request);
             return;
         }
@@ -399,7 +400,8 @@ impl DeviceInner {
             // Records the submitted request
             let submitted_request = SubmittedRequest::new(id as u16, bio_request, dma_streams);
             self.submitted_requests
-                .disable_irq().lock()
+                .disable_irq()
+                .lock()
                 .insert(token, submitted_request);
             return;
         }

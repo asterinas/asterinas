@@ -21,7 +21,8 @@ pub fn register_device(name: String, device: Arc<SpinLock<SocketDevice>>) {
     VSOCK_DEVICE_TABLE
         .get()
         .unwrap()
-        .disable_irq().lock()
+        .disable_irq()
+        .lock()
         .insert(name, (Arc::new(SpinLock::new(Vec::new())), device));
 }
 

@@ -209,7 +209,13 @@ impl LineDiscipline {
 
     /// include all operations that may cause sleep, and processes by a work queue.
     fn update_readable_state_after(&self) {
-        if let Some(signal) = self.work_item_para.disable_irq().lock().kernel_signal.take() {
+        if let Some(signal) = self
+            .work_item_para
+            .disable_irq()
+            .lock()
+            .kernel_signal
+            .take()
+        {
             (self.send_signal)(signal);
         };
         if let Some(pollee_type) = self.work_item_para.disable_irq().lock().pollee_type.take() {

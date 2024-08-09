@@ -6,9 +6,9 @@ use alloc::sync::Arc;
 use core::{
     cell::UnsafeCell,
     fmt,
+    marker::PhantomData,
     ops::{Deref, DerefMut},
     sync::atomic::{AtomicBool, Ordering},
-    marker::PhantomData,
 };
 
 use crate::{
@@ -33,6 +33,7 @@ pub trait Guardian {
     fn inner_guard() -> InnerGuard;
 }
 
+/// for lock disabling preempt
 pub struct PreemptDisabled;
 
 impl Guardian for PreemptDisabled {
@@ -47,6 +48,7 @@ impl Guardian for PreemptDisabled {
     }
 }
 
+/// for lock disabling Irq
 pub struct LocalIrqDisabled;
 
 impl Guardian for LocalIrqDisabled {
@@ -72,13 +74,12 @@ impl<T, G: Guardian> SpinLock<T, G> {
     }
 }
 
-impl<T> SpinLock<T, PreemptDisabled> {
+impl<T: ?Sized> SpinLock<T, PreemptDisabled> {
+    /// convert spinlock from PreemptDisabled to LocalIrqDisabled
     pub fn disable_irq(&self) -> &SpinLock<T, LocalIrqDisabled> {
         // SAFETY: The memory layout of the source and target types, which only differ in the `phantom` field, are identical because
         // (1) `PhantomData` is zero-sized, (2) the struct layout follows `repr(C)`.
-        unsafe {
-            core::mem::transmute(self)
-        }
+        unsafe { core::mem::transmute(self) }
     }
 }
 
@@ -155,7 +156,7 @@ impl<T: ?Sized + fmt::Debug, G> fmt::Debug for SpinLock<T, G> {
 unsafe impl<T: ?Sized + Send, G> Send for SpinLock<T, G> {}
 unsafe impl<T: ?Sized + Send, G> Sync for SpinLock<T, G> {}
 
-enum InnerGuard {
+pub enum InnerGuard {
     IrqGuard(DisabledLocalIrqGuard),
     PreemptGuard(DisablePreemptGuard),
 }
@@ -181,7 +182,9 @@ impl<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: Guardian> Deref for SpinLo
     }
 }
 
-impl<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: Guardian> DerefMut for SpinLockGuard_<T, R, G> {
+impl<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: Guardian> DerefMut
+    for SpinLockGuard_<T, R, G>
+{
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.lock.val.get() }
     }
@@ -193,7 +196,9 @@ impl<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: Guardian> Drop for SpinLoc
     }
 }
 
-impl<T: ?Sized + fmt::Debug, R: Deref<Target = SpinLock<T, G>>, G: Guardian> fmt::Debug for SpinLockGuard_<T, R, G> {
+impl<T: ?Sized + fmt::Debug, R: Deref<Target = SpinLock<T, G>>, G: Guardian> fmt::Debug
+    for SpinLockGuard_<T, R, G>
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
     }
@@ -203,4 +208,7 @@ impl<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: Guardian> !Send for SpinLo
 
 // SAFETY: `SpinLockGuard_` can be shared between tasks/threads in same CPU.
 // As `lock()` is only called when there are no race conditions caused by interrupts.
-unsafe impl<T: ?Sized + Sync, R: Deref<Target = SpinLock<T, G>> + Sync, G: Guardian> Sync for SpinLockGuard_<T, R, G> {}
+unsafe impl<T: ?Sized + Sync, R: Deref<Target = SpinLock<T, G>> + Sync, G: Guardian> Sync
+    for SpinLockGuard_<T, R, G>
+{
+}

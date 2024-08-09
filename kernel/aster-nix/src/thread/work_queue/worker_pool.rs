@@ -158,7 +158,8 @@ impl WorkerPool {
 
     pub fn has_pending_work_items(&self, request_cpu: u32) -> bool {
         self.work_queues
-            .disable_irq().lock()
+            .disable_irq()
+            .lock()
             .iter()
             .any(|work_queue| work_queue.has_pending_work_items(request_cpu))
     }

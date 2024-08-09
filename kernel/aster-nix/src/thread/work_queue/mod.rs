@@ -138,7 +138,8 @@ impl WorkQueue {
             return false;
         }
         self.inner
-            .disable_irq().lock()
+            .disable_irq()
+            .lock()
             .pending_work_items
             .push(work_item);
         if let Some(worker_pool) = self.worker_pool.upgrade() {
@@ -161,7 +162,8 @@ impl WorkQueue {
 
     fn has_pending_work_items(&self, request_cpu: u32) -> bool {
         self.inner
-            .disable_irq().lock()
+            .disable_irq()
+            .lock()
             .pending_work_items
             .iter()
             .any(|item| item.is_valid_cpu(request_cpu))

@@ -74,7 +74,8 @@ impl HasDaddr for TxBuffer {
 impl Drop for TxBuffer {
     fn drop(&mut self) {
         self.pool
-            .disable_irq().lock()
+            .disable_irq()
+            .lock()
             .push_back(self.dma_stream.clone());
     }
 }

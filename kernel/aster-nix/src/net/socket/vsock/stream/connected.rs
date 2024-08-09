@@ -122,7 +122,8 @@ impl Connected {
 
     pub fn set_peer_requested_shutdown(&self) {
         self.connection
-            .disable_irq().lock()
+            .disable_irq()
+            .lock()
             .set_peer_requested_shutdown()
     }
 

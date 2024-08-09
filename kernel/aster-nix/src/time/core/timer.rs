@@ -161,7 +161,8 @@ impl TimerManager {
 
     fn insert(&self, timer_callback: Arc<TimerCallback>) {
         self.timer_callbacks
-            .disable_irq().lock()
+            .disable_irq()
+            .lock()
             .push(timer_callback);
     }
 

@@ -41,7 +41,8 @@ impl Listen {
     pub fn try_accept(&self) -> Result<Arc<Connected>> {
         let connection = self
             .incoming_connection
-            .disable_irq().lock()
+            .disable_irq()
+            .lock()
             .pop_front()
             .ok_or_else(|| {
                 Error::with_message(Errno::EAGAIN, "no pending connection is available")

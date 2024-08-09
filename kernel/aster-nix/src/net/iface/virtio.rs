@@ -2,6 +2,7 @@
 
 use aster_network::AnyNetworkDevice;
 use aster_virtio::device::network::DEVICE_NAME;
+use ostd::sync::PreemptDisabled;
 use smoltcp::{
     iface::{Config, SocketHandle, SocketSet},
     socket::dhcpv4,
@@ -12,7 +13,7 @@ use super::{common::IfaceCommon, internal::IfaceInternal, Iface};
 use crate::prelude::*;
 
 pub struct IfaceVirtio {
-    driver: Arc<SpinLock<dyn AnyNetworkDevice>>,
+    driver: Arc<SpinLock<dyn AnyNetworkDevice, PreemptDisabled>>,
     common: IfaceCommon,
     dhcp_handle: SocketHandle,
     weak_self: Weak<Self>,

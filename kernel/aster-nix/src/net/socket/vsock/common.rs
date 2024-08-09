@@ -46,11 +46,13 @@ impl VsockSpace {
     /// Check whether the event is for this socket space
     fn is_event_for_socket(&self, event: &VsockEvent) -> bool {
         self.connecting_sockets
-            .disable_irq().lock()
+            .disable_irq()
+            .lock()
             .contains_key(&event.destination.into())
             || self
                 .listen_sockets
-                .disable_irq().lock()
+                .disable_irq()
+                .lock()
                 .contains_key(&event.destination.into())
             || self
                 .connected_sockets

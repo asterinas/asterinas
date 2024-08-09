@@ -204,7 +204,8 @@ pub fn _print(args: fmt::Arguments) {
     WRITER
         .get()
         .unwrap()
-        .disable_irq().lock()
+        .disable_irq()
+        .lock()
         .write_fmt(args)
         .unwrap();
 }

@@ -20,7 +20,7 @@ use crate::{
     cpu::CpuSet,
     mm::{kspace::KERNEL_PAGE_TABLE, FrameAllocOptions, PageFlags, Segment, PAGE_SIZE},
     prelude::*,
-    sync::{SpinLock, SpinLockGuard},
+    sync::{LocalIrqDisabled, SpinLock, SpinLockGuard},
     user::UserSpace,
 };
 
@@ -142,7 +142,7 @@ impl Task {
     }
 
     /// Gets inner
-    pub(crate) fn inner_exclusive_access(&self) -> SpinLockGuard<TaskInner, G> {
+    pub(crate) fn inner_exclusive_access(&self) -> SpinLockGuard<TaskInner, LocalIrqDisabled> {
         self.task_inner.disable_irq().lock()
     }
 

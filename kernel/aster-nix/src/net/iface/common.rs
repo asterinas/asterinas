@@ -4,7 +4,7 @@ use alloc::collections::btree_map::Entry;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use keyable_arc::KeyableArc;
-use ostd::sync::WaitQueue;
+use ostd::sync::{LocalIrqDisabled, WaitQueue};
 use smoltcp::{
     iface::{SocketHandle, SocketSet},
     phy::Device,
@@ -49,14 +49,16 @@ impl IfaceCommon {
     /// Acquires the lock to the interface.
     ///
     /// *Lock ordering:* [`Self::sockets`] first, [`Self::interface`] second.
-    pub(super) fn interface(&self) -> SpinLockGuard<smoltcp::iface::Interface> {
+    pub(super) fn interface(&self) -> SpinLockGuard<smoltcp::iface::Interface, LocalIrqDisabled> {
         self.interface.disable_irq().lock()
     }
 
     /// Acuqires the lock to the sockets.
     ///
     /// *Lock ordering:* [`Self::sockets`] first, [`Self::interface`] second.
-    pub(super) fn sockets(&self) -> SpinLockGuard<smoltcp::iface::SocketSet<'static>> {
+    pub(super) fn sockets(
+        &self,
+    ) -> SpinLockGuard<smoltcp::iface::SocketSet<'static>, LocalIrqDisabled> {
         self.sockets.disable_irq().lock()
     }
 
@@ -199,7 +201,8 @@ impl IfaceCommon {
 
             let closed_sockets = self
                 .closing_sockets
-                .disable_irq().lock()
+                .disable_irq()
+                .lock()
                 .extract_if(|closing_socket| closing_socket.is_closed())
                 .collect::<Vec<_>>();
             drop(closed_sockets);
