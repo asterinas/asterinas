@@ -24,6 +24,6 @@ pub use self::{
         ArcRwMutexReadGuard, ArcRwMutexUpgradeableGuard, ArcRwMutexWriteGuard, RwMutex,
         RwMutexReadGuard, RwMutexUpgradeableGuard, RwMutexWriteGuard,
     },
-    spin::{ArcSpinLockGuard, SpinLock, SpinLockGuard},
+    spin::{ArcSpinLockGuard, LocalIrqDisabled, PreemptDisabled, SpinLock, SpinLockGuard},
     wait::{WaitQueue, Waiter, Waker},
 };

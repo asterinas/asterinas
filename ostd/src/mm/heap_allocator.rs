@@ -53,13 +53,14 @@ impl<const ORDER: usize> LockedHeapWithRescue<ORDER> {
 
     /// SAFETY: The range [start, start + size) must be a valid memory region.
     pub unsafe fn init(&self, start: *const u8, size: usize) {
-        self.heap.lock_irq_disabled().init(start as usize, size);
+        self.heap.disable_irq().lock().init(start as usize, size);
     }
 
     /// SAFETY: The range [start, start + size) must be a valid memory region.
     unsafe fn add_to_heap(&self, start: usize, size: usize) {
         self.heap
-            .lock_irq_disabled()
+            .disable_irq()
+            .lock()
             .add_to_heap(start, start + size)
     }
 }
@@ -88,7 +89,8 @@ unsafe impl<const ORDER: usize> GlobalAlloc for LockedHeapWithRescue<ORDER> {
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         debug_assert!(ptr as usize != 0);
         self.heap
-            .lock_irq_disabled()
+            .disable_irq()
+            .lock()
             .dealloc(NonNull::new_unchecked(ptr), layout)
     }
 }

@@ -36,7 +36,7 @@ impl TtyDriver {
 
     /// Return the tty device in driver's internal table.
     pub fn lookup(&self, index: usize) -> Result<Arc<Tty>> {
-        let ttys = self.ttys.lock_irq_disabled();
+        let ttys = self.ttys.disable_irq().lock();
         // Return the tty device corresponding to idx
         if index >= ttys.len() {
             return_errno_with_message!(Errno::ENODEV, "lookup failed. No tty device");
@@ -49,12 +49,12 @@ impl TtyDriver {
     /// Install a new tty into the driver's internal tables.
     pub fn install(self: &Arc<Self>, tty: Arc<Tty>) {
         tty.set_driver(Arc::downgrade(self));
-        self.ttys.lock_irq_disabled().push(tty);
+        self.ttys.disable_irq().lock().push(tty);
     }
 
     /// remove a new tty into the driver's internal tables.
     pub fn remove(&self, index: usize) -> Result<()> {
-        let mut ttys = self.ttys.lock_irq_disabled();
+        let mut ttys = self.ttys.disable_irq().lock();
         if index >= ttys.len() {
             return_errno_with_message!(Errno::ENODEV, "lookup failed. No tty device");
         }
@@ -66,7 +66,7 @@ impl TtyDriver {
 
     pub fn push_char(&self, ch: u8) {
         // FIXME: should the char send to all ttys?
-        for tty in &*self.ttys.lock_irq_disabled() {
+        for tty in &*self.ttys.disable_irq().lock() {
             tty.push_char(ch);
         }
     }

@@ -76,12 +76,12 @@ impl LocalWorkerPool {
 
     fn add_worker(&self) {
         let worker = Worker::new(self.parent.clone(), self.cpu_id);
-        self.workers.lock_irq_disabled().push_back(worker.clone());
+        self.workers.disable_irq().lock().push_back(worker.clone());
         worker.bound_thread().run();
     }
 
     fn remove_worker(&self) {
-        let mut workers = self.workers.lock_irq_disabled();
+        let mut workers = self.workers.disable_irq().lock();
         for (index, worker) in workers.iter().enumerate() {
             if worker.is_idle() {
                 worker.destroy();
@@ -116,7 +116,7 @@ impl LocalWorkerPool {
     }
 
     fn destroy_all_workers(&self) {
-        for worker in self.workers.lock_irq_disabled().iter() {
+        for worker in self.workers.disable_irq().lock().iter() {
             worker.destroy();
         }
         self.idle_wait_queue.wake_all();
@@ -149,12 +149,13 @@ impl WorkerPool {
     }
 
     pub fn assign_work_queue(&self, work_queue: Arc<WorkQueue>) {
-        self.work_queues.lock_irq_disabled().push(work_queue);
+        self.work_queues.disable_irq().lock().push(work_queue);
     }
 
     pub fn has_pending_work_items(&self, request_cpu: u32) -> bool {
         self.work_queues
-            .lock_irq_disabled()
+            .disable_irq()
+            .lock()
             .iter()
             .any(|work_queue| work_queue.has_pending_work_items(request_cpu))
     }
@@ -164,7 +165,7 @@ impl WorkerPool {
     }
 
     pub fn num_workers(&self, cpu_id: u32) -> u16 {
-        self.local_pool(cpu_id).workers.lock_irq_disabled().len() as u16
+        self.local_pool(cpu_id).workers.disable_irq().lock().len() as u16
     }
 
     pub fn cpu_set(&self) -> &CpuSet {
@@ -172,7 +173,7 @@ impl WorkerPool {
     }
 
     pub(super) fn fetch_pending_work_item(&self, request_cpu: u32) -> Option<Arc<WorkItem>> {
-        for work_queue in self.work_queues.lock_irq_disabled().iter() {
+        for work_queue in self.work_queues.disable_irq().lock().iter() {
             let item = work_queue.dequeue(request_cpu);
             if item.is_some() {
                 return item;

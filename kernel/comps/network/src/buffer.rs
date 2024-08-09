@@ -74,7 +74,8 @@ impl HasDaddr for TxBuffer {
 impl Drop for TxBuffer {
     fn drop(&mut self) {
         self.pool
-            .lock_irq_disabled()
+            .disable_irq()
+            .lock()
             .push_back(self.dma_stream.clone());
     }
 }
@@ -145,7 +146,7 @@ fn get_tx_stream_from_pool(
     nbytes: usize,
     tx_buffer_pool: &'static SpinLock<LinkedList<DmaStream>>,
 ) -> Option<DmaStream> {
-    let mut pool = tx_buffer_pool.lock_irq_disabled();
+    let mut pool = tx_buffer_pool.disable_irq().lock();
     let mut cursor = pool.cursor_front_mut();
     while let Some(current) = cursor.current() {
         if current.nbytes() >= nbytes {

@@ -233,8 +233,8 @@ mod test {
         // FIXME: `ThreadOptions::new` currently accepts `Fn`, forcing us to use `SpinLock` to gain
         // internal mutability. We should avoid this `SpinLock` by making `ThreadOptions::new`
         // accept `FnOnce`.
-        let writer_with_lock = SpinLock::new(Some(writer));
-        let reader_with_lock = SpinLock::new(Some(reader));
+        let writer_with_lock: SpinLock<_> = SpinLock::new(Some(writer));
+        let reader_with_lock: SpinLock<_> = SpinLock::new(Some(reader));
 
         let signal_writer = Arc::new(AtomicBool::new(false));
         let signal_reader = signal_writer.clone();

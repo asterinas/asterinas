@@ -31,7 +31,8 @@ pub fn register_device(name: String, device: Arc<dyn AnyConsoleDevice>) {
         .get()
         .unwrap()
         .console_device_table
-        .lock_irq_disabled()
+        .disable_irq()
+        .lock()
         .insert(name, device);
 }
 
@@ -40,7 +41,8 @@ pub fn all_devices() -> Vec<(String, Arc<dyn AnyConsoleDevice>)> {
         .get()
         .unwrap()
         .console_device_table
-        .lock_irq_disabled();
+        .disable_irq()
+        .lock();
     console_devs
         .iter()
         .map(|(name, device)| (name.clone(), device.clone()))

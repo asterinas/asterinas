@@ -18,7 +18,10 @@ use core::{any::Any, fmt::Debug};
 pub use buffer::{RxBuffer, TxBuffer, RX_BUFFER_POOL, TX_BUFFER_POOL};
 use component::{init_component, ComponentInitError};
 pub use dma_pool::DmaSegment;
-use ostd::{sync::SpinLock, Pod};
+use ostd::{
+    sync::{PreemptDisabled, SpinLock},
+    Pod,
+};
 use smoltcp::phy;
 use spin::Once;
 
@@ -52,21 +55,23 @@ pub trait AnyNetworkDevice: Send + Sync + Any + Debug {
 
 pub trait NetDeviceIrqHandler = Fn() + Send + Sync + 'static;
 
-pub fn register_device(name: String, device: Arc<SpinLock<dyn AnyNetworkDevice>>) {
+pub fn register_device(name: String, device: Arc<SpinLock<dyn AnyNetworkDevice, PreemptDisabled>>) {
     COMPONENT
         .get()
         .unwrap()
         .network_device_table
-        .lock_irq_disabled()
+        .disable_irq()
+        .lock()
         .insert(name, (Arc::new(SpinLock::new(Vec::new())), device));
 }
 
-pub fn get_device(str: &str) -> Option<Arc<SpinLock<dyn AnyNetworkDevice>>> {
+pub fn get_device(str: &str) -> Option<Arc<SpinLock<dyn AnyNetworkDevice, PreemptDisabled>>> {
     let table = COMPONENT
         .get()
         .unwrap()
         .network_device_table
-        .lock_irq_disabled();
+        .disable_irq()
+        .lock();
     let (_, device) = table.get(str)?;
     Some(device.clone())
 }
@@ -80,11 +85,12 @@ pub fn register_recv_callback(name: &str, callback: impl NetDeviceIrqHandler) {
         .get()
         .unwrap()
         .network_device_table
-        .lock_irq_disabled();
+        .disable_irq()
+        .lock();
     let Some((callbacks, _)) = device_table.get(name) else {
         return;
     };
-    callbacks.lock_irq_disabled().push(Arc::new(callback));
+    callbacks.disable_irq().lock().push(Arc::new(callback));
 }
 
 pub fn handle_recv_irq(name: &str) {
@@ -92,11 +98,12 @@ pub fn handle_recv_irq(name: &str) {
         .get()
         .unwrap()
         .network_device_table
-        .lock_irq_disabled();
+        .disable_irq()
+        .lock();
     let Some((callbacks, _)) = device_table.get(name) else {
         return;
     };
-    let callbacks = callbacks.lock_irq_disabled();
+    let callbacks = callbacks.disable_irq().lock();
     for callback in callbacks.iter() {
         callback();
     }
@@ -107,7 +114,8 @@ pub fn all_devices() -> Vec<(String, NetworkDeviceRef)> {
         .get()
         .unwrap()
         .network_device_table
-        .lock_irq_disabled();
+        .disable_irq()
+        .lock();
     network_devs
         .iter()
         .map(|(name, (_, device))| (name.clone(), device.clone()))
@@ -115,8 +123,9 @@ pub fn all_devices() -> Vec<(String, NetworkDeviceRef)> {
 }
 
 static COMPONENT: Once<Component> = Once::new();
-pub(crate) static NETWORK_IRQ_HANDLERS: Once<SpinLock<Vec<Arc<dyn NetDeviceIrqHandler>>>> =
-    Once::new();
+pub(crate) static NETWORK_IRQ_HANDLERS: Once<
+    SpinLock<Vec<Arc<dyn NetDeviceIrqHandler>>, PreemptDisabled>,
+> = Once::new();
 
 #[init_component]
 fn init() -> Result<(), ComponentInitError> {
@@ -127,13 +136,13 @@ fn init() -> Result<(), ComponentInitError> {
     Ok(())
 }
 
-type NetDeviceIrqHandlerListRef = Arc<SpinLock<Vec<Arc<dyn NetDeviceIrqHandler>>>>;
-type NetworkDeviceRef = Arc<SpinLock<dyn AnyNetworkDevice>>;
+type NetDeviceIrqHandlerListRef = Arc<SpinLock<Vec<Arc<dyn NetDeviceIrqHandler>>, PreemptDisabled>>;
+type NetworkDeviceRef = Arc<SpinLock<dyn AnyNetworkDevice, PreemptDisabled>>;
 
 struct Component {
     /// Device list, the key is device name, value is (callbacks, device);
     network_device_table:
-        SpinLock<BTreeMap<String, (NetDeviceIrqHandlerListRef, NetworkDeviceRef)>>,
+        SpinLock<BTreeMap<String, (NetDeviceIrqHandlerListRef, NetworkDeviceRef)>, PreemptDisabled>,
 }
 
 impl Component {

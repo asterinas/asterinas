@@ -17,6 +17,7 @@ pub use any_socket::{
     AnyBoundSocket, AnyUnboundSocket, RawTcpSocket, RawUdpSocket, RECV_BUF_LEN, SEND_BUF_LEN,
 };
 pub use loopback::IfaceLoopback;
+use ostd::sync::LocalIrqDisabled;
 pub use smoltcp::wire::EthernetAddress;
 pub use util::{spawn_background_poll_thread, BindPortConfig};
 pub use virtio::IfaceVirtio;
@@ -77,11 +78,11 @@ mod internal {
     pub trait IfaceInternal {
         fn common(&self) -> &IfaceCommon;
         /// The inner socket set
-        fn sockets(&self) -> SpinLockGuard<SocketSet<'static>> {
+        fn sockets(&self) -> SpinLockGuard<SocketSet<'static>, LocalIrqDisabled> {
             self.common().sockets()
         }
         /// The inner iface.
-        fn iface_inner(&self) -> SpinLockGuard<smoltcp::iface::Interface> {
+        fn iface_inner(&self) -> SpinLockGuard<smoltcp::iface::Interface, LocalIrqDisabled> {
             self.common().interface()
         }
         /// The time we should do another poll.

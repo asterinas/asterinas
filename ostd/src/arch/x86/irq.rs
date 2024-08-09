@@ -10,7 +10,7 @@ use id_alloc::IdAlloc;
 use spin::Once;
 use trapframe::TrapFrame;
 
-use crate::sync::{Mutex, SpinLock, SpinLockGuard};
+use crate::sync::{Mutex, PreemptDisabled, SpinLock, SpinLockGuard};
 
 /// The global allocator for software defined IRQ lines.
 pub(crate) static IRQ_ALLOCATOR: Once<SpinLock<IdAlloc>> = Once::new();
@@ -101,7 +101,9 @@ impl IrqLine {
         self.irq_num
     }
 
-    pub fn callback_list(&self) -> SpinLockGuard<alloc::vec::Vec<CallbackElement>> {
+    pub fn callback_list(
+        &self,
+    ) -> SpinLockGuard<alloc::vec::Vec<CallbackElement>, PreemptDisabled> {
         self.callback_list.lock()
     }
 
