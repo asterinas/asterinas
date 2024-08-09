@@ -4,7 +4,7 @@ use std::{fs, path::PathBuf, process::Command};
 
 use assert_cmd::output::OutputOkExt;
 
-use crate::util::{cargo_osdk, depends_on_local_ostd};
+use crate::util::{add_tdx_scheme_to_manifest, cargo_osdk, depends_on_local_ostd};
 
 #[test]
 fn write_a_kernel_in_100_lines() {
@@ -25,7 +25,12 @@ fn write_a_kernel_in_100_lines() {
 
     // Depends on local OSTD
     let manifest_path = os_dir.join("Cargo.toml");
-    depends_on_local_ostd(manifest_path);
+    depends_on_local_ostd(manifest_path.clone());
+    let tdx_enabled = std::env::var("INTEL_TDX").is_ok();
+    if tdx_enabled {
+        let osdk_path = os_dir.join("OSDK.toml");
+        add_tdx_scheme_to_manifest(&osdk_path).unwrap();
+    }
 
     // Copies the kernel content
     let kernel_contents = include_str!("write_a_kernel_in_100_lines_templates/lib.rs");
@@ -57,7 +62,14 @@ fn write_a_kernel_in_100_lines() {
     fs::write(os_dir.join("Cargo.toml"), new_file_content).unwrap();
 
     // Runs the kernel
-    let output = cargo_osdk(&["run"]).current_dir(&os_dir).ok().unwrap();
+    let output = if tdx_enabled {
+        cargo_osdk(&["run", "--scheme", "tdx"])
+            .current_dir(&os_dir)
+            .ok()
+            .unwrap()
+    } else {
+        cargo_osdk(&["run"]).current_dir(&os_dir).ok().unwrap()
+    };
     let stdout = std::str::from_utf8(&output.stdout).unwrap();
     println!("stdout = {}", stdout);
 

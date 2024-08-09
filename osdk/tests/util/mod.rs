@@ -4,7 +4,8 @@
 
 use std::{
     ffi::OsStr,
-    fs::{self, create_dir_all},
+    fs::{self, create_dir_all, OpenOptions},
+    io::Write,
     path::{Path, PathBuf},
     process::Output,
 };
@@ -117,4 +118,18 @@ pub fn depends_on_local_ostd(manifest_path: impl AsRef<Path>) {
     dep.insert("ostd".to_string(), Value::Table(table));
 
     fs::write(manifest_path, manifest.to_string().as_bytes()).unwrap();
+}
+
+pub fn add_tdx_scheme_to_manifest(osdk_path: impl AsRef<Path>) -> std::io::Result<()> {
+    let template_path = Path::new(file!())
+        .parent()
+        .unwrap()
+        .join("scheme.tdx.template");
+    let mut file = OpenOptions::new()
+        .write(true)
+        .append(true)
+        .open(osdk_path)?;
+    let tdx_qemu_cfg = fs::read_to_string(template_path)?;
+    file.write_all(format!("\n\n{}", tdx_qemu_cfg).as_bytes())?;
+    Ok(())
 }
