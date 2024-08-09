@@ -134,6 +134,10 @@ done
 RELEASE_TAG_WORKFLOW=${ASTER_SRC_DIR}/.github/workflows/push_git_tag.yml
 update_tag_version $RELEASE_TAG_WORKFLOW
 
+# Bump version in test_osdk workflow
+TEST_OSDK_WORKFLOW=${ASTER_SRC_DIR}/.github/workflows/test_osdk.yml
+sed -i "s/:[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+/:${new_version}/g" $TEST_OSDK_WORKFLOW
+
 # Update Docker image versions in the documentation
 GET_STARTED_PATH=${ASTER_SRC_DIR}/docs/src/kernel/README.md
 update_image_versions $GET_STARTED_PATH
