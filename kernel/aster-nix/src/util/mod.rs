@@ -2,179 +2,190 @@
 
 use core::mem;
 
-use aster_rights::Full;
 use ostd::{
-    mm::{KernelSpace, VmIo, VmReader, VmWriter},
+    mm::{UserSpace, VmReader, VmSpace, VmWriter},
     task::Task,
 };
 
-use crate::{prelude::*, vm::vmar::Vmar};
+use crate::prelude::*;
 mod iovec;
 pub mod net;
 pub mod random;
 
 pub use iovec::{copy_iovs_from_user, IoVec};
 
-/// Reads bytes into the destination `VmWriter` from the user space of the
-/// current process.
-///
-/// If the reading is completely successful, returns `Ok`. Otherwise, it
-/// returns `Err`.
-///
-/// If the destination `VmWriter` (`dest`) is empty, this function still
-/// checks if the current task and user space are available. If they are,
-/// it returns `Ok`.
-///
-/// TODO: this API can be discarded and replaced with the API of `VmReader`
-/// after replacing all related `buf` usages.
-pub fn read_bytes_from_user(src: Vaddr, dest: &mut VmWriter<'_>) -> Result<()> {
-    let copy_len = dest.avail();
+/// A struct represents owning the user space of the current task,
+/// and provides the ability to do reading and writing instructions
+/// for the user space.
+pub struct CurrentUserSpace(Arc<VmSpace>);
 
-    if copy_len > 0 {
-        check_vaddr(src)?;
-    }
+impl !Sync for CurrentUserSpace {}
+impl !Send for CurrentUserSpace {}
 
-    let current_task = Task::current().unwrap();
-    let user_space = current_task.user_space().unwrap();
-
-    let mut user_reader = user_space.vm_space().reader(src, copy_len)?;
-    user_reader.read_fallible(dest).map_err(|err| err.0)?;
-    Ok(())
-}
-
-/// Reads a value typed `Pod` from the user space of the current process.
-pub fn read_val_from_user<T: Pod>(src: Vaddr) -> Result<T> {
-    if core::mem::size_of::<T>() > 0 {
-        check_vaddr(src)?;
-    }
-
-    let current_task = Task::current().unwrap();
-    let user_space = current_task.user_space().unwrap();
-
-    let mut user_reader = user_space
-        .vm_space()
-        .reader(src, core::mem::size_of::<T>())?;
-    Ok(user_reader.read_val()?)
-}
-
-/// Writes bytes from the source `VmReader` to the user space of the current
-/// process.
-///
-/// If the writing is completely successful, returns `Ok`. Otherwise, it
-/// returns `Err`.
-///
-/// If the source `VmReader` (`src`) is empty, this function still checks if
-/// the current task and user space are available. If they are, it returns
-/// `Ok`.
-///
-/// TODO: this API can be discarded and replaced with the API of `VmWriter`
-/// after replacing all related `buf` usages.
-pub fn write_bytes_to_user(dest: Vaddr, src: &mut VmReader<'_, KernelSpace>) -> Result<()> {
-    let copy_len = src.remain();
-
-    if copy_len > 0 {
-        check_vaddr(dest)?;
-    }
-
-    let current_task = Task::current().unwrap();
-    let user_space = current_task.user_space().unwrap();
-
-    let mut user_writer = user_space.vm_space().writer(dest, copy_len)?;
-    user_writer.write_fallible(src).map_err(|err| err.0)?;
-    Ok(())
-}
-
-/// Writes `val` to the user space of the current process.
-pub fn write_val_to_user<T: Pod>(dest: Vaddr, val: &T) -> Result<()> {
-    if core::mem::size_of::<T>() > 0 {
-        check_vaddr(dest)?;
-    }
-
-    let current_task = Task::current().unwrap();
-    let user_space = current_task.user_space().unwrap();
-
-    let mut user_writer = user_space
-        .vm_space()
-        .writer(dest, core::mem::size_of::<T>())?;
-    Ok(user_writer.write_val(val)?)
-}
-
-/// Read a C string from the user space of the current process.
-/// The length of the string should not exceed `max_len`,
-/// including the final `\0` byte.
-///
-/// This implementation is inspired by
-/// the `do_strncpy_from_user` function in Linux kernel.
-/// The original Linux implementation can be found at:
-/// <https://elixir.bootlin.com/linux/v6.0.9/source/lib/strncpy_from_user.c#L28>
-pub fn read_cstring_from_user(addr: Vaddr, max_len: usize) -> Result<CString> {
-    if max_len > 0 {
-        check_vaddr(addr)?;
-    }
-
-    let current = current!();
-    let vmar = current.root_vmar();
-    read_cstring_from_vmar(vmar, addr, max_len)
-}
-
-/// Read CString from `vmar`. If possible, use `read_cstring_from_user` instead.
-pub fn read_cstring_from_vmar(vmar: &Vmar<Full>, addr: Vaddr, max_len: usize) -> Result<CString> {
-    if max_len > 0 {
-        check_vaddr(addr)?;
-    }
-
-    let mut buffer: Vec<u8> = Vec::with_capacity(max_len);
-    let mut cur_addr = addr;
-
-    macro_rules! read_one_byte_at_a_time_while {
-        ($cond:expr) => {
-            while $cond {
-                let byte = vmar.read_val::<u8>(cur_addr)?;
-                buffer.push(byte);
-                if byte == 0 {
-                    return Ok(CString::from_vec_with_nul(buffer)
-                        .expect("We provided 0 but no 0 is found"));
-                }
-                cur_addr += mem::size_of::<u8>();
-            }
+impl CurrentUserSpace {
+    /// Gets the `CurrentUserSpace` from the current task.
+    pub fn get() -> Self {
+        let vm_space = {
+            let current_task = Task::current().unwrap();
+            let user_space = current_task.user_space().unwrap();
+            user_space.vm_space().clone()
         };
+        Self(vm_space)
     }
 
-    // Handle the first few bytes to make `cur_addr` aligned with `size_of::<usize>`
-    read_one_byte_at_a_time_while!(
-        cur_addr % mem::size_of::<usize>() != 0 && buffer.len() < max_len
-    );
+    /// Creates a reader to read data from the user space of the current task.
+    ///
+    /// Returns `Err` if the `vaddr` and `len` do not represent a user space memory range.
+    pub fn reader(&self, vaddr: Vaddr, len: usize) -> Result<VmReader<'_, UserSpace>> {
+        Ok(self.0.reader(vaddr, len)?)
+    }
 
-    // Handle the rest of the bytes in bulk
-    while (buffer.len() + mem::size_of::<usize>()) <= max_len {
-        let Ok(word) = vmar.read_val::<usize>(cur_addr) else {
-            break;
-        };
+    /// Creates a writer to write data into the user space.
+    ///
+    /// Returns `Err` if the `vaddr` and `len` do not represent a user space memory range.
+    pub fn writer(&self, vaddr: Vaddr, len: usize) -> Result<VmWriter<'_, UserSpace>> {
+        Ok(self.0.writer(vaddr, len)?)
+    }
 
-        if has_zero(word) {
-            for byte in word.to_ne_bytes() {
-                buffer.push(byte);
-                if byte == 0 {
-                    return Ok(CString::from_vec_with_nul(buffer)
-                        .expect("We provided 0 but no 0 is found"));
-                }
-            }
-            unreachable!("The branch should never be reached unless `has_zero` has bugs.")
+    /// Reads bytes into the destination `VmWriter` from the user space of the
+    /// current process.
+    ///
+    /// If the reading is completely successful, returns `Ok`. Otherwise, it
+    /// returns `Err`.
+    ///
+    /// If the destination `VmWriter` (`dest`) is empty, this function still
+    /// checks if the current task and user space are available. If they are,
+    /// it returns `Ok`.
+    pub fn read_bytes(&self, src: Vaddr, dest: &mut VmWriter<'_>) -> Result<()> {
+        let copy_len = dest.avail();
+
+        if copy_len > 0 {
+            check_vaddr(src)?;
         }
 
-        buffer.extend_from_slice(&word.to_ne_bytes());
-
-        cur_addr += mem::size_of::<usize>();
+        let mut user_reader = self.reader(src, copy_len)?;
+        user_reader.read_fallible(dest).map_err(|err| err.0)?;
+        Ok(())
     }
 
-    // Handle the last few bytes that are not enough for a word
-    read_one_byte_at_a_time_while!(buffer.len() < max_len);
+    /// Reads a value typed `Pod` from the user space of the current process.
+    pub fn read_val<T: Pod>(&self, src: Vaddr) -> Result<T> {
+        if core::mem::size_of::<T>() > 0 {
+            check_vaddr(src)?;
+        }
 
-    // Maximum length exceeded before finding the null terminator
-    return_errno_with_message!(Errno::EFAULT, "Fails to read CString from user");
+        let mut user_reader = self.reader(src, core::mem::size_of::<T>())?;
+        Ok(user_reader.read_val()?)
+    }
+
+    /// Writes bytes from the source `VmReader` to the user space of the current
+    /// process.
+    ///
+    /// If the writing is completely successful, returns `Ok`. Otherwise, it
+    /// returns `Err`.
+    ///
+    /// If the source `VmReader` (`src`) is empty, this function still checks if
+    /// the current task and user space are available. If they are, it returns
+    /// `Ok`.
+    pub fn write_bytes(&self, dest: Vaddr, src: &mut VmReader<'_>) -> Result<()> {
+        let copy_len = src.remain();
+
+        if copy_len > 0 {
+            check_vaddr(dest)?;
+        }
+
+        let mut user_writer = self.writer(dest, copy_len)?;
+        user_writer.write_fallible(src).map_err(|err| err.0)?;
+        Ok(())
+    }
+
+    /// Writes `val` to the user space of the current process.
+    pub fn write_val<T: Pod>(&self, dest: Vaddr, val: &T) -> Result<()> {
+        if core::mem::size_of::<T>() > 0 {
+            check_vaddr(dest)?;
+        }
+
+        let mut user_writer = self.writer(dest, core::mem::size_of::<T>())?;
+        Ok(user_writer.write_val(val)?)
+    }
+
+    /// Reads a C string from the user space of the current process.
+    /// The length of the string should not exceed `max_len`,
+    /// including the final `\0` byte.
+    pub fn read_cstring(&self, vaddr: Vaddr, max_len: usize) -> Result<CString> {
+        if max_len > 0 {
+            check_vaddr(vaddr)?;
+        }
+
+        let mut user_reader = self.reader(vaddr, max_len)?;
+        user_reader.read_cstring()
+    }
 }
 
-/// Determine whether the value contains a zero byte.
+/// A trait providing the ability to read a C string from the user space
+/// of the current process specifically for [`VmReader<'_, UserSpace>`], which
+/// should reading the bytes iteratively in the reader until encountering
+/// the end of the reader or reading a `\0` (is also included into the final C String).
+pub trait ReadCString {
+    fn read_cstring(&mut self) -> Result<CString>;
+}
+
+impl<'a> ReadCString for VmReader<'a, UserSpace> {
+    /// This implementation is inspired by
+    /// the `do_strncpy_from_user` function in Linux kernel.
+    /// The original Linux implementation can be found at:
+    /// <https://elixir.bootlin.com/linux/v6.0.9/source/lib/strncpy_from_user.c#L28>
+    fn read_cstring(&mut self) -> Result<CString> {
+        let max_len = self.remain();
+        let mut buffer: Vec<u8> = Vec::with_capacity(max_len);
+
+        macro_rules! read_one_byte_at_a_time_while {
+            ($cond:expr) => {
+                while $cond {
+                    let byte = self.read_val::<u8>()?;
+                    buffer.push(byte);
+                    if byte == 0 {
+                        return Ok(CString::from_vec_with_nul(buffer)
+                            .expect("We provided 0 but no 0 is found"));
+                    }
+                }
+            };
+        }
+
+        // Handle the first few bytes to make `cur_addr` aligned with `size_of::<usize>`
+        read_one_byte_at_a_time_while!(
+            (self.cursor() as usize) % mem::size_of::<usize>() != 0 && buffer.len() < max_len
+        );
+
+        // Handle the rest of the bytes in bulk
+        while (buffer.len() + mem::size_of::<usize>()) <= max_len {
+            let Ok(word) = self.read_val::<usize>() else {
+                break;
+            };
+
+            if has_zero(word) {
+                for byte in word.to_ne_bytes() {
+                    buffer.push(byte);
+                    if byte == 0 {
+                        return Ok(CString::from_vec_with_nul(buffer)
+                            .expect("We provided 0 but no 0 is found"));
+                    }
+                }
+                unreachable!("The branch should never be reached unless `has_zero` has bugs.")
+            }
+
+            buffer.extend_from_slice(&word.to_ne_bytes());
+        }
+
+        // Handle the last few bytes that are not enough for a word
+        read_one_byte_at_a_time_while!(buffer.len() < max_len);
+
+        // Maximum length exceeded before finding the null terminator
+        return_errno_with_message!(Errno::EFAULT, "Fails to read CString from user");
+    }
+}
+
+/// Determines whether the value contains a zero byte.
 ///
 /// This magic algorithm is from the Linux `has_zero` function:
 /// <https://elixir.bootlin.com/linux/v6.0.9/source/include/asm-generic/word-at-a-time.h#L93>
@@ -185,7 +196,7 @@ const fn has_zero(value: usize) -> bool {
     value.wrapping_sub(ONE_BITS) & !value & HIGH_BITS != 0
 }
 
-/// Check if the user space pointer is below the lowest userspace address.
+/// Checks if the user space pointer is below the lowest userspace address.
 ///
 /// If a pointer is below the lowest userspace address, it is likely to be a
 /// NULL pointer. Reading from or writing to a NULL pointer should trigger a
