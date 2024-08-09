@@ -40,7 +40,7 @@ qemu.args = """\
 
 [scheme."tdx"]
 supported_archs = ["x86_64"]
-build.features = ["intel_tdx"]
+build.features = ["cvm_guest"]
 boot.method = "grub-qcow2"
 grub.mkrescue_path = "/tmp/osdk_test_file"
 grub.protocol = "linux"

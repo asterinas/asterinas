@@ -10,7 +10,7 @@ mod urandom;
 mod zero;
 
 cfg_if! {
-    if #[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))] {
+    if #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))] {
         mod tdxguest;
 
         use tdx_guest::tdx_is_enabled;
@@ -41,7 +41,7 @@ pub fn init() -> Result<()> {
     let tty = Arc::new(tty::TtyDevice);
     add_node(tty, "tty")?;
     cfg_if! {
-        if #[cfg(all(target_arch = "x86_64", feature = "intel_tdx"))] {
+        if #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))] {
             let tdx_guest = Arc::new(tdxguest::TdxGuest);
 
             if tdx_is_enabled() {

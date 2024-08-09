@@ -59,7 +59,7 @@ bitflags::bitflags! {
         /// the TLB on an address space switch.
         const GLOBAL =          1 << 8;
         /// TDX shared bit.
-        #[cfg(feature = "intel_tdx")]
+        #[cfg(feature = "cvm_guest")]
         const SHARED =          1 << 51;
         /// Forbid execute codes on the page. The NXE bits in EFER msr must be set.
         const NO_EXECUTE =      1 << 63;
@@ -138,7 +138,7 @@ pub fn current_page_table_paddr() -> Paddr {
 
 impl PageTableEntry {
     cfg_if! {
-        if #[cfg(feature = "intel_tdx")] {
+        if #[cfg(feature = "cvm_guest")] {
             const PHYS_ADDR_MASK: usize = 0x7_FFFF_FFFF_F000;
         } else {
             const PHYS_ADDR_MASK: usize = 0xF_FFFF_FFFF_F000;
@@ -191,7 +191,7 @@ impl PageTableEntryTrait for PageTableEntry {
             | parse_flags!(self.0, PageTableFlags::DIRTY, PageFlags::DIRTY);
         let priv_flags = parse_flags!(self.0, PageTableFlags::USER, PrivFlags::USER)
             | parse_flags!(self.0, PageTableFlags::GLOBAL, PrivFlags::GLOBAL);
-        #[cfg(feature = "intel_tdx")]
+        #[cfg(feature = "cvm_guest")]
         let priv_flags =
             priv_flags | parse_flags!(self.0, PageTableFlags::SHARED, PrivFlags::SHARED);
         let cache = if self.0 & PageTableFlags::NO_CACHE.bits() != 0 {
@@ -228,7 +228,7 @@ impl PageTableEntryTrait for PageTableEntry {
                 PrivFlags::GLOBAL,
                 PageTableFlags::GLOBAL
             );
-        #[cfg(feature = "intel_tdx")]
+        #[cfg(feature = "cvm_guest")]
         {
             flags |= parse_flags!(
                 prop.priv_flags.bits(),

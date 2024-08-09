@@ -16,7 +16,7 @@ use crate::{
 };
 
 cfg_if! {
-    if #[cfg(feature = "intel_tdx")] {
+    if #[cfg(feature = "cvm_guest")] {
         use ::tdx_guest::tdx_is_enabled;
         use crate::arch::tdx_guest;
     }
@@ -161,7 +161,7 @@ pub fn init() {
             // FIXME: Is it possible to have an address that is not the default 0xFEC0_0000?
             // Need to find a way to determine if it is a valid address or not.
             const IO_APIC_DEFAULT_ADDRESS: usize = 0xFEC0_0000;
-            #[cfg(feature = "intel_tdx")]
+            #[cfg(feature = "cvm_guest")]
             // SAFETY:
             // This is safe because we are ensuring that the `IO_APIC_DEFAULT_ADDRESS` is a valid MMIO address before this operation.
             // The `IO_APIC_DEFAULT_ADDRESS` is a well-known address used for IO APICs in x86 systems, and it is page-aligned, which is a requirement for the `unprotect_gpa_range` function.
