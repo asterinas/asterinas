@@ -22,8 +22,8 @@ use crate::{
 
 cfg_if! {
     if #[cfg(feature = "cvm_guest")] {
-        use tdx_guest::{tdcall, tdx_is_enabled};
-        use crate::arch::{cpu::VIRTUALIZATION_EXCEPTION, tdx_guest::handle_virtual_exception};
+        use tdx_guest::{tdcall, tdx_is_enabled, handle_virtual_exception};
+        use crate::arch::{cpu::VIRTUALIZATION_EXCEPTION, tdx_guest::TrapFrameWrapper};
     }
 }
 
@@ -46,7 +46,9 @@ extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
             #[cfg(feature = "cvm_guest")]
             &VIRTUALIZATION_EXCEPTION => {
                 let ve_info = tdcall::get_veinfo().expect("#VE handler: fail to get VE info\n");
-                handle_virtual_exception(f, &ve_info);
+                let mut trapframe_wrapper = TrapFrameWrapper(&mut *f);
+                handle_virtual_exception(&mut trapframe_wrapper, &ve_info);
+                *f = *trapframe_wrapper.0;
             }
             &PAGE_FAULT => {
                 let page_fault_addr = x86_64::registers::control::Cr2::read().as_u64();

@@ -57,7 +57,7 @@ iced-x86 = { version = "1.21.0", default-features = false, features = [
     "decoder",
     "gas",
 ], optional = true }
-tdx-guest = { version = "0.1.5", optional = true }
+tdx-guest = { version = "0.1.7", optional = true }
 
 [features]
 default = ["cvm_guest", "log_color"]
