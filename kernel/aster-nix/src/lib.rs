@@ -92,7 +92,7 @@ fn init_thread() {
     ostd::trap::enable_local();
     net::lazy_init();
     fs::lazy_init();
-    // driver::pci::virtio::block::block_device_test();
+    device::lazy_init();
     let thread = Thread::spawn_kernel_thread(ThreadOptions::new(|| {
         println!("[kernel] Hello world from kernel!");
         let current = current_thread!();

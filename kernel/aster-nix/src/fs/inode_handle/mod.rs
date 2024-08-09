@@ -252,6 +252,14 @@ pub trait FileIo: Send + Sync + 'static {
 
     fn write(&self, buf: &[u8]) -> Result<usize>;
 
+    fn read_at(&self, _offset: usize, buf: &mut [u8]) -> Result<usize> {
+        self.read(buf)
+    }
+
+    fn write_at(&self, _offset: usize, buf: &[u8]) -> Result<usize> {
+        self.write(buf)
+    }
+
     fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents;
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {

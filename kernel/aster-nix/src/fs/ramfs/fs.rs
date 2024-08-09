@@ -511,7 +511,7 @@ impl Inode for RamInode {
             let self_inode = self.node.read();
 
             if let Some(device) = self_inode.inner.as_device() {
-                device.read(buf)?
+                device.read_at(offset, buf)?
             } else {
                 let Some(page_cache) = self_inode.inner.as_file() else {
                     return_errno_with_message!(Errno::EISDIR, "read is not supported");
@@ -542,7 +542,7 @@ impl Inode for RamInode {
         let self_inode = self.node.upread();
 
         if let Some(device) = self_inode.inner.as_device() {
-            let device_written_len = device.write(buf)?;
+            let device_written_len = device.write_at(offset, buf)?;
             let mut self_inode = self_inode.upgrade();
             let now = now();
             self_inode.set_mtime(now);
