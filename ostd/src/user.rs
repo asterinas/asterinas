@@ -30,7 +30,7 @@ impl UserSpace {
     }
 
     /// Returns the VM address space.
-    pub fn vm_space(&self) -> &VmSpace {
+    pub fn vm_space(&self) -> &Arc<VmSpace> {
         &self.vm_space
     }
 
