@@ -19,8 +19,8 @@ use crate::{
     fs::{
         device::Device,
         utils::{
-            CStr256, DirentVisitor, FallocMode, FileSystem, FsFlags, Inode, InodeMode, InodeType,
-            IoctlCmd, Metadata, PageCache, PageCacheBackend, SuperBlock,
+            CStr256, DirentVisitor, Extension, FallocMode, FileSystem, FsFlags, Inode, InodeMode,
+            InodeType, IoctlCmd, Metadata, PageCache, PageCacheBackend, SuperBlock,
         },
     },
     prelude::*,
@@ -55,6 +55,7 @@ impl RamFS {
                 typ: InodeType::Dir,
                 this: weak_root.clone(),
                 fs: weak_fs.clone(),
+                extension: Extension::new(),
             }),
             inode_allocator: AtomicU64::new(ROOT_INO + 1),
         })
@@ -99,6 +100,8 @@ struct RamInode {
     this: Weak<RamInode>,
     /// Reference to fs
     fs: Weak<RamFS>,
+    /// Extensions
+    extension: Extension,
 }
 
 struct Node {
@@ -415,6 +418,7 @@ impl RamInode {
             typ: InodeType::Dir,
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
+            extension: Extension::new(),
         })
     }
 
@@ -425,6 +429,7 @@ impl RamInode {
             typ: InodeType::File,
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
+            extension: Extension::new(),
         })
     }
 
@@ -435,6 +440,7 @@ impl RamInode {
             typ: InodeType::SymLink,
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
+            extension: Extension::new(),
         })
     }
 
@@ -445,6 +451,7 @@ impl RamInode {
             typ: InodeType::Socket,
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
+            extension: Extension::new(),
         })
     }
 
@@ -461,6 +468,7 @@ impl RamInode {
             typ: InodeType::from(device.type_()),
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
+            extension: Extension::new(),
         })
     }
 
@@ -1153,6 +1161,10 @@ impl Inode for RamInode {
             return device.ioctl(cmd, arg);
         }
         return_errno_with_message!(Errno::EINVAL, "ioctl is not supported");
+    }
+
+    fn extension(&self) -> Option<&Extension> {
+        Some(&self.extension)
     }
 }
 
