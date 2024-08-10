@@ -23,6 +23,7 @@
 #![feature(step_trait)]
 #![feature(trait_alias)]
 #![feature(trait_upcasting)]
+#![feature(linked_list_retain)]
 #![register_tool(component_access_control)]
 
 use ostd::{
@@ -55,6 +56,7 @@ pub mod driver;
 pub mod error;
 pub mod events;
 pub mod fs;
+pub mod ipc;
 pub mod net;
 pub mod prelude;
 mod process;
@@ -91,6 +93,7 @@ fn init_thread() {
     thread::work_queue::init();
     net::lazy_init();
     fs::lazy_init();
+    ipc::init();
     // driver::pci::virtio::block::block_device_test();
     let thread = Thread::spawn_kernel_thread(ThreadOptions::new(|| {
         println!("[kernel] Hello world from kernel!");
