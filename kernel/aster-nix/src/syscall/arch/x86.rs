@@ -89,6 +89,7 @@ use crate::syscall::{
     sched_getaffinity::sys_sched_getaffinity,
     sched_yield::sys_sched_yield,
     select::sys_select,
+    semctl::sys_semctl,
     semget::sys_semget,
     semop::{sys_semop, sys_semtimedop},
     sendfile::sys_sendfile,
@@ -194,6 +195,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_UNAME = 63             => sys_uname(args[..1]);
     SYS_SEMGET = 64            => sys_semget(args[..3]);
     SYS_SEMOP = 65             => sys_semop(args[..3]);
+    SYS_SEMCTL = 66            => sys_semctl(args[..4]);
     SYS_FCNTL = 72             => sys_fcntl(args[..3]);
     SYS_FLOCK = 73             => sys_flock(args[..2]);
     SYS_FSYNC = 74             => sys_fsync(args[..1]);

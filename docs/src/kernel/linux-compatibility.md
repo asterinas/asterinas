@@ -86,7 +86,7 @@ provided by Linux on x86-64 architecture.
 | 63      | uname            | ✅              |
 | 64      | semget           | ✅              |
 | 65      | semop            | ✅              |
-| 66      | semctl           | ❌              |
+| 66      | semctl           | ✅              |
 | 67      | shmdt            | ❌              |
 | 68      | msgget           | ❌              |
 | 69      | msgsnd           | ❌              |
