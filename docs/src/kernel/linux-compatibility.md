@@ -84,7 +84,7 @@ provided by Linux on x86-64 architecture.
 | 61      | wait4            | ✅              |
 | 62      | kill             | ✅              |
 | 63      | uname            | ✅              |
-| 64      | semget           | ❌              |
+| 64      | semget           | ✅              |
 | 65      | semop            | ❌              |
 | 66      | semctl           | ❌              |
 | 67      | shmdt            | ❌              |
