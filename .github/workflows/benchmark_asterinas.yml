@@ -45,6 +45,8 @@ jobs:
           - lmbench-fs-create-delete-files-10k
           # Mmap-related benchmarks
           - lmbench-pagefault
+          # Semaphore benchmark
+          - lmbench-semaphore
       fail-fast: false
     timeout-minutes: 60
     container: 
