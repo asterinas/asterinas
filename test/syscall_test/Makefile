@@ -36,6 +36,7 @@ TESTS ?= \
 	read_test \
 	readv_test \
 	rename_test \
+	semaphore_test \
 	sendfile_test \
 	stat_test \
 	stat_times_test \
