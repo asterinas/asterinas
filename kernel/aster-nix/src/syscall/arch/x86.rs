@@ -90,6 +90,7 @@ use crate::syscall::{
     sched_yield::sys_sched_yield,
     select::sys_select,
     semget::sys_semget,
+    semop::{sys_semop, sys_semtimedop},
     sendfile::sys_sendfile,
     sendmsg::sys_sendmsg,
     sendto::sys_sendto,
@@ -192,6 +193,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_KILL = 62              => sys_kill(args[..2]);
     SYS_UNAME = 63             => sys_uname(args[..1]);
     SYS_SEMGET = 64            => sys_semget(args[..3]);
+    SYS_SEMOP = 65             => sys_semop(args[..3]);
     SYS_FCNTL = 72             => sys_fcntl(args[..3]);
     SYS_FLOCK = 73             => sys_flock(args[..2]);
     SYS_FSYNC = 74             => sys_fsync(args[..1]);
@@ -263,6 +265,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_EPOLL_CREATE = 213     => sys_epoll_create(args[..1]);
     SYS_GETDENTS64 = 217       => sys_getdents64(args[..3]);
     SYS_SET_TID_ADDRESS = 218  => sys_set_tid_address(args[..1]);
+    SYS_SEMTIMEDOP = 220       => sys_semtimedop(args[..4]);
     SYS_TIMER_CREATE = 222     => sys_timer_create(args[..3]);
     SYS_TIMER_SETTIME = 223    => sys_timer_settime(args[..4]);
     SYS_TIMER_GETTIME = 224    => sys_timer_gettime(args[..2]);
