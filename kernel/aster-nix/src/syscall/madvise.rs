@@ -21,9 +21,22 @@ pub fn sys_madvise(start: Vaddr, len: usize, behavior: i32) -> Result<SyscallRet
         MadviseBehavior::MADV_DONTNEED => {
             warn!("MADV_DONTNEED isn't implemented, do nothing for now.");
         }
+        MadviseBehavior::MADV_FREE => madv_free(start, len)?,
         _ => todo!(),
     }
     Ok(SyscallReturn::Return(0))
+}
+
+fn madv_free(start: Vaddr, len: usize) -> Result<()> {
+    debug_assert!(start % PAGE_SIZE == 0);
+    debug_assert!(len % PAGE_SIZE == 0);
+
+    let current = current!();
+    let root_vmar = current.root_vmar();
+    let advised_range = start..start + len;
+    let _ = root_vmar.destroy(advised_range);
+
+    Ok(())
 }
 
 #[repr(i32)]
