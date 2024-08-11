@@ -3,8 +3,7 @@
 use super::SyscallReturn;
 use crate::prelude::*;
 
-pub fn sys_gettid(_ctx: &Context) -> Result<SyscallReturn> {
-    let current_thread = current_thread!();
-    let tid = current_thread.tid();
+pub fn sys_gettid(ctx: &Context) -> Result<SyscallReturn> {
+    let tid = ctx.thread.tid();
     Ok(SyscallReturn::Return(tid as _))
 }

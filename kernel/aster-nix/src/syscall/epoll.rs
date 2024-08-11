@@ -11,7 +11,7 @@ use crate::{
         utils::CreationFlags,
     },
     prelude::*,
-    process::{posix_thread::PosixThreadExt, signal::sig_mask::SigMask},
+    process::signal::sig_mask::SigMask,
 };
 
 pub fn sys_epoll_create(size: i32, ctx: &Context) -> Result<SyscallReturn> {
@@ -152,29 +152,26 @@ pub fn sys_epoll_wait(
     Ok(SyscallReturn::Return(epoll_events.len() as _))
 }
 
-fn set_signal_mask(set_ptr: Vaddr) -> Result<SigMask> {
+fn set_signal_mask(set_ptr: Vaddr, ctx: &Context) -> Result<SigMask> {
     let new_mask: Option<SigMask> = if set_ptr != 0 {
         Some(CurrentUserSpace::get().read_val::<u64>(set_ptr)?.into())
     } else {
         None
     };
 
-    let current_thread = current_thread!();
-    let posix_thread = current_thread.as_posix_thread().unwrap();
-
-    let old_sig_mask_value = posix_thread.sig_mask().load(Ordering::Relaxed);
+    let old_sig_mask_value = ctx.posix_thread.sig_mask().load(Ordering::Relaxed);
 
     if let Some(new_mask) = new_mask {
-        posix_thread.sig_mask().store(new_mask, Ordering::Relaxed);
+        ctx.posix_thread
+            .sig_mask()
+            .store(new_mask, Ordering::Relaxed);
     }
 
     Ok(old_sig_mask_value)
 }
 
-fn restore_signal_mask(sig_mask_val: SigMask) {
-    let current_thread = current_thread!();
-    let posix_thread = current_thread.as_posix_thread().unwrap();
-    posix_thread
+fn restore_signal_mask(sig_mask_val: SigMask, ctx: &Context) {
+    ctx.posix_thread
         .sig_mask()
         .store(sig_mask_val, Ordering::Relaxed);
 }
@@ -197,16 +194,16 @@ pub fn sys_epoll_pwait(
         error!("sigset size is not equal to 8");
     }
 
-    let old_sig_mask_value = set_signal_mask(sigmask)?;
+    let old_sig_mask_value = set_signal_mask(sigmask, ctx)?;
 
     let ready_events = match do_epoll_wait(epfd, max_events, timeout, ctx) {
         Ok(events) => {
-            restore_signal_mask(old_sig_mask_value);
+            restore_signal_mask(old_sig_mask_value, ctx);
             events
         }
         Err(e) => {
             // Restore the signal mask even if an error occurs
-            restore_signal_mask(old_sig_mask_value);
+            restore_signal_mask(old_sig_mask_value, ctx);
             return Err(e);
         }
     };

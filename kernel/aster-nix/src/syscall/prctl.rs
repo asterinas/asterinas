@@ -3,10 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::{
-        posix_thread::{PosixThreadExt, MAX_THREAD_NAME_LEN},
-        signal::sig_num::SigNum,
-    },
+    process::{posix_thread::MAX_THREAD_NAME_LEN, signal::sig_num::SigNum},
 };
 
 pub fn sys_prctl(
@@ -19,8 +16,6 @@ pub fn sys_prctl(
 ) -> Result<SyscallReturn> {
     let prctl_cmd = PrctlCmd::from_args(option, arg2, arg3, arg4, arg5)?;
     debug!("prctl cmd = {:x?}", prctl_cmd);
-    let current_thread = current_thread!();
-    let posix_thread = current_thread.as_posix_thread().unwrap();
     match prctl_cmd {
         PrctlCmd::PR_SET_PDEATHSIG(signum) => {
             ctx.process.set_parent_death_signal(signum);
@@ -47,7 +42,7 @@ pub fn sys_prctl(
             // TODO: implement coredump
         }
         PrctlCmd::PR_GET_NAME(write_to_addr) => {
-            let thread_name = posix_thread.thread_name().lock();
+            let thread_name = ctx.posix_thread.thread_name().lock();
             if let Some(thread_name) = &*thread_name {
                 if let Some(thread_name) = thread_name.name()? {
                     CurrentUserSpace::get().write_bytes(
@@ -58,7 +53,7 @@ pub fn sys_prctl(
             }
         }
         PrctlCmd::PR_SET_NAME(read_addr) => {
-            let mut thread_name = posix_thread.thread_name().lock();
+            let mut thread_name = ctx.posix_thread.thread_name().lock();
             if let Some(thread_name) = &mut *thread_name {
                 let new_thread_name =
                     CurrentUserSpace::get().read_cstring(read_addr, MAX_THREAD_NAME_LEN)?;

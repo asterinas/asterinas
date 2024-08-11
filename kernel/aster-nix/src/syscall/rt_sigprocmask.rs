@@ -5,12 +5,9 @@ use core::sync::atomic::Ordering;
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::{
-        posix_thread::PosixThreadExt,
-        signal::{
-            constants::{SIGKILL, SIGSTOP},
-            sig_mask::SigMask,
-        },
+    process::signal::{
+        constants::{SIGKILL, SIGSTOP},
+        sig_mask::SigMask,
     },
 };
 
@@ -19,7 +16,7 @@ pub fn sys_rt_sigprocmask(
     set_ptr: Vaddr,
     oldset_ptr: Vaddr,
     sigset_size: usize,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     let mask_op = MaskOp::try_from(how).unwrap();
     debug!(
@@ -29,21 +26,23 @@ pub fn sys_rt_sigprocmask(
     if sigset_size != 8 {
         error!("sigset size is not equal to 8");
     }
-    do_rt_sigprocmask(mask_op, set_ptr, oldset_ptr).unwrap();
+    do_rt_sigprocmask(mask_op, set_ptr, oldset_ptr, ctx).unwrap();
     Ok(SyscallReturn::Return(0))
 }
 
-fn do_rt_sigprocmask(mask_op: MaskOp, set_ptr: Vaddr, oldset_ptr: Vaddr) -> Result<()> {
-    let current_thread = current_thread!();
-    let posix_thread = current_thread.as_posix_thread().unwrap();
-
-    let old_sig_mask_value = posix_thread.sig_mask().load(Ordering::Relaxed);
+fn do_rt_sigprocmask(
+    mask_op: MaskOp,
+    set_ptr: Vaddr,
+    oldset_ptr: Vaddr,
+    ctx: &Context,
+) -> Result<()> {
+    let old_sig_mask_value = ctx.posix_thread.sig_mask().load(Ordering::Relaxed);
     debug!("old sig mask value: 0x{:x}", old_sig_mask_value);
     if oldset_ptr != 0 {
         CurrentUserSpace::get().write_val(oldset_ptr, &old_sig_mask_value)?;
     }
 
-    let sig_mask_ref = posix_thread.sig_mask();
+    let sig_mask_ref = ctx.posix_thread.sig_mask();
     if set_ptr != 0 {
         let mut read_mask = CurrentUserSpace::get().read_val::<SigMask>(set_ptr)?;
         match mask_op {
