@@ -3,12 +3,7 @@
 use super::SyscallReturn;
 use crate::{device, prelude::*};
 
-pub fn sys_getrandom(
-    buf: Vaddr,
-    count: usize,
-    flags: u32,
-    _ctx: &Context,
-) -> Result<SyscallReturn> {
+pub fn sys_getrandom(buf: Vaddr, count: usize, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     let flags = GetRandomFlags::from_bits_truncate(flags);
     debug!(
         "buf = 0x{:x}, count = 0x{:x}, flags = {:?}",
@@ -22,7 +17,8 @@ pub fn sys_getrandom(
     } else {
         device::Urandom::getrandom(&mut buffer)?
     };
-    CurrentUserSpace::get().write_bytes(buf, &mut VmReader::from(buffer.as_slice()))?;
+    ctx.get_user_space()
+        .write_bytes(buf, &mut VmReader::from(buffer.as_slice()))?;
     Ok(SyscallReturn::Return(read_len as isize))
 }
 

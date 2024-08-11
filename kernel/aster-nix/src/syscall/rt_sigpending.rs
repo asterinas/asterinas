@@ -28,6 +28,7 @@ fn do_rt_sigpending(set_ptr: Vaddr, ctx: &Context) -> Result<()> {
         sig_mask_value & sig_pending_value
     };
 
-    CurrentUserSpace::get().write_val(set_ptr, &u64::from(combined_signals))?;
+    ctx.get_user_space()
+        .write_val(set_ptr, &u64::from(combined_signals))?;
     Ok(())
 }

@@ -57,7 +57,9 @@ fn do_clock_nanosleep(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let request_time = {
-        let timespec = CurrentUserSpace::get().read_val::<timespec_t>(request_timespec_addr)?;
+        let timespec = ctx
+            .get_user_space()
+            .read_val::<timespec_t>(request_timespec_addr)?;
         Duration::try_from(timespec)?
     };
 
@@ -94,7 +96,8 @@ fn do_clock_nanosleep(
             if remain_timespec_addr != 0 && !is_abs_time {
                 let remaining_duration = (start_time + timeout) - end_time;
                 let remaining_timespec = timespec_t::from(remaining_duration);
-                CurrentUserSpace::get().write_val(remain_timespec_addr, &remaining_timespec)?;
+                ctx.get_user_space()
+                    .write_val(remain_timespec_addr, &remaining_timespec)?;
             }
 
             return_errno_with_message!(Errno::EINTR, "sleep was interrupted");

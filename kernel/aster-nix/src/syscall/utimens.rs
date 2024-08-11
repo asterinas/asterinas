@@ -30,7 +30,7 @@ pub fn sys_utimensat(
         dirfd, pathname_ptr, timespecs_ptr, flags
     );
     let times = if timespecs_ptr != 0 {
-        let (autime, mutime) = read_time_from_user::<timespec_t>(timespecs_ptr)?;
+        let (autime, mutime) = read_time_from_user::<timespec_t>(timespecs_ptr, ctx)?;
         if autime.is_utime_omit() && mutime.is_utime_omit() {
             return Ok(SyscallReturn::Return(0));
         }
@@ -78,7 +78,7 @@ pub fn sys_utime(pathname_ptr: Vaddr, utimbuf_ptr: Vaddr, ctx: &Context) -> Resu
         pathname_ptr, utimbuf_ptr
     );
     let times = if utimbuf_ptr != 0 {
-        let utimbuf = CurrentUserSpace::get().read_val::<Utimbuf>(utimbuf_ptr)?;
+        let utimbuf = ctx.get_user_space().read_val::<Utimbuf>(utimbuf_ptr)?;
         let atime = timespec_t {
             sec: utimbuf.actime,
             nsec: 0,
@@ -160,7 +160,9 @@ fn do_utimes(
     let pathname = if pathname_ptr == 0 {
         String::new()
     } else {
-        let cstring = CurrentUserSpace::get().read_cstring(pathname_ptr, MAX_FILENAME_LEN)?;
+        let cstring = ctx
+            .get_user_space()
+            .read_cstring(pathname_ptr, MAX_FILENAME_LEN)?;
         cstring.to_string_lossy().into_owned()
     };
     let dentry = {
@@ -186,7 +188,7 @@ fn do_futimesat(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let times = if timeval_ptr != 0 {
-        let (autime, mutime) = read_time_from_user::<timeval_t>(timeval_ptr)?;
+        let (autime, mutime) = read_time_from_user::<timeval_t>(timeval_ptr, ctx)?;
         if autime.usec >= 1000000 || autime.usec < 0 || mutime.usec >= 1000000 || mutime.usec < 0 {
             return_errno_with_message!(Errno::EINVAL, "Invalid time");
         }
@@ -201,9 +203,9 @@ fn do_futimesat(
     do_utimes(dirfd, pathname_ptr, times, 0, ctx)
 }
 
-fn read_time_from_user<T: Pod>(time_ptr: Vaddr) -> Result<(T, T)> {
+fn read_time_from_user<T: Pod>(time_ptr: Vaddr, ctx: &Context) -> Result<(T, T)> {
     let mut time_addr = time_ptr;
-    let user_space = CurrentUserSpace::get();
+    let user_space = ctx.get_user_space();
     let autime = user_space.read_val::<T>(time_addr)?;
     time_addr += core::mem::size_of::<T>();
     let mutime = user_space.read_val::<T>(time_addr)?;

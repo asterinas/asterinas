@@ -25,7 +25,7 @@ pub fn sys_mount(
     data: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let user_space = CurrentUserSpace::get();
+    let user_space = ctx.get_user_space();
     let devname = user_space.read_cstring(devname_addr, MAX_FILENAME_LEN)?;
     let dirname = user_space.read_cstring(dirname_addr, MAX_FILENAME_LEN)?;
     let mount_flags = MountFlags::from_bits_truncate(flags as u32);
@@ -63,7 +63,7 @@ pub fn sys_mount(
     } else if mount_flags.contains(MountFlags::MS_MOVE) {
         do_move_mount_old(devname, dst_dentry, ctx)?;
     } else {
-        do_new_mount(devname, fstype_addr, dst_dentry)?;
+        do_new_mount(devname, fstype_addr, dst_dentry, ctx)?;
     }
 
     Ok(SyscallReturn::Return(0))
@@ -132,12 +132,19 @@ fn do_move_mount_old(src_name: CString, dst_dentry: Arc<Dentry>, ctx: &Context) 
 }
 
 /// Mount a new filesystem.
-fn do_new_mount(devname: CString, fs_type: Vaddr, target_dentry: Arc<Dentry>) -> Result<()> {
+fn do_new_mount(
+    devname: CString,
+    fs_type: Vaddr,
+    target_dentry: Arc<Dentry>,
+    ctx: &Context,
+) -> Result<()> {
     if target_dentry.type_() != InodeType::Dir {
         return_errno_with_message!(Errno::ENOTDIR, "mountpoint must be directory");
     };
 
-    let fs_type = CurrentUserSpace::get().read_cstring(fs_type, MAX_FILENAME_LEN)?;
+    let fs_type = ctx
+        .get_user_space()
+        .read_cstring(fs_type, MAX_FILENAME_LEN)?;
     if fs_type.is_empty() {
         return_errno_with_message!(Errno::EINVAL, "fs_type is empty");
     }

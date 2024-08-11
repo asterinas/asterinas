@@ -17,7 +17,9 @@ pub fn sys_mkdirat(
     mode: u16,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let path = CurrentUserSpace::get().read_cstring(path_addr, MAX_FILENAME_LEN)?;
+    let path = ctx
+        .get_user_space()
+        .read_cstring(path_addr, MAX_FILENAME_LEN)?;
     debug!("dirfd = {}, path = {:?}, mode = {}", dirfd, path, mode);
 
     let current = ctx.process;

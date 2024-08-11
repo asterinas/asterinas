@@ -12,7 +12,7 @@ use crate::{
 };
 
 pub fn sys_statfs(path_ptr: Vaddr, statfs_buf_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
-    let user_space = CurrentUserSpace::get();
+    let user_space = ctx.get_user_space();
     let path = user_space.read_cstring(path_ptr, PATH_MAX)?;
     debug!("path = {:?}, statfs_buf_ptr = 0x{:x}", path, statfs_buf_ptr,);
 
@@ -36,7 +36,7 @@ pub fn sys_fstatfs(fd: FileDesc, statfs_buf_ptr: Vaddr, ctx: &Context) -> Result
         .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;
     let dentry = inode_handle.dentry();
     let statfs = Statfs::from(dentry.fs().sb());
-    CurrentUserSpace::get().write_val(statfs_buf_ptr, &statfs)?;
+    ctx.get_user_space().write_val(statfs_buf_ptr, &statfs)?;
     Ok(SyscallReturn::Return(0))
 }
 

@@ -21,10 +21,10 @@ pub fn sys_prlimit64(
     let mut resource_limits = ctx.process.resource_limits().lock();
     if old_rlim_addr != 0 {
         let rlimit = resource_limits.get_rlimit(resource);
-        CurrentUserSpace::get().write_val(old_rlim_addr, rlimit)?;
+        ctx.get_user_space().write_val(old_rlim_addr, rlimit)?;
     }
     if new_rlim_addr != 0 {
-        let new_rlimit = CurrentUserSpace::get().read_val(new_rlim_addr)?;
+        let new_rlimit = ctx.get_user_space().read_val(new_rlim_addr)?;
         *resource_limits.get_rlimit_mut(resource) = new_rlimit;
     }
     Ok(SyscallReturn::Return(0))

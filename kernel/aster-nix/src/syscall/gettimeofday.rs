@@ -10,7 +10,7 @@ use crate::{
 // Glibc sets the timezone_addr argument to NULL, so just ignore it.
 pub fn sys_gettimeofday(
     timeval_addr: Vaddr,
-    /* timezone_addr: Vaddr */ _ctx: &Context,
+    /* timezone_addr: Vaddr, */ ctx: &Context,
 ) -> Result<SyscallReturn> {
     if timeval_addr == 0 {
         return Ok(SyscallReturn::Return(0));
@@ -21,7 +21,7 @@ pub fn sys_gettimeofday(
         let time_duration = now.duration_since(&SystemTime::UNIX_EPOCH)?;
         timeval_t::from(time_duration)
     };
-    CurrentUserSpace::get().write_val(timeval_addr, &time_val)?;
+    ctx.get_user_space().write_val(timeval_addr, &time_val)?;
 
     Ok(SyscallReturn::Return(0))
 }

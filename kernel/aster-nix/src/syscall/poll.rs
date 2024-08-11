@@ -6,7 +6,7 @@ use super::SyscallReturn;
 use crate::{events::IoEvents, fs::file_table::FileDesc, prelude::*, process::signal::Poller};
 
 pub fn sys_poll(fds: Vaddr, nfds: u64, timeout: i32, ctx: &Context) -> Result<SyscallReturn> {
-    let user_space = CurrentUserSpace::get();
+    let user_space = ctx.get_user_space();
     let poll_fds = {
         let mut read_addr = fds;
         let mut poll_fds = Vec::with_capacity(nfds as _);

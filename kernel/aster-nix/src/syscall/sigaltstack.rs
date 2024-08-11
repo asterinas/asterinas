@@ -21,13 +21,17 @@ pub fn sys_sigaltstack(
         sig_stack.clone()
     };
 
-    get_old_stack(old_sig_stack_addr, old_stack.as_ref())?;
+    get_old_stack(old_sig_stack_addr, old_stack.as_ref(), ctx)?;
     set_new_stack(sig_stack_addr, old_stack.as_ref(), ctx)?;
 
     Ok(SyscallReturn::Return(0))
 }
 
-fn get_old_stack(old_sig_stack_addr: Vaddr, old_stack: Option<&SigStack>) -> Result<()> {
+fn get_old_stack(
+    old_sig_stack_addr: Vaddr,
+    old_stack: Option<&SigStack>,
+    ctx: &Context,
+) -> Result<()> {
     if old_sig_stack_addr == 0 {
         return Ok(());
     }
@@ -39,7 +43,7 @@ fn get_old_stack(old_sig_stack_addr: Vaddr, old_stack: Option<&SigStack>) -> Res
     debug!("old stack = {:?}", old_stack);
 
     let stack = stack_t::from(old_stack.clone());
-    CurrentUserSpace::get().write_val(old_sig_stack_addr, &stack)
+    ctx.get_user_space().write_val(old_sig_stack_addr, &stack)
 }
 
 fn set_new_stack(sig_stack_addr: Vaddr, old_stack: Option<&SigStack>, ctx: &Context) -> Result<()> {
@@ -54,7 +58,7 @@ fn set_new_stack(sig_stack_addr: Vaddr, old_stack: Option<&SigStack>, ctx: &Cont
     }
 
     let new_stack = {
-        let stack = CurrentUserSpace::get().read_val::<stack_t>(sig_stack_addr)?;
+        let stack = ctx.get_user_space().read_val::<stack_t>(sig_stack_addr)?;
         SigStack::try_from(stack)?
     };
 

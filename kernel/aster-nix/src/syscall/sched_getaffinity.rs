@@ -18,7 +18,7 @@ pub fn sys_sched_getaffinity(
     pid: Pid,
     cpuset_size: usize,
     cpu_set_ptr: Vaddr,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     let num_cpus = get_num_cpus();
 
@@ -41,7 +41,8 @@ pub fn sys_sched_getaffinity(
 
     let dummy_cpu_set = cpu_set_t::new(num_cpus);
 
-    CurrentUserSpace::get().write_val(cpu_set_ptr, &dummy_cpu_set)?;
+    ctx.get_user_space()
+        .write_val(cpu_set_ptr, &dummy_cpu_set)?;
 
     Ok(SyscallReturn::Return(0))
 }

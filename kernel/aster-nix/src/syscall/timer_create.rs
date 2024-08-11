@@ -51,7 +51,7 @@ pub fn sys_timer_create(
             })
         // Determine the timeout action through `sigevent`.
         } else {
-            let sig_event = CurrentUserSpace::get().read_val::<sigevent_t>(sigevent_addr)?;
+            let sig_event = ctx.get_user_space().read_val::<sigevent_t>(sigevent_addr)?;
             let sigev_notify = SigNotify::try_from(sig_event.sigev_notify)?;
             let signo = sig_event.sigev_signo;
             match sigev_notify {
@@ -146,7 +146,7 @@ pub fn sys_timer_create(
     };
 
     let timer_id = process_timer_manager.add_posix_timer(timer);
-    CurrentUserSpace::get().write_val(timer_id_addr, &timer_id)?;
+    ctx.get_user_space().write_val(timer_id_addr, &timer_id)?;
     Ok(SyscallReturn::Return(0))
 }
 

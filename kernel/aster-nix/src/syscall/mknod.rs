@@ -19,7 +19,9 @@ pub fn sys_mknodat(
     dev: usize,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let path = CurrentUserSpace::get().read_cstring(path_addr, MAX_FILENAME_LEN)?;
+    let path = ctx
+        .get_user_space()
+        .read_cstring(path_addr, MAX_FILENAME_LEN)?;
     let current = ctx.process;
     let inode_mode = {
         let mask_mode = mode & !current.umask().read().get();

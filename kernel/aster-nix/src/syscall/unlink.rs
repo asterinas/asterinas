@@ -22,7 +22,9 @@ pub fn sys_unlinkat(
         return super::rmdir::sys_rmdirat(dirfd, path_addr, ctx);
     }
 
-    let path = CurrentUserSpace::get().read_cstring(path_addr, MAX_FILENAME_LEN)?;
+    let path = ctx
+        .get_user_space()
+        .read_cstring(path_addr, MAX_FILENAME_LEN)?;
     debug!("dirfd = {}, path = {:?}", dirfd, path);
 
     let (dir_dentry, name) = {
