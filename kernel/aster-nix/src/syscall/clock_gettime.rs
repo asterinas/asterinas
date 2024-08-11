@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(non_camel_case_types)]
 use core::time::Duration;
 
 use int_to_c_enum::TryFromInt;
@@ -34,6 +33,7 @@ pub fn sys_clock_gettime(clockid: clockid_t, timespec_addr: Vaddr) -> Result<Sys
 // The hard-coded clock IDs.
 #[derive(Debug, Copy, Clone, TryFromInt, PartialEq)]
 #[repr(i32)]
+#[allow(non_camel_case_types)]
 pub enum ClockId {
     CLOCK_REALTIME = 0,
     CLOCK_MONOTONIC = 1,

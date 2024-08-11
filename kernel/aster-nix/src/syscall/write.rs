@@ -1,12 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-
 use super::SyscallReturn;
 use crate::{fs::file_table::FileDesc, prelude::*};
-
-const STDOUT: u64 = 1;
-const STDERR: u64 = 2;
 
 pub fn sys_write(fd: FileDesc, user_buf_ptr: Vaddr, user_buf_len: usize) -> Result<SyscallReturn> {
     debug!(

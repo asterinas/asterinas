@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 use super::SyscallReturn;
 use crate::{
     prelude::*,
@@ -85,7 +82,9 @@ pub enum PrctlCmd {
     PR_GET_PDEATHSIG(Vaddr),
     PR_SET_NAME(Vaddr),
     PR_GET_NAME(Vaddr),
+    #[allow(dead_code)]
     PR_SET_TIMERSLACK(u64),
+    #[allow(dead_code)]
     PR_GET_TIMERSLACK,
     PR_SET_DUMPABLE(Dumpable),
     PR_GET_DUMPABLE,
@@ -100,7 +99,7 @@ pub enum Dumpable {
 }
 
 impl PrctlCmd {
-    fn from_args(option: i32, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> Result<PrctlCmd> {
+    fn from_args(option: i32, arg2: u64, _arg3: u64, _arg4: u64, _arg5: u64) -> Result<PrctlCmd> {
         match option {
             PR_SET_PDEATHSIG => {
                 let signum = SigNum::try_from(arg2 as u8)?;

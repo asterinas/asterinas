@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-
 use super::SyscallReturn;
 use crate::{
     prelude::*,
@@ -111,5 +109,6 @@ impl From<SigStack> for stack_t {
     }
 }
 
+#[allow(unused)]
 const SIGSTKSZ: usize = 8192;
 const MINSTKSZ: usize = 2048;

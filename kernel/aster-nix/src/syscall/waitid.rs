@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(unused_variables)]
-
 use super::SyscallReturn;
 use crate::{
     prelude::*,
@@ -11,9 +9,9 @@ use crate::{
 pub fn sys_waitid(
     which: u64,
     upid: u64,
-    infoq_addr: u64,
+    _infoq_addr: u64,
     options: u64,
-    rusage_addr: u64,
+    _rusage_addr: u64,
 ) -> Result<SyscallReturn> {
     // FIXME: what does infoq and rusage use for?
     let process_filter = ProcessFilter::from_which_and_id(which, upid);
