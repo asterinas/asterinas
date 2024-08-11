@@ -21,7 +21,7 @@ pub fn sys_epoll_create(size: i32, ctx: &Context) -> Result<SyscallReturn> {
     sys_epoll_create1(0, ctx)
 }
 
-pub fn sys_epoll_create1(flags: u32, _ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_epoll_create1(flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("flags = 0x{:x}", flags);
 
     let fd_flags = {
@@ -37,9 +37,8 @@ pub fn sys_epoll_create1(flags: u32, _ctx: &Context) -> Result<SyscallReturn> {
         }
     };
 
-    let current = current!();
     let epoll_file: Arc<EpollFile> = EpollFile::new();
-    let mut file_table = current.file_table().lock();
+    let mut file_table = ctx.process.file_table().lock();
     let fd = file_table.insert(epoll_file, fd_flags);
     Ok(SyscallReturn::Return(fd as _))
 }
@@ -49,7 +48,7 @@ pub fn sys_epoll_ctl(
     op: i32,
     fd: FileDesc,
     event_addr: Vaddr,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
         "epfd = {}, op = {}, fd = {}, event_addr = 0x{:x}",
@@ -77,9 +76,8 @@ pub fn sys_epoll_ctl(
         _ => return_errno_with_message!(Errno::EINVAL, "invalid op"),
     };
 
-    let current = current!();
     let file = {
-        let file_table = current.file_table().lock();
+        let file_table = ctx.process.file_table().lock();
         file_table.get_file(epfd)?.clone()
     };
     let epoll_file = file
@@ -90,7 +88,12 @@ pub fn sys_epoll_ctl(
     Ok(SyscallReturn::Return(0 as _))
 }
 
-fn do_epoll_wait(epfd: FileDesc, max_events: i32, timeout: i32) -> Result<Vec<EpollEvent>> {
+fn do_epoll_wait(
+    epfd: FileDesc,
+    max_events: i32,
+    timeout: i32,
+    ctx: &Context,
+) -> Result<Vec<EpollEvent>> {
     let max_events = {
         if max_events <= 0 {
             return_errno_with_message!(Errno::EINVAL, "max_events is not positive");
@@ -103,8 +106,7 @@ fn do_epoll_wait(epfd: FileDesc, max_events: i32, timeout: i32) -> Result<Vec<Ep
         None
     };
 
-    let current = current!();
-    let file_table = current.file_table().lock();
+    let file_table = ctx.process.file_table().lock();
     let epoll_file = file_table
         .get_file(epfd)?
         .downcast_ref::<EpollFile>()
@@ -129,14 +131,14 @@ pub fn sys_epoll_wait(
     events_addr: Vaddr,
     max_events: i32,
     timeout: i32,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
         "epfd = {}, events_addr = 0x{:x}, max_events = {}, timeout = {:?}",
         epfd, events_addr, max_events, timeout
     );
 
-    let epoll_events = do_epoll_wait(epfd, max_events, timeout)?;
+    let epoll_events = do_epoll_wait(epfd, max_events, timeout, ctx)?;
 
     // Write back
     let mut write_addr = events_addr;
@@ -184,7 +186,7 @@ pub fn sys_epoll_pwait(
     timeout: i32,
     sigmask: Vaddr,
     sigset_size: usize,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
         "epfd = {}, events_addr = 0x{:x}, max_events = {}, timeout = {:?}, sigmask = 0x{:x}, sigset_size = {}",
@@ -197,7 +199,7 @@ pub fn sys_epoll_pwait(
 
     let old_sig_mask_value = set_signal_mask(sigmask)?;
 
-    let ready_events = match do_epoll_wait(epfd, max_events, timeout) {
+    let ready_events = match do_epoll_wait(epfd, max_events, timeout, ctx) {
         Ok(events) => {
             restore_signal_mask(old_sig_mask_value);
             events

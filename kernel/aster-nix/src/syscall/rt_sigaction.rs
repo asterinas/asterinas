@@ -11,7 +11,7 @@ pub fn sys_rt_sigaction(
     sig_action_addr: Vaddr,
     old_sig_action_addr: Vaddr,
     sigset_size: u64,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     let sig_num = SigNum::try_from(sig_num)?;
     debug!(
@@ -21,8 +21,7 @@ pub fn sys_rt_sigaction(
         old_sig_action_addr,
         sigset_size
     );
-    let current = current!();
-    let mut sig_dispositions = current.sig_dispositions().lock();
+    let mut sig_dispositions = ctx.process.sig_dispositions().lock();
     let old_action = sig_dispositions.get(sig_num);
     let old_action_c = old_action.as_c_type();
     if old_sig_action_addr != 0 {

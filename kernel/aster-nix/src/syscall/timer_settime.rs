@@ -13,7 +13,7 @@ pub fn sys_timer_settime(
     flags: i32,
     new_itimerspec_addr: Vaddr,
     old_itimerspec_addr: Vaddr,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     if new_itimerspec_addr == 0 {
         return_errno_with_message!(Errno::EINVAL, "invalid pointer to new value");
@@ -24,8 +24,7 @@ pub fn sys_timer_settime(
     let interval = Duration::try_from(new_itimerspec.it_interval)?;
     let expire_time = Duration::try_from(new_itimerspec.it_value)?;
 
-    let current_process = current!();
-    let Some(timer) = current_process.timer_manager().find_posix_timer(timer_id) else {
+    let Some(timer) = ctx.process.timer_manager().find_posix_timer(timer_id) else {
         return_errno_with_message!(Errno::EINVAL, "invalid timer ID");
     };
 
@@ -60,13 +59,12 @@ pub fn sys_timer_settime(
 pub fn sys_timer_gettime(
     timer_id: usize,
     itimerspec_addr: Vaddr,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     if itimerspec_addr == 0 {
         return_errno_with_message!(Errno::EINVAL, "invalid pointer to return value");
     }
-    let current_process = current!();
-    let Some(timer) = current_process.timer_manager().find_posix_timer(timer_id) else {
+    let Some(timer) = ctx.process.timer_manager().find_posix_timer(timer_id) else {
         return_errno_with_message!(Errno::EINVAL, "invalid timer ID");
     };
 

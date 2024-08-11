@@ -3,12 +3,11 @@
 use super::SyscallReturn;
 use crate::{fs::file_table::FileDesc, prelude::*};
 
-pub fn sys_close(fd: FileDesc, _ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_close(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}", fd);
 
     let file = {
-        let current = current!();
-        let mut file_table = current.file_table().lock();
+        let mut file_table = ctx.process.file_table().lock();
         let _ = file_table.get_file(fd)?;
         file_table.close_file(fd).unwrap()
     };

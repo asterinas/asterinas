@@ -9,8 +9,8 @@ use crate::{
     sched::nice::Nice,
 };
 
-pub fn sys_set_priority(which: i32, who: u32, prio: i32, _ctx: &Context) -> Result<SyscallReturn> {
-    let prio_target = PriorityTarget::new(which, who)?;
+pub fn sys_set_priority(which: i32, who: u32, prio: i32, ctx: &Context) -> Result<SyscallReturn> {
+    let prio_target = PriorityTarget::new(which, who, ctx)?;
     let new_nice = {
         let norm_prio = prio.clamp(i8::MIN as i32, i8::MAX as i32) as i8;
         Nice::new(norm_prio)
@@ -29,8 +29,8 @@ pub fn sys_set_priority(which: i32, who: u32, prio: i32, _ctx: &Context) -> Resu
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_get_priority(which: i32, who: u32, _ctx: &Context) -> Result<SyscallReturn> {
-    let prio_target = PriorityTarget::new(which, who)?;
+pub fn sys_get_priority(which: i32, who: u32, ctx: &Context) -> Result<SyscallReturn> {
+    let prio_target = PriorityTarget::new(which, who, ctx)?;
     debug!("get_priority prio_target: {:?}", prio_target);
 
     let processes = get_processes(prio_target)?;
@@ -98,13 +98,13 @@ enum PriorityTarget {
 }
 
 impl PriorityTarget {
-    fn new(which: i32, who: u32) -> Result<Self> {
+    fn new(which: i32, who: u32, ctx: &Context) -> Result<Self> {
         let which = Which::try_from(which)
             .map_err(|_| Error::with_message(Errno::EINVAL, "invalid which value"))?;
         Ok(match which {
             Which::PRIO_PROCESS => {
                 let pid = if who == 0 {
-                    current!().pid()
+                    ctx.process.pid()
                 } else {
                     who as Pid
                 };
@@ -112,7 +112,7 @@ impl PriorityTarget {
             }
             Which::PRIO_PGRP => {
                 let pgid = if who == 0 {
-                    current!().pgid()
+                    ctx.process.pgid()
                 } else {
                     who as Pgid
                 };
@@ -120,11 +120,7 @@ impl PriorityTarget {
             }
             Which::PRIO_USER => {
                 let uid = if who == 0 {
-                    current_thread!()
-                        .as_posix_thread()
-                        .unwrap()
-                        .credentials()
-                        .ruid()
+                    ctx.posix_thread.credentials().ruid()
                 } else {
                     Uid::new(who)
                 };

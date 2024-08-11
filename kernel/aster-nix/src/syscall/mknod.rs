@@ -17,10 +17,10 @@ pub fn sys_mknodat(
     path_addr: Vaddr,
     mode: u16,
     dev: usize,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     let path = CurrentUserSpace::get().read_cstring(path_addr, MAX_FILENAME_LEN)?;
-    let current = current!();
+    let current = ctx.process;
     let inode_mode = {
         let mask_mode = mode & !current.umask().read().get();
         InodeMode::from_bits_truncate(mask_mode)

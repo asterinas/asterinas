@@ -25,7 +25,6 @@ pub fn sys_unlinkat(
     let path = CurrentUserSpace::get().read_cstring(path_addr, MAX_FILENAME_LEN)?;
     debug!("dirfd = {}, path = {:?}", dirfd, path);
 
-    let current = current!();
     let (dir_dentry, name) = {
         let path = path.to_string_lossy();
         if path.is_empty() {
@@ -35,7 +34,7 @@ pub fn sys_unlinkat(
             return_errno_with_message!(Errno::EISDIR, "unlink on directory");
         }
         let fs_path = FsPath::new(dirfd, path.as_ref())?;
-        current.fs().read().lookup_dir_and_base_name(&fs_path)?
+        ctx.process.fs().read().lookup_dir_and_base_name(&fs_path)?
     };
     dir_dentry.unlink(&name)?;
     Ok(SyscallReturn::Return(0))

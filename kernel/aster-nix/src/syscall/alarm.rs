@@ -5,11 +5,10 @@ use core::time::Duration;
 use super::SyscallReturn;
 use crate::{prelude::*, time::timer::Timeout};
 
-pub fn sys_alarm(seconds: u32, _ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_alarm(seconds: u32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("seconds = {}", seconds);
 
-    let current = current!();
-    let alarm_timer = current.timer_manager().alarm_timer();
+    let alarm_timer = ctx.process.timer_manager().alarm_timer();
 
     let remaining = alarm_timer.remain();
     let mut remaining_secs = remaining.as_secs();

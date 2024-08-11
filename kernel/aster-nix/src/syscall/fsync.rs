@@ -6,12 +6,11 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_fsync(fd: FileDesc, _ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_fsync(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}", fd);
 
     let dentry = {
-        let current = current!();
-        let file_table = current.file_table().lock();
+        let file_table = ctx.process.file_table().lock();
         let file = file_table.get_file(fd)?;
         let inode_handle = file
             .downcast_ref::<InodeHandle>()
@@ -22,12 +21,11 @@ pub fn sys_fsync(fd: FileDesc, _ctx: &Context) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_fdatasync(fd: FileDesc, _ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_fdatasync(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}", fd);
 
     let dentry = {
-        let current = current!();
-        let file_table = current.file_table().lock();
+        let file_table = ctx.process.file_table().lock();
         let file = file_table.get_file(fd)?;
         let inode_handle = file
             .downcast_ref::<InodeHandle>()

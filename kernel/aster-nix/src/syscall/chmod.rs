@@ -10,11 +10,10 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_fchmod(fd: FileDesc, mode: u16, _ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_fchmod(fd: FileDesc, mode: u16, ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}, mode = 0o{:o}", fd, mode);
 
-    let current = current!();
-    let file_table = current.file_table().lock();
+    let file_table = ctx.process.file_table().lock();
     let file = file_table.get_file(fd)?;
     file.set_mode(InodeMode::from_bits_truncate(mode))?;
     Ok(SyscallReturn::Return(0))
@@ -30,19 +29,18 @@ pub fn sys_fchmodat(
     path_ptr: Vaddr,
     mode: u16,
     /* flags: u32, */
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     let path = CurrentUserSpace::get().read_cstring(path_ptr, PATH_MAX)?;
     debug!("dirfd = {}, path = {:?}, mode = 0o{:o}", dirfd, path, mode,);
 
-    let current = current!();
     let dentry = {
         let path = path.to_string_lossy();
         if path.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "path is empty");
         }
         let fs_path = FsPath::new(dirfd, path.as_ref())?;
-        current.fs().read().lookup(&fs_path)?
+        ctx.process.fs().read().lookup(&fs_path)?
     };
     dentry.set_mode(InodeMode::from_bits_truncate(mode))?;
     Ok(SyscallReturn::Return(0))

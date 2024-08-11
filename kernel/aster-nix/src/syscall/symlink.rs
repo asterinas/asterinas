@@ -15,7 +15,7 @@ pub fn sys_symlinkat(
     target_addr: Vaddr,
     dirfd: FileDesc,
     linkpath_addr: Vaddr,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     let user_space = CurrentUserSpace::get();
     let target = user_space.read_cstring(target_addr, MAX_FILENAME_LEN)?;
@@ -25,7 +25,6 @@ pub fn sys_symlinkat(
         target, dirfd, linkpath
     );
 
-    let current = current!();
     let target = target.to_string_lossy();
     if target.is_empty() {
         return_errno_with_message!(Errno::ENOENT, "target is empty");
@@ -36,7 +35,7 @@ pub fn sys_symlinkat(
             return_errno_with_message!(Errno::ENOENT, "linkpath is empty");
         }
         let fs_path = FsPath::new(dirfd, linkpath.as_ref())?;
-        current
+        ctx.process
             .fs()
             .read()
             .lookup_dir_and_new_basename(&fs_path, false)?

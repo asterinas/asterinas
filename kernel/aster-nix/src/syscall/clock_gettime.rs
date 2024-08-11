@@ -22,11 +22,11 @@ use crate::{
 pub fn sys_clock_gettime(
     clockid: clockid_t,
     timespec_addr: Vaddr,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!("clockid = {:?}", clockid);
 
-    let time_duration = read_clock(clockid)?;
+    let time_duration = read_clock(clockid, ctx)?;
 
     let timespec = timespec_t::from(time_duration);
     CurrentUserSpace::get().write_val(timespec_addr, &timespec)?;
@@ -109,7 +109,7 @@ pub enum DynamicClockType {
 /// Reads the time of a clock specified by the input clock ID.
 ///
 /// If the clock ID does not support, this function will return `Err`.
-pub fn read_clock(clockid: clockid_t) -> Result<Duration> {
+pub fn read_clock(clockid: clockid_t, ctx: &Context) -> Result<Duration> {
     if clockid >= 0 {
         let clock_id = ClockId::try_from(clockid)?;
         match clock_id {
@@ -119,14 +119,8 @@ pub fn read_clock(clockid: clockid_t) -> Result<Duration> {
             ClockId::CLOCK_REALTIME_COARSE => Ok(RealTimeCoarseClock::get().read_time()),
             ClockId::CLOCK_MONOTONIC_COARSE => Ok(MonotonicCoarseClock::get().read_time()),
             ClockId::CLOCK_BOOTTIME => Ok(BootTimeClock::get().read_time()),
-            ClockId::CLOCK_PROCESS_CPUTIME_ID => {
-                let process = current!();
-                Ok(process.prof_clock().read_time())
-            }
-            ClockId::CLOCK_THREAD_CPUTIME_ID => {
-                let thread = current_thread!();
-                Ok(thread.as_posix_thread().unwrap().prof_clock().read_time())
-            }
+            ClockId::CLOCK_PROCESS_CPUTIME_ID => Ok(ctx.process.prof_clock().read_time()),
+            ClockId::CLOCK_THREAD_CPUTIME_ID => Ok(ctx.posix_thread.prof_clock().read_time()),
         }
     } else {
         let dynamic_clockid_info = DynamicClockIdInfo::try_from(clockid)?;

@@ -11,7 +11,7 @@ use crate::{
     process::{Gid, Uid},
 };
 
-pub fn sys_fchown(fd: FileDesc, uid: i32, gid: i32, _ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_fchown(fd: FileDesc, uid: i32, gid: i32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}, uid = {}, gid = {}", fd, uid, gid);
 
     let uid = to_optional_id(uid, Uid::new)?;
@@ -20,8 +20,7 @@ pub fn sys_fchown(fd: FileDesc, uid: i32, gid: i32, _ctx: &Context) -> Result<Sy
         return Ok(SyscallReturn::Return(0));
     }
 
-    let current = current!();
-    let file_table = current.file_table().lock();
+    let file_table = ctx.process.file_table().lock();
     let file = file_table.get_file(fd)?;
     if let Some(uid) = uid {
         file.set_owner(uid)?;
@@ -76,11 +75,10 @@ pub fn sys_fchownat(
         return Ok(SyscallReturn::Return(0));
     }
 
-    let current = current!();
     let dentry = {
         let path = path.to_string_lossy();
         let fs_path = FsPath::new(dirfd, path.as_ref())?;
-        let fs = current.fs().read();
+        let fs = ctx.process.fs().read();
         if flags.contains(ChownFlags::AT_SYMLINK_NOFOLLOW) {
             fs.lookup_no_follow(&fs_path)?
         } else {

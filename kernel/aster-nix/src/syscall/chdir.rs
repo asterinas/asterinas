@@ -7,12 +7,11 @@ use crate::{
     syscall::constants::MAX_FILENAME_LEN,
 };
 
-pub fn sys_chdir(path_ptr: Vaddr, _ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_chdir(path_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     let path = CurrentUserSpace::get().read_cstring(path_ptr, MAX_FILENAME_LEN)?;
     debug!("path = {:?}", path);
 
-    let current = current!();
-    let mut fs = current.fs().write();
+    let mut fs = ctx.process.fs().write();
     let dentry = {
         let path = path.to_string_lossy();
         if path.is_empty() {
@@ -28,12 +27,11 @@ pub fn sys_chdir(path_ptr: Vaddr, _ctx: &Context) -> Result<SyscallReturn> {
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_fchdir(fd: FileDesc, _ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_fchdir(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}", fd);
 
-    let current = current!();
     let dentry = {
-        let file_table = current.file_table().lock();
+        let file_table = ctx.process.file_table().lock();
         let file = file_table.get_file(fd)?;
         let inode_handle = file
             .downcast_ref::<InodeHandle>()
@@ -43,6 +41,6 @@ pub fn sys_fchdir(fd: FileDesc, _ctx: &Context) -> Result<SyscallReturn> {
     if dentry.type_() != InodeType::Dir {
         return_errno_with_message!(Errno::ENOTDIR, "must be directory");
     }
-    current.fs().write().set_cwd(dentry);
+    ctx.process.fs().write().set_cwd(dentry);
     Ok(SyscallReturn::Return(0))
 }

@@ -7,9 +7,9 @@ pub fn sys_writev(
     fd: FileDesc,
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let res = do_sys_writev(fd, io_vec_ptr, io_vec_count)?;
+    let res = do_sys_writev(fd, io_vec_ptr, io_vec_count, ctx)?;
     Ok(SyscallReturn::Return(res as _))
 }
 
@@ -18,9 +18,9 @@ pub fn sys_pwritev(
     io_vec_ptr: Vaddr,
     io_vec_count: usize,
     offset: i64,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let res = do_sys_pwritev(fd, io_vec_ptr, io_vec_count, offset, RWFFlag::empty())?;
+    let res = do_sys_pwritev(fd, io_vec_ptr, io_vec_count, offset, RWFFlag::empty(), ctx)?;
     Ok(SyscallReturn::Return(res as _))
 }
 
@@ -30,16 +30,16 @@ pub fn sys_pwritev2(
     io_vec_count: usize,
     offset: i64,
     flags: u32,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     let flags = match RWFFlag::from_bits(flags) {
         Some(flags) => flags,
         None => return_errno_with_message!(Errno::EINVAL, "invalid flags"),
     };
     let res = if offset == -1 {
-        do_sys_writev(fd, io_vec_ptr, io_vec_count)?
+        do_sys_writev(fd, io_vec_ptr, io_vec_count, ctx)?
     } else {
-        do_sys_pwritev(fd, io_vec_ptr, io_vec_count, offset, flags)?
+        do_sys_pwritev(fd, io_vec_ptr, io_vec_count, offset, flags, ctx)?
     };
     Ok(SyscallReturn::Return(res as _))
 }
@@ -50,6 +50,7 @@ fn do_sys_pwritev(
     io_vec_count: usize,
     offset: i64,
     _flags: RWFFlag,
+    ctx: &Context,
 ) -> Result<usize> {
     // TODO: Implement flags support
     debug!(
@@ -60,8 +61,7 @@ fn do_sys_pwritev(
         return_errno_with_message!(Errno::EINVAL, "offset cannot be negative");
     }
     let file = {
-        let current = current!();
-        let filetable = current.file_table().lock();
+        let filetable = ctx.process.file_table().lock();
         filetable.get_file(fd)?.clone()
     };
     // TODO: Check (f.file->f_mode & FMODE_PREAD); We don't have f_mode in our FileLike trait
@@ -110,14 +110,18 @@ fn do_sys_pwritev(
     Ok(total_len)
 }
 
-fn do_sys_writev(fd: FileDesc, io_vec_ptr: Vaddr, io_vec_count: usize) -> Result<usize> {
+fn do_sys_writev(
+    fd: FileDesc,
+    io_vec_ptr: Vaddr,
+    io_vec_count: usize,
+    ctx: &Context,
+) -> Result<usize> {
     debug!(
         "fd = {}, io_vec_ptr = 0x{:x}, io_vec_counter = 0x{:x}",
         fd, io_vec_ptr, io_vec_count
     );
     let file = {
-        let current = current!();
-        let filetable = current.file_table().lock();
+        let filetable = ctx.process.file_table().lock();
         filetable.get_file(fd)?.clone()
     };
     let mut total_len = 0;

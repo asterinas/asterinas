@@ -12,18 +12,17 @@ pub fn sys_fallocate(
     mode: u64,
     offset: i64,
     len: i64,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
         "fd = {}, mode = {}, offset = {}, len = {}",
         fd, mode, offset, len
     );
 
-    check_offset_and_len(offset, len)?;
+    check_offset_and_len(offset, len, ctx)?;
 
     let file = {
-        let current = current!();
-        let file_table = current.file_table().lock();
+        let file_table = ctx.process.file_table().lock();
         file_table.get_file(fd)?.clone()
     };
 
@@ -36,7 +35,7 @@ pub fn sys_fallocate(
     Ok(SyscallReturn::Return(0))
 }
 
-fn check_offset_and_len(offset: i64, len: i64) -> Result<()> {
+fn check_offset_and_len(offset: i64, len: i64, ctx: &Context) -> Result<()> {
     if offset < 0 || len <= 0 {
         return_errno_with_message!(
             Errno::EINVAL,
@@ -48,8 +47,7 @@ fn check_offset_and_len(offset: i64, len: i64) -> Result<()> {
     }
 
     let max_file_size = {
-        let current = current!();
-        let resource_limits = current.resource_limits().lock();
+        let resource_limits = ctx.process.resource_limits().lock();
         resource_limits
             .get_rlimit(ResourceType::RLIMIT_FSIZE)
             .get_cur() as usize

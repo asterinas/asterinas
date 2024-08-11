@@ -22,7 +22,7 @@ pub fn sys_setitimer(
     itimer_type: i32,
     new_itimerval_addr: Vaddr,
     old_itimerval_addr: Vaddr,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
         "itimer_type = {}, new_itimerval_addr = 0x{:x}, old_itimerval_addr = 0x{:x}, ",
@@ -32,13 +32,12 @@ pub fn sys_setitimer(
     if new_itimerval_addr == 0 {
         return_errno_with_message!(Errno::EINVAL, "invalid pointer to new value");
     }
-    let current = current!();
     let user_space = CurrentUserSpace::get();
     let new_itimerval = user_space.read_val::<itimerval_t>(new_itimerval_addr)?;
     let interval = Duration::from(new_itimerval.it_interval);
     let expire_time = Duration::from(new_itimerval.it_value);
 
-    let process_timer_manager = current.timer_manager();
+    let process_timer_manager = ctx.process.timer_manager();
     let timer = match ItimerType::try_from(itimer_type)? {
         ItimerType::ITIMER_REAL => process_timer_manager.alarm_timer(),
         ItimerType::ITIMER_VIRTUAL => process_timer_manager.virtual_timer(),
@@ -69,7 +68,7 @@ pub fn sys_setitimer(
 pub fn sys_getitimer(
     itimer_type: i32,
     itimerval_addr: Vaddr,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
         "itimer_type = {}, itimerval_addr = 0x{:x}",
@@ -80,8 +79,7 @@ pub fn sys_getitimer(
         return_errno_with_message!(Errno::EINVAL, "invalid pointer to itimerval");
     }
 
-    let current = current!();
-    let process_timer_manager = current.timer_manager();
+    let process_timer_manager = ctx.process.timer_manager();
     let timer = match ItimerType::try_from(itimer_type)? {
         ItimerType::ITIMER_REAL => process_timer_manager.alarm_timer(),
         ItimerType::ITIMER_VIRTUAL => process_timer_manager.virtual_timer(),

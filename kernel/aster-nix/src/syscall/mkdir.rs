@@ -15,12 +15,12 @@ pub fn sys_mkdirat(
     dirfd: FileDesc,
     path_addr: Vaddr,
     mode: u16,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     let path = CurrentUserSpace::get().read_cstring(path_addr, MAX_FILENAME_LEN)?;
     debug!("dirfd = {}, path = {:?}, mode = {}", dirfd, path, mode);
 
-    let current = current!();
+    let current = ctx.process;
     let (dir_dentry, name) = {
         let path = path.to_string_lossy();
         if path.is_empty() {

@@ -9,7 +9,7 @@ pub fn sys_read(
     fd: FileDesc,
     user_buf_addr: Vaddr,
     buf_len: usize,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
         "fd = {}, user_buf_ptr = 0x{:x}, buf_len = 0x{:x}",
@@ -17,8 +17,7 @@ pub fn sys_read(
     );
 
     let file = {
-        let current = current!();
-        let file_table = current.file_table().lock();
+        let file_table = ctx.process.file_table().lock();
         file_table.get_file(fd)?.clone()
     };
 

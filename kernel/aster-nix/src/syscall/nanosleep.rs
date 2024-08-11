@@ -12,7 +12,7 @@ use crate::{
 pub fn sys_nanosleep(
     request_timespec_addr: Vaddr,
     remain_timespec_addr: Vaddr,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     let clockid = ClockId::CLOCK_MONOTONIC;
 
@@ -21,6 +21,7 @@ pub fn sys_nanosleep(
         false,
         request_timespec_addr,
         remain_timespec_addr,
+        ctx,
     )
 }
 
@@ -29,7 +30,7 @@ pub fn sys_clock_nanosleep(
     flags: i32,
     request_timespec_addr: Vaddr,
     remain_timespec_addr: Vaddr,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     let is_abs_time = if flags == 0 {
         false
@@ -44,6 +45,7 @@ pub fn sys_clock_nanosleep(
         is_abs_time,
         request_timespec_addr,
         remain_timespec_addr,
+        ctx,
     )
 }
 
@@ -52,6 +54,7 @@ fn do_clock_nanosleep(
     is_abs_time: bool,
     request_timespec_addr: Vaddr,
     remain_timespec_addr: Vaddr,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     let request_time = {
         let timespec = CurrentUserSpace::get().read_val::<timespec_t>(request_timespec_addr)?;
@@ -63,7 +66,7 @@ fn do_clock_nanosleep(
         clockid, is_abs_time, request_time, remain_timespec_addr
     );
 
-    let start_time = read_clock(clockid)?;
+    let start_time = read_clock(clockid, ctx)?;
     let timeout = if is_abs_time {
         if request_time < start_time {
             return Ok(SyscallReturn::Return(0));
@@ -82,7 +85,7 @@ fn do_clock_nanosleep(
     match res {
         Err(e) if e.error() == Errno::ETIME => Ok(SyscallReturn::Return(0)),
         Err(e) if e.error() == Errno::EINTR => {
-            let end_time = read_clock(clockid)?;
+            let end_time = read_clock(clockid, ctx)?;
 
             if end_time >= start_time + timeout {
                 return Ok(SyscallReturn::Return(0));

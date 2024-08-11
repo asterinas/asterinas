@@ -12,7 +12,7 @@ use crate::{
     util::net::{CSocketAddrFamily, Protocol, SockFlags, SockType, SOCK_TYPE_MASK},
 };
 
-pub fn sys_socket(domain: i32, type_: i32, protocol: i32, _ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_socket(domain: i32, type_: i32, protocol: i32, ctx: &Context) -> Result<SyscallReturn> {
     let domain = CSocketAddrFamily::try_from(domain)?;
     let sock_type = SockType::try_from(type_ & SOCK_TYPE_MASK)?;
     let sock_flags = SockFlags::from_bits_truncate(type_ & !SOCK_TYPE_MASK);
@@ -43,8 +43,7 @@ pub fn sys_socket(domain: i32, type_: i32, protocol: i32, _ctx: &Context) -> Res
         _ => return_errno_with_message!(Errno::EAFNOSUPPORT, "unsupported domain"),
     };
     let fd = {
-        let current = current!();
-        let mut file_table = current.file_table().lock();
+        let mut file_table = ctx.process.file_table().lock();
         let fd_flags = if sock_flags.contains(SockFlags::SOCK_CLOEXEC) {
             FdFlags::CLOEXEC
         } else {

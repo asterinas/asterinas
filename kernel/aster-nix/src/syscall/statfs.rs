@@ -11,27 +11,25 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_statfs(path_ptr: Vaddr, statfs_buf_ptr: Vaddr, _ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_statfs(path_ptr: Vaddr, statfs_buf_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     let user_space = CurrentUserSpace::get();
     let path = user_space.read_cstring(path_ptr, PATH_MAX)?;
     debug!("path = {:?}, statfs_buf_ptr = 0x{:x}", path, statfs_buf_ptr,);
 
-    let current = current!();
     let dentry = {
         let path = path.to_string_lossy();
         let fs_path = FsPath::try_from(path.as_ref())?;
-        current.fs().read().lookup(&fs_path)?
+        ctx.process.fs().read().lookup(&fs_path)?
     };
     let statfs = Statfs::from(dentry.fs().sb());
     user_space.write_val(statfs_buf_ptr, &statfs)?;
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn sys_fstatfs(fd: FileDesc, statfs_buf_ptr: Vaddr, _ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_fstatfs(fd: FileDesc, statfs_buf_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}, statfs_buf_addr = 0x{:x}", fd, statfs_buf_ptr);
 
-    let current = current!();
-    let file_table = current.file_table().lock();
+    let file_table = ctx.process.file_table().lock();
     let file = file_table.get_file(fd)?;
     let inode_handle = file
         .downcast_ref::<InodeHandle>()

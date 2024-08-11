@@ -9,14 +9,13 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_ioctl(fd: FileDesc, cmd: u32, arg: Vaddr, _ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_ioctl(fd: FileDesc, cmd: u32, arg: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     let ioctl_cmd = IoctlCmd::try_from(cmd)?;
     debug!(
         "fd = {}, ioctl_cmd = {:?}, arg = 0x{:x}",
         fd, ioctl_cmd, arg
     );
-    let current = current!();
-    let file_table = current.file_table().lock();
+    let file_table = ctx.process.file_table().lock();
     let file = file_table.get_file(fd)?;
     let res = match ioctl_cmd {
         IoctlCmd::FIONBIO => {

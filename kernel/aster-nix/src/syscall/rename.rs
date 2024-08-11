@@ -16,7 +16,7 @@ pub fn sys_renameat(
     old_path_addr: Vaddr,
     new_dirfd: FileDesc,
     new_path_addr: Vaddr,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     let user_space = CurrentUserSpace::get();
     let old_path = user_space.read_cstring(old_path_addr, MAX_FILENAME_LEN)?;
@@ -26,8 +26,7 @@ pub fn sys_renameat(
         old_dirfd, old_path, new_dirfd, new_path
     );
 
-    let current = current!();
-    let fs = current.fs().read();
+    let fs = ctx.process.fs().read();
 
     let (old_dir_dentry, old_name) = {
         let old_path = old_path.to_string_lossy();
