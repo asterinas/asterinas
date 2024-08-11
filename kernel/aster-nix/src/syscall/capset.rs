@@ -3,12 +3,9 @@
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::{
-        credentials::{
-            c_types::{cap_user_data_t, cap_user_header_t, LINUX_CAPABILITY_VERSION_3},
-            capabilities::CapSet,
-        },
-        credentials_mut,
+    process::credentials::{
+        c_types::{cap_user_data_t, cap_user_header_t, LINUX_CAPABILITY_VERSION_3},
+        capabilities::CapSet,
     },
 };
 
@@ -19,7 +16,7 @@ fn make_kernel_cap(low: u32, high: u32) -> u64 {
 pub fn sys_capset(
     cap_user_header_addr: Vaddr,
     cap_user_data_addr: Vaddr,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     let user_space = CurrentUserSpace::get();
     let cap_user_header: cap_user_header_t =
@@ -32,7 +29,7 @@ pub fn sys_capset(
     // The ability to set capabilities of any other process has been deprecated.
     // See: https://elixir.bootlin.com/linux/v6.9.3/source/kernel/capability.c#L209 for more details.
     let header_pid = cap_user_header.pid;
-    if header_pid != 0 && header_pid != current!().pid() {
+    if header_pid != 0 && header_pid != ctx.process.pid() {
         return_errno_with_message!(Errno::EINVAL, "invalid pid");
     }
 
@@ -43,7 +40,7 @@ pub fn sys_capset(
     let permitted = make_kernel_cap(cap_user_data.permitted, 0);
     let effective = make_kernel_cap(cap_user_data.effective, 0);
 
-    let credentials = credentials_mut();
+    let credentials = ctx.posix_thread.credentials_mut();
 
     credentials.set_inheritable_capset(CapSet::from_bits_truncate(inheritable));
     credentials.set_permitted_capset(CapSet::from_bits_truncate(permitted));

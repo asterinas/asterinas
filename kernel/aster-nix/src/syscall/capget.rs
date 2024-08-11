@@ -3,16 +3,15 @@
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::{
-        credentials,
-        credentials::c_types::{cap_user_data_t, cap_user_header_t, LINUX_CAPABILITY_VERSION_3},
+    process::credentials::c_types::{
+        cap_user_data_t, cap_user_header_t, LINUX_CAPABILITY_VERSION_3,
     },
 };
 
 pub fn sys_capget(
     cap_user_header_addr: Vaddr,
     cap_user_data_addr: Vaddr,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     let user_space = CurrentUserSpace::get();
     let cap_user_header: cap_user_header_t =
@@ -27,11 +26,11 @@ pub fn sys_capget(
     // Capget only query current process's credential. Namely, it only allows header->pid == 0
     // or header->pid == getpid(), which are equivalent.
     // See https://linux.die.net/man/2/capget (Section. With VFS capability support) for details.
-    if header_pid != 0 && header_pid != current!().pid() {
+    if header_pid != 0 && header_pid != ctx.process.pid() {
         return_errno_with_message!(Errno::EINVAL, "invalid pid");
     }
 
-    let credentials = credentials();
+    let credentials = ctx.posix_thread.credentials();
     let inheritable_capset = credentials.inheritable_capset();
     let permitted_capset = credentials.permitted_capset();
     let effective_capset = credentials.effective_capset();

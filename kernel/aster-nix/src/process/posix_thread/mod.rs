@@ -252,8 +252,16 @@ impl PosixThread {
         self.credentials.dup().restrict()
     }
 
-    /// Gets the write-only credentials of the thread.
-    pub(in crate::process) fn credentials_mut(&self) -> Credentials<WriteOp> {
+    /// Gets the write-only credentials of the current thread.
+    ///
+    /// It is illegal to mutate the credentials from a thread other than the
+    /// current thread. For performance reasons, this function only checks it
+    /// using debug assertions.
+    pub fn credentials_mut(&self) -> Credentials<WriteOp> {
+        debug_assert!(core::ptr::eq(
+            current_thread!().as_posix_thread().unwrap(),
+            self
+        ));
         self.credentials.dup().restrict()
     }
 }

@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::SyscallReturn;
-use crate::{prelude::*, process::credentials};
+use crate::prelude::*;
 
-pub fn sys_getgroups(size: i32, group_list_addr: Vaddr, _ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_getgroups(size: i32, group_list_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     debug!("size = {}, group_list_addr = 0x{:x}", size, group_list_addr);
 
     if size < 0 {
         return_errno_with_message!(Errno::EINVAL, "size cannot be negative");
     }
 
-    let credentials = credentials();
+    let credentials = ctx.posix_thread.credentials();
     let groups = credentials.groups();
 
     if size == 0 {

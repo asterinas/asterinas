@@ -1,12 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::SyscallReturn;
-use crate::{
-    prelude::*,
-    process::{credentials_mut, Gid},
-};
+use crate::{prelude::*, process::Gid};
 
-pub fn sys_setfsgid(gid: i32, _ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_setfsgid(gid: i32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("gid = {}", gid);
 
     let fsgid = if gid < 0 {
@@ -16,7 +13,7 @@ pub fn sys_setfsgid(gid: i32, _ctx: &Context) -> Result<SyscallReturn> {
     };
 
     let old_fsgid = {
-        let credentials = credentials_mut();
+        let credentials = ctx.posix_thread.credentials_mut();
         credentials.set_fsgid(fsgid)?
     };
 
