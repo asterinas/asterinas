@@ -31,7 +31,7 @@ pub fn sys_timer_create(
     clockid: clockid_t,
     sigevent_addr: Vaddr,
     timer_id_addr: Vaddr,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     if timer_id_addr == 0 {
         return_errno_with_message!(
@@ -111,13 +111,7 @@ pub fn sys_timer_create(
         let clock_id = ClockId::try_from(clockid)?;
         match clock_id {
             ClockId::CLOCK_PROCESS_CPUTIME_ID => process_timer_manager.create_prof_timer(func),
-            ClockId::CLOCK_THREAD_CPUTIME_ID => {
-                let current_thread = current_thread!();
-                current_thread
-                    .as_posix_thread()
-                    .unwrap()
-                    .create_prof_timer(func)
-            }
+            ClockId::CLOCK_THREAD_CPUTIME_ID => ctx.posix_thread.create_prof_timer(func),
             ClockId::CLOCK_REALTIME => RealTimeClock::timer_manager().create_timer(func),
             ClockId::CLOCK_MONOTONIC => MonotonicClock::timer_manager().create_timer(func),
             ClockId::CLOCK_BOOTTIME => BootTimeClock::timer_manager().create_timer(func),

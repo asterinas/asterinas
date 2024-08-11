@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::SyscallReturn;
-use crate::{prelude::*, process::posix_thread::PosixThreadExt};
+use crate::prelude::*;
 
-pub fn sys_set_tid_address(tidptr: Vaddr, _ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_set_tid_address(tidptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     debug!("tidptr = 0x{:x}", tidptr);
-    let current_thread = current_thread!();
-    let posix_thread = current_thread.as_posix_thread().unwrap();
-    let mut clear_child_tid = posix_thread.clear_child_tid().lock();
+    let mut clear_child_tid = ctx.posix_thread.clear_child_tid().lock();
     if *clear_child_tid != 0 {
         // According to manuals at https://man7.org/linux/man-pages/man2/set_tid_address.2.html
         // We need to write 0 to clear_child_tid and do futex wake
@@ -15,6 +13,6 @@ pub fn sys_set_tid_address(tidptr: Vaddr, _ctx: &Context) -> Result<SyscallRetur
     } else {
         *clear_child_tid = tidptr;
     }
-    let tid = current_thread.tid();
+    let tid = ctx.thread.tid();
     Ok(SyscallReturn::Return(tid as _))
 }
