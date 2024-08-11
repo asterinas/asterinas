@@ -15,7 +15,7 @@ pub fn sys_sendfile(
     let offset = if offset_ptr == 0 {
         None
     } else {
-        let offset: isize = CurrentUserSpace::get().read_val(offset_ptr)?;
+        let offset: isize = ctx.get_user_space().read_val(offset_ptr)?;
         if offset < 0 {
             return_errno_with_message!(Errno::EINVAL, "offset cannot be negative");
         }
@@ -109,7 +109,8 @@ pub fn sys_sendfile(
     }
 
     if let Some(offset) = offset {
-        CurrentUserSpace::get().write_val(offset_ptr, &(offset as isize))?;
+        ctx.get_user_space()
+            .write_val(offset_ptr, &(offset as isize))?;
     }
 
     Ok(SyscallReturn::Return(total_len as _))

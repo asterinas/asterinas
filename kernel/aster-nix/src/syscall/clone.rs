@@ -42,7 +42,7 @@ pub fn sys_clone3(
     }
 
     let clone_args = {
-        let args: Clone3Args = CurrentUserSpace::get().read_val(clong_args_addr)?;
+        let args: Clone3Args = ctx.get_user_space().read_val(clong_args_addr)?;
         trace!("clone3 args = {:x?}", args);
         CloneArgs::from(args)
     };

@@ -29,7 +29,7 @@ pub fn sys_clock_gettime(
     let time_duration = read_clock(clockid, ctx)?;
 
     let timespec = timespec_t::from(time_duration);
-    CurrentUserSpace::get().write_val(timespec_addr, &timespec)?;
+    ctx.get_user_space().write_val(timespec_addr, &timespec)?;
 
     Ok(SyscallReturn::Return(0))
 }

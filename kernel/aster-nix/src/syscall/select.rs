@@ -19,7 +19,7 @@ pub fn sys_select(
     let timeout = if timeval_addr == 0 {
         None
     } else {
-        let timeval = CurrentUserSpace::get().read_val::<timeval_t>(timeval_addr)?;
+        let timeval = ctx.get_user_space().read_val::<timeval_t>(timeval_addr)?;
         Some(Duration::from(timeval))
     };
 
@@ -45,7 +45,7 @@ pub fn do_sys_select(
         return_errno_with_message!(Errno::EINVAL, "nfds is negative or exceeds the FD_SETSIZE");
     }
 
-    let user_space = CurrentUserSpace::get();
+    let user_space = ctx.get_user_space();
     let get_fdset = |fdset_addr: Vaddr| -> Result<Option<FdSet>> {
         let fdset = if fdset_addr == 0 {
             None

@@ -24,14 +24,14 @@ pub fn sys_execve(
     argv_ptr_ptr: Vaddr,
     envp_ptr_ptr: Vaddr,
     ctx: &Context,
-    user_ctx: &mut UserContext,
+    user_context: &mut UserContext,
 ) -> Result<SyscallReturn> {
     let elf_file = {
-        let executable_path = read_filename(filename_ptr)?;
+        let executable_path = read_filename(filename_ptr, ctx)?;
         lookup_executable_file(AT_FDCWD, executable_path, OpenFlags::empty(), ctx)?
     };
 
-    do_execve(elf_file, argv_ptr_ptr, envp_ptr_ptr, ctx, user_ctx)?;
+    do_execve(elf_file, argv_ptr_ptr, envp_ptr_ptr, ctx, user_context)?;
     Ok(SyscallReturn::NoReturn)
 }
 
@@ -42,15 +42,15 @@ pub fn sys_execveat(
     envp_ptr_ptr: Vaddr,
     flags: u32,
     ctx: &Context,
-    user_ctx: &mut UserContext,
+    user_context: &mut UserContext,
 ) -> Result<SyscallReturn> {
     let elf_file = {
         let flags = OpenFlags::from_bits_truncate(flags);
-        let filename = read_filename(filename_ptr)?;
+        let filename = read_filename(filename_ptr, ctx)?;
         lookup_executable_file(dfd, filename, flags, ctx)?
     };
 
-    do_execve(elf_file, argv_ptr_ptr, envp_ptr_ptr, ctx, user_ctx)?;
+    do_execve(elf_file, argv_ptr_ptr, envp_ptr_ptr, ctx, user_context)?;
     Ok(SyscallReturn::NoReturn)
 }
 
@@ -84,7 +84,7 @@ fn do_execve(
     argv_ptr_ptr: Vaddr,
     envp_ptr_ptr: Vaddr,
     ctx: &Context,
-    user_ctx: &mut UserContext,
+    user_context: &mut UserContext,
 ) -> Result<()> {
     let Context {
         process,
@@ -94,8 +94,8 @@ fn do_execve(
     } = ctx;
 
     let executable_path = elf_file.abs_path();
-    let argv = read_cstring_vec(argv_ptr_ptr, MAX_ARGV_NUMBER, MAX_ARG_LEN)?;
-    let envp = read_cstring_vec(envp_ptr_ptr, MAX_ENVP_NUMBER, MAX_ENV_LEN)?;
+    let argv = read_cstring_vec(argv_ptr_ptr, MAX_ARGV_NUMBER, MAX_ARG_LEN, ctx)?;
+    let envp = read_cstring_vec(envp_ptr_ptr, MAX_ENVP_NUMBER, MAX_ENV_LEN, ctx)?;
     debug!(
         "filename: {:?}, argv = {:?}, envp = {:?}",
         executable_path, argv, envp
@@ -131,16 +131,16 @@ fn do_execve(
     process.set_executable_path(new_executable_path);
     // set signal disposition to default
     process.sig_dispositions().lock().inherit();
-    // set cpu ctx to default
+    // set cpu context to default
     let default_content = UserContext::default();
-    *user_ctx.general_regs_mut() = *default_content.general_regs();
-    user_ctx.set_tls_pointer(default_content.tls_pointer());
-    *user_ctx.fp_regs_mut() = *default_content.fp_regs();
+    *user_context.general_regs_mut() = *default_content.general_regs();
+    user_context.set_tls_pointer(default_content.tls_pointer());
+    *user_context.fp_regs_mut() = *default_content.fp_regs();
     // set new entry point
-    user_ctx.set_instruction_pointer(elf_load_info.entry_point() as _);
+    user_context.set_instruction_pointer(elf_load_info.entry_point() as _);
     debug!("entry_point: 0x{:x}", elf_load_info.entry_point());
     // set new user stack top
-    user_ctx.set_stack_pointer(elf_load_info.user_stack_top() as _);
+    user_context.set_stack_pointer(elf_load_info.user_stack_top() as _);
     debug!("user stack top: 0x{:x}", elf_load_info.user_stack_top());
     Ok(())
 }
@@ -152,8 +152,10 @@ bitflags::bitflags! {
     }
 }
 
-fn read_filename(filename_ptr: Vaddr) -> Result<String> {
-    let filename = CurrentUserSpace::get().read_cstring(filename_ptr, MAX_FILENAME_LEN)?;
+fn read_filename(filename_ptr: Vaddr, ctx: &Context) -> Result<String> {
+    let filename = ctx
+        .get_user_space()
+        .read_cstring(filename_ptr, MAX_FILENAME_LEN)?;
     Ok(filename.into_string().unwrap())
 }
 
@@ -161,6 +163,7 @@ fn read_cstring_vec(
     array_ptr: Vaddr,
     max_string_number: usize,
     max_string_len: usize,
+    ctx: &Context,
 ) -> Result<Vec<CString>> {
     let mut res = Vec::new();
     // On Linux, argv pointer and envp pointer can be specified as NULL.
@@ -169,7 +172,7 @@ fn read_cstring_vec(
     }
     let mut read_addr = array_ptr;
     let mut find_null = false;
-    let user_space = CurrentUserSpace::get();
+    let user_space = ctx.get_user_space();
     for _ in 0..max_string_number {
         let cstring_ptr = user_space.read_val::<usize>(read_addr)?;
         read_addr += 8;

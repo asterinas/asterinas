@@ -13,13 +13,13 @@ pub fn sys_getsockopt(
     optname: i32,
     optval: Vaddr,
     optlen_addr: Vaddr,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     let level = CSocketOptionLevel::try_from(level)?;
     if optval == 0 || optlen_addr == 0 {
         return_errno_with_message!(Errno::EINVAL, "optval or optlen_addr is null pointer");
     }
-    let user_space = CurrentUserSpace::get();
+    let user_space = ctx.get_user_space();
 
     let optlen: u32 = user_space.read_val(optlen_addr)?;
     debug!("level = {level:?}, sockfd = {sockfd}, optname = {optname:?}, optlen = {optlen}");

@@ -12,9 +12,9 @@ pub fn sys_sendmsg(
     sockfd: FileDesc,
     user_msghdr_ptr: Vaddr,
     flags: i32,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let c_user_msghdr: CUserMsgHdr = CurrentUserSpace::get().read_val(user_msghdr_ptr)?;
+    let c_user_msghdr: CUserMsgHdr = ctx.get_user_space().read_val(user_msghdr_ptr)?;
     let flags = SendRecvFlags::from_bits_truncate(flags);
 
     debug!(

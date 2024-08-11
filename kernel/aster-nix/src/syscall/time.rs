@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{prelude::*, time::SystemTime};
 
-pub fn sys_time(tloc: Vaddr, _ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_time(tloc: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     debug!("tloc = 0x{tloc:x}");
 
     let now_as_secs = {
@@ -12,7 +12,7 @@ pub fn sys_time(tloc: Vaddr, _ctx: &Context) -> Result<SyscallReturn> {
     };
 
     if tloc != 0 {
-        CurrentUserSpace::get().write_val(tloc, &now_as_secs)?;
+        ctx.get_user_space().write_val(tloc, &now_as_secs)?;
     }
 
     Ok(SyscallReturn::Return(now_as_secs as _))

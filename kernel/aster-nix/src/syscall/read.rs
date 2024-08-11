@@ -27,7 +27,7 @@ pub fn sys_read(
     let read_len = if buf_len != 0 {
         let mut read_buf = vec![0u8; buf_len];
         let read_len = file.read(&mut read_buf)?;
-        CurrentUserSpace::get().write_bytes(
+        ctx.get_user_space().write_bytes(
             user_buf_addr,
             &mut VmReader::from(&read_buf[..min(read_len, buf_len)]),
         )?;

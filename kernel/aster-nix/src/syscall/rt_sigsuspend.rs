@@ -13,7 +13,7 @@ use crate::{
 pub fn sys_rt_sigsuspend(
     sigmask_addr: Vaddr,
     sigmask_size: usize,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
         "sigmask_addr = 0x{:x}, sigmask_size = {}",
@@ -26,7 +26,7 @@ pub fn sys_rt_sigsuspend(
     }
 
     let sigmask = {
-        let mut mask: SigMask = CurrentUserSpace::get().read_val(sigmask_addr)?;
+        let mut mask: SigMask = ctx.get_user_space().read_val(sigmask_addr)?;
         // It is not possible to block SIGKILL or SIGSTOP,
         // specifying these signals in mask has no effect.
         mask -= SIGKILL;
