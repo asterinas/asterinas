@@ -16,7 +16,7 @@ pub fn sys_openat(
     path_addr: Vaddr,
     flags: u32,
     mode: u16,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     let path = CurrentUserSpace::get().read_cstring(path_addr, MAX_FILENAME_LEN)?;
     debug!(
@@ -24,7 +24,7 @@ pub fn sys_openat(
         dirfd, path, flags, mode
     );
 
-    let current = current!();
+    let current = ctx.process;
     let file_handle = {
         let path = path.to_string_lossy();
         let fs_path = FsPath::new(dirfd, path.as_ref())?;

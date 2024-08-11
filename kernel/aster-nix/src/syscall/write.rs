@@ -7,7 +7,7 @@ pub fn sys_write(
     fd: FileDesc,
     user_buf_ptr: Vaddr,
     user_buf_len: usize,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
         "fd = {}, user_buf_ptr = 0x{:x}, user_buf_len = 0x{:x}",
@@ -15,8 +15,7 @@ pub fn sys_write(
     );
 
     let file = {
-        let current = current!();
-        let file_table = current.file_table().lock();
+        let file_table = ctx.process.file_table().lock();
         file_table.get_file(fd)?.clone()
     };
 

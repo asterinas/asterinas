@@ -8,7 +8,7 @@ pub fn sys_sendfile(
     in_fd: FileDesc,
     offset_ptr: Vaddr,
     count: isize,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     trace!("raw offset ptr = 0x{:x}", offset_ptr);
 
@@ -34,8 +34,7 @@ pub fn sys_sendfile(
     };
 
     let (out_file, in_file) = {
-        let current = current!();
-        let file_table = current.file_table().lock();
+        let file_table = ctx.process.file_table().lock();
         let out_file = file_table.get_file(out_fd)?.clone();
         // FIXME: the in_file must support mmap-like operations (i.e., it cannot be a socket).
         let in_file = file_table.get_file(in_fd)?.clone();

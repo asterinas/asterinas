@@ -23,7 +23,7 @@ pub fn sys_mount(
     fstype_addr: Vaddr,
     flags: u64,
     data: Vaddr,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     let user_space = CurrentUserSpace::get();
     let devname = user_space.read_cstring(devname_addr, MAX_FILENAME_LEN)?;
@@ -34,14 +34,13 @@ pub fn sys_mount(
         devname, dirname, fstype_addr, mount_flags, data,
     );
 
-    let current = current!();
     let dst_dentry = {
         let dirname = dirname.to_string_lossy();
         if dirname.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "dirname is empty");
         }
         let fs_path = FsPath::new(AT_FDCWD, dirname.as_ref())?;
-        current.fs().read().lookup(&fs_path)?
+        ctx.process.fs().read().lookup(&fs_path)?
     };
 
     if mount_flags.contains(MountFlags::MS_REMOUNT) && mount_flags.contains(MountFlags::MS_BIND) {
@@ -53,6 +52,7 @@ pub fn sys_mount(
             devname,
             dst_dentry,
             mount_flags.contains(MountFlags::MS_REC),
+            ctx,
         )?;
     } else if mount_flags.contains(MountFlags::MS_SHARED)
         | mount_flags.contains(MountFlags::MS_PRIVATE)
@@ -61,7 +61,7 @@ pub fn sys_mount(
     {
         do_change_type()?;
     } else if mount_flags.contains(MountFlags::MS_MOVE) {
-        do_move_mount_old(devname, dst_dentry)?;
+        do_move_mount_old(devname, dst_dentry, ctx)?;
     } else {
         do_new_mount(devname, fstype_addr, dst_dentry)?;
     }
@@ -81,15 +81,19 @@ fn do_remount() -> Result<()> {
 ///
 /// If recursive is true, then bind the mount recursively.
 /// Such as use user command `mount --rbind src dst`.
-fn do_bind_mount(src_name: CString, dst_dentry: Arc<Dentry>, recursive: bool) -> Result<()> {
-    let current = current!();
+fn do_bind_mount(
+    src_name: CString,
+    dst_dentry: Arc<Dentry>,
+    recursive: bool,
+    ctx: &Context,
+) -> Result<()> {
     let src_dentry = {
         let src_name = src_name.to_string_lossy();
         if src_name.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "src_name is empty");
         }
         let fs_path = FsPath::new(AT_FDCWD, src_name.as_ref())?;
-        current.fs().read().lookup(&fs_path)?
+        ctx.process.fs().read().lookup(&fs_path)?
     };
 
     if src_dentry.type_() != InodeType::Dir {
@@ -105,15 +109,14 @@ fn do_change_type() -> Result<()> {
 }
 
 /// Move a mount from src location to dst location.
-fn do_move_mount_old(src_name: CString, dst_dentry: Arc<Dentry>) -> Result<()> {
-    let current = current!();
+fn do_move_mount_old(src_name: CString, dst_dentry: Arc<Dentry>, ctx: &Context) -> Result<()> {
     let src_dentry = {
         let src_name = src_name.to_string_lossy();
         if src_name.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "src_name is empty");
         }
         let fs_path = FsPath::new(AT_FDCWD, src_name.as_ref())?;
-        current.fs().read().lookup(&fs_path)?
+        ctx.process.fs().read().lookup(&fs_path)?
     };
 
     if !src_dentry.is_root_of_mount() {

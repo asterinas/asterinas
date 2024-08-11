@@ -8,7 +8,7 @@ pub fn sys_pwrite64(
     user_buf_ptr: Vaddr,
     user_buf_len: usize,
     offset: i64,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!(
         "fd = {}, user_buf_ptr = 0x{:x}, user_buf_len = 0x{:x}, offset = 0x{:x}",
@@ -18,8 +18,7 @@ pub fn sys_pwrite64(
         return_errno_with_message!(Errno::EINVAL, "offset cannot be negative");
     }
     let file = {
-        let current = current!();
-        let filetable = current.file_table().lock();
+        let filetable = ctx.process.file_table().lock();
         filetable.get_file(fd)?.clone()
     };
     // TODO: Check (f.file->f_mode & FMODE_PWRITE); We don't have f_mode in our FileLike trait

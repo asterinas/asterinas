@@ -30,30 +30,29 @@ use crate::{
     time::clocks::RealTimeClock,
 };
 
-pub fn sys_eventfd(init_val: u64, _ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_eventfd(init_val: u64, ctx: &Context) -> Result<SyscallReturn> {
     debug!("init_val = 0x{:x}", init_val);
 
-    let fd = do_sys_eventfd2(init_val, Flags::empty());
+    let fd = do_sys_eventfd2(init_val, Flags::empty(), ctx);
 
     Ok(SyscallReturn::Return(fd as _))
 }
 
-pub fn sys_eventfd2(init_val: u64, flags: u32, _ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_eventfd2(init_val: u64, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     trace!("raw flags = {}", flags);
     let flags = Flags::from_bits(flags)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown flags"))?;
     debug!("init_val = 0x{:x}, flags = {:?}", init_val, flags);
 
-    let fd = do_sys_eventfd2(init_val, flags);
+    let fd = do_sys_eventfd2(init_val, flags, ctx);
 
     Ok(SyscallReturn::Return(fd as _))
 }
 
-fn do_sys_eventfd2(init_val: u64, flags: Flags) -> FileDesc {
+fn do_sys_eventfd2(init_val: u64, flags: Flags, ctx: &Context) -> FileDesc {
     let event_file = EventFile::new(init_val, flags);
     let fd = {
-        let current = current!();
-        let mut file_table = current.file_table().lock();
+        let mut file_table = ctx.process.file_table().lock();
         let fd_flags = if flags.contains(Flags::EFD_CLOEXEC) {
             FdFlags::CLOEXEC
         } else {

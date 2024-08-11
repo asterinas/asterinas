@@ -16,7 +16,7 @@ pub fn sys_linkat(
     new_dirfd: FileDesc,
     new_path_addr: Vaddr,
     flags: u32,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     let user_space = CurrentUserSpace::get();
 
@@ -29,7 +29,6 @@ pub fn sys_linkat(
         old_dirfd, old_path, new_dirfd, new_path, flags
     );
 
-    let current = current!();
     let (old_dentry, new_dir_dentry, new_name) = {
         let old_path = old_path.to_string_lossy();
         if old_path.ends_with('/') {
@@ -45,7 +44,7 @@ pub fn sys_linkat(
 
         let old_fs_path = FsPath::new(old_dirfd, old_path.as_ref())?;
         let new_fs_path = FsPath::new(new_dirfd, new_path.as_ref())?;
-        let fs = current.fs().read();
+        let fs = ctx.process.fs().read();
         let old_dentry = if flags.contains(LinkFlags::AT_SYMLINK_FOLLOW) {
             fs.lookup(&old_fs_path)?
         } else {

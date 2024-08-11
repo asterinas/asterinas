@@ -10,24 +10,22 @@ use crate::{
     process::Pid,
 };
 
-pub fn sys_fcntl(fd: FileDesc, cmd: i32, arg: u64, _ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_fcntl(fd: FileDesc, cmd: i32, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
     let fcntl_cmd = FcntlCmd::try_from(cmd)?;
     debug!("fd = {}, cmd = {:?}, arg = {}", fd, fcntl_cmd, arg);
+    let current = ctx.process;
     match fcntl_cmd {
         FcntlCmd::F_DUPFD => {
-            let current = current!();
             let mut file_table = current.file_table().lock();
             let new_fd = file_table.dup(fd, arg as FileDesc, FdFlags::empty())?;
             Ok(SyscallReturn::Return(new_fd as _))
         }
         FcntlCmd::F_DUPFD_CLOEXEC => {
-            let current = current!();
             let mut file_table = current.file_table().lock();
             let new_fd = file_table.dup(fd, arg as FileDesc, FdFlags::CLOEXEC)?;
             Ok(SyscallReturn::Return(new_fd as _))
         }
         FcntlCmd::F_GETFD => {
-            let current = current!();
             let file_table = current.file_table().lock();
             let entry = file_table.get_entry(fd)?;
             let fd_flags = entry.flags();
@@ -41,14 +39,12 @@ pub fn sys_fcntl(fd: FileDesc, cmd: i32, arg: u64, _ctx: &Context) -> Result<Sys
                 FdFlags::from_bits(arg as u8)
                     .ok_or(Error::with_message(Errno::EINVAL, "invalid flags"))?
             };
-            let current = current!();
             let file_table = current.file_table().lock();
             let entry = file_table.get_entry(fd)?;
             entry.set_flags(flags);
             Ok(SyscallReturn::Return(0))
         }
         FcntlCmd::F_GETFL => {
-            let current = current!();
             let file = {
                 let file_table = current.file_table().lock();
                 file_table.get_file(fd)?.clone()
@@ -60,7 +56,6 @@ pub fn sys_fcntl(fd: FileDesc, cmd: i32, arg: u64, _ctx: &Context) -> Result<Sys
             ))
         }
         FcntlCmd::F_SETFL => {
-            let current = current!();
             let file = {
                 let file_table = current.file_table().lock();
                 file_table.get_file(fd)?.clone()
@@ -82,7 +77,6 @@ pub fn sys_fcntl(fd: FileDesc, cmd: i32, arg: u64, _ctx: &Context) -> Result<Sys
             Ok(SyscallReturn::Return(0))
         }
         FcntlCmd::F_SETOWN => {
-            let current = current!();
             let file_table = current.file_table().lock();
             let file_entry = file_table.get_entry(fd)?;
             // A process ID is specified as a positive value; a process group ID is specified as a negative value.
@@ -96,7 +90,6 @@ pub fn sys_fcntl(fd: FileDesc, cmd: i32, arg: u64, _ctx: &Context) -> Result<Sys
             Ok(SyscallReturn::Return(0))
         }
         FcntlCmd::F_GETOWN => {
-            let current = current!();
             let file_table = current.file_table().lock();
             let file_entry = file_table.get_entry(fd)?;
             let pid = file_entry.owner().unwrap_or(0);

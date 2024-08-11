@@ -14,7 +14,7 @@ pub fn sys_select(
     writefds_addr: Vaddr,
     exceptfds_addr: Vaddr,
     timeval_addr: Vaddr,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     let timeout = if timeval_addr == 0 {
         None
@@ -23,7 +23,14 @@ pub fn sys_select(
         Some(Duration::from(timeval))
     };
 
-    do_sys_select(nfds, readfds_addr, writefds_addr, exceptfds_addr, timeout)
+    do_sys_select(
+        nfds,
+        readfds_addr,
+        writefds_addr,
+        exceptfds_addr,
+        timeout,
+        ctx,
+    )
 }
 
 pub fn do_sys_select(
@@ -32,6 +39,7 @@ pub fn do_sys_select(
     writefds_addr: Vaddr,
     exceptfds_addr: Vaddr,
     timeout: Option<Duration>,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     if nfds < 0 || nfds as usize > FD_SETSIZE {
         return_errno_with_message!(Errno::EINVAL, "nfds is negative or exceeds the FD_SETSIZE");
@@ -62,6 +70,7 @@ pub fn do_sys_select(
         writefds.as_mut(),
         exceptfds.as_mut(),
         timeout,
+        ctx,
     )?;
 
     // FIXME: The Linux select() and pselect6() system call
@@ -89,6 +98,7 @@ fn do_select(
     mut writefds: Option<&mut FdSet>,
     mut exceptfds: Option<&mut FdSet>,
     timeout: Option<Duration>,
+    ctx: &Context,
 ) -> Result<usize> {
     // Convert the FdSet to an array of PollFd
     let poll_fds = {
@@ -123,7 +133,7 @@ fn do_select(
     }
 
     // Do the poll syscall that is equivalent to the select syscall
-    let num_revents = do_poll(&poll_fds, timeout)?;
+    let num_revents = do_poll(&poll_fds, timeout, ctx)?;
     if num_revents == 0 {
         return Ok(0);
     }

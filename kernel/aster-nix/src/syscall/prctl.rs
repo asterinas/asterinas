@@ -15,7 +15,7 @@ pub fn sys_prctl(
     arg3: u64,
     arg4: u64,
     arg5: u64,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     let prctl_cmd = PrctlCmd::from_args(option, arg2, arg3, arg4, arg5)?;
     debug!("prctl cmd = {:x?}", prctl_cmd);
@@ -23,14 +23,11 @@ pub fn sys_prctl(
     let posix_thread = current_thread.as_posix_thread().unwrap();
     match prctl_cmd {
         PrctlCmd::PR_SET_PDEATHSIG(signum) => {
-            let current = current!();
-            current.set_parent_death_signal(signum);
+            ctx.process.set_parent_death_signal(signum);
         }
         PrctlCmd::PR_GET_PDEATHSIG(write_to_addr) => {
             let write_val = {
-                let current = current!();
-
-                match current.parent_death_signal() {
+                match ctx.process.parent_death_signal() {
                     None => 0i32,
                     Some(signum) => signum.as_u8() as i32,
                 }

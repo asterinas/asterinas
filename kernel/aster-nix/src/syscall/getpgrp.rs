@@ -3,7 +3,6 @@
 use super::SyscallReturn;
 use crate::prelude::*;
 
-pub fn sys_getpgrp(_ctx: &Context) -> Result<SyscallReturn> {
-    let current = current!();
-    Ok(SyscallReturn::Return(current.pgid() as _))
+pub fn sys_getpgrp(ctx: &Context) -> Result<SyscallReturn> {
+    Ok(SyscallReturn::Return(ctx.process.pgid() as _))
 }

@@ -11,7 +11,7 @@ pub fn sys_wait4(
     exit_status_ptr: u64,
     wait_options: u32,
     rusage_addr: Vaddr,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     let wait_options = WaitOptions::from_bits(wait_options)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown wait option"))?;
@@ -19,7 +19,7 @@ pub fn sys_wait4(
         "pid = {}, exit_status_ptr = {}, wait_options: {:?}",
         wait_pid as i32, exit_status_ptr, wait_options
     );
-    debug!("wait4 current pid = {}", current!().pid());
+    debug!("wait4 current pid = {}", ctx.process.pid());
     let process_filter = ProcessFilter::from_id(wait_pid as _);
 
     let waited_process = wait_child_exit(process_filter, wait_options)?;

@@ -7,34 +7,32 @@ use crate::{
     process::ResourceType,
 };
 
-pub fn sys_dup(old_fd: FileDesc, _ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_dup(old_fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
     debug!("old_fd = {}", old_fd);
 
-    let current = current!();
-    let mut file_table = current.file_table().lock();
+    let mut file_table = ctx.process.file_table().lock();
     let new_fd = file_table.dup(old_fd, 0, FdFlags::empty())?;
 
     Ok(SyscallReturn::Return(new_fd as _))
 }
 
-pub fn sys_dup2(old_fd: FileDesc, new_fd: FileDesc, _ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_dup2(old_fd: FileDesc, new_fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
     debug!("old_fd = {}, new_fd = {}", old_fd, new_fd);
 
     if old_fd == new_fd {
-        let current = current!();
-        let file_table = current.file_table().lock();
+        let file_table = ctx.process.file_table().lock();
         let _ = file_table.get_file(old_fd)?;
         return Ok(SyscallReturn::Return(new_fd as _));
     }
 
-    do_dup3(old_fd, new_fd, FdFlags::empty())
+    do_dup3(old_fd, new_fd, FdFlags::empty(), ctx)
 }
 
 pub fn sys_dup3(
     old_fd: FileDesc,
     new_fd: FileDesc,
     flags: u32,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!("old_fd = {}, new_fd = {}", old_fd, new_fd);
 
@@ -44,15 +42,20 @@ pub fn sys_dup3(
         _ => return_errno_with_message!(Errno::EINVAL, "flags must be O_CLOEXEC or 0"),
     };
 
-    do_dup3(old_fd, new_fd, fdflag)
+    do_dup3(old_fd, new_fd, fdflag, ctx)
 }
 
-fn do_dup3(old_fd: FileDesc, new_fd: FileDesc, flags: FdFlags) -> Result<SyscallReturn> {
+fn do_dup3(
+    old_fd: FileDesc,
+    new_fd: FileDesc,
+    flags: FdFlags,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
     if old_fd == new_fd {
         return_errno!(Errno::EINVAL);
     }
 
-    let current = current!();
+    let current = ctx.process;
     if new_fd
         >= current
             .resource_limits()

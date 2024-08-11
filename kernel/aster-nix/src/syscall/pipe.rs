@@ -10,7 +10,7 @@ use crate::{
     prelude::*,
 };
 
-pub fn sys_pipe2(fds: Vaddr, flags: u32, _ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_pipe2(fds: Vaddr, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("flags: {:?}", flags);
 
     let (pipe_reader, pipe_writer) = {
@@ -30,8 +30,7 @@ pub fn sys_pipe2(fds: Vaddr, flags: u32, _ctx: &Context) -> Result<SyscallReturn
         FdFlags::empty()
     };
 
-    let current = current!();
-    let mut file_table = current.file_table().lock();
+    let mut file_table = ctx.process.file_table().lock();
 
     let pipe_fds = PipeFds {
         reader_fd: file_table.insert(pipe_reader, fd_flags),

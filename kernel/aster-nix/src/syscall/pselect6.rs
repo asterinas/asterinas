@@ -4,10 +4,7 @@ use core::{sync::atomic::Ordering, time::Duration};
 
 use super::{select::do_sys_select, SyscallReturn};
 use crate::{
-    fs::file_table::FileDesc,
-    prelude::*,
-    process::{posix_thread::PosixThreadExt, signal::sig_mask::SigMask},
-    time::timespec_t,
+    fs::file_table::FileDesc, prelude::*, process::signal::sig_mask::SigMask, time::timespec_t,
 };
 
 pub fn sys_pselect6(
@@ -17,11 +14,8 @@ pub fn sys_pselect6(
     exceptfds_addr: Vaddr,
     timespec_addr: Vaddr,
     sigmask_addr: Vaddr,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let current_thread = current_thread!();
-    let posix_thread = current_thread.as_posix_thread().unwrap();
-
     let user_space = CurrentUserSpace::get();
     let old_simask = if sigmask_addr != 0 {
         let sigmask_with_size: SigMaskWithSize = user_space.read_val(sigmask_addr)?;
@@ -29,7 +23,8 @@ pub fn sys_pselect6(
         if !sigmask_with_size.is_valid() {
             return_errno_with_message!(Errno::EINVAL, "sigmask size is invalid")
         }
-        let old_sigmask = posix_thread
+        let old_sigmask = ctx
+            .posix_thread
             .sig_mask()
             .swap(sigmask_with_size.sigmask, Ordering::Relaxed);
 
@@ -45,10 +40,19 @@ pub fn sys_pselect6(
         None
     };
 
-    let res = do_sys_select(nfds, readfds_addr, writefds_addr, exceptfds_addr, timeout);
+    let res = do_sys_select(
+        nfds,
+        readfds_addr,
+        writefds_addr,
+        exceptfds_addr,
+        timeout,
+        ctx,
+    );
 
     if let Some(old_mask) = old_simask {
-        posix_thread.sig_mask().store(old_mask, Ordering::Relaxed);
+        ctx.posix_thread
+            .sig_mask()
+            .store(old_mask, Ordering::Relaxed);
     }
 
     res

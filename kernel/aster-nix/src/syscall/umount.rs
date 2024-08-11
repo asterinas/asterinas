@@ -7,14 +7,13 @@ use crate::{
     syscall::constants::MAX_FILENAME_LEN,
 };
 
-pub fn sys_umount(path_addr: Vaddr, flags: u64, _ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_umount(path_addr: Vaddr, flags: u64, ctx: &Context) -> Result<SyscallReturn> {
     let path = CurrentUserSpace::get().read_cstring(path_addr, MAX_FILENAME_LEN)?;
     let umount_flags = UmountFlags::from_bits_truncate(flags as u32);
     debug!("path = {:?}, flags = {:?}", path, umount_flags);
 
     umount_flags.check_unsupported_flags()?;
 
-    let current = current!();
     let path = path.to_string_lossy();
     if path.is_empty() {
         return_errno_with_message!(Errno::ENOENT, "path is empty");
@@ -22,9 +21,9 @@ pub fn sys_umount(path_addr: Vaddr, flags: u64, _ctx: &Context) -> Result<Syscal
     let fs_path = FsPath::new(AT_FDCWD, path.as_ref())?;
 
     let target_dentry = if umount_flags.contains(UmountFlags::UMOUNT_NOFOLLOW) {
-        current.fs().read().lookup_no_follow(&fs_path)?
+        ctx.process.fs().read().lookup_no_follow(&fs_path)?
     } else {
-        current.fs().read().lookup(&fs_path)?
+        ctx.process.fs().read().lookup(&fs_path)?
     };
 
     target_dentry.unmount()?;

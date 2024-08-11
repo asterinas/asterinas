@@ -12,11 +12,10 @@ use crate::{
     time::timespec_t,
 };
 
-pub fn sys_fstat(fd: FileDesc, stat_buf_ptr: Vaddr, _ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_fstat(fd: FileDesc, stat_buf_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}, stat_buf_addr = 0x{:x}", fd, stat_buf_ptr);
 
-    let current = current!();
-    let file_table = current.file_table().lock();
+    let file_table = ctx.process.file_table().lock();
     let file = file_table.get_file(fd)?;
     let stat = Stat::from(file.metadata());
     CurrentUserSpace::get().write_val(stat_buf_ptr, &stat)?;
@@ -61,11 +60,10 @@ pub fn sys_fstatat(
         return self::sys_fstat(dirfd, stat_buf_ptr, ctx);
     }
 
-    let current = current!();
     let dentry = {
         let filename = filename.to_string_lossy();
         let fs_path = FsPath::new(dirfd, filename.as_ref())?;
-        let fs = current.fs().read();
+        let fs = ctx.process.fs().read();
         if flags.contains(StatFlags::AT_SYMLINK_NOFOLLOW) {
             fs.lookup_no_follow(&fs_path)?
         } else {

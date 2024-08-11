@@ -15,7 +15,7 @@ pub fn sys_readlinkat(
     path_addr: Vaddr,
     usr_buf_addr: Vaddr,
     usr_buf_len: usize,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     let user_space = CurrentUserSpace::get();
     let path = user_space.read_cstring(path_addr, MAX_FILENAME_LEN)?;
@@ -24,14 +24,13 @@ pub fn sys_readlinkat(
         dirfd, path, usr_buf_addr, usr_buf_len
     );
 
-    let current = current!();
     let dentry = {
         let path = path.to_string_lossy();
         if path.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "path is empty");
         }
         let fs_path = FsPath::new(dirfd, path.as_ref())?;
-        current.fs().read().lookup_no_follow(&fs_path)?
+        ctx.process.fs().read().lookup_no_follow(&fs_path)?
     };
     let linkpath = dentry.inode().read_link()?;
     let bytes = linkpath.as_bytes();

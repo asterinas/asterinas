@@ -28,7 +28,7 @@ pub fn sys_execve(
 ) -> Result<SyscallReturn> {
     let elf_file = {
         let executable_path = read_filename(filename_ptr)?;
-        lookup_executable_file(AT_FDCWD, executable_path, OpenFlags::empty())?
+        lookup_executable_file(AT_FDCWD, executable_path, OpenFlags::empty(), ctx)?
     };
 
     do_execve(elf_file, argv_ptr_ptr, envp_ptr_ptr, ctx, user_ctx)?;
@@ -47,7 +47,7 @@ pub fn sys_execveat(
     let elf_file = {
         let flags = OpenFlags::from_bits_truncate(flags);
         let filename = read_filename(filename_ptr)?;
-        lookup_executable_file(dfd, filename, flags)?
+        lookup_executable_file(dfd, filename, flags, ctx)?
     };
 
     do_execve(elf_file, argv_ptr_ptr, envp_ptr_ptr, ctx, user_ctx)?;
@@ -58,9 +58,9 @@ fn lookup_executable_file(
     dfd: FileDesc,
     filename: String,
     flags: OpenFlags,
+    ctx: &Context,
 ) -> Result<Arc<Dentry>> {
-    let current = current!();
-    let fs_resolver = current.fs().read();
+    let fs_resolver = ctx.process.fs().read();
     let dentry = if flags.contains(OpenFlags::AT_EMPTY_PATH) && filename.is_empty() {
         fs_resolver.lookup_from_fd(dfd)
     } else {
