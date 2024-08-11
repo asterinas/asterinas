@@ -8,7 +8,6 @@ use ostd::{
 };
 
 use super::{
-    credentials,
     posix_thread::{PosixThread, PosixThreadBuilder, PosixThreadExt, ThreadName},
     process_table,
     process_vm::ProcessVm,
@@ -184,7 +183,7 @@ fn clone_child_thread(
     let child_tid = allocate_tid();
     let child_thread = {
         let credentials = {
-            let credentials = credentials();
+            let credentials = ctx.posix_thread.credentials();
             Credentials::new_from(&credentials)
         };
 
@@ -271,7 +270,7 @@ fn clone_child_process(
             let child_thread_name = ThreadName::new_from_executable_path(&child_elf_path)?;
 
             let credentials = {
-                let credentials = credentials();
+                let credentials = ctx.posix_thread.credentials();
                 Credentials::new_from(&credentials)
             };
 

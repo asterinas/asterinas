@@ -14,8 +14,8 @@ use crate::{
     },
     prelude::*,
     process::{
-        check_executable_file, credentials_mut, load_program_to_vm, posix_thread::ThreadName,
-        Credentials, Process, MAX_ARGV_NUMBER, MAX_ARG_LEN, MAX_ENVP_NUMBER, MAX_ENV_LEN,
+        check_executable_file, load_program_to_vm, posix_thread::ThreadName, Credentials, Process,
+        MAX_ARGV_NUMBER, MAX_ARG_LEN, MAX_ENVP_NUMBER, MAX_ENV_LEN,
     },
 };
 
@@ -123,7 +123,7 @@ fn do_execve(
     *posix_thread.robust_list().lock() = None;
     debug!("load elf in execve succeeds");
 
-    let credentials = credentials_mut();
+    let credentials = ctx.posix_thread.credentials_mut();
     set_uid_from_elf(process, &credentials, &elf_file)?;
     set_gid_from_elf(process, &credentials, &elf_file)?;
 

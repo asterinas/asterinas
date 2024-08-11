@@ -5,7 +5,7 @@ use core::sync::atomic::Ordering;
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::{credentials, posix_thread::PosixThreadExt, process_table, Pgid, Pid, Process, Uid},
+    process::{posix_thread::PosixThreadExt, process_table, Pgid, Pid, Process, Uid},
     sched::nice::Nice,
 };
 
@@ -120,7 +120,11 @@ impl PriorityTarget {
             }
             Which::PRIO_USER => {
                 let uid = if who == 0 {
-                    credentials().ruid()
+                    current_thread!()
+                        .as_posix_thread()
+                        .unwrap()
+                        .credentials()
+                        .ruid()
                 } else {
                     Uid::new(who)
                 };

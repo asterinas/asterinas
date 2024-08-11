@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::{
-    credentials,
     posix_thread::PosixThreadExt,
     process_table,
     signal::signals::{user::UserSignal, Signal},
@@ -139,10 +138,15 @@ fn kill_process(process: &Process, signal: Option<UserSignal>) -> Result<()> {
 }
 
 fn current_thread_sender_ids() -> SignalSenderIds {
-    let credentials = credentials();
+    let current_thread = current_thread!();
+    let current_posix_thread = current_thread.as_posix_thread().unwrap();
+    let current_process = current_posix_thread.process();
+
+    let credentials = current_posix_thread.credentials();
     let ruid = credentials.ruid();
     let euid = credentials.euid();
-    let sid = current!().session().unwrap().sid();
+    let sid = current_process.session().unwrap().sid();
+
     SignalSenderIds::new(ruid, euid, sid)
 }
 

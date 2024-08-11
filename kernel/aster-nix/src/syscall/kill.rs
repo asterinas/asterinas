@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     prelude::*,
     process::{
-        credentials, kill, kill_all, kill_group,
+        kill, kill_all, kill_group,
         signal::{
             sig_num::SigNum,
             signals::user::{UserSignal, UserSignalKind},
@@ -13,7 +13,7 @@ use crate::{
     },
 };
 
-pub fn sys_kill(process_filter: u64, sig_num: u64, _ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_kill(process_filter: u64, sig_num: u64, ctx: &Context) -> Result<SyscallReturn> {
     let process_filter = ProcessFilter::from_id(process_filter as _);
     let sig_num = if sig_num == 0 {
         None
@@ -24,16 +24,16 @@ pub fn sys_kill(process_filter: u64, sig_num: u64, _ctx: &Context) -> Result<Sys
         "process_filter = {:?}, sig_num = {:?}",
         process_filter, sig_num
     );
-    do_sys_kill(process_filter, sig_num)?;
+    do_sys_kill(process_filter, sig_num, ctx)?;
     Ok(SyscallReturn::Return(0))
 }
 
-pub fn do_sys_kill(filter: ProcessFilter, sig_num: Option<SigNum>) -> Result<()> {
+pub fn do_sys_kill(filter: ProcessFilter, sig_num: Option<SigNum>, ctx: &Context) -> Result<()> {
     let current = current!();
 
     let signal = sig_num.map(|sig_num| {
         let pid = current.pid();
-        let uid = credentials().ruid();
+        let uid = ctx.posix_thread.credentials().ruid();
         UserSignal::new(sig_num, UserSignalKind::Kill, pid, uid)
     });
 

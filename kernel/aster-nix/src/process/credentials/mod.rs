@@ -7,12 +7,11 @@ mod group;
 mod static_cap;
 mod user;
 
-use aster_rights::{FullOp, ReadOp, WriteOp};
+use aster_rights::FullOp;
 use credentials_::Credentials_;
 pub use group::Gid;
 pub use user::Uid;
 
-use super::posix_thread::PosixThreadExt;
 use crate::prelude::*;
 
 /// `Credentials` represents a set of associated numeric user ids (UIDs) and group identifiers (GIDs)
@@ -25,25 +24,3 @@ use crate::prelude::*;
 /// - supplementary group IDs;
 /// - Linux capabilities.
 pub struct Credentials<R = FullOp>(Arc<Credentials_>, R);
-
-/// Gets read-only credentials of current thread.
-///
-/// # Panics
-///
-/// This method should only be called in process context.
-pub fn credentials() -> Credentials<ReadOp> {
-    let current_thread = current_thread!();
-    let posix_thread = current_thread.as_posix_thread().unwrap();
-    posix_thread.credentials()
-}
-
-/// Gets write-only credentials of current thread.
-///
-/// # Panics
-///
-/// This method should only be called in process context.
-pub fn credentials_mut() -> Credentials<WriteOp> {
-    let current_thread = current_thread!();
-    let posix_thread = current_thread.as_posix_thread().unwrap();
-    posix_thread.credentials_mut()
-}
