@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-
 use core::marker::PhantomData;
 
 use super::SyscallReturn;
@@ -234,6 +232,7 @@ impl DirentSerializer for Dirent64 {
 #[repr(u8)]
 #[derive(Debug, Clone, Copy)]
 enum DirentType {
+    #[allow(dead_code)]
     DT_UNKNOWN = 0,
     DT_FIFO = 1,
     DT_CHR = 2,
@@ -242,6 +241,7 @@ enum DirentType {
     DT_REG = 8,
     DT_LNK = 10,
     DT_SOCK = 12,
+    #[allow(dead_code)]
     DT_WHT = 14,
 }
 

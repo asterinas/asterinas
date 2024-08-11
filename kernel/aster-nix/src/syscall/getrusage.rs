@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(non_camel_case_types)]
-
 use int_to_c_enum::TryFromInt;
 
 use super::SyscallReturn;

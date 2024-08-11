@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(non_camel_case_types)]
 use core::time::Duration;
 
 use super::SyscallReturn;
@@ -12,6 +11,7 @@ use crate::{
 /// `ItimerType` is used to differ the target timer for some timer-related syscalls.
 #[derive(Debug, Copy, Clone, TryFromInt, PartialEq)]
 #[repr(i32)]
+#[allow(non_camel_case_types)]
 pub(super) enum ItimerType {
     ITIMER_REAL = 0,
     ITIMER_VIRTUAL = 1,

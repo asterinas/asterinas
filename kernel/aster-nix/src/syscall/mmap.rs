@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-
 //! This mod defines mmap flags and the handler to syscall mmap
 
 use align_ext::AlignExt;

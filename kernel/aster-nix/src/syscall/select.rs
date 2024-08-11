@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-
 use core::time::Duration;
 
 use super::{
@@ -203,6 +201,7 @@ impl FdSet {
     }
 
     /// Equivalent to FD_CLR.
+    #[allow(unused)]
     pub fn unset(&mut self, fd: FileDesc) -> Result<()> {
         let fd = fd as usize;
         if fd >= FD_SETSIZE {
