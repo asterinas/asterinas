@@ -119,6 +119,7 @@ fn ap_early_entry(local_apic_id: u32) -> ! {
     }
 
     trap::init();
+    crate::arch::irq::enable_local();
 
     // Mark the AP as started.
     let ap_boot_info = AP_BOOT_INFO.get().unwrap();
