@@ -115,7 +115,7 @@ impl Clone for InitStack {
             initial_top: self.initial_top,
             max_size: self.max_size,
             pos: self.pos.clone(),
-            vmo: self.vmo.new_cow_child(0..self.max_size).alloc().unwrap(),
+            vmo: self.vmo.dup(),
         }
     }
 }
@@ -149,8 +149,9 @@ impl InitStack {
             let map_addr = self.initial_top - self.max_size;
             debug_assert!(map_addr % PAGE_SIZE == 0);
             root_vmar
-                .new_map(self.vmo.dup().to_dyn(), perms)?
+                .new_map(self.max_size, perms)?
                 .offset(map_addr)
+                .vmo(self.vmo.dup().to_dyn())
         };
 
         vmar_map_options.build()?;
