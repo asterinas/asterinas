@@ -88,9 +88,9 @@ run_benchmark() {
 
     echo "Parsing results..."
     local linux_avg aster_avg
-    linux_avg=$(awk "/${search_pattern}/{print \$$result_index}" "${linux_output}" | tr -d '\r')
-    aster_avg=$(awk "/${search_pattern}/{print \$$result_index}" "${aster_output}" | tr -d '\r')
-
+    linux_avg=$(awk "/${search_pattern}/ {result=\$$result_index} END {print result}" "${linux_output}" | tr -d '\r')
+    aster_avg=$(awk "/${search_pattern}/ {result=\$$result_index} END {print result}" "${aster_output}" | tr -d '\r')
+    
     if [ -z "${linux_avg}" ] || [ -z "${aster_avg}" ]; then
         echo "Error: Failed to parse the average value from the benchmark output" >&2
         exit 1
