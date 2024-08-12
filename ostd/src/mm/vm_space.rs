@@ -26,7 +26,7 @@ use crate::{
     },
     cpu::CpuExceptionInfo,
     mm::{
-        page_table::{self, PageTableQueryResult as PtQr},
+        page_table::{self, PageTableItem},
         Frame, MAX_USERSPACE_VADDR,
     },
     prelude::*,
@@ -211,7 +211,7 @@ impl Default for VmSpace {
 pub struct Cursor<'a>(page_table::Cursor<'a, UserMode, PageTableEntry, PagingConsts>);
 
 impl Iterator for Cursor<'_> {
-    type Item = VmQueryResult;
+    type Item = VmItem;
 
     fn next(&mut self) -> Option<Self::Item> {
         let result = self.query();
@@ -226,8 +226,8 @@ impl Cursor<'_> {
     /// Query about the current slot.
     ///
     /// This function won't bring the cursor to the next slot.
-    pub fn query(&mut self) -> Result<VmQueryResult> {
-        Ok(self.0.query().map(|ptqr| ptqr.try_into().unwrap())?)
+    pub fn query(&mut self) -> Result<VmItem> {
+        Ok(self.0.query().map(|item| item.try_into().unwrap())?)
     }
 
     /// Jump to the virtual address.
@@ -253,8 +253,8 @@ impl CursorMut<'_> {
     /// This is the same as [`Cursor::query`].
     ///
     /// This function won't bring the cursor to the next slot.
-    pub fn query(&mut self) -> Result<VmQueryResult> {
-        Ok(self.0.query().map(|ptqr| ptqr.try_into().unwrap())?)
+    pub fn query(&mut self) -> Result<VmItem> {
+        Ok(self.0.query().map(|item| item.try_into().unwrap())?)
     }
 
     /// Jump to the virtual address.
@@ -339,7 +339,7 @@ impl CursorMut<'_> {
 
 /// The result of a query over the VM space.
 #[derive(Debug)]
-pub enum VmQueryResult {
+pub enum VmItem {
     /// The current slot is not mapped.
     NotMapped {
         /// The virtual address of the slot.
@@ -358,20 +358,22 @@ pub enum VmQueryResult {
     },
 }
 
-impl TryFrom<PtQr> for VmQueryResult {
+impl TryFrom<PageTableItem> for VmItem {
     type Error = &'static str;
 
-    fn try_from(ptqr: PtQr) -> core::result::Result<Self, Self::Error> {
-        match ptqr {
-            PtQr::NotMapped { va, len } => Ok(VmQueryResult::NotMapped { va, len }),
-            PtQr::Mapped { va, page, prop } => Ok(VmQueryResult::Mapped {
+    fn try_from(item: PageTableItem) -> core::result::Result<Self, Self::Error> {
+        match item {
+            PageTableItem::NotMapped { va, len } => Ok(VmItem::NotMapped { va, len }),
+            PageTableItem::Mapped { va, page, prop } => Ok(VmItem::Mapped {
                 va,
                 frame: page
                     .try_into()
                     .map_err(|_| "found typed memory mapped into `VmSpace`")?,
                 prop,
             }),
-            PtQr::MappedUntracked { .. } => Err("found untracked memory mapped into `VmSpace`"),
+            PageTableItem::MappedUntracked { .. } => {
+                Err("found untracked memory mapped into `VmSpace`")
+            }
         }
     }
 }
