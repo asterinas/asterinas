@@ -89,9 +89,6 @@ fn init_thread() {
     // Work queue should be initialized before interrupt is enabled,
     // in case any irq handler uses work queue as bottom half
     thread::work_queue::init();
-    // FIXME: Remove this if we move the step of mounting
-    // the filesystems to be done within the init process.
-    ostd::trap::enable_local();
     net::lazy_init();
     fs::lazy_init();
     // driver::pci::virtio::block::block_device_test();

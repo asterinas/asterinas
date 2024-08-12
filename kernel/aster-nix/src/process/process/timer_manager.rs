@@ -18,12 +18,14 @@ use ostd::{
 
 use super::Process;
 use crate::{
-    prelude::*,
     process::{
         posix_thread::PosixThreadExt,
         signal::{constants::SIGALRM, signals::kernel::KernelSignal},
     },
-    thread::work_queue::{submit_work_item, work_item::WorkItem},
+    thread::{
+        work_queue::{submit_work_item, work_item::WorkItem},
+        Thread,
+    },
     time::{
         clocks::{ProfClock, RealTimeClock},
         Timer, TimerManager,
@@ -36,40 +38,43 @@ use crate::{
 /// invoke the callbacks of expired timers which are based on the updated
 /// CPU clock.
 fn update_cpu_time() {
-    let current_thread = current_thread!();
-    if let Some(posix_thread) = current_thread.as_posix_thread() {
-        let process = posix_thread.process();
-        let timer_manager = process.timer_manager();
-        let jiffies_interval = Duration::from_millis(1000 / TIMER_FREQ);
-        // Based on whether the timer interrupt occurs in kernel mode or user mode,
-        // the function will add the duration of one timer interrupt interval to the
-        // corresponding CPU clocks.
-        if is_kernel_interrupted() {
-            posix_thread
-                .prof_clock()
-                .kernel_clock()
-                .add_time(jiffies_interval);
-            process
-                .prof_clock()
-                .kernel_clock()
-                .add_time(jiffies_interval);
-        } else {
-            posix_thread
-                .prof_clock()
-                .user_clock()
-                .add_time(jiffies_interval);
-            process.prof_clock().user_clock().add_time(jiffies_interval);
-            timer_manager
-                .virtual_timer()
-                .timer_manager()
-                .process_expired_timers();
-        }
+    let Some(current_thread) = Thread::current() else {
+        return;
+    };
+    let Some(posix_thread) = current_thread.as_posix_thread() else {
+        return;
+    };
+    let process = posix_thread.process();
+    let timer_manager = process.timer_manager();
+    let jiffies_interval = Duration::from_millis(1000 / TIMER_FREQ);
+    // Based on whether the timer interrupt occurs in kernel mode or user mode,
+    // the function will add the duration of one timer interrupt interval to the
+    // corresponding CPU clocks.
+    if is_kernel_interrupted() {
+        posix_thread
+            .prof_clock()
+            .kernel_clock()
+            .add_time(jiffies_interval);
+        process
+            .prof_clock()
+            .kernel_clock()
+            .add_time(jiffies_interval);
+    } else {
+        posix_thread
+            .prof_clock()
+            .user_clock()
+            .add_time(jiffies_interval);
+        process.prof_clock().user_clock().add_time(jiffies_interval);
         timer_manager
-            .prof_timer()
+            .virtual_timer()
             .timer_manager()
             .process_expired_timers();
-        posix_thread.process_expired_timers();
     }
+    timer_manager
+        .prof_timer()
+        .timer_manager()
+        .process_expired_timers();
+    posix_thread.process_expired_timers();
 }
 
 /// Registers a function to update the CPU clock in processes and
