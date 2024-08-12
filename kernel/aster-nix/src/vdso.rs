@@ -195,28 +195,31 @@ impl VdsoData {
 /// and a `Vmo` that contains all VDSO-related information, including the VDSO data and the VDSO calling interfaces.
 /// This `Vmo` must be mapped to every userspace process.
 struct Vdso {
-    /// A VdsoData instance.
+    /// A `VdsoData` instance.
     data: SpinLock<VdsoData>,
-    /// The vmo of the entire VDSO, including the library text and the VDSO data.
+    /// The VMO of the entire VDSO, including the library text and the VDSO data.
     vmo: Arc<Vmo>,
     /// The `Frame` that contains the VDSO data. This frame is contained in and
-    /// will not be removed from the VDSO vmo.
+    /// will not be removed from the VDSO VMO.
     data_frame: Frame,
 }
 
 /// A `SpinLock` for the `seq` field in `VdsoData`.
 static SEQ_LOCK: SpinLock<()> = SpinLock::new(());
 
+/// The size of the VDSO VMO.
+pub const VDSO_VMO_SIZE: usize = 5 * PAGE_SIZE;
+
 impl Vdso {
-    /// Construct a new Vdso, including an initialized `VdsoData` and a vmo of the VDSO.
+    /// Construct a new `Vdso`, including an initialized `VdsoData` and a VMO of the VDSO.
     fn new() -> Self {
         let mut vdso_data = VdsoData::empty();
         vdso_data.init();
 
         let (vdso_vmo, data_frame) = {
-            let vmo_options = VmoOptions::<Rights>::new(5 * PAGE_SIZE);
+            let vmo_options = VmoOptions::<Rights>::new(VDSO_VMO_SIZE);
             let vdso_vmo = vmo_options.alloc().unwrap();
-            // Write VDSO data to VDSO vmo.
+            // Write VDSO data to VDSO VMO.
             vdso_vmo.write_bytes(0x80, vdso_data.as_bytes()).unwrap();
 
             let vdso_lib_vmo = {
@@ -227,10 +230,10 @@ impl Vdso {
             };
             let mut vdso_text = Box::new([0u8; PAGE_SIZE]);
             vdso_lib_vmo.read_bytes(0, &mut *vdso_text).unwrap();
-            // Write VDSO library to VDSO vmo.
+            // Write VDSO library to VDSO VMO.
             vdso_vmo.write_bytes(0x4000, &*vdso_text).unwrap();
 
-            let data_frame = vdso_vmo.get_committed_frame(0, true).unwrap();
+            let data_frame = vdso_vmo.commit_page(0).unwrap();
             (vdso_vmo, data_frame)
         };
         Self {
@@ -329,7 +332,7 @@ pub(super) fn init() {
     coarse_instant_timer.set_timeout(Timeout::After(Duration::from_millis(100)));
 }
 
-/// Return the VDSO vmo.
+/// Returns the VDSO VMO.
 pub(crate) fn vdso_vmo() -> Option<Arc<Vmo>> {
     // We allow that VDSO does not exist
     VDSO.get().map(|vdso| vdso.vmo.clone())
