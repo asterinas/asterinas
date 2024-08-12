@@ -4,15 +4,11 @@ use core::ops::Range;
 
 use aster_rights::{Dup, Rights, TRightSet, TRights};
 use aster_rights_proc::require;
-use ostd::mm::VmIo;
 
 use super::{
     options::VmarChildOptions, vm_mapping::VmarMapOptions, VmPerms, Vmar, VmarRightsOp, Vmar_,
 };
-use crate::{
-    prelude::*,
-    vm::{page_fault_handler::PageFaultHandler, vmo::Vmo},
-};
+use crate::{prelude::*, vm::page_fault_handler::PageFaultHandler};
 
 impl<R: TRights> Vmar<TRightSet<R>> {
     /// Creates a root VMAR.
@@ -26,7 +22,7 @@ impl<R: TRights> Vmar<TRightSet<R>> {
         Self(inner, TRightSet(rights))
     }
 
-    /// Maps the given VMO into the VMAR through a set of VMAR mapping options.
+    /// Creates a mapping into the VMAR through a set of VMAR mapping options.
     ///
     /// # Example
     ///
@@ -35,13 +31,18 @@ impl<R: TRights> Vmar<TRightSet<R>> {
     /// use aster_nix::vm::{PAGE_SIZE, Vmar, VmoOptions};
     ///
     /// let vmar = Vmar::<RightsWrapper<Full>>::new().unwrap();
-    /// let vmo = VmoOptions::new(PAGE_SIZE).alloc().unwrap();
+    /// let vmo = VmoOptions::new(10 * PAGE_SIZE).alloc().unwrap();
     /// let target_vaddr = 0x1234000;
     /// let real_vaddr = vmar
-    ///     // Map the VMO to create a read-only mapping
-    ///     .new_map(vmo, VmPerms::READ)
+    ///     // Create a 4 * PAGE_SIZE bytes, read-only mapping
+    ///     .new_map(PAGE_SIZE * 4, VmPerms::READ)
     ///     // Provide an optional offset for the mapping inside the VMAR
     ///     .offset(target_vaddr)
+    ///     // Specify an optional binding VMO.
+    ///     .vmo(vmo)
+    ///     // Provide an optional offset to indicate the corresponding offset
+    ///     // in the VMO for the mapping
+    ///     .vmo_offset(2 * PAGE_SIZE)
     ///     .build()
     ///     .unwrap();
     /// assert!(real_vaddr == target_vaddr);
@@ -64,11 +65,11 @@ impl<R: TRights> Vmar<TRightSet<R>> {
     #[require(R > Dup)]
     pub fn new_map(
         &self,
-        vmo: Vmo<Rights>,
+        size: usize,
         perms: VmPerms,
     ) -> Result<VmarMapOptions<TRightSet<R>, Rights>> {
         let dup_self = self.dup()?;
-        Ok(VmarMapOptions::new(dup_self, vmo, perms))
+        Ok(VmarMapOptions::new(dup_self, size, perms))
     }
 
     /// Creates a new child VMAR through a set of VMAR child options.
@@ -105,10 +106,6 @@ impl<R: TRights> Vmar<TRightSet<R>> {
     ///
     /// The VMAR must have the rights corresponding to the specified memory
     /// permissions.
-    ///
-    /// The mappings overlapped with the specified range must be backed by
-    /// VMOs whose rights contain the rights corresponding to the specified
-    /// memory permissions.
     pub fn protect(&self, perms: VmPerms, range: Range<usize>) -> Result<()> {
         self.check_rights(perms.into())?;
         self.0.protect(perms, range)
@@ -168,20 +165,6 @@ impl<R: TRights> Vmar<TRightSet<R>> {
         } else {
             return_errno_with_message!(Errno::EACCES, "check rights failed");
         }
-    }
-}
-
-impl<R: TRights> VmIo for Vmar<TRightSet<R>> {
-    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> ostd::Result<()> {
-        self.check_rights(Rights::READ)?;
-        self.0.read(offset, buf)?;
-        Ok(())
-    }
-
-    fn write_bytes(&self, offset: usize, buf: &[u8]) -> ostd::Result<()> {
-        self.check_rights(Rights::WRITE)?;
-        self.0.write(offset, buf)?;
-        Ok(())
     }
 }
 

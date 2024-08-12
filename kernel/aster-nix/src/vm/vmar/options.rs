@@ -179,22 +179,12 @@ mod test {
         let map_offset = 0x1000_0000;
         let vmo_dup = vmo.dup().unwrap();
         root_vmar
-            .new_map(vmo_dup, perms)
+            .new_map(PAGE_SIZE, perms)
             .unwrap()
+            .vmo(vmo_dup)
             .offset(map_offset)
             .build()
             .unwrap();
-        root_vmar.write_val(map_offset, &100u8).unwrap();
-        assert!(root_vmar.read_val::<u8>(map_offset).unwrap() == 100);
-        let another_map_offset = 0x1100_0000;
-        let vmo_dup = vmo.dup().unwrap();
-        root_vmar
-            .new_map(vmo_dup, perms)
-            .unwrap()
-            .offset(another_map_offset)
-            .build()
-            .unwrap();
-        assert!(root_vmar.read_val::<u8>(another_map_offset).unwrap() == 100);
     }
 
     #[ktest]
@@ -208,8 +198,9 @@ mod test {
         let perms = VmPerms::READ;
         let vmo_dup = vmo.dup().unwrap();
         root_vmar
-            .new_map(vmo_dup, perms)
+            .new_map(PAGE_SIZE, perms)
             .unwrap()
+            .vmo(vmo_dup)
             .offset(OFFSET)
             .build()
             .unwrap();
