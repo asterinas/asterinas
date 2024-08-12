@@ -7,11 +7,11 @@ use aster_rights::Rights;
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::FileDesc,
+    fs::{file_handle::FileLike, file_table::FileDesc, inode_handle::InodeHandle},
     prelude::*,
     vm::{
         perms::VmPerms,
-        vmo::{Vmo, VmoChildOptions, VmoOptions, VmoRightsOp},
+        vmo::{VmoOptions, VmoRightsOp},
     },
 };
 
@@ -60,18 +60,9 @@ fn do_sys_mmap(
         return_errno_with_message!(Errno::EINVAL, "mmap only support page-aligned offset");
     }
 
-    let vmo = if option.flags.contains(MMapFlags::MAP_ANONYMOUS) {
-        if offset != 0 {
-            return_errno_with_message!(Errno::EINVAL, "offset must be zero for anonymous mapping");
-        }
-        alloc_anonyous_vmo(len)?
-    } else {
-        alloc_filebacked_vmo(fd, len, offset, &option, ctx)?
-    };
-
     let root_vmar = ctx.process.root_vmar();
     let vm_map_options = {
-        let mut options = root_vmar.new_map(vmo.to_dyn(), vm_perms)?;
+        let mut options = root_vmar.new_map(len, vm_perms)?;
         let flags = option.flags;
         if flags.contains(MMapFlags::MAP_FIXED) {
             options = options.offset(addr).can_overwrite(true);
@@ -84,47 +75,59 @@ fn do_sys_mmap(
             options = options.is_shared(true);
         }
 
+        if option.flags.contains(MMapFlags::MAP_ANONYMOUS) {
+            if offset != 0 {
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "offset must be zero for anonymous mapping"
+                );
+            }
+
+            // Anonymous shared mapping should share the same memory pages.
+            if option.typ() == MMapType::Shared {
+                let shared_vmo = {
+                    let vmo_options: VmoOptions<Rights> = VmoOptions::new(len);
+                    vmo_options.alloc()?
+                };
+                options = options.vmo(shared_vmo);
+            }
+        } else {
+            let vmo = {
+                let file_table = ctx.process.file_table().lock();
+                let file = file_table.get_file(fd)?;
+                let inode_handle = file
+                    .downcast_ref::<InodeHandle>()
+                    .ok_or(Error::with_message(Errno::EINVAL, "no inode"))?;
+
+                let access_mode = inode_handle.access_mode();
+                if vm_perms.contains(VmPerms::READ) && !access_mode.is_readable() {
+                    return_errno!(Errno::EACCES);
+                }
+                if option.typ() == MMapType::Shared
+                    && vm_perms.contains(VmPerms::WRITE)
+                    && !access_mode.is_writable()
+                {
+                    return_errno!(Errno::EACCES);
+                }
+
+                let inode = inode_handle.dentry().inode();
+                inode
+                    .page_cache()
+                    .ok_or(Error::with_message(
+                        Errno::EBADF,
+                        "File does not have page cache",
+                    ))?
+                    .to_dyn()
+            };
+
+            options = options.vmo(vmo).vmo_offset(offset);
+        }
+
         options
     };
+
     let map_addr = vm_map_options.build()?;
-    trace!("map range = 0x{:x} - 0x{:x}", map_addr, map_addr + len);
-
     Ok(map_addr)
-}
-
-fn alloc_anonyous_vmo(len: usize) -> Result<Vmo> {
-    let vmo_options: VmoOptions<Rights> = VmoOptions::new(len);
-    vmo_options.alloc()
-}
-
-fn alloc_filebacked_vmo(
-    fd: FileDesc,
-    len: usize,
-    offset: usize,
-    option: &MMapOptions,
-    ctx: &Context,
-) -> Result<Vmo> {
-    let page_cache_vmo = {
-        let fs_resolver = ctx.process.fs().read();
-        let dentry = fs_resolver.lookup_from_fd(fd)?;
-        let inode = dentry.inode();
-        inode
-            .page_cache()
-            .ok_or(Error::with_message(
-                Errno::EBADF,
-                "File does not have page cache",
-            ))?
-            .to_dyn()
-    };
-
-    if option.typ() == MMapType::Private {
-        // map private
-        VmoChildOptions::new_cow(page_cache_vmo, offset..(offset + len)).alloc()
-    } else {
-        // map shared
-        // FIXME: map shared vmo can exceed parent range, but slice child cannot
-        VmoChildOptions::new_slice_rights(page_cache_vmo, offset..(offset + len)).alloc()
-    }
 }
 
 fn check_option(option: &MMapOptions) -> Result<()> {
