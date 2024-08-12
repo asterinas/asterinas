@@ -7,7 +7,7 @@
 //! When create a process from elf file, we will use the elf_load_info to construct the VmSpace
 
 use align_ext::AlignExt;
-use aster_rights::{Full, Rights};
+use aster_rights::Full;
 use ostd::mm::VmIo;
 use xmas_elf::program::{self, ProgramHeader64};
 
@@ -23,12 +23,8 @@ use crate::{
         process_vm::{AuxKey, AuxVec, ProcessVm},
         TermStatus,
     },
-    vdso::vdso_vmo,
-    vm::{
-        perms::VmPerms,
-        vmar::Vmar,
-        vmo::{Vmo, VmoOptions, VmoRightsOp},
-    },
+    vdso::{vdso_vmo, VDSO_VMO_SIZE},
+    vm::{perms::VmPerms, util::duplicate_frame, vmar::Vmar, vmo::VmoRightsOp},
 };
 
 /// Loads elf to the process vm.   
@@ -197,7 +193,7 @@ impl ElfLoadInfo {
     }
 }
 
-/// init vmo for each segment and then map segment to root vmar
+/// Inits VMO for each segment and then map segment to root vmar
 pub fn map_segment_vmos(elf: &Elf, root_vmar: &Vmar<Full>, elf_file: &Dentry) -> Result<Vaddr> {
     // all segments of the shared object must be mapped to a continuous vm range
     // to ensure the relative offset of each segment not changed.
@@ -212,14 +208,7 @@ pub fn map_segment_vmos(elf: &Elf, root_vmar: &Vmar<Full>, elf_file: &Dentry) ->
             .map_err(|_| Error::with_message(Errno::ENOEXEC, "parse program header type fails"))?;
         if type_ == program::Type::Load {
             check_segment_align(program_header)?;
-            let (vmo, anonymous_map_size) = init_segment_vmo(program_header, elf_file)?;
-            map_segment_vmo(
-                program_header,
-                vmo,
-                anonymous_map_size,
-                root_vmar,
-                base_addr,
-            )?;
+            map_segment_vmo(program_header, elf_file, root_vmar, base_addr)?;
         }
     }
     Ok(base_addr)
@@ -245,49 +234,18 @@ fn base_map_addr(elf: &Elf, root_vmar: &Vmar<Full>) -> Result<Vaddr> {
             "executable file does not has loadable sections",
         ))?;
     let map_size = elf_size.align_up(PAGE_SIZE);
-    let vmo = VmoOptions::<Rights>::new(0).alloc()?;
-    let vmar_map_options = root_vmar.new_map(vmo, VmPerms::empty())?.size(map_size);
+    let vmar_map_options = root_vmar.new_map(map_size, VmPerms::empty())?;
     vmar_map_options.build()
 }
 
-/// map the segment vmo to root_vmar
+/// Creates and map the corresponding segment VMO to `root_vmar`.
+/// If needed, create additional anonymous mapping to represents .bss segment.
 fn map_segment_vmo(
     program_header: &ProgramHeader64,
-    vmo: Vmo,
-    anonymous_map_size: usize,
+    elf_file: &Dentry,
     root_vmar: &Vmar<Full>,
     base_addr: Vaddr,
 ) -> Result<()> {
-    let perms = parse_segment_perm(program_header.flags);
-    let offset = (program_header.virtual_addr as Vaddr).align_down(PAGE_SIZE);
-    trace!(
-        "map segment vmo: virtual addr = 0x{:x}, size = 0x{:x}, perms = {:?}",
-        offset,
-        program_header.mem_size,
-        perms
-    );
-    let vmo_size = vmo.size();
-    let mut vm_map_options = root_vmar.new_map(vmo, perms)?.can_overwrite(true);
-    let offset = base_addr + offset;
-    vm_map_options = vm_map_options.offset(offset);
-    let map_addr = vm_map_options.build()?;
-
-    if anonymous_map_size > 0 {
-        let anonymous_vmo = {
-            let options: VmoOptions<Rights> = VmoOptions::new(anonymous_map_size);
-            options.alloc()?
-        };
-        let mut anonymous_map_options =
-            root_vmar.new_map(anonymous_vmo, perms)?.can_overwrite(true);
-        anonymous_map_options = anonymous_map_options.offset(offset + vmo_size);
-        let anonymous_map_addr = anonymous_map_options.build()?;
-    }
-    Ok(())
-}
-
-/// Create VMO for each segment. Return the segment VMO and the size of
-/// additional anonymous mapping it needs.
-fn init_segment_vmo(program_header: &ProgramHeader64, elf_file: &Dentry) -> Result<(Vmo, usize)> {
     trace!(
         "mem range = 0x{:x} - 0x{:x}, mem_size = 0x{:x}",
         program_header.virtual_addr,
@@ -304,33 +262,29 @@ fn init_segment_vmo(program_header: &ProgramHeader64, elf_file: &Dentry) -> Resu
     let file_offset = program_header.offset as usize;
     let virtual_addr = program_header.virtual_addr as usize;
     debug_assert!(file_offset % PAGE_SIZE == virtual_addr % PAGE_SIZE);
-    let page_cache_vmo = {
+    let segment_vmo = {
         let inode = elf_file.inode();
-        inode.page_cache().ok_or(Error::with_message(
-            Errno::ENOENT,
-            "executable has no page cache",
-        ))?
+        inode
+            .page_cache()
+            .ok_or(Error::with_message(
+                Errno::ENOENT,
+                "executable has no page cache",
+            ))?
+            .to_dyn()
+            .dup_independent()?
     };
-    let vmo_size = {
+
+    let total_map_size = {
         let vmap_start = virtual_addr.align_down(PAGE_SIZE);
         let vmap_end = (virtual_addr + program_header.mem_size as usize).align_up(PAGE_SIZE);
         vmap_end - vmap_start
     };
 
-    let segment_vmo = {
-        let parent_range = {
-            let start = file_offset.align_down(PAGE_SIZE);
-            let end = (file_offset + program_header.file_size as usize).align_up(PAGE_SIZE);
-            start..end
-        };
-        debug_assert!(vmo_size >= (program_header.file_size as usize).align_up(PAGE_SIZE));
-        page_cache_vmo.new_cow_child(parent_range).alloc()?
-    };
-
-    let anonymous_map_size: usize = if vmo_size > segment_vmo.size() {
-        vmo_size - segment_vmo.size()
-    } else {
-        0
+    let (segment_offset, segment_size) = {
+        let start = file_offset.align_down(PAGE_SIZE);
+        let end = (file_offset + program_header.file_size as usize).align_up(PAGE_SIZE);
+        debug_assert!(total_map_size >= (program_header.file_size as usize).align_up(PAGE_SIZE));
+        (start, end - start)
     };
 
     // Write zero as paddings. There are head padding and tail padding.
@@ -342,17 +296,61 @@ fn init_segment_vmo(program_header: &ProgramHeader64, elf_file: &Dentry) -> Resu
     // Head padding.
     let page_offset = file_offset % PAGE_SIZE;
     if page_offset != 0 {
-        let buffer = vec![0u8; page_offset];
-        segment_vmo.write_bytes(0, &buffer)?;
+        let new_frame = {
+            let head_frame = segment_vmo.commit_page(segment_offset)?;
+            let new_frame = duplicate_frame(&head_frame)?;
+
+            let buffer = vec![0u8; page_offset];
+            new_frame.write_bytes(0, &buffer).unwrap();
+            new_frame
+        };
+        let head_idx = segment_offset / PAGE_SIZE;
+        segment_vmo.replace(new_frame, head_idx)?;
     }
+
     // Tail padding.
-    let segment_vmo_size = segment_vmo.size();
     let tail_padding_offset = program_header.file_size as usize + page_offset;
-    if segment_vmo_size > tail_padding_offset {
-        let buffer = vec![0u8; (segment_vmo_size - tail_padding_offset) % PAGE_SIZE];
-        segment_vmo.write_bytes(tail_padding_offset, &buffer)?;
+    if segment_size > tail_padding_offset {
+        let new_frame = {
+            let tail_frame = segment_vmo.commit_page(segment_offset + tail_padding_offset)?;
+            let new_frame = duplicate_frame(&tail_frame)?;
+
+            let buffer = vec![0u8; (segment_size - tail_padding_offset) % PAGE_SIZE];
+            new_frame
+                .write_bytes(tail_padding_offset % PAGE_SIZE, &buffer)
+                .unwrap();
+            new_frame
+        };
+
+        let tail_idx = (segment_offset + tail_padding_offset) / PAGE_SIZE;
+        segment_vmo.replace(new_frame, tail_idx).unwrap();
     }
-    Ok((segment_vmo.to_dyn(), anonymous_map_size))
+
+    let perms = parse_segment_perm(program_header.flags);
+    let mut vm_map_options = root_vmar
+        .new_map(segment_size, perms)?
+        .vmo(segment_vmo)
+        .vmo_offset(segment_offset)
+        .vmo_limit(segment_offset + segment_size)
+        .can_overwrite(true);
+    let offset = base_addr + (program_header.virtual_addr as Vaddr).align_down(PAGE_SIZE);
+    vm_map_options = vm_map_options.offset(offset);
+    let map_addr = vm_map_options.build()?;
+
+    let anonymous_map_size: usize = if total_map_size > segment_size {
+        total_map_size - segment_size
+    } else {
+        0
+    };
+
+    if anonymous_map_size > 0 {
+        let mut anonymous_map_options = root_vmar
+            .new_map(anonymous_map_size, perms)?
+            .can_overwrite(true);
+        anonymous_map_options = anonymous_map_options.offset(offset + segment_size);
+        anonymous_map_options.build()?;
+    }
+    Ok(())
 }
 
 fn parse_segment_perm(flags: xmas_elf::program::Flags) -> VmPerms {
@@ -411,15 +409,16 @@ pub fn init_aux_vec(elf: &Elf, elf_map_addr: Vaddr, ldso_base: Option<Vaddr>) ->
     Ok(aux_vec)
 }
 
-/// Map the vdso vmo to the corresponding virtual memory address.
+/// Maps the VDSO VMO to the corresponding virtual memory address.
 fn map_vdso_to_vm(process_vm: &ProcessVm) -> Option<Vaddr> {
     let root_vmar = process_vm.root_vmar();
     let vdso_vmo = vdso_vmo()?;
 
     let options = root_vmar
-        .new_map(vdso_vmo.dup().unwrap(), VmPerms::empty())
+        .new_map(VDSO_VMO_SIZE, VmPerms::empty())
         .unwrap()
-        .size(5 * PAGE_SIZE);
+        .vmo(vdso_vmo.dup().unwrap());
+
     let vdso_data_base = options.build().unwrap();
     let vdso_text_base = vdso_data_base + 0x4000;
 
