@@ -38,13 +38,11 @@ jobs:
       # Github's actions/checkout@v4 will result in a new user (not root) 
       # and thus not using the Rust environment we set up in the container. 
       # So the RUSTUP_HOME needs to be set here. 
-      # This only breaks when we invoke Cargo in the integration test of OSDK 
-      # since the OSDK toolchain is not nightly.
       - name: Unit test
         id: unit_test
         run: |
           cd osdk
-          RUSTUP_HOME=/root/.rustup cargo +stable build
+          RUSTUP_HOME=/root/.rustup cargo build
           RUSTUP_HOME=/root/.rustup cargo test
 
   osdk-test-tdx:
@@ -74,11 +72,9 @@ jobs:
       # Github's actions/checkout@v4 will result in a new user (not root) 
       # and thus not using the Rust environment we set up in the container. 
       # So the RUSTUP_HOME needs to be set here. 
-      # This only breaks when we invoke Cargo in the integration test of OSDK 
-      # since the OSDK toolchain is not nightly.
       - name: Unit test
         id: unit_test
         run: |
           cd osdk
-          RUSTUP_HOME=/root/.rustup INTEL_TDX=1 cargo +stable build
+          RUSTUP_HOME=/root/.rustup INTEL_TDX=1 cargo build
           RUSTUP_HOME=/root/.rustup INTEL_TDX=1 cargo test
