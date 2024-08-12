@@ -10,7 +10,7 @@ mod options;
 mod static_cap;
 pub mod vm_mapping;
 
-use core::{cmp::min, ops::Range};
+use core::ops::Range;
 
 use align_ext::AlignExt;
 use aster_rights::Rights;
@@ -40,12 +40,13 @@ use crate::{prelude::*, thread::exception::handle_page_fault, vm::perms::VmPerms
 ///    directly.
 ///
 /// VMARs are implemented with two flavors of capabilities:
-/// the dynamic one (`Vmar<Rights>`) and the static one (`Vmar<R: TRights>).
+/// the dynamic one (`Vmar<Rights>`) and the static one (`Vmar<R: TRights>`).
 pub struct Vmar<R = Rights>(Arc<Vmar_>, R);
 
 pub trait VmarRightsOp {
     /// Returns the access rights.
     fn rights(&self) -> Rights;
+    /// Checks whether current rights meet the input `rights`.
     fn check_rights(&self, rights: Rights) -> Result<()>;
 }
 
@@ -86,29 +87,43 @@ impl<R> Vmar<R> {
     pub fn vm_space(&self) -> &Arc<VmSpace> {
         self.0.vm_space()
     }
+
+    /// Resizes the original mapping `map_addr..map_addr + old_size` to `map_addr..map_addr + new_size`.
+    ///
+    /// The range of the original mapping does not have to correspond to the entire `VmMapping`,
+    /// but it must ensure that all existing ranges have a mapping. Otherwise, this method will return `Err`.
+    /// If the new mapping size is smaller than the original mapping size, the extra part will be unmapped.
+    /// If the new mapping is larger than the old mapping and the extra part overlaps with existing mapping,
+    /// resizing will fail and return `Err`.
+    ///
+    /// TODO: implement `remap` function to handle the case of overlapping mappings.
+    /// If the overlapping mappings are not fixed, they can be moved to make the resizing mapping successful.
+    pub fn resize_mapping(&self, map_addr: Vaddr, old_size: usize, new_size: usize) -> Result<()> {
+        self.0.resize_mapping(map_addr, old_size, new_size)
+    }
 }
 
 pub(super) struct Vmar_ {
-    /// vmar inner
+    /// VMAR inner
     inner: Mutex<VmarInner>,
     /// The offset relative to the root VMAR
     base: Vaddr,
     /// The total size of the VMAR in bytes
     size: usize,
-    /// The attached vmspace
+    /// The attached `VmSpace`
     vm_space: Arc<VmSpace>,
-    /// The parent vmar. If points to none, this is a root vmar
+    /// The parent VMAR. If points to none, this is a root VMAR
     parent: Weak<Vmar_>,
 }
 
 struct VmarInner {
-    /// Whether the vmar is destroyed
+    /// Whether the VMAR is destroyed
     is_destroyed: bool,
-    /// The child vmars. The key is offset relative to root VMAR
+    /// The child VMARs. The key is offset relative to root VMAR
     child_vmar_s: BTreeMap<Vaddr, Arc<Vmar_>>,
-    /// The mapped vmos. The key is offset relative to root VMAR
+    /// The mapped VMOs. The key is offset relative to root VMAR
     vm_mappings: BTreeMap<Vaddr, Arc<VmMapping>>,
-    /// Free regions that can be used for creating child vmar or mapping vmos
+    /// Free regions that can be used for creating child VMAR or mapping VMOs
     free_regions: BTreeMap<Vaddr, FreeRegion>,
 }
 
@@ -120,6 +135,42 @@ impl VmarInner {
             vm_mappings: BTreeMap::new(),
             free_regions: BTreeMap::new(),
         }
+    }
+
+    /// Finds a free region for child `Vmar` or `VmMapping`.
+    /// Returns (region base addr, child real offset).
+    fn find_free_region(
+        &mut self,
+        child_offset: Option<Vaddr>,
+        child_size: usize,
+        align: usize,
+    ) -> Result<(Vaddr, Vaddr)> {
+        if let Some(child_vmar_offset) = child_offset {
+            // if the offset is set, we should find a free region can satisfy both the offset and size
+            let child_vmar_range = child_vmar_offset..(child_vmar_offset + child_size);
+            for free_region in self.free_regions.find(&child_vmar_range) {
+                let free_region_range = free_region.range();
+                if free_region_range.start <= child_vmar_range.start
+                    && child_vmar_range.end <= free_region_range.end
+                {
+                    return Ok((free_region_range.start, child_vmar_offset));
+                }
+            }
+        } else {
+            // Else, we find a free region that can satisfy the length and align requirement.
+            // Here, we use a simple brute-force algorithm to find the first free range that can satisfy.
+            // FIXME: A randomized algorithm may be more efficient.
+            for (region_base, free_region) in &self.free_regions {
+                let region_start = free_region.start();
+                let region_end = free_region.end();
+                let child_vmar_real_start = region_start.align_up(align);
+                let child_vmar_real_end = child_vmar_real_start + child_size;
+                if region_start <= child_vmar_real_start && child_vmar_real_end <= region_end {
+                    return Ok((*region_base, child_vmar_real_start));
+                }
+            }
+        }
+        return_errno_with_message!(Errno::EACCES, "Cannot find free region for child")
     }
 }
 
@@ -160,7 +211,7 @@ impl Vmar_ {
         })
     }
 
-    pub fn new_root() -> Arc<Self> {
+    fn new_root() -> Arc<Self> {
         let mut free_regions = BTreeMap::new();
         let root_region = FreeRegion::new(ROOT_VMAR_LOWEST_ADDR..ROOT_VMAR_CAP_ADDR);
         free_regions.insert(root_region.start(), root_region);
@@ -179,10 +230,10 @@ impl Vmar_ {
         self.parent.upgrade().is_none()
     }
 
-    pub fn protect(&self, perms: VmPerms, range: Range<usize>) -> Result<()> {
+    fn protect(&self, perms: VmPerms, range: Range<usize>) -> Result<()> {
         assert!(range.start % PAGE_SIZE == 0);
         assert!(range.end % PAGE_SIZE == 0);
-        self.check_protected_range(&range)?;
+        self.ensure_range_mapped(&range)?;
         self.do_protect_inner(perms, range)?;
         Ok(())
     }
@@ -216,39 +267,33 @@ impl Vmar_ {
         Ok(())
     }
 
-    /// Ensure the whole protected range is mapped, that is to say, backed up by a VMO.
+    /// Ensure the whole protected range is mapped.
     /// Internally, we check whether the range intersects any free region recursively.
     /// If so, the range is not fully mapped.
-    fn check_protected_range(&self, protected_range: &Range<usize>) -> Result<()> {
+    fn ensure_range_mapped(&self, range: &Range<usize>) -> Result<()> {
         // The protected range should be in self's range
-        assert!(self.base <= protected_range.start);
-        assert!(protected_range.end <= self.base + self.size);
+        assert!(self.base <= range.start);
+        assert!(range.end <= self.base + self.size);
 
-        // The protected range should not interstect with any free region
+        // The protected range should not intersect with any free region
         let inner = self.inner.lock();
-        if inner
-            .free_regions
-            .find(protected_range)
-            .into_iter()
-            .next()
-            .is_some()
-        {
+        if inner.free_regions.find(range).into_iter().next().is_some() {
             return_errno_with_message!(Errno::EACCES, "protected range is not fully mapped");
         }
 
-        // if the protected range intersects with child vmar_, child vmar_ is responsible to do the check.
-        for child_vmar_ in inner.child_vmar_s.find(protected_range) {
+        // if the protected range intersects with child `Vmar_`, child `Vmar_` is responsible to do the check.
+        for child_vmar_ in inner.child_vmar_s.find(range) {
             let child_vmar_range = child_vmar_.range();
-            debug_assert!(is_intersected(&child_vmar_range, protected_range));
-            let intersected_range = get_intersected_range(protected_range, &child_vmar_range);
-            child_vmar_.check_protected_range(&intersected_range)?;
+            debug_assert!(is_intersected(&child_vmar_range, range));
+            let intersected_range = get_intersected_range(range, &child_vmar_range);
+            child_vmar_.ensure_range_mapped(&intersected_range)?;
         }
 
         Ok(())
     }
 
-    /// Handle user space page fault, if the page fault is successfully handled ,return Ok(()).
-    pub fn handle_page_fault(
+    /// Handles user space page fault, if the page fault is successfully handled ,return Ok(()).
+    fn handle_page_fault(
         &self,
         page_fault_addr: Vaddr,
         not_present: bool,
@@ -267,7 +312,7 @@ impl Vmar_ {
             return child_vmar.handle_page_fault(page_fault_addr, not_present, write);
         }
 
-        // FIXME: If multiple vmos are mapped to the addr, should we allow all vmos to handle page fault?
+        // FIXME: If multiple VMOs are mapped to the addr, should we allow all VMOs to handle page fault?
         if let Some(vm_mapping) = inner.vm_mappings.find_one(&page_fault_addr) {
             debug_assert!(is_intersected(
                 &vm_mapping.range(),
@@ -279,8 +324,8 @@ impl Vmar_ {
         return_errno_with_message!(Errno::EACCES, "page fault addr is not in current vmar");
     }
 
-    /// Clear all content of the root vmar
-    pub fn clear_root_vmar(&self) -> Result<()> {
+    /// Clears all content of the root VMAR.
+    fn clear_root_vmar(&self) -> Result<()> {
         debug_assert!(self.is_root_vmar());
         if !self.is_root_vmar() {
             return_errno_with_message!(Errno::EACCES, "The vmar is not root vmar");
@@ -343,6 +388,48 @@ impl Vmar_ {
         Ok(())
     }
 
+    fn resize_mapping(&self, map_addr: Vaddr, old_size: usize, new_size: usize) -> Result<()> {
+        debug_assert!(map_addr % PAGE_SIZE == 0);
+        debug_assert!(old_size % PAGE_SIZE == 0);
+        debug_assert!(new_size % PAGE_SIZE == 0);
+
+        if new_size == 0 {
+            return_errno_with_message!(Errno::EINVAL, "can not resize a mapping to 0 size");
+        }
+
+        if new_size == old_size {
+            return Ok(());
+        }
+
+        let old_map_end = map_addr + old_size;
+        let new_map_end = map_addr + new_size;
+        self.ensure_range_mapped(&(map_addr..old_map_end))?;
+
+        if new_size < old_size {
+            self.destroy(new_map_end..old_map_end)?;
+            return Ok(());
+        }
+
+        let last_mapping = {
+            let inner = self.inner.lock();
+            inner
+                .vm_mappings
+                .find_one(&(old_map_end - 1))
+                .unwrap()
+                .clone()
+        };
+
+        let extra_mapping_start = last_mapping.map_end();
+        let free_region = self.allocate_free_region_for_mapping(
+            new_map_end - extra_mapping_start,
+            Some(extra_mapping_start),
+            PAGE_SIZE,
+            false,
+        )?;
+        last_mapping.enlarge(new_map_end - extra_mapping_start);
+        Ok(())
+    }
+
     fn check_destroy_range(&self, range: &Range<usize>) -> Result<()> {
         debug_assert!(range.start % PAGE_SIZE == 0);
         debug_assert!(range.end % PAGE_SIZE == 0);
@@ -387,97 +474,7 @@ impl Vmar_ {
         inner.free_regions.append(&mut new_free_regions);
     }
 
-    pub fn read(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
-        let read_start = self.base + offset;
-        let read_end = buf.len() + read_start;
-        let read_range = read_start..read_end;
-        // If the read range is in child vmar.
-        let inner = self.inner.lock();
-        for child_vmar_ in inner.child_vmar_s.find(&read_range) {
-            let child_vmar_range = child_vmar_.range();
-            if child_vmar_range.start <= read_start && read_end <= child_vmar_range.end {
-                let child_offset = read_start - child_vmar_range.start;
-                return child_vmar_.read(child_offset, buf);
-            }
-        }
-
-        // If the read range is in mapped vmo.
-        let mut read_offset = 0;
-        for vm_mapping in inner.vm_mappings.find(&read_range) {
-            let vm_mapping_range = vm_mapping.range();
-            let current_start = read_start + read_offset;
-            if vm_mapping_range.start <= current_start {
-                let buf_len = min(
-                    buf.len() - read_offset,
-                    vm_mapping_range.end - current_start,
-                );
-                let vm_mapping_offset = current_start - vm_mapping_range.start;
-                vm_mapping.read_bytes(
-                    vm_mapping_offset,
-                    buf.get_mut(read_offset..buf_len).unwrap(),
-                )?;
-                read_offset += buf_len;
-            } else {
-                return_errno_with_message!(Errno::EACCES, "read range is not fully mapped");
-            }
-        }
-        if read_offset == buf.len() {
-            return Ok(());
-        }
-
-        // FIXME: If the read range is across different vmos or child vmars, should we directly return error?
-        return_errno_with_message!(Errno::EACCES, "read range is not backed up by a vmo");
-    }
-
-    pub fn write(&self, offset: usize, buf: &[u8]) -> Result<()> {
-        let write_start = self
-            .base
-            .checked_add(offset)
-            .ok_or_else(|| Error::with_message(Errno::EFAULT, "Arithmetic Overflow"))?;
-
-        let write_end = buf
-            .len()
-            .checked_add(write_start)
-            .ok_or_else(|| Error::with_message(Errno::EFAULT, "Arithmetic Overflow"))?;
-        let write_range = write_start..write_end;
-
-        // If the write range is in child vmar.
-        let inner = self.inner.lock();
-        for child_vmar_ in inner.child_vmar_s.find(&write_range) {
-            let child_vmar_range = child_vmar_.range();
-            if child_vmar_range.start <= write_start && write_end <= child_vmar_range.end {
-                let child_offset = write_start - child_vmar_range.start;
-                return child_vmar_.write(child_offset, buf);
-            }
-        }
-
-        // If the write range is in mapped vmo.
-        let mut write_offset = 0;
-        for vm_mapping in inner.vm_mappings.find(&write_range) {
-            let vm_mapping_range = vm_mapping.range();
-            let current_start = write_start + write_offset;
-            if vm_mapping_range.start <= current_start {
-                let buf_len = min(
-                    buf.len() - write_offset,
-                    vm_mapping_range.end - current_start,
-                );
-                let vm_mapping_offset = current_start - vm_mapping_range.start;
-                vm_mapping
-                    .write_bytes(vm_mapping_offset, buf.get(write_offset..buf_len).unwrap())?;
-                write_offset += buf_len;
-            } else {
-                return_errno_with_message!(Errno::EACCES, "write range is not fully mapped");
-            }
-        }
-        if write_offset == buf.len() {
-            return Ok(());
-        }
-
-        // FIXME: If the write range is across different vmos or child vmars, should we directly return error?
-        return_errno_with_message!(Errno::EACCES, "write range is not backed up by a vmo");
-    }
-
-    /// Allocate a child vmar_.
+    /// Allocate a child `Vmar_`.
     pub fn alloc_child_vmar(
         self: &Arc<Self>,
         child_vmar_offset: Option<usize>,
@@ -485,7 +482,9 @@ impl Vmar_ {
         align: usize,
     ) -> Result<Arc<Vmar_>> {
         let (region_base, child_vmar_offset) =
-            self.find_free_region_for_child(child_vmar_offset, child_vmar_size, align)?;
+            self.inner
+                .lock()
+                .find_free_region(child_vmar_offset, child_vmar_size, align)?;
         // This unwrap should never fails
         let free_region = self.inner.lock().free_regions.remove(&region_base).unwrap();
         let child_range = child_vmar_offset..(child_vmar_offset + child_vmar_size);
@@ -519,103 +518,69 @@ impl Vmar_ {
         Ok(child_vmar_)
     }
 
-    /// Find a free region for child vmar or vmo.
-    /// Returns (region base addr, child real offset).
-    fn find_free_region_for_child(
-        &self,
-        child_offset: Option<Vaddr>,
-        child_size: usize,
-        align: usize,
-    ) -> Result<(Vaddr, Vaddr)> {
-        let inner = self.inner.lock();
-
-        if let Some(child_vmar_offset) = child_offset {
-            // if the offset is set, we should find a free region can satisfy both the offset and size
-            let child_vmar_range = child_vmar_offset..(child_vmar_offset + child_size);
-            for free_region in inner.free_regions.find(&child_vmar_range) {
-                let free_region_range = free_region.range();
-                if free_region_range.start <= child_vmar_range.start
-                    && child_vmar_range.end <= free_region_range.end
-                {
-                    return Ok((free_region_range.start, child_vmar_offset));
-                }
-            }
-        } else {
-            // Else, we find a free region that can satisfy the length and align requirement.
-            // Here, we use a simple brute-force algorithm to find the first free range that can satisfy.
-            // FIXME: A randomized algorithm may be more efficient.
-            for (region_base, free_region) in &inner.free_regions {
-                let region_start = free_region.start();
-                let region_end = free_region.end();
-                let child_vmar_real_start = region_start.align_up(align);
-                let child_vmar_real_end = child_vmar_real_start + child_size;
-                if region_start <= child_vmar_real_start && child_vmar_real_end <= region_end {
-                    return Ok((*region_base, child_vmar_real_start));
-                }
-            }
-        }
-        return_errno_with_message!(Errno::EACCES, "Cannot find free region for child")
-    }
-
-    fn check_vmo_overwrite(&self, vmo_range: Range<usize>, can_overwrite: bool) -> Result<()> {
+    fn check_overwrite(&self, mapping_range: Range<usize>, can_overwrite: bool) -> Result<()> {
         let inner = self.inner.lock();
         if inner
             .child_vmar_s
-            .find(&vmo_range)
+            .find(&mapping_range)
             .into_iter()
             .next()
             .is_some()
         {
-            return_errno_with_message!(Errno::EACCES, "vmo range overlapped with child vmar range");
+            return_errno_with_message!(
+                Errno::EACCES,
+                "mapping range overlapped with child vmar range"
+            );
         }
 
         if !can_overwrite
             && inner
                 .vm_mappings
-                .find(&vmo_range)
+                .find(&mapping_range)
                 .into_iter()
                 .next()
                 .is_some()
         {
-            return_errno_with_message!(Errno::EACCES, "vmo range overlapped with another vmo");
+            return_errno_with_message!(
+                Errno::EACCES,
+                "mapping range overlapped with another mapping"
+            );
         }
 
         Ok(())
     }
 
     /// Returns the attached `VmSpace`.
-    pub(super) fn vm_space(&self) -> &Arc<VmSpace> {
+    fn vm_space(&self) -> &Arc<VmSpace> {
         &self.vm_space
     }
 
-    /// Map a vmo to this vmar.
-    pub fn add_mapping(&self, mapping: Arc<VmMapping>) {
+    /// Maps a `VmMapping` to this VMAR.
+    fn add_mapping(&self, mapping: Arc<VmMapping>) {
         self.inner
             .lock()
             .vm_mappings
             .insert(mapping.map_to_addr(), mapping);
     }
 
-    fn allocate_free_region_for_vmo(
+    fn allocate_free_region_for_mapping(
         &self,
-        vmo_size: usize,
-        size: usize,
+        map_size: usize,
         offset: Option<usize>,
         align: usize,
         can_overwrite: bool,
     ) -> Result<Vaddr> {
-        trace!("allocate free region, vmo_size = 0x{:x}, map_size = 0x{:x}, offset = {:x?}, align = 0x{:x}, can_overwrite = {}", vmo_size, size, offset, align, can_overwrite);
-        let map_size = size.max(vmo_size);
+        trace!("allocate free region, map_size = 0x{:x}, offset = {:x?}, align = 0x{:x}, can_overwrite = {}", map_size, offset, align, can_overwrite);
 
         if can_overwrite {
             let mut inner = self.inner.lock();
-            // If can_overwrite, the offset is ensured not to be None.
+            // If can overwrite, the offset is ensured not to be `None`.
             let offset = offset.ok_or(Error::with_message(
                 Errno::EINVAL,
                 "offset cannot be None since can overwrite is set",
             ))?;
             let map_range = offset..(offset + map_size);
-            // If can overwrite, the vmo can cross multiple free regions. We will split each free regions that intersect with the vmo.
+            // If can overwrite, the mapping can cross multiple free regions. We will split each free regions that intersect with the mapping.
             let mut split_regions = Vec::new();
 
             for free_region in inner.free_regions.find(&map_range) {
@@ -637,13 +602,12 @@ impl Vmar_ {
             self.trim_existing_mappings(map_range)?;
             Ok(offset)
         } else {
-            // Otherwise, the vmo in a single region.
-            let (free_region_base, offset) =
-                self.find_free_region_for_child(offset, map_size, align)?;
+            // Otherwise, the mapping in a single region.
             let mut inner = self.inner.lock();
+            let (free_region_base, offset) = inner.find_free_region(offset, map_size, align)?;
             let free_region = inner.free_regions.remove(&free_region_base).unwrap();
-            let vmo_range = offset..(offset + map_size);
-            let intersected_range = get_intersected_range(&free_region.range(), &vmo_range);
+            let mapping_range = offset..(offset + map_size);
+            let intersected_range = get_intersected_range(&free_region.range(), &mapping_range);
             let regions_after_split = free_region.allocate_range(intersected_range);
             regions_after_split.into_iter().for_each(|region| {
                 inner.free_regions.insert(region.start(), region);
@@ -681,7 +645,7 @@ impl Vmar_ {
         self.new_fork(None)
     }
 
-    /// Create a new vmar by creating cow child for all mapped vmos.
+    /// Creates a new fork VMAR with Copy-On-Write (COW) mechanism.
     fn new_fork(&self, parent: Option<&Arc<Vmar_>>) -> Result<Arc<Self>> {
         let new_vmar_ = {
             let vmar_inner = VmarInner::new();
@@ -717,7 +681,7 @@ impl Vmar_ {
                 .insert(*child_vmar_base, new_child_vmar);
         }
 
-        // Clone vm mappings.
+        // Clone mappings.
         for (vm_mapping_base, vm_mapping) in &inner.vm_mappings {
             let new_mapping = Arc::new(vm_mapping.new_fork(&new_vmar_)?);
             new_vmar_
@@ -727,19 +691,6 @@ impl Vmar_ {
                 .insert(*vm_mapping_base, new_mapping);
         }
         Ok(new_vmar_)
-    }
-
-    /// get mapped vmo at given offset
-    fn get_vm_mapping(&self, offset: Vaddr) -> Result<Arc<VmMapping>> {
-        let inner = self.inner.lock();
-        let range = offset..offset + 1;
-
-        if let Some(vm_mapping) = inner.vm_mappings.find_one(&offset) {
-            debug_assert!(is_intersected(&vm_mapping.range(), &(offset..offset + 1)));
-            return Ok(vm_mapping.clone());
-        }
-
-        return_errno_with_message!(Errno::EFAULT, "No mapped vmo at this offset");
     }
 }
 
@@ -751,17 +702,9 @@ impl<R> Vmar<R> {
         self.0.base
     }
 
-    /// The size of the vmar in bytes.
+    /// The size of the VMAR in bytes.
     pub fn size(&self) -> usize {
         self.0.size
-    }
-
-    /// Get mapped vmo at given offset.
-    /// TODO: improve the searching algorithm.
-    pub fn get_vm_mapping(&self, offset: Vaddr) -> Result<Arc<VmMapping>> {
-        let rights = Rights::all();
-        self.check_rights(rights)?;
-        self.0.get_vm_mapping(offset)
     }
 }
 
@@ -793,9 +736,10 @@ impl FreeRegion {
         self.range.end - self.range.start
     }
 
-    /// Allocate a range in this free region.
+    /// Allocates a range in this free region.
+    ///
     /// The range is ensured to be contained in current region before call this function.
-    /// The return vector contains regions that are not allocated. Since the allocate_range can be
+    /// The return vector contains regions that are not allocated. Since the `allocate_range` can be
     /// in the middle of a free region, the original region may be split as at most two regions.
     pub fn allocate_range(&self, allocate_range: Range<Vaddr>) -> Vec<FreeRegion> {
         let mut res = Vec::new();
@@ -817,13 +761,13 @@ impl FreeRegion {
     }
 }
 
-/// Determine whether two ranges are intersected.
+/// Determines whether two ranges are intersected.
 /// returns false if one of the ranges has a length of 0
 pub fn is_intersected(range1: &Range<usize>, range2: &Range<usize>) -> bool {
     range1.start.max(range2.start) < range1.end.min(range2.end)
 }
 
-/// Get the intersection range of two ranges.
+/// Gets the intersection range of two ranges.
 /// The two ranges should be ensured to be intersected.
 pub fn get_intersected_range(range1: &Range<usize>, range2: &Range<usize>) -> Range<usize> {
     debug_assert!(is_intersected(range1, range2));
