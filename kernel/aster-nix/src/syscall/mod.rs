@@ -33,6 +33,7 @@ mod exit;
 mod exit_group;
 mod fallocate;
 mod fcntl;
+mod flock;
 mod fork;
 mod fsync;
 mod futex;
