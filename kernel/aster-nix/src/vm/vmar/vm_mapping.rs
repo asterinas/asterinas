@@ -538,7 +538,7 @@ impl VmMappingInner {
         debug_assert!(range.start % PAGE_SIZE == 0);
         debug_assert!(range.end % PAGE_SIZE == 0);
         let mut cursor = vm_space.cursor_mut(&range).unwrap();
-        cursor.protect(range.len(), |p| p.flags = perms.into(), true)?;
+        cursor.protect(range.len(), |p| p.flags = perms.into());
         Ok(())
     }
 

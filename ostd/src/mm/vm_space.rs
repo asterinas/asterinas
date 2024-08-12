@@ -17,12 +17,12 @@ use super::{
     io::UserSpace,
     kspace::KERNEL_PAGE_TABLE,
     page_table::{PageTable, UserMode},
-    PageProperty, VmReader, VmWriter,
+    PageFlags, PageProperty, VmReader, VmWriter,
 };
 use crate::{
     arch::mm::{
-        current_page_table_paddr, tlb_flush_addr, tlb_flush_addr_range,
-        tlb_flush_all_excluding_global, PageTableEntry, PagingConsts,
+        current_page_table_paddr, tlb_flush_addr, tlb_flush_addr_range, PageTableEntry,
+        PagingConsts,
     },
     cpu::CpuExceptionInfo,
     mm::{
@@ -129,6 +129,18 @@ impl VmSpace {
     /// read-only. And both the VM space will take handles to the same
     /// physical memory pages.
     pub fn fork_copy_on_write(&self) -> Self {
+        // Protect the parent VM space as read-only.
+        let end = MAX_USERSPACE_VADDR;
+        let mut cursor = self.pt.cursor_mut(&(0..end)).unwrap();
+        let mut op = |prop: &mut PageProperty| {
+            prop.flags -= PageFlags::W;
+        };
+
+        // SAFETY: It is safe to protect memory in the userspace.
+        while let Some(range) = unsafe { cursor.protect_next(end - cursor.virt_addr(), &mut op) } {
+            tlb_flush_addr(range.start);
+        }
+
         let page_fault_handler = {
             let new_handler = Once::new();
             if let Some(handler) = self.page_fault_handler.get() {
@@ -136,12 +148,11 @@ impl VmSpace {
             }
             new_handler
         };
-        let new_space = Self {
-            pt: self.pt.fork_copy_on_write(),
+
+        Self {
+            pt: self.pt.clone_with(cursor),
             page_fault_handler,
-        };
-        tlb_flush_all_excluding_global();
-        new_space
+        }
     }
 
     /// Creates a reader to read data from the user space of the current task.
@@ -319,22 +330,14 @@ impl CursorMut<'_> {
     /// # Panics
     ///
     /// This method will panic if `len` is not page-aligned.
-    pub fn protect(
-        &mut self,
-        len: usize,
-        op: impl FnMut(&mut PageProperty),
-        allow_protect_absent: bool,
-    ) -> Result<()> {
+    pub fn protect(&mut self, len: usize, mut op: impl FnMut(&mut PageProperty)) {
         assert!(len % super::PAGE_SIZE == 0);
-        let start_va = self.virt_addr();
-        let end_va = start_va + len;
+        let end = self.0.virt_addr() + len;
 
         // SAFETY: It is safe to protect memory in the userspace.
-        let result = unsafe { self.0.protect(len, op, allow_protect_absent) };
-
-        tlb_flush_addr_range(&(start_va..end_va));
-
-        Ok(result?)
+        while let Some(range) = unsafe { self.0.protect_next(end - self.0.virt_addr(), &mut op) } {
+            tlb_flush_addr(range.start);
+        }
     }
 }
 

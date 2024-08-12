@@ -16,7 +16,6 @@ use super::{
 };
 pub(crate) use crate::arch::task::{context_switch, TaskContext};
 use crate::{
-    arch::mm::tlb_flush_addr_range,
     cpu::CpuSet,
     mm::{kspace::KERNEL_PAGE_TABLE, FrameAllocOptions, Paddr, PageFlags, Segment, PAGE_SIZE},
     prelude::*,
@@ -70,9 +69,8 @@ impl KernelStack {
         unsafe {
             let vaddr_range = guard_page_vaddr..guard_page_vaddr + PAGE_SIZE;
             page_table
-                .protect(&vaddr_range, |p| p.flags -= PageFlags::RW)
+                .protect_flush_tlb(&vaddr_range, |p| p.flags -= PageFlags::RW)
                 .unwrap();
-            tlb_flush_addr_range(&vaddr_range);
         }
         Ok(Self {
             segment: stack_segment,
@@ -98,9 +96,8 @@ impl Drop for KernelStack {
             unsafe {
                 let vaddr_range = guard_page_vaddr..guard_page_vaddr + PAGE_SIZE;
                 page_table
-                    .protect(&vaddr_range, |p| p.flags |= PageFlags::RW)
+                    .protect_flush_tlb(&vaddr_range, |p| p.flags |= PageFlags::RW)
                     .unwrap();
-                tlb_flush_addr_range(&vaddr_range);
             }
         }
     }

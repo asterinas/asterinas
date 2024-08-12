@@ -7,7 +7,7 @@ use cfg_if::cfg_if;
 
 use super::{check_and_insert_dma_mapping, remove_dma_mapping, DmaError, HasDaddr};
 use crate::{
-    arch::{iommu, mm::tlb_flush_addr_range},
+    arch::iommu,
     mm::{
         dma::{dma_type, Daddr, DmaType},
         io::VmIoOnce,
@@ -71,10 +71,9 @@ impl DmaCoherent {
             // SAFETY: the physical mappings is only used by DMA so protecting it is safe.
             unsafe {
                 page_table
-                    .protect(&va_range, |p| p.cache = CachePolicy::Uncacheable)
+                    .protect_flush_tlb(&va_range, |p| p.cache = CachePolicy::Uncacheable)
                     .unwrap();
             }
-            tlb_flush_addr_range(&va_range);
         }
         let start_daddr = match dma_type() {
             DmaType::Direct => {
@@ -159,10 +158,9 @@ impl Drop for DmaCoherentInner {
             // SAFETY: the physical mappings is only used by DMA so protecting it is safe.
             unsafe {
                 page_table
-                    .protect(&va_range, |p| p.cache = CachePolicy::Writeback)
+                    .protect_flush_tlb(&va_range, |p| p.cache = CachePolicy::Writeback)
                     .unwrap();
             }
-            tlb_flush_addr_range(&va_range);
         }
         remove_dma_mapping(start_paddr, frame_count);
     }

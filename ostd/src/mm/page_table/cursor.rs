@@ -629,34 +629,41 @@ where
         PageTableItem::NotMapped { va: start, len }
     }
 
-    /// Applies the given operation to all the mappings within the range.
+    /// Applies the operation to the next slot of mapping within the range.
     ///
-    /// The funtction will return an error if it is not allowed to protect an invalid range and
-    /// it does so, or if the range to be protected only covers a part of a page.
+    /// The range to be found in is the current virtual address with the
+    /// provided length.
+    ///
+    /// The function stops and yields the actually protected range if it has
+    /// actually protected a page, no matter if the following pages are also
+    /// required to be protected.
+    ///
+    /// It also makes the cursor moves forward to the next page after the
+    /// protected one. If no mapped pages exist in the following range, the
+    /// cursor will stop at the end of the range and return [`None`].
     ///
     /// # Safety
     ///
-    /// The caller should ensure that the range being protected does not affect kernel's memory safety.
+    /// The caller should ensure that the range being protected with the
+    /// operation does not affect kernel's memory safety.
     ///
     /// # Panics
     ///
     /// This function will panic if:
-    ///  - the range to be protected is out of the range where the cursor is required to operate.
-    pub unsafe fn protect(
+    ///  - the range to be protected is out of the range where the cursor
+    ///    is required to operate;
+    ///  - the specified virtual address range only covers a part of a page.
+    pub unsafe fn protect_next(
         &mut self,
         len: usize,
-        mut op: impl FnMut(&mut PageProperty),
-        allow_protect_absent: bool,
-    ) -> Result<(), PageTableError> {
+        op: &mut impl FnMut(&mut PageProperty),
+    ) -> Option<Range<Vaddr>> {
         let end = self.0.va + len;
         assert!(end <= self.0.barrier_va.end);
 
         while self.0.va < end {
             let cur_pte = self.0.read_cur_pte();
             if !cur_pte.is_present() {
-                if !allow_protect_absent {
-                    return Err(PageTableError::ProtectingAbsent);
-                }
                 self.0.move_forward();
                 continue;
             }
@@ -664,18 +671,33 @@ where
             // Go down if it's not a last node.
             if !cur_pte.is_last(self.0.level) {
                 self.0.level_down();
+
+                // We have got down a level. If there's no mapped PTEs in
+                // the current node, we can go back and skip to save time.
+                if self.0.guards[(self.0.level - 1) as usize]
+                    .as_ref()
+                    .unwrap()
+                    .nr_children()
+                    == 0
+                {
+                    self.0.level_up();
+                    self.0.move_forward();
+                }
+
                 continue;
             }
 
             // Go down if the page size is too big and we are protecting part
             // of untracked huge pages.
-            let vaddr_not_fit = self.0.va % page_size::<C>(self.0.level) != 0
-                || self.0.va + page_size::<C>(self.0.level) > end;
-            if !self.0.in_tracked_range() && vaddr_not_fit {
-                self.level_down_split();
-                continue;
-            } else if vaddr_not_fit {
-                return Err(PageTableError::ProtectingPartial);
+            if self.0.va % page_size::<C>(self.0.level) != 0
+                || self.0.va + page_size::<C>(self.0.level) > end
+            {
+                if self.0.in_tracked_range() {
+                    panic!("protecting part of a huge page");
+                } else {
+                    self.level_down_split();
+                    continue;
+                }
             }
 
             let mut pte_prop = cur_pte.prop();
@@ -683,10 +705,14 @@ where
 
             let idx = self.0.cur_idx();
             self.cur_node_mut().protect(idx, pte_prop);
+            let protected_va = self.0.va..self.0.va + page_size::<C>(self.0.level);
 
             self.0.move_forward();
+
+            return Some(protected_va);
         }
-        Ok(())
+
+        None
     }
 
     /// Consumes itself and leak the root guard for the caller if it locked the root level.
