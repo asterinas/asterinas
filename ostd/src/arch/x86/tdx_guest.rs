@@ -39,8 +39,8 @@ pub unsafe fn unprotect_gpa_range(gpa: Paddr, page_num: usize) -> Result<(), Pag
     if gpa & PAGE_MASK != 0 {
         warn!("Misaligned address: {:x}", gpa);
     }
-    // Protect the page in the kernel page table.
-    let pt = KERNEL_PAGE_TABLE.get().unwrap();
+
+    // Protect the page in the boot page table if in the boot phase.
     let protect_op = |prop: &mut PageProperty| {
         *prop = PageProperty {
             flags: prop.flags,
@@ -48,10 +48,6 @@ pub unsafe fn unprotect_gpa_range(gpa: Paddr, page_num: usize) -> Result<(), Pag
             priv_flags: prop.priv_flags | PrivFlags::SHARED,
         }
     };
-    let vaddr = paddr_to_vaddr(gpa);
-    pt.protect(&(vaddr..vaddr + page_num * PAGE_SIZE), protect_op)
-        .map_err(|_| PageConvertError::PageTable)?;
-    // Protect the page in the boot page table if in the boot phase.
     {
         let mut boot_pt_lock = BOOT_PAGE_TABLE.lock();
         if let Some(boot_pt) = boot_pt_lock.as_mut() {
@@ -61,6 +57,12 @@ pub unsafe fn unprotect_gpa_range(gpa: Paddr, page_num: usize) -> Result<(), Pag
             }
         }
     }
+    // Protect the page in the kernel page table.
+    let pt = KERNEL_PAGE_TABLE.get().unwrap();
+    let vaddr = paddr_to_vaddr(gpa);
+    pt.protect_flush_tlb(&(vaddr..vaddr + page_num * PAGE_SIZE), protect_op)
+        .map_err(|_| PageConvertError::PageTable)?;
+
     map_gpa(
         (gpa & (!PAGE_MASK)) as u64 | SHARED_MASK,
         (page_num * PAGE_SIZE) as u64,
@@ -82,8 +84,8 @@ pub unsafe fn protect_gpa_range(gpa: Paddr, page_num: usize) -> Result<(), PageC
     if gpa & !PAGE_MASK == 0 {
         warn!("Misaligned address: {:x}", gpa);
     }
-    // Protect the page in the kernel page table.
-    let pt = KERNEL_PAGE_TABLE.get().unwrap();
+
+    // Protect the page in the boot page table if in the boot phase.
     let protect_op = |prop: &mut PageProperty| {
         *prop = PageProperty {
             flags: prop.flags,
@@ -91,10 +93,6 @@ pub unsafe fn protect_gpa_range(gpa: Paddr, page_num: usize) -> Result<(), PageC
             priv_flags: prop.priv_flags - PrivFlags::SHARED,
         }
     };
-    let vaddr = paddr_to_vaddr(gpa);
-    pt.protect(&(vaddr..vaddr + page_num * PAGE_SIZE), protect_op)
-        .map_err(|_| PageConvertError::PageTable)?;
-    // Protect the page in the boot page table if in the boot phase.
     {
         let mut boot_pt_lock = BOOT_PAGE_TABLE.lock();
         if let Some(boot_pt) = boot_pt_lock.as_mut() {
@@ -104,6 +102,12 @@ pub unsafe fn protect_gpa_range(gpa: Paddr, page_num: usize) -> Result<(), PageC
             }
         }
     }
+    // Protect the page in the kernel page table.
+    let pt = KERNEL_PAGE_TABLE.get().unwrap();
+    let vaddr = paddr_to_vaddr(gpa);
+    pt.protect_flush_tlb(&(vaddr..vaddr + page_num * PAGE_SIZE), protect_op)
+        .map_err(|_| PageConvertError::PageTable)?;
+
     map_gpa((gpa & PAGE_MASK) as u64, (page_num * PAGE_SIZE) as u64)
         .map_err(|_| PageConvertError::TdVmcall)?;
     for i in 0..page_num {

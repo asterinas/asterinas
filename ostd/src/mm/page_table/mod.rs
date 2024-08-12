@@ -3,9 +3,8 @@
 use core::{fmt::Debug, marker::PhantomData, ops::Range};
 
 use super::{
-    nr_subpage_per_huge,
-    page_prop::{PageFlags, PageProperty},
-    page_size, Paddr, PagingConstsTrait, PagingLevel, Vaddr,
+    nr_subpage_per_huge, page_prop::PageProperty, page_size, Paddr, PagingConstsTrait, PagingLevel,
+    Vaddr,
 };
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
@@ -29,10 +28,6 @@ pub enum PageTableError {
     InvalidVaddr(Vaddr),
     /// Using virtual address not aligned.
     UnalignedVaddr,
-    /// Protecting a mapping that does not exist.
-    ProtectingAbsent,
-    /// Protecting a part of an already mapped page.
-    ProtectingPartial,
 }
 
 /// This is a compile-time technique to force the frame developers to distinguish
@@ -98,24 +93,18 @@ impl PageTable<UserMode> {
         }
     }
 
-    /// Remove all write permissions from the user page table and create a cloned
-    /// new page table.
+    /// Create a cloned new page table.
+    ///
+    /// This method takes a mutable cursor to the old page table that locks the
+    /// entire virtual address range. The caller may implement the copy-on-write
+    /// mechanism by first protecting the old page table and then clone it using
+    /// this method.
     ///
     /// TODO: We may consider making the page table itself copy-on-write.
-    pub fn fork_copy_on_write(&self) -> Self {
-        let mut cursor = self.cursor_mut(&UserMode::VADDR_RANGE).unwrap();
-
-        // SAFETY: Protecting the user page table is safe.
-        unsafe {
-            cursor
-                .protect(
-                    UserMode::VADDR_RANGE.len(),
-                    |p: &mut PageProperty| p.flags -= PageFlags::W,
-                    true,
-                )
-                .unwrap();
-        };
-
+    pub fn clone_with(
+        &self,
+        cursor: CursorMut<'_, UserMode, PageTableEntry, PagingConsts>,
+    ) -> Self {
         let root_node = cursor.leak_root_guard().unwrap();
 
         const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
@@ -177,6 +166,26 @@ impl PageTable<KernelMode> {
             }
         }
     }
+
+    /// Protect the given virtual address range in the kernel page table.
+    ///
+    /// This method flushes the TLB entries when doing protection.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the protection operation does not affect
+    /// the memory safety of the kernel.
+    pub unsafe fn protect_flush_tlb(
+        &self,
+        vaddr: &Range<Vaddr>,
+        mut op: impl FnMut(&mut PageProperty),
+    ) -> Result<(), PageTableError> {
+        let mut cursor = CursorMut::new(self, vaddr)?;
+        while let Some(range) = cursor.protect_next(vaddr.end - cursor.virt_addr(), &mut op) {
+            crate::arch::mm::tlb_flush_addr(range.start);
+        }
+        Ok(())
+    }
 }
 
 impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTable<M, E, C>
@@ -210,17 +219,6 @@ where
         prop: PageProperty,
     ) -> Result<(), PageTableError> {
         self.cursor_mut(vaddr)?.map_pa(paddr, prop);
-        Ok(())
-    }
-
-    pub unsafe fn protect(
-        &self,
-        vaddr: &Range<Vaddr>,
-        op: impl FnMut(&mut PageProperty),
-    ) -> Result<(), PageTableError> {
-        self.cursor_mut(vaddr)?
-            .protect(vaddr.len(), op, true)
-            .unwrap();
         Ok(())
     }
 

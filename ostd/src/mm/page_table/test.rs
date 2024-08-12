@@ -8,6 +8,7 @@ use crate::{
         kspace::LINEAR_MAPPING_BASE_VADDR,
         page::{allocator, meta::FrameMeta},
         page_prop::{CachePolicy, PageFlags},
+        MAX_USERSPACE_VADDR,
     },
     prelude::*,
 };
@@ -95,7 +96,7 @@ fn test_user_copy_on_write() {
     unsafe { pt.cursor_mut(&from).unwrap().map(page.clone().into(), prop) };
     assert_eq!(pt.query(from.start + 10).unwrap().0, start_paddr + 10);
 
-    let child_pt = pt.fork_copy_on_write();
+    let child_pt = pt.clone_with(pt.cursor_mut(&(0..MAX_USERSPACE_VADDR)).unwrap());
     assert_eq!(pt.query(from.start + 10).unwrap().0, start_paddr + 10);
     assert_eq!(child_pt.query(from.start + 10).unwrap().0, start_paddr + 10);
     assert!(matches!(
@@ -105,7 +106,7 @@ fn test_user_copy_on_write() {
     assert!(pt.query(from.start + 10).is_none());
     assert_eq!(child_pt.query(from.start + 10).unwrap().0, start_paddr + 10);
 
-    let sibling_pt = pt.fork_copy_on_write();
+    let sibling_pt = pt.clone_with(pt.cursor_mut(&(0..MAX_USERSPACE_VADDR)).unwrap());
     assert!(sibling_pt.query(from.start + 10).is_none());
     assert_eq!(child_pt.query(from.start + 10).unwrap().0, start_paddr + 10);
     drop(pt);
@@ -139,6 +140,25 @@ impl PagingConstsTrait for BasePagingConsts {
     const PTE_SIZE: usize = core::mem::size_of::<PageTableEntry>();
 }
 
+impl<M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTable<M, E, C>
+where
+    [(); C::NR_LEVELS as usize]:,
+{
+    fn protect(&self, range: &Range<Vaddr>, mut op: impl FnMut(&mut PageProperty)) {
+        let mut cursor = self.cursor_mut(range).unwrap();
+        loop {
+            unsafe {
+                if cursor
+                    .protect_next(range.end - cursor.virt_addr(), &mut op)
+                    .is_none()
+                {
+                    break;
+                }
+            };
+        }
+    }
+}
+
 #[ktest]
 fn test_base_protect_query() {
     let pt = PageTable::<UserMode>::empty();
@@ -162,7 +182,7 @@ fn test_base_protect_query() {
         assert_eq!(va..va + page.size(), i * PAGE_SIZE..(i + 1) * PAGE_SIZE);
     }
     let prot = PAGE_SIZE * 18..PAGE_SIZE * 20;
-    unsafe { pt.protect(&prot, |p| p.flags -= PageFlags::W).unwrap() };
+    pt.protect(&prot, |p| p.flags -= PageFlags::W);
     for (item, i) in pt.cursor(&prot).unwrap().zip(18..20) {
         let PageTableItem::Mapped { va, page, prop } = item else {
             panic!("Expected Mapped, got {:#x?}", item);
@@ -225,7 +245,7 @@ fn test_untracked_large_protect_query() {
     }
     let ppn = from_ppn.start + 18..from_ppn.start + 20;
     let va = UNTRACKED_OFFSET + PAGE_SIZE * ppn.start..UNTRACKED_OFFSET + PAGE_SIZE * ppn.end;
-    unsafe { pt.protect(&va, |p| p.flags -= PageFlags::W).unwrap() };
+    pt.protect(&va, |p| p.flags -= PageFlags::W);
     for (item, i) in pt
         .cursor(&(va.start - PAGE_SIZE..va.start))
         .unwrap()
