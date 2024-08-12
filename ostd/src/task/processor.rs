@@ -71,6 +71,11 @@ pub fn preempt(task: &Arc<Task>) {
 ///
 /// If the current task's status not [`TaskStatus::Runnable`], it will not be
 /// added to the scheduler.
+///
+/// # Panics
+///
+/// This function will panic if called while holding preemption locks or with
+/// local IRQ disabled.
 fn switch_to_task(next_task: Arc<Task>) {
     let preemt_lock_count = PREEMPT_LOCK_COUNT.load();
     if preemt_lock_count != 0 {
@@ -79,6 +84,11 @@ fn switch_to_task(next_task: Arc<Task>) {
             preemt_lock_count
         );
     }
+
+    assert!(
+        crate::arch::irq::is_local_enabled(),
+        "Switching task with local IRQ disabled"
+    );
 
     let irq_guard = crate::trap::disable_local();
 
