@@ -114,8 +114,6 @@ fn test_user_copy_on_write() {
     assert!(child_pt.query(from.start + 10).is_none());
 }
 
-type Qr = PageTableQueryResult;
-
 #[derive(Clone, Debug, Default)]
 struct BasePagingConsts {}
 
@@ -141,9 +139,9 @@ fn test_base_protect_query() {
             cursor.map(page.clone().into(), prop);
         }
     }
-    for (qr, i) in pt.cursor(&from).unwrap().zip(from_ppn) {
-        let Qr::Mapped { va, page, prop } = qr else {
-            panic!("Expected Mapped, got {:#x?}", qr);
+    for (item, i) in pt.cursor(&from).unwrap().zip(from_ppn) {
+        let PageTableItem::Mapped { va, page, prop } = item else {
+            panic!("Expected Mapped, got {:#x?}", item);
         };
         assert_eq!(prop.flags, PageFlags::RW);
         assert_eq!(prop.cache, CachePolicy::Writeback);
@@ -151,9 +149,9 @@ fn test_base_protect_query() {
     }
     let prot = PAGE_SIZE * 18..PAGE_SIZE * 20;
     unsafe { pt.protect(&prot, |p| p.flags -= PageFlags::W).unwrap() };
-    for (qr, i) in pt.cursor(&prot).unwrap().zip(18..20) {
-        let Qr::Mapped { va, page, prop } = qr else {
-            panic!("Expected Mapped, got {:#x?}", qr);
+    for (item, i) in pt.cursor(&prot).unwrap().zip(18..20) {
+        let PageTableItem::Mapped { va, page, prop } = item else {
+            panic!("Expected Mapped, got {:#x?}", item);
         };
         assert_eq!(prop.flags, PageFlags::R);
         assert_eq!(va..va + page.size(), i * PAGE_SIZE..(i + 1) * PAGE_SIZE);
@@ -190,9 +188,9 @@ fn test_untracked_large_protect_query() {
     let mapped_pa_of_va = |va: Vaddr| va - (from.start - to.start);
     let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
     unsafe { pt.map(&from, &to, prop).unwrap() };
-    for (qr, i) in pt.cursor(&from).unwrap().zip(0..512 + 2 + 2) {
-        let Qr::MappedUntracked { va, pa, len, prop } = qr else {
-            panic!("Expected MappedUntracked, got {:#x?}", qr);
+    for (item, i) in pt.cursor(&from).unwrap().zip(0..512 + 2 + 2) {
+        let PageTableItem::MappedUntracked { va, pa, len, prop } = item else {
+            panic!("Expected MappedUntracked, got {:#x?}", item);
         };
         assert_eq!(pa, mapped_pa_of_va(va));
         assert_eq!(prop.flags, PageFlags::RW);
@@ -214,35 +212,35 @@ fn test_untracked_large_protect_query() {
     let ppn = from_ppn.start + 18..from_ppn.start + 20;
     let va = UNTRACKED_OFFSET + PAGE_SIZE * ppn.start..UNTRACKED_OFFSET + PAGE_SIZE * ppn.end;
     unsafe { pt.protect(&va, |p| p.flags -= PageFlags::W).unwrap() };
-    for (qr, i) in pt
+    for (item, i) in pt
         .cursor(&(va.start - PAGE_SIZE..va.start))
         .unwrap()
         .zip(ppn.start - 1..ppn.start)
     {
-        let Qr::MappedUntracked { va, pa, len, prop } = qr else {
-            panic!("Expected MappedUntracked, got {:#x?}", qr);
+        let PageTableItem::MappedUntracked { va, pa, len, prop } = item else {
+            panic!("Expected MappedUntracked, got {:#x?}", item);
         };
         assert_eq!(pa, mapped_pa_of_va(va));
         assert_eq!(prop.flags, PageFlags::RW);
         let va = va - UNTRACKED_OFFSET;
         assert_eq!(va..va + len, i * PAGE_SIZE..(i + 1) * PAGE_SIZE);
     }
-    for (qr, i) in pt.cursor(&va).unwrap().zip(ppn.clone()) {
-        let Qr::MappedUntracked { va, pa, len, prop } = qr else {
-            panic!("Expected MappedUntracked, got {:#x?}", qr);
+    for (item, i) in pt.cursor(&va).unwrap().zip(ppn.clone()) {
+        let PageTableItem::MappedUntracked { va, pa, len, prop } = item else {
+            panic!("Expected MappedUntracked, got {:#x?}", item);
         };
         assert_eq!(pa, mapped_pa_of_va(va));
         assert_eq!(prop.flags, PageFlags::R);
         let va = va - UNTRACKED_OFFSET;
         assert_eq!(va..va + len, i * PAGE_SIZE..(i + 1) * PAGE_SIZE);
     }
-    for (qr, i) in pt
+    for (item, i) in pt
         .cursor(&(va.end..va.end + PAGE_SIZE))
         .unwrap()
         .zip(ppn.end..ppn.end + 1)
     {
-        let Qr::MappedUntracked { va, pa, len, prop } = qr else {
-            panic!("Expected MappedUntracked, got {:#x?}", qr);
+        let PageTableItem::MappedUntracked { va, pa, len, prop } = item else {
+            panic!("Expected MappedUntracked, got {:#x?}", item);
         };
         assert_eq!(pa, mapped_pa_of_va(va));
         assert_eq!(prop.flags, PageFlags::RW);
