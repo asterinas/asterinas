@@ -54,7 +54,7 @@ impl InodeHandle<Rights> {
         if !self.1.contains(rights) {
             return_errno_with_message!(Errno::EBADF, "check rights failed");
         }
-        Ok(InodeHandle(self.0, R1::new()))
+        Ok(InodeHandle(self.0.clone(), R1::new()))
     }
 
     pub fn read_to_end(&self, buf: &mut Vec<u8>) -> Result<usize> {
