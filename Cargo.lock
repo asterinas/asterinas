@@ -1757,7 +1757,7 @@ dependencies = [
 [[package]]
 name = "xarray"
 version = "0.1.0"
-source = "git+https://github.com/asterinas/xarray?rev=72a4067#72a4067a65e8f94cfc193f5f19ebc981c1de9de7"
+source = "git+https://github.com/asterinas/xarray#1dad5d9b74aac30193bd242a97077b4c54933830"
 dependencies = [
  "smallvec",
 ]

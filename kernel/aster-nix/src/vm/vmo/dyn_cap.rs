@@ -5,72 +5,14 @@ use core::ops::Range;
 use aster_rights::{Rights, TRights};
 use ostd::mm::{Frame, VmIo};
 
-use super::{
-    options::{VmoCowChild, VmoSliceChild},
-    CommitFlags, Vmo, VmoChildOptions, VmoRightsOp,
-};
+use super::{CommitFlags, Vmo, VmoRightsOp};
 use crate::prelude::*;
 
 impl Vmo<Rights> {
-    /// Creates a new slice VMO through a set of VMO child options.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// let parent = VmoOptions::new(PAGE_SIZE).alloc().unwrap();
-    /// let child_size = parent.size();
-    /// let child = parent.new_slice_child(0..child_size).alloc().unwrap();
-    /// assert!(child.size() == child_size);
-    /// ```
-    ///
-    /// For more details on the available options, see `VmoChildOptions`.
-    ///
-    /// # Access rights
-    ///
-    /// This method requires the Dup right.
-    ///
-    /// The new VMO child will be of the same capability flavor as the parent;
-    /// so are the access rights.
-    pub fn new_slice_child(
-        &self,
-        range: Range<usize>,
-    ) -> Result<VmoChildOptions<Rights, VmoSliceChild>> {
-        let dup_self = self.dup()?;
-        Ok(VmoChildOptions::new_slice_rights(dup_self, range))
-    }
-
-    /// Creates a new COW VMO through a set of VMO child options.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// let parent = VmoOptions::new(PAGE_SIZE).alloc().unwrap();
-    /// let child_size = 2 * parent.size();
-    /// let child = parent.new_cow_child(0..child_size).alloc().unwrap();
-    /// assert!(child.size() == child_size);
-    /// ```
-    ///
-    /// For more details on the available options, see `VmoChildOptions`.
-    ///
-    /// # Access rights
-    ///
-    /// This method requires the Dup right.
-    ///
-    /// The new VMO child will be of the same capability flavor as the parent.
-    /// The child will be given the access rights of the parent
-    /// plus the Write right.
-    pub fn new_cow_child(
-        &self,
-        range: Range<usize>,
-    ) -> Result<VmoChildOptions<Rights, VmoCowChild>> {
-        let dup_self = self.dup()?;
-        Ok(VmoChildOptions::new_cow(dup_self, range))
-    }
-
-    /// commit a page at specific offset
+    /// Commits a page at specific offset
     pub fn commit_page(&self, offset: usize) -> Result<Frame> {
         self.check_rights(Rights::WRITE)?;
-        self.0.commit_page(offset, false)
+        self.0.commit_page(offset)
     }
 
     /// Commits the pages specified in the range (in bytes).
@@ -135,6 +77,29 @@ impl Vmo<Rights> {
     pub fn dup(&self) -> Result<Self> {
         self.check_rights(Rights::DUP)?;
         Ok(Self(self.0.clone(), self.1))
+    }
+
+    /// Creates a new VMO that replicates the original capability, initially representing
+    /// the same physical pages.
+    /// Changes to the permissions and commits/replacements of internal pages in the original VMO
+    /// and the new VMO will not affect each other.
+    ///
+    /// # Access rights
+    ///
+    /// The method requires the Dup right.
+    pub fn dup_independent(&self) -> Result<Self> {
+        self.check_rights(Rights::DUP | Rights::WRITE)?;
+        Ok(Vmo(Arc::new(super::Vmo_::clone(&self.0)), self.1))
+    }
+
+    /// Replaces the page at the `page_idx` in the VMO with the input `page`.
+    ///
+    /// # Access rights
+    ///
+    /// The method requires the Write right.
+    pub fn replace(&self, page: Frame, page_idx: usize) -> Result<()> {
+        self.check_rights(Rights::WRITE)?;
+        self.0.replace(page, page_idx)
     }
 
     /// Restricts the access rights given the mask.
