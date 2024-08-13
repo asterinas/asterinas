@@ -50,60 +50,33 @@ impl TomlManifest {
                     .unwrap(),
             )
         };
-        // All the custom schemes should inherit settings from the default scheme, this is a helper.
-        fn finalize(current_manifest: Option<TomlManifest>) -> TomlManifest {
-            let Some(mut current_manifest) = current_manifest else {
-                error_msg!(
-                    "Cannot find `OSDK.toml` in the current directory or the workspace root"
-                );
-                process::exit(Errno::GetMetadata as _);
-            };
-            for scheme in current_manifest.map.values_mut() {
-                scheme.inherit(&current_manifest.default_scheme);
-            }
-            current_manifest
-        }
 
         // Search for OSDK.toml in the current directory first.
-        let current_manifest_path = PathBuf::from("OSDK.toml").canonicalize().ok();
-        let mut current_manifest = match &current_manifest_path {
-            Some(path) => deserialize_toml_manifest(path),
-            None => None,
-        };
-        // Then search in the workspace root.
-        let workspace_manifest_path = workspace_root.join("OSDK.toml").canonicalize().ok();
-        // The case that the current directory is also the workspace root.
-        if let Some(current) = &current_manifest_path {
-            if let Some(workspace) = &workspace_manifest_path {
-                if current == workspace {
-                    return finalize(current_manifest);
+        let current_manifest_path = PathBuf::from("OSDK.toml").canonicalize();
+        let current_manifest = match &current_manifest_path {
+            Ok(path) => deserialize_toml_manifest(path),
+            Err(_) => {
+                // If not found, search in the workspace root.
+                if let Ok(workspace_manifest_path) = workspace_root.join("OSDK.toml").canonicalize()
+                {
+                    deserialize_toml_manifest(workspace_manifest_path)
+                } else {
+                    None
                 }
             }
-        }
-        let workspace_manifest = match workspace_manifest_path {
-            Some(path) => deserialize_toml_manifest(path),
-            None => None,
         };
-        // The current manifest should inherit settings from the workspace manifest.
-        if let Some(workspace_manifest) = workspace_manifest {
-            if current_manifest.is_none() {
-                current_manifest = Some(workspace_manifest);
-            } else {
-                // Inherit one scheme at a time.
-                let current_manifest = current_manifest.as_mut().unwrap();
-                current_manifest
-                    .default_scheme
-                    .inherit(&workspace_manifest.default_scheme);
-                for (scheme_string, scheme) in workspace_manifest.map {
-                    let current_scheme = current_manifest
-                        .map
-                        .entry(scheme_string)
-                        .or_insert_with(Scheme::empty);
-                    current_scheme.inherit(&scheme);
-                }
-            }
+
+        let Some(mut current_manifest) = current_manifest else {
+            error_msg!("Cannot find `OSDK.toml` in the current directory or the workspace root");
+            process::exit(Errno::GetMetadata as _);
+        };
+
+        // All the schemes should inherit from the default scheme.
+        for scheme in current_manifest.map.values_mut() {
+            scheme.inherit(&current_manifest.default_scheme);
         }
-        finalize(current_manifest)
+
+        current_manifest
     }
 
     /// Get the scheme given the scheme from the command line arguments.
