@@ -15,10 +15,10 @@ one is of the workspace
 (in the same directory as the workspace's `Cargo.toml`)
 and one of the crate
 (in the same directory as the crate's `Cargo.toml`).
-OSDK will first refer to the crate-level manifest, then
-query the workspace-level manifest for undefined fields.
-In other words, missing fields of the crate manifest
-will inherit values from the workspace manifest.
+OSDK will firstly try to find the crate-level manifest.
+If the crate-level manifest is found, OSDK uses it only.
+If the manifest is not found, OSDK will look into the
+workspace-level manifest.
 
 ## Configurations
 
