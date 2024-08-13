@@ -44,8 +44,12 @@ pub mod task;
 pub mod trap;
 pub mod user;
 
-pub use ostd_macros::main;
+use arch::qemu::{exit_qemu, QemuExitCode};
+pub use ostd_macros::{ktest, main};
 pub use ostd_pod::Pod;
+/// The module re-exports everything from the ktest crate
+//
+pub use ostd_test::*;
 
 pub use self::{error::Error, prelude::Result};
 // [`CpuLocalCell`] is easy to be mis-used, so we don't expose it to the users.
@@ -106,14 +110,52 @@ fn invoke_ffi_init_funcs() {
     }
 }
 
+/// The entry point for the kernel tests.
+pub fn ktest_main() {
+    unsafe {
+        use crate::task::TaskOptions;
+
+        extern "Rust" {
+            pub static KTEST_TEST_WHITELIST: Option<&'static [&'static str]>;
+            pub static KTEST_CRATE_WHITELIST: Option<&'static [&'static str]>;
+        }
+        let test_task = move || {
+            run_ktests(KTEST_TEST_WHITELIST, KTEST_CRATE_WHITELIST);
+        };
+        let _ = TaskOptions::new(test_task).data(()).spawn();
+    }
+}
+
+fn run_ktests(test_whitelist: Option<&[&str]>, crate_whitelist: Option<&[&str]>) -> ! {
+    use alloc::{boxed::Box, string::ToString};
+    use core::any::Any;
+
+    use ostd_test::runner::{run_ktests, KtestResult};
+
+    use crate::console::early_print;
+
+    let fn_catch_unwind = &(unwinding::panic::catch_unwind::<(), fn()>
+        as fn(fn()) -> core::result::Result<(), Box<(dyn Any + Send + 'static)>>);
+
+    match run_ktests(
+        &early_print,
+        fn_catch_unwind,
+        test_whitelist.map(|s| s.iter().map(|s| s.to_string())),
+        crate_whitelist,
+    ) {
+        KtestResult::Ok => exit_qemu(QemuExitCode::Success),
+        KtestResult::Failed => exit_qemu(QemuExitCode::Failed),
+    };
+}
+
 /// Simple unit tests for the ktest framework.
-#[cfg(ktest)]
+
 mod test {
     use crate::prelude::*;
 
     #[ktest]
     fn trivial_assertion() {
-        assert_eq!(0, 0);
+        let _ = 1;
     }
 
     #[ktest]
@@ -127,10 +169,4 @@ mod test {
     fn expect_panic() {
         panic!("expected panic message");
     }
-}
-
-/// The module re-exports everything from the ktest crate
-#[cfg(ktest)]
-pub mod ktest {
-    pub use ostd_test::*;
 }

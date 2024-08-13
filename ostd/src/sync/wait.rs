@@ -295,7 +295,6 @@ impl Waker {
     }
 }
 
-#[cfg(ktest)]
 mod test {
     use super::*;
     use crate::{prelude::*, task::TaskOptions};
@@ -314,7 +313,7 @@ mod test {
             Task::yield_now();
 
             cond_cloned.store(true, Ordering::Relaxed);
-            wake(&*queue_cloned);
+            wake(&queue_cloned);
         })
         .data(())
         .spawn()

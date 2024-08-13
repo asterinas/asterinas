@@ -45,6 +45,8 @@ pub fn test_current_crate(config: &Config, args: &TestArgs) {
 pub static KTEST_TEST_WHITELIST: Option<&[&str]> = {};
 #[no_mangle]
 pub static KTEST_CRATE_WHITELIST: Option<&[&str]> = Some(&{:#?});
+
+extern crate ktest_runner;
 "#,
         ktest_test_whitelist, ktest_crate_whitelist,
     );

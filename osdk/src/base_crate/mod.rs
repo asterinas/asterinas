@@ -120,6 +120,22 @@ fn add_manifest_dependency(crate_name: &str, crate_path: impl AsRef<Path>) {
     .unwrap();
     dependencies.as_table_mut().unwrap().extend(dep);
 
+    // FIXME: This is a hack to add the ostd dependency.
+    // This should be removed once the OSTD crate is published on crates.io.
+    // let ostd_dep = toml::Table::from_str(&ostd_dep()).unwrap();
+    let crate_dir = env!("CARGO_MANIFEST_DIR");
+    let ostd_path = PathBuf::from(crate_dir)
+        .join("..")
+        .join("kernel")
+        .join("ktest-runner")
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .to_string();
+    let ostd_path = format!("ktest-runner = {{ path = \"{}\" }}", ostd_path);
+    let ostd_dep = toml::Table::from_str(&ostd_path).unwrap();
+    dependencies.as_table_mut().unwrap().extend(ostd_dep);
+
     let content = toml::to_string(&manifest).unwrap();
     fs::write(mainfest_path, content).unwrap();
 }

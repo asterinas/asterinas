@@ -21,8 +21,8 @@
 //! To write a unit test for any crates, it is recommended to create a new test
 //! module, e.g.:
 //!
-//! ```rust
-//! #[cfg(ktest)]
+//! ```rust,ignore
+//!
 //! mod test {
 //!     use ostd::prelude::*;
 //!

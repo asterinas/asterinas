@@ -26,17 +26,33 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let main_fn = parse_macro_input!(item as ItemFn);
     let main_fn_name = &main_fn.sig.ident;
 
-    quote!(
-        #[no_mangle]
-        pub fn __ostd_main() -> ! {
-            ostd::init();
-            #main_fn_name();
-            ostd::prelude::abort();
-        }
+    let package_name = std::env::var("CARGO_PKG_NAME").unwrap();
 
-        #main_fn
-    )
-    .into()
+    if package_name.as_str() == "ostd" {
+        quote!(
+            #[no_mangle]
+            pub fn __ostd_main() -> ! {
+                crate::init();
+                #main_fn_name();
+                crate::prelude::abort();
+            }
+
+            #main_fn
+        )
+        .into()
+    } else {
+        quote!(
+            #[no_mangle]
+            pub fn __ostd_main() -> ! {
+                ostd::init();
+                #main_fn_name();
+                ostd::prelude::abort();
+            }
+
+            #main_fn
+        )
+        .into()
+    }
 }
 
 /// The test attribute macro to mark a test function.
@@ -143,7 +159,7 @@ pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let register_ktest_item = if package_name.as_str() == "ostd" {
         quote! {
-            #[cfg(ktest)]
+
             #[used]
             #[link_section = ".ktest_array"]
             static #fn_ktest_item_name: ostd_test::KtestItem = ostd_test::KtestItem::new(
@@ -161,13 +177,13 @@ pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
     } else {
         quote! {
-            #[cfg(ktest)]
+
             #[used]
             #[link_section = ".ktest_array"]
-            static #fn_ktest_item_name: ostd::ktest::KtestItem = ostd::ktest::KtestItem::new(
+            static #fn_ktest_item_name: ostd::KtestItem = ostd::KtestItem::new(
                 #fn_name,
                 (#should_panic, #expectation_tokens),
-                ostd::ktest::KtestItemInfo {
+                ostd::KtestItemInfo {
                     module_path: module_path!(),
                     fn_name: stringify!(#fn_name),
                     package: #package_name,

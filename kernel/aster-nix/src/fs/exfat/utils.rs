@@ -63,6 +63,7 @@ impl DosTimestamp {
         }
 
         // When ktesting, the time module has not been initialized yet, return a fake value instead.
+        // FIXME: This is a workaround, we should initialize the time module in ktest.
         #[cfg(ktest)]
         {
             use crate::time::SystemTime;

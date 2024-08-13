@@ -380,7 +380,6 @@ impl<T> FifoInner<T> {
     }
 }
 
-#[cfg(ktest)]
 mod test {
     use ostd::prelude::*;
 
