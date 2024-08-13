@@ -20,6 +20,13 @@ update_package_version() {
     sed -i "0,/${pattern}/s/${pattern}/version = \"${new_version}\"/1" $1
 }
 
+# Update the version of the `ostd` dependency (`ostd = { version = "", ...`) in file $1
+update_ostd_dep_version() {
+    echo "Updating file $1"
+    pattern="^ostd = { version = \"[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+\""
+    sed -i "0,/${pattern}/s/${pattern}/ostd = { version = \"${new_version}\"/1" $1
+}
+
 # Update Docker image versions (`asterinas/asterinas:{version}`) in file $1
 update_image_versions() {
     echo "Updating file $1"
@@ -98,6 +105,7 @@ ASTER_SRC_DIR=${SCRIPT_DIR}/..
 DOCS_DIR=${ASTER_SRC_DIR}/docs
 OSTD_CARGO_TOML_PATH=${ASTER_SRC_DIR}/ostd/Cargo.toml
 OSDK_CARGO_TOML_PATH=${ASTER_SRC_DIR}/osdk/Cargo.toml
+OSTD_TEST_RUNNER_CARGO_TOML_PATH=${ASTER_SRC_DIR}/osdk/test-kernel/Cargo.toml
 VERSION_PATH=${ASTER_SRC_DIR}/VERSION
 
 current_version=$(cat ${VERSION_PATH})
@@ -114,6 +122,8 @@ new_version=$(bump_version ${current_version})
 # Update the package version in Cargo.toml
 update_package_version ${OSTD_CARGO_TOML_PATH}
 update_package_version ${OSDK_CARGO_TOML_PATH}
+update_package_version ${OSTD_TEST_RUNNER_CARGO_TOML_PATH}
+update_ostd_dep_version ${OSTD_TEST_RUNNER_CARGO_TOML_PATH}
 
 # Automatically bump Cargo.lock file
 cargo update -p asterinas --precise $new_version

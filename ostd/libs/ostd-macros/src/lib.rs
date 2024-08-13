@@ -7,12 +7,13 @@ use quote::quote;
 use rand::{distributions::Alphanumeric, Rng};
 use syn::{parse_macro_input, Expr, Ident, ItemFn};
 
-/// This macro is used to mark the kernel entry point.
+/// A macro attribute to mark the kernel entry point.
 ///
 /// # Example
 ///
 /// ```ignore
 /// #![no_std]
+/// #![feature(linkage)]
 ///
 /// use ostd::prelude::*;
 ///
@@ -28,8 +29,37 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     quote!(
         #[no_mangle]
-        pub fn __ostd_main() -> ! {
-            ostd::init();
+        #[linkage = "weak"]
+        extern "Rust" fn __ostd_main() -> ! {
+            // SAFETY: The function is called only once on the BSP.
+            unsafe { ostd::init() };
+            #main_fn_name();
+            ostd::prelude::abort();
+        }
+
+        #main_fn
+    )
+    .into()
+}
+
+/// A macro attribute for the unit test kernel entry point.
+///
+/// This macro is used for internal OSDK implementation. Do not use it
+/// directly.
+///
+/// It is a strong version of the `main` macro attribute. So if it exists (
+/// which means the unit test kernel is linked to perform testing), the actual
+/// kernel entry point will be replaced by this one.
+#[proc_macro_attribute]
+pub fn test_main(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let main_fn = parse_macro_input!(item as ItemFn);
+    let main_fn_name = &main_fn.sig.ident;
+
+    quote!(
+        #[no_mangle]
+        extern "Rust" fn __ostd_main() -> ! {
+            // SAFETY: The function is called only once on the BSP.
+            unsafe { ostd::init() };
             #main_fn_name();
             ostd::prelude::abort();
         }

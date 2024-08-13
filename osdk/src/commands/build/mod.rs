@@ -72,6 +72,7 @@ pub fn create_base_and_cached_build(
         &base_crate_path,
         &get_current_crate_info().name,
         get_current_crate_info().path,
+        false,
     );
     let original_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(&base_crate_path).unwrap();

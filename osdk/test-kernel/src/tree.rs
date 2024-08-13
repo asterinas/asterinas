@@ -213,8 +213,10 @@ impl<'a> Iterator for KtestModuleIter<'a> {
     }
 }
 
-#[cfg(test)]
+#[cfg(ktest)]
 mod tests {
+    use ostd::prelude::ktest;
+
     use super::*;
 
     macro_rules! gen_test_case {
@@ -227,7 +229,7 @@ mod tests {
                 KtestItem::new(
                     dummy_fn,
                     (false, None),
-                    crate::KtestItemInfo {
+                    ostd::ktest::KtestItemInfo {
                         module_path: m,
                         fn_name: f,
                         package: p,
@@ -250,7 +252,7 @@ mod tests {
         }};
     }
 
-    #[test]
+    #[ktest]
     fn test_tree_iter() {
         let tree = gen_test_case!();
         let mut iter = tree.iter();
@@ -261,7 +263,7 @@ mod tests {
         assert!(iter.next().is_none());
     }
 
-    #[test]
+    #[ktest]
     fn test_crate_iter() {
         let tree = gen_test_case!();
         for crate_ in tree.iter() {
@@ -285,7 +287,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[ktest]
     fn test_module_iter() {
         let tree = gen_test_case!();
         let mut collection = Vec::<&KtestItem>::new();

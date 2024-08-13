@@ -110,6 +110,7 @@ NON_OSDK_CRATES := \
 # In contrast, OSDK crates depend on OSTD (or being `ostd` itself)
 # and need to be built or tested with OSDK.
 OSDK_CRATES := \
+	osdk/test-kernel \
 	ostd \
 	ostd/libs/linux-bzimage/setup \
 	kernel \
@@ -130,7 +131,10 @@ all: build
 # To uninstall, do `cargo uninstall cargo-osdk`
 .PHONY: install_osdk
 install_osdk:
-	@cargo install cargo-osdk --path osdk
+	@# The `OSDK_LOCAL_DEV` environment variable is used for local development
+	@# without the need to publish the changes of OSDK's self-hosted
+	@# dependencies to `crates.io`.
+	@OSDK_LOCAL_DEV=1 cargo install cargo-osdk --path osdk
 
 # This will install OSDK if it is not already installed
 # To update OSDK, we need to run `install_osdk` manually

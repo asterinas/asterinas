@@ -112,11 +112,13 @@ impl Display for KtestPath {
     }
 }
 
-#[cfg(test)]
+#[cfg(ktest)]
 mod path_test {
+    use ostd::prelude::ktest;
+
     use super::*;
 
-    #[test]
+    #[ktest]
     fn test_ktest_path() {
         let mut path = KtestPath::new();
         path.push_back("a");
@@ -129,7 +131,7 @@ mod path_test {
         assert_eq!(path.pop_back(), None);
     }
 
-    #[test]
+    #[ktest]
     fn test_ktest_path_starts_with() {
         let mut path = KtestPath::new();
         path.push_back("a");
@@ -144,7 +146,7 @@ mod path_test {
         assert!(!path.starts_with(&KtestPath::from("d")));
     }
 
-    #[test]
+    #[ktest]
     fn test_ktest_path_ends_with() {
         let mut path = KtestPath::new();
         path.push_back("a");
@@ -238,8 +240,10 @@ impl Default for SuffixTrie {
     }
 }
 
-#[cfg(test)]
+#[cfg(ktest)]
 mod suffix_trie_test {
+    use ostd::prelude::ktest;
+
     use super::*;
 
     static TEST_PATHS: &[&str] = &[
@@ -252,7 +256,7 @@ mod suffix_trie_test {
         "m::n",
     ];
 
-    #[test]
+    #[ktest]
     fn test_contains() {
         let trie = SuffixTrie::from_paths(TEST_PATHS.iter().map(|&s| KtestPath::from(s)));
 
@@ -269,7 +273,7 @@ mod suffix_trie_test {
         assert!(!trie.contains(KtestPath::from("n").iter()));
     }
 
-    #[test]
+    #[ktest]
     fn test_matches() {
         let trie = SuffixTrie::from_paths(TEST_PATHS.iter().map(|&s| KtestPath::from(s)));
 

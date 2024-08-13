@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "osdk/test-kernel",
     "ostd",
     "ostd/libs/align_ext",
     "ostd/libs/ostd-macros",

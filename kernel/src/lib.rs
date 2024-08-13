@@ -2,6 +2,7 @@
 
 #![no_std]
 #![no_main]
+#![feature(linkage)]
 #![deny(unsafe_code)]
 extern crate ostd;
 
