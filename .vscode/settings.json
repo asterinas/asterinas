@@ -1,7 +1,15 @@
 {
-    "rust-analyzer.check.allTargets": false,
     "rust-analyzer.cargo.target": "x86_64-unknown-none",
-    "rust-analyzer.check.extraArgs": [
+    "rust-analyzer.check.extraEnv": {
+        "RUSTFLAGS": "--check-cfg cfg(ktest) --cfg ktest"
+    },
+    "rust-analyzer.check.overrideCommand": [
+        "cargo",
+        "check",
+        "--quiet",
+        "--message-format=json",
+        "--manifest-path",
+        "kernel/Cargo.toml",
         "--target",
         "x86_64-unknown-none",
         "-Zbuild-std=core,alloc,compiler_builtins",
