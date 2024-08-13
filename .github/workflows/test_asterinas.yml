@@ -1,17 +1,21 @@
 name: Test Asterinas
 
 on:
-  pull_request:
-  push:
-    branches:
-      - main
   # Schedule to run on every day at 15:00 UTC (23:00 CST)
   schedule:
     - cron: '0 15 * * *'
+  workflow_call:
+    inputs:
+      skip: 
+        description: 'Whether to check publish'
+        required: false
+        default: false
+        type: 'boolean'
+  workflow_dispatch:
 
 jobs:
   lint:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    if: ${{ github.event_name != 'schedule' && !inputs.skip }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     container: asterinas/asterinas:0.6.2
@@ -25,7 +29,7 @@ jobs:
         run: make check
 
   unit-test:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    if: ${{ github.event_name != 'schedule' && !inputs.skip }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     container: asterinas/asterinas:0.6.2
@@ -45,7 +49,7 @@ jobs:
       # TODO: add component check.
 
   integration-test:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    if: ${{ github.event_name != 'schedule' && !inputs.skip }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     container:
