@@ -171,7 +171,7 @@ fn install_setup_with_arch(
     cmd.arg("install").arg("linux-bzimage-setup");
     cmd.arg("--force");
     cmd.arg("--root").arg(install_dir.as_ref());
-    if std::env::var("AUTO_TEST").is_ok() || std::env::var("OSDK_INTEGRATION_TEST").is_ok() {
+    if matches!(option_env!("OSDK_LOCAL_DEV"), Some("1")) {
         cmd.arg("--path")
             .arg("../../../ostd/libs/linux-bzimage/setup");
     }

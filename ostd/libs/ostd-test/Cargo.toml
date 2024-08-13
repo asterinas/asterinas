@@ -2,11 +2,8 @@
 name = "ostd-test"
 version = "0.1.0"
 edition = "2021"
-description = "The kernel mode testing framework of OSTD"
+description = "The kernel mode unit testing framework of OSTD"
 license = "MPL-2.0"
 repository ="https://github.com/asterinas/asterinas"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-owo-colors = "3.5.0"

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #![no_std]
+#![feature(linkage)]
 #![deny(unsafe_code)]
 
 use ostd::prelude::*;

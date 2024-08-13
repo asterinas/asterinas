@@ -1,22 +1,57 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Test runner enabling control over the tests.
-//!
+//! The OSTD unit test runner is a kernel that runs the tests defined by the
+//! `#[ostd::ktest]` attribute. The kernel should be automatically selected to
+//! run when OSDK is used to test a specific crate.
 
-use alloc::{collections::BTreeSet, string::String, vec::Vec};
-use core::format_args;
+#![no_std]
+#![forbid(unsafe_code)]
 
-use owo_colors::OwoColorize;
+extern crate alloc;
 
-use crate::{
-    path::{KtestPath, SuffixTrie},
-    tree::{KtestCrate, KtestTree},
-    CatchUnwindImpl, KtestError, KtestItem, KtestIter,
+mod path;
+mod tree;
+
+use alloc::{boxed::Box, collections::BTreeSet, string::String, vec::Vec};
+use core::{any::Any, format_args};
+
+use ostd::{
+    early_print,
+    ktest::{
+        get_ktest_crate_whitelist, get_ktest_test_whitelist, KtestError, KtestItem, KtestIter,
+    },
 };
+use owo_colors::OwoColorize;
+use path::{KtestPath, SuffixTrie};
+use tree::{KtestCrate, KtestTree};
 
 pub enum KtestResult {
     Ok,
     Failed,
+}
+
+/// The entry point of the test runner.
+#[ostd::ktest::main]
+fn main() {
+    use ostd::task::TaskOptions;
+
+    let test_task = move || {
+        use alloc::string::ToString;
+
+        use ostd::arch::qemu::{exit_qemu, QemuExitCode};
+
+        match run_ktests(
+            get_ktest_test_whitelist().map(|s| s.iter().map(|s| s.to_string())),
+            get_ktest_crate_whitelist(),
+        ) {
+            KtestResult::Ok => exit_qemu(QemuExitCode::Success),
+            KtestResult::Failed => exit_qemu(QemuExitCode::Failed),
+        };
+    };
+
+    let _ = TaskOptions::new(test_task).data(()).spawn();
+
+    unreachable!("The spawn method will NOT return in the boot context")
 }
 
 /// Run all the tests registered by `#[ktest]` in the `.ktest_array` section.
@@ -32,27 +67,18 @@ pub enum KtestResult {
 ///
 /// If a test inside a crate fails, the test runner will continue to run the rest of the tests
 /// inside the crate. But the tests in the following crates will not be run.
-pub fn run_ktests<PrintFn, PathsIter>(
-    print: &PrintFn,
-    catch_unwind: &CatchUnwindImpl,
+fn run_ktests<PathsIter>(
     test_whitelist: Option<PathsIter>,
     crate_whitelist: Option<&[&str]>,
 ) -> KtestResult
 where
-    PrintFn: Fn(core::fmt::Arguments),
     PathsIter: Iterator<Item = String>,
 {
-    macro_rules! print {
-        ($fmt: literal $(, $($arg: tt)+)?) => {
-            print(format_args!($fmt $(, $($arg)+)?))
-        }
-    }
-
     let whitelist_trie =
         test_whitelist.map(|paths| SuffixTrie::from_paths(paths.map(|p| KtestPath::from(&p))));
 
     let tree = KtestTree::from_iter(KtestIter::new());
-    print!(
+    early_print!(
         "\n[ktest runner] running {} tests in {} crates\n",
         tree.nr_tot_tests(),
         tree.nr_tot_crates()
@@ -62,36 +88,22 @@ where
     for crate_ in tree.iter() {
         if let Some(crate_set) = &crate_set {
             if !crate_set.contains(crate_.name()) {
-                print!("\n[ktest runner] skipping crate \"{}\".\n", crate_.name());
+                early_print!("\n[ktest runner] skipping crate \"{}\".\n", crate_.name());
                 continue;
             }
         }
-        match run_crate_ktests(crate_, print, catch_unwind, &whitelist_trie) {
+        match run_crate_ktests(crate_, &whitelist_trie) {
             KtestResult::Ok => {}
             KtestResult::Failed => return KtestResult::Failed,
         }
     }
-    print!("\n[ktest runner] All crates tested.\n");
+    early_print!("\n[ktest runner] All crates tested.\n");
     KtestResult::Ok
 }
 
-fn run_crate_ktests<PrintFn>(
-    crate_: &KtestCrate,
-    print: &PrintFn,
-    catch_unwind: &CatchUnwindImpl,
-    whitelist: &Option<SuffixTrie>,
-) -> KtestResult
-where
-    PrintFn: Fn(core::fmt::Arguments),
-{
-    macro_rules! print {
-        ($fmt: literal $(, $($arg: tt)+)?) => {
-            print(format_args!($fmt $(, $($arg)+)?))
-        }
-    }
-
+fn run_crate_ktests(crate_: &KtestCrate, whitelist: &Option<SuffixTrie>) -> KtestResult {
     let crate_name = crate_.name();
-    print!(
+    early_print!(
         "\nrunning {} tests in crate \"{}\"\n\n",
         crate_.nr_tot_tests(),
         crate_name
@@ -110,19 +122,22 @@ where
                     continue;
                 }
             }
-            print!(
+            early_print!(
                 "test {}::{} ...",
                 test.info().module_path,
                 test.info().fn_name
             );
             debug_assert_eq!(test.info().package, crate_name);
-            match test.run(catch_unwind) {
+            match test.run(
+                &(unwinding::panic::catch_unwind::<(), fn()>
+                    as fn(fn()) -> Result<(), Box<(dyn Any + Send + 'static)>>),
+            ) {
                 Ok(()) => {
-                    print!(" {}\n", "ok".green());
+                    early_print!(" {}\n", "ok".green());
                     passed += 1;
                 }
                 Err(e) => {
-                    print!(" {}\n", "FAILED".red());
+                    early_print!(" {}\n", "FAILED".red());
                     failed_tests.push((test.clone(), e.clone()));
                 }
             }
@@ -130,19 +145,21 @@ where
     }
     let failed = failed_tests.len();
     if failed == 0 {
-        print!("\ntest result: {}.", "ok".green());
+        early_print!("\ntest result: {}.", "ok".green());
     } else {
-        print!("\ntest result: {}.", "FAILED".red());
+        early_print!("\ntest result: {}.", "FAILED".red());
     }
-    print!(
+    early_print!(
         " {} passed; {} failed; {} filtered out.\n",
-        passed, failed, filtered
+        passed,
+        failed,
+        filtered
     );
     assert!(passed + failed + filtered == crate_.nr_tot_tests());
     if failed > 0 {
-        print!("\nfailures:\n\n");
+        early_print!("\nfailures:\n\n");
         for (t, e) in failed_tests {
-            print!(
+            early_print!(
                 "---- {}:{}:{} - {} ----\n\n",
                 t.info().source,
                 t.info().line,
@@ -151,18 +168,18 @@ where
             );
             match e {
                 KtestError::Panic(s) => {
-                    print!("[caught panic] {}\n", s);
+                    early_print!("[caught panic] {}\n", s);
                 }
                 KtestError::ShouldPanicButNoPanic => {
-                    print!("test did not panic as expected\n");
+                    early_print!("test did not panic as expected\n");
                 }
                 KtestError::ExpectedPanicNotMatch(expected, s) => {
-                    print!("[caught panic] expected panic not match\n");
-                    print!("expected: {}\n", expected);
-                    print!("caught: {}\n", s);
+                    early_print!("[caught panic] expected panic not match\n");
+                    early_print!("expected: {}\n", expected);
+                    early_print!("caught: {}\n", s);
                 }
                 KtestError::Unknown => {
-                    print!("[caught panic] unknown panic payload! (fatal panic handling error in ktest)\n");
+                    early_print!("[caught panic] unknown panic payload! (fatal panic handling error in ktest)\n");
                 }
             }
         }

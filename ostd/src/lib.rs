@@ -56,10 +56,15 @@ pub(crate) use crate::cpu::local::cpu_local_cell;
 /// This function represents the first phase booting up the system. It makes
 /// all functionalities of OSTD available after the call.
 ///
-/// TODO: We need to refactor this function to make it more modular and
-/// make inter-initialization-dependencies more clear and reduce usages of
-/// boot stage only global variables.
-pub fn init() {
+/// # Safety
+///
+/// This function should be called only once and only on the BSP.
+//
+// TODO: We need to refactor this function to make it more modular and
+// make inter-initialization-dependencies more clear and reduce usages of
+// boot stage only global variables.
+#[doc(hidden)]
+pub unsafe fn init() {
     arch::enable_cpu_features();
     arch::serial::init();
 
@@ -131,8 +136,14 @@ mod test {
     }
 }
 
-/// The module re-exports everything from the ktest crate
-#[cfg(ktest)]
+#[doc(hidden)]
 pub mod ktest {
+    //! The module re-exports everything from the [`ostd_test`] crate, as well
+    //! as the test entry point macro.
+    //!
+    //! It is rather discouraged to use the definitions here directly. The
+    //! `ktest` attribute is sufficient for all normal use cases.
+
+    pub use ostd_macros::test_main as main;
     pub use ostd_test::*;
 }
