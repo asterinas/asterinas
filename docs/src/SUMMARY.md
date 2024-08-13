@@ -44,6 +44,7 @@
     * [General Guidelines]() 
     * [Rust Guidelines](to-contribute/style-guidelines/rust-guidelines.md) 
     * [Git Guidelines]() 
+* [Boterinas](to-contribute/boterinas.md)
 * [Community]()
 * [Code of Conduct]()
 
