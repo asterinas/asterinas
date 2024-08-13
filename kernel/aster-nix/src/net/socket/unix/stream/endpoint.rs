@@ -122,4 +122,4 @@ impl Endpoint {
     }
 }
 
-const DAFAULT_BUF_SIZE: usize = 4096;
+const DAFAULT_BUF_SIZE: usize = 65536;

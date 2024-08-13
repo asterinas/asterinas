@@ -58,4 +58,4 @@ struct PipeFds {
     writer_fd: FileDesc,
 }
 
-const PIPE_BUF_SIZE: usize = 1024 * 1024;
+const PIPE_BUF_SIZE: usize = 65536;
