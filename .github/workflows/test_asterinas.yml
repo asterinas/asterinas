@@ -5,9 +5,9 @@ on:
   push:
     branches:
       - main
-  # Schedule to run on every day at 15:00 UTC (23:00 CST)
+  # Schedule to run on every day at 22:00 UTC (06:00 Beijing Time)
   schedule:
-    - cron: '0 15 * * *'
+    - cron: '0 22 * * *'
 
 jobs:
   lint:
