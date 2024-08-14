@@ -109,8 +109,10 @@ pub struct UserMode<'a> {
     context: UserContext,
 }
 
-// An instance of `UserMode` is bound to the current task. So it cannot be [`Send`].
+// An instance of `UserMode` is bound to the current task. So it must not be sent to other tasks.
 impl<'a> !Send for UserMode<'a> {}
+// Note that implementing `!Sync` is unnecessary
+// because entering the user space via `UserMode` requires taking a mutable reference.
 
 impl<'a> UserMode<'a> {
     /// Creates a new `UserMode`.
