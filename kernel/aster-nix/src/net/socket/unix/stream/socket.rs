@@ -4,7 +4,7 @@ use core::sync::atomic::AtomicBool;
 
 use atomic::Ordering;
 
-use super::{connected::Connected, endpoint::Endpoint, init::Init, listener::Listener};
+use super::{connected::Connected, init::Init, listener::Listener};
 use crate::{
     events::{IoEvents, Observer},
     fs::{
@@ -59,10 +59,10 @@ impl UnixStreamSocket {
     }
 
     pub fn new_pair(is_nonblocking: bool) -> (Arc<Self>, Arc<Self>) {
-        let (end_a, end_b) = Endpoint::new_pair(None, None);
+        let (conn_a, conn_b) = Connected::new_pair(None, None);
         (
-            Self::new_connected(Connected::new(end_a), is_nonblocking),
-            Self::new_connected(Connected::new(end_b), is_nonblocking),
+            Self::new_connected(conn_a, is_nonblocking),
+            Self::new_connected(conn_b, is_nonblocking),
         )
     }
 

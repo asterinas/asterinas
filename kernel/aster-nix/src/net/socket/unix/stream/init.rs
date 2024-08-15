@@ -45,8 +45,7 @@ impl Init {
     }
 
     pub(super) fn connect(&self, remote_addr: &UnixSocketAddrBound) -> Result<Connected> {
-        let endpoint = push_incoming(remote_addr, self.addr.clone())?;
-        Ok(Connected::new(endpoint))
+        push_incoming(remote_addr, self.addr.clone())
     }
 
     pub(super) fn addr(&self) -> Option<&UnixSocketAddrBound> {
