@@ -136,7 +136,7 @@ impl<R> VmarChildOptions<R> {
 #[cfg(ktest)]
 mod test {
     use aster_rights::Full;
-    use ostd::{mm::VmIo, prelude::*};
+    use ostd::prelude::*;
 
     use super::*;
     use crate::vm::{

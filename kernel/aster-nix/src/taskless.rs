@@ -216,7 +216,7 @@ mod test {
         let mut counter = 0;
 
         // Schedule this taskless for `SCHEDULE_TIMES`.
-        while taskless.is_scheduled.load(Ordering::Acquire) == false {
+        while !taskless.is_scheduled.load(Ordering::Acquire) {
             taskless.schedule();
             counter += 1;
             if counter == SCHEDULE_TIMES {
@@ -227,7 +227,9 @@ mod test {
         // Wait for all taskless having finished.
         while taskless.is_running.load(Ordering::Acquire)
             || taskless.is_scheduled.load(Ordering::Acquire)
-        {}
+        {
+            core::hint::spin_loop()
+        }
 
         assert_eq!(counter, COUNTER.load(Ordering::Relaxed));
     }

@@ -49,9 +49,9 @@ pub fn main() {
         OsdkSubcommand::Test(test_args) => {
             execute_test_command(&load_config(&test_args.common_args), test_args);
         }
-        OsdkSubcommand::Check(args) => execute_forwarded_command("check", &args.args),
-        OsdkSubcommand::Clippy(args) => execute_forwarded_command("clippy", &args.args),
-        OsdkSubcommand::Doc(args) => execute_forwarded_command("doc", &args.args),
+        OsdkSubcommand::Check(args) => execute_forwarded_command("check", &args.args, true),
+        OsdkSubcommand::Clippy(args) => execute_forwarded_command("clippy", &args.args, true),
+        OsdkSubcommand::Doc(args) => execute_forwarded_command("doc", &args.args, false),
     }
 }
 

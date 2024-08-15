@@ -221,9 +221,7 @@ mod tests {
 
     macro_rules! gen_test_case {
         () => {{
-            fn dummy_fn() {
-                ()
-            }
+            fn dummy_fn() {}
             let mut tree = KtestTree::new();
             let new = |m: &'static str, f: &'static str, p: &'static str| {
                 KtestItem::new(
@@ -295,7 +293,7 @@ mod tests {
             for mov in crate_.iter() {
                 let module = mov;
                 for test in module.iter() {
-                    collection.push(&test);
+                    collection.push(test);
                 }
             }
         }

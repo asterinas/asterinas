@@ -484,7 +484,7 @@ mod test {
         let mut read = vec![0u8; BUF_SIZE];
         let read_after_rename = a_inode_new.read_bytes_at(0, &mut read);
         assert!(
-            read_after_rename.is_ok() && read_after_rename.clone().unwrap() == BUF_SIZE,
+            read_after_rename.is_ok() && read_after_rename.unwrap() == BUF_SIZE,
             "Fail to read after rename: {:?}",
             read_after_rename.unwrap_err()
         );
@@ -495,8 +495,7 @@ mod test {
         let new_buf = vec![7u8; NEW_BUF_SIZE];
         let new_write_after_rename = a_inode_new.write_bytes_at(0, &new_buf);
         assert!(
-            new_write_after_rename.is_ok()
-                && new_write_after_rename.clone().unwrap() == NEW_BUF_SIZE,
+            new_write_after_rename.is_ok() && new_write_after_rename.unwrap() == NEW_BUF_SIZE,
             "Fail to write file after rename: {:?}",
             new_write_after_rename.unwrap_err()
         );
@@ -984,7 +983,7 @@ mod test {
         let mut file_names: Vec<String> = (0..file_num).map(|x| x.to_string()).collect();
         file_names.sort();
         let mut file_inodes: Vec<Arc<dyn Inode>> = Vec::new();
-        for (_file_id, file_name) in file_names.iter().enumerate() {
+        for file_name in file_names.iter() {
             let inode = create_file(root.clone(), file_name);
             file_inodes.push(inode);
         }

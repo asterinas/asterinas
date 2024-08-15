@@ -60,7 +60,6 @@ impl DosTimestamp {
         #[cfg(not(ktest))]
         {
             use crate::time::clocks::RealTimeClock;
-
             DosTimestamp::from_duration(RealTimeClock::get().read_time())
         }
 
@@ -68,9 +67,9 @@ impl DosTimestamp {
         #[cfg(ktest)]
         {
             use crate::time::SystemTime;
-            return DosTimestamp::from_duration(
+            DosTimestamp::from_duration(
                 SystemTime::UNIX_EPOCH.duration_since(&SystemTime::UNIX_EPOCH)?,
-            );
+            )
         }
     }
 

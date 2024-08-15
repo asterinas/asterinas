@@ -119,6 +119,7 @@ mod test {
     use crate::prelude::*;
 
     #[ktest]
+    #[allow(clippy::eq_op)]
     fn trivial_assertion() {
         assert_eq!(0, 0);
     }

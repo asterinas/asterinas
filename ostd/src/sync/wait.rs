@@ -293,7 +293,7 @@ mod test {
             Task::yield_now();
 
             cond_cloned.store(true, Ordering::Relaxed);
-            wake(&*queue_cloned);
+            wake(&queue_cloned);
         })
         .data(())
         .spawn()

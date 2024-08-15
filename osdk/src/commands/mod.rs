@@ -16,8 +16,10 @@ pub use self::{
 
 use crate::arch::get_default_arch;
 
-/// Execute the forwarded cargo command with args containing the subcommand and its arguments.
-pub fn execute_forwarded_command(subcommand: &str, args: &Vec<String>) -> ! {
+/// Execute the forwarded cargo command with arguments.
+///
+/// The `cfg_ktest` parameter controls whether `cfg(ktest)` is enabled.
+pub fn execute_forwarded_command(subcommand: &str, args: &Vec<String>, cfg_ktest: bool) -> ! {
     let mut cargo = util::cargo();
     cargo.arg(subcommand).args(util::COMMON_CARGO_ARGS);
     if !args.contains(&"--target".to_owned()) {
@@ -27,6 +29,11 @@ pub fn execute_forwarded_command(subcommand: &str, args: &Vec<String>) -> ! {
 
     let env_rustflags = std::env::var("RUSTFLAGS").unwrap_or_default();
     let rustflags = env_rustflags + " --check-cfg cfg(ktest)";
+    let rustflags = if cfg_ktest {
+        rustflags + " --cfg ktest"
+    } else {
+        rustflags
+    };
 
     cargo.env("RUSTFLAGS", rustflags);
 

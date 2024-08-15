@@ -134,8 +134,8 @@ mod test {
     #[ktest]
     fn calculation() {
         let coeff = Coeff::new(23456, 56789, 1_000_000_000);
-        assert!(coeff * 0 as u64 == 0);
-        assert!(coeff * 100 as u64 == 100 * 23456 / 56789);
-        assert!(coeff * 1_000_000_000 as u64 == 1_000_000_000 * 23456 / 56789);
+        assert!(coeff * 0_u64 == 0);
+        assert!(coeff * 100_u64 == 100 * 23456 / 56789);
+        assert!(coeff * 1_000_000_000_u64 == 1_000_000_000 * 23456 / 56789);
     }
 }
