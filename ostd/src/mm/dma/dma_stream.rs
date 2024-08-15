@@ -334,7 +334,7 @@ mod test {
             .alloc_contiguous()
             .unwrap();
         let vm_segment_child = vm_segment_parent.range(0..1);
-        let dma_stream_parent =
+        let _dma_stream_parent =
             DmaStream::map(vm_segment_parent, DmaDirection::Bidirectional, false);
         let dma_stream_child = DmaStream::map(vm_segment_child, DmaDirection::Bidirectional, false);
         assert!(dma_stream_child.is_err());

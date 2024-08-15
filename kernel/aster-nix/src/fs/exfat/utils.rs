@@ -5,7 +5,7 @@ use core::{ops::Range, time::Duration};
 use time::{OffsetDateTime, PrimitiveDateTime, Time};
 
 use super::fat::ClusterID;
-use crate::{prelude::*, time::clocks::RealTimeClock};
+use crate::prelude::*;
 
 pub fn make_hash_index(cluster: ClusterID, offset: u32) -> usize {
     (cluster as usize) << 32usize | (offset as usize & 0xffffffffusize)
@@ -59,6 +59,8 @@ impl DosTimestamp {
     pub fn now() -> Result<Self> {
         #[cfg(not(ktest))]
         {
+            use crate::time::clocks::RealTimeClock;
+
             DosTimestamp::from_duration(RealTimeClock::get().read_time())
         }
 

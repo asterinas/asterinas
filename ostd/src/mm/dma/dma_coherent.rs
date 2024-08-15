@@ -245,7 +245,7 @@ mod test {
             .alloc_contiguous()
             .unwrap();
         let vm_segment_child = vm_segment_parent.range(0..1);
-        let dma_coherent_parent = DmaCoherent::map(vm_segment_parent, false);
+        let _dma_coherent_parent = DmaCoherent::map(vm_segment_parent, false);
         let dma_coherent_child = DmaCoherent::map(vm_segment_child, false);
         assert!(dma_coherent_child.is_err());
     }
