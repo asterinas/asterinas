@@ -2,12 +2,13 @@
 
 //! Tasks are the unit of code execution.
 
+mod preempt;
 mod processor;
 pub mod scheduler;
 #[allow(clippy::module_inception)]
 mod task;
 
 pub use self::{
-    processor::{disable_preempt, DisablePreemptGuard},
+    preempt::{disable_preempt, DisablePreemptGuard},
     task::{AtomicCpuId, Priority, Task, TaskAdapter, TaskContextApi, TaskOptions},
 };

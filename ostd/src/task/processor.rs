@@ -2,8 +2,11 @@
 
 use alloc::sync::Arc;
 
-use super::task::{context_switch, Task, TaskContext};
-use crate::{cpu::local::PREEMPT_INFO, cpu_local_cell};
+use super::{
+    preempt::cpu_local,
+    task::{context_switch, Task, TaskContext},
+};
+use crate::cpu_local_cell;
 
 cpu_local_cell! {
     /// The `Arc<Task>` (casted by [`Arc::into_raw`]) that is the current task.
@@ -43,9 +46,12 @@ pub(super) fn current_task() -> Option<Arc<Task>> {
 /// This function will panic if called while holding preemption locks or with
 /// local IRQ disabled.
 pub(super) fn switch_to_task(next_task: Arc<Task>) {
-    let preemt_count = PREEMPT_COUNT.get();
-    if preemt_count != 0 {
-        panic!("Switching task while holding {} locks", preemt_count);
+    let guard_count = cpu_local::get_guard_count();
+    if guard_count != 0 {
+        panic!(
+            "Switching task with preemption disabled (nesting depth: {})",
+            guard_count
+        );
     }
 
     assert!(
@@ -107,66 +113,4 @@ pub(super) fn switch_to_task(next_task: Arc<Task>) {
     // always possible. For example, `context_switch` can switch directly to the entry point of the
     // next task. Not dropping is just fine because the only consequence is that we delay the drop
     // to the next task switching.
-}
-
-static PREEMPT_COUNT: PreemptCount = PreemptCount::new();
-
-struct PreemptCount {}
-
-impl PreemptCount {
-    const SHIFT: u8 = 0;
-
-    const BITS: u8 = 31;
-
-    const MASK: u32 = ((1 << Self::BITS) - 1) << Self::SHIFT;
-
-    const fn new() -> Self {
-        Self {}
-    }
-
-    fn inc(&self) {
-        PREEMPT_INFO.add_assign(1 << Self::SHIFT);
-    }
-
-    fn dec(&self) {
-        PREEMPT_INFO.sub_assign(1 << Self::SHIFT);
-    }
-
-    fn get(&self) -> u32 {
-        PREEMPT_INFO.load() & Self::MASK
-    }
-}
-
-/// A guard for disable preempt.
-#[clippy::has_significant_drop]
-#[must_use]
-pub struct DisablePreemptGuard {
-    // This private field prevents user from constructing values of this type directly.
-    _private: (),
-}
-
-impl !Send for DisablePreemptGuard {}
-
-impl DisablePreemptGuard {
-    fn new() -> Self {
-        PREEMPT_COUNT.inc();
-        Self { _private: () }
-    }
-
-    /// Transfer this guard to a new guard.
-    /// This guard must be dropped after this function.
-    pub fn transfer_to(&self) -> Self {
-        disable_preempt()
-    }
-}
-
-impl Drop for DisablePreemptGuard {
-    fn drop(&mut self) {
-        PREEMPT_COUNT.dec();
-    }
-}
-
-/// Disables preemption.
-pub fn disable_preempt() -> DisablePreemptGuard {
-    DisablePreemptGuard::new()
 }
