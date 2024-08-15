@@ -21,8 +21,8 @@ use super::{
 };
 use crate::{
     arch::mm::{
-        current_page_table_paddr, tlb_flush_addr, tlb_flush_addr_range, PageTableEntry,
-        PagingConsts,
+        current_page_table_paddr, tlb_flush_addr, tlb_flush_addr_range,
+        tlb_flush_all_excluding_global, PageTableEntry, PagingConsts,
     },
     cpu::CpuExceptionInfo,
     mm::{
@@ -102,6 +102,29 @@ impl VmSpace {
         self.pt.activate();
     }
 
+    /// Clears all mappings.
+    pub fn clear(&self) {
+        let mut cursor = self.pt.cursor_mut(&(0..MAX_USERSPACE_VADDR)).unwrap();
+        loop {
+            // SAFETY: It is safe to un-map memory in the userspace.
+            let result = unsafe { cursor.take_next(MAX_USERSPACE_VADDR - cursor.virt_addr()) };
+            match result {
+                PageTableItem::Mapped { page, .. } => {
+                    drop(page);
+                }
+                PageTableItem::NotMapped { .. } => {
+                    break;
+                }
+                PageTableItem::MappedUntracked { .. } => {
+                    panic!("found untracked memory mapped into `VmSpace`");
+                }
+            }
+        }
+        // TODO: currently this method calls x86_64::flush_all(), which rewrite the Cr3 register.
+        // We should replace it with x86_64::flush_pcid(InvPicdCommand::AllExceptGlobal) after enabling PCID.
+        tlb_flush_all_excluding_global();
+    }
+
     pub(crate) fn handle_page_fault(
         &self,
         info: &CpuExceptionInfo,
@@ -136,10 +159,20 @@ impl VmSpace {
             prop.flags -= PageFlags::W;
         };
 
-        // SAFETY: It is safe to protect memory in the userspace.
-        while let Some(range) = unsafe { cursor.protect_next(end - cursor.virt_addr(), &mut op) } {
-            tlb_flush_addr(range.start);
+        loop {
+            // SAFETY: It is safe to protect memory in the userspace.
+            unsafe {
+                if cursor
+                    .protect_next(end - cursor.virt_addr(), &mut op)
+                    .is_none()
+                {
+                    break;
+                }
+            };
         }
+        // TODO: currently this method calls x86_64::flush_all(), which rewrite the Cr3 register.
+        // We should replace it with x86_64::flush_pcid(InvPicdCommand::AllExceptGlobal) after enabling PCID.
+        tlb_flush_all_excluding_global();
 
         let page_fault_handler = {
             let new_handler = Once::new();
