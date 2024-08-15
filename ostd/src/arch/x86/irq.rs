@@ -153,3 +153,27 @@ impl Drop for IrqCallbackHandle {
         CALLBACK_ID_ALLOCATOR.get().unwrap().lock().free(self.id);
     }
 }
+
+/// Sends a general inter-processor interrupt (IPI) to the specified CPU.
+///
+/// # Safety
+///
+/// The caller must ensure that the CPU ID and the interrupt number corresponds
+/// to a safe function to call.
+pub(crate) unsafe fn send_ipi(cpu_id: u32, irq_num: u8) {
+    use crate::arch::kernel::apic::{self, Icr};
+
+    let icr = Icr::new(
+        apic::ApicId::from(cpu_id),
+        apic::DestinationShorthand::NoShorthand,
+        apic::TriggerMode::Edge,
+        apic::Level::Assert,
+        apic::DeliveryStatus::Idle,
+        apic::DestinationMode::Physical,
+        apic::DeliveryMode::Fixed,
+        irq_num,
+    );
+    apic::borrow(|apic| {
+        apic.send_ipi(icr);
+    });
+}
