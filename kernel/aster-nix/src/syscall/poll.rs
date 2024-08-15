@@ -51,6 +51,7 @@ pub fn do_poll(poll_fds: &[PollFd], timeout: Option<Duration>, ctx: &Context) ->
     loop {
         let mut num_revents = 0;
 
+        let file_table = ctx.process.file_table().lock();
         for poll_fd in poll_fds {
             // Skip poll_fd if it is not given a fd
             let fd = match poll_fd.fd() {
@@ -59,10 +60,7 @@ pub fn do_poll(poll_fds: &[PollFd], timeout: Option<Duration>, ctx: &Context) ->
             };
 
             // Poll the file
-            let file = {
-                let file_table = ctx.process.file_table().lock();
-                file_table.get_file(fd)?.clone()
-            };
+            let file = file_table.get_file(fd)?;
             let need_poller = if num_revents == 0 {
                 Some(&mut poller)
             } else {
@@ -74,6 +72,8 @@ pub fn do_poll(poll_fds: &[PollFd], timeout: Option<Duration>, ctx: &Context) ->
                 num_revents += 1;
             }
         }
+
+        drop(file_table);
 
         if num_revents > 0 {
             return Ok(num_revents);

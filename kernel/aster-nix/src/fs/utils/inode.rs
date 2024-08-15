@@ -51,6 +51,10 @@ impl InodeType {
     pub fn is_directory(&self) -> bool {
         *self == InodeType::Dir
     }
+
+    pub fn is_device(&self) -> bool {
+        *self == InodeType::BlockDevice || *self == InodeType::CharDevice
+    }
 }
 
 impl From<DeviceType> for InodeType {

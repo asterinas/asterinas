@@ -1093,12 +1093,18 @@ impl Inode for RamInode {
     }
 
     fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
-        if let Some(device) = self.node.read().inner.as_device() {
-            device.poll(mask, poller)
-        } else {
-            let events = IoEvents::IN | IoEvents::OUT;
-            events & mask
+        if !self.typ.is_device() {
+            // Fast path: bypassing the read lock on `self.node`
+            // results in a 5x speed improvement for lmbench-select-file.
+            return (IoEvents::IN | IoEvents::OUT) & mask;
         }
+
+        let node = self.node.read();
+        let device = node
+            .inner
+            .as_device()
+            .expect("[Internal error] self.typ is device, while self.node is not");
+        device.poll(mask, poller)
     }
 
     fn fs(&self) -> Arc<dyn FileSystem> {

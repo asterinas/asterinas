@@ -102,7 +102,7 @@ fn do_select(
 ) -> Result<usize> {
     // Convert the FdSet to an array of PollFd
     let poll_fds = {
-        let mut poll_fds = Vec::new();
+        let mut poll_fds = Vec::with_capacity(nfds as usize);
         for fd in 0..nfds {
             let events = {
                 let readable = readfds.as_ref().map_or(false, |fds| fds.is_set(fd));
