@@ -127,8 +127,6 @@ pub fn call_ostd_main() -> ! {
     }
     #[cfg(ktest)]
     unsafe {
-        use alloc::boxed::Box;
-
         use crate::task::TaskOptions;
 
         crate::init();

@@ -433,7 +433,7 @@ mod test {
         let rmdir_empty_dir = root.rmdir(parent_name);
         assert!(rmdir_empty_dir.is_ok(), "Fail to remove an empty directory");
 
-        let parent_inode_again = create_folder(root.clone(), parent_name);
+        let _parent_inode_again = create_folder(root.clone(), parent_name);
         create_file(parent_inode.clone(), child_name);
         let lookup_result = parent_inode.lookup(child_name);
         assert!(
@@ -984,7 +984,7 @@ mod test {
         let mut file_names: Vec<String> = (0..file_num).map(|x| x.to_string()).collect();
         file_names.sort();
         let mut file_inodes: Vec<Arc<dyn Inode>> = Vec::new();
-        for (file_id, file_name) in file_names.iter().enumerate() {
+        for (_file_id, file_name) in file_names.iter().enumerate() {
             let inode = create_file(root.clone(), file_name);
             file_inodes.push(inode);
         }
