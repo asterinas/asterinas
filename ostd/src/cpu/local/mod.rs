@@ -43,6 +43,7 @@ use alloc::vec::Vec;
 use align_ext::AlignExt;
 pub(crate) use cell::{cpu_local_cell, CpuLocalCell};
 pub use cpu_local::{CpuLocal, CpuLocalDerefGuard};
+use spin::Once;
 
 use crate::{
     arch,
@@ -78,11 +79,8 @@ pub(crate) unsafe fn early_init_bsp_local_base() {
     }
 }
 
-/// The BSP initializes the CPU-local areas for APs. Here we use a
-/// non-disabling preempt version of lock because the [`crate::sync`]
-/// version needs `cpu_local` to work. Preemption and interrupts are
-/// disabled in this phase so it is safe to use this lock.
-static CPU_LOCAL_STORAGES: spin::RwLock<Vec<ContPages<KernelMeta>>> = spin::RwLock::new(Vec::new());
+/// The BSP initializes the CPU-local areas for APs.
+static CPU_LOCAL_STORAGES: Once<Vec<ContPages<KernelMeta>>> = Once::new();
 
 /// Initializes the CPU local data for the bootstrap processor (BSP).
 ///
@@ -99,7 +97,7 @@ pub unsafe fn init_on_bsp() {
 
     let num_cpus = super::num_cpus();
 
-    let mut cpu_local_storages = CPU_LOCAL_STORAGES.write();
+    let mut cpu_local_storages = Vec::with_capacity(num_cpus as usize - 1);
     for cpu_i in 1..num_cpus {
         let ap_pages = {
             let nbytes = (bsp_end_va - bsp_base_va).align_up(PAGE_SIZE);
@@ -126,6 +124,8 @@ pub unsafe fn init_on_bsp() {
         cpu_local_storages.push(ap_pages);
     }
 
+    CPU_LOCAL_STORAGES.call_once(|| cpu_local_storages);
+
     // Write the CPU ID of BSP to the first 4 bytes of the CPU-local area.
     let bsp_cpu_id_ptr = bsp_base_va as *mut u32;
     // SAFETY: the first 4 bytes is reserved for storing CPU ID.
@@ -144,8 +144,11 @@ pub unsafe fn init_on_bsp() {
 ///
 /// This function can only called on the AP.
 pub unsafe fn init_on_ap(cpu_id: u32) {
-    let rlock = CPU_LOCAL_STORAGES.read();
-    let ap_pages = rlock.get(cpu_id as usize - 1).unwrap();
+    let ap_pages = CPU_LOCAL_STORAGES
+        .get()
+        .unwrap()
+        .get(cpu_id as usize - 1)
+        .unwrap();
 
     let ap_pages_ptr = paddr_to_vaddr(ap_pages.start_paddr()) as *mut u32;
 

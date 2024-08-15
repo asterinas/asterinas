@@ -14,34 +14,35 @@ use crate::{
 ///
 /// The accessors of the CPU-local variables are defined with [`CpuLocal`].
 ///
-/// You can get the reference to the inner object by calling [`deref`]. But
-/// it is worth noting that the object is always the one in the original core
-/// when the reference is created. Use [`CpuLocal::borrow_irq_disabled`] if
-/// this is not expected, or if the inner type can't be shared across CPUs.
+/// You can get the reference to the inner object on one CPU by calling
+/// [`CpuLocal::get_on_cpu`]. Also if you intend to access the inner object
+/// on the current CPU, you can use [`CpuLocal::borrow_irq_disabled`] or
+/// [`CpuLocal::borrow_with`]. The latter two accessors can be used even if
+/// the inner object is not `Sync`.
 ///
 /// # Example
 ///
 /// ```rust
-/// use ostd::{cpu_local, sync::SpinLock};
-/// use core::sync::atomic::{AtomicU32, Ordering};
+/// use ostd::{cpu_local, cpu::this_cpu};
+/// use core::{sync::atomic::{AtomicU32, Ordering}, cell::Cell};
 ///
 /// cpu_local! {
 ///     static FOO: AtomicU32 = AtomicU32::new(1);
-///     pub static BAR: SpinLock<usize> = SpinLock::new(2);
+///     pub static BAR: Cell<usize> = Cell::new(2);
 /// }
 ///
 /// fn not_an_atomic_function() {
-///     let ref_of_foo = FOO.deref();
+///     let ref_of_foo = FOO.get_on_cpu(this_cpu());
 ///     // Note that the value of `FOO` here doesn't necessarily equal to the value
 ///     // of `FOO` of exactly the __current__ CPU. Since that task may be preempted
 ///     // and moved to another CPU since `ref_of_foo` is created.
 ///     let val_of_foo = ref_of_foo.load(Ordering::Relaxed);
 ///     println!("FOO VAL: {}", val_of_foo);
 ///
-///     let bar_guard = BAR.lock_irq_disabled();
+///     let bar_guard = BAR.borrow_irq_disabled();
 ///     // Here the value of `BAR` is always the one in the __current__ CPU since
 ///     // interrupts are disabled and we do not explicitly yield execution here.
-///     let val_of_bar = *bar_guard;
+///     let val_of_bar = bar_guard.get();
 ///     println!("BAR VAL: {}", val_of_bar);
 /// }
 /// ```
@@ -124,17 +125,10 @@ impl<T: 'static> CpuLocal<T> {
     /// # Safety
     ///
     /// The caller must ensure that the reference to `self` is static.
-    unsafe fn as_ptr(&self) -> *const T {
+    unsafe fn as_ptr(&'static self) -> *const T {
         super::has_init::assert_true();
 
-        let offset = {
-            let bsp_va = self as *const _ as usize;
-            let bsp_base = __cpu_local_start as usize;
-            // The implementation should ensure that the CPU-local object resides in the `.cpu_local`.
-            debug_assert!(bsp_va + core::mem::size_of::<T>() <= __cpu_local_end as usize);
-
-            bsp_va - bsp_base as usize
-        };
+        let offset = self.get_offset();
 
         let local_base = arch::cpu::local::get_base() as usize;
         let local_va = local_base + offset;
@@ -143,6 +137,51 @@ impl<T: 'static> CpuLocal<T> {
         debug_assert_eq!(local_va % core::mem::align_of::<T>(), 0);
 
         local_va as *mut T
+    }
+
+    /// Get the offset of the CPU-local object in the CPU-local area.
+    fn get_offset(&'static self) -> usize {
+        let bsp_va = self as *const _ as usize;
+        let bsp_base = __cpu_local_start as usize;
+        // The implementation should ensure that the CPU-local object resides in the `.cpu_local`.
+        debug_assert!(bsp_va + core::mem::size_of::<T>() <= __cpu_local_end as usize);
+
+        bsp_va - bsp_base
+    }
+}
+
+impl<T: 'static + Sync> CpuLocal<T> {
+    /// Get access to the copy of value on a specific CPU.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the CPU ID is out of range.
+    pub fn get_on_cpu(&'static self, cpu_id: u32) -> &'static T {
+        super::has_init::assert_true();
+
+        // If on the BSP, just use the statically linked storage.
+        if cpu_id == 0 {
+            return &self.0;
+        }
+
+        // SAFETY: Here we use `Once::get_unchecked` to make getting the CPU-
+        // local base faster. The storages must be initialized here so it is
+        // safe to do so.
+        let base = unsafe {
+            super::CPU_LOCAL_STORAGES
+                .get_unchecked()
+                .get(cpu_id as usize - 1)
+                .unwrap()
+                .start_paddr()
+        };
+        let base = crate::mm::paddr_to_vaddr(base);
+
+        let offset = self.get_offset();
+
+        let ptr = (base + offset) as *const T;
+
+        // SAFETY: The pointer is valid since the initialization is completed.
+        unsafe { &*ptr }
     }
 }
 
@@ -160,25 +199,6 @@ impl<T: 'static> !Clone for CpuLocal<T> {}
 // In general, it does not make any sense to send instances of `CpuLocal` to
 // other tasks as they should live on other CPUs to make sending useful.
 impl<T: 'static> !Send for CpuLocal<T> {}
-
-// For `Sync` types, we can create a reference over the inner type and allow
-// it to be shared across CPUs. So it is sound to provide a `Deref`
-// implementation. However it is up to the caller if sharing is desired.
-impl<T: 'static + Sync> Deref for CpuLocal<T> {
-    type Target = T;
-
-    /// Note that the reference to the inner object remains to the same object
-    /// accessed on the original CPU where the reference is created. If this
-    /// is not expected, turn off preemptions.
-    fn deref(&self) -> &Self::Target {
-        // SAFETY: it should be properly initialized before accesses.
-        // And we do not create a mutable reference over it. It is
-        // `Sync` so it can be referenced from this task. Here dereferencing
-        // from non-static instances is not feasible since no one can create
-        // a non-static instance of `CpuLocal`.
-        unsafe { &*self.as_ptr() }
-    }
-}
 
 /// A guard for accessing the CPU-local object.
 ///

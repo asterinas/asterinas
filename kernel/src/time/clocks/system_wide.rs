@@ -4,7 +4,12 @@ use alloc::sync::Arc;
 use core::time::Duration;
 
 use aster_time::read_monotonic_time;
-use ostd::{arch::timer::Jiffies, cpu_local, sync::SpinLock};
+use ostd::{
+    arch::timer::Jiffies,
+    cpu::{num_cpus, this_cpu},
+    cpu_local,
+    sync::SpinLock,
+};
 use paste::paste;
 use spin::Once;
 
@@ -30,7 +35,7 @@ impl RealTimeClock {
 
     /// Get the cpu-local system-wide `TimerManager` singleton of this clock.
     pub fn timer_manager() -> &'static Arc<TimerManager> {
-        CLOCK_REALTIME_MANAGER.get().unwrap()
+        CLOCK_REALTIME_MANAGER.get_on_cpu(this_cpu()).get().unwrap()
     }
 }
 
@@ -48,7 +53,10 @@ impl MonotonicClock {
 
     /// Get the cpu-local system-wide `TimerManager` singleton of this clock.
     pub fn timer_manager() -> &'static Arc<TimerManager> {
-        CLOCK_MONOTONIC_MANAGER.get().unwrap()
+        CLOCK_MONOTONIC_MANAGER
+            .get_on_cpu(this_cpu())
+            .get()
+            .unwrap()
     }
 }
 
@@ -127,7 +135,7 @@ impl BootTimeClock {
 
     /// Get the cpu-local system-wide `TimerManager` singleton of this clock.
     pub fn timer_manager() -> &'static Arc<TimerManager> {
-        CLOCK_BOOTTIME_MANAGER.get().unwrap()
+        CLOCK_BOOTTIME_MANAGER.get_on_cpu(this_cpu()).get().unwrap()
     }
 }
 
@@ -214,8 +222,10 @@ macro_rules! define_timer_managers {
             $(
                 let clock = paste! {[<$clock_id _INSTANCE>].get().unwrap().clone()};
                 let clock_manager = TimerManager::new(clock);
-                paste! {
-                    [<$clock_id _MANAGER>].call_once(|| clock_manager.clone());
+                for cpu in 0..num_cpus() {
+                    paste! {
+                        [<$clock_id _MANAGER>].get_on_cpu(cpu).call_once(|| clock_manager.clone());
+                    }
                 }
                 let callback = move || {
                     clock_manager.process_expired_timers();
@@ -287,10 +297,12 @@ pub(super) fn init() {
 /// to avoid functions like this one.
 pub fn init_for_ktest() {
     // If `spin::Once` has initialized, this closure will not be executed.
-    CLOCK_REALTIME_MANAGER.call_once(|| {
-        let clock = RealTimeClock { _private: () };
-        TimerManager::new(Arc::new(clock))
-    });
+    for cpu in 0..num_cpus() {
+        CLOCK_REALTIME_MANAGER.get_on_cpu(cpu).call_once(|| {
+            let clock = RealTimeClock { _private: () };
+            TimerManager::new(Arc::new(clock))
+        });
+    }
     CLOCK_REALTIME_COARSE_INSTANCE.call_once(|| Arc::new(RealTimeCoarseClock { _private: () }));
     RealTimeCoarseClock::current_ref().call_once(|| SpinLock::new(Duration::from_secs(0)));
     JIFFIES_TIMER_MANAGER.call_once(|| {
