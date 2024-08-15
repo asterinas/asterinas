@@ -218,3 +218,15 @@ FN_TEST(connect)
 		   EISCONN);
 }
 END_TEST()
+
+FN_TEST(listen)
+{
+	TEST_ERRNO(listen(sk_unbound, 10), EINVAL);
+
+	TEST_SUCC(listen(sk_listen, 10));
+
+	TEST_ERRNO(listen(sk_connected, 10), EINVAL);
+
+	TEST_ERRNO(listen(sk_accepted, 10), EINVAL);
+}
+END_TEST()

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::sync::atomic::{AtomicUsize, Ordering};
+
 use keyable_arc::KeyableWeak;
 
 use super::{connected::Connected, endpoint::Endpoint, UnixStreamSocket};
@@ -36,6 +38,11 @@ impl Listener {
         let socket = UnixStreamSocket::new_connected(connected, false);
 
         Ok((socket, peer_addr))
+    }
+
+    pub(super) fn listen(&self, backlog: usize) -> Result<()> {
+        self.backlog.set_backlog(backlog);
+        Ok(())
     }
 
     pub(super) fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
@@ -135,7 +142,7 @@ impl BacklogTable {
 struct Backlog {
     addr: UnixSocketAddrBound,
     pollee: Pollee,
-    backlog: usize,
+    backlog: AtomicUsize,
     incoming_endpoints: Mutex<VecDeque<Endpoint>>,
 }
 
@@ -144,7 +151,7 @@ impl Backlog {
         Self {
             addr,
             pollee: Pollee::new(IoEvents::empty()),
-            backlog,
+            backlog: AtomicUsize::new(backlog),
             incoming_endpoints: Mutex::new(VecDeque::with_capacity(backlog)),
         }
     }
@@ -155,7 +162,7 @@ impl Backlog {
 
     fn push_incoming(&self, endpoint: Endpoint) -> Result<()> {
         let mut endpoints = self.incoming_endpoints.lock();
-        if endpoints.len() >= self.backlog {
+        if endpoints.len() >= self.backlog.load(Ordering::Relaxed) {
             return_errno_with_message!(Errno::ECONNREFUSED, "incoming_endpoints is full");
         }
         endpoints.push_back(endpoint);
@@ -171,6 +178,10 @@ impl Backlog {
         }
         endpoint
             .ok_or_else(|| Error::with_message(Errno::EAGAIN, "no pending connection is available"))
+    }
+
+    fn set_backlog(&self, backlog: usize) {
+        self.backlog.store(backlog, Ordering::Relaxed);
     }
 
     fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
