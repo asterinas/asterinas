@@ -383,6 +383,7 @@ mod test {
 
     #[ktest]
     fn create_task() {
+        #[allow(clippy::eq_op)]
         let task = || {
             assert_eq!(1, 1);
         };
@@ -395,6 +396,7 @@ mod test {
 
     #[ktest]
     fn spawn_task() {
+        #[allow(clippy::eq_op)]
         let task = || {
             assert_eq!(1, 1);
         };

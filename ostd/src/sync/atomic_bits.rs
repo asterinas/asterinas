@@ -313,24 +313,24 @@ mod test {
     fn set_get() {
         let bits = AtomicBits::new_zeroes(128);
         for i in 0..bits.len() {
-            assert!(bits.get(i) == false);
+            assert!(!bits.get(i));
 
             bits.set(i, true);
-            assert!(bits.get(i) == true);
+            assert!(bits.get(i));
 
             bits.set(i, false);
-            assert!(bits.get(i) == false);
+            assert!(!bits.get(i));
         }
 
         let bits = AtomicBits::new_ones(128);
         for i in 0..bits.len() {
-            assert!(bits.get(i) == true);
+            assert!(bits.get(i));
 
             bits.set(i, false);
-            assert!(bits.get(i) == false);
+            assert!(!bits.get(i));
 
             bits.set(i, true);
-            assert!(bits.get(i) == true);
+            assert!(bits.get(i));
         }
     }
 
@@ -389,9 +389,9 @@ mod test {
     #[ktest]
     fn iter() {
         let bits = AtomicBits::new_zeroes(7);
-        assert!(bits.iter().all(|bit| bit == false));
+        assert!(bits.iter().all(|bit| !bit));
 
         let bits = AtomicBits::new_ones(128);
-        assert!(bits.iter().all(|bit| bit == true));
+        assert!(bits.iter().all(|bit| bit));
     }
 }

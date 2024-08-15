@@ -331,7 +331,7 @@ mod test {
     #[ktest]
     fn test_read_closed() {
         test_blocking(
-            |writer| drop(writer),
+            drop,
             |reader| {
                 let mut buf = [0; 1];
                 assert_eq!(reader.read(&mut writer_from(&mut buf)).unwrap(), 0);
@@ -350,7 +350,7 @@ mod test {
                     Errno::EPIPE
                 );
             },
-            |reader| drop(reader),
+            drop,
             Ordering::WriteThenRead,
         );
     }

@@ -210,7 +210,7 @@ format:
 	@make --no-print-directory -C test format
 
 .PHONY: check
-check: $(CARGO_OSDK)
+check: initramfs $(CARGO_OSDK)
 	@./tools/format_all.sh --check   	# Check Rust format issues
 	@# Check if STD_CRATES and NOSTD_CRATES combined is the same as all workspace members
 	@sed -n '/^\[workspace\]/,/^\[.*\]/{/members = \[/,/\]/p}' Cargo.toml | \
