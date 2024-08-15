@@ -11,12 +11,8 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use spin::Once;
 
-use super::{processor, task::Task};
-use crate::{
-    arch::timer,
-    cpu::{local::PREEMPT_INFO, this_cpu},
-    prelude::*,
-};
+use super::{preempt::cpu_local, processor, task::Task};
+use crate::{arch::timer, cpu::this_cpu, prelude::*};
 
 /// Injects a scheduler implementation into framework.
 ///
@@ -27,7 +23,7 @@ pub fn inject_scheduler(scheduler: &'static dyn Scheduler<Task>) {
     timer::register_callback(|| {
         SCHEDULER.get().unwrap().local_mut_rq_with(&mut |local_rq| {
             if local_rq.update_current(UpdateFlags::Tick) {
-                SHOULD_PREEMPT.set();
+                cpu_local::set_need_preempt();
             }
         })
     });
@@ -41,7 +37,7 @@ pub trait Scheduler<T = Task>: Sync + Send {
     ///
     /// Scheduler developers can perform load-balancing or some accounting work here.
     ///
-    /// If the `current` of a CPU should be preempted, this method returns the id of
+    /// If the `current` of a CPU needs to be preempted, this method returns the id of
     /// that CPU.
     fn enqueue(&self, runnable: Arc<T>, flags: EnqueueFlags) -> Option<u32>;
 
@@ -68,7 +64,7 @@ pub trait LocalRunQueue<T = Task> {
     /// Updates the current runnable task's scheduling statistics and potentially its
     /// position in the queue.
     ///
-    /// If the current runnable task should be preempted, the method returns `true`.
+    /// If the current runnable task needs to be preempted, the method returns `true`.
     fn update_current(&mut self, flags: UpdateFlags) -> bool;
 
     /// Picks the next current runnable task.
@@ -106,11 +102,7 @@ pub enum UpdateFlags {
 
 /// Preempts the current task.
 pub(crate) fn might_preempt() {
-    fn preempt_check() -> bool {
-        PREEMPT_INFO.load() == 0
-    }
-
-    if !preempt_check() {
+    if !cpu_local::should_preempt() {
         return;
     }
     yield_now();
@@ -142,15 +134,15 @@ pub(crate) fn park_current(has_woken: &AtomicBool) {
 
 /// Unblocks a target task.
 pub(crate) fn unpark_target(runnable: Arc<Task>) {
-    let should_preempt_info = SCHEDULER
+    let need_preempt_info = SCHEDULER
         .get()
         .unwrap()
         .enqueue(runnable, EnqueueFlags::Wake);
-    if should_preempt_info.is_some() {
-        let cpu_id = should_preempt_info.unwrap();
-        // FIXME: send IPI to set remote CPU's `SHOULD_PREEMPT` if needed.
+    if need_preempt_info.is_some() {
+        let cpu_id = need_preempt_info.unwrap();
+        // FIXME: send IPI to set remote CPU's need_preempt if needed.
         if cpu_id == this_cpu() {
-            SHOULD_PREEMPT.set();
+            cpu_local::set_need_preempt();
         }
     }
 }
@@ -165,15 +157,15 @@ pub(super) fn run_new_task(runnable: Arc<Task>) {
         fifo_scheduler::init();
     }
 
-    let should_preempt_info = SCHEDULER
+    let need_preempt_info = SCHEDULER
         .get()
         .unwrap()
         .enqueue(runnable, EnqueueFlags::Spawn);
-    if should_preempt_info.is_some() {
-        let cpu_id = should_preempt_info.unwrap();
-        // FIXME: send IPI to set remote CPU's `SHOULD_PREEMPT` if needed.
+    if need_preempt_info.is_some() {
+        let cpu_id = need_preempt_info.unwrap();
+        // FIXME: send IPI to set remote CPU's need_preempt if needed.
         if cpu_id == this_cpu() {
-            SHOULD_PREEMPT.set();
+            cpu_local::set_need_preempt();
         }
     }
 
@@ -234,7 +226,7 @@ where
         };
     };
 
-    SHOULD_PREEMPT.clear();
+    cpu_local::clear_need_preempt();
     processor::switch_to_task(next_task);
 }
 
@@ -246,26 +238,4 @@ enum ReschedAction {
     Retry,
     /// Switch to target task.
     SwitchTo(Arc<Task>),
-}
-
-static SHOULD_PREEMPT: ShouldPreemptFlag = ShouldPreemptFlag::new();
-
-struct ShouldPreemptFlag {}
-
-impl ShouldPreemptFlag {
-    const SHIFT: u8 = 31;
-
-    const MASK: u32 = 1 << Self::SHIFT;
-
-    const fn new() -> Self {
-        Self {}
-    }
-
-    fn set(&self) {
-        PREEMPT_INFO.bitand_assign(!Self::MASK);
-    }
-
-    fn clear(&self) {
-        PREEMPT_INFO.bitor_assign(Self::MASK);
-    }
 }

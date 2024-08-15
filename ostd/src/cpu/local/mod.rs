@@ -59,17 +59,6 @@ extern "C" {
     fn __cpu_local_end();
 }
 
-cpu_local_cell! {
-    /// A 4-byte preemption information consisting of a should_preempt flag at
-    /// the highest bit and a preemption counter in the lower 31 bits.
-    ///
-    /// We need to access the preemption info before we can copy the section
-    /// for application processors. So, the preemption info is not copied from
-    /// bootstrap processor's section as the initialization. Instead it is
-    /// initialized to zero for application processors.
-    pub(crate) static PREEMPT_INFO: u32 = 0;
-}
-
 /// Sets the base address of the CPU-local storage for the bootstrap processor.
 ///
 /// It should be called early to let [`crate::task::disable_preempt`] work,
@@ -132,24 +121,6 @@ pub unsafe fn init_on_bsp() {
         // SAFETY: bytes `0:4` are reserved for storing CPU ID.
         unsafe {
             (ap_pages_ptr as *mut u32).write(cpu_i);
-        }
-
-        // SAFETY: the `PREEMPT_INFO` may be dirty on the BSP, so we need
-        // to ensure that it is initialized to zero for APs. The safety
-        // requirements are met since the static is defined in the `.cpu_local`
-        // section and the pointer to that static is the offset in the CPU-
-        // local area. It is a `usize` so it is safe to be overwritten.
-        unsafe {
-            let preempt_info_ptr = &PREEMPT_INFO as *const _ as usize;
-            let preempt_info_offset = preempt_info_ptr - __cpu_local_start as usize;
-            let ap_preempt_info_ptr = ap_pages_ptr.add(preempt_info_offset) as *mut usize;
-            ap_preempt_info_ptr.write(0);
-        }
-
-        // SAFETY: bytes `8:16` are reserved for storing the pointer to the
-        // current task. We initialize it to null.
-        unsafe {
-            (ap_pages_ptr as *mut u64).add(1).write(0);
         }
 
         cpu_local_storages.push(ap_pages);
