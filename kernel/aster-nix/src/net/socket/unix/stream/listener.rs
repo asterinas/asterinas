@@ -4,7 +4,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 
 use keyable_arc::KeyableWeak;
 
-use super::{connected::Connected, endpoint::Endpoint, UnixStreamSocket};
+use super::{connected::Connected, UnixStreamSocket};
 use crate::{
     events::{IoEvents, Observer},
     fs::{file_handle::FileLike, path::Dentry, utils::Inode},
@@ -28,15 +28,10 @@ impl Listener {
     }
 
     pub(super) fn try_accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
-        let connected = {
-            let local_endpoint = self.backlog.pop_incoming()?;
-            Connected::new(local_endpoint)
-        };
-
+        let connected = self.backlog.pop_incoming()?;
         let peer_addr = connected.peer_addr().cloned().into();
 
         let socket = UnixStreamSocket::new_connected(connected, false);
-
         Ok((socket, peer_addr))
     }
 
@@ -119,7 +114,7 @@ impl BacklogTable {
         &self,
         server_addr: &UnixSocketAddrBound,
         client_addr: Option<UnixSocketAddrBound>,
-    ) -> Result<Endpoint> {
+    ) -> Result<Connected> {
         let backlog = self.get_backlog(server_addr).ok_or_else(|| {
             Error::with_message(
                 Errno::ECONNREFUSED,
@@ -144,7 +139,7 @@ struct Backlog {
     addr: UnixSocketAddrBound,
     pollee: Pollee,
     backlog: AtomicUsize,
-    incoming_endpoints: Mutex<VecDeque<Endpoint>>,
+    incoming_conns: Mutex<VecDeque<Connected>>,
 }
 
 impl Backlog {
@@ -153,7 +148,7 @@ impl Backlog {
             addr,
             pollee: Pollee::new(IoEvents::empty()),
             backlog: AtomicUsize::new(backlog),
-            incoming_endpoints: Mutex::new(VecDeque::with_capacity(backlog)),
+            incoming_conns: Mutex::new(VecDeque::with_capacity(backlog)),
         }
     }
 
@@ -161,33 +156,31 @@ impl Backlog {
         &self.addr
     }
 
-    fn push_incoming(&self, client_addr: Option<UnixSocketAddrBound>) -> Result<Endpoint> {
-        let mut endpoints = self.incoming_endpoints.lock();
+    fn push_incoming(&self, client_addr: Option<UnixSocketAddrBound>) -> Result<Connected> {
+        let mut incoming_conns = self.incoming_conns.lock();
 
-        if endpoints.len() >= self.backlog.load(Ordering::Relaxed) {
+        if incoming_conns.len() >= self.backlog.load(Ordering::Relaxed) {
             return_errno_with_message!(
                 Errno::ECONNREFUSED,
                 "the pending connection queue on the listening socket is full"
             );
         }
 
-        let (server_endpoint, client_endpoint) =
-            Endpoint::new_pair(Some(self.addr.clone()), client_addr);
-        endpoints.push_back(server_endpoint);
+        let (server_conn, client_conn) = Connected::new_pair(Some(self.addr.clone()), client_addr);
+        incoming_conns.push_back(server_conn);
 
         self.pollee.add_events(IoEvents::IN);
 
-        Ok(client_endpoint)
+        Ok(client_conn)
     }
 
-    fn pop_incoming(&self) -> Result<Endpoint> {
-        let mut incoming_endpoints = self.incoming_endpoints.lock();
-        let endpoint = incoming_endpoints.pop_front();
-        if incoming_endpoints.is_empty() {
+    fn pop_incoming(&self) -> Result<Connected> {
+        let mut incoming_conns = self.incoming_conns.lock();
+        let conn = incoming_conns.pop_front();
+        if incoming_conns.is_empty() {
             self.pollee.del_events(IoEvents::IN);
         }
-        endpoint
-            .ok_or_else(|| Error::with_message(Errno::EAGAIN, "no pending connection is available"))
+        conn.ok_or_else(|| Error::with_message(Errno::EAGAIN, "no pending connection is available"))
     }
 
     fn set_backlog(&self, backlog: usize) {
@@ -196,7 +189,7 @@ impl Backlog {
 
     fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         // Lock to avoid any events may change pollee state when we poll
-        let _lock = self.incoming_endpoints.lock();
+        let _lock = self.incoming_conns.lock();
         self.pollee.poll(mask, poller)
     }
 
@@ -229,6 +222,6 @@ fn unregister_backlog(addr: &UnixSocketAddrBound) {
 pub(super) fn push_incoming(
     server_addr: &UnixSocketAddrBound,
     client_addr: Option<UnixSocketAddrBound>,
-) -> Result<Endpoint> {
+) -> Result<Connected> {
     BACKLOG_TABLE.push_incoming(server_addr, client_addr)
 }
