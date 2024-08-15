@@ -103,7 +103,7 @@ impl BacklogTable {
         Some(new_backlog)
     }
 
-    fn get_backlog(&self, addr: &UnixSocketAddrBound) -> Result<Arc<Backlog>> {
+    fn get_backlog(&self, addr: &UnixSocketAddrBound) -> Option<Arc<Backlog>> {
         let inode = {
             let UnixSocketAddrBound::Path(_, dentry) = addr else {
                 todo!()
@@ -112,10 +112,7 @@ impl BacklogTable {
         };
 
         let backlog_sockets = self.backlog_sockets.read();
-        backlog_sockets
-            .get(&inode)
-            .map(Arc::clone)
-            .ok_or_else(|| Error::with_message(Errno::EINVAL, "the socket is not listened"))
+        backlog_sockets.get(&inode).cloned()
     }
 
     fn push_incoming(
@@ -123,10 +120,10 @@ impl BacklogTable {
         server_addr: &UnixSocketAddrBound,
         client_addr: Option<UnixSocketAddrBound>,
     ) -> Result<Endpoint> {
-        let backlog = self.get_backlog(server_addr).map_err(|_| {
+        let backlog = self.get_backlog(server_addr).ok_or_else(|| {
             Error::with_message(
                 Errno::ECONNREFUSED,
-                "no socket is listened at the remote address",
+                "no socket is listening at the remote address",
             )
         })?;
 
