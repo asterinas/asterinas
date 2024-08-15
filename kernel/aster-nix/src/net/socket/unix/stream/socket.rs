@@ -242,11 +242,11 @@ impl Socket for UnixStreamSocket {
                     "the socket is not bound",
                 ))?
                 .clone(),
-            State::Listen(_) => {
-                return_errno_with_message!(Errno::EINVAL, "the socket is already listening")
+            State::Listen(listen) => {
+                return listen.listen(backlog);
             }
             State::Connected(_) => {
-                return_errno_with_message!(Errno::EISCONN, "the socket is already connected")
+                return_errno_with_message!(Errno::EINVAL, "the socket is connected")
             }
         };
 
