@@ -16,9 +16,9 @@ pub(super) struct Listener {
 }
 
 impl Listener {
-    pub(super) fn new(addr: UnixSocketAddrBound, backlog: usize) -> Result<Self> {
-        let backlog = BACKLOG_TABLE.add_backlog(addr, backlog)?;
-        Ok(Self { backlog })
+    pub(super) fn new(addr: UnixSocketAddrBound, backlog: usize) -> Self {
+        let backlog = BACKLOG_TABLE.add_backlog(addr, backlog).unwrap();
+        Self { backlog }
     }
 
     pub(super) fn addr(&self) -> &UnixSocketAddrBound {
@@ -78,21 +78,22 @@ impl BacklogTable {
         }
     }
 
-    fn add_backlog(&self, addr: UnixSocketAddrBound, backlog: usize) -> Result<Arc<Backlog>> {
+    fn add_backlog(&self, addr: UnixSocketAddrBound, backlog: usize) -> Option<Arc<Backlog>> {
         let inode = {
             let UnixSocketAddrBound::Path(_, ref dentry) = addr else {
                 todo!()
             };
             create_keyable_inode(dentry)
         };
+        let new_backlog = Arc::new(Backlog::new(addr, backlog));
 
         let mut backlog_sockets = self.backlog_sockets.write();
         if backlog_sockets.contains_key(&inode) {
-            return_errno_with_message!(Errno::EADDRINUSE, "the addr is already used");
+            return None;
         }
-        let new_backlog = Arc::new(Backlog::new(addr, backlog));
         backlog_sockets.insert(inode, new_backlog.clone());
-        Ok(new_backlog)
+
+        Some(new_backlog)
     }
 
     fn get_backlog(&self, addr: &UnixSocketAddrBound) -> Result<Arc<Backlog>> {

@@ -232,7 +232,9 @@ impl Socket for UnixStreamSocket {
     }
 
     fn listen(&self, backlog: usize) -> Result<()> {
-        let addr = match &*self.state.read() {
+        let mut state = self.state.write();
+
+        let addr = match &*state {
             State::Init(init) => init
                 .addr()
                 .ok_or(Error::with_message(
@@ -248,8 +250,9 @@ impl Socket for UnixStreamSocket {
             }
         };
 
-        let listener = Listener::new(addr, backlog)?;
-        *self.state.write() = State::Listen(listener);
+        let listener = Listener::new(addr, backlog);
+        *state = State::Listen(listener);
+
         Ok(())
     }
 
