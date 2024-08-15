@@ -49,10 +49,7 @@ impl<T> SlotVec<T> {
     ///
     /// Return `None` if `idx` is out of bounds or the item is not exist.
     pub fn get(&self, idx: usize) -> Option<&T> {
-        if idx >= self.slots.len() {
-            return None;
-        }
-        self.slots[idx].as_ref()
+        self.slots.get(idx)?.as_ref()
     }
 
     /// Put an item into the vector.
