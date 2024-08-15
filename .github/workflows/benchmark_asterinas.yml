@@ -41,6 +41,8 @@ jobs:
           # File-related benchmarks
           - lmbench-file-rd-bandwidth
           - lmbench-select-file
+          - lmbench-fs-create-delete-files-0k
+          - lmbench-fs-create-delete-files-10k
       fail-fast: false
     timeout-minutes: 60
     container: 
