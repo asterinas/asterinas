@@ -238,7 +238,6 @@ impl From<u32> for ApicId {
 /// in the system excluding the sender.
 #[repr(u64)]
 pub enum DestinationShorthand {
-    #[allow(dead_code)]
     NoShorthand = 0b00,
     #[allow(dead_code)]
     MySelf = 0b01,
@@ -278,7 +277,6 @@ pub enum DestinationMode {
 #[repr(u64)]
 pub enum DeliveryMode {
     /// Delivers the interrupt specified in the vector field to the target processor or processors.
-    #[allow(dead_code)]
     Fixed = 0b000,
     /// Same as fixed mode, except that the interrupt is delivered to the processor executing at
     /// the lowest priority among the set of processors specified in the destination field. The

@@ -39,6 +39,7 @@ pub mod logger;
 pub mod mm;
 pub mod panicking;
 pub mod prelude;
+pub mod smp;
 pub mod sync;
 pub mod task;
 pub mod trap;
@@ -89,6 +90,8 @@ pub unsafe fn init() {
     // SAFETY: This function is called only once in the entire system.
     unsafe { trap::softirq::init() };
     arch::init_on_bsp();
+
+    smp::init();
 
     bus::init();
 
