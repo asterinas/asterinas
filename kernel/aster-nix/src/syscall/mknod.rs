@@ -9,7 +9,7 @@ use crate::{
         utils::{InodeMode, InodeType},
     },
     prelude::*,
-    syscall::{constants::MAX_FILENAME_LEN, stat::FileType},
+    syscall::constants::MAX_FILENAME_LEN,
 };
 
 pub fn sys_mknodat(
@@ -27,10 +27,10 @@ pub fn sys_mknodat(
         let mask_mode = mode & !current.umask().read().get();
         InodeMode::from_bits_truncate(mask_mode)
     };
-    let file_type = FileType::from_mode(mode);
+    let inode_type = InodeType::from_raw_mode(mode)?;
     debug!(
-        "dirfd = {}, path = {:?}, inode_mode = {:?}, file_type = {:?}, dev = {}",
-        dirfd, path, inode_mode, file_type, dev
+        "dirfd = {}, path = {:?}, inode_mode = {:?}, inode_type = {:?}, dev = {}",
+        dirfd, path, inode_mode, inode_type, dev
     );
 
     let (dir_dentry, name) = {
@@ -45,15 +45,15 @@ pub fn sys_mknodat(
             .lookup_dir_and_new_basename(&fs_path, false)?
     };
 
-    match file_type {
-        FileType::RegularFile => {
+    match inode_type {
+        InodeType::File => {
             let _ = dir_dentry.new_fs_child(&name, InodeType::File, inode_mode)?;
         }
-        FileType::CharacterDevice | FileType::BlockDevice => {
+        InodeType::CharDevice | InodeType::BlockDevice => {
             let device_inode = get_device(dev)?;
             let _ = dir_dentry.mknod(&name, inode_mode, device_inode)?;
         }
-        FileType::Fifo | FileType::Socket => {
+        InodeType::NamedPipe | InodeType::Socket => {
             return_errno_with_message!(Errno::EINVAL, "unsupported file types")
         }
         _ => return_errno_with_message!(Errno::EPERM, "unimplemented file types"),

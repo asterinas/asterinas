@@ -9,7 +9,7 @@ use aster_rights::Full;
 use crate::{
     fs::{
         device::Device,
-        ext2::{FilePerm, FileType, Inode as Ext2Inode},
+        ext2::{FilePerm, Inode as Ext2Inode},
         utils::{
             DirentVisitor, Extension, FallocMode, FileSystem, Inode, InodeMode, InodeType,
             IoctlCmd, Metadata,
@@ -39,7 +39,7 @@ impl Inode for Ext2Inode {
             atime: self.atime(),
             mtime: self.mtime(),
             ctime: self.ctime(),
-            type_: InodeType::from(self.file_type()),
+            type_: self.inode_type(),
             mode: InodeMode::from(self.file_perm()),
             nlinks: self.hard_links() as _,
             uid: Uid::new(self.uid()),
@@ -77,7 +77,7 @@ impl Inode for Ext2Inode {
     }
 
     fn type_(&self) -> InodeType {
-        InodeType::from(self.file_type())
+        self.inode_type()
     }
 
     fn mode(&self) -> Result<InodeMode> {
@@ -128,11 +128,11 @@ impl Inode for Ext2Inode {
     }
 
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
-        Ok(self.create(name, type_.into(), mode.into())?)
+        Ok(self.create(name, type_, mode.into())?)
     }
 
     fn mknod(&self, name: &str, mode: InodeMode, dev: Arc<dyn Device>) -> Result<Arc<dyn Inode>> {
-        let inode = self.create(name, InodeType::from(dev.type_()).into(), mode.into())?;
+        let inode = self.create(name, InodeType::from(dev.type_()), mode.into())?;
         inode.set_device_id(dev.id().into()).unwrap();
         Ok(inode)
     }
@@ -209,17 +209,5 @@ impl From<FilePerm> for InodeMode {
 impl From<InodeMode> for FilePerm {
     fn from(mode: InodeMode) -> Self {
         Self::from_bits_truncate(mode.bits() as _)
-    }
-}
-
-impl From<FileType> for InodeType {
-    fn from(type_: FileType) -> Self {
-        Self::try_from(type_ as u32).unwrap()
-    }
-}
-
-impl From<InodeType> for FileType {
-    fn from(type_: InodeType) -> Self {
-        Self::try_from(type_ as u16).unwrap()
     }
 }

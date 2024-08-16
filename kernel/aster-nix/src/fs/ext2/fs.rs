@@ -5,7 +5,7 @@
 use super::{
     block_group::{BlockGroup, RawGroupDescriptor},
     block_ptr::Ext2Bid,
-    inode::{FilePerm, FileType, Inode, InodeDesc, RawInode},
+    inode::{FilePerm, Inode, InodeDesc, RawInode},
     prelude::*,
     super_block::{RawSuperBlock, SuperBlock, SUPER_BLOCK_OFFSET},
 };
@@ -143,13 +143,13 @@ impl Ext2 {
     pub(super) fn create_inode(
         &self,
         dir_block_group_idx: usize,
-        file_type: FileType,
+        inode_type: InodeType,
         file_perm: FilePerm,
     ) -> Result<Arc<Inode>> {
         let (block_group_idx, ino) =
-            self.alloc_ino(dir_block_group_idx, file_type == FileType::Dir)?;
+            self.alloc_ino(dir_block_group_idx, inode_type == InodeType::Dir)?;
         let inode = {
-            let inode_desc = InodeDesc::new(file_type, file_perm);
+            let inode_desc = InodeDesc::new(inode_type, file_perm);
             Inode::new(ino, block_group_idx, inode_desc, self.self_ref.clone())
         };
         let block_group = &self.block_groups[block_group_idx];
