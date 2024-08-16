@@ -1,6 +1,44 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(unused_variables)]
+//! Abstractions for reading and writing virtual memory (VM) objects.
+//!
+//! # Safety
+//!
+//! The core virtual memory (VM) access APIs provided by this module are [`VmReader`] and
+//! [`VmWriter`], which allow for writing to or reading from a region of memory _safely_.
+//! `VmReader` and `VmWriter` objects can be constructed from memory regions of either typed memory
+//! (e.g., `&[u8]`) or untyped memory (e.g, [`Frame`]). Behind the scene, `VmReader` and `VmWriter`
+//! must be constructed via their [`from_user_space`] and [`from_kernel_space`] methods, whose
+//! safety depends on whether the given memory regions are _valid_ or not.
+//!
+//! [`Frame`]: crate::mm::Frame
+//! [`from_user_space`]: `VmReader::from_user_space`
+//! [`from_kernel_space`]: `VmReader::from_kernel_space`
+//!
+//! Here is a list of conditions for memory regions to be considered valid:
+//!
+//! - The memory region as a whole must be either typed or untyped memory, not both typed and
+//!   untyped.
+//!
+//! - If the memory region is typed, we require that:
+//!   - the [validity requirements] from the official Rust documentation must be met, and
+//!   - the type of the memory region (which must exist since the memory is typed) must be
+//!     plain-old-data, so that the writer can fill it with arbitrary data safely.
+//!
+//! [validity requirements]: core::ptr#safety
+//!
+//! - If the memory region is untyped, we require that:
+//!   - the underlying pages must remain alive while the validity requirements are in effect, and
+//!   - the kernel must access the memory region using only the APIs provided in this module, but
+//!     external accesses from hardware devices or user programs do not count.
+//!
+//! We have the last requirement for untyped memory to be valid because the safety interaction with
+//! other ways to access the memory region (e.g., atomic/volatile memory loads/stores) is not
+//! currently specified. Tis may be relaxed in the future, if appropriate and necessary.
+//!
+//! Note that data races on untyped memory are explicitly allowed (since pages can be mapped to
+//! user space, making it impossible to avoid data races). However, they may produce erroneous
+//! results, such as unexpected bytes being copied, but do not cause soundness problems.
 
 use core::marker::PhantomData;
 
@@ -223,21 +261,11 @@ pub struct KernelSpace;
 ///
 /// # Safety
 ///
-/// - Mappings of virtual memory range [`src`..`src` + len] and [`dst`..`dst` + len]
-///   must be [valid].
-/// - If one of the memory represents typed memory, these two virtual
-///   memory ranges and their corresponding physical pages should _not_ overlap.
+/// - `src` must be [valid] for reads of `len` bytes.
+/// - `dst` must be [valid] for writes of `len` bytes.
 ///
-/// Operation on typed memory may be safe only if it is plain-old-data. Otherwise,
-/// the safety requirements of [`core::ptr::copy`] should also be considered,
-/// except for the requirement that no concurrent access is allowed.
-///
-/// [valid]: core::ptr#safety
+/// [valid]: crate::mm::io#safety
 unsafe fn memcpy(dst: *mut u8, src: *const u8, len: usize) {
-    // The safety conditions of this method explicitly allow data races on untyped memory because
-    // this method can be used to copy data to/from a page that is also mapped to user space, so
-    // avoiding data races is not feasible in this case.
-    //
     // This method is implemented by calling `volatile_copy_memory`. Note that even with the
     // "volatile" keyword, data races are still considered undefined behavior (UB) in both the Rust
     // documentation and the C/C++ standards. In general, UB makes the behavior of the entire
@@ -256,17 +284,17 @@ unsafe fn memcpy(dst: *mut u8, src: *const u8, len: usize) {
 ///
 /// Returns the number of successfully copied bytes.
 ///
+/// In the following cases, this method may cause unexpected bytes to be copied, but will not cause
+/// safety problems as long as the safety requirements are met:
+/// - The source and destination overlap.
+/// - The current context is not associated with valid user space (e.g., in the kernel thread).
+///
 /// # Safety
 ///
-/// - Users should ensure one of [`src`..`src` + len] and [`dst`..`dst` + len]
-///   is in user space, and the other virtual memory range is in kernel space
-///   and is ensured to be [valid].
-/// - Users should ensure this function only be invoked when a suitable page
-///   table is activated.
-/// - The underlying physical memory range of [`src`..`src` + len] and [`dst`..`dst` + len]
-///   should _not_ overlap if the kernel space memory represent typed memory.
+/// - `src` must either be [valid] for reads of `len` bytes or be in user space for `len` bytes.
+/// - `dst` must either be [valid] for writes of `len` bytes or be in user space for `len` bytes.
 ///
-/// [valid]: core::ptr#safety
+/// [valid]: crate::mm::io#safety
 unsafe fn memcpy_fallible(dst: *mut u8, src: *const u8, len: usize) -> usize {
     let failed_bytes = __memcpy_fallible(dst, src, len);
     len - failed_bytes
@@ -313,14 +341,9 @@ macro_rules! impl_read_fallible {
                     return Ok(0);
                 }
 
-                // SAFETY: This method is only implemented when one of the operated
-                // `VmReader` or `VmWriter` is in user space.
-                // The the corresponding page table of the user space memory is
-                // guaranteed to be activated due to its construction requirement.
-                // The kernel space memory range will be valid since `copy_len` is the minimum
-                // of the reader's remaining data and the writer's available space, and will
-                // not overlap with user space memory range in physical address level if it
-                // represents typed memory.
+                // SAFETY: The source and destionation are subsets of memory ranges specified by
+                // the reader and writer, so they are either valid for reading and writing or in
+                // user space.
                 let copied_len = unsafe {
                     let copied_len = memcpy_fallible(writer.cursor, self.cursor, copy_len);
                     self.cursor = self.cursor.add(copied_len);
@@ -370,12 +393,9 @@ impl<'a> VmReader<'a, KernelSpace> {
     ///
     /// # Safety
     ///
-    /// Users must ensure the memory from `ptr` to `ptr.add(len)` is contiguous.
-    /// Users must ensure the memory is valid during the entire period of `'a`.
-    /// Users must ensure the memory should _not_ overlap with other `VmWriter`s
-    /// with typed memory, and if the memory range in this `VmReader` is typed,
-    /// it should _not_ overlap with other `VmWriter`s.
-    /// The user space memory is treated as untyped.
+    /// `ptr` must be [valid] for reads of `len` bytes during the entire lifetime `a`.
+    ///
+    /// [valid]: crate::mm::io#safety
     pub unsafe fn from_kernel_space(ptr: *const u8, len: usize) -> Self {
         // If casting a zero sized slice to a pointer, the pointer may be null
         // and does not reside in our kernel space range.
@@ -400,10 +420,8 @@ impl<'a> VmReader<'a, KernelSpace> {
             return 0;
         }
 
-        // SAFETY: the reading memory range and writing memory range will be valid
-        // since `copy_len` is the minimum of the reader's remaining data and the
-        // writer's available space, and will not overlap if one of them represents
-        // typed memory.
+        // SAFETY: The source and destionation are subsets of memory ranges specified by the reader
+        // and writer, so they are valid for reading and writing.
         unsafe {
             memcpy(writer.cursor, self.cursor, copy_len);
             self.cursor = self.cursor.add(copy_len);
@@ -464,9 +482,7 @@ impl<'a> VmReader<'a, UserSpace> {
     ///
     /// # Safety
     ///
-    /// Users must ensure the memory from `ptr` to `ptr.add(len)` is contiguous.
-    /// Users must ensure that the page table for the process in which this constructor is called
-    /// are active during the entire period of `'a`.
+    /// The virtual address range `ptr..ptr + len` must be in user space.
     pub unsafe fn from_user_space(ptr: *const u8, len: usize) -> Self {
         debug_assert!((ptr as usize).checked_add(len).unwrap_or(usize::MAX) <= MAX_USERSPACE_VADDR);
 
@@ -540,10 +556,11 @@ impl<'a, Space> VmReader<'a, Space> {
 
 impl<'a> From<&'a [u8]> for VmReader<'a> {
     fn from(slice: &'a [u8]) -> Self {
-        // SAFETY: the range of memory is contiguous and is valid during `'a`,
-        // and will not overlap with other `VmWriter` since the slice already has
-        // an immutable reference. The slice will not be mapped to the user space hence
-        // it will also not overlap with `VmWriter` generated from user space.
+        // SAFETY:
+        // - The memory range points to typed memory.
+        // - The validity requirements for read accesses are met because the pointer is converted
+        //   from an immutable reference that outlives the lifetime `'a`.
+        // - The type, i.e., the `u8` slice, is plain-old-data.
         unsafe { Self::from_kernel_space(slice.as_ptr(), slice.len()) }
     }
 }
@@ -576,12 +593,9 @@ impl<'a> VmWriter<'a, KernelSpace> {
     ///
     /// # Safety
     ///
-    /// Users must ensure the memory from `ptr` to `ptr.add(len)` is contiguous.
-    /// Users must ensure the memory is valid during the entire period of `'a`.
-    /// Users must ensure the memory should _not_ overlap with other `VmWriter`s
-    /// and `VmReader`s with typed memory, and if the memory range in this `VmWriter`
-    /// is typed, it should _not_ overlap with other `VmReader`s and `VmWriter`s.
-    /// The user space memory is treated as untyped.
+    /// `ptr` must be [valid] for writes of `len` bytes during the entire lifetime `a`.
+    ///
+    /// [valid]: crate::mm::io#safety
     pub unsafe fn from_kernel_space(ptr: *mut u8, len: usize) -> Self {
         // If casting a zero sized slice to a pointer, the pointer may be null
         // and does not reside in our kernel space range.
@@ -678,11 +692,12 @@ impl<'a> VmWriter<'a, UserSpace> {
     /// Constructs a `VmWriter` from a pointer and a length, which represents
     /// a memory range in user space.
     ///
+    /// The current context should be consistently associated with valid user space during the
+    /// entire lifetime `'a`. This is for correct semantics and is not a safety requirement.
+    ///
     /// # Safety
     ///
-    /// Users must ensure the memory from `ptr` to `ptr.add(len)` is contiguous.
-    /// Users must ensure that the page table for the process in which this constructor is called
-    /// are active during the entire period of `'a`.
+    /// `ptr` must be in user space for `len` bytes.
     pub unsafe fn from_user_space(ptr: *mut u8, len: usize) -> Self {
         debug_assert!((ptr as usize).checked_add(len).unwrap_or(usize::MAX) <= MAX_USERSPACE_VADDR);
 
@@ -754,11 +769,11 @@ impl<'a, Space> VmWriter<'a, Space> {
 
 impl<'a> From<&'a mut [u8]> for VmWriter<'a> {
     fn from(slice: &'a mut [u8]) -> Self {
-        // SAFETY: the range of memory is contiguous and is valid during `'a`, and
-        // will not overlap with other `VmWriter`s and `VmReader`s since the slice
-        // already has an mutable reference. The slice will not be mapped to the user
-        // space hence it will also not overlap with `VmWriter`s and `VmReader`s
-        // generated from user space.
+        // SAFETY:
+        // - The memory range points to typed memory.
+        // - The validity requirements for write accesses are met because the pointer is converted
+        //   from a mutable reference that outlives the lifetime `'a`.
+        // - The type, i.e., the `u8` slice, is plain-old-data.
         unsafe { Self::from_kernel_space(slice.as_mut_ptr(), slice.len()) }
     }
 }
