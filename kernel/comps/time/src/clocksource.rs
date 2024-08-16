@@ -59,7 +59,7 @@ pub struct ClockSource {
 }
 
 impl ClockSource {
-    /// Create a new `ClockSource` instance.
+    /// Creates a new `ClockSource` instance.
     /// Require basic information of based time counter, including the function for reading cycles,
     /// the frequency and the maximum delay seconds to update this `ClockSource`.
     /// The `ClockSource` also calculates a reliable `Coeff` based on the counter's frequency and
@@ -86,69 +86,72 @@ impl ClockSource {
         self.coeff * cycles
     }
 
-    /// Use the instant cycles to calculate the instant.
+    /// Uses the instant cycles to calculate the instant.
     ///
     /// It first calculates the difference between the instant cycles and the last
     /// recorded cycles stored in the clocksource. Then `ClockSource` will convert
     /// the passed cycles into passed time and calculate the current instant.
-    fn calculate_instant(&self, instant_cycles: u64) -> Instant {
-        let (last_instant, last_cycles) = *self.last_record.read_irq_disabled();
+    ///
+    /// Returns the calculated instant and instant cycles.
+    fn calculate_instant(&self) -> (Instant, u64) {
+        let (instant_cycles, last_instant, last_cycles) = {
+            let last_record = self.last_record.read_irq_disabled();
+            let (last_instant, last_cycles) = *last_record;
+            (self.read_cycles(), last_instant, last_cycles)
+        };
+
         let delta_nanos = {
             let delta_cycles = instant_cycles - last_cycles;
             self.cycles_to_nanos(delta_cycles)
         };
         let duration = Duration::from_nanos(delta_nanos);
-        last_instant + duration
+        (last_instant + duration, instant_cycles)
     }
 
-    /// Use an input instant and cycles to update the `last_record` in the `ClockSource`.
+    /// Uses an input instant and cycles to update the `last_record` in the `ClockSource`.
     fn update_last_record(&self, record: (Instant, u64)) {
         *self.last_record.write_irq_disabled() = record;
     }
 
-    /// read current cycles of the `ClockSource`.
+    /// Reads current cycles of the `ClockSource`.
     pub fn read_cycles(&self) -> u64 {
         (self.read_cycles)()
     }
 
-    /// Return the last instant and last cycles recorded in the `ClockSource`.
+    /// Returns the last instant and last cycles recorded in the `ClockSource`.
     pub fn last_record(&self) -> (Instant, u64) {
         return *self.last_record.read_irq_disabled();
     }
 
-    /// Return the maximum delay seconds for updating of the `ClockSource`.
+    /// Returns the maximum delay seconds for updating of the `ClockSource`.
     pub fn max_delay_secs(&self) -> u64 {
         self.base.max_delay_secs
     }
 
-    /// Return the reference to the generated cycles coeff of the `ClockSource`.
+    /// Returns the reference to the generated cycles coeff of the `ClockSource`.
     pub fn coeff(&self) -> &Coeff {
         &self.coeff
     }
 
-    /// Return the frequency of the counter used in the `ClockSource`.
+    /// Returns the frequency of the counter used in the `ClockSource`.
     pub fn freq(&self) -> u64 {
         self.base.freq
     }
 
-    /// Calibrate the recorded `Instant` to zero, and record the instant cycles.
+    /// Calibrates the recorded `Instant` to zero, and record the instant cycles.
     pub(crate) fn calibrate(&self, instant_cycles: u64) {
         self.update_last_record((Instant::zero(), instant_cycles));
     }
 
-    /// Get the instant to update the internal instant in the `ClockSource`.
+    /// Gets the instant to update the internal instant in the `ClockSource`.
     pub(crate) fn update(&self) {
-        let instant_cycles = self.read_cycles();
-        let instant = self.calculate_instant(instant_cycles);
+        let (instant, instant_cycles) = self.calculate_instant();
         self.update_last_record((instant, instant_cycles));
     }
 
-    /// Read the instant corresponding to the current time.
-    /// When trying to read an instant from the clocksource, it will use the reading method
-    /// to read instant cycles. Then leverage it to calculate the instant.
+    /// Reads the instant corresponding to the current time.
     pub(crate) fn read_instant(&self) -> Instant {
-        let instant_cycles = self.read_cycles();
-        self.calculate_instant(instant_cycles)
+        self.calculate_instant().0
     }
 }
 
@@ -162,22 +165,22 @@ pub struct Instant {
 }
 
 impl Instant {
-    /// Create a zeroed `Instant`.
+    /// Creates a zeroed `Instant`.
     pub const fn zero() -> Self {
         Self { secs: 0, nanos: 0 }
     }
 
-    /// Create an new `Instant` based on the inputting `secs` and `nanos`.
+    /// Creates an new `Instant` based on the inputting `secs` and `nanos`.
     pub fn new(secs: u64, nanos: u32) -> Self {
         Self { secs, nanos }
     }
 
-    /// Return the seconds recorded in the Instant.
+    /// Returns the seconds recorded in the Instant.
     pub fn secs(&self) -> u64 {
         self.secs
     }
 
-    /// Return the nanoseconds recorded in the Instant.
+    /// Returns the nanoseconds recorded in the Instant.
     pub fn nanos(&self) -> u32 {
         self.nanos
     }
