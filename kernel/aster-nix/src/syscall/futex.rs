@@ -69,8 +69,7 @@ pub fn sys_futex(
             .map(|nwakes| nwakes as _)
         }
         _ => panic!("Unsupported futex operations"),
-    }
-    .unwrap();
+    }?;
 
     debug!("futex returns, tid= {} ", ctx.thread.tid());
     Ok(SyscallReturn::Return(res as _))
