@@ -8,11 +8,10 @@ use aster_rights::Full;
 
 use crate::{
     fs::{
-        device::Device,
         ext2::{FilePerm, Inode as Ext2Inode},
         utils::{
             DirentVisitor, Extension, FallocMode, FileSystem, Inode, InodeMode, InodeType,
-            IoctlCmd, Metadata,
+            IoctlCmd, Metadata, MknodType,
         },
     },
     prelude::*,
@@ -131,9 +130,17 @@ impl Inode for Ext2Inode {
         Ok(self.create(name, type_, mode.into())?)
     }
 
-    fn mknod(&self, name: &str, mode: InodeMode, dev: Arc<dyn Device>) -> Result<Arc<dyn Inode>> {
-        let inode = self.create(name, InodeType::from(dev.type_()), mode.into())?;
-        inode.set_device_id(dev.id().into()).unwrap();
+    fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {
+        let inode_type = type_.inode_type();
+        let inode = match type_ {
+            MknodType::CharDeviceNode(dev) | MknodType::BlockDeviceNode(dev) => {
+                let inode = self.create(name, inode_type, mode.into())?;
+                inode.set_device_id(dev.id().into()).unwrap();
+                inode
+            }
+            _ => todo!(),
+        };
+
         Ok(inode)
     }
 

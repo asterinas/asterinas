@@ -9,10 +9,7 @@ use inherit_methods_macro::inherit_methods;
 
 use super::{Common, ProcFS};
 use crate::{
-    fs::{
-        device::Device,
-        utils::{DirentVisitor, FileSystem, Inode, InodeMode, InodeType, Metadata},
-    },
+    fs::utils::{DirentVisitor, FileSystem, Inode, InodeMode, InodeType, Metadata, MknodType},
     prelude::*,
     process::{Gid, Uid},
 };
@@ -97,12 +94,7 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn mknod(
-        &self,
-        _name: &str,
-        _mode: InodeMode,
-        _device: Arc<dyn Device>,
-    ) -> Result<Arc<dyn Inode>> {
+    fn mknod(&self, _name: &str, _mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::EPERM))
     }
 

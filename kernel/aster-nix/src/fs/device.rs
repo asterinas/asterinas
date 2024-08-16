@@ -125,7 +125,7 @@ pub fn add_node(device: Arc<dyn Device>, path: &str) -> Result<Arc<Dentry>> {
                     dentry = dentry.mknod(
                         next_name,
                         InodeMode::from_bits_truncate(0o666),
-                        device.clone(),
+                        device.clone().into(),
                     )?;
                 } else {
                     // Mkdir parent path

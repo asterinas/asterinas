@@ -20,7 +20,7 @@ use crate::{
         device::Device,
         utils::{
             CStr256, DirentVisitor, Extension, FallocMode, FileSystem, FsFlags, Inode, InodeMode,
-            InodeType, IoctlCmd, Metadata, PageCache, PageCacheBackend, SuperBlock,
+            InodeType, IoctlCmd, Metadata, MknodType, PageCache, PageCacheBackend, SuperBlock,
         },
     },
     prelude::*,
@@ -676,12 +676,7 @@ impl Inode for RamInode {
         Ok(())
     }
 
-    fn mknod(
-        &self,
-        name: &str,
-        mode: InodeMode,
-        device: Arc<dyn Device>,
-    ) -> Result<Arc<dyn Inode>> {
+    fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {
         if name.len() > NAME_MAX {
             return_errno!(Errno::ENAMETOOLONG);
         }
@@ -693,22 +688,27 @@ impl Inode for RamInode {
         if self_inode.inner.as_direntry().unwrap().contains_entry(name) {
             return_errno_with_message!(Errno::EEXIST, "entry exists");
         }
-        let device_inode = RamInode::new_device(
-            &self.fs.upgrade().unwrap(),
-            mode,
-            Uid::new_root(),
-            Gid::new_root(),
-            device,
-        );
+        let inode = match type_ {
+            MknodType::CharDeviceNode(device) | MknodType::BlockDeviceNode(device) => {
+                RamInode::new_device(
+                    &self.fs.upgrade().unwrap(),
+                    mode,
+                    Uid::new_root(),
+                    Gid::new_root(),
+                    device,
+                )
+            }
+            _ => return_errno_with_message!(Errno::EPERM, "unimplemented file types"),
+        };
 
         let mut self_inode = self_inode.upgrade();
         self_inode
             .inner
             .as_direntry_mut()
             .unwrap()
-            .append_entry(name, device_inode.clone());
+            .append_entry(name, inode.clone());
         self_inode.inc_size();
-        Ok(device_inode)
+        Ok(inode)
     }
 
     fn as_device(&self) -> Option<Arc<dyn Device>> {

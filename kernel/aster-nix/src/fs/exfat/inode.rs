@@ -28,11 +28,10 @@ use super::{
 use crate::{
     events::IoEvents,
     fs::{
-        device::Device,
         exfat::{dentry::ExfatDentryIterator, fat::ExfatChain, fs::ExfatFS},
         utils::{
-            DirentVisitor, Extension, Inode, InodeMode, InodeType, IoctlCmd, Metadata, PageCache,
-            PageCacheBackend,
+            DirentVisitor, Extension, Inode, InodeMode, InodeType, IoctlCmd, Metadata, MknodType,
+            PageCache, PageCacheBackend,
         },
     },
     prelude::*,
@@ -1444,7 +1443,7 @@ impl Inode for ExfatInode {
         Ok(result)
     }
 
-    fn mknod(&self, name: &str, mode: InodeMode, dev: Arc<dyn Device>) -> Result<Arc<dyn Inode>> {
+    fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {
         return_errno_with_message!(Errno::EINVAL, "unsupported operation")
     }
 
