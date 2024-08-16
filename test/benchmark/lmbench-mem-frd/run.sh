@@ -6,4 +6,4 @@ set -e
 
 echo "*** Running the LMbench memory-read bandwidth test ***"
 
-/benchmark/bin/lmbench/bw_mem -P 1 256m frd
+/benchmark/bin/lmbench/bw_mem -P 1 -N 50 512m frd
