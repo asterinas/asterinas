@@ -45,6 +45,7 @@ jobs:
           - lmbench-fs-create-delete-files-10k
           # Mmap-related benchmarks
           - lmbench-pagefault
+          - lmbench-mmap-bandwidth
           # Semaphore benchmark
           - lmbench-semaphore
       fail-fast: false
