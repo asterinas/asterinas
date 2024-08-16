@@ -54,6 +54,10 @@ fn do_sys_mmap(
 
     check_option(&option)?;
 
+    if len == 0 {
+        return_errno_with_message!(Errno::EINVAL, "mmap len cannot be zero");
+    }
+
     let len = len.align_up(PAGE_SIZE);
 
     if offset % PAGE_SIZE != 0 {
