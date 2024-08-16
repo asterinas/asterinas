@@ -33,8 +33,17 @@ pub fn sys_madvise(
 }
 
 fn madv_free(start: Vaddr, len: usize, ctx: &Context) -> Result<()> {
-    debug_assert!(start % PAGE_SIZE == 0);
-    debug_assert!(len % PAGE_SIZE == 0);
+    if start % PAGE_SIZE != 0 {
+        return_errno_with_message!(Errno::EINVAL, "the start address should be page aligned");
+    }
+
+    if len % PAGE_SIZE != 0 {
+        return_errno_with_message!(Errno::EINVAL, "the length should be page aligned");
+    }
+
+    if len == 0 {
+        return_errno_with_message!(Errno::EINVAL, "madv_free len cannot be zero");
+    }
 
     let root_vmar = ctx.process.root_vmar();
     let advised_range = start..start + len;
