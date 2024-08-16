@@ -19,7 +19,7 @@ pub fn sys_futex(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     // FIXME: we current ignore futex flags
-    let (futex_op, futex_flags) = futex_op_and_flags_from_u32(futex_op as _).unwrap();
+    let (futex_op, futex_flags) = futex_op_and_flags_from_u32(futex_op as _)?;
     debug!(
         "futex_op = {:?}, futex_flags = {:?}, futex_addr = 0x{:x}",
         futex_op, futex_flags, futex_addr
@@ -42,24 +42,24 @@ pub fn sys_futex(
 
     let res = match futex_op {
         FutexOp::FUTEX_WAIT => {
-            let timeout = get_futex_timeout(utime_addr).expect("Invalid time addr");
+            let timeout = get_futex_timeout(utime_addr)?;
             futex_wait(futex_addr as _, futex_val as _, &timeout).map(|_| 0)
         }
         FutexOp::FUTEX_WAIT_BITSET => {
-            let timeout = get_futex_timeout(utime_addr).expect("Invalid time addr");
+            let timeout = get_futex_timeout(utime_addr)?;
             futex_wait_bitset(futex_addr as _, futex_val as _, &timeout, bitset as _).map(|_| 0)
         }
         FutexOp::FUTEX_WAKE => {
-            let max_count = get_futex_val(futex_val as i32).expect("Invalid futex val");
+            let max_count = get_futex_val(futex_val as i32)?;
             futex_wake(futex_addr as _, max_count).map(|count| count as isize)
         }
         FutexOp::FUTEX_WAKE_BITSET => {
-            let max_count = get_futex_val(futex_val as i32).expect("Invalid futex val");
+            let max_count = get_futex_val(futex_val as i32)?;
             futex_wake_bitset(futex_addr as _, max_count, bitset as _).map(|count| count as isize)
         }
         FutexOp::FUTEX_REQUEUE => {
-            let max_nwakes = get_futex_val(futex_val as i32).expect("Invalid futex val");
-            let max_nrequeues = get_futex_val(utime_addr as i32).expect("Invalid utime addr");
+            let max_nwakes = get_futex_val(futex_val as i32)?;
+            let max_nrequeues = get_futex_val(utime_addr as i32)?;
             futex_requeue(
                 futex_addr as _,
                 max_nwakes,
