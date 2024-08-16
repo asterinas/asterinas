@@ -55,7 +55,7 @@ pub(crate) fn handle_page_fault(
         );
 
         if let Err(e) = root_vmar.handle_page_fault(page_fault_addr, not_present, write) {
-            error!(
+            warn!(
                 "page fault handler failed: addr: 0x{:x}, err: {:?}",
                 page_fault_addr, e
             );
