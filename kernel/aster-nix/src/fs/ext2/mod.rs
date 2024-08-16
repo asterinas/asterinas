@@ -23,7 +23,7 @@
 //! // Lookup the root inode.
 //! let root = ext2.root_inode()?;
 //! // Create a file inside root directory.
-//! let file = root.create("file", FileType::File, FilePerm::from_bits_truncate(0o666))?;
+//! let file = root.create("file", InodeType::File, FilePerm::from_bits_truncate(0o666))?;
 //! // Write data into the file.
 //! const WRITE_DATA: &[u8] = b"Hello, World";
 //! let len = file.write_at(0, WRITE_DATA)?;
@@ -37,7 +37,7 @@
 //! 2. Handles the intermediate failure status correctly.
 
 pub use fs::Ext2;
-pub use inode::{FilePerm, FileType, Inode};
+pub use inode::{FilePerm, Inode};
 pub use super_block::{SuperBlock, MAGIC_NUM};
 
 mod block_group;

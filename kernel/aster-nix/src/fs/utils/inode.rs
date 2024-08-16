@@ -17,7 +17,7 @@ use crate::{
     vm::vmo::Vmo,
 };
 
-#[repr(u32)]
+#[repr(u16)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, TryFromInt)]
 pub enum InodeType {
     NamedPipe = 0o010000,
@@ -54,6 +54,19 @@ impl InodeType {
 
     pub fn is_device(&self) -> bool {
         *self == InodeType::BlockDevice || *self == InodeType::CharDevice
+    }
+
+    /// Parse the inode type in the `mode` from syscall, and convert it into `InodeType`.
+    pub fn from_raw_mode(mut mode: u16) -> Result<Self> {
+        const TYPE_MASK: u16 = 0o170000;
+        mode &= TYPE_MASK;
+
+        // Special case
+        if mode == 0 {
+            return Ok(Self::File);
+        }
+        Self::try_from(mode & TYPE_MASK)
+            .map_err(|_| Error::with_message(Errno::EINVAL, "invalid file type"))
     }
 }
 

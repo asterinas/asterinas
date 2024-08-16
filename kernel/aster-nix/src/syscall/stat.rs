@@ -75,38 +75,6 @@ pub fn sys_fstatat(
     Ok(SyscallReturn::Return(0))
 }
 
-/// File type mask.
-const S_IFMT: u16 = 0o170000;
-
-/// Enum representing different file types.
-#[derive(Debug, PartialEq)]
-pub enum FileType {
-    Socket,
-    CharacterDevice,
-    BlockDevice,
-    Directory,
-    Fifo,
-    RegularFile,
-    Symlink,
-    Unknown,
-}
-
-impl FileType {
-    /// Extract the file type from the mode.
-    pub fn from_mode(mode: u16) -> FileType {
-        match mode & S_IFMT {
-            0o140000 => FileType::Socket,          // Socket.
-            0o020000 => FileType::CharacterDevice, // Character device.
-            0o060000 => FileType::BlockDevice,     // Block device.
-            0o040000 => FileType::Directory,       // Directory.
-            0o010000 => FileType::Fifo,            // FIFO (named pipe).
-            0 | 0o100000 => FileType::RegularFile, // Regular file.
-            0o120000 => FileType::Symlink,         // Symbolic link.
-            _ => FileType::Unknown,                // Unkonwn file type.
-        }
-    }
-}
-
 /// File Stat
 #[derive(Debug, Clone, Copy, Pod, Default)]
 #[repr(C)]

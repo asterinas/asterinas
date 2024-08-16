@@ -2,10 +2,7 @@
 
 #![allow(unused_variables)]
 
-use super::{
-    inode::{FileType, MAX_FNAME_LEN},
-    prelude::*,
-};
+use super::{inode::MAX_FNAME_LEN, prelude::*};
 
 /// The data structure in a directory's data block. It is stored in a linked list.
 ///
@@ -21,8 +18,8 @@ pub struct DirEntry {
 
 impl DirEntry {
     /// Constructs a new `DirEntry` object with the specified inode (`ino`),
-    /// name (`name`), and file type (`file_type`).
-    pub(super) fn new(ino: u32, name: &str, file_type: FileType) -> Self {
+    /// name (`name`), and file type (`inode_type`).
+    pub(super) fn new(ino: u32, name: &str, inode_type: InodeType) -> Self {
         debug_assert!(name.len() <= MAX_FNAME_LEN);
 
         let record_len = (Self::header_len() + name.len()).align_up(4) as u16;
@@ -31,7 +28,7 @@ impl DirEntry {
                 ino,
                 record_len,
                 name_len: name.len() as u8,
-                file_type: DirEntryFileType::from(file_type) as _,
+                inode_type: DirEntryFileType::from(inode_type) as _,
             },
             name: CStr256::from(name),
         }
@@ -39,12 +36,12 @@ impl DirEntry {
 
     /// Constructs a `DirEntry` with the name "." and `self_ino` as its inode.
     pub(super) fn self_entry(self_ino: u32) -> Self {
-        Self::new(self_ino, ".", FileType::Dir)
+        Self::new(self_ino, ".", InodeType::Dir)
     }
 
     /// Constructs a `DirEntry` with the name ".." and `parent_ino` as its inode.
     pub(super) fn parent_entry(parent_ino: u32) -> Self {
-        Self::new(parent_ino, "..", FileType::Dir)
+        Self::new(parent_ino, "..", InodeType::Dir)
     }
 
     /// Returns a reference to the header.
@@ -73,8 +70,8 @@ impl DirEntry {
     }
 
     /// Returns the type.
-    pub fn type_(&self) -> FileType {
-        FileType::from(DirEntryFileType::try_from(self.header.file_type).unwrap())
+    pub fn type_(&self) -> InodeType {
+        InodeType::from(DirEntryFileType::try_from(self.header.inode_type).unwrap())
     }
 
     /// Returns the distance to the next entry.
@@ -110,7 +107,7 @@ struct DirEntryHeader {
     /// Name Length
     name_len: u8,
     /// Type indicator
-    file_type: u8,
+    inode_type: u8,
 }
 
 /// The type indicator in the `DirEntry`.
@@ -127,29 +124,29 @@ enum DirEntryFileType {
     Symlink = 7,
 }
 
-impl From<FileType> for DirEntryFileType {
-    fn from(file_type: FileType) -> Self {
-        match file_type {
-            FileType::Fifo => Self::Fifo,
-            FileType::Char => Self::Char,
-            FileType::Dir => Self::Dir,
-            FileType::Block => Self::Block,
-            FileType::File => Self::File,
-            FileType::Symlink => Self::Symlink,
-            FileType::Socket => Self::Socket,
+impl From<InodeType> for DirEntryFileType {
+    fn from(inode_type: InodeType) -> Self {
+        match inode_type {
+            InodeType::NamedPipe => Self::Fifo,
+            InodeType::CharDevice => Self::Char,
+            InodeType::Dir => Self::Dir,
+            InodeType::BlockDevice => Self::Block,
+            InodeType::File => Self::File,
+            InodeType::SymLink => Self::Symlink,
+            InodeType::Socket => Self::Socket,
         }
     }
 }
 
-impl From<DirEntryFileType> for FileType {
+impl From<DirEntryFileType> for InodeType {
     fn from(file_type: DirEntryFileType) -> Self {
         match file_type {
-            DirEntryFileType::Fifo => Self::Fifo,
-            DirEntryFileType::Char => Self::Char,
+            DirEntryFileType::Fifo => Self::NamedPipe,
+            DirEntryFileType::Char => Self::CharDevice,
             DirEntryFileType::Dir => Self::Dir,
-            DirEntryFileType::Block => Self::Block,
+            DirEntryFileType::Block => Self::BlockDevice,
             DirEntryFileType::File => Self::File,
-            DirEntryFileType::Symlink => Self::Symlink,
+            DirEntryFileType::Symlink => Self::SymLink,
             DirEntryFileType::Socket => Self::Socket,
             DirEntryFileType::Unknown => panic!("unknown file type"),
         }

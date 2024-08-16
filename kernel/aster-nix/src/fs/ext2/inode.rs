@@ -63,7 +63,7 @@ impl Inode {
 
     pub fn resize(&self, new_size: usize) -> Result<()> {
         let inner = self.inner.upread();
-        if inner.file_type() != FileType::File {
+        if inner.inode_type() != InodeType::File {
             return_errno!(Errno::EISDIR);
         }
         if new_size == inner.file_size() {
@@ -86,7 +86,7 @@ impl Inode {
     pub fn create(
         &self,
         name: &str,
-        file_type: FileType,
+        inode_type: InodeType,
         file_perm: FilePerm,
     ) -> Result<Arc<Self>> {
         if name.len() > MAX_FNAME_LEN {
@@ -94,7 +94,7 @@ impl Inode {
         }
 
         let inner = self.inner.upread();
-        if inner.file_type() != FileType::Dir {
+        if inner.inode_type() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
         if inner.hard_links() == 0 {
@@ -106,13 +106,13 @@ impl Inode {
 
         let inode = self
             .fs()
-            .create_inode(self.block_group_idx, file_type, file_perm)?;
-        let is_dir = file_type == FileType::Dir;
+            .create_inode(self.block_group_idx, inode_type, file_perm)?;
+        let is_dir = inode_type == InodeType::Dir;
         if let Err(e) = inode.init(self.ino) {
             self.fs().free_inode(inode.ino, is_dir).unwrap();
             return Err(e);
         }
-        let new_entry = DirEntry::new(inode.ino, name, file_type);
+        let new_entry = DirEntry::new(inode.ino, name, inode_type);
 
         let mut inner = inner.upgrade();
         if let Err(e) = inner.append_entry(new_entry) {
@@ -132,7 +132,7 @@ impl Inode {
         }
 
         let inner = self.inner.read();
-        if inner.file_type() != FileType::Dir {
+        if inner.inode_type() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
         if inner.hard_links() == 0 {
@@ -150,15 +150,15 @@ impl Inode {
         }
 
         let inner = self.inner.upread();
-        if inner.file_type() != FileType::Dir {
+        if inner.inode_type() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
         if inner.hard_links() == 0 {
             return_errno_with_message!(Errno::ENOENT, "dir removed");
         }
 
-        let inode_type = inode.file_type();
-        if inode_type == FileType::Dir {
+        let inode_type = inode.inode_type();
+        if inode_type == InodeType::Dir {
             return_errno!(Errno::EPERM);
         }
 
@@ -187,7 +187,7 @@ impl Inode {
         }
 
         let file = self.lookup(name)?;
-        if file.file_type() == FileType::Dir {
+        if file.inode_type() == InodeType::Dir {
             return_errno!(Errno::EISDIR);
         }
 
@@ -228,7 +228,7 @@ impl Inode {
 
         let dir_inode = self.lookup(name)?;
         let dir_inner = dir_inode.inner.read();
-        if dir_inner.file_type() != FileType::Dir {
+        if dir_inner.inode_type() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
         if dir_inner.entry_count() > 2 {
@@ -252,7 +252,7 @@ impl Inode {
         if !Arc::ptr_eq(&dir_inode, &potential_new_dir) {
             return_errno!(Errno::ENOENT);
         }
-        if dir_inner.file_type() != FileType::Dir {
+        if dir_inner.inode_type() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
         if dir_inner.entry_count() > 2 {
@@ -272,7 +272,7 @@ impl Inode {
     /// Rename within its own directory.
     fn rename_within(&self, old_name: &str, new_name: &str) -> Result<()> {
         let self_inner = self.inner.upread();
-        if self_inner.file_type() != FileType::Dir {
+        if self_inner.inode_type() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
         if self_inner.hard_links() == 0 {
@@ -336,15 +336,15 @@ impl Inode {
 
         let dst_inode_typ = new_dst_entry.type_();
         match (src_inode_typ, dst_inode_typ) {
-            (FileType::Dir, FileType::Dir) => {
+            (InodeType::Dir, InodeType::Dir) => {
                 if dst_inner.entry_count() > 2 {
                     return_errno!(Errno::ENOTEMPTY);
                 }
             }
-            (FileType::Dir, _) => {
+            (InodeType::Dir, _) => {
                 return_errno!(Errno::ENOTDIR);
             }
-            (_, FileType::Dir) => {
+            (_, InodeType::Dir) => {
                 return_errno!(Errno::EISDIR);
             }
             _ => {}
@@ -357,7 +357,7 @@ impl Inode {
         self_inner.set_ctime(now);
 
         dst_inner.dec_hard_links();
-        if dst_inode_typ == FileType::Dir {
+        if dst_inode_typ == InodeType::Dir {
             dst_inner.dec_hard_links(); // For "."
         }
         dst_inner.set_ctime(now);
@@ -383,7 +383,8 @@ impl Inode {
         }
 
         let (self_inner, target_inner) = read_lock_two_inodes(self, target);
-        if self_inner.file_type() != FileType::Dir || target_inner.file_type() != FileType::Dir {
+        if self_inner.inode_type() != InodeType::Dir || target_inner.inode_type() != InodeType::Dir
+        {
             return_errno!(Errno::ENOTDIR);
         }
         if self_inner.hard_links() == 0 || target_inner.hard_links() == 0 {
@@ -401,7 +402,7 @@ impl Inode {
         if src_inode.ino == target.ino {
             return_errno!(Errno::EINVAL);
         }
-        let is_dir = src_inode_typ == FileType::Dir;
+        let is_dir = src_inode_typ == InodeType::Dir;
 
         let Some(dst_ino) = target_inner.get_entry_ino(new_name) else {
             drop(self_inner);
@@ -503,15 +504,15 @@ impl Inode {
         let mut dst_inner = write_guards.pop().unwrap();
         let dst_inode_typ = new_dst_entry.type_();
         match (src_inode_typ, dst_inode_typ) {
-            (FileType::Dir, FileType::Dir) => {
+            (InodeType::Dir, InodeType::Dir) => {
                 if dst_inner.entry_count() > 2 {
                     return_errno!(Errno::ENOTEMPTY);
                 }
             }
-            (FileType::Dir, _) => {
+            (InodeType::Dir, _) => {
                 return_errno!(Errno::ENOTDIR);
             }
-            (_, FileType::Dir) => {
+            (_, InodeType::Dir) => {
                 return_errno!(Errno::EISDIR);
             }
             _ => {}
@@ -547,7 +548,7 @@ impl Inode {
     pub fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
         let offset_read = {
             let inner = self.inner.read();
-            if inner.file_type() != FileType::Dir {
+            if inner.inode_type() != InodeType::Dir {
                 return_errno!(Errno::ENOTDIR);
             }
             if inner.hard_links() == 0 {
@@ -560,7 +561,7 @@ impl Inode {
                     visitor.visit(
                         dir_entry.name(),
                         dir_entry.ino() as u64,
-                        InodeType::from(dir_entry.type_()),
+                        dir_entry.type_(),
                         dir_entry.record_len(),
                     )?;
                     *offset += dir_entry.record_len();
@@ -583,7 +584,7 @@ impl Inode {
 
     pub fn write_link(&self, target: &str) -> Result<()> {
         let mut inner = self.inner.write();
-        if inner.file_type() != FileType::Symlink {
+        if inner.inode_type() != InodeType::SymLink {
             return_errno!(Errno::EISDIR);
         }
 
@@ -593,7 +594,7 @@ impl Inode {
 
     pub fn read_link(&self) -> Result<String> {
         let inner = self.inner.read();
-        if inner.file_type() != FileType::Symlink {
+        if inner.inode_type() != InodeType::SymLink {
             return_errno!(Errno::EISDIR);
         }
 
@@ -602,8 +603,8 @@ impl Inode {
 
     pub fn set_device_id(&self, device_id: u64) -> Result<()> {
         let mut inner = self.inner.write();
-        let file_type = inner.file_type();
-        if file_type != FileType::Block && file_type != FileType::Char {
+        let inode_type = inner.inode_type();
+        if inode_type != InodeType::BlockDevice && inode_type != InodeType::CharDevice {
             return_errno!(Errno::EISDIR);
         }
 
@@ -613,8 +614,8 @@ impl Inode {
 
     pub fn device_id(&self) -> u64 {
         let inner = self.inner.read();
-        let file_type = inner.file_type();
-        if file_type != FileType::Block && file_type != FileType::Char {
+        let inode_type = inner.inode_type();
+        if inode_type != InodeType::BlockDevice && inode_type != InodeType::CharDevice {
             return 0;
         }
         inner.device_id()
@@ -623,7 +624,7 @@ impl Inode {
     pub fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let bytes_read = {
             let inner = self.inner.read();
-            if inner.file_type() != FileType::File {
+            if inner.inode_type() != InodeType::File {
                 return_errno!(Errno::EISDIR);
             }
 
@@ -639,7 +640,7 @@ impl Inode {
     pub fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let bytes_read = {
             let inner = self.inner.read();
-            if inner.file_type() != FileType::File {
+            if inner.inode_type() != InodeType::File {
                 return_errno!(Errno::EISDIR);
             }
             if !is_block_aligned(offset) || !is_block_aligned(writer.avail()) {
@@ -657,7 +658,7 @@ impl Inode {
     pub fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
         let bytes_written = {
             let inner = self.inner.upread();
-            if inner.file_type() != FileType::File {
+            if inner.inode_type() != InodeType::File {
                 return_errno!(Errno::EISDIR);
             }
 
@@ -682,7 +683,7 @@ impl Inode {
     pub fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
         let bytes_written = {
             let inner = self.inner.upread();
-            if inner.file_type() != FileType::File {
+            if inner.inode_type() != InodeType::File {
                 return_errno!(Errno::EISDIR);
             }
             if !is_block_aligned(offset) || !is_block_aligned(reader.remain()) {
@@ -702,8 +703,8 @@ impl Inode {
 
     fn init(&self, dir_ino: u32) -> Result<()> {
         let mut inner = self.inner.write();
-        match inner.file_type() {
-            FileType::Dir => {
+        match inner.inode_type() {
+            InodeType::Dir => {
                 inner.init_dir(self.ino, dir_ino)?;
             }
             _ => {
@@ -743,7 +744,7 @@ impl Inode {
     }
 
     pub fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
-        if self.file_type() != FileType::File {
+        if self.inode_type() != InodeType::File {
             return_errno_with_message!(Errno::EISDIR, "not regular file");
         }
 
@@ -794,7 +795,7 @@ impl Inode {
 #[inherit_methods(from = "self.inner.read()")]
 impl Inode {
     pub fn file_size(&self) -> usize;
-    pub fn file_type(&self) -> FileType;
+    pub fn inode_type(&self) -> InodeType;
     pub fn file_perm(&self) -> FilePerm;
     pub fn uid(&self) -> u32;
     pub fn gid(&self) -> u32;
@@ -875,7 +876,7 @@ struct Inner {
 #[inherit_methods(from = "self.inode_impl")]
 impl Inner {
     pub fn file_size(&self) -> usize;
-    pub fn file_type(&self) -> FileType;
+    pub fn inode_type(&self) -> InodeType;
     pub fn file_perm(&self) -> FilePerm;
     pub fn set_file_perm(&mut self, perm: FilePerm);
     pub fn uid(&self) -> u32;
@@ -1039,7 +1040,7 @@ impl Inner {
     }
 
     pub fn append_entry(&mut self, entry: DirEntry) -> Result<()> {
-        let is_dir = entry.type_() == FileType::Dir;
+        let is_dir = entry.type_() == InodeType::Dir;
         let is_parent = entry.name() == "..";
 
         DirEntryWriter::new(&self.page_cache, 0).append_entry(entry)?;
@@ -1056,7 +1057,7 @@ impl Inner {
 
     pub fn remove_entry_at(&mut self, name: &str, offset: usize) -> Result<()> {
         let entry = DirEntryWriter::new(&self.page_cache, offset).remove_entry(name)?;
-        let is_dir = entry.type_() == FileType::Dir;
+        let is_dir = entry.type_() == InodeType::Dir;
         let file_size = self.inode_impl.file_size();
         let page_cache_size = self.page_cache.pages().size();
         if page_cache_size < file_size {
@@ -1786,7 +1787,7 @@ impl InodeImpl {
         self.0.write().resize(new_size)
     }
 
-    pub fn file_type(&self) -> FileType {
+    pub fn inode_type(&self) -> InodeType {
         self.0.read().desc.type_
     }
 
@@ -1985,7 +1986,7 @@ impl InodeImpl {
             if !inner.is_freed {
                 inode
                     .fs()
-                    .free_inode(inode.ino(), inner.desc.type_ == FileType::Dir)?;
+                    .free_inode(inode.ino(), inner.desc.type_ == InodeType::Dir)?;
                 inner.is_freed = true;
             }
         }
@@ -2023,7 +2024,7 @@ impl PageCacheBackend for InodeImpl {
 #[derive(Clone, Copy, Debug)]
 pub(super) struct InodeDesc {
     /// Type.
-    type_: FileType,
+    type_: InodeType,
     /// Permission.
     perm: FilePerm,
     /// User Id.
@@ -2056,13 +2057,13 @@ impl TryFrom<RawInode> for InodeDesc {
     type Error = crate::error::Error;
 
     fn try_from(inode: RawInode) -> Result<Self> {
-        let file_type = FileType::from_raw_mode(inode.mode)?;
+        let inode_type = InodeType::from_raw_mode(inode.mode)?;
         Ok(Self {
-            type_: file_type,
+            type_: inode_type,
             perm: FilePerm::from_raw_mode(inode.mode)?,
             uid: (inode.os_dependent_2.uid_high as u32) << 16 | inode.uid as u32,
             gid: (inode.os_dependent_2.gid_high as u32) << 16 | inode.gid as u32,
-            size: if file_type == FileType::File {
+            size: if inode_type == InodeType::File {
                 (inode.size_high as usize) << 32 | inode.size_low as usize
             } else {
                 inode.size_low as usize
@@ -2076,9 +2077,9 @@ impl TryFrom<RawInode> for InodeDesc {
             flags: FileFlags::from_bits(inode.flags)
                 .ok_or(Error::with_message(Errno::EINVAL, "invalid file flags"))?,
             block_ptrs: inode.block_ptrs,
-            acl: match file_type {
-                FileType::File => Some(Bid::new(inode.file_acl as _)),
-                FileType::Dir => Some(Bid::new(inode.size_high as _)),
+            acl: match inode_type {
+                InodeType::File => Some(Bid::new(inode.file_acl as _)),
+                InodeType::Dir => Some(Bid::new(inode.size_high as _)),
                 _ => None,
             },
         })
@@ -2086,7 +2087,7 @@ impl TryFrom<RawInode> for InodeDesc {
 }
 
 impl InodeDesc {
-    pub fn new(type_: FileType, perm: FilePerm) -> Dirty<Self> {
+    pub fn new(type_: InodeType, perm: FilePerm) -> Dirty<Self> {
         let now = now();
         Dirty::new_dirty(Self {
             type_,
@@ -2103,7 +2104,7 @@ impl InodeDesc {
             flags: FileFlags::empty(),
             block_ptrs: BlockPtrs::default(),
             acl: match type_ {
-                FileType::File | FileType::Dir => Some(Bid::new(0)),
+                InodeType::File | InodeType::Dir => Some(Bid::new(0)),
                 _ => None,
             },
         })
@@ -2124,37 +2125,10 @@ impl InodeDesc {
 
     #[inline]
     fn size_to_blocks(&self, size: usize) -> Ext2Bid {
-        if self.type_ == FileType::Symlink && size <= MAX_FAST_SYMLINK_LEN {
+        if self.type_ == InodeType::SymLink && size <= MAX_FAST_SYMLINK_LEN {
             return 0;
         }
         size.div_ceil(BLOCK_SIZE) as Ext2Bid
-    }
-}
-
-#[repr(u16)]
-#[derive(Copy, Clone, Debug, Eq, PartialEq, TryFromInt)]
-pub enum FileType {
-    /// FIFO special file
-    Fifo = 0o010000,
-    /// Character device
-    Char = 0o020000,
-    /// Directory
-    Dir = 0o040000,
-    /// Block device
-    Block = 0o060000,
-    /// Regular file
-    File = 0o100000,
-    /// Symbolic link
-    Symlink = 0o120000,
-    /// Socket
-    Socket = 0o140000,
-}
-
-impl FileType {
-    pub fn from_raw_mode(mode: u16) -> Result<Self> {
-        const TYPE_MASK: u16 = 0o170000;
-        Self::try_from(mode & TYPE_MASK)
-            .map_err(|_| Error::with_message(Errno::EINVAL, "invalid file type"))
     }
 }
 
@@ -2299,11 +2273,11 @@ impl From<&InodeDesc> for RawInode {
             flags: inode.flags.bits(),
             block_ptrs: inode.block_ptrs,
             file_acl: match inode.acl {
-                Some(acl) if inode.type_ == FileType::File => acl.to_raw() as u32,
+                Some(acl) if inode.type_ == InodeType::File => acl.to_raw() as u32,
                 _ => Default::default(),
             },
             size_high: match inode.acl {
-                Some(acl) if inode.type_ == FileType::Dir => acl.to_raw() as u32,
+                Some(acl) if inode.type_ == InodeType::Dir => acl.to_raw() as u32,
                 _ => Default::default(),
             },
             os_dependent_2: Osd2 {
