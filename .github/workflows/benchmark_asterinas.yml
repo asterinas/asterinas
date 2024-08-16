@@ -46,6 +46,7 @@ jobs:
           # Mmap-related benchmarks
           - lmbench-pagefault
           - lmbench-mmap-bandwidth
+          - lmbench-mmap-latency
           # Semaphore benchmark
           - lmbench-semaphore
       fail-fast: false
