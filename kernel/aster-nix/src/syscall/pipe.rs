@@ -4,8 +4,8 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file_table::{FdFlags, FileDesc},
-        pipe::{PipeReader, PipeWriter},
-        utils::{Channel, CreationFlags, StatusFlags},
+        pipe,
+        utils::CreationFlags,
     },
     prelude::*,
 };
@@ -13,16 +13,7 @@ use crate::{
 pub fn sys_pipe2(fds: Vaddr, flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("flags: {:?}", flags);
 
-    let (pipe_reader, pipe_writer) = {
-        let (producer, consumer) = Channel::new(PIPE_BUF_SIZE).split();
-
-        let status_flags = StatusFlags::from_bits_truncate(flags);
-
-        (
-            PipeReader::new(consumer, status_flags)?,
-            PipeWriter::new(producer, status_flags)?,
-        )
-    };
+    let (pipe_reader, pipe_writer) = pipe::new_pair()?;
 
     let fd_flags = if CreationFlags::from_bits_truncate(flags).contains(CreationFlags::O_CLOEXEC) {
         FdFlags::CLOEXEC
@@ -57,5 +48,3 @@ struct PipeFds {
     reader_fd: FileDesc,
     writer_fd: FileDesc,
 }
-
-const PIPE_BUF_SIZE: usize = 65536;

@@ -6,7 +6,7 @@ use crate::{
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
-        utils::{InodeMode, InodeType},
+        utils::{InodeMode, InodeType, MknodType},
     },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
@@ -53,7 +53,10 @@ pub fn sys_mknodat(
             let device_inode = get_device(dev)?;
             let _ = dir_dentry.mknod(&name, inode_mode, device_inode.into())?;
         }
-        InodeType::NamedPipe | InodeType::Socket => {
+        InodeType::NamedPipe => {
+            let _ = dir_dentry.mknod(&name, inode_mode, MknodType::NamedPipeNode)?;
+        }
+        InodeType::Socket => {
             return_errno_with_message!(Errno::EINVAL, "unsupported file types")
         }
         _ => return_errno_with_message!(Errno::EPERM, "unimplemented file types"),

@@ -25,7 +25,7 @@ impl<T> Channel<T> {
     /// # Panics
     ///
     /// This method will panic if the given capacity is zero.
-    pub fn new(capacity: usize) -> Self {
+    pub fn with_capacity(capacity: usize) -> Self {
         let common = Arc::new(Common::new(capacity));
 
         let producer = Producer(Fifo::new(common.clone()));
@@ -391,7 +391,7 @@ mod test {
         #[derive(Clone, Debug, PartialEq, Eq)]
         struct NonCopy(Arc<usize>);
 
-        let channel = Channel::new(16);
+        let channel = Channel::with_capacity(16);
         let (producer, consumer) = channel.split();
 
         let data = NonCopy(Arc::new(99));

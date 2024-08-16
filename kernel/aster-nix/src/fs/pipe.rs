@@ -6,7 +6,7 @@ use atomic::Ordering;
 
 use super::{
     file_handle::FileLike,
-    utils::{AccessMode, Consumer, InodeMode, InodeType, Metadata, Producer, StatusFlags},
+    utils::{AccessMode, Channel, Consumer, InodeMode, InodeType, Metadata, Producer, StatusFlags},
 };
 use crate::{
     events::{IoEvents, Observer},
@@ -17,6 +17,26 @@ use crate::{
     },
     time::clocks::RealTimeCoarseClock,
 };
+
+const DEFAULT_PIPE_BUF_SIZE: usize = 65536;
+
+pub fn new_pair() -> Result<(Arc<PipeReader>, Arc<PipeWriter>)> {
+    let (producer, consumer) = Channel::with_capacity(DEFAULT_PIPE_BUF_SIZE).split();
+
+    Ok((
+        PipeReader::new(consumer, StatusFlags::empty())?,
+        PipeWriter::new(producer, StatusFlags::empty())?,
+    ))
+}
+
+pub fn new_pair_with_capacity(capacity: usize) -> Result<(Arc<PipeReader>, Arc<PipeWriter>)> {
+    let (producer, consumer) = Channel::with_capacity(capacity).split();
+
+    Ok((
+        PipeReader::new(consumer, StatusFlags::empty())?,
+        PipeWriter::new(producer, StatusFlags::empty())?,
+    ))
+}
 
 pub struct PipeReader {
     consumer: Consumer<u8>,
@@ -228,7 +248,7 @@ mod test {
         W: Fn(Arc<PipeWriter>) + Sync + Send + 'static,
         R: Fn(Arc<PipeReader>) + Sync + Send + 'static,
     {
-        let channel = Channel::new(1);
+        let channel = Channel::with_capacity(1);
         let (writer, readr) = channel.split();
 
         let writer = PipeWriter::new(writer, StatusFlags::empty()).unwrap();
