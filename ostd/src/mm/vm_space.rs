@@ -201,11 +201,11 @@ impl VmSpace {
             return Err(Error::AccessDenied);
         }
 
-        // SAFETY: As long as the current task owns user space, the page table of
-        // the current task will be activated during the execution of the current task.
-        // Since `VmReader` is neither `Sync` nor `Send`, it will not live longer than
-        // the current task. Hence, it is ensured that the correct page table
-        // is activated during the usage period of the `VmReader`.
+        // `VmReader` is neither `Sync` nor `Send`, so it will not live longer than the current
+        // task. This ensures that the correct page table is activated during the usage period of
+        // the `VmReader`.
+        //
+        // SAFETY: The memory range is in user space, as checked above.
         Ok(unsafe { VmReader::<UserSpace>::from_user_space(vaddr as *const u8, len) })
     }
 
@@ -222,11 +222,11 @@ impl VmSpace {
             return Err(Error::AccessDenied);
         }
 
-        // SAFETY: As long as the current task owns user space, the page table of
-        // the current task will be activated during the execution of the current task.
-        // Since `VmWriter` is neither `Sync` nor `Send`, it will not live longer than
-        // the current task. Hence, it is ensured that the correct page table
-        // is activated during the usage period of the `VmWriter`.
+        // `VmWriter` is neither `Sync` nor `Send`, so it will not live longer than the current
+        // task. This ensures that the correct page table is activated during the usage period of
+        // the `VmWriter`.
+        //
+        // SAFETY: The memory range is in user space, as checked above.
         Ok(unsafe { VmWriter::<UserSpace>::from_user_space(vaddr as *mut u8, len) })
     }
 }
