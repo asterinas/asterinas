@@ -12,7 +12,17 @@ pub fn sys_mprotect(addr: Vaddr, len: usize, perms: u64, ctx: &Context) -> Resul
         addr, len, vm_perms
     );
     let root_vmar = ctx.process.root_vmar();
-    debug_assert!(addr % PAGE_SIZE == 0);
+
+    // According to linux behavior,
+    // <https://elixir.bootlin.com/linux/v6.0.9/source/mm/mprotect.c#L681>,
+    // the addr is checked even if len is 0.
+    if addr % PAGE_SIZE != 0 {
+        return_errno_with_message!(Errno::EINVAL, "the start address should be page aligned");
+    }
+    if len == 0 {
+        return Ok(SyscallReturn::Return(0));
+    }
+
     let len = len.align_up(PAGE_SIZE);
     let range = addr..(addr + len);
     root_vmar.protect(vm_perms, range)?;
