@@ -254,6 +254,33 @@ impl Metadata {
     }
 }
 
+pub enum MknodType {
+    NamedPipeNode,
+    CharDeviceNode(Arc<dyn Device>),
+    BlockDeviceNode(Arc<dyn Device>),
+}
+
+impl MknodType {
+    pub fn inode_type(&self) -> InodeType {
+        match self {
+            MknodType::NamedPipeNode => InodeType::NamedPipe,
+            MknodType::CharDeviceNode(_) => InodeType::CharDevice,
+            MknodType::BlockDeviceNode(_) => InodeType::BlockDevice,
+        }
+    }
+}
+
+impl From<Arc<dyn Device>> for MknodType {
+    fn from(device: Arc<dyn Device>) -> Self {
+        let inode_type: InodeType = device.type_().into();
+        match inode_type {
+            InodeType::CharDevice => Self::CharDeviceNode(device),
+            InodeType::BlockDevice => Self::BlockDeviceNode(device),
+            _ => unreachable!(),
+        }
+    }
+}
+
 pub trait Inode: Any + Sync + Send {
     fn size(&self) -> usize;
 
@@ -313,7 +340,7 @@ pub trait Inode: Any + Sync + Send {
         Err(Error::new(Errno::ENOTDIR))
     }
 
-    fn mknod(&self, name: &str, mode: InodeMode, dev: Arc<dyn Device>) -> Result<Arc<dyn Inode>> {
+    fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::ENOTDIR))
     }
 

@@ -12,9 +12,8 @@ use inherit_methods_macro::inherit_methods;
 
 use crate::{
     fs::{
-        device::Device,
         path::mount::MountNode,
-        utils::{FileSystem, Inode, InodeMode, InodeType, Metadata, NAME_MAX},
+        utils::{FileSystem, Inode, InodeMode, InodeType, Metadata, MknodType, NAME_MAX},
     },
     prelude::*,
     process::{Gid, Uid},
@@ -182,7 +181,7 @@ impl Dentry_ {
     }
 
     /// Create a Dentry_ by making a device inode.
-    pub fn mknod(&self, name: &str, mode: InodeMode, device: Arc<dyn Device>) -> Result<Arc<Self>> {
+    pub fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<Self>> {
         if self.inode.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
@@ -192,7 +191,7 @@ impl Dentry_ {
         }
 
         let child = {
-            let inode = self.inode.mknod(name, mode, device)?;
+            let inode = self.inode.mknod(name, mode, type_)?;
             let dentry = Self::new(
                 inode,
                 DentryOptions::Leaf((String::from(name), self.this())),
@@ -622,9 +621,9 @@ impl Dentry {
         Ok(child_mount)
     }
 
-    /// Create a Dentry by making a device inode.
-    pub fn mknod(&self, name: &str, mode: InodeMode, device: Arc<dyn Device>) -> Result<Arc<Self>> {
-        let inner = self.inner.mknod(name, mode, device)?;
+    /// Create a Dentry by making a device inode or others.
+    pub fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<Self>> {
+        let inner = self.inner.mknod(name, mode, type_)?;
         Ok(Self::new(self.mount_node.clone(), inner.clone()))
     }
 

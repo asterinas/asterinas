@@ -8,6 +8,7 @@ use aster_util::slot_vec::SlotVec;
 use id_alloc::IdAlloc;
 
 use self::{ptmx::Ptmx, slave::PtySlaveInode};
+use super::utils::MknodType;
 use crate::{
     device::PtyMaster,
     fs::{
@@ -222,7 +223,7 @@ impl Inode for RootInode {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn mknod(&self, name: &str, mode: InodeMode, dev: Arc<dyn Device>) -> Result<Arc<dyn Inode>> {
+    fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {
         Err(Error::new(Errno::EPERM))
     }
 
