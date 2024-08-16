@@ -67,6 +67,7 @@ mod mknod;
 mod mmap;
 mod mount;
 mod mprotect;
+mod msync;
 mod munmap;
 mod nanosleep;
 mod open;
