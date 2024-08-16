@@ -28,6 +28,7 @@ jobs:
           - lmbench-unix-bandwidth
           - lmbench-pipe-latency
           - lmbench-pipe-bandwidth
+          - lmbench-fifo-latency
           # Syscall-related benchmarks
           - lmbench-getpid
           - lmbench-fstat
