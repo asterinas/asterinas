@@ -73,12 +73,21 @@ impl FsResolver {
         let inode_handle = match self.lookup_inner(path, follow_tail_link) {
             Ok(dentry) => {
                 let inode = dentry.inode();
-                if inode.type_() == InodeType::SymLink
-                    && creation_flags.contains(CreationFlags::O_NOFOLLOW)
-                    && !status_flags.contains(StatusFlags::O_PATH)
-                {
-                    return_errno_with_message!(Errno::ELOOP, "file is a symlink");
+                match inode.type_() {
+                    InodeType::NamedPipe => {
+                        warn!("NamedPipe doesn't support additional operation when opening.");
+                        debug!("Open NamedPipe. creation_flags:{:?}, status_flags:{:?}, access_mode:{:?}, inode_mode:{:?}",creation_flags,status_flags,access_mode,inode_mode);
+                    }
+                    InodeType::SymLink => {
+                        if creation_flags.contains(CreationFlags::O_NOFOLLOW)
+                            && !status_flags.contains(StatusFlags::O_PATH)
+                        {
+                            return_errno_with_message!(Errno::ELOOP, "file is a symlink");
+                        }
+                    }
+                    _ => {}
                 }
+
                 if creation_flags.contains(CreationFlags::O_CREAT)
                     && creation_flags.contains(CreationFlags::O_EXCL)
                 {

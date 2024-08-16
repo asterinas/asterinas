@@ -18,6 +18,8 @@ use crate::{
     events::IoEvents,
     fs::{
         device::Device,
+        file_handle::FileLike,
+        named_pipe::NamedPipe,
         utils::{
             CStr256, DirentVisitor, Extension, FallocMode, FileSystem, FsFlags, Inode, InodeMode,
             InodeType, IoctlCmd, Metadata, MknodType, PageCache, PageCacheBackend, SuperBlock,
@@ -151,6 +153,13 @@ impl Node {
         }
     }
 
+    pub fn new_named_pipe(mode: InodeMode, uid: Uid, gid: Gid) -> Self {
+        Self {
+            inner: Inner::NamedPipe(NamedPipe::new().unwrap()),
+            metadata: InodeMeta::new(mode, uid, gid),
+        }
+    }
+
     pub fn inc_size(&mut self) {
         self.metadata.size += 1;
         self.metadata.blocks = (self.metadata.size + BLOCK_SIZE - 1) / BLOCK_SIZE;
@@ -253,6 +262,7 @@ enum Inner {
     SymLink(String),
     Device(Arc<dyn Device>),
     Socket,
+    NamedPipe(NamedPipe),
 }
 
 impl Inner {
@@ -472,6 +482,17 @@ impl RamInode {
         })
     }
 
+    fn new_named_pipe(fs: &Arc<RamFS>, mode: InodeMode, uid: Uid, gid: Gid) -> Arc<Self> {
+        Arc::new_cyclic(|weak_self| RamInode {
+            node: RwMutex::new(Node::new_named_pipe(mode, uid, gid)),
+            ino: fs.alloc_id(),
+            typ: InodeType::NamedPipe,
+            this: weak_self.clone(),
+            fs: Arc::downgrade(fs),
+            extension: Extension::new(),
+        })
+    }
+
     fn find(&self, name: &str) -> Result<Arc<Self>> {
         if self.typ != InodeType::Dir {
             return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
@@ -518,20 +539,20 @@ impl Inode for RamInode {
         let read_len = {
             let self_inode = self.node.read();
 
-            if let Some(device) = self_inode.inner.as_device() {
-                device.read(writer)?
-            } else {
-                let Some(page_cache) = self_inode.inner.as_file() else {
-                    return_errno_with_message!(Errno::EISDIR, "read is not supported");
-                };
-                let (offset, read_len) = {
-                    let file_size = self_inode.metadata.size;
-                    let start = file_size.min(offset);
-                    let end = file_size.min(offset + writer.avail());
-                    (start, end - start)
-                };
-                page_cache.pages().read(offset, writer)?;
-                read_len
+            match &self_inode.inner {
+                Inner::File(page_cache) => {
+                    let (offset, read_len) = {
+                        let file_size = self_inode.metadata.size;
+                        let start = file_size.min(offset);
+                        let end = file_size.min(offset + writer.avail());
+                        (start, end - start)
+                    };
+                    page_cache.pages().read(offset, writer)?;
+                    read_len
+                }
+                Inner::Device(device) => device.read(writer)?,
+                Inner::NamedPipe(named_pipe) => named_pipe.read(writer)?,
+                _ => return_errno_with_message!(Errno::EISDIR, "read is not supported"),
             }
         };
 
@@ -548,34 +569,36 @@ impl Inode for RamInode {
         let write_len = reader.remain();
         let self_inode = self.node.upread();
 
-        if let Some(device) = self_inode.inner.as_device() {
-            let device_written_len = device.write(reader)?;
-            let mut self_inode = self_inode.upgrade();
-            let now = now();
-            self_inode.set_mtime(now);
-            self_inode.set_ctime(now);
-            return Ok(device_written_len);
-        }
+        match &self_inode.inner {
+            Inner::File(page_cache) => {
+                let file_size = self_inode.metadata.size;
+                let new_size = offset + write_len;
+                let should_expand_size = new_size > file_size;
+                if should_expand_size {
+                    page_cache.resize(new_size)?;
+                }
+                page_cache.pages().write(offset, reader)?;
 
-        let Some(page_cache) = self_inode.inner.as_file() else {
-            return_errno_with_message!(Errno::EISDIR, "write is not supported");
+                let mut self_inode = self_inode.upgrade();
+                let now = now();
+                self_inode.set_mtime(now);
+                self_inode.set_ctime(now);
+                if should_expand_size {
+                    self_inode.resize(new_size);
+                }
+            }
+            Inner::Device(device) => {
+                device.write(reader)?;
+                let mut self_inode = self_inode.upgrade();
+                let now = now();
+                self_inode.set_mtime(now);
+                self_inode.set_ctime(now);
+            }
+            Inner::NamedPipe(named_pipe) => {
+                named_pipe.write(reader)?;
+            }
+            _ => return_errno_with_message!(Errno::EISDIR, "write is not supported"),
         };
-        let file_size = self_inode.metadata.size;
-        let new_size = offset + write_len;
-        let should_expand_size = new_size > file_size;
-        if should_expand_size {
-            page_cache.resize(new_size)?;
-        }
-        page_cache.pages().write(offset, reader)?;
-
-        let mut self_inode = self_inode.upgrade();
-        let now = now();
-        self_inode.set_mtime(now);
-        self_inode.set_ctime(now);
-        if should_expand_size {
-            self_inode.resize(new_size);
-        }
-
         Ok(write_len)
     }
 
@@ -698,7 +721,12 @@ impl Inode for RamInode {
                     device,
                 )
             }
-            _ => return_errno_with_message!(Errno::EPERM, "unimplemented file types"),
+            MknodType::NamedPipeNode => RamInode::new_named_pipe(
+                &self.fs.upgrade().unwrap(),
+                mode,
+                Uid::new_root(),
+                Gid::new_root(),
+            ),
         };
 
         let mut self_inode = self_inode.upgrade();
