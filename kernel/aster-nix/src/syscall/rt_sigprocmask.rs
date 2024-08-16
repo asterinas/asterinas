@@ -18,7 +18,7 @@ pub fn sys_rt_sigprocmask(
     sigset_size: usize,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let mask_op = MaskOp::try_from(how).unwrap();
+    let mask_op = MaskOp::try_from(how)?;
     debug!(
         "mask op = {:?}, set_ptr = 0x{:x}, oldset_ptr = 0x{:x}, sigset_size = {}",
         mask_op, set_ptr, oldset_ptr, sigset_size
