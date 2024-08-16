@@ -38,6 +38,7 @@ jobs:
           # Signal-related benchmarks
           - lmbench-signal
           - lmbench-signal-install
+          - lmbench-signal-prot
           # File-related benchmarks
           - lmbench-file-rd-bandwidth
           - lmbench-select-file
