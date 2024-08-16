@@ -26,7 +26,7 @@ pub fn sys_rt_sigprocmask(
     if sigset_size != 8 {
         error!("sigset size is not equal to 8");
     }
-    do_rt_sigprocmask(mask_op, set_ptr, oldset_ptr, ctx).unwrap();
+    do_rt_sigprocmask(mask_op, set_ptr, oldset_ptr, ctx)?;
     Ok(SyscallReturn::Return(0))
 }
 
