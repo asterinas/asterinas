@@ -138,8 +138,8 @@ where
             // `dequeue_current` method and nothing bad will happen. This may need to be revisited
             // after more complex schedulers are introduced.
 
-            current = local_rq.dequeue_current();
             local_rq.update_current(UpdateFlags::Wait);
+            current = local_rq.dequeue_current();
         }
 
         if let Some(next_task) = local_rq.pick_next_current() {

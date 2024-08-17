@@ -16,7 +16,7 @@ use ostd::{
 use super::{simple_scheduler::SimpleScheduler, worker::Worker, WorkItem, WorkPriority, WorkQueue};
 use crate::{
     prelude::*,
-    sched::priority::{Priority, PriorityRange},
+    sched::priority::Priority,
     thread::{kernel_thread::ThreadOptions, AsThread},
 };
 
@@ -242,7 +242,7 @@ impl Monitor {
             // This workaround is to make the monitor of high-priority worker pool
             // starvation-free under the current scheduling policy.
             let priority = match priority {
-                WorkPriority::High => Priority::new(PriorityRange::new(0)),
+                WorkPriority::High => Priority::default_real_time(),
                 WorkPriority::Normal => Priority::default(),
             };
             let bound_task = ThreadOptions::new(task_fn)

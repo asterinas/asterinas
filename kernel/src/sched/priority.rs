@@ -23,7 +23,7 @@ impl Nice {
         Self(range)
     }
 
-    pub fn range(&self) -> &NiceRange {
+    pub const fn range(&self) -> &NiceRange {
         &self.0
     }
 
@@ -74,7 +74,15 @@ impl Priority {
         Self(range)
     }
 
-    pub fn range(&self) -> &PriorityRange {
+    pub const fn default_real_time() -> Self {
+        Self::new(PriorityRange::new(50))
+    }
+
+    pub const fn idle() -> Self {
+        Self::new(PriorityRange::new(PriorityRange::MAX))
+    }
+
+    pub const fn range(&self) -> &PriorityRange {
         &self.0
     }
 
@@ -86,6 +94,12 @@ impl Priority {
 impl From<Nice> for Priority {
     fn from(value: Nice) -> Self {
         Self::new(PriorityRange::new(value.range().get() as u8 + 120))
+    }
+}
+
+impl From<Priority> for Nice {
+    fn from(priority: Priority) -> Self {
+        Self::new(NiceRange::new((priority.range().get() - 100) as i8 - 20))
     }
 }
 
@@ -129,7 +143,7 @@ macro_rules! define_ranged_integer {
                 self.0 = val;
             }
 
-            $visibility fn get(self) -> $type {
+            $visibility const fn get(self) -> $type {
                 self.0
             }
         }

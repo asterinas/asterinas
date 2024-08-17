@@ -16,11 +16,12 @@ use ostd::{
 };
 
 use super::{
-    priority::{Priority, PriorityRange},
+    priority::Priority,
     stats::{set_stats_from_scheduler, SchedulerStats},
 };
 use crate::{prelude::*, thread::Thread};
 
+#[allow(unused)]
 pub fn init() {
     let preempt_scheduler = Box::new(PreemptScheduler::default());
     let scheduler = Box::<PreemptScheduler<Thread, Task>>::leak(preempt_scheduler);
@@ -298,8 +299,8 @@ impl Default for TimeSlice {
 }
 
 impl PreemptSchedInfo for Thread {
-    const REAL_TIME_TASK_PRIORITY: Priority = Priority::new(PriorityRange::new(100));
-    const LOWEST_TASK_PRIORITY: Priority = Priority::new(PriorityRange::new(PriorityRange::MAX));
+    const REAL_TIME_TASK_PRIORITY: Priority = Priority::default_real_time();
+    const LOWEST_TASK_PRIORITY: Priority = Priority::idle();
 
     fn priority(&self) -> Priority {
         self.atomic_priority().load(Ordering::Relaxed)

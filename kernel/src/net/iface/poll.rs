@@ -7,11 +7,7 @@ use log::trace;
 use ostd::timer::Jiffies;
 
 use super::{ext::IfaceEx, Iface, IFACES};
-use crate::{
-    sched::priority::{Priority, PriorityRange},
-    thread::kernel_thread::ThreadOptions,
-    WaitTimeout,
-};
+use crate::{sched::priority::Priority, thread::kernel_thread::ThreadOptions, WaitTimeout};
 
 pub fn lazy_init() {
     for iface in IFACES.get().unwrap() {
@@ -68,6 +64,6 @@ fn spawn_background_poll_thread(iface: Arc<Iface>) {
 
     // FIXME: remove the use of real-time priority.
     ThreadOptions::new(task_fn)
-        .priority(Priority::new(PriorityRange::new(0)))
+        .priority(Priority::default_real_time())
         .spawn();
 }
