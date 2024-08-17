@@ -9,6 +9,7 @@
 #![allow(incomplete_features)]
 #![feature(btree_cursors)]
 #![feature(btree_extract_if)]
+#![feature(debug_closure_helpers)]
 #![feature(extend_one)]
 #![feature(fn_traits)]
 #![feature(format_args_nl)]
@@ -37,7 +38,6 @@ use ostd::{
     cpu::PinCurrentCpu,
 };
 use process::Process;
-use sched::priority::PriorityRange;
 
 use crate::{
     prelude::*,
@@ -86,7 +86,7 @@ pub fn main() {
 
     // Spawn the first kernel thread on BSP.
     ThreadOptions::new(init_thread)
-        .priority(Priority::new(PriorityRange::new(PriorityRange::MAX)))
+        .priority(Priority::idle())
         .spawn();
 }
 
@@ -120,7 +120,7 @@ fn ap_init() {
 
     ThreadOptions::new(ap_idle_thread)
         .cpu_affinity(cpu_id.into())
-        .priority(Priority::new(PriorityRange::new(PriorityRange::MAX)))
+        .priority(Priority::idle())
         .spawn();
 }
 

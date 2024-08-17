@@ -10,7 +10,7 @@ use ostd::{
 use super::worker_pool::WorkerPool;
 use crate::{
     prelude::*,
-    sched::priority::{Priority, PriorityRange},
+    sched::priority::Priority,
     thread::{kernel_thread::ThreadOptions, AsThread},
 };
 
@@ -52,8 +52,7 @@ impl Worker {
             cpu_affinity.add(bound_cpu);
             let mut priority = Priority::default();
             if worker_pool.upgrade().unwrap().is_high_priority() {
-                // FIXME: remove the use of real-time priority.
-                priority = Priority::new(PriorityRange::new(0));
+                priority = Priority::default_real_time();
             }
             let bound_task = ThreadOptions::new(task_fn)
                 .cpu_affinity(cpu_affinity)
