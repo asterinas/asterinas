@@ -9,7 +9,10 @@ use ostd::{cpu::CpuSet, sync::PreemptDisabled, task::Task};
 use self::status::{AtomicThreadStatus, ThreadStatus};
 use crate::{
     prelude::*,
-    sched::priority::{AtomicPriority, Priority},
+    sched::{
+        priority::{AtomicPriority, Priority},
+        SchedEntity,
+    },
 };
 
 pub mod exception;
@@ -35,6 +38,7 @@ pub struct Thread {
     priority: AtomicPriority,
     /// Thread cpu affinity
     cpu_affinity: SpinLock<CpuSet>,
+    sched_entity: SpinLock<SchedEntity>,
 }
 
 impl Thread {
@@ -42,16 +46,16 @@ impl Thread {
     pub fn new(
         task: Weak<Task>,
         data: impl Send + Sync + Any,
-        status: ThreadStatus,
         priority: Priority,
         cpu_affinity: CpuSet,
     ) -> Self {
         Thread {
             task,
             data: Box::new(data),
-            status: AtomicThreadStatus::new(status),
+            status: AtomicThreadStatus::new(ThreadStatus::Init),
             priority: AtomicPriority::new(priority),
             cpu_affinity: SpinLock::new(cpu_affinity),
+            sched_entity: SpinLock::new(SchedEntity::new(priority)),
         }
     }
 
@@ -64,6 +68,10 @@ impl Thread {
             .data()
             .downcast_ref::<Arc<Thread>>()
             .cloned()
+    }
+
+    pub fn task(&self) -> &Weak<Task> {
+        &self.task
     }
 
     /// Gets the Thread from task's data.
@@ -123,6 +131,10 @@ impl Thread {
     /// Updates the cpu affinity with the new value.
     pub fn set_cpu_affinity(&self, new_cpu_affinity: CpuSet) {
         *self.cpu_affinity.lock() = new_cpu_affinity;
+    }
+
+    pub fn sched_entity(&self) -> &SpinLock<SchedEntity> {
+        &self.sched_entity
     }
 
     pub fn yield_now() {

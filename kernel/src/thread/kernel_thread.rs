@@ -5,7 +5,7 @@ use ostd::{
     task::{Task, TaskOptions},
 };
 
-use super::{status::ThreadStatus, Thread};
+use super::Thread;
 use crate::{prelude::*, sched::priority::Priority};
 
 /// The inner data of a kernel thread
@@ -53,13 +53,11 @@ pub fn create_new_kernel_task(mut thread_options: ThreadOptions) -> Arc<Task> {
     Arc::new_cyclic(|weak_task| {
         let thread = {
             let kernel_thread = KernelThread;
-            let status = ThreadStatus::Init;
             let priority = thread_options.priority;
             let cpu_affinity = thread_options.cpu_affinity;
             Arc::new(Thread::new(
                 weak_task.clone(),
                 kernel_thread,
-                status,
                 priority,
                 cpu_affinity,
             ))
