@@ -14,6 +14,14 @@ pub fn sys_madvise(
         "start = 0x{:x}, len = 0x{:x}, behavior = {:?}",
         start, len, behavior
     );
+
+    if start % PAGE_SIZE != 0 {
+        return_errno_with_message!(Errno::EINVAL, "the start address should be page aligned");
+    }
+    if len == 0 {
+        return Ok(SyscallReturn::Return(0));
+    }
+
     match behavior {
         MadviseBehavior::MADV_NORMAL
         | MadviseBehavior::MADV_SEQUENTIAL
@@ -33,16 +41,8 @@ pub fn sys_madvise(
 }
 
 fn madv_free(start: Vaddr, len: usize, ctx: &Context) -> Result<()> {
-    if start % PAGE_SIZE != 0 {
-        return_errno_with_message!(Errno::EINVAL, "the start address should be page aligned");
-    }
-
     if len % PAGE_SIZE != 0 {
-        return_errno_with_message!(Errno::EINVAL, "the length should be page aligned");
-    }
-
-    if len == 0 {
-        return_errno_with_message!(Errno::EINVAL, "madv_free len cannot be zero");
+        return Ok(());
     }
 
     let root_vmar = ctx.process.root_vmar();
