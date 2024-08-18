@@ -44,6 +44,7 @@ jobs:
           - lmbench-select-file
           - lmbench-fs-create-delete-files-0k
           - lmbench-fs-create-delete-files-10k
+          - lmbench-fcntl
           # Mmap-related benchmarks
           - lmbench-pagefault
           - lmbench-mmap-bandwidth
