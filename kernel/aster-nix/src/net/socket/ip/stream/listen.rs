@@ -23,8 +23,11 @@ impl ListenStream {
         bound_socket: AnyBoundSocket,
         backlog: usize,
     ) -> core::result::Result<Self, (Error, AnyBoundSocket)> {
+        const SOMAXCONN: usize = 4096;
+        let somaxconn = SOMAXCONN.min(backlog);
+
         let listen_stream = Self {
-            backlog,
+            backlog: somaxconn,
             bound_socket,
             backlog_sockets: RwLock::new(Vec::new()),
         };
