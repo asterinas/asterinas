@@ -23,7 +23,7 @@ use crate::{
 /// # Example
 ///
 /// ```rust
-/// use ostd::{cpu_local, cpu::this_cpu};
+/// use ostd::{cpu_local, cpu::PinCurrentCpu, task::disable_preempt};
 /// use core::{sync::atomic::{AtomicU32, Ordering}, cell::Cell};
 ///
 /// cpu_local! {
@@ -32,16 +32,12 @@ use crate::{
 /// }
 ///
 /// fn not_an_atomic_function() {
-///     let ref_of_foo = FOO.get_on_cpu(this_cpu());
-///     // Note that the value of `FOO` here doesn't necessarily equal to the value
-///     // of `FOO` of exactly the __current__ CPU. Since that task may be preempted
-///     // and moved to another CPU since `ref_of_foo` is created.
+///     let preempt_guard = disable_preempt();
+///     let ref_of_foo = FOO.get_on_cpu(preempt_guard.current_cpu());
 ///     let val_of_foo = ref_of_foo.load(Ordering::Relaxed);
 ///     println!("FOO VAL: {}", val_of_foo);
 ///
 ///     let bar_guard = BAR.borrow_irq_disabled();
-///     // Here the value of `BAR` is always the one in the __current__ CPU since
-///     // interrupts are disabled and we do not explicitly yield execution here.
 ///     let val_of_bar = bar_guard.get();
 ///     println!("BAR VAL: {}", val_of_bar);
 /// }

@@ -12,7 +12,7 @@ use core::{
 };
 
 use crate::{
-    task::{disable_preempt, DisablePreemptGuard},
+    task::{disable_preempt, DisabledPreemptGuard},
     trap::{disable_local, DisabledLocalIrqGuard},
 };
 
@@ -54,7 +54,7 @@ pub trait Guardian {
 pub struct PreemptDisabled;
 
 impl Guardian for PreemptDisabled {
-    type Guard = DisablePreemptGuard;
+    type Guard = DisabledPreemptGuard;
 
     fn guard() -> Self::Guard {
         disable_preempt()

@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use ostd::{
-    cpu::{num_cpus, this_cpu},
+    cpu::{num_cpus, PinCurrentCpu},
     task::{
         scheduler::{inject_scheduler, EnqueueFlags, LocalRunQueue, Scheduler, UpdateFlags},
         AtomicCpuId, Priority, Task,
     },
+    trap::disable_local,
 };
 
 use crate::prelude::*;
@@ -71,13 +72,15 @@ impl<T: Sync + Send + PreemptSchedInfo> Scheduler<T> for PreemptScheduler<T> {
     }
 
     fn local_rq_with(&self, f: &mut dyn FnMut(&dyn LocalRunQueue<T>)) {
-        let local_rq: &PreemptRunQueue<T> = &self.rq[this_cpu() as usize].disable_irq().lock();
+        let irq_guard = disable_local();
+        let local_rq: &PreemptRunQueue<T> = &self.rq[irq_guard.current_cpu() as usize].lock();
         f(local_rq);
     }
 
     fn local_mut_rq_with(&self, f: &mut dyn FnMut(&mut dyn LocalRunQueue<T>)) {
+        let irq_guard = disable_local();
         let local_rq: &mut PreemptRunQueue<T> =
-            &mut self.rq[this_cpu() as usize].disable_irq().lock();
+            &mut self.rq[irq_guard.current_cpu() as usize].lock();
         f(local_rq);
     }
 }

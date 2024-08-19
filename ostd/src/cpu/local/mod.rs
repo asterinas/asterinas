@@ -98,7 +98,7 @@ pub unsafe fn init_on_bsp() {
     let num_cpus = super::num_cpus();
 
     let mut cpu_local_storages = Vec::with_capacity(num_cpus as usize - 1);
-    for cpu_i in 1..num_cpus {
+    for _ in 1..num_cpus {
         let ap_pages = {
             let nbytes = (bsp_end_va - bsp_base_va).align_up(PAGE_SIZE);
             page::allocator::alloc_contiguous(nbytes, |_| KernelMeta::default()).unwrap()
@@ -116,22 +116,10 @@ pub unsafe fn init_on_bsp() {
             );
         }
 
-        // SAFETY: bytes `0:4` are reserved for storing CPU ID.
-        unsafe {
-            (ap_pages_ptr as *mut u32).write(cpu_i);
-        }
-
         cpu_local_storages.push(ap_pages);
     }
 
     CPU_LOCAL_STORAGES.call_once(|| cpu_local_storages);
-
-    // Write the CPU ID of BSP to the first 4 bytes of the CPU-local area.
-    let bsp_cpu_id_ptr = bsp_base_va as *mut u32;
-    // SAFETY: the first 4 bytes is reserved for storing CPU ID.
-    unsafe {
-        bsp_cpu_id_ptr.write(0);
-    }
 
     arch::cpu::local::set_base(bsp_base_va as u64);
 
