@@ -153,6 +153,7 @@ dependencies = [
  "ascii",
  "aster-block",
  "aster-console",
+ "aster-framebuffer",
  "aster-input",
  "aster-network",
  "aster-rights",
@@ -166,6 +167,7 @@ dependencies = [
  "bytemuck",
  "bytemuck_derive",
  "cfg-if",
+ "component",
  "controlled",
  "core2",
  "cpio-decoder",
@@ -260,19 +262,6 @@ dependencies = [
  "smoltcp",
  "spin 0.9.8",
  "typeflags-util",
-]
-
-[[package]]
-name = "asterinas"
-version = "0.4.0"
-dependencies = [
- "aster-framebuffer",
- "aster-nix",
- "aster-time",
- "component",
- "id-alloc",
- "ostd",
- "x86_64 0.14.11",
 ]
 
 [[package]]

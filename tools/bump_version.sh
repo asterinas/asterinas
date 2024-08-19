@@ -126,7 +126,7 @@ update_package_version ${OSTD_TEST_RUNNER_CARGO_TOML_PATH}
 update_ostd_dep_version ${OSTD_TEST_RUNNER_CARGO_TOML_PATH}
 
 # Automatically bump Cargo.lock file
-cargo update -p asterinas --precise $new_version
+cargo update -p aster-nix --precise $new_version
 
 # Update Docker image versions in README files
 update_image_versions ${ASTER_SRC_DIR}/README.md
@@ -152,4 +152,4 @@ update_image_versions $GET_STARTED_PATH
 # `-n` is used to avoid adding a '\n' in the VERSION file.
 echo -n "${new_version}" > ${VERSION_PATH}
 
-echo "Bumped Asterinas & OSDK version to $new_version"
+echo "Bumped Asterinas OSTD & OSDK version to $new_version"
