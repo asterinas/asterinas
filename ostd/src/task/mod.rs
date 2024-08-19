@@ -9,6 +9,6 @@ pub mod scheduler;
 mod task;
 
 pub use self::{
-    preempt::{disable_preempt, DisablePreemptGuard},
+    preempt::{disable_preempt, DisabledPreemptGuard},
     task::{AtomicCpuId, Priority, Task, TaskAdapter, TaskContextApi, TaskOptions},
 };

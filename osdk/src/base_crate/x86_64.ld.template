@@ -119,10 +119,6 @@ SECTIONS
     . = ALIGN(4096);
     .cpu_local              : AT(ADDR(.cpu_local) - KERNEL_VMA) {
         __cpu_local_start = .;
-
-        # These 4 bytes are used to store the CPU ID.
-        . += 4;
-        
         KEEP(*(SORT(.cpu_local)))
         __cpu_local_end = .;
     }

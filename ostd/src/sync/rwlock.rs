@@ -14,7 +14,7 @@ use core::{
 };
 
 use crate::{
-    task::{disable_preempt, DisablePreemptGuard},
+    task::{disable_preempt, DisabledPreemptGuard},
     trap::{disable_local, DisabledLocalIrqGuard},
 };
 
@@ -544,7 +544,7 @@ unsafe impl<T: ?Sized + Sync, R: Deref<Target = RwLock<T>> + Clone + Sync> Sync
 
 enum InnerGuard {
     IrqGuard(DisabledLocalIrqGuard),
-    PreemptGuard(DisablePreemptGuard),
+    PreemptGuard(DisabledPreemptGuard),
 }
 
 impl InnerGuard {

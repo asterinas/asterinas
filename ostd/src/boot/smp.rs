@@ -113,9 +113,11 @@ pub fn register_ap_entry(entry: fn() -> !) {
 fn ap_early_entry(local_apic_id: u32) -> ! {
     crate::arch::enable_cpu_features();
 
-    // SAFETY: we are on the AP.
+    // SAFETY: we are on the AP and they are only called once with the correct
+    // CPU ID.
     unsafe {
         cpu::local::init_on_ap(local_apic_id);
+        cpu::set_this_cpu_id(local_apic_id);
     }
 
     trap::init();

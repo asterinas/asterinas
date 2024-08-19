@@ -42,7 +42,7 @@ use crate::{
         page_prop::PageProperty,
         Paddr, PagingConstsTrait, PagingLevel, PAGE_SIZE,
     },
-    task::{disable_preempt, DisablePreemptGuard},
+    task::{disable_preempt, DisabledPreemptGuard},
 };
 
 /// The raw handle to a page table node.
@@ -190,11 +190,11 @@ pub(super) struct PageTableNode<
     [(); C::NR_LEVELS as usize]:,
 {
     pub(super) page: Page<PageTablePageMeta<E, C>>,
-    preempt_guard: DisablePreemptGuard,
+    preempt_guard: DisabledPreemptGuard,
 }
 
-// FIXME: We cannot `#[derive(Debug)]` here due to `DisablePreemptGuard`. Should we skip
-// this field or implement the `Debug` trait also for `DisablePreemptGuard`?
+// FIXME: We cannot `#[derive(Debug)]` here due to `DisabledPreemptGuard`. Should we skip
+// this field or implement the `Debug` trait also for `DisabledPreemptGuard`?
 impl<E, C> fmt::Debug for PageTableNode<E, C>
 where
     E: PageTableEntryTrait,

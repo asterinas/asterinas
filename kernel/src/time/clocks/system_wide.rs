@@ -6,9 +6,10 @@ use core::time::Duration;
 use aster_time::read_monotonic_time;
 use ostd::{
     arch::timer::Jiffies,
-    cpu::{num_cpus, this_cpu},
+    cpu::{num_cpus, PinCurrentCpu},
     cpu_local,
     sync::SpinLock,
+    task::disable_preempt,
 };
 use paste::paste;
 use spin::Once;
@@ -35,7 +36,11 @@ impl RealTimeClock {
 
     /// Get the cpu-local system-wide `TimerManager` singleton of this clock.
     pub fn timer_manager() -> &'static Arc<TimerManager> {
-        CLOCK_REALTIME_MANAGER.get_on_cpu(this_cpu()).get().unwrap()
+        let preempt_guard = disable_preempt();
+        CLOCK_REALTIME_MANAGER
+            .get_on_cpu(preempt_guard.current_cpu())
+            .get()
+            .unwrap()
     }
 }
 
@@ -53,8 +58,9 @@ impl MonotonicClock {
 
     /// Get the cpu-local system-wide `TimerManager` singleton of this clock.
     pub fn timer_manager() -> &'static Arc<TimerManager> {
+        let preempt_guard = disable_preempt();
         CLOCK_MONOTONIC_MANAGER
-            .get_on_cpu(this_cpu())
+            .get_on_cpu(preempt_guard.current_cpu())
             .get()
             .unwrap()
     }
@@ -135,7 +141,11 @@ impl BootTimeClock {
 
     /// Get the cpu-local system-wide `TimerManager` singleton of this clock.
     pub fn timer_manager() -> &'static Arc<TimerManager> {
-        CLOCK_BOOTTIME_MANAGER.get_on_cpu(this_cpu()).get().unwrap()
+        let preempt_guard = disable_preempt();
+        CLOCK_BOOTTIME_MANAGER
+            .get_on_cpu(preempt_guard.current_cpu())
+            .get()
+            .unwrap()
     }
 }
 

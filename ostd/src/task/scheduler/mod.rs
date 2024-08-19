@@ -12,7 +12,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use spin::Once;
 
 use super::{preempt::cpu_local, processor, task::Task};
-use crate::{arch::timer, cpu::this_cpu, prelude::*};
+use crate::{arch::timer, cpu::PinCurrentCpu, prelude::*, task::disable_preempt};
 
 /// Injects a scheduler implementation into framework.
 ///
@@ -140,8 +140,9 @@ pub(crate) fn unpark_target(runnable: Arc<Task>) {
         .enqueue(runnable, EnqueueFlags::Wake);
     if need_preempt_info.is_some() {
         let cpu_id = need_preempt_info.unwrap();
+        let preempt_guard = disable_preempt();
         // FIXME: send IPI to set remote CPU's need_preempt if needed.
-        if cpu_id == this_cpu() {
+        if cpu_id == preempt_guard.current_cpu() {
             cpu_local::set_need_preempt();
         }
     }
@@ -163,8 +164,9 @@ pub(super) fn run_new_task(runnable: Arc<Task>) {
         .enqueue(runnable, EnqueueFlags::Spawn);
     if need_preempt_info.is_some() {
         let cpu_id = need_preempt_info.unwrap();
+        let preempt_guard = disable_preempt();
         // FIXME: send IPI to set remote CPU's need_preempt if needed.
-        if cpu_id == this_cpu() {
+        if cpu_id == preempt_guard.current_cpu() {
             cpu_local::set_need_preempt();
         }
     }

@@ -11,43 +11,85 @@ cfg_if::cfg_if! {
 }
 
 use alloc::vec::Vec;
-use core::sync::atomic::{AtomicU32, Ordering};
 
 use bitvec::{
     prelude::{BitVec, Lsb0},
     slice::IterOnes,
 };
+use local::cpu_local_cell;
+use spin::Once;
 
-use crate::arch::{self, boot::smp::get_num_processors};
+use crate::{
+    arch::boot::smp::get_num_processors, task::DisabledPreemptGuard, trap::DisabledLocalIrqGuard,
+};
 
-/// The number of CPUs. Zero means uninitialized.
-static NUM_CPUS: AtomicU32 = AtomicU32::new(0);
+/// The number of CPUs.
+static NUM_CPUS: Once<u32> = Once::new();
 
 /// Initializes the number of CPUs.
 ///
 /// # Safety
 ///
-/// The caller must ensure that this function is called only once at the
-/// correct time when the number of CPUs is available from the platform.
-pub unsafe fn init() {
+/// The caller must ensure that this function is called only once on the BSP
+/// at the correct time when the number of CPUs is available from the platform.
+pub(crate) unsafe fn init_num_cpus() {
     let num_processors = get_num_processors().unwrap_or(1);
-    NUM_CPUS.store(num_processors, Ordering::Release)
+    NUM_CPUS.call_once(|| num_processors);
+}
+
+/// Initializes the number of the current CPU.
+///
+/// # Safety
+///
+/// The caller must ensure that this function is called only once on the
+/// correct CPU with the correct CPU ID.
+pub(crate) unsafe fn set_this_cpu_id(id: u32) {
+    CURRENT_CPU.store(id);
 }
 
 /// Returns the number of CPUs.
 pub fn num_cpus() -> u32 {
-    let num = NUM_CPUS.load(Ordering::Acquire);
-    debug_assert_ne!(num, 0, "The number of CPUs is not initialized");
-    num
+    debug_assert!(
+        NUM_CPUS.get().is_some(),
+        "The number of CPUs is not initialized"
+    );
+    // SAFETY: The number of CPUs is initialized. The unsafe version is used
+    // to avoid the overhead of the check.
+    unsafe { *NUM_CPUS.get_unchecked() }
 }
 
-/// Returns the ID of this CPU.
+/// A marker trait for guard types that can "pin" the current task to the
+/// current CPU.
 ///
-/// The CPU ID is strategically placed at the beginning of the CPU local storage area.
-pub fn this_cpu() -> u32 {
-    // SAFETY: the cpu ID is stored at the beginning of the cpu local area, provided
-    // by the linker script.
-    unsafe { (arch::cpu::local::get_base() as usize as *mut u32).read() }
+/// Such guard types include [`DisabledLocalIrqGuard`] and
+/// [`DisabledPreemptGuard`]. When such guards exist, the CPU executing the
+/// current task is pinned. So getting the current CPU ID or CPU-local
+/// variables are safe.
+///
+/// # Safety
+///
+/// The implementor must ensure that the current task is pinned to the current
+/// CPU while any one of the instances of the implemented structure exists.
+pub unsafe trait PinCurrentCpu {
+    /// Returns the number of the current CPU.
+    fn current_cpu(&self) -> u32 {
+        let id = CURRENT_CPU.load();
+        debug_assert_ne!(id, u32::MAX, "This CPU is not initialized");
+        id
+    }
+}
+
+// SAFETY: When IRQs are disabled, the task cannot be passively preempted and
+// migrates to another CPU. If the task actively calls `yield`, it will not be
+// successful either.
+unsafe impl PinCurrentCpu for DisabledLocalIrqGuard {}
+// SAFETY: When preemption is disabled, the task cannot be preempted and migrates
+// to another CPU.
+unsafe impl PinCurrentCpu for DisabledPreemptGuard {}
+
+cpu_local_cell! {
+    /// The number of the current CPU.
+    static CURRENT_CPU: u32 = u32::MAX;
 }
 
 /// A subset of all CPUs in the system.

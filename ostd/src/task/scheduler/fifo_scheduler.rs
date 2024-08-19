@@ -4,9 +4,9 @@ use alloc::{boxed::Box, collections::VecDeque, sync::Arc, vec::Vec};
 
 use super::{inject_scheduler, EnqueueFlags, LocalRunQueue, Scheduler, UpdateFlags};
 use crate::{
-    cpu::{num_cpus, this_cpu},
+    cpu::{num_cpus, PinCurrentCpu},
     sync::SpinLock,
-    task::{AtomicCpuId, Task},
+    task::{disable_preempt, AtomicCpuId, Task},
 };
 
 pub fn init() {
@@ -61,12 +61,18 @@ impl<T: FifoSchedInfo + Send + Sync> Scheduler<T> for FifoScheduler<T> {
     }
 
     fn local_rq_with(&self, f: &mut dyn FnMut(&dyn LocalRunQueue<T>)) {
-        let local_rq: &FifoRunQueue<T> = &self.rq[this_cpu() as usize].disable_irq().lock();
+        let preempt_guard = disable_preempt();
+        let local_rq: &FifoRunQueue<T> = &self.rq[preempt_guard.current_cpu() as usize]
+            .disable_irq()
+            .lock();
         f(local_rq);
     }
 
     fn local_mut_rq_with(&self, f: &mut dyn FnMut(&mut dyn LocalRunQueue<T>)) {
-        let local_rq: &mut FifoRunQueue<T> = &mut self.rq[this_cpu() as usize].disable_irq().lock();
+        let preempt_guard = disable_preempt();
+        let local_rq: &mut FifoRunQueue<T> = &mut self.rq[preempt_guard.current_cpu() as usize]
+            .disable_irq()
+            .lock();
         f(local_rq);
     }
 }

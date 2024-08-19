@@ -4,7 +4,7 @@
 //! on a CPU with a single 32-bit, CPU-local integer value.
 //!
 //! * Bits from 0 to 30 represents an unsigned counter called `guard_count`,
-//!   which is the number of `DisablePreemptGuard` instances held by the
+//!   which is the number of `DisabledPreemptGuard` instances held by the
 //!   current CPU;
 //! * Bit 31 is set to `!need_preempt`, where `need_preempt` is a boolean value
 //!   that will be set by the scheduler when it decides that the current task
