@@ -69,7 +69,7 @@ pub fn init() {
     PAGE_TABLE.call_once(|| SpinLock::new(root_table));
 
     // Enable DMA remapping
-    let mut iommu_regs = IOMMU_REGS.get().unwrap().lock_irq_disabled();
+    let mut iommu_regs = IOMMU_REGS.get().unwrap().lock();
     iommu_regs.enable_dma_remapping(PAGE_TABLE.get().unwrap());
     info!("[IOMMU] DMA remapping enabled");
 }
