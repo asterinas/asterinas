@@ -114,7 +114,6 @@ OSDK_CRATES := \
 	ostd \
 	ostd/libs/linux-bzimage/setup \
 	kernel \
-	kernel/aster-nix \
 	kernel/comps/block \
 	kernel/comps/console \
 	kernel/comps/framebuffer \
