@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use align_ext::AlignExt;
+
 use super::SyscallReturn;
 use crate::prelude::*;
 
@@ -22,6 +24,7 @@ pub fn sys_madvise(
         return Ok(SyscallReturn::Return(0));
     }
 
+    let len = len.align_up(PAGE_SIZE);
     match behavior {
         MadviseBehavior::MADV_NORMAL
         | MadviseBehavior::MADV_SEQUENTIAL
@@ -41,10 +44,6 @@ pub fn sys_madvise(
 }
 
 fn madv_free(start: Vaddr, len: usize, ctx: &Context) -> Result<()> {
-    if len % PAGE_SIZE != 0 {
-        return Ok(());
-    }
-
     let root_vmar = ctx.process.root_vmar();
     let advised_range = start..start + len;
     let _ = root_vmar.destroy(advised_range);
