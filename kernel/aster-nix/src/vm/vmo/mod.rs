@@ -11,7 +11,7 @@ use align_ext::AlignExt;
 use aster_rights::Rights;
 use ostd::{
     collections::xarray::{CursorMut, XArray},
-    mm::{Frame, FrameAllocOptions, VmReader, VmWriter},
+    mm::{Frame, FrameAllocOptions, Infallible, VmReader, VmWriter},
 };
 
 use crate::prelude::*;
@@ -304,7 +304,7 @@ impl Vmo_ {
         let read_len = buf.len();
         let read_range = offset..(offset + read_len);
         let mut read_offset = offset % PAGE_SIZE;
-        let mut buf_writer: VmWriter = buf.into();
+        let mut buf_writer: VmWriter<Infallible> = buf.into();
 
         let read = move |page: Frame| {
             page.reader().skip(read_offset).read(&mut buf_writer);
@@ -319,7 +319,7 @@ impl Vmo_ {
         let write_len = buf.len();
         let write_range = offset..(offset + write_len);
         let mut write_offset = offset % PAGE_SIZE;
-        let mut buf_reader: VmReader = buf.into();
+        let mut buf_reader: VmReader<Infallible> = buf.into();
 
         let mut write = move |page: Frame| {
             page.writer().skip(write_offset).write(&mut buf_reader);

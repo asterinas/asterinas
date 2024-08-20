@@ -3,7 +3,7 @@
 use align_ext::AlignExt;
 use int_to_c_enum::TryFromInt;
 use ostd::{
-    mm::{Frame, Segment, VmReader, VmWriter},
+    mm::{Frame, Infallible, Segment, VmReader, VmWriter},
     sync::WaitQueue,
 };
 
@@ -423,7 +423,7 @@ impl<'a> BioSegment {
     }
 
     /// Returns a reader to read data from it.
-    pub fn reader(&'a self) -> VmReader<'a> {
+    pub fn reader(&'a self) -> VmReader<'a, Infallible> {
         self.pages
             .reader()
             .skip(self.offset.value())
@@ -431,7 +431,7 @@ impl<'a> BioSegment {
     }
 
     /// Returns a writer to write data into it.
-    pub fn writer(&'a self) -> VmWriter<'a> {
+    pub fn writer(&'a self) -> VmWriter<'a, Infallible> {
         self.pages
             .writer()
             .skip(self.offset.value())

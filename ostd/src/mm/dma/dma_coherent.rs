@@ -13,7 +13,7 @@ use crate::{
         io::VmIoOnce,
         kspace::{paddr_to_vaddr, KERNEL_PAGE_TABLE},
         page_prop::CachePolicy,
-        HasPaddr, Paddr, PodOnce, Segment, VmIo, VmReader, VmWriter, PAGE_SIZE,
+        HasPaddr, Infallible, Paddr, PodOnce, Segment, VmIo, VmReader, VmWriter, PAGE_SIZE,
     },
     prelude::*,
 };
@@ -192,12 +192,12 @@ impl VmIoOnce for DmaCoherent {
 
 impl<'a> DmaCoherent {
     /// Returns a reader to read data from it.
-    pub fn reader(&'a self) -> VmReader<'a> {
+    pub fn reader(&'a self) -> VmReader<'a, Infallible> {
         self.inner.vm_segment.reader()
     }
 
     /// Returns a writer to write data into it.
-    pub fn writer(&'a self) -> VmWriter<'a> {
+    pub fn writer(&'a self) -> VmWriter<'a, Infallible> {
         self.inner.vm_segment.writer()
     }
 }

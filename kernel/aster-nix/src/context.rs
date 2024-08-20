@@ -5,7 +5,7 @@
 use core::mem;
 
 use ostd::{
-    mm::{UserSpace, VmReader, VmSpace, VmWriter},
+    mm::{Fallible, Infallible, VmReader, VmSpace, VmWriter},
     task::Task,
 };
 
@@ -56,14 +56,14 @@ impl CurrentUserSpace {
     /// Creates a reader to read data from the user space of the current task.
     ///
     /// Returns `Err` if the `vaddr` and `len` do not represent a user space memory range.
-    pub fn reader(&self, vaddr: Vaddr, len: usize) -> Result<VmReader<'_, UserSpace>> {
+    pub fn reader(&self, vaddr: Vaddr, len: usize) -> Result<VmReader<'_, Fallible>> {
         Ok(self.0.reader(vaddr, len)?)
     }
 
     /// Creates a writer to write data into the user space.
     ///
     /// Returns `Err` if the `vaddr` and `len` do not represent a user space memory range.
-    pub fn writer(&self, vaddr: Vaddr, len: usize) -> Result<VmWriter<'_, UserSpace>> {
+    pub fn writer(&self, vaddr: Vaddr, len: usize) -> Result<VmWriter<'_, Fallible>> {
         Ok(self.0.writer(vaddr, len)?)
     }
 
@@ -76,7 +76,7 @@ impl CurrentUserSpace {
     /// If the destination `VmWriter` (`dest`) is empty, this function still
     /// checks if the current task and user space are available. If they are,
     /// it returns `Ok`.
-    pub fn read_bytes(&self, src: Vaddr, dest: &mut VmWriter<'_>) -> Result<()> {
+    pub fn read_bytes(&self, src: Vaddr, dest: &mut VmWriter<'_, Infallible>) -> Result<()> {
         let copy_len = dest.avail();
 
         if copy_len > 0 {
@@ -107,7 +107,7 @@ impl CurrentUserSpace {
     /// If the source `VmReader` (`src`) is empty, this function still checks if
     /// the current task and user space are available. If they are, it returns
     /// `Ok`.
-    pub fn write_bytes(&self, dest: Vaddr, src: &mut VmReader<'_>) -> Result<()> {
+    pub fn write_bytes(&self, dest: Vaddr, src: &mut VmReader<'_, Infallible>) -> Result<()> {
         let copy_len = src.remain();
 
         if copy_len > 0 {
@@ -150,7 +150,7 @@ pub trait ReadCString {
     fn read_cstring(&mut self) -> Result<CString>;
 }
 
-impl<'a> ReadCString for VmReader<'a, UserSpace> {
+impl<'a> ReadCString for VmReader<'a, Fallible> {
     /// This implementation is inspired by
     /// the `do_strncpy_from_user` function in Linux kernel.
     /// The original Linux implementation can be found at:

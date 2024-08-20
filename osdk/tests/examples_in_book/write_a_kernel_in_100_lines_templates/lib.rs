@@ -13,8 +13,8 @@ use alloc::vec;
 use ostd::arch::qemu::{exit_qemu, QemuExitCode};
 use ostd::cpu::UserContext;
 use ostd::mm::{
-    CachePolicy, FrameAllocOptions, PageFlags, PageProperty, Vaddr, VmIo, VmSpace, VmWriter,
-    PAGE_SIZE,
+    CachePolicy, FallibleVmRead, FallibleVmWrite, FrameAllocOptions, PageFlags, PageProperty,
+    Vaddr, VmIo, VmSpace, VmWriter, PAGE_SIZE,
 };
 use ostd::prelude::*;
 use ostd::task::{Task, TaskOptions};

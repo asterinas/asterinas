@@ -15,9 +15,12 @@ use core::mem::ManuallyDrop;
 
 pub use segment::Segment;
 
-use super::page::{
-    meta::{FrameMeta, MetaSlot, PageMeta, PageUsage},
-    DynPage, Page,
+use super::{
+    page::{
+        meta::{FrameMeta, MetaSlot, PageMeta, PageUsage},
+        DynPage, Page,
+    },
+    Infallible,
 };
 use crate::{
     mm::{
@@ -111,7 +114,7 @@ impl HasPaddr for Frame {
 
 impl<'a> Frame {
     /// Returns a reader to read data from it.
-    pub fn reader(&'a self) -> VmReader<'a> {
+    pub fn reader(&'a self) -> VmReader<'a, Infallible> {
         // SAFETY:
         // - The memory range points to untyped memory.
         // - The frame is alive during the lifetime `'a`.
@@ -120,7 +123,7 @@ impl<'a> Frame {
     }
 
     /// Returns a writer to write data into it.
-    pub fn writer(&'a self) -> VmWriter<'a> {
+    pub fn writer(&'a self) -> VmWriter<'a, Infallible> {
         // SAFETY:
         // - The memory range points to untyped memory.
         // - The frame is alive during the lifetime `'a`.
@@ -163,7 +166,7 @@ impl VmIo for alloc::vec::Vec<Frame> {
 
         let num_skip_pages = offset / PAGE_SIZE;
         let mut start = offset % PAGE_SIZE;
-        let mut buf_writer: VmWriter = buf.into();
+        let mut buf_writer: VmWriter<Infallible> = buf.into();
         for frame in self.iter().skip(num_skip_pages) {
             let read_len = frame.reader().skip(start).read(&mut buf_writer);
             if read_len == 0 {
@@ -183,7 +186,7 @@ impl VmIo for alloc::vec::Vec<Frame> {
 
         let num_skip_pages = offset / PAGE_SIZE;
         let mut start = offset % PAGE_SIZE;
-        let mut buf_reader: VmReader = buf.into();
+        let mut buf_reader: VmReader<Infallible> = buf.into();
         for frame in self.iter().skip(num_skip_pages) {
             let write_len = frame.writer().skip(start).write(&mut buf_reader);
             if write_len == 0 {
