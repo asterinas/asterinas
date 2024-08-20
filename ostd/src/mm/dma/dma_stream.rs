@@ -11,7 +11,7 @@ use crate::{
     error::Error,
     mm::{
         dma::{dma_type, Daddr, DmaType},
-        HasPaddr, Paddr, Segment, VmIo, VmReader, VmWriter, PAGE_SIZE,
+        HasPaddr, Infallible, Paddr, Segment, VmIo, VmReader, VmWriter, PAGE_SIZE,
     },
 };
 
@@ -220,7 +220,7 @@ impl VmIo for DmaStream {
 
 impl<'a> DmaStream {
     /// Returns a reader to read data from it.
-    pub fn reader(&'a self) -> Result<VmReader<'a>, Error> {
+    pub fn reader(&'a self) -> Result<VmReader<'a, Infallible>, Error> {
         if self.inner.direction == DmaDirection::ToDevice {
             return Err(Error::AccessDenied);
         }
@@ -228,7 +228,7 @@ impl<'a> DmaStream {
     }
 
     /// Returns a writer to write data into it.
-    pub fn writer(&'a self) -> Result<VmWriter<'a>, Error> {
+    pub fn writer(&'a self) -> Result<VmWriter<'a, Infallible>, Error> {
         if self.inner.direction == DmaDirection::FromDevice {
             return Err(Error::AccessDenied);
         }

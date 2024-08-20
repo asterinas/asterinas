@@ -11,7 +11,8 @@ use core::ops::Range;
 use bitvec::{array::BitArray, prelude::Lsb0};
 use ostd::{
     mm::{
-        Daddr, DmaDirection, DmaStream, FrameAllocOptions, HasDaddr, VmReader, VmWriter, PAGE_SIZE,
+        Daddr, DmaDirection, DmaStream, FrameAllocOptions, HasDaddr, Infallible, VmReader,
+        VmWriter, PAGE_SIZE,
     },
     sync::{RwLock, SpinLock},
 };
@@ -233,12 +234,12 @@ impl DmaSegment {
         self.size
     }
 
-    pub fn reader(&self) -> Result<VmReader<'_>, ostd::Error> {
+    pub fn reader(&self) -> Result<VmReader<'_, Infallible>, ostd::Error> {
         let offset = self.start_addr - self.dma_stream.daddr();
         Ok(self.dma_stream.reader()?.skip(offset).limit(self.size))
     }
 
-    pub fn writer(&self) -> Result<VmWriter<'_>, ostd::Error> {
+    pub fn writer(&self) -> Result<VmWriter<'_, Infallible>, ostd::Error> {
         let offset = self.start_addr - self.dma_stream.daddr();
         Ok(self.dma_stream.writer()?.skip(offset).limit(self.size))
     }

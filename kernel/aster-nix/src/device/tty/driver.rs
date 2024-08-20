@@ -2,7 +2,7 @@
 
 #![allow(dead_code)]
 
-use ostd::mm::VmReader;
+use ostd::mm::{Infallible, VmReader};
 use spin::Once;
 
 use crate::{
@@ -78,7 +78,7 @@ impl Default for TtyDriver {
     }
 }
 
-fn console_input_callback(mut reader: VmReader) {
+fn console_input_callback(mut reader: VmReader<Infallible>) {
     let tty_driver = get_tty_driver();
     while reader.remain() > 0 {
         let ch = reader.read_val().unwrap();

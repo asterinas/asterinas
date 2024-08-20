@@ -14,7 +14,7 @@ use core::ops::Range;
 use spin::Once;
 
 use super::{
-    io::UserSpace,
+    io::Fallible,
     kspace::KERNEL_PAGE_TABLE,
     page_table::{PageTable, UserMode},
     PageFlags, PageProperty, VmReader, VmWriter,
@@ -192,7 +192,7 @@ impl VmSpace {
     ///
     /// Returns `Err` if this `VmSpace` is not belonged to the user space of the current task
     /// or the `vaddr` and `len` do not represent a user space memory range.
-    pub fn reader(&self, vaddr: Vaddr, len: usize) -> Result<VmReader<'_, UserSpace>> {
+    pub fn reader(&self, vaddr: Vaddr, len: usize) -> Result<VmReader<'_, Fallible>> {
         if current_page_table_paddr() != unsafe { self.pt.root_paddr() } {
             return Err(Error::AccessDenied);
         }
@@ -206,14 +206,14 @@ impl VmSpace {
         // the `VmReader`.
         //
         // SAFETY: The memory range is in user space, as checked above.
-        Ok(unsafe { VmReader::<UserSpace>::from_user_space(vaddr as *const u8, len) })
+        Ok(unsafe { VmReader::<Fallible>::from_user_space(vaddr as *const u8, len) })
     }
 
     /// Creates a writer to write data into the user space.
     ///
     /// Returns `Err` if this `VmSpace` is not belonged to the user space of the current task
     /// or the `vaddr` and `len` do not represent a user space memory range.
-    pub fn writer(&self, vaddr: Vaddr, len: usize) -> Result<VmWriter<'_, UserSpace>> {
+    pub fn writer(&self, vaddr: Vaddr, len: usize) -> Result<VmWriter<'_, Fallible>> {
         if current_page_table_paddr() != unsafe { self.pt.root_paddr() } {
             return Err(Error::AccessDenied);
         }
@@ -227,7 +227,7 @@ impl VmSpace {
         // the `VmWriter`.
         //
         // SAFETY: The memory range is in user space, as checked above.
-        Ok(unsafe { VmWriter::<UserSpace>::from_user_space(vaddr as *mut u8, len) })
+        Ok(unsafe { VmWriter::<Fallible>::from_user_space(vaddr as *mut u8, len) })
     }
 }
 

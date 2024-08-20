@@ -28,7 +28,10 @@ use spin::Once;
 pub use self::{
     dma::{Daddr, DmaCoherent, DmaDirection, DmaStream, DmaStreamSlice, HasDaddr},
     frame::{options::FrameAllocOptions, Frame, Segment},
-    io::{KernelSpace, PodOnce, UserSpace, VmIo, VmIoOnce, VmReader, VmWriter},
+    io::{
+        Fallible, FallibleVmRead, FallibleVmWrite, Infallible, PodOnce, VmIo, VmIoOnce, VmReader,
+        VmWriter,
+    },
     page_prop::{CachePolicy, PageFlags, PageProperty},
     vm_space::VmSpace,
 };

@@ -5,7 +5,8 @@ use alloc::{collections::LinkedList, sync::Arc};
 use align_ext::AlignExt;
 use ostd::{
     mm::{
-        Daddr, DmaDirection, DmaStream, FrameAllocOptions, HasDaddr, VmReader, VmWriter, PAGE_SIZE,
+        Daddr, DmaDirection, DmaStream, FrameAllocOptions, HasDaddr, Infallible, VmReader,
+        VmWriter, PAGE_SIZE,
     },
     sync::SpinLock,
     Pod,
@@ -52,7 +53,7 @@ impl TxBuffer {
         tx_buffer
     }
 
-    pub fn writer(&self) -> VmWriter<'_> {
+    pub fn writer(&self) -> VmWriter<'_, Infallible> {
         self.dma_stream.writer().unwrap().limit(self.nbytes)
     }
 
@@ -106,7 +107,7 @@ impl RxBuffer {
         self.packet_len = packet_len;
     }
 
-    pub fn packet(&self) -> VmReader<'_> {
+    pub fn packet(&self) -> VmReader<'_, Infallible> {
         self.segment
             .sync(self.header_len..self.header_len + self.packet_len)
             .unwrap();
@@ -117,7 +118,7 @@ impl RxBuffer {
             .limit(self.packet_len)
     }
 
-    pub fn buf(&self) -> VmReader<'_> {
+    pub fn buf(&self) -> VmReader<'_, Infallible> {
         self.segment
             .sync(0..self.header_len + self.packet_len)
             .unwrap();

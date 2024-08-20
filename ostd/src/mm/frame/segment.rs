@@ -9,7 +9,7 @@ use super::Frame;
 use crate::{
     mm::{
         page::{cont_pages::ContPages, meta::FrameMeta, Page},
-        HasPaddr, Paddr, VmIo, VmReader, VmWriter, PAGE_SIZE,
+        HasPaddr, Infallible, Paddr, VmIo, VmReader, VmWriter, PAGE_SIZE,
     },
     Error, Result,
 };
@@ -95,7 +95,7 @@ impl Segment {
 
 impl<'a> Segment {
     /// Returns a reader to read data from it.
-    pub fn reader(&'a self) -> VmReader<'a> {
+    pub fn reader(&'a self) -> VmReader<'a, Infallible> {
         // SAFETY:
         // - The memory range points to untyped memory.
         // - The segment is alive during the lifetime `'a`.
@@ -104,7 +104,7 @@ impl<'a> Segment {
     }
 
     /// Returns a writer to write data into it.
-    pub fn writer(&'a self) -> VmWriter<'a> {
+    pub fn writer(&'a self) -> VmWriter<'a, Infallible> {
         // SAFETY:
         // - The memory range points to untyped memory.
         // - The segment is alive during the lifetime `'a`.
