@@ -239,6 +239,7 @@ check: initramfs $(CARGO_OSDK)
 		(cd $$dir && cargo osdk clippy -- -- -D warnings) || exit 1; \
 	done
 	@make --no-print-directory -C test check
+	@typos
 
 .PHONY: clean
 clean:
