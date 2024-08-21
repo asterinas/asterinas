@@ -215,7 +215,7 @@ pub fn init_kernel_page_table(meta_pages: Vec<Page<MetaPageMeta>>) {
         };
         let mut cursor = kpt.cursor_mut(&from).unwrap();
         for frame_paddr in to.step_by(PAGE_SIZE) {
-            let page = Page::<KernelMeta>::from_unused(frame_paddr, KernelMeta::default());
+            let page = Page::<KernelMeta>::from_free(frame_paddr, KernelMeta::default());
             // SAFETY: we are doing mappings for the kernel.
             unsafe {
                 let _old = cursor.map(page.into(), prop);
