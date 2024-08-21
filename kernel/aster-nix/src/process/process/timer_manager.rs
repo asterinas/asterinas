@@ -187,7 +187,12 @@ impl PosixTimerManager {
 
     /// Finds a POSIX timer by the input `timer_id`.
     pub fn find_posix_timer(&self, timer_id: usize) -> Option<Arc<Timer>> {
-        self.posix_timers.lock()[timer_id].clone()
+        let timers = self.posix_timers.lock();
+        if timer_id < timers.len() {
+            timers[timer_id].clone()
+        } else {
+            None
+        }
     }
 
     /// Removes the POSIX timer with the ID `timer_id`.
