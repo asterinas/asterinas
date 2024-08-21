@@ -188,25 +188,25 @@ impl PosixTimerManager {
     /// Finds a POSIX timer by the input `timer_id`.
     pub fn find_posix_timer(&self, timer_id: usize) -> Option<Arc<Timer>> {
         let timers = self.posix_timers.lock();
-        if timer_id < timers.len() {
-            timers[timer_id].clone()
-        } else {
-            None
+        if timer_id >= timers.len() {
+            return None;
         }
+
+        timers[timer_id].clone()
     }
 
     /// Removes the POSIX timer with the ID `timer_id`.
     pub fn remove_posix_timer(&self, timer_id: usize) -> Option<Arc<Timer>> {
         let mut timers = self.posix_timers.lock();
-        if timer_id < timers.len() {
-            let timer = timers[timer_id].take();
-            if timer.is_some() {
-                // Holding the lock of `posix_timers` is required to operate the `id_allocator`.
-                self.id_allocator.lock().free(timer_id);
-            }
-            timer
-        } else {
-            None
+        if timer_id >= timers.len() {
+            return None;
         }
+
+        let timer = timers[timer_id].take();
+        if timer.is_some() {
+            // Holding the lock of `posix_timers` is required to operate the `id_allocator`.
+            self.id_allocator.lock().free(timer_id);
+        }
+        timer
     }
 }
