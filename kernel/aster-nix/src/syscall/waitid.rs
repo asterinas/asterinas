@@ -15,7 +15,7 @@ pub fn sys_waitid(
     _ctx: &Context,
 ) -> Result<SyscallReturn> {
     // FIXME: what does infoq and rusage use for?
-    let process_filter = ProcessFilter::from_which_and_id(which, upid);
+    let process_filter = ProcessFilter::from_which_and_id(which, upid)?;
     let wait_options = WaitOptions::from_bits(options as u32).expect("Unknown wait options");
     let waited_process = wait_child_exit(process_filter, wait_options)?;
     let pid = waited_process.map_or(0, |process| process.pid());

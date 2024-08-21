@@ -14,14 +14,15 @@ pub enum ProcessFilter {
 
 impl ProcessFilter {
     // used for waitid
-    pub fn from_which_and_id(which: u64, id: u64) -> Self {
+    pub fn from_which_and_id(which: u64, id: u64) -> Result<Self> {
         // Does not support PID_FD now(which = 3)
         // https://elixir.bootlin.com/linux/latest/source/include/uapi/linux/wait.h#L20
         match which {
-            0 => ProcessFilter::Any,
-            1 => ProcessFilter::WithPid(id as Pid),
-            2 => ProcessFilter::WithPgid(id as Pgid),
-            _ => panic!("Unknown id type"),
+            0 => Ok(ProcessFilter::Any),
+            1 => Ok(ProcessFilter::WithPid(id as Pid)),
+            2 => Ok(ProcessFilter::WithPgid(id as Pgid)),
+            3 => todo!(),
+            _ => return_errno_with_message!(Errno::EINVAL, "invalid which"),
         }
     }
 
