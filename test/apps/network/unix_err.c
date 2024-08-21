@@ -47,22 +47,31 @@ FN_TEST(socket_addresses)
 		       "LONG_PATH has a wrong length");
 
 	MAKE_TEST("/tmp/R0", 8, 8, 8, 8, "/tmp/R0");
+	TEST_SUCC(unlink("/tmp/R0"));
 
 	MAKE_TEST("/tmp/R1", 8, 9, 8, 8, "/tmp/R1");
+	TEST_SUCC(unlink("/tmp/R1"));
 
 	MAKE_TEST("/tmp/R2", 6, 6, 8, 7, "/tmp/R");
+	TEST_SUCC(unlink("/tmp/R"));
 
 	MAKE_TEST("/tmp/R3", 7, 7, 8, 8, "/tmp/R3");
+	TEST_SUCC(unlink("/tmp/R3"));
 
 	MAKE_TEST("/tmp/R4", 7, 7, 7, 8, "/tmp/R4");
+	TEST_SUCC(unlink("/tmp/R4"));
 
 	MAKE_TEST("/tmp/R5", 7, 7, 6, 8, "/tmp/R");
+	TEST_SUCC(unlink("/tmp/R5"));
 
 	MAKE_TEST("/tmp/R6", 7, 7, 0, 8, "");
+	TEST_SUCC(unlink("/tmp/R6"));
 
 	MAKE_TEST(LONG_PATH, 107, 107, 108, 108, LONG_PATH);
+	TEST_SUCC(unlink(LONG_PATH));
 
 	MAKE_TEST(LONG_PATH "a", 108, 108, 108, 109, LONG_PATH "a");
+	TEST_SUCC(unlink(LONG_PATH "a"));
 
 #undef LONG_PATH
 #undef MAKE_TEST
@@ -294,3 +303,21 @@ FN_TEST(ns_abs)
 	TEST_SUCC(close(sk));
 }
 END_TEST()
+
+FN_SETUP(cleanup)
+{
+	CHECK(close(sk_unbound));
+
+	CHECK(close(sk_bound));
+
+	CHECK(close(sk_listen));
+
+	CHECK(close(sk_connected));
+
+	CHECK(close(sk_accepted));
+
+	CHECK(unlink(BOUND_ADDR.sun_path));
+
+	CHECK(unlink(LISTEN_ADDR.sun_path));
+}
+END_SETUP()
