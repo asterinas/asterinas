@@ -26,7 +26,7 @@ use core::{
 };
 
 pub use cont_pages::ContPages;
-use meta::{mapping, FrameMeta, MetaSlot, PageMeta, PageUsage};
+use meta::{mapping, FrameMeta, FreeMeta, FreePage, MetaSlot, PageMeta, PageUsage};
 
 use super::{Frame, PagingLevel, PAGE_SIZE};
 use crate::mm::{Paddr, PagingConsts, Vaddr};
@@ -44,7 +44,46 @@ unsafe impl<M: PageMeta> Send for Page<M> {}
 unsafe impl<M: PageMeta> Sync for Page<M> {}
 
 impl<M: PageMeta> Page<M> {
-    /// Get a `Page` handle with a specific usage from a raw, unused page.
+    /// Concurrent-safety page alloc function.
+    ///
+    /// The assurance of safety is facilitated by the function
+    /// `FreePage::try_lock`, which serves as the exclusive gateway for
+    /// allocating `FreePage` instances and ensures that a single referent
+    /// possesses exclusive access to a particular `FreePage` concurrently.
+    pub fn from_freepage(freepage: FreePage, metadata: M) -> Self {
+        let freepage_ptr = freepage.ptr;
+        // SAFETY: The aligned pointer points to a initialized `MetaSlot`.
+        let usage = unsafe { &(*freepage_ptr).usage };
+        // SAFETY: The aligned pointer points to a initialized `MetaSlot`.
+        let ref_count = unsafe { &(*freepage_ptr).ref_count };
+
+        // New page will be the new reference holder.
+        // Hence, the reference count should be added by one.
+        let last_ref_cnt = ref_count.fetch_add(1, Ordering::Relaxed);
+        debug_assert_eq!(last_ref_cnt, 1);
+
+        // Forget the FreePage handle.
+        //
+        // As the page is successfully allocated, its reference count should be
+        // larger than 1 according to the arrangement of `MetaSlot.ref_count`.
+        // Therefore, the `freepage` does not need to be drop to decrease the
+        // reference count.
+        core::mem::forget(freepage);
+
+        usage
+            .compare_exchange(0, M::USAGE as u8, Ordering::SeqCst, Ordering::Relaxed)
+            .expect("page already in use when trying to get a new handle");
+        unsafe {
+            core::ptr::drop_in_place(freepage_ptr as *mut FreeMeta);
+            (freepage_ptr as *mut M).write(metadata);
+        }
+        Self {
+            ptr: freepage_ptr,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Get a `Page` handle with a specific usage from a raw, free page.
     ///
     /// The caller should provide the initial metadata of the page.
     ///
@@ -53,34 +92,12 @@ impl<M: PageMeta> Page<M> {
     /// The function panics if:
     ///  - the physical address is out of bound or not aligned;
     ///  - the page is already in use.
-    pub fn from_unused(paddr: Paddr, metadata: M) -> Self {
-        assert!(paddr % PAGE_SIZE == 0);
-        assert!(paddr < MAX_PADDR.load(Ordering::Relaxed) as Paddr);
-        let vaddr = mapping::page_to_meta::<PagingConsts>(paddr);
-        let ptr = vaddr as *const MetaSlot;
-
-        // SAFETY: The aligned pointer points to an initialized `MetaSlot`.
-        let usage = unsafe { &(*ptr).usage };
-        // SAFETY: The aligned pointer points to an initialized `MetaSlot`.
-        let ref_count = unsafe { &(*ptr).ref_count };
-
-        usage
-            .compare_exchange(0, M::USAGE as u8, Ordering::SeqCst, Ordering::Relaxed)
-            .expect("page already in use when trying to get a new handle");
-
-        let old_ref_count = ref_count.fetch_add(1, Ordering::Relaxed);
-        debug_assert_eq!(old_ref_count, 0);
-
-        // Initialize the metadata
-        // SAFETY: The pointer points to the first byte of the `MetaSlot`
-        // structure, and layout ensured enough space for `M`. The original
-        // value does not represent any object that's needed to be dropped.
-        unsafe { (ptr as *mut M).write(metadata) };
-
-        Self {
-            ptr,
-            _marker: PhantomData,
-        }
+    pub fn from_free(paddr: Paddr, metadata: M) -> Self {
+        let freepage = FreePage::try_lock(paddr).expect(
+            "
+        Freepage is already in use when trying to get a new handle",
+        );
+        Self::from_freepage(freepage, metadata)
     }
 
     /// Check whether the page described at the physical address is allocated.
@@ -219,10 +236,11 @@ impl<M: PageMeta> Drop for Page<M> {
     fn drop(&mut self) {
         let last_ref_cnt = self.ref_count().fetch_sub(1, Ordering::Release);
         debug_assert!(last_ref_cnt > 0);
-        if last_ref_cnt == 1 {
+        if last_ref_cnt == 2 {
             // A fence is needed here with the same reasons stated in the implementation of
             // `Arc::drop`: <https://doc.rust-lang.org/std/sync/struct.Arc.html#method.drop>.
             core::sync::atomic::fence(Ordering::Acquire);
+
             // SAFETY: this is the last reference and is about to be dropped.
             unsafe {
                 meta::drop_as_last::<M>(self.ptr);
@@ -343,7 +361,7 @@ impl Drop for DynPage {
     fn drop(&mut self) {
         let last_ref_cnt = self.ref_count().fetch_sub(1, Ordering::Release);
         debug_assert!(last_ref_cnt > 0);
-        if last_ref_cnt == 1 {
+        if last_ref_cnt == 2 {
             // A fence is needed here with the same reasons stated in the implementation of
             // `Arc::drop`: <https://doc.rust-lang.org/std/sync/struct.Arc.html#method.drop>.
             core::sync::atomic::fence(Ordering::Acquire);
@@ -368,11 +386,12 @@ impl Drop for DynPage {
                         meta::drop_as_last::<meta::HeapMeta>(self.ptr);
                     }
                     // The following pages don't have metadata and can't be dropped.
-                    PageUsage::Unused
-                    | PageUsage::Reserved
-                    | PageUsage::Kernel
-                    | PageUsage::Meta => {
+                    PageUsage::Reserved | PageUsage::Kernel | PageUsage::Meta => {
                         panic!("dropping a dynamic page with usage {:?}", self.usage());
+                    }
+                    PageUsage::Free => {
+                        // Do not need to manage free page here.
+                        // It will be managed by the [`FreePage`].
                     }
                 }
             }

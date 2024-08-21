@@ -53,7 +53,9 @@ use super::{allocator, Page};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     mm::{
-        paddr_to_vaddr, page_size,
+        paddr_to_vaddr,
+        page::MAX_PADDR,
+        page_size,
         page_table::{boot_pt, PageTableEntryTrait},
         CachePolicy, Paddr, PageFlags, PageProperty, PagingConstsTrait, PagingLevel,
         PrivilegedPageFlags, Vaddr, PAGE_SIZE,
@@ -67,8 +69,8 @@ pub enum PageUsage {
     // The zero variant is reserved for the unused type. Only an unused page
     // can be designated for one of the other purposes.
     #[allow(dead_code)]
-    /// The page is unused.
-    Unused = 0,
+    /// The page is free, i.e. the page can be used for any purpose.
+    Free = 0,
     /// The page is reserved or unusable. The kernel should not touch it.
     #[allow(dead_code)]
     Reserved = 1,
@@ -103,20 +105,32 @@ pub(in crate::mm) struct MetaSlot {
     _inner: MetaSlotInner,
     /// To store [`PageUsage`].
     pub(super) usage: AtomicU8,
+
+    /// The Reference Count of the page.
+    ///
+    /// Note that the meaning of the reference count is arraged as follows:
+    /// - 0: The page is free and not referenced by anyone.
+    /// - 1: The page is referenced by [`FreePage`] or [`Page`] and is not in
+    ///   use, meaning that the page is to-be-allotted or to-be-released. You
+    ///   can refer to `FreePage::Drop` and `meta::drop_as_last` for more
+    ///   details.
+    /// - others: The page is referenced by `ref_count - 1` handle(s) and is in
+    ///   use.
     pub(super) ref_count: AtomicU32,
 }
 
 pub(super) union MetaSlotInner {
+    _linklist: ManuallyDrop<FreeMeta>,
     _frame: ManuallyDrop<FrameMeta>,
     _pt: ManuallyDrop<PageTablePageMeta>,
 }
 
 // Currently the sizes of the `MetaSlotInner` union variants are no larger
-// than 8 bytes and aligned to 8 bytes. So the size of `MetaSlot` is 16 bytes.
+// than 16 bytes and aligned to 16 bytes. So the size of `MetaSlot` is 24 bytes.
 //
 // Note that the size of `MetaSlot` should be a multiple of 8 bytes to prevent
 // cross-page accesses.
-const_assert_eq!(size_of::<MetaSlot>(), 16);
+const_assert_eq!(size_of::<MetaSlot>(), 24);
 
 /// All page metadata types must implemented this sealed trait,
 /// which ensures that each fields of `PageUsage` has one and only
@@ -145,19 +159,29 @@ pub trait PageMeta: Sync + private::Sealed + Sized {
 /// as the metadata slot after this operation becomes uninitialized.
 pub(super) unsafe fn drop_as_last<M: PageMeta>(ptr: *const MetaSlot) {
     // This would be guaranteed as a safety requirement.
-    debug_assert_eq!((*ptr).ref_count.load(Ordering::Relaxed), 0);
+    debug_assert_eq!((*ptr).ref_count.load(Ordering::Relaxed), 1);
     // Let the custom dropper handle the drop.
     let mut page = Page::<M> {
         ptr,
         _marker: PhantomData,
     };
+    // (*ptr).ref_count.fetch_add(1, Ordering::Relaxed);
     M::on_drop(&mut page);
     let _ = ManuallyDrop::new(page);
     // Drop the metadata.
     core::ptr::drop_in_place(ptr as *mut M);
-    // No handles means no usage. This also releases the page as unused for further
-    // calls to `Page::from_unused`.
+
+    // Reset the metadata slot.
+    // No handles means no usage. This also releases the page as free for further
+    // calls to `Page::from_free`.
+    // Set the reference count to 0.
+    (*ptr)
+        .ref_count
+        .compare_exchange(1, 0, Ordering::SeqCst, Ordering::Relaxed)
+        .expect("The reference count should be 1 while dropping as the last handle");
+    // Set the usage to free.
     (*ptr).usage.store(0, Ordering::Release);
+
     // Deallocate the page.
     // It would return the page to the allocator for further use. This would be done
     // after the release of the metadata to avoid re-allocation before the metadata
@@ -177,6 +201,87 @@ mod private {
 // ======= Start of all the specific metadata structures definitions ==========
 
 use private::Sealed;
+
+/// Free Meta: Linklist
+#[derive(Debug, Default)]
+#[repr(C)]
+pub struct FreeMeta {
+    // TODO: Complete the documentation.
+    // The next and previous pointers are stored the physical addresses
+    // to the specific physical pages.
+    prev: Paddr,
+    next: Paddr,
+}
+
+impl Sealed for FreeMeta {}
+
+/// Free Pages: The sole referencer to a free page.
+#[derive(Debug)]
+#[repr(C)]
+pub struct FreePage {
+    pub(in crate::mm::page) ptr: *const MetaSlot,
+}
+
+impl FreePage {
+    /// Get a Free Page handle if the paddr's corresponding metadata is free
+    /// and is not referenced by anyone.
+    ///
+    /// By leveraging this function, we can ensure that the page is not
+    /// referenced by anyone else, which is critical to improve concurrency
+    /// safety while transferring the page's usage.
+    ///
+    /// # Panic:
+    ///
+    /// The function panics if:
+    ///  - the physical address is out of bound or not aligned;
+    ///  - the page is already in use.
+    pub fn try_lock(paddr: Paddr) -> Option<Self> {
+        assert!(paddr % PAGE_SIZE == 0);
+        assert!(paddr < MAX_PADDR.load(Ordering::Relaxed) as Paddr);
+        let vaddr = mapping::page_to_meta::<PagingConsts>(paddr);
+        let ptr = vaddr as *const MetaSlot;
+
+        // SAFETY: The aligned pointer points to a initialized `MetaSlot`.
+        let usage = unsafe { &(*ptr).usage };
+        // SAFETY: The aligned pointer points to a initialized `MetaSlot`.
+        let ref_count = unsafe { &(*ptr).ref_count };
+
+        if ref_count
+            .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
+            .is_ok()
+        {
+            debug_assert_eq!(usage.load(Ordering::Relaxed), PageUsage::Free as u8);
+            Some(Self { ptr })
+        } else {
+            None
+        }
+    }
+
+    /// Get the metadata of the free page
+    // Non-const reference to the metadata is safe because the page is locked.
+    // Concurrency safety is guaranteed by the `try_lock`.
+    pub fn meta(&mut self) -> &mut FreeMeta {
+        let raw_ptr = self as *const Self as *mut Self;
+        unsafe {
+            let cell_ptr = raw_ptr as *mut UnsafeCell<FreeMeta>;
+            &mut *cell_ptr.as_mut().unwrap().get()
+        }
+    }
+}
+
+impl Drop for FreePage {
+    /// Drop the FreePage, decrease the reference count of the corresponding
+    /// page.
+    fn drop(&mut self) {
+        let ptr = self.ptr;
+
+        // SAFETY: The aligned pointer points to a initialized `MetaSlot`.
+        let ref_count = unsafe { &(*ptr).ref_count };
+        let last_ref_cnt = ref_count.fetch_sub(1, Ordering::Release);
+
+        debug_assert!(last_ref_cnt > 0);
+    }
+}
 
 /// The metadata of the page used as a frame.
 /// i.e., The corresponding page is a page of untyped memory.
@@ -362,7 +467,7 @@ pub(crate) fn init() -> Vec<Page<MetaPageMeta>> {
     .expect("Failed to manage frames with metadata");
     meta_pages
         .into_iter()
-        .map(|paddr| Page::<MetaPageMeta>::from_unused(paddr, MetaPageMeta::default()))
+        .map(|paddr| Page::<MetaPageMeta>::from_free(paddr, MetaPageMeta::default()))
         .collect()
 }
 

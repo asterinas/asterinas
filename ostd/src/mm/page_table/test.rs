@@ -183,7 +183,7 @@ fn test_base_protect_query() {
         for _ in 0..999 {
             let page = cur_allocator
                 .alloc_page(PAGE_SIZE)
-                .map(|p| page::Page::from_unused(p, FrameMeta::default()))
+                .map(|p| page::Page::from_free(p, FrameMeta::default()))
                 .unwrap();
             v.push(page);
         }

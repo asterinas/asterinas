@@ -76,7 +76,7 @@ impl FrameAllocOptions {
             let mut vector = Vec::new();
             for _ in 0..self.nframes {
                 let paddr = allocator.alloc_page(PAGE_SIZE).ok_or(Error::NoMemory)?;
-                let page = page::Page::from_unused(paddr, FrameMeta::default());
+                let page = page::Page::from_free(paddr, FrameMeta::default());
                 vector.push(page);
             }
             vector
