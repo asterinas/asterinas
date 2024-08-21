@@ -264,7 +264,8 @@ RUN curl https://sh.rustup.rs -sSf | \
 # Install cargo tools
 RUN cargo install \ 
     cargo-binutils \ 
-    mdbook
+    mdbook \
+    typos-cli
 
 FROM rust
 

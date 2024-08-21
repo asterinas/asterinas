@@ -1065,7 +1065,7 @@ checksum = "dd8b5dd2ae5ed71462c540258bedcb51965123ad7e7ccf4b9a8cafaa4a63576d"
 
 [[package]]
 name = "ostd"
-version = "0.6.2"
+version = "0.7.0"
 dependencies = [
  "acpi",
  "align_ext",
