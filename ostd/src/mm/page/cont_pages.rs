@@ -34,7 +34,7 @@ impl<M: PageMeta> Drop for ContPages<M> {
 }
 
 impl<M: PageMeta> ContPages<M> {
-    /// Create a new `ContPages` from unused pages.
+    /// Create a new `ContPages` from free pages.
     ///
     /// The caller must provide a closure to initialize metadata for all the pages.
     /// The closure receives the physical address of the page and returns the
@@ -45,12 +45,12 @@ impl<M: PageMeta> ContPages<M> {
     /// The function panics if:
     ///  - the physical address is invalid or not aligned;
     ///  - any of the pages are already in use.
-    pub fn from_unused<F>(range: Range<Paddr>, mut metadata_fn: F) -> Self
+    pub fn from_free<F>(range: Range<Paddr>, mut metadata_fn: F) -> Self
     where
         F: FnMut(Paddr) -> M,
     {
         for i in range.clone().step_by(PAGE_SIZE) {
-            let _ = ManuallyDrop::new(Page::<M>::from_unused(i, metadata_fn(i)));
+            let _ = ManuallyDrop::new(Page::<M>::from_free(i, metadata_fn(i)));
         }
         Self {
             range,
