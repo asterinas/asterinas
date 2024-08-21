@@ -98,7 +98,7 @@ pub(crate) fn alloc_single<M: PageMeta>(align: usize, metadata: M) -> Option<Pag
         .disable_irq()
         .lock()
         .alloc_page(align)
-        .map(|paddr| Page::from_unused(paddr, metadata))
+        .map(|paddr| Page::from_free(paddr, metadata))
 }
 
 /// Allocate a contiguous range of pages of a given length in bytes.
@@ -125,7 +125,7 @@ where
         .lock()
         .alloc(layout)
         .map(|begin_paddr| {
-            ContPages::from_unused(begin_paddr..begin_paddr + layout.size(), metadata_fn)
+            ContPages::from_free(begin_paddr..begin_paddr + layout.size(), metadata_fn)
         })
 }
 
