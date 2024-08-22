@@ -5,12 +5,15 @@
 mod capability;
 mod command;
 mod extended_cap;
+mod invalidation;
 mod status;
 
 use bit_field::BitField;
 pub use capability::Capability;
 use command::GlobalCommand;
 use extended_cap::ExtendedCapability;
+pub use extended_cap::ExtendedCapabilityFlags;
+use invalidation::InvalidationRegisters;
 use log::debug;
 use spin::Once;
 use status::GlobalStatus;
@@ -19,7 +22,7 @@ use volatile::{
     Volatile,
 };
 
-use super::{dma_remapping::RootTable, IommuError};
+use super::{dma_remapping::RootTable, invalidate::queue::Queue, IommuError};
 use crate::{
     arch::{
         iommu::fault,
@@ -62,6 +65,8 @@ pub struct IommuRegisters {
     root_table_address: Volatile<&'static mut u64, ReadWrite>,
     #[allow(dead_code)]
     context_command: Volatile<&'static mut u64, ReadWrite>,
+
+    invalidate: InvalidationRegisters,
 }
 
 impl IommuRegisters {
@@ -104,6 +109,65 @@ impl IommuRegisters {
         // Enable DMA remapping
         self.write_global_command(GlobalCommand::TE, true);
         while !self.global_status().contains(GlobalStatus::TES) {}
+    }
+
+    pub(super) fn enable_queued_invalidation(&mut self, queue: &Queue) {
+        assert!(self
+            .extended_capability()
+            .flags()
+            .contains(ExtendedCapabilityFlags::QI));
+        self.invalidate.queue_tail.write(0);
+
+        let mut write_value = queue.base_paddr() as u64;
+        // By default, we set descriptor width to 128-bit(0)
+        let descriptor_width = 0b0;
+        write_value |= descriptor_width << 11;
+
+        let write_queue_size = {
+            let mut queue_size = queue.size();
+            assert!(queue_size.is_power_of_two());
+            let mut write_queue_size = 0;
+
+            if descriptor_width == 0 {
+                // 2^(write_queue_size + 8) = number of entries = queue_size
+                assert!(queue_size >= (1 << 8));
+                queue_size >>= 8;
+            } else {
+                // 2^(write_queue_size + 7) = number of entries = queue_size
+                assert!(queue_size >= (1 << 7));
+                queue_size >>= 7;
+            };
+
+            while queue_size & 0b1 == 0 {
+                queue_size >>= 1;
+                write_queue_size += 1;
+            }
+            write_queue_size
+        };
+
+        write_value |= write_queue_size;
+
+        self.invalidate.queue_addr.write(write_value);
+
+        // Enable Queued invalidation
+        self.write_global_command(GlobalCommand::QIE, true);
+        while !self.global_status().contains(GlobalStatus::QIES) {}
+    }
+
+    fn global_invalidation(&mut self) {
+        // Set ICC(63) to 1 to requests invalidation and CIRG(62:61) to 01 to indicate global invalidation request.
+        self.context_command.write(0xA000_0000_0000_0000);
+
+        // Wait for invalidation complete (ICC set to 0).
+        let mut value = 0x8000_0000_0000_0000;
+        while (value & 0x8000_0000_0000_0000) != 0 {
+            value = self.context_command.read();
+        }
+
+        // Set IVT(63) to 1 to requests IOTLB invalidation and IIRG(61:60) to 01 to indicate global invalidation request.
+        self.invalidate
+            ._iotlb_invalidate
+            .write(0x9000_0000_0000_0000);
     }
 
     /// Write value to the global command register. This function will not wait until the command
@@ -156,6 +220,7 @@ impl IommuRegisters {
                 global_status,
                 root_table_address,
                 context_command,
+                invalidate: InvalidationRegisters::new(vaddr),
             }
         };
 
@@ -170,7 +235,7 @@ impl IommuRegisters {
     }
 }
 
-pub(super) static IOMMU_REGS: Once<SpinLock<IommuRegisters>> = Once::new();
+pub(super) static IOMMU_REGS: Once<SpinLock<IommuRegisters, LocalIrqDisabled>> = Once::new();
 
 pub(super) fn init() -> Result<(), IommuError> {
     let iommu_regs = IommuRegisters::new().ok_or(IommuError::NoIommu)?;
