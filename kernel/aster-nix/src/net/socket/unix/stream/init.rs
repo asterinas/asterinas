@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{connected::Connected, listener::push_incoming};
 use crate::{
     events::{IoEvents, Observer},
     fs::{
@@ -42,10 +41,6 @@ impl Init {
         self.addr = Some(bound_addr);
 
         Ok(())
-    }
-
-    pub(super) fn connect(&self, remote_addr: &UnixSocketAddrBound) -> Result<Connected> {
-        push_incoming(remote_addr, self.addr.clone())
     }
 
     pub(super) fn addr(&self) -> Option<&UnixSocketAddrBound> {

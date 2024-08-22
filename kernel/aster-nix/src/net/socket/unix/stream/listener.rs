@@ -161,7 +161,7 @@ impl Backlog {
 
         if incoming_conns.len() >= self.backlog.load(Ordering::Relaxed) {
             return_errno_with_message!(
-                Errno::ECONNREFUSED,
+                Errno::EAGAIN,
                 "the pending connection queue on the listening socket is full"
             );
         }
