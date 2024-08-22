@@ -44,6 +44,8 @@ pub mod task;
 pub mod trap;
 pub mod user;
 
+use core::sync::atomic::AtomicBool;
+
 pub use ostd_macros::main;
 pub use ostd_pod::Pod;
 
@@ -95,6 +97,9 @@ pub unsafe fn init() {
 
     invoke_ffi_init_funcs();
 }
+
+/// Indicates whether the kernel is in bootstrap context.
+pub static IN_BOOTSTRAP_CONTEXT: AtomicBool = AtomicBool::new(true);
 
 /// Invoke the initialization functions defined in the FFI.
 /// The component system uses this function to call the initialization functions of

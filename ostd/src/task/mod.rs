@@ -2,6 +2,7 @@
 
 //! Tasks are the unit of code execution.
 
+pub(crate) mod atomic_mode;
 mod preempt;
 mod processor;
 pub mod scheduler;

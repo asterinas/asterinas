@@ -140,6 +140,7 @@ impl<'a> UserMode<'a> {
         F: FnMut() -> bool,
     {
         debug_assert!(Arc::ptr_eq(&self.current, &Task::current().unwrap()));
+        crate::task::atomic_mode::might_sleep();
         self.context.execute(has_kernel_event)
     }
 
