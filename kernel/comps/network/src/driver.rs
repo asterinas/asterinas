@@ -37,12 +37,12 @@ pub struct RxToken(RxBuffer);
 impl phy::RxToken for RxToken {
     fn consume<R, F>(self, f: F) -> R
     where
-        F: FnOnce(&mut [u8]) -> R,
+        F: FnOnce(&[u8]) -> R,
     {
         let mut packet = self.0.packet();
         let mut buffer = vec![0u8; packet.remain()];
         packet.read(&mut VmWriter::from(&mut buffer as &mut [u8]));
-        f(&mut buffer)
+        f(&buffer)
     }
 }
 

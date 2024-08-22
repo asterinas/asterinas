@@ -43,9 +43,12 @@ impl BoundDatagram {
             .bound_socket
             .raw_with(|socket: &mut RawUdpSocket| socket.recv_slice(buf));
         match result {
-            Ok((recv_len, endpoint)) => Ok((recv_len, endpoint)),
+            Ok((recv_len, udp_metadata)) => Ok((recv_len, udp_metadata.endpoint)),
             Err(RecvError::Exhausted) => {
                 return_errno_with_message!(Errno::EAGAIN, "the receive buffer is empty")
+            }
+            Err(RecvError::Truncated) => {
+                todo!();
             }
         }
     }
