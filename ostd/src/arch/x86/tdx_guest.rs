@@ -6,9 +6,10 @@ use trapframe::TrapFrame;
 
 use crate::{
     mm::{
-        kspace::{BOOT_PAGE_TABLE, KERNEL_PAGE_TABLE},
+        kspace::KERNEL_PAGE_TABLE,
         paddr_to_vaddr,
         page_prop::{PageProperty, PrivilegedPageFlags as PrivFlags},
+        page_table::boot_pt,
         PAGE_SIZE,
     },
     prelude::Paddr,
@@ -48,15 +49,12 @@ pub unsafe fn unprotect_gpa_range(gpa: Paddr, page_num: usize) -> Result<(), Pag
             priv_flags: prop.priv_flags | PrivFlags::SHARED,
         }
     };
-    {
-        let mut boot_pt_lock = BOOT_PAGE_TABLE.lock();
-        if let Some(boot_pt) = boot_pt_lock.as_mut() {
-            for i in 0..page_num {
-                let vaddr = paddr_to_vaddr(gpa + i * PAGE_SIZE);
-                boot_pt.protect_base_page(vaddr, protect_op);
-            }
+    let _ = boot_pt::with_borrow(|boot_pt| {
+        for i in 0..page_num {
+            let vaddr = paddr_to_vaddr(gpa + i * PAGE_SIZE);
+            boot_pt.protect_base_page(vaddr, protect_op);
         }
-    }
+    });
     // Protect the page in the kernel page table.
     let pt = KERNEL_PAGE_TABLE.get().unwrap();
     let vaddr = paddr_to_vaddr(gpa);
@@ -93,15 +91,12 @@ pub unsafe fn protect_gpa_range(gpa: Paddr, page_num: usize) -> Result<(), PageC
             priv_flags: prop.priv_flags - PrivFlags::SHARED,
         }
     };
-    {
-        let mut boot_pt_lock = BOOT_PAGE_TABLE.lock();
-        if let Some(boot_pt) = boot_pt_lock.as_mut() {
-            for i in 0..page_num {
-                let vaddr = paddr_to_vaddr(gpa + i * PAGE_SIZE);
-                boot_pt.protect_base_page(vaddr, protect_op);
-            }
+    let _ = boot_pt::with_borrow(|boot_pt| {
+        for i in 0..page_num {
+            let vaddr = paddr_to_vaddr(gpa + i * PAGE_SIZE);
+            boot_pt.protect_base_page(vaddr, protect_op);
         }
-    }
+    });
     // Protect the page in the kernel page table.
     let pt = KERNEL_PAGE_TABLE.get().unwrap();
     let vaddr = paddr_to_vaddr(gpa);

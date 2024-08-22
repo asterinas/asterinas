@@ -82,7 +82,6 @@ pub unsafe fn init() {
     logger::init();
 
     mm::page::allocator::init();
-    mm::kspace::init_boot_page_table();
     mm::kspace::init_kernel_page_table(mm::init_page_meta());
     mm::misc_init();
 
@@ -93,7 +92,10 @@ pub unsafe fn init() {
 
     bus::init();
 
-    mm::kspace::activate_kernel_page_table();
+    // SAFETY: This function is called only once on the BSP.
+    unsafe {
+        mm::kspace::activate_kernel_page_table();
+    }
 
     arch::irq::enable_local();
 
