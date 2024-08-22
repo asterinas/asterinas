@@ -132,8 +132,10 @@ impl RangeLockItem {
     }
 
     /// Puts the current process in a wait state until the lock condition is satisfied
-    pub fn wait(&mut self) {
-        let cond = || None::<()>;
+    pub fn wait_until<F>(&self, cond: F)
+    where
+        F: FnMut() -> Option<()>,
+    {
         self.waitqueue.wait_until(cond);
     }
 
@@ -227,7 +229,7 @@ impl RangeLockList {
             req_lock, is_nonblocking
         );
         loop {
-            let mut conflict_lock;
+            let conflict_lock;
 
             {
                 let mut list = self.inner.write();
@@ -243,7 +245,14 @@ impl RangeLockList {
                 }
             }
 
-            conflict_lock.wait();
+            conflict_lock.wait_until(|| {
+                let list = self.inner.read();
+                if list.iter().any(|l| req_lock.conflict_with(l)) {
+                    None
+                } else {
+                    Some(())
+                }
+            });
         }
     }
 
