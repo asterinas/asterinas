@@ -126,11 +126,11 @@ pub(super) union MetaSlotInner {
 }
 
 // Currently the sizes of the `MetaSlotInner` union variants are no larger
-// than 16 bytes and aligned to 16 bytes. So the size of `MetaSlot` is 24 bytes.
+// than 24 bytes and aligned to 24 bytes. So the size of `MetaSlot` is 32 bytes.
 //
 // Note that the size of `MetaSlot` should be a multiple of 8 bytes to prevent
 // cross-page accesses.
-const_assert_eq!(size_of::<MetaSlot>(), 24);
+const_assert_eq!(size_of::<MetaSlot>(), 32);
 
 /// All page metadata types must implemented this sealed trait,
 /// which ensures that each fields of `PageUsage` has one and only
@@ -202,20 +202,25 @@ mod private {
 
 use private::Sealed;
 
-/// Free Meta: Linklist
+/// FreeMeta: Bidirectional unordered circular linked list of free pages.
+///
+/// Furnish memory modules out of `OSTD` with safe, efficient linked list
+/// to manage free pages. The linked list is arranged as follows:
+///
+/// `(paddr → freemeta) — next/prev —> (paddr → freemeta) — next/prev —>…`
 #[derive(Debug, Default)]
 #[repr(C)]
 pub struct FreeMeta {
-    // TODO: Complete the documentation.
-    // The next and previous pointers are stored the physical addresses
-    // to the specific physical pages.
+    value: usize,
+    // The `prev` and `next` pointers store the **physical addresses**
+    // of the designated memory pages.
     prev: Paddr,
     next: Paddr,
 }
 
 impl Sealed for FreeMeta {}
 
-/// Free Pages: The sole referencer to a free page.
+/// Free Pages: The only referencer to a specific free page.
 #[derive(Debug)]
 #[repr(C)]
 pub struct FreePage {
@@ -257,14 +262,23 @@ impl FreePage {
         }
     }
 
-    /// Get the metadata of the free page
-    // Non-const reference to the metadata is safe because the page is locked.
-    // Concurrency safety is guaranteed by the `try_lock`.
-    pub fn meta(&mut self) -> &mut FreeMeta {
+    /// Get the mutable metadata of the free page
+    /// Non-const reference to the metadata is safe because the page is locked.
+    /// Concurrency safety is guaranteed by the method [`try_lock`].
+    pub fn meta_mut(&mut self) -> &mut FreeMeta {
         let raw_ptr = self as *const Self as *mut Self;
         unsafe {
             let cell_ptr = raw_ptr as *mut UnsafeCell<FreeMeta>;
             &mut *cell_ptr.as_mut().unwrap().get()
+        }
+    }
+
+    /// Get the metadata of the free page.
+    pub fn meta(&self) -> &FreeMeta {
+        let raw_ptr = self as *const Self as *mut Self;
+        unsafe {
+            let cell_ptr = raw_ptr as *mut UnsafeCell<FreeMeta>;
+            &*cell_ptr.as_mut().unwrap().get()
         }
     }
 }
@@ -280,6 +294,146 @@ impl Drop for FreePage {
         let last_ref_cnt = ref_count.fetch_sub(1, Ordering::Release);
 
         debug_assert!(last_ref_cnt > 0);
+    }
+}
+
+/// Implementations linklist operations for FreePage.
+impl FreePage {
+    /// Initialize the circular linked list node.
+    pub fn init(&mut self) {
+        let paddr = self.paddr();
+        let meta = self.meta_mut();
+        meta.prev = paddr;
+        meta.next = paddr;
+    }
+
+    /// Get the physical address.
+    pub fn paddr(&self) -> Paddr {
+        mapping::meta_to_page::<PagingConsts>(self.ptr as Vaddr)
+    }
+
+    /// Get the value of the free page linked list.
+    pub fn value(&self) -> usize {
+        self.meta().value
+    }
+
+    /// Get the previous free page.
+    pub fn prev(&self) -> Option<Paddr> {
+        let current = self.paddr();
+        let meta = self.meta();
+        if meta.prev == current {
+            // The previous page is the current page itself.
+            None
+        } else {
+            Some(meta.prev)
+        }
+    }
+
+    /// Get the next free page.
+    pub fn next(&self) -> Option<Paddr> {
+        let current = self.paddr();
+        let meta = self.meta();
+        if meta.next == current {
+            // The next page is the current page itself.
+            None
+        } else {
+            Some(meta.next)
+        }
+    }
+
+    /// Set the value of the free page linked list.
+    pub fn set_value(&mut self, value: usize) {
+        self.meta_mut().value = value;
+    }
+
+    /// Insert a free page after the current free page.
+    pub fn insert_after(&mut self, new_addr: Paddr) {
+        let cur = self.paddr();
+        let mut new_page = FreePage::try_lock(new_addr).expect("The new page is not free");
+        let new_meta = new_page.meta_mut();
+
+        if let Some(next) = self.next() {
+            // The next page is not the current page itself.
+            // Avoid deadlock when the next page is the current page.
+            let mut next_page = FreePage::try_lock(next).expect("The next page is not free");
+            let next_meta = next_page.meta_mut();
+
+            new_meta.next = next;
+            next_meta.prev = new_addr;
+        } else {
+            new_meta.next = cur;
+            self.meta_mut().prev = new_addr;
+        }
+
+        self.meta_mut().next = new_addr;
+        new_meta.prev = cur;
+    }
+
+    /// Insert a free page before the current free page.
+    pub fn insert_before(&mut self, new_addr: Paddr) {
+        let cur = self.paddr();
+        let mut new_page = FreePage::try_lock(new_addr).expect("The new page is not free");
+        let new_meta = new_page.meta_mut();
+
+        if let Some(prev) = self.prev() {
+            // The previous page is not the current page itself.
+            // Avoid deadlock when the previous page is the current page.
+            let mut prev_page = FreePage::try_lock(prev).expect("The previous page is not free");
+            let prev_meta = prev_page.meta_mut();
+
+            new_meta.prev = prev;
+            prev_meta.next = new_addr;
+        } else {
+            new_meta.prev = cur;
+            self.meta_mut().next = new_addr;
+        }
+
+        self.meta_mut().prev = new_addr;
+        new_meta.next = cur;
+    }
+
+    /// Remove the current free page from the list.
+    /// Return true if the linked list is not empty after the removal.
+    pub fn remove(&mut self) -> bool {
+        let cur = self.paddr();
+        if let Some(next) = self.next() {
+            // Current node is not the only node in the list.
+            let mut next_page = FreePage::try_lock(next).expect("The next page is not free");
+            let next_meta = next_page.meta_mut();
+
+            let prev = self.prev().expect("Logical Error: The previous page is current page itself while the next page is not!");
+            if let Some(mut prev_page) = FreePage::try_lock(prev) {
+                let prev_meta = prev_page.meta_mut();
+                prev_meta.next = next;
+                next_meta.prev = prev;
+            } else {
+                // Special handle when linked list's size is 2.
+                // When the size is 2, the previous page is also the next page.
+                // After the removal, the list has only one node, which is the
+                // `next_page`. Without this special handle, this removal would
+                // cause a deadlock.
+                debug_assert_eq!(next, prev);
+                next_meta.next = next;
+                next_meta.prev = next;
+            }
+
+            let cur_meta = self.meta_mut();
+            cur_meta.next = cur;
+            cur_meta.prev = cur;
+            cur_meta.value = 0;
+
+            true
+        } else {
+            // Special handle when the linked list's size is 1.
+            // Current node is the only node in the list.
+            // After the removal, the list is empty.
+            let cur_meta = self.meta_mut();
+            cur_meta.next = cur;
+            cur_meta.prev = cur;
+            cur_meta.value = 0;
+
+            false
+        }
     }
 }
 

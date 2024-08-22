@@ -44,7 +44,7 @@ unsafe impl<M: PageMeta> Send for Page<M> {}
 unsafe impl<M: PageMeta> Sync for Page<M> {}
 
 impl<M: PageMeta> Page<M> {
-    /// Concurrent-safety page alloc function.
+    /// Concurrent-safety page alloc function.b
     ///
     /// The assurance of safety is facilitated by the function
     /// `FreePage::try_lock`, which serves as the exclusive gateway for
