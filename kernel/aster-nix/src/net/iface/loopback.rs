@@ -8,7 +8,10 @@ use smoltcp::{
 
 use super::{common::IfaceCommon, internal::IfaceInternal, Iface};
 use crate::{
-    net::socket::ip::{IpAddress, Ipv4Address},
+    net::{
+        iface::time::get_network_timestamp,
+        socket::ip::{IpAddress, Ipv4Address},
+    },
     prelude::*,
 };
 
@@ -28,8 +31,10 @@ impl IfaceLoopback {
     pub fn new() -> Arc<Self> {
         let mut loopback = Loopback::new(Medium::Ip);
         let interface = {
-            let config = Config::new();
-            let mut interface = smoltcp::iface::Interface::new(config, &mut loopback);
+            let config = Config::new(smoltcp::wire::HardwareAddress::Ip);
+            let now = get_network_timestamp();
+
+            let mut interface = smoltcp::iface::Interface::new(config, &mut loopback, now);
             interface.update_ip_addrs(|ip_addrs| {
                 debug_assert!(ip_addrs.is_empty());
                 let ip_addr = IpCidr::new(LOOPBACK_ADDRESS, LOOPBACK_ADDRESS_PREFIX_LEN);

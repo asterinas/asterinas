@@ -9,7 +9,7 @@ use smoltcp::{
     wire::{self, IpCidr},
 };
 
-use super::{common::IfaceCommon, internal::IfaceInternal, Iface};
+use super::{common::IfaceCommon, internal::IfaceInternal, time::get_network_timestamp, Iface};
 use crate::prelude::*;
 
 pub struct IfaceVirtio {
@@ -25,14 +25,13 @@ impl IfaceVirtio {
         let interface = {
             let mac_addr = virtio_net.lock().mac_addr();
             let ip_addr = IpCidr::new(wire::IpAddress::Ipv4(wire::Ipv4Address::UNSPECIFIED), 0);
-            let config = {
-                let mut config = Config::new();
-                config.hardware_addr = Some(wire::HardwareAddress::Ethernet(
-                    wire::EthernetAddress(mac_addr.0),
-                ));
-                config
-            };
-            let mut interface = smoltcp::iface::Interface::new(config, &mut *virtio_net.lock());
+            let config = Config::new(wire::HardwareAddress::Ethernet(wire::EthernetAddress(
+                mac_addr.0,
+            )));
+            let now = get_network_timestamp();
+
+            let mut interface =
+                smoltcp::iface::Interface::new(config, &mut *virtio_net.lock(), now);
             interface.update_ip_addrs(|ip_addrs| {
                 debug_assert!(ip_addrs.is_empty());
                 ip_addrs.push(ip_addr).unwrap();
@@ -110,6 +109,7 @@ impl Iface for IfaceVirtio {
         let hardware_addr = interface.hardware_addr();
         match hardware_addr {
             wire::HardwareAddress::Ethernet(ethe_address) => Some(ethe_address),
+            wire::HardwareAddress::Ip => None,
         }
     }
 

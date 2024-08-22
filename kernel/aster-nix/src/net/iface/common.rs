@@ -164,7 +164,9 @@ impl IfaceCommon {
             let mut has_events = false;
             let mut poll_at;
             loop {
-                has_events |= interface.poll(timestamp, device, &mut sockets);
+                while interface.poll(timestamp, device, &mut sockets) {
+                    has_events = true;
+                }
                 poll_at = interface.poll_at(timestamp, &sockets);
                 let Some(instant) = poll_at else {
                     break;
