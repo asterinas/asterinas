@@ -166,3 +166,11 @@ impl CpuSet {
         self.bitset.iter_ones()
     }
 }
+
+impl From<u32> for CpuSet {
+    fn from(cpu_id: u32) -> Self {
+        let mut set = Self::new_empty();
+        set.add(cpu_id);
+        set
+    }
+}

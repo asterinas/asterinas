@@ -35,6 +35,7 @@ use core::sync::atomic::Ordering;
 use ostd::{
     arch::qemu::{exit_qemu, QemuExitCode},
     boot,
+    cpu::PinCurrentCpu,
 };
 use process::Process;
 
@@ -83,7 +84,13 @@ pub fn main() {
     component::init_all(component::parse_metadata!()).unwrap();
     init();
     ostd::IN_BOOTSTRAP_CONTEXT.store(false, Ordering::Relaxed);
+
+    // Spawn all AP idle threads.
+    ostd::boot::smp::register_ap_entry(ap_init);
+
+    // Spawn the first kernel thread on BSP.
     Thread::spawn_kernel_thread(ThreadOptions::new(init_thread));
+    // Spawning functions in the bootstrap context will not return.
     unreachable!()
 }
 
@@ -98,6 +105,25 @@ pub fn init() {
     vdso::init();
     taskless::init();
     process::init();
+}
+
+fn ap_init() -> ! {
+    fn ap_idle_thread() {
+        let preempt_guard = ostd::task::disable_preempt();
+        let cpu_id = preempt_guard.current_cpu();
+        drop(preempt_guard);
+        log::info!("Kernel idle thread for CPU #{} started.", cpu_id);
+        loop {
+            Thread::yield_now();
+        }
+    }
+    let preempt_guard = ostd::task::disable_preempt();
+    let cpu_id = preempt_guard.current_cpu();
+    drop(preempt_guard);
+
+    Thread::spawn_kernel_thread(ThreadOptions::new(ap_idle_thread).cpu_affinity(cpu_id.into()));
+    // Spawning functions in the bootstrap context will not return.
+    unreachable!()
 }
 
 fn init_thread() {
