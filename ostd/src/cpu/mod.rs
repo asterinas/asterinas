@@ -156,6 +156,11 @@ impl CpuSet {
         self.bitset.get(cpu_id as usize).as_deref() == Some(&true)
     }
 
+    /// Returns the number of CPUs in the set.
+    pub fn count(&self) -> usize {
+        self.bitset.count_ones()
+    }
+
     /// Iterates over the CPUs in the set.
     pub fn iter(&self) -> IterOnes<'_, usize, Lsb0> {
         self.bitset.iter_ones()

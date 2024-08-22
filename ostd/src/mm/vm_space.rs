@@ -24,12 +24,15 @@ use crate::{
         current_page_table_paddr, tlb_flush_addr, tlb_flush_addr_range,
         tlb_flush_all_excluding_global, PageTableEntry, PagingConsts,
     },
-    cpu::CpuExceptionInfo,
+    cpu::{CpuExceptionInfo, CpuSet, PinCurrentCpu},
+    cpu_local_cell,
     mm::{
         page_table::{self, PageTableItem},
         Frame, MAX_USERSPACE_VADDR,
     },
     prelude::*,
+    sync::SpinLock,
+    task::disable_preempt,
     Error,
 };
 
@@ -52,6 +55,11 @@ use crate::{
 pub struct VmSpace {
     pt: PageTable<UserMode>,
     page_fault_handler: Once<fn(&VmSpace, &CpuExceptionInfo) -> core::result::Result<(), ()>>,
+    /// The CPUs that the `VmSpace` is activated on.
+    ///
+    /// TODO: implement an atomic bitset to optimize the performance in cases
+    /// that the number of CPUs is not large.
+    activated_cpus: SpinLock<CpuSet>,
 }
 
 // Notes on TLB flushing:
@@ -68,6 +76,7 @@ impl VmSpace {
         Self {
             pt: KERNEL_PAGE_TABLE.get().unwrap().create_user_page_table(),
             page_fault_handler: Once::new(),
+            activated_cpus: SpinLock::new(CpuSet::new_empty()),
         }
     }
 
@@ -97,9 +106,45 @@ impl VmSpace {
         Ok(self.pt.cursor_mut(va).map(CursorMut)?)
     }
 
-    /// Activates the page table.
-    pub(crate) fn activate(&self) {
-        self.pt.activate();
+    /// Activates the page table on the current CPU.
+    pub(crate) fn activate(self: &Arc<Self>) {
+        cpu_local_cell! {
+            /// The `Arc` pointer to the last activated VM space on this CPU. If the
+            /// pointer is NULL, it means that the last activated page table is merely
+            /// the kernel page table.
+            static LAST_ACTIVATED_VM_SPACE: *const VmSpace = core::ptr::null();
+        }
+
+        let preempt_guard = disable_preempt();
+
+        let mut activated_cpus = self.activated_cpus.lock();
+        let cpu = preempt_guard.current_cpu();
+
+        if !activated_cpus.contains(cpu) {
+            activated_cpus.add(cpu);
+            self.pt.activate();
+
+            let last_ptr = LAST_ACTIVATED_VM_SPACE.load();
+
+            if !last_ptr.is_null() {
+                // SAFETY: If the pointer is not NULL, it must be a valid
+                // pointer casted with `Arc::into_raw` on the last activated
+                // `Arc<VmSpace>`.
+                let last = unsafe { Arc::from_raw(last_ptr) };
+                debug_assert!(!Arc::ptr_eq(self, &last));
+                let mut last_cpus = last.activated_cpus.lock();
+                debug_assert!(last_cpus.contains(cpu));
+                last_cpus.remove(cpu);
+            }
+
+            LAST_ACTIVATED_VM_SPACE.store(Arc::into_raw(Arc::clone(self)));
+        }
+
+        if activated_cpus.count() > 1 {
+            // We don't support remote TLB flushing yet. It is less desirable
+            // to activate a `VmSpace` on more than one CPU.
+            log::warn!("A `VmSpace` is activated on more than one CPU");
+        }
     }
 
     /// Clears all mappings.
@@ -185,6 +230,7 @@ impl VmSpace {
         Self {
             pt: self.pt.clone_with(cursor),
             page_fault_handler,
+            activated_cpus: SpinLock::new(CpuSet::new_empty()),
         }
     }
 
