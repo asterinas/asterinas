@@ -4,7 +4,11 @@ use core::sync::atomic::AtomicBool;
 
 use atomic::Ordering;
 
-use super::{connected::Connected, init::Init, listener::Listener};
+use super::{
+    connected::Connected,
+    init::Init,
+    listener::{push_incoming, Listener},
+};
 use crate::{
     events::{IoEvents, Observer},
     fs::{
@@ -23,6 +27,7 @@ use crate::{
     },
     prelude::*,
     process::signal::{Pollable, Poller},
+    thread::Thread,
     util::IoVec,
 };
 
@@ -221,8 +226,8 @@ impl Socket for UnixStreamSocket {
         //
         // See also <https://elixir.bootlin.com/linux/v6.10.4/source/net/unix/af_unix.c#L1527>.
 
-        let connected = match &*self.state.read() {
-            State::Init(init) => init.connect(&remote_addr)?,
+        let client_addr = match &*self.state.read() {
+            State::Init(init) => init.addr().cloned(),
             State::Listen(_) => {
                 return_errno_with_message!(Errno::EINVAL, "the socket is listening")
             }
@@ -231,8 +236,23 @@ impl Socket for UnixStreamSocket {
             }
         };
 
-        *self.state.write() = State::Connected(connected);
-        Ok(())
+        // We use the `push_incoming` directly to avoid holding the read lock of `self.state`
+        // because it might call `Thread::yield_now` to wait for connection.
+        loop {
+            let res = push_incoming(&remote_addr, client_addr.clone());
+            match res {
+                Ok(connected) => {
+                    *self.state.write() = State::Connected(connected);
+                    return Ok(());
+                }
+                Err(err) if err.error() == Errno::EAGAIN => {
+                    // FIXME: Calling `Thread::yield_now` can cause the thread to run when the backlog is full,
+                    // which wastes a lot of CPU time. Using `WaitQueue` maybe a better solution.
+                    Thread::yield_now()
+                }
+                Err(err) => return Err(err),
+            }
+        }
     }
 
     fn listen(&self, backlog: usize) -> Result<()> {
