@@ -122,7 +122,7 @@ impl Default for FifoScheduler<Task> {
 
 impl FifoSchedInfo for Task {
     fn cpu(&self) -> &AtomicCpuId {
-        self.cpu()
+        &self.schedule_info().cpu
     }
 }
 

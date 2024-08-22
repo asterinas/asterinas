@@ -6,12 +6,13 @@
 //! and provides useful functions for controlling the execution flow.
 
 mod fifo_scheduler;
+pub mod info;
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use spin::Once;
 
-use super::{preempt::cpu_local, processor, task::Task};
+use super::{preempt::cpu_local, processor, Task};
 use crate::{arch::timer, cpu::PinCurrentCpu, prelude::*, task::disable_preempt};
 
 /// Injects a scheduler implementation into framework.

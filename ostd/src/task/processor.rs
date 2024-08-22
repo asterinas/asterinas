@@ -2,7 +2,7 @@
 
 use alloc::sync::Arc;
 
-use super::task::{context_switch, Task, TaskContext};
+use super::{context_switch, Task, TaskContext};
 use crate::cpu_local_cell;
 
 cpu_local_cell! {

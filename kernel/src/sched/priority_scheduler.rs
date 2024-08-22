@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use ostd::{
-    cpu::{num_cpus, PinCurrentCpu},
+    cpu::{num_cpus, CpuSet, PinCurrentCpu},
     task::{
+        disable_preempt,
         scheduler::{inject_scheduler, EnqueueFlags, LocalRunQueue, Scheduler, UpdateFlags},
         AtomicCpuId, Priority, Task,
     },
@@ -36,10 +37,31 @@ impl<T: PreemptSchedInfo> PreemptScheduler<T> {
         Self { rq }
     }
 
-    /// Selects a cpu for task to run on.
-    fn select_cpu(&self, _runnable: &Arc<T>) -> u32 {
-        // FIXME: adopt more reasonable policy once we fully enable SMP.
-        0
+    /// Selects a CPU for task to run on for the first time.
+    fn select_cpu(&self, runnable: &Arc<T>) -> u32 {
+        // If the CPU of a runnable task has been set before, keep scheduling
+        // the task to that one.
+        // TODO: Consider migrating tasks between CPUs for load balancing.
+        if let Some(cpu_id) = runnable.cpu().get() {
+            return cpu_id;
+        }
+
+        let preempt_guard = disable_preempt();
+        let mut selected = preempt_guard.current_cpu();
+        let mut minimum_load = usize::MAX;
+
+        for candidate in runnable.cpu_affinity().iter() {
+            let rq = self.rq[candidate].lock();
+            // A wild guess measuring the load of a runqueue. We assume that
+            // real-time tasks are 4-times as important as normal tasks.
+            let load = rq.real_time_entities.len() * 4 + rq.normal_entities.len();
+            if load < minimum_load {
+                selected = candidate as u32;
+                minimum_load = load;
+            }
+        }
+
+        selected
     }
 }
 
@@ -214,11 +236,15 @@ impl PreemptSchedInfo for Task {
     const REAL_TIME_TASK_PRIORITY: Self::PRIORITY = Priority::new(100);
 
     fn priority(&self) -> Self::PRIORITY {
-        self.priority()
+        self.schedule_info().priority
     }
 
     fn cpu(&self) -> &AtomicCpuId {
-        self.cpu()
+        &self.schedule_info().cpu
+    }
+
+    fn cpu_affinity(&self) -> &CpuSet {
+        &self.schedule_info().cpu_affinity
     }
 }
 
@@ -230,6 +256,8 @@ trait PreemptSchedInfo {
     fn priority(&self) -> Self::PRIORITY;
 
     fn cpu(&self) -> &AtomicCpuId;
+
+    fn cpu_affinity(&self) -> &CpuSet;
 
     fn is_real_time(&self) -> bool {
         self.priority() < Self::REAL_TIME_TASK_PRIORITY
