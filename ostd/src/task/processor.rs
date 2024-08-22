@@ -2,10 +2,7 @@
 
 use alloc::sync::Arc;
 
-use super::{
-    preempt::cpu_local,
-    task::{context_switch, Task, TaskContext},
-};
+use super::task::{context_switch, Task, TaskContext};
 use crate::cpu_local_cell;
 
 cpu_local_cell! {
@@ -46,18 +43,7 @@ pub(super) fn current_task() -> Option<Arc<Task>> {
 /// This function will panic if called while holding preemption locks or with
 /// local IRQ disabled.
 pub(super) fn switch_to_task(next_task: Arc<Task>) {
-    let guard_count = cpu_local::get_guard_count();
-    if guard_count != 0 {
-        panic!(
-            "Switching task with preemption disabled (nesting depth: {})",
-            guard_count
-        );
-    }
-
-    assert!(
-        crate::arch::irq::is_local_enabled(),
-        "Switching task with local IRQ disabled"
-    );
+    super::atomic_mode::might_sleep();
 
     let irq_guard = crate::trap::disable_local();
 
