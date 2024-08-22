@@ -15,6 +15,7 @@ RELEASE_LTO ?= 0
 LOG_LEVEL ?= error
 SCHEME ?= ""
 SMP ?= 1
+OSTD_TASK_STACK_SIZE_IN_PAGES ?= 64
 # End of global options.
 
 # The Makefile provides a way to run arbitrary tests in the kernel
@@ -50,8 +51,10 @@ endif
 
 ifeq ($(RELEASE_LTO), 1)
 CARGO_OSDK_ARGS += --profile release-lto
+OSTD_TASK_STACK_SIZE_IN_PAGES = 8
 else ifeq ($(RELEASE), 1)
 CARGO_OSDK_ARGS += --release
+OSTD_TASK_STACK_SIZE_IN_PAGES = 8
 endif
 
 ifeq ($(INTEL_TDX), 1)
