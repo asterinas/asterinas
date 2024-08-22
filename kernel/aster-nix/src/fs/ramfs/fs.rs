@@ -514,12 +514,12 @@ impl Inode for RamInode {
             .map(|page_cache| page_cache.pages().dup())
     }
 
-    fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let read_len = {
             let self_inode = self.node.read();
 
             if let Some(device) = self_inode.inner.as_device() {
-                device.read(buf)?
+                device.read(writer)?
             } else {
                 let Some(page_cache) = self_inode.inner.as_file() else {
                     return_errno_with_message!(Errno::EISDIR, "read is not supported");
@@ -527,12 +527,10 @@ impl Inode for RamInode {
                 let (offset, read_len) = {
                     let file_size = self_inode.metadata.size;
                     let start = file_size.min(offset);
-                    let end = file_size.min(offset + buf.len());
+                    let end = file_size.min(offset + writer.avail());
                     (start, end - start)
                 };
-                page_cache
-                    .pages()
-                    .read_bytes(offset, &mut buf[..read_len])?;
+                page_cache.pages().read(offset, writer)?;
                 read_len
             }
         };
@@ -542,15 +540,16 @@ impl Inode for RamInode {
         Ok(read_len)
     }
 
-    fn read_direct_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
-        self.read_at(offset, buf)
+    fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        self.read_at(offset, writer)
     }
 
-    fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
+        let write_len = reader.remain();
         let self_inode = self.node.upread();
 
         if let Some(device) = self_inode.inner.as_device() {
-            let device_written_len = device.write(buf)?;
+            let device_written_len = device.write(reader)?;
             let mut self_inode = self_inode.upgrade();
             let now = now();
             self_inode.set_mtime(now);
@@ -562,12 +561,12 @@ impl Inode for RamInode {
             return_errno_with_message!(Errno::EISDIR, "write is not supported");
         };
         let file_size = self_inode.metadata.size;
-        let new_size = offset + buf.len();
+        let new_size = offset + write_len;
         let should_expand_size = new_size > file_size;
         if should_expand_size {
             page_cache.resize(new_size)?;
         }
-        page_cache.pages().write_bytes(offset, buf)?;
+        page_cache.pages().write(offset, reader)?;
 
         let mut self_inode = self_inode.upgrade();
         let now = now();
@@ -577,11 +576,11 @@ impl Inode for RamInode {
             self_inode.resize(new_size);
         }
 
-        Ok(buf.len())
+        Ok(write_len)
     }
 
-    fn write_direct_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
-        self.write_at(offset, buf)
+    fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
+        self.write_at(offset, reader)
     }
 
     fn size(&self) -> usize {

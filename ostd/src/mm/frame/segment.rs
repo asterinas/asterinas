@@ -9,7 +9,8 @@ use super::Frame;
 use crate::{
     mm::{
         page::{cont_pages::ContPages, meta::FrameMeta, Page},
-        HasPaddr, Infallible, Paddr, VmIo, VmReader, VmWriter, PAGE_SIZE,
+        FallibleVmRead, FallibleVmWrite, HasPaddr, Infallible, Paddr, VmIo, VmReader, VmWriter,
+        PAGE_SIZE,
     },
     Error, Result,
 };
@@ -114,25 +115,35 @@ impl<'a> Segment {
 }
 
 impl VmIo for Segment {
-    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
+    fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<()> {
+        let read_len = writer.avail();
         // Do bound check with potential integer overflow in mind
-        let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
+        let max_offset = offset.checked_add(read_len).ok_or(Error::Overflow)?;
         if max_offset > self.nbytes() {
             return Err(Error::InvalidArgs);
         }
-        let len = self.reader().skip(offset).read(&mut buf.into());
-        debug_assert!(len == buf.len());
+        let len = self
+            .reader()
+            .skip(offset)
+            .read_fallible(writer)
+            .map_err(|(e, _)| e)?;
+        debug_assert!(len == read_len);
         Ok(())
     }
 
-    fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
+    fn write(&self, offset: usize, reader: &mut VmReader) -> Result<()> {
+        let write_len = reader.remain();
         // Do bound check with potential integer overflow in mind
-        let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
+        let max_offset = offset.checked_add(reader.remain()).ok_or(Error::Overflow)?;
         if max_offset > self.nbytes() {
             return Err(Error::InvalidArgs);
         }
-        let len = self.writer().skip(offset).write(&mut buf.into());
-        debug_assert!(len == buf.len());
+        let len = self
+            .writer()
+            .skip(offset)
+            .write_fallible(reader)
+            .map_err(|(e, _)| e)?;
+        debug_assert!(len == write_len);
         Ok(())
     }
 }

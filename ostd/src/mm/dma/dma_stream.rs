@@ -202,19 +202,19 @@ impl Drop for DmaStreamInner {
 
 impl VmIo for DmaStream {
     /// Reads data into the buffer.
-    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<(), Error> {
+    fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<(), Error> {
         if self.inner.direction == DmaDirection::ToDevice {
             return Err(Error::AccessDenied);
         }
-        self.inner.vm_segment.read_bytes(offset, buf)
+        self.inner.vm_segment.read(offset, writer)
     }
 
     /// Writes data from the buffer.
-    fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<(), Error> {
+    fn write(&self, offset: usize, reader: &mut VmReader) -> Result<(), Error> {
         if self.inner.direction == DmaDirection::FromDevice {
             return Err(Error::AccessDenied);
         }
-        self.inner.vm_segment.write_bytes(offset, buf)
+        self.inner.vm_segment.write(offset, reader)
     }
 }
 
@@ -282,18 +282,18 @@ impl<'a> DmaStreamSlice<'a> {
 }
 
 impl VmIo for DmaStreamSlice<'_> {
-    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<(), Error> {
-        if buf.len() + offset > self.len {
+    fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<(), Error> {
+        if writer.avail() + offset > self.len {
             return Err(Error::InvalidArgs);
         }
-        self.stream.read_bytes(self.offset + offset, buf)
+        self.stream.read(self.offset + offset, writer)
     }
 
-    fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<(), Error> {
-        if buf.len() + offset > self.len {
+    fn write(&self, offset: usize, reader: &mut VmReader) -> Result<(), Error> {
+        if reader.remain() + offset > self.len {
             return Err(Error::InvalidArgs);
         }
-        self.stream.write_bytes(self.offset + offset, buf)
+        self.stream.write(self.offset + offset, reader)
     }
 }
 

@@ -5,7 +5,10 @@
 use core::{mem::size_of, ops::Range};
 
 use crate::{
-    mm::{kspace::LINEAR_MAPPING_BASE_VADDR, paddr_to_vaddr, HasPaddr, Paddr, Vaddr, VmIo},
+    mm::{
+        kspace::LINEAR_MAPPING_BASE_VADDR, paddr_to_vaddr, HasPaddr, Paddr, Vaddr, VmIo, VmReader,
+        VmWriter,
+    },
     Error, Pod, Result,
 };
 
@@ -17,25 +20,27 @@ pub struct IoMem {
 }
 
 impl VmIo for IoMem {
-    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> crate::Result<()> {
-        self.check_range(offset, buf.len())?;
+    fn read(&self, offset: usize, writer: &mut VmWriter) -> crate::Result<()> {
+        let read_len = writer.avail();
+        self.check_range(offset, read_len)?;
         unsafe {
             core::ptr::copy(
                 (self.virtual_address + offset) as *const u8,
-                buf.as_mut_ptr(),
-                buf.len(),
+                writer.cursor(),
+                read_len,
             );
         }
         Ok(())
     }
 
-    fn write_bytes(&self, offset: usize, buf: &[u8]) -> crate::Result<()> {
-        self.check_range(offset, buf.len())?;
+    fn write(&self, offset: usize, reader: &mut VmReader) -> crate::Result<()> {
+        let write_len = reader.remain();
+        self.check_range(offset, write_len)?;
         unsafe {
             core::ptr::copy(
-                buf.as_ptr(),
+                reader.cursor(),
                 (self.virtual_address + offset) as *mut u8,
-                buf.len(),
+                write_len,
             );
         }
         Ok(())

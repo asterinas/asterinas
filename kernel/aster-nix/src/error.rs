@@ -189,8 +189,8 @@ impl AsRef<Error> for Error {
 }
 
 impl From<ostd::Error> for Error {
-    fn from(frame_error: ostd::Error) -> Self {
-        match frame_error {
+    fn from(ostd_error: ostd::Error) -> Self {
+        match ostd_error {
             ostd::Error::AccessDenied => Error::new(Errno::EFAULT),
             ostd::Error::NoMemory => Error::new(Errno::ENOMEM),
             ostd::Error::InvalidArgs => Error::new(Errno::EINVAL),
@@ -200,6 +200,13 @@ impl From<ostd::Error> for Error {
             ostd::Error::Overflow => Error::new(Errno::EOVERFLOW),
             ostd::Error::MapAlreadyMappedVaddr => Error::new(Errno::EINVAL),
         }
+    }
+}
+
+impl From<(ostd::Error, usize)> for Error {
+    // Used in fallible memory read/write API
+    fn from(ostd_error: (ostd::Error, usize)) -> Self {
+        Error::from(ostd_error.0)
     }
 }
 

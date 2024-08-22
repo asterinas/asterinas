@@ -19,12 +19,12 @@ impl Device for Null {
 }
 
 impl FileIo for Null {
-    fn read(&self, _buf: &mut [u8]) -> Result<usize> {
+    fn read(&self, _writer: &mut VmWriter) -> Result<usize> {
         Ok(0)
     }
 
-    fn write(&self, buf: &[u8]) -> Result<usize> {
-        Ok(buf.len())
+    fn write(&self, reader: &mut VmReader) -> Result<usize> {
+        Ok(reader.remain())
     }
 
     fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {

@@ -23,13 +23,14 @@ pub fn sys_write(
     // the user specified an empty buffer, we should detect errors by checking
     // the file discriptor. If no errors detected, return 0 successfully.
     let write_len = if user_buf_len != 0 {
-        let mut buffer = vec![0u8; user_buf_len];
-        ctx.get_user_space()
-            .read_bytes(user_buf_ptr, &mut VmWriter::from(buffer.as_mut_slice()))?;
-        debug!("write content = {:?}", buffer);
-        file.write(&buffer)?
+        let mut reader = ctx
+            .process
+            .root_vmar()
+            .vm_space()
+            .reader(user_buf_ptr, user_buf_len)?;
+        file.write(&mut reader)?
     } else {
-        file.write(&[])?
+        file.write_bytes(&[])?
     };
 
     Ok(SyscallReturn::Return(write_len as _))

@@ -112,7 +112,7 @@ fn do_sys_preadv(
         // but the current implementation does not ensure atomicity.
         // A suitable fix would be to add a `readv` method for the `FileLike` trait,
         // allowing each subsystem to implement atomicity.
-        let read_len = file.read_at(cur_offset, &mut buffer)?;
+        let read_len = file.read_bytes_at(cur_offset, &mut buffer)?;
         io_vec.write_exact_to_user(&buffer)?;
         total_len += read_len;
         cur_offset += read_len;
@@ -160,7 +160,7 @@ fn do_sys_readv(
         // but the current implementation does not ensure atomicity.
         // A suitable fix would be to add a `readv` method for the `FileLike` trait,
         // allowing each subsystem to implement atomicity.
-        let read_len = file.read(&mut buffer)?;
+        let read_len = file.read_bytes(&mut buffer)?;
         io_vec.write_exact_to_user(&buffer)?;
         total_len += read_len;
         if read_len == 0 || read_len < buffer.len() {

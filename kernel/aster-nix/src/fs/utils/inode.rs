@@ -280,19 +280,19 @@ pub trait Inode: Any + Sync + Send {
         None
     }
 
-    fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         Err(Error::new(Errno::EISDIR))
     }
 
-    fn read_direct_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+    fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         Err(Error::new(Errno::EISDIR))
     }
 
-    fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
         Err(Error::new(Errno::EISDIR))
     }
 
-    fn write_direct_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+    fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
         Err(Error::new(Errno::EISDIR))
     }
 
@@ -397,7 +397,7 @@ impl dyn Inode {
         (self as &dyn Any).downcast_ref::<T>()
     }
 
-    pub fn read_all(&self, buf: &mut Vec<u8>) -> Result<usize> {
+    pub fn read_to_end(&self, buf: &mut Vec<u8>) -> Result<usize> {
         if !self.type_().support_read() {
             return_errno!(Errno::EISDIR);
         }
@@ -406,10 +406,12 @@ impl dyn Inode {
         if buf.len() < file_size {
             buf.resize(file_size, 0);
         }
-        self.read_at(0, &mut buf[..file_size])
+
+        let mut writer = VmWriter::from(&mut buf[..file_size]).to_fallible();
+        self.read_at(0, &mut writer)
     }
 
-    pub fn read_direct_all(&self, buf: &mut Vec<u8>) -> Result<usize> {
+    pub fn read_direct_to_end(&self, buf: &mut Vec<u8>) -> Result<usize> {
         if !self.type_().support_read() {
             return_errno!(Errno::EISDIR);
         }
@@ -418,7 +420,9 @@ impl dyn Inode {
         if buf.len() < file_size {
             buf.resize(file_size, 0);
         }
-        self.read_direct_at(0, &mut buf[..file_size])
+
+        let mut writer = VmWriter::from(&mut buf[..file_size]).to_fallible();
+        self.read_direct_at(0, &mut writer)
     }
 
     pub fn writer(&self, from_offset: usize) -> InodeWriter {
@@ -426,6 +430,26 @@ impl dyn Inode {
             inner: self,
             offset: from_offset,
         }
+    }
+
+    pub fn read_bytes_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+        let mut writer = VmWriter::from(buf).to_fallible();
+        self.read_at(offset, &mut writer)
+    }
+
+    pub fn write_bytes_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+        let mut reader = VmReader::from(buf).to_fallible();
+        self.write_at(offset, &mut reader)
+    }
+
+    pub fn read_bytes_direct_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+        let mut writer = VmWriter::from(buf).to_fallible();
+        self.read_direct_at(offset, &mut writer)
+    }
+
+    pub fn write_bytes_direct_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+        let mut reader = VmReader::from(buf).to_fallible();
+        self.write_direct_at(offset, &mut reader)
     }
 }
 
@@ -437,9 +461,10 @@ pub struct InodeWriter<'a> {
 impl<'a> Write for InodeWriter<'a> {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+        let mut reader = VmReader::from(buf).to_fallible();
         let write_len = self
             .inner
-            .write_at(self.offset, buf)
+            .write_at(self.offset, &mut reader)
             .map_err(|_| IoError::new(IoErrorKind::WriteZero, "failed to write buffer"))?;
         self.offset += write_len;
         Ok(write_len)

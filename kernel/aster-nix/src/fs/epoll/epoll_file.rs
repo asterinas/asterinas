@@ -329,11 +329,11 @@ impl Pollable for EpollFile {
 
 // Implement the common methods required by FileHandle
 impl FileLike for EpollFile {
-    fn read(&self, buf: &mut [u8]) -> Result<usize> {
+    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "epoll files do not support read");
     }
 
-    fn write(&self, buf: &[u8]) -> Result<usize> {
+    fn write(&self, reader: &mut VmReader) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "epoll files do not support write");
     }
 

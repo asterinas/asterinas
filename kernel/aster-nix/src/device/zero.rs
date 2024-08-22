@@ -19,15 +19,17 @@ impl Device for Zero {
 }
 
 impl FileIo for Zero {
-    fn read(&self, buf: &mut [u8]) -> Result<usize> {
-        for byte in buf.iter_mut() {
-            *byte = 0;
+    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+        // TODO: Use more efficient way when need to read a bunch of zeros once.
+        let read_len = writer.avail();
+        for _ in 0..read_len {
+            writer.write_val(&0u8)?;
         }
-        Ok(buf.len())
+        Ok(read_len)
     }
 
-    fn write(&self, buf: &[u8]) -> Result<usize> {
-        Ok(buf.len())
+    fn write(&self, reader: &mut VmReader) -> Result<usize> {
+        Ok(reader.remain())
     }
 
     fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {

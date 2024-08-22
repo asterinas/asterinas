@@ -276,7 +276,7 @@ mod test {
         let root = fs.root_inode() as Arc<dyn Inode>;
         let file_name = "a.txt";
         let a_inode = create_file(root.clone(), file_name);
-        let _ = a_inode.write_at(8192, &[0, 1, 2, 3, 4]);
+        let _ = a_inode.write_bytes_at(8192, &[0, 1, 2, 3, 4]);
 
         let unlink_result = root.unlink(file_name);
         assert!(
@@ -336,7 +336,7 @@ mod test {
             let inode = create_file(root.clone(), file_name);
 
             if fs.num_free_clusters() > file_id as u32 {
-                let _ = inode.write_at(file_id * cluster_size, &[0, 1, 2, 3, 4]);
+                let _ = inode.write_bytes_at(file_id * cluster_size, &[0, 1, 2, 3, 4]);
             }
         }
 
@@ -464,7 +464,7 @@ mod test {
             //Use a prime number to make each sector different.
             *num = (i % 107) as u8;
         }
-        let _ = a_inode.write_at(0, &buf);
+        let _ = a_inode.write_bytes_at(0, &buf);
 
         let new_name = "HELLO.TXT";
         let rename_result = root.rename(file_name, &root.clone(), new_name);
@@ -482,7 +482,7 @@ mod test {
         // test read after rename
         let a_inode_new = root.lookup(new_name).unwrap();
         let mut read = vec![0u8; BUF_SIZE];
-        let read_after_rename = a_inode_new.read_at(0, &mut read);
+        let read_after_rename = a_inode_new.read_bytes_at(0, &mut read);
         assert!(
             read_after_rename.is_ok() && read_after_rename.clone().unwrap() == BUF_SIZE,
             "Fail to read after rename: {:?}",
@@ -493,7 +493,7 @@ mod test {
         // test write after rename
         const NEW_BUF_SIZE: usize = 9 * PAGE_SIZE + 23;
         let new_buf = vec![7u8; NEW_BUF_SIZE];
-        let new_write_after_rename = a_inode_new.write_at(0, &new_buf);
+        let new_write_after_rename = a_inode_new.write_bytes_at(0, &new_buf);
         assert!(
             new_write_after_rename.is_ok()
                 && new_write_after_rename.clone().unwrap() == NEW_BUF_SIZE,
@@ -502,7 +502,7 @@ mod test {
         );
 
         let mut new_read = vec![0u8; NEW_BUF_SIZE];
-        let _ = a_inode_new.read_at(0, &mut new_read);
+        let _ = a_inode_new.read_bytes_at(0, &mut new_read);
         assert!(
             new_buf.eq(&new_read),
             "New read and new write mismatch after rename"
@@ -630,7 +630,7 @@ mod test {
             *num = (i % 107) as u8;
         }
 
-        let write_result = file.write_direct_at(0, &buf);
+        let write_result = file.write_bytes_direct_at(0, &buf);
         assert!(
             write_result.is_ok(),
             "Fs failed to write direct: {:?}",
@@ -638,7 +638,7 @@ mod test {
         );
 
         let mut read = vec![0u8; BUF_SIZE];
-        let read_result = file.read_direct_at(0, &mut read);
+        let read_result = file.read_bytes_direct_at(0, &mut read);
         assert!(
             read_result.is_ok(),
             "Fs failed to read direct: {:?}",
@@ -662,7 +662,7 @@ mod test {
             *num = (i % 107) as u8;
         }
 
-        let write_result = file.write_at(0, &buf);
+        let write_result = file.write_bytes_at(0, &buf);
         assert!(
             write_result.is_ok(),
             "Fs failed to write: {:?}",
@@ -670,7 +670,7 @@ mod test {
         );
 
         let mut read = vec![0u8; BUF_SIZE];
-        let read_result = file.read_at(0, &mut read);
+        let read_result = file.read_bytes_at(0, &mut read);
         assert!(
             read_result.is_ok(),
             "Fs failed to read: {:?}",
@@ -706,19 +706,19 @@ mod test {
         for i in 0..steps {
             let start = i * write_len;
             let end = BUF_SIZE.min(start + write_len);
-            a.write_at(start, &buf_a[start..end]).unwrap();
-            b.write_at(start, &buf_b[start..end]).unwrap();
+            a.write_bytes_at(start, &buf_a[start..end]).unwrap();
+            b.write_bytes_at(start, &buf_b[start..end]).unwrap();
         }
 
         let mut read = vec![0u8; BUF_SIZE];
-        a.read_at(0, &mut read).unwrap();
+        a.read_bytes_at(0, &mut read).unwrap();
         assert!(
             buf_a.eq(&read),
             "File a mismatch. Data read result:{:?}",
             read
         );
 
-        b.read_at(0, &mut read).unwrap();
+        b.read_bytes_at(0, &mut read).unwrap();
         assert!(
             buf_b.eq(&read),
             "File b mismatch. Data read result:{:?}",
@@ -1032,7 +1032,7 @@ mod test {
 
             buf.resize(size, 0);
             rng.fill_bytes(&mut buf);
-            let write_result = inode.write_at(0, &buf);
+            let write_result = inode.write_bytes_at(0, &buf);
             assert!(
                 write_result.is_ok(),
                 "Fail to write after resize expand from {:?}pgs to {:?}pgs: {:?}",
@@ -1052,7 +1052,7 @@ mod test {
 
             buf.resize(size, 0);
             rng.fill_bytes(&mut buf);
-            let write_result = inode.write_at(0, &buf);
+            let write_result = inode.write_bytes_at(0, &buf);
             assert!(
                 write_result.is_ok(),
                 "Fail to write after resize shrink from {:?}pgs to {:?}pgs: {:?}",

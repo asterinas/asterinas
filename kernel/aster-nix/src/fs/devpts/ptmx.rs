@@ -132,19 +132,19 @@ impl Inode for Ptmx {
         self.metadata.write().ctime = time;
     }
 
-    fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         Ok(0)
     }
 
-    fn read_direct_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+    fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         Ok(0)
     }
 
-    fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
         Ok(0)
     }
 
-    fn write_direct_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+    fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
         Ok(0)
     }
 
@@ -178,11 +178,11 @@ impl Device for Inner {
 }
 
 impl FileIo for Inner {
-    fn read(&self, buf: &mut [u8]) -> Result<usize> {
+    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "cannot read ptmx");
     }
 
-    fn write(&self, buf: &[u8]) -> Result<usize> {
+    fn write(&self, reader: &mut VmReader) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "cannot write ptmx");
     }
 

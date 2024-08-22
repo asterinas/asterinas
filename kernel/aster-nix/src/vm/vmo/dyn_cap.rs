@@ -27,7 +27,7 @@ impl Vmo<Rights> {
     pub fn commit(&self, range: Range<usize>) -> Result<()> {
         self.check_rights(Rights::WRITE)?;
         self.0
-            .commit_and_operate(&range, |_| {}, CommitFlags::empty())?;
+            .commit_and_operate(&range, |_| Ok(()), CommitFlags::empty())?;
         Ok(())
     }
 
@@ -116,15 +116,15 @@ impl Vmo<Rights> {
 }
 
 impl VmIo for Vmo<Rights> {
-    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> ostd::Result<()> {
+    fn read(&self, offset: usize, writer: &mut VmWriter) -> ostd::Result<()> {
         self.check_rights(Rights::READ)?;
-        self.0.read_bytes(offset, buf)?;
+        self.0.read(offset, writer)?;
         Ok(())
     }
 
-    fn write_bytes(&self, offset: usize, buf: &[u8]) -> ostd::Result<()> {
+    fn write(&self, offset: usize, reader: &mut VmReader) -> ostd::Result<()> {
         self.check_rights(Rights::WRITE)?;
-        self.0.write_bytes(offset, buf)?;
+        self.0.write(offset, reader)?;
         Ok(())
     }
     // TODO: Support efficient `write_vals()`

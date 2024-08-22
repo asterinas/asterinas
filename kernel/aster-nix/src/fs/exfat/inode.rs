@@ -1221,7 +1221,7 @@ impl Inode for ExfatInode {
         Some(self.inner.read().page_cache.pages().dup())
     }
 
-    fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let inner = self.inner.upread();
         if inner.inode_type.is_directory() {
             return_errno!(Errno::EISDIR)
@@ -1229,25 +1229,22 @@ impl Inode for ExfatInode {
         let (read_off, read_len) = {
             let file_size = inner.size;
             let start = file_size.min(offset);
-            let end = file_size.min(offset + buf.len());
+            let end = file_size.min(offset + writer.avail());
             (start, end - start)
         };
-        inner
-            .page_cache
-            .pages()
-            .read_bytes(read_off, &mut buf[..read_len])?;
+        inner.page_cache.pages().read(read_off, writer)?;
 
         inner.upgrade().update_atime()?;
         Ok(read_len)
     }
 
     // The offset and the length of buffer must be multiples of the block size.
-    fn read_direct_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+    fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let inner = self.inner.upread();
         if inner.inode_type.is_directory() {
             return_errno!(Errno::EISDIR)
         }
-        if !is_block_aligned(offset) || !is_block_aligned(buf.len()) {
+        if !is_block_aligned(offset) || !is_block_aligned(writer.avail()) {
             return_errno_with_message!(Errno::EINVAL, "not block-aligned");
         }
 
@@ -1256,7 +1253,9 @@ impl Inode for ExfatInode {
         let (read_off, read_len) = {
             let file_size = inner.size;
             let start = file_size.min(offset).align_down(sector_size);
-            let end = file_size.min(offset + buf.len()).align_down(sector_size);
+            let end = file_size
+                .min(offset + writer.avail())
+                .align_down(sector_size);
             (start, end - start)
         };
 
@@ -1278,8 +1277,7 @@ impl Inode for ExfatInode {
             let physical_bid =
                 Bid::from_offset(cur_cluster.cluster_id() as usize * cluster_size + cur_offset);
             inner.fs().block_device().read_block(physical_bid, &frame)?;
-
-            frame.read_bytes(0, &mut buf[buf_offset..buf_offset + BLOCK_SIZE])?;
+            frame.read(0, writer).unwrap();
             buf_offset += BLOCK_SIZE;
 
             cur_offset += BLOCK_SIZE;
@@ -1293,7 +1291,8 @@ impl Inode for ExfatInode {
         Ok(read_len)
     }
 
-    fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
+        let write_len = reader.remain();
         // We need to obtain the fs lock to resize the file.
         let new_size = {
             let mut inner = self.inner.write();
@@ -1303,7 +1302,7 @@ impl Inode for ExfatInode {
 
             let file_size = inner.size;
             let file_allocated_size = inner.size_allocated;
-            let new_size = offset + buf.len();
+            let new_size = offset + write_len;
             let fs = inner.fs();
             let fs_guard = fs.lock();
             if new_size > file_size {
@@ -1317,7 +1316,7 @@ impl Inode for ExfatInode {
 
         // Locks released here, so that file write can be parallized.
         let inner = self.inner.upread();
-        inner.page_cache.pages().write_bytes(offset, buf)?;
+        inner.page_cache.pages().write(offset, reader)?;
 
         // Update timestamps and size.
         {
@@ -1336,21 +1335,22 @@ impl Inode for ExfatInode {
             inner.sync_all(&fs_guard)?;
         }
 
-        Ok(buf.len())
+        Ok(write_len)
     }
 
-    fn write_direct_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+    fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
+        let write_len = reader.remain();
         let inner = self.inner.upread();
         if inner.inode_type.is_directory() {
             return_errno!(Errno::EISDIR)
         }
-        if !is_block_aligned(offset) || !is_block_aligned(buf.len()) {
+        if !is_block_aligned(offset) || !is_block_aligned(write_len) {
             return_errno_with_message!(Errno::EINVAL, "not block-aligned");
         }
 
         let file_size = inner.size;
         let file_allocated_size = inner.size_allocated;
-        let end_offset = offset + buf.len();
+        let end_offset = offset + write_len;
 
         let start = offset.min(file_size);
         let end = end_offset.min(file_size);
@@ -1370,7 +1370,6 @@ impl Inode for ExfatInode {
         };
 
         let inner = self.inner.upread();
-        let mut buf_offset = 0;
 
         let start_pos = inner.start_chain.walk_to_cluster_at_offset(offset)?;
         let cluster_size = inner.fs().cluster_size();
@@ -1382,14 +1381,13 @@ impl Inode for ExfatInode {
                     .uninit(true)
                     .alloc_single()
                     .unwrap();
-                frame.write_bytes(0, &buf[buf_offset..buf_offset + BLOCK_SIZE])?;
+                frame.write(0, reader)?;
                 frame
             };
             let physical_bid =
                 Bid::from_offset(cur_cluster.cluster_id() as usize * cluster_size + cur_offset);
             let fs = inner.fs();
             fs.block_device().write_block(physical_bid, &frame)?;
-            buf_offset += BLOCK_SIZE;
 
             cur_offset += BLOCK_SIZE;
             if cur_offset >= cluster_size {
@@ -1412,7 +1410,7 @@ impl Inode for ExfatInode {
             inner.sync_metadata(&fs_guard)?;
         }
 
-        Ok(buf_offset)
+        Ok(write_len)
     }
 
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {

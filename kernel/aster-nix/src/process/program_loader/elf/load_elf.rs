@@ -97,7 +97,7 @@ fn lookup_and_parse_ldso(
     let ldso_elf = {
         let mut buf = Box::new([0u8; PAGE_SIZE]);
         let inode = ldso_file.inode();
-        inode.read_at(0, &mut *buf)?;
+        inode.read_bytes_at(0, &mut *buf)?;
         Elf::parse_elf(&*buf)?
     };
     Ok(Some((ldso_file, ldso_elf)))

@@ -98,32 +98,32 @@ impl FileLike for InodeHandle<Rights> {
     fn set_group(&self, gid: Gid) -> Result<()>;
     fn seek(&self, seek_from: SeekFrom) -> Result<usize>;
 
-    fn read(&self, buf: &mut [u8]) -> Result<usize> {
+    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         if !self.1.contains(Rights::READ) {
             return_errno_with_message!(Errno::EBADF, "file is not readable");
         }
-        self.0.read(buf)
+        self.0.read(writer)
     }
 
-    fn write(&self, buf: &[u8]) -> Result<usize> {
+    fn write(&self, reader: &mut VmReader) -> Result<usize> {
         if !self.1.contains(Rights::WRITE) {
             return_errno_with_message!(Errno::EBADF, "file is not writable");
         }
-        self.0.write(buf)
+        self.0.write(reader)
     }
 
-    fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         if !self.1.contains(Rights::READ) {
             return_errno_with_message!(Errno::EBADF, "file is not readable");
         }
-        self.0.read_at(offset, buf)
+        self.0.read_at(offset, writer)
     }
 
-    fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
         if !self.1.contains(Rights::WRITE) {
             return_errno_with_message!(Errno::EBADF, "file is not writable");
         }
-        self.0.write_at(offset, buf)
+        self.0.write_at(offset, reader)
     }
 
     fn resize(&self, new_size: usize) -> Result<()> {

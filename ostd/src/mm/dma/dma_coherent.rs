@@ -167,12 +167,12 @@ impl Drop for DmaCoherentInner {
 }
 
 impl VmIo for DmaCoherent {
-    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
-        self.inner.vm_segment.read_bytes(offset, buf)
+    fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<()> {
+        self.inner.vm_segment.read(offset, writer)
     }
 
-    fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
-        self.inner.vm_segment.write_bytes(offset, buf)
+    fn write(&self, offset: usize, reader: &mut VmReader) -> Result<()> {
+        self.inner.vm_segment.write(offset, reader)
     }
 }
 

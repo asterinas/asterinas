@@ -156,9 +156,9 @@ impl Pollable for EventFile {
 }
 
 impl FileLike for EventFile {
-    fn read(&self, buf: &mut [u8]) -> Result<usize> {
+    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         let read_len = core::mem::size_of::<u64>();
-        if buf.len() < read_len {
+        if writer.avail() < read_len {
             return_errno_with_message!(Errno::EINVAL, "buf len is less len u64 size");
         }
 
@@ -183,10 +183,10 @@ impl FileLike for EventFile {
 
             // Copy value from counter, and set the new counter value
             if self.flags.lock().contains(Flags::EFD_SEMAPHORE) {
-                buf[..read_len].copy_from_slice(1u64.as_bytes());
+                writer.write_fallible(&mut 1u64.as_bytes().into())?;
                 *counter -= 1;
             } else {
-                buf[..read_len].copy_from_slice((*counter).as_bytes());
+                writer.write_fallible(&mut (*counter).as_bytes().into())?;
                 *counter = 0;
             }
 
@@ -197,13 +197,13 @@ impl FileLike for EventFile {
         Ok(read_len)
     }
 
-    fn write(&self, buf: &[u8]) -> Result<usize> {
+    fn write(&self, reader: &mut VmReader) -> Result<usize> {
         let write_len = core::mem::size_of::<u64>();
-        if buf.len() < write_len {
+        if reader.remain() < write_len {
             return_errno_with_message!(Errno::EINVAL, "buf len is less than the size of u64");
         }
 
-        let supplied_value = u64::from_bytes(buf);
+        let supplied_value = reader.read_val::<u64>()?;
 
         // Try to add counter val at first
         if self.add_counter_val(supplied_value).is_ok() {
