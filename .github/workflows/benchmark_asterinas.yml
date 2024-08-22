@@ -26,6 +26,7 @@ jobs:
           # IPC-related benchmarks
           - lmbench-unix-latency
           - lmbench-unix-bandwidth
+          - lmbench-unix-connect-latency
           - lmbench-pipe-latency
           - lmbench-pipe-bandwidth
           # Syscall-related benchmarks
