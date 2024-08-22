@@ -78,12 +78,14 @@ unsafe impl<const ORDER: usize> GlobalAlloc for LockedHeapWithRescue<ORDER> {
             return core::ptr::null_mut::<u8>();
         }
 
-        self.heap
+        let res = self
+            .heap
             .lock()
             .alloc(layout)
             .map_or(core::ptr::null_mut::<u8>(), |allocation| {
                 allocation.as_ptr()
-            })
+            });
+        res
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
