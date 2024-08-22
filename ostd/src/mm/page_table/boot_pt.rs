@@ -5,19 +5,79 @@
 //! in order to initialize the running phase page tables.
 
 use alloc::vec::Vec;
+use core::{
+    result::Result,
+    sync::atomic::{AtomicU32, Ordering},
+};
 
 use super::{pte_index, PageTableEntryTrait};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
+    cpu::num_cpus,
     mm::{
         nr_subpage_per_huge, paddr_to_vaddr, page::allocator::PAGE_ALLOCATOR, PageProperty,
         PagingConstsTrait, Vaddr, PAGE_SIZE,
     },
+    sync::SpinLock,
 };
 
 type FrameNumber = usize;
 
-/// A simple boot page table for boot stage mapping management.
+/// The accessor to the boot page table singleton [`BootPageTable`].
+///
+/// The user should provide a closure to access the boot page table. The
+/// function will acquire the lock and call the closure with a mutable
+/// reference to the boot page table as the argument.
+///
+/// The boot page table will be dropped when there's no CPU activating it.
+/// This function will return an [`Err`] if the boot page table is dropped.
+pub(crate) fn with_borrow<F>(f: F) -> Result<(), ()>
+where
+    F: FnOnce(&mut BootPageTable),
+{
+    let mut boot_pt = BOOT_PAGE_TABLE.lock();
+
+    let dismiss_count = DISMISS_COUNT.load(Ordering::SeqCst);
+    // This function may be called on the BSP before we can get the number of
+    // CPUs. So we short-circuit the check if the number of CPUs is zero.
+    if dismiss_count != 0 && dismiss_count < num_cpus() {
+        return Err(());
+    }
+
+    // Lazy initialization.
+    if boot_pt.is_none() {
+        // SAFETY: This function is called only once.
+        *boot_pt = Some(unsafe { BootPageTable::from_current_pt() });
+    }
+
+    f(boot_pt.as_mut().unwrap());
+
+    Ok(())
+}
+
+/// Dismiss the boot page table.
+///
+/// By calling it on a CPU, the caller claims that the boot page table is no
+/// longer needed on this CPU.
+///
+/// # Safety
+///
+/// The caller should ensure that:
+///  - another legitimate page table is activated on this CPU;
+///  - this function should be called only once per CPU;
+///  - no [`with`] calls are performed on this CPU after this dismissal.
+pub(crate) unsafe fn dismiss() {
+    if DISMISS_COUNT.fetch_add(1, Ordering::SeqCst) == num_cpus() - 1 {
+        BOOT_PAGE_TABLE.lock().take();
+    }
+}
+
+/// The boot page table singleton instance.
+static BOOT_PAGE_TABLE: SpinLock<Option<BootPageTable>> = SpinLock::new(None);
+/// If it reaches the number of CPUs, the boot page table will be dropped.
+static DISMISS_COUNT: AtomicU32 = AtomicU32::new(0);
+
+/// A simple boot page table singleton for boot stage mapping management.
 /// If applicable, the boot page table could track the lifetime of page table
 /// frames that are set up by the firmware, loader or the setup code.
 pub struct BootPageTable<
@@ -33,8 +93,15 @@ pub struct BootPageTable<
 }
 
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
-    /// Creates a new boot page table from the current page table root physical address.
-    pub fn from_current_pt() -> Self {
+    /// Creates a new boot page table from the current page table root
+    /// physical address.
+    ///
+    /// # Safety
+    ///
+    /// This function should be called only once in the initialization phase.
+    /// Otherwise, It would lead to double-drop of the page table frames set up
+    /// by the firmware, loader or the setup code.
+    unsafe fn from_current_pt() -> Self {
         let root_paddr = crate::arch::mm::current_page_table_paddr();
         Self {
             root_pt: root_paddr / C::BASE_PAGE_SIZE,

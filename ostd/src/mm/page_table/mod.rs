@@ -18,7 +18,7 @@ pub use cursor::{Cursor, CursorMut, PageTableItem};
 #[cfg(ktest)]
 mod test;
 
-pub(in crate::mm) mod boot_pt;
+pub(crate) mod boot_pt;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PageTableError {

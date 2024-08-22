@@ -39,7 +39,7 @@
 //! 39 bits or 57 bits, the memory space just adjust proportionally.
 
 use alloc::vec::Vec;
-use core::{mem::ManuallyDrop, ops::Range};
+use core::ops::Range;
 
 use align_ext::AlignExt;
 use log::info;
@@ -52,13 +52,10 @@ use super::{
         Page,
     },
     page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
-    page_table::{boot_pt::BootPageTable, KernelMode, PageTable},
+    page_table::{KernelMode, PageTable},
     MemoryRegionType, Paddr, PagingConstsTrait, Vaddr, PAGE_SIZE,
 };
-use crate::{
-    arch::mm::{PageTableEntry, PagingConsts},
-    sync::SpinLock,
-};
+use crate::arch::mm::{PageTableEntry, PagingConsts};
 
 /// The shortest supported address width is 39 bits. And the literal
 /// values are written for 48 bits address width. Adjust the values
@@ -101,24 +98,12 @@ pub fn paddr_to_vaddr(pa: Paddr) -> usize {
     pa + LINEAR_MAPPING_BASE_VADDR
 }
 
-/// The boot page table instance.
-///
-/// It is used in the initialization phase before [`KERNEL_PAGE_TABLE`] is activated.
-/// Since we want dropping the boot page table unsafe, it is wrapped in a [`ManuallyDrop`].
-pub static BOOT_PAGE_TABLE: SpinLock<Option<ManuallyDrop<BootPageTable>>> = SpinLock::new(None);
-
 /// The kernel page table instance.
 ///
 /// It manages the kernel mapping of all address spaces by sharing the kernel part. And it
 /// is unlikely to be activated.
 pub static KERNEL_PAGE_TABLE: Once<PageTable<KernelMode, PageTableEntry, PagingConsts>> =
     Once::new();
-
-/// Initializes the boot page table.
-pub(crate) fn init_boot_page_table() {
-    let boot_pt = BootPageTable::from_current_pt();
-    *BOOT_PAGE_TABLE.lock() = Some(ManuallyDrop::new(boot_pt));
-}
 
 /// Initializes the kernel page table.
 ///
@@ -222,7 +207,12 @@ pub fn init_kernel_page_table(meta_pages: Vec<Page<MetaPageMeta>>) {
     KERNEL_PAGE_TABLE.call_once(|| kpt);
 }
 
-pub fn activate_kernel_page_table() {
+/// Activates the kernel page table.
+///
+/// # Safety
+///
+/// This function should only be called once per CPU.
+pub unsafe fn activate_kernel_page_table() {
     let kpt = KERNEL_PAGE_TABLE
         .get()
         .expect("The kernel page table is not initialized yet");
@@ -232,8 +222,9 @@ pub fn activate_kernel_page_table() {
         crate::arch::mm::tlb_flush_all_including_global();
     }
 
-    // SAFETY: the boot page table is OK to be dropped now since
+    // SAFETY: the boot page table is OK to be dismissed now since
     // the kernel page table is activated.
-    let mut boot_pt = BOOT_PAGE_TABLE.lock().take().unwrap();
-    unsafe { ManuallyDrop::drop(&mut boot_pt) };
+    unsafe {
+        crate::mm::page_table::boot_pt::dismiss();
+    }
 }

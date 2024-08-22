@@ -125,6 +125,11 @@ fn ap_early_entry(local_apic_id: u32) -> ! {
     }
     crate::arch::irq::enable_local();
 
+    // SAFETY: this function is only called once on this AP.
+    unsafe {
+        crate::mm::kspace::activate_kernel_page_table();
+    }
+
     // Mark the AP as started.
     let ap_boot_info = AP_BOOT_INFO.get().unwrap();
     ap_boot_info
