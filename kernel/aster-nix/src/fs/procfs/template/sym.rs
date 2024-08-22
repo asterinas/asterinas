@@ -59,19 +59,19 @@ impl<S: SymOps + 'static> Inode for ProcSym<S> {
         InodeType::SymLink
     }
 
-    fn read_at(&self, _offset: usize, _buf: &mut [u8]) -> Result<usize> {
+    fn read_at(&self, _offset: usize, _writer: &mut VmWriter) -> Result<usize> {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn read_direct_at(&self, _offset: usize, _buf: &mut [u8]) -> Result<usize> {
+    fn read_direct_at(&self, _offset: usize, _writer: &mut VmWriter) -> Result<usize> {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn write_at(&self, _offset: usize, _buf: &[u8]) -> Result<usize> {
+    fn write_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn write_direct_at(&self, _offset: usize, _buf: &[u8]) -> Result<usize> {
+    fn write_direct_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {
         Err(Error::new(Errno::EPERM))
     }
 

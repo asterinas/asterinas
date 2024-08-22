@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::cmp::min;
-
 use super::SyscallReturn;
 use crate::{fs::file_table::FileDesc, prelude::*};
 
@@ -25,15 +23,14 @@ pub fn sys_read(
     // the user specified an empty buffer, we should detect errors by checking
     // the file discriptor. If no errors detected, return 0 successfully.
     let read_len = if buf_len != 0 {
-        let mut read_buf = vec![0u8; buf_len];
-        let read_len = file.read(&mut read_buf)?;
-        ctx.get_user_space().write_bytes(
-            user_buf_addr,
-            &mut VmReader::from(&read_buf[..min(read_len, buf_len)]),
-        )?;
-        read_len
+        let mut writer = ctx
+            .process
+            .root_vmar()
+            .vm_space()
+            .writer(user_buf_addr, buf_len)?;
+        file.read(&mut writer)?
     } else {
-        file.read(&mut [])?
+        file.read_bytes(&mut [])?
     };
 
     Ok(SyscallReturn::Return(read_len as _))

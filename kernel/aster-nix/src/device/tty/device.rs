@@ -41,11 +41,11 @@ impl Device for TtyDevice {
 }
 
 impl FileIo for TtyDevice {
-    fn read(&self, buf: &mut [u8]) -> Result<usize> {
+    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "cannot read tty device");
     }
 
-    fn write(&self, buf: &[u8]) -> Result<usize> {
+    fn write(&self, reader: &mut VmReader) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "cannot write tty device");
     }
 

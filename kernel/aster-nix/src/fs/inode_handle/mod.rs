@@ -43,22 +43,22 @@ struct InodeHandle_ {
 }
 
 impl InodeHandle_ {
-    pub fn read(&self, buf: &mut [u8]) -> Result<usize> {
+    pub fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         if let Some(ref file_io) = self.file_io {
-            return file_io.read(buf);
+            return file_io.read(writer);
         }
 
         let mut offset = self.offset.lock();
 
-        let len = self.read_at(*offset, buf)?;
+        let len = self.read_at(*offset, writer)?;
 
         *offset += len;
         Ok(len)
     }
 
-    pub fn write(&self, buf: &[u8]) -> Result<usize> {
+    pub fn write(&self, reader: &mut VmReader) -> Result<usize> {
         if let Some(ref file_io) = self.file_io {
-            return file_io.write(buf);
+            return file_io.write(reader);
         }
 
         let mut offset = self.offset.lock();
@@ -67,25 +67,25 @@ impl InodeHandle_ {
             *offset = self.dentry.size();
         }
 
-        let len = self.write_at(*offset, buf)?;
+        let len = self.write_at(*offset, reader)?;
 
         *offset += len;
         Ok(len)
     }
 
-    pub fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+    pub fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         if let Some(ref file_io) = self.file_io {
             todo!("support read_at for FileIo");
         }
 
         if self.status_flags().contains(StatusFlags::O_DIRECT) {
-            self.dentry.inode().read_direct_at(offset, buf)
+            self.dentry.inode().read_direct_at(offset, writer)
         } else {
-            self.dentry.inode().read_at(offset, buf)
+            self.dentry.inode().read_at(offset, writer)
         }
     }
 
-    pub fn write_at(&self, mut offset: usize, buf: &[u8]) -> Result<usize> {
+    pub fn write_at(&self, mut offset: usize, reader: &mut VmReader) -> Result<usize> {
         if let Some(ref file_io) = self.file_io {
             todo!("support write_at for FileIo");
         }
@@ -96,9 +96,9 @@ impl InodeHandle_ {
         }
 
         if self.status_flags().contains(StatusFlags::O_DIRECT) {
-            self.dentry.inode().write_direct_at(offset, buf)
+            self.dentry.inode().write_direct_at(offset, reader)
         } else {
-            self.dentry.inode().write_at(offset, buf)
+            self.dentry.inode().write_at(offset, reader)
         }
     }
 
@@ -108,9 +108,9 @@ impl InodeHandle_ {
         }
 
         let len = if self.status_flags().contains(StatusFlags::O_DIRECT) {
-            self.dentry.inode().read_direct_all(buf)?
+            self.dentry.inode().read_direct_to_end(buf)?
         } else {
-            self.dentry.inode().read_all(buf)?
+            self.dentry.inode().read_to_end(buf)?
         };
         Ok(len)
     }
@@ -378,9 +378,9 @@ impl<R> Drop for InodeHandle<R> {
 }
 
 pub trait FileIo: Send + Sync + 'static {
-    fn read(&self, buf: &mut [u8]) -> Result<usize>;
+    fn read(&self, writer: &mut VmWriter) -> Result<usize>;
 
-    fn write(&self, buf: &[u8]) -> Result<usize>;
+    fn write(&self, reader: &mut VmReader) -> Result<usize>;
 
     fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents;
 

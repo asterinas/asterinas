@@ -11,7 +11,7 @@ use align_ext::AlignExt;
 use aster_rights::Rights;
 use ostd::{
     collections::xarray::{CursorMut, XArray},
-    mm::{Frame, FrameAllocOptions, Infallible, VmReader, VmWriter},
+    mm::{Frame, FrameAllocOptions, VmReader, VmWriter},
 };
 
 use crate::prelude::*;
@@ -269,7 +269,7 @@ impl Vmo_ {
         commit_flags: CommitFlags,
     ) -> Result<()>
     where
-        F: FnMut(Frame),
+        F: FnMut(Frame) -> Result<()>,
     {
         self.pages.with(|pages, size| {
             if range.end > size {
@@ -280,7 +280,7 @@ impl Vmo_ {
             let mut cursor = pages.cursor_mut(page_idx_range.start as u64);
             for page_idx in page_idx_range {
                 let committed_page = self.commit_with_cursor(&mut cursor, commit_flags)?;
-                operate(committed_page);
+                operate(committed_page)?;
                 cursor.next();
             }
             Ok(())
@@ -300,30 +300,30 @@ impl Vmo_ {
     }
 
     /// Reads the specified amount of buffer content starting from the target offset in the VMO.
-    pub fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
-        let read_len = buf.len();
+    pub fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<()> {
+        let read_len = writer.avail().min(self.size().saturating_sub(offset));
         let read_range = offset..(offset + read_len);
         let mut read_offset = offset % PAGE_SIZE;
-        let mut buf_writer: VmWriter<Infallible> = buf.into();
 
-        let read = move |page: Frame| {
-            page.reader().skip(read_offset).read(&mut buf_writer);
+        let read = move |page: Frame| -> Result<()> {
+            page.reader().skip(read_offset).read_fallible(writer)?;
             read_offset = 0;
+            Ok(())
         };
 
         self.commit_and_operate(&read_range, read, CommitFlags::empty())
     }
 
     /// Writes the specified amount of buffer content starting from the target offset in the VMO.
-    pub fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
-        let write_len = buf.len();
+    pub fn write(&self, offset: usize, reader: &mut VmReader) -> Result<()> {
+        let write_len = reader.remain();
         let write_range = offset..(offset + write_len);
         let mut write_offset = offset % PAGE_SIZE;
-        let mut buf_reader: VmReader<Infallible> = buf.into();
 
-        let mut write = move |page: Frame| {
-            page.writer().skip(write_offset).write(&mut buf_reader);
+        let mut write = move |page: Frame| -> Result<()> {
+            page.writer().skip(write_offset).write_fallible(reader)?;
             write_offset = 0;
+            Ok(())
         };
 
         if write_range.len() < PAGE_SIZE {
@@ -358,7 +358,8 @@ impl Vmo_ {
     /// Clears the target range in current VMO.
     pub fn clear(&self, range: Range<usize>) -> Result<()> {
         let buffer = vec![0u8; range.end - range.start];
-        self.write_bytes(range.start, &buffer)?;
+        let mut reader = VmReader::from(buffer.as_slice()).to_fallible();
+        self.write(range.start, &mut reader)?;
         Ok(())
     }
 

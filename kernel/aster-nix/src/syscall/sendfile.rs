@@ -63,13 +63,13 @@ pub fn sys_sendfile(
 
         // Read from `in_file`
         let read_res = if let Some(offset) = offset.as_mut() {
-            let res = in_file.read_at(*offset, &mut buffer[..max_readlen]);
+            let res = in_file.read_bytes_at(*offset, &mut buffer[..max_readlen]);
             if let Ok(len) = res.as_ref() {
                 *offset += *len;
             }
             res
         } else {
-            in_file.read(&mut buffer[..max_readlen])
+            in_file.read_bytes(&mut buffer[..max_readlen])
         };
 
         let read_len = match read_res {
@@ -89,7 +89,7 @@ pub fn sys_sendfile(
 
         // Note: `sendfile` allows sending partial data,
         // so short reads and short writes are all acceptable
-        let write_res = out_file.write(&buffer[..read_len]);
+        let write_res = out_file.write_bytes(&buffer[..read_len]);
 
         match write_res {
             Ok(len) => {

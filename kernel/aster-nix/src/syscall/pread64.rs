@@ -31,11 +31,12 @@ pub fn sys_pread64(
     }
 
     let read_len = {
-        let mut buffer = vec![0u8; user_buf_len];
-        let read_len = file.read_at(offset as usize, &mut buffer)?;
-        ctx.get_user_space()
-            .write_bytes(user_buf_ptr, &mut VmReader::from(buffer.as_slice()))?;
-        read_len
+        let mut writer = ctx
+            .process
+            .root_vmar()
+            .vm_space()
+            .writer(user_buf_ptr, user_buf_len)?;
+        file.read_at(offset as usize, &mut writer)?
     };
 
     Ok(SyscallReturn::Return(read_len as _))

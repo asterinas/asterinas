@@ -128,16 +128,20 @@ impl FileLike for UnixStreamSocket {
         Some(self)
     }
 
-    fn read(&self, buf: &mut [u8]) -> Result<usize> {
+    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+        let mut buf = vec![0u8; writer.avail()];
         // TODO: Set correct flags
         let flags = SendRecvFlags::empty();
-        self.recv(buf, flags)
+        let read_len = self.recv(&mut buf, flags)?;
+        writer.write_fallible(&mut buf.as_slice().into())?;
+        Ok(read_len)
     }
 
-    fn write(&self, buf: &[u8]) -> Result<usize> {
+    fn write(&self, reader: &mut VmReader) -> Result<usize> {
+        let buf = reader.collect()?;
         // TODO: Set correct flags
         let flags = SendRecvFlags::empty();
-        self.send(buf, flags)
+        self.send(&buf, flags)
     }
 
     fn status_flags(&self) -> StatusFlags {

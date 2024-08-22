@@ -111,20 +111,20 @@ impl Inode for Ext2Inode {
         Some(self.page_cache())
     }
 
-    fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
-        self.read_at(offset, buf)
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        self.read_at(offset, writer)
     }
 
-    fn read_direct_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
-        self.read_direct_at(offset, buf)
+    fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        self.read_direct_at(offset, writer)
     }
 
-    fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
-        self.write_at(offset, buf)
+    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
+        self.write_at(offset, reader)
     }
 
-    fn write_direct_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
-        self.write_direct_at(offset, buf)
+    fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
+        self.write_direct_at(offset, reader)
     }
 
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {

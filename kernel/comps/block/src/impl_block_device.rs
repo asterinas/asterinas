@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::mm::{Frame, FrameAllocOptions, Segment, VmIo};
+use ostd::mm::{
+    FallibleVmRead, FallibleVmWrite, Frame, FrameAllocOptions, Segment, VmIo, VmReader, VmWriter,
+};
 
 use super::{
     bio::{Bio, BioEnqueueError, BioSegment, BioStatus, BioType, BioWaiter, SubmittedBio},
@@ -76,24 +78,25 @@ impl dyn BlockDevice {
 
 impl VmIo for dyn BlockDevice {
     /// Reads consecutive bytes of several sectors in size.
-    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> ostd::Result<()> {
-        if offset % SECTOR_SIZE != 0 || buf.len() % SECTOR_SIZE != 0 {
+    fn read(&self, offset: usize, writer: &mut VmWriter) -> ostd::Result<()> {
+        let read_len = writer.avail();
+        if offset % SECTOR_SIZE != 0 || read_len % SECTOR_SIZE != 0 {
             return Err(ostd::Error::InvalidArgs);
         }
-        if buf.is_empty() {
+        if read_len == 0 {
             return Ok(());
         }
 
         let (bio, bio_segment) = {
             let num_blocks = {
                 let first = Bid::from_offset(offset).to_raw();
-                let last = Bid::from_offset(offset + buf.len() - 1).to_raw();
+                let last = Bid::from_offset(offset + read_len - 1).to_raw();
                 last - first + 1
             };
             let segment = FrameAllocOptions::new(num_blocks as usize)
                 .uninit(true)
                 .alloc_contiguous()?;
-            let bio_segment = BioSegment::from_segment(segment, offset % BLOCK_SIZE, buf.len());
+            let bio_segment = BioSegment::from_segment(segment, offset % BLOCK_SIZE, read_len);
 
             (
                 Bio::new(
@@ -109,7 +112,10 @@ impl VmIo for dyn BlockDevice {
         let status = bio.submit_and_wait(self)?;
         match status {
             BioStatus::Complete => {
-                let _ = bio_segment.reader().read(&mut buf.into());
+                let _ = bio_segment
+                    .reader()
+                    .read_fallible(writer)
+                    .map_err(|(e, _)| e)?;
                 Ok(())
             }
             _ => Err(ostd::Error::IoError),
@@ -117,28 +123,30 @@ impl VmIo for dyn BlockDevice {
     }
 
     /// Writes consecutive bytes of several sectors in size.
-    fn write_bytes(&self, offset: usize, buf: &[u8]) -> ostd::Result<()> {
-        if offset % SECTOR_SIZE != 0 || buf.len() % SECTOR_SIZE != 0 {
+    fn write(&self, offset: usize, reader: &mut VmReader) -> ostd::Result<()> {
+        let write_len = reader.remain();
+        if offset % SECTOR_SIZE != 0 || write_len % SECTOR_SIZE != 0 {
             return Err(ostd::Error::InvalidArgs);
         }
-        if buf.is_empty() {
+        if write_len == 0 {
             return Ok(());
         }
 
         let bio = {
             let num_blocks = {
                 let first = Bid::from_offset(offset).to_raw();
-                let last = Bid::from_offset(offset + buf.len() - 1).to_raw();
+                let last = Bid::from_offset(offset + write_len - 1).to_raw();
                 last - first + 1
             };
             let segment = FrameAllocOptions::new(num_blocks as usize)
                 .uninit(true)
                 .alloc_contiguous()?;
-            segment.write_bytes(offset % BLOCK_SIZE, buf)?;
+            segment.write(offset % BLOCK_SIZE, reader)?;
             let len = segment
                 .writer()
                 .skip(offset % BLOCK_SIZE)
-                .write(&mut buf.into());
+                .write_fallible(reader)
+                .map_err(|(e, _)| e)?;
             let bio_segment = BioSegment::from_segment(segment, offset % BLOCK_SIZE, len);
             Bio::new(
                 BioType::Write,

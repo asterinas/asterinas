@@ -8,8 +8,8 @@ use crate::prelude::*;
 
 impl<R: TRights> InodeHandle<TRightSet<R>> {
     #[require(R > Read)]
-    pub fn read(&self, buf: &mut [u8]) -> Result<usize> {
-        self.0.read(buf)
+    pub fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+        self.0.read(writer)
     }
 
     #[require(R > Read)]
@@ -18,8 +18,8 @@ impl<R: TRights> InodeHandle<TRightSet<R>> {
     }
 
     #[require(R > Write)]
-    pub fn write(&self, buf: &[u8]) -> Result<usize> {
-        self.0.write(buf)
+    pub fn write(&self, reader: &mut VmReader) -> Result<usize> {
+        self.0.write(reader)
     }
 
     #[require(R > Read)]

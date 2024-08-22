@@ -58,11 +58,11 @@ impl From<TdCallError> for Error {
 }
 
 impl FileIo for TdxGuest {
-    fn read(&self, _buf: &mut [u8]) -> Result<usize> {
+    fn read(&self, _writer: &mut VmWriter) -> Result<usize> {
         return_errno_with_message!(Errno::EPERM, "Read operation not supported")
     }
 
-    fn write(&self, _buf: &[u8]) -> Result<usize> {
+    fn write(&self, _reader: &mut VmReader) -> Result<usize> {
         return_errno_with_message!(Errno::EPERM, "Write operation not supported")
     }
 

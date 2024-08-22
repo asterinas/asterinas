@@ -36,7 +36,7 @@ pub fn load_program_to_vm(
     let file_header = {
         // read the first page of file header
         let mut file_header_buffer = Box::new([0u8; PAGE_SIZE]);
-        inode.read_at(0, &mut *file_header_buffer)?;
+        inode.read_bytes_at(0, &mut *file_header_buffer)?;
         file_header_buffer
     };
     if let Some(mut new_argv) = parse_shebang_line(&*file_header)? {

@@ -398,7 +398,7 @@ impl FileInMemory {
             self.name, offset, len
         );
         let mut buf = vec![0; len];
-        let read_result = self.inode.read_at(offset, &mut buf);
+        let read_result = self.inode.read_bytes_at(offset, &mut buf);
         assert!(
             read_result.is_ok(),
             "Fail to read file in range [{:?}, {:?}): {:?}",
@@ -430,7 +430,7 @@ impl FileInMemory {
         );
         let mut buf = vec![0; write_len];
         rng.fill_bytes(&mut buf);
-        let write_result = self.inode.write_at(write_start_offset, &buf);
+        let write_result = self.inode.write_bytes_at(write_start_offset, &buf);
         assert!(
             write_result.is_ok(),
             "Fail to write file in range [{:?}, {:?}): {:?}",

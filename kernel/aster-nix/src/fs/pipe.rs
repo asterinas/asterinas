@@ -41,12 +41,15 @@ impl Pollable for PipeReader {
 }
 
 impl FileLike for PipeReader {
-    fn read(&self, buf: &mut [u8]) -> Result<usize> {
-        if self.status_flags().contains(StatusFlags::O_NONBLOCK) {
-            self.consumer.try_read(buf)
+    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+        let mut buf = vec![0u8; writer.avail()];
+        let read_len = if self.status_flags().contains(StatusFlags::O_NONBLOCK) {
+            self.consumer.try_read(&mut buf)?
         } else {
-            self.wait_events(IoEvents::IN, || self.consumer.try_read(buf))
-        }
+            self.wait_events(IoEvents::IN, || self.consumer.try_read(&mut buf))?
+        };
+        writer.write_fallible(&mut buf.as_slice().into())?;
+        Ok(read_len)
     }
 
     fn status_flags(&self) -> StatusFlags {
@@ -123,11 +126,12 @@ impl Pollable for PipeWriter {
 }
 
 impl FileLike for PipeWriter {
-    fn write(&self, buf: &[u8]) -> Result<usize> {
+    fn write(&self, reader: &mut VmReader) -> Result<usize> {
+        let buf = reader.collect()?;
         if self.status_flags().contains(StatusFlags::O_NONBLOCK) {
-            self.producer.try_write(buf)
+            self.producer.try_write(&buf)
         } else {
-            self.wait_events(IoEvents::OUT, || self.producer.try_write(buf))
+            self.wait_events(IoEvents::OUT, || self.producer.try_write(&buf))
         }
     }
 
@@ -275,11 +279,11 @@ mod test {
     fn test_read_empty() {
         test_blocking(
             |writer| {
-                assert_eq!(writer.write(&[1]).unwrap(), 1);
+                assert_eq!(writer.write(&mut reader_from(&[1])).unwrap(), 1);
             },
             |reader| {
                 let mut buf = [0; 1];
-                assert_eq!(reader.read(&mut buf).unwrap(), 1);
+                assert_eq!(reader.read(&mut writer_from(&mut buf)).unwrap(), 1);
                 assert_eq!(&buf, &[1]);
             },
             Ordering::ReadThenWrite,
@@ -290,14 +294,14 @@ mod test {
     fn test_write_full() {
         test_blocking(
             |writer| {
-                assert_eq!(writer.write(&[1, 2]).unwrap(), 1);
-                assert_eq!(writer.write(&[2]).unwrap(), 1);
+                assert_eq!(writer.write(&mut reader_from(&[1, 2])).unwrap(), 1);
+                assert_eq!(writer.write(&mut reader_from(&[2])).unwrap(), 1);
             },
             |reader| {
                 let mut buf = [0; 2];
-                assert_eq!(reader.read(&mut buf).unwrap(), 1);
+                assert_eq!(reader.read(&mut writer_from(&mut buf)).unwrap(), 1);
                 assert_eq!(&buf[..1], &[1]);
-                assert_eq!(reader.read(&mut buf).unwrap(), 1);
+                assert_eq!(reader.read(&mut writer_from(&mut buf)).unwrap(), 1);
                 assert_eq!(&buf[..1], &[2]);
             },
             Ordering::WriteThenRead,
@@ -310,7 +314,7 @@ mod test {
             |writer| drop(writer),
             |reader| {
                 let mut buf = [0; 1];
-                assert_eq!(reader.read(&mut buf).unwrap(), 0);
+                assert_eq!(reader.read(&mut writer_from(&mut buf)).unwrap(), 0);
             },
             Ordering::ReadThenWrite,
         );
@@ -320,11 +324,22 @@ mod test {
     fn test_write_closed() {
         test_blocking(
             |writer| {
-                assert_eq!(writer.write(&[1, 2]).unwrap(), 1);
-                assert_eq!(writer.write(&[2]).unwrap_err().error(), Errno::EPIPE);
+                assert_eq!(writer.write(&mut reader_from(&[1, 2])).unwrap(), 1);
+                assert_eq!(
+                    writer.write(&mut reader_from(&[2])).unwrap_err().error(),
+                    Errno::EPIPE
+                );
             },
             |reader| drop(reader),
             Ordering::WriteThenRead,
         );
+    }
+
+    fn reader_from(buf: &[u8]) -> VmReader {
+        VmReader::from(buf).to_fallible()
+    }
+
+    fn writer_from(buf: &mut [u8]) -> VmWriter {
+        VmWriter::from(buf).to_fallible()
     }
 }

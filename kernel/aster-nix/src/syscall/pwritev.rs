@@ -103,7 +103,7 @@ fn do_sys_pwritev(
         // but the current implementation does not ensure atomicity.
         // A suitable fix would be to add a `writev` method for the `FileLike` trait,
         // allowing each subsystem to implement atomicity.
-        let write_len = file.write_at(cur_offset, &buffer)?;
+        let write_len = file.write_bytes_at(cur_offset, &buffer)?;
         total_len += write_len;
         cur_offset += write_len;
     }
@@ -144,7 +144,7 @@ fn do_sys_writev(
         // but the current implementation does not ensure atomicity.
         // A suitable fix would be to add a `writev` method for the `FileLike` trait,
         // allowing each subsystem to implement atomicity.
-        let write_len = file.write(&buffer)?;
+        let write_len = file.write_bytes(&buffer)?;
         total_len += write_len;
     }
     Ok(total_len)

@@ -113,20 +113,20 @@ impl Inode for PtySlaveInode {
         self.metadata.write().ctime = time;
     }
 
-    fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
-        self.device.read(buf)
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        self.device.read(writer)
     }
 
-    fn read_direct_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
-        self.device.read(buf)
+    fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        self.device.read(writer)
     }
 
-    fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
-        self.device.write(buf)
+    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
+        self.device.write(reader)
     }
 
-    fn write_direct_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
-        self.device.write(buf)
+    fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
+        self.device.write(reader)
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {

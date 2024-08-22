@@ -24,7 +24,7 @@ use super::{
 };
 use crate::{
     mm::{
-        io::{VmIo, VmReader, VmWriter},
+        io::{FallibleVmRead, FallibleVmWrite, VmIo, VmReader, VmWriter},
         paddr_to_vaddr, HasPaddr, Paddr, PAGE_SIZE,
     },
     Error, Result,
@@ -133,42 +133,55 @@ impl<'a> Frame {
 }
 
 impl VmIo for Frame {
-    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
+    fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<()> {
+        let read_len = writer.avail().min(self.size().saturating_sub(offset));
         // Do bound check with potential integer overflow in mind
-        let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
+        let max_offset = offset.checked_add(read_len).ok_or(Error::Overflow)?;
         if max_offset > self.size() {
             return Err(Error::InvalidArgs);
         }
-        let len = self.reader().skip(offset).read(&mut buf.into());
-        debug_assert!(len == buf.len());
+        let len = self
+            .reader()
+            .skip(offset)
+            .read_fallible(writer)
+            .map_err(|(e, _)| e)?;
+        debug_assert!(len == read_len);
         Ok(())
     }
 
-    fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
+    fn write(&self, offset: usize, reader: &mut VmReader) -> Result<()> {
+        let write_len = reader.remain().min(self.size().saturating_sub(offset));
         // Do bound check with potential integer overflow in mind
-        let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
+        let max_offset = offset.checked_add(write_len).ok_or(Error::Overflow)?;
         if max_offset > self.size() {
             return Err(Error::InvalidArgs);
         }
-        let len = self.writer().skip(offset).write(&mut buf.into());
-        debug_assert!(len == buf.len());
+        let len = self
+            .writer()
+            .skip(offset)
+            .write_fallible(reader)
+            .map_err(|(e, _)| e)?;
+        debug_assert!(len == write_len);
         Ok(())
     }
 }
 
 impl VmIo for alloc::vec::Vec<Frame> {
-    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
+    fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<()> {
         // Do bound check with potential integer overflow in mind
-        let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
+        let max_offset = offset.checked_add(writer.avail()).ok_or(Error::Overflow)?;
         if max_offset > self.len() * PAGE_SIZE {
             return Err(Error::InvalidArgs);
         }
 
         let num_skip_pages = offset / PAGE_SIZE;
         let mut start = offset % PAGE_SIZE;
-        let mut buf_writer: VmWriter<Infallible> = buf.into();
         for frame in self.iter().skip(num_skip_pages) {
-            let read_len = frame.reader().skip(start).read(&mut buf_writer);
+            let read_len = frame
+                .reader()
+                .skip(start)
+                .read_fallible(writer)
+                .map_err(|(e, _)| e)?;
             if read_len == 0 {
                 break;
             }
@@ -177,18 +190,21 @@ impl VmIo for alloc::vec::Vec<Frame> {
         Ok(())
     }
 
-    fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
+    fn write(&self, offset: usize, reader: &mut VmReader) -> Result<()> {
         // Do bound check with potential integer overflow in mind
-        let max_offset = offset.checked_add(buf.len()).ok_or(Error::Overflow)?;
+        let max_offset = offset.checked_add(reader.remain()).ok_or(Error::Overflow)?;
         if max_offset > self.len() * PAGE_SIZE {
             return Err(Error::InvalidArgs);
         }
 
         let num_skip_pages = offset / PAGE_SIZE;
         let mut start = offset % PAGE_SIZE;
-        let mut buf_reader: VmReader<Infallible> = buf.into();
         for frame in self.iter().skip(num_skip_pages) {
-            let write_len = frame.writer().skip(start).write(&mut buf_reader);
+            let write_len = frame
+                .writer()
+                .skip(start)
+                .write_fallible(reader)
+                .map_err(|(e, _)| e)?;
             if write_len == 0 {
                 break;
             }

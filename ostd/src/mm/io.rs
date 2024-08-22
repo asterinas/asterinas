@@ -40,6 +40,7 @@
 //! user space, making it impossible to avoid data races). However, they may produce erroneous
 //! results, such as unexpected bytes being copied, but do not cause soundness problems.
 
+use alloc::vec;
 use core::marker::PhantomData;
 
 use align_ext::AlignExt;
@@ -69,14 +70,26 @@ use crate::{
 /// [`Segment`]: crate::mm::Segment
 /// [`Frame`]: crate::mm::Frame
 pub trait VmIo: Send + Sync {
+    /// Reads requested data at a specified offset into a given `VmWriter`.
+    ///
+    /// # No short reads
+    ///
+    /// On success, the `writer` must be written with the requested data
+    /// completely. If, for any reason, the requested data is only partially
+    /// available, then the method shall return an error.
+    fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<()>;
+
     /// Reads a specified number of bytes at a specified offset into a given buffer.
     ///
     /// # No short reads
     ///
-    /// On success, the output `buf` must be filled with the requested data
-    /// completely. If, for any reason, the requested data is only partially
-    /// available, then the method shall return an error.
-    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()>;
+    /// Similar to [`read`].
+    ///
+    /// [`read`]: VmIo::read
+    fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()> {
+        let mut writer = VmWriter::from(buf).to_fallible();
+        self.read(offset, &mut writer)
+    }
 
     /// Reads a value of a specified type at a specified offset.
     fn read_val<T: Pod>(&self, offset: usize) -> Result<T> {
@@ -89,9 +102,9 @@ pub trait VmIo: Send + Sync {
     ///
     /// # No short reads
     ///
-    /// Similar to [`read_bytes`].
+    /// Similar to [`read`].
     ///
-    /// [`read_bytes`]: VmIo::read_bytes
+    /// [`read`]: VmIo::read
     fn read_slice<T: Pod>(&self, offset: usize, slice: &mut [T]) -> Result<()> {
         let len_in_bytes = core::mem::size_of_val(slice);
         let ptr = slice as *mut [T] as *mut u8;
@@ -101,14 +114,26 @@ pub trait VmIo: Send + Sync {
         self.read_bytes(offset, buf)
     }
 
+    /// Writes all data from a given `VmReader` at a specified offset.
+    ///
+    /// # No short writes
+    ///
+    /// On success, the data from the `reader` must be read to the VM object entirely.
+    /// If, for any reason, the input data can only be written partially,
+    /// then the method shall return an error.
+    fn write(&self, offset: usize, reader: &mut VmReader) -> Result<()>;
+
     /// Writes a specified number of bytes from a given buffer at a specified offset.
     ///
     /// # No short writes
     ///
-    /// On success, the input `buf` must be written to the VM object entirely.
-    /// If, for any reason, the input data can only be written partially,
-    /// then the method shall return an error.
-    fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()>;
+    /// Similar to [`write`].
+    ///
+    /// [`write`]: VmIo::write
+    fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()> {
+        let mut reader = VmReader::from(buf).to_fallible();
+        self.write(offset, &mut reader)
+    }
 
     /// Writes a value of a specified type at a specified offset.
     fn write_val<T: Pod>(&self, offset: usize, new_val: &T) -> Result<()> {
@@ -120,9 +145,9 @@ pub trait VmIo: Send + Sync {
     ///
     /// # No short write
     ///
-    /// Similar to [`write_bytes`].
+    /// Similar to [`write`].
     ///
-    /// [`write_bytes`]: VmIo::write_bytes
+    /// [`write`]: VmIo::write
     fn write_slice<T: Pod>(&self, offset: usize, slice: &[T]) -> Result<()> {
         let len_in_bytes = core::mem::size_of_val(slice);
         let ptr = slice as *const [T] as *const u8;
@@ -219,9 +244,11 @@ macro_rules! impl_vm_io_pointer {
     ($typ:ty,$from:tt) => {
         #[inherit_methods(from = $from)]
         impl<T: VmIo> VmIo for $typ {
+            fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<()>;
             fn read_bytes(&self, offset: usize, buf: &mut [u8]) -> Result<()>;
             fn read_val<F: Pod>(&self, offset: usize) -> Result<F>;
             fn read_slice<F: Pod>(&self, offset: usize, slice: &mut [F]) -> Result<()>;
+            fn write(&self, offset: usize, reader: &mut VmReader) -> Result<()>;
             fn write_bytes(&self, offset: usize, buf: &[u8]) -> Result<()>;
             fn write_val<F: Pod>(&self, offset: usize, new_val: &F) -> Result<()>;
             fn write_slice<F: Pod>(&self, offset: usize, slice: &[F]) -> Result<()>;
@@ -364,7 +391,7 @@ macro_rules! impl_read_fallible {
                     return Ok(0);
                 }
 
-                // SAFETY: The source and destionation are subsets of memory ranges specified by
+                // SAFETY: The source and destination are subsets of memory ranges specified by
                 // the reader and writer, so they are either valid for reading and writing or in
                 // user space.
                 let copied_len = unsafe {
@@ -437,7 +464,7 @@ impl<'a> VmReader<'a, Infallible> {
             return 0;
         }
 
-        // SAFETY: The source and destionation are subsets of memory ranges specified by the reader
+        // SAFETY: The source and destination are subsets of memory ranges specified by the reader
         // and writer, so they are valid for reading and writing.
         unsafe {
             memcpy(writer.cursor, self.cursor, copy_len);
@@ -544,6 +571,25 @@ impl<'a> VmReader<'a, Fallible> {
                 err
             })?;
         Ok(val)
+    }
+
+    /// Collects all the remaining bytes into a `Vec<u8>`.
+    ///
+    /// If the memory read failed, this method will return `Err`
+    /// and the current reader's cursor remains pointing to
+    /// the original starting position.
+    pub fn collect(&mut self) -> Result<Vec<u8>> {
+        let mut buf = vec![0u8; self.remain()];
+        self.read_fallible(&mut buf.as_mut_slice().into())
+            .map_err(|(err, copied_len)| {
+                // SAFETY: The `copied_len` is the number of bytes read so far.
+                // So the `cursor` can be moved back to the original position.
+                unsafe {
+                    self.cursor = self.cursor.sub(copied_len);
+                }
+                err
+            })?;
+        Ok(buf)
     }
 }
 

@@ -62,24 +62,24 @@ impl<F: FileOps + 'static> Inode for ProcFile<F> {
         InodeType::File
     }
 
-    fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let data = self.inner.data()?;
         let start = data.len().min(offset);
-        let end = data.len().min(offset + buf.len());
+        let end = data.len().min(offset + writer.avail());
         let len = end - start;
-        buf[0..len].copy_from_slice(&data[start..end]);
+        writer.write_fallible(&mut (&data[start..end]).into())?;
         Ok(len)
     }
 
-    fn read_direct_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
-        self.read_at(offset, buf)
+    fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        self.read_at(offset, writer)
     }
 
-    fn write_at(&self, _offset: usize, _buf: &[u8]) -> Result<usize> {
+    fn write_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {
         Err(Error::new(Errno::EPERM))
     }
 
-    fn write_direct_at(&self, _offset: usize, _buf: &[u8]) -> Result<usize> {
+    fn write_direct_at(&self, _offset: usize, _reader: &mut VmReader) -> Result<usize> {
         Err(Error::new(Errno::EPERM))
     }
 

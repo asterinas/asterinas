@@ -99,9 +99,10 @@ impl PtyMaster {
 }
 
 impl FileIo for PtyMaster {
-    fn read(&self, buf: &mut [u8]) -> Result<usize> {
+    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+        let read_len = writer.avail();
         // TODO: deal with nonblocking read
-        if buf.is_empty() {
+        if read_len == 0 {
             return Ok(0);
         }
 
@@ -124,17 +125,21 @@ impl FileIo for PtyMaster {
                 continue;
             }
 
-            let read_len = input.len().min(buf.len());
-            input.pop_slice(&mut buf[..read_len]);
+            let read_len = input.len().min(read_len);
+            let mut buf = vec![0u8; read_len];
+            input.pop_slice(&mut buf);
+            writer.write_fallible(&mut buf.as_slice().into())?;
             self.update_state(&input);
             return Ok(read_len);
         }
     }
 
-    fn write(&self, buf: &[u8]) -> Result<usize> {
+    fn write(&self, reader: &mut VmReader) -> Result<usize> {
+        let buf = reader.collect()?;
+        let write_len = buf.len();
         let mut input = self.input.lock();
         for character in buf {
-            self.output.push_char(*character, |content| {
+            self.output.push_char(character, |content| {
                 for byte in content.as_bytes() {
                     input.push_overwrite(*byte);
                 }
@@ -142,7 +147,7 @@ impl FileIo for PtyMaster {
         }
 
         self.update_state(&input);
-        Ok(buf.len())
+        Ok(write_len)
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
@@ -328,23 +333,28 @@ impl Terminal for PtySlave {
 }
 
 impl FileIo for PtySlave {
-    fn read(&self, buf: &mut [u8]) -> Result<usize> {
+    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+        let mut buf = vec![0u8; writer.avail()];
         self.job_control.wait_until_in_foreground()?;
-        self.master().output.read(buf)
+        let read_len = self.master().output.read(&mut buf)?;
+        writer.write_fallible(&mut buf.as_slice().into())?;
+        Ok(read_len)
     }
 
-    fn write(&self, buf: &[u8]) -> Result<usize> {
+    fn write(&self, reader: &mut VmReader) -> Result<usize> {
+        let buf = reader.collect()?;
+        let write_len = buf.len();
         let master = self.master();
         for ch in buf {
             // do we need to add '\r' here?
-            if *ch == b'\n' {
+            if ch == b'\n' {
                 master.slave_push_char(b'\r');
                 master.slave_push_char(b'\n');
             } else {
-                master.slave_push_char(*ch);
+                master.slave_push_char(ch);
             }
         }
-        Ok(buf.len())
+        Ok(write_len)
     }
 
     fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {

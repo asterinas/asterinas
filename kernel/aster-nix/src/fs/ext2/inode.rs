@@ -620,14 +620,14 @@ impl Inode {
         inner.device_id()
     }
 
-    pub fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+    pub fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let bytes_read = {
             let inner = self.inner.read();
             if inner.file_type() != FileType::File {
                 return_errno!(Errno::EISDIR);
             }
 
-            inner.read_at(offset, buf)?
+            inner.read_at(offset, writer)?
         };
 
         self.set_atime(now());
@@ -636,17 +636,17 @@ impl Inode {
     }
 
     // The offset and the length of buffer must be multiples of the block size.
-    pub fn read_direct_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+    pub fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let bytes_read = {
             let inner = self.inner.read();
             if inner.file_type() != FileType::File {
                 return_errno!(Errno::EISDIR);
             }
-            if !is_block_aligned(offset) || !is_block_aligned(buf.len()) {
+            if !is_block_aligned(offset) || !is_block_aligned(writer.avail()) {
                 return_errno_with_message!(Errno::EINVAL, "not block-aligned");
             }
 
-            inner.read_direct_at(offset, buf)?
+            inner.read_direct_at(offset, writer)?
         };
 
         self.set_atime(now());
@@ -654,7 +654,7 @@ impl Inode {
         Ok(bytes_read)
     }
 
-    pub fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+    pub fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
         let bytes_written = {
             let inner = self.inner.upread();
             if inner.file_type() != FileType::File {
@@ -662,12 +662,12 @@ impl Inode {
             }
 
             let file_size = inner.file_size();
-            let new_size = offset + buf.len();
+            let new_size = offset + reader.remain();
             if new_size > file_size {
                 let mut inner = inner.upgrade();
-                inner.extend_write_at(offset, buf)?
+                inner.extend_write_at(offset, reader)?
             } else {
-                inner.write_at(offset, buf)?
+                inner.write_at(offset, reader)?
             }
         };
 
@@ -679,18 +679,18 @@ impl Inode {
     }
 
     // The offset and the length of buffer must be multiples of the block size.
-    pub fn write_direct_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+    pub fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
         let bytes_written = {
             let inner = self.inner.upread();
             if inner.file_type() != FileType::File {
                 return_errno!(Errno::EISDIR);
             }
-            if !is_block_aligned(offset) || !is_block_aligned(buf.len()) {
+            if !is_block_aligned(offset) || !is_block_aligned(reader.remain()) {
                 return_errno_with_message!(Errno::EINVAL, "not block aligned");
             }
 
             let mut inner = inner.upgrade();
-            inner.write_direct_at(offset, buf)?
+            inner.write_direct_at(offset, reader)?
         };
 
         let now = now();
@@ -916,56 +916,58 @@ impl Inner {
         Ok(())
     }
 
-    pub fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+    pub fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let (offset, read_len) = {
             let file_size = self.inode_impl.file_size();
             let start = file_size.min(offset);
-            let end = file_size.min(offset + buf.len());
+            let end = file_size.min(offset + writer.avail());
             (start, end - start)
         };
 
-        self.page_cache
-            .pages()
-            .read_bytes(offset, &mut buf[..read_len])?;
+        self.page_cache.pages().read(offset, writer)?;
         Ok(read_len)
     }
 
-    pub fn read_direct_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+    pub fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let (offset, read_len) = {
             let file_size = self.inode_impl.file_size();
             let start = file_size.min(offset).align_down(BLOCK_SIZE);
-            let end = file_size.min(offset + buf.len()).align_down(BLOCK_SIZE);
+            let end = file_size
+                .min(offset + writer.avail())
+                .align_down(BLOCK_SIZE);
             (start, end - start)
         };
         self.page_cache.discard_range(offset..offset + read_len);
 
         let start_bid = Bid::from_offset(offset).to_raw() as Ext2Bid;
-        let buf_nblocks = buf.len() / BLOCK_SIZE;
+        let buf_nblocks = read_len / BLOCK_SIZE;
         let segment = FrameAllocOptions::new(buf_nblocks)
             .uninit(true)
             .alloc_contiguous()?;
 
         self.inode_impl.read_blocks(start_bid, &segment)?;
-        segment.read_bytes(0, buf)?;
+        segment.read(0, writer)?;
         Ok(read_len)
     }
 
-    pub fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
-        self.page_cache.pages().write_bytes(offset, buf)?;
-        Ok(buf.len())
+    pub fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
+        let write_len = reader.remain();
+        self.page_cache.pages().write(offset, reader)?;
+        Ok(write_len)
     }
 
-    pub fn extend_write_at(&mut self, offset: usize, buf: &[u8]) -> Result<usize> {
-        let new_size = offset + buf.len();
+    pub fn extend_write_at(&mut self, offset: usize, reader: &mut VmReader) -> Result<usize> {
+        let write_len = reader.remain();
+        let new_size = offset + write_len;
         self.page_cache.resize(new_size)?;
-        self.page_cache.pages().write_bytes(offset, buf)?;
+        self.page_cache.pages().write(offset, reader)?;
         self.inode_impl.resize(new_size)?;
-        Ok(buf.len())
+        Ok(write_len)
     }
 
-    pub fn write_direct_at(&mut self, offset: usize, buf: &[u8]) -> Result<usize> {
+    pub fn write_direct_at(&mut self, offset: usize, reader: &mut VmReader) -> Result<usize> {
         let file_size = self.inode_impl.file_size();
-        let write_len = buf.len();
+        let write_len = reader.remain();
         let end_offset = offset + write_len;
 
         let start = offset.min(file_size);
@@ -982,7 +984,7 @@ impl Inner {
             let segment = FrameAllocOptions::new(buf_nblocks)
                 .uninit(true)
                 .alloc_contiguous()?;
-            segment.write_bytes(0, buf)?;
+            segment.write(0, reader)?;
             segment
         };
 

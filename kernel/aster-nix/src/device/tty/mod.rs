@@ -72,13 +72,17 @@ impl Tty {
 }
 
 impl FileIo for Tty {
-    fn read(&self, buf: &mut [u8]) -> Result<usize> {
+    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+        let mut buf = vec![0; writer.avail()];
         self.job_control.wait_until_in_foreground()?;
-        self.ldisc.read(buf)
+        let read_len = self.ldisc.read(buf.as_mut_slice())?;
+        writer.write_fallible(&mut buf.as_slice().into())?;
+        Ok(read_len)
     }
 
-    fn write(&self, buf: &[u8]) -> Result<usize> {
-        if let Ok(content) = alloc::str::from_utf8(buf) {
+    fn write(&self, reader: &mut VmReader) -> Result<usize> {
+        let buf = reader.collect()?;
+        if let Ok(content) = alloc::str::from_utf8(&buf) {
             print!("{content}");
         } else {
             println!("Not utf-8 content: {:?}", buf);

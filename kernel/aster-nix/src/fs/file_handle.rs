@@ -17,11 +17,11 @@ use crate::{
 
 /// The basic operations defined on a file
 pub trait FileLike: Pollable + Send + Sync + Any {
-    fn read(&self, buf: &mut [u8]) -> Result<usize> {
+    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         return_errno_with_message!(Errno::EBADF, "the file is not valid for reading");
     }
 
-    fn write(&self, buf: &[u8]) -> Result<usize> {
+    fn write(&self, reader: &mut VmReader) -> Result<usize> {
         return_errno_with_message!(Errno::EBADF, "the file is not valid for writing");
     }
 
@@ -31,7 +31,7 @@ pub trait FileLike: Pollable + Send + Sync + Any {
     /// Unlike [`read`], `read_at` will not change the file offset.
     ///
     /// [`read`]: FileLike::read
-    fn read_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+    fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         return_errno_with_message!(Errno::ESPIPE, "read_at is not supported");
     }
 
@@ -42,7 +42,7 @@ pub trait FileLike: Pollable + Send + Sync + Any {
     /// If the file is append-only, the `offset` will be ignored.
     ///
     /// [`write`]: FileLike::write
-    fn write_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+    fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
         return_errno_with_message!(Errno::ESPIPE, "write_at is not supported");
     }
 
@@ -130,5 +130,25 @@ pub trait FileLike: Pollable + Send + Sync + Any {
 impl dyn FileLike {
     pub fn downcast_ref<T: FileLike>(&self) -> Option<&T> {
         (self as &dyn Any).downcast_ref::<T>()
+    }
+
+    pub fn read_bytes(&self, buf: &mut [u8]) -> Result<usize> {
+        let mut writer = VmWriter::from(buf).to_fallible();
+        self.read(&mut writer)
+    }
+
+    pub fn write_bytes(&self, buf: &[u8]) -> Result<usize> {
+        let mut reader = VmReader::from(buf).to_fallible();
+        self.write(&mut reader)
+    }
+
+    pub fn read_bytes_at(&self, offset: usize, buf: &mut [u8]) -> Result<usize> {
+        let mut writer = VmWriter::from(buf).to_fallible();
+        self.read_at(offset, &mut writer)
+    }
+
+    pub fn write_bytes_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
+        let mut reader = VmReader::from(buf).to_fallible();
+        self.write_at(offset, &mut reader)
     }
 }
