@@ -163,10 +163,18 @@ impl IfaceCommon {
         let (has_events, poll_at) = {
             let mut has_events = false;
             let mut poll_at;
+
             loop {
+                // `poll` transmits and receives a bounded number of packets. This loop ensures
+                // that all packets are transmitted and received. For details, see
+                // <https://github.com/smoltcp-rs/smoltcp/blob/8e3ea5c7f09a76f0a4988fda20cadc74eacdc0d8/src/iface/interface/mod.rs#L400-L405>.
                 while interface.poll(timestamp, device, &mut sockets) {
                     has_events = true;
                 }
+
+                // `poll_at` can return `Some(Instant::from_millis(0))`, which means `PollAt::Now`.
+                // For details, see
+                // <https://github.com/smoltcp-rs/smoltcp/blob/8e3ea5c7f09a76f0a4988fda20cadc74eacdc0d8/src/iface/interface/mod.rs#L478>.
                 poll_at = interface.poll_at(timestamp, &sockets);
                 let Some(instant) = poll_at else {
                     break;
@@ -175,6 +183,7 @@ impl IfaceCommon {
                     break;
                 }
             }
+
             (has_events, poll_at)
         };
 
