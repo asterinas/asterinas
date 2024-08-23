@@ -30,6 +30,7 @@ pub mod mapping {
     /// Converts a virtual address of the metadata slot to the physical address of the page.
     pub(crate) const fn meta_to_page<C: PagingConstsTrait>(vaddr: Vaddr) -> Paddr {
         let base = FRAME_METADATA_RANGE.start;
+        assert!(vaddr >= base);
         let offset = (vaddr - base) / size_of::<MetaSlot>();
         offset * PAGE_SIZE
     }
@@ -40,7 +41,6 @@ use core::{
     cell::UnsafeCell,
     marker::PhantomData,
     mem::{size_of, ManuallyDrop},
-    panic,
     sync::atomic::{AtomicU32, AtomicU8, Ordering},
 };
 
@@ -266,20 +266,12 @@ impl FreePage {
     /// Non-const reference to the metadata is safe because the page is locked.
     /// Concurrency safety is guaranteed by the method [`try_lock`].
     pub fn meta_mut(&mut self) -> &mut FreeMeta {
-        let raw_ptr = self as *const Self as *mut Self;
-        unsafe {
-            let cell_ptr = raw_ptr as *mut UnsafeCell<FreeMeta>;
-            &mut *cell_ptr.as_mut().unwrap().get()
-        }
+        unsafe { &mut *(self.ptr as *mut FreeMeta) }
     }
 
     /// Get the metadata of the free page.
     pub fn meta(&self) -> &FreeMeta {
-        let raw_ptr = self as *const Self as *mut Self;
-        unsafe {
-            let cell_ptr = raw_ptr as *mut UnsafeCell<FreeMeta>;
-            &*cell_ptr.as_mut().unwrap().get()
-        }
+        unsafe { &*(self.ptr as *const FreeMeta) }
     }
 }
 
@@ -300,9 +292,10 @@ impl Drop for FreePage {
 /// Implementations linklist operations for FreePage.
 impl FreePage {
     /// Initialize the circular linked list node.
-    pub fn init(&mut self) {
+    pub fn init(&mut self, value: usize) {
         let paddr = self.paddr();
         let meta = self.meta_mut();
+        meta.value = value;
         meta.prev = paddr;
         meta.next = paddr;
     }
@@ -318,6 +311,8 @@ impl FreePage {
     }
 
     /// Get the previous free page.
+    ///
+    /// Return None if the linked list has only one node.
     pub fn prev(&self) -> Option<Paddr> {
         let current = self.paddr();
         let meta = self.meta();
@@ -330,6 +325,8 @@ impl FreePage {
     }
 
     /// Get the next free page.
+    ///
+    /// Return None if the linked list has only one node.
     pub fn next(&self) -> Option<Paddr> {
         let current = self.paddr();
         let meta = self.meta();

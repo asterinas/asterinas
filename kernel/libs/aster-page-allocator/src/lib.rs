@@ -34,7 +34,7 @@ use buddy_allocator::BuddyFrameAllocator;
 use log::info;
 use ostd::{
     boot::memory_region::MemoryRegionType,
-    mm::{page, page::allocator::PageAlloc, PAGE_SIZE},
+    mm::{page::allocator::PageAlloc, PAGE_SIZE},
 };
 
 pub fn init() -> Box<dyn PageAlloc> {
@@ -56,12 +56,6 @@ pub fn init() -> Box<dyn PageAlloc> {
                 region.base(),
                 region.base() + region.len()
             );
-
-            for frame in start..end {
-                if page::Page::<page::meta::FrameMeta>::is_page_allocated(frame * PAGE_SIZE) {
-                    allocator.alloc_specific(frame, frame + 1);
-                }
-            }
         }
     }
     info!(
