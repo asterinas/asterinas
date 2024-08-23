@@ -2,6 +2,6 @@
     "alert_threshold": "125%",
     "alert_tool": "customBiggerIsBetter",
     "search_pattern": "lmdd result:",
-    "result_index": "7",
+    "result_index": "6",
     "description": "The bandwidth of file copy."
 }
