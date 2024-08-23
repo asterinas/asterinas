@@ -1,0 +1,14 @@
+[
+    {
+        "name": "Average bitrate of localhost TCP connection on Linux",
+        "unit": "Mbits/sec",
+        "value": 0,
+        "extra": "linux_avg"
+    },
+    {
+        "name": "Average bitrate of localhost TCP connection on Asterinas",
+        "unit": "Mbits/sec",
+        "value": 0,
+        "extra": "aster_avg"
+    }
+]
