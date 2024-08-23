@@ -16,6 +16,9 @@ pub fn sys_semget(key: i32, nsems: i32, semflags: i32, ctx: &Context) -> Result<
     if nsems < 0 || nsems as usize > SEMMSL {
         return_errno!(Errno::EINVAL);
     }
+    if key < 0 {
+        return_errno!(Errno::EINVAL);
+    }
 
     let flags = IpcFlags::from_bits_truncate(semflags as u32);
     let mode: u16 = (semflags as u32 & 0x1FF) as u16;
