@@ -9,19 +9,22 @@
 // Copyright (c) 2019-2020 Jiajie Chen
 //
 // We make the following new changes:
+// * Use [`FreePage`] linked list to improve page management efficiency.
 // * Add `alloc_specific` to allocate a specific range of frames.
-// * Implement `PageAlloc` trait for `BuddyFrameAllocator`.
-//!  * Add statistics for the total memory and free memory.
+// * Implement [`PageAlloc`] trait for `BuddyFrameAllocator`.
+// * Add statistics for the total memory and free memory.
 // * Refactor API to differentiate count and size of frames.
 //
 // These changes are released under the following license:
 //
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::collections::btree_set::BTreeSet;
 use core::{alloc::Layout, array, cmp::min, ops::Range};
 
-use ostd::mm::{page::allocator::PageAlloc, Paddr, PAGE_SIZE};
+use ostd::mm::{
+    page::{allocator::PageAlloc, meta::FreePage},
+    Paddr, PAGE_SIZE,
+};
 
 /// Buddy Frame allocator is a frame allocator based on buddy system, which
 /// allocates memory in power-of-two sizes.
@@ -34,9 +37,17 @@ use ostd::mm::{page::allocator::PageAlloc, Paddr, PAGE_SIZE};
 /// 1</sup> - 1.
 pub struct BuddyFrameAllocator<const ORDER: usize = 32> {
     // buddy system with max order of ORDER
-    free_list: [BTreeSet<usize>; ORDER],
+    // free_list keeps each class's entrance block's Frame Number
+    // Use linked list provided `meta::FreeMeta` to implement corresponding
+    // functions
+    //
+    // Notice: The value within the linked list represents the class of the
+    // block, which is set to class + 1, to avoid misjudgment between class 0
+    // and un-initialized block.
+    free_list: [Paddr; ORDER],
 
     // statistics
+    block_cnt: [u32; ORDER],
     allocated: usize,
     total: usize,
 }
@@ -49,9 +60,68 @@ impl<const ORDER: usize> BuddyFrameAllocator<ORDER> {
     /// Create an empty frame allocator
     pub fn new() -> Self {
         Self {
-            free_list: array::from_fn(|_| BTreeSet::default()),
+            free_list: array::from_fn(|_| 0),
+            block_cnt: array::from_fn(|_| 0),
             allocated: 0,
             total: 0,
+        }
+    }
+
+    /// Insert a frame to the free list
+    ///
+    /// Panic
+    ///
+    /// - The function panics if the class is larger than the max order.
+    fn insert_to_free_list(&mut self, class: usize, frame: usize) {
+        assert!(class < ORDER);
+
+        FreePage::try_lock(frame * PAGE_SIZE)
+            .expect("Failed to lock FreePage while adding frame")
+            .init(class + 1);
+        if self.block_cnt[class] == 0 {
+            self.free_list[class] = frame;
+        } else {
+            let mut list_head = FreePage::try_lock(self.free_list[class] * PAGE_SIZE)
+                .expect("Failed to lock FreePage while adding frame");
+            list_head.insert_before(frame * PAGE_SIZE);
+        }
+        self.block_cnt[class] += 1;
+    }
+
+    /// Remove a frame from the free list
+    ///
+    /// Panic
+    ///
+    /// The function panics if：
+    /// - The class is larger than the max order.
+    /// - The class is empty.
+    fn remove_from_free_list(&mut self, class: usize, frame: usize) {
+        assert!(class < ORDER);
+        assert!(self.block_cnt[class] > 0);
+
+        let mut freepage = FreePage::try_lock(frame * PAGE_SIZE)
+            .expect("Failed to lock FreePage while removing frame");
+
+        if frame == self.free_list[class] {
+            if let Some(next) = freepage.next() {
+                self.free_list[class] = next / PAGE_SIZE;
+            } else if self.block_cnt[class] > 1 {
+                let next = frame * PAGE_SIZE;
+                let prev = freepage.prev().unwrap_or(frame * PAGE_SIZE);
+                panic!("Free list is corrupted, class: {}, frame: {:x}, freelist cnt: {}, next: {:x}, prev: {:x}", class, frame, self.block_cnt[class], next, prev);
+            }
+        }
+
+        freepage.remove();
+        self.block_cnt[class] -= 1;
+    }
+
+    /// Check if the buddy of the given frame is free
+    fn is_free_block(&self, frame: usize, class: usize) -> bool {
+        if let Some(freepage) = FreePage::try_lock(frame * PAGE_SIZE) {
+            freepage.value() == class + 1
+        } else {
+            false
         }
     }
 
@@ -64,21 +134,38 @@ impl<const ORDER: usize> BuddyFrameAllocator<ORDER> {
 
         let mut total = 0;
         let mut current_start = start;
+        // Segment length is the length of the current segment
+        // Find the longest segment of free frames, improve the efficiency
+        let mut segment_length = 0;
 
-        while current_start < end {
+        while current_start + segment_length < end {
+            if FreePage::try_lock((current_start + segment_length) * PAGE_SIZE).is_none() {
+                if segment_length == 0 {
+                    current_start += 1;
+                    continue;
+                }
+            } else {
+                segment_length += 1;
+                if segment_length < (1 << (ORDER - 1)) && current_start + segment_length < end {
+                    continue;
+                }
+            }
+
             let lowbit = if current_start > 0 {
                 current_start & (!current_start + 1)
             } else {
                 32
             };
             let size = min(
-                min(lowbit, prev_power_of_two(end - current_start)),
+                min(lowbit, prev_power_of_two(segment_length)),
                 1 << (ORDER - 1),
             );
-            total += size;
+            let cur_class = size.trailing_zeros() as usize;
+            self.insert_to_free_list(cur_class, current_start);
 
-            self.free_list[size.trailing_zeros() as usize].insert(current_start);
             current_start += size;
+            segment_length = 0;
+            total += size;
         }
 
         self.total += total;
@@ -96,28 +183,33 @@ impl<const ORDER: usize> BuddyFrameAllocator<ORDER> {
         let class = power as usize;
         for i in class..self.free_list.len() {
             // Find the first non-empty size class
-            if !self.free_list[i].is_empty() {
+            if self.block_cnt[i] > 0 {
                 // Split buffers
                 for j in (class + 1..i + 1).rev() {
-                    if let Some(block_ref) = self.free_list[j].iter().next() {
-                        let block = *block_ref;
-                        self.free_list[j - 1].insert(block + (1 << (j - 1)));
-                        self.free_list[j - 1].insert(block);
-                        self.free_list[j].remove(&block);
-                    } else {
-                        return None;
-                    }
+                    let block_frame = FreePage::try_lock(self.free_list[j] * PAGE_SIZE)
+                        .expect("Failed to lock FreePage while allocating frame")
+                        .prev()
+                        .unwrap_or(self.free_list[j] * PAGE_SIZE)
+                        / PAGE_SIZE;
+
+                    // Remove original buffer from the class[j] list
+                    self.remove_from_free_list(j, block_frame);
+
+                    // Add two new buffers to the class[j-1] list
+                    self.insert_to_free_list(j - 1, block_frame);
+                    self.insert_to_free_list(j - 1, block_frame + (1 << (j - 1)));
                 }
 
-                let result = self.free_list[class].iter().next();
-                if let Some(result_ref) = result {
-                    let result = *result_ref;
-                    self.free_list[class].remove(&result);
-                    self.allocated += 1 << class;
-                    return Some(result);
-                } else {
-                    return None;
-                }
+                // Allocate the buffer
+                let result_frame = FreePage::try_lock(self.free_list[class] * PAGE_SIZE)
+                    .expect("Failed to lock FreePage while allocating frame")
+                    .prev()
+                    .unwrap_or(self.free_list[class] * PAGE_SIZE)
+                    / PAGE_SIZE;
+                self.remove_from_free_list(class, result_frame);
+                self.allocated += 1 << class;
+
+                return Some(result_frame);
             }
         }
         None
@@ -146,12 +238,13 @@ impl<const ORDER: usize> BuddyFrameAllocator<ORDER> {
         let mut current_class = class;
         while current_class < self.free_list.len() {
             let buddy = current_ptr ^ (1 << current_class);
-            if self.free_list[current_class].remove(&buddy) {
+            if self.is_free_block(buddy, current_class) {
                 // Free buddy found
+                self.remove_from_free_list(current_class, buddy);
                 current_ptr = min(current_ptr, buddy);
                 current_class += 1;
             } else {
-                self.free_list[current_class].insert(current_ptr);
+                self.insert_to_free_list(current_class, current_ptr);
                 break;
             }
         }
@@ -167,6 +260,7 @@ impl<const ORDER: usize> BuddyFrameAllocator<ORDER> {
     ///
     /// The function panics if no suitable block found for the given range.
     ///
+    #[allow(unused)]
     pub fn alloc_specific(&mut self, start: usize, end: usize) {
         let mut current_start = start;
         while current_start < end {
@@ -189,24 +283,21 @@ impl<const ORDER: usize> BuddyFrameAllocator<ORDER> {
             // introducing the free meta, we can reduce the time complexity of
             // deleting blocks from O(log(n)) to O(1).
             for i in (0..self.free_list.len()).rev() {
-                if self.free_list[i].is_empty() {
+                if self.block_cnt[i] == 0 {
                     continue;
                 }
-                // Traverse the blocks in the btree list
-                for block_iter in self.free_list[i].iter() {
-                    let block = *block_iter;
+                // Traverse the blocks in the list
+                let block = self.free_list[i];
+                for _ in 0..self.block_cnt[i] {
                     // block means the start frame of the block
-                    if block > current_start {
-                        break;
-                    }
                     if block <= current_start && block + (1 << i) > current_start {
                         if block == current_start && block + (1 << i) <= end {
-                            self.free_list[i].remove(&block);
+                            self.remove_from_free_list(i, block);
                             size = 1 << i;
                         } else if i > 0 {
-                            self.free_list[i - 1].insert(block);
-                            self.free_list[i - 1].insert(block + (1 << (i - 1)));
-                            self.free_list[i].remove(&block);
+                            self.insert_to_free_list(i - 1, block);
+                            self.insert_to_free_list(i - 1, block + (1 << (i - 1)));
+                            self.remove_from_free_list(i, block);
                         }
                         break;
                     }

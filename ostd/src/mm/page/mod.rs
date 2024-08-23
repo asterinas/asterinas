@@ -44,7 +44,7 @@ unsafe impl<M: PageMeta> Send for Page<M> {}
 unsafe impl<M: PageMeta> Sync for Page<M> {}
 
 impl<M: PageMeta> Page<M> {
-    /// Concurrent-safety page alloc function.b
+    /// Concurrent-safety page alloc function.
     ///
     /// The assurance of safety is facilitated by the function
     /// `FreePage::try_lock`, which serves as the exclusive gateway for
@@ -98,46 +98,6 @@ impl<M: PageMeta> Page<M> {
         Freepage is already in use when trying to get a new handle",
         );
         Self::from_freepage(freepage, metadata)
-    }
-
-    /// Check whether the page described at the physical address is allocated.
-    /// True if the page is allocated, false otherwise.
-    ///
-    /// # Warning
-    ///
-    /// Page status checked by this function may be outdated, since other
-    /// running threads may change them after the atomic load.
-    ///
-    /// Caller should make sure that:
-    ///
-    /// 1. No other threads will do `from_unused` or `drop`.
-    ///
-    /// 2. Lock the global page allocator.
-    ///
-    /// # Panics
-    ///
-    /// The function panics if:
-    ///
-    /// - the physical address is out of bound or not aligned.
-    ///
-    // # TODO
-    //
-    // Use a unique handle `FreePage` to check the page status.
-    // Current implementation is not safe if checking page status and changing
-    // page status happens concurrently.
-    pub fn is_page_allocated(paddr: Paddr) -> bool {
-        assert!(paddr % PAGE_SIZE == 0);
-        assert!(paddr < MAX_PADDR.load(Ordering::Relaxed) as Paddr);
-        let vaddr = mapping::page_to_meta::<PagingConsts>(paddr);
-        let ptr = vaddr as *const MetaSlot;
-
-        // SAFETY: The aligned pointer points to a initialized `MetaSlot`.
-        let usage = unsafe { &(*ptr).usage };
-
-        if let 0 = usage.load(Ordering::SeqCst) {
-            return false;
-        }
-        true
     }
 
     /// Forget the handle to the page.
