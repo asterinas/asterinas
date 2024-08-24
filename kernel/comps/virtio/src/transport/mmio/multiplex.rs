@@ -44,7 +44,7 @@ impl MultiplexIrq {
                 return;
             };
             let irq = multiplex_irq.read();
-            let interrupt_status = irq.interrupt_status.read().unwrap();
+            let interrupt_status = irq.interrupt_status.read_once().unwrap();
             let callbacks = if interrupt_status & 0x01 == 1 {
                 // Used buffer notification
                 &irq.queue_callbacks
@@ -55,7 +55,7 @@ impl MultiplexIrq {
             for callback in callbacks.iter() {
                 callback.call((trap_frame,));
             }
-            irq.interrupt_ack.write(&interrupt_status).unwrap();
+            irq.interrupt_ack.write_once(&interrupt_status).unwrap();
         };
         lock.irq.on_active(callback);
         drop(lock);

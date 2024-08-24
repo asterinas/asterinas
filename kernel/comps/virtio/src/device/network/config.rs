@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_network::EthernetAddr;
-use aster_util::safe_ptr::SafePtr;
+use aster_util::{field_ptr, safe_ptr::SafePtr};
 use bitflags::bitflags;
 use ostd::{io_mem::IoMem, Pod};
 
@@ -75,5 +75,26 @@ impl VirtioNetConfig {
     pub(super) fn new(transport: &dyn VirtioTransport) -> SafePtr<Self, IoMem> {
         let memory = transport.device_config_memory();
         SafePtr::new(memory, 0)
+    }
+
+    pub(super) fn read(this: &SafePtr<Self, IoMem>) -> ostd::prelude::Result<Self> {
+        Ok(Self {
+            // FIXME: It is impossible to call `read_once` on `EthernetAddr`. What's the proper way
+            // to read this field out?
+            mac: field_ptr!(this, Self, mac).read()?,
+            status: field_ptr!(this, Self, status).read_once()?,
+            max_virtqueue_pairs: field_ptr!(this, Self, max_virtqueue_pairs).read_once()?,
+            mtu: field_ptr!(this, Self, mtu).read_once()?,
+            speed: field_ptr!(this, Self, speed).read_once()?,
+            duplex: field_ptr!(this, Self, duplex).read_once()?,
+            rss_max_key_size: field_ptr!(this, Self, rss_max_key_size).read_once()?,
+            rss_max_indirection_table_length: field_ptr!(
+                this,
+                Self,
+                rss_max_indirection_table_length
+            )
+            .read_once()?,
+            supported_hash_types: field_ptr!(this, Self, supported_hash_types).read_once()?,
+        })
     }
 }

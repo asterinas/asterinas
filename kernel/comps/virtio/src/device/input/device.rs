@@ -171,15 +171,17 @@ impl InputDevice {
     /// result to `out`, return the result size.
     pub fn query_config_select(&self, select: InputConfigSelect, subsel: u8, out: &mut [u8]) -> u8 {
         field_ptr!(&self.config, VirtioInputConfig, select)
-            .write(&(select as u8))
+            .write_once(&(select as u8))
             .unwrap();
         field_ptr!(&self.config, VirtioInputConfig, subsel)
-            .write(&subsel)
+            .write_once(&subsel)
             .unwrap();
         let size = field_ptr!(&self.config, VirtioInputConfig, size)
-            .read()
+            .read_once()
             .unwrap();
         let data: [u8; 128] = field_ptr!(&self.config, VirtioInputConfig, data)
+            // FIXME: It is impossible to call `read_once` on `[u8; 128]`. What's the proper way to
+            // read this field out?
             .read()
             .unwrap();
         out[..size as usize].copy_from_slice(&data[..size as usize]);

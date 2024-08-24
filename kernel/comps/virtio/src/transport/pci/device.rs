@@ -80,30 +80,30 @@ impl VirtioTransport for VirtioPciTransport {
             return Err(VirtioTransportError::InvalidArgs);
         }
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_select)
-            .write(&idx)
+            .write_once(&idx)
             .unwrap();
         debug_assert_eq!(
             field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_select)
-                .read()
+                .read_once()
                 .unwrap(),
             idx
         );
 
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_size)
-            .write(&queue_size)
+            .write_once(&queue_size)
             .unwrap();
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_desc)
-            .write(&(descriptor_ptr.paddr() as u64))
+            .write_once(&(descriptor_ptr.paddr() as u64))
             .unwrap();
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_driver)
-            .write(&(avail_ring_ptr.paddr() as u64))
+            .write_once(&(avail_ring_ptr.paddr() as u64))
             .unwrap();
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_device)
-            .write(&(used_ring_ptr.paddr() as u64))
+            .write_once(&(used_ring_ptr.paddr() as u64))
             .unwrap();
         // Enable queue
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_enable)
-            .write(&1u16)
+            .write_once(&1u16)
             .unwrap();
         Ok(())
     }
@@ -120,7 +120,7 @@ impl VirtioTransport for VirtioPciTransport {
 
     fn num_queues(&self) -> u16 {
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, num_queues)
-            .read()
+            .read_once()
             .unwrap()
     }
 
@@ -142,17 +142,17 @@ impl VirtioTransport for VirtioPciTransport {
     fn device_features(&self) -> u64 {
         // select low
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, device_feature_select)
-            .write(&0u32)
+            .write_once(&0u32)
             .unwrap();
         let device_feature_low = field_ptr!(&self.common_cfg, VirtioPciCommonCfg, device_features)
-            .read()
+            .read_once()
             .unwrap();
         // select high
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, device_feature_select)
-            .write(&1u32)
+            .write_once(&1u32)
             .unwrap();
         let device_feature_high = field_ptr!(&self.common_cfg, VirtioPciCommonCfg, device_features)
-            .read()
+            .read_once()
             .unwrap() as u64;
         device_feature_high << 32 | device_feature_low as u64
     }
@@ -161,47 +161,47 @@ impl VirtioTransport for VirtioPciTransport {
         let low = features as u32;
         let high = (features >> 32) as u32;
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, driver_feature_select)
-            .write(&0u32)
+            .write_once(&0u32)
             .unwrap();
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, driver_features)
-            .write(&low)
+            .write_once(&low)
             .unwrap();
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, driver_feature_select)
-            .write(&1u32)
+            .write_once(&1u32)
             .unwrap();
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, driver_features)
-            .write(&high)
+            .write_once(&high)
             .unwrap();
         Ok(())
     }
 
     fn device_status(&self) -> DeviceStatus {
         let status = field_ptr!(&self.common_cfg, VirtioPciCommonCfg, device_status)
-            .read()
+            .read_once()
             .unwrap();
         DeviceStatus::from_bits(status).unwrap()
     }
 
     fn set_device_status(&mut self, status: DeviceStatus) -> Result<(), VirtioTransportError> {
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, device_status)
-            .write(&(status.bits()))
+            .write_once(&(status.bits()))
             .unwrap();
         Ok(())
     }
 
     fn max_queue_size(&self, idx: u16) -> Result<u16, crate::transport::VirtioTransportError> {
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_select)
-            .write(&idx)
+            .write_once(&idx)
             .unwrap();
         debug_assert_eq!(
             field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_select)
-                .read()
+                .read_once()
                 .unwrap(),
             idx
         );
 
         Ok(field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_size)
-            .read()
+            .read_once()
             .unwrap())
     }
 
@@ -223,16 +223,16 @@ impl VirtioTransport for VirtioPciTransport {
         };
         irq.on_active(func);
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_select)
-            .write(&index)
+            .write_once(&index)
             .unwrap();
         debug_assert_eq!(
             field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_select)
-                .read()
+                .read_once()
                 .unwrap(),
             index
         );
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_msix_vector)
-            .write(&vector)
+            .write_once(&vector)
             .unwrap();
         Ok(())
     }

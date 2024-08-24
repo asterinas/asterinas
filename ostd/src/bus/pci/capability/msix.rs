@@ -15,7 +15,7 @@ use crate::{
         common_device::PciCommonDevice,
         device_info::PciDeviceLocation,
     },
-    mm::VmIo,
+    mm::VmIoOnce,
     trap::IrqLine,
 };
 
@@ -121,15 +121,15 @@ impl CapabilityMsixData {
             // Set message address and disable this msix entry
             table_bar
                 .io_mem()
-                .write_val((16 * i) as usize + table_offset, &message_address)
+                .write_once((16 * i) as usize + table_offset, &message_address)
                 .unwrap();
             table_bar
                 .io_mem()
-                .write_val((16 * i + 4) as usize + table_offset, &message_upper_address)
+                .write_once((16 * i + 4) as usize + table_offset, &message_upper_address)
                 .unwrap();
             table_bar
                 .io_mem()
-                .write_val((16 * i + 12) as usize + table_offset, &1_u32)
+                .write_once((16 * i + 12) as usize + table_offset, &1_u32)
                 .unwrap();
         }
 
@@ -169,7 +169,7 @@ impl CapabilityMsixData {
         }
         self.table_bar
             .io_mem()
-            .write_val(
+            .write_once(
                 (16 * index + 8) as usize + self.table_offset,
                 &(handle.num() as u32),
             )
@@ -178,7 +178,7 @@ impl CapabilityMsixData {
         // Enable this msix vector
         self.table_bar
             .io_mem()
-            .write_val((16 * index + 12) as usize + self.table_offset, &0_u32)
+            .write_once((16 * index + 12) as usize + self.table_offset, &0_u32)
             .unwrap();
     }
 

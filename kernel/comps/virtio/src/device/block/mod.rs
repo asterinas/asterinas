@@ -3,7 +3,7 @@
 pub mod device;
 
 use aster_block::SECTOR_SIZE;
-use aster_util::safe_ptr::SafePtr;
+use aster_util::{field_ptr, safe_ptr::SafePtr};
 use bitflags::bitflags;
 use int_to_c_enum::TryFromInt;
 use ostd::{io_mem::IoMem, Pod};
@@ -119,15 +119,17 @@ impl VirtioBlockConfig {
         SECTOR_SIZE
     }
 
-    pub(self) fn block_size(&self) -> usize {
-        self.blk_size as usize
+    pub(self) fn read_block_size(this: &SafePtr<Self, IoMem>) -> ostd::prelude::Result<usize> {
+        field_ptr!(this, Self, blk_size)
+            .read_once()
+            .map(|val| val as usize)
     }
 
-    pub(self) fn capacity_sectors(&self) -> usize {
-        self.capacity as usize
-    }
-
-    pub(self) fn capacity_bytes(&self) -> usize {
-        self.capacity_sectors() * Self::sector_size()
+    pub(self) fn read_capacity_sectors(
+        this: &SafePtr<Self, IoMem>,
+    ) -> ostd::prelude::Result<usize> {
+        field_ptr!(this, Self, capacity)
+            .read_once()
+            .map(|val| val as usize)
     }
 }

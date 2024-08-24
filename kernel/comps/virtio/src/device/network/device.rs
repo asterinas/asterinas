@@ -7,9 +7,9 @@ use aster_network::{
     AnyNetworkDevice, EthernetAddr, RxBuffer, TxBuffer, VirtioNetError, RX_BUFFER_POOL,
     TX_BUFFER_POOL,
 };
-use aster_util::{field_ptr, slot_vec::SlotVec};
+use aster_util::slot_vec::SlotVec;
 use log::debug;
-use ostd::{offset_of, sync::SpinLock, trap::TrapFrame};
+use ostd::{sync::SpinLock, trap::TrapFrame};
 use smoltcp::phy::{DeviceCapabilities, Medium};
 
 use super::{config::VirtioNetConfig, header::VirtioNetHdr};
@@ -44,13 +44,11 @@ impl NetworkDevice {
         ));
         debug!("virtio_net_config = {:?}", virtio_net_config);
         debug!("features = {:?}", features);
-        let mac_addr = field_ptr!(&virtio_net_config, VirtioNetConfig, mac)
-            .read()
-            .unwrap();
-        let status = field_ptr!(&virtio_net_config, VirtioNetConfig, status)
-            .read()
-            .unwrap();
-        debug!("mac addr = {:x?}, status = {:?}", mac_addr, status);
+
+        let config = VirtioNetConfig::read(&virtio_net_config).unwrap();
+        let mac_addr = config.mac;
+        debug!("mac addr = {:x?}, status = {:?}", mac_addr, config.status);
+
         let mut recv_queue = VirtQueue::new(QUEUE_RECV, QUEUE_SIZE, transport.as_mut())
             .expect("creating recv queue fails");
         let send_queue = VirtQueue::new(QUEUE_SEND, QUEUE_SIZE, transport.as_mut())
@@ -71,7 +69,7 @@ impl NetworkDevice {
             recv_queue.notify();
         }
         let mut device = Self {
-            config: virtio_net_config.read().unwrap(),
+            config,
             mac_addr,
             send_queue,
             recv_queue,

@@ -342,7 +342,7 @@ impl VirtQueue {
 
     /// notify that there are available rings
     pub fn notify(&mut self) {
-        self.notify.write(&self.queue_idx).unwrap();
+        self.notify.write_once(&self.queue_idx).unwrap();
     }
 }
 
