@@ -1088,7 +1088,7 @@ dependencies = [
 
 [[package]]
 name = "ostd-macros"
-version = "0.1.4"
+version = "0.8.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1116,7 +1116,7 @@ dependencies = [
 
 [[package]]
 name = "ostd-test"
-version = "0.1.0"
+version = "0.8.0"
 
 [[package]]
 name = "owo-colors"
