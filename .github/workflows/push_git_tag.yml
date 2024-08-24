@@ -3,6 +3,7 @@
 name: Push release tag
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
