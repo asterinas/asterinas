@@ -54,8 +54,7 @@ pub fn load_elf_to_vm(
                     .unwrap();
             }
 
-            let init_stack_writer = process_vm.init_stack_writer(argv, envp, aux_vec);
-            init_stack_writer.write().unwrap();
+            process_vm.map_and_write_init_stack(argv, envp, aux_vec)?;
 
             let user_stack_top = process_vm.user_stack_top();
             Ok(ElfLoadInfo {

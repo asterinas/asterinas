@@ -19,8 +19,8 @@ pub use self::{
     heap::USER_HEAP_SIZE_LIMIT,
     init_stack::{
         aux_vec::{AuxKey, AuxVec},
-        InitStack, InitStackReader, InitStackWriter, INIT_STACK_SIZE, MAX_ARGV_NUMBER, MAX_ARG_LEN,
-        MAX_ENVP_NUMBER, MAX_ENV_LEN,
+        InitStack, InitStackReader, INIT_STACK_SIZE, MAX_ARGV_NUMBER, MAX_ARG_LEN, MAX_ENVP_NUMBER,
+        MAX_ENV_LEN,
     },
 };
 use crate::{prelude::*, vm::vmar::Vmar};
@@ -83,7 +83,6 @@ impl ProcessVm {
     pub fn alloc() -> Self {
         let root_vmar = Vmar::<Full>::new_root();
         let init_stack = InitStack::new();
-        init_stack.map_init_stack_vmo(&root_vmar).unwrap();
         let heap = Heap::new();
         heap.alloc_and_map_vmo(&root_vmar).unwrap();
         Self {
@@ -120,13 +119,14 @@ impl ProcessVm {
         self.init_stack.user_stack_top()
     }
 
-    pub(super) fn init_stack_writer(
+    pub(super) fn map_and_write_init_stack(
         &self,
         argv: Vec<CString>,
         envp: Vec<CString>,
         aux_vec: AuxVec,
-    ) -> InitStackWriter {
-        self.init_stack.writer(argv, envp, aux_vec)
+    ) -> Result<()> {
+        self.init_stack
+            .map_and_write(self.root_vmar(), argv, envp, aux_vec)
     }
 
     pub(super) fn heap(&self) -> &Heap {
@@ -136,7 +136,6 @@ impl ProcessVm {
     /// Clears existing mappings and then maps stack and heap vmo.
     pub(super) fn clear_and_map(&self) {
         self.root_vmar.clear().unwrap();
-        self.init_stack.map_init_stack_vmo(&self.root_vmar).unwrap();
         self.heap.alloc_and_map_vmo(&self.root_vmar).unwrap();
     }
 }
