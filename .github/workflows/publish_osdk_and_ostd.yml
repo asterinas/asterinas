@@ -1,6 +1,7 @@
 name: Publish OSDK and OSTD
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - VERSION
@@ -27,7 +28,7 @@ jobs:
           ./tools/github_workflows/publish_osdk_and_ostd.sh --dry-run
       
       - name: Publish OSTD and OSDK
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         env:
           REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
