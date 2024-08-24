@@ -81,10 +81,9 @@ impl aster_block::BlockDevice for BlockDevice {
     }
 
     fn metadata(&self) -> BlockDeviceMeta {
-        let device_config = self.device.config.read().unwrap();
         BlockDeviceMeta {
             max_nr_segments_per_bio: self.queue.max_nr_segments_per_bio(),
-            nr_sectors: device_config.capacity_sectors(),
+            nr_sectors: VirtioBlockConfig::read_capacity_sectors(&self.device.config).unwrap(),
         }
     }
 }
@@ -107,7 +106,7 @@ impl DeviceInner {
     pub fn init(mut transport: Box<dyn VirtioTransport>) -> Result<Arc<Self>, VirtioDeviceError> {
         let config = VirtioBlockConfig::new(transport.as_mut());
         assert_eq!(
-            config.read().unwrap().block_size(),
+            VirtioBlockConfig::read_block_size(&config).unwrap(),
             VirtioBlockConfig::sector_size(),
             "currently not support customized device logical block size"
         );

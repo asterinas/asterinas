@@ -9,6 +9,7 @@
 #![feature(coroutines)]
 #![feature(fn_traits)]
 #![feature(generic_const_exprs)]
+#![feature(is_none_or)]
 #![feature(iter_from_coroutine)]
 #![feature(let_chains)]
 #![feature(min_specialization)]

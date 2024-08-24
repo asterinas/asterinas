@@ -2,14 +2,15 @@
 
 //! I/O memory.
 
-use core::{mem::size_of, ops::Range};
+use core::ops::Range;
 
 use crate::{
     mm::{
-        kspace::LINEAR_MAPPING_BASE_VADDR, paddr_to_vaddr, HasPaddr, Paddr, Vaddr, VmIo, VmReader,
-        VmWriter,
+        kspace::LINEAR_MAPPING_BASE_VADDR, paddr_to_vaddr, FallibleVmRead, FallibleVmWrite,
+        HasPaddr, Infallible, Paddr, PodOnce, Vaddr, VmIo, VmIoOnce, VmReader, VmWriter,
     },
-    Error, Pod, Result,
+    prelude::*,
+    Error,
 };
 
 /// I/O memory.
@@ -17,45 +18,6 @@ use crate::{
 pub struct IoMem {
     virtual_address: Vaddr,
     limit: usize,
-}
-
-impl VmIo for IoMem {
-    fn read(&self, offset: usize, writer: &mut VmWriter) -> crate::Result<()> {
-        let read_len = writer.avail();
-        self.check_range(offset, read_len)?;
-        unsafe {
-            core::ptr::copy(
-                (self.virtual_address + offset) as *const u8,
-                writer.cursor(),
-                read_len,
-            );
-        }
-        Ok(())
-    }
-
-    fn write(&self, offset: usize, reader: &mut VmReader) -> crate::Result<()> {
-        let write_len = reader.remain();
-        self.check_range(offset, write_len)?;
-        unsafe {
-            core::ptr::copy(
-                reader.cursor(),
-                (self.virtual_address + offset) as *mut u8,
-                write_len,
-            );
-        }
-        Ok(())
-    }
-
-    fn read_val<T: Pod>(&self, offset: usize) -> crate::Result<T> {
-        self.check_range(offset, size_of::<T>())?;
-        Ok(unsafe { core::ptr::read_volatile((self.virtual_address + offset) as *const T) })
-    }
-
-    fn write_val<T: Pod>(&self, offset: usize, new_val: &T) -> crate::Result<()> {
-        self.check_range(offset, size_of::<T>())?;
-        unsafe { core::ptr::write_volatile((self.virtual_address + offset) as *mut T, *new_val) };
-        Ok(())
-    }
 }
 
 impl HasPaddr for IoMem {
@@ -69,7 +31,9 @@ impl IoMem {
     ///
     /// # Safety
     ///
-    /// User must ensure the given physical range is in the I/O memory region.
+    /// - The given physical address range must be in the I/O memory region.
+    /// - Reading from or writing to I/O memory regions may have side effects. Those side effects
+    ///   must not cause soundness problems (e.g., they must not corrupt the kernel memory).
     pub(crate) unsafe fn new(range: Range<Paddr>) -> IoMem {
         IoMem {
             virtual_address: paddr_to_vaddr(range.start),
@@ -111,18 +75,72 @@ impl IoMem {
         self.limit = range.len();
         Ok(())
     }
+}
 
-    fn check_range(&self, offset: usize, len: usize) -> Result<()> {
-        let sum = offset.checked_add(len).ok_or(Error::InvalidArgs)?;
-        if sum > self.limit {
-            log::error!(
-                "attempt to access address out of bounds, limit:0x{:x}, access position:0x{:x}",
-                self.limit,
-                sum
-            );
-            Err(Error::InvalidArgs)
-        } else {
-            Ok(())
+// For now, we reuse `VmReader` and `VmWriter` to access I/O memory.
+//
+// Note that I/O memory is not normal typed or untyped memory. Strictly speaking, it is not
+// "memory", but rather I/O ports that communicate directly with the hardware. However, this code
+// is in OSTD, so we can rely on the implementation details of `VmReader` and `VmWriter`, which we
+// know are also suitable for accessing I/O memory.
+impl IoMem {
+    fn reader(&self) -> VmReader<'_, Infallible> {
+        // SAFETY: The safety conditions of `IoMem::new` guarantee we can read from the I/O memory
+        // safely.
+        unsafe { VmReader::from_kernel_space(self.virtual_address as *mut u8, self.limit) }
+    }
+
+    fn writer(&self) -> VmWriter<'_, Infallible> {
+        // SAFETY: The safety conditions of `IoMem::new` guarantee we can read from the I/O memory
+        // safely.
+        unsafe { VmWriter::from_kernel_space(self.virtual_address as *mut u8, self.limit) }
+    }
+}
+
+impl VmIo for IoMem {
+    fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<()> {
+        if self
+            .limit
+            .checked_sub(offset)
+            .is_none_or(|remain| remain < writer.avail())
+        {
+            return Err(Error::InvalidArgs);
         }
+
+        self.reader()
+            .skip(offset)
+            .read_fallible(writer)
+            .map_err(|(e, _)| e)?;
+        debug_assert!(!writer.has_avail());
+
+        Ok(())
+    }
+
+    fn write(&self, offset: usize, reader: &mut VmReader) -> Result<()> {
+        if self
+            .limit
+            .checked_sub(offset)
+            .is_none_or(|avail| avail < reader.remain())
+        {
+            return Err(Error::InvalidArgs);
+        }
+
+        self.writer()
+            .skip(offset)
+            .write_fallible(reader)
+            .map_err(|(e, _)| e)?;
+        debug_assert!(!reader.has_remain());
+
+        Ok(())
+    }
+}
+
+impl VmIoOnce for IoMem {
+    fn read_once<T: PodOnce>(&self, offset: usize) -> Result<T> {
+        self.reader().skip(offset).read_once()
+    }
+
+    fn write_once<T: PodOnce>(&self, offset: usize, new_val: &T) -> Result<()> {
+        self.writer().skip(offset).write_once(new_val)
     }
 }

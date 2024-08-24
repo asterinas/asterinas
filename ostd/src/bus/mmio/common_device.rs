@@ -8,7 +8,7 @@ use log::info;
 use super::VIRTIO_MMIO_MAGIC;
 use crate::{
     io_mem::IoMem,
-    mm::{paddr_to_vaddr, Paddr, VmIo},
+    mm::{paddr_to_vaddr, Paddr, VmIoOnce},
     trap::IrqLine,
 };
 
@@ -55,12 +55,12 @@ impl MmioCommonDevice {
 
     /// Device ID
     pub fn device_id(&self) -> u32 {
-        self.io_mem.read_val::<u32>(8).unwrap()
+        self.io_mem.read_once::<u32>(8).unwrap()
     }
 
     /// Version of the MMIO device.
     pub fn version(&self) -> VirtioMmioVersion {
-        VirtioMmioVersion::try_from(self.io_mem.read_val::<u32>(4).unwrap()).unwrap()
+        VirtioMmioVersion::try_from(self.io_mem.read_once::<u32>(4).unwrap()).unwrap()
     }
 
     /// Interrupt line

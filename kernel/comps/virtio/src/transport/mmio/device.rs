@@ -79,7 +79,7 @@ impl VirtioMmioTransport {
         };
         if device.common_device.version() == VirtioMmioVersion::Legacy {
             field_ptr!(&device.layout, VirtioMmioLayout, legacy_guest_page_size)
-                .write(&(PAGE_SIZE as u32))
+                .write_once(&(PAGE_SIZE as u32))
                 .unwrap();
         }
         device
@@ -100,11 +100,11 @@ impl VirtioTransport for VirtioMmioTransport {
         device_ptr: &SafePtr<UsedRing, DmaCoherent>,
     ) -> Result<(), VirtioTransportError> {
         field_ptr!(&self.layout, VirtioMmioLayout, queue_sel)
-            .write(&(idx as u32))
+            .write_once(&(idx as u32))
             .unwrap();
 
         let queue_num_max: u32 = field_ptr!(&self.layout, VirtioMmioLayout, queue_num_max)
-            .read()
+            .read_once()
             .unwrap();
 
         if queue_size as u32 > queue_num_max {
@@ -117,7 +117,7 @@ impl VirtioTransport for VirtioMmioTransport {
         let device_paddr = device_ptr.paddr();
 
         field_ptr!(&self.layout, VirtioMmioLayout, queue_num)
-            .write(&(queue_size as u32))
+            .write_once(&(queue_size as u32))
             .unwrap();
 
         match self.common_device.version() {
@@ -131,39 +131,39 @@ impl VirtioTransport for VirtioMmioTransport {
                 assert_eq!(descriptor_paddr % PAGE_SIZE, 0);
                 let pfn = (descriptor_paddr / PAGE_SIZE) as u32;
                 field_ptr!(&self.layout, VirtioMmioLayout, legacy_queue_align)
-                    .write(&(PAGE_SIZE as u32))
+                    .write_once(&(PAGE_SIZE as u32))
                     .unwrap();
                 field_ptr!(&self.layout, VirtioMmioLayout, legacy_queue_pfn)
-                    .write(&pfn)
+                    .write_once(&pfn)
                     .unwrap();
             }
             VirtioMmioVersion::Modern => {
                 field_ptr!(&self.layout, VirtioMmioLayout, queue_desc_low)
-                    .write(&(descriptor_paddr as u32))
+                    .write_once(&(descriptor_paddr as u32))
                     .unwrap();
                 field_ptr!(&self.layout, VirtioMmioLayout, queue_desc_high)
-                    .write(&((descriptor_paddr >> 32) as u32))
+                    .write_once(&((descriptor_paddr >> 32) as u32))
                     .unwrap();
 
                 field_ptr!(&self.layout, VirtioMmioLayout, queue_driver_low)
-                    .write(&(driver_paddr as u32))
+                    .write_once(&(driver_paddr as u32))
                     .unwrap();
                 field_ptr!(&self.layout, VirtioMmioLayout, queue_driver_high)
-                    .write(&((driver_paddr >> 32) as u32))
+                    .write_once(&((driver_paddr >> 32) as u32))
                     .unwrap();
 
                 field_ptr!(&self.layout, VirtioMmioLayout, queue_device_low)
-                    .write(&(device_paddr as u32))
+                    .write_once(&(device_paddr as u32))
                     .unwrap();
                 field_ptr!(&self.layout, VirtioMmioLayout, queue_device_high)
-                    .write(&((device_paddr >> 32) as u32))
+                    .write_once(&((device_paddr >> 32) as u32))
                     .unwrap();
                 // enable queue
                 field_ptr!(&self.layout, VirtioMmioLayout, queue_sel)
-                    .write(&(idx as u32))
+                    .write_once(&(idx as u32))
                     .unwrap();
                 field_ptr!(&self.layout, VirtioMmioLayout, queue_ready)
-                    .write(&1u32)
+                    .write_once(&1u32)
                     .unwrap();
             }
         };
@@ -182,10 +182,10 @@ impl VirtioTransport for VirtioMmioTransport {
         const MAX_QUEUES: u32 = 512;
         while num_queues < MAX_QUEUES {
             field_ptr!(&self.layout, VirtioMmioLayout, queue_sel)
-                .write(&num_queues)
+                .write_once(&num_queues)
                 .unwrap();
             if field_ptr!(&self.layout, VirtioMmioLayout, queue_num_max)
-                .read()
+                .read_once()
                 .unwrap()
                 == 0u32
             {
@@ -207,17 +207,17 @@ impl VirtioTransport for VirtioMmioTransport {
     fn device_features(&self) -> u64 {
         // select low
         field_ptr!(&self.layout, VirtioMmioLayout, device_features_select)
-            .write(&0u32)
+            .write_once(&0u32)
             .unwrap();
         let device_feature_low = field_ptr!(&self.layout, VirtioMmioLayout, device_features)
-            .read()
+            .read_once()
             .unwrap();
         // select high
         field_ptr!(&self.layout, VirtioMmioLayout, device_features_select)
-            .write(&1u32)
+            .write_once(&1u32)
             .unwrap();
         let device_feature_high = field_ptr!(&self.layout, VirtioMmioLayout, device_features)
-            .read()
+            .read_once()
             .unwrap() as u64;
         device_feature_high << 32 | device_feature_low as u64
     }
@@ -226,16 +226,16 @@ impl VirtioTransport for VirtioMmioTransport {
         let low = features as u32;
         let high = (features >> 32) as u32;
         field_ptr!(&self.layout, VirtioMmioLayout, driver_features_select)
-            .write(&0u32)
+            .write_once(&0u32)
             .unwrap();
         field_ptr!(&self.layout, VirtioMmioLayout, driver_features)
-            .write(&low)
+            .write_once(&low)
             .unwrap();
         field_ptr!(&self.layout, VirtioMmioLayout, driver_features_select)
-            .write(&1u32)
+            .write_once(&1u32)
             .unwrap();
         field_ptr!(&self.layout, VirtioMmioLayout, driver_features)
-            .write(&high)
+            .write_once(&high)
             .unwrap();
         Ok(())
     }
@@ -243,7 +243,7 @@ impl VirtioTransport for VirtioMmioTransport {
     fn device_status(&self) -> DeviceStatus {
         DeviceStatus::from_bits(
             field_ptr!(&self.layout, VirtioMmioLayout, status)
-                .read()
+                .read_once()
                 .unwrap() as u8,
         )
         .unwrap()
@@ -251,7 +251,7 @@ impl VirtioTransport for VirtioMmioTransport {
 
     fn set_device_status(&mut self, status: DeviceStatus) -> Result<(), VirtioTransportError> {
         field_ptr!(&self.layout, VirtioMmioLayout, status)
-            .write(&(status.bits() as u32))
+            .write_once(&(status.bits() as u32))
             .unwrap();
         Ok(())
     }
@@ -262,10 +262,10 @@ impl VirtioTransport for VirtioMmioTransport {
 
     fn max_queue_size(&self, idx: u16) -> Result<u16, VirtioTransportError> {
         field_ptr!(&self.layout, VirtioMmioLayout, queue_sel)
-            .write(&(idx as u32))
+            .write_once(&(idx as u32))
             .unwrap();
         Ok(field_ptr!(&self.layout, VirtioMmioLayout, queue_num_max)
-            .read()
+            .read_once()
             .unwrap() as u16)
     }
 
