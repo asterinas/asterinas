@@ -14,7 +14,8 @@ mod util;
 mod virtio;
 
 pub use any_socket::{
-    AnyBoundSocket, AnyUnboundSocket, RawTcpSocket, RawUdpSocket, RECV_BUF_LEN, SEND_BUF_LEN,
+    AnyBoundSocket, AnyUnboundSocket, RawTcpSocket, RawUdpSocket, TCP_RECV_BUF_LEN,
+    TCP_SEND_BUF_LEN, UDP_RECV_PAYLOAD_LEN, UDP_SEND_PAYLOAD_LEN,
 };
 pub use loopback::IfaceLoopback;
 use ostd::sync::LocalIrqDisabled;

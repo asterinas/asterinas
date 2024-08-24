@@ -9,12 +9,15 @@ use super::{common::get_ephemeral_endpoint, IpEndpoint, UNSPECIFIED_LOCAL_ENDPOI
 use crate::{
     events::{IoEvents, Observer},
     fs::{file_handle::FileLike, utils::StatusFlags},
+    match_sock_option_mut,
     net::{
         poll_ifaces,
         socket::{
+            options::{Error as SocketError, SocketOption},
             util::{
                 copy_message_from_user, copy_message_to_user, create_message_buffer,
-                send_recv_flags::SendRecvFlags, socket_addr::SocketAddr, MessageHeader,
+                options::SocketOptionSet, send_recv_flags::SendRecvFlags, socket_addr::SocketAddr,
+                MessageHeader,
             },
             Socket,
         },
@@ -27,7 +30,21 @@ use crate::{
 mod bound;
 mod unbound;
 
+#[derive(Debug, Clone)]
+struct OptionSet {
+    socket: SocketOptionSet,
+    // TODO: UDP option set
+}
+
+impl OptionSet {
+    fn new() -> Self {
+        let socket = SocketOptionSet::new_udp();
+        OptionSet { socket }
+    }
+}
+
 pub struct DatagramSocket {
+    options: RwLock<OptionSet>,
     inner: RwLock<Takeable<Inner>>,
     nonblocking: AtomicBool,
     pollee: Pollee,
@@ -80,6 +97,7 @@ impl DatagramSocket {
                 inner: RwLock::new(Takeable::new(Inner::Unbound(unbound_datagram))),
                 nonblocking: AtomicBool::new(nonblocking),
                 pollee,
+                options: RwLock::new(OptionSet::new()),
             }
         })
     }
@@ -351,6 +369,22 @@ impl Socket for DatagramSocket {
         let message_header = MessageHeader::new(Some(peer_addr), None);
 
         Ok((copied_bytes, message_header))
+    }
+
+    fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
+        match_sock_option_mut!(option, {
+            socket_errors: SocketError => {
+                self.options.write().socket.get_and_clear_sock_errors(socket_errors);
+                return Ok(());
+            },
+            _ => ()
+        });
+
+        self.options.read().socket.get_option(option)
+    }
+
+    fn set_option(&self, option: &dyn SocketOption) -> Result<()> {
+        self.options.write().socket.set_option(option)
     }
 }
 
