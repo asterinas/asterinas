@@ -20,11 +20,11 @@ update_package_version() {
     sed -i "0,/${pattern}/s/${pattern}/version = \"${new_version}\"/1" $1
 }
 
-# Update the version of the `ostd` dependency (`ostd = { version = "", ...`) in file $1
-update_ostd_dep_version() {
-    echo "Updating file $1"
-    pattern="^ostd = { version = \"[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+\""
-    sed -i "0,/${pattern}/s/${pattern}/ostd = { version = \"${new_version}\"/1" $1
+# Update the version of the $2 dependency (`$2 = { version = "", ...`) in file $1
+update_dep_version() {
+    echo "Updating the version of $2 in file $1"
+    pattern="^$2 = { version = \"[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+\""
+    sed -i "0,/${pattern}/s/${pattern}/$2 = { version = \"${new_version}\"/1" $1
 }
 
 # Update Docker image versions (`asterinas/asterinas:{version}`) in file $1
@@ -104,8 +104,10 @@ SCRIPT_DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 ASTER_SRC_DIR=${SCRIPT_DIR}/..
 DOCS_DIR=${ASTER_SRC_DIR}/docs
 OSTD_CARGO_TOML_PATH=${ASTER_SRC_DIR}/ostd/Cargo.toml
+OSTD_TEST_CARGO_TOML_PATH=${ASTER_SRC_DIR}/ostd/libs/ostd-test/Cargo.toml
+OSTD_MACROS_CARGO_TOML_PATH=${ASTER_SRC_DIR}/ostd/libs/ostd-macros/Cargo.toml
 OSDK_CARGO_TOML_PATH=${ASTER_SRC_DIR}/osdk/Cargo.toml
-OSTD_TEST_RUNNER_CARGO_TOML_PATH=${ASTER_SRC_DIR}/osdk/test-kernel/Cargo.toml
+OSDK_TEST_RUNNER_CARGO_TOML_PATH=${ASTER_SRC_DIR}/osdk/test-kernel/Cargo.toml
 VERSION_PATH=${ASTER_SRC_DIR}/VERSION
 
 current_version=$(cat ${VERSION_PATH})
@@ -119,11 +121,15 @@ fi
 validate_bump_type
 new_version=$(bump_version ${current_version})
 
-# Update the package version in Cargo.toml
+# Update the versions in Cargo.toml
+update_package_version ${OSTD_TEST_CARGO_TOML_PATH}
+update_package_version ${OSTD_MACROS_CARGO_TOML_PATH}
 update_package_version ${OSTD_CARGO_TOML_PATH}
+update_dep_version ${OSTD_CARGO_TOML_PATH} ostd-test
+update_dep_version ${OSTD_CARGO_TOML_PATH} ostd-macros
 update_package_version ${OSDK_CARGO_TOML_PATH}
-update_package_version ${OSTD_TEST_RUNNER_CARGO_TOML_PATH}
-update_ostd_dep_version ${OSTD_TEST_RUNNER_CARGO_TOML_PATH}
+update_package_version ${OSDK_TEST_RUNNER_CARGO_TOML_PATH}
+update_dep_version ${OSDK_TEST_RUNNER_CARGO_TOML_PATH} ostd
 
 # Automatically bump Cargo.lock file
 cargo update -p aster-nix --precise $new_version
