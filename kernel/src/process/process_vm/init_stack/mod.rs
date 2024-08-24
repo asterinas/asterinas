@@ -106,7 +106,6 @@ pub struct InitStack {
     /// After initialized, `pos` points to the user stack pointer(rsp)
     /// of the process.
     pos: Arc<AtomicUsize>,
-    vmo: Vmo<Full>,
 }
 
 impl Clone for InitStack {
@@ -114,8 +113,7 @@ impl Clone for InitStack {
         Self {
             initial_top: self.initial_top,
             max_size: self.max_size,
-            pos: self.pos.clone(),
-            vmo: self.vmo.dup(),
+            pos: Arc::new(AtomicUsize::new(self.pos.load(Ordering::Relaxed))),
         }
     }
 }
@@ -130,34 +128,11 @@ impl InitStack {
         let initial_top = MAX_USERSPACE_VADDR - PAGE_SIZE * nr_pages_padding;
         let max_size = INIT_STACK_SIZE;
 
-        let vmo = {
-            let vmo_options = VmoOptions::<Full>::new(max_size);
-            vmo_options.alloc().unwrap()
-        };
         Self {
             initial_top,
             max_size,
             pos: Arc::new(AtomicUsize::new(initial_top)),
-            vmo,
         }
-    }
-
-    /// Maps the vmo of the init stack.
-    pub(super) fn map_init_stack_vmo(&self, root_vmar: &Vmar<Full>) -> Result<()> {
-        let vmar_map_options = {
-            let perms = VmPerms::READ | VmPerms::WRITE;
-            let map_addr = self.initial_top - self.max_size;
-            debug_assert!(map_addr % PAGE_SIZE == 0);
-            root_vmar
-                .new_map(self.max_size, perms)?
-                .offset(map_addr)
-                .vmo(self.vmo.dup().to_dyn())
-        };
-
-        vmar_map_options.build()?;
-
-        self.set_uninitialized();
-        Ok(())
     }
 
     /// Returns the user stack top(highest address), used to setup rsp.
@@ -170,32 +145,48 @@ impl InitStack {
         stack_top
     }
 
-    /// Constructs a writer to initialize the content of an `InitStack`.
-    pub(super) fn writer(
+    /// Maps the VMO of the init stack and constructs a writer to initialize its content.
+    pub(super) fn map_and_write(
         &self,
+        root_vmar: &Vmar<Full>,
         argv: Vec<CString>,
         envp: Vec<CString>,
         auxvec: AuxVec,
-    ) -> InitStackWriter<'_> {
-        // The stack should be written only once.
-        debug_assert!(!self.is_initialized());
-        InitStackWriter {
+    ) -> Result<()> {
+        self.set_uninitialized();
+
+        let vmo = {
+            let vmo_options = VmoOptions::<Full>::new(self.max_size);
+            vmo_options.alloc()?
+        };
+        let vmar_map_options = {
+            let perms = VmPerms::READ | VmPerms::WRITE;
+            let map_addr = self.initial_top - self.max_size;
+            debug_assert!(map_addr % PAGE_SIZE == 0);
+            root_vmar
+                .new_map(self.max_size, perms)?
+                .offset(map_addr)
+                .vmo(vmo.dup().to_dyn())
+        };
+        vmar_map_options.build()?;
+
+        let writer = InitStackWriter {
             pos: self.pos.clone(),
-            vmo: &self.vmo,
+            vmo,
             argv,
             envp,
             auxvec,
             map_addr: self.initial_top - self.max_size,
-        }
+        };
+        writer.write()
     }
 
     /// Constructs a reader to parse the content of an `InitStack`.
     /// The `InitStack` should only be read after initialized
-    pub(super) fn reader(&self) -> InitStackReader<'_> {
+    pub(super) fn reader(&self) -> InitStackReader {
         debug_assert!(self.is_initialized());
         InitStackReader {
             base: self.pos(),
-            vmo: &self.vmo,
             map_addr: self.initial_top - self.max_size,
         }
     }
@@ -214,9 +205,9 @@ impl InitStack {
 }
 
 /// A writer to initialize the content of an `InitStack`.
-pub struct InitStackWriter<'a> {
+struct InitStackWriter {
     pos: Arc<AtomicUsize>,
-    vmo: &'a Vmo<Full>,
+    vmo: Vmo<Full>,
     argv: Vec<CString>,
     envp: Vec<CString>,
     auxvec: AuxVec,
@@ -224,8 +215,8 @@ pub struct InitStackWriter<'a> {
     map_addr: usize,
 }
 
-impl<'a> InitStackWriter<'a> {
-    pub fn write(mut self) -> Result<()> {
+impl InitStackWriter {
+    fn write(mut self) -> Result<()> {
         // FIXME: Some OSes may put the first page of excutable file here
         // for interpreting elf headers.
 
@@ -371,18 +362,17 @@ fn generate_random_for_aux_vec() -> [u8; 16] {
 }
 
 /// A reader to parse the content of an `InitStack`.
-pub struct InitStackReader<'a> {
+pub struct InitStackReader {
     base: Vaddr,
-    vmo: &'a Vmo<Full>,
     /// The mapping address of the `InitStack`.
     map_addr: usize,
 }
 
-impl<'a> InitStackReader<'a> {
+impl InitStackReader {
     /// Reads argc from the process init stack
     pub fn argc(&self) -> Result<u64> {
         let stack_base = self.init_stack_bottom();
-        Ok(self.vmo.read_val(stack_base - self.map_addr)?)
+        CurrentUserSpace::get().read_val(stack_base)
     }
 
     /// Reads argv from the process init stack
