@@ -19,16 +19,11 @@ use crate::{
     net::{
         poll_ifaces,
         socket::{
-            options::{
-                Error as SocketError, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf, SocketOption,
-            },
+            options::{Error as SocketError, SocketOption},
             util::{
                 copy_message_from_user, copy_message_to_user, create_message_buffer,
-                options::{SocketOptionSet, MIN_RECVBUF, MIN_SENDBUF},
-                send_recv_flags::SendRecvFlags,
-                shutdown_cmd::SockShutdownCmd,
-                socket_addr::SocketAddr,
-                MessageHeader,
+                options::SocketOptionSet, send_recv_flags::SendRecvFlags,
+                shutdown_cmd::SockShutdownCmd, socket_addr::SocketAddr, MessageHeader,
             },
             Socket,
         },
@@ -561,15 +556,9 @@ impl Socket for StreamSocket {
     }
 
     fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
-        // Note that the socket error has to be handled separately, because it is automatically
-        // cleared after reading.
         match_sock_option_mut!(option, {
             socket_errors: SocketError => {
-                let mut options = self.options.write();
-                let sock_errors = options.socket.sock_errors();
-                socket_errors.set(sock_errors);
-                options.socket.set_sock_errors(None);
-
+                self.options.write().socket.get_and_clear_sock_errors(socket_errors);
                 return Ok(());
             },
             _ => ()
@@ -577,25 +566,12 @@ impl Socket for StreamSocket {
 
         let options = self.options.read();
 
+        match options.socket.get_option(option) {
+            Err(err) if err.error() == Errno::ENOPROTOOPT => (),
+            res => return res.map(|_| ()),
+        }
+
         match_sock_option_mut!(option, {
-            // Socket options:
-            socket_reuse_addr: ReuseAddr => {
-                let reuse_addr = options.socket.reuse_addr();
-                socket_reuse_addr.set(reuse_addr);
-            },
-            socket_send_buf: SendBuf => {
-                let send_buf = options.socket.send_buf();
-                socket_send_buf.set(send_buf);
-            },
-            socket_recv_buf: RecvBuf => {
-                let recv_buf = options.socket.recv_buf();
-                socket_recv_buf.set(recv_buf);
-            },
-            socket_reuse_port: ReusePort => {
-                let reuse_port = options.socket.reuse_port();
-                socket_reuse_port.set(reuse_port);
-            },
-            // TCP options:
             tcp_no_delay: NoDelay => {
                 let no_delay = options.tcp.no_delay();
                 tcp_no_delay.set(no_delay);
@@ -628,39 +604,14 @@ impl Socket for StreamSocket {
     fn set_option(&self, option: &dyn SocketOption) -> Result<()> {
         let mut options = self.options.write();
 
+        match options.socket.set_option(option) {
+            Err(err) if err.error() == Errno::ENOPROTOOPT => (),
+            res => return res,
+        }
+
         // FIXME: here we have only set the value of the option, without actually
         // making any real modifications.
         match_sock_option_ref!(option, {
-            // Socket options:
-            socket_recv_buf: RecvBuf => {
-                let recv_buf = socket_recv_buf.get().unwrap();
-                if *recv_buf <= MIN_RECVBUF {
-                    options.socket.set_recv_buf(MIN_RECVBUF);
-                } else {
-                    options.socket.set_recv_buf(*recv_buf);
-                }
-            },
-            socket_send_buf: SendBuf => {
-                let send_buf = socket_send_buf.get().unwrap();
-                if *send_buf <= MIN_SENDBUF {
-                    options.socket.set_send_buf(MIN_SENDBUF);
-                } else {
-                    options.socket.set_send_buf(*send_buf);
-                }
-            },
-            socket_reuse_addr: ReuseAddr => {
-                let reuse_addr = socket_reuse_addr.get().unwrap();
-                options.socket.set_reuse_addr(*reuse_addr);
-            },
-            socket_reuse_port: ReusePort => {
-                let reuse_port = socket_reuse_port.get().unwrap();
-                options.socket.set_reuse_port(*reuse_port);
-            },
-            socket_linger: Linger => {
-                let linger = socket_linger.get().unwrap();
-                options.socket.set_linger(*linger);
-            },
-            // TCP options:
             tcp_no_delay: NoDelay => {
                 let no_delay = tcp_no_delay.get().unwrap();
                 options.tcp.set_no_delay(*no_delay);

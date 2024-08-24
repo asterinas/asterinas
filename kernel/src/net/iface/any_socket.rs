@@ -29,8 +29,8 @@ pub(super) enum SocketFamily {
 impl AnyUnboundSocket {
     pub fn new_tcp(observer: Weak<dyn Observer<()>>) -> Self {
         let raw_tcp_socket = {
-            let rx_buffer = smoltcp::socket::tcp::SocketBuffer::new(vec![0u8; RECV_BUF_LEN]);
-            let tx_buffer = smoltcp::socket::tcp::SocketBuffer::new(vec![0u8; SEND_BUF_LEN]);
+            let rx_buffer = smoltcp::socket::tcp::SocketBuffer::new(vec![0u8; TCP_RECV_BUF_LEN]);
+            let tx_buffer = smoltcp::socket::tcp::SocketBuffer::new(vec![0u8; TCP_SEND_BUF_LEN]);
             RawTcpSocket::new(rx_buffer, tx_buffer)
         };
         AnyUnboundSocket {
@@ -44,7 +44,7 @@ impl AnyUnboundSocket {
             let metadata = smoltcp::socket::udp::PacketMetadata::EMPTY;
             let rx_buffer = smoltcp::socket::udp::PacketBuffer::new(
                 vec![metadata; UDP_METADATA_LEN],
-                vec![0u8; UDP_RECEIVE_PAYLOAD_LEN],
+                vec![0u8; UDP_RECV_PAYLOAD_LEN],
             );
             let tx_buffer = smoltcp::socket::udp::PacketBuffer::new(
                 vec![metadata; UDP_METADATA_LEN],
@@ -209,10 +209,10 @@ impl Drop for AnyBoundSocketInner {
 }
 
 // For TCP
-pub const RECV_BUF_LEN: usize = 65536;
-pub const SEND_BUF_LEN: usize = 65536;
+pub const TCP_RECV_BUF_LEN: usize = 65536;
+pub const TCP_SEND_BUF_LEN: usize = 65536;
 
 // For UDP
+pub const UDP_SEND_PAYLOAD_LEN: usize = 65536;
+pub const UDP_RECV_PAYLOAD_LEN: usize = 65536;
 const UDP_METADATA_LEN: usize = 256;
-const UDP_SEND_PAYLOAD_LEN: usize = 65536;
-const UDP_RECEIVE_PAYLOAD_LEN: usize = 65536;
