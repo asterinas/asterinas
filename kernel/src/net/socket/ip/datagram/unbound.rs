@@ -24,8 +24,12 @@ impl UnboundDatagram {
         }
     }
 
-    pub fn bind(self, endpoint: &IpEndpoint) -> core::result::Result<BoundDatagram, (Error, Self)> {
-        let bound_socket = match bind_socket(self.unbound_socket, endpoint, false) {
+    pub fn bind(
+        self,
+        endpoint: &IpEndpoint,
+        can_reuse: bool,
+    ) -> core::result::Result<BoundDatagram, (Error, Self)> {
+        let bound_socket = match bind_socket(self.unbound_socket, endpoint, can_reuse) {
             Ok(bound_socket) => bound_socket,
             Err((err, unbound_socket)) => return Err((err, Self { unbound_socket })),
         };
