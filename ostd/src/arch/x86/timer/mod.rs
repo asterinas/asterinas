@@ -15,7 +15,11 @@ use spin::Once;
 use trapframe::TrapFrame;
 
 use self::apic::APIC_TIMER_CALLBACK;
-use crate::{arch::x86::kernel, cpu_local, trap::IrqLine};
+use crate::{
+    arch::x86::kernel,
+    cpu_local,
+    trap::{self, IrqLine},
+};
 
 /// The timer frequency (Hz). Here we choose 1000Hz since 1000Hz is easier for unit conversion and
 /// convenient for timer. What's more, the frequency cannot be set too high or too low, 1000Hz is
@@ -57,8 +61,9 @@ pub fn register_callback<F>(func: F)
 where
     F: Fn() + Sync + Send + 'static,
 {
+    let irq_guard = trap::disable_local();
     INTERRUPT_CALLBACKS
-        .borrow_irq_disabled()
+        .get_with(&irq_guard)
         .borrow_mut()
         .push(Box::new(func));
 }
@@ -66,7 +71,8 @@ where
 fn timer_callback(_: &TrapFrame) {
     jiffies::ELAPSED.fetch_add(1, Ordering::SeqCst);
 
-    let callbacks_guard = INTERRUPT_CALLBACKS.borrow_irq_disabled();
+    let irq_guard = trap::disable_local();
+    let callbacks_guard = INTERRUPT_CALLBACKS.get_with(&irq_guard);
     for callback in callbacks_guard.borrow().iter() {
         (callback)();
     }

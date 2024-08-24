@@ -189,7 +189,8 @@ mod test {
         crate::cpu_local! {
             static FOO: RefCell<usize> = RefCell::new(1);
         }
-        let foo_guard = FOO.borrow_irq_disabled();
+        let irq_guard = crate::trap::disable_local();
+        let foo_guard = FOO.get_with(&irq_guard);
         assert_eq!(*foo_guard.borrow(), 1);
         *foo_guard.borrow_mut() = 2;
         assert_eq!(*foo_guard.borrow(), 2);

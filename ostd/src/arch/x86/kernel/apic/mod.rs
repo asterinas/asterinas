@@ -35,7 +35,8 @@ static APIC_TYPE: Once<ApicType> = Once::new();
 /// });
 /// ```
 pub fn borrow<R>(f: impl FnOnce(&mut (dyn Apic + 'static)) -> R) -> R {
-    let apic_guard = APIC_INSTANCE.borrow_irq_disabled();
+    let irq_guard = crate::trap::disable_local();
+    let apic_guard = APIC_INSTANCE.get_with(&irq_guard);
 
     // If it is not initialzed, lazily initialize it.
     if !apic_guard.is_completed() {

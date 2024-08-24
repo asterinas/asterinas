@@ -5,10 +5,7 @@
 use core::{marker::Sync, ops::Deref};
 
 use super::{__cpu_local_end, __cpu_local_start};
-use crate::{
-    arch,
-    trap::{self, DisabledLocalIrqGuard},
-};
+use crate::{arch, trap::DisabledLocalIrqGuard};
 
 /// Defines a CPU-local variable.
 ///
@@ -16,14 +13,13 @@ use crate::{
 ///
 /// You can get the reference to the inner object on one CPU by calling
 /// [`CpuLocal::get_on_cpu`]. Also if you intend to access the inner object
-/// on the current CPU, you can use [`CpuLocal::borrow_irq_disabled`] or
-/// [`CpuLocal::borrow_with`]. The latter two accessors can be used even if
-/// the inner object is not `Sync`.
+/// on the current CPU, you can use [`CpuLocal::get_with`]. The latter
+/// accessors can be used even if the inner object is not `Sync`.
 ///
 /// # Example
 ///
 /// ```rust
-/// use ostd::{cpu_local, cpu::PinCurrentCpu, task::disable_preempt};
+/// use ostd::{cpu_local, cpu::PinCurrentCpu, task::disable_preempt, trap};
 /// use core::{sync::atomic::{AtomicU32, Ordering}, cell::Cell};
 ///
 /// cpu_local! {
@@ -37,7 +33,8 @@ use crate::{
 ///     let val_of_foo = ref_of_foo.load(Ordering::Relaxed);
 ///     println!("FOO VAL: {}", val_of_foo);
 ///
-///     let bar_guard = BAR.borrow_irq_disabled();
+///     let irq_guard = trap::disable_local();
+///     let bar_guard = BAR.get_with(&irq_guard);
 ///     let val_of_bar = bar_guard.get();
 ///     println!("BAR VAL: {}", val_of_bar);
 /// }
@@ -87,29 +84,19 @@ impl<T: 'static> CpuLocal<T> {
         Self(val)
     }
 
-    /// Get access to the underlying value with IRQs disabled.
+    /// Get access to the underlying value on the current CPU with a
+    /// provided IRQ guard.
     ///
     /// By this method, you can borrow a reference to the underlying value
     /// even if `T` is not `Sync`. Because that it is per-CPU and IRQs are
     /// disabled, no other running tasks can access it.
-    pub fn borrow_irq_disabled(&'static self) -> CpuLocalDerefGuard<'_, T> {
-        CpuLocalDerefGuard {
-            cpu_local: self,
-            _guard: InnerGuard::Created(trap::disable_local()),
-        }
-    }
-
-    /// Get access to the underlying value with a provided guard.
-    ///
-    /// Similar to [`CpuLocal::borrow_irq_disabled`], but you can provide
-    /// a guard to disable IRQs if you already have one.
-    pub fn borrow_with<'a>(
+    pub fn get_with<'a>(
         &'static self,
         guard: &'a DisabledLocalIrqGuard,
     ) -> CpuLocalDerefGuard<'a, T> {
         CpuLocalDerefGuard {
             cpu_local: self,
-            _guard: InnerGuard::Provided(guard),
+            guard,
         }
     }
 
@@ -199,19 +186,12 @@ impl<T: 'static> !Send for CpuLocal<T> {}
 /// A guard for accessing the CPU-local object.
 ///
 /// It ensures that the CPU-local object is accessed with IRQs disabled.
-/// It is created by [`CpuLocal::borrow_irq_disabled`] or
-/// [`CpuLocal::borrow_with`]. Do not hold this guard for a longtime.
+/// It is created by [`CpuLocal::borrow_with`].
 #[must_use]
 pub struct CpuLocalDerefGuard<'a, T: 'static> {
     cpu_local: &'static CpuLocal<T>,
-    _guard: InnerGuard<'a>,
-}
-
-enum InnerGuard<'a> {
     #[allow(dead_code)]
-    Created(DisabledLocalIrqGuard),
-    #[allow(dead_code)]
-    Provided(&'a DisabledLocalIrqGuard),
+    guard: &'a DisabledLocalIrqGuard,
 }
 
 impl<T: 'static> Deref for CpuLocalDerefGuard<'_, T> {
