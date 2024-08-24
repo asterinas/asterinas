@@ -5,12 +5,10 @@ use core::{fmt::Debug, marker::PhantomData};
 use aster_rights::{Dup, Exec, Full, Read, Signal, TRightSet, TRights, Write};
 use aster_rights_proc::require;
 use inherit_methods_macro::inherit_methods;
-pub use ostd::Pod;
 use ostd::{
     mm::{Daddr, DmaStream, HasDaddr, HasPaddr, Paddr, PodOnce, VmIo, VmIoOnce},
-    Result,
+    Pod, Result,
 };
-pub use typeflags_util::SetContain;
 
 /// Safe pointers.
 ///
@@ -157,7 +155,7 @@ pub struct SafePtr<T, M, R = Full> {
     phantom: PhantomData<T>,
 }
 
-impl<T: Pod, M: VmIo> SafePtr<T, M> {
+impl<T, M> SafePtr<T, M> {
     /// Create a new instance.
     ///
     /// # Access rights
@@ -174,15 +172,14 @@ impl<T: Pod, M: VmIo> SafePtr<T, M> {
     }
 }
 
-impl<T: Pod, M: VmIo + HasPaddr> SafePtr<T, M> {
+impl<T, M: HasPaddr, R> SafePtr<T, M, R> {
     pub fn paddr(&self) -> Paddr {
         self.vm_obj.paddr() + self.offset
     }
 }
 
+// =============== Read and write methods ==============
 impl<T: Pod, M: VmIo, R: TRights> SafePtr<T, M, TRightSet<R>> {
-    // =============== Read and write methods ==============
-
     /// Read the value from the pointer.
     ///
     /// # Access rights
@@ -222,9 +219,33 @@ impl<T: Pod, M: VmIo, R: TRights> SafePtr<T, M, TRightSet<R>> {
     pub fn write_slice(&self, slice: &[T]) -> Result<()> {
         self.vm_obj.write_slice(self.offset, slice)
     }
+}
 
-    // =============== Address-related methods ==============
+// =============== Read and write methods ==============
+impl<T: PodOnce, M: VmIoOnce, R: TRights> SafePtr<T, M, TRightSet<R>> {
+    /// Reads the value from the pointer using one non-tearing instruction.
+    ///
+    /// # Access rights
+    ///
+    /// This method requires the `Read` right.
+    #[require(R > Read)]
+    pub fn read_once(&self) -> Result<T> {
+        self.vm_obj.read_once(self.offset)
+    }
 
+    /// Overwrites the value at the pointer using one non-tearing instruction.
+    ///
+    /// # Access rights
+    ///
+    /// This method requires the `Write` right.
+    #[require(R > Write)]
+    pub fn write_once(&self, val: &T) -> Result<()> {
+        self.vm_obj.write_once(self.offset, val)
+    }
+}
+
+// =============== Address-related methods ==============
+impl<T, M, R> SafePtr<T, M, R> {
     pub const fn is_aligned(&self) -> bool {
         self.offset % core::mem::align_of::<T>() == 0
     }
@@ -258,9 +279,10 @@ impl<T: Pod, M: VmIo, R: TRights> SafePtr<T, M, TRightSet<R>> {
             self.offset -= (-bytes) as usize;
         }
     }
+}
 
-    // =============== VM object-related methods ==============
-
+// =============== VM object-related methods ==============
+impl<T, M, R> SafePtr<T, M, R> {
     pub const fn vm(&self) -> &M {
         &self.vm_obj
     }
@@ -268,9 +290,12 @@ impl<T: Pod, M: VmIo, R: TRights> SafePtr<T, M, TRightSet<R>> {
     pub fn set_vm(&mut self, vm_obj: M) {
         self.vm_obj = vm_obj;
     }
+}
 
+// =============== VM object-related methods ==============
+impl<T, M, R: Clone> SafePtr<T, M, R> {
     /// Construct a new SafePtr which will point to the same address
-    pub fn borrow_vm(&self) -> SafePtr<T, &M, TRightSet<R>> {
+    pub fn borrow_vm(&self) -> SafePtr<T, &M, R> {
         let SafePtr {
             offset: addr,
             vm_obj,
@@ -280,15 +305,16 @@ impl<T: Pod, M: VmIo, R: TRights> SafePtr<T, M, TRightSet<R>> {
         SafePtr {
             offset: *addr,
             vm_obj,
-            rights: *rights,
+            rights: rights.clone(),
             phantom: PhantomData,
         }
     }
+}
 
-    // =============== Type conversion methods ==============
-
+// =============== Type conversion methods ==============
+impl<T, M, R> SafePtr<T, M, R> {
     /// Cast the accessed structure into a new one, which is usually used when accessing a field in a structure.
-    pub fn cast<U: Pod>(self) -> SafePtr<U, M, TRightSet<R>> {
+    pub fn cast<U>(self) -> SafePtr<U, M, R> {
         let SafePtr {
             offset: addr,
             vm_obj,
@@ -302,7 +328,10 @@ impl<T: Pod, M: VmIo, R: TRights> SafePtr<T, M, TRightSet<R>> {
             phantom: PhantomData,
         }
     }
+}
 
+// =============== Type conversion methods ==============
+impl<T, M, R: TRights> SafePtr<T, M, TRightSet<R>> {
     /// Construct a new SafePtr and restrict the rights of it.
     ///
     /// # Access rights
@@ -321,28 +350,6 @@ impl<T: Pod, M: VmIo, R: TRights> SafePtr<T, M, TRightSet<R>> {
             rights: TRightSet(R1::new()),
             phantom: PhantomData,
         }
-    }
-}
-
-impl<T: PodOnce, M: VmIoOnce, R: TRights> SafePtr<T, M, TRightSet<R>> {
-    /// Reads the value from the pointer using one non-tearing instruction.
-    ///
-    /// # Access rights
-    ///
-    /// This method requires the `Read` right.
-    #[require(R > Read)]
-    pub fn read_once(&self) -> Result<T> {
-        self.vm_obj.read_once(self.offset)
-    }
-
-    /// Overwrites the value at the pointer using one non-tearing instruction.
-    ///
-    /// # Access rights
-    ///
-    /// This method requires the `Write` right.
-    #[require(R > Write)]
-    pub fn write_once(&self, val: &T) -> Result<()> {
-        self.vm_obj.write_once(self.offset, val)
     }
 }
 
@@ -404,24 +411,13 @@ impl<T, M: Debug, R> Debug for SafePtr<T, M, R> {
 macro_rules! field_ptr {
     ($ptr:expr, $type:ty, $($field:tt)+) => {{
         use ostd::offset_of;
-        use ostd::mm::VmIo;
-        use aster_rights::Dup;
-        use aster_rights::TRightSet;
-        use aster_rights::TRights;
-        use aster_util::safe_ptr::Pod;
-        use aster_util::safe_ptr::SetContain;
         use aster_util::safe_ptr::SafePtr;
 
         #[inline]
-        fn new_field_ptr<T, M, R, U>(
-            container_ptr: &SafePtr<T, M, TRightSet<R>>,
+        fn new_field_ptr<T, M, R: Clone, U>(
+            container_ptr: &SafePtr<T, M, R>,
             field_offset: *const U
-        ) -> SafePtr<U, &M, TRightSet<R>>
-        where
-            T: Pod,
-            M: VmIo,
-            R: TRights,
-            U: Pod,
+        ) -> SafePtr<U, &M, R>
         {
             let mut ptr = container_ptr.borrow_vm();
             ptr.byte_add(field_offset as usize);
@@ -429,6 +425,6 @@ macro_rules! field_ptr {
         }
 
         let field_offset = offset_of!($type, $($field)*);
-        new_field_ptr($ptr,field_offset)
+        new_field_ptr($ptr, field_offset)
     }}
 }
