@@ -34,8 +34,8 @@ impl IoMem {
     /// - The given physical address range must be in the I/O memory region.
     /// - Reading from or writing to I/O memory regions may have side effects. Those side effects
     ///   must not cause soundness problems (e.g., they must not corrupt the kernel memory).
-    pub(crate) unsafe fn new(range: Range<Paddr>) -> IoMem {
-        IoMem {
+    pub(crate) unsafe fn new(range: Range<Paddr>) -> Self {
+        Self {
             virtual_address: paddr_to_vaddr(range.start),
             limit: range.len(),
         }
@@ -51,29 +51,20 @@ impl IoMem {
         self.limit
     }
 
-    /// Resizes the I/O memory region to the new `range`.
+    /// Slices the `IoMem`, returning another `IoMem` representing the subslice.
     ///
-    /// # Errors
+    /// # Panics
     ///
-    /// Returns an error if the new `range` is not within the current range.
-    pub fn resize(&mut self, range: Range<Paddr>) -> Result<()> {
-        let start_vaddr = paddr_to_vaddr(range.start);
-        let virtual_end = self
-            .virtual_address
-            .checked_add(self.limit)
-            .ok_or(Error::Overflow)?;
-        if start_vaddr < self.virtual_address || start_vaddr >= virtual_end {
-            return Err(Error::InvalidArgs);
+    /// This method will panic if the range is empty or out of bounds.
+    pub fn slice(&self, range: Range<usize>) -> Self {
+        // This ensures `range.start < range.end` and `range.end <= limit`.
+        assert!(!range.is_empty() && range.end <= self.limit);
+
+        // We've checked the range is in bounds, so we can construct the new `IoMem` safely.
+        Self {
+            virtual_address: self.virtual_address + range.start,
+            limit: range.end - range.start,
         }
-        let end_vaddr = start_vaddr
-            .checked_add(range.len())
-            .ok_or(Error::Overflow)?;
-        if end_vaddr <= self.virtual_address || end_vaddr > virtual_end {
-            return Err(Error::InvalidArgs);
-        }
-        self.virtual_address = start_vaddr;
-        self.limit = range.len();
-        Ok(())
     }
 }
 

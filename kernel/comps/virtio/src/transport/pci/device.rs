@@ -125,18 +125,11 @@ impl VirtioTransport for VirtioPciTransport {
     }
 
     fn device_config_memory(&self) -> IoMem {
-        let mut memory = self
-            .device_cfg
-            .memory_bar()
-            .as_ref()
-            .unwrap()
-            .io_mem()
-            .clone();
-        let new_paddr = memory.paddr() + self.device_cfg.offset() as usize;
-        memory
-            .resize(new_paddr..(self.device_cfg.length() as usize + new_paddr))
-            .unwrap();
-        memory
+        let memory = self.device_cfg.memory_bar().as_ref().unwrap().io_mem();
+
+        let offset = self.device_cfg.offset() as usize;
+        let length = self.device_cfg.length() as usize;
+        memory.slice(offset..offset + length)
     }
 
     fn device_features(&self) -> u64 {

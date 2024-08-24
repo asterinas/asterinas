@@ -198,10 +198,7 @@ impl VirtioTransport for VirtioMmioTransport {
 
     fn device_config_memory(&self) -> IoMem {
         // offset: 0x100~0x200
-        let mut io_mem = self.common_device.io_mem().clone();
-        let paddr = io_mem.paddr();
-        io_mem.resize((paddr + 0x100)..(paddr + 0x200)).unwrap();
-        io_mem
+        self.common_device.io_mem().slice(0x100..0x200)
     }
 
     fn device_features(&self) -> u64 {
