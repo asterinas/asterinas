@@ -30,6 +30,7 @@ impl InitStream {
     pub fn bind(
         self,
         endpoint: &IpEndpoint,
+        can_reuse: bool,
     ) -> core::result::Result<AnyBoundSocket, (Error, Self)> {
         let unbound_socket = match self {
             InitStream::Unbound(unbound_socket) => unbound_socket,
@@ -40,7 +41,7 @@ impl InitStream {
                 ));
             }
         };
-        let bound_socket = match bind_socket(unbound_socket, endpoint, false) {
+        let bound_socket = match bind_socket(unbound_socket, endpoint, can_reuse) {
             Ok(bound_socket) => bound_socket,
             Err((err, unbound_socket)) => return Err((err, InitStream::Unbound(unbound_socket))),
         };
@@ -52,7 +53,7 @@ impl InitStream {
         remote_endpoint: &IpEndpoint,
     ) -> core::result::Result<AnyBoundSocket, (Error, Self)> {
         let endpoint = get_ephemeral_endpoint(remote_endpoint);
-        self.bind(&endpoint)
+        self.bind(&endpoint, false)
     }
 
     pub fn connect(

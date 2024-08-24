@@ -56,7 +56,11 @@ enum Inner {
 }
 
 impl Inner {
-    fn bind(self, endpoint: &IpEndpoint) -> core::result::Result<BoundDatagram, (Error, Self)> {
+    fn bind(
+        self,
+        endpoint: &IpEndpoint,
+        can_reuse: bool,
+    ) -> core::result::Result<BoundDatagram, (Error, Self)> {
         let unbound_datagram = match self {
             Inner::Unbound(unbound_datagram) => unbound_datagram,
             Inner::Bound(bound_datagram) => {
@@ -67,7 +71,7 @@ impl Inner {
             }
         };
 
-        let bound_datagram = match unbound_datagram.bind(endpoint) {
+        let bound_datagram = match unbound_datagram.bind(endpoint, can_reuse) {
             Ok(bound_datagram) => bound_datagram,
             Err((err, unbound_datagram)) => return Err((err, Inner::Unbound(unbound_datagram))),
         };
@@ -83,7 +87,7 @@ impl Inner {
         }
 
         let endpoint = get_ephemeral_endpoint(remote_endpoint);
-        self.bind(&endpoint)
+        self.bind(&endpoint, false)
     }
 }
 
@@ -271,9 +275,10 @@ impl Socket for DatagramSocket {
     fn bind(&self, socket_addr: SocketAddr) -> Result<()> {
         let endpoint = socket_addr.try_into()?;
 
+        let can_reuse = self.options.read().socket.reuse_addr();
         let mut inner = self.inner.write();
         inner.borrow_result(|owned_inner| {
-            let bound_datagram = match owned_inner.bind(&endpoint) {
+            let bound_datagram = match owned_inner.bind(&endpoint, can_reuse) {
                 Ok(bound_datagram) => bound_datagram,
                 Err((err, err_inner)) => {
                     return (err_inner, Err(err));

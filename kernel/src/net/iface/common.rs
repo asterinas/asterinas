@@ -94,6 +94,7 @@ impl IfaceCommon {
         let mut used_ports = self.used_ports.write();
         if let Some(used_times) = used_ports.get_mut(&port) {
             if *used_times == 0 || can_reuse {
+                // FIXME: Check if the previous socket was bound with SO_REUSEADDR.
                 *used_times += 1;
             } else {
                 return_errno_with_message!(Errno::EADDRINUSE, "the address is already in use");

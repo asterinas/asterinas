@@ -398,6 +398,7 @@ impl Socket for StreamSocket {
     fn bind(&self, socket_addr: SocketAddr) -> Result<()> {
         let endpoint = socket_addr.try_into()?;
 
+        let can_reuse = self.options.read().socket.reuse_addr();
         let mut state = self.state.write();
 
         state.borrow_result(|owned_state| {
@@ -411,7 +412,7 @@ impl Socket for StreamSocket {
                 );
             };
 
-            let bound_socket = match init_stream.bind(&endpoint) {
+            let bound_socket = match init_stream.bind(&endpoint, can_reuse) {
                 Ok(bound_socket) => bound_socket,
                 Err((err, init_stream)) => {
                     return (State::Init(init_stream), Err(err));
