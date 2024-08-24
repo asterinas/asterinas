@@ -8,7 +8,11 @@ use core::{
 };
 
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListAtomicLink};
-use ostd::{cpu::local::CpuLocal, cpu_local, trap::SoftIrqLine};
+use ostd::{
+    cpu::local::CpuLocal,
+    cpu_local,
+    trap::{self, SoftIrqLine},
+};
 
 use crate::softirq_id::{TASKLESS_SOFTIRQ_ID, TASKLESS_URGENT_SOFTIRQ_ID};
 
@@ -132,8 +136,9 @@ fn do_schedule(
     {
         return;
     }
+    let irq_guard = trap::disable_local();
     taskless_list
-        .borrow_irq_disabled()
+        .get_with(&irq_guard)
         .borrow_mut()
         .push_front(taskless.clone());
 }
@@ -158,7 +163,8 @@ fn taskless_softirq_handler(
     softirq_id: u8,
 ) {
     let mut processing_list = {
-        let guard = taskless_list.borrow_irq_disabled();
+        let irq_guard = trap::disable_local();
+        let guard = taskless_list.get_with(&irq_guard);
         let mut list_mut = guard.borrow_mut();
         LinkedList::take(list_mut.deref_mut())
     };
@@ -169,8 +175,9 @@ fn taskless_softirq_handler(
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {
+            let irq_guard = trap::disable_local();
             taskless_list
-                .borrow_irq_disabled()
+                .get_with(&irq_guard)
                 .borrow_mut()
                 .push_front(taskless);
             SoftIrqLine::get(softirq_id).raise();
