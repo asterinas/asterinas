@@ -40,10 +40,7 @@ jobs:
       # So the RUSTUP_HOME needs to be set here. 
       - name: Unit test
         id: unit_test
-        run: |
-          cd osdk
-          RUSTUP_HOME=/root/.rustup cargo build
-          RUSTUP_HOME=/root/.rustup cargo test
+        run: RUSTUP_HOME=/root/.rustup make test_osdk
 
   osdk-test-tdx:
     if: github.event_name == 'schedule'
@@ -74,7 +71,4 @@ jobs:
       # So the RUSTUP_HOME needs to be set here. 
       - name: Unit test
         id: unit_test
-        run: |
-          cd osdk
-          RUSTUP_HOME=/root/.rustup INTEL_TDX=1 cargo build
-          RUSTUP_HOME=/root/.rustup INTEL_TDX=1 cargo test
+        run: RUSTUP_HOME=/root/.rustup INTEL_TDX=1 make test_osdk

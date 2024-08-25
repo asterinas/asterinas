@@ -140,6 +140,16 @@ install_osdk:
 $(CARGO_OSDK):
 	@make --no-print-directory install_osdk
 
+.PHONY: check_osdk
+check_osdk:
+	@cd osdk && cargo clippy -- -D warnings
+
+.PHONY: test_osdk
+test_osdk:
+	@cd osdk && \
+		OSDK_LOCAL_DEV=1 cargo build && \
+		OSDK_LOCAL_DEV=1 cargo test
+
 .PHONY: initramfs
 initramfs:
 	@make --no-print-directory -C test
@@ -230,13 +240,15 @@ check: initramfs $(CARGO_OSDK)
 	done
 	@make --no-print-directory -C test check
 
-.PHONY: check_osdk
-check_osdk:
-	@cd osdk && cargo clippy -- -D warnings
-
 .PHONY: clean
 clean:
+	@echo "Cleaning up Asterinas workspace target files"
 	@cargo clean
+	@echo "Cleaning up OSDK workspace target files"
+	@cd osdk && cargo clean
+	@echo "Cleaning up documentation target files"
 	@cd docs && mdbook clean
+	@echo "Cleaning up test target files"
 	@make --no-print-directory -C test clean
+	@echo "Uninstalling OSDK"
 	@rm -f $(CARGO_OSDK)
