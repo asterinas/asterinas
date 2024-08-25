@@ -131,14 +131,22 @@ fn add_manifest_dependency(
 
     if link_unit_test_runner {
         let dep_str = match option_env!("OSDK_LOCAL_DEV") {
-            Some("1") => "osdk-test-kernel = { path = \"../../../osdk/test-kernel\" }",
+            Some("1") => {
+                let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+                let test_kernel_dir = crate_dir.join("test-kernel");
+                format!(
+                    "osdk-test-kernel = {{ path = \"{}\" }}",
+                    test_kernel_dir.display()
+                )
+            }
             _ => concat!(
                 "osdk-test-kernel = { version = \"",
                 env!("CARGO_PKG_VERSION"),
                 "\" }"
-            ),
+            )
+            .to_owned(),
         };
-        let test_runner_dep = toml::Table::from_str(dep_str).unwrap();
+        let test_runner_dep = toml::Table::from_str(&dep_str).unwrap();
         dependencies.as_table_mut().unwrap().extend(test_runner_dep);
     }
 
