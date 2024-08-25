@@ -13,12 +13,12 @@ use crate::{
     time::timespec_t,
 };
 
-pub fn sys_semop(sem_id: i32, tsops: Vaddr, nsops: usize, _ctx: &Context) -> Result<SyscallReturn> {
+pub fn sys_semop(sem_id: i32, tsops: Vaddr, nsops: usize, ctx: &Context) -> Result<SyscallReturn> {
     debug!(
         "[sys_semop] sem_id = {:?}, tsops_vaddr = {:x?}, nsops = {:?}",
         sem_id, tsops, nsops
     );
-    do_sys_semtimedop(sem_id, tsops, nsops, None)
+    do_sys_semtimedop(sem_id, tsops, nsops, None, ctx)
 }
 
 pub fn sys_semtimedop(
@@ -41,7 +41,7 @@ pub fn sys_semtimedop(
         )?)
     };
 
-    do_sys_semtimedop(sem_id, tsops, nsops, timeout)
+    do_sys_semtimedop(sem_id, tsops, nsops, timeout, ctx)
 }
 
 fn do_sys_semtimedop(
@@ -49,6 +49,7 @@ fn do_sys_semtimedop(
     tsops: Vaddr,
     nsops: usize,
     timeout: Option<Duration>,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     if sem_id <= 0 || nsops == 0 {
         return_errno!(Errno::EINVAL);
@@ -64,7 +65,7 @@ fn do_sys_semtimedop(
             check_sem(sem_id, None, PermissionMode::ALTER)?;
         }
 
-        sem_op(sem_id, sem_buf, timeout)?;
+        sem_op(sem_id, sem_buf, timeout, ctx)?;
     }
 
     Ok(SyscallReturn::Return(0))
