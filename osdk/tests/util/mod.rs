@@ -146,7 +146,7 @@ pub(crate) fn add_tdx_scheme(osdk_path: impl AsRef<Path>) -> std::io::Result<()>
 }
 
 pub(crate) fn is_tdx_enabled() -> bool {
-    std::env::var("INTEL_TDX").is_ok()
+    std::env::var("INTEL_TDX").is_ok_and(|s| s == "1")
 }
 
 fn conditionally_add_tdx_args<T: AsRef<OsStr>, I: IntoIterator<Item = T> + Copy>(
