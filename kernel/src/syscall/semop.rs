@@ -61,7 +61,7 @@ fn do_sys_semtimedop(
         let sem_buf =
             CurrentUserSpace::get().read_val::<SemBuf>(tsops + size_of::<SemBuf>() * i)?;
 
-        sem_op(sem_id, sem_buf, timeout, ctx)?;
+        sem_op(sem_id, &sem_buf, timeout, ctx)?;
     }
 
     Ok(SyscallReturn::Return(0))

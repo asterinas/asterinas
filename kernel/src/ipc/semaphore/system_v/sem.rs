@@ -166,7 +166,7 @@ impl Semaphore {
         );
     }
 
-    fn sem_op(&self, sem_buf: SemBuf, timeout: Option<Duration>, ctx: &Context) -> Result<()> {
+    fn sem_op(&self, sem_buf: &SemBuf, timeout: Option<Duration>, ctx: &Context) -> Result<()> {
         let mut val = self.val.lock();
         let sem_op = sem_buf.sem_op;
         let current_pid = ctx.process.pid();
@@ -208,7 +208,7 @@ impl Semaphore {
         let (waiter, waker) = Waiter::new_pair();
         let status = Arc::new(AtomicStatus::new(Status::Pending));
         let pending_op = Box::new(PendingOp {
-            sem_buf,
+            sem_buf: *sem_buf,
             status: status.clone(),
             waker: waker.clone(),
             process: ctx.posix_thread.weak_process(),
@@ -303,7 +303,7 @@ impl Semaphore {
 
 pub fn sem_op(
     sem_id: key_t,
-    sem_buf: SemBuf,
+    sem_buf: &SemBuf,
     timeout: Option<Duration>,
     ctx: &Context,
 ) -> Result<()> {
