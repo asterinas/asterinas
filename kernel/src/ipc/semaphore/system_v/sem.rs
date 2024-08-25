@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use core::{
-    sync::atomic::{AtomicU16, AtomicU64, Ordering},
+    sync::atomic::{AtomicU16, AtomicU32, AtomicU64, Ordering},
     time::Duration,
 };
 
@@ -89,7 +89,7 @@ pub struct Semaphore {
     /// - through semop with op != 0
     /// - through semctl with SETVAL and SETALL
     /// - through SEM_UNDO when task exit
-    latest_modified_pid: RwMutex<Pid>,
+    latest_modified_pid: AtomicU32,
     /// Pending alter operations. For each pending operation, it has `sem_op < 0`.
     pending_alters: Mutex<LinkedList<Box<PendingOp>>>,
     /// Pending zeros operations. For each pending operation, it has `sem_op = 0`.
@@ -106,7 +106,8 @@ impl Semaphore {
 
         let mut current_val = self.val.lock();
         *current_val = val;
-        *self.latest_modified_pid.write() = current_pid;
+        self.latest_modified_pid
+            .store(current_pid, Ordering::Relaxed);
 
         self.update_pending_ops(current_val);
         Ok(())
@@ -117,7 +118,7 @@ impl Semaphore {
     }
 
     pub fn last_modified_pid(&self) -> Pid {
-        *self.latest_modified_pid.read()
+        self.latest_modified_pid.load(Ordering::Relaxed)
     }
 
     pub fn sem_otime(&self) -> Duration {
@@ -152,7 +153,7 @@ impl Semaphore {
     pub(super) fn new(val: i32) -> Self {
         Self {
             val: Mutex::new(val),
-            latest_modified_pid: RwMutex::new(current!().pid()),
+            latest_modified_pid: AtomicU32::new(current!().pid()),
             pending_alters: Mutex::new(LinkedList::new()),
             pending_const: Mutex::new(LinkedList::new()),
             sem_otime: AtomicU64::new(0),
@@ -190,7 +191,8 @@ impl Semaphore {
             }
 
             *val = new_val;
-            *self.latest_modified_pid.write() = current_pid;
+            self.latest_modified_pid
+                .store(current_pid, Ordering::Relaxed);
             self.update_otime();
 
             self.update_pending_ops(val);
@@ -275,7 +277,7 @@ impl Semaphore {
                 );
 
                 *val += i32::from(op.sem_buf.sem_op);
-                *self.latest_modified_pid.write() = op.pid;
+                self.latest_modified_pid.store(op.pid, Ordering::Relaxed);
                 self.update_otime();
                 op.status.set_status(Status::Normal);
                 op.waker.wake_up();
