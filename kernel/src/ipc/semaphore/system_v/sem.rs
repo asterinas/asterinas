@@ -198,6 +198,7 @@ impl Semaphore {
         } else if zero_condition {
             return Ok(());
         }
+        drop(val);
 
         // Need to wait for the semaphore
         if flags.contains(IpcFlags::IPC_NOWAIT) {
@@ -219,7 +220,6 @@ impl Semaphore {
         } else {
             self.pending_alters.lock().push_back(pending_op);
         }
-        drop(val);
 
         // Wait
         if let Some(timeout) = timeout {
