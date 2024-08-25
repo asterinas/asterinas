@@ -172,8 +172,9 @@ fn install_setup_with_arch(
     cmd.arg("--force");
     cmd.arg("--root").arg(install_dir.as_ref());
     if matches!(option_env!("OSDK_LOCAL_DEV"), Some("1")) {
-        cmd.arg("--path")
-            .arg("../../../ostd/libs/linux-bzimage/setup");
+        let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let setup_dir = crate_dir.join("../ostd/libs/linux-bzimage/setup");
+        cmd.arg("--path").arg(setup_dir);
     }
     // Remember to upgrade this version if new version of linux-bzimage-setup is released.
     const LINUX_BZIMAGE_SETUP_VERSION: &str = "0.1.0";
