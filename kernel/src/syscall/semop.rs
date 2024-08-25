@@ -6,8 +6,7 @@ use super::SyscallReturn;
 use crate::{
     ipc::semaphore::system_v::{
         sem::{sem_op, SemBuf},
-        sem_set::{check_sem, SEMOPM},
-        PermissionMode,
+        sem_set::SEMOPM,
     },
     prelude::*,
     time::timespec_t,
@@ -61,9 +60,6 @@ fn do_sys_semtimedop(
     for i in 0..nsops {
         let sem_buf =
             CurrentUserSpace::get().read_val::<SemBuf>(tsops + size_of::<SemBuf>() * i)?;
-        if sem_buf.sem_op() != 0 {
-            check_sem(sem_id, None, PermissionMode::ALTER)?;
-        }
 
         sem_op(sem_id, sem_buf, timeout, ctx)?;
     }
