@@ -58,7 +58,7 @@ pub fn sys_semctl(
                     .get(semnum as usize)
                     .ok_or(Error::new(Errno::EINVAL))?;
 
-                sem.set_val(val)?;
+                sem.set_val(val, ctx.process.pid())?;
                 sem_set.update_ctime();
 
                 Ok(())

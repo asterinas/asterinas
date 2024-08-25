@@ -99,14 +99,14 @@ pub struct Semaphore {
 }
 
 impl Semaphore {
-    pub fn set_val(&self, val: i32) -> Result<()> {
+    pub fn set_val(&self, val: i32, current_pid: Pid) -> Result<()> {
         if !(0..SEMVMX).contains(&val) {
             return_errno!(Errno::ERANGE);
         }
 
         let mut current_val = self.val.lock();
         *current_val = val;
-        *self.latest_modified_pid.write() = current!().pid();
+        *self.latest_modified_pid.write() = current_pid;
 
         self.update_pending_ops(current_val);
         Ok(())
@@ -166,9 +166,10 @@ impl Semaphore {
         );
     }
 
-    fn sem_op(&self, sem_buf: SemBuf, timeout: Option<Duration>) -> Result<()> {
+    fn sem_op(&self, sem_buf: SemBuf, timeout: Option<Duration>, ctx: &Context) -> Result<()> {
         let mut val = self.val.lock();
         let sem_op = sem_buf.sem_op;
+        let current_pid = ctx.process.pid();
 
         let flags = IpcFlags::from_bits(sem_buf.sem_flags as u32).unwrap();
         if flags.contains(IpcFlags::SEM_UNDO) {
@@ -189,7 +190,7 @@ impl Semaphore {
             }
 
             *val = new_val;
-            *self.latest_modified_pid.write() = current!().pid();
+            *self.latest_modified_pid.write() = current_pid;
             self.update_otime();
 
             self.update_pending_ops(val);
@@ -206,14 +207,12 @@ impl Semaphore {
         // Add current to pending list
         let (waiter, waker) = Waiter::new_pair();
         let status = Arc::new(AtomicStatus::new(Status::Pending));
-        let current = current!();
-        let pid = current.pid();
         let pending_op = Box::new(PendingOp {
             sem_buf,
             status: status.clone(),
             waker: waker.clone(),
-            process: Arc::downgrade(&current),
-            pid,
+            process: ctx.posix_thread.weak_process(),
+            pid: current_pid,
         });
         if sem_op == 0 {
             self.pending_const.lock().push_back(pending_op);
@@ -241,7 +240,7 @@ impl Semaphore {
                 } else {
                     self.pending_alters.lock()
                 };
-                pending_ops.retain(|op| op.pid != pid);
+                pending_ops.retain(|op| op.pid != current_pid);
                 Err(Error::new(Errno::EAGAIN))
             }
         }
@@ -302,7 +301,12 @@ impl Semaphore {
     }
 }
 
-pub fn sem_op(sem_id: key_t, sem_buf: SemBuf, timeout: Option<Duration>) -> Result<()> {
+pub fn sem_op(
+    sem_id: key_t,
+    sem_buf: SemBuf,
+    timeout: Option<Duration>,
+    ctx: &Context,
+) -> Result<()> {
     debug_assert!(sem_id > 0);
     debug!("[semop] sembuf: {:?}", sem_buf);
 
@@ -318,5 +322,5 @@ pub fn sem_op(sem_id: key_t, sem_buf: SemBuf, timeout: Option<Duration>) -> Resu
             .clone()
     };
 
-    sem.sem_op(sem_buf, timeout)
+    sem.sem_op(sem_buf, timeout, ctx)
 }
