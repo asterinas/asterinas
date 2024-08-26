@@ -22,6 +22,9 @@ pub fn sys_mprotect(addr: Vaddr, len: usize, perms: u64, ctx: &Context) -> Resul
     if len == 0 {
         return Ok(SyscallReturn::Return(0));
     }
+    if len > usize::MAX - PAGE_SIZE + 1 {
+        return_errno_with_message!(Errno::ENOMEM, "len align overflow");
+    }
 
     let len = len.align_up(PAGE_SIZE);
     let end = addr.checked_add(len).ok_or(Error::with_message(

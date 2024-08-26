@@ -14,6 +14,9 @@ pub fn sys_munmap(addr: Vaddr, len: usize, ctx: &Context) -> Result<SyscallRetur
     if len == 0 {
         return_errno_with_message!(Errno::EINVAL, "munmap len cannot be zero");
     }
+    if len > usize::MAX - PAGE_SIZE + 1 {
+        return_errno_with_message!(Errno::ENOMEM, "munmap len align overflow");
+    }
 
     let root_vmar = ctx.process.root_vmar();
     let len = len.align_up(PAGE_SIZE);

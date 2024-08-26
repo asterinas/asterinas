@@ -57,6 +57,9 @@ fn do_sys_mmap(
     if len == 0 {
         return_errno_with_message!(Errno::EINVAL, "mmap len cannot be zero");
     }
+    if len > usize::MAX - PAGE_SIZE + 1 {
+        return_errno_with_message!(Errno::ENOMEM, "mmap len align overflow");
+    }
 
     let len = len.align_up(PAGE_SIZE);
 
