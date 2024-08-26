@@ -4,7 +4,7 @@ use super::{Thread, Tid};
 use crate::prelude::*;
 
 lazy_static! {
-    static ref THREAD_TABLE: Mutex<BTreeMap<Tid, Arc<Thread>>> = Mutex::new(BTreeMap::new());
+    static ref THREAD_TABLE: SpinLock<BTreeMap<Tid, Arc<Thread>>> = SpinLock::new(BTreeMap::new());
 }
 
 pub fn add_thread(thread: Arc<Thread>) {
