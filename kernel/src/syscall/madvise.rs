@@ -20,7 +20,7 @@ pub fn sys_madvise(
     if start % PAGE_SIZE != 0 {
         return_errno_with_message!(Errno::EINVAL, "the start address should be page aligned");
     }
-    if len == 0 {
+    if len == 0 || len > usize::MAX - PAGE_SIZE + 1 {
         return Ok(SyscallReturn::Return(0));
     }
 
