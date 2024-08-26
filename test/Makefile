@@ -64,10 +64,10 @@ $(INITRAMFS)/lib/x86_64-linux-gnu: | $(VDSO_LIB)
 $(VDSO_LIB): | $(VDSO_DIR)
 	@# TODO: use a custom compiled vdso.so file in the future.
 	$(ATOMIC_WGET) $@ "https://raw.githubusercontent.com/asterinas/linux_vdso/2a6d2db/vdso64.so"
-	
+
 $(VDSO_DIR):
 	@mkdir -p $@
-	
+
 $(INITRAMFS)/lib64:
 	@mkdir -p $@
 	@cp -L /lib64/ld-linux-x86-64.so.2 $@
@@ -145,11 +145,14 @@ $(INITRAMFS_FILELIST): | $(INITRAMFS_ALL_DIRS)
 endif
 	@(cd $(INITRAMFS); find . -printf "%T@ %p\n") > $(INITRAMFS_FILELIST)
 
-$(EXT2_IMAGE):
+$(BUILD_DIR):
+	@mkdir -p $@
+
+$(EXT2_IMAGE): | $(BUILD_DIR)
 	@dd if=/dev/zero of=$(EXT2_IMAGE) bs=2G count=1
 	@mke2fs $(EXT2_IMAGE)
 
-$(EXFAT_IMAGE):
+$(EXFAT_IMAGE): | $(BUILD_DIR)
 	@fallocate -l 64M $(EXFAT_IMAGE)
 	@mkfs.exfat $(EXFAT_IMAGE)
 
