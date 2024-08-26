@@ -16,7 +16,6 @@ targets = ["x86_64-unknown-none"]
 
 [dependencies]
 align_ext = { path = "libs/align_ext", version = "0.1.0" }
-array-init = "2.0"
 bit_field = "0.10.1"
 buddy_system_allocator = "0.9.0"
 bitflags = "1.3"
