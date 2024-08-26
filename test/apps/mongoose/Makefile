@@ -2,7 +2,7 @@
 
 CUR_DIR := $(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
 ATOMIC_WGET := $(CUR_DIR)/../../../tools/atomic_wget.sh
-MONGOOSE_DIR := $(CUR_DIR)
+MONGOOSE_DIR ?= $(CUR_DIR)
 MONGOOSE_BUILD_DIR := $(BUILD_DIR)/network
 MONGOOSE_INSTALL_DIR := $(INSTALL_DIR)/network
 MONGOOSE_C := $(MONGOOSE_DIR)/mongoose.c
@@ -14,7 +14,7 @@ SERVER_BIN := $(MONGOOSE_INSTALL_DIR)/http_server
 CLIENT_C := http_client.c
 CLIENT_BIN := $(MONGOOSE_INSTALL_DIR)/http_client
 BINS := $(SERVER_BIN) $(CLIENT_BIN)
-CC := cc
+CC ?= cc
 CFLAGS := -W -Wall -Wextra -g -I. -I$(MONGOOSE_DIR) -DMG_ENABLE_LINES=1
 
 .PHONY: all 
