@@ -279,7 +279,7 @@ int test_sigchld()
 	int pid = fork();
 	if (pid == 0) {
 		// child process
-		printf("create a new proces successfully (pid = %d)\n",
+		printf("create a new process successfully (pid = %d)\n",
 		       getpid());
 		fflush(stdout);
 		exit(0);

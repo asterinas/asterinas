@@ -73,7 +73,7 @@ to introduce minimal overheads.
 Ideally, these APIs should be realized
 as [zero-cost abstractions](https://monomorph.is/posts/zero-cost-abstractions/).
 
-Fortunatelly, our efforts
+Fortunately, our efforts
 to design and implement an OS framework meeting these standards
 have borne fruit in the form of the [Asterinas OSTD](../ostd/).
 Using this framework as a foundation,

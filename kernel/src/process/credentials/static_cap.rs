@@ -49,7 +49,7 @@ impl<R: TRights> Credentials<R> {
 
     /// Gets real user id.
     ///
-    /// This method requies the `Read` right.
+    /// This method requires the `Read` right.
     #[require(R > Read)]
     pub fn ruid(&self) -> Uid {
         self.0.ruid()
@@ -57,7 +57,7 @@ impl<R: TRights> Credentials<R> {
 
     /// Gets effective user id.
     ///
-    /// This method requies the `Read` right.
+    /// This method requires the `Read` right.
     #[require(R > Read)]
     pub fn euid(&self) -> Uid {
         self.0.euid()
@@ -65,7 +65,7 @@ impl<R: TRights> Credentials<R> {
 
     /// Gets saved-set user id.
     ///
-    /// This method requies the `Read` right.
+    /// This method requires the `Read` right.
     #[require(R > Read)]
     pub fn suid(&self) -> Uid {
         self.0.suid()
@@ -73,7 +73,7 @@ impl<R: TRights> Credentials<R> {
 
     /// Gets file system user id.
     ///
-    /// This method requies the `Read` right.
+    /// This method requires the `Read` right.
     #[require(R > Read)]
     pub fn fsuid(&self) -> Uid {
         self.0.fsuid()
@@ -143,7 +143,7 @@ impl<R: TRights> Credentials<R> {
 
     /// Gets real group id.
     ///
-    /// This method requies the `Read` right.
+    /// This method requires the `Read` right.
     #[require(R > Read)]
     pub fn rgid(&self) -> Gid {
         self.0.rgid()
@@ -151,7 +151,7 @@ impl<R: TRights> Credentials<R> {
 
     /// Gets effective group id.
     ///
-    /// This method requies the `Read` right.
+    /// This method requires the `Read` right.
     #[require(R > Read)]
     pub fn egid(&self) -> Gid {
         self.0.egid()
@@ -159,7 +159,7 @@ impl<R: TRights> Credentials<R> {
 
     /// Gets saved-set group id.
     ///
-    /// This method requies the `Read` right.
+    /// This method requires the `Read` right.
     #[require(R > Read)]
     pub fn sgid(&self) -> Gid {
         self.0.sgid()
@@ -167,7 +167,7 @@ impl<R: TRights> Credentials<R> {
 
     /// Gets file system group id.
     ///
-    /// This method requies the `Read` right.
+    /// This method requires the `Read` right.
     #[require(R > Read)]
     pub fn fsgid(&self) -> Gid {
         self.0.fsgid()
@@ -237,7 +237,7 @@ impl<R: TRights> Credentials<R> {
 
     /// Acquires the read lock of supplementary group ids.
     ///
-    /// This method requies the `Read` right.
+    /// This method requires the `Read` right.
     #[require(R > Read)]
     pub fn groups(&self) -> RwLockReadGuard<BTreeSet<Gid>> {
         self.0.groups()
@@ -255,7 +255,7 @@ impl<R: TRights> Credentials<R> {
 
     /// Gets the capabilities that child process can inherit.
     ///
-    /// This method requies the `Read` right.
+    /// This method requires the `Read` right.
     #[require(R > Read)]
     pub fn inheritable_capset(&self) -> CapSet {
         self.0.inheritable_capset()
@@ -263,7 +263,7 @@ impl<R: TRights> Credentials<R> {
 
     /// Gets the capabilities that are permitted.
     ///
-    /// This method requies the `Read` right.
+    /// This method requires the `Read` right.
     #[require(R > Read)]
     pub fn permitted_capset(&self) -> CapSet {
         self.0.permitted_capset()
@@ -271,7 +271,7 @@ impl<R: TRights> Credentials<R> {
 
     /// Gets the capabilities that actually use.
     ///
-    /// This method requies the `Read` right.
+    /// This method requires the `Read` right.
     #[require(R > Read)]
     pub fn effective_capset(&self) -> CapSet {
         self.0.effective_capset()

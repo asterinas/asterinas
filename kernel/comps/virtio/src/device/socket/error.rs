@@ -103,7 +103,7 @@ impl fmt::Display for SocketError {
             Self::UnexpectedDataInPacket => write!(f, "No data is expected in the packet"),
             Self::InsufficientBufferSpaceInPeer => write!(f, "Peer has insufficient buffer space, try again later"),
             Self::RecycledWrongBuffer => write!(f, "Recycled a wrong buffer"),
-            Self::QueueError(_) => write!(f,"Error encounted out of vsock itself!"),
+            Self::QueueError(_) => write!(f,"Error encountered out of vsock itself!"),
         }
     }
 }

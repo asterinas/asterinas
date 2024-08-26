@@ -97,7 +97,7 @@ fn log_trap_info(exception: &CpuException, trap_info: &CpuExceptionInfo) {
         DEVICE_NOT_AVAILABLE => log_trap_common!(DEVICE_NOT_AVAILABLE, trap_info),
         DOUBLE_FAULT => log_trap_common!(DOUBLE_FAULT, trap_info),
         COPROCESSOR_SEGMENT_OVERRUN => log_trap_common!(COPROCESSOR_SEGMENT_OVERRUN, trap_info),
-        INVAILD_TSS => log_trap_common!(INVAILD_TSS, trap_info),
+        INVALID_TSS => log_trap_common!(INVALID_TSS, trap_info),
         SEGMENT_NOT_PRESENT => log_trap_common!(SEGMENT_NOT_PRESENT, trap_info),
         STACK_SEGMENT_FAULT => log_trap_common!(STACK_SEGMENT_FAULT, trap_info),
         GENERAL_PROTECTION_FAULT => log_trap_common!(GENERAL_PROTECTION_FAULT, trap_info),

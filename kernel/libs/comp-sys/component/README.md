@@ -11,7 +11,7 @@ Registering a crate as component by marking a function in the lib.rs with `#[ini
 
 ### Component initialization
 
-Component system need to be initialized by calling `componet::init_all` function and it needs  information about all components. Usually it is used with the `component::parse_metadata` macro.
+Component system need to be initialized by calling `component::init_all` function and it needs  information about all components. Usually it is used with the `component::parse_metadata` macro.
 
 ## Example
 

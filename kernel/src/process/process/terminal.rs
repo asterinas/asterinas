@@ -7,7 +7,7 @@ use crate::{
     process::{process_table, Pgid, ProcessGroup},
 };
 
-/// A termial is used to interact with system. A terminal can support the shell
+/// A terminal is used to interact with system. A terminal can support the shell
 /// job control.
 ///
 /// We currently support two kinds of terminal, the tty and pty.

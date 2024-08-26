@@ -50,7 +50,7 @@ pub use ostd_macros::main;
 pub use ostd_pod::Pod;
 
 pub use self::{error::Error, prelude::Result};
-// [`CpuLocalCell`] is easy to be mis-used, so we don't expose it to the users.
+// [`CpuLocalCell`] is easy to be misused, so we don't expose it to the users.
 pub(crate) use crate::cpu::local::cpu_local_cell;
 
 /// Initializes OSTD.

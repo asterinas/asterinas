@@ -26,7 +26,7 @@ pub fn parse_shebang_line(file_header_buffer: &[u8]) -> Result<Option<Vec<CStrin
     if shebang_argv.len() != 1 {
         return_errno_with_message!(
             Errno::EINVAL,
-            "One and only one intpreter program should be specified"
+            "One and only one interpreter program should be specified"
         );
     }
     Ok(Some(shebang_argv))

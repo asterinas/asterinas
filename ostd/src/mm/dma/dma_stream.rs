@@ -358,7 +358,7 @@ mod test {
     }
 
     #[ktest]
-    fn reader_and_wirter() {
+    fn reader_and_writer() {
         let vm_segment = FrameAllocOptions::new(2)
             .is_contiguous(true)
             .alloc_contiguous()

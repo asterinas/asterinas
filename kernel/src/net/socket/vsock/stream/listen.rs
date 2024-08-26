@@ -56,8 +56,8 @@ impl Listen {
     }
 
     pub fn update_io_events(&self) {
-        let incomming_connection = self.incoming_connection.disable_irq().lock();
-        if !incomming_connection.is_empty() {
+        let incoming_connection = self.incoming_connection.disable_irq().lock();
+        if !incoming_connection.is_empty() {
             self.pollee.add_events(IoEvents::IN);
         } else {
             self.pollee.del_events(IoEvents::IN);

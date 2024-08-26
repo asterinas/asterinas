@@ -14,7 +14,7 @@
  *
  *  - To define a setup function or a test function, FN_SETUP() or FN_TEST() can
  * be used. These functions are automatically executed in the order of their
- * definiton. Note that the order of execution is _not_ related to whether a
+ * definition. Note that the order of execution is _not_ related to whether a
  * function is a setup function or a test function.
  *
  *  - Within a setup function, CHECK() can be used to write a setup expression
@@ -57,7 +57,7 @@
 	}
 
 /**
- * Makes a fucntion call and checks its return value is positive.
+ * Makes a function call and checks its return value is positive.
  *
  * The execution will be aborted if the check fails.
  */

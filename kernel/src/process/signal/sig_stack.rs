@@ -83,7 +83,7 @@ impl SigStack {
         self.handler_counter -= 1
     }
 
-    /// Determins whether the stack is executed on by any signal handler
+    /// Determines whether the stack is executed on by any signal handler
     pub fn is_active(&self) -> bool {
         // FIXME: can DISABLE stack be used?
         self.handler_counter != 0 && !self.flags.contains(SigStackFlags::SS_AUTODISARM)

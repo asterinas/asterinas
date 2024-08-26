@@ -31,5 +31,5 @@ fn main() {
 
 ## Introduction
 This crate provides a derive procedural macro named `TryFromInt`. This macro will automatically implement [TryFrom](https://doc.rust-lang.org/core/convert/trait.TryFrom.html) trait for enums that meet the following requirements:
-1. The enum must have a primitive repr, i.e., the enum should have attribute like #[repr(u8)], #[repr(u32)], etc. The type parameter of TryFrom will be the repr, e.g., in the `QuickStart` example, the macro will implment `TryFrom<u8>` for `Color`.
+1. The enum must have a primitive repr, i.e., the enum should have attribute like #[repr(u8)], #[repr(u32)], etc. The type parameter of TryFrom will be the repr, e.g., in the `QuickStart` example, the macro will implement `TryFrom<u8>` for `Color`.
 2. The enum must consist solely of unit variants, which is called [units only enum](https://doc.rust-lang.org/reference/items/enumerations.html#unit-only-enum). Each field should have an **explicit discriminant**.

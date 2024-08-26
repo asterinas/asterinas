@@ -106,7 +106,7 @@ fn negotiate_features(transport: &mut Box<dyn VirtioTransport>) {
 }
 
 bitflags! {
-    /// all device features, bits 0~23 and 50~63 are sepecified by device.
+    /// all device features, bits 0~23 and 50~63 are specified by device.
     /// if using this struct to translate u64, use from_bits_truncate function instead of from_bits
     ///
     struct Feature: u64 {

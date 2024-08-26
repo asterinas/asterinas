@@ -263,7 +263,7 @@ mod test {
             info!("Successfully creating and reading {} files", file_id + 1);
         }
 
-        //Test skiped readdir.
+        //Test skipped readdir.
         let mut sub_inodes: Vec<String> = Vec::new();
         let _ = root.readdir_at(file_names.len() / 3 + 2, &mut sub_inodes);
 
@@ -956,7 +956,7 @@ mod test {
         let resize_too_large = f.resize(initial_free_clusters as usize * cluster_size + 1);
         assert!(
             resize_too_large.is_err() && fs.num_free_clusters() == initial_free_clusters,
-            "Fail to deal with a memeory overflow allocation"
+            "Fail to deal with a memory overflow allocation"
         );
 
         // Try to allocate a file of exactly the same size as the remaining spaces. This will succeed.

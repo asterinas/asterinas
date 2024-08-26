@@ -36,7 +36,7 @@
 //! ```
 //!
 //! If the address width is (according to [`crate::arch::mm::PagingConsts`])
-//! 39 bits or 57 bits, the memory space just adjust porportionally.
+//! 39 bits or 57 bits, the memory space just adjust proportionally.
 
 use alloc::vec::Vec;
 use core::{mem::ManuallyDrop, ops::Range};

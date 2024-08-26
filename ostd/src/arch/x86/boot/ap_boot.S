@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 
-// The boot routine excecuted by the application processor.
+// The boot routine executed by the application processor.
 
 .extern boot_gdtr
 .extern boot_page_table_start

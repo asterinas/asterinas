@@ -22,7 +22,7 @@ cpu_local_cell! {
 }
 
 /// The panic handler must be defined in the binary crate or in the crate that the binary
-/// crate explicity declares by `extern crate`. We cannot let the base crate depend on OSTD
+/// crate explicitly declares by `extern crate`. We cannot let the base crate depend on OSTD
 /// due to prismatic dependencies. That's why we export this symbol and state the
 /// panic handler in the binary crate.
 #[export_name = "__aster_panic_handler"]

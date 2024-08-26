@@ -89,7 +89,7 @@ impl AnyBoundSocket {
     /// Set the observer whose `on_events` will be called when certain iface events happen. After
     /// setting, the new observer will fire once immediately to avoid missing any events.
     ///
-    /// If there is an existing observer, due to race conditions, this function does not guarentee
+    /// If there is an existing observer, due to race conditions, this function does not guarantee
     /// that the old observer will never be called after the setting. Users should be aware of this
     /// and proactively handle the race conditions if necessary.
     pub fn set_observer(&self, handler: Weak<dyn Observer<()>>) {

@@ -48,7 +48,7 @@
 //!
 //! ## Validity
 //!
-//! The page table cursor API will guarentee that the page table, as a data
+//! The page table cursor API will guarantee that the page table, as a data
 //! structure, whose occupied memory will not suffer from data races. This is
 //! ensured by the page table lock protocol. In other words, any operations
 //! provided by the APIs (as long as safety requirements are met) will not
@@ -113,7 +113,7 @@ where
     /// index 0, and the level N page table lock guard is at index N - 1.
     ///
     /// When destructing the cursor, the locks will be released in the order
-    /// from low to high, exactly the reverse order of the aquisition.
+    /// from low to high, exactly the reverse order of the acquisition.
     /// This behavior is ensured by the default drop implementation of Rust:
     /// <https://doc.rust-lang.org/reference/destructors.html>.
     guards: [Option<PageTableNode<E, C>>; C::NR_LEVELS as usize],

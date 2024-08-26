@@ -2,12 +2,12 @@
 
 //! Metadata management of pages.
 //!
-//! You can picture a globally shared, static, gigantic arrary of metadata initialized for each page.
+//! You can picture a globally shared, static, gigantic array of metadata initialized for each page.
 //! An entry in the array is called a `MetaSlot`, which contains the metadata of a page. There would
 //! be a dedicated small "heap" space in each slot for dynamic metadata. You can store anything as the
 //! metadata of a page as long as it's [`Sync`].
 //!
-//! In the implemetation level, the slots are placed in the metadata pages mapped to a certain virtual
+//! In the implementation level, the slots are placed in the metadata pages mapped to a certain virtual
 //! address. It is faster, simpler, safer and more versatile compared with an actual static array
 //! implementation.
 

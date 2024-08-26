@@ -481,7 +481,7 @@ impl Socket for StreamSocket {
         let state = self.state.read();
         match state.as_ref() {
             State::Connected(connected_stream) => connected_stream.shutdown(cmd),
-            // TDOD: shutdown listening stream
+            // TODO: shutdown listening stream
             _ => return_errno_with_message!(Errno::EINVAL, "cannot shutdown"),
         }
     }

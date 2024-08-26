@@ -94,7 +94,7 @@ pub(crate) const fn nr_base_per_page<C: PagingConstsTrait>(level: PagingLevel) -
 
 /// The maximum virtual address of user space (non inclusive).
 ///
-/// Typicall 64-bit systems have at least 48-bit virtual address space.
+/// Typical 64-bit systems have at least 48-bit virtual address space.
 /// A typical way to reserve half of the address space for the kernel is
 /// to use the highest 48-bit virtual address space.
 ///

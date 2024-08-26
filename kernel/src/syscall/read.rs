@@ -21,7 +21,7 @@ pub fn sys_read(
 
     // According to <https://man7.org/linux/man-pages/man2/read.2.html>, if
     // the user specified an empty buffer, we should detect errors by checking
-    // the file discriptor. If no errors detected, return 0 successfully.
+    // the file descriptor. If no errors detected, return 0 successfully.
     let read_len = if buf_len != 0 {
         let mut writer = ctx
             .process

@@ -106,7 +106,7 @@ bitflags! {
         const X = 0b00000100;
         /// Readable + writable.
         const RW = Self::R.bits | Self::W.bits;
-        /// Readable + execuable.
+        /// Readable + executable.
         const RX = Self::R.bits | Self::X.bits;
         /// Readable + writable + executable.
         const RWX = Self::R.bits | Self::W.bits | Self::X.bits;

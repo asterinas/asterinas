@@ -206,7 +206,7 @@ impl Condvar {
     }
 
     /// Wait for the condition to become true,
-    /// and until the condition is explicitly woken up or interupted.
+    /// and until the condition is explicitly woken up or interrupted.
     ///
     /// This function blocks until either the condition becomes false
     /// or the condition variable is explicitly notified.

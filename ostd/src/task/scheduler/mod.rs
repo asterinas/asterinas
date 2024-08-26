@@ -150,7 +150,7 @@ pub(crate) fn unpark_target(runnable: Arc<Task>) {
 
 /// Enqueues a newly built task.
 ///
-/// Note that the new task is not guranteed to run at once.
+/// Note that the new task is not guaranteed to run at once.
 pub(super) fn run_new_task(runnable: Arc<Task>) {
     // FIXME: remove this check for `SCHEDULER`.
     // Currently OSTD cannot know whether its user has injected a scheduler.

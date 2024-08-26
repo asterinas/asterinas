@@ -26,7 +26,7 @@ impl TryFrom<u8> for SigNum {
 }
 
 impl SigNum {
-    /// Caller must ensure the sig_num is valid. otherweise, use try_from will check sig_num and does not panic.
+    /// Caller must ensure the sig_num is valid. Otherwise, use try_from will check sig_num and does not panic.
     pub const fn from_u8(sig_num: u8) -> Self {
         if sig_num > MAX_RT_SIG_NUM || sig_num < MIN_STD_SIG_NUM {
             panic!("invalid signal number")

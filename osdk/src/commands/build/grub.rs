@@ -113,7 +113,7 @@ fn generate_grub_cfg(
 
     // Delete the first two lines that notes the file a template file.
     let grub_cfg = grub_cfg.lines().skip(2).collect::<Vec<&str>>().join("\n");
-    // Set the timout style and timeout.
+    // Set the timeout style and timeout.
     let grub_cfg = grub_cfg
         .replace(
             "#GRUB_TIMEOUT_STYLE#",

@@ -31,7 +31,7 @@ pub const SEMMNS: usize = SEMMNI * SEMMSL;
 pub const SEMOPM: usize = 500;
 /// MAximum semaphore value.
 pub const SEMVMX: i32 = 32767;
-/// Maximum value that can be recored for semaphore adjustment (SEM_UNDO).
+/// Maximum value that can be recorded for semaphore adjustment (SEM_UNDO).
 pub const SEMAEM: i32 = SEMVMX;
 
 #[derive(Debug)]

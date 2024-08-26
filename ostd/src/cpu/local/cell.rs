@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! The implementaion of CPU-local variables that have inner mutability.
+//! The implementation of CPU-local variables that have inner mutability.
 
 use core::cell::UnsafeCell;
 
@@ -35,7 +35,7 @@ use crate::arch;
 ///
 ///     let _irq_guard = ostd::trap::disable_local_irq();
 ///     println!("1st FOO VAL: {:?}", FOO.load());
-///     // No suprises here, the two accesses must result in the same value.
+///     // No surprises here, the two accesses must result in the same value.
 ///     println!("2nd FOO VAL: {:?}", FOO.load());
 /// }
 /// ```

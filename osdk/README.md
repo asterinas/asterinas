@@ -13,7 +13,7 @@ OSDK (short for Operating System Development Kit) is designed to simplify the de
 
 #### Requirements
 
-Currenly, `cargo-osdk` only supports x86_64 ubuntu system. 
+Currently, `cargo-osdk` only supports x86_64 ubuntu system. 
 
 To run a kernel with QEMU, `cargo-osdk` requires the following tools to be installed: 
 - Rust >= 1.75.0

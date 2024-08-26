@@ -31,10 +31,10 @@ fn aster_rust_toolchain() -> String {
 }
 
 fn add_manifest_dependencies(cargo_metadata: &serde_json::Value, crate_name: &str) {
-    let mainfest_path = get_manifest_path(cargo_metadata, crate_name);
+    let manifest_path = get_manifest_path(cargo_metadata, crate_name);
 
     let mut manifest: toml::Table = {
-        let content = fs::read_to_string(mainfest_path).unwrap();
+        let content = fs::read_to_string(manifest_path).unwrap();
         toml::from_str(&content).unwrap()
     };
 
@@ -44,7 +44,7 @@ fn add_manifest_dependencies(cargo_metadata: &serde_json::Value, crate_name: &st
     dependencies.as_table_mut().unwrap().extend(ostd_dep);
 
     let content = toml::to_string(&manifest).unwrap();
-    fs::write(mainfest_path, content).unwrap();
+    fs::write(manifest_path, content).unwrap();
 }
 
 // Add `target/osdk/base` to `exclude` array of the workspace manifest

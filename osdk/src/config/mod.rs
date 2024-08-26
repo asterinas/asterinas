@@ -56,8 +56,8 @@ fn apply_args_before_finalize(action_scheme: &mut ActionScheme, args: &CommonArg
     if let Some(ref mut boot) = action_scheme.boot {
         apply_kv_array(&mut boot.kcmd_args, &args.kcmd_args, "=", &[]);
         for init_arg in &args.init_args {
-            for seperated_arg in init_arg.split(' ') {
-                boot.init_args.push(seperated_arg.to_string());
+            for separated_arg in init_arg.split(' ') {
+                boot.init_args.push(separated_arg.to_string());
             }
         }
         if let Some(initramfs) = &args.initramfs {

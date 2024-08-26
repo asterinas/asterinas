@@ -2,7 +2,7 @@
 
 #![allow(unused_variables)]
 
-//! Opend File Handle
+//! Opened File Handle
 
 use crate::{
     events::{IoEvents, Observer},

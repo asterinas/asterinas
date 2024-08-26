@@ -166,7 +166,7 @@ fn check_inline_asm_operand(
 
 /// check whether visiting the operand in local crate is valid.
 /// if the operand is invalid, add the def_path to def_paths.
-/// The operand is invalid only when follwing four points are all satisfied.
+/// The operand is invalid only when following four points are all satisfied.
 /// 1. The operand represents a static variable or a func(the first argument can not be self or its variants).
 /// 2. The operand is not defined in local crate.
 /// 3. The operand is marked with #[component_access_control::controlled]

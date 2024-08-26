@@ -124,7 +124,7 @@ impl CloneFlags {
 /// Clone a child thread or child process.
 ///
 /// FIXME: currently, the child process or thread will be scheduled to run at once,
-/// but this may not be the expected bahavior.
+/// but this may not be the expected behavior.
 pub fn clone_child(
     ctx: &Context,
     parent_context: &UserContext,
@@ -411,7 +411,7 @@ fn clone_sighand(
     parent_sig_dispositions: &Arc<Mutex<SigDispositions>>,
     clone_flags: CloneFlags,
 ) -> Arc<Mutex<SigDispositions>> {
-    // similer to CLONE_FILES
+    // similar to CLONE_FILES
     if clone_flags.contains(CloneFlags::CLONE_SIGHAND) {
         parent_sig_dispositions.clone()
     } else {

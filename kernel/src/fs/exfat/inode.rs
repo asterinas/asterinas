@@ -52,7 +52,7 @@ bitflags! {
         const SYSTEM    = 0x0004;
         /// This inode represents a volume. This attribute is not supported in our implementation.
         const VOLUME    = 0x0008;
-        /// This inode reprents a directory.
+        /// This inode represents a directory.
         const DIRECTORY = 0x0010;
         /// This file has been touched since the last DOS backup was performed on it. This attribute is not supported in our implementation.
         const ARCHIVE   = 0x0020;
@@ -187,7 +187,7 @@ impl ExfatInodeInner {
         self.fs().find_opened_inode(self.parent_hash)
     }
 
-    /// Get physical sector id from logical sector id fot this Inode.
+    /// Get physical sector id from logical sector id for this Inode.
     fn get_sector_id(&self, sector_id: usize) -> Result<usize> {
         let chain_offset = self
             .start_chain
@@ -315,12 +315,12 @@ impl ExfatInodeInner {
         file_dentry.create_utc_offset = self.ctime.utc_offset;
         file_dentry.create_date = self.ctime.date;
         file_dentry.create_time = self.ctime.time;
-        file_dentry.create_time_cs = self.ctime.increament_10ms;
+        file_dentry.create_time_cs = self.ctime.increment_10ms;
 
         file_dentry.modify_utc_offset = self.mtime.utc_offset;
         file_dentry.modify_date = self.mtime.date;
         file_dentry.modify_time = self.mtime.time;
-        file_dentry.modify_time_cs = self.mtime.increament_10ms;
+        file_dentry.modify_time_cs = self.mtime.increment_10ms;
 
         file_dentry.access_utc_offset = self.atime.utc_offset;
         file_dentry.access_date = self.atime.date;
@@ -692,11 +692,11 @@ impl ExfatInode {
         parent_hash: usize,
         fs_guard: &MutexGuard<()>,
     ) -> Result<Arc<ExfatInode>> {
-        const EXFAT_MIMIMUM_DENTRY: usize = 3;
+        const EXFAT_MINIMUM_DENTRY: usize = 3;
 
         let ino = fs.alloc_inode_number();
 
-        if dentry_set.len() < EXFAT_MIMIMUM_DENTRY {
+        if dentry_set.len() < EXFAT_MINIMUM_DENTRY {
             return_errno_with_message!(Errno::EINVAL, "invalid dentry length")
         }
 
@@ -1313,7 +1313,7 @@ impl Inode for ExfatInode {
             new_size.max(file_size)
         };
 
-        // Locks released here, so that file write can be parallized.
+        // Locks released here, so that file write can be parallelized.
         let inner = self.inner.upread();
         inner.page_cache.pages().write(offset, reader)?;
 

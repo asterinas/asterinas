@@ -217,7 +217,7 @@ struct InitStackWriter {
 
 impl InitStackWriter {
     fn write(mut self) -> Result<()> {
-        // FIXME: Some OSes may put the first page of excutable file here
+        // FIXME: Some OSes may put the first page of executable file here
         // for interpreting elf headers.
 
         let argc = self.argv.len() as u64;
@@ -268,7 +268,7 @@ impl InitStackWriter {
     }
 
     /// Libc ABI requires 16-byte alignment of the stack entrypoint.
-    /// Current postion of the stack is 8-byte aligned already, insert 8 byte
+    /// Current position of the stack is 8-byte aligned already, insert 8 byte
     /// to meet the requirement if necessary.
     fn adjust_stack_alignment(&self, envp_pointers: &[u64], argv_pointers: &[u64]) -> Result<()> {
         // Ensure 8-byte alignment
@@ -285,7 +285,7 @@ impl InitStackWriter {
     }
 
     fn write_aux_vec(&self) -> Result<()> {
-        // Write NULL auxilary
+        // Write NULL auxiliary
         self.write_u64(0)?;
         self.write_u64(AuxKey::AT_NULL as u64)?;
         // Write Auxiliary vectors

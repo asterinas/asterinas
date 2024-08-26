@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! This module maintains preemption-related information for the curren task
+//! This module maintains preemption-related information for the current task
 //! on a CPU with a single 32-bit, CPU-local integer value.
 //!
 //! * Bits from 0 to 30 represents an unsigned counter called `guard_count`,

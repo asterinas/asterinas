@@ -20,8 +20,8 @@ impl Connected {
         addr: Option<UnixSocketAddrBound>,
         peer_addr: Option<UnixSocketAddrBound>,
     ) -> (Connected, Connected) {
-        let (writer_this, reader_peer) = Channel::with_capacity(DAFAULT_BUF_SIZE).split();
-        let (writer_peer, reader_this) = Channel::with_capacity(DAFAULT_BUF_SIZE).split();
+        let (writer_this, reader_peer) = Channel::with_capacity(DEFAULT_BUF_SIZE).split();
+        let (writer_peer, reader_this) = Channel::with_capacity(DEFAULT_BUF_SIZE).split();
 
         let this = Connected {
             addr: addr.clone(),
@@ -122,4 +122,4 @@ impl Connected {
     }
 }
 
-const DAFAULT_BUF_SIZE: usize = 65536;
+const DEFAULT_BUF_SIZE: usize = 65536;

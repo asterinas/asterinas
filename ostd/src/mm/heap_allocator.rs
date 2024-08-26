@@ -126,7 +126,7 @@ fn rescue<const ORDER: usize>(heap: &LockedHeapWithRescue<ORDER>, layout: &Layou
     // So if the heap is nearly run out, allocating frame will fail too.
     let vaddr = paddr_to_vaddr(allocation_start * PAGE_SIZE);
 
-    // SAFETY: the frame is allocated from FramAllocator and never be deallocated,
+    // SAFETY: the frame is allocated from FrameAllocator and never be deallocated,
     // so the addr is always valid.
     unsafe {
         debug!(

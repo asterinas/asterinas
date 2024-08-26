@@ -239,7 +239,7 @@ impl Observer<IoEvents> for EventCounter {
 /// according to the events.
 ///
 /// This trait is added instead of creating a new method in [`Pollee`] because sometimes we do not
-/// have access to the internal [`Pollee`], but there is a method that provides the same sematics
+/// have access to the internal [`Pollee`], but there is a method that provides the same semantics
 /// as [`Pollee::poll`] and we need to perform event-based operations using that method.
 pub trait Pollable {
     /// Returns the interesting events if there are any, or waits for them to happen if there are

@@ -110,7 +110,7 @@ bitflags! {
         const CAPABILITIES_LIST         = 1 << 4;
         /// Sets to 1 if the device is capable of running at 66 MHz.
         const MHZ66_CAPABLE             = 1 << 5;
-        /// Sets to 1 if the device can accpet fast back-to-back transactions
+        /// Sets to 1 if the device can accept fast back-to-back transactions
         /// that are not from the same agent.
         const FAST_BACK_TO_BACK_CAPABLE = 1 << 7;
         /// This bit is only set when the following conditions are met:
@@ -136,7 +136,7 @@ bitflags! {
         /// Sets to 1 by a master device when its transaction is terminated with
         /// Target-Abort
         const RECEIVED_TARGET_ABORT     = 1 << 12;
-        /// Sets to 1 by a master device when its transcation (except for Special
+        /// Sets to 1 by a master device when its transaction (except for Special
         /// Cycle transactions) is terminated with Master-Abort.
         const RECEIVED_MASTER_ABORT     = 1 << 13;
         /// Sets to 1 when the device asserts SERR#

@@ -10,7 +10,7 @@
 //! which means the `SomeRightSet` should **include** the `AnotherRightSet`. In this case, `AnotherRightSet` should be a **generic parameter**.
 //! i.e., `AnotherRightSet` should occur the the generic param list of the function.
 //!
-//! If there are multiple constraits, they can be seperated with `|`, which means all constraits should be satisfied.
+//! If there are multiple constraints, they can be separated with `|`, which means all constraints should be satisfied.
 //!
 //! The require can also be used multiple times, which means each macro should be satisfied.
 //!

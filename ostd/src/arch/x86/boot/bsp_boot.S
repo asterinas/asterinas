@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 
-// The boot routine excecuted by the bootstrap processor.
+// The boot routine executed by the bootstrap processor.
 
 // The boot header, initial boot setup code, temporary GDT and page tables are
 // in the boot section. The boot section is mapped writable since kernel may

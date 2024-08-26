@@ -9,7 +9,7 @@
 //! immediately after the initialization of `ostd`. Thus you can use any
 //! feature provided by the frame including the heap allocator, etc.
 //!
-//! By all means, ostd-test is an individule crate that only requires:
+//! By all means, ostd-test is an individual crate that only requires:
 //!  - a custom linker script section `.ktest_array`,
 //!  - and an alloc implementation.
 //!

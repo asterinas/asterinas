@@ -57,22 +57,22 @@ use super::WaitQueue;
 ///
 /// let mutex = RwMutex::new(5)
 ///
-/// // many read mutexs can be held at once
+/// // many read mutexes can be held at once
 /// {
 ///     let r1 = mutex.read();
 ///     let r2 = mutex.read();
 ///     assert_eq!(*r1, 5);
 ///     assert_eq!(*r2, 5);
 ///     
-///     // Upgradeable read mutex can share access to data with read mutexs
+///     // Upgradeable read mutex can share access to data with read mutexes
 ///     let r3 = mutex.upread();
 ///     assert_eq!(*r3, 5);
 ///     drop(r1);
 ///     drop(r2);
-///     // read mutexs are dropped at this point
+///     // read mutexes are dropped at this point
 ///
 ///     // An upread mutex can only be upgraded successfully after all the
-///     // read mutexs are released, otherwise it will spin-wait.
+///     // read mutexes are released, otherwise it will spin-wait.
 ///     let mut w1 = r3.upgrade();
 ///     *w1 += 1;
 ///     assert_eq!(*w1, 6);

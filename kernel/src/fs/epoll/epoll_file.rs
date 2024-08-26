@@ -73,7 +73,7 @@ impl EpollFile {
         let mask = ep_event.events;
         let entry = EpollEntry::new(fd, weak_file, ep_event, ep_flags, self.weak_self.clone());
 
-        // Add the new entry to the interest list and start monitering its events
+        // Add the new entry to the interest list and start monitoring its events
         let mut interest = self.interest.lock();
         if interest.contains_key(&fd) {
             return_errno_with_message!(Errno::EEXIST, "the fd has been added");

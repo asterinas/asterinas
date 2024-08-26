@@ -334,7 +334,7 @@ impl VmMapping {
     ///
     /// Generally, this function is only used in `protect()` method.
     /// This method modifies the parent `Vmar` in the end if subdividing is required.
-    /// It removes current mapping and add splitted mapping to the Vmar.
+    /// It removes current mapping and add split mapping to the Vmar.
     fn protect_with_subdivision(
         &self,
         intersect_range: &Range<usize>,
@@ -402,7 +402,7 @@ impl VmMapping {
             return Ok(());
         }
         if trim_range.start <= map_to_addr && trim_range.end >= map_to_addr + map_size {
-            // Fast path: the whole mapping was trimed.
+            // Fast path: the whole mapping was trimmed.
             self.unmap(trim_range, true)?;
             mappings_to_remove.push_back(map_to_addr);
             return Ok(());

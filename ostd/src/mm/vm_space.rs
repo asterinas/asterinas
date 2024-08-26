@@ -92,7 +92,7 @@ impl VmSpace {
     ///
     /// The creation of the cursor may block if another cursor having an
     /// overlapping range is alive. The modification to the mapping by the
-    /// cursor may also block or be overriden the mapping of another cursor.
+    /// cursor may also block or be overridden the mapping of another cursor.
     pub fn cursor_mut(&self, va: &Range<Vaddr>) -> Result<CursorMut<'_>> {
         Ok(self.pt.cursor_mut(va).map(CursorMut)?)
     }

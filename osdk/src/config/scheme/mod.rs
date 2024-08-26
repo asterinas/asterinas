@@ -18,7 +18,7 @@ pub use qemu::*;
 pub struct Scheme {
     // The user is not allowed to set this field. However,
     // the manifest loader set this and all actions such
-    // as runnning, testing, and building will use this field.
+    // as running, testing, and building will use this field.
     pub work_dir: Option<PathBuf>,
     #[serde(default)]
     pub supported_archs: Vec<Arch>,
