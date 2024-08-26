@@ -7,3 +7,5 @@ LinkTest.AbsPathsWithNonDirFDs
 LinkTest.LinkDoesNotFollowSymlinks
 LinkTest.LinkatDoesNotFollowSymlinkByDefault
 LinkTest.LinkatWithSymlinkFollow
+LinkTest.NewDirFDWithOpath
+LinkTest.AbsPathsNonDirFDsWithOpath

@@ -42,8 +42,11 @@ int main(void)
 	if (cpid == 0) { // Child process
 		close(pipefd[0]); // Child closes read end of the pipe
 		const char *message = "Hello, world!\n";
-		write(pipefd[1], message,
-		      strlen(message)); // Write a string to the pipe
+		// Write a string to the pipe
+		if (write(pipefd[1], message, strlen(message)) == -1) {
+			perror("write error");
+			exit(EXIT_FAILURE);
+		}
 		close(pipefd[1]); // Close write end of the pipe
 		_exit(EXIT_SUCCESS);
 	} else { // Parent process

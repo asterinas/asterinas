@@ -1,3 +1,4 @@
 SyncTest.SyncFileSytem
 SyncTest.SyncFromPipe
-SyncTest.CannotSyncFileSytemAtBadFd
+SyncTest.CannotSyncFileSystemAtBadFd
+SyncTest.CannotSyncFileSystemAtOpathFD

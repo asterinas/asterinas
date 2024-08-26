@@ -1,4 +1,7 @@
 EpollTest.Timeout_NoRandomSave
+EpollTest.Timeout
+EpollTest.RegularFiles
+EpollTest.ReadyMutexCircularity
 EpollTest.CycleOfOneDisallowed
 EpollTest.CycleOfThreeDisallowed
 # `UnblockWithSignal` contains races. Better not to enable it.

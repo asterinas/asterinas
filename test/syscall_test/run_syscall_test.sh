@@ -39,6 +39,7 @@ run_one_test(){
     if [ -f $TEST_BIN_DIR/$1 ]; then
         get_blocklist_subtests $1
         cd $TEST_BIN_DIR && ./$1 --gtest_filter=-$BLOCK
+        cd
         ret=$?
         #After executing the test, it is necessary to clean the directory to ensure no residual data remains
         rm -rf $TEST_TMP_DIR/*

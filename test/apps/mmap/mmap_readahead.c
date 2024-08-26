@@ -17,7 +17,7 @@ FN_SETUP(mmap_readahead)
 {
 	int fd;
 
-	fd = CHECK(open(FILE_NAME, O_RDWR | O_CREAT));
+	fd = CHECK(open(FILE_NAME, O_RDWR | O_CREAT, 0644));
 	CHECK(unlink(FILE_NAME));
 
 	CHECK(ftruncate(fd, PAGE_SIZE * NR_PAGES));

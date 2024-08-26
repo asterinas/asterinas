@@ -15,7 +15,7 @@ rm hello_world.txt
 awk '{print $2}' shell_cmd.sh
 cp shell_cmd.sh shell_cmd_backup.sh
 cat shell_cmd_backup.sh
-rm shell_cmd_backup.sh
+rm -f shell_cmd_backup.sh
 
 ln -s shell_cmd.sh tesk_cmd_soft_link
 readlink -f tesk_cmd_soft_link

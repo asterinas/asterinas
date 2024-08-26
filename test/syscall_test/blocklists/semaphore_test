@@ -10,3 +10,8 @@ SemaphoreTest.SemOpMultiNoBlock
 SemaphoreTest.SemOpRandom
 SemaphoreTest.SemOpNamespace
 SemaphoreTest.SemCtlValAll
+SemaphoreTest.SemTimedOpBlock
+SemaphoreTest.SemopGetzcntOnSetRemoval
+SemaphoreTest.SemopGetzcntOnSignal
+SemaphoreTest.SemopGetncntOnSetRemoval
+SemaphoreTest.SemopGetncntOnSignal

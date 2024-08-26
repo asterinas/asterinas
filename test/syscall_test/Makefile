@@ -75,7 +75,7 @@ EXFAT_BLOCK_LIST := $(CUR_DIR)/blocklists.exfat
 .PHONY: all
 all: $(TESTS)
 
-$(TESTS): $(BIN_DIR) $(TARGET_DIR)
+$(TESTS): $(BIN_DIR) $(TARGET_DIR)/tests
 	@cp -f $</$@ $(TARGET_DIR)/tests
 
 ifndef ASTER_PREBUILT_SYSCALL_TEST
@@ -93,16 +93,12 @@ $(SRC_DIR):
 	@cd $@ && git clone -b 20200921.0 https://github.com/asterinas/gvisor.git .
 endif
 
+$(TARGET_DIR)/tests: | $(TARGET_DIR)
+	@mkdir $@
+
 $(TARGET_DIR): $(RUN_BASH) $(BLOCK_LIST) $(EXFAT_BLOCK_LIST)
-	@rm -rf $@ && mkdir -p $@
-	@# Prepare tests dir for test binaries
-	@mkdir $@/tests
-	@# Copy blocklists
-	@cp -rf $(BLOCK_LIST) $@
-	@# Copy exFAT specific blocklists
-	@cp -rf $(EXFAT_BLOCK_LIST) $@
-	@# Copy bash script
-	@cp -f $(RUN_BASH) $@
+	@mkdir -p $@
+	@cp -rf $^ $@
 
 .PHONY: clean
 clean:

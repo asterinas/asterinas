@@ -11,7 +11,10 @@
 // Signal handler for SIGUSR1
 static void handle_sigusr1(int sig)
 {
-	write(STDOUT_FILENO, "SIGUSR1 handled\n", 16);
+	if (write(STDOUT_FILENO, "SIGUSR1 handled\n", 16) == -1) {
+		perror("write error");
+		exit(EXIT_FAILURE);
+	}
 }
 
 int main(void)
@@ -47,8 +50,11 @@ int main(void)
 		sleep(3); // Sleep for several seconds to provide a time window to send SIGUSR1
 
 		const char *message = "Message from child process\n";
-		write(pipefd[1], message,
-		      strlen(message)); // Write a string to the pipe
+		// Write a string to the pipe
+		if (write(pipefd[1], message, strlen(message)) == -1) {
+			perror("write error");
+			exit(EXIT_FAILURE);
+		}
 		close(pipefd[1]); // Close write end of the pipe
 		_exit(EXIT_SUCCESS);
 	} else {
