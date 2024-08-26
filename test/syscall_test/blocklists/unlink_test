@@ -1,4 +1,5 @@
 UnlinkTest.AtDirDegradedPermissions_NoRandomSave
+UnlinkTest.AtDirDegradedPermissions
 UnlinkTest.ParentDegradedPermissions
 UnlinkTest.AtBad
 UnlinkTest.TooLongName

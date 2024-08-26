@@ -93,10 +93,10 @@ if [ "$1" = "microvm" ]; then
 fi
 
 if [ "$1" = "-ovmf" ] || [ "$2" = "-ovmf" ]; then
-    OVMF_PATH="/usr/share/OVMF"
+    OVMF_PATH="${OVMF_PATH:-/usr/share/OVMF}"
     QEMU_ARGS="${QEMU_ARGS}\
         -drive if=pflash,format=raw,unit=0,readonly=on,file=$OVMF_PATH/OVMF_CODE.fd \
-        -drive if=pflash,format=raw,unit=1,file=$OVMF_PATH/OVMF_VARS.fd \
+        -drive if=pflash,format=raw,unit=1,readonly=on,file=$OVMF_PATH/OVMF_VARS.fd \
     "
 fi
 

@@ -63,7 +63,10 @@ int main()
 
 	printf("Server is connected to client\n");
 	char *mesg = "Hello from unix socket server";
-	write(accepted_fd, mesg, strlen(mesg));
+	if (write(accepted_fd, mesg, strlen(mesg)) == -1) {
+		perror("write error");
+		exit(EXIT_FAILURE);
+	}
 
 	// Read data from the client
 	memset(buf, 0, BUFFER_SIZE);
