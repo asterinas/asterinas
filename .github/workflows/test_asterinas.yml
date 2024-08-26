@@ -78,10 +78,18 @@ jobs:
           make run AUTO_TEST=syscall \
             SYSCALL_TEST_DIR=/exfat EXTRA_BLOCKLISTS_DIRS=blocklists.exfat \
             ENABLE_KVM=0 BOOT_PROTOCOL=multiboot2 RELEASE=1
+      
+      - name: SMP Syscall Test (Multiboot2)
+        id: smp_syscall_test_mb2
+        run: make run AUTO_TEST=syscall ENABLE_KVM=1 BOOT_PROTOCOL=multiboot2 RELEASE=1 SMP=4
 
       - name: General Test (Linux EFI Handover Boot Protocol)
         id: test_linux
         run: make run AUTO_TEST=test ENABLE_KVM=1 BOOT_PROTOCOL=linux-efi-handover64 RELEASE=1
+      
+      - name: SMP General Test (Multiboot2)
+        id: smp_test_mb2
+        run: make run AUTO_TEST=test ENABLE_KVM=1 BOOT_PROTOCOL=multiboot2 RELEASE=1 SMP=4
 
   integration-test-tdx:
     if: github.event_name == 'schedule'
