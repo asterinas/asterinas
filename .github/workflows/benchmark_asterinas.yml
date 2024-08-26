@@ -57,6 +57,7 @@ jobs:
           # Network-related benchmark
           - lmbench-select-tcp
           - lmbench-http-bandwidth
+          - lmbench-tcp-bandwidth-localhost
       fail-fast: false
     timeout-minutes: 60
     container: 
