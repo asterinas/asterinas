@@ -95,9 +95,14 @@ impl SoftIrqLine {
 /// A slice that stores the [`SoftIrqLine`]s, whose ID is equal to its offset in the slice.
 static LINES: Once<[SoftIrqLine; SoftIrqLine::NR_LINES as usize]> = Once::new();
 
-pub(super) fn init() {
+/// Initializes the softirq lines.
+///
+/// # Safety
+///
+/// This function must be called only once.
+pub unsafe fn init() {
     let lines: [SoftIrqLine; SoftIrqLine::NR_LINES as usize] =
-        array_init::array_init(|i| SoftIrqLine::new(i as u8));
+        core::array::from_fn(|i| SoftIrqLine::new(i as u8));
     LINES.call_once(|| lines);
 }
 

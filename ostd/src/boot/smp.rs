@@ -15,7 +15,6 @@ use crate::{
         page::{self, meta::KernelMeta, ContPages},
         PAGE_SIZE,
     },
-    trap,
 };
 
 pub(crate) static AP_BOOT_INFO: Once<ApBootInfo> = Once::new();
@@ -120,7 +119,10 @@ fn ap_early_entry(local_apic_id: u32) -> ! {
         cpu::set_this_cpu_id(local_apic_id);
     }
 
-    trap::init();
+    // SAFETY: this function is only called once on this AP.
+    unsafe {
+        trapframe::init();
+    }
     crate::arch::irq::enable_local();
 
     // Mark the AP as started.
