@@ -69,8 +69,8 @@ fn fn_body_tokens(value_name: &str, data_enum: &DataEnum, ident: Ident) -> Token
             .discriminant
             .as_ref()
             .expect("Each field must be assigned a discriminant value explicitly");
-        let vairant_ident = &variant.ident;
-        let statement = quote!(#value => ::core::result::Result::Ok(#ident::#vairant_ident),);
+        let variant_ident = &variant.ident;
+        let statement = quote!(#value => ::core::result::Result::Ok(#ident::#variant_ident),);
         match_bodys.append_all(statement);
     }
     match_bodys.append_all(

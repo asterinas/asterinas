@@ -225,7 +225,7 @@ impl VsockSpace {
                     let Some(listen) = listen_sockets.get(&event.destination.into()) else {
                         return_errno_with_message!(
                             Errno::EINVAL,
-                            "connecion request can only be handled by listening socket"
+                            "connection request can only be handled by listening socket"
                         );
                     };
                     let peer = event.source;

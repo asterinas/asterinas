@@ -22,7 +22,7 @@ static APIC_TYPE: Once<ApicType> = Once::new();
 ///
 /// You should provide a closure operating on the given mutable borrow of the
 /// local APIC instance. During the execution of the closure, the interrupts
-/// are guarenteed to be disabled.
+/// are guaranteed to be disabled.
 ///
 /// Example:
 /// ```rust
@@ -38,7 +38,7 @@ pub fn borrow<R>(f: impl FnOnce(&mut (dyn Apic + 'static)) -> R) -> R {
     let irq_guard = crate::trap::disable_local();
     let apic_guard = APIC_INSTANCE.get_with(&irq_guard);
 
-    // If it is not initialzed, lazily initialize it.
+    // If it is not initialized, lazily initialize it.
     if !apic_guard.is_completed() {
         apic_guard.call_once(|| match APIC_TYPE.get().unwrap() {
             ApicType::XApic => {
@@ -115,7 +115,7 @@ enum ApicType {
 /// The inter-processor interrupt control register.
 ///
 /// ICR is a 64-bit local APIC register that allows software running on the
-/// porcessor to specify and send IPIs to other porcessors in the system.
+/// processor to specify and send IPIs to other processors in the system.
 /// To send an IPI, software must set up the ICR to indicate the type of IPI
 /// message to be sent and the destination processor or processors. (All fields
 /// of the ICR are read-write by software with the exception of the delivery
@@ -248,7 +248,7 @@ pub enum DestinationShorthand {
 
 #[repr(u64)]
 pub enum TriggerMode {
-    Egde = 0,
+    Edge = 0,
     Level = 1,
 }
 
@@ -297,7 +297,7 @@ pub enum DeliveryMode {
     /// perform an initialization.
     Init = 0b101,
     /// Start-up Interrupt
-    StrartUp = 0b110,
+    StartUp = 0b110,
 }
 
 #[derive(Debug)]

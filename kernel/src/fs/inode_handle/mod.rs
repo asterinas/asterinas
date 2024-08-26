@@ -2,7 +2,7 @@
 
 #![allow(unused_variables)]
 
-//! Opend Inode-backed File Handle
+//! Opened Inode-backed File Handle
 
 mod dyn_cap;
 mod static_cap;

@@ -50,7 +50,7 @@ impl FileRange {
         let old_start = self.start;
         self.start = new_start;
         let change = match new_start {
-            new_start if new_start > old_start => FileRangeChange::Shrinked,
+            new_start if new_start > old_start => FileRangeChange::Shrunk,
             new_start if new_start < old_start => FileRangeChange::Expanded,
             _ => FileRangeChange::Same,
         };
@@ -64,7 +64,7 @@ impl FileRange {
         let old_end = self.end;
         self.end = new_end;
         let change = match new_end {
-            new_end if new_end < old_end => FileRangeChange::Shrinked,
+            new_end if new_end < old_end => FileRangeChange::Shrunk,
             new_end if new_end > old_end => FileRangeChange::Expanded,
             _ => FileRangeChange::Same,
         };
@@ -110,7 +110,7 @@ impl FileRange {
 pub enum FileRangeChange {
     Same,
     Expanded,
-    Shrinked,
+    Shrunk,
 }
 
 /// The position of a range (say A) relative another overlapping range (say B).

@@ -315,7 +315,7 @@ impl<T: Copy, R: TRights> Fifo<T, R> {
 
 impl<T, R: TRights> Fifo<T, R> {
     /// Pushes an item into the endpoint.
-    /// If the `push` method failes, this method will return
+    /// If the `push` method fails, this method will return
     /// `Err` containing the item that hasn't been pushed
     #[require(R > Write)]
     pub fn push(&self, item: T) -> core::result::Result<(), T> {

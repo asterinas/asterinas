@@ -24,7 +24,7 @@ use crate::{
 /// RSDP information, key is the signature, value is the virtual address of the signature
 pub static ACPI_TABLES: Once<SpinLock<AcpiTables<AcpiMemoryHandler>>> = Once::new();
 
-/// Sdt header wrapper, user can use this structure to easily derive Debug, get table information without creating a new struture.
+/// Sdt header wrapper, user can use this structure to easily derive Debug, get table information without creating a new structure.
 ///
 /// For example, in DMAR (DMA Remapping) structure,
 /// we can use the following code to get some information of DMAR, including address, length:

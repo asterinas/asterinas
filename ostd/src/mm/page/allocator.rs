@@ -97,7 +97,7 @@ where
 
 /// Allocate pages.
 ///
-/// The allocated pages are not guarenteed to be contiguous.
+/// The allocated pages are not guaranteed to be contiguous.
 /// The total length of the allocated pages is `len`.
 ///
 /// The caller must provide a closure to initialize metadata for all the pages.

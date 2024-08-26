@@ -117,7 +117,7 @@ impl RootTable {
             )
             .unwrap();
         if bus_entry.is_present() {
-            warn!("IOMMU: Overwritting the existing device page table");
+            warn!("IOMMU: Overwriting the existing device page table");
         }
         let address = unsafe { page_table.root_paddr() };
         context_table.page_tables.insert(address, page_table);

@@ -101,7 +101,7 @@ impl DatagramSocket {
         }
     }
 
-    fn try_bind_empheral(&self, remote_endpoint: &IpEndpoint) -> Result<()> {
+    fn try_bind_ephemeral(&self, remote_endpoint: &IpEndpoint) -> Result<()> {
         // Fast path
         if let Inner::Bound(_) = self.inner.read().as_ref() {
             return Ok(());
@@ -269,7 +269,7 @@ impl Socket for DatagramSocket {
     fn connect(&self, socket_addr: SocketAddr) -> Result<()> {
         let endpoint = socket_addr.try_into()?;
 
-        self.try_bind_empheral(&endpoint)?;
+        self.try_bind_ephemeral(&endpoint)?;
 
         let mut inner = self.inner.write();
         let Inner::Bound(bound_datagram) = inner.as_mut() else {
@@ -311,7 +311,7 @@ impl Socket for DatagramSocket {
         let remote_endpoint = match addr {
             Some(remote_addr) => {
                 let endpoint = remote_addr.try_into()?;
-                self.try_bind_empheral(&endpoint)?;
+                self.try_bind_ephemeral(&endpoint)?;
                 endpoint
             }
             None => self.remote_endpoint().ok_or_else(|| {

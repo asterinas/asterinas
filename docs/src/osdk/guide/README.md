@@ -55,7 +55,7 @@ and can be installed by
 cargo install cargo-osdk
 ```
 
-### Upgrate
+### Upgrade
 If `cargo-osdk` is already installed,
 the tool can be upgraded by
 ```bash

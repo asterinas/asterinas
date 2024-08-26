@@ -156,7 +156,7 @@ impl Debug for FaultRecording {
             .field("Request type", &self.request_type())
             .field("Address type", &self.address_type())
             .field("Source identifier", &self.source_identifier())
-            .field("Fault Reson", &self.fault_reason())
+            .field("Fault Reason", &self.fault_reason())
             .field("Fault info", &self.fault_info())
             .field("Raw", &self.0)
             .finish()

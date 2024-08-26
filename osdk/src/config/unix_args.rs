@@ -45,11 +45,11 @@ pub fn split_to_kv_array(args: &str) -> Vec<String> {
 pub fn apply_kv_array(
     array: &mut Vec<String>,
     args: &Vec<String>,
-    seperator: &str,
+    separator: &str,
     multi_value_keys: &[&str],
 ) {
     let multi_value_keys = {
-        let mut inferred_keys = infer_multi_value_keys(array, seperator);
+        let mut inferred_keys = infer_multi_value_keys(array, separator);
         for key in multi_value_keys {
             inferred_keys.insert(key.to_string());
         }
@@ -63,8 +63,8 @@ pub fn apply_kv_array(
     let mut multi_value_key_strings: IndexMap<String, Vec<String>> = IndexMap::new();
     for item in array.drain(..) {
         // Each key-value string has two patterns:
-        // 1. Seperated by separator: key value / key=value
-        if let Some(key) = get_key(&item, seperator) {
+        // 1. Separated by separator: key value / key=value
+        if let Some(key) = get_key(&item, separator) {
             if multi_value_keys.contains(&key) {
                 if let Some(v) = multi_value_key_strings.get_mut(&key) {
                     v.push(item);
@@ -83,7 +83,7 @@ pub fn apply_kv_array(
     }
 
     for arg in args {
-        if let Some(key) = get_key(arg, seperator) {
+        if let Some(key) = get_key(arg, separator) {
             if multi_value_keys.contains(&key) {
                 if let Some(v) = multi_value_key_strings.get_mut(&key) {
                     v.push(arg.to_owned());
@@ -108,27 +108,27 @@ pub fn apply_kv_array(
     }
 }
 
-fn infer_multi_value_keys(array: &Vec<String>, seperator: &str) -> IndexSet<String> {
+fn infer_multi_value_keys(array: &Vec<String>, separator: &str) -> IndexSet<String> {
     let mut multi_val_keys = IndexSet::new();
 
-    let mut occured_keys = IndexSet::new();
+    let mut occurred_keys = IndexSet::new();
     for item in array {
-        let Some(key) = get_key(item, seperator) else {
+        let Some(key) = get_key(item, separator) else {
             continue;
         };
 
-        if occured_keys.contains(&key) {
+        if occurred_keys.contains(&key) {
             multi_val_keys.insert(key);
         } else {
-            occured_keys.insert(key);
+            occurred_keys.insert(key);
         }
     }
 
     multi_val_keys
 }
 
-pub fn get_key(item: &str, seperator: &str) -> Option<String> {
-    let split = item.split(seperator).collect::<Vec<_>>();
+pub fn get_key(item: &str, separator: &str) -> Option<String> {
+    let split = item.split(separator).collect::<Vec<_>>();
     let len = split.len();
     if len > 2 || len == 0 {
         error_msg!("`{}` is an invalid argument.", item);

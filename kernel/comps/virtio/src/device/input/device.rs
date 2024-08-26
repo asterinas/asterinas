@@ -188,7 +188,7 @@ impl InputDevice {
 
     fn handle_irq(&self) {
         let callbacks = self.callbacks.read_irq_disabled();
-        // Returns ture if there may be more events to handle
+        // Returns true if there may be more events to handle
         let handle_event = |event: &EventBuf| -> bool {
             event.sync().unwrap();
             let event: VirtioInputEvent = event.read().unwrap();

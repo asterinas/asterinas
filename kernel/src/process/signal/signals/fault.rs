@@ -41,7 +41,7 @@ impl FaultSignal {
                 let addr = Some(trap_info.page_fault_addr as u64);
                 (SIGSEGV, code, addr)
             }
-            _ => panic!("Exception cannnot be a signal"),
+            _ => panic!("Exception cannot be a signal"),
         };
         FaultSignal { num, code, addr }
     }

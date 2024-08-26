@@ -58,7 +58,7 @@ macro_rules! cpu_local {
 
 /// CPU-local objects.
 ///
-/// CPU-local objects are instanciated once per CPU core. They can be shared to
+/// CPU-local objects are instantiated once per CPU core. They can be shared to
 /// other cores. In the context of a preemptible kernel task, when holding the
 /// reference to the inner object, the object is always the one in the original
 /// core (when the reference is created), no matter which core the code is
@@ -169,7 +169,7 @@ impl<T: 'static + Sync> CpuLocal<T> {
 }
 
 // SAFETY: At any given time, only one task can access the inner value `T` of a
-// CPU-local variable if `T` is not `Sync`. We guarentee it by disabling the
+// CPU-local variable if `T` is not `Sync`. We guarantee it by disabling the
 // reference to the inner value, or turning off preemptions when creating
 // the reference.
 unsafe impl<T: 'static> Sync for CpuLocal<T> {}

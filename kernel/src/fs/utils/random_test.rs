@@ -153,7 +153,7 @@ impl DirInMemory {
             create_result.unwrap_err()
         );
         info!(
-            "    create {:?}/{:?}({:?}) succeeeded",
+            "    create {:?}/{:?}({:?}) succeeded",
             self.name, name, type_
         );
 

@@ -135,7 +135,7 @@ pub use typeflags_util::SetContain;
 /// ```
 ///
 /// But this coding pattern is too tedius for such a common task.
-/// To make the life of users easier, we provide a convinient macro named
+/// To make the life of users easier, we provide a convenient macro named
 /// `field_ptr`, which can be used to obtain the safe pointer of a field from
 /// that of its containing struct.
 ///

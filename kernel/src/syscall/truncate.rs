@@ -12,7 +12,7 @@ use crate::{
 };
 
 pub fn sys_ftruncate(fd: FileDesc, len: isize, ctx: &Context) -> Result<SyscallReturn> {
-    debug!("fd = {}, lentgh = {}", fd, len);
+    debug!("fd = {}, length = {}", fd, len);
 
     check_length(len, ctx)?;
 

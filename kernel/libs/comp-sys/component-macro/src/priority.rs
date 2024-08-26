@@ -180,7 +180,7 @@ fn read_component_file(workspace_root: &str) -> Vec<String> {
                 .collect();
         }
     }
-    panic!("Componets.toml file not valid")
+    panic!("Components.toml file not valid")
 }
 
 /// calculate the priority of one node

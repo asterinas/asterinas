@@ -67,7 +67,7 @@ impl SerialPort {
         // set interrupt watermark at 14 bytes
         self.fifo_ctrl.write(0xC7);
         // Mark data terminal ready, signal request to send
-        // and enable auxilliary output #2 (used as interrupt line for CPU)
+        // and enable auxiliary output #2 (used as interrupt line for CPU)
         self.modem_ctrl.write(0x0B);
         // Enable interrupts
         self.int_en.write(0x01);

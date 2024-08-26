@@ -248,7 +248,7 @@ where
     ///
     /// If another cursor is already accessing the range, the new cursor may wait until the
     /// previous cursor is dropped. The modification to the mapping by the cursor may also
-    /// block or be overriden by the mapping of another cursor.
+    /// block or be overridden by the mapping of another cursor.
     pub fn cursor(&'a self, va: &Range<Vaddr>) -> Result<Cursor<'a, M, E, C>, PageTableError> {
         Cursor::new(self, va)
     }
@@ -330,7 +330,7 @@ pub(super) unsafe fn page_walk<E: PageTableEntryTrait, C: PagingConstsTrait>(
 
 /// The interface for defining architecture-specific page table entries.
 ///
-/// Note that a default PTE shoud be a PTE that points to nothing.
+/// Note that a default PTE should be a PTE that points to nothing.
 pub trait PageTableEntryTrait: Clone + Copy + Debug + Default + Pod + Sized + Sync {
     /// Create a set of new invalid page table flags that indicates an absent page.
     ///

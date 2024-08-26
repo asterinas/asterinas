@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Read the Cpu ctx content then dispatch syscall to corrsponding handler
+//! Read the Cpu ctx content then dispatch syscall to corresponding handler
 //! The each sub module contains functions that handle real syscall logic.
 pub use clock_gettime::ClockId;
 use ostd::cpu::UserContext;
@@ -141,7 +141,7 @@ mod waitid;
 mod write;
 
 /// This macro is used to define syscall handler.
-/// The first param is ths number of parameters,
+/// The first param is the number of parameters,
 /// The second param is the function name of syscall handler,
 /// The third is optional, means the args(if parameter number > 0),
 /// The third is optional, means if cpu ctx is required.

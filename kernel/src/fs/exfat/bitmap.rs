@@ -144,7 +144,7 @@ impl ExfatBitmap {
             .fs()
             .is_cluster_range_valid(search_start_cluster..search_start_cluster + num_clusters)
         {
-            return_errno_with_message!(Errno::ENOSPC, "free contigous clusters not avalable.")
+            return_errno_with_message!(Errno::ENOSPC, "free contiguous clusters not available.")
         }
 
         let mut cur_index = search_start_cluster - EXFAT_RESERVED_CLUSTERS;

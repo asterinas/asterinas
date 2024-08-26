@@ -16,7 +16,7 @@
 macro_rules! offset_of {
     ($container:ty, $($field:tt)+) => ({
         // SAFETY: It is ok to have this uninitialized value because
-        // 1) Its memory won't be acccessed;
+        // 1) Its memory won't be accessed;
         // 2) It will be forgotten rather than being dropped;
         // 3) Before it gets forgotten, the code won't return prematurely or panic.
         let tmp: $container = unsafe { core::mem::MaybeUninit::uninit().assume_init() };

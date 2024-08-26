@@ -35,7 +35,7 @@ bitflags::bitflags! {
         const EXECUTABLE_IMAGE          = 1 << 1;
         const LINE_NUMS_STRIPPED        = 1 << 2;
         const LOCAL_SYMS_STRIPPED       = 1 << 3;
-        const AGGRESIVE_WS_TRIM         = 1 << 4;
+        const AGGRESSIVE_WS_TRIM         = 1 << 4;
         const LARGE_ADDRESS_AWARE       = 1 << 5;
         const SIXTEEN_BIT_MACHINE       = 1 << 6;
         const BYTES_REVERSED_LO         = 1 << 7;

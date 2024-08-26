@@ -80,9 +80,9 @@ pub fn new_base_crate(
     // here when OSTD is ready
     include_linker_script!(["x86_64.ld"]);
 
-    // Overrite the main.rs file
+    // Overwrite the main.rs file
     let main_rs = include_str!("main.rs.template");
-    // Replace all occurence of `#TARGET_NAME#` with the `dep_crate_name`
+    // Replace all occurrence of `#TARGET_NAME#` with the `dep_crate_name`
     let main_rs = main_rs.replace("#TARGET_NAME#", &dep_crate_name.replace('-', "_"));
     fs::write("src/main.rs", main_rs).unwrap();
 
@@ -104,10 +104,10 @@ fn add_manifest_dependency(
     crate_path: impl AsRef<Path>,
     link_unit_test_runner: bool,
 ) {
-    let mainfest_path = "Cargo.toml";
+    let manifest_path = "Cargo.toml";
 
     let mut manifest: toml::Table = {
-        let content = fs::read_to_string(mainfest_path).unwrap();
+        let content = fs::read_to_string(manifest_path).unwrap();
         toml::from_str(&content).unwrap()
     };
 
@@ -151,7 +151,7 @@ fn add_manifest_dependency(
     }
 
     let content = toml::to_string(&manifest).unwrap();
-    fs::write(mainfest_path, content).unwrap();
+    fs::write(manifest_path, content).unwrap();
 }
 
 fn copy_profile_configurations(workspace_root: impl AsRef<Path>) {

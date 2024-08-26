@@ -13,7 +13,7 @@
 //!
 //! Asterinas diffrentiates the boot protocol by the entry point
 //! chosen by the boot loader. In each entry point function,
-//! the universal callback registeration method from
+//! the universal callback registration method from
 //! `crate::boot` will be called. Thus the initialization of
 //! boot information is transparent for the upper level kernel.
 //!

@@ -128,7 +128,7 @@ fn parse_input(components: Vec<ComponentInfo>) -> BTreeMap<String, ComponentInfo
     out
 }
 
-/// Match the ComponetInfo with ComponentRegistry. The key is the relative path of one component
+/// Match the ComponentInfo with ComponentRegistry. The key is the relative path of one component
 fn match_and_call(
     mut components: BTreeMap<String, ComponentInfo>,
 ) -> Result<(), ComponentSystemInitError> {
@@ -161,7 +161,7 @@ fn match_and_call(
         infos.push(info);
     }
 
-    debug!("Remain componets:{components:?}");
+    debug!("Remain components:{components:?}");
 
     if !components.is_empty() {
         info!("Exists components that are not initialized");
@@ -174,11 +174,11 @@ fn match_and_call(
     for i in infos {
         info!("Component initializing:{:?}", i);
         if let Err(res) = i.function.unwrap().call(()) {
-            error!("Component initalize error:{:?}", res);
+            error!("Component initialize error:{:?}", res);
         } else {
-            info!("Component initalize complete");
+            info!("Component initialize complete");
         }
     }
-    info!("All components initalization completed");
+    info!("All components initialization completed");
     Ok(())
 }

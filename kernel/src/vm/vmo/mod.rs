@@ -73,7 +73,7 @@ pub use pager::Pager;
 ///
 pub struct Vmo<R = Rights>(pub(super) Arc<Vmo_>, R);
 
-/// Functions exist both for static capbility and dynamic capibility
+/// Functions exist both for static capbility and dynamic capability
 pub trait VmoRightsOp {
     /// Returns the access rights.
     fn rights(&self) -> Rights;
@@ -94,7 +94,7 @@ pub trait VmoRightsOp {
 }
 
 // We implement this trait for VMO, so we can use functions on type like Vmo<R> without trait bounds.
-// FIXME: This requires the imcomplete feature specialization, which should be fixed further.
+// FIXME: This requires the incomplete feature specialization, which should be fixed further.
 impl<R> VmoRightsOp for Vmo<R> {
     default fn rights(&self) -> Rights {
         unimplemented!()

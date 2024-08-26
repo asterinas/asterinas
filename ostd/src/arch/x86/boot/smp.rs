@@ -142,11 +142,11 @@ fn send_startup_to_all_aps() {
     let icr = Icr::new(
         ApicId::from(0),
         DestinationShorthand::AllExcludingSelf,
-        TriggerMode::Egde,
+        TriggerMode::Edge,
         Level::Assert,
         DeliveryStatus::Idle,
         DestinationMode::Physical,
-        DeliveryMode::StrartUp,
+        DeliveryMode::StartUp,
         (AP_BOOT_START_PA / PAGE_SIZE) as u8,
     );
     // SAFETY: we are sending startup IPI to all APs.

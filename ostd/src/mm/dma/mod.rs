@@ -13,7 +13,7 @@ use spin::Once;
 use super::Paddr;
 use crate::{arch::iommu::has_dma_remapping, mm::PAGE_SIZE, sync::SpinLock};
 
-/// The devide address.
+/// The device address.
 ///
 /// If a device performs DMA to read or write system
 /// memory, the addresses used by the device are device addresses.

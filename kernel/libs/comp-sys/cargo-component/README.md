@@ -9,7 +9,7 @@ cargo install --path .
 This will install two binaries `cargo-component` and `component-driver` at `$HOME/.cargo/bin`(by default, it depends on the cargo config).
 
 ## Usage
-Use `cargo component` or `cargo component check` or `cargo component audit`. The three commands are the same now. For Asterinas, we shoud use another alias command `cargo component-check`, which was defined in `src/.cargo/config.toml`.
+Use `cargo component` or `cargo component check` or `cargo component audit`. The three commands are the same now. For Asterinas, we should use another alias command `cargo component-check`, which was defined in `src/.cargo/config.toml`.
 
 ### Two notes:
 - The directory **where you run the command** should contains a `Components.toml` config file, where defines all components and whitelist. 

@@ -4,7 +4,7 @@ use crate::prelude::*;
 
 bitflags! {
     /// Flags used for send/recv.
-    /// The definiton is from https://elixir.bootlin.com/linux/v6.0.9/source/include/linux/socket.h
+    /// The definition is from https://elixir.bootlin.com/linux/v6.0.9/source/include/linux/socket.h
     #[repr(C)]
     #[derive(Pod)]
     pub struct SendRecvFlags: i32 {

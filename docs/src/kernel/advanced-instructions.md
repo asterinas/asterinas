@@ -91,7 +91,7 @@ After starting a debug server with OSDK from the shell with `make gdb_server`,
 a temporary `launch.json` is generated under `.vscode`.
 Your previous launch configs will be restored after the server is down.
 Press `F5`(Run and Debug) to start a debug session via VS Code. 
-Click `Continue`(or, press `F5`) at the fisrt break to resume the paused server instance,
+Click `Continue`(or, press `F5`) at the first break to resume the paused server instance,
 then it will continue until reaching your first breakpoint. 
 
 Note that if debugging with KVM enabled, you must use hardware assisted breakpoints. See "hbreak" in

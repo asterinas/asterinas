@@ -54,7 +54,7 @@ impl SystemTime {
         self.0.checked_add(duration).map(SystemTime)
     }
 
-    /// Substract a duration from self. If the result does not exceed inner bounds return Some(t), else return None.
+    /// Subtract a duration from self. If the result does not exceed inner bounds return Some(t), else return None.
     pub fn checked_sub(&self, duration: Duration) -> Option<Self> {
         let duration = convert_to_time_duration(duration);
         self.0.checked_sub(duration).map(SystemTime)

@@ -41,7 +41,7 @@ pub trait Iface: internal::IfaceInternal + Send + Sync {
     fn poll(&self);
 
     /// Bind a socket to the iface. So the packet for this socket will be dealt with by the interface.
-    /// If port is None, the iface will pick up an empheral port for the socket.
+    /// If port is None, the iface will pick up an ephemeral port for the socket.
     /// FIXME: The reason for binding socket and interface together is because there are limitations inside smoltcp.
     /// See discussion at <https://github.com/smoltcp-rs/smoltcp/issues/779>.
     fn bind_socket(

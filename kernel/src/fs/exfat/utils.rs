@@ -47,11 +47,11 @@ const EXFAT_TIME_ZONE_VALID: u8 = 1 << 7;
 
 #[derive(Default, Debug, Clone, Copy)]
 pub struct DosTimestamp {
-    // Timestamp at the precesion of double seconds.
+    // Timestamp at the precision of double seconds.
     pub(super) time: u16,
     pub(super) date: u16,
     // Precise time in 10ms.
-    pub(super) increament_10ms: u8,
+    pub(super) increment_10ms: u8,
     pub(super) utc_offset: u8,
 }
 
@@ -73,11 +73,11 @@ impl DosTimestamp {
         }
     }
 
-    pub fn new(time: u16, date: u16, increament_10ms: u8, utc_offset: u8) -> Result<Self> {
+    pub fn new(time: u16, date: u16, increment_10ms: u8, utc_offset: u8) -> Result<Self> {
         let time = Self {
             time,
             date,
-            increament_10ms,
+            increment_10ms,
             utc_offset,
         };
         Ok(time)
@@ -102,13 +102,13 @@ impl DosTimestamp {
             | ((date_time.day() as u16) << DAY_RANGE.start);
 
         const NSEC_PER_10MSEC: u32 = 10000000;
-        let increament_10ms =
+        let increment_10ms =
             (date_time.second() as u32 % 2 * 100 + date_time.nanosecond() / NSEC_PER_10MSEC) as u8;
 
         Ok(Self {
             time,
             date,
-            increament_10ms,
+            increment_10ms,
             utc_offset: 0,
         })
     }
@@ -144,15 +144,15 @@ impl DosTimestamp {
         let mut sec = date_time.assume_utc().unix_timestamp() as u64;
 
         let mut nano_sec: u32 = 0;
-        if self.increament_10ms != 0 {
+        if self.increment_10ms != 0 {
             const NSEC_PER_MSEC: u32 = 1000000;
-            sec += self.increament_10ms as u64 / 100;
-            nano_sec = (self.increament_10ms as u32 % 100) * 10 * NSEC_PER_MSEC;
+            sec += self.increment_10ms as u64 / 100;
+            nano_sec = (self.increment_10ms as u32 % 100) * 10 * NSEC_PER_MSEC;
         }
 
         /* Adjust timezone to UTC0. */
         if (self.utc_offset & EXFAT_TIME_ZONE_VALID) != 0u8 {
-            sec = Self::ajust_time_zone(sec, self.utc_offset & (!EXFAT_TIME_ZONE_VALID));
+            sec = Self::adjust_time_zone(sec, self.utc_offset & (!EXFAT_TIME_ZONE_VALID));
         } else {
             // TODO: Use mount info for timezone adjustment.
         }
@@ -160,7 +160,7 @@ impl DosTimestamp {
         Ok(Duration::new(sec, nano_sec))
     }
 
-    fn ajust_time_zone(sec: u64, time_zone: u8) -> u64 {
+    fn adjust_time_zone(sec: u64, time_zone: u8) -> u64 {
         if time_zone <= 0x3F {
             sec + Self::time_zone_sec(time_zone)
         } else {

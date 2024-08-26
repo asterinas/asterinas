@@ -326,7 +326,7 @@ impl LineDiscipline {
                     }
                 } else {
                     // raw mode
-                    // FIXME: avoid addtional bound check
+                    // FIXME: avoid additional bound check
                     *dst_i = next_char;
                     read_len += 1;
                 }

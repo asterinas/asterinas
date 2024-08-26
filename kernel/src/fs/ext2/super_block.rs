@@ -133,7 +133,7 @@ impl TryFrom<RawSuperBlock> for SuperBlock {
             check_interval: Duration::from_secs(sb.check_interval as _),
             creator_os: {
                 let os_id = OsId::try_from(sb.creator_os)
-                    .map_err(|_| Error::with_message(Errno::EINVAL, "invalid creater os"))?;
+                    .map_err(|_| Error::with_message(Errno::EINVAL, "invalid creator os"))?;
                 if os_id != OsId::Linux {
                     return_errno_with_message!(Errno::EINVAL, "not supported os id");
                 }
@@ -309,7 +309,7 @@ impl SuperBlock {
         Bid::new(super_block_bid as u64)
     }
 
-    /// Returns the starting block id of the block group descripter table
+    /// Returns the starting block id of the block group descriptor table
     /// inside the block group pointed by `block_group_idx`.
     ///
     /// # Panics
@@ -465,7 +465,7 @@ pub(super) struct RawSuperBlock {
     pub prealloc_dir_blocks: u8,
     padding1: u16,
     ///
-    /// This fileds are for journaling support in Ext3.
+    /// This fields are for journaling support in Ext3.
     ///
     /// Uuid of journal superblock.
     pub journal_uuid: [u8; 16],

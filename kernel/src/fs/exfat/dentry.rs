@@ -246,11 +246,11 @@ impl ExfatDentrySet {
             create_utc_offset: dos_time.utc_offset,
             create_date: dos_time.date,
             create_time: dos_time.time,
-            create_time_cs: dos_time.increament_10ms,
+            create_time_cs: dos_time.increment_10ms,
             modify_utc_offset: dos_time.utc_offset,
             modify_date: dos_time.date,
             modify_time: dos_time.time,
-            modify_time_cs: dos_time.increament_10ms,
+            modify_time_cs: dos_time.increment_10ms,
             access_utc_offset: dos_time.utc_offset,
             access_date: dos_time.date,
             access_time: dos_time.time,
@@ -403,7 +403,7 @@ impl ExfatDentrySet {
         }
         Ok(name)
     }
-    /// Name dentries are not permited to modify. We should create a new dentry set for renaming.
+    /// Name dentries are not permitted to modify. We should create a new dentry set for renaming.
 
     fn calculate_checksum(&self) -> u16 {
         const CHECKSUM_BYTES_RANGE: Range<usize> = 2..4;
@@ -505,7 +505,7 @@ impl Iterator for ExfatDentryIterator {
 
 #[repr(C, packed)]
 #[derive(Clone, Debug, Default, Copy, Pod)]
-// For files & directorys
+// For files & directories
 pub(super) struct ExfatFileDentry {
     pub(super) dentry_type: u8, // 0x85
     // Number of Secondary directory entries.
@@ -635,7 +635,7 @@ pub(super) struct ExfatGenericSecondaryDentry {
 #[derive(Clone, Debug, Default, Copy, Pod)]
 pub(super) struct ExfatDeletedDentry {
     pub(super) dentry_type: u8,
-    pub(super) reserverd: [u8; 31],
+    pub(super) reserved: [u8; 31],
 }
 
 #[derive(Default, Debug)]

@@ -345,24 +345,24 @@ struct MemoryEntry {
 
 impl MemoryEntry {
     fn size(&self) -> u32 {
-        // SAFETY: the entry can only be contructed from a valid address.
+        // SAFETY: the entry can only be constructed from a valid address.
         unsafe { (self.ptr as *const u32).read_unaligned() }
     }
 
     fn base_addr(&self) -> u64 {
-        // SAFETY: the entry can only be contructed from a valid address.
+        // SAFETY: the entry can only be constructed from a valid address.
         unsafe { ((self.ptr + 4) as *const u64).read_unaligned() }
     }
 
     fn length(&self) -> u64 {
-        // SAFETY: the entry can only be contructed from a valid address.
+        // SAFETY: the entry can only be constructed from a valid address.
         unsafe { ((self.ptr + 12) as *const u64).read_unaligned() }
     }
 
     fn memory_type(&self) -> MemoryRegionType {
         // The multiboot (v1) manual doesn't specify the length of the type field.
         // Experimental result shows that "u8" works. So be it.
-        // SAFETY: the entry can only be contructed from a valid address.
+        // SAFETY: the entry can only be constructed from a valid address.
         let typ_val = unsafe { ((self.ptr + 20) as *const u8).read_unaligned() };
         // The meaning of the values are however documented clearly by the manual.
         match typ_val {

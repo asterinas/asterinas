@@ -59,7 +59,7 @@ pub struct PciDeviceLocation {
     pub bus: u8,
     /// Device number with max 31
     pub device: u8,
-    /// Deivce number with max 7
+    /// Device number with max 7
     pub function: u8,
 }
 

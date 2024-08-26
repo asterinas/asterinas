@@ -1,0 +1,28 @@
+# This file is to help typos avoid false-positives.
+
+# Words listed below are marked as valid, not mistakes. 
+[default.extend-words]
+rela = "rela"
+ANDD = "ANDD"
+ethe = "ethe"
+mke  = "mke"
+WHT  = "WHT"
+ist  = "ist"
+TME  = "TME"
+BA   = "BA"
+ND   = "ND"
+Fo   = "Fo"
+
+# Files with svg suffix are ignored to check. 
+[type.svg]
+extend-glob = ["*.svg"]
+check-file = false
+
+# Files listed below are ignored to check.
+[files]
+extend-exclude = [
+    "test/syscall_test/blocklists/pty_test",
+    "test/build/initramfs/opt/syscall_test/blocklists/pty_test",
+    "test/syscall_test/blocklists/sync_test",
+    "test/build/initramfs/opt/syscall_test/blocklists/sync_test",
+]

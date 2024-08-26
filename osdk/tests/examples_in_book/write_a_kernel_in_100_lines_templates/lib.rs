@@ -38,7 +38,7 @@ fn create_user_space(program: &[u8]) -> UserSpace {
     let nframes = program.len().align_up(PAGE_SIZE) / PAGE_SIZE;
     let user_pages = {
         let vm_frames = FrameAllocOptions::new(nframes).alloc().unwrap();
-        // Phyiscal memory pages can be only accessed
+        // Physical memory pages can be only accessed
         // via the Frame abstraction.
         vm_frames.write_bytes(0, program).unwrap();
         vm_frames

@@ -25,8 +25,8 @@ pub fn expand_type_flag(type_flags_def: &TypeFlagDef) -> TokenStream {
         all_tokens.append_all(impl_main_trait_tokens);
     });
 
-    let impl_set_entend_tokens = impl_set_extend(type_flags_def, &flag_sets);
-    all_tokens.append_all(impl_set_entend_tokens);
+    let impl_set_intend_tokens = impl_set_extend(type_flags_def, &flag_sets);
+    all_tokens.append_all(impl_set_intend_tokens);
 
     let export_declarive_macro_tokens = export_declarive_macro(type_flags_def, &flag_sets);
     all_tokens.append_all(export_declarive_macro_tokens);

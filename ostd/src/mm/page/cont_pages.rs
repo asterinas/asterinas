@@ -13,7 +13,7 @@ use crate::mm::{Paddr, PAGE_SIZE};
 /// This is a handle to many contiguous pages. It will be more lightweight
 /// than owning an array of page handles.
 ///
-/// The ownership is acheived by the reference counting mechanism of pages.
+/// The ownership is achieved by the reference counting mechanism of pages.
 /// When constructing a `ContPages`, the page handles are created then
 /// forgotten, leaving the reference count. When dropping a it, the page
 /// handles are restored and dropped, decrementing the reference count.

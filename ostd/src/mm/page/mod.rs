@@ -73,7 +73,7 @@ impl<M: PageMeta> Page<M> {
 
         // Initialize the metadata
         // SAFETY: The pointer points to the first byte of the `MetaSlot`
-        // structure, and layout ensured enoungh space for `M`. The original
+        // structure, and layout ensured enough space for `M`. The original
         // value does not represent any object that's needed to be dropped.
         unsafe { (ptr as *mut M).write(metadata) };
 

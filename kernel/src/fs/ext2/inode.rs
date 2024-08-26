@@ -1485,7 +1485,7 @@ impl InodeImpl_ {
 
     /// Shrinks inode size.
     ///
-    /// After the reduction, the size will be shrinked to `new_size`,
+    /// After the reduction, the size will be shrunk to `new_size`,
     /// which may result in an decreased block count.
     fn shrink(&mut self, new_size: usize) {
         let new_blocks = self.desc.size_to_blocks(new_size);

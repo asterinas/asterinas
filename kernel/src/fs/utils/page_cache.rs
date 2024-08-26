@@ -72,7 +72,7 @@ impl PageCache {
     pub fn resize(&self, new_size: usize) -> Result<()> {
         // If the new size is smaller and not page-aligned,
         // first zero the gap between the new size and the
-        // next page boundry (or the old size), if such a gap exists.
+        // next page boundary (or the old size), if such a gap exists.
         let old_size = self.pages.size();
         if old_size > new_size && new_size % PAGE_SIZE != 0 {
             let gap_size = old_size.min(new_size.align_up(PAGE_SIZE)) - new_size;

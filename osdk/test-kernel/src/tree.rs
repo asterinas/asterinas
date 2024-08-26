@@ -133,7 +133,7 @@ impl Default for KtestTree {
     }
 }
 
-/// The `KtestTreeIter` will iterate over all crates. Yeilding `KtestCrate`s.
+/// The `KtestTreeIter` will iterate over all crates. Yielding `KtestCrate`s.
 pub struct KtestTreeIter<'a> {
     crate_iter: btree_map::Iter<'a, String, KtestCrate>,
 }
@@ -156,7 +156,7 @@ impl<'a> Iterator for KtestTreeIter<'a> {
 
 type CrateChildrenIter<'a> = btree_map::Iter<'a, String, KtestModule>;
 
-/// The `KtestCrateIter` will iterate over all modules in a crate. Yeilding `KtestModule`s.
+/// The `KtestCrateIter` will iterate over all modules in a crate. Yielding `KtestModule`s.
 /// The iterator will return modules in the depth-first-search order of the module tree.
 pub struct KtestCrateIter<'a> {
     path: Vec<(&'a KtestModule, CrateChildrenIter<'a>)>,
@@ -192,7 +192,7 @@ impl<'a> Iterator for KtestCrateIter<'a> {
     }
 }
 
-/// The `KtestModuleIter` will iterate over all tests in a crate. Yeilding `KtestItem`s.
+/// The `KtestModuleIter` will iterate over all tests in a crate. Yielding `KtestItem`s.
 pub struct KtestModuleIter<'a> {
     test_iter: core::slice::Iter<'a, KtestItem>,
 }

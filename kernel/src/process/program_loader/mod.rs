@@ -16,7 +16,7 @@ use crate::{
     prelude::*,
 };
 
-/// Load an executable to root vmar, including loading programe image, preparing heap and stack,
+/// Load an executable to root vmar, including loading programme image, preparing heap and stack,
 /// initializing argv, envp and aux tables.
 /// About recursion_limit: recursion limit is used to limit th recursion depth of shebang executables.
 /// If the interpreter(the program behind #!) of shebang executable is also a shebang,

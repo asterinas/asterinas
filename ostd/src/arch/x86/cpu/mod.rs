@@ -238,7 +238,7 @@ define_cpu_exception!(
     [DEVICE_NOT_AVAILABLE = 7, Fault],
     [DOUBLE_FAULT = 8, Abort],
     [COPROCESSOR_SEGMENT_OVERRUN = 9, Fault],
-    [INVAILD_TSS = 10, Fault],
+    [INVALID_TSS = 10, Fault],
     [SEGMENT_NOT_PRESENT = 11, Fault],
     [STACK_SEGMENT_FAULT = 12, Fault],
     [GENERAL_PROTECTION_FAULT = 13, Fault],

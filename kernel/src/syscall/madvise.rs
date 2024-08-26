@@ -76,7 +76,7 @@ pub enum MadviseBehavior {
     MADV_HUGEPAGE = 14,   /* Worth backing with hugepages */
     MADV_NOHUGEPAGE = 15, /* Not worth backing with hugepages */
 
-    MADV_DONTDUMP = 16, /* Explicity exclude from the core dump,
+    MADV_DONTDUMP = 16, /* Explicitly exclude from the core dump,
                         overrides the coredump filter bits */
     MADV_DODUMP = 17, /* Clear the MADV_DONTDUMP flag */
 

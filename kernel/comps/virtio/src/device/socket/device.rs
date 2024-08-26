@@ -61,7 +61,7 @@ impl SocketDevice {
                 << 32;
 
         let mut recv_queue = VirtQueue::new(QUEUE_RECV, QUEUE_SIZE, transport.as_mut())
-            .expect("createing recv queue fails");
+            .expect("creating recv queue fails");
         let send_queue = VirtQueue::new(QUEUE_SEND, QUEUE_SIZE, transport.as_mut())
             .expect("creating send queue fails");
         let event_queue = VirtQueue::new(QUEUE_EVENT, QUEUE_SIZE, transport.as_mut())
