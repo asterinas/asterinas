@@ -60,6 +60,7 @@ jobs:
           - lmbench-tcp-bandwidth-localhost
           - lmbench-tcp-connect-latency
           - lmbench-tcp-latency-localhost
+          - lmbench-udp-latency-localhost
       fail-fast: false
     timeout-minutes: 60
     container: 
