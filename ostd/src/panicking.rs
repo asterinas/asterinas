@@ -7,6 +7,7 @@ use core::ffi::c_void;
 use crate::{
     arch::qemu::{exit_qemu, QemuExitCode},
     cpu_local_cell, early_print, early_println,
+    sync::SpinLock,
 };
 
 extern crate cfg_if;
@@ -55,7 +56,6 @@ pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
         begin_panic(Box::new(throw_info.clone()));
     }
     early_println!("{}", info);
-    early_println!("Printing stack trace:");
     print_stack_trace();
     abort();
 }
@@ -66,6 +66,13 @@ pub fn abort() -> ! {
 }
 
 fn print_stack_trace() {
+    /// We acquire a global lock to prevent the frames in the stack trace from
+    /// interleaving. The spin lock is used merely for its simplicity.
+    static BACKTRACE_PRINT_LOCK: SpinLock<()> = SpinLock::new(());
+    let _lock = BACKTRACE_PRINT_LOCK.lock();
+
+    early_println!("Printing stack trace:");
+
     struct CallbackData {
         counter: usize,
     }
@@ -99,6 +106,7 @@ fn print_stack_trace() {
         early_print!("\n\n");
         UnwindReasonCode::NO_REASON
     }
+
     let mut data = CallbackData { counter: 0 };
     _Unwind_Backtrace(callback, &mut data as *mut _ as _);
 }
