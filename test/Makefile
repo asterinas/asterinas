@@ -9,7 +9,6 @@ ATOMIC_WGET := $(CUR_DIR)/../tools/atomic_wget.sh
 BUILD_DIR := $(CUR_DIR)/build
 INITRAMFS := $(BUILD_DIR)/initramfs
 INITRAMFS_FILELIST := $(BUILD_DIR)/initramfs.filelist
-INITRAMFS_IMAGE := $(BUILD_DIR)/initramfs.cpio.gz
 EXT2_IMAGE := $(BUILD_DIR)/ext2.img
 EXFAT_IMAGE := $(BUILD_DIR)/exfat.img
 INITRAMFS_EMPTY_DIRS := \
@@ -35,6 +34,27 @@ SYSCALL_TEST_DIR := $(INITRAMFS)/opt/syscall_test
 
 .PHONY: all
 all: build
+
+# If `INITRAMFS_IMAGE` is not provided, build one
+ifndef INITRAMFS_IMAGE
+INITRAMFS_IMAGE := $(BUILD_DIR)/initramfs.cpio.gz
+
+.PHONY: $(INITRAMFS_IMAGE)
+$(INITRAMFS_IMAGE): $(INITRAMFS_FILELIST) | $(BUILD_DIR)
+	@if ! cmp -s $(INITRAMFS_FILELIST) $(INITRAMFS_FILELIST).previous ; then \
+		echo "Generating the initramfs image..."; \
+		cp -f $(INITRAMFS_FILELIST) $(INITRAMFS_FILELIST).previous; \
+		( \
+			cd $(INITRAMFS); \
+			# `$(INITRAMFS_FILELIST)` contains files' last modification \
+			# time in the first column, and files' relative path to \
+			# `$(INITRAMFS)` in the second column. This prunes the first \
+			# column and passes the second column to `cpio`. \
+			cut -d " " -f 2- $(INITRAMFS_FILELIST) | \
+				cpio -o -H newc | gzip \
+		) > $@; \
+	fi
+endif
 
 $(INITRAMFS)/lib/x86_64-linux-gnu: | $(VDSO_LIB)
 	@mkdir -p $@
@@ -130,22 +150,6 @@ $(INITRAMFS_EMPTY_DIRS):
 .PHONY: $(SYSCALL_TEST_DIR)
 $(SYSCALL_TEST_DIR):
 	@make --no-print-directory -C syscall_test
-
-.PHONY: $(INITRAMFS_IMAGE)
-$(INITRAMFS_IMAGE): $(INITRAMFS_FILELIST)
-	@if ! cmp -s $(INITRAMFS_FILELIST) $(INITRAMFS_FILELIST).previous ; then \
-		echo "Generating the initramfs image..."; \
-		cp -f $(INITRAMFS_FILELIST) $(INITRAMFS_FILELIST).previous; \
-		( \
-			cd $(INITRAMFS); \
-			# `$(INITRAMFS_FILELIST)` contains files' last modification \
-			# time in the first column, and files' relative path to \
-			# `$(INITRAMFS)` in the second column. This prunes the first \
-			# column and passes the second column to `cpio`. \
-			cut -d " " -f 2- $(INITRAMFS_FILELIST) | \
-				cpio -o -H newc | gzip \
-		) > $@; \
-	fi
 
 .PHONY: $(INITRAMFS_FILELIST)
 # If the BUILD_SYSCALL_TEST variable is set, we should depend on the
