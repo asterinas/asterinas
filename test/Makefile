@@ -95,11 +95,14 @@ $(INITRAMFS)/usr/bin: | $(INITRAMFS)/bin
 $(INITRAMFS)/test:
 	@make --no-print-directory -C apps
 
-$(INITRAMFS)/benchmark: | $(INITRAMFS)/benchmark/bin
-	@cp -rf $(CUR_DIR)/benchmark/* $@
+$(INITRAMFS)/benchmark: | $(INITRAMFS)/benchmark/bin $(INITRAMFS)/benchmark/benchmarks
 	@if [ -e $(BENCHMARK_ENTRYPOINT) ]; then \
 		cp $(BENCHMARK_ENTRYPOINT) $@; \
 	fi
+
+$(INITRAMFS)/benchmark/benchmarks:
+	@mkdir -p $@
+	@cp -rf $(CUR_DIR)/benchmark/* $@
 
 $(INITRAMFS)/benchmark/bin:
 	@mkdir -p $@
@@ -107,8 +110,8 @@ $(INITRAMFS)/benchmark/bin:
 	@cp /usr/local/benchmark/iperf/bin/iperf3 $@
 	@cp /usr/local/benchmark/membench/membench $@
 	@cp /usr/local/benchmark/iozone $@
-	@cp -r /usr/local/benchmark/unixbench $@
-	@cp -r /usr/local/benchmark/lmbench $@
+	@cp /usr/local/benchmark/unixbench/* $@
+	@cp /usr/local/benchmark/lmbench/* $@
 	@cp /usr/local/benchmark/fio/bin/fio $@
 
 # Make necessary directories.

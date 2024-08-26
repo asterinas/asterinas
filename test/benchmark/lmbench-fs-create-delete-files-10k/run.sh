@@ -6,4 +6,4 @@ set -e
 
 echo "*** Running the LMbench file system create/delete test ***"
 
-/benchmark/bin/lmbench/lat_fs -s 10k -P 1
+/benchmark/bin/lat_fs -s 10k -P 1

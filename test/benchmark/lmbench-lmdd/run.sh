@@ -6,4 +6,4 @@ set -e
 
 echo "*** Running the LMbench lmdd test ***"
 
-echo -n "lmdd result: " & /benchmark/bin/lmbench/lmdd if=/dev/zero of=/ext2/test_file bs=1M count=512
+echo -n "lmdd result: " & /benchmark/bin/lmdd if=/dev/zero of=/ext2/test_file bs=1M count=512
