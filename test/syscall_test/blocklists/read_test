@@ -1,2 +1,4 @@
 ReadTest.EofAfterRead
 ReadTest.ZeroBuffer
+ReadTest.ReadWithOpath
+ReadTest.PartialReadSIGSEGV
