@@ -91,6 +91,11 @@ ifeq ($(ENABLE_KVM), 1)
 CARGO_OSDK_ARGS += --qemu-args="-accel kvm"
 endif
 
+ifdef PREBUILT_INITRAMFS
+INITRAMFS_IMAGE := $(shell pwd)/$(PREBUILT_INITRAMFS)
+CARGO_OSDK_ARGS += --initramfs="$(INITRAMFS_IMAGE)"
+endif
+
 # Pass make variables to all subdirectory makes
 export
 
@@ -199,12 +204,18 @@ test:
 		(cd $$dir && cargo test) || exit 1; \
 	done
 
+# FIXME: osdk test doesn't actually need initramfs.
+# Once this fake dependency is removed, this option can also be removed.
+ifdef PREBUILT_INITRAMFS
+CARGO_OSDK_KTEST_ARGS += --initramfs="$(INITRAMFS_IMAGE)"
+endif
+
 .PHONY: ktest
 ktest: initramfs $(CARGO_OSDK)
 	@# Exclude linux-bzimage-setup from ktest since it's hard to be unit tested
 	@for dir in $(OSDK_CRATES); do \
 		[ $$dir = "ostd/libs/linux-bzimage/setup" ] && continue; \
-		(cd $$dir && cargo osdk test) || exit 1; \
+		(cd $$dir && cargo osdk test $(CARGO_OSDK_KTEST_ARGS)) || exit 1; \
 	done
 
 .PHONY: docs
