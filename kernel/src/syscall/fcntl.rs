@@ -164,11 +164,11 @@ enum FcntlCmd {
     F_SETFD = 2,
     F_GETFL = 3,
     F_SETFL = 4,
+    F_GETLK = 5,
     F_SETLK = 6,
     F_SETLKW = 7,
-    F_GETLK = 8,
-    F_SETOWN = 9,
-    F_GETOWN = 10,
+    F_SETOWN = 8,
+    F_GETOWN = 9,
     F_DUPFD_CLOEXEC = 1030,
 }
 
