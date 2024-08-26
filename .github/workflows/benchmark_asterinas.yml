@@ -56,6 +56,7 @@ jobs:
           - lmbench-semaphore
           # Network-related benchmark
           - lmbench-select-tcp
+          - lmbench-http-bandwidth
       fail-fast: false
     timeout-minutes: 60
     container: 
