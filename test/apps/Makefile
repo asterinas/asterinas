@@ -6,7 +6,8 @@ MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
 
 INITRAMFS ?= $(CUR_DIR)/../build/initramfs
-TEST_BUILD_DIR ?= $(INITRAMFS)/test
+BUILD_DIR ?= $(CUR_DIR)/../build/build
+INSTALL_DIR ?= $(INITRAMFS)/test
 
 # These test apps are sorted by name
 TEST_APPS := \
@@ -44,8 +45,8 @@ C_SOURCES := \
 all: $(TEST_APPS) scripts
 
 .PHONY: $(TEST_APPS)
-$(TEST_APPS):
-	@make --no-print-directory -C $@
+$(TEST_APPS): | $(INSTALL_DIR) $(BUILD_DIR)
+	@make --no-print-directory BUILD_DIR=$(BUILD_DIR) INSTALL_DIR=$(INSTALL_DIR) -C $@
 
 .PHONY: format
 format:
@@ -57,9 +58,9 @@ check:
 	@echo "Checking code format for general tests..."
 	@clang-format --dry-run --Werror $(C_SOURCES)
 
-$(TEST_BUILD_DIR):
+$(INSTALL_DIR) $(BUILD_DIR):
 	@mkdir -p $@
 
 .PHONY: scripts
-scripts: | $(TEST_BUILD_DIR)
-	@make --no-print-directory BUILD_DIR=$(TEST_BUILD_DIR) -C scripts
+scripts: | $(INSTALL_DIR) $(BUILD_DIR)
+	@make --no-print-directory BUILD_DIR=$(BUILD_DIR) INSTALL_DIR=$(INSTALL_DIR) -C scripts
