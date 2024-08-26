@@ -1,0 +1,24 @@
+--- tmp/WORKSPACE.old	2024-06-04 23:30:18.933769319 +0800
++++ tmp/WORKSPACE	2024-06-04 23:41:57.860110079 +0800
+@@ -85,19 +85,11 @@
+ )
+ 
+ load("@bazel_gazelle//:deps.bzl", "gazelle_dependencies", "go_repository")
+-load("@io_bazel_rules_go//go:deps.bzl", "go_download_sdk", "go_rules_dependencies")
++load("@io_bazel_rules_go//go:deps.bzl", "go_host_sdk", "go_rules_dependencies")
+ 
+ go_rules_dependencies()
+ 
+-go_download_sdk(
+-    name = "go_sdk",
+-    # This implements a fix in the types package which dramatically speeds up
+-    # analysis. Without this fix, the nogo rules will often fail to run in
+-    # time on our continuous integration.
+-    patch = "//tools:go_types_memoize.patch",
+-    patch_strip = 2,
+-    version = "1.22.0",
+-)
++go_host_sdk(name = "go_sdk")
+ 
+ gazelle_dependencies()
+ 

@@ -24,3 +24,6 @@ virtio-net.pcap
 
 # benchmark results
 /result_*.json
+
+# Nix build result
+/result
