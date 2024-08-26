@@ -205,6 +205,47 @@ FN_TEST(bind)
 }
 END_TEST()
 
+FN_TEST(bind_reuseaddr)
+{
+	sk_addr.sin_port = htons(8081);
+	struct sockaddr *psaddr = (struct sockaddr *)&sk_addr;
+	socklen_t addrlen = sizeof(sk_addr);
+
+	int disable = 0;
+	int enable = 1;
+	int sk1 = TEST_SUCC(socket(PF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0));
+	int sk2 = TEST_SUCC(socket(PF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0));
+
+	TEST_SUCC(bind(sk1, psaddr, addrlen));
+
+	TEST_ERRNO(bind(sk2, psaddr, addrlen), EADDRINUSE);
+
+	// FIXME: The test will fail in Asterinas since it doesn't check
+	// if the previous socket was bound with `SO_REUSEADDR`
+	//
+	// TEST_SUCC(setsockopt(sk1, SOL_SOCKET, SO_REUSEADDR, &disable,
+	// 		     sizeof(disable)));
+	// TEST_SUCC(setsockopt(sk2, SOL_SOCKET, SO_REUSEADDR, &enable,
+	// 		     sizeof(enable)));
+	// TEST_ERRNO(bind(sk2, psaddr, addrlen), EADDRINUSE);
+
+	TEST_SUCC(setsockopt(sk1, SOL_SOCKET, SO_REUSEADDR, &enable,
+			     sizeof(enable)));
+	TEST_SUCC(setsockopt(sk2, SOL_SOCKET, SO_REUSEADDR, &disable,
+			     sizeof(disable)));
+	TEST_ERRNO(bind(sk2, psaddr, addrlen), EADDRINUSE);
+
+	TEST_SUCC(setsockopt(sk1, SOL_SOCKET, SO_REUSEADDR, &enable,
+			     sizeof(enable)));
+	TEST_SUCC(setsockopt(sk2, SOL_SOCKET, SO_REUSEADDR, &enable,
+			     sizeof(enable)));
+	TEST_SUCC(bind(sk2, psaddr, addrlen));
+
+	TEST_SUCC(close(sk1));
+	TEST_SUCC(close(sk2));
+}
+END_TEST()
+
 FN_TEST(listen)
 {
 	// The second `listen` does nothing but succeed.
