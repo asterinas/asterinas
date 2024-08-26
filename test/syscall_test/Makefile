@@ -65,7 +65,7 @@ else
 	SRC_DIR := $(BUILD_DIR)/gvisor_src
 endif
 INITRAMFS ?= $(CUR_DIR)/../build/initramfs
-TARGET_DIR := $(INITRAMFS)/opt/syscall_test
+TARGET_DIR ?= $(INITRAMFS)/opt/syscall_test
 RUN_BASH := $(CUR_DIR)/run_syscall_test.sh
 BLOCK_LIST := $(CUR_DIR)/blocklists
 EXFAT_BLOCK_LIST := $(CUR_DIR)/blocklists.exfat
