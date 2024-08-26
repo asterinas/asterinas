@@ -64,7 +64,9 @@ extern "C" {
 ///
 /// It should be called early to let [`crate::task::disable_preempt`] work,
 /// which needs to update a CPU-local preemption info. Otherwise it may
-/// panic when calling [`crate::task::disable_preempt`].
+/// panic when calling [`crate::task::disable_preempt`]. It is needed since
+/// heap allocations need to disable preemption, which would happen in the
+/// very early stage of the kernel.
 ///
 /// # Safety
 ///
@@ -140,16 +142,12 @@ pub unsafe fn init_on_ap(cpu_id: u32) {
 
     let ap_pages_ptr = paddr_to_vaddr(ap_pages.start_paddr()) as *mut u32;
 
-    debug_assert_eq!(
-        cpu_id,
-        // SAFETY: the CPU ID is stored at the beginning of the CPU local area.
-        unsafe { ap_pages_ptr.read() }
-    );
-
     // SAFETY: the memory will be dedicated to the AP. And we are on the AP.
     unsafe {
         arch::cpu::local::set_base(ap_pages_ptr as u64);
     }
+
+    crate::task::reset_preempt_info();
 }
 
 mod has_init {
