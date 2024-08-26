@@ -61,13 +61,13 @@ run_benchmark() {
         -smp 1 \
         -m 8G \
         -machine q35,kernel-irqchip=split \
-        -cpu Icelake-Server,+x2apic \
+        -cpu Icelake-Server,-pcid,+x2apic \
         --enable-kvm \
         -kernel ${LINUX_KERNEL} \
         -initrd ${BENCHMARK_DIR}/../build/initramfs.cpio.gz \
         -drive if=none,format=raw,id=x0,file=${BENCHMARK_DIR}/../build/ext2.img \
         -device virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,serial=vext2,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,config-wce=off,request-merging=off,write-cache=off,backend_defaults=off,discard=off,event_idx=off,indirect_desc=off,ioeventfd=off,queue_reset=off \
-        -append 'console=ttyS0 rdinit=/benchmark/benchmark_entrypoint.sh mitigations=off' \
+        -append 'console=ttyS0 rdinit=/benchmark/benchmark_entrypoint.sh mitigations=off hugepages=0 transparent_hugepage=never' \
         -nographic \
         2>&1 | tee ${linux_output}" 
 
