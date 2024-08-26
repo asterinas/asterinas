@@ -24,7 +24,11 @@ pub fn sys_mprotect(addr: Vaddr, len: usize, perms: u64, ctx: &Context) -> Resul
     }
 
     let len = len.align_up(PAGE_SIZE);
-    let range = addr..(addr + len);
+    let end = addr.checked_add(len).ok_or(Error::with_message(
+        Errno::ENOMEM,
+        "integer overflow when (addr + len)",
+    ))?;
+    let range = addr..end;
     root_vmar.protect(vm_perms, range)?;
     Ok(SyscallReturn::Return(0))
 }

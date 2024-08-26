@@ -17,7 +17,11 @@ pub fn sys_munmap(addr: Vaddr, len: usize, ctx: &Context) -> Result<SyscallRetur
 
     let root_vmar = ctx.process.root_vmar();
     let len = len.align_up(PAGE_SIZE);
-    debug!("unmap range = 0x{:x} - 0x{:x}", addr, addr + len);
-    root_vmar.destroy(addr..addr + len)?;
+    let end = addr.checked_add(len).ok_or(Error::with_message(
+        Errno::EINVAL,
+        "integer overflow when (addr + len)",
+    ))?;
+    debug!("unmap range = 0x{:x} - 0x{:x}", addr, end);
+    root_vmar.destroy(addr..end)?;
     Ok(SyscallReturn::Return(0))
 }

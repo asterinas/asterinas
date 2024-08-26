@@ -25,6 +25,10 @@ pub fn sys_madvise(
     }
 
     let len = len.align_up(PAGE_SIZE);
+    let end = start.checked_add(len).ok_or(Error::with_message(
+        Errno::EINVAL,
+        "integer overflow when (start + len)",
+    ))?;
     match behavior {
         MadviseBehavior::MADV_NORMAL
         | MadviseBehavior::MADV_SEQUENTIAL
@@ -37,15 +41,15 @@ pub fn sys_madvise(
         MadviseBehavior::MADV_DONTNEED => {
             warn!("MADV_DONTNEED isn't implemented, do nothing for now.");
         }
-        MadviseBehavior::MADV_FREE => madv_free(start, len, ctx)?,
+        MadviseBehavior::MADV_FREE => madv_free(start, end, ctx)?,
         _ => todo!(),
     }
     Ok(SyscallReturn::Return(0))
 }
 
-fn madv_free(start: Vaddr, len: usize, ctx: &Context) -> Result<()> {
+fn madv_free(start: Vaddr, end: Vaddr, ctx: &Context) -> Result<()> {
     let root_vmar = ctx.process.root_vmar();
-    let advised_range = start..start + len;
+    let advised_range = start..end;
     let _ = root_vmar.destroy(advised_range);
 
     Ok(())
