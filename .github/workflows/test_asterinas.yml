@@ -19,20 +19,58 @@ jobs:
       - run: echo "Running in asterinas/asterinas:0.8.1"
 
       - uses: actions/checkout@v4
-      
+
       - name: Check
         id: check
         run: make check
 
-  unit-test:
+  build-initrd:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: nixbuild/nix-quick-install-action@v28
+
+      - name: Restore and Cache Nix Store
+        uses: nix-community/cache-nix-action@v5
+        with:
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', 'flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+          purge: true
+          purge-prefixes: nix-${{ runner.os }}-
+          purge-created: 0
+          purge-primary-key: never
+
+      - name: Build Initrd
+        run: |
+          nix build .#initrd -L
+
+      - name: Upload Initrd
+        uses: actions/upload-artifact@v4
+        with:
+          name: initrd.gz
+          path: result/initrd.gz
+          compression-level: 0  # initrd.gz is already compressed
+
+  unit-test:
+    needs: build-initrd
     runs-on: ubuntu-latest
     timeout-minutes: 15
     container: asterinas/asterinas:0.8.1
+    env:
+      PREBUILT_INITRAMFS: result/initrd.gz
     steps:
       - run: echo "Running in asterinas/asterinas:0.8.1"
 
       - uses: actions/checkout@v4
+
+      - name: Download Initrd
+        uses: actions/download-artifact@v4
+        with:
+          name: initrd.gz
+          path: result
 
       - name: Usermode Unit test
         id: usermode_unit_test
@@ -45,16 +83,35 @@ jobs:
       # TODO: add component check.
 
   integration-test:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        initrd:
+          - label: "Makefile initrd"
+            path: ""
+          - label: "Nix initrd"
+            path: result/initrd.gz
+
+    name: integration-test (${{ matrix.initrd.label }})
+    needs: build-initrd
     runs-on: ubuntu-latest
     timeout-minutes: 30
     container:
       image: asterinas/asterinas:0.8.1
       options: --device=/dev/kvm
+    env:
+      PREBUILT_INITRAMFS: ${{ matrix.initrd.path }}
     steps:
       - run: echo "Running in asterinas/asterinas:0.8.1"
 
       - uses: actions/checkout@v4
+
+      - name: Download Initrd
+        if: ${{ matrix.initrd.path != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: initrd.gz
+          path: result
 
       - name: SMP Boot Test (Multiboot)
         id: boot_test_mb
@@ -78,7 +135,7 @@ jobs:
           make run AUTO_TEST=syscall \
             SYSCALL_TEST_DIR=/exfat EXTRA_BLOCKLISTS_DIRS=blocklists.exfat \
             ENABLE_KVM=0 BOOT_PROTOCOL=multiboot2 RELEASE=1
-      
+
       - name: SMP Syscall Test (Multiboot2)
         id: smp_syscall_test_mb2
         run: make run AUTO_TEST=syscall ENABLE_KVM=1 BOOT_PROTOCOL=multiboot2 RELEASE=1 SMP=4
@@ -86,7 +143,7 @@ jobs:
       - name: General Test (Linux EFI Handover Boot Protocol)
         id: test_linux
         run: make run AUTO_TEST=test ENABLE_KVM=1 BOOT_PROTOCOL=linux-efi-handover64 RELEASE=1
-      
+
       - name: SMP General Test (Multiboot2)
         id: smp_test_mb2
         run: make run AUTO_TEST=test ENABLE_KVM=1 BOOT_PROTOCOL=multiboot2 RELEASE=1 SMP=4
