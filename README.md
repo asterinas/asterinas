@@ -3,7 +3,7 @@
     A secure, fast, and general-purpose OS kernel written in Rust and compatible with Linux<br/>
     <a href="https://github.com/asterinas/asterinas/actions/workflows/test_osdk.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/test_osdk.yml/badge.svg?event=push" alt="Test OSDK" style="max-width: 100%;"></a>
     <a href="https://github.com/asterinas/asterinas/actions/workflows/test_asterinas.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/test_asterinas.yml/badge.svg?event=push" alt="Test Asterinas" style="max-width: 100%;"></a>
-    <a href="https://asterinas.github.io/benchmark/"><img src="https://github.com/asterinas/asterinas/actions/workflows/benchmark_asterinas.yml/badge.svg" alt="Benchmark Asterinas" style="max-width: 100%;"></a>
+    <a href="https://asterinas.github.io/benchmark/lmbench/"><img src="https://github.com/asterinas/asterinas/actions/workflows/benchmark_asterinas.yml/badge.svg" alt="Benchmark Asterinas" style="max-width: 100%;"></a>
     <br/>
 </p>
 
