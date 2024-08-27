@@ -117,8 +117,9 @@ impl PosixThread {
     }
 
     /// Returns whether the signal is blocked by the thread.
-    pub(in crate::process) fn has_signal_blocked(&self, signal: &dyn Signal) -> bool {
-        self.sig_mask.contains(signal.num(), Ordering::Relaxed)
+    pub(in crate::process) fn has_signal_blocked(&self, signum: SigNum) -> bool {
+        // FIMXE: Some signals cannot be blocked, even set in sig_mask.
+        self.sig_mask.contains(signum, Ordering::Relaxed)
     }
 
     /// Checks whether the signal can be delivered to the thread.
@@ -141,7 +142,7 @@ impl PosixThread {
             && *signum == SIGCONT
         {
             let receiver_sid = self.process().session().unwrap().sid();
-            if receiver_sid == sender.sid() {
+            if receiver_sid == sender.sid().unwrap() {
                 return Ok(());
             }
 

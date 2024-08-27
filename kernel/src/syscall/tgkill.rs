@@ -28,6 +28,6 @@ pub fn sys_tgkill(tgid: Pid, tid: Tid, sig_num: u8, ctx: &Context) -> Result<Sys
         let uid = ctx.posix_thread.credentials().ruid();
         UserSignal::new(sig_num, UserSignalKind::Tkill, pid, uid)
     });
-    tgkill(tid, tgid, signal)?;
+    tgkill(tid, tgid, signal, ctx)?;
     Ok(SyscallReturn::Return(0))
 }

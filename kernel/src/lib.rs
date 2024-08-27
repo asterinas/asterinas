@@ -168,7 +168,7 @@ fn init_thread() {
     }
 
     // TODO: exit via qemu isa debug device should not be the only way.
-    let exit_code = if initproc.exit_code().unwrap() == 0 {
+    let exit_code = if initproc.exit_code() == 0 {
         QemuExitCode::Success
     } else {
         QemuExitCode::Failed

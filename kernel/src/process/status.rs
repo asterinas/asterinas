@@ -4,32 +4,56 @@
 
 //! The process status
 
-use super::TermStatus;
+use core::sync::atomic::{AtomicU64, Ordering};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProcessStatus {
-    // Not ready to run
-    Uninit,
-    /// Can be scheduled to run
-    Runnable,
-    /// Exit while not reaped by parent
-    Zombie(TermStatus),
+use super::{ExitCode, TermStatus};
+
+/// The status of process.
+///
+/// The `ProcessStatus` can be viewed as two parts,
+/// the highest 32 bits is the value of `TermStatus`, if any,
+/// the lowest 32 bits is the value of status.
+#[derive(Debug)]
+pub struct ProcessStatus(AtomicU64);
+
+#[repr(u8)]
+enum Status {
+    Uninit = 0,
+    Runnable = 1,
+    Zombie = 2,
 }
 
 impl ProcessStatus {
-    pub fn set_zombie(&mut self, term_status: TermStatus) {
-        *self = ProcessStatus::Zombie(term_status);
+    const LOW_MASK: u64 = 0xffff_ffff;
+
+    pub fn new_uninit() -> Self {
+        Self(AtomicU64::new(Status::Uninit as u64))
+    }
+
+    pub fn set_zombie(&self, term_status: TermStatus) {
+        let new_val = (term_status.as_u32() as u64) << 32 | Status::Zombie as u64;
+        self.0.store(new_val, Ordering::Relaxed);
     }
 
     pub fn is_zombie(&self) -> bool {
-        matches!(self, ProcessStatus::Zombie(_))
+        self.0.load(Ordering::Relaxed) & Self::LOW_MASK == Status::Zombie as u64
     }
 
-    pub fn set_runnable(&mut self) {
-        *self = ProcessStatus::Runnable;
+    pub fn set_runnable(&self) {
+        let new_val = Status::Runnable as u64;
+        self.0.store(new_val, Ordering::Relaxed);
     }
 
     pub fn is_runnable(&self) -> bool {
-        *self == ProcessStatus::Runnable
+        self.0.load(Ordering::Relaxed) & Self::LOW_MASK == Status::Runnable as u64
+    }
+
+    /// Returns the exit code.
+    ///
+    /// If the process is not exited, the exit code is zero.
+    /// But if exit code is zero, the process may or may not exit.
+    pub fn exit_code(&self) -> ExitCode {
+        let val = self.0.load(Ordering::Relaxed);
+        (val >> 32 & Self::LOW_MASK) as ExitCode
     }
 }
