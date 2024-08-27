@@ -1030,7 +1030,7 @@ checksum = "dd8b5dd2ae5ed71462c540258bedcb51965123ad7e7ccf4b9a8cafaa4a63576d"
 
 [[package]]
 name = "osdk-test-kernel"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "ostd",
  "owo-colors 4.0.0",
@@ -1039,7 +1039,7 @@ dependencies = [
 
 [[package]]
 name = "ostd"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "acpi",
  "align_ext",
@@ -1081,7 +1081,7 @@ dependencies = [
 
 [[package]]
 name = "ostd-macros"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1109,7 +1109,7 @@ dependencies = [
 
 [[package]]
 name = "ostd-test"
-version = "0.8.0"
+version = "0.8.1"
 
 [[package]]
 name = "owo-colors"
