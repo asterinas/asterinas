@@ -69,7 +69,7 @@ pub struct Process {
     /// The threads
     threads: Mutex<Vec<Arc<Thread>>>,
     /// Process status
-    status: Mutex<ProcessStatus>,
+    status: ProcessStatus,
     /// Parent process
     pub(super) parent: Mutex<Weak<Process>>,
     /// Children processes
@@ -140,7 +140,7 @@ impl Process {
             executable_path: RwLock::new(executable_path),
             process_vm,
             children_pauser,
-            status: Mutex::new(ProcessStatus::Uninit),
+            status: ProcessStatus::new_uninit(),
             parent: Mutex::new(parent),
             children: Mutex::new(BTreeMap::new()),
             process_group: Mutex::new(Weak::new()),
@@ -589,7 +589,7 @@ impl Process {
         let threads = self.threads.lock();
         for thread in threads.iter() {
             let posix_thread = thread.as_posix_thread().unwrap();
-            if !posix_thread.has_signal_blocked(&signal) {
+            if !posix_thread.has_signal_blocked(signal.num()) {
                 posix_thread.enqueue_signal(Box::new(signal));
                 return;
             }
@@ -622,26 +622,23 @@ impl Process {
     // ******************* Status ********************
 
     fn set_runnable(&self) {
-        self.status.lock().set_runnable();
+        self.status.set_runnable();
     }
 
     fn is_runnable(&self) -> bool {
-        self.status.lock().is_runnable()
+        self.status.is_runnable()
     }
 
     pub fn is_zombie(&self) -> bool {
-        self.status.lock().is_zombie()
+        self.status.is_zombie()
     }
 
     pub fn set_zombie(&self, term_status: TermStatus) {
-        *self.status.lock() = ProcessStatus::Zombie(term_status);
+        self.status.set_zombie(term_status);
     }
 
-    pub fn exit_code(&self) -> Option<ExitCode> {
-        match &*self.status.lock() {
-            ProcessStatus::Runnable | ProcessStatus::Uninit => None,
-            ProcessStatus::Zombie(term_status) => Some(term_status.as_u32()),
-        }
+    pub fn exit_code(&self) -> ExitCode {
+        self.status.exit_code()
     }
 }
 

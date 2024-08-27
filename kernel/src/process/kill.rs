@@ -3,7 +3,11 @@
 use super::{
     posix_thread::PosixThreadExt,
     process_table,
-    signal::signals::{user::UserSignal, Signal},
+    signal::{
+        constants::SIGCONT,
+        sig_num::SigNum,
+        signals::{user::UserSignal, Signal},
+    },
     Pgid, Pid, Process, Sid, Uid,
 };
 use crate::{
@@ -18,11 +22,27 @@ use crate::{
 ///
 /// If `signal` is `None`, this method will only check permission without sending
 /// any signal.
-pub fn kill(pid: Pid, signal: Option<UserSignal>) -> Result<()> {
+pub fn kill(pid: Pid, signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
+    // Fast path: If the signal is sent to self, we can skip most check.
+    if pid == ctx.process.pid() {
+        let Some(signal) = signal else {
+            return Ok(());
+        };
+
+        if !ctx.posix_thread.has_signal_blocked(signal.num()) {
+            ctx.posix_thread.enqueue_signal(Box::new(signal));
+            return Ok(());
+        }
+
+        return kill_process(ctx.process, Some(signal), ctx);
+    }
+
+    // Slow path
+
     let process = process_table::get_process(pid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target process does not exist"))?;
 
-    kill_process(&process, signal)
+    kill_process(&process, signal, ctx)
 }
 
 /// Sends a signal to all processes in a group, using the current process
@@ -33,13 +53,13 @@ pub fn kill(pid: Pid, signal: Option<UserSignal>) -> Result<()> {
 ///
 /// If `signal` is `None`, this method will only check permission without sending
 /// any signal.
-pub fn kill_group(pgid: Pgid, signal: Option<UserSignal>) -> Result<()> {
+pub fn kill_group(pgid: Pgid, signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
     let process_group = process_table::get_process_group(&pgid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "target group does not exist"))?;
 
     let inner = process_group.inner.lock();
     for process in inner.processes.values() {
-        kill_process(process, signal)?;
+        kill_process(process, signal, ctx)?;
     }
 
     Ok(())
@@ -50,7 +70,7 @@ pub fn kill_group(pgid: Pgid, signal: Option<UserSignal>) -> Result<()> {
 ///
 /// If `signal` is `None`, this method will only check permission without sending
 /// any signal.
-pub fn tgkill(tid: Tid, tgid: Pid, signal: Option<UserSignal>) -> Result<()> {
+pub fn tgkill(tid: Tid, tgid: Pid, signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
     let thread = thread_table::get_thread(tid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "target thread does not exist"))?;
 
@@ -71,7 +91,7 @@ pub fn tgkill(tid: Tid, tgid: Pid, signal: Option<UserSignal>) -> Result<()> {
 
     // Check permission
     let signum = signal.map(|signal| signal.num());
-    let sender = current_thread_sender_ids();
+    let sender = current_thread_sender_ids(signum.as_ref(), ctx);
     posix_thread.check_signal_perm(signum.as_ref(), &sender)?;
 
     if let Some(signal) = signal {
@@ -86,66 +106,74 @@ pub fn tgkill(tid: Tid, tgid: Pid, signal: Option<UserSignal>) -> Result<()> {
 ///
 /// The credentials of the current process will be checked to determine
 /// if it is authorized to send the signal to the target group.
-pub fn kill_all(signal: Option<UserSignal>) -> Result<()> {
+pub fn kill_all(signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
     let current = current!();
     for process in process_table::process_table().iter() {
         if Arc::ptr_eq(&current, process) || process.is_init_process() {
             continue;
         }
 
-        kill_process(process, signal)?;
+        kill_process(process, signal, ctx)?;
     }
 
     Ok(())
 }
 
-fn kill_process(process: &Process, signal: Option<UserSignal>) -> Result<()> {
+fn kill_process(process: &Process, signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
     let threads = process.threads().lock();
-    let posix_threads = threads
-        .iter()
-        .map(|thread| thread.as_posix_thread().unwrap());
 
-    // First check permission
     let signum = signal.map(|signal| signal.num());
-    let sender_ids = current_thread_sender_ids();
-    let mut permitted_threads = {
-        posix_threads.clone().filter(|posix_thread| {
-            posix_thread
-                .check_signal_perm(signum.as_ref(), &sender_ids)
-                .is_ok()
-        })
-    };
+    let sender_ids = current_thread_sender_ids(signum.as_ref(), ctx);
 
-    if permitted_threads.clone().count() == 0 {
-        return_errno_with_message!(Errno::EPERM, "cannot send signal to the target process");
-    }
+    let mut permitted_thread = None;
+    for thread in threads.iter() {
+        let posix_thread = thread.as_posix_thread().unwrap();
 
-    let Some(signal) = signal else { return Ok(()) };
+        // First check permission
+        if posix_thread
+            .check_signal_perm(signum.as_ref(), &sender_ids)
+            .is_ok()
+        {
+            let Some(ref signum) = signum else {
+                // If signal is None, only permission check is required
+                return Ok(());
+            };
 
-    // Send signal to any thread that does not blocks the signal.
-    for thread in permitted_threads.clone() {
-        if !thread.has_signal_blocked(&signal) {
-            thread.enqueue_signal(Box::new(signal));
-            return Ok(());
+            if !posix_thread.has_signal_blocked(*signum) {
+                // Send signal to any thread that does not blocks the signal.
+                let signal = signal.unwrap();
+                posix_thread.enqueue_signal(Box::new(signal));
+                return Ok(());
+            } else if permitted_thread.is_none() {
+                permitted_thread = Some(posix_thread);
+            }
         }
     }
 
+    let Some(permitted_thread) = permitted_thread else {
+        return_errno_with_message!(Errno::EPERM, "cannot send signal to the target process");
+    };
+
+    // If signal is None, only permission check is required
+    let Some(signal) = signal else { return Ok(()) };
+
     // If all threads block the signal, send signal to the first thread.
-    let first_thread = permitted_threads.next().unwrap();
-    first_thread.enqueue_signal(Box::new(signal));
+    permitted_thread.enqueue_signal(Box::new(signal));
 
     Ok(())
 }
 
-fn current_thread_sender_ids() -> SignalSenderIds {
-    let current_thread = current_thread!();
-    let current_posix_thread = current_thread.as_posix_thread().unwrap();
-    let current_process = current_posix_thread.process();
-
-    let credentials = current_posix_thread.credentials();
+fn current_thread_sender_ids(signum: Option<&SigNum>, ctx: &Context) -> SignalSenderIds {
+    let credentials = ctx.posix_thread.credentials();
     let ruid = credentials.ruid();
     let euid = credentials.euid();
-    let sid = current_process.session().unwrap().sid();
+    let sid = signum.and_then(|signum| {
+        if *signum == SIGCONT {
+            Some(ctx.process.session().unwrap().sid())
+        } else {
+            None
+        }
+    });
 
     SignalSenderIds::new(ruid, euid, sid)
 }
@@ -156,11 +184,11 @@ fn current_thread_sender_ids() -> SignalSenderIds {
 pub(super) struct SignalSenderIds {
     ruid: Uid,
     euid: Uid,
-    sid: Sid,
+    sid: Option<Sid>,
 }
 
 impl SignalSenderIds {
-    fn new(ruid: Uid, euid: Uid, sid: Sid) -> Self {
+    fn new(ruid: Uid, euid: Uid, sid: Option<Sid>) -> Self {
         Self { ruid, euid, sid }
     }
 
@@ -172,7 +200,7 @@ impl SignalSenderIds {
         self.euid
     }
 
-    pub(super) fn sid(&self) -> Sid {
+    pub(super) fn sid(&self) -> Option<Sid> {
         self.sid
     }
 }

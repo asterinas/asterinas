@@ -19,12 +19,12 @@ pub fn handle_exception(ctx: &Context, context: &UserContext) {
     match *exception {
         PAGE_FAULT => {
             if handle_page_fault(root_vmar.vm_space(), trap_info).is_err() {
-                generate_fault_signal(trap_info);
+                generate_fault_signal(trap_info, ctx);
             }
         }
         _ => {
             // We current do nothing about other exceptions
-            generate_fault_signal(trap_info);
+            generate_fault_signal(trap_info, ctx);
         }
     }
 }
@@ -42,13 +42,14 @@ pub(crate) fn handle_page_fault(
         trap_info.error_code,
         page_fault_addr
     );
+
     let not_present = trap_info.error_code & PAGE_NOT_PRESENT_ERROR_MASK == 0;
     let write = trap_info.error_code & WRITE_ACCESS_MASK != 0;
     if not_present || write {
-        // If page is not present or due to write access, we should ask the vmar try to commit this page
         let current = current!();
         let root_vmar = current.root_vmar();
 
+        // If page is not present or due to write access, we should ask the vmar try to commit this page
         debug_assert_eq!(
             Arc::as_ptr(root_vmar.vm_space()),
             vm_space as *const VmSpace
@@ -69,10 +70,9 @@ pub(crate) fn handle_page_fault(
 }
 
 /// generate a fault signal for current process.
-fn generate_fault_signal(trap_info: &CpuExceptionInfo) {
-    let current = current!();
+fn generate_fault_signal(trap_info: &CpuExceptionInfo, ctx: &Context) {
     let signal = FaultSignal::new(trap_info);
-    current.enqueue_signal(signal);
+    ctx.posix_thread.enqueue_signal(Box::new(signal));
 }
 
 macro_rules! log_trap_common {
