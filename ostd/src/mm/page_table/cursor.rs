@@ -253,14 +253,16 @@ where
     }
 
     /// Jumps to the given virtual address.
+    /// If the target address is out of the range, this method will return `Err`.
     ///
     /// # Panics
     ///
-    /// This method panics if the address is out of the range where the cursor is required to operate,
-    /// or has bad alignment.
-    pub fn jump(&mut self, va: Vaddr) {
-        assert!(self.barrier_va.contains(&va));
+    /// This method panics if the address has bad alignment.
+    pub fn jump(&mut self, va: Vaddr) -> Result<(), PageTableError> {
         assert!(va % C::BASE_PAGE_SIZE == 0);
+        if !self.barrier_va.contains(&va) {
+            return Err(PageTableError::InvalidVaddr(va));
+        }
 
         loop {
             let cur_node_start = self.va & !(page_size::<C>(self.level + 1) - 1);
@@ -268,14 +270,14 @@ where
             // If the address is within the current node, we can jump directly.
             if cur_node_start <= va && va < cur_node_end {
                 self.va = va;
-                return;
+                return Ok(());
             }
 
             // There is a corner case that the cursor is depleted, sitting at the start of the
             // next node but the next node is not locked because the parent is not locked.
             if self.va >= self.barrier_va.end && self.level == self.guard_level {
                 self.va = va;
-                return;
+                return Ok(());
             }
 
             debug_assert!(self.level < self.guard_level);
@@ -405,7 +407,7 @@ where
     ///
     /// This method panics if the address is out of the range where the cursor is required to operate,
     /// or has bad alignment.
-    pub fn jump(&mut self, va: Vaddr) {
+    pub fn jump(&mut self, va: Vaddr) -> Result<(), PageTableError> {
         self.0.jump(va)
     }
 
