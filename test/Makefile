@@ -13,7 +13,6 @@ INITRAMFS_IMAGE := $(BUILD_DIR)/initramfs.cpio.gz
 EXT2_IMAGE := $(BUILD_DIR)/ext2.img
 EXFAT_IMAGE := $(BUILD_DIR)/exfat.img
 INITRAMFS_EMPTY_DIRS := \
-	$(INITRAMFS)/sbin \
 	$(INITRAMFS)/root \
 	$(INITRAMFS)/tmp \
 	$(INITRAMFS)/opt \
@@ -26,6 +25,7 @@ INITRAMFS_ALL_DIRS := \
 	$(INITRAMFS)/lib/x86_64-linux-gnu \
 	$(INITRAMFS)/lib64 \
 	$(INITRAMFS)/bin \
+	$(INITRAMFS)/sbin \
 	$(INITRAMFS)/usr/bin \
 	$(INITRAMFS)/test \
 	$(INITRAMFS)/benchmark \
@@ -81,6 +81,11 @@ $(INITRAMFS)/etc:
 $(INITRAMFS)/bin:
 	@mkdir -p $@
 	@/bin/busybox --install -s $@
+
+$(INITRAMFS)/sbin:
+	@mkdir -p $@
+	@cp /sbin/ldconfig $@
+	@cp /sbin/ldconfig.real $@
 
 $(INITRAMFS)/usr/bin: | $(INITRAMFS)/bin
 	@mkdir -p $@
