@@ -46,7 +46,7 @@ endif
 
 # If the BENCHMARK is set, we will run the benchmark in the kernel mode.
 ifneq ($(BENCHMARK), none)
-CARGO_OSDK_ARGS += --init-args="/benchmark/$(BENCHMARK)/run.sh"
+CARGO_OSDK_ARGS += --init-args="/benchmark/common/runner.sh $(BENCHMARK)"
 endif
 
 ifeq ($(RELEASE_LTO), 1)
