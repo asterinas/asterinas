@@ -169,7 +169,7 @@ impl VmarInner {
                         .checked_add(child_size)
                         .ok_or(Error::with_message(
                             Errno::ENOMEM,
-                            "integer overflow whem (child_vmar_real_start + child_size)",
+                            "integer overflow when (child_vmar_real_start + child_size)",
                         ))?;
                 if region_start <= child_vmar_real_start && child_vmar_real_end <= region_end {
                     return Ok((*region_base, child_vmar_real_start));
