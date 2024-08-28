@@ -80,13 +80,15 @@ fn print_stack_trace() {
         let data = unsafe { &mut *(arg as *mut CallbackData) };
         data.counter += 1;
         let pc = _Unwind_GetIP(unwind_ctx);
-        let fde_initial_address = _Unwind_FindEnclosingFunction(pc as *mut c_void) as usize;
-        early_println!(
-            "{:4}: fn {:#18x} - pc {:#18x} / registers:",
-            data.counter,
-            fde_initial_address,
-            pc,
-        );
+        if pc > 0 {
+            let fde_initial_address = _Unwind_FindEnclosingFunction(pc as *mut c_void) as usize;
+            early_println!(
+                "{:4}: fn {:#18x} - pc {:#18x} / registers:",
+                data.counter,
+                fde_initial_address,
+                pc,
+            );
+        }
         // Print the first 8 general registers for any architecture. The register number follows
         // the DWARF standard.
         for i in 0..8u16 {
