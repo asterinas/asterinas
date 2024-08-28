@@ -15,12 +15,12 @@ __memcpy_fallible: # (dst: *mut u8, src: *const u8, size: usize) -> usize
 .move:
     rep movsb
 
-.exit:
+.memcpy_exit:
     mov rax, rcx
     ret
 
 .pushsection .ex_table, "a"
     .align 8
     .quad [.move]
-    .quad [.exit]
+    .quad [.memcpy_exit]
 .popsection
