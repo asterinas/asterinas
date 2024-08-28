@@ -17,7 +17,7 @@ use super::{
     io::Fallible,
     kspace::KERNEL_PAGE_TABLE,
     page_table::{PageTable, UserMode},
-    PageFlags, PageProperty, VmReader, VmWriter,
+    PageFlags, PageProperty, VmReader, VmWriter, PAGE_SIZE,
 };
 use crate::{
     arch::mm::{
@@ -329,6 +329,12 @@ impl Cursor<'_> {
 pub struct CursorMut<'a>(page_table::CursorMut<'a, UserMode, PageTableEntry, PagingConsts>);
 
 impl CursorMut<'_> {
+    /// The threshold used to determine whether need to flush TLB all
+    /// when flushing a range of TLB addresses. If the range of TLB entries
+    /// to be flushed exceeds this threshold, the overhead incurred by
+    /// flushing pages individually would surpass the overhead of flushing all entries at once.
+    const TLB_FLUSH_THRESHOLD: usize = 32 * PAGE_SIZE;
+
     /// Query about the current slot.
     ///
     /// This is the same as [`Cursor::query`].
@@ -382,15 +388,17 @@ impl CursorMut<'_> {
     pub fn unmap(&mut self, len: usize) {
         assert!(len % super::PAGE_SIZE == 0);
         let end_va = self.virt_addr() + len;
-
+        let need_flush_all = len >= Self::TLB_FLUSH_THRESHOLD;
         loop {
             // SAFETY: It is safe to un-map memory in the userspace.
             let result = unsafe { self.0.take_next(end_va - self.virt_addr()) };
             match result {
                 PageTableItem::Mapped { va, page, .. } => {
-                    // TODO: Ask other processors to flush the TLB before we
-                    // release the page back to the allocator.
-                    tlb_flush_addr(va);
+                    if !need_flush_all {
+                        // TODO: Ask other processors to flush the TLB before we
+                        // release the page back to the allocator.
+                        tlb_flush_addr(va);
+                    }
                     drop(page);
                 }
                 PageTableItem::NotMapped { .. } => {
@@ -400,6 +408,9 @@ impl CursorMut<'_> {
                     panic!("found untracked memory mapped into `VmSpace`");
                 }
             }
+        }
+        if need_flush_all {
+            tlb_flush_all_excluding_global();
         }
     }
 
@@ -416,10 +427,16 @@ impl CursorMut<'_> {
     pub fn protect(&mut self, len: usize, mut op: impl FnMut(&mut PageProperty)) {
         assert!(len % super::PAGE_SIZE == 0);
         let end = self.0.virt_addr() + len;
-
+        let need_flush_all = len >= Self::TLB_FLUSH_THRESHOLD;
         // SAFETY: It is safe to protect memory in the userspace.
         while let Some(range) = unsafe { self.0.protect_next(end - self.0.virt_addr(), &mut op) } {
-            tlb_flush_addr(range.start);
+            if !need_flush_all {
+                tlb_flush_addr(range.start);
+            }
+        }
+
+        if need_flush_all {
+            tlb_flush_all_excluding_global();
         }
     }
 }
