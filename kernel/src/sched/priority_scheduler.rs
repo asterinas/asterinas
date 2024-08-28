@@ -3,7 +3,6 @@
 use ostd::{
     cpu::{num_cpus, CpuSet, PinCurrentCpu},
     task::{
-        disable_preempt,
         scheduler::{inject_scheduler, EnqueueFlags, LocalRunQueue, Scheduler, UpdateFlags},
         AtomicCpuId, Priority, Task,
     },
@@ -46,8 +45,8 @@ impl<T: PreemptSchedInfo> PreemptScheduler<T> {
             return cpu_id;
         }
 
-        let preempt_guard = disable_preempt();
-        let mut selected = preempt_guard.current_cpu();
+        let irq_guard = disable_local();
+        let mut selected = irq_guard.current_cpu();
         let mut minimum_load = usize::MAX;
 
         for candidate in runnable.cpu_affinity().iter() {
