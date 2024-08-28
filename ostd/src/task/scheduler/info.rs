@@ -4,8 +4,6 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use crate::cpu::CpuSet;
-
 /// Fields of a task that OSTD will never touch.
 ///
 /// The type ought to be defined by the OSTD user and injected into the task.
@@ -17,8 +15,6 @@ use crate::cpu::CpuSet;
 pub struct TaskScheduleInfo {
     /// The CPU that the task would like to be running on.
     pub cpu: AtomicCpuId,
-    /// The CPUs that this task can run on.
-    pub cpu_affinity: CpuSet,
 }
 
 /// An atomic CPUID container.

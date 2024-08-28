@@ -19,7 +19,7 @@ pub use self::{
     scheduler::info::{AtomicCpuId, TaskScheduleInfo},
 };
 pub(crate) use crate::arch::task::{context_switch, TaskContext};
-use crate::{cpu::CpuSet, prelude::*, user::UserSpace};
+use crate::{prelude::*, user::UserSpace};
 
 /// A task that executes a function to the end.
 ///
@@ -124,7 +124,6 @@ pub struct TaskOptions {
     func: Option<Box<dyn Fn() + Send + Sync>>,
     data: Option<Box<dyn Any + Send + Sync>>,
     user_space: Option<Arc<UserSpace>>,
-    cpu_affinity: CpuSet,
 }
 
 impl TaskOptions {
@@ -137,7 +136,6 @@ impl TaskOptions {
             func: Some(Box::new(func)),
             data: None,
             user_space: None,
-            cpu_affinity: CpuSet::new_full(),
         }
     }
 
@@ -162,15 +160,6 @@ impl TaskOptions {
     /// Sets the user space associated with the task.
     pub fn user_space(mut self, user_space: Option<Arc<UserSpace>>) -> Self {
         self.user_space = user_space;
-        self
-    }
-
-    /// Sets the CPU affinity mask for the task.
-    ///
-    /// The `cpu_affinity` parameter represents
-    /// the desired set of CPUs to run the task on.
-    pub fn cpu_affinity(mut self, cpu_affinity: CpuSet) -> Self {
-        self.cpu_affinity = cpu_affinity;
         self
     }
 
@@ -212,7 +201,6 @@ impl TaskOptions {
             kstack,
             schedule_info: TaskScheduleInfo {
                 cpu: AtomicCpuId::default(),
-                cpu_affinity: self.cpu_affinity,
             },
         };
 
