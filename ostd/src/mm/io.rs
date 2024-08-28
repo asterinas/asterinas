@@ -48,7 +48,7 @@ use const_assert::{Assert, IsTrue};
 use inherit_methods_macro::inherit_methods;
 
 use crate::{
-    arch::mm::__memcpy_fallible,
+    arch::mm::{__memcpy_fallible, __memset_fallible},
     mm::{
         kspace::{KERNEL_BASE_VADDR, KERNEL_END_VADDR},
         MAX_USERSPACE_VADDR,
@@ -323,6 +323,21 @@ unsafe fn memcpy(dst: *mut u8, src: *const u8, len: usize) {
 /// [valid]: crate::mm::io#safety
 unsafe fn memcpy_fallible(dst: *mut u8, src: *const u8, len: usize) -> usize {
     let failed_bytes = __memcpy_fallible(dst, src, len);
+    len - failed_bytes
+}
+
+/// Fills `len` bytes of memory at `dst` with the specified `value`.
+/// This function will early stop filling if encountering an unresolvable page fault.
+///
+/// Returns the number of successfully set bytes.
+///
+/// # Safety
+///
+/// - `dst` must either be [valid] for writes of `len` bytes or be in user space for `len` bytes.
+///
+/// [valid]: crate::mm::io#safety
+unsafe fn memset_fallible(dst: *mut u8, value: u8, len: usize) -> usize {
+    let failed_bytes = __memset_fallible(dst, value, len);
     len - failed_bytes
 }
 
@@ -824,6 +839,34 @@ impl<'a> VmWriter<'a, Fallible> {
                 err
             })?;
         Ok(())
+    }
+
+    /// Writes `len` zeros to the target memory.
+    ///
+    /// This method attempts to fill up to `len` bytes with zeros. If the available
+    /// memory from the current cursor position is less than `len`, it will only fill
+    /// the available space.
+    ///
+    /// If the memory write failed due to an unresolvable page fault, this method
+    /// will return `Err` with the length set so far.
+    pub fn fill_zeros(&mut self, len: usize) -> core::result::Result<usize, (Error, usize)> {
+        let len_to_set = self.avail().min(len);
+        if len_to_set == 0 {
+            return Ok(0);
+        }
+
+        // SAFETY: The destination is a subset of the memory range specified by
+        // the current writer, so it is either valid for writing or in user space.
+        let set_len = unsafe {
+            let set_len = memset_fallible(self.cursor, 0u8, len_to_set);
+            self.cursor = self.cursor.add(set_len);
+            set_len
+        };
+        if set_len < len_to_set {
+            Err((Error::PageFault, set_len))
+        } else {
+            Ok(len_to_set)
+        }
     }
 }
 

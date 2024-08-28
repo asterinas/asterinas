@@ -20,11 +20,7 @@ impl Device for Zero {
 
 impl FileIo for Zero {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        // TODO: Use more efficient way when need to read a bunch of zeros once.
-        let read_len = writer.avail();
-        for _ in 0..read_len {
-            writer.write_val(&0u8)?;
-        }
+        let read_len = writer.fill_zeros(writer.avail())?;
         Ok(read_len)
     }
 
