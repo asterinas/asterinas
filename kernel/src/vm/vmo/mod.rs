@@ -260,16 +260,17 @@ impl Vmo_ {
         })
     }
 
-    /// Commits a range of pages in the VMO, and perform the operation
-    /// on each page in the range in turn.
-    pub fn commit_and_operate<F>(
+    /// Traverses the indices within a specified range of a VMO sequentially.
+    /// For each index position, you have the option to commit the page as well as
+    /// perform other operations.
+    pub fn operate_on_range<F>(
         &self,
         range: &Range<usize>,
         mut operate: F,
         commit_flags: CommitFlags,
     ) -> Result<()>
     where
-        F: FnMut(Frame) -> Result<()>,
+        F: FnMut(&mut dyn FnMut() -> Result<Frame>) -> Result<()>,
     {
         self.pages.with(|pages, size| {
             if range.end > size {
@@ -279,8 +280,8 @@ impl Vmo_ {
             let page_idx_range = get_page_idx_range(range);
             let mut cursor = pages.cursor_mut(page_idx_range.start as u64);
             for page_idx in page_idx_range {
-                let committed_page = self.commit_with_cursor(&mut cursor, commit_flags)?;
-                operate(committed_page)?;
+                let mut commit_fn = || self.commit_with_cursor(&mut cursor, commit_flags);
+                operate(&mut commit_fn)?;
                 cursor.next();
             }
             Ok(())
@@ -305,13 +306,14 @@ impl Vmo_ {
         let read_range = offset..(offset + read_len);
         let mut read_offset = offset % PAGE_SIZE;
 
-        let read = move |page: Frame| -> Result<()> {
-            page.reader().skip(read_offset).read_fallible(writer)?;
+        let read = move |commit_fn: &mut dyn FnMut() -> Result<Frame>| {
+            let frame = commit_fn()?;
+            frame.reader().skip(read_offset).read_fallible(writer)?;
             read_offset = 0;
             Ok(())
         };
 
-        self.commit_and_operate(&read_range, read, CommitFlags::empty())
+        self.operate_on_range(&read_range, read, CommitFlags::empty())
     }
 
     /// Writes the specified amount of buffer content starting from the target offset in the VMO.
@@ -320,29 +322,30 @@ impl Vmo_ {
         let write_range = offset..(offset + write_len);
         let mut write_offset = offset % PAGE_SIZE;
 
-        let mut write = move |page: Frame| -> Result<()> {
-            page.writer().skip(write_offset).write_fallible(reader)?;
+        let mut write = move |commit_fn: &mut dyn FnMut() -> Result<Frame>| {
+            let frame = commit_fn()?;
+            frame.writer().skip(write_offset).write_fallible(reader)?;
             write_offset = 0;
             Ok(())
         };
 
         if write_range.len() < PAGE_SIZE {
-            self.commit_and_operate(&write_range, write, CommitFlags::empty())?;
+            self.operate_on_range(&write_range, write, CommitFlags::empty())?;
         } else {
             let temp = write_range.start + PAGE_SIZE - 1;
             let up_align_start = temp - temp % PAGE_SIZE;
             let down_align_end = write_range.end - write_range.end % PAGE_SIZE;
             if write_range.start != up_align_start {
                 let head_range = write_range.start..up_align_start;
-                self.commit_and_operate(&head_range, &mut write, CommitFlags::empty())?;
+                self.operate_on_range(&head_range, &mut write, CommitFlags::empty())?;
             }
             if up_align_start != down_align_end {
                 let mid_range = up_align_start..down_align_end;
-                self.commit_and_operate(&mid_range, &mut write, CommitFlags::WILL_OVERWRITE)?;
+                self.operate_on_range(&mid_range, &mut write, CommitFlags::WILL_OVERWRITE)?;
             }
             if down_align_end != write_range.end {
                 let tail_range = down_align_end..write_range.end;
-                self.commit_and_operate(&tail_range, &mut write, CommitFlags::empty())?;
+                self.operate_on_range(&tail_range, &mut write, CommitFlags::empty())?;
             }
         }
 

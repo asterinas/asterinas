@@ -124,7 +124,10 @@ fn do_sys_mmap(
                     .to_dyn()
             };
 
-            options = options.vmo(vmo).vmo_offset(offset);
+            options = options
+                .vmo(vmo)
+                .vmo_offset(offset)
+                .handle_page_faults_around();
         }
 
         options
