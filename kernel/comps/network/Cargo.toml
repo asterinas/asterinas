@@ -15,7 +15,6 @@ component = { path = "../../libs/comp-sys/component" }
 int-to-c-enum = { path = "../../libs/int-to-c-enum" }
 log = "0.4"
 ostd = { path = "../../../ostd" }
-ringbuf = { version = "0.3.2", default-features = false, features = ["alloc"] }
 smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "dc08e0b", default-features = false, features = [
     "alloc",
     "log",

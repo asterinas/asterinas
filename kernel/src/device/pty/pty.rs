@@ -2,8 +2,6 @@
 
 use alloc::format;
 
-use ringbuf::{ring_buffer::RbBase, HeapRb, Rb};
-
 use crate::{
     device::tty::{line_discipline::LineDiscipline, new_job_control_and_ldisc},
     events::IoEvents,
@@ -20,6 +18,7 @@ use crate::{
         signal::{Pollee, Poller},
         JobControl, Terminal,
     },
+    util::ring_buffer::RingBuffer,
 };
 
 const BUFFER_CAPACITY: usize = 4096;
@@ -32,7 +31,7 @@ pub struct PtyMaster {
     ptmx: Arc<dyn Inode>,
     index: u32,
     output: Arc<LineDiscipline>,
-    input: SpinLock<HeapRb<u8>>,
+    input: SpinLock<RingBuffer<u8>>,
     job_control: Arc<JobControl>,
     /// The state of input buffer
     pollee: Pollee,
@@ -46,7 +45,7 @@ impl PtyMaster {
             ptmx,
             index,
             output: ldisc,
-            input: SpinLock::new(HeapRb::new(BUFFER_CAPACITY)),
+            input: SpinLock::new(RingBuffer::new(BUFFER_CAPACITY)),
             job_control,
             pollee: Pollee::new(IoEvents::OUT),
             weak_self: weak_ref.clone(),
@@ -89,7 +88,7 @@ impl PtyMaster {
         self.output.buffer_len()
     }
 
-    fn update_state(&self, buf: &HeapRb<u8>) {
+    fn update_state(&self, buf: &RingBuffer<u8>) {
         if buf.is_empty() {
             self.pollee.del_events(IoEvents::IN)
         } else {
@@ -125,10 +124,10 @@ impl FileIo for PtyMaster {
                 continue;
             }
 
-            let read_len = input.len().min(read_len);
-            let mut buf = vec![0u8; read_len];
-            input.pop_slice(&mut buf);
-            writer.write_fallible(&mut buf.as_slice().into())?;
+            let read_len = match input.read_fallible(writer) {
+                Ok(len) => len,
+                Err((_, len)) => len,
+            };
             self.update_state(&input);
             return Ok(read_len);
         }
