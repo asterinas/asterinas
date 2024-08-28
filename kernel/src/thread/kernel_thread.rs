@@ -55,19 +55,17 @@ pub fn create_new_kernel_task(mut thread_options: ThreadOptions) -> Arc<Task> {
             let kernel_thread = KernelThread;
             let status = ThreadStatus::Init;
             let priority = thread_options.priority;
+            let cpu_affinity = thread_options.cpu_affinity;
             Arc::new(Thread::new(
                 weak_task.clone(),
                 kernel_thread,
                 status,
                 priority,
+                cpu_affinity,
             ))
         };
 
-        TaskOptions::new(thread_fn)
-            .data(thread)
-            .cpu_affinity(thread_options.cpu_affinity)
-            .build()
-            .unwrap()
+        TaskOptions::new(thread_fn).data(thread).build().unwrap()
     })
 }
 

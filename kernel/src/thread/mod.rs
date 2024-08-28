@@ -4,7 +4,7 @@
 
 use core::sync::atomic::Ordering;
 
-use ostd::task::Task;
+use ostd::{cpu::CpuSet, sync::PreemptDisabled, task::Task};
 
 use self::status::{AtomicThreadStatus, ThreadStatus};
 use crate::{
@@ -33,6 +33,8 @@ pub struct Thread {
     status: AtomicThreadStatus,
     /// Thread priority
     priority: AtomicPriority,
+    /// Thread cpu affinity
+    cpu_affinity: SpinLock<CpuSet>,
 }
 
 impl Thread {
@@ -42,12 +44,14 @@ impl Thread {
         data: impl Send + Sync + Any,
         status: ThreadStatus,
         priority: Priority,
+        cpu_affinity: CpuSet,
     ) -> Self {
         Thread {
             task,
             data: Box::new(data),
             status: AtomicThreadStatus::new(status),
             priority: AtomicPriority::new(priority),
+            cpu_affinity: SpinLock::new(cpu_affinity),
         }
     }
 
@@ -109,6 +113,16 @@ impl Thread {
     /// Updates the priority with the new value.
     pub fn set_priority(&self, new_priority: Priority) {
         self.priority.store(new_priority, Ordering::Relaxed)
+    }
+
+    /// Acquires the lock of cpu affinity.
+    pub fn lock_cpu_affinity(&self) -> SpinLockGuard<CpuSet, PreemptDisabled> {
+        self.cpu_affinity.lock()
+    }
+
+    /// Updates the cpu affinity with the new value.
+    pub fn set_cpu_affinity(&self, new_cpu_affinity: CpuSet) {
+        *self.cpu_affinity.lock() = new_cpu_affinity;
     }
 
     pub fn yield_now() {

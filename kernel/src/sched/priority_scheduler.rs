@@ -2,6 +2,7 @@
 
 use ostd::{
     cpu::{num_cpus, CpuSet, PinCurrentCpu},
+    sync::PreemptDisabled,
     task::{
         scheduler::{inject_scheduler, EnqueueFlags, LocalRunQueue, Scheduler, UpdateFlags},
         AtomicCpuId, Task,
@@ -259,8 +260,11 @@ impl PreemptSchedInfo for Task {
         &self.schedule_info().cpu
     }
 
-    fn cpu_affinity(&self) -> &CpuSet {
-        &self.schedule_info().cpu_affinity
+    fn cpu_affinity(&self) -> SpinLockGuard<CpuSet, PreemptDisabled> {
+        self.data()
+            .downcast_ref::<Arc<Thread>>()
+            .unwrap()
+            .lock_cpu_affinity()
     }
 }
 
@@ -272,7 +276,7 @@ trait PreemptSchedInfo {
 
     fn cpu(&self) -> &AtomicCpuId;
 
-    fn cpu_affinity(&self) -> &CpuSet;
+    fn cpu_affinity(&self) -> SpinLockGuard<CpuSet, PreemptDisabled>;
 
     fn is_real_time(&self) -> bool {
         self.priority() < Self::REAL_TIME_TASK_PRIORITY
