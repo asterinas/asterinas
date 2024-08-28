@@ -62,13 +62,11 @@ impl Pollable for PipeReader {
 
 impl FileLike for PipeReader {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        let mut buf = vec![0u8; writer.avail()];
         let read_len = if self.status_flags().contains(StatusFlags::O_NONBLOCK) {
-            self.consumer.try_read(&mut buf)?
+            self.consumer.try_read(writer)?
         } else {
-            self.wait_events(IoEvents::IN, || self.consumer.try_read(&mut buf))?
+            self.wait_events(IoEvents::IN, || self.consumer.try_read(writer))?
         };
-        writer.write_fallible(&mut buf.as_slice().into())?;
         Ok(read_len)
     }
 
@@ -147,11 +145,10 @@ impl Pollable for PipeWriter {
 
 impl FileLike for PipeWriter {
     fn write(&self, reader: &mut VmReader) -> Result<usize> {
-        let buf = reader.collect()?;
         if self.status_flags().contains(StatusFlags::O_NONBLOCK) {
-            self.producer.try_write(&buf)
+            self.producer.try_write(reader)
         } else {
-            self.wait_events(IoEvents::OUT, || self.producer.try_write(&buf))
+            self.wait_events(IoEvents::OUT, || self.producer.try_write(reader))
         }
     }
 

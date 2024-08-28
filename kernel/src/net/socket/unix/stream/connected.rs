@@ -48,11 +48,13 @@ impl Connected {
     }
 
     pub(super) fn try_read(&self, buf: &mut [u8]) -> Result<usize> {
-        self.reader.try_read(buf)
+        let mut writer = VmWriter::from(buf).to_fallible();
+        self.reader.try_read(&mut writer)
     }
 
     pub(super) fn try_write(&self, buf: &[u8]) -> Result<usize> {
-        self.writer.try_write(buf)
+        let mut reader = VmReader::from(buf).to_fallible();
+        self.writer.try_write(&mut reader)
     }
 
     pub(super) fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {

@@ -5,7 +5,6 @@
 use alloc::format;
 
 use ostd::trap::{disable_local, in_interrupt_context};
-use ringbuf::{ring_buffer::RbBase, Rb, StaticRb};
 
 use super::termio::{KernelTermios, WinSize, CC_C_CHAR};
 use crate::{
@@ -17,6 +16,7 @@ use crate::{
         Pollee, Poller,
     },
     thread::work_queue::{submit_work_item, work_item::WorkItem, WorkPriority},
+    util::ring_buffer::RingBuffer,
 };
 
 // This implementation refers the implementation of linux
@@ -30,7 +30,7 @@ pub struct LineDiscipline {
     /// current line
     current_line: SpinLock<CurrentLine>,
     /// The read buffer
-    read_buffer: SpinLock<StaticRb<u8, BUFFER_CAPACITY>>,
+    read_buffer: SpinLock<RingBuffer<u8>>,
     /// termios
     termios: SpinLock<KernelTermios>,
     /// Windows size,
@@ -45,21 +45,24 @@ pub struct LineDiscipline {
     work_item_para: Arc<SpinLock<LineDisciplineWorkPara>>,
 }
 
-#[derive(Default)]
 pub struct CurrentLine {
-    buffer: StaticRb<u8, BUFFER_CAPACITY>,
+    buffer: RingBuffer<u8>,
+}
+
+impl Default for CurrentLine {
+    fn default() -> Self {
+        Self {
+            buffer: RingBuffer::new(BUFFER_CAPACITY),
+        }
+    }
 }
 
 impl CurrentLine {
-    pub fn new() -> Self {
-        Self {
-            buffer: StaticRb::default(),
-        }
-    }
-
     /// read all bytes inside current line and clear current line
     pub fn drain(&mut self) -> Vec<u8> {
-        self.buffer.pop_iter().collect()
+        let mut ret = vec![0u8; self.buffer.len()];
+        self.buffer.pop_slice(ret.as_mut_slice()).unwrap();
+        ret
     }
 
     pub fn push_char(&mut self, char: u8) {
@@ -69,7 +72,7 @@ impl CurrentLine {
     }
 
     pub fn backspace(&mut self) {
-        self.buffer.pop();
+        let _ = self.buffer.pop();
     }
 
     pub fn is_full(&self) -> bool {
@@ -92,8 +95,8 @@ impl LineDiscipline {
                 }
             })));
             Self {
-                current_line: SpinLock::new(CurrentLine::new()),
-                read_buffer: SpinLock::new(StaticRb::default()),
+                current_line: SpinLock::new(CurrentLine::default()),
+                read_buffer: SpinLock::new(RingBuffer::new(BUFFER_CAPACITY)),
                 termios: SpinLock::new(KernelTermios::default()),
                 winsize: SpinLock::new(WinSize::default()),
                 pollee: Pollee::new(IoEvents::empty()),
@@ -372,7 +375,7 @@ impl LineDiscipline {
 
     pub fn drain_input(&self) {
         self.current_line.lock().drain();
-        let _: Vec<_> = self.read_buffer.lock().pop_iter().collect();
+        self.read_buffer.lock().clear();
     }
 
     pub fn buffer_len(&self) -> usize {

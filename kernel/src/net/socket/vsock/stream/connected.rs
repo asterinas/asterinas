@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_virtio::device::socket::connect::{ConnectionInfo, VsockEvent};
-use ringbuf::{ring_buffer::RbBase, HeapRb, Rb};
 
 use super::connecting::Connecting;
 use crate::{
@@ -12,6 +11,7 @@ use crate::{
     },
     prelude::*,
     process::signal::{Pollee, Poller},
+    util::ring_buffer::RingBuffer,
 };
 
 const PER_CONNECTION_BUFFER_CAPACITY: usize = 4096;
@@ -53,7 +53,7 @@ impl Connected {
     pub fn try_recv(&self, buf: &mut [u8]) -> Result<usize> {
         let mut connection = self.connection.disable_irq().lock();
         let bytes_read = connection.buffer.len().min(buf.len());
-        connection.buffer.pop_slice(&mut buf[..bytes_read]);
+        connection.buffer.pop_slice(&mut buf[..bytes_read]).unwrap();
         connection.info.done_forwarding(bytes_read);
 
         match bytes_read {
@@ -144,7 +144,7 @@ impl Connected {
 
 struct Connection {
     info: ConnectionInfo,
-    buffer: HeapRb<u8>,
+    buffer: RingBuffer<u8>,
     /// The peer sent a SHUTDOWN request, but we haven't yet responded with a RST because there is
     /// still data in the buffer.
     peer_requested_shutdown: bool,
@@ -157,7 +157,7 @@ impl Connection {
         info.buf_alloc = PER_CONNECTION_BUFFER_CAPACITY.try_into().unwrap();
         Self {
             info,
-            buffer: HeapRb::new(PER_CONNECTION_BUFFER_CAPACITY),
+            buffer: RingBuffer::new(PER_CONNECTION_BUFFER_CAPACITY),
             peer_requested_shutdown: false,
             local_shutdown: false,
         }
@@ -183,7 +183,7 @@ impl Connection {
         info.buf_alloc = PER_CONNECTION_BUFFER_CAPACITY.try_into().unwrap();
         Self {
             info,
-            buffer: HeapRb::new(PER_CONNECTION_BUFFER_CAPACITY),
+            buffer: RingBuffer::new(PER_CONNECTION_BUFFER_CAPACITY),
             peer_requested_shutdown: false,
             local_shutdown: false,
         }
@@ -194,10 +194,10 @@ impl Connection {
     }
 
     fn add(&mut self, bytes: &[u8]) -> bool {
-        if bytes.len() > self.buffer.free_len() {
+        if bytes.len() > self.buffer.capacity() - self.buffer.len() {
             return false;
         }
-        self.buffer.push_slice(bytes);
+        self.buffer.push_slice(bytes).unwrap();
         true
     }
 }

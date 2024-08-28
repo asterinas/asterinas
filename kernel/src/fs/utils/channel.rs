@@ -4,12 +4,12 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use aster_rights::{Read, ReadOp, TRights, Write, WriteOp};
 use aster_rights_proc::require;
-use ringbuf::{HeapConsumer as HeapRbConsumer, HeapProducer as HeapRbProducer, HeapRb};
 
 use crate::{
     events::{IoEvents, Observer},
     prelude::*,
     process::signal::{Pollee, Poller},
+    util::ring_buffer::{RbConsumer, RbProducer, RingBuffer},
 };
 
 /// A unidirectional communication channel, intended to implement IPC, e.g., pipe,
@@ -93,11 +93,11 @@ macro_rules! impl_common_methods_for_channel {
 }
 
 impl<T> Producer<T> {
-    fn this_end(&self) -> &FifoInner<HeapRbProducer<T>> {
+    fn this_end(&self) -> &FifoInner<RbProducer<T>> {
         &self.0.common.producer
     }
 
-    fn peer_end(&self) -> &FifoInner<HeapRbConsumer<T>> {
+    fn peer_end(&self) -> &FifoInner<RbConsumer<T>> {
         &self.0.common.consumer
     }
 
@@ -127,14 +127,14 @@ impl<T> Producer<T> {
     impl_common_methods_for_channel!();
 }
 
-impl<T: Copy> Producer<T> {
+impl Producer<u8> {
     /// Tries to write `buf` to the channel.
     ///
     /// - Returns `Ok(_)` with the number of bytes written if successful.
     /// - Returns `Err(EPIPE)` if the channel is shut down.
     /// - Returns `Err(EAGAIN)` if the channel is full.
-    pub fn try_write(&self, buf: &[T]) -> Result<usize> {
-        if buf.is_empty() {
+    pub fn try_write(&self, reader: &mut VmReader) -> Result<usize> {
+        if reader.remain() == 0 {
             // Even after shutdown, writing an empty buffer is still fine.
             return Ok(0);
         }
@@ -143,7 +143,7 @@ impl<T: Copy> Producer<T> {
             return_errno_with_message!(Errno::EPIPE, "the channel is shut down");
         }
 
-        let written_len = self.0.write(buf);
+        let written_len = self.0.write(reader);
         self.update_pollee();
 
         if written_len > 0 {
@@ -154,7 +154,7 @@ impl<T: Copy> Producer<T> {
     }
 }
 
-impl<T> Producer<T> {
+impl<T: Pod> Producer<T> {
     /// Tries to push `item` to the channel.
     ///
     /// - Returns `Ok(())` if successful.
@@ -188,11 +188,11 @@ impl<T> Drop for Producer<T> {
 }
 
 impl<T> Consumer<T> {
-    fn this_end(&self) -> &FifoInner<HeapRbConsumer<T>> {
+    fn this_end(&self) -> &FifoInner<RbConsumer<T>> {
         &self.0.common.consumer
     }
 
-    fn peer_end(&self) -> &FifoInner<HeapRbProducer<T>> {
+    fn peer_end(&self) -> &FifoInner<RbProducer<T>> {
         &self.0.common.producer
     }
 
@@ -220,21 +220,21 @@ impl<T> Consumer<T> {
     impl_common_methods_for_channel!();
 }
 
-impl<T: Copy> Consumer<T> {
+impl Consumer<u8> {
     /// Tries to read `buf` from the channel.
     ///
     /// - Returns `Ok(_)` with the number of bytes read if successful.
     /// - Returns `Ok(0)` if the channel is shut down and there is no data left.
     /// - Returns `Err(EAGAIN)` if the channel is empty.
-    pub fn try_read(&self, buf: &mut [T]) -> Result<usize> {
-        if buf.is_empty() {
+    pub fn try_read(&self, writer: &mut VmWriter) -> Result<usize> {
+        if writer.avail() == 0 {
             return Ok(0);
         }
 
         // This must be recorded before the actual operation to avoid race conditions.
         let is_shutdown = self.is_shutdown() || self.is_peer_shutdown();
 
-        let read_len = self.0.read(buf);
+        let read_len = self.0.read(writer);
         self.update_pollee();
 
         if read_len > 0 {
@@ -247,7 +247,7 @@ impl<T: Copy> Consumer<T> {
     }
 }
 
-impl<T> Consumer<T> {
+impl<T: Pod> Consumer<T> {
     /// Tries to read an item from the channel.
     ///
     /// - Returns `Ok(Some(_))` with the popped item if successful.
@@ -299,28 +299,40 @@ impl<T, R: TRights> Fifo<T, R> {
     }
 }
 
-impl<T: Copy, R: TRights> Fifo<T, R> {
+impl<R: TRights> Fifo<u8, R> {
     #[require(R > Read)]
-    pub fn read(&self, buf: &mut [T]) -> usize {
+    pub fn read(&self, writer: &mut VmWriter) -> usize {
         let mut rb = self.common.consumer.rb();
-        rb.pop_slice(buf)
+        match rb.read_fallible(writer) {
+            Ok(len) => len,
+            Err((e, len)) => {
+                error!("memory read failed on the ring buffer, error: {e:?}");
+                len
+            }
+        }
     }
 
     #[require(R > Write)]
-    pub fn write(&self, buf: &[T]) -> usize {
+    pub fn write(&self, reader: &mut VmReader) -> usize {
         let mut rb = self.common.producer.rb();
-        rb.push_slice(buf)
+        match rb.write_fallible(reader) {
+            Ok(len) => len,
+            Err((e, len)) => {
+                error!("memory write failed on the ring buffer, error: {e:?}");
+                len
+            }
+        }
     }
 }
 
-impl<T, R: TRights> Fifo<T, R> {
+impl<T: Pod, R: TRights> Fifo<T, R> {
     /// Pushes an item into the endpoint.
     /// If the `push` method fails, this method will return
     /// `Err` containing the item that hasn't been pushed
     #[require(R > Write)]
     pub fn push(&self, item: T) -> core::result::Result<(), T> {
         let mut rb = self.common.producer.rb();
-        rb.push(item)
+        rb.push(item).ok_or(item)
     }
 
     /// Pops an item from the endpoint.
@@ -332,13 +344,13 @@ impl<T, R: TRights> Fifo<T, R> {
 }
 
 struct Common<T> {
-    producer: FifoInner<HeapRbProducer<T>>,
-    consumer: FifoInner<HeapRbConsumer<T>>,
+    producer: FifoInner<RbProducer<T>>,
+    consumer: FifoInner<RbConsumer<T>>,
 }
 
 impl<T> Common<T> {
     fn new(capacity: usize) -> Self {
-        let rb: HeapRb<T> = HeapRb::new(capacity);
+        let rb: RingBuffer<T> = RingBuffer::new(capacity);
         let (rb_producer, rb_consumer) = rb.split();
 
         let producer = FifoInner::new(rb_producer, IoEvents::OUT);
@@ -387,23 +399,28 @@ mod test {
     use super::*;
 
     #[ktest]
-    fn test_non_copy() {
-        #[derive(Clone, Debug, PartialEq, Eq)]
-        struct NonCopy(Arc<usize>);
-
+    fn test_channel_basics() {
         let channel = Channel::with_capacity(16);
         let (producer, consumer) = channel.split();
 
-        let data = NonCopy(Arc::new(99));
-        let expected_data = data.clone();
+        let data = [1u8, 3, 7];
 
-        for _ in 0..3 {
-            producer.try_push(data.clone()).unwrap();
+        for d in &data {
+            producer.try_push(*d).unwrap();
+        }
+        for d in &data {
+            let popped = consumer.try_pop().unwrap().unwrap();
+            assert_eq!(*d, popped);
         }
 
-        for _ in 0..3 {
-            let data = consumer.try_pop().unwrap().unwrap();
-            assert_eq!(data, expected_data);
-        }
+        let mut expected_data = [0u8; 3];
+        let write_len = producer
+            .try_write(&mut VmReader::from(data.as_slice()).to_fallible())
+            .unwrap();
+        assert_eq!(write_len, 3);
+        consumer
+            .try_read(&mut VmWriter::from(expected_data.as_mut_slice()).to_fallible())
+            .unwrap();
+        assert_eq!(data, expected_data);
     }
 }
