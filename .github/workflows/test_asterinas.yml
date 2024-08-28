@@ -51,6 +51,19 @@ jobs:
     container:
       image: asterinas/asterinas:0.8.3
       options: --device=/dev/kvm
+    strategy:
+      matrix: 
+        # The ids of each test
+        test_id: 
+          - 'boot_test_mb'
+          - 'boot_test_linux_legacy32'
+          - 'syscall_test'
+          - 'syscall_test_at_ext2'
+          - 'syscall_test_at_exfat_linux'
+          - 'smp_syscall_test_mb2'
+          - 'test_linux'
+          - 'smp_test_mb2'
+
     steps:
       - run: echo "Running in asterinas/asterinas:0.8.3"
 
@@ -58,22 +71,27 @@ jobs:
 
       - name: SMP Boot Test (Multiboot)
         id: boot_test_mb
+        if: ${{ matrix.test_id == 'boot_test_mb' }}
         run: make run AUTO_TEST=boot ENABLE_KVM=1 BOOT_PROTOCOL=multiboot RELEASE=1 SMP=4
 
       - name: SMP Boot Test (Linux Legacy 32-bit Boot Protocol)
         id: boot_test_linux_legacy32
+        if: ${{ matrix.test_id == 'boot_test_linux_legacy32' }}
         run: make run AUTO_TEST=boot ENABLE_KVM=1 BOOT_PROTOCOL=linux-legacy32 RELEASE=1 SMP=4
 
       - name: Syscall Test (Linux EFI Handover Boot Protocol) (Debug Build)
         id: syscall_test
+        if: ${{ matrix.test_id == 'syscall_test' }}
         run: make run AUTO_TEST=syscall ENABLE_KVM=1 BOOT_PROTOCOL=linux-efi-handover64 RELEASE=0
 
       - name: Syscall Test at Ext2 (MicroVM)
         id: syscall_test_at_ext2
+        if: ${{ matrix.test_id == 'syscall_test_at_ext2' }}
         run: make run AUTO_TEST=syscall SYSCALL_TEST_DIR=/ext2 ENABLE_KVM=1 SCHEME=microvm RELEASE=1
 
       - name: Syscall Test at Exfat (Multiboot2) (without KVM enabled)
         id: syscall_test_at_exfat_linux
+        if: ${{ matrix.test_id == 'syscall_test_at_exfat_linux' }}
         run: |
           make run AUTO_TEST=syscall \
             SYSCALL_TEST_DIR=/exfat EXTRA_BLOCKLISTS_DIRS=blocklists.exfat \
@@ -81,14 +99,17 @@ jobs:
       
       - name: SMP Syscall Test (Multiboot2)
         id: smp_syscall_test_mb2
+        if: ${{ matrix.test_id == 'smp_syscall_test_mb2' }}
         run: make run AUTO_TEST=syscall ENABLE_KVM=1 BOOT_PROTOCOL=multiboot2 RELEASE=1 SMP=4
 
       - name: General Test (Linux EFI Handover Boot Protocol)
         id: test_linux
+        if: ${{ matrix.test_id == 'test_linux' }}
         run: make run AUTO_TEST=test ENABLE_KVM=1 BOOT_PROTOCOL=linux-efi-handover64 RELEASE=1
       
       - name: SMP General Test (Multiboot2)
         id: smp_test_mb2
+        if: ${{ matrix.test_id == 'smp_test_mb2' }}
         run: make run AUTO_TEST=test ENABLE_KVM=1 BOOT_PROTOCOL=multiboot2 RELEASE=1 SMP=4
 
   integration-test-tdx:
