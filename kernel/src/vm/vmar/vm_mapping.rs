@@ -3,7 +3,10 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use core::ops::Range;
+use core::{
+    cmp::{max, min},
+    ops::Range,
+};
 
 use align_ext::AlignExt;
 use aster_rights::Rights;
@@ -46,6 +49,8 @@ pub(super) struct VmMapping {
     /// or are carried through to the underlying file for
     /// file-backed shared mappings.
     is_shared: bool,
+    /// Whether the mapping needs to handle surrounding pages when handling page fault.
+    handle_page_faults_around: bool,
 }
 
 impl VmMapping {
@@ -57,6 +62,7 @@ impl VmMapping {
             parent: self.parent.clone(),
             vmo,
             is_shared: self.is_shared,
+            handle_page_faults_around: self.handle_page_faults_around,
         })
     }
 }
@@ -96,6 +102,7 @@ impl VmMapping {
             align,
             can_overwrite,
             is_shared,
+            handle_page_faults_around,
         } = option;
         let Vmar(parent_vmar, _) = parent;
         let map_to_addr =
@@ -130,6 +137,7 @@ impl VmMapping {
             parent: Arc::downgrade(&parent_vmar),
             vmo,
             is_shared,
+            handle_page_faults_around,
         })
     }
 
@@ -218,6 +226,12 @@ impl VmMapping {
     ) -> Result<()> {
         let required_perm = if write { VmPerms::WRITE } else { VmPerms::READ };
         self.check_perms(&required_perm)?;
+
+        if !write && self.vmo.is_some() && self.handle_page_faults_around {
+            self.handle_page_faults_around(page_fault_addr)?;
+            return Ok(());
+        }
+
         let page_aligned_addr = page_fault_addr.align_down(PAGE_SIZE);
 
         if write && !not_present {
@@ -283,6 +297,47 @@ impl VmMapping {
         }
     }
 
+    fn handle_page_faults_around(&self, page_fault_addr: Vaddr) -> Result<()> {
+        const SURROUNDING_PAGE_NUM: usize = 16;
+        const SURROUNDING_PAGE_ADDR_MASK: usize = !(SURROUNDING_PAGE_NUM * PAGE_SIZE - 1);
+
+        let inner = self.inner.lock();
+        let vmo_offset = inner.vmo_offset.unwrap();
+        let vmo = self.vmo().unwrap();
+        let around_page_addr = page_fault_addr & SURROUNDING_PAGE_ADDR_MASK;
+        let valid_size = min(vmo.size() - vmo_offset, inner.map_size);
+
+        let start_addr = max(around_page_addr, inner.map_to_addr);
+        let end_addr = min(
+            start_addr + SURROUNDING_PAGE_NUM * PAGE_SIZE,
+            inner.map_to_addr + valid_size,
+        );
+
+        let vm_perms = inner.perms - VmPerms::WRITE;
+        let vm_map_options = { PageProperty::new(vm_perms.into(), CachePolicy::Writeback) };
+        let parent = self.parent.upgrade().unwrap();
+        let vm_space = parent.vm_space();
+        let mut cursor = vm_space.cursor_mut(&(start_addr..end_addr))?;
+        let operate = move |commit_fn: &mut dyn FnMut() -> Result<Frame>| {
+            if let VmItem::NotMapped { .. } = cursor.query().unwrap() {
+                let frame = commit_fn()?;
+                cursor.map(frame, vm_map_options);
+            } else {
+                let next_addr = cursor.virt_addr() + PAGE_SIZE;
+                if next_addr < end_addr {
+                    let _ = cursor.jump(next_addr);
+                }
+            }
+            Ok(())
+        };
+
+        let start_offset = vmo_offset + start_addr - inner.map_to_addr;
+        let end_offset = vmo_offset + end_addr - inner.map_to_addr;
+        vmo.operate_on_range(&(start_offset..end_offset), operate)?;
+
+        Ok(())
+    }
+
     /// Protects a specified range of pages in the mapping to the target perms.
     /// This `VmMapping` will split to maintain its property.
     ///
@@ -313,6 +368,7 @@ impl VmMapping {
             parent: Arc::downgrade(new_parent),
             vmo: self.vmo.as_ref().map(|vmo| vmo.dup()).transpose()?,
             is_shared: self.is_shared,
+            handle_page_faults_around: self.handle_page_faults_around,
         })
     }
 
@@ -577,6 +633,8 @@ pub struct VmarMapOptions<R1, R2> {
     can_overwrite: bool,
     // Whether the mapping is mapped with `MAP_SHARED`
     is_shared: bool,
+    // Whether the mapping needs to handle surrounding pages when handling page fault.
+    handle_page_faults_around: bool,
 }
 
 impl<R1, R2> VmarMapOptions<R1, R2> {
@@ -598,6 +656,7 @@ impl<R1, R2> VmarMapOptions<R1, R2> {
             align: PAGE_SIZE,
             can_overwrite: false,
             is_shared: false,
+            handle_page_faults_around: false,
         }
     }
 
@@ -681,6 +740,12 @@ impl<R1, R2> VmarMapOptions<R1, R2> {
     /// process when forking.
     pub fn is_shared(mut self, is_shared: bool) -> Self {
         self.is_shared = is_shared;
+        self
+    }
+
+    /// Sets the mapping to handle surrounding pages when handling page fault.
+    pub fn handle_page_faults_around(mut self) -> Self {
+        self.handle_page_faults_around = true;
         self
     }
 
@@ -786,11 +851,28 @@ impl MappedVmo {
         self.vmo.commit_page(page_idx * PAGE_SIZE)
     }
 
+    /// Traverses the indices within a specified range of a VMO sequentially.
+    /// For each index position, you have the option to commit the page as well as
+    /// perform other operations.
+    fn operate_on_range<F>(&self, range: &Range<usize>, operate: F) -> Result<()>
+    where
+        F: FnMut(&mut dyn FnMut() -> Result<Frame>) -> Result<()>,
+    {
+        debug_assert!(self.range.start <= range.start && self.range.end >= range.end);
+
+        self.vmo.operate_on_range(range, operate)
+    }
+
     /// Duplicates the capability.
     pub fn dup(&self) -> Result<Self> {
         Ok(Self {
             vmo: self.vmo.dup()?,
             range: self.range.clone(),
         })
+    }
+
+    /// Returns the size (in bytes) of a VMO.
+    pub fn size(&self) -> usize {
+        self.vmo.size()
     }
 }

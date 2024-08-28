@@ -27,9 +27,24 @@ impl<R: TRights> Vmo<TRightSet<R>> {
     /// The method requires the Write right.
     #[require(R > Write)]
     pub fn commit(&self, range: Range<usize>) -> Result<()> {
-        self.0
-            .commit_and_operate(&range, |_| Ok(()), CommitFlags::empty())?;
+        self.0.operate_on_range(
+            &range,
+            |commit_fn| commit_fn().map(|_| ()),
+            CommitFlags::empty(),
+        )?;
         Ok(())
+    }
+
+    /// Traverses the indices within a specified range of a VMO sequentially.
+    /// For each index position, you have the option to commit the page as well as
+    /// perform other operations.
+    #[require(R > Write)]
+    pub(in crate::vm) fn operate_on_range<F>(&self, range: &Range<usize>, operate: F) -> Result<()>
+    where
+        F: FnMut(&mut dyn FnMut() -> Result<Frame>) -> Result<()>,
+    {
+        self.0
+            .operate_on_range(range, operate, CommitFlags::empty())
     }
 
     /// Decommits the pages specified in the range (in bytes).

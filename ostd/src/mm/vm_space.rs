@@ -295,7 +295,7 @@ impl CursorMut<'_> {
     /// Jump to the virtual address.
     ///
     /// This is the same as [`Cursor::jump`].
-    pub fn jump(&mut self, va: Vaddr) -> Result<()>{
+    pub fn jump(&mut self, va: Vaddr) -> Result<()> {
         self.0.jump(va)?;
         Ok(())
     }

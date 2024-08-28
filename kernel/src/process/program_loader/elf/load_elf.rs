@@ -233,7 +233,9 @@ fn base_map_addr(elf: &Elf, root_vmar: &Vmar<Full>) -> Result<Vaddr> {
             "executable file does not has loadable sections",
         ))?;
     let map_size = elf_size.align_up(PAGE_SIZE);
-    let vmar_map_options = root_vmar.new_map(map_size, VmPerms::empty())?;
+    let vmar_map_options = root_vmar
+        .new_map(map_size, VmPerms::empty())?
+        .handle_page_faults_around();
     vmar_map_options.build()
 }
 
@@ -333,7 +335,7 @@ fn map_segment_vmo(
         .vmo_limit(segment_offset + segment_size)
         .can_overwrite(true);
     let offset = base_addr + (program_header.virtual_addr as Vaddr).align_down(PAGE_SIZE);
-    vm_map_options = vm_map_options.offset(offset);
+    vm_map_options = vm_map_options.offset(offset).handle_page_faults_around();
     let map_addr = vm_map_options.build()?;
 
     let anonymous_map_size: usize = if total_map_size > segment_size {
