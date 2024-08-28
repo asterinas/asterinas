@@ -12,7 +12,7 @@ use serde::{de, Deserialize, Deserializer, Serialize};
 
 use super::scheme::Scheme;
 
-use crate::{config::scheme::QemuScheme, error::Errno, error_msg, util::get_cargo_metadata};
+use crate::{error::Errno, error_msg, util::get_cargo_metadata};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OsdkMeta {
@@ -128,82 +128,7 @@ fn deserialize_toml_manifest(path: impl AsRef<Path>) -> Option<TomlManifest> {
     for scheme in manifest.map.values_mut() {
         scheme.work_dir = Some(cwd.to_path_buf());
     }
-    // Canonicalize all the path fields
-    let canonicalize = |target: &mut PathBuf| {
-        let last_cwd = std::env::current_dir().unwrap();
-        std::env::set_current_dir(cwd).unwrap();
-        *target = target.canonicalize().unwrap_or_else(|err| {
-            error_msg!(
-                "Cannot canonicalize path `{}`: {}",
-                target.to_string_lossy(),
-                err,
-            );
-            std::env::set_current_dir(&last_cwd).unwrap();
-            process::exit(Errno::GetMetadata as _);
-        });
-        std::env::set_current_dir(last_cwd).unwrap();
-    };
-    let canonicalize_scheme = |scheme: &mut Scheme| {
-        macro_rules! canonicalize_paths_in_scheme {
-            ($scheme:expr) => {
-                if let Some(ref mut boot) = $scheme.boot {
-                    if let Some(ref mut initramfs) = boot.initramfs {
-                        canonicalize(initramfs);
-                    }
-                }
-                if let Some(ref mut qemu) = $scheme.qemu {
-                    if let Some(ref mut qemu_path) = qemu.path {
-                        canonicalize(qemu_path);
-                    }
-                }
-                if let Some(ref mut grub) = $scheme.grub {
-                    if let Some(ref mut grub_mkrescue_path) = grub.grub_mkrescue {
-                        canonicalize(grub_mkrescue_path);
-                    }
-                }
-            };
-        }
-        canonicalize_paths_in_scheme!(scheme);
-        if let Some(ref mut run) = scheme.run {
-            canonicalize_paths_in_scheme!(run);
-        }
-        if let Some(ref mut test) = scheme.test {
-            canonicalize_paths_in_scheme!(test);
-        }
-    };
-    canonicalize_scheme(&mut manifest.default_scheme);
-    for scheme in manifest.map.values_mut() {
-        canonicalize_scheme(scheme);
-    }
-    // Do evaluations on the need to be evaluated string field, namely,
-    // QEMU arguments.
-    use super::eval::eval;
-    let eval_scheme = |scheme: &mut Scheme| {
-        let eval_qemu = |qemu: &mut Option<QemuScheme>| {
-            if let Some(ref mut qemu) = qemu {
-                if let Some(ref mut args) = qemu.args {
-                    *args = match eval(cwd, args) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            error_msg!("Failed to evaluate qemu args: {:#?}", e);
-                            process::exit(Errno::ParseMetadata as _);
-                        }
-                    }
-                }
-            }
-        };
-        eval_qemu(&mut scheme.qemu);
-        if let Some(ref mut run) = scheme.run {
-            eval_qemu(&mut run.qemu);
-        }
-        if let Some(ref mut test) = scheme.test {
-            eval_qemu(&mut test.qemu);
-        }
-    };
-    eval_scheme(&mut manifest.default_scheme);
-    for scheme in manifest.map.values_mut() {
-        eval_scheme(scheme);
-    }
+
     Some(manifest)
 }
 
