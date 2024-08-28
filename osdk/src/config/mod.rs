@@ -5,8 +5,6 @@
 //! arguments if the arguments is missing, e.g., the path of QEMU. The final configuration is stored in `BuildConfig`,
 //! `RunConfig` and `TestConfig`. These `*Config` are used for `build`, `run` and `test` subcommand.
 
-mod eval;
-
 pub mod manifest;
 pub mod scheme;
 pub mod unix_args;
@@ -14,7 +12,11 @@ pub mod unix_args;
 #[cfg(test)]
 mod test;
 
-use std::{env, path::PathBuf};
+use std::{
+    env, io,
+    path::{Path, PathBuf},
+    process,
+};
 
 use linux_bzimage_builder::PayloadEncoding;
 use scheme::{
@@ -25,6 +27,8 @@ use crate::{
     arch::{get_default_arch, Arch},
     cli::CommonArgs,
     config::unix_args::apply_kv_array,
+    error::Errno,
+    error_msg,
 };
 
 /// The global configuration for the OSDK actions.
@@ -37,7 +41,11 @@ pub struct Config {
     pub test: Action,
 }
 
-fn apply_args_before_finalize(action_scheme: &mut ActionScheme, args: &CommonArgs) {
+fn apply_args_before_finalize(
+    action_scheme: &mut ActionScheme,
+    args: &CommonArgs,
+    workdir: &PathBuf,
+) {
     if action_scheme.grub.is_none() {
         action_scheme.grub = Some(GrubScheme::default());
     }
@@ -61,7 +69,11 @@ fn apply_args_before_finalize(action_scheme: &mut ActionScheme, args: &CommonArg
             }
         }
         if let Some(initramfs) = &args.initramfs {
-            boot.initramfs = Some(initramfs.clone());
+            let Ok(initramfs) = initramfs.canonicalize() else {
+                error_msg!("The initramfs path provided with argument `--initramfs` does not match any files.");
+                process::exit(Errno::GetMetadata as _);
+            };
+            boot.initramfs = Some(initramfs);
         }
         if let Some(boot_method) = args.boot_method {
             boot.method = Some(boot_method);
@@ -73,12 +85,90 @@ fn apply_args_before_finalize(action_scheme: &mut ActionScheme, args: &CommonArg
     }
     if let Some(ref mut qemu) = action_scheme.qemu {
         if let Some(path) = &args.qemu_exe {
-            qemu.path = Some(path.clone());
+            let Ok(qemu_path) = path.canonicalize() else {
+                error_msg!(
+                    "The QEMU path provided with argument `--qemu-exe` does not match any files."
+                );
+                process::exit(Errno::GetMetadata as _);
+            };
+            qemu.path = Some(qemu_path);
         }
         if let Some(bootdev_options) = &args.bootdev_append_options {
             qemu.bootdev_append_options = Some(bootdev_options.clone());
         }
     }
+
+    canonicalize_and_eval(action_scheme, workdir);
+}
+
+fn canonicalize_and_eval(action_scheme: &mut ActionScheme, workdir: &PathBuf) {
+    let canonicalize = |target: &mut PathBuf| {
+        let last_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(workdir).unwrap();
+
+        *target = target.canonicalize().unwrap_or_else(|err| {
+            error_msg!(
+                "Cannot canonicalize path `{}`: {}",
+                target.to_string_lossy(),
+                err,
+            );
+            std::env::set_current_dir(&last_cwd).unwrap();
+            process::exit(Errno::GetMetadata as _);
+        });
+        std::env::set_current_dir(last_cwd).unwrap();
+    };
+
+    if let Some(ref mut boot) = action_scheme.boot {
+        if let Some(ref mut initramfs) = boot.initramfs {
+            canonicalize(initramfs);
+        }
+
+        if let Some(ref mut qemu) = action_scheme.qemu {
+            if let Some(ref mut qemu_path) = qemu.path {
+                canonicalize(qemu_path);
+            }
+        }
+
+        if let Some(ref mut grub) = action_scheme.grub {
+            if let Some(ref mut grub_mkrescue_path) = grub.grub_mkrescue {
+                canonicalize(grub_mkrescue_path);
+            }
+        }
+    }
+
+    // Do evaluations on the need to be evaluated string field, namely,
+    // QEMU arguments.
+
+    if let Some(ref mut qemu) = action_scheme.qemu {
+        if let Some(ref mut args) = qemu.args {
+            *args = match eval(workdir, args) {
+                Ok(v) => v,
+                Err(e) => {
+                    error_msg!("Failed to evaluate qemu args: {:#?}", e);
+                    process::exit(Errno::ParseMetadata as _);
+                }
+            }
+        }
+    }
+}
+
+/// This function is used to evaluate the string using the host's shell recursively
+/// in order.
+pub fn eval(cwd: impl AsRef<Path>, s: &String) -> io::Result<String> {
+    let mut eval = process::Command::new("bash");
+    eval.arg("-c");
+    eval.arg(format!("echo \"{}\"", s));
+    eval.current_dir(cwd.as_ref());
+    let output = eval.output()?;
+    if !output.stderr.is_empty() {
+        println!(
+            "[Info] {}",
+            String::from_utf8_lossy(&output.stderr).trim_end_matches('\n')
+        );
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .trim_end_matches('\n')
+        .to_string())
 }
 
 fn apply_args_after_finalize(action: &mut Action, args: &CommonArgs) {
@@ -111,7 +201,7 @@ impl Config {
         let run = {
             let mut run = scheme.run.clone().unwrap_or_default();
             run.inherit(&default_scheme);
-            apply_args_before_finalize(&mut run, common_args);
+            apply_args_before_finalize(&mut run, common_args, scheme.work_dir.as_ref().unwrap());
             let mut run = run.finalize(target_arch);
             apply_args_after_finalize(&mut run, common_args);
             check_compatibility(run.grub.boot_protocol, run.build.encoding.clone());
@@ -120,7 +210,7 @@ impl Config {
         let test = {
             let mut test = scheme.test.clone().unwrap_or_default();
             test.inherit(&default_scheme);
-            apply_args_before_finalize(&mut test, common_args);
+            apply_args_before_finalize(&mut test, common_args, scheme.work_dir.as_ref().unwrap());
             let mut test = test.finalize(target_arch);
             apply_args_after_finalize(&mut test, common_args);
             check_compatibility(test.grub.boot_protocol, test.build.encoding.clone());
