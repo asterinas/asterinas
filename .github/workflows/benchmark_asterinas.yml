@@ -54,6 +54,8 @@ jobs:
           - lmbench-mmap-latency
           # Semaphore benchmark
           - lmbench-semaphore
+          # Network-related benchmarks
+          - iperf3-localhost-tcp
       fail-fast: false
     timeout-minutes: 60
     container: 

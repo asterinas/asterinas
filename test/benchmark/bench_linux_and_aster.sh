@@ -25,6 +25,7 @@ generate_entrypoint_script() {
     local init_script=$(cat <<EOF
 #!/bin/sh
 mount -t devtmpfs devtmpfs /dev
+ip link set lo up
 modprobe virtio_blk
 mkfs.ext2 -F /dev/vda
 mount -t ext2 /dev/vda /ext2
