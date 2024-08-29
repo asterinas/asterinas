@@ -51,7 +51,7 @@ extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
                 *f = *trapframe_wrapper.0;
             }
             &PAGE_FAULT => {
-                let page_fault_addr = x86_64::registers::control::Cr2::read().as_u64();
+                let page_fault_addr = x86_64::registers::control::Cr2::read_raw();
                 // The actual user space implementation should be responsible
                 // for providing mechanism to treat the 0 virtual address.
                 if (0..MAX_USERSPACE_VADDR).contains(&(page_fault_addr as usize)) {

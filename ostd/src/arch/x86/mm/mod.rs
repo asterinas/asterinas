@@ -130,7 +130,7 @@ pub unsafe fn activate_page_table(root_paddr: Paddr, root_pt_cache: CachePolicy)
 }
 
 pub fn current_page_table_paddr() -> Paddr {
-    x86_64::registers::control::Cr3::read()
+    x86_64::registers::control::Cr3::read_raw()
         .0
         .start_address()
         .as_u64() as Paddr
