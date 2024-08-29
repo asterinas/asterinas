@@ -22,7 +22,7 @@ pub fn sys_mprotect(addr: Vaddr, len: usize, perms: u64, ctx: &Context) -> Resul
     if len == 0 {
         return Ok(SyscallReturn::Return(0));
     }
-    if len > usize::MAX - PAGE_SIZE + 1 {
+    if len > isize::MAX as usize {
         return_errno_with_message!(Errno::ENOMEM, "len align overflow");
     }
 
