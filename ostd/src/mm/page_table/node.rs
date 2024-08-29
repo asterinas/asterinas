@@ -355,17 +355,22 @@ where
         debug_assert!(deep.end <= shallow.start || deep.start >= shallow.end);
 
         let mut new_pt = Self::alloc(self.level());
-
+        let mut copied_child_count = self.nr_children();
         for i in deep {
+            if copied_child_count == 0 {
+                return new_pt;
+            }
             match self.child(i, true) {
                 Child::PageTable(pt) => {
                     let guard = pt.clone_shallow().lock();
                     let new_child = guard.make_copy(0..nr_subpage_per_huge::<C>(), 0..0);
                     new_pt.set_child_pt(i, new_child.into_raw(), true);
+                    copied_child_count -= 1;
                 }
                 Child::Page(page) => {
                     let prop = self.read_pte_prop(i);
                     new_pt.set_child_page(i, page.clone(), prop);
+                    copied_child_count -= 1;
                 }
                 Child::None => {}
                 Child::Untracked(_) => {
@@ -375,10 +380,14 @@ where
         }
 
         for i in shallow {
+            if copied_child_count == 0 {
+                return new_pt;
+            }
             debug_assert_eq!(self.level(), C::NR_LEVELS);
             match self.child(i, /*meaningless*/ true) {
                 Child::PageTable(pt) => {
                     new_pt.set_child_pt(i, pt.clone_shallow(), /*meaningless*/ true);
+                    copied_child_count -= 1;
                 }
                 Child::None => {}
                 Child::Page(_) | Child::Untracked(_) => {
