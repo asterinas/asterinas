@@ -47,17 +47,19 @@ export VSOCK=1
 CARGO_OSDK_ARGS += --init-args="/test/run_vsock_test.sh"
 endif
 
-# If the BENCHMARK is set, we will run the benchmark in the kernel mode.
-ifneq ($(BENCHMARK), none)
-CARGO_OSDK_ARGS += --init-args="/benchmark/common/runner.sh $(BENCHMARK)"
-endif
-
 ifeq ($(RELEASE_LTO), 1)
 CARGO_OSDK_ARGS += --profile release-lto
 OSTD_TASK_STACK_SIZE_IN_PAGES = 8
 else ifeq ($(RELEASE), 1)
 CARGO_OSDK_ARGS += --release
 OSTD_TASK_STACK_SIZE_IN_PAGES = 8
+endif
+
+# If the BENCHMARK is set, we will run the benchmark in the kernel mode.
+ifneq ($(BENCHMARK), none)
+CARGO_OSDK_ARGS += --init-args="/benchmark/common/runner.sh $(BENCHMARK)"
+# TODO: remove this workaround after enabling kernel virtual area.
+OSTD_TASK_STACK_SIZE_IN_PAGES = 7
 endif
 
 ifeq ($(INTEL_TDX), 1)
