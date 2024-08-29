@@ -20,7 +20,7 @@ pub fn sys_madvise(
     if start % PAGE_SIZE != 0 {
         return_errno_with_message!(Errno::EINVAL, "the start address should be page aligned");
     }
-    if len > usize::MAX - PAGE_SIZE + 1 {
+    if len > isize::MAX as usize {
         return_errno_with_message!(Errno::EINVAL, "len align overflow");
     }
     if len == 0 {
