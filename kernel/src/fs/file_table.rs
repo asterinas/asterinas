@@ -9,6 +9,7 @@ use aster_util::slot_vec::SlotVec;
 use super::{
     file_handle::FileLike,
     fs_resolver::{FsPath, FsResolver, AT_FDCWD},
+    inode_handle::InodeHandle,
     utils::{AccessMode, InodeMode},
 };
 use crate::{
@@ -116,52 +117,55 @@ impl FileTable {
     }
 
     pub fn close_file(&mut self, fd: FileDesc) -> Option<Arc<dyn FileLike>> {
-        let entry = self.table.remove(fd as usize);
-        if entry.is_some() {
-            let events = FdEvents::Close(fd);
-            self.notify_fd_events(&events);
-            entry.as_ref().unwrap().notify_fd_events(&events);
+        let removed_entry = self.table.remove(fd as usize)?;
+
+        let events = FdEvents::Close(fd);
+        self.notify_fd_events(&events);
+        removed_entry.notify_fd_events(&events);
+
+        let closed_file = removed_entry.file;
+        if let Some(closed_inode_file) = closed_file.downcast_ref::<InodeHandle>() {
+            closed_inode_file.release_range_locks();
         }
-        entry.map(|e| e.file)
+        Some(closed_file)
     }
 
     pub fn close_all(&mut self) -> Vec<Arc<dyn FileLike>> {
-        let mut closed_files = Vec::new();
-        let closed_fds: Vec<FileDesc> = self
-            .table
-            .idxes_and_items()
-            .map(|(idx, _)| idx as FileDesc)
-            .collect();
-        for fd in closed_fds {
-            let entry = self.table.remove(fd as usize).unwrap();
-            let events = FdEvents::Close(fd);
-            self.notify_fd_events(&events);
-            entry.notify_fd_events(&events);
-            closed_files.push(entry.file);
-        }
-        closed_files
+        self.close_files(|_, _| true)
     }
 
     pub fn close_files_on_exec(&mut self) -> Vec<Arc<dyn FileLike>> {
+        self.close_files(|_, entry| entry.flags().contains(FdFlags::CLOEXEC))
+    }
+
+    fn close_files<F>(&mut self, should_close: F) -> Vec<Arc<dyn FileLike>>
+    where
+        F: Fn(FileDesc, &FileTableEntry) -> bool,
+    {
         let mut closed_files = Vec::new();
         let closed_fds: Vec<FileDesc> = self
             .table
             .idxes_and_items()
             .filter_map(|(idx, entry)| {
-                if entry.flags().contains(FdFlags::CLOEXEC) {
+                if should_close(idx as FileDesc, entry) {
                     Some(idx as FileDesc)
                 } else {
                     None
                 }
             })
             .collect();
+
         for fd in closed_fds {
-            let entry = self.table.remove(fd as usize).unwrap();
+            let removed_entry = self.table.remove(fd as usize).unwrap();
             let events = FdEvents::Close(fd);
             self.notify_fd_events(&events);
-            entry.notify_fd_events(&events);
-            closed_files.push(entry.file);
+            removed_entry.notify_fd_events(&events);
+            closed_files.push(removed_entry.file.clone());
+            if let Some(inode_file) = removed_entry.file.downcast_ref::<InodeHandle>() {
+                inode_file.release_range_locks();
+            }
         }
+
         closed_files
     }
 
