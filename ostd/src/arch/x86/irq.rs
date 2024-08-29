@@ -9,6 +9,7 @@ use alloc::{boxed::Box, fmt::Debug, sync::Arc, vec::Vec};
 use id_alloc::IdAlloc;
 use spin::Once;
 use trapframe::TrapFrame;
+use x86_64::registers::rflags::{self, RFlags};
 
 use crate::sync::{Mutex, PreemptDisabled, SpinLock, SpinLockGuard};
 
@@ -53,7 +54,7 @@ pub(crate) fn disable_local() {
 }
 
 pub(crate) fn is_local_enabled() -> bool {
-    x86_64::instructions::interrupts::are_enabled()
+    (rflags::read_raw() & RFlags::INTERRUPT_FLAG.bits()) != 0
 }
 
 static CALLBACK_ID_ALLOCATOR: Once<Mutex<IdAlloc>> = Once::new();
