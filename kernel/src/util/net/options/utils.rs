@@ -3,6 +3,7 @@
 use core::time::Duration;
 
 use crate::{
+    get_current_userspace,
     net::socket::{ip::stream::CongestionControl, LingerOption},
     prelude::*,
 };
@@ -46,7 +47,7 @@ macro_rules! impl_read_write_for_pod_type {
                 if (max_len as usize) < core::mem::size_of::<$pod_ty>() {
                     return_errno_with_message!(Errno::EINVAL, "max_len is too short");
                 }
-                crate::context::CurrentUserSpace::get().read_val::<$pod_ty>(addr)
+                crate::get_current_userspace!().read_val::<$pod_ty>(addr)
             }
         }
 
@@ -58,7 +59,7 @@ macro_rules! impl_read_write_for_pod_type {
                     return_errno_with_message!(Errno::EINVAL, "max_len is too short");
                 }
 
-                crate::context::CurrentUserSpace::get().write_val(addr, self)?;
+                crate::get_current_userspace!().write_val(addr, self)?;
                 Ok(write_len)
             }
         }
@@ -73,7 +74,7 @@ impl ReadFromUser for bool {
             return_errno_with_message!(Errno::EINVAL, "max_len is too short");
         }
 
-        let val = CurrentUserSpace::get().read_val::<i32>(addr)?;
+        let val = get_current_userspace!().read_val::<i32>(addr)?;
 
         Ok(val != 0)
     }
@@ -88,7 +89,7 @@ impl WriteToUser for bool {
         }
 
         let val = if *self { 1i32 } else { 0i32 };
-        CurrentUserSpace::get().write_val(addr, &val)?;
+        get_current_userspace!().write_val(addr, &val)?;
         Ok(write_len)
     }
 }
@@ -106,7 +107,7 @@ impl WriteToUser for Option<Error> {
             Some(error) => error.error() as i32,
         };
 
-        CurrentUserSpace::get().write_val(addr, &val)?;
+        get_current_userspace!().write_val(addr, &val)?;
         Ok(write_len)
     }
 }
@@ -117,7 +118,7 @@ impl ReadFromUser for LingerOption {
             return_errno_with_message!(Errno::EINVAL, "max_len is too short");
         }
 
-        let c_linger = CurrentUserSpace::get().read_val::<CLinger>(addr)?;
+        let c_linger = get_current_userspace!().read_val::<CLinger>(addr)?;
 
         Ok(LingerOption::from(c_linger))
     }
@@ -132,7 +133,7 @@ impl WriteToUser for LingerOption {
         }
 
         let linger = CLinger::from(*self);
-        CurrentUserSpace::get().write_val(addr, &linger)?;
+        get_current_userspace!().write_val(addr, &linger)?;
         Ok(write_len)
     }
 }
@@ -140,7 +141,7 @@ impl WriteToUser for LingerOption {
 impl ReadFromUser for CongestionControl {
     fn read_from_user(addr: Vaddr, max_len: u32) -> Result<Self> {
         let mut bytes = vec![0; max_len as usize];
-        CurrentUserSpace::get().read_bytes(addr, &mut VmWriter::from(bytes.as_mut_slice()))?;
+        get_current_userspace!().read_bytes(addr, &mut VmWriter::from(bytes.as_mut_slice()))?;
         let name = String::from_utf8(bytes).unwrap();
         CongestionControl::new(&name)
     }
@@ -155,7 +156,7 @@ impl WriteToUser for CongestionControl {
             return_errno_with_message!(Errno::EINVAL, "max_len is too short");
         }
 
-        CurrentUserSpace::get().write_bytes(addr, &mut VmReader::from(name))?;
+        get_current_userspace!().write_bytes(addr, &mut VmReader::from(name))?;
 
         Ok(write_len)
     }

@@ -2,8 +2,10 @@
 
 use core::cmp::min;
 
+use ostd::task::Task;
+
 use super::{ip::CSocketAddrInet, unix, vsock::CSocketAddrVm};
-use crate::{net::socket::SocketAddr, prelude::*};
+use crate::{get_current_userspace, net::socket::SocketAddr, prelude::*};
 
 /// Address family.
 ///
@@ -144,7 +146,7 @@ pub fn read_socket_addr_from_user(addr: Vaddr, addr_len: usize) -> Result<Socket
     }
 
     let mut storage = Storage::new_zeroed();
-    CurrentUserSpace::get().read_bytes(
+    get_current_userspace!().read_bytes(
         addr,
         &mut VmWriter::from(&mut storage.as_bytes_mut()[..addr_len]),
     )?;
@@ -200,7 +202,9 @@ pub fn write_socket_addr_to_user(
     dest: Vaddr,
     max_len_ptr: Vaddr,
 ) -> Result<()> {
-    let user_space = CurrentUserSpace::get();
+    let current_task = Task::current().unwrap();
+    let user_space = CurrentUserSpace::new(&current_task);
+
     let max_len = user_space.read_val::<i32>(max_len_ptr)?;
 
     let actual_len = write_socket_addr_with_max_len(socket_addr, dest, max_len)?;
@@ -235,7 +239,9 @@ pub fn write_socket_addr_with_max_len(
         );
     }
 
-    let user_space = CurrentUserSpace::get();
+    let current_task = Task::current().unwrap();
+    let user_space = CurrentUserSpace::new(&current_task);
+
     let actual_len = match socket_addr {
         SocketAddr::IPv4(addr, port) => {
             let socket_addr = CSocketAddrInet::from((*addr, *port));

@@ -16,7 +16,7 @@ use crate::{
 };
 
 /// The context that can be accessed from the current POSIX thread.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Context<'a> {
     pub process: &'a Process,
     pub posix_thread: &'a PosixThread,
@@ -27,30 +27,47 @@ pub struct Context<'a> {
 impl Context<'_> {
     /// Gets the userspace of the current task.
     pub fn get_user_space(&self) -> CurrentUserSpace {
-        CurrentUserSpace(self.task.user_space().unwrap().vm_space().clone())
+        CurrentUserSpace::new(self.task)
     }
 }
 
 /// The user's memory space of the current task.
 ///
 /// It provides methods to read from or write to the user space efficiently.
-pub struct CurrentUserSpace(Arc<VmSpace>);
+pub struct CurrentUserSpace<'a>(&'a VmSpace);
 
-impl !Sync for CurrentUserSpace {}
-impl !Send for CurrentUserSpace {}
+/// Gets the [`CurrentUserSpace`] from the current task.
+///
+/// This is slower than [`Context::get_user_space`]. Don't use this getter
+/// If you get the access to the [`Context`].
+#[macro_export]
+macro_rules! get_current_userspace {
+    () => {
+        CurrentUserSpace::new(&ostd::task::Task::current().unwrap())
+    };
+}
 
-impl CurrentUserSpace {
-    /// Gets the `CurrentUserSpace` from the current task.
+impl<'a> CurrentUserSpace<'a> {
+    /// Creates a new `CurrentUserSpace` from the specified task.
     ///
-    /// This is slower than [`Context::get_user_space`]. Don't use this getter
-    /// If you get the access to the [`Context`].
-    pub fn get() -> Self {
-        let vm_space = {
-            let current_task = Task::current().unwrap();
-            let user_space = current_task.user_space().unwrap();
-            user_space.vm_space().clone()
-        };
-        Self(vm_space)
+    /// This method is _not_ recommended for use, as it does not verify whether the provided
+    /// `task` is the current task in release builds.
+    ///
+    /// If you have access to a [`Context`], it is preferable to call [`Context::get_user_space`].
+    ///
+    /// Otherwise, you can use the `get_current_userspace` macro
+    /// to obtain an instance of `CurrentUserSpace` if it will only be used once.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic in debug builds if the specified `task` is not the current task.
+    pub fn new(task: &'a Task) -> Self {
+        let user_space = task.user_space().unwrap();
+        debug_assert!(Arc::ptr_eq(
+            task.user_space().unwrap(),
+            Task::current().unwrap().user_space().unwrap()
+        ));
+        Self(user_space.vm_space())
     }
 
     /// Creates a reader to read data from the user space of the current task.

@@ -26,11 +26,12 @@ use sig_mask::SigMask;
 use sig_num::SigNum;
 pub use sig_stack::{SigStack, SigStackFlags};
 
-use super::posix_thread::{PosixThread, PosixThreadExt};
+use super::posix_thread::PosixThread;
 use crate::{
+    get_current_userspace,
     prelude::*,
     process::{do_exit_group, TermStatus},
-    thread::{status::ThreadStatus, Thread},
+    thread::status::ThreadStatus,
 };
 
 pub trait SignalContext {
@@ -41,12 +42,9 @@ pub trait SignalContext {
 // TODO: This interface of this method is error prone.
 // The method takes an argument for the current thread to optimize its efficiency.
 /// Handle pending signal for current process.
-pub fn handle_pending_signal(
-    context: &mut UserContext,
-    current_thread: &Arc<Thread>,
-) -> Result<()> {
+pub fn handle_pending_signal(user_ctx: &mut UserContext, ctx: &Context) -> Result<()> {
     // We first deal with signal in current thread, then signal in current process.
-    let posix_thread = current_thread.as_posix_thread().unwrap();
+    let posix_thread = ctx.posix_thread;
     let signal = {
         let sig_mask = posix_thread.sig_mask().load(Ordering::Relaxed);
         if let Some(signal) = posix_thread.dequeue_signal(&sig_mask) {
@@ -82,13 +80,13 @@ pub fn handle_pending_signal(
             drop(sig_dispositions);
 
             handle_user_signal(
-                posix_thread,
+                ctx,
                 sig_num,
                 handler_addr,
                 flags,
                 restorer_addr,
                 mask,
-                context,
+                user_ctx,
                 signal.to_info(),
             )?
         }
@@ -109,7 +107,7 @@ pub fn handle_pending_signal(
                 }
                 SigDefaultAction::Ign => {}
                 SigDefaultAction::Stop => {
-                    let _ = current_thread.atomic_status().compare_exchange(
+                    let _ = ctx.thread.atomic_status().compare_exchange(
                         ThreadStatus::Running,
                         ThreadStatus::Stopped,
                         Ordering::AcqRel,
@@ -117,7 +115,7 @@ pub fn handle_pending_signal(
                     );
                 }
                 SigDefaultAction::Cont => {
-                    let _ = current_thread.atomic_status().compare_exchange(
+                    let _ = ctx.thread.atomic_status().compare_exchange(
                         ThreadStatus::Stopped,
                         ThreadStatus::Running,
                         Ordering::AcqRel,
@@ -132,13 +130,13 @@ pub fn handle_pending_signal(
 
 #[allow(clippy::too_many_arguments)]
 pub fn handle_user_signal(
-    posix_thread: &PosixThread,
+    ctx: &Context,
     sig_num: SigNum,
     handler_addr: Vaddr,
     flags: SigActionFlags,
     restorer_addr: Vaddr,
     mut mask: SigMask,
-    context: &mut UserContext,
+    user_ctx: &mut UserContext,
     sig_info: siginfo_t,
 ) -> Result<()> {
     debug!("sig_num = {:?}, signame = {}", sig_num, sig_num.sig_name());
@@ -156,23 +154,24 @@ pub fn handle_user_signal(
     }
 
     // block signals in sigmask when running signal handler
-    let old_mask = posix_thread.sig_mask().load(Ordering::Relaxed);
-    posix_thread
+    let old_mask = ctx.posix_thread.sig_mask().load(Ordering::Relaxed);
+    ctx.posix_thread
         .sig_mask()
         .store(old_mask + mask, Ordering::Relaxed);
 
     // Set up signal stack.
-    let mut stack_pointer = if let Some(sp) = use_alternate_signal_stack(posix_thread) {
+    let mut stack_pointer = if let Some(sp) = use_alternate_signal_stack(ctx.posix_thread) {
         sp as u64
     } else {
         // just use user stack
-        context.stack_pointer() as u64
+        user_ctx.stack_pointer() as u64
     };
 
     // To avoid corrupting signal stack, we minus 128 first.
     stack_pointer -= 128;
 
-    let user_space = CurrentUserSpace::get();
+    let user_space = ctx.get_user_space();
+
     // 1. write siginfo_t
     stack_pointer -= mem::size_of::<siginfo_t>() as u64;
     user_space.write_val(stack_pointer as _, &sig_info)?;
@@ -188,8 +187,8 @@ pub fn handle_user_signal(
         .uc_mcontext
         .inner
         .gp_regs
-        .copy_from_raw(context.general_regs());
-    let mut sig_context = posix_thread.sig_context().lock();
+        .copy_from_raw(user_ctx.general_regs());
+    let mut sig_context = ctx.posix_thread.sig_context().lock();
     if let Some(sig_context_addr) = *sig_context {
         ucontext.uc_link = sig_context_addr;
     } else {
@@ -222,13 +221,13 @@ pub fn handle_user_signal(
     }
 
     // 4. Set correct register values
-    context.set_instruction_pointer(handler_addr as _);
-    context.set_stack_pointer(stack_pointer as usize);
+    user_ctx.set_instruction_pointer(handler_addr as _);
+    user_ctx.set_stack_pointer(stack_pointer as usize);
     // parameters of signal handler
     if flags.contains(SigActionFlags::SA_SIGINFO) {
-        context.set_arguments(sig_num, siginfo_addr as usize, ucontext_addr as usize);
+        user_ctx.set_arguments(sig_num, siginfo_addr as usize, ucontext_addr as usize);
     } else {
-        context.set_arguments(sig_num, 0, 0);
+        user_ctx.set_arguments(sig_num, 0, 0);
     }
 
     Ok(())
@@ -261,7 +260,7 @@ fn use_alternate_signal_stack(posix_thread: &PosixThread) -> Option<usize> {
 
 fn write_u64_to_user_stack(rsp: u64, value: u64) -> Result<u64> {
     let rsp = rsp - 8;
-    CurrentUserSpace::get().write_val(rsp as Vaddr, &value)?;
+    get_current_userspace!().write_val(rsp as Vaddr, &value)?;
     Ok(rsp)
 }
 

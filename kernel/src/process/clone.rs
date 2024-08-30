@@ -18,6 +18,7 @@ use super::{
 use crate::{
     cpu::LinuxAbi,
     fs::{file_table::FileTable, fs_resolver::FsResolver, utils::FileCreationMask},
+    get_current_userspace,
     prelude::*,
     process::posix_thread::allocate_posix_tid,
     thread::{Thread, Tid},
@@ -338,7 +339,7 @@ fn clone_parent_settid(
     clone_flags: CloneFlags,
 ) -> Result<()> {
     if clone_flags.contains(CloneFlags::CLONE_PARENT_SETTID) {
-        CurrentUserSpace::get().write_val(parent_tidptr, &child_tid)?;
+        get_current_userspace!().write_val(parent_tidptr, &child_tid)?;
     }
     Ok(())
 }
