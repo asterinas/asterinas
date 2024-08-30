@@ -106,10 +106,8 @@ impl Semaphore {
 
         let mut current_val = self.val.lock();
         *current_val = val;
-        self.latest_modified_pid
-            .store(current_pid, Ordering::Relaxed);
 
-        self.update_pending_ops(current_val);
+        self.update_pending_ops(current_val, current_pid);
         Ok(())
     }
 
@@ -191,11 +189,7 @@ impl Semaphore {
             }
 
             *val = new_val;
-            self.latest_modified_pid
-                .store(current_pid, Ordering::Relaxed);
-            self.update_otime();
-
-            self.update_pending_ops(val);
+            self.update_pending_ops(val, current_pid);
             return Ok(());
         } else if zero_condition {
             return Ok(());
@@ -249,7 +243,7 @@ impl Semaphore {
     }
 
     /// Updates pending ops after the val changed.
-    fn update_pending_ops(&self, mut val: MutexGuard<i32>) {
+    fn update_pending_ops(&self, mut val: MutexGuard<i32>, current_pid: Pid) {
         debug_assert!(*val >= 0);
         trace!("Updating pending ops, semaphore before: {:?}", *val);
 
@@ -259,6 +253,7 @@ impl Semaphore {
 
         // Step one:
         let mut value = *val;
+        let mut latest_modified_pid = current_pid;
         if value > 0 {
             let mut pending_alters = self.pending_alters.lock();
             let mut cursor = pending_alters.cursor_front_mut();
@@ -282,8 +277,7 @@ impl Semaphore {
                     );
 
                     value += i32::from(op.sem_buf.sem_op);
-                    self.latest_modified_pid.store(op.pid, Ordering::Relaxed);
-                    self.update_otime();
+                    latest_modified_pid = op.pid;
                     op.status.set_status(Status::Normal);
                     op.waker.wake_up();
                     cursor.remove_current().unwrap();
@@ -291,6 +285,12 @@ impl Semaphore {
                     cursor.move_next();
                 }
             }
+        }
+
+        if latest_modified_pid != 0 {
+            self.latest_modified_pid
+                .store(latest_modified_pid, Ordering::Relaxed);
+            self.update_otime();
         }
 
         // Step two:
