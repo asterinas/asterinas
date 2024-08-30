@@ -258,37 +258,43 @@ impl Semaphore {
         // 2. If val is equal to 0, then clear pending_const
 
         // Step one:
-        let mut pending_alters = self.pending_alters.lock();
-        pending_alters.retain_mut(|op| {
-            if *val == 0 {
-                return true;
-            }
-            // Check if the process alive.
-            if op.process.upgrade().is_none() {
-                return false;
-            }
-            debug_assert!(op.sem_buf.sem_op < 0);
+        let mut value = *val;
+        if value > 0 {
+            let mut pending_alters = self.pending_alters.lock();
+            let mut cursor = pending_alters.cursor_front_mut();
+            while let Some(op) = cursor.current() {
+                if value == 0 {
+                    break;
+                }
+                // Check if the process alive.
+                if op.process.upgrade().is_none() {
+                    cursor.remove_current().unwrap();
+                    continue;
+                }
 
-            if op.sem_buf.sem_op.abs() as i32 <= *val {
-                trace!(
-                    "Found removable pending op, op: {:?}, pid:{:?}",
-                    op.sem_buf.sem_op,
-                    op.pid
-                );
+                debug_assert!(op.sem_buf.sem_op < 0);
 
-                *val += i32::from(op.sem_buf.sem_op);
-                self.latest_modified_pid.store(op.pid, Ordering::Relaxed);
-                self.update_otime();
-                op.status.set_status(Status::Normal);
-                op.waker.wake_up();
-                false
-            } else {
-                true
+                if op.sem_buf.sem_op.abs() as i32 <= value {
+                    trace!(
+                        "Found removable pending op, op: {:?}, pid:{:?}",
+                        op.sem_buf.sem_op,
+                        op.pid
+                    );
+
+                    value += i32::from(op.sem_buf.sem_op);
+                    self.latest_modified_pid.store(op.pid, Ordering::Relaxed);
+                    self.update_otime();
+                    op.status.set_status(Status::Normal);
+                    op.waker.wake_up();
+                    cursor.remove_current().unwrap();
+                } else {
+                    cursor.move_next();
+                }
             }
-        });
+        }
 
         // Step two:
-        if *val == 0 {
+        if value == 0 {
             let mut pending_const = self.pending_const.lock();
             pending_const.iter().for_each(|op| {
                 op.status.set_status(Status::Normal);
@@ -299,7 +305,8 @@ impl Semaphore {
             });
             pending_const.clear();
         }
-        trace!("Updated pending ops, semaphore after: {:?}", *val);
+        *val = value;
+        trace!("Updated pending ops, semaphore after: {:?}", value);
     }
 }
 
