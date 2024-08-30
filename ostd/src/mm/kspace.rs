@@ -156,7 +156,7 @@ pub fn init_kernel_page_table(meta_pages: Vec<Page<MetaPageMeta>>) {
         for meta_page in meta_pages {
             // SAFETY: we are doing the metadata mappings for the kernel.
             unsafe {
-                cursor.map(meta_page.into(), prop);
+                let _old = cursor.map(meta_page.into(), prop);
             }
         }
     }
@@ -199,7 +199,7 @@ pub fn init_kernel_page_table(meta_pages: Vec<Page<MetaPageMeta>>) {
             let page = Page::<KernelMeta>::from_unused(frame_paddr, KernelMeta::default());
             // SAFETY: we are doing mappings for the kernel.
             unsafe {
-                cursor.map(page.into(), prop);
+                let _old = cursor.map(page.into(), prop);
             }
         }
     }

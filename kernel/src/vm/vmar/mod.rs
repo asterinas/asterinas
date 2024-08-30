@@ -336,7 +336,7 @@ impl Vmar_ {
         if !self.is_root_vmar() {
             return_errno_with_message!(Errno::EACCES, "The vmar is not root vmar");
         }
-        self.vm_space.clear();
+        self.clear_vm_space();
         let mut inner = self.inner.lock();
         inner.child_vmar_s.clear();
         inner.vm_mappings.clear();
@@ -344,6 +344,13 @@ impl Vmar_ {
         let root_region = FreeRegion::new(ROOT_VMAR_LOWEST_ADDR..ROOT_VMAR_CAP_ADDR);
         inner.free_regions.insert(root_region.start(), root_region);
         Ok(())
+    }
+
+    fn clear_vm_space(&self) {
+        let start = ROOT_VMAR_LOWEST_ADDR;
+        let end = ROOT_VMAR_CAP_ADDR;
+        let mut cursor = self.vm_space.cursor_mut(&(start..end)).unwrap();
+        cursor.unmap(end - start);
     }
 
     pub fn destroy(&self, range: Range<usize>) -> Result<()> {

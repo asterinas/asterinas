@@ -128,10 +128,7 @@ impl WorkerPool {
         Arc::new_cyclic(|pool_ref| {
             let mut local_pools = Vec::new();
             for cpu_id in cpu_set.iter() {
-                local_pools.push(Arc::new(LocalWorkerPool::new(
-                    pool_ref.clone(),
-                    cpu_id as u32,
-                )));
+                local_pools.push(Arc::new(LocalWorkerPool::new(pool_ref.clone(), cpu_id)));
             }
             WorkerPool {
                 local_pools,

@@ -32,7 +32,7 @@ use crate::{
 /// However if called on the current processor, it will be synchronous.
 pub fn inter_processor_call(targets: &CpuSet, f: fn()) {
     let irq_guard = trap::disable_local();
-    let this_cpu_id = irq_guard.current_cpu() as usize;
+    let this_cpu_id = irq_guard.current_cpu();
     let irq_num = INTER_PROCESSOR_CALL_IRQ.get().unwrap().num();
 
     let mut call_on_self = false;
@@ -41,7 +41,7 @@ pub fn inter_processor_call(targets: &CpuSet, f: fn()) {
             call_on_self = true;
             continue;
         }
-        CALL_QUEUES.get_on_cpu(cpu_id as u32).lock().push_back(f);
+        CALL_QUEUES.get_on_cpu(cpu_id).lock().push_back(f);
     }
     for cpu_id in targets.iter() {
         if cpu_id == this_cpu_id {
@@ -49,7 +49,7 @@ pub fn inter_processor_call(targets: &CpuSet, f: fn()) {
         }
         // SAFETY: It is safe to send inter processor call IPI to other CPUs.
         unsafe {
-            crate::arch::irq::send_ipi(cpu_id as u32, irq_num);
+            crate::arch::irq::send_ipi(cpu_id, irq_num);
         }
     }
     if call_on_self {

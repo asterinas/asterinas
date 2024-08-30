@@ -10,12 +10,7 @@ cfg_if::cfg_if! {
     }
 }
 
-use alloc::vec::Vec;
-
-use bitvec::{
-    prelude::{BitVec, Lsb0},
-    slice::IterOnes,
-};
+use bitvec::prelude::BitVec;
 use local::cpu_local_cell;
 use spin::Once;
 
@@ -122,13 +117,6 @@ impl CpuSet {
         self.bitset.set(cpu_id as usize, true);
     }
 
-    /// Adds a list of CPUs to the set.
-    pub fn add_from_vec(&mut self, cpu_ids: Vec<u32>) {
-        for cpu_id in cpu_ids {
-            self.add(cpu_id)
-        }
-    }
-
     /// Adds all CPUs to the set.
     pub fn add_all(&mut self) {
         self.bitset.fill(true);
@@ -137,13 +125,6 @@ impl CpuSet {
     /// Removes a CPU from the set.
     pub fn remove(&mut self, cpu_id: u32) {
         self.bitset.set(cpu_id as usize, false);
-    }
-
-    /// Removes a list of CPUs from the set.
-    pub fn remove_from_vec(&mut self, cpu_ids: Vec<u32>) {
-        for cpu_id in cpu_ids {
-            self.remove(cpu_id);
-        }
     }
 
     /// Removes all CPUs from the set.
@@ -162,8 +143,8 @@ impl CpuSet {
     }
 
     /// Iterates over the CPUs in the set.
-    pub fn iter(&self) -> IterOnes<'_, usize, Lsb0> {
-        self.bitset.iter_ones()
+    pub fn iter(&self) -> impl Iterator<Item = u32> + '_ {
+        self.bitset.iter_ones().map(|idx| idx as u32)
     }
 }
 
