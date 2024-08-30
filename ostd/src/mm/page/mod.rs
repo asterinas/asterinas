@@ -126,8 +126,8 @@ impl<M: PageMeta> Page<M> {
     /// The physical address must represent a valid page and the caller must already hold one
     /// reference count.
     pub(in crate::mm) unsafe fn inc_ref_count(paddr: Paddr) {
-        let page = unsafe { ManuallyDrop::new(Self::from_raw(paddr)) };
-        let _page = page.clone();
+        let vaddr: Vaddr = mapping::page_to_meta::<PagingConsts>(paddr);
+        unsafe{ &(*(vaddr as *const MetaSlot)).ref_count }.fetch_add(1, Ordering::Relaxed);
     }
 
     /// Get the physical address.
@@ -232,8 +232,8 @@ impl DynPage {
     /// The physical address must represent a valid page and the caller must already hold one
     /// reference count.
     pub(in crate::mm) unsafe fn inc_ref_count(paddr: Paddr) {
-        let page = unsafe { ManuallyDrop::new(Self::from_raw(paddr)) };
-        let _page = page.clone();
+        let vaddr: Vaddr = mapping::page_to_meta::<PagingConsts>(paddr);
+        unsafe{ &(*(vaddr as *const MetaSlot)).ref_count }.fetch_add(1, Ordering::Relaxed);
     }
 
     /// Get the physical address of the start of the page
