@@ -57,10 +57,9 @@ fn do_sys_semtimedop(
         return_errno!(Errno::E2BIG);
     }
 
+    let user_space = ctx.get_user_space();
     for i in 0..nsops {
-        let sem_buf =
-            CurrentUserSpace::get().read_val::<SemBuf>(tsops + size_of::<SemBuf>() * i)?;
-
+        let sem_buf = user_space.read_val::<SemBuf>(tsops + size_of::<SemBuf>() * i)?;
         sem_op(sem_id, &sem_buf, timeout, ctx)?;
     }
 
