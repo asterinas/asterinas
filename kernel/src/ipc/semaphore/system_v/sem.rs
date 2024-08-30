@@ -91,9 +91,9 @@ pub struct Semaphore {
     /// - through SEM_UNDO when task exit
     latest_modified_pid: AtomicU32,
     /// Pending alter operations. For each pending operation, it has `sem_op < 0`.
-    pending_alters: Mutex<LinkedList<Box<PendingOp>>>,
+    pending_alters: Mutex<LinkedList<PendingOp>>,
     /// Pending zeros operations. For each pending operation, it has `sem_op = 0`.
-    pending_const: Mutex<LinkedList<Box<PendingOp>>>,
+    pending_const: Mutex<LinkedList<PendingOp>>,
     /// Last semop time.
     sem_otime: AtomicU64,
 }
@@ -210,13 +210,13 @@ impl Semaphore {
         // Add current to pending list
         let (waiter, waker) = Waiter::new_pair();
         let status = Arc::new(AtomicStatus::new(Status::Pending));
-        let pending_op = Box::new(PendingOp {
+        let pending_op = PendingOp {
             sem_buf: *sem_buf,
             status: status.clone(),
             waker: waker.clone(),
             process: ctx.posix_thread.weak_process(),
             pid: current_pid,
-        });
+        };
         if sem_op == 0 {
             self.pending_const.lock().push_back(pending_op);
         } else {
