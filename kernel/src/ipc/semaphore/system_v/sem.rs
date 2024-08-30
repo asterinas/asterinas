@@ -5,7 +5,7 @@ use core::{
     time::Duration,
 };
 
-use ostd::sync::{Mutex, Waiter, Waker};
+use ostd::sync::{PreemptDisabled, Waiter, Waker};
 
 use super::sem_set::SEMVMX;
 use crate::{
@@ -84,16 +84,16 @@ impl Debug for PendingOp {
 
 #[derive(Debug)]
 pub struct Semaphore {
-    val: Mutex<i32>,
+    val: SpinLock<i32>,
     /// PID of the process that last modified semaphore.
     /// - through semop with op != 0
     /// - through semctl with SETVAL and SETALL
     /// - through SEM_UNDO when task exit
     latest_modified_pid: AtomicU32,
     /// Pending alter operations. For each pending operation, it has `sem_op < 0`.
-    pending_alters: Mutex<LinkedList<PendingOp>>,
+    pending_alters: SpinLock<LinkedList<PendingOp>>,
     /// Pending zeros operations. For each pending operation, it has `sem_op = 0`.
-    pending_const: Mutex<LinkedList<PendingOp>>,
+    pending_const: SpinLock<LinkedList<PendingOp>>,
     /// Last semop time.
     sem_otime: AtomicU64,
 }
@@ -150,10 +150,10 @@ impl Semaphore {
 
     pub(super) fn new(val: i32) -> Self {
         Self {
-            val: Mutex::new(val),
+            val: SpinLock::new(val),
             latest_modified_pid: AtomicU32::new(current!().pid()),
-            pending_alters: Mutex::new(LinkedList::new()),
-            pending_const: Mutex::new(LinkedList::new()),
+            pending_alters: SpinLock::new(LinkedList::new()),
+            pending_const: SpinLock::new(LinkedList::new()),
             sem_otime: AtomicU64::new(0),
         }
     }
@@ -170,7 +170,7 @@ impl Semaphore {
         let sem_op = sem_buf.sem_op;
         let current_pid = ctx.process.pid();
 
-        let flags = IpcFlags::from_bits(sem_buf.sem_flags as u32).unwrap();
+        let flags = IpcFlags::from_bits_truncate(sem_buf.sem_flags as u32);
         if flags.contains(IpcFlags::SEM_UNDO) {
             todo!()
         }
@@ -243,7 +243,7 @@ impl Semaphore {
     }
 
     /// Updates pending ops after the val changed.
-    fn update_pending_ops(&self, mut val: MutexGuard<i32>, current_pid: Pid) {
+    fn update_pending_ops(&self, mut val: SpinLockGuard<i32, PreemptDisabled>, current_pid: Pid) {
         debug_assert!(*val >= 0);
         trace!("Updating pending ops, semaphore before: {:?}", *val);
 
