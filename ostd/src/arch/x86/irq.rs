@@ -173,7 +173,7 @@ pub(crate) unsafe fn send_ipi(cpu_id: u32, irq_num: u8) {
         apic::DeliveryMode::Fixed,
         irq_num,
     );
-    apic::borrow(|apic| {
+    apic::with_borrow(|apic| {
         apic.send_ipi(icr);
     });
 }

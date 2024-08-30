@@ -150,7 +150,7 @@ fn send_startup_to_all_aps() {
         (AP_BOOT_START_PA / PAGE_SIZE) as u8,
     );
     // SAFETY: we are sending startup IPI to all APs.
-    apic::borrow(|apic| unsafe { apic.send_ipi(icr) });
+    apic::with_borrow(|apic| unsafe { apic.send_ipi(icr) });
 }
 
 fn send_init_to_all_aps() {
@@ -165,7 +165,7 @@ fn send_init_to_all_aps() {
         0,
     );
     // SAFETY: we are sending init IPI to all APs.
-    apic::borrow(|apic| unsafe { apic.send_ipi(icr) });
+    apic::with_borrow(|apic| unsafe { apic.send_ipi(icr) });
 }
 
 fn send_init_deassert() {
@@ -180,7 +180,7 @@ fn send_init_deassert() {
         0,
     );
     // SAFETY: we are sending deassert IPI to all APs.
-    apic::borrow(|apic| unsafe { apic.send_ipi(icr) });
+    apic::with_borrow(|apic| unsafe { apic.send_ipi(icr) });
 }
 
 /// Spin wait approximately `c` cycles.

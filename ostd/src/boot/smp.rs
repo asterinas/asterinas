@@ -123,6 +123,13 @@ fn ap_early_entry(local_apic_id: u32) -> ! {
     unsafe {
         trapframe::init();
     }
+
+    // SAFETY: this function is only called once on this AP, after the BSP has
+    // done the architecture-specific initialization.
+    unsafe {
+        crate::arch::init_on_ap();
+    }
+
     crate::arch::irq::enable_local();
 
     // SAFETY: this function is only called once on this AP.

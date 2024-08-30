@@ -13,7 +13,7 @@ pub mod x2apic;
 pub mod xapic;
 
 cpu_local! {
-    static APIC_INSTANCE: Once<RefCell<Box<dyn Apic + 'static>>> = Once::new();
+    static APIC_INSTANCE: RefCell<Option<Box<dyn Apic + 'static>>> = RefCell::new(None);
 }
 
 static APIC_TYPE: Once<ApicType> = Once::new();
@@ -24,23 +24,29 @@ static APIC_TYPE: Once<ApicType> = Once::new();
 /// local APIC instance. During the execution of the closure, the interrupts
 /// are guaranteed to be disabled.
 ///
+/// This function also lazily initializes the Local APIC instance. It does
+/// enable the Local APIC if it is not enabled.
+///
 /// Example:
 /// ```rust
 /// use ostd::arch::x86::kernel::apic;
 ///
-/// let ticks = apic::borrow(|apic| {
+/// let ticks = apic::with_borrow(|apic| {
 ///     let ticks = apic.timer_current_count();
 ///     apic.set_timer_init_count(0);
 ///     ticks
 /// });
 /// ```
-pub fn borrow<R>(f: impl FnOnce(&mut (dyn Apic + 'static)) -> R) -> R {
+pub fn with_borrow<R>(f: impl FnOnce(&mut (dyn Apic + 'static)) -> R) -> R {
     let irq_guard = crate::trap::disable_local();
     let apic_guard = APIC_INSTANCE.get_with(&irq_guard);
+    let mut apic_init_ref = apic_guard.borrow_mut();
 
     // If it is not initialized, lazily initialize it.
-    if !apic_guard.is_completed() {
-        apic_guard.call_once(|| match APIC_TYPE.get().unwrap() {
+    let apic_ref = if let Some(apic_ref) = apic_init_ref.as_mut() {
+        apic_ref
+    } else {
+        *apic_init_ref = Some(match APIC_TYPE.get().unwrap() {
             ApicType::XApic => {
                 let mut xapic = xapic::XApic::new().unwrap();
                 xapic.enable();
@@ -51,7 +57,7 @@ pub fn borrow<R>(f: impl FnOnce(&mut (dyn Apic + 'static)) -> R) -> R {
                     version & 0xff,
                     (version >> 16) & 0xff
                 );
-                RefCell::new(Box::new(xapic))
+                Box::new(xapic)
             }
             ApicType::X2Apic => {
                 let mut x2apic = x2apic::X2Apic::new().unwrap();
@@ -63,13 +69,12 @@ pub fn borrow<R>(f: impl FnOnce(&mut (dyn Apic + 'static)) -> R) -> R {
                     version & 0xff,
                     (version >> 16) & 0xff
                 );
-                RefCell::new(Box::new(x2apic))
+                Box::new(x2apic)
             }
         });
-    }
 
-    let apic_cell = apic_guard.get().unwrap();
-    let mut apic_ref = apic_cell.borrow_mut();
+        apic_init_ref.as_mut().unwrap()
+    };
 
     let ret = f.call_once((apic_ref.as_mut(),));
 

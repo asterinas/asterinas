@@ -54,7 +54,7 @@ fn is_tsc_deadline_mode_supported() -> bool {
 fn init_tsc_mode() -> IrqLine {
     let timer_irq = IrqLine::alloc().unwrap();
     // Enable tsc deadline mode
-    apic::borrow(|apic| {
+    apic::with_borrow(|apic| {
         apic.set_lvt_timer(timer_irq.num() as u64 | (1 << 18));
     });
     let tsc_step = TSC_FREQ.load(Ordering::Relaxed) / TIMER_FREQ;
@@ -81,7 +81,7 @@ fn init_periodic_mode() -> IrqLine {
     super::pit::enable_ioapic_line(irq.clone());
 
     // Set APIC timer count
-    apic::borrow(|apic| {
+    apic::with_borrow(|apic| {
         apic.set_timer_div_config(DivideConfig::Divide64);
         apic.set_timer_init_count(0xFFFF_FFFF);
     });
@@ -99,7 +99,7 @@ fn init_periodic_mode() -> IrqLine {
     // Init APIC Timer
     let timer_irq = IrqLine::alloc().unwrap();
 
-    apic::borrow(|apic| {
+    apic::with_borrow(|apic| {
         apic.set_timer_init_count(INIT_COUNT.load(Ordering::Relaxed));
         apic.set_lvt_timer(timer_irq.num() as u64 | (1 << 17));
         apic.set_timer_div_config(DivideConfig::Divide64);
@@ -115,7 +115,7 @@ fn init_periodic_mode() -> IrqLine {
 
         if IN_TIME.load(Ordering::Relaxed) < CALLBACK_TIMES || IS_FINISH.load(Ordering::Acquire) {
             if IN_TIME.load(Ordering::Relaxed) == 0 {
-                let remain_ticks = apic::borrow(|apic| apic.timer_current_count());
+                let remain_ticks = apic::with_borrow(|apic| apic.timer_current_count());
                 APIC_FIRST_COUNT.store(0xFFFF_FFFF - remain_ticks, Ordering::Relaxed);
             }
             IN_TIME.fetch_add(1, Ordering::Relaxed);
@@ -124,7 +124,7 @@ fn init_periodic_mode() -> IrqLine {
 
         // Stop PIT and APIC Timer
         super::pit::disable_ioapic_line();
-        let remain_ticks = apic::borrow(|apic| {
+        let remain_ticks = apic::with_borrow(|apic| {
             let remain_ticks = apic.timer_current_count();
             apic.set_timer_init_count(0);
             remain_ticks
