@@ -55,7 +55,7 @@ impl Thread {
     /// # Panics
     ///
     /// This method panics if the task is not a thread.
-    pub fn borrow_from_task(task: &Arc<Task>) -> &Arc<Self> {
+    pub fn borrow_from_task(task: &Task) -> &Arc<Self> {
         task.data().downcast_ref::<Arc<Thread>>().unwrap()
     }
 

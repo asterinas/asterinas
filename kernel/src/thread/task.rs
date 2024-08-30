@@ -8,6 +8,7 @@ use ostd::{
 use super::Thread;
 use crate::{
     cpu::LinuxAbi,
+    get_current_userspace,
     prelude::*,
     process::{posix_thread::PosixThreadExt, signal::handle_pending_signal},
     syscall::handle_syscall,
@@ -46,7 +47,7 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Arc<Thread>)
         // Make sure the store operation completes before the clone call returns control to user space
         // in the child process.
         if is_userspace_vaddr(child_tid_ptr) {
-            CurrentUserSpace::get()
+            get_current_userspace!()
                 .write_val(child_tid_ptr, &current_posix_thread.tid())
                 .unwrap();
         }
@@ -73,12 +74,12 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Arc<Thread>)
             if current_thread.status().is_exited() {
                 break;
             }
-            handle_pending_signal(user_ctx, &current_thread).unwrap();
+            handle_pending_signal(user_ctx, &ctx).unwrap();
             // If current is suspended, wait for a signal to wake up self
             while current_thread.status().is_stopped() {
                 Thread::yield_now();
                 debug!("{} is suspended.", current_posix_thread.tid());
-                handle_pending_signal(user_ctx, &current_thread).unwrap();
+                handle_pending_signal(user_ctx, &ctx).unwrap();
             }
             if current_thread.status().is_exited() {
                 debug!("exit due to signal");

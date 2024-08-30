@@ -21,20 +21,24 @@ pub fn sys_rt_sigaction(
         old_sig_action_addr,
         sigset_size
     );
+
     let mut sig_dispositions = ctx.process.sig_dispositions().lock();
-    let old_action = sig_dispositions.get(sig_num);
-    let old_action_c = old_action.as_c_type();
-    if old_sig_action_addr != 0 {
-        ctx.get_user_space()
-            .write_val(old_sig_action_addr, &old_action_c)?;
-    }
-    if sig_action_addr != 0 {
+
+    let old_action = if sig_action_addr != 0 {
         let sig_action_c = ctx
             .get_user_space()
             .read_val::<sigaction_t>(sig_action_addr)?;
         let sig_action = SigAction::try_from(sig_action_c).unwrap();
         trace!("sig action = {:?}", sig_action);
-        sig_dispositions.set(sig_num, sig_action);
+        sig_dispositions.set(sig_num, sig_action)
+    } else {
+        sig_dispositions.get(sig_num)
+    };
+
+    if old_sig_action_addr != 0 {
+        let old_action_c = old_action.as_c_type();
+        ctx.get_user_space()
+            .write_val(old_sig_action_addr, &old_action_c)?;
     }
 
     Ok(SyscallReturn::Return(0))

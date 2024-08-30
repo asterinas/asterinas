@@ -26,9 +26,9 @@ impl SigDispositions {
         self.map[idx]
     }
 
-    pub fn set(&mut self, num: SigNum, sa: SigAction) {
+    pub fn set(&mut self, num: SigNum, sa: SigAction) -> SigAction {
         let idx = Self::num_to_idx(num);
-        self.map[idx] = sa;
+        core::mem::replace(&mut self.map[idx], sa)
     }
 
     pub fn set_default(&mut self, num: SigNum) {

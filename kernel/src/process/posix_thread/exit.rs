@@ -2,6 +2,7 @@
 
 use super::{futex::futex_wake, robust_list::wake_robust_futex, thread_table, PosixThread};
 use crate::{
+    get_current_userspace,
     prelude::*,
     process::{do_exit_group, TermStatus},
     thread::{Thread, Tid},
@@ -25,7 +26,7 @@ pub fn do_exit(thread: &Thread, posix_thread: &PosixThread, term_status: TermSta
     if *clear_ctid != 0 {
         futex_wake(*clear_ctid, 1, None)?;
         // FIXME: the correct write length?
-        CurrentUserSpace::get()
+        get_current_userspace!()
             .write_val(*clear_ctid, &0u32)
             .unwrap();
         *clear_ctid = 0;

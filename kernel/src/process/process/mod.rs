@@ -334,7 +334,7 @@ impl Process {
             .lock()
             .iter()
             .find(|task| task.tid() == self.pid)
-            .map(Thread::borrow_from_task)
+            .map(|task| Thread::borrow_from_task(task.as_ref()))
             .cloned()
     }
 

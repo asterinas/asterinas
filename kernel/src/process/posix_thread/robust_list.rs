@@ -2,7 +2,11 @@
 
 //! The implementation of robust list is from occlum.
 
-use crate::{prelude::*, process::posix_thread::futex::futex_wake, thread::Tid};
+use ostd::task::Task;
+
+use crate::{
+    get_current_userspace, prelude::*, process::posix_thread::futex::futex_wake, thread::Tid,
+};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
@@ -101,7 +105,7 @@ impl<'a> Iterator for FutexIter<'a> {
             } else {
                 None
             };
-            let Ok(robust_list) = CurrentUserSpace::get().read_val::<RobustList>(self.entry_ptr)
+            let Ok(robust_list) = get_current_userspace!().read_val::<RobustList>(self.entry_ptr)
             else {
                 return None;
             };
@@ -123,7 +127,9 @@ const FUTEX_TID_MASK: u32 = 0x3FFF_FFFF;
 /// Wakeup one robust futex owned by the thread
 /// FIXME: requires atomic operations here
 pub fn wake_robust_futex(futex_addr: Vaddr, tid: Tid) -> Result<()> {
-    let user_space = CurrentUserSpace::get();
+    let task = Task::current().unwrap();
+    let user_space = CurrentUserSpace::new(&task);
+
     let futex_val = {
         if futex_addr == 0 {
             return_errno_with_message!(Errno::EINVAL, "invalid futext addr");

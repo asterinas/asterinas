@@ -20,10 +20,14 @@ use core::{
 
 use align_ext::AlignExt;
 use aster_rights::Full;
-use ostd::mm::{VmIo, MAX_USERSPACE_VADDR};
+use ostd::{
+    mm::{VmIo, MAX_USERSPACE_VADDR},
+    task::Task,
+};
 
 use self::aux_vec::{AuxKey, AuxVec};
 use crate::{
+    get_current_userspace,
     prelude::*,
     util::random::getrandom,
     vm::{
@@ -372,7 +376,7 @@ impl InitStackReader {
     /// Reads argc from the process init stack
     pub fn argc(&self) -> Result<u64> {
         let stack_base = self.init_stack_bottom();
-        CurrentUserSpace::get().read_val(stack_base)
+        get_current_userspace!().read_val(stack_base)
     }
 
     /// Reads argv from the process init stack
@@ -383,7 +387,10 @@ impl InitStackReader {
         let read_offset = self.init_stack_bottom() + size_of::<usize>();
 
         let mut argv = Vec::with_capacity(argc);
-        let user_space = CurrentUserSpace::get();
+
+        let current_task = Task::current().unwrap();
+        let user_space = CurrentUserSpace::new(&current_task);
+
         let mut argv_reader = user_space.reader(read_offset, argc * size_of::<usize>())?;
         for _ in 0..argc {
             let arg = {
@@ -410,7 +417,10 @@ impl InitStackReader {
             + size_of::<usize>();
 
         let mut envp = Vec::new();
-        let user_space = CurrentUserSpace::get();
+
+        let current_task = Task::current().unwrap();
+        let user_space = CurrentUserSpace::new(&current_task);
+
         let mut envp_reader = user_space.reader(read_offset, MAX_ENVP_NUMBER)?;
         for _ in 0..MAX_ENVP_NUMBER {
             let envp_ptr = envp_reader.read_val::<Vaddr>()?;

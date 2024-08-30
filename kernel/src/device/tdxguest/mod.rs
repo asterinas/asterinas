@@ -82,7 +82,7 @@ impl FileIo for TdxGuest {
 fn handle_get_report(arg: usize) -> Result<i32> {
     const SHARED_BIT: u8 = 51;
     const SHARED_MASK: u64 = 1u64 << SHARED_BIT;
-    let user_space = CurrentUserSpace::get();
+    let user_space = get_current_userspace!();
     let user_request: TdxReportRequest = user_space.read_val(arg)?;
 
     let vm_segment = FrameAllocOptions::new(2)
