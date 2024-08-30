@@ -108,10 +108,21 @@ pub(crate) fn init_on_bsp() {
     kernel::pic::init();
 }
 
+/// Architecture-specific initialization on the application processor.
+///
+/// # Safety
+///
+/// This function must be called only once on each application processor.
+/// And it should be called after the BSP's call to [`init_on_bsp`].
+pub(crate) unsafe fn init_on_ap() {
+    // Trigger the initialization of the local APIC.
+    crate::arch::x86::kernel::apic::with_borrow(|_| {});
+}
+
 pub(crate) fn interrupts_ack(irq_number: usize) {
     if !cpu::CpuException::is_cpu_exception(irq_number as u16) {
         kernel::pic::ack();
-        kernel::apic::borrow(|apic| {
+        kernel::apic::with_borrow(|apic| {
             apic.eoi();
         });
     }
