@@ -50,12 +50,12 @@ impl<T: PreemptSchedInfo> PreemptScheduler<T> {
         let mut minimum_load = usize::MAX;
 
         for candidate in runnable.cpu_affinity().iter() {
-            let rq = self.rq[candidate].lock();
+            let rq = self.rq[candidate as usize].lock();
             // A wild guess measuring the load of a runqueue. We assume that
             // real-time tasks are 4-times as important as normal tasks.
             let load = rq.real_time_entities.len() * 4 + rq.normal_entities.len();
             if load < minimum_load {
-                selected = candidate as u32;
+                selected = candidate;
                 minimum_load = load;
             }
         }

@@ -57,6 +57,7 @@ fn create_user_space(program: &[u8]) -> UserSpace {
         for frame in user_pages {
             cursor.map(frame, map_prop);
         }
+        drop(cursor);
         Arc::new(vm_space)
     };
     let user_cpu_state = {

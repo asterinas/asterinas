@@ -162,7 +162,11 @@ impl PageTable<KernelMode> {
         for i in start..end {
             if !root_node.read_pte(i).is_present() {
                 let node = PageTableNode::alloc(PagingConsts::NR_LEVELS - 1);
-                root_node.set_child_pt(i, node.into_raw(), i < NR_PTES_PER_NODE * 3 / 4);
+                let _ = root_node.replace_child(
+                    i,
+                    Child::PageTable(node.into_raw()),
+                    i < NR_PTES_PER_NODE * 3 / 4,
+                );
             }
         }
     }

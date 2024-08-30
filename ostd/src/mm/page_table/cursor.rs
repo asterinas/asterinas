@@ -73,7 +73,10 @@ use super::{
     page_size, pte_index, Child, KernelMode, PageTable, PageTableEntryTrait, PageTableError,
     PageTableMode, PageTableNode, PagingConstsTrait, PagingLevel, UserMode,
 };
-use crate::mm::{page::DynPage, Paddr, PageProperty, Vaddr};
+use crate::{
+    mm::{page::DynPage, Paddr, PageProperty, Vaddr},
+    task::{disable_preempt, DisabledPreemptGuard},
+};
 
 #[derive(Clone, Debug)]
 pub enum PageTableItem {
@@ -125,7 +128,8 @@ where
     va: Vaddr,
     /// The virtual address range that is locked.
     barrier_va: Range<Vaddr>,
-    phantom: PhantomData<&'a PageTable<M, E, C>>,
+    preempt_guard: DisabledPreemptGuard,
+    _phantom: PhantomData<&'a PageTable<M, E, C>>,
 }
 
 impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<'a, M, E, C>
@@ -162,7 +166,8 @@ where
             guard_level: C::NR_LEVELS,
             va: va.start,
             barrier_va: va.clone(),
-            phantom: PhantomData,
+            preempt_guard: disable_preempt(),
+            _phantom: PhantomData,
         };
 
         // Go down and get proper locks. The cursor should hold a lock of a
@@ -204,36 +209,27 @@ where
             let level = self.level;
             let va = self.va;
 
-            let pte = self.read_cur_pte();
-            if !pte.is_present() {
-                return Ok(PageTableItem::NotMapped {
-                    va,
-                    len: page_size::<C>(level),
-                });
-            }
-            if !pte.is_last(level) {
-                self.level_down();
-                continue;
-            }
-
             match self.cur_child() {
-                Child::Page(page) => {
-                    return Ok(PageTableItem::Mapped {
+                Child::PageTable(_) => {
+                    self.level_down();
+                    continue;
+                }
+                Child::None => {
+                    return Ok(PageTableItem::NotMapped {
                         va,
-                        page,
-                        prop: pte.prop(),
+                        len: page_size::<C>(level),
                     });
                 }
-                Child::Untracked(pa) => {
+                Child::Page(page, prop) => {
+                    return Ok(PageTableItem::Mapped { va, page, prop });
+                }
+                Child::Untracked(pa, prop) => {
                     return Ok(PageTableItem::MappedUntracked {
                         va,
                         pa,
                         len: page_size::<C>(level),
-                        prop: pte.prop(),
+                        prop,
                     });
-                }
-                Child::None | Child::PageTable(_) => {
-                    unreachable!(); // Already checked with the PTE.
                 }
             }
         }
@@ -287,6 +283,10 @@ where
 
     pub fn virt_addr(&self) -> Vaddr {
         self.va
+    }
+
+    pub fn preempt_guard(&self) -> &DisabledPreemptGuard {
+        &self.preempt_guard
     }
 
     /// Goes up a level. We release the current page if it has no mappings since the cursor only moves
@@ -423,6 +423,8 @@ where
 
     /// Maps the range starting from the current address to a [`DynPage`].
     ///
+    /// It returns the previously mapped [`DynPage`] if that exists.
+    ///
     /// # Panics
     ///
     /// This function will panic if
@@ -434,7 +436,7 @@ where
     ///
     /// The caller should ensure that the virtual range being mapped does
     /// not affect kernel's memory safety.
-    pub unsafe fn map(&mut self, page: DynPage, prop: PageProperty) {
+    pub unsafe fn map(&mut self, page: DynPage, prop: PageProperty) -> Option<DynPage> {
         let end = self.0.va + page.size();
         assert!(end <= self.0.barrier_va.end);
         debug_assert!(self.0.in_tracked_range());
@@ -458,8 +460,19 @@ where
 
         // Map the current page.
         let idx = self.0.cur_idx();
-        self.cur_node_mut().set_child_page(idx, page, prop);
+        let old = self
+            .cur_node_mut()
+            .replace_child(idx, Child::Page(page, prop), true);
         self.0.move_forward();
+
+        match old {
+            Child::Page(old_page, _) => Some(old_page),
+            Child::None => None,
+            Child::PageTable(_) => {
+                todo!("Dropping page table nodes while mapping requires TLB flush")
+            }
+            Child::Untracked(_, _) => panic!("Mapping a tracked page in an untracked range"),
+        }
     }
 
     /// Maps the range starting from the current address to a physical address range.
@@ -520,7 +533,9 @@ where
             // Map the current page.
             debug_assert!(!self.0.in_tracked_range());
             let idx = self.0.cur_idx();
-            self.cur_node_mut().set_child_untracked(idx, pa, prop);
+            let _ = self
+                .cur_node_mut()
+                .replace_child(idx, Child::Untracked(pa, prop), false);
 
             let level = self.0.level;
             pa += page_size::<C>(level);
@@ -605,23 +620,25 @@ where
 
             // Unmap the current page and return it.
             let idx = self.0.cur_idx();
-            let ret = self.cur_node_mut().take_child(idx, is_tracked);
+            let ret = self
+                .cur_node_mut()
+                .replace_child(idx, Child::None, is_tracked);
             let ret_page_va = self.0.va;
             let ret_page_size = page_size::<C>(self.0.level);
 
             self.0.move_forward();
 
             return match ret {
-                Child::Page(page) => PageTableItem::Mapped {
+                Child::Page(page, prop) => PageTableItem::Mapped {
                     va: ret_page_va,
                     page,
-                    prop: cur_pte.prop(),
+                    prop,
                 },
-                Child::Untracked(pa) => PageTableItem::MappedUntracked {
+                Child::Untracked(pa, prop) => PageTableItem::MappedUntracked {
                     va: ret_page_va,
                     pa,
                     len: ret_page_size,
-                    prop: cur_pte.prop(),
+                    prop,
                 },
                 Child::None | Child::PageTable(_) => unreachable!(),
             };
@@ -717,6 +734,10 @@ where
         None
     }
 
+    pub fn preempt_guard(&self) -> &DisabledPreemptGuard {
+        &self.0.preempt_guard
+    }
+
     /// Consumes itself and leak the root guard for the caller if it locked the root level.
     ///
     /// It is useful when the caller wants to keep the root guard while the cursor should be dropped.
@@ -743,8 +764,12 @@ where
         let new_node = PageTableNode::<E, C>::alloc(self.0.level - 1);
         let idx = self.0.cur_idx();
         let is_tracked = self.0.in_tracked_range();
-        self.cur_node_mut()
-            .set_child_pt(idx, new_node.clone_raw(), is_tracked);
+        let old = self.cur_node_mut().replace_child(
+            idx,
+            Child::PageTable(new_node.clone_raw()),
+            is_tracked,
+        );
+        debug_assert!(old.is_none());
         self.0.level -= 1;
         self.0.guards[(self.0.level - 1) as usize] = Some(new_node);
     }

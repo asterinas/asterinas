@@ -24,12 +24,12 @@ impl WorkerScheduler for SimpleScheduler {
     fn schedule(&self) {
         let worker_pool = self.worker_pool.upgrade().unwrap();
         for cpu_id in worker_pool.cpu_set().iter() {
-            if !worker_pool.heartbeat(cpu_id as u32)
-                && worker_pool.has_pending_work_items(cpu_id as u32)
-                && !worker_pool.wake_worker(cpu_id as u32)
-                && worker_pool.num_workers(cpu_id as u32) < WORKER_LIMIT
+            if !worker_pool.heartbeat(cpu_id)
+                && worker_pool.has_pending_work_items(cpu_id)
+                && !worker_pool.wake_worker(cpu_id)
+                && worker_pool.num_workers(cpu_id) < WORKER_LIMIT
             {
-                worker_pool.add_worker(cpu_id as u32);
+                worker_pool.add_worker(cpu_id);
             }
         }
     }

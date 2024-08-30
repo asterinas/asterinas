@@ -3,6 +3,7 @@
 /// A guard for disable preempt.
 #[clippy::has_significant_drop]
 #[must_use]
+#[derive(Debug)]
 pub struct DisabledPreemptGuard {
     // This private field prevents user from constructing values of this type directly.
     _private: (),
