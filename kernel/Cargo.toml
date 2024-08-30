@@ -17,6 +17,7 @@ aster-virtio = { path = "comps/virtio" }
 aster-rights = { path = "libs/aster-rights" }
 component = { path = "libs/comp-sys/component" }
 controlled = { path = "libs/comp-sys/controlled" }
+crossbeam-queue = { version = "0.3.11", default-features = false, features = ["alloc"] }
 ostd = { path = "../ostd" }
 typeflags = { path = "libs/typeflags" }
 typeflags-util = { path = "libs/typeflags-util" }

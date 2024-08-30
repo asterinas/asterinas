@@ -8,7 +8,7 @@ use crate::prelude::*;
 
 mod any_socket;
 mod common;
-mod loopback;
+pub(super) mod loopback;
 mod time;
 mod util;
 mod virtio;

@@ -14,6 +14,8 @@ pub mod iface;
 pub mod socket;
 
 pub fn init() {
+    iface::loopback::init();
+
     IFACES.call_once(|| {
         let iface_virtio = IfaceVirtio::new();
         let iface_loopback = IfaceLoopback::new();
