@@ -59,7 +59,7 @@ impl Pollee {
     fn register_poller(&self, poller: &mut PollHandle, mask: IoEvents) {
         self.inner
             .subject
-            .register_observer(poller.observer(), mask);
+            .register_observer(poller.observer.clone(), mask);
 
         poller.pollees.push(Arc::downgrade(&self.inner));
     }
@@ -126,31 +126,108 @@ impl Pollee {
     }
 }
 
-/// A poller gets notified when its associated pollees have interesting events.
+/// An opaque handle that can be used as an argument of the [`Pollee::poll`] method.
+///
+/// This type can represent an entity of [`PollAdaptor`] or [`Poller`], which is done via the
+/// [`PollAdaptor::as_handle_mut`] and [`Poller::as_handle_mut`] methods.
+///
+/// When this handle is dropped or reset (via [`PollHandle::reset`]), the entity will no longer be
+/// notified of the events from the pollee.
 pub struct PollHandle {
-    // Use event counter to wait or wake up a poller
-    event_counter: Arc<EventCounter>,
-    // All pollees that are interesting to this poller
+    // The event observer.
+    observer: Weak<dyn Observer<IoEvents>>,
+    // The associated pollees.
     pollees: Vec<Weak<PolleeInner>>,
-    // A waiter used to pause the current thread.
-    waiter: Waiter,
-}
-
-impl Default for PollHandle {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl PollHandle {
-    /// Constructs a new `PollHandle`.
-    pub fn new() -> Self {
-        let (waiter, waker) = Waiter::new_pair();
+    /// Constructs a new handle with the observer.
+    ///
+    /// Note: It is a *logic error* to construct the multiple handles with the same observer (where
+    /// "same" means [`Weak::ptr_eq`]). If possible, consider using [`PollAdaptor::with_observer`]
+    /// instead.
+    pub fn new(observer: Weak<dyn Observer<IoEvents>>) -> Self {
         Self {
-            event_counter: Arc::new(EventCounter::new(waker)),
+            observer,
             pollees: Vec::new(),
+        }
+    }
+
+    /// Resets the handle.
+    ///
+    /// The observer will be unregistered and will no longer receive events.
+    pub fn reset(&mut self) {
+        let observer = &self.observer;
+
+        self.pollees
+            .iter()
+            .filter_map(Weak::upgrade)
+            .for_each(|pollee| {
+                pollee.subject.unregister_observer(observer);
+            });
+    }
+}
+
+impl Drop for PollHandle {
+    fn drop(&mut self) {
+        self.reset();
+    }
+}
+
+/// An adaptor to make an [`Observer`] usable for [`Pollee::poll`].
+///
+/// Normally, [`Pollee::poll`] accepts a [`Poller`] which is used to wait for events. By using this
+/// adaptor, it is possible to use any [`Observer`] with [`Pollee::poll`]. The observer will be
+/// notified whenever there are new events.
+pub struct PollAdaptor<O> {
+    // The event observer.
+    observer: Arc<O>,
+    // The inner with observer type erased.
+    inner: PollHandle,
+}
+
+impl<O: Observer<IoEvents> + 'static> PollAdaptor<O> {
+    /// Constructs a new adaptor with the specified observer.
+    pub fn with_observer(observer: O) -> Self {
+        let observer = Arc::new(observer);
+        let inner = PollHandle::new(Arc::downgrade(&observer) as _);
+
+        Self { observer, inner }
+    }
+}
+
+impl<O> PollAdaptor<O> {
+    /// Gets a reference to the observer.
+    pub fn observer(&self) -> &Arc<O> {
+        &self.observer
+    }
+
+    /// Returns a mutable reference of [`PollHandle`].
+    pub fn as_handle_mut(&mut self) -> &mut PollHandle {
+        &mut self.inner
+    }
+}
+
+/// A poller that can be used to wait for some events.
+pub struct Poller {
+    poller: PollAdaptor<EventCounter>,
+    waiter: Waiter,
+}
+
+impl Poller {
+    /// Constructs a new poller to wait for interesting events.
+    pub fn new() -> Self {
+        let (waiter, event_counter) = EventCounter::new_pair();
+
+        Self {
+            poller: PollAdaptor::with_observer(event_counter),
             waiter,
         }
+    }
+
+    /// Returns a mutable reference of [`PollHandle`].
+    pub fn as_handle_mut(&mut self) -> &mut PollHandle {
+        self.poller.as_handle_mut()
     }
 
     /// Waits until some interesting events happen since the last wait or until the timeout
@@ -158,43 +235,30 @@ impl PollHandle {
     ///
     /// The waiting process can be interrupted by a signal.
     pub fn wait(&self, timeout: Option<&Duration>) -> Result<()> {
-        self.event_counter.read(&self.waiter, timeout)?;
+        self.poller.observer().read(&self.waiter, timeout)?;
         Ok(())
     }
-
-    fn observer(&self) -> Weak<dyn Observer<IoEvents>> {
-        Arc::downgrade(&self.event_counter) as _
-    }
 }
 
-impl Drop for PollHandle {
-    fn drop(&mut self) {
-        let observer = self.observer();
-
-        self.pollees
-            .iter()
-            .filter_map(Weak::upgrade)
-            .for_each(|pollee| {
-                pollee.subject.unregister_observer(&observer);
-            });
-    }
-}
-
-/// A counter for wait and wakeup.
 struct EventCounter {
     counter: AtomicUsize,
     waker: Arc<Waker>,
 }
 
 impl EventCounter {
-    pub fn new(waker: Arc<Waker>) -> Self {
-        Self {
-            counter: AtomicUsize::new(0),
-            waker,
-        }
+    fn new_pair() -> (Waiter, Self) {
+        let (waiter, waker) = Waiter::new_pair();
+
+        (
+            waiter,
+            Self {
+                counter: AtomicUsize::new(0),
+                waker,
+            },
+        )
     }
 
-    pub fn read(&self, waiter: &Waiter, timeout: Option<&Duration>) -> Result<usize> {
+    fn read(&self, waiter: &Waiter, timeout: Option<&Duration>) -> Result<usize> {
         let cond = || {
             let val = self.counter.swap(0, Ordering::Relaxed);
             if val > 0 {
@@ -207,7 +271,7 @@ impl EventCounter {
         waiter.pause_until_or_timeout(cond, timeout)
     }
 
-    pub fn write(&self) {
+    fn write(&self) {
         self.counter.fetch_add(1, Ordering::Relaxed);
         self.waker.wake_up();
     }
@@ -270,8 +334,8 @@ pub trait Pollable {
         }
 
         // Wait until the event happens.
-        let mut poller = PollHandle::new();
-        if self.poll(mask, Some(&mut poller)).is_empty() {
+        let mut poller = Poller::new();
+        if self.poll(mask, Some(poller.as_handle_mut())).is_empty() {
             poller.wait(timeout)?;
         }
 
