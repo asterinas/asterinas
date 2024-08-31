@@ -37,27 +37,22 @@ impl Pollee {
         }
     }
 
-    /// Returns the current events of the pollee given an event mask.
+    /// Returns the current events of the pollee filtered by the given event mask.
     ///
-    /// If no interesting events are polled and a poller is provided, then
-    /// the poller will start monitoring the pollee and receive event
-    /// notification once the pollee gets any interesting events.
+    /// If a poller is provided, the poller will start monitoring the pollee and receive event
+    /// notification when the pollee receives interesting events.
     ///
-    /// This operation is _atomic_ in the sense that either some interesting
-    /// events are returned or the poller is registered (if a poller is provided).
+    /// This operation is _atomic_ in the sense that if there are interesting events, either the
+    /// events are returned or the poller is notified.
     pub fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         let mask = mask | IoEvents::ALWAYS_POLL;
 
-        // Fast path: return events immediately
-        let revents = self.events() & mask;
-        if !revents.is_empty() || poller.is_none() {
-            return revents;
+        // Register the provided poller.
+        if let Some(poller) = poller {
+            self.register_poller(poller, mask);
         }
 
-        // Register the provided poller.
-        self.register_poller(poller.unwrap(), mask);
-
-        // It is important to check events again to handle race conditions
+        // Check events after the registration to prevent race conditions.
         self.events() & mask
     }
 
@@ -235,8 +230,8 @@ impl Observer<IoEvents> for EventCounter {
 /// have access to the internal [`Pollee`], but there is a method that provides the same semantics
 /// as [`Pollee::poll`] and we need to perform event-based operations using that method.
 pub trait Pollable {
-    /// Returns the interesting events if there are any, or waits for them to happen if there are
-    /// none.
+    /// Returns the interesting events now and monitors their occurrence in the future if the
+    /// poller is provided.
     ///
     /// This method has the same semantics as [`Pollee::poll`].
     fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents;
@@ -290,9 +285,7 @@ pub trait Pollable {
             // Wait until the next event happens.
             //
             // FIXME: We need to update `timeout` since we have waited for some time.
-            if self.poll(mask, Some(&mut poller)).is_empty() {
-                poller.wait(timeout)?;
-            }
+            poller.wait(timeout)?;
         }
     }
 }
