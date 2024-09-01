@@ -80,6 +80,21 @@ impl Frame {
             core::ptr::copy_nonoverlapping(src.as_ptr(), self.as_mut_ptr(), self.size());
         }
     }
+
+    /// Get the reference count of the frame.
+    ///
+    /// It returns the number of all references to the page, including all the
+    /// existing page handles ([`Frame`]) and all the mappings in the page
+    /// table that points to the page.
+    ///
+    /// # Safety
+    ///
+    /// The function is safe to call, but using it requires extra care. The
+    /// reference count can be changed by other threads at any time including
+    /// potentially between calling this method and acting on the result.
+    pub fn reference_count(&self) -> u32 {
+        self.page.reference_count()
+    }
 }
 
 impl From<Page<FrameMeta>> for Frame {
