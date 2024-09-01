@@ -212,55 +212,46 @@ impl EpollFile {
     }
 
     fn pop_ready(&self, max_events: usize, ep_events: &mut Vec<EpollEvent>) -> usize {
-        let mut count_events = 0;
         let mut ready = self.ready.lock();
-        let mut pop_quota = ready.len();
-        loop {
-            // Pop some ready entries per round.
-            //
-            // Since the popped ready entries may contain "false positive" and
-            // we want to return as many results as possible, this has to
-            // be done in a loop.
-            let pop_count = (max_events - count_events).min(pop_quota);
-            if pop_count == 0 {
+
+        let mut count_events = 0;
+        for _ in 0..ready.len() {
+            if count_events >= max_events {
                 break;
             }
-            let ready_entries: Vec<Arc<EpollEntry>> = ready
-                .drain(..pop_count)
-                .filter_map(|entry| Weak::upgrade(&entry))
-                .collect();
-            pop_quota -= pop_count;
 
-            // Examine these ready entries, which are candidates for the results
-            // to be returned.
-            for entry in ready_entries {
-                let (ep_event, ep_flags) = entry.event_and_flags();
-                // If this entry's file is ready, save it in the output array.
-                // EPOLLHUP and EPOLLERR should always be reported.
-                let ready_events = entry.poll() & (ep_event.events | IoEvents::HUP | IoEvents::ERR);
+            let weak_entry = ready.pop_front().unwrap();
+            let Some(entry) = Weak::upgrade(&weak_entry) else {
+                // The entry has been deleted.
+                continue;
+            };
 
-                // Records the events from the ready list
-                if !ready_events.is_empty() {
-                    ep_events.push(EpollEvent::new(ready_events, ep_event.user_data));
-                    count_events += 1;
-                }
+            let (ep_event, ep_flags) = entry.event_and_flags();
+            // If this entry's file is ready, save it in the output array.
+            // EPOLLHUP and EPOLLERR should always be reported.
+            let ready_events = entry.poll() & (ep_event.events | IoEvents::HUP | IoEvents::ERR);
 
-                // If there are events and the epoll entry is neither edge-triggered
-                // nor one-shot, then we should keep the entry in the ready list.
-                if !ready_events.is_empty()
-                    && !ep_flags.intersects(EpollFlags::ONE_SHOT | EpollFlags::EDGE_TRIGGER)
-                {
-                    ready.push_back(Arc::downgrade(&entry));
-                }
-                // Otherwise, the entry is indeed removed the ready list and we should reset
-                // its ready flag.
-                else {
-                    entry.reset_ready();
-                    // For EPOLLONESHOT flag, this entry should also be removed from the interest list
-                    if ep_flags.intersects(EpollFlags::ONE_SHOT) {
-                        self.del_interest(entry.fd())
-                            .expect("this entry should be in the interest list");
-                    }
+            // Records the events from the ready list
+            if !ready_events.is_empty() {
+                ep_events.push(EpollEvent::new(ready_events, ep_event.user_data));
+                count_events += 1;
+            }
+
+            // If there are events and the epoll entry is neither edge-triggered
+            // nor one-shot, then we should keep the entry in the ready list.
+            if !ready_events.is_empty()
+                && !ep_flags.intersects(EpollFlags::ONE_SHOT | EpollFlags::EDGE_TRIGGER)
+            {
+                ready.push_back(weak_entry);
+            }
+            // Otherwise, the entry is indeed removed the ready list and we should reset
+            // its ready flag.
+            else {
+                entry.reset_ready();
+                // For EPOLLONESHOT flag, this entry should also be removed from the interest list
+                if ep_flags.intersects(EpollFlags::ONE_SHOT) {
+                    self.del_interest(entry.fd())
+                        .expect("this entry should be in the interest list");
                 }
             }
         }
@@ -269,6 +260,7 @@ impl EpollFile {
         if ready.len() == 0 {
             self.pollee.del_events(IoEvents::IN);
         }
+
         count_events
     }
 
