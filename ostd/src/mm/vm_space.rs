@@ -348,12 +348,9 @@ impl CursorMut<'_, '_> {
     /// Map a frame into the current slot.
     ///
     /// This method will bring the cursor to the next slot after the modification.
-    pub fn map(&mut self, frame: Frame, mut prop: PageProperty) {
+    pub fn map(&mut self, frame: Frame, prop: PageProperty) {
         let start_va = self.virt_addr();
         let end_va = start_va + frame.size();
-        // TODO: this is a temporary fix to avoid the overhead of setting ACCESSED bit in userspace.
-        // When this bit is truly enabled, it needs to be set at a more appropriate location.
-        prop.flags |= PageFlags::ACCESSED;
         // SAFETY: It is safe to map untyped memory into the userspace.
         let old = unsafe { self.pt_cursor.map(frame.into(), prop) };
 
