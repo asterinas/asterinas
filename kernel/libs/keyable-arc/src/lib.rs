@@ -315,6 +315,12 @@ impl<T: ?Sized> From<KeyableWeak<T>> for Weak<T> {
     }
 }
 
+impl<T: ?Sized> Clone for KeyableWeak<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
 impl<T: ?Sized + fmt::Debug> fmt::Debug for KeyableWeak<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "(KeyableWeak)")
