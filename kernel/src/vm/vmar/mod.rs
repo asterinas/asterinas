@@ -164,7 +164,13 @@ impl VmarInner {
                 let region_start = free_region.start();
                 let region_end = free_region.end();
                 let child_vmar_real_start = region_start.align_up(align);
-                let child_vmar_real_end = child_vmar_real_start + child_size;
+                let child_vmar_real_end =
+                    child_vmar_real_start
+                        .checked_add(child_size)
+                        .ok_or(Error::with_message(
+                            Errno::ENOMEM,
+                            "integer overflow when (child_vmar_real_start + child_size)",
+                        ))?;
                 if region_start <= child_vmar_real_start && child_vmar_real_end <= region_end {
                     return Ok((*region_base, child_vmar_real_start));
                 }

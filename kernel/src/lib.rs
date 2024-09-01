@@ -28,6 +28,7 @@
 #![feature(trait_alias)]
 #![feature(trait_upcasting)]
 #![feature(linked_list_retain)]
+#![feature(linked_list_cursors)]
 #![register_tool(component_access_control)]
 
 use core::sync::atomic::Ordering;

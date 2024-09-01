@@ -20,11 +20,18 @@ pub fn sys_madvise(
     if start % PAGE_SIZE != 0 {
         return_errno_with_message!(Errno::EINVAL, "the start address should be page aligned");
     }
+    if len > isize::MAX as usize {
+        return_errno_with_message!(Errno::EINVAL, "len align overflow");
+    }
     if len == 0 {
         return Ok(SyscallReturn::Return(0));
     }
 
     let len = len.align_up(PAGE_SIZE);
+    let end = start.checked_add(len).ok_or(Error::with_message(
+        Errno::EINVAL,
+        "integer overflow when (start + len)",
+    ))?;
     match behavior {
         MadviseBehavior::MADV_NORMAL
         | MadviseBehavior::MADV_SEQUENTIAL
@@ -37,15 +44,15 @@ pub fn sys_madvise(
         MadviseBehavior::MADV_DONTNEED => {
             warn!("MADV_DONTNEED isn't implemented, do nothing for now.");
         }
-        MadviseBehavior::MADV_FREE => madv_free(start, len, ctx)?,
+        MadviseBehavior::MADV_FREE => madv_free(start, end, ctx)?,
         _ => todo!(),
     }
     Ok(SyscallReturn::Return(0))
 }
 
-fn madv_free(start: Vaddr, len: usize, ctx: &Context) -> Result<()> {
+fn madv_free(start: Vaddr, end: Vaddr, ctx: &Context) -> Result<()> {
     let root_vmar = ctx.process.root_vmar();
-    let advised_range = start..start + len;
+    let advised_range = start..end;
     let _ = root_vmar.destroy(advised_range);
 
     Ok(())

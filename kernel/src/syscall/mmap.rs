@@ -57,11 +57,21 @@ fn do_sys_mmap(
     if len == 0 {
         return_errno_with_message!(Errno::EINVAL, "mmap len cannot be zero");
     }
+    if len > isize::MAX as usize {
+        return_errno_with_message!(Errno::ENOMEM, "mmap len too large");
+    }
 
     let len = len.align_up(PAGE_SIZE);
 
     if offset % PAGE_SIZE != 0 {
         return_errno_with_message!(Errno::EINVAL, "mmap only support page-aligned offset");
+    }
+    offset.checked_add(len).ok_or(Error::with_message(
+        Errno::EOVERFLOW,
+        "integer overflow when (offset + len)",
+    ))?;
+    if addr > isize::MAX as usize - len {
+        return_errno_with_message!(Errno::ENOMEM, "mmap (addr + len) too large");
     }
 
     let root_vmar = ctx.process.root_vmar();

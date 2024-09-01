@@ -34,7 +34,7 @@ impl log::Log for Logger {
             return;
         }
 
-        let timestamp = format!("[{:>10?}]", Jiffies::elapsed().as_duration().as_secs_f64());
+        let timestamp = format!("[{:>10.3}]", Jiffies::elapsed().as_duration().as_secs_f64());
         let level = format!("{:<5}", record.level());
         let record_str = format!("{}", record.args());
 

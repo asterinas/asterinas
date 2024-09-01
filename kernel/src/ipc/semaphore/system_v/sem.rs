@@ -5,7 +5,7 @@ use core::{
     time::Duration,
 };
 
-use ostd::sync::{Mutex, Waiter, Waker};
+use ostd::sync::{PreemptDisabled, Waiter, Waker};
 
 use super::sem_set::SEMVMX;
 use crate::{
@@ -84,16 +84,16 @@ impl Debug for PendingOp {
 
 #[derive(Debug)]
 pub struct Semaphore {
-    val: Mutex<i32>,
+    val: SpinLock<i32>,
     /// PID of the process that last modified semaphore.
     /// - through semop with op != 0
     /// - through semctl with SETVAL and SETALL
     /// - through SEM_UNDO when task exit
     latest_modified_pid: AtomicU32,
     /// Pending alter operations. For each pending operation, it has `sem_op < 0`.
-    pending_alters: Mutex<LinkedList<Box<PendingOp>>>,
+    pending_alters: SpinLock<LinkedList<PendingOp>>,
     /// Pending zeros operations. For each pending operation, it has `sem_op = 0`.
-    pending_const: Mutex<LinkedList<Box<PendingOp>>>,
+    pending_const: SpinLock<LinkedList<PendingOp>>,
     /// Last semop time.
     sem_otime: AtomicU64,
 }
@@ -106,10 +106,8 @@ impl Semaphore {
 
         let mut current_val = self.val.lock();
         *current_val = val;
-        self.latest_modified_pid
-            .store(current_pid, Ordering::Relaxed);
 
-        self.update_pending_ops(current_val);
+        self.update_pending_ops(current_val, current_pid);
         Ok(())
     }
 
@@ -152,10 +150,10 @@ impl Semaphore {
 
     pub(super) fn new(val: i32) -> Self {
         Self {
-            val: Mutex::new(val),
+            val: SpinLock::new(val),
             latest_modified_pid: AtomicU32::new(current!().pid()),
-            pending_alters: Mutex::new(LinkedList::new()),
-            pending_const: Mutex::new(LinkedList::new()),
+            pending_alters: SpinLock::new(LinkedList::new()),
+            pending_const: SpinLock::new(LinkedList::new()),
             sem_otime: AtomicU64::new(0),
         }
     }
@@ -172,7 +170,7 @@ impl Semaphore {
         let sem_op = sem_buf.sem_op;
         let current_pid = ctx.process.pid();
 
-        let flags = IpcFlags::from_bits(sem_buf.sem_flags as u32).unwrap();
+        let flags = IpcFlags::from_bits_truncate(sem_buf.sem_flags as u32);
         if flags.contains(IpcFlags::SEM_UNDO) {
             todo!()
         }
@@ -191,11 +189,7 @@ impl Semaphore {
             }
 
             *val = new_val;
-            self.latest_modified_pid
-                .store(current_pid, Ordering::Relaxed);
-            self.update_otime();
-
-            self.update_pending_ops(val);
+            self.update_pending_ops(val, current_pid);
             return Ok(());
         } else if zero_condition {
             return Ok(());
@@ -210,13 +204,13 @@ impl Semaphore {
         // Add current to pending list
         let (waiter, waker) = Waiter::new_pair();
         let status = Arc::new(AtomicStatus::new(Status::Pending));
-        let pending_op = Box::new(PendingOp {
+        let pending_op = PendingOp {
             sem_buf: *sem_buf,
             status: status.clone(),
             waker: waker.clone(),
             process: ctx.posix_thread.weak_process(),
             pid: current_pid,
-        });
+        };
         if sem_op == 0 {
             self.pending_const.lock().push_back(pending_op);
         } else {
@@ -249,7 +243,7 @@ impl Semaphore {
     }
 
     /// Updates pending ops after the val changed.
-    fn update_pending_ops(&self, mut val: MutexGuard<i32>) {
+    fn update_pending_ops(&self, mut val: SpinLockGuard<i32, PreemptDisabled>, current_pid: Pid) {
         debug_assert!(*val >= 0);
         trace!("Updating pending ops, semaphore before: {:?}", *val);
 
@@ -258,37 +252,49 @@ impl Semaphore {
         // 2. If val is equal to 0, then clear pending_const
 
         // Step one:
-        let mut pending_alters = self.pending_alters.lock();
-        pending_alters.retain_mut(|op| {
-            if *val == 0 {
-                return true;
-            }
-            // Check if the process alive.
-            if op.process.upgrade().is_none() {
-                return false;
-            }
-            debug_assert!(op.sem_buf.sem_op < 0);
+        let mut value = *val;
+        let mut latest_modified_pid = current_pid;
+        if value > 0 {
+            let mut pending_alters = self.pending_alters.lock();
+            let mut cursor = pending_alters.cursor_front_mut();
+            while let Some(op) = cursor.current() {
+                if value == 0 {
+                    break;
+                }
+                // Check if the process alive.
+                if op.process.upgrade().is_none() {
+                    cursor.remove_current().unwrap();
+                    continue;
+                }
 
-            if op.sem_buf.sem_op.abs() as i32 <= *val {
-                trace!(
-                    "Found removable pending op, op: {:?}, pid:{:?}",
-                    op.sem_buf.sem_op,
-                    op.pid
-                );
+                debug_assert!(op.sem_buf.sem_op < 0);
 
-                *val += i32::from(op.sem_buf.sem_op);
-                self.latest_modified_pid.store(op.pid, Ordering::Relaxed);
-                self.update_otime();
-                op.status.set_status(Status::Normal);
-                op.waker.wake_up();
-                false
-            } else {
-                true
+                if op.sem_buf.sem_op.abs() as i32 <= value {
+                    trace!(
+                        "Found removable pending op, op: {:?}, pid:{:?}",
+                        op.sem_buf.sem_op,
+                        op.pid
+                    );
+
+                    value += i32::from(op.sem_buf.sem_op);
+                    latest_modified_pid = op.pid;
+                    op.status.set_status(Status::Normal);
+                    op.waker.wake_up();
+                    cursor.remove_current().unwrap();
+                } else {
+                    cursor.move_next();
+                }
             }
-        });
+        }
+
+        if latest_modified_pid != 0 {
+            self.latest_modified_pid
+                .store(latest_modified_pid, Ordering::Relaxed);
+            self.update_otime();
+        }
 
         // Step two:
-        if *val == 0 {
+        if value == 0 {
             let mut pending_const = self.pending_const.lock();
             pending_const.iter().for_each(|op| {
                 op.status.set_status(Status::Normal);
@@ -299,7 +305,8 @@ impl Semaphore {
             });
             pending_const.clear();
         }
-        trace!("Updated pending ops, semaphore after: {:?}", *val);
+        *val = value;
+        trace!("Updated pending ops, semaphore after: {:?}", value);
     }
 }
 
