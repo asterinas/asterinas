@@ -31,7 +31,7 @@ pub struct EpollFile {
     // All interesting entries.
     interest: Mutex<BTreeMap<FileDesc, Arc<EpollEntry>>>,
     // Entries that are probably ready (having events happened).
-    ready: Mutex<VecDeque<Arc<EpollEntry>>>,
+    ready: Mutex<VecDeque<Weak<EpollEntry>>>,
     // EpollFile itself is also pollable
     pollee: Pollee,
     // Any EpollFile is wrapped with Arc when created.
@@ -104,10 +104,10 @@ impl EpollFile {
         // But unfortunately, deleting an entry from the ready list has a
         // complexity of O(N).
         //
-        // To optimize the performance, we only mark the epoll entry as
-        // deleted at this moment. The real deletion happens when the ready list
-        // is scanned in EpolFile::wait.
-        entry.set_deleted();
+        // To optimize performance, we postpone the actual deletion to the time
+        // when the ready list is scanned in `EpolFile::wait`. This can be done
+        // because the strong reference count will reach zero and `Weak::upgrade`
+        // will fail.
 
         let file = match entry.file() {
             Some(file) => file,
@@ -132,9 +132,6 @@ impl EpollFile {
         let entry = interest
             .get(&fd)
             .ok_or_else(|| Error::with_message(Errno::ENOENT, "fd is not in the interest list"))?;
-        if entry.is_deleted() {
-            return_errno_with_message!(Errno::ENOENT, "fd is not in the interest list");
-        }
         let new_mask = new_ep_event.events;
         entry.update(new_ep_event, new_ep_flags);
         let entry = entry.clone();
@@ -203,13 +200,10 @@ impl EpollFile {
 
     fn push_ready(&self, entry: Arc<EpollEntry>) {
         let mut ready = self.ready.lock();
-        if entry.is_deleted() {
-            return;
-        }
 
         if !entry.is_ready() {
             entry.set_ready();
-            ready.push_back(entry);
+            ready.push_back(Arc::downgrade(&entry));
         }
 
         // Even if the entry is already set to ready, there might be new events that we are interested in.
@@ -233,7 +227,7 @@ impl EpollFile {
             }
             let ready_entries: Vec<Arc<EpollEntry>> = ready
                 .drain(..pop_count)
-                .filter(|entry| !entry.is_deleted())
+                .filter_map(|entry| Weak::upgrade(&entry))
                 .collect();
             pop_quota -= pop_count;
 
@@ -262,7 +256,7 @@ impl EpollFile {
                 // If the epoll entry is neither edge-triggered or one-shot, then we should
                 // keep the entry in the ready list.
                 if !ep_flags.intersects(EpollFlags::ONE_SHOT | EpollFlags::EDGE_TRIGGER) {
-                    ready.push_back(entry);
+                    ready.push_back(Arc::downgrade(&entry));
                 }
                 // Otherwise, the entry is indeed removed the ready list and we should reset
                 // its ready flag.
@@ -307,7 +301,6 @@ impl Drop for EpollFile {
         let fds: Vec<_> = interest
             .extract_if(|_, _| true)
             .map(|(fd, entry)| {
-                entry.set_deleted();
                 if let Some(file) = entry.file() {
                     let _ = file.unregister_observer(&(entry.self_weak() as _));
                 }
@@ -366,8 +359,6 @@ pub struct EpollEntry {
     inner: Mutex<Inner>,
     // Whether the entry is in the ready list
     is_ready: AtomicBool,
-    // Whether the entry has been deleted from the interest list
-    is_deleted: AtomicBool,
     // Refers to the epoll file containing this epoll entry
     weak_epoll: Weak<EpollFile>,
     // An EpollEntry is always contained inside Arc
@@ -393,7 +384,6 @@ impl EpollEntry {
             file,
             inner: Mutex::new(Inner { event, flags }),
             is_ready: AtomicBool::new(false),
-            is_deleted: AtomicBool::new(false),
             weak_epoll,
             weak_self: me.clone(),
         })
@@ -471,16 +461,6 @@ impl EpollEntry {
         self.is_ready.store(false, Ordering::Relaxed)
     }
 
-    /// Returns whether the epoll entry has been deleted from the interest list.
-    pub fn is_deleted(&self) -> bool {
-        self.is_deleted.load(Ordering::Relaxed)
-    }
-
-    /// Mark the epoll entry as having been deleted from the interest list.
-    pub fn set_deleted(&self) {
-        self.is_deleted.store(true, Ordering::Relaxed);
-    }
-
     /// Get the file descriptor associated with the epoll entry.
     pub fn fd(&self) -> FileDesc {
         self.fd
@@ -489,11 +469,6 @@ impl EpollEntry {
 
 impl Observer<IoEvents> for EpollEntry {
     fn on_events(&self, _events: &IoEvents) {
-        // Fast path
-        if self.is_deleted() {
-            return;
-        }
-
         if let Some(epoll_file) = self.epoll_file() {
             epoll_file.push_ready(self.self_arc());
         }
