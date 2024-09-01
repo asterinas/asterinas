@@ -245,7 +245,7 @@ impl VmMapping {
                 cursor.protect(PAGE_SIZE, |p| p.flags |= PageFlags::W);
             } else {
                 let new_frame = duplicate_frame(&frame)?;
-                prop.flags |= PageFlags::W;
+                prop.flags |= PageFlags::W | PageFlags::ACCESSED | PageFlags::DIRTY;
                 cursor.map(new_frame, prop);
             }
             return Ok(());
@@ -265,7 +265,12 @@ impl VmMapping {
                 }
                 perms
             };
-            let map_prop = PageProperty::new(vm_perms.into(), CachePolicy::Writeback);
+            let mut page_flags = vm_perms.into();
+            page_flags |= PageFlags::ACCESSED;
+            if write {
+                page_flags |= PageFlags::DIRTY;
+            }
+            let map_prop = PageProperty::new(page_flags, CachePolicy::Writeback);
 
             cursor.map(frame, map_prop);
         }
@@ -328,14 +333,18 @@ impl VmMapping {
         );
 
         let vm_perms = inner.perms - VmPerms::WRITE;
-        let vm_map_options = { PageProperty::new(vm_perms.into(), CachePolicy::Writeback) };
         let parent = self.parent.upgrade().unwrap();
         let vm_space = parent.vm_space();
         let mut cursor = vm_space.cursor_mut(&(start_addr..end_addr))?;
         let operate = move |commit_fn: &mut dyn FnMut() -> Result<Frame>| {
-            if let VmItem::NotMapped { .. } = cursor.query().unwrap() {
+            if let VmItem::NotMapped { va, len } = cursor.query().unwrap() {
+                let mut page_flags = vm_perms.into();
+                if (va..len).contains(&page_fault_addr) {
+                    page_flags |= PageFlags::ACCESSED;
+                }
+                let page_prop = PageProperty::new(page_flags, CachePolicy::Writeback);
                 let frame = commit_fn()?;
-                cursor.map(frame, vm_map_options);
+                cursor.map(frame, page_prop);
             } else {
                 let next_addr = cursor.virt_addr() + PAGE_SIZE;
                 if next_addr < end_addr {
