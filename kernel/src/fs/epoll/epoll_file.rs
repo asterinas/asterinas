@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 use core::{
     borrow::Borrow,
     sync::atomic::{AtomicBool, Ordering},
@@ -149,7 +146,7 @@ impl EpollFile {
                 .ok_or_else(|| {
                     Error::with_message(Errno::ENOENT, "fd is not in the interest list")
                 })?;
-            entry.update(new_ep_event, new_ep_flags);
+            entry.update(new_ep_event, new_ep_flags)?;
 
             entry.clone()
         };
@@ -232,20 +229,22 @@ impl EpollFile {
                 continue;
             };
 
-            let (ep_event, ep_flags) = entry.event_and_flags();
-            // If this entry's file is ready, save it in the output array.
-            // EPOLLHUP and EPOLLERR should always be reported.
-            let ready_events = entry.poll() & (ep_event.events | IoEvents::HUP | IoEvents::ERR);
-
-            // Records the events from the ready list
-            if !ready_events.is_empty() {
-                ep_events.push(EpollEvent::new(ready_events, ep_event.user_data));
-                count_events += 1;
-            }
+            let (has_ready_events, ep_flags) = match entry.poll() {
+                // If this entry's file is ready, the events need to be saved in the output array.
+                Some((ready_events, user_data, ep_flags)) if !ready_events.is_empty() => {
+                    ep_events.push(EpollEvent::new(ready_events, user_data));
+                    count_events += 1;
+                    (true, ep_flags)
+                }
+                // If the file is not ready, there is nothing to do.
+                Some((_, _, ep_flags)) => (false, ep_flags),
+                // If the file no longer exists, the entry should be removed.
+                None => (false, EpollFlags::ONE_SHOT),
+            };
 
             // If there are events and the epoll entry is neither edge-triggered
             // nor one-shot, then we should keep the entry in the ready list.
-            if !ready_events.is_empty()
+            if has_ready_events
                 && !ep_flags.intersects(EpollFlags::ONE_SHOT | EpollFlags::EDGE_TRIGGER)
             {
                 ready.push_back(weak_entry);
@@ -285,11 +284,11 @@ impl Pollable for EpollFile {
 
 // Implement the common methods required by FileHandle
 impl FileLike for EpollFile {
-    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+    fn read(&self, _writer: &mut VmWriter) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "epoll files do not support read");
     }
 
-    fn write(&self, reader: &mut VmReader) -> Result<usize> {
+    fn write(&self, _reader: &mut VmReader) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "epoll files do not support write");
     }
 
@@ -407,38 +406,30 @@ impl EpollEntry {
         self.key.file.upgrade().map(KeyableArc::into)
     }
 
-    /// Get the epoll event associated with the epoll entry.
-    pub fn event(&self) -> EpollEvent {
-        let inner = self.inner.lock();
-        inner.event
-    }
-
-    /// Get the epoll flags associated with the epoll entry.
-    pub fn flags(&self) -> EpollFlags {
-        let inner = self.inner.lock();
-        inner.flags
-    }
-
-    /// Get the epoll event and flags that are associated with this epoll entry.
-    pub fn event_and_flags(&self) -> (EpollEvent, EpollFlags) {
-        let inner = self.inner.lock();
-        (inner.event, inner.flags)
-    }
-
     /// Poll the events of the file associated with this epoll entry.
     ///
     /// If the returned events is not empty, then the file is considered ready.
-    pub fn poll(&self) -> IoEvents {
-        match self.file() {
-            Some(file) => file.poll(IoEvents::all(), None),
-            None => IoEvents::empty(),
-        }
+    pub fn poll(&self) -> Option<(IoEvents, u64, EpollFlags)> {
+        let file = self.file()?;
+
+        let (event, flags) = {
+            let inner = self.inner.lock();
+            (inner.event, inner.flags)
+        };
+
+        Some((file.poll(event.events, None), event.user_data, flags))
     }
 
     /// Update the epoll entry, most likely to be triggered via `EpollCtl::Mod`.
-    pub fn update(&self, event: EpollEvent, flags: EpollFlags) {
+    pub fn update(&self, event: EpollEvent, flags: EpollFlags) -> Result<()> {
         let mut inner = self.inner.lock();
-        *inner = EpollEntryInner { event, flags }
+
+        if let Some(file) = self.file() {
+            file.register_observer(self.self_weak(), event.events)?;
+        }
+        *inner = EpollEntryInner { event, flags };
+
+        Ok(())
     }
 
     /// Returns whether the epoll entry is in the ready list.
