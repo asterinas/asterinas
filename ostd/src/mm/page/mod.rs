@@ -164,6 +164,21 @@ impl<M: PageMeta> Page<M> {
         unsafe { &*(self.ptr as *const M) }
     }
 
+    /// Get the reference count of the page.
+    ///
+    /// It returns the number of all references to the page, including all the
+    /// existing page handles ([`Page`], [`DynPage`]), and all the mappings in the
+    /// page table that points to the page.
+    ///
+    /// # Safety
+    ///
+    /// The function is safe to call, but using it requires extra care. The
+    /// reference count can be changed by other threads at any time including
+    /// potentially between calling this method and acting on the result.
+    pub fn reference_count(&self) -> u32 {
+        self.ref_count().load(Ordering::Relaxed)
+    }
+
     fn ref_count(&self) -> &AtomicU32 {
         unsafe { &(*self.ptr).ref_count }
     }

@@ -241,7 +241,14 @@ impl VmMapping {
                 return Ok(());
             }
 
-            if self.is_shared {
+            // If the forked child or parent immediately unmaps the page after
+            // the fork without accessing it, we are the only reference to the
+            // frame. We can directly map the frame as writable without
+            // copying. In this case, the reference count of the frame is 2 (
+            // one for the mapping and one for the frame handle itself).
+            let only_reference = frame.reference_count() == 2;
+
+            if self.is_shared || only_reference {
                 cursor.protect(PAGE_SIZE, |p| p.flags |= PageFlags::W);
             } else {
                 let new_frame = duplicate_frame(&frame)?;
