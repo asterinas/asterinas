@@ -50,3 +50,44 @@ FN_TEST(epoll_add_del)
 	TEST_SUCC(close(rfd2));
 }
 END_TEST()
+
+FN_TEST(epoll_mod)
+{
+	int fildes[2];
+	int epfd, rfd, wfd;
+	struct epoll_event ev;
+	char buf[1];
+
+	// Setup pipes
+	TEST_SUCC(pipe(fildes));
+	rfd = fildes[0];
+	wfd = fildes[1];
+	TEST_SUCC(write(wfd, "", 1));
+
+	// Setup epoll
+	epfd = TEST_SUCC(epoll_create1(0));
+	ev.events = EPOLLOUT;
+	ev.data.fd = rfd;
+	TEST_SUCC(epoll_ctl(epfd, EPOLL_CTL_ADD, rfd, &ev));
+
+	// Wait for EPOLLOUT
+	TEST_RES(epoll_wait(epfd, &ev, 1, 0), _ret == 0);
+
+	// Modify the events
+	ev.events = EPOLLIN;
+	ev.data.fd = rfd;
+	TEST_SUCC(epoll_ctl(epfd, EPOLL_CTL_MOD, rfd, &ev));
+
+	// Wait for EPOLLIN
+	TEST_RES(epoll_wait(epfd, &ev, 1, 0), _ret == 1);
+	TEST_SUCC(read(rfd, buf, 1));
+	TEST_RES(epoll_wait(epfd, &ev, 1, 0), _ret == 0);
+	TEST_SUCC(write(wfd, "", 1));
+	TEST_RES(epoll_wait(epfd, &ev, 1, 0), _ret == 1);
+
+	// Clean up
+	TEST_SUCC(close(epfd));
+	TEST_SUCC(close(rfd));
+	TEST_SUCC(close(wfd));
+}
+END_TEST()
