@@ -238,24 +238,18 @@ impl EpollFile {
                 // If this entry's file is ready, save it in the output array.
                 // EPOLLHUP and EPOLLERR should always be reported.
                 let ready_events = entry.poll() & (ep_event.events | IoEvents::HUP | IoEvents::ERR);
-                // If there are no events, the entry should be removed from the ready list.
-                if ready_events.is_empty() {
-                    entry.reset_ready();
-                    // For EPOLLONESHOT flag, this entry should also be removed from the interest list
-                    if ep_flags.intersects(EpollFlags::ONE_SHOT) {
-                        self.del_interest(entry.fd())
-                            .expect("this entry should be in the interest list");
-                    }
-                    continue;
-                }
 
                 // Records the events from the ready list
-                ep_events.push(EpollEvent::new(ready_events, ep_event.user_data));
-                count_events += 1;
+                if !ready_events.is_empty() {
+                    ep_events.push(EpollEvent::new(ready_events, ep_event.user_data));
+                    count_events += 1;
+                }
 
-                // If the epoll entry is neither edge-triggered or one-shot, then we should
-                // keep the entry in the ready list.
-                if !ep_flags.intersects(EpollFlags::ONE_SHOT | EpollFlags::EDGE_TRIGGER) {
+                // If there are events and the epoll entry is neither edge-triggered
+                // nor one-shot, then we should keep the entry in the ready list.
+                if !ready_events.is_empty()
+                    && !ep_flags.intersects(EpollFlags::ONE_SHOT | EpollFlags::EDGE_TRIGGER)
+                {
                     ready.push_back(Arc::downgrade(&entry));
                 }
                 // Otherwise, the entry is indeed removed the ready list and we should reset
