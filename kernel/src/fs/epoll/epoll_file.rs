@@ -88,7 +88,10 @@ impl EpollFile {
             let mut interest = self.interest.lock();
 
             if interest.contains(&EpollEntryKey::from((fd, &file))) {
-                return_errno_with_message!(Errno::EEXIST, "the fd has been added");
+                return_errno_with_message!(
+                    Errno::EEXIST,
+                    "the file is already in the interest list"
+                );
             }
 
             let entry = EpollEntry::new(fd, &file, ep_event, ep_flags, self.weak_self.clone())?;
@@ -122,7 +125,7 @@ impl EpollFile {
             .lock()
             .remove(&EpollEntryKey::from((fd, file)))
         {
-            return_errno_with_message!(Errno::ENOENT, "fd is not in the interest list");
+            return_errno_with_message!(Errno::ENOENT, "the file is not in the interest list");
         }
 
         Ok(())
@@ -144,7 +147,7 @@ impl EpollFile {
             let EpollEntryHolder(entry) = interest
                 .get(&EpollEntryKey::from((fd, &file)))
                 .ok_or_else(|| {
-                    Error::with_message(Errno::ENOENT, "fd is not in the interest list")
+                    Error::with_message(Errno::ENOENT, "the file is not in the interest list")
                 })?;
             entry.update(new_ep_event, new_ep_flags)?;
 
@@ -209,7 +212,8 @@ impl EpollFile {
             ready.push_back(Arc::downgrade(&entry));
         }
 
-        // Even if the entry is already set to ready, there might be new events that we are interested in.
+        // Even if the entry is already set to ready,
+        // there might be new events that we are interested in.
         // Wake the poller anyway.
         self.pollee.add_events(IoEvents::IN);
     }
