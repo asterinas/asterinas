@@ -41,7 +41,7 @@ pub fn sys_poll(fds: Vaddr, nfds: u64, timeout: i32, ctx: &Context) -> Result<Sy
         poll_fds, nfds, timeout
     );
 
-    let num_revents = do_poll(&poll_fds, timeout, ctx)?;
+    let num_revents = do_poll(&poll_fds, timeout.as_ref(), ctx)?;
 
     // Write back
     let mut write_addr = fds;
@@ -55,7 +55,7 @@ pub fn sys_poll(fds: Vaddr, nfds: u64, timeout: i32, ctx: &Context) -> Result<Sy
     Ok(SyscallReturn::Return(num_revents as _))
 }
 
-pub fn do_poll(poll_fds: &[PollFd], timeout: Option<Duration>, ctx: &Context) -> Result<usize> {
+pub fn do_poll(poll_fds: &[PollFd], timeout: Option<&Duration>, ctx: &Context) -> Result<usize> {
     let (result, files) = hold_files(poll_fds, ctx);
     match result {
         FileResult::AllValid => (),
@@ -74,24 +74,22 @@ pub fn do_poll(poll_fds: &[PollFd], timeout: Option<Duration>, ctx: &Context) ->
     };
 
     loop {
-        if let Some(timeout) = timeout.as_ref() {
-            match poller.wait_timeout(timeout) {
-                Ok(_) => {}
-                Err(e) if e.error() == Errno::ETIME => {
-                    // The return value is zero if the timeout expires
-                    // before any file descriptors became ready
-                    return Ok(0);
-                }
-                Err(e) => return Err(e),
-            };
-        } else {
-            poller.wait()?;
-        }
+        match poller.wait(timeout) {
+            Ok(_) => {}
+            Err(e) if e.error() == Errno::ETIME => {
+                // The return value is zero if the timeout expires
+                // before any file descriptors became ready
+                return Ok(0);
+            }
+            Err(e) => return Err(e),
+        };
 
         let num_events = count_all_events(poll_fds, &files);
         if num_events > 0 {
             return Ok(num_events);
         }
+
+        // FIXME: We need to update `timeout` since we have waited for some time.
     }
 }
 

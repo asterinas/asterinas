@@ -190,7 +190,7 @@ impl FileLike for EventFile {
         if self.is_nonblocking() {
             self.try_read(writer)?;
         } else {
-            self.wait_events(IoEvents::IN, || self.try_read(writer))?;
+            self.wait_events(IoEvents::IN, None, || self.try_read(writer))?;
         }
 
         Ok(read_len)

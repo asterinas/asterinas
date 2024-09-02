@@ -315,7 +315,7 @@ impl StreamSocket {
         if self.is_nonblocking() {
             self.try_recv(writer, flags)
         } else {
-            self.wait_events(IoEvents::IN, || self.try_recv(writer, flags))
+            self.wait_events(IoEvents::IN, None, || self.try_recv(writer, flags))
         }
     }
 
@@ -347,7 +347,7 @@ impl StreamSocket {
         if self.is_nonblocking() {
             self.try_send(reader, flags)
         } else {
-            self.wait_events(IoEvents::OUT, || self.try_send(reader, flags))
+            self.wait_events(IoEvents::OUT, None, || self.try_send(reader, flags))
         }
     }
 
@@ -466,7 +466,7 @@ impl Socket for StreamSocket {
             return result;
         }
 
-        self.wait_events(IoEvents::OUT, || self.check_connect())
+        self.wait_events(IoEvents::OUT, None, || self.check_connect())
     }
 
     fn listen(&self, backlog: usize) -> Result<()> {
@@ -505,7 +505,7 @@ impl Socket for StreamSocket {
         if self.is_nonblocking() {
             self.try_accept()
         } else {
-            self.wait_events(IoEvents::IN, || self.try_accept())
+            self.wait_events(IoEvents::IN, None, || self.try_accept())
         }
     }
 

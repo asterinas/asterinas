@@ -235,7 +235,7 @@ impl LineDiscipline {
     }
 
     pub fn read(&self, buf: &mut [u8]) -> Result<usize> {
-        self.wait_events(IoEvents::IN, || self.try_read(buf))
+        self.wait_events(IoEvents::IN, None, || self.try_read(buf))
     }
 
     /// Reads all bytes buffered to `dst`.
