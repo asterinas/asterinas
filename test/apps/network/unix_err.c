@@ -6,6 +6,7 @@
 #include <sys/un.h>
 #include <sys/poll.h>
 #include <sys/epoll.h>
+#include <sys/wait.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <stddef.h>
@@ -336,6 +337,67 @@ FN_TEST(recv)
 	TEST_ERRNO(recv(sk_bound, buf, 1, 0), EINVAL);
 
 	TEST_ERRNO(recv(sk_listen, buf, 1, 0), EINVAL);
+}
+END_TEST()
+
+FN_TEST(blocking_connect)
+{
+	int i;
+	int sk, sks[4];
+	int pid;
+
+	// Setup
+
+	sk = TEST_SUCC(socket(PF_UNIX, SOCK_STREAM, 0));
+	TEST_SUCC(
+		bind(sk, (struct sockaddr *)&UNIX_ADDR("\0"), PATH_OFFSET + 1));
+	TEST_SUCC(listen(sk, 2));
+
+	for (i = 0; i < 3; ++i) {
+		sks[i] = TEST_SUCC(
+			socket(PF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0));
+		TEST_SUCC(connect(sks[i], (struct sockaddr *)&UNIX_ADDR("\0"),
+				  PATH_OFFSET + 1));
+	}
+
+#define MAKE_TEST(child, parent, errno)                                      \
+	sks[i] = TEST_SUCC(socket(PF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0)); \
+	TEST_ERRNO(connect(sks[i], (struct sockaddr *)&UNIX_ADDR("\0"),      \
+			   PATH_OFFSET + 1),                                 \
+		   EAGAIN);                                                  \
+	TEST_SUCC(close(sks[i]));                                            \
+                                                                             \
+	pid = TEST_SUCC(fork());                                             \
+	if (pid == 0) {                                                      \
+		usleep(300 * 1000);                                          \
+		CHECK(child);                                                \
+		exit(0);                                                     \
+	}                                                                    \
+	TEST_SUCC(parent);                                                   \
+                                                                             \
+	sks[i] = TEST_SUCC(socket(PF_UNIX, SOCK_STREAM, 0));                 \
+	TEST_ERRNO(connect(sks[i], (struct sockaddr *)&UNIX_ADDR("\0"),      \
+			   PATH_OFFSET + 1),                                 \
+		   errno);                                                   \
+                                                                             \
+	TEST_SUCC(close(sks[i]));                                            \
+	TEST_SUCC(wait(NULL));
+
+	// Test 1: Accepting a connection resumes the blocked connection request
+	MAKE_TEST(accept(sk, NULL, NULL), 0, 0);
+
+	// Test 2: Resetting the backlog resumes the blocked connection request
+	MAKE_TEST(listen(sk, 3), 0, 0);
+
+	// Test 3: Closing the listener resumes the blocked connection request
+	MAKE_TEST(close(sk), close(sk), ECONNREFUSED);
+
+#undef MAKE_TEST
+
+	// Clean up
+
+	for (i = 0; i < 3; ++i)
+		TEST_SUCC(close(sks[i]));
 }
 END_TEST()
 

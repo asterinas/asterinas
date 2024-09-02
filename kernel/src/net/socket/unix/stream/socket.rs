@@ -8,13 +8,13 @@ use takeable::Takeable;
 use super::{
     connected::Connected,
     init::Init,
-    listener::{push_incoming, Listener},
+    listener::{get_backlog, Backlog, Listener},
 };
 use crate::{
     events::{IoEvents, Observer},
     fs::{file_handle::FileLike, utils::StatusFlags},
     net::socket::{
-        unix::{addr::UnixSocketAddrKey, UnixSocketAddr},
+        unix::UnixSocketAddr,
         util::{
             copy_message_from_user, copy_message_to_user, create_message_buffer,
             send_recv_flags::SendRecvFlags, socket_addr::SocketAddr, MessageHeader,
@@ -23,7 +23,6 @@ use crate::{
     },
     prelude::*,
     process::signal::{Pollable, Poller},
-    thread::Thread,
     util::IoVec,
 };
 
@@ -101,7 +100,7 @@ impl UnixStreamSocket {
         }
     }
 
-    fn try_connect(&self, remote_addr: &UnixSocketAddrKey) -> Result<()> {
+    fn try_connect(&self, backlog: &Arc<Backlog>) -> Result<()> {
         let mut state = self.state.write();
 
         state.borrow_result(|owned_state| {
@@ -127,7 +126,7 @@ impl UnixStreamSocket {
                 }
             };
 
-            let connected = match push_incoming(remote_addr, init) {
+            let connected = match backlog.push_incoming(init) {
                 Ok(connected) => connected,
                 Err((err, init)) => return (State::Init(init), Err(err)),
             };
@@ -239,29 +238,23 @@ impl Socket for UnixStreamSocket {
 
     fn connect(&self, socket_addr: SocketAddr) -> Result<()> {
         let remote_addr = UnixSocketAddr::try_from(socket_addr)?.connect()?;
+        let backlog = get_backlog(&remote_addr)?;
 
-        // Note that the Linux kernel implementation locks the remote socket and checks to see if
-        // it is listening first. This is different from our implementation, which locks the local
-        // socket and checks the state of the local socket first.
-        //
-        // The difference may result in different error codes, but it's doubtful that this will
-        // ever lead to real problems.
-        //
-        // See also <https://elixir.bootlin.com/linux/v6.10.4/source/net/unix/af_unix.c#L1527>.
-
-        loop {
-            let res = self.try_connect(&remote_addr);
-
-            if !res.is_err_and(|err| err.error() == Errno::EAGAIN) {
-                return res;
-            }
-
-            // FIXME: Add `Pauser` in `Backlog` and use it to avoid this `Thread::yield_now`.
-            Thread::yield_now();
+        if self.is_nonblocking() {
+            self.try_connect(&backlog)
+        } else {
+            backlog.pause_until(|| self.try_connect(&backlog))
         }
     }
 
     fn listen(&self, backlog: usize) -> Result<()> {
+        const SOMAXCONN: usize = 4096;
+
+        // Linux allows a maximum of `backlog + 1` sockets in the backlog queue. Although this
+        // seems to be mostly an implementation detail, we follow the exact Linux behavior to
+        // ensure that our regression tests pass with the Linux kernel.
+        let backlog = backlog.saturating_add(1).min(SOMAXCONN);
+
         let mut state = self.state.write();
 
         state.borrow_result(|owned_state| {
