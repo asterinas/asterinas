@@ -8,14 +8,17 @@ use core::{
 
 use aster_rights::ReadOp;
 use id_alloc::IdAlloc;
-use ostd::sync::{Mutex, RwMutex, RwMutexReadGuard, RwMutexWriteGuard};
+use ostd::sync::{PreemptDisabled, RwLockReadGuard, RwLockWriteGuard};
 use spin::Once;
 
-use super::PermissionMode;
+use super::{
+    sem::{update_pending_alter, wake_const_ops, PendingOp, Status},
+    PermissionMode,
+};
 use crate::{
     ipc::{key_t, semaphore::system_v::sem::Semaphore, IpcPermission},
     prelude::*,
-    process::Credentials,
+    process::{Credentials, Pid},
     time::clocks::RealTimeCoarseClock,
 };
 
@@ -38,21 +41,110 @@ pub const SEMAEM: i32 = SEMVMX;
 pub struct SemaphoreSet {
     /// Number of semaphores in the set
     nsems: usize,
-    /// Semaphores
-    sems: Box<[Arc<Semaphore>]>,
+    /// Inner
+    inner: SpinLock<SemSetInner>,
     /// Semaphore permission
     permission: IpcPermission,
     /// Creation time or last modification via `semctl`
     sem_ctime: AtomicU64,
+    /// Last semop time.
+    sem_otime: AtomicU64,
+}
+
+#[derive(Debug)]
+pub(super) struct SemSetInner {
+    /// Semaphores
+    pub(super) sems: Box<[Semaphore]>,
+    /// Pending alter operations.
+    pub(super) pending_alter: LinkedList<PendingOp>,
+    /// Pending zeros operations.
+    pub(super) pending_const: LinkedList<PendingOp>,
+}
+
+impl SemSetInner {
+    pub fn field_mut(
+        &mut self,
+    ) -> (
+        &mut Box<[Semaphore]>,
+        &mut LinkedList<PendingOp>,
+        &mut LinkedList<PendingOp>,
+    ) {
+        (
+            &mut self.sems,
+            &mut self.pending_alter,
+            &mut self.pending_const,
+        )
+    }
 }
 
 impl SemaphoreSet {
+    pub fn pending_const_count(&self, sem_num: u16) -> usize {
+        let inner = self.inner.lock();
+        let pending_const = &inner.pending_const;
+        let mut count = 1;
+        for i in pending_const.iter() {
+            for sem_buf in i.sops_iter() {
+                if sem_buf.sem_num() == sem_num {
+                    count += 1;
+                }
+            }
+        }
+        count
+    }
+
+    pub fn pending_alter_count(&self, sem_num: u16) -> usize {
+        let inner = self.inner.lock();
+        let pending_alter = &inner.pending_alter;
+        let mut count = 1;
+        for i in pending_alter.iter() {
+            for sem_buf in i.sops_iter() {
+                if sem_buf.sem_num() == sem_num {
+                    count += 1;
+                }
+            }
+        }
+        count
+    }
+
     pub fn nsems(&self) -> usize {
         self.nsems
     }
 
-    pub fn get(&self, index: usize) -> Option<&Arc<Semaphore>> {
-        self.sems.get(index)
+    pub fn setval(&self, sem_num: usize, val: i32, pid: Pid) -> Result<()> {
+        if !(0..SEMVMX).contains(&val) {
+            return_errno!(Errno::ERANGE);
+        }
+
+        let mut inner = self.inner();
+        let (sems, pending_alter, pending_const) = inner.field_mut();
+        let sem = sems.get_mut(sem_num).ok_or(Error::new(Errno::EINVAL))?;
+
+        sem.set_val(val);
+        sem.set_latest_modified_pid(pid);
+
+        let mut wake_queue = LinkedList::new();
+        if val == 0 {
+            wake_const_ops(sems, pending_const, &mut wake_queue);
+        } else {
+            update_pending_alter(sems, pending_alter, pending_const, &mut wake_queue);
+        }
+
+        for wake_op in wake_queue {
+            wake_op.set_status(Status::Normal);
+            if let Some(waker) = wake_op.waker() {
+                waker.wake_up();
+            }
+        }
+
+        self.update_ctime();
+        Ok(())
+    }
+
+    pub fn get<T>(&self, sem_num: usize, func: &dyn Fn(&Semaphore) -> T) -> Result<T> {
+        let inner = self.inner();
+        Ok(func(
+            inner.sems.get(sem_num).ok_or(Error::new(Errno::EINVAL))?,
+        ))
     }
 
     pub fn permission(&self) -> &IpcPermission {
@@ -70,12 +162,23 @@ impl SemaphoreSet {
         );
     }
 
+    pub fn update_otime(&self) {
+        self.sem_otime.store(
+            RealTimeCoarseClock::get().read_time().as_secs(),
+            Ordering::Relaxed,
+        );
+    }
+
+    pub(super) fn inner(&self) -> SpinLockGuard<SemSetInner, PreemptDisabled> {
+        self.inner.lock()
+    }
+
     fn new(key: key_t, nsems: usize, mode: u16, credentials: Credentials<ReadOp>) -> Result<Self> {
         debug_assert!(nsems <= SEMMSL);
 
         let mut sems = Vec::with_capacity(nsems);
         for _ in 0..nsems {
-            sems.push(Arc::new(Semaphore::new(0)));
+            sems.push(Semaphore::new(0));
         }
 
         let permission =
@@ -83,18 +186,38 @@ impl SemaphoreSet {
 
         Ok(Self {
             nsems,
-            sems: sems.into_boxed_slice(),
             permission,
             sem_ctime: AtomicU64::new(RealTimeCoarseClock::get().read_time().as_secs()),
+            sem_otime: AtomicU64::new(0),
+            inner: SpinLock::new(SemSetInner {
+                sems: sems.into_boxed_slice(),
+                pending_alter: LinkedList::new(),
+                pending_const: LinkedList::new(),
+            }),
         })
     }
 }
 
 impl Drop for SemaphoreSet {
     fn drop(&mut self) {
-        for sem in self.sems.iter() {
-            sem.removed();
+        let mut inner = self.inner();
+        let pending_alter = &mut inner.pending_alter;
+        for pending_alter in pending_alter.iter_mut() {
+            pending_alter.set_status(Status::Removed);
+            if let Some(ref waker) = pending_alter.waker() {
+                waker.wake_up();
+            }
         }
+        pending_alter.clear();
+
+        let pending_const = &mut inner.pending_const;
+        for pending_const in pending_const.iter_mut() {
+            pending_const.set_status(Status::Removed);
+            if let Some(ref waker) = pending_const.waker() {
+                waker.wake_up();
+            }
+        }
+        pending_const.clear();
 
         ID_ALLOCATOR
             .get()
@@ -164,18 +287,18 @@ pub fn create_sem_set(nsems: usize, mode: u16, credentials: Credentials<ReadOp>)
     Ok(id)
 }
 
-pub fn sem_sets<'a>() -> RwMutexReadGuard<'a, BTreeMap<key_t, SemaphoreSet>> {
+pub fn sem_sets<'a>() -> RwLockReadGuard<'a, BTreeMap<key_t, SemaphoreSet>> {
     SEMAPHORE_SETS.read()
 }
 
-pub fn sem_sets_mut<'a>() -> RwMutexWriteGuard<'a, BTreeMap<key_t, SemaphoreSet>> {
+pub fn sem_sets_mut<'a>() -> RwLockWriteGuard<'a, BTreeMap<key_t, SemaphoreSet>> {
     SEMAPHORE_SETS.write()
 }
 
-static ID_ALLOCATOR: Once<Mutex<IdAlloc>> = Once::new();
+static ID_ALLOCATOR: Once<SpinLock<IdAlloc>> = Once::new();
 
 /// Semaphore sets in system
-static SEMAPHORE_SETS: RwMutex<BTreeMap<key_t, SemaphoreSet>> = RwMutex::new(BTreeMap::new());
+static SEMAPHORE_SETS: RwLock<BTreeMap<key_t, SemaphoreSet>> = RwLock::new(BTreeMap::new());
 
 pub(super) fn init() {
     ID_ALLOCATOR.call_once(|| {
@@ -183,6 +306,6 @@ pub(super) fn init() {
         // Remove the first index 0
         id_alloc.alloc();
 
-        Mutex::new(id_alloc)
+        SpinLock::new(id_alloc)
     });
 }

@@ -4,6 +4,7 @@ use super::SyscallReturn;
 use crate::{
     ipc::{
         semaphore::system_v::{
+            sem::Semaphore,
             sem_set::{check_sem, sem_sets, sem_sets_mut, SemaphoreSet},
             PermissionMode,
         },
@@ -54,52 +55,39 @@ pub fn sys_semctl(
             }
 
             check_and_ctl(semid, PermissionMode::ALTER, |sem_set| {
-                let sem = sem_set
-                    .get(semnum as usize)
-                    .ok_or(Error::new(Errno::EINVAL))?;
-
-                sem.set_val(val, ctx.process.pid())?;
-                sem_set.update_ctime();
-
-                Ok(())
+                sem_set.setval(semnum as usize, val, ctx.process.pid())
             })?;
         }
         IpcControlCmd::SEM_GETVAL => {
+            fn sem_val(sem: &Semaphore) -> i32 {
+                sem.val()
+            }
             let val: i32 = check_and_ctl(semid, PermissionMode::READ, |sem_set| {
-                Ok(sem_set
-                    .get(semnum as usize)
-                    .ok_or(Error::new(Errno::EINVAL))?
-                    .val())
+                sem_set.get(semnum as usize, &sem_val)
             })?;
 
             return Ok(SyscallReturn::Return(val as isize));
         }
         IpcControlCmd::SEM_GETPID => {
+            fn sem_pid(sem: &Semaphore) -> Pid {
+                sem.latest_modified_pid()
+            }
             let pid: Pid = check_and_ctl(semid, PermissionMode::READ, |sem_set| {
-                Ok(sem_set
-                    .get(semnum as usize)
-                    .ok_or(Error::new(Errno::EINVAL))?
-                    .last_modified_pid())
+                sem_set.get(semnum as usize, &sem_pid)
             })?;
 
             return Ok(SyscallReturn::Return(pid as isize));
         }
         IpcControlCmd::SEM_GETZCNT => {
             let cnt: usize = check_and_ctl(semid, PermissionMode::READ, |sem_set| {
-                Ok(sem_set
-                    .get(semnum as usize)
-                    .ok_or(Error::new(Errno::EINVAL))?
-                    .pending_zero_count())
+                Ok(sem_set.pending_const_count(semnum as u16))
             })?;
 
             return Ok(SyscallReturn::Return(cnt as isize));
         }
         IpcControlCmd::SEM_GETNCNT => {
             let cnt: usize = check_and_ctl(semid, PermissionMode::READ, |sem_set| {
-                Ok(sem_set
-                    .get(semnum as usize)
-                    .ok_or(Error::new(Errno::EINVAL))?
-                    .pending_alter_count())
+                Ok(sem_set.pending_alter_count(semnum as u16))
             })?;
 
             return Ok(SyscallReturn::Return(cnt as isize));

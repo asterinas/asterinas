@@ -58,10 +58,12 @@ fn do_sys_semtimedop(
     }
 
     let user_space = ctx.get_user_space();
+    let mut semops = Vec::with_capacity(nsops);
     for i in 0..nsops {
-        let sem_buf = user_space.read_val::<SemBuf>(tsops + size_of::<SemBuf>() * i)?;
-        sem_op(sem_id, &sem_buf, timeout, ctx)?;
+        semops.push(user_space.read_val::<SemBuf>(tsops + size_of::<SemBuf>() * i)?);
     }
+
+    sem_op(sem_id, semops, timeout, ctx)?;
 
     Ok(SyscallReturn::Return(0))
 }
