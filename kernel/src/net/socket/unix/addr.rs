@@ -30,6 +30,14 @@ impl UnixSocketAddr {
         Ok(bound)
     }
 
+    pub(super) fn bind_unnamed(&self) -> Result<()> {
+        if matches!(self, UnixSocketAddr::Unnamed) {
+            Ok(())
+        } else {
+            return_errno_with_message!(Errno::EINVAL, "the socket is already bound");
+        }
+    }
+
     pub(super) fn connect(&self) -> Result<UnixSocketAddrKey> {
         let bound = match self {
             Self::Unnamed => return_errno_with_message!(

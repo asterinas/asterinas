@@ -229,11 +229,11 @@ impl Socket for UnixStreamSocket {
 
         match self.state.write().as_mut() {
             State::Init(init) => init.bind(addr),
-            _ => return_errno_with_message!(
-                Errno::EINVAL,
-                "cannot bind a listening or connected socket"
-            ),
-            // FIXME: Maybe binding a connected socket should also be allowed?
+            State::Connected(connected) => connected.bind(addr),
+            State::Listen(_) => {
+                // Listening sockets are always already bound.
+                addr.bind_unnamed()
+            }
         }
     }
 
@@ -315,7 +315,7 @@ impl Socket for UnixStreamSocket {
         let addr = match self.state.read().as_ref() {
             State::Init(init) => init.addr().cloned(),
             State::Listen(listen) => Some(listen.addr().clone()),
-            State::Connected(connected) => connected.addr().cloned(),
+            State::Connected(connected) => connected.addr(),
         };
 
         Ok(addr.into())
@@ -323,8 +323,10 @@ impl Socket for UnixStreamSocket {
 
     fn peer_addr(&self) -> Result<SocketAddr> {
         let peer_addr = match self.state.read().as_ref() {
-            State::Connected(connected) => connected.peer_addr().cloned(),
-            _ => return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected"),
+            State::Connected(connected) => connected.peer_addr(),
+            State::Init(_) | State::Listen(_) => {
+                return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected")
+            }
         };
 
         Ok(peer_addr.into())
