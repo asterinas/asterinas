@@ -11,7 +11,7 @@ use crate::{
 };
 
 /// The abstract of device
-pub trait Device: Sync + Send + FileIo {
+pub trait Device: FileIo {
     /// Return the device type.
     fn type_(&self) -> DeviceType;
 

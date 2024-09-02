@@ -3,7 +3,12 @@
 #![allow(unused_variables)]
 
 use super::*;
-use crate::{events::IoEvents, fs::inode_handle::FileIo, prelude::*, process::signal::Poller};
+use crate::{
+    events::IoEvents,
+    fs::inode_handle::FileIo,
+    prelude::*,
+    process::signal::{Pollable, Poller},
+};
 
 pub struct Zero;
 
@@ -22,6 +27,13 @@ impl Device for Zero {
     }
 }
 
+impl Pollable for Zero {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+        let events = IoEvents::IN | IoEvents::OUT;
+        events & mask
+    }
+}
+
 impl FileIo for Zero {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         let read_len = writer.fill_zeros(writer.avail())?;
@@ -30,10 +42,5 @@ impl FileIo for Zero {
 
     fn write(&self, reader: &mut VmReader) -> Result<usize> {
         Ok(reader.remain())
-    }
-
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
-        let events = IoEvents::IN | IoEvents::OUT;
-        events & mask
     }
 }
