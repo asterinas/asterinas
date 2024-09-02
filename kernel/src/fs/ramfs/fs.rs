@@ -536,28 +536,29 @@ impl Inode for RamInode {
     }
 
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        let read_len = {
-            let self_inode = self.node.read();
+        let self_inode = self.node.upread();
 
-            match &self_inode.inner {
-                Inner::File(page_cache) => {
-                    let (offset, read_len) = {
-                        let file_size = self_inode.metadata.size;
-                        let start = file_size.min(offset);
-                        let end = file_size.min(offset + writer.avail());
-                        (start, end - start)
-                    };
-                    page_cache.pages().read(offset, writer)?;
-                    read_len
-                }
-                Inner::Device(device) => device.read(writer)?,
-                Inner::NamedPipe(named_pipe) => named_pipe.read(writer)?,
-                _ => return_errno_with_message!(Errno::EISDIR, "read is not supported"),
+        let read_len = match &self_inode.inner {
+            Inner::File(page_cache) => {
+                let (offset, read_len) = {
+                    let file_size = self_inode.metadata.size;
+                    let start = file_size.min(offset);
+                    let end = file_size.min(offset + writer.avail());
+                    (start, end - start)
+                };
+                page_cache.pages().read(offset, writer)?;
+                self_inode.upgrade().set_atime(now());
+                read_len
             }
+            // TODO: Optimize the lock control (use `read()` rather `upread()`) on device
+            Inner::Device(device) => {
+                device.read(writer)?
+                // Typically, devices like "/dev/zero" or "/dev/null" do not require modifying
+                // timestamps here. Please adjust this behavior accordingly if there are special devices.
+            }
+            Inner::NamedPipe(named_pipe) => named_pipe.read(writer)?,
+            _ => return_errno_with_message!(Errno::EISDIR, "read is not supported"),
         };
-
-        self.set_atime(now());
-
         Ok(read_len)
     }
 
@@ -566,12 +567,12 @@ impl Inode for RamInode {
     }
 
     fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
-        let write_len = reader.remain();
         let self_inode = self.node.upread();
 
-        match &self_inode.inner {
+        let written_len = match &self_inode.inner {
             Inner::File(page_cache) => {
                 let file_size = self_inode.metadata.size;
+                let write_len = reader.remain();
                 let new_size = offset + write_len;
                 let should_expand_size = new_size > file_size;
                 if should_expand_size {
@@ -586,20 +587,18 @@ impl Inode for RamInode {
                 if should_expand_size {
                     self_inode.resize(new_size);
                 }
+                write_len
             }
+            // TODO: Optimize the lock control (use `read()` rather `upread()`) on device
             Inner::Device(device) => {
-                device.write(reader)?;
-                let mut self_inode = self_inode.upgrade();
-                let now = now();
-                self_inode.set_mtime(now);
-                self_inode.set_ctime(now);
+                device.write(reader)?
+                // Typically, devices like "/dev/zero" or "/dev/null" do not require modifying
+                // timestamps here. Please adjust this behavior accordingly if there are special devices.
             }
-            Inner::NamedPipe(named_pipe) => {
-                named_pipe.write(reader)?;
-            }
+            Inner::NamedPipe(named_pipe) => named_pipe.write(reader)?,
             _ => return_errno_with_message!(Errno::EISDIR, "write is not supported"),
         };
-        Ok(write_len)
+        Ok(written_len)
     }
 
     fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
