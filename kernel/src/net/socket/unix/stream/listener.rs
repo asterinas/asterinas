@@ -15,7 +15,7 @@ use crate::{
         SockShutdownCmd, SocketAddr,
     },
     prelude::*,
-    process::signal::{Pollee, Poller},
+    process::signal::{Pauser, Pollee, Poller},
 };
 
 pub(super) struct Listener {
@@ -105,6 +105,8 @@ impl Listener {
 
 impl Drop for Listener {
     fn drop(&mut self) {
+        self.backlog.shutdown();
+
         unregister_backlog(&self.backlog.addr().to_key())
     }
 }
@@ -147,37 +149,17 @@ impl BacklogTable {
         self.backlog_sockets.read().get(addr).cloned()
     }
 
-    fn push_incoming(
-        &self,
-        server_key: &UnixSocketAddrKey,
-        init: Init,
-    ) -> core::result::Result<Connected, (Error, Init)> {
-        let backlog = match self.get_backlog(server_key) {
-            Some(backlog) => backlog,
-            None => {
-                return Err((
-                    Error::with_message(
-                        Errno::ECONNREFUSED,
-                        "no socket is listening at the remote address",
-                    ),
-                    init,
-                ))
-            }
-        };
-
-        backlog.push_incoming(init)
-    }
-
     fn remove_backlog(&self, addr_key: &UnixSocketAddrKey) {
         self.backlog_sockets.write().remove(addr_key);
     }
 }
 
-struct Backlog {
+pub(super) struct Backlog {
     addr: UnixSocketAddrBound,
     pollee: Pollee,
     backlog: AtomicUsize,
     incoming_conns: Mutex<Option<VecDeque<Connected>>>,
+    pauser: Arc<Pauser>,
 }
 
 impl Backlog {
@@ -193,6 +175,7 @@ impl Backlog {
             pollee,
             backlog: AtomicUsize::new(backlog),
             incoming_conns: Mutex::new(incoming_sockets),
+            pauser: Pauser::new(),
         }
     }
 
@@ -200,7 +183,73 @@ impl Backlog {
         &self.addr
     }
 
-    fn push_incoming(&self, init: Init) -> core::result::Result<Connected, (Error, Init)> {
+    fn pop_incoming(&self) -> Result<Connected> {
+        let mut locked_incoming_conns = self.incoming_conns.lock();
+
+        let Some(incoming_conns) = &mut *locked_incoming_conns else {
+            return_errno_with_message!(Errno::EINVAL, "the socket is shut down for reading");
+        };
+
+        let conn = incoming_conns.pop_front();
+        if incoming_conns.is_empty() {
+            self.pollee.del_events(IoEvents::IN);
+        }
+
+        drop(locked_incoming_conns);
+
+        if conn.is_some() {
+            self.pauser.resume_one();
+        }
+
+        conn.ok_or_else(|| Error::with_message(Errno::EAGAIN, "no pending connection is available"))
+    }
+
+    fn set_backlog(&self, backlog: usize) {
+        let old_backlog = self.backlog.swap(backlog, Ordering::Relaxed);
+
+        if old_backlog < backlog {
+            self.pauser.resume_all();
+        }
+    }
+
+    fn shutdown(&self) {
+        let mut incoming_conns = self.incoming_conns.lock();
+
+        *incoming_conns = None;
+        self.pollee.add_events(IoEvents::HUP);
+        self.pollee.del_events(IoEvents::IN);
+
+        drop(incoming_conns);
+
+        self.pauser.resume_all();
+    }
+
+    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+        self.pollee.poll(mask, poller)
+    }
+
+    fn register_observer(
+        &self,
+        observer: Weak<dyn Observer<IoEvents>>,
+        mask: IoEvents,
+    ) -> Result<()> {
+        self.pollee.register_observer(observer, mask);
+        Ok(())
+    }
+
+    fn unregister_observer(
+        &self,
+        observer: &Weak<dyn Observer<IoEvents>>,
+    ) -> Option<Weak<dyn Observer<IoEvents>>> {
+        self.pollee.unregister_observer(observer)
+    }
+}
+
+impl Backlog {
+    pub(super) fn push_incoming(
+        &self,
+        init: Init,
+    ) -> core::result::Result<Connected, (Error, Init)> {
         let mut locked_incoming_conns = self.incoming_conns.lock();
 
         let Some(incoming_conns) = &mut *locked_incoming_conns else {
@@ -231,51 +280,14 @@ impl Backlog {
         Ok(client_conn)
     }
 
-    fn pop_incoming(&self) -> Result<Connected> {
-        let mut locked_incoming_conns = self.incoming_conns.lock();
-
-        let Some(incoming_conns) = &mut *locked_incoming_conns else {
-            return_errno_with_message!(Errno::EINVAL, "the socket is shut down for reading");
-        };
-
-        let conn = incoming_conns.pop_front();
-        if incoming_conns.is_empty() {
-            self.pollee.del_events(IoEvents::IN);
-        }
-
-        conn.ok_or_else(|| Error::with_message(Errno::EAGAIN, "no pending connection is available"))
-    }
-
-    fn set_backlog(&self, backlog: usize) {
-        self.backlog.store(backlog, Ordering::Relaxed);
-    }
-
-    fn shutdown(&self) {
-        let mut incoming_conns = self.incoming_conns.lock();
-
-        *incoming_conns = None;
-        self.pollee.add_events(IoEvents::HUP);
-        self.pollee.del_events(IoEvents::IN);
-    }
-
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
-        self.pollee.poll(mask, poller)
-    }
-
-    fn register_observer(
-        &self,
-        observer: Weak<dyn Observer<IoEvents>>,
-        mask: IoEvents,
-    ) -> Result<()> {
-        self.pollee.register_observer(observer, mask);
-        Ok(())
-    }
-
-    fn unregister_observer(
-        &self,
-        observer: &Weak<dyn Observer<IoEvents>>,
-    ) -> Option<Weak<dyn Observer<IoEvents>>> {
-        self.pollee.unregister_observer(observer)
+    pub(super) fn pause_until<F>(&self, mut cond: F) -> Result<()>
+    where
+        F: FnMut() -> Result<()>,
+    {
+        self.pauser.pause_until(|| match cond() {
+            Err(err) if err.error() == Errno::EAGAIN => None,
+            result => Some(result),
+        })?
     }
 }
 
@@ -283,9 +295,11 @@ fn unregister_backlog(addr: &UnixSocketAddrKey) {
     BACKLOG_TABLE.remove_backlog(addr);
 }
 
-pub(super) fn push_incoming(
-    server_key: &UnixSocketAddrKey,
-    init: Init,
-) -> core::result::Result<Connected, (Error, Init)> {
-    BACKLOG_TABLE.push_incoming(server_key, init)
+pub(super) fn get_backlog(server_key: &UnixSocketAddrKey) -> Result<Arc<Backlog>> {
+    BACKLOG_TABLE.get_backlog(server_key).ok_or_else(|| {
+        Error::with_message(
+            Errno::ECONNREFUSED,
+            "no socket is listening at the remote address",
+        )
+    })
 }
