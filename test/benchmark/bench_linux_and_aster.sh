@@ -84,7 +84,7 @@ run_benchmark() {
     fi
 
     echo "Running benchmark ${benchmark} on Linux and Asterinas..."
-    make run BENCHMARK=${benchmark} ENABLE_KVM=1 RELEASE=1 2>&1 | tee "${aster_output}"
+    make run BENCHMARK=${benchmark} ENABLE_KVM=1 RELEASE_LTO=1 2>&1 | tee "${aster_output}"
     eval "$qemu_cmd"
 
     echo "Parsing results..."
