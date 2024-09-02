@@ -307,6 +307,13 @@ impl Inner {
             _ => None,
         }
     }
+
+    fn as_named_pipe(&self) -> Option<&NamedPipe> {
+        match self {
+            Inner::NamedPipe(pipe) => Some(pipe),
+            _ => None,
+        }
+    }
 }
 
 struct DirEntry {
@@ -536,29 +543,32 @@ impl Inode for RamInode {
     }
 
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        let self_inode = self.node.upread();
-
-        let read_len = match &self_inode.inner {
-            Inner::File(page_cache) => {
-                let (offset, read_len) = {
-                    let file_size = self_inode.metadata.size;
-                    let start = file_size.min(offset);
-                    let end = file_size.min(offset + writer.avail());
-                    (start, end - start)
-                };
-                page_cache.pages().read(offset, writer)?;
-                self_inode.upgrade().set_atime(now());
-                read_len
+        let read_len = {
+            let self_inode = self.node.read();
+            match &self_inode.inner {
+                Inner::File(page_cache) => {
+                    let (offset, read_len) = {
+                        let file_size = self_inode.metadata.size;
+                        let start = file_size.min(offset);
+                        let end = file_size.min(offset + writer.avail());
+                        (start, end - start)
+                    };
+                    page_cache.pages().read(offset, writer)?;
+                    read_len
+                }
+                Inner::Device(device) => {
+                    device.read(writer)?
+                    // Typically, devices like "/dev/zero" or "/dev/null" do not require modifying
+                    // timestamps here. Please adjust this behavior accordingly if there are special devices.
+                }
+                Inner::NamedPipe(named_pipe) => named_pipe.read(writer)?,
+                _ => return_errno_with_message!(Errno::EISDIR, "read is not supported"),
             }
-            // TODO: Optimize the lock control (use `read()` rather `upread()`) on device
-            Inner::Device(device) => {
-                device.read(writer)?
-                // Typically, devices like "/dev/zero" or "/dev/null" do not require modifying
-                // timestamps here. Please adjust this behavior accordingly if there are special devices.
-            }
-            Inner::NamedPipe(named_pipe) => named_pipe.read(writer)?,
-            _ => return_errno_with_message!(Errno::EISDIR, "read is not supported"),
         };
+
+        if self.typ == InodeType::File {
+            self.set_atime(now());
+        }
         Ok(read_len)
     }
 
@@ -567,10 +577,11 @@ impl Inode for RamInode {
     }
 
     fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
-        let self_inode = self.node.upread();
+        let written_len = match self.typ {
+            InodeType::File => {
+                let self_inode = self.node.upread();
+                let page_cache = self_inode.inner.as_file().unwrap();
 
-        let written_len = match &self_inode.inner {
-            Inner::File(page_cache) => {
                 let file_size = self_inode.metadata.size;
                 let write_len = reader.remain();
                 let new_size = offset + write_len;
@@ -589,13 +600,18 @@ impl Inode for RamInode {
                 }
                 write_len
             }
-            // TODO: Optimize the lock control (use `read()` rather `upread()`) on device
-            Inner::Device(device) => {
+            InodeType::CharDevice | InodeType::BlockDevice => {
+                let self_inode = self.node.read();
+                let device = self_inode.inner.as_device().unwrap();
                 device.write(reader)?
                 // Typically, devices like "/dev/zero" or "/dev/null" do not require modifying
                 // timestamps here. Please adjust this behavior accordingly if there are special devices.
             }
-            Inner::NamedPipe(named_pipe) => named_pipe.write(reader)?,
+            InodeType::NamedPipe => {
+                let self_inode = self.node.read();
+                let named_pipe = self_inode.inner.as_named_pipe().unwrap();
+                named_pipe.write(reader)?
+            }
             _ => return_errno_with_message!(Errno::EISDIR, "write is not supported"),
         };
         Ok(written_len)
