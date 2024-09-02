@@ -16,7 +16,7 @@ use crate::{
     process::signal::{
         constants::{SIGINT, SIGQUIT},
         signals::kernel::KernelSignal,
-        Pollee, Poller,
+        Pollable, Pollee, Poller,
     },
     thread::work_queue::{submit_work_item, work_item::WorkItem, WorkPriority},
     util::ring_buffer::RingBuffer,
@@ -84,6 +84,12 @@ impl CurrentLine {
 
     pub fn is_empty(&self) -> bool {
         self.buffer.is_empty()
+    }
+}
+
+impl Pollable for LineDiscipline {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+        self.pollee.poll(mask, poller)
     }
 }
 
@@ -229,19 +235,7 @@ impl LineDiscipline {
     }
 
     pub fn read(&self, buf: &mut [u8]) -> Result<usize> {
-        loop {
-            let res = self.try_read(buf);
-            match res {
-                Ok(len) => return Ok(len),
-                Err(e) if e.error() != Errno::EAGAIN => return Err(e),
-                Err(_) => {
-                    let mut poller = Poller::new();
-                    if self.poll(IoEvents::IN, Some(&mut poller)).is_empty() {
-                        poller.wait()?
-                    }
-                }
-            }
-        }
+        self.wait_events(IoEvents::IN, || self.try_read(buf))
     }
 
     /// Reads all bytes buffered to `dst`.
@@ -273,10 +267,6 @@ impl LineDiscipline {
         };
         self.update_readable_state();
         Ok(read_len)
-    }
-
-    pub fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
-        self.pollee.poll(mask, poller)
     }
 
     /// Reads bytes from `self` to `dst`, returning the actual bytes read.
