@@ -11,7 +11,7 @@ use crate::{
 /// job control.
 ///
 /// We currently support two kinds of terminal, the tty and pty.
-pub trait Terminal: Send + Sync + FileIo {
+pub trait Terminal: FileIo {
     // *************** Foreground ***************
 
     /// Returns the foreground process group

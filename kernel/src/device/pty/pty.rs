@@ -16,7 +16,7 @@ use crate::{
     get_current_userspace,
     prelude::*,
     process::{
-        signal::{Pollee, Poller},
+        signal::{Pollable, Pollee, Poller},
         JobControl, Terminal,
     },
     util::ring_buffer::RingBuffer,
@@ -95,6 +95,26 @@ impl PtyMaster {
         } else {
             self.pollee.add_events(IoEvents::IN);
         }
+    }
+}
+
+impl Pollable for PtyMaster {
+    fn poll(&self, mask: IoEvents, mut poller: Option<&mut Poller>) -> IoEvents {
+        let mut poll_status = IoEvents::empty();
+
+        let poll_in_mask = mask & IoEvents::IN;
+        if !poll_in_mask.is_empty() {
+            let poll_in_status = self.pollee.poll(poll_in_mask, poller.as_deref_mut());
+            poll_status |= poll_in_status;
+        }
+
+        let poll_out_mask = mask & IoEvents::OUT;
+        if !poll_out_mask.is_empty() {
+            let poll_out_status = self.output.poll(poll_out_mask, poller);
+            poll_status |= poll_out_status;
+        }
+
+        poll_status
     }
 }
 
@@ -245,24 +265,6 @@ impl FileIo for PtyMaster {
             _ => Ok(0),
         }
     }
-
-    fn poll(&self, mask: IoEvents, mut poller: Option<&mut Poller>) -> IoEvents {
-        let mut poll_status = IoEvents::empty();
-
-        let poll_in_mask = mask & IoEvents::IN;
-        if !poll_in_mask.is_empty() {
-            let poll_in_status = self.pollee.poll(poll_in_mask, poller.as_deref_mut());
-            poll_status |= poll_in_status;
-        }
-
-        let poll_out_mask = mask & IoEvents::OUT;
-        if !poll_out_mask.is_empty() {
-            let poll_out_status = self.output.poll(poll_out_mask, poller);
-            poll_status |= poll_out_status;
-        }
-
-        poll_status
-    }
 }
 
 impl Terminal for PtyMaster {
@@ -329,6 +331,12 @@ impl Terminal for PtySlave {
     }
 }
 
+impl Pollable for PtySlave {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+        self.master().slave_poll(mask, poller)
+    }
+}
+
 impl FileIo for PtySlave {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         let mut buf = vec![0u8; writer.avail()];
@@ -352,10 +360,6 @@ impl FileIo for PtySlave {
             }
         }
         Ok(write_len)
-    }
-
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
-        self.master().slave_poll(mask, poller)
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {

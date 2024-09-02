@@ -16,7 +16,7 @@ use crate::{
     get_current_userspace,
     prelude::*,
     process::{
-        signal::{signals::kernel::KernelSignal, Poller},
+        signal::{signals::kernel::KernelSignal, Pollable, Poller},
         JobControl, Process, Terminal,
     },
 };
@@ -72,6 +72,12 @@ impl Tty {
     }
 }
 
+impl Pollable for Tty {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+        self.ldisc.poll(mask, poller)
+    }
+}
+
 impl FileIo for Tty {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         let mut buf = vec![0; writer.avail()];
@@ -89,10 +95,6 @@ impl FileIo for Tty {
             println!("Not utf-8 content: {:?}", buf);
         }
         Ok(buf.len())
-    }
-
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
-        self.ldisc.poll(mask, poller)
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
