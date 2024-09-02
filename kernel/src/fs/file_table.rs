@@ -18,7 +18,7 @@ use crate::{
     net::socket::Socket,
     prelude::*,
     process::{
-        signal::{constants::SIGIO, signals::kernel::KernelSignal},
+        signal::{constants::SIGIO, signals::kernel::KernelSignal, PollAdaptor},
         Pid, Process,
     },
 };
@@ -284,30 +284,20 @@ impl FileTableEntry {
     /// for I/O events on the file descriptor, if `O_ASYNC` status flag is set
     /// on this file.
     pub fn set_owner(&mut self, owner: Option<&Arc<Process>>) -> Result<()> {
-        match owner {
-            None => {
-                // Unset the owner if the given pid is zero
-                if let Some((_, observer)) = self.owner.as_ref() {
-                    let _ = self.file.unregister_observer(&Arc::downgrade(observer));
-                }
-                let _ = self.owner.take();
-            }
-            Some(owner_process) => {
-                let owner_pid = owner_process.pid();
-                if let Some((pid, observer)) = self.owner.as_ref() {
-                    if *pid == owner_pid {
-                        return Ok(());
-                    }
+        let Some(process) = owner else {
+            self.owner = None;
+            return Ok(());
+        };
 
-                    let _ = self.file.unregister_observer(&Arc::downgrade(observer));
-                }
+        let mut poller = PollAdaptor::with_observer(OwnerObserver::new(
+            self.file.clone(),
+            Arc::downgrade(process),
+        ));
+        self.file
+            .poll(IoEvents::IN | IoEvents::OUT, Some(poller.as_handle_mut()));
 
-                let observer = OwnerObserver::new(self.file.clone(), Arc::downgrade(owner_process));
-                self.file
-                    .register_observer(observer.weak_self(), IoEvents::empty())?;
-                let _ = self.owner.insert((owner_pid, observer));
-            }
-        }
+        self.owner = Some((process.pid(), poller));
+
         Ok(())
     }
 
@@ -342,7 +332,7 @@ impl Clone for FileTableEntry {
             file: self.file.clone(),
             flags: AtomicU8::new(self.flags.load(Ordering::Relaxed)),
             subject: Subject::new(),
-            owner: self.owner.clone(),
+            owner: None,
         }
     }
 }
@@ -354,25 +344,16 @@ bitflags! {
     }
 }
 
-type Owner = (Pid, Arc<dyn Observer<IoEvents>>);
+type Owner = (Pid, PollAdaptor<OwnerObserver>);
 
 struct OwnerObserver {
     file: Arc<dyn FileLike>,
     owner: Weak<Process>,
-    weak_self: Weak<Self>,
 }
 
 impl OwnerObserver {
-    pub fn new(file: Arc<dyn FileLike>, owner: Weak<Process>) -> Arc<Self> {
-        Arc::new_cyclic(|weak_ref| Self {
-            file,
-            owner,
-            weak_self: weak_ref.clone(),
-        })
-    }
-
-    pub fn weak_self(&self) -> Weak<Self> {
-        self.weak_self.clone()
+    pub fn new(file: Arc<dyn FileLike>, owner: Weak<Process>) -> Self {
+        Self { file, owner }
     }
 }
 
