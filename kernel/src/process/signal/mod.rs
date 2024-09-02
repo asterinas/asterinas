@@ -20,7 +20,7 @@ use c_types::{siginfo_t, ucontext_t};
 pub use events::{SigEvents, SigEventsFilter};
 use ostd::{cpu::UserContext, user::UserContextApi};
 pub use pause::{with_signal_blocked, Pause};
-pub use poll::{PollHandle, Pollable, Pollee, Poller};
+pub use poll::{PollAdaptor, PollHandle, Pollable, Pollee, Poller};
 use sig_action::{SigAction, SigActionFlags, SigDefaultAction};
 use sig_mask::SigMask;
 use sig_num::SigNum;
