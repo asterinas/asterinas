@@ -89,6 +89,19 @@ impl PtyMaster {
         self.output.buffer_len()
     }
 
+    fn try_read(&self, writer: &mut VmWriter) -> Result<usize> {
+        let mut input = self.input.disable_irq().lock();
+
+        if input.is_empty() {
+            return_errno_with_message!(Errno::EAGAIN, "the buffer is empty");
+        }
+
+        let read_len = input.read_fallible(writer)?;
+        self.update_state(&input);
+
+        Ok(read_len)
+    }
+
     fn update_state(&self, buf: &RingBuffer<u8>) {
         if buf.is_empty() {
             self.pollee.del_events(IoEvents::IN)
@@ -120,35 +133,12 @@ impl Pollable for PtyMaster {
 
 impl FileIo for PtyMaster {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        let read_len = writer.avail();
-        // TODO: deal with nonblocking read
-        if read_len == 0 {
+        if !writer.has_avail() {
             return Ok(0);
         }
 
-        let mut poller = Poller::new();
-        loop {
-            let mut input = self.input.disable_irq().lock();
-
-            if input.is_empty() {
-                let events = self.pollee.poll(IoEvents::IN, Some(&mut poller));
-
-                if events.contains(IoEvents::ERR) {
-                    return_errno_with_message!(Errno::EACCES, "unexpected err");
-                }
-
-                if events.is_empty() {
-                    drop(input);
-                    // FIXME: deal with pty read timeout
-                    poller.wait()?;
-                }
-                continue;
-            }
-
-            let read_len = input.read_fallible(writer)?;
-            self.update_state(&input);
-            return Ok(read_len);
-        }
+        // TODO: deal with nonblocking and timeout
+        self.wait_events(IoEvents::IN, || self.try_read(writer))
     }
 
     fn write(&self, reader: &mut VmReader) -> Result<usize> {

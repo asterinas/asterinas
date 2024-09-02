@@ -130,6 +130,28 @@ impl EventFile {
         // TODO: deal with overflow logic
     }
 
+    fn try_read(&self, writer: &mut VmWriter) -> Result<()> {
+        let mut counter = self.counter.lock();
+
+        // Wait until the counter becomes non-zero
+        if *counter == 0 {
+            return_errno_with_message!(Errno::EAGAIN, "the counter is zero");
+        }
+
+        // Copy value from counter, and set the new counter value
+        if self.flags.lock().contains(Flags::EFD_SEMAPHORE) {
+            writer.write_fallible(&mut 1u64.as_bytes().into())?;
+            *counter -= 1;
+        } else {
+            writer.write_fallible(&mut (*counter).as_bytes().into())?;
+            *counter = 0;
+        }
+
+        self.update_io_state(&counter);
+
+        Ok(())
+    }
+
     /// Adds val to the counter.
     ///
     /// If the new_value is overflowed or exceeds MAX_COUNTER_VALUE, the counter value
@@ -160,40 +182,15 @@ impl Pollable for EventFile {
 impl FileLike for EventFile {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         let read_len = core::mem::size_of::<u64>();
+
         if writer.avail() < read_len {
             return_errno_with_message!(Errno::EINVAL, "buf len is less len u64 size");
         }
 
-        loop {
-            let mut counter = self.counter.lock();
-
-            // Wait until the counter becomes non-zero
-            if *counter == 0 {
-                if self.is_nonblocking() {
-                    return_errno_with_message!(Errno::EAGAIN, "try reading event file again");
-                }
-
-                self.update_io_state(&counter);
-                drop(counter);
-
-                let mut poller = Poller::new();
-                if self.pollee.poll(IoEvents::IN, Some(&mut poller)).is_empty() {
-                    poller.wait()?;
-                }
-                continue;
-            }
-
-            // Copy value from counter, and set the new counter value
-            if self.flags.lock().contains(Flags::EFD_SEMAPHORE) {
-                writer.write_fallible(&mut 1u64.as_bytes().into())?;
-                *counter -= 1;
-            } else {
-                writer.write_fallible(&mut (*counter).as_bytes().into())?;
-                *counter = 0;
-            }
-
-            self.update_io_state(&counter);
-            break;
+        if self.is_nonblocking() {
+            self.try_read(writer)?;
+        } else {
+            self.wait_events(IoEvents::IN, || self.try_read(writer))?;
         }
 
         Ok(read_len)
