@@ -211,6 +211,62 @@ FN_TEST(getpeername)
 }
 END_TEST()
 
+FN_TEST(bind)
+{
+	TEST_ERRNO(bind(sk_bound, (struct sockaddr *)&UNIX_ADDR("\0Z"),
+			PATH_OFFSET + 1),
+		   EINVAL);
+
+	TEST_ERRNO(bind(sk_listen, (struct sockaddr *)&UNIX_ADDR("\0Z"),
+			PATH_OFFSET + 1),
+		   EINVAL);
+
+	TEST_SUCC(bind(sk_bound, (struct sockaddr *)&UNNAMED_ADDR,
+		       UNNAMED_ADDRLEN));
+
+	TEST_SUCC(bind(sk_listen, (struct sockaddr *)&UNNAMED_ADDR,
+		       UNNAMED_ADDRLEN));
+}
+END_TEST()
+
+FN_TEST(bind_connected)
+{
+	int fildes[2];
+	struct sockaddr_un addr;
+	socklen_t addrlen;
+
+	TEST_SUCC(socketpair(PF_UNIX, SOCK_STREAM, 0, fildes));
+
+	TEST_SUCC(bind(fildes[0], (struct sockaddr *)&UNIX_ADDR("\0X"),
+		       PATH_OFFSET + 2));
+	addrlen = sizeof(addr);
+	TEST_RES(getpeername(fildes[1], (struct sockaddr *)&addr, &addrlen),
+		 addrlen == PATH_OFFSET + 2 && memcmp(&addr, &UNIX_ADDR("\0X"),
+						      PATH_OFFSET + 2) == 0);
+
+	TEST_SUCC(bind(fildes[1], (struct sockaddr *)&UNIX_ADDR("\0Y"),
+		       PATH_OFFSET + 2));
+	addrlen = sizeof(addr);
+	TEST_RES(getpeername(fildes[0], (struct sockaddr *)&addr, &addrlen),
+		 addrlen == PATH_OFFSET + 2 && memcmp(&addr, &UNIX_ADDR("\0Y"),
+						      PATH_OFFSET + 2) == 0);
+
+	TEST_ERRNO(bind(fildes[0], (struct sockaddr *)&UNIX_ADDR("\0Z"),
+			PATH_OFFSET + 2),
+		   EINVAL);
+	TEST_ERRNO(bind(fildes[1], (struct sockaddr *)&UNIX_ADDR("\0Z"),
+			PATH_OFFSET + 2),
+		   EINVAL);
+	TEST_SUCC(bind(fildes[0], (struct sockaddr *)&UNNAMED_ADDR,
+		       UNNAMED_ADDRLEN));
+	TEST_SUCC(bind(fildes[1], (struct sockaddr *)&UNNAMED_ADDR,
+		       UNNAMED_ADDRLEN));
+
+	TEST_SUCC(close(fildes[0]));
+	TEST_SUCC(close(fildes[1]));
+}
+END_TEST()
+
 FN_TEST(connect)
 {
 	TEST_ERRNO(connect(sk_unbound, (struct sockaddr *)&BOUND_ADDR,

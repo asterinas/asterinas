@@ -37,7 +37,7 @@ impl Init {
 
     pub(super) fn bind(&mut self, addr_to_bind: UnixSocketAddr) -> Result<()> {
         if self.addr.is_some() {
-            return_errno_with_message!(Errno::EINVAL, "the socket is already bound");
+            return addr_to_bind.bind_unnamed();
         }
 
         let bound_addr = addr_to_bind.bind()?;
