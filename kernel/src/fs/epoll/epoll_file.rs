@@ -344,22 +344,6 @@ impl FileLike for EpollFile {
         return_errno_with_message!(Errno::EINVAL, "epoll files do not support ioctl");
     }
 
-    fn register_observer(
-        &self,
-        observer: Weak<dyn Observer<IoEvents>>,
-        mask: IoEvents,
-    ) -> Result<()> {
-        self.pollee.register_observer(observer, mask);
-        Ok(())
-    }
-
-    fn unregister_observer(
-        &self,
-        observer: &Weak<dyn Observer<IoEvents>>,
-    ) -> Option<Weak<dyn Observer<IoEvents>>> {
-        self.pollee.unregister_observer(observer)
-    }
-
     fn metadata(&self) -> Metadata {
         // This is a dummy implementation.
         // TODO: Add "anonymous inode fs" and link `EpollFile` to it.

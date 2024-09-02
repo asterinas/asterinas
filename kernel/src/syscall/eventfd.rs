@@ -18,7 +18,7 @@ use ostd::sync::WaitQueue;
 
 use super::SyscallReturn;
 use crate::{
-    events::{IoEvents, Observer},
+    events::IoEvents,
     fs::{
         file_handle::FileLike,
         file_table::{FdFlags, FileDesc},
@@ -240,22 +240,6 @@ impl FileLike for EventFile {
         // TODO: deal with other flags
 
         Ok(())
-    }
-
-    fn register_observer(
-        &self,
-        observer: Weak<dyn crate::events::Observer<IoEvents>>,
-        mask: IoEvents,
-    ) -> Result<()> {
-        self.pollee.register_observer(observer, mask);
-        Ok(())
-    }
-
-    fn unregister_observer(
-        &self,
-        observer: &Weak<dyn Observer<IoEvents>>,
-    ) -> Option<Weak<dyn Observer<IoEvents>>> {
-        self.pollee.unregister_observer(observer)
     }
 
     fn metadata(&self) -> Metadata {

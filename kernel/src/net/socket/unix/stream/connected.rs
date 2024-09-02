@@ -5,7 +5,7 @@ use core::ops::Deref;
 use ostd::sync::PreemptDisabled;
 
 use crate::{
-    events::{IoEvents, Observer},
+    events::IoEvents,
     fs::utils::{Channel, Consumer, Producer},
     net::socket::{
         unix::{addr::UnixSocketAddrBound, UnixSocketAddr},
@@ -95,25 +95,6 @@ impl Connected {
         let writer_events = self.writer.poll(mask, poller);
 
         combine_io_events(mask, reader_events, writer_events)
-    }
-
-    pub(super) fn register_observer(
-        &self,
-        observer: Weak<dyn Observer<IoEvents>>,
-        mask: IoEvents,
-    ) -> Result<()> {
-        self.reader.register_observer(observer.clone(), mask)?;
-        self.writer.register_observer(observer, mask)?;
-        Ok(())
-    }
-
-    pub(super) fn unregister_observer(
-        &self,
-        observer: &Weak<dyn Observer<IoEvents>>,
-    ) -> Option<Weak<dyn Observer<IoEvents>>> {
-        let reader_observer = self.reader.unregister_observer(observer);
-        let writer_observer = self.writer.unregister_observer(observer);
-        reader_observer.or(writer_observer)
     }
 }
 

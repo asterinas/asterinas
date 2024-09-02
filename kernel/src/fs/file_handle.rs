@@ -5,7 +5,6 @@
 //! Opened File Handle
 
 use crate::{
-    events::{IoEvents, Observer},
     fs::{
         device::Device,
         utils::{AccessMode, FallocMode, InodeMode, IoctlCmd, Metadata, SeekFrom, StatusFlags},
@@ -99,22 +98,6 @@ pub trait FileLike: Pollable + Send + Sync + Any {
 
     fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
         return_errno_with_message!(Errno::EOPNOTSUPP, "fallocate is not supported");
-    }
-
-    fn register_observer(
-        &self,
-        observer: Weak<dyn Observer<IoEvents>>,
-        mask: IoEvents,
-    ) -> Result<()> {
-        return_errno_with_message!(Errno::EINVAL, "register_observer is not supported")
-    }
-
-    #[must_use]
-    fn unregister_observer(
-        &self,
-        observer: &Weak<dyn Observer<IoEvents>>,
-    ) -> Option<Weak<dyn Observer<IoEvents>>> {
-        None
     }
 
     fn as_socket(self: Arc<Self>) -> Option<Arc<dyn Socket>> {

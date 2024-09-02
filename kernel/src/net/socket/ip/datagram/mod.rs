@@ -8,7 +8,7 @@ use takeable::Takeable;
 use self::{bound::BoundDatagram, unbound::UnboundDatagram};
 use super::{common::get_ephemeral_endpoint, UNSPECIFIED_LOCAL_ENDPOINT};
 use crate::{
-    events::{IoEvents, Observer},
+    events::IoEvents,
     fs::{
         file_handle::FileLike,
         utils::{InodeMode, Metadata, StatusFlags},
@@ -257,22 +257,6 @@ impl FileLike for DatagramSocket {
             self.set_nonblocking(false);
         }
         Ok(())
-    }
-
-    fn register_observer(
-        &self,
-        observer: Weak<dyn Observer<IoEvents>>,
-        mask: IoEvents,
-    ) -> Result<()> {
-        self.pollee.register_observer(observer, mask);
-        Ok(())
-    }
-
-    fn unregister_observer(
-        &self,
-        observer: &Weak<dyn Observer<IoEvents>>,
-    ) -> Option<Weak<dyn Observer<IoEvents>>> {
-        self.pollee.unregister_observer(observer)
     }
 
     fn metadata(&self) -> Metadata {

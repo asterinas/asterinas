@@ -14,7 +14,7 @@ use util::TcpOptionSet;
 
 use super::UNSPECIFIED_LOCAL_ENDPOINT;
 use crate::{
-    events::{IoEvents, Observer},
+    events::IoEvents,
     fs::{
         file_handle::FileLike,
         utils::{InodeMode, Metadata, StatusFlags},
@@ -414,22 +414,6 @@ impl FileLike for StreamSocket {
 
     fn as_socket(self: Arc<Self>) -> Option<Arc<dyn Socket>> {
         Some(self)
-    }
-
-    fn register_observer(
-        &self,
-        observer: Weak<dyn Observer<IoEvents>>,
-        mask: IoEvents,
-    ) -> Result<()> {
-        self.pollee.register_observer(observer, mask);
-        Ok(())
-    }
-
-    fn unregister_observer(
-        &self,
-        observer: &Weak<dyn Observer<IoEvents>>,
-    ) -> Option<Weak<dyn Observer<IoEvents>>> {
-        self.pollee.unregister_observer(observer)
     }
 
     fn metadata(&self) -> Metadata {
