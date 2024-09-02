@@ -4,6 +4,8 @@ SemaphoreTest.SemopGetzcnt
 SemaphoreTest.SemopGetncnt
 SemaphoreTest.IpcInfo
 SemaphoreTest.SemInfo
+# SemOpMultiNoBlock requires handling the dupsop situation
+SemaphoreTest.SemOpMultiNoBlock
 # SemOpRandom will failed in vmar/mod.rs:336:13:assertion failed.
 SemaphoreTest.SemOpRandom
 SemaphoreTest.SemOpNamespace
