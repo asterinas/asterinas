@@ -7,7 +7,7 @@ use super::{
     utils::{AccessMode, Channel, Consumer, InodeMode, InodeType, Metadata, Producer, StatusFlags},
 };
 use crate::{
-    events::{IoEvents, Observer},
+    events::IoEvents,
     prelude::*,
     process::{
         signal::{PollHandle, Pollable},
@@ -104,21 +104,6 @@ impl FileLike for PipeReader {
             rdev: 0,
         }
     }
-
-    fn register_observer(
-        &self,
-        observer: Weak<dyn Observer<IoEvents>>,
-        mask: IoEvents,
-    ) -> Result<()> {
-        self.consumer.register_observer(observer, mask)
-    }
-
-    fn unregister_observer(
-        &self,
-        observer: &Weak<dyn Observer<IoEvents>>,
-    ) -> Option<Weak<dyn Observer<IoEvents>>> {
-        self.consumer.unregister_observer(observer)
-    }
 }
 
 pub struct PipeWriter {
@@ -187,21 +172,6 @@ impl FileLike for PipeWriter {
             gid: Gid::new_root(),
             rdev: 0,
         }
-    }
-
-    fn register_observer(
-        &self,
-        observer: Weak<dyn Observer<IoEvents>>,
-        mask: IoEvents,
-    ) -> Result<()> {
-        self.producer.register_observer(observer, mask)
-    }
-
-    fn unregister_observer(
-        &self,
-        observer: &Weak<dyn Observer<IoEvents>>,
-    ) -> Option<Weak<dyn Observer<IoEvents>>> {
-        self.producer.unregister_observer(observer)
     }
 }
 
