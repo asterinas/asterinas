@@ -1189,6 +1189,13 @@ impl Inode for RamInode {
         return_errno_with_message!(Errno::EINVAL, "ioctl is not supported");
     }
 
+    fn is_seekable(&self) -> bool {
+        !matches!(
+            self.typ,
+            InodeType::NamedPipe | InodeType::CharDevice | InodeType::Dir | InodeType::Socket
+        )
+    }
+
     fn extension(&self) -> Option<&Extension> {
         Some(&self.extension)
     }
