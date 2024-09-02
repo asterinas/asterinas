@@ -426,6 +426,10 @@ pub trait Inode: Any + Sync + Send {
         true
     }
 
+    fn is_seekable(&self) -> bool {
+        true
+    }
+
     /// Get the extension of this inode
     fn extension(&self) -> Option<&Extension> {
         None

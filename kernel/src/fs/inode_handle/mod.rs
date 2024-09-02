@@ -48,6 +48,10 @@ impl InodeHandle_ {
             return file_io.read(writer);
         }
 
+        if !self.dentry.inode().is_seekable() {
+            return self.read_at(0, writer);
+        }
+
         let mut offset = self.offset.lock();
 
         let len = self.read_at(*offset, writer)?;
@@ -59,6 +63,10 @@ impl InodeHandle_ {
     pub fn write(&self, reader: &mut VmReader) -> Result<usize> {
         if let Some(ref file_io) = self.file_io {
             return file_io.write(reader);
+        }
+
+        if !self.dentry.inode().is_seekable() {
+            return self.write_at(0, reader);
         }
 
         let mut offset = self.offset.lock();
