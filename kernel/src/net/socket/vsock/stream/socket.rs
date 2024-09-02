@@ -125,7 +125,7 @@ impl VsockStreamSocket {
         if self.is_nonblocking() {
             self.try_recv(writer, flags)
         } else {
-            self.wait_events(IoEvents::IN, || self.try_recv(writer, flags))
+            self.wait_events(IoEvents::IN, None, || self.try_recv(writer, flags))
         }
     }
 }
@@ -236,7 +236,7 @@ impl Socket for VsockStreamSocket {
             .poll(IoEvents::IN, Some(&mut poller))
             .contains(IoEvents::IN)
         {
-            if let Err(e) = poller.wait() {
+            if let Err(e) = poller.wait(None) {
                 vsockspace
                     .remove_connecting_socket(&connecting.local_addr())
                     .unwrap();
@@ -285,7 +285,7 @@ impl Socket for VsockStreamSocket {
         if self.is_nonblocking() {
             self.try_accept()
         } else {
-            self.wait_events(IoEvents::IN, || self.try_accept())
+            self.wait_events(IoEvents::IN, None, || self.try_accept())
         }
     }
 

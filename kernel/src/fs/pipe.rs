@@ -63,7 +63,7 @@ impl FileLike for PipeReader {
         let read_len = if self.status_flags().contains(StatusFlags::O_NONBLOCK) {
             self.consumer.try_read(writer)?
         } else {
-            self.wait_events(IoEvents::IN, || self.consumer.try_read(writer))?
+            self.wait_events(IoEvents::IN, None, || self.consumer.try_read(writer))?
         };
         Ok(read_len)
     }
@@ -148,7 +148,7 @@ impl FileLike for PipeWriter {
         if self.status_flags().contains(StatusFlags::O_NONBLOCK) {
             self.producer.try_write(reader)
         } else {
-            self.wait_events(IoEvents::OUT, || self.producer.try_write(reader))
+            self.wait_events(IoEvents::OUT, None, || self.producer.try_write(reader))
         }
     }
 

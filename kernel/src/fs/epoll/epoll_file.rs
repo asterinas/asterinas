@@ -194,34 +194,21 @@ impl EpollFile {
     /// expires or a signal arrives.
     pub fn wait(&self, max_events: usize, timeout: Option<&Duration>) -> Result<Vec<EpollEvent>> {
         let mut ep_events = Vec::new();
-        let mut poller = None;
-        loop {
-            // Try to pop some ready entries
+
+        self.wait_events(IoEvents::IN, timeout, || {
             self.pop_multi_ready(max_events, &mut ep_events);
-            if !ep_events.is_empty() {
-                return Ok(ep_events);
+
+            if ep_events.is_empty() {
+                return Err(Error::with_message(
+                    Errno::EAGAIN,
+                    "there are no available events",
+                ));
             }
 
-            // Return immediately if specifying a timeout of zero
-            if timeout.is_some() && timeout.as_ref().unwrap().is_zero() {
-                return Ok(ep_events);
-            }
+            Ok(())
+        })?;
 
-            // If no ready entries for now, wait for them
-            if poller.is_none() {
-                poller = Some(Poller::new());
-                let events = self.pollee.poll(IoEvents::IN, poller.as_mut());
-                if !events.is_empty() {
-                    continue;
-                }
-            }
-
-            if let Some(timeout) = timeout {
-                poller.as_ref().unwrap().wait_timeout(timeout)?;
-            } else {
-                poller.as_ref().unwrap().wait()?;
-            }
-        }
+        Ok(ep_events)
     }
 
     fn push_ready(&self, entry: Arc<EpollEntry>) {

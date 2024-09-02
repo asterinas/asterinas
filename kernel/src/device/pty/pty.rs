@@ -138,7 +138,7 @@ impl FileIo for PtyMaster {
         }
 
         // TODO: deal with nonblocking and timeout
-        self.wait_events(IoEvents::IN, || self.try_read(writer))
+        self.wait_events(IoEvents::IN, None, || self.try_read(writer))
     }
 
     fn write(&self, reader: &mut VmReader) -> Result<usize> {
