@@ -31,6 +31,10 @@ impl Device for Random {
         // The same value as Linux
         DeviceId::new(1, 8)
     }
+
+    fn open(&self) -> Result<Option<Arc<dyn FileIo>>> {
+        Ok(Some(Arc::new(Random)))
+    }
 }
 
 impl FileIo for Random {

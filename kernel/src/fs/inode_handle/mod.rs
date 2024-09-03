@@ -98,12 +98,13 @@ impl InodeHandle_ {
             todo!("support write_at for FileIo");
         }
 
-        if self.status_flags().contains(StatusFlags::O_APPEND) {
+        let status_flags = self.status_flags();
+        if status_flags.contains(StatusFlags::O_APPEND) {
             // If the file has the O_APPEND flag, the offset is ignored
             offset = self.dentry.size();
         }
 
-        if self.status_flags().contains(StatusFlags::O_DIRECT) {
+        if status_flags.contains(StatusFlags::O_DIRECT) {
             self.dentry.inode().write_direct_at(offset, reader)
         } else {
             self.dentry.inode().write_at(offset, reader)

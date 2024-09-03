@@ -31,6 +31,10 @@ impl Device for Urandom {
         // The same value as Linux
         DeviceId::new(1, 9)
     }
+
+    fn open(&self) -> Result<Option<Arc<dyn FileIo>>> {
+        Ok(Some(Arc::new(Urandom)))
+    }
 }
 
 impl FileIo for Urandom {
