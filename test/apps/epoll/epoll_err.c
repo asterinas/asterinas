@@ -91,3 +91,79 @@ FN_TEST(epoll_mod)
 	TEST_SUCC(close(wfd));
 }
 END_TEST()
+
+FN_TEST(epoll_flags_et)
+{
+	int fildes[2];
+	int epfd, rfd, wfd;
+	struct epoll_event ev;
+
+	// Setup pipes
+	TEST_SUCC(pipe(fildes));
+	rfd = fildes[0];
+	wfd = fildes[1];
+
+	// Setup epoll
+	epfd = TEST_SUCC(epoll_create1(0));
+	ev.events = EPOLLIN | EPOLLET;
+	ev.data.fd = rfd;
+	TEST_SUCC(epoll_ctl(epfd, EPOLL_CTL_ADD, rfd, &ev));
+
+	// Wait for EPOLLIN after writing something
+	TEST_SUCC(write(wfd, "", 1));
+	TEST_RES(epoll_wait(epfd, &ev, 1, 0), _ret == 1);
+
+	// Wait for EPOLLIN without writing something
+	TEST_RES(epoll_wait(epfd, &ev, 1, 0), _ret == 0);
+
+	// Wait for EPOLLIN after writing something
+	TEST_SUCC(write(wfd, "", 1));
+	TEST_RES(epoll_wait(epfd, &ev, 1, 0), _ret == 1);
+
+	// Clean up
+	TEST_SUCC(close(epfd));
+	TEST_SUCC(close(rfd));
+	TEST_SUCC(close(wfd));
+}
+END_TEST()
+
+FN_TEST(epoll_flags_oneshot)
+{
+	int fildes[2];
+	int epfd, rfd, wfd;
+	struct epoll_event ev;
+
+	// Setup pipes
+	TEST_SUCC(pipe(fildes));
+	rfd = fildes[0];
+	wfd = fildes[1];
+
+	// Setup epoll
+	epfd = TEST_SUCC(epoll_create1(0));
+	ev.events = EPOLLIN | EPOLLONESHOT;
+	ev.data.fd = rfd;
+	TEST_SUCC(epoll_ctl(epfd, EPOLL_CTL_ADD, rfd, &ev));
+
+	// Wait for EPOLLIN after writing something
+	TEST_SUCC(write(wfd, "", 1));
+	TEST_RES(epoll_wait(epfd, &ev, 1, 0), _ret == 1);
+
+	// Wait for EPOLLIN without writing something
+	TEST_RES(epoll_wait(epfd, &ev, 1, 0), _ret == 0);
+
+	// Wait for EPOLLIN after writing something
+	TEST_SUCC(write(wfd, "", 1));
+	TEST_RES(epoll_wait(epfd, &ev, 1, 0), _ret == 0);
+
+	// Wait for EPOLLIN after rearming epoll
+	ev.events = EPOLLIN | EPOLLONESHOT;
+	ev.data.fd = rfd;
+	TEST_SUCC(epoll_ctl(epfd, EPOLL_CTL_MOD, rfd, &ev));
+	TEST_RES(epoll_wait(epfd, &ev, 1, 0), _ret == 1);
+
+	// Clean up
+	TEST_SUCC(close(epfd));
+	TEST_SUCC(close(rfd));
+	TEST_SUCC(close(wfd));
+}
+END_TEST()
