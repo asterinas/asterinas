@@ -16,6 +16,10 @@ impl Device for Null {
         // Same value with Linux
         DeviceId::new(1, 3)
     }
+
+    fn open(&self) -> Result<Option<Arc<dyn FileIo>>> {
+        Ok(Some(Arc::new(Null)))
+    }
 }
 
 impl FileIo for Null {
