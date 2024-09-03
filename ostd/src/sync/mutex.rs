@@ -50,7 +50,9 @@ impl<T: ?Sized> Mutex<T> {
     pub fn try_lock(&self) -> Option<MutexGuard<T>> {
         // Cannot be reduced to `then_some`, or the possible dropping of the temporary
         // guard will cause an unexpected unlock.
-        self.acquire_lock().then_some(MutexGuard { mutex: self })
+        // SAFETY: The lock is successfully acquired when creating the guard.
+        self.acquire_lock()
+            .then(|| unsafe { MutexGuard::new(self) })
     }
 
     /// Tries acquire the mutex through an [`Arc`].
@@ -100,6 +102,16 @@ pub struct MutexGuard_<T: ?Sized, R: Deref<Target = Mutex<T>>> {
 /// A guard that provides exclusive access to the data protected by a [`Mutex`].
 pub type MutexGuard<'a, T> = MutexGuard_<T, &'a Mutex<T>>;
 
+impl<'a, T: ?Sized> MutexGuard<'a, T> {
+    /// # Safety
+    ///
+    /// The caller must ensure that the given reference of [`Mutex`] lock has been successfully acquired
+    /// in the current context. When the created [`MutexGuard`] is dropped, it will unlock the [`Mutex`].
+    unsafe fn new(mutex: &'a Mutex<T>) -> MutexGuard<'a, T> {
+        MutexGuard { mutex }
+    }
+}
+
 /// An guard that provides exclusive access to the data protected by a `Arc<Mutex>`.
 pub type ArcMutexGuard<T> = MutexGuard_<T, Arc<Mutex<T>>>;
 
@@ -136,5 +148,29 @@ unsafe impl<T: ?Sized + Sync, R: Deref<Target = Mutex<T>> + Sync> Sync for Mutex
 impl<'a, T: ?Sized> MutexGuard<'a, T> {
     pub fn get_lock(guard: &MutexGuard<'a, T>) -> &'a Mutex<T> {
         guard.mutex
+    }
+}
+
+#[cfg(ktest)]
+mod test {
+    use super::*;
+    use crate::prelude::*;
+
+    // A regression test for a bug fixed in [#1279](https://github.com/asterinas/asterinas/pull/1279).
+    #[ktest]
+    fn test_mutex_try_lock_does_not_unlock() {
+        let lock = Mutex::new(0);
+        assert!(!lock.lock.load(Ordering::Relaxed));
+
+        // A successful lock
+        let guard1 = lock.lock();
+        assert!(lock.lock.load(Ordering::Relaxed));
+
+        // A failed `try_lock` won't drop the lock
+        assert!(lock.try_lock().is_none());
+        assert!(lock.lock.load(Ordering::Relaxed));
+
+        // Ensure the lock is held until here
+        drop(guard1);
     }
 }
