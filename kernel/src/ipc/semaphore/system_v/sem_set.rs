@@ -235,6 +235,9 @@ pub fn create_sem_set_with_id(
 ) -> Result<()> {
     debug_assert!(nsems <= SEMMSL);
     debug_assert!(id > 0);
+    if id as usize > SEMMNI {
+        return_errno_with_message!(Errno::ENOENT, "id larger than SEMMNI");
+    }
 
     ID_ALLOCATOR
         .get()
