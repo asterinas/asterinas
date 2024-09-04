@@ -9,8 +9,8 @@ use core::ops::Range;
 
 use ostd::{
     mm::{
-        FallibleVmRead, FallibleVmWrite, Frame, Infallible, Paddr, Segment, VmIo, VmReader,
-        VmWriter, PAGE_SIZE,
+        AnyFrame, FallibleVmRead, FallibleVmWrite, Frame, Infallible, Paddr, Segment, VmIo,
+        VmReader, VmWriter, PAGE_SIZE,
     },
     Error, Result,
 };
@@ -141,8 +141,14 @@ impl From<SegmentSlice> for Segment {
     }
 }
 
-impl From<Frame> for SegmentSlice {
-    fn from(frame: Frame) -> Self {
+impl<M: Send + Sync + 'static> From<Frame<M>> for SegmentSlice {
+    fn from(frame: Frame<M>) -> Self {
+        SegmentSlice::from(Segment::from(frame))
+    }
+}
+
+impl From<AnyFrame> for SegmentSlice {
+    fn from(frame: AnyFrame) -> Self {
         SegmentSlice::from(Segment::from(frame))
     }
 }

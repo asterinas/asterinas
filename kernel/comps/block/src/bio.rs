@@ -4,7 +4,7 @@ use align_ext::AlignExt;
 use aster_util::segment_slice::SegmentSlice;
 use int_to_c_enum::TryFromInt;
 use ostd::{
-    mm::{Frame, Infallible, VmReader, VmWriter},
+    mm::{AnyFrame, Infallible, VmReader, VmWriter},
     sync::WaitQueue,
 };
 
@@ -392,7 +392,7 @@ impl<'a> BioSegment {
     }
 
     /// Constructs a new `BioSegment` from `Frame`.
-    pub fn from_frame(frame: Frame, offset: usize, len: usize) -> Self {
+    pub fn from_frame(frame: AnyFrame, offset: usize, len: usize) -> Self {
         assert!(offset + len <= super::BLOCK_SIZE);
 
         Self {

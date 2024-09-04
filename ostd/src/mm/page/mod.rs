@@ -26,18 +26,21 @@ use core::{
 };
 
 pub use cont_pages::ContPages;
-use meta::{mapping, FrameMeta, MetaSlot, PageMeta, PageUsage};
+use meta::{mapping, FrameMetaBox, MetaSlot, PageMeta, PageUsage};
 
-use super::{Frame, PagingLevel, PAGE_SIZE};
-use crate::mm::{Paddr, PagingConsts, Vaddr};
+use crate::mm::{
+    frame::{AnyFrame, Frame},
+    Paddr, PagingConsts, PagingLevel, Vaddr, PAGE_SIZE,
+};
 
 static MAX_PADDR: AtomicUsize = AtomicUsize::new(0);
 
 /// A page with a statically-known usage, whose metadata is represented by `M`.
+#[repr(transparent)]
 #[derive(Debug)]
 pub struct Page<M: PageMeta> {
-    pub(super) ptr: *const MetaSlot,
-    pub(super) _marker: PhantomData<M>,
+    ptr: *const MetaSlot,
+    _marker: PhantomData<M>,
 }
 
 unsafe impl<M: PageMeta> Send for Page<M> {}
@@ -92,9 +95,8 @@ impl<M: PageMeta> Page<M> {
     /// data structures need to hold the page handle such as the page table.
     #[allow(unused)]
     pub(in crate::mm) fn into_raw(self) -> Paddr {
-        let paddr = self.paddr();
-        core::mem::forget(self);
-        paddr
+        let page = ManuallyDrop::new(self);
+        page.paddr()
     }
 
     /// Restore a forgotten `Page` from a physical address.
@@ -113,6 +115,20 @@ impl<M: PageMeta> Page<M> {
         let vaddr = mapping::page_to_meta::<PagingConsts>(paddr);
         let ptr = vaddr as *const MetaSlot;
 
+        Self {
+            ptr,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Same as [`Self::into_raw`] but returns a raw pointer to the metadata slot.
+    pub(in crate::mm) fn into_raw_ptr(self) -> *const MetaSlot {
+        let page = ManuallyDrop::new(self);
+        page.ptr
+    }
+
+    /// Same as [`Self::from_raw`] but takes a raw pointer to the metadata slot.
+    pub(in crate::mm) unsafe fn from_raw_ptr(ptr: *const MetaSlot) -> Self {
         Self {
             ptr,
             _marker: PhantomData,
@@ -210,9 +226,7 @@ impl<M: PageMeta> Drop for Page<M> {
     }
 }
 
-/// A page with a dynamically-known usage.
-///
-/// It can also be used when the user don't care about the usage of the page.
+/// A page with a usage not known at compile time.
 #[derive(Debug)]
 pub struct DynPage {
     ptr: *const MetaSlot,
@@ -286,6 +300,7 @@ impl DynPage {
     }
 
     fn ref_count(&self) -> &AtomicU32 {
+        // SAFETY: the pointer points to a valid `MetaSlot` structure.
         unsafe { &(*self.ptr).ref_count }
     }
 }
@@ -319,9 +334,15 @@ impl<M: PageMeta> From<Page<M>> for DynPage {
     }
 }
 
-impl From<Frame> for DynPage {
-    fn from(frame: Frame) -> Self {
-        Page::<FrameMeta>::from(frame).into()
+impl From<AnyFrame> for DynPage {
+    fn from(frame: AnyFrame) -> Self {
+        Page::<FrameMetaBox>::from(frame).into()
+    }
+}
+
+impl<M: Send + Sync + 'static> From<Frame<M>> for DynPage {
+    fn from(frame: Frame<M>) -> Self {
+        Page::<FrameMetaBox>::from(frame).into()
     }
 }
 
@@ -346,7 +367,7 @@ impl Drop for DynPage {
             unsafe {
                 match self.usage() {
                     PageUsage::Frame => {
-                        meta::drop_as_last::<meta::FrameMeta>(self.ptr);
+                        meta::drop_as_last::<meta::FrameMetaBox>(self.ptr);
                     }
                     PageUsage::PageTable => {
                         meta::drop_as_last::<meta::PageTablePageMeta>(self.ptr);

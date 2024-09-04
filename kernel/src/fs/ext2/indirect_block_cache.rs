@@ -42,7 +42,7 @@ impl IndirectBlockCache {
         let fs = self.fs();
         let load_block = || -> Result<IndirectBlock> {
             let mut block = IndirectBlock::alloc_uninit()?;
-            fs.read_block(bid, &block.frame)?;
+            fs.read_block(bid, (&block.frame).into())?;
             block.state = State::UpToDate;
             Ok(block)
         };
@@ -59,7 +59,7 @@ impl IndirectBlockCache {
         let fs = self.fs();
         let load_block = || -> Result<IndirectBlock> {
             let mut block = IndirectBlock::alloc_uninit()?;
-            fs.read_block(bid, &block.frame)?;
+            fs.read_block(bid, (&block.frame).into())?;
             block.state = State::UpToDate;
             Ok(block)
         };
@@ -104,7 +104,7 @@ impl IndirectBlockCache {
         for _ in 0..num {
             let (bid, block) = self.cache.pop_lru().unwrap();
             if block.is_dirty() {
-                bio_waiter.concat(self.fs().write_block_async(bid, &block.frame)?);
+                bio_waiter.concat(self.fs().write_block_async(bid, (&block.frame).into())?);
             }
         }
 
@@ -132,7 +132,7 @@ impl IndirectBlock {
     /// Allocates an uninitialized block whose bytes are to be populated with
     /// data loaded from the disk.
     fn alloc_uninit() -> Result<Self> {
-        let frame = FrameAllocOptions::new(1).uninit(true).alloc_single()?;
+        let frame = FrameAllocOptions::new(1).uninit(true).alloc_single(())?;
         Ok(Self {
             frame,
             state: State::Uninit,
@@ -141,7 +141,7 @@ impl IndirectBlock {
 
     /// Allocates a new block with its bytes initialized to zero.
     pub fn alloc() -> Result<Self> {
-        let frame = FrameAllocOptions::new(1).alloc_single()?;
+        let frame = FrameAllocOptions::new(1).alloc_single(())?;
         Ok(Self {
             frame,
             state: State::Dirty,

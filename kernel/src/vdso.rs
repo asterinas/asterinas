@@ -21,7 +21,7 @@ use aster_rights::Rights;
 use aster_time::{read_monotonic_time, Instant};
 use aster_util::coeff::Coeff;
 use ostd::{
-    mm::{Frame, VmIo, PAGE_SIZE},
+    mm::{AnyFrame, VmIo, PAGE_SIZE},
     sync::SpinLock,
     Pod,
 };
@@ -201,7 +201,7 @@ struct Vdso {
     vmo: Arc<Vmo>,
     /// The `Frame` that contains the VDSO data. This frame is contained in and
     /// will not be removed from the VDSO VMO.
-    data_frame: Frame,
+    data_frame: AnyFrame,
 }
 
 /// A `SpinLock` for the `seq` field in `VdsoData`.

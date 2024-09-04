@@ -87,7 +87,7 @@ fn handle_get_report(arg: usize) -> Result<i32> {
 
     let vm_segment = FrameAllocOptions::new(2)
         .is_contiguous(true)
-        .alloc_contiguous()
+        .alloc_contiguous(|_| ())
         .unwrap();
     let dma_coherent = DmaCoherent::map(vm_segment, false).unwrap();
     dma_coherent

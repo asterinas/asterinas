@@ -81,7 +81,7 @@ impl VirtQueue {
             let desc_size = size_of::<Descriptor>() * size as usize;
 
             let (seg1, seg2) = {
-                let segment = FrameAllocOptions::new(2).alloc_contiguous().unwrap();
+                let segment = FrameAllocOptions::new(2).alloc_contiguous(|_| ()).unwrap();
                 segment.split(ostd::mm::PAGE_SIZE)
             };
             let desc_frame_ptr: SafePtr<Descriptor, DmaCoherent> =
@@ -98,18 +98,27 @@ impl VirtQueue {
             }
             (
                 SafePtr::new(
-                    DmaCoherent::map(FrameAllocOptions::new(1).alloc_contiguous().unwrap(), true)
-                        .unwrap(),
+                    DmaCoherent::map(
+                        FrameAllocOptions::new(1).alloc_contiguous(|_| ()).unwrap(),
+                        true,
+                    )
+                    .unwrap(),
                     0,
                 ),
                 SafePtr::new(
-                    DmaCoherent::map(FrameAllocOptions::new(1).alloc_contiguous().unwrap(), true)
-                        .unwrap(),
+                    DmaCoherent::map(
+                        FrameAllocOptions::new(1).alloc_contiguous(|_| ()).unwrap(),
+                        true,
+                    )
+                    .unwrap(),
                     0,
                 ),
                 SafePtr::new(
-                    DmaCoherent::map(FrameAllocOptions::new(1).alloc_contiguous().unwrap(), true)
-                        .unwrap(),
+                    DmaCoherent::map(
+                        FrameAllocOptions::new(1).alloc_contiguous(|_| ()).unwrap(),
+                        true,
+                    )
+                    .unwrap(),
                     0,
                 ),
             )

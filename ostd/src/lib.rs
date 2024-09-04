@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! The standard library for Asterinas and other Rust OSes.
+#![feature(allocator_api)]
 #![feature(alloc_error_handler)]
 #![feature(const_mut_refs)]
 #![feature(const_ptr_sub_ptr)]
 #![feature(const_trait_impl)]
 #![feature(core_intrinsics)]
 #![feature(coroutines)]
+#![feature(downcast_unchecked)]
 #![feature(fn_traits)]
 #![feature(generic_const_exprs)]
 #![feature(is_none_or)]
@@ -16,10 +18,11 @@
 #![feature(negative_impls)]
 #![feature(new_uninit)]
 #![feature(panic_info_message)]
+#![feature(ptr_metadata)]
 #![feature(ptr_sub_ptr)]
 #![feature(strict_provenance)]
 #![feature(sync_unsafe_cell)]
-#![feature(allocator_api)]
+#![feature(trait_upcasting)]
 // The `generic_const_exprs` feature is incomplete however required for the page table
 // const generic implementation. We are using this feature in a conservative manner.
 #![allow(incomplete_features)]

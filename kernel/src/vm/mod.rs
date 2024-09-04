@@ -18,6 +18,5 @@
 
 pub mod page_fault_handler;
 pub mod perms;
-pub mod util;
 pub mod vmar;
 pub mod vmo;

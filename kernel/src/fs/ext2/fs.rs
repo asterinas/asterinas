@@ -2,6 +2,8 @@
 
 #![allow(dead_code)]
 
+use ostd::mm::AnyFrame;
+
 use super::{
     block_group::{BlockGroup, RawGroupDescriptor},
     block_ptr::Ext2Bid,
@@ -48,7 +50,7 @@ impl Ext2 {
             .div_ceil(BLOCK_SIZE);
             let segment = FrameAllocOptions::new(npages)
                 .uninit(true)
-                .alloc_contiguous()?
+                .alloc_contiguous(|_| ())?
                 .into();
             match block_device.read_blocks(super_block.group_descriptors_bid(0), &segment)? {
                 BioStatus::Complete => (),
@@ -321,7 +323,7 @@ impl Ext2 {
     }
 
     /// Reads one block indicated by the `bid` synchronously.
-    pub(super) fn read_block(&self, bid: Ext2Bid, frame: &Frame) -> Result<()> {
+    pub(super) fn read_block(&self, bid: Ext2Bid, frame: &AnyFrame) -> Result<()> {
         let status = self.block_device.read_block(Bid::new(bid as u64), frame)?;
         match status {
             BioStatus::Complete => Ok(()),
@@ -330,7 +332,7 @@ impl Ext2 {
     }
 
     /// Reads one block indicated by the `bid` asynchronously.
-    pub(super) fn read_block_async(&self, bid: Ext2Bid, frame: &Frame) -> Result<BioWaiter> {
+    pub(super) fn read_block_async(&self, bid: Ext2Bid, frame: &AnyFrame) -> Result<BioWaiter> {
         let waiter = self
             .block_device
             .read_block_async(Bid::new(bid as u64), frame)?;
@@ -361,7 +363,7 @@ impl Ext2 {
     }
 
     /// Writes one block indicated by the `bid` synchronously.
-    pub(super) fn write_block(&self, bid: Ext2Bid, frame: &Frame) -> Result<()> {
+    pub(super) fn write_block(&self, bid: Ext2Bid, frame: &AnyFrame) -> Result<()> {
         let status = self.block_device.write_block(Bid::new(bid as u64), frame)?;
         match status {
             BioStatus::Complete => Ok(()),
@@ -370,7 +372,7 @@ impl Ext2 {
     }
 
     /// Writes one block indicated by the `bid` asynchronously.
-    pub(super) fn write_block_async(&self, bid: Ext2Bid, frame: &Frame) -> Result<BioWaiter> {
+    pub(super) fn write_block_async(&self, bid: Ext2Bid, frame: &AnyFrame) -> Result<BioWaiter> {
         let waiter = self
             .block_device
             .write_block_async(Bid::new(bid as u64), frame)?;

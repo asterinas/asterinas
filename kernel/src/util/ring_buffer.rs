@@ -80,7 +80,7 @@ impl<T> RingBuffer<T> {
         let nframes = capacity.saturating_mul(Self::T_SIZE).align_up(PAGE_SIZE) / PAGE_SIZE;
         let segment = FrameAllocOptions::new(nframes)
             .uninit(true)
-            .alloc_contiguous()
+            .alloc_contiguous(|_| ())
             .unwrap();
         Self {
             segment,

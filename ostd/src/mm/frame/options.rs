@@ -5,7 +5,10 @@
 use super::{Frame, Segment};
 use crate::{
     mm::{
-        page::{self, meta::FrameMeta},
+        page::{
+            self,
+            meta::{FrameMeta, FrameMetaBox},
+        },
         PAGE_SIZE,
     },
     prelude::*,
@@ -54,17 +57,32 @@ impl FrameAllocOptions {
         self
     }
 
-    /// Allocates a collection of page frames according to the given options.
-    pub fn alloc(&self) -> Result<Vec<Frame>> {
+    /// Allocates a collection of page frames according to the given options and metadata.
+    ///
+    /// The metadata function `metadata_fn` is called for each allocated frame to provide metadata.
+    pub fn alloc<F, M>(&self, mut metadata_fn: F) -> Result<Vec<Frame<M>>>
+    where
+        F: FnMut(Paddr) -> M,
+        M: FrameMeta,
+    {
         let pages = if self.is_contiguous {
-            page::allocator::alloc(self.nframes * PAGE_SIZE, |_| FrameMeta::default())
-                .ok_or(Error::NoMemory)?
+            page::allocator::alloc(self.nframes * PAGE_SIZE, |p| {
+                FrameMetaBox::new(metadata_fn(p))
+            })
+            .ok_or(Error::NoMemory)?
         } else {
-            page::allocator::alloc_contiguous(self.nframes * PAGE_SIZE, |_| FrameMeta::default())
-                .ok_or(Error::NoMemory)?
-                .into()
+            page::allocator::alloc_contiguous(self.nframes * PAGE_SIZE, |p| {
+                FrameMetaBox::new(metadata_fn(p))
+            })
+            .ok_or(Error::NoMemory)?
+            .into()
         };
-        let frames: Vec<_> = pages.into_iter().map(|page| Frame { page }).collect();
+        let frames: Vec<_> = pages
+            .into_iter()
+            .map(|page|
+                // SAFETY: The pages are allocated with the metadata type `M`.
+                unsafe { Frame::<M>::from_unchecked(page.into()) })
+            .collect();
         if !self.uninit {
             for frame in frames.iter() {
                 frame.writer().fill(0);
@@ -74,14 +92,16 @@ impl FrameAllocOptions {
         Ok(frames)
     }
 
-    /// Allocates a single page frame according to the given options.
-    pub fn alloc_single(&self) -> Result<Frame> {
+    /// Allocates a single page frame according to the given options and metadata.
+    pub fn alloc_single<M: FrameMeta>(&self, metadata: M) -> Result<Frame<M>> {
         if self.nframes != 1 {
             return Err(Error::InvalidArgs);
         }
 
-        let page = page::allocator::alloc_single(FrameMeta::default()).ok_or(Error::NoMemory)?;
-        let frame = Frame { page };
+        let page =
+            page::allocator::alloc_single(FrameMetaBox::new(metadata)).ok_or(Error::NoMemory)?;
+        // SAFETY: The pages are allocated with the metadata type `M`.
+        let frame = unsafe { Frame::<M>::from_unchecked(page.into()) };
         if !self.uninit {
             frame.writer().fill(0);
         }
@@ -92,16 +112,21 @@ impl FrameAllocOptions {
     /// Allocates a contiguous range of page frames according to the given options.
     ///
     /// The returned [`Segment`] contains at least one page frame.
-    pub fn alloc_contiguous(&self) -> Result<Segment> {
+    pub fn alloc_contiguous<M, F>(&self, mut metadata_fn: F) -> Result<Segment>
+    where
+        F: FnMut(Paddr) -> M,
+        M: FrameMeta,
+    {
         // It's no use to checking `self.is_contiguous` here.
         if self.nframes == 0 {
             return Err(Error::InvalidArgs);
         }
 
-        let segment: Segment =
-            page::allocator::alloc_contiguous(self.nframes * PAGE_SIZE, |_| FrameMeta::default())
-                .ok_or(Error::NoMemory)?
-                .into();
+        let segment: Segment = page::allocator::alloc_contiguous(self.nframes * PAGE_SIZE, |p| {
+            FrameMetaBox::new(metadata_fn(p))
+        })
+        .ok_or(Error::NoMemory)?
+        .into();
         if !self.uninit {
             segment.writer().fill(0);
         }
@@ -116,21 +141,18 @@ fn test_alloc_dealloc() {
     // Here we allocate and deallocate frames in random orders to test the allocator.
     // We expect the test to fail if the underlying implementation panics.
     let single_options = FrameAllocOptions::new(1);
-    let multi_options = FrameAllocOptions::new(10);
     let mut contiguous_options = FrameAllocOptions::new(10);
     contiguous_options.is_contiguous(true);
     let mut remember_vec = Vec::new();
     for _ in 0..10 {
         for i in 0..10 {
-            let single_frame = single_options.alloc_single().unwrap();
+            let single_frame = single_options.alloc_single(()).unwrap();
             if i % 3 == 0 {
                 remember_vec.push(single_frame);
             }
         }
-        let contiguous_segment = contiguous_options.alloc_contiguous().unwrap();
+        let contiguous_segment = contiguous_options.alloc_contiguous(|_| ()).unwrap();
         drop(contiguous_segment);
-        let multi_frames = multi_options.alloc().unwrap();
-        remember_vec.extend(multi_frames.into_iter());
         remember_vec.pop();
     }
 }

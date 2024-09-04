@@ -320,7 +320,7 @@ mod test {
     fn streaming_map() {
         let vm_segment = FrameAllocOptions::new(1)
             .is_contiguous(true)
-            .alloc_contiguous()
+            .alloc_contiguous(|_| ())
             .unwrap();
         let dma_stream =
             DmaStream::map(vm_segment.clone(), DmaDirection::Bidirectional, true).unwrap();
@@ -331,7 +331,7 @@ mod test {
     fn duplicate_map() {
         let vm_segment_parent = FrameAllocOptions::new(2)
             .is_contiguous(true)
-            .alloc_contiguous()
+            .alloc_contiguous(|_| ())
             .unwrap();
         let vm_segment_child = vm_segment_parent.slice(&(0..PAGE_SIZE));
         let dma_stream_parent =
@@ -345,7 +345,7 @@ mod test {
     fn read_and_write() {
         let vm_segment = FrameAllocOptions::new(2)
             .is_contiguous(true)
-            .alloc_contiguous()
+            .alloc_contiguous(|_| ())
             .unwrap();
         let dma_stream = DmaStream::map(vm_segment, DmaDirection::Bidirectional, false).unwrap();
 
@@ -361,7 +361,7 @@ mod test {
     fn reader_and_writer() {
         let vm_segment = FrameAllocOptions::new(2)
             .is_contiguous(true)
-            .alloc_contiguous()
+            .alloc_contiguous(|_| ())
             .unwrap();
         let dma_stream = DmaStream::map(vm_segment, DmaDirection::Bidirectional, false).unwrap();
 

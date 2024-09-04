@@ -87,12 +87,12 @@ impl ConsoleDevice {
             SpinLock::new(VirtQueue::new(TRANSMIT0_QUEUE_INDEX, 2, transport.as_mut()).unwrap());
 
         let send_buffer = {
-            let vm_segment = FrameAllocOptions::new(1).alloc_contiguous().unwrap();
+            let vm_segment = FrameAllocOptions::new(1).alloc_contiguous(|_| ()).unwrap();
             DmaStream::map(vm_segment, DmaDirection::ToDevice, false).unwrap()
         };
 
         let receive_buffer = {
-            let vm_segment = FrameAllocOptions::new(1).alloc_contiguous().unwrap();
+            let vm_segment = FrameAllocOptions::new(1).alloc_contiguous(|_| ()).unwrap();
             DmaStream::map(vm_segment, DmaDirection::FromDevice, false).unwrap()
         };
 

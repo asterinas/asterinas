@@ -113,7 +113,7 @@ mod test {
     fn new_vm_segment_from_image() -> Segment {
         let vm_segment = FrameAllocOptions::new(EXFAT_IMAGE.len().div_ceil(PAGE_SIZE))
             .uninit(true)
-            .alloc_contiguous()
+            .alloc_contiguous(|_| ())
             .unwrap();
 
         vm_segment.write_bytes(0, EXFAT_IMAGE).unwrap();

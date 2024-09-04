@@ -4,11 +4,12 @@
 
 use core::ops::Range;
 
+use super::{AnyFrame, Frame};
 use crate::{
     mm::{
         io::{FallibleVmRead, FallibleVmWrite},
-        page::{meta::FrameMeta, ContPages},
-        Frame, HasPaddr, Infallible, Paddr, VmIo, VmReader, VmWriter,
+        page::{meta::FrameMetaBox, ContPages, Page},
+        HasPaddr, Infallible, Paddr, VmIo, VmReader, VmWriter,
     },
     Error, Result,
 };
@@ -32,12 +33,14 @@ use crate::{
 /// ```rust
 /// let vm_segment = FrameAllocOptions::new(2)
 ///     .is_contiguous(true)
-///     .alloc_contiguous()?;
+///     .alloc_contiguous(|_| ())?;
 /// vm_segment.write_bytes(0, buf)?;
 /// ```
+///
+/// [`Frame`]: crate::mm::Frame
 #[derive(Debug)]
 pub struct Segment {
-    pages: ContPages<FrameMeta>,
+    pages: ContPages<FrameMetaBox>,
 }
 
 impl HasPaddr for Segment {
@@ -120,16 +123,24 @@ impl Segment {
     }
 }
 
-impl From<Frame> for Segment {
-    fn from(frame: Frame) -> Self {
+impl From<AnyFrame> for Segment {
+    fn from(frame: AnyFrame) -> Self {
         Self {
-            pages: ContPages::from(frame.page),
+            pages: ContPages::from(Page::<FrameMetaBox>::from(frame)),
         }
     }
 }
 
-impl From<ContPages<FrameMeta>> for Segment {
-    fn from(pages: ContPages<FrameMeta>) -> Self {
+impl<M: Send + Sync + 'static> From<Frame<M>> for Segment {
+    fn from(frame: Frame<M>) -> Self {
+        Self {
+            pages: ContPages::from(Page::<FrameMetaBox>::from(frame)),
+        }
+    }
+}
+
+impl From<ContPages<FrameMetaBox>> for Segment {
+    fn from(pages: ContPages<FrameMetaBox>) -> Self {
         Self { pages }
     }
 }
@@ -169,9 +180,9 @@ impl VmIo for Segment {
 }
 
 impl Iterator for Segment {
-    type Item = Frame;
+    type Item = AnyFrame;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.pages.next().map(|page| Frame { page })
+        self.pages.next().map(AnyFrame::from)
     }
 }

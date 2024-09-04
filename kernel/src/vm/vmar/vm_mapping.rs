@@ -11,8 +11,8 @@ use core::{
 use align_ext::AlignExt;
 use aster_rights::Rights;
 use ostd::mm::{
-    tlb::TlbFlushOp, vm_space::VmItem, CachePolicy, Frame, FrameAllocOptions, PageFlags,
-    PageProperty, VmSpace,
+    tlb::TlbFlushOp, vm_space::VmItem, AnyFrame, CachePolicy, FrameAllocOptions, PageFlags,
+    PageProperty, UntypedPage, VmSpace,
 };
 
 use super::{interval::Interval, is_intersected, Vmar, Vmar_};
@@ -21,7 +21,6 @@ use crate::{
     thread::exception::PageFaultInfo,
     vm::{
         perms::VmPerms,
-        util::duplicate_frame,
         vmo::{Vmo, VmoRightsOp},
     },
 };
@@ -250,9 +249,10 @@ impl VmMapping {
                     cursor.flusher().issue_tlb_flush(TlbFlushOp::Address(va));
                     cursor.flusher().dispatch_tlb_flush();
                 } else {
-                    let new_frame = duplicate_frame(&frame)?;
+                    let new_frame = FrameAllocOptions::new(1).uninit(true).alloc_single(())?;
+                    new_frame.writer().write(&mut frame.reader());
                     prop.flags |= new_flags;
-                    cursor.map(new_frame, prop);
+                    cursor.map(new_frame.into(), prop);
                 }
             }
             VmItem::Mapped { .. } => {
@@ -291,10 +291,13 @@ impl VmMapping {
         inner_lock: &MutexGuard<VmMappingInner>,
         page_fault_addr: Vaddr,
         write: bool,
-    ) -> Result<(Frame, bool)> {
+    ) -> Result<(AnyFrame, bool)> {
         let mut is_readonly = false;
         let Some(vmo) = &self.vmo else {
-            return Ok((FrameAllocOptions::new(1).alloc_single()?, is_readonly));
+            return Ok((
+                FrameAllocOptions::new(1).alloc_single(())?.into(),
+                is_readonly,
+            ));
         };
 
         let vmo_offset = inner_lock.vmo_offset.unwrap() + page_fault_addr - inner_lock.map_to_addr;
@@ -302,7 +305,10 @@ impl VmMapping {
         let Ok(page) = vmo.get_committed_frame(page_idx) else {
             if !self.is_shared {
                 // The page index is outside the VMO. This is only allowed in private mapping.
-                return Ok((FrameAllocOptions::new(1).alloc_single()?, is_readonly));
+                return Ok((
+                    FrameAllocOptions::new(1).alloc_single(())?.into(),
+                    is_readonly,
+                ));
             } else {
                 return_errno_with_message!(
                     Errno::EFAULT,
@@ -313,7 +319,14 @@ impl VmMapping {
 
         if !self.is_shared && write {
             // Write access to private VMO-backed mapping. Performs COW directly.
-            Ok((duplicate_frame(&page)?, is_readonly))
+            Ok((
+                {
+                    let new_frame = FrameAllocOptions::new(1).alloc_single(())?;
+                    new_frame.writer().write(&mut page.reader());
+                    new_frame.into()
+                },
+                is_readonly,
+            ))
         } else {
             // Operations to shared mapping or read access to private VMO-backed mapping.
             // If read access to private VMO-backed mapping triggers a page fault,
@@ -344,7 +357,7 @@ impl VmMapping {
         let parent = self.parent.upgrade().unwrap();
         let vm_space = parent.vm_space();
         let mut cursor = vm_space.cursor_mut(&(start_addr..end_addr))?;
-        let operate = move |commit_fn: &mut dyn FnMut() -> Result<Frame>| {
+        let operate = move |commit_fn: &mut dyn FnMut() -> Result<AnyFrame>| {
             if let VmItem::NotMapped { va, len } = cursor.query().unwrap() {
                 // We regard all the surrounding pages as accessed, no matter
                 // if it is really so. Then the hardware won't bother to update
@@ -860,7 +873,7 @@ impl MappedVmo {
     ///
     /// If the VMO has not committed a frame at this index, it will commit
     /// one first and return it.
-    pub fn get_committed_frame(&self, page_idx: usize) -> Result<Frame> {
+    pub fn get_committed_frame(&self, page_idx: usize) -> Result<AnyFrame> {
         debug_assert!(self.range.contains(&(page_idx * PAGE_SIZE)));
 
         self.vmo.commit_page(page_idx * PAGE_SIZE)
@@ -871,7 +884,7 @@ impl MappedVmo {
     /// perform other operations.
     fn operate_on_range<F>(&self, range: &Range<usize>, operate: F) -> Result<()>
     where
-        F: FnMut(&mut dyn FnMut() -> Result<Frame>) -> Result<()>,
+        F: FnMut(&mut dyn FnMut() -> Result<AnyFrame>) -> Result<()>,
     {
         debug_assert!(self.range.start <= range.start && self.range.end >= range.end);
 

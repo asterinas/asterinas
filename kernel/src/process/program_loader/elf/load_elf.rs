@@ -8,7 +8,7 @@
 
 use align_ext::AlignExt;
 use aster_rights::Full;
-use ostd::mm::VmIo;
+use ostd::mm::{FrameAllocOptions, UntypedPage};
 use xmas_elf::program::{self, ProgramHeader64};
 
 use super::elf_file::Elf;
@@ -24,7 +24,7 @@ use crate::{
         TermStatus,
     },
     vdso::{vdso_vmo, VDSO_VMO_SIZE},
-    vm::{perms::VmPerms, util::duplicate_frame, vmar::Vmar, vmo::VmoRightsOp},
+    vm::{perms::VmPerms, vmar::Vmar, vmo::VmoRightsOp},
 };
 
 /// Loads elf to the process vm.   
@@ -299,14 +299,19 @@ fn map_segment_vmo(
     if page_offset != 0 {
         let new_frame = {
             let head_frame = segment_vmo.commit_page(segment_offset)?;
-            let new_frame = duplicate_frame(&head_frame)?;
-
-            let buffer = vec![0u8; page_offset];
-            new_frame.write_bytes(0, &buffer).unwrap();
+            let new_frame = FrameAllocOptions::new(1)
+                .uninit(true)
+                .alloc_single(())
+                .unwrap();
+            new_frame.writer().limit(page_offset).fill(0u8);
+            new_frame
+                .writer()
+                .skip(page_offset)
+                .write(&mut head_frame.reader().skip(page_offset));
             new_frame
         };
         let head_idx = segment_offset / PAGE_SIZE;
-        segment_vmo.replace(new_frame, head_idx)?;
+        segment_vmo.replace(new_frame.into(), head_idx)?;
     }
 
     // Tail padding.
@@ -314,17 +319,21 @@ fn map_segment_vmo(
     if segment_size > tail_padding_offset {
         let new_frame = {
             let tail_frame = segment_vmo.commit_page(segment_offset + tail_padding_offset)?;
-            let new_frame = duplicate_frame(&tail_frame)?;
-
-            let buffer = vec![0u8; (segment_size - tail_padding_offset) % PAGE_SIZE];
-            new_frame
-                .write_bytes(tail_padding_offset % PAGE_SIZE, &buffer)
+            let in_page_end = tail_padding_offset % PAGE_SIZE;
+            let new_frame = FrameAllocOptions::new(1)
+                .uninit(true)
+                .alloc_single(())
                 .unwrap();
+            new_frame.writer().skip(in_page_end).fill(0u8);
+            new_frame
+                .writer()
+                .limit(in_page_end)
+                .write(&mut tail_frame.reader());
             new_frame
         };
 
         let tail_idx = (segment_offset + tail_padding_offset) / PAGE_SIZE;
-        segment_vmo.replace(new_frame, tail_idx).unwrap();
+        segment_vmo.replace(new_frame.into(), tail_idx).unwrap();
     }
 
     let perms = parse_segment_perm(program_header.flags);

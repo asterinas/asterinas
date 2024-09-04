@@ -6,6 +6,7 @@
 use alloc::rc::Rc;
 
 use inherit_methods_macro::inherit_methods;
+use ostd::mm::AnyFrame;
 
 use super::{
     block_ptr::{BidPath, BlockPtrs, Ext2Bid, BID_SIZE, MAX_BLOCK_PTRS},
@@ -944,7 +945,7 @@ impl Inner {
         let buf_nblocks = read_len / BLOCK_SIZE;
         let segment = FrameAllocOptions::new(buf_nblocks)
             .uninit(true)
-            .alloc_contiguous()?
+            .alloc_contiguous(|_| ())?
             .into();
 
         self.inode_impl.read_blocks(start_bid, &segment)?;
@@ -985,7 +986,7 @@ impl Inner {
         let segment = {
             let segment = FrameAllocOptions::new(buf_nblocks)
                 .uninit(true)
-                .alloc_contiguous()?;
+                .alloc_contiguous(|_| ())?;
             segment.write(0, reader)?;
             segment.into()
         };
@@ -1964,7 +1965,7 @@ impl InodeImpl {
         // TODO: If we can persist the `blocks_hole_desc`, Can we avoid zeroing all the holes on the device?
         debug_assert!(max_batch_len > 0);
         let zeroed_segment: SegmentSlice = FrameAllocOptions::new(max_batch_len)
-            .alloc_contiguous()?
+            .alloc_contiguous(|_| ())?
             .into();
         for (start_bid, batch_len) in data_hole_batches {
             inner.write_blocks(start_bid, &zeroed_segment.range(0..batch_len))?;
@@ -2002,12 +2003,12 @@ impl InodeImpl {
 }
 
 impl PageCacheBackend for InodeImpl {
-    fn read_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
+    fn read_page_async(&self, idx: usize, frame: &AnyFrame) -> Result<BioWaiter> {
         let bid = idx as Ext2Bid;
         self.read_blocks_async(bid, &SegmentSlice::from(frame.clone()))
     }
 
-    fn write_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
+    fn write_page_async(&self, idx: usize, frame: &AnyFrame) -> Result<BioWaiter> {
         let bid = idx as Ext2Bid;
         self.write_blocks_async(bid, &SegmentSlice::from(frame.clone()))
     }

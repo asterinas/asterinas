@@ -37,9 +37,10 @@ pub mod mapping {
 
 use alloc::vec::Vec;
 use core::{
+    any::Any,
     cell::UnsafeCell,
     marker::PhantomData,
-    mem::{size_of, ManuallyDrop},
+    mem::{size_of, ManuallyDrop, MaybeUninit},
     panic,
     sync::atomic::{AtomicU32, AtomicU8, Ordering},
 };
@@ -97,17 +98,17 @@ pub(in crate::mm) struct MetaSlot {
     pub(super) ref_count: AtomicU32,
 }
 
+#[repr(C)]
 pub(super) union MetaSlotInner {
-    _frame: ManuallyDrop<FrameMeta>,
+    _frame: ManuallyDrop<FrameMetaBox>,
     _pt: ManuallyDrop<PageTablePageMeta>,
 }
 
-// Currently the sizes of the `MetaSlotInner` union variants are no larger
-// than 8 bytes and aligned to 8 bytes. So the size of `MetaSlot` is 16 bytes.
+// It depends on how much the preserved space is for the frame metadata.
 //
 // Note that the size of `MetaSlot` should be a multiple of 8 bytes to prevent
 // cross-page accesses.
-const_assert_eq!(size_of::<MetaSlot>(), 16);
+const_assert_eq!(size_of::<MetaSlot>(), 64);
 
 /// All page metadata types must implemented this sealed trait,
 /// which ensures that each fields of `PageUsage` has one and only
@@ -164,17 +165,80 @@ mod private {
 
 use private::Sealed;
 
-#[derive(Debug, Default)]
+// The metadata slot is 64 bytes. The universal fields takes 5 bytes. So the
+// remaining 56 bytes can be used by the frame metadata box.
+/// The maximum size of the metadata of a frame.
+pub const FRAME_METADATA_MAX_SIZE: usize = 56 - size_of::<FrameMetaVtablePtr>();
+
+/// The metadata container of an untyped page.
+///
+/// It's a bit like a `Box<dyn Any + Send + Sync>`, but with a size limit and
+/// doesn't require heap allocation.
+#[derive(Debug)]
 #[repr(C)]
-pub struct FrameMeta {
-    // If not doing so, the page table metadata would fit
-    // in the front padding of meta slot and make it 12 bytes.
-    // We make it 16 bytes. Further usage of frame metadata
-    // is welcome to exploit this space.
-    _unused_for_layout_padding: [u8; 8],
+pub(in crate::mm) struct FrameMetaBox {
+    vtable: FrameMetaVtablePtr,
+    storage: MaybeUninit<[u8; FRAME_METADATA_MAX_SIZE]>,
 }
 
-impl Sealed for FrameMeta {}
+type FrameMetaVtablePtr = core::ptr::DynMetadata<dyn FrameMeta>;
+
+/// A trait for types that can be used as frame metadata.
+pub trait FrameMeta: Any + Send + Sync + 'static {}
+impl<T> FrameMeta for T
+where
+    T: Any + Send + Sync + Sized + 'static,
+    [(); { size_of::<T>() <= FRAME_METADATA_MAX_SIZE } as usize]:,
+    Assert<{ size_of::<T>() <= FRAME_METADATA_MAX_SIZE }>: IsTrue,
+{
+}
+
+// A compile-time constant generic assertion.
+pub(in crate::mm) enum Assert<const CHECK: bool> {}
+// The trait is implemented only when the assertion is true.
+pub(in crate::mm) trait IsTrue: Sealed {}
+impl Sealed for Assert<true> {}
+impl IsTrue for Assert<true> {}
+
+impl FrameMetaBox {
+    /// Constructs a new frame metadata with the given data.
+    pub(in crate::mm) fn new<T: FrameMeta>(data: T) -> Self {
+        // Use trait upcasting to get the vtable.
+        let vtable = core::ptr::metadata(&data as &dyn FrameMeta as *const dyn FrameMeta);
+        let mut storage = MaybeUninit::uninit();
+        let ptr = storage.as_mut_ptr() as *mut T;
+        // We hope in most cases the compiler will optimize away the write.
+        //
+        // The padding bytes remain uninitialized.
+        //
+        // SAFETY: the size of `data` is less than or equal to the size of the
+        // storage array, and the array by value is valid to be written to.
+        // We will not forget the data since we will call the corresponding
+        // drop implementation when the metadata is dropped.
+        unsafe { core::ptr::write(ptr, data) };
+        Self { vtable, storage }
+    }
+
+    pub(in crate::mm) fn inner(&self) -> &dyn Any {
+        let ptr: *const dyn FrameMeta =
+            core::ptr::from_raw_parts(self.storage.as_ptr(), self.vtable);
+        // SAFETY: the pointer is valid and the type is correct if the
+        // structure is correctly initialized.
+        (unsafe { &*ptr }) as &dyn Any
+    }
+}
+
+impl Drop for FrameMetaBox {
+    fn drop(&mut self) {
+        let ptr: *mut dyn FrameMeta =
+            core::ptr::from_raw_parts_mut(self.storage.as_mut_ptr(), self.vtable);
+        // SAFETY: the pointer is valid and the type is correct if the
+        // structure is correctly initialized.
+        unsafe { core::ptr::drop_in_place(ptr) };
+    }
+}
+
+impl Sealed for FrameMetaBox {}
 
 /// The metadata of any kinds of page table pages.
 /// Make sure the the generic parameters don't effect the memory layout.
