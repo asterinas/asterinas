@@ -1,27 +1,33 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! A contiguous range of page frames.
+//! A contiguous segment of untyped memory pages.
 
-use alloc::sync::Arc;
 use core::ops::Range;
 
-use super::Frame;
 use crate::{
     mm::{
-        page::{cont_pages::ContPages, meta::FrameMeta, Page},
-        FallibleVmRead, FallibleVmWrite, HasPaddr, Infallible, Paddr, VmIo, VmReader, VmWriter,
-        PAGE_SIZE,
+        io::{FallibleVmRead, FallibleVmWrite},
+        page::{meta::FrameMeta, ContPages},
+        Frame, HasPaddr, Infallible, Paddr, VmIo, VmReader, VmWriter,
     },
     Error, Result,
 };
 
-/// A handle to a contiguous range of page frames (physical memory pages).
+/// A contiguous segment of untyped memory pages.
 ///
-/// A cloned `Segment` refers to the same page frames as the original.
-/// As the original and cloned instances point to the same physical address,  
-/// they are treated as equal to each other.
+/// A [`Segment`] object is a handle to a contiguous range of untyped memory
+/// pages, and the underlying pages can be shared among multiple threads.
+/// [`Segment::slice`] can be used to clone a slice of the segment (also can be
+/// used to clone the entire range). Reference counts are maintained for each
+/// page in the segment. So cloning the handle may not be cheap as it
+/// increments the reference count of all the cloned pages.
 ///
-/// #Example
+/// Other [`Frame`] handles can also refer to the pages in the segment. And
+/// the segment can be iterated over to get all the frames in it.
+///
+/// To allocate a segment, use [`crate::mm::FrameAllocator`].
+///
+/// # Example
 ///
 /// ```rust
 /// let vm_segment = FrameAllocOptions::new(2)
@@ -29,88 +35,102 @@ use crate::{
 ///     .alloc_contiguous()?;
 /// vm_segment.write_bytes(0, buf)?;
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Segment {
-    inner: Arc<ContPages<FrameMeta>>,
-    range: Range<usize>,
+    pages: ContPages<FrameMeta>,
 }
 
 impl HasPaddr for Segment {
     fn paddr(&self) -> Paddr {
-        self.start_paddr()
+        self.pages.start_paddr()
+    }
+}
+
+impl Clone for Segment {
+    fn clone(&self) -> Self {
+        Self {
+            pages: self.pages.clone(),
+        }
     }
 }
 
 impl Segment {
-    /// Returns a part of the `Segment`.
-    ///
-    /// # Panics
-    ///
-    /// If `range` is not within the range of this `Segment`,
-    /// then the method panics.
-    pub fn range(&self, range: Range<usize>) -> Self {
-        let orig_range = &self.range;
-        let adj_range = (range.start + orig_range.start)..(range.end + orig_range.start);
-        assert!(!adj_range.is_empty() && adj_range.end <= orig_range.end);
-
-        Self {
-            inner: self.inner.clone(),
-            range: adj_range,
-        }
-    }
-
     /// Returns the start physical address.
     pub fn start_paddr(&self) -> Paddr {
-        self.start_frame_index() * PAGE_SIZE
+        self.pages.start_paddr()
     }
 
     /// Returns the end physical address.
     pub fn end_paddr(&self) -> Paddr {
-        (self.start_frame_index() + self.nframes()) * PAGE_SIZE
+        self.pages.end_paddr()
     }
 
-    /// Returns the number of page frames.
-    pub fn nframes(&self) -> usize {
-        self.range.len()
-    }
-
-    /// Returns the number of bytes.
+    /// Returns the number of bytes in it.
     pub fn nbytes(&self) -> usize {
-        self.nframes() * PAGE_SIZE
+        self.pages.nbytes()
     }
 
-    fn start_frame_index(&self) -> usize {
-        self.inner.start_paddr() / PAGE_SIZE + self.range.start
+    /// Split the segment into two at the given byte offset from the start.
+    ///
+    /// The resulting segments cannot be empty. So the byte offset cannot be
+    /// neither zero nor the length of the segment.
+    ///
+    /// # Panics
+    ///
+    /// The function panics if the byte offset is out of bounds, at either ends, or
+    /// not base-page-aligned.
+    pub fn split(self, offset: usize) -> (Self, Self) {
+        let (left, right) = self.pages.split(offset);
+        (Self { pages: left }, Self { pages: right })
     }
 
-    /// Returns a raw pointer to the starting virtual address of the `Segment`.
-    pub fn as_ptr(&self) -> *const u8 {
-        super::paddr_to_vaddr(self.start_paddr()) as *const u8
+    /// Get an extra handle to the segment in the byte range.
+    ///
+    /// The sliced byte range in indexed by the offset from the start of the
+    /// segment. The resulting segment holds extra reference counts.
+    ///
+    /// # Panics
+    ///
+    /// The function panics if the byte range is out of bounds, or if any of
+    /// the ends of the byte range is not base-page aligned.
+    pub fn slice(&self, range: &Range<usize>) -> Self {
+        Self {
+            pages: self.pages.slice(range),
+        }
     }
 
-    /// Returns a mutable raw pointer to the starting virtual address of the `Segment`.
-    pub fn as_mut_ptr(&self) -> *mut u8 {
-        super::paddr_to_vaddr(self.start_paddr()) as *mut u8
+    /// Gets a [`VmReader`] to read from the segment from the beginning to the end.
+    pub fn reader(&self) -> VmReader<'_, Infallible> {
+        let ptr = super::paddr_to_vaddr(self.start_paddr()) as *const u8;
+        // SAFETY:
+        // - The memory range points to untyped memory.
+        // - The segment is alive during the lifetime `'a`.
+        // - Using `VmReader` and `VmWriter` is the only way to access the segment.
+        unsafe { VmReader::from_kernel_space(ptr, self.nbytes()) }
+    }
+
+    /// Gets a [`VmWriter`] to write to the segment from the beginning to the end.
+    pub fn writer(&self) -> VmWriter<'_, Infallible> {
+        let ptr = super::paddr_to_vaddr(self.start_paddr()) as *mut u8;
+        // SAFETY:
+        // - The memory range points to untyped memory.
+        // - The segment is alive during the lifetime `'a`.
+        // - Using `VmReader` and `VmWriter` is the only way to access the segment.
+        unsafe { VmWriter::from_kernel_space(ptr, self.nbytes()) }
     }
 }
 
-impl<'a> Segment {
-    /// Returns a reader to read data from it.
-    pub fn reader(&'a self) -> VmReader<'a, Infallible> {
-        // SAFETY:
-        // - The memory range points to untyped memory.
-        // - The segment is alive during the lifetime `'a`.
-        // - Using `VmReader` and `VmWriter` is the only way to access the segment.
-        unsafe { VmReader::from_kernel_space(self.as_ptr(), self.nbytes()) }
+impl From<Frame> for Segment {
+    fn from(frame: Frame) -> Self {
+        Self {
+            pages: ContPages::from(frame.page),
+        }
     }
+}
 
-    /// Returns a writer to write data into it.
-    pub fn writer(&'a self) -> VmWriter<'a, Infallible> {
-        // SAFETY:
-        // - The memory range points to untyped memory.
-        // - The segment is alive during the lifetime `'a`.
-        // - Using `VmReader` and `VmWriter` is the only way to access the segment.
-        unsafe { VmWriter::from_kernel_space(self.as_mut_ptr(), self.nbytes()) }
+impl From<ContPages<FrameMeta>> for Segment {
+    fn from(pages: ContPages<FrameMeta>) -> Self {
+        Self { pages }
     }
 }
 
@@ -148,21 +168,10 @@ impl VmIo for Segment {
     }
 }
 
-impl From<Frame> for Segment {
-    fn from(frame: Frame) -> Self {
-        Self {
-            inner: Arc::new(Page::<FrameMeta>::from(frame).into()),
-            range: 0..1,
-        }
-    }
-}
+impl Iterator for Segment {
+    type Item = Frame;
 
-impl From<ContPages<FrameMeta>> for Segment {
-    fn from(cont_pages: ContPages<FrameMeta>) -> Self {
-        let len = cont_pages.len();
-        Self {
-            inner: Arc::new(cont_pages),
-            range: 0..len / PAGE_SIZE,
-        }
+    fn next(&mut self) -> Option<Self::Item> {
+        self.pages.next().map(|page| Frame { page })
     }
 }

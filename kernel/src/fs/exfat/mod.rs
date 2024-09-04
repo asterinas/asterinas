@@ -22,7 +22,7 @@ mod test {
         BlockDevice, BlockDeviceMeta,
     };
     use ostd::{
-        mm::{FrameAllocOptions, Segment, VmIo},
+        mm::{FrameAllocOptions, Segment, VmIo, PAGE_SIZE},
         prelude::*,
     };
     use rand::{rngs::SmallRng, RngCore, SeedableRng};
@@ -48,7 +48,7 @@ mod test {
         }
 
         pub fn sectors_count(&self) -> usize {
-            self.0.nframes() * (PAGE_SIZE / SECTOR_SIZE)
+            self.0.nbytes() / SECTOR_SIZE
         }
     }
 
@@ -111,13 +111,10 @@ mod test {
 
     /// Read exfat disk image
     fn new_vm_segment_from_image() -> Segment {
-        let vm_segment = {
-            FrameAllocOptions::new(EXFAT_IMAGE.len() / PAGE_SIZE)
-                .is_contiguous(true)
-                .uninit(true)
-                .alloc_contiguous()
-                .unwrap()
-        };
+        let vm_segment = FrameAllocOptions::new(EXFAT_IMAGE.len().div_ceil(PAGE_SIZE))
+            .uninit(true)
+            .alloc_contiguous()
+            .unwrap();
 
         vm_segment.write_bytes(0, EXFAT_IMAGE).unwrap();
         vm_segment

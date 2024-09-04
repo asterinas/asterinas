@@ -944,7 +944,8 @@ impl Inner {
         let buf_nblocks = read_len / BLOCK_SIZE;
         let segment = FrameAllocOptions::new(buf_nblocks)
             .uninit(true)
-            .alloc_contiguous()?;
+            .alloc_contiguous()?
+            .into();
 
         self.inode_impl.read_blocks(start_bid, &segment)?;
         segment.read(0, writer)?;
@@ -986,7 +987,7 @@ impl Inner {
                 .uninit(true)
                 .alloc_contiguous()?;
             segment.write(0, reader)?;
-            segment
+            segment.into()
         };
 
         self.inode_impl.write_blocks(start_bid, &segment)?;
@@ -1128,7 +1129,7 @@ impl InodeImpl_ {
         self.inode().fs()
     }
 
-    pub fn read_blocks_async(&self, bid: Ext2Bid, blocks: &Segment) -> Result<BioWaiter> {
+    pub fn read_blocks_async(&self, bid: Ext2Bid, blocks: &SegmentSlice) -> Result<BioWaiter> {
         let nblocks = blocks.nframes();
         let mut segments = Vec::new();
 
@@ -1183,14 +1184,14 @@ impl InodeImpl_ {
         Ok(bio_waiter)
     }
 
-    pub fn read_blocks(&self, bid: Ext2Bid, blocks: &Segment) -> Result<()> {
+    pub fn read_blocks(&self, bid: Ext2Bid, blocks: &SegmentSlice) -> Result<()> {
         match self.read_blocks_async(bid, blocks)?.wait() {
             Some(BioStatus::Complete) => Ok(()),
             _ => return_errno!(Errno::EIO),
         }
     }
 
-    pub fn write_blocks_async(&self, bid: Ext2Bid, blocks: &Segment) -> Result<BioWaiter> {
+    pub fn write_blocks_async(&self, bid: Ext2Bid, blocks: &SegmentSlice) -> Result<BioWaiter> {
         let nblocks = blocks.nframes();
         let mut bio_waiter = BioWaiter::new();
 
@@ -1214,7 +1215,7 @@ impl InodeImpl_ {
         Ok(bio_waiter)
     }
 
-    pub fn write_blocks(&self, bid: Ext2Bid, blocks: &Segment) -> Result<()> {
+    pub fn write_blocks(&self, bid: Ext2Bid, blocks: &SegmentSlice) -> Result<()> {
         match self.write_blocks_async(bid, blocks)?.wait() {
             Some(BioStatus::Complete) => Ok(()),
             _ => return_errno!(Errno::EIO),
@@ -1873,20 +1874,20 @@ impl InodeImpl {
     }
 
     /// Reads one or multiple blocks to the segment start from `bid` asynchronously.
-    pub fn read_blocks_async(&self, bid: Ext2Bid, blocks: &Segment) -> Result<BioWaiter> {
+    pub fn read_blocks_async(&self, bid: Ext2Bid, blocks: &SegmentSlice) -> Result<BioWaiter> {
         self.0.read().read_blocks_async(bid, blocks)
     }
 
-    pub fn read_blocks(&self, bid: Ext2Bid, blocks: &Segment) -> Result<()> {
+    pub fn read_blocks(&self, bid: Ext2Bid, blocks: &SegmentSlice) -> Result<()> {
         self.0.read().read_blocks(bid, blocks)
     }
 
     /// Writes one or multiple blocks from the segment start from `bid` asynchronously.
-    pub fn write_blocks_async(&self, bid: Ext2Bid, blocks: &Segment) -> Result<BioWaiter> {
+    pub fn write_blocks_async(&self, bid: Ext2Bid, blocks: &SegmentSlice) -> Result<BioWaiter> {
         self.0.read().write_blocks_async(bid, blocks)
     }
 
-    pub fn write_blocks(&self, bid: Ext2Bid, blocks: &Segment) -> Result<()> {
+    pub fn write_blocks(&self, bid: Ext2Bid, blocks: &SegmentSlice) -> Result<()> {
         self.0.read().write_blocks(bid, blocks)
     }
 
@@ -1962,7 +1963,9 @@ impl InodeImpl {
 
         // TODO: If we can persist the `blocks_hole_desc`, Can we avoid zeroing all the holes on the device?
         debug_assert!(max_batch_len > 0);
-        let zeroed_segment = FrameAllocOptions::new(max_batch_len).alloc_contiguous()?;
+        let zeroed_segment: SegmentSlice = FrameAllocOptions::new(max_batch_len)
+            .alloc_contiguous()?
+            .into();
         for (start_bid, batch_len) in data_hole_batches {
             inner.write_blocks(start_bid, &zeroed_segment.range(0..batch_len))?;
         }
@@ -2001,12 +2004,12 @@ impl InodeImpl {
 impl PageCacheBackend for InodeImpl {
     fn read_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
         let bid = idx as Ext2Bid;
-        self.read_blocks_async(bid, &Segment::from(frame.clone()))
+        self.read_blocks_async(bid, &SegmentSlice::from(frame.clone()))
     }
 
     fn write_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
         let bid = idx as Ext2Bid;
-        self.write_blocks_async(bid, &Segment::from(frame.clone()))
+        self.write_blocks_async(bid, &SegmentSlice::from(frame.clone()))
     }
 
     fn npages(&self) -> usize {
