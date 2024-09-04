@@ -28,7 +28,7 @@ struct BlockGroupImpl {
 impl BlockGroup {
     /// Loads and constructs a block group.
     pub fn load(
-        group_descriptors_segment: &Segment,
+        group_descriptors_segment: &SegmentSlice,
         idx: usize,
         block_device: &dyn BlockDevice,
         super_block: &SuperBlock,

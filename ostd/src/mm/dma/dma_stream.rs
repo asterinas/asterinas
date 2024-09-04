@@ -63,7 +63,7 @@ impl DmaStream {
         direction: DmaDirection,
         is_cache_coherent: bool,
     ) -> Result<Self, DmaError> {
-        let frame_count = vm_segment.nframes();
+        let frame_count = vm_segment.nbytes() / PAGE_SIZE;
         let start_paddr = vm_segment.start_paddr();
         if !check_and_insert_dma_mapping(start_paddr, frame_count) {
             return Err(DmaError::AlreadyMapped);
@@ -119,7 +119,7 @@ impl DmaStream {
 
     /// Returns the number of frames
     pub fn nframes(&self) -> usize {
-        self.inner.vm_segment.nframes()
+        self.inner.vm_segment.nbytes() / PAGE_SIZE
     }
 
     /// Returns the number of bytes
@@ -171,7 +171,7 @@ impl HasDaddr for DmaStream {
 
 impl Drop for DmaStreamInner {
     fn drop(&mut self) {
-        let frame_count = self.vm_segment.nframes();
+        let frame_count = self.vm_segment.nbytes() / PAGE_SIZE;
         let start_paddr = self.vm_segment.start_paddr();
         // Ensure that the addresses used later will not overflow
         start_paddr.checked_add(frame_count * PAGE_SIZE).unwrap();
@@ -333,7 +333,7 @@ mod test {
             .is_contiguous(true)
             .alloc_contiguous()
             .unwrap();
-        let vm_segment_child = vm_segment_parent.range(0..1);
+        let vm_segment_child = vm_segment_parent.slice(&(0..PAGE_SIZE));
         let dma_stream_parent =
             DmaStream::map(vm_segment_parent, DmaDirection::Bidirectional, false);
         let dma_stream_child = DmaStream::map(vm_segment_child, DmaDirection::Bidirectional, false);

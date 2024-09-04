@@ -9,23 +9,20 @@
 //! read and written by the kernel or the user.
 
 pub mod options;
-pub mod segment;
+mod segment;
 
 use core::mem::ManuallyDrop;
 
 pub use segment::Segment;
 
-use super::{
-    page::{
-        meta::{FrameMeta, MetaSlot, PageMeta, PageUsage},
-        DynPage, Page,
-    },
-    Infallible,
+use super::page::{
+    meta::{FrameMeta, MetaSlot, PageMeta, PageUsage},
+    DynPage, Page,
 };
 use crate::{
     mm::{
         io::{FallibleVmRead, FallibleVmWrite, VmIo, VmReader, VmWriter},
-        paddr_to_vaddr, HasPaddr, Paddr, PAGE_SIZE,
+        paddr_to_vaddr, HasPaddr, Infallible, Paddr, PAGE_SIZE,
     },
     Error, Result,
 };
@@ -177,54 +174,6 @@ impl VmIo for Frame {
             .write_fallible(reader)
             .map_err(|(e, _)| e)?;
         debug_assert!(len == write_len);
-        Ok(())
-    }
-}
-
-impl VmIo for alloc::vec::Vec<Frame> {
-    fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<()> {
-        // Do bound check with potential integer overflow in mind
-        let max_offset = offset.checked_add(writer.avail()).ok_or(Error::Overflow)?;
-        if max_offset > self.len() * PAGE_SIZE {
-            return Err(Error::InvalidArgs);
-        }
-
-        let num_skip_pages = offset / PAGE_SIZE;
-        let mut start = offset % PAGE_SIZE;
-        for frame in self.iter().skip(num_skip_pages) {
-            let read_len = frame
-                .reader()
-                .skip(start)
-                .read_fallible(writer)
-                .map_err(|(e, _)| e)?;
-            if read_len == 0 {
-                break;
-            }
-            start = 0;
-        }
-        Ok(())
-    }
-
-    fn write(&self, offset: usize, reader: &mut VmReader) -> Result<()> {
-        // Do bound check with potential integer overflow in mind
-        let max_offset = offset.checked_add(reader.remain()).ok_or(Error::Overflow)?;
-        if max_offset > self.len() * PAGE_SIZE {
-            return Err(Error::InvalidArgs);
-        }
-
-        let num_skip_pages = offset / PAGE_SIZE;
-        let mut start = offset % PAGE_SIZE;
-        for frame in self.iter().skip(num_skip_pages) {
-            let write_len = frame
-                .writer()
-                .skip(start)
-                .write_fallible(reader)
-                .map_err(|(e, _)| e)?;
-            if write_len == 0 {
-                break;
-            }
-            start = 0;
-        }
         Ok(())
     }
 }

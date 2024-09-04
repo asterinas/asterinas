@@ -15,7 +15,7 @@
 //! the handle only a pointer to the metadata.
 
 pub mod allocator;
-pub mod cont_pages;
+mod cont_pages;
 pub mod meta;
 
 use core::{

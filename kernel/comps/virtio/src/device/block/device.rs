@@ -419,7 +419,8 @@ impl DeviceInner {
             .flat_map(|bio| {
                 bio.segments().iter().map(|segment| {
                     let dma_stream =
-                        DmaStream::map(segment.pages().clone(), dma_direction, false).unwrap();
+                        DmaStream::map(segment.pages().clone().into(), dma_direction, false)
+                            .unwrap();
                     (dma_stream, segment.offset(), segment.nbytes())
                 })
             })

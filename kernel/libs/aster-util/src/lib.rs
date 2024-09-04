@@ -10,5 +10,6 @@ extern crate alloc;
 pub mod coeff;
 pub mod dup;
 pub mod safe_ptr;
+pub mod segment_slice;
 pub mod slot_vec;
 pub mod union_read_ptr;

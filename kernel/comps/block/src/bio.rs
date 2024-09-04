@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use align_ext::AlignExt;
+use aster_util::segment_slice::SegmentSlice;
 use int_to_c_enum::TryFromInt;
 use ostd::{
-    mm::{Frame, Infallible, Segment, VmReader, VmWriter},
+    mm::{Frame, Infallible, VmReader, VmWriter},
     sync::WaitQueue,
 };
 
@@ -366,7 +367,7 @@ pub enum BioStatus {
 #[derive(Debug, Clone)]
 pub struct BioSegment {
     /// The contiguous pages on which this segment resides.
-    pages: Segment,
+    pages: SegmentSlice,
     /// The starting offset (in bytes) within the first page.
     /// The offset should always be aligned to the sector size and
     /// must not exceed the size of a single page.
@@ -381,9 +382,8 @@ const SECTOR_SIZE: u16 = super::SECTOR_SIZE as u16;
 
 impl<'a> BioSegment {
     /// Constructs a new `BioSegment` from `Segment`.
-    pub fn from_segment(segment: Segment, offset: usize, len: usize) -> Self {
+    pub fn from_segment(segment: SegmentSlice, offset: usize, len: usize) -> Self {
         assert!(offset + len <= segment.nbytes());
-
         Self {
             pages: segment.range(frame_range(&(offset..offset + len))),
             offset: AlignedUsize::<SECTOR_SIZE>::new(offset % super::BLOCK_SIZE).unwrap(),
@@ -396,7 +396,7 @@ impl<'a> BioSegment {
         assert!(offset + len <= super::BLOCK_SIZE);
 
         Self {
-            pages: Segment::from(frame),
+            pages: SegmentSlice::from(frame),
             offset: AlignedUsize::<SECTOR_SIZE>::new(offset).unwrap(),
             len: AlignedUsize::<SECTOR_SIZE>::new(len).unwrap(),
         }
@@ -418,7 +418,7 @@ impl<'a> BioSegment {
     }
 
     /// Returns the contiguous pages on which this segment resides.
-    pub fn pages(&self) -> &Segment {
+    pub fn pages(&self) -> &SegmentSlice {
         &self.pages
     }
 
