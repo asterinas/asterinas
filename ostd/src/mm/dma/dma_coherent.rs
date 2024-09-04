@@ -57,7 +57,7 @@ impl DmaCoherent {
         vm_segment: Segment,
         is_cache_coherent: bool,
     ) -> core::result::Result<Self, DmaError> {
-        let frame_count = vm_segment.nframes();
+        let frame_count = vm_segment.nbytes() / PAGE_SIZE;
         let start_paddr = vm_segment.start_paddr();
         if !check_and_insert_dma_mapping(start_paddr, frame_count) {
             return Err(DmaError::AlreadyMapped);
@@ -109,6 +109,11 @@ impl DmaCoherent {
             }),
         })
     }
+
+    /// Returns the number of bytes in the DMA mapping.
+    pub fn nbytes(&self) -> usize {
+        self.inner.vm_segment.nbytes()
+    }
 }
 
 impl HasDaddr for DmaCoherent {
@@ -126,7 +131,7 @@ impl Deref for DmaCoherent {
 
 impl Drop for DmaCoherentInner {
     fn drop(&mut self) {
-        let frame_count = self.vm_segment.nframes();
+        let frame_count = self.vm_segment.nbytes() / PAGE_SIZE;
         let start_paddr = self.vm_segment.start_paddr();
         // Ensure that the addresses used later will not overflow
         start_paddr.checked_add(frame_count * PAGE_SIZE).unwrap();
@@ -244,7 +249,7 @@ mod test {
             .is_contiguous(true)
             .alloc_contiguous()
             .unwrap();
-        let vm_segment_child = vm_segment_parent.range(0..1);
+        let vm_segment_child = vm_segment_parent.slice(&(0..PAGE_SIZE));
         let _dma_coherent_parent = DmaCoherent::map(vm_segment_parent, false);
         let dma_coherent_child = DmaCoherent::map(vm_segment_child, false);
         assert!(dma_coherent_child.is_err());

@@ -25,16 +25,31 @@ pub struct ContPages<M: PageMeta> {
 
 impl<M: PageMeta> Drop for ContPages<M> {
     fn drop(&mut self) {
-        for i in self.range.clone().step_by(PAGE_SIZE) {
+        for paddr in self.range.clone().step_by(PAGE_SIZE) {
             // SAFETY: for each page there would be a forgotten handle
             // when creating the `ContPages` object.
-            drop(unsafe { Page::<M>::from_raw(i) });
+            drop(unsafe { Page::<M>::from_raw(paddr) });
+        }
+    }
+}
+
+impl<M: PageMeta> Clone for ContPages<M> {
+    fn clone(&self) -> Self {
+        for paddr in self.range.clone().step_by(PAGE_SIZE) {
+            // SAFETY: for each page there would be a forgotten handle
+            // when creating the `ContPages` object, so we already have
+            // reference counts for the pages.
+            unsafe { Page::<M>::inc_ref_count(paddr) };
+        }
+        Self {
+            range: self.range.clone(),
+            _marker: core::marker::PhantomData,
         }
     }
 }
 
 impl<M: PageMeta> ContPages<M> {
-    /// Create a new `ContPages` from unused pages.
+    /// Creates a new `ContPages` from unused pages.
     ///
     /// The caller must provide a closure to initialize metadata for all the pages.
     /// The closure receives the physical address of the page and returns the
@@ -49,8 +64,8 @@ impl<M: PageMeta> ContPages<M> {
     where
         F: FnMut(Paddr) -> M,
     {
-        for i in range.clone().step_by(PAGE_SIZE) {
-            let _ = ManuallyDrop::new(Page::<M>::from_unused(i, metadata_fn(i)));
+        for paddr in range.clone().step_by(PAGE_SIZE) {
+            let _ = ManuallyDrop::new(Page::<M>::from_unused(paddr, metadata_fn(paddr)));
         }
         Self {
             range,
@@ -58,19 +73,75 @@ impl<M: PageMeta> ContPages<M> {
         }
     }
 
-    /// Get the start physical address of the contiguous pages.
+    /// Gets the start physical address of the contiguous pages.
     pub fn start_paddr(&self) -> Paddr {
         self.range.start
     }
 
-    /// Get the end physical address of the contiguous pages.
+    /// Gets the end physical address of the contiguous pages.
     pub fn end_paddr(&self) -> Paddr {
         self.range.end
     }
 
-    /// Get the length in bytes of the contiguous pages.
-    pub fn len(&self) -> usize {
+    /// Gets the length in bytes of the contiguous pages.
+    pub fn nbytes(&self) -> usize {
         self.range.end - self.range.start
+    }
+
+    /// Splits the pages into two at the given byte offset from the start.
+    ///
+    /// The resulting pages cannot be empty. So the offset cannot be neither
+    /// zero nor the length of the pages.
+    ///
+    /// # Panics
+    ///
+    /// The function panics if the offset is out of bounds, at either ends, or
+    /// not base-page-aligned.
+    pub fn split(self, offset: usize) -> (Self, Self) {
+        assert!(offset % PAGE_SIZE == 0);
+        assert!(0 < offset && offset < self.nbytes());
+
+        let old = ManuallyDrop::new(self);
+        let at = old.range.start + offset;
+
+        (
+            Self {
+                range: old.range.start..at,
+                _marker: core::marker::PhantomData,
+            },
+            Self {
+                range: at..old.range.end,
+                _marker: core::marker::PhantomData,
+            },
+        )
+    }
+
+    /// Gets an extra handle to the pages in the byte offset range.
+    ///
+    /// The sliced byte offset range in indexed by the offset from the start of
+    /// the contiguous pages. The resulting pages holds extra reference counts.
+    ///
+    /// # Panics
+    ///
+    /// The function panics if the byte offset range is out of bounds, or if
+    /// any of the ends of the byte offset range is not base-page aligned.
+    pub fn slice(&self, range: &Range<usize>) -> Self {
+        assert!(range.start % PAGE_SIZE == 0 && range.end % PAGE_SIZE == 0);
+        let start = self.range.start + range.start;
+        let end = self.range.start + range.end;
+        assert!(start <= end && end <= self.range.end);
+
+        for paddr in (start..end).step_by(PAGE_SIZE) {
+            // SAFETY: We already have reference counts for the pages since
+            // for each page there would be a forgotten handle when creating
+            // the `ContPages` object.
+            unsafe { Page::<M>::inc_ref_count(paddr) };
+        }
+
+        Self {
+            range: start..end,
+            _marker: core::marker::PhantomData,
+        }
     }
 }
 
@@ -98,5 +169,23 @@ impl<M: PageMeta> From<ContPages<M>> for Vec<Page<M>> {
             .collect();
         let _ = ManuallyDrop::new(pages);
         vector
+    }
+}
+
+impl<M: PageMeta> Iterator for ContPages<M> {
+    type Item = Page<M>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.range.start < self.range.end {
+            // SAFETY: each page in the range would be a handle forgotten
+            // when creating the `ContPages` object.
+            let page = unsafe { Page::<M>::from_raw(self.range.start) };
+            self.range.start += PAGE_SIZE;
+            // The end cannot be non-page-aligned.
+            debug_assert!(self.range.start <= self.range.end);
+            Some(page)
+        } else {
+            None
+        }
     }
 }

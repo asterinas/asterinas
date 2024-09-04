@@ -81,10 +81,8 @@ impl VirtQueue {
             let desc_size = size_of::<Descriptor>() * size as usize;
 
             let (seg1, seg2) = {
-                let continue_segment = FrameAllocOptions::new(2).alloc_contiguous().unwrap();
-                let seg1 = continue_segment.range(0..1);
-                let seg2 = continue_segment.range(1..2);
-                (seg1, seg2)
+                let segment = FrameAllocOptions::new(2).alloc_contiguous().unwrap();
+                segment.split(ostd::mm::PAGE_SIZE)
             };
             let desc_frame_ptr: SafePtr<Descriptor, DmaCoherent> =
                 SafePtr::new(DmaCoherent::map(seg1, true).unwrap(), 0);
