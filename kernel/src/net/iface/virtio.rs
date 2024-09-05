@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::borrow::ToOwned;
+
 use aster_network::AnyNetworkDevice;
 use aster_virtio::device::network::DEVICE_NAME;
 use ostd::sync::PreemptDisabled;
@@ -9,7 +11,9 @@ use smoltcp::{
     wire::{self, IpCidr},
 };
 
-use super::{common::IfaceCommon, internal::IfaceInternal, time::get_network_timestamp, Iface};
+use super::{
+    common::IfaceCommon, ext::IfaceExt, internal::IfaceInternal, time::get_network_timestamp, Iface,
+};
 use crate::prelude::*;
 
 pub struct IfaceVirtio {
@@ -21,6 +25,7 @@ pub struct IfaceVirtio {
 impl IfaceVirtio {
     pub fn new() -> Arc<Self> {
         let virtio_net = aster_network::get_device(DEVICE_NAME).unwrap();
+
         let interface = {
             let mac_addr = virtio_net.lock().mac_addr();
             let ip_addr = IpCidr::new(wire::IpAddress::Ipv4(wire::Ipv4Address::UNSPECIFIED), 0);
@@ -37,10 +42,13 @@ impl IfaceVirtio {
             });
             interface
         };
-        let common = IfaceCommon::new(interface);
+
+        let common = IfaceCommon::new(interface, IfaceExt::new("virtio".to_owned()));
+
         let mut socket_set = common.sockets();
         let dhcp_handle = init_dhcp_client(&mut socket_set);
         drop(socket_set);
+
         Arc::new(Self {
             driver: virtio_net,
             common,
@@ -87,20 +95,19 @@ impl IfaceVirtio {
     }
 }
 
-impl IfaceInternal for IfaceVirtio {
+impl IfaceInternal<IfaceExt> for IfaceVirtio {
     fn common(&self) -> &IfaceCommon {
         &self.common
     }
 }
 
 impl Iface for IfaceVirtio {
-    fn name(&self) -> &str {
-        "virtio"
-    }
-
-    fn poll(&self) {
+    fn raw_poll(&self, schedule_next_poll: &dyn Fn(Option<u64>)) {
         let mut driver = self.driver.disable_irq().lock();
-        self.common.poll(&mut *driver);
+
+        let next_poll = self.common.poll(&mut *driver);
+        schedule_next_poll(next_poll);
+
         self.process_dhcp();
     }
 }

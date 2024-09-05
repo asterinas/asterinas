@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::borrow::ToOwned;
+
 use smoltcp::{
     iface::Config,
     phy::{Loopback, Medium},
@@ -9,7 +11,7 @@ use smoltcp::{
 use super::{common::IfaceCommon, internal::IfaceInternal, Iface};
 use crate::{
     net::{
-        iface::time::get_network_timestamp,
+        iface::{ext::IfaceExt, time::get_network_timestamp},
         socket::ip::{IpAddress, Ipv4Address},
     },
     prelude::*,
@@ -29,6 +31,7 @@ pub struct IfaceLoopback {
 impl IfaceLoopback {
     pub fn new() -> Arc<Self> {
         let mut loopback = Loopback::new(Medium::Ip);
+
         let interface = {
             let config = Config::new(smoltcp::wire::HardwareAddress::Ip);
             let now = get_network_timestamp();
@@ -41,28 +44,27 @@ impl IfaceLoopback {
             });
             interface
         };
+
         println!("Loopback ipaddr: {}", interface.ipv4_addr().unwrap());
-        let common = IfaceCommon::new(interface);
+
         Arc::new(Self {
             driver: Mutex::new(loopback),
-            common,
+            common: IfaceCommon::new(interface, IfaceExt::new("lo".to_owned())),
         })
     }
 }
 
-impl IfaceInternal for IfaceLoopback {
+impl IfaceInternal<IfaceExt> for IfaceLoopback {
     fn common(&self) -> &IfaceCommon {
         &self.common
     }
 }
 
 impl Iface for IfaceLoopback {
-    fn name(&self) -> &str {
-        "lo"
-    }
-
-    fn poll(&self) {
+    fn raw_poll(&self, schedule_next_poll: &dyn Fn(Option<u64>)) {
         let mut device = self.driver.lock();
-        self.common.poll(&mut *device);
+
+        let next_poll = self.common.poll(&mut *device);
+        schedule_next_poll(next_poll);
     }
 }
