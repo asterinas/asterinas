@@ -16,7 +16,6 @@ pub struct IfaceVirtio {
     driver: Arc<SpinLock<dyn AnyNetworkDevice, PreemptDisabled>>,
     common: IfaceCommon,
     dhcp_handle: SocketHandle,
-    weak_self: Weak<Self>,
 }
 
 impl IfaceVirtio {
@@ -42,11 +41,10 @@ impl IfaceVirtio {
         let mut socket_set = common.sockets();
         let dhcp_handle = init_dhcp_client(&mut socket_set);
         drop(socket_set);
-        Arc::new_cyclic(|weak| Self {
+        Arc::new(Self {
             driver: virtio_net,
             common,
             dhcp_handle,
-            weak_self: weak.clone(),
         })
     }
 
@@ -93,24 +91,11 @@ impl IfaceInternal for IfaceVirtio {
     fn common(&self) -> &IfaceCommon {
         &self.common
     }
-
-    fn arc_self(&self) -> Arc<dyn Iface> {
-        self.weak_self.upgrade().unwrap()
-    }
 }
 
 impl Iface for IfaceVirtio {
     fn name(&self) -> &str {
         "virtio"
-    }
-
-    fn mac_addr(&self) -> Option<smoltcp::wire::EthernetAddress> {
-        let interface = self.common.interface();
-        let hardware_addr = interface.hardware_addr();
-        match hardware_addr {
-            wire::HardwareAddress::Ethernet(ethe_address) => Some(ethe_address),
-            wire::HardwareAddress::Ip => None,
-        }
     }
 
     fn poll(&self) {

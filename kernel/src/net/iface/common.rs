@@ -8,7 +8,6 @@ use ostd::sync::{LocalIrqDisabled, WaitQueue};
 use smoltcp::{
     iface::{SocketHandle, SocketSet},
     phy::Device,
-    wire::IpCidr,
 };
 
 use super::{
@@ -64,14 +63,6 @@ impl IfaceCommon {
 
     pub(super) fn ipv4_addr(&self) -> Option<Ipv4Address> {
         self.interface.disable_irq().lock().ipv4_addr()
-    }
-
-    pub(super) fn netmask(&self) -> Option<Ipv4Address> {
-        let interface = self.interface.disable_irq().lock();
-        let ip_addrs = interface.ip_addrs();
-        ip_addrs.first().map(|cidr| match cidr {
-            IpCidr::Ipv4(ipv4_cidr) => ipv4_cidr.netmask(),
-        })
     }
 
     pub(super) fn polling_wait_queue(&self) -> &WaitQueue {
