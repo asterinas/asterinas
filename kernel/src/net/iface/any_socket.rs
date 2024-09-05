@@ -113,16 +113,34 @@ impl AnyBoundSocket {
         self.0.raw_with(f)
     }
 
-    /// Try to connect to a remote endpoint. Tcp socket only.
+    /// Connects to a remote endpoint.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the socket is not a TCP socket.
     pub fn do_connect(&self, remote_endpoint: IpEndpoint) -> Result<()> {
-        let mut sockets = self.0.iface.sockets();
+        let common = self.iface().common();
+
+        let mut sockets = common.sockets();
         let socket = sockets.get_mut::<RawTcpSocket>(self.0.handle);
-        let port = self.0.port;
-        let mut iface_inner = self.0.iface.iface_inner();
-        let cx = iface_inner.context();
+
+        let mut iface = common.interface();
+        let cx = iface.context();
+
+        // The only reason this method might fail is because we're trying to connect to an
+        // unspecified address (i.e. 0.0.0.0). We currently have no support for binding to,
+        // listening on, or connecting to the unspecified address.
+        //
+        // We assume the remote will just refuse to connect, so we return `ECONNREFUSED`.
         socket
-            .connect(cx, remote_endpoint, port)
-            .map_err(|_| Error::with_message(Errno::ENOBUFS, "send connection request failed"))?;
+            .connect(cx, remote_endpoint, self.0.port)
+            .map_err(|_| {
+                Error::with_message(
+                    Errno::ECONNREFUSED,
+                    "connecting to an unspecified address is not supported",
+                )
+            })?;
+
         Ok(())
     }
 
@@ -194,7 +212,7 @@ impl AnyBoundSocketInner {
         &self,
         mut f: F,
     ) -> R {
-        let mut sockets = self.iface.sockets();
+        let mut sockets = self.iface.common().sockets();
         let socket = sockets.get_mut::<T>(self.handle);
         f(socket)
     }

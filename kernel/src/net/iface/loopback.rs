@@ -24,7 +24,6 @@ pub const LOOPBACK_ADDRESS_PREFIX_LEN: u8 = 8; // mask: 255.0.0.0
 pub struct IfaceLoopback {
     driver: Mutex<Loopback>,
     common: IfaceCommon,
-    weak_self: Weak<Self>,
 }
 
 impl IfaceLoopback {
@@ -44,10 +43,9 @@ impl IfaceLoopback {
         };
         println!("Loopback ipaddr: {}", interface.ipv4_addr().unwrap());
         let common = IfaceCommon::new(interface);
-        Arc::new_cyclic(|weak| Self {
+        Arc::new(Self {
             driver: Mutex::new(loopback),
             common,
-            weak_self: weak.clone(),
         })
     }
 }
@@ -56,19 +54,11 @@ impl IfaceInternal for IfaceLoopback {
     fn common(&self) -> &IfaceCommon {
         &self.common
     }
-
-    fn arc_self(&self) -> Arc<dyn Iface> {
-        self.weak_self.upgrade().unwrap()
-    }
 }
 
 impl Iface for IfaceLoopback {
     fn name(&self) -> &str {
         "lo"
-    }
-
-    fn mac_addr(&self) -> Option<smoltcp::wire::EthernetAddress> {
-        None
     }
 
     fn poll(&self) {
