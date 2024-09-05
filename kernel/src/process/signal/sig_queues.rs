@@ -69,6 +69,9 @@ impl SigQueues {
 
     /// Returns whether there's some pending signals that are not blocked
     pub fn has_pending(&self, blocked: SigMask) -> bool {
+        if self.is_empty() {
+            return false;
+        }
         self.queues.lock().has_pending(blocked)
     }
 
