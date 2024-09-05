@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::collections::btree_map::Entry;
-use core::sync::atomic::{AtomicU64, Ordering};
 
 use keyable_arc::KeyableArc;
-use ostd::sync::{LocalIrqDisabled, WaitQueue};
+use ostd::sync::LocalIrqDisabled;
 use smoltcp::{
     iface::{SocketHandle, SocketSet},
     phy::Device,
@@ -12,36 +11,33 @@ use smoltcp::{
 
 use super::{
     any_socket::{AnyBoundSocketInner, AnyRawSocket, AnyUnboundSocket, SocketFamily},
+    ext::IfaceExt,
     time::get_network_timestamp,
     util::BindPortConfig,
     AnyBoundSocket, Iface,
 };
 use crate::{net::socket::ip::Ipv4Address, prelude::*};
 
-pub struct IfaceCommon {
+pub struct IfaceCommon<E = IfaceExt> {
     interface: SpinLock<smoltcp::iface::Interface>,
     sockets: SpinLock<SocketSet<'static>>,
     used_ports: RwLock<BTreeMap<u16, usize>>,
-    /// The time should do next poll. We stores the total milliseconds since system boots up.
-    next_poll_at_ms: AtomicU64,
-    bound_sockets: RwLock<BTreeSet<KeyableArc<AnyBoundSocketInner>>>,
-    closing_sockets: SpinLock<BTreeSet<KeyableArc<AnyBoundSocketInner>>>,
-    /// The wait queue that background polling thread will sleep on
-    polling_wait_queue: WaitQueue,
+    bound_sockets: RwLock<BTreeSet<KeyableArc<AnyBoundSocketInner<E>>>>,
+    closing_sockets: SpinLock<BTreeSet<KeyableArc<AnyBoundSocketInner<E>>>>,
+    ext: E,
 }
 
-impl IfaceCommon {
-    pub(super) fn new(interface: smoltcp::iface::Interface) -> Self {
+impl<E> IfaceCommon<E> {
+    pub(super) fn new(interface: smoltcp::iface::Interface, ext: E) -> Self {
         let socket_set = SocketSet::new(Vec::new());
         let used_ports = BTreeMap::new();
         Self {
             interface: SpinLock::new(interface),
             sockets: SpinLock::new(socket_set),
             used_ports: RwLock::new(used_ports),
-            next_poll_at_ms: AtomicU64::new(0),
             bound_sockets: RwLock::new(BTreeSet::new()),
             closing_sockets: SpinLock::new(BTreeSet::new()),
-            polling_wait_queue: WaitQueue::new(),
+            ext,
         }
     }
 
@@ -63,10 +59,6 @@ impl IfaceCommon {
 
     pub(super) fn ipv4_addr(&self) -> Option<Ipv4Address> {
         self.interface.disable_irq().lock().ipv4_addr()
-    }
-
-    pub(super) fn polling_wait_queue(&self) -> &WaitQueue {
-        &self.polling_wait_queue
     }
 
     /// Alloc an unused port range from 49152 ~ 65535 (According to smoltcp docs)
@@ -108,10 +100,10 @@ impl IfaceCommon {
 
     pub(super) fn bind_socket(
         &self,
-        iface: Arc<dyn Iface>,
+        iface: Arc<dyn Iface<E>>,
         socket: Box<AnyUnboundSocket>,
         config: BindPortConfig,
-    ) -> core::result::Result<AnyBoundSocket, (Error, Box<AnyUnboundSocket>)> {
+    ) -> core::result::Result<AnyBoundSocket<E>, (Error, Box<AnyUnboundSocket>)> {
         let port = if let Some(port) = config.port() {
             port
         } else {
@@ -147,7 +139,8 @@ impl IfaceCommon {
         self.sockets.disable_irq().lock().remove(handle);
     }
 
-    pub(super) fn poll<D: Device + ?Sized>(&self, device: &mut D) {
+    #[must_use]
+    pub(super) fn poll<D: Device + ?Sized>(&self, device: &mut D) -> Option<u64> {
         let mut sockets = self.sockets.disable_irq().lock();
         let mut interface = self.interface.disable_irq().lock();
 
@@ -183,18 +176,6 @@ impl IfaceCommon {
         drop(interface);
         drop(sockets);
 
-        if let Some(instant) = poll_at {
-            let old_instant = self.next_poll_at_ms.load(Ordering::Relaxed);
-            let new_instant = instant.total_millis() as u64;
-            self.next_poll_at_ms.store(new_instant, Ordering::Relaxed);
-
-            if old_instant == 0 || new_instant < old_instant {
-                self.polling_wait_queue.wake_all();
-            }
-        } else {
-            self.next_poll_at_ms.store(0, Ordering::Relaxed);
-        }
-
         if has_events {
             // We never try to hold the write lock in the IRQ context, and we disable IRQ when
             // holding the write lock. So we don't need to disable IRQ when holding the read lock.
@@ -210,18 +191,15 @@ impl IfaceCommon {
                 .collect::<Vec<_>>();
             drop(closed_sockets);
         }
+
+        poll_at.map(|at| smoltcp::time::Instant::total_millis(&at) as u64)
     }
 
-    pub(super) fn next_poll_at_ms(&self) -> Option<u64> {
-        let millis = self.next_poll_at_ms.load(Ordering::Relaxed);
-        if millis == 0 {
-            None
-        } else {
-            Some(millis)
-        }
+    pub(super) fn ext(&self) -> &E {
+        &self.ext
     }
 
-    fn insert_bound_socket(&self, socket: &Arc<AnyBoundSocketInner>) {
+    fn insert_bound_socket(&self, socket: &Arc<AnyBoundSocketInner<E>>) {
         let keyable_socket = KeyableArc::from(socket.clone());
 
         let inserted = self
@@ -231,7 +209,7 @@ impl IfaceCommon {
         assert!(inserted);
     }
 
-    pub(super) fn remove_bound_socket_now(&self, socket: &Arc<AnyBoundSocketInner>) {
+    pub(super) fn remove_bound_socket_now(&self, socket: &Arc<AnyBoundSocketInner<E>>) {
         let keyable_socket = KeyableArc::from(socket.clone());
 
         let removed = self
@@ -241,7 +219,7 @@ impl IfaceCommon {
         assert!(removed);
     }
 
-    pub(super) fn remove_bound_socket_when_closed(&self, socket: &Arc<AnyBoundSocketInner>) {
+    pub(super) fn remove_bound_socket_when_closed(&self, socket: &Arc<AnyBoundSocketInner<E>>) {
         let keyable_socket = KeyableArc::from(socket.clone());
 
         let removed = self

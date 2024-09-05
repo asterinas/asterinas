@@ -4,14 +4,13 @@ use core::time::Duration;
 
 use ostd::{arch::timer::Jiffies, task::Priority};
 
-use super::Iface;
+use super::{ext::IfaceEx, Iface};
 use crate::{
     prelude::*,
     thread::{
         kernel_thread::{KernelThreadExt, ThreadOptions},
         Thread,
     },
-    time::wait::WaitTimeout,
 };
 
 pub enum BindPortConfig {
@@ -51,12 +50,15 @@ impl BindPortConfig {
 pub fn spawn_background_poll_thread(iface: Arc<dyn Iface>) {
     let task_fn = move || {
         trace!("spawn background poll thread for {}", iface.name());
-        let wait_queue = iface.polling_wait_queue();
+
+        let iface_ext = iface.ext();
+        let wait_queue = iface_ext.polling_wait_queue();
+
         loop {
-            let next_poll_at_ms = if let Some(next_poll_at_ms) = iface.next_poll_at_ms() {
+            let next_poll_at_ms = if let Some(next_poll_at_ms) = iface_ext.next_poll_at_ms() {
                 next_poll_at_ms
             } else {
-                wait_queue.wait_until(|| iface.next_poll_at_ms())
+                wait_queue.wait_until(|| iface_ext.next_poll_at_ms())
             };
 
             let now_as_ms = Jiffies::elapsed().as_duration().as_millis() as u64;
@@ -76,8 +78,9 @@ pub fn spawn_background_poll_thread(iface: Arc<dyn Iface>) {
 
             let duration = Duration::from_millis(next_poll_at_ms - now_as_ms);
             wait_queue.wait_until_or_timeout(
-                // If `iface.next_poll_at_ms()` changes to an earlier time, we will end the waiting.
-                || (iface.next_poll_at_ms()? < next_poll_at_ms).then_some(()),
+                // If `iface_ext.next_poll_at_ms()` changes to an earlier time, we will end the
+                // waiting.
+                || (iface_ext.next_poll_at_ms()? < next_poll_at_ms).then_some(()),
                 &duration,
             );
         }

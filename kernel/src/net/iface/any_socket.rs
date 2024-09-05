@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::Iface;
+use super::{ext::IfaceExt, Iface};
 use crate::{
     events::Observer,
     net::socket::ip::{IpAddress, IpEndpoint},
@@ -63,11 +63,11 @@ impl AnyUnboundSocket {
     }
 }
 
-pub struct AnyBoundSocket(Arc<AnyBoundSocketInner>);
+pub struct AnyBoundSocket<E = IfaceExt>(Arc<AnyBoundSocketInner<E>>);
 
-impl AnyBoundSocket {
+impl<E> AnyBoundSocket<E> {
     pub(super) fn new(
-        iface: Arc<dyn Iface>,
+        iface: Arc<dyn Iface<E>>,
         handle: smoltcp::iface::SocketHandle,
         port: u16,
         socket_family: SocketFamily,
@@ -82,7 +82,7 @@ impl AnyBoundSocket {
         }))
     }
 
-    pub(super) fn inner(&self) -> &Arc<AnyBoundSocketInner> {
+    pub(super) fn inner(&self) -> &Arc<AnyBoundSocketInner<E>> {
         &self.0
     }
 
@@ -144,12 +144,12 @@ impl AnyBoundSocket {
         Ok(())
     }
 
-    pub fn iface(&self) -> &Arc<dyn Iface> {
+    pub fn iface(&self) -> &Arc<dyn Iface<E>> {
         &self.0.iface
     }
 }
 
-impl Drop for AnyBoundSocket {
+impl<E> Drop for AnyBoundSocket<E> {
     fn drop(&mut self) {
         if self.0.start_closing() {
             self.0.iface.common().remove_bound_socket_now(&self.0);
@@ -162,15 +162,15 @@ impl Drop for AnyBoundSocket {
     }
 }
 
-pub(super) struct AnyBoundSocketInner {
-    iface: Arc<dyn Iface>,
+pub(super) struct AnyBoundSocketInner<E> {
+    iface: Arc<dyn Iface<E>>,
     handle: smoltcp::iface::SocketHandle,
     port: u16,
     socket_family: SocketFamily,
     observer: RwLock<Weak<dyn Observer<()>>>,
 }
 
-impl AnyBoundSocketInner {
+impl<E> AnyBoundSocketInner<E> {
     pub(super) fn on_iface_events(&self) {
         if let Some(observer) = Weak::upgrade(&*self.observer.read()) {
             observer.on_events(&())
@@ -218,7 +218,7 @@ impl AnyBoundSocketInner {
     }
 }
 
-impl Drop for AnyBoundSocketInner {
+impl<E> Drop for AnyBoundSocketInner<E> {
     fn drop(&mut self) {
         let iface_common = self.iface.common();
         iface_common.remove_socket(self.handle);

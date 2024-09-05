@@ -11,7 +11,7 @@ use crate::{
     fs::{file_handle::FileLike, utils::StatusFlags},
     match_sock_option_mut,
     net::{
-        poll_ifaces,
+        iface::poll_ifaces,
         socket::{
             options::{Error as SocketError, SocketOption},
             util::{

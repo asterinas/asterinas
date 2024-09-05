@@ -2,10 +2,7 @@
 
 use super::{IpAddress, IpEndpoint};
 use crate::{
-    net::{
-        iface::{AnyBoundSocket, AnyUnboundSocket, BindPortConfig, Iface},
-        IFACES,
-    },
+    net::iface::{AnyBoundSocket, AnyUnboundSocket, BindPortConfig, Iface, IFACES},
     prelude::*,
 };
 
