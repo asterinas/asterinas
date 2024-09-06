@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
+use alloc::{borrow::ToOwned, sync::Arc};
 
+use ostd::sync::PreemptDisabled;
 use spin::Once;
 
 use super::{spawn_background_poll_thread, Iface};
 use crate::{
-    net::iface::{ext::IfaceEx, IfaceLoopback, IfaceVirtio},
+    net::iface::{
+        device::WithDevice,
+        ext::{IfaceEx, IfaceExt},
+    },
     prelude::*,
 };
 
@@ -14,8 +18,8 @@ pub static IFACES: Once<Vec<Arc<dyn Iface>>> = Once::new();
 
 pub fn init() {
     IFACES.call_once(|| {
-        let iface_virtio = IfaceVirtio::new();
-        let iface_loopback = IfaceLoopback::new();
+        let iface_virtio = new_virtio();
+        let iface_loopback = new_loopback();
         vec![iface_virtio, iface_loopback]
     });
 
@@ -28,6 +32,69 @@ pub fn init() {
     }
 
     poll_ifaces();
+}
+
+fn new_virtio() -> Arc<dyn Iface> {
+    use aster_network::AnyNetworkDevice;
+    use aster_virtio::device::network::DEVICE_NAME;
+
+    use super::ether::{EtherIface, EthernetAddress};
+
+    let virtio_net = aster_network::get_device(DEVICE_NAME).unwrap();
+
+    let ether_addr = virtio_net.disable_irq().lock().mac_addr().0;
+
+    struct Wrapper(Arc<SpinLock<dyn AnyNetworkDevice, PreemptDisabled>>);
+
+    impl WithDevice for Wrapper {
+        type Device = dyn AnyNetworkDevice;
+
+        fn with<F, R>(&self, f: F) -> R
+        where
+            F: FnOnce(&mut Self::Device) -> R,
+        {
+            let mut device = self.0.disable_irq().lock();
+            f(&mut *device)
+        }
+    }
+
+    EtherIface::new(
+        Wrapper(virtio_net),
+        EthernetAddress(ether_addr),
+        IfaceExt::new("virtio".to_owned()),
+    )
+}
+
+fn new_loopback() -> Arc<dyn Iface> {
+    use smoltcp::phy::{Loopback, Medium};
+
+    use super::ip::{IpAddress, IpCidr, IpIface, Ipv4Address};
+
+    const LOOPBACK_ADDRESS: IpAddress = {
+        let ipv4_addr = Ipv4Address::new(127, 0, 0, 1);
+        IpAddress::Ipv4(ipv4_addr)
+    };
+    const LOOPBACK_ADDRESS_PREFIX_LEN: u8 = 8; // mask: 255.0.0.0
+
+    struct Wrapper(Mutex<Loopback>);
+
+    impl WithDevice for Wrapper {
+        type Device = Loopback;
+
+        fn with<F, R>(&self, f: F) -> R
+        where
+            F: FnOnce(&mut Self::Device) -> R,
+        {
+            let mut device = self.0.lock();
+            f(&mut device)
+        }
+    }
+
+    IpIface::new(
+        Wrapper(Mutex::new(Loopback::new(Medium::Ip))),
+        IpCidr::new(LOOPBACK_ADDRESS, LOOPBACK_ADDRESS_PREFIX_LEN),
+        IfaceExt::new("lo".to_owned()),
+    ) as _
 }
 
 pub fn lazy_init() {
