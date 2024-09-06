@@ -19,7 +19,6 @@ MODULES_DIR="${BENCHMARK_DIR}/../build/initramfs/lib/modules/${KERNEL_VERSION}/k
 WGET_SCRIPT="${BENCHMARK_DIR}/../../tools/atomic_wget.sh"
 
 # Generate entrypoint script for Linux cases
-# TODO: Disable optimize-related features in Linux's ext2 using 'mkfs.ext2 -O ^[feature]'
 generate_entrypoint_script() {
     local benchmark="$1"
     local init_script=$(cat <<EOF
@@ -27,7 +26,6 @@ generate_entrypoint_script() {
 mount -t devtmpfs devtmpfs /dev
 ip link set lo up
 modprobe virtio_blk
-mkfs.ext2 -F /dev/vda
 mount -t ext2 /dev/vda /ext2
 
 echo "Running ${benchmark}"
@@ -56,7 +54,6 @@ run_benchmark() {
     generate_entrypoint_script "${benchmark}" > "${initramfs_entrypoint_script}"
     chmod +x "${initramfs_entrypoint_script}"
         
-    # TODO: enable nopti for Linux to make the comparison more fair
     local qemu_cmd="/usr/local/qemu/bin/qemu-system-x86_64 \
         --no-reboot \
         -smp 1 \
@@ -83,8 +80,13 @@ run_benchmark() {
         ${WGET_SCRIPT} "${MODULES_DIR}/drivers/block/virtio_blk.ko" "https://raw.githubusercontent.com/asterinas/linux_kernel/f938bde/modules/virtio_blk.ko"
     fi
 
-    echo "Running benchmark ${benchmark} on Linux and Asterinas..."
+    echo "Running benchmark ${benchmark} on Asterinas..."
     make run BENCHMARK=${benchmark} ENABLE_KVM=1 RELEASE_LTO=1 2>&1 | tee "${aster_output}"
+
+    echo "Running benchmark ${benchmark} on Linux..."
+    # Disable unsupported ext2 features of Asterinas on Linux to ensure fairness
+    mke2fs -F -O ^ext_attr -O ^resize_inode -O ^dir_index ${BENCHMARK_DIR}/../build/ext2.img
+    make initramfs
     eval "$qemu_cmd"
 
     echo "Parsing results..."
