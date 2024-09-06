@@ -5,22 +5,21 @@ use crate::prelude::*;
 
 mod any_socket;
 mod common;
+mod device;
+mod ether;
 mod ext;
 mod init;
-mod loopback;
+mod ip;
 mod time;
 mod util;
-mod virtio;
 
 pub use any_socket::{
     AnyBoundSocket, AnyUnboundSocket, RawTcpSocket, RawUdpSocket, TCP_RECV_BUF_LEN,
     TCP_SEND_BUF_LEN, UDP_RECV_PAYLOAD_LEN, UDP_SEND_PAYLOAD_LEN,
 };
 pub use init::{init, lazy_init, poll_ifaces, IFACES};
-pub use loopback::IfaceLoopback;
 pub use smoltcp::wire::EthernetAddress;
 pub use util::{spawn_background_poll_thread, BindPortConfig};
-pub use virtio::IfaceVirtio;
 
 use crate::net::socket::ip::Ipv4Address;
 
