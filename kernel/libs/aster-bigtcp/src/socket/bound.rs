@@ -1,77 +1,30 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{ext::IfaceExt, Iface};
-use crate::{
-    events::Observer,
-    net::socket::ip::{IpAddress, IpEndpoint},
-    prelude::*,
+use alloc::sync::{Arc, Weak};
+
+use ostd::sync::RwLock;
+use smoltcp::{
+    socket::tcp::ConnectError,
+    wire::{IpAddress, IpEndpoint},
 };
 
-pub type RawTcpSocket = smoltcp::socket::tcp::Socket<'static>;
-pub type RawUdpSocket = smoltcp::socket::udp::Socket<'static>;
+use super::{event::SocketEventObserver, RawTcpSocket, RawUdpSocket};
+use crate::iface::Iface;
 
-pub struct AnyUnboundSocket {
-    socket_family: AnyRawSocket,
-    observer: Weak<dyn Observer<()>>,
-}
-
-#[allow(clippy::large_enum_variant)]
-pub(super) enum AnyRawSocket {
-    Tcp(RawTcpSocket),
-    Udp(RawUdpSocket),
-}
-
-pub(super) enum SocketFamily {
+pub(crate) enum SocketFamily {
     Tcp,
     Udp,
 }
 
-impl AnyUnboundSocket {
-    pub fn new_tcp(observer: Weak<dyn Observer<()>>) -> Self {
-        let raw_tcp_socket = {
-            let rx_buffer = smoltcp::socket::tcp::SocketBuffer::new(vec![0u8; TCP_RECV_BUF_LEN]);
-            let tx_buffer = smoltcp::socket::tcp::SocketBuffer::new(vec![0u8; TCP_SEND_BUF_LEN]);
-            RawTcpSocket::new(rx_buffer, tx_buffer)
-        };
-        AnyUnboundSocket {
-            socket_family: AnyRawSocket::Tcp(raw_tcp_socket),
-            observer,
-        }
-    }
-
-    pub fn new_udp(observer: Weak<dyn Observer<()>>) -> Self {
-        let raw_udp_socket = {
-            let metadata = smoltcp::socket::udp::PacketMetadata::EMPTY;
-            let rx_buffer = smoltcp::socket::udp::PacketBuffer::new(
-                vec![metadata; UDP_METADATA_LEN],
-                vec![0u8; UDP_RECV_PAYLOAD_LEN],
-            );
-            let tx_buffer = smoltcp::socket::udp::PacketBuffer::new(
-                vec![metadata; UDP_METADATA_LEN],
-                vec![0u8; UDP_SEND_PAYLOAD_LEN],
-            );
-            RawUdpSocket::new(rx_buffer, tx_buffer)
-        };
-        AnyUnboundSocket {
-            socket_family: AnyRawSocket::Udp(raw_udp_socket),
-            observer,
-        }
-    }
-
-    pub(super) fn into_raw(self) -> (AnyRawSocket, Weak<dyn Observer<()>>) {
-        (self.socket_family, self.observer)
-    }
-}
-
-pub struct AnyBoundSocket<E = IfaceExt>(Arc<AnyBoundSocketInner<E>>);
+pub struct AnyBoundSocket<E>(Arc<AnyBoundSocketInner<E>>);
 
 impl<E> AnyBoundSocket<E> {
-    pub(super) fn new(
+    pub(crate) fn new(
         iface: Arc<dyn Iface<E>>,
         handle: smoltcp::iface::SocketHandle,
         port: u16,
         socket_family: SocketFamily,
-        observer: Weak<dyn Observer<()>>,
+        observer: Weak<dyn SocketEventObserver>,
     ) -> Self {
         Self(Arc::new(AnyBoundSocketInner {
             iface,
@@ -82,18 +35,18 @@ impl<E> AnyBoundSocket<E> {
         }))
     }
 
-    pub(super) fn inner(&self) -> &Arc<AnyBoundSocketInner<E>> {
+    pub(crate) fn inner(&self) -> &Arc<AnyBoundSocketInner<E>> {
         &self.0
     }
 
-    /// Set the observer whose `on_events` will be called when certain iface events happen. After
+    /// Sets the observer whose `on_events` will be called when certain iface events happen. After
     /// setting, the new observer will fire once immediately to avoid missing any events.
     ///
     /// If there is an existing observer, due to race conditions, this function does not guarantee
     /// that the old observer will never be called after the setting. Users should be aware of this
     /// and proactively handle the race conditions if necessary.
-    pub fn set_observer(&self, handler: Weak<dyn Observer<()>>) {
-        *self.0.observer.write() = handler;
+    pub fn set_observer(&self, new_observer: Weak<dyn SocketEventObserver>) {
+        *self.0.observer.write() = new_observer;
 
         self.0.on_iface_events();
     }
@@ -118,7 +71,7 @@ impl<E> AnyBoundSocket<E> {
     /// # Panics
     ///
     /// This method will panic if the socket is not a TCP socket.
-    pub fn do_connect(&self, remote_endpoint: IpEndpoint) -> Result<()> {
+    pub fn do_connect(&self, remote_endpoint: IpEndpoint) -> Result<(), ConnectError> {
         let common = self.iface().common();
 
         let mut sockets = common.sockets();
@@ -127,21 +80,7 @@ impl<E> AnyBoundSocket<E> {
         let mut iface = common.interface();
         let cx = iface.context();
 
-        // The only reason this method might fail is because we're trying to connect to an
-        // unspecified address (i.e. 0.0.0.0). We currently have no support for binding to,
-        // listening on, or connecting to the unspecified address.
-        //
-        // We assume the remote will just refuse to connect, so we return `ECONNREFUSED`.
-        socket
-            .connect(cx, remote_endpoint, self.0.port)
-            .map_err(|_| {
-                Error::with_message(
-                    Errno::ECONNREFUSED,
-                    "connecting to an unspecified address is not supported",
-                )
-            })?;
-
-        Ok(())
+        socket.connect(cx, remote_endpoint, self.0.port)
     }
 
     pub fn iface(&self) -> &Arc<dyn Iface<E>> {
@@ -162,22 +101,22 @@ impl<E> Drop for AnyBoundSocket<E> {
     }
 }
 
-pub(super) struct AnyBoundSocketInner<E> {
+pub(crate) struct AnyBoundSocketInner<E> {
     iface: Arc<dyn Iface<E>>,
     handle: smoltcp::iface::SocketHandle,
     port: u16,
     socket_family: SocketFamily,
-    observer: RwLock<Weak<dyn Observer<()>>>,
+    observer: RwLock<Weak<dyn SocketEventObserver>>,
 }
 
 impl<E> AnyBoundSocketInner<E> {
-    pub(super) fn on_iface_events(&self) {
+    pub(crate) fn on_iface_events(&self) {
         if let Some(observer) = Weak::upgrade(&*self.observer.read()) {
-            observer.on_events(&())
+            observer.on_events();
         }
     }
 
-    pub(super) fn is_closed(&self) -> bool {
+    pub(crate) fn is_closed(&self) -> bool {
         match self.socket_family {
             SocketFamily::Tcp => self.raw_with(|socket: &mut RawTcpSocket| {
                 socket.state() == smoltcp::socket::tcp::State::Closed
@@ -225,12 +164,3 @@ impl<E> Drop for AnyBoundSocketInner<E> {
         iface_common.release_port(self.port);
     }
 }
-
-// For TCP
-pub const TCP_RECV_BUF_LEN: usize = 65536;
-pub const TCP_SEND_BUF_LEN: usize = 65536;
-
-// For UDP
-pub const UDP_SEND_PAYLOAD_LEN: usize = 65536;
-pub const UDP_RECV_PAYLOAD_LEN: usize = 65536;
-const UDP_METADATA_LEN: usize = 256;

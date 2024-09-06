@@ -2,10 +2,11 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use aster_bigtcp::{socket::SocketEventObserver, wire::IpEndpoint};
 use takeable::Takeable;
 
 use self::{bound::BoundDatagram, unbound::UnboundDatagram};
-use super::{common::get_ephemeral_endpoint, IpEndpoint, UNSPECIFIED_LOCAL_ENDPOINT};
+use super::{common::get_ephemeral_endpoint, UNSPECIFIED_LOCAL_ENDPOINT};
 use crate::{
     events::{IoEvents, Observer},
     fs::{file_handle::FileLike, utils::StatusFlags},
@@ -393,8 +394,8 @@ impl Socket for DatagramSocket {
     }
 }
 
-impl Observer<()> for DatagramSocket {
-    fn on_events(&self, _events: &()) {
+impl SocketEventObserver for DatagramSocket {
+    fn on_events(&self) {
         self.update_io_events();
     }
 }

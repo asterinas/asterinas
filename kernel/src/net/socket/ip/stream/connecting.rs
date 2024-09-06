@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{connected::ConnectedStream, init::InitStream, IpEndpoint};
-use crate::{
-    net::iface::{AnyBoundSocket, RawTcpSocket},
-    prelude::*,
-    process::signal::Pollee,
-};
+use aster_bigtcp::{socket::RawTcpSocket, wire::IpEndpoint};
+
+use super::{connected::ConnectedStream, init::InitStream};
+use crate::{net::iface::AnyBoundSocket, prelude::*, process::signal::Pollee};
 
 pub struct ConnectingStream {
     bound_socket: AnyBoundSocket,
@@ -29,9 +27,21 @@ impl ConnectingStream {
         bound_socket: AnyBoundSocket,
         remote_endpoint: IpEndpoint,
     ) -> core::result::Result<Self, (Error, AnyBoundSocket)> {
-        if let Err(err) = bound_socket.do_connect(remote_endpoint) {
-            return Err((err, bound_socket));
+        // The only reason this method might fail is because we're trying to connect to an
+        // unspecified address (i.e. 0.0.0.0). We currently have no support for binding to,
+        // listening on, or connecting to the unspecified address.
+        //
+        // We assume the remote will just refuse to connect, so we return `ECONNREFUSED`.
+        if bound_socket.do_connect(remote_endpoint).is_err() {
+            return Err((
+                Error::with_message(
+                    Errno::ECONNREFUSED,
+                    "connecting to an unspecified address is not supported",
+                ),
+                bound_socket,
+            ));
         }
+
         Ok(Self {
             bound_socket,
             remote_endpoint,

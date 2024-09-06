@@ -67,7 +67,7 @@ pub trait IfaceEx {
     fn poll(&self);
 }
 
-impl IfaceEx for dyn Iface<IfaceExt> {
+impl IfaceEx for Iface {
     fn name(&self) -> &str {
         &self.ext().name
     }

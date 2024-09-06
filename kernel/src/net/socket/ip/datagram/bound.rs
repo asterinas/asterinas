@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use smoltcp::socket::udp::{RecvError, SendError};
+use aster_bigtcp::{
+    errors::udp::{RecvError, SendError},
+    socket::RawUdpSocket,
+    wire::IpEndpoint,
+};
 
-use super::IpEndpoint;
 use crate::{
     events::IoEvents,
-    net::{
-        iface::{AnyBoundSocket, RawUdpSocket},
-        socket::util::send_recv_flags::SendRecvFlags,
-    },
+    net::{iface::AnyBoundSocket, socket::util::send_recv_flags::SendRecvFlags},
     prelude::*,
     process::signal::Pollee,
 };

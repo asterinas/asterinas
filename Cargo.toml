@@ -24,6 +24,7 @@ members = [
     "kernel/libs/aster-rights",
     "kernel/libs/aster-rights-proc",
     "kernel/libs/aster-util",
+    "kernel/libs/aster-bigtcp",
     "kernel/libs/keyable-arc",
     "kernel/libs/typeflags",
     "kernel/libs/typeflags-util",

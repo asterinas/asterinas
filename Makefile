@@ -126,7 +126,8 @@ OSDK_CRATES := \
 	kernel/comps/network \
 	kernel/comps/time \
 	kernel/comps/virtio \
-	kernel/libs/aster-util
+	kernel/libs/aster-util \
+	kernel/libs/aster-bigtcp
 
 .PHONY: all
 all: build

@@ -2,12 +2,12 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use aster_bigtcp::{socket::SocketEventObserver, wire::IpEndpoint};
 use connected::ConnectedStream;
 use connecting::ConnectingStream;
 use init::InitStream;
 use listen::ListenStream;
 use options::{Congestion, MaxSegment, NoDelay, WindowClamp};
-use smoltcp::wire::IpEndpoint;
 use takeable::Takeable;
 use util::{TcpOptionSet, DEFAULT_MAXSEG};
 
@@ -647,8 +647,8 @@ impl Socket for StreamSocket {
     }
 }
 
-impl Observer<()> for StreamSocket {
-    fn on_events(&self, _events: &()) {
+impl SocketEventObserver for StreamSocket {
+    fn on_events(&self) {
         let conn_ready = self.update_io_events();
 
         if conn_ready {

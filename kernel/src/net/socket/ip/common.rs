@@ -1,12 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{IpAddress, IpEndpoint};
+use aster_bigtcp::{
+    errors::BindError,
+    iface::BindPortConfig,
+    socket::AnyUnboundSocket,
+    wire::{IpAddress, IpEndpoint},
+};
+
 use crate::{
-    net::iface::{AnyBoundSocket, AnyUnboundSocket, BindPortConfig, Iface, IFACES},
+    net::iface::{AnyBoundSocket, Iface, IFACES},
     prelude::*,
 };
 
-pub fn get_iface_to_bind(ip_addr: &IpAddress) -> Option<Arc<dyn Iface>> {
+pub(super) fn get_iface_to_bind(ip_addr: &IpAddress) -> Option<Arc<Iface>> {
     let ifaces = IFACES.get().unwrap();
     let IpAddress::Ipv4(ipv4_addr) = ip_addr;
     ifaces
@@ -24,7 +30,7 @@ pub fn get_iface_to_bind(ip_addr: &IpAddress) -> Option<Arc<dyn Iface>> {
 /// Get a suitable iface to deal with sendto/connect request if the socket is not bound to an iface.
 /// If the remote address is the same as that of some iface, we will use the iface.
 /// Otherwise, we will use a default interface.
-fn get_ephemeral_iface(remote_ip_addr: &IpAddress) -> Arc<dyn Iface> {
+fn get_ephemeral_iface(remote_ip_addr: &IpAddress) -> Arc<Iface> {
     let ifaces = IFACES.get().unwrap();
     let IpAddress::Ipv4(remote_ipv4_addr) = remote_ip_addr;
     if let Some(iface) = ifaces.iter().find(|iface| {
@@ -48,18 +54,35 @@ pub(super) fn bind_socket(
     let iface = match get_iface_to_bind(&endpoint.addr) {
         Some(iface) => iface,
         None => {
-            let err = Error::with_message(Errno::EADDRNOTAVAIL, "Request iface is not available");
+            let err = Error::with_message(
+                Errno::EADDRNOTAVAIL,
+                "the address is not available from the local machine",
+            );
             return Err((err, unbound_socket));
         }
     };
-    let bind_port_config = match BindPortConfig::new(endpoint.port, can_reuse) {
-        Ok(config) => config,
-        Err(e) => return Err((e, unbound_socket)),
-    };
-    iface.bind_socket(unbound_socket, bind_port_config)
+
+    let bind_port_config = BindPortConfig::new(endpoint.port, can_reuse);
+
+    iface
+        .bind_socket(unbound_socket, bind_port_config)
+        .map_err(|(err, unbound)| (err.into(), unbound))
 }
 
-pub fn get_ephemeral_endpoint(remote_endpoint: &IpEndpoint) -> IpEndpoint {
+impl From<BindError> for Error {
+    fn from(value: BindError) -> Self {
+        match value {
+            BindError::Exhausted => {
+                Error::with_message(Errno::EAGAIN, "no ephemeral port is available")
+            }
+            BindError::InUse => {
+                Error::with_message(Errno::EADDRINUSE, "the address is already in use")
+            }
+        }
+    }
+}
+
+pub(super) fn get_ephemeral_endpoint(remote_endpoint: &IpEndpoint) -> IpEndpoint {
     let iface = get_ephemeral_iface(&remote_endpoint.addr);
     let ip_addr = iface.ipv4_addr().unwrap();
     IpEndpoint::new(IpAddress::Ipv4(ip_addr), 0)

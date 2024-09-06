@@ -2,15 +2,14 @@
 
 use alloc::sync::Weak;
 
-use super::{bound::BoundDatagram, IpEndpoint};
+use aster_bigtcp::{
+    socket::{AnyUnboundSocket, RawUdpSocket, SocketEventObserver},
+    wire::IpEndpoint,
+};
+
+use super::bound::BoundDatagram;
 use crate::{
-    events::{IoEvents, Observer},
-    net::{
-        iface::{AnyUnboundSocket, RawUdpSocket},
-        socket::ip::common::bind_socket,
-    },
-    prelude::*,
-    process::signal::Pollee,
+    events::IoEvents, net::socket::ip::common::bind_socket, prelude::*, process::signal::Pollee,
 };
 
 pub struct UnboundDatagram {
@@ -18,7 +17,7 @@ pub struct UnboundDatagram {
 }
 
 impl UnboundDatagram {
-    pub fn new(observer: Weak<dyn Observer<()>>) -> Self {
+    pub fn new(observer: Weak<dyn SocketEventObserver>) -> Self {
         Self {
             unbound_socket: Box::new(AnyUnboundSocket::new_udp(observer)),
         }

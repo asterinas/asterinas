@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use smoltcp::iface::Config;
-pub use smoltcp::wire::{IpAddress, IpCidr, Ipv4Address};
+use alloc::sync::Arc;
 
-use super::{common::IfaceCommon, device::WithDevice, internal::IfaceInternal, Iface};
-use crate::{net::iface::time::get_network_timestamp, prelude::*};
+use smoltcp::{iface::Config, wire::IpCidr};
+
+use crate::{
+    device::WithDevice,
+    iface::{
+        common::IfaceCommon, iface::internal::IfaceInternal, time::get_network_timestamp, Iface,
+    },
+};
 
 pub struct IpIface<D: WithDevice, E> {
     driver: D,
