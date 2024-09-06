@@ -73,4 +73,4 @@ See [The Asterinas Book](https://asterinas.github.io/book/) to learn more about 
 Asterinas's source code and documentation primarily use the 
 [Mozilla Public License (MPL), Version 2.0](https://github.com/asterinas/asterinas/blob/main/LICENSE-MPL).
 Select components are under more permissive licenses,
-detailed [here](https://github.com/asterinas/asterinas/blob/main/.licenserc.yaml). For the rationles behind the choice of MPL, see [here](https://asterinas.github.io/book/index.html#licensing).
+detailed [here](https://github.com/asterinas/asterinas/blob/main/.licenserc.yaml). For the rationales behind the choice of MPL, see [here](https://asterinas.github.io/book/index.html#licensing).
