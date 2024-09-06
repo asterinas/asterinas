@@ -106,9 +106,11 @@ fn do_epoll_wait(
         None
     };
 
-    let file_table = ctx.process.file_table().lock();
-    let epoll_file = file_table
-        .get_file(epfd)?
+    let epoll_file_arc = {
+        let file_table = ctx.process.file_table().lock();
+        file_table.get_file(epfd)?.clone()
+    };
+    let epoll_file = epoll_file_arc
         .downcast_ref::<EpollFile>()
         .ok_or(Error::with_message(Errno::EINVAL, "not epoll file"))?;
     let result = epoll_file.wait(max_events, timeout.as_ref());
