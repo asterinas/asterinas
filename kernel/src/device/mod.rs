@@ -7,6 +7,7 @@ mod pty;
 mod random;
 pub mod tty;
 mod urandom;
+mod virtio_blk;
 mod zero;
 
 cfg_if! {
@@ -22,6 +23,7 @@ cfg_if! {
 pub use pty::{new_pty_pair, PtyMaster, PtySlave};
 pub use random::Random;
 pub use urandom::Urandom;
+pub use virtio_blk::start_block_device;
 
 use self::tty::get_n_tty;
 use crate::{
@@ -55,6 +57,16 @@ pub fn init() -> Result<()> {
     add_node(urandom, "urandom")?;
     pty::init()?;
     Ok(())
+}
+
+/// Lazily init the virtio-blk device node.
+pub fn lazy_init() {
+    // The device name is specified in qemu args as `--serial={device_name}`
+    const VIRTIO_BLK_DEVICE_NAME: &str = "vda";
+    let _ = start_block_device(VIRTIO_BLK_DEVICE_NAME).unwrap();
+
+    let virtio_blk = Arc::new(virtio_blk::VirtioBlk::get_device(VIRTIO_BLK_DEVICE_NAME));
+    let _ = add_node(virtio_blk, VIRTIO_BLK_DEVICE_NAME).unwrap();
 }
 
 // TODO: Implement a more scalable solution for ID-to-device mapping.

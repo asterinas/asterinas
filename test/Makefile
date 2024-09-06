@@ -12,6 +12,7 @@ INITRAMFS_FILELIST := $(BUILD_DIR)/initramfs.filelist
 INITRAMFS_IMAGE := $(BUILD_DIR)/initramfs.cpio.gz
 EXT2_IMAGE := $(BUILD_DIR)/ext2.img
 EXFAT_IMAGE := $(BUILD_DIR)/exfat.img
+VDA_IMAGE := $(BUILD_DIR)/vda.img
 INITRAMFS_EMPTY_DIRS := \
 	$(INITRAMFS)/root \
 	$(INITRAMFS)/tmp \
@@ -153,8 +154,11 @@ $(EXFAT_IMAGE):
 	@fallocate -l 64M $(EXFAT_IMAGE)
 	@mkfs.exfat $(EXFAT_IMAGE)
 
+$(VDA_IMAGE):
+	@dd if=/dev/zero of=$(VDA_IMAGE) bs=1G count=1
+
 .PHONY: build
-build: $(INITRAMFS_IMAGE) $(EXT2_IMAGE) $(EXFAT_IMAGE)
+build: $(INITRAMFS_IMAGE) $(EXT2_IMAGE) $(EXFAT_IMAGE) $(VDA_IMAGE)
 
 .PHONY: format
 format:

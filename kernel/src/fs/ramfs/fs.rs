@@ -552,7 +552,7 @@ impl Inode for RamInode {
             }
             // TODO: Optimize the lock control (use `read()` rather `upread()`) on device
             Inner::Device(device) => {
-                device.read(writer)?
+                device.read_at(offset, writer)?
                 // Typically, devices like "/dev/zero" or "/dev/null" do not require modifying
                 // timestamps here. Please adjust this behavior accordingly if there are special devices.
             }
@@ -591,7 +591,7 @@ impl Inode for RamInode {
             }
             // TODO: Optimize the lock control (use `read()` rather `upread()`) on device
             Inner::Device(device) => {
-                device.write(reader)?
+                device.write_at(offset, reader)?
                 // Typically, devices like "/dev/zero" or "/dev/null" do not require modifying
                 // timestamps here. Please adjust this behavior accordingly if there are special devices.
             }

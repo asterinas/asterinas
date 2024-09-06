@@ -37,4 +37,10 @@ pub enum IoctlCmd {
     TIOCGPTPEER = 0x40045441,
     /// Get tdx report using TDCALL
     TDXGETREPORT = 0xc4405401,
+    /// Get block size
+    BLKBSZGET = 0x80081270,
+    /// Set block size
+    BLKBSZSET = 0x40081271,
+    /// Get block device size in bytes
+    BLKGETSIZE64 = 0x80081272,
 }
