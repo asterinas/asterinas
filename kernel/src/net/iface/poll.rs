@@ -1,53 +1,35 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::sync::Arc;
 use core::time::Duration;
 
+use log::trace;
 use ostd::{arch::timer::Jiffies, task::Priority};
 
-use super::{ext::IfaceEx, Iface};
+use super::{ext::IfaceEx, Iface, IFACES};
 use crate::{
-    prelude::*,
     thread::{
         kernel_thread::{KernelThreadExt, ThreadOptions},
         Thread,
     },
+    WaitTimeout,
 };
 
-pub enum BindPortConfig {
-    CanReuse(u16),
-    Specified(u16),
-    Ephemeral,
-}
-
-impl BindPortConfig {
-    pub fn new(port: u16, can_reuse: bool) -> Result<Self> {
-        let config = if port != 0 {
-            if can_reuse {
-                Self::CanReuse(port)
-            } else {
-                Self::Specified(port)
-            }
-        } else if can_reuse {
-            return_errno_with_message!(Errno::EINVAL, "invalid bind port config");
-        } else {
-            Self::Ephemeral
-        };
-        Ok(config)
-    }
-
-    pub(super) fn can_reuse(&self) -> bool {
-        matches!(self, Self::CanReuse(_))
-    }
-
-    pub(super) fn port(&self) -> Option<u16> {
-        match self {
-            Self::CanReuse(port) | Self::Specified(port) => Some(*port),
-            Self::Ephemeral => None,
-        }
+pub fn lazy_init() {
+    for iface in IFACES.get().unwrap() {
+        spawn_background_poll_thread(iface.clone());
     }
 }
 
-pub fn spawn_background_poll_thread(iface: Arc<dyn Iface>) {
+pub fn poll_ifaces() {
+    let ifaces = IFACES.get().unwrap();
+
+    for iface in ifaces.iter() {
+        iface.poll();
+    }
+}
+
+fn spawn_background_poll_thread(iface: Arc<Iface>) {
     let task_fn = move || {
         trace!("spawn background poll thread for {}", iface.name());
 

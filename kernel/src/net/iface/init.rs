@@ -2,19 +2,17 @@
 
 use alloc::{borrow::ToOwned, sync::Arc};
 
+use aster_bigtcp::device::WithDevice;
 use ostd::sync::PreemptDisabled;
 use spin::Once;
 
-use super::{spawn_background_poll_thread, Iface};
+use super::{poll_ifaces, Iface};
 use crate::{
-    net::iface::{
-        device::WithDevice,
-        ext::{IfaceEx, IfaceExt},
-    },
+    net::iface::ext::{IfaceEx, IfaceExt},
     prelude::*,
 };
 
-pub static IFACES: Once<Vec<Arc<dyn Iface>>> = Once::new();
+pub static IFACES: Once<Vec<Arc<Iface>>> = Once::new();
 
 pub fn init() {
     IFACES.call_once(|| {
@@ -34,11 +32,10 @@ pub fn init() {
     poll_ifaces();
 }
 
-fn new_virtio() -> Arc<dyn Iface> {
+fn new_virtio() -> Arc<Iface> {
+    use aster_bigtcp::{iface::EtherIface, wire::EthernetAddress};
     use aster_network::AnyNetworkDevice;
     use aster_virtio::device::network::DEVICE_NAME;
-
-    use super::ether::{EtherIface, EthernetAddress};
 
     let virtio_net = aster_network::get_device(DEVICE_NAME).unwrap();
 
@@ -65,10 +62,12 @@ fn new_virtio() -> Arc<dyn Iface> {
     )
 }
 
-fn new_loopback() -> Arc<dyn Iface> {
-    use smoltcp::phy::{Loopback, Medium};
-
-    use super::ip::{IpAddress, IpCidr, IpIface, Ipv4Address};
+fn new_loopback() -> Arc<Iface> {
+    use aster_bigtcp::{
+        device::{Loopback, Medium},
+        iface::IpIface,
+        wire::{IpAddress, IpCidr, Ipv4Address},
+    };
 
     const LOOPBACK_ADDRESS: IpAddress = {
         let ipv4_addr = Ipv4Address::new(127, 0, 0, 1);
@@ -95,18 +94,4 @@ fn new_loopback() -> Arc<dyn Iface> {
         IpCidr::new(LOOPBACK_ADDRESS, LOOPBACK_ADDRESS_PREFIX_LEN),
         IfaceExt::new("lo".to_owned()),
     ) as _
-}
-
-pub fn lazy_init() {
-    for iface in IFACES.get().unwrap() {
-        spawn_background_poll_thread(iface.clone());
-    }
-}
-
-pub fn poll_ifaces() {
-    let ifaces = IFACES.get().unwrap();
-
-    for iface in ifaces.iter() {
-        iface.poll();
-    }
 }

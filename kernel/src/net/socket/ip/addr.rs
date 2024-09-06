@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-pub use smoltcp::wire::{IpAddress, IpEndpoint, Ipv4Address};
+use aster_bigtcp::wire::{IpAddress, IpEndpoint, Ipv4Address};
 
 use crate::{net::socket::SocketAddr, prelude::*, return_errno_with_message};
-
-pub type PortNum = u16;
 
 impl TryFrom<SocketAddr> for IpEndpoint {
     type Error = Error;
@@ -29,3 +27,11 @@ impl From<IpEndpoint> for SocketAddr {
         }
     }
 }
+
+/// A local endpoint, which indicates that the local endpoint is unspecified.
+///
+/// According to the Linux man pages and the Linux implementation, `getsockname()` will _not_ fail
+/// even if the socket is unbound. Instead, it will return an unspecified socket address. This
+/// unspecified endpoint helps with that.
+pub(super) const UNSPECIFIED_LOCAL_ENDPOINT: IpEndpoint =
+    IpEndpoint::new(IpAddress::Ipv4(Ipv4Address::UNSPECIFIED), 0);

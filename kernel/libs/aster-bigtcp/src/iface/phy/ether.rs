@@ -1,17 +1,20 @@
 // SPDX-License-Identifier: MPL-2.0
 
-pub use smoltcp::wire::EthernetAddress;
+use alloc::sync::Arc;
+
+use ostd::prelude::*;
 use smoltcp::{
     iface::{Config, SocketHandle, SocketSet},
     socket::dhcpv4,
-    wire::{self, IpCidr},
+    wire::{self, EthernetAddress, IpCidr},
 };
 
-use super::{
-    common::IfaceCommon, device::WithDevice, internal::IfaceInternal, time::get_network_timestamp,
-    Iface,
+use crate::{
+    device::WithDevice,
+    iface::{
+        common::IfaceCommon, iface::internal::IfaceInternal, time::get_network_timestamp, Iface,
+    },
 };
-use crate::prelude::*;
 
 pub struct EtherIface<D: WithDevice, E> {
     driver: D,
@@ -51,18 +54,15 @@ impl<D: WithDevice, E> EtherIface<D, E> {
     pub fn process_dhcp(&self) {
         let mut socket_set = self.common.sockets();
         let dhcp_socket: &mut dhcpv4::Socket = socket_set.get_mut(self.dhcp_handle);
-        let config = if let Some(event) = dhcp_socket.poll() {
-            debug!("event = {:?}", event);
-            if let dhcpv4::Event::Configured(config) = event {
-                config
-            } else {
-                return;
-            }
-        } else {
+
+        let Some(dhcpv4::Event::Configured(config)) = dhcp_socket.poll() else {
             return;
         };
         let ip_addr = IpCidr::Ipv4(config.address);
+
         let mut interface = self.common.interface();
+
+        println!("[DHCP] Local IP address: {:?}", ip_addr,);
         interface.update_ip_addrs(|ipaddrs| {
             if let Some(addr) = ipaddrs.iter_mut().next() {
                 // already has ipaddrs
@@ -72,12 +72,9 @@ impl<D: WithDevice, E> EtherIface<D, E> {
                 ipaddrs.push(ip_addr).unwrap();
             }
         });
-        println!(
-            "DHCP update IP address: {:?}",
-            interface.ipv4_addr().unwrap()
-        );
+
         if let Some(router) = config.router {
-            println!("Default router address: {:?}", router);
+            println!("[DHCP] Router IP address: {:?}", router);
             interface
                 .routes_mut()
                 .add_default_ipv4_route(router)

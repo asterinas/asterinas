@@ -2,13 +2,16 @@
 
 use alloc::sync::Weak;
 
-use smoltcp::socket::tcp::{RecvError, SendError};
+use aster_bigtcp::{
+    errors::tcp::{RecvError, SendError},
+    socket::{RawTcpSocket, SocketEventObserver},
+    wire::IpEndpoint,
+};
 
-use super::IpEndpoint;
 use crate::{
-    events::{IoEvents, Observer},
+    events::IoEvents,
     net::{
-        iface::{AnyBoundSocket, RawTcpSocket},
+        iface::AnyBoundSocket,
         socket::util::{send_recv_flags::SendRecvFlags, shutdown_cmd::SockShutdownCmd},
     },
     prelude::*,
@@ -122,7 +125,7 @@ impl ConnectedStream {
         });
     }
 
-    pub(super) fn set_observer(&self, observer: Weak<dyn Observer<()>>) {
+    pub(super) fn set_observer(&self, observer: Weak<dyn SocketEventObserver>) {
         self.bound_socket.set_observer(observer)
     }
 }

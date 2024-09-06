@@ -2,11 +2,16 @@
 
 use alloc::sync::Weak;
 
-use super::{connecting::ConnectingStream, listen::ListenStream, IpEndpoint};
+use aster_bigtcp::{
+    socket::{AnyUnboundSocket, SocketEventObserver},
+    wire::IpEndpoint,
+};
+
+use super::{connecting::ConnectingStream, listen::ListenStream};
 use crate::{
-    events::{IoEvents, Observer},
+    events::IoEvents,
     net::{
-        iface::{AnyBoundSocket, AnyUnboundSocket},
+        iface::AnyBoundSocket,
         socket::ip::common::{bind_socket, get_ephemeral_endpoint},
     },
     prelude::*,
@@ -19,7 +24,7 @@ pub enum InitStream {
 }
 
 impl InitStream {
-    pub fn new(observer: Weak<dyn Observer<()>>) -> Self {
+    pub fn new(observer: Weak<dyn SocketEventObserver>) -> Self {
         InitStream::Unbound(Box::new(AnyUnboundSocket::new_tcp(observer)))
     }
 

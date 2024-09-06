@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use smoltcp::socket::tcp::ListenError;
-
-use super::{connected::ConnectedStream, IpEndpoint};
-use crate::{
-    events::IoEvents,
-    net::iface::{AnyBoundSocket, AnyUnboundSocket, BindPortConfig, RawTcpSocket},
-    prelude::*,
-    process::signal::Pollee,
+use aster_bigtcp::{
+    errors::tcp::ListenError,
+    iface::BindPortConfig,
+    socket::{AnyUnboundSocket, RawTcpSocket},
+    wire::IpEndpoint,
 };
+
+use super::connected::ConnectedStream;
+use crate::{events::IoEvents, net::iface::AnyBoundSocket, prelude::*, process::signal::Pollee};
 
 pub struct ListenStream {
     backlog: usize,
@@ -117,7 +117,7 @@ impl BacklogSocket {
         let unbound_socket = Box::new(AnyUnboundSocket::new_tcp(Weak::<()>::new()));
         let bound_socket = {
             let iface = bound_socket.iface();
-            let bind_port_config = BindPortConfig::new(local_endpoint.port, true)?;
+            let bind_port_config = BindPortConfig::new(local_endpoint.port, true);
             iface
                 .bind_socket(unbound_socket, bind_port_config)
                 .map_err(|(err, _)| err)?

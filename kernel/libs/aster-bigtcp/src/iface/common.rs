@@ -1,24 +1,30 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::collections::btree_map::Entry;
+use alloc::{
+    boxed::Box,
+    collections::{
+        btree_map::{BTreeMap, Entry},
+        btree_set::BTreeSet,
+    },
+    sync::Arc,
+    vec::Vec,
+};
 
 use keyable_arc::KeyableArc;
-use ostd::sync::LocalIrqDisabled;
+use ostd::sync::{LocalIrqDisabled, RwLock, SpinLock, SpinLockGuard};
 use smoltcp::{
     iface::{SocketHandle, SocketSet},
     phy::Device,
+    wire::Ipv4Address,
 };
 
-use super::{
-    any_socket::{AnyBoundSocketInner, AnyRawSocket, AnyUnboundSocket, SocketFamily},
-    ext::IfaceExt,
-    time::get_network_timestamp,
-    util::BindPortConfig,
-    AnyBoundSocket, Iface,
+use super::{port::BindPortConfig, time::get_network_timestamp, Iface};
+use crate::{
+    errors::BindError,
+    socket::{AnyBoundSocket, AnyBoundSocketInner, AnyRawSocket, AnyUnboundSocket, SocketFamily},
 };
-use crate::{net::socket::ip::Ipv4Address, prelude::*};
 
-pub struct IfaceCommon<E = IfaceExt> {
+pub struct IfaceCommon<E> {
     interface: SpinLock<smoltcp::iface::Interface>,
     sockets: SpinLock<SocketSet<'static>>,
     used_ports: RwLock<BTreeMap<u16, usize>>,
@@ -44,14 +50,14 @@ impl<E> IfaceCommon<E> {
     /// Acquires the lock to the interface.
     ///
     /// *Lock ordering:* [`Self::sockets`] first, [`Self::interface`] second.
-    pub(super) fn interface(&self) -> SpinLockGuard<smoltcp::iface::Interface, LocalIrqDisabled> {
+    pub(crate) fn interface(&self) -> SpinLockGuard<smoltcp::iface::Interface, LocalIrqDisabled> {
         self.interface.disable_irq().lock()
     }
 
     /// Acuqires the lock to the sockets.
     ///
     /// *Lock ordering:* [`Self::sockets`] first, [`Self::interface`] second.
-    pub(super) fn sockets(
+    pub(crate) fn sockets(
         &self,
     ) -> SpinLockGuard<smoltcp::iface::SocketSet<'static>, LocalIrqDisabled> {
         self.sockets.disable_irq().lock()
@@ -62,34 +68,35 @@ impl<E> IfaceCommon<E> {
     }
 
     /// Alloc an unused port range from 49152 ~ 65535 (According to smoltcp docs)
-    fn alloc_ephemeral_port(&self) -> Result<u16> {
+    fn alloc_ephemeral_port(&self) -> Option<u16> {
         let mut used_ports = self.used_ports.write();
         for port in IP_LOCAL_PORT_START..=IP_LOCAL_PORT_END {
             if let Entry::Vacant(e) = used_ports.entry(port) {
                 e.insert(0);
-                return Ok(port);
+                return Some(port);
             }
         }
-        return_errno_with_message!(Errno::EAGAIN, "no ephemeral port is available");
+        None
     }
 
-    fn bind_port(&self, port: u16, can_reuse: bool) -> Result<()> {
+    #[must_use]
+    fn bind_port(&self, port: u16, can_reuse: bool) -> bool {
         let mut used_ports = self.used_ports.write();
         if let Some(used_times) = used_ports.get_mut(&port) {
             if *used_times == 0 || can_reuse {
                 // FIXME: Check if the previous socket was bound with SO_REUSEADDR.
                 *used_times += 1;
             } else {
-                return_errno_with_message!(Errno::EADDRINUSE, "the address is already in use");
+                return false;
             }
         } else {
             used_ports.insert(port, 1);
         }
-        Ok(())
+        true
     }
 
     /// Release port number so the port can be used again. For reused port, the port may still be in use.
-    pub(super) fn release_port(&self, port: u16) {
+    pub(crate) fn release_port(&self, port: u16) {
         let mut used_ports = self.used_ports.write();
         if let Some(used_times) = used_ports.remove(&port) {
             if used_times != 1 {
@@ -103,17 +110,17 @@ impl<E> IfaceCommon<E> {
         iface: Arc<dyn Iface<E>>,
         socket: Box<AnyUnboundSocket>,
         config: BindPortConfig,
-    ) -> core::result::Result<AnyBoundSocket<E>, (Error, Box<AnyUnboundSocket>)> {
+    ) -> core::result::Result<AnyBoundSocket<E>, (BindError, Box<AnyUnboundSocket>)> {
         let port = if let Some(port) = config.port() {
             port
         } else {
             match self.alloc_ephemeral_port() {
-                Ok(port) => port,
-                Err(err) => return Err((err, socket)),
+                Some(port) => port,
+                None => return Err((BindError::Exhausted, socket)),
             }
         };
-        if let Some(err) = self.bind_port(port, config.can_reuse()).err() {
-            return Err((err, socket));
+        if !self.bind_port(port, config.can_reuse()) {
+            return Err((BindError::InUse, socket));
         }
 
         let (handle, socket_family, observer) = match socket.into_raw() {
@@ -135,7 +142,7 @@ impl<E> IfaceCommon<E> {
     }
 
     /// Remove a socket from the interface
-    pub(super) fn remove_socket(&self, handle: SocketHandle) {
+    pub(crate) fn remove_socket(&self, handle: SocketHandle) {
         self.sockets.disable_irq().lock().remove(handle);
     }
 
@@ -209,7 +216,7 @@ impl<E> IfaceCommon<E> {
         assert!(inserted);
     }
 
-    pub(super) fn remove_bound_socket_now(&self, socket: &Arc<AnyBoundSocketInner<E>>) {
+    pub(crate) fn remove_bound_socket_now(&self, socket: &Arc<AnyBoundSocketInner<E>>) {
         let keyable_socket = KeyableArc::from(socket.clone());
 
         let removed = self
@@ -219,7 +226,7 @@ impl<E> IfaceCommon<E> {
         assert!(removed);
     }
 
-    pub(super) fn remove_bound_socket_when_closed(&self, socket: &Arc<AnyBoundSocketInner<E>>) {
+    pub(crate) fn remove_bound_socket_when_closed(&self, socket: &Arc<AnyBoundSocketInner<E>>) {
         let keyable_socket = KeyableArc::from(socket.clone());
 
         let removed = self

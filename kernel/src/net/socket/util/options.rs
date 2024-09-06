@@ -2,13 +2,14 @@
 
 use core::time::Duration;
 
+use aster_bigtcp::socket::{
+    TCP_RECV_BUF_LEN, TCP_SEND_BUF_LEN, UDP_RECV_PAYLOAD_LEN, UDP_SEND_PAYLOAD_LEN,
+};
+
 use crate::{
     match_sock_option_mut, match_sock_option_ref,
-    net::{
-        iface::{TCP_RECV_BUF_LEN, TCP_SEND_BUF_LEN, UDP_RECV_PAYLOAD_LEN, UDP_SEND_PAYLOAD_LEN},
-        socket::options::{
-            Error as SocketError, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf, SocketOption,
-        },
+    net::socket::options::{
+        Error as SocketError, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf, SocketOption,
     },
     prelude::*,
 };
