@@ -82,10 +82,6 @@ impl ClockSource {
         }
     }
 
-    fn cycles_to_nanos(&self, cycles: u64) -> u64 {
-        self.coeff * cycles
-    }
-
     /// Uses the instant cycles to calculate the instant.
     ///
     /// It first calculates the difference between the instant cycles and the last
@@ -102,10 +98,25 @@ impl ClockSource {
 
         let delta_nanos = {
             let delta_cycles = instant_cycles - last_cycles;
-            self.cycles_to_nanos(delta_cycles)
+            self.cycles_to_nanos_lossy(delta_cycles)
         };
         let duration = Duration::from_nanos(delta_nanos);
         (last_instant + duration, instant_cycles)
+    }
+
+    fn cycles_to_nanos_lossy(&self, cycles: u64) -> u64 {
+        let max_cycles = self.base.max_delay_secs * self.base.freq;
+        if cycles <= max_cycles {
+            self.coeff * cycles
+        } else {
+            log::warn!(
+                "The clock source becomes not reliable since an \
+                interval of {} cycles exceeds the maximum delay {}(s)",
+                cycles,
+                max_cycles
+            );
+            self.coeff * max_cycles
+        }
     }
 
     /// Uses an input instant and cycles to update the `last_record` in the `ClockSource`.
