@@ -377,7 +377,7 @@ impl<T: ?Sized, R: Deref<Target = RwMutex<T>>> Deref for RwMutexUpgradeableGuard
 impl<T: ?Sized, R: Deref<Target = RwMutex<T>>> Drop for RwMutexUpgradeableGuard_<T, R> {
     fn drop(&mut self) {
         let res = self.inner.lock.fetch_sub(UPGRADEABLE_READER, Release);
-        if res == 0 {
+        if res == UPGRADEABLE_READER {
             self.inner.queue.wake_all();
         }
     }
