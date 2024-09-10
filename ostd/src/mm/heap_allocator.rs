@@ -11,13 +11,12 @@ use super::paddr_to_vaddr;
 use crate::{
     mm::{page::allocator::PAGE_ALLOCATOR, PAGE_SIZE},
     prelude::*,
-    sync::SpinLock,
-    trap::disable_local,
+    sync::{LocalIrqDisabled, SpinLock, SpinLockGuard},
     Error,
 };
 
 #[global_allocator]
-static HEAP_ALLOCATOR: LockedHeapWithRescue = LockedHeapWithRescue::new(rescue);
+static HEAP_ALLOCATOR: LockedHeapWithRescue = LockedHeapWithRescue::new();
 
 #[alloc_error_handler]
 pub fn handle_alloc_error(layout: core::alloc::Layout) -> ! {
@@ -40,16 +39,12 @@ pub fn init() {
 
 struct LockedHeapWithRescue {
     heap: Once<SpinLock<Heap>>,
-    rescue: fn(&Self, &Layout) -> Result<()>,
 }
 
 impl LockedHeapWithRescue {
     /// Creates an new heap
-    pub const fn new(rescue: fn(&Self, &Layout) -> Result<()>) -> Self {
-        Self {
-            heap: Once::new(),
-            rescue,
-        }
+    pub const fn new() -> Self {
+        Self { heap: Once::new() }
     }
 
     /// SAFETY: The range [start, start + size) must be a valid memory region.
@@ -57,41 +52,25 @@ impl LockedHeapWithRescue {
         self.heap
             .call_once(|| SpinLock::new(Heap::new(start as usize, size)));
     }
-
-    /// SAFETY: The range [start, start + size) must be a valid memory region.
-    unsafe fn add_to_heap(&self, start: usize, size: usize) {
-        self.heap
-            .get()
-            .unwrap()
-            .disable_irq()
-            .lock()
-            .add_memory(start, size);
-    }
 }
 
 unsafe impl GlobalAlloc for LockedHeapWithRescue {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let _guard = disable_local();
+        let mut heap = self.heap.get().unwrap().disable_irq().lock();
 
-        if let Ok(allocation) = self.heap.get().unwrap().lock().allocate(layout) {
+        if let Ok(allocation) = heap.allocate(layout) {
             return allocation as *mut u8;
         }
 
         // Avoid locking self.heap when calling rescue.
-        if (self.rescue)(self, &layout).is_err() {
+        if rescue(&mut heap, &layout).is_err() {
             return core::ptr::null_mut::<u8>();
         }
 
-        let res = self
-            .heap
-            .get()
-            .unwrap()
-            .lock()
-            .allocate(layout)
+        heap.allocate(layout)
             .map_or(core::ptr::null_mut::<u8>(), |allocation| {
                 allocation as *mut u8
-            });
-        res
+            })
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
@@ -105,7 +84,7 @@ unsafe impl GlobalAlloc for LockedHeapWithRescue {
     }
 }
 
-fn rescue(heap: &LockedHeapWithRescue, layout: &Layout) -> Result<()> {
+fn rescue(heap: &mut SpinLockGuard<Heap, LocalIrqDisabled>, layout: &Layout) -> Result<()> {
     const MIN_NUM_FRAMES: usize = 0x4000000 / PAGE_SIZE; // 64MB
 
     debug!("enlarge heap, layout = {:?}", layout);
@@ -142,7 +121,7 @@ fn rescue(heap: &LockedHeapWithRescue, layout: &Layout) -> Result<()> {
             vaddr,
             PAGE_SIZE * num_frames
         );
-        heap.add_to_heap(vaddr, PAGE_SIZE * num_frames);
+        heap.add_memory(vaddr, PAGE_SIZE * num_frames);
     }
 
     Ok(())
