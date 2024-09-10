@@ -3,6 +3,7 @@
 #![allow(unused_variables)]
 
 pub mod dmar;
+pub mod multiprocessor_wakeup;
 pub mod remapping;
 
 use alloc::borrow::ToOwned;
