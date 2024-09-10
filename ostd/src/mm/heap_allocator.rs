@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::{
-    alloc::{GlobalAlloc, Layout},
-    ptr::NonNull,
-};
+use core::alloc::{GlobalAlloc, Layout};
 
 use align_ext::AlignExt;
-use buddy_system_allocator::Heap;
 use log::debug;
+use slab_allocator::Heap;
+use spin::Once;
 
 use super::paddr_to_vaddr;
 use crate::{
@@ -19,7 +17,7 @@ use crate::{
 };
 
 #[global_allocator]
-static HEAP_ALLOCATOR: LockedHeapWithRescue<32> = LockedHeapWithRescue::new(rescue);
+static HEAP_ALLOCATOR: LockedHeapWithRescue = LockedHeapWithRescue::new(rescue);
 
 #[alloc_error_handler]
 pub fn handle_alloc_error(layout: core::alloc::Layout) -> ! {
@@ -28,49 +26,55 @@ pub fn handle_alloc_error(layout: core::alloc::Layout) -> ! {
 
 const INIT_KERNEL_HEAP_SIZE: usize = PAGE_SIZE * 256;
 
-static mut HEAP_SPACE: [u8; INIT_KERNEL_HEAP_SIZE] = [0; INIT_KERNEL_HEAP_SIZE];
+#[repr(align(4096))]
+struct InitHeapSpace([u8; INIT_KERNEL_HEAP_SIZE]);
+
+static mut HEAP_SPACE: InitHeapSpace = InitHeapSpace([0; INIT_KERNEL_HEAP_SIZE]);
 
 pub fn init() {
     // SAFETY: The HEAP_SPACE is a static memory range, so it's always valid.
     unsafe {
-        HEAP_ALLOCATOR.init(HEAP_SPACE.as_ptr(), INIT_KERNEL_HEAP_SIZE);
+        HEAP_ALLOCATOR.init(HEAP_SPACE.0.as_ptr(), INIT_KERNEL_HEAP_SIZE);
     }
 }
 
-struct LockedHeapWithRescue<const ORDER: usize> {
-    heap: SpinLock<Heap<ORDER>>,
+struct LockedHeapWithRescue {
+    heap: Once<SpinLock<Heap>>,
     rescue: fn(&Self, &Layout) -> Result<()>,
 }
 
-impl<const ORDER: usize> LockedHeapWithRescue<ORDER> {
+impl LockedHeapWithRescue {
     /// Creates an new heap
     pub const fn new(rescue: fn(&Self, &Layout) -> Result<()>) -> Self {
         Self {
-            heap: SpinLock::new(Heap::<ORDER>::new()),
+            heap: Once::new(),
             rescue,
         }
     }
 
     /// SAFETY: The range [start, start + size) must be a valid memory region.
     pub unsafe fn init(&self, start: *const u8, size: usize) {
-        self.heap.disable_irq().lock().init(start as usize, size);
+        self.heap
+            .call_once(|| SpinLock::new(Heap::new(start as usize, size)));
     }
 
     /// SAFETY: The range [start, start + size) must be a valid memory region.
     unsafe fn add_to_heap(&self, start: usize, size: usize) {
         self.heap
+            .get()
+            .unwrap()
             .disable_irq()
             .lock()
-            .add_to_heap(start, start + size)
+            .add_memory(start, size);
     }
 }
 
-unsafe impl<const ORDER: usize> GlobalAlloc for LockedHeapWithRescue<ORDER> {
+unsafe impl GlobalAlloc for LockedHeapWithRescue {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let _guard = disable_local();
 
-        if let Ok(allocation) = self.heap.lock().alloc(layout) {
-            return allocation.as_ptr();
+        if let Ok(allocation) = self.heap.get().unwrap().lock().allocate(layout) {
+            return allocation as *mut u8;
         }
 
         // Avoid locking self.heap when calling rescue.
@@ -80,10 +84,12 @@ unsafe impl<const ORDER: usize> GlobalAlloc for LockedHeapWithRescue<ORDER> {
 
         let res = self
             .heap
+            .get()
+            .unwrap()
             .lock()
-            .alloc(layout)
+            .allocate(layout)
             .map_or(core::ptr::null_mut::<u8>(), |allocation| {
-                allocation.as_ptr()
+                allocation as *mut u8
             });
         res
     }
@@ -91,13 +97,15 @@ unsafe impl<const ORDER: usize> GlobalAlloc for LockedHeapWithRescue<ORDER> {
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
         debug_assert!(ptr as usize != 0);
         self.heap
+            .get()
+            .unwrap()
             .disable_irq()
             .lock()
-            .dealloc(NonNull::new_unchecked(ptr), layout)
+            .deallocate(ptr as usize, layout)
     }
 }
 
-fn rescue<const ORDER: usize>(heap: &LockedHeapWithRescue<ORDER>, layout: &Layout) -> Result<()> {
+fn rescue(heap: &LockedHeapWithRescue, layout: &Layout) -> Result<()> {
     const MIN_NUM_FRAMES: usize = 0x4000000 / PAGE_SIZE; // 64MB
 
     debug!("enlarge heap, layout = {:?}", layout);
