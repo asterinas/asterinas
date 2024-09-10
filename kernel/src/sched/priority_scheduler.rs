@@ -53,7 +53,9 @@ impl<T: PreemptSchedInfo> PreemptScheduler<T> {
             let rq = self.rq[candidate].lock();
             // A wild guess measuring the load of a runqueue. We assume that
             // real-time tasks are 4-times as important as normal tasks.
-            let load = rq.real_time_entities.len() * 4 + rq.normal_entities.len();
+            let load = rq.real_time_entities.len() * 8
+                + rq.normal_entities.len() * 2
+                + rq.lowest_entities.len();
             if load < minimum_load {
                 selected = candidate as u32;
                 minimum_load = load;
@@ -85,6 +87,8 @@ impl<T: Sync + Send + PreemptSchedInfo> Scheduler<T> for PreemptScheduler<T> {
         let entity = PreemptSchedEntity::new(runnable);
         if entity.is_real_time() {
             rq.real_time_entities.push_back(entity);
+        } else if entity.is_lowest() {
+            rq.lowest_entities.push_back(entity);
         } else {
             rq.normal_entities.push_back(entity);
         }
@@ -116,6 +120,7 @@ struct PreemptRunQueue<T: PreemptSchedInfo> {
     current: Option<PreemptSchedEntity<T>>,
     real_time_entities: VecDeque<PreemptSchedEntity<T>>,
     normal_entities: VecDeque<PreemptSchedEntity<T>>,
+    lowest_entities: VecDeque<PreemptSchedEntity<T>>,
 }
 
 impl<T: PreemptSchedInfo> PreemptRunQueue<T> {
@@ -124,6 +129,7 @@ impl<T: PreemptSchedInfo> PreemptRunQueue<T> {
             current: None,
             real_time_entities: VecDeque::new(),
             normal_entities: VecDeque::new(),
+            lowest_entities: VecDeque::new(),
         }
     }
 }
@@ -149,12 +155,16 @@ impl<T: Sync + Send + PreemptSchedInfo> LocalRunQueue<T> for PreemptRunQueue<T> 
     fn pick_next_current(&mut self) -> Option<&Arc<T>> {
         let next_entity = if !self.real_time_entities.is_empty() {
             self.real_time_entities.pop_front()
-        } else {
+        } else if !self.normal_entities.is_empty() {
             self.normal_entities.pop_front()
+        } else {
+            self.lowest_entities.pop_front()
         }?;
         if let Some(prev_entity) = self.current.replace(next_entity) {
             if prev_entity.is_real_time() {
                 self.real_time_entities.push_back(prev_entity);
+            } else if prev_entity.is_lowest() {
+                self.lowest_entities.push_back(prev_entity);
             } else {
                 self.normal_entities.push_back(prev_entity);
             }
@@ -188,6 +198,10 @@ impl<T: PreemptSchedInfo> PreemptSchedEntity<T> {
 
     fn is_real_time(&self) -> bool {
         self.runnable.is_real_time()
+    }
+
+    fn is_lowest(&self) -> bool {
+        self.runnable.is_lowest()
     }
 
     fn tick(&mut self) -> bool {
@@ -233,6 +247,7 @@ impl PreemptSchedInfo for Task {
     type PRIORITY = Priority;
 
     const REAL_TIME_TASK_PRIORITY: Self::PRIORITY = Priority::new(100);
+    const LOWEST_TASK_PRIORITY: Self::PRIORITY = Priority::lowest();
 
     fn priority(&self) -> Self::PRIORITY {
         self.schedule_info().priority
@@ -251,6 +266,7 @@ trait PreemptSchedInfo {
     type PRIORITY: Ord + PartialOrd + Eq + PartialEq;
 
     const REAL_TIME_TASK_PRIORITY: Self::PRIORITY;
+    const LOWEST_TASK_PRIORITY: Self::PRIORITY;
 
     fn priority(&self) -> Self::PRIORITY;
 
@@ -260,5 +276,9 @@ trait PreemptSchedInfo {
 
     fn is_real_time(&self) -> bool {
         self.priority() < Self::REAL_TIME_TASK_PRIORITY
+    }
+
+    fn is_lowest(&self) -> bool {
+        self.priority() == Self::LOWEST_TASK_PRIORITY
     }
 }

@@ -35,39 +35,45 @@ pub const REAL_TIME_TASK_PRIORITY: u16 = 100;
 pub struct Priority(u16);
 
 impl Priority {
+    const LOWEST: u16 = 139;
+    const LOW: u16 = 110;
+    const NORMAL: u16 = 100;
+    const HIGH: u16 = 10;
+    const HIGHEST: u16 = 0;
+
     /// Creates a new `Priority` with the specified value.
     ///
     /// # Panics
     ///
     /// Panics if the `val` is greater than 139.
     pub const fn new(val: u16) -> Self {
-        assert!(val <= 139);
+        assert!(val <= Self::LOWEST);
         Self(val)
     }
 
     /// Returns a `Priority` representing the lowest priority (139).
     pub const fn lowest() -> Self {
-        Self::new(139)
+        Self::new(Self::LOWEST)
     }
 
     /// Returns a `Priority` representing a low priority.
     pub const fn low() -> Self {
-        Self::new(110)
+        Self::new(Self::LOW)
     }
 
     /// Returns a `Priority` representing a normal priority.
     pub const fn normal() -> Self {
-        Self::new(100)
+        Self::new(Self::NORMAL)
     }
 
     /// Returns a `Priority` representing a high priority.
     pub const fn high() -> Self {
-        Self::new(10)
+        Self::new(Self::HIGH)
     }
 
     /// Returns a `Priority` representing the highest priority (0).
     pub const fn highest() -> Self {
-        Self::new(0)
+        Self::new(Self::HIGHEST)
     }
 
     /// Sets the value of the `Priority`.
