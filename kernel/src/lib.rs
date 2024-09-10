@@ -33,11 +33,7 @@
 
 use core::sync::atomic::Ordering;
 
-use ostd::{
-    arch::qemu::{exit_qemu, QemuExitCode},
-    boot,
-    cpu::PinCurrentCpu,
-};
+use ostd::{boot, cpu::PinCurrentCpu};
 use process::Process;
 
 use crate::{
@@ -155,26 +151,14 @@ fn init_thread() {
 
     let karg = boot::kernel_cmdline();
 
-    let initproc = Process::spawn_user_process(
+    let _ = Process::spawn_user_process(
         karg.get_initproc_path().unwrap(),
         karg.get_initproc_argv().to_vec(),
         karg.get_initproc_envp().to_vec(),
     )
     .expect("Run init process failed.");
-    // Wait till initproc become zombie.
-    while !initproc.is_zombie() {
-        // We don't have preemptive scheduler now.
-        // The long running init thread should yield its own execution to allow other tasks to go on.
-        Thread::yield_now();
-    }
-
-    // TODO: exit via qemu isa debug device should not be the only way.
-    let exit_code = if initproc.exit_code() == 0 {
-        QemuExitCode::Success
-    } else {
-        QemuExitCode::Failed
-    };
-    exit_qemu(exit_code);
+    // Run initproc
+    Thread::yield_now();
 }
 
 fn print_banner() {
