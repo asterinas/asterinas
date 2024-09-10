@@ -138,7 +138,9 @@ pub fn read_clock(clockid: clockid_t, ctx: &Context) -> Result<Duration> {
             DynamicClockIdInfo::Tid(tid, clock_type) => {
                 let thread = thread_table::get_thread(tid)
                     .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid clock ID"))?;
-                let posix_thread = thread.as_posix_thread().unwrap();
+                let posix_thread = thread
+                    .as_posix_thread()
+                    .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid clock ID"))?;
                 match clock_type {
                     DynamicClockType::Profiling => Ok(posix_thread.prof_clock().read_time()),
                     DynamicClockType::Virtual => {
