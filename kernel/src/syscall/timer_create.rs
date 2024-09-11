@@ -134,7 +134,9 @@ pub fn sys_timer_create(
             DynamicClockIdInfo::Tid(tid, clock_type) => {
                 let thread = thread_table::get_thread(tid)
                     .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid clock id"))?;
-                let posix_thread = thread.as_posix_thread().unwrap();
+                let posix_thread = thread
+                    .as_posix_thread()
+                    .ok_or_else(|| crate::Error::with_message(Errno::EINVAL, "invalid clock id"))?;
                 match clock_type {
                     DynamicClockType::Profiling => posix_thread.create_prof_timer(func),
                     DynamicClockType::Virtual => posix_thread.create_virtual_timer(func),
