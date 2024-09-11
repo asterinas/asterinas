@@ -57,7 +57,7 @@ endif
 
 # If the BENCHMARK is set, we will run the benchmark in the kernel mode.
 ifneq ($(BENCHMARK), none)
-CARGO_OSDK_ARGS += --init-args="/benchmark/common/runner.sh $(BENCHMARK)"
+CARGO_OSDK_ARGS += --init-args="/benchmark/benchmarks/common/runner.sh $(BENCHMARK)"
 # TODO: remove this workaround after enabling kernel virtual area.
 OSTD_TASK_STACK_SIZE_IN_PAGES = 7
 endif
@@ -89,6 +89,11 @@ endif
 
 ifeq ($(ENABLE_KVM), 1)
 CARGO_OSDK_ARGS += --qemu-args="-accel kvm"
+endif
+
+ifdef PREBUILT_INITRAMFS
+INITRAMFS_IMAGE := $(shell pwd)/$(PREBUILT_INITRAMFS)
+CARGO_OSDK_ARGS += --initramfs="$(INITRAMFS_IMAGE)"
 endif
 
 # Pass make variables to all subdirectory makes
@@ -199,12 +204,18 @@ test:
 		(cd $$dir && cargo test) || exit 1; \
 	done
 
+# FIXME: osdk test doesn't actually need initramfs.
+# Once this fake dependency is removed, this option can also be removed.
+ifdef PREBUILT_INITRAMFS
+CARGO_OSDK_KTEST_ARGS += --initramfs="$(INITRAMFS_IMAGE)"
+endif
+
 .PHONY: ktest
 ktest: initramfs $(CARGO_OSDK)
 	@# Exclude linux-bzimage-setup from ktest since it's hard to be unit tested
 	@for dir in $(OSDK_CRATES); do \
 		[ $$dir = "ostd/libs/linux-bzimage/setup" ] && continue; \
-		(cd $$dir && cargo osdk test) || exit 1; \
+		(cd $$dir && cargo osdk test $(CARGO_OSDK_KTEST_ARGS)) || exit 1; \
 	done
 
 .PHONY: docs

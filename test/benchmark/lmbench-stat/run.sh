@@ -7,4 +7,4 @@ set -e
 echo "*** Running the LMbench stat latency test ***"
 
 touch test_file
-/benchmark/bin/lmbench/lat_syscall -P 1 stat test_file
+/benchmark/bin/lat_syscall -P 1 stat test_file

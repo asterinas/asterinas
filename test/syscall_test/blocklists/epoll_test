@@ -1,12 +1,17 @@
 EpollTest.Timeout_NoRandomSave
+EpollTest.Timeout
 EpollTest.TimeoutNoFds
 EpollTest.UnblockWithNewFD
 EpollTest.Oneshot
 EpollTest.EdgeTriggered_NoRandomSave
+EpollTest.EdgeTriggered
 EpollTest.OneshotAndEdgeTriggered
 EpollTest.CycleOfOneDisallowed
 EpollTest.CycleOfThreeDisallowed
 EpollTest.CloseFile
+EpollTest.DoubleEpollOneShot
+EpollTest.RegularFiles
+EpollTest.ReadyMutexCircularity
 # `UnblockWithSignal` contains races. Better not to enable it.
 # See https://github.com/asterinas/asterinas/pull/1035 for details.
 EpollTest.UnblockWithSignal

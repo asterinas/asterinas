@@ -6,4 +6,4 @@ set -e
 
 echo "*** Running lmbench-fcntl ***"
 
-/benchmark/bin/lmbench/lat_fcntl -P 1
+/benchmark/bin/lat_fcntl -P 1
