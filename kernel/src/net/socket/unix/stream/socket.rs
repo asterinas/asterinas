@@ -15,15 +15,12 @@ use crate::{
     fs::{file_handle::FileLike, utils::StatusFlags},
     net::socket::{
         unix::UnixSocketAddr,
-        util::{
-            copy_message_from_user, copy_message_to_user, create_message_buffer,
-            send_recv_flags::SendRecvFlags, socket_addr::SocketAddr, MessageHeader,
-        },
+        util::{send_recv_flags::SendRecvFlags, socket_addr::SocketAddr, MessageHeader},
         SockShutdownCmd, Socket,
     },
     prelude::*,
     process::signal::{Pollable, Poller},
-    util::IoVec,
+    util::{MultiRead, MultiWrite},
 };
 
 pub struct UnixStreamSocket {
@@ -66,15 +63,15 @@ impl UnixStreamSocket {
         )
     }
 
-    fn send(&self, buf: &[u8], flags: SendRecvFlags) -> Result<usize> {
+    fn send(&self, reader: &mut dyn MultiRead, flags: SendRecvFlags) -> Result<usize> {
         if self.is_nonblocking() {
-            self.try_send(buf, flags)
+            self.try_send(reader, flags)
         } else {
-            self.wait_events(IoEvents::OUT, || self.try_send(buf, flags))
+            self.wait_events(IoEvents::OUT, || self.try_send(reader, flags))
         }
     }
 
-    fn try_send(&self, buf: &[u8], _flags: SendRecvFlags) -> Result<usize> {
+    fn try_send(&self, buf: &mut dyn MultiRead, _flags: SendRecvFlags) -> Result<usize> {
         match self.state.read().as_ref() {
             State::Connected(connected) => connected.try_write(buf),
             State::Init(_) | State::Listen(_) => {
@@ -83,15 +80,15 @@ impl UnixStreamSocket {
         }
     }
 
-    fn recv(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<usize> {
+    fn recv(&self, writer: &mut dyn MultiWrite, flags: SendRecvFlags) -> Result<usize> {
         if self.is_nonblocking() {
-            self.try_recv(buf, flags)
+            self.try_recv(writer, flags)
         } else {
-            self.wait_events(IoEvents::IN, || self.try_recv(buf, flags))
+            self.wait_events(IoEvents::IN, || self.try_recv(writer, flags))
         }
     }
 
-    fn try_recv(&self, buf: &mut [u8], _flags: SendRecvFlags) -> Result<usize> {
+    fn try_recv(&self, buf: &mut dyn MultiWrite, _flags: SendRecvFlags) -> Result<usize> {
         match self.state.read().as_ref() {
             State::Connected(connected) => connected.try_read(buf),
             State::Init(_) | State::Listen(_) => {
@@ -170,19 +167,16 @@ impl FileLike for UnixStreamSocket {
     }
 
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        let mut buf = vec![0u8; writer.avail()];
         // TODO: Set correct flags
         let flags = SendRecvFlags::empty();
-        let read_len = self.recv(&mut buf, flags)?;
-        writer.write_fallible(&mut buf.as_slice().into())?;
+        let read_len = self.recv(writer, flags)?;
         Ok(read_len)
     }
 
     fn write(&self, reader: &mut VmReader) -> Result<usize> {
-        let buf = reader.collect()?;
         // TODO: Set correct flags
         let flags = SendRecvFlags::empty();
-        self.send(&buf, flags)
+        self.send(reader, flags)
     }
 
     fn status_flags(&self) -> StatusFlags {
@@ -327,7 +321,7 @@ impl Socket for UnixStreamSocket {
 
     fn sendmsg(
         &self,
-        io_vecs: &[IoVec],
+        reader: &mut dyn MultiRead,
         message_header: MessageHeader,
         flags: SendRecvFlags,
     ) -> Result<usize> {
@@ -343,27 +337,23 @@ impl Socket for UnixStreamSocket {
             warn!("sending control message is not supported");
         }
 
-        let buf = copy_message_from_user(io_vecs);
-
-        self.send(&buf, flags)
+        self.send(reader, flags)
     }
 
-    fn recvmsg(&self, io_vecs: &[IoVec], flags: SendRecvFlags) -> Result<(usize, MessageHeader)> {
+    fn recvmsg(
+        &self,
+        writer: &mut dyn MultiWrite,
+        flags: SendRecvFlags,
+    ) -> Result<(usize, MessageHeader)> {
         // TODO: Deal with flags
         debug_assert!(flags.is_all_supported());
 
-        let mut buf = create_message_buffer(io_vecs);
-        let received_bytes = self.recv(&mut buf, flags)?;
-
-        let copied_bytes = {
-            let message = &buf[..received_bytes];
-            copy_message_to_user(io_vecs, message)
-        };
+        let received_bytes = self.recv(writer, flags)?;
 
         // TODO: Receive control message
 
         let message_header = MessageHeader::new(None, None);
 
-        Ok((copied_bytes, message_header))
+        Ok((received_bytes, message_header))
     }
 }

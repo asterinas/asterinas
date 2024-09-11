@@ -5,7 +5,11 @@ pub use self::util::{
     options::LingerOption, send_recv_flags::SendRecvFlags, shutdown_cmd::SockShutdownCmd,
     socket_addr::SocketAddr, MessageHeader,
 };
-use crate::{fs::file_handle::FileLike, prelude::*, util::IoVec};
+use crate::{
+    fs::file_handle::FileLike,
+    prelude::*,
+    util::{MultiRead, MultiWrite},
+};
 
 pub mod ip;
 pub mod options;
@@ -64,7 +68,7 @@ pub trait Socket: FileLike + Send + Sync {
     /// Sends a message on a socket.
     fn sendmsg(
         &self,
-        io_vecs: &[IoVec],
+        reader: &mut dyn MultiRead,
         message_header: MessageHeader,
         flags: SendRecvFlags,
     ) -> Result<usize>;
@@ -74,5 +78,9 @@ pub trait Socket: FileLike + Send + Sync {
     /// If successful, the `io_vecs` buffer will be filled with the received content.
     /// This method returns the length of the received message,
     /// and the message header.
-    fn recvmsg(&self, io_vecs: &[IoVec], flags: SendRecvFlags) -> Result<(usize, MessageHeader)>;
+    fn recvmsg(
+        &self,
+        writers: &mut dyn MultiWrite,
+        flags: SendRecvFlags,
+    ) -> Result<(usize, MessageHeader)>;
 }

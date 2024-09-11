@@ -5,10 +5,7 @@ use crate::{
     fs::file_table::FileDesc,
     net::socket::{MessageHeader, SendRecvFlags},
     prelude::*,
-    util::{
-        net::{get_socket_from_fd, read_socket_addr_from_user},
-        IoVec,
-    },
+    util::net::{get_socket_from_fd, read_socket_addr_from_user},
 };
 
 pub fn sys_sendto(
@@ -18,7 +15,7 @@ pub fn sys_sendto(
     flags: i32,
     dest_addr: Vaddr,
     addrlen: usize,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     let flags = SendRecvFlags::from_bits_truncate(flags);
     let socket_addr = if dest_addr == 0 {
@@ -31,10 +28,13 @@ pub fn sys_sendto(
 
     let socket = get_socket_from_fd(sockfd)?;
 
-    let io_vecs = [IoVec::new(buf, len)];
     let message_header = MessageHeader::new(socket_addr, None);
 
-    let send_size = socket.sendmsg(&io_vecs, message_header, flags)?;
+    let mut reader = {
+        let vm_space = ctx.process.root_vmar().vm_space();
+        vm_space.reader(buf, len)?
+    };
+    let send_size = socket.sendmsg(&mut reader, message_header, flags)?;
 
     Ok(SyscallReturn::Return(send_size as _))
 }

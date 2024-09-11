@@ -9,7 +9,10 @@ use crate::{
     events::{IoEvents, Observer},
     prelude::*,
     process::signal::{Pollee, Poller},
-    util::ring_buffer::{RbConsumer, RbProducer, RingBuffer},
+    util::{
+        ring_buffer::{RbConsumer, RbProducer, RingBuffer},
+        MultiRead, MultiWrite,
+    },
 };
 
 /// A unidirectional communication channel, intended to implement IPC, e.g., pipe,
@@ -142,8 +145,8 @@ impl Producer<u8> {
     /// - Returns `Ok(_)` with the number of bytes written if successful.
     /// - Returns `Err(EPIPE)` if the channel is shut down.
     /// - Returns `Err(EAGAIN)` if the channel is full.
-    pub fn try_write(&self, reader: &mut VmReader) -> Result<usize> {
-        if reader.remain() == 0 {
+    pub fn try_write(&self, reader: &mut dyn MultiRead) -> Result<usize> {
+        if reader.is_empty() {
             // Even after shutdown, writing an empty buffer is still fine.
             return Ok(0);
         }
@@ -230,8 +233,8 @@ impl Consumer<u8> {
     /// - Returns `Ok(_)` with the number of bytes read if successful.
     /// - Returns `Ok(0)` if the channel is shut down and there is no data left.
     /// - Returns `Err(EAGAIN)` if the channel is empty.
-    pub fn try_read(&self, writer: &mut VmWriter) -> Result<usize> {
-        if writer.avail() == 0 {
+    pub fn try_read(&self, writer: &mut dyn MultiWrite) -> Result<usize> {
+        if writer.is_empty() {
             return Ok(0);
         }
 
@@ -296,25 +299,25 @@ impl<T, R: TRights> Fifo<T, R> {
 
 impl<R: TRights> Fifo<u8, R> {
     #[require(R > Read)]
-    pub fn read(&self, writer: &mut VmWriter) -> usize {
+    pub fn read(&self, writer: &mut dyn MultiWrite) -> Result<usize> {
         let mut rb = self.common.consumer.rb();
         match rb.read_fallible(writer) {
             Ok(len) => len,
-            Err((e, len)) => {
+            Err(e) => {
                 error!("memory read failed on the ring buffer, error: {e:?}");
-                len
+                0
             }
         }
     }
 
     #[require(R > Write)]
-    pub fn write(&self, reader: &mut VmReader) -> usize {
+    pub fn write(&self, reader: &mut dyn MultiRead) -> Result<usize> {
         let mut rb = self.common.producer.rb();
         match rb.write_fallible(reader) {
             Ok(len) => len,
-            Err((e, len)) => {
+            Err(e) => {
                 error!("memory write failed on the ring buffer, error: {e:?}");
-                len
+                0
             }
         }
     }

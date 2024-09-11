@@ -124,10 +124,7 @@ impl FileIo for PtyMaster {
                 continue;
             }
 
-            let read_len = match input.read_fallible(writer) {
-                Ok(len) => len,
-                Err((_, len)) => len,
-            };
+            let read_len = input.read_fallible(writer)?;
             self.update_state(&input);
             return Ok(read_len);
         }

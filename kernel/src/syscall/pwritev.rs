@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::SyscallReturn;
-use crate::{fs::file_table::FileDesc, prelude::*, util::copy_iovs_from_user};
+use crate::{fs::file_table::FileDesc, prelude::*, util::VmReaderArray};
 
 pub fn sys_writev(
     fd: FileDesc,
@@ -72,18 +72,20 @@ fn do_sys_pwritev(
     let mut total_len: usize = 0;
     let mut cur_offset = offset as usize;
 
-    let io_vecs = copy_iovs_from_user(io_vec_ptr, io_vec_count)?;
-    for io_vec in io_vecs.as_ref() {
-        if io_vec.is_empty() {
+    let mut reader_array = VmReaderArray::from_user_io_vecs(ctx, io_vec_ptr, io_vec_count)?;
+    for reader in reader_array.readers_mut() {
+        if !reader.has_remain() {
             continue;
         }
-        if total_len.checked_add(io_vec.len()).is_none()
+
+        let reader_len = reader.remain();
+        if total_len.checked_add(reader_len).is_none()
             || total_len
-                .checked_add(io_vec.len())
+                .checked_add(reader_len)
                 .and_then(|sum| sum.checked_add(cur_offset))
                 .is_none()
             || total_len
-                .checked_add(io_vec.len())
+                .checked_add(reader_len)
                 .and_then(|sum| sum.checked_add(cur_offset))
                 .map(|sum| sum > isize::MAX as usize)
                 .unwrap_or(false)
@@ -91,19 +93,13 @@ fn do_sys_pwritev(
             return_errno_with_message!(Errno::EINVAL, "Total length overflow");
         }
 
-        let buffer = {
-            let mut buffer = vec![0u8; io_vec.len()];
-            io_vec.read_exact_from_user(&mut buffer)?;
-            buffer
-        };
-
         // TODO: According to the man page
         // at <https://man7.org/linux/man-pages/man2/readv.2.html>,
         // writev must be atomic,
         // but the current implementation does not ensure atomicity.
         // A suitable fix would be to add a `writev` method for the `FileLike` trait,
         // allowing each subsystem to implement atomicity.
-        let write_len = file.write_bytes_at(cur_offset, &buffer)?;
+        let write_len = file.write_at(cur_offset, reader)?;
         total_len += write_len;
         cur_offset += write_len;
     }
@@ -126,17 +122,11 @@ fn do_sys_writev(
     };
     let mut total_len = 0;
 
-    let io_vecs = copy_iovs_from_user(io_vec_ptr, io_vec_count)?;
-    for io_vec in io_vecs.as_ref() {
-        if io_vec.is_empty() {
+    let mut reader_array = VmReaderArray::from_user_io_vecs(ctx, io_vec_ptr, io_vec_count)?;
+    for reader in reader_array.readers_mut() {
+        if !reader.has_remain() {
             continue;
         }
-
-        let buffer = {
-            let mut buffer = vec![0u8; io_vec.len()];
-            io_vec.read_exact_from_user(&mut buffer)?;
-            buffer
-        };
 
         // TODO: According to the man page
         // at <https://man7.org/linux/man-pages/man2/readv.2.html>,
@@ -144,7 +134,7 @@ fn do_sys_writev(
         // but the current implementation does not ensure atomicity.
         // A suitable fix would be to add a `writev` method for the `FileLike` trait,
         // allowing each subsystem to implement atomicity.
-        let write_len = file.write_bytes(&buffer)?;
+        let write_len = file.write(reader)?;
         total_len += write_len;
     }
     Ok(total_len)

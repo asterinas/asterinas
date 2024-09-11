@@ -9,13 +9,12 @@ use crate::{
     events::IoEvents,
     fs::{file_handle::FileLike, utils::StatusFlags},
     net::socket::{
-        util::{copy_message_from_user, copy_message_to_user, create_message_buffer},
         vsock::{addr::VsockSocketAddr, VSOCK_GLOBAL},
         MessageHeader, SendRecvFlags, SockShutdownCmd, Socket, SocketAddr,
     },
     prelude::*,
     process::signal::{Pollable, Poller},
-    util::IoVec,
+    util::{MultiRead, MultiWrite},
 };
 
 pub struct VsockStreamSocket {
@@ -81,17 +80,21 @@ impl VsockStreamSocket {
         Ok((socket, peer_addr.into()))
     }
 
-    fn send(&self, buf: &[u8], flags: SendRecvFlags) -> Result<usize> {
+    fn send(&self, reader: &mut dyn MultiRead, flags: SendRecvFlags) -> Result<usize> {
         let inner = self.status.read();
         match &*inner {
-            Status::Connected(connected) => connected.send(buf, flags),
+            Status::Connected(connected) => connected.send(reader, flags),
             Status::Init(_) | Status::Listen(_) => {
                 return_errno_with_message!(Errno::EINVAL, "the socket is not connected");
             }
         }
     }
 
-    fn try_recv(&self, buf: &mut [u8], _flags: SendRecvFlags) -> Result<(usize, SocketAddr)> {
+    fn try_recv(
+        &self,
+        writer: &mut dyn MultiWrite,
+        _flags: SendRecvFlags,
+    ) -> Result<(usize, SocketAddr)> {
         let connected = match &*self.status.read() {
             Status::Connected(connected) => connected.clone(),
             Status::Init(_) | Status::Listen(_) => {
@@ -99,7 +102,7 @@ impl VsockStreamSocket {
             }
         };
 
-        let read_size = connected.try_recv(buf)?;
+        let read_size = connected.try_recv(writer)?;
         connected.update_io_events();
 
         let peer_addr = self.peer_addr()?;
@@ -113,11 +116,15 @@ impl VsockStreamSocket {
         Ok((read_size, peer_addr))
     }
 
-    fn recv(&self, buf: &mut [u8], flags: SendRecvFlags) -> Result<(usize, SocketAddr)> {
+    fn recv(
+        &self,
+        writer: &mut dyn MultiWrite,
+        flags: SendRecvFlags,
+    ) -> Result<(usize, SocketAddr)> {
         if self.is_nonblocking() {
-            self.try_recv(buf, flags)
+            self.try_recv(writer, flags)
         } else {
-            self.wait_events(IoEvents::IN, || self.try_recv(buf, flags))
+            self.wait_events(IoEvents::IN, || self.try_recv(writer, flags))
         }
     }
 }
@@ -138,19 +145,16 @@ impl FileLike for VsockStreamSocket {
     }
 
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        let mut buf = vec![0u8; writer.avail()];
         // TODO: Set correct flags
         let read_len = self
-            .recv(&mut buf, SendRecvFlags::empty())
+            .recv(writer, SendRecvFlags::empty())
             .map(|(len, _)| len)?;
-        writer.write_fallible(&mut buf.as_slice().into())?;
         Ok(read_len)
     }
 
     fn write(&self, reader: &mut VmReader) -> Result<usize> {
-        let buf = reader.collect()?;
         // TODO: Set correct flags
-        self.send(&buf, SendRecvFlags::empty())
+        self.send(reader, SendRecvFlags::empty())
     }
 
     fn status_flags(&self) -> StatusFlags {
@@ -285,7 +289,7 @@ impl Socket for VsockStreamSocket {
 
     fn sendmsg(
         &self,
-        io_vecs: &[IoVec],
+        reader: &mut dyn MultiRead,
         message_header: MessageHeader,
         flags: SendRecvFlags,
     ) -> Result<usize> {
@@ -301,28 +305,24 @@ impl Socket for VsockStreamSocket {
             warn!("sending control message is not supported");
         }
 
-        let buf = copy_message_from_user(io_vecs);
-        self.send(&buf, flags)
+        self.send(reader, flags)
     }
 
-    fn recvmsg(&self, io_vecs: &[IoVec], flags: SendRecvFlags) -> Result<(usize, MessageHeader)> {
+    fn recvmsg(
+        &self,
+        writer: &mut dyn MultiWrite,
+        flags: SendRecvFlags,
+    ) -> Result<(usize, MessageHeader)> {
         // TODO: Deal with flags
         debug_assert!(flags.is_all_supported());
 
-        let mut buf = create_message_buffer(io_vecs);
-
-        let (received_bytes, _) = self.recv(&mut buf, flags)?;
-
-        let copied_bytes = {
-            let message = &buf[..received_bytes];
-            copy_message_to_user(io_vecs, message)
-        };
+        let (received_bytes, _) = self.recv(writer, flags)?;
 
         // TODO: Receive control message
 
         let messsge_header = MessageHeader::new(None, None);
 
-        Ok((copied_bytes, messsge_header))
+        Ok((received_bytes, messsge_header))
     }
 
     fn addr(&self) -> Result<SocketAddr> {

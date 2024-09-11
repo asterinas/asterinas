@@ -24,8 +24,8 @@ pub fn sys_recvmsg(
 
     let (total_bytes, message_header) = {
         let socket = get_socket_from_fd(sockfd)?;
-        let io_vecs = c_user_msghdr.copy_iovs_from_user()?;
-        socket.recvmsg(&io_vecs, flags)?
+        let mut io_vec_writer = c_user_msghdr.copy_writer_array_from_user(ctx)?;
+        socket.recvmsg(&mut io_vec_writer, flags)?
     };
 
     if let Some(addr) = message_header.addr() {

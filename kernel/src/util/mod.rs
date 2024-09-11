@@ -5,4 +5,4 @@ pub mod net;
 pub mod random;
 pub mod ring_buffer;
 
-pub use iovec::{copy_iovs_from_user, IoVec};
+pub use iovec::{MultiRead, MultiWrite, VmReaderArray, VmWriterArray};

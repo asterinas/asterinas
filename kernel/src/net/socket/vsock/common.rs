@@ -16,7 +16,7 @@ use super::{
         listen::Listen,
     },
 };
-use crate::{events::IoEvents, prelude::*, return_errno_with_message};
+use crate::{events::IoEvents, prelude::*, return_errno_with_message, util::MultiRead};
 
 /// Manage all active sockets
 pub struct VsockSpace {
@@ -190,10 +190,15 @@ impl VsockSpace {
     }
 
     /// Send a data packet
-    pub fn send(&self, buffer: &[u8], info: &mut ConnectionInfo) -> Result<()> {
+    pub fn send(&self, reader: &mut dyn MultiRead, info: &mut ConnectionInfo) -> Result<()> {
+        // FIXME: Creating this buffer should be avoided
+        // if the underlying driver can accept reader.
+        let mut buffer = vec![0u8; reader.sum_lens()];
+        reader.read(&mut VmWriter::from(buffer.as_mut_slice()))?;
+
         let mut driver = self.driver.disable_irq().lock();
         driver
-            .send(buffer, info)
+            .send(&buffer, info)
             .map_err(|_| Error::with_message(Errno::EIO, "cannot send data packet"))
     }
 
