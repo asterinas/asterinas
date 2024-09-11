@@ -141,7 +141,7 @@ where
     /// Note that this function does not ensure exclusive access to the claimed
     /// virtual address range. The accesses using this cursor may block or fail.
     pub fn new(pt: &'a PageTable<M, E, C>, va: &Range<Vaddr>) -> Result<Self, PageTableError> {
-        if !M::covers(va) {
+        if !M::covers(va) || va.is_empty() {
             return Err(PageTableError::InvalidVaddrRange(va.start, va.end));
         }
         if va.start % C::BASE_PAGE_SIZE != 0 || va.end % C::BASE_PAGE_SIZE != 0 {
