@@ -62,4 +62,5 @@ test_fdatasync
 echo "All fdatasync test passed."
 
 pipe/pipe_err
+pipe/short_rw
 epoll/epoll_err
