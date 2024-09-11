@@ -1,6 +1,6 @@
 [package]
 name = "ostd"
-version = "0.8.1"
+version = "0.8.2"
 edition = "2021"
 description = "Rust OS framework that facilitates the development of and innovation in OS kernels"
 license = "MPL-2.0"
@@ -33,8 +33,8 @@ log = "0.4"
 num = { version = "0.4", default-features = false }
 num-derive = { version = "0.4", default-features = false }
 num-traits = { version = "0.2", default-features = false }
-ostd-macros = { version = "0.8.1", path = "libs/ostd-macros" }
-ostd-test = { version = "0.8.1", path = "libs/ostd-test" }
+ostd-macros = { version = "0.8.2", path = "libs/ostd-macros" }
+ostd-test = { version = "0.8.2", path = "libs/ostd-test" }
 owo-colors = { version = "3", optional = true }
 ostd-pod = { git = "https://github.com/asterinas/ostd-pod", rev = "c4644be", version = "0.1.1" }
 spin = "0.9.4"

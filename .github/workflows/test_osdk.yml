@@ -21,9 +21,9 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        # asterinas/asterinas:0.8.1 container is the developing container of asterinas,
-        # asterinas/osdk:0.8.1 container is built with the intructions from Asterinas Book
-        container: ['asterinas/asterinas:0.8.1', 'asterinas/osdk:0.8.1']
+        # asterinas/asterinas:0.8.2 container is the developing container of asterinas,
+        # asterinas/osdk:0.8.2 container is built with the intructions from Asterinas Book
+        container: ['asterinas/asterinas:0.8.2', 'asterinas/osdk:0.8.2']
     container: ${{ matrix.container }}
     steps:
       - run: echo "Running in ${{ matrix.container }}"
@@ -32,7 +32,7 @@ jobs:
 
       - name: Lint
         id: lint
-        if: matrix.container == 'asterinas/asterinas:0.8.1'
+        if: matrix.container == 'asterinas/asterinas:0.8.2'
         run: make check_osdk
 
       # Github's actions/checkout@v4 will result in a new user (not root) 
@@ -53,9 +53,9 @@ jobs:
       RUSTUP_UPDATE_ROOT: https://mirrors.ustc.edu.cn/rust-static/rustup
     strategy:
       matrix:
-        # asterinas/asterinas:0.8.1-tdx container is the developing container of asterinas,
-        # asterinas/osdk:0.8.1-tdx container is built with the intructions from Asterinas Book
-        container: ['asterinas/asterinas:0.8.1-tdx', 'asterinas/osdk:0.8.1-tdx']
+        # asterinas/asterinas:0.8.2-tdx container is the developing container of asterinas,
+        # asterinas/osdk:0.8.2-tdx container is built with the intructions from Asterinas Book
+        container: ['asterinas/asterinas:0.8.2-tdx', 'asterinas/osdk:0.8.2-tdx']
     container: 
       image: ${{ matrix.container }}
       options: --device=/dev/kvm --privileged
@@ -64,7 +64,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Lint
         id: lint
-        if: matrix.container == 'asterinas/asterinas:0.8.1-tdx'
+        if: matrix.container == 'asterinas/asterinas:0.8.2-tdx'
         run: make check_osdk
       # Github's actions/checkout@v4 will result in a new user (not root) 
       # and thus not using the Rust environment we set up in the container. 
