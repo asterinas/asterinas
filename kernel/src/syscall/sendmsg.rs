@@ -24,9 +24,9 @@ pub fn sys_sendmsg(
 
     let socket = get_socket_from_fd(sockfd)?;
 
-    let (io_vecs, message_header) = {
+    let (mut io_vec_reader, message_header) = {
         let addr = c_user_msghdr.read_socket_addr_from_user()?;
-        let io_vecs = c_user_msghdr.copy_iovs_from_user()?;
+        let io_vec_reader = c_user_msghdr.copy_reader_array_from_user(ctx)?;
 
         let control_message = {
             if c_user_msghdr.msg_control != 0 {
@@ -36,10 +36,10 @@ pub fn sys_sendmsg(
             None
         };
 
-        (io_vecs, MessageHeader::new(addr, control_message))
+        (io_vec_reader, MessageHeader::new(addr, control_message))
     };
 
-    let total_bytes = socket.sendmsg(&io_vecs, message_header, flags)?;
+    let total_bytes = socket.sendmsg(&mut io_vec_reader, message_header, flags)?;
 
     Ok(SyscallReturn::Return(total_bytes as _))
 }

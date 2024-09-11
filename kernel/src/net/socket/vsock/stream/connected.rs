@@ -11,7 +11,7 @@ use crate::{
     },
     prelude::*,
     process::signal::{Pollee, Poller},
-    util::ring_buffer::RingBuffer,
+    util::{ring_buffer::RingBuffer, MultiRead, MultiWrite},
 };
 
 const PER_CONNECTION_BUFFER_CAPACITY: usize = 4096;
@@ -50,10 +50,9 @@ impl Connected {
         self.id
     }
 
-    pub fn try_recv(&self, buf: &mut [u8]) -> Result<usize> {
+    pub fn try_recv(&self, writer: &mut dyn MultiWrite) -> Result<usize> {
         let mut connection = self.connection.disable_irq().lock();
-        let bytes_read = connection.buffer.len().min(buf.len());
-        connection.buffer.pop_slice(&mut buf[..bytes_read]).unwrap();
+        let bytes_read = connection.buffer.read_fallible(writer)?;
         connection.info.done_forwarding(bytes_read);
 
         match bytes_read {
@@ -68,14 +67,14 @@ impl Connected {
         }
     }
 
-    pub fn send(&self, packet: &[u8], flags: SendRecvFlags) -> Result<usize> {
+    pub fn send(&self, reader: &mut dyn MultiRead, flags: SendRecvFlags) -> Result<usize> {
         let mut connection = self.connection.disable_irq().lock();
         debug_assert!(flags.is_all_supported());
-        let buf_len = packet.len();
+        let buf_len = reader.sum_lens();
         VSOCK_GLOBAL
             .get()
             .unwrap()
-            .send(packet, &mut connection.info)?;
+            .send(reader, &mut connection.info)?;
 
         Ok(buf_len)
     }

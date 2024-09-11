@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::file_table::FileDesc,
     prelude::*,
-    util::{copy_iovs_from_user, IoVec},
+    util::{MultiWrite, VmWriterArray},
 };
 
 pub fn sys_readv(
@@ -74,29 +74,23 @@ fn do_sys_preadv(
         return Ok(0);
     }
 
-    // Calculate the total buffer length and check for overflow
-    let total_len = io_vec_count
-        .checked_mul(core::mem::size_of::<IoVec>())
-        .and_then(|val| val.checked_add(offset as usize));
-    if total_len.is_none() {
-        return_errno_with_message!(Errno::EINVAL, "offset + io_vec_count overflow");
-    }
-
     let mut total_len: usize = 0;
     let mut cur_offset = offset as usize;
 
-    let io_vecs = copy_iovs_from_user(io_vec_ptr, io_vec_count)?;
-    for io_vec in io_vecs.as_ref() {
-        if io_vec.is_empty() {
+    let mut writer_array = VmWriterArray::from_user_io_vecs(ctx, io_vec_ptr, io_vec_count)?;
+    for writer in writer_array.writers_mut() {
+        if !writer.has_avail() {
             continue;
         }
-        if total_len.checked_add(io_vec.len()).is_none()
+
+        let writer_len = writer.sum_lens();
+        if total_len.checked_add(writer_len).is_none()
             || total_len
-                .checked_add(io_vec.len())
+                .checked_add(writer_len)
                 .and_then(|sum| sum.checked_add(cur_offset))
                 .is_none()
             || total_len
-                .checked_add(io_vec.len())
+                .checked_add(writer_len)
                 .and_then(|sum| sum.checked_add(cur_offset))
                 .map(|sum| sum > isize::MAX as usize)
                 .unwrap_or(false)
@@ -104,19 +98,16 @@ fn do_sys_preadv(
             return_errno_with_message!(Errno::EINVAL, "Total length overflow");
         }
 
-        let mut buffer = vec![0u8; io_vec.len()];
-
         // TODO: According to the man page
         // at <https://man7.org/linux/man-pages/man2/readv.2.html>,
         // readv must be atomic,
         // but the current implementation does not ensure atomicity.
         // A suitable fix would be to add a `readv` method for the `FileLike` trait,
         // allowing each subsystem to implement atomicity.
-        let read_len = file.read_bytes_at(cur_offset, &mut buffer)?;
-        io_vec.write_exact_to_user(&buffer)?;
+        let read_len = file.read_at(cur_offset, writer)?;
         total_len += read_len;
         cur_offset += read_len;
-        if read_len == 0 || read_len < buffer.len() {
+        if read_len == 0 || writer.has_avail() {
             // End of file reached or no more data to read
             break;
         }
@@ -147,23 +138,21 @@ fn do_sys_readv(
 
     let mut total_len = 0;
 
-    let io_vecs = copy_iovs_from_user(io_vec_ptr, io_vec_count)?;
-    for io_vec in io_vecs.as_ref() {
-        if io_vec.is_empty() {
+    let mut writer_array = VmWriterArray::from_user_io_vecs(ctx, io_vec_ptr, io_vec_count)?;
+    for writer in writer_array.writers_mut() {
+        if !writer.has_avail() {
             continue;
         }
 
-        let mut buffer = vec![0u8; io_vec.len()];
         // TODO: According to the man page
         // at <https://man7.org/linux/man-pages/man2/readv.2.html>,
         // readv must be atomic,
         // but the current implementation does not ensure atomicity.
         // A suitable fix would be to add a `readv` method for the `FileLike` trait,
         // allowing each subsystem to implement atomicity.
-        let read_len = file.read_bytes(&mut buffer)?;
-        io_vec.write_exact_to_user(&buffer)?;
+        let read_len = file.read(writer)?;
         total_len += read_len;
-        if read_len == 0 || read_len < buffer.len() {
+        if read_len == 0 || writer.has_avail() {
             // End of file reached or no more data to read
             break;
         }

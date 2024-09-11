@@ -10,6 +10,7 @@ use align_ext::AlignExt;
 use inherit_methods_macro::inherit_methods;
 use ostd::mm::{FrameAllocOptions, Segment, VmIo};
 
+use super::{MultiRead, MultiWrite};
 use crate::prelude::*;
 
 /// A lock-free SPSC FIFO ring buffer backed by a [`Segment`].
@@ -220,13 +221,10 @@ impl<T: Pod> RingBuffer<T> {
 }
 
 impl RingBuffer<u8> {
-    /// Writes data from the `VmReader` to the `RingBuffer`.
+    /// Writes data from the `reader` to the `RingBuffer`.
     ///
     /// Returns the number of bytes written.
-    pub fn write_fallible(
-        &mut self,
-        reader: &mut VmReader,
-    ) -> core::result::Result<usize, (Error, usize)> {
+    pub fn write_fallible(&mut self, reader: &mut dyn MultiRead) -> Result<usize> {
         let mut producer = Producer {
             rb: self,
             phantom: PhantomData,
@@ -234,13 +232,10 @@ impl RingBuffer<u8> {
         producer.write_fallible(reader)
     }
 
-    /// Reads data from the `VmWriter` to the `RingBuffer`.
+    /// Reads data from the `writer` to the `RingBuffer`.
     ///
     /// Returns the number of bytes read.
-    pub fn read_fallible(
-        &mut self,
-        writer: &mut VmWriter,
-    ) -> core::result::Result<usize, (Error, usize)> {
+    pub fn read_fallible(&mut self, writer: &mut dyn MultiWrite) -> Result<usize> {
         let mut consumer = Consumer {
             rb: self,
             phantom: PhantomData,
@@ -310,38 +305,26 @@ impl<R: Deref<Target = RingBuffer<u8>>> Producer<u8, R> {
     /// Writes data from the `VmReader` to the `RingBuffer`.
     ///
     /// Returns the number of bytes written.
-    pub fn write_fallible(
-        &mut self,
-        reader: &mut VmReader,
-    ) -> core::result::Result<usize, (Error, usize)> {
+    pub fn write_fallible(&mut self, reader: &mut dyn MultiRead) -> Result<usize> {
         let rb = &self.rb;
         let free_len = rb.free_len();
         if free_len == 0 {
             return Ok(0);
         }
-        let write_len = reader.remain().min(free_len);
+        let write_len = reader.sum_lens().min(free_len);
 
         let tail = rb.tail();
         let write_len = if tail + write_len > rb.capacity {
             // Write into two separate parts
             let mut writer = rb.segment.writer().skip(tail).limit(rb.capacity - tail);
-            let mut len = writer.write_fallible(reader).map_err(|(e, l1)| {
-                rb.advance_tail(tail, l1);
-                (e.into(), l1)
-            })?;
+            let mut len = reader.read(&mut writer)?;
 
             let mut writer = rb.segment.writer().limit(write_len - (rb.capacity - tail));
-            len += writer.write_fallible(reader).map_err(|(e, l2)| {
-                rb.advance_tail(tail, len + l2);
-                (e.into(), len + l2)
-            })?;
+            len += reader.read(&mut writer)?;
             len
         } else {
             let mut writer = rb.segment.writer().skip(tail).limit(write_len);
-            writer.write_fallible(reader).map_err(|(e, len)| {
-                rb.advance_tail(tail, len);
-                (e.into(), len)
-            })?
+            reader.read(&mut writer)?
         };
 
         rb.advance_tail(tail, write_len);
@@ -418,38 +401,26 @@ impl<R: Deref<Target = RingBuffer<u8>>> Consumer<u8, R> {
     /// Reads data from the `VmWriter` to the `RingBuffer`.
     ///
     /// Returns the number of bytes read.
-    pub fn read_fallible(
-        &mut self,
-        writer: &mut VmWriter,
-    ) -> core::result::Result<usize, (Error, usize)> {
+    pub fn read_fallible(&mut self, writer: &mut dyn MultiWrite) -> Result<usize> {
         let rb = &self.rb;
         let len = rb.len();
         if len == 0 {
             return Ok(0);
         }
-        let read_len = writer.avail().min(len);
+        let read_len = writer.sum_lens().min(len);
 
         let head = rb.head();
         let read_len = if head + read_len > rb.capacity {
             // Read from two separate parts
             let mut reader = rb.segment.reader().skip(head).limit(rb.capacity - head);
-            let mut len = reader.read_fallible(writer).map_err(|(e, l1)| {
-                rb.advance_head(head, l1);
-                (e.into(), l1)
-            })?;
+            let mut len = writer.write(&mut reader)?;
 
             let mut reader = rb.segment.reader().limit(read_len - (rb.capacity - head));
-            len += reader.read_fallible(writer).map_err(|(e, l2)| {
-                rb.advance_head(head, len + l2);
-                (e.into(), len + l2)
-            })?;
+            len += writer.write(&mut reader)?;
             len
         } else {
             let mut reader = rb.segment.reader().skip(head).limit(read_len);
-            reader.read_fallible(writer).map_err(|(e, len)| {
-                rb.advance_head(head, len);
-                (e.into(), len)
-            })?
+            writer.write(&mut reader)?
         };
 
         rb.advance_head(head, read_len);
