@@ -2,11 +2,13 @@
 
 #![allow(unused_variables)]
 
+use aster_rights::Full;
 use ostd::{cpu::*, mm::VmSpace};
 
 use crate::{
-    prelude::*, process::signal::signals::fault::FaultSignal,
-    vm::page_fault_handler::PageFaultHandler,
+    prelude::*,
+    process::signal::signals::fault::FaultSignal,
+    vm::{page_fault_handler::PageFaultHandler, vmar::Vmar},
 };
 
 /// We can't handle most exceptions, just send self a fault signal before return to user space.
@@ -14,11 +16,10 @@ pub fn handle_exception(ctx: &Context, context: &UserContext) {
     let trap_info = context.trap_information();
     let exception = CpuException::to_cpu_exception(trap_info.id as u16).unwrap();
     log_trap_info(exception, trap_info);
-    let root_vmar = ctx.process.root_vmar();
 
     match *exception {
         PAGE_FAULT => {
-            if handle_page_fault(root_vmar.vm_space(), trap_info).is_err() {
+            if handle_page_fault_from_vmar(ctx.process.root_vmar(), trap_info).is_err() {
                 generate_fault_signal(trap_info, ctx);
             }
         }
@@ -30,8 +31,25 @@ pub fn handle_exception(ctx: &Context, context: &UserContext) {
 }
 
 /// Handles the page fault occurs in the input `VmSpace`.
-pub(crate) fn handle_page_fault(
+pub(crate) fn handle_page_fault_from_vm_space(
     vm_space: &VmSpace,
+    trap_info: &CpuExceptionInfo,
+) -> core::result::Result<(), ()> {
+    let current = current!();
+    let root_vmar = current.root_vmar();
+
+    // If page is not present or due to write access, we should ask the vmar try to commit this page
+    debug_assert_eq!(
+        Arc::as_ptr(root_vmar.vm_space()),
+        vm_space as *const VmSpace
+    );
+
+    handle_page_fault_from_vmar(root_vmar, trap_info)
+}
+
+/// Handles the page fault occurs in the input `Vmar`.
+pub(crate) fn handle_page_fault_from_vmar(
+    root_vmar: &Vmar<Full>,
     trap_info: &CpuExceptionInfo,
 ) -> core::result::Result<(), ()> {
     const PAGE_NOT_PRESENT_ERROR_MASK: usize = 0x1 << 0;
@@ -46,15 +64,6 @@ pub(crate) fn handle_page_fault(
     let not_present = trap_info.error_code & PAGE_NOT_PRESENT_ERROR_MASK == 0;
     let write = trap_info.error_code & WRITE_ACCESS_MASK != 0;
     if not_present || write {
-        let current = current!();
-        let root_vmar = current.root_vmar();
-
-        // If page is not present or due to write access, we should ask the vmar try to commit this page
-        debug_assert_eq!(
-            Arc::as_ptr(root_vmar.vm_space()),
-            vm_space as *const VmSpace
-        );
-
         if let Err(e) = root_vmar.handle_page_fault(page_fault_addr, not_present, write) {
             warn!(
                 "page fault handler failed: addr: 0x{:x}, err: {:?}",

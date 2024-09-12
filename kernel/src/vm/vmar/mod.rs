@@ -21,7 +21,7 @@ use self::{
     vm_mapping::VmMapping,
 };
 use super::page_fault_handler::PageFaultHandler;
-use crate::{prelude::*, thread::exception::handle_page_fault, vm::perms::VmPerms};
+use crate::{prelude::*, thread::exception::handle_page_fault_from_vm_space, vm::perms::VmPerms};
 
 /// Virtual Memory Address Regions (VMARs) are a type of capability that manages
 /// user address spaces.
@@ -228,7 +228,7 @@ impl Vmar_ {
             free_regions,
         };
         let vm_space = VmSpace::new();
-        vm_space.register_page_fault_handler(handle_page_fault);
+        vm_space.register_page_fault_handler(handle_page_fault_from_vm_space);
         Vmar_::new(vmar_inner, Arc::new(vm_space), 0, ROOT_VMAR_CAP_ADDR, None)
     }
 
