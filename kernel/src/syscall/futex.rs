@@ -71,6 +71,6 @@ pub fn sys_futex(
         _ => panic!("Unsupported futex operations"),
     }?;
 
-    debug!("futex returns, tid= {} ", ctx.thread.tid());
+    debug!("futex returns, tid= {} ", ctx.posix_thread.tid());
     Ok(SyscallReturn::Return(res as _))
 }

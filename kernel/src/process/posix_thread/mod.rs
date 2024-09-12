@@ -2,7 +2,7 @@
 
 #![allow(dead_code)]
 
-use core::sync::atomic::Ordering;
+use core::sync::atomic::{AtomicU32, Ordering};
 
 use aster_rights::{ReadOp, WriteOp};
 use ostd::sync::Waker;
@@ -42,6 +42,8 @@ pub use robust_list::RobustListHead;
 pub struct PosixThread {
     // Immutable part
     process: Weak<Process>,
+    tid: Tid,
+
     // Mutable part
     name: Mutex<Option<ThreadName>>,
 
@@ -85,6 +87,11 @@ impl PosixThread {
 
     pub fn weak_process(&self) -> Weak<Process> {
         Weak::clone(&self.process)
+    }
+
+    /// Returns the thread id
+    pub fn tid(&self) -> Tid {
+        self.tid
     }
 
     pub fn thread_name(&self) -> &Mutex<Option<ThreadName>> {
@@ -291,4 +298,11 @@ impl PosixThread {
         ));
         self.credentials.dup().restrict()
     }
+}
+
+static POSIX_TID_ALLOCATOR: AtomicU32 = AtomicU32::new(0);
+
+/// Allocates a new tid for the new posix thread
+pub fn allocate_posix_tid() -> Tid {
+    POSIX_TID_ALLOCATOR.fetch_add(1, Ordering::SeqCst)
 }

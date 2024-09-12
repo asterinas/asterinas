@@ -95,6 +95,7 @@ impl PosixThreadBuilder {
 
             let posix_thread = PosixThread {
                 process,
+                tid,
                 name: Mutex::new(thread_name),
                 set_child_tid: Mutex::new(set_child_tid),
                 clear_child_tid: Mutex::new(clear_child_tid),
@@ -110,9 +111,9 @@ impl PosixThreadBuilder {
                 prof_timer_manager,
             };
 
-            Thread::new(tid, task, posix_thread, status)
+            Thread::new(task, posix_thread, status)
         });
-        thread_table::add_thread(thread.clone());
+        thread_table::add_posix_thread(tid, thread.clone());
         thread
     }
 }

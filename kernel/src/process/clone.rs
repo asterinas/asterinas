@@ -18,7 +18,8 @@ use crate::{
     cpu::LinuxAbi,
     fs::{file_table::FileTable, fs_resolver::FsResolver, utils::FileCreationMask},
     prelude::*,
-    thread::{allocate_tid, thread_table, Thread, Tid},
+    process::posix_thread::allocate_posix_tid,
+    thread::{thread_table, Thread, Tid},
 };
 
 bitflags! {
@@ -180,7 +181,7 @@ fn clone_child_thread(
     // Inherit sigmask from current thread
     let sig_mask = posix_thread.sig_mask().load(Ordering::Relaxed).into();
 
-    let child_tid = allocate_tid();
+    let child_tid = allocate_posix_tid();
     let child_thread = {
         let credentials = {
             let credentials = ctx.posix_thread.credentials();
@@ -262,7 +263,7 @@ fn clone_child_process(
     // inherit parent's nice value
     let child_nice = process.nice().load(Ordering::Relaxed);
 
-    let child_tid = allocate_tid();
+    let child_tid = allocate_posix_tid();
 
     let child = {
         let child_elf_path = process.executable_path();
@@ -295,7 +296,7 @@ fn clone_child_process(
     };
 
     // Deals with clone flags
-    let child_thread = thread_table::get_thread(child_tid).unwrap();
+    let child_thread = thread_table::get_posix_thread(child_tid).unwrap();
     let child_posix_thread = child_thread.as_posix_thread().unwrap();
     clone_parent_settid(child_tid, clone_args.parent_tidptr, clone_flags)?;
     clone_child_cleartid(child_posix_thread, clone_args.child_tidptr, clone_flags)?;

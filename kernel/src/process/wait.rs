@@ -2,12 +2,12 @@
 
 #![allow(dead_code)]
 
-use super::{
-    process_filter::ProcessFilter,
-    signal::{constants::SIGCHLD, with_signal_blocked},
-    ExitCode, Pid, Process,
+use super::{process_filter::ProcessFilter, signal::constants::SIGCHLD, ExitCode, Pid, Process};
+use crate::{
+    prelude::*,
+    process::{posix_thread::PosixThreadExt, process_table, signal::with_signal_blocked},
+    thread::thread_table,
 };
-use crate::{prelude::*, process::process_table, thread::thread_table};
 
 // The definition of WaitOptions is from Occlum
 bitflags! {
@@ -86,7 +86,7 @@ fn reap_zombie_child(process: &Process, pid: Pid) -> ExitCode {
     let child_process = process.children().lock().remove(&pid).unwrap();
     assert!(child_process.is_zombie());
     for thread in &*child_process.threads().lock() {
-        thread_table::remove_thread(thread.tid());
+        thread_table::remove_posix_thread(thread.tid());
     }
 
     // Lock order: session table -> group table -> process table -> group of process

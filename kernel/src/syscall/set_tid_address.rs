@@ -13,6 +13,6 @@ pub fn sys_set_tid_address(tidptr: Vaddr, ctx: &Context) -> Result<SyscallReturn
     } else {
         *clear_child_tid = tidptr;
     }
-    let tid = ctx.thread.tid();
+    let tid = ctx.posix_thread.tid();
     Ok(SyscallReturn::Return(tid as _))
 }

@@ -5,7 +5,7 @@ use ostd::{
     task::{Priority, TaskOptions},
 };
 
-use super::{allocate_tid, status::ThreadStatus, thread_table, Thread};
+use super::{status::ThreadStatus, thread_table, Thread};
 use crate::prelude::*;
 
 /// The inner data of a kernel thread
@@ -38,21 +38,21 @@ impl KernelThreadExt for Thread {
             let current_thread = current_thread!();
             // ensure the thread is exit
             current_thread.exit();
+            thread_table::remove_kernel_thread(current_thread);
         };
-        let tid = allocate_tid();
         let thread = Arc::new_cyclic(|thread_ref| {
-            let weal_thread = thread_ref.clone();
+            let weak_thread = thread_ref.clone();
             let task = TaskOptions::new(thread_fn)
-                .data(weal_thread)
+                .data(weak_thread)
                 .priority(thread_options.priority)
                 .cpu_affinity(thread_options.cpu_affinity)
                 .build()
                 .unwrap();
             let status = ThreadStatus::Init;
             let kernel_thread = KernelThread;
-            Thread::new(tid, task, kernel_thread, status)
+            Thread::new(task, kernel_thread, status)
         });
-        thread_table::add_thread(thread.clone());
+        thread_table::add_kernel_thread(thread.clone());
         thread
     }
 

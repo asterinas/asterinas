@@ -345,7 +345,10 @@ macro_rules! log_syscall_entry {
         if log::log_enabled!(log::Level::Info) {
             let syscall_name_str = stringify!($syscall_name);
             let pid = $crate::current!().pid();
-            let tid = $crate::current_thread!().tid();
+            let tid = {
+                use $crate::process::posix_thread::PosixThreadExt;
+                $crate::current_thread!().tid()
+            };
             log::info!(
                 "[pid={}][tid={}][id={}][{}]",
                 pid,
