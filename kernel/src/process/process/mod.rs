@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::sync::atomic::Ordering;
+
 use self::timer_manager::PosixTimerManager;
 use super::{
     posix_thread::PosixThreadExt,
@@ -71,7 +73,7 @@ pub struct Process {
     /// Process status
     status: ProcessStatus,
     /// Parent process
-    pub(super) parent: Mutex<Weak<Process>>,
+    pub(super) parent: ParentProcess,
     /// Children processes
     children: Mutex<BTreeMap<Pid, Arc<Process>>>,
     /// Process group
@@ -100,6 +102,63 @@ pub struct Process {
 
     /// A manager that manages timer resources and utilities of the process.
     timer_manager: PosixTimerManager,
+}
+
+/// Representing a parent process by holding a weak reference to it and its PID.
+///
+/// This type caches the value of the PID so that it can be retrieved cheaply.
+///
+/// The benefit of using `ParentProcess` over `(Mutex<Weak<Process>>, Atomic<Pid>,)` is to
+/// enforce the invariant that the cached PID and the weak reference are always kept in sync.
+pub struct ParentProcess {
+    process: Mutex<Weak<Process>>,
+    pid: Atomic<Pid>,
+}
+
+impl ParentProcess {
+    pub fn new(process: Weak<Process>) -> Self {
+        let pid = match process.upgrade() {
+            Some(process) => process.pid(),
+            None => 0,
+        };
+
+        Self {
+            process: Mutex::new(process),
+            pid: Atomic::new(pid),
+        }
+    }
+
+    pub fn pid(&self) -> Pid {
+        self.pid.load(Ordering::Relaxed)
+    }
+
+    pub fn lock(&self) -> ParentProcessGuard<'_> {
+        ParentProcessGuard {
+            guard: self.process.lock(),
+            this: self,
+        }
+    }
+}
+
+pub struct ParentProcessGuard<'a> {
+    guard: MutexGuard<'a, Weak<Process>>,
+    this: &'a ParentProcess,
+}
+
+impl ParentProcessGuard<'_> {
+    pub fn process(&self) -> Weak<Process> {
+        self.guard.clone()
+    }
+
+    pub fn pid(&self) -> Pid {
+        self.this.pid()
+    }
+
+    /// Update both pid and weak ref.
+    pub fn set_process(&mut self, new_process: &Arc<Process>) {
+        self.this.pid.store(new_process.pid(), Ordering::Relaxed);
+        *self.guard = Arc::downgrade(new_process);
+    }
 }
 
 impl Process {
@@ -141,7 +200,7 @@ impl Process {
             process_vm,
             children_pauser,
             status: ProcessStatus::new_uninit(),
-            parent: Mutex::new(parent),
+            parent: ParentProcess::new(parent),
             children: Mutex::new(BTreeMap::new()),
             process_group: Mutex::new(Weak::new()),
             file_table,
@@ -268,12 +327,12 @@ impl Process {
     }
 
     // *********** Parent and child ***********
-    pub fn parent(&self) -> Option<Arc<Process>> {
-        self.parent.lock().upgrade()
+    pub fn parent(&self) -> &ParentProcess {
+        &self.parent
     }
 
     pub fn is_init_process(&self) -> bool {
-        self.parent().is_none()
+        self.parent.lock().process().upgrade().is_none()
     }
 
     pub(super) fn children(&self) -> &Mutex<BTreeMap<Pid, Arc<Process>>> {

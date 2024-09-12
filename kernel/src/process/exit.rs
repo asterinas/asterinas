@@ -49,12 +49,13 @@ pub fn do_exit_group(term_status: TermStatus) {
             for (_, child_process) in current.children().lock().extract_if(|_, _| true) {
                 let mut parent = child_process.parent.lock();
                 init_children.insert(child_process.pid(), child_process.clone());
-                *parent = Arc::downgrade(&init_process);
+                parent.set_process(&init_process);
             }
         }
     }
 
-    if let Some(parent) = current.parent() {
+    let parent = current.parent().lock().process();
+    if let Some(parent) = parent.upgrade() {
         // Notify parent
         let signal = KernelSignal::new(SIGCHLD);
         parent.enqueue_signal(signal);
