@@ -4,7 +4,7 @@ use core::sync::atomic::Ordering;
 
 use self::timer_manager::PosixTimerManager;
 use super::{
-    posix_thread::PosixThreadExt,
+    posix_thread::{allocate_posix_tid, PosixThreadExt},
     process_table,
     process_vm::{Heap, InitStackReader, ProcessVm},
     rlimit::ResourceLimits,
@@ -21,7 +21,7 @@ use crate::{
     fs::{file_table::FileTable, fs_resolver::FsResolver, utils::FileCreationMask},
     prelude::*,
     sched::nice::Nice,
-    thread::{allocate_tid, Thread},
+    thread::Thread,
     time::clocks::ProfClock,
     vm::vmar::Vmar,
 };
@@ -236,7 +236,7 @@ impl Process {
         envp: Vec<CString>,
     ) -> Result<Arc<Self>> {
         let process_builder = {
-            let pid = allocate_tid();
+            let pid = allocate_posix_tid();
             let parent = Weak::new();
 
             let credentials = Credentials::new_root();
@@ -710,7 +710,7 @@ mod test {
     fn new_process(parent: Option<Arc<Process>>) -> Arc<Process> {
         crate::util::random::init();
         crate::fs::rootfs::init_root_mount();
-        let pid = allocate_tid();
+        let pid = allocate_posix_tid();
         let parent = if let Some(parent) = parent {
             Arc::downgrade(&parent)
         } else {

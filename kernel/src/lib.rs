@@ -133,10 +133,7 @@ fn ap_init() -> ! {
 }
 
 fn init_thread() {
-    println!(
-        "[kernel] Spawn init thread, tid = {}",
-        current_thread!().tid()
-    );
+    println!("[kernel] Spawn init thread");
     // Work queue should be initialized before interrupt is enabled,
     // in case any irq handler uses work queue as bottom half
     thread::work_queue::init();
@@ -146,15 +143,8 @@ fn init_thread() {
     // driver::pci::virtio::block::block_device_test();
     let thread = Thread::spawn_kernel_thread(ThreadOptions::new(|| {
         println!("[kernel] Hello world from kernel!");
-        let current = current_thread!();
-        let tid = current.tid();
-        debug!("current tid = {}", tid);
     }));
     thread.join();
-    info!(
-        "[aster-nix/lib.rs] spawn kernel thread, tid = {}",
-        thread.tid()
-    );
 
     print_banner();
 

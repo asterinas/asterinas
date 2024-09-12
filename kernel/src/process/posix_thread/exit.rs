@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{futex::futex_wake, robust_list::wake_robust_futex, PosixThread, PosixThreadExt};
+use super::{futex::futex_wake, robust_list::wake_robust_futex, PosixThread};
 use crate::{
     prelude::*,
     process::{do_exit_group, TermStatus},
@@ -12,15 +12,13 @@ use crate::{
 /// # Panics
 ///
 /// If the thread is not a POSIX thread, this method will panic.
-pub fn do_exit(thread: Arc<Thread>, term_status: TermStatus) -> Result<()> {
+pub fn do_exit(thread: &Thread, posix_thread: &PosixThread, term_status: TermStatus) -> Result<()> {
     if thread.status().is_exited() {
         return Ok(());
     }
     thread.exit();
 
-    let tid = thread.tid();
-
-    let posix_thread = thread.as_posix_thread().unwrap();
+    let tid = posix_thread.tid;
 
     let mut clear_ctid = posix_thread.clear_child_tid().lock();
     // If clear_ctid !=0 ,do a futex wake and write zero to the clear_ctid addr.
@@ -38,7 +36,7 @@ pub fn do_exit(thread: Arc<Thread>, term_status: TermStatus) -> Result<()> {
     if tid != posix_thread.process().pid() {
         // We don't remove main thread.
         // The main thread is removed when the process is reaped.
-        thread_table::remove_thread(tid);
+        thread_table::remove_posix_thread(tid);
     }
 
     if posix_thread.is_main_thread(tid) || posix_thread.is_last_thread() {

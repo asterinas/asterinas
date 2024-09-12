@@ -2,7 +2,7 @@
 
 //! Posix thread implementation
 
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::Ordering;
 
 use ostd::task::Task;
 
@@ -18,13 +18,9 @@ pub mod work_queue;
 
 pub type Tid = u32;
 
-static TID_ALLOCATOR: AtomicU32 = AtomicU32::new(0);
-
 /// A thread is a wrapper on top of task.
 pub struct Thread {
     // immutable part
-    /// Thread id
-    tid: Tid,
     /// Low-level info
     task: Arc<Task>,
     /// Data: Posix thread info/Kernel thread Info
@@ -36,14 +32,8 @@ pub struct Thread {
 
 impl Thread {
     /// Never call these function directly
-    pub fn new(
-        tid: Tid,
-        task: Arc<Task>,
-        data: impl Send + Sync + Any,
-        status: ThreadStatus,
-    ) -> Self {
+    pub fn new(task: Arc<Task>, data: impl Send + Sync + Any, status: ThreadStatus) -> Self {
         Thread {
-            tid,
             task,
             data: Box::new(data),
             status: AtomicThreadStatus::new(status),
@@ -94,10 +84,6 @@ impl Thread {
         Task::yield_now()
     }
 
-    pub fn tid(&self) -> Tid {
-        self.tid
-    }
-
     /// Returns the associated data.
     ///
     /// The return type must be borrowed box, otherwise the `downcast_ref` will fail.
@@ -105,9 +91,4 @@ impl Thread {
     pub fn data(&self) -> &Box<dyn Send + Sync + Any> {
         &self.data
     }
-}
-
-/// Allocates a new tid for the new thread
-pub fn allocate_tid() -> Tid {
-    TID_ALLOCATOR.fetch_add(1, Ordering::SeqCst)
 }

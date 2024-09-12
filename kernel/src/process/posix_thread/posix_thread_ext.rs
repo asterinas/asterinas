@@ -13,6 +13,14 @@ use crate::{
     thread::{Thread, Tid},
 };
 pub trait PosixThreadExt {
+    /// Returns the thread id.
+    ///
+    /// # Panics
+    ///
+    /// If the thread is not posix thread, this method will panic.
+    fn tid(&self) -> Tid {
+        self.as_posix_thread().unwrap().tid()
+    }
     fn as_posix_thread(&self) -> Option<&PosixThread>;
     #[allow(clippy::too_many_arguments)]
     fn new_posix_thread_from_executable(

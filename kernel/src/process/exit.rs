@@ -4,7 +4,7 @@ use super::{process_table, Pid, Process, TermStatus};
 use crate::{
     prelude::*,
     process::{
-        posix_thread::do_exit,
+        posix_thread::{do_exit, PosixThreadExt},
         signal::{constants::SIGCHLD, signals::kernel::KernelSignal},
     },
 };
@@ -20,7 +20,7 @@ pub fn do_exit_group(term_status: TermStatus) {
     // Exit all threads
     let threads = current.threads().lock().clone();
     for thread in threads {
-        if let Err(e) = do_exit(thread, term_status) {
+        if let Err(e) = do_exit(&thread, thread.as_posix_thread().unwrap(), term_status) {
             debug!("Ignore error when call exit: {:?}", e);
         }
     }
