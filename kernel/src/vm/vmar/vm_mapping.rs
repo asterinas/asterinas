@@ -305,7 +305,7 @@ impl VmMapping {
         let vmo_offset = inner.vmo_offset.unwrap();
         let vmo = self.vmo().unwrap();
         let around_page_addr = page_fault_addr & SURROUNDING_PAGE_ADDR_MASK;
-        let valid_size = min(vmo.size() - vmo_offset, inner.map_size);
+        let valid_size = min(vmo.size().saturating_sub(vmo_offset), inner.map_size);
 
         let start_addr = max(around_page_addr, inner.map_to_addr);
         let end_addr = min(
