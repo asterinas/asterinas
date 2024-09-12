@@ -3,7 +3,7 @@
 use alloc::{borrow::ToOwned, sync::Arc};
 
 use aster_bigtcp::device::WithDevice;
-use ostd::sync::PreemptDisabled;
+use ostd::sync::LocalIrqDisabled;
 use spin::Once;
 
 use super::{poll_ifaces, Iface};
@@ -39,9 +39,9 @@ fn new_virtio() -> Arc<Iface> {
 
     let virtio_net = aster_network::get_device(DEVICE_NAME).unwrap();
 
-    let ether_addr = virtio_net.disable_irq().lock().mac_addr().0;
+    let ether_addr = virtio_net.lock().mac_addr().0;
 
-    struct Wrapper(Arc<SpinLock<dyn AnyNetworkDevice, PreemptDisabled>>);
+    struct Wrapper(Arc<SpinLock<dyn AnyNetworkDevice, LocalIrqDisabled>>);
 
     impl WithDevice for Wrapper {
         type Device = dyn AnyNetworkDevice;
@@ -50,7 +50,7 @@ fn new_virtio() -> Arc<Iface> {
         where
             F: FnOnce(&mut Self::Device) -> R,
         {
-            let mut device = self.0.disable_irq().lock();
+            let mut device = self.0.lock();
             f(&mut *device)
         }
     }
