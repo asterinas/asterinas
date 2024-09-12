@@ -25,11 +25,11 @@ use crate::{
 };
 
 pub struct IfaceCommon<E> {
-    interface: SpinLock<smoltcp::iface::Interface>,
-    sockets: SpinLock<SocketSet<'static>>,
+    interface: SpinLock<smoltcp::iface::Interface, LocalIrqDisabled>,
+    sockets: SpinLock<SocketSet<'static>, LocalIrqDisabled>,
     used_ports: RwLock<BTreeMap<u16, usize>>,
     bound_sockets: RwLock<BTreeSet<KeyableArc<AnyBoundSocketInner<E>>>>,
-    closing_sockets: SpinLock<BTreeSet<KeyableArc<AnyBoundSocketInner<E>>>>,
+    closing_sockets: SpinLock<BTreeSet<KeyableArc<AnyBoundSocketInner<E>>>, LocalIrqDisabled>,
     ext: E,
 }
 
@@ -51,7 +51,7 @@ impl<E> IfaceCommon<E> {
     ///
     /// *Lock ordering:* [`Self::sockets`] first, [`Self::interface`] second.
     pub(crate) fn interface(&self) -> SpinLockGuard<smoltcp::iface::Interface, LocalIrqDisabled> {
-        self.interface.disable_irq().lock()
+        self.interface.lock()
     }
 
     /// Acuqires the lock to the sockets.
@@ -60,11 +60,11 @@ impl<E> IfaceCommon<E> {
     pub(crate) fn sockets(
         &self,
     ) -> SpinLockGuard<smoltcp::iface::SocketSet<'static>, LocalIrqDisabled> {
-        self.sockets.disable_irq().lock()
+        self.sockets.lock()
     }
 
     pub(super) fn ipv4_addr(&self) -> Option<Ipv4Address> {
-        self.interface.disable_irq().lock().ipv4_addr()
+        self.interface.lock().ipv4_addr()
     }
 
     /// Alloc an unused port range from 49152 ~ 65535 (According to smoltcp docs)
@@ -125,12 +125,12 @@ impl<E> IfaceCommon<E> {
 
         let (handle, socket_family, observer) = match socket.into_raw() {
             (AnyRawSocket::Tcp(tcp_socket), observer) => (
-                self.sockets.disable_irq().lock().add(tcp_socket),
+                self.sockets.lock().add(tcp_socket),
                 SocketFamily::Tcp,
                 observer,
             ),
             (AnyRawSocket::Udp(udp_socket), observer) => (
-                self.sockets.disable_irq().lock().add(udp_socket),
+                self.sockets.lock().add(udp_socket),
                 SocketFamily::Udp,
                 observer,
             ),
@@ -143,13 +143,13 @@ impl<E> IfaceCommon<E> {
 
     /// Remove a socket from the interface
     pub(crate) fn remove_socket(&self, handle: SocketHandle) {
-        self.sockets.disable_irq().lock().remove(handle);
+        self.sockets.lock().remove(handle);
     }
 
     #[must_use]
     pub(super) fn poll<D: Device + ?Sized>(&self, device: &mut D) -> Option<u64> {
-        let mut sockets = self.sockets.disable_irq().lock();
-        let mut interface = self.interface.disable_irq().lock();
+        let mut sockets = self.sockets.lock();
+        let mut interface = self.interface.lock();
 
         let timestamp = get_network_timestamp();
         let (has_events, poll_at) = {
@@ -192,7 +192,6 @@ impl<E> IfaceCommon<E> {
 
             let closed_sockets = self
                 .closing_sockets
-                .disable_irq()
                 .lock()
                 .extract_if(|closing_socket| closing_socket.is_closed())
                 .collect::<Vec<_>>();
@@ -235,7 +234,7 @@ impl<E> IfaceCommon<E> {
             .remove(&keyable_socket);
         assert!(removed);
 
-        let mut closing_sockets = self.closing_sockets.disable_irq().lock();
+        let mut closing_sockets = self.closing_sockets.lock();
 
         // Check `is_closed` after holding the lock to avoid race conditions.
         if keyable_socket.is_closed() {

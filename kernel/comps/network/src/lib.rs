@@ -19,7 +19,7 @@ pub use buffer::{RxBuffer, TxBuffer, RX_BUFFER_POOL, TX_BUFFER_POOL};
 use component::{init_component, ComponentInitError};
 pub use dma_pool::DmaSegment;
 use ostd::{
-    sync::{PreemptDisabled, SpinLock},
+    sync::{LocalIrqDisabled, SpinLock},
     Pod,
 };
 use smoltcp::phy;
@@ -55,23 +55,20 @@ pub trait AnyNetworkDevice: Send + Sync + Any + Debug {
 
 pub trait NetDeviceIrqHandler = Fn() + Send + Sync + 'static;
 
-pub fn register_device(name: String, device: Arc<SpinLock<dyn AnyNetworkDevice, PreemptDisabled>>) {
+pub fn register_device(
+    name: String,
+    device: Arc<SpinLock<dyn AnyNetworkDevice, LocalIrqDisabled>>,
+) {
     COMPONENT
         .get()
         .unwrap()
         .network_device_table
-        .disable_irq()
         .lock()
         .insert(name, (Arc::new(SpinLock::new(Vec::new())), device));
 }
 
-pub fn get_device(str: &str) -> Option<Arc<SpinLock<dyn AnyNetworkDevice, PreemptDisabled>>> {
-    let table = COMPONENT
-        .get()
-        .unwrap()
-        .network_device_table
-        .disable_irq()
-        .lock();
+pub fn get_device(str: &str) -> Option<Arc<SpinLock<dyn AnyNetworkDevice, LocalIrqDisabled>>> {
+    let table = COMPONENT.get().unwrap().network_device_table.lock();
     let (_, device) = table.get(str)?;
     Some(device.clone())
 }
@@ -81,41 +78,26 @@ pub fn get_device(str: &str) -> Option<Arc<SpinLock<dyn AnyNetworkDevice, Preemp
 /// Since the callback will be called in interrupt context,
 /// the callback function should NOT sleep.
 pub fn register_recv_callback(name: &str, callback: impl NetDeviceIrqHandler) {
-    let device_table = COMPONENT
-        .get()
-        .unwrap()
-        .network_device_table
-        .disable_irq()
-        .lock();
+    let device_table = COMPONENT.get().unwrap().network_device_table.lock();
     let Some((callbacks, _)) = device_table.get(name) else {
         return;
     };
-    callbacks.disable_irq().lock().push(Arc::new(callback));
+    callbacks.lock().push(Arc::new(callback));
 }
 
 pub fn handle_recv_irq(name: &str) {
-    let device_table = COMPONENT
-        .get()
-        .unwrap()
-        .network_device_table
-        .disable_irq()
-        .lock();
+    let device_table = COMPONENT.get().unwrap().network_device_table.lock();
     let Some((callbacks, _)) = device_table.get(name) else {
         return;
     };
-    let callbacks = callbacks.disable_irq().lock();
+    let callbacks = callbacks.lock();
     for callback in callbacks.iter() {
         callback();
     }
 }
 
 pub fn all_devices() -> Vec<(String, NetworkDeviceRef)> {
-    let network_devs = COMPONENT
-        .get()
-        .unwrap()
-        .network_device_table
-        .disable_irq()
-        .lock();
+    let network_devs = COMPONENT.get().unwrap().network_device_table.lock();
     network_devs
         .iter()
         .map(|(name, (_, device))| (name.clone(), device.clone()))
@@ -124,7 +106,7 @@ pub fn all_devices() -> Vec<(String, NetworkDeviceRef)> {
 
 static COMPONENT: Once<Component> = Once::new();
 pub(crate) static NETWORK_IRQ_HANDLERS: Once<
-    SpinLock<Vec<Arc<dyn NetDeviceIrqHandler>>, PreemptDisabled>,
+    SpinLock<Vec<Arc<dyn NetDeviceIrqHandler>>, LocalIrqDisabled>,
 > = Once::new();
 
 #[init_component]
@@ -136,13 +118,16 @@ fn init() -> Result<(), ComponentInitError> {
     Ok(())
 }
 
-type NetDeviceIrqHandlerListRef = Arc<SpinLock<Vec<Arc<dyn NetDeviceIrqHandler>>, PreemptDisabled>>;
-type NetworkDeviceRef = Arc<SpinLock<dyn AnyNetworkDevice, PreemptDisabled>>;
+type NetDeviceIrqHandlerListRef =
+    Arc<SpinLock<Vec<Arc<dyn NetDeviceIrqHandler>>, LocalIrqDisabled>>;
+type NetworkDeviceRef = Arc<SpinLock<dyn AnyNetworkDevice, LocalIrqDisabled>>;
 
 struct Component {
     /// Device list, the key is device name, value is (callbacks, device);
-    network_device_table:
-        SpinLock<BTreeMap<String, (NetDeviceIrqHandlerListRef, NetworkDeviceRef)>, PreemptDisabled>,
+    network_device_table: SpinLock<
+        BTreeMap<String, (NetDeviceIrqHandlerListRef, NetworkDeviceRef)>,
+        LocalIrqDisabled,
+    >,
 }
 
 impl Component {
