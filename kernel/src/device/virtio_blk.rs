@@ -111,7 +111,7 @@ impl FileIo for VirtioBlk {
                 // write_val_to_user(arg, &BLOCK_SIZE)?;
             }
             IoctlCmd::BLKGETSIZE64 => {
-                CurrentUserSpace::get().write_val(arg as _, &(1024 * 1024 * 1024_usize))?;
+                CurrentUserSpace::get().write_val(arg as _, &(11 * 1024 * 1024 * 1024_usize))?;
                 // write_val_to_user(arg, &(1024 * 1024 * 1024_usize))?;
             }
             _ => {

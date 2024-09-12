@@ -167,7 +167,7 @@ $(EXFAT_IMAGE):
 	@mkfs.exfat $(EXFAT_IMAGE)
 
 $(VDA_IMAGE):
-	@dd if=/dev/zero of=$(VDA_IMAGE) bs=1G count=1
+	@dd if=/dev/zero of=$(VDA_IMAGE) bs=1G count=11
 
 .PHONY: build
 build: $(INITRAMFS_IMAGE) $(EXT2_IMAGE) $(EXFAT_IMAGE) $(VDA_IMAGE)

@@ -17,21 +17,73 @@ source "${BENCHMARK_DIR}/common/prepare_host.sh"
 # Parse the results from the benchmark output
 parse_results() {
     local benchmark="$1"
-    local search_pattern="$2"
-    local result_index="$3"
-    local linux_output="$4"
-    local aster_output="$5"
-    local result_template="$6"
-    local result_file="$7"
+    local init_script=$(cat <<EOF
+#!/bin/sh
 
-    local linux_result aster_result
-    linux_result=$(awk "/${search_pattern}/ {result=\$$result_index} END {print result}" "${linux_output}" | tr -d '\r')
-    aster_result=$(awk "/${search_pattern}/ {result=\$$result_index} END {print result}" "${aster_output}" | tr -d '\r')
-    
-    if [ -z "${linux_result}" ] || [ -z "${aster_result}" ]; then
-        echo "Error: Failed to parse the results from the benchmark output" >&2
+run_fio_test() {
+    local mode="\$1"
+    local rw="\$2"
+    local size="\$3"
+    local bs="\$4"
+
+    local rwtype
+    local name
+
+    if [ "\$mode" == "seq" ]; then
+        name="seq-"
+    elif [ "\$mode" == "rnd" ]; then
+        name="rnd-"
+        rwtype="rand"
+    else
+        echo "Error: Invalid mode. Please use 'seq' or 'rnd'."
         exit 1
     fi
+
+    if [ "\$rw" == "r" ]; then
+        name="\${name}r-\$bs"
+        rwtype="\${rwtype}read"
+    elif [ "\$rw" == "w" ]; then
+        name="\${name}w-\$bs"
+        rwtype="\${rwtype}write"
+    else
+        echo "Error: Invalid rw. Please use 'r' or 'w'."
+        exit 1
+    fi
+    
+    /benchmark/bin/fio \
+        --ioengine=sync \
+        --size=\$size \
+        --rw=\$rwtype \
+        --filename=/dev/vda \
+        --name=\$name \
+        --bs=\$bs \
+        --direct=1 \
+        --numjobs=1 \
+        --fsync_on_close=1 \
+        --time_based=1 \
+        --runtime=60
+}
+
+mount -t devtmpfs devtmpfs /dev
+ip link set lo up
+modprobe virtio_blk
+mkfs.ext2 -F /dev/vda
+mount -t ext2 /dev/vda /ext2
+
+# echo "Running ${benchmark}"
+# chmod +x /benchmark/${benchmark}/run.sh
+# /benchmark/${benchmark}/run.sh
+
+# /benchmark/bin/fio -ioengine=sync -size=10G -rw=write -filename=/dev/vda -name=seq-w-1m -bs=1M -direct=1 -numjobs=1 -fsync_on_close=1 -time_based=0 -runtime=20
+# source fio_aster_test.sh
+run_fio_test "seq" "w" "10G" "1M"
+run_fio_test "rnd" "w" "10G" "4K"
+run_fio_test "rnd" "w" "10G" "32K"
+run_fio_test "rnd" "w" "10G" "256K"
+run_fio_test "seq" "r" "10G" "1M"
+run_fio_test "rnd" "r" "10G" "4K"
+run_fio_test "rnd" "r" "10G" "32K"
+run_fio_test "rnd" "r" "10G" "256K"
 
     echo "Updating the result template with extracted values..."
     jq --arg linux_result "${linux_result}" --arg aster_result "${aster_result}" \
@@ -101,8 +153,9 @@ run_benchmark() {
     parse_results "$benchmark" "$search_pattern" "$result_index" "$linux_output" "$aster_output" "$result_template" "$result_file"
 
     echo "Cleaning up..."
-    rm -f "${linux_output}"
-    rm -f "${aster_output}"
+    # rm -f "${initramfs_entrypoint_script}"
+    # rm -f "${linux_output}"
+    # rm -f "${aster_output}"
 }
 
 # Main
