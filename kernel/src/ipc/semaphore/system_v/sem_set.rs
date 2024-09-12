@@ -81,7 +81,7 @@ impl SemaphoreSet {
     pub fn pending_const_count(&self, sem_num: u16) -> usize {
         let inner = self.inner.lock();
         let pending_const = &inner.pending_const;
-        let mut count = 1;
+        let mut count = 0;
         for i in pending_const.iter() {
             for sem_buf in i.sops_iter() {
                 if sem_buf.sem_num() == sem_num {
@@ -95,7 +95,7 @@ impl SemaphoreSet {
     pub fn pending_alter_count(&self, sem_num: u16) -> usize {
         let inner = self.inner.lock();
         let pending_alter = &inner.pending_alter;
-        let mut count = 1;
+        let mut count = 0;
         for i in pending_alter.iter() {
             for sem_buf in i.sops_iter() {
                 if sem_buf.sem_num() == sem_num {
