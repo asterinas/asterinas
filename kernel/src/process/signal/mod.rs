@@ -3,7 +3,7 @@
 pub mod c_types;
 pub mod constants;
 mod events;
-mod pauser;
+mod pause;
 mod poll;
 pub mod sig_action;
 pub mod sig_disposition;
@@ -19,7 +19,7 @@ use align_ext::AlignExt;
 use c_types::{siginfo_t, ucontext_t};
 pub use events::{SigEvents, SigEventsFilter};
 use ostd::{cpu::UserContext, user::UserContextApi};
-pub use pauser::Pauser;
+pub use pause::{with_signal_blocked, Pause};
 pub use poll::{Pollable, Pollee, Poller};
 use sig_action::{SigAction, SigActionFlags, SigDefaultAction};
 use sig_mask::SigMask;
