@@ -1,0 +1,14 @@
+[
+    {
+        "name": "Average unix connect latency on Linux",
+        "unit": "µs",
+        "value": 0,
+        "extra": "linux_result"
+    },
+    {
+        "name": "Average unix connect latency on Asterinas",
+        "unit": "µs",
+        "value": 0,
+        "extra": "aster_result"
+    }
+]

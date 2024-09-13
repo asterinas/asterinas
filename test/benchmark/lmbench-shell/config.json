@@ -1,7 +1,0 @@
-{
-    "alert_threshold": "125%",
-    "alert_tool": "customSmallerIsBetter",
-    "search_pattern": "Process fork\\+\\/bin\\/sh",
-    "result_index": "4",
-    "description": "The latency of creating and executing a shell process on a single processor."
-}

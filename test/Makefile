@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 
+BINARY_CACHE_DIR := /opt/linux_binary_cache
 VDSO_DIR := ../target
 VDSO_LIB := $(VDSO_DIR)/vdso64.so
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
@@ -7,7 +8,6 @@ CUR_DIR := $(patsubst %/,%,$(dir $(MKFILE_PATH)))
 ATOMIC_WGET := $(CUR_DIR)/../tools/atomic_wget.sh
 BUILD_DIR := $(CUR_DIR)/build
 INITRAMFS := $(BUILD_DIR)/initramfs
-BENCHMARK_ENTRYPOINT := $(CUR_DIR)/benchmark/benchmark_entrypoint.sh
 INITRAMFS_FILELIST := $(BUILD_DIR)/initramfs.filelist
 INITRAMFS_IMAGE := $(BUILD_DIR)/initramfs.cpio.gz
 EXT2_IMAGE := $(BUILD_DIR)/ext2.img
@@ -61,13 +61,17 @@ $(INITRAMFS)/lib/x86_64-linux-gnu: | $(VDSO_LIB)
 	@# required for VDSO
 	@cp -L $(VDSO_LIB) $@
 
-$(VDSO_LIB): | $(VDSO_DIR)
+$(VDSO_LIB): | $(VDSO_DIR) $(BINARY_CACHE_DIR)/vdso64.so
 	@# TODO: use a custom compiled vdso.so file in the future.
-	$(ATOMIC_WGET) $@ "https://raw.githubusercontent.com/asterinas/linux_vdso/2a6d2db/vdso64.so"
+	@cp $(BINARY_CACHE_DIR)/vdso64.so $@
 	
 $(VDSO_DIR):
 	@mkdir -p $@
 	
+$(BINARY_CACHE_DIR)/vdso64.so:
+	@mkdir -p $(BINARY_CACHE_DIR)
+	@$(ATOMIC_WGET) $@ "https://raw.githubusercontent.com/asterinas/linux_vdso/2a6d2db/vdso64.so"
+
 $(INITRAMFS)/lib64:
 	@mkdir -p $@
 	@cp -L /lib64/ld-linux-x86-64.so.2 $@
@@ -97,9 +101,6 @@ $(INITRAMFS)/test:
 
 $(INITRAMFS)/benchmark: | $(INITRAMFS)/benchmark/bin
 	@cp -rf $(CUR_DIR)/benchmark/* $@
-	@if [ -e $(BENCHMARK_ENTRYPOINT) ]; then \
-		cp $(BENCHMARK_ENTRYPOINT) $@; \
-	fi
 
 $(INITRAMFS)/benchmark/bin:
 	@mkdir -p $@

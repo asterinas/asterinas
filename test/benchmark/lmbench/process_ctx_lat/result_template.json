@@ -1,0 +1,14 @@
+[
+    {
+        "name": "Average context switch latency on Linux",
+        "unit": "µs",
+        "value": 0,
+        "extra": "linux_result"
+    },
+    {
+        "name": "Average context switch latency on Asterinas",
+        "unit": "µs",
+        "value": 0,
+        "extra": "aster_result"
+    }
+]

@@ -1,0 +1,14 @@
+[
+    {
+        "name": "Average Execution Time per CPU on Linux",
+        "unit": "ms",
+        "value": 0,
+        "extra": "linux_result"
+    },
+    {
+        "name": "Average Execution Time per CPU on Asterinas",
+        "unit": "ms",
+        "value": 0,
+        "extra": "aster_result"
+    }
+]

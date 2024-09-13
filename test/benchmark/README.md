@@ -72,25 +72,29 @@ To add a new benchmark to the Asternias Continuous Integration (CI) system, foll
 
 1. **Create the Benchmark Directory:**
    - Navigate to `asterinas/test/benchmarks`.
-   - Create a new directory named after your benchmark, e.g., `getpid`.
+   - Create a new directory named after your benchmark, e.g., `lmbench/getpid`.
 
 2. **Create the Necessary Files:**
    - **config.json:**
      ```json
       {
         "alert_threshold": "125%",
-        "alert_tool": "customBiggerIsBetter",
-        "search_pattern": "134.22",
-        "result_index": "2",
-        "description": "The memory bandwidth for copying 128 MB of data on a single processor using the fcp (fast copy) method."
-      }
+        "alert_tool": "customSmallerIsBetter",
+        "search_pattern": "Simple syscall:",
+        "result_index": "3",
+        "description": "lat_syscall null",
+        "title": "[Process] The cost of getpid",
+        "show_in_overview": "false"
+      } 
      ```
      
-    - `alert_threshold`: Set the threshold for alerting. If the benchmark result exceeds this threshold, an alert will be triggered. Note that the threshold should usually be greater than 100%.
+    - `alert_threshold`: Set the threshold for alerting. If the benchmark result exceeds this threshold, an alert will be triggered. Note that the threshold should usually be greater than 100%. If your results are not stable, set it to a bigger value.
     - `alert_tool`: Choose the validation tool to use. The available options are `customBiggerIsBetter` and `customSmallerIsBetter`. Refer to [this](https://github.com/benchmark-action/github-action-benchmark?tab=readme-ov-file#tool-required) for more details. If using `customBiggerIsBetter`, the alert will be triggered when `prev.value / current.value` exceeds the threshold. If using `customSmallerIsBetter`, the alert will be triggered when `current.value / prev.value` exceeds the threshold.
     - `search_pattern`: Define a regular expression to extract benchmark results from the output using `awk`. This regular expression is designed to match specific patterns in the output, effectively isolating the benchmark results and producing a set of fragments.
     - `result_index`: Specify the index of the result in the extracted output. This field is aligned with `awk`'s action.
     - `description`: Provide a brief description of the benchmark.
+    - `title`: Set the title of the benchmark.
+    - `show_in_overview`: Default is true. Set to `false` to avoid displaying the benchmark in the overview results.
 
     For example, if the benchmark output is "Syscall average latency: 1000 ns", the `search_pattern` is "Syscall average latency:", and the `result_index` is "4". `awk` will extract "1000" as the benchmark result. See the `awk` [manual](https://www.gnu.org/software/gawk/manual/gawk.html#Getting-Started) for more information.
 
@@ -102,13 +106,13 @@ To add a new benchmark to the Asternias Continuous Integration (CI) system, foll
              "name": "Average Syscall Latency on Linux",
              "unit": "ns",
              "value": 0,
-             "extra": "linux_avg"
+             "extra": "linux_result"
          },
          {
              "name": "Average Syscall Latency on Asterinas",
              "unit": "ns",
              "value": 0,
-             "extra": "aster_avg"
+             "extra": "aster_result"
          }
      ]
      ```
@@ -118,7 +122,7 @@ To add a new benchmark to the Asternias Continuous Integration (CI) system, foll
      ```bash
      #!/bin/bash
 
-     /benchmark/bin/getpid
+     /benchmark/bin/lmbench/lat_syscall -P 1 null
      ```
      - This script runs the benchmark. Ensure the path to the benchmark binary is correct. `asterinas/test/Makefile` handles the benchmark binaries.
 
@@ -130,7 +134,7 @@ To add a new benchmark to the Asternias Continuous Integration (CI) system, foll
      ```yaml
      strategy:
        matrix:
-         benchmark: [getpid]
+         benchmark: [lmbench/getpid]
        fail-fast: false
      ```
 
@@ -140,7 +144,7 @@ To add a new benchmark to the Asternias Continuous Integration (CI) system, foll
    - Execute the following command to test the benchmark locally:
      ```bash
      cd asterinas
-     bash test/benchmark/bench_linux_aster.sh getpid
+     bash test/benchmark/bench_linux_and_aster.sh lmbench/getpid
      ```
    - Ensure the benchmark runs successfully and check the results in `asterinas/result_getpid.json`.
 
