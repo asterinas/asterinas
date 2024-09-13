@@ -4,11 +4,12 @@ use core::sync::atomic::Ordering;
 
 use ostd::{
     cpu::UserContext,
+    task::Task,
     user::{UserContextApi, UserSpace},
 };
 
 use super::{
-    posix_thread::{PosixThread, PosixThreadBuilder, PosixThreadExt, ThreadName},
+    posix_thread::{thread_table, PosixThread, PosixThreadBuilder, PosixThreadExt, ThreadName},
     process_table,
     process_vm::ProcessVm,
     signal::sig_disposition::SigDispositions,
@@ -19,7 +20,7 @@ use crate::{
     fs::{file_table::FileTable, fs_resolver::FsResolver, utils::FileCreationMask},
     prelude::*,
     process::posix_thread::allocate_posix_tid,
-    thread::{thread_table, Thread, Tid},
+    thread::{Thread, Tid},
 };
 
 bitflags! {
@@ -133,7 +134,8 @@ pub fn clone_child(
 ) -> Result<Tid> {
     clone_args.clone_flags.check_unsupported_flags()?;
     if clone_args.clone_flags.contains(CloneFlags::CLONE_THREAD) {
-        let child_thread = clone_child_thread(ctx, parent_context, clone_args)?;
+        let child_task = clone_child_task(ctx, parent_context, clone_args)?;
+        let child_thread = Thread::borrow_from_task(&child_task);
         child_thread.run();
 
         let child_tid = child_thread.tid();
@@ -147,11 +149,11 @@ pub fn clone_child(
     }
 }
 
-fn clone_child_thread(
+fn clone_child_task(
     ctx: &Context,
     parent_context: &UserContext,
     clone_args: CloneArgs,
-) -> Result<Arc<Thread>> {
+) -> Result<Arc<Task>> {
     let Context {
         process,
         posix_thread,
@@ -182,7 +184,7 @@ fn clone_child_thread(
     let sig_mask = posix_thread.sig_mask().load(Ordering::Relaxed).into();
 
     let child_tid = allocate_posix_tid();
-    let child_thread = {
+    let child_task = {
         let credentials = {
             let credentials = ctx.posix_thread.credentials();
             Credentials::new_from(&credentials)
@@ -194,13 +196,13 @@ fn clone_child_thread(
         thread_builder.build()
     };
 
-    process.threads().lock().push(child_thread.clone());
+    process.tasks().lock().push(child_task.clone());
 
-    let child_posix_thread = child_thread.as_posix_thread().unwrap();
+    let child_posix_thread = child_task.as_posix_thread().unwrap();
     clone_parent_settid(child_tid, clone_args.parent_tidptr, clone_flags)?;
     clone_child_cleartid(child_posix_thread, clone_args.child_tidptr, clone_flags)?;
     clone_child_settid(child_posix_thread, clone_args.child_tidptr, clone_flags)?;
-    Ok(child_thread)
+    Ok(child_task)
 }
 
 fn clone_child_process(
@@ -296,7 +298,7 @@ fn clone_child_process(
     };
 
     // Deals with clone flags
-    let child_thread = thread_table::get_posix_thread(child_tid).unwrap();
+    let child_thread = thread_table::get_thread(child_tid).unwrap();
     let child_posix_thread = child_thread.as_posix_thread().unwrap();
     clone_parent_settid(child_tid, clone_args.parent_tidptr, clone_flags)?;
     clone_child_cleartid(child_posix_thread, clone_args.child_tidptr, clone_flags)?;

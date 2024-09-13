@@ -7,12 +7,16 @@ use core::{
     time::Duration,
 };
 
-use ostd::{cpu::CpuSet, sync::WaitQueue, task::Priority};
+use ostd::{
+    cpu::CpuSet,
+    sync::WaitQueue,
+    task::{Priority, Task},
+};
 
 use super::{simple_scheduler::SimpleScheduler, worker::Worker, WorkItem, WorkPriority, WorkQueue};
 use crate::{
     prelude::*,
-    thread::kernel_thread::{KernelThreadExt, ThreadOptions},
+    thread::kernel_thread::{create_new_kernel_task, ThreadOptions},
     Thread,
 };
 
@@ -60,7 +64,7 @@ pub trait WorkerScheduler: Sync + Send {
 /// are found processing in the pool.
 pub struct Monitor {
     worker_pool: Weak<WorkerPool>,
-    bound_thread: Arc<Thread>,
+    bound_task: Arc<Task>,
 }
 
 impl LocalWorkerPool {
@@ -77,7 +81,7 @@ impl LocalWorkerPool {
     fn add_worker(&self) {
         let worker = Worker::new(self.parent.clone(), self.cpu_id);
         self.workers.disable_irq().lock().push_back(worker.clone());
-        worker.bound_thread().run();
+        Thread::borrow_from_task(worker.bound_task()).run();
     }
 
     fn remove_worker(&self) {
@@ -236,20 +240,20 @@ impl Monitor {
                 WorkPriority::High => Priority::high(),
                 WorkPriority::Normal => Priority::normal(),
             };
-            let bound_thread = Thread::new_kernel_thread(
+            let bound_task = create_new_kernel_task(
                 ThreadOptions::new(task_fn)
                     .cpu_affinity(cpu_affinity)
                     .priority(priority),
             );
             Self {
                 worker_pool,
-                bound_thread,
+                bound_task,
             }
         })
     }
 
     pub fn run(&self) {
-        self.bound_thread.run();
+        Thread::borrow_from_task(&self.bound_task).run()
     }
 
     fn run_monitor_loop(self: &Arc<Self>) {

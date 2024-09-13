@@ -166,7 +166,7 @@ impl TaskOptions {
     }
 
     /// Builds a new task without running it immediately.
-    pub fn build(self) -> Result<Arc<Task>> {
+    pub fn build(self) -> Result<Task> {
         /// all task will entering this function
         /// this function is mean to executing the task_fn in Task
         extern "C" fn kernel_task_entry() {
@@ -201,12 +201,12 @@ impl TaskOptions {
         // have any arguments, so we only need to align the stack pointer to 16 bytes.
         ctx.set_stack_pointer(crate::mm::paddr_to_vaddr(new_task.kstack.end_paddr() - 16));
 
-        Ok(Arc::new(new_task))
+        Ok(new_task)
     }
 
     /// Builds a new task and run it immediately.
     pub fn spawn(self) -> Result<Arc<Task>> {
-        let task = self.build()?;
+        let task = Arc::new(self.build()?);
         task.run();
         Ok(task)
     }
@@ -237,11 +237,13 @@ mod test {
         let task = || {
             assert_eq!(1, 1);
         };
-        let task_option = crate::task::TaskOptions::new(task)
-            .data(())
-            .build()
-            .unwrap();
-        task_option.run();
+        let task = Arc::new(
+            crate::task::TaskOptions::new(task)
+                .data(())
+                .build()
+                .unwrap(),
+        );
+        task.run();
     }
 
     #[ktest]

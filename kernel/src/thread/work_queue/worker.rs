@@ -2,12 +2,15 @@
 
 #![allow(dead_code)]
 
-use ostd::{cpu::CpuSet, task::Priority};
+use ostd::{
+    cpu::CpuSet,
+    task::{Priority, Task},
+};
 
 use super::worker_pool::WorkerPool;
 use crate::{
     prelude::*,
-    thread::kernel_thread::{KernelThreadExt, ThreadOptions},
+    thread::kernel_thread::{create_new_kernel_task, ThreadOptions},
     Thread,
 };
 
@@ -17,7 +20,7 @@ use crate::{
 /// added to the `WorkerPool`.
 pub(super) struct Worker {
     worker_pool: Weak<WorkerPool>,
-    bound_thread: Arc<Thread>,
+    bound_task: Arc<Task>,
     bound_cpu: u32,
     inner: SpinLock<WorkerInner>,
 }
@@ -51,14 +54,14 @@ impl Worker {
             if worker_pool.upgrade().unwrap().is_high_priority() {
                 priority = Priority::high();
             }
-            let bound_thread = Thread::new_kernel_thread(
+            let bound_task = create_new_kernel_task(
                 ThreadOptions::new(task_fn)
                     .cpu_affinity(cpu_affinity)
                     .priority(priority),
             );
             Self {
                 worker_pool,
-                bound_thread,
+                bound_task,
                 bound_cpu,
                 inner: SpinLock::new(WorkerInner {
                     worker_status: WorkerStatus::Running,
@@ -68,7 +71,8 @@ impl Worker {
     }
 
     pub(super) fn run(&self) {
-        self.bound_thread.run();
+        let thread = Thread::borrow_from_task(&self.bound_task);
+        thread.run();
     }
 
     /// The thread function bound to normal workers.
@@ -97,8 +101,8 @@ impl Worker {
         self.exit();
     }
 
-    pub(super) fn bound_thread(&self) -> &Arc<Thread> {
-        &self.bound_thread
+    pub(super) fn bound_task(&self) -> &Arc<Task> {
+        &self.bound_task
     }
 
     pub(super) fn is_idle(&self) -> bool {

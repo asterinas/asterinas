@@ -13,7 +13,6 @@ pub mod exception;
 pub mod kernel_thread;
 pub mod status;
 pub mod task;
-pub mod thread_table;
 pub mod work_queue;
 
 pub type Tid = u32;
@@ -22,7 +21,7 @@ pub type Tid = u32;
 pub struct Thread {
     // immutable part
     /// Low-level info
-    task: Arc<Task>,
+    task: Weak<Task>,
     /// Data: Posix thread info/Kernel thread Info
     data: Box<dyn Send + Sync + Any>,
 
@@ -32,7 +31,7 @@ pub struct Thread {
 
 impl Thread {
     /// Never call these function directly
-    pub fn new(task: Arc<Task>, data: impl Send + Sync + Any, status: ThreadStatus) -> Self {
+    pub fn new(task: Weak<Task>, data: impl Send + Sync + Any, status: ThreadStatus) -> Self {
         Thread {
             task,
             data: Box::new(data),
@@ -47,18 +46,23 @@ impl Thread {
     pub fn current() -> Option<Arc<Self>> {
         Task::current()?
             .data()
-            .downcast_ref::<Weak<Thread>>()?
-            .upgrade()
+            .downcast_ref::<Arc<Thread>>()
+            .cloned()
     }
 
-    pub(in crate::thread) fn task(&self) -> &Arc<Task> {
-        &self.task
+    /// Gets the Thread from task's data.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if the task is not a thread.
+    pub fn borrow_from_task(task: &Arc<Task>) -> &Arc<Self> {
+        task.data().downcast_ref::<Arc<Thread>>().unwrap()
     }
 
     /// Runs this thread at once.
     pub fn run(&self) {
         self.set_status(ThreadStatus::Running);
-        self.task.run();
+        self.task.upgrade().unwrap().run();
     }
 
     pub(super) fn exit(&self) {

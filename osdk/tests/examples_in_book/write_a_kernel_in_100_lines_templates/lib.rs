@@ -102,11 +102,13 @@ fn create_user_task(user_space: Arc<UserSpace>) -> Arc<Task> {
     // Kernel tasks are managed by the Framework,
     // while scheduling algorithms for them can be
     // determined by the users of the Framework.
-    TaskOptions::new(user_task)
-        .user_space(Some(user_space))
-        .data(0)
-        .build()
-        .unwrap()
+    Arc::new(
+        TaskOptions::new(user_task)
+            .user_space(Some(user_space))
+            .data(0)
+            .build()
+            .unwrap(),
+    )
 }
 
 fn handle_syscall(user_context: &mut UserContext, user_space: &UserSpace) {

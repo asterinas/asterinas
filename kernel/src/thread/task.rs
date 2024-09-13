@@ -16,12 +16,12 @@ use crate::{
 };
 
 /// create new task with userspace and parent process
-pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Weak<Thread>) -> Arc<Task> {
+pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Arc<Thread>) -> Task {
     fn user_task_entry() {
         let current_thread = current_thread!();
         let current_posix_thread = current_thread.as_posix_thread().unwrap();
         let current_process = current_posix_thread.process();
-        let current_task = current_thread.task();
+        let current_task = Task::current().unwrap();
 
         let user_space = current_task
             .user_space()
