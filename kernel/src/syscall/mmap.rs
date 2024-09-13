@@ -24,7 +24,7 @@ pub fn sys_mmap(
     offset: u64,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let perms = VmPerms::from_posix_prot_bits(perms as u32).unwrap();
+    let perms = VmPerms::from_bits_truncate(perms as u32);
     let option = MMapOptions::try_from(flags as u32)?;
     let res = do_sys_mmap(
         addr as usize,

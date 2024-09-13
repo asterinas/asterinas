@@ -16,12 +16,6 @@ bitflags! {
     }
 }
 
-impl VmPerms {
-    pub fn from_posix_prot_bits(bits: u32) -> Option<Self> {
-        VmPerms::from_bits(bits)
-    }
-}
-
 impl From<Rights> for VmPerms {
     fn from(rights: Rights) -> VmPerms {
         let mut vm_perm = VmPerms::empty();
