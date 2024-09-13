@@ -86,16 +86,9 @@ impl Pause for Waiter {
             return Ok(res);
         }
 
-        let current_thread = self
-            .task()
-            .data()
-            .downcast_ref::<Weak<Thread>>()
-            .and_then(|thread| thread.upgrade());
+        let current_thread = self.task().data().downcast_ref::<Arc<Thread>>();
 
-        let Some(posix_thread) = current_thread
-            .as_ref()
-            .and_then(|thread| thread.as_posix_thread())
-        else {
+        let Some(posix_thread) = current_thread.and_then(|thread| thread.as_posix_thread()) else {
             if let Some(timeout) = timeout {
                 return self.wait_until_or_timeout(cond, timeout);
             } else {

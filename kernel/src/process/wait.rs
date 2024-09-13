@@ -5,8 +5,11 @@
 use super::{process_filter::ProcessFilter, signal::constants::SIGCHLD, ExitCode, Pid, Process};
 use crate::{
     prelude::*,
-    process::{posix_thread::PosixThreadExt, process_table, signal::with_signal_blocked},
-    thread::thread_table,
+    process::{
+        posix_thread::{thread_table, PosixThreadExt},
+        process_table,
+        signal::with_signal_blocked,
+    },
 };
 
 // The definition of WaitOptions is from Occlum
@@ -85,8 +88,8 @@ pub fn wait_child_exit(
 fn reap_zombie_child(process: &Process, pid: Pid) -> ExitCode {
     let child_process = process.children().lock().remove(&pid).unwrap();
     assert!(child_process.is_zombie());
-    for thread in &*child_process.threads().lock() {
-        thread_table::remove_posix_thread(thread.tid());
+    for task in &*child_process.tasks().lock() {
+        thread_table::remove_thread(task.tid());
     }
 
     // Lock order: session table -> group table -> process table -> group of process

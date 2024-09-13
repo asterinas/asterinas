@@ -2,23 +2,22 @@
 
 use ostd::{
     cpu::CpuSet,
-    task::{Priority, TaskOptions},
+    task::{Priority, Task, TaskOptions},
 };
 
-use super::{status::ThreadStatus, thread_table, Thread};
+use super::{status::ThreadStatus, Thread};
 use crate::prelude::*;
 
 /// The inner data of a kernel thread
 pub struct KernelThread;
 
 pub trait KernelThreadExt {
-    /// get the kernel_thread structure
+    /// Gets the kernel_thread structure
     fn as_kernel_thread(&self) -> Option<&KernelThread>;
-    /// create a new kernel thread structure, **NOT** run the thread.
-    fn new_kernel_thread(thread_options: ThreadOptions) -> Arc<Thread>;
-    /// create a new kernel thread structure, and then run the thread.
+    /// Creates a new kernel thread, and then run the thread.
     fn spawn_kernel_thread(thread_options: ThreadOptions) -> Arc<Thread> {
-        let thread = Self::new_kernel_thread(thread_options);
+        let task = create_new_kernel_task(thread_options);
+        let thread = Thread::borrow_from_task(&task).clone();
         thread.run();
         thread
     }
@@ -31,31 +30,6 @@ impl KernelThreadExt for Thread {
         self.data().downcast_ref::<KernelThread>()
     }
 
-    fn new_kernel_thread(mut thread_options: ThreadOptions) -> Arc<Self> {
-        let task_fn = thread_options.take_func();
-        let thread_fn = move || {
-            task_fn();
-            let current_thread = current_thread!();
-            // ensure the thread is exit
-            current_thread.exit();
-            thread_table::remove_kernel_thread(current_thread);
-        };
-        let thread = Arc::new_cyclic(|thread_ref| {
-            let weak_thread = thread_ref.clone();
-            let task = TaskOptions::new(thread_fn)
-                .data(weak_thread)
-                .priority(thread_options.priority)
-                .cpu_affinity(thread_options.cpu_affinity)
-                .build()
-                .unwrap();
-            let status = ThreadStatus::Init;
-            let kernel_thread = KernelThread;
-            Thread::new(task, kernel_thread, status)
-        });
-        thread_table::add_kernel_thread(thread.clone());
-        thread
-    }
-
     fn join(&self) {
         loop {
             if self.status().is_exited() {
@@ -65,6 +39,31 @@ impl KernelThreadExt for Thread {
             }
         }
     }
+}
+
+/// Creates a new task of kernel thread, **NOT** run the thread.
+pub fn create_new_kernel_task(mut thread_options: ThreadOptions) -> Arc<Task> {
+    let task_fn = thread_options.take_func();
+    let thread_fn = move || {
+        task_fn();
+        // Ensures the thread is exit
+        current_thread!().exit();
+    };
+
+    Arc::new_cyclic(|weak_task| {
+        let thread = {
+            let kernel_thread = KernelThread;
+            let status = ThreadStatus::Init;
+            Arc::new(Thread::new(weak_task.clone(), kernel_thread, status))
+        };
+
+        TaskOptions::new(thread_fn)
+            .data(thread)
+            .priority(thread_options.priority)
+            .cpu_affinity(thread_options.cpu_affinity)
+            .build()
+            .unwrap()
+    })
 }
 
 /// Options to create or spawn a new thread.

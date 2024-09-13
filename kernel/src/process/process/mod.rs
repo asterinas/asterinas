@@ -37,7 +37,7 @@ use aster_rights::Full;
 use atomic::Atomic;
 pub use builder::ProcessBuilder;
 pub use job_control::JobControl;
-use ostd::sync::WaitQueue;
+use ostd::{sync::WaitQueue, task::Task};
 pub use process_group::ProcessGroup;
 pub use session::Session;
 pub use terminal::Terminal;
@@ -68,7 +68,7 @@ pub struct Process {
     /// The executable path.
     executable_path: RwLock<String>,
     /// The threads
-    threads: Mutex<Vec<Arc<Thread>>>,
+    tasks: Mutex<Vec<Arc<Task>>>,
     /// Process status
     status: ProcessStatus,
     /// Parent process
@@ -167,14 +167,20 @@ impl Process {
     ///  - the function is called in the bootstrap context;
     ///  - or if the current task is not associated with a process.
     pub fn current() -> Option<Arc<Process>> {
-        Some(Thread::current()?.as_posix_thread()?.process())
+        Some(
+            Task::current()?
+                .data()
+                .downcast_ref::<Arc<Thread>>()?
+                .as_posix_thread()?
+                .process(),
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
     fn new(
         pid: Pid,
         parent: Weak<Process>,
-        threads: Vec<Arc<Thread>>,
+        tasks: Vec<Arc<Task>>,
         executable_path: String,
         process_vm: ProcessVm,
 
@@ -194,7 +200,7 @@ impl Process {
 
         Arc::new_cyclic(|process_ref: &Weak<Process>| Self {
             pid,
-            threads: Mutex::new(threads),
+            tasks: Mutex::new(tasks),
             executable_path: RwLock::new(executable_path),
             process_vm,
             children_wait_queue,
@@ -271,13 +277,14 @@ impl Process {
 
     /// start to run current process
     pub fn run(&self) {
-        let threads = self.threads.lock();
+        let tasks = self.tasks.lock();
         // when run the process, the process should has only one thread
-        debug_assert!(threads.len() == 1);
+        debug_assert!(tasks.len() == 1);
         debug_assert!(self.is_runnable());
-        let thread = threads[0].clone();
+        let task = tasks[0].clone();
         // should not hold the lock when run thread
-        drop(threads);
+        drop(tasks);
+        let thread = Thread::borrow_from_task(&task);
         thread.run();
     }
 
@@ -297,8 +304,8 @@ impl Process {
         &self.timer_manager
     }
 
-    pub fn threads(&self) -> &Mutex<Vec<Arc<Thread>>> {
-        &self.threads
+    pub fn tasks(&self) -> &Mutex<Vec<Arc<Task>>> {
+        &self.tasks
     }
 
     pub fn executable_path(&self) -> String {
@@ -318,10 +325,11 @@ impl Process {
     }
 
     pub fn main_thread(&self) -> Option<Arc<Thread>> {
-        self.threads
+        self.tasks
             .lock()
             .iter()
-            .find(|thread| thread.tid() == self.pid)
+            .find(|task| task.tid() == self.pid)
+            .map(Thread::borrow_from_task)
             .cloned()
     }
 
@@ -644,7 +652,7 @@ impl Process {
         // TODO: check that the signal is not user signal
 
         // Enqueue signal to the first thread that does not block the signal
-        let threads = self.threads.lock();
+        let threads = self.tasks.lock();
         for thread in threads.iter() {
             let posix_thread = thread.as_posix_thread().unwrap();
             if !posix_thread.has_signal_blocked(signal.num()) {

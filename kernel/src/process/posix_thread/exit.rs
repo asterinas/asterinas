@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{futex::futex_wake, robust_list::wake_robust_futex, PosixThread};
+use super::{futex::futex_wake, robust_list::wake_robust_futex, thread_table, PosixThread};
 use crate::{
     prelude::*,
     process::{do_exit_group, TermStatus},
-    thread::{thread_table, Thread, Tid},
+    thread::{Thread, Tid},
 };
 
 /// Exits the thread if the thread is a POSIX thread.
@@ -36,7 +36,7 @@ pub fn do_exit(thread: &Thread, posix_thread: &PosixThread, term_status: TermSta
     if tid != posix_thread.process().pid() {
         // We don't remove main thread.
         // The main thread is removed when the process is reaped.
-        thread_table::remove_posix_thread(tid);
+        thread_table::remove_thread(tid);
     }
 
     if posix_thread.is_main_thread(tid) || posix_thread.is_last_thread() {

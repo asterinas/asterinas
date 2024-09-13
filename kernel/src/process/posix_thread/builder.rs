@@ -2,9 +2,9 @@
 
 #![allow(dead_code)]
 
-use ostd::user::UserSpace;
+use ostd::{task::Task, user::UserSpace};
 
-use super::PosixThread;
+use super::{thread_table, PosixThread};
 use crate::{
     prelude::*,
     process::{
@@ -12,7 +12,7 @@ use crate::{
         signal::{sig_mask::AtomicSigMask, sig_queues::SigQueues},
         Credentials, Process,
     },
-    thread::{status::ThreadStatus, task, thread_table, Thread, Tid},
+    thread::{status::ThreadStatus, task, Thread, Tid},
     time::{clocks::ProfClock, TimerManager},
 };
 
@@ -72,7 +72,7 @@ impl PosixThreadBuilder {
         self
     }
 
-    pub fn build(self) -> Arc<Thread> {
+    pub fn build(self) -> Arc<Task> {
         let Self {
             tid,
             user_space,
@@ -85,35 +85,36 @@ impl PosixThreadBuilder {
             sig_queues,
         } = self;
 
-        let thread = Arc::new_cyclic(|thread_ref| {
-            let task = task::create_new_user_task(user_space, thread_ref.clone());
-            let status = ThreadStatus::Init;
+        Arc::new_cyclic(|weak_task| {
+            let posix_thread = {
+                let prof_clock = ProfClock::new();
+                let virtual_timer_manager = TimerManager::new(prof_clock.user_clock().clone());
+                let prof_timer_manager = TimerManager::new(prof_clock.clone());
 
-            let prof_clock = ProfClock::new();
-            let virtual_timer_manager = TimerManager::new(prof_clock.user_clock().clone());
-            let prof_timer_manager = TimerManager::new(prof_clock.clone());
-
-            let posix_thread = PosixThread {
-                process,
-                tid,
-                name: Mutex::new(thread_name),
-                set_child_tid: Mutex::new(set_child_tid),
-                clear_child_tid: Mutex::new(clear_child_tid),
-                credentials,
-                sig_mask,
-                sig_queues,
-                sig_context: Mutex::new(None),
-                sig_stack: Mutex::new(None),
-                signalled_waker: SpinLock::new(None),
-                robust_list: Mutex::new(None),
-                prof_clock,
-                virtual_timer_manager,
-                prof_timer_manager,
+                PosixThread {
+                    process,
+                    tid,
+                    name: Mutex::new(thread_name),
+                    set_child_tid: Mutex::new(set_child_tid),
+                    clear_child_tid: Mutex::new(clear_child_tid),
+                    credentials,
+                    sig_mask,
+                    sig_queues,
+                    sig_context: Mutex::new(None),
+                    sig_stack: Mutex::new(None),
+                    signalled_waker: SpinLock::new(None),
+                    robust_list: Mutex::new(None),
+                    prof_clock,
+                    virtual_timer_manager,
+                    prof_timer_manager,
+                }
             };
 
-            Thread::new(task, posix_thread, status)
-        });
-        thread_table::add_posix_thread(tid, thread.clone());
-        thread
+            let status = ThreadStatus::Init;
+            let thread = Arc::new(Thread::new(weak_task.clone(), posix_thread, status));
+
+            thread_table::add_thread(tid, thread.clone());
+            task::create_new_user_task(user_space, thread)
+        })
     }
 }

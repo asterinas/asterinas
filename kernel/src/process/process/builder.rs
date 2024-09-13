@@ -7,14 +7,13 @@ use crate::{
     fs::{file_table::FileTable, fs_resolver::FsResolver, utils::FileCreationMask},
     prelude::*,
     process::{
-        posix_thread::{PosixThreadBuilder, PosixThreadExt},
+        posix_thread::{create_posix_task_from_executable, PosixThreadBuilder},
         process_vm::ProcessVm,
         rlimit::ResourceLimits,
         signal::sig_disposition::SigDispositions,
         Credentials,
     },
     sched::nice::Nice,
-    thread::Thread,
 };
 
 pub struct ProcessBuilder<'a> {
@@ -190,11 +189,11 @@ impl<'a> ProcessBuilder<'a> {
             )
         };
 
-        let thread = if let Some(thread_builder) = main_thread_builder {
+        let task = if let Some(thread_builder) = main_thread_builder {
             let builder = thread_builder.process(Arc::downgrade(&process));
             builder.build()
         } else {
-            Thread::new_posix_thread_from_executable(
+            create_posix_task_from_executable(
                 pid,
                 credentials.unwrap(),
                 process.vm(),
@@ -206,7 +205,7 @@ impl<'a> ProcessBuilder<'a> {
             )?
         };
 
-        process.threads().lock().push(thread);
+        process.tasks().lock().push(task);
 
         process.set_runnable();
 

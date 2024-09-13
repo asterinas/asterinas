@@ -7,7 +7,7 @@ use super::{
 use crate::{
     prelude::*,
     process::{
-        posix_thread::PosixThreadExt,
+        posix_thread::{thread_table, PosixThreadExt},
         process_table,
         signal::{
             c_types::{sigevent_t, SigNotify},
@@ -17,10 +17,7 @@ use crate::{
         },
     },
     syscall::ClockId,
-    thread::{
-        thread_table,
-        work_queue::{submit_work_item, work_item::WorkItem},
-    },
+    thread::work_queue::{submit_work_item, work_item::WorkItem},
     time::{
         clockid_t,
         clocks::{BootTimeClock, MonotonicClock, RealTimeClock},
@@ -76,7 +73,7 @@ pub fn sys_timer_create(
                 // Send a signal to the specified thread when the timer is expired.
                 SigNotify::SIGEV_THREAD_ID => {
                     let tid = sig_event.sigev_un.read_tid() as u32;
-                    let thread = thread_table::get_posix_thread(tid).ok_or_else(|| {
+                    let thread = thread_table::get_thread(tid).ok_or_else(|| {
                         Error::with_message(Errno::EINVAL, "target thread does not exist")
                     })?;
                     let posix_thread = thread.as_posix_thread().unwrap();
@@ -132,7 +129,7 @@ pub fn sys_timer_create(
                 }
             }
             DynamicClockIdInfo::Tid(tid, clock_type) => {
-                let thread = thread_table::get_posix_thread(tid)
+                let thread = thread_table::get_thread(tid)
                     .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid clock id"))?;
                 let posix_thread = thread.as_posix_thread().unwrap();
                 match clock_type {

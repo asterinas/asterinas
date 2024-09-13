@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::{
-    posix_thread::PosixThreadExt,
+    posix_thread::{thread_table, PosixThreadExt},
     process_table,
     signal::{
         constants::SIGCONT,
@@ -10,10 +10,7 @@ use super::{
     },
     Pgid, Pid, Process, Sid, Uid,
 };
-use crate::{
-    prelude::*,
-    thread::{thread_table, Tid},
-};
+use crate::{prelude::*, thread::Tid};
 
 /// Sends a signal to a process, using the current process as the sender.
 ///
@@ -71,7 +68,7 @@ pub fn kill_group(pgid: Pgid, signal: Option<UserSignal>, ctx: &Context) -> Resu
 /// If `signal` is `None`, this method will only check permission without sending
 /// any signal.
 pub fn tgkill(tid: Tid, tgid: Pid, signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
-    let thread = thread_table::get_posix_thread(tid)
+    let thread = thread_table::get_thread(tid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "target thread does not exist"))?;
 
     if thread.status().is_exited() {
@@ -120,14 +117,14 @@ pub fn kill_all(signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
 }
 
 fn kill_process(process: &Process, signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
-    let threads = process.threads().lock();
+    let tasks = process.tasks().lock();
 
     let signum = signal.map(|signal| signal.num());
     let sender_ids = current_thread_sender_ids(signum.as_ref(), ctx);
 
     let mut permitted_thread = None;
-    for thread in threads.iter() {
-        let posix_thread = thread.as_posix_thread().unwrap();
+    for task in tasks.iter() {
+        let posix_thread = task.as_posix_thread().unwrap();
 
         // First check permission
         if posix_thread
