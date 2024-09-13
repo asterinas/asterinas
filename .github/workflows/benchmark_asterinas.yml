@@ -12,55 +12,53 @@ jobs:
     strategy:
       matrix:
         benchmark: 
-          - sysbench-cpu
-          - sysbench-thread
-          # Process-related benchmarks
-          - lmbench-ctx
-          - lmbench-fork
-          - lmbench-exec
-          - lmbench-shell
+          - sysbench/cpu_lat
+          - sysbench/thread_lat
           # Memory-related benchmarks
-          - lmbench-mem-frd
-          - lmbench-mem-fwr
-          - lmbench-mem-fcp
-          # IPC-related benchmarks
-          - lmbench-unix-latency
-          - lmbench-unix-bandwidth
-          - lmbench-unix-connect-latency
-          - lmbench-pipe-latency
-          - lmbench-pipe-bandwidth
-          - lmbench-fifo-latency
-          # Syscall-related benchmarks
-          - lmbench-getpid
-          - lmbench-fstat
-          - lmbench-open
-          - lmbench-stat
-          - lmbench-write
-          - lmbench-read
+          - lmbench/mem_read_bw
+          - lmbench/mem_write_bw
+          - lmbench/mem_copy_bw
+          - lmbench/mem_pagefault_lat
+          - lmbench/mem_mmap_bw
+          - lmbench/mem_mmap_lat
+          # Process-related benchmarks
+          - lmbench/process_getppid_lat
+          - lmbench/process_ctx_lat
+          - lmbench/process_fork_lat
+          - lmbench/process_exec_lat
+          - lmbench/process_shell_lat
           # Signal-related benchmarks
-          - lmbench-signal
-          - lmbench-signal-install
-          - lmbench-signal-prot
+          - lmbench/signal_catch_lat
+          - lmbench/signal_install_lat
+          - lmbench/signal_prot_lat
+          # IPC-related benchmarks
+          - lmbench/pipe_lat
+          - lmbench/pipe_bw
+          - lmbench/fifo_lat
+          - lmbench/semaphore_lat
+          - lmbench/unix_lat
+          - lmbench/unix_bw
+          - lmbench/unix_connect_lat
+          # Syscall-related benchmarks
+          - lmbench/vfs_fstat_lat
+          - lmbench/vfs_open_lat
+          - lmbench/vfs_stat_lat
+          - lmbench/vfs_write_lat
+          - lmbench/vfs_read_lat
+          - lmbench/vfs_select_lat
+          - lmbench/vfs_fcntl_lat
+          - lmbench/vfs_read_pagecache_bw
           # File-related benchmarks
-          - lmbench-file-rd-bandwidth
-          - lmbench-select-file
-          - lmbench-fs-create-delete-files-0k
-          - lmbench-fs-create-delete-files-10k
-          - lmbench-fcntl
-          - lmbench-lmdd
-          # Mmap-related benchmarks
-          - lmbench-pagefault
-          - lmbench-mmap-bandwidth
-          - lmbench-mmap-latency
-          # Semaphore benchmark
-          - lmbench-semaphore
+          - lmbench/ramfs_create_delete_files_0k_ops
+          - lmbench/ramfs_create_delete_files_10k_ops
+          - lmbench/ext2_copy_files_bw
           # Network-related benchmark
-          - lmbench-select-tcp
-          - lmbench-http-bandwidth
-          - lmbench-tcp-bandwidth-localhost
-          - lmbench-tcp-connect-latency
-          - lmbench-tcp-latency-localhost
-          - lmbench-udp-latency-localhost
+          - lmbench/tcp_loopback_bw
+          - lmbench/tcp_loopback_lat
+          - lmbench/tcp_loopback_connect_lat
+          - lmbench/tcp_loopback_select_lat
+          - lmbench/tcp_loopback_http_bw
+          - lmbench/udp_loopback_lat
       fail-fast: false
     timeout-minutes: 60
     container: 
@@ -94,26 +92,39 @@ jobs:
     - name: Set up benchmark configuration
       run: |
         ALERT_THRESHOLD=$(jq -r '.alert_threshold' test/benchmark/${{ matrix.benchmark }}/config.json)
-        echo "ALERT_THRESHOLD=$ALERT_THRESHOLD" >> $GITHUB_ENV
-        
         ALERT_TOOL=$(jq -r '.alert_tool' test/benchmark/${{ matrix.benchmark }}/config.json)
-        if [ "${ALERT_TOOL}" = "null" ]; then
+        TITLE=$(jq -r '.title' test/benchmark/${{ matrix.benchmark }}/config.json)
+        DESCRIPTION=$(jq -r '.description' test/benchmark/${{ matrix.benchmark }}/config.json)
+        SHOW_IN_OVERVIEW=$(jq -r '.show_in_overview' test/benchmark/${{ matrix.benchmark }}/config.json)
+
+        if [ "$ALERT_THRESHOLD" = "null" ]; then
+          ALERT_THRESHOLD="130%"
+        fi
+        if [ "$ALERT_TOOL" = "null" ]; then
           ALERT_TOOL="customSmallerIsBetter"
         fi
-        echo "ALERT_TOOL=$ALERT_TOOL" >> $GITHUB_ENV
-        
-        DESCRIPTION=$(jq -r '.description' test/benchmark/${{ matrix.benchmark }}/config.json)
-        if [ -z "$DESCRIPTION" ]; then
-          DESCRIPTION=""
+        if [ "$TITLE" = "null" ]; then
+          TITLE="${{ matrix.benchmark }}"
         fi
+        if [ "$SHOW_IN_OVERVIEW" = "null" ]; then
+          SHOW_IN_OVERVIEW="false"
+        fi
+
+        echo "ALERT_THRESHOLD=$ALERT_THRESHOLD" >> $GITHUB_ENV
+        echo "ALERT_TOOL=$ALERT_TOOL" >> $GITHUB_ENV
+        echo "TITLE=$TITLE" >> $GITHUB_ENV
         echo "DESCRIPTION=$DESCRIPTION" >> $GITHUB_ENV
+        echo "SHOW_IN_OVERVIEW=$SHOW_IN_OVERVIEW" >> $GITHUB_ENV
+
+        BENCHMARK_NAME=$(basename "${{ matrix.benchmark }}")
+        echo "BENCHMARK_NAME=$BENCHMARK_NAME" >> $GITHUB_ENV
 
     - name: Store benchmark results
-      uses: asterinas/github-action-benchmark@v2
+      uses: asterinas/github-action-benchmark@v3
       with:
-        name: ${{ matrix.benchmark }} Benchmark
+        name: ${{ matrix.benchmark }}
         tool: ${{ env.ALERT_TOOL }}
-        output-file-path: result_${{ matrix.benchmark }}.json
+        output-file-path: result_${{ env.BENCHMARK_NAME }}.json
         benchmark-data-dir-path: '' 
         github-token: ${{ secrets.BENCHMARK_SECRET }}
         gh-repository: 'github.com/asterinas/benchmark'
@@ -121,4 +132,6 @@ jobs:
         alert-threshold: ${{ env.ALERT_THRESHOLD }} 
         comment-on-alert: true
         fail-on-alert: true
+        chart-title: ${{ env.TITLE }}
         chart-description: ${{ env.DESCRIPTION }}
+        show-in-overview: ${{ env.SHOW_IN_OVERVIEW }}
