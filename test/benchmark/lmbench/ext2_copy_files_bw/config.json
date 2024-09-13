@@ -1,0 +1,8 @@
+{
+    "alert_threshold": "125%",
+    "alert_tool": "customBiggerIsBetter",
+    "search_pattern": "lmdd result:",
+    "result_index": "8",
+    "description": "lmdd",
+    "title": "[EXT2] The bandwidth of copying data between files"
+}

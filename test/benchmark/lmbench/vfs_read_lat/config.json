@@ -1,0 +1,8 @@
+{
+    "alert_threshold": "150%",
+    "alert_tool": "customSmallerIsBetter",
+    "search_pattern": "Simple read:",
+    "result_index": "3",
+    "description": "lat_syscall read",
+    "title": "[VFS] The cost of read (/dev/zero)"
+}

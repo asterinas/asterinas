@@ -1,7 +1,0 @@
-{
-    "alert_threshold": "125%",
-    "alert_tool": "customSmallerIsBetter",
-    "search_pattern": "Select on 200 tcp fd's:",
-    "result_index": "6",
-    "description": "The latency of select TCP on a single processor."
-}

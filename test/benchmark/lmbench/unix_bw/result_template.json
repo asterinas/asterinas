@@ -1,0 +1,14 @@
+[
+    {
+        "name": "Average unix bandwidth on Linux",
+        "unit": "MB/s",
+        "value": 0,
+        "extra": "linux_result"
+    },
+    {
+        "name": "Average unix bandwidth on Asterinas",
+        "unit": "MB/s",
+        "value": 0,
+        "extra": "aster_result"
+    }
+]

@@ -1,0 +1,14 @@
+[
+    {
+        "name": "Average write latency on Linux",
+        "unit": "µs",
+        "value": 0,
+        "extra": "linux_result"
+    },
+    {
+        "name": "Average write latency on Asterinas",
+        "unit": "µs",
+        "value": 0,
+        "extra": "aster_result"
+    }
+]

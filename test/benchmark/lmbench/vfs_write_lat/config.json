@@ -1,0 +1,8 @@
+{
+    "alert_threshold": "150%",
+    "alert_tool": "customSmallerIsBetter",
+    "search_pattern": "Simple write:",
+    "result_index": "3",
+    "description": "lat_syscall write",
+    "title": "[VFS] The cost of write (/dev/null)"
+}

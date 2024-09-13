@@ -1,7 +1,0 @@
-{
-    "alert_threshold": "150%",
-    "alert_tool": "customSmallerIsBetter",
-    "search_pattern": "Simple write:",
-    "result_index": "3",
-    "description": "The latency of the write system call on a single processor."
-}

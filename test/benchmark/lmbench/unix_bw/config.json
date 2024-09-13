@@ -1,0 +1,8 @@
+{
+    "alert_threshold": "125%",
+    "alert_tool": "customBiggerIsBetter",
+    "search_pattern": "sock stream bandwidth",
+    "result_index": "5",
+    "description": "bw_unix",
+    "title": "[Unix sockets] The bandwidth"
+}

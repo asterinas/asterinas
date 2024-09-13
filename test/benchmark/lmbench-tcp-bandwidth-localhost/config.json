@@ -1,7 +1,0 @@
-{
-    "alert_threshold": "125%",
-    "alert_tool": "customBiggerIsBetter",
-    "search_pattern": "0.004096 ",
-    "result_index": "2",
-    "description": "The bandwidth of TCP with 4096 message size in localhost."
-}

@@ -1,0 +1,8 @@
+{
+    "alert_threshold": "125%",
+    "alert_tool": "customSmallerIsBetter",
+    "search_pattern": "Protection fault:",
+    "result_index": "3",
+    "description": "lat_sig prot",
+    "title": "[Signals] The cost of catching a segfault"
+}
