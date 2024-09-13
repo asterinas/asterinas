@@ -52,6 +52,13 @@ impl<T> SlotVec<T> {
         self.slots.get(idx)?.as_ref()
     }
 
+    /// Get the mutable reference of the item at position `idx`.
+    ///
+    /// Return `None` if `idx` is out of bounds or the item is not exist.
+    pub fn get_mut(&mut self, idx: usize) -> Option<&mut T> {
+        self.slots.get_mut(idx)?.as_mut()
+    }
+
     /// Put an item into the vector.
     /// It may be put into any existing empty slots or the back of the vector.
     ///

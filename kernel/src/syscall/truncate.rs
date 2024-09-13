@@ -16,8 +16,11 @@ pub fn sys_ftruncate(fd: FileDesc, len: isize, ctx: &Context) -> Result<SyscallR
 
     check_length(len, ctx)?;
 
-    let file_table = ctx.process.file_table().lock();
-    let file = file_table.get_file(fd)?;
+    let file = {
+        let file_table = ctx.process.file_table().lock();
+        file_table.get_file(fd)?.clone()
+    };
+
     file.resize(len as usize)?;
     Ok(SyscallReturn::Return(0))
 }

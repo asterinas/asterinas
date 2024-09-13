@@ -11,7 +11,7 @@ use crate::{
         },
     },
     prelude::*,
-    process::Pid,
+    process::{process_table, Pid},
 };
 
 pub fn sys_fcntl(fd: FileDesc, cmd: i32, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
@@ -142,8 +142,6 @@ fn handle_getown(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
 }
 
 fn handle_setown(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
-    let file_table = ctx.process.file_table().lock();
-    let file_entry = file_table.get_entry(fd)?;
     // A process ID is specified as a positive value; a process group ID is specified as a negative value.
     let abs_arg = (arg as i32).unsigned_abs();
     if abs_arg > i32::MAX as u32 {
@@ -151,7 +149,19 @@ fn handle_setown(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn>
     }
     let pid = Pid::try_from(abs_arg)
         .map_err(|_| Error::with_message(Errno::EINVAL, "invalid process (group) id"))?;
-    file_entry.set_owner(pid)?;
+
+    let owner_process = if pid == 0 {
+        None
+    } else {
+        Some(process_table::get_process(pid).ok_or(Error::with_message(
+            Errno::ESRCH,
+            "cannot set_owner with an invalid pid",
+        ))?)
+    };
+
+    let mut file_table = ctx.process.file_table().lock();
+    let file_entry = file_table.get_entry_mut(fd)?;
+    file_entry.set_owner(owner_process.as_ref())?;
     Ok(SyscallReturn::Return(0))
 }
 

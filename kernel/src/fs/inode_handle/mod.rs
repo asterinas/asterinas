@@ -266,13 +266,16 @@ impl InodeHandle_ {
     }
 
     fn release_range_locks(&self) {
+        if self.dentry.inode().extension().is_none() {
+            return;
+        }
+
         let range_lock = RangeLockItemBuilder::new()
             .type_(RangeLockType::Unlock)
             .range(FileRange::new(0, OFFSET_MAX).unwrap())
             .build()
             .unwrap();
-
-        self.unlock_range_lock(&range_lock)
+        self.unlock_range_lock(&range_lock);
     }
 
     fn unlock_range_lock(&self, lock: &RangeLockItem) {

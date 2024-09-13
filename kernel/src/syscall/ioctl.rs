@@ -15,8 +15,11 @@ pub fn sys_ioctl(fd: FileDesc, cmd: u32, arg: Vaddr, ctx: &Context) -> Result<Sy
         "fd = {}, ioctl_cmd = {:?}, arg = 0x{:x}",
         fd, ioctl_cmd, arg
     );
-    let file_table = ctx.process.file_table().lock();
-    let file = file_table.get_file(fd)?;
+
+    let file = {
+        let file_table = ctx.process.file_table().lock();
+        file_table.get_file(fd)?.clone()
+    };
     let res = match ioctl_cmd {
         IoctlCmd::FIONBIO => {
             let is_nonblocking = ctx.get_user_space().read_val::<i32>(arg)? != 0;
