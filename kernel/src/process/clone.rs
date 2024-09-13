@@ -394,16 +394,16 @@ fn clone_fs(
 }
 
 fn clone_files(
-    parent_file_table: &Arc<Mutex<FileTable>>,
+    parent_file_table: &Arc<SpinLock<FileTable>>,
     clone_flags: CloneFlags,
-) -> Arc<Mutex<FileTable>> {
+) -> Arc<SpinLock<FileTable>> {
     // if CLONE_FILES is set, the child and parent shares the same file table
     // Otherwise, the child will deep copy a new file table.
     // FIXME: the clone may not be deep copy.
     if clone_flags.contains(CloneFlags::CLONE_FILES) {
         parent_file_table.clone()
     } else {
-        Arc::new(Mutex::new(parent_file_table.lock().clone()))
+        Arc::new(SpinLock::new(parent_file_table.lock().clone()))
     }
 }
 

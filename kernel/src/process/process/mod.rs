@@ -79,7 +79,7 @@ pub struct Process {
     /// Process group
     pub(super) process_group: Mutex<Weak<ProcessGroup>>,
     /// File table
-    file_table: Arc<Mutex<FileTable>>,
+    file_table: Arc<SpinLock<FileTable>>,
     /// FsResolver
     fs: Arc<RwMutex<FsResolver>>,
     /// umask
@@ -180,7 +180,7 @@ impl Process {
         process_vm: ProcessVm,
 
         fs: Arc<RwMutex<FsResolver>>,
-        file_table: Arc<Mutex<FileTable>>,
+        file_table: Arc<SpinLock<FileTable>>,
 
         umask: Arc<RwLock<FileCreationMask>>,
         resource_limits: ResourceLimits,
@@ -611,7 +611,7 @@ impl Process {
 
     // ************** File system ****************
 
-    pub fn file_table(&self) -> &Arc<Mutex<FileTable>> {
+    pub fn file_table(&self) -> &Arc<SpinLock<FileTable>> {
         &self.file_table
     }
 
@@ -724,7 +724,7 @@ mod test {
             String::new(),
             ProcessVm::alloc(),
             Arc::new(RwMutex::new(FsResolver::new())),
-            Arc::new(Mutex::new(FileTable::new())),
+            Arc::new(SpinLock::new(FileTable::new())),
             Arc::new(RwLock::new(FileCreationMask::default())),
             ResourceLimits::default(),
             Nice::default(),

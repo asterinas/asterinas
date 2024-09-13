@@ -18,7 +18,6 @@ use crate::{
     net::socket::Socket,
     prelude::*,
     process::{
-        process_table,
         signal::{constants::SIGIO, signals::kernel::KernelSignal},
         Pid, Process,
     },
@@ -125,6 +124,7 @@ impl FileTable {
 
         let closed_file = removed_entry.file;
         if let Some(closed_inode_file) = closed_file.downcast_ref::<InodeHandle>() {
+            // FIXME: Operation below should not hold any mutex if `self` is protected by a spinlock externally
             closed_inode_file.release_range_locks();
         }
         Some(closed_file)
@@ -162,6 +162,7 @@ impl FileTable {
             removed_entry.notify_fd_events(&events);
             closed_files.push(removed_entry.file.clone());
             if let Some(inode_file) = removed_entry.file.downcast_ref::<InodeHandle>() {
+                // FIXME: Operation below should not hold any mutex if `self` is protected by a spinlock externally
                 inode_file.release_range_locks();
             }
         }
@@ -186,6 +187,12 @@ impl FileTable {
     pub fn get_entry(&self, fd: FileDesc) -> Result<&FileTableEntry> {
         self.table
             .get(fd as usize)
+            .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
+    }
+
+    pub fn get_entry_mut(&mut self, fd: FileDesc) -> Result<&mut FileTableEntry> {
+        self.table
+            .get_mut(fd as usize)
             .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
     }
 
@@ -230,7 +237,7 @@ impl Drop for FileTable {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum FdEvents {
     Close(FileDesc),
     DropFileTable,
@@ -242,7 +249,7 @@ pub struct FileTableEntry {
     file: Arc<dyn FileLike>,
     flags: AtomicU8,
     subject: Subject<FdEvents>,
-    owner: RwLock<Option<Owner>>,
+    owner: Option<Owner>,
 }
 
 impl FileTableEntry {
@@ -251,7 +258,7 @@ impl FileTableEntry {
             file,
             flags: AtomicU8::new(flags.bits()),
             subject: Subject::new(),
-            owner: RwLock::new(None),
+            owner: None,
         }
     }
 
@@ -260,7 +267,7 @@ impl FileTableEntry {
     }
 
     pub fn owner(&self) -> Option<Pid> {
-        self.owner.read().as_ref().map(|(pid, _)| *pid)
+        self.owner.as_ref().map(|(pid, _)| *pid)
     }
 
     /// Set a process (group) as owner of the file descriptor.
@@ -268,36 +275,31 @@ impl FileTableEntry {
     /// Such that this process (group) will receive `SIGIO` and `SIGURG` signals
     /// for I/O events on the file descriptor, if `O_ASYNC` status flag is set
     /// on this file.
-    pub fn set_owner(&self, owner: Pid) -> Result<()> {
-        if self.owner().is_some_and(|pid| pid == owner) {
-            return Ok(());
-        }
+    pub fn set_owner(&mut self, owner: Option<&Arc<Process>>) -> Result<()> {
+        match owner {
+            None => {
+                // Unset the owner if the given pid is zero
+                if let Some((_, observer)) = self.owner.as_ref() {
+                    let _ = self.file.unregister_observer(&Arc::downgrade(observer));
+                }
+                let _ = self.owner.take();
+            }
+            Some(owner_process) => {
+                let owner_pid = owner_process.pid();
+                if let Some((pid, observer)) = self.owner.as_ref() {
+                    if *pid == owner_pid {
+                        return Ok(());
+                    }
 
-        // Unset the owner if the given pid is zero.
-        let new_owner = if owner == 0 {
-            None
-        } else {
-            let process = process_table::get_process(owner as _).ok_or(Error::with_message(
-                Errno::ESRCH,
-                "cannot set_owner with an invalid pid",
-            ))?;
-            let observer = OwnerObserver::new(self.file.clone(), Arc::downgrade(&process));
-            Some((owner, observer))
-        };
+                    let _ = self.file.unregister_observer(&Arc::downgrade(observer));
+                }
 
-        let mut self_owner = self.owner.write();
-        if let Some((_, observer)) = self_owner.as_ref() {
-            let _ = self.file.unregister_observer(&Arc::downgrade(observer));
-        }
-
-        *self_owner = match new_owner {
-            None => None,
-            Some((pid, observer)) => {
+                let observer = OwnerObserver::new(self.file.clone(), Arc::downgrade(owner_process));
                 self.file
                     .register_observer(observer.weak_self(), IoEvents::empty())?;
-                Some((pid, observer))
+                let _ = self.owner.insert((owner_pid, observer));
             }
-        };
+        }
         Ok(())
     }
 
@@ -328,7 +330,7 @@ impl Clone for FileTableEntry {
             file: self.file.clone(),
             flags: AtomicU8::new(self.flags.load(Ordering::Relaxed)),
             subject: Subject::new(),
-            owner: RwLock::new(self.owner.read().clone()),
+            owner: self.owner.clone(),
         }
     }
 }
