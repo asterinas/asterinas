@@ -54,6 +54,7 @@ pub(crate) use crate::{
     current, current_thread,
     error::{Errno, Error},
     print, println,
+    process::signal::Pause,
     time::{wait::WaitTimeout, Clock},
 };
 pub(crate) type Result<T> = core::result::Result<T, Error>;

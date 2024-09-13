@@ -5,6 +5,7 @@
 use core::sync::atomic::Ordering;
 
 use aster_rights::{ReadOp, WriteOp};
+use ostd::sync::Waker;
 
 use super::{
     kill::SignalSenderIds,
@@ -41,7 +42,6 @@ pub use robust_list::RobustListHead;
 pub struct PosixThread {
     // Immutable part
     process: Weak<Process>,
-
     // Mutable part
     name: Mutex<Option<ThreadName>>,
 
@@ -64,6 +64,9 @@ pub struct PosixThread {
     /// FIXME: This field may be removed. For glibc applications with RESTORER flag set, the sig_context is always equals with rsp.
     sig_context: Mutex<Option<Vaddr>>,
     sig_stack: Mutex<Option<SigStack>>,
+    /// The per-thread signal [`Waker`], which will be used to wake up the thread
+    /// when enqueuing a signal.
+    signalled_waker: SpinLock<Option<Arc<Waker>>>,
 
     /// A profiling clock measures the user CPU time and kernel CPU time in the thread.
     prof_clock: Arc<ProfClock>,
@@ -171,10 +174,33 @@ impl PosixThread {
         return_errno_with_message!(Errno::EPERM, "sending signal to the thread is not allowed.");
     }
 
+    /// Sets the input [`Waker`] as the signalled waker of this thread.
+    ///
+    /// This approach can collaborate with signal-aware wait methods.
+    /// Once a signalled waker is set for a thread, it cannot be reset until it is cleared.
+    ///
+    /// # Panics
+    ///
+    /// If setting a new waker before clearing the current thread's signalled waker
+    /// this method will panic.
+    pub fn set_signalled_waker(&self, waker: Arc<Waker>) {
+        let mut signalled_waker = self.signalled_waker.lock();
+        assert!(signalled_waker.is_none());
+        *signalled_waker = Some(waker);
+    }
+
+    /// Clears the signalled waker of this thread.
+    pub fn clear_signalled_waker(&self) {
+        *self.signalled_waker.lock() = None;
+    }
+
     /// Enqueues a thread-directed signal. This method should only be used for enqueue kernel
     /// signal and fault signal.
     pub fn enqueue_signal(&self, signal: Box<dyn Signal>) {
         self.sig_queues.enqueue(signal);
+        if let Some(waker) = &*self.signalled_waker.lock() {
+            waker.wake_up();
+        }
     }
 
     /// Returns a reference to the profiling clock of the current thread.
@@ -216,7 +242,7 @@ impl PosixThread {
         self.sig_queues.register_observer(observer, filter);
     }
 
-    pub fn unregiser_sigqueue_observer(&self, observer: &Weak<dyn Observer<SigEvents>>) {
+    pub fn unregister_sigqueue_observer(&self, observer: &Weak<dyn Observer<SigEvents>>) {
         self.sig_queues.unregister_observer(observer);
     }
 

@@ -103,6 +103,7 @@ impl PosixThreadBuilder {
                 sig_queues,
                 sig_context: Mutex::new(None),
                 sig_stack: Mutex::new(None),
+                signalled_waker: SpinLock::new(None),
                 robust_list: Mutex::new(None),
                 prof_clock,
                 virtual_timer_manager,
