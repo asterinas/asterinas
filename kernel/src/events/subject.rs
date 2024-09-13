@@ -10,7 +10,7 @@ use crate::prelude::*;
 /// A Subject notifies interesting events to registered observers.
 pub struct Subject<E: Events, F: EventsFilter<E> = ()> {
     // A table that maintains all interesting observers.
-    observers: Mutex<BTreeMap<KeyableWeak<dyn Observer<E>>, F>>,
+    observers: SpinLock<BTreeMap<KeyableWeak<dyn Observer<E>>, F>>,
     // To reduce lock contentions, we maintain a counter for the size of the table
     num_observers: AtomicUsize,
 }
@@ -18,7 +18,7 @@ pub struct Subject<E: Events, F: EventsFilter<E> = ()> {
 impl<E: Events, F: EventsFilter<E>> Subject<E, F> {
     pub const fn new() -> Self {
         Self {
-            observers: Mutex::new(BTreeMap::new()),
+            observers: SpinLock::new(BTreeMap::new()),
             num_observers: AtomicUsize::new(0),
         }
     }
@@ -70,19 +70,29 @@ impl<E: Events, F: EventsFilter<E>> Subject<E, F> {
         }
 
         // Slow path: broadcast the new events to all observers.
+        let mut active_observers = Vec::new();
+        let mut num_freed = 0;
         let mut observers = self.observers.lock();
         observers.retain(|observer, filter| {
             if let Some(observer) = observer.upgrade() {
-                if !filter.filter(events) {
-                    return true;
+                if filter.filter(events) {
+                    // XXX: Mind the performance impact when there comes many active observers
+                    active_observers.push(observer.clone());
                 }
-                observer.on_events(events);
                 true
             } else {
-                self.num_observers.fetch_sub(1, Ordering::Relaxed);
+                num_freed += 1;
                 false
             }
         });
+        if num_freed > 0 {
+            self.num_observers.fetch_sub(num_freed, Ordering::Relaxed);
+        }
+        drop(observers);
+
+        for observer in active_observers {
+            observer.on_events(events);
+        }
     }
 }
 
