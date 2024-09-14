@@ -264,7 +264,7 @@ impl Monitor {
             for local_pool in worker_pool.local_pools.iter() {
                 local_pool.set_heartbeat(false);
             }
-            sleep_queue.wait_until_or_timeout(|| -> Option<()> { None }, &sleep_duration);
+            let _ = sleep_queue.wait_until_or_timeout(|| -> Option<()> { None }, &sleep_duration);
         }
     }
 }
