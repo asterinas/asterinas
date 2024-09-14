@@ -51,6 +51,8 @@ jobs:
           # File-related benchmarks
           - lmbench/ramfs_create_delete_files_0k_ops
           - lmbench/ramfs_create_delete_files_10k_ops
+          - lmbench/ext2_create_delete_files_0k_ops
+          - lmbench/ext2_create_delete_files_10k_ops
           - lmbench/ext2_copy_files_bw
           # Network-related benchmark
           - lmbench/tcp_loopback_bw
