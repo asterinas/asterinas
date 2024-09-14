@@ -14,6 +14,8 @@
 //! refer to the man 2 eventfd documentation.
 //!
 
+use ostd::sync::WaitQueue;
+
 use super::SyscallReturn;
 use crate::{
     events::{IoEvents, Observer},
@@ -24,7 +26,7 @@ use crate::{
     },
     prelude::*,
     process::{
-        signal::{Pauser, Pollable, Pollee, Poller},
+        signal::{Pollable, Pollee, Poller},
         Gid, Uid,
     },
     time::clocks::RealTimeClock,
@@ -75,7 +77,7 @@ struct EventFile {
     counter: Mutex<u64>,
     pollee: Pollee,
     flags: Mutex<Flags>,
-    write_pauser: Arc<Pauser>,
+    write_wait_queue: WaitQueue,
 }
 
 impl EventFile {
@@ -84,12 +86,12 @@ impl EventFile {
     fn new(init_val: u64, flags: Flags) -> Self {
         let counter = Mutex::new(init_val);
         let pollee = Pollee::new(IoEvents::OUT);
-        let write_pauser = Pauser::new();
+        let write_wait_queue = WaitQueue::new();
         Self {
             counter,
             pollee,
             flags: Mutex::new(flags),
-            write_pauser,
+            write_wait_queue,
         }
     }
 
@@ -112,7 +114,7 @@ impl EventFile {
                 self.pollee.del_events(IoEvents::IN);
             }
 
-            self.write_pauser.resume_all();
+            self.write_wait_queue.wake_all();
 
             return;
         }
@@ -215,7 +217,7 @@ impl FileLike for EventFile {
         }
 
         // Wait until counter can be added val to
-        self.write_pauser
+        self.write_wait_queue
             .pause_until(|| self.add_counter_val(supplied_value).ok())?;
 
         Ok(write_len)

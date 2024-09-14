@@ -2,6 +2,8 @@
 
 use core::sync::atomic::{AtomicUsize, Ordering};
 
+use ostd::sync::WaitQueue;
+
 use super::{
     connected::{combine_io_events, Connected},
     init::Init,
@@ -15,7 +17,7 @@ use crate::{
         SockShutdownCmd, SocketAddr,
     },
     prelude::*,
-    process::signal::{Pauser, Pollee, Poller},
+    process::signal::{Pollee, Poller},
 };
 
 pub(super) struct Listener {
@@ -159,7 +161,7 @@ pub(super) struct Backlog {
     pollee: Pollee,
     backlog: AtomicUsize,
     incoming_conns: Mutex<Option<VecDeque<Connected>>>,
-    pauser: Arc<Pauser>,
+    wait_queue: WaitQueue,
 }
 
 impl Backlog {
@@ -175,7 +177,7 @@ impl Backlog {
             pollee,
             backlog: AtomicUsize::new(backlog),
             incoming_conns: Mutex::new(incoming_sockets),
-            pauser: Pauser::new(),
+            wait_queue: WaitQueue::new(),
         }
     }
 
@@ -198,7 +200,7 @@ impl Backlog {
         drop(locked_incoming_conns);
 
         if conn.is_some() {
-            self.pauser.resume_one();
+            self.wait_queue.wake_one();
         }
 
         conn.ok_or_else(|| Error::with_message(Errno::EAGAIN, "no pending connection is available"))
@@ -208,7 +210,7 @@ impl Backlog {
         let old_backlog = self.backlog.swap(backlog, Ordering::Relaxed);
 
         if old_backlog < backlog {
-            self.pauser.resume_all();
+            self.wait_queue.wake_all();
         }
     }
 
@@ -221,7 +223,7 @@ impl Backlog {
 
         drop(incoming_conns);
 
-        self.pauser.resume_all();
+        self.wait_queue.wake_all();
     }
 
     fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
@@ -284,7 +286,7 @@ impl Backlog {
     where
         F: FnMut() -> Result<()>,
     {
-        self.pauser.pause_until(|| match cond() {
+        self.wait_queue.pause_until(|| match cond() {
             Err(err) if err.error() == Errno::EAGAIN => None,
             result => Some(result),
         })?

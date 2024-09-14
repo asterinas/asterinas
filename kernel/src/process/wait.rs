@@ -2,7 +2,11 @@
 
 #![allow(dead_code)]
 
-use super::{process_filter::ProcessFilter, ExitCode, Pid, Process};
+use super::{
+    process_filter::ProcessFilter,
+    signal::{constants::SIGCHLD, with_signal_blocked},
+    ExitCode, Pid, Process,
+};
 use crate::{prelude::*, process::process_table, thread::thread_table};
 
 // The definition of WaitOptions is from Occlum
@@ -27,48 +31,51 @@ impl WaitOptions {
 pub fn wait_child_exit(
     child_filter: ProcessFilter,
     wait_options: WaitOptions,
+    ctx: &Context,
 ) -> Result<Option<Arc<Process>>> {
-    let current = current!();
-    let zombie_child = current.children_pauser().pause_until(|| {
-        let unwaited_children = current
-            .children()
-            .lock()
-            .values()
-            .filter(|child| match child_filter {
-                ProcessFilter::Any => true,
-                ProcessFilter::WithPid(pid) => child.pid() == pid,
-                ProcessFilter::WithPgid(pgid) => child.pgid() == pgid,
-            })
-            .cloned()
-            .collect::<Vec<_>>();
+    let current = ctx.process;
+    let zombie_child = with_signal_blocked(ctx, SIGCHLD.into(), || {
+        current.children_wait_queue().pause_until(|| {
+            let unwaited_children = current
+                .children()
+                .lock()
+                .values()
+                .filter(|child| match child_filter {
+                    ProcessFilter::Any => true,
+                    ProcessFilter::WithPid(pid) => child.pid() == pid,
+                    ProcessFilter::WithPgid(pgid) => child.pgid() == pgid,
+                })
+                .cloned()
+                .collect::<Vec<_>>();
 
-        if unwaited_children.is_empty() {
-            return Some(Err(Error::with_message(
-                Errno::ECHILD,
-                "the process has no child to wait",
-            )));
-        }
-
-        // return immediately if we find a zombie child
-        let zombie_child = unwaited_children.iter().find(|child| child.is_zombie());
-
-        if let Some(zombie_child) = zombie_child {
-            let zombie_pid = zombie_child.pid();
-            if wait_options.contains(WaitOptions::WNOWAIT) {
-                // does not reap child, directly return
-                return Some(Ok(Some(zombie_child.clone())));
-            } else {
-                reap_zombie_child(&current, zombie_pid);
-                return Some(Ok(Some(zombie_child.clone())));
+            if unwaited_children.is_empty() {
+                return Some(Err(Error::with_message(
+                    Errno::ECHILD,
+                    "the process has no child to wait",
+                )));
             }
-        }
 
-        if wait_options.contains(WaitOptions::WNOHANG) {
-            return Some(Ok(None));
-        }
+            // return immediately if we find a zombie child
+            let zombie_child = unwaited_children.iter().find(|child| child.is_zombie());
 
-        // wait
-        None
+            if let Some(zombie_child) = zombie_child {
+                let zombie_pid = zombie_child.pid();
+                if wait_options.contains(WaitOptions::WNOWAIT) {
+                    // does not reap child, directly return
+                    return Some(Ok(Some(zombie_child.clone())));
+                } else {
+                    reap_zombie_child(current, zombie_pid);
+                    return Some(Ok(Some(zombie_child.clone())));
+                }
+            }
+
+            if wait_options.contains(WaitOptions::WNOHANG) {
+                return Some(Ok(None));
+            }
+
+            // wait
+            None
+        })
     })??;
 
     Ok(zombie_child)

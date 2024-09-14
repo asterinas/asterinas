@@ -2,13 +2,14 @@
 
 #![allow(unused_variables)]
 
+use ostd::sync::WaitQueue;
+
 use crate::{
     prelude::*,
     process::{
         signal::{
             constants::{SIGCONT, SIGHUP},
             signals::kernel::KernelSignal,
-            Pauser,
         },
         ProcessGroup, Session,
     },
@@ -22,7 +23,7 @@ use crate::{
 pub struct JobControl {
     foreground: SpinLock<Weak<ProcessGroup>>,
     session: SpinLock<Weak<Session>>,
-    pauser: Arc<Pauser>,
+    wait_queue: WaitQueue,
 }
 
 impl JobControl {
@@ -31,7 +32,7 @@ impl JobControl {
         Self {
             foreground: SpinLock::new(Weak::new()),
             session: SpinLock::new(Weak::new()),
-            pauser: Pauser::new(),
+            wait_queue: WaitQueue::new(),
         }
     }
 
@@ -73,7 +74,7 @@ impl JobControl {
         let session = current.session().unwrap();
         *self.session.lock() = Arc::downgrade(&session);
 
-        self.pauser.resume_all();
+        self.wait_queue.wake_all();
         Ok(())
     }
 
@@ -129,7 +130,7 @@ impl JobControl {
         }
 
         *self.foreground.lock() = Arc::downgrade(process_group);
-        self.pauser.resume_all();
+        self.wait_queue.wake_all();
         Ok(())
     }
 
@@ -146,7 +147,7 @@ impl JobControl {
         }
 
         // Slow path
-        self.pauser.pause_until(|| {
+        self.wait_queue.pause_until(|| {
             if self.current_belongs_to_foreground() {
                 Some(())
             } else {
