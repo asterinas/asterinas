@@ -12,13 +12,13 @@ pub fn sys_waitid(
     _infoq_addr: u64,
     options: u64,
     _rusage_addr: u64,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     // FIXME: what does infoq and rusage use for?
     let process_filter = ProcessFilter::from_which_and_id(which, upid)?;
     let wait_options = WaitOptions::from_bits(options as u32)
         .ok_or(Error::with_message(Errno::EINVAL, "invalid options"))?;
-    let waited_process = wait_child_exit(process_filter, wait_options)?;
+    let waited_process = wait_child_exit(process_filter, wait_options, ctx)?;
     let pid = waited_process.map_or(0, |process| process.pid());
     Ok(SyscallReturn::Return(pid as _))
 }

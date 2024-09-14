@@ -59,7 +59,7 @@ pub fn do_exit_group(term_status: TermStatus) {
         // Notify parent
         let signal = KernelSignal::new(SIGCHLD);
         parent.enqueue_signal(signal);
-        parent.children_pauser().resume_all();
+        parent.children_wait_queue().wake_all();
     }
 }
 

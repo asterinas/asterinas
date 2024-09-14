@@ -5,10 +5,11 @@ use core::{
     time::Duration,
 };
 
+use ostd::sync::{Waiter, Waker};
+
 use crate::{
     events::{IoEvents, Observer, Subject},
     prelude::*,
-    process::signal::Pauser,
 };
 
 /// A pollee maintains a set of active events, which can be polled with
@@ -136,6 +137,8 @@ pub struct Poller {
     event_counter: Arc<EventCounter>,
     // All pollees that are interesting to this poller
     pollees: Vec<Weak<PolleeInner>>,
+    // A waiter used to pause the current thread.
+    waiter: Waiter,
 }
 
 impl Default for Poller {
@@ -147,23 +150,25 @@ impl Default for Poller {
 impl Poller {
     /// Constructs a new `Poller`.
     pub fn new() -> Self {
+        let (waiter, waker) = Waiter::new_pair();
         Self {
-            event_counter: Arc::new(EventCounter::new()),
+            event_counter: Arc::new(EventCounter::new(waker)),
             pollees: Vec::new(),
+            waiter,
         }
     }
 
     /// Wait until there are any interesting events happen since last `wait`. The `wait`
     /// can be interrupted by signal.
     pub fn wait(&self) -> Result<()> {
-        self.event_counter.read(None)?;
+        self.event_counter.read(&self.waiter, None)?;
         Ok(())
     }
 
     /// Wait until there are any interesting events happen since last `wait` or a given timeout
     /// is expired. This method can be interrupted by signal.
     pub fn wait_timeout(&self, timeout: &Duration) -> Result<()> {
-        self.event_counter.read(Some(timeout))?;
+        self.event_counter.read(&self.waiter, Some(timeout))?;
         Ok(())
     }
 
@@ -188,20 +193,18 @@ impl Drop for Poller {
 /// A counter for wait and wakeup.
 struct EventCounter {
     counter: AtomicUsize,
-    pauser: Arc<Pauser>,
+    waker: Arc<Waker>,
 }
 
 impl EventCounter {
-    pub fn new() -> Self {
-        let pauser = Pauser::new();
-
+    pub fn new(waker: Arc<Waker>) -> Self {
         Self {
             counter: AtomicUsize::new(0),
-            pauser,
+            waker,
         }
     }
 
-    pub fn read(&self, timeout: Option<&Duration>) -> Result<usize> {
+    pub fn read(&self, waiter: &Waiter, timeout: Option<&Duration>) -> Result<usize> {
         let cond = || {
             let val = self.counter.swap(0, Ordering::Relaxed);
             if val > 0 {
@@ -212,15 +215,15 @@ impl EventCounter {
         };
 
         if let Some(timeout) = timeout {
-            self.pauser.pause_until_or_timeout(cond, timeout)
+            waiter.pause_until_or_timeout(cond, timeout)
         } else {
-            self.pauser.pause_until(cond)
+            waiter.pause_until(cond)
         }
     }
 
     pub fn write(&self) {
         self.counter.fetch_add(1, Ordering::Relaxed);
-        self.pauser.resume_one();
+        self.waker.wake_up();
     }
 }
 

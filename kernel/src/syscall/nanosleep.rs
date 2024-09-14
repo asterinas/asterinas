@@ -2,10 +2,11 @@
 
 use core::time::Duration;
 
+use ostd::sync::Waiter;
+
 use super::{clock_gettime::read_clock, ClockId, SyscallReturn};
 use crate::{
     prelude::*,
-    process::signal::Pauser,
     time::{clockid_t, timespec_t, TIMER_ABSTIME},
 };
 
@@ -81,9 +82,9 @@ fn do_clock_nanosleep(
 
     // FIXME: sleeping thread can only be interrupted by signals that will call signal handler or terminate
     // current process. i.e., the signals that should be ignored will not interrupt sleeping thread.
-    let pauser = Pauser::new();
+    let waiter = Waiter::new_pair().0;
 
-    let res = pauser.pause_until_or_timeout(|| None, &timeout);
+    let res = waiter.pause_until_or_timeout(|| None, &timeout);
     match res {
         Err(e) if e.error() == Errno::ETIME => Ok(SyscallReturn::Return(0)),
         Err(e) if e.error() == Errno::EINTR => {

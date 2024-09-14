@@ -22,7 +22,7 @@ pub fn sys_wait4(
     debug!("wait4 current pid = {}", ctx.process.pid());
     let process_filter = ProcessFilter::from_id(wait_pid as _);
 
-    let waited_process = wait_child_exit(process_filter, wait_options)?;
+    let waited_process = wait_child_exit(process_filter, wait_options, ctx)?;
     let Some(process) = waited_process else {
         return Ok(SyscallReturn::Return(0 as _));
     };

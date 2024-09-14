@@ -9,11 +9,9 @@ use super::{
     process_vm::{Heap, InitStackReader, ProcessVm},
     rlimit::ResourceLimits,
     signal::{
-        constants::SIGCHLD,
         sig_disposition::SigDispositions,
         sig_num::{AtomicSigNum, SigNum},
         signals::Signal,
-        Pauser,
     },
     status::ProcessStatus,
     Credentials, TermStatus,
@@ -39,6 +37,7 @@ use aster_rights::Full;
 use atomic::Atomic;
 pub use builder::ProcessBuilder;
 pub use job_control::JobControl;
+use ostd::sync::WaitQueue;
 pub use process_group::ProcessGroup;
 pub use session::Session;
 pub use terminal::Terminal;
@@ -63,7 +62,7 @@ pub struct Process {
 
     process_vm: ProcessVm,
     /// Wait for child status changed
-    children_pauser: Arc<Pauser>,
+    children_wait_queue: WaitQueue,
 
     // Mutable Part
     /// The executable path.
@@ -189,7 +188,7 @@ impl Process {
     ) -> Arc<Self> {
         // SIGCHID does not interrupt pauser. Child process will
         // resume paused parent when doing exit.
-        let children_pauser = Pauser::new_with_mask(SIGCHLD.into());
+        let children_wait_queue = WaitQueue::new();
 
         let prof_clock = ProfClock::new();
 
@@ -198,7 +197,7 @@ impl Process {
             threads: Mutex::new(threads),
             executable_path: RwLock::new(executable_path),
             process_vm,
-            children_pauser,
+            children_wait_queue,
             status: ProcessStatus::new_uninit(),
             parent: ParentProcess::new(parent),
             children: Mutex::new(BTreeMap::new()),
@@ -343,8 +342,8 @@ impl Process {
         self.children.lock().contains_key(pid)
     }
 
-    pub fn children_pauser(&self) -> &Arc<Pauser> {
-        &self.children_pauser
+    pub fn children_wait_queue(&self) -> &WaitQueue {
+        &self.children_wait_queue
     }
 
     // *********** Process group & Session***********

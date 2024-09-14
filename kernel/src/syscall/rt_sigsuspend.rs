@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use ostd::sync::Waiter;
+
 use super::SyscallReturn;
 use crate::{
     prelude::*,
     process::signal::{
         constants::{SIGKILL, SIGSTOP},
         sig_mask::SigMask,
-        Pauser,
+        with_signal_blocked,
     },
 };
 
@@ -34,9 +36,9 @@ pub fn sys_rt_sigsuspend(
         mask
     };
 
-    // Pause until receiving any signal
-    let pauser = Pauser::new_with_mask(sigmask);
-    pauser.pause_until(|| None::<()>)?;
+    // Wait until receiving any signal
+    let waiter = Waiter::new_pair().0;
+    with_signal_blocked(ctx, sigmask, || waiter.pause_until(|| None::<()>))?;
 
     // This syscall should always return `Err(EINTR)`. This path should never be reached.
     unreachable!("rt_sigsuspend always return EINTR");
