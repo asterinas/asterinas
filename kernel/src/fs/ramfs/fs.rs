@@ -8,6 +8,7 @@ use core::{
 use aster_block::bio::BioWaiter;
 use aster_rights::Full;
 use aster_util::slot_vec::SlotVec;
+use hashbrown::HashMap;
 use ostd::{
     mm::{Frame, VmIo},
     sync::RwMutexWriteGuard,
@@ -242,13 +243,13 @@ impl InodeMeta {
     pub fn new_dir(mode: InodeMode, uid: Uid, gid: Gid) -> Self {
         let now = now();
         Self {
-            size: 2,
+            size: NUM_SPECIAL_ENTRIES,
             blocks: 1,
             atime: now,
             mtime: now,
             ctime: now,
             mode,
-            nlinks: 2,
+            nlinks: NUM_SPECIAL_ENTRIES,
             uid,
             gid,
         }
@@ -316,16 +317,22 @@ impl Inner {
     }
 }
 
+/// Represents a directory entry within a `RamInode`.
 struct DirEntry {
     children: SlotVec<(CStr256, Arc<RamInode>)>,
+    idx_map: HashMap<CStr256, usize>, // Used to accelerate indexing in `children`
     this: Weak<RamInode>,
     parent: Weak<RamInode>,
 }
+
+// Every directory has two special entries: "." and "..".
+const NUM_SPECIAL_ENTRIES: usize = 2;
 
 impl DirEntry {
     fn new(this: Weak<RamInode>, parent: Weak<RamInode>) -> Self {
         Self {
             children: SlotVec::new(),
+            idx_map: HashMap::new(),
             this,
             parent,
         }
@@ -339,9 +346,7 @@ impl DirEntry {
         if name == "." || name == ".." {
             true
         } else {
-            self.children
-                .iter()
-                .any(|(child, _)| child.as_str().unwrap() == name)
+            self.idx_map.contains_key(name.as_bytes())
         }
     }
 
@@ -351,20 +356,31 @@ impl DirEntry {
         } else if name == ".." {
             Some((1, self.parent.upgrade().unwrap()))
         } else {
-            self.children
-                .idxes_and_items()
-                .find(|(_, (child, _))| child.as_str().unwrap() == name)
-                .map(|(idx, (_, inode))| (idx + 2, inode.clone()))
+            let idx = *self.idx_map.get(name.as_bytes())?;
+            let target_inode = self
+                .children
+                .get(idx)
+                .map(|(name_cstr256, inode)| {
+                    debug_assert_eq!(name, name_cstr256.as_str().unwrap());
+                    inode.clone()
+                })
+                .unwrap();
+            Some((idx + NUM_SPECIAL_ENTRIES, target_inode))
         }
     }
 
     fn append_entry(&mut self, name: &str, inode: Arc<RamInode>) -> usize {
-        self.children.put((CStr256::from(name), inode))
+        let name = CStr256::from(name);
+        let idx = self.children.put((name, inode));
+        self.idx_map.insert(name, idx);
+        idx
     }
 
     fn remove_entry(&mut self, idx: usize) -> Option<(CStr256, Arc<RamInode>)> {
-        assert!(idx >= 2);
-        self.children.remove(idx - 2)
+        assert!(idx >= NUM_SPECIAL_ENTRIES);
+        let removed = self.children.remove(idx - NUM_SPECIAL_ENTRIES)?;
+        self.idx_map.remove(&removed.0);
+        Some(removed)
     }
 
     fn substitute_entry(
@@ -372,8 +388,15 @@ impl DirEntry {
         idx: usize,
         new_entry: (CStr256, Arc<RamInode>),
     ) -> Option<(CStr256, Arc<RamInode>)> {
-        assert!(idx >= 2);
-        self.children.put_at(idx - 2, new_entry)
+        assert!(idx >= NUM_SPECIAL_ENTRIES);
+        let new_name = new_entry.0;
+        let idx_children = idx - NUM_SPECIAL_ENTRIES;
+
+        let substitute = self.children.put_at(idx_children, new_entry)?;
+        let removed = self.idx_map.remove(&substitute.0);
+        debug_assert_eq!(removed.unwrap(), idx_children);
+        self.idx_map.insert(new_name, idx_children);
+        Some(substitute)
     }
 
     fn visit_entry(&self, idx: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
@@ -391,12 +414,12 @@ impl DirEntry {
             }
             // Read the normal child entries.
             let start_idx = *idx;
-            for (offset, (name, child)) in self
+            for (offset_children, (name, child)) in self
                 .children
                 .idxes_and_items()
-                .map(|(offset, (name, child))| (offset + 2, (name, child)))
-                .skip_while(|(offset, _)| offset < &start_idx)
+                .skip_while(|(offset, _)| offset + NUM_SPECIAL_ENTRIES < start_idx)
             {
+                let offset = offset_children + NUM_SPECIAL_ENTRIES;
                 visitor.visit(name.as_str().unwrap(), child.ino, child.typ, offset)?;
                 *idx = offset + 1;
             }
