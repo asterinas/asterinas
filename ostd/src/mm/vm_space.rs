@@ -372,12 +372,18 @@ impl CursorMut<'_, '_> {
     pub fn unmap(&mut self, len: usize) {
         assert!(len % super::PAGE_SIZE == 0);
         let end_va = self.virt_addr() + len;
+        let tlb_prefer_flush_all = len > TLB_FLUSH_ALL_THRESHOLD * PAGE_SIZE;
 
         loop {
             // SAFETY: It is safe to un-map memory in the userspace.
             let result = unsafe { self.pt_cursor.take_next(end_va - self.virt_addr()) };
             match result {
                 PageTableItem::Mapped { va, page, .. } => {
+                    if !self.need_remote_flush && tlb_prefer_flush_all {
+                        // Only on single-CPU cases we can drop the page immediately before flushing.
+                        drop(page);
+                        continue;
+                    }
                     self.issue_tlb_flush(TlbFlushOp::Address(va), Some(page));
                 }
                 PageTableItem::NotMapped { .. } => {
@@ -387,6 +393,10 @@ impl CursorMut<'_, '_> {
                     panic!("found untracked memory mapped into `VmSpace`");
                 }
             }
+        }
+
+        if !self.need_remote_flush && tlb_prefer_flush_all {
+            self.issue_tlb_flush(TlbFlushOp::All, None);
         }
 
         self.dispatch_tlb_flush();
