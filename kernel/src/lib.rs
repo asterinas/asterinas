@@ -37,12 +37,13 @@ use ostd::{
     arch::qemu::{exit_qemu, QemuExitCode},
     boot,
     cpu::PinCurrentCpu,
-    task::Priority,
 };
 use process::Process;
+use sched::priority::PriorityRange;
 
 use crate::{
     prelude::*,
+    sched::priority::Priority,
     thread::{
         kernel_thread::{KernelThreadExt, ThreadOptions},
         Thread,
@@ -91,7 +92,10 @@ pub fn main() {
     ostd::boot::smp::register_ap_entry(ap_init);
 
     // Spawn the first kernel thread on BSP.
-    Thread::spawn_kernel_thread(ThreadOptions::new(init_thread).priority(Priority::lowest()));
+    Thread::spawn_kernel_thread(
+        ThreadOptions::new(init_thread)
+            .priority(Priority::new(PriorityRange::new(PriorityRange::MAX))),
+    );
     // Spawning functions in the bootstrap context will not return.
     unreachable!()
 }
@@ -126,7 +130,7 @@ fn ap_init() -> ! {
     Thread::spawn_kernel_thread(
         ThreadOptions::new(ap_idle_thread)
             .cpu_affinity(cpu_id.into())
-            .priority(Priority::lowest()),
+            .priority(Priority::new(PriorityRange::new(PriorityRange::MAX))),
     );
     // Spawning functions in the bootstrap context will not return.
     unreachable!()

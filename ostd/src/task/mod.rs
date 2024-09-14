@@ -16,7 +16,7 @@ use processor::current_task;
 
 pub use self::{
     preempt::{disable_preempt, DisabledPreemptGuard},
-    scheduler::info::{AtomicCpuId, Priority, TaskScheduleInfo},
+    scheduler::info::{AtomicCpuId, TaskScheduleInfo},
 };
 pub(crate) use crate::arch::task::{context_switch, TaskContext};
 use crate::{cpu::CpuSet, prelude::*, user::UserSpace};
@@ -124,7 +124,6 @@ pub struct TaskOptions {
     func: Option<Box<dyn Fn() + Send + Sync>>,
     data: Option<Box<dyn Any + Send + Sync>>,
     user_space: Option<Arc<UserSpace>>,
-    priority: Priority,
     cpu_affinity: CpuSet,
 }
 
@@ -138,7 +137,6 @@ impl TaskOptions {
             func: Some(Box::new(func)),
             data: None,
             user_space: None,
-            priority: Priority::normal(),
             cpu_affinity: CpuSet::new_full(),
         }
     }
@@ -164,12 +162,6 @@ impl TaskOptions {
     /// Sets the user space associated with the task.
     pub fn user_space(mut self, user_space: Option<Arc<UserSpace>>) -> Self {
         self.user_space = user_space;
-        self
-    }
-
-    /// Sets the priority of the task.
-    pub fn priority(mut self, priority: Priority) -> Self {
-        self.priority = priority;
         self
     }
 
@@ -220,7 +212,6 @@ impl TaskOptions {
             kstack,
             schedule_info: TaskScheduleInfo {
                 cpu: AtomicCpuId::default(),
-                priority: self.priority,
                 cpu_affinity: self.cpu_affinity,
             },
         };

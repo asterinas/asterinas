@@ -164,12 +164,9 @@ dependencies = [
  "aster-time",
  "aster-util",
  "aster-virtio",
- "atomic",
  "atomic-integer-wrapper",
  "bitflags 1.3.2",
  "bitvec",
- "bytemuck",
- "bytemuck_derive",
  "cfg-if",
  "component",
  "controlled",
@@ -264,15 +261,6 @@ dependencies = [
  "ostd",
  "spin 0.9.8",
  "typeflags-util",
-]
-
-[[package]]
-name = "atomic"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d818003e740b63afc82337e3160717f4f63078720a810b7b903e70a5d1d2994"
-dependencies = [
- "bytemuck",
 ]
 
 [[package]]
@@ -1345,6 +1333,7 @@ dependencies = [
  "cfg-if",
  "defmt",
  "heapless",
+ "log",
  "managed",
 ]
 

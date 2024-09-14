@@ -4,12 +4,13 @@ use ostd::{
     cpu::{num_cpus, CpuSet, PinCurrentCpu},
     task::{
         scheduler::{inject_scheduler, EnqueueFlags, LocalRunQueue, Scheduler, UpdateFlags},
-        AtomicCpuId, Priority, Task,
+        AtomicCpuId, Task,
     },
     trap::disable_local,
 };
 
-use crate::prelude::*;
+use super::priority::{Priority, PriorityRange};
+use crate::{prelude::*, thread::Thread};
 
 pub fn init() {
     let preempt_scheduler = Box::new(PreemptScheduler::default());
@@ -244,13 +245,14 @@ impl Default for TimeSlice {
 }
 
 impl PreemptSchedInfo for Task {
-    type PRIORITY = Priority;
+    const REAL_TIME_TASK_PRIORITY: Priority = Priority::new(PriorityRange::new(100));
+    const LOWEST_TASK_PRIORITY: Priority = Priority::new(PriorityRange::new(PriorityRange::MAX));
 
-    const REAL_TIME_TASK_PRIORITY: Self::PRIORITY = Priority::new(100);
-    const LOWEST_TASK_PRIORITY: Self::PRIORITY = Priority::lowest();
-
-    fn priority(&self) -> Self::PRIORITY {
-        self.schedule_info().priority
+    fn priority(&self) -> Priority {
+        self.data()
+            .downcast_ref::<Arc<Thread>>()
+            .unwrap()
+            .priority()
     }
 
     fn cpu(&self) -> &AtomicCpuId {
@@ -263,12 +265,10 @@ impl PreemptSchedInfo for Task {
 }
 
 trait PreemptSchedInfo {
-    type PRIORITY: Ord + PartialOrd + Eq + PartialEq;
+    const REAL_TIME_TASK_PRIORITY: Priority;
+    const LOWEST_TASK_PRIORITY: Priority;
 
-    const REAL_TIME_TASK_PRIORITY: Self::PRIORITY;
-    const LOWEST_TASK_PRIORITY: Self::PRIORITY;
-
-    fn priority(&self) -> Self::PRIORITY;
+    fn priority(&self) -> Priority;
 
     fn cpu(&self) -> &AtomicCpuId;
 

@@ -7,15 +7,12 @@ use core::{
     time::Duration,
 };
 
-use ostd::{
-    cpu::CpuSet,
-    sync::WaitQueue,
-    task::{Priority, Task},
-};
+use ostd::{cpu::CpuSet, sync::WaitQueue, task::Task};
 
 use super::{simple_scheduler::SimpleScheduler, worker::Worker, WorkItem, WorkPriority, WorkQueue};
 use crate::{
     prelude::*,
+    sched::priority::{Priority, PriorityRange},
     thread::kernel_thread::{create_new_kernel_task, ThreadOptions},
     Thread,
 };
@@ -236,9 +233,13 @@ impl Monitor {
                 current_monitor.run_monitor_loop();
             });
             let cpu_affinity = CpuSet::new_full();
+            // FIXME: remove the use of real-time priority.
+            // Logically all monitors should be of default normal priority.
+            // This workaround is to make the monitor of high-priority worker pool
+            // starvation-free under the current scheduling policy.
             let priority = match priority {
-                WorkPriority::High => Priority::high(),
-                WorkPriority::Normal => Priority::normal(),
+                WorkPriority::High => Priority::new(PriorityRange::new(0)),
+                WorkPriority::Normal => Priority::default(),
             };
             let bound_task = create_new_kernel_task(
                 ThreadOptions::new(task_fn)

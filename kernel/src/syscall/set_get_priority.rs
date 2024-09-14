@@ -6,14 +6,14 @@ use super::SyscallReturn;
 use crate::{
     prelude::*,
     process::{posix_thread::PosixThreadExt, process_table, Pgid, Pid, Process, Uid},
-    sched::nice::Nice,
+    sched::priority::{Nice, NiceRange},
 };
 
 pub fn sys_set_priority(which: i32, who: u32, prio: i32, ctx: &Context) -> Result<SyscallReturn> {
     let prio_target = PriorityTarget::new(which, who, ctx)?;
     let new_nice = {
-        let norm_prio = prio.clamp(i8::MIN as i32, i8::MAX as i32) as i8;
-        Nice::new(norm_prio)
+        let nice_raw = prio.clamp(NiceRange::MIN as i32, NiceRange::MAX as i32) as i8;
+        Nice::new(NiceRange::new(nice_raw))
     };
 
     debug!(
@@ -35,9 +35,9 @@ pub fn sys_get_priority(which: i32, who: u32, ctx: &Context) -> Result<SyscallRe
 
     let processes = get_processes(prio_target)?;
     let highest_prio = {
-        let mut nice = Nice::MAX;
+        let mut nice = NiceRange::MAX;
         for process in processes.iter() {
-            let proc_nice = process.nice().load(Ordering::Relaxed);
+            let proc_nice = process.nice().load(Ordering::Relaxed).range().get();
             // Returns the highest priority enjoyed by the processes
             if proc_nice < nice {
                 nice = proc_nice;
@@ -46,7 +46,7 @@ pub fn sys_get_priority(which: i32, who: u32, ctx: &Context) -> Result<SyscallRe
 
         // The system call returns nice values translated to the range 40 to 1,
         // since a negative return value would be interpreted as an error.
-        20 - nice.to_raw()
+        20 - nice
     };
 
     Ok(SyscallReturn::Return(highest_prio as _))

@@ -20,7 +20,7 @@ use crate::{
     device::tty::open_ntty_as_controlling_terminal,
     fs::{file_table::FileTable, fs_resolver::FsResolver, utils::FileCreationMask},
     prelude::*,
-    sched::nice::Nice,
+    sched::priority::{AtomicNice, Nice},
     thread::Thread,
     time::clocks::ProfClock,
     vm::vmar::Vmar,
@@ -34,7 +34,6 @@ mod terminal;
 mod timer_manager;
 
 use aster_rights::Full;
-use atomic::Atomic;
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 pub use builder::ProcessBuilder;
 pub use job_control::JobControl;
@@ -93,7 +92,7 @@ pub struct Process {
     /// Scheduling priority nice value
     /// According to POSIX.1, the nice value is a per-process attribute,
     /// the threads in a process should share a nice value.
-    nice: Atomic<Nice>,
+    nice: AtomicNice,
 
     // Signal
     /// Sig dispositions
@@ -223,7 +222,7 @@ impl Process {
             parent_death_signal: AtomicSigNum::new_empty(),
             exit_signal: AtomicSigNum::new_empty(),
             resource_limits: Mutex::new(resource_limits),
-            nice: Atomic::new(nice),
+            nice: AtomicNice::new(nice),
             timer_manager: PosixTimerManager::new(&prof_clock, process_ref),
             prof_clock,
         })
@@ -329,7 +328,7 @@ impl Process {
         &self.resource_limits
     }
 
-    pub fn nice(&self) -> &Atomic<Nice> {
+    pub fn nice(&self) -> &AtomicNice {
         &self.nice
     }
 
