@@ -36,6 +36,11 @@ mod random_test;
 mod range_lock;
 mod status_flags;
 
+use core::{
+    borrow::Borrow,
+    hash::{Hash, Hasher},
+};
+
 use crate::prelude::*;
 
 #[derive(Copy, PartialEq, Eq, Clone, Debug)]
@@ -185,6 +190,18 @@ impl<'a, const N: usize> From<&'a str> for FixedStr<N> {
     fn from(string: &'a str) -> Self {
         let bytes = string.as_bytes();
         Self::from(bytes)
+    }
+}
+
+impl<const N: usize> Borrow<[u8]> for FixedCStr<N> {
+    fn borrow(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+impl<const N: usize> Hash for FixedCStr<N> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.as_bytes().hash(state);
     }
 }
 
