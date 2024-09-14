@@ -41,8 +41,11 @@ pub fn futex_wait_bitset(
     // lock futex bucket ref here to avoid data race
     let mut futex_bucket = futex_bucket_ref.lock();
 
-    if futex_key.load_val() != futex_val {
-        return_errno_with_message!(Errno::EAGAIN, "futex value does not match");
+    if !futex_key.load_val().is_ok_and(|val| val == futex_val) {
+        return_errno_with_message!(
+            Errno::EAGAIN,
+            "futex value does not match or load_val failed"
+        );
     }
 
     futex_bucket.add_item(futex_item);
@@ -327,10 +330,10 @@ impl FutexKey {
         Self { addr, bitset }
     }
 
-    pub fn load_val(&self) -> i32 {
+    pub fn load_val(&self) -> Result<i32> {
         // FIXME: how to implement a atomic load?
         warn!("implement an atomic load");
-        CurrentUserSpace::get().read_val(self.addr).unwrap()
+        CurrentUserSpace::get().read_val(self.addr)
     }
 
     pub fn addr(&self) -> Vaddr {
