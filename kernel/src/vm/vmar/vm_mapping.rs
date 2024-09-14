@@ -345,10 +345,10 @@ impl VmMapping {
         let mut cursor = vm_space.cursor_mut(&(start_addr..end_addr))?;
         let operate = move |commit_fn: &mut dyn FnMut() -> Result<Frame>| {
             if let VmItem::NotMapped { va, len } = cursor.query().unwrap() {
-                let mut page_flags = vm_perms.into();
-                if (va..len).contains(&page_fault_addr) {
-                    page_flags |= PageFlags::ACCESSED;
-                }
+                // We regard all the surrounding pages as accessed, no matter
+                // if it is really so. Then the hardware won't bother to update
+                // the accessed bit of the page table on following accesses.
+                let page_flags = PageFlags::from(vm_perms) | PageFlags::ACCESSED;
                 let page_prop = PageProperty::new(page_flags, CachePolicy::Writeback);
                 let frame = commit_fn()?;
                 cursor.map(frame, page_prop);
