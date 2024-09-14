@@ -164,8 +164,8 @@ impl Condvar {
         // Wait until the condition becomes true, we're explicitly woken up, or the timeout elapses.
         let res = self.waitqueue.wait_until_or_timeout(cond, &timeout);
         match res {
-            Some(_) => Ok((lock.lock(), false)),
-            None => {
+            Ok(()) => Ok((lock.lock(), false)),
+            Err(_) => {
                 let mut counter = self.counter.lock();
                 counter.waiter_count -= 1;
                 Err(LockErr::Timeout((lock.lock(), true)))

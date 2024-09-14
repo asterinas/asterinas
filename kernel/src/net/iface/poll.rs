@@ -59,7 +59,7 @@ fn spawn_background_poll_thread(iface: Arc<Iface>) {
             }
 
             let duration = Duration::from_millis(next_poll_at_ms - now_as_ms);
-            wait_queue.wait_until_or_timeout(
+            let _ = wait_queue.wait_until_or_timeout(
                 // If `iface_ext.next_poll_at_ms()` changes to an earlier time, we will end the
                 // waiting.
                 || (iface_ext.next_poll_at_ms()? < next_poll_at_ms).then_some(()),
