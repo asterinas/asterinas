@@ -350,12 +350,13 @@ impl CursorMut<'_, '_> {
     /// This method will bring the cursor to the next slot after the modification.
     pub fn map(&mut self, frame: Frame, prop: PageProperty) {
         let start_va = self.virt_addr();
-        let end_va = start_va + frame.size();
         // SAFETY: It is safe to map untyped memory into the userspace.
         let old = unsafe { self.pt_cursor.map(frame.into(), prop) };
 
-        self.issue_tlb_flush(TlbFlushOp::Range(start_va..end_va), old);
-        self.dispatch_tlb_flush();
+        if old.is_some() {
+            self.issue_tlb_flush(TlbFlushOp::Address(start_va), old);
+            self.dispatch_tlb_flush();
+        }
     }
 
     /// Clear the mapping starting from the current slot.
