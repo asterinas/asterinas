@@ -519,7 +519,11 @@ impl RamInode {
 impl PageCacheBackend for RamInode {
     fn read_page_async(&self, _idx: usize, frame: &Frame) -> Result<BioWaiter> {
         // Initially, any block/page in a RamFs inode contains all zeros
-        frame.writer().fill(0);
+        frame
+            .writer()
+            .to_fallible()
+            .fill_zeros(frame.size())
+            .unwrap();
         Ok(BioWaiter::new())
     }
 
