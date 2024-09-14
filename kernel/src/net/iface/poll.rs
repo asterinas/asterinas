@@ -4,10 +4,11 @@ use alloc::sync::Arc;
 use core::time::Duration;
 
 use log::trace;
-use ostd::{arch::timer::Jiffies, task::Priority};
+use ostd::arch::timer::Jiffies;
 
 use super::{ext::IfaceEx, Iface, IFACES};
 use crate::{
+    sched::priority::{Priority, PriorityRange},
     thread::{
         kernel_thread::{KernelThreadExt, ThreadOptions},
         Thread,
@@ -68,6 +69,7 @@ fn spawn_background_poll_thread(iface: Arc<Iface>) {
         }
     };
 
-    let options = ThreadOptions::new(task_fn).priority(Priority::high());
+    // FIXME: remove the use of real-time priority.
+    let options = ThreadOptions::new(task_fn).priority(Priority::new(PriorityRange::new(0)));
     Thread::spawn_kernel_thread(options);
 }

@@ -2,14 +2,12 @@
 
 #![allow(dead_code)]
 
-use ostd::{
-    cpu::CpuSet,
-    task::{Priority, Task},
-};
+use ostd::{cpu::CpuSet, task::Task};
 
 use super::worker_pool::WorkerPool;
 use crate::{
     prelude::*,
+    sched::priority::{Priority, PriorityRange},
     thread::kernel_thread::{create_new_kernel_task, ThreadOptions},
     Thread,
 };
@@ -50,9 +48,10 @@ impl Worker {
             });
             let mut cpu_affinity = CpuSet::new_empty();
             cpu_affinity.add(bound_cpu);
-            let mut priority = Priority::normal();
+            let mut priority = Priority::default();
             if worker_pool.upgrade().unwrap().is_high_priority() {
-                priority = Priority::high();
+                // FIXME: remove the use of real-time priority.
+                priority = Priority::new(PriorityRange::new(0));
             }
             let bound_task = create_new_kernel_task(
                 ThreadOptions::new(task_fn)

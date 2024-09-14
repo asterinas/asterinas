@@ -15,81 +15,10 @@ use crate::cpu::CpuSet;
 /// [existential types](https://github.com/rust-lang/rfcs/pull/2492) do not
 /// exist yet. So we decide to define them in OSTD.
 pub struct TaskScheduleInfo {
-    /// Priority of the task.
-    pub priority: Priority,
     /// The CPU that the task would like to be running on.
     pub cpu: AtomicCpuId,
     /// The CPUs that this task can run on.
     pub cpu_affinity: CpuSet,
-}
-
-/// The priority of a real-time task.
-pub const REAL_TIME_TASK_PRIORITY: u16 = 100;
-
-/// The priority of a task.
-///
-/// Similar to Linux, a larger value represents a lower priority,
-/// with a range of 0 to 139. Priorities ranging from 0 to 99 are considered real-time,
-/// while those ranging from 100 to 139 are considered normal.
-#[derive(Copy, Clone, Eq, Ord, PartialEq, PartialOrd)]
-pub struct Priority(u16);
-
-impl Priority {
-    const LOWEST: u16 = 139;
-    const LOW: u16 = 110;
-    const NORMAL: u16 = 100;
-    const HIGH: u16 = 10;
-    const HIGHEST: u16 = 0;
-
-    /// Creates a new `Priority` with the specified value.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the `val` is greater than 139.
-    pub const fn new(val: u16) -> Self {
-        assert!(val <= Self::LOWEST);
-        Self(val)
-    }
-
-    /// Returns a `Priority` representing the lowest priority (139).
-    pub const fn lowest() -> Self {
-        Self::new(Self::LOWEST)
-    }
-
-    /// Returns a `Priority` representing a low priority.
-    pub const fn low() -> Self {
-        Self::new(Self::LOW)
-    }
-
-    /// Returns a `Priority` representing a normal priority.
-    pub const fn normal() -> Self {
-        Self::new(Self::NORMAL)
-    }
-
-    /// Returns a `Priority` representing a high priority.
-    pub const fn high() -> Self {
-        Self::new(Self::HIGH)
-    }
-
-    /// Returns a `Priority` representing the highest priority (0).
-    pub const fn highest() -> Self {
-        Self::new(Self::HIGHEST)
-    }
-
-    /// Sets the value of the `Priority`.
-    pub const fn set(&mut self, val: u16) {
-        self.0 = val;
-    }
-
-    /// Returns the value of the `Priority`.
-    pub const fn get(self) -> u16 {
-        self.0
-    }
-
-    /// Checks if the `Priority` is considered a real-time priority.
-    pub const fn is_real_time(&self) -> bool {
-        self.0 < REAL_TIME_TASK_PRIORITY
-    }
 }
 
 /// An atomic CPUID container.

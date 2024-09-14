@@ -2,11 +2,11 @@
 
 use ostd::{
     cpu::CpuSet,
-    task::{Priority, Task, TaskOptions},
+    task::{Task, TaskOptions},
 };
 
 use super::{status::ThreadStatus, Thread};
-use crate::prelude::*;
+use crate::{prelude::*, sched::priority::Priority};
 
 /// The inner data of a kernel thread
 pub struct KernelThread;
@@ -54,12 +54,17 @@ pub fn create_new_kernel_task(mut thread_options: ThreadOptions) -> Arc<Task> {
         let thread = {
             let kernel_thread = KernelThread;
             let status = ThreadStatus::Init;
-            Arc::new(Thread::new(weak_task.clone(), kernel_thread, status))
+            let priority = thread_options.priority;
+            Arc::new(Thread::new(
+                weak_task.clone(),
+                kernel_thread,
+                status,
+                priority,
+            ))
         };
 
         TaskOptions::new(thread_fn)
             .data(thread)
-            .priority(thread_options.priority)
             .cpu_affinity(thread_options.cpu_affinity)
             .build()
             .unwrap()
@@ -81,7 +86,7 @@ impl ThreadOptions {
         let cpu_affinity = CpuSet::new_full();
         Self {
             func: Some(Box::new(func)),
-            priority: Priority::normal(),
+            priority: Priority::default(),
             cpu_affinity,
         }
     }

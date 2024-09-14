@@ -7,7 +7,10 @@ use core::sync::atomic::Ordering;
 use ostd::task::Task;
 
 use self::status::{AtomicThreadStatus, ThreadStatus};
-use crate::prelude::*;
+use crate::{
+    prelude::*,
+    sched::priority::{AtomicPriority, Priority},
+};
 
 pub mod exception;
 pub mod kernel_thread;
@@ -26,16 +29,25 @@ pub struct Thread {
     data: Box<dyn Send + Sync + Any>,
 
     // mutable part
+    /// Thread status
     status: AtomicThreadStatus,
+    /// Thread priority
+    priority: AtomicPriority,
 }
 
 impl Thread {
     /// Never call these function directly
-    pub fn new(task: Weak<Task>, data: impl Send + Sync + Any, status: ThreadStatus) -> Self {
+    pub fn new(
+        task: Weak<Task>,
+        data: impl Send + Sync + Any,
+        status: ThreadStatus,
+        priority: Priority,
+    ) -> Self {
         Thread {
             task,
             data: Box::new(data),
             status: AtomicThreadStatus::new(status),
+            priority: AtomicPriority::new(priority),
         }
     }
 
@@ -79,9 +91,24 @@ impl Thread {
         self.status.load(Ordering::Acquire)
     }
 
-    /// Updates the status with the `new` value.
+    /// Updates the status with the new value.
     pub fn set_status(&self, new_status: ThreadStatus) {
         self.status.store(new_status, Ordering::Release);
+    }
+
+    /// Returns the reference to the atomic priority.
+    pub fn atomic_priority(&self) -> &AtomicPriority {
+        &self.priority
+    }
+
+    /// Returns the current priority.
+    pub fn priority(&self) -> Priority {
+        self.priority.load(Ordering::Relaxed)
+    }
+
+    /// Updates the priority with the new value.
+    pub fn set_priority(&self, new_priority: Priority) {
+        self.priority.store(new_priority, Ordering::Relaxed)
     }
 
     pub fn yield_now() {

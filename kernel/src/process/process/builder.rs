@@ -13,7 +13,7 @@ use crate::{
         signal::sig_disposition::SigDispositions,
         Credentials,
     },
-    sched::nice::Nice,
+    sched::priority::Nice,
 };
 
 pub struct ProcessBuilder<'a> {
