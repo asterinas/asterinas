@@ -27,6 +27,7 @@ INITRAMFS_ALL_DIRS := \
 	$(INITRAMFS)/bin \
 	$(INITRAMFS)/sbin \
 	$(INITRAMFS)/usr/bin \
+	$(INITRAMFS)/usr/local \
 	$(INITRAMFS)/test \
 	$(INITRAMFS)/benchmark \
 	$(INITRAMFS_EMPTY_DIRS)
@@ -58,6 +59,8 @@ $(INITRAMFS)/lib/x86_64-linux-gnu: | $(VDSO_LIB)
 	@cp -L /lib/x86_64-linux-gnu/libkrb5support.so.0 $@
 	@cp -L /lib/x86_64-linux-gnu/libkeyutils.so.1 $@
 	@cp -L /lib/x86_64-linux-gnu/libresolv.so.2 $@
+	@# required for LevelDB-db_bench_sqlite3
+	@cp -L /lib/x86_64-linux-gnu/libsqlite3.so $@
 	@# required for VDSO
 	@cp -L $(VDSO_LIB) $@
 
@@ -95,6 +98,11 @@ $(INITRAMFS)/usr/bin: | $(INITRAMFS)/bin
 	@mkdir -p $@
 	@cp /usr/bin/busybox $@
 
+$(INITRAMFS)/usr/local:
+	@mkdir -p $@
+	@cp -r /usr/local/nginx $@
+	@cp -r /usr/local/redis $@
+
 .PHONY: $(INITRAMFS)/test
 $(INITRAMFS)/test:
 	@make --no-print-directory -C apps
@@ -111,6 +119,10 @@ $(INITRAMFS)/benchmark/bin:
 	@cp -r /usr/local/benchmark/unixbench $@
 	@cp -r /usr/local/benchmark/lmbench $@
 	@cp /usr/local/benchmark/fio/bin/fio $@
+	@cp /usr/local/benchmark/sqlite-speedtest1 $@
+	@cp /usr/local/leveldb/benchmark/db_bench $@
+	@mv $@/db_bench $@/db_bench_leveldb
+	@cp /usr/local/leveldb/benchmark/db_bench_sqlite3 $@
 
 # Make necessary directories.
 $(INITRAMFS_EMPTY_DIRS):
