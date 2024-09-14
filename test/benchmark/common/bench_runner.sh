@@ -45,7 +45,6 @@ prepare_system() {
         mount -t devtmpfs devtmpfs /dev
         ip link set lo up
         modprobe virtio_blk
-        mkfs.ext2 -F /dev/vda
         mount -t ext2 /dev/vda /ext2
     elif [ "$SYSTEM" = "asterinas" ]; then
         # Asterinas-specific preparation (if any)
