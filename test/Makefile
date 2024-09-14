@@ -81,8 +81,7 @@ $(INITRAMFS)/lib64:
 
 $(INITRAMFS)/etc:
 	@mkdir -p $@
-	@cp $(CUR_DIR)/etc/passwd $@
-	@cp $(CUR_DIR)/etc/group $@
+	@cp $(CUR_DIR)/etc/* $@
 
 # Install busybox into /bin and /usr/bin.
 $(INITRAMFS)/bin:
