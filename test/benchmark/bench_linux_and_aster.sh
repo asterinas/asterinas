@@ -44,6 +44,13 @@ prepare_libs() {
     fi
 }
 
+# Prepare fs for Linux
+prepare_fs() {
+    # Disable unsupported ext2 features of Asterinas on Linux to ensure fairness
+    mke2fs -F -O ^ext_attr -O ^resize_inode -O ^dir_index ${BENCHMARK_DIR}/../build/ext2.img
+    make initramfs
+}
+
 # Parse the results from the benchmark output
 parse_results() {
     local benchmark="$1"
@@ -86,6 +93,10 @@ run_benchmark() {
     prepare_libs
 
     local asterinas_cmd="make run BENCHMARK=${benchmark} ENABLE_KVM=1 RELEASE_LTO=1 2>&1 | tee ${aster_output}"
+    echo "Running benchmark ${benchmark} on Asterinas..."
+    eval "$asterinas_cmd"
+
+    prepare_fs
     local linux_cmd="/usr/local/qemu/bin/qemu-system-x86_64 \
         --no-reboot \
         -smp 1 \
@@ -100,9 +111,6 @@ run_benchmark() {
         -append 'console=ttyS0 rdinit=/benchmark/common/bench_runner.sh ${benchmark} linux mitigations=off hugepages=0 transparent_hugepage=never' \
         -nographic \
         2>&1 | tee ${linux_output}"
-
-    echo "Running benchmark ${benchmark} on Asterinas..."
-    eval "$asterinas_cmd"
     echo "Running benchmark ${benchmark} on Linux..."
     eval "$linux_cmd"
 
