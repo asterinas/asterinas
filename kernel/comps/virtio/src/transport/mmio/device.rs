@@ -46,7 +46,7 @@ impl MmioDevice for VirtioMmioDevice {
 
 impl MmioDevice for VirtioMmioTransport {
     fn device_id(&self) -> u32 {
-        self.common_device.device_id()
+        self.device.device_id()
     }
 }
 
@@ -58,7 +58,7 @@ impl VirtioMmioTransport {
     pub(super) fn new(device: MmioCommonDevice) -> Self {
         let irq = device.irq().clone();
         let layout = SafePtr::new(device.io_mem().clone(), 0);
-        let device_id = device.device_id();
+        let device_id = device.read_device_id().unwrap();
         let (interrupt_ack, interrupt_status) = {
             let interrupt_ack_offset = offset_of!(VirtioMmioLayout, interrupt_ack);
             let interrupt_status_offset = offset_of!(VirtioMmioLayout, interrupt_status);
@@ -77,7 +77,7 @@ impl VirtioMmioTransport {
             multiplex: MultiplexIrq::new(irq, interrupt_ack, interrupt_status),
             device: Arc::new(VirtioMmioDevice { device_id }),
         };
-        if device.common_device.version() == VirtioMmioVersion::Legacy {
+        if device.common_device.read_version().unwrap() == VirtioMmioVersion::Legacy {
             field_ptr!(&device.layout, VirtioMmioLayout, legacy_guest_page_size)
                 .write_once(&(PAGE_SIZE as u32))
                 .unwrap();
@@ -88,7 +88,7 @@ impl VirtioMmioTransport {
 
 impl VirtioTransport for VirtioMmioTransport {
     fn device_type(&self) -> VirtioDeviceType {
-        VirtioDeviceType::try_from(self.common_device.device_id() as u8).unwrap()
+        VirtioDeviceType::try_from(self.device.device_id() as u8).unwrap()
     }
 
     fn set_queue(
@@ -120,7 +120,7 @@ impl VirtioTransport for VirtioMmioTransport {
             .write_once(&(queue_size as u32))
             .unwrap();
 
-        match self.common_device.version() {
+        match self.common_device.read_version().unwrap() {
             VirtioMmioVersion::Legacy => {
                 // The area should be continuous
                 assert_eq!(
@@ -254,7 +254,7 @@ impl VirtioTransport for VirtioMmioTransport {
     }
 
     fn is_legacy_version(&self) -> bool {
-        self.common_device.version() == VirtioMmioVersion::Legacy
+        self.common_device.read_version().unwrap() == VirtioMmioVersion::Legacy
     }
 
     fn max_queue_size(&self, idx: u16) -> Result<u16, VirtioTransportError> {
