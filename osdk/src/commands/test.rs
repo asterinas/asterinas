@@ -2,16 +2,17 @@
 
 use std::fs;
 
-use super::{build::do_cached_build, util::DEFAULT_TARGET_RELPATH};
+use super::{
+    build::do_cached_build,
+    util::{get_workspace_default_members, DEFAULT_TARGET_RELPATH},
+};
 use crate::{
     base_crate::new_base_crate,
     cli::TestArgs,
     config::{scheme::ActionChoice, Config},
     error::Errno,
     error_msg,
-    util::{
-        get_cargo_metadata, get_current_crate_info, get_target_directory, parse_package_id_string,
-    },
+    util::{get_current_crate_info, get_target_directory},
 };
 
 pub fn execute_test_command(config: &Config, args: &TestArgs) {
@@ -102,21 +103,4 @@ pub static KTEST_CRATE_WHITELIST: Option<&[&str]> = Some(&{:#?});
     std::env::set_current_dir(original_dir).unwrap();
 
     bundle.run(config, ActionChoice::Test);
-}
-
-fn get_workspace_default_members() -> Vec<String> {
-    let metadata = get_cargo_metadata(None::<&str>, None::<&[&str]>).unwrap();
-    let default_members = metadata
-        .get("workspace_default_members")
-        .unwrap()
-        .as_array()
-        .unwrap();
-    default_members
-        .iter()
-        .map(|value| {
-            let default_member = value.as_str().unwrap();
-            let crate_info = parse_package_id_string(default_member);
-            crate_info.path
-        })
-        .collect()
 }
