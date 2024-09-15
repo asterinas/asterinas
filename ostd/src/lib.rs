@@ -161,5 +161,7 @@ pub mod ktest {
     //! `ktest` attribute is sufficient for all normal use cases.
 
     pub use ostd_macros::test_main as main;
+    pub use ostd_macros::miri_main as miri_main;
+
     pub use ostd_test::*;
 }
