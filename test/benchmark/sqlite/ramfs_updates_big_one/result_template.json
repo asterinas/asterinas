@@ -1,0 +1,14 @@
+[
+    {
+        "name": "The speed of updates-big-one on Linux (Ramfs)",
+        "unit": "second",
+        "value": 0,
+        "extra": "linux_result"
+    },
+    {
+        "name": "The speed of updates-big-one Asterinas (Ramfs)",
+        "unit": "second",
+        "value": 0,
+        "extra": "aster_result"
+    }
+]

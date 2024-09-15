@@ -1,0 +1,14 @@
+[
+    {
+        "name": "The speed of updates-big-one on Linux (Ext2)",
+        "unit": "second",
+        "value": 0,
+        "extra": "linux_result"
+    },
+    {
+        "name": "The speed of updates-big-one Asterinas (Ext2)",
+        "unit": "second",
+        "value": 0,
+        "extra": "aster_result"
+    }
+]

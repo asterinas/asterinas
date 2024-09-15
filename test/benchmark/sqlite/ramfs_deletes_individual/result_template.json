@@ -1,0 +1,14 @@
+[
+    {
+        "name": "The speed of deletes-individual on Linux (Ramfs)",
+        "unit": "second",
+        "value": 0,
+        "extra": "linux_result"
+    },
+    {
+        "name": "The speed of deletes-individual on Asterinas (Ramfs)",
+        "unit": "second",
+        "value": 0,
+        "extra": "aster_result"
+    }
+]

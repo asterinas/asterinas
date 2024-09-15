@@ -1,0 +1,9 @@
+{
+    "alert_threshold": "125%",
+    "alert_tool": "customSmallerIsBetter",
+    "search_pattern": "TOTAL....",
+    "result_index": "2",
+    "result_substring": "1,5",
+    "description": "sqlite-speed-test: total",
+    "title": "[Ext2] The total result of sqlite speedtest"
+}

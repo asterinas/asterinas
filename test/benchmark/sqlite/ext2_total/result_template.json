@@ -1,0 +1,14 @@
+[
+    {
+        "name": "Total speed on Linux (Ext2)",
+        "unit": "second",
+        "value": 0,
+        "extra": "linux_result"
+    },
+    {
+        "name": "Total speed on Asterinas (Ext2)",
+        "unit": "second",
+        "value": 0,
+        "extra": "aster_result"
+    }
+]

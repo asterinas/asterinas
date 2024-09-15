@@ -1,0 +1,9 @@
+{
+    "alert_threshold": "125%",
+    "alert_tool": "customSmallerIsBetter",
+    "search_pattern": "50000 UPDATES of individual rows....",
+    "result_index": "8",
+    "result_substring": "1,5",
+    "description": "sqlite-speed-test: 50000 UPDATES of individual rows",
+    "title": "[Ext2] The updates-individual result of sqlite speedtest"
+}
