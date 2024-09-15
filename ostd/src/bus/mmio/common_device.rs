@@ -10,6 +10,7 @@ use crate::{
     io_mem::IoMem,
     mm::{paddr_to_vaddr, Paddr, VmIoOnce},
     trap::IrqLine,
+    Error, Result,
 };
 
 /// MMIO Common device.
@@ -37,7 +38,7 @@ impl MmioCommonDevice {
         };
         info!(
             "[Virtio]: Found Virtio mmio device, device id:{:?}, irq number:{:?}",
-            res.device_id(),
+            res.read_device_id().unwrap(),
             res.irq.num()
         );
         res
@@ -54,13 +55,14 @@ impl MmioCommonDevice {
     }
 
     /// Device ID
-    pub fn device_id(&self) -> u32 {
-        self.io_mem.read_once::<u32>(8).unwrap()
+    pub fn read_device_id(&self) -> Result<u32> {
+        self.io_mem.read_once::<u32>(8)
     }
 
     /// Version of the MMIO device.
-    pub fn version(&self) -> VirtioMmioVersion {
-        VirtioMmioVersion::try_from(self.io_mem.read_once::<u32>(4).unwrap()).unwrap()
+    pub fn read_version(&self) -> Result<VirtioMmioVersion> {
+        VirtioMmioVersion::try_from(self.io_mem.read_once::<u32>(4)?)
+            .map_err(|_| Error::InvalidArgs)
     }
 
     /// Interrupt line

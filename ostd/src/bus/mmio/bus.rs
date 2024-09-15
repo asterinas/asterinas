@@ -47,7 +47,7 @@ impl MmioBus {
         let length = self.common_devices.len();
         for i in (0..length).rev() {
             let common_device = self.common_devices.pop_front().unwrap();
-            let device_id = common_device.device_id();
+            let device_id = common_device.read_device_id().unwrap();
             let device = match driver.probe(common_device) {
                 Ok(device) => {
                     debug_assert!(device_id == device.device_id());
@@ -58,7 +58,6 @@ impl MmioBus {
                     if err != BusProbeError::DeviceNotMatch {
                         error!("MMIO device construction failed, reason: {:?}", err);
                     }
-                    debug_assert!(device_id == device.device_id());
                     device
                 }
             };
@@ -68,7 +67,7 @@ impl MmioBus {
     }
 
     pub(super) fn register_mmio_device(&mut self, mut mmio_device: MmioCommonDevice) {
-        let device_id = mmio_device.device_id();
+        let device_id = mmio_device.read_device_id().unwrap();
         for driver in self.drivers.iter() {
             mmio_device = match driver.probe(mmio_device) {
                 Ok(device) => {
@@ -80,7 +79,6 @@ impl MmioBus {
                     if err != BusProbeError::DeviceNotMatch {
                         error!("MMIO device construction failed, reason: {:?}", err);
                     }
-                    debug_assert!(device_id == common_device.device_id());
                     common_device
                 }
             };
