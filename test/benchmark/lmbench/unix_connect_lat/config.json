@@ -3,6 +3,7 @@
     "alert_tool": "customSmallerIsBetter",
     "search_pattern": "UNIX connection cost:",
     "result_index": "4",
+    "result_substring": "null",
     "description": "lat_connect",
     "title": "[Unix sockets] The latency of connect"
 }

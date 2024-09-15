@@ -3,6 +3,7 @@
     "alert_tool": "customBiggerIsBetter",
     "search_pattern": "sock stream bandwidth",
     "result_index": "5",
+    "result_substring": "null",
     "description": "bw_unix",
     "title": "[Unix sockets] The bandwidth"
 }

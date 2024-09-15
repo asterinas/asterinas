@@ -3,6 +3,7 @@
     "alert_tool": "customBiggerIsBetter",
     "search_pattern": "Pipe bandwidth",
     "result_index": "3",
+    "result_substring": "null",
     "description": "bw_pipe",
     "title": "[Pipes] The bandwidth"
 }

@@ -3,6 +3,7 @@
     "alert_tool": "customBiggerIsBetter",
     "search_pattern": "536.87",
     "result_index": "2",
+    "result_substring": "null",
     "description": "bw_mem fwr",
     "title": "[Memory] The bandwidth of writing integers"
 }

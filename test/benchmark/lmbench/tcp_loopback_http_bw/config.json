@@ -3,6 +3,7 @@
     "alert_tool": "customBiggerIsBetter",
     "search_pattern": "Avg xfer: ",
     "result_index": "8",
+    "result_substring": "null",
     "description": "bw_http",
     "title": "[HTTP] The bandwidth"
 }

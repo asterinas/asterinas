@@ -3,6 +3,7 @@
     "alert_tool": "customSmallerIsBetter",
     "search_pattern": "4.194304",
     "result_index": "2",
+    "result_substring": "null",
     "description": "lat_mmap",
     "title": "[Memory] The cost of mmap+unmap"
 }

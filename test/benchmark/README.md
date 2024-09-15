@@ -82,6 +82,7 @@ To add a new benchmark to the Asternias Continuous Integration (CI) system, foll
         "alert_tool": "customSmallerIsBetter",
         "search_pattern": "Simple syscall:",
         "result_index": "3",
+        "result_substring": "null",
         "description": "lat_syscall null",
         "title": "[Process] The cost of getpid",
         "show_in_overview": "false"
@@ -92,6 +93,7 @@ To add a new benchmark to the Asternias Continuous Integration (CI) system, foll
     - `alert_tool`: Choose the validation tool to use. The available options are `customBiggerIsBetter` and `customSmallerIsBetter`. Refer to [this](https://github.com/benchmark-action/github-action-benchmark?tab=readme-ov-file#tool-required) for more details. If using `customBiggerIsBetter`, the alert will be triggered when `prev.value / current.value` exceeds the threshold. If using `customSmallerIsBetter`, the alert will be triggered when `current.value / prev.value` exceeds the threshold.
     - `search_pattern`: Define a regular expression to extract benchmark results from the output using `awk`. This regular expression is designed to match specific patterns in the output, effectively isolating the benchmark results and producing a set of fragments.
     - `result_index`: Specify the index of the result in the extracted output. This field is aligned with `awk`'s action.
+    - `result_substring`: Specify the substring in the result as the final output. `null` indicates that no substring is specified. The format is `{start_index},{length}` where `start_index` begins at 1.
     - `description`: Provide a brief description of the benchmark.
     - `title`: Set the title of the benchmark.
     - `show_in_overview`: Default is true. Set to `false` to avoid displaying the benchmark in the overview results.
