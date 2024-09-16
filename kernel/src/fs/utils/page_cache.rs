@@ -306,8 +306,12 @@ impl ReadaheadState {
         for async_idx in window.readahead_range() {
             let mut async_page = Page::alloc()?;
             let pg_waiter = backend.read_page_async(async_idx, async_page.frame())?;
-            self.waiter.concat(pg_waiter);
-            async_page.set_state(PageState::Uninit);
+            if pg_waiter.nreqs() > 0 {
+                self.waiter.concat(pg_waiter);
+            } else {
+                // Some backends (e.g. RamFS) do not issue requests, but fill the page directly.
+                async_page.set_state(PageState::UpToDate);
+            }
             pages.put(async_idx, async_page);
         }
         Ok(())
@@ -394,9 +398,7 @@ impl PageCacheManager {
             if let PageState::Uninit = page.state() {
                 // Cond 2: We should wait for the previous readahead.
                 // If there is no previous readahead, an error must have occurred somewhere.
-                if ra_state.request_number() == 0 {
-                    return_errno!(Errno::EINVAL)
-                }
+                assert!(ra_state.request_number() != 0);
                 ra_state.wait_for_prev_readahead(&mut pages)?;
                 pages.get(&idx).unwrap().frame().clone()
             } else {
