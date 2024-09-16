@@ -10,6 +10,7 @@ use alloc::{sync::Arc, vec::Vec};
 use cfg_if::cfg_if;
 
 use crate::{
+    arch::iommu::has_interrupt_remapping,
     bus::pci::{
         cfg_space::{Bar, Command, MemoryBar},
         common_device::PciCommonDevice,
@@ -163,18 +164,41 @@ impl CapabilityMsixData {
     }
 
     /// Enables an interrupt line, it will replace the old handle with the new handle.
-    pub fn set_interrupt_vector(&mut self, handle: IrqLine, index: u16) {
+    pub fn set_interrupt_vector(&mut self, irq: IrqLine, index: u16) {
         if index >= self.table_size {
             return;
         }
-        self.table_bar
-            .io_mem()
-            .write_val(
-                (16 * index + 8) as usize + self.table_offset,
-                &(handle.num() as u32),
-            )
-            .unwrap();
-        let old_handles = core::mem::replace(&mut self.irqs[index as usize], Some(handle));
+        if has_interrupt_remapping() {
+            let mut handle = irq.inner_irq().bind_remapping_entry().unwrap().lock();
+            // Enable irt entry
+            let irt_entry_mut = handle.irt_entry_mut().unwrap();
+            irt_entry_mut.enable_default(irq.num() as u32);
+
+            // Use remappable format
+            let mut address = 0xFEE0_0000u32;
+            address |= 0b1_1000;
+            address |= (handle.index() as u32 & 0x7FFF) << 5;
+            address |= (handle.index() as u32 & 0x8000) >> 13;
+
+            self.table_bar
+                .io_mem()
+                .write_val((16 * index) as usize + self.table_offset, &address)
+                .unwrap();
+            self.table_bar
+                .io_mem()
+                .write_val((16 * index + 8) as usize + self.table_offset, &0)
+                .unwrap();
+        } else {
+            self.table_bar
+                .io_mem()
+                .write_val(
+                    (16 * index + 8) as usize + self.table_offset,
+                    &(irq.num() as u32),
+                )
+                .unwrap();
+        }
+
+        let _old_irq = core::mem::replace(&mut self.irqs[index as usize], Some(irq));
         // Enable this msix vector
         self.table_bar
             .io_mem()

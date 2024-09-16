@@ -11,7 +11,8 @@ use spin::Once;
 use trapframe::TrapFrame;
 use x86_64::registers::rflags::{self, RFlags};
 
-use crate::sync::{Mutex, PreemptDisabled, SpinLock, SpinLockGuard};
+use super::iommu::{alloc_irt_entry, has_interrupt_remapping, IrtEntryHandle};
+use crate::sync::{LocalIrqDisabled, Mutex, PreemptDisabled, SpinLock, SpinLockGuard};
 
 /// The global allocator for software defined IRQ lines.
 pub(crate) static IRQ_ALLOCATOR: Once<SpinLock<IdAlloc>> = Once::new();
@@ -24,6 +25,7 @@ pub(crate) fn init() {
         list.push(IrqLine {
             irq_num: i as u8,
             callback_list: SpinLock::new(Vec::new()),
+            bind_remapping_entry: Once::new(),
         });
     }
     IRQ_LIST.call_once(|| list);
@@ -83,6 +85,7 @@ impl Debug for CallbackElement {
 pub(crate) struct IrqLine {
     pub(crate) irq_num: u8,
     pub(crate) callback_list: SpinLock<Vec<CallbackElement>>,
+    bind_remapping_entry: Once<Arc<SpinLock<IrtEntryHandle, LocalIrqDisabled>>>,
 }
 
 impl IrqLine {
@@ -94,7 +97,18 @@ impl IrqLine {
     /// considered a dangerous operation.
     #[allow(clippy::redundant_allocation)]
     pub unsafe fn acquire(irq_num: u8) -> Arc<&'static Self> {
-        Arc::new(IRQ_LIST.get().unwrap().get(irq_num as usize).unwrap())
+        let irq = Arc::new(IRQ_LIST.get().unwrap().get(irq_num as usize).unwrap());
+        if has_interrupt_remapping() {
+            let handle = alloc_irt_entry();
+            if let Some(handle) = handle {
+                irq.bind_remapping_entry.call_once(|| handle);
+            }
+        }
+        irq
+    }
+
+    pub fn bind_remapping_entry(&self) -> Option<&Arc<SpinLock<IrtEntryHandle, LocalIrqDisabled>>> {
+        self.bind_remapping_entry.get()
     }
 
     /// Gets the IRQ number.
