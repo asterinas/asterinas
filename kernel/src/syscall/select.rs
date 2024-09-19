@@ -19,9 +19,10 @@ pub fn sys_select(
     let timeout = if timeval_addr == 0 {
         None
     } else {
-        let mut timeval = ctx.get_user_space().read_val::<timeval_t>(timeval_addr)?;
-        timeval.sec += timeval.usec / 1_000_000;
-        timeval.usec %= 1_000_000;
+        let timeval = ctx
+            .get_user_space()
+            .read_val::<timeval_t>(timeval_addr)?
+            .normalize();
         Some(Duration::try_from(timeval)?)
     };
 

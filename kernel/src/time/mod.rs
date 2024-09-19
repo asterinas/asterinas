@@ -21,6 +21,10 @@ pub type time_t = i64;
 pub type suseconds_t = i64;
 pub type clock_t = i64;
 
+const NSEC_PER_USEC: i64 = 1_000;
+const USEC_PER_SEC: i64 = 1_000_000;
+const NSEC_PER_SEC: i64 = 1_000_000_000;
+
 pub(super) fn init() {
     system_time::init();
     clocks::init();
@@ -46,7 +50,7 @@ impl From<Duration> for timespec_t {
 impl From<timeval_t> for timespec_t {
     fn from(timeval: timeval_t) -> timespec_t {
         let sec = timeval.sec;
-        let nsec = timeval.usec * 1000;
+        let nsec = timeval.usec * NSEC_PER_USEC;
         debug_assert!(sec >= 0); // nsec >= 0 always holds
         timespec_t { sec, nsec }
     }
@@ -60,7 +64,7 @@ impl TryFrom<timespec_t> for Duration {
             return_errno_with_message!(Errno::EINVAL, "timesepc_t cannot be negative");
         }
 
-        if value.nsec > 1_000_000_000 {
+        if value.nsec > NSEC_PER_SEC {
             // The value of nanoseconds cannot exceed 10^9,
             // otherwise the value for seconds should be set.
             return_errno_with_message!(Errno::EINVAL, "nsec is not normalized");
@@ -75,6 +79,21 @@ impl TryFrom<timespec_t> for Duration {
 pub struct timeval_t {
     pub sec: time_t,
     pub usec: suseconds_t,
+}
+
+impl timeval_t {
+    /// Normalizes time by adding carries from microseconds to seconds.
+    ///
+    /// Some Linux system calls do this before checking the validity (e.g., the [select]
+    /// implementation).
+    ///
+    /// [select]: https://elixir.bootlin.com/linux/v6.10.5/source/fs/select.c#L716
+    pub fn normalize(&self) -> Self {
+        Self {
+            sec: self.sec.wrapping_add(self.usec / USEC_PER_SEC),
+            usec: self.usec % USEC_PER_SEC,
+        }
+    }
 }
 
 impl From<Duration> for timeval_t {
@@ -93,7 +112,7 @@ impl TryFrom<timeval_t> for Duration {
         if timeval.sec < 0 || timeval.usec < 0 {
             return_errno_with_message!(Errno::EINVAL, "timeval_t cannot be negative");
         }
-        if timeval.usec > 1_000_000 {
+        if timeval.usec > USEC_PER_SEC {
             // The value of microsecond cannot exceed 10^6,
             // otherwise the value for seconds should be set.
             return_errno_with_message!(Errno::EINVAL, "nsec is not normalized");
@@ -101,7 +120,7 @@ impl TryFrom<timeval_t> for Duration {
 
         Ok(Duration::new(
             timeval.sec as u64,
-            (timeval.usec * 1000) as u32,
+            (timeval.usec * NSEC_PER_USEC) as u32,
         ))
     }
 }
