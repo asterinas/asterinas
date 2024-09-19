@@ -5,6 +5,7 @@ use core::{
     time::Duration,
 };
 
+use align_ext::AlignExt;
 use aster_block::bio::BioWaiter;
 use aster_rights::Full;
 use aster_util::slot_vec::SlotVec;
@@ -614,7 +615,7 @@ impl Inode for RamInode {
                 let new_size = offset + write_len;
                 let should_expand_size = new_size > file_size;
                 if should_expand_size {
-                    page_cache.resize(new_size)?;
+                    page_cache.resize(new_size.align_up(BLOCK_SIZE))?;
                 }
                 page_cache.pages().write(offset, reader)?;
 
