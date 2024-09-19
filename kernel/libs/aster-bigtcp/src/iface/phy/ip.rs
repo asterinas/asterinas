@@ -2,7 +2,10 @@
 
 use alloc::sync::Arc;
 
-use smoltcp::{iface::Config, wire::IpCidr};
+use smoltcp::{
+    iface::Config,
+    wire::{self, Ipv4Cidr},
+};
 
 use crate::{
     device::WithDevice,
@@ -17,7 +20,7 @@ pub struct IpIface<D: WithDevice, E> {
 }
 
 impl<D: WithDevice, E> IpIface<D, E> {
-    pub fn new(driver: D, ip_cidr: IpCidr, ext: E) -> Arc<Self> {
+    pub fn new(driver: D, ip_cidr: Ipv4Cidr, ext: E) -> Arc<Self> {
         let interface = driver.with(|device| {
             let config = Config::new(smoltcp::wire::HardwareAddress::Ip);
             let now = get_network_timestamp();
@@ -25,7 +28,7 @@ impl<D: WithDevice, E> IpIface<D, E> {
             let mut interface = smoltcp::iface::Interface::new(config, device, now);
             interface.update_ip_addrs(|ip_addrs| {
                 debug_assert!(ip_addrs.is_empty());
-                ip_addrs.push(ip_cidr).unwrap();
+                ip_addrs.push(wire::IpCidr::Ipv4(ip_cidr)).unwrap();
             });
             interface
         });

@@ -33,9 +33,16 @@ pub fn init() {
 }
 
 fn new_virtio() -> Arc<Iface> {
-    use aster_bigtcp::{iface::EtherIface, wire::EthernetAddress};
+    use aster_bigtcp::{
+        iface::EtherIface,
+        wire::{EthernetAddress, Ipv4Address, Ipv4Cidr},
+    };
     use aster_network::AnyNetworkDevice;
     use aster_virtio::device::network::DEVICE_NAME;
+
+    const VIRTIO_ADDRESS: Ipv4Address = Ipv4Address::new(10, 0, 2, 15);
+    const VIRTIO_ADDRESS_PREFIX_LEN: u8 = 24; // mask: 255.255.255.0
+    const VIRTIO_GATEWAY: Ipv4Address = Ipv4Address::new(10, 0, 2, 2);
 
     let virtio_net = aster_network::get_device(DEVICE_NAME).unwrap();
 
@@ -58,6 +65,8 @@ fn new_virtio() -> Arc<Iface> {
     EtherIface::new(
         Wrapper(virtio_net),
         EthernetAddress(ether_addr),
+        Ipv4Cidr::new(VIRTIO_ADDRESS, VIRTIO_ADDRESS_PREFIX_LEN),
+        VIRTIO_GATEWAY,
         IfaceExt::new("virtio".to_owned()),
     )
 }
@@ -66,13 +75,10 @@ fn new_loopback() -> Arc<Iface> {
     use aster_bigtcp::{
         device::{Loopback, Medium},
         iface::IpIface,
-        wire::{IpAddress, IpCidr, Ipv4Address},
+        wire::{Ipv4Address, Ipv4Cidr},
     };
 
-    const LOOPBACK_ADDRESS: IpAddress = {
-        let ipv4_addr = Ipv4Address::new(127, 0, 0, 1);
-        IpAddress::Ipv4(ipv4_addr)
-    };
+    const LOOPBACK_ADDRESS: Ipv4Address = Ipv4Address::new(127, 0, 0, 1);
     const LOOPBACK_ADDRESS_PREFIX_LEN: u8 = 8; // mask: 255.0.0.0
 
     struct Wrapper(Mutex<Loopback>);
@@ -91,7 +97,7 @@ fn new_loopback() -> Arc<Iface> {
 
     IpIface::new(
         Wrapper(Mutex::new(Loopback::new(Medium::Ip))),
-        IpCidr::new(LOOPBACK_ADDRESS, LOOPBACK_ADDRESS_PREFIX_LEN),
+        Ipv4Cidr::new(LOOPBACK_ADDRESS, LOOPBACK_ADDRESS_PREFIX_LEN),
         IfaceExt::new("lo".to_owned()),
     ) as _
 }
