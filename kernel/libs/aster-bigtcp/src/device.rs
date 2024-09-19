@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-pub use smoltcp::phy::{Device, Loopback, Medium};
+pub use smoltcp::phy::{Device, DeviceCapabilities, Loopback, Medium, RxToken, TxToken};
 
 /// A trait that allows to obtain a mutable reference of [`Device`].
 ///

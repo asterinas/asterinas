@@ -3,6 +3,7 @@
 use alloc::{boxed::Box, string::ToString, sync::Arc};
 use core::{fmt::Debug, hint::spin_loop, mem::size_of};
 
+use aster_bigtcp::device::{DeviceCapabilities, Medium};
 use aster_network::{
     AnyNetworkDevice, EthernetAddr, RxBuffer, TxBuffer, VirtioNetError, RX_BUFFER_POOL,
     TX_BUFFER_POOL,
@@ -10,7 +11,6 @@ use aster_network::{
 use aster_util::slot_vec::SlotVec;
 use log::debug;
 use ostd::{sync::SpinLock, trap::TrapFrame};
-use smoltcp::phy::{DeviceCapabilities, Medium};
 
 use super::{config::VirtioNetConfig, header::VirtioNetHdr};
 use crate::{
