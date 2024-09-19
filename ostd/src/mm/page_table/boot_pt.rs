@@ -240,7 +240,7 @@ fn test_boot_pt_map_protect() {
         mm::{CachePolicy, FrameAllocOptions, PageFlags},
     };
 
-    let root_frame = FrameAllocOptions::new(1).alloc_single(()).unwrap();
+    let root_frame = FrameAllocOptions::new().alloc_single(()).unwrap();
     let root_paddr = root_frame.start_paddr();
 
     let mut boot_pt = BootPageTable::<PageTableEntry, PagingConsts> {

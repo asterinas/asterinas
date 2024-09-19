@@ -195,7 +195,7 @@ impl Vmo_ {
     /// Prepares a new `AnyFrame` for the target index in pages, returns this new frame.
     fn prepare_page(&self, page_idx: usize) -> Result<AnyFrame> {
         match &self.pager {
-            None => Ok(FrameAllocOptions::new(1).alloc_single(())?.into()),
+            None => Ok(FrameAllocOptions::new().alloc_single(())?.into()),
             Some(pager) => pager.commit_page(page_idx),
         }
     }
@@ -205,7 +205,7 @@ impl Vmo_ {
         if let Some(pager) = &self.pager {
             pager.commit_overwrite(page_idx)
         } else {
-            Ok(FrameAllocOptions::new(1).alloc_single(())?.into())
+            Ok(FrameAllocOptions::new().alloc_single(())?.into())
         }
     }
 

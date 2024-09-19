@@ -85,9 +85,8 @@ fn handle_get_report(arg: usize) -> Result<i32> {
     let user_space = get_current_userspace!();
     let user_request: TdxReportRequest = user_space.read_val(arg)?;
 
-    let vm_segment = FrameAllocOptions::new(2)
-        .is_contiguous(true)
-        .alloc_contiguous(|_| ())
+    let vm_segment = FrameAllocOptions::new()
+        .alloc_contiguous(2, |_| ())
         .unwrap();
     let dma_coherent = DmaCoherent::map(vm_segment, false).unwrap();
     dma_coherent

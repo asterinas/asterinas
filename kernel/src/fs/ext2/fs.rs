@@ -48,9 +48,9 @@ impl Ext2 {
             let npages = ((super_block.block_groups_count() as usize)
                 * core::mem::size_of::<RawGroupDescriptor>())
             .div_ceil(BLOCK_SIZE);
-            let segment = FrameAllocOptions::new(npages)
-                .uninit(true)
-                .alloc_contiguous(|_| ())?
+            let segment = FrameAllocOptions::new()
+                .zeroed(false)
+                .alloc_contiguous(npages, |_| ())?
                 .into();
             match block_device.read_blocks(super_block.group_descriptors_bid(0), &segment)? {
                 BioStatus::Complete => (),

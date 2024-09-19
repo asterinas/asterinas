@@ -241,7 +241,9 @@ impl EventTable {
     fn new(num_events: usize) -> Self {
         assert!(num_events * mem::size_of::<VirtioInputEvent>() <= PAGE_SIZE);
 
-        let vm_segment = FrameAllocOptions::new(1).alloc_contiguous(|_| ()).unwrap();
+        let vm_segment = FrameAllocOptions::new()
+            .alloc_contiguous(1, |_| ())
+            .unwrap();
 
         let default_event = VirtioInputEvent::default();
         let iter = iter::repeat(&default_event).take(EVENT_SIZE);

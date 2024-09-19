@@ -1263,8 +1263,8 @@ impl Inode for ExfatInode {
             .discard_range(read_off..read_off + read_len);
 
         let mut buf_offset = 0;
-        let frame = FrameAllocOptions::new(1)
-            .uninit(true)
+        let frame = FrameAllocOptions::new()
+            .zeroed(false)
             .alloc_single(())
             .unwrap();
 
@@ -1379,8 +1379,8 @@ impl Inode for ExfatInode {
         let mut cur_offset = start_pos.1;
         for _ in Bid::from_offset(offset)..Bid::from_offset(end_offset) {
             let frame = {
-                let frame = FrameAllocOptions::new(1)
-                    .uninit(true)
+                let frame = FrameAllocOptions::new()
+                    .zeroed(false)
                     .alloc_single(())
                     .unwrap();
                 frame.write(0, reader)?;

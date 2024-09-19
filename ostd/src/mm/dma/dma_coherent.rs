@@ -222,9 +222,8 @@ mod test {
 
     #[ktest]
     fn map_with_coherent_device() {
-        let vm_segment = FrameAllocOptions::new(1)
-            .is_contiguous(true)
-            .alloc_contiguous(|_| ())
+        let vm_segment = FrameAllocOptions::new()
+            .alloc_contiguous(1, |_| ())
             .unwrap();
         let dma_coherent = DmaCoherent::map(vm_segment.clone(), true).unwrap();
         assert!(dma_coherent.paddr() == vm_segment.paddr());
@@ -232,9 +231,8 @@ mod test {
 
     #[ktest]
     fn map_with_incoherent_device() {
-        let vm_segment = FrameAllocOptions::new(1)
-            .is_contiguous(true)
-            .alloc_contiguous(|_| ())
+        let vm_segment = FrameAllocOptions::new()
+            .alloc_contiguous(1, |_| ())
             .unwrap();
         let dma_coherent = DmaCoherent::map(vm_segment.clone(), false).unwrap();
         assert!(dma_coherent.paddr() == vm_segment.paddr());
@@ -245,9 +243,8 @@ mod test {
 
     #[ktest]
     fn duplicate_map() {
-        let vm_segment_parent = FrameAllocOptions::new(2)
-            .is_contiguous(true)
-            .alloc_contiguous(|_| ())
+        let vm_segment_parent = FrameAllocOptions::new()
+            .alloc_contiguous(2, |_| ())
             .unwrap();
         let vm_segment_child = vm_segment_parent.slice(&(0..PAGE_SIZE));
         let _dma_coherent_parent = DmaCoherent::map(vm_segment_parent, false);
@@ -257,9 +254,8 @@ mod test {
 
     #[ktest]
     fn read_and_write() {
-        let vm_segment = FrameAllocOptions::new(2)
-            .is_contiguous(true)
-            .alloc_contiguous(|_| ())
+        let vm_segment = FrameAllocOptions::new()
+            .alloc_contiguous(2, |_| ())
             .unwrap();
         let dma_coherent = DmaCoherent::map(vm_segment, false).unwrap();
 
@@ -272,9 +268,8 @@ mod test {
 
     #[ktest]
     fn reader_and_writer() {
-        let vm_segment = FrameAllocOptions::new(2)
-            .is_contiguous(true)
-            .alloc_contiguous(|_| ())
+        let vm_segment = FrameAllocOptions::new()
+            .alloc_contiguous(2, |_| ())
             .unwrap();
         let dma_coherent = DmaCoherent::map(vm_segment, false).unwrap();
 

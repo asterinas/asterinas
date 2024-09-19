@@ -152,7 +152,7 @@ impl DmaPage {
         pool: Weak<DmaPool>,
     ) -> Result<Self, ostd::Error> {
         let dma_stream = {
-            let segment = FrameAllocOptions::new(1).alloc_contiguous(|_| ())?;
+            let segment = FrameAllocOptions::new().alloc_contiguous(1, |_| ())?;
 
             DmaStream::map(segment, direction, is_cache_coherent)
                 .map_err(|_| ostd::Error::AccessDenied)?

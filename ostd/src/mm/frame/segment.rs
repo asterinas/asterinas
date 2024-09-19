@@ -31,9 +31,8 @@ use crate::{
 /// # Example
 ///
 /// ```rust
-/// let vm_segment = FrameAllocOptions::new(2)
-///     .is_contiguous(true)
-///     .alloc_contiguous(|_| ())?;
+/// let vm_segment = FrameAllocOptions::new()
+///     .alloc_contiguous(2, |_| ())?;
 /// vm_segment.write_bytes(0, buf)?;
 /// ```
 ///

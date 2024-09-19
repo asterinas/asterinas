@@ -78,9 +78,9 @@ impl<T> RingBuffer<T> {
             "capacity must be a power of two"
         );
         let nframes = capacity.saturating_mul(Self::T_SIZE).align_up(PAGE_SIZE) / PAGE_SIZE;
-        let segment = FrameAllocOptions::new(nframes)
-            .uninit(true)
-            .alloc_contiguous(|_| ())
+        let segment = FrameAllocOptions::new()
+            .zeroed(false)
+            .alloc_contiguous(nframes, |_| ())
             .unwrap();
         Self {
             segment,

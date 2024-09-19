@@ -111,9 +111,9 @@ mod test {
 
     /// Read exfat disk image
     fn new_vm_segment_from_image() -> Segment {
-        let vm_segment = FrameAllocOptions::new(EXFAT_IMAGE.len().div_ceil(PAGE_SIZE))
-            .uninit(true)
-            .alloc_contiguous(|_| ())
+        let vm_segment = FrameAllocOptions::new()
+            .zeroed(false)
+            .alloc_contiguous(EXFAT_IMAGE.len().div_ceil(PAGE_SIZE), |_| ())
             .unwrap();
 
         vm_segment.write_bytes(0, EXFAT_IMAGE).unwrap();

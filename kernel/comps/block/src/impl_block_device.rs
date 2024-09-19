@@ -110,9 +110,9 @@ impl VmIo for dyn BlockDevice {
                 let last = Bid::from_offset(offset + read_len - 1).to_raw();
                 last - first + 1
             };
-            let segment = FrameAllocOptions::new(num_blocks as usize)
-                .uninit(true)
-                .alloc_contiguous(|_| ())?;
+            let segment = FrameAllocOptions::new()
+                .zeroed(false)
+                .alloc_contiguous(num_blocks as usize, |_| ())?;
             let bio_segment =
                 BioSegment::from_segment(segment.into(), offset % BLOCK_SIZE, read_len);
 
@@ -156,9 +156,9 @@ impl VmIo for dyn BlockDevice {
                 let last = Bid::from_offset(offset + write_len - 1).to_raw();
                 last - first + 1
             };
-            let segment = FrameAllocOptions::new(num_blocks as usize)
-                .uninit(true)
-                .alloc_contiguous(|_| ())?;
+            let segment = FrameAllocOptions::new()
+                .zeroed(false)
+                .alloc_contiguous(num_blocks as usize, |_| ())?;
             segment.write(offset % BLOCK_SIZE, reader)?;
             let len = segment
                 .writer()
@@ -198,9 +198,9 @@ impl dyn BlockDevice {
                 let last = Bid::from_offset(offset + buf.len() - 1).to_raw();
                 last - first + 1
             };
-            let segment = FrameAllocOptions::new(num_blocks as usize)
-                .uninit(true)
-                .alloc_contiguous(|_| ())?;
+            let segment = FrameAllocOptions::new()
+                .zeroed(false)
+                .alloc_contiguous(num_blocks as usize, |_| ())?;
             segment.write_bytes(offset % BLOCK_SIZE, buf)?;
             let len = segment
                 .writer()

@@ -943,9 +943,9 @@ impl Inner {
 
         let start_bid = Bid::from_offset(offset).to_raw() as Ext2Bid;
         let buf_nblocks = read_len / BLOCK_SIZE;
-        let segment = FrameAllocOptions::new(buf_nblocks)
-            .uninit(true)
-            .alloc_contiguous(|_| ())?
+        let segment = FrameAllocOptions::new()
+            .zeroed(false)
+            .alloc_contiguous(buf_nblocks, |_| ())?
             .into();
 
         self.inode_impl.read_blocks(start_bid, &segment)?;
@@ -984,9 +984,9 @@ impl Inner {
         let start_bid = Bid::from_offset(offset).to_raw() as Ext2Bid;
         let buf_nblocks = write_len / BLOCK_SIZE;
         let segment = {
-            let segment = FrameAllocOptions::new(buf_nblocks)
-                .uninit(true)
-                .alloc_contiguous(|_| ())?;
+            let segment = FrameAllocOptions::new()
+                .zeroed(false)
+                .alloc_contiguous(buf_nblocks, |_| ())?;
             segment.write(0, reader)?;
             segment.into()
         };
@@ -1964,8 +1964,8 @@ impl InodeImpl {
 
         // TODO: If we can persist the `blocks_hole_desc`, Can we avoid zeroing all the holes on the device?
         debug_assert!(max_batch_len > 0);
-        let zeroed_segment: SegmentSlice = FrameAllocOptions::new(max_batch_len)
-            .alloc_contiguous(|_| ())?
+        let zeroed_segment: SegmentSlice = FrameAllocOptions::new()
+            .alloc_contiguous(max_batch_len, |_| ())?
             .into();
         for (start_bid, batch_len) in data_hole_batches {
             inner.write_blocks(start_bid, &zeroed_segment.range(0..batch_len))?;

@@ -299,8 +299,8 @@ fn map_segment_vmo(
     if page_offset != 0 {
         let new_frame = {
             let head_frame = segment_vmo.commit_page(segment_offset)?;
-            let new_frame = FrameAllocOptions::new(1)
-                .uninit(true)
+            let new_frame = FrameAllocOptions::new()
+                .zeroed(false)
                 .alloc_single(())
                 .unwrap();
             new_frame.writer().limit(page_offset).fill(0u8);
@@ -320,8 +320,8 @@ fn map_segment_vmo(
         let new_frame = {
             let tail_frame = segment_vmo.commit_page(segment_offset + tail_padding_offset)?;
             let in_page_end = tail_padding_offset % PAGE_SIZE;
-            let new_frame = FrameAllocOptions::new(1)
-                .uninit(true)
+            let new_frame = FrameAllocOptions::new()
+                .zeroed(false)
                 .alloc_single(())
                 .unwrap();
             new_frame.writer().skip(in_page_end).fill(0u8);

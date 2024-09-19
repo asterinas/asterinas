@@ -35,8 +35,8 @@ impl TxBuffer {
         } else {
             let segment = {
                 let nframes = (nbytes.align_up(PAGE_SIZE)) / PAGE_SIZE;
-                FrameAllocOptions::new(nframes)
-                    .alloc_contiguous(|_| ())
+                FrameAllocOptions::new()
+                    .alloc_contiguous(nframes, |_| ())
                     .unwrap()
             };
             DmaStream::map(segment, DmaDirection::ToDevice, false).unwrap()

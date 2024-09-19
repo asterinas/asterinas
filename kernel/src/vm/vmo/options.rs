@@ -141,7 +141,7 @@ fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<XArray<
     if flags.contains(VmoFlags::CONTIGUOUS) {
         // if the vmo is continuous, we need to allocate frames for the vmo
         let frames_num = size / PAGE_SIZE;
-        let frames = FrameAllocOptions::new(frames_num).alloc_contiguous(|_| ())?;
+        let frames = FrameAllocOptions::new().alloc_contiguous(frames_num, |_| ())?;
         let mut committed_pages = XArray::new();
         let mut cursor = committed_pages.cursor_mut(0);
         for frame in frames {

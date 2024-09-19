@@ -57,7 +57,7 @@ impl RootTable {
 
     pub(super) fn new() -> Self {
         Self {
-            root_frame: FrameAllocOptions::new(1).alloc_single(()).unwrap(),
+            root_frame: FrameAllocOptions::new().alloc_single(()).unwrap(),
             context_tables: BTreeMap::new(),
         }
     }
@@ -243,7 +243,7 @@ pub struct ContextTable {
 impl ContextTable {
     fn new() -> Self {
         Self {
-            entries_frame: FrameAllocOptions::new(1).alloc_single(()).unwrap(),
+            entries_frame: FrameAllocOptions::new().alloc_single(()).unwrap(),
             page_tables: BTreeMap::new(),
         }
     }

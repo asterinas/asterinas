@@ -124,12 +124,16 @@ impl DeviceInner {
         let queue = VirtQueue::new(0, Self::QUEUE_SIZE, transport.as_mut())
             .expect("create virtqueue failed");
         let block_requests = {
-            let vm_segment = FrameAllocOptions::new(1).alloc_contiguous(|_| ()).unwrap();
+            let vm_segment = FrameAllocOptions::new()
+                .alloc_contiguous(1, |_| ())
+                .unwrap();
             DmaStream::map(vm_segment, DmaDirection::Bidirectional, false).unwrap()
         };
         assert!(Self::QUEUE_SIZE as usize * REQ_SIZE <= block_requests.nbytes());
         let block_responses = {
-            let vm_segment = FrameAllocOptions::new(1).alloc_contiguous(|_| ()).unwrap();
+            let vm_segment = FrameAllocOptions::new()
+                .alloc_contiguous(1, |_| ())
+                .unwrap();
             DmaStream::map(vm_segment, DmaDirection::Bidirectional, false).unwrap()
         };
         assert!(Self::QUEUE_SIZE as usize * RESP_SIZE <= block_responses.nbytes());
@@ -240,9 +244,9 @@ impl DeviceInner {
         };
         const MAX_ID_LENGTH: usize = 20;
         let device_id_stream = {
-            let segment = FrameAllocOptions::new(1)
-                .uninit(true)
-                .alloc_contiguous(|_| ())
+            let segment = FrameAllocOptions::new()
+                .zeroed(false)
+                .alloc_contiguous(1, |_| ())
                 .unwrap();
             DmaStream::map(segment, DmaDirection::FromDevice, false).unwrap()
         };

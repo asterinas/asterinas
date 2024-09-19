@@ -501,7 +501,7 @@ pub trait CachePageExt {
                 state: AtomicU8::new(PageState::Uninit as u8),
             },
         };
-        let page = FrameAllocOptions::new(1).uninit(true).alloc_single(meta)?;
+        let page = FrameAllocOptions::new().zeroed(false).alloc_single(meta)?;
         Ok(page)
     }
 
