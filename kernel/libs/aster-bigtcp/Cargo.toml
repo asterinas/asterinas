@@ -8,17 +8,12 @@ edition = "2021"
 [dependencies]
 keyable-arc = { path = "../keyable-arc" }
 ostd = { path = "../../../ostd" }
-smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "dc08e0b", default-features = false, features = [
+smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "469dccd", default-features = false, features = [
     "alloc",
     "log",
     "medium-ethernet",
     "medium-ip",
-    "proto-dhcpv4",
     "proto-ipv4",
-    "proto-igmp",
-    "socket-icmp",
     "socket-udp",
     "socket-tcp",
-    "socket-raw",
-    "socket-dhcpv4",
 ] }
