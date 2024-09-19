@@ -11,7 +11,7 @@ use alloc::{
 };
 
 use keyable_arc::KeyableArc;
-use ostd::sync::{LocalIrqDisabled, RwLock, SpinLock, SpinLockGuard};
+use ostd::sync::{LocalIrqDisabled, PreemptDisabled, RwLock, SpinLock, SpinLockGuard};
 use smoltcp::{
     iface::{SocketHandle, SocketSet},
     phy::Device,
@@ -27,7 +27,7 @@ use crate::{
 pub struct IfaceCommon<E> {
     interface: SpinLock<smoltcp::iface::Interface, LocalIrqDisabled>,
     sockets: SpinLock<SocketSet<'static>, LocalIrqDisabled>,
-    used_ports: RwLock<BTreeMap<u16, usize>>,
+    used_ports: SpinLock<BTreeMap<u16, usize>, PreemptDisabled>,
     bound_sockets: RwLock<BTreeSet<KeyableArc<AnyBoundSocketInner<E>>>>,
     closing_sockets: SpinLock<BTreeSet<KeyableArc<AnyBoundSocketInner<E>>>, LocalIrqDisabled>,
     ext: E,
@@ -40,7 +40,7 @@ impl<E> IfaceCommon<E> {
         Self {
             interface: SpinLock::new(interface),
             sockets: SpinLock::new(socket_set),
-            used_ports: RwLock::new(used_ports),
+            used_ports: SpinLock::new(used_ports),
             bound_sockets: RwLock::new(BTreeSet::new()),
             closing_sockets: SpinLock::new(BTreeSet::new()),
             ext,
@@ -69,7 +69,7 @@ impl<E> IfaceCommon<E> {
 
     /// Alloc an unused port range from 49152 ~ 65535 (According to smoltcp docs)
     fn alloc_ephemeral_port(&self) -> Option<u16> {
-        let mut used_ports = self.used_ports.write();
+        let mut used_ports = self.used_ports.lock();
         for port in IP_LOCAL_PORT_START..=IP_LOCAL_PORT_END {
             if let Entry::Vacant(e) = used_ports.entry(port) {
                 e.insert(0);
@@ -81,7 +81,7 @@ impl<E> IfaceCommon<E> {
 
     #[must_use]
     fn bind_port(&self, port: u16, can_reuse: bool) -> bool {
-        let mut used_ports = self.used_ports.write();
+        let mut used_ports = self.used_ports.lock();
         if let Some(used_times) = used_ports.get_mut(&port) {
             if *used_times == 0 || can_reuse {
                 // FIXME: Check if the previous socket was bound with SO_REUSEADDR.
@@ -97,7 +97,7 @@ impl<E> IfaceCommon<E> {
 
     /// Release port number so the port can be used again. For reused port, the port may still be in use.
     pub(crate) fn release_port(&self, port: u16) {
-        let mut used_ports = self.used_ports.write();
+        let mut used_ports = self.used_ports.lock();
         if let Some(used_times) = used_ports.remove(&port) {
             if used_times != 1 {
                 used_ports.insert(port, used_times - 1);
