@@ -960,7 +960,7 @@ impl Inner {
     pub fn extend_write_at(&mut self, offset: usize, reader: &mut VmReader) -> Result<usize> {
         let write_len = reader.remain();
         let new_size = offset + write_len;
-        self.page_cache.resize(new_size)?;
+        self.page_cache.resize(new_size.align_up(BLOCK_SIZE))?;
         self.page_cache.pages().write(offset, reader)?;
         self.inode_impl.resize(new_size)?;
         Ok(write_len)
