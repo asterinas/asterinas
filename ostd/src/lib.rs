@@ -18,6 +18,7 @@
 #![feature(panic_info_message)]
 #![feature(ptr_sub_ptr)]
 #![feature(strict_provenance)]
+#![feature(sync_unsafe_cell)]
 // The `generic_const_exprs` feature is incomplete however required for the page table
 // const generic implementation. We are using this feature in a conservative manner.
 #![allow(incomplete_features)]
@@ -87,7 +88,6 @@ pub unsafe fn init() {
     mm::kspace::init_kernel_page_table(mm::init_page_meta());
     mm::misc_init();
 
-    trapframe::init();
     // SAFETY: This function is called only once in the entire system.
     unsafe { trap::softirq::init() };
     arch::init_on_bsp();

@@ -14,7 +14,11 @@ context_switch: # (cur: *mut TaskContext, nxt: *TaskContext)
   mov [rdi + 32], r13
   mov [rdi + 40], r14
   mov [rdi + 48], r15
+  rdfsbase r15
+  mov [rdi + 64], r15
   # Restore nxt's registers
+  mov r15, [rsi + 64]
+  wrfsbase r15
   mov rsp, [rsi + 0]
   mov rbx, [rsi + 8]
   mov rbp, [rsi + 16]

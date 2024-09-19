@@ -12,10 +12,11 @@ use core::{
 use bitflags::bitflags;
 use cfg_if::cfg_if;
 use log::debug;
-pub use trapframe::GeneralRegs as RawGeneralRegs;
-use trapframe::UserContext as RawUserContext;
+use x86::bits64::segmentation::wrfsbase;
 use x86_64::registers::rflags::RFlags;
 
+pub use super::trap::GeneralRegs as RawGeneralRegs;
+use super::trap::{TrapFrame, UserContext as RawUserContext};
 use crate::{
     task::scheduler,
     trap::call_irq_callback_functions,
@@ -76,6 +77,27 @@ impl UserContext {
     pub fn fp_regs_mut(&mut self) -> &mut FpRegs {
         &mut self.fp_regs
     }
+
+    /// Sets thread-local storage pointer.
+    pub fn set_tls_pointer(&mut self, tls: usize) {
+        self.set_fsbase(tls)
+    }
+
+    /// Gets thread-local storage pointer.
+    pub fn tls_pointer(&self) -> usize {
+        self.fsbase()
+    }
+
+    /// Activates thread-local storage pointer on the current CPU.
+    ///
+    /// # Safety
+    ///
+    /// The method by itself is safe because the value of the TLS register won't affect kernel code.
+    /// But if the user relies on the TLS pointer, make sure that the pointer is correctly set when
+    /// entering the user space.
+    pub fn activate_tls_pointer(&self) {
+        unsafe { wrfsbase(self.fsbase() as u64) }
+    }
 }
 
 impl UserContextApiInternal for UserContext {
@@ -135,8 +157,8 @@ impl UserContextApiInternal for UserContext {
         return_reason
     }
 
-    fn as_trap_frame(&self) -> trapframe::TrapFrame {
-        trapframe::TrapFrame {
+    fn as_trap_frame(&self) -> TrapFrame {
+        TrapFrame {
             rax: self.user_context.general.rax,
             rbx: self.user_context.general.rbx,
             rcx: self.user_context.general.rcx,

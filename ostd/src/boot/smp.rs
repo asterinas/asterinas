@@ -121,7 +121,7 @@ fn ap_early_entry(local_apic_id: u32) -> ! {
 
     // SAFETY: this function is only called once on this AP.
     unsafe {
-        trapframe::init();
+        crate::arch::trap::init(false);
     }
 
     // SAFETY: this function is only called once on this AP, after the BSP has

@@ -5,7 +5,6 @@ use ostd::{cpu::UserContext, user::UserContextApi};
 
 use super::{constants::*, SyscallReturn};
 use crate::{
-    cpu::LinuxAbi,
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
