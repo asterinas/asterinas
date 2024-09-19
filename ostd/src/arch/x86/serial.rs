@@ -10,10 +10,12 @@ use core::fmt::Write;
 
 use log::debug;
 use spin::Once;
-use trapframe::TrapFrame;
 
 use super::{device::serial::SerialPort, kernel::IO_APIC};
-use crate::{sync::SpinLock, trap::IrqLine};
+use crate::{
+    sync::SpinLock,
+    trap::{IrqLine, TrapFrame},
+};
 
 /// Prints the formatted arguments to the standard output using the serial port.
 #[inline]

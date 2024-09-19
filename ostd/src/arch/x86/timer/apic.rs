@@ -10,7 +10,6 @@ use core::{
 
 use log::info;
 use spin::Once;
-use trapframe::TrapFrame;
 use x86::{
     cpuid::cpuid,
     msr::{wrmsr, IA32_TSC_DEADLINE},
@@ -26,7 +25,7 @@ use crate::{
             tsc::TSC_FREQ,
         },
     },
-    trap::IrqLine,
+    trap::{IrqLine, TrapFrame},
 };
 
 /// Initializes APIC with tsc deadline mode or periodic mode.

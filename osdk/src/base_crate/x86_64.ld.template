@@ -117,11 +117,17 @@ SECTIONS
     # processor, while it would be copied to other dynamically allocated memory
     # areas for the application processors.
     . = ALIGN(4096);
-    .cpu_local              : AT(ADDR(.cpu_local) - KERNEL_VMA) {
-        __cpu_local_start = .;
-        KEEP(*(SORT(.cpu_local)))
-        __cpu_local_end = .;
+    __cpu_local_start = .;
+    # Make sure that cpu_local_tss is right at the beginning of CPU local area,
+    # which stores the task state segment in x86_64 architecture, so that
+    # when trap from ring3 to ring0, CPU can switch stack correctly.
+    .cpu_local_tss          : AT(ADDR(.cpu_local_tss) - KERNEL_VMA) {
+        *(.cpu_local_tss)
     }
+    .cpu_local              : AT(ADDR(.cpu_local) - KERNEL_VMA) {
+        KEEP(*(SORT(.cpu_local)))
+    }
+    __cpu_local_end = .;
 
     .bss                    : AT(ADDR(.bss) - KERNEL_VMA) {
         __bss = .;

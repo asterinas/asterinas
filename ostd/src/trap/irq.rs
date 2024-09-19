@@ -4,11 +4,10 @@
 
 use core::fmt::Debug;
 
-use trapframe::TrapFrame;
-
 use crate::{
     arch::irq::{self, IrqCallbackHandle, IRQ_ALLOCATOR},
     prelude::*,
+    trap::TrapFrame,
     Error,
 };
 

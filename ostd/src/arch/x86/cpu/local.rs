@@ -2,25 +2,25 @@
 
 //! Architecture dependent CPU-local information utilities.
 
-use x86_64::registers::segmentation::{Segment64, FS};
+use x86_64::registers::segmentation::{Segment64, GS};
 
-/// Sets the base address for the CPU local storage by writing to the FS base model-specific register.
+/// Sets the base address for the CPU local storage by writing to the GS base model-specific register.
 /// This operation is marked as `unsafe` because it directly interfaces with low-level CPU registers.
 ///
 /// # Safety
 ///
-///  - This function is safe to call provided that the FS register is dedicated entirely for CPU local storage
+///  - This function is safe to call provided that the GS register is dedicated entirely for CPU local storage
 ///    and is not concurrently accessed for other purposes.
 ///  - The caller must ensure that `addr` is a valid address and properly aligned, as required by the CPU.
 ///  - This function should only be called in contexts where the CPU is in a state to accept such changes,
 ///    such as during processor initialization.
 pub(crate) unsafe fn set_base(addr: u64) {
-    FS::write_base(x86_64::addr::VirtAddr::new(addr));
+    GS::write_base(x86_64::addr::VirtAddr::new(addr));
 }
 
-/// Gets the base address for the CPU local storage by reading the FS base model-specific register.
+/// Gets the base address for the CPU local storage by reading the GS base model-specific register.
 pub(crate) fn get_base() -> u64 {
-    FS::read_base().as_u64()
+    GS::read_base().as_u64()
 }
 
 use crate::cpu::local::single_instr::{
@@ -29,7 +29,7 @@ use crate::cpu::local::single_instr::{
     SingleInstructionSubAssign,
 };
 
-/// The GDT ensures that the FS segment is initialized to zero on boot.
+/// The GDT ensures that the GS segment is initialized to zero on boot.
 /// This assertion checks that the base address has been set.
 macro_rules! debug_assert_initialized {
     () => {
@@ -49,7 +49,7 @@ macro_rules! impl_numeric_single_instruction_for {
                 debug_assert_initialized!();
 
                 core::arch::asm!(
-                    concat!("add fs:[{0}], {1", $register_format, "}"),
+                    concat!("add gs:[{0}], {1", $register_format, "}"),
                     in(reg) offset,
                     in($inout_type) val,
                     options(nostack),
@@ -62,7 +62,7 @@ macro_rules! impl_numeric_single_instruction_for {
                 debug_assert_initialized!();
 
                 core::arch::asm!(
-                    concat!("sub fs:[{0}], {1", $register_format, "}"),
+                    concat!("sub gs:[{0}], {1", $register_format, "}"),
                     in(reg) offset,
                     in($inout_type) val,
                     options(nostack),
@@ -75,7 +75,7 @@ macro_rules! impl_numeric_single_instruction_for {
                 debug_assert_initialized!();
 
                 core::arch::asm!(
-                    concat!("and fs:[{0}], {1", $register_format, "}"),
+                    concat!("and gs:[{0}], {1", $register_format, "}"),
                     in(reg) offset,
                     in($inout_type) val,
                     options(nostack),
@@ -88,7 +88,7 @@ macro_rules! impl_numeric_single_instruction_for {
                 debug_assert_initialized!();
 
                 core::arch::asm!(
-                    concat!("or fs:[{0}], {1", $register_format, "}"),
+                    concat!("or gs:[{0}], {1", $register_format, "}"),
                     in(reg) offset,
                     in($inout_type) val,
                     options(nostack),
@@ -101,7 +101,7 @@ macro_rules! impl_numeric_single_instruction_for {
                 debug_assert_initialized!();
 
                 core::arch::asm!(
-                    concat!("xor fs:[{0}], {1", $register_format, "}"),
+                    concat!("xor gs:[{0}], {1", $register_format, "}"),
                     in(reg) offset,
                     in($inout_type) val,
                     options(nostack),
@@ -115,7 +115,7 @@ macro_rules! impl_numeric_single_instruction_for {
 
                 let val: Self;
                 core::arch::asm!(
-                    concat!("mov {0", $register_format, "}, fs:[{1}]"),
+                    concat!("mov {0", $register_format, "}, gs:[{1}]"),
                     out($inout_type) val,
                     in(reg) offset,
                     options(nostack, readonly),
@@ -129,7 +129,7 @@ macro_rules! impl_numeric_single_instruction_for {
                 debug_assert_initialized!();
 
                 core::arch::asm!(
-                    concat!("mov fs:[{0}], {1", $register_format, "}"),
+                    concat!("mov gs:[{0}], {1", $register_format, "}"),
                     in(reg) offset,
                     in($inout_type) val,
                     options(nostack),
@@ -162,7 +162,7 @@ macro_rules! impl_generic_single_instruction_for {
 
                 let val: Self;
                 core::arch::asm!(
-                    concat!("mov {0}, fs:[{1}]"),
+                    concat!("mov {0}, gs:[{1}]"),
                     out(reg) val,
                     in(reg) offset,
                     options(nostack, readonly),
@@ -176,7 +176,7 @@ macro_rules! impl_generic_single_instruction_for {
                 debug_assert_initialized!();
 
                 core::arch::asm!(
-                    concat!("mov fs:[{0}], {1}"),
+                    concat!("mov gs:[{0}], {1}"),
                     in(reg) offset,
                     in(reg) val,
                     options(nostack),
@@ -202,7 +202,7 @@ impl SingleInstructionLoad for bool {
 
         let val: u8;
         core::arch::asm!(
-            "mov {0}, fs:[{1}]",
+            "mov {0}, gs:[{1}]",
             out(reg_byte) val,
             in(reg) offset,
             options(nostack, readonly),
@@ -218,7 +218,7 @@ impl SingleInstructionStore for bool {
 
         let val: u8 = if val { 1 } else { 0 };
         core::arch::asm!(
-            "mov fs:[{0}], {1}",
+            "mov gs:[{0}], {1}",
             in(reg) offset,
             in(reg_byte) val,
             options(nostack),

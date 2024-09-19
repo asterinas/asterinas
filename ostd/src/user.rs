@@ -4,9 +4,7 @@
 
 //! User space.
 
-use trapframe::TrapFrame;
-
-use crate::{cpu::UserContext, mm::VmSpace, prelude::*, task::Task};
+use crate::{cpu::UserContext, mm::VmSpace, prelude::*, task::Task, trap::TrapFrame};
 
 /// A user space.
 ///
@@ -46,6 +44,16 @@ impl UserSpace {
     /// panics.      
     pub fn user_mode(&self) -> UserMode<'_> {
         todo!()
+    }
+
+    /// Sets thread-local storage pointer.
+    pub fn set_tls_pointer(&mut self, tls: usize) {
+        self.init_ctx.set_tls_pointer(tls)
+    }
+
+    /// Gets thread-local storage pointer.
+    pub fn tls_pointer(&self) -> usize {
+        self.init_ctx.tls_pointer()
     }
 }
 

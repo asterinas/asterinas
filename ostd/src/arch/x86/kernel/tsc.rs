@@ -8,7 +8,6 @@ use core::{
 };
 
 use log::info;
-use trapframe::TrapFrame;
 use x86::cpuid::cpuid;
 
 use crate::{
@@ -16,7 +15,7 @@ use crate::{
         pit::{self, OperatingMode},
         TIMER_FREQ,
     },
-    trap::IrqLine,
+    trap::{IrqLine, TrapFrame},
 };
 
 /// The frequency of TSC(Hz)

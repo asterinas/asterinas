@@ -8,10 +8,12 @@ use alloc::{boxed::Box, fmt::Debug, sync::Arc, vec::Vec};
 
 use id_alloc::IdAlloc;
 use spin::Once;
-use trapframe::TrapFrame;
 use x86_64::registers::rflags::{self, RFlags};
 
-use crate::sync::{Mutex, PreemptDisabled, SpinLock, SpinLockGuard};
+use crate::{
+    sync::{Mutex, PreemptDisabled, SpinLock, SpinLockGuard},
+    trap::TrapFrame,
+};
 
 /// The global allocator for software defined IRQ lines.
 pub(crate) static IRQ_ALLOCATOR: Once<SpinLock<IdAlloc>> = Once::new();

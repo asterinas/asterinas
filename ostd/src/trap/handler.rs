@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use trapframe::TrapFrame;
-
-use crate::{arch::irq::IRQ_LIST, cpu_local_cell};
+use crate::{arch::irq::IRQ_LIST, cpu_local_cell, trap::TrapFrame};
 
 pub(crate) fn call_irq_callback_functions(trap_frame: &TrapFrame, irq_number: usize) {
     // For x86 CPUs, interrupts are not re-entrant. Local interrupts will be disabled when

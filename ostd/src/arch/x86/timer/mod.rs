@@ -12,13 +12,12 @@ use core::{cell::RefCell, sync::atomic::Ordering};
 
 pub use jiffies::Jiffies;
 use spin::Once;
-use trapframe::TrapFrame;
 
 use self::apic::APIC_TIMER_CALLBACK;
 use crate::{
     arch::x86::kernel,
     cpu_local,
-    trap::{self, IrqLine},
+    trap::{self, IrqLine, TrapFrame},
 };
 
 /// The timer frequency (Hz). Here we choose 1000Hz since 1000Hz is easier for unit conversion and

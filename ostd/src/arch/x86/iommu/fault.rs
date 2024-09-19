@@ -9,11 +9,13 @@ use core::fmt::Debug;
 use bitflags::bitflags;
 use log::info;
 use spin::Once;
-use trapframe::TrapFrame;
 use volatile::{access::ReadWrite, Volatile};
 
 use super::registers::Capability;
-use crate::{mm::Vaddr, trap::IrqLine};
+use crate::{
+    mm::Vaddr,
+    trap::{IrqLine, TrapFrame},
+};
 
 #[derive(Debug)]
 pub struct FaultEventRegisters {

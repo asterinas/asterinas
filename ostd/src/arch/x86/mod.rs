@@ -60,6 +60,10 @@ pub(crate) fn check_tdx_init() {
 }
 
 pub(crate) fn init_on_bsp() {
+    // SAFETY: this function is only called once on BSP.
+    unsafe {
+        crate::arch::trap::init(true);
+    }
     irq::init();
     kernel::acpi::init();
 

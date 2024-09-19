@@ -11,6 +11,7 @@ core::arch::global_asm!(include_str!("switch.S"));
 pub(crate) struct TaskContext {
     pub regs: CalleeRegs,
     pub rip: usize,
+    pub fsbase: usize,
 }
 
 impl TaskContext {
@@ -18,7 +19,18 @@ impl TaskContext {
         Self {
             regs: CalleeRegs::new(),
             rip: 0,
+            fsbase: 0,
         }
+    }
+
+    /// Sets thread-local storage pointer.
+    pub fn set_tls_pointer(&mut self, tls: usize) {
+        self.fsbase = tls;
+    }
+
+    /// Gets thread-local storage pointer.
+    pub fn tls_pointer(&self) -> usize {
+        self.fsbase
     }
 }
 
