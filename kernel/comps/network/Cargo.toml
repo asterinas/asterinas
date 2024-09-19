@@ -9,24 +9,11 @@ edition = "2021"
 align_ext = { path = "../../../ostd/libs/align_ext" }
 aster-util = { path = "../../libs/aster-util" }
 aster-rights = { path = "../../libs/aster-rights" }
+aster-bigtcp = { path = "../../libs/aster-bigtcp" }
 bitflags = "1.3"
 bitvec = { version = "1.0.1", default-features = false, features = ["alloc"] }
 component = { path = "../../libs/comp-sys/component" }
 int-to-c-enum = { path = "../../libs/int-to-c-enum" }
 log = "0.4"
 ostd = { path = "../../../ostd" }
-smoltcp = { git = "https://github.com/smoltcp-rs/smoltcp", rev = "dc08e0b", default-features = false, features = [
-    "alloc",
-    "log",
-    "medium-ethernet",
-    "medium-ip",
-    "proto-dhcpv4",
-    "proto-ipv4",
-    "proto-igmp",
-    "socket-icmp",
-    "socket-udp",
-    "socket-tcp",
-    "socket-raw",
-    "socket-dhcpv4",
-] }
 spin = "0.9.4"

@@ -18,6 +18,7 @@ pub mod device;
 pub mod errors;
 pub mod iface;
 pub mod socket;
+pub mod time;
 pub mod wire;
 
 extern crate alloc;

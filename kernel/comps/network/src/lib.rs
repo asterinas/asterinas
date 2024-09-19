@@ -15,6 +15,7 @@ extern crate alloc;
 use alloc::{collections::BTreeMap, string::String, sync::Arc, vec::Vec};
 use core::{any::Any, fmt::Debug};
 
+use aster_bigtcp::device::DeviceCapabilities;
 pub use buffer::{RxBuffer, TxBuffer, RX_BUFFER_POOL, TX_BUFFER_POOL};
 use component::{init_component, ComponentInitError};
 pub use dma_pool::DmaSegment;
@@ -22,7 +23,6 @@ use ostd::{
     sync::{LocalIrqDisabled, SpinLock},
     Pod,
 };
-use smoltcp::phy;
 use spin::Once;
 
 #[derive(Debug, Clone, Copy, Pod)]
@@ -40,7 +40,7 @@ pub trait AnyNetworkDevice: Send + Sync + Any + Debug {
     // ================Device Information=================
 
     fn mac_addr(&self) -> EthernetAddr;
-    fn capabilities(&self) -> phy::DeviceCapabilities;
+    fn capabilities(&self) -> DeviceCapabilities;
 
     // ================Device Operation===================
 

@@ -2,12 +2,12 @@
 
 use alloc::vec;
 
+use aster_bigtcp::{device, time::Instant};
 use ostd::mm::VmWriter;
-use smoltcp::{phy, time::Instant};
 
 use crate::{buffer::RxBuffer, AnyNetworkDevice};
 
-impl phy::Device for dyn AnyNetworkDevice {
+impl device::Device for dyn AnyNetworkDevice {
     type RxToken<'a> = RxToken;
     type TxToken<'a> = TxToken<'a>;
 
@@ -28,13 +28,13 @@ impl phy::Device for dyn AnyNetworkDevice {
         }
     }
 
-    fn capabilities(&self) -> phy::DeviceCapabilities {
+    fn capabilities(&self) -> device::DeviceCapabilities {
         self.capabilities()
     }
 }
 pub struct RxToken(RxBuffer);
 
-impl phy::RxToken for RxToken {
+impl device::RxToken for RxToken {
     fn consume<R, F>(self, f: F) -> R
     where
         F: FnOnce(&[u8]) -> R,
@@ -48,7 +48,7 @@ impl phy::RxToken for RxToken {
 
 pub struct TxToken<'a>(&'a mut dyn AnyNetworkDevice);
 
-impl<'a> phy::TxToken for TxToken<'a> {
+impl<'a> device::TxToken for TxToken<'a> {
     fn consume<R, F>(self, len: usize, f: F) -> R
     where
         F: FnOnce(&mut [u8]) -> R,
