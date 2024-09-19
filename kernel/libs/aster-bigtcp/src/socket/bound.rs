@@ -46,7 +46,7 @@ impl<E> AnyBoundSocket<E> {
     /// that the old observer will never be called after the setting. Users should be aware of this
     /// and proactively handle the race conditions if necessary.
     pub fn set_observer(&self, new_observer: Weak<dyn SocketEventObserver>) {
-        *self.0.observer.write() = new_observer;
+        *self.0.observer.write_irq_disabled() = new_observer;
 
         self.0.on_iface_events();
     }
@@ -111,8 +111,12 @@ pub(crate) struct AnyBoundSocketInner<E> {
 
 impl<E> AnyBoundSocketInner<E> {
     pub(crate) fn on_iface_events(&self) {
-        if let Some(observer) = Weak::upgrade(&*self.observer.read()) {
-            observer.on_events();
+        // We never hold the write lock in IRQ handlers, so we don't need to disable IRQs when we
+        // get the read lock.
+        let observer = Weak::upgrade(&*self.observer.read());
+
+        if let Some(inner) = observer {
+            inner.on_events();
         }
     }
 
