@@ -34,8 +34,8 @@ pub fn sys_setitimer(
     }
     let user_space = ctx.get_user_space();
     let new_itimerval = user_space.read_val::<itimerval_t>(new_itimerval_addr)?;
-    let interval = Duration::from(new_itimerval.it_interval);
-    let expire_time = Duration::from(new_itimerval.it_value);
+    let interval = Duration::try_from(new_itimerval.it_interval)?;
+    let expire_time = Duration::try_from(new_itimerval.it_value)?;
 
     let process_timer_manager = ctx.process.timer_manager();
     let timer = match ItimerType::try_from(itimer_type)? {

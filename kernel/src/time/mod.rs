@@ -86,9 +86,23 @@ impl From<Duration> for timeval_t {
     }
 }
 
-impl From<timeval_t> for Duration {
-    fn from(timeval: timeval_t) -> Self {
-        Duration::new(timeval.sec as u64, (timeval.usec * 1000) as u32)
+impl TryFrom<timeval_t> for Duration {
+    type Error = crate::Error;
+
+    fn try_from(timeval: timeval_t) -> Result<Self> {
+        if timeval.sec < 0 || timeval.usec < 0 {
+            return_errno_with_message!(Errno::EINVAL, "timeval_t cannot be negative");
+        }
+        if timeval.usec > 1_000_000 {
+            // The value of microsecond cannot exceed 10^6,
+            // otherwise the value for seconds should be set.
+            return_errno_with_message!(Errno::EINVAL, "nsec is not normalized");
+        }
+
+        Ok(Duration::new(
+            timeval.sec as u64,
+            (timeval.usec * 1000) as u32,
+        ))
     }
 }
 
