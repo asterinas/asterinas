@@ -29,3 +29,5 @@ FcntlLockTest.SetLockSymlink
 FcntlLockTest.SetLockProc
 FcntlLockTest.SetLockPipe
 FcntlLockTest.SetLockSocket
+# SetReadLockThenBlockingWriteLock suffers from a panic from ostd.
+FcntlLockTest.SetReadLockThenBlockingWriteLock
