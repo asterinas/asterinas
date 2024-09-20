@@ -9,7 +9,7 @@ use ostd::{
 };
 use spin::Once;
 
-use crate::{prelude::*, time::wait::TimerBuilder};
+use crate::{prelude::*, process::Pid, time::wait::TimerBuilder};
 
 type FutexBitSet = u32;
 type FutexBucketRef = Arc<Mutex<FutexBucket>>;
@@ -24,6 +24,7 @@ pub fn futex_wait(
     futex_val: i32,
     timer_builder: Option<TimerBuilder>,
     ctx: &Context,
+    pid: Option<Pid>,
 ) -> Result<()> {
     futex_wait_bitset(
         futex_addr as _,
@@ -31,6 +32,7 @@ pub fn futex_wait(
         timer_builder,
         FUTEX_BITSET_MATCH_ANY,
         ctx,
+        pid,
     )
 }
 
@@ -41,6 +43,7 @@ pub fn futex_wait_bitset(
     timer_builder: Option<TimerBuilder>,
     bitset: FutexBitSet,
     ctx: &Context,
+    pid: Option<Pid>,
 ) -> Result<()> {
     debug!(
         "futex_wait_bitset addr: {:#x}, val: {}, bitset: {:#x}",
@@ -51,7 +54,7 @@ pub fn futex_wait_bitset(
         return_errno_with_message!(Errno::EINVAL, "at least one bit should be set");
     }
 
-    let futex_key = FutexKey::new(futex_addr, bitset);
+    let futex_key = FutexKey::new(futex_addr, bitset, pid);
     let (futex_item, waiter) = FutexItem::create(futex_key);
 
     let (_, futex_bucket_ref) = get_futex_bucket(futex_key);
@@ -74,8 +77,8 @@ pub fn futex_wait_bitset(
 }
 
 /// Does futex wake
-pub fn futex_wake(futex_addr: Vaddr, max_count: usize) -> Result<usize> {
-    futex_wake_bitset(futex_addr, max_count, FUTEX_BITSET_MATCH_ANY)
+pub fn futex_wake(futex_addr: Vaddr, max_count: usize, pid: Option<Pid>) -> Result<usize> {
+    futex_wake_bitset(futex_addr, max_count, FUTEX_BITSET_MATCH_ANY, pid)
 }
 
 /// Does futex wake with bitset
@@ -83,6 +86,7 @@ pub fn futex_wake_bitset(
     futex_addr: Vaddr,
     max_count: usize,
     bitset: FutexBitSet,
+    pid: Option<Pid>,
 ) -> Result<usize> {
     debug!(
         "futex_wake_bitset addr: {:#x}, max_count: {}, bitset: {:#x}",
@@ -93,7 +97,7 @@ pub fn futex_wake_bitset(
         return_errno_with_message!(Errno::EINVAL, "at least one bit should be set");
     }
 
-    let futex_key = FutexKey::new(futex_addr, bitset);
+    let futex_key = FutexKey::new(futex_addr, bitset, pid);
     let (_, futex_bucket_ref) = get_futex_bucket(futex_key);
     let mut futex_bucket = futex_bucket_ref.lock();
     let res = futex_bucket.remove_and_wake_items(futex_key, max_count);
@@ -108,13 +112,14 @@ pub fn futex_requeue(
     max_nwakes: usize,
     max_nrequeues: usize,
     futex_new_addr: Vaddr,
+    pid: Option<Pid>,
 ) -> Result<usize> {
     if futex_new_addr == futex_addr {
-        return futex_wake(futex_addr, max_nwakes);
+        return futex_wake(futex_addr, max_nwakes, pid);
     }
 
-    let futex_key = FutexKey::new(futex_addr, FUTEX_BITSET_MATCH_ANY);
-    let futex_new_key = FutexKey::new(futex_new_addr, FUTEX_BITSET_MATCH_ANY);
+    let futex_key = FutexKey::new(futex_addr, FUTEX_BITSET_MATCH_ANY, pid);
+    let futex_new_key = FutexKey::new(futex_new_addr, FUTEX_BITSET_MATCH_ANY, pid);
     let (bucket_idx, futex_bucket_ref) = get_futex_bucket(futex_key);
     let (new_bucket_idx, futex_new_bucket_ref) = get_futex_bucket(futex_new_key);
 
@@ -332,11 +337,14 @@ impl FutexItem {
 struct FutexKey {
     addr: Vaddr,
     bitset: FutexBitSet,
+    /// Specify whether this `FutexKey` is process private or shared. If `pid` is
+    /// None, then this `FutexKey` is shared.
+    pid: Option<Pid>,
 }
 
 impl FutexKey {
-    pub fn new(addr: Vaddr, bitset: FutexBitSet) -> Self {
-        Self { addr, bitset }
+    pub fn new(addr: Vaddr, bitset: FutexBitSet, pid: Option<Pid>) -> Self {
+        Self { addr, bitset, pid }
     }
 
     pub fn load_val(&self, ctx: &Context) -> Result<i32> {
@@ -354,7 +362,8 @@ impl FutexKey {
     }
 
     pub fn match_up(&self, another: &Self) -> bool {
-        self.addr == another.addr && (self.bitset & another.bitset) != 0
+        // TODO: Use hash value to do match_up
+        self.addr == another.addr && (self.bitset & another.bitset) != 0 && self.pid == another.pid
     }
 }
 
