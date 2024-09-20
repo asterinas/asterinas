@@ -16,7 +16,7 @@ use core::{
 use component::{init_component, ComponentInitError};
 use font8x8::UnicodeFonts;
 use ostd::{
-    boot,
+    boot::{self, memory_region::MemoryRegionType, memory_regions},
     io_mem::IoMem,
     mm::{VmIo, PAGE_SIZE},
     sync::SpinLock,
@@ -39,8 +39,10 @@ pub(crate) fn init() {
     let mut writer = {
         let framebuffer = boot::framebuffer_arg();
         let mut size = 0;
-        for i in ostd::mm::FRAMEBUFFER_REGIONS.get().unwrap().iter() {
-            size = i.len();
+        for region in memory_regions() {
+            if region.typ() == MemoryRegionType::Framebuffer {
+                size = region.len();
+            }
         }
 
         let page_size = size / PAGE_SIZE;
