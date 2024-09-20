@@ -4,5 +4,6 @@
     "search_pattern": "Semaphore latency:",
     "result_index": "3",
     "description": "lat_sem",
-    "title": "[Semaphores] The cost of semop"
+    "title": "[Semaphores] The cost of semop",
+    "show_in_overview": "false"
 }
