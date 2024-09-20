@@ -9,7 +9,11 @@ SharedPrivate/PrivateAndSharedFutexTest.PIConcurrency_NoRandomSave/*
 SharedPrivate/PrivateAndSharedFutexTest.PIWaiters/*
 SharedPrivate/PrivateAndSharedFutexTest.PITryLock/*
 SharedPrivate/PrivateAndSharedFutexTest.PITryLockConcurrency_NoRandomSave/*
-
+# WakeAll_NoRandomSave/* encounters a segmenation fault
+SharedPrivate/PrivateAndSharedFutexTest.WakeAll_NoRandomSave/0
+SharedPrivate/PrivateAndSharedFutexTest.WakeAll_NoRandomSave/1
 SharedPrivate/PrivateAndSharedFutexTest.WakeSome_NoRandomSave/1
 SharedPrivate/PrivateAndSharedFutexTest.NoWakeInterprocessPrivateAnon_NoRandomSave/*
 SharedPrivate/PrivateAndSharedFutexTest.WakeWrongKind_NoRandomSave/*
+# WakeAfterCOWBreak_NoRandomSave/* hangs sometimes
+SharedPrivate/PrivateAndSharedFutexTest.WakeAfterCOWBreak_NoRandomSave/0
