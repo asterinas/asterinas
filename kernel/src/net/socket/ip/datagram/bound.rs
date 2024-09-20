@@ -2,25 +2,24 @@
 
 use aster_bigtcp::{
     errors::udp::{RecvError, SendError},
-    socket::RawUdpSocket,
     wire::IpEndpoint,
 };
 
 use crate::{
     events::IoEvents,
-    net::{iface::AnyBoundSocket, socket::util::send_recv_flags::SendRecvFlags},
+    net::{iface::BoundUdpSocket, socket::util::send_recv_flags::SendRecvFlags},
     prelude::*,
     process::signal::Pollee,
     util::{MultiRead, MultiWrite},
 };
 
 pub struct BoundDatagram {
-    bound_socket: AnyBoundSocket,
+    bound_socket: BoundUdpSocket,
     remote_endpoint: Option<IpEndpoint>,
 }
 
 impl BoundDatagram {
-    pub fn new(bound_socket: AnyBoundSocket) -> Self {
+    pub fn new(bound_socket: BoundUdpSocket) -> Self {
         Self {
             bound_socket,
             remote_endpoint: None,
@@ -44,12 +43,10 @@ impl BoundDatagram {
         writer: &mut dyn MultiWrite,
         _flags: SendRecvFlags,
     ) -> Result<(usize, IpEndpoint)> {
-        let result = self.bound_socket.raw_with(|socket: &mut RawUdpSocket| {
-            socket.recv().map(|(packet, udp_metadata)| {
-                let copied_res = writer.write(&mut VmReader::from(packet));
-                let endpoint = udp_metadata.endpoint;
-                (copied_res, endpoint)
-            })
+        let result = self.bound_socket.recv(|packet, udp_metadata| {
+            let copied_res = writer.write(&mut VmReader::from(packet));
+            let endpoint = udp_metadata.endpoint;
+            (copied_res, endpoint)
         });
 
         match result {
@@ -59,7 +56,7 @@ impl BoundDatagram {
                 return_errno_with_message!(Errno::EAGAIN, "the receive buffer is empty")
             }
             Err(RecvError::Truncated) => {
-                unreachable!("`Socket::recv` should never fail with `RecvError::Truncated`")
+                unreachable!("`recv` should never fail with `RecvError::Truncated`")
             }
         }
     }
@@ -70,32 +67,31 @@ impl BoundDatagram {
         remote: &IpEndpoint,
         _flags: SendRecvFlags,
     ) -> Result<usize> {
-        let reader_len = reader.sum_lens();
+        let result = self
+            .bound_socket
+            .send(reader.sum_lens(), *remote, |socket_buffer| {
+                // FIXME: If copy failed, we should not send any packet.
+                // But current smoltcp API seems not to support this behavior.
+                reader
+                    .read(&mut VmWriter::from(socket_buffer))
+                    .map_err(|e| {
+                        warn!("unexpected UDP packet will be sent");
+                        e
+                    })
+            });
 
-        self.bound_socket.raw_with(|socket: &mut RawUdpSocket| {
-            if socket.payload_send_capacity() < reader_len {
+        match result {
+            Ok(inner) => inner,
+            Err(SendError::TooLarge) => {
                 return_errno_with_message!(Errno::EMSGSIZE, "the message is too large");
             }
-
-            let socket_buffer = match socket.send(reader_len, *remote) {
-                Ok(socket_buffer) => socket_buffer,
-                Err(SendError::BufferFull) => {
-                    return_errno_with_message!(Errno::EAGAIN, "the send buffer is full")
-                }
-                Err(SendError::Unaddressable) => {
-                    return_errno_with_message!(Errno::EINVAL, "the destination address is invalid")
-                }
-            };
-
-            // FIXME: If copy failed, we should not send any packet.
-            // But current smoltcp API seems not to support this behavior.
-            reader
-                .read(&mut VmWriter::from(socket_buffer))
-                .map_err(|e| {
-                    warn!("unexpected UDP packet will be sent");
-                    e
-                })
-        })
+            Err(SendError::Unaddressable) => {
+                return_errno_with_message!(Errno::EINVAL, "the destination address is invalid");
+            }
+            Err(SendError::BufferFull) => {
+                return_errno_with_message!(Errno::EAGAIN, "the send buffer is full");
+            }
+        }
     }
 
     pub(super) fn init_pollee(&self, pollee: &Pollee) {
@@ -104,7 +100,7 @@ impl BoundDatagram {
     }
 
     pub(super) fn update_io_events(&self, pollee: &Pollee) {
-        self.bound_socket.raw_with(|socket: &mut RawUdpSocket| {
+        self.bound_socket.raw_with(|socket| {
             if socket.can_recv() {
                 pollee.add_events(IoEvents::IN);
             } else {

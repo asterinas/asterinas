@@ -7,7 +7,7 @@ use smoltcp::wire::Ipv4Address;
 use super::port::BindPortConfig;
 use crate::{
     errors::BindError,
-    socket::{AnyBoundSocket, AnyUnboundSocket},
+    socket::{BoundTcpSocket, BoundUdpSocket, UnboundTcpSocket, UnboundUdpSocket},
 };
 
 /// A network interface.
@@ -42,13 +42,22 @@ impl<E> dyn Iface<E> {
     /// FIXME: The reason for binding the socket and the iface together is because there are
     /// limitations inside smoltcp. See discussion at
     /// <https://github.com/smoltcp-rs/smoltcp/issues/779>.
-    pub fn bind_socket(
+    pub fn bind_tcp(
         self: &Arc<Self>,
-        socket: Box<AnyUnboundSocket>,
+        socket: Box<UnboundTcpSocket>,
         config: BindPortConfig,
-    ) -> core::result::Result<AnyBoundSocket<E>, (BindError, Box<AnyUnboundSocket>)> {
+    ) -> core::result::Result<BoundTcpSocket<E>, (BindError, Box<UnboundTcpSocket>)> {
         let common = self.common();
-        common.bind_socket(self.clone(), socket, config)
+        common.bind_tcp(self.clone(), socket, config)
+    }
+
+    pub fn bind_udp(
+        self: &Arc<Self>,
+        socket: Box<UnboundUdpSocket>,
+        config: BindPortConfig,
+    ) -> core::result::Result<BoundUdpSocket<E>, (BindError, Box<UnboundUdpSocket>)> {
+        let common = self.common();
+        common.bind_udp(self.clone(), socket, config)
     }
 
     /// Gets the IPv4 address of the iface, if any.

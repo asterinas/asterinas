@@ -3,12 +3,11 @@
 use aster_bigtcp::{
     errors::BindError,
     iface::BindPortConfig,
-    socket::AnyUnboundSocket,
     wire::{IpAddress, IpEndpoint},
 };
 
 use crate::{
-    net::iface::{AnyBoundSocket, Iface, IFACES},
+    net::iface::{Iface, IFACES},
     prelude::*,
 };
 
@@ -46,11 +45,16 @@ fn get_ephemeral_iface(remote_ip_addr: &IpAddress) -> Arc<Iface> {
     ifaces[0].clone()
 }
 
-pub(super) fn bind_socket(
-    unbound_socket: Box<AnyUnboundSocket>,
+pub(super) fn bind_socket<S, T>(
+    unbound_socket: Box<S>,
     endpoint: &IpEndpoint,
     can_reuse: bool,
-) -> core::result::Result<AnyBoundSocket, (Error, Box<AnyUnboundSocket>)> {
+    bind: impl FnOnce(
+        Arc<Iface>,
+        Box<S>,
+        BindPortConfig,
+    ) -> core::result::Result<T, (BindError, Box<S>)>,
+) -> core::result::Result<T, (Error, Box<S>)> {
     let iface = match get_iface_to_bind(&endpoint.addr) {
         Some(iface) => iface,
         None => {
@@ -64,9 +68,7 @@ pub(super) fn bind_socket(
 
     let bind_port_config = BindPortConfig::new(endpoint.port, can_reuse);
 
-    iface
-        .bind_socket(unbound_socket, bind_port_config)
-        .map_err(|(err, unbound)| (err.into(), unbound))
+    bind(iface, unbound_socket, bind_port_config).map_err(|(err, unbound)| (err.into(), unbound))
 }
 
 impl From<BindError> for Error {

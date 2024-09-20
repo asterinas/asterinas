@@ -4,14 +4,14 @@ use alloc::sync::Weak;
 
 use aster_bigtcp::{
     errors::tcp::{RecvError, SendError},
-    socket::{RawTcpSocket, SocketEventObserver},
+    socket::SocketEventObserver,
     wire::IpEndpoint,
 };
 
 use crate::{
     events::IoEvents,
     net::{
-        iface::AnyBoundSocket,
+        iface::BoundTcpSocket,
         socket::util::{send_recv_flags::SendRecvFlags, shutdown_cmd::SockShutdownCmd},
     },
     prelude::*,
@@ -20,7 +20,7 @@ use crate::{
 };
 
 pub struct ConnectedStream {
-    bound_socket: AnyBoundSocket,
+    bound_socket: BoundTcpSocket,
     remote_endpoint: IpEndpoint,
     /// Indicates whether this connection is "new" in a `connect()` system call.
     ///
@@ -37,7 +37,7 @@ pub struct ConnectedStream {
 
 impl ConnectedStream {
     pub fn new(
-        bound_socket: AnyBoundSocket,
+        bound_socket: BoundTcpSocket,
         remote_endpoint: IpEndpoint,
         is_new_connection: bool,
     ) -> Self {
@@ -50,20 +50,16 @@ impl ConnectedStream {
 
     pub fn shutdown(&self, _cmd: SockShutdownCmd) -> Result<()> {
         // TODO: deal with cmd
-        self.bound_socket.raw_with(|socket: &mut RawTcpSocket| {
-            socket.close();
-        });
+        self.bound_socket.close();
         Ok(())
     }
 
     pub fn try_recv(&self, writer: &mut dyn MultiWrite, _flags: SendRecvFlags) -> Result<usize> {
-        let result = self.bound_socket.raw_with(|socket: &mut RawTcpSocket| {
-            socket.recv(
-                |socket_buffer| match writer.write(&mut VmReader::from(&*socket_buffer)) {
-                    Ok(len) => (len, Ok(len)),
-                    Err(e) => (0, Err(e)),
-                },
-            )
+        let result = self.bound_socket.recv(|socket_buffer| {
+            match writer.write(&mut VmReader::from(&*socket_buffer)) {
+                Ok(len) => (len, Ok(len)),
+                Err(e) => (0, Err(e)),
+            }
         });
 
         match result {
@@ -78,13 +74,11 @@ impl ConnectedStream {
     }
 
     pub fn try_send(&self, reader: &mut dyn MultiRead, _flags: SendRecvFlags) -> Result<usize> {
-        let result = self.bound_socket.raw_with(|socket: &mut RawTcpSocket| {
-            socket.send(
-                |socket_buffer| match reader.read(&mut VmWriter::from(socket_buffer)) {
-                    Ok(len) => (len, Ok(len)),
-                    Err(e) => (0, Err(e)),
-                },
-            )
+        let result = self.bound_socket.send(|socket_buffer| {
+            match reader.read(&mut VmWriter::from(socket_buffer)) {
+                Ok(len) => (len, Ok(len)),
+                Err(e) => (0, Err(e)),
+            }
         });
 
         match result {
@@ -123,7 +117,7 @@ impl ConnectedStream {
     }
 
     pub(super) fn update_io_events(&self, pollee: &Pollee) {
-        self.bound_socket.raw_with(|socket: &mut RawTcpSocket| {
+        self.bound_socket.raw_with(|socket| {
             if socket.can_recv() {
                 pollee.add_events(IoEvents::IN);
             } else {

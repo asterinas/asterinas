@@ -4,6 +4,7 @@ mod common;
 #[allow(clippy::module_inception)]
 mod iface;
 mod phy;
+mod poll;
 mod port;
 mod time;
 

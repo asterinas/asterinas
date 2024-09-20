@@ -3,7 +3,7 @@
 use alloc::sync::Weak;
 
 use aster_bigtcp::{
-    socket::{AnyUnboundSocket, SocketEventObserver},
+    socket::{SocketEventObserver, UnboundTcpSocket},
     wire::IpEndpoint,
 };
 
@@ -11,7 +11,7 @@ use super::{connecting::ConnectingStream, listen::ListenStream};
 use crate::{
     events::IoEvents,
     net::{
-        iface::AnyBoundSocket,
+        iface::BoundTcpSocket,
         socket::ip::common::{bind_socket, get_ephemeral_endpoint},
     },
     prelude::*,
@@ -19,16 +19,16 @@ use crate::{
 };
 
 pub enum InitStream {
-    Unbound(Box<AnyUnboundSocket>),
-    Bound(AnyBoundSocket),
+    Unbound(Box<UnboundTcpSocket>),
+    Bound(BoundTcpSocket),
 }
 
 impl InitStream {
     pub fn new(observer: Weak<dyn SocketEventObserver>) -> Self {
-        InitStream::Unbound(Box::new(AnyUnboundSocket::new_tcp(observer)))
+        InitStream::Unbound(Box::new(UnboundTcpSocket::new(observer)))
     }
 
-    pub fn new_bound(bound_socket: AnyBoundSocket) -> Self {
+    pub fn new_bound(bound_socket: BoundTcpSocket) -> Self {
         InitStream::Bound(bound_socket)
     }
 
@@ -36,7 +36,7 @@ impl InitStream {
         self,
         endpoint: &IpEndpoint,
         can_reuse: bool,
-    ) -> core::result::Result<AnyBoundSocket, (Error, Self)> {
+    ) -> core::result::Result<BoundTcpSocket, (Error, Self)> {
         let unbound_socket = match self {
             InitStream::Unbound(unbound_socket) => unbound_socket,
             InitStream::Bound(bound_socket) => {
@@ -46,7 +46,12 @@ impl InitStream {
                 ));
             }
         };
-        let bound_socket = match bind_socket(unbound_socket, endpoint, can_reuse) {
+        let bound_socket = match bind_socket(
+            unbound_socket,
+            endpoint,
+            can_reuse,
+            |iface, socket, config| iface.bind_tcp(socket, config),
+        ) {
             Ok(bound_socket) => bound_socket,
             Err((err, unbound_socket)) => return Err((err, InitStream::Unbound(unbound_socket))),
         };
@@ -56,7 +61,7 @@ impl InitStream {
     fn bind_to_ephemeral_endpoint(
         self,
         remote_endpoint: &IpEndpoint,
-    ) -> core::result::Result<AnyBoundSocket, (Error, Self)> {
+    ) -> core::result::Result<BoundTcpSocket, (Error, Self)> {
         let endpoint = get_ephemeral_endpoint(remote_endpoint);
         self.bind(&endpoint, false)
     }
