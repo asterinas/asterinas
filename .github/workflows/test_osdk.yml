@@ -24,6 +24,7 @@ jobs:
         # asterinas/asterinas:0.8.3 container is the developing container of asterinas,
         # asterinas/osdk:0.8.3 container is built with the intructions from Asterinas Book
         container: ['asterinas/asterinas:0.8.3', 'asterinas/osdk:0.8.3']
+      fail-fast: false
     container: ${{ matrix.container }}
     steps:
       - run: echo "Running in ${{ matrix.container }}"
@@ -56,6 +57,7 @@ jobs:
         # asterinas/asterinas:0.8.3-tdx container is the developing container of asterinas,
         # asterinas/osdk:0.8.3-tdx container is built with the intructions from Asterinas Book
         container: ['asterinas/asterinas:0.8.3-tdx', 'asterinas/osdk:0.8.3-tdx']
+      fail-fast: false
     container: 
       image: ${{ matrix.container }}
       options: --device=/dev/kvm --privileged
