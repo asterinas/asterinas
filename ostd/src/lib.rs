@@ -86,7 +86,7 @@ pub unsafe fn init() {
 
     mm::page::allocator::init();
     mm::kspace::init_kernel_page_table(mm::init_page_meta());
-    mm::misc_init();
+    mm::dma::init();
 
     // SAFETY: This function is called only once in the entire system.
     unsafe { trap::softirq::init() };
