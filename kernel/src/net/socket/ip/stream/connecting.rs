@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_bigtcp::{socket::RawTcpSocket, wire::IpEndpoint};
+use aster_bigtcp::wire::IpEndpoint;
 
 use super::{connected::ConnectedStream, init::InitStream};
-use crate::{net::iface::AnyBoundSocket, prelude::*, process::signal::Pollee};
+use crate::{net::iface::BoundTcpSocket, prelude::*, process::signal::Pollee};
 
 pub struct ConnectingStream {
-    bound_socket: AnyBoundSocket,
+    bound_socket: BoundTcpSocket,
     remote_endpoint: IpEndpoint,
     conn_result: RwLock<Option<ConnResult>>,
 }
@@ -24,15 +24,15 @@ pub enum NonConnectedStream {
 
 impl ConnectingStream {
     pub fn new(
-        bound_socket: AnyBoundSocket,
+        bound_socket: BoundTcpSocket,
         remote_endpoint: IpEndpoint,
-    ) -> core::result::Result<Self, (Error, AnyBoundSocket)> {
+    ) -> core::result::Result<Self, (Error, BoundTcpSocket)> {
         // The only reason this method might fail is because we're trying to connect to an
         // unspecified address (i.e. 0.0.0.0). We currently have no support for binding to,
         // listening on, or connecting to the unspecified address.
         //
         // We assume the remote will just refuse to connect, so we return `ECONNREFUSED`.
-        if bound_socket.do_connect(remote_endpoint).is_err() {
+        if bound_socket.connect(remote_endpoint).is_err() {
             return Err((
                 Error::with_message(
                     Errno::ECONNREFUSED,
@@ -91,7 +91,7 @@ impl ConnectingStream {
             return false;
         }
 
-        self.bound_socket.raw_with(|socket: &mut RawTcpSocket| {
+        self.bound_socket.raw_with(|socket| {
             let mut result = self.conn_result.write();
             if result.is_some() {
                 return false;

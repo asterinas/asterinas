@@ -14,5 +14,15 @@ pub mod tcp {
 }
 
 pub mod udp {
-    pub use smoltcp::socket::udp::{RecvError, SendError};
+    pub use smoltcp::socket::udp::RecvError;
+
+    /// An error returned by [`BoundTcpSocket::recv`].
+    ///
+    /// [`BoundTcpSocket::recv`]: crate::socket::BoundTcpSocket::recv
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+    pub enum SendError {
+        TooLarge,
+        Unaddressable,
+        BufferFull,
+    }
 }

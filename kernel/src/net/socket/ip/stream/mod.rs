@@ -230,18 +230,13 @@ impl StreamSocket {
             return_errno_with_message!(Errno::EINVAL, "the socket is not listening");
         };
 
-        let accepted = listen_stream.try_accept().map(|connected_stream| {
+        listen_stream.try_accept().map(|connected_stream| {
             listen_stream.update_io_events(&self.pollee);
 
             let remote_endpoint = connected_stream.remote_endpoint();
             let accepted_socket = Self::new_connected(connected_stream);
             (accepted_socket as _, remote_endpoint.into())
-        });
-
-        drop(state);
-        poll_ifaces();
-
-        accepted
+        })
     }
 
     fn try_recv(
@@ -262,8 +257,6 @@ impl StreamSocket {
         };
 
         let received = connected_stream.try_recv(writer, flags).map(|recv_bytes| {
-            connected_stream.update_io_events(&self.pollee);
-
             let remote_endpoint = connected_stream.remote_endpoint();
             (recv_bytes, remote_endpoint.into())
         });
@@ -302,10 +295,7 @@ impl StreamSocket {
             }
         };
 
-        let sent_bytes = connected_stream.try_send(reader, flags).map(|sent_bytes| {
-            connected_stream.update_io_events(&self.pollee);
-            sent_bytes
-        });
+        let sent_bytes = connected_stream.try_send(reader, flags);
 
         drop(state);
         poll_ifaces();
@@ -656,5 +646,13 @@ impl SocketEventObserver for StreamSocket {
             let result = self.finish_connect();
             options.socket.set_sock_errors(result.err());
         }
+    }
+}
+
+impl Drop for StreamSocket {
+    fn drop(&mut self) {
+        self.state.write().take();
+
+        poll_ifaces();
     }
 }

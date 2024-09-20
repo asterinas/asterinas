@@ -4,7 +4,8 @@ use alloc::sync::Arc;
 
 use smoltcp::{
     iface::Config,
-    wire::{self, Ipv4Cidr},
+    phy::TxToken,
+    wire::{self, Ipv4Cidr, Ipv4Packet},
 };
 
 use crate::{
@@ -14,7 +15,7 @@ use crate::{
     },
 };
 
-pub struct IpIface<D: WithDevice, E> {
+pub struct IpIface<D, E> {
     driver: D,
     common: IfaceCommon<E>,
 }
@@ -39,16 +40,30 @@ impl<D: WithDevice, E> IpIface<D, E> {
     }
 }
 
-impl<D: WithDevice, E> IfaceInternal<E> for IpIface<D, E> {
+impl<D, E> IfaceInternal<E> for IpIface<D, E> {
     fn common(&self) -> &IfaceCommon<E> {
         &self.common
     }
 }
 
-impl<D: WithDevice, E: Send + Sync> Iface<E> for IpIface<D, E> {
+impl<D: WithDevice + 'static, E: Send + Sync> Iface<E> for IpIface<D, E> {
     fn raw_poll(&self, schedule_next_poll: &dyn Fn(Option<u64>)) {
         self.driver.with(|device| {
-            let next_poll = self.common.poll(device);
+            let next_poll = self.common.poll(
+                device,
+                |data, _iface_cx, tx_token| Some((Ipv4Packet::new_checked(data).ok()?, tx_token)),
+                |pkt, iface_cx, tx_token| {
+                    let ip_repr = pkt.ip_repr();
+                    tx_token.consume(ip_repr.buffer_len(), |buffer| {
+                        ip_repr.emit(&mut buffer[..], &iface_cx.checksum_caps());
+                        pkt.emit_payload(
+                            &ip_repr,
+                            &mut buffer[ip_repr.header_len()..],
+                            &iface_cx.caps,
+                        );
+                    });
+                },
+            );
             schedule_next_poll(next_poll);
         });
     }

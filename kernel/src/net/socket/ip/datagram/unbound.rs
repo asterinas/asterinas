@@ -3,7 +3,7 @@
 use alloc::sync::Weak;
 
 use aster_bigtcp::{
-    socket::{AnyUnboundSocket, RawUdpSocket, SocketEventObserver},
+    socket::{SocketEventObserver, UnboundUdpSocket},
     wire::IpEndpoint,
 };
 
@@ -13,13 +13,13 @@ use crate::{
 };
 
 pub struct UnboundDatagram {
-    unbound_socket: Box<AnyUnboundSocket>,
+    unbound_socket: Box<UnboundUdpSocket>,
 }
 
 impl UnboundDatagram {
     pub fn new(observer: Weak<dyn SocketEventObserver>) -> Self {
         Self {
-            unbound_socket: Box::new(AnyUnboundSocket::new_udp(observer)),
+            unbound_socket: Box::new(UnboundUdpSocket::new(observer)),
         }
     }
 
@@ -28,15 +28,18 @@ impl UnboundDatagram {
         endpoint: &IpEndpoint,
         can_reuse: bool,
     ) -> core::result::Result<BoundDatagram, (Error, Self)> {
-        let bound_socket = match bind_socket(self.unbound_socket, endpoint, can_reuse) {
+        let bound_socket = match bind_socket(
+            self.unbound_socket,
+            endpoint,
+            can_reuse,
+            |iface, socket, config| iface.bind_udp(socket, config),
+        ) {
             Ok(bound_socket) => bound_socket,
             Err((err, unbound_socket)) => return Err((err, Self { unbound_socket })),
         };
 
         let bound_endpoint = bound_socket.local_endpoint().unwrap();
-        bound_socket.raw_with(|socket: &mut RawUdpSocket| {
-            socket.bind(bound_endpoint).unwrap();
-        });
+        bound_socket.bind(bound_endpoint).unwrap();
 
         Ok(BoundDatagram::new(bound_socket))
     }

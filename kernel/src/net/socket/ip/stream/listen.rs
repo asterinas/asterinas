@@ -1,28 +1,25 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_bigtcp::{
-    errors::tcp::ListenError,
-    iface::BindPortConfig,
-    socket::{AnyUnboundSocket, RawTcpSocket},
-    wire::IpEndpoint,
+    errors::tcp::ListenError, iface::BindPortConfig, socket::UnboundTcpSocket, wire::IpEndpoint,
 };
 
 use super::connected::ConnectedStream;
-use crate::{events::IoEvents, net::iface::AnyBoundSocket, prelude::*, process::signal::Pollee};
+use crate::{events::IoEvents, net::iface::BoundTcpSocket, prelude::*, process::signal::Pollee};
 
 pub struct ListenStream {
     backlog: usize,
     /// A bound socket held to ensure the TCP port cannot be released
-    bound_socket: AnyBoundSocket,
+    bound_socket: BoundTcpSocket,
     /// Backlog sockets listening at the local endpoint
     backlog_sockets: RwLock<Vec<BacklogSocket>>,
 }
 
 impl ListenStream {
     pub fn new(
-        bound_socket: AnyBoundSocket,
+        bound_socket: BoundTcpSocket,
         backlog: usize,
-    ) -> core::result::Result<Self, (Error, AnyBoundSocket)> {
+    ) -> core::result::Result<Self, (Error, BoundTcpSocket)> {
         const SOMAXCONN: usize = 4096;
         let somaxconn = SOMAXCONN.min(backlog);
 
@@ -102,30 +99,28 @@ impl ListenStream {
 }
 
 struct BacklogSocket {
-    bound_socket: AnyBoundSocket,
+    bound_socket: BoundTcpSocket,
 }
 
 impl BacklogSocket {
     // FIXME: All of the error codes below seem to have no Linux equivalents, and I see no reason
     // why the error may occur. Perhaps it is better to call `unwrap()` directly?
-    fn new(bound_socket: &AnyBoundSocket) -> Result<Self> {
+    fn new(bound_socket: &BoundTcpSocket) -> Result<Self> {
         let local_endpoint = bound_socket.local_endpoint().ok_or(Error::with_message(
             Errno::EINVAL,
             "the socket is not bound",
         ))?;
 
-        let unbound_socket = Box::new(AnyUnboundSocket::new_tcp(Weak::<()>::new()));
+        let unbound_socket = Box::new(UnboundTcpSocket::new(bound_socket.observer()));
         let bound_socket = {
             let iface = bound_socket.iface();
             let bind_port_config = BindPortConfig::new(local_endpoint.port, true);
             iface
-                .bind_socket(unbound_socket, bind_port_config)
+                .bind_tcp(unbound_socket, bind_port_config)
                 .map_err(|(err, _)| err)?
         };
 
-        let result = bound_socket
-            .raw_with(|raw_tcp_socket: &mut RawTcpSocket| raw_tcp_socket.listen(local_endpoint));
-        match result {
+        match bound_socket.listen(local_endpoint) {
             Ok(()) => Ok(Self { bound_socket }),
             Err(ListenError::Unaddressable) => {
                 return_errno_with_message!(Errno::EINVAL, "the listening address is invalid")
@@ -137,16 +132,15 @@ impl BacklogSocket {
     }
 
     fn is_active(&self) -> bool {
-        self.bound_socket
-            .raw_with(|socket: &mut RawTcpSocket| socket.is_active())
+        self.bound_socket.raw_with(|socket| socket.is_active())
     }
 
     fn remote_endpoint(&self) -> Option<IpEndpoint> {
         self.bound_socket
-            .raw_with(|socket: &mut RawTcpSocket| socket.remote_endpoint())
+            .raw_with(|socket| socket.remote_endpoint())
     }
 
-    fn into_bound_socket(self) -> AnyBoundSocket {
+    fn into_bound_socket(self) -> BoundTcpSocket {
         self.bound_socket
     }
 }

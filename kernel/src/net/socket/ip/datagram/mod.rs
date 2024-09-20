@@ -154,13 +154,9 @@ impl DatagramSocket {
             return_errno_with_message!(Errno::EAGAIN, "the socket is not bound");
         };
 
-        let received =
-            bound_datagram
-                .try_recv(writer, flags)
-                .map(|(recv_bytes, remote_endpoint)| {
-                    bound_datagram.update_io_events(&self.pollee);
-                    (recv_bytes, remote_endpoint.into())
-                });
+        let received = bound_datagram
+            .try_recv(writer, flags)
+            .map(|(recv_bytes, remote_endpoint)| (recv_bytes, remote_endpoint.into()));
 
         drop(inner);
         poll_ifaces();
@@ -192,12 +188,7 @@ impl DatagramSocket {
             return_errno_with_message!(Errno::EAGAIN, "the socket is not bound")
         };
 
-        let sent_bytes = bound_datagram
-            .try_send(reader, remote, flags)
-            .map(|sent_bytes| {
-                bound_datagram.update_io_events(&self.pollee);
-                sent_bytes
-            });
+        let sent_bytes = bound_datagram.try_send(reader, remote, flags);
 
         drop(inner);
         poll_ifaces();
