@@ -131,8 +131,9 @@ update_package_version ${OSDK_CARGO_TOML_PATH}
 update_package_version ${OSDK_TEST_RUNNER_CARGO_TOML_PATH}
 update_dep_version ${OSDK_TEST_RUNNER_CARGO_TOML_PATH} ostd
 
-# Automatically bump Cargo.lock file
-cargo update -p aster-nix --precise $new_version
+# Automatically bump Cargo.lock files
+cargo update -p aster-nix --precise $new_version # For Cargo.lock
+cd osdk && cargo update -p cargo-osdk --precise $new_version # For osdk/Cargo.lock
 
 # Update Docker image versions in README files
 update_image_versions ${ASTER_SRC_DIR}/README.md
