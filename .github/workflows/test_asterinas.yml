@@ -63,6 +63,7 @@ jobs:
           - 'smp_syscall_test_mb2'
           - 'test_linux'
           - 'smp_test_mb2'
+      fail-fast: false
 
     steps:
       - run: echo "Running in asterinas/asterinas:0.8.3"
