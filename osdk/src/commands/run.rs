@@ -224,7 +224,7 @@ mod vsc {
             exit(Errno::ParseMetadata as _);
         }
         if gdb::stub_type_of(gdb_stub_addr) != gdb::StubAddrType::Tcp {
-            error_msg!("Non-TCP GDB server address is not supported under '--vsc' currently");
+            error_msg!("Non-TCP GDB server address is not supported under '--gdb-vsc' currently");
             exit(Errno::ParseMetadata as _);
         }
     }

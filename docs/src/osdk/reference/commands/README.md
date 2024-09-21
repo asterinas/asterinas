@@ -11,6 +11,7 @@ Currently, OSDK supports the following subcommands:
 - **run**: Run the kernel with a VMM
 - **test**: Execute kernel mode unit test by starting a VMM
 - **debug**: Debug a remote target via GDB
+- **profile**: Profile a remote GDB debug target to collect stack traces
 - **check**: Analyze the current package and report errors
 - **clippy**: Check the current package and catch common mistakes
 
