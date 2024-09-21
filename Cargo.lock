@@ -1084,7 +1084,6 @@ dependencies = [
  "ostd-test",
  "owo-colors 3.5.0",
  "rsdp",
- "slab_allocator",
  "spin 0.9.8",
  "static_assertions",
  "tdx-guest",
@@ -1318,14 +1317,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "eb5b1b31579f3811bf615c144393417496f152e12ac8b7663bf664f4a815306d"
 dependencies = [
  "serde",
-]
-
-[[package]]
-name = "slab_allocator"
-version = "0.3.1"
-source = "git+https://github.com/arceos-org/slab_allocator/?rev=3c13499#3c13499d664ccd36f66786985b753340aea57f5a"
-dependencies = [
- "buddy_system_allocator",
 ]
 
 [[package]]
