@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+mod slab_allocator;
+
 use core::alloc::{GlobalAlloc, Layout};
 
 use align_ext::AlignExt;

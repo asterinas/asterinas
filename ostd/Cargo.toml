@@ -42,7 +42,6 @@ static_assertions = "1.1.0"
 unwinding = { version = "0.2.2", default-features = false, features = ["fde-gnu-eh-frame-hdr", "hide-trace", "panic", "personality", "unwinder"] }
 volatile = { version = "0.4.5", features = ["unstable"] }
 xarray = { git = "https://github.com/asterinas/xarray", version = "0.1.0" }
-slab_allocator = { git = "https://github.com/arceos-org/slab_allocator/", rev = "3c13499" , version = "0.3.1" }
 
 [target.x86_64-unknown-none.dependencies]
 x86_64 = "0.14.2"
