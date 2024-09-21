@@ -79,7 +79,13 @@ mod qemu_gdb_feature {
             path.to_string_lossy().to_string()
         };
 
-        let mut instance = cargo_osdk(["run", "-G", "--gdb-server-addr", unix_socket.as_str()]);
+        let mut instance = cargo_osdk([
+            "run",
+            "--gdb-server",
+            "--gdb-wait-client",
+            "--gdb-server-addr",
+            unix_socket.as_str(),
+        ]);
         instance.current_dir(&workspace.os_dir());
 
         let sock = unix_socket.clone();
@@ -123,7 +129,14 @@ mod qemu_gdb_feature {
             let workspace = workspace::WorkSpace::new(WORKSPACE, kernel_name);
             let addr = ":50001";
 
-            let mut instance = cargo_osdk(["run", "-G", "--vsc", "--gdb-server-addr", addr]);
+            let mut instance = cargo_osdk([
+                "run",
+                "--gdb-server",
+                "--gdb-wait-client",
+                "--gdb-vsc",
+                "--gdb-server-addr",
+                addr,
+            ]);
             instance.current_dir(&workspace.os_dir());
 
             let dir = workspace.os_dir();

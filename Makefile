@@ -1,13 +1,14 @@
 # SPDX-License-Identifier: MPL-2.0
 
-# Global options.
+# =========================== Makefile options. ===============================
+
+# Global build options.
 ARCH ?= x86_64
 BENCHMARK ?= none
 BOOT_METHOD ?= grub-rescue-iso
 BOOT_PROTOCOL ?= multiboot2
 BUILD_SYSCALL_TEST ?= 0
 ENABLE_KVM ?= 1
-GDB_TCP_PORT ?= 1234
 INTEL_TDX ?= 0
 MEM ?= 8G
 RELEASE ?= 0
@@ -16,7 +17,14 @@ LOG_LEVEL ?= error
 SCHEME ?= ""
 SMP ?= 1
 OSTD_TASK_STACK_SIZE_IN_PAGES ?= 64
-# End of global options.
+# End of global build options.
+
+# GDB debugging and profiling options.
+GDB_TCP_PORT ?= 1234
+GDB_PROFILE_FORMAT ?= folded
+GDB_PROFILE_COUNT ?= 200
+GDB_PROFILE_INTERVAL ?= 0.1
+# End of GDB options.
 
 # The Makefile provides a way to run arbitrary tests in the kernel
 # mode using the kernel command line.
@@ -25,6 +33,8 @@ AUTO_TEST ?= none
 EXTRA_BLOCKLISTS_DIRS ?= ""
 SYSCALL_TEST_DIR ?= /tmp
 # End of auto test features.
+
+# ========================= End of Makefile options. ==========================
 
 CARGO_OSDK := ~/.cargo/bin/cargo-osdk
 
@@ -189,11 +199,21 @@ endif
 
 .PHONY: gdb_server
 gdb_server: initramfs $(CARGO_OSDK)
-	@cargo osdk run $(CARGO_OSDK_ARGS) -G --vsc --gdb-server-addr :$(GDB_TCP_PORT)
+	@cargo osdk run $(CARGO_OSDK_ARGS) --gdb-server --gdb-wait-client --gdb-vsc \
+		--gdb-server-addr :$(GDB_TCP_PORT)
 
 .PHONY: gdb_client
 gdb_client: $(CARGO_OSDK)
-	@cd kernel && cargo osdk debug $(CARGO_OSDK_ARGS) --remote :$(GDB_TCP_PORT)
+	@cargo osdk debug $(CARGO_OSDK_ARGS) --remote :$(GDB_TCP_PORT)
+
+.PHONY: profile_server
+profile_server: initramfs $(CARGO_OSDK)
+	@cargo osdk run $(CARGO_OSDK_ARGS) --gdb-server --gdb-server-addr :$(GDB_TCP_PORT)
+
+.PHONY: profile_client
+profile_client: $(CARGO_OSDK)
+	@cargo osdk profile $(CARGO_OSDK_ARGS) --remote :$(GDB_TCP_PORT) \
+		--samples $(GDB_PROFILE_COUNT) --interval $(GDB_PROFILE_INTERVAL) --format $(GDB_PROFILE_FORMAT)
 
 .PHONY: test
 test:
