@@ -19,8 +19,10 @@ version = "0.2.0"
 
 [dependencies]
 clap = { version = "4.4.17", features = ["cargo", "derive"] }
+chrono = "0.4.38"
 env_logger = "0.11.0"
 indexmap = "2.2.1"
+indicatif = "0.17.8" # For a commandline progress bar
 lazy_static = "1.4.0"
 log = "0.4.20"
 quote = "1.0.35"

@@ -8,7 +8,7 @@ use crate::{
 };
 
 pub fn execute_run_command(config: &Config, gdb_server_args: &GdbServerArgs) {
-    if gdb_server_args.is_gdb_enabled {
+    if gdb_server_args.enabled {
         use std::env;
         env::set_var(
             "RUSTFLAGS",
@@ -21,25 +21,29 @@ pub fn execute_run_command(config: &Config, gdb_server_args: &GdbServerArgs) {
     let target_name = get_current_crate_info().name;
 
     let mut config = config.clone();
-    if gdb_server_args.is_gdb_enabled {
+    if gdb_server_args.enabled {
         let qemu_gdb_args = {
-            let gdb_stub_addr = gdb_server_args.gdb_server_addr.as_str();
+            let gdb_stub_addr = gdb_server_args.host_addr.as_str();
             match gdb::stub_type_of(gdb_stub_addr) {
                 gdb::StubAddrType::Unix => {
                     format!(
-                        " -chardev socket,path={},server=on,wait=off,id=gdb0 -gdb chardev:gdb0 -S",
+                        " -chardev socket,path={},server=on,wait=off,id=gdb0 -gdb chardev:gdb0",
                         gdb_stub_addr
                     )
                 }
                 gdb::StubAddrType::Tcp => {
                     format!(
-                        " -gdb tcp:{} -S",
+                        " -gdb tcp:{}",
                         gdb::tcp_addr_util::format_tcp_addr(gdb_stub_addr)
                     )
                 }
             }
         };
         config.run.qemu.args += &qemu_gdb_args;
+
+        if gdb_server_args.wait_client {
+            config.run.qemu.args += " -S";
+        }
 
         // Ensure debug info added when debugging in the release profile.
         if config.run.build.profile.contains("release") {
@@ -53,7 +57,7 @@ pub fn execute_run_command(config: &Config, gdb_server_args: &GdbServerArgs) {
     let _vsc_launch_file = gdb_server_args.vsc_launch_file.then(|| {
         vsc::check_gdb_config(gdb_server_args);
         let profile = super::util::profile_name_adapter(&config.run.build.profile);
-        vsc::VscLaunchConfig::new(profile, &gdb_server_args.gdb_server_addr)
+        vsc::VscLaunchConfig::new(profile, &gdb_server_args.host_addr)
     });
 
     let default_bundle_directory = osdk_output_directory.join(target_name);
@@ -205,7 +209,7 @@ mod vsc {
         use crate::{error::Errno, error_msg};
         use std::process::exit;
 
-        if !args.is_gdb_enabled {
+        if !args.enabled {
             error_msg!(
                 "No need for a VSCode launch file without launching GDB server,\
                     pass '-h' for help"
@@ -214,7 +218,7 @@ mod vsc {
         }
 
         // check GDB server address
-        let gdb_stub_addr = args.gdb_server_addr.as_str();
+        let gdb_stub_addr = args.host_addr.as_str();
         if gdb_stub_addr.is_empty() {
             error_msg!("GDB server address is required to generate a VSCode launch file");
             exit(Errno::ParseMetadata as _);
