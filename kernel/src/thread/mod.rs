@@ -4,7 +4,10 @@
 
 use core::sync::atomic::Ordering;
 
-use ostd::{cpu::CpuSet, sync::PreemptDisabled, task::Task};
+use ostd::{
+    cpu::{AtomicCpuSet, CpuSet},
+    task::Task,
+};
 
 use self::status::{AtomicThreadStatus, ThreadStatus};
 use crate::{
@@ -34,8 +37,8 @@ pub struct Thread {
     status: AtomicThreadStatus,
     /// Thread priority
     priority: AtomicPriority,
-    /// Thread cpu affinity
-    cpu_affinity: SpinLock<CpuSet>,
+    /// Thread CPU affinity
+    cpu_affinity: AtomicCpuSet,
 }
 
 impl Thread {
@@ -52,7 +55,7 @@ impl Thread {
             data: Box::new(data),
             status: AtomicThreadStatus::new(status),
             priority: AtomicPriority::new(priority),
-            cpu_affinity: SpinLock::new(cpu_affinity),
+            cpu_affinity: AtomicCpuSet::new(cpu_affinity),
         }
     }
 
@@ -65,6 +68,11 @@ impl Thread {
             .data()
             .downcast_ref::<Arc<Thread>>()
             .cloned()
+    }
+
+    /// Returns the task associated with this thread.
+    pub fn task(&self) -> Arc<Task> {
+        self.task.upgrade().unwrap()
     }
 
     /// Gets the Thread from task's data.
@@ -116,14 +124,9 @@ impl Thread {
         self.priority.store(new_priority, Ordering::Relaxed)
     }
 
-    /// Acquires the lock of cpu affinity.
-    pub fn lock_cpu_affinity(&self) -> SpinLockGuard<CpuSet, PreemptDisabled> {
-        self.cpu_affinity.lock()
-    }
-
-    /// Updates the cpu affinity with the new value.
-    pub fn set_cpu_affinity(&self, new_cpu_affinity: CpuSet) {
-        *self.cpu_affinity.lock() = new_cpu_affinity;
+    /// Returns the reference to the atomic CPU affinity.
+    pub fn atomic_cpu_affinity(&self) -> &AtomicCpuSet {
+        &self.cpu_affinity
     }
 
     pub fn yield_now() {

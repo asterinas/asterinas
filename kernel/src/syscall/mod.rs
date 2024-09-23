@@ -93,7 +93,7 @@ mod rt_sigpending;
 mod rt_sigprocmask;
 mod rt_sigreturn;
 mod rt_sigsuspend;
-mod sched_getaffinity;
+mod sched_affinity;
 mod sched_yield;
 mod select;
 mod semctl;

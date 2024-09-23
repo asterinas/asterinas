@@ -80,6 +80,11 @@ impl CpuSet {
             .sum()
     }
 
+    /// Returns true if the set is empty.
+    pub fn is_empty(&self) -> bool {
+        self.bits.iter().all(|part| *part == 0)
+    }
+
     /// Adds all CPUs to the set.
     pub fn add_all(&mut self) {
         self.bits.fill(!0);
@@ -92,6 +97,8 @@ impl CpuSet {
     }
 
     /// Iterates over the CPUs in the set.
+    ///
+    /// The order of the iteration is guaranteed to be in ascending order.
     pub fn iter(&self) -> impl Iterator<Item = CpuId> + '_ {
         self.bits.iter().enumerate().flat_map(|(part_idx, &part)| {
             (0..BITS_PER_PART).filter_map(move |bit_idx| {
@@ -165,9 +172,9 @@ impl AtomicCpuSet {
     ///
     /// This operation can only be done in the [`Ordering::Relaxed`] memory
     /// order. It cannot be used to synchronize anything between CPUs.
-    pub fn store(&self, value: CpuSet) {
-        for (part, new_part) in self.bits.iter().zip(value.bits) {
-            part.store(new_part, Ordering::Relaxed);
+    pub fn store(&self, value: &CpuSet) {
+        for (part, new_part) in self.bits.iter().zip(value.bits.iter()) {
+            part.store(*new_part, Ordering::Relaxed);
         }
     }
 
@@ -260,7 +267,7 @@ mod test {
                 }
             }
 
-            atomic_set.store(CpuSet::with_capacity_val(test_num_cpus, 0));
+            atomic_set.store(&CpuSet::with_capacity_val(test_num_cpus, 0));
 
             for cpu_id in test_all_iter() {
                 assert!(!atomic_set.contains(cpu_id, Ordering::Relaxed));
