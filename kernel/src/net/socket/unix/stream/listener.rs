@@ -160,7 +160,7 @@ pub(super) struct Backlog {
     addr: UnixSocketAddrBound,
     pollee: Pollee,
     backlog: AtomicUsize,
-    incoming_conns: Mutex<Option<VecDeque<Connected>>>,
+    incoming_conns: SpinLock<Option<VecDeque<Connected>>>,
     wait_queue: WaitQueue,
 }
 
@@ -176,7 +176,7 @@ impl Backlog {
             addr,
             pollee,
             backlog: AtomicUsize::new(backlog),
-            incoming_conns: Mutex::new(incoming_sockets),
+            incoming_conns: SpinLock::new(incoming_sockets),
             wait_queue: WaitQueue::new(),
         }
     }

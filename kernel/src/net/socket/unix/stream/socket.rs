@@ -24,21 +24,21 @@ use crate::{
 };
 
 pub struct UnixStreamSocket {
-    state: RwLock<Takeable<State>>,
+    state: RwMutex<Takeable<State>>,
     is_nonblocking: AtomicBool,
 }
 
 impl UnixStreamSocket {
     pub(super) fn new_init(init: Init, is_nonblocking: bool) -> Arc<Self> {
         Arc::new(Self {
-            state: RwLock::new(Takeable::new(State::Init(init))),
+            state: RwMutex::new(Takeable::new(State::Init(init))),
             is_nonblocking: AtomicBool::new(is_nonblocking),
         })
     }
 
     pub(super) fn new_connected(connected: Connected, is_nonblocking: bool) -> Arc<Self> {
         Arc::new(Self {
-            state: RwLock::new(Takeable::new(State::Connected(connected))),
+            state: RwMutex::new(Takeable::new(State::Connected(connected))),
             is_nonblocking: AtomicBool::new(is_nonblocking),
         })
     }
