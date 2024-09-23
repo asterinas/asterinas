@@ -10,14 +10,11 @@
 //!
 //! IRQs are disabled while printing. So do not print long log messages.
 
-use alloc::format;
-
 use log::{LevelFilter, Metadata, Record};
 
 use crate::{
     arch::timer::Jiffies,
     boot::{kcmdline::ModuleArg, kernel_cmdline},
-    early_println,
 };
 
 const LOGGER: Logger = Logger {};
@@ -34,34 +31,43 @@ impl log::Log for Logger {
             return;
         }
 
-        let timestamp = format!("[{:>10.3}]", Jiffies::elapsed().as_duration().as_secs_f64());
-        let level = format!("{:<5}", record.level());
-        let record_str = format!("{}", record.args());
-
-        #[cfg(feature = "log_color")]
-        let (timestamp, level, record_str) = {
-            use alloc::string::ToString;
-
-            use owo_colors::OwoColorize;
-
-            let timestamp = timestamp.green();
-            let level = match record.level() {
-                log::Level::Error => level.red().to_string(),
-                log::Level::Warn => level.bright_yellow().to_string(),
-                log::Level::Info => level.blue().to_string(),
-                log::Level::Debug => level.bright_green().to_string(),
-                log::Level::Trace => level.bright_black().to_string(),
-            };
-            let record_str = record_str.default_color();
-            (timestamp, level, record_str)
-        };
+        let timestamp = Jiffies::elapsed().as_duration().as_secs_f64();
+        let level = record.level();
 
         // Use a global lock to prevent interleaving of log messages.
         use crate::sync::SpinLock;
         static RECORD_LOCK: SpinLock<()> = SpinLock::new(());
         let _lock = RECORD_LOCK.disable_irq().lock();
 
-        early_println!("{} {}: {}", timestamp, level, record_str);
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "log_color")]{
+                use owo_colors::Style;
+
+                let timestamp_style = Style::new().green();
+                let record_style = Style::new().default_color();
+                let level_style = match record.level() {
+                    log::Level::Error => Style::new().red(),
+                    log::Level::Warn => Style::new().bright_yellow(),
+                    log::Level::Info => Style::new().blue(),
+                    log::Level::Debug => Style::new().bright_green(),
+                    log::Level::Trace => Style::new().bright_black(),
+                };
+
+                crate::console::early_print(
+                    format_args!("{} {:<5}: {}\n",
+                    timestamp_style.style(format_args!("[{:>10.3}]", timestamp)),
+                    level_style.style(level),
+                    record_style.style(record.args()))
+                );
+            }else{
+                crate::console::early_print(
+                    format_args!("{} {:<5}: {}\n",
+                    format_args!("[{:>10.3}]", timestamp),
+                    level,
+                    record.args())
+                );
+            }
+        }
     }
 
     fn flush(&self) {}
