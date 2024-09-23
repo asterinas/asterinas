@@ -15,7 +15,7 @@ support the loading of Linux kernel modules.
 ## System Calls
 
 At the time of writing,
-Asterinas implements more than 160 out of the 336 system calls
+Asterinas implements 177 out of the 336 system calls
 provided by Linux on x86-64 architecture.
 
 | Numbers | Names            | Is Implemented  |
@@ -223,7 +223,7 @@ provided by Linux on x86-64 architecture.
 | 200     | tkill            | ❌              |
 | 201     | time             | ✅              |
 | 202     | futex            | ✅              |
-| 203     | sched_setaffinity | ❌             |
+| 203     | sched_setaffinity | ✅             |
 | 204     | sched_getaffinity | ✅             |
 | 205     | set_thread_area  | ❌              |
 | 206     | io_setup         | ❌              |
