@@ -64,7 +64,7 @@
 //!
 //! ```
 
-use ostd::cpu::CpuSet;
+use ostd::cpu::{CpuId, CpuSet};
 use spin::Once;
 use work_item::WorkItem;
 use worker_pool::WorkerPool;
@@ -150,7 +150,7 @@ impl WorkQueue {
 
     /// Request a pending work item. The `request_cpu` indicates the CPU where
     /// the calling worker is located.
-    fn dequeue(&self, request_cpu: u32) -> Option<Arc<WorkItem>> {
+    fn dequeue(&self, request_cpu: CpuId) -> Option<Arc<WorkItem>> {
         let mut inner = self.inner.disable_irq().lock();
         let index = inner
             .pending_work_items
@@ -160,7 +160,7 @@ impl WorkQueue {
         Some(item)
     }
 
-    fn has_pending_work_items(&self, request_cpu: u32) -> bool {
+    fn has_pending_work_items(&self, request_cpu: CpuId) -> bool {
         self.inner
             .disable_irq()
             .lock()

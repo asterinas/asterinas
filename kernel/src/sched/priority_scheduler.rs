@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use ostd::{
-    cpu::{num_cpus, CpuSet, PinCurrentCpu},
+    cpu::{num_cpus, CpuId, CpuSet, PinCurrentCpu},
     sync::PreemptDisabled,
     task::{
         scheduler::{
@@ -33,8 +33,8 @@ struct PreemptScheduler<T: PreemptSchedInfo + FromTask<U>, U: CommonSchedInfo> {
 }
 
 impl<T: PreemptSchedInfo + FromTask<U>, U: CommonSchedInfo> PreemptScheduler<T, U> {
-    fn new(nr_cpus: u32) -> Self {
-        let mut rq = Vec::with_capacity(nr_cpus as usize);
+    fn new(nr_cpus: usize) -> Self {
+        let mut rq = Vec::with_capacity(nr_cpus);
         for _ in 0..nr_cpus {
             rq.push(SpinLock::new(PreemptRunQueue::new()));
         }
@@ -42,7 +42,7 @@ impl<T: PreemptSchedInfo + FromTask<U>, U: CommonSchedInfo> PreemptScheduler<T, 
     }
 
     /// Selects a CPU for task to run on for the first time.
-    fn select_cpu(&self, entity: &PreemptSchedEntity<T, U>) -> u32 {
+    fn select_cpu(&self, entity: &PreemptSchedEntity<T, U>) -> CpuId {
         // If the CPU of a runnable task has been set before, keep scheduling
         // the task to that one.
         // TODO: Consider migrating tasks between CPUs for load balancing.
@@ -55,7 +55,7 @@ impl<T: PreemptSchedInfo + FromTask<U>, U: CommonSchedInfo> PreemptScheduler<T, 
         let mut minimum_load = usize::MAX;
 
         for candidate in entity.thread.cpu_affinity().iter() {
-            let rq = self.rq[candidate as usize].lock();
+            let rq = self.rq[candidate.as_usize()].lock();
             // A wild guess measuring the load of a runqueue. We assume that
             // real-time tasks are 4-times as important as normal tasks.
             let load = rq.real_time_entities.len() * 8
@@ -74,7 +74,7 @@ impl<T: PreemptSchedInfo + FromTask<U>, U: CommonSchedInfo> PreemptScheduler<T, 
 impl<T: Sync + Send + PreemptSchedInfo + FromTask<U>, U: Sync + Send + CommonSchedInfo> Scheduler<U>
     for PreemptScheduler<T, U>
 {
-    fn enqueue(&self, task: Arc<U>, flags: EnqueueFlags) -> Option<u32> {
+    fn enqueue(&self, task: Arc<U>, flags: EnqueueFlags) -> Option<CpuId> {
         let entity = PreemptSchedEntity::new(task);
         let mut still_in_rq = false;
         let target_cpu = {
@@ -88,7 +88,7 @@ impl<T: Sync + Send + PreemptSchedInfo + FromTask<U>, U: Sync + Send + CommonSch
             cpu_id
         };
 
-        let mut rq = self.rq[target_cpu as usize].disable_irq().lock();
+        let mut rq = self.rq[target_cpu.as_usize()].disable_irq().lock();
         if still_in_rq && let Err(_) = entity.task.cpu().set_if_is_none(target_cpu) {
             return None;
         }
@@ -105,14 +105,14 @@ impl<T: Sync + Send + PreemptSchedInfo + FromTask<U>, U: Sync + Send + CommonSch
 
     fn local_rq_with(&self, f: &mut dyn FnMut(&dyn LocalRunQueue<U>)) {
         let irq_guard = disable_local();
-        let local_rq: &PreemptRunQueue<T, U> = &self.rq[irq_guard.current_cpu() as usize].lock();
+        let local_rq: &PreemptRunQueue<T, U> = &self.rq[irq_guard.current_cpu().as_usize()].lock();
         f(local_rq);
     }
 
     fn local_mut_rq_with(&self, f: &mut dyn FnMut(&mut dyn LocalRunQueue<U>)) {
         let irq_guard = disable_local();
         let local_rq: &mut PreemptRunQueue<T, U> =
-            &mut self.rq[irq_guard.current_cpu() as usize].lock();
+            &mut self.rq[irq_guard.current_cpu().as_usize()].lock();
         f(local_rq);
     }
 }

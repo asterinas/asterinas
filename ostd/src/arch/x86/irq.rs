@@ -11,6 +11,7 @@ use spin::Once;
 use x86_64::registers::rflags::{self, RFlags};
 
 use crate::{
+    cpu::CpuId,
     sync::{Mutex, RwLock, RwLockReadGuard, SpinLock},
     trap::TrapFrame,
 };
@@ -160,11 +161,11 @@ impl Drop for IrqCallbackHandle {
 ///
 /// The caller must ensure that the CPU ID and the interrupt number corresponds
 /// to a safe function to call.
-pub(crate) unsafe fn send_ipi(cpu_id: u32, irq_num: u8) {
+pub(crate) unsafe fn send_ipi(cpu_id: CpuId, irq_num: u8) {
     use crate::arch::kernel::apic::{self, Icr};
 
     let icr = Icr::new(
-        apic::ApicId::from(cpu_id),
+        apic::ApicId::from(cpu_id.as_usize() as u32),
         apic::DestinationShorthand::NoShorthand,
         apic::TriggerMode::Edge,
         apic::Level::Assert,
