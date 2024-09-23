@@ -4,8 +4,11 @@ use ostd::{
     cpu::{num_cpus, CpuSet, PinCurrentCpu},
     sync::PreemptDisabled,
     task::{
-        scheduler::{inject_scheduler, EnqueueFlags, LocalRunQueue, Scheduler, UpdateFlags},
-        AtomicCpuId, Task,
+        scheduler::{
+            info::CommonSchedInfo, inject_scheduler, EnqueueFlags, LocalRunQueue, Scheduler,
+            UpdateFlags,
+        },
+        Task,
     },
     trap::disable_local,
 };
@@ -15,7 +18,7 @@ use crate::{prelude::*, thread::Thread};
 
 pub fn init() {
     let preempt_scheduler = Box::new(PreemptScheduler::default());
-    let scheduler = Box::<PreemptScheduler<Task>>::leak(preempt_scheduler);
+    let scheduler = Box::<PreemptScheduler<Thread, Task>>::leak(preempt_scheduler);
     inject_scheduler(scheduler);
 }
 
@@ -25,11 +28,11 @@ pub fn init() {
 /// are always prioritized during scheduling.
 /// Normal tasks are placed in the `normal_entities` queue and are only
 /// scheduled for execution when there are no real-time tasks.
-struct PreemptScheduler<T: PreemptSchedInfo> {
-    rq: Vec<SpinLock<PreemptRunQueue<T>>>,
+struct PreemptScheduler<T: PreemptSchedInfo + FromTask<U>, U: CommonSchedInfo> {
+    rq: Vec<SpinLock<PreemptRunQueue<T, U>>>,
 }
 
-impl<T: PreemptSchedInfo> PreemptScheduler<T> {
+impl<T: PreemptSchedInfo + FromTask<U>, U: CommonSchedInfo> PreemptScheduler<T, U> {
     fn new(nr_cpus: u32) -> Self {
         let mut rq = Vec::with_capacity(nr_cpus as usize);
         for _ in 0..nr_cpus {
@@ -39,11 +42,11 @@ impl<T: PreemptSchedInfo> PreemptScheduler<T> {
     }
 
     /// Selects a CPU for task to run on for the first time.
-    fn select_cpu(&self, runnable: &Arc<T>) -> u32 {
+    fn select_cpu(&self, entity: &PreemptSchedEntity<T, U>) -> u32 {
         // If the CPU of a runnable task has been set before, keep scheduling
         // the task to that one.
         // TODO: Consider migrating tasks between CPUs for load balancing.
-        if let Some(cpu_id) = runnable.cpu().get() {
+        if let Some(cpu_id) = entity.task.cpu().get() {
             return cpu_id;
         }
 
@@ -51,7 +54,7 @@ impl<T: PreemptSchedInfo> PreemptScheduler<T> {
         let mut selected = irq_guard.current_cpu();
         let mut minimum_load = usize::MAX;
 
-        for candidate in runnable.cpu_affinity().iter() {
+        for candidate in entity.thread.cpu_affinity().iter() {
             let rq = self.rq[candidate as usize].lock();
             // A wild guess measuring the load of a runqueue. We assume that
             // real-time tasks are 4-times as important as normal tasks.
@@ -68,12 +71,15 @@ impl<T: PreemptSchedInfo> PreemptScheduler<T> {
     }
 }
 
-impl<T: Sync + Send + PreemptSchedInfo> Scheduler<T> for PreemptScheduler<T> {
-    fn enqueue(&self, runnable: Arc<T>, flags: EnqueueFlags) -> Option<u32> {
+impl<T: Sync + Send + PreemptSchedInfo + FromTask<U>, U: Sync + Send + CommonSchedInfo> Scheduler<U>
+    for PreemptScheduler<T, U>
+{
+    fn enqueue(&self, task: Arc<U>, flags: EnqueueFlags) -> Option<u32> {
+        let entity = PreemptSchedEntity::new(task);
         let mut still_in_rq = false;
         let target_cpu = {
-            let mut cpu_id = self.select_cpu(&runnable);
-            if let Err(task_cpu_id) = runnable.cpu().set_if_is_none(cpu_id) {
+            let mut cpu_id = self.select_cpu(&entity);
+            if let Err(task_cpu_id) = entity.task.cpu().set_if_is_none(cpu_id) {
                 debug_assert!(flags != EnqueueFlags::Spawn);
                 still_in_rq = true;
                 cpu_id = task_cpu_id;
@@ -83,13 +89,12 @@ impl<T: Sync + Send + PreemptSchedInfo> Scheduler<T> for PreemptScheduler<T> {
         };
 
         let mut rq = self.rq[target_cpu as usize].disable_irq().lock();
-        if still_in_rq && let Err(_) = runnable.cpu().set_if_is_none(target_cpu) {
+        if still_in_rq && let Err(_) = entity.task.cpu().set_if_is_none(target_cpu) {
             return None;
         }
-        let entity = PreemptSchedEntity::new(runnable);
-        if entity.is_real_time() {
+        if entity.thread.is_real_time() {
             rq.real_time_entities.push_back(entity);
-        } else if entity.is_lowest() {
+        } else if entity.thread.is_lowest() {
             rq.lowest_entities.push_back(entity);
         } else {
             rq.normal_entities.push_back(entity);
@@ -98,34 +103,34 @@ impl<T: Sync + Send + PreemptSchedInfo> Scheduler<T> for PreemptScheduler<T> {
         Some(target_cpu)
     }
 
-    fn local_rq_with(&self, f: &mut dyn FnMut(&dyn LocalRunQueue<T>)) {
+    fn local_rq_with(&self, f: &mut dyn FnMut(&dyn LocalRunQueue<U>)) {
         let irq_guard = disable_local();
-        let local_rq: &PreemptRunQueue<T> = &self.rq[irq_guard.current_cpu() as usize].lock();
+        let local_rq: &PreemptRunQueue<T, U> = &self.rq[irq_guard.current_cpu() as usize].lock();
         f(local_rq);
     }
 
-    fn local_mut_rq_with(&self, f: &mut dyn FnMut(&mut dyn LocalRunQueue<T>)) {
+    fn local_mut_rq_with(&self, f: &mut dyn FnMut(&mut dyn LocalRunQueue<U>)) {
         let irq_guard = disable_local();
-        let local_rq: &mut PreemptRunQueue<T> =
+        let local_rq: &mut PreemptRunQueue<T, U> =
             &mut self.rq[irq_guard.current_cpu() as usize].lock();
         f(local_rq);
     }
 }
 
-impl Default for PreemptScheduler<Task> {
+impl Default for PreemptScheduler<Thread, Task> {
     fn default() -> Self {
         Self::new(num_cpus())
     }
 }
 
-struct PreemptRunQueue<T: PreemptSchedInfo> {
-    current: Option<PreemptSchedEntity<T>>,
-    real_time_entities: VecDeque<PreemptSchedEntity<T>>,
-    normal_entities: VecDeque<PreemptSchedEntity<T>>,
-    lowest_entities: VecDeque<PreemptSchedEntity<T>>,
+struct PreemptRunQueue<T: PreemptSchedInfo + FromTask<U>, U: CommonSchedInfo> {
+    current: Option<PreemptSchedEntity<T, U>>,
+    real_time_entities: VecDeque<PreemptSchedEntity<T, U>>,
+    normal_entities: VecDeque<PreemptSchedEntity<T, U>>,
+    lowest_entities: VecDeque<PreemptSchedEntity<T, U>>,
 }
 
-impl<T: PreemptSchedInfo> PreemptRunQueue<T> {
+impl<T: PreemptSchedInfo + FromTask<U>, U: CommonSchedInfo> PreemptRunQueue<T, U> {
     pub fn new() -> Self {
         Self {
             current: None,
@@ -136,9 +141,11 @@ impl<T: PreemptSchedInfo> PreemptRunQueue<T> {
     }
 }
 
-impl<T: Sync + Send + PreemptSchedInfo> LocalRunQueue<T> for PreemptRunQueue<T> {
-    fn current(&self) -> Option<&Arc<T>> {
-        self.current.as_ref().map(|entity| &entity.runnable)
+impl<T: PreemptSchedInfo + FromTask<U>, U: CommonSchedInfo> LocalRunQueue<U>
+    for PreemptRunQueue<T, U>
+{
+    fn current(&self) -> Option<&Arc<U>> {
+        self.current.as_ref().map(|entity| &entity.task)
     }
 
     fn update_current(&mut self, flags: UpdateFlags) -> bool {
@@ -148,13 +155,14 @@ impl<T: Sync + Send + PreemptSchedInfo> LocalRunQueue<T> for PreemptRunQueue<T> 
                     return false;
                 };
                 current_entity.tick()
-                    || (!current_entity.is_real_time() && !self.real_time_entities.is_empty())
+                    || (!current_entity.thread.is_real_time()
+                        && !self.real_time_entities.is_empty())
             }
             _ => true,
         }
     }
 
-    fn pick_next_current(&mut self) -> Option<&Arc<T>> {
+    fn pick_next_current(&mut self) -> Option<&Arc<U>> {
         let next_entity = if !self.real_time_entities.is_empty() {
             self.real_time_entities.pop_front()
         } else if !self.normal_entities.is_empty() {
@@ -163,47 +171,42 @@ impl<T: Sync + Send + PreemptSchedInfo> LocalRunQueue<T> for PreemptRunQueue<T> 
             self.lowest_entities.pop_front()
         }?;
         if let Some(prev_entity) = self.current.replace(next_entity) {
-            if prev_entity.is_real_time() {
+            if prev_entity.thread.is_real_time() {
                 self.real_time_entities.push_back(prev_entity);
-            } else if prev_entity.is_lowest() {
+            } else if prev_entity.thread.is_lowest() {
                 self.lowest_entities.push_back(prev_entity);
             } else {
                 self.normal_entities.push_back(prev_entity);
             }
         }
 
-        Some(&self.current.as_ref().unwrap().runnable)
+        Some(&self.current.as_ref().unwrap().task)
     }
 
-    fn dequeue_current(&mut self) -> Option<Arc<T>> {
+    fn dequeue_current(&mut self) -> Option<Arc<U>> {
         self.current.take().map(|entity| {
-            let runnable = entity.runnable;
+            let runnable = entity.task;
             runnable.cpu().set_to_none();
 
             runnable
         })
     }
 }
-
-struct PreemptSchedEntity<T: PreemptSchedInfo> {
-    runnable: Arc<T>,
+struct PreemptSchedEntity<T: PreemptSchedInfo + FromTask<U>, U: CommonSchedInfo> {
+    task: Arc<U>,
+    thread: Arc<T>,
     time_slice: TimeSlice,
 }
 
-impl<T: PreemptSchedInfo> PreemptSchedEntity<T> {
-    fn new(runnable: Arc<T>) -> Self {
+impl<T: PreemptSchedInfo + FromTask<U>, U: CommonSchedInfo> PreemptSchedEntity<T, U> {
+    fn new(task: Arc<U>) -> Self {
+        let thread = T::from_task(&task);
+        let time_slice = TimeSlice::default();
         Self {
-            runnable,
-            time_slice: TimeSlice::default(),
+            task,
+            thread,
+            time_slice,
         }
-    }
-
-    fn is_real_time(&self) -> bool {
-        self.runnable.is_real_time()
-    }
-
-    fn is_lowest(&self) -> bool {
-        self.runnable.is_lowest()
     }
 
     fn tick(&mut self) -> bool {
@@ -211,10 +214,11 @@ impl<T: PreemptSchedInfo> PreemptSchedEntity<T> {
     }
 }
 
-impl<T: PreemptSchedInfo> Clone for PreemptSchedEntity<T> {
+impl<T: PreemptSchedInfo + FromTask<U>, U: CommonSchedInfo> Clone for PreemptSchedEntity<T, U> {
     fn clone(&self) -> Self {
         Self {
-            runnable: self.runnable.clone(),
+            task: self.task.clone(),
+            thread: self.thread.clone(),
             time_slice: self.time_slice,
         }
     }
@@ -245,26 +249,16 @@ impl Default for TimeSlice {
     }
 }
 
-impl PreemptSchedInfo for Task {
+impl PreemptSchedInfo for Thread {
     const REAL_TIME_TASK_PRIORITY: Priority = Priority::new(PriorityRange::new(100));
     const LOWEST_TASK_PRIORITY: Priority = Priority::new(PriorityRange::new(PriorityRange::MAX));
 
     fn priority(&self) -> Priority {
-        self.data()
-            .downcast_ref::<Arc<Thread>>()
-            .unwrap()
-            .priority()
-    }
-
-    fn cpu(&self) -> &AtomicCpuId {
-        &self.schedule_info().cpu
+        self.priority()
     }
 
     fn cpu_affinity(&self) -> SpinLockGuard<CpuSet, PreemptDisabled> {
-        self.data()
-            .downcast_ref::<Arc<Thread>>()
-            .unwrap()
-            .lock_cpu_affinity()
+        self.lock_cpu_affinity()
     }
 }
 
@@ -273,8 +267,6 @@ trait PreemptSchedInfo {
     const LOWEST_TASK_PRIORITY: Priority;
 
     fn priority(&self) -> Priority;
-
-    fn cpu(&self) -> &AtomicCpuId;
 
     fn cpu_affinity(&self) -> SpinLockGuard<CpuSet, PreemptDisabled>;
 
@@ -285,4 +277,14 @@ trait PreemptSchedInfo {
     fn is_lowest(&self) -> bool {
         self.priority() == Self::LOWEST_TASK_PRIORITY
     }
+}
+
+impl FromTask<Task> for Thread {
+    fn from_task(task: &Arc<Task>) -> Arc<Self> {
+        task.data().downcast_ref::<Arc<Self>>().unwrap().clone()
+    }
+}
+
+trait FromTask<U> {
+    fn from_task(task: &Arc<U>) -> Arc<Self>;
 }
