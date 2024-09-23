@@ -7,7 +7,11 @@ use core::{
     time::Duration,
 };
 
-use ostd::{cpu::CpuSet, sync::WaitQueue, task::Task};
+use ostd::{
+    cpu::{CpuId, CpuSet},
+    sync::WaitQueue,
+    task::Task,
+};
 
 use super::{simple_scheduler::SimpleScheduler, worker::Worker, WorkItem, WorkPriority, WorkQueue};
 use crate::{
@@ -34,7 +38,7 @@ pub struct WorkerPool {
 
 /// A set of workers for a specific CPU.
 pub struct LocalWorkerPool {
-    cpu_id: u32,
+    cpu_id: CpuId,
     idle_wait_queue: WaitQueue,
     parent: Weak<WorkerPool>,
     /// A liveness check for LocalWorkerPool. The monitor periodically clears heartbeat,
@@ -66,7 +70,7 @@ pub struct Monitor {
 }
 
 impl LocalWorkerPool {
-    fn new(worker_pool: Weak<WorkerPool>, cpu_id: u32) -> Self {
+    fn new(worker_pool: Weak<WorkerPool>, cpu_id: CpuId) -> Self {
         LocalWorkerPool {
             cpu_id,
             idle_wait_queue: WaitQueue::new(),
@@ -151,7 +155,7 @@ impl WorkerPool {
         self.work_queues.disable_irq().lock().push(work_queue);
     }
 
-    pub fn has_pending_work_items(&self, request_cpu: u32) -> bool {
+    pub fn has_pending_work_items(&self, request_cpu: CpuId) -> bool {
         self.work_queues
             .disable_irq()
             .lock()
@@ -163,7 +167,7 @@ impl WorkerPool {
         self.scheduler.schedule();
     }
 
-    pub fn num_workers(&self, cpu_id: u32) -> u16 {
+    pub fn num_workers(&self, cpu_id: CpuId) -> u16 {
         self.local_pool(cpu_id).workers.disable_irq().lock().len() as u16
     }
 
@@ -171,7 +175,7 @@ impl WorkerPool {
         &self.cpu_set
     }
 
-    pub(super) fn fetch_pending_work_item(&self, request_cpu: u32) -> Option<Arc<WorkItem>> {
+    pub(super) fn fetch_pending_work_item(&self, request_cpu: CpuId) -> Option<Arc<WorkItem>> {
         for work_queue in self.work_queues.disable_irq().lock().iter() {
             let item = work_queue.dequeue(request_cpu);
             if item.is_some() {
@@ -181,22 +185,22 @@ impl WorkerPool {
         None
     }
 
-    fn local_pool(&self, cpu_id: u32) -> &Arc<LocalWorkerPool> {
+    fn local_pool(&self, cpu_id: CpuId) -> &Arc<LocalWorkerPool> {
         self.local_pools
             .iter()
             .find(|local_pool: &&Arc<LocalWorkerPool>| local_pool.cpu_id == cpu_id)
             .unwrap()
     }
 
-    pub(super) fn wake_worker(&self, cpu_id: u32) -> bool {
+    pub(super) fn wake_worker(&self, cpu_id: CpuId) -> bool {
         self.local_pool(cpu_id).wake_worker()
     }
 
-    pub(super) fn add_worker(&self, cpu_id: u32) {
+    pub(super) fn add_worker(&self, cpu_id: CpuId) {
         self.local_pool(cpu_id).add_worker();
     }
 
-    pub(super) fn remove_worker(&self, cpu_id: u32) {
+    pub(super) fn remove_worker(&self, cpu_id: CpuId) {
         self.local_pool(cpu_id).remove_worker();
     }
 
@@ -204,15 +208,15 @@ impl WorkerPool {
         self.priority == WorkPriority::High
     }
 
-    pub(super) fn heartbeat(&self, cpu_id: u32) -> bool {
+    pub(super) fn heartbeat(&self, cpu_id: CpuId) -> bool {
         self.local_pool(cpu_id).heartbeat()
     }
 
-    pub(super) fn set_heartbeat(&self, cpu_id: u32, heartbeat: bool) {
+    pub(super) fn set_heartbeat(&self, cpu_id: CpuId, heartbeat: bool) {
         self.local_pool(cpu_id).set_heartbeat(heartbeat)
     }
 
-    pub(super) fn idle_current_worker(&self, cpu_id: u32, worker: Arc<Worker>) {
+    pub(super) fn idle_current_worker(&self, cpu_id: CpuId, worker: Arc<Worker>) {
         self.local_pool(cpu_id).idle_current_worker(worker);
     }
 }
