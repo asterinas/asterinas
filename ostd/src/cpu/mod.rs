@@ -3,6 +3,7 @@
 //! CPU-related definitions.
 
 pub mod local;
+pub mod set;
 
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "x86_64")] {
@@ -12,7 +13,7 @@ cfg_if::cfg_if! {
     }
 }
 
-use bitvec::prelude::BitVec;
+pub use set::{AtomicCpuSet, CpuSet};
 use spin::Once;
 
 use crate::{
@@ -87,73 +88,4 @@ unsafe impl PinCurrentCpu for DisabledPreemptGuard {}
 cpu_local_cell! {
     /// The number of the current CPU.
     static CURRENT_CPU: u32 = u32::MAX;
-}
-
-/// A subset of all CPUs in the system.
-///
-/// This structure can be used to mask out a subset of CPUs in the system.
-#[derive(Clone, Debug, Default)]
-pub struct CpuSet {
-    bitset: BitVec,
-}
-
-impl CpuSet {
-    /// Creates a new `CpuSet` with all CPUs in the system.
-    pub fn new_full() -> Self {
-        let num_cpus = num_cpus();
-        let mut bitset = BitVec::with_capacity(num_cpus as usize);
-        bitset.resize(num_cpus as usize, true);
-        Self { bitset }
-    }
-
-    /// Creates a new `CpuSet` with no CPUs in the system.
-    pub fn new_empty() -> Self {
-        let num_cpus = num_cpus();
-        let mut bitset = BitVec::with_capacity(num_cpus as usize);
-        bitset.resize(num_cpus as usize, false);
-        Self { bitset }
-    }
-
-    /// Adds a CPU to the set.
-    pub fn add(&mut self, cpu_id: u32) {
-        self.bitset.set(cpu_id as usize, true);
-    }
-
-    /// Adds all CPUs to the set.
-    pub fn add_all(&mut self) {
-        self.bitset.fill(true);
-    }
-
-    /// Removes a CPU from the set.
-    pub fn remove(&mut self, cpu_id: u32) {
-        self.bitset.set(cpu_id as usize, false);
-    }
-
-    /// Removes all CPUs from the set.
-    pub fn clear(&mut self) {
-        self.bitset.fill(false);
-    }
-
-    /// Returns true if the set contains the specified CPU.
-    pub fn contains(&self, cpu_id: u32) -> bool {
-        self.bitset.get(cpu_id as usize).as_deref() == Some(&true)
-    }
-
-    /// Returns the number of CPUs in the set.
-    pub fn count(&self) -> usize {
-        self.bitset.count_ones()
-    }
-
-    /// Iterates over the CPUs in the set.
-    pub fn iter(&self) -> impl Iterator<Item = u32> + '_ {
-        self.bitset.iter_ones().map(|idx| idx as u32)
-    }
-}
-
-impl From<u32> for CpuSet {
-    fn from(cpu_id: u32) -> Self {
-        let mut set = Self::new_empty();
-        set.add(cpu_id);
-        set
-    }
 }
