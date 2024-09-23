@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::sync::atomic::Ordering;
+
 use ostd::{
     cpu::{num_cpus, CpuId, CpuSet, PinCurrentCpu},
-    sync::PreemptDisabled,
     task::{
         scheduler::{
             info::CommonSchedInfo, inject_scheduler, EnqueueFlags, LocalRunQueue, Scheduler,
@@ -254,11 +255,11 @@ impl PreemptSchedInfo for Thread {
     const LOWEST_TASK_PRIORITY: Priority = Priority::new(PriorityRange::new(PriorityRange::MAX));
 
     fn priority(&self) -> Priority {
-        self.priority()
+        self.atomic_priority().load(Ordering::Relaxed)
     }
 
-    fn cpu_affinity(&self) -> SpinLockGuard<CpuSet, PreemptDisabled> {
-        self.lock_cpu_affinity()
+    fn cpu_affinity(&self) -> CpuSet {
+        self.atomic_cpu_affinity().load()
     }
 }
 
@@ -268,7 +269,7 @@ trait PreemptSchedInfo {
 
     fn priority(&self) -> Priority;
 
-    fn cpu_affinity(&self) -> SpinLockGuard<CpuSet, PreemptDisabled>;
+    fn cpu_affinity(&self) -> CpuSet;
 
     fn is_real_time(&self) -> bool {
         self.priority() < Self::REAL_TIME_TASK_PRIORITY
