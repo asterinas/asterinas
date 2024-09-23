@@ -79,7 +79,7 @@ use crate::syscall::{
     rt_sigpending::sys_rt_sigpending,
     rt_sigprocmask::sys_rt_sigprocmask,
     rt_sigsuspend::sys_rt_sigsuspend,
-    sched_getaffinity::sys_sched_getaffinity,
+    sched_affinity::{sys_sched_getaffinity, sys_sched_setaffinity},
     sched_yield::sys_sched_yield,
     semctl::sys_semctl,
     semget::sys_semget,
@@ -191,6 +191,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_SETITIMER = 103          => sys_setitimer(args[..3]);
     SYS_TIMER_CREATE = 107       => sys_timer_create(args[..3]);
     SYS_TIMER_DELETE = 111       => sys_timer_delete(args[..1]);
+    SYS_SCHED_SETAFFINITY = 122  => sys_sched_setaffinity(args[..3]);
     SYS_SCHED_GETAFFINITY = 123  => sys_sched_getaffinity(args[..3]);
     SYS_SCHED_YIELD = 124        => sys_sched_yield(args[..0]);
     SYS_KILL = 129               => sys_kill(args[..2]);
