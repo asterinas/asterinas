@@ -189,7 +189,13 @@ fn do_futimesat(
 ) -> Result<SyscallReturn> {
     let times = if timeval_ptr != 0 {
         let (autime, mutime) = read_time_from_user::<timeval_t>(timeval_ptr, ctx)?;
-        if autime.usec >= 1000000 || autime.usec < 0 || mutime.usec >= 1000000 || mutime.usec < 0 {
+        if autime.usec >= 1000000
+            || autime.usec < 0
+            || autime.sec < 0
+            || mutime.usec >= 1000000
+            || mutime.usec < 0
+            || mutime.sec < 0
+        {
             return_errno_with_message!(Errno::EINVAL, "Invalid time");
         }
         let (autime, mutime) = (timespec_t::from(autime), timespec_t::from(mutime));
