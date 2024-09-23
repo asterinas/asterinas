@@ -21,6 +21,66 @@ use crate::{
     arch::boot::smp::get_num_processors, task::DisabledPreemptGuard, trap::DisabledLocalIrqGuard,
 };
 
+/// The ID of a CPU in the system.
+///
+/// If converting from/to an integer, the integer must start from 0 and be less
+/// than the number of CPUs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CpuId(u32);
+
+impl CpuId {
+    /// Returns the CPU ID of the bootstrap processor (BSP).
+    pub const fn bsp() -> Self {
+        CpuId(0)
+    }
+
+    /// Converts the CPU ID to an `usize`.
+    pub const fn as_usize(self) -> usize {
+        self.0 as usize
+    }
+
+    /// Converts the CPU ID to an `u32`.
+    pub const fn as_u32(self) -> u32 {
+        self.0
+    }
+}
+
+impl TryFrom<usize> for CpuId {
+    type Error = &'static str;
+
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        if value < num_cpus() {
+            Ok(CpuId(value as u32))
+        } else {
+            Err("The given CPU ID is out of range")
+        }
+    }
+}
+
+impl TryFrom<u32> for CpuId {
+    type Error = &'static str;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        if (value as usize) < num_cpus() {
+            Ok(CpuId(value))
+        } else {
+            Err("The given CPU ID is out of range")
+        }
+    }
+}
+
+impl From<CpuId> for usize {
+    fn from(id: CpuId) -> usize {
+        id.0 as usize
+    }
+}
+
+impl From<CpuId> for u32 {
+    fn from(id: CpuId) -> u32 {
+        id.0
+    }
+}
+
 /// The number of CPUs.
 static NUM_CPUS: Once<u32> = Once::new();
 
@@ -46,14 +106,20 @@ pub(crate) unsafe fn set_this_cpu_id(id: u32) {
 }
 
 /// Returns the number of CPUs.
-pub fn num_cpus() -> u32 {
+pub fn num_cpus() -> usize {
     debug_assert!(
         NUM_CPUS.get().is_some(),
         "The number of CPUs is not initialized"
     );
     // SAFETY: The number of CPUs is initialized. The unsafe version is used
     // to avoid the overhead of the check.
-    unsafe { *NUM_CPUS.get_unchecked() }
+    let num = unsafe { *NUM_CPUS.get_unchecked() };
+    num as usize
+}
+
+/// Returns an iterator over all CPUs.
+pub fn all_cpus() -> impl Iterator<Item = CpuId> {
+    (0..num_cpus()).map(|id| CpuId(id as u32))
 }
 
 /// A marker trait for guard types that can "pin" the current task to the
@@ -70,10 +136,10 @@ pub fn num_cpus() -> u32 {
 /// CPU while any one of the instances of the implemented structure exists.
 pub unsafe trait PinCurrentCpu {
     /// Returns the number of the current CPU.
-    fn current_cpu(&self) -> u32 {
+    fn current_cpu(&self) -> CpuId {
         let id = CURRENT_CPU.load();
         debug_assert_ne!(id, u32::MAX, "This CPU is not initialized");
-        id
+        CpuId(id)
     }
 }
 

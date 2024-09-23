@@ -4,7 +4,7 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use ostd::cpu::CpuSet;
+use ostd::cpu::{CpuId, CpuSet};
 
 use crate::prelude::*;
 
@@ -33,7 +33,7 @@ impl WorkItem {
         &mut self.cpu_affinity
     }
 
-    pub(super) fn is_valid_cpu(&self, cpu_id: u32) -> bool {
+    pub(super) fn is_valid_cpu(&self, cpu_id: CpuId) -> bool {
         self.cpu_affinity.contains(cpu_id)
     }
 
