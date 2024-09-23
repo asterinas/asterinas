@@ -22,7 +22,7 @@ use super::{
     kspace::KERNEL_PAGE_TABLE,
     page::DynPage,
     page_table::{PageTable, UserMode},
-    PageFlags, PageProperty, VmReader, VmWriter, PAGE_SIZE,
+    PageProperty, VmReader, VmWriter, PAGE_SIZE,
 };
 use crate::{
     arch::mm::{current_page_table_paddr, PageTableEntry, PagingConsts},
@@ -171,48 +171,6 @@ impl VmSpace {
         func: fn(&VmSpace, &CpuExceptionInfo) -> core::result::Result<(), ()>,
     ) {
         self.page_fault_handler.call_once(|| func);
-    }
-
-    /// Forks a new VM space with copy-on-write semantics.
-    ///
-    /// Both the parent and the newly forked VM space will be marked as
-    /// read-only. And both the VM space will take handles to the same
-    /// physical memory pages.
-    pub fn fork_copy_on_write(&self) -> Self {
-        // Protect the parent VM space as read-only.
-        let end = MAX_USERSPACE_VADDR;
-        let mut cursor = self.cursor_mut(&(0..end)).unwrap();
-        let mut op = |prop: &mut PageProperty| {
-            prop.flags -= PageFlags::W;
-        };
-
-        cursor.protect(end, &mut op);
-
-        let page_fault_handler = {
-            let new_handler = Once::new();
-            if let Some(handler) = self.page_fault_handler.get() {
-                new_handler.call_once(|| *handler);
-            }
-            new_handler
-        };
-
-        let CursorMut {
-            pt_cursor,
-            activation_lock,
-            ..
-        } = cursor;
-
-        let new_pt = self.pt.clone_with(pt_cursor);
-
-        // Release the activation lock after the page table is cloned to
-        // prevent modification to the parent page table while cloning.
-        drop(activation_lock);
-
-        Self {
-            pt: new_pt,
-            page_fault_handler,
-            activation_lock: RwLock::new(()),
-        }
     }
 
     /// Creates a reader to read data from the user space of the current task.
@@ -431,6 +389,44 @@ impl CursorMut<'_, '_> {
             self.issue_tlb_flush(TlbFlushOp::All, None);
         }
         self.dispatch_tlb_flush();
+    }
+
+    /// Copies the mapping from the given cursor to the current cursor.
+    ///
+    /// All the mappings in the current cursor's range must be empty. The
+    /// function allows the source cursor to operate on the mapping before
+    /// the copy happens. So it is equivalent to protect then duplicate.
+    /// Only the mapping is copied, the mapped pages are not copied.
+    ///
+    /// After the operation, both cursors will advance by the specified length.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if:
+    ///  - either one of the range to be copied is out of the range where any
+    ///    of the cursor is required to operate;
+    ///  - either one of the specified virtual address ranges only covers a
+    ///    part of a page.
+    ///  - the current cursor's range contains mapped pages.
+    pub fn copy_from(
+        &mut self,
+        src: &mut Self,
+        len: usize,
+        op: &mut impl FnMut(&mut PageProperty),
+    ) {
+        let va = src.virt_addr();
+
+        // SAFETY: Operations on user memory spaces are safe if it doesn't
+        // involve dropping any pages.
+        unsafe { self.pt_cursor.copy_from(&mut src.pt_cursor, len, op) };
+
+        if len > TLB_FLUSH_ALL_THRESHOLD * PAGE_SIZE {
+            src.issue_tlb_flush(TlbFlushOp::All, None);
+        } else {
+            src.issue_tlb_flush(TlbFlushOp::Range(va..va + len), None);
+        }
+
+        src.dispatch_tlb_flush();
     }
 
     fn issue_tlb_flush(&self, op: TlbFlushOp, drop_after_flush: Option<DynPage>) {

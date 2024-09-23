@@ -25,9 +25,7 @@
 //! the initialization of the entity that the PTE points to. This is taken care in this module.
 //!
 
-use core::{
-    fmt, marker::PhantomData, mem::ManuallyDrop, ops::Range, panic, sync::atomic::Ordering,
-};
+use core::{fmt, marker::PhantomData, mem::ManuallyDrop, panic, sync::atomic::Ordering};
 
 use super::{nr_subpage_per_huge, page_size, PageTableEntryTrait};
 use crate::{
@@ -372,74 +370,6 @@ where
             }
             Child::None
         }
-    }
-
-    /// Makes a copy of the page table node.
-    ///
-    /// This function allows you to control about the way to copy the children.
-    /// For indexes in `deep`, the children are deep copied and this function will be recursively called.
-    /// For indexes in `shallow`, the children are shallow copied as new references.
-    ///
-    /// You cannot shallow copy a child that is mapped to a page. Deep copying a page child will not
-    /// copy the mapped page but will copy the handle to the page.
-    ///
-    /// You cannot either deep copy or shallow copy a child that is mapped to an untracked page.
-    ///
-    /// The ranges must be disjoint.
-    pub(super) unsafe fn make_copy(&self, deep: Range<usize>, shallow: Range<usize>) -> Self {
-        debug_assert!(deep.end <= nr_subpage_per_huge::<C>());
-        debug_assert!(shallow.end <= nr_subpage_per_huge::<C>());
-        debug_assert!(deep.end <= shallow.start || deep.start >= shallow.end);
-
-        let mut new_pt = Self::alloc(self.level());
-        let mut copied_child_count = self.nr_children();
-        for i in deep {
-            if copied_child_count == 0 {
-                return new_pt;
-            }
-            match self.child(i, true) {
-                Child::PageTable(pt) => {
-                    let guard = pt.clone_shallow().lock();
-                    let new_child = guard.make_copy(0..nr_subpage_per_huge::<C>(), 0..0);
-                    let old = new_pt.replace_child(i, Child::PageTable(new_child.into_raw()), true);
-                    debug_assert!(old.is_none());
-                    copied_child_count -= 1;
-                }
-                Child::Page(page, prop) => {
-                    let old = new_pt.replace_child(i, Child::Page(page.clone(), prop), true);
-                    debug_assert!(old.is_none());
-                    copied_child_count -= 1;
-                }
-                Child::None => {}
-                Child::Untracked(_, _) => {
-                    unreachable!();
-                }
-            }
-        }
-
-        for i in shallow {
-            if copied_child_count == 0 {
-                return new_pt;
-            }
-            debug_assert_eq!(self.level(), C::NR_LEVELS);
-            match self.child(i, /*meaningless*/ true) {
-                Child::PageTable(pt) => {
-                    let old = new_pt.replace_child(
-                        i,
-                        Child::PageTable(pt.clone_shallow()),
-                        /*meaningless*/ true,
-                    );
-                    debug_assert!(old.is_none());
-                    copied_child_count -= 1;
-                }
-                Child::None => {}
-                Child::Page(_, _) | Child::Untracked(_, _) => {
-                    unreachable!();
-                }
-            }
-        }
-
-        new_pt
     }
 
     /// Splits the untracked huge page mapped at `idx` to smaller pages.

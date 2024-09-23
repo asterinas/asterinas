@@ -16,7 +16,7 @@ use align_ext::AlignExt;
 use aster_rights::Rights;
 use ostd::{
     cpu::CpuExceptionInfo,
-    mm::{VmSpace, MAX_USERSPACE_VADDR},
+    mm::{PageFlags, PageProperty, VmSpace, MAX_USERSPACE_VADDR},
 };
 
 use self::{
@@ -220,13 +220,6 @@ impl Vmar_ {
     }
 
     fn new_root() -> Arc<Self> {
-        fn handle_page_fault_wrapper(
-            vm_space: &VmSpace,
-            trap_info: &CpuExceptionInfo,
-        ) -> core::result::Result<(), ()> {
-            handle_page_fault_from_vm_space(vm_space, &trap_info.try_into().unwrap())
-        }
-
         let mut free_regions = BTreeMap::new();
         let root_region = FreeRegion::new(ROOT_VMAR_LOWEST_ADDR..ROOT_VMAR_CAP_ADDR);
         free_regions.insert(root_region.start(), root_region);
@@ -668,7 +661,9 @@ impl Vmar_ {
             let vm_space = if let Some(parent) = parent {
                 parent.vm_space().clone()
             } else {
-                Arc::new(self.vm_space().fork_copy_on_write())
+                let new_space = VmSpace::new();
+                new_space.register_page_fault_handler(handle_page_fault_wrapper);
+                Arc::new(new_space)
             };
             Vmar_::new(vmar_inner, vm_space, self.base, self.size, parent)
         };
@@ -694,16 +689,41 @@ impl Vmar_ {
         }
 
         // Clone mappings.
-        for (vm_mapping_base, vm_mapping) in &inner.vm_mappings {
-            let new_mapping = Arc::new(vm_mapping.new_fork(&new_vmar_)?);
-            new_vmar_
-                .inner
-                .lock()
-                .vm_mappings
-                .insert(*vm_mapping_base, new_mapping);
+        {
+            let new_vmspace = new_vmar_.vm_space();
+            let range = self.base..(self.base + self.size);
+            let mut new_cursor = new_vmspace.cursor_mut(&range).unwrap();
+            let cur_vmspace = self.vm_space();
+            let mut cur_cursor = cur_vmspace.cursor_mut(&range).unwrap();
+            for (vm_mapping_base, vm_mapping) in &inner.vm_mappings {
+                // Clone the `VmMapping` to the new VMAR.
+                let new_mapping = Arc::new(vm_mapping.new_fork(&new_vmar_)?);
+                new_vmar_
+                    .inner
+                    .lock()
+                    .vm_mappings
+                    .insert(*vm_mapping_base, new_mapping);
+
+                // Protect the mapping and copy to the new page table for COW.
+                cur_cursor.jump(*vm_mapping_base).unwrap();
+                new_cursor.jump(*vm_mapping_base).unwrap();
+                let mut op = |page: &mut PageProperty| {
+                    page.flags -= PageFlags::W;
+                };
+                new_cursor.copy_from(&mut cur_cursor, vm_mapping.map_size(), &mut op);
+            }
         }
+
         Ok(new_vmar_)
     }
+}
+
+/// This is for fallible user space write handling.
+fn handle_page_fault_wrapper(
+    vm_space: &VmSpace,
+    trap_info: &CpuExceptionInfo,
+) -> core::result::Result<(), ()> {
+    handle_page_fault_from_vm_space(vm_space, &trap_info.try_into().unwrap())
 }
 
 impl<R> Vmar<R> {
