@@ -92,53 +92,29 @@ impl PageTable<UserMode> {
             self.root.activate();
         }
     }
-
-    /// Create a cloned new page table.
-    ///
-    /// This method takes a mutable cursor to the old page table that locks the
-    /// entire virtual address range. The caller may implement the copy-on-write
-    /// mechanism by first protecting the old page table and then clone it using
-    /// this method.
-    ///
-    /// TODO: We may consider making the page table itself copy-on-write.
-    pub fn clone_with(
-        &self,
-        cursor: CursorMut<'_, UserMode, PageTableEntry, PagingConsts>,
-    ) -> Self {
-        let root_node = cursor.leak_root_guard().unwrap();
-
-        const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
-        let new_root_node = unsafe {
-            root_node.make_copy(
-                0..NR_PTES_PER_NODE / 2,
-                NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE,
-            )
-        };
-
-        PageTable::<UserMode> {
-            root: new_root_node.into_raw(),
-            _phantom: PhantomData,
-        }
-    }
 }
 
 impl PageTable<KernelMode> {
     /// Create a new user page table.
     ///
-    /// This should be the only way to create the first user page table, that is
-    /// to fork the kernel page table with all the kernel mappings shared.
-    ///
-    /// Then, one can use a user page table to call [`fork_copy_on_write`], creating
-    /// other child page tables.
+    /// This should be the only way to create the user page table, that is to
+    /// duplicate the kernel page table with all the kernel mappings shared.
     pub fn create_user_page_table(&self) -> PageTable<UserMode> {
         let root_node = self.root.clone_shallow().lock();
+        let mut new_node = PageTableNode::alloc(PagingConsts::NR_LEVELS);
 
+        // Make a shallow copy of the root node in the kernel space range.
+        // The user space range is not copied.
         const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
-        let new_root_node =
-            unsafe { root_node.make_copy(0..0, NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE) };
+        for i in NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE {
+            let child = root_node.child(i, /* meaningless */ true);
+            if !child.is_none() {
+                let _ = new_node.replace_child(i, child, /* meaningless */ true);
+            }
+        }
 
         PageTable::<UserMode> {
-            root: new_root_node.into_raw(),
+            root: new_node.into_raw(),
             _phantom: PhantomData,
         }
     }
