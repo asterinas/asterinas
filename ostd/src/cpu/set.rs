@@ -7,7 +7,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use smallvec::SmallVec;
 use static_assertions::const_assert_eq;
 
-use super::num_cpus;
+use super::{num_cpus, CpuId};
 
 /// A subset of all CPUs in the system.
 #[derive(Clone, Debug, Default)]
@@ -21,12 +21,12 @@ type InnerPart = u64;
 const BITS_PER_PART: usize = core::mem::size_of::<InnerPart>() * 8;
 const NR_PARTS_NO_ALLOC: usize = 2;
 
-const fn part_idx(cpu_id: u32) -> usize {
-    cpu_id as usize / BITS_PER_PART
+const fn part_idx(cpu_id: CpuId) -> usize {
+    cpu_id.as_usize() / BITS_PER_PART
 }
 
-const fn bit_idx(cpu_id: u32) -> usize {
-    cpu_id as usize % BITS_PER_PART
+const fn bit_idx(cpu_id: CpuId) -> usize {
+    cpu_id.as_usize() % BITS_PER_PART
 }
 
 const fn parts_for_cpus(num_cpus: usize) -> usize {
@@ -36,18 +36,18 @@ const fn parts_for_cpus(num_cpus: usize) -> usize {
 impl CpuSet {
     /// Creates a new `CpuSet` with all CPUs in the system.
     pub fn new_full() -> Self {
-        let mut ret = Self::with_capacity_val(num_cpus() as usize, !0);
+        let mut ret = Self::with_capacity_val(num_cpus(), !0);
         ret.clear_nonexistent_cpu_bits();
         ret
     }
 
     /// Creates a new `CpuSet` with no CPUs in the system.
     pub fn new_empty() -> Self {
-        Self::with_capacity_val(num_cpus() as usize, 0)
+        Self::with_capacity_val(num_cpus(), 0)
     }
 
     /// Adds a CPU to the set.
-    pub fn add(&mut self, cpu_id: u32) {
+    pub fn add(&mut self, cpu_id: CpuId) {
         let part_idx = part_idx(cpu_id);
         let bit_idx = bit_idx(cpu_id);
         if part_idx >= self.bits.len() {
@@ -57,7 +57,7 @@ impl CpuSet {
     }
 
     /// Removes a CPU from the set.
-    pub fn remove(&mut self, cpu_id: u32) {
+    pub fn remove(&mut self, cpu_id: CpuId) {
         let part_idx = part_idx(cpu_id);
         let bit_idx = bit_idx(cpu_id);
         if part_idx < self.bits.len() {
@@ -66,7 +66,7 @@ impl CpuSet {
     }
 
     /// Returns true if the set contains the specified CPU.
-    pub fn contains(&self, cpu_id: u32) -> bool {
+    pub fn contains(&self, cpu_id: CpuId) -> bool {
         let part_idx = part_idx(cpu_id);
         let bit_idx = bit_idx(cpu_id);
         part_idx < self.bits.len() && (self.bits[part_idx] & (1 << bit_idx)) != 0
@@ -92,11 +92,12 @@ impl CpuSet {
     }
 
     /// Iterates over the CPUs in the set.
-    pub fn iter(&self) -> impl Iterator<Item = u32> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = CpuId> + '_ {
         self.bits.iter().enumerate().flat_map(|(part_idx, &part)| {
             (0..BITS_PER_PART).filter_map(move |bit_idx| {
                 if (part & (1 << bit_idx)) != 0 {
-                    Some((part_idx * BITS_PER_PART + bit_idx) as u32)
+                    let id = part_idx * BITS_PER_PART + bit_idx;
+                    Some(CpuId(id as u32))
                 } else {
                     None
                 }
@@ -113,7 +114,7 @@ impl CpuSet {
     }
 
     fn clear_nonexistent_cpu_bits(&mut self) {
-        let num_cpus = num_cpus() as usize;
+        let num_cpus = num_cpus();
         if num_cpus % BITS_PER_PART != 0 {
             let num_parts = parts_for_cpus(num_cpus);
             self.bits[num_parts - 1] &= (1 << (num_cpus % BITS_PER_PART)) - 1;
@@ -121,8 +122,8 @@ impl CpuSet {
     }
 }
 
-impl From<u32> for CpuSet {
-    fn from(cpu_id: u32) -> Self {
+impl From<CpuId> for CpuSet {
+    fn from(cpu_id: CpuId) -> Self {
         let mut set = Self::new_empty();
         set.add(cpu_id);
         set
@@ -171,7 +172,7 @@ impl AtomicCpuSet {
     }
 
     /// Atomically adds a CPU with the given ordering.
-    pub fn add(&self, cpu_id: u32, ordering: Ordering) {
+    pub fn add(&self, cpu_id: CpuId, ordering: Ordering) {
         let part_idx = part_idx(cpu_id);
         let bit_idx = bit_idx(cpu_id);
         if part_idx < self.bits.len() {
@@ -180,7 +181,7 @@ impl AtomicCpuSet {
     }
 
     /// Atomically removes a CPU with the given ordering.
-    pub fn remove(&self, cpu_id: u32, ordering: Ordering) {
+    pub fn remove(&self, cpu_id: CpuId, ordering: Ordering) {
         let part_idx = part_idx(cpu_id);
         let bit_idx = bit_idx(cpu_id);
         if part_idx < self.bits.len() {
@@ -189,7 +190,7 @@ impl AtomicCpuSet {
     }
 
     /// Atomically checks if the set contains the specified CPU.
-    pub fn contains(&self, cpu_id: u32, ordering: Ordering) -> bool {
+    pub fn contains(&self, cpu_id: CpuId, ordering: Ordering) -> bool {
         let part_idx = part_idx(cpu_id);
         let bit_idx = bit_idx(cpu_id);
         part_idx < self.bits.len() && (self.bits[part_idx].load(ordering) & (1 << bit_idx)) != 0
@@ -199,24 +200,23 @@ impl AtomicCpuSet {
 #[cfg(ktest)]
 mod test {
     use super::*;
-    use crate::prelude::*;
+    use crate::{cpu::all_cpus, prelude::*};
 
     #[ktest]
     fn test_full_cpu_set_iter_is_all() {
         let set = CpuSet::new_full();
         let num_cpus = num_cpus();
-        let all_cpus = (0..num_cpus).collect::<Vec<_>>();
+        let all_cpus = all_cpus().collect::<Vec<_>>();
         let set_cpus = set.iter().collect::<Vec<_>>();
 
-        assert!(set_cpus.len() == num_cpus as usize);
+        assert!(set_cpus.len() == num_cpus);
         assert_eq!(set_cpus, all_cpus);
     }
 
     #[ktest]
     fn test_full_cpu_set_contains_all() {
         let set = CpuSet::new_full();
-        let num_cpus = num_cpus();
-        for cpu_id in 0..num_cpus {
+        for cpu_id in all_cpus() {
             assert!(set.contains(cpu_id));
         }
     }
@@ -231,28 +231,29 @@ mod test {
     #[ktest]
     fn test_empty_cpu_set_contains_none() {
         let set = CpuSet::new_empty();
-        let num_cpus = num_cpus();
-        for cpu_id in 0..num_cpus {
+        for cpu_id in all_cpus() {
             assert!(!set.contains(cpu_id));
         }
     }
 
     #[ktest]
     fn test_atomic_cpu_set_multiple_sizes() {
-        for test_num_cpus in [1, 3, 12, 64, 96, 99, 128, 256, 288, 1024] {
+        for test_num_cpus in [1usize, 3, 12, 64, 96, 99, 128, 256, 288, 1024] {
+            let test_all_iter = || (0..test_num_cpus).map(|id| CpuId(id as u32));
+
             let set = CpuSet::with_capacity_val(test_num_cpus, 0);
             let atomic_set = AtomicCpuSet::new(set);
 
-            for cpu_id in 0..test_num_cpus as u32 {
+            for cpu_id in test_all_iter() {
                 assert!(!atomic_set.contains(cpu_id, Ordering::Relaxed));
-                if cpu_id % 3 == 0 {
+                if cpu_id.as_usize() % 3 == 0 {
                     atomic_set.add(cpu_id, Ordering::Relaxed);
                 }
             }
 
             let loaded = atomic_set.load();
             for cpu_id in loaded.iter() {
-                if cpu_id % 3 == 0 {
+                if cpu_id.as_usize() % 3 == 0 {
                     assert!(loaded.contains(cpu_id));
                 } else {
                     assert!(!loaded.contains(cpu_id));
@@ -261,7 +262,7 @@ mod test {
 
             atomic_set.store(CpuSet::with_capacity_val(test_num_cpus, 0));
 
-            for cpu_id in 0..test_num_cpus as u32 {
+            for cpu_id in test_all_iter() {
                 assert!(!atomic_set.contains(cpu_id, Ordering::Relaxed));
                 atomic_set.add(cpu_id, Ordering::Relaxed);
             }

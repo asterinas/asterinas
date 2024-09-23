@@ -95,7 +95,7 @@ pub unsafe fn init_on_bsp() {
 
     let num_cpus = super::num_cpus();
 
-    let mut cpu_local_storages = Vec::with_capacity(num_cpus as usize - 1);
+    let mut cpu_local_storages = Vec::with_capacity(num_cpus - 1);
     for _ in 1..num_cpus {
         let ap_pages = {
             let nbytes = (bsp_end_va - bsp_base_va).align_up(PAGE_SIZE);

@@ -115,7 +115,7 @@ fn ap_init() -> ! {
         let preempt_guard = ostd::task::disable_preempt();
         let cpu_id = preempt_guard.current_cpu();
         drop(preempt_guard);
-        log::info!("Kernel idle thread for CPU #{} started.", cpu_id);
+        log::info!("Kernel idle thread for CPU #{} started.", cpu_id.as_usize());
         loop {
             Thread::yield_now();
         }

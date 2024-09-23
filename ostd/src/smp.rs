@@ -72,7 +72,7 @@ fn do_inter_processor_call(_trapframe: &TrapFrame) {
     let mut queue = CALL_QUEUES.get_on_cpu(cur_cpu).lock();
     while let Some(f) = queue.pop_front() {
         log::trace!(
-            "Performing inter-processor call to {:#?} on CPU {}",
+            "Performing inter-processor call to {:#?} on CPU {:#?}",
             f,
             cur_cpu
         );

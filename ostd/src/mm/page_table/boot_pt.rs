@@ -68,7 +68,7 @@ where
 ///    another page table and before this dismissal.
 pub(crate) unsafe fn dismiss() {
     IS_DISMISSED.store(true);
-    if DISMISS_COUNT.fetch_add(1, Ordering::SeqCst) == num_cpus() - 1 {
+    if DISMISS_COUNT.fetch_add(1, Ordering::SeqCst) as usize == num_cpus() - 1 {
         BOOT_PAGE_TABLE.lock().take();
     }
 }
