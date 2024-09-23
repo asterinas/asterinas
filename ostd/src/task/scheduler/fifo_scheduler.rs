@@ -2,11 +2,13 @@
 
 use alloc::{boxed::Box, collections::VecDeque, sync::Arc, vec::Vec};
 
-use super::{inject_scheduler, EnqueueFlags, LocalRunQueue, Scheduler, UpdateFlags};
+use super::{
+    info::CommonSchedInfo, inject_scheduler, EnqueueFlags, LocalRunQueue, Scheduler, UpdateFlags,
+};
 use crate::{
     cpu::{num_cpus, PinCurrentCpu},
     sync::SpinLock,
-    task::{disable_preempt, AtomicCpuId, Task},
+    task::{disable_preempt, Task},
 };
 
 pub fn init() {
@@ -16,12 +18,12 @@ pub fn init() {
 }
 
 /// A simple FIFO (First-In-First-Out) task scheduler.
-struct FifoScheduler<T: FifoSchedInfo> {
+struct FifoScheduler<T: CommonSchedInfo> {
     /// A thread-safe queue to hold tasks waiting to be executed.
     rq: Vec<SpinLock<FifoRunQueue<T>>>,
 }
 
-impl<T: FifoSchedInfo> FifoScheduler<T> {
+impl<T: CommonSchedInfo> FifoScheduler<T> {
     /// Creates a new instance of `FifoScheduler`.
     fn new(nr_cpus: u32) -> Self {
         let mut rq = Vec::new();
@@ -37,7 +39,7 @@ impl<T: FifoSchedInfo> FifoScheduler<T> {
     }
 }
 
-impl<T: FifoSchedInfo + Send + Sync> Scheduler<T> for FifoScheduler<T> {
+impl<T: CommonSchedInfo + Send + Sync> Scheduler<T> for FifoScheduler<T> {
     fn enqueue(&self, runnable: Arc<T>, flags: EnqueueFlags) -> Option<u32> {
         let mut still_in_rq = false;
         let target_cpu = {
@@ -77,12 +79,12 @@ impl<T: FifoSchedInfo + Send + Sync> Scheduler<T> for FifoScheduler<T> {
     }
 }
 
-struct FifoRunQueue<T: FifoSchedInfo> {
+struct FifoRunQueue<T: CommonSchedInfo> {
     current: Option<Arc<T>>,
     queue: VecDeque<Arc<T>>,
 }
 
-impl<T: FifoSchedInfo> FifoRunQueue<T> {
+impl<T: CommonSchedInfo> FifoRunQueue<T> {
     pub const fn new() -> Self {
         Self {
             current: None,
@@ -91,7 +93,7 @@ impl<T: FifoSchedInfo> FifoRunQueue<T> {
     }
 }
 
-impl<T: FifoSchedInfo> LocalRunQueue<T> for FifoRunQueue<T> {
+impl<T: CommonSchedInfo> LocalRunQueue<T> for FifoRunQueue<T> {
     fn current(&self) -> Option<&Arc<T>> {
         self.current.as_ref()
     }
@@ -118,14 +120,4 @@ impl Default for FifoScheduler<Task> {
     fn default() -> Self {
         Self::new(num_cpus())
     }
-}
-
-impl FifoSchedInfo for Task {
-    fn cpu(&self) -> &AtomicCpuId {
-        &self.schedule_info().cpu
-    }
-}
-
-trait FifoSchedInfo {
-    fn cpu(&self) -> &AtomicCpuId;
 }

@@ -4,6 +4,8 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
+use crate::task::Task;
+
 /// Fields of a task that OSTD will never touch.
 ///
 /// The type ought to be defined by the OSTD user and injected into the task.
@@ -60,4 +62,16 @@ impl Default for AtomicCpuId {
     fn default() -> Self {
         Self::new(Self::NONE)
     }
+}
+
+impl CommonSchedInfo for Task {
+    fn cpu(&self) -> &AtomicCpuId {
+        &self.schedule_info().cpu
+    }
+}
+
+/// Trait for fetching common scheduling information.
+pub trait CommonSchedInfo {
+    /// Gets the CPU that the task is running on or lately ran on.
+    fn cpu(&self) -> &AtomicCpuId;
 }
