@@ -13,7 +13,12 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use spin::Once;
 
 use super::{preempt::cpu_local, processor, Task};
-use crate::{cpu::PinCurrentCpu, prelude::*, task::disable_preempt, timer};
+use crate::{
+    cpu::{CpuId, PinCurrentCpu},
+    prelude::*,
+    task::disable_preempt,
+    timer,
+};
 
 /// Injects a scheduler implementation into framework.
 ///
@@ -40,7 +45,7 @@ pub trait Scheduler<T = Task>: Sync + Send {
     ///
     /// If the `current` of a CPU needs to be preempted, this method returns the id of
     /// that CPU.
-    fn enqueue(&self, runnable: Arc<T>, flags: EnqueueFlags) -> Option<u32>;
+    fn enqueue(&self, runnable: Arc<T>, flags: EnqueueFlags) -> Option<CpuId>;
 
     /// Gets an immutable access to the local runqueue of the current CPU core.
     fn local_rq_with(&self, f: &mut dyn FnMut(&dyn LocalRunQueue<T>));

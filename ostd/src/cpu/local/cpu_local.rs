@@ -5,7 +5,7 @@
 use core::{marker::Sync, ops::Deref};
 
 use super::{__cpu_local_end, __cpu_local_start};
-use crate::{arch, trap::DisabledLocalIrqGuard};
+use crate::{arch, cpu::CpuId, trap::DisabledLocalIrqGuard};
 
 /// Defines a CPU-local variable.
 ///
@@ -139,8 +139,10 @@ impl<T: 'static + Sync> CpuLocal<T> {
     /// # Panics
     ///
     /// Panics if the CPU ID is out of range.
-    pub fn get_on_cpu(&'static self, cpu_id: u32) -> &'static T {
+    pub fn get_on_cpu(&'static self, cpu_id: CpuId) -> &'static T {
         super::has_init::assert_true();
+
+        let cpu_id = cpu_id.as_usize();
 
         // If on the BSP, just use the statically linked storage.
         if cpu_id == 0 {
@@ -153,7 +155,7 @@ impl<T: 'static + Sync> CpuLocal<T> {
         let base = unsafe {
             super::CPU_LOCAL_STORAGES
                 .get_unchecked()
-                .get(cpu_id as usize - 1)
+                .get(cpu_id - 1)
                 .unwrap()
                 .start_paddr()
         };

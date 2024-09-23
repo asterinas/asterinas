@@ -16,7 +16,7 @@ use core::{
 
 use crate::{
     arch::mm::{current_page_table_paddr, PageTableEntry, PagingConsts},
-    cpu::{num_cpus, CpuExceptionInfo, CpuSet, PinCurrentCpu},
+    cpu::{all_cpus, CpuExceptionInfo, CpuSet, PinCurrentCpu},
     cpu_local,
     mm::{
         io::Fallible,
@@ -93,7 +93,7 @@ impl VmSpace {
 
             let mut activated_cpus = CpuSet::new_empty();
 
-            for cpu in 0..num_cpus() {
+            for cpu in all_cpus() {
                 // The activation lock is held; other CPUs cannot activate this `VmSpace`.
                 let ptr =
                     ACTIVATED_VM_SPACE.get_on_cpu(cpu).load(Ordering::Relaxed) as *const VmSpace;

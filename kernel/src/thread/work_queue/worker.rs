@@ -2,7 +2,10 @@
 
 #![allow(dead_code)]
 
-use ostd::{cpu::CpuSet, task::Task};
+use ostd::{
+    cpu::{CpuId, CpuSet},
+    task::Task,
+};
 
 use super::worker_pool::WorkerPool;
 use crate::{
@@ -19,7 +22,7 @@ use crate::{
 pub(super) struct Worker {
     worker_pool: Weak<WorkerPool>,
     bound_task: Arc<Task>,
-    bound_cpu: u32,
+    bound_cpu: CpuId,
     inner: SpinLock<WorkerInner>,
 }
 
@@ -39,7 +42,7 @@ enum WorkerStatus {
 
 impl Worker {
     /// Creates a new `Worker` to the given `worker_pool`.
-    pub(super) fn new(worker_pool: Weak<WorkerPool>, bound_cpu: u32) -> Arc<Self> {
+    pub(super) fn new(worker_pool: Weak<WorkerPool>, bound_cpu: CpuId) -> Arc<Self> {
         Arc::new_cyclic(|worker_ref| {
             let weal_worker = worker_ref.clone();
             let task_fn = Box::new(move || {

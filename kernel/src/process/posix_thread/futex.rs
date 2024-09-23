@@ -164,7 +164,7 @@ static FUTEX_BUCKETS: Once<FutexBucketVec> = Once::new();
 /// This number is calculated the same way as Linux's:
 /// <https://github.com/torvalds/linux/blob/master/kernel/futex/core.c>
 fn get_bucket_count() -> usize {
-    ((1 << 8) * num_cpus()).next_power_of_two() as usize
+    ((1 << 8) * num_cpus()).next_power_of_two()
 }
 
 fn get_futex_bucket(key: FutexKey) -> (usize, FutexBucketRef) {
