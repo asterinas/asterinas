@@ -823,10 +823,6 @@ where
         }
     }
 
-    pub fn preempt_guard(&self) -> &DisabledPreemptGuard {
-        &self.0.preempt_guard
-    }
-
     /// Goes down a level assuming the current slot is absent.
     ///
     /// This method will create a new child page table node and go down to it.

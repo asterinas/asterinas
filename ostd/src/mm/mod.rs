@@ -18,6 +18,7 @@ pub(crate) mod page;
 pub(crate) mod page_prop;
 pub(crate) mod page_table;
 pub mod stat;
+pub mod tlb;
 pub mod vm_space;
 
 use core::{fmt::Debug, ops::Range};
