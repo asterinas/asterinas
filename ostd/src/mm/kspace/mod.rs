@@ -17,17 +17,17 @@
 //! +-+ <- 0xffff_ffff_8000_0000
 //! | |
 //! | |         Unused hole.
-//! +-+ <- 0xffff_ff00_0000_0000
-//! | |         For frame metadata, 1 TiB.
-//! | |         Mapped frames are tracked with handles.
-//! +-+ <- 0xffff_fe00_0000_0000
-//! | |         For vm alloc/io mappings, 1 TiB.
-//! | |         Mapped frames are tracked with handles.
-//! +-+ <- 0xffff_fd00_0000_0000
+//! +-+ <- 0xffff_e100_0000_0000
+//! | |         For frame metadata, 1 TiB. Mapped frames are untracked.
+//! +-+ <- 0xffff_e000_0000_0000
+//! | |         For [`kva::Kva`], 16 TiB. Mapped pages are tracked with handles.
+//! +-+ <- 0xffff_d000_0000_0000
+//! | |         For [`kva::Kva`], 16 TiB. Mapped pages are untracked.
+//! +-+ <- the middle of the higher half (0xffff_c000_0000_0000)
 //! | |
 //! | |
 //! | |
-//! | |         For linear mappings.
+//! | |         For linear mappings, 64 TiB.
 //! | |         Mapped physical addresses are untracked.
 //! | |
 //! | |
@@ -37,6 +37,8 @@
 //!
 //! If the address width is (according to [`crate::arch::mm::PagingConsts`])
 //! 39 bits or 57 bits, the memory space just adjust proportionally.
+
+pub(crate) mod kva;
 
 use alloc::vec::Vec;
 use core::ops::Range;
@@ -85,13 +87,17 @@ const KERNEL_CODE_BASE_VADDR: usize = 0xffff_ffff_8000_0000 << ADDR_WIDTH_SHIFT;
 #[cfg(target_arch = "riscv64")]
 const KERNEL_CODE_BASE_VADDR: usize = 0xffff_ffff_0000_0000 << ADDR_WIDTH_SHIFT;
 
-const FRAME_METADATA_CAP_VADDR: Vaddr = 0xffff_ff00_0000_0000 << ADDR_WIDTH_SHIFT;
-const FRAME_METADATA_BASE_VADDR: Vaddr = 0xffff_fe00_0000_0000 << ADDR_WIDTH_SHIFT;
+const FRAME_METADATA_CAP_VADDR: Vaddr = 0xffff_e100_0000_0000 << ADDR_WIDTH_SHIFT;
+const FRAME_METADATA_BASE_VADDR: Vaddr = 0xffff_e000_0000_0000 << ADDR_WIDTH_SHIFT;
 pub(in crate::mm) const FRAME_METADATA_RANGE: Range<Vaddr> =
     FRAME_METADATA_BASE_VADDR..FRAME_METADATA_CAP_VADDR;
 
-const VMALLOC_BASE_VADDR: Vaddr = 0xffff_fd00_0000_0000 << ADDR_WIDTH_SHIFT;
-pub const VMALLOC_VADDR_RANGE: Range<Vaddr> = VMALLOC_BASE_VADDR..FRAME_METADATA_BASE_VADDR;
+const TRACKED_MAPPED_PAGES_BASE_VADDR: Vaddr = 0xffff_d000_0000_0000 << ADDR_WIDTH_SHIFT;
+pub const TRACKED_MAPPED_PAGES_RANGE: Range<Vaddr> =
+    TRACKED_MAPPED_PAGES_BASE_VADDR..FRAME_METADATA_BASE_VADDR;
+
+const VMALLOC_BASE_VADDR: Vaddr = 0xffff_c000_0000_0000 << ADDR_WIDTH_SHIFT;
+pub const VMALLOC_VADDR_RANGE: Range<Vaddr> = VMALLOC_BASE_VADDR..TRACKED_MAPPED_PAGES_BASE_VADDR;
 
 /// The base address of the linear mapping of all physical
 /// memory in the kernel address space.
