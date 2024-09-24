@@ -178,8 +178,7 @@ impl TaskOptions {
         // to at least 16 bytes. And a larger alignment is needed if larger arguments
         // are passed to the function. The `kernel_task_entry` function does not
         // have any arguments, so we only need to align the stack pointer to 16 bytes.
-        ctx.get_mut()
-            .set_stack_pointer(crate::mm::paddr_to_vaddr(kstack.end_paddr() - 16));
+        ctx.get_mut().set_stack_pointer(kstack.end_vaddr() - 16);
 
         let new_task = Task {
             func: SyncUnsafeCell::new(self.func),

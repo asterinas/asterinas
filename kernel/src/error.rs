@@ -199,6 +199,7 @@ impl From<ostd::Error> for Error {
             ostd::Error::PageFault => Error::new(Errno::EFAULT),
             ostd::Error::Overflow => Error::new(Errno::EOVERFLOW),
             ostd::Error::MapAlreadyMappedVaddr => Error::new(Errno::EINVAL),
+            ostd::Error::KvaAllocError => Error::new(Errno::ENOMEM),
         }
     }
 }
