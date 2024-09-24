@@ -58,6 +58,9 @@ getset = "0.1.2"
 takeable = "0.2.2"
 cfg-if = "1.0"
 
+[target.riscv64gc-unknown-none-elf.dependencies]
+riscv = { version = "0.11.1", features = ["s-mode"] }
+
 [dependencies.lazy_static]
 version = "1.0"
 features = ["spin_no_std"]

@@ -186,6 +186,11 @@ pub struct HeaderPt2_64 {
 }
 
 fn check_elf_header(elf_header: &ElfHeader) -> Result<()> {
+    #[cfg(target_arch = "riscv64")]
+    const EXPECTED_ELF_MACHINE: header::Machine = header::Machine::RISC_V;
+    #[cfg(target_arch = "x86_64")]
+    const EXPECTED_ELF_MACHINE: header::Machine = header::Machine::X86_64;
+
     // 64bit
     debug_assert_eq!(elf_header.pt1.class(), header::Class::SixtyFour);
     if elf_header.pt1.class() != header::Class::SixtyFour {
@@ -201,14 +206,14 @@ fn check_elf_header(elf_header: &ElfHeader) -> Result<()> {
     // if elf_header.pt1.os_abi() != header::OsAbi::SystemV {
     //     return Error::new(Errno::ENOEXEC);
     // }
-    // x86_64 architecture
-    debug_assert_eq!(elf_header.pt2.machine.as_machine(), header::Machine::X86_64);
-    if elf_header.pt2.machine.as_machine() != header::Machine::X86_64 {
-        return_errno_with_message!(Errno::ENOEXEC, "Not x86_64 executable");
+    if elf_header.pt2.machine.as_machine() != EXPECTED_ELF_MACHINE {
+        return_errno_with_message!(
+            Errno::ENOEXEC,
+            "Executable could not be run on this architecture"
+        );
     }
     // Executable file or shared object
     let elf_type = elf_header.pt2.type_.as_type();
-    debug_assert!(elf_type == header::Type::Executable || elf_type == header::Type::SharedObject);
     if elf_type != header::Type::Executable && elf_type != header::Type::SharedObject {
         return_errno_with_message!(Errno::ENOEXEC, "Not executable file");
     }

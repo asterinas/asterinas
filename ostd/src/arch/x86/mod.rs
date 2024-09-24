@@ -39,7 +39,7 @@ use kernel::apic::ioapic;
 use log::{info, warn};
 
 #[cfg(feature = "cvm_guest")]
-pub(crate) fn check_tdx_init() {
+pub(crate) fn init_cvm_guest() {
     match init_tdx() {
         Ok(td_info) => {
             early_println!(
