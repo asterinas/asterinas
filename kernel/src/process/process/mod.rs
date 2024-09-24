@@ -101,6 +101,9 @@ pub struct Process {
     /// The signal that the process should receive when parent process exits.
     parent_death_signal: AtomicSigNum,
 
+    /// The signal that should be sent to the parent when this process exits.
+    exit_signal: AtomicSigNum,
+
     /// A profiling clock measures the user CPU time and kernel CPU time of the current process.
     prof_clock: Arc<ProfClock>,
 
@@ -218,6 +221,7 @@ impl Process {
             umask,
             sig_dispositions,
             parent_death_signal: AtomicSigNum::new_empty(),
+            exit_signal: AtomicSigNum::new_empty(),
             resource_limits: Mutex::new(resource_limits),
             nice: Atomic::new(nice),
             timer_manager: PosixTimerManager::new(&prof_clock, process_ref),
@@ -688,6 +692,14 @@ impl Process {
     /// when the process exits.
     pub fn parent_death_signal(&self) -> Option<SigNum> {
         self.parent_death_signal.as_sig_num()
+    }
+
+    pub fn set_exit_signal(&self, sig_num: SigNum) {
+        self.exit_signal.set(sig_num);
+    }
+
+    pub fn exit_signal(&self) -> Option<SigNum> {
+        self.exit_signal.as_sig_num()
     }
 
     // ******************* Status ********************
