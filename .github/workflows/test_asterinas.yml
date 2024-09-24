@@ -47,7 +47,7 @@ jobs:
   integration-test:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     container:
       image: asterinas/asterinas:0.8.3
       options: --device=/dev/kvm
