@@ -669,11 +669,11 @@ impl Vmar_ {
         };
 
         let inner = self.inner.lock();
+        let mut new_inner = new_vmar_.inner.lock();
+
         // Clone free regions.
         for (free_region_base, free_region) in &inner.free_regions {
-            new_vmar_
-                .inner
-                .lock()
+            new_inner
                 .free_regions
                 .insert(*free_region_base, free_region.clone());
         }
@@ -681,9 +681,7 @@ impl Vmar_ {
         // Clone child vmars.
         for (child_vmar_base, child_vmar_) in &inner.child_vmar_s {
             let new_child_vmar = child_vmar_.new_fork(Some(&new_vmar_))?;
-            new_vmar_
-                .inner
-                .lock()
+            new_inner
                 .child_vmar_s
                 .insert(*child_vmar_base, new_child_vmar);
         }
@@ -698,11 +696,7 @@ impl Vmar_ {
             for (vm_mapping_base, vm_mapping) in &inner.vm_mappings {
                 // Clone the `VmMapping` to the new VMAR.
                 let new_mapping = Arc::new(vm_mapping.new_fork(&new_vmar_)?);
-                new_vmar_
-                    .inner
-                    .lock()
-                    .vm_mappings
-                    .insert(*vm_mapping_base, new_mapping);
+                new_inner.vm_mappings.insert(*vm_mapping_base, new_mapping);
 
                 // Protect the mapping and copy to the new page table for COW.
                 cur_cursor.jump(*vm_mapping_base).unwrap();
@@ -713,6 +707,8 @@ impl Vmar_ {
                 new_cursor.copy_from(&mut cur_cursor, vm_mapping.map_size(), &mut op);
             }
         }
+
+        drop(new_inner);
 
         Ok(new_vmar_)
     }
