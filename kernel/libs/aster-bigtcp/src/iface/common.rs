@@ -47,6 +47,16 @@ impl<E> IfaceCommon<E> {
         }
     }
 
+    pub(super) fn ipv4_addr(&self) -> Option<Ipv4Address> {
+        self.interface.lock().ipv4_addr()
+    }
+
+    pub(super) fn ext(&self) -> &E {
+        &self.ext
+    }
+}
+
+impl<E> IfaceCommon<E> {
     /// Acquires the lock to the interface.
     ///
     /// *Lock ordering:* [`Self::sockets`] first, [`Self::interface`] second.
@@ -62,53 +72,12 @@ impl<E> IfaceCommon<E> {
     ) -> SpinLockGuard<smoltcp::iface::SocketSet<'static>, LocalIrqDisabled> {
         self.sockets.lock()
     }
+}
 
-    pub(super) fn ipv4_addr(&self) -> Option<Ipv4Address> {
-        self.interface.lock().ipv4_addr()
-    }
+const IP_LOCAL_PORT_START: u16 = 32768;
+const IP_LOCAL_PORT_END: u16 = 60999;
 
-    /// Allocates an unused ephemeral port.
-    ///
-    /// We follow the port range that many Linux kernels use by default, which is 32768-60999.
-    ///
-    /// See <https://en.wikipedia.org/wiki/Ephemeral_port>.
-    fn alloc_ephemeral_port(&self) -> Option<u16> {
-        let mut used_ports = self.used_ports.lock();
-        for port in IP_LOCAL_PORT_START..=IP_LOCAL_PORT_END {
-            if let Entry::Vacant(e) = used_ports.entry(port) {
-                e.insert(0);
-                return Some(port);
-            }
-        }
-        None
-    }
-
-    #[must_use]
-    fn bind_port(&self, port: u16, can_reuse: bool) -> bool {
-        let mut used_ports = self.used_ports.lock();
-        if let Some(used_times) = used_ports.get_mut(&port) {
-            if *used_times == 0 || can_reuse {
-                // FIXME: Check if the previous socket was bound with SO_REUSEADDR.
-                *used_times += 1;
-            } else {
-                return false;
-            }
-        } else {
-            used_ports.insert(port, 1);
-        }
-        true
-    }
-
-    /// Releases the port so that it can be used again (if it is not being reused).
-    pub(crate) fn release_port(&self, port: u16) {
-        let mut used_ports = self.used_ports.lock();
-        if let Some(used_times) = used_ports.remove(&port) {
-            if used_times != 1 {
-                used_ports.insert(port, used_times - 1);
-            }
-        }
-    }
-
+impl<E> IfaceCommon<E> {
     pub(super) fn bind_socket(
         &self,
         iface: Arc<dyn Iface<E>>,
@@ -145,11 +114,97 @@ impl<E> IfaceCommon<E> {
         Ok(bound_socket)
     }
 
-    /// Remove a socket from the interface
+    /// Allocates an unused ephemeral port.
+    ///
+    /// We follow the port range that many Linux kernels use by default, which is 32768-60999.
+    ///
+    /// See <https://en.wikipedia.org/wiki/Ephemeral_port>.
+    fn alloc_ephemeral_port(&self) -> Option<u16> {
+        let mut used_ports = self.used_ports.lock();
+        for port in IP_LOCAL_PORT_START..=IP_LOCAL_PORT_END {
+            if let Entry::Vacant(e) = used_ports.entry(port) {
+                e.insert(0);
+                return Some(port);
+            }
+        }
+        None
+    }
+
+    #[must_use]
+    fn bind_port(&self, port: u16, can_reuse: bool) -> bool {
+        let mut used_ports = self.used_ports.lock();
+        if let Some(used_times) = used_ports.get_mut(&port) {
+            if *used_times == 0 || can_reuse {
+                // FIXME: Check if the previous socket was bound with SO_REUSEADDR.
+                *used_times += 1;
+            } else {
+                return false;
+            }
+        } else {
+            used_ports.insert(port, 1);
+        }
+        true
+    }
+
+    fn insert_bound_socket(&self, socket: &Arc<AnyBoundSocketInner<E>>) {
+        let keyable_socket = KeyableArc::from(socket.clone());
+
+        let inserted = self
+            .bound_sockets
+            .write_irq_disabled()
+            .insert(keyable_socket);
+        assert!(inserted);
+    }
+}
+
+impl<E> IfaceCommon<E> {
+    /// Releases the port so that it can be used again (if it is not being reused).
+    pub(crate) fn release_port(&self, port: u16) {
+        let mut used_ports = self.used_ports.lock();
+        if let Some(used_times) = used_ports.remove(&port) {
+            if used_times != 1 {
+                used_ports.insert(port, used_times - 1);
+            }
+        }
+    }
+
+    /// Removes a socket from the interface.
     pub(crate) fn remove_socket(&self, handle: SocketHandle) {
         self.sockets.lock().remove(handle);
     }
 
+    pub(crate) fn remove_bound_socket_now(&self, socket: &Arc<AnyBoundSocketInner<E>>) {
+        let keyable_socket = KeyableArc::from(socket.clone());
+
+        let removed = self
+            .bound_sockets
+            .write_irq_disabled()
+            .remove(&keyable_socket);
+        assert!(removed);
+    }
+
+    pub(crate) fn remove_bound_socket_when_closed(&self, socket: &Arc<AnyBoundSocketInner<E>>) {
+        let keyable_socket = KeyableArc::from(socket.clone());
+
+        let removed = self
+            .bound_sockets
+            .write_irq_disabled()
+            .remove(&keyable_socket);
+        assert!(removed);
+
+        let mut closing_sockets = self.closing_sockets.lock();
+
+        // Check `is_closed` after holding the lock to avoid race conditions.
+        if keyable_socket.is_closed() {
+            return;
+        }
+
+        let inserted = closing_sockets.insert(keyable_socket);
+        assert!(inserted);
+    }
+}
+
+impl<E> IfaceCommon<E> {
     #[must_use]
     pub(super) fn poll<D: Device + ?Sized>(&self, device: &mut D) -> Option<u64> {
         let mut sockets = self.sockets.lock();
@@ -204,51 +259,4 @@ impl<E> IfaceCommon<E> {
 
         poll_at.map(|at| smoltcp::time::Instant::total_millis(&at) as u64)
     }
-
-    pub(super) fn ext(&self) -> &E {
-        &self.ext
-    }
-
-    fn insert_bound_socket(&self, socket: &Arc<AnyBoundSocketInner<E>>) {
-        let keyable_socket = KeyableArc::from(socket.clone());
-
-        let inserted = self
-            .bound_sockets
-            .write_irq_disabled()
-            .insert(keyable_socket);
-        assert!(inserted);
-    }
-
-    pub(crate) fn remove_bound_socket_now(&self, socket: &Arc<AnyBoundSocketInner<E>>) {
-        let keyable_socket = KeyableArc::from(socket.clone());
-
-        let removed = self
-            .bound_sockets
-            .write_irq_disabled()
-            .remove(&keyable_socket);
-        assert!(removed);
-    }
-
-    pub(crate) fn remove_bound_socket_when_closed(&self, socket: &Arc<AnyBoundSocketInner<E>>) {
-        let keyable_socket = KeyableArc::from(socket.clone());
-
-        let removed = self
-            .bound_sockets
-            .write_irq_disabled()
-            .remove(&keyable_socket);
-        assert!(removed);
-
-        let mut closing_sockets = self.closing_sockets.lock();
-
-        // Check `is_closed` after holding the lock to avoid race conditions.
-        if keyable_socket.is_closed() {
-            return;
-        }
-
-        let inserted = closing_sockets.insert(keyable_socket);
-        assert!(inserted);
-    }
 }
-
-const IP_LOCAL_PORT_START: u16 = 32768;
-const IP_LOCAL_PORT_END: u16 = 60999;
