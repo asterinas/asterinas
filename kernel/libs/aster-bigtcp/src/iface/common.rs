@@ -67,7 +67,11 @@ impl<E> IfaceCommon<E> {
         self.interface.lock().ipv4_addr()
     }
 
-    /// Alloc an unused port range from 49152 ~ 65535 (According to smoltcp docs)
+    /// Allocates an unused ephemeral port.
+    ///
+    /// We follow the port range that many Linux kernels use by default, which is 32768-60999.
+    ///
+    /// See <https://en.wikipedia.org/wiki/Ephemeral_port>.
     fn alloc_ephemeral_port(&self) -> Option<u16> {
         let mut used_ports = self.used_ports.lock();
         for port in IP_LOCAL_PORT_START..=IP_LOCAL_PORT_END {
@@ -95,7 +99,7 @@ impl<E> IfaceCommon<E> {
         true
     }
 
-    /// Release port number so the port can be used again. For reused port, the port may still be in use.
+    /// Releases the port so that it can be used again (if it is not being reused).
     pub(crate) fn release_port(&self, port: u16) {
         let mut used_ports = self.used_ports.lock();
         if let Some(used_times) = used_ports.remove(&port) {
@@ -246,5 +250,5 @@ impl<E> IfaceCommon<E> {
     }
 }
 
-const IP_LOCAL_PORT_START: u16 = 49152;
-const IP_LOCAL_PORT_END: u16 = 65535;
+const IP_LOCAL_PORT_START: u16 = 32768;
+const IP_LOCAL_PORT_END: u16 = 60999;
