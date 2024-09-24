@@ -345,6 +345,10 @@ fn clone_child_process(
         process_builder.build()?
     };
 
+    if let Some(sig) = clone_args.exit_signal {
+        child.set_exit_signal(sig);
+    };
+
     // Deals with clone flags
     let child_thread = thread_table::get_thread(child_tid).unwrap();
     let child_posix_thread = child_thread.as_posix_thread().unwrap();

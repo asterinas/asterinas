@@ -5,7 +5,7 @@ use crate::{
     prelude::*,
     process::{
         posix_thread::{do_exit, PosixThreadExt},
-        signal::{constants::SIGCHLD, signals::kernel::KernelSignal},
+        signal::signals::kernel::KernelSignal,
     },
     thread::Thread,
 };
@@ -60,10 +60,11 @@ pub fn do_exit_group(term_status: TermStatus) {
     let parent = current.parent().lock().process();
     if let Some(parent) = parent.upgrade() {
         // Notify parent
-        let signal = KernelSignal::new(SIGCHLD);
-        parent.enqueue_signal(signal);
+        if let Some(signal) = current.exit_signal().map(KernelSignal::new) {
+            parent.enqueue_signal(signal);
+        };
         parent.children_wait_queue().wake_all();
-    }
+    };
 }
 
 const INIT_PROCESS_PID: Pid = 1;

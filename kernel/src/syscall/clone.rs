@@ -7,11 +7,7 @@ use ostd::cpu::UserContext;
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::{
-        clone_child,
-        signal::{constants::SIGCHLD, sig_num::SigNum},
-        CloneArgs, CloneFlags,
-    },
+    process::{clone_child, signal::sig_num::SigNum, CloneArgs, CloneFlags},
 };
 
 // The order of arguments for clone differs in different architecture.
@@ -87,11 +83,7 @@ struct Clone3Args {
 
 impl From<Clone3Args> for CloneArgs {
     fn from(value: Clone3Args) -> Self {
-        // TODO: deal with pidfd, exit_signal, set_tid, set_tid_size, cgroup
-        if value.exit_signal != 0 || value.exit_signal as u8 != SIGCHLD.as_u8() {
-            warn!("exit signal is not supported");
-        }
-
+        // TODO: deal with pidfd, set_tid, set_tid_size, cgroup
         if value.pidfd != 0 {
             warn!("pidfd is not supported");
         }
