@@ -2,8 +2,9 @@
 
 use crate::{
     mm::{
-        kspace::kva::Kva,
+        kspace::kvirt_area::{KVirtArea, Tracked},
         page::{allocator, meta::KernelStackMeta},
+        page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
         PAGE_SIZE,
     },
     prelude::*,
@@ -26,25 +27,30 @@ pub const DEFAULT_STACK_SIZE_IN_PAGES: u32 = 128;
 pub static KERNEL_STACK_SIZE: usize = STACK_SIZE_IN_PAGES as usize * PAGE_SIZE;
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct KernelStack {
-    kva: Kva,
+    kvirt_area: KVirtArea<Tracked>,
     end_vaddr: Vaddr,
     has_guard_page: bool,
 }
 
 impl KernelStack {
-    /// Generates a kernel stack with a guard page.
-    /// An additional page is allocated and be regarded as a guard page, which should not be accessed.
+    /// Generates a kernel stack with guard pages.
+    /// 4 additional pages are allocated and regarded as guard pages, which should not be accessed.
     pub fn new_with_guard_page() -> Result<Self> {
-        let mut new_kva = Kva::new(KERNEL_STACK_SIZE + 4 * PAGE_SIZE);
-        let mapped_start = new_kva.range().start + 2 * PAGE_SIZE;
+        let mut new_kvirt_area = KVirtArea::<Tracked>::new(KERNEL_STACK_SIZE + 4 * PAGE_SIZE);
+        let mapped_start = new_kvirt_area.range().start + 2 * PAGE_SIZE;
         let mapped_end = mapped_start + KERNEL_STACK_SIZE;
         let pages = allocator::alloc(KERNEL_STACK_SIZE, |_| KernelStackMeta::default()).unwrap();
-        unsafe {
-            new_kva.map_pages(mapped_start..mapped_end, pages);
-        }
+        let prop = PageProperty {
+            flags: PageFlags::RW,
+            cache: CachePolicy::Writeback,
+            priv_flags: PrivilegedPageFlags::empty(),
+        };
+        new_kvirt_area.map_pages(mapped_start..mapped_end, pages.iter().cloned(), prop);
+
         Ok(Self {
-            kva: new_kva,
+            kvirt_area: new_kvirt_area,
             end_vaddr: mapped_end,
             has_guard_page: true,
         })

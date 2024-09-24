@@ -20,9 +20,9 @@
 //! +-+ <- 0xffff_e100_0000_0000
 //! | |         For frame metadata, 1 TiB. Mapped frames are untracked.
 //! +-+ <- 0xffff_e000_0000_0000
-//! | |         For [`kva::Kva`], 16 TiB. Mapped pages are tracked with handles.
+//! | |         For [`KVirtArea<Tracked>`], 16 TiB. Mapped pages are tracked with handles.
 //! +-+ <- 0xffff_d000_0000_0000
-//! | |         For [`kva::Kva`], 16 TiB. Mapped pages are untracked.
+//! | |         For [`KVirtArea<Untracked>`], 16 TiB. Mapped pages are untracked.
 //! +-+ <- the middle of the higher half (0xffff_c000_0000_0000)
 //! | |
 //! | |
@@ -38,7 +38,7 @@
 //! If the address width is (according to [`crate::arch::mm::PagingConsts`])
 //! 39 bits or 57 bits, the memory space just adjust proportionally.
 
-pub(crate) mod kva;
+pub(crate) mod kvirt_area;
 
 use alloc::vec::Vec;
 use core::ops::Range;
@@ -114,7 +114,7 @@ pub fn paddr_to_vaddr(pa: Paddr) -> usize {
 ///
 /// About what is tracked mapping, see [`crate::mm::page::meta::MapTrackingStatus`].
 pub(crate) fn should_map_as_tracked(addr: Vaddr) -> bool {
-    !LINEAR_MAPPING_VADDR_RANGE.contains(&addr)
+    !(LINEAR_MAPPING_VADDR_RANGE.contains(&addr) || VMALLOC_VADDR_RANGE.contains(&addr))
 }
 
 /// The kernel page table instance.

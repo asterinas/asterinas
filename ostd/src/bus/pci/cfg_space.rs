@@ -13,6 +13,7 @@ use super::PciDeviceLocation;
 use crate::{
     arch::device::io_port::{PortRead, PortWrite},
     io_mem::IoMem,
+    mm::page_prop::{CachePolicy, PageFlags},
     Error, Result,
 };
 
@@ -244,7 +245,13 @@ impl MemoryBar {
             size,
             prefetchable,
             address_length,
-            io_memory: unsafe { IoMem::new((base as usize)..((base + size as u64) as usize)) },
+            io_memory: unsafe {
+                IoMem::new(
+                    (base as usize)..((base + size as u64) as usize),
+                    PageFlags::RW,
+                    CachePolicy::Uncacheable,
+                )
+            },
         })
     }
 }
