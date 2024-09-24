@@ -1,11 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::num::NonZeroU64;
+
 use ostd::cpu::UserContext;
 
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::{clone_child, signal::constants::SIGCHLD, CloneArgs, CloneFlags},
+    process::{
+        clone_child,
+        signal::{constants::SIGCHLD, sig_num::SigNum},
+        CloneArgs, CloneFlags,
+    },
 };
 
 // The order of arguments for clone differs in different architecture.
@@ -19,10 +25,9 @@ pub fn sys_clone(
     ctx: &Context,
     parent_context: &UserContext,
 ) -> Result<SyscallReturn> {
-    let clone_flags = CloneFlags::from(clone_flags);
-    debug!("flags = {:?}, child_stack_ptr = 0x{:x}, parent_tid_ptr = 0x{:x}, child tid ptr = 0x{:x}, tls = 0x{:x}", clone_flags, new_sp, parent_tidptr, child_tidptr, tls);
-    let clone_args = CloneArgs::new(new_sp, 0, parent_tidptr, child_tidptr, tls, clone_flags);
-    let child_pid = clone_child(ctx, parent_context, clone_args).unwrap();
+    let args = CloneArgs::for_clone(clone_flags, parent_tidptr, child_tidptr, tls, new_sp)?;
+    debug!("flags = {:?}, child_stack_ptr = 0x{:x}, parent_tid_ptr = 0x{:x?}, child tid ptr = 0x{:x}, tls = 0x{:x}", args.flags, args.stack, args.parent_tid, args.child_tid, args.tls);
+    let child_pid = clone_child(ctx, parent_context, args).unwrap();
     Ok(SyscallReturn::Return(child_pid as _))
 }
 
@@ -82,10 +87,6 @@ struct Clone3Args {
 
 impl From<Clone3Args> for CloneArgs {
     fn from(value: Clone3Args) -> Self {
-        const FLAGS_MASK: u64 = 0xff;
-        let clone_flags =
-            CloneFlags::from(value.exit_signal & FLAGS_MASK | value.flags & !FLAGS_MASK);
-
         // TODO: deal with pidfd, exit_signal, set_tid, set_tid_size, cgroup
         if value.exit_signal != 0 || value.exit_signal as u8 != SIGCHLD.as_u8() {
             warn!("exit signal is not supported");
@@ -103,13 +104,18 @@ impl From<Clone3Args> for CloneArgs {
             warn!("cgroup is not supported");
         }
 
-        CloneArgs::new(
-            value.stack,
-            value.stack_size as _,
-            value.parent_tid as _,
-            value.child_tid as _,
-            value.tls,
-            clone_flags,
-        )
+        Self {
+            flags: CloneFlags::from_bits_truncate(value.flags as u32),
+            _pidfd: Some(value.pidfd),
+            child_tid: value.child_tid as _,
+            parent_tid: Some(value.parent_tid as _),
+            exit_signal: (value.exit_signal != 0).then(|| SigNum::from_u8(value.exit_signal as u8)),
+            stack: value.stack,
+            stack_size: NonZeroU64::new(value.stack_size),
+            tls: value.tls,
+            _set_tid: Some(value.set_tid),
+            _set_tid_size: Some(value.set_tid_size),
+            _cgroup: Some(value.cgroup),
+        }
     }
 }

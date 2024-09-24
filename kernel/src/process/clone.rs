@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::Ordering;
+use core::{num::NonZeroU64, sync::atomic::Ordering};
 
 use ostd::{
     cpu::UserContext,
@@ -12,7 +12,7 @@ use super::{
     posix_thread::{thread_table, PosixThread, PosixThreadBuilder, PosixThreadExt, ThreadName},
     process_table,
     process_vm::ProcessVm,
-    signal::sig_disposition::SigDispositions,
+    signal::{constants::SIGCHLD, sig_disposition::SigDispositions, sig_num::SigNum},
     Credentials, Process, ProcessBuilder,
 };
 use crate::{
@@ -25,6 +25,7 @@ use crate::{
 };
 
 bitflags! {
+    #[derive(Default)]
     pub struct CloneFlags: u32 {
         const CLONE_VM      = 0x00000100;       /* Set if VM shared between processes.  */
         const CLONE_FS      = 0x00000200;       /* Set if fs info shared between processes.  */
@@ -53,45 +54,91 @@ bitflags! {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+/// An internal structure to homogenize the arguments for `clone` and
+/// `clone3`.
+///
+/// From the clone(2) man page:
+///
+/// ```
+/// The following table shows the equivalence between the arguments
+/// of clone() and the fields in the clone_args argument supplied to
+/// clone3():
+///     clone()         clone3()        Notes
+///                     cl_args field
+///     flags & ~0xff   flags           For most flags; details
+///                                     below
+///     parent_tid      pidfd           See CLONE_PIDFD
+///     child_tid       child_tid       See CLONE_CHILD_SETTID
+///     parent_tid      parent_tid      See CLONE_PARENT_SETTID
+///     flags & 0xff    exit_signal
+///     stack           stack
+///     ---             stack_size
+///     tls             tls             See CLONE_SETTLS
+///     ---             set_tid         See below for details
+///     ---             set_tid_size
+///     ---             cgroup          See CLONE_INTO_CGROUP
+/// ```
+#[derive(Debug, Clone, Copy, Default)]
 pub struct CloneArgs {
-    new_sp: u64,
-    stack_size: usize,
-    parent_tidptr: Vaddr,
-    child_tidptr: Vaddr,
-    tls: u64,
-    clone_flags: CloneFlags,
+    pub flags: CloneFlags,
+    pub _pidfd: Option<u64>,
+    pub child_tid: Vaddr,
+    pub parent_tid: Option<Vaddr>,
+    pub exit_signal: Option<SigNum>,
+    pub stack: u64,
+    pub stack_size: Option<NonZeroU64>,
+    pub tls: u64,
+    pub _set_tid: Option<u64>,
+    pub _set_tid_size: Option<u64>,
+    pub _cgroup: Option<u64>,
 }
 
 impl CloneArgs {
-    /// Clone Args for syscall fork.
-    /// TODO: set the correct values
-    pub const fn for_fork() -> Self {
-        CloneArgs {
-            new_sp: 0,
-            stack_size: 0,
-            parent_tidptr: 0,
-            child_tidptr: 0,
-            tls: 0,
-            clone_flags: CloneFlags::empty(),
-        }
+    /// Prepares a new [`CloneArgs`] based on the arguments for clone(2).
+    pub fn for_clone(
+        raw_flags: u64,
+        parent_tid: Vaddr,
+        child_tid: Vaddr,
+        tls: u64,
+        stack: u64,
+    ) -> Result<Self> {
+        const FLAG_MASK: u64 = 0xff;
+        let flags = CloneFlags::from(raw_flags & !FLAG_MASK);
+        let exit_signal = raw_flags & FLAG_MASK;
+        // Disambiguate the `parent_tid` parameter. The field is used
+        // both for `CLONE_PIDFD` and `CLONE_PARENT_SETTID`, so at
+        // most only one can be specified.
+        let (pidfd, parent_tid) = match (
+            flags.contains(CloneFlags::CLONE_PIDFD),
+            flags.contains(CloneFlags::CLONE_PARENT_SETTID),
+        ) {
+            (false, false) => (None, None),
+            (true, false) => (Some(parent_tid as u64), None),
+            (false, true) => (None, Some(parent_tid)),
+            (true, true) => {
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "CLONE_PIDFD was specified with CLONE_PARENT_SETTID"
+                );
+            }
+        };
+
+        Ok(Self {
+            flags,
+            _pidfd: pidfd,
+            child_tid,
+            parent_tid,
+            exit_signal: (exit_signal != 0).then(|| SigNum::from_u8(exit_signal as u8)),
+            stack,
+            tls,
+            ..Default::default()
+        })
     }
 
-    pub const fn new(
-        new_sp: u64,
-        stack_size: usize,
-        parent_tidptr: Vaddr,
-        child_tidptr: Vaddr,
-        tls: u64,
-        clone_flags: CloneFlags,
-    ) -> Self {
-        CloneArgs {
-            new_sp,
-            stack_size,
-            parent_tidptr,
-            child_tidptr,
-            tls,
-            clone_flags,
+    pub fn for_fork() -> Self {
+        Self {
+            exit_signal: Some(SIGCHLD),
+            ..Default::default()
         }
     }
 }
@@ -133,8 +180,8 @@ pub fn clone_child(
     parent_context: &UserContext,
     clone_args: CloneArgs,
 ) -> Result<Tid> {
-    clone_args.clone_flags.check_unsupported_flags()?;
-    if clone_args.clone_flags.contains(CloneFlags::CLONE_THREAD) {
+    clone_args.flags.check_unsupported_flags()?;
+    if clone_args.flags.contains(CloneFlags::CLONE_THREAD) {
         let child_task = clone_child_task(ctx, parent_context, clone_args)?;
         let child_thread = Thread::borrow_from_task(&child_task);
         child_thread.run();
@@ -162,7 +209,7 @@ fn clone_child_task(
         task: _,
     } = ctx;
 
-    let clone_flags = clone_args.clone_flags;
+    let clone_flags = clone_args.flags;
     debug_assert!(clone_flags.contains(CloneFlags::CLONE_VM));
     debug_assert!(clone_flags.contains(CloneFlags::CLONE_FILES));
     debug_assert!(clone_flags.contains(CloneFlags::CLONE_SIGHAND));
@@ -172,7 +219,7 @@ fn clone_child_task(
         let child_vm_space = child_root_vmar.vm_space().clone();
         let child_cpu_context = clone_cpu_context(
             parent_context,
-            clone_args.new_sp,
+            clone_args.stack,
             clone_args.stack_size,
             clone_args.tls,
             clone_flags,
@@ -200,9 +247,9 @@ fn clone_child_task(
     process.tasks().lock().push(child_task.clone());
 
     let child_posix_thread = child_task.as_posix_thread().unwrap();
-    clone_parent_settid(child_tid, clone_args.parent_tidptr, clone_flags)?;
-    clone_child_cleartid(child_posix_thread, clone_args.child_tidptr, clone_flags)?;
-    clone_child_settid(child_posix_thread, clone_args.child_tidptr, clone_flags)?;
+    clone_parent_settid(child_tid, clone_args.parent_tid, clone_flags)?;
+    clone_child_cleartid(child_posix_thread, clone_args.child_tid, clone_flags)?;
+    clone_child_settid(child_posix_thread, clone_args.child_tid, clone_flags)?;
     Ok(child_task)
 }
 
@@ -218,7 +265,7 @@ fn clone_child_process(
         task: _,
     } = ctx;
 
-    let clone_flags = clone_args.clone_flags;
+    let clone_flags = clone_args.flags;
 
     // clone vm
     let child_process_vm = {
@@ -230,7 +277,7 @@ fn clone_child_process(
     let child_user_space = {
         let child_cpu_context = clone_cpu_context(
             parent_context,
-            clone_args.new_sp,
+            clone_args.stack,
             clone_args.stack_size,
             clone_args.tls,
             clone_flags,
@@ -301,9 +348,9 @@ fn clone_child_process(
     // Deals with clone flags
     let child_thread = thread_table::get_thread(child_tid).unwrap();
     let child_posix_thread = child_thread.as_posix_thread().unwrap();
-    clone_parent_settid(child_tid, clone_args.parent_tidptr, clone_flags)?;
-    clone_child_cleartid(child_posix_thread, clone_args.child_tidptr, clone_flags)?;
-    clone_child_settid(child_posix_thread, clone_args.child_tidptr, clone_flags)?;
+    clone_parent_settid(child_tid, clone_args.parent_tid, clone_flags)?;
+    clone_child_cleartid(child_posix_thread, clone_args.child_tid, clone_flags)?;
+    clone_child_settid(child_posix_thread, clone_args.child_tid, clone_flags)?;
 
     // Sets parent process and group for child process.
     set_parent_and_group(process, &child);
@@ -335,11 +382,13 @@ fn clone_child_settid(
 
 fn clone_parent_settid(
     child_tid: Tid,
-    parent_tidptr: Vaddr,
+    parent_tidptr: Option<Vaddr>,
     clone_flags: CloneFlags,
 ) -> Result<()> {
-    if clone_flags.contains(CloneFlags::CLONE_PARENT_SETTID) {
-        get_current_userspace!().write_val(parent_tidptr, &child_tid)?;
+    if let Some(addr) =
+        parent_tidptr.filter(|_| clone_flags.contains(CloneFlags::CLONE_PARENT_SETTID))
+    {
+        get_current_userspace!().write_val(addr, &child_tid)?;
     }
     Ok(())
 }
@@ -357,7 +406,7 @@ fn clone_vm(parent_process_vm: &ProcessVm, clone_flags: CloneFlags) -> Result<Pr
 fn clone_cpu_context(
     parent_context: &UserContext,
     new_sp: u64,
-    stack_size: usize,
+    stack_size: Option<NonZeroU64>,
     tls: u64,
     clone_flags: CloneFlags,
 ) -> UserContext {
@@ -371,8 +420,8 @@ fn clone_cpu_context(
     }
     if new_sp != 0 {
         // If stack size is not 0, the `new_sp` points to the BOTTOMMOST byte of stack.
-        if stack_size != 0 {
-            child_context.set_stack_pointer(new_sp as usize + stack_size);
+        if let Some(size) = stack_size {
+            child_context.set_stack_pointer((new_sp + size.get()) as usize)
         }
         // If stack size is 0, the new_sp points to the TOPMOST byte of stack.
         else {
