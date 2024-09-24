@@ -22,7 +22,7 @@ pub enum Error {
     /// Memory mapping already exists for the given virtual address.
     MapAlreadyMappedVaddr,
     /// Error when allocating kernel virtual memory.
-    KvaAllocError,
+    KVirtAreaAllocError,
 }
 
 impl From<PageTableError> for Error {
