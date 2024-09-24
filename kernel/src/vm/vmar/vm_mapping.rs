@@ -11,7 +11,8 @@ use core::{
 use align_ext::AlignExt;
 use aster_rights::Rights;
 use ostd::mm::{
-    vm_space::VmItem, CachePolicy, Frame, FrameAllocOptions, PageFlags, PageProperty, VmSpace,
+    tlb::TlbFlushOp, vm_space::VmItem, CachePolicy, Frame, FrameAllocOptions, PageFlags,
+    PageProperty, VmSpace,
 };
 
 use super::{interval::Interval, is_intersected, Vmar, Vmar_};
@@ -224,7 +225,7 @@ impl VmMapping {
 
         match cursor.query().unwrap() {
             VmItem::Mapped {
-                va: _,
+                va,
                 frame,
                 mut prop,
             } if is_write => {
@@ -245,7 +246,9 @@ impl VmMapping {
                 let new_flags = PageFlags::W | PageFlags::ACCESSED | PageFlags::DIRTY;
 
                 if self.is_shared || only_reference {
-                    cursor.protect(PAGE_SIZE, |p| p.flags |= new_flags);
+                    cursor.protect_next(PAGE_SIZE, |p| p.flags |= new_flags);
+                    cursor.flusher().issue_tlb_flush(TlbFlushOp::Address(va));
+                    cursor.flusher().dispatch_tlb_flush();
                 } else {
                     let new_frame = duplicate_frame(&frame)?;
                     prop.flags |= new_flags;
@@ -558,7 +561,15 @@ impl VmMappingInner {
         debug_assert!(range.start % PAGE_SIZE == 0);
         debug_assert!(range.end % PAGE_SIZE == 0);
         let mut cursor = vm_space.cursor_mut(&range).unwrap();
-        cursor.protect(range.len(), |p| p.flags = perms.into());
+        let op = |p: &mut PageProperty| p.flags = perms.into();
+        while cursor.virt_addr() < range.end {
+            if let Some(va) = cursor.protect_next(range.end - cursor.virt_addr(), op) {
+                cursor.flusher().issue_tlb_flush(TlbFlushOp::Range(va));
+            } else {
+                break;
+            }
+        }
+        cursor.flusher().dispatch_tlb_flush();
         Ok(())
     }
 

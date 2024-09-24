@@ -9,30 +9,25 @@
 //! powerful concurrent accesses to the page table, and suffers from the same
 //! validity concerns as described in [`super::page_table::cursor`].
 
-use alloc::collections::vec_deque::VecDeque;
 use core::{
     ops::Range,
     sync::atomic::{AtomicPtr, Ordering},
 };
 
-use super::{
-    io::Fallible,
-    kspace::KERNEL_PAGE_TABLE,
-    page::DynPage,
-    page_table::{PageTable, UserMode},
-    PageProperty, VmReader, VmWriter, PAGE_SIZE,
-};
 use crate::{
     arch::mm::{current_page_table_paddr, PageTableEntry, PagingConsts},
     cpu::{num_cpus, CpuExceptionInfo, CpuSet, PinCurrentCpu},
     cpu_local,
     mm::{
-        page_table::{self, PageTableItem},
-        Frame, MAX_USERSPACE_VADDR,
+        io::Fallible,
+        kspace::KERNEL_PAGE_TABLE,
+        page_table::{self, PageTable, PageTableItem, UserMode},
+        tlb::{TlbFlushOp, TlbFlusher, FLUSH_ALL_RANGE_THRESHOLD},
+        Frame, PageProperty, VmReader, VmWriter, MAX_USERSPACE_VADDR,
     },
     prelude::*,
-    sync::{RwLock, RwLockReadGuard, SpinLock},
-    task::disable_preempt,
+    sync::{RwLock, RwLockReadGuard},
+    task::{disable_preempt, DisabledPreemptGuard},
     Error,
 };
 
@@ -96,11 +91,7 @@ impl VmSpace {
         Ok(self.pt.cursor_mut(va).map(|pt_cursor| {
             let activation_lock = self.activation_lock.read();
 
-            let cur_cpu = pt_cursor.preempt_guard().current_cpu();
-
             let mut activated_cpus = CpuSet::new_empty();
-            let mut need_self_flush = false;
-            let mut need_remote_flush = false;
 
             for cpu in 0..num_cpus() {
                 // The activation lock is held; other CPUs cannot activate this `VmSpace`.
@@ -108,20 +99,13 @@ impl VmSpace {
                     ACTIVATED_VM_SPACE.get_on_cpu(cpu).load(Ordering::Relaxed) as *const VmSpace;
                 if ptr == self as *const VmSpace {
                     activated_cpus.add(cpu);
-                    if cpu == cur_cpu {
-                        need_self_flush = true;
-                    } else {
-                        need_remote_flush = true;
-                    }
                 }
             }
 
             CursorMut {
                 pt_cursor,
                 activation_lock,
-                activated_cpus,
-                need_remote_flush,
-                need_self_flush,
+                flusher: TlbFlusher::new(activated_cpus, disable_preempt()),
             }
         })?)
     }
@@ -264,12 +248,9 @@ pub struct CursorMut<'a, 'b> {
     pt_cursor: page_table::CursorMut<'a, UserMode, PageTableEntry, PagingConsts>,
     #[allow(dead_code)]
     activation_lock: RwLockReadGuard<'b, ()>,
-    // Better to store them here since loading and counting them from the CPUs
-    // list brings non-trivial overhead. We have a read lock so the stored set
-    // is always a superset of actual activated CPUs.
-    activated_cpus: CpuSet,
-    need_remote_flush: bool,
-    need_self_flush: bool,
+    // We have a read lock so the CPU set in the flusher is always a superset
+    // of actual activated CPUs.
+    flusher: TlbFlusher<DisabledPreemptGuard>,
 }
 
 impl CursorMut<'_, '_> {
@@ -298,6 +279,11 @@ impl CursorMut<'_, '_> {
         self.pt_cursor.virt_addr()
     }
 
+    /// Get the dedicated TLB flusher for this cursor.
+    pub fn flusher(&self) -> &TlbFlusher<DisabledPreemptGuard> {
+        &self.flusher
+    }
+
     /// Map a frame into the current slot.
     ///
     /// This method will bring the cursor to the next slot after the modification.
@@ -306,9 +292,10 @@ impl CursorMut<'_, '_> {
         // SAFETY: It is safe to map untyped memory into the userspace.
         let old = unsafe { self.pt_cursor.map(frame.into(), prop) };
 
-        if old.is_some() {
-            self.issue_tlb_flush(TlbFlushOp::Address(start_va), old);
-            self.dispatch_tlb_flush();
+        if let Some(old) = old {
+            self.flusher
+                .issue_tlb_flush_with(TlbFlushOp::Address(start_va), old);
+            self.flusher.dispatch_tlb_flush();
         }
     }
 
@@ -320,25 +307,31 @@ impl CursorMut<'_, '_> {
     /// Already-absent mappings encountered by the cursor will be skipped. It
     /// is valid to unmap a range that is not mapped.
     ///
+    /// It must issue and dispatch a TLB flush after the operation. Otherwise,
+    /// the memory safety will be compromised. Please call this function less
+    /// to avoid the overhead of TLB flush. Using a large `len` is wiser than
+    /// splitting the operation into multiple small ones.
+    ///
     /// # Panics
     ///
     /// This method will panic if `len` is not page-aligned.
     pub fn unmap(&mut self, len: usize) {
         assert!(len % super::PAGE_SIZE == 0);
         let end_va = self.virt_addr() + len;
-        let tlb_prefer_flush_all = len > TLB_FLUSH_ALL_THRESHOLD * PAGE_SIZE;
+        let tlb_prefer_flush_all = len > FLUSH_ALL_RANGE_THRESHOLD;
 
         loop {
             // SAFETY: It is safe to un-map memory in the userspace.
             let result = unsafe { self.pt_cursor.take_next(end_va - self.virt_addr()) };
             match result {
                 PageTableItem::Mapped { va, page, .. } => {
-                    if !self.need_remote_flush && tlb_prefer_flush_all {
+                    if !self.flusher.need_remote_flush() && tlb_prefer_flush_all {
                         // Only on single-CPU cases we can drop the page immediately before flushing.
                         drop(page);
                         continue;
                     }
-                    self.issue_tlb_flush(TlbFlushOp::Address(va), Some(page));
+                    self.flusher
+                        .issue_tlb_flush_with(TlbFlushOp::Address(va), page);
                 }
                 PageTableItem::NotMapped { .. } => {
                     break;
@@ -349,41 +342,43 @@ impl CursorMut<'_, '_> {
             }
         }
 
-        if !self.need_remote_flush && tlb_prefer_flush_all {
-            self.issue_tlb_flush(TlbFlushOp::All, None);
+        if !self.flusher.need_remote_flush() && tlb_prefer_flush_all {
+            self.flusher.issue_tlb_flush(TlbFlushOp::All);
         }
 
-        self.dispatch_tlb_flush();
+        self.flusher.dispatch_tlb_flush();
     }
 
-    /// Change the mapping property starting from the current slot.
+    /// Applies the operation to the next slot of mapping within the range.
     ///
-    /// This method will bring the cursor forward by `len` bytes in the virtual
-    /// address space after the modification.
+    /// The range to be found in is the current virtual address with the
+    /// provided length.
     ///
-    /// The way to change the property is specified by the closure `op`.
+    /// The function stops and yields the actually protected range if it has
+    /// actually protected a page, no matter if the following pages are also
+    /// required to be protected.
+    ///
+    /// It also makes the cursor moves forward to the next page after the
+    /// protected one. If no mapped pages exist in the following range, the
+    /// cursor will stop at the end of the range and return [`None`].
+    ///
+    /// Note that it will **NOT** flush the TLB after the operation. Please
+    /// make the decision yourself on when and how to flush the TLB using
+    /// [`Self::flusher`].
     ///
     /// # Panics
     ///
-    /// This method will panic if `len` is not page-aligned.
-    pub fn protect(&mut self, len: usize, mut op: impl FnMut(&mut PageProperty)) {
-        assert!(len % super::PAGE_SIZE == 0);
-        let end = self.virt_addr() + len;
-        let tlb_prefer_flush_all = len > TLB_FLUSH_ALL_THRESHOLD * PAGE_SIZE;
-
+    /// This function will panic if:
+    ///  - the range to be protected is out of the range where the cursor
+    ///    is required to operate;
+    ///  - the specified virtual address range only covers a part of a page.
+    pub fn protect_next(
+        &mut self,
+        len: usize,
+        mut op: impl FnMut(&mut PageProperty),
+    ) -> Option<Range<Vaddr>> {
         // SAFETY: It is safe to protect memory in the userspace.
-        while let Some(range) =
-            unsafe { self.pt_cursor.protect_next(end - self.virt_addr(), &mut op) }
-        {
-            if !tlb_prefer_flush_all {
-                self.issue_tlb_flush(TlbFlushOp::Range(range), None);
-            }
-        }
-
-        if tlb_prefer_flush_all {
-            self.issue_tlb_flush(TlbFlushOp::All, None);
-        }
-        self.dispatch_tlb_flush();
+        unsafe { self.pt_cursor.protect_next(len, &mut op) }
     }
 
     /// Copies the mapping from the given cursor to the current cursor.
@@ -394,6 +389,10 @@ impl CursorMut<'_, '_> {
     /// Only the mapping is copied, the mapped pages are not copied.
     ///
     /// After the operation, both cursors will advance by the specified length.
+    ///
+    /// Note that it will **NOT** flush the TLB after the operation. Please
+    /// make the decision yourself on when and how to flush the TLB using
+    /// the source's [`CursorMut::flusher`].
     ///
     /// # Panics
     ///
@@ -409,81 +408,13 @@ impl CursorMut<'_, '_> {
         len: usize,
         op: &mut impl FnMut(&mut PageProperty),
     ) {
-        let va = src.virt_addr();
-
         // SAFETY: Operations on user memory spaces are safe if it doesn't
         // involve dropping any pages.
-        unsafe { self.pt_cursor.copy_from(&mut src.pt_cursor, len, op) };
-
-        if len > TLB_FLUSH_ALL_THRESHOLD * PAGE_SIZE {
-            src.issue_tlb_flush(TlbFlushOp::All, None);
-        } else {
-            src.issue_tlb_flush(TlbFlushOp::Range(va..va + len), None);
-        }
-
-        src.dispatch_tlb_flush();
-    }
-
-    fn issue_tlb_flush(&self, op: TlbFlushOp, drop_after_flush: Option<DynPage>) {
-        let request = TlbFlushRequest {
-            op,
-            drop_after_flush,
-        };
-
-        // Fast path for single CPU cases.
-        if !self.need_remote_flush {
-            if self.need_self_flush {
-                request.do_flush();
-            }
-            return;
-        }
-
-        // Slow path for multi-CPU cases.
-        for cpu in self.activated_cpus.iter() {
-            let mut queue = TLB_FLUSH_REQUESTS.get_on_cpu(cpu).lock();
-            queue.push_back(request.clone());
-        }
-    }
-
-    fn dispatch_tlb_flush(&self) {
-        if !self.need_remote_flush {
-            return;
-        }
-
-        fn do_remote_flush() {
-            let preempt_guard = disable_preempt();
-            let mut requests = TLB_FLUSH_REQUESTS
-                .get_on_cpu(preempt_guard.current_cpu())
-                .lock();
-            if requests.len() > TLB_FLUSH_ALL_THRESHOLD {
-                // TODO: in most cases, we need only to flush all the TLB entries
-                // for an ASID if it is enabled.
-                crate::arch::mm::tlb_flush_all_excluding_global();
-                requests.clear();
-            } else {
-                while let Some(request) = requests.pop_front() {
-                    request.do_flush();
-                    if matches!(request.op, TlbFlushOp::All) {
-                        requests.clear();
-                        break;
-                    }
-                }
-            }
-        }
-
-        crate::smp::inter_processor_call(&self.activated_cpus.clone(), do_remote_flush);
+        unsafe { self.pt_cursor.copy_from(&mut src.pt_cursor, len, op) }
     }
 }
 
-/// The threshold used to determine whether we need to flush all TLB entries
-/// when handling a bunch of TLB flush requests. If the number of requests
-/// exceeds this threshold, the overhead incurred by flushing pages
-/// individually would surpass the overhead of flushing all entries at once.
-const TLB_FLUSH_ALL_THRESHOLD: usize = 32;
-
 cpu_local! {
-    /// The queue of pending requests.
-    static TLB_FLUSH_REQUESTS: SpinLock<VecDeque<TlbFlushRequest>> = SpinLock::new(VecDeque::new());
     /// The `Arc` pointer to the activated VM space on this CPU. If the pointer
     /// is NULL, it means that the activated page table is merely the kernel
     /// page table.
@@ -491,38 +422,6 @@ cpu_local! {
     // CPU, rather than merely the activated `VmSpace`. When ASID is enabled,
     // the non-active `VmSpace`s can still have their TLB entries in the CPU!
     static ACTIVATED_VM_SPACE: AtomicPtr<VmSpace> = AtomicPtr::new(core::ptr::null_mut());
-}
-
-#[derive(Debug, Clone)]
-struct TlbFlushRequest {
-    op: TlbFlushOp,
-    // If we need to remove a mapped page from the page table, we can only
-    // recycle the page after all the relevant TLB entries in all CPUs are
-    // flushed. Otherwise if the page is recycled for other purposes, the user
-    // space program can still access the page through the TLB entries.
-    #[allow(dead_code)]
-    drop_after_flush: Option<DynPage>,
-}
-
-#[derive(Debug, Clone)]
-enum TlbFlushOp {
-    All,
-    Address(Vaddr),
-    Range(Range<Vaddr>),
-}
-
-impl TlbFlushRequest {
-    /// Perform the TLB flush operation on the current CPU.
-    fn do_flush(&self) {
-        use crate::arch::mm::{
-            tlb_flush_addr, tlb_flush_addr_range, tlb_flush_all_excluding_global,
-        };
-        match &self.op {
-            TlbFlushOp::All => tlb_flush_all_excluding_global(),
-            TlbFlushOp::Address(addr) => tlb_flush_addr(*addr),
-            TlbFlushOp::Range(range) => tlb_flush_addr_range(range),
-        }
-    }
 }
 
 /// The result of a query over the VM space.

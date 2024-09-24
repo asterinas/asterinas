@@ -16,7 +16,7 @@ use align_ext::AlignExt;
 use aster_rights::Rights;
 use ostd::{
     cpu::CpuExceptionInfo,
-    mm::{PageFlags, PageProperty, VmSpace, MAX_USERSPACE_VADDR},
+    mm::{tlb::TlbFlushOp, PageFlags, PageProperty, VmSpace, MAX_USERSPACE_VADDR},
 };
 
 use self::{
@@ -706,6 +706,8 @@ impl Vmar_ {
                 };
                 new_cursor.copy_from(&mut cur_cursor, vm_mapping.map_size(), &mut op);
             }
+            cur_cursor.flusher().issue_tlb_flush(TlbFlushOp::All);
+            cur_cursor.flusher().dispatch_tlb_flush();
         }
 
         drop(new_inner);
