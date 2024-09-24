@@ -2,6 +2,7 @@
 
 //! The standard library for Asterinas and other Rust OSes.
 #![feature(alloc_error_handler)]
+#![feature(btree_cursors)]
 #![feature(const_mut_refs)]
 #![feature(const_ptr_sub_ptr)]
 #![feature(const_trait_impl)]
@@ -96,12 +97,12 @@ pub unsafe fn init() {
 
     smp::init();
 
-    bus::init();
-
     // SAFETY: This function is called only once on the BSP.
     unsafe {
         mm::kspace::activate_kernel_page_table();
     }
+
+    bus::init();
 
     arch::irq::enable_local();
 

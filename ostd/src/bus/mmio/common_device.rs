@@ -8,7 +8,11 @@ use log::info;
 use super::VIRTIO_MMIO_MAGIC;
 use crate::{
     io_mem::IoMem,
-    mm::{paddr_to_vaddr, Paddr, VmIoOnce},
+    mm::{
+        paddr_to_vaddr,
+        page_prop::{CachePolicy, PageFlags},
+        Paddr, VmIoOnce,
+    },
     trap::IrqLine,
     Error, Result,
 };
@@ -31,7 +35,13 @@ impl MmioCommonDevice {
             debug_assert_eq!(*(paddr_to_vaddr(paddr) as *const u32), VIRTIO_MMIO_MAGIC);
         }
         // SAFETY: This range is virtio-mmio device space.
-        let io_mem = unsafe { IoMem::new(paddr..paddr + 0x200) };
+        let io_mem = unsafe {
+            IoMem::new(
+                paddr..paddr + 0x200,
+                PageFlags::RW,
+                CachePolicy::Uncacheable,
+            )
+        };
         let res = Self {
             io_mem,
             irq: handle,
