@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::Ordering;
+use core::sync::atomic::{AtomicU32, Ordering};
 
 use self::timer_manager::PosixTimerManager;
 use super::{
@@ -35,6 +35,7 @@ mod timer_manager;
 
 use aster_rights::Full;
 use atomic::Atomic;
+use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 pub use builder::ProcessBuilder;
 pub use job_control::JobControl;
 use ostd::{sync::WaitQueue, task::Task};
@@ -44,6 +45,10 @@ pub use terminal::Terminal;
 
 /// Process id.
 pub type Pid = u32;
+define_atomic_version_of_integer_like_type!(Pid, {
+    #[derive(Debug)]
+    pub struct AtomicPid(AtomicU32);
+});
 /// Process group id.
 pub type Pgid = u32;
 /// Session Id.
@@ -107,11 +112,11 @@ pub struct Process {
 ///
 /// This type caches the value of the PID so that it can be retrieved cheaply.
 ///
-/// The benefit of using `ParentProcess` over `(Mutex<Weak<Process>>, Atomic<Pid>,)` is to
+/// The benefit of using `ParentProcess` over `(Mutex<Weak<Process>>, AtomicPid,)` is to
 /// enforce the invariant that the cached PID and the weak reference are always kept in sync.
 pub struct ParentProcess {
     process: Mutex<Weak<Process>>,
-    pid: Atomic<Pid>,
+    pid: AtomicPid,
 }
 
 impl ParentProcess {
@@ -123,7 +128,7 @@ impl ParentProcess {
 
         Self {
             process: Mutex::new(process),
-            pid: Atomic::new(pid),
+            pid: AtomicPid::new(pid),
         }
     }
 

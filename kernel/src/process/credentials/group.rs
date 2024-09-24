@@ -2,6 +2,8 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
+use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
+
 use crate::prelude::*;
 
 #[derive(Debug, Clone, Copy, Pod, Default, PartialEq, Eq, PartialOrd, Ord)]
@@ -17,10 +19,6 @@ impl Gid {
         Self(ROOT_GID)
     }
 
-    pub const fn as_u32(&self) -> u32 {
-        self.0
-    }
-
     pub const fn is_root(&self) -> bool {
         self.0 == ROOT_GID
     }
@@ -28,25 +26,25 @@ impl Gid {
 
 const ROOT_GID: u32 = 0;
 
-#[derive(Debug)]
-pub(super) struct AtomicGid(AtomicU32);
-
-impl AtomicGid {
-    pub const fn new(gid: Gid) -> Self {
-        Self(AtomicU32::new(gid.as_u32()))
-    }
-
-    pub fn set(&self, gid: Gid) {
-        self.0.store(gid.as_u32(), Ordering::Relaxed)
-    }
-
-    pub fn get(&self) -> Gid {
-        Gid(self.0.load(Ordering::Relaxed))
+impl From<u32> for Gid {
+    fn from(value: u32) -> Self {
+        Self::new(value)
     }
 }
 
+impl From<Gid> for u32 {
+    fn from(value: Gid) -> Self {
+        value.0
+    }
+}
+
+define_atomic_version_of_integer_like_type!(Gid, {
+    #[derive(Debug)]
+    pub(super) struct AtomicGid(AtomicU32);
+});
+
 impl Clone for AtomicGid {
     fn clone(&self) -> Self {
-        Self(AtomicU32::new(self.0.load(Ordering::Relaxed)))
+        Self::new(self.load(Ordering::Relaxed))
     }
 }

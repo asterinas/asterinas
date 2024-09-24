@@ -17,5 +17,7 @@ pub fn sys_setfsuid(uid: i32, ctx: &Context) -> Result<SyscallReturn> {
         credentials.set_fsuid(fsuid)?
     };
 
-    Ok(SyscallReturn::Return(old_fsuid.as_u32() as _))
+    Ok(SyscallReturn::Return(
+        <Uid as Into<u32>>::into(old_fsuid) as _
+    ))
 }

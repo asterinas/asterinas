@@ -17,5 +17,7 @@ pub fn sys_setfsgid(gid: i32, ctx: &Context) -> Result<SyscallReturn> {
         credentials.set_fsgid(fsgid)?
     };
 
-    Ok(SyscallReturn::Return(old_fsgid.as_u32() as _))
+    Ok(SyscallReturn::Return(
+        <Gid as Into<u32>>::into(old_fsgid) as _
+    ))
 }

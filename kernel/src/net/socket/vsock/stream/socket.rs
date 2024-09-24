@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::AtomicBool;
-
-use atomic::Ordering;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use super::{connected::Connected, connecting::Connecting, init::Init, listen::Listen};
 use crate::{

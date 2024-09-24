@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::sync::atomic::Ordering;
+
 use ostd::sync::{RwLockReadGuard, RwLockWriteGuard};
 
 use super::{group::AtomicGid, user::AtomicUid, Gid, Uid};
@@ -75,28 +77,28 @@ impl Credentials_ {
     //  ******* Uid methods *******
 
     pub(super) fn ruid(&self) -> Uid {
-        self.ruid.get()
+        self.ruid.load(Ordering::Relaxed)
     }
 
     pub(super) fn euid(&self) -> Uid {
-        self.euid.get()
+        self.euid.load(Ordering::Relaxed)
     }
 
     pub(super) fn suid(&self) -> Uid {
-        self.suid.get()
+        self.suid.load(Ordering::Relaxed)
     }
 
     pub(super) fn fsuid(&self) -> Uid {
-        self.fsuid.get()
+        self.fsuid.load(Ordering::Relaxed)
     }
 
     pub(super) fn set_uid(&self, uid: Uid) {
         if self.is_privileged() {
-            self.ruid.set(uid);
-            self.euid.set(uid);
-            self.suid.set(uid);
+            self.ruid.store(uid, Ordering::Relaxed);
+            self.euid.store(uid, Ordering::Relaxed);
+            self.suid.store(uid, Ordering::Relaxed);
         } else {
-            self.euid.set(uid);
+            self.euid.store(uid, Ordering::Relaxed);
         }
     }
 
@@ -108,13 +110,13 @@ impl Credentials_ {
         self.set_resuid_unchecked(ruid, euid, None);
 
         if should_set_suid {
-            self.suid.set(self.euid());
+            self.suid.store(self.euid(), Ordering::Release);
         }
 
         // FIXME: should we set fsuid here? The linux document for syscall `setfsuid` is contradictory
         // with the document of syscall `setreuid`. The `setfsuid` document says the `fsuid` is always
         // the same as `euid`, but `setreuid` does not mention the `fsuid` should be set.
-        self.fsuid.set(self.euid());
+        self.fsuid.store(self.euid(), Ordering::Release);
 
         Ok(())
     }
@@ -129,7 +131,7 @@ impl Credentials_ {
 
         self.set_resuid_unchecked(ruid, euid, suid);
 
-        self.fsuid.set(self.euid());
+        self.fsuid.store(self.euid(), Ordering::Release);
 
         Ok(())
     }
@@ -142,7 +144,7 @@ impl Credentials_ {
         };
 
         if self.is_privileged() {
-            self.fsuid.set(fsuid);
+            self.fsuid.store(fsuid, Ordering::Release);
             return Ok(old_fsuid);
         }
 
@@ -153,17 +155,17 @@ impl Credentials_ {
             )
         }
 
-        self.fsuid.set(fsuid);
+        self.fsuid.store(fsuid, Ordering::Release);
 
         Ok(old_fsuid)
     }
 
     pub(super) fn set_euid(&self, euid: Uid) {
-        self.euid.set(euid);
+        self.euid.store(euid, Ordering::Release);
     }
 
     pub(super) fn set_suid(&self, suid: Uid) {
-        self.suid.set(suid);
+        self.suid.store(suid, Ordering::Release);
     }
 
     // For `setreuid`, ruid can *NOT* be set to old suid,
@@ -217,43 +219,43 @@ impl Credentials_ {
 
     fn set_resuid_unchecked(&self, ruid: Option<Uid>, euid: Option<Uid>, suid: Option<Uid>) {
         if let Some(ruid) = ruid {
-            self.ruid.set(ruid);
+            self.ruid.store(ruid, Ordering::Relaxed);
         }
 
         if let Some(euid) = euid {
-            self.euid.set(euid);
+            self.euid.store(euid, Ordering::Relaxed);
         }
 
         if let Some(suid) = suid {
-            self.suid.set(suid);
+            self.suid.store(suid, Ordering::Relaxed);
         }
     }
 
     //  ******* Gid methods *******
 
     pub(super) fn rgid(&self) -> Gid {
-        self.rgid.get()
+        self.rgid.load(Ordering::Relaxed)
     }
 
     pub(super) fn egid(&self) -> Gid {
-        self.egid.get()
+        self.egid.load(Ordering::Relaxed)
     }
 
     pub(super) fn sgid(&self) -> Gid {
-        self.sgid.get()
+        self.sgid.load(Ordering::Relaxed)
     }
 
     pub(super) fn fsgid(&self) -> Gid {
-        self.fsgid.get()
+        self.fsgid.load(Ordering::Relaxed)
     }
 
     pub(super) fn set_gid(&self, gid: Gid) {
         if self.is_privileged() {
-            self.rgid.set(gid);
-            self.egid.set(gid);
-            self.sgid.set(gid);
+            self.rgid.store(gid, Ordering::Relaxed);
+            self.egid.store(gid, Ordering::Relaxed);
+            self.sgid.store(gid, Ordering::Relaxed);
         } else {
-            self.egid.set(gid);
+            self.egid.store(gid, Ordering::Relaxed);
         }
     }
 
@@ -265,10 +267,10 @@ impl Credentials_ {
         self.set_resgid_unchecked(rgid, egid, None);
 
         if should_set_sgid {
-            self.sgid.set(self.egid());
+            self.sgid.store(self.egid(), Ordering::Relaxed);
         }
 
-        self.fsgid.set(self.egid());
+        self.fsgid.store(self.egid(), Ordering::Relaxed);
 
         Ok(())
     }
@@ -283,7 +285,7 @@ impl Credentials_ {
 
         self.set_resgid_unchecked(rgid, egid, sgid);
 
-        self.fsgid.set(self.egid());
+        self.fsgid.store(self.egid(), Ordering::Relaxed);
 
         Ok(())
     }
@@ -296,7 +298,7 @@ impl Credentials_ {
         };
 
         if self.is_privileged() {
-            self.fsgid.set(fsgid);
+            self.fsgid.store(fsgid, Ordering::Relaxed);
             return Ok(old_fsgid);
         }
 
@@ -307,17 +309,17 @@ impl Credentials_ {
             )
         }
 
-        self.fsgid.set(fsgid);
+        self.fsgid.store(fsgid, Ordering::Relaxed);
 
         Ok(old_fsgid)
     }
 
     pub(super) fn set_egid(&self, egid: Gid) {
-        self.egid.set(egid);
+        self.egid.store(egid, Ordering::Relaxed);
     }
 
     pub(super) fn set_sgid(&self, sgid: Gid) {
-        self.sgid.set(sgid);
+        self.sgid.store(sgid, Ordering::Relaxed);
     }
 
     // For `setregid`, rgid can *NOT* be set to old sgid,
@@ -371,15 +373,15 @@ impl Credentials_ {
 
     fn set_resgid_unchecked(&self, rgid: Option<Gid>, egid: Option<Gid>, sgid: Option<Gid>) {
         if let Some(rgid) = rgid {
-            self.rgid.set(rgid);
+            self.rgid.store(rgid, Ordering::Relaxed);
         }
 
         if let Some(egid) = egid {
-            self.egid.set(egid);
+            self.egid.store(egid, Ordering::Relaxed);
         }
 
         if let Some(sgid) = sgid {
-            self.sgid.set(sgid);
+            self.sgid.store(sgid, Ordering::Relaxed);
         }
     }
 
@@ -396,27 +398,30 @@ impl Credentials_ {
     //  ******* Linux Capability methods *******
 
     pub(super) fn inheritable_capset(&self) -> CapSet {
-        self.inheritable_capset.get()
+        self.inheritable_capset.load(Ordering::Relaxed)
     }
 
     pub(super) fn permitted_capset(&self) -> CapSet {
-        self.permitted_capset.get()
+        self.permitted_capset.load(Ordering::Relaxed)
     }
 
     pub(super) fn effective_capset(&self) -> CapSet {
-        self.effective_capset.get()
+        self.effective_capset.load(Ordering::Relaxed)
     }
 
     pub(super) fn set_inheritable_capset(&self, inheritable_capset: CapSet) {
-        self.inheritable_capset.set(inheritable_capset);
+        self.inheritable_capset
+            .store(inheritable_capset, Ordering::Relaxed);
     }
 
     pub(super) fn set_permitted_capset(&self, permitted_capset: CapSet) {
-        self.permitted_capset.set(permitted_capset);
+        self.permitted_capset
+            .store(permitted_capset, Ordering::Relaxed);
     }
 
     pub(super) fn set_effective_capset(&self, effective_capset: CapSet) {
-        self.effective_capset.set(effective_capset);
+        self.effective_capset
+            .store(effective_capset, Ordering::Relaxed);
     }
 }
 

@@ -12,6 +12,8 @@ use core::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
+use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
+
 use super::{constants::MIN_STD_SIG_NUM, sig_num::SigNum};
 use crate::prelude::*;
 
@@ -158,68 +160,26 @@ impl LowerHex for SigSet {
 /// [`Relaxed`]: core::sync::atomic::Ordering::Relaxed
 pub type AtomicSigMask = AtomicSigSet;
 
-/// An atomic signal set.
-pub struct AtomicSigSet(AtomicU64);
+define_atomic_version_of_integer_like_type!(SigSet, {
+    pub struct AtomicSigSet(AtomicU64);
+});
 
 impl From<SigSet> for AtomicSigSet {
     fn from(set: SigSet) -> Self {
-        AtomicSigSet(AtomicU64::new(set.bits))
+        Self::new(set)
     }
 }
 
 impl AtomicSigSet {
     pub fn new_empty() -> Self {
-        AtomicSigSet(AtomicU64::new(0))
+        AtomicSigSet::new(0)
     }
 
     pub fn new_full() -> Self {
-        AtomicSigSet(AtomicU64::new(!0))
-    }
-
-    pub fn load(&self, ordering: Ordering) -> SigSet {
-        SigSet {
-            bits: self.0.load(ordering),
-        }
-    }
-
-    pub fn store(&self, new_mask: impl Into<SigMask>, ordering: Ordering) {
-        self.0.store(new_mask.into().bits, ordering);
-    }
-
-    pub fn swap(&self, new_mask: impl Into<SigMask>, ordering: Ordering) -> SigSet {
-        let bits = self.0.swap(new_mask.into().bits, ordering);
-        SigSet { bits }
+        AtomicSigSet::new(!0)
     }
 
     pub fn contains(&self, signals: impl Into<SigSet>, ordering: Ordering) -> bool {
-        SigSet {
-            bits: self.0.load(ordering),
-        }
-        .contains(signals.into())
-    }
-
-    /// Applies an update to the signal set.
-    ///
-    /// This is the same as [`AtomicU64::fetch_update`], but the closure `f`
-    /// operates on a [`SigMask`] instead of a `u64`.
-    ///
-    /// It would be a bit slow since it would check if the value is written by
-    /// another thread while evaluating the closure `f`. If you are confident
-    /// that there's no such race, don't use this method.
-    pub fn fetch_update<F>(
-        &self,
-        set_order: Ordering,
-        fetch_order: Ordering,
-        mut f: F,
-    ) -> core::result::Result<SigMask, SigMask>
-    where
-        F: FnMut(SigMask) -> Option<SigMask>,
-    {
-        self.0
-            .fetch_update(set_order, fetch_order, |bits| {
-                f(SigMask { bits }).map(|set| set.bits)
-            })
-            .map(SigMask::from)
-            .map_err(SigMask::from)
+        self.load(ordering).contains(signals.into())
     }
 }

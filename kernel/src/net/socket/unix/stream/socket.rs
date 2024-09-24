@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::AtomicBool;
+use core::sync::atomic::{AtomicBool, Ordering};
 
-use atomic::Ordering;
 use takeable::Takeable;
 
 use super::{
