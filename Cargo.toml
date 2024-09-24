@@ -28,6 +28,7 @@ members = [
     "kernel/libs/keyable-arc",
     "kernel/libs/typeflags",
     "kernel/libs/typeflags-util",
+    "kernel/libs/atomic-integer-wrapper",
 ]
 exclude = [
     "kernel/libs/comp-sys/cargo-component",

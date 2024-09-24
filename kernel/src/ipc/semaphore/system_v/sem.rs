@@ -6,6 +6,7 @@ use core::{
     time::Duration,
 };
 
+use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use ostd::sync::{PreemptDisabled, Waiter, Waker};
 
 use super::sem_set::{SemSetInner, SEMVMX};
@@ -46,21 +47,15 @@ pub enum Status {
     Removed = 2,
 }
 
-struct AtomicStatus(AtomicU16);
-
-impl AtomicStatus {
-    fn new(status: Status) -> Self {
-        Self(AtomicU16::new(status as u16))
-    }
-
-    fn status(&self) -> Status {
-        Status::try_from(self.0.load(Ordering::Relaxed)).unwrap()
-    }
-
-    fn set_status(&self, status: Status) {
-        self.0.store(status as u16, Ordering::Relaxed);
+impl From<Status> for u16 {
+    fn from(value: Status) -> Self {
+        value as u16
     }
 }
+
+define_atomic_version_of_integer_like_type!(Status, try_from = true, {
+    struct AtomicStatus(AtomicU16);
+});
 
 /// Pending atomic semop.
 pub struct PendingOp {
@@ -76,7 +71,7 @@ impl PendingOp {
     }
 
     pub fn set_status(&self, status: Status) {
-        self.status.set_status(status);
+        self.status.store(status, Ordering::Relaxed);
     }
 
     pub fn waker(&self) -> &Option<Arc<Waker>> {
@@ -92,7 +87,7 @@ impl Debug for PendingOp {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("PendingOp")
             .field("sops", &self.sops)
-            .field("status", &(self.status.status()))
+            .field("status", &(self.status.load(Ordering::Relaxed)))
             .field("pid", &self.pid)
             .finish()
     }
@@ -205,7 +200,7 @@ pub fn sem_op(
     drop(local_sem_sets);
 
     waiter.wait();
-    match status.status() {
+    match status.load(Ordering::Relaxed) {
         Status::Normal => Ok(()),
         Status::Removed => Err(Error::new(Errno::EIDRM)),
         Status::Pending => {

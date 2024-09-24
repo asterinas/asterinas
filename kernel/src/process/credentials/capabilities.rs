@@ -2,6 +2,7 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
+use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use bitflags::bitflags;
 
 bitflags! {
@@ -53,6 +54,8 @@ bitflags! {
 }
 
 impl CapSet {
+    const MASK: u64 = (1 << (CapSet::most_significant_bit() + 1)) - 1;
+
     /// Converts the capability set to a `u32`. The higher bits are truncated.
     pub fn as_u32(&self) -> u32 {
         self.bits() as u32
@@ -64,31 +67,37 @@ impl CapSet {
     }
 
     /// The most significant bit in a 64-bit `CapSet` that may be set to represent a Linux capability.
-    pub fn most_significant_bit() -> u8 {
+    pub const fn most_significant_bit() -> u8 {
         // CHECKPOINT_RESTORE is the Linux capability with the largest numerical value
         40
     }
 }
 
-#[derive(Debug)]
-pub(super) struct AtomicCapSet(AtomicU64);
+impl TryFrom<u64> for CapSet {
+    type Error = &'static str;
 
-impl AtomicCapSet {
-    pub const fn new(capset: CapSet) -> Self {
-        Self(AtomicU64::new(capset.bits))
-    }
-
-    pub fn set(&self, capset: CapSet) {
-        self.0.store(capset.bits(), Ordering::Relaxed);
-    }
-
-    pub fn get(&self) -> CapSet {
-        CapSet::from_bits_truncate(self.0.load(Ordering::Relaxed))
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        if value & !CapSet::MASK != 0 {
+            Err("Invalid CapSet.")
+        } else {
+            Ok(CapSet { bits: value })
+        }
     }
 }
 
+impl From<CapSet> for u64 {
+    fn from(value: CapSet) -> Self {
+        value.bits()
+    }
+}
+
+define_atomic_version_of_integer_like_type!(CapSet, try_from = true, {
+    #[derive(Debug)]
+    pub(super) struct AtomicCapSet(AtomicU64);
+});
+
 impl Clone for AtomicCapSet {
     fn clone(&self) -> Self {
-        Self::new(self.get())
+        Self::new(self.load(Ordering::Relaxed))
     }
 }

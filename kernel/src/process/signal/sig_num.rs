@@ -2,9 +2,7 @@
 
 #![allow(dead_code)]
 
-use core::sync::atomic::AtomicU8;
-
-use atomic::Ordering;
+use core::sync::atomic::{AtomicU8, Ordering};
 
 use super::constants::*;
 use crate::prelude::*;

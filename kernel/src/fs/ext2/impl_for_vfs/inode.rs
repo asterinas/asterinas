@@ -93,7 +93,7 @@ impl Inode for Ext2Inode {
     }
 
     fn set_owner(&self, uid: Uid) -> Result<()> {
-        self.set_uid(uid.as_u32());
+        self.set_uid(uid.into());
         Ok(())
     }
 
@@ -102,7 +102,7 @@ impl Inode for Ext2Inode {
     }
 
     fn set_group(&self, gid: Gid) -> Result<()> {
-        self.set_gid(gid.as_u32());
+        self.set_gid(gid.into());
         Ok(())
     }
 

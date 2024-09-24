@@ -110,7 +110,8 @@ NON_OSDK_CRATES := \
 	kernel/libs/aster-rights-proc \
 	kernel/libs/keyable-arc \
 	kernel/libs/typeflags \
-	kernel/libs/typeflags-util
+	kernel/libs/typeflags-util \
+	kernel/libs/atomic-integer-wrapper
 
 # In contrast, OSDK crates depend on OSTD (or being `ostd` itself)
 # and need to be built or tested with OSDK.
