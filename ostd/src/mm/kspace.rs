@@ -13,13 +13,13 @@
 //!
 //! ```text
 //! +-+ <- the highest used address (0xffff_ffff_ffff_0000)
-//! | |         For the kernel code, 1 GiB. Mapped frames are untracked.
+//! | |         For the kernel code, 1 GiB. Mapped frames are tracked.
 //! +-+ <- 0xffff_ffff_8000_0000
 //! | |
 //! | |         Unused hole.
 //! +-+ <- 0xffff_ff00_0000_0000
 //! | |         For frame metadata, 1 TiB.
-//! | |         Mapped frames are untracked.
+//! | |         Mapped frames are tracked with handles.
 //! +-+ <- 0xffff_fe00_0000_0000
 //! | |         For vm alloc/io mappings, 1 TiB.
 //! | |         Mapped frames are tracked with handles.
@@ -102,6 +102,13 @@ pub const LINEAR_MAPPING_VADDR_RANGE: Range<Vaddr> = LINEAR_MAPPING_BASE_VADDR..
 pub fn paddr_to_vaddr(pa: Paddr) -> usize {
     debug_assert!(pa < VMALLOC_BASE_VADDR - LINEAR_MAPPING_BASE_VADDR);
     pa + LINEAR_MAPPING_BASE_VADDR
+}
+
+/// Returns whether the given address should be mapped as tracked.
+///
+/// About what is tracked mapping, see [`crate::mm::page::meta::MapTrackingStatus`].
+pub(crate) fn should_map_as_tracked(addr: Vaddr) -> bool {
+    !LINEAR_MAPPING_VADDR_RANGE.contains(&addr)
 }
 
 /// The kernel page table instance.

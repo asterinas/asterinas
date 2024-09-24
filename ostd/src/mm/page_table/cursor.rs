@@ -75,7 +75,11 @@ use super::{
 };
 use crate::{
     mm::{
-        page::{meta::PageTablePageMeta, DynPage, Page},
+        kspace::should_map_as_tracked,
+        page::{
+            meta::{MapTrackingStatus, PageTablePageMeta},
+            DynPage, Page,
+        },
         Paddr, PageProperty, Vaddr,
     },
     task::{disable_preempt, DisabledPreemptGuard},
@@ -229,7 +233,8 @@ where
                 Child::Page(page, prop) => {
                     return Ok(PageTableItem::Mapped { va, page, prop });
                 }
-                Child::Untracked(pa, prop) => {
+                Child::Untracked(pa, plevel, prop) => {
+                    debug_assert_eq!(plevel, level);
                     return Ok(PageTableItem::MappedUntracked {
                         va,
                         pa,
@@ -323,6 +328,12 @@ where
         self.guards[(self.level - 1) as usize] = Some(nxt_lvl_ptn_locked);
     }
 
+    fn should_map_as_tracked(&self) -> bool {
+        (TypeId::of::<M>() == TypeId::of::<KernelMode>()
+            || TypeId::of::<M>() == TypeId::of::<UserMode>())
+            && should_map_as_tracked(self.va)
+    }
+
     fn cur_node(&self) -> &PageTableNode<E, C> {
         self.guards[(self.level - 1) as usize].as_ref().unwrap()
     }
@@ -332,29 +343,11 @@ where
     }
 
     fn cur_child(&self) -> Child<E, C> {
-        self.cur_node()
-            .child(self.cur_idx(), self.in_tracked_range())
+        self.cur_node().child(self.cur_idx())
     }
 
     fn read_cur_pte(&self) -> E {
         self.cur_node().read_pte(self.cur_idx())
-    }
-
-    /// Tells if the current virtual range must contain untracked mappings.
-    ///
-    /// _Tracked mappings_ means that the mapped physical addresses (in PTEs) points to pages
-    /// tracked by the metadata system. _Tracked mappings_ must be created with page handles.
-    /// While _untracked mappings_ solely maps to plain physical addresses.
-    ///
-    /// In the kernel mode, this is aligned with the definition in [`crate::mm::kspace`].
-    /// Only linear mappings in the kernel should be considered as untracked mappings.
-    ///
-    /// All mappings in the user mode are tracked. And all mappings in the IOMMU
-    /// page table are untracked.
-    fn in_tracked_range(&self) -> bool {
-        TypeId::of::<M>() == TypeId::of::<UserMode>()
-            || TypeId::of::<M>() == TypeId::of::<KernelMode>()
-                && !crate::mm::kspace::LINEAR_MAPPING_VADDR_RANGE.contains(&self.va)
     }
 }
 
@@ -445,13 +438,14 @@ where
     pub unsafe fn map(&mut self, page: DynPage, prop: PageProperty) -> Option<DynPage> {
         let end = self.0.va + page.size();
         assert!(end <= self.0.barrier_va.end);
-        debug_assert!(self.0.in_tracked_range());
 
         // Go down if not applicable.
         while self.0.level > C::HIGHEST_TRANSLATION_LEVEL
             || self.0.va % page_size::<C>(self.0.level) != 0
             || self.0.va + page_size::<C>(self.0.level) > end
         {
+            debug_assert!(self.0.should_map_as_tracked());
+
             let pte = self.0.read_cur_pte();
             if pte.is_present() && !pte.is_last(self.0.level) {
                 self.0.level_down();
@@ -468,7 +462,7 @@ where
         let idx = self.0.cur_idx();
         let old = self
             .cur_node_mut()
-            .replace_child(idx, Child::Page(page, prop), true);
+            .replace_child(idx, Child::Page(page, prop));
         self.0.move_forward();
 
         match old {
@@ -477,7 +471,7 @@ where
             Child::PageTable(_) => {
                 todo!("Dropping page table nodes while mapping requires TLB flush")
             }
-            Child::Untracked(_, _) => panic!("Mapping a tracked page in an untracked range"),
+            Child::Untracked(_, _, _) => panic!("Mapping a tracked page in an untracked range"),
         }
     }
 
@@ -537,11 +531,12 @@ where
             }
 
             // Map the current page.
-            debug_assert!(!self.0.in_tracked_range());
+            debug_assert!(!self.0.should_map_as_tracked());
             let idx = self.0.cur_idx();
+            let level = self.0.level;
             let _ = self
                 .cur_node_mut()
-                .replace_child(idx, Child::Untracked(pa, prop), false);
+                .replace_child(idx, Child::Untracked(pa, level, prop));
 
             let level = self.0.level;
             pa += page_size::<C>(level);
@@ -581,7 +576,6 @@ where
 
         while self.0.va < end {
             let cur_pte = self.0.read_cur_pte();
-            let is_tracked = self.0.in_tracked_range();
 
             // Skip if it is already absent.
             if !cur_pte.is_present() {
@@ -596,14 +590,14 @@ where
             if self.0.va % page_size::<C>(self.0.level) != 0
                 || self.0.va + page_size::<C>(self.0.level) > end
             {
-                if !is_tracked {
-                    // Level down if we are removing part of a huge untracked page.
-                    self.level_down_split();
-                    continue;
-                }
-
                 if cur_pte.is_last(self.0.level) {
-                    panic!("removing part of a huge page");
+                    if !self.0.should_map_as_tracked() {
+                        // Level down if we are removing part of a huge untracked page.
+                        self.level_down_split();
+                        continue;
+                    } else {
+                        panic!("removing part of a huge page");
+                    }
                 }
 
                 // Level down if the current PTE points to a page table and we cannot
@@ -626,11 +620,8 @@ where
 
             // Unmap the current page and return it.
             let idx = self.0.cur_idx();
-            let ret = self
-                .cur_node_mut()
-                .replace_child(idx, Child::None, is_tracked);
+            let ret = self.cur_node_mut().replace_child(idx, Child::None);
             let ret_page_va = self.0.va;
-            let ret_page_size = page_size::<C>(self.0.level);
 
             self.0.move_forward();
 
@@ -640,12 +631,15 @@ where
                     page,
                     prop,
                 },
-                Child::Untracked(pa, prop) => PageTableItem::MappedUntracked {
-                    va: ret_page_va,
-                    pa,
-                    len: ret_page_size,
-                    prop,
-                },
+                Child::Untracked(pa, level, prop) => {
+                    debug_assert_eq!(level, self.0.level);
+                    PageTableItem::MappedUntracked {
+                        va: ret_page_va,
+                        pa,
+                        len: page_size::<C>(level),
+                        prop,
+                    }
+                }
                 Child::PageTable(node) => {
                     let node = ManuallyDrop::new(node);
                     let page = Page::<PageTablePageMeta<E, C>>::from_raw(node.paddr());
@@ -722,7 +716,7 @@ where
             if self.0.va % page_size::<C>(self.0.level) != 0
                 || self.0.va + page_size::<C>(self.0.level) > end
             {
-                if self.0.in_tracked_range() {
+                if self.0.should_map_as_tracked() {
                     panic!("protecting part of a huge page");
                 } else {
                     self.level_down_split();
@@ -818,7 +812,7 @@ where
             src.cur_node_mut().protect(idx, pte_prop);
 
             // Do copy.
-            let child = src.cur_node_mut().child(idx, true);
+            let child = src.cur_node_mut().child(idx);
             let Child::<E, C>::Page(page, prop) = child else {
                 panic!("Unexpected child for source mapping: {:#?}", child);
             };
@@ -839,14 +833,18 @@ where
     /// This method will create a new child page table node and go down to it.
     fn level_down_create(&mut self) {
         debug_assert!(self.0.level > 1);
-        let new_node = PageTableNode::<E, C>::alloc(self.0.level - 1);
-        let idx = self.0.cur_idx();
-        let is_tracked = self.0.in_tracked_range();
-        let old = self.cur_node_mut().replace_child(
-            idx,
-            Child::PageTable(new_node.clone_raw()),
-            is_tracked,
+        let new_node = PageTableNode::<E, C>::alloc(
+            self.0.level - 1,
+            if self.0.should_map_as_tracked() {
+                MapTrackingStatus::Tracked
+            } else {
+                MapTrackingStatus::Untracked
+            },
         );
+        let idx = self.0.cur_idx();
+        let old = self
+            .cur_node_mut()
+            .replace_child(idx, Child::PageTable(new_node.clone_raw()));
         debug_assert!(old.is_none());
         self.0.level -= 1;
         self.0.guards[(self.0.level - 1) as usize] = Some(new_node);
@@ -857,7 +855,7 @@ where
     /// This method will split the huge page and go down to the next level.
     fn level_down_split(&mut self) {
         debug_assert!(self.0.level > 1);
-        debug_assert!(!self.0.in_tracked_range());
+        debug_assert!(!self.0.should_map_as_tracked());
 
         let idx = self.0.cur_idx();
         self.cur_node_mut().split_untracked_huge(idx);
