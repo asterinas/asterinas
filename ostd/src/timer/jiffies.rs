@@ -5,7 +5,7 @@ use core::{
     time::Duration,
 };
 
-use super::TIMER_FREQ;
+use crate::arch::timer::TIMER_FREQ;
 
 /// Jiffies is a term used to denote the units of time measurement by the kernel.
 ///
@@ -14,7 +14,7 @@ use super::TIMER_FREQ;
 #[derive(Copy, Clone, Debug)]
 pub struct Jiffies(u64);
 
-pub(super) static ELAPSED: AtomicU64 = AtomicU64::new(0);
+pub(crate) static ELAPSED: AtomicU64 = AtomicU64::new(0);
 
 impl Jiffies {
     /// Creates a new instance.
