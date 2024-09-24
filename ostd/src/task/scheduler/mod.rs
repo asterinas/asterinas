@@ -13,7 +13,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use spin::Once;
 
 use super::{preempt::cpu_local, processor, Task};
-use crate::{arch::timer, cpu::PinCurrentCpu, prelude::*, task::disable_preempt};
+use crate::{cpu::PinCurrentCpu, prelude::*, task::disable_preempt, timer};
 
 /// Injects a scheduler implementation into framework.
 ///

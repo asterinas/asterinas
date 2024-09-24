@@ -9,11 +9,9 @@ use core::time::Duration;
 
 use id_alloc::IdAlloc;
 use ostd::{
-    arch::{
-        timer::{self, TIMER_FREQ},
-        trap::is_kernel_interrupted,
-    },
+    arch::{timer::TIMER_FREQ, trap::is_kernel_interrupted},
     sync::Mutex,
+    timer,
 };
 
 use super::Process;

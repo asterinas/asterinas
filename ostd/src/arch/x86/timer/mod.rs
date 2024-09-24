@@ -4,19 +4,16 @@
 
 mod apic;
 mod hpet;
-mod jiffies;
 pub(crate) mod pit;
 
-use alloc::{boxed::Box, vec::Vec};
-use core::{cell::RefCell, sync::atomic::Ordering};
+use core::sync::atomic::Ordering;
 
-pub use jiffies::Jiffies;
 use spin::Once;
 
 use self::apic::APIC_TIMER_CALLBACK;
 use crate::{
     arch::x86::kernel,
-    cpu_local,
+    timer::INTERRUPT_CALLBACKS,
     trap::{self, IrqLine, TrapFrame},
 };
 
@@ -51,24 +48,8 @@ pub(super) fn init() {
     TIMER_IRQ.call_once(|| timer_irq);
 }
 
-cpu_local! {
-    static INTERRUPT_CALLBACKS: RefCell<Vec<Box<dyn Fn() + Sync + Send>>> = RefCell::new(Vec::new());
-}
-
-/// Registers a function that will be executed during the system timer interruption.
-pub fn register_callback<F>(func: F)
-where
-    F: Fn() + Sync + Send + 'static,
-{
-    let irq_guard = trap::disable_local();
-    INTERRUPT_CALLBACKS
-        .get_with(&irq_guard)
-        .borrow_mut()
-        .push(Box::new(func));
-}
-
 fn timer_callback(_: &TrapFrame) {
-    jiffies::ELAPSED.fetch_add(1, Ordering::SeqCst);
+    crate::timer::jiffies::ELAPSED.fetch_add(1, Ordering::SeqCst);
 
     let irq_guard = trap::disable_local();
     let callbacks_guard = INTERRUPT_CALLBACKS.get_with(&irq_guard);

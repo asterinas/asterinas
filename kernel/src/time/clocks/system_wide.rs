@@ -5,11 +5,11 @@ use core::time::Duration;
 
 use aster_time::read_monotonic_time;
 use ostd::{
-    arch::timer::Jiffies,
     cpu::{num_cpus, PinCurrentCpu},
     cpu_local,
     sync::SpinLock,
     task::disable_preempt,
+    timer::Jiffies,
 };
 use paste::paste;
 use spin::Once;
