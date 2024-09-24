@@ -80,7 +80,10 @@ pub fn kernel_loaded_offset() -> usize {
     KERNEL_CODE_BASE_VADDR
 }
 
+#[cfg(target_arch = "x86_64")]
 const KERNEL_CODE_BASE_VADDR: usize = 0xffff_ffff_8000_0000 << ADDR_WIDTH_SHIFT;
+#[cfg(target_arch = "riscv64")]
+const KERNEL_CODE_BASE_VADDR: usize = 0xffff_ffff_0000_0000 << ADDR_WIDTH_SHIFT;
 
 const FRAME_METADATA_CAP_VADDR: Vaddr = 0xffff_ff00_0000_0000 << ADDR_WIDTH_SHIFT;
 const FRAME_METADATA_BASE_VADDR: Vaddr = 0xffff_fe00_0000_0000 << ADDR_WIDTH_SHIFT;

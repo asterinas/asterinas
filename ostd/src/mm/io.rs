@@ -943,3 +943,10 @@ const fn is_pod_once<T: Pod>() -> bool {
 
     size == 1 || size == 2 || size == 4 || size == 8
 }
+
+#[cfg(target_arch = "riscv64")]
+const fn is_pod_once<T: Pod>() -> bool {
+    let size = size_of::<T>();
+
+    size == 1 || size == 2 || size == 4 || size == 8
+}

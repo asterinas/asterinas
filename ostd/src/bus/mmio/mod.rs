@@ -15,8 +15,7 @@ use log::debug;
 
 use self::bus::MmioBus;
 use crate::{
-    arch::kernel::IO_APIC, bus::mmio::common_device::MmioCommonDevice, mm::paddr_to_vaddr,
-    sync::SpinLock, trap::IrqLine,
+    bus::mmio::common_device::MmioCommonDevice, mm::paddr_to_vaddr, sync::SpinLock, trap::IrqLine,
 };
 
 cfg_if! {
@@ -45,14 +44,16 @@ pub(crate) fn init() {
         }
     }
     // FIXME: The address 0xFEB0_0000 is obtained from an instance of microvm, and it may not work in other architecture.
+    #[cfg(target_arch = "x86_64")]
     iter_range(0xFEB0_0000..0xFEB0_4000);
 }
 
+#[cfg(target_arch = "x86_64")]
 fn iter_range(range: Range<usize>) {
     debug!("[Virtio]: Iter MMIO range:{:x?}", range);
     let mut current = range.end;
     let mut lock = MMIO_BUS.lock();
-    let io_apics = IO_APIC.get().unwrap();
+    let io_apics = crate::arch::kernel::IO_APIC.get().unwrap();
     let is_ioapic2 = io_apics.len() == 2;
     let mut io_apic = if is_ioapic2 {
         io_apics.get(1).unwrap().lock()
