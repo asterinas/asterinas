@@ -15,8 +15,6 @@ use core::{
     sync::atomic::{AtomicPtr, Ordering},
 };
 
-use spin::Once;
-
 use super::{
     io::Fallible,
     kspace::KERNEL_PAGE_TABLE,
@@ -56,7 +54,7 @@ use crate::{
 #[derive(Debug)]
 pub struct VmSpace {
     pt: PageTable<UserMode>,
-    page_fault_handler: Once<fn(&VmSpace, &CpuExceptionInfo) -> core::result::Result<(), ()>>,
+    page_fault_handler: Option<fn(&VmSpace, &CpuExceptionInfo) -> core::result::Result<(), ()>>,
     /// A CPU can only activate a `VmSpace` when no mutable cursors are alive.
     /// Cursors hold read locks and activation require a write lock.
     activation_lock: RwLock<()>,
@@ -67,7 +65,7 @@ impl VmSpace {
     pub fn new() -> Self {
         Self {
             pt: KERNEL_PAGE_TABLE.get().unwrap().create_user_page_table(),
-            page_fault_handler: Once::new(),
+            page_fault_handler: None,
             activation_lock: RwLock::new(()),
         }
     }
@@ -156,21 +154,18 @@ impl VmSpace {
         &self,
         info: &CpuExceptionInfo,
     ) -> core::result::Result<(), ()> {
-        if let Some(func) = self.page_fault_handler.get() {
+        if let Some(func) = self.page_fault_handler {
             return func(self, info);
         }
         Err(())
     }
 
     /// Registers the page fault handler in this `VmSpace`.
-    ///
-    /// The page fault handler of a `VmSpace` can only be initialized once.
-    /// If it has been initialized before, calling this method will have no effect.
     pub fn register_page_fault_handler(
-        &self,
+        &mut self,
         func: fn(&VmSpace, &CpuExceptionInfo) -> core::result::Result<(), ()>,
     ) {
-        self.page_fault_handler.call_once(|| func);
+        self.page_fault_handler = Some(func);
     }
 
     /// Creates a reader to read data from the user space of the current task.
