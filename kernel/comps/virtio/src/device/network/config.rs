@@ -63,7 +63,7 @@ pub struct VirtioNetConfig {
     pub mac: EthernetAddr,
     pub status: Status,
     max_virtqueue_pairs: u16,
-    mtu: u16,
+    pub mtu: u16,
     speed: u32,
     duplex: u8,
     rss_max_key_size: u8,
