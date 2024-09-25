@@ -1,0 +1,9 @@
+{
+    "alert_threshold": "130%",
+    "alert_tool": "customBiggerIsBetter",
+    "search_pattern": "sender",
+    "result_index": "7",
+    "description": "iperf3 -s -B 10.0.2.15",
+    "title": "[Network] iperf3 sender performance using TCP",
+    "benchmark_type": "host_guest"
+}
