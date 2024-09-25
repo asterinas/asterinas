@@ -7,6 +7,7 @@ use core::{
 };
 
 use keyable_arc::{KeyableArc, KeyableWeak};
+use ostd::sync::LocalIrqDisabled;
 
 use super::*;
 use crate::{
@@ -31,7 +32,7 @@ pub struct EpollFile {
     // All interesting entries.
     interest: Mutex<BTreeSet<EpollEntryHolder>>,
     // Entries that are probably ready (having events happened).
-    ready: Mutex<VecDeque<Weak<EpollEntry>>>,
+    ready: SpinLock<LinkedList<Weak<EpollEntry>>, LocalIrqDisabled>,
     // EpollFile itself is also pollable
     pollee: Pollee,
     // Any EpollFile is wrapped with Arc when created.
@@ -43,7 +44,7 @@ impl EpollFile {
     pub fn new() -> Arc<Self> {
         Arc::new_cyclic(|me| Self {
             interest: Mutex::new(BTreeSet::new()),
-            ready: Mutex::new(VecDeque::new()),
+            ready: SpinLock::new(LinkedList::new()),
             pollee: Pollee::new(IoEvents::empty()),
             weak_self: me.clone(),
         })
@@ -526,8 +527,11 @@ impl EpollEntry {
     ///
     /// This method must be called while holding the lock of the ready list. This is the only way
     /// to ensure that the "is ready" state matches the fact that the entry is actually in the
-    /// ready list.
-    pub fn set_ready(&self, _guard: &MutexGuard<VecDeque<Weak<EpollEntry>>>) {
+    /// ready list.    
+    pub fn set_ready(
+        &self,
+        _guard: &SpinLockGuard<LinkedList<Weak<EpollEntry>>, LocalIrqDisabled>,
+    ) {
         self.is_ready.store(true, Ordering::Relaxed);
     }
 
@@ -536,7 +540,10 @@ impl EpollEntry {
     /// This method must be called while holding the lock of the ready list. This is the only way
     /// to ensure that the "is ready" state matches the fact that the entry is actually in the
     /// ready list.
-    pub fn reset_ready(&self, _guard: &MutexGuard<VecDeque<Weak<EpollEntry>>>) {
+    pub fn reset_ready(
+        &self,
+        _guard: &SpinLockGuard<LinkedList<Weak<EpollEntry>>, LocalIrqDisabled>,
+    ) {
         self.is_ready.store(false, Ordering::Relaxed)
     }
 
