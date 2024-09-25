@@ -170,7 +170,7 @@ impl TaskOptions {
         extern "C" fn kernel_task_entry() {
             let current_task = current_task()
                 .expect("no current task, it should have current task in kernel task entry");
-            current_task.func.call(());
+            (current_task.func)();
             current_task.exit();
         }
 

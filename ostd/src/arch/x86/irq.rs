@@ -68,7 +68,7 @@ pub struct CallbackElement {
 
 impl CallbackElement {
     pub fn call(&self, element: &TrapFrame) {
-        self.function.call((element,));
+        (self.function)(element);
     }
 }
 

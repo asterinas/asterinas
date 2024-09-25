@@ -11,6 +11,7 @@
 #![feature(generic_const_exprs)]
 #![feature(iter_from_coroutine)]
 #![feature(let_chains)]
+#![feature(linkage)]
 #![feature(min_specialization)]
 #![feature(negative_impls)]
 #![feature(ptr_sub_ptr)]
@@ -36,7 +37,7 @@ mod error;
 pub mod io_mem;
 pub mod logger;
 pub mod mm;
-pub mod panicking;
+pub mod panic;
 pub mod prelude;
 pub mod smp;
 pub mod sync;
@@ -47,7 +48,7 @@ pub mod user;
 
 use core::sync::atomic::AtomicBool;
 
-pub use ostd_macros::main;
+pub use ostd_macros::{main, panic_handler};
 pub use ostd_pod::Pod;
 
 pub use self::{error::Error, prelude::Result};
@@ -65,7 +66,7 @@ pub use self::{error::Error, prelude::Result};
 // make inter-initialization-dependencies more clear and reduce usages of
 // boot stage only global variables.
 #[doc(hidden)]
-pub unsafe fn init() {
+unsafe fn init() {
     arch::enable_cpu_features();
     arch::serial::init();
 
@@ -153,6 +154,6 @@ pub mod ktest {
     //! It is rather discouraged to use the definitions here directly. The
     //! `ktest` attribute is sufficient for all normal use cases.
 
-    pub use ostd_macros::test_main as main;
+    pub use ostd_macros::{test_main as main, test_panic_handler as panic_handler};
     pub use ostd_test::*;
 }
