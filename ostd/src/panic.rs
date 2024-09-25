@@ -4,60 +4,45 @@
 
 use core::ffi::c_void;
 
+pub use unwinding::panic::{begin_panic, catch_unwind};
+
 use crate::{
     arch::qemu::{exit_qemu, QemuExitCode},
-    cpu_local_cell, early_print, early_println,
+    early_print, early_println,
     sync::SpinLock,
 };
 
 extern crate cfg_if;
 extern crate gimli;
+
 use gimli::Register;
 use unwinding::abi::{
     UnwindContext, UnwindReasonCode, _Unwind_Backtrace, _Unwind_FindEnclosingFunction,
     _Unwind_GetGR, _Unwind_GetIP,
 };
 
-cpu_local_cell! {
-    static IN_PANIC: bool = false;
-}
-
-/// The asterinas panic handler.
+/// The default panic handler for OSTD based kernels.
 ///
-/// The panic handler must be defined in the binary crate or in the crate that the binary
-/// crate explicitly declares by `extern crate`. We cannot let the base crate depend on OSTD
-/// due to prismatic dependencies. That's why we export this symbol and state the
-/// panic handler in the binary crate.
-#[export_name = "__aster_panic_handler"]
-pub fn panic_handler(info: &core::panic::PanicInfo) -> ! {
+/// The user can override it by defining their own panic handler with the macro
+/// `#[ostd::panic_handler]`.
+#[cfg(not(ktest))]
+#[no_mangle]
+pub fn __ostd_panic_handler(info: &core::panic::PanicInfo) -> ! {
     let _irq_guard = crate::trap::disable_local();
 
+    crate::cpu_local_cell! {
+        static IN_PANIC: bool = false;
+    }
+
     if IN_PANIC.load() {
-        early_println!("{}", info);
-        early_println!("The panic handler panicked when processing the above panic. Aborting.");
+        early_println!("The panic handler panicked {:#?}", info);
         abort();
     }
 
-    // If in ktest, we would like to catch the panics and resume the test.
-    #[cfg(ktest)]
-    {
-        use alloc::{boxed::Box, string::ToString};
+    IN_PANIC.store(true);
 
-        use unwinding::panic::begin_panic;
+    early_println!("Non-resettable panic! {:#?}", info);
 
-        let throw_info = ostd_test::PanicInfo {
-            message: info.message().to_string(),
-            file: info.location().unwrap().file().to_string(),
-            line: info.location().unwrap().line() as usize,
-            col: info.location().unwrap().column() as usize,
-            resolve_panic: || {
-                IN_PANIC.store(false);
-            },
-        };
-        // Throw an exception and expecting it to be caught.
-        begin_panic(Box::new(throw_info.clone()));
-    }
-    early_println!("{}", info);
     print_stack_trace();
     abort();
 }
@@ -67,7 +52,10 @@ pub fn abort() -> ! {
     exit_qemu(QemuExitCode::Failed);
 }
 
-fn print_stack_trace() {
+/// Prints the stack trace of the current thread to the console.
+///
+/// The printing procedure is protected by a spin lock to prevent interleaving.
+pub fn print_stack_trace() {
     /// We acquire a global lock to prevent the frames in the stack trace from
     /// interleaving. The spin lock is used merely for its simplicity.
     static BACKTRACE_PRINT_LOCK: SpinLock<()> = SpinLock::new(());
@@ -98,6 +86,10 @@ fn print_stack_trace() {
             cfg_if::cfg_if! {
                 if #[cfg(target_arch = "x86_64")] {
                     let reg_name = gimli::X86_64::register_name(Register(i)).unwrap_or("unknown");
+                } else if #[cfg(target_arch = "riscv64")] {
+                    let reg_name = gimli::RiscV::register_name(Register(i)).unwrap_or("unknown");
+                } else if #[cfg(target_arch = "aarch64")] {
+                    let reg_name = gimli::AArch64::register_name(Register(i)).unwrap_or("unknown");
                 } else {
                     let reg_name = "unknown";
                 }
