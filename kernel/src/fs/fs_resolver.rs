@@ -131,7 +131,9 @@ impl FsResolver {
             return_errno_with_message!(Errno::EISDIR, "path refers to a directory");
         }
 
-        let parent = lookup_ctx.parent().unwrap();
+        let parent = lookup_ctx
+            .parent()
+            .ok_or_else(|| Error::with_message(Errno::ENOENT, "parent not found"))?;
         if !parent.mode()?.is_writable() {
             return_errno_with_message!(Errno::EACCES, "file cannot be created");
         }
