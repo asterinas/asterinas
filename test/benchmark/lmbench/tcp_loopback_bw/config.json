@@ -3,6 +3,7 @@
     "alert_tool": "customBiggerIsBetter",
     "search_pattern": "0.004096 ",
     "result_index": "2",
+    "result_substring": "null",
     "description": "bw_tcp -l",
     "title": "[TCP sockets] The bandwidth (localhost)"
 }

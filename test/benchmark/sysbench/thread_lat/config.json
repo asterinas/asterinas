@@ -3,6 +3,7 @@
     "alert_tool": "customSmallerIsBetter",
     "search_pattern": "avg:",
     "result_index": "NF",
+    "result_substring": "null",
     "description": "sysbench threads",
     "title": "[Threads] Threads performance"
 }

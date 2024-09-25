@@ -1,0 +1,9 @@
+{
+    "alert_threshold": "125%",
+    "alert_tool": "customSmallerIsBetter",
+    "search_pattern": "70000 SELECTS on an IPK....",
+    "result_index": "8",
+    "result_substring": "1,5",
+    "description": "sqlite-speed-test: 70000 SELECTS on an IPK",
+    "title": "[Ext2] The selects-ipk result of sqlite speedtest"
+}

@@ -3,6 +3,7 @@
     "alert_tool": "customSmallerIsBetter",
     "search_pattern": "Fcntl lock latency:",
     "result_index": "4",
+    "result_substring": "null",
     "description": "lat_fcntl",
     "title": "[VFS] The cost of record locking/unlocking via fcntl"
 }

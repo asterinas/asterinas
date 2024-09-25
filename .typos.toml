@@ -25,4 +25,9 @@ extend-exclude = [
     "test/build/initramfs/opt/syscall_test/blocklists/pty_test",
     "test/syscall_test/blocklists/sync_test",
     "test/build/initramfs/opt/syscall_test/blocklists/sync_test",
+    
+    "test/benchmark/sqlite/ext2_deletes_between/config.json",
+    "test/benchmark/sqlite/ext2_deletes_individual/config.json",
+    "test/benchmark/sqlite/ramfs_deletes_between/config.json",
+    "test/benchmark/sqlite/ramfs_deletes_individual/config.json",
 ]

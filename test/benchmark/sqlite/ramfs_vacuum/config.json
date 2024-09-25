@@ -1,0 +1,9 @@
+{
+    "alert_threshold": "125%",
+    "alert_tool": "customSmallerIsBetter",
+    "search_pattern": "VACUUM....",
+    "result_index": "4",
+    "result_substring": "1,5",
+    "description": "sqlite-speed-test: repacking database file into a minimal amount of disk space",
+    "title": "[Ramfs] The 'VACUUM' result of sqlite speedtest"
+}

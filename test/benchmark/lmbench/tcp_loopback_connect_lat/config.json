@@ -3,6 +3,7 @@
     "alert_tool": "customSmallerIsBetter",
     "search_pattern": "TCP\\/IP connection cost to 127.0.0.1:",
     "result_index": "6",
+    "result_substring": "null",
     "description": "lat_connect",
     "title": "[TCP sockets] The latency of connect"
 }

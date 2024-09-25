@@ -1,0 +1,14 @@
+[
+    {
+        "name": "The speed of updates-between on Linux (Ext2)",
+        "unit": "second",
+        "value": 0,
+        "extra": "linux_result"
+    },
+    {
+        "name": "The speed of updates-between on Asterinas (Ext2)",
+        "unit": "second",
+        "value": 0,
+        "extra": "aster_result"
+    }
+]

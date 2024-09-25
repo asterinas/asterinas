@@ -54,6 +54,25 @@ jobs:
           - lmbench/ext2_create_delete_files_0k_ops
           - lmbench/ext2_create_delete_files_10k_ops
           - lmbench/ext2_copy_files_bw
+          # File-SQLlite benchmarks
+          - sqlite/ext2_deletes_between
+          - sqlite/ext2_deletes_individual
+          - sqlite/ext2_refill_replace
+          - sqlite/ext2_selects_ipk
+          - sqlite/ext2_selects_text_pk
+          - sqlite/ext2_total
+          - sqlite/ext2_updates_between
+          - sqlite/ext2_updates_big_one
+          - sqlite/ext2_updates_individual
+          - sqlite/ext2_vacuum
+          - sqlite/ramfs_deletes_between
+          - sqlite/ramfs_deletes_individual
+          - sqlite/ramfs_refill_replace
+          - sqlite/ramfs_total
+          - sqlite/ramfs_updates_between
+          - sqlite/ramfs_updates_big_one
+          - sqlite/ramfs_updates_individual
+          - sqlite/ramfs_vacuum
           # Network-related benchmark
           - lmbench/tcp_loopback_bw
           - lmbench/tcp_loopback_lat

@@ -56,10 +56,11 @@ parse_results() {
     local benchmark="$1"
     local search_pattern="$2"
     local result_index="$3"
-    local linux_output="$4"
-    local aster_output="$5"
-    local result_template="$6"
-    local result_file="$7"
+    local result_substring="$4"
+    local linux_output="$5"
+    local aster_output="$6"
+    local result_template="$7"
+    local result_file="$8"
 
     local linux_result aster_result
     linux_result=$(awk "/${search_pattern}/ {result=\$$result_index} END {print result}" "${linux_output}" | tr -d '\r')
@@ -68,6 +69,11 @@ parse_results() {
     if [ -z "${linux_result}" ] || [ -z "${aster_result}" ]; then
         echo "Error: Failed to parse the results from the benchmark output" >&2
         exit 1
+    fi
+
+    if [[ $result_substring != "null" ]]; then
+        linux_result=$(awk "BEGIN{print substr($linux_result,$result_substring)}")
+        aster_result=$(awk "BEGIN{print substr($aster_result,$result_substring)}")
     fi
 
     echo "Updating the result template with extracted values..."
@@ -82,6 +88,7 @@ run_benchmark() {
     local benchmark="$1"
     local search_pattern="$2"
     local result_index="$3"
+    local result_substring="$4"
 
     local linux_output="${BENCHMARK_DIR}/linux_output.txt"
     local aster_output="${BENCHMARK_DIR}/aster_output.txt"
@@ -115,7 +122,7 @@ run_benchmark() {
     eval "$linux_cmd"
 
     echo "Parsing results..."
-    parse_results "$benchmark" "$search_pattern" "$result_index" "$linux_output" "$aster_output" "$result_template" "$result_file"
+    parse_results "$benchmark" "$search_pattern" "$result_index" "$result_substring" "$linux_output" "$aster_output" "$result_template" "$result_file"
 
     echo "Cleaning up..."
     rm -f "${linux_output}"
@@ -135,7 +142,8 @@ fi
 
 search_pattern=$(jq -r '.search_pattern' "$BENCHMARK_DIR/$BENCHMARK/config.json")
 result_index=$(jq -r '.result_index' "$BENCHMARK_DIR/$BENCHMARK/config.json")
+result_substring=$(jq -r '.result_substring' "$BENCHMARK_DIR/$BENCHMARK/config.json")
 
-run_benchmark "$BENCHMARK" "$search_pattern" "$result_index"
+run_benchmark "$BENCHMARK" "$search_pattern" "$result_index" "$result_substring"
 
 echo "Benchmark completed successfully."

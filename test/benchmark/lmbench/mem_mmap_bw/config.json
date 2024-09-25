@@ -3,6 +3,7 @@
     "alert_tool": "customBiggerIsBetter",
     "search_pattern": "268.44",
     "result_index": "2",
+    "result_substring": "null",
     "description": "bw_mmap",
     "title": "[Memory] The bandwidth of mmap"
 }

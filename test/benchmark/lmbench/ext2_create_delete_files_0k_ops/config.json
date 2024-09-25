@@ -3,6 +3,7 @@
     "alert_tool": "customBiggerIsBetter",
     "search_pattern": "^0k",
     "result_index": "2",
+    "result_substring": "null",
     "description": "lat_fs -s 0k /ext2",
     "title": "[Ext2] The cost of creating/deleting small files (0KB)"
 }
