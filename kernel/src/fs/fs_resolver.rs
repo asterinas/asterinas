@@ -11,28 +11,18 @@ use super::{
 };
 use crate::prelude::*;
 
-#[derive(Debug)]
+/// The file descriptor of the current working directory.
+pub const AT_FDCWD: FileDesc = -100;
+
+/// File system resolver.
+#[derive(Debug, Clone)]
 pub struct FsResolver {
     root: Arc<Dentry>,
     cwd: Arc<Dentry>,
 }
 
-impl Clone for FsResolver {
-    fn clone(&self) -> Self {
-        Self {
-            root: self.root.clone(),
-            cwd: self.cwd.clone(),
-        }
-    }
-}
-
-impl Default for FsResolver {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl FsResolver {
+    /// Creates a new file system resolver.
     pub fn new() -> Self {
         Self {
             root: Dentry::new_fs_root(root_mount().clone()),
@@ -40,92 +30,43 @@ impl FsResolver {
         }
     }
 
-    /// Get the root directory
+    /// Gets the root directory.
     pub fn root(&self) -> &Arc<Dentry> {
         &self.root
     }
 
-    /// Get the current working directory
+    /// Gets the current working directory.
     pub fn cwd(&self) -> &Arc<Dentry> {
         &self.cwd
     }
 
-    /// Set the current working directory.
+    /// Sets the current working directory to the given `dentry`.
     pub fn set_cwd(&mut self, dentry: Arc<Dentry>) {
         self.cwd = dentry;
     }
 
-    /// Set the root directory
+    /// Sets the root directory to the given `dentry`.
     pub fn set_root(&mut self, dentry: Arc<Dentry>) {
         self.root = dentry;
     }
 
-    /// Open or create a file inode handler.
+    /// Opens or creates a file inode handler.
     pub fn open(&self, path: &FsPath, flags: u32, mode: u16) -> Result<InodeHandle> {
-        let creation_flags = CreationFlags::from_bits_truncate(flags);
-        let status_flags = StatusFlags::from_bits_truncate(flags);
-        let access_mode = AccessMode::from_u32(flags)?;
-        let inode_mode = InodeMode::from_bits_truncate(mode);
+        let open_args = OpenArgs::from_flags_and_mode(flags, mode)?;
 
-        let follow_tail_link = !(creation_flags.contains(CreationFlags::O_NOFOLLOW)
-            || creation_flags.contains(CreationFlags::O_CREAT)
-                && creation_flags.contains(CreationFlags::O_EXCL));
-        let inode_handle = match self.lookup_inner(path, follow_tail_link) {
-            Ok(dentry) => {
-                let inode = dentry.inode();
-                match inode.type_() {
-                    InodeType::NamedPipe => {
-                        warn!("NamedPipe doesn't support additional operation when opening.");
-                        debug!("Open NamedPipe. creation_flags:{:?}, status_flags:{:?}, access_mode:{:?}, inode_mode:{:?}",creation_flags,status_flags,access_mode,inode_mode);
-                    }
-                    InodeType::SymLink => {
-                        if creation_flags.contains(CreationFlags::O_NOFOLLOW)
-                            && !status_flags.contains(StatusFlags::O_PATH)
-                        {
-                            return_errno_with_message!(Errno::ELOOP, "file is a symlink");
-                        }
-                    }
-                    _ => {}
-                }
+        let follow_tail_link = open_args.follow_tail_link();
+        let stop_on_parent = false;
+        let mut lookup_ctx = LookupCtx::new(follow_tail_link, stop_on_parent);
 
-                if creation_flags.contains(CreationFlags::O_CREAT)
-                    && creation_flags.contains(CreationFlags::O_EXCL)
-                {
-                    return_errno_with_message!(Errno::EEXIST, "file exists");
-                }
-                if creation_flags.contains(CreationFlags::O_DIRECTORY)
-                    && inode.type_() != InodeType::Dir
-                {
-                    return_errno_with_message!(
-                        Errno::ENOTDIR,
-                        "O_DIRECTORY is specified but file is not a directory"
-                    );
-                }
+        let lookup_res = self.lookup_inner(path, &mut lookup_ctx);
 
-                if creation_flags.contains(CreationFlags::O_TRUNC) {
-                    dentry.resize(0)?;
-                }
-                InodeHandle::new(dentry, access_mode, status_flags)?
-            }
+        let inode_handle = match lookup_res {
+            Ok(target_dentry) => self.open_existing_file(target_dentry, &open_args)?,
             Err(e)
                 if e.error() == Errno::ENOENT
-                    && creation_flags.contains(CreationFlags::O_CREAT) =>
+                    && open_args.creation_flags.contains(CreationFlags::O_CREAT) =>
             {
-                if creation_flags.contains(CreationFlags::O_DIRECTORY) {
-                    return_errno_with_message!(Errno::ENOTDIR, "cannot create directory");
-                }
-                let (dir_dentry, file_name) =
-                    self.lookup_dir_and_base_name_inner(path, follow_tail_link)?;
-                if file_name.ends_with('/') {
-                    return_errno_with_message!(Errno::EISDIR, "path refers to a directory");
-                }
-                if !dir_dentry.mode()?.is_writable() {
-                    return_errno_with_message!(Errno::EACCES, "file cannot be created");
-                }
-
-                let dentry = dir_dentry.new_fs_child(&file_name, InodeType::File, inode_mode)?;
-                // Don't check access mode for newly created file
-                InodeHandle::new_unchecked_access(dentry, access_mode, status_flags)?
+                self.create_new_file(&open_args, &mut lookup_ctx)?
             }
             Err(e) => return Err(e),
         };
@@ -133,28 +74,101 @@ impl FsResolver {
         Ok(inode_handle)
     }
 
-    /// Lookup dentry according to FsPath, always follow symlinks
+    fn open_existing_file(
+        &self,
+        target_dentry: Arc<Dentry>,
+        open_args: &OpenArgs,
+    ) -> Result<InodeHandle> {
+        let inode = target_dentry.inode();
+        let inode_type = inode.type_();
+        let creation_flags = &open_args.creation_flags;
+
+        match inode_type {
+            InodeType::NamedPipe => {
+                warn!("NamedPipe doesn't support additional operation when opening.");
+                debug!("Open NamedPipe with args: {open_args:?}.");
+            }
+            InodeType::SymLink => {
+                if creation_flags.contains(CreationFlags::O_NOFOLLOW)
+                    && !open_args.status_flags.contains(StatusFlags::O_PATH)
+                {
+                    return_errno_with_message!(Errno::ELOOP, "file is a symlink");
+                }
+            }
+            _ => {}
+        }
+
+        if creation_flags.contains(CreationFlags::O_CREAT)
+            && creation_flags.contains(CreationFlags::O_EXCL)
+        {
+            return_errno_with_message!(Errno::EEXIST, "file exists");
+        }
+        if creation_flags.contains(CreationFlags::O_DIRECTORY) && inode_type != InodeType::Dir {
+            return_errno_with_message!(
+                Errno::ENOTDIR,
+                "O_DIRECTORY is specified but file is not a directory"
+            );
+        }
+
+        if creation_flags.contains(CreationFlags::O_TRUNC) {
+            target_dentry.resize(0)?;
+        }
+        InodeHandle::new(target_dentry, open_args.access_mode, open_args.status_flags)
+    }
+
+    fn create_new_file(
+        &self,
+        open_args: &OpenArgs,
+        lookup_ctx: &mut LookupCtx,
+    ) -> Result<InodeHandle> {
+        if open_args
+            .creation_flags
+            .contains(CreationFlags::O_DIRECTORY)
+        {
+            return_errno_with_message!(Errno::ENOTDIR, "cannot create directory");
+        }
+        if lookup_ctx.tail_is_dir() {
+            return_errno_with_message!(Errno::EISDIR, "path refers to a directory");
+        }
+
+        let parent = lookup_ctx.parent().unwrap();
+        if !parent.mode()?.is_writable() {
+            return_errno_with_message!(Errno::EACCES, "file cannot be created");
+        }
+
+        let tail_file_name = lookup_ctx.tail_file_name().unwrap();
+        let new_dentry =
+            parent.new_fs_child(&tail_file_name, InodeType::File, open_args.inode_mode)?;
+        // Don't check access mode for newly created file
+        InodeHandle::new_unchecked_access(new_dentry, open_args.access_mode, open_args.status_flags)
+    }
+
+    /// Lookups the target dentry according to the `path`.
+    /// Symlinks are always followed.
     pub fn lookup(&self, path: &FsPath) -> Result<Arc<Dentry>> {
-        self.lookup_inner(path, true)
+        let (follow_tail_link, stop_on_parent) = (true, false);
+        self.lookup_inner(path, &mut LookupCtx::new(follow_tail_link, stop_on_parent))
     }
 
-    /// Lookup dentry according to FsPath, do not follow it if last component is a symlink
+    /// Lookups the target dentry according to the `path`.
+    /// If the last component is a symlink, it will not be followed.
     pub fn lookup_no_follow(&self, path: &FsPath) -> Result<Arc<Dentry>> {
-        self.lookup_inner(path, false)
+        let (follow_tail_link, stop_on_parent) = (false, false);
+        self.lookup_inner(path, &mut LookupCtx::new(follow_tail_link, stop_on_parent))
     }
 
-    fn lookup_inner(&self, path: &FsPath, follow_tail_link: bool) -> Result<Arc<Dentry>> {
+    fn lookup_inner(&self, path: &FsPath, lookup_ctx: &mut LookupCtx) -> Result<Arc<Dentry>> {
         let dentry = match path.inner {
             FsPathInner::Absolute(path) => {
-                self.lookup_from_parent(&self.root, path.trim_start_matches('/'), follow_tail_link)?
+                self.lookup_from_parent(&self.root, path.trim_start_matches('/'), lookup_ctx)?
             }
             FsPathInner::CwdRelative(path) => {
-                self.lookup_from_parent(&self.cwd, path, follow_tail_link)?
+                self.lookup_from_parent(&self.cwd, path, lookup_ctx)?
             }
             FsPathInner::Cwd => self.cwd.clone(),
             FsPathInner::FdRelative(fd, path) => {
                 let parent = self.lookup_from_fd(fd)?;
-                self.lookup_from_parent(&parent, path, follow_tail_link)?
+                self.lookup_from_parent(&parent, path, lookup_ctx)?
             }
             FsPathInner::Fd(fd) => self.lookup_from_fd(fd)?,
         };
@@ -162,9 +176,9 @@ impl FsResolver {
         Ok(dentry)
     }
 
-    /// Lookup dentry from parent
+    /// Lookups the target dentry according to the parent directory dentry.
     ///
-    /// The length of `path` cannot exceed PATH_MAX.
+    /// The length of `path` cannot exceed `PATH_MAX`.
     /// If `path` ends with `/`, then the returned inode must be a directory inode.
     ///
     /// While looking up the dentry, symbolic links will be followed for
@@ -177,15 +191,20 @@ impl FsResolver {
         &self,
         parent: &Arc<Dentry>,
         relative_path: &str,
-        follow_tail_link: bool,
+        lookup_ctx: &mut LookupCtx,
     ) -> Result<Arc<Dentry>> {
         debug_assert!(!relative_path.starts_with('/'));
 
         if relative_path.len() > PATH_MAX {
             return_errno_with_message!(Errno::ENAMETOOLONG, "path is too long");
         }
+        if relative_path.is_empty() {
+            assert!(!lookup_ctx.stop_on_parent);
+            return Ok(parent.clone());
+        }
 
         // To handle symlinks
+        let follow_tail_link = lookup_ctx.follow_tail_link;
         let mut link_path = String::new();
         let mut follows = 0;
 
@@ -202,9 +221,24 @@ impl FsResolver {
                 };
 
             // Iterate next dentry
-            let next_dentry = dentry.lookup(next_name)?;
-            let next_type = next_dentry.type_();
             let next_is_tail = path_remain.is_empty();
+            if next_is_tail && lookup_ctx.stop_on_parent {
+                lookup_ctx.set_tail_file(next_name, must_be_dir);
+                return Ok(dentry);
+            }
+
+            let next_dentry = match dentry.lookup(next_name) {
+                Ok(dentry) => dentry,
+                Err(e) => {
+                    if next_is_tail && e.error() == Errno::ENOENT && lookup_ctx.tail_file.is_none()
+                    {
+                        lookup_ctx.set_tail_file(next_name, must_be_dir);
+                        lookup_ctx.set_parent(&dentry);
+                    }
+                    return Err(e);
+                }
+            };
+            let next_type = next_dentry.type_();
 
             // If next inode is a symlink, follow symlinks at most `SYMLINKS_MAX` times.
             if next_type == InodeType::SymLink && (follow_tail_link || !next_is_tail) {
@@ -246,7 +280,7 @@ impl FsResolver {
         Ok(dentry)
     }
 
-    /// Lookup dentry from the giving fd
+    /// Lookups the target dentry according to the given `fd`.
     pub fn lookup_from_fd(&self, fd: FileDesc) -> Result<Arc<Dentry>> {
         let current = current!();
         let file_table = current.file_table().lock();
@@ -257,106 +291,149 @@ impl FsResolver {
         Ok(inode_handle.dentry().clone())
     }
 
-    /// Lookup the dir dentry and base file name of the giving path.
+    /// Lookups the target parent directory dentry and
+    /// the base file name according to the given `path`.
     ///
-    /// If the last component is a symlink, do not deference it
+    /// If the last component is a symlink, do not deference it.
     pub fn lookup_dir_and_base_name(&self, path: &FsPath) -> Result<(Arc<Dentry>, String)> {
-        self.lookup_dir_and_base_name_inner(path, false)
-    }
-
-    fn lookup_dir_and_base_name_inner(
-        &self,
-        path: &FsPath,
-        follow_tail_link: bool,
-    ) -> Result<(Arc<Dentry>, String)> {
-        let (mut dir_dentry, mut base_name) = match path.inner {
-            FsPathInner::Absolute(path) => {
-                let (dir, file_name) = split_path(path);
-                (
-                    self.lookup_from_parent(&self.root, dir.trim_start_matches('/'), true)?,
-                    String::from(file_name),
-                )
-            }
-            FsPathInner::CwdRelative(path) => {
-                let (dir, file_name) = split_path(path);
-                (
-                    self.lookup_from_parent(&self.cwd, dir, true)?,
-                    String::from(file_name),
-                )
-            }
-            FsPathInner::FdRelative(fd, path) => {
-                let (dir, file_name) = split_path(path);
-                let parent = self.lookup_from_fd(fd)?;
-                (
-                    self.lookup_from_parent(&parent, dir, true)?,
-                    String::from(file_name),
-                )
-            }
-            _ => return_errno!(Errno::ENOENT),
-        };
-        if !follow_tail_link {
-            return Ok((dir_dentry, base_name));
+        if matches!(path.inner, FsPathInner::Fd(_)) {
+            return_errno!(Errno::ENOENT);
         }
 
-        // Dereference the tail symlinks if needed
-        loop {
-            match dir_dentry.lookup(base_name.trim_end_matches('/')) {
-                Ok(dentry) if dentry.type_() == InodeType::SymLink => {
-                    let link = {
-                        let mut link = dentry.inode().read_link()?;
-                        if link.is_empty() {
-                            return_errno_with_message!(Errno::ENOENT, "invalid symlink");
-                        }
-                        if base_name.ends_with('/') && !link.ends_with('/') {
-                            link += "/";
-                        }
-                        link
-                    };
-                    let (dir, file_name) = split_path(&link);
-                    if dir.starts_with('/') {
-                        dir_dentry =
-                            self.lookup_from_parent(&self.root, dir.trim_start_matches('/'), true)?;
-                        base_name = String::from(file_name);
-                    } else {
-                        dir_dentry = self.lookup_from_parent(&dir_dentry, dir, true)?;
-                        base_name = String::from(file_name);
-                    }
-                }
-                _ => break,
-            }
-        }
+        let (follow_tail_link, stop_on_parent) = (false, true);
+        let mut lookup_ctx = LookupCtx::new(follow_tail_link, stop_on_parent);
+        let parent_dir = self.lookup_inner(path, &mut lookup_ctx)?;
 
-        Ok((dir_dentry, base_name))
+        let tail_file_name = lookup_ctx.tail_file_name().unwrap();
+        Ok((parent_dir, tail_file_name))
     }
 
-    /// The method used to create a new file using pathname.
+    /// Lookups the target parent directory dentry and checks whether
+    /// the base file does not exist yet according to the given `path`.
     ///
-    /// For example, mkdir, mknod, link, and symlink all need to create
+    /// `is_dir` is used to determine whether a directory needs to be created.
+    ///
+    /// # Usage case
+    ///
+    /// `mkdir`, `mknod`, `link`, and `symlink` all need to create
     /// new file and all need to perform unique processing on the last
     /// component of the path name. It is used to provide a unified
     /// method for pathname lookup and error handling.
-    ///
-    /// is_dir is used to determine whether a directory needs to be created.
     pub fn lookup_dir_and_new_basename(
         &self,
         path: &FsPath,
         is_dir: bool,
     ) -> Result<(Arc<Dentry>, String)> {
-        let (dir_dentry, filename) = self.lookup_dir_and_base_name_inner(path, false)?;
-        if dir_dentry.lookup(filename.trim_end_matches('/')).is_ok() {
-            return_errno_with_message!(Errno::EEXIST, "file exists");
+        if matches!(path.inner, FsPathInner::Fd(_)) {
+            return_errno!(Errno::ENOENT);
         }
 
-        if !is_dir && filename.ends_with('/') {
+        let (follow_tail_link, stop_on_parent) = (false, true);
+        let mut lookup_ctx = LookupCtx::new(follow_tail_link, stop_on_parent);
+        let parent_dir = self.lookup_inner(path, &mut lookup_ctx)?;
+        let tail_file_name = lookup_ctx.tail_file_name().unwrap();
+
+        if parent_dir
+            .lookup(tail_file_name.trim_end_matches('/'))
+            .is_ok()
+        {
+            return_errno_with_message!(Errno::EEXIST, "file exists");
+        }
+        if !is_dir && lookup_ctx.tail_is_dir() {
             return_errno_with_message!(Errno::ENOENT, "No such file or directory");
         }
 
-        Ok((dir_dentry, filename))
+        Ok((parent_dir.clone(), tail_file_name))
     }
 }
 
-pub const AT_FDCWD: FileDesc = -100;
+impl Default for FsResolver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
+/// Context information describing one lookup operation.
+#[derive(Debug)]
+struct LookupCtx {
+    follow_tail_link: bool,
+    stop_on_parent: bool,
+    // (file_name, file_is_dir)
+    tail_file: Option<(String, bool)>,
+    parent: Option<Arc<Dentry>>,
+}
+
+impl LookupCtx {
+    pub fn new(follow_tail_link: bool, stop_on_parent: bool) -> Self {
+        Self {
+            follow_tail_link,
+            stop_on_parent,
+            tail_file: None,
+            parent: None,
+        }
+    }
+
+    pub fn tail_file_name(&self) -> Option<String> {
+        self.tail_file.as_ref().map(|(file_name, file_is_dir)| {
+            let mut tail_file_name = file_name.clone();
+            if *file_is_dir {
+                tail_file_name += "/";
+            }
+            tail_file_name
+        })
+    }
+
+    pub fn tail_is_dir(&self) -> bool {
+        self.tail_file
+            .as_ref()
+            .map(|(_, is_dir)| *is_dir)
+            .unwrap_or(false)
+    }
+
+    pub fn parent(&self) -> Option<&Arc<Dentry>> {
+        self.parent.as_ref()
+    }
+
+    pub fn set_tail_file(&mut self, file_name: &str, file_is_dir: bool) {
+        let _ = self.tail_file.insert((file_name.to_string(), file_is_dir));
+    }
+
+    pub fn set_parent(&mut self, parent: &Arc<Dentry>) {
+        let _ = self.parent.insert(parent.clone());
+    }
+}
+
+#[derive(Debug)]
+/// Arguments for an open request.
+struct OpenArgs {
+    creation_flags: CreationFlags,
+    status_flags: StatusFlags,
+    access_mode: AccessMode,
+    inode_mode: InodeMode,
+}
+
+impl OpenArgs {
+    pub fn from_flags_and_mode(flags: u32, mode: u16) -> Result<Self> {
+        let creation_flags = CreationFlags::from_bits_truncate(flags);
+        let status_flags = StatusFlags::from_bits_truncate(flags);
+        let access_mode = AccessMode::from_u32(flags)?;
+        let inode_mode = InodeMode::from_bits_truncate(mode);
+        Ok(Self {
+            creation_flags,
+            status_flags,
+            access_mode,
+            inode_mode,
+        })
+    }
+
+    pub fn follow_tail_link(&self) -> bool {
+        !(self.creation_flags.contains(CreationFlags::O_NOFOLLOW)
+            || self.creation_flags.contains(CreationFlags::O_CREAT)
+                && self.creation_flags.contains(CreationFlags::O_EXCL))
+    }
+}
+
+/// Path in the file system.
 #[derive(Debug)]
 pub struct FsPath<'a> {
     inner: FsPathInner<'a>,
@@ -364,19 +441,20 @@ pub struct FsPath<'a> {
 
 #[derive(Debug)]
 enum FsPathInner<'a> {
-    // absolute path
+    // Absolute path
     Absolute(&'a str),
-    // path is relative to Cwd
+    // Path is relative to `Cwd`
     CwdRelative(&'a str),
-    // Cwd
+    // Current working directory
     Cwd,
-    // path is relative to DirFd
+    // Path is relative to the directory fd
     FdRelative(FileDesc, &'a str),
     // Fd
     Fd(FileDesc),
 }
 
 impl<'a> FsPath<'a> {
+    /// Creates a new `FsPath` from the given `dirfd` and `path`.
     pub fn new(dirfd: FileDesc, path: &'a str) -> Result<Self> {
         if path.len() > PATH_MAX {
             return_errno_with_message!(Errno::ENAMETOOLONG, "path name too long");
@@ -417,7 +495,7 @@ impl<'a> TryFrom<&'a str> for FsPath<'a> {
     }
 }
 
-/// Split a `path` to (`dir_path`, `file_name`).
+/// Splits a `path` to (`dir_path`, `file_name`).
 ///
 /// The `dir_path` must be a directory.
 ///
