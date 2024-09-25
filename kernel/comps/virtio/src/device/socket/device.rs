@@ -190,8 +190,10 @@ impl SocketDevice {
     ) -> Result<(), SocketError> {
         debug!("Sent packet {:?}. Op {:?}", header, header.op());
         debug!("buffer in send_packet_to_tx_queue: {:?}", buffer);
-        let tx_pool = TX_BUFFER_POOL.get().unwrap();
-        let tx_buffer = TxBuffer::new(header, buffer, tx_pool);
+        let tx_buffer = {
+            let pool = TX_BUFFER_POOL.get().unwrap();
+            TxBuffer::new(header, buffer, pool)
+        };
 
         let token = self.send_queue.add_dma_buf(&[&tx_buffer], &[])?;
 

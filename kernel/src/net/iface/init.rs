@@ -22,11 +22,13 @@ pub fn init() {
     });
 
     for (name, _) in aster_network::all_devices() {
-        aster_network::register_recv_callback(&name, || {
+        let callback = || {
             // TODO: further check that the irq num is the same as iface's irq num
             let iface_virtio = &IFACES.get().unwrap()[0];
             iface_virtio.poll();
-        })
+        };
+        aster_network::register_recv_callback(&name, callback);
+        aster_network::register_send_callback(&name, callback);
     }
 
     poll_ifaces();

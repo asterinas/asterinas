@@ -12,7 +12,7 @@ impl device::Device for dyn AnyNetworkDevice {
     type TxToken<'a> = TxToken<'a>;
 
     fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
-        if self.can_receive() {
+        if self.can_receive() && self.can_send() {
             let rx_buffer = self.receive().unwrap();
             Some((RxToken(rx_buffer), TxToken(self)))
         } else {
