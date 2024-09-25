@@ -97,7 +97,6 @@ jobs:
         ALERT_TOOL=$(jq -r '.alert_tool' test/benchmark/${{ matrix.benchmark }}/config.json)
         TITLE=$(jq -r '.title' test/benchmark/${{ matrix.benchmark }}/config.json)
         DESCRIPTION=$(jq -r '.description' test/benchmark/${{ matrix.benchmark }}/config.json)
-        SHOW_IN_OVERVIEW=$(jq -r '.show_in_overview' test/benchmark/${{ matrix.benchmark }}/config.json)
 
         if [ "$ALERT_THRESHOLD" = "null" ]; then
           ALERT_THRESHOLD="130%"
@@ -108,26 +107,26 @@ jobs:
         if [ "$TITLE" = "null" ]; then
           TITLE="${{ matrix.benchmark }}"
         fi
-        if [ "$SHOW_IN_OVERVIEW" = "null" ]; then
-          SHOW_IN_OVERVIEW="false"
-        fi
 
         echo "ALERT_THRESHOLD=$ALERT_THRESHOLD" >> $GITHUB_ENV
         echo "ALERT_TOOL=$ALERT_TOOL" >> $GITHUB_ENV
         echo "TITLE=$TITLE" >> $GITHUB_ENV
         echo "DESCRIPTION=$DESCRIPTION" >> $GITHUB_ENV
-        echo "SHOW_IN_OVERVIEW=$SHOW_IN_OVERVIEW" >> $GITHUB_ENV
 
         BENCHMARK_NAME=$(basename "${{ matrix.benchmark }}")
         echo "BENCHMARK_NAME=$BENCHMARK_NAME" >> $GITHUB_ENV
+        BENCHMARK_STORE_DIR=$(dirname "${{ matrix.benchmark }}")
+        echo "BENCHMARK_STORE_DIR=$BENCHMARK_STORE_DIR" >> $GITHUB_ENV
+        BENCHMARK_SUMMARY=test/benchmark/${BENCHMARK_STORE_DIR}/summary.json
+        echo "BENCHMARK_SUMMARY=$BENCHMARK_SUMMARY" >> $GITHUB_ENV
 
     - name: Store benchmark results
-      uses: asterinas/github-action-benchmark@v3
+      uses: asterinas/github-action-benchmark@v4
       with:
-        name: ${{ matrix.benchmark }}
+        name: ${{ env.BENCHMARK_NAME }}
         tool: ${{ env.ALERT_TOOL }}
         output-file-path: result_${{ env.BENCHMARK_NAME }}.json
-        benchmark-data-dir-path: '' 
+        benchmark-data-dir-path: ${{ env.BENCHMARK_STORE_DIR }}
         github-token: ${{ secrets.BENCHMARK_SECRET }}
         gh-repository: 'github.com/asterinas/benchmark'
         auto-push: true
@@ -136,4 +135,4 @@ jobs:
         fail-on-alert: true
         chart-title: ${{ env.TITLE }}
         chart-description: ${{ env.DESCRIPTION }}
-        show-in-overview: ${{ env.SHOW_IN_OVERVIEW }}
+        summary-json-path: ${{ env.BENCHMARK_SUMMARY }}
