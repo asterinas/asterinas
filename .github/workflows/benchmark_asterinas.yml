@@ -61,6 +61,7 @@ jobs:
           - lmbench/tcp_loopback_select_lat
           - lmbench/tcp_loopback_http_bw
           - lmbench/udp_loopback_lat
+          - iperf3/tcp_virtio_bw
       fail-fast: false
     timeout-minutes: 60
     container: 
@@ -89,7 +90,8 @@ jobs:
         max_attempts: 3
         command: |
           make install_osdk
-          bash test/benchmark/bench_linux_and_aster.sh ${{ matrix.benchmark }}
+          BENCHMARK_TYPE=$(jq -r '.benchmark_type' test/benchmark/${{ matrix.benchmark }}/config.json)
+          bash test/benchmark/bench_linux_and_aster.sh ${{ matrix.benchmark }} $BENCHMARK_TYPE
 
     - name: Set up benchmark configuration
       run: |

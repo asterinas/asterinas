@@ -7,11 +7,12 @@
 # A switch "-ovmf" can be passed as an argument to enable OVMF.
 # The enrivonmental variable VSOCK can be passed as 1 to trigger vsock module.
 
-SSH_RAND_PORT=$(shuf -i 1024-65535 -n 1)
-NGINX_RAND_PORT=$(shuf -i 1024-65535 -n 1)
-REDIS_RAND_PORT=$(shuf -i 1024-65535 -n 1)
+SSH_RAND_PORT=${SSH_PORT:-$(shuf -i 1024-65535 -n 1)}
+NGINX_RAND_PORT=${NGINX_PORT:-$(shuf -i 1024-65535 -n 1)}
+REDIS_RAND_PORT=${REDIS_PORT:-$(shuf -i 1024-65535 -n 1)}
+IPERF_RAND_PORT=${IPERF_PORT:-$(shuf -i 1024-65535 -n 1)}
 
-echo "[$1] Forwarded QEMU guest port: $SSH_RAND_PORT->22; $NGINX_RAND_PORT->8080 $REDIS_RAND_PORT->6379" 1>&2
+echo "[$1] Forwarded QEMU guest port: $SSH_RAND_PORT->22; $NGINX_RAND_PORT->8080 $REDIS_RAND_PORT->6379 $IPERF_RAND_PORT->5201" 1>&2
 
 COMMON_QEMU_ARGS="\
     -cpu Icelake-Server,+x2apic \
@@ -23,7 +24,7 @@ COMMON_QEMU_ARGS="\
     -serial chardev:mux \
     -monitor chardev:mux \
     -chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log \
-    -netdev user,id=net01,hostfwd=tcp::$SSH_RAND_PORT-:22,hostfwd=tcp::$NGINX_RAND_PORT-:8080,hostfwd=tcp::$REDIS_RAND_PORT-:6379 \
+    -netdev user,id=net01,hostfwd=tcp::$SSH_RAND_PORT-:22,hostfwd=tcp::$NGINX_RAND_PORT-:8080,hostfwd=tcp::$REDIS_RAND_PORT-:6379,hostfwd=tcp::$IPERF_RAND_PORT-:5201 \
     -object filter-dump,id=filter0,netdev=net01,file=virtio-net.pcap \
     -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
     -drive if=none,format=raw,id=x0,file=./test/build/ext2.img \
