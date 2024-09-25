@@ -83,8 +83,7 @@ To add a new benchmark to the Asternias Continuous Integration (CI) system, foll
         "search_pattern": "Simple syscall:",
         "result_index": "3",
         "description": "lat_syscall null",
-        "title": "[Process] The cost of getpid",
-        "show_in_overview": "false"
+        "title": "[Process] The cost of getpid"
       } 
      ```
      
@@ -94,10 +93,21 @@ To add a new benchmark to the Asternias Continuous Integration (CI) system, foll
     - `result_index`: Specify the index of the result in the extracted output. This field is aligned with `awk`'s action.
     - `description`: Provide a brief description of the benchmark.
     - `title`: Set the title of the benchmark.
-    - `show_in_overview`: Default is true. Set to `false` to avoid displaying the benchmark in the overview results.
 
     For example, if the benchmark output is "Syscall average latency: 1000 ns", the `search_pattern` is "Syscall average latency:", and the `result_index` is "4". `awk` will extract "1000" as the benchmark result. See the `awk` [manual](https://www.gnu.org/software/gawk/manual/gawk.html#Getting-Started) for more information.
 
+    - **summary.json:**
+    ```json
+    {
+        "benchmarks": [
+            "cpu_lat",
+            "thread_lat"
+        ]
+    }
+    ```
+    - List all the benchmarks that are included in the benchmark overview. This file is used to generate the overview chart of the benchmark results. 
+    - The benchmark does not appear in the overview chart if it is not listed in this file. But it will still be included in the detailed benchmark results.
+    - The sequence of the benchmarks in this file will be the same as the sequence in the overview chart.
 
    - **result_template.json:**
      ```json
