@@ -187,6 +187,7 @@ impl FsResolver {
     /// If `follow_tail_link` is true and the trailing component is a symlink,
     /// it will be followed.
     /// Symlinks in earlier components of the path will always be followed.
+    #[allow(clippy::redundant_closure)]
     fn lookup_from_parent(
         &self,
         parent: &Arc<Dentry>,
@@ -205,7 +206,7 @@ impl FsResolver {
 
         // To handle symlinks
         let follow_tail_link = lookup_ctx.follow_tail_link;
-        let mut link_path = String::new();
+        let mut link_path_opt = None;
         let mut follows = 0;
 
         // Initialize the first dentry and the relative path
@@ -263,9 +264,10 @@ impl FsResolver {
                 if link_path_remain.starts_with('/') {
                     dentry = self.root.clone();
                 }
+                let link_path = link_path_opt.get_or_insert_with(|| String::new());
                 link_path.clear();
                 link_path.push_str(link_path_remain.trim_start_matches('/'));
-                relative_path = &link_path;
+                relative_path = link_path;
                 follows += 1;
             } else {
                 // If path ends with `/`, the inode must be a directory

@@ -12,11 +12,11 @@ impl InodeHandle<Rights> {
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Result<Self> {
-        let inode = dentry.inode();
-        if access_mode.is_readable() && !inode.mode()?.is_readable() {
+        let inode_mode = dentry.inode().mode()?;
+        if access_mode.is_readable() && !inode_mode.is_readable() {
             return_errno_with_message!(Errno::EACCES, "file is not readable");
         }
-        if access_mode.is_writable() && !inode.mode()?.is_writable() {
+        if access_mode.is_writable() && !inode_mode.is_writable() {
             return_errno_with_message!(Errno::EACCES, "file is not writable");
         }
 
@@ -29,7 +29,7 @@ impl InodeHandle<Rights> {
         status_flags: StatusFlags,
     ) -> Result<Self> {
         let inode = dentry.inode();
-        if access_mode.is_writable() && inode.type_() == InodeType::Dir {
+        if inode.type_() == InodeType::Dir && access_mode.is_writable() {
             return_errno_with_message!(Errno::EISDIR, "directory cannot open to write");
         }
 
