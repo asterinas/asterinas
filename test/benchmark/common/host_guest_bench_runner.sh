@@ -14,8 +14,16 @@ LINUX_OUTPUT=$5
 BENCHMARK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)/../"
 source "${BENCHMARK_DIR}/common/prepare_host.sh"
 
-# Persist iperf3 port
-export IPERF_PORT=5201
+if [[ "$BENCHMARK_PATH" =~ "iperf" ]]; then 
+    # Persist Iperf port
+    export IPERF_PORT=5201
+elif [[ "$BENCHMARK_PATH" =~ "nginx" ]]; then
+    # Persist Nginx port
+    export NGINX_PORT=8080
+elif [[ "$BENCHMARK_PATH" =~ "redis" ]]; then
+    # Persist Redis port
+    export REDIS_PORT=6379
+fi
 
 # Function to run the benchmark
 # Parameters:
