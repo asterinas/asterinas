@@ -84,7 +84,7 @@ run_benchmark() {
             ;;
         "host_guest")
             echo "Running benchmark ${benchmark} on host and guest..."
-            bash "${BENCHMARK_DIR}/${benchmark_root}/bench_runner.sh" \
+            bash "${BENCHMARK_DIR}/common/host_guest_bench_runner.sh" \
                 "${BENCHMARK_DIR}/${benchmark}" \
                 "${asterinas_cmd}" \
                 "${linux_cmd}" \
