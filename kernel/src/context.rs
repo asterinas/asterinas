@@ -191,7 +191,7 @@ impl<'a> ReadCString for VmReader<'a, Fallible> {
 
         // Handle the first few bytes to make `cur_addr` aligned with `size_of::<usize>`
         read_one_byte_at_a_time_while!(
-            (self.cursor() as usize) % mem::size_of::<usize>() != 0 && buffer.len() < max_len
+            !is_addr_aligned(self.cursor() as usize) && buffer.len() < max_len
         );
 
         // Handle the rest of the bytes in bulk
@@ -252,4 +252,9 @@ fn check_vaddr(va: Vaddr) -> Result<()> {
     } else {
         Ok(())
     }
+}
+
+/// Checks if the given address is aligned.
+const fn is_addr_aligned(addr: usize) -> bool {
+    (addr & (mem::size_of::<usize>() - 1)) == 0
 }
