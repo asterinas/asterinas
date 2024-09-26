@@ -12,7 +12,7 @@ use aster_util::slot_vec::SlotVec;
 use hashbrown::HashMap;
 use ostd::{
     mm::{Frame, VmIo},
-    sync::RwMutexWriteGuard,
+    sync::RwLockWriteGuard,
 };
 
 use super::*;
@@ -48,12 +48,11 @@ impl RamFS {
         Arc::new_cyclic(|weak_fs| Self {
             sb: SuperBlock::new(RAMFS_MAGIC, BLOCK_SIZE, NAME_MAX),
             root: Arc::new_cyclic(|weak_root| RamInode {
-                node: RwMutex::new(Node::new_dir(
+                inner: Inner::new_dir(weak_root.clone(), weak_root.clone()),
+                metadata: SpinLock::new(InodeMeta::new_dir(
                     InodeMode::from_bits_truncate(0o755),
                     Uid::new_root(),
                     Gid::new_root(),
-                    weak_root.clone(),
-                    weak_root.clone(),
                 )),
                 ino: ROOT_INO,
                 typ: InodeType::Dir,
@@ -89,9 +88,12 @@ impl FileSystem for RamFS {
     }
 }
 
+/// An inode of `RamFs`.
 struct RamInode {
-    /// The mutable part of the inode
-    node: RwMutex<Node>,
+    /// Inode inner specifics
+    inner: Inner,
+    /// Inode metadata
+    metadata: SpinLock<InodeMeta>,
     /// Inode number
     ino: u64,
     /// Type of the inode
@@ -104,110 +106,79 @@ struct RamInode {
     extension: Extension,
 }
 
-struct Node {
-    inner: Inner,
-    metadata: InodeMeta,
+/// Inode inner specifics.
+#[allow(clippy::large_enum_variant)]
+enum Inner {
+    Dir(RwLock<DirEntry>),
+    File(PageCache),
+    SymLink(SpinLock<String>),
+    Device(Arc<dyn Device>),
+    Socket,
+    NamedPipe(NamedPipe),
 }
 
-impl Node {
-    pub fn new_dir(
-        mode: InodeMode,
-        uid: Uid,
-        gid: Gid,
-        this: Weak<RamInode>,
-        parent: Weak<RamInode>,
-    ) -> Self {
-        Self {
-            inner: Inner::Dir(DirEntry::new(this, parent)),
-            metadata: InodeMeta::new_dir(mode, uid, gid),
+impl Inner {
+    pub fn new_dir(this: Weak<RamInode>, parent: Weak<RamInode>) -> Self {
+        Self::Dir(RwLock::new(DirEntry::new(this, parent)))
+    }
+
+    pub fn new_file(this: Weak<RamInode>) -> Self {
+        Self::File(PageCache::new(this).unwrap())
+    }
+
+    pub fn new_symlink() -> Self {
+        Self::SymLink(SpinLock::new(String::from("")))
+    }
+
+    pub fn new_device(device: Arc<dyn Device>) -> Self {
+        Self::Device(device)
+    }
+
+    pub fn new_socket() -> Self {
+        Self::Socket
+    }
+
+    pub fn new_named_pipe() -> Self {
+        Self::NamedPipe(NamedPipe::new().unwrap())
+    }
+
+    fn as_direntry(&self) -> Option<&RwLock<DirEntry>> {
+        match self {
+            Self::Dir(dir_entry) => Some(dir_entry),
+            _ => None,
         }
     }
 
-    pub fn new_file(mode: InodeMode, uid: Uid, gid: Gid, this: Weak<RamInode>) -> Self {
-        Self {
-            inner: Inner::File(PageCache::new(this).unwrap()),
-            metadata: InodeMeta::new(mode, uid, gid),
+    fn as_file(&self) -> Option<&PageCache> {
+        match self {
+            Self::File(page_cache) => Some(page_cache),
+            _ => None,
         }
     }
 
-    pub fn new_symlink(mode: InodeMode, uid: Uid, gid: Gid) -> Self {
-        Self {
-            inner: Inner::SymLink(String::from("")),
-            metadata: InodeMeta::new(mode, uid, gid),
+    fn as_symlink(&self) -> Option<&SpinLock<String>> {
+        match self {
+            Self::SymLink(link) => Some(link),
+            _ => None,
         }
     }
 
-    pub fn new_socket(mode: InodeMode, uid: Uid, gid: Gid) -> Self {
-        Self {
-            inner: Inner::Socket,
-            metadata: InodeMeta::new(mode, uid, gid),
+    fn as_device(&self) -> Option<&Arc<dyn Device>> {
+        match self {
+            Self::Device(device) => Some(device),
+            _ => None,
         }
     }
 
-    pub fn new_device(mode: InodeMode, uid: Uid, gid: Gid, device: Arc<dyn Device>) -> Self {
-        Self {
-            inner: Inner::Device(device),
-            metadata: InodeMeta::new(mode, uid, gid),
+    fn as_named_pipe(&self) -> Option<&NamedPipe> {
+        match self {
+            Self::NamedPipe(pipe) => Some(pipe),
+            _ => None,
         }
-    }
-
-    pub fn new_named_pipe(mode: InodeMode, uid: Uid, gid: Gid) -> Self {
-        Self {
-            inner: Inner::NamedPipe(NamedPipe::new().unwrap()),
-            metadata: InodeMeta::new(mode, uid, gid),
-        }
-    }
-
-    pub fn inc_size(&mut self) {
-        self.metadata.size += 1;
-        self.metadata.blocks = (self.metadata.size + BLOCK_SIZE - 1) / BLOCK_SIZE;
-    }
-
-    pub fn dec_size(&mut self) {
-        debug_assert!(self.metadata.size > 0);
-        self.metadata.size -= 1;
-        self.metadata.blocks = (self.metadata.size + BLOCK_SIZE - 1) / BLOCK_SIZE;
-    }
-
-    pub fn resize(&mut self, new_size: usize) {
-        self.metadata.size = new_size;
-        self.metadata.blocks = (new_size + BLOCK_SIZE - 1) / BLOCK_SIZE;
-    }
-
-    pub fn atime(&self) -> Duration {
-        self.metadata.atime
-    }
-
-    pub fn set_atime(&mut self, time: Duration) {
-        self.metadata.atime = time;
-    }
-
-    pub fn mtime(&self) -> Duration {
-        self.metadata.mtime
-    }
-
-    pub fn set_mtime(&mut self, time: Duration) {
-        self.metadata.mtime = time;
-    }
-
-    pub fn ctime(&self) -> Duration {
-        self.metadata.ctime
-    }
-
-    pub fn set_ctime(&mut self, time: Duration) {
-        self.metadata.ctime = time;
-    }
-
-    pub fn inc_nlinks(&mut self) {
-        self.metadata.nlinks += 1;
-    }
-
-    pub fn dec_nlinks(&mut self) {
-        debug_assert!(self.metadata.nlinks > 0);
-        self.metadata.nlinks -= 1;
     }
 }
 
+/// Inode metadata.
 #[derive(Debug, Clone, Copy)]
 struct InodeMeta {
     size: usize,
@@ -251,66 +222,42 @@ impl InodeMeta {
             gid,
         }
     }
-}
 
-#[allow(clippy::large_enum_variant)]
-enum Inner {
-    Dir(DirEntry),
-    File(PageCache),
-    SymLink(String),
-    Device(Arc<dyn Device>),
-    Socket,
-    NamedPipe(NamedPipe),
-}
-
-impl Inner {
-    fn as_file(&self) -> Option<&PageCache> {
-        match self {
-            Inner::File(page_cache) => Some(page_cache),
-            _ => None,
-        }
+    pub fn resize(&mut self, new_size: usize) {
+        self.size = new_size;
+        self.blocks = new_size.align_up(BLOCK_SIZE) / BLOCK_SIZE;
     }
 
-    fn as_direntry(&self) -> Option<&DirEntry> {
-        match self {
-            Inner::Dir(dir_entry) => Some(dir_entry),
-            _ => None,
-        }
+    pub fn inc_size(&mut self) {
+        self.size += 1;
+        self.blocks = self.size.align_up(BLOCK_SIZE) / BLOCK_SIZE;
     }
 
-    fn as_direntry_mut(&mut self) -> Option<&mut DirEntry> {
-        match self {
-            Inner::Dir(dir_entry) => Some(dir_entry),
-            _ => None,
-        }
+    pub fn dec_size(&mut self) {
+        debug_assert!(self.size > 0);
+        self.size -= 1;
+        self.blocks = self.size.align_up(BLOCK_SIZE) / BLOCK_SIZE;
     }
 
-    fn as_symlink(&self) -> Option<&str> {
-        match self {
-            Inner::SymLink(link) => Some(link.as_ref()),
-            _ => None,
-        }
+    pub fn set_atime(&mut self, time: Duration) {
+        self.atime = time;
     }
 
-    fn as_symlink_mut(&mut self) -> Option<&mut String> {
-        match self {
-            Inner::SymLink(link) => Some(link),
-            _ => None,
-        }
+    pub fn set_mtime(&mut self, time: Duration) {
+        self.mtime = time;
     }
 
-    fn as_device(&self) -> Option<&Arc<dyn Device>> {
-        match self {
-            Inner::Device(device) => Some(device),
-            _ => None,
-        }
+    pub fn set_ctime(&mut self, time: Duration) {
+        self.ctime = time;
     }
 
-    fn as_named_pipe(&self) -> Option<&NamedPipe> {
-        match self {
-            Inner::NamedPipe(pipe) => Some(pipe),
-            _ => None,
-        }
+    pub fn inc_nlinks(&mut self) {
+        self.nlinks += 1;
+    }
+
+    pub fn dec_nlinks(&mut self) {
+        debug_assert!(self.nlinks > 0);
+        self.nlinks -= 1;
     }
 }
 
@@ -444,13 +391,8 @@ impl RamInode {
         parent: &Weak<RamInode>,
     ) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| RamInode {
-            node: RwMutex::new(Node::new_dir(
-                mode,
-                uid,
-                gid,
-                weak_self.clone(),
-                parent.clone(),
-            )),
+            inner: Inner::new_dir(weak_self.clone(), parent.clone()),
+            metadata: SpinLock::new(InodeMeta::new_dir(mode, uid, gid)),
             ino: fs.alloc_id(),
             typ: InodeType::Dir,
             this: weak_self.clone(),
@@ -461,7 +403,8 @@ impl RamInode {
 
     fn new_file(fs: &Arc<RamFS>, mode: InodeMode, uid: Uid, gid: Gid) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| RamInode {
-            node: RwMutex::new(Node::new_file(mode, uid, gid, weak_self.clone())),
+            inner: Inner::new_file(weak_self.clone()),
+            metadata: SpinLock::new(InodeMeta::new(mode, uid, gid)),
             ino: fs.alloc_id(),
             typ: InodeType::File,
             this: weak_self.clone(),
@@ -472,20 +415,10 @@ impl RamInode {
 
     fn new_symlink(fs: &Arc<RamFS>, mode: InodeMode, uid: Uid, gid: Gid) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| RamInode {
-            node: RwMutex::new(Node::new_symlink(mode, uid, gid)),
+            inner: Inner::new_symlink(),
+            metadata: SpinLock::new(InodeMeta::new(mode, uid, gid)),
             ino: fs.alloc_id(),
             typ: InodeType::SymLink,
-            this: weak_self.clone(),
-            fs: Arc::downgrade(fs),
-            extension: Extension::new(),
-        })
-    }
-
-    fn new_socket(fs: &Arc<RamFS>, mode: InodeMode, uid: Uid, gid: Gid) -> Arc<Self> {
-        Arc::new_cyclic(|weak_self| RamInode {
-            node: RwMutex::new(Node::new_socket(mode, uid, gid)),
-            ino: fs.alloc_id(),
-            typ: InodeType::Socket,
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
@@ -500,7 +433,8 @@ impl RamInode {
         device: Arc<dyn Device>,
     ) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| RamInode {
-            node: RwMutex::new(Node::new_device(mode, uid, gid, device.clone())),
+            inner: Inner::new_device(device.clone()),
+            metadata: SpinLock::new(InodeMeta::new(mode, uid, gid)),
             ino: fs.alloc_id(),
             typ: InodeType::from(device.type_()),
             this: weak_self.clone(),
@@ -509,9 +443,22 @@ impl RamInode {
         })
     }
 
+    fn new_socket(fs: &Arc<RamFS>, mode: InodeMode, uid: Uid, gid: Gid) -> Arc<Self> {
+        Arc::new_cyclic(|weak_self| RamInode {
+            inner: Inner::new_socket(),
+            metadata: SpinLock::new(InodeMeta::new(mode, uid, gid)),
+            ino: fs.alloc_id(),
+            typ: InodeType::Socket,
+            this: weak_self.clone(),
+            fs: Arc::downgrade(fs),
+            extension: Extension::new(),
+        })
+    }
+
     fn new_named_pipe(fs: &Arc<RamFS>, mode: InodeMode, uid: Uid, gid: Gid) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| RamInode {
-            node: RwMutex::new(Node::new_named_pipe(mode, uid, gid)),
+            inner: Inner::new_named_pipe(),
+            metadata: SpinLock::new(InodeMeta::new(mode, uid, gid)),
             ino: fs.alloc_id(),
             typ: InodeType::NamedPipe,
             this: weak_self.clone(),
@@ -525,11 +472,11 @@ impl RamInode {
             return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
         }
 
-        let self_inode = self.node.read();
-        let (_, inode) = self_inode
+        let (_, inode) = self
             .inner
             .as_direntry()
             .unwrap()
+            .read()
             .get_entry(name)
             .ok_or(Error::new(Errno::ENOENT))?;
         Ok(inode)
@@ -553,26 +500,23 @@ impl PageCacheBackend for RamInode {
     }
 
     fn npages(&self) -> usize {
-        self.node.read().metadata.blocks
+        self.metadata.lock().blocks
     }
 }
 
 impl Inode for RamInode {
     fn page_cache(&self) -> Option<Vmo<Full>> {
-        self.node
-            .read()
-            .inner
+        self.inner
             .as_file()
             .map(|page_cache| page_cache.pages().dup())
     }
 
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
         let read_len = {
-            let self_inode = self.node.read();
-            match &self_inode.inner {
+            match &self.inner {
                 Inner::File(page_cache) => {
                     let (offset, read_len) = {
-                        let file_size = self_inode.metadata.size;
+                        let file_size = self.size();
                         let start = file_size.min(offset);
                         let end = file_size.min(offset + writer.avail());
                         (start, end - start)
@@ -603,37 +547,36 @@ impl Inode for RamInode {
     fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
         let written_len = match self.typ {
             InodeType::File => {
-                let self_inode = self.node.upread();
-                let page_cache = self_inode.inner.as_file().unwrap();
+                let page_cache = self.inner.as_file().unwrap();
 
-                let file_size = self_inode.metadata.size;
+                let file_size = self.size();
                 let write_len = reader.remain();
                 let new_size = offset + write_len;
                 let should_expand_size = new_size > file_size;
+                let new_size_aligned = new_size.align_up(BLOCK_SIZE);
                 if should_expand_size {
-                    page_cache.resize(new_size.align_up(BLOCK_SIZE))?;
+                    page_cache.resize(new_size_aligned)?;
                 }
                 page_cache.pages().write(offset, reader)?;
 
-                let mut self_inode = self_inode.upgrade();
                 let now = now();
-                self_inode.set_mtime(now);
-                self_inode.set_ctime(now);
+                let mut inode_meta = self.metadata.lock();
+                inode_meta.set_mtime(now);
+                inode_meta.set_ctime(now);
                 if should_expand_size {
-                    self_inode.resize(new_size);
+                    inode_meta.size = new_size;
+                    inode_meta.blocks = new_size_aligned / BLOCK_SIZE;
                 }
                 write_len
             }
             InodeType::CharDevice | InodeType::BlockDevice => {
-                let self_inode = self.node.read();
-                let device = self_inode.inner.as_device().unwrap();
+                let device = self.inner.as_device().unwrap();
                 device.write(reader)?
                 // Typically, devices like "/dev/zero" or "/dev/null" do not require modifying
                 // timestamps here. Please adjust this behavior accordingly if there are special devices.
             }
             InodeType::NamedPipe => {
-                let self_inode = self.node.read();
-                let named_pipe = self_inode.inner.as_named_pipe().unwrap();
+                let named_pipe = self.inner.as_named_pipe().unwrap();
                 named_pipe.write(reader)?
             }
             _ => return_errno_with_message!(Errno::EISDIR, "write is not supported"),
@@ -646,7 +589,7 @@ impl Inode for RamInode {
     }
 
     fn size(&self) -> usize {
-        self.node.read().metadata.size
+        self.metadata.lock().size
     }
 
     fn resize(&self, new_size: usize) -> Result<()> {
@@ -654,47 +597,44 @@ impl Inode for RamInode {
             return_errno_with_message!(Errno::EISDIR, "not regular file");
         }
 
-        let self_inode = self.node.upread();
-        let file_size = self_inode.metadata.size;
+        let file_size = self.size();
         if file_size == new_size {
             return Ok(());
         }
 
-        let mut self_inode = self_inode.upgrade();
-        self_inode.resize(new_size);
-        let now = now();
-        self_inode.set_mtime(now);
-        self_inode.set_ctime(now);
-
-        let self_inode = self_inode.downgrade();
-        let page_cache = self_inode.inner.as_file().unwrap();
+        let page_cache = self.inner.as_file().unwrap();
         page_cache.resize(new_size)?;
 
+        let now = now();
+        let mut inode_meta = self.metadata.lock();
+        inode_meta.set_mtime(now);
+        inode_meta.set_ctime(now);
+        inode_meta.resize(new_size);
         Ok(())
     }
 
     fn atime(&self) -> Duration {
-        self.node.read().atime()
+        self.metadata.lock().atime
     }
 
     fn set_atime(&self, time: Duration) {
-        self.node.write().set_atime(time)
+        self.metadata.lock().set_atime(time);
     }
 
     fn mtime(&self) -> Duration {
-        self.node.read().mtime()
+        self.metadata.lock().mtime
     }
 
     fn set_mtime(&self, time: Duration) {
-        self.node.write().set_mtime(time)
+        self.metadata.lock().set_mtime(time);
     }
 
     fn ctime(&self) -> Duration {
-        self.node.read().ctime()
+        self.metadata.lock().ctime
     }
 
     fn set_ctime(&self, time: Duration) {
-        self.node.write().set_ctime(time)
+        self.metadata.lock().set_ctime(time);
     }
 
     fn ino(&self) -> u64 {
@@ -706,35 +646,35 @@ impl Inode for RamInode {
     }
 
     fn mode(&self) -> Result<InodeMode> {
-        Ok(self.node.read().metadata.mode)
+        Ok(self.metadata.lock().mode)
     }
 
     fn set_mode(&self, mode: InodeMode) -> Result<()> {
-        let mut self_inode = self.node.write();
-        self_inode.metadata.mode = mode;
-        self_inode.set_ctime(now());
+        let mut inode_meta = self.metadata.lock();
+        inode_meta.mode = mode;
+        inode_meta.set_ctime(now());
         Ok(())
     }
 
     fn owner(&self) -> Result<Uid> {
-        Ok(self.node.read().metadata.uid)
+        Ok(self.metadata.lock().uid)
     }
 
     fn set_owner(&self, uid: Uid) -> Result<()> {
-        let mut self_inode = self.node.write();
-        self_inode.metadata.uid = uid;
-        self_inode.set_ctime(now());
+        let mut inode_meta = self.metadata.lock();
+        inode_meta.uid = uid;
+        inode_meta.set_ctime(now());
         Ok(())
     }
 
     fn group(&self) -> Result<Gid> {
-        Ok(self.node.read().metadata.gid)
+        Ok(self.metadata.lock().gid)
     }
 
     fn set_group(&self, gid: Gid) -> Result<()> {
-        let mut self_inode = self.node.write();
-        self_inode.metadata.gid = gid;
-        self_inode.set_ctime(now());
+        let mut inode_meta = self.metadata.lock();
+        inode_meta.gid = gid;
+        inode_meta.set_ctime(now());
         Ok(())
     }
 
@@ -746,11 +686,12 @@ impl Inode for RamInode {
             return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
         }
 
-        let self_inode = self.node.upread();
-        if self_inode.inner.as_direntry().unwrap().contains_entry(name) {
+        let self_dir = self.inner.as_direntry().unwrap().upread();
+        if self_dir.contains_entry(name) {
             return_errno_with_message!(Errno::EEXIST, "entry exists");
         }
-        let inode = match type_ {
+
+        let new_inode = match type_ {
             MknodType::CharDeviceNode(device) | MknodType::BlockDeviceNode(device) => {
                 RamInode::new_device(
                     &self.fs.upgrade().unwrap(),
@@ -768,21 +709,19 @@ impl Inode for RamInode {
             ),
         };
 
-        let mut self_inode = self_inode.upgrade();
-        self_inode
-            .inner
-            .as_direntry_mut()
-            .unwrap()
-            .append_entry(name, inode.clone());
-        self_inode.inc_size();
-        Ok(inode)
+        let mut self_dir = self_dir.upgrade();
+        self_dir.append_entry(name, new_inode.clone());
+        drop(self_dir);
+
+        self.metadata.lock().inc_size();
+        Ok(new_inode)
     }
 
     fn as_device(&self) -> Option<Arc<dyn Device>> {
         if !self.typ.is_device() {
             return None;
         }
-        self.node.read().inner.as_device().cloned()
+        self.inner.as_device().cloned()
     }
 
     fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
@@ -793,10 +732,11 @@ impl Inode for RamInode {
             return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
         }
 
-        let self_inode = self.node.upread();
-        if self_inode.inner.as_direntry().unwrap().contains_entry(name) {
+        let self_dir = self.inner.as_direntry().unwrap().upread();
+        if self_dir.contains_entry(name) {
             return_errno_with_message!(Errno::EEXIST, "entry exists");
         }
+
         let fs = self.fs.upgrade().unwrap();
         let new_inode = match type_ {
             InodeType::File => RamInode::new_file(&fs, mode, Uid::new_root(), Gid::new_root()),
@@ -812,19 +752,18 @@ impl Inode for RamInode {
             }
         };
 
-        let mut self_inode = self_inode.upgrade();
-        if InodeType::Dir == type_ {
-            self_inode.inc_nlinks();
-        }
-        self_inode
-            .inner
-            .as_direntry_mut()
-            .unwrap()
-            .append_entry(name, new_inode.clone());
-        self_inode.inc_size();
+        let mut self_dir = self_dir.upgrade();
+        self_dir.append_entry(name, new_inode.clone());
+        drop(self_dir);
+
         let now = now();
-        self_inode.set_mtime(now);
-        self_inode.set_ctime(now);
+        let mut inode_meta = self.metadata.lock();
+        inode_meta.set_mtime(now);
+        inode_meta.set_ctime(now);
+        inode_meta.inc_size();
+        if type_ == InodeType::Dir {
+            inode_meta.inc_nlinks();
+        }
 
         Ok(new_inode)
     }
@@ -835,11 +774,10 @@ impl Inode for RamInode {
         }
 
         let cnt = self
-            .node
-            .read()
             .inner
             .as_direntry()
             .unwrap()
+            .read()
             .visit_entry(offset, visitor)?;
 
         self.set_atime(now());
@@ -854,6 +792,7 @@ impl Inode for RamInode {
         if self.typ != InodeType::Dir {
             return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
         }
+
         let old = old
             .downcast_ref::<RamInode>()
             .ok_or(Error::new(Errno::EXDEV))?;
@@ -861,21 +800,23 @@ impl Inode for RamInode {
             return_errno_with_message!(Errno::EPERM, "old is a dir");
         }
 
-        let mut self_inode = self.node.write();
-        let self_dir = self_inode.inner.as_direntry_mut().unwrap();
+        let mut self_dir = self.inner.as_direntry().unwrap().write();
         if self_dir.contains_entry(name) {
             return_errno_with_message!(Errno::EEXIST, "entry exist");
         }
         self_dir.append_entry(name, old.this.upgrade().unwrap());
-        self_inode.inc_size();
-        let now = now();
-        self_inode.set_mtime(now);
-        self_inode.set_ctime(now);
-        drop(self_inode);
+        drop(self_dir);
 
-        let mut old_inode = old.node.write();
-        old_inode.inc_nlinks();
-        old_inode.set_ctime(now);
+        let now = now();
+        let mut self_meta = self.metadata.lock();
+        self_meta.set_mtime(now);
+        self_meta.set_ctime(now);
+        self_meta.inc_size();
+        drop(self_meta);
+
+        let mut old_meta = old.metadata.lock();
+        old_meta.inc_nlinks();
+        old_meta.set_ctime(now);
 
         Ok(())
     }
@@ -891,20 +832,23 @@ impl Inode for RamInode {
         }
 
         // When we got the lock, the dir may have been modified by another thread
-        let (mut self_inode, mut target_inode) = write_lock_two_inodes(self, &target);
-        let self_dir = self_inode.inner.as_direntry_mut().unwrap();
+        let mut self_dir = self.inner.as_direntry().unwrap().write();
         let (idx, new_target) = self_dir.get_entry(name).ok_or(Error::new(Errno::ENOENT))?;
         if !Arc::ptr_eq(&new_target, &target) {
             return_errno!(Errno::ENOENT);
         }
-
         self_dir.remove_entry(idx);
-        self_inode.dec_size();
-        target_inode.dec_nlinks();
+        drop(self_dir);
+
         let now = now();
-        self_inode.set_mtime(now);
-        self_inode.set_ctime(now);
-        target_inode.set_ctime(now);
+        let mut self_meta = self.metadata.lock();
+        self_meta.dec_size();
+        self_meta.set_mtime(now);
+        self_meta.set_ctime(now);
+        drop(self_meta);
+        let mut target_meta = target.metadata.lock();
+        target_meta.dec_nlinks();
+        target_meta.set_ctime(now);
 
         Ok(())
     }
@@ -922,40 +866,32 @@ impl Inode for RamInode {
             return_errno_with_message!(Errno::ENOTDIR, "rmdir on not dir");
         }
 
-        let target_inode = target.node.read();
-        if !target_inode
-            .inner
-            .as_direntry()
-            .unwrap()
-            .is_empty_children()
-        {
+        // When we got the lock, the dir may have been modified by another thread
+        let (mut self_dir, target_dir) = write_lock_two_direntries_by_ino(
+            (self.ino, self.inner.as_direntry().unwrap()),
+            (target.ino, target.inner.as_direntry().unwrap()),
+        );
+        if !target_dir.is_empty_children() {
             return_errno_with_message!(Errno::ENOTEMPTY, "dir not empty");
         }
-        drop(target_inode);
-
-        // When we got the lock, the dir may have been modified by another thread
-        let (mut self_inode, mut target_inode) = write_lock_two_inodes(self, &target);
-        let self_dir = self_inode.inner.as_direntry_mut().unwrap();
         let (idx, new_target) = self_dir.get_entry(name).ok_or(Error::new(Errno::ENOENT))?;
         if !Arc::ptr_eq(&new_target, &target) {
             return_errno!(Errno::ENOENT);
         }
-        if !target_inode
-            .inner
-            .as_direntry()
-            .unwrap()
-            .is_empty_children()
-        {
-            return_errno_with_message!(Errno::ENOTEMPTY, "dir not empty");
-        }
         self_dir.remove_entry(idx);
-        self_inode.dec_size();
-        self_inode.dec_nlinks();
+        drop(self_dir);
+        drop(target_dir);
+
         let now = now();
-        self_inode.set_mtime(now);
-        self_inode.set_ctime(now);
-        target_inode.dec_nlinks();
-        target_inode.dec_nlinks();
+        let mut self_meta = self.metadata.lock();
+        self_meta.dec_size();
+        self_meta.dec_nlinks();
+        self_meta.set_mtime(now);
+        self_meta.set_ctime(now);
+        drop(self_meta);
+        let mut target_meta = target.metadata.lock();
+        target_meta.dec_nlinks();
+        target_meta.dec_nlinks();
 
         Ok(())
     }
@@ -997,11 +933,10 @@ impl Inode for RamInode {
                 match (src_inode.typ, dst_inode.typ) {
                     (InodeType::Dir, InodeType::Dir) => {
                         if !dst_inode
-                            .node
-                            .read()
                             .inner
                             .as_direntry()
                             .unwrap()
+                            .read()
                             .is_empty_children()
                         {
                             return_errno_with_message!(Errno::ENOTEMPTY, "dir not empty");
@@ -1020,8 +955,7 @@ impl Inode for RamInode {
 
         // Rename in the same directory
         if self.ino == target.ino {
-            let mut self_inode = self.node.write();
-            let self_dir = self_inode.inner.as_direntry_mut().unwrap();
+            let mut self_dir = self.inner.as_direntry().unwrap().write();
             let (src_idx, src_inode) = self_dir
                 .get_entry(old_name)
                 .ok_or(Error::new(Errno::ENOENT))?;
@@ -1031,31 +965,38 @@ impl Inode for RamInode {
                 check_replace_inode(&src_inode, &dst_inode)?;
                 self_dir.remove_entry(dst_idx);
                 self_dir.substitute_entry(src_idx, (CStr256::from(new_name), src_inode.clone()));
-                self_inode.dec_size();
-                if is_dir {
-                    self_inode.dec_nlinks();
-                }
+                drop(self_dir);
+
                 let now = now();
-                self_inode.set_mtime(now);
-                self_inode.set_ctime(now);
-                drop(self_inode);
-                dst_inode.set_ctime(now);
+                let mut self_meta = self.metadata.lock();
+                self_meta.dec_size();
+                if is_dir {
+                    self_meta.dec_nlinks();
+                }
+                self_meta.set_mtime(now);
+                self_meta.set_ctime(now);
+                drop(self_meta);
                 src_inode.set_ctime(now);
+                dst_inode.set_ctime(now);
             } else {
                 self_dir.substitute_entry(src_idx, (CStr256::from(new_name), src_inode.clone()));
+                drop(self_dir);
                 let now = now();
-                self_inode.set_mtime(now);
-                self_inode.set_ctime(now);
-                drop(self_inode);
+                let mut self_meta = self.metadata.lock();
+                self_meta.set_mtime(now);
+                self_meta.set_ctime(now);
+                drop(self_meta);
                 src_inode.set_ctime(now);
             }
         }
         // Or rename across different directories
         else {
-            let (mut self_inode, mut target_inode) = write_lock_two_inodes(self, target);
+            let (mut self_dir, mut target_dir) = write_lock_two_direntries_by_ino(
+                (self.ino, self.inner.as_direntry().unwrap()),
+                (target.ino, target.inner.as_direntry().unwrap()),
+            );
             let self_inode_arc = self.this.upgrade().unwrap();
             let target_inode_arc = target.this.upgrade().unwrap();
-            let self_dir = self_inode.inner.as_direntry_mut().unwrap();
             let (src_idx, src_inode) = self_dir
                 .get_entry(old_name)
                 .ok_or(Error::new(Errno::ENOENT))?;
@@ -1065,7 +1006,6 @@ impl Inode for RamInode {
             }
             let is_dir = src_inode.typ == InodeType::Dir;
 
-            let target_dir = target_inode.inner.as_direntry_mut().unwrap();
             if let Some((dst_idx, dst_inode)) = target_dir.get_entry(new_name) {
                 // Avoid renaming a subdirectory to a directory.
                 if Arc::ptr_eq(&self_inode_arc, &dst_inode) {
@@ -1075,45 +1015,57 @@ impl Inode for RamInode {
                 self_dir.remove_entry(src_idx);
                 target_dir.remove_entry(dst_idx);
                 target_dir.append_entry(new_name, src_inode.clone());
-                self_inode.dec_size();
-                if is_dir {
-                    self_inode.dec_nlinks();
-                }
+                drop(self_dir);
+                drop(target_dir);
+
                 let now = now();
-                self_inode.set_mtime(now);
-                self_inode.set_ctime(now);
-                target_inode.set_mtime(now);
-                target_inode.set_ctime(now);
-                drop(self_inode);
-                drop(target_inode);
+                let mut self_meta = self.metadata.lock();
+                self_meta.dec_size();
+                if is_dir {
+                    self_meta.dec_nlinks();
+                }
+                self_meta.set_mtime(now);
+                self_meta.set_ctime(now);
+                drop(self_meta);
+                let mut target_meta = target.metadata.lock();
+                target_meta.set_mtime(now);
+                target_meta.set_ctime(now);
+                drop(target_meta);
                 dst_inode.set_ctime(now);
                 src_inode.set_ctime(now);
             } else {
                 self_dir.remove_entry(src_idx);
                 target_dir.append_entry(new_name, src_inode.clone());
-                self_inode.dec_size();
-                target_inode.inc_size();
-                if is_dir {
-                    self_inode.dec_nlinks();
-                    target_inode.inc_nlinks();
-                }
+                drop(self_dir);
+                drop(target_dir);
+
                 let now = now();
-                self_inode.set_mtime(now);
-                self_inode.set_ctime(now);
-                target_inode.set_mtime(now);
-                target_inode.set_ctime(now);
-                drop(self_inode);
-                drop(target_inode);
+                let mut self_meta = self.metadata.lock();
+                self_meta.dec_size();
+                if is_dir {
+                    self_meta.dec_nlinks();
+                }
+                self_meta.set_mtime(now);
+                self_meta.set_ctime(now);
+                drop(self_meta);
+
+                let mut target_meta = target.metadata.lock();
+                target_meta.inc_size();
+                if is_dir {
+                    target_meta.inc_nlinks();
+                }
+                target_meta.set_mtime(now);
+                target_meta.set_ctime(now);
+                drop(target_meta);
                 src_inode.set_ctime(now);
             }
 
             if is_dir {
                 src_inode
-                    .node
-                    .write()
                     .inner
-                    .as_direntry_mut()
+                    .as_direntry()
                     .unwrap()
+                    .write()
                     .set_parent(target.this.clone());
             }
         }
@@ -1125,9 +1077,8 @@ impl Inode for RamInode {
             return_errno_with_message!(Errno::EINVAL, "self is not symlink");
         }
 
-        let self_inode = self.node.read();
-        let link = self_inode.inner.as_symlink().unwrap();
-        Ok(String::from(link))
+        let link = self.inner.as_symlink().unwrap().lock();
+        Ok(link.clone())
     }
 
     fn write_link(&self, target: &str) -> Result<()> {
@@ -1135,17 +1086,22 @@ impl Inode for RamInode {
             return_errno_with_message!(Errno::EINVAL, "self is not symlink");
         }
 
-        let mut self_inode = self.node.write();
-        let link = self_inode.inner.as_symlink_mut().unwrap();
+        let mut link = self.inner.as_symlink().unwrap().lock();
         *link = String::from(target);
+        drop(link);
+
         // Symlink's metadata.blocks should be 0, so just set the size.
-        self_inode.metadata.size = target.len();
+        self.metadata.lock().size = target.len();
         Ok(())
     }
 
     fn metadata(&self) -> Metadata {
-        let self_inode = self.node.read();
-        let inode_metadata = &self_inode.metadata;
+        let rdev = self
+            .inner
+            .as_device()
+            .map(|device| device.id().into())
+            .unwrap_or(0);
+        let inode_metadata = self.metadata.lock();
         Metadata {
             dev: 0,
             ino: self.ino as _,
@@ -1160,28 +1116,19 @@ impl Inode for RamInode {
             nlinks: inode_metadata.nlinks,
             uid: inode_metadata.uid,
             gid: inode_metadata.gid,
-            rdev: {
-                if let Some(device) = self_inode.inner.as_device() {
-                    device.id().into()
-                } else {
-                    0
-                }
-            },
+            rdev,
         }
     }
 
     fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
         if !self.typ.is_device() {
-            // Fast path: bypassing the read lock on `self.node`
-            // results in a 5x speed improvement for lmbench-select-file.
             return (IoEvents::IN | IoEvents::OUT) & mask;
         }
 
-        let node = self.node.read();
-        let device = node
+        let device = self
             .inner
             .as_device()
-            .expect("[Internal error] self.typ is device, while self.node is not");
+            .expect("[Internal error] self.typ is device, while self.inner is not");
         device.poll(mask, poller)
     }
 
@@ -1208,14 +1155,13 @@ impl Inode for RamInode {
                 Ok(())
             }
             FallocMode::PunchHoleKeepSize => {
-                let node = self.node.read();
-                let file_size = node.metadata.size;
+                let file_size = self.size();
                 if offset >= file_size {
                     return Ok(());
                 }
                 let range = offset..file_size.min(offset + len);
                 // TODO: Think of a more light-weight approach
-                node.inner.as_file().unwrap().fill_zeros(range)
+                self.inner.as_file().unwrap().fill_zeros(range)
             }
             _ => {
                 return_errno_with_message!(
@@ -1227,7 +1173,7 @@ impl Inode for RamInode {
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
-        if let Some(device) = self.node.read().inner.as_device() {
+        if let Some(device) = self.inner.as_device() {
             return device.ioctl(cmd, arg);
         }
         return_errno_with_message!(Errno::EINVAL, "ioctl is not supported");
@@ -1245,17 +1191,20 @@ impl Inode for RamInode {
     }
 }
 
-fn write_lock_two_inodes<'a>(
-    this: &'a RamInode,
-    other: &'a RamInode,
-) -> (RwMutexWriteGuard<'a, Node>, RwMutexWriteGuard<'a, Node>) {
-    if this.ino < other.ino {
-        let this = this.node.write();
-        let other = other.node.write();
+fn write_lock_two_direntries_by_ino<'a>(
+    this: (u64, &'a RwLock<DirEntry>),
+    other: (u64, &'a RwLock<DirEntry>),
+) -> (
+    RwLockWriteGuard<'a, DirEntry>,
+    RwLockWriteGuard<'a, DirEntry>,
+) {
+    if this.0 < other.0 {
+        let this = this.1.write();
+        let other = other.1.write();
         (this, other)
     } else {
-        let other = other.node.write();
-        let this = this.node.write();
+        let other = other.1.write();
+        let this = this.1.write();
         (this, other)
     }
 }
