@@ -63,6 +63,7 @@ jobs:
           - lmbench/tcp_loopback_http_bw
           - lmbench/udp_loopback_lat
           - iperf3/tcp_virtio_bw
+          - nginx/http_req10k_conc1_bw
       fail-fast: false
     timeout-minutes: 60
     container: 
