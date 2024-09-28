@@ -57,7 +57,7 @@ impl DmaCoherent {
         vm_segment: Segment,
         is_cache_coherent: bool,
     ) -> core::result::Result<Self, DmaError> {
-        let frame_count = vm_segment.nframes();
+        let frame_count = vm_segment.nbytes() / PAGE_SIZE;
         let start_paddr = vm_segment.start_paddr();
         if !check_and_insert_dma_mapping(start_paddr, frame_count) {
             return Err(DmaError::AlreadyMapped);
@@ -109,6 +109,11 @@ impl DmaCoherent {
             }),
         })
     }
+
+    /// Returns the number of bytes in the DMA mapping.
+    pub fn nbytes(&self) -> usize {
+        self.inner.vm_segment.nbytes()
+    }
 }
 
 impl HasDaddr for DmaCoherent {
@@ -126,7 +131,7 @@ impl Deref for DmaCoherent {
 
 impl Drop for DmaCoherentInner {
     fn drop(&mut self) {
-        let frame_count = self.vm_segment.nframes();
+        let frame_count = self.vm_segment.nbytes() / PAGE_SIZE;
         let start_paddr = self.vm_segment.start_paddr();
         // Ensure that the addresses used later will not overflow
         start_paddr.checked_add(frame_count * PAGE_SIZE).unwrap();
@@ -217,9 +222,8 @@ mod test {
 
     #[ktest]
     fn map_with_coherent_device() {
-        let vm_segment = FrameAllocOptions::new(1)
-            .is_contiguous(true)
-            .alloc_contiguous()
+        let vm_segment = FrameAllocOptions::new()
+            .alloc_contiguous(1, |_| ())
             .unwrap();
         let dma_coherent = DmaCoherent::map(vm_segment.clone(), true).unwrap();
         assert!(dma_coherent.paddr() == vm_segment.paddr());
@@ -227,9 +231,8 @@ mod test {
 
     #[ktest]
     fn map_with_incoherent_device() {
-        let vm_segment = FrameAllocOptions::new(1)
-            .is_contiguous(true)
-            .alloc_contiguous()
+        let vm_segment = FrameAllocOptions::new()
+            .alloc_contiguous(1, |_| ())
             .unwrap();
         let dma_coherent = DmaCoherent::map(vm_segment.clone(), false).unwrap();
         assert!(dma_coherent.paddr() == vm_segment.paddr());
@@ -240,11 +243,10 @@ mod test {
 
     #[ktest]
     fn duplicate_map() {
-        let vm_segment_parent = FrameAllocOptions::new(2)
-            .is_contiguous(true)
-            .alloc_contiguous()
+        let vm_segment_parent = FrameAllocOptions::new()
+            .alloc_contiguous(2, |_| ())
             .unwrap();
-        let vm_segment_child = vm_segment_parent.range(0..1);
+        let vm_segment_child = vm_segment_parent.slice(&(0..PAGE_SIZE));
         let _dma_coherent_parent = DmaCoherent::map(vm_segment_parent, false);
         let dma_coherent_child = DmaCoherent::map(vm_segment_child, false);
         assert!(dma_coherent_child.is_err());
@@ -252,9 +254,8 @@ mod test {
 
     #[ktest]
     fn read_and_write() {
-        let vm_segment = FrameAllocOptions::new(2)
-            .is_contiguous(true)
-            .alloc_contiguous()
+        let vm_segment = FrameAllocOptions::new()
+            .alloc_contiguous(2, |_| ())
             .unwrap();
         let dma_coherent = DmaCoherent::map(vm_segment, false).unwrap();
 
@@ -267,9 +268,8 @@ mod test {
 
     #[ktest]
     fn reader_and_writer() {
-        let vm_segment = FrameAllocOptions::new(2)
-            .is_contiguous(true)
-            .alloc_contiguous()
+        let vm_segment = FrameAllocOptions::new()
+            .alloc_contiguous(2, |_| ())
             .unwrap();
         let dma_coherent = DmaCoherent::map(vm_segment, false).unwrap();
 

@@ -2,6 +2,8 @@
 
 #![allow(dead_code)]
 
+use ostd::mm::AnyFrame;
+
 use super::{
     block_group::{BlockGroup, RawGroupDescriptor},
     block_ptr::Ext2Bid,
@@ -23,7 +25,7 @@ pub struct Ext2 {
     blocks_per_group: Ext2Bid,
     inode_size: usize,
     block_size: usize,
-    group_descriptors_segment: Segment,
+    group_descriptors_segment: SegmentSlice,
     self_ref: Weak<Self>,
 }
 
@@ -46,9 +48,10 @@ impl Ext2 {
             let npages = ((super_block.block_groups_count() as usize)
                 * core::mem::size_of::<RawGroupDescriptor>())
             .div_ceil(BLOCK_SIZE);
-            let segment = FrameAllocOptions::new(npages)
-                .uninit(true)
-                .alloc_contiguous()?;
+            let segment = FrameAllocOptions::new()
+                .zeroed(false)
+                .alloc_contiguous(npages, |_| ())?
+                .into();
             match block_device.read_blocks(super_block.group_descriptors_bid(0), &segment)? {
                 BioStatus::Complete => (),
                 err_status => {
@@ -61,7 +64,7 @@ impl Ext2 {
         // Load the block groups information
         let load_block_groups = |fs: Weak<Ext2>,
                                  block_device: &dyn BlockDevice,
-                                 group_descriptors_segment: &Segment|
+                                 group_descriptors_segment: &SegmentSlice|
          -> Result<Vec<BlockGroup>> {
             let block_groups_count = super_block.block_groups_count() as usize;
             let mut block_groups = Vec::with_capacity(block_groups_count);
@@ -297,7 +300,7 @@ impl Ext2 {
     }
 
     /// Reads contiguous blocks starting from the `bid` synchronously.
-    pub(super) fn read_blocks(&self, bid: Ext2Bid, segment: &Segment) -> Result<()> {
+    pub(super) fn read_blocks(&self, bid: Ext2Bid, segment: &SegmentSlice) -> Result<()> {
         let status = self
             .block_device
             .read_blocks(Bid::new(bid as u64), segment)?;
@@ -308,7 +311,11 @@ impl Ext2 {
     }
 
     /// Reads contiguous blocks starting from the `bid` asynchronously.
-    pub(super) fn read_blocks_async(&self, bid: Ext2Bid, segment: &Segment) -> Result<BioWaiter> {
+    pub(super) fn read_blocks_async(
+        &self,
+        bid: Ext2Bid,
+        segment: &SegmentSlice,
+    ) -> Result<BioWaiter> {
         let waiter = self
             .block_device
             .read_blocks_async(Bid::new(bid as u64), segment)?;
@@ -316,7 +323,7 @@ impl Ext2 {
     }
 
     /// Reads one block indicated by the `bid` synchronously.
-    pub(super) fn read_block(&self, bid: Ext2Bid, frame: &Frame) -> Result<()> {
+    pub(super) fn read_block(&self, bid: Ext2Bid, frame: &AnyFrame) -> Result<()> {
         let status = self.block_device.read_block(Bid::new(bid as u64), frame)?;
         match status {
             BioStatus::Complete => Ok(()),
@@ -325,7 +332,7 @@ impl Ext2 {
     }
 
     /// Reads one block indicated by the `bid` asynchronously.
-    pub(super) fn read_block_async(&self, bid: Ext2Bid, frame: &Frame) -> Result<BioWaiter> {
+    pub(super) fn read_block_async(&self, bid: Ext2Bid, frame: &AnyFrame) -> Result<BioWaiter> {
         let waiter = self
             .block_device
             .read_block_async(Bid::new(bid as u64), frame)?;
@@ -333,7 +340,7 @@ impl Ext2 {
     }
 
     /// Writes contiguous blocks starting from the `bid` synchronously.
-    pub(super) fn write_blocks(&self, bid: Ext2Bid, segment: &Segment) -> Result<()> {
+    pub(super) fn write_blocks(&self, bid: Ext2Bid, segment: &SegmentSlice) -> Result<()> {
         let status = self
             .block_device
             .write_blocks(Bid::new(bid as u64), segment)?;
@@ -344,7 +351,11 @@ impl Ext2 {
     }
 
     /// Writes contiguous blocks starting from the `bid` asynchronously.
-    pub(super) fn write_blocks_async(&self, bid: Ext2Bid, segment: &Segment) -> Result<BioWaiter> {
+    pub(super) fn write_blocks_async(
+        &self,
+        bid: Ext2Bid,
+        segment: &SegmentSlice,
+    ) -> Result<BioWaiter> {
         let waiter = self
             .block_device
             .write_blocks_async(Bid::new(bid as u64), segment)?;
@@ -352,7 +363,7 @@ impl Ext2 {
     }
 
     /// Writes one block indicated by the `bid` synchronously.
-    pub(super) fn write_block(&self, bid: Ext2Bid, frame: &Frame) -> Result<()> {
+    pub(super) fn write_block(&self, bid: Ext2Bid, frame: &AnyFrame) -> Result<()> {
         let status = self.block_device.write_block(Bid::new(bid as u64), frame)?;
         match status {
             BioStatus::Complete => Ok(()),
@@ -361,7 +372,7 @@ impl Ext2 {
     }
 
     /// Writes one block indicated by the `bid` asynchronously.
-    pub(super) fn write_block_async(&self, bid: Ext2Bid, frame: &Frame) -> Result<BioWaiter> {
+    pub(super) fn write_block_async(&self, bid: Ext2Bid, frame: &AnyFrame) -> Result<BioWaiter> {
         let waiter = self
             .block_device
             .write_block_async(Bid::new(bid as u64), frame)?;

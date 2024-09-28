@@ -206,6 +206,7 @@ ktest: initramfs $(CARGO_OSDK)
 	@# Exclude linux-bzimage-setup from ktest since it's hard to be unit tested
 	@for dir in $(OSDK_CRATES); do \
 		[ $$dir = "ostd/libs/linux-bzimage/setup" ] && continue; \
+		echo "Testing crate $$dir in kernel mode"; \
 		(cd $$dir && cargo osdk test) || exit 1; \
 	done
 

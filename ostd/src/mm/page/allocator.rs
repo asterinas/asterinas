@@ -1,11 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! The physical page memory allocator.
-//!
-//! TODO: Decouple it with the frame allocator in [`crate::mm::frame::options`] by
-//! allocating pages rather untyped memory from this module.
-
-use alloc::vec::Vec;
 
 use align_ext::AlignExt;
 use buddy_system_allocator::FrameAllocator;
@@ -93,34 +88,6 @@ where
         .map(|start| {
             ContPages::from_unused(start * PAGE_SIZE..start * PAGE_SIZE + len, metadata_fn)
         })
-}
-
-/// Allocate pages.
-///
-/// The allocated pages are not guaranteed to be contiguous.
-/// The total length of the allocated pages is `len`.
-///
-/// The caller must provide a closure to initialize metadata for all the pages.
-/// The closure receives the physical address of the page and returns the
-/// metadata, which is similar to [`core::array::from_fn`].
-///
-/// # Panics
-///
-/// The function panics if the length is not base-page-aligned.
-pub(crate) fn alloc<M: PageMeta, F>(len: usize, mut metadata_fn: F) -> Option<Vec<Page<M>>>
-where
-    F: FnMut(Paddr) -> M,
-{
-    assert!(len % PAGE_SIZE == 0);
-    let nframes = len / PAGE_SIZE;
-    let mut allocator = PAGE_ALLOCATOR.get().unwrap().lock();
-    let mut vector = Vec::new();
-    for _ in 0..nframes {
-        let paddr = allocator.alloc(1)? * PAGE_SIZE;
-        let page = Page::<M>::from_unused(paddr, metadata_fn(paddr));
-        vector.push(page);
-    }
-    Some(vector)
 }
 
 pub(crate) fn init() {

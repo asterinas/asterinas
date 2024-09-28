@@ -23,7 +23,7 @@ use crate::{
         kspace::KERNEL_PAGE_TABLE,
         page_table::{self, PageTable, PageTableItem, UserMode},
         tlb::{TlbFlushOp, TlbFlusher, FLUSH_ALL_RANGE_THRESHOLD},
-        Frame, PageProperty, VmReader, VmWriter, MAX_USERSPACE_VADDR,
+        AnyFrame, PageProperty, VmReader, VmWriter, MAX_USERSPACE_VADDR,
     },
     prelude::*,
     sync::{RwLock, RwLockReadGuard},
@@ -33,17 +33,17 @@ use crate::{
 
 /// Virtual memory space.
 ///
-/// A virtual memory space (`VmSpace`) can be created and assigned to a user
+/// A virtual memory space ([`VmSpace`]) can be created and assigned to a user
 /// space so that the virtual memory of the user space can be manipulated
 /// safely. For example,  given an arbitrary user-space pointer, one can read
 /// and write the memory location referred to by the user-space pointer without
 /// the risk of breaking the memory safety of the kernel space.
 ///
 /// A newly-created `VmSpace` is not backed by any physical memory pages. To
-/// provide memory pages for a `VmSpace`, one can allocate and map physical
-/// memory ([`Frame`]s) to the `VmSpace` using the cursor.
+/// provide memory pages for a `VmSpace`, one can allocate and map untyped
+/// physical memory ([`AnyFrame`]s) to the [`VmSpace`] using the cursor.
 ///
-/// A `VmSpace` can also attach a page fault handler, which will be invoked to
+/// A [`VmSpace`] can also attach a page fault handler, which will be invoked to
 /// handle page faults generated from user space.
 #[allow(clippy::type_complexity)]
 #[derive(Debug)]
@@ -287,7 +287,7 @@ impl CursorMut<'_, '_> {
     /// Map a frame into the current slot.
     ///
     /// This method will bring the cursor to the next slot after the modification.
-    pub fn map(&mut self, frame: Frame, prop: PageProperty) {
+    pub fn map(&mut self, frame: AnyFrame, prop: PageProperty) {
         let start_va = self.virt_addr();
         // SAFETY: It is safe to map untyped memory into the userspace.
         let old = unsafe { self.pt_cursor.map(frame.into(), prop) };
@@ -439,7 +439,7 @@ pub enum VmItem {
         /// The virtual address of the slot.
         va: Vaddr,
         /// The mapped frame.
-        frame: Frame,
+        frame: AnyFrame,
         /// The property of the slot.
         prop: PageProperty,
     },

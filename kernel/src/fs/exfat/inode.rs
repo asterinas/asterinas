@@ -13,7 +13,7 @@ use aster_block::{
     BLOCK_SIZE,
 };
 use aster_rights::Full;
-use ostd::mm::{Frame, FrameAllocOptions, VmIo};
+use ostd::mm::{AnyFrame, FrameAllocOptions, VmIo};
 
 use super::{
     constants::*,
@@ -135,7 +135,7 @@ struct ExfatInodeInner {
 }
 
 impl PageCacheBackend for ExfatInode {
-    fn read_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
+    fn read_page_async(&self, idx: usize, frame: &AnyFrame) -> Result<BioWaiter> {
         let inner = self.inner.read();
         if inner.size < idx * PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "Invalid read size")
@@ -148,7 +148,7 @@ impl PageCacheBackend for ExfatInode {
         Ok(waiter)
     }
 
-    fn write_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
+    fn write_page_async(&self, idx: usize, frame: &AnyFrame) -> Result<BioWaiter> {
         let inner = self.inner.read();
         let sector_size = inner.fs().sector_size();
 
@@ -1263,9 +1263,9 @@ impl Inode for ExfatInode {
             .discard_range(read_off..read_off + read_len);
 
         let mut buf_offset = 0;
-        let frame = FrameAllocOptions::new(1)
-            .uninit(true)
-            .alloc_single()
+        let frame = FrameAllocOptions::new()
+            .zeroed(false)
+            .alloc_single(())
             .unwrap();
 
         let start_pos = inner.start_chain.walk_to_cluster_at_offset(read_off)?;
@@ -1275,7 +1275,10 @@ impl Inode for ExfatInode {
         for _ in Bid::from_offset(read_off)..Bid::from_offset(read_off + read_len) {
             let physical_bid =
                 Bid::from_offset(cur_cluster.cluster_id() as usize * cluster_size + cur_offset);
-            inner.fs().block_device().read_block(physical_bid, &frame)?;
+            inner
+                .fs()
+                .block_device()
+                .read_block(physical_bid, (&frame).into())?;
             frame.read(0, writer).unwrap();
             buf_offset += BLOCK_SIZE;
 
@@ -1376,9 +1379,9 @@ impl Inode for ExfatInode {
         let mut cur_offset = start_pos.1;
         for _ in Bid::from_offset(offset)..Bid::from_offset(end_offset) {
             let frame = {
-                let frame = FrameAllocOptions::new(1)
-                    .uninit(true)
-                    .alloc_single()
+                let frame = FrameAllocOptions::new()
+                    .zeroed(false)
+                    .alloc_single(())
                     .unwrap();
                 frame.write(0, reader)?;
                 frame
@@ -1386,7 +1389,8 @@ impl Inode for ExfatInode {
             let physical_bid =
                 Bid::from_offset(cur_cluster.cluster_id() as usize * cluster_size + cur_offset);
             let fs = inner.fs();
-            fs.block_device().write_block(physical_bid, &frame)?;
+            fs.block_device()
+                .write_block(physical_bid, (&frame).into())?;
 
             cur_offset += BLOCK_SIZE;
             if cur_offset >= cluster_size {

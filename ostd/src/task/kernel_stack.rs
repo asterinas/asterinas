@@ -28,7 +28,8 @@ pub struct KernelStack {
 impl KernelStack {
     pub fn new() -> Result<Self> {
         Ok(Self {
-            segment: FrameAllocOptions::new(STACK_SIZE_IN_PAGES as usize).alloc_contiguous()?,
+            segment: FrameAllocOptions::new()
+                .alloc_contiguous(STACK_SIZE_IN_PAGES as usize, |_| ())?,
             has_guard_page: false,
         })
     }
@@ -37,7 +38,7 @@ impl KernelStack {
     /// An additional page is allocated and be regarded as a guard page, which should not be accessed.  
     pub fn new_with_guard_page() -> Result<Self> {
         let stack_segment =
-            FrameAllocOptions::new(STACK_SIZE_IN_PAGES as usize + 1).alloc_contiguous()?;
+            FrameAllocOptions::new().alloc_contiguous(STACK_SIZE_IN_PAGES as usize + 1, |_| ())?;
         // FIXME: modifying the the linear mapping is bad.
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
         let guard_page_vaddr = {

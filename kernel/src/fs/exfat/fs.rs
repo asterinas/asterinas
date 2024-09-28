@@ -8,7 +8,7 @@ use core::{num::NonZeroUsize, ops::Range, sync::atomic::AtomicU64};
 use aster_block::{bio::BioWaiter, id::BlockId, BlockDevice};
 use hashbrown::HashMap;
 use lru::LruCache;
-use ostd::mm::Frame;
+use ostd::mm::AnyFrame;
 pub(super) use ostd::mm::VmIo;
 
 use super::{
@@ -364,7 +364,7 @@ impl ExfatFS {
 }
 
 impl PageCacheBackend for ExfatFS {
-    fn read_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
+    fn read_page_async(&self, idx: usize, frame: &AnyFrame) -> Result<BioWaiter> {
         if self.fs_size() < idx * PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "invalid read size")
         }
@@ -374,7 +374,7 @@ impl PageCacheBackend for ExfatFS {
         Ok(waiter)
     }
 
-    fn write_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
+    fn write_page_async(&self, idx: usize, frame: &AnyFrame) -> Result<BioWaiter> {
         if self.fs_size() < idx * PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "invalid write size")
         }

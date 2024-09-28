@@ -9,7 +9,7 @@ pub type Vaddr = usize;
 pub type Paddr = usize;
 
 pub(crate) mod dma;
-pub mod frame;
+mod frame;
 pub(crate) mod heap_allocator;
 mod io;
 pub(crate) mod kspace;
@@ -25,7 +25,7 @@ use core::{fmt::Debug, ops::Range};
 
 pub use self::{
     dma::{Daddr, DmaCoherent, DmaDirection, DmaStream, DmaStreamSlice, HasDaddr},
-    frame::{options::FrameAllocOptions, Frame, Segment},
+    frame::{options::FrameAllocOptions, AnyFrame, Frame, Segment, UntypedPage},
     io::{
         Fallible, FallibleVmRead, FallibleVmWrite, Infallible, PodOnce, VmIo, VmIoOnce, VmReader,
         VmWriter,

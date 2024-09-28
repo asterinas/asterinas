@@ -63,7 +63,7 @@ impl DmaStream {
         direction: DmaDirection,
         is_cache_coherent: bool,
     ) -> Result<Self, DmaError> {
-        let frame_count = vm_segment.nframes();
+        let frame_count = vm_segment.nbytes() / PAGE_SIZE;
         let start_paddr = vm_segment.start_paddr();
         if !check_and_insert_dma_mapping(start_paddr, frame_count) {
             return Err(DmaError::AlreadyMapped);
@@ -119,7 +119,7 @@ impl DmaStream {
 
     /// Returns the number of frames
     pub fn nframes(&self) -> usize {
-        self.inner.vm_segment.nframes()
+        self.inner.vm_segment.nbytes() / PAGE_SIZE
     }
 
     /// Returns the number of bytes
@@ -171,7 +171,7 @@ impl HasDaddr for DmaStream {
 
 impl Drop for DmaStreamInner {
     fn drop(&mut self) {
-        let frame_count = self.vm_segment.nframes();
+        let frame_count = self.vm_segment.nbytes() / PAGE_SIZE;
         let start_paddr = self.vm_segment.start_paddr();
         // Ensure that the addresses used later will not overflow
         start_paddr.checked_add(frame_count * PAGE_SIZE).unwrap();
@@ -318,9 +318,8 @@ mod test {
 
     #[ktest]
     fn streaming_map() {
-        let vm_segment = FrameAllocOptions::new(1)
-            .is_contiguous(true)
-            .alloc_contiguous()
+        let vm_segment = FrameAllocOptions::new()
+            .alloc_contiguous(1, |_| ())
             .unwrap();
         let dma_stream =
             DmaStream::map(vm_segment.clone(), DmaDirection::Bidirectional, true).unwrap();
@@ -329,11 +328,10 @@ mod test {
 
     #[ktest]
     fn duplicate_map() {
-        let vm_segment_parent = FrameAllocOptions::new(2)
-            .is_contiguous(true)
-            .alloc_contiguous()
+        let vm_segment_parent = FrameAllocOptions::new()
+            .alloc_contiguous(2, |_| ())
             .unwrap();
-        let vm_segment_child = vm_segment_parent.range(0..1);
+        let vm_segment_child = vm_segment_parent.slice(&(0..PAGE_SIZE));
         let dma_stream_parent =
             DmaStream::map(vm_segment_parent, DmaDirection::Bidirectional, false);
         let dma_stream_child = DmaStream::map(vm_segment_child, DmaDirection::Bidirectional, false);
@@ -343,9 +341,8 @@ mod test {
 
     #[ktest]
     fn read_and_write() {
-        let vm_segment = FrameAllocOptions::new(2)
-            .is_contiguous(true)
-            .alloc_contiguous()
+        let vm_segment = FrameAllocOptions::new()
+            .alloc_contiguous(2, |_| ())
             .unwrap();
         let dma_stream = DmaStream::map(vm_segment, DmaDirection::Bidirectional, false).unwrap();
 
@@ -359,9 +356,8 @@ mod test {
 
     #[ktest]
     fn reader_and_writer() {
-        let vm_segment = FrameAllocOptions::new(2)
-            .is_contiguous(true)
-            .alloc_contiguous()
+        let vm_segment = FrameAllocOptions::new()
+            .alloc_contiguous(2, |_| ())
             .unwrap();
         let dma_stream = DmaStream::map(vm_segment, DmaDirection::Bidirectional, false).unwrap();
 

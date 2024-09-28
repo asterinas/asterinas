@@ -12,8 +12,9 @@ pub(super) use aster_block::{
     BlockDevice, BLOCK_SIZE,
 };
 pub(super) use aster_rights::Full;
+pub(super) use aster_util::segment_slice::SegmentSlice;
 pub(super) use ostd::{
-    mm::{Frame, FrameAllocOptions, Segment, VmIo},
+    mm::{Frame, FrameAllocOptions, VmIo},
     sync::{RwMutex, RwMutexReadGuard, RwMutexWriteGuard},
 };
 pub(super) use static_assertions::const_assert;
