@@ -1,0 +1,14 @@
+[
+    {
+        "name": "Average HTTP Bandwidth over virtio-net between Host Linux and Guest Linux",
+        "unit": "Kbytes/sec",
+        "value": 0,
+        "extra": "linux_result"
+    },
+    {
+        "name": "Average HTTP Bandwidth over virtio-net between Host Linux and Guest Asterinas",
+        "unit": "Kbytes/sec",
+        "value": 0,
+        "extra": "aster_result"
+    }
+]
