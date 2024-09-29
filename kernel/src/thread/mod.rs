@@ -86,42 +86,64 @@ impl Thread {
 
     /// Runs this thread at once.
     pub fn run(&self) {
-        self.set_status(ThreadStatus::Running);
+        self.status.store(ThreadStatus::Running, Ordering::Release);
         self.task.upgrade().unwrap().run();
     }
 
+    /// Returns whether the thread is exited.
+    pub fn is_exited(&self) -> bool {
+        self.status.load(Ordering::Acquire).is_exited()
+    }
+
+    /// Returns whether the thread is stopped.
+    pub fn is_stopped(&self) -> bool {
+        self.status.load(Ordering::Acquire).is_stopped()
+    }
+
+    /// Stops the thread if it is running.
+    ///
+    /// If the previous status is not [`ThreadStatus::Running`], this function
+    /// returns [`Err`] with the previous state. Otherwise, it sets the status
+    /// to [`ThreadStatus::Stopped`] and returns [`Ok`] with the previous state.
+    ///
+    /// This function only sets the status to [`ThreadStatus::Stopped`],
+    /// without initiating a reschedule.
+    pub fn stop(&self) -> core::result::Result<ThreadStatus, ThreadStatus> {
+        self.status.compare_exchange(
+            ThreadStatus::Running,
+            ThreadStatus::Stopped,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        )
+    }
+
+    /// Resumes running the thread if it is stopped.
+    ///
+    /// If the previous status is not [`ThreadStatus::Stopped`], this function
+    /// returns [`None`]. Otherwise, it sets the status to
+    /// [`ThreadStatus::Running`] and returns [`Some(())`].
+    ///
+    /// This function only sets the status to [`ThreadStatus::Running`],
+    /// without initiating a reschedule.
+    pub fn resume(&self) -> Option<()> {
+        self.status
+            .compare_exchange(
+                ThreadStatus::Stopped,
+                ThreadStatus::Running,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .ok()
+            .map(|_| ())
+    }
+
     pub(super) fn exit(&self) {
-        self.set_status(ThreadStatus::Exited);
-    }
-
-    /// Returns the reference to the atomic status.
-    pub fn atomic_status(&self) -> &AtomicThreadStatus {
-        &self.status
-    }
-
-    /// Returns the current status.
-    pub fn status(&self) -> ThreadStatus {
-        self.status.load(Ordering::Acquire)
-    }
-
-    /// Updates the status with the new value.
-    pub fn set_status(&self, new_status: ThreadStatus) {
-        self.status.store(new_status, Ordering::Release);
+        self.status.store(ThreadStatus::Exited, Ordering::Release);
     }
 
     /// Returns the reference to the atomic priority.
     pub fn atomic_priority(&self) -> &AtomicPriority {
         &self.priority
-    }
-
-    /// Returns the current priority.
-    pub fn priority(&self) -> Priority {
-        self.priority.load(Ordering::Relaxed)
-    }
-
-    /// Updates the priority with the new value.
-    pub fn set_priority(&self, new_priority: Priority) {
-        self.priority.store(new_priority, Ordering::Relaxed)
     }
 
     /// Returns the reference to the atomic CPU affinity.

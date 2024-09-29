@@ -32,7 +32,7 @@ impl KernelThreadExt for Thread {
 
     fn join(&self) {
         loop {
-            if self.status().is_exited() {
+            if self.is_exited() {
                 return;
             } else {
                 Thread::yield_now();

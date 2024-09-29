@@ -71,17 +71,17 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Arc<Thread>)
                 ReturnReason::KernelEvent => {}
             };
 
-            if current_thread.status().is_exited() {
+            if current_thread.is_exited() {
                 break;
             }
             handle_pending_signal(user_ctx, &ctx).unwrap();
             // If current is suspended, wait for a signal to wake up self
-            while current_thread.status().is_stopped() {
+            while current_thread.is_stopped() {
                 Thread::yield_now();
                 debug!("{} is suspended.", current_posix_thread.tid());
                 handle_pending_signal(user_ctx, &ctx).unwrap();
             }
-            if current_thread.status().is_exited() {
+            if current_thread.is_exited() {
                 debug!("exit due to signal");
                 break;
             }
