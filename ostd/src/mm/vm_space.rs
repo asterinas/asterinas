@@ -333,6 +333,15 @@ impl CursorMut<'_, '_> {
                     self.flusher
                         .issue_tlb_flush_with(TlbFlushOp::Address(va), page);
                 }
+                PageTableItem::PageTableNode { page } => {
+                    if !self.flusher.need_remote_flush() && tlb_prefer_flush_all {
+                        // Only on single-CPU cases we can drop the page immediately before flushing.
+                        drop(page);
+                        continue;
+                    }
+                    // If we unmap an entire page table node, we prefer directly flushing all TLBs.
+                    self.flusher.issue_tlb_flush_with(TlbFlushOp::All, page);
+                }
                 PageTableItem::NotMapped { .. } => {
                     break;
                 }
@@ -460,6 +469,9 @@ impl TryFrom<PageTableItem> for VmItem {
             }),
             PageTableItem::MappedUntracked { .. } => {
                 Err("found untracked memory mapped into `VmSpace`")
+            }
+            PageTableItem::PageTableNode { .. } => {
+                unreachable!()
             }
         }
     }

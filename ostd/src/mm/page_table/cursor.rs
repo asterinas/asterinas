@@ -65,7 +65,7 @@
 //! table cursor should add additional entry point checks to prevent these defined
 //! behaviors if they are not wanted.
 
-use core::{any::TypeId, marker::PhantomData, ops::Range};
+use core::{any::TypeId, marker::PhantomData, mem::ManuallyDrop, ops::Range};
 
 use align_ext::AlignExt;
 
@@ -74,7 +74,10 @@ use super::{
     PageTableMode, PageTableNode, PagingConstsTrait, PagingLevel, UserMode,
 };
 use crate::{
-    mm::{page::DynPage, Paddr, PageProperty, Vaddr},
+    mm::{
+        page::{meta::PageTablePageMeta, DynPage, Page},
+        Paddr, PageProperty, Vaddr,
+    },
     task::{disable_preempt, DisabledPreemptGuard},
 };
 
@@ -88,6 +91,9 @@ pub enum PageTableItem {
         va: Vaddr,
         page: DynPage,
         prop: PageProperty,
+    },
+    PageTableNode {
+        page: DynPage,
     },
     #[allow(dead_code)]
     MappedUntracked {
@@ -587,8 +593,21 @@ where
                 continue;
             }
 
-            // Level down if the current PTE points to a page table.
-            if !cur_pte.is_last(self.0.level) {
+            if self.0.va % page_size::<C>(self.0.level) != 0
+                || self.0.va + page_size::<C>(self.0.level) > end
+            {
+                if !is_tracked {
+                    // Level down if we are removing part of a huge untracked page.
+                    self.level_down_split();
+                    continue;
+                }
+
+                if cur_pte.is_last(self.0.level) {
+                    panic!("removing part of a huge page");
+                }
+
+                // Level down if the current PTE points to a page table and we cannot
+                // unmap this page table node entirely.
                 self.0.level_down();
 
                 // We have got down a level. If there's no mapped PTEs in
@@ -602,20 +621,7 @@ where
                     self.0.level_up();
                     self.0.move_forward();
                 }
-
                 continue;
-            }
-
-            // Level down if we are removing part of a huge untracked page.
-            if self.0.va % page_size::<C>(self.0.level) != 0
-                || self.0.va + page_size::<C>(self.0.level) > end
-            {
-                if !is_tracked {
-                    self.level_down_split();
-                    continue;
-                } else {
-                    panic!("removing part of a huge page");
-                }
             }
 
             // Unmap the current page and return it.
@@ -640,7 +646,12 @@ where
                     len: ret_page_size,
                     prop,
                 },
-                Child::None | Child::PageTable(_) => unreachable!(),
+                Child::PageTable(node) => {
+                    let node = ManuallyDrop::new(node);
+                    let page = Page::<PageTablePageMeta<E, C>>::from_raw(node.paddr());
+                    PageTableItem::PageTableNode { page: page.into() }
+                }
+                Child::None => unreachable!(),
             };
         }
 
