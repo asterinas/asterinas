@@ -8,6 +8,8 @@
 //! further analyzed using tools like
 //! [flame graph](https://github.com/brendangregg/FlameGraph).
 
+use inferno::flamegraph;
+
 use crate::{
     cli::{ProfileArgs, ProfileFormat},
     commands::util::bin_file_name,
@@ -103,50 +105,68 @@ impl Profile {
     fn serialize_to<W: Write>(&self, format: ProfileFormat, cpu_mask: u128, mut target: W) {
         match format {
             ProfileFormat::Folded => {
-                let mut folded = HashMap::new();
+                let folded = self.fold(cpu_mask);
 
-                // Process each stack trace and fold it for flame graph format
-                for capture in &self.stack_traces {
-                    for (cpu_id, stack) in capture {
-                        if *cpu_id >= 128 || cpu_mask & (1u128 << *cpu_id) == 0 {
-                            continue;
-                        }
-
-                        // Fold the stack trace
-                        let folded_key = stack.iter().rev().cloned().collect::<Vec<_>>().join(";");
-                        *folded.entry(folded_key).or_insert(0) += 1;
-                    }
-                }
-
-                // Write the folded traces
+                // Write the folded traces to the target text writer.
                 for (key, count) in folded {
                     writeln!(&mut target, "{} {}", key, count)
                         .expect("Failed to write folded output");
                 }
             }
             ProfileFormat::Json => {
-                // Filter out the stack traces based on the CPU mask
-                let filtered_traces = self
-                    .stack_traces
-                    .iter()
-                    .map(|capture| {
-                        capture
-                            .iter()
-                            .filter(|(cpu_id, _)| {
-                                **cpu_id < 128 && cpu_mask & (1u128 << **cpu_id) != 0
-                            })
-                            .map(|(cpu_id, stack)| (*cpu_id, stack.clone()))
-                            .collect::<HashMap<_, _>>()
-                    })
-                    .collect::<Vec<_>>();
-
-                let filtered = Profile {
-                    stack_traces: filtered_traces,
-                };
+                let filtered = self.filter_cpu(cpu_mask);
 
                 serde_json::to_writer(target, &filtered).expect("Failed to write JSON output");
             }
+            ProfileFormat::FlameGraph => {
+                let folded = self.fold(cpu_mask);
+
+                // Generate the flame graph folded text lines.
+                let lines = folded
+                    .iter()
+                    .map(|(key, count)| format!("{} {}", key, count))
+                    .collect::<Vec<_>>();
+
+                // Generate the flame graph to the target SVG writer.
+                let mut opt = flamegraph::Options::default();
+                flamegraph::from_lines(&mut opt, lines.iter().map(|s| s.as_str()), target).unwrap();
+            }
         }
+    }
+
+    fn filter_cpu(&self, cpu_mask: u128) -> Profile {
+        let filtered_traces = self
+            .stack_traces
+            .iter()
+            .map(|capture| {
+                capture
+                    .iter()
+                    .filter(|(cpu_id, _)| **cpu_id < 128 && cpu_mask & (1u128 << **cpu_id) != 0)
+                    .map(|(cpu_id, stack)| (*cpu_id, stack.clone()))
+                    .collect::<HashMap<_, _>>()
+            })
+            .collect::<Vec<_>>();
+
+        Self {
+            stack_traces: filtered_traces,
+        }
+    }
+
+    fn fold(&self, cpu_mask: u128) -> HashMap<String, u32> {
+        let mut folded = HashMap::new();
+
+        for capture in &self.stack_traces {
+            for (cpu_id, stack) in capture {
+                if *cpu_id >= 128 || cpu_mask & (1u128 << *cpu_id) == 0 {
+                    continue;
+                }
+
+                let folded_key = stack.iter().rev().cloned().collect::<Vec<_>>().join(";");
+                *folded.entry(folded_key).or_insert(0) += 1;
+            }
+        }
+
+        folded
     }
 }
 

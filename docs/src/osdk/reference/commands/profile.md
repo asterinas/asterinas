@@ -4,9 +4,9 @@
 
 The profile command is used to collect stack traces when running the target
 kernel in QEMU. It attaches to the GDB server initiated with the run subcommand
-and collects the stack trace periodically. The collected data can be
-further analyzed using tools like
-[flame graph](https://github.com/brendangregg/FlameGraph).
+and collects the stack trace periodically. The collected information can be
+used to directly generate a flame graph, or be stored for later analysis using
+[the original flame graph tool](https://github.com/brendangregg/FlameGraph).
 
 ## Options
 
@@ -33,10 +33,11 @@ Parse a collected JSON profile file into other formats.
 Possible values:
     - `json`:   The parsed stack trace log from GDB in JSON.
     - `folded`: The folded stack trace for flame graph.
+    - `flame-graph`: A SVG flame graph.
 
 If the user does not specify the format, it will be inferred from the
 output file extension. If the output file does not have an extension,
-the default format is folded stack traces.
+the default format is flame graph.
 
 `--cpu-mask <CPU_MASK>`:
 

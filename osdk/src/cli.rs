@@ -254,9 +254,11 @@ pub struct ProfileArgs {
 pub enum ProfileFormat {
     /// The raw stack trace log parsed from GDB in JSON
     Json,
-    /// The folded stack trace for a
-    /// [flame graph](https://github.com/brendangregg/FlameGraph)
+    /// The folded stack trace for generating a flame graph later using
+    /// [the original tool](https://github.com/brendangregg/FlameGraph)
     Folded,
+    /// A SVG flame graph
+    FlameGraph,
 }
 
 impl ProfileFormat {
@@ -264,6 +266,7 @@ impl ProfileFormat {
         match self {
             ProfileFormat::Json => "json",
             ProfileFormat::Folded => "folded",
+            ProfileFormat::FlameGraph => "svg",
         }
     }
 }
@@ -291,17 +294,18 @@ impl DebugProfileOutArgs {
     ///
     /// If the user does not specify the format, it will be inferred from the
     /// output file extension. If the output file does not have an extension,
-    /// the default format is folded stack traces.
+    /// the default format is flame graph.
     pub fn format(&self) -> ProfileFormat {
         self.format.unwrap_or_else(|| {
             if self.output.is_some() {
                 match self.output.as_ref().unwrap().extension() {
                     Some(ext) if ext == "folded" => ProfileFormat::Folded,
                     Some(ext) if ext == "json" => ProfileFormat::Json,
-                    _ => ProfileFormat::Folded,
+                    Some(ext) if ext == "svg" => ProfileFormat::FlameGraph,
+                    _ => ProfileFormat::FlameGraph,
                 }
             } else {
-                ProfileFormat::Folded
+                ProfileFormat::FlameGraph
             }
         })
     }
