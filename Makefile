@@ -21,7 +21,7 @@ OSTD_TASK_STACK_SIZE_IN_PAGES ?= 64
 
 # GDB debugging and profiling options.
 GDB_TCP_PORT ?= 1234
-GDB_PROFILE_FORMAT ?= folded
+GDB_PROFILE_FORMAT ?= flame-graph
 GDB_PROFILE_COUNT ?= 200
 GDB_PROFILE_INTERVAL ?= 0.1
 # End of GDB options.
