@@ -14,7 +14,7 @@ use crate::{
 ///
 /// If the thread is not a POSIX thread, this method will panic.
 pub fn do_exit(thread: &Thread, posix_thread: &PosixThread, term_status: TermStatus) -> Result<()> {
-    if thread.status().is_exited() {
+    if thread.is_exited() {
         return Ok(());
     }
     thread.exit();

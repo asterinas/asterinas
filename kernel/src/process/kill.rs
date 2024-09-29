@@ -71,7 +71,7 @@ pub fn tgkill(tid: Tid, tgid: Pid, signal: Option<UserSignal>, ctx: &Context) ->
     let thread = thread_table::get_thread(tid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "target thread does not exist"))?;
 
-    if thread.status().is_exited() {
+    if thread.is_exited() {
         return Ok(());
     }
 
