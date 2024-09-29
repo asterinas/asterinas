@@ -56,6 +56,7 @@ jobs:
           - lmbench/ext2_copy_files_bw
           # Network-related benchmark
           - lmbench/tcp_loopback_bw
+          - lmbench/tcp_loopback_bw_64k
           - lmbench/tcp_loopback_lat
           - lmbench/tcp_loopback_connect_lat
           - lmbench/tcp_loopback_select_lat
