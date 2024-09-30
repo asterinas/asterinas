@@ -3,14 +3,15 @@
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Errno {
-    CreateCrate = 1,
-    GetMetadata = 2,
-    AddRustToolchain = 3,
-    ParseMetadata = 4,
-    ExecuteCommand = 5,
-    BuildCrate = 6,
-    RunBundle = 7,
-    BadCrateName = 8,
+    Cli = 1,
+    CreateCrate = 2,
+    GetMetadata = 3,
+    AddRustToolchain = 4,
+    ParseMetadata = 5,
+    ExecuteCommand = 6,
+    BuildCrate = 7,
+    RunBundle = 8,
+    BadCrateName = 9,
 }
 
 /// Print error message to console
