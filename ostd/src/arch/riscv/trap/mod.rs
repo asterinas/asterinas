@@ -4,9 +4,10 @@
 
 mod trap;
 
+use riscv::register::scause::{Interrupt, Trap};
 pub use trap::{GeneralRegs, TrapFrame, UserContext};
 
-use crate::cpu_local_cell;
+use crate::{cpu_local_cell, trap::call_irq_callback_functions};
 
 cpu_local_cell! {
     static IS_KERNEL_INTERRUPTED: bool = false;
@@ -26,19 +27,24 @@ pub fn is_kernel_interrupted() -> bool {
 
 /// Handle traps (only from kernel).
 #[no_mangle]
-extern "C" fn trap_handler(f: &mut TrapFrame) {
-    use riscv::register::scause::Trap;
-
+extern "C" fn trap_handler(trap_frame: &mut TrapFrame) {
     match riscv::register::scause::read().cause() {
-        Trap::Interrupt(_) => {
+        Trap::Interrupt(interrupt) => {
             IS_KERNEL_INTERRUPTED.store(true);
-            todo!();
+            match interrupt {
+                Interrupt::SupervisorSoft => todo!(),
+                Interrupt::SupervisorTimer => todo!(),
+                Interrupt::SupervisorExternal => {
+                    call_irq_callback_functions(trap_frame, Interrupt::SupervisorExternal as usize);
+                }
+                Interrupt::Unknown => todo!(),
+            }
             IS_KERNEL_INTERRUPTED.store(false);
         }
         Trap::Exception(e) => {
             let stval = riscv::register::stval::read();
             panic!(
-                "Cannot handle kernel cpu exception: {e:?}. stval: {stval:#x}, trapframe: {f:#x?}.",
+                "Cannot handle kernel cpu exception: {e:?}. stval: {stval:#x}, trapframe: {trap_frame:#x?}.",
             );
         }
     }
