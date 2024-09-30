@@ -268,7 +268,7 @@ impl VirtioPciTransport {
                         "Unrecognized virtio-pci device id:{:x?}",
                         common_device.device_id().device_id
                     );
-                    return Err((BusProbeError::ConfigurationSpaceError, common_device));
+                    return Err((BusProbeError::DeviceNotMatch, common_device));
                 }
                 let id = id - 0x1040;
                 match VirtioDeviceType::try_from(id as u8) {
@@ -278,7 +278,7 @@ impl VirtioPciTransport {
                             "Unrecognized virtio-pci device id:{:x?}",
                             common_device.device_id().device_id
                         );
-                        return Err((BusProbeError::ConfigurationSpaceError, common_device));
+                        return Err((BusProbeError::DeviceNotMatch, common_device));
                     }
                 }
             }
