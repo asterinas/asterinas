@@ -3,7 +3,7 @@
 ## Overview
 
 Asterinas is a _secure_, _fast_, and _general-purpose_ OS kernel
-that provides _Linux-compatible_ ABI.
+that provides an _Linux-compatible_ ABI.
 It can serve as a seamless replacement for Linux
 while enhancing _memory safety_ and _developer friendliness_.
 
@@ -44,7 +44,11 @@ git clone https://github.com/asterinas/asterinas
 2. Run a Docker container as the development environment.
 
 ```bash
-docker run -it --privileged --network=host --device=/dev/kvm -v $(pwd)/asterinas:/root/asterinas asterinas/asterinas:0.9.0
+docker run -it --privileged \
+               --network=host \
+               --device=/dev/kvm \
+               -v $(pwd)/asterinas:/root/asterinas \
+               asterinas/asterinas:0.9.0
 ```
 
 3. Inside the container, go to the project folder to build and run Asterinas.

@@ -64,8 +64,8 @@ Then, in the interactive shell, run the following script to start the syscall te
 
 ### Using GDB to Debug
 
-To debug Asterinas by [QEMU GDB support](https://qemu-project.gitlab.io/qemu/system/gdb.html),
-one could compile Asterinas in the debug profile,
+To debug Asterinas via [QEMU GDB support](https://qemu-project.gitlab.io/qemu/system/gdb.html),
+you can compile Asterinas in the debug profile,
 start an Asterinas instance and run the GDB interactive shell in another terminal.
 
 Start a GDB-enabled VM of Asterinas with OSDK and wait for debugging connection:

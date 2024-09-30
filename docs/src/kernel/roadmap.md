@@ -18,7 +18,7 @@ which would take a significant amount of time.
 
 To address this obstacle,
 we have decided to enter the cloud market first.
-In an IaaS cloud, workloads of different tenants are run in VMs
+In an IaaS (Infrastructure-as-a-Service) cloud, workloads of different tenants are run in VMs
 or [VM-style bare-metal servers](https://dl.acm.org/doi/10.1145/3373376.3378507)
 for maximum isolation and elasticity.
 The main device driver requirement for the VM environment is virtio,
@@ -28,7 +28,7 @@ or the host OS of a VM-style bare-metal server in production
 looks quite feasible in the near future.
 
 Asterinas provides high assurance of memory safety
-thanks to [the framekernel architecture]().
+thanks to [the framekernel architecture](the-framekernel-architecture.md).
 Thus, in the cloud setting,
 Asterinas is attractive for usage scenarios
 where Linux ABI is necessary but Linux itself is considered insecure
