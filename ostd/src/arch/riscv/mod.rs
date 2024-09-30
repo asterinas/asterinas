@@ -49,6 +49,7 @@ pub(crate) fn init_on_bsp() {
         Ok(_) => {}
         Err(err) => warn!("IOMMU initialization error:{:?}", err),
     }
+    pci::init();
 }
 
 pub(crate) unsafe fn init_on_ap() {
