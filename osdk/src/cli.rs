@@ -37,7 +37,7 @@ pub fn main() {
         OsdkSubcommand::Run(run_args) => {
             execute_run_command(
                 &load_config(&run_args.common_args),
-                &run_args.gdb_server_args,
+                run_args.gdb_server.as_deref(),
             );
         }
         OsdkSubcommand::Debug(debug_args) => {
@@ -168,44 +168,20 @@ pub struct BuildArgs {
 
 #[derive(Debug, Parser)]
 pub struct RunArgs {
-    #[command(flatten)]
-    pub gdb_server_args: GdbServerArgs,
-    #[command(flatten)]
-    pub common_args: CommonArgs,
-}
-
-#[derive(Debug, Args, Clone, Default)]
-pub struct GdbServerArgs {
     #[arg(
         long = "gdb-server",
-        help = "Enable the QEMU GDB server for debugging",
-        default_value_t
+        help = "Enable the QEMU GDB server for debugging\n\
+                This option supports an additional comma separated configuration list:\n\t \
+                    addr=ADDR:   the network or unix socket address on which the GDB server listens, \
+                                 `.osdk-gdb-socket` by default;\n\t \
+                    wait-client: let the GDB server wait for the GDB client before execution;\n\t \
+                    vscode:      generate a '.vscode/launch.json' for debugging with Visual Studio Code.",
+        value_name = "[addr=ADDR][,wait-client][,vscode]",
+        default_missing_value = ""
     )]
-    pub enabled: bool,
-    #[arg(
-        long = "gdb-wait-client",
-        help = "Let the QEMU GDB server wait for the GDB client before execution",
-        default_value_t,
-        requires = "enabled"
-    )]
-    pub wait_client: bool,
-    #[arg(
-        long = "gdb-vsc",
-        help = "Generate a '.vscode/launch.json' for debugging with Visual Studio Code \
-                (only works when '--enable-gdb' is enabled)",
-        default_value_t,
-        requires = "enabled"
-    )]
-    pub vsc_launch_file: bool,
-    #[arg(
-        long = "gdb-server-addr",
-        help = "The network address on which the GDB server listens, \
-        it can be either a path for the UNIX domain socket or a TCP port on an IP address.",
-        value_name = "ADDR",
-        default_value = ".osdk-gdb-socket",
-        requires = "enabled"
-    )]
-    pub host_addr: String,
+    pub gdb_server: Option<String>,
+    #[command(flatten)]
+    pub common_args: CommonArgs,
 }
 
 #[derive(Debug, Parser)]

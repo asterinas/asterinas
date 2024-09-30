@@ -199,8 +199,7 @@ endif
 
 .PHONY: gdb_server
 gdb_server: initramfs $(CARGO_OSDK)
-	@cargo osdk run $(CARGO_OSDK_ARGS) --gdb-server --gdb-wait-client --gdb-vsc \
-		--gdb-server-addr :$(GDB_TCP_PORT)
+	@cargo osdk run $(CARGO_OSDK_ARGS) --gdb-server wait-client,vscode,addr=:$(GDB_TCP_PORT)
 
 .PHONY: gdb_client
 gdb_client: $(CARGO_OSDK)
@@ -208,7 +207,7 @@ gdb_client: $(CARGO_OSDK)
 
 .PHONY: profile_server
 profile_server: initramfs $(CARGO_OSDK)
-	@cargo osdk run $(CARGO_OSDK_ARGS) --gdb-server --gdb-server-addr :$(GDB_TCP_PORT)
+	@cargo osdk run $(CARGO_OSDK_ARGS) --gdb-server addr=:$(GDB_TCP_PORT)
 
 .PHONY: profile_client
 profile_client: $(CARGO_OSDK)

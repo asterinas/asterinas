@@ -82,9 +82,7 @@ mod qemu_gdb_feature {
         let mut instance = cargo_osdk([
             "run",
             "--gdb-server",
-            "--gdb-wait-client",
-            "--gdb-server-addr",
-            unix_socket.as_str(),
+            format!("addr={},wait-client", unix_socket.as_str()).as_str(),
         ]);
         instance.current_dir(&workspace.os_dir());
 
@@ -112,8 +110,8 @@ mod qemu_gdb_feature {
         let mut gdb = Command::new("gdb");
         gdb.args(["-ex", format!("target remote {}", addr).as_str()]);
         gdb.write_stdin("\n")
-            .write_stdin("c\n")
-            .write_stdin("quit\n");
+            .write_stdin("quit\n")
+            .write_stdin("y\n");
         gdb.assert().success();
     }
     mod vsc {
@@ -132,18 +130,15 @@ mod qemu_gdb_feature {
             let mut instance = cargo_osdk([
                 "run",
                 "--gdb-server",
-                "--gdb-wait-client",
-                "--gdb-vsc",
-                "--gdb-server-addr",
-                addr,
+                format!("wait-client,vscode,addr={}", addr).as_str(),
             ]);
             instance.current_dir(&workspace.os_dir());
 
             let dir = workspace.os_dir();
             let bin_file_path = Path::new(&workspace.os_dir())
                 .join("target")
-                .join("x86_64-unknown-none")
-                .join("debug")
+                .join("osdk")
+                .join(kernel_name)
                 .join(format!("{}-osdk-bin", kernel_name));
             let _gdb = std::thread::spawn(move || {
                 while !bin_file_path.exists() {

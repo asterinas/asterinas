@@ -1,64 +1,29 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use std::process::exit;
+
+use vsc::VscLaunchConfig;
+
 use super::{build::create_base_and_cached_build, util::DEFAULT_TARGET_RELPATH};
 use crate::{
-    cli::GdbServerArgs,
     config::{scheme::ActionChoice, Config},
+    error::Errno,
+    error_msg,
     util::{get_current_crate_info, get_target_directory},
 };
 
-pub fn execute_run_command(config: &Config, gdb_server_args: &GdbServerArgs) {
-    if gdb_server_args.enabled {
-        use std::env;
-        env::set_var(
-            "RUSTFLAGS",
-            env::var("RUSTFLAGS").unwrap_or_default() + " -g",
-        );
-    }
-
+pub fn execute_run_command(config: &Config, gdb_server_args: Option<&str>) {
     let cargo_target_directory = get_target_directory();
     let osdk_output_directory = cargo_target_directory.join(DEFAULT_TARGET_RELPATH);
     let target_name = get_current_crate_info().name;
 
     let mut config = config.clone();
-    if gdb_server_args.enabled {
-        let qemu_gdb_args = {
-            let gdb_stub_addr = gdb_server_args.host_addr.as_str();
-            match gdb::stub_type_of(gdb_stub_addr) {
-                gdb::StubAddrType::Unix => {
-                    format!(
-                        " -chardev socket,path={},server=on,wait=off,id=gdb0 -gdb chardev:gdb0",
-                        gdb_stub_addr
-                    )
-                }
-                gdb::StubAddrType::Tcp => {
-                    format!(
-                        " -gdb tcp:{}",
-                        gdb::tcp_addr_util::format_tcp_addr(gdb_stub_addr)
-                    )
-                }
-            }
-        };
-        config.run.qemu.args += &qemu_gdb_args;
 
-        if gdb_server_args.wait_client {
-            config.run.qemu.args += " -S";
-        }
-
-        // Ensure debug info added when debugging in the release profile.
-        if config.run.build.profile.contains("release") {
-            config
-                .run
-                .build
-                .override_configs
-                .push(format!("profile.{}.debug=true", config.run.build.profile));
-        }
-    }
-    let _vsc_launch_file = gdb_server_args.vsc_launch_file.then(|| {
-        vsc::check_gdb_config(gdb_server_args);
-        let profile = super::util::profile_name_adapter(&config.run.build.profile);
-        vsc::VscLaunchConfig::new(profile, &gdb_server_args.host_addr)
-    });
+    let _vsc_launch_file = if let Some(gdb_server_str) = gdb_server_args {
+        adapt_for_gdb_server(&mut config, gdb_server_str)
+    } else {
+        None
+    };
 
     let default_bundle_directory = osdk_output_directory.join(target_name);
     let bundle = create_base_and_cached_build(
@@ -71,6 +36,82 @@ pub fn execute_run_command(config: &Config, gdb_server_args: &GdbServerArgs) {
     );
 
     bundle.run(&config, ActionChoice::Run);
+}
+
+fn adapt_for_gdb_server(config: &mut Config, gdb_server_str: &str) -> Option<VscLaunchConfig> {
+    let gdb_server_args = GdbServerArgs::from_str(gdb_server_str);
+
+    // Add GDB server arguments to QEMU.
+    let qemu_gdb_args = {
+        let gdb_stub_addr = gdb_server_args.host_addr.as_str();
+        match gdb::stub_type_of(gdb_stub_addr) {
+            gdb::StubAddrType::Unix => {
+                format!(
+                    " -chardev socket,path={},server=on,wait=off,id=gdb0 -gdb chardev:gdb0",
+                    gdb_stub_addr
+                )
+            }
+            gdb::StubAddrType::Tcp => {
+                format!(
+                    " -gdb tcp:{}",
+                    gdb::tcp_addr_util::format_tcp_addr(gdb_stub_addr)
+                )
+            }
+        }
+    };
+    config.run.qemu.args += &qemu_gdb_args;
+
+    if gdb_server_args.wait_client {
+        config.run.qemu.args += " -S";
+    }
+
+    // Ensure debug info added when debugging in the release profile.
+    if config.run.build.profile.contains("release") {
+        config
+            .run
+            .build
+            .override_configs
+            .push(format!("profile.{}.debug=true", config.run.build.profile));
+    }
+
+    gdb_server_args.vsc_launch_file.then(|| {
+        vsc::check_gdb_config(&gdb_server_args);
+        let profile = super::util::profile_name_adapter(&config.run.build.profile);
+        vsc::VscLaunchConfig::new(profile, &gdb_server_args.host_addr)
+    })
+}
+
+struct GdbServerArgs {
+    host_addr: String,
+    wait_client: bool,
+    vsc_launch_file: bool,
+}
+
+impl GdbServerArgs {
+    fn from_str(args: &str) -> Self {
+        let mut host_addr = ".osdk-gdb-socket".to_string();
+        let mut wait_client = false;
+        let mut vsc_launch_file = false;
+
+        for arg in args.split(",") {
+            let kv = arg.split('=').collect::<Vec<_>>();
+            match kv.as_slice() {
+                ["addr", addr] => host_addr = addr.to_string(),
+                ["wait-client"] => wait_client = true,
+                ["vscode"] => vsc_launch_file = true,
+                _ => {
+                    error_msg!("Invalid GDB server argument: {}", arg);
+                    exit(Errno::Cli as _);
+                }
+            }
+        }
+
+        GdbServerArgs {
+            host_addr,
+            wait_client,
+            vsc_launch_file,
+        }
+    }
 }
 
 mod gdb {
@@ -115,7 +156,6 @@ mod gdb {
 
 mod vsc {
     use crate::{
-        cli::GdbServerArgs,
         commands::util::bin_file_name,
         util::{get_cargo_metadata, get_current_crate_info},
     };
@@ -125,7 +165,7 @@ mod vsc {
         path::Path,
     };
 
-    use super::gdb;
+    use super::{gdb, GdbServerArgs};
 
     const VSC_DIR: &str = ".vscode";
 
@@ -174,6 +214,7 @@ mod vsc {
             }
         }
     }
+
     impl Drop for VscLaunchConfig {
         fn drop(&mut self) {
             // remove generated files
@@ -209,14 +250,6 @@ mod vsc {
         use crate::{error::Errno, error_msg};
         use std::process::exit;
 
-        if !args.enabled {
-            error_msg!(
-                "No need for a VSCode launch file without launching GDB server,\
-                    pass '-h' for help"
-            );
-            exit(Errno::ParseMetadata as _);
-        }
-
         // check GDB server address
         let gdb_stub_addr = args.host_addr.as_str();
         if gdb_stub_addr.is_empty() {
@@ -224,7 +257,9 @@ mod vsc {
             exit(Errno::ParseMetadata as _);
         }
         if gdb::stub_type_of(gdb_stub_addr) != gdb::StubAddrType::Tcp {
-            error_msg!("Non-TCP GDB server address is not supported under '--gdb-vsc' currently");
+            error_msg!(
+                "Non-TCP GDB server address is not supported under '--gdb-server vscode' currently"
+            );
             exit(Errno::ParseMetadata as _);
         }
     }

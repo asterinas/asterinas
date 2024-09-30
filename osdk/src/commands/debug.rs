@@ -18,10 +18,9 @@ pub fn execute_debug_command(_profile: &str, args: &DebugArgs) {
 
     let mut gdb = Command::new("gdb");
     gdb.args([
+        format!("{}", file_path.display()).as_str(),
         "-ex",
         format!("target remote {}", remote).as_str(),
-        "-ex",
-        format!("file {}", file_path.display()).as_str(),
     ]);
     gdb.status().unwrap();
 }
