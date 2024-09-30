@@ -1,6 +1,6 @@
 # Creating an OS Project
 
-OSDK can be used to create a new kernel project
+The OSDK can be used to create a new kernel project
 or a new library project.
 A kernel project defines the entry point of the kernel
 and can be run with QEMU.
@@ -112,4 +112,4 @@ The default manifest of a kernel project:
 ### `rust-toolchain.toml`
 
 The Rust toolchain for the kernel.
-It aligns with the toolchain of the Asterinas OSTD.
+It is the same as the toolchain of the Asterinas OSTD.

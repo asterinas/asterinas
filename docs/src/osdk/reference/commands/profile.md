@@ -3,7 +3,7 @@
 ## Overview
 
 The profile command is used to collect stack traces when running the target
-kernel in QEMU. It attaches to the GDB server initiated with the run subcommand
+kernel in QEMU. It attaches to the GDB server, initiated with the run subcommand,
 and collects the stack trace periodically. The collected information can be
 used to directly generate a flame graph, or be stored for later analysis using
 [the original flame graph tool](https://github.com/brendangregg/FlameGraph).

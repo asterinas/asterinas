@@ -2,7 +2,7 @@
 
 Typically, an operating system may consist of multiple crates,
 and these crates may be organized in a workspace.
-OSDK also supports managing projects in a workspace.
+The OSDK also supports managing projects in a workspace.
 Below is an example that demonstrates
 how to create, build, run, and test projects in a workspace.
 
@@ -47,11 +47,11 @@ myworkspace/
           └── lib.rs
 ```
 
-At present, OSDK mandates that there must be only one kernel project
+At present, the OSDK mandates that there must be only one kernel project
 within a workspace.
 
 In addition to the two projects,
-OSDK will also generate `OSDK.toml` and `rust-toolchain.toml`
+the OSDK will also generate `OSDK.toml` and `rust-toolchain.toml`
 at the root of the workspace.
 
 Next, add the following function to `mylib/src/lib.rs`.

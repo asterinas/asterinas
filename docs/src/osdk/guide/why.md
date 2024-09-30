@@ -9,7 +9,7 @@ This is important to Asterinas
 as we believe that the project's success
 is intricately tied to the productivity and happiness
 of its developers.
-So OSDK is here to upgrade your dev experience.
+So the OSDK is here to upgrade your dev experience.
 
 To be honest, writing OS kernels is hard.
 Even when you're using Rust,
@@ -24,7 +24,7 @@ no stack, no heap, no threads, not even the standard I/O.
 It's just you and the no_std world of Rust.
 You have to implement these basic programming primitives
 by getting your hands dirty with the most low-level,
-error-prone, nitty-gritty of computer architecture.
+error-prone, and nitty-gritty details of computer architecture.
 It's a journey of learning, doing, and
 a whole lot of finger-crossing
 to make sure everything clicks into place.
@@ -35,7 +35,7 @@ reuse OS-related libraries/crates across projects.
 Think about it:
 most applications share a common groundwork,
 like libc, Rust's std library, or an SDK.
-This isn't the case with kernels --
+This isn't the case with kernels -
 they lack this shared starting point,
 forcing each one to craft its own set of tools
 from the ground up.
@@ -83,4 +83,4 @@ as reported by [RustSec Advisory Database](https://rustsec.org).
 Despite having [a whole book](https://doc.rust-lang.org/nomicon/)
 to document "the Dark Arts of Unsafe Rust",
 unsafe Rust is still tricky to use correctly,
-even among reasoned Rust developers.
+even among seasoned Rust developers.

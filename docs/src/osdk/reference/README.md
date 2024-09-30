@@ -1,6 +1,6 @@
 # OSDK User Reference
 
-OSDK is a command line tool that can be used
+The Asterinas OSDK is a command line tool that can be used
 as a subcommand of Cargo.
 The common usage of OSDK is:
 
@@ -15,7 +15,7 @@ you can use `cargo osdk help <COMMAND>`.
 
 ## Manifest
 
-OSDK utilizes a manifest named `OSDK.toml`
+The OSDK utilizes a manifest named `OSDK.toml`
 to define its precise behavior regarding
 how to run a kernel with QEMU.
 The `OSDK.toml` file should be placed

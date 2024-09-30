@@ -2,12 +2,12 @@
 
 ## Overview
 
-OSDK (short for Operating System Development Kit) 
+The Asterinas OSDK (short for Operating System Development Kit) 
 is designed to simplify the development of Rust operating systems.
 It aims to streamline the process 
 by leveraging [the framekernel architecture](../../kernel/the-framekernel-architecture.md). 
 
-OSDK provides a command-line tool `cargo-osdk`,
+The OSDK provides a command-line tool `cargo-osdk`,
 which facilitates project management 
 for those developed on the framekernel architecture.
 `cargo-osdk` can be used as a subcommand of Cargo.
@@ -18,7 +18,7 @@ and testing projects conveniently.
 ## Install OSDK
 
 ### Requirements
-Currently, OSDK only works on x86_64 ubuntu system.
+Currently, OSDK is only supported on x86_64 Ubuntu systems.
 We will add support for more operating systems in the future.
 
 To run a kernel developed by OSDK with QEMU,
@@ -50,14 +50,14 @@ cargo install cargo-binutils
 ### Install
 
 `cargo-osdk` is published on [crates.io](https://crates.io/),
-and can be installed by
+and can be installed by running
 ```bash
 cargo install cargo-osdk
 ```
 
 ### Upgrade
 If `cargo-osdk` is already installed,
-the tool can be upgraded by
+the tool can be upgraded by running
 ```bash
 cargo install --force cargo-osdk
 ```
