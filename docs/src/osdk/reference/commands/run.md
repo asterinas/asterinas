@@ -33,6 +33,9 @@ Launch a debug server via QEMU with an unix socket stub, e.g. `.debug`:
 
 ```bash
 cargo osdk run --gdb-server addr=.debug
+
+```bash
+cargo osdk run --gdb-server --gdb-server-addr .debug
 ```
 
 Launch a debug server via QEMU with a TCP stub, e.g., `localhost:1234`:
@@ -45,4 +48,10 @@ Launch a debug server via QEMU and use VSCode to interact with:
 
 ```bash
 cargo osdk run --gdb-server wait-client,vscode,addr=:1234
+```
+
+Launch a debug server via QEMU and use VSCode to interact with:
+
+```bash
+cargo osdk run --gdb-server --gdb-vsc --gdb-server-addr :1234
 ```

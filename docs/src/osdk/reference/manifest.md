@@ -2,7 +2,7 @@
 
 ## Overview
 
-OSDK utilizes a manifest to define its precise behavior.
+The OSDK tool utilizes a manifest to define its precise behavior.
 Typically, the configuration file is named `OSDK.toml`
 and is placed in the root directory of the workspace
 (the same directory as the workspace's `Cargo.toml`).

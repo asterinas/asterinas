@@ -1,6 +1,6 @@
 # Running or Testing an OS Project
 
-OSDK allows for convenient building, running,
+The OSDK allows for convenient building, running,
 and testing of an OS project.
 The following example shows the typical workflow.
 
@@ -76,12 +76,12 @@ cargo osdk test foo
 
 ## Options
 
-Both `build`, `run`, and `test` commands accept options
+All of the `build`, `run`, and `test` commands accept options
 to control their behavior, such as how to compile and
 launch the kernel.
 The following documentations provide details on
 all the available options:
 
-- [build options](../reference/commands/build.md)
-- [run options](../reference/commands/run.md)
-- [test options](../reference/commands/test.md)
+- [`build` options](../reference/commands/build.md)
+- [`run` options](../reference/commands/run.md)
+- [`test` options](../reference/commands/test.md)

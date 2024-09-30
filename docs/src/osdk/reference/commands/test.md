@@ -5,12 +5,12 @@ execute kernel mode unit test by starting QEMU.
 The usage is as follows:
 
 ```bash
-cargo osdk test [OPTIONS] [TESTNAME]
+cargo osdk test [TESTNAME] [OPTIONS] 
 ```
 
 ## Arguments 
 
-[TESTNAME]:
+`TESTNAME`:
 Only run tests containing this string in their names
 
 ## Options
