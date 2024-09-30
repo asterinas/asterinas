@@ -22,6 +22,10 @@ pub fn sys_rt_sigaction(
         sigset_size
     );
 
+    if sigset_size != 8 {
+        return_errno_with_message!(Errno::EINVAL, "sigset size is not equal to 8");
+    }
+
     let mut sig_dispositions = ctx.process.sig_dispositions().lock();
 
     let old_action = if sig_action_addr != 0 {
