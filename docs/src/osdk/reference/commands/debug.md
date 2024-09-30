@@ -17,7 +17,7 @@ needed instead of the normal break points (`break`/`b`) in GDB.
 ## Options
 
 `--remote <REMOTE>`:
-Specify the address of the remote target [default: .aster-gdb-socket].
+Specify the address of the remote target [default: .osdk-gdb-socket].
 The address can be either a path for the UNIX domain socket
 or a TCP port on an IP address.
 

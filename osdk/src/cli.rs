@@ -202,7 +202,7 @@ pub struct GdbServerArgs {
         help = "The network address on which the GDB server listens, \
         it can be either a path for the UNIX domain socket or a TCP port on an IP address.",
         value_name = "ADDR",
-        default_value = ".aster-gdb-socket",
+        default_value = ".osdk-gdb-socket",
         requires = "enabled"
     )]
     pub host_addr: String,
@@ -213,7 +213,7 @@ pub struct DebugArgs {
     #[arg(
         long,
         help = "Specify the address of the remote target",
-        default_value = ".aster-gdb-socket"
+        default_value = ".osdk-gdb-socket"
     )]
     pub remote: String,
     #[command(flatten)]
@@ -225,7 +225,7 @@ pub struct ProfileArgs {
     #[arg(
         long,
         help = "Specify the address of the remote target",
-        default_value = ".aster-gdb-socket"
+        default_value = ".osdk-gdb-socket"
     )]
     pub remote: String,
     #[arg(long, help = "The number of samples to collect", default_value = "200")]
