@@ -16,17 +16,17 @@ This book is divided into five distinct parts:
 
 Explore the modern OS kernel at the heart of Asterinas.
 Designed to realize the full potential of Rust,
-Asterinas Kernel implements Linux ABI in a safe and efficient way.
+Asterinas Kernel implements the Linux ABI in a safe and efficient way.
 This means it can seamlessly replace Linux,
 offering enhanced safety and security.
 
 #### [Part 2: Asterinas OSTD](ostd/)
 
-Asterinas OSTD lays down a minimalistic, powerful, and solid foundation
+The Asterinas OSTD lays down a minimalistic, powerful, and solid foundation
 for OS development.
 It's akin to Rust's `std` crate
 but crafted for the demands of _safe_ Rust OS development.
-Asterinas Kernel is built on this very OSTD.
+The Asterinas Kernel is built on this very OSTD.
 
 #### [Part 3: Asterinas OSDK](osdk/guide/)
 

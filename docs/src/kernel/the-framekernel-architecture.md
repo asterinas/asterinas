@@ -47,7 +47,7 @@ It must concurrently fulfill four criteria.
 The safe APIs of the framework are considered sound
 if no [undefined behaviors](https://doc.rust-lang.org/reference/behavior-considered-undefined.html#behavior-considered-undefined) shall be triggered
 by whatever safe Rust code that a programmer may write using the APIs
----as long as the code is verified by the Rust toolchain.
+- as long as the code is verified by the Rust toolchain.
 Soundness ensures that the OS framework,
 in conjunction with the Rust toolchain,
 bears the full responsibility for the kernel's memory safety.
