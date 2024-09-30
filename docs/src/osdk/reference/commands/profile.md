@@ -13,7 +13,7 @@ used to directly generate a flame graph, or be stored for later analysis using
 `--remote <REMOTE>`:
 
 Specify the address of the remote target.
-By default this is `.aster-gdb-socket`
+By default this is `.osdk-gdb-socket`
 
 `--samples <SAMPLES>`:
 
