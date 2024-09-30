@@ -9,6 +9,6 @@ pub mod softirq;
 pub use handler::in_interrupt_context;
 pub use softirq::SoftIrqLine;
 
-pub(crate) use self::handler::call_irq_callback_functions;
+pub(crate) use self::handler::{call_irq_callback_functions, IN_INTERRUPT_CONTEXT};
 pub use self::irq::{disable_local, DisabledLocalIrqGuard, IrqCallbackFunction, IrqLine};
 pub use crate::arch::trap::TrapFrame;

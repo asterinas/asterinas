@@ -7,6 +7,7 @@ mod trap;
 use riscv::register::scause::{Interrupt, Trap};
 pub use trap::{GeneralRegs, TrapFrame, UserContext};
 
+use super::timer::timer_callback;
 use crate::{cpu_local_cell, trap::call_irq_callback_functions};
 
 cpu_local_cell! {
@@ -33,7 +34,7 @@ extern "C" fn trap_handler(trap_frame: &mut TrapFrame) {
             IS_KERNEL_INTERRUPTED.store(true);
             match interrupt {
                 Interrupt::SupervisorSoft => todo!(),
-                Interrupt::SupervisorTimer => todo!(),
+                Interrupt::SupervisorTimer => timer_callback(),
                 Interrupt::SupervisorExternal => {
                     call_irq_callback_functions(trap_frame, Interrupt::SupervisorExternal as usize);
                 }

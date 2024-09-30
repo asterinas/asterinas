@@ -9,7 +9,10 @@ use core::fmt::Debug;
 use riscv::register::scause::{Exception, Interrupt, Trap};
 
 pub use super::trap::GeneralRegs as RawGeneralRegs;
-use super::trap::{TrapFrame, UserContext as RawUserContext};
+use super::{
+    timer::timer_callback,
+    trap::{TrapFrame, UserContext as RawUserContext},
+};
 use crate::{
     trap::call_irq_callback_functions,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
@@ -116,7 +119,7 @@ impl UserContextApiInternal for UserContext {
             match riscv::register::scause::read().cause() {
                 Trap::Interrupt(interrupt) => match interrupt {
                     Interrupt::SupervisorSoft => todo!(),
-                    Interrupt::SupervisorTimer => todo!(),
+                    Interrupt::SupervisorTimer => timer_callback(),
                     Interrupt::SupervisorExternal => {
                         call_irq_callback_functions(
                             &self.as_trap_frame(),
