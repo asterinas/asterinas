@@ -51,10 +51,10 @@ do_publish_for() {
         TARGET_ARGS="--target $2"
     fi
     if [ -n "$DRY_RUN" ]; then
-        cargo publish --dry-run $TARGET_ARGS
+        cargo publish --dry-run --registry crates-io $TARGET_ARGS
         cargo doc $TARGET_ARGS
     else
-        cargo publish --token $TOKEN $TARGET_ARGS
+        cargo publish --token $TOKEN --registry crates-io $TARGET_ARGS
     fi
     popd
 }
@@ -63,7 +63,7 @@ do_publish_for osdk
 
 # All supported targets of OSTD, this array should keep consistent with
 # `package.metadata.docs.rs.targets` in `ostd/Cargo.toml`.
-TARGETS="x86_64-unknown-none"
+TARGETS="x86_64-unknown-none riscv64gc-unknown-none-elf"
 for TARGET in $TARGETS; do
     do_publish_for ostd/libs/ostd-macros $TARGET
     do_publish_for ostd/libs/ostd-test $TARGET

@@ -12,7 +12,7 @@ repository = "https://github.com/asterinas/asterinas"
 # Settings for publishing docs in docs.rs
 [package.metadata.docs.rs]
 default-target = "x86_64-unknown-none"
-targets = ["x86_64-unknown-none"]
+targets = ["x86_64-unknown-none", "riscv64gc-unknown-none-elf"]
 
 [dependencies]
 align_ext = { path = "libs/align_ext", version = "0.1.0" }
