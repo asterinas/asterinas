@@ -17,7 +17,7 @@ pub mod trap;
 
 use core::sync::atomic::Ordering;
 
-use log::{trace, warn};
+use log::warn;
 
 #[cfg(feature = "cvm_guest")]
 pub(crate) fn init_cvm_guest() {
@@ -56,8 +56,8 @@ pub(crate) unsafe fn init_on_ap() {
     unimplemented!()
 }
 
-pub(crate) fn interrupts_ack(_irq_number: usize) {
-    trace!("Interrupt ack");
+pub(crate) fn interrupts_ack(irq_number: usize) {
+    device::plic::complete_interrupt(irq_number as u16);
 }
 
 /// Return the frequency of TSC. The unit is Hz.

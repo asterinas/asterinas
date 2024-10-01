@@ -10,6 +10,7 @@ use riscv::register::scause::{Exception, Interrupt, Trap};
 
 pub use super::trap::GeneralRegs as RawGeneralRegs;
 use super::{
+    device::plic::claim_interrupt,
     timer::timer_callback,
     trap::{TrapFrame, UserContext as RawUserContext},
 };
@@ -121,10 +122,11 @@ impl UserContextApiInternal for UserContext {
                     Interrupt::SupervisorSoft => todo!(),
                     Interrupt::SupervisorTimer => timer_callback(),
                     Interrupt::SupervisorExternal => {
-                        call_irq_callback_functions(
-                            &self.as_trap_frame(),
-                            Interrupt::SupervisorExternal as usize,
-                        );
+                        while let irq = claim_interrupt()
+                            && irq != 0
+                        {
+                            call_irq_callback_functions(&self.as_trap_frame(), irq as usize);
+                        }
                     }
                     Interrupt::Unknown => todo!(),
                 },

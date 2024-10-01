@@ -32,7 +32,39 @@ pub static MMIO_BUS: SpinLock<MmioBus> = SpinLock::new(MmioBus::new());
 static IRQS: SpinLock<Vec<IrqLine>> = SpinLock::new(Vec::new());
 
 pub(crate) fn init() {
-    #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+    #[cfg(target_arch = "riscv64")]
+    riscv64_init();
+
+    #[cfg(target_arch = "x86_64")]
+    x86_microvm_init();
+}
+
+// The following functions need to be refactored because we don't actually want this code in the ostd.
+
+#[cfg(target_arch = "riscv64")]
+fn riscv64_init() {
+    use crate::arch::{boot::DEVICE_TREE, device::plic::enable_external_interrupt};
+
+    let mut mmio_bus = MMIO_BUS.lock();
+    for virtio in DEVICE_TREE
+        .get()
+        .unwrap()
+        .find_all_nodes("/soc/virtio_mmio")
+    {
+        let irq = virtio.interrupts().unwrap().next().unwrap();
+        let region = virtio.reg().unwrap().next().unwrap();
+        let device = MmioCommonDevice::new(
+            region.starting_address as usize,
+            IrqLine::alloc_specific(irq as u8).unwrap(),
+        );
+        enable_external_interrupt(irq as u16, 0xFE);
+        mmio_bus.register_mmio_device(device);
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+fn x86_microvm_init() {
+    #[cfg(feature = "cvm_guest")]
     // SAFETY:
     // This is safe because we are ensuring that the address range 0xFEB0_0000 to 0xFEB0_4000 is valid before this operation.
     // The address range is page-aligned and falls within the MMIO range, which is a requirement for the `unprotect_gpa_range` function.
