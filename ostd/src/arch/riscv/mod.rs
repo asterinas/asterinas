@@ -41,6 +41,7 @@ pub(crate) fn init_on_bsp() {
 
     crate::boot::smp::boot_all_aps();
 
+    device::init();
     timer::init();
 }
 
