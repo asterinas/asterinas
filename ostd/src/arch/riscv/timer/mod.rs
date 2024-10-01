@@ -5,13 +5,11 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use riscv::register::{sie, time};
-use spin::Once;
 
-use super::trap::TrapFrame;
 use crate::{
     arch::boot::DEVICE_TREE,
     timer::INTERRUPT_CALLBACKS,
-    trap::{self, IrqLine, IN_INTERRUPT_CONTEXT},
+    trap::{self, IN_INTERRUPT_CONTEXT},
 };
 
 /// The timer frequency (Hz). Here we choose 1000Hz since 1000Hz is easier for unit conversion and

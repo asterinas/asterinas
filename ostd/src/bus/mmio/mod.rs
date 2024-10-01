@@ -8,15 +8,11 @@ pub mod bus;
 pub mod common_device;
 
 use alloc::vec::Vec;
-use core::ops::Range;
 
 use cfg_if::cfg_if;
-use log::debug;
 
 use self::bus::MmioBus;
-use crate::{
-    bus::mmio::common_device::MmioCommonDevice, mm::paddr_to_vaddr, sync::SpinLock, trap::IrqLine,
-};
+use crate::{bus::mmio::common_device::MmioCommonDevice, sync::SpinLock, trap::IrqLine};
 
 cfg_if! {
     if #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))] {
@@ -81,8 +77,10 @@ fn x86_microvm_init() {
 }
 
 #[cfg(target_arch = "x86_64")]
-fn iter_range(range: Range<usize>) {
-    debug!("[Virtio]: Iter MMIO range:{:x?}", range);
+fn iter_range(range: core::ops::Range<usize>) {
+    use crate::mm::paddr_to_vaddr;
+
+    log::debug!("[Virtio]: Iter MMIO range:{:x?}", range);
     let mut current = range.end;
     let mut lock = MMIO_BUS.lock();
     let io_apics = crate::arch::kernel::IO_APIC.get().unwrap();

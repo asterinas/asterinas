@@ -138,6 +138,7 @@ impl DmaStream {
     ///
     /// [`read_bytes`]: Self::read_bytes
     /// [`write_bytes`]: Self::write_bytes
+    #[allow(unreachable_code)]
     pub fn sync(&self, _byte_range: Range<usize>) -> Result<(), Error> {
         cfg_if::cfg_if! {
             if #[cfg(target_arch = "x86_64")]{
@@ -151,9 +152,9 @@ impl DmaStream {
                 if self.inner.is_cache_coherent {
                     return Ok(());
                 }
-                let start_va = self.inner.vm_segment.as_ptr();
+                let _start_va = self.inner.vm_segment.as_ptr();
                 // TODO: Query the CPU for the cache line size via CPUID, we use 64 bytes as the cache line size here.
-                for i in _byte_range.step_by(64) {
+                for _ in _byte_range.step_by(64) {
                     // TODO: Call the cache line flush command in the corresponding architecture.
                     #[cfg(target_arch="riscv64")]
                     {

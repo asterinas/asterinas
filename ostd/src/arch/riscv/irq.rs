@@ -83,6 +83,7 @@ impl IrqLine {
     }
 
     /// Get the IRQ number.
+    #[allow(dead_code)]
     pub fn num(&self) -> u8 {
         self.irq_num
     }
@@ -145,6 +146,6 @@ impl Drop for IrqCallbackHandle {
 ///
 /// The caller must ensure that the CPU ID and the interrupt number corresponds
 /// to a safe function to call.
-pub(crate) unsafe fn send_ipi(cpu_id: u32, irq_num: u8) {
+pub(crate) unsafe fn send_ipi(_cpu_id: u32, _irq_num: u8) {
     unimplemented!()
 }

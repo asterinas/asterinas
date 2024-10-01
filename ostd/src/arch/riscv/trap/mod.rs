@@ -16,6 +16,9 @@ cpu_local_cell! {
 
 /// Initialize interrupt handling on RISC-V.
 pub unsafe fn init(on_bsp: bool) {
+    if !on_bsp {
+        todo!();
+    }
     self::trap::init();
 }
 

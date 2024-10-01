@@ -12,7 +12,6 @@ use crate::{
 
 extern crate cfg_if;
 extern crate gimli;
-use gimli::Register;
 use unwinding::abi::{
     UnwindContext, UnwindReasonCode, _Unwind_Backtrace, _Unwind_FindEnclosingFunction,
     _Unwind_GetGR, _Unwind_GetIP,
@@ -95,7 +94,7 @@ fn print_stack_trace() {
             let reg_i = _Unwind_GetGR(unwind_ctx, i as i32);
             cfg_if::cfg_if! {
                 if #[cfg(target_arch = "x86_64")] {
-                    let reg_name = gimli::X86_64::register_name(Register(i)).unwrap_or("unknown");
+                    let reg_name = gimli::X86_64::register_name(gimli::Register(i)).unwrap_or("unknown");
                 } else {
                     let reg_name = "unknown";
                 }

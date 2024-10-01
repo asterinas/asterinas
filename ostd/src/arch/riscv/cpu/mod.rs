@@ -37,6 +37,7 @@ pub struct CpuExceptionInfo {
     pub code: Exception,
     /// The error code associated with the exception.
     pub page_fault_addr: usize,
+    /// The error code.
     pub error_code: usize, // TODO
 }
 
