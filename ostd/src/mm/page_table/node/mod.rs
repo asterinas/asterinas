@@ -27,7 +27,7 @@
 
 mod child;
 
-use core::{fmt, marker::PhantomData, mem::ManuallyDrop, panic, sync::atomic::Ordering};
+use core::{marker::PhantomData, mem::ManuallyDrop, panic, sync::atomic::Ordering};
 
 pub(in crate::mm) use child::Child;
 
@@ -59,7 +59,7 @@ pub(super) struct RawPageTableNode<E: PageTableEntryTrait, C: PagingConstsTrait>
 where
     [(); C::NR_LEVELS as usize]:,
 {
-    pub(super) raw: Paddr,
+    raw: Paddr,
     _phantom: PhantomData<(E, C)>,
 }
 
@@ -73,13 +73,7 @@ where
 
     /// Converts a raw handle to an accessible handle by pertaining the lock.
     pub(super) fn lock(self) -> PageTableNode<E, C> {
-        // Prevent dropping the handle.
-        let this = ManuallyDrop::new(self);
-
-        // SAFETY: The physical address in the raw handle is valid and we are
-        // transferring the ownership to a new handle. No increment of the reference
-        // count is needed.
-        let page = unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(this.paddr()) };
+        let page: Page<PageTablePageMeta<E, C>> = self.into();
 
         // Acquire the lock.
         while page
@@ -91,7 +85,7 @@ where
             core::hint::spin_loop();
         }
 
-        PageTableNode::<E, C> { page, _private: () }
+        PageTableNode::<E, C> { page }
     }
 
     /// Creates a copy of the handle.
@@ -175,6 +169,20 @@ where
     }
 }
 
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> From<RawPageTableNode<E, C>>
+    for Page<PageTablePageMeta<E, C>>
+where
+    [(); C::NR_LEVELS as usize]:,
+{
+    fn from(raw: RawPageTableNode<E, C>) -> Self {
+        let raw = ManuallyDrop::new(raw);
+        // SAFETY: The physical address in the raw handle is valid and we are
+        // transferring the ownership to a new handle. No increment of the reference
+        // count is needed.
+        unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(raw.paddr()) }
+    }
+}
+
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for RawPageTableNode<E, C>
 where
     [(); C::NR_LEVELS as usize]:,
@@ -193,29 +201,14 @@ where
 /// of the page table. Dropping the page table node will also drop all handles if the page
 /// table node has no references. You can set the page table node as a child of another
 /// page table node.
+#[derive(Debug)]
 pub(super) struct PageTableNode<
     E: PageTableEntryTrait = PageTableEntry,
     C: PagingConstsTrait = PagingConsts,
 > where
     [(); C::NR_LEVELS as usize]:,
 {
-    pub(super) page: Page<PageTablePageMeta<E, C>>,
-    _private: (),
-}
-
-// FIXME: We cannot `#[derive(Debug)]` here due to `DisabledPreemptGuard`. Should we skip
-// this field or implement the `Debug` trait also for `DisabledPreemptGuard`?
-impl<E, C> fmt::Debug for PageTableNode<E, C>
-where
-    E: PageTableEntryTrait,
-    C: PagingConstsTrait,
-    [(); C::NR_LEVELS as usize]:,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("PageTableEntryTrait")
-            .field("page", &self.page)
-            .finish()
-    }
+    page: Page<PageTablePageMeta<E, C>>,
 }
 
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableNode<E, C>
@@ -238,15 +231,15 @@ where
         unsafe { core::ptr::write_bytes(ptr, 0, PAGE_SIZE) };
         debug_assert!(E::new_absent().as_bytes().iter().all(|&b| b == 0));
 
-        Self { page, _private: () }
+        Self { page }
     }
 
     pub fn level(&self) -> PagingLevel {
-        self.meta().level
+        self.page.meta().level
     }
 
     pub fn is_tracked(&self) -> MapTrackingStatus {
-        self.meta().is_tracked
+        self.page.meta().is_tracked
     }
 
     /// Converts the handle into a raw handle to be stored in a PTE or CPU.
@@ -350,18 +343,17 @@ where
 
         pte.set_prop(prop);
 
-        // SAFETY: the index is within the bound and the PTE is valid.
-        unsafe {
-            (self.as_ptr() as *mut E).add(idx).write(pte);
-        }
+        self.write_pte(idx, pte);
     }
 
     pub(super) fn read_pte(&self, idx: usize) -> E {
         // It should be ensured by the cursor.
         debug_assert!(idx < nr_subpage_per_huge::<C>());
 
+        let ptr = paddr_to_vaddr(self.page.paddr()) as *const E;
+
         // SAFETY: the index is within the bound and PTE is plain-old-data.
-        unsafe { self.as_ptr().add(idx).read() }
+        unsafe { ptr.add(idx).read() }
     }
 
     /// Writes a page table entry at a given index.
@@ -371,32 +363,22 @@ where
         // It should be ensured by the cursor.
         debug_assert!(idx < nr_subpage_per_huge::<C>());
 
+        let ptr = paddr_to_vaddr(self.page.paddr()) as *mut E;
+
         // SAFETY: the index is within the bound and PTE is plain-old-data.
-        unsafe { (self.as_ptr() as *mut E).add(idx).write(pte) };
+        unsafe { ptr.add(idx).write(pte) };
     }
 
     /// The number of valid PTEs.
     pub(super) fn nr_children(&self) -> u16 {
         // SAFETY: The lock is held so there is no mutable reference to it.
         // It would be safe to read.
-        unsafe { *self.meta().nr_children.get() }
+        unsafe { *self.page.meta().nr_children.get() }
     }
 
     fn nr_children_mut(&mut self) -> &mut u16 {
         // SAFETY: The lock is held so we have an exclusive access.
-        unsafe { &mut *self.meta().nr_children.get() }
-    }
-
-    fn as_ptr(&self) -> *const E {
-        paddr_to_vaddr(self.start_paddr()) as *const E
-    }
-
-    fn start_paddr(&self) -> Paddr {
-        self.page.paddr()
-    }
-
-    fn meta(&self) -> &PageTablePageMeta<E, C> {
-        self.page.meta()
+        unsafe { &mut *self.page.meta().nr_children.get() }
     }
 }
 

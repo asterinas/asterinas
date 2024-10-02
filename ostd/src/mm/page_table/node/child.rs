@@ -18,6 +18,10 @@ use crate::{
 };
 
 /// A child of a page table node.
+///
+/// This is a owning handle to a child of a page table node. If the child is
+/// either a page table node or a page, it holds a reference count to the
+/// corresponding page.
 #[derive(Debug)]
 pub(in crate::mm) enum Child<
     E: PageTableEntryTrait = PageTableEntry,
