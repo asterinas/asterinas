@@ -65,7 +65,7 @@
 //! table cursor should add additional entry point checks to prevent these defined
 //! behaviors if they are not wanted.
 
-use core::{any::TypeId, marker::PhantomData, mem::ManuallyDrop, ops::Range};
+use core::{any::TypeId, marker::PhantomData, ops::Range};
 
 use align_ext::AlignExt;
 
@@ -640,11 +640,9 @@ where
                         prop,
                     }
                 }
-                Child::PageTable(node) => {
-                    let node = ManuallyDrop::new(node);
-                    let page = Page::<PageTablePageMeta<E, C>>::from_raw(node.paddr());
-                    PageTableItem::PageTableNode { page: page.into() }
-                }
+                Child::PageTable(node) => PageTableItem::PageTableNode {
+                    page: Page::<PageTablePageMeta<E, C>>::from(node).into(),
+                },
                 Child::None => unreachable!(),
             };
         }
