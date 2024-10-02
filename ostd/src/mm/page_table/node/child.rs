@@ -8,10 +8,7 @@ use super::{PageTableEntryTrait, RawPageTableNode};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     mm::{
-        page::{
-            meta::{MapTrackingStatus, PageTablePageMeta},
-            DynPage, Page,
-        },
+        page::{inc_page_ref_count, meta::MapTrackingStatus, DynPage},
         page_prop::PageProperty,
         Paddr, PagingConstsTrait, PagingLevel,
     },
@@ -45,6 +42,27 @@ where
         matches!(self, Child::None)
     }
 
+    /// Returns whether the child is compatible with the given node.
+    ///
+    /// In other words, it checks whether the child can be a child of a node
+    /// with the given level and tracking status.
+    pub(super) fn is_compatible(
+        &self,
+        node_level: PagingLevel,
+        is_tracked: MapTrackingStatus,
+    ) -> bool {
+        match self {
+            Child::PageTable(pt) => node_level == pt.level() + 1,
+            Child::Page(p, _) => {
+                node_level == p.level() && is_tracked == MapTrackingStatus::Tracked
+            }
+            Child::Untracked(_, level, _) => {
+                node_level == *level && is_tracked == MapTrackingStatus::Untracked
+            }
+            Child::None => true,
+        }
+    }
+
     /// Converts a child into a owning PTE.
     ///
     /// By conversion it loses information about whether the page is tracked
@@ -74,8 +92,10 @@ where
     /// # Safety
     ///
     /// The provided PTE must be originated from [`Child::into_pte`]. And the
-    /// provided information (level and tracking status) must align with the
-    /// lost information during the conversion.
+    /// provided information (level and tracking status) must be the same with
+    /// the lost information during the conversion. Strictly speaking, the
+    /// provided arguments must be compatible with the original child (
+    /// specified by [`Child::is_compatible`]).
     ///
     /// This method should be only used no more than once for a PTE that has
     /// been converted from a child using the [`Child::into_pte`] method.
@@ -85,18 +105,25 @@ where
         is_tracked: MapTrackingStatus,
     ) -> Self {
         if !pte.is_present() {
-            Child::None
-        } else {
-            let paddr = pte.paddr();
-            if !pte.is_last(level) {
-                Child::PageTable(RawPageTableNode::from_paddr(paddr))
-            } else {
-                match is_tracked {
-                    MapTrackingStatus::Tracked => Child::Page(DynPage::from_raw(paddr), pte.prop()),
-                    MapTrackingStatus::Untracked => Child::Untracked(paddr, level, pte.prop()),
-                    MapTrackingStatus::NotApplicable => panic!("Invalid tracking status"),
-                }
+            return Child::None;
+        }
+
+        let paddr = pte.paddr();
+
+        if !pte.is_last(level) {
+            // SAFETY: The physical address points to a valid page table node
+            // at the given level.
+            return Child::PageTable(unsafe { RawPageTableNode::from_raw_parts(paddr, level - 1) });
+        }
+
+        match is_tracked {
+            MapTrackingStatus::Tracked => {
+                // SAFETY: The physical address points to a valid page.
+                let page = unsafe { DynPage::from_raw(paddr) };
+                Child::Page(page, pte.prop())
             }
+            MapTrackingStatus::Untracked => Child::Untracked(paddr, level, pte.prop()),
+            MapTrackingStatus::NotApplicable => panic!("Invalid tracking status"),
         }
     }
 
@@ -104,9 +131,8 @@ where
     ///
     /// # Safety
     ///
-    /// The provided PTE must be originated from [`Child::into_pte`]. And the
-    /// provided information (level and tracking status) must align with the
-    /// lost information during the conversion.
+    /// The provided PTE must be originated from [`Child::into_pte`], which is
+    /// the same requirement as the [`Child::from_pte`] method.
     ///
     /// This method must not be used with a PTE that has been restored to a
     /// child using the [`Child::from_pte`] method.
@@ -116,22 +142,31 @@ where
         is_tracked: MapTrackingStatus,
     ) -> Self {
         if !pte.is_present() {
-            Child::None
-        } else {
-            let paddr = pte.paddr();
-            if !pte.is_last(level) {
-                Page::<PageTablePageMeta<E, C>>::inc_ref_count(paddr);
-                Child::PageTable(RawPageTableNode::from_paddr(paddr))
-            } else {
-                match is_tracked {
-                    MapTrackingStatus::Tracked => {
-                        DynPage::inc_ref_count(paddr);
-                        Child::Page(DynPage::from_raw(paddr), pte.prop())
-                    }
-                    MapTrackingStatus::Untracked => Child::Untracked(paddr, level, pte.prop()),
-                    MapTrackingStatus::NotApplicable => panic!("Invalid tracking status"),
-                }
+            return Child::None;
+        }
+
+        let paddr = pte.paddr();
+
+        if !pte.is_last(level) {
+            // SAFETY: The physical address is valid and the PTE already owns
+            // the reference to the page.
+            unsafe { inc_page_ref_count(paddr) };
+            // SAFETY: The physical address points to a valid page table node
+            // at the given level.
+            return Child::PageTable(unsafe { RawPageTableNode::from_raw_parts(paddr, level - 1) });
+        }
+
+        match is_tracked {
+            MapTrackingStatus::Tracked => {
+                // SAFETY: The physical address is valid and the PTE already owns
+                // the reference to the page.
+                unsafe { inc_page_ref_count(paddr) };
+                // SAFETY: The physical address points to a valid page.
+                let page = unsafe { DynPage::from_raw(paddr) };
+                Child::Page(page, pte.prop())
             }
+            MapTrackingStatus::Untracked => Child::Untracked(paddr, level, pte.prop()),
+            MapTrackingStatus::NotApplicable => panic!("Invalid tracking status"),
         }
     }
 }

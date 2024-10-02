@@ -100,7 +100,7 @@ impl PageTable<KernelMode> {
     /// This should be the only way to create the user page table, that is to
     /// duplicate the kernel page table with all the kernel mappings shared.
     pub fn create_user_page_table(&self) -> PageTable<UserMode> {
-        let root_node = self.root.clone_shallow().lock();
+        let mut root_node = self.root.clone_shallow().lock();
         let mut new_node =
             PageTableNode::alloc(PagingConsts::NR_LEVELS, MapTrackingStatus::NotApplicable);
 
@@ -108,9 +108,9 @@ impl PageTable<KernelMode> {
         // The user space range is not copied.
         const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
         for i in NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE {
-            let child = root_node.child(i);
-            if !child.is_none() {
-                let _ = new_node.replace_child(i, child);
+            let root_entry = root_node.entry(i);
+            if !root_entry.is_none() {
+                let _ = new_node.entry(i).replace(root_entry.to_owned());
             }
         }
 
@@ -137,7 +137,8 @@ impl PageTable<KernelMode> {
 
         let mut root_node = self.root.clone_shallow().lock();
         for i in start..end {
-            if !root_node.read_pte(i).is_present() {
+            let root_entry = root_node.entry(i);
+            if root_entry.is_none() {
                 let nxt_level = PagingConsts::NR_LEVELS - 1;
                 let is_tracked = if super::kspace::should_map_as_tracked(
                     i * page_size::<PagingConsts>(nxt_level),
@@ -147,7 +148,7 @@ impl PageTable<KernelMode> {
                     MapTrackingStatus::Untracked
                 };
                 let node = PageTableNode::alloc(nxt_level, is_tracked);
-                let _ = root_node.replace_child(i, Child::PageTable(node.into_raw()));
+                let _ = root_entry.replace(Child::PageTable(node.into_raw()));
             }
         }
     }
