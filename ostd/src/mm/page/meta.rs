@@ -37,53 +37,31 @@ pub mod mapping {
 
 use alloc::vec::Vec;
 use core::{
+    any::Any,
     cell::UnsafeCell,
-    marker::PhantomData,
-    mem::{size_of, ManuallyDrop},
-    panic,
-    sync::atomic::{AtomicU32, AtomicU8, Ordering},
+    mem::size_of,
+    sync::atomic::{AtomicU32, Ordering},
 };
 
 use log::info;
-use num_derive::FromPrimitive;
 use static_assertions::const_assert_eq;
 
 use super::{allocator, Page};
 use crate::{
-    arch::mm::{PageTableEntry, PagingConsts},
+    arch::mm::PagingConsts,
     mm::{
-        paddr_to_vaddr, page_size,
-        page_table::{boot_pt, PageTableEntryTrait},
-        CachePolicy, Paddr, PageFlags, PageProperty, PagingConstsTrait, PagingLevel,
-        PrivilegedPageFlags, Vaddr, PAGE_SIZE,
+        paddr_to_vaddr, page_size, page_table::boot_pt, CachePolicy, Paddr, PageFlags,
+        PageProperty, PrivilegedPageFlags, Vaddr, PAGE_SIZE,
     },
 };
 
-/// Represents the usage of a page.
-#[repr(u8)]
-#[derive(Debug, FromPrimitive, PartialEq)]
-pub enum PageUsage {
-    // The zero variant is reserved for the unused type. Only an unused page
-    // can be designated for one of the other purposes.
-    #[allow(dead_code)]
-    Unused = 0,
-    /// The page is reserved or unusable. The kernel should not touch it.
-    #[allow(dead_code)]
-    Reserved = 1,
+/// The maximum number of bytes of the metadata of a page.
+pub const PAGE_METADATA_MAX_SIZE: usize =
+    META_SLOT_SIZE - size_of::<AtomicU32>() - size_of::<PageMetaVtablePtr>();
+/// The maximum alignment in bytes of the metadata of a page.
+pub const PAGE_METADATA_MAX_ALIGN: usize = align_of::<MetaSlot>();
 
-    /// The page is used as a frame, i.e., a page of untyped memory.
-    Frame = 32,
-
-    /// The page is used by a page table.
-    PageTable = 64,
-    /// The page stores metadata of other pages.
-    Meta = 65,
-    /// The page stores the kernel such as kernel code, data, etc.
-    Kernel = 66,
-
-    /// The page stores data for kernel stack.
-    KernelStack = 67,
-}
+const META_SLOT_SIZE: usize = 64;
 
 #[repr(C)]
 pub(in crate::mm) struct MetaSlot {
@@ -92,40 +70,57 @@ pub(in crate::mm) struct MetaSlot {
     /// It is placed at the beginning of a slot because:
     ///  - the implementation can simply cast a `*const MetaSlot`
     ///    to a `*const PageMeta` for manipulation;
-    ///  - the subsequent fields can utilize the end padding of the
-    ///    the inner union to save space.
-    _inner: MetaSlotInner,
-    /// To store [`PageUsage`].
-    pub(super) usage: AtomicU8,
+    ///  - if the metadata need special alignment, we can provide
+    ///    at most `PAGE_METADATA_ALIGN` bytes of alignment;
+    ///  - the subsequent fields can utilize the padding of the
+    ///    reference count to save space.
+    storage: UnsafeCell<[u8; PAGE_METADATA_MAX_SIZE]>,
+    /// The reference count of the page.
     pub(super) ref_count: AtomicU32,
+    /// The virtual table that indicates the type of the metadata.
+    pub(super) vtable_ptr: UnsafeCell<PageMetaVtablePtr>,
 }
 
-pub(super) union MetaSlotInner {
-    _frame: ManuallyDrop<FrameMeta>,
-    _pt: ManuallyDrop<PageTablePageMeta>,
-}
+type PageMetaVtablePtr = core::ptr::DynMetadata<dyn PageMeta>;
 
-// Currently the sizes of the `MetaSlotInner` union variants are no larger
-// than 8 bytes and aligned to 8 bytes. So the size of `MetaSlot` is 16 bytes.
-//
-// Note that the size of `MetaSlot` should be a multiple of 8 bytes to prevent
-// cross-page accesses.
-const_assert_eq!(size_of::<MetaSlot>(), 16);
+const_assert_eq!(PAGE_SIZE % META_SLOT_SIZE, 0);
+const_assert_eq!(size_of::<MetaSlot>(), META_SLOT_SIZE);
 
-/// All page metadata types must implemented this sealed trait,
-/// which ensures that each fields of `PageUsage` has one and only
-/// one metadata type corresponding to the usage purpose. Any user
-/// outside this module won't be able to add more metadata types
-/// and break assumptions made by this module.
+/// All page metadata types must implement this trait.
 ///
 /// If a page type needs specific drop behavior, it should specify
 /// when implementing this trait. When we drop the last handle to
-/// this page, the `on_drop` method will be called.
-pub trait PageMeta: Sync + private::Sealed + Sized {
-    const USAGE: PageUsage;
-
-    fn on_drop(page: &mut Page<Self>);
+/// this page, the `on_drop` method will be called. The `on_drop`
+/// method is called with the physical address of the page.
+///
+/// # Safety
+///
+/// The implemented structure must have a size less than or equal to
+/// [`PAGE_METADATA_MAX_SIZE`] and an alignment less than or equal to
+/// [`PAGE_METADATA_MAX_ALIGN`].
+pub unsafe trait PageMeta: Any + Send + Sync + 'static {
+    fn on_drop(&mut self, _paddr: Paddr) {}
 }
+
+/// Makes a structure usable as a page metadata.
+///
+/// Directly implementing [`PageMeta`] is not safe since the size and alignment
+/// must be checked. This macro provides a safe way to implement the trait with
+/// compile-time checks.
+#[macro_export]
+macro_rules! impl_page_meta {
+    ($($t:ty),*) => {
+        $(
+            use static_assertions::const_assert;
+            const_assert!(size_of::<$t>() <= $crate::mm::page::meta::PAGE_METADATA_MAX_SIZE);
+            const_assert!(align_of::<$t>() <= $crate::mm::page::meta::PAGE_METADATA_MAX_ALIGN);
+            // SAFETY: The size and alignment of the structure are checked.
+            unsafe impl $crate::mm::page::meta::PageMeta for $t {}
+        )*
+    };
+}
+
+pub use impl_page_meta;
 
 /// An internal routine in dropping implementations.
 ///
@@ -134,154 +129,35 @@ pub trait PageMeta: Sync + private::Sealed + Sized {
 /// The caller should ensure that the pointer points to a page's metadata slot. The
 /// page should have a last handle to the page, and the page is about to be dropped,
 /// as the metadata slot after this operation becomes uninitialized.
-pub(super) unsafe fn drop_as_last<M: PageMeta>(ptr: *const MetaSlot) {
+pub(super) unsafe fn drop_last_in_place(ptr: *mut MetaSlot) {
     // This would be guaranteed as a safety requirement.
     debug_assert_eq!((*ptr).ref_count.load(Ordering::Relaxed), 0);
+
+    let paddr = mapping::meta_to_page::<PagingConsts>(ptr as Vaddr);
+
+    let meta_ptr: *mut dyn PageMeta = core::ptr::from_raw_parts_mut(ptr, *(*ptr).vtable_ptr.get());
+
     // Let the custom dropper handle the drop.
-    let mut page = Page::<M> {
-        ptr,
-        _marker: PhantomData,
-    };
-    M::on_drop(&mut page);
-    let _ = ManuallyDrop::new(page);
+    (*meta_ptr).on_drop(paddr);
+
     // Drop the metadata.
-    core::ptr::drop_in_place(ptr as *mut M);
-    // No handles means no usage. This also releases the page as unused for further
-    // calls to `Page::from_unused`.
-    (*ptr).usage.store(0, Ordering::Release);
+    core::ptr::drop_in_place(meta_ptr);
+
     // Deallocate the page.
     // It would return the page to the allocator for further use. This would be done
     // after the release of the metadata to avoid re-allocation before the metadata
     // is reset.
-    allocator::PAGE_ALLOCATOR.get().unwrap().lock().dealloc(
-        mapping::meta_to_page::<PagingConsts>(ptr as Vaddr) / PAGE_SIZE,
-        1,
-    );
+    allocator::PAGE_ALLOCATOR
+        .get()
+        .unwrap()
+        .lock()
+        .dealloc(paddr / PAGE_SIZE, 1);
 }
-
-mod private {
-    pub trait Sealed {}
-}
-
-// ======= Start of all the specific metadata structures definitions ==========
-
-use private::Sealed;
-
+/// The metadata of pages that holds metadata of pages.
 #[derive(Debug, Default)]
-#[repr(C)]
-pub struct FrameMeta {
-    // If not doing so, the page table metadata would fit
-    // in the front padding of meta slot and make it 12 bytes.
-    // We make it 16 bytes. Further usage of frame metadata
-    // is welcome to exploit this space.
-    _unused_for_layout_padding: [u8; 8],
-}
-
-impl Sealed for FrameMeta {}
-
-/// The metadata of any kinds of page table pages.
-/// Make sure the the generic parameters don't effect the memory layout.
-#[derive(Debug)]
-#[repr(C)]
-pub(in crate::mm) struct PageTablePageMeta<
-    E: PageTableEntryTrait = PageTableEntry,
-    C: PagingConstsTrait = PagingConsts,
-> where
-    [(); C::NR_LEVELS as usize]:,
-{
-    /// The number of valid PTEs. It is mutable if the lock is held.
-    pub nr_children: UnsafeCell<u16>,
-    /// The level of the page table page. A page table page cannot be
-    /// referenced by page tables of different levels.
-    pub level: PagingLevel,
-    /// Whether the pages mapped by the node is tracked.
-    pub is_tracked: MapTrackingStatus,
-    /// The lock for the page table page.
-    pub lock: AtomicU8,
-    _phantom: core::marker::PhantomData<(E, C)>,
-}
-
-/// Describe if the physical address recorded in this page table refers to a
-/// page tracked by metadata.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u8)]
-pub(in crate::mm) enum MapTrackingStatus {
-    /// The page table node cannot contain references to any pages. It can only
-    /// contain references to child page table nodes.
-    NotApplicable,
-    /// The mapped pages are not tracked by metadata. If any child page table
-    /// nodes exist, they should also be tracked.
-    Untracked,
-    /// The mapped pages are tracked by metadata. If any child page table nodes
-    /// exist, they should also be tracked.
-    Tracked,
-}
-
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTablePageMeta<E, C>
-where
-    [(); C::NR_LEVELS as usize]:,
-{
-    pub fn new_locked(level: PagingLevel, is_tracked: MapTrackingStatus) -> Self {
-        Self {
-            nr_children: UnsafeCell::new(0),
-            level,
-            is_tracked,
-            lock: AtomicU8::new(1),
-            _phantom: PhantomData,
-        }
-    }
-}
-
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> Sealed for PageTablePageMeta<E, C> where
-    [(); C::NR_LEVELS as usize]:
-{
-}
-
-unsafe impl<E: PageTableEntryTrait, C: PagingConstsTrait> Send for PageTablePageMeta<E, C> where
-    [(); C::NR_LEVELS as usize]:
-{
-}
-
-unsafe impl<E: PageTableEntryTrait, C: PagingConstsTrait> Sync for PageTablePageMeta<E, C> where
-    [(); C::NR_LEVELS as usize]:
-{
-}
-
-#[derive(Debug, Default)]
-#[repr(C)]
 pub struct MetaPageMeta {}
 
-impl Sealed for MetaPageMeta {}
-impl PageMeta for MetaPageMeta {
-    const USAGE: PageUsage = PageUsage::Meta;
-    fn on_drop(_page: &mut Page<Self>) {
-        panic!("Meta pages are currently not allowed to be dropped");
-    }
-}
-
-#[derive(Debug, Default)]
-#[repr(C)]
-pub struct KernelMeta {}
-
-impl Sealed for KernelMeta {}
-impl PageMeta for KernelMeta {
-    const USAGE: PageUsage = PageUsage::Kernel;
-    fn on_drop(_page: &mut Page<Self>) {
-        panic!("Kernel pages are not allowed to be dropped");
-    }
-}
-
-#[derive(Debug, Default)]
-#[repr(C)]
-pub struct KernelStackMeta {}
-
-impl Sealed for KernelStackMeta {}
-impl PageMeta for KernelStackMeta {
-    const USAGE: PageUsage = PageUsage::KernelStack;
-    fn on_drop(_page: &mut Page<Self>) {}
-}
-
-// ======== End of all the specific metadata structures definitions ===========
+impl_page_meta!(MetaPageMeta);
 
 /// Initializes the metadata of all physical pages.
 ///

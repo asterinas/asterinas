@@ -70,15 +70,13 @@ use core::{any::TypeId, marker::PhantomData, mem::ManuallyDrop, ops::Range};
 use align_ext::AlignExt;
 
 use super::{
-    page_size, pte_index, Child, Entry, KernelMode, PageTable, PageTableEntryTrait, PageTableError,
-    PageTableMode, PageTableNode, PagingConstsTrait, PagingLevel, RawPageTableNode, UserMode,
+    page_size, pte_index, Child, Entry, KernelMode, MapTrackingStatus, PageTable,
+    PageTableEntryTrait, PageTableError, PageTableMode, PageTableNode, PagingConstsTrait,
+    PagingLevel, RawPageTableNode, UserMode,
 };
 use crate::{
     mm::{
-        kspace::should_map_as_tracked,
-        paddr_to_vaddr,
-        page::{meta::MapTrackingStatus, DynPage},
-        Paddr, PageProperty, Vaddr,
+        kspace::should_map_as_tracked, paddr_to_vaddr, page::DynPage, Paddr, PageProperty, Vaddr,
     },
     task::{disable_preempt, DisabledPreemptGuard},
 };
