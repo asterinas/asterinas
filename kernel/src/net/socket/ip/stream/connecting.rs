@@ -1,25 +1,21 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_bigtcp::wire::IpEndpoint;
+use ostd::sync::LocalIrqDisabled;
 
 use super::{connected::ConnectedStream, init::InitStream};
-use crate::{net::iface::BoundTcpSocket, prelude::*, process::signal::Pollee};
+use crate::{events::IoEvents, net::iface::BoundTcpSocket, prelude::*, process::signal::Pollee};
 
 pub struct ConnectingStream {
     bound_socket: BoundTcpSocket,
     remote_endpoint: IpEndpoint,
-    conn_result: RwLock<Option<ConnResult>>,
+    conn_result: SpinLock<Option<ConnResult>, LocalIrqDisabled>,
 }
 
 #[derive(Clone, Copy)]
 enum ConnResult {
     Connected,
     Refused,
-}
-
-pub enum NonConnectedStream {
-    Init(InitStream),
-    Connecting(ConnectingStream),
 }
 
 impl ConnectingStream {
@@ -45,12 +41,16 @@ impl ConnectingStream {
         Ok(Self {
             bound_socket,
             remote_endpoint,
-            conn_result: RwLock::new(None),
+            conn_result: SpinLock::new(None),
         })
     }
 
-    pub fn into_result(self) -> core::result::Result<ConnectedStream, (Error, NonConnectedStream)> {
-        let conn_result = *self.conn_result.read();
+    pub fn has_result(&self) -> bool {
+        self.conn_result.lock().is_some()
+    }
+
+    pub fn into_result(self) -> core::result::Result<ConnectedStream, (Error, InitStream)> {
+        let conn_result = *self.conn_result.lock();
         match conn_result {
             Some(ConnResult::Connected) => Ok(ConnectedStream::new(
                 self.bound_socket,
@@ -59,12 +59,9 @@ impl ConnectingStream {
             )),
             Some(ConnResult::Refused) => Err((
                 Error::with_message(Errno::ECONNREFUSED, "the connection is refused"),
-                NonConnectedStream::Init(InitStream::new_bound(self.bound_socket)),
+                InitStream::new_bound(self.bound_socket),
             )),
-            None => Err((
-                Error::with_message(Errno::EAGAIN, "the connection is pending"),
-                NonConnectedStream::Connecting(self),
-            )),
+            None => unreachable!("`has_result` must be true before calling `into_result`"),
         }
     }
 
@@ -80,35 +77,39 @@ impl ConnectingStream {
         pollee.reset_events();
     }
 
-    /// Returns `true` when `conn_result` becomes ready, which indicates that the caller should
-    /// invoke the `into_result()` method as soon as possible.
-    ///
-    /// Since `into_result()` needs to be called only once, this method will return `true`
-    /// _exactly_ once. The caller is responsible for not missing this event.
-    #[must_use]
-    pub(super) fn update_io_events(&self) -> bool {
-        if self.conn_result.read().is_some() {
-            return false;
+    pub(super) fn update_io_events(&self, pollee: &Pollee) {
+        if self.conn_result.lock().is_some() {
+            return;
         }
 
         self.bound_socket.raw_with(|socket| {
-            let mut result = self.conn_result.write();
+            let mut result = self.conn_result.lock();
             if result.is_some() {
-                return false;
+                return;
             }
 
             // Connected
             if socket.can_send() {
                 *result = Some(ConnResult::Connected);
-                return true;
+                pollee.add_events(IoEvents::OUT);
+                return;
             }
             // Connecting
             if socket.is_open() {
-                return false;
+                return;
             }
             // Refused
             *result = Some(ConnResult::Refused);
-            true
+            pollee.add_events(IoEvents::OUT);
+
+            // Add `IoEvents::OUT` because the man pages say "EINPROGRESS [..] It is possible to
+            // select(2) or poll(2) for completion by selecting the socket for writing". For
+            // details, see <https://man7.org/linux/man-pages/man2/connect.2.html>.
+            //
+            // TODO: It is better to do the state transition and let `ConnectedStream` or
+            // `InitStream` set the correct I/O events. However, the state transition is delayed
+            // because we're probably in IRQ handlers. Maybe mark the `pollee` as obsolete and
+            // re-calculate the I/O events in `poll`.
         })
     }
 }

@@ -8,8 +8,9 @@ use connecting::ConnectingStream;
 use init::InitStream;
 use listen::ListenStream;
 use options::{Congestion, MaxSegment, NoDelay, WindowClamp};
+use ostd::sync::{RwLockReadGuard, RwLockWriteGuard};
 use takeable::Takeable;
-use util::{TcpOptionSet, DEFAULT_MAXSEG};
+use util::TcpOptionSet;
 
 use super::UNSPECIFIED_LOCAL_ENDPOINT;
 use crate::{
@@ -39,7 +40,6 @@ mod listen;
 pub mod options;
 mod util;
 
-use self::connecting::NonConnectedStream;
 pub use self::util::CongestionControl;
 
 pub struct StreamSocket {
@@ -111,11 +111,79 @@ impl StreamSocket {
         self.is_nonblocking.store(nonblocking, Ordering::Relaxed);
     }
 
+    /// Ensures that the socket state is up to date and obtains a read lock on it.
+    ///
+    /// For a description of what "up-to-date" means, see [`Self::update_connecting`].
+    fn read_updated_state(&self) -> RwLockReadGuard<Takeable<State>> {
+        loop {
+            let state = self.state.read();
+            match state.as_ref() {
+                State::Connecting(connecting_stream) if connecting_stream.has_result() => (),
+                _ => return state,
+            };
+            drop(state);
+
+            self.update_connecting();
+        }
+    }
+
+    /// Ensures that the socket state is up to date and obtains a write lock on it.
+    ///
+    /// For a description of what "up-to-date" means, see [`Self::update_connecting`].
+    fn write_updated_state(&self) -> RwLockWriteGuard<Takeable<State>> {
+        self.update_connecting().1
+    }
+
+    /// Updates the socket state if the socket is an obsolete connecting socket.
+    ///
+    /// A connecting socket can become obsolete because some network events can set the socket to
+    /// connected state (if the connection succeeds) or initial state (if the connection is
+    /// refused) in [`Self::update_io_events`], but the state transition is delayed until the user
+    /// operates on the socket to avoid too many locks in the interrupt handler.
+    ///
+    /// This method performs the delayed state transition to ensure that the state is up to date
+    /// and returns the guards of the write-locked options and state.
+    fn update_connecting(
+        &self,
+    ) -> (
+        RwLockWriteGuard<OptionSet>,
+        RwLockWriteGuard<Takeable<State>>,
+    ) {
+        // Hold the lock in advance to avoid race conditions.
+        let mut options = self.options.write();
+        let mut state = self.state.write_irq_disabled();
+
+        match state.as_ref() {
+            State::Connecting(connection_stream) if connection_stream.has_result() => (),
+            _ => return (options, state),
+        }
+
+        let result = state.borrow_result(|owned_state| {
+            let State::Connecting(connecting_stream) = owned_state else {
+                unreachable!("`State::Connecting` is checked before calling `borrow_result`");
+            };
+
+            let connected_stream = match connecting_stream.into_result() {
+                Ok(connected_stream) => connected_stream,
+                Err((err, init_stream)) => {
+                    init_stream.init_pollee(&self.pollee);
+                    return (State::Init(init_stream), Err(err));
+                }
+            };
+            connected_stream.init_pollee(&self.pollee);
+
+            (State::Connected(connected_stream), Ok(()))
+        });
+        options.socket.set_sock_errors(result.err());
+
+        (options, state)
+    }
+
     // Returns `None` to block the task and wait for the connection to be established, and returns
     // `Some(_)` if blocking is not necessary or not allowed.
     fn start_connect(&self, remote_endpoint: &IpEndpoint) -> Option<Result<()>> {
         let is_nonblocking = self.is_nonblocking();
-        let mut state = self.state.write();
+        let mut state = self.write_updated_state();
 
         let result_or_block = state.borrow_result(|mut owned_state| {
             let init_stream = match owned_state {
@@ -174,41 +242,8 @@ impl StreamSocket {
         result_or_block
     }
 
-    fn finish_connect(&self) -> Result<()> {
-        let mut state = self.state.write();
-
-        state.borrow_result(|owned_state| {
-            let State::Connecting(connecting_stream) = owned_state else {
-                debug_assert!(false, "the socket unexpectedly left the connecting state");
-                return (
-                    owned_state,
-                    Err(Error::with_message(
-                        Errno::EINVAL,
-                        "the socket is not connecting",
-                    )),
-                );
-            };
-
-            let connected_stream = match connecting_stream.into_result() {
-                Ok(connected_stream) => connected_stream,
-                Err((err, NonConnectedStream::Init(init_stream))) => {
-                    init_stream.init_pollee(&self.pollee);
-                    return (State::Init(init_stream), Err(err));
-                }
-                Err((err, NonConnectedStream::Connecting(connecting_stream))) => {
-                    return (State::Connecting(connecting_stream), Err(err));
-                }
-            };
-            connected_stream.init_pollee(&self.pollee);
-
-            (State::Connected(connected_stream), Ok(()))
-        })
-    }
-
     fn check_connect(&self) -> Result<()> {
-        // Hold the lock in advance to avoid deadlocks.
-        let mut options = self.options.write();
-        let mut state = self.state.write();
+        let (mut options, mut state) = self.update_connecting();
 
         match state.as_mut() {
             State::Connecting(_) => {
@@ -224,7 +259,7 @@ impl StreamSocket {
     }
 
     fn try_accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
-        let state = self.state.read();
+        let state = self.read_updated_state();
 
         let State::Listen(listen_stream) = state.as_ref() else {
             return_errno_with_message!(Errno::EINVAL, "the socket is not listening");
@@ -244,7 +279,7 @@ impl StreamSocket {
         writer: &mut dyn MultiWrite,
         flags: SendRecvFlags,
     ) -> Result<(usize, SocketAddr)> {
-        let state = self.state.read();
+        let state = self.read_updated_state();
 
         let connected_stream = match state.as_ref() {
             State::Connected(connected_stream) => connected_stream,
@@ -280,7 +315,7 @@ impl StreamSocket {
     }
 
     fn try_send(&self, reader: &mut dyn MultiRead, flags: SendRecvFlags) -> Result<usize> {
-        let state = self.state.read();
+        let state = self.read_updated_state();
 
         let connected_stream = match state.as_ref() {
             State::Connected(connected_stream) => connected_stream,
@@ -311,21 +346,24 @@ impl StreamSocket {
         }
     }
 
-    #[must_use]
-    fn update_io_events(&self) -> bool {
+    fn update_io_events(&self) {
         let state = self.state.read();
         match state.as_ref() {
-            State::Init(_) => false,
-            State::Connecting(connecting_stream) => connecting_stream.update_io_events(),
+            State::Init(_) => (),
+            State::Connecting(connecting_stream) => {
+                connecting_stream.update_io_events(&self.pollee)
+            }
             State::Listen(listen_stream) => {
                 listen_stream.update_io_events(&self.pollee);
-                false
             }
             State::Connected(connected_stream) => {
                 connected_stream.update_io_events(&self.pollee);
-                false
             }
         }
+
+        // Note: Network events can cause a state transition from `State::Connecting` to
+        // `State::Connected`/`State::Init`. The state transition is delayed until
+        // `update_connecting`is triggered by user events, see that method for details.
     }
 }
 
@@ -392,7 +430,7 @@ impl Socket for StreamSocket {
         let endpoint = socket_addr.try_into()?;
 
         let can_reuse = self.options.read().socket.reuse_addr();
-        let mut state = self.state.write();
+        let mut state = self.write_updated_state();
 
         state.borrow_result(|owned_state| {
             let State::Init(init_stream) = owned_state else {
@@ -427,7 +465,7 @@ impl Socket for StreamSocket {
     }
 
     fn listen(&self, backlog: usize) -> Result<()> {
-        let mut state = self.state.write();
+        let mut state = self.write_updated_state();
 
         state.borrow_result(|owned_state| {
             let init_stream = match owned_state {
@@ -467,7 +505,7 @@ impl Socket for StreamSocket {
     }
 
     fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
-        let state = self.state.read();
+        let state = self.read_updated_state();
         match state.as_ref() {
             State::Connected(connected_stream) => connected_stream.shutdown(cmd),
             // TODO: shutdown listening stream
@@ -476,7 +514,7 @@ impl Socket for StreamSocket {
     }
 
     fn addr(&self) -> Result<SocketAddr> {
-        let state = self.state.read();
+        let state = self.read_updated_state();
         let local_endpoint = match state.as_ref() {
             State::Init(init_stream) => init_stream
                 .local_endpoint()
@@ -489,7 +527,7 @@ impl Socket for StreamSocket {
     }
 
     fn peer_addr(&self) -> Result<SocketAddr> {
-        let state = self.state.read();
+        let state = self.read_updated_state();
         let remote_endpoint = match state.as_ref() {
             State::Init(_) | State::Listen(_) => {
                 return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected")
@@ -547,7 +585,8 @@ impl Socket for StreamSocket {
     fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
         match_sock_option_mut!(option, {
             socket_errors: SocketError => {
-                self.options.write().socket.get_and_clear_sock_errors(socket_errors);
+                let mut options = self.update_connecting().0;
+                options.socket.get_and_clear_sock_errors(socket_errors);
                 return Ok(());
             },
             _ => ()
@@ -632,15 +671,7 @@ impl Socket for StreamSocket {
 
 impl SocketEventObserver for StreamSocket {
     fn on_events(&self) {
-        let conn_ready = self.update_io_events();
-
-        if conn_ready {
-            // Hold the lock in advance to avoid race conditions.
-            let mut options = self.options.write();
-
-            let result = self.finish_connect();
-            options.socket.set_sock_errors(result.err());
-        }
+        self.update_io_events();
     }
 }
 
