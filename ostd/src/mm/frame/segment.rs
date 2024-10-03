@@ -6,8 +6,9 @@ use core::ops::Range;
 
 use crate::{
     mm::{
+        frame::FrameMeta,
         io::{FallibleVmRead, FallibleVmWrite},
-        page::{meta::FrameMeta, ContPages},
+        page::ContPages,
         Frame, HasPaddr, Infallible, Paddr, VmIo, VmReader, VmWriter,
     },
     Error, Result,

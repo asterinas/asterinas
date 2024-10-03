@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::{
+    impl_page_meta,
     mm::{
         kspace::kvirt_area::{KVirtArea, Tracked},
-        page::{allocator, meta::KernelStackMeta},
+        page::allocator,
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
         PAGE_SIZE,
     },
@@ -33,6 +34,11 @@ pub struct KernelStack {
     end_vaddr: Vaddr,
     has_guard_page: bool,
 }
+
+#[derive(Debug, Default)]
+struct KernelStackMeta {}
+
+impl_page_meta!(KernelStackMeta);
 
 impl KernelStack {
     /// Generates a kernel stack with guard pages.
