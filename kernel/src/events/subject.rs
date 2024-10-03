@@ -3,6 +3,7 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use keyable_arc::KeyableWeak;
+use ostd::sync::LocalIrqDisabled;
 
 use super::{Events, EventsFilter, Observer};
 use crate::prelude::*;
@@ -10,7 +11,7 @@ use crate::prelude::*;
 /// A Subject notifies interesting events to registered observers.
 pub struct Subject<E: Events, F: EventsFilter<E> = ()> {
     // A table that maintains all interesting observers.
-    observers: SpinLock<BTreeMap<KeyableWeak<dyn Observer<E>>, F>>,
+    observers: SpinLock<BTreeMap<KeyableWeak<dyn Observer<E>>, F>, LocalIrqDisabled>,
     // To reduce lock contentions, we maintain a counter for the size of the table
     num_observers: AtomicUsize,
 }
