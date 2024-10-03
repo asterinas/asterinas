@@ -557,9 +557,11 @@ impl Socket for StreamSocket {
 
         match options.socket.get_option(option) {
             Err(err) if err.error() == Errno::ENOPROTOOPT => (),
-            res => return res.map(|_| ()),
+            res => return res,
         }
 
+        // FIXME: Here we only return the previously set values, without actually
+        // asking the underlying sockets for the real, effective values.
         match_sock_option_mut!(option, {
             tcp_no_delay: NoDelay => {
                 let no_delay = options.tcp.no_delay();
@@ -570,14 +572,7 @@ impl Socket for StreamSocket {
                 tcp_congestion.set(congestion);
             },
             tcp_maxseg: MaxSegment => {
-                // It will always return the default MSS value defined above for an unconnected socket
-                // and always return the actual current MSS for a connected one.
-
-                // FIXME: how to get the current MSS?
-                let maxseg = match self.state.read().as_ref() {
-                    State::Init(_) | State::Listen(_) | State::Connecting(_) => DEFAULT_MAXSEG,
-                    State::Connected(_) => options.tcp.maxseg(),
-                };
+                let maxseg = options.tcp.maxseg();
                 tcp_maxseg.set(maxseg);
             },
             tcp_window_clamp: WindowClamp => {
@@ -598,7 +593,7 @@ impl Socket for StreamSocket {
             res => return res,
         }
 
-        // FIXME: here we have only set the value of the option, without actually
+        // FIXME: Here we have only set the value of the option, without actually
         // making any real modifications.
         match_sock_option_ref!(option, {
             tcp_no_delay: NoDelay => {
@@ -621,7 +616,7 @@ impl Socket for StreamSocket {
             },
             tcp_window_clamp: WindowClamp => {
                 let window_clamp = tcp_window_clamp.get().unwrap();
-                let half_recv_buf = (options.socket.recv_buf()) / 2;
+                let half_recv_buf = options.socket.recv_buf() / 2;
                 if *window_clamp <= half_recv_buf {
                     options.tcp.set_window_clamp(half_recv_buf);
                 } else {
