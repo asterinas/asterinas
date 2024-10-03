@@ -44,8 +44,9 @@ use spin::Once;
 use crate::{
     arch,
     mm::{
+        kspace::KernelMeta,
         paddr_to_vaddr,
-        page::{self, meta::KernelMeta, ContPages},
+        page::{self, ContPages},
         PAGE_SIZE,
     },
 };

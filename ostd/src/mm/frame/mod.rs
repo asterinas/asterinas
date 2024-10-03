@@ -15,14 +15,17 @@ use core::mem::ManuallyDrop;
 
 pub use segment::Segment;
 
-use super::page::{
-    meta::{FrameMeta, MetaSlot, PageMeta, PageUsage},
-    DynPage, Page,
+use super::{
+    page::{
+        meta::{impl_page_meta, MetaSlot},
+        DynPage, Page,
+    },
+    Infallible,
 };
 use crate::{
     mm::{
         io::{FallibleVmRead, FallibleVmWrite, VmIo, VmReader, VmWriter},
-        paddr_to_vaddr, HasPaddr, Infallible, Paddr, PAGE_SIZE,
+        paddr_to_vaddr, HasPaddr, Paddr, PAGE_SIZE,
     },
     Error, Result,
 };
@@ -178,14 +181,11 @@ impl VmIo for Frame {
     }
 }
 
-impl PageMeta for FrameMeta {
-    const USAGE: PageUsage = PageUsage::Frame;
+/// Metadata for a frame.
+#[derive(Debug, Default)]
+pub struct FrameMeta {}
 
-    fn on_drop(_page: &mut Page<Self>) {
-        // Nothing should be done so far since dropping the page would
-        // have all taken care of.
-    }
-}
+impl_page_meta!(FrameMeta);
 
 // Here are implementations for `xarray`.
 

@@ -11,8 +11,9 @@ use crate::{
     arch::boot::smp::{bringup_all_aps, get_num_processors},
     cpu,
     mm::{
+        kspace::KernelMeta,
         paddr_to_vaddr,
-        page::{self, meta::KernelMeta, ContPages},
+        page::{self, ContPages},
         PAGE_SIZE,
     },
     task::Task,

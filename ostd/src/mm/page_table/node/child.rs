@@ -4,11 +4,11 @@
 
 use core::{mem::ManuallyDrop, panic};
 
-use super::{PageTableEntryTrait, RawPageTableNode};
+use super::{MapTrackingStatus, PageTableEntryTrait, RawPageTableNode};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     mm::{
-        page::{inc_page_ref_count, meta::MapTrackingStatus, DynPage},
+        page::{inc_page_ref_count, DynPage},
         page_prop::PageProperty,
         Paddr, PagingConstsTrait, PagingLevel,
     },
