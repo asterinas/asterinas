@@ -8,7 +8,8 @@ use core::ops::Range;
 use super::Frame;
 use crate::{
     mm::{
-        page::{cont_pages::ContPages, meta::FrameMeta, Page},
+        frame::FrameMeta,
+        page::{cont_pages::ContPages, Page},
         FallibleVmRead, FallibleVmWrite, HasPaddr, Infallible, Paddr, VmIo, VmReader, VmWriter,
         PAGE_SIZE,
     },

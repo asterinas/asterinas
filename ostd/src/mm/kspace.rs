@@ -48,7 +48,7 @@ use spin::Once;
 use super::{
     nr_subpage_per_huge,
     page::{
-        meta::{mapping, KernelMeta, MetaPageMeta},
+        meta::{mapping, MetaPageMeta, PageMeta},
         Page,
     },
     page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
@@ -241,3 +241,9 @@ pub unsafe fn activate_kernel_page_table() {
         crate::mm::page_table::boot_pt::dismiss();
     }
 }
+
+/// The metadata of pages that contains the kernel itself.
+#[derive(Debug, Default)]
+pub struct KernelMeta {}
+
+impl PageMeta for KernelMeta {}

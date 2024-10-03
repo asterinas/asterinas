@@ -2,11 +2,8 @@
 
 //! This module provides accessors to the page table entries in a node.
 
-use super::{Child, PageTableEntryTrait, PageTableNode};
-use crate::mm::{
-    nr_subpage_per_huge, page::meta::MapTrackingStatus, page_prop::PageProperty, page_size,
-    PagingConstsTrait,
-};
+use super::{Child, MapTrackingStatus, PageTableEntryTrait, PageTableNode};
+use crate::mm::{nr_subpage_per_huge, page_prop::PageProperty, page_size, PagingConstsTrait};
 
 /// A view of an entry in a page table node.
 ///
