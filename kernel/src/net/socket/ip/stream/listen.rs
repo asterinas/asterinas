@@ -36,7 +36,7 @@ impl ListenStream {
 
     /// Append sockets listening at LocalEndPoint to support backlog
     fn fill_backlog_sockets(&self) -> Result<()> {
-        let mut backlog_sockets = self.backlog_sockets.write();
+        let mut backlog_sockets = self.backlog_sockets.write_irq_disabled();
 
         let backlog = self.backlog;
         let current_backlog_len = backlog_sockets.len();
@@ -54,7 +54,7 @@ impl ListenStream {
     }
 
     pub fn try_accept(&self) -> Result<ConnectedStream> {
-        let mut backlog_sockets = self.backlog_sockets.write();
+        let mut backlog_sockets = self.backlog_sockets.write_irq_disabled();
 
         let index = backlog_sockets
             .iter()
