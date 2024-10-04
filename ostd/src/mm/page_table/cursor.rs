@@ -95,7 +95,6 @@ pub enum PageTableItem {
     PageTableNode {
         page: DynPage,
     },
-    #[allow(dead_code)]
     MappedUntracked {
         va: Vaddr,
         pa: Paddr,
@@ -508,7 +507,7 @@ where
     ///  - the range being mapped does not affect kernel's memory safety;
     ///  - the physical address to be mapped is valid and safe to use;
     ///  - it is allowed to map untracked pages in this virtual address range.
-    pub unsafe fn map_pa(&mut self, pa: &Range<Paddr>, prop: PageProperty) {
+    pub unsafe fn map_untracked(&mut self, pa: &Range<Paddr>, prop: PageProperty) {
         let end = self.0.va + pa.len();
         let mut pa = pa.start;
         assert!(end <= self.0.barrier_va.end);

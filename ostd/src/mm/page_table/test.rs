@@ -55,7 +55,7 @@ fn test_untracked_map_unmap() {
     let to = PAGE_SIZE * to_ppn.start..PAGE_SIZE * to_ppn.end;
     let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
 
-    unsafe { pt.map(&from, &to, prop).unwrap() };
+    unsafe { pt.cursor_mut(&from).unwrap().map_untracked(&to, prop) };
     for i in 0..100 {
         let offset = i * (PAGE_SIZE + 1000);
         assert_eq!(pt.query(from.start + offset).unwrap().0, to.start + offset);
@@ -239,7 +239,7 @@ fn test_untracked_large_protect_query() {
     let to = PAGE_SIZE * to_ppn.start..PAGE_SIZE * to_ppn.end;
     let mapped_pa_of_va = |va: Vaddr| va - (from.start - to.start);
     let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
-    unsafe { pt.map(&from, &to, prop).unwrap() };
+    unsafe { pt.cursor_mut(&from).unwrap().map_untracked(&to, prop) };
     for (item, i) in pt.cursor(&from).unwrap().zip(0..512 + 2 + 2) {
         let PageTableItem::MappedUntracked { va, pa, len, prop } = item else {
             panic!("Expected MappedUntracked, got {:#x?}", item);

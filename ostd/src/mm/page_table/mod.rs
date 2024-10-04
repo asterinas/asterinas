@@ -146,26 +146,6 @@ impl PageTable<KernelMode> {
             }
         }
     }
-
-    /// Protect the given virtual address range in the kernel page table.
-    ///
-    /// This method flushes the TLB entries when doing protection.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that the protection operation does not affect
-    /// the memory safety of the kernel.
-    pub unsafe fn protect_flush_tlb(
-        &self,
-        vaddr: &Range<Vaddr>,
-        mut op: impl FnMut(&mut PageProperty),
-    ) -> Result<(), PageTableError> {
-        let mut cursor = CursorMut::new(self, vaddr)?;
-        while let Some(range) = cursor.protect_next(vaddr.end - cursor.virt_addr(), &mut op) {
-            crate::arch::mm::tlb_flush_addr(range.start);
-        }
-        Ok(())
-    }
 }
 
 impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTable<M, E, C>
@@ -190,16 +170,6 @@ where
     /// hardware since the page table node may be dropped, resulting in UAF.
     pub unsafe fn root_paddr(&self) -> Paddr {
         self.root.paddr()
-    }
-
-    pub unsafe fn map(
-        &self,
-        vaddr: &Range<Vaddr>,
-        paddr: &Range<Paddr>,
-        prop: PageProperty,
-    ) -> Result<(), PageTableError> {
-        self.cursor_mut(vaddr)?.map_pa(paddr, prop);
-        Ok(())
     }
 
     /// Query about the mapping of a single byte at the given virtual address.

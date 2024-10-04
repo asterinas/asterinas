@@ -20,7 +20,7 @@ use crate::{
     cpu_local,
     mm::{
         io::Fallible,
-        kspace::KERNEL_PAGE_TABLE,
+        kspace,
         page_table::{self, PageTable, PageTableItem, UserMode},
         tlb::{TlbFlushOp, TlbFlusher, FLUSH_ALL_RANGE_THRESHOLD},
         Frame, PageProperty, VmReader, VmWriter, MAX_USERSPACE_VADDR,
@@ -59,7 +59,7 @@ impl VmSpace {
     /// Creates a new VM address space.
     pub fn new() -> Self {
         Self {
-            pt: KERNEL_PAGE_TABLE.get().unwrap().create_user_page_table(),
+            pt: kspace::create_user_page_table(),
             page_fault_handler: None,
             activation_lock: RwLock::new(()),
         }

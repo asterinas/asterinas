@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-
 //! Kernel memory space management.
 //!
 //! The kernel memory space is currently managed as follows, if the
@@ -52,12 +50,15 @@ use super::{
         Page,
     },
     page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
-    page_table::{KernelMode, PageTable},
+    page_table::{KernelMode, PageTable, PageTableError, PageTableItem, UserMode},
+    tlb::{TlbFlushOp, TlbFlusher},
     Paddr, PagingConstsTrait, Vaddr, PAGE_SIZE,
 };
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     boot::memory_region::MemoryRegionType,
+    cpu::CpuSet,
+    task::disable_preempt,
 };
 
 /// The shortest supported address width is 39 bits. And the literal
@@ -91,6 +92,7 @@ pub(in crate::mm) const FRAME_METADATA_RANGE: Range<Vaddr> =
     FRAME_METADATA_BASE_VADDR..FRAME_METADATA_CAP_VADDR;
 
 const VMALLOC_BASE_VADDR: Vaddr = 0xffff_fd00_0000_0000 << ADDR_WIDTH_SHIFT;
+#[allow(dead_code)]
 pub const VMALLOC_VADDR_RANGE: Range<Vaddr> = VMALLOC_BASE_VADDR..FRAME_METADATA_BASE_VADDR;
 
 /// The base address of the linear mapping of all physical
@@ -99,17 +101,84 @@ pub const LINEAR_MAPPING_BASE_VADDR: Vaddr = 0xffff_8000_0000_0000 << ADDR_WIDTH
 pub const LINEAR_MAPPING_VADDR_RANGE: Range<Vaddr> = LINEAR_MAPPING_BASE_VADDR..VMALLOC_BASE_VADDR;
 
 /// Convert physical address to virtual address using offset, only available inside `ostd`
-pub fn paddr_to_vaddr(pa: Paddr) -> usize {
+pub(crate) fn paddr_to_vaddr(pa: Paddr) -> Vaddr {
     debug_assert!(pa < VMALLOC_BASE_VADDR - LINEAR_MAPPING_BASE_VADDR);
     pa + LINEAR_MAPPING_BASE_VADDR
+}
+
+/// Map the given physical address range to the given virtual address range.
+///
+/// # Safety
+///
+/// The caller must ensure that the mapping operation does not affect the
+/// memory safety of the kernel. The physical address range must be allowed
+/// to be mapped as untracked.
+pub(crate) unsafe fn map_untracked(
+    vaddr: &Range<Vaddr>,
+    paddr: &Range<Paddr>,
+    prop: PageProperty,
+) -> Result<(), PageTableError> {
+    let mut cursor = KERNEL_PAGE_TABLE
+        .get()
+        .expect("Page table not initialized")
+        .cursor_mut(vaddr)?;
+    cursor.map_untracked(paddr, prop);
+    Ok(())
+}
+
+/// Protect the given virtual address range in the kernel page table.
+///
+/// This method flushes the TLB entries when doing protection.
+///
+/// # Safety
+///
+/// The caller must ensure that the mapping operation does not affect the
+/// memory safety of the kernel.
+pub(crate) unsafe fn protect(
+    vaddr: &Range<Vaddr>,
+    mut op: impl FnMut(&mut PageProperty),
+) -> Result<(), PageTableError> {
+    let mut cursor = KERNEL_PAGE_TABLE
+        .get()
+        .expect("Page table not initialized")
+        .cursor_mut(vaddr)?;
+    let flusher = TlbFlusher::new(CpuSet::new_full(), disable_preempt());
+    while let Some(range) = cursor.protect_next(vaddr.end - cursor.virt_addr(), &mut op) {
+        // We make solid flushes instead of opportunistically flushing all
+        // entries since flushing global entries are expensive.
+        flusher.issue_tlb_flush(TlbFlushOp::Range(range));
+    }
+    flusher.dispatch_tlb_flush();
+    Ok(())
+}
+
+/// Query the page table item at the given kernel virtual address.
+// Only used in tests
+#[allow(dead_code)]
+pub(crate) fn query(vaddr: Vaddr) -> Result<PageTableItem, PageTableError> {
+    let mut cursor = KERNEL_PAGE_TABLE
+        .get()
+        .expect("Page table not initialized")
+        .cursor(&(vaddr..vaddr + PAGE_SIZE))?;
+    cursor.query()
+}
+
+/// Create a new user page table.
+///
+/// This should be the only way to create the user page table, that is to
+/// duplicate the kernel page table with all the kernel mappings shared.
+pub(super) fn create_user_page_table() -> PageTable<UserMode> {
+    KERNEL_PAGE_TABLE
+        .get()
+        .expect("Page table not initialized")
+        .create_user_page_table()
 }
 
 /// The kernel page table instance.
 ///
 /// It manages the kernel mapping of all address spaces by sharing the kernel part. And it
 /// is unlikely to be activated.
-pub static KERNEL_PAGE_TABLE: Once<PageTable<KernelMode, PageTableEntry, PagingConsts>> =
-    Once::new();
+static KERNEL_PAGE_TABLE: Once<PageTable<KernelMode, PageTableEntry, PagingConsts>> = Once::new();
 
 /// Initializes the kernel page table.
 ///
@@ -143,9 +212,10 @@ pub fn init_kernel_page_table(meta_pages: Vec<Page<MetaPageMeta>>) {
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
+        let mut cursor = kpt.cursor_mut(&from).unwrap();
         // SAFETY: we are doing the linear mapping for the kernel.
         unsafe {
-            kpt.map(&from, &to, prop).unwrap();
+            cursor.map_untracked(&to, prop);
         }
     }
 
@@ -178,9 +248,10 @@ pub fn init_kernel_page_table(meta_pages: Vec<Page<MetaPageMeta>>) {
             cache: CachePolicy::Uncacheable,
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
+        let mut cursor = kpt.cursor_mut(&from).unwrap();
         // SAFETY: we are doing I/O mappings for the kernel.
         unsafe {
-            kpt.map(&from, &to, prop).unwrap();
+            cursor.map_untracked(&to, prop);
         }
     }
 

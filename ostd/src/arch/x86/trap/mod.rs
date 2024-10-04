@@ -29,7 +29,7 @@ use crate::{
     cpu::{CpuException, CpuExceptionInfo, PageFaultErrorCode},
     cpu_local_cell,
     mm::{
-        kspace::{KERNEL_PAGE_TABLE, LINEAR_MAPPING_BASE_VADDR, LINEAR_MAPPING_VADDR_RANGE},
+        kspace::{self, LINEAR_MAPPING_BASE_VADDR, LINEAR_MAPPING_VADDR_RANGE},
         page_prop::{CachePolicy, PageProperty},
         PageFlags, PrivilegedPageFlags as PrivFlags, MAX_USERSPACE_VADDR, PAGE_SIZE,
     },
@@ -313,9 +313,6 @@ fn handle_kernel_page_fault(f: &TrapFrame, page_fault_vaddr: u64) {
     );
 
     // Do the mapping
-    let page_table = KERNEL_PAGE_TABLE
-        .get()
-        .expect("kernel page fault: the kernel page table is not initialized");
     let vaddr = (page_fault_vaddr as usize).align_down(PAGE_SIZE);
     let paddr = vaddr - LINEAR_MAPPING_BASE_VADDR;
 
@@ -337,16 +334,15 @@ fn handle_kernel_page_fault(f: &TrapFrame, page_fault_vaddr: u64) {
     // 2. We map the address to the correct physical page with the correct flags, where the
     //    correctness follows the semantics of the direct mapping of physical memory.
     unsafe {
-        page_table
-            .map(
-                &(vaddr..vaddr + PAGE_SIZE),
-                &(paddr..paddr + PAGE_SIZE),
-                PageProperty {
-                    flags: PageFlags::RW,
-                    cache: CachePolicy::Uncacheable,
-                    priv_flags,
-                },
-            )
-            .unwrap();
+        kspace::map_untracked(
+            &(vaddr..vaddr + PAGE_SIZE),
+            &(paddr..paddr + PAGE_SIZE),
+            PageProperty {
+                flags: PageFlags::RW,
+                cache: CachePolicy::Uncacheable,
+                priv_flags,
+            },
+        )
+        .unwrap();
     }
 }
