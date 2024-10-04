@@ -52,7 +52,8 @@ pub fn abort() -> ! {
     exit_qemu(QemuExitCode::Failed);
 }
 
-fn print_stack_trace() {
+/// Prints the stack trace of the current thread to the console.
+pub fn print_stack_trace() {
     /// We acquire a global lock to prevent the frames in the stack trace from
     /// interleaving. The spin lock is used merely for its simplicity.
     static BACKTRACE_PRINT_LOCK: SpinLock<()> = SpinLock::new(());
