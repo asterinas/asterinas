@@ -66,6 +66,7 @@ pub mod events;
 pub mod fs;
 pub mod ipc;
 pub mod net;
+pub mod oops;
 pub mod prelude;
 mod process;
 mod sched;
