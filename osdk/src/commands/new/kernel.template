@@ -1,6 +1,4 @@
 #![no_std]
-// The feature `linkage` is required for `ostd::main` to work.
-#![feature(linkage)]
 #![deny(unsafe_code)]
 
 use ostd::prelude::*;
