@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::{
-    mm::{kspace::KERNEL_PAGE_TABLE, FrameAllocOptions, Paddr, PageFlags, Segment, PAGE_SIZE},
+    mm::{kspace, FrameAllocOptions, Paddr, PageFlags, Segment, PAGE_SIZE},
     prelude::*,
 };
 
@@ -38,8 +38,6 @@ impl KernelStack {
     pub fn new_with_guard_page() -> Result<Self> {
         let stack_segment =
             FrameAllocOptions::new(STACK_SIZE_IN_PAGES as usize + 1).alloc_contiguous()?;
-        // FIXME: modifying the the linear mapping is bad.
-        let page_table = KERNEL_PAGE_TABLE.get().unwrap();
         let guard_page_vaddr = {
             let guard_page_paddr = stack_segment.start_paddr();
             crate::mm::paddr_to_vaddr(guard_page_paddr)
@@ -47,9 +45,8 @@ impl KernelStack {
         // SAFETY: the segment allocated is not used by others so we can protect it.
         unsafe {
             let vaddr_range = guard_page_vaddr..guard_page_vaddr + PAGE_SIZE;
-            page_table
-                .protect_flush_tlb(&vaddr_range, |p| p.flags -= PageFlags::RW)
-                .unwrap();
+            // FIXME: modifying the the linear mapping is bad.
+            kspace::protect(&vaddr_range, |p| p.flags -= PageFlags::RW).unwrap();
         }
         Ok(Self {
             segment: stack_segment,
@@ -65,8 +62,6 @@ impl KernelStack {
 impl Drop for KernelStack {
     fn drop(&mut self) {
         if self.has_guard_page {
-            // FIXME: modifying the the linear mapping is bad.
-            let page_table = KERNEL_PAGE_TABLE.get().unwrap();
             let guard_page_vaddr = {
                 let guard_page_paddr = self.segment.start_paddr();
                 crate::mm::paddr_to_vaddr(guard_page_paddr)
@@ -74,9 +69,8 @@ impl Drop for KernelStack {
             // SAFETY: the segment allocated is not used by others so we can protect it.
             unsafe {
                 let vaddr_range = guard_page_vaddr..guard_page_vaddr + PAGE_SIZE;
-                page_table
-                    .protect_flush_tlb(&vaddr_range, |p| p.flags |= PageFlags::RW)
-                    .unwrap();
+                // FIXME: modifying the the linear mapping is bad.
+                kspace::protect(&vaddr_range, |p| p.flags |= PageFlags::RW).unwrap();
             }
         }
     }

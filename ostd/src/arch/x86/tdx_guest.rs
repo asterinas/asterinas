@@ -5,8 +5,7 @@ use tdx_guest::{tdcall::accept_page, tdvmcall::map_gpa, TdxTrapFrame};
 
 use crate::{
     mm::{
-        kspace::KERNEL_PAGE_TABLE,
-        paddr_to_vaddr,
+        kspace, paddr_to_vaddr,
         page_prop::{PageProperty, PrivilegedPageFlags as PrivFlags},
         page_table::boot_pt,
         PAGE_SIZE,
@@ -56,9 +55,8 @@ pub unsafe fn unprotect_gpa_range(gpa: Paddr, page_num: usize) -> Result<(), Pag
         }
     });
     // Protect the page in the kernel page table.
-    let pt = KERNEL_PAGE_TABLE.get().unwrap();
     let vaddr = paddr_to_vaddr(gpa);
-    pt.protect_flush_tlb(&(vaddr..vaddr + page_num * PAGE_SIZE), protect_op)
+    kspace::protect(&(vaddr..vaddr + page_num * PAGE_SIZE), protect_op)
         .map_err(|_| PageConvertError::PageTable)?;
 
     map_gpa(
@@ -98,9 +96,8 @@ pub unsafe fn protect_gpa_range(gpa: Paddr, page_num: usize) -> Result<(), PageC
         }
     });
     // Protect the page in the kernel page table.
-    let pt = KERNEL_PAGE_TABLE.get().unwrap();
     let vaddr = paddr_to_vaddr(gpa);
-    pt.protect_flush_tlb(&(vaddr..vaddr + page_num * PAGE_SIZE), protect_op)
+    kspace::protect(&(vaddr..vaddr + page_num * PAGE_SIZE), protect_op)
         .map_err(|_| PageConvertError::PageTable)?;
 
     map_gpa((gpa & PAGE_MASK) as u64, (page_num * PAGE_SIZE) as u64)

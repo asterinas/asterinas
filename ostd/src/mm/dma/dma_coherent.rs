@@ -11,7 +11,7 @@ use crate::{
     mm::{
         dma::{dma_type, Daddr, DmaType},
         io::VmIoOnce,
-        kspace::{paddr_to_vaddr, KERNEL_PAGE_TABLE},
+        kspace::{self, paddr_to_vaddr},
         page_prop::CachePolicy,
         HasPaddr, Infallible, Paddr, PodOnce, Segment, VmIo, VmReader, VmWriter, PAGE_SIZE,
     },
@@ -65,14 +65,11 @@ impl DmaCoherent {
         // Ensure that the addresses used later will not overflow
         start_paddr.checked_add(frame_count * PAGE_SIZE).unwrap();
         if !is_cache_coherent {
-            let page_table = KERNEL_PAGE_TABLE.get().unwrap();
             let vaddr = paddr_to_vaddr(start_paddr);
             let va_range = vaddr..vaddr + (frame_count * PAGE_SIZE);
             // SAFETY: the physical mappings is only used by DMA so protecting it is safe.
             unsafe {
-                page_table
-                    .protect_flush_tlb(&va_range, |p| p.cache = CachePolicy::Uncacheable)
-                    .unwrap();
+                kspace::protect(&va_range, |p| p.cache = CachePolicy::Uncacheable).unwrap();
             }
         }
         let start_daddr = match dma_type() {
@@ -152,14 +149,11 @@ impl Drop for DmaCoherentInner {
             }
         }
         if !self.is_cache_coherent {
-            let page_table = KERNEL_PAGE_TABLE.get().unwrap();
             let vaddr = paddr_to_vaddr(start_paddr);
             let va_range = vaddr..vaddr + (frame_count * PAGE_SIZE);
             // SAFETY: the physical mappings is only used by DMA so protecting it is safe.
             unsafe {
-                page_table
-                    .protect_flush_tlb(&va_range, |p| p.cache = CachePolicy::Writeback)
-                    .unwrap();
+                kspace::protect(&va_range, |p| p.cache = CachePolicy::Writeback).unwrap();
             }
         }
         remove_dma_mapping(start_paddr, frame_count);
@@ -213,7 +207,7 @@ mod test {
     use alloc::vec;
 
     use super::*;
-    use crate::mm::FrameAllocOptions;
+    use crate::mm::{page_table::PageTableItem, FrameAllocOptions};
 
     #[ktest]
     fn map_with_coherent_device() {
@@ -233,9 +227,17 @@ mod test {
             .unwrap();
         let dma_coherent = DmaCoherent::map(vm_segment.clone(), false).unwrap();
         assert!(dma_coherent.paddr() == vm_segment.paddr());
-        let page_table = KERNEL_PAGE_TABLE.get().unwrap();
         let vaddr = paddr_to_vaddr(vm_segment.paddr());
-        assert!(page_table.query(vaddr).unwrap().1.cache == CachePolicy::Uncacheable);
+        let PageTableItem::MappedUntracked {
+            va: _,
+            pa: _,
+            len: _,
+            prop,
+        } = kspace::query(vaddr).unwrap()
+        else {
+            panic!("The page is not mapped.");
+        };
+        assert!(prop.cache == CachePolicy::Uncacheable);
     }
 
     #[ktest]

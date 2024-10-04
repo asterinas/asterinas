@@ -50,6 +50,12 @@ pub enum ContextTableError {
     ModificationError(PageTableError),
 }
 
+impl From<PageTableError> for ContextTableError {
+    fn from(err: PageTableError) -> Self {
+        ContextTableError::ModificationError(err)
+    }
+}
+
 impl RootTable {
     pub fn root_paddr(&self) -> Paddr {
         self.root_frame.start_paddr()
@@ -295,17 +301,16 @@ impl ContextTable {
         if device.device >= 32 || device.function >= 8 {
             return Err(ContextTableError::InvalidDeviceId);
         }
-        self.get_or_create_page_table(device)
-            .map(
-                &(daddr..daddr + PAGE_SIZE),
-                &(paddr..paddr + PAGE_SIZE),
-                PageProperty {
-                    flags: PageFlags::RW,
-                    cache: CachePolicy::Uncacheable,
-                    priv_flags: PrivFlags::empty(),
-                },
-            )
-            .unwrap();
+        let table = self.get_or_create_page_table(device);
+        let mut cursor = table.cursor_mut(&(daddr..daddr + PAGE_SIZE))?;
+        cursor.map_untracked(
+            &(paddr..paddr + PAGE_SIZE),
+            PageProperty {
+                flags: PageFlags::RW,
+                cache: CachePolicy::Uncacheable,
+                priv_flags: PrivFlags::empty(),
+            },
+        );
         Ok(())
     }
 
