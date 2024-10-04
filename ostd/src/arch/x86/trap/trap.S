@@ -15,6 +15,8 @@
  * SPDX-License-Identifier: MPL-2.0
  */
 
+.code64
+
 .equ NUM_INT, 256
 
 .altmacro

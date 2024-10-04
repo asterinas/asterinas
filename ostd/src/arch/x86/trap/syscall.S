@@ -15,6 +15,8 @@
  * SPDX-License-Identifier: MPL-2.0
  */
 
+.code64
+
 .text
     # extern "sysv64" fn syscall_return(&mut GeneralRegs)
 .global syscall_return
