@@ -16,7 +16,6 @@
 #![feature(int_roundings)]
 #![feature(iter_repeat_n)]
 #![feature(let_chains)]
-#![feature(linkage)]
 #![feature(linked_list_remove)]
 #![feature(negative_impls)]
 #![feature(register_tool)]

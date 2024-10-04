@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #![no_std]
-// The feature `linkage` is required for `ostd::main` to work.
-#![feature(linkage)]
+#![deny(unsafe_code)]
 
 extern crate alloc;
 

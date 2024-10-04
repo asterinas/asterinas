@@ -13,7 +13,6 @@ use syn::{parse_macro_input, Expr, Ident, ItemFn};
 ///
 /// ```ignore
 /// #![no_std]
-/// #![feature(linkage)]
 ///
 /// use ostd::prelude::*;
 ///
@@ -28,13 +27,14 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let main_fn_name = &main_fn.sig.ident;
 
     quote!(
+        #[cfg(not(ktest))]
         #[no_mangle]
-        #[linkage = "weak"]
         extern "Rust" fn __ostd_main() -> ! {
             #main_fn_name();
             ostd::prelude::abort();
         }
 
+        #[allow(unused)]
         #main_fn
     )
     .into()
@@ -44,10 +44,6 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
 ///
 /// This macro is used for internal OSDK implementation. Do not use it
 /// directly.
-///
-/// It is a strong version of the `main` macro attribute. So if it exists (
-/// which means the unit test kernel is linked to perform testing), the actual
-/// kernel entry point will be replaced by this one.
 #[proc_macro_attribute]
 pub fn test_main(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let main_fn = parse_macro_input!(item as ItemFn);
@@ -82,7 +78,7 @@ pub fn panic_handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
             #handler_fn_name(info);
         }
 
-        #[cfg(not(ktest))]
+        #[allow(unused)]
         #handler_fn
     )
     .into()
