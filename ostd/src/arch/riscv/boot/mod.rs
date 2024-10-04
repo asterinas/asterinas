@@ -35,20 +35,12 @@ fn init_kernel_commandline(kernel_cmdline: &'static Once<KCmdlineArg>) {
 }
 
 fn init_initramfs(initramfs: &'static Once<&'static [u8]>) {
-    let chosen = DEVICE_TREE.get().unwrap().find_node("/chosen").unwrap();
-    let initrd_start = chosen
-        .property("linux,initrd-start")
-        .unwrap()
-        .as_usize()
-        .unwrap();
-    let initrd_end = chosen
-        .property("linux,initrd-end")
-        .unwrap()
-        .as_usize()
-        .unwrap();
+    let Some((start, end)) = parse_initramfs_range() else {
+        return;
+    };
 
-    let base_va = paddr_to_vaddr(initrd_start);
-    let length = initrd_end - initrd_start;
+    let base_va = paddr_to_vaddr(start);
+    let length = end - start;
     initramfs.call_once(|| unsafe { core::slice::from_raw_parts(base_va as *const u8, length) });
 }
 
@@ -89,25 +81,22 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
     regions.push(MemoryRegion::kernel());
 
     // Add the initramfs region.
-    let chosen = DEVICE_TREE.get().unwrap().find_node("/chosen").unwrap();
-    let initrd_start = chosen
-        .property("linux,initrd-start")
-        .unwrap()
-        .as_usize()
-        .unwrap();
-    let initrd_end = chosen
-        .property("linux,initrd-end")
-        .unwrap()
-        .as_usize()
-        .unwrap();
-    let length = initrd_end - initrd_start;
-    regions.push(MemoryRegion::new(
-        initrd_start,
-        length,
-        MemoryRegionType::Module,
-    ));
+    if let Some((start, end)) = parse_initramfs_range() {
+        regions.push(MemoryRegion::new(
+            start,
+            end - start,
+            MemoryRegionType::Module,
+        ));
+    }
 
     memory_regions.call_once(|| non_overlapping_regions_from(regions.as_ref()));
+}
+
+fn parse_initramfs_range() -> Option<(usize, usize)> {
+    let chosen = DEVICE_TREE.get().unwrap().find_node("/chosen").unwrap();
+    let initrd_start = chosen.property("linux,initrd-start")?.as_usize()?;
+    let initrd_end = chosen.property("linux,initrd-end")?.as_usize()?;
+    Some((initrd_start, initrd_end))
 }
 
 /// The entry point of the Rust code portion of Asterinas.
