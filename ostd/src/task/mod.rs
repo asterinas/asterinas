@@ -8,7 +8,7 @@ mod preempt;
 mod processor;
 pub mod scheduler;
 
-use core::{any::Any, cell::UnsafeCell};
+use core::{any::Any, cell::SyncUnsafeCell};
 
 use kernel_stack::KernelStack;
 pub(crate) use preempt::cpu_local::reset_preempt_info;
@@ -27,20 +27,16 @@ use crate::{prelude::*, user::UserSpace};
 /// If having a user space, the task can switch to the user space to
 /// execute user code. Multiple tasks can share a single user space.
 pub struct Task {
-    func: Box<dyn Fn() + Send + Sync>,
+    func: SyncUnsafeCell<Option<Box<dyn FnOnce() + Send + Sync>>>,
     data: Box<dyn Any + Send + Sync>,
     user_space: Option<Arc<UserSpace>>,
-    ctx: UnsafeCell<TaskContext>,
+    ctx: SyncUnsafeCell<TaskContext>,
     /// kernel stack, note that the top is SyscallFrame/TrapFrame
     #[allow(dead_code)]
     kstack: KernelStack,
 
     schedule_info: TaskScheduleInfo,
 }
-
-// SAFETY: `UnsafeCell<TaskContext>` is not `Sync`. However, we only use it in `schedule()` where
-// we have exclusive access to the field.
-unsafe impl Sync for Task {}
 
 impl Task {
     /// Gets the current task.
@@ -50,7 +46,7 @@ impl Task {
         current_task()
     }
 
-    pub(super) fn ctx(&self) -> &UnsafeCell<TaskContext> {
+    pub(super) fn ctx(&self) -> &SyncUnsafeCell<TaskContext> {
         &self.ctx
     }
 
@@ -78,7 +74,7 @@ impl Task {
         scheduler::yield_now()
     }
 
-    /// Runs the task.
+    /// Kicks the task scheduler to run the task.
     ///
     /// BUG: This method highly depends on the current scheduling policy.
     pub fn run(self: &Arc<Self>) {
@@ -103,25 +99,11 @@ impl Task {
             None
         }
     }
-
-    /// Exits the current task.
-    ///
-    /// The task `self` must be the task that is currently running.
-    ///
-    /// **NOTE:** If there is anything left on the stack, it will be forgotten. This behavior may
-    /// lead to resource leakage.
-    fn exit(self: Arc<Self>) -> ! {
-        // `current_task()` still holds a strong reference, so nothing is destroyed at this point,
-        // neither is the kernel stack.
-        drop(self);
-        scheduler::exit_current();
-        unreachable!()
-    }
 }
 
 /// Options to create or spawn a new task.
 pub struct TaskOptions {
-    func: Option<Box<dyn Fn() + Send + Sync>>,
+    func: Option<Box<dyn FnOnce() + Send + Sync>>,
     data: Option<Box<dyn Any + Send + Sync>>,
     user_space: Option<Arc<UserSpace>>,
 }
@@ -130,7 +112,7 @@ impl TaskOptions {
     /// Creates a set of options for a task.
     pub fn new<F>(func: F) -> Self
     where
-        F: Fn() + Send + Sync + 'static,
+        F: FnOnce() + Send + Sync + 'static,
     {
         Self {
             func: Some(Box::new(func)),
@@ -170,13 +152,19 @@ impl TaskOptions {
         extern "C" fn kernel_task_entry() {
             let current_task = current_task()
                 .expect("no current task, it should have current task in kernel task entry");
-            (current_task.func)();
-            current_task.exit();
+            // SAFETY: The scheduler will ensure that the task is only accessed
+            // by one CPU.
+            let task_func = unsafe { &mut *current_task.func.get() };
+            let task_func = task_func
+                .take()
+                .expect("task function is `None` when trying to run");
+            task_func();
+            scheduler::exit_current();
         }
 
         let kstack = KernelStack::new_with_guard_page()?;
 
-        let mut ctx = UnsafeCell::new(TaskContext::default());
+        let mut ctx = SyncUnsafeCell::new(TaskContext::default());
         if let Some(user_space) = self.user_space.as_ref() {
             ctx.get_mut().set_tls_pointer(user_space.tls_pointer());
         };
@@ -194,7 +182,7 @@ impl TaskOptions {
             .set_stack_pointer(crate::mm::paddr_to_vaddr(kstack.end_paddr() - 16));
 
         let new_task = Task {
-            func: self.func.unwrap(),
+            func: SyncUnsafeCell::new(self.func),
             data: self.data.unwrap(),
             user_space: self.user_space,
             ctx,
