@@ -25,7 +25,7 @@ use unwinding::abi::{
 ///
 /// The user can override it by defining their own panic handler with the macro
 /// `#[ostd::panic_handler]`.
-#[cfg(not(ktest))]
+#[linkage = "weak"]
 #[no_mangle]
 pub fn __ostd_panic_handler(info: &core::panic::PanicInfo) -> ! {
     let _irq_guard = crate::trap::disable_local();
