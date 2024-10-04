@@ -76,7 +76,6 @@ qemu.args = """\
 boot.method = "qemu-direct"
 build.strip_elf = false
 
-qemu.path = "./qemu-system-riscv64"
 qemu.args = """\
     -cpu rv64,zba=true,zbb=true \
     -machine virt \
