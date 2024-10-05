@@ -2,6 +2,7 @@
 
 //! The standard library for Asterinas and other Rust OSes.
 #![feature(alloc_error_handler)]
+#![feature(allocator_api)]
 #![feature(const_mut_refs)]
 #![feature(const_ptr_sub_ptr)]
 #![feature(const_trait_impl)]
@@ -16,10 +17,11 @@
 #![feature(negative_impls)]
 #![feature(new_uninit)]
 #![feature(panic_info_message)]
+#![feature(ptr_metadata)]
 #![feature(ptr_sub_ptr)]
 #![feature(strict_provenance)]
 #![feature(sync_unsafe_cell)]
-#![feature(allocator_api)]
+#![feature(trait_upcasting)]
 // The `generic_const_exprs` feature is incomplete however required for the page table
 // const generic implementation. We are using this feature in a conservative manner.
 #![allow(incomplete_features)]

@@ -5,8 +5,9 @@ use core::mem::ManuallyDrop;
 use super::*;
 use crate::{
     mm::{
+        frame::FrameMeta,
         kspace::LINEAR_MAPPING_BASE_VADDR,
-        page::{allocator, meta::FrameMeta},
+        page::allocator,
         page_prop::{CachePolicy, PageFlags},
         MAX_USERSPACE_VADDR,
     },

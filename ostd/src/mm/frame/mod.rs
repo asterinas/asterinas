@@ -17,7 +17,7 @@ pub use segment::Segment;
 
 use super::{
     page::{
-        meta::{FrameMeta, MetaSlot, PageMeta, PageUsage},
+        meta::{MetaSlot, PageMeta},
         DynPage, Page,
     },
     Infallible,
@@ -229,14 +229,11 @@ impl VmIo for alloc::vec::Vec<Frame> {
     }
 }
 
-impl PageMeta for FrameMeta {
-    const USAGE: PageUsage = PageUsage::Frame;
+/// Metadata for a frame.
+#[derive(Debug, Default)]
+pub struct FrameMeta {}
 
-    fn on_drop(_page: &mut Page<Self>) {
-        // Nothing should be done so far since dropping the page would
-        // have all taken care of.
-    }
-}
+impl PageMeta for FrameMeta {}
 
 // Here are implementations for `xarray`.
 

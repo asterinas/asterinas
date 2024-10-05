@@ -4,10 +4,7 @@
 
 use super::{Frame, Segment};
 use crate::{
-    mm::{
-        page::{self, meta::FrameMeta},
-        PAGE_SIZE,
-    },
+    mm::{frame::FrameMeta, page, PAGE_SIZE},
     prelude::*,
     Error,
 };
