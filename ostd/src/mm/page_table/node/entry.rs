@@ -44,12 +44,14 @@ where
 
     /// Returns if the entry maps to a page.
     pub(in crate::mm) fn is_last(&self) -> bool {
-        self.pte.is_present() && self.pte.is_last(self.node.level())
+        // SAFETY: The entry is present in the second evaluated case.
+        self.pte.is_present() && unsafe { self.pte.is_last(self.node.level()) }
     }
 
     /// Returns if the entry maps to a page table node.
     pub(in crate::mm) fn is_node(&self) -> bool {
-        self.pte.is_present() && !self.pte.is_last(self.node.level())
+        // SAFETY: The entry is present in the second evaluated case.
+        self.pte.is_present() && unsafe { !self.pte.is_last(self.node.level()) }
     }
 
     /// Gets a owned handle to the child.
@@ -60,12 +62,19 @@ where
     }
 
     /// Operates on the mapping properties of the entry.
+    ///
+    /// The operation is applied only if the entry is present.
     pub(in crate::mm) fn protect(&mut self, op: &mut impl FnMut(&mut PageProperty)) {
-        let prop = self.pte.prop();
+        if !self.pte.is_present() {
+            return;
+        }
+        // SAFETY: The entry is present.
+        let prop = unsafe { self.pte.prop() };
         let mut new_prop = prop;
         op(&mut new_prop);
         if prop != new_prop {
-            self.pte.set_prop(new_prop);
+            // SAFETY: The entry is present.
+            unsafe { self.pte.set_prop(new_prop) };
             // SAFETY:
             //  1. The index is within the bounds.
             //  2. We replace the PTE with a new one, which differs only in
@@ -112,16 +121,18 @@ where
     ///
     /// # Panics
     ///
-    /// The method panics if the entry does not belong to a node that can map
-    /// to untracked huge pages.
+    /// The method panics if:
+    ///  - the entry does not belong to a node that can map to untracked huge
+    ///    pages.
+    ///  - the entry is absent.
     pub(in crate::mm) fn split_untracked_huge(self) -> PageTableNode<E, C> {
         // These should be ensured by the cursor.
         assert!(self.node.level() > 1);
         assert_eq!(self.node.is_tracked(), MapTrackingStatus::Untracked);
+        assert!(self.pte.is_present());
 
-        let pa = self.pte.paddr();
-        let level = self.node.level();
-        let prop = self.pte.prop();
+        // SAFETY: The entry is present.
+        let (pa, level, prop) = unsafe { (self.pte.paddr(), self.node.level(), self.pte.prop()) };
 
         let mut new_page = PageTableNode::<E, C>::alloc(level - 1, MapTrackingStatus::Untracked);
         for i in 0..nr_subpage_per_huge::<C>() {

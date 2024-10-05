@@ -108,15 +108,19 @@ where
             return Child::None;
         }
 
-        let paddr = pte.paddr();
+        // SAFETY: The PTE is present.
+        let paddr = unsafe { pte.paddr() };
 
         if !pte.is_last(level) {
             return Child::PageTable(RawPageTableNode::from_raw_parts(paddr, level - 1));
         }
 
+        // SAFETY: The PTE is present.
+        let prop = unsafe { pte.prop() };
+
         match is_tracked {
-            MapTrackingStatus::Tracked => Child::Page(DynPage::from_raw(paddr), pte.prop()),
-            MapTrackingStatus::Untracked => Child::Untracked(paddr, level, pte.prop()),
+            MapTrackingStatus::Tracked => Child::Page(DynPage::from_raw(paddr), prop),
+            MapTrackingStatus::Untracked => Child::Untracked(paddr, level, prop),
             MapTrackingStatus::NotApplicable => panic!("Invalid tracking status"),
         }
     }
@@ -139,19 +143,23 @@ where
             return Child::None;
         }
 
-        let paddr = pte.paddr();
+        // SAFETY: The PTE is present.
+        let paddr = unsafe { pte.paddr() };
 
         if !pte.is_last(level) {
             inc_page_ref_count(paddr);
             return Child::PageTable(RawPageTableNode::from_raw_parts(paddr, level - 1));
         }
 
+        // SAFETY: The PTE is present.
+        let prop = unsafe { pte.prop() };
+
         match is_tracked {
             MapTrackingStatus::Tracked => {
                 inc_page_ref_count(paddr);
-                Child::Page(DynPage::from_raw(paddr), pte.prop())
+                Child::Page(DynPage::from_raw(paddr), prop)
             }
-            MapTrackingStatus::Untracked => Child::Untracked(paddr, level, pte.prop()),
+            MapTrackingStatus::Untracked => Child::Untracked(paddr, level, prop),
             MapTrackingStatus::NotApplicable => panic!("Invalid tracking status"),
         }
     }

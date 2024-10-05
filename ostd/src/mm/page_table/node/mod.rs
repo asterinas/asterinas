@@ -41,7 +41,7 @@ use crate::{
             meta::{MapTrackingStatus, PageMeta, PageTablePageMeta, PageUsage},
             DynPage, Page,
         },
-        Paddr, PagingConstsTrait, PagingLevel, PAGE_SIZE,
+        Paddr, PagingConstsTrait, PagingLevel,
     },
 };
 
@@ -262,11 +262,12 @@ where
         let page = page::allocator::alloc_single::<PageTablePageMeta<E, C>>(meta).unwrap();
 
         // Zero out the page table node.
-        let ptr = paddr_to_vaddr(page.paddr()) as *mut u8;
-        // SAFETY: The page is exclusively owned here. Pointers are valid also.
-        // We rely on the fact that 0 represents an absent entry to speed up `memset`.
-        unsafe { core::ptr::write_bytes(ptr, 0, PAGE_SIZE) };
-        debug_assert!(E::new_absent().as_bytes().iter().all(|&b| b == 0));
+        let ptr = paddr_to_vaddr(page.paddr()) as *mut E;
+        // SAFETY: The page is exclusively owned here. The pointers are valid,
+        // and the range is within the bound.
+        for i in 0..nr_subpage_per_huge::<C>() {
+            unsafe { core::ptr::write(ptr.add(i), E::new_absent()) };
+        }
 
         Self { page }
     }
@@ -378,8 +379,9 @@ where
             // Rust is very conservative about inlining and optimizing dead code
             // for `unsafe` code. So we manually inline the function here.
             if pte.is_present() {
-                let paddr = pte.paddr();
-                if !pte.is_last(level) {
+                // SAFETY: The PTE is present.
+                let (paddr, is_last) = unsafe { (pte.paddr(), pte.is_last(level)) };
+                if !is_last {
                     // SAFETY: The PTE points to a page table node. The ownership
                     // of the child is transferred to the child then dropped.
                     drop(unsafe { Page::<Self>::from_raw(paddr) });

@@ -103,13 +103,22 @@ protected_mode:
     mov gs, ax
 
 page_table_setup:
-    // Zero out the page table.
-    mov al, 0x00
+    // Fill the page table with 0x7_ffff_ffff_f000 for each quad-word.
+    // In OSTD's x86 implementation, an all-zero PTE is a mapping to the zero
+    // page without any permissions. a PTE with the value 0x7_ffff_ffff_f000
+    // is the invalid PTE.
+    mov eax, 0xfffff000
+    mov edx, 0x0007ffff
     lea edi, [boot_page_table_start - KERNEL_VMA]
     lea ecx, [boot_page_table_end - KERNEL_VMA]
     sub ecx, edi
+    shr ecx, 3
     cld
-    rep stosb
+fill_quad_word:
+    mov [edi], eax
+    mov [edi + 4], edx
+    add edi, 8
+    loop fill_quad_word
 
 // PTE flags used in this file.
 PTE_PRESENT     = (1)
