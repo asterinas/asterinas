@@ -152,38 +152,45 @@ impl Heap {
     }
 
     /// Allocates a chunk of the given size with the given alignment. Returns a pointer to the
-    /// beginning of that chunk if it was successful. Else it returns `Err`.
+    /// beginning of that chunk and remaining bytes in buddy system allocator if it was successful.
+    /// Else it returns `Err`.
+    ///
     /// This function finds the slab of lowest size which can still accommodate the given chunk.
     /// The runtime is in `O(1)` for chunks of size <= 4096, and `O(n)` when chunk size is > 4096,
-    pub fn allocate(&mut self, layout: Layout) -> Result<usize, AllocError> {
-        match Heap::layout_to_allocator(&layout) {
+    pub fn allocate(&mut self, layout: Layout) -> Result<(*mut u8, usize), AllocError> {
+        let addr = match Heap::layout_to_allocator(&layout) {
             HeapAllocator::Slab64Bytes => self
                 .slab_64_bytes
-                .allocate(layout, &mut self.buddy_allocator),
+                .allocate(layout, &mut self.buddy_allocator)?,
             HeapAllocator::Slab128Bytes => self
                 .slab_128_bytes
-                .allocate(layout, &mut self.buddy_allocator),
+                .allocate(layout, &mut self.buddy_allocator)?,
             HeapAllocator::Slab256Bytes => self
                 .slab_256_bytes
-                .allocate(layout, &mut self.buddy_allocator),
+                .allocate(layout, &mut self.buddy_allocator)?,
             HeapAllocator::Slab512Bytes => self
                 .slab_512_bytes
-                .allocate(layout, &mut self.buddy_allocator),
+                .allocate(layout, &mut self.buddy_allocator)?,
             HeapAllocator::Slab1024Bytes => self
                 .slab_1024_bytes
-                .allocate(layout, &mut self.buddy_allocator),
+                .allocate(layout, &mut self.buddy_allocator)?,
             HeapAllocator::Slab2048Bytes => self
                 .slab_2048_bytes
-                .allocate(layout, &mut self.buddy_allocator),
+                .allocate(layout, &mut self.buddy_allocator)?,
             HeapAllocator::Slab4096Bytes => self
                 .slab_4096_bytes
-                .allocate(layout, &mut self.buddy_allocator),
+                .allocate(layout, &mut self.buddy_allocator)?,
             HeapAllocator::BuddyAllocator => self
                 .buddy_allocator
                 .alloc(layout)
                 .map(|ptr| ptr.as_ptr() as usize)
-                .map_err(|_| AllocError),
-        }
+                .map_err(|_| AllocError)?,
+        };
+
+        Ok((
+            addr as *mut u8,
+            self.buddy_allocator.stats_total_bytes() - self.buddy_allocator.stats_alloc_actual(),
+        ))
     }
 
     /// Frees the given allocation. `ptr` must be a pointer returned
@@ -197,7 +204,8 @@ impl Heap {
     /// # Safety
     /// This function is unsafe because it can cause undefined behavior if the
     /// given address is invalid.
-    pub unsafe fn deallocate(&mut self, ptr: usize, layout: Layout) {
+    pub unsafe fn deallocate(&mut self, ptr: *mut u8, layout: Layout) {
+        let ptr = ptr as usize;
         match Heap::layout_to_allocator(&layout) {
             HeapAllocator::Slab64Bytes => self.slab_64_bytes.deallocate(ptr),
             HeapAllocator::Slab128Bytes => self.slab_128_bytes.deallocate(ptr),
