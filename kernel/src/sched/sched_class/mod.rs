@@ -10,7 +10,7 @@ use core::fmt;
 
 use ostd::{
     cpu::{num_cpus, CpuSet, PinCurrentCpu},
-    sync::SpinLock,
+    sync::{PreemptDisabled, SpinLock, SpinLockGuard},
     task::{
         scheduler::{inject_scheduler, EnqueueFlags, LocalRunQueue, Scheduler, UpdateFlags},
         Task,
@@ -59,7 +59,11 @@ trait SchedClassRq: Send + fmt::Debug {
     type Entity;
 
     /// Enqueues a task into the run queue.
-    fn enqueue(&mut self, thread: Arc<Thread>);
+    fn enqueue(
+        &mut self,
+        thread: Arc<Thread>,
+        entity: SpinLockGuard<'_, SchedEntity, PreemptDisabled>,
+    );
 
     /// Dequeues a task from the run queue.
     fn dequeue(&mut self, entity: &Self::Entity);
@@ -140,25 +144,14 @@ impl PerCpuClassRqSet {
     }
 
     fn enqueue_thread(&mut self, thread: &Arc<Thread>) {
-        enum SchedKind {
-            Stop,
-            RealTime,
-            Fair,
-            Idle,
-        }
         let cloned = thread.clone();
-        let kind = match &*thread.sched_entity().lock() {
-            SchedEntity::Stop(_) => SchedKind::Stop,
-            SchedEntity::RealTime(_) => SchedKind::RealTime,
-            SchedEntity::Fair(_) => SchedKind::Fair,
-            SchedEntity::Idle(_) => SchedKind::Idle,
+        let entity = thread.sched_entity().lock();
+        match *entity {
+            SchedEntity::Stop(_) => self.stop.enqueue(cloned, entity),
+            SchedEntity::RealTime(_) => self.real_time.enqueue(cloned, entity),
+            SchedEntity::Fair(_) => self.fair.enqueue(cloned, entity),
+            SchedEntity::Idle(_) => self.idle.enqueue(cloned, entity),
         };
-        match kind {
-            SchedKind::Stop => self.stop.enqueue(cloned),
-            SchedKind::RealTime => self.real_time.enqueue(cloned),
-            SchedKind::Fair => self.fair.enqueue(cloned),
-            SchedKind::Idle => self.idle.enqueue(cloned),
-        }
     }
 }
 

@@ -3,7 +3,11 @@
 use alloc::{collections::btree_map::BTreeMap, sync::Arc};
 use core::{cmp, ops::Bound};
 
-use ostd::{cpu::num_cpus, task::scheduler::UpdateFlags};
+use ostd::{
+    cpu::num_cpus,
+    sync::{PreemptDisabled, SpinLockGuard},
+    task::scheduler::UpdateFlags,
+};
 
 use super::{
     sched_clock,
@@ -183,7 +187,7 @@ impl FairClassRq {
         };
 
         match &mut *thread.sched_entity().lock() {
-            SchedEntity::Fair(vr) => vr.start = sched_clock(),
+            SchedEntity::Fair(vruntime) => vruntime.start = sched_clock(),
             _ => unreachable!(),
         }
 
@@ -194,11 +198,16 @@ impl FairClassRq {
 impl SchedClassRq for FairClassRq {
     type Entity = VRuntime;
 
-    fn enqueue(&mut self, thread: Arc<Thread>) {
-        match &*thread.sched_entity().lock() {
-            SchedEntity::Fair(vr) => self.load += vr.weight,
+    fn enqueue(
+        &mut self,
+        thread: Arc<Thread>,
+        entity: SpinLockGuard<'_, SchedEntity, PreemptDisabled>,
+    ) {
+        match &*entity {
+            SchedEntity::Fair(vruntime) => self.load += vruntime.weight,
             _ => unreachable!(),
         };
+        drop(entity);
         self.threads.insert(FairQueueItem(thread), ());
     }
 

@@ -23,7 +23,7 @@ impl core::fmt::Debug for IdleClassRq {
 impl SchedClassRq for IdleClassRq {
     type Entity = IdleEntity;
 
-    fn enqueue(&mut self, thread: Arc<Thread>) {
+    fn enqueue(&mut self, thread: Arc<Thread>, _: SpinLockGuard<'_, SchedEntity, PreemptDisabled>) {
         let ptr = Arc::as_ptr(&thread);
         if let Some(t) = self.thread.replace(thread)
             && ptr != Arc::as_ptr(&t)
