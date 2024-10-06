@@ -99,8 +99,11 @@ impl RealTimeClassRq {
 impl SchedClassRq for RealTimeClassRq {
     type Entity = RealTimeEntity;
 
-    fn enqueue(&mut self, thread: Arc<Thread>, entity: &RealTimeEntity) {
-        let prio = entity.priority;
+    fn enqueue(&mut self, thread: Arc<Thread>) {
+        let prio = match &*thread.sched_entity().lock() {
+            SchedEntity::RealTime(entity) => entity.priority,
+            _ => unreachable!(),
+        };
         self.next_array().enqueue(thread, prio.range().get());
     }
 

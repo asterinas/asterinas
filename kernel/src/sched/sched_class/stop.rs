@@ -23,7 +23,7 @@ impl core::fmt::Debug for StopClassRq {
 impl SchedClassRq for StopClassRq {
     type Entity = StopEntity;
 
-    fn enqueue(&mut self, thread: Arc<Thread>, _: &StopEntity) {
+    fn enqueue(&mut self, thread: Arc<Thread>) {
         if self.thread.replace(thread).is_some() {
             panic!("Multiple `stop` threads spawned")
         }

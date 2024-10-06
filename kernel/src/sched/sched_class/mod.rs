@@ -59,7 +59,7 @@ trait SchedClassRq: Send + fmt::Debug {
     type Entity;
 
     /// Enqueues a task into the run queue.
-    fn enqueue(&mut self, thread: Arc<Thread>, entity: &Self::Entity);
+    fn enqueue(&mut self, thread: Arc<Thread>);
 
     /// Dequeues a task from the run queue.
     fn dequeue(&mut self, entity: &Self::Entity);
@@ -73,6 +73,7 @@ trait SchedClassRq: Send + fmt::Debug {
 
 /// The scheduling entity. Users should not construct a scheduling entity
 /// directly using its variant types.
+#[derive(Debug)]
 pub enum SchedEntity {
     Stop(stop::StopEntity),
     RealTime(real_time::RealTimeEntity),
@@ -139,14 +140,24 @@ impl PerCpuClassRqSet {
     }
 
     fn enqueue_thread(&mut self, thread: &Arc<Thread>) {
+        enum SchedKind {
+            Stop,
+            RealTime,
+            Fair,
+            Idle,
+        }
         let cloned = thread.clone();
-        match &*thread.sched_entity().lock() {
-            SchedEntity::Stop(stop_entity) => self.stop.enqueue(cloned, stop_entity),
-            SchedEntity::RealTime(real_time_entity) => {
-                self.real_time.enqueue(cloned, real_time_entity)
-            }
-            SchedEntity::Fair(vruntime) => self.fair.enqueue(cloned, vruntime),
-            SchedEntity::Idle(idle_entity) => self.idle.enqueue(cloned, idle_entity),
+        let kind = match &*thread.sched_entity().lock() {
+            SchedEntity::Stop(_) => SchedKind::Stop,
+            SchedEntity::RealTime(_) => SchedKind::RealTime,
+            SchedEntity::Fair(_) => SchedKind::Fair,
+            SchedEntity::Idle(_) => SchedKind::Idle,
+        };
+        match kind {
+            SchedKind::Stop => self.stop.enqueue(cloned),
+            SchedKind::RealTime => self.real_time.enqueue(cloned),
+            SchedKind::Fair => self.fair.enqueue(cloned),
+            SchedKind::Idle => self.idle.enqueue(cloned),
         }
     }
 }

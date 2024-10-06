@@ -194,8 +194,11 @@ impl FairClassRq {
 impl SchedClassRq for FairClassRq {
     type Entity = VRuntime;
 
-    fn enqueue(&mut self, thread: Arc<Thread>, vruntime: &VRuntime) {
-        self.load += vruntime.weight;
+    fn enqueue(&mut self, thread: Arc<Thread>) {
+        match &*thread.sched_entity().lock() {
+            SchedEntity::Fair(vr) => self.load += vr.weight,
+            _ => unreachable!(),
+        };
         self.threads.insert(FairQueueItem(thread), ());
     }
 
