@@ -226,6 +226,8 @@ ktest: initramfs $(CARGO_OSDK)
 	@for dir in $(OSDK_CRATES); do \
 		[ $$dir = "ostd/libs/linux-bzimage/setup" ] && continue; \
 		(cd $$dir && cargo osdk test) || exit 1; \
+		tail --lines 10 qemu.log | grep -q "^\\[ktest runner\\] All crates tested." \
+			|| (echo "Test failed" && exit 1); \
 	done
 
 .PHONY: docs

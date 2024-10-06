@@ -77,7 +77,7 @@ pub(crate) fn tlb_flush_all_including_global() {
     riscv::asm::sfence_vma_all()
 }
 
-#[derive(Clone, Copy, Pod, Default)]
+#[derive(Clone, Copy, Pod)]
 #[repr(C)]
 pub struct PageTableEntry(usize);
 
@@ -117,13 +117,19 @@ macro_rules! parse_flags {
 }
 
 impl PageTableEntryTrait for PageTableEntry {
+    fn new_absent() -> Self {
+        Self(0)
+    }
+
     fn is_present(&self) -> bool {
         self.0 & PageTableFlags::VALID.bits() != 0
     }
 
     fn new_page(paddr: Paddr, _level: PagingLevel, prop: PageProperty) -> Self {
         let mut pte = Self::new_paddr(paddr);
-        pte.set_prop(prop);
+        pte.0 |= PageTableFlags::VALID.bits();
+        // SAFETY: The created PTE is present.
+        unsafe { pte.set_prop(prop) };
         pte
     }
 
@@ -134,12 +140,12 @@ impl PageTableEntryTrait for PageTableEntry {
         PageTableEntry(pte.0 | PageTableFlags::VALID.bits())
     }
 
-    fn paddr(&self) -> Paddr {
+    unsafe fn paddr(&self) -> Paddr {
         let ppn = (self.0 & Self::PHYS_ADDR_MASK) >> 10;
         ppn << 12
     }
 
-    fn prop(&self) -> PageProperty {
+    unsafe fn prop(&self) -> PageProperty {
         let flags = parse_flags!(self.0, PageTableFlags::READABLE, PageFlags::R)
             | parse_flags!(self.0, PageTableFlags::WRITABLE, PageFlags::W)
             | parse_flags!(self.0, PageTableFlags::EXECUTABLE, PageFlags::X)
@@ -161,9 +167,8 @@ impl PageTableEntryTrait for PageTableEntry {
         }
     }
 
-    fn set_prop(&mut self, prop: PageProperty) {
-        let mut flags = PageTableFlags::VALID.bits()
-            | parse_flags!(prop.flags.bits(), PageFlags::R, PageTableFlags::READABLE)
+    unsafe fn set_prop(&mut self, prop: PageProperty) {
+        let mut flags = parse_flags!(prop.flags.bits(), PageFlags::R, PageTableFlags::READABLE)
             | parse_flags!(prop.flags.bits(), PageFlags::W, PageTableFlags::WRITABLE)
             | parse_flags!(prop.flags.bits(), PageFlags::X, PageTableFlags::EXECUTABLE)
             | parse_flags!(
@@ -189,7 +194,7 @@ impl PageTableEntryTrait for PageTableEntry {
         self.0 = (self.0 & Self::PHYS_ADDR_MASK) | flags;
     }
 
-    fn is_last(&self, level: PagingLevel) -> bool {
+    unsafe fn is_last(&self, level: PagingLevel) -> bool {
         let rwx = PageTableFlags::READABLE | PageTableFlags::WRITABLE | PageTableFlags::EXECUTABLE;
         level == 1 || (self.0 & rwx.bits()) != 0
     }
@@ -199,13 +204,13 @@ impl fmt::Debug for PageTableEntry {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut f = f.debug_struct("PageTableEntry");
         f.field("raw", &format_args!("{:#x}", self.0))
-            .field("paddr", &format_args!("{:#x}", self.paddr()))
+            .field("paddr", &format_args!("{:#x}", unsafe { self.paddr() }))
             .field("present", &self.is_present())
             .field(
                 "flags",
                 &PageTableFlags::from_bits_truncate(self.0 & !Self::PHYS_ADDR_MASK),
             )
-            .field("prop", &self.prop())
+            .field("prop", &unsafe { self.prop() })
             .finish()
     }
 }

@@ -32,7 +32,12 @@ bitflags::bitflags! {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct Ia32eEntry(u64);
+
+impl Ia32eEntry {
+    const ABSENT_ENTRY: Self = Self(0x7_ffff_ffff_f000);
+}
 
 /// The table in the IA32E paging specification that occupies a physical page frame.
 pub struct Ia32eTable([Ia32eEntry; TABLE_ENTRY_COUNT]);
@@ -55,13 +60,14 @@ impl PageNumber {
     pub fn addr(&self) -> u64 {
         self.0 << 12
     }
-    /// Get the physical page frame as slice.
+    /// Get the physical page frame as a PTE slice.
     ///
     /// # Safety
+    ///
     /// The caller must ensure that the page number is a physical page number and
     /// it is identically mapped when running the code.
-    unsafe fn get_page_frame(&self) -> &'static mut [u8] {
-        core::slice::from_raw_parts_mut(self.addr() as *mut u8, 4096)
+    unsafe fn get_page_frame(&self) -> &'static mut [Ia32eEntry] {
+        core::slice::from_raw_parts_mut(self.addr() as *mut Ia32eEntry, 512)
     }
 }
 
@@ -95,19 +101,6 @@ pub struct PageTableCreator {
     end_pfn: PageNumber,
 }
 
-/// Fills the given slice with the given value.
-///
-/// TODO: use `Slice::fill` instead. But it currently will fail with "invalid opcode".
-unsafe fn memset(dst: &mut [u8], val: u8) {
-    core::arch::asm!(
-        "rep stosb",
-        inout("rcx") dst.len() => _,
-        inout("rdi") dst.as_mut_ptr() => _,
-        in("al") val,
-        options(nostack),
-    );
-}
-
 impl PageTableCreator {
     /// Creates a new page table creator.
     ///
@@ -119,7 +112,7 @@ impl PageTableCreator {
     pub unsafe fn new(first_pfn: PageNumber, end_pfn: PageNumber) -> Self {
         assert!(end_pfn - first_pfn >= 4);
         // Clear the first page for the PML4 table.
-        memset(first_pfn.get_page_frame(), 0);
+        first_pfn.get_page_frame().fill(Ia32eEntry::ABSENT_ENTRY);
         Self {
             first_pfn,
             next_pfn: first_pfn + 1,
@@ -132,7 +125,7 @@ impl PageTableCreator {
         let pfn = self.next_pfn;
         self.next_pfn += 1;
         unsafe {
-            memset(pfn.get_page_frame(), 0);
+            pfn.get_page_frame().fill(Ia32eEntry::ABSENT_ENTRY);
         }
         pfn
     }
@@ -192,9 +185,11 @@ impl Ia32eEntry {
     fn paddr(&self) -> u64 {
         self.0 & Self::PHYS_ADDR_MASK
     }
+
     fn flags(&self) -> Ia32eFlags {
         Ia32eFlags::from_bits_truncate(self.0)
     }
+
     fn update(&mut self, paddr: u64, flags: Ia32eFlags) {
         self.0 = (paddr & Self::PHYS_ADDR_MASK) | flags.bits();
     }

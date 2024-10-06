@@ -65,7 +65,7 @@ bitflags::bitflags! {
     }
 }
 
-#[derive(Debug, Clone, Copy, Pod, Default)]
+#[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
 pub struct PageTableEntry(u64);
 
@@ -75,9 +75,18 @@ impl PageTableEntry {
 }
 
 impl PageTableEntryTrait for PageTableEntry {
+    fn new_absent() -> Self {
+        Self(0)
+    }
+
+    fn is_present(&self) -> bool {
+        self.0 != 0
+    }
+
     fn new_page(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self {
         let mut pte = Self(paddr as u64 & Self::PHYS_MASK | PageTableFlags::LAST_PAGE.bits());
-        pte.set_prop(prop);
+        // SAFETY: The created PTE is present.
+        unsafe { pte.set_prop(prop) };
         pte
     }
 
@@ -89,15 +98,11 @@ impl PageTableEntryTrait for PageTableEntry {
         )
     }
 
-    fn paddr(&self) -> Paddr {
+    unsafe fn paddr(&self) -> Paddr {
         (self.0 & Self::PHYS_MASK) as usize
     }
 
-    fn is_present(&self) -> bool {
-        self.0 & (PageTableFlags::READABLE | PageTableFlags::WRITABLE).bits() != 0
-    }
-
-    fn prop(&self) -> PageProperty {
+    unsafe fn prop(&self) -> PageProperty {
         let mut flags = PageFlags::empty();
         if self.0 & PageTableFlags::READABLE.bits() != 0 {
             flags |= PageFlags::R;
@@ -125,7 +130,7 @@ impl PageTableEntryTrait for PageTableEntry {
         }
     }
 
-    fn set_prop(&mut self, prop: PageProperty) {
+    unsafe fn set_prop(&mut self, prop: PageProperty) {
         let mut flags = PageTableFlags::empty();
         if prop.flags.contains(PageFlags::W) {
             flags |= PageTableFlags::WRITABLE;
@@ -139,7 +144,7 @@ impl PageTableEntryTrait for PageTableEntry {
         self.0 = self.0 & !Self::PROP_MASK | flags.bits();
     }
 
-    fn is_last(&self, level: PagingLevel) -> bool {
+    unsafe fn is_last(&self, level: PagingLevel) -> bool {
         level == 1
     }
 }

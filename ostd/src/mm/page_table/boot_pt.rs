@@ -214,8 +214,12 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
         let frame = PAGE_ALLOCATOR.get().unwrap().lock().alloc(1).unwrap();
         self.frames.push(frame);
         // Zero it out.
-        let vaddr = paddr_to_vaddr(frame * PAGE_SIZE) as *mut u8;
-        unsafe { core::ptr::write_bytes(vaddr, 0, PAGE_SIZE) };
+        let pt_ptr = paddr_to_vaddr(frame * PAGE_SIZE) as *mut E;
+        for i in 0..nr_subpage_per_huge::<C>() {
+            // SAFETY: The frame is allocated by the page allocator so it is valid
+            // to write to it. The range is within the bounds of the frame.
+            unsafe { core::ptr::write(pt_ptr.add(i), E::new_absent()) };
+        }
         frame
     }
 }

@@ -3,8 +3,8 @@
 use core::{fmt::Debug, marker::PhantomData, ops::Range};
 
 use super::{
-    nr_subpage_per_huge, page_prop::PageProperty, page_size, Paddr, PagingConstsTrait, PagingLevel,
-    Vaddr,
+    nr_subpage_per_huge, page::meta::MapTrackingStatus, page_prop::PageProperty, page_size, Paddr,
+    PagingConstsTrait, PagingLevel, Vaddr,
 };
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
@@ -100,16 +100,17 @@ impl PageTable<KernelMode> {
     /// This should be the only way to create the user page table, that is to
     /// duplicate the kernel page table with all the kernel mappings shared.
     pub fn create_user_page_table(&self) -> PageTable<UserMode> {
-        let root_node = self.root.clone_shallow().lock();
-        let mut new_node = PageTableNode::alloc(PagingConsts::NR_LEVELS);
+        let mut root_node = self.root.clone_shallow().lock();
+        let mut new_node =
+            PageTableNode::alloc(PagingConsts::NR_LEVELS, MapTrackingStatus::NotApplicable);
 
         // Make a shallow copy of the root node in the kernel space range.
         // The user space range is not copied.
         const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
         for i in NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE {
-            let child = root_node.child(i, /* meaningless */ true);
-            if !child.is_none() {
-                let _ = new_node.replace_child(i, child, /* meaningless */ true);
+            let root_entry = root_node.entry(i);
+            if !root_entry.is_none() {
+                let _ = new_node.entry(i).replace(root_entry.to_owned());
             }
         }
 
@@ -136,13 +137,18 @@ impl PageTable<KernelMode> {
 
         let mut root_node = self.root.clone_shallow().lock();
         for i in start..end {
-            if !root_node.read_pte(i).is_present() {
-                let node = PageTableNode::alloc(PagingConsts::NR_LEVELS - 1);
-                let _ = root_node.replace_child(
-                    i,
-                    Child::PageTable(node.into_raw()),
-                    i < NR_PTES_PER_NODE * 3 / 4,
-                );
+            let root_entry = root_node.entry(i);
+            if root_entry.is_none() {
+                let nxt_level = PagingConsts::NR_LEVELS - 1;
+                let is_tracked = if super::kspace::should_map_as_tracked(
+                    i * page_size::<PagingConsts>(nxt_level),
+                ) {
+                    MapTrackingStatus::Tracked
+                } else {
+                    MapTrackingStatus::Untracked
+                };
+                let node = PageTableNode::alloc(nxt_level, is_tracked);
+                let _ = root_entry.replace(Child::PageTable(node.into_raw()));
             }
         }
     }
@@ -175,7 +181,8 @@ where
     /// Create a new empty page table. Useful for the kernel page table and IOMMU page tables only.
     pub fn empty() -> Self {
         PageTable {
-            root: PageTableNode::<E, C>::alloc(C::NR_LEVELS).into_raw(),
+            root: PageTableNode::<E, C>::alloc(C::NR_LEVELS, MapTrackingStatus::NotApplicable)
+                .into_raw(),
             _phantom: PhantomData,
         }
     }
@@ -311,36 +318,75 @@ pub(super) unsafe fn page_walk<E: PageTableEntryTrait, C: PagingConstsTrait>(
 /// The interface for defining architecture-specific page table entries.
 ///
 /// Note that a default PTE should be a PTE that points to nothing.
-pub trait PageTableEntryTrait: Clone + Copy + Debug + Default + Pod + Sized + Sync {
-    /// Create a set of new invalid page table flags that indicates an absent page.
+pub trait PageTableEntryTrait: Clone + Copy + Debug + Pod + Sized + Sync {
+    /// Create a PTE that points to nothing.
     ///
-    /// Note that currently the implementation requires an all zero PTE to be an absent PTE.
-    fn new_absent() -> Self {
-        Self::default()
-    }
+    /// If a PTE `e` is an absent PTE, `e.is_present()` should return false.
+    fn new_absent() -> Self;
 
-    /// If the flags are present with valid mappings.
+    /// If the PTE points to something.
+    ///
+    /// This is used to determine if the entry owns the mapped entity, whether
+    /// it is a page or a child page table. The entry should allow a present
+    /// mapping without any permissions for the user, even reading.
     fn is_present(&self) -> bool;
 
-    /// Create a new PTE with the given physical address and flags that map to a page.
+    /// Create a new PTE with the given flags that map to a page.
+    ///
+    /// For any combination of inputs, the resulting PTE should be present.
     fn new_page(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self;
 
     /// Create a new PTE that map to a child page table.
+    ///
+    /// The properties of the child page table are determined freely by
+    /// architecture-specific implementations.
+    ///
+    /// For any combination of inputs, the resulting PTE should be present.
     fn new_pt(paddr: Paddr) -> Self;
-
-    /// Get the physical address from the PTE.
-    /// The physical address recorded in the PTE is either:
-    /// - the physical address of the next level page table;
-    /// - or the physical address of the page it maps to.
-    fn paddr(&self) -> Paddr;
-
-    fn prop(&self) -> PageProperty;
-
-    fn set_prop(&mut self, prop: PageProperty);
 
     /// If the PTE maps a page rather than a child page table.
     ///
-    /// The level of the page table the entry resides is given since architectures
-    /// like amd64 only uses a huge bit in intermediate levels.
-    fn is_last(&self, level: PagingLevel) -> bool;
+    /// The level of the page table the entry resides is given since
+    /// architectures like `amd64` only uses a huge bit in intermediate levels.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the PTE is present. Otherwise, the result
+    /// is undefined. The level must be the level of the page table the PTE
+    /// resides in.
+    unsafe fn is_last(&self, level: PagingLevel) -> bool;
+
+    /// Get the physical address from the PTE.
+    ///
+    /// The physical address recorded in the PTE is either:
+    ///  - the physical address of the next level page table;
+    ///  - or the physical address of the page it maps to.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the PTE is present. Otherwise, the result
+    /// is undefined.
+    unsafe fn paddr(&self) -> Paddr;
+
+    /// Get the mapping properties of the PTE.
+    ///
+    /// The properties include the permission bits, the cache policy, and the
+    /// accessed/dirty status.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the PTE is present. Otherwise, the result
+    /// is undefined.
+    unsafe fn prop(&self) -> PageProperty;
+
+    /// Set the mapping properties of the PTE.
+    ///
+    /// The properties include the permission bits, the cache policy, and the
+    /// accessed/dirty status.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the PTE is present. Otherwise, the behavior
+    /// is undefined.
+    unsafe fn set_prop(&mut self, prop: PageProperty);
 }

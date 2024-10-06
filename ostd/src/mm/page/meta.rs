@@ -180,29 +180,50 @@ impl Sealed for FrameMeta {}
 /// Make sure the the generic parameters don't effect the memory layout.
 #[derive(Debug)]
 #[repr(C)]
-pub struct PageTablePageMeta<
+pub(in crate::mm) struct PageTablePageMeta<
     E: PageTableEntryTrait = PageTableEntry,
     C: PagingConstsTrait = PagingConsts,
 > where
     [(); C::NR_LEVELS as usize]:,
 {
-    pub level: PagingLevel,
-    /// The lock for the page table page.
-    pub lock: AtomicU8,
     /// The number of valid PTEs. It is mutable if the lock is held.
     pub nr_children: UnsafeCell<u16>,
+    /// The level of the page table page. A page table page cannot be
+    /// referenced by page tables of different levels.
+    pub level: PagingLevel,
+    /// Whether the pages mapped by the node is tracked.
+    pub is_tracked: MapTrackingStatus,
+    /// The lock for the page table page.
+    pub lock: AtomicU8,
     _phantom: core::marker::PhantomData<(E, C)>,
+}
+
+/// Describe if the physical address recorded in this page table refers to a
+/// page tracked by metadata.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub(in crate::mm) enum MapTrackingStatus {
+    /// The page table node cannot contain references to any pages. It can only
+    /// contain references to child page table nodes.
+    NotApplicable,
+    /// The mapped pages are not tracked by metadata. If any child page table
+    /// nodes exist, they should also be tracked.
+    Untracked,
+    /// The mapped pages are tracked by metadata. If any child page table nodes
+    /// exist, they should also be tracked.
+    Tracked,
 }
 
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTablePageMeta<E, C>
 where
     [(); C::NR_LEVELS as usize]:,
 {
-    pub fn new_locked(level: PagingLevel) -> Self {
+    pub fn new_locked(level: PagingLevel, is_tracked: MapTrackingStatus) -> Self {
         Self {
-            level,
-            lock: AtomicU8::new(1),
             nr_children: UnsafeCell::new(0),
+            level,
+            is_tracked,
+            lock: AtomicU8::new(1),
             _phantom: PhantomData,
         }
     }

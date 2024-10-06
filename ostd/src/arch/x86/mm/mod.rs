@@ -102,7 +102,7 @@ pub(crate) fn tlb_flush_all_including_global() {
     }
 }
 
-#[derive(Clone, Copy, Pod, Default)]
+#[derive(Clone, Copy, Pod)]
 #[repr(C)]
 pub struct PageTableEntry(usize);
 
@@ -145,6 +145,11 @@ impl PageTableEntry {
         }
     }
     const PROP_MASK: usize = !Self::PHYS_ADDR_MASK & !PageTableFlags::HUGE.bits();
+
+    // Since x86 doesn't have a "valid" bit like RISC-V, we make the highest
+    // physical address an unusable address. And we define that the unusable
+    // address, incorporated with an all-zero flags, is the only absent entry.
+    const ABSENT_INNER_VALUE: usize = 0x7_ffff_ffff_f000;
 }
 
 /// Parse a bit-flag bits `val` in the representation of `from` to `to` in bits.
@@ -155,20 +160,27 @@ macro_rules! parse_flags {
 }
 
 impl PageTableEntryTrait for PageTableEntry {
+    fn new_absent() -> Self {
+        Self(Self::ABSENT_INNER_VALUE)
+    }
+
     fn is_present(&self) -> bool {
-        self.0 & PageTableFlags::PRESENT.bits() != 0
+        self.0 != Self::ABSENT_INNER_VALUE
     }
 
     fn new_page(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self {
-        let mut pte = Self(
-            paddr & Self::PHYS_ADDR_MASK
-                | ((level != 1) as usize) << PageTableFlags::HUGE.bits().ilog2(),
-        );
-        pte.set_prop(prop);
+        let masked_paddr = paddr & Self::PHYS_ADDR_MASK;
+        debug_assert_ne!(masked_paddr, Self::ABSENT_INNER_VALUE);
+        let mut pte =
+            Self(masked_paddr | ((level != 1) as usize) << PageTableFlags::HUGE.bits().ilog2());
+        // SAFETY: The created PTE is present.
+        unsafe { pte.set_prop(prop) };
         pte
     }
 
     fn new_pt(paddr: Paddr) -> Self {
+        let masked_paddr = paddr & Self::PHYS_ADDR_MASK;
+        debug_assert_ne!(masked_paddr, Self::ABSENT_INNER_VALUE);
         // In x86 if it's an intermediate PTE, it's better to have the same permissions
         // as the most permissive child (to reduce hardware page walk accesses). But we
         // don't have a mechanism to keep it generic across architectures, thus just
@@ -176,14 +188,14 @@ impl PageTableEntryTrait for PageTableEntry {
         let flags = PageTableFlags::PRESENT.bits()
             | PageTableFlags::WRITABLE.bits()
             | PageTableFlags::USER.bits();
-        Self(paddr & Self::PHYS_ADDR_MASK | flags)
+        Self(masked_paddr | flags)
     }
 
-    fn paddr(&self) -> Paddr {
+    unsafe fn paddr(&self) -> Paddr {
         self.0 & Self::PHYS_ADDR_MASK
     }
 
-    fn prop(&self) -> PageProperty {
+    unsafe fn prop(&self) -> PageProperty {
         let flags = parse_flags!(self.0, PageTableFlags::PRESENT, PageFlags::R)
             | parse_flags!(self.0, PageTableFlags::WRITABLE, PageFlags::W)
             | parse_flags!(!self.0, PageTableFlags::NO_EXECUTE, PageFlags::X)
@@ -208,7 +220,7 @@ impl PageTableEntryTrait for PageTableEntry {
         }
     }
 
-    fn set_prop(&mut self, prop: PageProperty) {
+    unsafe fn set_prop(&mut self, prop: PageProperty) {
         let mut flags = PageTableFlags::PRESENT.bits();
         flags |= parse_flags!(prop.flags.bits(), PageFlags::W, PageTableFlags::WRITABLE)
             | parse_flags!(!prop.flags.bits(), PageFlags::X, PageTableFlags::NO_EXECUTE)
@@ -249,7 +261,7 @@ impl PageTableEntryTrait for PageTableEntry {
         self.0 = self.0 & !Self::PROP_MASK | flags;
     }
 
-    fn is_last(&self, level: PagingLevel) -> bool {
+    unsafe fn is_last(&self, level: PagingLevel) -> bool {
         level == 1 || (self.0 & PageTableFlags::HUGE.bits() != 0)
     }
 }
@@ -258,13 +270,13 @@ impl fmt::Debug for PageTableEntry {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut f = f.debug_struct("PageTableEntry");
         f.field("raw", &format_args!("{:#x}", self.0))
-            .field("paddr", &format_args!("{:#x}", self.paddr()))
+            .field("paddr", &format_args!("{:#x}", unsafe { self.paddr() }))
             .field("present", &self.is_present())
             .field(
                 "flags",
                 &PageTableFlags::from_bits_truncate(self.0 & !Self::PHYS_ADDR_MASK),
             )
-            .field("prop", &self.prop())
+            .field("prop", &unsafe { self.prop() })
             .finish()
     }
 }
