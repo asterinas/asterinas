@@ -20,8 +20,8 @@ use crate::{
 };
 
 pub const fn nice_to_weight(nice: Nice) -> u64 {
-    /// Calculated using the formula below:
-    ///     
+    /// Calculated by the formula below:
+    ///
     ///     weight = 1024 * 1.1^(-nice)
     ///
     /// We propose that every increment of the nice value results
@@ -35,18 +35,46 @@ pub const fn nice_to_weight(nice: Nice) -> u64 {
 }
 const WEIGHT_0: u64 = nice_to_weight(Nice::new(NiceRange::new(0)));
 
+/// The scheduling entity for the FAIR scheduling class.
+///
+/// The structure contains 2 significant indications:
+/// `vruntime` & `period_start`.
+///
+/// # `vruntime`
+///
+/// The vruntime (virtual runtime) is calculated by the formula:
+///
+///     vruntime += (cur - start) * WEIGHT_0 / weight
+///
+/// and a thread with a lower vruntime gains a greater privilege to be
+/// scheduled, making the whole run queue balanced on vruntime (thus FAIR).
+///
+/// # Scheduling periods
+///
+/// Scheduling periods is designed to calculate the time slice for each threads.
+///
+/// The time slice for each threads is calculated by the formula:
+///
+///     time_slice = period * weight / load
+///
+/// where `load` is the sum of all weights in the run queue including
+/// the current thread and [`period`](FairClassRq::period) is calculated
+/// regarding the number of running threads.
+///
+/// When a thread's time slice is exhausted, it will be put back to the
+/// run queue.
 #[derive(Debug, Clone, Copy)]
-pub struct VRuntime {
+pub struct FairEntity {
     weight: u64,
     vruntime: u64,
     start: u64,
     period_start: u64,
 }
 
-impl VRuntime {
+impl FairEntity {
     pub fn new(nice: Nice) -> Self {
         let now = sched_clock();
-        VRuntime {
+        FairEntity {
             weight: nice_to_weight(nice),
 
             vruntime: 0,
@@ -64,6 +92,7 @@ impl VRuntime {
     }
 
     fn tick(&mut self, load: u64, period: u64) -> bool {
+        // Update the vruntime.
         let cur = sched_clock();
         self.vruntime = self.get_with_cur(cur);
         self.start = cur;
@@ -72,8 +101,11 @@ impl VRuntime {
         debug_assert!(period != 0);
         debug_assert!(cur - self.period_start != 0);
 
-        let slice = period * self.weight;
-        if cur - self.period_start > slice / load {
+        // Check if the time slice is exhausted.
+        //
+        // The expression is dedicated to avoid overflowing.
+        let slice = period * self.weight / load;
+        if cur - self.period_start > slice {
             self.period_start = cur;
             true
         } else {
@@ -82,30 +114,34 @@ impl VRuntime {
     }
 }
 
-impl Ord for VRuntime {
+impl Ord for FairEntity {
     fn cmp(&self, other: &Self) -> cmp::Ordering {
         (self.get().cmp(&other.get())).then_with(|| self.start.cmp(&other.start))
     }
 }
 
-impl PartialOrd for VRuntime {
+impl PartialOrd for FairEntity {
     fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Eq for VRuntime {}
+impl Eq for FairEntity {}
 
-impl PartialEq for VRuntime {
+impl PartialEq for FairEntity {
     fn eq(&self, other: &Self) -> bool {
         self.get() == other.get() && self.start == other.start
     }
 }
 
+/// The wrapper for threads in the FAIR run queue.
+///
+/// This structure is used to provide the capability for keying in the
+/// run queue implemented by `BTreeSet` in the `FairClassRq`.
 struct FairQueueItem(Arc<Thread>);
 
 impl FairQueueItem {
-    fn key(&self) -> VRuntime {
+    fn key(&self) -> FairEntity {
         match *self.0.sched_entity().lock() {
             SchedEntity::Fair(vruntime) => vruntime,
             _ => unreachable!(),
@@ -133,8 +169,18 @@ impl Ord for FairQueueItem {
     }
 }
 
+/// The per-cpu run queue for the FAIR scheduling class.
+///
+/// See [`FairEntity`] for the explanation of vruntimes and scheduling periods.
+///
+/// The structure contains a `BTreeSet` to store the threads in the run queue to
+/// ensure the efficiency for finding next-to-run threads.
 pub(super) struct FairClassRq {
     cpu: u32,
+    // FIXME: This field should have the type `BTreeSet<FairQueueItem>`. However,
+    // The `BTreeSet` implementation in the current Rust toolchain (2024-6-20) doesn't
+    // support cursors (e.g. `lower_bound_mut`), which is later merged into the Rust
+    // mainline in August, 2024. So please use `BTreeSet` after the toolchain update.
     threads: BTreeMap<FairQueueItem, ()>,
     load: u64,
 }
@@ -157,7 +203,7 @@ impl core::fmt::Debug for FairClassRq {
 }
 
 impl FairClassRq {
-    fn new(cpu: u32) -> Self {
+    pub fn new(cpu: u32) -> Self {
         Self {
             cpu,
             threads: BTreeMap::new(),
@@ -165,11 +211,25 @@ impl FairClassRq {
         }
     }
 
+    /// The scheduling period is calculated as the maximum of the following two values:
+    ///
+    /// 1. The minimum period value, defined by [`min_period_clocks`].
+    /// 2. `period = min_granularity * n` where
+    ///    `min_granularity = log2(1 + num_cpus) * base_slice_clocks`, and `n` is the number of
+    ///    runnable threads (including the current running thread).
+    ///
+    /// The formula is chosen by 3 principles:
+    ///
+    /// 1. The scheduling period should reflect the running threads and CPUs;
+    /// 2. The scheduling period should not be too low to limit the overhead of context switching;
+    /// 3. The scheduling period should not be too high to ensure the scheduling latency
+    ///    & responsiveness.
     fn period(&self) -> u64 {
         let base_slice_clks = base_slice_clocks();
         let min_period_clks = min_period_clocks();
 
         let min_gran_clks = base_slice_clks * u64::from((1 + num_cpus()).ilog2());
+        // `+ 1` means including the current running thread.
         (min_gran_clks * (self.threads.len() + 1) as u64).max(min_period_clks)
     }
 
@@ -177,17 +237,18 @@ impl FairClassRq {
         let mut front = self.threads.lower_bound_mut(Bound::Unbounded);
         let FairQueueItem(thread) = loop {
             let (thread, _) = front.peek_next()?;
-            if !thread.0.lock_cpu_affinity().contains(target_cpu) {
-                front.next().unwrap();
-                continue;
+            if thread.0.lock_cpu_affinity().contains(target_cpu) {
+                let (thread, _) = front.remove_next().unwrap();
+                break thread;
             }
-
-            let (thread, _) = front.remove_next().unwrap();
-            break thread;
+            front.next().unwrap();
         };
 
         match &mut *thread.sched_entity().lock() {
-            SchedEntity::Fair(vruntime) => vruntime.start = sched_clock(),
+            SchedEntity::Fair(vruntime) => {
+                vruntime.start = sched_clock();
+                self.load -= vruntime.weight;
+            }
             _ => unreachable!(),
         }
 
@@ -196,7 +257,7 @@ impl FairClassRq {
 }
 
 impl SchedClassRq for FairClassRq {
-    type Entity = VRuntime;
+    type Entity = FairEntity;
 
     fn enqueue(
         &mut self,
@@ -211,25 +272,23 @@ impl SchedClassRq for FairClassRq {
         self.threads.insert(FairQueueItem(thread), ());
     }
 
-    fn dequeue(&mut self, vruntime: &VRuntime) {
-        self.load -= vruntime.weight;
-    }
+    fn dequeue(&mut self, _vruntime: &FairEntity) {}
 
     fn pick_next(&mut self) -> Option<Arc<Thread>> {
         self.pop(self.cpu)
     }
 
-    fn update_current(&mut self, vruntime: &mut VRuntime, flags: UpdateFlags) -> bool {
+    fn update_current(&mut self, vruntime: &mut FairEntity, flags: UpdateFlags) -> bool {
         match flags {
             UpdateFlags::Yield => {
                 vruntime.period_start = sched_clock();
                 true
             }
-            UpdateFlags::Tick | UpdateFlags::Wait => vruntime.tick(self.load, self.period()),
+            UpdateFlags::Tick | UpdateFlags::Wait => {
+                // Includes the current running thread.
+                let load = self.load + vruntime.weight;
+                vruntime.tick(load, self.period())
+            }
         }
     }
-}
-
-pub fn new_class(cpu: u32) -> FairClassRq {
-    FairClassRq::new(cpu)
 }

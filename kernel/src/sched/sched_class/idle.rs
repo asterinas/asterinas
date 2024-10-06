@@ -5,8 +5,17 @@ use super::*;
 #[derive(Debug)]
 pub struct IdleEntity(pub(super) ());
 
+/// The per-cpu run queue for the IDLE scheduling class.
+///
+/// This run queue is used for the per-cpu idle thread, if any.
 pub(super) struct IdleClassRq {
     thread: Option<Arc<Thread>>,
+}
+
+impl IdleClassRq {
+    pub fn new() -> Self {
+        Self { thread: None }
+    }
 }
 
 impl core::fmt::Debug for IdleClassRq {
@@ -39,10 +48,7 @@ impl SchedClassRq for IdleClassRq {
     }
 
     fn update_current(&mut self, _: &mut IdleEntity, _flags: UpdateFlags) -> bool {
+        // Idle threads has the grestest priority value. They should always be preempted.
         true
     }
-}
-
-pub fn new_class(_cpu: u32) -> IdleClassRq {
-    IdleClassRq { thread: None }
 }

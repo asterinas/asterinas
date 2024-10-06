@@ -5,13 +5,25 @@ use super::*;
 #[derive(Debug)]
 pub struct StopEntity(pub(super) ());
 
+/// The per-cpu run queue for the STOP scheduling class.
+///
+/// This is a singleton class, meaning that only one thread can be in this class at a time.
+/// This is used for the most critical tasks, such as powering off and rebooting.
 pub(super) struct StopClassRq {
-    thread: Option<Arc<Thread>>,
+    thread: SpinLock<Option<Arc<Thread>>>,
+}
+
+impl StopClassRq {
+    pub fn new() -> Arc<Self> {
+        Arc::new(StopClassRq {
+            thread: SpinLock::new(None),
+        })
+    }
 }
 
 impl core::fmt::Debug for StopClassRq {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        if self.thread.is_some() {
+        if self.thread.lock().is_some() {
             write!(f, "Stop: occupied")?;
         } else {
             write!(f, "Stop: empty")?;
@@ -20,11 +32,11 @@ impl core::fmt::Debug for StopClassRq {
     }
 }
 
-impl SchedClassRq for StopClassRq {
+impl SchedClassRq for Arc<StopClassRq> {
     type Entity = StopEntity;
 
     fn enqueue(&mut self, thread: Arc<Thread>, _: SpinLockGuard<'_, SchedEntity, PreemptDisabled>) {
-        if self.thread.replace(thread).is_some() {
+        if self.thread.lock().replace(thread).is_some() {
             panic!("Multiple `stop` threads spawned")
         }
     }
@@ -32,14 +44,11 @@ impl SchedClassRq for StopClassRq {
     fn dequeue(&mut self, _: &StopEntity) {}
 
     fn pick_next(&mut self) -> Option<Arc<Thread>> {
-        self.thread.take()
+        self.thread.lock().take()
     }
 
     fn update_current(&mut self, _: &mut StopEntity, _flags: UpdateFlags) -> bool {
-        self.thread.is_some()
+        // Stop threads has the lowest priority value. They should never be preempted.
+        false
     }
-}
-
-pub fn new_class(_cpu: u32) -> StopClassRq {
-    StopClassRq { thread: None }
 }

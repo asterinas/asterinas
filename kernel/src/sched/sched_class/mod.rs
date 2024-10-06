@@ -46,7 +46,7 @@ pub struct ClassScheduler {
 /// scheduling classes in its corresponding CPU core. The current task of this CPU
 /// core is also stored in this structure.
 struct PerCpuClassRqSet {
-    stop: stop::StopClassRq,
+    stop: Arc<stop::StopClassRq>,
     real_time: real_time::RealTimeClassRq,
     fair: fair::FairClassRq,
     idle: idle::IdleClassRq,
@@ -81,7 +81,7 @@ trait SchedClassRq: Send + fmt::Debug {
 pub enum SchedEntity {
     Stop(stop::StopEntity),
     RealTime(real_time::RealTimeEntity),
-    Fair(fair::VRuntime),
+    Fair(fair::FairEntity),
     Idle(idle::IdleEntity),
 }
 
@@ -91,7 +91,7 @@ impl SchedEntity {
         match priority.range().get() {
             0 => SchedEntity::Stop(stop::StopEntity(())),
             1..100 => SchedEntity::RealTime(real_time::RealTimeEntity::new(priority)),
-            100..=139 => SchedEntity::Fair(fair::VRuntime::new(priority.into())),
+            100..=139 => SchedEntity::Fair(fair::FairEntity::new(priority.into())),
             _ => SchedEntity::Idle(idle::IdleEntity(())),
         }
     }
@@ -210,12 +210,13 @@ impl LocalRunQueue for PerCpuClassRqSet {
 
 impl Default for ClassScheduler {
     fn default() -> Self {
+        let stop = stop::StopClassRq::new();
         let class_rq = |cpu| {
             SpinLock::new(PerCpuClassRqSet {
-                stop: stop::new_class(cpu),
-                real_time: real_time::new_class(cpu),
-                fair: fair::new_class(cpu),
-                idle: idle::new_class(cpu),
+                stop: stop.clone(),
+                real_time: real_time::RealTimeClassRq::new(cpu),
+                fair: fair::FairClassRq::new(cpu),
+                idle: idle::IdleClassRq::new(),
                 current: None,
             })
         };
