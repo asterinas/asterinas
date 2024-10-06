@@ -48,7 +48,7 @@ impl SchedClassRq for IdleClassRq {
     }
 
     fn update_current(&mut self, _: &mut IdleEntity, _flags: UpdateFlags) -> bool {
-        // Idle threads has the grestest priority value. They should always be preempted.
+        // Idle threads has the greatest priority value. They should always be preempted.
         true
     }
 }
