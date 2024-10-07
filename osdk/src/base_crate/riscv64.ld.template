@@ -29,6 +29,14 @@ SECTIONS
         KEEP(*(.eh_frame .eh_frame.*))
     }
 
+    # The list of unit test function symbols that should be executed while
+    # doing `cargo osdk test`.
+    .ktest_array            : AT(ADDR(.ktest_array) - KERNEL_VMA_OFFSET) {
+        __ktest_array = .;
+        KEEP(*(SORT(.ktest_array)))
+        __ktest_array_end = .;
+    }
+
     .init_array             : AT(ADDR(.init_array) - KERNEL_VMA_OFFSET) {
         __sinit_array = .;
         KEEP(*(SORT(.init_array .init_array.*)))
