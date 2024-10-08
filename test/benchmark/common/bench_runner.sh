@@ -45,12 +45,6 @@ prepare_system() {
     if [ "$SYSTEM" = "linux" ]; then
         # Mount necessary fs
         mount -t devtmpfs devtmpfs /dev
-        # Add drivers
-        depmod
-        modprobe failover
-        modprobe net_failover
-        modprobe virtio_net
-        modprobe virtio_blk
         # Enable network
         ip link set lo up
         ip link set eth0 up
