@@ -69,7 +69,7 @@ impl<M: PageMeta> ContPages<M> {
     }
 
     /// Get the length in bytes of the contiguous pages.
-    pub fn len(&self) -> usize {
+    pub fn nbytes(&self) -> usize {
         self.range.end - self.range.start
     }
 }

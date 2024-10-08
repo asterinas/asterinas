@@ -109,6 +109,7 @@ OSTD_MACROS_CARGO_TOML_PATH=${ASTER_SRC_DIR}/ostd/libs/ostd-macros/Cargo.toml
 OSDK_CARGO_TOML_PATH=${ASTER_SRC_DIR}/osdk/Cargo.toml
 OSDK_TEST_RUNNER_CARGO_TOML_PATH=${ASTER_SRC_DIR}/osdk/test-kernel/Cargo.toml
 VERSION_PATH=${ASTER_SRC_DIR}/VERSION
+ASTER_KERNEL_PATH=${ASTER_SRC_DIR}/kernel
 
 current_version=$(cat ${VERSION_PATH})
 bump_type=$1
@@ -130,6 +131,7 @@ update_dep_version ${OSTD_CARGO_TOML_PATH} ostd-macros
 update_package_version ${OSDK_CARGO_TOML_PATH}
 update_package_version ${OSDK_TEST_RUNNER_CARGO_TOML_PATH}
 update_dep_version ${OSDK_TEST_RUNNER_CARGO_TOML_PATH} ostd
+update_package_version ${ASTER_KERNEL_PATH}/libs/aster-page-allocator/Cargo.toml
 
 # Automatically bump Cargo.lock files
 cargo update -p aster-nix --precise $new_version # For Cargo.lock

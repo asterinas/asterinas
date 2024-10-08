@@ -159,6 +159,7 @@ dependencies = [
  "aster-framebuffer",
  "aster-input",
  "aster-network",
+ "aster-page-allocator",
  "aster-rights",
  "aster-rights-proc",
  "aster-time",
@@ -197,6 +198,16 @@ dependencies = [
  "typeflags-util",
  "vte",
  "xmas-elf 0.8.0",
+]
+
+[[package]]
+name = "aster-page-allocator"
+version = "0.1.0"
+dependencies = [
+ "align_ext",
+ "id-alloc",
+ "log",
+ "ostd",
 ]
 
 [[package]]
