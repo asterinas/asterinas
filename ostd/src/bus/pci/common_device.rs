@@ -65,7 +65,7 @@ impl PciCommonDevice {
         )
     }
 
-    pub(super) fn new(location: PciDeviceLocation) -> Option<Self> {
+    pub(crate) fn new(location: PciDeviceLocation) -> Option<Self> {
         if location.read16(0) == 0xFFFF {
             // not exists
             return None;

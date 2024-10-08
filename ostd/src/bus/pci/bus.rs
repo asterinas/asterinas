@@ -72,7 +72,7 @@ impl PciBus {
         self.drivers.push(driver);
     }
 
-    pub(super) fn register_common_device(&mut self, mut common_device: PciCommonDevice) {
+    pub(crate) fn register_common_device(&mut self, mut common_device: PciCommonDevice) {
         debug!("Find pci common devices:{:x?}", common_device);
         let device_id = *common_device.device_id();
         for driver in self.drivers.iter() {
@@ -94,7 +94,7 @@ impl PciBus {
         self.common_devices.push_back(common_device);
     }
 
-    pub(super) const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             common_devices: VecDeque::new(),
             devices: Vec::new(),

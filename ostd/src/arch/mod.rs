@@ -4,12 +4,14 @@
 //!
 //! Each architecture that Asterinas supports may contain a submodule here.
 
-#[cfg(target_arch = "riscv64")]
-pub mod riscv;
-#[cfg(target_arch = "x86_64")]
-pub mod x86;
+use cfg_if::cfg_if;
 
-#[cfg(target_arch = "riscv64")]
-pub use self::riscv::*;
-#[cfg(target_arch = "x86_64")]
-pub use self::x86::*;
+cfg_if! {
+    if #[cfg(target_arch = "riscv64")] {
+        pub mod riscv;
+        pub use self::riscv::*;
+    } else if #[cfg(target_arch = "x86_64")] {
+        pub mod x86;
+        pub use self::x86::*;
+    }
+}

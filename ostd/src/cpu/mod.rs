@@ -4,18 +4,11 @@
 
 pub mod local;
 
-cfg_if::cfg_if! {
-    if #[cfg(target_arch = "x86_64")] {
-        pub use crate::arch::x86::cpu::*;
-    } else if #[cfg(target_arch = "riscv64")] {
-        pub use crate::arch::riscv::cpu::*;
-    }
-}
-
 use bitvec::prelude::BitVec;
 use local::cpu_local_cell;
 use spin::Once;
 
+pub use crate::arch::cpu::*;
 use crate::{
     arch::boot::smp::get_num_processors, task::DisabledPreemptGuard, trap::DisabledLocalIrqGuard,
 };
