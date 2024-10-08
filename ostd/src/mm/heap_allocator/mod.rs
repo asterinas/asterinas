@@ -88,23 +88,29 @@ impl LockedHeapWithRescue {
             size / PAGE_SIZE
         };
 
-        let allocation_start = {
-            let mut page_allocator = PAGE_ALLOCATOR.get().unwrap().lock();
-            if num_frames >= MIN_NUM_FRAMES {
-                page_allocator.alloc(num_frames).ok_or(Error::NoMemory)?
-            } else {
-                match page_allocator.alloc(MIN_NUM_FRAMES) {
-                    None => page_allocator.alloc(num_frames).ok_or(Error::NoMemory)?,
-                    Some(start) => {
-                        num_frames = MIN_NUM_FRAMES;
-                        start
-                    }
+    let allocation_start_paddr = {
+        let mut page_allocator = PAGE_ALLOCATOR.get().unwrap().lock();
+        if num_frames >= MIN_NUM_FRAMES {
+            page_allocator
+                .alloc(Layout::from_size_align(num_frames * PAGE_SIZE, PAGE_SIZE).unwrap())
+                .ok_or(Error::NoMemory)?
+        } else {
+            match page_allocator
+                .alloc(Layout::from_size_align(MIN_NUM_FRAMES * PAGE_SIZE, PAGE_SIZE).unwrap())
+            {
+                None => page_allocator
+                    .alloc(Layout::from_size_align(num_frames * PAGE_SIZE, PAGE_SIZE).unwrap())
+                    .ok_or(Error::NoMemory)?,
+                Some(start) => {
+                    num_frames = MIN_NUM_FRAMES;
+                    start
                 }
             }
-        };
-        // FIXME: the alloc function internally allocates heap memory(inside FrameAllocator).
-        // So if the heap is nearly run out, allocating frame will fail too.
-        let vaddr = paddr_to_vaddr(allocation_start * PAGE_SIZE);
+        }
+    };
+    // FIXME: the alloc function internally allocates heap memory(inside FrameAllocator).
+    // So if the heap is nearly run out, allocating frame will fail too.
+    let vaddr = paddr_to_vaddr(allocation_start_paddr);
 
         // SAFETY: the frame is allocated from FrameAllocator and never be deallocated,
         // so the addr is always valid.

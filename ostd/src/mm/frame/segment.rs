@@ -159,7 +159,7 @@ impl From<Frame> for Segment {
 
 impl From<ContPages<FrameMeta>> for Segment {
     fn from(cont_pages: ContPages<FrameMeta>) -> Self {
-        let len = cont_pages.len();
+        let len = cont_pages.nbytes();
         Self {
             inner: Arc::new(cont_pages),
             range: 0..len / PAGE_SIZE,

@@ -15,13 +15,23 @@ use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     cpu::num_cpus,
     mm::{
-        nr_subpage_per_huge, paddr_to_vaddr, page::allocator::PAGE_ALLOCATOR, PageProperty,
-        PagingConstsTrait, Vaddr, PAGE_SIZE,
+        nr_subpage_per_huge, paddr_to_vaddr,
+        page::{
+            allocator::{PageAlloc, BOOTSTRAP_PAGE_ALLOCATOR},
+            meta::BootPageTableMeta,
+            Page,
+        },
+        PageProperty, PagingConstsTrait, Vaddr, PAGE_SIZE,
     },
     sync::SpinLock,
 };
 
 type FrameNumber = usize;
+
+enum BootPageTableFrame {
+    Number(FrameNumber),
+    Page(Page<BootPageTableMeta>),
+}
 
 /// The accessor to the boot page table singleton [`BootPageTable`].
 ///
@@ -85,10 +95,9 @@ pub struct BootPageTable<
     C: PagingConstsTrait = PagingConsts,
 > {
     root_pt: FrameNumber,
-    // The frames allocated for this page table are not tracked with
-    // metadata [`crate::mm::frame::meta`]. Here is a record of it
-    // for deallocation.
-    frames: Vec<FrameNumber>,
+    // Hold the ownership of the frames, tracked with
+    // metadata[`crate::mm::frame::meta`].
+    frames: Vec<BootPageTableFrame>,
     _pretend_to_use: core::marker::PhantomData<(E, C)>,
 }
 
@@ -211,20 +220,39 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
     }
 
     fn alloc_frame(&mut self) -> FrameNumber {
-        let frame = PAGE_ALLOCATOR.get().unwrap().lock().alloc(1).unwrap();
-        self.frames.push(frame);
+        let frame = BOOTSTRAP_PAGE_ALLOCATOR
+            .get()
+            .unwrap()
+            .lock()
+            .alloc_page(PAGE_SIZE)
+            .unwrap()
+            / PAGE_SIZE;
+        self.frames.push(BootPageTableFrame::Number(frame));
         // Zero it out.
         let vaddr = paddr_to_vaddr(frame * PAGE_SIZE) as *mut u8;
         unsafe { core::ptr::write_bytes(vaddr, 0, PAGE_SIZE) };
         frame
     }
-}
 
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for BootPageTable<E, C> {
-    fn drop(&mut self) {
-        for frame in &self.frames {
-            PAGE_ALLOCATOR.get().unwrap().lock().dealloc(*frame, 1);
-        }
+    /// Converts the frame numbers to pages.
+    ///
+    /// Boot page table is designed for supporting initialization of meta
+    /// utities. The pages used by the boot page table are not automatically
+    /// managed by meta and it is manually managed by the boot page table in
+    /// the frame number form. To coordinate with later page manage utilities,
+    /// the boot page table should convert the aforementioned frame numbers to
+    /// pages.
+    pub fn manage_frames_with_meta(&mut self) {
+        self.frames = self.frames.iter().map(|frame| {
+            match frame {
+                BootPageTableFrame::Number(frame) => {
+                    BootPageTableFrame::Page(Page::<BootPageTableMeta>::from_free(*frame * PAGE_SIZE, BootPageTableMeta::default()))
+                }
+                BootPageTableFrame::Page(page) => {
+                    panic!("Should not convert frame number to page while pages are already in the boot page table, page = {:?}", page);
+                }
+            }
+        }).collect::<Vec<BootPageTableFrame>>();
     }
 }
 

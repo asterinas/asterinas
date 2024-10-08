@@ -37,6 +37,7 @@ use ostd::{
     arch::qemu::{exit_qemu, QemuExitCode},
     boot,
     cpu::PinCurrentCpu,
+    mm::page::allocator::PageAlloc,
 };
 use process::Process;
 use sched::priority::PriorityRange;
@@ -135,6 +136,11 @@ fn ap_init() -> ! {
     );
     // Spawning functions in the bootstrap context will not return.
     unreachable!()
+}
+
+#[ostd::page_allocator_init_fn]
+fn init_page_allocator() -> Box<dyn PageAlloc> {
+    aster_page_allocator::init()
 }
 
 fn init_thread() {
