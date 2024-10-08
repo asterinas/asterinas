@@ -30,16 +30,8 @@ RUN apt update && apt-get install -y --no-install-recommends \
 
 WORKDIR /opt/linux_binary_cache
 RUN wget https://raw.githubusercontent.com/asterinas/linux_vdso/2a6d2db/vdso64.so -O vdso64.so
-RUN wget https://raw.githubusercontent.com/asterinas/linux_binary_cache/8a5b6fd/vmlinuz-5.15.0-105-generic \
+RUN wget https://raw.githubusercontent.com/asterinas/linux_binary_cache/14598b6/vmlinuz-5.15.0-105 \
         -O vmlinuz
-RUN wget https://raw.githubusercontent.com/asterinas/linux_binary_cache/8a5b6fd/kernel/drivers/block/virtio_blk.ko \
-        -O virtio_blk.ko
-RUN wget https://raw.githubusercontent.com/asterinas/linux_binary_cache/8a5b6fd/kernel/drivers/net/net_failover.ko \
-        -O net_failover.ko
-RUN wget https://raw.githubusercontent.com/asterinas/linux_binary_cache/8a5b6fd/kernel/drivers/net/virtio_net.ko \
-        -O virtio_net.ko
-RUN wget https://raw.githubusercontent.com/asterinas/linux_binary_cache/8a5b6fd/kernel/net/core/failover.ko \
-        -O failover.ko
 
 #= Build benchmark =========================================================
 
