@@ -48,7 +48,13 @@ run_benchmark() {
 # Use a sleep time of 2 minutes (2m) for the Asterinas VM
 run_benchmark "${ASTERINAS_GUEST_CMD}" "${ASTERINAS_OUTPUT}" "2m"
 
+# Wait for the Asterinas QEMU process to exit
+wait
+
 # Run the benchmark on the Linux VM
 # Use a sleep time of 20 seconds (20s) for the Linux VM
 prepare_fs
 run_benchmark "${LINUX_GUEST_CMD}" "${LINUX_OUTPUT}" "20s"
+
+# Wait for the Linux QEMU process to exit
+wait
