@@ -107,7 +107,7 @@ impl<R> Vmar<R> {
 
 pub(super) struct Vmar_ {
     /// VMAR inner
-    inner: Mutex<VmarInner>,
+    inner: RwMutex<VmarInner>,
     /// The offset relative to the root VMAR
     base: Vaddr,
     /// The total size of the VMAR in bytes
@@ -211,7 +211,7 @@ impl Vmar_ {
         };
 
         Arc::new(Vmar_ {
-            inner: Mutex::new(inner),
+            inner: RwMutex::new(inner),
             base,
             size,
             vm_space,
@@ -249,7 +249,7 @@ impl Vmar_ {
     // Do real protect. The protected range is ensured to be mapped.
     fn do_protect_inner(&self, perms: VmPerms, range: Range<usize>) -> Result<()> {
         let protect_mappings: Vec<Arc<VmMapping>> = {
-            let inner = self.inner.lock();
+            let inner = self.inner.read();
             inner
                 .vm_mappings
                 .find(&range)
@@ -265,7 +265,7 @@ impl Vmar_ {
             vm_mapping.protect(perms, intersected_range)?;
         }
 
-        for child_vmar_ in self.inner.lock().child_vmar_s.find(&range) {
+        for child_vmar_ in self.inner.read().child_vmar_s.find(&range) {
             let child_vmar_range = child_vmar_.range();
             debug_assert!(is_intersected(&child_vmar_range, &range));
             let intersected_range = get_intersected_range(&range, &child_vmar_range);
@@ -284,7 +284,7 @@ impl Vmar_ {
         assert!(range.end <= self.base + self.size);
 
         // The protected range should not intersect with any free region
-        let inner = self.inner.lock();
+        let inner = self.inner.read();
         if inner.free_regions.find(range).into_iter().next().is_some() {
             return_errno_with_message!(Errno::EACCES, "protected range is not fully mapped");
         }
@@ -307,7 +307,7 @@ impl Vmar_ {
             return_errno_with_message!(Errno::EACCES, "page fault addr is not in current vmar");
         }
 
-        let inner = self.inner.lock();
+        let inner = self.inner.read();
         if let Some(child_vmar) = inner.child_vmar_s.find_one(&address) {
             debug_assert!(child_vmar.range().contains(&address));
             return child_vmar.handle_page_fault(page_fault_info);
@@ -329,7 +329,7 @@ impl Vmar_ {
             return_errno_with_message!(Errno::EACCES, "The vmar is not root vmar");
         }
         self.clear_vm_space();
-        let mut inner = self.inner.lock();
+        let mut inner = self.inner.write();
         inner.child_vmar_s.clear();
         inner.vm_mappings.clear();
         inner.free_regions.clear();
@@ -345,7 +345,7 @@ impl Vmar_ {
 
     pub fn destroy(&self, range: Range<usize>) -> Result<()> {
         self.check_destroy_range(&range)?;
-        let mut inner = self.inner.lock();
+        let mut inner = self.inner.write();
         let mut free_regions = BTreeMap::new();
 
         for child_vmar_ in inner.child_vmar_s.find(&range) {
@@ -414,7 +414,7 @@ impl Vmar_ {
         }
 
         let last_mapping = {
-            let inner = self.inner.lock();
+            let inner = self.inner.read();
             inner
                 .vm_mappings
                 .find_one(&(old_map_end - 1))
@@ -437,7 +437,7 @@ impl Vmar_ {
         debug_assert!(range.start % PAGE_SIZE == 0);
         debug_assert!(range.end % PAGE_SIZE == 0);
 
-        let inner = self.inner.lock();
+        let inner = self.inner.read();
 
         for child_vmar_ in inner.child_vmar_s.find(range) {
             let child_vmar_range = child_vmar_.range();
@@ -456,12 +456,12 @@ impl Vmar_ {
     }
 
     fn is_destroyed(&self) -> bool {
-        self.inner.lock().is_destroyed
+        self.inner.read().is_destroyed
     }
 
     fn merge_continuous_regions(&self) {
         let mut new_free_regions = BTreeMap::new();
-        let mut inner = self.inner.lock();
+        let mut inner = self.inner.write();
         let keys = inner.free_regions.keys().cloned().collect::<Vec<_>>();
         for key in keys {
             if let Some(mut free_region) = inner.free_regions.remove(&key) {
@@ -486,15 +486,20 @@ impl Vmar_ {
     ) -> Result<Arc<Vmar_>> {
         let (region_base, child_vmar_offset) =
             self.inner
-                .lock()
+                .write()
                 .find_free_region(child_vmar_offset, child_vmar_size, align)?;
         // This unwrap should never fails
-        let free_region = self.inner.lock().free_regions.remove(&region_base).unwrap();
+        let free_region = self
+            .inner
+            .write()
+            .free_regions
+            .remove(&region_base)
+            .unwrap();
         let child_range = child_vmar_offset..(child_vmar_offset + child_vmar_size);
         let regions_after_allocation = free_region.allocate_range(child_range.clone());
         regions_after_allocation.into_iter().for_each(|region| {
             self.inner
-                .lock()
+                .write()
                 .free_regions
                 .insert(region.start(), region);
         });
@@ -515,14 +520,14 @@ impl Vmar_ {
             Some(self),
         );
         self.inner
-            .lock()
+            .write()
             .child_vmar_s
             .insert(child_vmar_.base, child_vmar_.clone());
         Ok(child_vmar_)
     }
 
     fn check_overwrite(&self, mapping_range: Range<usize>, can_overwrite: bool) -> Result<()> {
-        let inner = self.inner.lock();
+        let inner = self.inner.read();
         if inner
             .child_vmar_s
             .find(&mapping_range)
@@ -561,7 +566,7 @@ impl Vmar_ {
     /// Maps a `VmMapping` to this VMAR.
     fn add_mapping(&self, mapping: Arc<VmMapping>) {
         self.inner
-            .lock()
+            .write()
             .vm_mappings
             .insert(mapping.map_to_addr(), mapping);
     }
@@ -576,7 +581,7 @@ impl Vmar_ {
         trace!("allocate free region, map_size = 0x{:x}, offset = {:x?}, align = 0x{:x}, can_overwrite = {}", map_size, offset, align, can_overwrite);
 
         if can_overwrite {
-            let mut inner = self.inner.lock();
+            let mut inner = self.inner.write();
             // If can overwrite, the offset is ensured not to be `None`.
             let offset = offset.ok_or(Error::with_message(
                 Errno::EINVAL,
@@ -606,7 +611,7 @@ impl Vmar_ {
             Ok(offset)
         } else {
             // Otherwise, the mapping in a single region.
-            let mut inner = self.inner.lock();
+            let mut inner = self.inner.write();
             let (free_region_base, offset) = inner.find_free_region(offset, map_size, align)?;
             let free_region = inner.free_regions.remove(&free_region_base).unwrap();
             let mapping_range = offset..(offset + map_size);
@@ -620,7 +625,7 @@ impl Vmar_ {
     }
 
     fn trim_existing_mappings(&self, trim_range: Range<usize>) -> Result<()> {
-        let mut inner = self.inner.lock();
+        let mut inner = self.inner.write();
         let mut mappings_to_remove = LinkedList::new();
         let mut mappings_to_append = LinkedList::new();
         for vm_mapping in inner.vm_mappings.find(&trim_range) {
@@ -666,8 +671,8 @@ impl Vmar_ {
             Vmar_::new(vmar_inner, vm_space, self.base, self.size, parent)
         };
 
-        let inner = self.inner.lock();
-        let mut new_inner = new_vmar_.inner.lock();
+        let inner = self.inner.read();
+        let mut new_inner = new_vmar_.inner.write();
 
         // Clone free regions.
         for (free_region_base, free_region) in &inner.free_regions {
