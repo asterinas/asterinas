@@ -91,11 +91,6 @@ run_benchmark() {
                 "${aster_output}" \
                 "${linux_output}"
             ;;
-        "guest-guest")
-            echo "Running benchmark ${benchmark} between guests..."
-            echo "TODO"
-            exit 1
-            ;;
         *)
             echo "Error: Unknown benchmark type '${benchmark_type}'" >&2
             exit 1
