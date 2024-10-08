@@ -31,6 +31,7 @@ pub fn do_exit(thread: &Thread, posix_thread: &PosixThread, term_status: TermSta
         futex_wake(*clear_ctid, 1, None)?;
         *clear_ctid = 0;
     }
+    drop(clear_ctid);
     // exit the robust list: walk the robust list; mark futex words as dead and do futex wake
     wake_robust_list(posix_thread, tid);
 
