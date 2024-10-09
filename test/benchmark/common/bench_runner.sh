@@ -6,6 +6,7 @@
 set -e
 
 BENCHMARK_DIR="/benchmark"
+READY_MESSAGE="The VM is ready for the benchmark."
 
 BENCH_NAME=$1
 SYSTEM="${2:-asterinas}"
@@ -66,6 +67,10 @@ main() {
 
     # Prepare the system
     prepare_system
+    
+    # Message to notify the host script. It must align with the READY_MESSAGE in host_guest_bench_runner.sh.
+    # DO NOT REMOVE THIS LINE!!!
+    echo "${READY_MESSAGE}"
 
     # Run the benchmark
     BENCH_SCRIPT=${BENCHMARK_DIR}/${BENCH_NAME}/run.sh
