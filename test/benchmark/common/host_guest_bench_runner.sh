@@ -9,6 +9,9 @@ ASTERINAS_GUEST_CMD=$2
 LINUX_GUEST_CMD=$3
 ASTERINAS_OUTPUT=$4
 LINUX_OUTPUT=$5
+# Message to monitor in the log file to determine whether the VM is ready
+# It should align with bench_runner.sh
+READY_MESSAGE="The VM is ready for the benchmark."
 
 # Import the common functions
 BENCHMARK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)/../"
@@ -29,32 +32,46 @@ fi
 # Parameters:
 #   $1: guest command to run on the VM
 #   $2: output file to store the benchmark results
-#   $3: sleep time before running the host command
+#   $3: log file to monitor for the ready message
+#   $4: ready message to monitor in the log file
 run_benchmark() {
     local guest_cmd=$1
     local output_file=$2
-    local sleep_time=$3
+    local guest_log_file=$3
+    local ready_message=$4
 
     echo "Running the benchmark on the VM..."
-    eval "${guest_cmd}" & 
-    sleep "${sleep_time}"  
+    eval "${guest_cmd}" | tee "${guest_log_file}" & 
+
+    # Monitor the log file for the ready message
+    echo "Waiting for the ready message: ${ready_message}"
+    while true; do
+        if grep -q "${ready_message}" "${guest_log_file}"; then
+            echo "Ready message detected. Running the benchmark on the host..."
+            break
+        fi
+        sleep 1
+    done
+
+    # Sleep for a short time to ensure the guest is fully ready
+    sleep 1
+
     # Run the host command and save the output to the specified file.
-    # You can also redirect the guest output to it.
-    echo "Running the benchmark on the host..."
     bash "${BENCHMARK_PATH}/host.sh" | tee "${output_file}"  
+
+    # Clean up the log file
+    rm -f "${guest_log_file}"
 }
 
 # Run the benchmark on the Asterinas VM
-# Use a sleep time of 2 minutes (2m) for the Asterinas VM
-run_benchmark "${ASTERINAS_GUEST_CMD}" "${ASTERINAS_OUTPUT}" "2m"
+run_benchmark "${ASTERINAS_GUEST_CMD}" "${ASTERINAS_OUTPUT}" "/tmp/asterinas.log" "${READY_MESSAGE}" 
 
 # Wait for the Asterinas QEMU process to exit
 wait
 
 # Run the benchmark on the Linux VM
-# Use a sleep time of 20 seconds (20s) for the Linux VM
 prepare_fs
-run_benchmark "${LINUX_GUEST_CMD}" "${LINUX_OUTPUT}" "20s"
+run_benchmark "${LINUX_GUEST_CMD}" "${LINUX_OUTPUT}" "/tmp/linux.log" "${READY_MESSAGE}"
 
 # Wait for the Linux QEMU process to exit
 wait
