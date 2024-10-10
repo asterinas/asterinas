@@ -5,12 +5,12 @@
 use alloc::vec::Vec;
 use core::{fmt::Debug, mem::size_of, slice::Iter};
 
-use acpi::{sdt::Signature, AcpiTable};
-
-use super::{
-    remapping::{Andd, Atsr, Drhd, Rhsa, Rmrr, Satc, Sidp},
-    SdtHeaderWrapper,
+use acpi::{
+    sdt::{SdtHeader, Signature},
+    AcpiTable,
 };
+
+use super::remapping::{Andd, Atsr, Drhd, Rhsa, Rmrr, Satc, Sidp};
 use crate::mm::paddr_to_vaddr;
 
 /// DMA Remapping structure. When IOMMU is enabled, the structure should be present in the ACPI table,
@@ -51,15 +51,16 @@ pub enum RemappingType {
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
 struct DmarHeader {
-    header: SdtHeaderWrapper,
+    header: SdtHeader,
     host_address_width: u8,
     flags: u8,
     reserved: [u8; 10],
 }
 
-impl AcpiTable for DmarHeader {
+unsafe impl AcpiTable for DmarHeader {
+    const SIGNATURE: Signature = Signature::DMAR;
     fn header(&self) -> &acpi::sdt::SdtHeader {
-        &self.header.0
+        &self.header
     }
 }
 
@@ -71,11 +72,7 @@ impl Dmar {
         }
         let acpi_table_lock = super::ACPI_TABLES.get().unwrap().lock();
         // SAFETY: The DmarHeader is the header for the DMAR structure, it fits all the field described in Intel manual.
-        let dmar_mapping = unsafe {
-            acpi_table_lock
-                .get_sdt::<DmarHeader>(Signature::DMAR)
-                .unwrap()?
-        };
+        let dmar_mapping = acpi_table_lock.find_table::<DmarHeader>().ok()?;
 
         let physical_address = dmar_mapping.physical_start();
         let len = dmar_mapping.mapped_length();

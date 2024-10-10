@@ -9,7 +9,7 @@
 
 #![allow(unused_variables)]
 
-use acpi::{fadt::Fadt, sdt::Signature};
+use acpi::fadt::Fadt;
 use x86_64::instructions::port::{ReadOnlyAccess, WriteOnlyAccess};
 
 use super::io_port::IoPort;
@@ -26,15 +26,8 @@ pub fn century_register() -> Option<u8> {
     if !ACPI_TABLES.is_completed() {
         return None;
     }
-    unsafe {
-        match ACPI_TABLES
-            .get()
-            .unwrap()
-            .lock()
-            .get_sdt::<Fadt>(Signature::FADT)
-        {
-            Ok(a) => Some(a.unwrap().century),
-            Err(er) => None,
-        }
+    match ACPI_TABLES.get().unwrap().lock().find_table::<Fadt>() {
+        Ok(a) => Some(a.century),
+        Err(er) => None,
     }
 }
