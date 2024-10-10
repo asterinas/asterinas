@@ -16,13 +16,13 @@ pub struct MountNode {
     root_dentry: Arc<Dentry_>,
     /// Mountpoint dentry. A mount node can be mounted on one dentry of another mount node,
     /// which makes the mount being the child of the mount node.
-    mountpoint_dentry: RwMutex<Option<Arc<Dentry_>>>,
+    mountpoint_dentry: RwLock<Option<Arc<Dentry_>>>,
     /// The associated FS.
     fs: Arc<dyn FileSystem>,
     /// The parent mount node.
-    parent: RwMutex<Option<Weak<MountNode>>>,
+    parent: RwLock<Option<Weak<MountNode>>>,
     /// Child mount nodes which are mounted on one dentry of self.
-    children: RwMutex<HashMap<DentryKey, Arc<Self>>>,
+    children: RwLock<HashMap<DentryKey, Arc<Self>>>,
     /// Reference to self.
     this: Weak<Self>,
 }
@@ -50,9 +50,9 @@ impl MountNode {
     fn new(fs: Arc<dyn FileSystem>, parent_mount: Option<Weak<MountNode>>) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| Self {
             root_dentry: Dentry_::new_root(fs.root_inode()),
-            mountpoint_dentry: RwMutex::new(None),
-            parent: RwMutex::new(parent_mount),
-            children: RwMutex::new(HashMap::new()),
+            mountpoint_dentry: RwLock::new(None),
+            parent: RwLock::new(parent_mount),
+            children: RwLock::new(HashMap::new()),
             fs,
             this: weak_self.clone(),
         })
@@ -106,9 +106,9 @@ impl MountNode {
     fn clone_mount_node(&self, root_dentry: &Arc<Dentry_>) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| Self {
             root_dentry: root_dentry.clone(),
-            mountpoint_dentry: RwMutex::new(None),
-            parent: RwMutex::new(None),
-            children: RwMutex::new(HashMap::new()),
+            mountpoint_dentry: RwLock::new(None),
+            parent: RwLock::new(None),
+            children: RwLock::new(HashMap::new()),
             fs: self.fs.clone(),
             this: weak_self.clone(),
         })
@@ -221,11 +221,13 @@ impl MountNode {
 
     /// Flushes all pending filesystem metadata and cached file data to the device.
     pub fn sync(&self) -> Result<()> {
-        let children = self.children.read();
-        for child in children.values() {
+        let children: Vec<Arc<MountNode>> = {
+            let children = self.children.read();
+            children.values().cloned().collect()
+        };
+        for child in children {
             child.sync()?;
         }
-        drop(children);
 
         self.fs.sync()?;
         Ok(())
