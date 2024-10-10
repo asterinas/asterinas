@@ -32,7 +32,7 @@ use crate::{
 pub struct InodeHandle<R = Rights>(Arc<InodeHandle_>, R);
 
 struct InodeHandle_ {
-    dentry: Arc<Dentry>,
+    dentry: Dentry,
     /// `file_io` is Similar to `file_private` field in `file` structure in linux. If
     /// `file_io` is Some, typical file operations including `read`, `write`, `poll`,
     /// `ioctl` will be provided by `file_io`, instead of `dentry`.
@@ -354,7 +354,7 @@ impl Debug for InodeHandle_ {
 
 /// Methods for both dyn and static
 impl<R> InodeHandle<R> {
-    pub fn dentry(&self) -> &Arc<Dentry> {
+    pub fn dentry(&self) -> &Dentry {
         &self.0.dentry
     }
 
