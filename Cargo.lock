@@ -4,13 +4,12 @@ version = 3
 
 [[package]]
 name = "acpi"
-version = "4.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "654f48ab3178632ea535be1765073b990895cb62f70a7e5671975d7150c26d15"
+version = "5.0.0"
+source = "git+https://github.com/rust-osdev/acpi.git?rev=da9b3b1#da9b3b147ae1e9cd6e77882cd604e5aba21d9d92"
 dependencies = [
  "bit_field",
+ "bitflags 2.6.0",
  "log",
- "rsdp",
 ]
 
 [[package]]
@@ -1112,7 +1111,6 @@ dependencies = [
  "ostd-test",
  "owo-colors 3.5.0",
  "riscv",
- "rsdp",
  "sbi-rt",
  "spin 0.9.8",
  "static_assertions",
@@ -1308,15 +1306,6 @@ name = "rle-decode-fast"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3582f63211428f83597b51b2ddb88e2a91a9d52d12831f9d08f5e624e8977422"
-
-[[package]]
-name = "rsdp"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66d3add2fc55ef37511bcf81a08ee7a09eff07b23aae38b06a29024a38c604b1"
-dependencies = [
- "log",
-]
 
 [[package]]
 name = "rustversion"
