@@ -164,9 +164,8 @@ pub fn init() {
             #[cfg(feature = "cvm_guest")]
             // SAFETY:
             // This is safe because we are ensuring that the `IO_APIC_DEFAULT_ADDRESS` is a valid MMIO address before this operation.
-            // The `IO_APIC_DEFAULT_ADDRESS` is a well-known address used for IO APICs in x86 systems, and it is page-aligned, which is a requirement for the `unprotect_gpa_range` function.
+            // The `IO_APIC_DEFAULT_ADDRESS` is a well-known address used for IO APICs in x86 systems.
             // We are also ensuring that we are only unprotecting a single page.
-            // Therefore, we are not causing any undefined behavior or violating any of the requirements of the `unprotect_gpa_range` function.
             if tdx_is_enabled() {
                 unsafe {
                     tdx_guest::unprotect_gpa_range(IO_APIC_DEFAULT_ADDRESS, 1).unwrap();
@@ -197,6 +196,15 @@ pub fn init() {
             let mut vec = Vec::new();
             for id in 0..apic.io_apics.len() {
                 let io_apic = apic.io_apics.get(id).unwrap();
+                #[cfg(feature = "cvm_guest")]
+                // SAFETY:
+                // This is safe because we are ensuring that the `io_apic.address` is a valid MMIO address before this operation.
+                // We are also ensuring that we are only unprotecting a single page.
+                if tdx_is_enabled() {
+                    unsafe {
+                        tdx_guest::unprotect_gpa_range(io_apic.address as usize, 1).unwrap();
+                    }
+                }
                 let interrupt_base = io_apic.global_system_interrupt_base;
                 let mut io_apic = unsafe { IoApicAccess::new(io_apic.address as usize) };
                 io_apic.set_id(id as u8);
