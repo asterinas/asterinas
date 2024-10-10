@@ -40,7 +40,7 @@ where
     let dismiss_count = DISMISS_COUNT.load(Ordering::SeqCst);
     // This function may be called on the BSP before we can get the number of
     // CPUs. So we short-circuit the check if the number of CPUs is zero.
-    if dismiss_count != 0 && dismiss_count < num_cpus() {
+    if dismiss_count != 0 && (dismiss_count as usize) < num_cpus() {
         return Err(());
     }
 
@@ -67,7 +67,7 @@ where
 ///  - this function should be called only once per CPU;
 ///  - no [`with`] calls are performed on this CPU after this dismissal.
 pub(crate) unsafe fn dismiss() {
-    if DISMISS_COUNT.fetch_add(1, Ordering::SeqCst) == num_cpus() - 1 {
+    if DISMISS_COUNT.fetch_add(1, Ordering::SeqCst) as usize == num_cpus() - 1 {
         BOOT_PAGE_TABLE.lock().take();
     }
 }
