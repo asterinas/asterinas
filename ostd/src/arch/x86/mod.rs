@@ -3,6 +3,7 @@
 //! Platform-specific code for the x86 platform.
 
 pub mod boot;
+pub(crate) mod bus;
 pub(crate) mod cpu;
 pub mod device;
 pub(crate) mod ex_table;
@@ -35,6 +36,7 @@ use core::{
     sync::atomic::Ordering,
 };
 
+use gimli::Register;
 use kernel::apic::ioapic;
 use log::{info, warn};
 
@@ -207,4 +209,9 @@ pub(crate) fn enable_cpu_features() {
             *efer |= EferFlags::NO_EXECUTE_ENABLE;
         });
     }
+}
+
+/// Return the name of the register given an index
+pub fn register_name(index: u16) -> Option<&'static str> {
+    gimli::X86_64::register_name(Register(index))
 }
