@@ -8,6 +8,7 @@ use crate::{
     error::Error,
     events::IoEvents,
     fs::{inode_handle::FileIo, utils::IoctlCmd},
+    get_current_userspace,
     process::signal::Poller,
 };
 
@@ -82,8 +83,7 @@ impl FileIo for TdxGuest {
 fn handle_get_report(arg: usize) -> Result<i32> {
     const SHARED_BIT: u8 = 51;
     const SHARED_MASK: u64 = 1u64 << SHARED_BIT;
-    let user_space = get_current_userspace!();
-    let user_request: TdxReportRequest = user_space.read_val(arg)?;
+    let user_request: TdxReportRequest = get_current_userspace!().read_val(arg)?;
 
     let vm_segment = FrameAllocOptions::new(2)
         .is_contiguous(true)
@@ -112,6 +112,6 @@ fn handle_get_report(arg: usize) -> Result<i32> {
         .read_bytes(1024, &mut generated_report)
         .unwrap();
     let report_slice: &[u8] = &generated_report;
-    user_space.write_bytes(tdx_report_vaddr, &mut VmReader::from(report_slice))?;
+    get_current_userspace!().write_bytes(tdx_report_vaddr, &mut VmReader::from(report_slice))?;
     Ok(0)
 }
