@@ -311,6 +311,10 @@ impl FileTableEntry {
         self.flags.store(flags.bits(), Ordering::Relaxed);
     }
 
+    pub fn clear_flags(&self) {
+        self.flags.store(0, Ordering::Relaxed);
+    }
+
     pub fn register_observer(&self, epoll: Weak<dyn Observer<FdEvents>>) {
         self.subject.register_observer(epoll, ());
     }

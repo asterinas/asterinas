@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_table::FileDesc,
+        file_table::{FdFlags, FileDesc},
         utils::{IoctlCmd, StatusFlags},
     },
     prelude::*,
@@ -37,6 +37,23 @@ pub fn sys_ioctl(fd: FileDesc, cmd: u32, arg: Vaddr, ctx: &Context) -> Result<Sy
             // first to let the kernel know just whom to notify.
             flags.set(StatusFlags::O_ASYNC, is_async);
             file.set_status_flags(flags)?;
+            0
+        }
+        IoctlCmd::FIOCLEX => {
+            // Sets the close-on-exec flag of the file.
+            // Follow the implementation of fcntl()
+
+            let flags = FdFlags::CLOEXEC;
+            let file_table = ctx.process.file_table().lock();
+            let entry = file_table.get_entry(fd)?;
+            entry.set_flags(flags);
+            0
+        }
+        IoctlCmd::FIONCLEX => {
+            // Clears the close-on-exec flag of the file.
+            let file_table = ctx.process.file_table().lock();
+            let entry = file_table.get_entry(fd)?;
+            entry.clear_flags();
             0
         }
         _ => file.ioctl(ioctl_cmd, arg)?,
