@@ -5,16 +5,11 @@
 //! Reference: <https://wiki.osdev.org/PCI>
 
 use alloc::sync::Arc;
-use core::mem::size_of;
 
 use bitflags::bitflags;
 
 use super::PciDeviceLocation;
-use crate::{
-    arch::device::io_port::{PortRead, PortWrite},
-    io_mem::IoMem,
-    Error, Result,
-};
+use crate::{io_mem::IoMem, Error, Result};
 
 /// Offset in PCI device's common configuration space(Not the PCI bridge).
 #[repr(u16)]
@@ -276,8 +271,11 @@ impl IoBar {
         self.size
     }
 
+    #[cfg(target_arch = "x86_64")]
     /// Reads from port
-    pub fn read<T: PortRead>(&self, offset: u32) -> Result<T> {
+    pub fn read<T: crate::arch::device::io_port::PortRead>(&self, offset: u32) -> Result<T> {
+        use core::mem::size_of;
+
         // Check alignment
         if (self.base + offset) % size_of::<T>() as u32 != 0 {
             return Err(Error::InvalidArgs);
@@ -291,8 +289,15 @@ impl IoBar {
         unsafe { Ok(T::read_from_port((self.base + offset) as u16)) }
     }
 
+    #[cfg(target_arch = "x86_64")]
     /// Writes to port
-    pub fn write<T: PortWrite>(&self, offset: u32, value: T) -> Result<()> {
+    pub fn write<T: crate::arch::device::io_port::PortWrite>(
+        &self,
+        offset: u32,
+        value: T,
+    ) -> Result<()> {
+        use core::mem::size_of;
+
         // Check alignment
         if (self.base + offset) % size_of::<T>() as u32 != 0 {
             return Err(Error::InvalidArgs);
