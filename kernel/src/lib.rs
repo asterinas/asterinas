@@ -16,9 +16,9 @@
 #![feature(int_roundings)]
 #![feature(iter_repeat_n)]
 #![feature(let_chains)]
-#![feature(linkage)]
 #![feature(linked_list_remove)]
 #![feature(negative_impls)]
+#![feature(panic_info_message)]
 #![feature(register_tool)]
 // FIXME: This feature is used to support vm capbility now as a work around.
 // Since this is an incomplete feature, use this feature is unsafe.
@@ -68,6 +68,7 @@ pub mod events;
 pub mod fs;
 pub mod ipc;
 pub mod net;
+pub mod oops;
 pub mod prelude;
 mod process;
 mod sched;

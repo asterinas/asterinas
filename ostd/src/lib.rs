@@ -2,6 +2,7 @@
 
 //! The standard library for Asterinas and other Rust OSes.
 #![feature(alloc_error_handler)]
+#![feature(allocator_api)]
 #![feature(const_mut_refs)]
 #![feature(const_ptr_sub_ptr)]
 #![feature(const_trait_impl)]
@@ -12,6 +13,7 @@
 #![feature(is_none_or)]
 #![feature(iter_from_coroutine)]
 #![feature(let_chains)]
+#![feature(linkage)]
 #![feature(min_specialization)]
 #![feature(negative_impls)]
 #![feature(new_uninit)]
@@ -19,7 +21,6 @@
 #![feature(ptr_sub_ptr)]
 #![feature(strict_provenance)]
 #![feature(sync_unsafe_cell)]
-#![feature(allocator_api)]
 // The `generic_const_exprs` feature is incomplete however required for the page table
 // const generic implementation. We are using this feature in a conservative manner.
 #![allow(incomplete_features)]
@@ -40,7 +41,7 @@ mod error;
 pub mod io_mem;
 pub mod logger;
 pub mod mm;
-pub mod panicking;
+pub mod panic;
 pub mod prelude;
 pub mod smp;
 pub mod sync;
@@ -51,7 +52,7 @@ pub mod user;
 
 use core::sync::atomic::AtomicBool;
 
-pub use ostd_macros::main;
+pub use ostd_macros::{main, panic_handler};
 pub use ostd_pod::Pod;
 
 pub use self::{error::Error, prelude::Result};
@@ -71,7 +72,7 @@ pub(crate) use crate::cpu::local::cpu_local_cell;
 // make inter-initialization-dependencies more clear and reduce usages of
 // boot stage only global variables.
 #[doc(hidden)]
-pub unsafe fn init() {
+unsafe fn init() {
     arch::enable_cpu_features();
     arch::serial::init();
 
@@ -160,6 +161,6 @@ pub mod ktest {
     //! It is rather discouraged to use the definitions here directly. The
     //! `ktest` attribute is sufficient for all normal use cases.
 
-    pub use ostd_macros::test_main as main;
+    pub use ostd_macros::{test_main as main, test_panic_handler as panic_handler};
     pub use ostd_test::*;
 }
