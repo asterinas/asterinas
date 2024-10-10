@@ -69,7 +69,7 @@ impl MountNode {
     /// mountpoint. It is the fs's responsibility to ensure the data consistency.
     ///
     /// Return the mounted child mount.
-    pub fn mount(&self, fs: Arc<dyn FileSystem>, mountpoint: &Arc<Dentry>) -> Result<Arc<Self>> {
+    pub fn mount(&self, fs: Arc<dyn FileSystem>, mountpoint: &Dentry) -> Result<Arc<Self>> {
         if !Arc::ptr_eq(mountpoint.mount_node(), &self.this()) {
             return_errno_with_message!(Errno::EINVAL, "mountpoint not belongs to this");
         }
@@ -129,13 +129,13 @@ impl MountNode {
     ) -> Arc<Self> {
         let new_root_mount = self.clone_mount_node(root_dentry);
         if !recursive {
-            return new_root_mount.clone();
+            return new_root_mount;
         }
+
         let mut stack = vec![self.this()];
         let mut new_stack = vec![new_root_mount.clone()];
-
         while let Some(old_mount) = stack.pop() {
-            let new_parent_mount = new_stack.pop().unwrap().clone();
+            let new_parent_mount = new_stack.pop().unwrap();
             let old_children = old_mount.children.read();
             for old_child_mount in old_children.values() {
                 let mountpoint_dentry = old_child_mount.mountpoint_dentry().unwrap();
@@ -153,10 +153,11 @@ impl MountNode {
                 new_child_mount
                     .set_mountpoint_dentry(&old_child_mount.mountpoint_dentry().unwrap());
                 stack.push(old_child_mount.clone());
-                new_stack.push(new_child_mount.clone());
+                new_stack.push(new_child_mount);
             }
         }
-        new_root_mount.clone()
+
+        new_root_mount
     }
 
     /// Detaches the mount node from the parent mount node.
@@ -171,7 +172,7 @@ impl MountNode {
     }
 
     /// Attaches the mount node to the mountpoint.
-    fn attach_mount_node(&self, mountpoint: &Arc<Dentry>) {
+    fn attach_mount_node(&self, mountpoint: &Dentry) {
         let key = mountpoint.key();
         mountpoint
             .mount_node()
@@ -183,7 +184,7 @@ impl MountNode {
     }
 
     /// Grafts the mount node tree to the mountpoint.
-    pub fn graft_mount_node_tree(&self, mountpoint: &Arc<Dentry>) -> Result<()> {
+    pub fn graft_mount_node_tree(&self, mountpoint: &Dentry) -> Result<()> {
         if mountpoint.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }

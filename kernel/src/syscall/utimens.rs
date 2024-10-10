@@ -109,7 +109,7 @@ struct Utimbuf {
     modtime: i64,
 }
 
-fn vfs_utimes(dentry: &Arc<Dentry>, times: Option<TimeSpecPair>) -> Result<SyscallReturn> {
+fn vfs_utimes(dentry: &Dentry, times: Option<TimeSpecPair>) -> Result<SyscallReturn> {
     let (atime, mtime, ctime) = match times {
         Some(times) => {
             if !times.atime.is_valid() || !times.mtime.is_valid() {
