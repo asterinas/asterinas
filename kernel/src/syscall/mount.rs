@@ -83,7 +83,7 @@ fn do_remount() -> Result<()> {
 /// Such as use user command `mount --rbind src dst`.
 fn do_bind_mount(
     src_name: CString,
-    dst_dentry: Arc<Dentry>,
+    dst_dentry: Dentry,
     recursive: bool,
     ctx: &Context,
 ) -> Result<()> {
@@ -109,7 +109,7 @@ fn do_change_type() -> Result<()> {
 }
 
 /// Move a mount from src location to dst location.
-fn do_move_mount_old(src_name: CString, dst_dentry: Arc<Dentry>, ctx: &Context) -> Result<()> {
+fn do_move_mount_old(src_name: CString, dst_dentry: Dentry, ctx: &Context) -> Result<()> {
     let src_dentry = {
         let src_name = src_name.to_string_lossy();
         if src_name.is_empty() {
@@ -135,7 +135,7 @@ fn do_move_mount_old(src_name: CString, dst_dentry: Arc<Dentry>, ctx: &Context) 
 fn do_new_mount(
     devname: CString,
     fs_type: Vaddr,
-    target_dentry: Arc<Dentry>,
+    target_dentry: Dentry,
     ctx: &Context,
 ) -> Result<()> {
     if target_dentry.type_() != InodeType::Dir {

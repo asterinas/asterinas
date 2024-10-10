@@ -58,7 +58,7 @@ fn lookup_executable_file(
     filename: String,
     flags: OpenFlags,
     ctx: &Context,
-) -> Result<Arc<Dentry>> {
+) -> Result<Dentry> {
     let fs_resolver = ctx.process.fs().read();
     let dentry = if flags.contains(OpenFlags::AT_EMPTY_PATH) && filename.is_empty() {
         fs_resolver.lookup_from_fd(dfd)
@@ -79,7 +79,7 @@ fn lookup_executable_file(
 }
 
 fn do_execve(
-    elf_file: Arc<Dentry>,
+    elf_file: Dentry,
     argv_ptr_ptr: Vaddr,
     envp_ptr_ptr: Vaddr,
     ctx: &Context,
@@ -193,7 +193,7 @@ fn read_cstring_vec(
 fn set_uid_from_elf(
     current: &Process,
     credentials: &Credentials<WriteOp>,
-    elf_file: &Arc<Dentry>,
+    elf_file: &Dentry,
 ) -> Result<()> {
     if elf_file.mode()?.has_set_uid() {
         let uid = elf_file.owner()?;
@@ -211,7 +211,7 @@ fn set_uid_from_elf(
 fn set_gid_from_elf(
     current: &Process,
     credentials: &Credentials<WriteOp>,
-    elf_file: &Arc<Dentry>,
+    elf_file: &Dentry,
 ) -> Result<()> {
     if elf_file.mode()?.has_set_gid() {
         let gid = elf_file.group()?;

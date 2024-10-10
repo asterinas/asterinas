@@ -91,7 +91,7 @@ impl From<u64> for DeviceId {
 ///
 /// If the parent path is not existing, `mkdir -p` the parent path.
 /// This function is used in registering device.
-pub fn add_node(device: Arc<dyn Device>, path: &str) -> Result<Arc<Dentry>> {
+pub fn add_node(device: Arc<dyn Device>, path: &str) -> Result<Dentry> {
     let mut dentry = {
         let fs_resolver = FsResolver::new();
         fs_resolver.lookup(&FsPath::try_from("/dev").unwrap())?

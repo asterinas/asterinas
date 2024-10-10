@@ -22,21 +22,20 @@ use crate::{
 };
 
 /// A `Dentry` is used to represent a location in the mount tree.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Dentry {
     mount_node: Arc<MountNode>,
     inner: Arc<Dentry_>,
-    this: Weak<Dentry>,
 }
 
 /// The inner structure of `Dentry` for caching helpful nodes
 /// to accelerate the path lookup.
 pub struct Dentry_ {
     inode: Arc<dyn Inode>,
-    name_and_parent: RwMutex<Option<(String, Arc<Dentry_>)>>,
-    this: Weak<Dentry_>,
+    name_and_parent: RwLock<Option<(String, Arc<Dentry_>)>>,
     children: RwMutex<Children>,
     flags: AtomicU32,
+    this: Weak<Dentry_>,
 }
 
 impl Dentry_ {
@@ -53,8 +52,8 @@ impl Dentry_ {
             inode,
             flags: AtomicU32::new(DentryFlags::empty().bits()),
             name_and_parent: match options {
-                DentryOptions::Leaf(name_and_parent) => RwMutex::new(Some(name_and_parent)),
-                _ => RwMutex::new(None),
+                DentryOptions::Leaf(name_and_parent) => RwLock::new(Some(name_and_parent)),
+                _ => RwLock::new(None),
             },
             this: weak_self.clone(),
             children: RwMutex::new(Children::new()),
@@ -139,129 +138,116 @@ impl Dentry_ {
 
     /// Creates a `Dentry_` by creating a new inode of the `type_` with the `mode`.
     pub fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<Self>> {
-        if self.inode.type_() != InodeType::Dir {
+        if self.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
 
         let children = self.children.upread();
-        if children.find_dentry(name).is_some() {
+        if children.contains(name) {
             return_errno!(Errno::EEXIST);
         }
 
-        let child = {
-            let inode = self.inode.create(name, type_, mode)?;
-            let dentry = Self::new(
-                inode,
-                DentryOptions::Leaf((String::from(name), self.this())),
-            );
+        let new_inode = self.inode.create(name, type_, mode)?;
+        let name = String::from(name);
+        let new_child = Dentry_::new(new_inode, DentryOptions::Leaf((name.clone(), self.this())));
 
-            let mut children = children.upgrade();
-            children.insert_dentry(&dentry);
-            dentry
-        };
-        Ok(child)
+        let mut children = children.upgrade();
+        children.insert(name, new_child.clone());
+        Ok(new_child)
     }
 
     /// Lookups a target `Dentry_` from the cache in children.
     pub fn lookup_via_cache(&self, name: &str) -> Option<Arc<Dentry_>> {
         let children = self.children.read();
-        children.find_dentry(name)
+        children.find(name)
     }
 
     /// Lookups a target `Dentry_` from the file system.
     pub fn lookup_via_fs(&self, name: &str) -> Result<Arc<Dentry_>> {
         let children = self.children.upread();
+
         let inode = self.inode.lookup(name)?;
-        let inner = Self::new(
-            inode,
-            DentryOptions::Leaf((String::from(name), self.this())),
-        );
+        let name = String::from(name);
+        let target = Self::new(inode, DentryOptions::Leaf((name.clone(), self.this())));
 
         let mut children = children.upgrade();
-        children.insert_dentry(&inner);
-        Ok(inner)
-    }
-
-    fn insert_dentry(&self, child_dentry: &Arc<Dentry_>) {
-        let mut children = self.children.write();
-        children.insert_dentry(child_dentry);
+        children.insert(name, target.clone());
+        Ok(target)
     }
 
     /// Creates a `Dentry_` by making an inode of the `type_` with the `mode`.
     pub fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<Self>> {
-        if self.inode.type_() != InodeType::Dir {
+        if self.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
 
         let children = self.children.upread();
-        if children.find_dentry(name).is_some() {
+        if children.contains(name) {
             return_errno!(Errno::EEXIST);
         }
 
-        let child = {
-            let inode = self.inode.mknod(name, mode, type_)?;
-            let dentry = Self::new(
-                inode,
-                DentryOptions::Leaf((String::from(name), self.this())),
-            );
+        let inode = self.inode.mknod(name, mode, type_)?;
+        let name = String::from(name);
+        let new_child = Dentry_::new(inode, DentryOptions::Leaf((name.clone(), self.this())));
 
-            let mut children = children.upgrade();
-            children.insert_dentry(&dentry);
-            dentry
-        };
-        Ok(child)
+        let mut children = children.upgrade();
+        children.insert(name, new_child.clone());
+        Ok(new_child)
     }
 
     /// Links a new name for the `Dentry_` by `link()` the inner inode.
     pub fn link(&self, old: &Arc<Self>, name: &str) -> Result<()> {
-        if self.inode.type_() != InodeType::Dir {
+        if self.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
 
         let children = self.children.upread();
-        if children.find_dentry(name).is_some() {
+        if children.contains(name) {
             return_errno!(Errno::EEXIST);
         }
 
         let old_inode = old.inode();
         self.inode.link(old_inode, name)?;
-        let dentry = Self::new(
+        let name = String::from(name);
+        let dentry = Dentry_::new(
             old_inode.clone(),
-            DentryOptions::Leaf((String::from(name), self.this())),
+            DentryOptions::Leaf((name.clone(), self.this())),
         );
 
         let mut children = children.upgrade();
-        children.insert_dentry(&dentry);
+        children.insert(name, dentry);
         Ok(())
     }
 
     /// Deletes a `Dentry_` by `unlink()` the inner inode.
     pub fn unlink(&self, name: &str) -> Result<()> {
-        if self.inode.type_() != InodeType::Dir {
+        if self.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
 
         let children = self.children.upread();
-        let _ = children.find_dentry_with_checking_mountpoint(name)?;
+        children.check_mountpoint(name)?;
+
         self.inode.unlink(name)?;
 
         let mut children = children.upgrade();
-        children.delete_dentry(name);
+        children.delete(name);
         Ok(())
     }
 
     /// Deletes a directory `Dentry_` by `rmdir()` the inner inode.
     pub fn rmdir(&self, name: &str) -> Result<()> {
-        if self.inode.type_() != InodeType::Dir {
+        if self.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
 
         let children = self.children.upread();
-        let _ = children.find_dentry_with_checking_mountpoint(name)?;
+        children.check_mountpoint(name)?;
+
         self.inode.rmdir(name)?;
 
         let mut children = children.upgrade();
-        children.delete_dentry(name);
+        children.delete(name);
         Ok(())
     }
 
@@ -270,7 +256,7 @@ impl Dentry_ {
         if old_name == "." || old_name == ".." || new_name == "." || new_name == ".." {
             return_errno_with_message!(Errno::EISDIR, "old_name or new_name is a directory");
         }
-        if self.inode.type_() != InodeType::Dir || new_dir.inode.type_() != InodeType::Dir {
+        if self.type_() != InodeType::Dir || new_dir.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
 
@@ -281,37 +267,38 @@ impl Dentry_ {
             }
 
             let children = self.children.upread();
-            let old_dentry = children.find_dentry_with_checking_mountpoint(old_name)?;
-            let _ = children.find_dentry_with_checking_mountpoint(new_name)?;
+            let old_dentry = children.check_mountpoint_then_find(old_name)?;
+            children.check_mountpoint(new_name)?;
+
             self.inode.rename(old_name, &self.inode, new_name)?;
 
             let mut children = children.upgrade();
             match old_dentry.as_ref() {
                 Some(dentry) => {
-                    children.delete_dentry(old_name);
+                    children.delete(old_name);
                     dentry.set_name_and_parent(new_name, self.this());
-                    children.insert_dentry(dentry);
+                    children.insert(new_name.to_string(), dentry.clone());
                 }
                 None => {
-                    children.delete_dentry(new_name);
+                    children.delete(new_name);
                 }
             }
         } else {
             // The two are different dentries
             let (mut self_children, mut new_dir_children) =
                 write_lock_children_on_two_dentries(self, new_dir);
-            let old_dentry = self_children.find_dentry_with_checking_mountpoint(old_name)?;
-            let _ = new_dir_children.find_dentry_with_checking_mountpoint(new_name)?;
+            let old_dentry = self_children.check_mountpoint_then_find(old_name)?;
+            new_dir_children.check_mountpoint(new_name)?;
 
             self.inode.rename(old_name, &new_dir.inode, new_name)?;
             match old_dentry.as_ref() {
                 Some(dentry) => {
-                    self_children.delete_dentry(old_name);
+                    self_children.delete(old_name);
                     dentry.set_name_and_parent(new_name, new_dir.this());
-                    new_dir_children.insert_dentry(dentry);
+                    new_dir_children.insert(new_name.to_string(), dentry.clone());
                 }
                 None => {
-                    new_dir_children.delete_dentry(new_name);
+                    new_dir_children.delete(new_name);
                 }
             }
         }
@@ -387,41 +374,60 @@ enum DentryOptions {
 }
 
 struct Children {
-    inner: HashMap<String, Arc<Dentry_>>,
+    dentries: HashMap<String, Arc<Dentry_>>,
 }
 
 impl Children {
     pub fn new() -> Self {
         Self {
-            inner: HashMap::new(),
+            dentries: HashMap::new(),
         }
     }
 
-    pub fn insert_dentry(&mut self, dentry: &Arc<Dentry_>) {
+    pub fn len(&self) -> usize {
+        self.dentries.len()
+    }
+
+    pub fn contains(&self, name: &str) -> bool {
+        self.dentries.contains_key(name)
+    }
+
+    pub fn find(&self, name: &str) -> Option<Arc<Dentry_>> {
+        self.dentries.get(name).cloned()
+    }
+
+    pub fn insert(&mut self, name: String, dentry: Arc<Dentry_>) {
         // Do not cache it in the children if is not cacheable.
         // When we lookup it from the parent, it will always be newly created.
-        if !dentry.inode().is_dentry_cacheable() {
+        if !dentry.inode.is_dentry_cacheable() {
             return;
         }
 
-        let _ = self.inner.insert(dentry.name(), dentry.clone());
+        let _ = self.dentries.insert(name, dentry);
     }
 
-    pub fn delete_dentry(&mut self, name: &str) -> Option<Arc<Dentry_>> {
-        self.inner.remove(name)
+    pub fn delete(&mut self, name: &str) -> Option<Arc<Dentry_>> {
+        self.dentries.remove(name)
     }
 
-    pub fn find_dentry(&self, name: &str) -> Option<Arc<Dentry_>> {
-        self.inner.get(name).cloned()
-    }
-
-    pub fn find_dentry_with_checking_mountpoint(&self, name: &str) -> Result<Option<Arc<Dentry_>>> {
-        let dentry = self.find_dentry(name);
-        if let Some(dentry) = dentry.as_ref() {
+    pub fn check_mountpoint(&self, name: &str) -> Result<()> {
+        if let Some(dentry) = self.dentries.get(name) {
             if dentry.is_mountpoint() {
                 return_errno_with_message!(Errno::EBUSY, "dentry is mountpint");
             }
         }
+        Ok(())
+    }
+
+    pub fn check_mountpoint_then_find(&self, name: &str) -> Result<Option<Arc<Dentry_>>> {
+        let dentry = if let Some(dentry) = self.dentries.get(name) {
+            if dentry.is_mountpoint() {
+                return_errno_with_message!(Errno::EBUSY, "dentry is mountpint");
+            }
+            Some(dentry.clone())
+        } else {
+            None
+        };
         Ok(dentry)
     }
 }
@@ -448,52 +454,50 @@ fn write_lock_children_on_two_dentries<'a>(
 
 impl Dentry {
     /// Creates a new `Dentry` to represent the root directory of a file system.
-    pub fn new_fs_root(mount_node: Arc<MountNode>) -> Arc<Self> {
-        Self::new(mount_node.clone(), mount_node.root_dentry().clone())
+    pub fn new_fs_root(mount_node: Arc<MountNode>) -> Self {
+        let inner = mount_node.root_dentry().clone();
+        Self::new(mount_node, inner)
     }
 
     /// Creates a new `Dentry` to represent the child directory of a file system.
-    pub fn new_fs_child(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<Self>> {
+    pub fn new_fs_child(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Self> {
         let new_child_dentry = self.inner.create(name, type_, mode)?;
-        Ok(Self::new(self.mount_node.clone(), new_child_dentry.clone()))
+        Ok(Self::new(self.mount_node.clone(), new_child_dentry))
     }
 
-    fn new(mount_node: Arc<MountNode>, inner: Arc<Dentry_>) -> Arc<Self> {
-        Arc::new_cyclic(|weak_self| Self {
-            mount_node,
-            inner,
-            this: weak_self.clone(),
-        })
+    fn new(mount_node: Arc<MountNode>, inner: Arc<Dentry_>) -> Self {
+        Self { mount_node, inner }
     }
 
     /// Lookups the target `Dentry` given the `name`.
-    pub fn lookup(&self, name: &str) -> Result<Arc<Self>> {
-        if self.inner.inode().type_() != InodeType::Dir {
+    pub fn lookup(&self, name: &str) -> Result<Self> {
+        if self.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
-        if !self.inner.inode().mode()?.is_executable() {
+        if !self.mode()?.is_executable() {
             return_errno!(Errno::EACCES);
         }
         if name.len() > NAME_MAX {
             return_errno!(Errno::ENAMETOOLONG);
         }
 
-        let dentry = match name {
+        let target_dentry = match name {
             "." => self.this(),
             ".." => self.effective_parent().unwrap_or_else(|| self.this()),
             name => {
-                let children_inner = self.inner.lookup_via_cache(name);
-                match children_inner {
-                    Some(inner) => Self::new(self.mount_node().clone(), inner.clone()),
+                let target_inner_opt = self.inner.lookup_via_cache(name);
+                match target_inner_opt {
+                    Some(target_inner) => Self::new(self.mount_node.clone(), target_inner),
                     None => {
-                        let fs_inner = self.inner.lookup_via_fs(name)?;
-                        Self::new(self.mount_node().clone(), fs_inner.clone())
+                        let target_inner = self.inner.lookup_via_fs(name)?;
+                        Self::new(self.mount_node.clone(), target_inner)
                     }
                 }
             }
         };
-        let dentry = dentry.get_top_dentry();
-        Ok(dentry)
+
+        let target_dentry = target_dentry.get_top_dentry();
+        Ok(target_dentry)
     }
 
     /// Gets the absolute path.
@@ -535,8 +539,8 @@ impl Dentry {
         };
 
         let parent_inner = Self::new(
-            self.mount_node.parent().unwrap().upgrade().unwrap().clone(),
-            self.mount_node.mountpoint_dentry().unwrap().clone(),
+            self.mount_node.parent().unwrap().upgrade().unwrap(),
+            self.mount_node.mountpoint_dentry().unwrap(),
         );
         parent_inner.effective_name()
     }
@@ -545,18 +549,18 @@ impl Dentry {
     ///
     /// If it is the root of a mount, it will go up to the mountpoint
     /// to get the parent of the mountpoint recursively.
-    fn effective_parent(&self) -> Option<Arc<Self>> {
+    fn effective_parent(&self) -> Option<Self> {
         if !self.inner.is_root_of_mount() {
             return Some(Self::new(
                 self.mount_node.clone(),
-                self.inner.parent().unwrap().clone(),
+                self.inner.parent().unwrap(),
             ));
         }
 
         let parent = self.mount_node.parent()?;
         let mountpoint = self.mount_node.mountpoint_dentry()?;
 
-        let parent_dentry = Self::new(parent.upgrade().unwrap(), mountpoint.clone());
+        let parent_dentry = Self::new(parent.upgrade().unwrap(), mountpoint);
         parent_dentry.effective_parent()
     }
 
@@ -567,15 +571,17 @@ impl Dentry {
     /// For example, first `mount /dev/sda1 /mnt` and then `mount /dev/sda2 /mnt`.
     /// After the second mount is completed, the content of the first mount will be overridden.
     /// We need to recursively obtain the top `Dentry`.
-    fn get_top_dentry(&self) -> Arc<Self> {
+    fn get_top_dentry(self) -> Self {
         if !self.inner.is_mountpoint() {
-            return self.this();
+            return self;
         }
-        match self.mount_node.get(self) {
+
+        match self.mount_node.get(&self) {
             Some(child_mount) => {
-                Self::new(child_mount.clone(), child_mount.root_dentry().clone()).get_top_dentry()
+                let inner = child_mount.root_dentry().clone();
+                Self::new(child_mount, inner).get_top_dentry()
             }
-            None => self.this(),
+            None => self,
         }
     }
 
@@ -594,14 +600,14 @@ impl Dentry {
     ///
     /// Returns the mounted child mount.
     pub fn mount(&self, fs: Arc<dyn FileSystem>) -> Result<Arc<MountNode>> {
-        if self.inner.inode().type_() != InodeType::Dir {
+        if self.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
         if self.effective_parent().is_none() {
             return_errno_with_message!(Errno::EINVAL, "can not mount on root");
         }
 
-        let child_mount = self.mount_node().mount(fs, &self.this())?;
+        let child_mount = self.mount_node.mount(fs, &self.this())?;
         self.set_mountpoint(child_mount.clone());
         Ok(child_mount)
     }
@@ -614,12 +620,11 @@ impl Dentry {
             return_errno_with_message!(Errno::EINVAL, "not mounted");
         }
 
-        let mount_node = self.mount_node.clone();
-        let Some(mountpoint_dentry) = mount_node.mountpoint_dentry() else {
+        let Some(mountpoint_dentry) = self.mount_node.mountpoint_dentry() else {
             return_errno_with_message!(Errno::EINVAL, "cannot umount root mount");
         };
 
-        let mountpoint_mount_node = mount_node.parent().unwrap().upgrade().unwrap();
+        let mountpoint_mount_node = self.mount_node.parent().unwrap().upgrade().unwrap();
         let mountpoint = Self::new(mountpoint_mount_node.clone(), mountpoint_dentry.clone());
 
         let child_mount = mountpoint_mount_node.unmount(&mountpoint)?;
@@ -628,13 +633,13 @@ impl Dentry {
     }
 
     /// Creates a `Dentry` by making an inode of the `type_` with the `mode`.
-    pub fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<Self>> {
+    pub fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Self> {
         let inner = self.inner.mknod(name, mode, type_)?;
-        Ok(Self::new(self.mount_node.clone(), inner.clone()))
+        Ok(Self::new(self.mount_node.clone(), inner))
     }
 
     /// Links a new name for the `Dentry`.
-    pub fn link(&self, old: &Arc<Self>, name: &str) -> Result<()> {
+    pub fn link(&self, old: &Self, name: &str) -> Result<()> {
         if !Arc::ptr_eq(&old.mount_node, &self.mount_node) {
             return_errno_with_message!(Errno::EXDEV, "cannot cross mount");
         }
@@ -652,7 +657,7 @@ impl Dentry {
     }
 
     /// Renames a `Dentry` to the new `Dentry` by `rename()` the inner inode.
-    pub fn rename(&self, old_name: &str, new_dir: &Arc<Self>, new_name: &str) -> Result<()> {
+    pub fn rename(&self, old_name: &str, new_dir: &Self, new_name: &str) -> Result<()> {
         if !Arc::ptr_eq(&self.mount_node, &new_dir.mount_node) {
             return_errno_with_message!(Errno::EXDEV, "cannot cross mount");
         }
@@ -664,7 +669,7 @@ impl Dentry {
     /// If `recursive` is true, it will bind mount the whole mount tree
     /// to the destination `Dentry`. Otherwise, it will only bind mount
     /// the root mount node.
-    pub fn bind_mount_to(&self, dst_dentry: &Arc<Self>, recursive: bool) -> Result<()> {
+    pub fn bind_mount_to(&self, dst_dentry: &Self, recursive: bool) -> Result<()> {
         let src_mount = self
             .mount_node
             .clone_mount_node_tree(&self.inner, recursive);
@@ -672,8 +677,8 @@ impl Dentry {
         Ok(())
     }
 
-    fn this(&self) -> Arc<Self> {
-        self.this.upgrade().unwrap()
+    fn this(&self) -> Self {
+        self.clone()
     }
 
     /// Gets the mount node of current `Dentry`.

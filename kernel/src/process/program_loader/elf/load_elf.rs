@@ -34,7 +34,7 @@ use crate::{
 pub fn load_elf_to_vm(
     process_vm: &ProcessVm,
     file_header: &[u8],
-    elf_file: Arc<Dentry>,
+    elf_file: Dentry,
     fs_resolver: &FsResolver,
     argv: Vec<CString>,
     envp: Vec<CString>,
@@ -85,7 +85,7 @@ fn lookup_and_parse_ldso(
     elf: &Elf,
     file_header: &[u8],
     fs_resolver: &FsResolver,
-) -> Result<Option<(Arc<Dentry>, Elf)>> {
+) -> Result<Option<(Dentry, Elf)>> {
     let ldso_file = {
         let Some(ldso_path) = elf.ldso_path(file_header)? else {
             return Ok(None);
@@ -112,7 +112,7 @@ fn load_ldso(root_vmar: &Vmar<Full>, ldso_file: &Dentry, ldso_elf: &Elf) -> Resu
 
 fn init_and_map_vmos(
     process_vm: &ProcessVm,
-    ldso: Option<(Arc<Dentry>, Elf)>,
+    ldso: Option<(Dentry, Elf)>,
     parsed_elf: &Elf,
     elf_file: &Dentry,
 ) -> Result<(Vaddr, AuxVec)> {

@@ -72,7 +72,7 @@ impl TryFrom<SocketAddr> for UnixSocketAddr {
 
 #[derive(Clone, Debug)]
 pub(super) enum UnixSocketAddrBound {
-    Path(Arc<str>, Arc<Dentry>),
+    Path(Arc<str>, Dentry),
     Abstract(Arc<AbstractHandle>),
 }
 

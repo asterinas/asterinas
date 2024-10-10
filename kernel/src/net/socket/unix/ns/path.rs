@@ -9,7 +9,7 @@ use crate::{
     prelude::*,
 };
 
-pub fn lookup_socket_file(path: &str) -> Result<Arc<Dentry>> {
+pub fn lookup_socket_file(path: &str) -> Result<Dentry> {
     let dentry = {
         let current = current!();
         let fs = current.fs().read();
@@ -31,7 +31,7 @@ pub fn lookup_socket_file(path: &str) -> Result<Arc<Dentry>> {
     Ok(dentry)
 }
 
-pub fn create_socket_file(path: &str) -> Result<Arc<Dentry>> {
+pub fn create_socket_file(path: &str) -> Result<Dentry> {
     let (parent_pathname, file_name) = split_path(path);
 
     let parent = {

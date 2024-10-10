@@ -17,8 +17,8 @@ pub const AT_FDCWD: FileDesc = -100;
 /// File system resolver.
 #[derive(Debug, Clone)]
 pub struct FsResolver {
-    root: Arc<Dentry>,
-    cwd: Arc<Dentry>,
+    root: Dentry,
+    cwd: Dentry,
 }
 
 impl FsResolver {
@@ -31,22 +31,22 @@ impl FsResolver {
     }
 
     /// Gets the root directory.
-    pub fn root(&self) -> &Arc<Dentry> {
+    pub fn root(&self) -> &Dentry {
         &self.root
     }
 
     /// Gets the current working directory.
-    pub fn cwd(&self) -> &Arc<Dentry> {
+    pub fn cwd(&self) -> &Dentry {
         &self.cwd
     }
 
     /// Sets the current working directory to the given `dentry`.
-    pub fn set_cwd(&mut self, dentry: Arc<Dentry>) {
+    pub fn set_cwd(&mut self, dentry: Dentry) {
         self.cwd = dentry;
     }
 
     /// Sets the root directory to the given `dentry`.
-    pub fn set_root(&mut self, dentry: Arc<Dentry>) {
+    pub fn set_root(&mut self, dentry: Dentry) {
         self.root = dentry;
     }
 
@@ -76,7 +76,7 @@ impl FsResolver {
 
     fn open_existing_file(
         &self,
-        target_dentry: Arc<Dentry>,
+        target_dentry: Dentry,
         open_args: &OpenArgs,
     ) -> Result<InodeHandle> {
         let inode = target_dentry.inode();
@@ -147,19 +147,19 @@ impl FsResolver {
 
     /// Lookups the target dentry according to the `path`.
     /// Symlinks are always followed.
-    pub fn lookup(&self, path: &FsPath) -> Result<Arc<Dentry>> {
+    pub fn lookup(&self, path: &FsPath) -> Result<Dentry> {
         let (follow_tail_link, stop_on_parent) = (true, false);
         self.lookup_inner(path, &mut LookupCtx::new(follow_tail_link, stop_on_parent))
     }
 
     /// Lookups the target dentry according to the `path`.
     /// If the last component is a symlink, it will not be followed.
-    pub fn lookup_no_follow(&self, path: &FsPath) -> Result<Arc<Dentry>> {
+    pub fn lookup_no_follow(&self, path: &FsPath) -> Result<Dentry> {
         let (follow_tail_link, stop_on_parent) = (false, false);
         self.lookup_inner(path, &mut LookupCtx::new(follow_tail_link, stop_on_parent))
     }
 
-    fn lookup_inner(&self, path: &FsPath, lookup_ctx: &mut LookupCtx) -> Result<Arc<Dentry>> {
+    fn lookup_inner(&self, path: &FsPath, lookup_ctx: &mut LookupCtx) -> Result<Dentry> {
         let dentry = match path.inner {
             FsPathInner::Absolute(path) => {
                 self.lookup_from_parent(&self.root, path.trim_start_matches('/'), lookup_ctx)?
@@ -192,10 +192,10 @@ impl FsResolver {
     #[allow(clippy::redundant_closure)]
     fn lookup_from_parent(
         &self,
-        parent: &Arc<Dentry>,
+        parent: &Dentry,
         relative_path: &str,
         lookup_ctx: &mut LookupCtx,
-    ) -> Result<Arc<Dentry>> {
+    ) -> Result<Dentry> {
         debug_assert!(!relative_path.starts_with('/'));
 
         if relative_path.len() > PATH_MAX {
@@ -285,7 +285,7 @@ impl FsResolver {
     }
 
     /// Lookups the target dentry according to the given `fd`.
-    pub fn lookup_from_fd(&self, fd: FileDesc) -> Result<Arc<Dentry>> {
+    pub fn lookup_from_fd(&self, fd: FileDesc) -> Result<Dentry> {
         let current = current!();
         let file_table = current.file_table().lock();
         let inode_handle = file_table
@@ -299,7 +299,7 @@ impl FsResolver {
     /// the base file name according to the given `path`.
     ///
     /// If the last component is a symlink, do not deference it.
-    pub fn lookup_dir_and_base_name(&self, path: &FsPath) -> Result<(Arc<Dentry>, String)> {
+    pub fn lookup_dir_and_base_name(&self, path: &FsPath) -> Result<(Dentry, String)> {
         if matches!(path.inner, FsPathInner::Fd(_)) {
             return_errno!(Errno::ENOENT);
         }
@@ -327,7 +327,7 @@ impl FsResolver {
         &self,
         path: &FsPath,
         is_dir: bool,
-    ) -> Result<(Arc<Dentry>, String)> {
+    ) -> Result<(Dentry, String)> {
         if matches!(path.inner, FsPathInner::Fd(_)) {
             return_errno!(Errno::ENOENT);
         }
@@ -364,7 +364,7 @@ struct LookupCtx {
     stop_on_parent: bool,
     // (file_name, file_is_dir)
     tail_file: Option<(String, bool)>,
-    parent: Option<Arc<Dentry>>,
+    parent: Option<Dentry>,
 }
 
 impl LookupCtx {
@@ -394,7 +394,7 @@ impl LookupCtx {
             .unwrap_or(false)
     }
 
-    pub fn parent(&self) -> Option<&Arc<Dentry>> {
+    pub fn parent(&self) -> Option<&Dentry> {
         self.parent.as_ref()
     }
 
@@ -402,7 +402,7 @@ impl LookupCtx {
         let _ = self.tail_file.insert((file_name.to_string(), file_is_dir));
     }
 
-    pub fn set_parent(&mut self, parent: &Arc<Dentry>) {
+    pub fn set_parent(&mut self, parent: &Dentry) {
         let _ = self.parent.insert(parent.clone());
     }
 }

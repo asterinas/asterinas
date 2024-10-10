@@ -7,11 +7,7 @@ use super::*;
 use crate::{prelude::*, process::signal::Pollable};
 
 impl InodeHandle<Rights> {
-    pub fn new(
-        dentry: Arc<Dentry>,
-        access_mode: AccessMode,
-        status_flags: StatusFlags,
-    ) -> Result<Self> {
+    pub fn new(dentry: Dentry, access_mode: AccessMode, status_flags: StatusFlags) -> Result<Self> {
         let inode_mode = dentry.inode().mode()?;
         if access_mode.is_readable() && !inode_mode.is_readable() {
             return_errno_with_message!(Errno::EACCES, "file is not readable");
@@ -24,7 +20,7 @@ impl InodeHandle<Rights> {
     }
 
     pub fn new_unchecked_access(
-        dentry: Arc<Dentry>,
+        dentry: Dentry,
         access_mode: AccessMode,
         status_flags: StatusFlags,
     ) -> Result<Self> {
