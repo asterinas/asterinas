@@ -12,6 +12,7 @@ use crate::{
     Pod,
 };
 
+#[allow(dead_code)]
 pub(crate) const NR_ENTRIES_PER_PAGE: usize = 512;
 
 #[derive(Clone, Debug, Default)]
