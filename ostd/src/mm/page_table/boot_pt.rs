@@ -14,6 +14,7 @@ use super::{pte_index, PageTableEntryTrait};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     cpu::num_cpus,
+    cpu_local_cell,
     mm::{
         nr_subpage_per_huge, paddr_to_vaddr, page::allocator::PAGE_ALLOCATOR, PageProperty,
         PagingConstsTrait, Vaddr, PAGE_SIZE,
@@ -37,10 +38,7 @@ where
 {
     let mut boot_pt = BOOT_PAGE_TABLE.lock();
 
-    let dismiss_count = DISMISS_COUNT.load(Ordering::SeqCst);
-    // This function may be called on the BSP before we can get the number of
-    // CPUs. So we short-circuit the check if the number of CPUs is zero.
-    if dismiss_count != 0 && dismiss_count < num_cpus() {
+    if IS_DISMISSED.load() {
         return Err(());
     }
 
@@ -65,8 +63,11 @@ where
 /// The caller should ensure that:
 ///  - another legitimate page table is activated on this CPU;
 ///  - this function should be called only once per CPU;
-///  - no [`with`] calls are performed on this CPU after this dismissal.
+///  - no [`with`] calls are performed on this CPU after this dismissal;
+///  - no [`with`] calls are performed on this CPU after the activation of
+///    another page table and before this dismissal.
 pub(crate) unsafe fn dismiss() {
+    IS_DISMISSED.store(true);
     if DISMISS_COUNT.fetch_add(1, Ordering::SeqCst) == num_cpus() - 1 {
         BOOT_PAGE_TABLE.lock().take();
     }
@@ -76,6 +77,10 @@ pub(crate) unsafe fn dismiss() {
 static BOOT_PAGE_TABLE: SpinLock<Option<BootPageTable>> = SpinLock::new(None);
 /// If it reaches the number of CPUs, the boot page table will be dropped.
 static DISMISS_COUNT: AtomicU32 = AtomicU32::new(0);
+cpu_local_cell! {
+    /// If the boot page table is dismissed on this CPU.
+    static IS_DISMISSED: bool = false;
+}
 
 /// A simple boot page table singleton for boot stage mapping management.
 /// If applicable, the boot page table could track the lifetime of page table
