@@ -236,7 +236,7 @@ pub unsafe fn activate_kernel_page_table() {
     }
 
     // SAFETY: the boot page table is OK to be dismissed now since
-    // the kernel page table is activated.
+    // the kernel page table is activated just now.
     unsafe {
         crate::mm::page_table::boot_pt::dismiss();
     }
