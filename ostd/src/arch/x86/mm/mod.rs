@@ -53,7 +53,10 @@ bitflags::bitflags! {
         const ACCESSED =        1 << 5;
         /// Whether the memory area represented by this entry is modified.
         const DIRTY =           1 << 6;
-        /// Only in the non-starting and non-ending levels, indication of huge page.
+        /// In level 2 or 3 it indicates that it map to a huge page.
+        /// In level 1, it is the PAT (page attribute table) bit.
+        /// We use this bit in level 1, 2 and 3 to indicate that this entry is
+        /// "valid". For levels above 3, `PRESENT` is used for "valid".
         const HUGE =            1 << 7;
         /// Indicates that the mapping is present in all address spaces, so it isn't flushed from
         /// the TLB on an address space switch.
@@ -156,14 +159,15 @@ macro_rules! parse_flags {
 
 impl PageTableEntryTrait for PageTableEntry {
     fn is_present(&self) -> bool {
-        self.0 & PageTableFlags::PRESENT.bits() != 0
+        // For PT child, `PRESENT` should be set; for huge page, `HUGE` should
+        // be set; for the leaf child page, `PAT`, which is the same bit as
+        // the `HUGE` bit in upper levels, should be set.
+        self.0 & PageTableFlags::PRESENT.bits() != 0 || self.0 & PageTableFlags::HUGE.bits() != 0
     }
 
-    fn new_page(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self {
-        let mut pte = Self(
-            paddr & Self::PHYS_ADDR_MASK
-                | ((level != 1) as usize) << PageTableFlags::HUGE.bits().ilog2(),
-        );
+    fn new_page(paddr: Paddr, _level: PagingLevel, prop: PageProperty) -> Self {
+        let flags = PageTableFlags::HUGE.bits();
+        let mut pte = Self(paddr & Self::PHYS_ADDR_MASK | flags);
         pte.set_prop(prop);
         pte
     }
@@ -209,8 +213,12 @@ impl PageTableEntryTrait for PageTableEntry {
     }
 
     fn set_prop(&mut self, prop: PageProperty) {
-        let mut flags = PageTableFlags::PRESENT.bits();
-        flags |= parse_flags!(prop.flags.bits(), PageFlags::W, PageTableFlags::WRITABLE)
+        if !self.is_present() {
+            return;
+        }
+        let mut flags = PageTableFlags::empty().bits();
+        flags |= parse_flags!(prop.flags.bits(), PageFlags::R, PageTableFlags::PRESENT)
+            | parse_flags!(prop.flags.bits(), PageFlags::W, PageTableFlags::WRITABLE)
             | parse_flags!(!prop.flags.bits(), PageFlags::X, PageTableFlags::NO_EXECUTE)
             | parse_flags!(
                 prop.flags.bits(),
@@ -249,8 +257,8 @@ impl PageTableEntryTrait for PageTableEntry {
         self.0 = self.0 & !Self::PROP_MASK | flags;
     }
 
-    fn is_last(&self, level: PagingLevel) -> bool {
-        level == 1 || (self.0 & PageTableFlags::HUGE.bits() != 0)
+    fn is_last(&self, _level: PagingLevel) -> bool {
+        self.0 & PageTableFlags::HUGE.bits() != 0
     }
 }
 

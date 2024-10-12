@@ -327,6 +327,10 @@ pub trait PageTableEntryTrait: Clone + Copy + Debug + Default + Pod + Sized + Sy
     }
 
     /// If the flags are present with valid mappings.
+    ///
+    /// For PTEs created by [`Self::new_absent`], this method should return
+    /// false. And for PTEs created by [`Self::new_page`] or [`Self::new_pt`]
+    /// and modified with [`Self::set_prop`] this method should return true.
     fn is_present(&self) -> bool;
 
     /// Create a new PTE with the given physical address and flags that map to a page.
@@ -343,6 +347,10 @@ pub trait PageTableEntryTrait: Clone + Copy + Debug + Default + Pod + Sized + Sy
 
     fn prop(&self) -> PageProperty;
 
+    /// Set the page property of the PTE.
+    ///
+    /// This will be only done if the PTE is present. If not, this method will
+    /// do nothing.
     fn set_prop(&mut self, prop: PageProperty);
 
     /// If the PTE maps a page rather than a child page table.

@@ -161,7 +161,9 @@ impl PageTableCreator {
         }
         let pt = unsafe { &mut *(pde.paddr() as *mut Ia32eTable) };
         let pte = pt.index(1, from.addr());
-        pte.update(to.addr(), flags);
+        // In level-1 PTE, the HUGE bit is the PAT bit (page attribute table).
+        // We use it as the "valid" bit for the page table entry.
+        pte.update(to.addr(), flags | Ia32eFlags::HUGE);
     }
 
     pub fn nr_frames_used(&self) -> usize {
