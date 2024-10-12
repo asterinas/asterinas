@@ -126,9 +126,10 @@ impl VmIo for SegmentSlice {
 
 impl From<Segment> for SegmentSlice {
     fn from(segment: Segment) -> Self {
+        let range = 0..segment.nbytes() / PAGE_SIZE;
         Self {
             inner: Arc::new(segment),
-            range: 0..1,
+            range,
         }
     }
 }
