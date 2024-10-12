@@ -154,7 +154,7 @@ impl NetworkDevice {
             .rx_buffers
             .remove(token as usize)
             .ok_or(VirtioNetError::WrongToken)?;
-        rx_buffer.set_packet_len(len as usize);
+        rx_buffer.set_packet_len(len as usize - size_of::<VirtioNetHdr>());
         // FIXME: Ideally, we can reuse the returned buffer without creating new buffer.
         // But this requires locking device to be compatible with smoltcp interface.
         let rx_pool = RX_BUFFER_POOL.get().unwrap();
@@ -179,6 +179,8 @@ impl NetworkDevice {
         if self.send_queue.should_notify() {
             self.send_queue.notify();
         }
+
+        debug!("send packet, token = {}, len = {}", token, packet.len());
 
         debug_assert!(self.tx_buffers[token as usize].is_none());
         self.tx_buffers[token as usize] = Some(tx_buffer);

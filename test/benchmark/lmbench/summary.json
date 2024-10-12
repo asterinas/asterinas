@@ -34,6 +34,7 @@
     "tcp_loopback_bw_4k",
     "tcp_loopback_bw_64k",
     "tcp_loopback_lat",
+    "tcp_virtio_lat",
     "tcp_loopback_connect_lat",
     "tcp_loopback_select_lat",
     "tcp_loopback_http_bw",
