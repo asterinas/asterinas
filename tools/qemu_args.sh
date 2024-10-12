@@ -33,7 +33,7 @@ COMMON_QEMU_ARGS="\
     -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
     -drive if=none,format=raw,id=x0,file=./test/build/ext2.img \
     -drive if=none,format=raw,id=x1,file=./test/build/exfat.img \
-    -drive if=none,format=raw,id=x2,file=./test/build/vda.img,cache=none \
+    -drive if=none,format=raw,id=x2,file=./test/build/vda.img \
 "
 
 if [ "$1" = "iommu" ]; then
