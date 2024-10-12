@@ -57,9 +57,6 @@ where
     /// Operates on the mapping properties of the entry.
     ///
     /// It only modifies the properties if the entry is present.
-    // FIXME: in x86_64, you can protect a page with neither of the RWX
-    // permissions. This would make the page not accessible and leaked. Such a
-    // behavior is memory-safe but wrong. In RISC-V there's no problem.
     pub(in crate::mm) fn protect(&mut self, op: &mut impl FnMut(&mut PageProperty)) {
         if !self.pte.is_present() {
             return;
