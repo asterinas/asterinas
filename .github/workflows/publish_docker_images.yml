@@ -33,7 +33,7 @@ jobs:
 
       - name: Generate Dockerfile
         run: |
-          pip install Jinja2
+          pip install Jinja2 --break-system-packages
           python3 ./tools/docker/gen_dockerfile.py
 
       - name: Build and push development image
@@ -49,7 +49,7 @@ jobs:
 
       - name: Generate Dockerfile for Intel TDX
         run: |
-          pip install Jinja2
+          pip install Jinja2 --break-system-packages
           python3 ./tools/docker/gen_dockerfile.py --intel-tdx
 
       - name: Build and push development image for Intel TDX
