@@ -67,7 +67,7 @@ jobs:
       fail-fast: false
     timeout-minutes: 60
     container: 
-      image: asterinas/asterinas:0.9.1
+      image: asterinas/asterinas:0.9.2
       options: --device=/dev/kvm
     env:
       # Need to set up proxy since the self-hosted CI server is located in China,
