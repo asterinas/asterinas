@@ -26,6 +26,9 @@ elif [[ "$BENCHMARK_PATH" =~ "nginx" ]]; then
 elif [[ "$BENCHMARK_PATH" =~ "redis" ]]; then
     # Persist Redis port
     export REDIS_PORT=6379
+elif [[ "$BENCHMARK_PATH" =~ "tcp_virtio_lat" ]]; then
+    # Persist lmbench/tcp_lat port
+    export LMBENCH_TCP_LAT_PORT=31234
 fi
 
 # Function to run the benchmark
@@ -57,7 +60,7 @@ run_benchmark() {
     sleep 1
 
     # Run the host command and save the output to the specified file.
-    bash "${BENCHMARK_PATH}/host.sh" | tee "${output_file}"  
+    bash "${BENCHMARK_PATH}/host.sh" 2>&1 | tee "${output_file}"  
 
     # Clean up the log file
     rm -f "${guest_log_file}"

@@ -265,13 +265,18 @@ impl StreamSocket {
             return_errno_with_message!(Errno::EINVAL, "the socket is not listening");
         };
 
-        listen_stream.try_accept().map(|connected_stream| {
+        let accepted = listen_stream.try_accept().map(|connected_stream| {
             listen_stream.update_io_events(&self.pollee);
 
             let remote_endpoint = connected_stream.remote_endpoint();
             let accepted_socket = Self::new_connected(connected_stream);
             (accepted_socket as _, remote_endpoint.into())
-        })
+        });
+
+        drop(state);
+        poll_ifaces();
+
+        accepted
     }
 
     fn try_recv(

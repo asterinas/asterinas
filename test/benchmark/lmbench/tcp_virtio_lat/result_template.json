@@ -1,0 +1,14 @@
+[
+    {
+        "name": "Average TCP latency over virtio-net on Linux",
+        "unit": "µs",
+        "value": 0,
+        "extra": "linux_result"
+    },
+    {
+        "name": "Average TCP latency over virtio-net on Asterinas",
+        "unit": "µs",
+        "value": 0,
+        "extra": "aster_result"
+    }
+]
