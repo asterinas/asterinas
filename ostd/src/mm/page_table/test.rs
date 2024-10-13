@@ -147,17 +147,6 @@ fn test_user_copy_on_write() {
     assert!(child_pt.query(from.start + 10).is_none());
 }
 
-#[derive(Clone, Debug, Default)]
-struct BasePagingConsts {}
-
-impl PagingConstsTrait for BasePagingConsts {
-    const NR_LEVELS: PagingLevel = 4;
-    const BASE_PAGE_SIZE: usize = PAGE_SIZE;
-    const ADDRESS_WIDTH: usize = 48;
-    const HIGHEST_TRANSLATION_LEVEL: PagingLevel = 1;
-    const PTE_SIZE: usize = core::mem::size_of::<PageTableEntry>();
-}
-
 impl<M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTable<M, E, C>
 where
     [(); C::NR_LEVELS as usize]:,

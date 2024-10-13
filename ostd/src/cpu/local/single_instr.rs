@@ -114,6 +114,7 @@ pub trait SingleInstructionBitXorAssign<Rhs = Self> {
     /// # Safety
     ///
     /// Please refer to the module-level documentation of [`self`].
+    #[allow(unused)]
     unsafe fn bitxor_assign(offset: *mut Self, rhs: Rhs);
 }
 

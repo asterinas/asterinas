@@ -698,7 +698,7 @@ mod test {
         }
 
         let steps = 7;
-        let write_len = (BUF_SIZE + steps - 1) / steps;
+        let write_len = BUF_SIZE.div_ceil(steps);
         for i in 0..steps {
             let start = i * write_len;
             let end = BUF_SIZE.min(start + write_len);

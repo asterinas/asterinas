@@ -28,6 +28,7 @@ pub struct KtestModule {
 }
 
 impl KtestModule {
+    #[allow(dead_code)]
     pub fn nr_this_tests(&self) -> usize {
         self.tests.len()
     }

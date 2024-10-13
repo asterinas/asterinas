@@ -74,9 +74,8 @@ impl BoundDatagram {
                 // But current smoltcp API seems not to support this behavior.
                 reader
                     .read(&mut VmWriter::from(socket_buffer))
-                    .map_err(|e| {
-                        warn!("unexpected UDP packet will be sent");
-                        e
+                    .inspect_err(|e| {
+                        warn!("unexpected UDP packet {e:#?} will be sent");
                     })
             });
 

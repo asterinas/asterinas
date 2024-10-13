@@ -22,6 +22,8 @@ cpu_local_cell! {
     static IN_PANIC: bool = false;
 }
 
+/// The asterinas panic handler.
+///
 /// The panic handler must be defined in the binary crate or in the crate that the binary
 /// crate explicitly declares by `extern crate`. We cannot let the base crate depend on OSTD
 /// due to prismatic dependencies. That's why we export this symbol and state the

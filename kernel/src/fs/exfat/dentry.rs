@@ -403,8 +403,8 @@ impl ExfatDentrySet {
         }
         Ok(name)
     }
-    /// Name dentries are not permitted to modify. We should create a new dentry set for renaming.
 
+    /// Name dentries are not permitted to modify. We should create a new dentry set for renaming.
     fn calculate_checksum(&self) -> u16 {
         const CHECKSUM_BYTES_RANGE: Range<usize> = 2..4;
         const EMPTY_RANGE: Range<usize> = 0..0;
@@ -502,7 +502,6 @@ impl Iterator for ExfatDentryIterator {
 }
 
 /// On-disk dentry formats
-
 #[repr(C, packed)]
 #[derive(Clone, Debug, Default, Copy, Pod)]
 // For files & directories

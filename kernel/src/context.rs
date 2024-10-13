@@ -159,15 +159,19 @@ impl<'a> CurrentUserSpace<'a> {
     }
 }
 
-/// A trait providing the ability to read a C string from the user space
-/// of the current process specifically for [`VmReader<'_, UserSpace>`], which
-/// should reading the bytes iteratively in the reader until encountering
-/// the end of the reader or reading a `\0` (is also included into the final C String).
+/// A trait providing the ability to read a C string from the user space.
+///
+/// The user space should be of the current process. The implemented method
+/// should read the bytes iteratively in the reader ([`VmReader`]) until
+/// encountering the end of the reader or reading a `\0` (which is also
+/// included in the final C String).
 pub trait ReadCString {
     fn read_cstring(&mut self) -> Result<CString>;
 }
 
-impl<'a> ReadCString for VmReader<'a, Fallible> {
+impl ReadCString for VmReader<'_, Fallible> {
+    /// Reads a C string from the user space.
+    ///
     /// This implementation is inspired by
     /// the `do_strncpy_from_user` function in Linux kernel.
     /// The original Linux implementation can be found at:

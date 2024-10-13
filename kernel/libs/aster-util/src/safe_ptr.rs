@@ -368,7 +368,7 @@ impl<T, R> SafePtr<T, DmaStream, R> {
 }
 
 #[inherit_methods(from = "(*self)")]
-impl<'a, T, R> SafePtr<T, &'a DmaStream, R> {
+impl<T, R> SafePtr<T, &DmaStream, R> {
     pub fn sync(&self) -> Result<()>;
 }
 

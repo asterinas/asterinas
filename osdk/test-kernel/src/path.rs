@@ -46,6 +46,7 @@ impl KtestPath {
         self.path.pop_back()
     }
 
+    #[allow(dead_code)]
     pub fn push_front(&mut self, s: &str) {
         self.path.push_front(PathElement::from(s))
     }
@@ -54,6 +55,7 @@ impl KtestPath {
         self.path.pop_front()
     }
 
+    #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.path.len()
     }

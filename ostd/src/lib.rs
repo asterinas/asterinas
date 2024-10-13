@@ -2,24 +2,20 @@
 
 //! The standard library for Asterinas and other Rust OSes.
 #![feature(alloc_error_handler)]
-#![feature(const_mut_refs)]
+#![feature(allocator_api)]
 #![feature(const_ptr_sub_ptr)]
 #![feature(const_trait_impl)]
 #![feature(core_intrinsics)]
 #![feature(coroutines)]
 #![feature(fn_traits)]
 #![feature(generic_const_exprs)]
-#![feature(is_none_or)]
 #![feature(iter_from_coroutine)]
 #![feature(let_chains)]
 #![feature(min_specialization)]
 #![feature(negative_impls)]
-#![feature(new_uninit)]
-#![feature(panic_info_message)]
 #![feature(ptr_sub_ptr)]
 #![feature(strict_provenance)]
 #![feature(sync_unsafe_cell)]
-#![feature(allocator_api)]
 // The `generic_const_exprs` feature is incomplete however required for the page table
 // const generic implementation. We are using this feature in a conservative manner.
 #![allow(incomplete_features)]
@@ -81,7 +77,8 @@ pub unsafe fn init() {
     // SAFETY: This function is called only once and only on the BSP.
     unsafe { cpu::local::early_init_bsp_local_base() };
 
-    mm::heap_allocator::init();
+    // SAFETY: This function is called only once and only on the BSP.
+    unsafe { mm::heap_allocator::init() };
 
     boot::init();
     logger::init();

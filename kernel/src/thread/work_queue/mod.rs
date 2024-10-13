@@ -2,6 +2,68 @@
 
 #![allow(dead_code)]
 
+//! Work queue mechanism.
+//!
+//! # Overview
+//!
+//! A `workqueue` is a kernel-level mechanism used to schedule and execute deferred work.
+//! Deferred work refers to tasks that need to be executed at some point in the future,
+//! but not necessarily immediately.
+//!
+//! The workqueue mechanism is implemented using a combination of kernel threads and data
+//! structures such as `WorkItem`, `WorkQueue`, `Worker` and `WorkerPool`. The `WorkItem`
+//! represents a task to be processed, while the `WorkQueue` maintains the queue of submitted
+//! `WorkItems`. The `Worker` is responsible for processing these submitted tasks,
+//! and the `WorkerPool` manages and schedules these workers.
+//!
+//! # Examples
+//!
+//! The system has a default work queue and worker pool,
+//! and it also provides high-level APIs for users to use.
+//! Here is a basic example to how to use those APIs.
+//!
+//! ```rust
+//! use crate::thread::work_queue::{submit_work_func, submit_work_item, WorkItem};
+//!
+//! // Submit to high priority queue.
+//! submit_work_func(||{ }, true);
+//!
+//! // Submit to low priority queue.
+//! submit_work_func(||{ }, false);
+//!
+//! fn deferred_task(){
+//!     // ...
+//! }
+//!
+//! // Create a work item.
+//! let work_item = Arc::new(WorkItem::new(Box::new(deferred_task)));
+//!
+//! // Submit to high priority queue.
+//! submit_work_item(work_item, true);
+//!
+//! // Submit to low priority queue.
+//! submit_work_item(work_item, false);
+//! ```
+//!
+//! Certainly, users can also create a dedicated WorkQueue and WorkerPool.
+//!
+//! ```rust
+//! use ostd::cpu::CpuSet;
+//! use crate::thread::work_queue::{WorkQueue, WorkerPool, WorkItem};
+//!
+//! fn deferred_task(){
+//!     // ...
+//! }
+//!
+//! let cpu_set = CpuSet::new_full();
+//! let high_pri_pool = WorkerPool::new(true, cpu_set);
+//! let my_queue = WorkQueue::new(Arc::downgrade(high_pri_pool.get().unwrap()));
+//!
+//! let work_item = Arc::new(WorkItem::new(Box::new(deferred_task)));
+//! my_queue.enqueue(work_item);
+//!
+//! ```
+
 use ostd::cpu::CpuSet;
 use spin::Once;
 use work_item::WorkItem;
@@ -18,68 +80,6 @@ static WORKERPOOL_NORMAL: Once<Arc<WorkerPool>> = Once::new();
 static WORKERPOOL_HIGH_PRI: Once<Arc<WorkerPool>> = Once::new();
 static WORKQUEUE_GLOBAL_NORMAL: Once<Arc<WorkQueue>> = Once::new();
 static WORKQUEUE_GLOBAL_HIGH_PRI: Once<Arc<WorkQueue>> = Once::new();
-
-/// Work queue mechanism.
-///
-/// # Overview
-///
-/// A `workqueue` is a kernel-level mechanism used to schedule and execute deferred work.
-/// Deferred work refers to tasks that need to be executed at some point in the future,
-/// but not necessarily immediately.
-///
-/// The workqueue mechanism is implemented using a combination of kernel threads and data
-/// structures such as `WorkItem`, `WorkQueue`, `Worker` and `WorkerPool`. The `WorkItem`
-/// represents a task to be processed, while the `WorkQueue` maintains the queue of submitted
-/// `WorkItems`. The `Worker` is responsible for processing these submitted tasks,
-/// and the `WorkerPool` manages and schedules these workers.
-///
-/// # Examples
-///
-/// The system has a default work queue and worker pool,
-/// and it also provides high-level APIs for users to use.
-/// Here is a basic example to how to use those APIs.
-///
-/// ```rust
-/// use crate::thread::work_queue::{submit_work_func, submit_work_item, WorkItem};
-///
-/// // Submit to high priority queue.
-/// submit_work_func(||{ }, true);
-///
-/// // Submit to low priority queue.
-/// submit_work_func(||{ }, false);
-///
-/// fn deferred_task(){
-///     // ...
-/// }
-///
-/// // Create a work item.
-/// let work_item = Arc::new(WorkItem::new(Box::new(deferred_task)));
-///
-/// // Submit to high priority queue.
-/// submit_work_item(work_item, true);
-///
-/// // Submit to low priority queue.
-/// submit_work_item(work_item, false);
-/// ```
-///
-/// Certainly, users can also create a dedicated WorkQueue and WorkerPool.
-///
-/// ```rust
-/// use ostd::cpu::CpuSet;
-/// use crate::thread::work_queue::{WorkQueue, WorkerPool, WorkItem};
-///
-/// fn deferred_task(){
-///     // ...
-/// }
-///
-/// let cpu_set = CpuSet::new_full();
-/// let high_pri_pool = WorkerPool::new(true, cpu_set);
-/// let my_queue = WorkQueue::new(Arc::downgrade(high_pri_pool.get().unwrap()));
-///
-/// let work_item = Arc::new(WorkItem::new(Box::new(deferred_task)));
-/// my_queue.enqueue(work_item);
-///
-/// ```
 
 /// Submit a function to a global work queue.
 pub fn submit_work_func<F>(work_func: F, work_priority: WorkPriority)

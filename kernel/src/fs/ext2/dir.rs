@@ -192,7 +192,7 @@ impl<'a> DirEntryReader<'a> {
     }
 }
 
-impl<'a> Iterator for DirEntryReader<'a> {
+impl Iterator for DirEntryReader<'_> {
     type Item = (usize, DirEntry);
 
     fn next(&mut self) -> Option<Self::Item> {

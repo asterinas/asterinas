@@ -116,7 +116,7 @@ impl<'a> Iter<'a> {
     }
 }
 
-impl<'a> Iterator for Iter<'a> {
+impl Iterator for Iter<'_> {
     type Item = bool;
 
     fn next(&mut self) -> Option<bool> {
@@ -171,7 +171,7 @@ impl<'a> OnesIter<'a> {
     }
 }
 
-impl<'a> Iterator for OnesIter<'a> {
+impl Iterator for OnesIter<'_> {
     type Item = usize;
 
     fn next(&mut self) -> Option<usize> {
@@ -236,7 +236,7 @@ impl<'a> ZeroesIter<'a> {
     }
 }
 
-impl<'a> Iterator for ZeroesIter<'a> {
+impl Iterator for ZeroesIter<'_> {
     type Item = usize;
 
     fn next(&mut self) -> Option<usize> {

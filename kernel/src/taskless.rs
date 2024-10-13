@@ -61,6 +61,7 @@ pub struct Taskless {
     /// The function that will be called when executing this taskless job.
     callback: Box<RefCell<dyn FnMut() + Send + Sync + 'static>>,
     /// Whether this `Taskless` is disabled.
+    #[allow(unused)]
     is_disabled: AtomicBool,
     link: LinkedListAtomicLink,
 }
@@ -74,6 +75,7 @@ cpu_local! {
 
 impl Taskless {
     /// Creates a new `Taskless` instance with its callback function.
+    #[allow(unused)]
     pub fn new<F>(callback: F) -> Arc<Self>
     where
         F: FnMut() + Send + Sync + 'static,
@@ -94,6 +96,7 @@ impl Taskless {
     /// Schedules this taskless job and it will be executed in later time.
     ///
     /// If the taskless job has been scheduled, this function will do nothing.
+    #[allow(unused)]
     pub fn schedule(self: &Arc<Self>) {
         do_schedule(self, &TASKLESS_LIST);
         SoftIrqLine::get(TASKLESS_SOFTIRQ_ID).raise();
@@ -103,6 +106,7 @@ impl Taskless {
     /// in softirq context.
     ///
     /// If the taskless job has been scheduled, this function will do nothing.
+    #[allow(unused)]
     pub fn schedule_urgent(self: &Arc<Self>) {
         do_schedule(self, &TASKLESS_URGENT_LIST);
         SoftIrqLine::get(TASKLESS_URGENT_SOFTIRQ_ID).raise();
@@ -111,17 +115,20 @@ impl Taskless {
     /// Enables this `Taskless` so that it can be executed once it has been scheduled.
     ///
     /// A new `Taskless` is enabled by default.
+    #[allow(unused)]
     pub fn enable(&self) {
         self.is_disabled.store(false, Ordering::Release);
     }
 
     /// Disables this `Taskless` so that it can not be scheduled. Note that if the `Taskless`
     /// has been scheduled, it can still continue to complete this job.
+    #[allow(unused)]
     pub fn disable(&self) {
         self.is_disabled.store(true, Ordering::Release);
     }
 }
 
+#[allow(unused)]
 fn do_schedule(
     taskless: &Arc<Taskless>,
     taskless_list: &'static CpuLocal<RefCell<LinkedList<TasklessAdapter>>>,

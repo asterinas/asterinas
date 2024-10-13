@@ -108,7 +108,7 @@ pub struct ProcessGroupGuard<'a> {
     inner: MutexGuard<'a, Inner>,
 }
 
-impl<'a> ProcessGroupGuard<'a> {
+impl ProcessGroupGuard<'_> {
     /// Returns an iterator over the processes in the group.
     pub fn iter(&self) -> ProcessGroupIter {
         ProcessGroupIter {

@@ -218,6 +218,7 @@ impl MMapOptions {
         self.typ
     }
 
+    #[allow(unused)]
     pub fn flags(&self) -> MMapFlags {
         self.flags
     }

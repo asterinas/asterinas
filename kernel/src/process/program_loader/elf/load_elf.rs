@@ -338,11 +338,7 @@ fn map_segment_vmo(
     vm_map_options = vm_map_options.offset(offset).handle_page_faults_around();
     let map_addr = vm_map_options.build()?;
 
-    let anonymous_map_size: usize = if total_map_size > segment_size {
-        total_map_size - segment_size
-    } else {
-        0
-    };
+    let anonymous_map_size: usize = total_map_size.saturating_sub(segment_size);
 
     if anonymous_map_size > 0 {
         let mut anonymous_map_options = root_vmar

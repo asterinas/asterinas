@@ -491,7 +491,7 @@ impl<'a> FsPath<'a> {
 impl<'a> TryFrom<&'a str> for FsPath<'a> {
     type Error = crate::error::Error;
 
-    fn try_from(path: &'a str) -> Result<FsPath> {
+    fn try_from(path: &'a str) -> Result<FsPath<'a>> {
         if path.is_empty() {
             return_errno_with_message!(Errno::ENOENT, "path is an empty string");
         }

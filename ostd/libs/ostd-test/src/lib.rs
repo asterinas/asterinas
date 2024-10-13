@@ -65,7 +65,6 @@
 //!
 
 #![cfg_attr(not(test), no_std)]
-#![feature(panic_info_message)]
 
 extern crate alloc;
 use alloc::{boxed::Box, string::String};

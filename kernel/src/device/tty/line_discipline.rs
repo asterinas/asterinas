@@ -240,7 +240,7 @@ impl LineDiscipline {
             b'\r' => echo_callback("\r\n"),
             ch if ch == *termios.get_special_char(CC_C_CHAR::VERASE) => {
                 // write a space to overwrite current character
-                let backspace: &str = core::str::from_utf8(&[b'\x08', b' ', b'\x08']).unwrap();
+                let backspace: &str = core::str::from_utf8(b"\x08 \x08").unwrap();
                 echo_callback(backspace);
             }
             ch if is_printable_char(ch) => print!("{}", char::from(ch)),

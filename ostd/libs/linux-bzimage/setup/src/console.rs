@@ -33,20 +33,37 @@ impl Write for Stdout {
     }
 }
 
+/// Print a string to the console.
+///
 /// This is used when dyn Trait is not supported or fmt::Arguments is fragile to use in PIE.
 ///
-/// SAFETY: init() must be called before print_str() and there should be no race conditions.
+/// # Safety
+///
+/// [`init()`] must be called before it and there should be no race conditions.
 pub unsafe fn print_str(s: &str) {
+    #[allow(static_mut_refs)]
     STDOUT.write_str(s).unwrap();
 }
 
+/// Print a single character to the console.
+///
+/// This is used when dyn Trait is not supported or fmt::Arguments is fragile to use in PIE.
+///
+/// # Safety
+///
+/// [`init()`] must be called before it and there should be no race conditions.
 unsafe fn print_char(c: char) {
+    #[allow(static_mut_refs)]
     STDOUT.serial_port.send(c as u8);
 }
 
+/// Print a hexadecimal number to the console.
+///
 /// This is used when dyn Trait is not supported or fmt::Arguments is fragile to use in PIE.
 ///
-/// SAFETY: init() must be called before print_hex() and there should be no race conditions.
+/// # Safety
+///
+/// [`init()`] must be called before it and there should be no race conditions.
 pub unsafe fn print_hex(n: u64) {
     print_str("0x");
     for i in (0..16).rev() {

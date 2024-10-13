@@ -199,7 +199,7 @@ pub struct FrameRef<'a> {
     _marker: PhantomData<&'a Frame>,
 }
 
-impl<'a> Deref for FrameRef<'a> {
+impl Deref for FrameRef<'_> {
     type Target = Frame;
 
     fn deref(&self) -> &Self::Target {
@@ -210,7 +210,10 @@ impl<'a> Deref for FrameRef<'a> {
 // SAFETY: `Frame` is essentially an `*const MetaSlot` that could be used as a `*const` pointer.
 // The pointer is also aligned to 4.
 unsafe impl xarray::ItemEntry for Frame {
-    type Ref<'a> = FrameRef<'a> where Self: 'a;
+    type Ref<'a>
+        = FrameRef<'a>
+    where
+        Self: 'a;
 
     fn into_raw(self) -> *const () {
         let ptr = self.page.ptr;

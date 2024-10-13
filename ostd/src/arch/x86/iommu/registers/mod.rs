@@ -30,6 +30,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 pub struct IommuVersion {
     major: u8,
     minor: u8,
@@ -37,11 +38,13 @@ pub struct IommuVersion {
 
 impl IommuVersion {
     /// Major version number
+    #[allow(dead_code)]
     pub fn major(&self) -> u8 {
         self.major
     }
 
     /// Minor version number
+    #[allow(dead_code)]
     pub fn minor(&self) -> u8 {
         self.minor
     }
@@ -50,6 +53,7 @@ impl IommuVersion {
 /// Important registers used by IOMMU.
 #[derive(Debug)]
 pub struct IommuRegisters {
+    #[allow(dead_code)]
     version: Volatile<&'static u32, ReadOnly>,
     capability: Volatile<&'static u64, ReadOnly>,
     extended_capability: Volatile<&'static u64, ReadOnly>,
@@ -62,6 +66,7 @@ pub struct IommuRegisters {
 
 impl IommuRegisters {
     /// Version of IOMMU
+    #[allow(dead_code)]
     pub fn version(&self) -> IommuVersion {
         let version = self.version.read();
         IommuVersion {

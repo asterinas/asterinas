@@ -45,10 +45,12 @@ impl<const BLK_SIZE: usize> Slab<BLK_SIZE> {
         }
     }
 
+    #[allow(unused)]
     pub fn total_blocks(&self) -> usize {
         self.total_blocks
     }
 
+    #[allow(unused)]
     pub fn used_blocks(&self) -> usize {
         self.total_blocks - self.free_block_list.len()
     }
@@ -120,6 +122,7 @@ impl<const BLK_SIZE: usize> FreeBlockList<BLK_SIZE> {
     }
 
     fn pop(&mut self) -> Option<&'static mut FreeBlock> {
+        #[allow(clippy::manual_inspect)]
         self.head.take().map(|node| {
             self.head = node.next.take();
             self.len -= 1;

@@ -3,6 +3,7 @@
 use crate::{Cons, Nil};
 
 /// This trait will extend a set with another item.
+///
 /// If the set already contains the item, it will return the original set.
 /// Otherwise, it will return the new set with the new item.
 /// The implementation should care about the item orders when extending set.

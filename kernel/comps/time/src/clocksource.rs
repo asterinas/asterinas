@@ -166,9 +166,12 @@ impl ClockSource {
     }
 }
 
-/// `Instant` captures a specific moment, storing the duration of time
+/// A specific moment.
+///
+/// [`Instant`] captures a specific moment, storing the duration of time
 /// elapsed since a reference point (typically the system boot time).
-/// The `Instant` is expressed in seconds and the fractional part is expressed in nanoseconds.
+/// The [`Instant`] is expressed in seconds and the fractional part is
+/// expressed in nanoseconds.
 #[derive(Debug, Default, Copy, Clone)]
 pub struct Instant {
     secs: u64,
