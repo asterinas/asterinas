@@ -502,7 +502,7 @@ pub struct InodeWriter<'a> {
     offset: usize,
 }
 
-impl<'a> Write for InodeWriter<'a> {
+impl Write for InodeWriter<'_> {
     #[inline]
     fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
         let mut reader = VmReader::from(buf).to_fallible();

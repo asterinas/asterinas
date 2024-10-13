@@ -2,11 +2,13 @@
 
 //! Provides the ability to exit QEMU and return a value as debug result.
 
-/// The exit code of x86 QEMU isa debug device. In `qemu-system-x86_64` the
-/// exit code will be `(code << 1) | 1`. So you could never let QEMU invoke
-/// `exit(0)`. We also need to check if the exit code is returned by the
-/// kernel, so we couldn't use 0 as exit_success because this may conflict
-/// with QEMU return value 1, which indicates that QEMU itself fails.
+/// The exit code of x86 QEMU isa debug device.
+///
+/// In `qemu-system-x86_64` the exit code will be `(code << 1) | 1`. So you
+/// could never let QEMU invoke `exit(0)`. We also need to check if the exit
+/// code is returned by the kernel, so we couldn't use 0 as exit_success
+/// because this may conflict with QEMU return value 1, which indicates that
+/// QEMU itself fails.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum QemuExitCode {

@@ -118,7 +118,7 @@ pub struct UserMode<'a> {
 }
 
 // An instance of `UserMode` is bound to the current task. So it must not be sent to other tasks.
-impl<'a> !Send for UserMode<'a> {}
+impl !Send for UserMode<'_> {}
 // Note that implementing `!Sync` is unnecessary
 // because entering the user space via `UserMode` requires taking a mutable reference.
 

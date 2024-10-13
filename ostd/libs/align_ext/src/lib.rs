@@ -6,9 +6,6 @@
 /// `u64`, and `usize`, to provide methods to make integers aligned to a
 /// power of two.
 pub trait AlignExt {
-    /// Returns whether the number is a power of two
-    fn is_power_of_two(&self) -> bool;
-
     /// Returns to the smallest number that is greater than or equal to
     /// `self` and is a multiple of the given power of two.
     ///
@@ -50,11 +47,6 @@ macro_rules! impl_align_ext {
     ($( $uint_type:ty ),+,) => {
         $(
             impl AlignExt for $uint_type {
-                #[inline]
-                fn is_power_of_two(&self) -> bool {
-                    (*self != 0) && ((*self & (*self - 1)) == 0)
-                }
-
                 #[inline]
                 fn align_up(self, align: Self) -> Self {
                     assert!(align.is_power_of_two() && align >= 2);

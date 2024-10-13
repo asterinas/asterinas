@@ -173,7 +173,7 @@ pub trait MultiWrite {
     }
 }
 
-impl<'a> MultiRead for VmReaderArray<'a> {
+impl MultiRead for VmReaderArray<'_> {
     fn read(&mut self, writer: &mut VmWriter<'_, Infallible>) -> Result<usize> {
         let mut total_len = 0;
 
@@ -192,7 +192,7 @@ impl<'a> MultiRead for VmReaderArray<'a> {
     }
 }
 
-impl<'a> MultiRead for VmReader<'a> {
+impl MultiRead for VmReader<'_> {
     fn read(&mut self, writer: &mut VmWriter<'_, Infallible>) -> Result<usize> {
         Ok(self.read_fallible(writer)?)
     }
@@ -202,7 +202,7 @@ impl<'a> MultiRead for VmReader<'a> {
     }
 }
 
-impl<'a> MultiWrite for VmWriterArray<'a> {
+impl MultiWrite for VmWriterArray<'_> {
     fn write(&mut self, reader: &mut VmReader<'_, Infallible>) -> Result<usize> {
         let mut total_len = 0;
 
@@ -221,7 +221,7 @@ impl<'a> MultiWrite for VmWriterArray<'a> {
     }
 }
 
-impl<'a> MultiWrite for VmWriter<'a> {
+impl MultiWrite for VmWriter<'_> {
     fn write(&mut self, reader: &mut VmReader<'_, Infallible>) -> Result<usize> {
         Ok(self.write_fallible(reader)?)
     }

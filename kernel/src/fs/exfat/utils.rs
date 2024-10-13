@@ -14,7 +14,7 @@ pub fn make_hash_index(cluster: ClusterID, offset: u32) -> usize {
 pub fn calc_checksum_32(data: &[u8]) -> u32 {
     let mut checksum: u32 = 0;
     for &value in data {
-        checksum = ((checksum << 31) | (checksum >> 1)).wrapping_add(value as u32);
+        checksum = checksum.rotate_right(1).wrapping_add(value as u32);
     }
     checksum
 }
@@ -27,7 +27,7 @@ pub fn calc_checksum_16(data: &[u8], ignore: core::ops::Range<usize>, prev_check
         if ignore.contains(&pos) {
             continue;
         }
-        result = ((result << 15) | (result >> 1)).wrapping_add(value as u16);
+        result = result.rotate_right(1).wrapping_add(value as u16);
     }
     result
 }

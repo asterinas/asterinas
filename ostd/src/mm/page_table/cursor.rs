@@ -334,8 +334,8 @@ where
     }
 }
 
-impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Iterator
-    for Cursor<'a, M, E, C>
+impl<M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Iterator
+    for Cursor<'_, M, E, C>
 where
     [(); C::NR_LEVELS as usize]:,
 {

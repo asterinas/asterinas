@@ -6,6 +6,7 @@ use super::*;
 pub const OFFSET_MAX: usize = i64::MAX as usize;
 
 /// A range in a file.
+///
 /// The range is [start, end).
 /// The range is valid if start < end.
 /// The range is empty if start == end.

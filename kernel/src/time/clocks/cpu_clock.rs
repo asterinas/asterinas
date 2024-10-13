@@ -13,6 +13,7 @@ pub struct CpuClock {
 }
 
 /// A profiling clock that contains a user CPU clock and a kernel CPU clock.
+///
 /// These two clocks record the CPU time in user mode and kernel mode respectively.
 /// Reading this clock directly returns the sum of both times.
 pub struct ProfClock {

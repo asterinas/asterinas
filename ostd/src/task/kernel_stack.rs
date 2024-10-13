@@ -26,13 +26,6 @@ pub struct KernelStack {
 }
 
 impl KernelStack {
-    pub fn new() -> Result<Self> {
-        Ok(Self {
-            segment: FrameAllocOptions::new(STACK_SIZE_IN_PAGES as usize).alloc_contiguous()?,
-            has_guard_page: false,
-        })
-    }
-
     /// Generates a kernel stack with a guard page.
     /// An additional page is allocated and be regarded as a guard page, which should not be accessed.  
     pub fn new_with_guard_page() -> Result<Self> {

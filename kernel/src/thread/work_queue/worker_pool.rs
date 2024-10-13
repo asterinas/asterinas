@@ -57,6 +57,7 @@ pub trait WorkerScheduler: Sync + Send {
 }
 
 /// The `Monitor` is responsible for monitoring the `WorkerPool` for scheduling needs.
+///
 /// Currently, it only performs a liveness check, and attempts to schedule when no workers
 /// are found processing in the pool.
 pub struct Monitor {

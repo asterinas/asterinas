@@ -891,7 +891,7 @@ impl ExfatInode {
         // TODO: remove trailing periods of pathname.
         // Do not allow creation of files with names ending with period(s).
 
-        let name_dentries = (name.len() + EXFAT_FILE_NAME_LEN - 1) / EXFAT_FILE_NAME_LEN;
+        let name_dentries = name.len().div_ceil(EXFAT_FILE_NAME_LEN);
         let num_dentries = name_dentries + 2; // FILE Entry + Stream Entry + Name Entry
 
         // We update the size of inode before writing page_cache, but it is fine since we've cleaned the page_cache.
@@ -1139,7 +1139,7 @@ impl Inode for ExfatInode {
             ino: inner.ino,
             size: inner.size,
             blk_size,
-            blocks: (inner.size + blk_size - 1) / blk_size,
+            blocks: inner.size.div_ceil(blk_size),
             atime: inner.atime.as_duration().unwrap_or_default(),
             mtime: inner.mtime.as_duration().unwrap_or_default(),
             ctime: inner.ctime.as_duration().unwrap_or_default(),

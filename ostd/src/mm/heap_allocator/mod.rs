@@ -31,11 +31,16 @@ const INIT_KERNEL_HEAP_SIZE: usize = PAGE_SIZE * 256;
 #[repr(align(4096))]
 struct InitHeapSpace([u8; INIT_KERNEL_HEAP_SIZE]);
 
-static mut HEAP_SPACE: InitHeapSpace = InitHeapSpace([0; INIT_KERNEL_HEAP_SIZE]);
-
-pub fn init() {
+/// Initialize the heap allocator.
+///
+/// # Safety
+///
+/// This function should be called only once.
+pub unsafe fn init() {
+    static mut HEAP_SPACE: InitHeapSpace = InitHeapSpace([0; INIT_KERNEL_HEAP_SIZE]);
     // SAFETY: The HEAP_SPACE is a static memory range, so it's always valid.
     unsafe {
+        #[allow(static_mut_refs)]
         HEAP_ALLOCATOR.init(HEAP_SPACE.0.as_ptr(), INIT_KERNEL_HEAP_SIZE);
     }
 }

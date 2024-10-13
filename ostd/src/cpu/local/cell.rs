@@ -208,6 +208,7 @@ impl<T: 'static + SingleInstructionBitXorAssign<T>> CpuLocalCell<T> {
     ///
     /// Note that this memory operation will not be elided or reordered by the
     /// compiler since it is a black-box.
+    #[allow(unused)]
     pub fn bitxor_assign(&'static self, rhs: T) {
         let offset = self as *const _ as usize - __cpu_local_start as usize;
         // SAFETY: The CPU-local object is defined in the `.cpu_local` section,

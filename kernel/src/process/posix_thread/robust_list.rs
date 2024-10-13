@@ -84,7 +84,7 @@ impl<'a> FutexIter<'a> {
 
 const ROBUST_LIST_LIMIT: isize = 2048;
 
-impl<'a> Iterator for FutexIter<'a> {
+impl Iterator for FutexIter<'_> {
     type Item = Vaddr;
 
     fn next(&mut self) -> Option<Self::Item> {

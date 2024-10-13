@@ -162,9 +162,9 @@ impl<D, E> EtherIface<D, E> {
                 }
 
                 // Ignore the ARP packet if we do not own the target address.
-                if !iface_cx
+                if iface_cx
                     .ipv4_addr()
-                    .is_some_and(|addr| addr == *target_protocol_addr)
+                    .is_none_or(|addr| addr != *target_protocol_addr)
                 {
                     return None;
                 }

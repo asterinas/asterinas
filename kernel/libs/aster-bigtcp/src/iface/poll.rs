@@ -44,7 +44,7 @@ impl<'a, E> PollContext<'a, E> {
 pub(super) trait FnHelper<A, B, C, O>: FnMut(A, B, C) -> O {}
 impl<A, B, C, O, F> FnHelper<A, B, C, O> for F where F: FnMut(A, B, C) -> O {}
 
-impl<'a, E> PollContext<'a, E> {
+impl<E> PollContext<'_, E> {
     pub(super) fn poll_ingress<D, P, Q>(
         &mut self,
         device: &mut D,
@@ -280,7 +280,7 @@ impl<'a, E> PollContext<'a, E> {
     }
 }
 
-impl<'a, E> PollContext<'a, E> {
+impl<E> PollContext<'_, E> {
     pub(super) fn poll_egress<D, Q>(&mut self, device: &mut D, mut dispatch_phy: Q)
     where
         D: Device + ?Sized,

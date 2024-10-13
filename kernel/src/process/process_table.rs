@@ -44,7 +44,7 @@ pub struct ProcessTable<'a> {
     inner: MutexGuard<'a, BTreeMap<Pid, Arc<Process>>>,
 }
 
-impl<'a> ProcessTable<'a> {
+impl ProcessTable<'_> {
     /// Returns an iterator over the processes in the table.
     pub fn iter(&self) -> ProcessTableIter {
         ProcessTableIter {

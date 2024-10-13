@@ -17,15 +17,18 @@ use crate::{
     trap::{self, IrqLine, TrapFrame},
 };
 
-/// The timer frequency (Hz). Here we choose 1000Hz since 1000Hz is easier for unit conversion and
-/// convenient for timer. What's more, the frequency cannot be set too high or too low, 1000Hz is
-/// a modest choice.
+/// The timer frequency (Hz).
 ///
-/// For system performance reasons, this rate cannot be set too high, otherwise most of the time
-/// is spent executing timer code.
+/// Here we choose 1000Hz since 1000Hz is easier for unit conversion and
+/// convenient for timer. What's more, the frequency cannot be set too high or
+/// too low, 1000Hz is a modest choice.
 ///
-/// Due to hardware limitations, this value cannot be set too low; for example, PIT cannot accept
-/// frequencies lower than 19Hz = 1193182 / 65536 (Timer rate / Divider)
+/// For system performance reasons, this rate cannot be set too high, otherwise
+/// most of the time is spent executing timer code.
+///
+/// Due to hardware limitations, this value cannot be set too low; for example,
+/// PIT cannot accept frequencies lower than 19Hz = 1193182 / 65536 (Timer rate
+/// / Divider)
 pub const TIMER_FREQ: u64 = 1000;
 
 static TIMER_IRQ: Once<IrqLine> = Once::new();

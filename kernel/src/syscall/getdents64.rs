@@ -104,7 +104,7 @@ impl<'a, T: DirentSerializer> DirentBufferReader<'a, T> {
     }
 }
 
-impl<'a, T: DirentSerializer> DirentVisitor for DirentBufferReader<'a, T> {
+impl<T: DirentSerializer> DirentVisitor for DirentBufferReader<'_, T> {
     fn visit(&mut self, name: &str, ino: u64, type_: InodeType, offset: usize) -> Result<()> {
         let dirent_serializer = T::new(ino, offset as u64, type_, CString::new(name)?);
         if self.read_len >= self.buffer.len() {

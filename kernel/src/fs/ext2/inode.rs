@@ -1761,7 +1761,7 @@ impl<'a> DeviceRangeReader<'a> {
     }
 }
 
-impl<'a> Iterator for DeviceRangeReader<'a> {
+impl Iterator for DeviceRangeReader<'_> {
     type Item = Range<Ext2Bid>;
 
     fn next(&mut self) -> Option<Self::Item> {

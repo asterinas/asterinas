@@ -543,7 +543,7 @@ impl<'a> VmReader<'a, Infallible> {
     }
 }
 
-impl<'a> VmReader<'a, Fallible> {
+impl VmReader<'_, Fallible> {
     /// Constructs a `VmReader` from a pointer and a length, which represents
     /// a memory range in user space.
     ///
@@ -608,7 +608,7 @@ impl<'a> VmReader<'a, Fallible> {
     }
 }
 
-impl<'a, Fallibility> VmReader<'a, Fallibility> {
+impl<Fallibility> VmReader<'_, Fallibility> {
     /// Returns the number of bytes for the remaining data.
     pub const fn remain(&self) -> usize {
         // SAFETY: the end is equal to or greater than the cursor.
@@ -794,7 +794,7 @@ impl<'a> VmWriter<'a, Infallible> {
     }
 }
 
-impl<'a> VmWriter<'a, Fallible> {
+impl VmWriter<'_, Fallible> {
     /// Constructs a `VmWriter` from a pointer and a length, which represents
     /// a memory range in user space.
     ///
@@ -870,7 +870,7 @@ impl<'a> VmWriter<'a, Fallible> {
     }
 }
 
-impl<'a, Fallibility> VmWriter<'a, Fallibility> {
+impl<Fallibility> VmWriter<'_, Fallibility> {
     /// Returns the number of bytes for the available space.
     pub const fn avail(&self) -> usize {
         // SAFETY: the end is equal to or greater than the cursor.

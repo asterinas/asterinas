@@ -48,7 +48,7 @@ impl device::RxToken for RxToken {
 
 pub struct TxToken<'a>(&'a mut dyn AnyNetworkDevice);
 
-impl<'a> device::TxToken for TxToken<'a> {
+impl device::TxToken for TxToken<'_> {
     fn consume<R, F>(self, len: usize, f: F) -> R
     where
         F: FnOnce(&mut [u8]) -> R,

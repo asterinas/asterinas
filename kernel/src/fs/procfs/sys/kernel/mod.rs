@@ -15,7 +15,6 @@ use crate::{
 mod cap_last_cap;
 
 /// Represents the inode at `/proc/sys/kernel`.
-
 pub struct KernelDirOps;
 
 impl KernelDirOps {

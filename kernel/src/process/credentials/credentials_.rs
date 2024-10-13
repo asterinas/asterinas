@@ -34,8 +34,8 @@ pub(super) struct Credentials_ {
     supplementary_gids: RwLock<BTreeSet<Gid>>,
 
     /// The Linux capabilities.
+    ///
     /// This is not the capability (in static_cap.rs) enforced on rust objects.
-
     /// Capability that child processes can inherit
     inheritable_capset: AtomicCapSet,
 
