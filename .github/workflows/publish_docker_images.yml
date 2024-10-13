@@ -33,7 +33,8 @@ jobs:
 
       - name: Generate Dockerfile
         run: |
-          pip install Jinja2
+          sudo apt-get update
+          sudo apt-get install -y python3-jinja2
           python3 ./tools/docker/gen_dockerfile.py
 
       - name: Build and push development image
@@ -49,7 +50,6 @@ jobs:
 
       - name: Generate Dockerfile for Intel TDX
         run: |
-          pip install Jinja2
           python3 ./tools/docker/gen_dockerfile.py --intel-tdx
 
       - name: Build and push development image for Intel TDX
