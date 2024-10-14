@@ -51,7 +51,19 @@ do_publish_for() {
         TARGET_ARGS="--target $2"
     fi
     if [ -n "$DRY_RUN" ]; then
-        cargo publish --dry-run $TARGET_ARGS
+        # Temporarily change the crate version to the next patched version.
+        #
+        # `cargo publish --dry-run` requires that 
+        # the crate version is not already published on crates.io,
+        # otherwise, the check will fail.
+        # Therefore, we modify the crate version to ensure it is not published.
+        current_version=$(cat $ASTER_SRC_DIR/VERSION)
+        next_patched_version=$(echo "$current_version" | awk -F. '{printf "%d.%d.%d\n", $1, $2, $3 + 1}')
+        pattern="^version = \"[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+\"$"
+        sed -i "0,/${pattern}/s/${pattern}/version = \"${next_patched_version}\"/1" Cargo.toml
+        
+        # Perform checks
+        cargo publish --dry-run --allow-dirty $TARGET_ARGS
         cargo doc $TARGET_ARGS
     else
         cargo publish --token $TOKEN $TARGET_ARGS
