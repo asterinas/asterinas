@@ -2,14 +2,12 @@
 
 use linux_boot_params::BootParams;
 use uefi::{
-    data_types::Handle,
+    prelude::*,
     proto::loaded_image::LoadedImage,
-    table::{
-        boot::MemoryMap,
-        cfg::{ACPI2_GUID, ACPI_GUID},
-        Boot, Runtime, SystemTable,
-    },
+    boot::{exit_boot_services, open_protocol_exclusive},
+    mem::memory_map::{MemoryMapOwned, MemoryMap},
 };
+use uefi_raw::table::system::SystemTable;
 
 use super::{
     decoder::decode_payload,
@@ -22,77 +20,78 @@ use super::{
 #[allow(unused_variables)]
 #[allow(clippy::diverging_sub_expression)]
 #[export_name = "efi_stub_entry"]
-extern "sysv64" fn efi_stub_entry(handle: Handle, mut system_table: SystemTable<Boot>) -> ! {
+extern "sysv64" fn efi_stub_entry(handle: Handle, system_table: *const SystemTable) -> ! {
     unsafe {
-        system_table.boot_services().set_image_handle(handle);
+        boot::set_image_handle(handle);
+        uefi::table::set_system_table(system_table);
     }
-    uefi_services::init(&mut system_table).unwrap();
+    uefi::helpers::init().unwrap();
 
     let boot_params = todo!("Use EFI boot services to fill boot params");
 
-    efi_phase_boot(handle, system_table, boot_params);
+    efi_phase_boot(boot_params);
 }
 
 #[export_name = "efi_handover_entry"]
 extern "sysv64" fn efi_handover_entry(
     handle: Handle,
-    mut system_table: SystemTable<Boot>,
+    system_table: *const SystemTable,
     boot_params_ptr: *mut BootParams,
 ) -> ! {
     unsafe {
-        system_table.boot_services().set_image_handle(handle);
+        boot::set_image_handle(handle);
+        uefi::table::set_system_table(system_table);
     }
-    uefi_services::init(&mut system_table).unwrap();
+    uefi::helpers::init().unwrap();
 
     // SAFETY: boot_params is a valid pointer.
     let boot_params = unsafe { &mut *boot_params_ptr };
 
-    efi_phase_boot(handle, system_table, boot_params)
+    efi_phase_boot(boot_params)
 }
 
-fn efi_phase_boot(
-    handle: Handle,
-    system_table: SystemTable<Boot>,
-    boot_params: &mut BootParams,
-) -> ! {
-    // SAFETY: this init function is only called once.
-    unsafe { crate::console::init() };
+fn efi_phase_boot(boot_params: &mut BootParams) -> ! {
+    // SAFETY: This is the right time to initialize the console and it is only
+    // called once here before all console operations.
+    unsafe {
+        crate::console::init();
+    }
 
     // SAFETY: this is the right time to apply relocations.
     unsafe { apply_rela_dyn_relocations() };
 
-    uefi_services::println!("[EFI stub] Relocations applied.");
+    uefi::println!("[EFI stub] Relocations applied.");
+    uefi::println!("[EFI stub] Stub loaded at {:#x?}", crate::x86::get_image_loaded_offset());
 
     // Fill the boot params with the RSDP address if it is not provided.
     if boot_params.acpi_rsdp_addr == 0 {
-        boot_params.acpi_rsdp_addr = get_rsdp_addr(&system_table);
+        boot_params.acpi_rsdp_addr = get_rsdp_addr();
     }
 
     // Load the kernel payload to memory.
     let payload = crate::get_payload(boot_params);
     let kernel = decode_payload(payload);
 
-    uefi_services::println!("[EFI stub] Loading payload.");
+    uefi::println!("[EFI stub] Loading payload.");
     crate::loader::load_elf(&kernel);
 
-    uefi_services::println!("[EFI stub] Exiting EFI boot services.");
+    uefi::println!("[EFI stub] Exiting EFI boot services.");
     let memory_type = {
-        let boot_services = system_table.boot_services();
-        let Ok(loaded_image) = boot_services.open_protocol_exclusive::<LoadedImage>(handle) else {
+        let Ok(loaded_image) = open_protocol_exclusive::<LoadedImage>(boot::image_handle()) else {
             panic!("Failed to open LoadedImage protocol");
         };
         loaded_image.data_type()
     };
-    let (system_table, memory_map) = system_table.exit_boot_services(memory_type);
+    // SAFETY: All allocations in the boot services phase are not used after
+    // this point.
+    let memory_map = unsafe {
+        exit_boot_services(memory_type)
+    };
 
-    efi_phase_runtime(system_table, memory_map, boot_params);
+    efi_phase_runtime(memory_map, boot_params);
 }
 
-fn efi_phase_runtime(
-    _system_table: SystemTable<Runtime>,
-    memory_map: MemoryMap<'static>,
-    boot_params: &mut BootParams,
-) -> ! {
+fn efi_phase_runtime(memory_map: MemoryMapOwned, boot_params: &mut BootParams) -> ! {
     unsafe {
         crate::console::print_str("[EFI stub] Entered runtime services.\n");
     }
@@ -218,16 +217,18 @@ fn efi_phase_runtime(
     }
 }
 
-fn get_rsdp_addr(boot_table: &SystemTable<Boot>) -> u64 {
-    let config_table = boot_table.config_table();
-    for entry in config_table {
-        // Prefer ACPI2 over ACPI.
-        if entry.guid == ACPI2_GUID {
-            return entry.address as usize as u64;
+fn get_rsdp_addr() -> u64 {
+    use uefi::table::cfg::{ACPI2_GUID, ACPI_GUID};
+    uefi::system::with_config_table(|table| {
+        for entry in table {
+            // Prefer ACPI2 over ACPI.
+            if entry.guid == ACPI2_GUID {
+                return entry.address as usize as u64;
+            }
+            if entry.guid == ACPI_GUID {
+                return entry.address as usize as u64;
+            }
         }
-        if entry.guid == ACPI_GUID {
-            return entry.address as usize as u64;
-        }
-    }
-    panic!("ACPI RSDP not found");
+        panic!("ACPI RSDP not found");
+    })
 }
