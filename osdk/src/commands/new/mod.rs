@@ -170,7 +170,7 @@ fn get_src_path<'a>(cargo_metadata: &'a serde_json::Value, crate_name: &str) -> 
 
     let target = &targets[0];
     let src_path = target.get("src_path").unwrap();
-    return src_path.as_str().unwrap();
+    src_path.as_str().unwrap()
 }
 
 fn get_workspace_root(cargo_metadata: &serde_json::Value) -> &str {

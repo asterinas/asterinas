@@ -248,4 +248,6 @@ pub fn trace_panic_from_log(qemu_log: File, bin_path: PathBuf) {
             }
         }
     }
+    addr2line_proc.kill().unwrap();
+    addr2line_proc.wait().unwrap();
 }
