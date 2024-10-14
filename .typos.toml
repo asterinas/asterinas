@@ -13,6 +13,7 @@ TME  = "TME"
 BA   = "BA"
 ND   = "ND"
 Fo   = "Fo"
+Inh  = "Inh"
 
 # Files with svg suffix are ignored to check. 
 [type.svg]

@@ -66,6 +66,14 @@ impl FileTable {
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.table.slots_len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.table.is_empty()
+    }
+
     pub fn dup(&mut self, fd: FileDesc, new_fd: FileDesc, flags: FdFlags) -> Result<FileDesc> {
         let file = self
             .table
@@ -80,12 +88,12 @@ impl FileTable {
                 return new_fd;
             }
 
-            for idx in new_fd + 1..self.table.slots_len() {
+            for idx in new_fd + 1..self.len() {
                 if self.table.get(idx).is_none() {
                     return idx;
                 }
             }
-            self.table.slots_len()
+            self.len()
         };
 
         let min_free_fd = get_min_free_fd();
