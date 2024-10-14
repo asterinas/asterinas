@@ -53,7 +53,7 @@ pub fn sys_ioctl(fd: FileDesc, cmd: u32, arg: Vaddr, ctx: &Context) -> Result<Sy
             // Clears the close-on-exec flag of the file.
             let file_table = ctx.process.file_table().lock();
             let entry = file_table.get_entry(fd)?;
-            entry.clear_flags();
+            entry.set_flags(entry.flags() & (!FdFlags::CLOEXEC));
             0
         }
         _ => file.ioctl(ioctl_cmd, arg)?,
