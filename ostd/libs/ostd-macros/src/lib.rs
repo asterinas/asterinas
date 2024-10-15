@@ -69,6 +69,23 @@ pub fn test_main(_attr: TokenStream, item: TokenStream) -> TokenStream {
     .into()
 }
 
+#[proc_macro_attribute]
+pub fn miri_main(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let main_fn = parse_macro_input!(item as ItemFn);
+    let main_fn_name = &main_fn.sig.ident;
+
+    quote!(
+        #[cfg(miri)]
+        #[no_mangle]
+        extern "Rust" fn __miri_main() {
+            #main_fn_name();
+        }
+
+        #main_fn
+    )
+    .into()
+}
+
 /// The test attribute macro to mark a test function.
 ///
 /// # Example

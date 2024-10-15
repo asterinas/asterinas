@@ -3,6 +3,7 @@
 //! Platform-specific code for the RISC-V platform.
 
 pub mod boot;
+pub(crate) mod bus;
 pub(crate) mod cpu;
 pub mod device;
 pub mod iommu;
@@ -66,4 +67,9 @@ pub(crate) fn enable_cpu_features() {
     unsafe {
         riscv::register::sstatus::set_fs(riscv::register::sstatus::FS::Clean);
     }
+}
+
+/// Return the name of the register given an index
+pub fn register_name(_index: u16) -> Option<&'static str> {
+    None
 }

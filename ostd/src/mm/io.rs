@@ -937,14 +937,6 @@ pub trait PodOnce: Pod {}
 
 impl<T: Pod> PodOnce for T where Assert<{ is_pod_once::<T>() }>: IsTrue {}
 
-#[cfg(target_arch = "x86_64")]
-const fn is_pod_once<T: Pod>() -> bool {
-    let size = size_of::<T>();
-
-    size == 1 || size == 2 || size == 4 || size == 8
-}
-
-#[cfg(target_arch = "riscv64")]
 const fn is_pod_once<T: Pod>() -> bool {
     let size = size_of::<T>();
 
