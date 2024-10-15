@@ -16,10 +16,23 @@ const START_OF_SETUP32_VA: usize = 0x100000;
 /// The setup is a position-independent executable. We can get the loaded base
 /// address from the symbol.
 #[inline]
-#[allow(clippy::fn_to_numeric_cast)]
 pub fn get_image_loaded_offset() -> isize {
-    extern "C" {
-        fn start_of_setup32();
+    let address_of_start: usize;
+    #[cfg(target_arch = "x86_64")]
+    unsafe {
+        core::arch::asm!(
+            "lea {}, [rip + start_of_setup32]",
+            out(reg) address_of_start,
+            options(pure, nomem, nostack)
+        );
     }
-    start_of_setup32 as isize - START_OF_SETUP32_VA as isize
+    #[cfg(target_arch = "x86")]
+    unsafe {
+        core::arch::asm!(
+            "lea {}, [start_of_setup32]",
+            out(reg) address_of_start,
+            options(pure, nomem, nostack)
+        );
+    }
+    address_of_start as isize - START_OF_SETUP32_VA as isize
 }

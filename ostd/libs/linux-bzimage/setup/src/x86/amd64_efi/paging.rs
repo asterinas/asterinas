@@ -18,6 +18,7 @@ const TABLE_ENTRY_COUNT: usize = 512;
 
 bitflags::bitflags! {
     #[derive(Clone, Copy)]
+    #[repr(C)]
     pub struct Ia32eFlags: u64 {
         const PRESENT =         1 << 0;
         const WRITABLE =        1 << 1;
@@ -32,9 +33,11 @@ bitflags::bitflags! {
     }
 }
 
+#[repr(C)]
 pub struct Ia32eEntry(u64);
 
 /// The table in the IA32E paging specification that occupies a physical page frame.
+#[repr(C)]
 pub struct Ia32eTable([Ia32eEntry; TABLE_ENTRY_COUNT]);
 
 /// A page number. It could be either a physical page number or a virtual page number.
