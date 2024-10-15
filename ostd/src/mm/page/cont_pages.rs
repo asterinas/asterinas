@@ -74,13 +74,13 @@ impl<M: PageMeta> ContPages<M> {
     }
 
     /// Forget the handle and return the raw range.
-    /// 
+    ///
     /// This is the same as [`Page::into_raw`] and [`DynPage::into_raw`].
-    /// 
-    /// This will result in the designated range of pages being leaked without 
+    ///
+    /// This will result in the designated range of pages being leaked without
     /// calling the custom dropper.
-    /// 
-    /// The range of physical address to the page is returned in case the page 
+    ///
+    /// The range of physical address to the page is returned in case the page
     /// needs to be restored using [`Self::from_raw`] later.
     pub(in crate::mm) fn into_raw(self) -> Range<Paddr> {
         let range = self.range.clone();
@@ -89,10 +89,11 @@ impl<M: PageMeta> ContPages<M> {
     }
 
     /// Restore the handle from the raw range.
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// The safety concerns are the same as [`Page::from_raw`].
+    #[allow(unused)]
     pub(in crate::mm) fn from_raw(range: Range<Paddr>) -> Self {
         Self {
             range,

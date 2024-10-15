@@ -11,7 +11,10 @@ use spin::Once;
 
 use super::paddr_to_vaddr;
 use crate::{
-    mm::{page::allocator::PAGE_ALLOCATOR, PAGE_SIZE},
+    mm::{
+        page::{allocator::alloc_contiguous, meta::HeapMeta},
+        PAGE_SIZE,
+    },
     prelude::*,
     sync::SpinLock,
     trap::disable_local,
@@ -93,13 +96,14 @@ impl LockedHeapWithRescue {
             size / PAGE_SIZE
         };
 
-        let allocation_start = {
-            let mut page_allocator = PAGE_ALLOCATOR.get().unwrap().lock();
+        let allocated_cont_pages = {
             if num_frames >= MIN_NUM_FRAMES {
-                page_allocator.alloc(num_frames).ok_or(Error::NoMemory)?
+                alloc_contiguous(num_frames * PAGE_SIZE, |_| HeapMeta::default())
+                    .ok_or(Error::NoMemory)?
             } else {
-                match page_allocator.alloc(MIN_NUM_FRAMES) {
-                    None => page_allocator.alloc(num_frames).ok_or(Error::NoMemory)?,
+                match alloc_contiguous(MIN_NUM_FRAMES * PAGE_SIZE, |_| HeapMeta::default()) {
+                    None => alloc_contiguous(num_frames * PAGE_SIZE, |_| HeapMeta::default())
+                        .ok_or(Error::NoMemory)?,
                     Some(start) => {
                         num_frames = MIN_NUM_FRAMES;
                         start
@@ -107,9 +111,13 @@ impl LockedHeapWithRescue {
                 }
             }
         };
+
+        // Forget the allocated pages to prevent unintended deallocation.
+        let allocation_start = allocated_cont_pages.into_raw().start;
+
         // FIXME: the alloc function internally allocates heap memory(inside FrameAllocator).
         // So if the heap is nearly run out, allocating frame will fail too.
-        let vaddr = paddr_to_vaddr(allocation_start * PAGE_SIZE);
+        let vaddr = paddr_to_vaddr(allocation_start);
 
         // SAFETY: the frame is allocated from FrameAllocator and never be deallocated,
         // so the addr is always valid.
