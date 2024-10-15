@@ -16,6 +16,7 @@ use ostd::{
 use super::priority::{Priority, PriorityRange};
 use crate::{prelude::*, thread::Thread};
 
+#[allow(unused)]
 pub fn init() {
     let preempt_scheduler = Box::new(PreemptScheduler::default());
     let scheduler = Box::<PreemptScheduler<Thread, Task>>::leak(preempt_scheduler);
