@@ -17,6 +17,8 @@ pub mod trap;
 
 use core::sync::atomic::Ordering;
 
+use log::warn;
+
 #[cfg(feature = "cvm_guest")]
 pub(crate) fn init_cvm_guest() {
     // Unimplemented, no-op
@@ -41,7 +43,13 @@ pub(crate) fn init_on_bsp() {
 
     crate::boot::smp::boot_all_aps();
 
+    device::init();
     timer::init();
+    match iommu::init() {
+        Ok(_) => {}
+        Err(err) => warn!("IOMMU initialization error:{:?}", err),
+    }
+    pci::init();
 }
 
 pub(crate) unsafe fn init_on_ap() {
@@ -49,7 +57,7 @@ pub(crate) unsafe fn init_on_ap() {
 }
 
 pub(crate) fn interrupts_ack(irq_number: usize) {
-    unimplemented!()
+    device::plic::complete_interrupt(irq_number as u16);
 }
 
 /// Return the frequency of TSC. The unit is Hz.
