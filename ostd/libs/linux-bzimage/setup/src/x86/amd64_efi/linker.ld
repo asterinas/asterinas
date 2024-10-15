@@ -40,15 +40,11 @@ SECTIONS
     .eh_frame_hdr           : {
         *(.eh_frame_hdr .eh_frame_hdr.*)
     }
-
-    .rela.dyn               : {
-        PROVIDE(__rela_dyn_start = .);
-        *(.rela.dyn .rela.dyn.*)
-        PROVIDE(__rela_dyn_end = .);
-    }
-
-    .rela.plt               : {
-        *(.rela.plt .rela.plt.*)
+    
+    .rela                   : {
+        PROVIDE(__rela_start = .);
+        *(.rela .rela.*)
+        PROVIDE(__rela_end = .);
     }
 
     .comment                : { *(.comment) }

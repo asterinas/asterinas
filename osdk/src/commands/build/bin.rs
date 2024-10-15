@@ -167,7 +167,37 @@ fn install_setup_with_arch(
     let target_dir = std::fs::canonicalize(target_dir).unwrap();
 
     let mut cmd = Command::new("cargo");
-    cmd.env("RUSTFLAGS", "-Ccode-model=kernel -Crelocation-model=pie -Ctarget-feature=+crt-static -Zplt=yes -Zrelax-elf-relocations=yes -Crelro-level=full");
+    let mut rustflags = vec![
+        "-Cdebuginfo=2",
+        "-Ccode-model=kernel",
+        "-Crelocation-model=pie",
+        "-Zplt=yes",
+        "-Zrelax-elf-relocations=yes",
+        "-Crelro-level=full",
+    ];
+    let target_feature_args = match arch {
+        SetupInstallArch::X86_64 => {
+            concat!(
+                "-Ctarget-feature=",
+                "+crt-static",
+                ",-adx",
+                ",-aes",
+                ",-avx",
+                ",-avx2",
+                ",-fxsr",
+                ",-sse",
+                ",-sse2",
+                ",-sse3",
+                ",-sse4.1",
+                ",-sse4.2",
+                ",-ssse3",
+                ",-xsave",
+            )
+        }
+        SetupInstallArch::Other(_) => "-Ctarget-feature=+crt-static",
+    };
+    rustflags.push(target_feature_args);
+    cmd.env("RUSTFLAGS", rustflags.join(" "));
     cmd.arg("install").arg("linux-bzimage-setup");
     cmd.arg("--force");
     cmd.arg("--root").arg(install_dir.as_ref());

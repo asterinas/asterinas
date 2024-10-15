@@ -2,17 +2,17 @@
 
 use linux_boot_params::BootParams;
 use uefi::{
+    boot::{exit_boot_services, open_protocol_exclusive},
+    mem::memory_map::{MemoryMap, MemoryMapOwned},
     prelude::*,
     proto::loaded_image::LoadedImage,
-    boot::{exit_boot_services, open_protocol_exclusive},
-    mem::memory_map::{MemoryMapOwned, MemoryMap},
 };
 use uefi_raw::table::system::SystemTable;
 
 use super::{
     decoder::decode_payload,
     paging::{Ia32eFlags, PageNumber, PageTableCreator},
-    relocation::apply_rela_dyn_relocations,
+    relocation::apply_rela_relocations,
 };
 
 // Suppress warnings since using todo!.
@@ -21,10 +21,9 @@ use super::{
 #[allow(clippy::diverging_sub_expression)]
 #[export_name = "efi_stub_entry"]
 extern "sysv64" fn efi_stub_entry(handle: Handle, system_table: *const SystemTable) -> ! {
-    unsafe {
-        boot::set_image_handle(handle);
-        uefi::table::set_system_table(system_table);
-    }
+    // SAFETY: handle and system_table are valid pointers. It is only called once.
+    unsafe { system_init(handle, system_table) };
+
     uefi::helpers::init().unwrap();
 
     let boot_params = todo!("Use EFI boot services to fill boot params");
@@ -38,10 +37,9 @@ extern "sysv64" fn efi_handover_entry(
     system_table: *const SystemTable,
     boot_params_ptr: *mut BootParams,
 ) -> ! {
-    unsafe {
-        boot::set_image_handle(handle);
-        uefi::table::set_system_table(system_table);
-    }
+    // SAFETY: handle and system_table are valid pointers. It is only called once.
+    unsafe { system_init(handle, system_table) };
+
     uefi::helpers::init().unwrap();
 
     // SAFETY: boot_params is a valid pointer.
@@ -50,18 +48,36 @@ extern "sysv64" fn efi_handover_entry(
     efi_phase_boot(boot_params)
 }
 
-fn efi_phase_boot(boot_params: &mut BootParams) -> ! {
+/// Initialize the system.
+///
+/// # Safety
+///
+/// This function should be called only once with valid parameters before all
+/// operations.
+unsafe fn system_init(handle: Handle, system_table: *const SystemTable) {
     // SAFETY: This is the right time to initialize the console and it is only
     // called once here before all console operations.
     unsafe {
         crate::console::init();
     }
 
-    // SAFETY: this is the right time to apply relocations.
-    unsafe { apply_rela_dyn_relocations() };
+    // SAFETY: This is the right time to apply relocations.
+    unsafe { apply_rela_relocations() };
 
+    // SAFETY: The handle and system_table are valid pointers. They are passed
+    // from the UEFI firmware. They are only called once.
+    unsafe {
+        boot::set_image_handle(handle);
+        uefi::table::set_system_table(system_table);
+    }
+}
+
+fn efi_phase_boot(boot_params: &mut BootParams) -> ! {
     uefi::println!("[EFI stub] Relocations applied.");
-    uefi::println!("[EFI stub] Stub loaded at {:#x?}", crate::x86::get_image_loaded_offset());
+    uefi::println!(
+        "[EFI stub] Stub loaded at {:#x?}",
+        crate::x86::get_image_loaded_offset()
+    );
 
     // Fill the boot params with the RSDP address if it is not provided.
     if boot_params.acpi_rsdp_addr == 0 {
@@ -84,9 +100,7 @@ fn efi_phase_boot(boot_params: &mut BootParams) -> ! {
     };
     // SAFETY: All allocations in the boot services phase are not used after
     // this point.
-    let memory_map = unsafe {
-        exit_boot_services(memory_type)
-    };
+    let memory_map = unsafe { exit_boot_services(memory_type) };
 
     efi_phase_runtime(memory_map, boot_params);
 }
