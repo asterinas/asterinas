@@ -8,7 +8,7 @@
 //! The reference to the Linux PE header definition:
 //! <https://github.com/torvalds/linux/blob/master/include/linux/pe.h>
 
-use std::{mem::size_of, ops::Range};
+use std::{mem::size_of, vec};
 
 use bytemuck::{Pod, Zeroable};
 use serde::Serialize;
@@ -202,80 +202,6 @@ struct PeSectionHdr {
     flags: u32,
 }
 
-struct ImageSectionAddrInfo {
-    pub text: Range<SetupVA>,
-    pub data: Range<SetupVA>,
-    pub bss: Range<SetupVA>,
-    /// All the readonly but loaded sections.
-    pub rodata: Range<SetupVA>,
-}
-
-impl ImageSectionAddrInfo {
-    fn from(elf: &xmas_elf::ElfFile) -> Self {
-        let mut text_start = None;
-        let mut text_end = None;
-        let mut data_start = None;
-        let mut data_end = None;
-        let mut bss_start = None;
-        let mut bss_end = None;
-        let mut rodata_start = None;
-        let mut rodata_end = None;
-        for program in elf.program_iter() {
-            if program.get_type().unwrap() == xmas_elf::program::Type::Load {
-                let offset = SetupVA::from(program.virtual_addr() as usize);
-                let length = program.mem_size() as usize;
-                if program.flags().is_execute() {
-                    text_start = Some(offset);
-                    text_end = Some(offset + length);
-                } else if program.flags().is_write() {
-                    data_start = Some(offset);
-                    data_end = Some(offset + program.file_size() as usize);
-                    bss_start = Some(offset + program.file_size() as usize);
-                    bss_end = Some(offset + length);
-                } else if program.flags().is_read() {
-                    rodata_start = Some(offset);
-                    rodata_end = Some(offset + length);
-                }
-            }
-        }
-
-        Self {
-            text: text_start.unwrap()..text_end.unwrap(),
-            data: data_start.unwrap()..data_end.unwrap(),
-            bss: bss_start.unwrap()..bss_end.unwrap(),
-            rodata: rodata_start.unwrap()..rodata_end.unwrap(),
-        }
-    }
-
-    fn text_virt_size(&self) -> usize {
-        self.text.end - self.text.start
-    }
-
-    fn text_file_size(&self) -> usize {
-        SetupFileOffset::from(self.text.end) - SetupFileOffset::from(self.text.start)
-    }
-
-    fn data_virt_size(&self) -> usize {
-        self.data.end - self.data.start
-    }
-
-    fn data_file_size(&self) -> usize {
-        SetupFileOffset::from(self.data.end) - SetupFileOffset::from(self.data.start)
-    }
-
-    fn bss_virt_size(&self) -> usize {
-        self.bss.end - self.bss.start
-    }
-
-    fn rodata_virt_size(&self) -> usize {
-        self.rodata.end - self.rodata.start
-    }
-
-    fn rodata_file_size(&self) -> usize {
-        SetupFileOffset::from(self.rodata.end) - SetupFileOffset::from(self.rodata.start)
-    }
-}
-
 pub struct ImagePeCoffHeaderBuf {
     pub header_at_zero: Vec<u8>,
     pub relocs: (SetupFileOffset, Vec<u8>),
@@ -350,93 +276,16 @@ pub(crate) fn make_pe_coff_header(setup_elf: &[u8], image_size: usize) -> ImageP
         },
     };
 
-    let addr_info = ImageSectionAddrInfo::from(&elf);
-
     // PE section headers
-    let sec_hdrs = [
-        // .reloc
-        PeSectionHdr {
-            name: [b'.', b'r', b'e', b'l', b'o', b'c', 0, 0],
-            virtual_size: relocs.len() as u32,
-            virtual_address: usize::from(SetupVA::from(reloc_offset)) as u32,
-            raw_data_size: relocs.len() as u32,
-            data_addr: usize::from(reloc_offset) as u32,
-            relocs: 0,
-            line_numbers: 0,
-            num_relocs: 0,
-            num_lin_numbers: 0,
-            flags: (PeSectionHdrFlags::CNT_INITIALIZED_DATA
-                | PeSectionHdrFlags::MEM_READ
-                | PeSectionHdrFlags::MEM_DISCARDABLE)
-                .bits
-                | PeSectionHdrFlagsAlign::_1Bytes as u32,
-        },
-        // .text
-        PeSectionHdr {
-            name: [b'.', b't', b'e', b'x', b't', 0, 0, 0],
-            virtual_size: addr_info.text_virt_size() as u32,
-            virtual_address: usize::from(addr_info.text.start) as u32,
-            raw_data_size: addr_info.text_file_size() as u32,
-            data_addr: usize::from(SetupFileOffset::from(addr_info.text.start)) as u32,
-            relocs: 0,
-            line_numbers: 0,
-            num_relocs: 0,
-            num_lin_numbers: 0,
-            flags: (PeSectionHdrFlags::CNT_CODE
-                | PeSectionHdrFlags::MEM_READ
-                | PeSectionHdrFlags::MEM_EXECUTE)
-                .bits
-                | PeSectionHdrFlagsAlign::_16Bytes as u32,
-        },
-        // .data
-        PeSectionHdr {
-            name: [b'.', b'd', b'a', b't', b'a', 0, 0, 0],
-            virtual_size: addr_info.data_virt_size() as u32,
-            virtual_address: usize::from(addr_info.data.start) as u32,
-            raw_data_size: addr_info.data_file_size() as u32,
-            data_addr: usize::from(SetupFileOffset::from(addr_info.data.start)) as u32,
-            relocs: 0,
-            line_numbers: 0,
-            num_relocs: 0,
-            num_lin_numbers: 0,
-            flags: (PeSectionHdrFlags::CNT_INITIALIZED_DATA
-                | PeSectionHdrFlags::MEM_READ
-                | PeSectionHdrFlags::MEM_WRITE)
-                .bits
-                | PeSectionHdrFlagsAlign::_16Bytes as u32,
-        },
-        // .bss
-        PeSectionHdr {
-            name: [b'.', b'b', b's', b's', 0, 0, 0, 0],
-            virtual_size: addr_info.bss_virt_size() as u32,
-            virtual_address: usize::from(addr_info.bss.start) as u32,
-            raw_data_size: 0,
-            data_addr: 0,
-            relocs: 0,
-            line_numbers: 0,
-            num_relocs: 0,
-            num_lin_numbers: 0,
-            flags: (PeSectionHdrFlags::CNT_UNINITIALIZED_DATA
-                | PeSectionHdrFlags::MEM_READ
-                | PeSectionHdrFlags::MEM_WRITE)
-                .bits
-                | PeSectionHdrFlagsAlign::_16Bytes as u32,
-        },
-        // .rodata
-        PeSectionHdr {
-            name: [b'.', b'r', b'o', b'd', b'a', b't', b'a', 0],
-            virtual_size: addr_info.rodata_virt_size() as u32,
-            virtual_address: usize::from(addr_info.rodata.start) as u32,
-            raw_data_size: addr_info.rodata_file_size() as u32,
-            data_addr: usize::from(SetupFileOffset::from(addr_info.rodata.start)) as u32,
-            relocs: 0,
-            line_numbers: 0,
-            num_relocs: 0,
-            num_lin_numbers: 0,
-            flags: (PeSectionHdrFlags::CNT_INITIALIZED_DATA | PeSectionHdrFlags::MEM_READ).bits
-                | PeSectionHdrFlagsAlign::_16Bytes as u32,
-        },
-    ];
+    let mut sec_hdrs = get_pe_sec_headers_from(&elf);
+
+    sec_hdrs.push(PeSectionHdr::new_reloc(
+        relocs.len() as u32,
+        usize::from(SetupVA::from(reloc_offset)) as u32,
+        relocs.len() as u32,
+        usize::from(reloc_offset) as u32,
+    ));
+
     // Write the MS-DOS header
     bin.extend_from_slice(&MZ_MAGIC.to_le_bytes());
     // Write the MS-DOS stub at 0x3c
@@ -459,4 +308,141 @@ pub(crate) fn make_pe_coff_header(setup_elf: &[u8], image_size: usize) -> ImageP
         header_at_zero: bin,
         relocs: (reloc_offset, relocs),
     }
+}
+
+impl PeSectionHdr {
+    fn new_reloc(
+        virtual_size: u32,
+        virtual_address: u32,
+        raw_data_size: u32,
+        data_addr: u32,
+    ) -> Self {
+        Self {
+            name: [b'.', b'r', b'e', b'l', b'o', b'c', 0, 0],
+            virtual_size,
+            virtual_address,
+            raw_data_size,
+            data_addr,
+            relocs: 0,
+            line_numbers: 0,
+            num_relocs: 0,
+            num_lin_numbers: 0,
+            flags: (PeSectionHdrFlags::CNT_INITIALIZED_DATA
+                | PeSectionHdrFlags::MEM_READ
+                | PeSectionHdrFlags::MEM_DISCARDABLE)
+                .bits
+                | PeSectionHdrFlagsAlign::_1Bytes as u32,
+        }
+    }
+
+    fn new_text(
+        virtual_size: u32,
+        virtual_address: u32,
+        raw_data_size: u32,
+        data_addr: u32,
+    ) -> Self {
+        Self {
+            name: [b'.', b't', b'e', b'x', b't', 0, 0, 0],
+            virtual_size,
+            virtual_address,
+            raw_data_size,
+            data_addr,
+            relocs: 0,
+            line_numbers: 0,
+            num_relocs: 0,
+            num_lin_numbers: 0,
+            flags: (PeSectionHdrFlags::CNT_CODE
+                | PeSectionHdrFlags::MEM_READ
+                | PeSectionHdrFlags::MEM_EXECUTE)
+                .bits
+                | PeSectionHdrFlagsAlign::_16Bytes as u32,
+        }
+    }
+
+    fn new_data(
+        virtual_size: u32,
+        virtual_address: u32,
+        raw_data_size: u32,
+        data_addr: u32,
+    ) -> Self {
+        Self {
+            name: [b'.', b'd', b'a', b't', b'a', 0, 0, 0],
+            virtual_size,
+            virtual_address,
+            raw_data_size,
+            data_addr,
+            relocs: 0,
+            line_numbers: 0,
+            num_relocs: 0,
+            num_lin_numbers: 0,
+            flags: (PeSectionHdrFlags::CNT_INITIALIZED_DATA
+                | PeSectionHdrFlags::MEM_READ
+                | PeSectionHdrFlags::MEM_WRITE)
+                .bits
+                | PeSectionHdrFlagsAlign::_16Bytes as u32,
+        }
+    }
+
+    fn new_rodata(
+        virtual_size: u32,
+        virtual_address: u32,
+        raw_data_size: u32,
+        data_addr: u32,
+    ) -> Self {
+        Self {
+            name: [b'.', b'r', b'o', b'd', b'a', b't', b'a', 0],
+            virtual_size,
+            virtual_address,
+            raw_data_size,
+            data_addr,
+            relocs: 0,
+            line_numbers: 0,
+            num_relocs: 0,
+            num_lin_numbers: 0,
+            flags: (PeSectionHdrFlags::CNT_INITIALIZED_DATA | PeSectionHdrFlags::MEM_READ).bits
+                | PeSectionHdrFlagsAlign::_16Bytes as u32,
+        }
+    }
+}
+
+fn get_pe_sec_headers_from(elf: &xmas_elf::ElfFile) -> Vec<PeSectionHdr> {
+    let mut result = vec![];
+
+    for program in elf.program_iter() {
+        if program.get_type().unwrap() == xmas_elf::program::Type::Load {
+            let offset = SetupVA::from(program.virtual_addr() as usize);
+            let length = program.mem_size() as usize;
+
+            if program.flags().is_execute() {
+                result.push(PeSectionHdr::new_text(
+                    length as u32,
+                    usize::from(offset) as u32,
+                    length as u32,
+                    usize::from(SetupFileOffset::from(offset)) as u32,
+                ));
+            } else if program.flags().is_write() {
+                // We don't care about `.bss` sections since the binary is
+                // expanded to raw.
+                if program.file_size() == 0 {
+                    continue;
+                }
+
+                result.push(PeSectionHdr::new_data(
+                    length as u32,
+                    usize::from(offset) as u32,
+                    length as u32,
+                    usize::from(SetupFileOffset::from(offset)) as u32,
+                ));
+            } else if program.flags().is_read() {
+                result.push(PeSectionHdr::new_rodata(
+                    length as u32,
+                    usize::from(offset) as u32,
+                    length as u32,
+                    usize::from(SetupFileOffset::from(offset)) as u32,
+                ));
+            }
+        }
+    }
+
+    result
 }
