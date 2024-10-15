@@ -106,6 +106,9 @@ DOCS_DIR=${ASTER_SRC_DIR}/docs
 OSTD_CARGO_TOML_PATH=${ASTER_SRC_DIR}/ostd/Cargo.toml
 OSTD_TEST_CARGO_TOML_PATH=${ASTER_SRC_DIR}/ostd/libs/ostd-test/Cargo.toml
 OSTD_MACROS_CARGO_TOML_PATH=${ASTER_SRC_DIR}/ostd/libs/ostd-macros/Cargo.toml
+LINUX_BOOT_PARAMS_CARGO_TOML_PATH=${ASTER_SRC_DIR}/ostd/libs/linux-bzimage/boot-params/Cargo.toml
+LINUX_BZIMAGE_BUILDER_CARGO_TOML_PATH=${ASTER_SRC_DIR}/ostd/libs/linux-bzimage/builder/Cargo.toml
+LINUX_BZIMAGE_SETUP_CARGO_TOML_PATH=${ASTER_SRC_DIR}/ostd/libs/linux-bzimage/setup/Cargo.toml
 OSDK_CARGO_TOML_PATH=${ASTER_SRC_DIR}/osdk/Cargo.toml
 OSDK_TEST_RUNNER_CARGO_TOML_PATH=${ASTER_SRC_DIR}/osdk/test-kernel/Cargo.toml
 VERSION_PATH=${ASTER_SRC_DIR}/VERSION
@@ -125,11 +128,17 @@ new_version=$(bump_version ${current_version})
 update_package_version ${OSTD_TEST_CARGO_TOML_PATH}
 update_package_version ${OSTD_MACROS_CARGO_TOML_PATH}
 update_package_version ${OSTD_CARGO_TOML_PATH}
+update_package_version ${LINUX_BOOT_PARAMS_CARGO_TOML_PATH}
+update_package_version ${LINUX_BZIMAGE_BUILDER_CARGO_TOML_PATH}
+update_package_version ${LINUX_BZIMAGE_SETUP_CARGO_TOML_PATH}
 update_dep_version ${OSTD_CARGO_TOML_PATH} ostd-test
+update_dep_version ${OSTD_CARGO_TOML_PATH} linux-boot-params
 update_dep_version ${OSTD_CARGO_TOML_PATH} ostd-macros
+update_dep_version ${LINUX_BZIMAGE_SETUP_CARGO_TOML_PATH} linux-boot-params
 update_package_version ${OSDK_CARGO_TOML_PATH}
 update_package_version ${OSDK_TEST_RUNNER_CARGO_TOML_PATH}
 update_dep_version ${OSDK_TEST_RUNNER_CARGO_TOML_PATH} ostd
+update_dep_version ${OSDK_CARGO_TOML_PATH} linux-bzimage-builder
 
 # Automatically bump Cargo.lock files
 cargo update -p aster-nix --precise $new_version # For Cargo.lock
