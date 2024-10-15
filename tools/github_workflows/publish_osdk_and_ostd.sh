@@ -60,6 +60,8 @@ do_publish_for() {
 }
 
 do_publish_for osdk
+do_publish_for ostd/libs/linux-bzimage/build
+do_publish_for ostd/libs/linux-bzimage/boot-params
 
 # All supported targets of OSTD, this array should keep consistent with
 # `package.metadata.docs.rs.targets` in `ostd/Cargo.toml`.
@@ -67,6 +69,7 @@ TARGETS="x86_64-unknown-none"
 for TARGET in $TARGETS; do
     do_publish_for ostd/libs/ostd-macros $TARGET
     do_publish_for ostd/libs/ostd-test $TARGET
+    do_publish_for ostd/libs/linux-bzimage/setup $TARGET
     do_publish_for ostd $TARGET
     do_publish_for osdk/test-kernel $TARGET
 

@@ -9,15 +9,8 @@ repository = "https://github.com/asterinas/asterinas"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[dependencies.linux-bzimage-builder]
-# The path for local development
-path = "../ostd/libs/linux-bzimage/builder"
-# The version specified here is used for publishing on crates.io.
-# Please update this version when publishing the cargo-osdk crate
-# if there have been any changes to the dependent crate.
-version = "0.2.0"
-
 [dependencies]
+linux-bzimage-builder = { version = "0.2.0", path = "../ostd/libs/linux-bzimage/builder" }
 clap = { version = "4.4.17", features = ["cargo", "derive"] }
 chrono = "0.4.38"
 env_logger = "0.11.0"

@@ -205,10 +205,9 @@ fn install_setup_with_arch(
         let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let setup_dir = crate_dir.join("../ostd/libs/linux-bzimage/setup");
         cmd.arg("--path").arg(setup_dir);
+    } else {
+        cmd.arg("--version").arg(env!("CARGO_PKG_VERSION"));
     }
-    // Remember to upgrade this version if new version of linux-bzimage-setup is released.
-    const LINUX_BZIMAGE_SETUP_VERSION: &str = "0.1.0";
-    cmd.arg("--version").arg(LINUX_BZIMAGE_SETUP_VERSION);
     cmd.arg("--target").arg(match arch {
         SetupInstallArch::X86_64 => "x86_64-unknown-none",
         SetupInstallArch::Other(path) => path.to_str().unwrap(),
