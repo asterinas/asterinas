@@ -85,6 +85,8 @@ pub enum PageUsage {
     KernelStack = 67,
     /// The page is used by the boot page table.
     BootPageTable = 68,
+    /// The page is used as a heap page.
+    Heap = 69,
 }
 
 #[repr(C)]
@@ -294,6 +296,19 @@ impl PageMeta for BootPageTableMeta {
     const USAGE: PageUsage = PageUsage::BootPageTable;
     fn on_drop(_page: &mut Page<Self>) {
         // Do noting.
+    }
+}
+
+/// The metadata of a heap page.
+#[derive(Debug, Default)]
+#[repr(C)]
+pub struct HeapMeta {}
+impl Sealed for HeapMeta {}
+impl PageMeta for HeapMeta {
+    const USAGE: PageUsage = PageUsage::Heap;
+    fn on_drop(_page: &mut Page<Self>) {
+        // Nothing should be done so far since dropping the page would
+        // have all taken care of.
     }
 }
 

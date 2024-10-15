@@ -11,7 +11,10 @@ use spin::Once;
 
 use super::paddr_to_vaddr;
 use crate::{
-    mm::{page::allocator::PAGE_ALLOCATOR, PAGE_SIZE},
+    mm::{
+        page::{allocator::alloc_contiguous, meta::HeapMeta},
+        PAGE_SIZE,
+    },
     prelude::*,
     sync::SpinLock,
     trap::disable_local,
@@ -93,19 +96,23 @@ impl LockedHeapWithRescue {
             size / PAGE_SIZE
         };
 
-        let allocation_start_paddr = {
-            let mut page_allocator = PAGE_ALLOCATOR.get().unwrap().disable_irq().lock();
+        let allocated_cont_pages = {
             if num_frames >= MIN_NUM_FRAMES {
-                page_allocator
-                    .alloc(Layout::from_size_align(num_frames * PAGE_SIZE, PAGE_SIZE).unwrap())
-                    .ok_or(Error::NoMemory)?
+                alloc_contiguous(
+                    Layout::from_size_align(num_frames * PAGE_SIZE, PAGE_SIZE).unwrap(),
+                    |_| HeapMeta::default(),
+                )
+                .ok_or(Error::NoMemory)?
             } else {
-                match page_allocator
-                    .alloc(Layout::from_size_align(MIN_NUM_FRAMES * PAGE_SIZE, PAGE_SIZE).unwrap())
-                {
-                    None => page_allocator
-                        .alloc(Layout::from_size_align(num_frames * PAGE_SIZE, PAGE_SIZE).unwrap())
-                        .ok_or(Error::NoMemory)?,
+                match alloc_contiguous(
+                    Layout::from_size_align(MIN_NUM_FRAMES * PAGE_SIZE, PAGE_SIZE).unwrap(),
+                    |_| HeapMeta::default(),
+                ) {
+                    None => alloc_contiguous(
+                        Layout::from_size_align(num_frames * PAGE_SIZE, PAGE_SIZE).unwrap(),
+                        |_| HeapMeta::default(),
+                    )
+                    .ok_or(Error::NoMemory)?,
                     Some(start) => {
                         num_frames = MIN_NUM_FRAMES;
                         start
@@ -113,6 +120,10 @@ impl LockedHeapWithRescue {
                 }
             }
         };
+
+        // Forget the allocated pages to prevent unintended deallocation.
+        let allocation_start_paddr = allocated_cont_pages.into_raw().start;
+
         // FIXME: the alloc function internally allocates heap memory(inside FrameAllocator).
         // So if the heap is nearly run out, allocating frame will fail too.
         let vaddr = paddr_to_vaddr(allocation_start_paddr);
