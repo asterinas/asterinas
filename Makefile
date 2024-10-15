@@ -89,7 +89,7 @@ endif
 ifeq ($(BOOT_PROTOCOL), linux-efi-handover64)
 CARGO_OSDK_ARGS += --grub-mkrescue=/usr/bin/grub-mkrescue
 CARGO_OSDK_ARGS += --grub-boot-protocol="linux"
-CARGO_OSDK_ARGS += --encoding gzip
+CARGO_OSDK_ARGS += --encoding raw # FIXME: GZIP self-decompression triggers CPU faults
 else ifeq ($(BOOT_PROTOCOL), linux-legacy32)
 CARGO_OSDK_ARGS += --linux-x86-legacy-boot
 CARGO_OSDK_ARGS += --grub-boot-protocol="linux"
