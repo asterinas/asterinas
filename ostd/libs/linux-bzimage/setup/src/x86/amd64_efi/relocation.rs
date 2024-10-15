@@ -2,6 +2,7 @@
 
 use crate::x86::get_image_loaded_offset;
 
+#[repr(C)]
 struct Elf64Rela {
     r_offset: u64,
     r_info: u64,
@@ -15,7 +16,9 @@ fn get_rela_array() -> &'static [Elf64Rela] {
     }
     let start = __rela_dyn_start as *const Elf64Rela;
     let end = __rela_dyn_end as *const Elf64Rela;
+
     let len = unsafe { end.offset_from(start) } as usize;
+
     #[cfg(feature = "debug_print")]
     unsafe {
         use crate::console::{print_hex, print_str};
@@ -27,6 +30,7 @@ fn get_rela_array() -> &'static [Elf64Rela] {
         print_hex(end as u64);
         print_str("\n");
     }
+
     // SAFETY: the linker will ensure that the symbols are valid.
     unsafe { core::slice::from_raw_parts(start, len) }
 }

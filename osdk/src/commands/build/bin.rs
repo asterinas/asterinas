@@ -166,6 +166,15 @@ fn install_setup_with_arch(
     }
     let target_dir = std::fs::canonicalize(target_dir).unwrap();
 
+    // Use `rustup override set` to set the toolchain to the frozen nightly version.
+    let nightly_version = "nightly-2024-06-20";
+    let _status = Command::new("rustup")
+        .arg("override")
+        .arg("set")
+        .arg(nightly_version)
+        .status()
+        .unwrap();
+
     let mut cmd = Command::new("cargo");
     cmd.env("RUSTFLAGS", "-Ccode-model=kernel -Crelocation-model=pie -Ctarget-feature=+crt-static -Zplt=yes -Zrelax-elf-relocations=yes -Crelro-level=full");
     cmd.arg("install").arg("linux-bzimage-setup");
@@ -190,6 +199,14 @@ fn install_setup_with_arch(
     cmd.arg("--target-dir").arg(target_dir.as_os_str());
 
     let status = cmd.status().unwrap();
+
+    // Restore the toolchain.
+    let _status = Command::new("rustup")
+        .arg("override")
+        .arg("unset")
+        .status()
+        .unwrap();
+
     if !status.success() {
         panic!(
             "Failed to build linux x86 setup header:\n\tcommand `{:?}`\n\treturned {}",
