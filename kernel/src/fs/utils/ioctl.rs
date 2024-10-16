@@ -27,6 +27,10 @@ pub enum IoctlCmd {
     FIONBIO = 0x5421,
     /// the calling process gives up this controlling terminal
     TIOCNOTTY = 0x5422,
+    /// Clear the close on exec flag on a file descriptor
+    FIONCLEX = 0x5450,
+    /// Set the close on exec flag on a file descriptor
+    FIOCLEX = 0x5451,
     /// Enable or disable asynchronous I/O mode.
     FIOASYNC = 0x5452,
     /// Get Pty Number
