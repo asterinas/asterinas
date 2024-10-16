@@ -12,8 +12,8 @@ use super::{
     posix_thread::{thread_table, PosixThread, PosixThreadBuilder, PosixThreadExt, ThreadName},
     process_table,
     process_vm::ProcessVm,
-    signal::{constants::SIGCHLD, sig_disposition::SigDispositions, sig_num::SigNum},
-    Credentials, Process, ProcessBuilder,
+    signal::sig_disposition::SigDispositions,
+    Credentials, Namespaces, Process, ProcessBuilder,
 };
 use crate::{
     cpu::LinuxAbi,
@@ -162,7 +162,8 @@ impl CloneFlags {
             | CloneFlags::CLONE_SETTLS
             | CloneFlags::CLONE_PARENT_SETTID
             | CloneFlags::CLONE_CHILD_SETTID
-            | CloneFlags::CLONE_CHILD_CLEARTID;
+            | CloneFlags::CLONE_CHILD_CLEARTID
+            | CloneFlags::CLONE_NEWNS;
         let unsupported_flags = *self - supported_flags;
         if !unsupported_flags.is_empty() {
             panic!("contains unsupported clone flags: {:?}", unsupported_flags);
@@ -356,6 +357,11 @@ fn clone_child_process(
     clone_child_cleartid(child_posix_thread, clone_args.child_tid, clone_flags)?;
     clone_child_settid(child_posix_thread, clone_args.child_tid, clone_flags)?;
 
+    // clone namespaces and switch to new namespaces
+    let current = current!();
+    let child_namespaces = clone_namespaces(&child, current.namespaces(), clone_flags);
+    child.switch_namespaces(child_namespaces);
+
     // Sets parent process and group for child process.
     set_parent_and_group(process, &child);
 
@@ -464,6 +470,22 @@ fn clone_files(
     }
 }
 
+fn clone_namespaces(
+    process: &Arc<Process>,
+    parent_namespaces: &Arc<Mutex<Namespaces>>,
+    clone_flags: CloneFlags,
+) -> Arc<Mutex<Namespaces>> {
+    let parent_namespaces = parent_namespaces.lock();
+
+    let new_mnt_ns = if clone_flags.contains(CloneFlags::CLONE_NEWNS) {
+        parent_namespaces.mnt_ns().copy_mnt_ns(process)
+    } else {
+        parent_namespaces.mnt_ns().clone()
+    };
+
+    Arc::new(Mutex::new(Namespaces::new(new_mnt_ns)))
+}
+
 fn clone_sighand(
     parent_sig_dispositions: &Arc<Mutex<SigDispositions>>,
     clone_flags: CloneFlags,
@@ -497,4 +519,11 @@ fn set_parent_and_group(parent: &Process, child: &Arc<Process>) {
     *child_group_mut = Arc::downgrade(&process_group);
 
     process_table_mut.insert(child.pid(), child.clone());
+}
+
+pub fn unshare(unshare_flags: CloneFlags) -> Result<()> {
+    let current = current!();
+    let child_namespaces = clone_namespaces(&current, current.namespaces(), unshare_flags);
+    current.switch_namespaces(child_namespaces);
+    Ok(())
 }
