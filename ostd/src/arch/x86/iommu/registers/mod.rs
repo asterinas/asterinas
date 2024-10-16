@@ -26,7 +26,7 @@ use crate::{
         x86::kernel::acpi::dmar::{Dmar, Remapping},
     },
     mm::paddr_to_vaddr,
-    sync::SpinLock,
+    sync::{LocalIrqDisabled, SpinLock},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -91,7 +91,10 @@ impl IommuRegisters {
     }
 
     /// Enable DMA remapping with static RootTable
-    pub(super) fn enable_dma_remapping(&mut self, root_table: &'static SpinLock<RootTable>) {
+    pub(super) fn enable_dma_remapping(
+        &mut self,
+        root_table: &'static SpinLock<RootTable, LocalIrqDisabled>,
+    ) {
         // Set root table address
         self.root_table_address
             .write(root_table.lock().root_paddr() as u64);
