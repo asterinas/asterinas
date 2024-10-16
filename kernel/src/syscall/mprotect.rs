@@ -32,6 +32,16 @@ pub fn sys_mprotect(addr: Vaddr, len: usize, perms: u64, ctx: &Context) -> Resul
         "integer overflow when (addr + len)",
     ))?;
     let range = addr..end;
+
+    // On x86, `PROT_WRITE` implies `PROT_READ`.
+    // <https://man7.org/linux/man-pages/man2/mprotect.2.html>
+    #[cfg(target_arch = "x86_64")]
+    let vm_perms = if !vm_perms.contains(VmPerms::READ) && vm_perms.contains(VmPerms::WRITE) {
+        vm_perms | VmPerms::READ
+    } else {
+        vm_perms
+    };
+
     root_vmar.protect(vm_perms, range)?;
     Ok(SyscallReturn::Return(0))
 }
