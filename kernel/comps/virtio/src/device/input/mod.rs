@@ -38,24 +38,26 @@ pub static DEVICE_NAME: &str = "Virtio-Input";
 #[repr(u8)]
 #[derive(Debug, Clone, Copy)]
 pub enum InputConfigSelect {
-    /// Returns the name of the device, in u.string. subsel is zero.
+    /// Invalid configuration selection.
+    Unset = 0x00,
+    /// Returns the name of the device, subsel is zero.
     IdName = 0x01,
-    /// Returns the serial number of the device, in u.string. subsel is zero.
+    /// Returns the serial number of the device, subsel is zero.
     IdSerial = 0x02,
-    /// Returns ID information of the device, in u.ids. subsel is zero.
+    /// Returns ID information of the device, subsel is zero.
     IdDevids = 0x03,
-    /// Returns input properties of the device, in u.bitmap. subsel is zero.
+    /// Returns input properties of the device, subsel is zero.
     /// Individual bits in the bitmap correspond to INPUT_PROP_* constants used
     /// by the underlying evdev implementation.
     PropBits = 0x10,
     /// subsel specifies the event type using EV_* constants in the underlying
     /// evdev implementation. If size is non-zero the event type is supported
-    /// and a bitmap of supported event codes is returned in u.bitmap. Individual
+    /// and a bitmap of supported event codes is returned. Individual
     /// bits in the bitmap correspond to implementation-defined input event codes,
     /// for example keys or pointing device axes.
     EvBits = 0x11,
     /// subsel specifies the absolute axis using ABS_* constants in the underlying
-    /// evdev implementation. Information about the axis will be returned in u.abs.
+    /// evdev implementation. Information about the axis will be returned.
     AbsInfo = 0x12,
 }
 
@@ -92,7 +94,7 @@ struct AbsInfo {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Pod)]
-struct DevIDs {
+struct DevIds {
     bustype: u16,
     vendor: u16,
     product: u16,

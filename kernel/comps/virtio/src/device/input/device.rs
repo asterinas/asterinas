@@ -32,7 +32,7 @@ bitflags! {
     /// The properties of input device.
     ///
     /// Ref: Linux input-event-codes.h
-    pub struct InputProp : u8{
+    pub struct InputProp : u8 {
         /// Needs a pointer
         const POINTER           = 1 << 0;
         /// Direct input devices
@@ -112,15 +112,15 @@ impl InputDevice {
             callbacks: RwLock::new(Vec::new()),
         });
 
-        let mut raw_name: [u8; 128] = [0; 128];
-        device.query_config_select(InputConfigSelect::IdName, 0, &mut raw_name);
-        let name = String::from_utf8(raw_name.to_vec()).unwrap();
+        let name = device.query_config_id_name();
         info!("Virtio input device name:{}", name);
 
-        let mut prop: [u8; 128] = [0; 128];
-        device.query_config_select(InputConfigSelect::PropBits, 0, &mut prop);
-        let input_prop = InputProp::from_bits(prop[0]).unwrap();
-        debug!("input device prop:{:?}", input_prop);
+        let input_prop = device.query_config_prop_bits();
+        if let Some(prop) = input_prop {
+            debug!("input device prop: {:?}", prop);
+        } else {
+            debug!("input device has no properties or the properties is not defined");
+        }
 
         let mut transport = device.transport.disable_irq().lock();
         fn config_space_change(_: &TrapFrame) {
@@ -167,25 +167,45 @@ impl InputDevice {
         }
     }
 
-    /// Query a specific piece of information by `select` and `subsel`, and write
-    /// result to `out`, return the result size.
-    pub fn query_config_select(&self, select: InputConfigSelect, subsel: u8, out: &mut [u8]) -> u8 {
+    pub fn query_config_id_name(&self) -> String {
+        let size = self.select_config(InputConfigSelect::IdName, 0);
+
+        let out = {
+            // TODO: Add a general API to read this byte-by-byte.
+            let mut out = Vec::with_capacity(size);
+            let mut data_ptr = field_ptr!(&self.config, VirtioInputConfig, data).cast::<u8>();
+            for _ in 0..size {
+                out.push(data_ptr.read_once().unwrap());
+                data_ptr.byte_add(1);
+            }
+            out
+        };
+
+        String::from_utf8(out).unwrap()
+    }
+
+    pub fn query_config_prop_bits(&self) -> Option<InputProp> {
+        let size = self.select_config(InputConfigSelect::PropBits, 0);
+        if size == 0 {
+            return None;
+        }
+        assert!(size == 1);
+
+        let data_ptr = field_ptr!(&self.config, VirtioInputConfig, data);
+        InputProp::from_bits(data_ptr.cast::<u8>().read_once().unwrap())
+    }
+
+    /// Query a specific piece of information by `select` and `subsel`, return the result size.
+    fn select_config(&self, select: InputConfigSelect, subsel: u8) -> usize {
         field_ptr!(&self.config, VirtioInputConfig, select)
             .write_once(&(select as u8))
             .unwrap();
         field_ptr!(&self.config, VirtioInputConfig, subsel)
             .write_once(&subsel)
             .unwrap();
-        let size = field_ptr!(&self.config, VirtioInputConfig, size)
+        field_ptr!(&self.config, VirtioInputConfig, size)
             .read_once()
-            .unwrap();
-        let data: [u8; 128] = field_ptr!(&self.config, VirtioInputConfig, data)
-            // FIXME: It is impossible to call `read_once` on `[u8; 128]`. What's the proper way to
-            // read this field out?
-            .read()
-            .unwrap();
-        out[..size as usize].copy_from_slice(&data[..size as usize]);
-        size
+            .unwrap() as usize
     }
 
     fn handle_irq(&self) {

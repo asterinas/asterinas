@@ -3,7 +3,7 @@
 use aster_network::EthernetAddr;
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use bitflags::bitflags;
-use ostd::{io_mem::IoMem, Pod};
+use ostd::{io_mem::IoMem, offset_of, Pod};
 
 use crate::transport::VirtioTransport;
 
@@ -78,10 +78,19 @@ impl VirtioNetConfig {
     }
 
     pub(super) fn read(this: &SafePtr<Self, IoMem>) -> ostd::prelude::Result<Self> {
+        // TODO: Add a general API to read this byte-by-byte.
+        let mac_data = {
+            let mut mac_data: [u8; 6] = [0; 6];
+            let mut mac_ptr = field_ptr!(this, Self, mac).cast::<u8>();
+            for byte in &mut mac_data {
+                *byte = mac_ptr.read_once().unwrap();
+                mac_ptr.byte_add(1);
+            }
+            mac_data
+        };
+
         Ok(Self {
-            // FIXME: It is impossible to call `read_once` on `EthernetAddr`. What's the proper way
-            // to read this field out?
-            mac: field_ptr!(this, Self, mac).read()?,
+            mac: aster_network::EthernetAddr(mac_data),
             status: field_ptr!(this, Self, status).read_once()?,
             max_virtqueue_pairs: field_ptr!(this, Self, max_virtqueue_pairs).read_once()?,
             mtu: field_ptr!(this, Self, mtu).read_once()?,
