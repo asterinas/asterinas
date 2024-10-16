@@ -71,9 +71,9 @@ do_publish_for() {
     popd
 }
 
-do_publish_for osdk
-do_publish_for ostd/libs/linux-bzimage/build
 do_publish_for ostd/libs/linux-bzimage/boot-params
+do_publish_for ostd/libs/linux-bzimage/builder
+do_publish_for osdk
 
 # All supported targets of OSTD, this array should keep consistent with
 # `package.metadata.docs.rs.targets` in `ostd/Cargo.toml`.
