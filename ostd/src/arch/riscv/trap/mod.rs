@@ -6,7 +6,9 @@ mod trap;
 
 pub use trap::{GeneralRegs, TrapFrame, UserContext};
 
-use crate::cpu_local_cell;
+use crate::{
+    arch::device::plic::claim_interrupt, cpu_local_cell, trap::call_irq_callback_functions,
+};
 
 cpu_local_cell! {
     static IS_KERNEL_INTERRUPTED: bool = false;
@@ -30,9 +32,20 @@ extern "C" fn trap_handler(f: &mut TrapFrame) {
     use riscv::register::scause::Trap;
 
     match riscv::register::scause::read().cause() {
-        Trap::Interrupt(_) => {
+        Trap::Interrupt(interrupt) => {
             IS_KERNEL_INTERRUPTED.store(true);
-            todo!();
+            match interrupt {
+                riscv::register::scause::Interrupt::SupervisorSoft => todo!(),
+                riscv::register::scause::Interrupt::SupervisorTimer => todo!(),
+                riscv::register::scause::Interrupt::SupervisorExternal => {
+                    while let irq = claim_interrupt()
+                        && irq != 0
+                    {
+                        call_irq_callback_functions(f, irq as usize);
+                    }
+                }
+                riscv::register::scause::Interrupt::Unknown => todo!(),
+            }
             IS_KERNEL_INTERRUPTED.store(false);
         }
         Trap::Exception(e) => {
