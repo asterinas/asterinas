@@ -112,6 +112,7 @@ LINUX_BZIMAGE_SETUP_CARGO_TOML_PATH=${ASTER_SRC_DIR}/ostd/libs/linux-bzimage/set
 OSDK_CARGO_TOML_PATH=${ASTER_SRC_DIR}/osdk/Cargo.toml
 OSDK_TEST_RUNNER_CARGO_TOML_PATH=${ASTER_SRC_DIR}/osdk/test-kernel/Cargo.toml
 VERSION_PATH=${ASTER_SRC_DIR}/VERSION
+ASTER_KERNEL_PATH=${ASTER_SRC_DIR}/kernel
 
 current_version=$(cat ${VERSION_PATH})
 bump_type=$1
@@ -139,6 +140,7 @@ update_package_version ${OSDK_CARGO_TOML_PATH}
 update_package_version ${OSDK_TEST_RUNNER_CARGO_TOML_PATH}
 update_dep_version ${OSDK_TEST_RUNNER_CARGO_TOML_PATH} ostd
 update_dep_version ${OSDK_CARGO_TOML_PATH} linux-bzimage-builder
+update_package_version ${ASTER_KERNEL_PATH}/libs/aster-page-allocator/Cargo.toml
 
 # Automatically bump Cargo.lock files
 cargo update -p aster-nix --precise $new_version # For Cargo.lock
