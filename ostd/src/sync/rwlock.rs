@@ -125,6 +125,11 @@ impl<T> RwLock<T> {
     }
 }
 
+#[inline]
+fn is_read_lockable(lock: usize) -> bool {
+    lock & (WRITER | MAX_READER | BEING_UPGRADED) == 0
+}
+
 impl<T: ?Sized> RwLock<T> {
     /// Acquires a read lock while disabling the local IRQs and spin-wait
     /// until it can be acquired.
@@ -192,14 +197,15 @@ impl<T: ?Sized> RwLock<T> {
     /// when acquiring fails.
     pub fn try_read_irq_disabled(&self) -> Option<RwLockReadGuard<T>> {
         let irq_guard = disable_local();
-        let lock = self.lock.fetch_add(READER, Acquire);
-        if lock & (WRITER | MAX_READER | BEING_UPGRADED) == 0 {
+        let res = self.lock.fetch_update(Acquire, Relaxed, |lock| {
+            is_read_lockable(lock).then(|| lock + READER)
+        });
+        if res.is_ok() {
             Some(RwLockReadGuard {
                 inner: self,
                 inner_guard: InnerGuard::IrqGuard(irq_guard),
             })
         } else {
-            self.lock.fetch_sub(READER, Release);
             None
         }
     }
@@ -384,14 +390,15 @@ impl<T: ?Sized> RwLock<T> {
     /// [`try_read_irq_disabled`]: Self::try_read_irq_disabled
     pub fn try_read(&self) -> Option<RwLockReadGuard<T>> {
         let guard = disable_preempt();
-        let lock = self.lock.fetch_add(READER, Acquire);
-        if lock & (WRITER | MAX_READER | BEING_UPGRADED) == 0 {
+        let res = self.lock.fetch_update(Acquire, Relaxed, |lock| {
+            is_read_lockable(lock).then(|| lock + READER)
+        });
+        if res.is_ok() {
             Some(RwLockReadGuard {
                 inner: self,
                 inner_guard: InnerGuard::PreemptGuard(guard),
             })
         } else {
-            self.lock.fetch_sub(READER, Release);
             None
         }
     }
@@ -404,14 +411,15 @@ impl<T: ?Sized> RwLock<T> {
     /// [`try_read`]: Self::try_read
     pub fn try_read_arc(self: &Arc<Self>) -> Option<ArcRwLockReadGuard<T>> {
         let guard = disable_preempt();
-        let lock = self.lock.fetch_add(READER, Acquire);
-        if lock & (WRITER | MAX_READER | BEING_UPGRADED) == 0 {
+        let res = self.lock.fetch_update(Acquire, Relaxed, |lock| {
+            is_read_lockable(lock).then(|| lock + READER)
+        });
+        if res.is_ok() {
             Some(ArcRwLockReadGuard {
                 inner: self.clone(),
                 inner_guard: InnerGuard::PreemptGuard(guard),
             })
         } else {
-            self.lock.fetch_sub(READER, Release);
             None
         }
     }
