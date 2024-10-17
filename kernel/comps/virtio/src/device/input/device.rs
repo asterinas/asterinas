@@ -179,12 +179,17 @@ impl InputDevice {
         let size = field_ptr!(&self.config, VirtioInputConfig, size)
             .read_once()
             .unwrap();
-        let data: [u8; 128] = field_ptr!(&self.config, VirtioInputConfig, data)
-            // FIXME: It is impossible to call `read_once` on `[u8; 128]`. What's the proper way to
-            // read this field out?
-            .read()
-            .unwrap();
-        out[..size as usize].copy_from_slice(&data[..size as usize]);
+        // FIXME: It is impossible to call `read_once` on `[u8; 128]`. What's the proper way to
+        // read this field out?
+        let data_offset = offset_of!(VirtioInputConfig, data);
+        for cur_offset in (0..size as usize).step_by(8) {
+            let mut ptr = self.config.borrow_vm();
+            ptr.byte_add(data_offset as usize + cur_offset);
+            let cur_data: u64 = ptr.cast().read_once().unwrap();
+            let bytes = cur_data.to_be_bytes();
+            let end = (cur_offset + 8).min(size as usize);
+            out[cur_offset..end].copy_from_slice(&bytes[..end - cur_offset]);
+        }
         size
     }
 
