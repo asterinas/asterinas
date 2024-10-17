@@ -16,6 +16,8 @@ mod cmdline;
 mod comm;
 mod exe;
 mod fd;
+mod stat;
+mod status;
 
 /// Represents the inode at `/proc/[pid]`.
 pub struct PidDirOps(Arc<Process>);
@@ -51,6 +53,8 @@ impl DirOps for PidDirOps {
             "comm" => CommFileOps::new_inode(self.0.clone(), this_ptr.clone()),
             "fd" => FdDirOps::new_inode(self.0.clone(), this_ptr.clone()),
             "cmdline" => CmdlineFileOps::new_inode(self.0.clone(), this_ptr.clone()),
+            "status" => status::StatusFileOps::new_inode(self.0.clone(), this_ptr.clone()),
+            "stat" => stat::StatFileOps::new_inode(self.0.clone(), this_ptr.clone()),
             _ => return_errno!(Errno::ENOENT),
         };
         Ok(inode)
@@ -73,6 +77,12 @@ impl DirOps for PidDirOps {
         });
         cached_children.put_entry_if_not_found("cmdline", || {
             CmdlineFileOps::new_inode(self.0.clone(), this_ptr.clone())
+        });
+        cached_children.put_entry_if_not_found("status", || {
+            status::StatusFileOps::new_inode(self.0.clone(), this_ptr.clone())
+        });
+        cached_children.put_entry_if_not_found("stat", || {
+            stat::StatFileOps::new_inode(self.0.clone(), this_ptr.clone())
         });
     }
 }
