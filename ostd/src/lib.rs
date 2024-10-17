@@ -47,7 +47,7 @@ pub mod user;
 
 use core::sync::atomic::AtomicBool;
 
-pub use ostd_macros::main;
+pub use ostd_macros::{default_page_allocator_init_fn, main, page_allocator_init_fn};
 pub use ostd_pod::Pod;
 
 pub use self::{error::Error, prelude::Result};
@@ -83,8 +83,10 @@ pub unsafe fn init() {
     boot::init();
     logger::init();
 
+    mm::page::allocator::bootstrap_init();
+    let meta_vec = mm::init_page_meta();
     mm::page::allocator::init();
-    mm::kspace::init_kernel_page_table(mm::init_page_meta());
+    mm::kspace::init_kernel_page_table(meta_vec);
     mm::dma::init();
 
     // SAFETY: This function is called only once in the entire system.

@@ -61,14 +61,19 @@ pub fn boot_all_aps() {
     AP_BOOT_INFO.call_once(|| {
         let mut per_ap_info = BTreeMap::new();
         // Use two pages to place stack pointers of all APs, thus support up to 1024 APs.
-        let boot_stack_array =
-            page::allocator::alloc_contiguous(2 * PAGE_SIZE, |_| KernelMeta::default()).unwrap();
+        let boot_stack_array = page::allocator::alloc_contiguous(
+            core::alloc::Layout::from_size_align(2 * PAGE_SIZE, PAGE_SIZE).unwrap(),
+            |_| KernelMeta::default(),
+        )
+        .unwrap();
         assert!(num_cpus < 1024);
 
         for ap in 1..num_cpus {
-            let boot_stack_pages =
-                page::allocator::alloc_contiguous(AP_BOOT_STACK_SIZE, |_| KernelMeta::default())
-                    .unwrap();
+            let boot_stack_pages = page::allocator::alloc_contiguous(
+                core::alloc::Layout::from_size_align(AP_BOOT_STACK_SIZE, PAGE_SIZE).unwrap(),
+                |_| KernelMeta::default(),
+            )
+            .unwrap();
             let boot_stack_ptr = paddr_to_vaddr(boot_stack_pages.end_paddr());
             let stack_array_ptr = paddr_to_vaddr(boot_stack_array.start_paddr()) as *mut u64;
             // SAFETY: The `stack_array_ptr` is valid and aligned.

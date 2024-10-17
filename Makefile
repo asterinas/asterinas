@@ -138,7 +138,8 @@ OSDK_CRATES := \
 	kernel/comps/time \
 	kernel/comps/virtio \
 	kernel/libs/aster-util \
-	kernel/libs/aster-bigtcp
+	kernel/libs/aster-bigtcp \
+	kernel/libs/aster-page-allocator
 
 .PHONY: all
 all: build
