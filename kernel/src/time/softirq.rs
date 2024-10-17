@@ -2,9 +2,8 @@
 
 use alloc::{boxed::Box, vec::Vec};
 
-use ostd::{sync::RwLock, timer, trap::SoftIrqLine};
-
-use crate::softirq_id::TIMER_SOFTIRQ_ID;
+use aster_softirq::{softirq_id::TIMER_SOFTIRQ_ID, SoftIrqLine};
+use ostd::{sync::RwLock, timer};
 
 static TIMER_SOFTIRQ_CALLBACKS: RwLock<Vec<Box<dyn Fn() + Sync + Send>>> = RwLock::new(Vec::new());
 

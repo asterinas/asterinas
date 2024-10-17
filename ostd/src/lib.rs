@@ -51,8 +51,6 @@ pub use ostd_macros::main;
 pub use ostd_pod::Pod;
 
 pub use self::{error::Error, prelude::Result};
-// [`CpuLocalCell`] is easy to be misused, so we don't expose it to the users.
-pub(crate) use crate::cpu::local::cpu_local_cell;
 
 /// Initializes OSTD.
 ///
@@ -87,8 +85,6 @@ pub unsafe fn init() {
     mm::kspace::init_kernel_page_table(mm::init_page_meta());
     mm::dma::init();
 
-    // SAFETY: This function is called only once in the entire system.
-    unsafe { trap::softirq::init() };
     arch::init_on_bsp();
 
     smp::init();

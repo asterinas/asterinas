@@ -39,6 +39,7 @@ use crate::arch;
 ///     println!("2nd FOO VAL: {:?}", FOO.load());
 /// }
 /// ```
+#[macro_export]
 macro_rules! cpu_local_cell {
     ($( $(#[$attr:meta])* $vis:vis static $name:ident: $t:ty = $init:expr; )*) => {
         $(
@@ -55,8 +56,6 @@ macro_rules! cpu_local_cell {
     };
 }
 
-pub(crate) use cpu_local_cell;
-
 /// Inner mutable CPU-local objects.
 ///
 /// CPU-local cell objects are only accessible from the current CPU. When
@@ -70,6 +69,10 @@ pub(crate) use cpu_local_cell;
 ///
 /// You should only create the CPU-local cell object using the macro
 /// [`cpu_local_cell!`].
+///
+/// Please exercise extreme caution when using `CpuLocalCell`. In most cases,
+/// it is necessary to disable interrupts or preemption when using it to prevent
+/// the operated object from being changed, which can lead to race conditions.
 ///
 /// For the difference between [`super::CpuLocal`] and [`CpuLocalCell`], see
 /// [`super`].

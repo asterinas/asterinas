@@ -1,13 +1,22 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! Software interrupt.
+#![no_std]
+#![deny(unsafe_code)]
+
+extern crate alloc;
 
 use alloc::boxed::Box;
 use core::sync::atomic::{AtomicU8, Ordering};
 
+use component::{init_component, ComponentInitError};
+use ostd::{cpu_local_cell, trap::register_bottom_half_handler};
 use spin::Once;
 
-use crate::{cpu_local_cell, task::disable_preempt};
+pub mod softirq_id;
+mod taskless;
+
+pub use taskless::Taskless;
 
 /// A representation of a software interrupt (softirq) line.
 ///
@@ -95,15 +104,15 @@ impl SoftIrqLine {
 /// A slice that stores the [`SoftIrqLine`]s, whose ID is equal to its offset in the slice.
 static LINES: Once<[SoftIrqLine; SoftIrqLine::NR_LINES as usize]> = Once::new();
 
-/// Initializes the softirq lines.
-///
-/// # Safety
-///
-/// This function must be called only once.
-pub unsafe fn init() {
+#[init_component]
+fn init() -> Result<(), ComponentInitError> {
     let lines: [SoftIrqLine; SoftIrqLine::NR_LINES as usize] =
         core::array::from_fn(|i| SoftIrqLine::new(i as u8));
     LINES.call_once(|| lines);
+    register_bottom_half_handler(process_pending);
+
+    taskless::init();
+    Ok(())
 }
 
 static ENABLED_MASK: AtomicU8 = AtomicU8::new(0);
@@ -139,7 +148,6 @@ pub(crate) fn process_pending() {
         return;
     }
 
-    let _preempt_guard = disable_preempt();
     disable_softirq_local();
 
     for _i in 0..SOFTIRQ_RUN_TIMES {

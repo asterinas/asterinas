@@ -70,9 +70,7 @@ pub mod net;
 pub mod prelude;
 mod process;
 mod sched;
-pub mod softirq_id;
 pub mod syscall;
-mod taskless;
 pub mod thread;
 pub mod time;
 mod util;
@@ -109,7 +107,6 @@ pub fn init() {
     fs::rootfs::init(boot::initramfs()).unwrap();
     device::init().unwrap();
     vdso::init();
-    taskless::init();
     process::init();
 }
 

@@ -135,6 +135,7 @@ OSDK_CRATES := \
 	kernel/comps/framebuffer \
 	kernel/comps/input \
 	kernel/comps/network \
+	kernel/comps/softirq \
 	kernel/comps/time \
 	kernel/comps/virtio \
 	kernel/libs/aster-util \
