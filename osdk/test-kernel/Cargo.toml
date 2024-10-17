@@ -11,4 +11,3 @@ repository ="https://github.com/asterinas/asterinas"
 [dependencies]
 ostd = { version = "0.9.3", path = "../../ostd" }
 owo-colors = "4.0.0"
-unwinding = { version = "0.2.3", default-features = false, features = ["fde-gnu-eh-frame-hdr", "hide-trace", "panic", "personality", "unwinder"] }

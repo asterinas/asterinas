@@ -15,7 +15,6 @@
 #![feature(format_args_nl)]
 #![feature(int_roundings)]
 #![feature(let_chains)]
-#![feature(linkage)]
 #![feature(linked_list_remove)]
 #![feature(negative_impls)]
 #![feature(register_tool)]
@@ -67,6 +66,7 @@ pub mod events;
 pub mod fs;
 pub mod ipc;
 pub mod net;
+pub mod oops;
 pub mod prelude;
 mod process;
 mod sched;

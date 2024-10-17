@@ -89,9 +89,13 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Arc<Thread>)
         debug!("exit user loop");
     }
 
-    TaskOptions::new(user_task_entry)
-        .data(thread_ref)
-        .user_space(Some(user_space))
-        .build()
-        .expect("spawn task failed")
+    TaskOptions::new(|| {
+        // TODO: If a kernel "oops" is caught, we should kill the entire
+        // process rather than just ending the thread.
+        let _ = crate::oops::catch_panics_as_oops(user_task_entry);
+    })
+    .data(thread_ref)
+    .user_space(Some(user_space))
+    .build()
+    .expect("spawn task failed")
 }

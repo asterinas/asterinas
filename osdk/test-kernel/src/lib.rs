@@ -16,7 +16,7 @@ use alloc::{boxed::Box, collections::BTreeSet, string::String, vec::Vec};
 use core::{any::Any, format_args};
 
 use ostd::{
-    early_print,
+    early_print, early_println,
     ktest::{
         get_ktest_crate_whitelist, get_ktest_test_whitelist, KtestError, KtestItem, KtestIter,
     },
@@ -54,10 +54,31 @@ fn main() {
     unreachable!("The spawn method will NOT return in the boot context")
 }
 
+#[ostd::ktest::panic_handler]
+fn panic_handler(info: &core::panic::PanicInfo) -> ! {
+    let _irq_guard = ostd::trap::disable_local();
+
+    use alloc::{boxed::Box, string::ToString};
+
+    use ostd::panic::begin_panic;
+
+    let throw_info = ostd::ktest::PanicInfo {
+        message: info.message().to_string(),
+        file: info.location().unwrap().file().to_string(),
+        line: info.location().unwrap().line() as usize,
+        col: info.location().unwrap().column() as usize,
+    };
+
+    // Throw an exception and expecting it to be caught.
+    begin_panic(Box::new(throw_info.clone()));
+
+    // If not caught, abort the kernel.
+    early_println!("An uncaught panic occurred: {:#?}", throw_info);
+
+    ostd::prelude::abort();
+}
+
 /// Run all the tests registered by `#[ktest]` in the `.ktest_array` section.
-///
-/// Need to provide a print function `print` to print the test result, and a `catch_unwind`
-/// implementation to catch the panic.
 ///
 /// The `whitelist` argument is optional. If it is `None`, all tests compiled will be run.
 /// If it is `Some`, only the tests whose test path being the suffix of any paths in the whitelist
@@ -129,7 +150,7 @@ fn run_crate_ktests(crate_: &KtestCrate, whitelist: &Option<SuffixTrie>) -> Ktes
             );
             debug_assert_eq!(test.info().package, crate_name);
             match test.run(
-                &(unwinding::panic::catch_unwind::<(), fn()>
+                &(ostd::panic::catch_unwind::<(), fn()>
                     as fn(fn()) -> Result<(), Box<(dyn Any + Send + 'static)>>),
             ) {
                 Ok(()) => {
