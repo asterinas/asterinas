@@ -161,6 +161,7 @@ dependencies = [
  "aster-network",
  "aster-rights",
  "aster-rights-proc",
+ "aster-softirq",
  "aster-time",
  "aster-util",
  "aster-virtio",
@@ -216,6 +217,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "aster-softirq"
+version = "0.1.0"
+dependencies = [
+ "component",
+ "intrusive-collections",
+ "ostd",
+ "spin 0.9.8",
 ]
 
 [[package]]

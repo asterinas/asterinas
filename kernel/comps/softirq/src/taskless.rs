@@ -8,13 +8,12 @@ use core::{
 };
 
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListAtomicLink};
-use ostd::{
-    cpu::local::CpuLocal,
-    cpu_local,
-    trap::{self, SoftIrqLine},
-};
+use ostd::{cpu::local::CpuLocal, cpu_local, trap};
 
-use crate::softirq_id::{TASKLESS_SOFTIRQ_ID, TASKLESS_URGENT_SOFTIRQ_ID};
+use super::{
+    softirq_id::{TASKLESS_SOFTIRQ_ID, TASKLESS_URGENT_SOFTIRQ_ID},
+    SoftIrqLine,
+};
 
 /// `Taskless` represents a _taskless_ job whose execution is deferred to a later time.
 ///
@@ -211,7 +210,7 @@ mod test {
     fn init() {
         static DONE: AtomicBool = AtomicBool::new(false);
         if !DONE.load(Ordering::SeqCst) {
-            super::init();
+            let _ = super::super::init();
             DONE.store(true, Ordering::SeqCst);
         }
     }
