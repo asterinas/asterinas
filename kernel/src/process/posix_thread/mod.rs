@@ -299,7 +299,7 @@ impl PosixThread {
     }
 }
 
-static POSIX_TID_ALLOCATOR: AtomicU32 = AtomicU32::new(0);
+static POSIX_TID_ALLOCATOR: AtomicU32 = AtomicU32::new(1);
 
 /// Allocates a new tid for the new posix thread
 pub fn allocate_posix_tid() -> Tid {
