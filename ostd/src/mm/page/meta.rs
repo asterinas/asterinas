@@ -80,6 +80,8 @@ pub enum PageUsage {
     Meta = 65,
     /// The page stores the kernel such as kernel code, data, etc.
     Kernel = 66,
+    /// The page is used as a heap page.
+    Heap = 67,
 }
 
 #[repr(C)]
@@ -265,6 +267,18 @@ impl PageMeta for KernelMeta {
     const USAGE: PageUsage = PageUsage::Kernel;
     fn on_drop(_page: &mut Page<Self>) {
         panic!("Kernel pages are not allowed to be dropped");
+    }
+}
+
+#[derive(Debug, Default)]
+#[repr(C)]
+pub struct HeapMeta {}
+impl Sealed for HeapMeta {}
+impl PageMeta for HeapMeta {
+    const USAGE: PageUsage = PageUsage::Heap;
+    fn on_drop(_page: &mut Page<Self>) {
+        // Nothing should be done so far since dropping the page would
+        // have all taken care of.
     }
 }
 
