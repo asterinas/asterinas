@@ -31,7 +31,6 @@ use crate::{
     get_current_userspace,
     prelude::*,
     process::{do_exit_group, TermStatus},
-    thread::status::ThreadStatus,
 };
 
 pub trait SignalContext {
@@ -107,20 +106,10 @@ pub fn handle_pending_signal(user_ctx: &mut UserContext, ctx: &Context) -> Resul
                 }
                 SigDefaultAction::Ign => {}
                 SigDefaultAction::Stop => {
-                    let _ = ctx.thread.atomic_status().compare_exchange(
-                        ThreadStatus::Running,
-                        ThreadStatus::Stopped,
-                        Ordering::AcqRel,
-                        Ordering::Relaxed,
-                    );
+                    let _ = ctx.thread.stop();
                 }
                 SigDefaultAction::Cont => {
-                    let _ = ctx.thread.atomic_status().compare_exchange(
-                        ThreadStatus::Stopped,
-                        ThreadStatus::Running,
-                        Ordering::AcqRel,
-                        Ordering::Relaxed,
-                    );
+                    let _ = ctx.thread.resume();
                 }
             }
         }
