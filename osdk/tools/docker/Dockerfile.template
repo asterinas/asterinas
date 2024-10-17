@@ -31,6 +31,9 @@ RUN curl https://sh.rustup.rs -sSf | \
 # Install cargo-binutils
 RUN cargo install cargo-binutils
 
+# Install cargo-osdk
+RUN cargo install cargo-osdk
+
 VOLUME [ "/root/asterinas" ]
 
 WORKDIR /root/asterinas
