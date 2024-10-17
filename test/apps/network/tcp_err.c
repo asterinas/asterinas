@@ -460,3 +460,21 @@ FN_TEST(sendmsg_and_recvmsg)
 	TEST_RES(sendmsg(sk_accepted, &msg, 0), _ret <= sndbuf);
 }
 END_TEST()
+
+FN_TEST(self_connect)
+{
+	int sk;
+	char buf[5];
+
+	sk = TEST_SUCC(socket(PF_INET, SOCK_STREAM, 0));
+
+	sk_addr.sin_port = htons(8888);
+	TEST_SUCC(bind(sk, (struct sockaddr *)&sk_addr, sizeof(sk_addr)));
+	TEST_SUCC(connect(sk, (struct sockaddr *)&sk_addr, sizeof(sk_addr)));
+
+	TEST_RES(write(sk, "hello", 5), _ret == 5);
+	TEST_RES(read(sk, buf, 5), _ret == 5 && memcmp(buf, "hello", 5) == 0);
+
+	TEST_SUCC(close(sk));
+}
+END_TEST()
