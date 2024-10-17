@@ -5,6 +5,8 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use sys::SysDirOps;
 
 use self::{
+    cpuinfo::CpuInfoFileOps,
+    kcore::KCoreFileOps,
     meminfo::MemInfoFileOps,
     pid::PidDirOps,
     self_::SelfSymOps,
@@ -20,7 +22,9 @@ use crate::{
     process::{process_table, process_table::PidEvent, Pid},
 };
 
+mod cpuinfo;
 mod filesystems;
+mod kcore;
 mod meminfo;
 mod pid;
 mod self_;
@@ -106,6 +110,10 @@ impl DirOps for RootDirOps {
             FileSystemsFileOps::new_inode(this_ptr.clone())
         } else if name == "meminfo" {
             MemInfoFileOps::new_inode(this_ptr.clone())
+        } else if name == "kcore" {
+            KCoreFileOps::new_inode(this_ptr.clone())
+        } else if name == "cpuinfo" {
+            CpuInfoFileOps::new_inode(this_ptr.clone())
         } else if let Ok(pid) = name.parse::<Pid>() {
             let process_ref =
                 process_table::get_process(pid).ok_or_else(|| Error::new(Errno::ENOENT))?;
@@ -129,7 +137,10 @@ impl DirOps for RootDirOps {
         });
         cached_children
             .put_entry_if_not_found("meminfo", || MemInfoFileOps::new_inode(this_ptr.clone()));
-
+        cached_children
+            .put_entry_if_not_found("kcore", || KCoreFileOps::new_inode(this_ptr.clone()));
+        cached_children
+            .put_entry_if_not_found("cpuinfo", || CpuInfoFileOps::new_inode(this_ptr.clone()));
         for process in process_table::process_table().iter() {
             let pid = process.pid().to_string();
             cached_children.put_entry_if_not_found(&pid, || {
