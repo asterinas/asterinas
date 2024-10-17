@@ -28,10 +28,6 @@
 // the CPU-local objects can be shared across CPUs. While through a CPU-local
 // cell object you can only access the value on the current CPU, therefore
 // enabling inner mutability without locks.
-//
-// The cell-variant is currently not a public API because that it is rather
-// hard to be used without introducing races. But it is useful for OSTD's
-// internal implementation.
 
 mod cell;
 mod cpu_local;
@@ -41,7 +37,7 @@ pub(crate) mod single_instr;
 use alloc::vec::Vec;
 
 use align_ext::AlignExt;
-pub(crate) use cell::{cpu_local_cell, CpuLocalCell};
+pub use cell::CpuLocalCell;
 pub use cpu_local::{CpuLocal, CpuLocalDerefGuard};
 use spin::Once;
 
