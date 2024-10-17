@@ -7,12 +7,13 @@ use spin::Once;
 
 use super::{
     fs_resolver::{FsPath, FsResolver},
+    kernfs::PseudoFileSystem,
     path::MountNode,
     procfs::ProcFS,
     ramfs::RamFS,
     utils::{FileSystem, InodeMode, InodeType},
 };
-use crate::prelude::*;
+use crate::{fs::sysfs::SysFS, prelude::*};
 
 /// Unpack and prepare the rootfs from the initramfs CPIO buffer.
 pub fn init(initramfs_buf: &[u8]) -> Result<()> {
@@ -81,6 +82,11 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
     // Mount DevFS
     let dev_dentry = fs.lookup(&FsPath::try_from("/dev")?)?;
     dev_dentry.mount(RamFS::new())?;
+    // Mount SysFS
+    let sys_dentry = fs.lookup(&FsPath::try_from("/sys")?)?;
+    let sysfs: Arc<SysFS> = SysFS::new();
+    sys_dentry.mount(sysfs.clone())?;
+    sysfs.init()?;
 
     println!("[kernel] rootfs is ready");
 
