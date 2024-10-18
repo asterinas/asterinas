@@ -2,6 +2,7 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
+use loadavg::LoadAvgFileOps;
 use sys::SysDirOps;
 
 use self::{
@@ -21,6 +22,7 @@ use crate::{
 };
 
 mod filesystems;
+mod loadavg;
 mod meminfo;
 mod pid;
 mod self_;
@@ -106,6 +108,8 @@ impl DirOps for RootDirOps {
             FileSystemsFileOps::new_inode(this_ptr.clone())
         } else if name == "meminfo" {
             MemInfoFileOps::new_inode(this_ptr.clone())
+        } else if name == "loadavg" {
+            LoadAvgFileOps::new_inode(this_ptr.clone())
         } else if let Ok(pid) = name.parse::<Pid>() {
             let process_ref =
                 process_table::get_process(pid).ok_or_else(|| Error::new(Errno::ENOENT))?;
@@ -129,6 +133,8 @@ impl DirOps for RootDirOps {
         });
         cached_children
             .put_entry_if_not_found("meminfo", || MemInfoFileOps::new_inode(this_ptr.clone()));
+        cached_children
+            .put_entry_if_not_found("loadavg", || LoadAvgFileOps::new_inode(this_ptr.clone()));
 
         for process in process_table::process_table_mut().iter() {
             let pid = process.pid().to_string();

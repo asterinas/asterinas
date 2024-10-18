@@ -5,6 +5,7 @@ use core::sync::atomic::Ordering;
 use ostd::{
     cpu::{num_cpus, CpuId, CpuSet, PinCurrentCpu},
     task::{
+        disable_preempt,
         scheduler::{
             info::CommonSchedInfo, inject_scheduler, EnqueueFlags, LocalRunQueue, Scheduler,
             UpdateFlags,
@@ -14,13 +15,23 @@ use ostd::{
     trap::disable_local,
 };
 
-use super::priority::{Priority, PriorityRange};
+use super::{
+    priority::{Priority, PriorityRange},
+    stats::{set_stats_from_scheduler, SchedulerStats},
+};
 use crate::{prelude::*, thread::Thread};
 
 pub fn init() {
     let preempt_scheduler = Box::new(PreemptScheduler::default());
     let scheduler = Box::<PreemptScheduler<Thread, Task>>::leak(preempt_scheduler);
+
+    // Inject the scheduler into the ostd for actual scheduling work.
     inject_scheduler(scheduler);
+
+    // Set the scheduler into the system for statistics.
+    // We set this after injecting the scheduler into ostd,
+    // so that the loadavg statistics are updated after the scheduler is used.
+    set_stats_from_scheduler(scheduler);
 }
 
 /// The preempt scheduler.
@@ -115,6 +126,29 @@ impl<T: Sync + Send + PreemptSchedInfo + FromTask<U>, U: Sync + Send + CommonSch
         let local_rq: &mut PreemptRunQueue<T, U> =
             &mut self.rq[irq_guard.current_cpu().as_usize()].lock();
         f(local_rq);
+    }
+}
+
+impl<T: Sync + Send + PreemptSchedInfo + FromTask<U>, U: Sync + Send + CommonSchedInfo>
+    SchedulerStats for PreemptScheduler<T, U>
+{
+    fn nr_queued_and_running(&self) -> (u32, u32) {
+        let _preempt_guard = disable_preempt();
+        let mut nr_queued = 0;
+        let mut nr_running = 0;
+
+        for rq in self.rq.iter() {
+            let rq = rq.lock();
+
+            nr_queued +=
+                rq.real_time_entities.len() + rq.normal_entities.len() + rq.lowest_entities.len();
+
+            if rq.current.is_some() {
+                nr_running += 1;
+            }
+        }
+
+        (nr_queued as u32, nr_running)
     }
 }
 
