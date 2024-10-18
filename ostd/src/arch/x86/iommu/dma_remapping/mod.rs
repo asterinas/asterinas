@@ -11,7 +11,7 @@ use crate::{
     bus::pci::PciDeviceLocation,
     mm::{Daddr, PageTable},
     prelude::Paddr,
-    sync::SpinLock,
+    sync::{LocalIrqDisabled, SpinLock},
 };
 
 mod context_table;
@@ -74,4 +74,7 @@ pub fn init() {
     info!("[IOMMU] DMA remapping enabled");
 }
 
-static PAGE_TABLE: Once<SpinLock<RootTable>> = Once::new();
+// TODO: Currently `map()` or `unmap()` could be called in both task and interrupt
+// contexts (e.g., within the virtio-blk module), potentially leading to deadlocks.
+// Once this issue is resolved, `LocalIrqDisabled` is no longer needed.
+static PAGE_TABLE: Once<SpinLock<RootTable, LocalIrqDisabled>> = Once::new();
