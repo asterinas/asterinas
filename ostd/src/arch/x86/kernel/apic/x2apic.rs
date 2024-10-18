@@ -61,13 +61,14 @@ impl super::Apic for X2Apic {
         unsafe { rdmsr(IA32_X2APIC_VERSION) as u32 }
     }
 
-    fn eoi(&mut self) {
+    fn eoi(&self) {
         unsafe {
             wrmsr(IA32_X2APIC_EOI, 0);
         }
     }
 
-    unsafe fn send_ipi(&mut self, icr: super::Icr) {
+    unsafe fn send_ipi(&self, icr: super::Icr) {
+        let _guard = crate::trap::disable_local();
         wrmsr(IA32_X2APIC_ESR, 0);
         wrmsr(IA32_X2APIC_ICR, icr.0);
         loop {
@@ -83,7 +84,7 @@ impl super::Apic for X2Apic {
 }
 
 impl ApicTimer for X2Apic {
-    fn set_timer_init_count(&mut self, value: u64) {
+    fn set_timer_init_count(&self, value: u64) {
         unsafe {
             wrmsr(IA32_X2APIC_INIT_COUNT, value);
         }
@@ -93,13 +94,13 @@ impl ApicTimer for X2Apic {
         unsafe { rdmsr(IA32_X2APIC_CUR_COUNT) }
     }
 
-    fn set_lvt_timer(&mut self, value: u64) {
+    fn set_lvt_timer(&self, value: u64) {
         unsafe {
             wrmsr(IA32_X2APIC_LVT_TIMER, value);
         }
     }
 
-    fn set_timer_div_config(&mut self, div_config: super::DivideConfig) {
+    fn set_timer_div_config(&self, div_config: super::DivideConfig) {
         unsafe {
             wrmsr(IA32_X2APIC_DIV_CONF, div_config as u64);
         }
