@@ -374,7 +374,7 @@ impl PageCacheManager {
 
         for (_, page) in pages
             .iter_mut()
-            .filter(|(idx, _)| page_idx_range.contains(idx))
+            .filter(|(idx, _)| page_idx_range.contains(*idx))
         {
             page.set_state(PageState::UpToDate);
         }
