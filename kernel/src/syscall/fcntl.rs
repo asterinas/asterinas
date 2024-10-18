@@ -46,7 +46,7 @@ fn handle_getfd(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
 }
 
 fn handle_setfd(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
-    let flags = if arg > u8::MAX.into() {
+    let flags = if arg > u64::from(u8::MAX) {
         return_errno_with_message!(Errno::EINVAL, "invalid fd flags");
     } else {
         FdFlags::from_bits(arg as u8).ok_or(Error::with_message(Errno::EINVAL, "invalid flags"))?
