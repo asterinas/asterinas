@@ -277,7 +277,7 @@ impl PosixThread {
         let tasks = process.tasks().lock();
         tasks
             .iter()
-            .all(|task| Thread::borrow_from_task(task).status().is_exited())
+            .all(|task| Thread::borrow_from_task(task).is_exited())
     }
 
     /// Gets the read-only credentials of the thread.
