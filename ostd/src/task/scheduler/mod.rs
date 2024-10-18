@@ -140,17 +140,12 @@ pub(crate) fn park_current(has_woken: &AtomicBool) {
 
 /// Unblocks a target task.
 pub(crate) fn unpark_target(runnable: Arc<Task>) {
-    let need_preempt_info = SCHEDULER
+    let preempt_cpu = SCHEDULER
         .get()
         .unwrap()
         .enqueue(runnable, EnqueueFlags::Wake);
-    if need_preempt_info.is_some() {
-        let cpu_id = need_preempt_info.unwrap();
-        let preempt_guard = disable_preempt();
-        // FIXME: send IPI to set remote CPU's need_preempt if needed.
-        if cpu_id == preempt_guard.current_cpu() {
-            cpu_local::set_need_preempt();
-        }
+    if let Some(preempt_cpu_id) = preempt_cpu {
+        set_need_preempt(preempt_cpu_id);
     }
 }
 
@@ -164,20 +159,25 @@ pub(super) fn run_new_task(runnable: Arc<Task>) {
         fifo_scheduler::init();
     }
 
-    let need_preempt_info = SCHEDULER
+    let preempt_cpu = SCHEDULER
         .get()
         .unwrap()
         .enqueue(runnable, EnqueueFlags::Spawn);
-    if need_preempt_info.is_some() {
-        let cpu_id = need_preempt_info.unwrap();
-        let preempt_guard = disable_preempt();
-        // FIXME: send IPI to set remote CPU's need_preempt if needed.
-        if cpu_id == preempt_guard.current_cpu() {
-            cpu_local::set_need_preempt();
-        }
+    if let Some(preempt_cpu_id) = preempt_cpu {
+        set_need_preempt(preempt_cpu_id);
     }
 
     might_preempt();
+}
+
+fn set_need_preempt(cpu_id: CpuId) {
+    let preempt_guard = disable_preempt();
+
+    if preempt_guard.current_cpu() == cpu_id {
+        cpu_local::set_need_preempt();
+    } else {
+        // TODO: Send IPIs to set remote CPU's `need_preempt`
+    }
 }
 
 /// Dequeues the current task from its runqueue.
