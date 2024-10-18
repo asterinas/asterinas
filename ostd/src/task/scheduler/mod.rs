@@ -118,8 +118,8 @@ pub(crate) fn park_current(has_woken: &AtomicBool) {
             if has_woken.load(Ordering::Acquire) {
                 return ReschedAction::DoNothing;
             }
-            current = local_rq.dequeue_current();
             local_rq.update_current(UpdateFlags::Wait);
+            current = local_rq.dequeue_current();
         }
         if let Some(next_task) = local_rq.pick_next_current() {
             if Arc::ptr_eq(current.as_ref().unwrap(), next_task) {

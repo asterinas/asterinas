@@ -51,7 +51,7 @@ impl Worker {
             let mut priority = Priority::default();
             if worker_pool.upgrade().unwrap().is_high_priority() {
                 // FIXME: remove the use of real-time priority.
-                priority = Priority::new(PriorityRange::new(0));
+                priority = Priority::new(PriorityRange::new(100));
             }
             let bound_task = create_new_kernel_task(
                 ThreadOptions::new(task_fn)
