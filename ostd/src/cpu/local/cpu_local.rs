@@ -108,7 +108,7 @@ impl<T: 'static> CpuLocal<T> {
     /// # Safety
     ///
     /// The caller must ensure that the reference to `self` is static.
-    unsafe fn as_ptr(&'static self) -> *const T {
+    pub(crate) unsafe fn as_ptr(&'static self) -> *const T {
         super::has_init::assert_true();
 
         let offset = self.get_offset();

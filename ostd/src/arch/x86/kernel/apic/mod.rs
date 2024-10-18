@@ -1,20 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::boxed::Box;
-use core::cell::RefCell;
+use core::{
+    cell::UnsafeCell,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use bit_field::BitField;
 use spin::Once;
 
-use crate::cpu_local;
+use crate::{cpu::PinCurrentCpu, cpu_local};
 
 pub mod ioapic;
 pub mod x2apic;
 pub mod xapic;
-
-cpu_local! {
-    static APIC_INSTANCE: RefCell<Option<Box<dyn Apic + 'static>>> = RefCell::new(None);
-}
 
 static APIC_TYPE: Once<ApicType> = Once::new();
 
@@ -37,16 +36,27 @@ static APIC_TYPE: Once<ApicType> = Once::new();
 ///     ticks
 /// });
 /// ```
-pub fn with_borrow<R>(f: impl FnOnce(&mut (dyn Apic + 'static)) -> R) -> R {
-    let irq_guard = crate::trap::disable_local();
-    let apic_guard = APIC_INSTANCE.get_with(&irq_guard);
-    let mut apic_init_ref = apic_guard.borrow_mut();
+pub fn with_borrow<R>(f: impl FnOnce(&(dyn Apic + 'static)) -> R) -> R {
+    cpu_local! {
+        static APIC_INSTANCE: UnsafeCell<Option<Box<dyn Apic + 'static>>> = UnsafeCell::new(None);
+        static IS_INITIALIZED: AtomicBool = AtomicBool::new(false);
+    }
+
+    let preempt_guard = crate::task::disable_preempt();
+
+    // SAFETY: Preemption is disabled, so we can safely access the CPU-local variable.
+    let apic_ptr = unsafe {
+        let ptr = APIC_INSTANCE.as_ptr();
+        (*ptr).get()
+    };
 
     // If it is not initialized, lazily initialize it.
-    let apic_ref = if let Some(apic_ref) = apic_init_ref.as_mut() {
-        apic_ref
-    } else {
-        *apic_init_ref = Some(match APIC_TYPE.get().unwrap() {
+    if IS_INITIALIZED
+        .get_on_cpu(preempt_guard.current_cpu())
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+        .is_ok()
+    {
+        let apic: Option<Box<dyn Apic>> = Some(match APIC_TYPE.get().unwrap() {
             ApicType::XApic => {
                 let mut xapic = xapic::XApic::new().unwrap();
                 xapic.enable();
@@ -72,30 +82,42 @@ pub fn with_borrow<R>(f: impl FnOnce(&mut (dyn Apic + 'static)) -> R) -> R {
                 Box::new(x2apic)
             }
         });
+        // SAFETY: It will be only written once and no other read or write can
+        // happen concurrently for the synchronization with `IS_INITIALIZED`.
+        //
+        // If interrupts happen during the initialization, it can be written
+        // twice. But it should not happen since we must call this function
+        // when interrupts are disabled during the initialization of OSTD.
+        unsafe {
+            debug_assert!(apic_ptr.read().is_none());
+            apic_ptr.write(apic);
+        }
+    }
 
-        apic_init_ref.as_mut().unwrap()
-    };
+    // SAFETY: The APIC pointer is not accessed by other CPUs. It should point
+    // to initialized data and there will not be any write-during-read problem
+    // since there would be no write after `IS_INITIALIZED` is set to true.
+    let apic_ref = unsafe { &*apic_ptr };
+    let apic_ref = apic_ref.as_ref().unwrap().as_ref();
 
-    let ret = f.call_once((apic_ref.as_mut(),));
-
-    ret
+    f.call_once((apic_ref,))
 }
 
-pub trait Apic: ApicTimer + Sync + Send {
+pub trait Apic: ApicTimer {
     fn id(&self) -> u32;
 
     fn version(&self) -> u32;
 
     /// End of Interrupt, this function will inform APIC that this interrupt has been processed.
-    fn eoi(&mut self);
+    fn eoi(&self);
 
     /// Send a general inter-processor interrupt.
-    unsafe fn send_ipi(&mut self, icr: Icr);
+    unsafe fn send_ipi(&self, icr: Icr);
 }
 
-pub trait ApicTimer: Sync + Send {
+pub trait ApicTimer {
     /// Sets the initial timer count, the APIC timer will count down from this value.
-    fn set_timer_init_count(&mut self, value: u64);
+    fn set_timer_init_count(&self, value: u64);
 
     /// Gets the current count of the timer.
     /// The interval can be expressed by the expression: `init_count` - `current_count`.
@@ -106,10 +128,10 @@ pub trait ApicTimer: Sync + Send {
     /// Bit 12:    Delivery Status, 0 for Idle, 1 for Send Pending.
     /// Bit 16:    Mask bit.
     /// Bit 17-18: Timer Mode, 0 for One-shot, 1 for Periodic, 2 for TSC-Deadline.
-    fn set_lvt_timer(&mut self, value: u64);
+    fn set_lvt_timer(&self, value: u64);
 
     /// Sets timer divide config register.
-    fn set_timer_div_config(&mut self, div_config: DivideConfig);
+    fn set_timer_div_config(&self, div_config: DivideConfig);
 }
 
 enum ApicType {
