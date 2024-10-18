@@ -5,8 +5,8 @@ use ostd::{
     sync::PreemptDisabled,
     task::{
         scheduler::{
-            info::CommonSchedInfo, inject_scheduler, EnqueueFlags, LocalRunQueue, Scheduler,
-            UpdateFlags,
+            info::CommonSchedInfo, inject_scheduler, CurrentState, EnqueueFlags, LocalRunQueue,
+            Scheduler, UpdateFlags,
         },
         Task,
     },
@@ -162,7 +162,7 @@ impl<T: PreemptSchedInfo + FromTask<U>, U: CommonSchedInfo> LocalRunQueue<U>
         }
     }
 
-    fn pick_next_current(&mut self) -> Option<&Arc<U>> {
+    fn pick_next(&mut self, current_state: CurrentState) -> Option<&Arc<U>> {
         let next_entity = if !self.real_time_entities.is_empty() {
             self.real_time_entities.pop_front()
         } else if !self.normal_entities.is_empty() {
@@ -170,28 +170,28 @@ impl<T: PreemptSchedInfo + FromTask<U>, U: CommonSchedInfo> LocalRunQueue<U>
         } else {
             self.lowest_entities.pop_front()
         }?;
+
         if let Some(prev_entity) = self.current.replace(next_entity) {
-            if prev_entity.thread.is_real_time() {
-                self.real_time_entities.push_back(prev_entity);
-            } else if prev_entity.thread.is_lowest() {
-                self.lowest_entities.push_back(prev_entity);
-            } else {
-                self.normal_entities.push_back(prev_entity);
+            match current_state {
+                CurrentState::Runnable => {
+                    if prev_entity.thread.is_real_time() {
+                        self.real_time_entities.push_back(prev_entity);
+                    } else if prev_entity.thread.is_lowest() {
+                        self.lowest_entities.push_back(prev_entity);
+                    } else {
+                        self.normal_entities.push_back(prev_entity);
+                    }
+                }
+                CurrentState::NeedSleep => {
+                    prev_entity.task.cpu().set_to_none();
+                }
             }
         }
 
         Some(&self.current.as_ref().unwrap().task)
     }
-
-    fn dequeue_current(&mut self) -> Option<Arc<U>> {
-        self.current.take().map(|entity| {
-            let runnable = entity.task;
-            runnable.cpu().set_to_none();
-
-            runnable
-        })
-    }
 }
+
 struct PreemptSchedEntity<T: PreemptSchedInfo + FromTask<U>, U: CommonSchedInfo> {
     task: Arc<U>,
     thread: Arc<T>,
