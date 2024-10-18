@@ -248,7 +248,12 @@ impl RangeLockList {
             conflict_lock.wait_until(|| {
                 let list = self.inner.read();
                 if list.iter().any(|l| req_lock.conflict_with(l)) {
-                    None
+                    if Arc::strong_count(&conflict_lock.waitqueue) == 1 {
+                        // Exit the waiting loop as conflict_lock is no longer in the list
+                        Some(())
+                    } else {
+                        None
+                    }
                 } else {
                     Some(())
                 }
