@@ -151,7 +151,7 @@ impl DmaStream {
                 if self.inner.is_cache_coherent {
                     return Ok(());
                 }
-                let start_va = self.inner.vm_segment.as_ptr();
+                let start_va = crate::mm::paddr_to_vaddr(self.inner.vm_segment.paddr()) as *const u8;
                 // TODO: Query the CPU for the cache line size via CPUID, we use 64 bytes as the cache line size here.
                 for i in _byte_range.step_by(64) {
                     // TODO: Call the cache line flush command in the corresponding architecture.
