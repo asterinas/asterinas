@@ -217,3 +217,59 @@ pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     TokenStream::from(output)
 }
+
+/// This macro is used to mark the page allocator initialization function.
+///
+/// # Example
+///
+/// ```ignore
+/// #[ostd::page_allocator_init_fn]
+/// pub fn init_page_allocator() -> Box<dyn ostd::mm::page::allocator::PageAlloc> {
+/// // Your page allocator initialization code here
+/// }
+/// ```
+///
+/// It is a strong version of the `default_page_allocator_init_fn` macro
+/// attribute. So if it exists, the actual global page allocator will be
+/// replaced by this one.
+#[proc_macro_attribute]
+pub fn page_allocator_init_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let init_fn = parse_macro_input!(item as ItemFn);
+    let init_fn_name = &init_fn.sig.ident;
+
+    let output = quote! {
+        #[no_mangle]
+        pub fn __ostd_page_allocator_init_fn() -> Box<dyn ostd::mm::page::allocator::PageAlloc> {
+            #init_fn_name()
+        }
+
+        #init_fn
+    };
+
+    TokenStream::from(output)
+}
+
+/// This macro is used to mark the page allocator initialization function by
+/// default for all kernels.
+///
+/// # Safety
+///
+/// This macro is used for internal OSDK implementation. Do not use it
+/// directly.
+#[proc_macro_attribute]
+pub fn default_page_allocator_init_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let init_fn = parse_macro_input!(item as ItemFn);
+    let init_fn_name = &init_fn.sig.ident;
+
+    let output = quote! {
+        #[no_mangle]
+        #[linkage = "weak"]
+        pub fn __ostd_page_allocator_init_fn() -> Box<dyn ostd::mm::page::allocator::PageAlloc> {
+            #init_fn_name()
+        }
+
+        #init_fn
+    };
+
+    TokenStream::from(output)
+}
