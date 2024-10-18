@@ -81,8 +81,8 @@ where
         let page: Page<PageTablePageMeta<E, C>> = self.into();
 
         // Acquire the lock.
-        while page
-            .meta()
+        let meta = page.meta();
+        while meta
             .lock
             .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
