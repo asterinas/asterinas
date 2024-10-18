@@ -14,7 +14,7 @@ pub(crate) mod heap_allocator;
 mod io;
 pub(crate) mod kspace;
 mod offset;
-pub(crate) mod page;
+pub mod page;
 pub(crate) mod page_prop;
 pub(crate) mod page_table;
 pub mod stat;
