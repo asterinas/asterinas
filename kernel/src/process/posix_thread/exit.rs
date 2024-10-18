@@ -24,11 +24,11 @@ pub fn do_exit(thread: &Thread, posix_thread: &PosixThread, term_status: TermSta
     let mut clear_ctid = posix_thread.clear_child_tid().lock();
     // If clear_ctid !=0 ,do a futex wake and write zero to the clear_ctid addr.
     if *clear_ctid != 0 {
-        futex_wake(*clear_ctid, 1, None)?;
         // FIXME: the correct write length?
         if let Err(e) = get_current_userspace!().write_val(*clear_ctid, &0u32) {
             debug!("Ignore error during exit process: {:?}", e);
         }
+        futex_wake(*clear_ctid, 1, None)?;
         *clear_ctid = 0;
     }
     // exit the robust list: walk the robust list; mark futex words as dead and do futex wake
