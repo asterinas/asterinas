@@ -3,7 +3,8 @@
 use alloc::{boxed::Box, collections::VecDeque, sync::Arc, vec::Vec};
 
 use super::{
-    info::CommonSchedInfo, inject_scheduler, EnqueueFlags, LocalRunQueue, Scheduler, UpdateFlags,
+    info::CommonSchedInfo, inject_scheduler, CurrentState, EnqueueFlags, LocalRunQueue, Scheduler,
+    UpdateFlags,
 };
 use crate::{
     cpu::{num_cpus, PinCurrentCpu},
@@ -102,17 +103,17 @@ impl<T: CommonSchedInfo> LocalRunQueue<T> for FifoRunQueue<T> {
         !matches!(flags, UpdateFlags::Tick)
     }
 
-    fn pick_next_current(&mut self) -> Option<&Arc<T>> {
+    fn pick_next(&mut self, current_state: CurrentState) -> Option<&Arc<T>> {
         let next_task = self.queue.pop_front()?;
+
         if let Some(prev_task) = self.current.replace(next_task) {
-            self.queue.push_back(prev_task);
+            match current_state {
+                CurrentState::Runnable => self.queue.push_back(prev_task),
+                CurrentState::NeedSleep => prev_task.cpu().set_to_none(),
+            }
         }
 
         self.current.as_ref()
-    }
-
-    fn dequeue_current(&mut self) -> Option<Arc<T>> {
-        self.current.take().inspect(|task| task.cpu().set_to_none())
     }
 }
 
