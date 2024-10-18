@@ -15,7 +15,7 @@ const APIC_LVT_MASK_BITS: u32 = 1 << 16;
 
 #[derive(Debug)]
 pub struct XApic {
-    mmio_region: &'static mut [u32],
+    mmio_start: *mut u32,
 }
 
 impl XApic {
@@ -24,9 +24,8 @@ impl XApic {
             return None;
         }
         let address = mm::paddr_to_vaddr(get_apic_base_address());
-        let region: &'static mut [u32] = unsafe { &mut *(address as *mut [u32; 256]) };
         Some(Self {
-            mmio_region: region,
+            mmio_start: address as *mut u32,
         })
     }
 
@@ -34,14 +33,16 @@ impl XApic {
     fn read(&self, offset: u32) -> u32 {
         assert!(offset as usize % 4 == 0);
         let index = offset as usize / 4;
-        unsafe { core::ptr::read_volatile(&self.mmio_region[index]) }
+        debug_assert!(index < 256);
+        unsafe { core::ptr::read_volatile(self.mmio_start.add(index)) }
     }
 
     /// Writes a register in the MMIO region.
-    fn write(&mut self, offset: u32, val: u32) {
+    fn write(&self, offset: u32, val: u32) {
         assert!(offset as usize % 4 == 0);
         let index = offset as usize / 4;
-        unsafe { core::ptr::write_volatile(&mut self.mmio_region[index], val) }
+        debug_assert!(index < 256);
+        unsafe { core::ptr::write_volatile(self.mmio_start.add(index), val) }
     }
 
     pub fn enable(&mut self) {
@@ -68,11 +69,12 @@ impl super::Apic for XApic {
         self.read(xapic::XAPIC_VERSION)
     }
 
-    fn eoi(&mut self) {
+    fn eoi(&self) {
         self.write(xapic::XAPIC_EOI, 0);
     }
 
-    unsafe fn send_ipi(&mut self, icr: super::Icr) {
+    unsafe fn send_ipi(&self, icr: super::Icr) {
+        let _guard = crate::trap::disable_local();
         self.write(xapic::XAPIC_ESR, 0);
         // The upper 32 bits of ICR must be written into XAPIC_ICR1 first,
         // because writing into XAPIC_ICR0 will trigger the action of
@@ -92,7 +94,7 @@ impl super::Apic for XApic {
 }
 
 impl ApicTimer for XApic {
-    fn set_timer_init_count(&mut self, value: u64) {
+    fn set_timer_init_count(&self, value: u64) {
         self.write(xapic::XAPIC_TIMER_INIT_COUNT, value as u32);
     }
 
@@ -100,11 +102,11 @@ impl ApicTimer for XApic {
         self.read(xapic::XAPIC_TIMER_CURRENT_COUNT) as u64
     }
 
-    fn set_lvt_timer(&mut self, value: u64) {
+    fn set_lvt_timer(&self, value: u64) {
         self.write(xapic::XAPIC_LVT_TIMER, value as u32);
     }
 
-    fn set_timer_div_config(&mut self, div_config: super::DivideConfig) {
+    fn set_timer_div_config(&self, div_config: super::DivideConfig) {
         self.write(xapic::XAPIC_TIMER_DIV_CONF, div_config as u32);
     }
 }
