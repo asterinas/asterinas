@@ -68,8 +68,6 @@ endif
 # If the BENCHMARK is set, we will run the benchmark in the kernel mode.
 ifneq ($(BENCHMARK), none)
 CARGO_OSDK_ARGS += --init-args="/benchmark/common/bench_runner.sh $(BENCHMARK) asterinas"
-# TODO: remove this workaround after enabling kernel virtual area.
-OSTD_TASK_STACK_SIZE_IN_PAGES = 7
 endif
 
 ifeq ($(INTEL_TDX), 1)
