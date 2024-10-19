@@ -9,8 +9,14 @@ use core::fmt::Debug;
 use riscv::register::scause::{Exception, Trap};
 
 pub use super::trap::GeneralRegs as RawGeneralRegs;
-use super::trap::{TrapFrame, UserContext as RawUserContext};
-use crate::user::{ReturnReason, UserContextApi, UserContextApiInternal};
+use super::{
+    device::plic::claim_interrupt,
+    trap::{TrapFrame, UserContext as RawUserContext},
+};
+use crate::{
+    trap::call_irq_callback_functions,
+    user::{ReturnReason, UserContextApi, UserContextApiInternal},
+};
 
 /// Cpu context, including both general-purpose registers and floating-point registers.
 #[derive(Clone, Copy, Debug)]
@@ -111,7 +117,18 @@ impl UserContextApiInternal for UserContext {
         let ret = loop {
             self.user_context.run();
             match riscv::register::scause::read().cause() {
-                Trap::Interrupt(_) => todo!(),
+                Trap::Interrupt(interrupt) => match interrupt {
+                    riscv::register::scause::Interrupt::SupervisorSoft => todo!(),
+                    riscv::register::scause::Interrupt::SupervisorTimer => todo!(),
+                    riscv::register::scause::Interrupt::SupervisorExternal => {
+                        while let irq = claim_interrupt()
+                            && irq != 0
+                        {
+                            call_irq_callback_functions(&self.as_trap_frame(), irq as usize);
+                        }
+                    }
+                    riscv::register::scause::Interrupt::Unknown => todo!(),
+                },
                 Trap::Exception(Exception::UserEnvCall) => {
                     self.user_context.sepc += 4;
                     break ReturnReason::UserSyscall;

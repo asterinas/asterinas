@@ -4,3 +4,8 @@
 //! This module mainly contains the APIs that should exposed to the device driver like PCI, RTC
 
 pub mod io_port;
+pub mod plic;
+
+pub(crate) fn init() {
+    plic::init();
+}
