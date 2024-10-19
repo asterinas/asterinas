@@ -8,7 +8,7 @@ use smoltcp::{
     phy::{DeviceCapabilities, TxToken},
     wire::{
         self, ArpOperation, ArpPacket, ArpRepr, EthernetAddress, EthernetFrame, EthernetProtocol,
-        EthernetRepr, IpAddress, Ipv4Address, Ipv4Cidr, Ipv4Packet,
+        EthernetRepr, IpAddress, Ipv4Address, Ipv4AddressExt, Ipv4Cidr, Ipv4Packet,
     },
 };
 
@@ -157,7 +157,7 @@ impl<D, E> EtherIface<D, E> {
                 ..
             } => {
                 // Ignore the ARP packet if the source addresses are not unicast.
-                if !source_hardware_addr.is_unicast() || !source_protocol_addr.is_unicast() {
+                if !source_hardware_addr.is_unicast() || !source_protocol_addr.x_is_unicast() {
                     return None;
                 }
 

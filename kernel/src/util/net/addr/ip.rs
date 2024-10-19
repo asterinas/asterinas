@@ -51,13 +51,15 @@ struct CInetAddr {
 
 impl From<Ipv4Address> for CInetAddr {
     fn from(value: Ipv4Address) -> Self {
-        Self { s_addr: value.0 }
+        Self {
+            s_addr: value.octets(),
+        }
     }
 }
 
 impl From<CInetAddr> for Ipv4Address {
     fn from(value: CInetAddr) -> Self {
-        Self(value.s_addr)
+        Self::from(value.s_addr)
     }
 }
 
