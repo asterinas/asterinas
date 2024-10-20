@@ -175,11 +175,7 @@ fn test_base_protect_query() {
     let from = PAGE_SIZE * from_ppn.start..PAGE_SIZE * from_ppn.end;
     let to = {
         let mut v = Vec::new();
-        let mut cur_allocator = allocator::PAGE_ALLOCATOR
-            .get()
-            .unwrap()
-            .disable_irq()
-            .lock();
+        let cur_allocator = allocator::PAGE_ALLOCATOR.get().unwrap();
         for _ in 0..999 {
             let page = cur_allocator
                 .alloc_page(PAGE_SIZE)

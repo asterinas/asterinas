@@ -21,9 +21,12 @@
 
 use core::{alloc::Layout, array, cmp::min, ops::Range};
 
-use ostd::mm::{
-    page::{allocator::PageAlloc, meta::FreePage},
-    Paddr, PAGE_SIZE,
+use ostd::{
+    mm::{
+        page::{allocator::PageAlloc, meta::FreePage},
+        Paddr, PAGE_SIZE,
+    },
+    sync::SpinLock,
 };
 
 /// Buddy Frame allocator is a frame allocator based on buddy system, which
@@ -52,6 +55,15 @@ pub struct BuddyFrameAllocator<const ORDER: usize = 32> {
     total: usize,
 }
 
+/// The locked version of the [`BuddyFrameAllocator`], a frame allocator based
+/// on buddy system. Import [`SpinLock`] to get the inner mutable reference,
+/// catering to the requirement of the `PageAlloc` trait. For more details of
+/// buddy system, please refer to the [`BuddyFrameAllocator`] documentation.
+pub struct LockedBuddyFrameAllocator<const ORDER: usize = 32> {
+    // BuddyFrameAllocator with spinlock
+    allocator: SpinLock<BuddyFrameAllocator<ORDER>>,
+}
+
 pub(crate) fn prev_power_of_two(num: usize) -> usize {
     1 << (usize::BITS as usize - num.leading_zeros() as usize - 1)
 }
@@ -72,7 +84,7 @@ impl<const ORDER: usize> BuddyFrameAllocator<ORDER> {
     /// Panic
     ///
     /// - The function panics if the class is larger than the max order.
-    fn insert_to_free_list(&mut self, class: usize, frame: usize) {
+    pub(crate) fn insert_to_free_list(&mut self, class: usize, frame: usize) {
         assert!(class < ORDER);
 
         FreePage::try_lock(frame * PAGE_SIZE)
@@ -95,7 +107,7 @@ impl<const ORDER: usize> BuddyFrameAllocator<ORDER> {
     /// The function panics if：
     /// - The class is larger than the max order.
     /// - The class is empty.
-    fn remove_from_free_list(&mut self, class: usize, frame: usize) {
+    pub(crate) fn remove_from_free_list(&mut self, class: usize, frame: usize) {
         assert!(class < ORDER);
         assert!(self.block_cnt[class] > 0);
 
@@ -117,7 +129,7 @@ impl<const ORDER: usize> BuddyFrameAllocator<ORDER> {
     }
 
     /// Check if the buddy of the given frame is free
-    fn is_free_block(&self, frame: usize, class: usize) -> bool {
+    pub(crate) fn is_free_block(&self, frame: usize, class: usize) -> bool {
         if let Some(freepage) = FreePage::try_lock(frame * PAGE_SIZE) {
             freepage.value() == class + 1
         } else {
@@ -127,7 +139,7 @@ impl<const ORDER: usize> BuddyFrameAllocator<ORDER> {
 
     /// Add a range of free pages, described by the **frame number**
     /// [start, end), for the allocator to manage.
-    fn add_free_pages(&mut self, range: Range<usize>) {
+    pub(crate) fn add_free_pages(&mut self, range: Range<usize>) {
         let start = range.start;
         let end = range.end;
         assert!(start <= end);
@@ -173,7 +185,7 @@ impl<const ORDER: usize> BuddyFrameAllocator<ORDER> {
 
     /// Allocate a range of frames from the allocator, returning the first frame of the allocated
     /// range.
-    pub fn alloc(&mut self, count: usize) -> Option<usize> {
+    pub(crate) fn alloc(&mut self, count: usize) -> Option<usize> {
         self.alloc_power_of_two(count.next_power_of_two().trailing_zeros())
     }
 
@@ -224,7 +236,7 @@ impl<const ORDER: usize> BuddyFrameAllocator<ORDER> {
     /// # Safety
     ///
     /// Do not deallocate the same range twice.
-    pub fn dealloc(&mut self, start_frame: usize, count: usize) {
+    pub(crate) fn dealloc(&mut self, start_frame: usize, count: usize) {
         self.dealloc_power_of_two(start_frame, count.next_power_of_two().trailing_zeros())
     }
 
@@ -261,7 +273,7 @@ impl<const ORDER: usize> BuddyFrameAllocator<ORDER> {
     /// The function panics if no suitable block found for the given range.
     ///
     #[allow(unused)]
-    pub fn alloc_specific(&mut self, start: usize, end: usize) {
+    pub(crate) fn alloc_specific(&mut self, start: usize, end: usize) {
         let mut current_start = start;
         while current_start < end {
             /*
@@ -321,27 +333,51 @@ impl<const ORDER: usize> BuddyFrameAllocator<ORDER> {
             self.allocated += size;
         }
     }
-}
 
-impl PageAlloc for BuddyFrameAllocator<32> {
-    fn add_free_pages(&mut self, range: Range<usize>) {
-        BuddyFrameAllocator::add_free_pages(self, range)
-    }
-
-    fn alloc(&mut self, layout: Layout) -> Option<Paddr> {
-        assert!(layout.size() & (PAGE_SIZE - 1) == 0);
-        BuddyFrameAllocator::alloc(self, layout.size() / PAGE_SIZE).map(|idx| idx * PAGE_SIZE)
-    }
-
-    fn dealloc(&mut self, addr: Paddr, nr_pages: usize) {
-        BuddyFrameAllocator::dealloc(self, addr / PAGE_SIZE, nr_pages)
-    }
-
-    fn total_mem(&self) -> usize {
+    pub(crate) fn total_mem(&self) -> usize {
         self.total * PAGE_SIZE
     }
 
-    fn free_mem(&self) -> usize {
+    pub(crate) fn free_mem(&self) -> usize {
         (self.total - self.allocated) * PAGE_SIZE
+    }
+}
+
+impl LockedBuddyFrameAllocator<32> {
+    /// Create a new locked buddy frame allocator
+    pub fn new() -> Self {
+        Self {
+            allocator: SpinLock::new(BuddyFrameAllocator::new()),
+        }
+    }
+}
+
+impl PageAlloc for LockedBuddyFrameAllocator<32> {
+    fn add_free_pages(&self, range: Range<usize>) {
+        self.allocator.disable_irq().lock().add_free_pages(range)
+    }
+
+    fn alloc(&self, layout: Layout) -> Option<Paddr> {
+        assert!(layout.size() & (PAGE_SIZE - 1) == 0);
+        self.allocator
+            .disable_irq()
+            .lock()
+            .alloc(layout.size() / PAGE_SIZE)
+            .map(|idx| idx * PAGE_SIZE)
+    }
+
+    fn dealloc(&self, addr: Paddr, nr_pages: usize) {
+        self.allocator
+            .disable_irq()
+            .lock()
+            .dealloc(addr / PAGE_SIZE, nr_pages)
+    }
+
+    fn total_mem(&self) -> usize {
+        self.allocator.disable_irq().lock().total_mem()
+    }
+
+    fn free_mem(&self) -> usize {
+        self.allocator.disable_irq().lock().free_mem()
     }
 }
