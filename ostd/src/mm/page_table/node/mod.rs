@@ -28,9 +28,12 @@
 mod child;
 mod entry;
 
-use core::{marker::PhantomData, mem::ManuallyDrop, sync::atomic::Ordering};
+use core::{marker::PhantomData, mem::ManuallyDrop};
 
-pub(in crate::mm) use self::{child::Child, entry::Entry};
+pub(in crate::mm) use self::{
+    child::Child,
+    entry::{Entry, EntryMut},
+};
 use super::{nr_subpage_per_huge, PageTableEntryTrait};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
@@ -75,24 +78,30 @@ where
         self.level
     }
 
-    /// Converts a raw handle to an accessible handle by pertaining the lock.
-    pub(super) fn lock(self) -> PageTableNode<E, C> {
+    /// Converts a raw handle to a mutable handle by pertaining the lock.
+    pub(super) fn lock_write(self) -> PageTableNode<true, E, C> {
         let level = self.level;
         let page: Page<PageTablePageMeta<E, C>> = self.into();
 
         // Acquire the lock.
-        while page
-            .meta()
-            .lock
-            .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
-            .is_err()
-        {
-            core::hint::spin_loop();
-        }
+        let meta = page.meta();
+        meta.lock_write();
 
         debug_assert_eq!(page.meta().level, level);
+        PageTableNode::<true, E, C> { page }
+    }
 
-        PageTableNode::<E, C> { page }
+    /// Converts a raw handle to a readable handle by pertaining the lock.
+    pub(super) fn lock_read(self) -> PageTableNode<false, E, C> {
+        let level = self.level;
+        let page: Page<PageTablePageMeta<E, C>> = self.into();
+
+        // Acquire the lock.
+        let meta = page.meta();
+        meta.lock_read();
+
+        debug_assert_eq!(page.meta().level, level);
+        PageTableNode::<false, E, C> { page }
     }
 
     /// Creates a copy of the handle.
@@ -219,6 +228,7 @@ where
 /// page table node.
 #[derive(Debug)]
 pub(super) struct PageTableNode<
+    const IS_MUT: bool = true,
     E: PageTableEntryTrait = PageTableEntry,
     C: PagingConstsTrait = PagingConsts,
 > where
@@ -227,39 +237,17 @@ pub(super) struct PageTableNode<
     page: Page<PageTablePageMeta<E, C>>,
 }
 
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableNode<E, C>
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableNode<true, E, C>
 where
     [(); C::NR_LEVELS as usize]:,
 {
-    /// Borrows an entry in the node at a given index.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the index is not within the bound of
-    /// [`nr_subpage_per_huge<C>`].
-    pub(super) fn entry(&mut self, idx: usize) -> Entry<'_, E, C> {
-        assert!(idx < nr_subpage_per_huge::<C>());
-        // SAFETY: The index is within the bound.
-        unsafe { Entry::new_at(self, idx) }
-    }
-
-    /// Gets the level of the page table node.
-    pub(super) fn level(&self) -> PagingLevel {
-        self.page.meta().level
-    }
-
-    /// Gets the tracking status of the page table node.
-    pub(super) fn is_tracked(&self) -> MapTrackingStatus {
-        self.page.meta().is_tracked
-    }
-
     /// Allocates a new empty page table node.
     ///
     /// This function returns an owning handle. The newly created handle does not
     /// set the lock bit for performance as it is exclusive and unlocking is an
     /// extra unnecessary expensive operation.
     pub(super) fn alloc(level: PagingLevel, is_tracked: MapTrackingStatus) -> Self {
-        let meta = PageTablePageMeta::new_locked(level, is_tracked);
+        let meta = PageTablePageMeta::new_locked_write(level, is_tracked);
         let page = page::allocator::alloc_single::<PageTablePageMeta<E, C>>(meta).unwrap();
 
         // Zero out the page table node.
@@ -272,12 +260,80 @@ where
         Self { page }
     }
 
+    /// Mutably borrows an entry in the node at a given index.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the index is not within the bound of
+    /// [`nr_subpage_per_huge<C>`].
+    pub(super) fn entry_mut(&mut self, idx: usize) -> EntryMut<'_, E, C> {
+        assert!(idx < nr_subpage_per_huge::<C>());
+        // SAFETY: The index is within the bound.
+        unsafe { EntryMut::new_at(self, idx) }
+    }
+
+    /// Writes a page table entry at a given index.
+    ///
+    /// This operation will leak the old child if the old PTE is present.
+    ///
+    /// The child represented by the given PTE will handover the ownership to
+    /// the node. The PTE will be rendered invalid after this operation.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that:
+    ///  1. The index must be within the bound;
+    ///  2. The PTE must represent a child compatible with this page table node
+    ///     (see [`Child::is_compatible`]).
+    unsafe fn write_pte(&mut self, idx: usize, pte: E) {
+        debug_assert!(idx < nr_subpage_per_huge::<C>());
+        let ptr = paddr_to_vaddr(self.page.paddr()) as *mut E;
+        // SAFETY: The index is within the bound and the PTE is plain-old-data.
+        unsafe { ptr.add(idx).write(pte) }
+    }
+}
+
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableNode<false, E, C>
+where
+    [(); C::NR_LEVELS as usize]:,
+{
+    /// Borrows an entry in the node at a given index.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the index is not within the bound of
+    /// [`nr_subpage_per_huge<C>`].
+    pub(super) fn entry(&self, idx: usize) -> Entry<'_, E, C> {
+        assert!(idx < nr_subpage_per_huge::<C>());
+        // SAFETY: The index is within the bound.
+        unsafe { Entry::new_at(self, idx) }
+    }
+}
+
+impl<E: PageTableEntryTrait, C: PagingConstsTrait, const IS_MUT: bool> PageTableNode<IS_MUT, E, C>
+where
+    [(); C::NR_LEVELS as usize]:,
+{
+    /// Gets the level of the page table node.
+    pub(super) fn level(&self) -> PagingLevel {
+        self.page.meta().level
+    }
+
+    /// Gets the tracking status of the page table node.
+    pub(super) fn is_tracked(&self) -> MapTrackingStatus {
+        self.page.meta().is_tracked
+    }
+
     /// Converts the handle into a raw handle to be stored in a PTE or CPU.
     pub(super) fn into_raw(self) -> RawPageTableNode<E, C> {
         let this = ManuallyDrop::new(self);
 
         // Release the lock.
-        this.page.meta().lock.store(0, Ordering::Release);
+        if IS_MUT {
+            this.page.meta().unlock_write();
+        } else {
+            this.page.meta().unlock_read();
+        }
 
         // SAFETY: The provided physical address is valid and the level is
         // correct. The reference count is not changed.
@@ -315,26 +371,6 @@ where
         unsafe { ptr.add(idx).read() }
     }
 
-    /// Writes a page table entry at a given index.
-    ///
-    /// This operation will leak the old child if the old PTE is present.
-    ///
-    /// The child represented by the given PTE will handover the ownership to
-    /// the node. The PTE will be rendered invalid after this operation.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that:
-    ///  1. The index must be within the bound;
-    ///  2. The PTE must represent a child compatible with this page table node
-    ///     (see [`Child::is_compatible`]).
-    unsafe fn write_pte(&mut self, idx: usize, pte: E) {
-        debug_assert!(idx < nr_subpage_per_huge::<C>());
-        let ptr = paddr_to_vaddr(self.page.paddr()) as *mut E;
-        // SAFETY: The index is within the bound and the PTE is plain-old-data.
-        unsafe { ptr.add(idx).write(pte) }
-    }
-
     /// Gets the mutable reference to the number of valid PTEs in the node.
     fn nr_children_mut(&mut self) -> &mut u16 {
         // SAFETY: The lock is held so we have an exclusive access.
@@ -342,13 +378,18 @@ where
     }
 }
 
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for PageTableNode<E, C>
+impl<E: PageTableEntryTrait, C: PagingConstsTrait, const IS_MUT: bool> Drop
+    for PageTableNode<IS_MUT, E, C>
 where
     [(); C::NR_LEVELS as usize]:,
 {
     fn drop(&mut self) {
         // Release the lock.
-        self.page.meta().lock.store(0, Ordering::Release);
+        if IS_MUT {
+            self.page.meta().unlock_write();
+        } else {
+            self.page.meta().unlock_read();
+        }
     }
 }
 
