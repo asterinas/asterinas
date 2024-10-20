@@ -228,8 +228,6 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
         let frame = BOOTSTRAP_PAGE_ALLOCATOR
             .get()
             .unwrap()
-            .disable_irq()
-            .lock()
             .alloc_page(PAGE_SIZE)
             .unwrap()
             / PAGE_SIZE;

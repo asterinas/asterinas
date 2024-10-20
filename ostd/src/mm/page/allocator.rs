@@ -37,7 +37,7 @@ pub trait PageAlloc: Sync + Send {
     ///
     /// Warning! May lead to panic when afterwards allocation while using
     /// out-of `ostd`
-    fn add_free_pages(&mut self, range: Range<usize>);
+    fn add_free_pages(&self, range: Range<usize>);
 
     /// Allocates a contiguous range of pages described by the layout.
     ///
@@ -45,18 +45,14 @@ pub trait PageAlloc: Sync + Send {
     ///
     /// The function panics if the layout.size is not base-page-aligned or
     /// if the layout.align is less than the PAGE_SIZE.
-    // TODO(Comments from pr #1137): Refactor the trait to support lock-free
-    // design of local page allocation cache. Specifically, change all the
-    // signatures to `&self` and require the implementor to use their own
-    // synchronization primitives to manage their locking scheme.
-    fn alloc(&mut self, layout: Layout) -> Option<Paddr>;
+    fn alloc(&self, layout: Layout) -> Option<Paddr>;
 
     /// Allocates one page with specific alignment
     ///
     /// # Panics
     ///
     /// The function panics if the align is not a power-of-two
-    fn alloc_page(&mut self, align: usize) -> Option<Paddr> {
+    fn alloc_page(&self, align: usize) -> Option<Paddr> {
         // CHeck whether the align is always a power-of-two
         assert!(align.is_power_of_two());
         let alignment = core::cmp::max(align, PAGE_SIZE);
@@ -75,7 +71,7 @@ pub trait PageAlloc: Sync + Send {
     /// Therefore, deallocating pages out-of `ostd` without coordination with
     /// the meta system may lead to unexpected behavior, such as panics during
     /// afterwards allocation.
-    fn dealloc(&mut self, addr: Paddr, nr_pages: usize);
+    fn dealloc(&self, addr: Paddr, nr_pages: usize);
 
     /// Returns the total number of bytes managed by the allocator.
     fn total_mem(&self) -> usize;
@@ -86,7 +82,7 @@ pub trait PageAlloc: Sync + Send {
 
 /// The global page allocator, described by the `PageAlloc` trait.
 #[export_name = "PAGE_ALLOCATOR"]
-pub static PAGE_ALLOCATOR: Once<SpinLock<Box<dyn PageAlloc>>> = Once::new();
+pub static PAGE_ALLOCATOR: Once<Box<dyn PageAlloc>> = Once::new();
 
 /// Allocate a single page.
 ///
@@ -95,8 +91,6 @@ pub(crate) fn alloc_single<M: PageMeta>(align: usize, metadata: M) -> Option<Pag
     PAGE_ALLOCATOR
         .get()
         .unwrap()
-        .disable_irq()
-        .lock()
         .alloc_page(align)
         .map(|paddr| Page::from_free(paddr, metadata))
 }
@@ -121,8 +115,6 @@ where
     PAGE_ALLOCATOR
         .get()
         .unwrap()
-        .disable_irq()
-        .lock()
         .alloc(layout)
         .map(|begin_paddr| {
             ContPages::from_free(begin_paddr..begin_paddr + layout.size(), metadata_fn)
@@ -137,11 +129,11 @@ pub(crate) fn init() {
         }
         allocator = __ostd_page_allocator_init_fn();
     }
-    PAGE_ALLOCATOR.call_once(|| SpinLock::new(allocator));
+    PAGE_ALLOCATOR.call_once(|| allocator);
 }
 
 /// The bootstrapping phase page allocator.
-pub(crate) struct BootstrapFrameAllocator {
+pub(crate) struct BootFrameAllocator {
     // memory region idx: The index for the global memory region indicates the
     // current memory region in use, facilitating rapid boot page allocation.
     mem_region_idx: usize,
@@ -150,10 +142,17 @@ pub(crate) struct BootstrapFrameAllocator {
     frame_cursor: usize,
 }
 
-pub(in crate::mm) static BOOTSTRAP_PAGE_ALLOCATOR: Once<SpinLock<BootstrapFrameAllocator>> =
-    Once::new();
+/// The locked version of the bootstrapping phase page allocator.
+/// Import [`SpinLock`] to get the inner mutable reference, catering to
+/// the requirement of the `PageAlloc` trait.
+pub(crate) struct LockedBootFrameAllocator {
+    // The bootstrap frame allocator with a spin lock.
+    allocator: SpinLock<BootFrameAllocator>,
+}
 
-impl BootstrapFrameAllocator {
+pub(in crate::mm) static BOOTSTRAP_PAGE_ALLOCATOR: Once<LockedBootFrameAllocator> = Once::new();
+
+impl BootFrameAllocator {
     pub fn new() -> Self {
         // Get the first frame for allocation
         let mut first_idx = 0;
@@ -188,19 +187,8 @@ impl BootstrapFrameAllocator {
             frame_cursor: first_frame,
         }
     }
-}
 
-impl PageAlloc for BootstrapFrameAllocator {
-    fn add_free_pages(&mut self, _range: Range<usize>) {
-        warn!("BootstrapFrameAllocator does not need to add frames");
-    }
-
-    fn alloc(&mut self, _layout: Layout) -> Option<Paddr> {
-        warn!("BootstrapFrameAllocator does not support to allocate memory described by range");
-        None
-    }
-
-    fn alloc_page(&mut self, _align: usize) -> Option<Paddr> {
+    pub fn alloc_page(&mut self, _align: usize) -> Option<Paddr> {
         let frame = self.frame_cursor;
         // Update idx and cursor
         let regions = crate::boot::memory_regions();
@@ -236,23 +224,46 @@ impl PageAlloc for BootstrapFrameAllocator {
         }
         Some(frame * PAGE_SIZE)
     }
+}
 
-    fn dealloc(&mut self, _addr: Paddr, _nr_pages: usize) {
-        panic!("BootstrapFrameAllocator does support frames deallocation!");
+impl LockedBootFrameAllocator {
+    pub fn new() -> Self {
+        Self {
+            allocator: SpinLock::new(BootFrameAllocator::new()),
+        }
+    }
+}
+
+impl PageAlloc for LockedBootFrameAllocator {
+    fn add_free_pages(&self, _range: Range<usize>) {
+        warn!("BootFrameAllocator does not need to add frames");
+    }
+
+    fn alloc(&self, _layout: Layout) -> Option<Paddr> {
+        warn!("BootFrameAllocator does not support to allocate memory described by range");
+        None
+    }
+
+    fn alloc_page(&self, _align: usize) -> Option<Paddr> {
+        self.allocator.disable_irq().lock().alloc_page(_align)
+    }
+
+    fn dealloc(&self, _addr: Paddr, _nr_pages: usize) {
+        panic!("BootFrameAllocator does support frames deallocation!");
     }
 
     fn total_mem(&self) -> usize {
-        warn!("BootstrapFrameAllocator does not support to calculate total memory");
+        warn!("BootFrameAllocator does not support to calculate total memory");
         0
     }
 
     fn free_mem(&self) -> usize {
-        warn!("BootstrapFrameAllocator does not support to calculate free memory");
+        warn!("BootFrameAllocator does not support to calculate free memory");
         0
     }
 }
 
 pub(crate) fn bootstrap_init() {
     info!("Initializing the bootstrap page allocator");
-    BOOTSTRAP_PAGE_ALLOCATOR.call_once(|| SpinLock::new(BootstrapFrameAllocator::new()));
+    BOOTSTRAP_PAGE_ALLOCATOR.call_once(LockedBootFrameAllocator::new);
 }

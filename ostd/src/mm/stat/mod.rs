@@ -10,22 +10,12 @@ use crate::mm::page::allocator::PAGE_ALLOCATOR;
 /// in most occasions. For example, bad memory, kernel statically-allocated
 /// memory or firmware reserved memories do not count.
 pub fn mem_total() -> usize {
-    PAGE_ALLOCATOR
-        .get()
-        .unwrap()
-        .disable_irq()
-        .lock()
-        .total_mem()
+    PAGE_ALLOCATOR.get().unwrap().total_mem()
 }
 
 /// Current readily available memory (in bytes).
 ///
 /// Such memory can be directly used for allocation without reclaiming.
 pub fn mem_available() -> usize {
-    PAGE_ALLOCATOR
-        .get()
-        .unwrap()
-        .disable_irq()
-        .lock()
-        .free_mem()
+    PAGE_ALLOCATOR.get().unwrap().free_mem()
 }

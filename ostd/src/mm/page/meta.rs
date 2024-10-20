@@ -187,8 +187,6 @@ pub(super) unsafe fn drop_as_last<M: PageMeta>(ptr: *const MetaSlot) {
     allocator::PAGE_ALLOCATOR
         .get()
         .unwrap()
-        .disable_irq()
-        .lock()
         .dealloc(mapping::meta_to_page::<PagingConsts>(ptr as Vaddr), 1);
 }
 
@@ -609,7 +607,7 @@ pub(crate) fn init() -> Vec<Page<MetaPageMeta>> {
 
 fn alloc_meta_pages(nframes: usize) -> Vec<Paddr> {
     let mut meta_pages = Vec::new();
-    let mut allocator = BOOTSTRAP_PAGE_ALLOCATOR.get().unwrap().disable_irq().lock();
+    let allocator = BOOTSTRAP_PAGE_ALLOCATOR.get().unwrap();
     for _ in 0..nframes {
         let frame_paddr = allocator
             .alloc_page(PAGE_SIZE)
