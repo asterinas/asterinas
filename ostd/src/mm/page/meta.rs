@@ -196,8 +196,8 @@ pub(in crate::mm) struct PageTablePageMeta<
     pub level: PagingLevel,
     /// Whether the pages mapped by the node is tracked.
     pub is_tracked: MapTrackingStatus,
-    /// The lock for the page table page.
-    pub lock: AtomicU8,
+    /// The read/write lock for the page table page.
+    lock: AtomicU32,
     _phantom: core::marker::PhantomData<(E, C)>,
 }
 
@@ -221,14 +221,48 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTablePageMeta<E, C>
 where
     [(); C::NR_LEVELS as usize]:,
 {
-    pub fn new_locked(level: PagingLevel, is_tracked: MapTrackingStatus) -> Self {
+    const WRITE_LOCK_BIT: u32 = 1 << 31;
+
+    pub(crate) fn new_locked_write(level: PagingLevel, is_tracked: MapTrackingStatus) -> Self {
         Self {
             nr_children: UnsafeCell::new(0),
             level,
             is_tracked,
-            lock: AtomicU8::new(1),
+            lock: AtomicU32::new(Self::WRITE_LOCK_BIT),
             _phantom: PhantomData,
         }
+    }
+
+    pub(crate) fn lock_read(&self) {
+        loop {
+            let old = self.lock.fetch_add(1, Ordering::Acquire);
+            if old & Self::WRITE_LOCK_BIT == 0 {
+                return;
+            }
+            self.lock.fetch_sub(1, Ordering::Release);
+            core::hint::spin_loop();
+        }
+    }
+
+    pub(crate) fn unlock_read(&self) {
+        let old = self.lock.fetch_sub(1, Ordering::Release);
+        debug_assert!(old & Self::WRITE_LOCK_BIT == 0);
+        debug_assert!(old > 0);
+    }
+
+    pub(crate) fn lock_write(&self) {
+        while self
+            .lock
+            .compare_exchange(0, Self::WRITE_LOCK_BIT, Ordering::AcqRel, Ordering::Relaxed)
+            .is_err()
+        {
+            core::hint::spin_loop();
+        }
+    }
+
+    pub(crate) fn unlock_write(&self) {
+        self.lock
+            .fetch_and(!Self::WRITE_LOCK_BIT, Ordering::Release);
     }
 }
 

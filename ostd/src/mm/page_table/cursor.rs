@@ -45,6 +45,8 @@
 //!  5. Map some pages in D;
 //!  6. `unlock(D)`, `lock_guard = [ locked(B) ]`;
 //!
+//! Also, since in this protocol `A` will only be read when creating the cursor,
+//! the lock for `A` is a read lock even if the cursor is a mutable cursor.
 //!
 //! ## Validity
 //!
@@ -70,8 +72,8 @@ use core::{any::TypeId, marker::PhantomData, ops::Range};
 use align_ext::AlignExt;
 
 use super::{
-    page_size, pte_index, Child, Entry, KernelMode, PageTable, PageTableEntryTrait, PageTableError,
-    PageTableMode, PageTableNode, PagingConstsTrait, PagingLevel, UserMode,
+    page_size, pte_index, Child, EntryMut, KernelMode, PageTable, PageTableEntryTrait,
+    PageTableError, PageTableMode, PageTableNode, PagingConstsTrait, PagingLevel, UserMode,
 };
 use crate::{
     mm::{
@@ -129,7 +131,7 @@ where
     /// from low to high, exactly the reverse order of the acquisition.
     /// This behavior is ensured by the default drop implementation of Rust:
     /// <https://doc.rust-lang.org/reference/destructors.html>.
-    guards: [Option<PageTableNode<E, C>>; C::NR_LEVELS as usize],
+    guards: [Option<PageTableNode<true, E, C>>; C::NR_LEVELS as usize],
     /// The level of the page table that the cursor points to.
     level: PagingLevel,
     /// From `guard_level` to `level`, the locks are held in `guards`.
@@ -163,16 +165,8 @@ where
             return Err(PageTableError::UnalignedVaddr);
         }
 
-        // Create a guard array that only hold the root node lock.
-        let guards = core::array::from_fn(|i| {
-            if i == (C::NR_LEVELS - 1) as usize {
-                Some(pt.root.clone_shallow().lock())
-            } else {
-                None
-            }
-        });
         let mut cursor = Self {
-            guards,
+            guards: core::array::from_fn(|_| None),
             level: C::NR_LEVELS,
             guard_level: C::NR_LEVELS,
             va: va.start,
@@ -180,6 +174,8 @@ where
             preempt_guard: disable_preempt(),
             _phantom: PhantomData,
         };
+
+        let mut cur_ptn = Some(pt.root.clone_shallow());
 
         // Go down and get proper locks. The cursor should hold a lock of a
         // page table node containing the virtual address range.
@@ -195,20 +191,24 @@ where
                 break;
             }
 
-            let entry = cursor.cur_entry();
-            if !entry.is_node() {
+            let cur_index = pte_index::<C>(cursor.va, cursor.level);
+            let cur_rlock = cur_ptn.take().unwrap().lock_read();
+            let cur_entry = cur_rlock.entry(cur_index);
+
+            if !cur_entry.is_node() {
+                cur_ptn = Some(cur_rlock.into_raw());
                 break;
             }
-            let Child::PageTable(child_pt) = entry.to_owned() else {
+            let Child::PageTable(child_pt) = cur_entry.to_owned() else {
                 unreachable!("Already checked");
             };
 
-            cursor.push_level(child_pt.lock());
-
-            // Release the guard of the previous (upper) level.
-            cursor.guards[cursor.level as usize] = None;
-            cursor.guard_level -= 1;
+            cursor.level -= 1;
+            cur_ptn = Some(child_pt);
         }
+
+        cursor.guard_level = cursor.level;
+        cursor.guards[(cursor.level - 1) as usize] = Some(cur_ptn.unwrap().lock_write());
 
         Ok(cursor)
     }
@@ -225,7 +225,7 @@ where
 
             match self.cur_entry().to_owned() {
                 Child::PageTable(pt) => {
-                    self.push_level(pt.lock());
+                    self.push_level(pt.lock_write());
                     continue;
                 }
                 Child::None => {
@@ -316,7 +316,7 @@ where
     }
 
     /// Goes down a level to a child page table.
-    fn push_level(&mut self, child_pt: PageTableNode<E, C>) {
+    fn push_level(&mut self, child_pt: PageTableNode<true, E, C>) {
         self.level -= 1;
         debug_assert_eq!(self.level, child_pt.level());
         self.guards[(self.level - 1) as usize] = Some(child_pt);
@@ -328,9 +328,9 @@ where
             && should_map_as_tracked(self.va)
     }
 
-    fn cur_entry(&mut self) -> Entry<'_, E, C> {
+    fn cur_entry(&mut self) -> EntryMut<'_, E, C> {
         let node = self.guards[(self.level - 1) as usize].as_mut().unwrap();
-        node.entry(pte_index::<C>(self.va, self.level))
+        node.entry_mut(pte_index::<C>(self.va, self.level))
     }
 }
 
@@ -432,11 +432,13 @@ where
             let cur_entry = self.0.cur_entry();
             match cur_entry.to_owned() {
                 Child::PageTable(pt) => {
-                    self.0.push_level(pt.lock());
+                    self.0.push_level(pt.lock_write());
                 }
                 Child::None => {
-                    let pt =
-                        PageTableNode::<E, C>::alloc(cur_level - 1, MapTrackingStatus::Tracked);
+                    let pt = PageTableNode::<true, E, C>::alloc(
+                        cur_level - 1,
+                        MapTrackingStatus::Tracked,
+                    );
                     let _ = cur_entry.replace(Child::PageTable(pt.clone_raw()));
                     self.0.push_level(pt);
                 }
@@ -513,10 +515,10 @@ where
                 let cur_entry = self.0.cur_entry();
                 match cur_entry.to_owned() {
                     Child::PageTable(pt) => {
-                        self.0.push_level(pt.lock());
+                        self.0.push_level(pt.lock_write());
                     }
                     Child::None => {
-                        let pt = PageTableNode::<E, C>::alloc(
+                        let pt = PageTableNode::<true, E, C>::alloc(
                             cur_level - 1,
                             MapTrackingStatus::Untracked,
                         );
@@ -598,7 +600,7 @@ where
                 let child = cur_entry.to_owned();
                 match child {
                     Child::PageTable(pt) => {
-                        let pt = pt.lock();
+                        let pt = pt.lock_write();
                         // If there's no mapped PTEs in the next level, we can
                         // skip to save time.
                         if pt.nr_children() != 0 {
@@ -704,7 +706,7 @@ where
                 let Child::PageTable(pt) = cur_entry.to_owned() else {
                     unreachable!("Already checked");
                 };
-                let pt = pt.lock();
+                let pt = pt.lock_write();
                 // If there's no mapped PTEs in the next level, we can
                 // skip to save time.
                 if pt.nr_children() != 0 {
@@ -782,7 +784,7 @@ where
 
             match src_entry.to_owned() {
                 Child::PageTable(pt) => {
-                    let pt = pt.lock();
+                    let pt = pt.lock_write();
                     // If there's no mapped PTEs in the next level, we can
                     // skip to save time.
                     if pt.nr_children() != 0 {

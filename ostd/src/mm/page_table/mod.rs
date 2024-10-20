@@ -100,7 +100,7 @@ impl PageTable<KernelMode> {
     /// This should be the only way to create the user page table, that is to
     /// duplicate the kernel page table with all the kernel mappings shared.
     pub fn create_user_page_table(&self) -> PageTable<UserMode> {
-        let mut root_node = self.root.clone_shallow().lock();
+        let root_node = self.root.clone_shallow().lock_read();
         let mut new_node =
             PageTableNode::alloc(PagingConsts::NR_LEVELS, MapTrackingStatus::NotApplicable);
 
@@ -110,7 +110,7 @@ impl PageTable<KernelMode> {
         for i in NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE {
             let root_entry = root_node.entry(i);
             if !root_entry.is_none() {
-                let _ = new_node.entry(i).replace(root_entry.to_owned());
+                let _ = new_node.entry_mut(i).replace(root_entry.to_owned());
             }
         }
 
@@ -135,9 +135,9 @@ impl PageTable<KernelMode> {
         let end = root_index.end;
         debug_assert!(end <= NR_PTES_PER_NODE);
 
-        let mut root_node = self.root.clone_shallow().lock();
+        let mut root_node = self.root.clone_shallow().lock_write();
         for i in start..end {
-            let root_entry = root_node.entry(i);
+            let root_entry = root_node.entry_mut(i);
             if root_entry.is_none() {
                 let nxt_level = PagingConsts::NR_LEVELS - 1;
                 let is_tracked = if super::kspace::should_map_as_tracked(
@@ -147,7 +147,9 @@ impl PageTable<KernelMode> {
                 } else {
                     MapTrackingStatus::Untracked
                 };
-                let node = PageTableNode::alloc(nxt_level, is_tracked);
+                let node = PageTableNode::<true, PageTableEntry, PagingConsts>::alloc(
+                    nxt_level, is_tracked,
+                );
                 let _ = root_entry.replace(Child::PageTable(node.into_raw()));
             }
         }
@@ -181,8 +183,11 @@ where
     /// Create a new empty page table. Useful for the kernel page table and IOMMU page tables only.
     pub fn empty() -> Self {
         PageTable {
-            root: PageTableNode::<E, C>::alloc(C::NR_LEVELS, MapTrackingStatus::NotApplicable)
-                .into_raw(),
+            root: PageTableNode::<true, E, C>::alloc(
+                C::NR_LEVELS,
+                MapTrackingStatus::NotApplicable,
+            )
+            .into_raw(),
             _phantom: PhantomData,
         }
     }
