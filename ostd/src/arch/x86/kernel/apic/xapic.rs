@@ -5,7 +5,7 @@
 use x86::apic::xapic;
 
 use super::ApicTimer;
-use crate::mm;
+use crate::{device::dispatcher::io_mem::IO_MEM_DISPATCHER, mm};
 
 const IA32_APIC_BASE_MSR: u32 = 0x1B;
 const IA32_APIC_BASE_MSR_BSP: u32 = 0x100; // Processor is a BSP
@@ -23,7 +23,9 @@ impl XApic {
         if !Self::has_xapic() {
             return None;
         }
-        let address = mm::paddr_to_vaddr(get_apic_base_address());
+        let base_addr = get_apic_base_address();
+        IO_MEM_DISPATCHER.remove(base_addr..(base_addr + size_of::<[u32; 256]>()));
+        let address = mm::paddr_to_vaddr(base_addr);
         Some(Self {
             mmio_start: address as *mut u32,
         })
