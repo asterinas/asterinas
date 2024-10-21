@@ -10,7 +10,7 @@ use ostd::{
         pci::{capability::CapabilityData, cfg_space::Bar, common_device::PciCommonDevice},
         BusProbeError,
     },
-    io_mem::IoMem,
+    io::IoMem,
     mm::{DmaCoherent, HasDaddr, PAGE_SIZE},
     trap::IrqCallbackFunction,
 };

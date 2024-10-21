@@ -14,7 +14,7 @@ use ostd::{
         },
         pci::cfg_space::Bar,
     },
-    io_mem::IoMem,
+    io::IoMem,
     mm::{DmaCoherent, PAGE_SIZE},
     offset_of,
     sync::RwLock,

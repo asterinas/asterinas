@@ -7,7 +7,7 @@ use aster_util::safe_ptr::SafePtr;
 use ostd::{
     arch::device::io_port::{PortRead, PortWrite},
     bus::pci::cfg_space::Bar,
-    io_mem::IoMem,
+    io::IoMem,
     mm::{DmaCoherent, PodOnce},
     trap::IrqCallbackFunction,
     Pod,
