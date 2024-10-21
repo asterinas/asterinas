@@ -47,6 +47,7 @@ pub mod task;
 pub mod timer;
 pub mod trap;
 pub mod user;
+pub(crate) mod util;
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
