@@ -6,7 +6,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 use spin::Once;
 
-use crate::{arch::boot::DEVICE_TREE, io_mem::IoMem};
+use crate::{arch::boot::DEVICE_TREE, io::IoMem};
 
 /// The timer frequency (Hz). Here we choose 1000Hz since 1000Hz is easier for unit conversion and
 /// convenient for timer. What's more, the frequency cannot be set too high or too low, 1000Hz is
