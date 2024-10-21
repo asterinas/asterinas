@@ -7,7 +7,7 @@ use aster_console::{AnyConsoleDevice, ConsoleCallback};
 use aster_util::safe_ptr::SafePtr;
 use log::debug;
 use ostd::{
-    io_mem::IoMem,
+    device::io_mem::IoMem,
     mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, VmReader},
     sync::{RwLock, SpinLock},
     trap::TrapFrame,

@@ -11,7 +11,7 @@ use ostd::{
         bus::MmioDevice,
         common_device::{MmioCommonDevice, VirtioMmioVersion},
     },
-    io_mem::IoMem,
+    device::io_mem::IoMem,
     mm::{DmaCoherent, PAGE_SIZE},
     offset_of,
     sync::RwLock,
