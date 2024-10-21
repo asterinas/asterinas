@@ -266,9 +266,8 @@ impl Waker {
     }
 
     fn do_wait(&self) {
-        let has_woken = &self.has_woken;
-        while !has_woken.swap(false, Ordering::Acquire) {
-            scheduler::park_current(has_woken);
+        while !self.has_woken.swap(false, Ordering::Acquire) {
+            scheduler::park_current(|| self.has_woken.load(Ordering::Acquire));
         }
     }
 

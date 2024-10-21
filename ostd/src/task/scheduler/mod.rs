@@ -8,8 +8,6 @@
 mod fifo_scheduler;
 pub mod info;
 
-use core::sync::atomic::{AtomicBool, Ordering};
-
 use spin::Once;
 
 use super::{preempt::cpu_local, processor, Task};
@@ -114,27 +112,45 @@ pub(crate) fn might_preempt() {
     yield_now();
 }
 
-/// Blocks the current task unless `has_woken` is `true`.
-pub(crate) fn park_current(has_woken: &AtomicBool) {
+/// Blocks the current task unless `has_woken()` returns `true`.
+///
+/// Note that this method may return due to spurious wake events. It's the caller's responsibility
+/// to detect them (if necessary).
+pub(crate) fn park_current<F>(has_woken: F)
+where
+    F: Fn() -> bool,
+{
     let mut current = None;
     let mut is_first_try = true;
-    reschedule(&mut |local_rq: &mut dyn LocalRunQueue| {
+
+    reschedule(|local_rq: &mut dyn LocalRunQueue| {
         if is_first_try {
-            if has_woken.load(Ordering::Acquire) {
+            if has_woken() {
                 return ReschedAction::DoNothing;
             }
+
+            // Note the race conditions: the current task may be woken after the above `has_woken`
+            // check, but before the below `dequeue_current` action, we need to make sure that the
+            // wakeup event isn't lost.
+            //
+            // Currently, for the FIFO scheduler, `Scheduler::enqueue` will try to lock `local_rq`
+            // when the above race condition occurs, so it will wait until we finish calling the
+            // `dequeue_current` method and nothing bad will happen. This may need to be revisited
+            // after more complex schedulers are introduced.
+
             current = local_rq.dequeue_current();
             local_rq.update_current(UpdateFlags::Wait);
         }
+
         if let Some(next_task) = local_rq.pick_next_current() {
             if Arc::ptr_eq(current.as_ref().unwrap(), next_task) {
                 return ReschedAction::DoNothing;
             }
-            ReschedAction::SwitchTo(next_task.clone())
-        } else {
-            is_first_try = false;
-            ReschedAction::Retry
+            return ReschedAction::SwitchTo(next_task.clone());
         }
+
+        is_first_try = false;
+        ReschedAction::Retry
     });
 }
 
@@ -184,7 +200,7 @@ fn set_need_preempt(cpu_id: CpuId) {
 ///
 /// This should only be called if the current is to exit.
 pub(super) fn exit_current() -> ! {
-    reschedule(&mut |local_rq: &mut dyn LocalRunQueue| {
+    reschedule(|local_rq: &mut dyn LocalRunQueue| {
         let _ = local_rq.dequeue_current();
         if let Some(next_task) = local_rq.pick_next_current() {
             ReschedAction::SwitchTo(next_task.clone())
@@ -198,9 +214,8 @@ pub(super) fn exit_current() -> ! {
 
 /// Yields execution.
 pub(super) fn yield_now() {
-    reschedule(&mut |local_rq| {
+    reschedule(|local_rq| {
         local_rq.update_current(UpdateFlags::Yield);
-
         if let Some(next_task) = local_rq.pick_next_current() {
             ReschedAction::SwitchTo(next_task.clone())
         } else {
@@ -213,7 +228,7 @@ pub(super) fn yield_now() {
 /// user-given closure.
 ///
 /// The closure makes the scheduling decision by taking the local runqueue has its input.
-fn reschedule<F>(f: &mut F)
+fn reschedule<F>(mut f: F)
 where
     F: FnMut(&mut dyn LocalRunQueue) -> ReschedAction,
 {
@@ -235,6 +250,10 @@ where
             }
         };
     };
+
+    // FIXME: At this point, we need to prevent the current task from being scheduled on another
+    // CPU core. However, we currently have no way to ensure this. This is a soundness hole and
+    // should be fixed. See <https://github.com/asterinas/asterinas/issues/1471> for details.
 
     cpu_local::clear_need_preempt();
     processor::switch_to_task(next_task);
