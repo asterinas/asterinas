@@ -14,6 +14,7 @@ use crate::{
 
 pub mod exception;
 pub mod kernel_thread;
+pub mod oops;
 pub mod status;
 pub mod task;
 pub mod work_queue;
