@@ -5,7 +5,7 @@ use ostd::{
     task::{Task, TaskOptions},
 };
 
-use super::{status::ThreadStatus, Thread};
+use super::{oops, status::ThreadStatus, Thread};
 use crate::{prelude::*, sched::priority::Priority};
 
 /// The inner data of a kernel thread
@@ -45,7 +45,7 @@ impl KernelThreadExt for Thread {
 pub fn create_new_kernel_task(mut thread_options: ThreadOptions) -> Arc<Task> {
     let task_fn = thread_options.take_func();
     let thread_fn = move || {
-        let _ = crate::oops::catch_panics_as_oops(task_fn);
+        let _ = oops::catch_panics_as_oops(task_fn);
         // Ensure that the thread exits.
         current_thread!().exit();
     };

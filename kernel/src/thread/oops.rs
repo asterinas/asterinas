@@ -4,7 +4,8 @@
 //!
 //! In Asterinas, a Rust panic leads to a kernel "oops". A kernel oops behaves
 //! as an exceptional control flow event. If kernel oopses happened too many
-//! times, the kernel panics and the system gets halted.
+//! times, the kernel panics and the system gets halted. Kernel oops are per-
+//! thread, so one thread's oops does not affect other threads.
 //!
 //! Though we can recover from the Rust panics. It is generally not recommended
 //! to make Rust panics as a general exception handling mechanism. Handling
@@ -12,6 +13,7 @@
 
 use alloc::{
     boxed::Box,
+    format,
     string::{String, ToString},
     sync::Arc,
 };
@@ -22,7 +24,7 @@ use core::{
 
 use ostd::panic;
 
-use crate::{current_thread, Thread};
+use super::Thread;
 
 // TODO: Control the kernel commandline parsing from the kernel crate.
 // In Linux it can be dynamically changed by writing to
@@ -49,10 +51,6 @@ pub fn catch_panics_as_oops<F, R>(f: F) -> Result<R, OopsInfo>
 where
     F: FnOnce() -> R,
 {
-    if PANIC_ON_OOPS.load(Ordering::Relaxed) {
-        return Ok(f());
-    }
-
     let result = panic::catch_unwind(f);
 
     match result {
@@ -64,12 +62,9 @@ where
 
             let count = OOPS_COUNT.fetch_add(1, Ordering::Relaxed);
             if count >= MAX_OOPS_COUNT {
-                // Too many oops. Panic the kernel.
-                //
-                // Note that for nested `catch_panics_as_oops` it still works as
-                // expected. The outer `catch_panics_as_oops` will catch the panic
-                // and found that the oops count is too high, then panic the kernel.
-                panic!("Too many oops. The kernel panics.");
+                // Too many oops. Abort the kernel.
+                log::error!("Too many oops. The kernel panics.");
+                panic::abort();
             }
 
             Err(*info)
@@ -86,19 +81,39 @@ static OOPS_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 #[ostd::panic_handler]
 fn panic_handler(info: &core::panic::PanicInfo) -> ! {
-    let message = info.message().to_string();
-    let thread = current_thread!();
+    let message = info.message();
 
-    // Raise the panic and expect it to be caught.
-    // TODO: eliminate the need for heap allocation.
-    panic::begin_panic(Box::new(OopsInfo {
-        message: message.clone(),
-        thread,
-    }));
+    if let Some(thread) = Thread::current() {
+        let panic_on_oops = PANIC_ON_OOPS.load(Ordering::Relaxed);
+        if !panic_on_oops && info.can_unwind() {
+            // TODO: eliminate the need for heap allocation.
+            let message = if let Some(location) = info.location() {
+                format!("{} at {}:{}", message, location.file(), location.line())
+            } else {
+                message.to_string()
+            };
+            // Raise the panic and expect it to be caught.
+            panic::begin_panic(Box::new(OopsInfo { message, thread }));
+        }
+    }
 
     // Halt the system if the panic is not caught.
-    log::error!("Uncaught panic! {:#?}", message);
+    if let Some(location) = info.location() {
+        log::error!(
+            "Uncaught panic: {}\nat {}:{}",
+            message,
+            location.file(),
+            location.line(),
+        );
+    } else {
+        log::error!("Uncaught panic: {}", message);
+    }
 
-    panic::print_stack_trace();
+    if info.can_unwind() {
+        panic::print_stack_trace();
+    } else {
+        log::error!("Backtrace is disabled.");
+    }
+
     panic::abort();
 }
