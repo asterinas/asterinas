@@ -3,7 +3,7 @@
 use aster_network::EthernetAddr;
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use bitflags::bitflags;
-use ostd::{io_mem::IoMem, offset_of, Pod};
+use ostd::{device::io_mem::IoMem, offset_of, Pod};
 
 use crate::transport::VirtioTransport;
 
