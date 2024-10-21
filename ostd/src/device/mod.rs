@@ -2,4 +2,5 @@
 
 //! Device I/O access.
 
+pub mod dispatcher;
 pub mod io_mem;

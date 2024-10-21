@@ -196,3 +196,10 @@ impl VmIoOnce for IoMem {
         self.writer().skip(offset + self.offset).write_once(new_val)
     }
 }
+
+impl Drop for IoMem {
+    fn drop(&mut self) {
+        // FIXME: After the PCI bus is removed from OSTD, we should uncomment the following code.
+        // super::dispatcher::io_mem::IO_MEM_DISPATCHER.recycle(self.pa..(self.pa + self.limit));
+    }
+}

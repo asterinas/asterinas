@@ -88,6 +88,8 @@ unsafe fn init() {
     mm::kspace::init_kernel_page_table(mm::init_page_meta());
     mm::dma::init();
 
+    device::dispatcher::init();
+
     arch::init_on_bsp();
 
     smp::init();
