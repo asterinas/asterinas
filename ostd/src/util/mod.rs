@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+pub mod vaddr_alloc;
+
 use core::ops::Range;
 
 /// Asserts that a boolean expression is `true` at compile-time.
