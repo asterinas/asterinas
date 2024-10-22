@@ -1123,6 +1123,7 @@ dependencies = [
  "owo-colors 3.5.0",
  "riscv",
  "sbi-rt",
+ "smallvec",
  "spin 0.9.8",
  "static_assertions",
  "tdx-guest",
