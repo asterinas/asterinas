@@ -31,6 +31,7 @@ pub fn create_bootdev_image(
     let action = match &action {
         ActionChoice::Run => &config.run,
         ActionChoice::Test => &config.test,
+        ActionChoice::Miri => todo!(),
     };
     let protocol = &action.grub.boot_protocol;
 

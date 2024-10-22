@@ -10,6 +10,7 @@ use crate::{cli::CommonArgs, config::Arch};
 pub enum ActionChoice {
     Run,
     Test,
+    Miri,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -78,6 +78,14 @@ fn panic_handler(info: &core::panic::PanicInfo) -> ! {
     ostd::prelude::abort();
 }
 
+/// The entry point of the miri runner.
+#[ostd::ktest::miri_main]
+fn miri_main() {
+    use alloc::string::ToString;
+    let test_whitelist: &[&str] = &["atomic_bits"];
+    run_ktests(Some(test_whitelist.iter().map(|s| s.to_string())), None);
+}
+
 /// Run all the tests registered by `#[ktest]` in the `.ktest_array` section.
 ///
 /// The `whitelist` argument is optional. If it is `None`, all tests compiled will be run.

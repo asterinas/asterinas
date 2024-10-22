@@ -8,7 +8,8 @@ use crate::{
     arch::Arch,
     commands::{
         execute_build_command, execute_debug_command, execute_forwarded_command,
-        execute_new_command, execute_profile_command, execute_run_command, execute_test_command,
+        execute_miri_command, execute_new_command, execute_profile_command, execute_run_command,
+        execute_test_command,
     },
     config::{
         manifest::{ProjectType, TomlManifest},
@@ -55,6 +56,9 @@ pub fn main() {
         OsdkSubcommand::Test(test_args) => {
             execute_test_command(&load_config(&test_args.common_args), test_args);
         }
+        OsdkSubcommand::Miri(test_args) => {
+            execute_miri_command(&load_config(&test_args.common_args), test_args)
+        }
         OsdkSubcommand::Check(args) => execute_forwarded_command("check", &args.args, true),
         OsdkSubcommand::Clippy(args) => execute_forwarded_command("clippy", &args.args, true),
         OsdkSubcommand::Doc(args) => execute_forwarded_command("doc", &args.args, false),
@@ -89,6 +93,8 @@ pub enum OsdkSubcommand {
     Profile(ProfileArgs),
     #[command(about = "Execute kernel mode unit test by starting a VMM")]
     Test(TestArgs),
+    #[command(about = "Use miri to run user mode tests")]
+    Miri(TestArgs),
     #[command(about = "Check a local package and all of its dependencies for errors")]
     Check(ForwardedArguments),
     #[command(about = "Checks a package to catch common mistakes and improve your Rust code")]

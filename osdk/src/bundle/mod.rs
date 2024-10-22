@@ -51,7 +51,8 @@ impl Bundle {
         std::fs::create_dir_all(path.as_ref()).unwrap();
         let config_initramfs = match action {
             ActionChoice::Run => config.run.boot.initramfs.as_ref(),
-            ActionChoice::Test => config.test.boot.initramfs.as_ref(),
+            // FIXME!
+            ActionChoice::Test | ActionChoice::Miri => config.test.boot.initramfs.as_ref(),
         };
         let initramfs = if let Some(ref initramfs) = config_initramfs {
             if !initramfs.exists() {
@@ -123,10 +124,12 @@ impl Bundle {
         let self_action = match self.manifest.action {
             ActionChoice::Run => &self.manifest.config.run,
             ActionChoice::Test => &self.manifest.config.test,
+            ActionChoice::Miri => todo!(),
         };
         let config_action = match action {
             ActionChoice::Run => &config.run,
             ActionChoice::Test => &config.test,
+            ActionChoice::Miri => unreachable!(),
         };
 
         // Compare the manifest with the run configuration except the initramfs and the boot method.
@@ -198,6 +201,9 @@ impl Bundle {
         let action = match action {
             ActionChoice::Run => &config.run,
             ActionChoice::Test => &config.test,
+            ActionChoice::Miri => {
+                todo!();
+            }
         };
         let mut qemu_cmd = Command::new(&action.qemu.path);
 
