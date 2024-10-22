@@ -361,6 +361,7 @@ FROM rust
 
 # Install all Asterinas dependent packages
 RUN apt update && apt-get install -y --no-install-recommends \ 
+    bridge-utils \ 
     clang-format       `# formatting general tests` \ 
     cpio \ 
     cpuid \ 
@@ -373,11 +374,14 @@ RUN apt update && apt-get install -y --no-install-recommends \
     grub-efi-amd64-dbg \ 
     ovmf                `# provide an alternative stable firmware` \ 
     {% endif %}
+    iptables \ 
+    iproute2 \ 
     libpixman-1-dev     `# running dependency for QEMU` \ 
     mtools              `# used by grub-mkrescue` \ 
     net-tools \ 
     openssh-server \ 
     pkg-config \ 
+    socat \ 
     strace \ 
     sudo \ 
     unzip \ 
