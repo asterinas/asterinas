@@ -13,6 +13,8 @@ REDIS_RAND_PORT=${REDIS_PORT:-$(shuf -i 1024-65535 -n 1)}
 IPERF_RAND_PORT=${IPERF_PORT:-$(shuf -i 1024-65535 -n 1)}
 LMBENCH_TCP_LAT_RAND_PORT=${LMBENCH_TCP_LAT_PORT:-$(shuf -i 1024-65535 -n 1)}
 
+SOCK_MONITOR=/run/asterinas_monitor.socket
+
 # Optional QEMU arguments. Opt in them manually if needed.
 # QEMU_OPT_ARG_DUMP_PACKETS="-object filter-dump,id=filter0,netdev=net01,file=virtio-net.pcap"
 
@@ -27,6 +29,7 @@ COMMON_QEMU_ARGS="\
     -display none \
     -serial chardev:mux \
     -monitor chardev:mux \
+    -monitor unix:${SOCK_MONITOR},server,nowait \
     -chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log \
     -netdev user,id=net01,hostfwd=tcp::$SSH_RAND_PORT-:22,hostfwd=tcp::$NGINX_RAND_PORT-:8080,hostfwd=tcp::$REDIS_RAND_PORT-:6379,hostfwd=tcp::$IPERF_RAND_PORT-:5201,hostfwd=tcp::$LMBENCH_TCP_LAT_RAND_PORT-:31234 \
     $QEMU_OPT_ARG_DUMP_PACKETS \

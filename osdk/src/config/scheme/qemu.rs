@@ -93,10 +93,10 @@ impl QemuScheme {
 
 /// Keys with multiple values
 const MULTI_VALUE_KEYS: &[&str] = &[
-    "-device", "-chardev", "-object", "-netdev", "-drive", "-cdrom",
+    "-device", "-chardev", "-object", "-netdev", "-drive", "-cdrom", "-monitor",
 ];
 /// Keys with only single value
-const SINGLE_VALUE_KEYS: &[&str] = &["-cpu", "-machine", "-m", "-serial", "-monitor", "-display"];
+const SINGLE_VALUE_KEYS: &[&str] = &["-cpu", "-machine", "-m", "-serial", "-display"];
 /// Keys with no value
 const NO_VALUE_KEYS: &[&str] = &["--no-reboot", "-nographic", "-enable-kvm"];
 /// Keys are not allowed to set in configuration files and command line
