@@ -108,6 +108,10 @@ pub fn do_cached_build(
         )
     };
 
+    if action == ActionChoice::Miri {
+        return build_a_new_one();
+    }
+
     let existing_bundle = Bundle::load(&bundle_path);
     let Some(existing_bundle) = existing_bundle else {
         return build_a_new_one();
@@ -145,19 +149,27 @@ pub fn do_build(
     }
     let mut bundle = Bundle::new(&bundle_path, config, action);
 
-    let (build, boot) = match action {
-        ActionChoice::Run => (&config.run.build, &config.run.boot),
-        ActionChoice::Test => (&config.test.build, &config.test.boot),
+    let (build, boot, cargo_action, bin_path_prefix) = match action {
+        ActionChoice::Run => (&config.run.build, &config.run.boot, vec!["build"], None),
+        ActionChoice::Test => (&config.test.build, &config.test.boot, vec!["build"], None),
+        ActionChoice::Miri => (
+            &config.test.build,
+            &config.test.boot,
+            vec!["miri", "run"],
+            Some("miri"),
+        ),
     };
 
     let aster_elf = build_kernel_elf(
         config.target_arch,
         &build.profile,
+        &cargo_action,
         &build.features[..],
         build.no_default_features,
         &build.override_configs[..],
         &cargo_target_directory,
         rustflags,
+        bin_path_prefix,
     );
 
     match boot.method {
@@ -190,11 +202,13 @@ pub fn do_build(
 fn build_kernel_elf(
     arch: Arch,
     profile: &str,
+    cargo_action: &[&str],
     features: &[String],
     no_default_features: bool,
     override_configs: &[String],
     cargo_target_directory: impl AsRef<Path>,
     rustflags: &[&str],
+    bin_path_prefix: Option<&str>,
 ) -> AsterBin {
     let target_os_string = OsString::from(&arch.triple());
     let rustc_linker_script_arg = format!("-C link-arg=-T{}.ld", arch);
@@ -225,7 +239,7 @@ fn build_kernel_elf(
     let mut command = cargo();
     command.env_remove("RUSTUP_TOOLCHAIN");
     command.env("RUSTFLAGS", rustflags.join(" "));
-    command.arg("build");
+    command.args(cargo_action);
     command.arg("--features").arg(features.join(" "));
     if no_default_features {
         command.arg("--no-default-features");
@@ -248,8 +262,13 @@ fn build_kernel_elf(
         process::exit(Errno::ExecuteCommand as _);
     }
 
-    let aster_bin_path = cargo_target_directory
-        .as_ref()
+    let aster_bin_path = cargo_target_directory.as_ref().to_path_buf();
+    let aster_bin_path = if let Some(prefix) = bin_path_prefix {
+        aster_bin_path.join(prefix)
+    } else {
+        aster_bin_path
+    };
+    let aster_bin_path = aster_bin_path
         .join(&target_os_string)
         .join(profile_name_adapter(profile))
         .join(get_current_crate_info().name);

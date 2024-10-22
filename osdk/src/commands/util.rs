@@ -10,6 +10,7 @@ pub const COMMON_CARGO_ARGS: &[&str] = &[
 ];
 
 pub const DEFAULT_TARGET_RELPATH: &str = "osdk";
+pub const DEFAULT_MIRI_TARGET_RELPATH: &str = "osdk-miri";
 
 pub fn cargo() -> Command {
     Command::new("cargo")
