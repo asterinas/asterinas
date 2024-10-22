@@ -34,6 +34,11 @@ EXTRA_BLOCKLISTS_DIRS ?= ""
 SYSCALL_TEST_DIR ?= /tmp
 # End of auto test features.
 
+# Network settings
+NETDEV ?= user 		# Possible values are user,tap
+VHOST ?= off	
+# End of network settings
+
 # ========================= End of Makefile options. ==========================
 
 CARGO_OSDK := ~/.cargo/bin/cargo-osdk
