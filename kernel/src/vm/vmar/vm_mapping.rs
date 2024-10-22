@@ -10,9 +10,12 @@ use core::{
 
 use align_ext::AlignExt;
 use aster_rights::Rights;
-use ostd::mm::{
-    tlb::TlbFlushOp, vm_space::VmItem, CachePolicy, Frame, FrameAllocOptions, PageFlags,
-    PageProperty, VmSpace,
+use ostd::{
+    mm::{
+        tlb::TlbFlushOp, vm_space::VmItem, CachePolicy, Frame, FrameAllocOptions, PageFlags,
+        PageProperty, VmSpace,
+    },
+    sync::RwLockReadGuard,
 };
 
 use super::{interval::Interval, is_intersected, Vmar, Vmar_};
@@ -39,7 +42,7 @@ use crate::{
 ///
 /// Such mappings will also be VMO-backed mappings.
 pub(super) struct VmMapping {
-    inner: Mutex<VmMappingInner>,
+    inner: RwLock<VmMappingInner>,
     /// The parent VMAR. The parent should always point to a valid VMAR.
     parent: Weak<Vmar_>,
     /// Specific physical pages that need to be mapped.
@@ -57,10 +60,10 @@ pub(super) struct VmMapping {
 
 impl VmMapping {
     pub fn try_clone(&self) -> Result<Self> {
-        let inner = self.inner.lock().clone();
+        let inner = self.inner.read().clone();
         let vmo = self.vmo.as_ref().map(|vmo| vmo.dup()).transpose()?;
         Ok(Self {
-            inner: Mutex::new(inner),
+            inner: RwLock::new(inner),
             parent: self.parent.clone(),
             vmo,
             is_shared: self.is_shared,
@@ -135,7 +138,7 @@ impl VmMapping {
         };
 
         Ok(Self {
-            inner: Mutex::new(vm_mapping_inner),
+            inner: RwLock::new(vm_mapping_inner),
             parent: Arc::downgrade(&parent_vmar),
             vmo,
             is_shared,
@@ -156,7 +159,7 @@ impl VmMapping {
         let partial_mapping = Arc::new(self.try_clone()?);
         // Adjust the mapping range and the permission.
         {
-            let mut inner = partial_mapping.inner.lock();
+            let mut inner = partial_mapping.inner.write();
             inner.shrink_to(range);
             if let Some(perms) = new_perms {
                 inner.perms = perms;
@@ -171,29 +174,29 @@ impl VmMapping {
 
     /// Returns the mapping's start address.
     pub fn map_to_addr(&self) -> Vaddr {
-        self.inner.lock().map_to_addr
+        self.inner.read().map_to_addr
     }
 
     /// Returns the mapping's end address.
     pub fn map_end(&self) -> Vaddr {
-        let inner = self.inner.lock();
+        let inner = self.inner.read();
         inner.map_to_addr + inner.map_size
     }
 
     /// Returns the mapping's size.
     pub fn map_size(&self) -> usize {
-        self.inner.lock().map_size
+        self.inner.read().map_size
     }
 
     /// Unmaps pages in the range
     pub fn unmap(&self, range: &Range<usize>, may_destroy: bool) -> Result<()> {
         let parent = self.parent.upgrade().unwrap();
         let vm_space = parent.vm_space();
-        self.inner.lock().unmap(vm_space, range, may_destroy)
+        self.inner.write().unmap(vm_space, range, may_destroy)
     }
 
     pub fn is_destroyed(&self) -> bool {
-        self.inner.lock().is_destroyed
+        self.inner.read().is_destroyed
     }
 
     /// Returns whether the mapping is a shared mapping.
@@ -202,7 +205,7 @@ impl VmMapping {
     }
 
     pub fn enlarge(&self, extra_size: usize) {
-        self.inner.lock().map_size += extra_size;
+        self.inner.write().map_size += extra_size;
     }
 
     pub fn handle_page_fault(&self, page_fault_info: &PageFaultInfo) -> Result<()> {
@@ -261,17 +264,19 @@ impl VmMapping {
             VmItem::NotMapped { .. } => {
                 // Map a new frame to the page fault address.
 
-                let inner_lock = self.inner.lock();
-                let (frame, is_readonly) = self.prepare_page(&inner_lock, address, is_write)?;
+                let inner = self.inner.read();
+                let (frame, is_readonly) = self.prepare_page(&inner, address, is_write)?;
 
                 let vm_perms = {
-                    let mut perms = inner_lock.perms;
+                    let mut perms = inner.perms;
                     if is_readonly {
                         // COW pages are forced to be read-only.
                         perms -= VmPerms::WRITE;
                     }
                     perms
                 };
+                drop(inner);
+
                 let mut page_flags = vm_perms.into();
                 page_flags |= PageFlags::ACCESSED;
                 if is_write {
@@ -288,7 +293,7 @@ impl VmMapping {
 
     fn prepare_page(
         &self,
-        inner_lock: &MutexGuard<VmMappingInner>,
+        mapping_inner: &RwLockReadGuard<VmMappingInner>,
         page_fault_addr: Vaddr,
         write: bool,
     ) -> Result<(Frame, bool)> {
@@ -297,7 +302,8 @@ impl VmMapping {
             return Ok((FrameAllocOptions::new(1).alloc_single()?, is_readonly));
         };
 
-        let vmo_offset = inner_lock.vmo_offset.unwrap() + page_fault_addr - inner_lock.map_to_addr;
+        let vmo_offset =
+            mapping_inner.vmo_offset.unwrap() + page_fault_addr - mapping_inner.map_to_addr;
         let page_idx = vmo_offset / PAGE_SIZE;
         let Ok(page) = vmo.get_committed_frame(page_idx) else {
             if !self.is_shared {
@@ -328,7 +334,7 @@ impl VmMapping {
         const SURROUNDING_PAGE_NUM: usize = 16;
         const SURROUNDING_PAGE_ADDR_MASK: usize = !(SURROUNDING_PAGE_NUM * PAGE_SIZE - 1);
 
-        let inner = self.inner.lock();
+        let inner = self.inner.read();
         let vmo_offset = inner.vmo_offset.unwrap();
         let vmo = self.vmo().unwrap();
         let around_page_addr = page_fault_addr & SURROUNDING_PAGE_ADDR_MASK;
@@ -376,7 +382,7 @@ impl VmMapping {
     /// it should not be called during the direct iteration of the `vm_mappings`.
     pub(super) fn protect(&self, new_perms: VmPerms, range: Range<usize>) -> Result<()> {
         // If `new_perms` is equal to `old_perms`, `protect()` will not modify any permission in the VmMapping.
-        let old_perms = self.inner.lock().perms;
+        let old_perms = self.inner.read().perms;
         if old_perms == new_perms {
             return Ok(());
         }
@@ -386,16 +392,16 @@ impl VmMapping {
         // Protect permission in the VmSpace.
         let vmar = self.parent.upgrade().unwrap();
         let vm_space = vmar.vm_space();
-        self.inner.lock().protect(vm_space, new_perms, range)?;
+        self.inner.write().protect(vm_space, new_perms, range)?;
 
         Ok(())
     }
 
     pub(super) fn new_fork(&self, new_parent: &Arc<Vmar_>) -> Result<VmMapping> {
-        let new_inner = self.inner.lock().clone();
+        let new_inner = self.inner.read().clone();
 
         Ok(VmMapping {
-            inner: Mutex::new(new_inner),
+            inner: RwLock::new(new_inner),
             parent: Arc::downgrade(new_parent),
             vmo: self.vmo.as_ref().map(|vmo| vmo.dup()).transpose()?,
             is_shared: self.is_shared,
@@ -431,7 +437,7 @@ impl VmMapping {
         let range = self.range();
         // Condition 4, the `additional_mappings` will be empty.
         if range.start == intersect_range.start && range.end == intersect_range.end {
-            self.inner.lock().perms = perms;
+            self.inner.write().perms = perms;
             return Ok(());
         }
         // Condition 1 or 3, which needs an additional new VmMapping with range (range.start..intersect_range.start)
@@ -451,7 +457,7 @@ impl VmMapping {
 
         // Begin to modify the `Vmar`.
         let vmar = self.parent.upgrade().unwrap();
-        let mut vmar_inner = vmar.inner.lock();
+        let mut vmar_inner = vmar.inner.write();
         // Remove the original mapping.
         vmar_inner.vm_mappings.remove(&self.map_to_addr());
         // Add protected mappings to the vmar.
@@ -522,18 +528,18 @@ impl VmMapping {
     fn trim_left(&self, vaddr: Vaddr) -> Result<Vaddr> {
         let vmar = self.parent.upgrade().unwrap();
         let vm_space = vmar.vm_space();
-        self.inner.lock().trim_left(vm_space, vaddr)
+        self.inner.write().trim_left(vm_space, vaddr)
     }
 
     /// Trims the mapping from right to a new address.
     fn trim_right(&self, vaddr: Vaddr) -> Result<Vaddr> {
         let vmar = self.parent.upgrade().unwrap();
         let vm_space = vmar.vm_space();
-        self.inner.lock().trim_right(vm_space, vaddr)
+        self.inner.write().trim_right(vm_space, vaddr)
     }
 
     fn check_perms(&self, perms: &VmPerms) -> Result<()> {
-        self.inner.lock().check_perms(perms)
+        self.inner.read().check_perms(perms)
     }
 }
 
