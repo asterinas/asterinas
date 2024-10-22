@@ -13,6 +13,11 @@ REDIS_RAND_PORT=${REDIS_PORT:-$(shuf -i 1024-65535 -n 1)}
 IPERF_RAND_PORT=${IPERF_PORT:-$(shuf -i 1024-65535 -n 1)}
 LMBENCH_TCP_LAT_RAND_PORT=${LMBENCH_TCP_LAT_PORT:-$(shuf -i 1024-65535 -n 1)}
 
+# Start monitoring while running benchmark to obtain vCPU information and pin vCPUs.
+if [[ ! "$BENCHMARK" == *"none"* ]]; then
+    SOCK_MONITOR="-monitor unix:/run/asterinas_monitor.socket,server,nowait"
+fi
+
 # Optional QEMU arguments. Opt in them manually if needed.
 # QEMU_OPT_ARG_DUMP_PACKETS="-object filter-dump,id=filter0,netdev=net01,file=virtio-net.pcap"
 
@@ -38,6 +43,7 @@ COMMON_QEMU_ARGS="\
     -display none \
     -serial chardev:mux \
     -monitor chardev:mux \
+    $SOCK_MONITOR \
     -chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log \
     $NETDEV_ARGS \
     $QEMU_OPT_ARG_DUMP_PACKETS \
