@@ -61,6 +61,24 @@ pub fn test_main(_attr: TokenStream, item: TokenStream) -> TokenStream {
     .into()
 }
 
+#[proc_macro_attribute]
+pub fn miri_main(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let main_fn = parse_macro_input!(item as ItemFn);
+    let main_fn_name = &main_fn.sig.ident;
+
+    quote!(
+        #[cfg(miri)]
+        #[no_mangle]
+        extern "Rust" fn __miri_main() {
+            #main_fn_name();
+        }
+
+        #[cfg(miri)]
+        #main_fn
+    )
+    .into()
+}
+
 /// A macro attribute for the panic handler.
 ///
 /// The attributed function will be used to override OSTD's default

@@ -156,5 +156,6 @@ pub mod ktest {
     //! `ktest` attribute is sufficient for all normal use cases.
 
     pub use ostd_macros::{test_main as main, test_panic_handler as panic_handler};
+    pub use ostd_macros::miri_main;
     pub use ostd_test::*;
 }
