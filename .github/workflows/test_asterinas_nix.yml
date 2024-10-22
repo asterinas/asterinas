@@ -1,0 +1,163 @@
+name: Test Asterinas (Nix)
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  # Schedule to run on every day at 22:00 UTC (06:00 Beijing Time)
+  schedule:
+    - cron: '0 22 * * *'
+
+jobs:
+  # Warm-up Nix, so subsequent jobs can reuse the cache
+  nix-cache:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: nixbuild/nix-quick-install-action@v28
+
+      - name: Calculate Cache Key
+        id: calc-cache-key
+        run: |
+          key=$(nix derivation show '.#_cache' | jq 'keys[0]' -r)
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+
+      - name: Try Restore Nix Store Cache
+        id: nix-cache-restore
+        uses: nix-community/cache-nix-action@v5.1.0
+        with:
+          primary-key: nix-cache-${{ runner.os }}-${{ steps.calc-cache-key.outputs.key }}
+          purge-prefixes: nix-cache-${{ runner.os }}-
+          skip-restore-on-hit-primary-key: true
+
+      - name: Build Nix Cache
+        if: steps.nix-cache-restore.outputs.hit-primary-key != 'true'
+        run: |
+          nix build .#_cache -L
+          nix-store --add-root ./result --realise
+          nix store gc
+
+  lint:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    needs: nix-cache
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: nixbuild/nix-quick-install-action@v28
+
+      - name: Restore Nix Store Cache
+        uses: nix-community/cache-nix-action@v5.1.0
+        with:
+          primary-key: "nix-cache-dummy"
+          restore-prefixes-first-match: nix-cache-${{ runner.os }}-
+          fail-on: first-match.miss
+          save: false
+
+      - name: Setup Environment using Nix
+        uses: rrbutani/use-nix-shell-action@v1
+        with:
+          extraNixOptions: "-L"
+
+      - name: Check
+        id: check
+        run: make check
+
+  unit-test:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    needs: nix-cache
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: nixbuild/nix-quick-install-action@v28
+
+      - name: Restore Nix Store Cache
+        uses: nix-community/cache-nix-action@v5.1.0
+        with:
+          primary-key: "nix-cache-dummy"
+          restore-prefixes-first-match: nix-cache-${{ runner.os }}-
+          fail-on: first-match.miss
+          save: false
+
+      - name: Setup Environment using Nix
+        uses: rrbutani/use-nix-shell-action@v1
+        with:
+          extraNixOptions: "-L"
+
+      - name: Usermode Unit test
+        id: usermode_unit_test
+        run: make test
+
+      - name: Ktest Unit Test
+        id: ktest_unit_test
+        run: |
+          mkdir -p test/build && cp $PREBUILT_INITRAMFS test/build/initramfs.cpio.gz
+          make ktest
+
+      # TODO: add component check.
+
+  integration-test:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    needs: nix-cache
+    name: integration-test (x86_64) (${{ matrix.test.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    strategy:
+      matrix:
+        test:
+          - name: SMP Boot Test (Multiboot)
+            run: make run AUTO_TEST=boot ENABLE_KVM=1 BOOT_PROTOCOL=multiboot RELEASE=1 SMP=4
+          - name: SMP Boot Test (Linux Legacy 32-bit Boot Protocol)
+            run: make run AUTO_TEST=boot ENABLE_KVM=1 BOOT_PROTOCOL=linux-legacy32 RELEASE=1 SMP=4
+          - name: Syscall Test (Linux EFI Handover Boot Protocol) (Debug Build)
+            run: make run AUTO_TEST=syscall ENABLE_KVM=1 BOOT_PROTOCOL=linux-efi-handover64 RELEASE=0
+          - name: Syscall Test at Ext2 (MicroVM)
+            run: make run AUTO_TEST=syscall SYSCALL_TEST_DIR=/ext2 ENABLE_KVM=1 SCHEME=microvm RELEASE=1
+          - name: Syscall Test at Exfat (Multiboot2) (without KVM enabled)
+            run: make run AUTO_TEST=syscall SYSCALL_TEST_DIR=/exfat EXTRA_BLOCKLISTS_DIRS=blocklists.exfat ENABLE_KVM=0 BOOT_PROTOCOL=multiboot2 RELEASE=1
+          - name: SMP Syscall Test (Multiboot2)
+            run: make run AUTO_TEST=syscall ENABLE_KVM=1 BOOT_PROTOCOL=multiboot2 RELEASE=1 SMP=4
+          - name: General Test (Linux EFI Handover Boot Protocol)
+            run: make run AUTO_TEST=test ENABLE_KVM=1 BOOT_PROTOCOL=linux-efi-handover64 RELEASE=1
+          - name: SMP General Test (Multiboot2)
+            run: make run AUTO_TEST=test ENABLE_KVM=1 BOOT_PROTOCOL=multiboot2 RELEASE=1 SMP=4
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # https://github.blog/changelog/2023-02-23-hardware-accelerated-android-virtualization-on-actions-windows-and-linux-larger-hosted-runners/
+      - name: Enable KVM group perms
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install Nix
+        uses: nixbuild/nix-quick-install-action@v28
+
+      - name: Restore Nix Store Cache
+        uses: nix-community/cache-nix-action@v5.1.0
+        with:
+          primary-key: "nix-cache-dummy"
+          restore-prefixes-first-match: nix-cache-${{ runner.os }}-
+          fail-on: first-match.miss
+          save: false
+
+      - name: Setup Environment using Nix
+        uses: rrbutani/use-nix-shell-action@v1
+        with:
+          extraNixOptions: "-L"
+
+      - name: ${{ matrix.test.name }}
+        run: ${{ matrix.test.run }}
