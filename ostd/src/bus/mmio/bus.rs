@@ -66,7 +66,7 @@ impl MmioBus {
         self.drivers.push(driver);
     }
 
-    pub(super) fn register_mmio_device(&mut self, mut mmio_device: MmioCommonDevice) {
+    pub(crate) fn register_mmio_device(&mut self, mut mmio_device: MmioCommonDevice) {
         let device_id = mmio_device.read_device_id().unwrap();
         for driver in self.drivers.iter() {
             mmio_device = match driver.probe(mmio_device) {
@@ -86,7 +86,7 @@ impl MmioBus {
         self.common_devices.push_back(mmio_device);
     }
 
-    pub(super) const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             common_devices: VecDeque::new(),
             devices: Vec::new(),

@@ -25,7 +25,7 @@ pub struct MmioCommonDevice {
 }
 
 impl MmioCommonDevice {
-    pub(super) fn new(paddr: Paddr, handle: IrqLine) -> Self {
+    pub(crate) fn new(paddr: Paddr, handle: IrqLine) -> Self {
         // TODO: Implement universal access to MMIO devices since we are temporarily
         // using specific virtio device as implementation of CommonDevice.
 

@@ -12,6 +12,7 @@ use crate::{
     Pod,
 };
 
+pub(crate) const KERNEL_CODE_BASE_VADDR_PREFIX: usize = 0xffff_ffff_0000_0000;
 pub(crate) const NR_ENTRIES_PER_PAGE: usize = 512;
 
 #[derive(Clone, Debug, Default)]
