@@ -526,7 +526,7 @@ impl Dentry {
     ///
     /// If it is the root of a mount, it will go up to the mountpoint
     /// to get the name of the mountpoint recursively.
-    fn effective_name(&self) -> String {
+    pub fn effective_name(&self) -> String {
         if !self.inner.is_root_of_mount() {
             return self.inner.name();
         }
@@ -549,7 +549,7 @@ impl Dentry {
     ///
     /// If it is the root of a mount, it will go up to the mountpoint
     /// to get the parent of the mountpoint recursively.
-    fn effective_parent(&self) -> Option<Self> {
+    pub fn effective_parent(&self) -> Option<Self> {
         if !self.inner.is_root_of_mount() {
             return Some(Self::new(
                 self.mount_node.clone(),
