@@ -14,9 +14,9 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    container: asterinas/asterinas:0.9.3
+    container: asterinas/asterinas:0.9.4
     steps:
-      - run: echo "Running in asterinas/asterinas:0.9.3"
+      - run: echo "Running in asterinas/asterinas:0.9.4"
 
       - uses: actions/checkout@v4
       
@@ -28,9 +28,9 @@ jobs:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    container: asterinas/asterinas:0.9.3
+    container: asterinas/asterinas:0.9.4
     steps:
-      - run: echo "Running in asterinas/asterinas:0.9.3"
+      - run: echo "Running in asterinas/asterinas:0.9.4"
 
       - uses: actions/checkout@v4
 
@@ -49,7 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     container:
-      image: asterinas/asterinas:0.9.3
+      image: asterinas/asterinas:0.9.4
       options: --device=/dev/kvm
     strategy:
       matrix: 
@@ -66,7 +66,7 @@ jobs:
       fail-fast: false
 
     steps:
-      - run: echo "Running in asterinas/asterinas:0.9.3"
+      - run: echo "Running in asterinas/asterinas:0.9.4"
 
       - uses: actions/checkout@v4
 
@@ -118,7 +118,7 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 30
     container:
-      image: asterinas/asterinas:0.9.3-tdx
+      image: asterinas/asterinas:0.9.4-tdx
       options: --device=/dev/kvm --privileged
     env:
       # Need to set up proxy since the self-hosted CI server is located in China,
@@ -126,7 +126,7 @@ jobs:
       RUSTUP_DIST_SERVER: https://mirrors.ustc.edu.cn/rust-static
       RUSTUP_UPDATE_ROOT: https://mirrors.ustc.edu.cn/rust-static/rustup
     steps:
-      - run: echo "Running in asterinas/asterinas:0.9.3-tdx"
+      - run: echo "Running in asterinas/asterinas:0.9.4-tdx"
       - uses: actions/checkout@v4
       - name: Set up the environment
         run: |
