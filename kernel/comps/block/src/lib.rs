@@ -68,6 +68,8 @@ pub struct BlockDeviceMeta {
     pub max_nr_segments_per_bio: usize,
     /// The total number of sectors of the block device.
     pub nr_sectors: usize,
+    /// Whether the block device supports `VIRTIO_BLK_F_FLUSH` feature.
+    pub flush: bool,
     // Additional useful metadata can be added here in the future.
 }
 

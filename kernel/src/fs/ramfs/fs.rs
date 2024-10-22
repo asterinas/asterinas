@@ -589,6 +589,27 @@ impl Inode for RamInode {
         self.write_at(offset, reader)
     }
 
+    fn sync_all(&self) -> Result<()> {
+        let self_inode = self.node.read();
+        match &self_inode.inner {
+            Inner::Device(device) => {
+                device.sync()?;
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+    fn sync_data(&self) -> Result<()> {
+        let self_inode = self.node.read();
+        match &self_inode.inner {
+            Inner::Device(device) => {
+                device.sync()?;
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
     fn size(&self) -> usize {
         self.metadata.lock().size
     }

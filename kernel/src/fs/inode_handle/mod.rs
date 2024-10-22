@@ -402,6 +402,10 @@ pub trait FileIo: Send + Sync + 'static {
         self.write(reader)
     }
 
+    fn sync(&self) -> Result<()> {
+        Ok(())
+    }
+
     fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents;
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {

@@ -99,6 +99,11 @@ impl FileIo for VirtioBlk {
         Ok(buf_len)
     }
 
+    fn sync(&self) -> Result<()> {
+        self.device.sync(Bid::from_offset(0))?;
+        Ok(())
+    }
+
     fn poll(&self, mask: IoEvents, _poller: Option<&mut Poller>) -> IoEvents {
         let events = IoEvents::IN | IoEvents::OUT;
         events & mask
