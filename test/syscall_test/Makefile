@@ -50,6 +50,7 @@ TESTS ?= \
 	uidgid_test \
 	unlink_test \
 	utimes_test \
+	unshare_test \
 	vdso_clock_gettime_test \
 	write_test \
 	fallocate_test \

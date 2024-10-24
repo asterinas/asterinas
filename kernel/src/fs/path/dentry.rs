@@ -4,7 +4,7 @@
 #![allow(unused_variables)]
 
 use core::{
-    sync::atomic::{AtomicU32, Ordering},
+    sync::atomic::{AtomicU32, AtomicU8, Ordering},
     time::Duration,
 };
 
@@ -18,7 +18,7 @@ use crate::{
         utils::{FileSystem, Inode, InodeMode, InodeType, Metadata, MknodType, NAME_MAX},
     },
     prelude::*,
-    process::{Gid, Uid},
+    process::{Gid, Process, Uid},
 };
 
 /// A `Dentry` is used to represent a location in the mount tree.
@@ -34,6 +34,7 @@ pub struct Dentry_ {
     inode: Arc<dyn Inode>,
     name_and_parent: RwLock<Option<(String, Arc<Dentry_>)>>,
     children: RwMutex<Children>,
+    mountpoint_count: AtomicU8,
     flags: AtomicU32,
     this: Weak<Dentry_>,
 }
@@ -57,6 +58,7 @@ impl Dentry_ {
             },
             this: weak_self.clone(),
             children: RwMutex::new(Children::new()),
+            mountpoint_count: AtomicU8::new(0),
         })
     }
 
@@ -99,6 +101,12 @@ impl Dentry_ {
         &self.inode
     }
 
+    /// Get the mountpoint count.
+    fn mountpoint_count(&self) -> u8 {
+        self.mountpoint_count.load(Ordering::Acquire)
+    }
+
+    /// Get the DentryFlags.
     fn flags(&self) -> DentryFlags {
         let flags = self.flags.load(Ordering::Relaxed);
         DentryFlags::from_bits(flags).unwrap()
@@ -122,13 +130,17 @@ impl Dentry_ {
     }
 
     pub fn set_mountpoint_dentry(&self) {
+        self.mountpoint_count.fetch_add(1, Ordering::AcqRel);
         self.flags
             .fetch_or(DentryFlags::MOUNTED.bits(), Ordering::Release);
     }
 
     pub fn clear_mountpoint(&self) {
-        self.flags
-            .fetch_and(!(DentryFlags::MOUNTED.bits()), Ordering::Release);
+        self.mountpoint_count.fetch_sub(1, Ordering::AcqRel);
+        if self.mountpoint_count() == 0 {
+            self.flags
+                .fetch_and(!(DentryFlags::MOUNTED.bits()), Ordering::Release);
+        }
     }
 
     /// Currently, the root `Dentry_` of a fs is the root of a mount.
@@ -675,6 +687,18 @@ impl Dentry {
             .clone_mount_node_tree(&self.inner, recursive);
         src_mount.graft_mount_node_tree(dst_dentry)?;
         Ok(())
+    }
+
+    /// Move process's root from this mount node to another.
+    pub(super) fn move_root(&self, mount_node: &Arc<MountNode>, process: &Arc<Process>) {
+        let root_dentry = Self::new(mount_node.clone(), self.inner.clone());
+        process.fs().write().set_root(root_dentry);
+    }
+
+    /// Move process's cwd from this mount node to another.
+    pub(super) fn move_cwd(&self, mount_node: &Arc<MountNode>, process: &Arc<Process>) {
+        let cwd_dentry = Self::new(mount_node.clone(), self.inner.clone());
+        process.fs().write().set_cwd(cwd_dentry);
     }
 
     fn this(&self) -> Self {
