@@ -525,7 +525,7 @@ impl Inode for RamInode {
                     read_len
                 }
                 Inner::Device(device) => {
-                    device.read(writer)?
+                    device.read_at(offset, writer)?
                     // Typically, devices like "/dev/zero" or "/dev/null" do not require modifying
                     // timestamps here. Please adjust this behavior accordingly if there are special devices.
                 }
@@ -570,8 +570,9 @@ impl Inode for RamInode {
                 write_len
             }
             InodeType::CharDevice | InodeType::BlockDevice => {
-                let device = self.inner.as_device().unwrap();
-                device.write(reader)?
+                let self_inode = self.node.read();
+                let device = self_inode.inner.as_device().unwrap();
+                device.write_at(offset, reader)?
                 // Typically, devices like "/dev/zero" or "/dev/null" do not require modifying
                 // timestamps here. Please adjust this behavior accordingly if there are special devices.
             }
@@ -586,6 +587,27 @@ impl Inode for RamInode {
 
     fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
         self.write_at(offset, reader)
+    }
+
+    fn sync_all(&self) -> Result<()> {
+        let self_inode = self.node.read();
+        match &self_inode.inner {
+            Inner::Device(device) => {
+                device.sync()?;
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+    fn sync_data(&self) -> Result<()> {
+        let self_inode = self.node.read();
+        match &self_inode.inner {
+            Inner::Device(device) => {
+                device.sync()?;
+                Ok(())
+            }
+            _ => Ok(()),
+        }
     }
 
     fn size(&self) -> usize {

@@ -83,6 +83,18 @@ impl dyn BlockDevice {
         let bio = create_bio_from_frame(BioType::Write, bid, frame);
         bio.submit(self)
     }
+
+    /// Flushes any cached data to the persistent storage on the host.
+    /// This will be ignored if the device doesn't support the `VIRTIO_BLK_F_FLUSH` feature.
+    pub fn sync(&self, bid: Bid) -> Result<BioStatus, BioEnqueueError> {
+        let status = if self.metadata().flush {
+            let bio = create_bio(BioType::Flush, bid);
+            bio.submit_and_wait(self)?
+        } else {
+            BioStatus::NotSupported
+        };
+        Ok(status)
+    }
 }
 
 impl VmIo for dyn BlockDevice {
@@ -210,6 +222,10 @@ impl dyn BlockDevice {
         let complete = bio.submit(self)?;
         Ok(complete)
     }
+}
+
+fn create_bio(type_: BioType, bid: Bid) -> Bio {
+    Bio::new(type_, Sid::from(bid), vec![], Some(general_complete_fn))
 }
 
 // TODO: Maybe we should have a builder for `Bio`.

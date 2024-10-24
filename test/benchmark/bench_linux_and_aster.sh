@@ -101,8 +101,8 @@ run_benchmark() {
     parse_results "$benchmark" "$search_pattern" "$result_index" "$linux_output" "$aster_output" "$result_template" "$result_file"
 
     echo "Cleaning up..."
-    rm -f "${linux_output}"
-    rm -f "${aster_output}"
+    # rm -f "${linux_output}"
+    # rm -f "${aster_output}"
 }
 
 # Main
