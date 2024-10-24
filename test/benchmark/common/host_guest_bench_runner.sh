@@ -59,8 +59,21 @@ run_benchmark() {
     # Sleep for a short time to ensure the guest is fully ready
     sleep 1
 
+    # Pin qemu vCPUs to CPUs
+
+    if [[ "$guest_cmd" == *"linux_monitor"* ]]; then
+        bash ${BENCHMARK_DIR}/../../tools/bind_core.sh /run/linux_monitor.socket
+    else
+        bash ${BENCHMARK_DIR}/../../tools/bind_core.sh /run/asterinas_monitor.socket
+    fi
+
+    # Sleep for a short time to ensure taskset is ready
+    sleep 1
+
     # Run the host command and save the output to the specified file.
-    bash "${BENCHMARK_PATH}/host.sh" 2>&1 | tee "${output_file}"  
+    # FIXME: If QEMU starts with more than one vCPUs, 
+    # the CPUs of taskset should be changed accordingly.   
+    taskset -c 1 bash "${BENCHMARK_PATH}/host.sh" 2>&1 | tee "${output_file}"  
 
     # Clean up the log file
     rm -f "${guest_log_file}"

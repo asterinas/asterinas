@@ -64,6 +64,7 @@ run_benchmark() {
         -m 8G \
         -machine q35,kernel-irqchip=split \
         -cpu Icelake-Server,-pcid,+x2apic \
+        -monitor unix:/run/linux_monitor.socket,server,nowait \
         --enable-kvm \
         -kernel ${LINUX_KERNEL} \
         -initrd ${BENCHMARK_DIR}/../build/initramfs.cpio.gz \
@@ -101,6 +102,8 @@ run_benchmark() {
     parse_results "$benchmark" "$search_pattern" "$result_index" "$linux_output" "$aster_output" "$result_template" "$result_file"
 
     echo "Cleaning up..."
+    rm -f "/run/asterinas_monitor.socket"
+    rm -f "/run/linux_monitor.socket"
     rm -f "${linux_output}"
     rm -f "${aster_output}"
 }
