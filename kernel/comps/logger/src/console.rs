@@ -27,7 +27,7 @@ pub fn _print(args: Arguments) {
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => {{
-        $crate::console::_print(format_args!($($arg)*));
+        aster_logger::_print(format_args!($($arg)*));
     }};
 }
 
@@ -35,9 +35,9 @@ macro_rules! print {
 #[macro_export]
 macro_rules! println {
     () => {
-        $crate::print!("\n")
+        aster_logger::print!("\n")
     };
     ($($arg:tt)*) => {{
-        $crate::console::_print(format_args_nl!($($arg)*));
+        aster_logger::_print(format_args_nl!($($arg)*));
     }};
 }
