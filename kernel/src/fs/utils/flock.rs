@@ -2,7 +2,7 @@
 use alloc::fmt;
 use core::ptr;
 
-use ostd::sync::WaitQueue;
+use ostd::sync::{WaitQueue, Waiter};
 
 use crate::{
     fs::{file_handle::FileLike, inode_handle::InodeHandle},
@@ -62,12 +62,6 @@ impl FlockItem {
         false
     }
 
-    /// Waits until the lock can be acquired.
-    pub fn wait(&self) {
-        let cond = || None::<()>;
-        self.waitqueue.wait_until(cond);
-    }
-
     /// Wakes all threads that are waiting for this lock.
     pub fn wake_all(&self) {
         self.waitqueue.wake_all();
@@ -102,14 +96,14 @@ impl Debug for FlockItem {
 /// Represents a list of non-POSIX file advisory locks (FLOCK).
 /// The list is used to manage file locks and resolve conflicts between them.
 pub struct FlockList {
-    inner: RwMutex<VecDeque<FlockItem>>,
+    inner: Mutex<VecDeque<FlockItem>>,
 }
 
 impl FlockList {
     /// Creates a new FlockList.
     pub fn new() -> Self {
         Self {
-            inner: RwMutex::new(VecDeque::new()),
+            inner: Mutex::new(VecDeque::new()),
         }
     }
 
@@ -123,14 +117,15 @@ impl FlockList {
             req_lock, is_nonblocking
         );
         loop {
-            let conflict_lock;
+            let (waiter, waker);
             {
-                let mut list = self.inner.write();
+                let mut list = self.inner.lock();
                 if let Some(existing_lock) = list.iter().find(|l| req_lock.conflict_with(l)) {
                     if is_nonblocking {
                         return_errno_with_message!(Errno::EAGAIN, "the file is locked");
                     }
-                    conflict_lock = existing_lock.clone();
+                    (waiter, waker) = Waiter::new_pair();
+                    existing_lock.waitqueue.enqueue(waker);
                 } else {
                     match list.iter().position(|l| req_lock.same_owner_with(l)) {
                         Some(idx) => {
@@ -143,7 +138,7 @@ impl FlockList {
                     return Ok(());
                 }
             }
-            conflict_lock.wait();
+            waiter.wait();
         }
     }
 
@@ -157,7 +152,7 @@ impl FlockList {
             "unlock with owner: {:?}",
             req_owner as *const InodeHandle<R>
         );
-        let mut list = self.inner.write();
+        let mut list = self.inner.lock();
         list.retain(|lock| {
             if let Some(owner) = lock.owner() {
                 if ptr::eq(
