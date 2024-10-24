@@ -305,3 +305,8 @@ static POSIX_TID_ALLOCATOR: AtomicU32 = AtomicU32::new(1);
 pub fn allocate_posix_tid() -> Tid {
     POSIX_TID_ALLOCATOR.fetch_add(1, Ordering::SeqCst)
 }
+
+/// Returns the last allocated tid
+pub fn last_tid() -> Tid {
+    POSIX_TID_ALLOCATOR.load(Ordering::SeqCst) - 1
+}
