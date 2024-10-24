@@ -22,6 +22,7 @@ echo "Start network test......"
 ./http_server &
 ./http_client
 ./tcp_err
+./tcp_poll
 ./udp_err
 ./unix_err
 
