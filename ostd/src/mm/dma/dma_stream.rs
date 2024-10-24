@@ -55,6 +55,11 @@ pub enum DmaDirection {
 }
 
 impl DmaStream {
+    /// Creates a slice of the DMA stream.
+    pub fn slice(&self, offset: usize, len: usize) -> DmaStreamSlice {
+        DmaStreamSlice::new(self, offset, len)
+    }
+
     /// Establishes DMA stream mapping for a given [`Segment`].
     ///
     /// The method fails if the segment already belongs to a DMA mapping.
@@ -243,14 +248,14 @@ impl HasPaddr for DmaStream {
 }
 
 /// A slice of streaming DMA mapping.
-#[derive(Debug)]
-pub struct DmaStreamSlice<'a> {
-    stream: &'a DmaStream,
+#[derive(Debug, Clone)]
+pub struct DmaStreamSlice {
+    stream: DmaStream,
     offset: usize,
     len: usize,
 }
 
-impl<'a> DmaStreamSlice<'a> {
+impl DmaStreamSlice {
     /// Constructs a `DmaStreamSlice` from the [`DmaStream`].
     ///
     /// # Panics
@@ -259,15 +264,25 @@ impl<'a> DmaStreamSlice<'a> {
     /// this method will panic.
     /// If the `offset + len` is greater than the length of the stream,
     /// this method will panic.
-    pub fn new(stream: &'a DmaStream, offset: usize, len: usize) -> Self {
+    pub fn new(stream: &DmaStream, offset: usize, len: usize) -> Self {
         assert!(offset < stream.nbytes());
         assert!(offset + len <= stream.nbytes());
 
         Self {
-            stream,
+            stream: stream.clone(),
             offset,
             len,
         }
+    }
+
+    /// Returns the underlying `DmaStream`.
+    pub fn stream(&self) -> &DmaStream {
+        &self.stream
+    }
+
+    /// Returns the offset of the slice.
+    pub fn offset(&self) -> usize {
+        self.offset
     }
 
     /// Returns the number of bytes.
@@ -279,9 +294,21 @@ impl<'a> DmaStreamSlice<'a> {
     pub fn sync(&self) -> Result<(), Error> {
         self.stream.sync(self.offset..self.offset + self.len)
     }
+
+    /// Returns a reader to read data from it.
+    pub fn reader(&self) -> Result<VmReader<Infallible>, Error> {
+        let stream_reader = self.stream.reader()?.skip(self.offset).limit(self.len);
+        Ok(stream_reader)
+    }
+
+    /// Returns a writer to write data into it.
+    pub fn writer(&self) -> Result<VmWriter<Infallible>, Error> {
+        let stream_writer = self.stream.writer()?.skip(self.offset).limit(self.len);
+        Ok(stream_writer)
+    }
 }
 
-impl VmIo for DmaStreamSlice<'_> {
+impl VmIo for DmaStreamSlice {
     fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<(), Error> {
         if writer.avail() + offset > self.len {
             return Err(Error::InvalidArgs);
@@ -297,13 +324,13 @@ impl VmIo for DmaStreamSlice<'_> {
     }
 }
 
-impl HasDaddr for DmaStreamSlice<'_> {
+impl HasDaddr for DmaStreamSlice {
     fn daddr(&self) -> Daddr {
         self.stream.daddr() + self.offset
     }
 }
 
-impl HasPaddr for DmaStreamSlice<'_> {
+impl HasPaddr for DmaStreamSlice {
     fn paddr(&self) -> Paddr {
         self.stream.paddr() + self.offset
     }

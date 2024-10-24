@@ -942,13 +942,10 @@ impl Inner {
 
         let start_bid = Bid::from_offset(offset).to_raw() as Ext2Bid;
         let buf_nblocks = read_len / BLOCK_SIZE;
-        let segment = FrameAllocOptions::new(buf_nblocks)
-            .uninit(true)
-            .alloc_contiguous()?
-            .into();
-
-        self.inode_impl.read_blocks(start_bid, &segment)?;
-        segment.read(0, writer)?;
+        let bio_segment = BioSegment::new(buf_nblocks, BioDirection::Write);
+        self.inode_impl
+            .read_blocks(start_bid, bio_segment.clone())?;
+        bio_segment.read(0, writer)?;
         Ok(read_len)
     }
 
@@ -982,15 +979,10 @@ impl Inner {
 
         let start_bid = Bid::from_offset(offset).to_raw() as Ext2Bid;
         let buf_nblocks = write_len / BLOCK_SIZE;
-        let segment = {
-            let segment = FrameAllocOptions::new(buf_nblocks)
-                .uninit(true)
-                .alloc_contiguous()?;
-            segment.write(0, reader)?;
-            segment.into()
-        };
 
-        self.inode_impl.write_blocks(start_bid, &segment)?;
+        let bio_segment = BioSegment::new(buf_nblocks, BioDirection::Write);
+        bio_segment.write(0, reader)?;
+        self.inode_impl.write_blocks(start_bid, bio_segment)?;
         Ok(write_len)
     }
 
@@ -1129,8 +1121,8 @@ impl InodeImpl_ {
         self.inode().fs()
     }
 
-    pub fn read_blocks_async(&self, bid: Ext2Bid, blocks: &SegmentSlice) -> Result<BioWaiter> {
-        let nblocks = blocks.nframes();
+    pub fn read_blocks_async(&self, bid: Ext2Bid, blocks: BioSegment) -> Result<BioWaiter> {
+        let nblocks = blocks.nblocks();
         let mut segments = Vec::new();
 
         // Traverse all blocks to be read, handle any holes, and collect contiguous blocks in batches
@@ -1178,21 +1170,21 @@ impl InodeImpl_ {
         // Read blocks in batches
         let mut bio_waiter = BioWaiter::new();
         for (start_bid, segment) in segments {
-            let waiter = self.fs().read_blocks_async(start_bid, &segment)?;
+            let waiter = self.fs().read_blocks_async(start_bid, segment)?;
             bio_waiter.concat(waiter);
         }
         Ok(bio_waiter)
     }
 
-    pub fn read_blocks(&self, bid: Ext2Bid, blocks: &SegmentSlice) -> Result<()> {
+    pub fn read_blocks(&self, bid: Ext2Bid, blocks: BioSegment) -> Result<()> {
         match self.read_blocks_async(bid, blocks)?.wait() {
             Some(BioStatus::Complete) => Ok(()),
             _ => return_errno!(Errno::EIO),
         }
     }
 
-    pub fn write_blocks_async(&self, bid: Ext2Bid, blocks: &SegmentSlice) -> Result<BioWaiter> {
-        let nblocks = blocks.nframes();
+    pub fn write_blocks_async(&self, bid: Ext2Bid, blocks: BioSegment) -> Result<BioWaiter> {
+        let nblocks = blocks.nblocks();
         let mut bio_waiter = BioWaiter::new();
 
         let mut blocks_offset = 0;
@@ -1201,7 +1193,7 @@ impl InodeImpl_ {
             let range_len = dev_range.len();
             let segment = blocks.range(blocks_offset..blocks_offset + range_len);
 
-            let waiter = self.fs().write_blocks_async(first_bid, &segment)?;
+            let waiter = self.fs().write_blocks_async(first_bid, segment)?;
             bio_waiter.concat(waiter);
 
             blocks_offset += range_len;
@@ -1215,7 +1207,7 @@ impl InodeImpl_ {
         Ok(bio_waiter)
     }
 
-    pub fn write_blocks(&self, bid: Ext2Bid, blocks: &SegmentSlice) -> Result<()> {
+    pub fn write_blocks(&self, bid: Ext2Bid, blocks: BioSegment) -> Result<()> {
         match self.write_blocks_async(bid, blocks)?.wait() {
             Some(BioStatus::Complete) => Ok(()),
             _ => return_errno!(Errno::EIO),
@@ -1874,20 +1866,20 @@ impl InodeImpl {
     }
 
     /// Reads one or multiple blocks to the segment start from `bid` asynchronously.
-    pub fn read_blocks_async(&self, bid: Ext2Bid, blocks: &SegmentSlice) -> Result<BioWaiter> {
+    pub fn read_blocks_async(&self, bid: Ext2Bid, blocks: BioSegment) -> Result<BioWaiter> {
         self.0.read().read_blocks_async(bid, blocks)
     }
 
-    pub fn read_blocks(&self, bid: Ext2Bid, blocks: &SegmentSlice) -> Result<()> {
+    pub fn read_blocks(&self, bid: Ext2Bid, blocks: BioSegment) -> Result<()> {
         self.0.read().read_blocks(bid, blocks)
     }
 
     /// Writes one or multiple blocks from the segment start from `bid` asynchronously.
-    pub fn write_blocks_async(&self, bid: Ext2Bid, blocks: &SegmentSlice) -> Result<BioWaiter> {
+    pub fn write_blocks_async(&self, bid: Ext2Bid, blocks: BioSegment) -> Result<BioWaiter> {
         self.0.read().write_blocks_async(bid, blocks)
     }
 
-    pub fn write_blocks(&self, bid: Ext2Bid, blocks: &SegmentSlice) -> Result<()> {
+    pub fn write_blocks(&self, bid: Ext2Bid, blocks: BioSegment) -> Result<()> {
         self.0.read().write_blocks(bid, blocks)
     }
 
@@ -1963,11 +1955,12 @@ impl InodeImpl {
 
         // TODO: If we can persist the `blocks_hole_desc`, Can we avoid zeroing all the holes on the device?
         debug_assert!(max_batch_len > 0);
-        let zeroed_segment: SegmentSlice = FrameAllocOptions::new(max_batch_len)
-            .alloc_contiguous()?
-            .into();
+        let zeroed_segment = BioSegment::new_with_segment(
+            FrameAllocOptions::new(max_batch_len).alloc_contiguous()?,
+            BioDirection::Write,
+        );
         for (start_bid, batch_len) in data_hole_batches {
-            inner.write_blocks(start_bid, &zeroed_segment.range(0..batch_len))?;
+            inner.write_blocks(start_bid, zeroed_segment.range(0..batch_len))?;
         }
         Ok(())
     }
@@ -2004,12 +1997,14 @@ impl InodeImpl {
 impl PageCacheBackend for InodeImpl {
     fn read_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
         let bid = idx as Ext2Bid;
-        self.read_blocks_async(bid, &SegmentSlice::from(frame.clone()))
+        let bio_segment = BioSegment::new_with_segment(frame.clone().into(), BioDirection::Read);
+        self.read_blocks_async(bid, bio_segment)
     }
 
     fn write_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
         let bid = idx as Ext2Bid;
-        self.write_blocks_async(bid, &SegmentSlice::from(frame.clone()))
+        let bio_segment = BioSegment::new_with_segment(frame.clone().into(), BioDirection::Write);
+        self.write_blocks_async(bid, bio_segment)
     }
 
     fn npages(&self) -> usize {
