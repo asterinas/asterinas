@@ -103,6 +103,7 @@ impl InitStream {
 
     pub(super) fn init_pollee(&self, pollee: &Pollee) {
         pollee.reset_events();
-        pollee.add_events(IoEvents::OUT);
+        // Linux adds IoEvents::OUT and IoEvents::HUP for a newly created socket
+        pollee.add_events(IoEvents::OUT | IoEvents::HUP);
     }
 }
