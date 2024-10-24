@@ -2,7 +2,7 @@
 
 use core::fmt;
 
-use ostd::sync::{RwMutexWriteGuard, WaitQueue};
+use ostd::sync::{RwMutexWriteGuard, WaitQueue, Waiter};
 
 use self::range::FileRangeChange;
 pub use self::{
@@ -229,7 +229,7 @@ impl RangeLockList {
             req_lock, is_nonblocking
         );
         loop {
-            let conflict_lock;
+            let (waiter, waker);
 
             {
                 let mut list = self.inner.write();
@@ -237,22 +237,15 @@ impl RangeLockList {
                     if is_nonblocking {
                         return_errno_with_message!(Errno::EAGAIN, "the file is locked");
                     }
-
-                    conflict_lock = existing_lock.clone();
+                    (waiter, waker) = Waiter::new_pair();
+                    existing_lock.waitqueue.enqueue(waker);
                 } else {
                     Self::insert_lock_into_list(&mut list, req_lock);
                     return Ok(());
                 }
             }
 
-            conflict_lock.wait_until(|| {
-                let list = self.inner.read();
-                if list.iter().any(|l| req_lock.conflict_with(l)) {
-                    None
-                } else {
-                    Some(())
-                }
-            });
+            waiter.wait();
         }
     }
 
