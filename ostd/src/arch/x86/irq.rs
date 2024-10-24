@@ -11,7 +11,7 @@ use spin::Once;
 use x86_64::registers::rflags::{self, RFlags};
 
 use crate::{
-    sync::{Mutex, PreemptDisabled, SpinLock, SpinLockGuard},
+    sync::{Mutex, RwLock, RwLockReadGuard, SpinLock},
     trap::TrapFrame,
 };
 
@@ -25,7 +25,7 @@ pub(crate) fn init() {
     for i in 0..256 {
         list.push(IrqLine {
             irq_num: i as u8,
-            callback_list: SpinLock::new(Vec::new()),
+            callback_list: RwLock::new(Vec::new()),
         });
     }
     IRQ_LIST.call_once(|| list);
@@ -84,7 +84,7 @@ impl Debug for CallbackElement {
 #[derive(Debug)]
 pub(crate) struct IrqLine {
     pub(crate) irq_num: u8,
-    pub(crate) callback_list: SpinLock<Vec<CallbackElement>>,
+    pub(crate) callback_list: RwLock<Vec<CallbackElement>>,
 }
 
 impl IrqLine {
@@ -104,10 +104,8 @@ impl IrqLine {
         self.irq_num
     }
 
-    pub fn callback_list(
-        &self,
-    ) -> SpinLockGuard<alloc::vec::Vec<CallbackElement>, PreemptDisabled> {
-        self.callback_list.lock()
+    pub fn callback_list(&self) -> RwLockReadGuard<alloc::vec::Vec<CallbackElement>> {
+        self.callback_list.read()
     }
 
     /// Registers a callback that will be invoked when the IRQ is active.
@@ -121,7 +119,7 @@ impl IrqLine {
         F: Fn(&TrapFrame) + Sync + Send + 'static,
     {
         let allocated_id = CALLBACK_ID_ALLOCATOR.get().unwrap().lock().alloc().unwrap();
-        self.callback_list.lock().push(CallbackElement {
+        self.callback_list.write().push(CallbackElement {
             function: Box::new(callback),
             id: allocated_id,
         });
@@ -150,7 +148,7 @@ impl Drop for IrqCallbackHandle {
             .get(self.irq_num as usize)
             .unwrap()
             .callback_list
-            .lock();
+            .write();
         a.retain(|item| item.id != self.id);
         CALLBACK_ID_ALLOCATOR.get().unwrap().lock().free(self.id);
     }
