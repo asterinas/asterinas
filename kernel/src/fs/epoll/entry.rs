@@ -19,10 +19,10 @@ use crate::{
 /// An epoll entry that is contained in an epoll file.
 ///
 /// Each epoll entry can be added, modified, or deleted by the `EpollCtl` command.
-pub struct EpollEntry {
-    // The file descriptor and the file
+pub(super) struct EpollEntry {
+    // The file descriptor and the file.
     key: EpollEntryKey,
-    // The event masks and flags
+    // The event masks and flags.
     inner: Mutex<EpollEntryInner>,
     // The observer that receives events.
     //
@@ -32,7 +32,7 @@ pub struct EpollEntry {
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
-pub struct EpollEntryKey {
+pub(super) struct EpollEntryKey {
     fd: FileDesc,
     file: KeyableWeak<dyn FileLike>,
 }
@@ -63,7 +63,7 @@ struct EpollEntryInner {
 
 impl EpollEntry {
     /// Creates a new epoll entry associated with the given epoll file.
-    pub fn new(
+    pub(super) fn new(
         fd: FileDesc,
         file: KeyableWeak<dyn FileLike>,
         ready_set: Arc<ReadySet>,
@@ -88,11 +88,11 @@ impl EpollEntry {
         })
     }
 
-    /// Get the file associated with this epoll entry.
+    /// Gets the file associated with this epoll entry.
     ///
     /// Since an epoll entry only holds a weak reference to the file,
     /// it is possible (albeit unlikely) that the file has been dropped.
-    pub fn file(&self) -> Option<Arc<dyn FileLike>> {
+    fn file(&self) -> Option<Arc<dyn FileLike>> {
         self.key.file.upgrade().map(KeyableArc::into)
     }
 
@@ -101,7 +101,7 @@ impl EpollEntry {
     /// This method returns `None` if the file is dead. Otherwise, it returns the epoll event (if
     /// any) and a boolean value indicating whether the entry should be kept in the ready list
     /// (`true`) or removed from the ready list (`false`).
-    pub fn poll(&self) -> Option<(Option<EpollEvent>, bool)> {
+    pub(super) fn poll(&self) -> Option<(Option<EpollEvent>, bool)> {
         let file = self.file()?;
         let inner = self.inner.lock();
 
@@ -139,7 +139,7 @@ impl EpollEntry {
     /// Updates the epoll entry by the given event masks and flags.
     ///
     /// This method needs to be called in response to `EpollCtl::Add` and `EpollCtl::Mod`.
-    pub fn update(&self, event: EpollEvent, flags: EpollFlags) -> IoEvents {
+    pub(super) fn update(&self, event: EpollEvent, flags: EpollFlags) -> IoEvents {
         let file = self.file().unwrap();
 
         let mut inner = self.inner.lock();
@@ -155,7 +155,7 @@ impl EpollEntry {
     /// Shuts down the epoll entry.
     ///
     /// This method needs to be called in response to `EpollCtl::Del`.
-    pub fn shutdown(&self) {
+    pub(super) fn shutdown(&self) {
         let mut inner = self.inner.lock();
 
         self.observer.reset_enabled(&inner);
@@ -163,40 +163,40 @@ impl EpollEntry {
     }
 
     /// Gets the underlying observer.
-    pub fn observer(&self) -> &EpollEntryObserver {
+    pub(super) fn observer(&self) -> &EpollEntryObserver {
         &self.observer
     }
 
     /// Gets the key associated with the epoll entry.
-    pub fn key(&self) -> &EpollEntryKey {
+    pub(super) fn key(&self) -> &EpollEntryKey {
         &self.key
     }
 
-    /// Get the file descriptor associated with the epoll entry.
-    pub fn fd(&self) -> FileDesc {
+    /// Gets the file descriptor associated with the epoll entry.
+    pub(super) fn fd(&self) -> FileDesc {
         self.key.fd
     }
 
-    /// Get the file associated with this epoll entry.
-    pub fn file_weak(&self) -> &KeyableWeak<dyn FileLike> {
+    /// Gets the file associated with this epoll entry.
+    pub(super) fn file_weak(&self) -> &KeyableWeak<dyn FileLike> {
         &self.key.file
     }
 }
 
 /// A observer for [`EpollEntry`] that can receive events.
-pub struct EpollEntryObserver {
-    // Whether the entry is enabled
+pub(super) struct EpollEntryObserver {
+    // Whether the entry is enabled.
     is_enabled: AtomicBool,
-    // Whether the entry is in the ready list
+    // Whether the entry is in the ready list.
     is_ready: AtomicBool,
-    // The ready set of the epoll file that contains this epoll entry
+    // The ready set of the epoll file that contains this epoll entry.
     ready_set: Arc<ReadySet>,
-    // The epoll entry itself (always inside an `Arc`)
+    // The epoll entry itself (always inside an `Arc`).
     weak_entry: Weak<EpollEntry>,
 }
 
 impl EpollEntryObserver {
-    pub fn new(ready_set: Arc<ReadySet>, weak_entry: Weak<EpollEntry>) -> Self {
+    fn new(ready_set: Arc<ReadySet>, weak_entry: Weak<EpollEntry>) -> Self {
         Self {
             is_enabled: AtomicBool::new(false),
             is_ready: AtomicBool::new(false),
@@ -210,7 +210,7 @@ impl EpollEntryObserver {
     /// *Caution:* If this method is called without holding the lock of the ready list, the user
     /// must ensure that the behavior is desired with respect to the way the ready list might be
     /// modified concurrently.
-    pub fn is_ready(&self) -> bool {
+    fn is_ready(&self) -> bool {
         self.is_ready.load(Ordering::Relaxed)
     }
 
@@ -219,7 +219,7 @@ impl EpollEntryObserver {
     /// This method must be called while holding the lock of the ready list. This is the only way
     /// to ensure that the "is ready" state matches the fact that the entry is actually in the
     /// ready list.
-    pub fn set_ready(&self, _guard: &SpinLockGuard<VecDeque<Weak<EpollEntry>>, LocalIrqDisabled>) {
+    fn set_ready(&self, _guard: &SpinLockGuard<VecDeque<Weak<EpollEntry>>, LocalIrqDisabled>) {
         self.is_ready.store(true, Ordering::Relaxed);
     }
 
@@ -228,10 +228,7 @@ impl EpollEntryObserver {
     /// This method must be called while holding the lock of the ready list. This is the only way
     /// to ensure that the "is ready" state matches the fact that the entry is actually in the
     /// ready list.
-    pub fn reset_ready(
-        &self,
-        _guard: &SpinLockGuard<VecDeque<Weak<EpollEntry>>, LocalIrqDisabled>,
-    ) {
+    fn reset_ready(&self, _guard: &SpinLockGuard<VecDeque<Weak<EpollEntry>>, LocalIrqDisabled>) {
         self.is_ready.store(false, Ordering::Relaxed)
     }
 
@@ -240,7 +237,7 @@ impl EpollEntryObserver {
     /// *Caution:* If this method is called without holding the lock of the event masks and flags,
     /// the user must ensure that the behavior is desired with respect to the way the event masks
     /// and flags might be modified concurrently.
-    pub fn is_enabled(&self) -> bool {
+    fn is_enabled(&self) -> bool {
         self.is_enabled.load(Ordering::Relaxed)
     }
 
@@ -263,7 +260,7 @@ impl EpollEntryObserver {
     }
 
     /// Gets an instance of `Weak` that refers to the epoll entry.
-    pub fn weak_entry(&self) -> &Weak<EpollEntry> {
+    fn weak_entry(&self) -> &Weak<EpollEntry> {
         &self.weak_entry
     }
 }
@@ -275,7 +272,7 @@ impl Observer<IoEvents> for EpollEntryObserver {
 }
 
 /// A set of ready epoll entries.
-pub struct ReadySet {
+pub(super) struct ReadySet {
     // Entries that are probably ready (having events happened).
     entries: SpinLock<VecDeque<Weak<EpollEntry>>, LocalIrqDisabled>,
     // A guard to ensure that ready entries can be popped by one thread at a time.
@@ -287,7 +284,7 @@ pub struct ReadySet {
 struct PopGuard;
 
 impl ReadySet {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             entries: SpinLock::new(VecDeque::new()),
             pop_guard: Mutex::new(PopGuard),
@@ -295,7 +292,7 @@ impl ReadySet {
         }
     }
 
-    pub fn push(&self, observer: &EpollEntryObserver) {
+    pub(super) fn push(&self, observer: &EpollEntryObserver) {
         // Note that we cannot take the `EpollEntryInner` lock because we are in the callback of
         // the event observer. Doing so will cause dead locks due to inconsistent locking orders.
         //
@@ -322,7 +319,7 @@ impl ReadySet {
         self.pollee.add_events(IoEvents::IN);
     }
 
-    pub fn lock_pop(&self) -> ReadySetPopIter {
+    pub(super) fn lock_pop(&self) -> ReadySetPopIter {
         ReadySetPopIter {
             ready_set: self,
             _pop_guard: self.pop_guard.lock(),
@@ -330,13 +327,13 @@ impl ReadySet {
         }
     }
 
-    pub fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
+    pub(super) fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         self.pollee.poll(mask, poller)
     }
 }
 
 /// An iterator to pop ready entries from a [`ReadySet`].
-pub struct ReadySetPopIter<'a> {
+pub(super) struct ReadySetPopIter<'a> {
     ready_set: &'a ReadySet,
     _pop_guard: MutexGuard<'a, PopGuard>,
     limit: Option<usize>,

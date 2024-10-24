@@ -52,7 +52,7 @@ impl EpollFile {
         })
     }
 
-    /// Control the interest list of the epoll file.
+    /// Controls the interest list of the epoll file.
     pub fn control(&self, cmd: &EpollCtl) -> Result<()> {
         let fd = match cmd {
             EpollCtl::Add(fd, ..) => *fd,
@@ -176,7 +176,7 @@ impl EpollFile {
         Ok(())
     }
 
-    /// Wait for interesting events happen on the files in the interest list
+    /// Waits for interesting events happen on the files in the interest list
     /// of the epoll file.
     ///
     /// This method blocks until either some interesting events happen or
