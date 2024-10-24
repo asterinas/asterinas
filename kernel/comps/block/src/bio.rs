@@ -1,15 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use align_ext::AlignExt;
-use aster_util::segment_slice::SegmentSlice;
 use int_to_c_enum::TryFromInt;
 use ostd::{
-    mm::{Frame, Infallible, VmReader, VmWriter},
-    sync::WaitQueue,
+    mm::{
+        DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, Infallible, Segment, VmIo,
+        VmReader, VmWriter,
+    },
+    sync::{SpinLock, WaitQueue},
+    Error,
 };
+use spin::Once;
 
 use super::{id::Sid, BlockDevice};
-use crate::prelude::*;
+use crate::{prelude::*, BLOCK_SIZE};
 
 /// The unit for block I/O.
 ///
@@ -366,76 +370,130 @@ pub enum BioStatus {
 /// It is a contiguous memory region that contains multiple sectors.
 #[derive(Debug, Clone)]
 pub struct BioSegment {
-    /// The contiguous pages on which this segment resides.
-    pages: SegmentSlice,
-    /// The starting offset (in bytes) within the first page.
-    /// The offset should always be aligned to the sector size and
-    /// must not exceed the size of a single page.
-    offset: AlignedUsize<SECTOR_SIZE>,
-    /// The total length (in bytes).
-    /// The length can span multiple pages and should be aligned to
-    /// the sector size.
-    len: AlignedUsize<SECTOR_SIZE>,
+    segment: DmaStreamSlice,
+    from_pool: bool,
+}
+
+impl Drop for BioSegment {
+    fn drop(&mut self) {
+        if self.from_pool {}
+    }
 }
 
 const SECTOR_SIZE: u16 = super::SECTOR_SIZE as u16;
 
+#[derive(Debug, Clone, Copy)]
+pub enum BioDirection {
+    Read,
+    Write,
+}
+impl From<BioDirection> for DmaDirection {
+    fn from(direction: BioDirection) -> Self {
+        match direction {
+            BioDirection::Read => DmaDirection::FromDevice,
+            BioDirection::Write => DmaDirection::ToDevice,
+        }
+    }
+}
+
 impl<'a> BioSegment {
     /// Constructs a new `BioSegment` from `Segment`.
-    pub fn from_segment(segment: SegmentSlice, offset: usize, len: usize) -> Self {
-        assert!(offset + len <= segment.nbytes());
+    pub fn new(nblocks: usize, direction: BioDirection) -> Self {
+        Self::from_parts(nblocks, 0, nblocks * BLOCK_SIZE, direction)
+    }
+
+    pub(super) fn from_parts(
+        nblocks: usize,
+        offset_of_first_block: usize,
+        len: usize,
+        direction: BioDirection,
+    ) -> Self {
+        assert!(offset_of_first_block + len <= nblocks * BLOCK_SIZE);
+        let (segment, from_pool) = {
+            let pool = target_pool(direction);
+            if let Some(segment) = pool.alloc(nblocks, offset_of_first_block, len) {
+                (segment, true)
+            } else {
+                let segment = FrameAllocOptions::new(nblocks)
+                    .uninit(true)
+                    .alloc_contiguous()
+                    .unwrap();
+                let stream = DmaStream::map(segment, direction.into(), false).unwrap();
+                (
+                    DmaStreamSlice::new(&stream, offset_of_first_block, len),
+                    false,
+                )
+            }
+        };
+        Self { segment, from_pool }
+    }
+
+    pub fn new_with_segment(segment: Segment, direction: BioDirection) -> Self {
+        let len = segment.nbytes();
+        let dma_stream = DmaStream::map(segment, direction.into(), false).unwrap();
         Self {
-            pages: segment.range(frame_range(&(offset..offset + len))),
-            offset: AlignedUsize::<SECTOR_SIZE>::new(offset % super::BLOCK_SIZE).unwrap(),
-            len: AlignedUsize::<SECTOR_SIZE>::new(len).unwrap(),
+            segment: DmaStreamSlice::new(&dma_stream, 0, len),
+            from_pool: false,
         }
     }
 
-    /// Constructs a new `BioSegment` from `Frame`.
-    pub fn from_frame(frame: Frame, offset: usize, len: usize) -> Self {
-        assert!(offset + len <= super::BLOCK_SIZE);
-
+    pub fn range(&self, range: Range<usize>) -> Self {
+        let self_segment = &self.segment;
+        assert!(
+            range.start >= self_segment.offset() % BLOCK_SIZE && range.end <= self_segment.nbytes()
+        );
         Self {
-            pages: SegmentSlice::from(frame),
-            offset: AlignedUsize::<SECTOR_SIZE>::new(offset).unwrap(),
-            len: AlignedUsize::<SECTOR_SIZE>::new(len).unwrap(),
+            segment: DmaStreamSlice::new(
+                self_segment.stream(),
+                self_segment.offset() + range.start,
+                range.len(),
+            ),
+            from_pool: self.from_pool,
         }
     }
 
     /// Returns the number of sectors.
     pub fn nsectors(&self) -> Sid {
-        Sid::from_offset(self.len.value())
+        Sid::from_offset(self.segment.nbytes())
     }
 
     /// Returns the number of bytes.
     pub fn nbytes(&self) -> usize {
-        self.len.value()
+        self.segment.nbytes()
+    }
+
+    pub fn nblocks(&self) -> usize {
+        self.nbytes().align_up(BLOCK_SIZE)
     }
 
     /// Returns the offset (in bytes) within the first page.
     pub fn offset(&self) -> usize {
-        self.offset.value()
+        self.segment.offset()
     }
 
     /// Returns the contiguous pages on which this segment resides.
-    pub fn pages(&self) -> &SegmentSlice {
-        &self.pages
+    pub fn pages(&self) -> &DmaStreamSlice {
+        &self.segment
     }
 
     /// Returns a reader to read data from it.
     pub fn reader(&'a self) -> VmReader<'a, Infallible> {
-        self.pages
-            .reader()
-            .skip(self.offset.value())
-            .limit(self.len.value())
+        self.segment.reader().unwrap()
     }
 
     /// Returns a writer to write data into it.
     pub fn writer(&'a self) -> VmWriter<'a, Infallible> {
-        self.pages
-            .writer()
-            .skip(self.offset.value())
-            .limit(self.len.value())
+        self.segment.writer().unwrap()
+    }
+}
+
+impl VmIo for BioSegment {
+    fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<(), Error> {
+        self.segment.read(offset, writer)
+    }
+
+    fn write(&self, offset: usize, reader: &mut VmReader) -> Result<(), Error> {
+        self.segment.write(offset, reader)
     }
 }
 
@@ -443,6 +501,117 @@ fn frame_range(byte_range: &Range<usize>) -> Range<usize> {
     let start = byte_range.start.align_down(super::BLOCK_SIZE);
     let end = byte_range.end.align_up(super::BLOCK_SIZE);
     (start / super::BLOCK_SIZE)..(end / super::BLOCK_SIZE)
+}
+
+struct BioSegmentPool {
+    pool: DmaStream,
+    total_blocks: usize,
+    manager: SpinLock<PoolSlotManager>,
+}
+
+struct PoolSlotManager {
+    occupied: Vec<u8>,
+    min_free: usize,
+}
+
+impl BioSegmentPool {
+    pub fn new(total_blocks: usize, direction: DmaDirection) -> Self {
+        let pool = {
+            let segment = FrameAllocOptions::new(total_blocks)
+                .uninit(true)
+                .alloc_contiguous()
+                .unwrap();
+            DmaStream::map(segment, direction, false).unwrap()
+        };
+        let manager = SpinLock::new(PoolSlotManager {
+            occupied: vec![0; total_blocks],
+            min_free: 0,
+        });
+
+        Self {
+            total_blocks,
+            pool,
+            manager,
+        }
+    }
+
+    pub fn alloc(
+        &self,
+        nblocks: usize,
+        offset_of_first_block: usize,
+        len: usize,
+    ) -> Option<DmaStreamSlice> {
+        assert!(offset_of_first_block < BLOCK_SIZE && len / BLOCK_SIZE <= nblocks);
+        let mut manager = self.manager.lock();
+        if nblocks > self.total_blocks - manager.min_free {
+            return None;
+        }
+        let mut start = manager.min_free;
+        let mut end = start;
+        while end <= self.total_blocks && end - start < nblocks {
+            if manager.occupied[end] == 1 {
+                start = end + 1;
+                end = start;
+            } else {
+                end += 1;
+            }
+        }
+
+        if end - start < nblocks {
+            return None;
+        }
+
+        manager.occupied[start..end].fill(1);
+        manager.min_free = manager.occupied[end..]
+            .iter()
+            .position(|i| *i == 0)
+            .unwrap_or(self.total_blocks);
+        Some(DmaStreamSlice::new(
+            &self.pool,
+            start * BLOCK_SIZE + offset_of_first_block,
+            len,
+        ))
+    }
+
+    pub fn free(&self, slice: &DmaStreamSlice) {
+        let start = slice.offset() / BLOCK_SIZE;
+        let end = slice.offset() + slice.nbytes() / BLOCK_SIZE;
+        if end <= start || end > self.total_blocks {
+            return;
+        }
+
+        let mut manager = self.manager.lock();
+        manager.occupied[start..end].fill(0);
+        if start < manager.min_free {
+            manager.min_free = start;
+        }
+    }
+}
+
+static BIO_SEGMENT_RPOOL: Once<Arc<BioSegmentPool>> = Once::new();
+static BIO_SEGMENT_WPOOL: Once<Arc<BioSegmentPool>> = Once::new();
+const POOL_DEFAULT_NBLOCKS: usize = 4096;
+
+pub fn bio_segment_pool_init() {
+    BIO_SEGMENT_RPOOL.call_once(|| {
+        Arc::new(BioSegmentPool::new(
+            POOL_DEFAULT_NBLOCKS,
+            DmaDirection::FromDevice,
+        ))
+    });
+    BIO_SEGMENT_RPOOL.call_once(|| {
+        Arc::new(BioSegmentPool::new(
+            POOL_DEFAULT_NBLOCKS,
+            DmaDirection::ToDevice,
+        ))
+    });
+}
+
+fn target_pool(direction: BioDirection) -> &'static Arc<BioSegmentPool> {
+    match direction {
+        BioDirection::Read => BIO_SEGMENT_RPOOL.get().unwrap(),
+        BioDirection::Write => BIO_SEGMENT_WPOOL.get().unwrap(),
+    }
 }
 
 /// An aligned unsigned integer number.

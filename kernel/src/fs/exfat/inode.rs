@@ -8,12 +8,12 @@ use core::{cmp::Ordering, time::Duration};
 
 pub(super) use align_ext::AlignExt;
 use aster_block::{
-    bio::BioWaiter,
+    bio::{BioDirection, BioSegment, BioWaiter},
     id::{Bid, BlockId},
     BLOCK_SIZE,
 };
 use aster_rights::Full;
-use ostd::mm::{Frame, FrameAllocOptions, VmIo};
+use ostd::mm::{Frame, VmIo};
 
 use super::{
     constants::*,
@@ -141,9 +141,10 @@ impl PageCacheBackend for ExfatInode {
             return_errno_with_message!(Errno::EINVAL, "Invalid read size")
         }
         let sector_id = inner.get_sector_id(idx * PAGE_SIZE / inner.fs().sector_size())?;
-        let waiter = inner.fs().block_device().read_block_async(
+        let bio_segment = BioSegment::new_with_segment(frame.clone().into(), BioDirection::Read);
+        let waiter = inner.fs().block_device().read_blocks_async(
             BlockId::from_offset(sector_id * inner.fs().sector_size()),
-            frame,
+            bio_segment,
         )?;
         Ok(waiter)
     }
@@ -156,9 +157,10 @@ impl PageCacheBackend for ExfatInode {
 
         // FIXME: We may need to truncate the file if write_page fails.
         // To fix this issue, we need to change the interface of the PageCacheBackend trait.
-        let waiter = inner.fs().block_device().write_block_async(
+        let bio_segment = BioSegment::new_with_segment(frame.clone().into(), BioDirection::Write);
+        let waiter = inner.fs().block_device().write_blocks_async(
             BlockId::from_offset(sector_id * inner.fs().sector_size()),
-            frame,
+            bio_segment,
         )?;
         Ok(waiter)
     }
@@ -1263,10 +1265,7 @@ impl Inode for ExfatInode {
             .discard_range(read_off..read_off + read_len);
 
         let mut buf_offset = 0;
-        let frame = FrameAllocOptions::new(1)
-            .uninit(true)
-            .alloc_single()
-            .unwrap();
+        let bio_segment = BioSegment::new(1, BioDirection::Read);
 
         let start_pos = inner.start_chain.walk_to_cluster_at_offset(read_off)?;
         let cluster_size = inner.fs().cluster_size();
@@ -1275,8 +1274,11 @@ impl Inode for ExfatInode {
         for _ in Bid::from_offset(read_off)..Bid::from_offset(read_off + read_len) {
             let physical_bid =
                 Bid::from_offset(cur_cluster.cluster_id() as usize * cluster_size + cur_offset);
-            inner.fs().block_device().read_block(physical_bid, &frame)?;
-            frame.read(0, writer).unwrap();
+            inner
+                .fs()
+                .block_device()
+                .read_blocks(physical_bid, bio_segment.clone())?;
+            bio_segment.read(0, writer).unwrap();
             buf_offset += BLOCK_SIZE;
 
             cur_offset += BLOCK_SIZE;
@@ -1375,18 +1377,15 @@ impl Inode for ExfatInode {
         let mut cur_cluster = start_pos.0.clone();
         let mut cur_offset = start_pos.1;
         for _ in Bid::from_offset(offset)..Bid::from_offset(end_offset) {
-            let frame = {
-                let frame = FrameAllocOptions::new(1)
-                    .uninit(true)
-                    .alloc_single()
-                    .unwrap();
-                frame.write(0, reader)?;
-                frame
+            let bio_segment = {
+                let segment = BioSegment::new(1, BioDirection::Write);
+                segment.write(0, reader)?;
+                segment
             };
             let physical_bid =
                 Bid::from_offset(cur_cluster.cluster_id() as usize * cluster_size + cur_offset);
             let fs = inner.fs();
-            fs.block_device().write_block(physical_bid, &frame)?;
+            fs.block_device().write_blocks(physical_bid, bio_segment)?;
 
             cur_offset += BLOCK_SIZE;
             if cur_offset >= cluster_size {

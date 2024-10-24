@@ -1,16 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_util::segment_slice::SegmentSlice;
-use ostd::mm::{
-    FallibleVmRead, FallibleVmWrite, Frame, FrameAllocOptions, VmIo, VmReader, VmWriter,
-};
+use ostd::mm::{FallibleVmRead, FallibleVmWrite, VmIo, VmReader, VmWriter};
 
 use super::{
     bio::{Bio, BioEnqueueError, BioSegment, BioStatus, BioType, BioWaiter, SubmittedBio},
     id::{Bid, Sid},
     BlockDevice, BLOCK_SIZE, SECTOR_SIZE,
 };
-use crate::prelude::*;
+use crate::{bio::BioDirection, prelude::*};
 
 /// Implements several commonly used APIs for the block device to conveniently
 /// read and write block(s).
@@ -20,9 +17,14 @@ impl dyn BlockDevice {
     pub fn read_blocks(
         &self,
         bid: Bid,
-        segment: &SegmentSlice,
+        bio_segment: BioSegment,
     ) -> Result<BioStatus, BioEnqueueError> {
-        let bio = create_bio_from_segment(BioType::Read, bid, segment);
+        let bio = Bio::new(
+            BioType::Read,
+            Sid::from(bid),
+            vec![bio_segment],
+            Some(general_complete_fn),
+        );
         let status = bio.submit_and_wait(self)?;
         Ok(status)
     }
@@ -31,22 +33,14 @@ impl dyn BlockDevice {
     pub fn read_blocks_async(
         &self,
         bid: Bid,
-        segment: &SegmentSlice,
+        bio_segment: BioSegment,
     ) -> Result<BioWaiter, BioEnqueueError> {
-        let bio = create_bio_from_segment(BioType::Read, bid, segment);
-        bio.submit(self)
-    }
-
-    /// Synchronously reads one block indicated by the `bid`.
-    pub fn read_block(&self, bid: Bid, frame: &Frame) -> Result<BioStatus, BioEnqueueError> {
-        let bio = create_bio_from_frame(BioType::Read, bid, frame);
-        let status = bio.submit_and_wait(self)?;
-        Ok(status)
-    }
-
-    /// Asynchronously reads one block indicated by the `bid`.
-    pub fn read_block_async(&self, bid: Bid, frame: &Frame) -> Result<BioWaiter, BioEnqueueError> {
-        let bio = create_bio_from_frame(BioType::Read, bid, frame);
+        let bio = Bio::new(
+            BioType::Read,
+            Sid::from(bid),
+            vec![bio_segment],
+            Some(general_complete_fn),
+        );
         bio.submit(self)
     }
 
@@ -54,9 +48,14 @@ impl dyn BlockDevice {
     pub fn write_blocks(
         &self,
         bid: Bid,
-        segment: &SegmentSlice,
+        bio_segment: BioSegment,
     ) -> Result<BioStatus, BioEnqueueError> {
-        let bio = create_bio_from_segment(BioType::Write, bid, segment);
+        let bio = Bio::new(
+            BioType::Write,
+            Sid::from(bid),
+            vec![bio_segment],
+            Some(general_complete_fn),
+        );
         let status = bio.submit_and_wait(self)?;
         Ok(status)
     }
@@ -65,22 +64,14 @@ impl dyn BlockDevice {
     pub fn write_blocks_async(
         &self,
         bid: Bid,
-        segment: &SegmentSlice,
+        bio_segment: BioSegment,
     ) -> Result<BioWaiter, BioEnqueueError> {
-        let bio = create_bio_from_segment(BioType::Write, bid, segment);
-        bio.submit(self)
-    }
-
-    /// Synchronously writes one block indicated by the `bid`.
-    pub fn write_block(&self, bid: Bid, frame: &Frame) -> Result<BioStatus, BioEnqueueError> {
-        let bio = create_bio_from_frame(BioType::Write, bid, frame);
-        let status = bio.submit_and_wait(self)?;
-        Ok(status)
-    }
-
-    /// Asynchronously writes one block indicated by the `bid`.
-    pub fn write_block_async(&self, bid: Bid, frame: &Frame) -> Result<BioWaiter, BioEnqueueError> {
-        let bio = create_bio_from_frame(BioType::Write, bid, frame);
+        let bio = Bio::new(
+            BioType::Write,
+            Sid::from(bid),
+            vec![bio_segment],
+            Some(general_complete_fn),
+        );
         bio.submit(self)
     }
 }
@@ -100,13 +91,14 @@ impl VmIo for dyn BlockDevice {
             let num_blocks = {
                 let first = Bid::from_offset(offset).to_raw();
                 let last = Bid::from_offset(offset + read_len - 1).to_raw();
-                last - first + 1
+                (last - first + 1) as usize
             };
-            let segment = FrameAllocOptions::new(num_blocks as usize)
-                .uninit(true)
-                .alloc_contiguous()?;
-            let bio_segment =
-                BioSegment::from_segment(segment.into(), offset % BLOCK_SIZE, read_len);
+            let bio_segment = BioSegment::from_parts(
+                num_blocks,
+                offset % BLOCK_SIZE,
+                read_len,
+                BioDirection::Read,
+            );
 
             (
                 Bio::new(
@@ -146,18 +138,19 @@ impl VmIo for dyn BlockDevice {
             let num_blocks = {
                 let first = Bid::from_offset(offset).to_raw();
                 let last = Bid::from_offset(offset + write_len - 1).to_raw();
-                last - first + 1
+                (last - first + 1) as usize
             };
-            let segment = FrameAllocOptions::new(num_blocks as usize)
-                .uninit(true)
-                .alloc_contiguous()?;
-            segment.write(offset % BLOCK_SIZE, reader)?;
-            let len = segment
+            let bio_segment = BioSegment::from_parts(
+                num_blocks,
+                offset % BLOCK_SIZE,
+                write_len,
+                BioDirection::Write,
+            );
+            bio_segment
                 .writer()
-                .skip(offset % BLOCK_SIZE)
+                .to_fallible()
                 .write_fallible(reader)
                 .map_err(|(e, _)| e)?;
-            let bio_segment = BioSegment::from_segment(segment.into(), offset % BLOCK_SIZE, len);
             Bio::new(
                 BioType::Write,
                 Sid::from_offset(offset),
@@ -188,17 +181,19 @@ impl dyn BlockDevice {
             let num_blocks = {
                 let first = Bid::from_offset(offset).to_raw();
                 let last = Bid::from_offset(offset + buf.len() - 1).to_raw();
-                last - first + 1
+                (last - first + 1) as usize
             };
-            let segment = FrameAllocOptions::new(num_blocks as usize)
-                .uninit(true)
-                .alloc_contiguous()?;
-            segment.write_bytes(offset % BLOCK_SIZE, buf)?;
-            let len = segment
+            let bio_segment = BioSegment::from_parts(
+                num_blocks,
+                offset % BLOCK_SIZE,
+                buf.len(),
+                BioDirection::Write,
+            );
+            bio_segment
                 .writer()
-                .skip(offset % BLOCK_SIZE)
-                .write(&mut buf.into());
-            let bio_segment = BioSegment::from_segment(segment.into(), offset % BLOCK_SIZE, len);
+                .to_fallible()
+                .write_fallible(&mut VmReader::from(buf))
+                .map_err(|(e, _)| e)?;
             Bio::new(
                 BioType::Write,
                 Sid::from_offset(offset),
@@ -210,28 +205,6 @@ impl dyn BlockDevice {
         let complete = bio.submit(self)?;
         Ok(complete)
     }
-}
-
-// TODO: Maybe we should have a builder for `Bio`.
-fn create_bio_from_segment(type_: BioType, bid: Bid, segment: &SegmentSlice) -> Bio {
-    let bio_segment = BioSegment::from_segment(segment.clone(), 0, segment.nbytes());
-    Bio::new(
-        type_,
-        Sid::from(bid),
-        vec![bio_segment],
-        Some(general_complete_fn),
-    )
-}
-
-// TODO: Maybe we should have a builder for `Bio`.
-fn create_bio_from_frame(type_: BioType, bid: Bid, frame: &Frame) -> Bio {
-    let bio_segment = BioSegment::from_frame(frame.clone(), 0, BLOCK_SIZE);
-    Bio::new(
-        type_,
-        Sid::from(bid),
-        vec![bio_segment],
-        Some(general_complete_fn),
-    )
 }
 
 fn general_complete_fn(bio: &SubmittedBio) {

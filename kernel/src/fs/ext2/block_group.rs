@@ -28,7 +28,7 @@ struct BlockGroupImpl {
 impl BlockGroup {
     /// Loads and constructs a block group.
     pub fn load(
-        group_descriptors_segment: &SegmentSlice,
+        group_descriptors_segment: &BioSegment,
         idx: usize,
         block_device: &dyn BlockDevice,
         super_block: &SuperBlock,
@@ -320,12 +320,20 @@ impl Debug for BlockGroup {
 impl PageCacheBackend for BlockGroupImpl {
     fn read_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
         let bid = self.inode_table_bid + idx as Ext2Bid;
-        self.fs.upgrade().unwrap().read_block_async(bid, frame)
+        let bio_segment = BioSegment::new_with_segment(frame.clone().into(), BioDirection::Read);
+        self.fs
+            .upgrade()
+            .unwrap()
+            .read_blocks_async(bid, bio_segment)
     }
 
     fn write_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
         let bid = self.inode_table_bid + idx as Ext2Bid;
-        self.fs.upgrade().unwrap().write_block_async(bid, frame)
+        let bio_segment = BioSegment::new_with_segment(frame.clone().into(), BioDirection::Write);
+        self.fs
+            .upgrade()
+            .unwrap()
+            .write_blocks_async(bid, bio_segment)
     }
 
     fn npages(&self) -> usize {
