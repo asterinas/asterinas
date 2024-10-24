@@ -13,6 +13,7 @@ aster-network = { path = "comps/network" }
 aster-console = { path = "comps/console" }
 aster-framebuffer = { path = "comps/framebuffer" }
 aster-softirq = { path = "comps/softirq" }
+aster-logger = { path = "comps/logger" }
 aster-time = { path = "comps/time" }
 aster-virtio = { path = "comps/virtio" }
 aster-rights = { path = "libs/aster-rights" }

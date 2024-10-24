@@ -57,7 +57,7 @@ run_benchmark() {
     echo "Preparing libraries..."
     prepare_libs
 
-    local asterinas_cmd="make run BENCHMARK=${benchmark} ENABLE_KVM=1 RELEASE_LTO=1 2>&1"
+    local asterinas_cmd="make run BENCHMARK=${benchmark} ENABLE_KVM=1 LOG_LEVEL=Off RELEASE_LTO=1 2>&1"
     local linux_cmd="/usr/local/qemu/bin/qemu-system-x86_64 \
         --no-reboot \
         -smp 1 \
