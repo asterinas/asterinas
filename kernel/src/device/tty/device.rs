@@ -9,7 +9,7 @@ use crate::{
         inode_handle::FileIo,
     },
     prelude::*,
-    process::signal::Poller,
+    process::signal::{Pollable, Poller},
 };
 
 /// Corresponds to `/dev/tty` in the file system. This device represents the controlling terminal
@@ -40,6 +40,12 @@ impl Device for TtyDevice {
     }
 }
 
+impl Pollable for TtyDevice {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+        IoEvents::empty()
+    }
+}
+
 impl FileIo for TtyDevice {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "cannot read tty device");
@@ -47,9 +53,5 @@ impl FileIo for TtyDevice {
 
     fn write(&self, reader: &mut VmReader) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "cannot write tty device");
-    }
-
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
-        IoEvents::empty()
     }
 }

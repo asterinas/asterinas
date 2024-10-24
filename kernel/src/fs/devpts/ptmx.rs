@@ -4,7 +4,11 @@
 #![allow(unused_variables)]
 
 use super::*;
-use crate::{events::IoEvents, fs::inode_handle::FileIo, process::signal::Poller};
+use crate::{
+    events::IoEvents,
+    fs::inode_handle::FileIo,
+    process::signal::{Pollable, Poller},
+};
 
 /// Same major number with Linux.
 const PTMX_MAJOR_NUM: u32 = 5;
@@ -177,6 +181,12 @@ impl Device for Inner {
     }
 }
 
+impl Pollable for Inner {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+        IoEvents::empty()
+    }
+}
+
 impl FileIo for Inner {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "cannot read ptmx");
@@ -184,9 +194,5 @@ impl FileIo for Inner {
 
     fn write(&self, reader: &mut VmReader) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "cannot write ptmx");
-    }
-
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
-        IoEvents::empty()
     }
 }

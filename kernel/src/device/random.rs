@@ -9,7 +9,7 @@ use crate::{
         inode_handle::FileIo,
     },
     prelude::*,
-    process::signal::Poller,
+    process::signal::{Pollable, Poller},
     util::random::getrandom,
 };
 
@@ -37,6 +37,13 @@ impl Device for Random {
     }
 }
 
+impl Pollable for Random {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+        let events = IoEvents::IN | IoEvents::OUT;
+        events & mask
+    }
+}
+
 impl FileIo for Random {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         let mut buf = vec![0; writer.avail()];
@@ -45,10 +52,5 @@ impl FileIo for Random {
 
     fn write(&self, reader: &mut VmReader) -> Result<usize> {
         Ok(reader.remain())
-    }
-
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
-        let events = IoEvents::IN | IoEvents::OUT;
-        events & mask
     }
 }

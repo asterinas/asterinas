@@ -158,17 +158,12 @@ impl Poller {
         }
     }
 
-    /// Wait until there are any interesting events happen since last `wait`. The `wait`
-    /// can be interrupted by signal.
-    pub fn wait(&self) -> Result<()> {
-        self.event_counter.read(&self.waiter, None)?;
-        Ok(())
-    }
-
-    /// Wait until there are any interesting events happen since last `wait` or a given timeout
-    /// is expired. This method can be interrupted by signal.
-    pub fn wait_timeout(&self, timeout: &Duration) -> Result<()> {
-        self.event_counter.read(&self.waiter, Some(timeout))?;
+    /// Waits until some interesting events happen since the last wait or until the timeout
+    /// expires.
+    ///
+    /// The waiting process can be interrupted by a signal.
+    pub fn wait(&self, timeout: Option<&Duration>) -> Result<()> {
+        self.event_counter.read(&self.waiter, timeout)?;
         Ok(())
     }
 
@@ -256,29 +251,52 @@ pub trait Pollable {
     /// will return whatever the call to `cond()` returns. Otherwise, the method will wait for some
     /// interesting events specified in `mask` to happen and try again.
     ///
+    /// This method will fail with `ETIME` if the timeout is specified and the event does not occur
+    /// before the timeout expires.
+    ///
     /// The user must ensure that a call to `cond()` does not fail with `EAGAIN` when the
     /// interesting events occur. However, it is allowed to have spurious `EAGAIN` failures due to
     /// race conditions where the events are consumed by another thread.
-    fn wait_events<F, R>(&self, mask: IoEvents, mut cond: F) -> Result<R>
+    fn wait_events<F, R>(
+        &self,
+        mask: IoEvents,
+        timeout: Option<&Duration>,
+        mut cond: F,
+    ) -> Result<R>
     where
         Self: Sized,
         F: FnMut() -> Result<R>,
     {
+        // Fast path: Return immediately if the operation gives a result.
+        match cond() {
+            Err(err) if err.error() == Errno::EAGAIN => (),
+            result => return result,
+        }
+
+        // Fast path: Return immediately if the timeout is zero.
+        if timeout.is_some_and(|duration| duration.is_zero()) {
+            return_errno_with_message!(Errno::ETIME, "the timeout expired");
+        }
+
+        // Wait until the event happens.
         let mut poller = Poller::new();
+        if self.poll(mask, Some(&mut poller)).is_empty() {
+            poller.wait(timeout)?;
+        }
 
         loop {
+            // Try again after the event happens.
             match cond() {
                 Err(err) if err.error() == Errno::EAGAIN => (),
                 result => return result,
             };
 
-            let events = self.poll(mask, Some(&mut poller));
-            if !events.is_empty() {
-                continue;
+            // Wait until the next event happens.
+            //
+            // FIXME: We need to update `timeout` since we have waited for some time.
+            if self.poll(mask, Some(&mut poller)).is_empty() {
+                poller.wait(timeout)?;
             }
-
-            // TODO: Support timeout
-            poller.wait()?;
         }
     }
 }
