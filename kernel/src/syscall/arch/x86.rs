@@ -71,7 +71,7 @@ use crate::syscall::{
     prctl::sys_prctl,
     pread64::sys_pread64,
     preadv::{sys_preadv, sys_preadv2, sys_readv},
-    prlimit64::sys_prlimit64,
+    prlimit64::{sys_getrlimit, sys_prlimit64, sys_setrlimit},
     pselect6::sys_pselect6,
     pwrite64::sys_pwrite64,
     pwritev::{sys_pwritev, sys_pwritev2, sys_writev},
@@ -221,6 +221,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_LCHOWN = 94            => sys_lchown(args[..3]);
     SYS_UMASK = 95             => sys_umask(args[..1]);
     SYS_GETTIMEOFDAY = 96      => sys_gettimeofday(args[..1]);
+    SYS_GETRLIMIT = 97         => sys_getrlimit(args[..2]);
     SYS_GETRUSAGE = 98         => sys_getrusage(args[..2]);
     SYS_GETUID = 102           => sys_getuid(args[..0]);
     SYS_GETGID = 104           => sys_getgid(args[..0]);
@@ -256,6 +257,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_SET_PRIORITY = 141     => sys_set_priority(args[..3]);
     SYS_PRCTL = 157            => sys_prctl(args[..5]);
     SYS_ARCH_PRCTL = 158       => sys_arch_prctl(args[..2], &mut user_ctx);
+    SYS_SETRLIMIT = 160        => sys_setrlimit(args[..2]);
     SYS_CHROOT = 161           => sys_chroot(args[..1]);
     SYS_SYNC = 162             => sys_sync(args[..0]);
     SYS_MOUNT = 165            => sys_mount(args[..5]);
