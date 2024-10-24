@@ -11,8 +11,8 @@ use log::info;
 use spin::Once;
 
 use crate::{
-    arch::x86::kernel::acpi::ACPI_TABLES, mm::paddr_to_vaddr, sync::SpinLock, trap::IrqLine, Error,
-    Result,
+    arch::x86::kernel::acpi::ACPI_TABLES, device::dispatcher::io_mem::IO_MEM_DISPATCHER,
+    mm::paddr_to_vaddr, sync::SpinLock, trap::IrqLine, Error, Result,
 };
 
 cfg_if! {
@@ -108,6 +108,7 @@ impl IoApicAccess {
     ///
     /// User must ensure the base address is valid.
     unsafe fn new(base_address: usize) -> Self {
+        IO_MEM_DISPATCHER.remove(base_address..(base_address + 0x20));
         let vaddr = paddr_to_vaddr(base_address);
         Self {
             register: vaddr as *mut u32,

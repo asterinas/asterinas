@@ -12,7 +12,7 @@ use bitflags::bitflags;
 use super::PciDeviceLocation;
 use crate::{
     arch::device::io_port::{PortRead, PortWrite},
-    io_mem::IoMem,
+    device::io_mem::IoMem,
     mm::page_prop::{CachePolicy, PageFlags},
     Error, Result,
 };

@@ -25,7 +25,8 @@ use crate::{
         iommu::fault,
         x86::kernel::acpi::dmar::{Dmar, Remapping},
     },
-    mm::paddr_to_vaddr,
+    device::dispatcher::io_mem::IO_MEM_DISPATCHER,
+    mm::{paddr_to_vaddr, PAGE_SIZE},
     sync::SpinLock,
 };
 
@@ -162,6 +163,7 @@ impl IommuRegisters {
             "IOMMU extend capability:{:#x?}",
             iommu_regs.extended_capability()
         );
+        IO_MEM_DISPATCHER.remove(base_address as usize..(base_address as usize + PAGE_SIZE));
 
         Some(iommu_regs)
     }
