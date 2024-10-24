@@ -511,11 +511,16 @@ impl Socket for StreamSocket {
 
     fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
         let state = self.read_updated_state();
-        match state.as_ref() {
-            State::Connected(connected_stream) => connected_stream.shutdown(cmd),
+        let res = match state.as_ref() {
+            State::Connected(connected_stream) => connected_stream.shutdown(cmd, &self.pollee),
             // TODO: shutdown listening stream
             _ => return_errno_with_message!(Errno::EINVAL, "cannot shutdown"),
-        }
+        };
+
+        drop(state);
+        poll_ifaces();
+
+        res
     }
 
     fn addr(&self) -> Result<SocketAddr> {
