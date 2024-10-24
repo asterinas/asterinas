@@ -11,7 +11,7 @@ pub mod scheduler;
 use core::{any::Any, cell::SyncUnsafeCell};
 
 use kernel_stack::KernelStack;
-pub(crate) use preempt::cpu_local::reset_preempt_info;
+pub(crate) use preempt::cpu_local::{reset_preempt_info, should_preempt};
 use processor::current_task;
 
 pub use self::{

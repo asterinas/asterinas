@@ -23,7 +23,7 @@ use crate::cpu_local_cell;
 /// Returns whether the current task _should_ be preempted or not.
 ///
 /// `should_preempt() == need_preempt() && get_guard_count() == 0`.
-pub(in crate::task) fn should_preempt() -> bool {
+pub(crate) fn should_preempt() -> bool {
     PREEMPT_INFO.load() == 0
 }
 
