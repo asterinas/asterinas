@@ -16,7 +16,7 @@ use crate::{
     get_current_userspace,
     prelude::*,
     process::{
-        signal::{Pollable, Pollee, Poller},
+        signal::{PollHandle, Pollable, Pollee},
         JobControl, Terminal,
     },
     util::ring_buffer::RingBuffer,
@@ -67,7 +67,11 @@ impl PtyMaster {
         self.update_state(&input);
     }
 
-    pub(super) fn slave_poll(&self, mask: IoEvents, mut poller: Option<&mut Poller>) -> IoEvents {
+    pub(super) fn slave_poll(
+        &self,
+        mask: IoEvents,
+        mut poller: Option<&mut PollHandle>,
+    ) -> IoEvents {
         let mut poll_status = IoEvents::empty();
 
         let poll_in_mask = mask & IoEvents::IN;
@@ -112,7 +116,7 @@ impl PtyMaster {
 }
 
 impl Pollable for PtyMaster {
-    fn poll(&self, mask: IoEvents, mut poller: Option<&mut Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, mut poller: Option<&mut PollHandle>) -> IoEvents {
         let mut poll_status = IoEvents::empty();
 
         let poll_in_mask = mask & IoEvents::IN;
@@ -322,7 +326,7 @@ impl Terminal for PtySlave {
 }
 
 impl Pollable for PtySlave {
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         self.master().slave_poll(mask, poller)
     }
 }

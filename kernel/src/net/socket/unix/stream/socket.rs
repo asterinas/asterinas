@@ -21,7 +21,7 @@ use crate::{
         SockShutdownCmd, Socket,
     },
     prelude::*,
-    process::signal::{Pollable, Poller},
+    process::signal::{PollHandle, Pollable},
     util::{MultiRead, MultiWrite},
 };
 
@@ -153,7 +153,7 @@ impl UnixStreamSocket {
 }
 
 impl Pollable for UnixStreamSocket {
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         let inner = self.state.read();
         match inner.as_ref() {
             State::Init(init) => init.poll(mask, poller),

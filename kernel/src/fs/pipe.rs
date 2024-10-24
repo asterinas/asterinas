@@ -10,7 +10,7 @@ use crate::{
     events::{IoEvents, Observer},
     prelude::*,
     process::{
-        signal::{Pollable, Poller},
+        signal::{PollHandle, Pollable},
         Gid, Uid,
     },
     time::clocks::RealTimeCoarseClock,
@@ -53,7 +53,7 @@ impl PipeReader {
 }
 
 impl Pollable for PipeReader {
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         self.consumer.poll(mask, poller)
     }
 }
@@ -138,7 +138,7 @@ impl PipeWriter {
 }
 
 impl Pollable for PipeWriter {
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         self.producer.poll(mask, poller)
     }
 }

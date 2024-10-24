@@ -8,7 +8,7 @@ use aster_rights_proc::require;
 use crate::{
     events::{IoEvents, Observer},
     prelude::*,
-    process::signal::{Pollee, Poller},
+    process::signal::{PollHandle, Pollee},
     util::{
         ring_buffer::{RbConsumer, RbProducer, RingBuffer},
         MultiRead, MultiWrite,
@@ -82,7 +82,7 @@ macro_rules! impl_common_methods_for_channel {
             self.0.common.is_shutdown()
         }
 
-        pub fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+        pub fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
             self.this_end().pollee.poll(mask, poller)
         }
 

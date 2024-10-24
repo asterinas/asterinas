@@ -12,7 +12,7 @@ use crate::{
         SockShutdownCmd,
     },
     prelude::*,
-    process::signal::{Pollee, Poller},
+    process::signal::{PollHandle, Pollee},
     util::{MultiRead, MultiWrite},
 };
 
@@ -89,7 +89,7 @@ impl Connected {
         }
     }
 
-    pub(super) fn poll(&self, mask: IoEvents, mut poller: Option<&mut Poller>) -> IoEvents {
+    pub(super) fn poll(&self, mask: IoEvents, mut poller: Option<&mut PollHandle>) -> IoEvents {
         // Note that `mask | IoEvents::ALWAYS_POLL` contains all the events we care about.
         let reader_events = self.reader.poll(mask, poller.as_deref_mut());
         let writer_events = self.writer.poll(mask, poller);

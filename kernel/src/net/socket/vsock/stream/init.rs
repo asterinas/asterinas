@@ -7,7 +7,7 @@ use crate::{
         VSOCK_GLOBAL,
     },
     prelude::*,
-    process::signal::{Pollee, Poller},
+    process::signal::{PollHandle, Pollee},
 };
 
 pub struct Init {
@@ -61,7 +61,7 @@ impl Init {
         *self.bound_addr.lock()
     }
 
-    pub fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+    pub fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         self.pollee.poll(mask, poller)
     }
 }

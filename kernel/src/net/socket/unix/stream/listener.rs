@@ -17,7 +17,7 @@ use crate::{
         SockShutdownCmd, SocketAddr,
     },
     prelude::*,
-    process::signal::{Pollee, Poller},
+    process::signal::{PollHandle, Pollee},
 };
 
 pub(super) struct Listener {
@@ -78,7 +78,7 @@ impl Listener {
         }
     }
 
-    pub(super) fn poll(&self, mask: IoEvents, mut poller: Option<&mut Poller>) -> IoEvents {
+    pub(super) fn poll(&self, mask: IoEvents, mut poller: Option<&mut PollHandle>) -> IoEvents {
         let reader_events = self.backlog.poll(mask, poller.as_deref_mut());
         let writer_events = self.writer_pollee.poll(mask, poller);
 
@@ -226,7 +226,7 @@ impl Backlog {
         self.wait_queue.wake_all();
     }
 
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         self.pollee.poll(mask, poller)
     }
 

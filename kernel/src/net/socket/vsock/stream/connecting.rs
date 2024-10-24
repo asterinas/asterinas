@@ -7,7 +7,7 @@ use crate::{
     events::IoEvents,
     net::socket::vsock::{addr::VsockSocketAddr, VSOCK_GLOBAL},
     prelude::*,
-    process::signal::{Pollee, Poller},
+    process::signal::{PollHandle, Pollee},
 };
 
 pub struct Connecting {
@@ -45,7 +45,7 @@ impl Connecting {
         self.info.disable_irq().lock().update_for_event(event)
     }
 
-    pub fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+    pub fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         self.pollee.poll(mask, poller)
     }
 

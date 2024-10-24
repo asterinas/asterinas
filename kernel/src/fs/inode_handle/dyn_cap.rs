@@ -77,7 +77,7 @@ impl Clone for InodeHandle<Rights> {
 
 #[inherit_methods(from = "self.0")]
 impl Pollable for InodeHandle<Rights> {
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents;
+    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents;
 }
 
 #[inherit_methods(from = "self.0")]

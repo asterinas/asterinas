@@ -16,7 +16,7 @@ use crate::{
     process::signal::{
         constants::{SIGINT, SIGQUIT},
         signals::kernel::KernelSignal,
-        Pollable, Pollee, Poller,
+        PollHandle, Pollable, Pollee,
     },
     thread::work_queue::{submit_work_item, work_item::WorkItem, WorkPriority},
     util::ring_buffer::RingBuffer,
@@ -88,7 +88,7 @@ impl CurrentLine {
 }
 
 impl Pollable for LineDiscipline {
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         self.pollee.poll(mask, poller)
     }
 }

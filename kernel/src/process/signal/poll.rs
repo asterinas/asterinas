@@ -44,7 +44,7 @@ impl Pollee {
     ///
     /// This operation is _atomic_ in the sense that if there are interesting events, either the
     /// events are returned or the poller is notified.
-    pub fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+    pub fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         let mask = mask | IoEvents::ALWAYS_POLL;
 
         // Register the provided poller.
@@ -56,7 +56,7 @@ impl Pollee {
         self.events() & mask
     }
 
-    fn register_poller(&self, poller: &mut Poller, mask: IoEvents) {
+    fn register_poller(&self, poller: &mut PollHandle, mask: IoEvents) {
         self.inner
             .subject
             .register_observer(poller.observer(), mask);
@@ -127,7 +127,7 @@ impl Pollee {
 }
 
 /// A poller gets notified when its associated pollees have interesting events.
-pub struct Poller {
+pub struct PollHandle {
     // Use event counter to wait or wake up a poller
     event_counter: Arc<EventCounter>,
     // All pollees that are interesting to this poller
@@ -136,14 +136,14 @@ pub struct Poller {
     waiter: Waiter,
 }
 
-impl Default for Poller {
+impl Default for PollHandle {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Poller {
-    /// Constructs a new `Poller`.
+impl PollHandle {
+    /// Constructs a new `PollHandle`.
     pub fn new() -> Self {
         let (waiter, waker) = Waiter::new_pair();
         Self {
@@ -167,7 +167,7 @@ impl Poller {
     }
 }
 
-impl Drop for Poller {
+impl Drop for PollHandle {
     fn drop(&mut self) {
         let observer = self.observer();
 
@@ -234,7 +234,7 @@ pub trait Pollable {
     /// poller is provided.
     ///
     /// This method has the same semantics as [`Pollee::poll`].
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents;
+    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents;
 
     /// Waits for events and performs event-based operations.
     ///
@@ -270,7 +270,7 @@ pub trait Pollable {
         }
 
         // Wait until the event happens.
-        let mut poller = Poller::new();
+        let mut poller = PollHandle::new();
         if self.poll(mask, Some(&mut poller)).is_empty() {
             poller.wait(timeout)?;
         }

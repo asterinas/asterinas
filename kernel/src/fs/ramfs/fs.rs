@@ -28,7 +28,7 @@ use crate::{
         },
     },
     prelude::*,
-    process::{signal::Poller, Gid, Uid},
+    process::{signal::PollHandle, Gid, Uid},
     time::clocks::RealTimeCoarseClock,
     vm::vmo::Vmo,
 };
@@ -1120,7 +1120,7 @@ impl Inode for RamInode {
         }
     }
 
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         if !self.typ.is_device() {
             return (IoEvents::IN | IoEvents::OUT) & mask;
         }

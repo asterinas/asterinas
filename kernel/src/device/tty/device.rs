@@ -9,7 +9,7 @@ use crate::{
         inode_handle::FileIo,
     },
     prelude::*,
-    process::signal::{Pollable, Poller},
+    process::signal::{PollHandle, Pollable},
 };
 
 /// Corresponds to `/dev/tty` in the file system. This device represents the controlling terminal
@@ -41,7 +41,7 @@ impl Device for TtyDevice {
 }
 
 impl Pollable for TtyDevice {
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         IoEvents::empty()
     }
 }

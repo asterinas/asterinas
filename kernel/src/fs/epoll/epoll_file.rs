@@ -16,7 +16,7 @@ use crate::{
         file_handle::FileLike,
         utils::{InodeMode, IoctlCmd, Metadata},
     },
-    process::signal::{Pollable, Pollee, Poller},
+    process::signal::{PollHandle, Pollable, Pollee},
 };
 
 /// A file-like object that provides epoll API.
@@ -326,7 +326,7 @@ impl EpollFile {
 }
 
 impl Pollable for EpollFile {
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         self.pollee.poll(mask, poller)
     }
 }

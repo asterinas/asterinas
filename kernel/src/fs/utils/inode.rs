@@ -12,7 +12,7 @@ use crate::{
     events::IoEvents,
     fs::device::{Device, DeviceType},
     prelude::*,
-    process::{signal::Poller, Gid, Uid},
+    process::{signal::PollHandle, Gid, Uid},
     time::clocks::RealTimeCoarseClock,
     vm::vmo::Vmo,
 };
@@ -398,7 +398,7 @@ pub trait Inode: Any + Sync + Send {
         return_errno!(Errno::EOPNOTSUPP);
     }
 
-    fn poll(&self, mask: IoEvents, _poller: Option<&mut Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
         let events = IoEvents::IN | IoEvents::OUT;
         events & mask
     }

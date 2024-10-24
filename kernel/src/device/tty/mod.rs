@@ -16,7 +16,7 @@ use crate::{
     get_current_userspace,
     prelude::*,
     process::{
-        signal::{signals::kernel::KernelSignal, Pollable, Poller},
+        signal::{signals::kernel::KernelSignal, PollHandle, Pollable},
         JobControl, Process, Terminal,
     },
 };
@@ -73,7 +73,7 @@ impl Tty {
 }
 
 impl Pollable for Tty {
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         self.ldisc.poll(mask, poller)
     }
 }
