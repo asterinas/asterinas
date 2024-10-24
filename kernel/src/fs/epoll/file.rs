@@ -7,7 +7,7 @@ use keyable_arc::KeyableWeak;
 use ostd::sync::Mutex;
 
 use super::{
-    entry::{EpollEntry, EpollEntryKey, ReadySet},
+    entry::{Entry, EntryKey, ReadySet},
     EpollCtl, EpollEvent, EpollFlags,
 };
 use crate::{
@@ -35,7 +35,7 @@ use crate::{
 /// event happens on the file.
 pub struct EpollFile {
     // All interesting entries.
-    interest: Mutex<BTreeSet<EpollEntryHolder>>,
+    interest: Mutex<BTreeSet<EntryHolder>>,
     // A set of ready entries.
     //
     // Keep this in a separate `Arc` to avoid dropping `EpollFile` in the observer callback, which
@@ -90,14 +90,14 @@ impl EpollFile {
         let ready_entry = {
             let mut interest = self.interest.lock();
 
-            if interest.contains(&EpollEntryKey::from((fd, &file))) {
+            if interest.contains(&EntryKey::from((fd, &file))) {
                 return_errno_with_message!(
                     Errno::EEXIST,
                     "the file is already in the interest list"
                 );
             }
 
-            let entry = EpollEntry::new(fd, Arc::downgrade(&file).into(), self.ready.clone());
+            let entry = Entry::new(fd, Arc::downgrade(&file).into(), self.ready.clone());
             let events = entry.update(ep_event, ep_flags);
 
             let ready_entry = if !events.is_empty() {
@@ -130,11 +130,7 @@ impl EpollFile {
         // because the strong reference count will reach zero and `Weak::upgrade`
         // will fail.
 
-        if !self
-            .interest
-            .lock()
-            .remove(&EpollEntryKey::from((fd, file)))
-        {
+        if !self.interest.lock().remove(&EntryKey::from((fd, file))) {
             return_errno_with_message!(Errno::ENOENT, "the file is not in the interest list");
         }
 
@@ -154,9 +150,8 @@ impl EpollFile {
         let ready_entry = {
             let interest = self.interest.lock();
 
-            let EpollEntryHolder(entry) = interest
-                .get(&EpollEntryKey::from((fd, &file)))
-                .ok_or_else(|| {
+            let EntryHolder(entry) =
+                interest.get(&EntryKey::from((fd, &file))).ok_or_else(|| {
                     Error::with_message(Errno::ENOENT, "the file is not in the interest list")
                 })?;
             let events = entry.update(new_ep_event, new_ep_flags);
@@ -281,38 +276,38 @@ impl FileLike for EpollFile {
     }
 }
 
-struct EpollEntryHolder(Arc<EpollEntry>);
+struct EntryHolder(Arc<Entry>);
 
-impl PartialOrd for EpollEntryHolder {
+impl PartialOrd for EntryHolder {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
-impl Ord for EpollEntryHolder {
+impl Ord for EntryHolder {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         self.0.key().cmp(other.0.key())
     }
 }
-impl PartialEq for EpollEntryHolder {
+impl PartialEq for EntryHolder {
     fn eq(&self, other: &Self) -> bool {
         self.0.key().eq(other.0.key())
     }
 }
-impl Eq for EpollEntryHolder {}
+impl Eq for EntryHolder {}
 
-impl Borrow<EpollEntryKey> for EpollEntryHolder {
-    fn borrow(&self) -> &EpollEntryKey {
+impl Borrow<EntryKey> for EntryHolder {
+    fn borrow(&self) -> &EntryKey {
         self.0.key()
     }
 }
 
-impl From<Arc<EpollEntry>> for EpollEntryHolder {
-    fn from(value: Arc<EpollEntry>) -> Self {
+impl From<Arc<Entry>> for EntryHolder {
+    fn from(value: Arc<Entry>) -> Self {
         Self(value)
     }
 }
 
-impl Drop for EpollEntryHolder {
+impl Drop for EntryHolder {
     fn drop(&mut self) {
         self.0.shutdown();
     }
