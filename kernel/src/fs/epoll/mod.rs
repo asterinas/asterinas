@@ -3,9 +3,10 @@
 use super::file_table::FileDesc;
 use crate::{events::IoEvents, prelude::*};
 
-mod epoll_file;
+mod entry;
+mod file;
 
-pub use self::epoll_file::EpollFile;
+pub use file::EpollFile;
 
 /// An epoll control command.
 #[derive(Copy, Clone, Debug, PartialEq)]
