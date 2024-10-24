@@ -7,13 +7,13 @@ use super::{
     listener::Listener,
 };
 use crate::{
-    events::{IoEvents, Observer},
+    events::IoEvents,
     net::socket::{
         unix::addr::{UnixSocketAddr, UnixSocketAddrBound},
         SockShutdownCmd,
     },
     prelude::*,
-    process::signal::{Pollee, Poller},
+    process::signal::{AnyPoller, Pollee},
 };
 
 pub(super) struct Init {
@@ -112,7 +112,7 @@ impl Init {
         self.addr.as_ref()
     }
 
-    pub(super) fn poll(&self, mask: IoEvents, mut poller: Option<&mut Poller>) -> IoEvents {
+    pub(super) fn poll(&self, mask: IoEvents, mut poller: Option<&mut AnyPoller>) -> IoEvents {
         // To avoid loss of events, this must be compatible with
         // `Connected::poll`/`Listener::poll`.
         let reader_events = self.reader_pollee.poll(mask, poller.as_deref_mut());
@@ -121,26 +121,5 @@ impl Init {
         // According to the Linux implementation, we always have `IoEvents::HUP` in this state.
         // Meanwhile, it is in `IoEvents::ALWAYS_POLL`, so we always return it.
         combine_io_events(mask, reader_events, writer_events) | IoEvents::HUP
-    }
-
-    pub(super) fn register_observer(
-        &self,
-        observer: Weak<dyn Observer<IoEvents>>,
-        mask: IoEvents,
-    ) -> Result<()> {
-        // To avoid loss of events, this must be compatible with
-        // `Connected::poll`/`Listener::poll`.
-        self.reader_pollee.register_observer(observer.clone(), mask);
-        self.writer_pollee.register_observer(observer, mask);
-        Ok(())
-    }
-
-    pub(super) fn unregister_observer(
-        &self,
-        observer: &Weak<dyn Observer<IoEvents>>,
-    ) -> Option<Weak<dyn Observer<IoEvents>>> {
-        let reader_observer = self.reader_pollee.unregister_observer(observer);
-        let writer_observer = self.writer_pollee.unregister_observer(observer);
-        reader_observer.or(writer_observer)
     }
 }

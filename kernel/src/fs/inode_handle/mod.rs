@@ -25,7 +25,10 @@ use crate::{
         },
     },
     prelude::*,
-    process::{signal::Poller, Gid, Uid},
+    process::{
+        signal::{AnyPoller, Pollable},
+        Gid, Uid,
+    },
 };
 
 #[derive(Debug)]
@@ -186,7 +189,7 @@ impl InodeHandle_ {
         Ok(read_cnt)
     }
 
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut AnyPoller>) -> IoEvents {
         if let Some(ref file_io) = self.file_io {
             return file_io.poll(mask, poller);
         }
@@ -389,12 +392,10 @@ impl<R> Drop for InodeHandle<R> {
     }
 }
 
-pub trait FileIo: Send + Sync + 'static {
+pub trait FileIo: Pollable + Send + Sync + 'static {
     fn read(&self, writer: &mut VmWriter) -> Result<usize>;
 
     fn write(&self, reader: &mut VmReader) -> Result<usize>;
-
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents;
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
         return_errno_with_message!(Errno::EINVAL, "ioctl is not supported");

@@ -11,7 +11,7 @@ use crate::{
         MessageHeader, SendRecvFlags, SockShutdownCmd, Socket, SocketAddr,
     },
     prelude::*,
-    process::signal::{Pollable, Poller},
+    process::signal::{AnyPoller, Pollable, WaitablePoller},
     util::{MultiRead, MultiWrite},
 };
 
@@ -122,13 +122,13 @@ impl VsockStreamSocket {
         if self.is_nonblocking() {
             self.try_recv(writer, flags)
         } else {
-            self.wait_events(IoEvents::IN, || self.try_recv(writer, flags))
+            self.wait_events(IoEvents::IN, None, || self.try_recv(writer, flags))
         }
     }
 }
 
 impl Pollable for VsockStreamSocket {
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut AnyPoller>) -> IoEvents {
         match &*self.status.read() {
             Status::Init(init) => init.poll(mask, poller),
             Status::Listen(listen) => listen.poll(mask, poller),
@@ -218,12 +218,12 @@ impl Socket for VsockStreamSocket {
         vsockspace.request(&connecting.info()).unwrap();
         // wait for response from driver
         // TODO: Add timeout
-        let mut poller = Poller::new();
+        let mut poller = WaitablePoller::new();
         if !connecting
-            .poll(IoEvents::IN, Some(&mut poller))
+            .poll(IoEvents::IN, Some(poller.as_dyn()))
             .contains(IoEvents::IN)
         {
-            if let Err(e) = poller.wait() {
+            if let Err(e) = poller.wait(None) {
                 vsockspace
                     .remove_connecting_socket(&connecting.local_addr())
                     .unwrap();
@@ -272,7 +272,7 @@ impl Socket for VsockStreamSocket {
         if self.is_nonblocking() {
             self.try_accept()
         } else {
-            self.wait_events(IoEvents::IN, || self.try_accept())
+            self.wait_events(IoEvents::IN, None, || self.try_accept())
         }
     }
 

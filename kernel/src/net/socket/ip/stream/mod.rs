@@ -14,7 +14,7 @@ use util::TcpOptionSet;
 
 use super::UNSPECIFIED_LOCAL_ENDPOINT;
 use crate::{
-    events::{IoEvents, Observer},
+    events::IoEvents,
     fs::{file_handle::FileLike, utils::StatusFlags},
     match_sock_option_mut, match_sock_option_ref,
     net::{
@@ -29,7 +29,7 @@ use crate::{
         },
     },
     prelude::*,
-    process::signal::{Pollable, Pollee, Poller},
+    process::signal::{AnyPoller, Pollable, Pollee},
     util::{MultiRead, MultiWrite},
 };
 
@@ -315,7 +315,7 @@ impl StreamSocket {
         if self.is_nonblocking() {
             self.try_recv(writer, flags)
         } else {
-            self.wait_events(IoEvents::IN, || self.try_recv(writer, flags))
+            self.wait_events(IoEvents::IN, None, || self.try_recv(writer, flags))
         }
     }
 
@@ -347,7 +347,7 @@ impl StreamSocket {
         if self.is_nonblocking() {
             self.try_send(reader, flags)
         } else {
-            self.wait_events(IoEvents::OUT, || self.try_send(reader, flags))
+            self.wait_events(IoEvents::OUT, None, || self.try_send(reader, flags))
         }
     }
 
@@ -373,7 +373,7 @@ impl StreamSocket {
 }
 
 impl Pollable for StreamSocket {
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut AnyPoller>) -> IoEvents {
         self.pollee.poll(mask, poller)
     }
 }
@@ -411,22 +411,6 @@ impl FileLike for StreamSocket {
 
     fn as_socket(self: Arc<Self>) -> Option<Arc<dyn Socket>> {
         Some(self)
-    }
-
-    fn register_observer(
-        &self,
-        observer: Weak<dyn Observer<IoEvents>>,
-        mask: IoEvents,
-    ) -> Result<()> {
-        self.pollee.register_observer(observer, mask);
-        Ok(())
-    }
-
-    fn unregister_observer(
-        &self,
-        observer: &Weak<dyn Observer<IoEvents>>,
-    ) -> Option<Weak<dyn Observer<IoEvents>>> {
-        self.pollee.unregister_observer(observer)
     }
 }
 
@@ -466,7 +450,7 @@ impl Socket for StreamSocket {
             return result;
         }
 
-        self.wait_events(IoEvents::OUT, || self.check_connect())
+        self.wait_events(IoEvents::OUT, None, || self.check_connect())
     }
 
     fn listen(&self, backlog: usize) -> Result<()> {
@@ -505,7 +489,7 @@ impl Socket for StreamSocket {
         if self.is_nonblocking() {
             self.try_accept()
         } else {
-            self.wait_events(IoEvents::IN, || self.try_accept())
+            self.wait_events(IoEvents::IN, None, || self.try_accept())
         }
     }
 

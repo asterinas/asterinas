@@ -10,7 +10,7 @@ use crate::{
         SendRecvFlags, SockShutdownCmd,
     },
     prelude::*,
-    process::signal::{Pollee, Poller},
+    process::signal::{AnyPoller, Pollee},
     util::{ring_buffer::RingBuffer, MultiRead, MultiWrite},
 };
 
@@ -126,7 +126,7 @@ impl Connected {
             .set_peer_requested_shutdown()
     }
 
-    pub fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+    pub fn poll(&self, mask: IoEvents, poller: Option<&mut AnyPoller>) -> IoEvents {
         self.pollee.poll(mask, poller)
     }
 

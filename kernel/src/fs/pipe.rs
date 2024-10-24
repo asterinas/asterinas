@@ -7,10 +7,10 @@ use super::{
     utils::{AccessMode, Channel, Consumer, InodeMode, InodeType, Metadata, Producer, StatusFlags},
 };
 use crate::{
-    events::{IoEvents, Observer},
+    events::IoEvents,
     prelude::*,
     process::{
-        signal::{Pollable, Poller},
+        signal::{AnyPoller, Pollable},
         Gid, Uid,
     },
     time::clocks::RealTimeCoarseClock,
@@ -53,7 +53,7 @@ impl PipeReader {
 }
 
 impl Pollable for PipeReader {
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut AnyPoller>) -> IoEvents {
         self.consumer.poll(mask, poller)
     }
 }
@@ -63,7 +63,7 @@ impl FileLike for PipeReader {
         let read_len = if self.status_flags().contains(StatusFlags::O_NONBLOCK) {
             self.consumer.try_read(writer)?
         } else {
-            self.wait_events(IoEvents::IN, || self.consumer.try_read(writer))?
+            self.wait_events(IoEvents::IN, None, || self.consumer.try_read(writer))?
         };
         Ok(read_len)
     }
@@ -102,21 +102,6 @@ impl FileLike for PipeReader {
             rdev: 0,
         }
     }
-
-    fn register_observer(
-        &self,
-        observer: Weak<dyn Observer<IoEvents>>,
-        mask: IoEvents,
-    ) -> Result<()> {
-        self.consumer.register_observer(observer, mask)
-    }
-
-    fn unregister_observer(
-        &self,
-        observer: &Weak<dyn Observer<IoEvents>>,
-    ) -> Option<Weak<dyn Observer<IoEvents>>> {
-        self.consumer.unregister_observer(observer)
-    }
 }
 
 pub struct PipeWriter {
@@ -136,7 +121,7 @@ impl PipeWriter {
 }
 
 impl Pollable for PipeWriter {
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut AnyPoller>) -> IoEvents {
         self.producer.poll(mask, poller)
     }
 }
@@ -146,7 +131,7 @@ impl FileLike for PipeWriter {
         if self.status_flags().contains(StatusFlags::O_NONBLOCK) {
             self.producer.try_write(reader)
         } else {
-            self.wait_events(IoEvents::OUT, || self.producer.try_write(reader))
+            self.wait_events(IoEvents::OUT, None, || self.producer.try_write(reader))
         }
     }
 
@@ -183,21 +168,6 @@ impl FileLike for PipeWriter {
             gid: Gid::new_root(),
             rdev: 0,
         }
-    }
-
-    fn register_observer(
-        &self,
-        observer: Weak<dyn Observer<IoEvents>>,
-        mask: IoEvents,
-    ) -> Result<()> {
-        self.producer.register_observer(observer, mask)
-    }
-
-    fn unregister_observer(
-        &self,
-        observer: &Weak<dyn Observer<IoEvents>>,
-    ) -> Option<Weak<dyn Observer<IoEvents>>> {
-        self.producer.unregister_observer(observer)
     }
 }
 
