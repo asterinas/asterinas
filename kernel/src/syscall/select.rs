@@ -72,7 +72,7 @@ pub fn do_sys_select(
         readfds.as_mut(),
         writefds.as_mut(),
         exceptfds.as_mut(),
-        timeout,
+        timeout.as_ref(),
         ctx,
     )?;
 
@@ -100,7 +100,7 @@ fn do_select(
     mut readfds: Option<&mut FdSet>,
     mut writefds: Option<&mut FdSet>,
     mut exceptfds: Option<&mut FdSet>,
-    timeout: Option<Duration>,
+    timeout: Option<&Duration>,
     ctx: &Context,
 ) -> Result<usize> {
     // Convert the FdSet to an array of PollFd

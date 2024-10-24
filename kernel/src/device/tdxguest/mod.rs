@@ -8,7 +8,7 @@ use crate::{
     error::Error,
     events::IoEvents,
     fs::{inode_handle::FileIo, utils::IoctlCmd},
-    process::signal::Poller,
+    process::signal::AnyPoller,
 };
 
 const TDX_REPORTDATA_LEN: usize = 64;
@@ -57,6 +57,13 @@ impl From<TdCallError> for Error {
     }
 }
 
+impl Pollable for TdxGuest {
+    fn poll(&self, mask: IoEvents, _poller: Option<&mut AnyPoller>) -> IoEvents {
+        let events = IoEvents::IN | IoEvents::OUT;
+        events & mask
+    }
+}
+
 impl FileIo for TdxGuest {
     fn read(&self, _writer: &mut VmWriter) -> Result<usize> {
         return_errno_with_message!(Errno::EPERM, "Read operation not supported")
@@ -71,11 +78,6 @@ impl FileIo for TdxGuest {
             IoctlCmd::TDXGETREPORT => handle_get_report(arg),
             _ => return_errno_with_message!(Errno::EPERM, "Unsupported ioctl"),
         }
-    }
-
-    fn poll(&self, mask: IoEvents, _poller: Option<&mut Poller>) -> IoEvents {
-        let events = IoEvents::IN | IoEvents::OUT;
-        events & mask
     }
 }
 

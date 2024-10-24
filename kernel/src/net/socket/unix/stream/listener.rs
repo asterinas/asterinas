@@ -10,14 +10,14 @@ use super::{
     UnixStreamSocket,
 };
 use crate::{
-    events::{IoEvents, Observer},
+    events::IoEvents,
     fs::file_handle::FileLike,
     net::socket::{
         unix::addr::{UnixSocketAddrBound, UnixSocketAddrKey},
         SockShutdownCmd, SocketAddr,
     },
     prelude::*,
-    process::signal::{Pollee, Poller},
+    process::signal::{AnyPoller, Pollee},
 };
 
 pub(super) struct Listener {
@@ -78,30 +78,11 @@ impl Listener {
         }
     }
 
-    pub(super) fn poll(&self, mask: IoEvents, mut poller: Option<&mut Poller>) -> IoEvents {
+    pub(super) fn poll(&self, mask: IoEvents, mut poller: Option<&mut AnyPoller>) -> IoEvents {
         let reader_events = self.backlog.poll(mask, poller.as_deref_mut());
         let writer_events = self.writer_pollee.poll(mask, poller);
 
         combine_io_events(mask, reader_events, writer_events)
-    }
-
-    pub(super) fn register_observer(
-        &self,
-        observer: Weak<dyn Observer<IoEvents>>,
-        mask: IoEvents,
-    ) -> Result<()> {
-        self.backlog.register_observer(observer.clone(), mask)?;
-        self.writer_pollee.register_observer(observer, mask);
-        Ok(())
-    }
-
-    pub(super) fn unregister_observer(
-        &self,
-        observer: &Weak<dyn Observer<IoEvents>>,
-    ) -> Option<Weak<dyn Observer<IoEvents>>> {
-        let reader_observer = self.backlog.unregister_observer(observer);
-        let writer_observer = self.writer_pollee.unregister_observer(observer);
-        reader_observer.or(writer_observer)
     }
 }
 
@@ -226,24 +207,8 @@ impl Backlog {
         self.wait_queue.wake_all();
     }
 
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut AnyPoller>) -> IoEvents {
         self.pollee.poll(mask, poller)
-    }
-
-    fn register_observer(
-        &self,
-        observer: Weak<dyn Observer<IoEvents>>,
-        mask: IoEvents,
-    ) -> Result<()> {
-        self.pollee.register_observer(observer, mask);
-        Ok(())
-    }
-
-    fn unregister_observer(
-        &self,
-        observer: &Weak<dyn Observer<IoEvents>>,
-    ) -> Option<Weak<dyn Observer<IoEvents>>> {
-        self.pollee.unregister_observer(observer)
     }
 }
 

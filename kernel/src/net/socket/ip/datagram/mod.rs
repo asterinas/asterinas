@@ -8,7 +8,7 @@ use takeable::Takeable;
 use self::{bound::BoundDatagram, unbound::UnboundDatagram};
 use super::{common::get_ephemeral_endpoint, UNSPECIFIED_LOCAL_ENDPOINT};
 use crate::{
-    events::{IoEvents, Observer},
+    events::IoEvents,
     fs::{file_handle::FileLike, utils::StatusFlags},
     match_sock_option_mut,
     net::{
@@ -23,7 +23,7 @@ use crate::{
         },
     },
     prelude::*,
-    process::signal::{Pollable, Pollee, Poller},
+    process::signal::{AnyPoller, Pollable, Pollee},
     util::{MultiRead, MultiWrite},
 };
 
@@ -172,7 +172,7 @@ impl DatagramSocket {
         if self.is_nonblocking() {
             self.try_recv(writer, flags)
         } else {
-            self.wait_events(IoEvents::IN, || self.try_recv(writer, flags))
+            self.wait_events(IoEvents::IN, None, || self.try_recv(writer, flags))
         }
     }
 
@@ -206,7 +206,7 @@ impl DatagramSocket {
 }
 
 impl Pollable for DatagramSocket {
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut AnyPoller>) -> IoEvents {
         self.pollee.poll(mask, poller)
     }
 }
@@ -254,22 +254,6 @@ impl FileLike for DatagramSocket {
             self.set_nonblocking(false);
         }
         Ok(())
-    }
-
-    fn register_observer(
-        &self,
-        observer: Weak<dyn Observer<IoEvents>>,
-        mask: IoEvents,
-    ) -> Result<()> {
-        self.pollee.register_observer(observer, mask);
-        Ok(())
-    }
-
-    fn unregister_observer(
-        &self,
-        observer: &Weak<dyn Observer<IoEvents>>,
-    ) -> Option<Weak<dyn Observer<IoEvents>>> {
-        self.pollee.unregister_observer(observer)
     }
 }
 
