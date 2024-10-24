@@ -13,7 +13,7 @@ use crate::{
         SockShutdownCmd,
     },
     prelude::*,
-    process::signal::{Pollee, Poller},
+    process::signal::{PollHandle, Pollee},
 };
 
 pub(super) struct Init {
@@ -112,7 +112,7 @@ impl Init {
         self.addr.as_ref()
     }
 
-    pub(super) fn poll(&self, mask: IoEvents, mut poller: Option<&mut Poller>) -> IoEvents {
+    pub(super) fn poll(&self, mask: IoEvents, mut poller: Option<&mut PollHandle>) -> IoEvents {
         // To avoid loss of events, this must be compatible with
         // `Connected::poll`/`Listener::poll`.
         let reader_events = self.reader_pollee.poll(mask, poller.as_deref_mut());

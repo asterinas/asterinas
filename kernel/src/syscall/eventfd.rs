@@ -26,7 +26,7 @@ use crate::{
     },
     prelude::*,
     process::{
-        signal::{Pollable, Pollee, Poller},
+        signal::{PollHandle, Pollable, Pollee},
         Gid, Uid,
     },
     time::clocks::RealTimeClock,
@@ -174,7 +174,7 @@ impl EventFile {
 }
 
 impl Pollable for EventFile {
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         self.pollee.poll(mask, poller)
     }
 }

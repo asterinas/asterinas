@@ -35,7 +35,7 @@ use crate::{
         },
     },
     prelude::*,
-    process::{signal::Poller, Gid, Uid},
+    process::{signal::PollHandle, Gid, Uid},
     vm::vmo::Vmo,
 };
 
@@ -1695,7 +1695,7 @@ impl Inode for ExfatInode {
         Ok(())
     }
 
-    fn poll(&self, mask: IoEvents, _poller: Option<&mut Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
         let events = IoEvents::IN | IoEvents::OUT;
         events & mask
     }

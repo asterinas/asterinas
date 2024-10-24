@@ -7,7 +7,7 @@ use super::*;
 use crate::{
     events::IoEvents,
     fs::inode_handle::FileIo,
-    process::signal::{Pollable, Poller},
+    process::signal::{PollHandle, Pollable},
 };
 
 /// Same major number with Linux.
@@ -182,7 +182,7 @@ impl Device for Inner {
 }
 
 impl Pollable for Inner {
-    fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         IoEvents::empty()
     }
 }

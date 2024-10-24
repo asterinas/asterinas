@@ -8,7 +8,7 @@ use crate::{
     error::Error,
     events::IoEvents,
     fs::{inode_handle::FileIo, utils::IoctlCmd},
-    process::signal::{Pollable, Poller},
+    process::signal::{PollHandle, Pollable},
 };
 
 const TDX_REPORTDATA_LEN: usize = 64;
@@ -58,7 +58,7 @@ impl From<TdCallError> for Error {
 }
 
 impl Pollable for TdxGuest {
-    fn poll(&self, mask: IoEvents, _poller: Option<&mut Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
         let events = IoEvents::IN | IoEvents::OUT;
         events & mask
     }

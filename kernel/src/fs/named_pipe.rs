@@ -8,7 +8,7 @@ use super::{
 use crate::{
     events::IoEvents,
     prelude::*,
-    process::signal::{Pollable, Poller},
+    process::signal::{PollHandle, Pollable},
 };
 
 pub struct NamedPipe {
@@ -31,7 +31,7 @@ impl NamedPipe {
 }
 
 impl Pollable for NamedPipe {
-    fn poll(&self, _mask: IoEvents, _poller: Option<&mut Poller>) -> IoEvents {
+    fn poll(&self, _mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
         warn!("Named pipe doesn't support poll now, return IoEvents::empty for now.");
         IoEvents::empty()
     }
