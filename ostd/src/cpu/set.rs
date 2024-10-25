@@ -141,6 +141,7 @@ impl From<CpuId> for CpuSet {
 ///
 /// It provides atomic operations for each CPU in the system. When the
 /// operation contains multiple CPUs, the ordering is not guaranteed.
+#[derive(Debug)]
 pub struct AtomicCpuSet {
     bits: SmallVec<[AtomicInnerPart; NR_PARTS_NO_ALLOC]>,
 }

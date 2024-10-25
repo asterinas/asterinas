@@ -16,7 +16,7 @@ use core::{
 
 use crate::{
     arch::mm::{current_page_table_paddr, PageTableEntry, PagingConsts},
-    cpu::{all_cpus, CpuExceptionInfo, CpuSet, PinCurrentCpu},
+    cpu::{AtomicCpuSet, CpuExceptionInfo, CpuSet, PinCurrentCpu},
     cpu_local,
     mm::{
         io::Fallible,
@@ -53,6 +53,7 @@ pub struct VmSpace {
     /// A CPU can only activate a `VmSpace` when no mutable cursors are alive.
     /// Cursors hold read locks and activation require a write lock.
     activation_lock: RwLock<()>,
+    cpus: AtomicCpuSet,
 }
 
 impl VmSpace {
@@ -62,6 +63,7 @@ impl VmSpace {
             pt: KERNEL_PAGE_TABLE.get().unwrap().create_user_page_table(),
             page_fault_handler: None,
             activation_lock: RwLock::new(()),
+            cpus: AtomicCpuSet::new(CpuSet::new_empty()),
         }
     }
 
@@ -85,21 +87,10 @@ impl VmSpace {
         Ok(self.pt.cursor_mut_with(va, |pt_cursor| {
             let activation_lock = self.activation_lock.read();
 
-            let mut activated_cpus = CpuSet::new_empty();
-
-            for cpu in all_cpus() {
-                // The activation lock is held; other CPUs cannot activate this `VmSpace`.
-                let ptr =
-                    ACTIVATED_VM_SPACE.get_on_cpu(cpu).load(Ordering::Relaxed) as *const VmSpace;
-                if ptr == self as *const VmSpace {
-                    activated_cpus.add(cpu);
-                }
-            }
-
             let mut vm_space_cursor = CursorMut {
                 pt_cursor,
                 activation_lock,
-                flusher: TlbFlusher::new(activated_cpus, disable_preempt()),
+                flusher: TlbFlusher::new(self.cpus.load(), disable_preempt()),
             };
 
             f(&mut vm_space_cursor)
@@ -114,6 +105,9 @@ impl VmSpace {
         let _activation_lock = self.activation_lock.write();
 
         let cpu = preempt_guard.current_cpu();
+
+        self.cpus.add(cpu, Ordering::Relaxed);
+
         let activated_vm_space = ACTIVATED_VM_SPACE.get_on_cpu(cpu);
 
         let last_ptr = activated_vm_space.load(Ordering::Relaxed) as *const VmSpace;
@@ -125,7 +119,8 @@ impl VmSpace {
             if !last_ptr.is_null() {
                 // SAFETY: The pointer is cast from an `Arc` when it's activated
                 // the last time, so it can be restored and only restored once.
-                drop(unsafe { Arc::from_raw(last_ptr) });
+                let last = unsafe { Arc::from_raw(last_ptr) };
+                last.cpus.remove(cpu, Ordering::Relaxed);
             }
         }
     }
