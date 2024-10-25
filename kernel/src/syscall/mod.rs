@@ -44,6 +44,7 @@ mod geteuid;
 mod getgid;
 mod getgroups;
 mod getpeername;
+mod getpgid;
 mod getpgrp;
 mod getpid;
 mod getppid;

@@ -141,7 +141,7 @@ provided by Linux on x86-64 architecture.
 | 118     | getresuid        | ✅              |
 | 119     | setresgid        | ✅              |
 | 120     | getresgid        | ✅              |
-| 121     | getpgid          | ❌              |
+| 121     | getpgid          | ✅              |
 | 122     | setfsuid         | ✅              |
 | 123     | setfsgid         | ✅              |
 | 124     | getsid           | ✅              |
