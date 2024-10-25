@@ -144,7 +144,7 @@ mod write;
 /// The first param is the number of parameters,
 /// The second param is the function name of syscall handler,
 /// The third is optional, means the args(if parameter number > 0),
-/// The third is optional, means if cpu ctx is required.
+/// The fourth is optional, means if cpu ctx is required.
 macro_rules! syscall_handler {
     (0, $fn_name: ident, $args: ident, $ctx: expr) => {
         $fn_name($ctx)
