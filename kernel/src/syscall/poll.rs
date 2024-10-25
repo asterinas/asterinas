@@ -56,7 +56,13 @@ pub fn sys_poll(fds: Vaddr, nfds: u64, timeout: i32, ctx: &Context) -> Result<Sy
 }
 
 pub fn do_poll(poll_fds: &[PollFd], timeout: Option<Duration>, ctx: &Context) -> Result<usize> {
-    let files = hold_files(poll_fds, ctx)?;
+    let (result, files) = hold_files(poll_fds, ctx);
+    match result {
+        FileResult::AllValid => (),
+        FileResult::SomeInvalid => {
+            return Ok(count_all_events(poll_fds, &files));
+        }
+    }
 
     let poller = match register_poller(poll_fds, files.as_ref()) {
         PollerResult::AllRegistered(poller) => poller,
@@ -89,11 +95,17 @@ pub fn do_poll(poll_fds: &[PollFd], timeout: Option<Duration>, ctx: &Context) ->
     }
 }
 
+enum FileResult {
+    AllValid,
+    SomeInvalid,
+}
+
 /// Holds all the files we're going to poll.
-fn hold_files(poll_fds: &[PollFd], ctx: &Context) -> Result<Vec<Option<Arc<dyn FileLike>>>> {
+fn hold_files(poll_fds: &[PollFd], ctx: &Context) -> (FileResult, Vec<Option<Arc<dyn FileLike>>>) {
     let file_table = ctx.process.file_table().lock();
 
     let mut files = Vec::with_capacity(poll_fds.len());
+    let mut result = FileResult::AllValid;
 
     for poll_fd in poll_fds.iter() {
         let Some(fd) = poll_fd.fd() else {
@@ -101,10 +113,18 @@ fn hold_files(poll_fds: &[PollFd], ctx: &Context) -> Result<Vec<Option<Arc<dyn F
             continue;
         };
 
-        files.push(Some(file_table.get_file(fd)?.clone()));
+        let Ok(file) = file_table.get_file(fd) else {
+            poll_fd.revents.set(IoEvents::NVAL);
+            result = FileResult::SomeInvalid;
+
+            files.push(None);
+            continue;
+        };
+
+        files.push(Some(file.clone()));
     }
 
-    Ok(files)
+    (result, files)
 }
 
 enum PollerResult {
@@ -139,6 +159,10 @@ fn count_all_events(poll_fds: &[PollFd], files: &[Option<Arc<dyn FileLike>>]) ->
 
     for (poll_fd, file) in poll_fds.iter().zip(files.iter()) {
         let Some(file) = file else {
+            if !poll_fd.revents.get().is_empty() {
+                // This is only possible for POLLNVAL.
+                counter += 1;
+            }
             continue;
         };
 

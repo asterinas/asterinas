@@ -146,7 +146,7 @@ fn do_select(
     for poll_fd in &poll_fds {
         let fd = poll_fd.fd().unwrap();
         let revents = poll_fd.revents().get();
-        let (readable, writable, except) = convert_events_to_rwe(&revents);
+        let (readable, writable, except) = convert_events_to_rwe(revents)?;
         if let Some(ref mut fds) = readfds
             && readable
         {
@@ -169,8 +169,8 @@ fn do_select(
     Ok(total_revents)
 }
 
-// Convert select's rwe input to poll's IoEvents input according to Linux's
-// behavior.
+/// Converts `select` RWE input to `poll` I/O event input
+/// according to Linux's behavior.
 fn convert_rwe_to_events(readable: bool, writable: bool, except: bool) -> IoEvents {
     let mut events = IoEvents::empty();
     if readable {
@@ -185,13 +185,17 @@ fn convert_rwe_to_events(readable: bool, writable: bool, except: bool) -> IoEven
     events
 }
 
-// Convert poll's IoEvents results to select's rwe results according to Linux's
-// behavior.
-fn convert_events_to_rwe(events: &IoEvents) -> (bool, bool, bool) {
+/// Converts `poll` I/O event results to `select` RWE results
+/// according to Linux's behavior.
+fn convert_events_to_rwe(events: IoEvents) -> Result<(bool, bool, bool)> {
+    if events.contains(IoEvents::NVAL) {
+        return_errno_with_message!(Errno::EBADF, "the file descriptor is invalid");
+    }
+
     let readable = events.intersects(IoEvents::IN | IoEvents::HUP | IoEvents::ERR);
     let writable = events.intersects(IoEvents::OUT | IoEvents::ERR);
     let except = events.contains(IoEvents::PRI);
-    (readable, writable, except)
+    Ok((readable, writable, except))
 }
 
 const FD_SETSIZE: usize = 1024;
