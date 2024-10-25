@@ -8,8 +8,6 @@
 mod fifo_scheduler;
 pub mod info;
 
-use core::sync::atomic::{AtomicBool, Ordering};
-
 use spin::Once;
 
 use super::{preempt::cpu_local, processor, Task};
@@ -49,6 +47,15 @@ pub trait Scheduler<T = Task>: Sync + Send {
     fn local_mut_rq_with(&self, f: &mut dyn FnMut(&mut dyn LocalRunQueue<T>));
 }
 
+/// The state of the current task at the time of scheduling.
+#[derive(PartialEq, Copy, Clone)]
+pub enum CurrentState {
+    /// The current task is still runnable, so it will be kept in the runqueue.
+    Runnable,
+    /// The current task needs to go to sleep, so it will leave the runqueue.
+    NeedSleep,
+}
+
 /// The _local_ view of a per-CPU runqueue.
 ///
 /// This local view provides the interface for the runqueue of a CPU core
@@ -68,17 +75,15 @@ pub trait LocalRunQueue<T = Task> {
     /// If the current runnable task needs to be preempted, the method returns `true`.
     fn update_current(&mut self, flags: UpdateFlags) -> bool;
 
-    /// Picks the next current runnable task.
+    /// Picks the next runnable task.
     ///
-    /// This method returns the chosen next current runnable task. If there is no
-    /// candidate for next current runnable task, this method returns `None`.
-    fn pick_next_current(&mut self) -> Option<&Arc<T>>;
-
-    /// Removes the current runnable task from runqueue.
+    /// This method returns the selected next runnable task. This task will replace the current
+    /// runnable task after the method returns. If there is no candidate for such a task, this
+    /// method will do nothing but return `None`.
     ///
-    /// This method returns the current runnable task. If there is no current runnable
-    /// task, this method returns `None`.
-    fn dequeue_current(&mut self) -> Option<Arc<T>>;
+    /// After the next runnable task is selected, `current_state` will decide whether or not to
+    /// keep the current runnable task in the runqueue. See [`CurrentState`] for details.
+    fn pick_next(&mut self, current_state: CurrentState) -> Option<&Arc<T>>;
 }
 
 /// Possible triggers of an `enqueue` action.
@@ -109,43 +114,41 @@ pub(crate) fn might_preempt() {
     yield_now();
 }
 
-/// Blocks the current task unless `has_woken` is `true`.
-pub(crate) fn park_current(has_woken: &AtomicBool) {
-    let mut current = None;
-    let mut is_first_try = true;
-    reschedule(&mut |local_rq: &mut dyn LocalRunQueue| {
-        if is_first_try {
-            if has_woken.load(Ordering::Acquire) {
-                return ReschedAction::DoNothing;
-            }
-            current = local_rq.dequeue_current();
-            local_rq.update_current(UpdateFlags::Wait);
+/// Blocks the current task unless `has_woken()` returns `true`.
+///
+/// Note that this method may return due to spurious wake events. It's the caller's responsibility
+/// to detect them (if necessary).
+pub(crate) fn park_current<F>(mut has_woken: F)
+where
+    F: FnMut() -> bool,
+{
+    reschedule(|local_rq: &mut dyn LocalRunQueue| {
+        if has_woken() {
+            return None;
         }
-        if let Some(next_task) = local_rq.pick_next_current() {
-            if Arc::ptr_eq(current.as_ref().unwrap(), next_task) {
-                return ReschedAction::DoNothing;
-            }
-            ReschedAction::SwitchTo(next_task.clone())
-        } else {
-            is_first_try = false;
-            ReschedAction::Retry
-        }
+
+        // Note the race conditions: the current task may be woken after the above `has_woken`
+        // check, but before the below `pick_next` action, we need to make sure that the wakeup
+        // event isn't lost.
+        //
+        // Currently, for the FIFO scheduler, `Scheduler::enqueue` will try to lock `local_rq` when
+        // the above race condition occurs, so it will wait until we finish calling the `pick_next`
+        // method and nothing bad will happen. This may need to be revisited after more complex
+        // schedulers are introduced.
+
+        local_rq.update_current(UpdateFlags::Wait);
+        local_rq.pick_next(CurrentState::NeedSleep)
     });
 }
 
 /// Unblocks a target task.
 pub(crate) fn unpark_target(runnable: Arc<Task>) {
-    let need_preempt_info = SCHEDULER
+    let target_cpu = SCHEDULER
         .get()
         .unwrap()
         .enqueue(runnable, EnqueueFlags::Wake);
-    if need_preempt_info.is_some() {
-        let cpu_id = need_preempt_info.unwrap();
-        let preempt_guard = disable_preempt();
-        // FIXME: send IPI to set remote CPU's need_preempt if needed.
-        if cpu_id == preempt_guard.current_cpu() {
-            cpu_local::set_need_preempt();
-        }
+    if let Some(target_cpu_id) = target_cpu {
+        set_need_preempt(target_cpu_id);
     }
 }
 
@@ -159,86 +162,65 @@ pub(super) fn run_new_task(runnable: Arc<Task>) {
         fifo_scheduler::init();
     }
 
-    let need_preempt_info = SCHEDULER
+    let target_cpu = SCHEDULER
         .get()
         .unwrap()
         .enqueue(runnable, EnqueueFlags::Spawn);
-    if need_preempt_info.is_some() {
-        let cpu_id = need_preempt_info.unwrap();
-        let preempt_guard = disable_preempt();
-        // FIXME: send IPI to set remote CPU's need_preempt if needed.
-        if cpu_id == preempt_guard.current_cpu() {
-            cpu_local::set_need_preempt();
-        }
+    if let Some(target_cpu_id) = target_cpu {
+        set_need_preempt(target_cpu_id);
     }
 
     might_preempt();
+}
+
+fn set_need_preempt(cpu_id: u32) {
+    let preempt_guard = disable_preempt();
+
+    if preempt_guard.current_cpu() == cpu_id {
+        cpu_local::set_need_preempt();
+    } else {
+        // TODO: Send IPIs to set remote CPU's `need_preempt`
+    }
 }
 
 /// Dequeues the current task from its runqueue.
 ///
 /// This should only be called if the current is to exit.
 pub(super) fn exit_current() {
-    reschedule(&mut |local_rq: &mut dyn LocalRunQueue| {
-        let _ = local_rq.dequeue_current();
-        if let Some(next_task) = local_rq.pick_next_current() {
-            ReschedAction::SwitchTo(next_task.clone())
-        } else {
-            ReschedAction::Retry
-        }
-    })
+    loop {
+        reschedule(|local_rq: &mut dyn LocalRunQueue| local_rq.pick_next(CurrentState::NeedSleep))
+    }
 }
 
 /// Yields execution.
 pub(super) fn yield_now() {
-    reschedule(&mut |local_rq| {
+    reschedule(|local_rq| {
         local_rq.update_current(UpdateFlags::Yield);
-
-        if let Some(next_task) = local_rq.pick_next_current() {
-            ReschedAction::SwitchTo(next_task.clone())
-        } else {
-            ReschedAction::DoNothing
-        }
+        local_rq.pick_next(CurrentState::Runnable)
     })
 }
 
-/// Do rescheduling by acting on the scheduling decision (`ReschedAction`) made by a
-/// user-given closure.
+/// Performs rescheduling by acting on the scheduling decision made by a user-given closure.
 ///
-/// The closure makes the scheduling decision by taking the local runqueue has its input.
-fn reschedule<F>(f: &mut F)
+/// The closure makes the scheduling decision (i.e., to switch to the next task or to do nothing)
+/// by taking the local runqueue as its input.
+fn reschedule<F>(mut f: F)
 where
-    F: FnMut(&mut dyn LocalRunQueue) -> ReschedAction,
+    F: FnMut(&mut dyn LocalRunQueue) -> Option<&Arc<Task>>,
 {
-    let next_task = loop {
-        let mut action = ReschedAction::DoNothing;
-        SCHEDULER.get().unwrap().local_mut_rq_with(&mut |rq| {
-            action = f(rq);
-        });
+    let mut maybe_next_task = None;
+    SCHEDULER.get().unwrap().local_mut_rq_with(&mut |rq| {
+        maybe_next_task = f(rq).cloned();
+    });
 
-        match action {
-            ReschedAction::DoNothing => {
-                return;
-            }
-            ReschedAction::Retry => {
-                continue;
-            }
-            ReschedAction::SwitchTo(next_task) => {
-                break next_task;
-            }
-        };
+    let Some(next_task) = maybe_next_task else {
+        return;
     };
+
+    // FIXME: At this point, we need to prevent the current task from being scheduled on another
+    // CPU core. However, we currently have no way to ensure this. This is a soundness hole and
+    // should be fixed. See <https://github.com/asterinas/asterinas/issues/1471> for details.
 
     cpu_local::clear_need_preempt();
     processor::switch_to_task(next_task);
-}
-
-/// Possible actions of a rescheduling.
-enum ReschedAction {
-    /// Keep running current task and do nothing.
-    DoNothing,
-    /// Loop until finding a task to swap out the current.
-    Retry,
-    /// Switch to target task.
-    SwitchTo(Arc<Task>),
 }
