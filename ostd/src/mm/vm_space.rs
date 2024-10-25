@@ -9,15 +9,12 @@
 //! powerful concurrent accesses to the page table, and suffers from the same
 //! validity concerns as described in [`super::page_table::cursor`].
 
-use core::{
-    ops::Range,
-    sync::atomic::{AtomicPtr, Ordering},
-};
+use core::{ops::Range, sync::atomic::Ordering};
 
 use crate::{
     arch::mm::{current_page_table_paddr, PageTableEntry, PagingConsts},
-    cpu::{all_cpus, CpuExceptionInfo, CpuSet, PinCurrentCpu},
-    cpu_local,
+    cpu::{AtomicCpuSet, CpuExceptionInfo, CpuSet, PinCurrentCpu},
+    cpu_local_cell,
     mm::{
         io::Fallible,
         kspace::KERNEL_PAGE_TABLE,
@@ -53,6 +50,7 @@ pub struct VmSpace {
     /// A CPU can only activate a `VmSpace` when no mutable cursors are alive.
     /// Cursors hold read locks and activation require a write lock.
     activation_lock: RwLock<()>,
+    cpus: AtomicCpuSet,
 }
 
 impl VmSpace {
@@ -62,6 +60,7 @@ impl VmSpace {
             pt: KERNEL_PAGE_TABLE.get().unwrap().create_user_page_table(),
             page_fault_handler: None,
             activation_lock: RwLock::new(()),
+            cpus: AtomicCpuSet::new(CpuSet::new_empty()),
         }
     }
 
@@ -91,21 +90,10 @@ impl VmSpace {
         Ok(self.pt.cursor_mut(va).map(|pt_cursor| {
             let activation_lock = self.activation_lock.read();
 
-            let mut activated_cpus = CpuSet::new_empty();
-
-            for cpu in all_cpus() {
-                // The activation lock is held; other CPUs cannot activate this `VmSpace`.
-                let ptr =
-                    ACTIVATED_VM_SPACE.get_on_cpu(cpu).load(Ordering::Relaxed) as *const VmSpace;
-                if ptr == self as *const VmSpace {
-                    activated_cpus.add(cpu);
-                }
-            }
-
             CursorMut {
                 pt_cursor,
                 activation_lock,
-                flusher: TlbFlusher::new(activated_cpus, disable_preempt()),
+                flusher: TlbFlusher::new(self.cpus.load(), disable_preempt()),
             }
         })?)
     }
@@ -113,25 +101,31 @@ impl VmSpace {
     /// Activates the page table on the current CPU.
     pub(crate) fn activate(self: &Arc<Self>) {
         let preempt_guard = disable_preempt();
+        let cpu = preempt_guard.current_cpu();
 
-        // Ensure no mutable cursors (which holds read locks) are alive.
+        let last_ptr = ACTIVATED_VM_SPACE.load();
+
+        if last_ptr == Arc::as_ptr(self) {
+            return;
+        }
+
+        // Ensure no mutable cursors (which holds read locks) are alive before
+        // we add the CPU to the CPU set.
         let _activation_lock = self.activation_lock.write();
 
-        let cpu = preempt_guard.current_cpu();
-        let activated_vm_space = ACTIVATED_VM_SPACE.get_on_cpu(cpu);
+        // Record ourselves in the CPU set and the activated VM space pointer.
+        self.cpus.add(cpu, Ordering::Relaxed);
+        let self_ptr = Arc::into_raw(Arc::clone(self)) as *mut VmSpace;
+        ACTIVATED_VM_SPACE.store(self_ptr);
 
-        let last_ptr = activated_vm_space.load(Ordering::Relaxed) as *const VmSpace;
-
-        if last_ptr != Arc::as_ptr(self) {
-            self.pt.activate();
-            let ptr = Arc::into_raw(Arc::clone(self)) as *mut VmSpace;
-            activated_vm_space.store(ptr, Ordering::Relaxed);
-            if !last_ptr.is_null() {
-                // SAFETY: The pointer is cast from an `Arc` when it's activated
-                // the last time, so it can be restored and only restored once.
-                drop(unsafe { Arc::from_raw(last_ptr) });
-            }
+        if !last_ptr.is_null() {
+            // SAFETY: The pointer is cast from an `Arc` when it's activated
+            // the last time, so it can be restored and only restored once.
+            let last = unsafe { Arc::from_raw(last_ptr) };
+            last.cpus.remove(cpu, Ordering::Relaxed);
         }
+
+        self.pt.activate();
     }
 
     pub(crate) fn handle_page_fault(
@@ -423,14 +417,14 @@ impl CursorMut<'_, '_> {
     }
 }
 
-cpu_local! {
+cpu_local_cell! {
     /// The `Arc` pointer to the activated VM space on this CPU. If the pointer
     /// is NULL, it means that the activated page table is merely the kernel
     /// page table.
     // TODO: If we are enabling ASID, we need to maintain the TLB state of each
     // CPU, rather than merely the activated `VmSpace`. When ASID is enabled,
     // the non-active `VmSpace`s can still have their TLB entries in the CPU!
-    static ACTIVATED_VM_SPACE: AtomicPtr<VmSpace> = AtomicPtr::new(core::ptr::null_mut());
+    static ACTIVATED_VM_SPACE: *const VmSpace = core::ptr::null();
 }
 
 /// The result of a query over the VM space.
