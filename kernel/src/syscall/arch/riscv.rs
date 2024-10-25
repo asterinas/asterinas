@@ -33,7 +33,7 @@ use crate::syscall::{
     getgid::sys_getgid,
     getgroups::sys_getgroups,
     getpeername::sys_getpeername,
-    getpgrp::sys_getpgrp,
+    getpgid::sys_getpgid,
     getpid::sys_getpid,
     getppid::sys_getppid,
     getrandom::sys_getrandom,
@@ -214,7 +214,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_SETFSUID = 151           => sys_setfsuid(args[..1]);
     SYS_SETFSGID = 152           => sys_setfsgid(args[..1]);
     SYS_SETPGID = 154            => sys_setpgid(args[..2]);
-    SYS_GETPGRP = 155            => sys_getpgrp(args[..0]);
+    SYS_GETPGID = 155            => sys_getpgid(args[..1]);
     SYS_GETSID = 156             => sys_getsid(args[..1]);
     SYS_SETSID = 157             => sys_setsid(args[..0]);
     SYS_GETGROUPS = 158          => sys_getgroups(args[..2]);
