@@ -2,3 +2,6 @@
 name = "#NAME#"
 version = "#VERSION#"
 edition = "2021"
+
+[workspace]
+members = []

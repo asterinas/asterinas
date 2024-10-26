@@ -58,7 +58,7 @@ use super::{
     Paddr, PagingConstsTrait, Vaddr, PAGE_SIZE,
 };
 use crate::{
-    arch::mm::{PageTableEntry, PagingConsts},
+    arch::mm::{PageTableEntry, PagingConsts, KERNEL_CODE_BASE_VADDR_PREFIX},
     boot::memory_region::MemoryRegionType,
 };
 
@@ -82,10 +82,7 @@ pub fn kernel_loaded_offset() -> usize {
     KERNEL_CODE_BASE_VADDR
 }
 
-#[cfg(target_arch = "x86_64")]
-const KERNEL_CODE_BASE_VADDR: usize = 0xffff_ffff_8000_0000 << ADDR_WIDTH_SHIFT;
-#[cfg(target_arch = "riscv64")]
-const KERNEL_CODE_BASE_VADDR: usize = 0xffff_ffff_0000_0000 << ADDR_WIDTH_SHIFT;
+const KERNEL_CODE_BASE_VADDR: usize = KERNEL_CODE_BASE_VADDR_PREFIX << ADDR_WIDTH_SHIFT;
 
 const FRAME_METADATA_CAP_VADDR: Vaddr = 0xffff_e100_0000_0000 << ADDR_WIDTH_SHIFT;
 const FRAME_METADATA_BASE_VADDR: Vaddr = 0xffff_e000_0000_0000 << ADDR_WIDTH_SHIFT;

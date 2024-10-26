@@ -7,6 +7,7 @@ use core::ffi::c_void;
 pub use unwinding::panic::{begin_panic, catch_unwind};
 
 use crate::{
+    arch,
     arch::qemu::{exit_qemu, QemuExitCode},
     early_print, early_println,
     sync::SpinLock,
@@ -14,8 +15,6 @@ use crate::{
 
 extern crate cfg_if;
 extern crate gimli;
-
-use gimli::Register;
 use unwinding::abi::{
     UnwindContext, UnwindReasonCode, _Unwind_Backtrace, _Unwind_FindEnclosingFunction,
     _Unwind_GetGR, _Unwind_GetIP,
@@ -83,17 +82,8 @@ pub fn print_stack_trace() {
         // the DWARF standard.
         for i in 0..8u16 {
             let reg_i = _Unwind_GetGR(unwind_ctx, i as i32);
-            cfg_if::cfg_if! {
-                if #[cfg(target_arch = "x86_64")] {
-                    let reg_name = gimli::X86_64::register_name(Register(i)).unwrap_or("unknown");
-                } else if #[cfg(target_arch = "riscv64")] {
-                    let reg_name = gimli::RiscV::register_name(Register(i)).unwrap_or("unknown");
-                } else if #[cfg(target_arch = "aarch64")] {
-                    let reg_name = gimli::AArch64::register_name(Register(i)).unwrap_or("unknown");
-                } else {
-                    let reg_name = "unknown";
-                }
-            }
+            let reg_name = arch::register_name(i).unwrap_or("unknown");
+
             if i % 4 == 0 {
                 early_print!("\n    ");
             }

@@ -1,32 +1,28 @@
-// SPDX-License-Identifier: MPL-2.0
+use crate::commands::build::do_cached_build;
+use super::util::{self, DEFAULT_MIRI_TARGET_RELPATH};
 
 use std::fs;
 
-use super::{
-    build::do_cached_build,
-    util::{get_workspace_default_members, DEFAULT_TARGET_RELPATH},
-};
 use crate::{
-    base_crate::new_base_crate,
     cli::TestArgs,
     config::{scheme::ActionChoice, Config},
-    error::Errno,
-    error_msg,
     util::{get_current_crate_info, get_target_directory},
 };
 
-pub fn execute_test_command(config: &Config, args: &TestArgs) {
-    let crates = get_workspace_default_members();
+use crate::{base_crate::new_base_crate, error::Errno, error_msg};
+
+pub fn execute_miri_command(config: &Config, args: &TestArgs) {
+    let crates = util::get_workspace_default_members();
     for crate_path in crates {
         std::env::set_current_dir(crate_path).unwrap();
-        test_current_crate(config, args);
+        miri_current_crate(config, args);
     }
 }
 
-pub fn test_current_crate(config: &Config, args: &TestArgs) {
+pub fn miri_current_crate(config: &Config, args: &TestArgs) {
     let current_crate = get_current_crate_info();
     let cargo_target_directory = get_target_directory();
-    let osdk_output_directory = cargo_target_directory.join(DEFAULT_TARGET_RELPATH);
+    let osdk_output_directory = cargo_target_directory.join(DEFAULT_MIRI_TARGET_RELPATH);
     let target_crate_dir = osdk_output_directory.join("base");
 
     // A special case is that we use OSDK to test the OSDK test runner crate
@@ -89,18 +85,13 @@ pub static KTEST_CRATE_WHITELIST: Option<&[&str]> = Some(&{:#?});
     // Build the kernel with the given base crate
     let target_name = get_current_crate_info().name;
     let default_bundle_directory = osdk_output_directory.join(target_name);
-    let original_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(&target_crate_dir).unwrap();
-    let bundle = do_cached_build(
+    let _bundle = do_cached_build(
         default_bundle_directory,
         &osdk_output_directory,
         &cargo_target_directory,
         config,
-        ActionChoice::Test,
+        ActionChoice::Miri,
         &["--cfg ktest"],
     );
-    std::env::remove_var("RUSTFLAGS");
-    std::env::set_current_dir(original_dir).unwrap();
-
-    bundle.run(config, ActionChoice::Test);
 }
