@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
+pub(crate) mod queued;
+
 use core::{
     cell::UnsafeCell,
     fmt,
     marker::PhantomData,
     ops::{Deref, DerefMut},
-    sync::atomic::{AtomicBool, Ordering},
 };
 
 use super::{guard::SpinGuardian, LocalIrqDisabled, PreemptDisabled};
@@ -35,7 +36,7 @@ pub struct SpinLock<T: ?Sized, G = PreemptDisabled> {
 }
 
 struct SpinLockInner<T: ?Sized> {
-    lock: AtomicBool,
+    body: queued::LockBody,
     val: UnsafeCell<T>,
 }
 
@@ -43,7 +44,7 @@ impl<T, G> SpinLock<T, G> {
     /// Creates a new spin lock.
     pub const fn new(val: T) -> Self {
         let lock_inner = SpinLockInner {
-            lock: AtomicBool::new(false),
+            body: queued::LockBody::new(),
             val: UnsafeCell::new(val),
         };
         Self {
@@ -72,7 +73,9 @@ impl<T: ?Sized, G: SpinGuardian> SpinLock<T, G> {
     pub fn lock(&self) -> SpinLockGuard<T, G> {
         // Notice the guard must be created before acquiring the lock.
         let inner_guard = G::guard();
-        self.acquire_lock();
+
+        self.inner.body.lock(inner_guard.as_atomic_mode_guard());
+
         SpinLockGuard_ {
             lock: self,
             guard: inner_guard,
@@ -82,7 +85,7 @@ impl<T: ?Sized, G: SpinGuardian> SpinLock<T, G> {
     /// Tries acquiring the spin lock immedidately.
     pub fn try_lock(&self) -> Option<SpinLockGuard<T, G>> {
         let inner_guard = G::guard();
-        if self.try_acquire_lock() {
+        if self.inner.body.try_lock(inner_guard.as_atomic_mode_guard()) {
             let lock_guard = SpinLockGuard_ {
                 lock: self,
                 guard: inner_guard,
@@ -98,24 +101,6 @@ impl<T: ?Sized, G: SpinGuardian> SpinLock<T, G> {
     /// already statically guaranteed that access to the data is exclusive.
     pub fn get_mut(&mut self) -> &mut T {
         self.inner.val.get_mut()
-    }
-
-    /// Acquires the spin lock, otherwise busy waiting
-    fn acquire_lock(&self) {
-        while !self.try_acquire_lock() {
-            core::hint::spin_loop();
-        }
-    }
-
-    fn try_acquire_lock(&self) -> bool {
-        self.inner
-            .lock
-            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .is_ok()
-    }
-
-    fn release_lock(&self) {
-        self.inner.lock.store(false, Ordering::Release);
     }
 }
 
@@ -170,7 +155,8 @@ impl<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: SpinGuardian> Drop
     for SpinLockGuard_<T, R, G>
 {
     fn drop(&mut self) {
-        self.lock.release_lock();
+        // SAFETY: The guard exists so the lock is held.
+        unsafe { self.lock.inner.body.unlock() };
     }
 }
 
