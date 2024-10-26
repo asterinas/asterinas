@@ -2,6 +2,8 @@
 
 #![allow(dead_code)]
 
+pub(crate) mod mcs;
+
 use alloc::sync::Arc;
 use core::{
     cell::UnsafeCell,
