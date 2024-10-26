@@ -403,7 +403,12 @@ impl Vmar_ {
                 let mut op = |page: &mut PageProperty| {
                     page.flags -= PageFlags::W;
                 };
-                new_cursor.copy_from(&mut cur_cursor, vm_mapping.map_size(), &mut op);
+                new_cursor.copy_from(
+                    &mut cur_cursor,
+                    vm_mapping.map_size(),
+                    &mut op,
+                    vm_mapping.need_pt_copy(),
+                );
             }
             cur_cursor.flusher().issue_tlb_flush(TlbFlushOp::All);
             cur_cursor.flusher().dispatch_tlb_flush();

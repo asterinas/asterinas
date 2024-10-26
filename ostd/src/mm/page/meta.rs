@@ -196,6 +196,8 @@ pub(in crate::mm) struct PageTablePageMeta<
     pub level: PagingLevel,
     /// Whether the pages mapped by the node is tracked.
     pub is_tracked: MapTrackingStatus,
+    /// Whether the page table page should be copied on writing.
+    pub cow: UnsafeCell<bool>,
     /// The lock for the page table page.
     pub lock: AtomicU8,
     _phantom: core::marker::PhantomData<(E, C)>,
@@ -227,6 +229,7 @@ where
             level,
             is_tracked,
             lock: AtomicU8::new(1),
+            cow: UnsafeCell::new(false),
             _phantom: PhantomData,
         }
     }

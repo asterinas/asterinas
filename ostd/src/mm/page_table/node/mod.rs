@@ -340,6 +340,66 @@ where
         // SAFETY: The lock is held so we have an exclusive access.
         unsafe { &mut *self.page.meta().nr_children.get() }
     }
+
+    /// Gets the Copy-On-Write status of the page table node.
+    pub fn is_cow(&self) -> bool {
+        // SAFETY: The lock is held so we have an exclusive access.
+        unsafe { *self.page.meta().cow.get() }
+    }
+
+    /// Set the page table node to Copy-On-Write.
+    pub fn set_cow(&mut self) {
+        // SAFETY: The lock is held so we have an exclusive access.
+        unsafe {
+            *self.page.meta().cow.get() = true;
+        }
+    }
+
+    /// Unset the page table node from Copy-On-Write.
+    pub fn unset_cow(&mut self) {
+        // SAFETY: The lock is held so we have an exclusive access.
+        unsafe {
+            *self.page.meta().cow.get() = false;
+        }
+    }
+
+    /// Perform Copy-On-Write.
+    /// Returns the newly copied page's handle. If there is no need to copy, returns None.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the page table node isn't set to Copy-On-Write
+    pub fn copy_on_write(&mut self) -> Option<PageTableNode<E, C>> {
+        assert!(self.is_cow());
+        let page: DynPage = self.page.clone().into();
+        let page: Page<PageTablePageMeta> = page.try_into().unwrap();
+
+        // If we are the only reference to the page table page, we can directly set the
+        // page writable without copying. In this case, the reference count of the page
+        // is 3 (one for the mapping `self.page`, one for `page`, and one for the frame
+        // handle itself).
+        let only_reference = page.reference_count() == 3;
+
+        if only_reference {
+            self.unset_cow();
+            // There is no need to set all self's children to COW.
+            None
+        } else {
+            let mut new_pt = Self::alloc(self.level(), self.is_tracked());
+            // Set every self's children also children of new_pt.
+            for i in 0..nr_subpage_per_huge::<C>() {
+                let child = self.entry(i);
+                if let Child::PageTable(child_pt) = child.to_owned() {
+                    let mut child_pt = child_pt.lock();
+                    child_pt.set_cow();
+                    new_pt
+                        .entry(i)
+                        .replace(Child::PageTable(child_pt.clone_raw()));
+                }
+            }
+            Some(new_pt)
+        }
+    }
 }
 
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for PageTableNode<E, C>
