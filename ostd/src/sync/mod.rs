@@ -8,7 +8,7 @@ mod rcu;
 mod rwarc;
 mod rwlock;
 mod rwmutex;
-mod spin;
+pub(crate) mod spin;
 mod wait;
 
 pub(crate) use self::{
