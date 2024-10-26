@@ -181,6 +181,7 @@ impl DeviceInner {
                 let Ok((token, _)) = queue.pop_used() else {
                     return;
                 };
+                drop(queue);
                 self.submitted_requests.lock().remove(&token).unwrap()
             };
 
