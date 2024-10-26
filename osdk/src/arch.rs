@@ -15,9 +15,9 @@ pub enum Arch {
     #[serde(rename = "aarch64")]
     Aarch64,
     #[serde(rename = "riscv64")]
-    X86_64,
-    #[serde(rename = "x86_64")]
     RiscV64,
+    #[serde(rename = "x86_64")]
+    X86_64,
 }
 
 impl ValueEnum for Arch {
