@@ -10,7 +10,7 @@ mod mutex;
 mod rwarc;
 mod rwlock;
 mod rwmutex;
-mod spin;
+pub(crate) mod spin;
 mod wait;
 
 // pub use self::rcu::{pass_quiescent_state, OwnerPtr, Rcu, RcuReadGuard, RcuReclaimer};
