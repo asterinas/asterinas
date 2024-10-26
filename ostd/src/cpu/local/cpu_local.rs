@@ -107,13 +107,19 @@ impl<T: 'static> CpuLocal<T> {
     ///
     /// # Safety
     ///
-    /// The caller must ensure that the reference to `self` is static.
+    /// The caller must ensure that preemptions are disabled during the
+    /// manipulation of the returned pointer. Otherwise, the pointer may
+    /// point to an object on another CPU.
     pub(crate) unsafe fn as_ptr(&'static self) -> *const T {
-        super::has_init::assert_true();
-
         let offset = self.get_offset();
 
         let local_base = arch::cpu::local::get_base() as usize;
+
+        // The MCS lock uses BSP-local storage early. So instead of asserting
+        // `super::has_init::assert_true()`, we just check if the base is
+        // initialized.
+        debug_assert_ne!(local_base, 0);
+
         let local_va = local_base + offset;
 
         // A sanity check about the alignment.

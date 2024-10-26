@@ -58,11 +58,11 @@ extern "C" {
 
 /// Sets the base address of the CPU-local storage for the bootstrap processor.
 ///
-/// It should be called early to let [`crate::task::disable_preempt`] work,
-/// which needs to update a CPU-local preemption info. Otherwise it may
-/// panic when calling [`crate::task::disable_preempt`]. It is needed since
-/// heap allocations need to disable preemption, which would happen in the
-/// very early stage of the kernel.
+/// It should be called early to let [`crate::task::disable_preempt`] and
+/// [`crate::sync::spin::mcs::NodeRef`] to work, which needs to CPU-local info.
+///
+/// It is needed since heap allocations need to disable preemption and acquire
+/// spin locks, which would happen in the very early stage of the kernel.
 ///
 /// # Safety
 ///
@@ -143,7 +143,8 @@ pub unsafe fn init_on_ap(cpu_id: u32) {
         arch::cpu::local::set_base(ap_pages_ptr as u64);
     }
 
-    crate::task::reset_preempt_info();
+    crate::task::reset_preempt_info_for_ap();
+    crate::sync::spin::mcs::reset_node_alloc_info_for_ap();
 }
 
 mod has_init {

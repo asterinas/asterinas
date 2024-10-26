@@ -9,7 +9,7 @@ mod mutex;
 // mod rcu;
 mod rwlock;
 mod rwmutex;
-mod spin;
+pub(crate) mod spin;
 mod wait;
 
 // pub use self::rcu::{pass_quiescent_state, OwnerPtr, Rcu, RcuReadGuard, RcuReclaimer};
@@ -24,6 +24,6 @@ pub use self::{
         ArcRwMutexReadGuard, ArcRwMutexUpgradeableGuard, ArcRwMutexWriteGuard, RwMutex,
         RwMutexReadGuard, RwMutexUpgradeableGuard, RwMutexWriteGuard,
     },
-    spin::{ArcSpinLockGuard, LocalIrqDisabled, PreemptDisabled, SpinLock, SpinLockGuard},
+    spin::{LocalIrqDisabled, PreemptDisabled, SpinLock, SpinLockGuard},
     wait::{WaitQueue, Waiter, Waker},
 };
