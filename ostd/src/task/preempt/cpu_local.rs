@@ -67,7 +67,7 @@ cpu_local_cell! {
 /// initialize the CPU-local storage for APs, the value of the AP's
 /// `PREEMPT_INFO` would be that of the BSP's. Therefore, we need to reset the
 /// `PREEMPT_INFO` to the initial state on APs' initialization.
-pub(crate) unsafe fn reset_preempt_info() {
+pub(crate) unsafe fn reset_preempt_info_for_ap() {
     PREEMPT_INFO.store(NEED_PREEMPT_MASK);
 }
 
