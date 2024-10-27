@@ -183,7 +183,7 @@ pub(super) fn run_new_task(runnable: Arc<Task>) {
 /// Dequeues the current task from its runqueue.
 ///
 /// This should only be called if the current is to exit.
-pub(super) fn exit_current() {
+pub(super) fn exit_current() -> ! {
     reschedule(&mut |local_rq: &mut dyn LocalRunQueue| {
         let _ = local_rq.dequeue_current();
         if let Some(next_task) = local_rq.pick_next_current() {
@@ -191,7 +191,9 @@ pub(super) fn exit_current() {
         } else {
             ReschedAction::Retry
         }
-    })
+    });
+
+    unreachable!()
 }
 
 /// Yields execution.
