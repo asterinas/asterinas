@@ -4,9 +4,11 @@
 
 mod trap;
 
+use riscv::register::scause::{Exception, Trap};
 pub use trap::{GeneralRegs, TrapFrame, UserContext};
 
-use crate::cpu_local_cell;
+use super::ex_table::ExTable;
+use crate::{cpu::CpuExceptionInfo, cpu_local_cell, mm::MAX_USERSPACE_VADDR, task::Task};
 
 cpu_local_cell! {
     static IS_KERNEL_INTERRUPTED: bool = false;
@@ -27,8 +29,6 @@ pub fn is_kernel_interrupted() -> bool {
 /// Handle traps (only from kernel).
 #[no_mangle]
 extern "C" fn trap_handler(f: &mut TrapFrame) {
-    use riscv::register::scause::Trap;
-
     match riscv::register::scause::read().cause() {
         Trap::Interrupt(_) => {
             IS_KERNEL_INTERRUPTED.store(true);
@@ -37,9 +37,43 @@ extern "C" fn trap_handler(f: &mut TrapFrame) {
         }
         Trap::Exception(e) => {
             let stval = riscv::register::stval::read();
-            panic!(
-                "Cannot handle kernel cpu exception: {e:?}. stval: {stval:#x}, trapframe: {f:#x?}.",
-            );
+            // The actual user space implementation should be responsible
+            // for providing mechanism to treat the 0 virtual address.
+            if (0..MAX_USERSPACE_VADDR).contains(&stval) {
+                handle_user_page_fault(f, stval, e);
+            } else {
+                panic!(
+                    "Cannot handle kernel cpu exception: {e:?}. stval: {stval:#x}, trapframe: {f:#x?}.",
+                );
+            }
         }
+    }
+}
+
+/// Handles page fault from user space.
+fn handle_user_page_fault(f: &mut TrapFrame, page_fault_addr: usize, e: Exception) {
+    let current_task = Task::current().unwrap();
+    let user_space = current_task
+        .user_space()
+        .expect("the user space is missing when a page fault from the user happens.");
+
+    let info = CpuExceptionInfo {
+        code: e,
+        page_fault_addr,
+        error_code: 0,
+    };
+
+    let res = user_space.vm_space().handle_page_fault(&info);
+    // Copying bytes by bytes can recover directly
+    // if handling the page fault successfully.
+    if res.is_ok() {
+        return;
+    }
+
+    // Use the exception table to recover to normal execution.
+    if let Some(addr) = ExTable::find_recovery_inst_addr(f.sepc) {
+        f.sepc = addr;
+    } else {
+        panic!("Cannot handle user page fault; Trapframe: {:#x?}.", f);
     }
 }
