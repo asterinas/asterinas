@@ -64,7 +64,9 @@ jobs:
           - lmbench/tcp_loopback_http_bw
           - lmbench/udp_loopback_lat
           - iperf3/tcp_virtio_bw
+          # Nginx benchmarks
           - nginx/http_req10k_conc1_bw
+          - nginx/http_req10k_conc20_bw
           # Redis benchmarks
           - redis/ping_inline_100k_conc20_rps
           - redis/ping_mbulk_100k_conc20_rps
