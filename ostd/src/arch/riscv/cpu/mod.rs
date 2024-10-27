@@ -35,8 +35,12 @@ pub struct CpuExceptionInfo {
 
 impl Default for UserContext {
     fn default() -> Self {
+        let mut user_context = RawUserContext::default();
+        user_context.sstatus |= (riscv::register::sstatus::FS::Clean as usize) << 13;
+        // TODO: save floating registers on context/task switch
+
         UserContext {
-            user_context: RawUserContext::default(),
+            user_context,
             trap: Trap::Exception(Exception::Unknown),
             fp_regs: (),
             cpu_exception_info: CpuExceptionInfo::default(),

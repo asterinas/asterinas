@@ -74,6 +74,7 @@ trap_from_user:
     STORE_SP t1, 32         # save sstatus
     STORE_SP t2, 33         # save sepc
 
+    # FIXME: remove kernel floating support once related usage is dropped
     li t0, 3 << 13
     or t1, t1, t0           # sstatus.FS = Dirty (3)
     csrw sstatus, t1
