@@ -46,6 +46,14 @@ jobs:
     needs: nix-cache
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
+    strategy:
+      matrix:
+        arch:
+          - x86_64
+          - riscv64
+      fail-fast: false
+
     steps:
       - uses: actions/checkout@v4
 
@@ -63,17 +71,29 @@ jobs:
       - name: Setup Environment using Nix
         uses: rrbutani/use-nix-shell-action@v1
         with:
+          devShell: ".#${{ matrix.arch }}"
           extraNixOptions: "-L"
 
       - name: Check
         id: check
-        run: make check
+        run: make check ARCH=${{ matrix.arch }}
 
   unit-test:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     needs: nix-cache
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    name: unit-test (${{ matrix.arch.arch }})
+
+    strategy:
+      matrix:
+        arch:
+          - arch: x86_64
+            args: "ARCH=x86_64"
+          - arch: riscv64
+            args: "ARCH=riscv64 SCHEME=riscv"
+      fail-fast: false
+
     steps:
       - uses: actions/checkout@v4
 
@@ -91,6 +111,7 @@ jobs:
       - name: Setup Environment using Nix
         uses: rrbutani/use-nix-shell-action@v1
         with:
+          devShell: ".#${{ matrix.arch.arch }}"
           extraNixOptions: "-L"
 
       - name: Usermode Unit test
@@ -101,7 +122,7 @@ jobs:
         id: ktest_unit_test
         run: |
           mkdir -p test/build && cp $PREBUILT_INITRAMFS test/build/initramfs.cpio.gz
-          make ktest
+          make ktest ${{ matrix.arch.args }}
 
       # TODO: add component check.
 
@@ -157,6 +178,44 @@ jobs:
       - name: Setup Environment using Nix
         uses: rrbutani/use-nix-shell-action@v1
         with:
+          devShell: .#x86_64
+          extraNixOptions: "-L"
+
+      - name: ${{ matrix.test.name }}
+        run: ${{ matrix.test.run }}
+
+  integration-test-riscv:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    needs: nix-cache
+    name: integration-test (RISC-V) (${{ matrix.test.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    strategy:
+      matrix:
+        test:
+          - name: Boot Test
+            run: make run ARCH=riscv64 AUTO_TEST=boot ENABLE_KVM=0 SCHEME=riscv RELEASE=1
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: nixbuild/nix-quick-install-action@v28
+
+      - name: Restore Nix Store Cache
+        uses: nix-community/cache-nix-action@v5.1.0
+        with:
+          primary-key: "nix-cache-dummy"
+          restore-prefixes-first-match: nix-cache-${{ runner.os }}-
+          fail-on: first-match.miss
+          save: false
+
+      - name: Setup Environment using Nix
+        uses: rrbutani/use-nix-shell-action@v1
+        with:
+          devShell: .#riscv64
           extraNixOptions: "-L"
 
       - name: ${{ matrix.test.name }}

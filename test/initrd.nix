@@ -1,11 +1,15 @@
 { lib
+, system
 , busybox
 , sysbench, iperf, unixbench, iozone, fio
 , membench, lmbench, test-apps, gvisor-syscall-tests
 , makeInitrdNG, buildEnv, callPackage
 , fetchurl
+, buildPackages
 }:
-makeInitrdNG {
+let
+  test-apps = callPackage ./apps/default.nix { };
+in buildPackages.makeInitrdNG {
   name = "aster-initrd";
   compressor = "gzip";
 
@@ -52,11 +56,15 @@ makeInitrdNG {
       "/etc".source = ./etc;
       "/lib/x86_64-linux-gnu/vdso64.so".source = vdso;
 
+    } // lib.optionalAttrs (system == "x86_64-linux") {
       # Test Files
       "/opt/syscall_test".source = gvisor-syscall-tests;
       "/benchmark/bin".source = "${benchmarkBinEnv}/bin";
       "/benchmark/benchmarks".source = ./benchmark;
       "/test".source = test-apps;
+
+    } // lib.optionalAttrs (system == "riscv64-linux") {
+      "/test/boot_hello.sh".source = ./apps/scripts/boot_hello.sh;
     };
 
     storePaths = [
