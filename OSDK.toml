@@ -93,3 +93,23 @@ qemu.args = """\
     -device virtio-serial-device \
     -device virtconsole,chardev=mux \
 """
+
+[scheme."riscv".test]
+
+qemu.args = """\
+    -cpu rv64,zba=true,zbb=true,svpbmt=true \
+    -machine virt \
+    -m 8G \
+    --no-reboot \
+    -nographic \
+    -display none \
+    -serial chardev:mux \
+    -monitor chardev:mux \
+    -chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log \
+    -drive if=none,format=raw,id=x0,file=./test/build/ext2.img \
+    -drive if=none,format=raw,id=x1,file=./test/build/exfat.img \
+    -device virtio-blk-device,drive=x0 \
+    -device virtio-keyboard-device \
+    -device virtio-serial-device \
+    -device virtconsole,chardev=mux \
+"""
