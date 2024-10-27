@@ -7,7 +7,7 @@
     <br/>
 </p>
 
-English | [中文版](README_CN.md) | [日本語](README_JP.md)
+English | [中文版](README_CN.md) | [日本語](README_JP.md) | [Русский](README_RU.md)
 
 ## Introducing Asterinas
 
