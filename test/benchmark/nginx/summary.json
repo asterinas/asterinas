@@ -1,5 +1,6 @@
 {
     "benchmarks": [
-        "http_req10k_conc1_bw"
+        "http_req10k_conc1_bw",
+        "http_req10k_conc20_bw"
     ]
 }
