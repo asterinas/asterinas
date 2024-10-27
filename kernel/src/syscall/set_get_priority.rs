@@ -69,7 +69,7 @@ fn get_processes(prio_target: PriorityTarget) -> Result<Vec<Arc<Process>>> {
         }
         PriorityTarget::User(uid) => {
             // Get the processes that are running under the specified user
-            let processes: Vec<Arc<Process>> = process_table::process_table()
+            let processes: Vec<Arc<Process>> = process_table::process_table_mut()
                 .iter()
                 .filter(|process| {
                     let Some(main_thread) = process.main_thread() else {
