@@ -246,7 +246,10 @@ impl PageAlloc for LockedBootFrameAllocator {
     }
 
     fn alloc(&self, layout: Layout) -> Option<Paddr> {
-        self.allocator.disable_irq().lock().alloc_pages(layout.size() / PAGE_SIZE)
+        self.allocator
+            .disable_irq()
+            .lock()
+            .alloc_pages(layout.size() / PAGE_SIZE)
     }
 
     fn dealloc(&self, _addr: Paddr, _nr_pages: usize) {
