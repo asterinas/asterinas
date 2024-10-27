@@ -65,6 +65,11 @@ jobs:
           - lmbench/udp_loopback_lat
           - iperf3/tcp_virtio_bw
           - nginx/http_req10k_conc1_bw
+          # Redis benchmarks
+          - redis/ping_inline_100k_conc20_rps
+          - redis/ping_mbulk_100k_conc20_rps
+          - redis/get_100k_conc20_rps
+          - redis/set_100k_conc20_rps
       fail-fast: false
     timeout-minutes: 60
     container: 
