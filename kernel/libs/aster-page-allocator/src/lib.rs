@@ -30,7 +30,7 @@ use alloc::boxed::Box;
 use core::ops::Range;
 
 use align_ext::AlignExt;
-use buddy_allocator::LockedBuddyFrameAllocator;
+use buddy_allocator::BuddyFrameAllocator;
 use log::info;
 use ostd::{
     boot::memory_region::MemoryRegionType,
@@ -39,7 +39,7 @@ use ostd::{
 
 pub fn init() -> Box<dyn PageAlloc> {
     let regions = ostd::boot::memory_regions();
-    let allocator = Box::new(LockedBuddyFrameAllocator::<32>::new());
+    let allocator = Box::new(BuddyFrameAllocator::<32>::new());
     for region in regions.iter() {
         if region.typ() == MemoryRegionType::Usable {
             // Make the memory region page-aligned, and skip if it is too small.
