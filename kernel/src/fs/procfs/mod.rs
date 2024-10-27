@@ -130,7 +130,7 @@ impl DirOps for RootDirOps {
         cached_children
             .put_entry_if_not_found("meminfo", || MemInfoFileOps::new_inode(this_ptr.clone()));
 
-        for process in process_table::process_table().iter() {
+        for process in process_table::process_table_mut().iter() {
             let pid = process.pid().to_string();
             cached_children.put_entry_if_not_found(&pid, || {
                 PidDirOps::new_inode(process.clone(), this_ptr.clone())

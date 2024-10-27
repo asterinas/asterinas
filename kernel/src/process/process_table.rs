@@ -14,42 +14,62 @@ use crate::{
     prelude::*,
 };
 
-static PROCESS_TABLE: Mutex<BTreeMap<Pid, Arc<Process>>> = Mutex::new(BTreeMap::new());
+static PROCESS_TABLE: Mutex<ProcessTable> = Mutex::new(ProcessTable::new());
 static PROCESS_GROUP_TABLE: Mutex<BTreeMap<Pgid, Arc<ProcessGroup>>> = Mutex::new(BTreeMap::new());
-static PROCESS_TABLE_SUBJECT: Subject<PidEvent> = Subject::new();
 static SESSION_TABLE: Mutex<BTreeMap<Sid, Arc<Session>>> = Mutex::new(BTreeMap::new());
 
 // ************ Process *************
-
 /// Gets a process with pid
 pub fn get_process(pid: Pid) -> Option<Arc<Process>> {
-    PROCESS_TABLE.lock().get(&pid).cloned()
+    PROCESS_TABLE.lock().get(pid).cloned()
 }
 
-pub(super) fn process_table_mut() -> MutexGuard<'static, BTreeMap<Pid, Arc<Process>>> {
+pub fn process_table_mut() -> MutexGuard<'static, ProcessTable> {
     PROCESS_TABLE.lock()
 }
 
-/// Acquires a lock on the process table and returns a `ProcessTable`.
-pub fn process_table() -> ProcessTable<'static> {
-    ProcessTable {
-        inner: PROCESS_TABLE.lock(),
+/// Process Table.
+pub struct ProcessTable {
+    inner: BTreeMap<Pid, Arc<Process>>,
+    subject: Subject<PidEvent>,
+}
+
+impl ProcessTable {
+    pub const fn new() -> Self {
+        Self {
+            inner: BTreeMap::new(),
+            subject: Subject::new(),
+        }
     }
-}
 
-/// A wrapper for the mutex-protected process table.
-///
-/// It provides the `iter` method to iterator over the processes in the table.
-pub struct ProcessTable<'a> {
-    inner: MutexGuard<'a, BTreeMap<Pid, Arc<Process>>>,
-}
+    pub fn get(&self, pid: Pid) -> Option<&Arc<Process>> {
+        self.inner.get(&pid)
+    }
 
-impl ProcessTable<'_> {
+    pub fn insert(&mut self, pid: Pid, process: Arc<Process>) {
+        self.inner.insert(pid, process);
+    }
+
+    pub fn remove(&mut self, pid: Pid) {
+        self.inner.remove(&pid);
+        self.subject.notify_observers(&PidEvent::Exit(pid));
+    }
+
     /// Returns an iterator over the processes in the table.
     pub fn iter(&self) -> ProcessTableIter {
         ProcessTableIter {
             inner: self.inner.values(),
         }
+    }
+
+    /// Registers an observer which watches `PidEvent`.
+    pub fn register_observer(&self, observer: Weak<dyn Observer<PidEvent>>) {
+        self.subject.register_observer(observer, ());
+    }
+
+    /// Unregisters an observer which watches `PidEvent`.
+    pub fn unregister_observer(&self, observer: &Weak<dyn Observer<PidEvent>>) {
+        self.subject.unregister_observer(observer);
     }
 }
 
@@ -97,12 +117,12 @@ pub(super) fn session_table_mut() -> MutexGuard<'static, BTreeMap<Sid, Arc<Sessi
 
 /// Registers an observer which watches `PidEvent`.
 pub fn register_observer(observer: Weak<dyn Observer<PidEvent>>) {
-    PROCESS_TABLE_SUBJECT.register_observer(observer, ());
+    PROCESS_TABLE.lock().register_observer(observer);
 }
 
 /// Unregisters an observer which watches `PidEvent`.
 pub fn unregister_observer(observer: &Weak<dyn Observer<PidEvent>>) {
-    PROCESS_TABLE_SUBJECT.unregister_observer(observer);
+    PROCESS_TABLE.lock().unregister_observer(observer);
 }
 
 #[derive(Copy, Clone)]

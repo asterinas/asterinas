@@ -118,6 +118,6 @@ fn reap_zombie_child(process: &Process, pid: Pid) -> ExitCode {
         }
     }
 
-    process_table_mut.remove(&child_process.pid());
+    process_table_mut.remove(child_process.pid());
     child_process.exit_code()
 }
