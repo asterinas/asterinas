@@ -6,7 +6,10 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 use spin::Once;
 
-use crate::{arch::boot::DEVICE_TREE, io_mem::IoMem};
+use crate::{
+    arch::{boot::DEVICE_TREE, device::create_device_io_mem},
+    io_mem::IoMem,
+};
 
 /// The timer frequency (Hz). Here we choose 1000Hz since 1000Hz is easier for unit conversion and
 /// convenient for timer. What's more, the frequency cannot be set too high or too low, 1000Hz is
@@ -36,12 +39,7 @@ pub(super) fn init() {
         && compatible.all().any(|c| c == "google,goldfish-rtc")
     {
         let region = chosen.reg().unwrap().next().unwrap();
-        let io_mem = unsafe {
-            IoMem::new(
-                (region.starting_address as usize)
-                    ..(region.starting_address as usize) + region.size.unwrap(),
-            )
-        };
+        let io_mem = unsafe { create_device_io_mem(region.starting_address, region.size.unwrap()) };
         GOLDFISH_IO_MEM.call_once(|| io_mem);
     }
 }
