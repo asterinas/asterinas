@@ -86,11 +86,15 @@ unsafe fn init() {
 
     mm::page::allocator::bootstrap_init();
     let meta_vec = mm::init_page_meta();
+
+    arch::init_on_bsp();
+
+    // Since the page allocator's local cache depend on the macro
+    // [`ostd::cpu_local!`], we need to initialize the corresponding utilities
+    // first.
     mm::page::allocator::init();
     mm::kspace::init_kernel_page_table(meta_vec);
     mm::dma::init();
-
-    arch::init_on_bsp();
 
     smp::init();
 

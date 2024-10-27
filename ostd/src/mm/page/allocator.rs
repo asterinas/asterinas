@@ -188,11 +188,15 @@ impl BootFrameAllocator {
         }
     }
 
-    pub fn alloc_page(&mut self, _align: usize) -> Option<Paddr> {
-        let frame = self.frame_cursor;
+    /// Allocate pages for the bootstrapping phase.
+    ///
+    /// # Notice
+    ///
+    /// The align **MUST BE** 4KB, otherwise it will panic.
+    pub fn alloc_pages(&mut self, count: usize) -> Option<Paddr> {
+        let frame: usize;
         // Update idx and cursor
         let regions = crate::boot::memory_regions();
-        self.frame_cursor += 1;
         loop {
             let region = regions[self.mem_region_idx];
             if region.typ() == crate::boot::memory_region::MemoryRegionType::Usable {
@@ -210,9 +214,11 @@ impl BootFrameAllocator {
                 if self.frame_cursor < start {
                     self.frame_cursor = start;
                 }
-                if self.frame_cursor >= end {
+                if self.frame_cursor + count >= end {
                     self.mem_region_idx += 1;
                 } else {
+                    frame = self.frame_cursor;
+                    self.frame_cursor += count;
                     break;
                 }
             } else {
@@ -239,13 +245,8 @@ impl PageAlloc for LockedBootFrameAllocator {
         warn!("BootFrameAllocator does not need to add frames");
     }
 
-    fn alloc(&self, _layout: Layout) -> Option<Paddr> {
-        warn!("BootFrameAllocator does not support to allocate memory described by range");
-        None
-    }
-
-    fn alloc_page(&self, _align: usize) -> Option<Paddr> {
-        self.allocator.disable_irq().lock().alloc_page(_align)
+    fn alloc(&self, layout: Layout) -> Option<Paddr> {
+        self.allocator.disable_irq().lock().alloc_pages(layout.size() / PAGE_SIZE)
     }
 
     fn dealloc(&self, _addr: Paddr, _nr_pages: usize) {
@@ -266,4 +267,45 @@ impl PageAlloc for LockedBootFrameAllocator {
 pub(crate) fn bootstrap_init() {
     info!("Initializing the bootstrap page allocator");
     BOOTSTRAP_PAGE_ALLOCATOR.call_once(LockedBootFrameAllocator::new);
+}
+
+/// Allocate a single page during the bootstrapping phase.
+///
+/// Similar to [`alloc_single`], but for the bootstrapping phase.
+///
+/// # Notice
+///
+/// 1. Should be called after the [`mm::init_page_meta()`] is finished.
+/// 2. The align **MUST BE** 4KB, otherwise it will panic.
+#[allow(unused)]
+pub(crate) fn alloc_single_boot<M: PageMeta>(align: usize, metadata: M) -> Option<Page<M>> {
+    BOOTSTRAP_PAGE_ALLOCATOR
+        .get()
+        .unwrap()
+        .alloc_page(align)
+        .map(|paddr| Page::from_free(paddr, metadata))
+}
+
+/// Allocate a contiguous range of pages of a given length in bytes during the bootstrapping phase.
+///
+/// Similar to [`alloc_contiguous`], but for the bootstrapping phase.
+///
+/// # Notice
+/// 1. Should be called after the [`mm::init_page_meta()`] is finished.
+/// 2. The align **MUST BE** 4KB, otherwise it will panic.
+pub(crate) fn alloc_contiguous_boot<M: PageMeta, F>(
+    layout: Layout,
+    metadata_fn: F,
+) -> Option<ContPages<M>>
+where
+    F: FnMut(Paddr) -> M,
+{
+    assert!(layout.size() % PAGE_SIZE == 0);
+    BOOTSTRAP_PAGE_ALLOCATOR
+        .get()
+        .unwrap()
+        .alloc(layout)
+        .map(|begin_paddr| {
+            ContPages::from_free(begin_paddr..begin_paddr + layout.size(), metadata_fn)
+        })
 }
