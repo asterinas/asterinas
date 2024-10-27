@@ -7,7 +7,7 @@
     <br/>
 </p>
 
-[English](README.md) | 中文版
+[English](README.md) | 中文版 | [日本語](README_JP.md)
 
 ## 初见星绽
 
