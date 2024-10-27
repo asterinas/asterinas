@@ -36,21 +36,21 @@ pub(crate) fn with_borrow<F>(f: F) -> Result<(), ()>
 where
     F: FnOnce(&mut BootPageTable),
 {
-    let mut boot_pt = BOOT_PAGE_TABLE.lock();
-
     if IS_DISMISSED.load() {
         return Err(());
     }
 
-    // Lazy initialization.
-    if boot_pt.is_none() {
-        // SAFETY: This function is called only once.
-        *boot_pt = Some(unsafe { BootPageTable::from_current_pt() });
-    }
+    BOOT_PAGE_TABLE.lock_with(|boot_pt| {
+        // Lazy initialization.
+        if boot_pt.is_none() {
+            // SAFETY: This function is called only once.
+            *boot_pt = Some(unsafe { BootPageTable::from_current_pt() });
+        }
 
-    f(boot_pt.as_mut().unwrap());
+        f(boot_pt.as_mut().unwrap());
 
-    Ok(())
+        Ok(())
+    })
 }
 
 /// Dismiss the boot page table.
@@ -69,7 +69,7 @@ where
 pub(crate) unsafe fn dismiss() {
     IS_DISMISSED.store(true);
     if DISMISS_COUNT.fetch_add(1, Ordering::SeqCst) as usize == num_cpus() - 1 {
-        BOOT_PAGE_TABLE.lock().take();
+        BOOT_PAGE_TABLE.lock_with(|a| a.take());
     }
 }
 
@@ -216,7 +216,10 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
     }
 
     fn alloc_frame(&mut self) -> FrameNumber {
-        let frame = PAGE_ALLOCATOR.get().unwrap().lock().alloc(1).unwrap();
+        let frame = PAGE_ALLOCATOR
+            .get()
+            .unwrap()
+            .lock_with(|a| a.alloc(1).unwrap());
         self.frames.push(frame);
         // Zero it out.
         let vaddr = paddr_to_vaddr(frame * PAGE_SIZE) as *mut u8;
@@ -228,7 +231,10 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for BootPageTable<E, C> {
     fn drop(&mut self) {
         for frame in &self.frames {
-            PAGE_ALLOCATOR.get().unwrap().lock().dealloc(*frame, 1);
+            PAGE_ALLOCATOR
+                .get()
+                .unwrap()
+                .lock_with(|a| a.dealloc(*frame, 1));
         }
     }
 }

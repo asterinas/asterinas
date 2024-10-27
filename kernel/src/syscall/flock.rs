@@ -13,11 +13,10 @@ use crate::{
 pub fn sys_flock(fd: FileDesc, ops: i32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("flock: fd: {}, ops: {:?}", fd, ops);
 
-    let file = {
-        let current = ctx.process;
-        let file_table = current.file_table().lock();
-        file_table.get_file(fd)?.clone()
-    };
+    let file = ctx
+        .process
+        .file_table()
+        .lock_with(|file_table| Result::Ok(file_table.get_file(fd)?.clone()))?;
     let inode_file = file
         .downcast_ref::<InodeHandle>()
         .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;

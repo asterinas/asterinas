@@ -53,15 +53,14 @@ pub fn sys_eventfd2(init_val: u64, flags: u32, ctx: &Context) -> Result<SyscallR
 
 fn do_sys_eventfd2(init_val: u64, flags: Flags, ctx: &Context) -> FileDesc {
     let event_file = EventFile::new(init_val, flags);
-    let fd = {
-        let mut file_table = ctx.process.file_table().lock();
+    let fd = ctx.process.file_table().lock_with(|file_table| {
         let fd_flags = if flags.contains(Flags::EFD_CLOEXEC) {
             FdFlags::CLOEXEC
         } else {
             FdFlags::empty()
         };
         file_table.insert(Arc::new(event_file), fd_flags)
-    };
+    });
     fd
 }
 

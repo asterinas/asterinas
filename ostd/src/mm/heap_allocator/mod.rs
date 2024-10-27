@@ -67,8 +67,7 @@ impl LockedHeapWithRescue {
             .get()
             .unwrap()
             .disable_irq()
-            .lock()
-            .add_memory(start, size);
+            .lock_with(|heap| heap.add_memory(start, size));
     }
 
     fn rescue_if_low_memory(&self, remain_bytes: usize, layout: Layout) {
@@ -94,18 +93,23 @@ impl LockedHeapWithRescue {
         };
 
         let allocation_start = {
-            let mut page_allocator = PAGE_ALLOCATOR.get().unwrap().lock();
-            if num_frames >= MIN_NUM_FRAMES {
-                page_allocator.alloc(num_frames).ok_or(Error::NoMemory)?
-            } else {
-                match page_allocator.alloc(MIN_NUM_FRAMES) {
-                    None => page_allocator.alloc(num_frames).ok_or(Error::NoMemory)?,
-                    Some(start) => {
-                        num_frames = MIN_NUM_FRAMES;
-                        start
+            PAGE_ALLOCATOR
+                .get()
+                .unwrap()
+                .lock_with(|page_allocator| {
+                    if num_frames >= MIN_NUM_FRAMES {
+                        page_allocator.alloc(num_frames)
+                    } else {
+                        match page_allocator.alloc(MIN_NUM_FRAMES) {
+                            None => page_allocator.alloc(num_frames),
+                            Some(start) => {
+                                num_frames = MIN_NUM_FRAMES;
+                                Some(start)
+                            }
+                        }
                     }
-                }
-            }
+                })
+                .ok_or(Error::NoMemory)?
         };
         // FIXME: the alloc function internally allocates heap memory(inside FrameAllocator).
         // So if the heap is nearly run out, allocating frame will fail too.
@@ -130,7 +134,7 @@ unsafe impl GlobalAlloc for LockedHeapWithRescue {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let _guard = disable_local();
 
-        let res = self.heap.get().unwrap().lock().allocate(layout);
+        let res = self.heap.get().unwrap().lock_with(|a| a.allocate(layout));
         if let Ok((allocation, remain_bytes)) = res {
             self.rescue_if_low_memory(remain_bytes, layout);
             return allocation;
@@ -140,7 +144,7 @@ unsafe impl GlobalAlloc for LockedHeapWithRescue {
             return core::ptr::null_mut::<u8>();
         }
 
-        let res = self.heap.get().unwrap().lock().allocate(layout);
+        let res = self.heap.get().unwrap().lock_with(|a| a.allocate(layout));
         if let Ok((allocation, remain_bytes)) = res {
             self.rescue_if_low_memory(remain_bytes, layout);
             allocation
@@ -155,7 +159,6 @@ unsafe impl GlobalAlloc for LockedHeapWithRescue {
             .get()
             .unwrap()
             .disable_irq()
-            .lock()
-            .deallocate(ptr, layout)
+            .lock_with(|h| h.deallocate(ptr, layout));
     }
 }

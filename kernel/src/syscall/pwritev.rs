@@ -60,10 +60,10 @@ fn do_sys_pwritev(
     if offset < 0 {
         return_errno_with_message!(Errno::EINVAL, "offset cannot be negative");
     }
-    let file = {
-        let filetable = ctx.process.file_table().lock();
-        filetable.get_file(fd)?.clone()
-    };
+    let file = ctx
+        .process
+        .file_table()
+        .lock_with(|filetable| Result::Ok(filetable.get_file(fd)?.clone()))?;
     // TODO: Check (f.file->f_mode & FMODE_PREAD); We don't have f_mode in our FileLike trait
     if io_vec_count == 0 {
         return Ok(0);
@@ -116,10 +116,11 @@ fn do_sys_writev(
         "fd = {}, io_vec_ptr = 0x{:x}, io_vec_counter = 0x{:x}",
         fd, io_vec_ptr, io_vec_count
     );
-    let file = {
-        let filetable = ctx.process.file_table().lock();
-        filetable.get_file(fd)?.clone()
-    };
+
+    let file = ctx
+        .process
+        .file_table()
+        .lock_with(|filetable| Result::Ok(filetable.get_file(fd)?.clone()))?;
     let mut total_len = 0;
 
     let mut reader_array = VmReaderArray::from_user_io_vecs(ctx, io_vec_ptr, io_vec_count)?;

@@ -47,7 +47,10 @@ pub(crate) fn get_num_processors() -> Option<u32> {
     if !ACPI_TABLES.is_completed() {
         return None;
     }
-    let processor_info = PlatformInfo::new(&*ACPI_TABLES.get().unwrap().lock())
+    let processor_info = ACPI_TABLES
+        .get()
+        .unwrap()
+        .lock_with(|t| PlatformInfo::new(t))
         .unwrap()
         .processor_info
         .unwrap();

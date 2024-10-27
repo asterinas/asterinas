@@ -33,13 +33,12 @@ pub fn sys_sendfile(
         count as usize
     };
 
-    let (out_file, in_file) = {
-        let file_table = ctx.process.file_table().lock();
+    let (out_file, in_file) = ctx.process.file_table().lock_with(|file_table| {
         let out_file = file_table.get_file(out_fd)?.clone();
         // FIXME: the in_file must support mmap-like operations (i.e., it cannot be a socket).
         let in_file = file_table.get_file(in_fd)?.clone();
-        (out_file, in_file)
-    };
+        Result::Ok((out_file, in_file))
+    })?;
 
     // sendfile can send at most `MAX_COUNT` bytes
     const MAX_COUNT: usize = 0x7fff_f000;

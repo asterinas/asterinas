@@ -31,15 +31,16 @@ pub unsafe fn map(daddr: Daddr, paddr: Paddr) -> Result<(), IommuError> {
         return Err(IommuError::NoIommu);
     };
     // The page table of all devices is the same. So we can use any device ID.
-    table
-        .lock()
-        .map(PciDeviceLocation::zero(), daddr, paddr)
-        .map_err(|err| match err {
-            context_table::ContextTableError::InvalidDeviceId => unreachable!(),
-            context_table::ContextTableError::ModificationError(err) => {
-                IommuError::ModificationError(err)
-            }
-        })
+    table.lock_with(|table| {
+        table
+            .map(PciDeviceLocation::zero(), daddr, paddr)
+            .map_err(|err| match err {
+                context_table::ContextTableError::InvalidDeviceId => unreachable!(),
+                context_table::ContextTableError::ModificationError(err) => {
+                    IommuError::ModificationError(err)
+                }
+            })
+    })
 }
 
 pub fn unmap(daddr: Daddr) -> Result<(), IommuError> {
@@ -47,15 +48,16 @@ pub fn unmap(daddr: Daddr) -> Result<(), IommuError> {
         return Err(IommuError::NoIommu);
     };
     // The page table of all devices is the same. So we can use any device ID.
-    table
-        .lock()
-        .unmap(PciDeviceLocation::zero(), daddr)
-        .map_err(|err| match err {
-            context_table::ContextTableError::InvalidDeviceId => unreachable!(),
-            context_table::ContextTableError::ModificationError(err) => {
-                IommuError::ModificationError(err)
-            }
-        })
+    table.lock_with(|table| {
+        table
+            .unmap(PciDeviceLocation::zero(), daddr)
+            .map_err(|err| match err {
+                context_table::ContextTableError::InvalidDeviceId => unreachable!(),
+                context_table::ContextTableError::ModificationError(err) => {
+                    IommuError::ModificationError(err)
+                }
+            })
+    })
 }
 
 pub fn init() {
@@ -69,9 +71,10 @@ pub fn init() {
     PAGE_TABLE.call_once(|| SpinLock::new(root_table));
 
     // Enable DMA remapping
-    let mut iommu_regs = IOMMU_REGS.get().unwrap().lock();
-    iommu_regs.enable_dma_remapping(PAGE_TABLE.get().unwrap());
-    info!("[IOMMU] DMA remapping enabled");
+    IOMMU_REGS.get().unwrap().lock_with(|regs| {
+        regs.enable_dma_remapping(PAGE_TABLE.get().unwrap());
+        info!("[IOMMU] DMA remapping enabled");
+    });
 }
 
 // TODO: Currently `map()` or `unmap()` could be called in both task and interrupt

@@ -82,19 +82,22 @@ impl LocalWorkerPool {
 
     fn add_worker(&self) {
         let worker = Worker::new(self.parent.clone(), self.cpu_id);
-        self.workers.disable_irq().lock().push_back(worker.clone());
+        self.workers
+            .disable_irq()
+            .lock_with(|workers| workers.push_back(worker.clone()));
         Thread::borrow_from_task(worker.bound_task()).run();
     }
 
     fn remove_worker(&self) {
-        let mut workers = self.workers.disable_irq().lock();
-        for (index, worker) in workers.iter().enumerate() {
-            if worker.is_idle() {
-                worker.destroy();
-                workers.remove(index);
-                break;
+        self.workers.disable_irq().lock_with(|workers| {
+            for (index, worker) in workers.iter().enumerate() {
+                if worker.is_idle() {
+                    worker.destroy();
+                    workers.remove(index);
+                    break;
+                }
             }
-        }
+        });
     }
 
     fn wake_worker(&self) -> bool {
@@ -122,10 +125,12 @@ impl LocalWorkerPool {
     }
 
     fn destroy_all_workers(&self) {
-        for worker in self.workers.disable_irq().lock().iter() {
-            worker.destroy();
-        }
-        self.idle_wait_queue.wake_all();
+        self.workers.disable_irq().lock_with(|workers| {
+            for worker in workers.iter() {
+                worker.destroy();
+            }
+            self.idle_wait_queue.wake_all();
+        })
     }
 }
 
@@ -152,15 +157,17 @@ impl WorkerPool {
     }
 
     pub fn assign_work_queue(&self, work_queue: Arc<WorkQueue>) {
-        self.work_queues.disable_irq().lock().push(work_queue);
+        self.work_queues
+            .disable_irq()
+            .lock_with(|queues| queues.push(work_queue));
     }
 
     pub fn has_pending_work_items(&self, request_cpu: CpuId) -> bool {
-        self.work_queues
-            .disable_irq()
-            .lock()
-            .iter()
-            .any(|work_queue| work_queue.has_pending_work_items(request_cpu))
+        self.work_queues.disable_irq().lock_with(|queues| {
+            queues
+                .iter()
+                .any(|work_queue| work_queue.has_pending_work_items(request_cpu))
+        })
     }
 
     pub fn schedule(&self) {
@@ -168,7 +175,10 @@ impl WorkerPool {
     }
 
     pub fn num_workers(&self, cpu_id: CpuId) -> u16 {
-        self.local_pool(cpu_id).workers.disable_irq().lock().len() as u16
+        self.local_pool(cpu_id)
+            .workers
+            .disable_irq()
+            .lock_with(|workers| workers.len() as u16)
     }
 
     pub fn cpu_set(&self) -> &CpuSet {
@@ -176,13 +186,15 @@ impl WorkerPool {
     }
 
     pub(super) fn fetch_pending_work_item(&self, request_cpu: CpuId) -> Option<Arc<WorkItem>> {
-        for work_queue in self.work_queues.disable_irq().lock().iter() {
-            let item = work_queue.dequeue(request_cpu);
-            if item.is_some() {
-                return item;
+        self.work_queues.disable_irq().lock_with(|queues| {
+            for work_queue in queues.iter() {
+                let item = work_queue.dequeue(request_cpu);
+                if item.is_some() {
+                    return item;
+                }
             }
-        }
-        None
+            None
+        })
     }
 
     fn local_pool(&self, cpu_id: CpuId) -> &Arc<LocalWorkerPool> {

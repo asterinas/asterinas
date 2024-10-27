@@ -18,10 +18,10 @@ pub fn sys_pread64(
     if offset < 0 {
         return_errno_with_message!(Errno::EINVAL, "offset cannot be negative");
     }
-    let file = {
-        let filetable = ctx.process.file_table().lock();
-        filetable.get_file(fd)?.clone()
-    };
+    let file = ctx
+        .process
+        .file_table()
+        .lock_with(|filetable| Result::Ok(filetable.get_file(fd)?.clone()))?;
     // TODO: Check (f.file->f_mode & FMODE_PREAD); We don't have f_mode in our FileLike trait
     if user_buf_len == 0 {
         return Ok(SyscallReturn::Return(0));

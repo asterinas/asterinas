@@ -22,41 +22,63 @@ pub fn register_device(name: String, device: Arc<SpinLock<SocketDevice>>) {
         .get()
         .unwrap()
         .disable_irq()
-        .lock()
-        .insert(name, (Arc::new(SpinLock::new(Vec::new())), device));
+        .lock_with(|table| table.insert(name, (Arc::new(SpinLock::new(Vec::new())), device)));
 }
 
 pub fn get_device(str: &str) -> Option<Arc<SpinLock<SocketDevice>>> {
-    let lock = VSOCK_DEVICE_TABLE.get().unwrap().disable_irq().lock();
-    let (_, device) = lock.get(str)?;
-    Some(device.clone())
+    VSOCK_DEVICE_TABLE
+        .get()
+        .unwrap()
+        .disable_irq()
+        .lock_with(|lock| {
+            let (_, device) = lock.get(str)?;
+            Some(device.clone())
+        })
 }
 
 pub fn all_devices() -> Vec<(String, Arc<SpinLock<SocketDevice>>)> {
-    let vsock_devs = VSOCK_DEVICE_TABLE.get().unwrap().disable_irq().lock();
-    vsock_devs
-        .iter()
-        .map(|(name, (_, device))| (name.clone(), device.clone()))
-        .collect()
+    VSOCK_DEVICE_TABLE
+        .get()
+        .unwrap()
+        .disable_irq()
+        .lock_with(|vsock_devs| {
+            vsock_devs
+                .iter()
+                .map(|(name, (_, device))| (name.clone(), device.clone()))
+                .collect()
+        })
 }
 
 pub fn register_recv_callback(name: &str, callback: impl VsockDeviceIrqHandler) {
-    let lock = VSOCK_DEVICE_TABLE.get().unwrap().disable_irq().lock();
-    let Some((callbacks, _)) = lock.get(name) else {
-        return;
-    };
-    callbacks.disable_irq().lock().push(Arc::new(callback));
+    VSOCK_DEVICE_TABLE
+        .get()
+        .unwrap()
+        .disable_irq()
+        .lock_with(|lock| {
+            let Some((callbacks, _)) = lock.get(name) else {
+                return;
+            };
+            callbacks
+                .disable_irq()
+                .lock_with(|callbacks| callbacks.push(Arc::new(callback)));
+        });
 }
 
 pub fn handle_recv_irq(name: &str) {
-    let lock = VSOCK_DEVICE_TABLE.get().unwrap().disable_irq().lock();
-    let Some((callbacks, _)) = lock.get(name) else {
-        return;
-    };
-    let lock = callbacks.disable_irq().lock();
-    for callback in lock.iter() {
-        callback.call(())
-    }
+    VSOCK_DEVICE_TABLE
+        .get()
+        .unwrap()
+        .disable_irq()
+        .lock_with(|lock| {
+            let Some((callbacks, _)) = lock.get(name) else {
+                return;
+            };
+            callbacks.disable_irq().lock_with(|lock| {
+                for callback in lock.iter() {
+                    callback.call(())
+                }
+            });
+        });
 }
 
 pub fn init() {

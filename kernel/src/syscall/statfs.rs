@@ -29,14 +29,13 @@ pub fn sys_statfs(path_ptr: Vaddr, statfs_buf_ptr: Vaddr, ctx: &Context) -> Resu
 pub fn sys_fstatfs(fd: FileDesc, statfs_buf_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}, statfs_buf_addr = 0x{:x}", fd, statfs_buf_ptr);
 
-    let fs = {
-        let file_table = ctx.process.file_table().lock();
+    let fs = ctx.process.file_table().lock_with(|file_table| {
         let file = file_table.get_file(fd)?;
         let inode_handle = file
             .downcast_ref::<InodeHandle>()
             .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;
-        inode_handle.dentry().fs()
-    };
+        Result::Ok(inode_handle.dentry().fs())
+    })?;
 
     let statfs = Statfs::from(fs.sb());
     ctx.get_user_space().write_val(statfs_buf_ptr, &statfs)?;

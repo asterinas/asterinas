@@ -13,7 +13,7 @@ static RNG: Once<SpinLock<StdRng>> = Once::new();
 ///
 /// It's cryptographically secure, as documented in [`rand::rngs::StdRng`].
 pub fn getrandom(dst: &mut [u8]) -> Result<()> {
-    Ok(RNG.get().unwrap().lock().try_fill_bytes(dst)?)
+    Ok(RNG.get().unwrap().lock_with(|g| g.try_fill_bytes(dst))?)
 }
 
 pub fn init() {

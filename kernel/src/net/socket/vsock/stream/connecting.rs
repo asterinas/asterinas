@@ -38,11 +38,13 @@ impl Connecting {
     }
 
     pub fn info(&self) -> ConnectionInfo {
-        self.info.disable_irq().lock().clone()
+        self.info.disable_irq().lock_with(|info| info.clone())
     }
 
     pub fn update_info(&self, event: &VsockEvent) {
-        self.info.disable_irq().lock().update_for_event(event)
+        self.info
+            .disable_irq()
+            .lock_with(|info| info.update_for_event(event));
     }
 
     pub fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {

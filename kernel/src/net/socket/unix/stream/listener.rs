@@ -186,18 +186,17 @@ impl Backlog {
     }
 
     fn pop_incoming(&self) -> Result<Connected> {
-        let mut locked_incoming_conns = self.incoming_conns.lock();
+        let conn = self.incoming_conns.lock_with(|locked_incoming_conns| {
+            let Some(incoming_conns) = &mut *locked_incoming_conns else {
+                return_errno_with_message!(Errno::EINVAL, "the socket is shut down for reading");
+            };
 
-        let Some(incoming_conns) = &mut *locked_incoming_conns else {
-            return_errno_with_message!(Errno::EINVAL, "the socket is shut down for reading");
-        };
-
-        let conn = incoming_conns.pop_front();
-        if incoming_conns.is_empty() {
-            self.pollee.del_events(IoEvents::IN);
-        }
-
-        drop(locked_incoming_conns);
+            let conn = incoming_conns.pop_front();
+            if incoming_conns.is_empty() {
+                self.pollee.del_events(IoEvents::IN);
+            }
+            Result::Ok(conn)
+        })?;
 
         if conn.is_some() {
             self.wait_queue.wake_one();
@@ -215,13 +214,11 @@ impl Backlog {
     }
 
     fn shutdown(&self) {
-        let mut incoming_conns = self.incoming_conns.lock();
-
-        *incoming_conns = None;
-        self.pollee.add_events(IoEvents::HUP);
-        self.pollee.del_events(IoEvents::IN);
-
-        drop(incoming_conns);
+        self.incoming_conns.lock_with(|incoming_conns| {
+            *incoming_conns = None;
+            self.pollee.add_events(IoEvents::HUP);
+            self.pollee.del_events(IoEvents::IN);
+        });
 
         self.wait_queue.wake_all();
     }
@@ -252,34 +249,34 @@ impl Backlog {
         &self,
         init: Init,
     ) -> core::result::Result<Connected, (Error, Init)> {
-        let mut locked_incoming_conns = self.incoming_conns.lock();
+        self.incoming_conns.lock_with(|locked_incoming_conns| {
+            let Some(incoming_conns) = &mut *locked_incoming_conns else {
+                return Err((
+                    Error::with_message(
+                        Errno::ECONNREFUSED,
+                        "the listening socket is shut down for reading",
+                    ),
+                    init,
+                ));
+            };
 
-        let Some(incoming_conns) = &mut *locked_incoming_conns else {
-            return Err((
-                Error::with_message(
-                    Errno::ECONNREFUSED,
-                    "the listening socket is shut down for reading",
-                ),
-                init,
-            ));
-        };
+            if incoming_conns.len() >= self.backlog.load(Ordering::Relaxed) {
+                return Err((
+                    Error::with_message(
+                        Errno::EAGAIN,
+                        "the pending connection queue on the listening socket is full",
+                    ),
+                    init,
+                ));
+            }
 
-        if incoming_conns.len() >= self.backlog.load(Ordering::Relaxed) {
-            return Err((
-                Error::with_message(
-                    Errno::EAGAIN,
-                    "the pending connection queue on the listening socket is full",
-                ),
-                init,
-            ));
-        }
+            let (client_conn, server_conn) = init.into_connected(self.addr.clone());
+            incoming_conns.push_back(server_conn);
 
-        let (client_conn, server_conn) = init.into_connected(self.addr.clone());
-        incoming_conns.push_back(server_conn);
+            self.pollee.add_events(IoEvents::IN);
 
-        self.pollee.add_events(IoEvents::IN);
-
-        Ok(client_conn)
+            Ok(client_conn)
+        })
     }
 
     pub(super) fn pause_until<F>(&self, mut cond: F) -> Result<()>

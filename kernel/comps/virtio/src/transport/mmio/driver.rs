@@ -22,11 +22,12 @@ pub struct VirtioMmioDriver {
 
 impl VirtioMmioDriver {
     pub fn num_devices(&self) -> usize {
-        self.devices.lock().len()
+        self.devices
+            .lock_with(|devices: &mut Vec<VirtioMmioTransport>| devices.len())
     }
 
     pub fn pop_device_transport(&self) -> Option<VirtioMmioTransport> {
-        self.devices.lock().pop()
+        self.devices.lock_with(|devices| devices.pop())
     }
 
     pub(super) fn new() -> Self {
@@ -43,7 +44,7 @@ impl MmioDriver for VirtioMmioDriver {
     ) -> Result<Arc<dyn MmioDevice>, (BusProbeError, MmioCommonDevice)> {
         let device = VirtioMmioTransport::new(device);
         let mmio_device = device.mmio_device().clone();
-        self.devices.lock().push(device);
+        self.devices.lock_with(|devices| devices.push(device));
         Ok(mmio_device)
     }
 }

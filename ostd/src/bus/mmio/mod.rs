@@ -50,34 +50,48 @@ pub(crate) fn init() {
 
 #[cfg(target_arch = "x86_64")]
 fn iter_range(range: Range<usize>) {
+    use crate::arch::x86::kernel::IoApic;
+
     debug!("[Virtio]: Iter MMIO range:{:x?}", range);
     let mut current = range.end;
-    let mut lock = MMIO_BUS.lock();
+
+    let mut do_iter_range = |io_apic: &mut IoApic, mmio_bus: &mut bus::MmioBus| {
+        let mut device_count = 0;
+        while current > range.start {
+            current -= 0x100;
+            // SAFETY: It only read the value and judge if the magic value fit 0x74726976
+            let magic = unsafe { core::ptr::read_volatile(paddr_to_vaddr(current) as *const u32) };
+            if magic == VIRTIO_MMIO_MAGIC {
+                // SAFETY: It only read the device id
+                let device_id = unsafe { *(paddr_to_vaddr(current + 8) as *const u32) };
+                device_count += 1;
+                if device_id == 0 {
+                    continue;
+                }
+                let handle = IrqLine::alloc().unwrap();
+                // If has two IOApic, then start: 24 (0 in IOApic2), end 47 (23 in IOApic2)
+                // If one IOApic, then start: 16, end 23
+                io_apic.enable(24 - device_count, handle.clone()).unwrap();
+                let device = MmioCommonDevice::new(current, handle);
+                mmio_bus.register_mmio_device(device);
+            }
+        }
+    };
+
     let io_apics = crate::arch::kernel::IO_APIC.get().unwrap();
     let is_ioapic2 = io_apics.len() == 2;
-    let mut io_apic = if is_ioapic2 {
-        io_apics.get(1).unwrap().lock()
-    } else {
-        io_apics.first().unwrap().lock()
-    };
-    let mut device_count = 0;
-    while current > range.start {
-        current -= 0x100;
-        // SAFETY: It only read the value and judge if the magic value fit 0x74726976
-        let magic = unsafe { core::ptr::read_volatile(paddr_to_vaddr(current) as *const u32) };
-        if magic == VIRTIO_MMIO_MAGIC {
-            // SAFETY: It only read the device id
-            let device_id = unsafe { *(paddr_to_vaddr(current + 8) as *const u32) };
-            device_count += 1;
-            if device_id == 0 {
-                continue;
-            }
-            let handle = IrqLine::alloc().unwrap();
-            // If has two IOApic, then start: 24 (0 in IOApic2), end 47 (23 in IOApic2)
-            // If one IOApic, then start: 16, end 23
-            io_apic.enable(24 - device_count, handle.clone()).unwrap();
-            let device = MmioCommonDevice::new(current, handle);
-            lock.register_mmio_device(device);
-        }
-    }
+
+    MMIO_BUS.lock_with(|mmio_bus| {
+        if is_ioapic2 {
+            io_apics
+                .get(1)
+                .unwrap()
+                .lock_with(|io_apic| do_iter_range(io_apic, mmio_bus))
+        } else {
+            io_apics
+                .first()
+                .unwrap()
+                .lock_with(|io_apic| do_iter_range(io_apic, mmio_bus))
+        };
+    });
 }

@@ -48,7 +48,7 @@ fn new_virtio() -> Arc<Iface> {
 
     let virtio_net = aster_network::get_device(DEVICE_NAME).unwrap();
 
-    let ether_addr = virtio_net.lock().mac_addr().0;
+    let ether_addr = virtio_net.lock_with(|net| net.mac_addr().0);
 
     struct Wrapper(Arc<SpinLock<dyn AnyNetworkDevice, LocalIrqDisabled>>);
 
@@ -59,8 +59,7 @@ fn new_virtio() -> Arc<Iface> {
         where
             F: FnOnce(&mut Self::Device) -> R,
         {
-            let mut device = self.0.lock();
-            f(&mut *device)
+            self.0.lock_with(f)
         }
     }
 

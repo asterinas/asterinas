@@ -14,10 +14,10 @@ pub fn sys_read(
         fd, user_buf_addr, buf_len
     );
 
-    let file = {
-        let file_table = ctx.process.file_table().lock();
-        file_table.get_file(fd)?.clone()
-    };
+    let file = ctx
+        .process
+        .file_table()
+        .lock_with(|table| table.get_file(fd).cloned())?;
 
     // According to <https://man7.org/linux/man-pages/man2/read.2.html>, if
     // the user specified an empty buffer, we should detect errors by checking

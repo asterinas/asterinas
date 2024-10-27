@@ -144,8 +144,7 @@ impl<D, E> EtherIface<D, E> {
                 //
                 // TODO: Remove the mapping if it expires.
                 self.arp_table
-                    .lock()
-                    .insert(*source_protocol_addr, *source_hardware_addr);
+                    .lock_with(|t| t.insert(*source_protocol_addr, *source_hardware_addr));
 
                 None
             }
@@ -203,8 +202,10 @@ impl<D, E> EtherIface<D, E> {
         // Resolve the next-hop Ethernet address.
         let next_hop_ether = if next_hop_ip.is_broadcast() {
             EthernetAddress::BROADCAST
-        } else if let Some(next_hop_ether) = self.arp_table.lock().get(&next_hop_ip) {
-            *next_hop_ether
+        } else if let Some(next_hop_ether) =
+            self.arp_table.lock_with(|t| t.get(&next_hop_ip).cloned())
+        {
+            next_hop_ether
         } else {
             // If the next-hop Ethernet address cannot be resolved, we drop the original packet and
             // send an ARP packet instead. The upper layer should be responsible for detecting the

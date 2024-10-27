@@ -165,7 +165,11 @@ impl Clock for MonotonicClock {
 
 impl Clock for RealTimeCoarseClock {
     fn read_time(&self) -> Duration {
-        *Self::current_ref().get().unwrap().disable_irq().lock()
+        Self::current_ref()
+            .get()
+            .unwrap()
+            .disable_irq()
+            .lock_with(|t| *t)
     }
 }
 
@@ -278,7 +282,7 @@ fn init_jiffies_clock_manager() {
 fn update_coarse_clock() {
     let real_time = RealTimeClock::get().read_time();
     let current = RealTimeCoarseClock::current_ref().get().unwrap();
-    *current.disable_irq().lock() = real_time;
+    current.disable_irq().lock_with(|cur| *cur = real_time);
 }
 
 fn init_coarse_clock() {

@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::ops::Deref;
-
-use ostd::sync::PreemptDisabled;
-
 use crate::{
     events::{IoEvents, Observer},
     fs::utils::{Channel, Consumer, Producer},
@@ -51,7 +47,7 @@ impl Connected {
     }
 
     pub(super) fn addr(&self) -> Option<UnixSocketAddrBound> {
-        self.addr.addr().deref().as_ref().cloned()
+        self.addr.lock_addr_with(|addr| addr.as_ref().cloned())
     }
 
     pub(super) fn peer_addr(&self) -> Option<UnixSocketAddrBound> {
@@ -59,16 +55,16 @@ impl Connected {
     }
 
     pub(super) fn bind(&self, addr_to_bind: UnixSocketAddr) -> Result<()> {
-        let mut addr = self.addr.addr();
+        self.addr.lock_addr_with(|addr| {
+            if addr.is_some() {
+                return addr_to_bind.bind_unnamed();
+            }
 
-        if addr.is_some() {
-            return addr_to_bind.bind_unnamed();
-        }
+            let bound_addr = addr_to_bind.bind()?;
+            *addr = Some(bound_addr);
 
-        let bound_addr = addr_to_bind.bind()?;
-        *addr = Some(bound_addr);
-
-        Ok(())
+            Ok(())
+        })
     }
 
     pub(super) fn try_read(&self, writer: &mut dyn MultiWrite) -> Result<usize> {
@@ -166,12 +162,15 @@ impl AddrView {
         (view1, view2)
     }
 
-    fn addr(&self) -> SpinLockGuard<Option<UnixSocketAddrBound>, PreemptDisabled> {
-        self.addr.lock()
+    fn lock_addr_with<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut Option<UnixSocketAddrBound>) -> R,
+    {
+        self.addr.lock_with(f)
     }
 
     fn peer_addr(&self) -> Option<UnixSocketAddrBound> {
-        self.peer.lock().as_ref().cloned()
+        self.peer.lock_with(|peer| peer.as_ref().cloned())
     }
 }
 

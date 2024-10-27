@@ -77,11 +77,12 @@ impl Hpet {
             comparators.push(comp);
         }
 
-        let mut lock = ioapic::IO_APIC.get().unwrap()[0].lock();
         let irq = IrqLine::alloc().unwrap();
-        // FIXME: The index of HPET interrupt needs to be tested.
-        lock.enable(0, irq.clone()).unwrap();
-        drop(lock);
+
+        ioapic::IO_APIC.get().unwrap()[0].lock_with(|ioapic| {
+            // FIXME: The index of HPET interrupt needs to be tested.
+            ioapic.enable(0, irq.clone()).unwrap();
+        });
 
         Hpet {
             information_register,
@@ -115,9 +116,10 @@ impl Hpet {
 
 /// HPET init, need to init IOAPIC before init this function
 pub fn init() -> Result<(), AcpiError> {
-    let lock = ACPI_TABLES.get().unwrap().lock();
-
-    let hpet_info = HpetInfo::new(&*lock)?;
+    let hpet_info = ACPI_TABLES
+        .get()
+        .unwrap()
+        .lock_with(|tables| HpetInfo::new(tables))?;
 
     // config IO APIC entry
     let hpet = Hpet::new(hpet_info.base_address);

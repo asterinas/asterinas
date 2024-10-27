@@ -244,34 +244,36 @@ impl Vdso {
     }
 
     fn update_high_res_instant(&self, instant: Instant, instant_cycles: u64) {
-        let seq_lock = SEQ_LOCK.lock();
-        self.data
-            .lock()
-            .update_high_res_instant(instant, instant_cycles);
+        SEQ_LOCK.lock_with(|_| {
+            self.data
+                .lock_with(|d| d.update_high_res_instant(instant, instant_cycles));
 
-        // Update begins.
-        self.data_frame.write_val(0x80, &1).unwrap();
-        self.data_frame.write_val(0x88, &instant_cycles).unwrap();
-        for clock_id in HIGH_RES_CLOCK_IDS {
-            self.update_data_frame_instant(clock_id);
-        }
+            // Update begins.
+            self.data_frame.write_val(0x80, &1).unwrap();
+            self.data_frame.write_val(0x88, &instant_cycles).unwrap();
+            for clock_id in HIGH_RES_CLOCK_IDS {
+                self.update_data_frame_instant(clock_id);
+            }
 
-        // Update finishes.
-        self.data_frame.write_val(0x80, &0).unwrap();
+            // Update finishes.
+            self.data_frame.write_val(0x80, &0).unwrap();
+        });
     }
 
     fn update_coarse_res_instant(&self, instant: Instant) {
-        let seq_lock = SEQ_LOCK.lock();
-        self.data.lock().update_coarse_res_instant(instant);
+        SEQ_LOCK.lock_with(|_| {
+            self.data
+                .lock_with(|data| data.update_coarse_res_instant(instant));
 
-        // Update begins.
-        self.data_frame.write_val(0x80, &1).unwrap();
-        for clock_id in COARSE_RES_CLOCK_IDS {
-            self.update_data_frame_instant(clock_id);
-        }
+            // Update begins.
+            self.data_frame.write_val(0x80, &1).unwrap();
+            for clock_id in COARSE_RES_CLOCK_IDS {
+                self.update_data_frame_instant(clock_id);
+            }
 
-        // Update finishes.
-        self.data_frame.write_val(0x80, &0).unwrap();
+            // Update finishes.
+            self.data_frame.write_val(0x80, &0).unwrap();
+        });
     }
 
     /// Update the requisite fields of the VDSO data in the `data_frame`.
@@ -279,13 +281,14 @@ impl Vdso {
         let clock_index = clockid as usize;
         let secs_offset = 0xA0 + clock_index * 0x10;
         let nanos_info_offset = 0xA8 + clock_index * 0x10;
-        let data = self.data.lock();
-        self.data_frame
-            .write_val(secs_offset, &data.basetime[clock_index].secs)
-            .unwrap();
-        self.data_frame
-            .write_val(nanos_info_offset, &data.basetime[clock_index].nanos_info)
-            .unwrap();
+        self.data.lock_with(|data| {
+            self.data_frame
+                .write_val(secs_offset, &data.basetime[clock_index].secs)
+                .unwrap();
+            self.data_frame
+                .write_val(nanos_info_offset, &data.basetime[clock_index].nanos_info)
+                .unwrap();
+        });
     }
 }
 

@@ -112,63 +112,65 @@ impl LineDiscipline {
 
     /// Pushes a char to the line discipline
     pub fn push_char<F2: FnMut(&str)>(&self, ch: u8, echo_callback: F2) {
-        let termios = self.termios.lock();
+        self.termios.lock_with(|termios| {
+            let ch = if termios.contains_icrnl() && ch == b'\r' {
+                b'\n'
+            } else {
+                ch
+            };
 
-        let ch = if termios.contains_icrnl() && ch == b'\r' {
-            b'\n'
-        } else {
-            ch
-        };
+            if self.may_send_signal(termios, ch) {
+                submit_work_item(self.work_item.clone(), WorkPriority::High);
+                // CBREAK mode may require the character to be outputted, so just go ahead.
+            }
 
-        if self.may_send_signal(&termios, ch) {
-            submit_work_item(self.work_item.clone(), WorkPriority::High);
-            // CBREAK mode may require the character to be outputted, so just go ahead.
-        }
+            // Typically, a tty in raw mode does not echo. But the tty can also be in a CBREAK mode,
+            // with ICANON closed and ECHO opened.
+            if termios.contain_echo() {
+                self.output_char(ch, termios, echo_callback);
+            }
 
-        // Typically, a tty in raw mode does not echo. But the tty can also be in a CBREAK mode,
-        // with ICANON closed and ECHO opened.
-        if termios.contain_echo() {
-            self.output_char(ch, &termios, echo_callback);
-        }
+            // Raw mode
+            if !termios.is_canonical_mode() {
+                self.read_buffer.lock_with(|rb| rb.push_overwrite(ch));
+                self.update_readable_state();
+                return;
+            }
 
-        // Raw mode
-        if !termios.is_canonical_mode() {
-            self.read_buffer.lock().push_overwrite(ch);
+            // Canonical mode
+
+            if ch == *termios.get_special_char(CC_C_CHAR::VKILL) {
+                // Erase current line
+                self.current_line.lock_with(|l| l.drain());
+            }
+
+            if ch == *termios.get_special_char(CC_C_CHAR::VERASE) {
+                // Type backspace
+                self.current_line.lock_with(|current_line| {
+                    if !current_line.is_empty() {
+                        current_line.backspace();
+                    }
+                });
+            }
+
+            if is_line_terminator(ch, termios) {
+                // If a new line is met, all bytes in current_line will be moved to read_buffer
+                self.current_line.lock_with(|current_line| {
+                    current_line.push_char(ch);
+                    let current_line_chars = current_line.drain();
+                    for char in current_line_chars {
+                        self.read_buffer.lock_with(|rb| rb.push_overwrite(char));
+                    }
+                });
+            }
+
+            if is_printable_char(ch) {
+                // Printable character
+                self.current_line.lock_with(|l| l.push_char(ch));
+            }
+
             self.update_readable_state();
-            return;
-        }
-
-        // Canonical mode
-
-        if ch == *termios.get_special_char(CC_C_CHAR::VKILL) {
-            // Erase current line
-            self.current_line.lock().drain();
-        }
-
-        if ch == *termios.get_special_char(CC_C_CHAR::VERASE) {
-            // Type backspace
-            let mut current_line = self.current_line.lock();
-            if !current_line.is_empty() {
-                current_line.backspace();
-            }
-        }
-
-        if is_line_terminator(ch, &termios) {
-            // If a new line is met, all bytes in current_line will be moved to read_buffer
-            let mut current_line = self.current_line.lock();
-            current_line.push_char(ch);
-            let current_line_chars = current_line.drain();
-            for char in current_line_chars {
-                self.read_buffer.lock().push_overwrite(char);
-            }
-        }
-
-        if is_printable_char(ch) {
-            // Printable character
-            self.current_line.lock().push_char(ch);
-        }
-
-        self.update_readable_state();
+        })
     }
 
     fn may_send_signal(&self, termios: &KernelTermios, ch: u8) -> bool {
@@ -184,7 +186,8 @@ impl LineDiscipline {
 
         if in_interrupt_context() {
             // `kernel_signal()` may cause sleep, so only construct parameters here.
-            self.work_item_para.lock().kernel_signal = Some(signal);
+            self.work_item_para
+                .lock_with(|para| para.kernel_signal = Some(signal));
         } else {
             (self.send_signal)(signal);
         }
@@ -193,18 +196,21 @@ impl LineDiscipline {
     }
 
     pub fn update_readable_state(&self) {
-        let buffer = self.read_buffer.lock();
-
-        if !buffer.is_empty() {
-            self.pollee.add_events(IoEvents::IN);
-        } else {
-            self.pollee.del_events(IoEvents::IN);
-        }
+        self.read_buffer.lock_with(|buffer| {
+            if !buffer.is_empty() {
+                self.pollee.add_events(IoEvents::IN);
+            } else {
+                self.pollee.del_events(IoEvents::IN);
+            }
+        });
     }
 
     /// Sends a signal later. The signal will be handled by a work queue.
     fn send_signal_after(&self) {
-        if let Some(signal) = self.work_item_para.lock().kernel_signal.take() {
+        if let Some(signal) = self
+            .work_item_para
+            .lock_with(|para| para.kernel_signal.take())
+        {
             (self.send_signal)(signal);
         };
     }
@@ -248,14 +254,13 @@ impl LineDiscipline {
     ///
     /// This method returns the actual read length.
     fn try_read(&self, dst: &mut [u8]) -> Result<usize> {
-        let (vmin, vtime) = {
-            let termios = self.termios.lock();
+        let (vmin, vtime) = self.termios.lock_with(|termios| {
             let vmin = *termios.get_special_char(CC_C_CHAR::VMIN);
             let vtime = *termios.get_special_char(CC_C_CHAR::VTIME);
             (vmin, vtime)
-        };
+        });
         let read_len = {
-            let len = self.read_buffer.lock().len();
+            let len = self.read_buffer.lock_with(|rb| rb.len());
             let max_read_len = len.min(dst.len());
             if vmin == 0 && vtime == 0 {
                 // poll read
@@ -283,41 +288,46 @@ impl LineDiscipline {
     ///
     /// If no bytes are available, this method returns 0 immediately.
     fn poll_read(&self, dst: &mut [u8]) -> usize {
-        let mut buffer = self.read_buffer.lock();
-        let len = buffer.len();
-        let max_read_len = len.min(dst.len());
-        if max_read_len == 0 {
-            return 0;
-        }
-        let mut read_len = 0;
-        for dst_i in dst.iter_mut().take(max_read_len) {
-            if let Some(next_char) = buffer.pop() {
-                let termios = self.termios.lock();
-                if termios.is_canonical_mode() {
-                    // canonical mode, read until meet new line
-                    if is_line_terminator(next_char, &termios) {
-                        // The eof should not be read
-                        if !is_eof(next_char, &termios) {
+        self.read_buffer.lock_with(|buffer| {
+            let len = buffer.len();
+            let max_read_len = len.min(dst.len());
+            if max_read_len == 0 {
+                return 0;
+            }
+            let mut read_len = 0;
+            for dst_i in dst.iter_mut().take(max_read_len) {
+                if let Some(next_char) = buffer.pop() {
+                    if self.termios.lock_with(|termios| {
+                        if termios.is_canonical_mode() {
+                            // canonical mode, read until meet new line
+                            if is_line_terminator(next_char, termios) {
+                                // The eof should not be read
+                                if !is_eof(next_char, termios) {
+                                    *dst_i = next_char;
+                                    read_len += 1;
+                                }
+                                return true; // break
+                            } else {
+                                *dst_i = next_char;
+                                read_len += 1;
+                            }
+                        } else {
+                            // raw mode
+                            // FIXME: avoid additional bound check
                             *dst_i = next_char;
                             read_len += 1;
                         }
+                        false // continue
+                    }) {
                         break;
-                    } else {
-                        *dst_i = next_char;
-                        read_len += 1;
-                    }
+                    };
                 } else {
-                    // raw mode
-                    // FIXME: avoid additional bound check
-                    *dst_i = next_char;
-                    read_len += 1;
+                    break;
                 }
-            } else {
-                break;
             }
-        }
 
-        read_len
+            read_len
+        })
     }
 
     /// Reads bytes from `self` into `dst`,
@@ -329,7 +339,7 @@ impl LineDiscipline {
     /// this method returns [`Errno::EAGAIN`].
     pub fn block_read(&self, dst: &mut [u8], vmin: u8) -> Result<usize> {
         let _guard = disable_local();
-        let buffer_len = self.read_buffer.lock().len();
+        let buffer_len = self.read_buffer.lock_with(|rb| rb.len());
         if buffer_len >= dst.len() {
             return Ok(self.poll_read(dst));
         }
@@ -341,32 +351,32 @@ impl LineDiscipline {
 
     /// Returns whether there is buffered data
     pub fn is_empty(&self) -> bool {
-        self.read_buffer.lock().len() == 0
+        self.read_buffer.lock_with(|rb| rb.len() == 0)
     }
 
     pub fn termios(&self) -> KernelTermios {
-        *self.termios.lock()
+        self.termios.lock_with(|termios| *termios)
     }
 
     pub fn set_termios(&self, termios: KernelTermios) {
-        *self.termios.lock() = termios;
+        self.termios.lock_with(|t| *t = termios);
     }
 
     pub fn drain_input(&self) {
-        self.current_line.lock().drain();
-        self.read_buffer.lock().clear();
+        self.current_line.lock_with(|l| l.drain());
+        self.read_buffer.lock_with(|rb| rb.clear());
     }
 
     pub fn buffer_len(&self) -> usize {
-        self.read_buffer.lock().len()
+        self.read_buffer.lock_with(|rb| rb.len())
     }
 
     pub fn window_size(&self) -> WinSize {
-        *self.winsize.lock()
+        self.winsize.lock_with(|ws| *ws)
     }
 
     pub fn set_window_size(&self, winsize: WinSize) {
-        *self.winsize.lock() = winsize;
+        self.winsize.lock_with(|ws| *ws = winsize);
     }
 }
 

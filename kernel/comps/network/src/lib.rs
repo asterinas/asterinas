@@ -65,14 +65,20 @@ pub fn register_device(
         .get()
         .unwrap()
         .network_device_table
-        .lock()
-        .insert(name, NetworkDeviceIrqCallbackSet::new(device));
+        .lock_with(|tables| {
+            tables.insert(name, NetworkDeviceIrqCallbackSet::new(device));
+        });
 }
 
 pub fn get_device(str: &str) -> Option<Arc<SpinLock<dyn AnyNetworkDevice, LocalIrqDisabled>>> {
-    let table = COMPONENT.get().unwrap().network_device_table.lock();
-    let callbacks = table.get(str)?;
-    Some(callbacks.device.clone())
+    COMPONENT
+        .get()
+        .unwrap()
+        .network_device_table
+        .lock_with(|table| {
+            let callbacks = table.get(str)?;
+            Some(callbacks.device.clone())
+        })
 }
 
 /// Registers callback which will be called when receiving message.
@@ -80,60 +86,92 @@ pub fn get_device(str: &str) -> Option<Arc<SpinLock<dyn AnyNetworkDevice, LocalI
 /// Since the callback will be called in interrupt context,
 /// the callback function should NOT sleep.
 pub fn register_recv_callback(name: &str, callback: impl NetDeviceIrqHandler) {
-    let device_table = COMPONENT.get().unwrap().network_device_table.lock();
-    let Some(callbacks) = device_table.get(name) else {
-        return;
-    };
-    callbacks.recv_callbacks.lock().push(Arc::new(callback));
+    COMPONENT
+        .get()
+        .unwrap()
+        .network_device_table
+        .lock_with(|device_table| {
+            let Some(callbacks) = device_table.get(name) else {
+                return;
+            };
+            callbacks
+                .recv_callbacks
+                .lock_with(|callbacks| callbacks.push(Arc::new(callback)));
+        })
 }
 
 pub fn register_send_callback(name: &str, callback: impl NetDeviceIrqHandler) {
-    let device_table = COMPONENT.get().unwrap().network_device_table.lock();
-    let Some(callbacks) = device_table.get(name) else {
-        return;
-    };
-    callbacks.send_callbacks.lock().push(Arc::new(callback));
+    COMPONENT
+        .get()
+        .unwrap()
+        .network_device_table
+        .lock_with(|device_table| {
+            let Some(callbacks) = device_table.get(name) else {
+                return;
+            };
+            callbacks
+                .send_callbacks
+                .lock_with(|callbacks| callbacks.push(Arc::new(callback)));
+        })
 }
 
 pub fn handle_recv_irq(name: &str) {
-    let device_table = COMPONENT.get().unwrap().network_device_table.lock();
-    let Some(callbacks) = device_table.get(name) else {
-        return;
-    };
+    COMPONENT
+        .get()
+        .unwrap()
+        .network_device_table
+        .lock_with(|device_table| {
+            let Some(callbacks) = device_table.get(name) else {
+                return;
+            };
 
-    let callbacks = callbacks.recv_callbacks.lock();
-    for callback in callbacks.iter() {
-        callback();
-    }
+            callbacks.recv_callbacks.lock_with(|callbacks| {
+                for callback in callbacks.iter() {
+                    callback();
+                }
+            });
+        });
 }
 
 pub fn handle_send_irq(name: &str) {
-    let device_table = COMPONENT.get().unwrap().network_device_table.lock();
-    let Some(callbacks) = device_table.get(name) else {
-        return;
-    };
+    COMPONENT
+        .get()
+        .unwrap()
+        .network_device_table
+        .lock_with(|device_table| {
+            let Some(callbacks) = device_table.get(name) else {
+                return;
+            };
 
-    let can_send = {
-        let mut device = callbacks.device.lock();
-        device.free_processed_tx_buffers();
-        device.can_send()
-    };
-    if !can_send {
-        return;
-    }
+            let can_send = {
+                callbacks.device.lock_with(|device| {
+                    device.free_processed_tx_buffers();
+                    device.can_send()
+                })
+            };
+            if !can_send {
+                return;
+            }
 
-    let callbacks = callbacks.send_callbacks.lock();
-    for callback in callbacks.iter() {
-        callback();
-    }
+            callbacks.send_callbacks.lock_with(|callbacks| {
+                for callback in callbacks.iter() {
+                    callback();
+                }
+            });
+        });
 }
 
 pub fn all_devices() -> Vec<(String, NetworkDeviceRef)> {
-    let network_devs = COMPONENT.get().unwrap().network_device_table.lock();
-    network_devs
-        .iter()
-        .map(|(name, callbacks)| (name.clone(), callbacks.device.clone()))
-        .collect()
+    COMPONENT
+        .get()
+        .unwrap()
+        .network_device_table
+        .lock_with(|network_devs| {
+            network_devs
+                .iter()
+                .map(|(name, callbacks)| (name.clone(), callbacks.device.clone()))
+                .collect()
+        })
 }
 
 static COMPONENT: Once<Component> = Once::new();

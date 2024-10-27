@@ -4,14 +4,7 @@
 
 pub(crate) mod mcs;
 
-use alloc::sync::Arc;
-use core::{
-    cell::UnsafeCell,
-    fmt,
-    marker::PhantomData,
-    ops::{Deref, DerefMut},
-    sync::atomic::{AtomicBool, Ordering},
-};
+use core::{cell::UnsafeCell, fmt, marker::PhantomData};
 
 use crate::{
     task::{disable_preempt, DisabledPreemptGuard},
@@ -39,7 +32,7 @@ pub struct SpinLock<T: ?Sized, G = PreemptDisabled> {
 }
 
 struct SpinLockInner<T: ?Sized> {
-    lock: AtomicBool,
+    lock: mcs::LockBody,
     val: UnsafeCell<T>,
 }
 
@@ -84,7 +77,7 @@ impl<T, G: Guardian> SpinLock<T, G> {
     /// Creates a new spin lock.
     pub const fn new(val: T) -> Self {
         let lock_inner = SpinLockInner {
-            lock: AtomicBool::new(false),
+            lock: mcs::LockBody::new(),
             val: UnsafeCell::new(val),
         };
         Self {
@@ -109,61 +102,54 @@ impl<T: ?Sized> SpinLock<T, PreemptDisabled> {
 }
 
 impl<T: ?Sized, G: Guardian> SpinLock<T, G> {
-    /// Acquires the spin lock.
-    pub fn lock(&self) -> SpinLockGuard<T, G> {
-        // Notice the guard must be created before acquiring the lock.
-        let inner_guard = G::guard();
-        self.acquire_lock();
-        SpinLockGuard_ {
-            lock: self,
-            guard: inner_guard,
-        }
-    }
-
-    /// Acquires the spin lock through an [`Arc`].
+    /// Acquires the spin lock and applies the closure to the inner data.
     ///
-    /// The method is similar to [`lock`], but it doesn't have the requirement
-    /// for compile-time checked lifetimes of the lock guard.
+    /// If the lock is already held by another thread, the current thread will
+    /// spin until the lock is released.
+    pub fn lock_with<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        let _guard = G::guard();
+
+        let mcs_unsafe_node = core::pin::pin!(mcs::UnsafeNode::new());
+        let mcs_node = mcs::Node::new(&self.inner.lock, mcs_unsafe_node);
+
+        let mcs_node = mcs_node.lock();
+
+        // SAFETY: The lock is acquired so the critical section is safe.
+        let r = f(unsafe { &mut *self.inner.val.get() });
+
+        mcs_node.unlock();
+
+        r
+    }
+
+    /// Tries acquiring the spin lock immedidately and applies the closure to
+    /// the inner data.
     ///
-    /// [`lock`]: Self::lock
-    pub fn lock_arc(self: &Arc<Self>) -> ArcSpinLockGuard<T, G> {
-        let inner_guard = G::guard();
-        self.acquire_lock();
-        SpinLockGuard_ {
-            lock: self.clone(),
-            guard: inner_guard,
+    /// If the lock is already held by another thread, this method will return
+    /// `None`. Otherwise, it will return `Some` with the result of the closure.
+    pub fn try_lock_with<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        let _guard = G::guard();
+
+        let mcs_unsafe_node = core::pin::pin!(mcs::UnsafeNode::new());
+        let mcs_node = mcs::Node::new(&self.inner.lock, mcs_unsafe_node);
+
+        match mcs_node.try_lock() {
+            Ok(mcs_node) => {
+                // SAFETY: The lock is acquired so the critical section is safe.
+                let r = f(unsafe { &mut *self.inner.val.get() });
+
+                mcs_node.unlock();
+
+                Some(r)
+            }
+            Err(_) => None,
         }
-    }
-
-    /// Tries acquiring the spin lock immedidately.
-    pub fn try_lock(&self) -> Option<SpinLockGuard<T, G>> {
-        let inner_guard = G::guard();
-        if self.try_acquire_lock() {
-            let lock_guard = SpinLockGuard_ {
-                lock: self,
-                guard: inner_guard,
-            };
-            return Some(lock_guard);
-        }
-        None
-    }
-
-    /// Acquires the spin lock, otherwise busy waiting
-    fn acquire_lock(&self) {
-        while !self.try_acquire_lock() {
-            core::hint::spin_loop();
-        }
-    }
-
-    fn try_acquire_lock(&self) -> bool {
-        self.inner
-            .lock
-            .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-            .is_ok()
-    }
-
-    fn release_lock(&self) {
-        self.inner.lock.store(false, Ordering::Release);
     }
 }
 
@@ -176,55 +162,3 @@ impl<T: ?Sized + fmt::Debug, G> fmt::Debug for SpinLock<T, G> {
 // SAFETY: Only a single lock holder is permitted to access the inner data of Spinlock.
 unsafe impl<T: ?Sized + Send, G> Send for SpinLock<T, G> {}
 unsafe impl<T: ?Sized + Send, G> Sync for SpinLock<T, G> {}
-
-/// A guard that provides exclusive access to the data protected by a [`SpinLock`].
-pub type SpinLockGuard<'a, T, G> = SpinLockGuard_<T, &'a SpinLock<T, G>, G>;
-/// A guard that provides exclusive access to the data protected by a `Arc<SpinLock>`.
-pub type ArcSpinLockGuard<T, G> = SpinLockGuard_<T, Arc<SpinLock<T, G>>, G>;
-
-/// The guard of a spin lock.
-#[clippy::has_significant_drop]
-#[must_use]
-pub struct SpinLockGuard_<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: Guardian> {
-    guard: G::Guard,
-    lock: R,
-}
-
-impl<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: Guardian> Deref for SpinLockGuard_<T, R, G> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        unsafe { &*self.lock.inner.val.get() }
-    }
-}
-
-impl<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: Guardian> DerefMut
-    for SpinLockGuard_<T, R, G>
-{
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *self.lock.inner.val.get() }
-    }
-}
-
-impl<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: Guardian> Drop for SpinLockGuard_<T, R, G> {
-    fn drop(&mut self) {
-        self.lock.release_lock();
-    }
-}
-
-impl<T: ?Sized + fmt::Debug, R: Deref<Target = SpinLock<T, G>>, G: Guardian> fmt::Debug
-    for SpinLockGuard_<T, R, G>
-{
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Debug::fmt(&**self, f)
-    }
-}
-
-impl<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: Guardian> !Send for SpinLockGuard_<T, R, G> {}
-
-// SAFETY: `SpinLockGuard_` can be shared between tasks/threads in same CPU.
-// As `lock()` is only called when there are no race conditions caused by interrupts.
-unsafe impl<T: ?Sized + Sync, R: Deref<Target = SpinLock<T, G>> + Sync, G: Guardian> Sync
-    for SpinLockGuard_<T, R, G>
-{
-}

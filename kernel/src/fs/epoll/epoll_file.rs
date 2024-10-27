@@ -65,8 +65,9 @@ impl EpollFile {
 
         let file = {
             let current = current!();
-            let file_table = current.file_table().lock();
-            file_table.get_file(fd)?.clone()
+            current
+                .file_table()
+                .lock_with(|file_table| Result::Ok(file_table.get_file(fd)?.clone()))?
         };
 
         match *cmd {
@@ -235,17 +236,17 @@ impl EpollFile {
             return;
         }
 
-        let mut ready = self.ready.lock();
+        self.ready.lock_with(|ready| {
+            if !entry.is_ready() {
+                entry.set_ready(ready);
+                ready.push_back(Arc::downgrade(&entry));
+            }
 
-        if !entry.is_ready() {
-            entry.set_ready(&ready);
-            ready.push_back(Arc::downgrade(&entry));
-        }
-
-        // Even if the entry is already set to ready,
-        // there might be new events that we are interested in.
-        // Wake the poller anyway.
-        self.pollee.add_events(IoEvents::IN);
+            // Even if the entry is already set to ready,
+            // there might be new events that we are interested in.
+            // Wake the poller anyway.
+            self.pollee.add_events(IoEvents::IN);
+        });
     }
 
     fn pop_multi_ready(&self, max_events: usize, ep_events: &mut Vec<EpollEvent>) {
@@ -298,34 +299,35 @@ impl EpollFile {
             return None;
         }
 
-        let mut ready = self.ready.lock();
-        let mut limit = limit.unwrap_or_else(|| ready.len());
+        self.ready.lock_with(|ready| {
+            let mut limit = limit.unwrap_or(ready.len());
 
-        while limit > 0 {
-            limit -= 1;
+            while limit > 0 {
+                limit -= 1;
 
-            // Pop the front entry. Note that `_guard` and `limit` guarantee that this entry must
-            // exist, so we can just unwrap it.
-            let weak_entry = ready.pop_front().unwrap();
+                // Pop the front entry. Note that `_guard` and `limit` guarantee that this entry must
+                // exist, so we can just unwrap it.
+                let weak_entry = ready.pop_front().unwrap();
 
-            // Clear the epoll file's events if there are no ready entries.
-            if ready.len() == 0 {
-                self.pollee.del_events(IoEvents::IN);
+                // Clear the epoll file's events if there are no ready entries.
+                if ready.is_empty() {
+                    self.pollee.del_events(IoEvents::IN);
+                }
+
+                let Some(entry) = Weak::upgrade(&weak_entry) else {
+                    // The entry has been deleted.
+                    continue;
+                };
+
+                // Mark the entry as not ready. We can invoke `push_ready` later to add it back to the
+                // ready list if we need to.
+                entry.reset_ready(ready);
+
+                return Some((entry, limit));
             }
 
-            let Some(entry) = Weak::upgrade(&weak_entry) else {
-                // The entry has been deleted.
-                continue;
-            };
-
-            // Mark the entry as not ready. We can invoke `push_ready` later to add it back to the
-            // ready list if we need to.
-            entry.reset_ready(&ready);
-
-            return Some((entry, limit));
-        }
-
-        None
+            None
+        })
     }
 
     fn warn_unsupported_flags(&self, flags: &EpollFlags) {
@@ -554,7 +556,7 @@ impl EpollEntry {
     /// This method must be called while holding the lock of the ready list. This is the only way
     /// to ensure that the "is ready" state matches the fact that the entry is actually in the
     /// ready list.
-    pub fn set_ready(&self, _guard: &SpinLockGuard<VecDeque<Weak<EpollEntry>>, LocalIrqDisabled>) {
+    pub fn set_ready(&self, _guard: &mut VecDeque<Weak<EpollEntry>>) {
         self.is_ready.store(true, Ordering::Relaxed);
     }
 
@@ -563,10 +565,7 @@ impl EpollEntry {
     /// This method must be called while holding the lock of the ready list. This is the only way
     /// to ensure that the "is ready" state matches the fact that the entry is actually in the
     /// ready list.
-    pub fn reset_ready(
-        &self,
-        _guard: &SpinLockGuard<VecDeque<Weak<EpollEntry>>, LocalIrqDisabled>,
-    ) {
+    pub fn reset_ready(&self, _guard: &mut VecDeque<Weak<EpollEntry>>) {
         self.is_ready.store(false, Ordering::Relaxed)
     }
 

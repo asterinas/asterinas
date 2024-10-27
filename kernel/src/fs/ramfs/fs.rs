@@ -500,7 +500,7 @@ impl PageCacheBackend for RamInode {
     }
 
     fn npages(&self) -> usize {
-        self.metadata.lock().blocks
+        self.metadata.lock_with(|m| m.blocks)
     }
 }
 
@@ -560,13 +560,14 @@ impl Inode for RamInode {
                 page_cache.pages().write(offset, reader)?;
 
                 let now = now();
-                let mut inode_meta = self.metadata.lock();
-                inode_meta.set_mtime(now);
-                inode_meta.set_ctime(now);
-                if should_expand_size {
-                    inode_meta.size = new_size;
-                    inode_meta.blocks = new_size_aligned / BLOCK_SIZE;
-                }
+                self.metadata.lock_with(|inode_meta| {
+                    inode_meta.set_mtime(now);
+                    inode_meta.set_ctime(now);
+                    if should_expand_size {
+                        inode_meta.size = new_size;
+                        inode_meta.blocks = new_size_aligned / BLOCK_SIZE;
+                    }
+                });
                 write_len
             }
             InodeType::CharDevice | InodeType::BlockDevice => {
@@ -589,7 +590,7 @@ impl Inode for RamInode {
     }
 
     fn size(&self) -> usize {
-        self.metadata.lock().size
+        self.metadata.lock_with(|m| m.size)
     }
 
     fn resize(&self, new_size: usize) -> Result<()> {
@@ -606,35 +607,36 @@ impl Inode for RamInode {
         page_cache.resize(new_size)?;
 
         let now = now();
-        let mut inode_meta = self.metadata.lock();
-        inode_meta.set_mtime(now);
-        inode_meta.set_ctime(now);
-        inode_meta.resize(new_size);
+        self.metadata.lock_with(|inode_meta| {
+            inode_meta.set_mtime(now);
+            inode_meta.set_ctime(now);
+            inode_meta.resize(new_size);
+        });
         Ok(())
     }
 
     fn atime(&self) -> Duration {
-        self.metadata.lock().atime
+        self.metadata.lock_with(|m| m.atime)
     }
 
     fn set_atime(&self, time: Duration) {
-        self.metadata.lock().set_atime(time);
+        self.metadata.lock_with(|m| m.set_atime(time));
     }
 
     fn mtime(&self) -> Duration {
-        self.metadata.lock().mtime
+        self.metadata.lock_with(|m| m.mtime)
     }
 
     fn set_mtime(&self, time: Duration) {
-        self.metadata.lock().set_mtime(time);
+        self.metadata.lock_with(|m| m.set_mtime(time));
     }
 
     fn ctime(&self) -> Duration {
-        self.metadata.lock().ctime
+        self.metadata.lock_with(|m| m.ctime)
     }
 
     fn set_ctime(&self, time: Duration) {
-        self.metadata.lock().set_ctime(time);
+        self.metadata.lock_with(|m| m.set_ctime(time));
     }
 
     fn ino(&self) -> u64 {
@@ -646,36 +648,39 @@ impl Inode for RamInode {
     }
 
     fn mode(&self) -> Result<InodeMode> {
-        Ok(self.metadata.lock().mode)
+        Ok(self.metadata.lock_with(|m| m.mode))
     }
 
     fn set_mode(&self, mode: InodeMode) -> Result<()> {
-        let mut inode_meta = self.metadata.lock();
-        inode_meta.mode = mode;
-        inode_meta.set_ctime(now());
-        Ok(())
+        self.metadata.lock_with(|inode_meta| {
+            inode_meta.mode = mode;
+            inode_meta.set_ctime(now());
+            Ok(())
+        })
     }
 
     fn owner(&self) -> Result<Uid> {
-        Ok(self.metadata.lock().uid)
+        Ok(self.metadata.lock_with(|m| m.uid))
     }
 
     fn set_owner(&self, uid: Uid) -> Result<()> {
-        let mut inode_meta = self.metadata.lock();
-        inode_meta.uid = uid;
-        inode_meta.set_ctime(now());
-        Ok(())
+        self.metadata.lock_with(|inode_meta| {
+            inode_meta.uid = uid;
+            inode_meta.set_ctime(now());
+            Ok(())
+        })
     }
 
     fn group(&self) -> Result<Gid> {
-        Ok(self.metadata.lock().gid)
+        Ok(self.metadata.lock_with(|m| m.gid))
     }
 
     fn set_group(&self, gid: Gid) -> Result<()> {
-        let mut inode_meta = self.metadata.lock();
-        inode_meta.gid = gid;
-        inode_meta.set_ctime(now());
-        Ok(())
+        self.metadata.lock_with(|inode_meta| {
+            inode_meta.gid = gid;
+            inode_meta.set_ctime(now());
+            Ok(())
+        })
     }
 
     fn mknod(&self, name: &str, mode: InodeMode, type_: MknodType) -> Result<Arc<dyn Inode>> {
@@ -713,7 +718,7 @@ impl Inode for RamInode {
         self_dir.append_entry(name, new_inode.clone());
         drop(self_dir);
 
-        self.metadata.lock().inc_size();
+        self.metadata.lock_with(|m| m.inc_size());
         Ok(new_inode)
     }
 
@@ -757,13 +762,14 @@ impl Inode for RamInode {
         drop(self_dir);
 
         let now = now();
-        let mut inode_meta = self.metadata.lock();
-        inode_meta.set_mtime(now);
-        inode_meta.set_ctime(now);
-        inode_meta.inc_size();
-        if type_ == InodeType::Dir {
-            inode_meta.inc_nlinks();
-        }
+        self.metadata.lock_with(|inode_meta| {
+            inode_meta.set_mtime(now);
+            inode_meta.set_ctime(now);
+            inode_meta.inc_size();
+            if type_ == InodeType::Dir {
+                inode_meta.inc_nlinks();
+            }
+        });
 
         Ok(new_inode)
     }
@@ -808,15 +814,16 @@ impl Inode for RamInode {
         drop(self_dir);
 
         let now = now();
-        let mut self_meta = self.metadata.lock();
-        self_meta.set_mtime(now);
-        self_meta.set_ctime(now);
-        self_meta.inc_size();
-        drop(self_meta);
+        self.metadata.lock_with(|self_meta| {
+            self_meta.set_mtime(now);
+            self_meta.set_ctime(now);
+            self_meta.inc_size();
+        });
 
-        let mut old_meta = old.metadata.lock();
-        old_meta.inc_nlinks();
-        old_meta.set_ctime(now);
+        old.metadata.lock_with(|old_meta| {
+            old_meta.inc_nlinks();
+            old_meta.set_ctime(now);
+        });
 
         Ok(())
     }
@@ -841,14 +848,15 @@ impl Inode for RamInode {
         drop(self_dir);
 
         let now = now();
-        let mut self_meta = self.metadata.lock();
-        self_meta.dec_size();
-        self_meta.set_mtime(now);
-        self_meta.set_ctime(now);
-        drop(self_meta);
-        let mut target_meta = target.metadata.lock();
-        target_meta.dec_nlinks();
-        target_meta.set_ctime(now);
+        self.metadata.lock_with(|self_meta| {
+            self_meta.dec_size();
+            self_meta.set_mtime(now);
+            self_meta.set_ctime(now);
+        });
+        target.metadata.lock_with(|target_meta| {
+            target_meta.dec_nlinks();
+            target_meta.set_ctime(now);
+        });
 
         Ok(())
     }
@@ -883,15 +891,16 @@ impl Inode for RamInode {
         drop(target_dir);
 
         let now = now();
-        let mut self_meta = self.metadata.lock();
-        self_meta.dec_size();
-        self_meta.dec_nlinks();
-        self_meta.set_mtime(now);
-        self_meta.set_ctime(now);
-        drop(self_meta);
-        let mut target_meta = target.metadata.lock();
-        target_meta.dec_nlinks();
-        target_meta.dec_nlinks();
+        self.metadata.lock_with(|self_meta| {
+            self_meta.dec_size();
+            self_meta.dec_nlinks();
+            self_meta.set_mtime(now);
+            self_meta.set_ctime(now);
+        });
+        target.metadata.lock_with(|target_meta| {
+            target_meta.dec_nlinks();
+            target_meta.dec_nlinks();
+        });
 
         Ok(())
     }
@@ -968,24 +977,24 @@ impl Inode for RamInode {
                 drop(self_dir);
 
                 let now = now();
-                let mut self_meta = self.metadata.lock();
-                self_meta.dec_size();
-                if is_dir {
-                    self_meta.dec_nlinks();
-                }
-                self_meta.set_mtime(now);
-                self_meta.set_ctime(now);
-                drop(self_meta);
+                self.metadata.lock_with(|self_meta| {
+                    self_meta.dec_size();
+                    if is_dir {
+                        self_meta.dec_nlinks();
+                    }
+                    self_meta.set_mtime(now);
+                    self_meta.set_ctime(now);
+                });
                 src_inode.set_ctime(now);
                 dst_inode.set_ctime(now);
             } else {
                 self_dir.substitute_entry(src_idx, (CStr256::from(new_name), src_inode.clone()));
                 drop(self_dir);
                 let now = now();
-                let mut self_meta = self.metadata.lock();
-                self_meta.set_mtime(now);
-                self_meta.set_ctime(now);
-                drop(self_meta);
+                self.metadata.lock_with(|self_meta| {
+                    self_meta.set_mtime(now);
+                    self_meta.set_ctime(now);
+                });
                 src_inode.set_ctime(now);
             }
         }
@@ -1019,18 +1028,18 @@ impl Inode for RamInode {
                 drop(target_dir);
 
                 let now = now();
-                let mut self_meta = self.metadata.lock();
-                self_meta.dec_size();
-                if is_dir {
-                    self_meta.dec_nlinks();
-                }
-                self_meta.set_mtime(now);
-                self_meta.set_ctime(now);
-                drop(self_meta);
-                let mut target_meta = target.metadata.lock();
-                target_meta.set_mtime(now);
-                target_meta.set_ctime(now);
-                drop(target_meta);
+                self.metadata.lock_with(|self_meta| {
+                    self_meta.dec_size();
+                    if is_dir {
+                        self_meta.dec_nlinks();
+                    }
+                    self_meta.set_mtime(now);
+                    self_meta.set_ctime(now);
+                });
+                target.metadata.lock_with(|target_meta| {
+                    target_meta.set_mtime(now);
+                    target_meta.set_ctime(now);
+                });
                 dst_inode.set_ctime(now);
                 src_inode.set_ctime(now);
             } else {
@@ -1040,23 +1049,23 @@ impl Inode for RamInode {
                 drop(target_dir);
 
                 let now = now();
-                let mut self_meta = self.metadata.lock();
-                self_meta.dec_size();
-                if is_dir {
-                    self_meta.dec_nlinks();
-                }
-                self_meta.set_mtime(now);
-                self_meta.set_ctime(now);
-                drop(self_meta);
+                self.metadata.lock_with(|self_meta| {
+                    self_meta.dec_size();
+                    if is_dir {
+                        self_meta.dec_nlinks();
+                    }
+                    self_meta.set_mtime(now);
+                    self_meta.set_ctime(now);
+                });
 
-                let mut target_meta = target.metadata.lock();
-                target_meta.inc_size();
-                if is_dir {
-                    target_meta.inc_nlinks();
-                }
-                target_meta.set_mtime(now);
-                target_meta.set_ctime(now);
-                drop(target_meta);
+                target.metadata.lock_with(|target_meta| {
+                    target_meta.inc_size();
+                    if is_dir {
+                        target_meta.inc_nlinks();
+                    }
+                    target_meta.set_mtime(now);
+                    target_meta.set_ctime(now);
+                });
                 src_inode.set_ctime(now);
             }
 
@@ -1077,8 +1086,10 @@ impl Inode for RamInode {
             return_errno_with_message!(Errno::EINVAL, "self is not symlink");
         }
 
-        let link = self.inner.as_symlink().unwrap().lock();
-        Ok(link.clone())
+        self.inner
+            .as_symlink()
+            .unwrap()
+            .lock_with(|link| Ok(link.clone()))
     }
 
     fn write_link(&self, target: &str) -> Result<()> {
@@ -1086,12 +1097,13 @@ impl Inode for RamInode {
             return_errno_with_message!(Errno::EINVAL, "self is not symlink");
         }
 
-        let mut link = self.inner.as_symlink().unwrap().lock();
-        *link = String::from(target);
-        drop(link);
+        self.inner
+            .as_symlink()
+            .unwrap()
+            .lock_with(|link| *link = String::from(target));
 
         // Symlink's metadata.blocks should be 0, so just set the size.
-        self.metadata.lock().size = target.len();
+        self.metadata.lock_with(|m| m.size = target.len());
         Ok(())
     }
 
@@ -1101,8 +1113,7 @@ impl Inode for RamInode {
             .as_device()
             .map(|device| device.id().into())
             .unwrap_or(0);
-        let inode_metadata = self.metadata.lock();
-        Metadata {
+        self.metadata.lock_with(|inode_metadata| Metadata {
             dev: 0,
             ino: self.ino as _,
             size: inode_metadata.size,
@@ -1117,7 +1128,7 @@ impl Inode for RamInode {
             uid: inode_metadata.uid,
             gid: inode_metadata.gid,
             rdev,
-        }
+        })
     }
 
     fn poll(&self, mask: IoEvents, poller: Option<&mut Poller>) -> IoEvents {

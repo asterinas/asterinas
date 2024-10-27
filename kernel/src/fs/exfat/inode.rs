@@ -476,7 +476,8 @@ impl ExfatInodeInner {
         let fs = self.fs();
 
         let target_upcase = if !case_sensitive {
-            fs.upcase_table().lock().str_to_upcase(target_name)?
+            fs.upcase_table()
+                .lock_with(|tbl| tbl.str_to_upcase(target_name))?
         } else {
             target_name.to_string()
         };
@@ -506,7 +507,8 @@ impl ExfatInodeInner {
 
         for (name, offset) in name_and_offsets {
             let name_upcase = if !case_sensitive {
-                fs.upcase_table().lock().str_to_upcase(&name)?
+                fs.upcase_table()
+                    .lock_with(|tbl| tbl.str_to_upcase(&name))?
             } else {
                 name
             };
@@ -1616,8 +1618,12 @@ impl Inode for ExfatInode {
         let fs = self.inner.read().fs();
         let fs_guard = fs.lock();
         // Rename something to itself, return success directly.
-        let up_old_name = fs.upcase_table().lock().str_to_upcase(old_name)?;
-        let up_new_name = fs.upcase_table().lock().str_to_upcase(new_name)?;
+        let up_old_name = fs
+            .upcase_table()
+            .lock_with(|tbl| tbl.str_to_upcase(old_name))?;
+        let up_new_name = fs
+            .upcase_table()
+            .lock_with(|tbl| tbl.str_to_upcase(new_name))?;
         if self.inner.read().ino == target_.inner.read().ino && up_old_name.eq(&up_new_name) {
             return Ok(());
         }

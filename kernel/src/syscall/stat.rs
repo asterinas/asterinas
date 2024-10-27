@@ -15,10 +15,10 @@ use crate::{
 pub fn sys_fstat(fd: FileDesc, stat_buf_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}, stat_buf_addr = 0x{:x}", fd, stat_buf_ptr);
 
-    let file = {
-        let file_table = ctx.process.file_table().lock();
-        file_table.get_file(fd)?.clone()
-    };
+    let file = ctx
+        .process
+        .file_table()
+        .lock_with(|table| table.get_file(fd).cloned())?;
 
     let stat = Stat::from(file.metadata());
     ctx.get_user_space().write_val(stat_buf_ptr, &stat)?;

@@ -287,12 +287,13 @@ impl FsResolver {
     /// Lookups the target dentry according to the given `fd`.
     pub fn lookup_from_fd(&self, fd: FileDesc) -> Result<Dentry> {
         let current = current!();
-        let file_table = current.file_table().lock();
-        let inode_handle = file_table
-            .get_file(fd)?
-            .downcast_ref::<InodeHandle>()
-            .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;
-        Ok(inode_handle.dentry().clone())
+        current.file_table().lock_with(|file_table| {
+            let inode_handle = file_table
+                .get_file(fd)?
+                .downcast_ref::<InodeHandle>()
+                .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;
+            Ok(inode_handle.dentry().clone())
+        })
     }
 
     /// Lookups the target parent directory dentry and

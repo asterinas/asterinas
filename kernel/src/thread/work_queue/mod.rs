@@ -139,9 +139,7 @@ impl WorkQueue {
         }
         self.inner
             .disable_irq()
-            .lock()
-            .pending_work_items
-            .push(work_item);
+            .lock_with(|q| q.pending_work_items.push(work_item));
         if let Some(worker_pool) = self.worker_pool.upgrade() {
             worker_pool.schedule()
         }
@@ -151,22 +149,22 @@ impl WorkQueue {
     /// Request a pending work item. The `request_cpu` indicates the CPU where
     /// the calling worker is located.
     fn dequeue(&self, request_cpu: CpuId) -> Option<Arc<WorkItem>> {
-        let mut inner = self.inner.disable_irq().lock();
-        let index = inner
-            .pending_work_items
-            .iter()
-            .position(|item| item.is_valid_cpu(request_cpu))?;
-        let item = inner.pending_work_items.remove(index);
-        Some(item)
+        self.inner.disable_irq().lock_with(|inner| {
+            let index = inner
+                .pending_work_items
+                .iter()
+                .position(|item| item.is_valid_cpu(request_cpu))?;
+            let item = inner.pending_work_items.remove(index);
+            Some(item)
+        })
     }
 
     fn has_pending_work_items(&self, request_cpu: CpuId) -> bool {
-        self.inner
-            .disable_irq()
-            .lock()
-            .pending_work_items
-            .iter()
-            .any(|item| item.is_valid_cpu(request_cpu))
+        self.inner.disable_irq().lock_with(|q| {
+            q.pending_work_items
+                .iter()
+                .any(|item| item.is_valid_cpu(request_cpu))
+        })
     }
 }
 

@@ -97,7 +97,7 @@ impl IommuRegisters {
     ) {
         // Set root table address
         self.root_table_address
-            .write(root_table.lock().root_paddr() as u64);
+            .write(root_table.lock_with(|t| t.root_paddr()) as u64);
         self.write_global_command(GlobalCommand::SRTP, true);
         while !self.global_status().contains(GlobalStatus::RTPS) {}
 

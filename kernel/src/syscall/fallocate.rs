@@ -21,10 +21,10 @@ pub fn sys_fallocate(
 
     check_offset_and_len(offset, len, ctx)?;
 
-    let file = {
-        let file_table = ctx.process.file_table().lock();
-        file_table.get_file(fd)?.clone()
-    };
+    let file = ctx
+        .process
+        .file_table()
+        .lock_with(|table| table.get_file(fd).cloned())?;
 
     let falloc_mode = FallocMode::try_from(
         RawFallocMode::from_bits(mode as _)

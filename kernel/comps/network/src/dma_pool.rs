@@ -98,34 +98,38 @@ impl DmaPool {
     pub fn alloc_segment(self: &Arc<Self>) -> Result<DmaSegment, ostd::Error> {
         // Lock order: pool.avail_pages -> pool.all_pages
         //             pool.avail_pages -> page.allocated_segments
-        let mut avail_pages = self.avail_pages.disable_irq().lock();
-        if avail_pages.is_empty() {
-            /// Allocate a new page
-            let new_page = {
-                let pool = Arc::downgrade(self);
-                Arc::new(DmaPage::new(
-                    self.segment_size,
-                    self.direction,
-                    self.is_cache_coherent,
-                    pool,
-                )?)
-            };
-            let mut all_pages = self.all_pages.disable_irq().lock();
-            avail_pages.push_back(new_page.clone());
-            all_pages.push_back(new_page);
-        }
+        self.avail_pages.disable_irq().lock_with(|avail_pages| {
+            if avail_pages.is_empty() {
+                /// Allocate a new page
+                let new_page = {
+                    let pool = Arc::downgrade(self);
+                    Arc::new(DmaPage::new(
+                        self.segment_size,
+                        self.direction,
+                        self.is_cache_coherent,
+                        pool,
+                    )?)
+                };
+                self.all_pages.disable_irq().lock_with(|all_pages| {
+                    avail_pages.push_back(new_page.clone());
+                    all_pages.push_back(new_page);
+                })
+            }
 
-        let first_avail_page = avail_pages.front().unwrap();
-        let free_segment = first_avail_page.alloc_segment().unwrap();
-        if first_avail_page.is_full() {
-            avail_pages.pop_front();
-        }
-        Ok(free_segment)
+            let first_avail_page = avail_pages.front().unwrap();
+            let free_segment = first_avail_page.alloc_segment().unwrap();
+            if first_avail_page.is_full() {
+                avail_pages.pop_front();
+            }
+            Ok(free_segment)
+        })
     }
 
     /// Returns the number of pages in pool
     fn num_pages(&self) -> usize {
-        self.all_pages.disable_irq().lock().len()
+        self.all_pages
+            .disable_irq()
+            .lock_with(|all_pages| all_pages.len())
     }
 
     /// Return segment size in pool
@@ -167,22 +171,24 @@ impl DmaPage {
     }
 
     fn alloc_segment(self: &Arc<Self>) -> Option<DmaSegment> {
-        let mut segments = self.allocated_segments.disable_irq().lock();
-        let free_segment_index = get_next_free_index(&segments, self.nr_blocks_per_page())?;
-        segments.set(free_segment_index, true);
+        self.allocated_segments.disable_irq().lock_with(|segments| {
+            let free_segment_index = get_next_free_index(segments, self.nr_blocks_per_page())?;
+            segments.set(free_segment_index, true);
 
-        let segment = DmaSegment {
-            size: self.segment_size,
-            dma_stream: self.storage.clone(),
-            start_addr: self.storage.daddr() + free_segment_index * self.segment_size,
-            page: Arc::downgrade(self),
-        };
+            let segment = DmaSegment {
+                size: self.segment_size,
+                dma_stream: self.storage.clone(),
+                start_addr: self.storage.daddr() + free_segment_index * self.segment_size,
+                page: Arc::downgrade(self),
+            };
 
-        Some(segment)
+            Some(segment)
+        })
     }
 
     fn is_free(&self) -> bool {
-        *self.allocated_segments.lock() == BitArray::<[usize; 1], Lsb0>::ZERO
+        self.allocated_segments
+            .lock_with(|segments| *segments == BitArray::<[usize; 1], Lsb0>::ZERO)
     }
 
     const fn nr_blocks_per_page(&self) -> usize {
@@ -190,8 +196,9 @@ impl DmaPage {
     }
 
     fn is_full(&self) -> bool {
-        let segments = self.allocated_segments.disable_irq().lock();
-        get_next_free_index(&segments, self.nr_blocks_per_page()).is_none()
+        self.allocated_segments.disable_irq().lock_with(|segments| {
+            get_next_free_index(segments, self.nr_blocks_per_page()).is_none()
+        })
     }
 }
 
@@ -258,29 +265,35 @@ impl Drop for DmaSegment {
 
         // Keep the same lock order as `pool.alloc_segment`
         // Lock order: pool.avail_pages -> pool.all_pages -> page.allocated_segments
-        let mut avail_pages = pool.avail_pages.disable_irq().lock();
-        let mut all_pages = pool.all_pages.disable_irq().lock();
+        pool.avail_pages.disable_irq().lock_with(|avail_pages| {
+            pool.all_pages.disable_irq().lock_with(|all_pages| {
+                page.allocated_segments
+                    .disable_irq()
+                    .lock_with(|allocated_segments| {
+                        let nr_blocks_per_page = PAGE_SIZE / self.size;
+                        let became_avail =
+                            get_next_free_index(allocated_segments, nr_blocks_per_page).is_none();
 
-        let mut allocated_segments = page.allocated_segments.disable_irq().lock();
+                        debug_assert!(
+                            (page.daddr()..page.daddr() + PAGE_SIZE).contains(&self.daddr())
+                        );
+                        let segment_idx = (self.daddr() - page.daddr()) / self.size;
+                        allocated_segments.set(segment_idx, false);
 
-        let nr_blocks_per_page = PAGE_SIZE / self.size;
-        let became_avail = get_next_free_index(&allocated_segments, nr_blocks_per_page).is_none();
+                        let became_free = allocated_segments.not_any();
 
-        debug_assert!((page.daddr()..page.daddr() + PAGE_SIZE).contains(&self.daddr()));
-        let segment_idx = (self.daddr() - page.daddr()) / self.size;
-        allocated_segments.set(segment_idx, false);
+                        if became_free && all_pages.len() > pool.high_watermark {
+                            avail_pages.retain(|page_| !Arc::ptr_eq(page_, &page));
+                            all_pages.retain(|page_| !Arc::ptr_eq(page_, &page));
+                            return;
+                        }
 
-        let became_free = allocated_segments.not_any();
-
-        if became_free && all_pages.len() > pool.high_watermark {
-            avail_pages.retain(|page_| !Arc::ptr_eq(page_, &page));
-            all_pages.retain(|page_| !Arc::ptr_eq(page_, &page));
-            return;
-        }
-
-        if became_avail {
-            avail_pages.push_back(page.clone());
-        }
+                        if became_avail {
+                            avail_pages.push_back(page.clone());
+                        }
+                    })
+            });
+        });
     }
 }
 

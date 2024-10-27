@@ -92,13 +92,17 @@ impl WaitQueue {
         }
 
         loop {
-            let mut wakers = self.wakers.disable_irq().lock();
-            let Some(waker) = wakers.pop_front() else {
+            let waker = self.wakers.disable_irq().lock_with(|wakers| {
+                let waker = wakers.pop_front();
+                if waker.is_some() {
+                    self.num_wakers.fetch_sub(1, Ordering::Release);
+                }
+                waker
+            });
+
+            let Some(waker) = waker else {
                 return false;
             };
-            self.num_wakers.fetch_sub(1, Ordering::Release);
-            // Avoid holding lock when calling `wake_up`
-            drop(wakers);
 
             if waker.wake_up() {
                 return true;
@@ -116,13 +120,17 @@ impl WaitQueue {
         let mut num_woken = 0;
 
         loop {
-            let mut wakers = self.wakers.disable_irq().lock();
-            let Some(waker) = wakers.pop_front() else {
+            let waker = self.wakers.disable_irq().lock_with(|wakers| {
+                let waker = wakers.pop_front();
+                if waker.is_some() {
+                    self.num_wakers.fetch_sub(1, Ordering::Release);
+                }
+                waker
+            });
+
+            let Some(waker) = waker else {
                 break;
             };
-            self.num_wakers.fetch_sub(1, Ordering::Release);
-            // Avoid holding lock when calling `wake_up`
-            drop(wakers);
 
             if waker.wake_up() {
                 num_woken += 1;
@@ -142,9 +150,10 @@ impl WaitQueue {
     /// Enqueues the input [`Waker`] to the wait queue.
     #[doc(hidden)]
     pub fn enqueue(&self, waker: Arc<Waker>) {
-        let mut wakers = self.wakers.disable_irq().lock();
-        wakers.push_back(waker);
-        self.num_wakers.fetch_add(1, Ordering::Acquire);
+        self.wakers.disable_irq().lock_with(|wakers| {
+            wakers.push_back(waker);
+            self.num_wakers.fetch_add(1, Ordering::Acquire);
+        });
     }
 }
 

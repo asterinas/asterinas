@@ -21,19 +21,20 @@ pub fn sys_pipe2(fds: Vaddr, flags: u32, ctx: &Context) -> Result<SyscallReturn>
         FdFlags::empty()
     };
 
-    let mut file_table = ctx.process.file_table().lock();
+    ctx.process.file_table().lock_with(|file_table| {
+        let pipe_fds = PipeFds {
+            reader_fd: file_table.insert(pipe_reader, fd_flags),
+            writer_fd: file_table.insert(pipe_writer, fd_flags),
+        };
+        debug!("pipe_fds: {:?}", pipe_fds);
 
-    let pipe_fds = PipeFds {
-        reader_fd: file_table.insert(pipe_reader, fd_flags),
-        writer_fd: file_table.insert(pipe_writer, fd_flags),
-    };
-    debug!("pipe_fds: {:?}", pipe_fds);
-
-    if let Err(err) = ctx.get_user_space().write_val(fds, &pipe_fds) {
-        file_table.close_file(pipe_fds.reader_fd).unwrap();
-        file_table.close_file(pipe_fds.writer_fd).unwrap();
-        return Err(err);
-    }
+        if let Err(err) = ctx.get_user_space().write_val(fds, &pipe_fds) {
+            file_table.close_file(pipe_fds.reader_fd).unwrap();
+            file_table.close_file(pipe_fds.writer_fd).unwrap();
+            return Err(err);
+        }
+        Result::Ok(())
+    })?;
 
     Ok(SyscallReturn::Return(0))
 }

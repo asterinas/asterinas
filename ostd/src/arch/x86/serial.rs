@@ -30,8 +30,7 @@ pub type InputCallback = dyn Fn(u8) + Send + Sync + 'static;
 pub fn register_console_input_callback(f: &'static InputCallback) {
     SERIAL_INPUT_CALLBACKS
         .disable_irq()
-        .lock()
-        .push(Arc::new(f));
+        .lock_with(|callbacks| callbacks.push(Arc::new(f)));
 }
 
 struct Stdout;
@@ -67,8 +66,12 @@ pub(crate) fn callback_init() {
         crate::arch::x86::kernel::pic::allocate_irq(4).unwrap()
     } else {
         let irq = IrqLine::alloc().unwrap();
-        let mut io_apic = IO_APIC.get().unwrap().first().unwrap().lock();
-        io_apic.enable(4, irq.clone()).unwrap();
+        IO_APIC
+            .get()
+            .unwrap()
+            .first()
+            .unwrap()
+            .lock_with(|io_apic| io_apic.enable(4, irq.clone()).unwrap());
         irq
     };
     irq.on_active(handle_serial_input);
@@ -83,22 +86,18 @@ where
         .get()
         .unwrap()
         .disable_irq()
-        .lock()
-        .on_active(callback);
+        .lock_with(|line| line.on_active(callback));
 }
 
 fn handle_serial_input(trap_frame: &TrapFrame) {
     // debug!("keyboard interrupt was met");
-    let lock = if let Some(lock) = SERIAL_INPUT_CALLBACKS.try_lock() {
-        lock
-    } else {
-        return;
-    };
-    let received_char = receive_char().unwrap();
-    debug!("receive char = {:?}", received_char);
-    for callback in lock.iter() {
-        callback(received_char);
-    }
+    SERIAL_INPUT_CALLBACKS.try_lock_with(|callbacks| {
+        let received_char = receive_char().unwrap();
+        debug!("receive char = {:?}", received_char);
+        for callback in callbacks.iter() {
+            callback(received_char);
+        }
+    });
 }
 
 fn line_sts() -> LineSts {

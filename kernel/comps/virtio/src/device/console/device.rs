@@ -32,25 +32,28 @@ pub struct ConsoleDevice {
 
 impl AnyConsoleDevice for ConsoleDevice {
     fn send(&self, value: &[u8]) {
-        let mut transmit_queue = self.transmit_queue.disable_irq().lock();
-        let mut reader = VmReader::from(value);
+        self.transmit_queue
+            .disable_irq()
+            .lock_with(|transmit_queue| {
+                let mut reader = VmReader::from(value);
 
-        while reader.remain() > 0 {
-            let mut writer = self.send_buffer.writer().unwrap();
-            let len = writer.write(&mut reader);
-            self.send_buffer.sync(0..len).unwrap();
+                while reader.remain() > 0 {
+                    let mut writer = self.send_buffer.writer().unwrap();
+                    let len = writer.write(&mut reader);
+                    self.send_buffer.sync(0..len).unwrap();
 
-            let slice = DmaStreamSlice::new(&self.send_buffer, 0, len);
-            transmit_queue.add_dma_buf(&[&slice], &[]).unwrap();
+                    let slice = DmaStreamSlice::new(&self.send_buffer, 0, len);
+                    transmit_queue.add_dma_buf(&[&slice], &[]).unwrap();
 
-            if transmit_queue.should_notify() {
-                transmit_queue.notify();
-            }
-            while !transmit_queue.can_pop() {
-                spin_loop();
-            }
-            transmit_queue.pop_used().unwrap();
-        }
+                    if transmit_queue.should_notify() {
+                        transmit_queue.notify();
+                    }
+                    while !transmit_queue.can_pop() {
+                        spin_loop();
+                    }
+                    transmit_queue.pop_used().unwrap();
+                }
+            });
     }
 
     fn register_callback(&self, callback: &'static ConsoleCallback) {
@@ -106,22 +109,27 @@ impl ConsoleDevice {
             callbacks: RwLock::new(Vec::new()),
         });
 
-        device.activate_receive_buffer(&mut device.receive_queue.disable_irq().lock());
+        device
+            .receive_queue
+            .disable_irq()
+            .lock_with(|receive_queue| {
+                device.activate_receive_buffer(receive_queue);
+            });
 
         // Register irq callbacks
-        let mut transport = device.transport.disable_irq().lock();
-        let handle_console_input = {
-            let device = device.clone();
-            move |_: &TrapFrame| device.handle_recv_irq()
-        };
-        transport
-            .register_queue_callback(RECV0_QUEUE_INDEX, Box::new(handle_console_input), false)
-            .unwrap();
-        transport
-            .register_cfg_callback(Box::new(config_space_change))
-            .unwrap();
-        transport.finish_init();
-        drop(transport);
+        device.transport.disable_irq().lock_with(|transport| {
+            let handle_console_input = {
+                let device = device.clone();
+                move |_: &TrapFrame| device.handle_recv_irq()
+            };
+            transport
+                .register_queue_callback(RECV0_QUEUE_INDEX, Box::new(handle_console_input), false)
+                .unwrap();
+            transport
+                .register_cfg_callback(Box::new(config_space_change))
+                .unwrap();
+            transport.finish_init();
+        });
 
         aster_console::register_device(DEVICE_NAME.to_string(), device);
 
@@ -129,21 +137,21 @@ impl ConsoleDevice {
     }
 
     fn handle_recv_irq(&self) {
-        let mut receive_queue = self.receive_queue.disable_irq().lock();
+        self.receive_queue.disable_irq().lock_with(|receive_queue| {
+            let Ok((_, len)) = receive_queue.pop_used() else {
+                return;
+            };
+            self.receive_buffer.sync(0..len as usize).unwrap();
 
-        let Ok((_, len)) = receive_queue.pop_used() else {
-            return;
-        };
-        self.receive_buffer.sync(0..len as usize).unwrap();
+            let callbacks = self.callbacks.read_irq_disabled();
+            for callback in callbacks.iter() {
+                let reader = self.receive_buffer.reader().unwrap().limit(len as usize);
+                callback(reader);
+            }
+            drop(callbacks);
 
-        let callbacks = self.callbacks.read_irq_disabled();
-        for callback in callbacks.iter() {
-            let reader = self.receive_buffer.reader().unwrap().limit(len as usize);
-            callback(reader);
-        }
-        drop(callbacks);
-
-        self.activate_receive_buffer(&mut receive_queue);
+            self.activate_receive_buffer(receive_queue);
+        });
     }
 
     fn activate_receive_buffer(&self, receive_queue: &mut VirtQueue) {

@@ -5,4 +5,4 @@ pub(super) mod apic;
 pub(super) mod pic;
 pub(super) mod tsc;
 
-pub use apic::ioapic::IO_APIC;
+pub use apic::ioapic::{IoApic, IO_APIC};

@@ -180,14 +180,26 @@ pub(crate) fn init(operating_mode: OperatingMode) {
 
 /// Enable the IOAPIC line that connected to PIC
 pub(crate) fn enable_ioapic_line(irq: IrqLine) {
-    let mut io_apic = IO_APIC.get().unwrap().first().unwrap().lock();
-    debug_assert_eq!(io_apic.interrupt_base(), 0);
-    io_apic.enable(2, irq.clone()).unwrap();
+    IO_APIC
+        .get()
+        .unwrap()
+        .first()
+        .unwrap()
+        .lock_with(|io_apic| {
+            debug_assert_eq!(io_apic.interrupt_base(), 0);
+            io_apic.enable(2, irq.clone()).unwrap();
+        });
 }
 
 /// Disable the IOAPIC line that connected to PIC
 pub(crate) fn disable_ioapic_line() {
-    let mut io_apic = IO_APIC.get().unwrap().first().unwrap().lock();
-    debug_assert_eq!(io_apic.interrupt_base(), 0);
-    io_apic.disable(2).unwrap();
+    IO_APIC
+        .get()
+        .unwrap()
+        .first()
+        .unwrap()
+        .lock_with(|io_apic| {
+            debug_assert_eq!(io_apic.interrupt_base(), 0);
+            io_apic.disable(2).unwrap();
+        });
 }

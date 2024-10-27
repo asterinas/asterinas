@@ -65,9 +65,11 @@ pub(in crate::mm) static PAGE_ALLOCATOR: Once<SpinLock<CountingFrameAllocator>> 
 ///
 /// The metadata of the page is initialized with the given metadata.
 pub(crate) fn alloc_single<M: PageMeta>(metadata: M) -> Option<Page<M>> {
-    PAGE_ALLOCATOR.get().unwrap().lock().alloc(1).map(|idx| {
-        let paddr = idx * PAGE_SIZE;
-        Page::from_unused(paddr, metadata)
+    PAGE_ALLOCATOR.get().unwrap().lock_with(|a| {
+        a.alloc(1).map(|idx| {
+            let paddr = idx * PAGE_SIZE;
+            Page::from_unused(paddr, metadata)
+        })
     })
 }
 
@@ -85,14 +87,11 @@ where
     F: FnMut(Paddr) -> M,
 {
     assert!(len % PAGE_SIZE == 0);
-    PAGE_ALLOCATOR
-        .get()
-        .unwrap()
-        .lock()
-        .alloc(len / PAGE_SIZE)
-        .map(|start| {
+    PAGE_ALLOCATOR.get().unwrap().lock_with(|a| {
+        a.alloc(len / PAGE_SIZE).map(|start| {
             ContPages::from_unused(start * PAGE_SIZE..start * PAGE_SIZE + len, metadata_fn)
         })
+    })
 }
 
 /// Allocate pages.
@@ -113,14 +112,15 @@ where
 {
     assert!(len % PAGE_SIZE == 0);
     let nframes = len / PAGE_SIZE;
-    let mut allocator = PAGE_ALLOCATOR.get().unwrap().lock();
-    let mut vector = Vec::new();
-    for _ in 0..nframes {
-        let paddr = allocator.alloc(1)? * PAGE_SIZE;
-        let page = Page::<M>::from_unused(paddr, metadata_fn(paddr));
-        vector.push(page);
-    }
-    Some(vector)
+    PAGE_ALLOCATOR.get().unwrap().lock_with(|allocator| {
+        let mut vector = Vec::new();
+        for _ in 0..nframes {
+            let paddr = allocator.alloc(1)? * PAGE_SIZE;
+            let page = Page::<M>::from_unused(paddr, metadata_fn(paddr));
+            vector.push(page);
+        }
+        Some(vector)
+    })
 }
 
 pub(crate) fn init() {

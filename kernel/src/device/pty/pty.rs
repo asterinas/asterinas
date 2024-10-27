@@ -62,9 +62,10 @@ impl PtyMaster {
     }
 
     pub(super) fn slave_push_char(&self, ch: u8) {
-        let mut input = self.input.disable_irq().lock();
-        input.push_overwrite(ch);
-        self.update_state(&input);
+        self.input.disable_irq().lock_with(|input| {
+            input.push_overwrite(ch);
+            self.update_state(input);
+        });
     }
 
     pub(super) fn slave_poll(&self, mask: IoEvents, mut poller: Option<&mut Poller>) -> IoEvents {
@@ -108,43 +109,52 @@ impl FileIo for PtyMaster {
 
         let mut poller = Poller::new();
         loop {
-            let mut input = self.input.disable_irq().lock();
+            let (should_wait, read_len) = self.input.disable_irq().lock_with(|input| {
+                if input.is_empty() {
+                    let events = self.pollee.poll(IoEvents::IN, Some(&mut poller));
 
-            if input.is_empty() {
-                let events = self.pollee.poll(IoEvents::IN, Some(&mut poller));
+                    if events.contains(IoEvents::ERR) {
+                        return_errno_with_message!(Errno::EACCES, "unexpected err");
+                    }
 
-                if events.contains(IoEvents::ERR) {
-                    return_errno_with_message!(Errno::EACCES, "unexpected err");
+                    if events.is_empty() {
+                        return Result::Ok((true, None)); // should wait before retry
+                    }
+
+                    return Result::Ok((false, None)); // no need to wait before retry
                 }
 
-                if events.is_empty() {
-                    drop(input);
-                    // FIXME: deal with pty read timeout
-                    poller.wait()?;
-                }
-                continue;
+                let read_len = input.read_fallible(writer)?;
+                self.update_state(input);
+                Ok((false, Some(read_len)))
+            })?;
+
+            if should_wait {
+                // FIXME: deal with pty read timeout
+                poller.wait()?;
             }
 
-            let read_len = input.read_fallible(writer)?;
-            self.update_state(&input);
-            return Ok(read_len);
+            if let Some(read_len) = read_len {
+                return Ok(read_len);
+            }
         }
     }
 
     fn write(&self, reader: &mut VmReader) -> Result<usize> {
         let buf = reader.collect()?;
         let write_len = buf.len();
-        let mut input = self.input.lock();
-        for character in buf {
-            self.output.push_char(character, |content| {
-                for byte in content.as_bytes() {
-                    input.push_overwrite(*byte);
-                }
-            });
-        }
+        self.input.lock_with(|input| {
+            for character in buf {
+                self.output.push_char(character, |content| {
+                    for byte in content.as_bytes() {
+                        input.push_overwrite(*byte);
+                    }
+                });
+            }
 
-        self.update_state(&input);
-        Ok(write_len)
+            self.update_state(input);
+            Ok(write_len)
+        })
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
@@ -189,11 +199,10 @@ impl FileIo for PtyMaster {
                     Arc::new(inode_handle)
                 };
 
-                let fd = {
-                    let mut file_table = current.file_table().lock();
+                let fd = current.file_table().lock_with(|file_table| {
                     // TODO: deal with the O_CLOEXEC flag
                     file_table.insert(slave, FdFlags::empty())
-                };
+                });
                 Ok(fd)
             }
             IoctlCmd::TIOCGWINSZ => {
@@ -238,7 +247,7 @@ impl FileIo for PtyMaster {
                 Ok(0)
             }
             IoctlCmd::FIONREAD => {
-                let len = self.input.lock().len() as i32;
+                let len = self.input.lock_with(|input| input.len()) as i32;
                 get_current_userspace!().write_val(arg, &len)?;
                 Ok(0)
             }

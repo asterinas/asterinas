@@ -10,7 +10,7 @@ use alloc::{
 };
 
 use keyable_arc::KeyableArc;
-use ostd::sync::{LocalIrqDisabled, PreemptDisabled, SpinLock, SpinLockGuard};
+use ostd::sync::{LocalIrqDisabled, PreemptDisabled, SpinLock};
 use smoltcp::{
     iface::{packet::Packet, Context},
     phy::Device,
@@ -51,7 +51,7 @@ impl<E> IfaceCommon<E> {
     }
 
     pub(super) fn ipv4_addr(&self) -> Option<Ipv4Address> {
-        self.interface.lock().ipv4_addr()
+        self.interface.lock_with(|iface| iface.ipv4_addr())
     }
 
     pub(super) fn ext(&self) -> &E {
@@ -61,8 +61,11 @@ impl<E> IfaceCommon<E> {
 
 impl<E> IfaceCommon<E> {
     /// Acquires the lock to the interface.
-    pub(crate) fn interface(&self) -> SpinLockGuard<smoltcp::iface::Interface, LocalIrqDisabled> {
-        self.interface.lock()
+    pub(crate) fn lock_with<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut smoltcp::iface::Interface) -> R,
+    {
+        self.interface.lock_with(f)
     }
 }
 
@@ -86,8 +89,7 @@ impl<E> IfaceCommon<E> {
 
         let inserted = self
             .tcp_sockets
-            .lock()
-            .insert(KeyableArc::from(bound_socket.inner().clone()));
+            .lock_with(|sockets| sockets.insert(KeyableArc::from(bound_socket.inner().clone())));
         assert!(inserted);
 
         Ok(bound_socket)
@@ -109,8 +111,7 @@ impl<E> IfaceCommon<E> {
 
         let inserted = self
             .udp_sockets
-            .lock()
-            .insert(KeyableArc::from(bound_socket.inner().clone()));
+            .lock_with(|sockets| sockets.insert(KeyableArc::from(bound_socket.inner().clone())));
         assert!(inserted);
 
         Ok(bound_socket)
@@ -122,14 +123,15 @@ impl<E> IfaceCommon<E> {
     ///
     /// See <https://en.wikipedia.org/wiki/Ephemeral_port>.
     fn alloc_ephemeral_port(&self) -> Option<u16> {
-        let mut used_ports = self.used_ports.lock();
-        for port in IP_LOCAL_PORT_START..=IP_LOCAL_PORT_END {
-            if let Entry::Vacant(e) = used_ports.entry(port) {
-                e.insert(0);
-                return Some(port);
+        self.used_ports.lock_with(|used_ports| {
+            for port in IP_LOCAL_PORT_START..=IP_LOCAL_PORT_END {
+                if let Entry::Vacant(e) = used_ports.entry(port) {
+                    e.insert(0);
+                    return Some(port);
+                }
             }
-        }
-        None
+            None
+        })
     }
 
     fn bind_port(&self, config: BindPortConfig) -> Result<u16, BindError> {
@@ -142,20 +144,20 @@ impl<E> IfaceCommon<E> {
             }
         };
 
-        let mut used_ports = self.used_ports.lock();
-
-        if let Some(used_times) = used_ports.get_mut(&port) {
-            if *used_times == 0 || config.can_reuse() {
-                // FIXME: Check if the previous socket was bound with SO_REUSEADDR.
-                *used_times += 1;
+        self.used_ports.lock_with(|used_ports| {
+            if let Some(used_times) = used_ports.get_mut(&port) {
+                if *used_times == 0 || config.can_reuse() {
+                    // FIXME: Check if the previous socket was bound with SO_REUSEADDR.
+                    *used_times += 1;
+                } else {
+                    return Err(BindError::InUse);
+                }
             } else {
-                return Err(BindError::InUse);
+                used_ports.insert(port, 1);
             }
-        } else {
-            used_ports.insert(port, 1);
-        }
 
-        Ok(port)
+            Ok(port)
+        })
     }
 }
 
@@ -175,7 +177,9 @@ impl<E> IfaceCommon<E> {
     pub(crate) fn remove_udp_socket(&self, socket: &Arc<BoundUdpSocketInner<E>>) {
         let keyable_socket = KeyableArc::from(socket.clone());
 
-        let removed = self.udp_sockets.lock().remove(&keyable_socket);
+        let removed = self
+            .udp_sockets
+            .lock_with(|sockets| sockets.remove(&keyable_socket));
         assert!(removed);
 
         self.release_port(keyable_socket.port());
@@ -183,12 +187,13 @@ impl<E> IfaceCommon<E> {
 
     /// Releases the port so that it can be used again (if it is not being reused).
     fn release_port(&self, port: u16) {
-        let mut used_ports = self.used_ports.lock();
-        if let Some(used_times) = used_ports.remove(&port) {
-            if used_times != 1 {
-                used_ports.insert(port, used_times - 1);
+        self.used_ports.lock_with(|used_ports| {
+            if let Some(used_times) = used_ports.remove(&port) {
+                if used_times != 1 {
+                    used_ports.insert(port, used_times - 1);
+                }
             }
-        }
+        });
     }
 }
 
@@ -209,44 +214,47 @@ impl<E> IfaceCommon<E> {
         >,
         Q: FnMut(&Packet, &mut Context, D::TxToken<'_>),
     {
-        let mut interface = self.interface();
-        interface.context().now = get_network_timestamp();
+        self.lock_with(|interface| {
+            interface.context().now = get_network_timestamp();
 
-        let mut tcp_sockets = self.tcp_sockets.lock();
-        let udp_sockets = self.udp_sockets.lock();
+            self.tcp_sockets.lock_with(|tcp_sockets| {
+                self.udp_sockets.lock_with(|udp_sockets| {
+                    let mut context =
+                        PollContext::new(interface.context(), tcp_sockets, udp_sockets);
+                    context.poll_ingress(device, process_phy, &mut dispatch_phy);
+                    context.poll_egress(device, dispatch_phy);
 
-        let mut context = PollContext::new(interface.context(), &tcp_sockets, &udp_sockets);
-        context.poll_ingress(device, process_phy, &mut dispatch_phy);
-        context.poll_egress(device, dispatch_phy);
+                    tcp_sockets.iter().for_each(|socket| {
+                        if socket.has_new_events() {
+                            socket.on_iface_events();
+                        }
+                    });
+                    udp_sockets.iter().for_each(|socket| {
+                        if socket.has_new_events() {
+                            socket.on_iface_events();
+                        }
+                    });
 
-        tcp_sockets.iter().for_each(|socket| {
-            if socket.has_new_events() {
-                socket.on_iface_events();
-            }
-        });
-        udp_sockets.iter().for_each(|socket| {
-            if socket.has_new_events() {
-                socket.on_iface_events();
-            }
-        });
+                    self.remove_dead_tcp_sockets(tcp_sockets);
 
-        self.remove_dead_tcp_sockets(&mut tcp_sockets);
-
-        match (
-            tcp_sockets
-                .iter()
-                .map(|socket| socket.next_poll_at_ms())
-                .min(),
-            udp_sockets
-                .iter()
-                .map(|socket| socket.next_poll_at_ms())
-                .min(),
-        ) {
-            (Some(tcp_poll_at), Some(udp_poll_at)) if tcp_poll_at <= udp_poll_at => {
-                Some(tcp_poll_at)
-            }
-            (tcp_poll_at, None) => tcp_poll_at,
-            (_, udp_poll_at) => udp_poll_at,
-        }
+                    match (
+                        tcp_sockets
+                            .iter()
+                            .map(|socket| socket.next_poll_at_ms())
+                            .min(),
+                        udp_sockets
+                            .iter()
+                            .map(|socket| socket.next_poll_at_ms())
+                            .min(),
+                    ) {
+                        (Some(tcp_poll_at), Some(udp_poll_at)) if tcp_poll_at <= udp_poll_at => {
+                            Some(tcp_poll_at)
+                        }
+                        (tcp_poll_at, None) => tcp_poll_at,
+                        (_, udp_poll_at) => udp_poll_at,
+                    }
+                })
+            })
+        })
     }
 }

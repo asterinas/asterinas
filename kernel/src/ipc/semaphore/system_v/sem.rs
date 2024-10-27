@@ -7,7 +7,7 @@ use core::{
 };
 
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
-use ostd::sync::{PreemptDisabled, Waiter, Waker};
+use ostd::sync::{Waiter, Waker};
 
 use super::sem_set::{SemSetInner, SEMVMX};
 use crate::{
@@ -157,46 +157,51 @@ pub fn sem_op(
     let sem_set = local_sem_sets
         .get(&sem_id)
         .ok_or(Error::new(Errno::EINVAL))?;
-    let mut inner = sem_set.inner();
 
-    if perform_atomic_semop(&mut inner.sems, &mut pending_op)? {
-        if alter {
-            let wake_queue = do_smart_update(&mut inner, &pending_op);
-            for wake_op in wake_queue {
-                wake_op.set_status(Status::Normal);
-                if let Some(waker) = wake_op.waker {
-                    waker.wake_up();
+    let Some((waiter, status)) = sem_set.lock_inner_with(|inner| {
+        if perform_atomic_semop(&mut inner.sems, &mut pending_op)? {
+            if alter {
+                let wake_queue = do_smart_update(inner, &pending_op);
+                for wake_op in wake_queue {
+                    wake_op.set_status(Status::Normal);
+                    if let Some(waker) = wake_op.waker {
+                        waker.wake_up();
+                    }
                 }
             }
+
+            sem_set.update_otime();
+            return Ok(None);
         }
 
-        sem_set.update_otime();
+        // Prepare to wait
+        let status = pending_op.status.clone();
+        let (waiter, waker) = Waiter::new_pair();
+
+        // Check if timeout exists to avoid calling `Arc::clone()`
+        if let Some(timeout) = timeout {
+            pending_op.waker = Some(waker.clone());
+
+            let jiffies_timer = JIFFIES_TIMER_MANAGER.get().unwrap().create_timer(move || {
+                waker.wake_up();
+            });
+            jiffies_timer.set_timeout(Timeout::After(timeout));
+        } else {
+            pending_op.waker = Some(waker);
+        }
+
+        if alter {
+            inner.pending_alter.push_back(pending_op);
+        } else {
+            inner.pending_const.push_back(pending_op);
+        }
+
+        Result::Ok(Some((waiter, status)))
+    })?
+    else {
         return Ok(());
-    }
+    };
 
-    // Prepare to wait
-    let status = pending_op.status.clone();
-    let (waiter, waker) = Waiter::new_pair();
-
-    // Check if timeout exists to avoid calling `Arc::clone()`
-    if let Some(timeout) = timeout {
-        pending_op.waker = Some(waker.clone());
-
-        let jiffies_timer = JIFFIES_TIMER_MANAGER.get().unwrap().create_timer(move || {
-            waker.wake_up();
-        });
-        jiffies_timer.set_timeout(Timeout::After(timeout));
-    } else {
-        pending_op.waker = Some(waker);
-    }
-
-    if alter {
-        inner.pending_alter.push_back(pending_op);
-    } else {
-        inner.pending_const.push_back(pending_op);
-    }
-
-    drop(inner);
     drop(local_sem_sets);
 
     waiter.wait();
@@ -207,23 +212,23 @@ pub fn sem_op(
             // FIXME: Getting sem_sets maybe time-consuming.
             let sem_sets = sem_sets();
             let sem_set = sem_sets.get(&sem_id).ok_or(Error::new(Errno::EINVAL))?;
-            let mut inner = sem_set.inner();
+            sem_set.lock_inner_with(|inner| {
+                let pending_ops = if alter {
+                    &mut inner.pending_alter
+                } else {
+                    &mut inner.pending_const
+                };
+                pending_ops.retain(|op| op.pid != pid);
 
-            let pending_ops = if alter {
-                &mut inner.pending_alter
-            } else {
-                &mut inner.pending_const
-            };
-            pending_ops.retain(|op| op.pid != pid);
-
-            Err(Error::new(Errno::EAGAIN))
+                Err(Error::new(Errno::EAGAIN))
+            })
         }
     }
 }
 
 /// Update pending const and alter operations, ref: <https://elixir.bootlin.com/linux/v6.0.9/source/ipc/sem.c#L1029>
 pub(super) fn do_smart_update(
-    inner: &mut SpinLockGuard<SemSetInner, PreemptDisabled>,
+    inner: &mut SemSetInner,
     pending_op: &PendingOp,
 ) -> LinkedList<PendingOp> {
     let mut wake_queue = LinkedList::new();

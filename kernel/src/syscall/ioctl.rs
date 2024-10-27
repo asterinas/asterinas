@@ -16,10 +16,10 @@ pub fn sys_ioctl(fd: FileDesc, cmd: u32, arg: Vaddr, ctx: &Context) -> Result<Sy
         fd, ioctl_cmd, arg
     );
 
-    let file = {
-        let file_table = ctx.process.file_table().lock();
-        file_table.get_file(fd)?.clone()
-    };
+    let file = ctx
+        .process
+        .file_table()
+        .lock_with(|table| table.get_file(fd).cloned())?;
     let res = match ioctl_cmd {
         IoctlCmd::FIONBIO => {
             let is_nonblocking = ctx.get_user_space().read_val::<i32>(arg)? != 0;
@@ -44,17 +44,19 @@ pub fn sys_ioctl(fd: FileDesc, cmd: u32, arg: Vaddr, ctx: &Context) -> Result<Sy
             // Follow the implementation of fcntl()
 
             let flags = FdFlags::CLOEXEC;
-            let file_table = ctx.process.file_table().lock();
-            let entry = file_table.get_entry(fd)?;
-            entry.set_flags(flags);
-            0
+            ctx.process.file_table().lock_with(|file_table| {
+                let entry = file_table.get_entry(fd)?;
+                entry.set_flags(flags);
+                Result::Ok(0)
+            })?
         }
         IoctlCmd::FIONCLEX => {
             // Clears the close-on-exec flag of the file.
-            let file_table = ctx.process.file_table().lock();
-            let entry = file_table.get_entry(fd)?;
-            entry.set_flags(entry.flags() & (!FdFlags::CLOEXEC));
-            0
+            ctx.process.file_table().lock_with(|file_table| {
+                let entry = file_table.get_entry(fd)?;
+                entry.set_flags(entry.flags() & (!FdFlags::CLOEXEC));
+                Result::Ok(0)
+            })?
         }
         _ => file.ioctl(ioctl_cmd, arg)?,
     };

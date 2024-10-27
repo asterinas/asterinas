@@ -41,7 +41,7 @@ pub fn inter_processor_call(targets: &CpuSet, f: fn()) {
             call_on_self = true;
             continue;
         }
-        CALL_QUEUES.get_on_cpu(cpu_id).lock().push_back(f);
+        CALL_QUEUES.get_on_cpu(cpu_id).lock_with(|q| q.push_back(f));
     }
     for cpu_id in targets.iter() {
         if cpu_id == this_cpu_id {
@@ -69,15 +69,16 @@ fn do_inter_processor_call(_trapframe: &TrapFrame) {
     let preempt_guard = trap::disable_local();
     let cur_cpu = preempt_guard.current_cpu();
 
-    let mut queue = CALL_QUEUES.get_on_cpu(cur_cpu).lock();
-    while let Some(f) = queue.pop_front() {
-        log::trace!(
-            "Performing inter-processor call to {:#?} on CPU {:#?}",
-            f,
-            cur_cpu
-        );
-        f();
-    }
+    CALL_QUEUES.get_on_cpu(cur_cpu).lock_with(|queue| {
+        while let Some(f) = queue.pop_front() {
+            log::trace!(
+                "Performing inter-processor call to {:#?} on CPU {:#?}",
+                f,
+                cur_cpu
+            );
+            f();
+        }
+    });
 }
 
 pub(super) fn init() {

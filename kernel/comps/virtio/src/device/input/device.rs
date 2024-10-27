@@ -122,24 +122,24 @@ impl InputDevice {
             debug!("input device has no properties or the properties is not defined");
         }
 
-        let mut transport = device.transport.disable_irq().lock();
-        fn config_space_change(_: &TrapFrame) {
-            debug!("input device config space change");
-        }
-        transport
-            .register_cfg_callback(Box::new(config_space_change))
-            .unwrap();
+        device.transport.disable_irq().lock_with(|transport| {
+            fn config_space_change(_: &TrapFrame) {
+                debug!("input device config space change");
+            }
+            transport
+                .register_cfg_callback(Box::new(config_space_change))
+                .unwrap();
 
-        let handle_input = {
-            let device = device.clone();
-            move |_: &TrapFrame| device.handle_irq()
-        };
-        transport
-            .register_queue_callback(QUEUE_EVENT, Box::new(handle_input), false)
-            .unwrap();
+            let handle_input = {
+                let device = device.clone();
+                move |_: &TrapFrame| device.handle_irq()
+            };
+            transport
+                .register_queue_callback(QUEUE_EVENT, Box::new(handle_input), false)
+                .unwrap();
 
-        transport.finish_init();
-        drop(transport);
+            transport.finish_init();
+        });
 
         aster_input::register_device(super::DEVICE_NAME.to_string(), device);
 
@@ -148,23 +148,23 @@ impl InputDevice {
 
     /// Pop the pending event.
     fn pop_pending_events(&self, handle_event: &impl Fn(&EventBuf) -> bool) {
-        let mut event_queue = self.event_queue.disable_irq().lock();
+        self.event_queue.disable_irq().lock_with(|event_queue| {
+            // one interrupt may contain several input events, so it should loop
+            while let Ok((token, _)) = event_queue.pop_used() {
+                debug_assert!(token < QUEUE_SIZE);
+                let ptr = self.event_table.get(token as usize);
+                let res = handle_event(&ptr);
+                let new_token = event_queue.add_dma_buf(&[], &[&ptr]).unwrap();
+                // This only works because nothing happen between `pop_used` and `add` that affects
+                // the list of free descriptors in the queue, so `add` reuses the descriptor which
+                // was just freed by `pop_used`.
+                assert_eq!(new_token, token);
 
-        // one interrupt may contain several input events, so it should loop
-        while let Ok((token, _)) = event_queue.pop_used() {
-            debug_assert!(token < QUEUE_SIZE);
-            let ptr = self.event_table.get(token as usize);
-            let res = handle_event(&ptr);
-            let new_token = event_queue.add_dma_buf(&[], &[&ptr]).unwrap();
-            // This only works because nothing happen between `pop_used` and `add` that affects
-            // the list of free descriptors in the queue, so `add` reuses the descriptor which
-            // was just freed by `pop_used`.
-            assert_eq!(new_token, token);
-
-            if !res {
-                break;
+                if !res {
+                    break;
+                }
             }
-        }
+        });
     }
 
     pub fn query_config_id_name(&self) -> String {

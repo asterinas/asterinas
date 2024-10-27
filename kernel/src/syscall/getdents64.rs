@@ -23,10 +23,10 @@ pub fn sys_getdents(
         fd, buf_addr, buf_len
     );
 
-    let file = {
-        let file_table = ctx.process.file_table().lock();
-        file_table.get_file(fd)?.clone()
-    };
+    let file = ctx
+        .process
+        .file_table()
+        .lock_with(|table| table.get_file(fd).cloned())?;
     let inode_handle = file
         .downcast_ref::<InodeHandle>()
         .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;
@@ -53,10 +53,10 @@ pub fn sys_getdents64(
         fd, buf_addr, buf_len
     );
 
-    let file = {
-        let file_table = ctx.process.file_table().lock();
-        file_table.get_file(fd)?.clone()
-    };
+    let file = ctx
+        .process
+        .file_table()
+        .lock_with(|table| table.get_file(fd).cloned())?;
     let inode_handle = file
         .downcast_ref::<InodeHandle>()
         .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;

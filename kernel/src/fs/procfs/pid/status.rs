@@ -80,7 +80,7 @@ impl FileOps for StatusFileOps {
         writeln!(
             status_output,
             "FDSize:\t{}",
-            process.file_table().lock().len()
+            process.file_table().lock_with(|tbl| tbl.len())
         )
         .unwrap();
         writeln!(status_output, "Threads:\t{}", process.tasks().lock().len()).unwrap();

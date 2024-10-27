@@ -33,16 +33,18 @@ pub fn sys_fcntl(fd: FileDesc, cmd: i32, arg: u64, ctx: &Context) -> Result<Sysc
 }
 
 fn handle_dupfd(fd: FileDesc, arg: u64, flags: FdFlags, ctx: &Context) -> Result<SyscallReturn> {
-    let mut file_table = ctx.process.file_table().lock();
-    let new_fd = file_table.dup(fd, arg as FileDesc, flags)?;
-    Ok(SyscallReturn::Return(new_fd as _))
+    ctx.process.file_table().lock_with(|file_table| {
+        let new_fd = file_table.dup(fd, arg as FileDesc, flags)?;
+        Ok(SyscallReturn::Return(new_fd as _))
+    })
 }
 
 fn handle_getfd(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
-    let file_table = ctx.process.file_table().lock();
-    let entry = file_table.get_entry(fd)?;
-    let fd_flags = entry.flags();
-    Ok(SyscallReturn::Return(fd_flags.bits() as _))
+    ctx.process.file_table().lock_with(|file_table| {
+        let entry = file_table.get_entry(fd)?;
+        let fd_flags = entry.flags();
+        Ok(SyscallReturn::Return(fd_flags.bits() as _))
+    })
 }
 
 fn handle_setfd(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
@@ -51,17 +53,18 @@ fn handle_setfd(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> 
     } else {
         FdFlags::from_bits(arg as u8).ok_or(Error::with_message(Errno::EINVAL, "invalid flags"))?
     };
-    let file_table = ctx.process.file_table().lock();
-    let entry = file_table.get_entry(fd)?;
-    entry.set_flags(flags);
-    Ok(SyscallReturn::Return(0))
+    ctx.process.file_table().lock_with(|file_table| {
+        let entry = file_table.get_entry(fd)?;
+        entry.set_flags(flags);
+        Ok(SyscallReturn::Return(0))
+    })
 }
 
 fn handle_getfl(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
-    let file = {
-        let file_table = ctx.process.file_table().lock();
-        file_table.get_file(fd)?.clone()
-    };
+    let file = ctx
+        .process
+        .file_table()
+        .lock_with(|table| table.get_file(fd).cloned())?;
     let status_flags = file.status_flags();
     let access_mode = file.access_mode();
     Ok(SyscallReturn::Return(
@@ -70,10 +73,10 @@ fn handle_getfl(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
 }
 
 fn handle_setfl(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
-    let file = {
-        let file_table = ctx.process.file_table().lock();
-        file_table.get_file(fd)?.clone()
-    };
+    let file = ctx
+        .process
+        .file_table()
+        .lock_with(|table| table.get_file(fd).cloned())?;
     let valid_flags_mask = StatusFlags::O_APPEND
         | StatusFlags::O_ASYNC
         | StatusFlags::O_DIRECT
@@ -87,10 +90,10 @@ fn handle_setfl(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> 
 }
 
 fn handle_getlk(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
-    let file = {
-        let file_table = ctx.process.file_table().lock();
-        file_table.get_file(fd)?.clone()
-    };
+    let file = ctx
+        .process
+        .file_table()
+        .lock_with(|table| table.get_file(fd).cloned())?;
     let lock_mut_ptr = arg as Vaddr;
     let mut lock_mut_c = ctx.get_user_space().read_val::<c_flock>(lock_mut_ptr)?;
     let lock_type = RangeLockType::try_from(lock_mut_c.l_type)?;
@@ -116,10 +119,10 @@ fn handle_setlk(
     is_nonblocking: bool,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let file = {
-        let file_table = ctx.process.file_table().lock();
-        file_table.get_file(fd)?.clone()
-    };
+    let file = ctx
+        .process
+        .file_table()
+        .lock_with(|table| table.get_file(fd).cloned())?;
     let lock_mut_ptr = arg as Vaddr;
     let lock_mut_c = ctx.get_user_space().read_val::<c_flock>(lock_mut_ptr)?;
     let lock_type = RangeLockType::try_from(lock_mut_c.l_type)?;
@@ -135,10 +138,11 @@ fn handle_setlk(
 }
 
 fn handle_getown(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
-    let file_table = ctx.process.file_table().lock();
-    let file_entry = file_table.get_entry(fd)?;
-    let pid = file_entry.owner().unwrap_or(0);
-    Ok(SyscallReturn::Return(pid as _))
+    ctx.process.file_table().lock_with(|file_table| {
+        let file_entry = file_table.get_entry(fd)?;
+        let pid = file_entry.owner().unwrap_or(0);
+        Ok(SyscallReturn::Return(pid as _))
+    })
 }
 
 fn handle_setown(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
@@ -159,9 +163,12 @@ fn handle_setown(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn>
         ))?)
     };
 
-    let mut file_table = ctx.process.file_table().lock();
-    let file_entry = file_table.get_entry_mut(fd)?;
-    file_entry.set_owner(owner_process.as_ref())?;
+    ctx.process.file_table().lock_with(|file_table| {
+        let file_entry = file_table.get_entry_mut(fd)?;
+        file_entry.set_owner(owner_process.as_ref())?;
+        Result::Ok(())
+    })?;
+
     Ok(SyscallReturn::Return(0))
 }
 

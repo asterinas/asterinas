@@ -8,15 +8,15 @@ static THREAD_TABLE: SpinLock<BTreeMap<Tid, Arc<Thread>>> = SpinLock::new(BTreeM
 /// Adds a posix thread to global thread table
 pub fn add_thread(tid: Tid, thread: Arc<Thread>) {
     debug_assert_eq!(tid, thread.tid());
-    THREAD_TABLE.lock().insert(tid, thread);
+    THREAD_TABLE.lock_with(|table| table.insert(tid, thread));
 }
 
 /// Removes a posix thread to global thread table
 pub fn remove_thread(tid: Tid) {
-    THREAD_TABLE.lock().remove(&tid);
+    THREAD_TABLE.lock_with(|table| table.remove(&tid));
 }
 
 /// Gets a posix thread from the global thread table
 pub fn get_thread(tid: Tid) -> Option<Arc<Thread>> {
-    THREAD_TABLE.lock().get(&tid).cloned()
+    THREAD_TABLE.lock_with(|table| table.get(&tid).cloned())
 }

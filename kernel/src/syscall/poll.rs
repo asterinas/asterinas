@@ -102,29 +102,29 @@ enum FileResult {
 
 /// Holds all the files we're going to poll.
 fn hold_files(poll_fds: &[PollFd], ctx: &Context) -> (FileResult, Vec<Option<Arc<dyn FileLike>>>) {
-    let file_table = ctx.process.file_table().lock();
+    ctx.process.file_table().lock_with(|file_table| {
+        let mut files = Vec::with_capacity(poll_fds.len());
+        let mut result = FileResult::AllValid;
 
-    let mut files = Vec::with_capacity(poll_fds.len());
-    let mut result = FileResult::AllValid;
+        for poll_fd in poll_fds.iter() {
+            let Some(fd) = poll_fd.fd() else {
+                files.push(None);
+                continue;
+            };
 
-    for poll_fd in poll_fds.iter() {
-        let Some(fd) = poll_fd.fd() else {
-            files.push(None);
-            continue;
-        };
+            let Ok(file) = file_table.get_file(fd) else {
+                poll_fd.revents.set(IoEvents::NVAL);
+                result = FileResult::SomeInvalid;
 
-        let Ok(file) = file_table.get_file(fd) else {
-            poll_fd.revents.set(IoEvents::NVAL);
-            result = FileResult::SomeInvalid;
+                files.push(None);
+                continue;
+            };
 
-            files.push(None);
-            continue;
-        };
+            files.push(Some(file.clone()));
+        }
 
-        files.push(Some(file.clone()));
-    }
-
-    (result, files)
+        (result, files)
+    })
 }
 
 enum PollerResult {

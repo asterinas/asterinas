@@ -38,9 +38,10 @@ pub fn sys_epoll_create1(flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     };
 
     let epoll_file: Arc<EpollFile> = EpollFile::new();
-    let mut file_table = ctx.process.file_table().lock();
-    let fd = file_table.insert(epoll_file, fd_flags);
-    Ok(SyscallReturn::Return(fd as _))
+    ctx.process.file_table().lock_with(|file_table| {
+        let fd = file_table.insert(epoll_file, fd_flags);
+        Ok(SyscallReturn::Return(fd as _))
+    })
 }
 
 pub fn sys_epoll_ctl(
@@ -76,10 +77,10 @@ pub fn sys_epoll_ctl(
         _ => return_errno_with_message!(Errno::EINVAL, "invalid op"),
     };
 
-    let file = {
-        let file_table = ctx.process.file_table().lock();
-        file_table.get_file(epfd)?.clone()
-    };
+    let file = ctx
+        .process
+        .file_table()
+        .lock_with(|file_table| Result::Ok(file_table.get_file(epfd)?.clone()))?;
     let epoll_file = file
         .downcast_ref::<EpollFile>()
         .ok_or(Error::with_message(Errno::EINVAL, "not epoll file"))?;
@@ -106,10 +107,10 @@ fn do_epoll_wait(
         None
     };
 
-    let epoll_file_arc = {
-        let file_table = ctx.process.file_table().lock();
-        file_table.get_file(epfd)?.clone()
-    };
+    let epoll_file_arc = ctx
+        .process
+        .file_table()
+        .lock_with(|file_table| Result::Ok(file_table.get_file(epfd)?.clone()))?;
     let epoll_file = epoll_file_arc
         .downcast_ref::<EpollFile>()
         .ok_or(Error::with_message(Errno::EINVAL, "not epoll file"))?;

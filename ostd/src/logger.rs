@@ -31,16 +31,25 @@ impl log::Log for Logger {
             return;
         }
 
-        let timestamp = Jiffies::elapsed().as_duration().as_secs_f64();
-        let level = record.level();
-
         // Use a global lock to prevent interleaving of log messages.
         use crate::sync::SpinLock;
         static RECORD_LOCK: SpinLock<()> = SpinLock::new(());
-        let _lock = RECORD_LOCK.disable_irq().lock();
+
+        RECORD_LOCK.disable_irq().lock_with(|_| {
+            self.do_log(record);
+        });
+    }
+
+    fn flush(&self) {}
+}
+
+impl Logger {
+    fn do_log(&self, record: &Record) {
+        let timestamp = Jiffies::elapsed().as_duration().as_secs_f64();
+        let level = record.level();
 
         cfg_if::cfg_if! {
-            if #[cfg(feature = "log_color")]{
+            if #[cfg(feature = "log_color")] {
                 use owo_colors::Style;
 
                 let timestamp_style = Style::new().green();
@@ -59,7 +68,7 @@ impl log::Log for Logger {
                     level_style.style(level),
                     record_style.style(record.args()))
                 );
-            }else{
+            } else {
                 crate::console::early_print(
                     format_args!("{} {:<5}: {}\n",
                     format_args!("[{:>10.3}]", timestamp),
@@ -69,8 +78,6 @@ impl log::Log for Logger {
             }
         }
     }
-
-    fn flush(&self) {}
 }
 
 /// Initialize the logger. Users should avoid using the log macros before this function is called.

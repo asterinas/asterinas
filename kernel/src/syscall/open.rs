@@ -34,17 +34,18 @@ pub fn sys_openat(
         let inode_handle = current.fs().read().open(&fs_path, flags, mask_mode)?;
         Arc::new(inode_handle)
     };
-    let mut file_table = current.file_table().lock();
-    let fd = {
-        let fd_flags =
-            if CreationFlags::from_bits_truncate(flags).contains(CreationFlags::O_CLOEXEC) {
-                FdFlags::CLOEXEC
-            } else {
-                FdFlags::empty()
-            };
-        file_table.insert(file_handle, fd_flags)
-    };
-    Ok(SyscallReturn::Return(fd as _))
+    current.file_table().lock_with(|file_table| {
+        let fd = {
+            let fd_flags =
+                if CreationFlags::from_bits_truncate(flags).contains(CreationFlags::O_CLOEXEC) {
+                    FdFlags::CLOEXEC
+                } else {
+                    FdFlags::empty()
+                };
+            file_table.insert(file_handle, fd_flags)
+        };
+        Ok(SyscallReturn::Return(fd as _))
+    })
 }
 
 pub fn sys_open(path_addr: Vaddr, flags: u32, mode: u16, ctx: &Context) -> Result<SyscallReturn> {

@@ -56,12 +56,13 @@ impl<T: PreemptSchedInfo + FromTask<U>, U: CommonSchedInfo> PreemptScheduler<T, 
         let mut minimum_load = usize::MAX;
 
         for candidate in entity.thread.cpu_affinity().iter() {
-            let rq = self.rq[candidate.as_usize()].lock();
-            // A wild guess measuring the load of a runqueue. We assume that
-            // real-time tasks are 4-times as important as normal tasks.
-            let load = rq.real_time_entities.len() * 8
-                + rq.normal_entities.len() * 2
-                + rq.lowest_entities.len();
+            let load = self.rq[candidate.as_usize()].lock_with(|rq| {
+                // A wild guess measuring the load of a runqueue. We assume that
+                // real-time tasks are 4-times as important as normal tasks.
+                rq.real_time_entities.len() * 8
+                    + rq.normal_entities.len() * 2
+                    + rq.lowest_entities.len()
+            });
             if load < minimum_load {
                 selected = candidate;
                 minimum_load = load;
@@ -89,32 +90,32 @@ impl<T: Sync + Send + PreemptSchedInfo + FromTask<U>, U: Sync + Send + CommonSch
             cpu_id
         };
 
-        let mut rq = self.rq[target_cpu.as_usize()].disable_irq().lock();
-        if still_in_rq && let Err(_) = entity.task.cpu().set_if_is_none(target_cpu) {
-            return None;
-        }
-        if entity.thread.is_real_time() {
-            rq.real_time_entities.push_back(entity);
-        } else if entity.thread.is_lowest() {
-            rq.lowest_entities.push_back(entity);
-        } else {
-            rq.normal_entities.push_back(entity);
-        }
+        self.rq[target_cpu.as_usize()]
+            .disable_irq()
+            .lock_with(|rq| {
+                if still_in_rq && let Err(_) = entity.task.cpu().set_if_is_none(target_cpu) {
+                    return None;
+                }
+                if entity.thread.is_real_time() {
+                    rq.real_time_entities.push_back(entity);
+                } else if entity.thread.is_lowest() {
+                    rq.lowest_entities.push_back(entity);
+                } else {
+                    rq.normal_entities.push_back(entity);
+                }
 
-        Some(target_cpu)
+                Some(target_cpu)
+            })
     }
 
     fn local_rq_with(&self, f: &mut dyn FnMut(&dyn LocalRunQueue<U>)) {
         let irq_guard = disable_local();
-        let local_rq: &PreemptRunQueue<T, U> = &self.rq[irq_guard.current_cpu().as_usize()].lock();
-        f(local_rq);
+        self.rq[irq_guard.current_cpu().as_usize()].lock_with(|rq| f(rq));
     }
 
     fn local_mut_rq_with(&self, f: &mut dyn FnMut(&mut dyn LocalRunQueue<U>)) {
         let irq_guard = disable_local();
-        let local_rq: &mut PreemptRunQueue<T, U> =
-            &mut self.rq[irq_guard.current_cpu().as_usize()].lock();
-        f(local_rq);
+        self.rq[irq_guard.current_cpu().as_usize()].lock_with(|rq| f(rq));
     }
 }
 

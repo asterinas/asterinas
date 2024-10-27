@@ -42,14 +42,13 @@ pub fn sys_socket(domain: i32, type_: i32, protocol: i32, ctx: &Context) -> Resu
         }
         _ => return_errno_with_message!(Errno::EAFNOSUPPORT, "unsupported domain"),
     };
-    let fd = {
-        let mut file_table = ctx.process.file_table().lock();
+    let fd = ctx.process.file_table().lock_with(|file_table| {
         let fd_flags = if sock_flags.contains(SockFlags::SOCK_CLOEXEC) {
             FdFlags::CLOEXEC
         } else {
             FdFlags::empty()
         };
         file_table.insert(file_like, fd_flags)
-    };
+    });
     Ok(SyscallReturn::Return(fd as _))
 }

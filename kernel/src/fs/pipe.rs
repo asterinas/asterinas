@@ -259,7 +259,7 @@ mod test {
         let signal_reader = signal_writer.clone();
 
         let writer = Thread::spawn_kernel_thread(ThreadOptions::new(move || {
-            let writer = writer_with_lock.lock().take().unwrap();
+            let writer = writer_with_lock.lock_with(|writer| writer.take().unwrap());
 
             if ordering == Ordering::ReadThenWrite {
                 while !signal_writer.load(atomic::Ordering::Relaxed) {
@@ -273,7 +273,7 @@ mod test {
         }));
 
         let reader = Thread::spawn_kernel_thread(ThreadOptions::new(move || {
-            let reader = reader_with_lock.lock().take().unwrap();
+            let reader = reader_with_lock.lock_with(|reader| reader.take().unwrap());
 
             if ordering == Ordering::WriteThenRead {
                 while !signal_reader.load(atomic::Ordering::Relaxed) {

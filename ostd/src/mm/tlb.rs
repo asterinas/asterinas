@@ -104,11 +104,14 @@ impl<G: PinCurrentCpu> TlbFlusher<G> {
 
         // Slow path for multi-CPU cases.
         for cpu in self.target_cpus.iter() {
-            let mut op_queue = FLUSH_OPS.get_on_cpu(cpu).lock();
-            if let Some(drop_after_flush) = drop_after_flush.clone() {
-                PAGE_KEEPER.get_on_cpu(cpu).lock().push(drop_after_flush);
-            }
-            op_queue.push(op.clone());
+            FLUSH_OPS.get_on_cpu(cpu).lock_with(|op_queue| {
+                if let Some(drop_after_flush) = drop_after_flush.clone() {
+                    PAGE_KEEPER
+                        .get_on_cpu(cpu)
+                        .lock_with(|keeper| keeper.push(drop_after_flush));
+                }
+                op_queue.push(op.clone());
+            });
         }
     }
 }
@@ -163,9 +166,12 @@ fn do_remote_flush() {
     let preempt_guard = disable_preempt();
     let current_cpu = preempt_guard.current_cpu();
 
-    let mut op_queue = FLUSH_OPS.get_on_cpu(current_cpu).lock();
-    op_queue.flush_all();
-    PAGE_KEEPER.get_on_cpu(current_cpu).lock().clear();
+    FLUSH_OPS.get_on_cpu(current_cpu).lock_with(|op_queue| {
+        op_queue.flush_all();
+        PAGE_KEEPER
+            .get_on_cpu(current_cpu)
+            .lock_with(|keeper| keeper.clear());
+    });
 }
 
 /// If a TLB flushing request exceeds this threshold, we flush all.

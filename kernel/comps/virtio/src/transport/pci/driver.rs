@@ -22,11 +22,12 @@ pub struct VirtioPciDriver {
 
 impl VirtioPciDriver {
     pub fn num_devices(&self) -> usize {
-        self.devices.lock().len()
+        self.devices
+            .lock_with(|devices: &mut Vec<VirtioPciTransport>| devices.len())
     }
 
     pub fn pop_device_transport(&self) -> Option<VirtioPciTransport> {
-        self.devices.lock().pop()
+        self.devices.lock_with(|devices| devices.pop())
     }
 
     pub(super) fn new() -> Self {
@@ -47,7 +48,7 @@ impl PciDriver for VirtioPciDriver {
         }
         let transport = VirtioPciTransport::new(device)?;
         let device = transport.pci_device().clone();
-        self.devices.lock().push(transport);
+        self.devices.lock_with(|devices| devices.push(transport));
         Ok(device)
     }
 }

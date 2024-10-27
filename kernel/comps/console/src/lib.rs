@@ -35,21 +35,23 @@ pub fn register_device(name: String, device: Arc<dyn AnyConsoleDevice>) {
         .unwrap()
         .console_device_table
         .disable_irq()
-        .lock()
-        .insert(name, device);
+        .lock_with(|console_devs| {
+            console_devs.insert(name, device);
+        });
 }
 
 pub fn all_devices() -> Vec<(String, Arc<dyn AnyConsoleDevice>)> {
-    let console_devs = COMPONENT
+    COMPONENT
         .get()
         .unwrap()
         .console_device_table
         .disable_irq()
-        .lock();
-    console_devs
-        .iter()
-        .map(|(name, device)| (name.clone(), device.clone()))
-        .collect()
+        .lock_with(|console_devs| {
+            console_devs
+                .iter()
+                .map(|(name, device)| (name.clone(), device.clone()))
+                .collect()
+        })
 }
 
 static COMPONENT: Once<Component> = Once::new();

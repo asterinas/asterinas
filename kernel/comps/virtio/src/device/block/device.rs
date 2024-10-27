@@ -154,8 +154,7 @@ impl DeviceInner {
             cloned_device.handle_config_change();
         };
 
-        {
-            let mut transport = device.transport.lock();
+        device.transport.lock_with(|transport| {
             transport
                 .register_cfg_callback(Box::new(handle_config_change))
                 .unwrap();
@@ -163,7 +162,7 @@ impl DeviceInner {
                 .register_queue_callback(0, Box::new(handle_irq), false)
                 .unwrap();
             transport.finish_init();
-        }
+        });
 
         Ok(device)
     }
@@ -177,11 +176,18 @@ impl DeviceInner {
         loop {
             // Pops the complete request
             let complete_request = {
-                let mut queue = self.queue.lock();
-                let Ok((token, _)) = queue.pop_used() else {
+                let Some(req) = self.queue.lock_with(|queue| {
+                    let Ok((token, _)) = queue.pop_used() else {
+                        return None;
+                    };
+                    Some(
+                        self.submitted_requests
+                            .lock_with(|rqs| rqs.remove(&token).unwrap()),
+                    )
+                }) else {
                     return;
                 };
-                self.submitted_requests.lock().remove(&token).unwrap()
+                req
             };
 
             // Handles the response
@@ -189,7 +195,7 @@ impl DeviceInner {
             let resp_slice = DmaStreamSlice::new(&self.block_responses, id * RESP_SIZE, RESP_SIZE);
             resp_slice.sync().unwrap();
             let resp: BlockResp = resp_slice.read_val(0).unwrap();
-            self.id_allocator.lock().free(id);
+            self.id_allocator.lock_with(|a| a.free(id));
             match RespStatus::try_from(resp.status).unwrap() {
                 RespStatus::Ok => {}
                 // FIXME: Return an error instead of triggering a kernel panic
@@ -220,7 +226,11 @@ impl DeviceInner {
     // TODO: Most logic is the same as read and write, there should be a refactor.
     // TODO: Should return an Err instead of panic if the device fails.
     fn request_device_id(&self) -> String {
-        let id = self.id_allocator.disable_irq().lock().alloc().unwrap();
+        let id = self
+            .id_allocator
+            .disable_irq()
+            .lock_with(|a| a.alloc())
+            .unwrap();
         let req_slice = {
             let req_slice = DmaStreamSlice::new(&self.block_requests, id * REQ_SIZE, REQ_SIZE);
             let req = BlockReq {
@@ -249,45 +259,51 @@ impl DeviceInner {
         let device_id_slice = DmaStreamSlice::new(&device_id_stream, 0, MAX_ID_LENGTH);
         let outputs = vec![&device_id_slice, &resp_slice];
 
-        let mut queue = self.queue.disable_irq().lock();
-        let token = queue
-            .add_dma_buf(&[&req_slice], outputs.as_slice())
-            .expect("add queue failed");
-        if queue.should_notify() {
-            queue.notify();
-        }
-        while !queue.can_pop() {
-            spin_loop();
-        }
-        queue.pop_used_with_token(token).expect("pop used failed");
+        self.queue.disable_irq().lock_with(|queue| {
+            let token = queue
+                .add_dma_buf(&[&req_slice], outputs.as_slice())
+                .expect("add queue failed");
+            if queue.should_notify() {
+                queue.notify();
+            }
+            while !queue.can_pop() {
+                spin_loop();
+            }
+            queue.pop_used_with_token(token).expect("pop used failed");
 
-        resp_slice.sync().unwrap();
-        self.id_allocator.disable_irq().lock().free(id);
-        let resp: BlockResp = resp_slice.read_val(0).unwrap();
-        match RespStatus::try_from(resp.status).unwrap() {
-            RespStatus::Ok => {}
-            _ => panic!("io error in block device"),
-        };
+            resp_slice.sync().unwrap();
+            self.id_allocator.disable_irq().lock_with(|a| a.free(id));
+            let resp: BlockResp = resp_slice.read_val(0).unwrap();
+            match RespStatus::try_from(resp.status).unwrap() {
+                RespStatus::Ok => {}
+                _ => panic!("io error in block device"),
+            };
 
-        let device_id = {
-            device_id_slice.sync().unwrap();
-            let mut device_id = vec![0u8; MAX_ID_LENGTH];
-            let _ = device_id_slice.read_bytes(0, &mut device_id);
-            let len = device_id
-                .iter()
-                .position(|&b| b == 0)
-                .unwrap_or(MAX_ID_LENGTH);
-            device_id.truncate(len);
-            device_id
-        };
-        String::from_utf8(device_id).unwrap()
+            let device_id = {
+                device_id_slice.sync().unwrap();
+                let mut device_id = vec![0u8; MAX_ID_LENGTH];
+                let _ = device_id_slice.read_bytes(0, &mut device_id);
+                let len = device_id
+                    .iter()
+                    .position(|&b| b == 0)
+                    .unwrap_or(MAX_ID_LENGTH);
+                device_id.truncate(len);
+                device_id
+            };
+            String::from_utf8(device_id).unwrap()
+        })
     }
 
     /// Reads data from the device, this function is non-blocking.
     fn read(&self, bio_request: BioRequest) {
         let dma_streams = Self::dma_stream_map(&bio_request);
 
-        let id = self.id_allocator.disable_irq().lock().alloc().unwrap();
+        let id = self
+            .id_allocator
+            .disable_irq()
+            .lock_with(|a| a.alloc())
+            .unwrap();
+
         let req_slice = {
             let req_slice = DmaStreamSlice::new(&self.block_requests, id * REQ_SIZE, REQ_SIZE);
             let req = BlockReq {
@@ -300,34 +316,35 @@ impl DeviceInner {
             req_slice
         };
 
-        let resp_slice = {
-            let resp_slice = DmaStreamSlice::new(&self.block_responses, id * RESP_SIZE, RESP_SIZE);
-            resp_slice.write_val(0, &BlockResp::default()).unwrap();
-            resp_slice
-        };
-
-        let dma_slices: Vec<DmaStreamSlice> = dma_streams
-            .iter()
-            .map(|(stream, offset, len)| DmaStreamSlice::new(stream, *offset, *len))
-            .collect();
-        let outputs = {
-            let mut outputs: Vec<&DmaStreamSlice> = Vec::with_capacity(dma_streams.len() + 1);
-            outputs.extend(dma_slices.iter());
-            outputs.push(&resp_slice);
-            outputs
-        };
-
-        let num_used_descs = outputs.len() + 1;
+        let num_used_descs = dma_streams.len() + 1;
         // FIXME: Split the request if it is too big
         if num_used_descs > Self::QUEUE_SIZE as usize {
             panic!("The request size surpasses the queue size");
         }
 
-        loop {
-            let mut queue = self.queue.disable_irq().lock();
-            if num_used_descs > queue.available_desc() {
-                continue;
-            }
+        // Call this closure once the queue is ready
+        self.once_queue_ready(num_used_descs, |queue: &mut VirtQueue| {
+            let resp_slice = {
+                let resp_slice =
+                    DmaStreamSlice::new(&self.block_responses, id * RESP_SIZE, RESP_SIZE);
+                resp_slice.write_val(0, &BlockResp::default()).unwrap();
+                resp_slice
+            };
+
+            let dma_slices: Vec<DmaStreamSlice> = dma_streams
+                .iter()
+                .map(|(stream, offset, len)| DmaStreamSlice::new(stream, *offset, *len))
+                .collect();
+
+            let outputs = {
+                let mut outputs: Vec<&DmaStreamSlice> = Vec::with_capacity(num_used_descs - 1);
+                outputs.extend(dma_slices.iter());
+                outputs.push(&resp_slice);
+                outputs
+            };
+
+            debug_assert_eq!(num_used_descs, outputs.len());
+
             let token = queue
                 .add_dma_buf(&[&req_slice], outputs.as_slice())
                 .expect("add queue failed");
@@ -339,17 +356,20 @@ impl DeviceInner {
             let submitted_request = SubmittedRequest::new(id as u16, bio_request, dma_streams);
             self.submitted_requests
                 .disable_irq()
-                .lock()
-                .insert(token, submitted_request);
-            return;
-        }
+                .lock_with(|rqs| rqs.insert(token, submitted_request));
+        });
     }
 
     /// Writes data to the device, this function is non-blocking.
     fn write(&self, bio_request: BioRequest) {
         let dma_streams = Self::dma_stream_map(&bio_request);
 
-        let id = self.id_allocator.disable_irq().lock().alloc().unwrap();
+        let id = self
+            .id_allocator
+            .disable_irq()
+            .lock_with(|a| a.alloc())
+            .unwrap();
+
         let req_slice = {
             let req_slice = DmaStreamSlice::new(&self.block_requests, id * REQ_SIZE, REQ_SIZE);
             let req = BlockReq {
@@ -362,33 +382,34 @@ impl DeviceInner {
             req_slice
         };
 
-        let resp_slice = {
-            let resp_slice = DmaStreamSlice::new(&self.block_responses, id * RESP_SIZE, RESP_SIZE);
-            resp_slice.write_val(0, &BlockResp::default()).unwrap();
-            resp_slice
-        };
-
-        let dma_slices: Vec<DmaStreamSlice> = dma_streams
-            .iter()
-            .map(|(stream, offset, len)| DmaStreamSlice::new(stream, *offset, *len))
-            .collect();
-        let inputs = {
-            let mut inputs: Vec<&DmaStreamSlice> = Vec::with_capacity(dma_streams.len() + 1);
-            inputs.push(&req_slice);
-            inputs.extend(dma_slices.iter());
-            inputs
-        };
-
-        let num_used_descs = inputs.len() + 1;
+        let num_used_descs = dma_streams.len() + 1;
         // FIXME: Split the request if it is too big
         if num_used_descs > Self::QUEUE_SIZE as usize {
             panic!("The request size surpasses the queue size");
         }
-        loop {
-            let mut queue = self.queue.disable_irq().lock();
-            if num_used_descs > queue.available_desc() {
-                continue;
-            }
+
+        self.once_queue_ready(num_used_descs, |queue: &mut VirtQueue| {
+            let resp_slice = {
+                let resp_slice =
+                    DmaStreamSlice::new(&self.block_responses, id * RESP_SIZE, RESP_SIZE);
+                resp_slice.write_val(0, &BlockResp::default()).unwrap();
+                resp_slice
+            };
+
+            let dma_slices: Vec<DmaStreamSlice> = dma_streams
+                .iter()
+                .map(|(stream, offset, len)| DmaStreamSlice::new(stream, *offset, *len))
+                .collect();
+
+            let inputs = {
+                let mut inputs: Vec<&DmaStreamSlice> = Vec::with_capacity(num_used_descs);
+                inputs.push(&req_slice);
+                inputs.extend(dma_slices.iter());
+                inputs
+            };
+
+            debug_assert_eq!(num_used_descs, inputs.len());
+
             let token = queue
                 .add_dma_buf(inputs.as_slice(), &[&resp_slice])
                 .expect("add queue failed");
@@ -400,9 +421,27 @@ impl DeviceInner {
             let submitted_request = SubmittedRequest::new(id as u16, bio_request, dma_streams);
             self.submitted_requests
                 .disable_irq()
-                .lock()
-                .insert(token, submitted_request);
-            return;
+                .lock_with(|rqs| rqs.insert(token, submitted_request));
+        });
+    }
+
+    /// Calls the closure once the queue have enough available descriptors.
+    fn once_queue_ready<F, R>(&self, num_avail_descs: usize, f: F) -> R
+    where
+        F: FnOnce(&mut VirtQueue) -> R,
+    {
+        let mut once_queue_ready = Some(f);
+
+        loop {
+            if let Some(r) = self.queue.disable_irq().lock_with(|queue| {
+                if queue.available_desc() < num_avail_descs {
+                    return None; // retry
+                }
+
+                Some(once_queue_ready.take().unwrap().call_once((queue,)))
+            }) {
+                return r;
+            }
         }
     }
 

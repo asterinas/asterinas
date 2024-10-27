@@ -153,10 +153,12 @@ pub(super) unsafe fn drop_as_last<M: PageMeta>(ptr: *const MetaSlot) {
     // It would return the page to the allocator for further use. This would be done
     // after the release of the metadata to avoid re-allocation before the metadata
     // is reset.
-    allocator::PAGE_ALLOCATOR.get().unwrap().lock().dealloc(
-        mapping::meta_to_page::<PagingConsts>(ptr as Vaddr) / PAGE_SIZE,
-        1,
-    );
+    allocator::PAGE_ALLOCATOR.get().unwrap().lock_with(|a| {
+        a.dealloc(
+            mapping::meta_to_page::<PagingConsts>(ptr as Vaddr) / PAGE_SIZE,
+            1,
+        )
+    });
 }
 
 mod private {
@@ -328,9 +330,7 @@ fn alloc_meta_pages(nframes: usize) -> Vec<Paddr> {
     let start_frame = allocator::PAGE_ALLOCATOR
         .get()
         .unwrap()
-        .lock()
-        .alloc(nframes)
-        .unwrap()
+        .lock_with(|a| a.alloc(nframes).unwrap())
         * PAGE_SIZE;
     // Zero them out as initialization.
     let vaddr = paddr_to_vaddr(start_frame) as *mut u8;

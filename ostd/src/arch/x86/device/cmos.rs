@@ -26,7 +26,11 @@ pub fn century_register() -> Option<u8> {
     if !ACPI_TABLES.is_completed() {
         return None;
     }
-    match ACPI_TABLES.get().unwrap().lock().find_table::<Fadt>() {
+    match ACPI_TABLES
+        .get()
+        .unwrap()
+        .lock_with(|t| t.find_table::<Fadt>())
+    {
         Ok(a) => Some(a.century),
         Err(er) => None,
     }

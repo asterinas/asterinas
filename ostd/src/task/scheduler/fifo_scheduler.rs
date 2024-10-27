@@ -53,29 +53,30 @@ impl<T: CommonSchedInfo + Send + Sync> Scheduler<T> for FifoScheduler<T> {
             cpu_id
         };
 
-        let mut rq = self.rq[target_cpu.as_usize()].disable_irq().lock();
-        if still_in_rq && let Err(_) = runnable.cpu().set_if_is_none(target_cpu) {
-            return None;
-        }
-        rq.queue.push_back(runnable);
+        self.rq[target_cpu.as_usize()]
+            .disable_irq()
+            .lock_with(|rq| {
+                if still_in_rq && let Err(_) = runnable.cpu().set_if_is_none(target_cpu) {
+                    return None;
+                }
+                rq.queue.push_back(runnable);
 
-        Some(target_cpu)
+                Some(target_cpu)
+            })
     }
 
     fn local_rq_with(&self, f: &mut dyn FnMut(&dyn LocalRunQueue<T>)) {
         let preempt_guard = disable_preempt();
-        let local_rq: &FifoRunQueue<T> = &self.rq[preempt_guard.current_cpu().as_usize()]
+        self.rq[preempt_guard.current_cpu().as_usize()]
             .disable_irq()
-            .lock();
-        f(local_rq);
+            .lock_with(|rq| f(rq));
     }
 
     fn local_mut_rq_with(&self, f: &mut dyn FnMut(&mut dyn LocalRunQueue<T>)) {
         let preempt_guard = disable_preempt();
-        let local_rq: &mut FifoRunQueue<T> = &mut self.rq[preempt_guard.current_cpu().as_usize()]
+        self.rq[preempt_guard.current_cpu().as_usize()]
             .disable_irq()
-            .lock();
-        f(local_rq);
+            .lock_with(|rq| f(rq));
     }
 }
 

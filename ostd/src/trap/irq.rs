@@ -33,18 +33,16 @@ pub struct IrqLine {
 impl IrqLine {
     /// Allocates a specific IRQ line.
     pub fn alloc_specific(irq: u8) -> Result<Self> {
-        IRQ_ALLOCATOR
-            .get()
-            .unwrap()
-            .lock()
-            .alloc_specific(irq as usize)
-            .map(|irq_num| Self::new(irq_num as u8))
-            .ok_or(Error::NotEnoughResources)
+        IRQ_ALLOCATOR.get().unwrap().lock_with(|a| {
+            a.alloc_specific(irq as usize)
+                .map(|irq_num| Self::new(irq_num as u8))
+                .ok_or(Error::NotEnoughResources)
+        })
     }
 
     /// Allocates an available IRQ line.
     pub fn alloc() -> Result<Self> {
-        let Some(irq_num) = IRQ_ALLOCATOR.get().unwrap().lock().alloc() else {
+        let Some(irq_num) = IRQ_ALLOCATOR.get().unwrap().lock_with(|a| a.alloc()) else {
             return Err(Error::NotEnoughResources);
         };
         Ok(Self::new(irq_num as u8))
@@ -97,8 +95,7 @@ impl Drop for IrqLine {
             IRQ_ALLOCATOR
                 .get()
                 .unwrap()
-                .lock()
-                .free(self.irq_num as usize);
+                .lock_with(|a| a.free(self.irq_num as usize));
         }
     }
 }

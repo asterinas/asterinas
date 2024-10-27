@@ -32,14 +32,14 @@ pub fn sys_chdir(path_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
 pub fn sys_fchdir(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}", fd);
 
-    let dentry = {
-        let file_table = ctx.process.file_table().lock();
+    let dentry = ctx.process.file_table().lock_with(|file_table| {
         let file = file_table.get_file(fd)?;
         let inode_handle = file
             .downcast_ref::<InodeHandle>()
             .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;
-        inode_handle.dentry().clone()
-    };
+        Result::Ok(inode_handle.dentry().clone())
+    })?;
+
     if dentry.type_() != InodeType::Dir {
         return_errno_with_message!(Errno::ENOTDIR, "must be directory");
     }

@@ -59,50 +59,50 @@ pub fn print_stack_trace() {
     /// We acquire a global lock to prevent the frames in the stack trace from
     /// interleaving. The spin lock is used merely for its simplicity.
     static BACKTRACE_PRINT_LOCK: SpinLock<()> = SpinLock::new(());
-    let _lock = BACKTRACE_PRINT_LOCK.lock();
+    BACKTRACE_PRINT_LOCK.lock_with(|_| {
+        early_println!("Printing stack trace:");
 
-    early_println!("Printing stack trace:");
-
-    struct CallbackData {
-        counter: usize,
-    }
-    extern "C" fn callback(unwind_ctx: &UnwindContext<'_>, arg: *mut c_void) -> UnwindReasonCode {
-        let data = unsafe { &mut *(arg as *mut CallbackData) };
-        data.counter += 1;
-        let pc = _Unwind_GetIP(unwind_ctx);
-        if pc > 0 {
-            let fde_initial_address = _Unwind_FindEnclosingFunction(pc as *mut c_void) as usize;
-            early_println!(
-                "{:4}: fn {:#18x} - pc {:#18x} / registers:",
-                data.counter,
-                fde_initial_address,
-                pc,
-            );
+        struct CallbackData {
+            counter: usize,
         }
-        // Print the first 8 general registers for any architecture. The register number follows
-        // the DWARF standard.
-        for i in 0..8u16 {
-            let reg_i = _Unwind_GetGR(unwind_ctx, i as i32);
-            cfg_if::cfg_if! {
-                if #[cfg(target_arch = "x86_64")] {
-                    let reg_name = gimli::X86_64::register_name(Register(i)).unwrap_or("unknown");
-                } else if #[cfg(target_arch = "riscv64")] {
-                    let reg_name = gimli::RiscV::register_name(Register(i)).unwrap_or("unknown");
-                } else if #[cfg(target_arch = "aarch64")] {
-                    let reg_name = gimli::AArch64::register_name(Register(i)).unwrap_or("unknown");
-                } else {
-                    let reg_name = "unknown";
+        extern "C" fn callback(unwind_ctx: &UnwindContext<'_>, arg: *mut c_void) -> UnwindReasonCode {
+            let data = unsafe { &mut *(arg as *mut CallbackData) };
+            data.counter += 1;
+            let pc = _Unwind_GetIP(unwind_ctx);
+            if pc > 0 {
+                let fde_initial_address = _Unwind_FindEnclosingFunction(pc as *mut c_void) as usize;
+                early_println!(
+                    "{:4}: fn {:#18x} - pc {:#18x} / registers:",
+                    data.counter,
+                    fde_initial_address,
+                    pc,
+                );
+            }
+            // Print the first 8 general registers for any architecture. The register number follows
+            // the DWARF standard.
+            for i in 0..8u16 {
+                let reg_i = _Unwind_GetGR(unwind_ctx, i as i32);
+                cfg_if::cfg_if! {
+                    if #[cfg(target_arch = "x86_64")] {
+                        let reg_name = gimli::X86_64::register_name(Register(i)).unwrap_or("unknown");
+                    } else if #[cfg(target_arch = "riscv64")] {
+                        let reg_name = gimli::RiscV::register_name(Register(i)).unwrap_or("unknown");
+                    } else if #[cfg(target_arch = "aarch64")] {
+                        let reg_name = gimli::AArch64::register_name(Register(i)).unwrap_or("unknown");
+                    } else {
+                        let reg_name = "unknown";
+                    }
                 }
+                if i % 4 == 0 {
+                    early_print!("\n    ");
+                }
+                early_print!(" {} {:#18x};", reg_name, reg_i);
             }
-            if i % 4 == 0 {
-                early_print!("\n    ");
-            }
-            early_print!(" {} {:#18x};", reg_name, reg_i);
+            early_print!("\n\n");
+            UnwindReasonCode::NO_REASON
         }
-        early_print!("\n\n");
-        UnwindReasonCode::NO_REASON
-    }
 
-    let mut data = CallbackData { counter: 0 };
-    _Unwind_Backtrace(callback, &mut data as *mut _ as _);
+        let mut data = CallbackData { counter: 0 };
+        _Unwind_Backtrace(callback, &mut data as *mut _ as _);
+    });
 }

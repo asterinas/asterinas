@@ -9,7 +9,7 @@ use core::{
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
-use ostd::sync::{LocalIrqDisabled, RwLock, SpinLock, SpinLockGuard};
+use ostd::sync::{LocalIrqDisabled, RwLock, SpinLock};
 use smoltcp::{
     iface::Context,
     socket::{udp::UdpMetadata, PollAt},
@@ -80,8 +80,11 @@ impl DerefMut for RawTcpSocketExt {
 }
 
 impl TcpSocket {
-    fn lock(&self) -> SpinLockGuard<RawTcpSocketExt, LocalIrqDisabled> {
-        self.socket.lock()
+    fn lock_with<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut RawTcpSocketExt) -> R,
+    {
+        self.socket.lock_with(|socket| f(socket))
     }
 
     /// Returns whether the TCP socket is dead.
@@ -121,15 +124,15 @@ impl AnySocket for TcpSocket {
     }
 
     fn on_drop<E>(this: &Arc<BoundSocketInner<Self, E>>) {
-        let mut socket = this.socket.lock();
+        this.socket.lock_with(|socket| {
+            socket.in_background = true;
+            socket.close();
 
-        socket.in_background = true;
-        socket.close();
-
-        // A TCP socket may not be appropriate for immediate removal. We leave the removal decision
-        // to the polling logic.
-        this.update_next_poll_at_ms(PollAt::Now);
-        this.socket.update_dead(&socket);
+            // A TCP socket may not be appropriate for immediate removal. We leave the removal decision
+            // to the polling logic.
+            this.update_next_poll_at_ms(PollAt::Now);
+            this.socket.update_dead(socket);
+        });
     }
 }
 
@@ -144,7 +147,7 @@ impl AnySocket for UdpSocket {
     }
 
     fn on_drop<E>(this: &Arc<BoundSocketInner<Self, E>>) {
-        this.socket.lock().close();
+        this.socket.lock_with(|socket| socket.close());
 
         // A UDP socket can be removed immediately.
         this.iface.common().remove_udp_socket(this);
@@ -224,15 +227,15 @@ impl<E> BoundTcpSocket<E> {
         remote_endpoint: IpEndpoint,
     ) -> Result<(), smoltcp::socket::tcp::ConnectError> {
         let common = self.iface().common();
-        let mut iface = common.interface();
+        common.lock_with(|iface| {
+            self.0.socket.lock_with(|socket| {
+                let result = socket.connect(iface.context(), remote_endpoint, self.0.port);
+                self.0
+                    .update_next_poll_at_ms(socket.poll_at(iface.context()));
 
-        let mut socket = self.0.socket.lock();
-
-        let result = socket.connect(iface.context(), remote_endpoint, self.0.port);
-        self.0
-            .update_next_poll_at_ms(socket.poll_at(iface.context()));
-
-        result
+                result
+            })
+        })
     }
 
     /// Listens at a specified endpoint.
@@ -240,40 +243,40 @@ impl<E> BoundTcpSocket<E> {
         &self,
         local_endpoint: IpEndpoint,
     ) -> Result<(), smoltcp::socket::tcp::ListenError> {
-        let mut socket = self.0.socket.lock();
-
-        socket.listen(local_endpoint)
+        self.0
+            .socket
+            .lock_with(|socket| socket.listen(local_endpoint))
     }
 
     pub fn send<F, R>(&self, f: F) -> Result<R, smoltcp::socket::tcp::SendError>
     where
         F: FnOnce(&mut [u8]) -> (usize, R),
     {
-        let mut socket = self.0.socket.lock();
+        self.0.socket.lock_with(|socket| {
+            let result = socket.send(f);
+            self.0.update_next_poll_at_ms(PollAt::Now);
 
-        let result = socket.send(f);
-        self.0.update_next_poll_at_ms(PollAt::Now);
-
-        result
+            result
+        })
     }
 
     pub fn recv<F, R>(&self, f: F) -> Result<R, smoltcp::socket::tcp::RecvError>
     where
         F: FnOnce(&mut [u8]) -> (usize, R),
     {
-        let mut socket = self.0.socket.lock();
+        self.0.socket.lock_with(|socket| {
+            let result = socket.recv(f);
+            self.0.update_next_poll_at_ms(PollAt::Now);
 
-        let result = socket.recv(f);
-        self.0.update_next_poll_at_ms(PollAt::Now);
-
-        result
+            result
+        })
     }
 
     pub fn close(&self) {
-        let mut socket = self.0.socket.lock();
-
-        socket.close();
-        self.0.update_next_poll_at_ms(PollAt::Now);
+        self.0.socket.lock_with(|socket| {
+            socket.close();
+            self.0.update_next_poll_at_ms(PollAt::Now);
+        });
     }
 
     /// Calls `f` with an immutable reference to the associated [`RawTcpSocket`].
@@ -284,17 +287,16 @@ impl<E> BoundTcpSocket<E> {
     where
         F: FnOnce(&RawTcpSocket) -> R,
     {
-        let socket = self.0.socket.lock();
-        f(&socket)
+        self.0.socket.lock_with(|socket| f(socket))
     }
 }
 
 impl<E> BoundUdpSocket<E> {
     /// Binds to a specified endpoint.
     pub fn bind(&self, local_endpoint: IpEndpoint) -> Result<(), smoltcp::socket::udp::BindError> {
-        let mut socket = self.0.socket.lock();
-
-        socket.bind(local_endpoint)
+        self.0
+            .socket
+            .lock_with(|socket| socket.bind(local_endpoint))
     }
 
     pub fn send<F, R>(
@@ -310,34 +312,34 @@ impl<E> BoundUdpSocket<E> {
 
         use crate::errors::udp::SendError;
 
-        let mut socket = self.0.socket.lock();
+        self.0.socket.lock_with(|socket| {
+            if size > socket.packet_send_capacity() {
+                return Err(SendError::TooLarge);
+            }
 
-        if size > socket.packet_send_capacity() {
-            return Err(SendError::TooLarge);
-        }
+            let buffer = match socket.send(size, meta) {
+                Ok(data) => data,
+                Err(SendErrorInner::Unaddressable) => return Err(SendError::Unaddressable),
+                Err(SendErrorInner::BufferFull) => return Err(SendError::BufferFull),
+            };
+            let result = f(buffer);
+            self.0.update_next_poll_at_ms(PollAt::Now);
 
-        let buffer = match socket.send(size, meta) {
-            Ok(data) => data,
-            Err(SendErrorInner::Unaddressable) => return Err(SendError::Unaddressable),
-            Err(SendErrorInner::BufferFull) => return Err(SendError::BufferFull),
-        };
-        let result = f(buffer);
-        self.0.update_next_poll_at_ms(PollAt::Now);
-
-        Ok(result)
+            Ok(result)
+        })
     }
 
     pub fn recv<F, R>(&self, f: F) -> Result<R, smoltcp::socket::udp::RecvError>
     where
         F: FnOnce(&[u8], UdpMetadata) -> R,
     {
-        let mut socket = self.0.socket.lock();
+        self.0.socket.lock_with(|socket| {
+            let (data, meta) = socket.recv()?;
+            let result = f(data, meta);
+            self.0.update_next_poll_at_ms(PollAt::Now);
 
-        let (data, meta) = socket.recv()?;
-        let result = f(data, meta);
-        self.0.update_next_poll_at_ms(PollAt::Now);
-
-        Ok(result)
+            Ok(result)
+        })
     }
 
     /// Calls `f` with an immutable reference to the associated [`RawUdpSocket`].
@@ -348,8 +350,7 @@ impl<E> BoundUdpSocket<E> {
     where
         F: FnOnce(&RawUdpSocket) -> R,
     {
-        let socket = self.0.socket.lock();
-        f(&socket)
+        self.0.socket.lock_with(|socket| f(socket))
     }
 }
 
@@ -445,21 +446,23 @@ impl<E> BoundTcpSocketInner<E> {
         ip_repr: &IpRepr,
         tcp_repr: &TcpRepr,
     ) -> TcpProcessResult {
-        let mut socket = self.socket.lock();
+        self.socket.lock_with(|socket| {
+            if !socket.accepts(cx, ip_repr, tcp_repr) {
+                return TcpProcessResult::NotProcessed;
+            }
 
-        if !socket.accepts(cx, ip_repr, tcp_repr) {
-            return TcpProcessResult::NotProcessed;
-        }
+            let result = match socket.process(cx, ip_repr, tcp_repr) {
+                None => TcpProcessResult::Processed,
+                Some((ip_repr, tcp_repr)) => {
+                    TcpProcessResult::ProcessedWithReply(ip_repr, tcp_repr)
+                }
+            };
 
-        let result = match socket.process(cx, ip_repr, tcp_repr) {
-            None => TcpProcessResult::Processed,
-            Some((ip_repr, tcp_repr)) => TcpProcessResult::ProcessedWithReply(ip_repr, tcp_repr),
-        };
+            self.update_next_poll_at_ms(socket.poll_at(cx));
+            self.socket.update_dead(socket);
 
-        self.update_next_poll_at_ms(socket.poll_at(cx));
-        self.socket.update_dead(&socket);
-
-        result
+            result
+        })
     }
 
     /// Tries to generate an outgoing packet and dispatches the generated packet.
@@ -471,29 +474,29 @@ impl<E> BoundTcpSocketInner<E> {
     where
         D: FnOnce(&mut Context, &IpRepr, &TcpRepr) -> Option<(IpRepr, TcpRepr<'static>)>,
     {
-        let mut socket = self.socket.lock();
+        self.socket.lock_with(|socket| {
+            let mut reply = None;
+            socket
+                .dispatch(cx, |cx, (ip_repr, tcp_repr)| {
+                    reply = dispatch(cx, &ip_repr, &tcp_repr);
+                    Ok::<(), ()>(())
+                })
+                .unwrap();
 
-        let mut reply = None;
-        socket
-            .dispatch(cx, |cx, (ip_repr, tcp_repr)| {
-                reply = dispatch(cx, &ip_repr, &tcp_repr);
-                Ok::<(), ()>(())
-            })
-            .unwrap();
-
-        // `dispatch` can return a packet in response to the generated packet. If the socket
-        // accepts the packet, we can process it directly.
-        while let Some((ref ip_repr, ref tcp_repr)) = reply {
-            if !socket.accepts(cx, ip_repr, tcp_repr) {
-                break;
+            // `dispatch` can return a packet in response to the generated packet. If the socket
+            // accepts the packet, we can process it directly.
+            while let Some((ref ip_repr, ref tcp_repr)) = reply {
+                if !socket.accepts(cx, ip_repr, tcp_repr) {
+                    break;
+                }
+                reply = socket.process(cx, ip_repr, tcp_repr);
             }
-            reply = socket.process(cx, ip_repr, tcp_repr);
-        }
 
-        self.update_next_poll_at_ms(socket.poll_at(cx));
-        self.socket.update_dead(&socket);
+            self.update_next_poll_at_ms(socket.poll_at(cx));
+            self.socket.update_dead(socket);
 
-        reply
+            reply
+        })
     }
 }
 
@@ -506,22 +509,22 @@ impl<E> BoundUdpSocketInner<E> {
         udp_repr: &UdpRepr,
         udp_payload: &[u8],
     ) -> bool {
-        let mut socket = self.socket.lock();
+        self.socket.lock_with(|socket| {
+            if !socket.accepts(cx, ip_repr, udp_repr) {
+                return false;
+            }
 
-        if !socket.accepts(cx, ip_repr, udp_repr) {
-            return false;
-        }
+            socket.process(
+                cx,
+                smoltcp::phy::PacketMeta::default(),
+                ip_repr,
+                udp_repr,
+                udp_payload,
+            );
+            self.update_next_poll_at_ms(socket.poll_at(cx));
 
-        socket.process(
-            cx,
-            smoltcp::phy::PacketMeta::default(),
-            ip_repr,
-            udp_repr,
-            udp_payload,
-        );
-        self.update_next_poll_at_ms(socket.poll_at(cx));
-
-        true
+            true
+        })
     }
 
     /// Tries to generate an outgoing packet and dispatches the generated packet.
@@ -529,14 +532,14 @@ impl<E> BoundUdpSocketInner<E> {
     where
         D: FnOnce(&mut Context, &IpRepr, &UdpRepr, &[u8]),
     {
-        let mut socket = self.socket.lock();
-
-        socket
-            .dispatch(cx, |cx, _meta, (ip_repr, udp_repr, udp_payload)| {
-                dispatch(cx, &ip_repr, &udp_repr, udp_payload);
-                Ok::<(), ()>(())
-            })
-            .unwrap();
-        self.update_next_poll_at_ms(socket.poll_at(cx));
+        self.socket.lock_with(|socket| {
+            socket
+                .dispatch(cx, |cx, _meta, (ip_repr, udp_repr, udp_payload)| {
+                    dispatch(cx, &ip_repr, &udp_repr, udp_payload);
+                    Ok::<(), ()>(())
+                })
+                .unwrap();
+            self.update_next_poll_at_ms(socket.poll_at(cx));
+        });
     }
 }

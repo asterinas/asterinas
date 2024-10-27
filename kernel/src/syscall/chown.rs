@@ -20,10 +20,10 @@ pub fn sys_fchown(fd: FileDesc, uid: i32, gid: i32, ctx: &Context) -> Result<Sys
         return Ok(SyscallReturn::Return(0));
     }
 
-    let file = {
-        let file_table = ctx.process.file_table().lock();
-        file_table.get_file(fd)?.clone()
-    };
+    let file = ctx
+        .process
+        .file_table()
+        .lock_with(|table| table.get_file(fd).cloned())?;
     if let Some(uid) = uid {
         file.set_owner(uid)?;
     }

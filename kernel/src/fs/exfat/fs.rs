@@ -106,7 +106,7 @@ impl ExfatFS {
         )?;
 
         *exfat_fs.bitmap.lock() = bitmap;
-        *exfat_fs.upcase_table.lock() = upcase_table;
+        exfat_fs.upcase_table.lock_with(|tbl| *tbl = upcase_table);
 
         // TODO: Handle UTF-8
 

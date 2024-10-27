@@ -115,9 +115,9 @@ fn do_sys_mmap(
                 options = options.vmo(shared_vmo);
             }
         } else {
-            let vmo = {
-                let file_table = ctx.process.file_table().lock();
+            let vmo = ctx.process.file_table().lock_with(|file_table| {
                 let file = file_table.get_file(fd)?;
+
                 let inode_handle = file
                     .downcast_ref::<InodeHandle>()
                     .ok_or(Error::with_message(Errno::EINVAL, "no inode"))?;
@@ -134,14 +134,14 @@ fn do_sys_mmap(
                 }
 
                 let inode = inode_handle.dentry().inode();
-                inode
+                Ok(inode
                     .page_cache()
                     .ok_or(Error::with_message(
                         Errno::EBADF,
                         "File does not have page cache",
                     ))?
-                    .to_dyn()
-            };
+                    .to_dyn())
+            })?;
 
             options = options
                 .vmo(vmo)

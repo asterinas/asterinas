@@ -42,8 +42,7 @@ pub fn do_exit_group(term_status: TermStatus) {
     }
 
     // Close all files then exit the process
-    let files = current.file_table().lock().close_all();
-    drop(files);
+    current.file_table().lock_with(|files| files.close_all());
 
     // Move children to the init process
     if !is_init_process(&current) {

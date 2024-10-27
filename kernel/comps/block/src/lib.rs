@@ -82,8 +82,7 @@ pub fn register_device(name: String, device: Arc<dyn BlockDevice>) {
         .get()
         .unwrap()
         .block_device_table
-        .lock()
-        .insert(name, device);
+        .lock_with(|t| t.insert(name, device));
 }
 
 pub fn get_device(str: &str) -> Option<Arc<dyn BlockDevice>> {
@@ -91,17 +90,20 @@ pub fn get_device(str: &str) -> Option<Arc<dyn BlockDevice>> {
         .get()
         .unwrap()
         .block_device_table
-        .lock()
-        .get(str)
-        .cloned()
+        .lock_with(|dev| dev.get(str).cloned())
 }
 
 pub fn all_devices() -> Vec<(String, Arc<dyn BlockDevice>)> {
-    let block_devs = COMPONENT.get().unwrap().block_device_table.lock();
-    block_devs
-        .iter()
-        .map(|(name, device)| (name.clone(), device.clone()))
-        .collect()
+    COMPONENT
+        .get()
+        .unwrap()
+        .block_device_table
+        .lock_with(|block_devs| {
+            block_devs
+                .iter()
+                .map(|(name, device)| (name.clone(), device.clone()))
+                .collect()
+        })
 }
 
 static COMPONENT: Once<Component> = Once::new();

@@ -192,23 +192,26 @@ impl PosixThread {
     /// If setting a new waker before clearing the current thread's signalled waker
     /// this method will panic.
     pub fn set_signalled_waker(&self, waker: Arc<Waker>) {
-        let mut signalled_waker = self.signalled_waker.lock();
-        assert!(signalled_waker.is_none());
-        *signalled_waker = Some(waker);
+        self.signalled_waker.lock_with(|signalled_waker| {
+            assert!(signalled_waker.is_none());
+            *signalled_waker = Some(waker);
+        });
     }
 
     /// Clears the signalled waker of this thread.
     pub fn clear_signalled_waker(&self) {
-        *self.signalled_waker.lock() = None;
+        self.signalled_waker.lock_with(|waker| *waker = None);
     }
 
     /// Enqueues a thread-directed signal. This method should only be used for enqueue kernel
     /// signal and fault signal.
     pub fn enqueue_signal(&self, signal: Box<dyn Signal>) {
         self.sig_queues.enqueue(signal);
-        if let Some(waker) = &*self.signalled_waker.lock() {
-            waker.wake_up();
-        }
+        self.signalled_waker.lock_with(|waker| {
+            if let Some(waker) = waker {
+                waker.wake_up();
+            }
+        });
     }
 
     /// Returns a reference to the profiling clock of the current thread.

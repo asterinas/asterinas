@@ -107,8 +107,9 @@ fn do_execve(
     *posix_thread.clear_child_tid().lock() = 0;
 
     // Ensure that the file descriptors with the close-on-exec flag are closed.
-    let closed_files = process.file_table().lock().close_files_on_exec();
-    drop(closed_files);
+    process
+        .file_table()
+        .lock_with(|file_table| file_table.close_files_on_exec());
 
     debug!("load program to root vmar");
     let (new_executable_path, elf_load_info) = {

@@ -207,7 +207,5 @@ pub fn _print(args: fmt::Arguments) {
         .get()
         .unwrap()
         .disable_irq()
-        .lock()
-        .write_fmt(args)
-        .unwrap();
+        .lock_with(|writer| writer.write_fmt(args).unwrap());
 }

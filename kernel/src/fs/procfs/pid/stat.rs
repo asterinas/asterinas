@@ -38,7 +38,7 @@ impl FileOps for StatFileOps {
             process.pid(),
             process.parent().pid(),
             process.parent().pid(),
-            process.file_table().lock().len(),
+            process.file_table().lock_with(|tbl| tbl.len()),
             process.tasks().lock().len()
         )
         .unwrap();

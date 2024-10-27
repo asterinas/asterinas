@@ -36,8 +36,7 @@ pub fn sys_socketpair(
         ),
     };
 
-    let socket_fds = {
-        let mut file_table = ctx.process.file_table().lock();
+    let socket_fds = ctx.process.file_table().lock_with(|file_table| {
         let fd_flags = if sock_flags.contains(SockFlags::SOCK_CLOEXEC) {
             FdFlags::CLOEXEC
         } else {
@@ -46,7 +45,7 @@ pub fn sys_socketpair(
         let fd_a = file_table.insert(socket_a, fd_flags);
         let fd_b = file_table.insert(socket_b, fd_flags);
         SocketFds(fd_a, fd_b)
-    };
+    });
 
     ctx.get_user_space().write_val(sv, &socket_fds)?;
     Ok(SyscallReturn::Return(0))

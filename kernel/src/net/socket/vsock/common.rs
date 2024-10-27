@@ -47,13 +47,11 @@ impl VsockSpace {
     fn is_event_for_socket(&self, event: &VsockEvent) -> bool {
         self.connecting_sockets
             .disable_irq()
-            .lock()
-            .contains_key(&event.destination.into())
+            .lock_with(|sockets| sockets.contains_key(&event.destination.into()))
             || self
                 .listen_sockets
                 .disable_irq()
-                .lock()
-                .contains_key(&event.destination.into())
+                .lock_with(|sockets| sockets.contains_key(&event.destination.into()))
             || self
                 .connected_sockets
                 .read_irq_disabled()
@@ -62,27 +60,30 @@ impl VsockSpace {
 
     /// Alloc an unused port range
     pub fn alloc_ephemeral_port(&self) -> Result<u32> {
-        let mut used_ports = self.used_ports.disable_irq().lock();
-        // FIXME: the maximal port number is not defined by spec
-        for port in 1024..u32::MAX {
-            if !used_ports.contains(&port) {
-                used_ports.insert(port);
-                return Ok(port);
+        self.used_ports.disable_irq().lock_with(|used_ports| {
+            // FIXME: the maximal port number is not defined by spec
+            for port in 1024..u32::MAX {
+                if !used_ports.contains(&port) {
+                    used_ports.insert(port);
+                    return Ok(port);
+                }
             }
-        }
-        return_errno_with_message!(Errno::EAGAIN, "cannot find unused high port");
+            return_errno_with_message!(Errno::EAGAIN, "cannot find unused high port");
+        })
     }
 
     /// Bind a port
     pub fn bind_port(&self, port: u32) -> bool {
-        let mut used_ports = self.used_ports.disable_irq().lock();
-        used_ports.insert(port)
+        self.used_ports
+            .disable_irq()
+            .lock_with(|used_ports| used_ports.insert(port))
     }
 
     /// Recycle a port
     pub fn recycle_port(&self, port: &u32) -> bool {
-        let mut used_ports = self.used_ports.disable_irq().lock();
-        used_ports.remove(port)
+        self.used_ports
+            .disable_irq()
+            .lock_with(|used_ports| used_ports.remove(port))
     }
 
     /// Insert a connected socket
@@ -107,14 +108,16 @@ impl VsockSpace {
         addr: VsockSocketAddr,
         connecting: Arc<Connecting>,
     ) -> Option<Arc<Connecting>> {
-        let mut connecting_sockets = self.connecting_sockets.disable_irq().lock();
-        connecting_sockets.insert(addr, connecting)
+        self.connecting_sockets
+            .disable_irq()
+            .lock_with(|connecting_sockets| connecting_sockets.insert(addr, connecting))
     }
 
     /// Remove a connecting socket
     pub fn remove_connecting_socket(&self, addr: &VsockSocketAddr) -> Option<Arc<Connecting>> {
-        let mut connecting_sockets = self.connecting_sockets.disable_irq().lock();
-        connecting_sockets.remove(addr)
+        self.connecting_sockets
+            .disable_irq()
+            .lock_with(|connecting_sockets| connecting_sockets.remove(addr))
     }
 
     /// Insert a listening socket
@@ -123,70 +126,79 @@ impl VsockSpace {
         addr: VsockSocketAddr,
         listen: Arc<Listen>,
     ) -> Option<Arc<Listen>> {
-        let mut listen_sockets = self.listen_sockets.disable_irq().lock();
-        listen_sockets.insert(addr, listen)
+        self.listen_sockets
+            .disable_irq()
+            .lock_with(|listen_sockets| listen_sockets.insert(addr, listen))
     }
 
     /// Remove a listening socket
     pub fn remove_listen_socket(&self, addr: &VsockSocketAddr) -> Option<Arc<Listen>> {
-        let mut listen_sockets = self.listen_sockets.disable_irq().lock();
-        listen_sockets.remove(addr)
+        self.listen_sockets
+            .disable_irq()
+            .lock_with(|listen_sockets| listen_sockets.remove(addr))
     }
 }
 
 impl VsockSpace {
     /// Get the CID of the guest
     pub fn guest_cid(&self) -> u32 {
-        let driver = self.driver.disable_irq().lock();
-        driver.guest_cid() as u32
+        self.driver
+            .disable_irq()
+            .lock_with(|driver| driver.guest_cid() as u32)
     }
 
     /// Send a request packet for initializing a new connection.
     pub fn request(&self, info: &ConnectionInfo) -> Result<()> {
-        let mut driver = self.driver.disable_irq().lock();
-        driver
-            .request(info)
-            .map_err(|_| Error::with_message(Errno::EIO, "cannot send connect packet"))
+        self.driver.disable_irq().lock_with(|driver| {
+            driver
+                .request(info)
+                .map_err(|_| Error::with_message(Errno::EIO, "cannot send connect packet"))
+        })
     }
 
     /// Send a response packet for accepting a new connection.
     pub fn response(&self, info: &ConnectionInfo) -> Result<()> {
-        let mut driver = self.driver.disable_irq().lock();
-        driver
-            .response(info)
-            .map_err(|_| Error::with_message(Errno::EIO, "cannot send response packet"))
+        self.driver.disable_irq().lock_with(|driver| {
+            driver
+                .response(info)
+                .map_err(|_| Error::with_message(Errno::EIO, "cannot send response packet"))
+        })
     }
 
     /// Send a shutdown packet to close a connection
     pub fn shutdown(&self, info: &ConnectionInfo) -> Result<()> {
-        let mut driver = self.driver.disable_irq().lock();
-        driver
-            .shutdown(info)
-            .map_err(|_| Error::with_message(Errno::EIO, "cannot send shutdown packet"))
+        self.driver.disable_irq().lock_with(|driver| {
+            driver
+                .shutdown(info)
+                .map_err(|_| Error::with_message(Errno::EIO, "cannot send shutdown packet"))
+        })
     }
 
     /// Send a reset packet to reset a connection
     pub fn reset(&self, info: &ConnectionInfo) -> Result<()> {
-        let mut driver = self.driver.disable_irq().lock();
-        driver
-            .reset(info)
-            .map_err(|_| Error::with_message(Errno::EIO, "cannot send reset packet"))
+        self.driver.disable_irq().lock_with(|driver| {
+            driver
+                .reset(info)
+                .map_err(|_| Error::with_message(Errno::EIO, "cannot send reset packet"))
+        })
     }
 
     /// Send a credit request packet
     pub fn request_credit(&self, info: &ConnectionInfo) -> Result<()> {
-        let mut driver = self.driver.disable_irq().lock();
-        driver
-            .credit_request(info)
-            .map_err(|_| Error::with_message(Errno::EIO, "cannot send credit request packet"))
+        self.driver.disable_irq().lock_with(|driver| {
+            driver
+                .credit_request(info)
+                .map_err(|_| Error::with_message(Errno::EIO, "cannot send credit request packet"))
+        })
     }
 
     /// Send a credit update packet
     pub fn update_credit(&self, info: &ConnectionInfo) -> Result<()> {
-        let mut driver = self.driver.disable_irq().lock();
-        driver
-            .credit_update(info)
-            .map_err(|_| Error::with_message(Errno::EIO, "cannot send credit update packet"))
+        self.driver.disable_irq().lock_with(|driver| {
+            driver
+                .credit_update(info)
+                .map_err(|_| Error::with_message(Errno::EIO, "cannot send credit update packet"))
+        })
     }
 
     /// Send a data packet
@@ -196,92 +208,114 @@ impl VsockSpace {
         let mut buffer = vec![0u8; reader.sum_lens()];
         reader.read(&mut VmWriter::from(buffer.as_mut_slice()))?;
 
-        let mut driver = self.driver.disable_irq().lock();
-        driver
-            .send(&buffer, info)
-            .map_err(|_| Error::with_message(Errno::EIO, "cannot send data packet"))
+        self.driver.disable_irq().lock_with(|driver| {
+            driver
+                .send(&buffer, info)
+                .map_err(|_| Error::with_message(Errno::EIO, "cannot send data packet"))
+        })
     }
 
     /// Poll for each event from the driver
     pub fn poll(&self) -> Result<()> {
-        let mut driver = self.driver.disable_irq().lock();
+        self.driver.disable_irq().lock_with(|driver| {
+            while let Some(event) = self.poll_single(driver)? {
+                if !self.is_event_for_socket(&event) {
+                    debug!("ignore event {:?}", event);
+                    continue;
+                }
 
-        while let Some(event) = self.poll_single(&mut driver)? {
-            if !self.is_event_for_socket(&event) {
-                debug!("ignore event {:?}", event);
-                continue;
-            }
-
-            debug!("vsock receive event: {:?}", event);
-            // The socket must be stored in the VsockSpace.
-            if let Some(connected) = self
-                .connected_sockets
-                .read_irq_disabled()
-                .get(&event.into())
-            {
-                connected.update_info(&event);
-            }
-
-            // Response to the event
-            match event.event_type {
-                VsockEventType::ConnectionRequest => {
-                    // Preparation for listen socket `accept`
-                    let listen_sockets = self.listen_sockets.disable_irq().lock();
-                    let Some(listen) = listen_sockets.get(&event.destination.into()) else {
-                        return_errno_with_message!(
-                            Errno::EINVAL,
-                            "connection request can only be handled by listening socket"
-                        );
-                    };
-                    let peer = event.source;
-                    let connected = Arc::new(Connected::new(peer.into(), listen.addr()));
-                    connected.update_info(&event);
-                    listen.push_incoming(connected).unwrap();
-                    listen.update_io_events();
-                }
-                VsockEventType::ConnectionResponse => {
-                    let connecting_sockets = self.connecting_sockets.disable_irq().lock();
-                    let Some(connecting) = connecting_sockets.get(&event.destination.into()) else {
-                        return_errno_with_message!(
-                            Errno::EINVAL,
-                            "connected event can only be handled by connecting socket"
-                        );
-                    };
-                    debug!(
-                        "match a connecting socket. Peer{:?}; local{:?}",
-                        connecting.peer_addr(),
-                        connecting.local_addr()
-                    );
-                    connecting.update_info(&event);
-                    connecting.add_events(IoEvents::IN);
-                }
-                VsockEventType::Disconnected { .. } => {
-                    let connected_sockets = self.connected_sockets.read_irq_disabled();
-                    let Some(connected) = connected_sockets.get(&event.into()) else {
-                        return_errno_with_message!(Errno::ENOTCONN, "the socket hasn't connected");
-                    };
-                    connected.set_peer_requested_shutdown();
-                }
-                VsockEventType::Received { .. } => {}
-                VsockEventType::CreditRequest => {
-                    let connected_sockets = self.connected_sockets.read_irq_disabled();
-                    let Some(connected) = connected_sockets.get(&event.into()) else {
-                        return_errno_with_message!(Errno::ENOTCONN, "the socket hasn't connected");
-                    };
-                    driver.credit_update(&connected.get_info()).map_err(|_| {
-                        Error::with_message(Errno::EIO, "cannot send credit update")
-                    })?;
-                }
-                VsockEventType::CreditUpdate => {
-                    let connected_sockets = self.connected_sockets.read_irq_disabled();
-                    let Some(connected) = connected_sockets.get(&event.into()) else {
-                        return_errno_with_message!(Errno::ENOTCONN, "the socket hasn't connected");
-                    };
+                debug!("vsock receive event: {:?}", event);
+                // The socket must be stored in the VsockSpace.
+                if let Some(connected) = self
+                    .connected_sockets
+                    .read_irq_disabled()
+                    .get(&event.into())
+                {
                     connected.update_info(&event);
                 }
+
+                // Response to the event
+                match event.event_type {
+                    VsockEventType::ConnectionRequest => {
+                        // Preparation for listen socket `accept`
+                        self.listen_sockets
+                            .disable_irq()
+                            .lock_with(|listen_sockets| {
+                                let Some(listen) = listen_sockets.get(&event.destination.into())
+                                else {
+                                    return_errno_with_message!(
+                                    Errno::EINVAL,
+                                    "connection request can only be handled by listening socket"
+                                );
+                                };
+                                let peer = event.source;
+                                let connected =
+                                    Arc::new(Connected::new(peer.into(), listen.addr()));
+                                connected.update_info(&event);
+                                listen.push_incoming(connected).unwrap();
+                                listen.update_io_events();
+                                Result::Ok(())
+                            })?;
+                    }
+                    VsockEventType::ConnectionResponse => {
+                        self.connecting_sockets
+                            .disable_irq()
+                            .lock_with(|connecting_sockets| {
+                                let Some(connecting) =
+                                    connecting_sockets.get(&event.destination.into())
+                                else {
+                                    return_errno_with_message!(
+                                        Errno::EINVAL,
+                                        "connected event can only be handled by connecting socket"
+                                    );
+                                };
+                                debug!(
+                                    "match a connecting socket. Peer{:?}; local{:?}",
+                                    connecting.peer_addr(),
+                                    connecting.local_addr()
+                                );
+                                connecting.update_info(&event);
+                                connecting.add_events(IoEvents::IN);
+                                Result::Ok(())
+                            })?;
+                    }
+                    VsockEventType::Disconnected { .. } => {
+                        let connected_sockets = self.connected_sockets.read_irq_disabled();
+                        let Some(connected) = connected_sockets.get(&event.into()) else {
+                            return_errno_with_message!(
+                                Errno::ENOTCONN,
+                                "the socket hasn't connected"
+                            );
+                        };
+                        connected.set_peer_requested_shutdown();
+                    }
+                    VsockEventType::Received { .. } => {}
+                    VsockEventType::CreditRequest => {
+                        let connected_sockets = self.connected_sockets.read_irq_disabled();
+                        let Some(connected) = connected_sockets.get(&event.into()) else {
+                            return_errno_with_message!(
+                                Errno::ENOTCONN,
+                                "the socket hasn't connected"
+                            );
+                        };
+                        driver.credit_update(&connected.get_info()).map_err(|_| {
+                            Error::with_message(Errno::EIO, "cannot send credit update")
+                        })?;
+                    }
+                    VsockEventType::CreditUpdate => {
+                        let connected_sockets = self.connected_sockets.read_irq_disabled();
+                        let Some(connected) = connected_sockets.get(&event.into()) else {
+                            return_errno_with_message!(
+                                Errno::ENOTCONN,
+                                "the socket hasn't connected"
+                            );
+                        };
+                        connected.update_info(&event);
+                    }
+                }
             }
-        }
-        Ok(())
+            Ok(())
+        })
     }
 
     fn poll_single(&self, driver: &mut SocketDevice) -> Result<Option<VsockEvent>> {

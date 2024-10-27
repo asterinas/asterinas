@@ -58,15 +58,18 @@ impl Timer {
     /// Set the interval time for this timer.
     /// The timer will be reset with the interval time upon expiration.
     pub fn set_interval(&self, interval: Duration) {
-        *self.interval.disable_irq().lock() = interval;
+        self.interval.disable_irq().lock_with(|i| *i = interval);
     }
 
     /// Cancel the current timer's set timeout callback.
     pub fn cancel(&self) {
-        let timer_callback = self.timer_callback.disable_irq().lock();
-        if let Some(timer_callback) = timer_callback.upgrade() {
-            timer_callback.cancel();
-        }
+        self.timer_callback
+            .disable_irq()
+            .lock_with(|timer_callback| {
+                if let Some(timer_callback) = timer_callback.upgrade() {
+                    timer_callback.cancel();
+                }
+            });
     }
 
     /// Set the timer with a timeout.
@@ -89,17 +92,24 @@ impl Timer {
             Box::new(move || interval_timer_callback(&timer_weak)),
         ));
 
-        let mut timer_callback = self.timer_callback.disable_irq().lock();
-        if let Some(timer_callback) = timer_callback.upgrade() {
-            timer_callback.cancel();
-        }
-        *timer_callback = Arc::downgrade(&new_timer_callback);
+        self.timer_callback
+            .disable_irq()
+            .lock_with(|timer_callback| {
+                if let Some(timer_callback) = timer_callback.upgrade() {
+                    timer_callback.cancel();
+                }
+                *timer_callback = Arc::downgrade(&new_timer_callback);
+            });
+
         self.timer_manager.insert(new_timer_callback);
     }
 
     /// Return the current expired time of this timer.
     pub fn expired_time(&self) -> Duration {
-        let timer_callback = self.timer_callback.disable_irq().lock().upgrade();
+        let timer_callback = self
+            .timer_callback
+            .disable_irq()
+            .lock_with(|cb| cb.upgrade());
         timer_callback.map_or(Duration::ZERO, |timer_callback| timer_callback.expired_time)
     }
 
@@ -125,7 +135,7 @@ impl Timer {
 
     /// Returns the interval time of the current timer.
     pub fn interval(&self) -> Duration {
-        *self.interval.disable_irq().lock()
+        self.interval.disable_irq().lock_with(|i| *i)
     }
 }
 
@@ -135,10 +145,12 @@ fn interval_timer_callback(timer: &Weak<Timer>) {
     };
 
     (timer.registered_callback)();
-    let interval = timer.interval.disable_irq().lock();
-    if *interval != Duration::ZERO {
-        timer.set_timeout(Timeout::After(*interval));
-    }
+
+    timer.interval.disable_irq().lock_with(|interval| {
+        if *interval != Duration::ZERO {
+            timer.set_timeout(Timeout::After(*interval));
+        }
+    })
 }
 
 /// `TimerManager` is used to create timers and manage their expiries. It holds a clock and can
@@ -174,36 +186,40 @@ impl TimerManager {
     fn insert(&self, timer_callback: Arc<TimerCallback>) {
         self.timer_callbacks
             .disable_irq()
-            .lock()
-            .push(timer_callback);
+            .lock_with(|cbs| cbs.push(timer_callback));
     }
 
     /// Check the managed timers, and if any have timed out,
     /// call the corresponding callback functions.
     pub fn process_expired_timers(&self) {
         let callbacks = {
-            let mut timeout_list = self.timer_callbacks.disable_irq().lock();
-            if timeout_list.len() == 0 {
-                return;
-            }
+            self.timer_callbacks
+                .disable_irq()
+                .lock_with(|timeout_list| {
+                    if timeout_list.is_empty() {
+                        return None;
+                    }
 
-            let mut callbacks = Vec::new();
-            let current_time = self.clock.read_time();
-            while let Some(t) = timeout_list.peek() {
-                if t.is_cancelled() {
-                    // Just ignore the cancelled callback
-                    timeout_list.pop();
-                } else if t.expired_time <= current_time {
-                    callbacks.push(timeout_list.pop().unwrap());
-                } else {
-                    break;
-                }
-            }
-            callbacks
+                    let mut callbacks = Vec::new();
+                    let current_time = self.clock.read_time();
+                    while let Some(t) = timeout_list.peek() {
+                        if t.is_cancelled() {
+                            // Just ignore the cancelled callback
+                            timeout_list.pop();
+                        } else if t.expired_time <= current_time {
+                            callbacks.push(timeout_list.pop().unwrap());
+                        } else {
+                            break;
+                        }
+                    }
+                    Some(callbacks)
+                })
         };
 
-        for callback in callbacks {
-            (callback.callback)();
+        if let Some(callbacks) = callbacks {
+            for callback in callbacks {
+                (callback.callback)();
+            }
         }
     }
 

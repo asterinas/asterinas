@@ -20,10 +20,11 @@ pub fn sys_lseek(fd: FileDesc, offset: isize, whence: u32, ctx: &Context) -> Res
         2 => SeekFrom::End(offset),
         _ => return_errno!(Errno::EINVAL),
     };
-    let file = {
-        let file_table = ctx.process.file_table().lock();
-        file_table.get_file(fd)?.clone()
-    };
+
+    let file = ctx
+        .process
+        .file_table()
+        .lock_with(|table| table.get_file(fd).cloned())?;
 
     let offset = file.seek(seek_from)?;
     Ok(SyscallReturn::Return(offset as _))

@@ -63,29 +63,39 @@ pub fn init() {
 /// Checks whether the physical addresses has dma mapping.
 /// Fail if they have been mapped, otherwise insert them.
 fn check_and_insert_dma_mapping(start_paddr: Paddr, num_pages: usize) -> bool {
-    let mut mapping_set = DMA_MAPPING_SET.get().unwrap().disable_irq().lock();
-    // Ensure that the addresses used later will not overflow
-    start_paddr.checked_add(num_pages * PAGE_SIZE).unwrap();
-    for i in 0..num_pages {
-        let paddr = start_paddr + (i * PAGE_SIZE);
-        if mapping_set.contains(&paddr) {
-            return false;
-        }
-    }
-    for i in 0..num_pages {
-        let paddr = start_paddr + (i * PAGE_SIZE);
-        mapping_set.insert(paddr);
-    }
-    true
+    DMA_MAPPING_SET
+        .get()
+        .unwrap()
+        .disable_irq()
+        .lock_with(|mapping_set| {
+            // Ensure that the addresses used later will not overflow
+            start_paddr.checked_add(num_pages * PAGE_SIZE).unwrap();
+            for i in 0..num_pages {
+                let paddr = start_paddr + (i * PAGE_SIZE);
+                if mapping_set.contains(&paddr) {
+                    return false;
+                }
+            }
+            for i in 0..num_pages {
+                let paddr = start_paddr + (i * PAGE_SIZE);
+                mapping_set.insert(paddr);
+            }
+            true
+        })
 }
 
 /// Removes a physical address from the dma mapping set.
 fn remove_dma_mapping(start_paddr: Paddr, num_pages: usize) {
-    let mut mapping_set = DMA_MAPPING_SET.get().unwrap().disable_irq().lock();
-    // Ensure that the addresses used later will not overflow
-    start_paddr.checked_add(num_pages * PAGE_SIZE).unwrap();
-    for i in 0..num_pages {
-        let paddr = start_paddr + (i * PAGE_SIZE);
-        mapping_set.remove(&paddr);
-    }
+    DMA_MAPPING_SET
+        .get()
+        .unwrap()
+        .disable_irq()
+        .lock_with(|mapping_set| {
+            // Ensure that the addresses used later will not overflow
+            start_paddr.checked_add(num_pages * PAGE_SIZE).unwrap();
+            for i in 0..num_pages {
+                let paddr = start_paddr + (i * PAGE_SIZE);
+                mapping_set.remove(&paddr);
+            }
+        });
 }

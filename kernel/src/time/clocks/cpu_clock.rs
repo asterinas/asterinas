@@ -31,13 +31,13 @@ impl CpuClock {
 
     /// Adds `interval` to the original recorded time to update the `CpuClock`.
     pub fn add_time(&self, interval: Duration) {
-        *self.time.disable_irq().lock() += interval;
+        self.time.disable_irq().lock_with(|t| *t += interval);
     }
 }
 
 impl Clock for CpuClock {
     fn read_time(&self) -> Duration {
-        *self.time.disable_irq().lock()
+        self.time.disable_irq().lock_with(|t| *t)
     }
 }
 

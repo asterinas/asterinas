@@ -188,8 +188,12 @@ pub fn init() {
         });
         return;
     }
-    let table = ACPI_TABLES.get().unwrap().lock();
-    let platform_info = PlatformInfo::new(&*table).unwrap();
+
+    let platform_info = ACPI_TABLES
+        .get()
+        .unwrap()
+        .lock_with(|tables| PlatformInfo::new(tables).unwrap());
+
     match platform_info.interrupt_model {
         acpi::InterruptModel::Unknown => panic!("not found APIC in ACPI Table"),
         acpi::InterruptModel::Apic(apic) => {

@@ -8,7 +8,7 @@ use core::{
 
 use aster_rights::ReadOp;
 use id_alloc::IdAlloc;
-use ostd::sync::{PreemptDisabled, RwLockReadGuard, RwLockWriteGuard};
+use ostd::sync::{RwLockReadGuard, RwLockWriteGuard};
 use spin::Once;
 
 use super::{
@@ -79,31 +79,33 @@ impl SemSetInner {
 
 impl SemaphoreSet {
     pub fn pending_const_count(&self, sem_num: u16) -> usize {
-        let inner = self.inner.lock();
-        let pending_const = &inner.pending_const;
-        let mut count = 0;
-        for i in pending_const.iter() {
-            for sem_buf in i.sops_iter() {
-                if sem_buf.sem_num() == sem_num {
-                    count += 1;
+        self.lock_inner_with(|inner| {
+            let pending_const = &inner.pending_const;
+            let mut count = 0;
+            for i in pending_const.iter() {
+                for sem_buf in i.sops_iter() {
+                    if sem_buf.sem_num() == sem_num {
+                        count += 1;
+                    }
                 }
             }
-        }
-        count
+            count
+        })
     }
 
     pub fn pending_alter_count(&self, sem_num: u16) -> usize {
-        let inner = self.inner.lock();
-        let pending_alter = &inner.pending_alter;
-        let mut count = 0;
-        for i in pending_alter.iter() {
-            for sem_buf in i.sops_iter() {
-                if sem_buf.sem_num() == sem_num {
-                    count += 1;
+        self.lock_inner_with(|inner| {
+            let pending_alter = &inner.pending_alter;
+            let mut count = 0;
+            for i in pending_alter.iter() {
+                for sem_buf in i.sops_iter() {
+                    if sem_buf.sem_num() == sem_num {
+                        count += 1;
+                    }
                 }
             }
-        }
-        count
+            count
+        })
     }
 
     pub fn nsems(&self) -> usize {
@@ -115,36 +117,38 @@ impl SemaphoreSet {
             return_errno!(Errno::ERANGE);
         }
 
-        let mut inner = self.inner();
-        let (sems, pending_alter, pending_const) = inner.field_mut();
-        let sem = sems.get_mut(sem_num).ok_or(Error::new(Errno::EINVAL))?;
+        self.lock_inner_with(|inner| {
+            let (sems, pending_alter, pending_const) = inner.field_mut();
+            let sem = sems.get_mut(sem_num).ok_or(Error::new(Errno::EINVAL))?;
 
-        sem.set_val(val);
-        sem.set_latest_modified_pid(pid);
+            sem.set_val(val);
+            sem.set_latest_modified_pid(pid);
 
-        let mut wake_queue = LinkedList::new();
-        if val == 0 {
-            wake_const_ops(sems, pending_const, &mut wake_queue);
-        } else {
-            update_pending_alter(sems, pending_alter, pending_const, &mut wake_queue);
-        }
-
-        for wake_op in wake_queue {
-            wake_op.set_status(Status::Normal);
-            if let Some(waker) = wake_op.waker() {
-                waker.wake_up();
+            let mut wake_queue = LinkedList::new();
+            if val == 0 {
+                wake_const_ops(sems, pending_const, &mut wake_queue);
+            } else {
+                update_pending_alter(sems, pending_alter, pending_const, &mut wake_queue);
             }
-        }
 
-        self.update_ctime();
-        Ok(())
+            for wake_op in wake_queue {
+                wake_op.set_status(Status::Normal);
+                if let Some(waker) = wake_op.waker() {
+                    waker.wake_up();
+                }
+            }
+
+            self.update_ctime();
+            Ok(())
+        })
     }
 
     pub fn get<T>(&self, sem_num: usize, func: &dyn Fn(&Semaphore) -> T) -> Result<T> {
-        let inner = self.inner();
-        Ok(func(
-            inner.sems.get(sem_num).ok_or(Error::new(Errno::EINVAL))?,
-        ))
+        self.lock_inner_with(|inner| {
+            Ok(func(
+                inner.sems.get(sem_num).ok_or(Error::new(Errno::EINVAL))?,
+            ))
+        })
     }
 
     pub fn permission(&self) -> &IpcPermission {
@@ -169,8 +173,11 @@ impl SemaphoreSet {
         );
     }
 
-    pub(super) fn inner(&self) -> SpinLockGuard<SemSetInner, PreemptDisabled> {
-        self.inner.lock()
+    pub(super) fn lock_inner_with<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut SemSetInner) -> R,
+    {
+        self.inner.lock_with(f)
     }
 
     fn new(key: key_t, nsems: usize, mode: u16, credentials: Credentials<ReadOp>) -> Result<Self> {
@@ -200,30 +207,30 @@ impl SemaphoreSet {
 
 impl Drop for SemaphoreSet {
     fn drop(&mut self) {
-        let mut inner = self.inner();
-        let pending_alter = &mut inner.pending_alter;
-        for pending_alter in pending_alter.iter_mut() {
-            pending_alter.set_status(Status::Removed);
-            if let Some(ref waker) = pending_alter.waker() {
-                waker.wake_up();
+        self.lock_inner_with(|inner| {
+            let pending_alter = &mut inner.pending_alter;
+            for pending_alter in pending_alter.iter_mut() {
+                pending_alter.set_status(Status::Removed);
+                if let Some(ref waker) = pending_alter.waker() {
+                    waker.wake_up();
+                }
             }
-        }
-        pending_alter.clear();
+            pending_alter.clear();
 
-        let pending_const = &mut inner.pending_const;
-        for pending_const in pending_const.iter_mut() {
-            pending_const.set_status(Status::Removed);
-            if let Some(ref waker) = pending_const.waker() {
-                waker.wake_up();
+            let pending_const = &mut inner.pending_const;
+            for pending_const in pending_const.iter_mut() {
+                pending_const.set_status(Status::Removed);
+                if let Some(ref waker) = pending_const.waker() {
+                    waker.wake_up();
+                }
             }
-        }
-        pending_const.clear();
+            pending_const.clear();
+        });
 
         ID_ALLOCATOR
             .get()
             .unwrap()
-            .lock()
-            .free(self.permission.key() as usize);
+            .lock_with(|a| a.free(self.permission.key() as usize));
     }
 }
 
@@ -242,8 +249,7 @@ pub fn create_sem_set_with_id(
     ID_ALLOCATOR
         .get()
         .unwrap()
-        .lock()
-        .alloc_specific(id as usize)
+        .lock_with(|a| a.alloc_specific(id as usize))
         .ok_or(Error::new(Errno::EEXIST))?;
 
     let mut sem_sets = SEMAPHORE_SETS.write();
@@ -280,8 +286,7 @@ pub fn create_sem_set(nsems: usize, mode: u16, credentials: Credentials<ReadOp>)
     let id = ID_ALLOCATOR
         .get()
         .unwrap()
-        .lock()
-        .alloc()
+        .lock_with(|a| a.alloc())
         .ok_or(Error::new(Errno::ENOSPC))? as i32;
 
     let mut sem_sets = SEMAPHORE_SETS.write();

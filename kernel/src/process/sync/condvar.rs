@@ -113,19 +113,19 @@ impl Condvar {
     pub fn wait<'a, T>(&self, guard: MutexGuard<'a, T>) -> LockResult<MutexGuard<'a, T>> {
         let cond = || {
             // Check if the notify counter is greater than 0.
-            let mut counter = self.counter.lock();
-            if counter.notify_count > 0 {
-                // Decrement the notify counter.
-                counter.notify_count -= 1;
-                Some(())
-            } else {
-                None
-            }
+            self.counter.lock_with(|counter| {
+                if counter.notify_count > 0 {
+                    // Decrement the notify counter.
+                    counter.notify_count -= 1;
+                    Some(())
+                } else {
+                    None
+                }
+            })
         };
-        {
-            let mut counter = self.counter.lock();
+        self.counter.lock_with(|counter| {
             counter.waiter_count += 1;
-        }
+        });
         let lock = MutexGuard::get_lock(&guard);
         drop(guard);
         self.waitqueue.wait_until(cond);
@@ -145,20 +145,20 @@ impl Condvar {
         timeout: Duration,
     ) -> LockResult<(MutexGuard<'a, T>, bool)> {
         let cond = || {
-            // Check if the notify counter is greater than 0.
-            let mut counter = self.counter.lock();
-            if counter.notify_count > 0 {
-                // Decrement the notify counter.
-                counter.notify_count -= 1;
-                Some(())
-            } else {
-                None
-            }
+            self.counter.lock_with(|counter| {
+                // Check if the notify counter is greater than 0.
+                if counter.notify_count > 0 {
+                    // Decrement the notify counter.
+                    counter.notify_count -= 1;
+                    Some(())
+                } else {
+                    None
+                }
+            })
         };
-        {
-            let mut counter = self.counter.lock();
+        self.counter.lock_with(|counter| {
             counter.waiter_count += 1;
-        }
+        });
         let lock = MutexGuard::get_lock(&guard);
         drop(guard);
         // Wait until the condition becomes true, we're explicitly woken up, or the timeout elapses.
@@ -166,8 +166,9 @@ impl Condvar {
         match res {
             Ok(()) => Ok((lock.lock(), false)),
             Err(_) => {
-                let mut counter = self.counter.lock();
-                counter.waiter_count -= 1;
+                self.counter.lock_with(|counter| {
+                    counter.waiter_count -= 1;
+                });
                 Err(LockErr::Timeout((lock.lock(), true)))
             }
         }
@@ -237,13 +238,14 @@ impl Condvar {
     /// and allowed to reacquire the associated mutex.
     /// If no threads are waiting, this function is a no-op.
     pub fn notify_one(&self) {
-        let mut counter = self.counter.lock();
-        if counter.waiter_count == 0 {
-            return;
-        }
-        counter.notify_count += 1;
-        self.waitqueue.wake_one();
-        counter.waiter_count -= 1;
+        self.counter.lock_with(|counter| {
+            if counter.waiter_count == 0 {
+                return;
+            }
+            counter.notify_count += 1;
+            self.waitqueue.wake_one();
+            counter.waiter_count -= 1;
+        });
     }
 
     /// Wakes up all blocked threads waiting on this condition variable.
@@ -252,13 +254,14 @@ impl Condvar {
     /// and they will be allowed to reacquire the associated mutex.
     /// If no threads are waiting, this function is a no-op.
     pub fn notify_all(&self) {
-        let mut counter = self.counter.lock();
-        if counter.waiter_count == 0 {
-            return;
-        }
-        counter.notify_count = counter.waiter_count;
-        self.waitqueue.wake_all();
-        counter.waiter_count = 0;
+        self.counter.lock_with(|counter| {
+            if counter.waiter_count == 0 {
+                return;
+            }
+            counter.notify_count = counter.waiter_count;
+            self.waitqueue.wake_all();
+            counter.waiter_count = 0;
+        });
     }
 }
 

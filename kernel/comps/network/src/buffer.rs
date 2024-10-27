@@ -31,7 +31,7 @@ impl TxBuffer {
 
         assert!(nbytes <= TX_BUFFER_LEN);
 
-        let dma_stream = if let Some(stream) = pool.lock().pop_front() {
+        let dma_stream = if let Some(stream) = pool.lock_with(|pool| pool.pop_front()) {
             stream
         } else {
             let segment = FrameAllocOptions::new(TX_BUFFER_LEN / PAGE_SIZE)
@@ -76,7 +76,8 @@ impl HasDaddr for TxBuffer {
 
 impl Drop for TxBuffer {
     fn drop(&mut self) {
-        self.pool.lock().push_back(self.dma_stream.clone());
+        self.pool
+            .lock_with(|pool| pool.push_back(self.dma_stream.clone()));
     }
 }
 

@@ -31,14 +31,15 @@ impl<E: Events, F: EventsFilter<E>> Subject<E, F> {
     /// If the given observer has already been registered, then its registered events
     /// filter will be updated.
     pub fn register_observer(&self, observer: Weak<dyn Observer<E>>, filter: F) {
-        let mut observers = self.observers.lock();
-        let is_new = {
-            let observer: KeyableWeak<dyn Observer<E>> = observer.into();
-            observers.insert(observer, filter).is_none()
-        };
-        if is_new {
-            self.num_observers.fetch_add(1, Ordering::Relaxed);
-        }
+        self.observers.lock_with(|observers| {
+            let is_new = {
+                let observer: KeyableWeak<dyn Observer<E>> = observer.into();
+                observers.insert(observer, filter).is_none()
+            };
+            if is_new {
+                self.num_observers.fetch_add(1, Ordering::Relaxed);
+            }
+        });
     }
 
     /// Unregister an observer.
@@ -51,14 +52,15 @@ impl<E: Events, F: EventsFilter<E>> Subject<E, F> {
         observer: &Weak<dyn Observer<E>>,
     ) -> Option<Weak<dyn Observer<E>>> {
         let observer: KeyableWeak<dyn Observer<E>> = observer.clone().into();
-        let mut observers = self.observers.lock();
-        let observer = observers
-            .remove_entry(&observer)
-            .map(|(observer, _)| observer.into());
-        if observer.is_some() {
-            self.num_observers.fetch_sub(1, Ordering::Relaxed);
-        }
-        observer
+        self.observers.lock_with(|observers| {
+            let observer = observers
+                .remove_entry(&observer)
+                .map(|(observer, _)| observer.into());
+            if observer.is_some() {
+                self.num_observers.fetch_sub(1, Ordering::Relaxed);
+            }
+            observer
+        })
     }
 
     /// Notify events to all registered observers.
@@ -73,23 +75,23 @@ impl<E: Events, F: EventsFilter<E>> Subject<E, F> {
         // Slow path: broadcast the new events to all observers.
         let mut active_observers = Vec::new();
         let mut num_freed = 0;
-        let mut observers = self.observers.lock();
-        observers.retain(|observer, filter| {
-            if let Some(observer) = observer.upgrade() {
-                if filter.filter(events) {
-                    // XXX: Mind the performance impact when there comes many active observers
-                    active_observers.push(observer.clone());
+        self.observers.lock_with(|observers| {
+            observers.retain(|observer, filter| {
+                if let Some(observer) = observer.upgrade() {
+                    if filter.filter(events) {
+                        // XXX: Mind the performance impact when there comes many active observers
+                        active_observers.push(observer.clone());
+                    }
+                    true
+                } else {
+                    num_freed += 1;
+                    false
                 }
-                true
-            } else {
-                num_freed += 1;
-                false
+            });
+            if num_freed > 0 {
+                self.num_observers.fetch_sub(num_freed, Ordering::Relaxed);
             }
         });
-        if num_freed > 0 {
-            self.num_observers.fetch_sub(num_freed, Ordering::Relaxed);
-        }
-        drop(observers);
 
         for observer in active_observers {
             observer.on_events(events);

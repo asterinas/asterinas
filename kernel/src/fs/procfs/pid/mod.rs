@@ -30,9 +30,10 @@ impl PidDirOps {
             .volatile()
             .build()
             .unwrap();
-        let file_table = process_ref.file_table().lock();
         let weak_ptr = Arc::downgrade(&pid_inode);
-        file_table.register_observer(weak_ptr);
+        process_ref.file_table().lock_with(|file_table| {
+            file_table.register_observer(weak_ptr);
+        });
         pid_inode
     }
 }

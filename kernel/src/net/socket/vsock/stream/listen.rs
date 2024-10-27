@@ -29,23 +29,29 @@ impl Listen {
     }
 
     pub fn push_incoming(&self, connect: Arc<Connected>) -> Result<()> {
-        let mut incoming_connections = self.incoming_connection.disable_irq().lock();
-        if incoming_connections.len() >= self.backlog {
-            return_errno_with_message!(Errno::ECONNREFUSED, "queue in listenging socket is full")
-        }
-        // FIXME: check if the port is already used
-        incoming_connections.push_back(connect);
-        Ok(())
+        self.incoming_connection
+            .disable_irq()
+            .lock_with(|incoming_connections| {
+                if incoming_connections.len() >= self.backlog {
+                    return_errno_with_message!(
+                        Errno::ECONNREFUSED,
+                        "queue in listenging socket is full"
+                    )
+                }
+                // FIXME: check if the port is already used
+                incoming_connections.push_back(connect);
+                Ok(())
+            })
     }
 
     pub fn try_accept(&self) -> Result<Arc<Connected>> {
         let connection = self
             .incoming_connection
             .disable_irq()
-            .lock()
-            .pop_front()
-            .ok_or_else(|| {
-                Error::with_message(Errno::EAGAIN, "no pending connection is available")
+            .lock_with(|connection| {
+                connection.pop_front().ok_or_else(|| {
+                    Error::with_message(Errno::EAGAIN, "no pending connection is available")
+                })
             })?;
 
         Ok(connection)
@@ -56,11 +62,14 @@ impl Listen {
     }
 
     pub fn update_io_events(&self) {
-        let incoming_connection = self.incoming_connection.disable_irq().lock();
-        if !incoming_connection.is_empty() {
-            self.pollee.add_events(IoEvents::IN);
-        } else {
-            self.pollee.del_events(IoEvents::IN);
-        }
+        self.incoming_connection
+            .disable_irq()
+            .lock_with(|incoming_connection| {
+                if !incoming_connection.is_empty() {
+                    self.pollee.add_events(IoEvents::IN);
+                } else {
+                    self.pollee.del_events(IoEvents::IN);
+                }
+            });
     }
 }

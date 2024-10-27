@@ -65,10 +65,10 @@ fn do_sys_preadv(
         return_errno_with_message!(Errno::EINVAL, "offset cannot be negative");
     }
 
-    let file = {
-        let filetable = ctx.process.file_table().lock();
-        filetable.get_file(fd)?.clone()
-    };
+    let file = ctx
+        .process
+        .file_table()
+        .lock_with(|filetable| Result::Ok(filetable.get_file(fd)?.clone()))?;
 
     if io_vec_count == 0 {
         return Ok(0);
@@ -127,10 +127,10 @@ fn do_sys_readv(
         fd, io_vec_ptr, io_vec_count
     );
 
-    let file = {
-        let filetable = ctx.process.file_table().lock();
-        filetable.get_file(fd)?.clone()
-    };
+    let file = ctx
+        .process
+        .file_table()
+        .lock_with(|filetable| Result::Ok(filetable.get_file(fd)?.clone()))?;
 
     if io_vec_count == 0 {
         return Ok(0);

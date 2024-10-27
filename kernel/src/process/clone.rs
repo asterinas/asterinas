@@ -460,7 +460,9 @@ fn clone_files(
     if clone_flags.contains(CloneFlags::CLONE_FILES) {
         parent_file_table.clone()
     } else {
-        Arc::new(SpinLock::new(parent_file_table.lock().clone()))
+        Arc::new(SpinLock::new(
+            parent_file_table.lock_with(|table| table.clone()),
+        ))
     }
 }
 
