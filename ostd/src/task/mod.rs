@@ -149,7 +149,7 @@ impl TaskOptions {
     pub fn build(self) -> Result<Task> {
         /// all task will entering this function
         /// this function is mean to executing the task_fn in Task
-        extern "C" fn kernel_task_entry() {
+        extern "C" fn kernel_task_entry() -> ! {
             let current_task = current_task()
                 .expect("no current task, it should have current task in kernel task entry");
             // SAFETY: The scheduler will ensure that the task is only accessed
@@ -159,6 +159,10 @@ impl TaskOptions {
                 .take()
                 .expect("task function is `None` when trying to run");
             task_func();
+
+            // Manually drop all the on-stack variables to prevent memory leakage!
+            // This is needed because `scheduler::exit_current()` will never return.
+            drop(current_task);
             scheduler::exit_current();
         }
 
