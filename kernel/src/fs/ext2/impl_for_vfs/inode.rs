@@ -191,11 +191,15 @@ impl Inode for Ext2Inode {
     }
 
     fn sync_all(&self) -> Result<()> {
-        self.sync_all()
+        self.sync_all()?;
+        self.fs().block_device().sync()?;
+        Ok(())
     }
 
     fn sync_data(&self) -> Result<()> {
-        self.sync_data()
+        self.sync_data()?;
+        self.fs().block_device().sync()?;
+        Ok(())
     }
 
     fn fs(&self) -> Arc<dyn FileSystem> {
