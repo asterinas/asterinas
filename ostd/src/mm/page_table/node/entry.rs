@@ -2,10 +2,15 @@
 
 //! This module provides accessors to the page table entries in a node.
 
-use super::{Child, PageTableEntryTrait, PageTableNode};
-use crate::mm::{
-    nr_subpage_per_huge, page::meta::MapTrackingStatus, page_prop::PageProperty, page_size,
-    PagingConstsTrait,
+use core::pin::Pin;
+
+use super::{Child, PageTableEntryTrait, PageTableNode, RawPageTableNode};
+use crate::{
+    mm::{
+        nr_subpage_per_huge, page::meta::MapTrackingStatus, page_prop::PageProperty, page_size,
+        PagingConstsTrait,
+    },
+    sync::spin::mcs,
 };
 
 /// A view of an entry in a page table node.
@@ -15,7 +20,7 @@ use crate::mm::{
 /// This is a static reference to an entry in a node that does not account for
 /// a dynamic reference count to the child. It can be used to create a owned
 /// handle, which is a [`Child`].
-pub(in crate::mm) struct Entry<'a, E: PageTableEntryTrait, C: PagingConstsTrait>
+pub(in crate::mm) struct Entry<'guard, 'mcs, E: PageTableEntryTrait, C: PagingConstsTrait>
 where
     [(); C::NR_LEVELS as usize]:,
 {
@@ -30,10 +35,10 @@ where
     /// The index of the entry in the node.
     idx: usize,
     /// The node that contains the entry.
-    node: &'a mut PageTableNode<E, C>,
+    node: &'guard mut PageTableNode<'mcs, E, C>,
 }
 
-impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'a, E, C>
+impl<'guard, 'mcs, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'guard, 'mcs, E, C>
 where
     [(); C::NR_LEVELS as usize]:,
 {
@@ -119,7 +124,10 @@ where
     ///
     /// If the entry does not map to a untracked huge page, the method returns
     /// `None`.
-    pub(in crate::mm) fn split_if_untracked_huge(self) -> Option<PageTableNode<E, C>> {
+    pub(in crate::mm) fn split_if_untracked_huge(
+        self,
+        mcs_node: Pin<&mut mcs::UnsafeNode>,
+    ) -> Option<PageTableNode<E, C>> {
         let level = self.node.level();
 
         if !(self.pte.is_last(level)
@@ -132,7 +140,8 @@ where
         let pa = self.pte.paddr();
         let prop = self.pte.prop();
 
-        let mut new_page = PageTableNode::<E, C>::alloc(level - 1, MapTrackingStatus::Untracked);
+        let raw_new_page = RawPageTableNode::<E, C>::alloc(level - 1, MapTrackingStatus::Untracked);
+        let mut new_page = PageTableNode::lock_from_raw(raw_new_page, mcs_node);
         for i in 0..nr_subpage_per_huge::<C>() {
             let small_pa = pa + i * page_size::<C>(level - 1);
             let _ = new_page
@@ -150,7 +159,7 @@ where
     /// # Safety
     ///
     /// The caller must ensure that the index is within the bounds of the node.
-    pub(super) unsafe fn new_at(node: &'a mut PageTableNode<E, C>, idx: usize) -> Self {
+    pub(super) unsafe fn new_at(node: &'guard mut PageTableNode<'mcs, E, C>, idx: usize) -> Self {
         // SAFETY: The index is within the bound.
         let pte = unsafe { node.read_pte(idx) };
         Self { pte, idx, node }

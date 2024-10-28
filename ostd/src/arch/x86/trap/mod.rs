@@ -331,22 +331,23 @@ fn handle_kernel_page_fault(f: &TrapFrame, page_fault_vaddr: u64) {
         }
     }
 
-    // SAFETY:
-    // 1. We have checked that the page fault address falls within the address range of the direct
-    //    mapping of physical memory.
-    // 2. We map the address to the correct physical page with the correct flags, where the
-    //    correctness follows the semantics of the direct mapping of physical memory.
-    unsafe {
-        page_table
-            .map(
-                &(vaddr..vaddr + PAGE_SIZE),
-                &(paddr..paddr + PAGE_SIZE),
-                PageProperty {
-                    flags: PageFlags::RW,
-                    cache: CachePolicy::Uncacheable,
-                    priv_flags,
-                },
-            )
-            .unwrap();
-    }
+    page_table
+        .cursor_mut_with(&(vaddr..vaddr + PAGE_SIZE), |cursor| {
+            // SAFETY:
+            // 1. We have checked that the page fault address falls within the address range of the direct
+            //    mapping of physical memory.
+            // 2. We map the address to the correct physical page with the correct flags, where the
+            //    correctness follows the semantics of the direct mapping of physical memory.
+            unsafe {
+                cursor.map_pa(
+                    &(paddr..paddr + PAGE_SIZE),
+                    PageProperty {
+                        flags: PageFlags::RW,
+                        cache: CachePolicy::Uncacheable,
+                        priv_flags,
+                    },
+                );
+            }
+        })
+        .unwrap();
 }

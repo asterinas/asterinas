@@ -339,8 +339,11 @@ impl Vmar_ {
     }
 
     fn clear_vm_space(&self) {
-        let mut cursor = self.vm_space.cursor_mut(&(0..ROOT_VMAR_CAP_ADDR)).unwrap();
-        cursor.unmap(ROOT_VMAR_CAP_ADDR);
+        self.vm_space
+            .cursor_mut_with(&(0..ROOT_VMAR_CAP_ADDR), |cursor| {
+                cursor.unmap(ROOT_VMAR_CAP_ADDR);
+            })
+            .unwrap();
     }
 
     pub fn destroy(&self, range: Range<usize>) -> Result<()> {
@@ -693,24 +696,33 @@ impl Vmar_ {
         {
             let new_vmspace = new_vmar_.vm_space();
             let range = self.base..(self.base + self.size);
-            let mut new_cursor = new_vmspace.cursor_mut(&range).unwrap();
             let cur_vmspace = self.vm_space();
-            let mut cur_cursor = cur_vmspace.cursor_mut(&range).unwrap();
-            for (vm_mapping_base, vm_mapping) in &inner.vm_mappings {
-                // Clone the `VmMapping` to the new VMAR.
-                let new_mapping = Arc::new(vm_mapping.new_fork(&new_vmar_)?);
-                new_inner.vm_mappings.insert(*vm_mapping_base, new_mapping);
+            cur_vmspace
+                .cursor_mut_with(&range, |cur_cursor| {
+                    new_vmspace
+                        .cursor_mut_with(&range, |new_cursor| {
+                            for (vm_mapping_base, vm_mapping) in &inner.vm_mappings {
+                                // Clone the `VmMapping` to the new VMAR.
+                                let new_mapping = Arc::new(vm_mapping.new_fork(&new_vmar_)?);
+                                new_inner.vm_mappings.insert(*vm_mapping_base, new_mapping);
 
-                // Protect the mapping and copy to the new page table for COW.
-                cur_cursor.jump(*vm_mapping_base).unwrap();
-                new_cursor.jump(*vm_mapping_base).unwrap();
-                let mut op = |page: &mut PageProperty| {
-                    page.flags -= PageFlags::W;
-                };
-                new_cursor.copy_from(&mut cur_cursor, vm_mapping.map_size(), &mut op);
-            }
-            cur_cursor.flusher().issue_tlb_flush(TlbFlushOp::All);
-            cur_cursor.flusher().dispatch_tlb_flush();
+                                // Protect the mapping and copy to the new page table for COW.
+                                cur_cursor.jump(*vm_mapping_base).unwrap();
+                                new_cursor.jump(*vm_mapping_base).unwrap();
+                                let mut op = |page: &mut PageProperty| {
+                                    page.flags -= PageFlags::W;
+                                };
+                                new_cursor.copy_from(cur_cursor, vm_mapping.map_size(), &mut op);
+                            }
+                            cur_cursor.flusher().issue_tlb_flush(TlbFlushOp::All);
+                            cur_cursor.flusher().dispatch_tlb_flush();
+
+                            Result::Ok(())
+                        })
+                        .unwrap()?;
+                    Result::Ok(())
+                })
+                .unwrap()?;
         }
 
         drop(new_inner);

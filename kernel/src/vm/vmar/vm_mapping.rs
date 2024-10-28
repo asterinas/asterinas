@@ -222,71 +222,74 @@ impl VmMapping {
         }
 
         let root_vmar = self.parent.upgrade().unwrap();
-        let mut cursor = root_vmar
-            .vm_space()
-            .cursor_mut(&(page_aligned_addr..page_aligned_addr + PAGE_SIZE))?;
+        root_vmar.vm_space().cursor_mut_with(
+            &(page_aligned_addr..page_aligned_addr + PAGE_SIZE),
+            |cursor| {
+                match cursor.query().unwrap() {
+                    VmItem::Mapped {
+                        va,
+                        frame,
+                        mut prop,
+                    } if is_write => {
+                        // Perform COW if it is a write access to a shared mapping.
 
-        match cursor.query().unwrap() {
-            VmItem::Mapped {
-                va,
-                frame,
-                mut prop,
-            } if is_write => {
-                // Perform COW if it is a write access to a shared mapping.
+                        // Skip if the page fault is already handled.
+                        if prop.flags.contains(PageFlags::W) {
+                            return Result::Ok(());
+                        }
 
-                // Skip if the page fault is already handled.
-                if prop.flags.contains(PageFlags::W) {
-                    return Ok(());
-                }
+                        // If the forked child or parent immediately unmaps the page after
+                        // the fork without accessing it, we are the only reference to the
+                        // frame. We can directly map the frame as writable without
+                        // copying. In this case, the reference count of the frame is 2 (
+                        // one for the mapping and one for the frame handle itself).
+                        let only_reference = frame.reference_count() == 2;
 
-                // If the forked child or parent immediately unmaps the page after
-                // the fork without accessing it, we are the only reference to the
-                // frame. We can directly map the frame as writable without
-                // copying. In this case, the reference count of the frame is 2 (
-                // one for the mapping and one for the frame handle itself).
-                let only_reference = frame.reference_count() == 2;
+                        let new_flags = PageFlags::W | PageFlags::ACCESSED | PageFlags::DIRTY;
 
-                let new_flags = PageFlags::W | PageFlags::ACCESSED | PageFlags::DIRTY;
-
-                if self.is_shared || only_reference {
-                    cursor.protect_next(PAGE_SIZE, |p| p.flags |= new_flags);
-                    cursor.flusher().issue_tlb_flush(TlbFlushOp::Address(va));
-                    cursor.flusher().dispatch_tlb_flush();
-                } else {
-                    let new_frame = duplicate_frame(&frame)?;
-                    prop.flags |= new_flags;
-                    cursor.map(new_frame, prop);
-                }
-            }
-            VmItem::Mapped { .. } => {
-                panic!("non-COW page fault should not happen on mapped address")
-            }
-            VmItem::NotMapped { .. } => {
-                // Map a new frame to the page fault address.
-
-                let inner = self.inner.read();
-                let (frame, is_readonly) = self.prepare_page(&inner, address, is_write)?;
-
-                let vm_perms = {
-                    let mut perms = inner.perms;
-                    if is_readonly {
-                        // COW pages are forced to be read-only.
-                        perms -= VmPerms::WRITE;
+                        if self.is_shared || only_reference {
+                            cursor.protect_next(PAGE_SIZE, |p| p.flags |= new_flags);
+                            cursor.flusher().issue_tlb_flush(TlbFlushOp::Address(va));
+                            cursor.flusher().dispatch_tlb_flush();
+                        } else {
+                            let new_frame = duplicate_frame(&frame)?;
+                            prop.flags |= new_flags;
+                            cursor.map(new_frame, prop);
+                        }
                     }
-                    perms
-                };
-                drop(inner);
+                    VmItem::Mapped { .. } => {
+                        panic!("non-COW page fault should not happen on mapped address")
+                    }
+                    VmItem::NotMapped { .. } => {
+                        // Map a new frame to the page fault address.
 
-                let mut page_flags = vm_perms.into();
-                page_flags |= PageFlags::ACCESSED;
-                if is_write {
-                    page_flags |= PageFlags::DIRTY;
+                        let inner = self.inner.read();
+                        let (frame, is_readonly) = self.prepare_page(&inner, address, is_write)?;
+
+                        let vm_perms = {
+                            let mut perms = inner.perms;
+                            if is_readonly {
+                                // COW pages are forced to be read-only.
+                                perms -= VmPerms::WRITE;
+                            }
+                            perms
+                        };
+                        drop(inner);
+
+                        let mut page_flags = vm_perms.into();
+                        page_flags |= PageFlags::ACCESSED;
+                        if is_write {
+                            page_flags |= PageFlags::DIRTY;
+                        }
+                        let map_prop = PageProperty::new(page_flags, CachePolicy::Writeback);
+
+                        cursor.map(frame, map_prop);
+                    }
                 }
-                let map_prop = PageProperty::new(page_flags, CachePolicy::Writeback);
 
-                cursor.map(frame, map_prop);
-            }
-        }
+                Result::Ok(())
+            },
+        )??;
 
         Ok(())
     }
@@ -349,28 +352,31 @@ impl VmMapping {
         let vm_perms = inner.perms - VmPerms::WRITE;
         let parent = self.parent.upgrade().unwrap();
         let vm_space = parent.vm_space();
-        let mut cursor = vm_space.cursor_mut(&(start_addr..end_addr))?;
-        let operate = move |commit_fn: &mut dyn FnMut() -> Result<Frame>| {
-            if let VmItem::NotMapped { va, len } = cursor.query().unwrap() {
-                // We regard all the surrounding pages as accessed, no matter
-                // if it is really so. Then the hardware won't bother to update
-                // the accessed bit of the page table on following accesses.
-                let page_flags = PageFlags::from(vm_perms) | PageFlags::ACCESSED;
-                let page_prop = PageProperty::new(page_flags, CachePolicy::Writeback);
-                let frame = commit_fn()?;
-                cursor.map(frame, page_prop);
-            } else {
-                let next_addr = cursor.virt_addr() + PAGE_SIZE;
-                if next_addr < end_addr {
-                    let _ = cursor.jump(next_addr);
+        vm_space.cursor_mut_with(&(start_addr..end_addr), |cursor| {
+            let operate = move |commit_fn: &mut dyn FnMut() -> Result<Frame>| {
+                if let VmItem::NotMapped { va, len } = cursor.query().unwrap() {
+                    // We regard all the surrounding pages as accessed, no matter
+                    // if it is really so. Then the hardware won't bother to update
+                    // the accessed bit of the page table on following accesses.
+                    let page_flags = PageFlags::from(vm_perms) | PageFlags::ACCESSED;
+                    let page_prop = PageProperty::new(page_flags, CachePolicy::Writeback);
+                    let frame = commit_fn()?;
+                    cursor.map(frame, page_prop);
+                } else {
+                    let next_addr = cursor.virt_addr() + PAGE_SIZE;
+                    if next_addr < end_addr {
+                        let _ = cursor.jump(next_addr);
+                    }
                 }
-            }
-            Ok(())
-        };
+                Ok(())
+            };
 
-        let start_offset = vmo_offset + start_addr - inner.map_to_addr;
-        let end_offset = vmo_offset + end_addr - inner.map_to_addr;
-        vmo.operate_on_range(&(start_offset..end_offset), operate)?;
+            let start_offset = vmo_offset + start_addr - inner.map_to_addr;
+            let end_offset = vmo_offset + end_addr - inner.map_to_addr;
+            vmo.operate_on_range(&(start_offset..end_offset), operate)?;
+
+            Result::Ok(())
+        })??;
 
         Ok(())
     }
@@ -549,8 +555,9 @@ impl VmMappingInner {
         let map_addr = range.start.align_down(PAGE_SIZE);
         let map_end = range.end.align_up(PAGE_SIZE);
         let map_range = map_addr..map_end;
-        let mut cursor = vm_space.cursor_mut(&map_range)?;
-        cursor.unmap(map_range.len());
+        vm_space.cursor_mut_with(&map_range, |cursor| {
+            cursor.unmap(map_range.len());
+        })?;
 
         if may_destroy && map_range == self.range() {
             self.is_destroyed = true;
@@ -566,16 +573,19 @@ impl VmMappingInner {
     ) -> Result<()> {
         debug_assert!(range.start % PAGE_SIZE == 0);
         debug_assert!(range.end % PAGE_SIZE == 0);
-        let mut cursor = vm_space.cursor_mut(&range).unwrap();
-        let op = |p: &mut PageProperty| p.flags = perms.into();
-        while cursor.virt_addr() < range.end {
-            if let Some(va) = cursor.protect_next(range.end - cursor.virt_addr(), op) {
-                cursor.flusher().issue_tlb_flush(TlbFlushOp::Range(va));
-            } else {
-                break;
-            }
-        }
-        cursor.flusher().dispatch_tlb_flush();
+        vm_space
+            .cursor_mut_with(&range, |cursor| {
+                let op = |p: &mut PageProperty| p.flags = perms.into();
+                while cursor.virt_addr() < range.end {
+                    if let Some(va) = cursor.protect_next(range.end - cursor.virt_addr(), op) {
+                        cursor.flusher().issue_tlb_flush(TlbFlushOp::Range(va));
+                    } else {
+                        break;
+                    }
+                }
+                cursor.flusher().dispatch_tlb_flush();
+            })
+            .unwrap();
         Ok(())
     }
 

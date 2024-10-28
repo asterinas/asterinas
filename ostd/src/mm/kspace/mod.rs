@@ -156,10 +156,13 @@ pub fn init_kernel_page_table(meta_pages: Vec<Page<MetaPageMeta>>) {
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
-        // SAFETY: we are doing the linear mapping for the kernel.
-        unsafe {
-            kpt.map(&from, &to, prop).unwrap();
-        }
+        kpt.cursor_mut_with(&from, |cursor| {
+            // SAFETY: we are doing the linear mapping for the kernel.
+            unsafe {
+                cursor.map_pa(&to, prop);
+            }
+        })
+        .unwrap();
     }
 
     // Map the metadata pages.
@@ -171,13 +174,15 @@ pub fn init_kernel_page_table(meta_pages: Vec<Page<MetaPageMeta>>) {
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
-        let mut cursor = kpt.cursor_mut(&from).unwrap();
-        for meta_page in meta_pages {
-            // SAFETY: we are doing the metadata mappings for the kernel.
-            unsafe {
-                let _old = cursor.map(meta_page.into(), prop);
+        kpt.cursor_mut_with(&from, |cursor| {
+            for meta_page in meta_pages {
+                // SAFETY: we are doing the metadata mappings for the kernel.
+                unsafe {
+                    let _old = cursor.map(meta_page.into(), prop);
+                }
             }
-        }
+        })
+        .unwrap();
     }
 
     // Map for the I/O area.
@@ -191,10 +196,13 @@ pub fn init_kernel_page_table(meta_pages: Vec<Page<MetaPageMeta>>) {
             cache: CachePolicy::Uncacheable,
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
-        // SAFETY: we are doing I/O mappings for the kernel.
-        unsafe {
-            kpt.map(&from, &to, prop).unwrap();
-        }
+        kpt.cursor_mut_with(&from, |cursor| {
+            // SAFETY: we are doing I/O mappings for the kernel.
+            unsafe {
+                cursor.map_pa(&to, prop);
+            }
+        })
+        .unwrap();
     }
 
     // Map for the kernel code itself.
@@ -213,14 +221,16 @@ pub fn init_kernel_page_table(meta_pages: Vec<Page<MetaPageMeta>>) {
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
-        let mut cursor = kpt.cursor_mut(&from).unwrap();
-        for frame_paddr in to.step_by(PAGE_SIZE) {
-            let page = Page::<KernelMeta>::from_unused(frame_paddr, KernelMeta::default());
-            // SAFETY: we are doing mappings for the kernel.
-            unsafe {
-                let _old = cursor.map(page.into(), prop);
+        kpt.cursor_mut_with(&from, |cursor| {
+            for frame_paddr in to.step_by(PAGE_SIZE) {
+                let page = Page::<KernelMeta>::from_unused(frame_paddr, KernelMeta::default());
+                // SAFETY: we are doing mappings for the kernel.
+                unsafe {
+                    let _old = cursor.map(page.into(), prop);
+                }
             }
-        }
+        })
+        .unwrap();
     }
 
     KERNEL_PAGE_TABLE.call_once(|| kpt);

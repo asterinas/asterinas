@@ -65,30 +65,24 @@ impl VmSpace {
         }
     }
 
-    /// Gets an immutable cursor in the virtual address range.
-    ///
-    /// The cursor behaves like a lock guard, exclusively owning a sub-tree of
-    /// the page table, preventing others from creating a cursor in it. So be
-    /// sure to drop the cursor as soon as possible.
-    ///
-    /// The creation of the cursor may block if another cursor having an
-    /// overlapping range is alive.
-    pub fn cursor(&self, va: &Range<Vaddr>) -> Result<Cursor<'_>> {
-        Ok(self.pt.cursor(va).map(Cursor)?)
-    }
-
     /// Gets an mutable cursor in the virtual address range.
     ///
-    /// The same as [`Self::cursor`], the cursor behaves like a lock guard,
-    /// exclusively owning a sub-tree of the page table, preventing others
-    /// from creating a cursor in it. So be sure to drop the cursor as soon as
-    /// possible.
+    /// The caller should provide a closure to operate on the cursor. The
+    /// cursor will have the ability to read and modify the mappings in the
+    /// specified range.
+    ///
+    /// The cursor behaves like a lock guard, exclusively owning a sub-tree of
+    /// the page table, preventing others from creating a cursor in it. So the
+    /// provided closure should not block for a long time.
     ///
     /// The creation of the cursor may block if another cursor having an
     /// overlapping range is alive. The modification to the mapping by the
     /// cursor may also block or be overridden the mapping of another cursor.
-    pub fn cursor_mut(&self, va: &Range<Vaddr>) -> Result<CursorMut<'_, '_>> {
-        Ok(self.pt.cursor_mut(va).map(|pt_cursor| {
+    pub fn cursor_mut_with<F, R>(&self, va: &Range<Vaddr>, f: F) -> Result<R>
+    where
+        F: for<'a> FnOnce(&'a mut CursorMut<'_, '_, '_, '_>) -> R,
+    {
+        Ok(self.pt.cursor_mut_with(va, |pt_cursor| {
             let activation_lock = self.activation_lock.read();
 
             let mut activated_cpus = CpuSet::new_empty();
@@ -102,11 +96,13 @@ impl VmSpace {
                 }
             }
 
-            CursorMut {
+            let mut vm_space_cursor = CursorMut {
                 pt_cursor,
                 activation_lock,
                 flusher: TlbFlusher::new(activated_cpus, disable_preempt()),
-            }
+            };
+
+            f(&mut vm_space_cursor)
         })?)
     }
 
@@ -201,59 +197,20 @@ impl Default for VmSpace {
     }
 }
 
-/// The cursor for querying over the VM space without modifying it.
-///
-/// It exclusively owns a sub-tree of the page table, preventing others from
-/// reading or modifying the same sub-tree. Two read-only cursors can not be
-/// created from the same virtual address range either.
-pub struct Cursor<'a>(page_table::Cursor<'a, UserMode, PageTableEntry, PagingConsts>);
-
-impl Iterator for Cursor<'_> {
-    type Item = VmItem;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let result = self.query();
-        if result.is_ok() {
-            self.0.move_forward();
-        }
-        result.ok()
-    }
-}
-
-impl Cursor<'_> {
-    /// Query about the current slot.
-    ///
-    /// This function won't bring the cursor to the next slot.
-    pub fn query(&mut self) -> Result<VmItem> {
-        Ok(self.0.query().map(|item| item.try_into().unwrap())?)
-    }
-
-    /// Jump to the virtual address.
-    pub fn jump(&mut self, va: Vaddr) -> Result<()> {
-        self.0.jump(va)?;
-        Ok(())
-    }
-
-    /// Get the virtual address of the current slot.
-    pub fn virt_addr(&self) -> Vaddr {
-        self.0.virt_addr()
-    }
-}
-
 /// The cursor for modifying the mappings in VM space.
 ///
 /// It exclusively owns a sub-tree of the page table, preventing others from
 /// reading or modifying the same sub-tree.
-pub struct CursorMut<'a, 'b> {
-    pt_cursor: page_table::CursorMut<'a, UserMode, PageTableEntry, PagingConsts>,
+pub struct CursorMut<'a, 'b, 'c, 'd> {
+    pt_cursor: &'a mut page_table::CursorMut<'b, 'c, UserMode, PageTableEntry, PagingConsts>,
     #[allow(dead_code)]
-    activation_lock: RwLockReadGuard<'b, ()>,
+    activation_lock: RwLockReadGuard<'d, ()>,
     // We have a read lock so the CPU set in the flusher is always a superset
     // of actual activated CPUs.
     flusher: TlbFlusher<DisabledPreemptGuard>,
 }
 
-impl CursorMut<'_, '_> {
+impl CursorMut<'_, '_, '_, '_> {
     /// Query about the current slot.
     ///
     /// This is the same as [`Cursor::query`].
@@ -322,7 +279,10 @@ impl CursorMut<'_, '_> {
 
         loop {
             // SAFETY: It is safe to un-map memory in the userspace.
-            let result = unsafe { self.pt_cursor.take_next(end_va - self.virt_addr()) };
+            let result = unsafe {
+                self.pt_cursor
+                    .take_next(end_va - self.pt_cursor.virt_addr())
+            };
             match result {
                 PageTableItem::Mapped { va, page, .. } => {
                     if !self.flusher.need_remote_flush() && tlb_prefer_flush_all {
@@ -413,13 +373,13 @@ impl CursorMut<'_, '_> {
     ///  - the current cursor's range contains mapped pages.
     pub fn copy_from(
         &mut self,
-        src: &mut Self,
+        src: &mut CursorMut<'_, '_, '_, '_>,
         len: usize,
         op: &mut impl FnMut(&mut PageProperty),
     ) {
         // SAFETY: Operations on user memory spaces are safe if it doesn't
         // involve dropping any pages.
-        unsafe { self.pt_cursor.copy_from(&mut src.pt_cursor, len, op) }
+        unsafe { self.pt_cursor.copy_from(src.pt_cursor, len, op) }
     }
 }
 

@@ -51,12 +51,14 @@ fn create_user_space(program: &[u8]) -> UserSpace {
         // created and manipulated safely through
         // the `VmSpace` abstraction.
         let vm_space = VmSpace::new();
-        let mut cursor = vm_space.cursor_mut(&(MAP_ADDR..MAP_ADDR + nbytes)).unwrap();
-        let map_prop = PageProperty::new(PageFlags::RWX, CachePolicy::Writeback);
-        for frame in user_pages {
-            cursor.map(frame, map_prop);
-        }
-        drop(cursor);
+        vm_space
+            .cursor_mut_with(&(MAP_ADDR..MAP_ADDR + nbytes), |cursor| {
+                let map_prop = PageProperty::new(PageFlags::RWX, CachePolicy::Writeback);
+                for frame in user_pages {
+                    cursor.map(frame, map_prop);
+                }
+            })
+            .unwrap();
         Arc::new(vm_space)
     };
     let user_cpu_state = {

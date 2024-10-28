@@ -296,16 +296,18 @@ impl ContextTable {
             return Err(ContextTableError::InvalidDeviceId);
         }
         self.get_or_create_page_table(device)
-            .map(
-                &(daddr..daddr + PAGE_SIZE),
-                &(paddr..paddr + PAGE_SIZE),
-                PageProperty {
-                    flags: PageFlags::RW,
-                    cache: CachePolicy::Uncacheable,
-                    priv_flags: PrivFlags::empty(),
-                },
-            )
+            .cursor_mut_with(&(daddr..daddr + PAGE_SIZE), |cursor| {
+                cursor.map_pa(
+                    &(paddr..paddr + PAGE_SIZE),
+                    PageProperty {
+                        flags: PageFlags::RW,
+                        cache: CachePolicy::Uncacheable,
+                        priv_flags: PrivFlags::empty(),
+                    },
+                )
+            })
             .unwrap();
+
         Ok(())
     }
 
@@ -314,11 +316,11 @@ impl ContextTable {
             return Err(ContextTableError::InvalidDeviceId);
         }
         let pt = self.get_or_create_page_table(device);
-        let mut cursor = pt.cursor_mut(&(daddr..daddr + PAGE_SIZE)).unwrap();
-        unsafe {
+        pt.cursor_mut_with(&(daddr..daddr + PAGE_SIZE), |cursor| unsafe {
             let result = cursor.take_next(PAGE_SIZE);
             debug_assert!(matches!(result, PageTableItem::MappedUntracked { .. }));
-        }
+        })
+        .unwrap();
         Ok(())
     }
 }

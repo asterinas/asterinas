@@ -105,12 +105,9 @@ pub(super) union MetaSlotInner {
     _pt: ManuallyDrop<PageTablePageMeta>,
 }
 
-// Currently the sizes of the `MetaSlotInner` union variants are no larger
-// than 8 bytes and aligned to 8 bytes. So the size of `MetaSlot` is 16 bytes.
-//
 // Note that the size of `MetaSlot` should be a multiple of 8 bytes to prevent
 // cross-page accesses.
-const_assert_eq!(size_of::<MetaSlot>(), 16);
+const_assert_eq!(size_of::<MetaSlot>(), 24);
 
 /// All page metadata types must implemented this sealed trait,
 /// which ensures that each fields of `PageUsage` has one and only
@@ -171,15 +168,11 @@ use private::Sealed;
 
 #[derive(Debug, Default)]
 #[repr(C)]
-pub struct FrameMeta {
-    // If not doing so, the page table metadata would fit
-    // in the front padding of meta slot and make it 12 bytes.
-    // We make it 16 bytes. Further usage of frame metadata
-    // is welcome to exploit this space.
-    _unused_for_layout_padding: [u8; 8],
-}
+pub struct FrameMeta {}
 
 impl Sealed for FrameMeta {}
+
+use crate::sync::spin::mcs;
 
 /// The metadata of any kinds of page table pages.
 /// Make sure the the generic parameters don't effect the memory layout.
@@ -199,7 +192,7 @@ pub(in crate::mm) struct PageTablePageMeta<
     /// Whether the pages mapped by the node is tracked.
     pub is_tracked: MapTrackingStatus,
     /// The lock for the page table page.
-    pub lock: AtomicU8,
+    pub lock: mcs::LockBody,
     _phantom: core::marker::PhantomData<(E, C)>,
 }
 
@@ -223,12 +216,12 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTablePageMeta<E, C>
 where
     [(); C::NR_LEVELS as usize]:,
 {
-    pub fn new_locked(level: PagingLevel, is_tracked: MapTrackingStatus) -> Self {
+    pub fn new(level: PagingLevel, is_tracked: MapTrackingStatus) -> Self {
         Self {
             nr_children: UnsafeCell::new(0),
             level,
             is_tracked,
-            lock: AtomicU8::new(1),
+            lock: mcs::LockBody::new(),
             _phantom: PhantomData,
         }
     }

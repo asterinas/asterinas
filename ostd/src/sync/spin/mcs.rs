@@ -27,6 +27,7 @@ use core::{
 ///
 /// Each memory location that is shared between CPUs must have a unique
 /// instance of this type.
+#[derive(Debug)]
 pub(crate) struct LockBody {
     tail: AtomicPtr<UnsafeNode>,
 }
@@ -55,6 +56,7 @@ impl LockBody {
 ///
 /// Directly using this type is not safe. See [`Node`] for a safe wrapper that
 /// ensures that the node state is correct at compile time.
+#[derive(Debug)]
 pub(crate) struct UnsafeNode {
     /// Pointer to the next "acquiring" node in the queue.
     next: AtomicPtr<UnsafeNode>,
@@ -92,6 +94,7 @@ impl UnsafeNode {
 ///
 /// If the node is "ready", the `READY` parameter should be `true`. Otherwise,
 /// it should be `false`.
+#[derive(Debug)]
 pub(crate) struct Node<'a, 'b, const READY: bool> {
     lock: &'a LockBody,
     node: Pin<&'b mut UnsafeNode>,
@@ -168,6 +171,11 @@ impl<'a, 'b> Node<'a, 'b, true> {
             // The node is still "ready".
             Err(self)
         }
+    }
+
+    /// Takes a ready unsafe node out of the node.
+    pub(crate) fn take_unsafe_node(self) -> Pin<&'b mut UnsafeNode> {
+        self.node
     }
 }
 

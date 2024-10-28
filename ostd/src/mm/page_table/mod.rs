@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::{fmt::Debug, marker::PhantomData, ops::Range};
+use core::{fmt::Debug, marker::PhantomData, ops::Range, pin::pin};
 
 use super::{
     nr_subpage_per_huge, page::meta::MapTrackingStatus, page_prop::PageProperty, page_size, Paddr,
@@ -8,13 +8,14 @@ use super::{
 };
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
+    sync::spin::mcs,
     Pod,
 };
 
 mod node;
 use node::*;
 pub mod cursor;
-pub use cursor::{Cursor, CursorMut, PageTableItem};
+pub use cursor::{CursorMut, PageTableItem};
 #[cfg(ktest)]
 mod test;
 
@@ -100,9 +101,12 @@ impl PageTable<KernelMode> {
     /// This should be the only way to create the user page table, that is to
     /// duplicate the kernel page table with all the kernel mappings shared.
     pub fn create_user_page_table(&self) -> PageTable<UserMode> {
-        let mut root_node = self.root.clone_shallow().lock();
-        let mut new_node =
-            PageTableNode::alloc(PagingConsts::NR_LEVELS, MapTrackingStatus::NotApplicable);
+        let root_mcs_node = pin!(mcs::UnsafeNode::new());
+        let mut root_node = PageTableNode::lock_from_raw(self.root.clone_shallow(), root_mcs_node);
+        let new_mcs_node = pin!(mcs::UnsafeNode::new());
+        let new_raw_node =
+            RawPageTableNode::alloc(PagingConsts::NR_LEVELS, MapTrackingStatus::NotApplicable);
+        let mut new_node = PageTableNode::lock_from_raw(new_raw_node, new_mcs_node);
 
         // Make a shallow copy of the root node in the kernel space range.
         // The user space range is not copied.
@@ -114,8 +118,10 @@ impl PageTable<KernelMode> {
             }
         }
 
+        drop(root_node.release_into_raw().0);
+
         PageTable::<UserMode> {
-            root: new_node.into_raw(),
+            root: new_node.release_into_raw().0,
             _phantom: PhantomData,
         }
     }
@@ -135,7 +141,8 @@ impl PageTable<KernelMode> {
         let end = root_index.end;
         debug_assert!(end <= NR_PTES_PER_NODE);
 
-        let mut root_node = self.root.clone_shallow().lock();
+        let root_mcs_node = pin!(mcs::UnsafeNode::new());
+        let mut root_node = PageTableNode::lock_from_raw(self.root.clone_shallow(), root_mcs_node);
         for i in start..end {
             let root_entry = root_node.entry(i);
             if root_entry.is_none() {
@@ -147,10 +154,12 @@ impl PageTable<KernelMode> {
                 } else {
                     MapTrackingStatus::Untracked
                 };
-                let node = PageTableNode::alloc(nxt_level, is_tracked);
-                let _ = root_entry.replace(Child::PageTable(node.into_raw()));
+                let node = RawPageTableNode::alloc(nxt_level, is_tracked);
+                let _ = root_entry.replace(Child::PageTable(node));
             }
         }
+
+        drop(root_node.release_into_raw());
     }
 
     /// Protect the given virtual address range in the kernel page table.
@@ -166,11 +175,11 @@ impl PageTable<KernelMode> {
         vaddr: &Range<Vaddr>,
         mut op: impl FnMut(&mut PageProperty),
     ) -> Result<(), PageTableError> {
-        let mut cursor = CursorMut::new(self, vaddr)?;
-        while let Some(range) = cursor.protect_next(vaddr.end - cursor.virt_addr(), &mut op) {
-            crate::arch::mm::tlb_flush_addr(range.start);
-        }
-        Ok(())
+        self.cursor_mut_with(vaddr, |cursor| {
+            while let Some(range) = cursor.protect_next(vaddr.end - cursor.virt_addr(), &mut op) {
+                crate::arch::mm::tlb_flush_addr(range.start);
+            }
+        })
     }
 }
 
@@ -181,8 +190,7 @@ where
     /// Create a new empty page table. Useful for the kernel page table and IOMMU page tables only.
     pub fn empty() -> Self {
         PageTable {
-            root: PageTableNode::<E, C>::alloc(C::NR_LEVELS, MapTrackingStatus::NotApplicable)
-                .into_raw(),
+            root: RawPageTableNode::<E, C>::alloc(C::NR_LEVELS, MapTrackingStatus::NotApplicable),
             _phantom: PhantomData,
         }
     }
@@ -199,16 +207,6 @@ where
         self.root.paddr()
     }
 
-    pub unsafe fn map(
-        &self,
-        vaddr: &Range<Vaddr>,
-        paddr: &Range<Paddr>,
-        prop: PageProperty,
-    ) -> Result<(), PageTableError> {
-        self.cursor_mut(vaddr)?.map_pa(paddr, prop);
-        Ok(())
-    }
-
     /// Query about the mapping of a single byte at the given virtual address.
     ///
     /// Note that this function may fail reflect an accurate result if there are
@@ -220,24 +218,26 @@ where
         unsafe { page_walk::<E, C>(self.root_paddr(), vaddr) }
     }
 
-    /// Create a new cursor exclusively accessing the virtual address range for mapping.
+    /// Create a new cursor exclusively accessing the virtual range.
     ///
-    /// If another cursor is already accessing the range, the new cursor may wait until the
-    /// previous cursor is dropped.
-    pub fn cursor_mut(
-        &'a self,
-        va: &Range<Vaddr>,
-    ) -> Result<CursorMut<'a, M, E, C>, PageTableError> {
-        CursorMut::new(self, va)
-    }
+    /// If another cursor is already accessing the range, the new cursor may
+    /// wait until the previous cursor is dropped.
+    pub fn cursor_mut_with<F, R>(&'a self, va: &Range<Vaddr>, f: F) -> Result<R, PageTableError>
+    where
+        F: FnOnce(&mut CursorMut<'a, '_, M, E, C>) -> R,
+    {
+        // Allocate enough nodes for the cursor on the stack.
+        let mcs1 = pin!(mcs::UnsafeNode::new());
+        let mcs2 = pin!(mcs::UnsafeNode::new());
+        let mcs3 = pin!(mcs::UnsafeNode::new());
+        let mcs4 = pin!(mcs::UnsafeNode::new());
+        let mcs5 = pin!(mcs::UnsafeNode::new());
 
-    /// Create a new cursor exclusively accessing the virtual address range for querying.
-    ///
-    /// If another cursor is already accessing the range, the new cursor may wait until the
-    /// previous cursor is dropped. The modification to the mapping by the cursor may also
-    /// block or be overridden by the mapping of another cursor.
-    pub fn cursor(&'a self, va: &Range<Vaddr>) -> Result<Cursor<'a, M, E, C>, PageTableError> {
-        Cursor::new(self, va)
+        let mut cursor = CursorMut::new(self, va, [mcs1, mcs2, mcs3, mcs4, mcs5])?;
+
+        let r = f.call_once((&mut cursor,));
+
+        Ok(r)
     }
 
     /// Create a new reference to the same page table.
@@ -318,7 +318,9 @@ pub(super) unsafe fn page_walk<E: PageTableEntryTrait, C: PagingConstsTrait>(
 /// The interface for defining architecture-specific page table entries.
 ///
 /// Note that a default PTE should be a PTE that points to nothing.
-pub trait PageTableEntryTrait: Clone + Copy + Debug + Default + Pod + Sized + Sync {
+pub trait PageTableEntryTrait:
+    Clone + Copy + Debug + Default + Pod + Sized + Sync + 'static
+{
     /// Create a set of new invalid page table flags that indicates an absent page.
     ///
     /// Note that currently the implementation requires an all zero PTE to be an absent PTE.
