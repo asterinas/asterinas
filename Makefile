@@ -72,7 +72,7 @@ endif
 
 # If the BENCHMARK is set, we will run the benchmark in the kernel mode.
 ifneq ($(BENCHMARK), none)
-CARGO_OSDK_ARGS += --init-args="/benchmark/common/bench_runner.sh $(BENCHMARK) asterinas"
+CARGO_OSDK_ARGS += --init-args="/benchmark/benchmarks/common/bench_runner.sh $(BENCHMARK) asterinas"
 endif
 
 ifeq ($(INTEL_TDX), 1)
@@ -102,6 +102,11 @@ endif
 
 ifeq ($(ENABLE_KVM), 1)
 CARGO_OSDK_ARGS += --qemu-args="-accel kvm"
+endif
+
+ifdef PREBUILT_INITRAMFS
+INITRAMFS_IMAGE := $(shell realpath $(PREBUILT_INITRAMFS))
+CARGO_OSDK_ARGS += --initramfs="$(INITRAMFS_IMAGE)"
 endif
 
 # Pass make variables to all subdirectory makes

@@ -6,4 +6,4 @@ set -e
 
 echo "*** Running lmbench-signal install ***"
 
-/benchmark/bin/lmbench/lat_sig -P 1 install
+/benchmark/bin/lat_sig -P 1 install

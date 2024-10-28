@@ -6,4 +6,4 @@ set -e
 
 echo "*** Running the LMbench fifo latency test ***"
 
-/benchmark/bin/lmbench/lat_fifo -P 1
+/benchmark/bin/lat_fifo -P 1

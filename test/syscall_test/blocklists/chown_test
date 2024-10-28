@@ -1,3 +1,5 @@
+ChownTest.FchownFileWithOpath
+ChownTest.FchownDirWithOpath
 ChownKinds/ChownParamTest.ChownFileSucceeds/0
 ChownKinds/ChownParamTest.ChownFileSucceeds/1
 ChownKinds/ChownParamTest.ChownFileSucceeds/2

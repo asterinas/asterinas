@@ -5,3 +5,7 @@ ChmodTest.FchmodatFileAbsolutePath
 ChmodTest.FchmodatFile
 ChmodTest.ChmodFileToNoPermissionsSucceeds
 ChmodTest.FchmodFileToNoPermissionsSucceeds_NoRandomSave
+ChmodTest.FchmodFileSucceeds
+ChmodTest.FchmodDirSucceeds
+ChmodTest.FchmodatWithOpath
+ChmodTest.FchmodFileToNoPermissionsSucceeds
