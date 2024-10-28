@@ -83,6 +83,18 @@ impl dyn BlockDevice {
         let bio = create_bio_from_frame(BioType::Write, bid, frame);
         bio.submit(self)
     }
+
+    /// Issues a sync request
+    pub fn sync(&self) -> Result<BioStatus, BioEnqueueError> {
+        let bio = Bio::new(
+            BioType::Flush,
+            Sid::from(Bid::from_offset(0)),
+            vec![],
+            Some(general_complete_fn),
+        );
+        let status = bio.submit_and_wait(self)?;
+        Ok(status)
+    }
 }
 
 impl VmIo for dyn BlockDevice {
