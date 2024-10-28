@@ -1683,6 +1683,8 @@ impl Inode for ExfatInode {
         let fs_guard = fs.lock();
         inner.sync_all(&fs_guard)?;
 
+        fs.block_device().sync()?;
+
         Ok(())
     }
 
@@ -1691,6 +1693,8 @@ impl Inode for ExfatInode {
         let fs = inner.fs();
         let fs_guard = fs.lock();
         inner.sync_data(&fs_guard)?;
+
+        fs.block_device().sync()?;
 
         Ok(())
     }
