@@ -63,7 +63,8 @@ impl BlockDevice {
         match request.type_() {
             BioType::Read => self.device.read(request),
             BioType::Write => self.device.write(request),
-            BioType::Flush | BioType::Discard => todo!(),
+            BioType::Flush => self.device.flush(request),
+            BioType::Discard => todo!(),
         }
     }
 
@@ -398,6 +399,58 @@ impl DeviceInner {
 
             // Records the submitted request
             let submitted_request = SubmittedRequest::new(id as u16, bio_request, dma_streams);
+            self.submitted_requests
+                .disable_irq()
+                .lock()
+                .insert(token, submitted_request);
+            return;
+        }
+    }
+
+    /// Flushes any cached data from the guest to the persistent storage on the host.
+    /// This will be ignored if the device doesn't support the `VIRTIO_BLK_F_FLUSH` feature.
+    fn flush(&self, bio_request: BioRequest) {
+        if self.transport.lock().device_features() & BlockFeatures::FLUSH.bits() == 0 {
+            bio_request.bios().for_each(|bio| {
+                bio.complete(BioStatus::Complete);
+            });
+            return;
+        }
+
+        let id = self.id_allocator.disable_irq().lock().alloc().unwrap();
+        let req_slice = {
+            let req_slice = DmaStreamSlice::new(&self.block_requests, id * REQ_SIZE, REQ_SIZE);
+            let req = BlockReq {
+                type_: ReqType::Flush as _,
+                reserved: 0,
+                sector: bio_request.sid_range().start.to_raw(),
+            };
+            req_slice.write_val(0, &req).unwrap();
+            req_slice.sync().unwrap();
+            req_slice
+        };
+
+        let resp_slice = {
+            let resp_slice = DmaStreamSlice::new(&self.block_responses, id * RESP_SIZE, RESP_SIZE);
+            resp_slice.write_val(0, &BlockResp::default()).unwrap();
+            resp_slice
+        };
+
+        let num_used_descs = 1;
+        loop {
+            let mut queue = self.queue.disable_irq().lock();
+            if num_used_descs > queue.available_desc() {
+                continue;
+            }
+            let token = queue
+                .add_dma_buf(&[&req_slice], &[&resp_slice])
+                .expect("add queue failed");
+            if queue.should_notify() {
+                queue.notify();
+            }
+
+            // Records the submitted request
+            let submitted_request = SubmittedRequest::new(id as u16, bio_request, Vec::new());
             self.submitted_requests
                 .disable_irq()
                 .lock()
