@@ -30,8 +30,6 @@
 #![feature(trait_upcasting)]
 #![register_tool(component_access_control)]
 
-use core::sync::atomic::Ordering;
-
 use ostd::{
     arch::qemu::{exit_qemu, QemuExitCode},
     boot,
@@ -79,7 +77,6 @@ pub fn main() {
     ostd::early_println!("[kernel] OSTD initialized. Preparing components.");
     component::init_all(component::parse_metadata!()).unwrap();
     init();
-    ostd::IN_BOOTSTRAP_CONTEXT.store(false, Ordering::Relaxed);
 
     // Spawn all AP idle threads.
     ostd::boot::smp::register_ap_entry(ap_init);
