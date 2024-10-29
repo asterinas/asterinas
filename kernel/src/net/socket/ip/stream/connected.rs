@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::sync::Weak;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicU8, Ordering};
 
 use aster_bigtcp::{
     errors::tcp::{RecvError, SendError},
@@ -34,16 +34,17 @@ pub struct ConnectedStream {
     /// connection is established asynchronously will succeed and any subsequent `connect()` will
     /// fail.
     is_new_connection: bool,
-    /// Indicates if the receiving side of this socket is closed.
+    /// Indicates if the receiving side or the sending side of this socket is closed.
     ///
     /// The receiving side may be closed if this side disables reading
     /// or if the peer side closes its sending half.
-    is_receiving_closed: AtomicBool,
-    /// Indicates if the sending side of this socket is closed.
     ///
     /// The sending side can only be closed if this side disables writing.
-    is_sending_closed: AtomicBool,
+    is_closed: AtomicU8,
 }
+
+const IS_SENDIND_CLOSED: u8 = 0x1;
+const IS_RECEIVING_CLOSED: u8 = 0x1 << 1;
 
 impl ConnectedStream {
     pub fn new(
@@ -55,19 +56,20 @@ impl ConnectedStream {
             bound_socket,
             remote_endpoint,
             is_new_connection,
-            is_receiving_closed: AtomicBool::new(false),
-            is_sending_closed: AtomicBool::new(false),
+            is_closed: AtomicU8::new(0),
         }
     }
 
     pub fn shutdown(&self, cmd: SockShutdownCmd, pollee: &Pollee) -> Result<()> {
         if cmd.shut_read() {
-            self.is_receiving_closed.store(true, Ordering::Relaxed);
+            self.is_closed
+                .fetch_or(IS_RECEIVING_CLOSED, Ordering::Relaxed);
             self.update_io_events(pollee);
         }
 
         if cmd.shut_write() {
-            self.is_sending_closed.store(true, Ordering::Relaxed);
+            self.is_closed
+                .fetch_or(IS_SENDIND_CLOSED, Ordering::Relaxed);
             self.bound_socket.close();
         }
 
@@ -83,7 +85,7 @@ impl ConnectedStream {
         });
 
         match result {
-            Ok(Ok(0)) if self.is_receiving_closed.load(Ordering::Relaxed) => Ok(0),
+            Ok(Ok(0)) if self.is_closed.load(Ordering::Relaxed) & IS_RECEIVING_CLOSED != 0 => Ok(0),
             Ok(Ok(0)) => return_errno_with_message!(Errno::EAGAIN, "the receive buffer is empty"),
             Ok(Ok(recv_bytes)) => Ok(recv_bytes),
             Ok(Err(e)) => Err(e),
@@ -145,17 +147,23 @@ impl ConnectedStream {
 
     pub(super) fn update_io_events(&self, pollee: &Pollee) {
         self.bound_socket.raw_with(|socket| {
-            if is_peer_closed(socket) {
+            let is_closed = if is_peer_closed(socket) {
                 // Only the sending side of peer socket is closed
-                self.is_receiving_closed.store(true, Ordering::Relaxed);
+                let old_value = self
+                    .is_closed
+                    .fetch_or(IS_RECEIVING_CLOSED, Ordering::Relaxed);
+                old_value | IS_RECEIVING_CLOSED
             } else if is_closed(socket) {
                 // The sending side of both peer socket and this socket are closed
-                self.is_receiving_closed.store(true, Ordering::Relaxed);
-                self.is_sending_closed.store(true, Ordering::Relaxed);
-            }
+                self.is_closed
+                    .fetch_or(IS_RECEIVING_CLOSED | IS_SENDIND_CLOSED, Ordering::Relaxed);
+                IS_RECEIVING_CLOSED | IS_SENDIND_CLOSED
+            } else {
+                self.is_closed.load(Ordering::Relaxed)
+            };
 
-            let is_receiving_closed = self.is_receiving_closed.load(Ordering::Relaxed);
-            let is_sending_closed = self.is_sending_closed.load(Ordering::Relaxed);
+            let is_receiving_closed = is_closed & IS_RECEIVING_CLOSED != 0;
+            let is_sending_closed = is_closed & IS_SENDIND_CLOSED != 0;
 
             // If the receiving side is closed, always add events IN and RDHUP;
             // otherwise, check if the socket can receive.
