@@ -14,6 +14,9 @@ use crate::{
     process::signal::sig_mask::SigMask,
 };
 
+// See: https://elixir.bootlin.com/linux/v6.11.5/source/fs/eventpoll.c#L2437
+const EP_MAX_EVENTS: usize = i32::MAX as usize / core::mem::size_of::<c_epoll_event>();
+
 pub fn sys_epoll_create(size: i32, ctx: &Context) -> Result<SyscallReturn> {
     if size <= 0 {
         return_errno_with_message!(Errno::EINVAL, "size is not positive");
@@ -95,8 +98,8 @@ fn do_epoll_wait(
     ctx: &Context,
 ) -> Result<Vec<EpollEvent>> {
     let max_events = {
-        if max_events <= 0 {
-            return_errno_with_message!(Errno::EINVAL, "max_events is not positive");
+        if max_events <= 0 || max_events as usize > EP_MAX_EVENTS {
+            return_errno_with_message!(Errno::EINVAL, "max_events is not valid");
         }
         max_events as usize
     };
@@ -192,7 +195,7 @@ pub fn sys_epoll_pwait(
         epfd, events_addr, max_events, timeout, sigmask, sigset_size
     );
 
-    if sigset_size != 8 {
+    if sigmask != 0 && sigset_size != 8 {
         return_errno_with_message!(Errno::EINVAL, "sigset size is not equal to 8");
     }
 
