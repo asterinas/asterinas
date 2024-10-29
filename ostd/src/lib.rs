@@ -47,7 +47,7 @@ pub mod timer;
 pub mod trap;
 pub mod user;
 
-use core::sync::atomic::AtomicBool;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 pub use ostd_macros::{main, panic_handler};
 pub use ostd_pod::Pod;
@@ -101,10 +101,12 @@ unsafe fn init() {
     arch::irq::enable_local();
 
     invoke_ffi_init_funcs();
+
+    IN_BOOTSTRAP_CONTEXT.store(false, Ordering::Relaxed);
 }
 
 /// Indicates whether the kernel is in bootstrap context.
-pub static IN_BOOTSTRAP_CONTEXT: AtomicBool = AtomicBool::new(true);
+pub(crate) static IN_BOOTSTRAP_CONTEXT: AtomicBool = AtomicBool::new(true);
 
 /// Invoke the initialization functions defined in the FFI.
 /// The component system uses this function to call the initialization functions of
