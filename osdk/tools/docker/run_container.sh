@@ -5,7 +5,7 @@
 set -e
 
 SCRIPT_DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
-ASTER_ROOT_DIR=${SCRIPT_DIR}/../..
+ASTER_ROOT_DIR=${SCRIPT_DIR}/../../..
 VERSION=$( cat ${ASTER_ROOT_DIR}/VERSION )
 
 if [ "$1" = "intel-tdx" ]; then
