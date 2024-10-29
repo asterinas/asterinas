@@ -14,10 +14,7 @@ use util::TcpOptionSet;
 
 use super::UNSPECIFIED_LOCAL_ENDPOINT;
 use crate::{
-    events::{IoEvents, Observer},
-    fs::{file_handle::FileLike, utils::StatusFlags},
-    match_sock_option_mut, match_sock_option_ref,
-    net::{
+    events::{IoEvents, Observer}, fs::{file_handle::FileLike, utils::StatusFlags}, match_sock_option_mut, match_sock_option_ref, net::{
         iface::poll_ifaces,
         socket::{
             options::{Error as SocketError, SocketOption},
@@ -27,10 +24,7 @@ use crate::{
             },
             Socket,
         },
-    },
-    prelude::*,
-    process::signal::{Pollable, Pollee, Poller},
-    util::{MultiRead, MultiWrite},
+    }, prelude::*, process::signal::{Pollable, Pollee, Poller}, thread::Thread, util::{MultiRead, MultiWrite}
 };
 
 mod connected;
@@ -466,7 +460,11 @@ impl Socket for StreamSocket {
             return result;
         }
 
-        self.wait_events(IoEvents::OUT, || self.check_connect())
+        let res = self.wait_events(IoEvents::OUT, || self.check_connect());
+        if res.is_err() {
+            Thread::yield_now();
+        }
+        res
     }
 
     fn listen(&self, backlog: usize) -> Result<()> {
