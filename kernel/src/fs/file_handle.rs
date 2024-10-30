@@ -54,9 +54,8 @@ pub trait FileLike: Pollable + Send + Sync + Any {
         return_errno_with_message!(Errno::EINVAL, "resize is not supported");
     }
 
-    fn metadata(&self) -> Metadata {
-        panic!("metadata unsupported");
-    }
+    /// Get the metadata that describes this file.
+    fn metadata(&self) -> Metadata;
 
     fn mode(&self) -> Result<InodeMode> {
         return_errno_with_message!(Errno::EINVAL, "mode is not supported");

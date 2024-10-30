@@ -12,7 +12,10 @@ use ostd::sync::LocalIrqDisabled;
 use super::*;
 use crate::{
     events::Observer,
-    fs::{file_handle::FileLike, utils::IoctlCmd},
+    fs::{
+        file_handle::FileLike,
+        utils::{InodeMode, IoctlCmd, Metadata},
+    },
     process::signal::{Pollable, Pollee, Poller},
 };
 
@@ -341,7 +344,6 @@ impl Pollable for EpollFile {
     }
 }
 
-// Implement the common methods required by FileHandle
 impl FileLike for EpollFile {
     fn read(&self, _writer: &mut VmWriter) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "epoll files do not support read");
@@ -369,6 +371,16 @@ impl FileLike for EpollFile {
         observer: &Weak<dyn Observer<IoEvents>>,
     ) -> Option<Weak<dyn Observer<IoEvents>>> {
         self.pollee.unregister_observer(observer)
+    }
+
+    fn metadata(&self) -> Metadata {
+        // This is a dummy implementation.
+        // TODO: Add "anonymous inode fs" and link `EpollFile` to it.
+        Metadata::new_file(
+            0,
+            InodeMode::from_bits_truncate(0o600),
+            aster_block::BLOCK_SIZE,
+        )
     }
 }
 

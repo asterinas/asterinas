@@ -84,6 +84,8 @@ impl FileLike for PipeReader {
     }
 
     fn metadata(&self) -> Metadata {
+        // This is a dummy implementation.
+        // TODO: Add "PipeFS" and link `PipeReader` to it.
         let now = RealTimeCoarseClock::get().read_time();
         Metadata {
             dev: 0,
@@ -166,6 +168,8 @@ impl FileLike for PipeWriter {
     }
 
     fn metadata(&self) -> Metadata {
+        // This is a dummy implementation.
+        // TODO: Add "PipeFS" and link `PipeWriter` to it.
         let now = RealTimeCoarseClock::get().read_time();
         Metadata {
             dev: 0,

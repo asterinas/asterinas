@@ -15,7 +15,10 @@ use util::TcpOptionSet;
 use super::UNSPECIFIED_LOCAL_ENDPOINT;
 use crate::{
     events::{IoEvents, Observer},
-    fs::{file_handle::FileLike, utils::StatusFlags},
+    fs::{
+        file_handle::FileLike,
+        utils::{InodeMode, Metadata, StatusFlags},
+    },
     match_sock_option_mut, match_sock_option_ref,
     net::{
         iface::poll_ifaces,
@@ -427,6 +430,16 @@ impl FileLike for StreamSocket {
         observer: &Weak<dyn Observer<IoEvents>>,
     ) -> Option<Weak<dyn Observer<IoEvents>>> {
         self.pollee.unregister_observer(observer)
+    }
+
+    fn metadata(&self) -> Metadata {
+        // This is a dummy implementation.
+        // TODO: Add "SockFS" and link `StreamSocket` to it.
+        Metadata::new_socket(
+            0,
+            InodeMode::from_bits_truncate(0o140777),
+            aster_block::BLOCK_SIZE,
+        )
     }
 }
 
