@@ -9,7 +9,10 @@ use self::{bound::BoundDatagram, unbound::UnboundDatagram};
 use super::{common::get_ephemeral_endpoint, UNSPECIFIED_LOCAL_ENDPOINT};
 use crate::{
     events::{IoEvents, Observer},
-    fs::{file_handle::FileLike, utils::StatusFlags},
+    fs::{
+        file_handle::FileLike,
+        utils::{InodeMode, Metadata, StatusFlags},
+    },
     match_sock_option_mut,
     net::{
         iface::poll_ifaces,
@@ -270,6 +273,16 @@ impl FileLike for DatagramSocket {
         observer: &Weak<dyn Observer<IoEvents>>,
     ) -> Option<Weak<dyn Observer<IoEvents>>> {
         self.pollee.unregister_observer(observer)
+    }
+
+    fn metadata(&self) -> Metadata {
+        // This is a dummy implementation.
+        // TODO: Add "SockFS" and link `DatagramSocket` to it.
+        Metadata::new_socket(
+            0,
+            InodeMode::from_bits_truncate(0o140777),
+            aster_block::BLOCK_SIZE,
+        )
     }
 }
 

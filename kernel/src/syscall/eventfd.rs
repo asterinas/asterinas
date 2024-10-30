@@ -262,6 +262,8 @@ impl FileLike for EventFile {
     }
 
     fn metadata(&self) -> Metadata {
+        // This is a dummy implementation.
+        // TODO: Add "anonymous inode fs" and link `EventFile` to it.
         let now = RealTimeClock::get().read_time();
         Metadata {
             dev: 0,

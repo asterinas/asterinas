@@ -11,7 +11,10 @@ use super::{
 };
 use crate::{
     events::{IoEvents, Observer},
-    fs::{file_handle::FileLike, utils::StatusFlags},
+    fs::{
+        file_handle::FileLike,
+        utils::{InodeMode, Metadata, StatusFlags},
+    },
     net::socket::{
         unix::UnixSocketAddr,
         util::{send_recv_flags::SendRecvFlags, socket_addr::SocketAddr, MessageHeader},
@@ -212,6 +215,16 @@ impl FileLike for UnixStreamSocket {
             State::Listen(listen) => listen.unregister_observer(observer),
             State::Connected(connected) => connected.unregister_observer(observer),
         }
+    }
+
+    fn metadata(&self) -> Metadata {
+        // This is a dummy implementation.
+        // TODO: Add "SockFS" and link `UnixStreamSocket` to it.
+        Metadata::new_socket(
+            0,
+            InodeMode::from_bits_truncate(0o140777),
+            aster_block::BLOCK_SIZE,
+        )
     }
 }
 

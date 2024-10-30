@@ -5,7 +5,10 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use super::{connected::Connected, connecting::Connecting, init::Init, listen::Listen};
 use crate::{
     events::IoEvents,
-    fs::{file_handle::FileLike, utils::StatusFlags},
+    fs::{
+        file_handle::FileLike,
+        utils::{InodeMode, Metadata, StatusFlags},
+    },
     net::socket::{
         vsock::{addr::VsockSocketAddr, VSOCK_GLOBAL},
         MessageHeader, SendRecvFlags, SockShutdownCmd, Socket, SocketAddr,
@@ -170,6 +173,16 @@ impl FileLike for VsockStreamSocket {
             self.set_nonblocking(false);
         }
         Ok(())
+    }
+
+    fn metadata(&self) -> Metadata {
+        // This is a dummy implementation.
+        // TODO: Add "SockFS" and link `VsockStreamSocket` to it.
+        Metadata::new_socket(
+            0,
+            InodeMode::from_bits_truncate(0o140777),
+            aster_block::BLOCK_SIZE,
+        )
     }
 }
 
