@@ -42,7 +42,6 @@ pub use super_block::{SuperBlock, MAGIC_NUM};
 
 mod block_group;
 mod block_ptr;
-mod blocks_hole;
 mod dir;
 mod fs;
 mod impl_for_vfs;

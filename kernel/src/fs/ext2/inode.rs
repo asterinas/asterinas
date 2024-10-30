@@ -9,7 +9,6 @@ use inherit_methods_macro::inherit_methods;
 
 use super::{
     block_ptr::{BidPath, BlockPtrs, Ext2Bid, BID_SIZE, MAX_BLOCK_PTRS},
-    blocks_hole::BlocksHoleDesc,
     dir::{DirEntry, DirEntryReader, DirEntryWriter},
     fs::Ext2,
     indirect_block_cache::{IndirectBlock, IndirectBlockCache},
@@ -761,15 +760,6 @@ impl Inode {
 
                 // TODO: Think of a more light-weight approach
                 inner.page_cache.fill_zeros(offset..end_offset)?;
-
-                // Mark the full blocks as holes
-                let inode_impl = inner.inode_impl.0.read();
-                let mut blocks_hole_desc = inode_impl.blocks_hole_desc.write();
-                for bid in Bid::from_offset(offset.align_up(BLOCK_SIZE))
-                    ..Bid::from_offset(end_offset.align_down(BLOCK_SIZE))
-                {
-                    blocks_hole_desc.set(bid.to_raw() as _);
-                }
                 Ok(())
             }
             // We extend the compatibility here since Ext2 in Linux
@@ -1091,9 +1081,6 @@ impl Inner {
         // Writes back the data in page cache.
         let file_size = self.inode_impl.file_size();
         self.page_cache.evict_range(0..file_size)?;
-
-        // Writes back the data holes
-        self.inode_impl.sync_data_holes()?;
         Ok(())
     }
 }
@@ -1102,7 +1089,6 @@ struct InodeImpl(RwMutex<InodeImpl_>);
 
 struct InodeImpl_ {
     desc: Dirty<InodeDesc>,
-    blocks_hole_desc: RwLock<BlocksHoleDesc>,
     indirect_blocks: RwMutex<IndirectBlockCache>,
     is_freed: bool,
     last_alloc_device_bid: Option<Ext2Bid>,
@@ -1112,7 +1098,6 @@ struct InodeImpl_ {
 impl InodeImpl_ {
     pub fn new(desc: Dirty<InodeDesc>, weak_self: Weak<Inode>, fs: Weak<Ext2>) -> Self {
         Self {
-            blocks_hole_desc: RwLock::new(BlocksHoleDesc::new(desc.blocks_count() as usize)),
             desc,
             indirect_blocks: RwMutex::new(IndirectBlockCache::new(fs)),
             is_freed: false,
@@ -1131,56 +1116,20 @@ impl InodeImpl_ {
 
     pub fn read_blocks_async(&self, bid: Ext2Bid, blocks: &SegmentSlice) -> Result<BioWaiter> {
         let nblocks = blocks.nframes();
-        let mut segments = Vec::new();
+        let mut bio_waiter = BioWaiter::new();
 
-        // Traverse all blocks to be read, handle any holes, and collect contiguous blocks in batches
-        let mut nth_bid = bid;
         let mut blocks_offset = 0;
         for dev_range in DeviceRangeReader::new(self, bid..bid + nblocks as Ext2Bid)? {
             let first_bid = dev_range.start as Ext2Bid;
             let range_len = dev_range.len();
+            let segment = blocks.range(blocks_offset..blocks_offset + range_len);
 
-            let (mut curr_batch_start_bid, mut curr_batch_len) = (first_bid, 0);
-            let blocks_hole_desc = self.blocks_hole_desc.read();
-            for curr_bid in first_bid..first_bid + range_len as Ext2Bid {
-                if blocks_hole_desc.is_hole(nth_bid as usize) {
-                    if curr_batch_len > 0 {
-                        // Collect current batch
-                        let segment = blocks.range(blocks_offset..blocks_offset + curr_batch_len);
-                        segments.push((curr_batch_start_bid, segment));
-                        blocks_offset += curr_batch_len;
-                        curr_batch_len = 0;
-                    }
-
-                    // Zero the hole
-                    blocks
-                        .range(blocks_offset..blocks_offset + 1)
-                        .writer()
-                        .fill(0);
-                    blocks_offset += 1;
-                } else {
-                    if curr_batch_len == 0 {
-                        // Start to record next batch
-                        curr_batch_start_bid = curr_bid;
-                    }
-                    curr_batch_len += 1;
-                }
-                nth_bid += 1;
-            }
-            // Collect the last batch if present
-            if curr_batch_len > 0 {
-                let segment = blocks.range(blocks_offset..blocks_offset + curr_batch_len);
-                segments.push((curr_batch_start_bid, segment));
-                blocks_offset += curr_batch_len;
-            }
-        }
-
-        // Read blocks in batches
-        let mut bio_waiter = BioWaiter::new();
-        for (start_bid, segment) in segments {
-            let waiter = self.fs().read_blocks_async(start_bid, &segment)?;
+            let waiter = self.fs().read_blocks_async(first_bid, &segment)?;
             bio_waiter.concat(waiter);
+
+            blocks_offset += range_len;
         }
+
         Ok(bio_waiter)
     }
 
@@ -1206,11 +1155,6 @@ impl InodeImpl_ {
 
             blocks_offset += range_len;
         }
-
-        // FIXME: Unset the block hole in the callback function of bio.
-        self.blocks_hole_desc
-            .write()
-            .unset_range((bid as usize)..bid as usize + nblocks);
 
         Ok(bio_waiter)
     }
@@ -1246,7 +1190,6 @@ impl InodeImpl_ {
                 return_errno_with_message!(Errno::ENOSPC, "not enough free blocks");
             }
             self.expand_blocks(old_blocks..new_blocks)?;
-            self.blocks_hole_desc.write().resize(new_blocks as usize);
         }
 
         // Expands the size
@@ -1495,7 +1438,6 @@ impl InodeImpl_ {
         // Shrinks block count if necessary
         if new_blocks < old_blocks {
             self.shrink_blocks(new_blocks..old_blocks);
-            self.blocks_hole_desc.write().resize(new_blocks as usize);
         }
 
         // Shrinks the size
@@ -1918,58 +1860,6 @@ impl InodeImpl {
         let mut symlink = vec![0u8; inner.desc.size];
         symlink.copy_from_slice(&inner.desc.block_ptrs.as_bytes()[..inner.desc.size]);
         Ok(String::from_utf8(symlink)?)
-    }
-
-    pub fn sync_data_holes(&self) -> Result<()> {
-        let inner = self.0.read();
-        let blocks_hole_desc = inner.blocks_hole_desc.read();
-        // Collect contiguous data holes in batches
-        let (data_hole_batches, max_batch_len) = {
-            let mut data_hole_batches: Vec<(Ext2Bid, usize)> = Vec::new();
-            let mut max_batch_len = 0;
-            let mut prev_bid = None;
-            let (mut curr_batch_start_bid, mut curr_batch_len) = (0 as Ext2Bid, 0);
-
-            for bid in
-                (0..inner.desc.blocks_count()).filter(|bid| blocks_hole_desc.is_hole(*bid as _))
-            {
-                match prev_bid {
-                    Some(prev) if bid == prev + 1 => {
-                        curr_batch_len += 1;
-                    }
-                    _ => {
-                        if curr_batch_len > 0 {
-                            data_hole_batches.push((curr_batch_start_bid, curr_batch_len));
-                            max_batch_len = max_batch_len.max(curr_batch_len);
-                        }
-                        curr_batch_start_bid = bid;
-                        curr_batch_len = 1;
-                    }
-                }
-                prev_bid = Some(bid);
-            }
-            // Collect the last batch if present
-            if curr_batch_len > 0 {
-                data_hole_batches.push((curr_batch_start_bid, curr_batch_len));
-                max_batch_len = max_batch_len.max(curr_batch_len);
-            }
-
-            (data_hole_batches, max_batch_len)
-        };
-        drop(blocks_hole_desc);
-        if data_hole_batches.is_empty() {
-            return Ok(());
-        }
-
-        // TODO: If we can persist the `blocks_hole_desc`, Can we avoid zeroing all the holes on the device?
-        debug_assert!(max_batch_len > 0);
-        let zeroed_segment: SegmentSlice = FrameAllocOptions::new(max_batch_len)
-            .alloc_contiguous()?
-            .into();
-        for (start_bid, batch_len) in data_hole_batches {
-            inner.write_blocks(start_bid, &zeroed_segment.range(0..batch_len))?;
-        }
-        Ok(())
     }
 
     pub fn sync_metadata(&self) -> Result<()> {
