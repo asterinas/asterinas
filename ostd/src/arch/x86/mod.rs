@@ -2,6 +2,7 @@
 
 //! Platform-specific code for the x86 platform.
 
+mod allocator;
 pub mod boot;
 pub(crate) mod cpu;
 pub mod device;
@@ -17,6 +18,7 @@ pub mod task;
 pub mod timer;
 pub mod trap;
 
+use allocator::construct_io_mem_allocator_builder;
 use cfg_if::cfg_if;
 use spin::Once;
 use x86::cpuid::{CpuId, FeatureInfo};
@@ -77,6 +79,8 @@ pub(crate) fn init_on_bsp() {
         crate::cpu::set_this_cpu_id(0);
     }
 
+    let builder = construct_io_mem_allocator_builder();
+
     match kernel::apic::init() {
         Ok(_) => {
             ioapic::init();
@@ -114,6 +118,11 @@ pub(crate) fn init_on_bsp() {
 
     // Some driver like serial may use PIC
     kernel::pic::init();
+
+    // SAFETY: All the system device memory I/Os have been removed from the builder.
+    unsafe {
+        crate::io::io_mem::allocator::init(builder);
+    }
 }
 
 /// Architecture-specific initialization on the application processor.
