@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! I/O memory.
+//! I/O memory and its allocator that allocates memory I/O (MMIO) to device drivers.
+
+pub mod allocator;
 
 use core::ops::{Deref, Range};
 
@@ -190,5 +192,13 @@ impl VmIoOnce for IoMem {
 
     fn write_once<T: PodOnce>(&self, offset: usize, new_val: &T) -> Result<()> {
         self.writer().skip(offset).write_once(new_val)
+    }
+}
+
+impl Drop for IoMem {
+    fn drop(&mut self) {
+        // TODO: Multiple `IoMem` instances should not overlap, we should refactor the driver code and
+        // remove the `Clone` and `IoMem::slice`. After refactoring, the `Drop` can be implemented to recycle
+        // the `IoMem`.
     }
 }
