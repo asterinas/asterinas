@@ -24,6 +24,7 @@ use unwinding::abi::{
 ///
 /// The user can override it by defining their own panic handler with the macro
 /// `#[ostd::panic_handler]`.
+#[cfg(not(miri))]
 #[linkage = "weak"]
 #[no_mangle]
 pub fn __ostd_panic_handler(info: &core::panic::PanicInfo) -> ! {
