@@ -142,6 +142,9 @@ where
     va: Vaddr,
     /// The virtual address range that is locked.
     barrier_va: Range<Vaddr>,
+    /// For CursorInner<Mut, ..>::copy_from_cow(),
+    /// pages in the range do not need to copying mappings.
+    cow_range: Option<Range<Vaddr>>,
     #[allow(dead_code)]
     preempt_guard: DisabledPreemptGuard,
     _phantom: PhantomData<&'a PageTable<M, E, C>>,
@@ -176,6 +179,7 @@ where
             guard_level: C::NR_LEVELS,
             va: va.start,
             barrier_va: va.clone(),
+            cow_range: None,
             preempt_guard: disable_preempt(),
             _phantom: PhantomData,
             _phantom_mutable: PhantomData,
@@ -390,7 +394,6 @@ where
     }
 
     fn cur_entry(&mut self) -> Entry<'_, E, C> {
-        // 这样运行时检查 TypeId 好吗？
         if TypeId::of::<Mutable>() == TypeId::of::<Mut>() {
             self.do_pt_cow();
         }
@@ -404,7 +407,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorI
 where
     [(); C::NR_LEVELS as usize]:,
 {
-        /// Maps the range starting from the current address to a [`DynPage`].
+    /// Maps the range starting from the current address to a [`DynPage`].
     ///
     /// It returns the previously mapped [`DynPage`] if that exists.
     ///
@@ -867,56 +870,22 @@ where
         assert!(len % page_size::<C>(1) == 0);
         let this_end = self.va + len;
         assert!(this_end <= self.barrier_va.end);
-        let src_original_va = src.va;
+        // let src_original_va = src.va;
         let src_end = src.va + len;
         assert!(src_end <= src.barrier_va.end);
 
-        // Protect `src`'s mapping with `op`.
-        while src.va < src_end {
+        while self.va < this_end && src.va < src_end {
+            let src_va = src.va;
+            let src_level = src.level;
+            let src_cow_range = src.cow_range.clone();
             let mut src_entry = src.cur_entry();
 
             match src_entry.to_owned() {
                 Child::PageTable(pt) => {
-                    let pt = pt.lock();
-                    // If there's no mapped PTEs in the next level, we can
-                    // skip to save time.
-                    if pt.nr_children() != 0 {
-                        src.push_level(pt);
-                    } else {
-                        src.move_forward();
-                    }
-                    continue;
-                }
-                Child::None => {
-                    src.move_forward();
-                    continue;
-                }
-                Child::Untracked(_, _, _) => {
-                    panic!("Copying untracked mappings");
-                }
-                Child::Page(_, _) => {
-                    // Do protection.
-                    src_entry.protect(op);
-                    src.move_forward();
-                }
-            }
-        }
-
-        // Copy mapping from `src`` to `self`.
-        // 为什么不把这两部分组合在一起？
-        // 因为用 COW 免去复制 page table page 之后还需要继续往下走，还需要调用对应的 cur_entry，这会导致触发立即的 COW
-        // 我的想法是在离开这个需要 COW 的 node 的子树(pop_level 或者 move_forward)时再设置这页的 cow metadata，
-        // 这需要在 CursorMut 里加字段，感觉很丑陋啊，商量一下吧
-        src.jump(src_original_va).unwrap();
-        while self.va < this_end && src.va < src_end {
-            let src_va = src.va;
-            let src_level = src.level;
-
-            match src.cur_entry().to_owned() {
-                Child::PageTable(pt) => {
                     let mut pt = pt.lock();
                     if pt.nr_children() != 0 {
-                        if src_va % page_size::<C>(src_level) == 0
+                        if src_cow_range.is_none_or(|range| !range.contains(&src_va))
+                            && src_va % page_size::<C>(src_level) == 0
                             && src_va + page_size::<C>(src_level) <= src_end
                         {
                             // `self` and `src` can share the same child page table page, and copy it when writing.
@@ -926,10 +895,9 @@ where
                             self.jump(src_va).unwrap();
                             let original = self.map_pt_node(&pt);
                             debug_assert!(original.is_none() && self.level == src.level);
-                            src.move_forward();
-                        } else {
-                            src.push_level(pt);
+                            src.cow_range = Some(src_va..src_va + page_size::<C>(src_level));
                         }
+                        src.push_level(pt);
                     } else {
                         // If there's no mapped PTEs in the next level, we can
                         // skip to save time.
@@ -945,22 +913,27 @@ where
                     panic!("Copying untracked mappings");
                 }
                 Child::Page(page, mut prop) => {
-                    let mapped_page_size = page.size();
-                    debug_assert!({
-                        let original_prop = prop;
+                    if src_cow_range.is_none_or(|range| !range.contains(&src_va)) {
+                        let mapped_page_size = page.size();
+
+                        // Do protection.
+                        src_entry.protect(op);
+
+                        // Do copy.
                         op(&mut prop);
-                        original_prop == prop
-                    });
+                        self.jump(src_va).unwrap();
+                        let original = self.map(page, prop);
+                        assert!(original.is_none());
 
-                    // Do copy.
-                    self.jump(src_va).unwrap();
-                    let original = self.map(page, prop);
-                    assert!(original.is_none());
-
-                    // Only move the source cursor forward since `Self::map` will do it.
-                    // This assertion is to ensure that they move by the same length.
-                    debug_assert_eq!(mapped_page_size, page_size::<C>(src.level));
-                    src.move_forward();
+                        // Only move the source cursor forward since `Self::map` will do it.
+                        // This assertion is to ensure that they move by the same length.
+                        debug_assert_eq!(mapped_page_size, page_size::<C>(src.level));
+                        src.move_forward();
+                    } else {
+                        // Do protection only.
+                        src_entry.protect(op);
+                        src.move_forward();
+                    }
                 }
             }
         }
