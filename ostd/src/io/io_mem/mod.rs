@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! I/O memory.
+//! I/O memory and its allocator that allocates memory I/O (MMIO) to device drivers.
+
+mod allocator;
 
 use core::ops::{Deref, Range};
 
 use align_ext::AlignExt;
 
+pub(super) use self::allocator::init;
+pub(crate) use self::allocator::IoMemAllocatorBuilder;
 use crate::{
     if_tdx_enabled,
     mm::{
@@ -35,6 +39,43 @@ impl HasPaddr for IoMem {
 }
 
 impl IoMem {
+    /// Acquires an `IoMem` instance for the given range.
+    pub fn acquire(range: Range<Paddr>) -> Result<IoMem> {
+        allocator::IO_MEM_ALLOCATOR
+            .get()
+            .unwrap()
+            .acquire(range)
+            .ok_or(Error::AccessDenied)
+    }
+
+    /// Returns the physical address of the I/O memory.
+    pub fn paddr(&self) -> Paddr {
+        self.pa
+    }
+
+    /// Returns the length of the I/O memory region.
+    pub fn length(&self) -> usize {
+        self.limit
+    }
+
+    /// Slices the `IoMem`, returning another `IoMem` representing the subslice.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the range is empty or out of bounds.
+    pub fn slice(&self, range: Range<usize>) -> Self {
+        // This ensures `range.start < range.end` and `range.end <= limit`.
+        assert!(!range.is_empty() && range.end <= self.limit);
+
+        // We've checked the range is in bounds, so we can construct the new `IoMem` safely.
+        Self {
+            kvirt_area: self.kvirt_area.clone(),
+            offset: self.offset + range.start,
+            limit: range.len(),
+            pa: self.pa + range.start,
+        }
+    }
+
     /// Creates a new `IoMem`.
     ///
     /// # Safety
@@ -74,34 +115,6 @@ impl IoMem {
             offset: range.start - first_page_start,
             limit: range.len(),
             pa: range.start,
-        }
-    }
-
-    /// Returns the physical address of the I/O memory.
-    pub fn paddr(&self) -> Paddr {
-        self.pa
-    }
-
-    /// Returns the length of the I/O memory region.
-    pub fn length(&self) -> usize {
-        self.limit
-    }
-
-    /// Slices the `IoMem`, returning another `IoMem` representing the subslice.
-    ///
-    /// # Panics
-    ///
-    /// This method will panic if the range is empty or out of bounds.
-    pub fn slice(&self, range: Range<usize>) -> Self {
-        // This ensures `range.start < range.end` and `range.end <= limit`.
-        assert!(!range.is_empty() && range.end <= self.limit);
-
-        // We've checked the range is in bounds, so we can construct the new `IoMem` safely.
-        Self {
-            kvirt_area: self.kvirt_area.clone(),
-            offset: self.offset + range.start,
-            limit: range.len(),
-            pa: self.pa + range.start,
         }
     }
 }
@@ -184,5 +197,13 @@ impl VmIoOnce for IoMem {
 
     fn write_once<T: PodOnce>(&self, offset: usize, new_val: &T) -> Result<()> {
         self.writer().skip(offset).write_once(new_val)
+    }
+}
+
+impl Drop for IoMem {
+    fn drop(&mut self) {
+        // TODO: Multiple `IoMem` instances should not overlap, we should refactor the driver code and
+        // remove the `Clone` and `IoMem::slice`. After refactoring, the `Drop` can be implemented to recycle
+        // the `IoMem`.
     }
 }
