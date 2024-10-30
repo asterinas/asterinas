@@ -274,7 +274,16 @@ macro_rules! impl_syscall_nums_and_dispatch_fn {
                 $(
                     $num => {
                         $crate::log_syscall_entry!($name);
-                        $crate::syscall::dispatch_fn_inner!(args, ctx, user_ctx, $handler $args)
+                        use ostd::panic;
+                        use crate::Errno;
+                        use crate::error::Error;
+                        let result = panic::catch_unwind(|| {
+                            $crate::syscall::dispatch_fn_inner!(args, ctx, user_ctx, $handler $args)
+                        });
+                        match result {
+                            Ok(syscall_return) => syscall_return,
+                            Err(_) => Err(Error::with_message(Errno::ENOSYS, "not implemented")),
+                        }
                     }
                 )*
                 _ => {

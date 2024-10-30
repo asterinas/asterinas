@@ -82,15 +82,26 @@ static OOPS_COUNT: AtomicUsize = AtomicUsize::new(0);
 #[ostd::panic_handler]
 fn panic_handler(info: &core::panic::PanicInfo) -> ! {
     let message = info.message();
+    let location = info.location();
 
     if let Some(thread) = Thread::current() {
         let panic_on_oops = PANIC_ON_OOPS.load(Ordering::Relaxed);
-        if !panic_on_oops && info.can_unwind() {
+
+        let should_handle = (!panic_on_oops && info.can_unwind())
+            || message
+                .as_str()
+                .unwrap_or_default()
+                .contains("not yet implemented")
+            || message
+                .as_str()
+                .unwrap_or_default()
+                .contains("not implemented");
+
+        if should_handle {
             // TODO: eliminate the need for heap allocation.
-            let message = if let Some(location) = info.location() {
-                format!("{} at {}:{}", message, location.file(), location.line())
-            } else {
-                message.to_string()
+            let message = match location {
+                Some(loc) => format!("{} at {}:{}", message, loc.file(), loc.line()),
+                None => message.to_string(),
             };
             // Raise the panic and expect it to be caught.
             panic::begin_panic(Box::new(OopsInfo { message, thread }));
