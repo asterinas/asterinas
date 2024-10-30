@@ -47,9 +47,22 @@ pub fn __ostd_panic_handler(info: &core::panic::PanicInfo) -> ! {
     abort();
 }
 
+#[cfg(miri)]
+mod miri_lib {
+    extern "C" {
+        pub fn abort() -> !;
+    }
+}
+
 /// Aborts the QEMU
 pub fn abort() -> ! {
-    exit_qemu(QemuExitCode::Failed);
+    cfg_if::cfg_if! {
+        if #[cfg(miri)] {
+            unsafe{ miri_lib::abort() }
+        } else {
+            exit_qemu(QemuExitCode::Failed);
+        }
+    }
 }
 
 /// Prints the stack trace of the current thread to the console.

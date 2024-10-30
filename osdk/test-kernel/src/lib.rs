@@ -54,6 +54,7 @@ fn main() {
     unreachable!("The spawn method will NOT return in the boot context")
 }
 
+#[cfg(not(miri))]
 #[ostd::ktest::panic_handler]
 fn panic_handler(info: &core::panic::PanicInfo) -> ! {
     let _irq_guard = ostd::trap::disable_local();
@@ -74,6 +75,14 @@ fn panic_handler(info: &core::panic::PanicInfo) -> ! {
 
     // If not caught, abort the kernel.
     early_println!("An uncaught panic occurred: {:#?}", throw_info);
+
+    ostd::prelude::abort();
+}
+
+#[cfg(miri)]
+#[ostd::ktest::panic_handler]
+fn panic_handler(info: &core::panic::PanicInfo) -> ! {
+    early_println!("An uncaught panic occurred: {:#?}", info);
 
     ostd::prelude::abort();
 }
