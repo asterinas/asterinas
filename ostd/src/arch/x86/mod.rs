@@ -5,6 +5,7 @@
 pub mod boot;
 pub(crate) mod cpu;
 pub mod device;
+mod dispatcher;
 pub(crate) mod ex_table;
 pub mod iommu;
 pub(crate) mod irq;
@@ -18,6 +19,7 @@ pub mod timer;
 pub mod trap;
 
 use cfg_if::cfg_if;
+use dispatcher::construct_io_mem_dispatcher_builder;
 
 cfg_if! {
     if #[cfg(feature = "cvm_guest")] {
@@ -73,6 +75,8 @@ pub(crate) fn init_on_bsp() {
         crate::cpu::set_this_cpu_id(0);
     }
 
+    let builder = construct_io_mem_dispatcher_builder();
+
     match kernel::apic::init() {
         Ok(_) => {
             ioapic::init();
@@ -110,6 +114,11 @@ pub(crate) fn init_on_bsp() {
 
     // Some driver like serial may use PIC
     kernel::pic::init();
+
+    // SAFETY: All the system device memory I/Os have been removed from the builder.
+    unsafe {
+        crate::device::dispatcher::io_mem::init(builder);
+    }
 }
 
 /// Architecture-specific initialization on the application processor.

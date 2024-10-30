@@ -192,3 +192,11 @@ impl VmIoOnce for IoMem {
         self.writer().skip(offset).write_once(new_val)
     }
 }
+
+impl Drop for IoMem {
+    fn drop(&mut self) {
+        // TODO: Multiple `IoMem` instances should not overlap, we should refactor the driver code and
+        // remove the `Clone` and `IoMem::slice`. After refactoring, the `Drop` can be implemented to recycle
+        // the `IoMem`.
+    }
+}
