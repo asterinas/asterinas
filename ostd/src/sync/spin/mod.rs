@@ -3,6 +3,7 @@
 #![allow(dead_code)]
 
 pub(crate) mod mcs;
+pub(crate) mod rwmcs;
 
 use core::{cell::UnsafeCell, fmt, marker::PhantomData};
 
