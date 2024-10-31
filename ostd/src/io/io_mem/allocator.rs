@@ -113,8 +113,8 @@ pub static IO_MEM_ALLOCATOR: Once<IoMemAllocator> = Once::new();
 ///
 /// User must ensure all the memory I/O regions that belong to the system device have been removed by calling the
 /// `remove` function.
-pub(crate) unsafe fn init(builder: IoMemAllocatorBuilder) {
-    IO_MEM_ALLOCATOR.call_once(|| IoMemAllocator::new(builder.allocators));
+pub(crate) unsafe fn init(io_mem_builder: IoMemAllocatorBuilder) {
+    IO_MEM_ALLOCATOR.call_once(|| IoMemAllocator::new(io_mem_builder.allocators));
 }
 
 fn find_allocator<'a>(

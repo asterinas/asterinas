@@ -23,7 +23,7 @@ impl XApic {
         if !Self::has_xapic() {
             return None;
         }
-        let address = mm::paddr_to_vaddr(get_apic_base_address());
+        let address = mm::paddr_to_vaddr(get_xapic_base_address());
         Some(Self {
             mmio_start: address as *mut u32,
         })
@@ -47,7 +47,7 @@ impl XApic {
 
     pub fn enable(&mut self) {
         // Enable xAPIC
-        set_apic_base_address(get_apic_base_address());
+        set_apic_base_address(get_xapic_base_address());
 
         // Set SVR, Enable APIC and set Spurious Vector to 15 (Reserved irq number)
         let svr: u32 = (1 << 8) | 15;
@@ -119,8 +119,8 @@ fn set_apic_base_address(address: usize) {
     }
 }
 
-/// Gets APIC base address
-fn get_apic_base_address() -> usize {
+/// Gets xAPIC base address
+pub(super) fn get_xapic_base_address() -> usize {
     unsafe {
         (x86_64::registers::model_specific::Msr::new(IA32_APIC_BASE_MSR).read() & 0xf_ffff_f000)
             as usize
