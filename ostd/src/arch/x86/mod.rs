@@ -77,9 +77,9 @@ pub(crate) fn init_on_bsp() {
 
     let builder = construct_io_mem_dispatcher_builder();
 
-    match kernel::apic::init() {
+    match kernel::apic::init(&builder) {
         Ok(_) => {
-            ioapic::init();
+            ioapic::init(&builder);
         }
         Err(err) => {
             info!("APIC init error:{:?}", err);
@@ -99,7 +99,7 @@ pub(crate) fn init_on_bsp() {
     cfg_if! {
         if #[cfg(feature = "cvm_guest")] {
             if !tdx_is_enabled() {
-                match iommu::init() {
+                match iommu::init(&builder) {
                     Ok(_) => {}
                     Err(err) => warn!("IOMMU initialization error:{:?}", err),
                 }

@@ -11,7 +11,7 @@ mod registers;
 pub(crate) use dma_remapping::{has_dma_remapping, map, unmap};
 pub(crate) use interrupt_remapping::{alloc_irt_entry, has_interrupt_remapping, IrtEntryHandle};
 
-use crate::mm::page_table::PageTableError;
+use crate::{device::dispatcher::io_mem::IoMemDispatcherBuilder, mm::page_table::PageTableError};
 
 /// An enumeration representing possible errors related to IOMMU.
 #[derive(Debug)]
@@ -22,8 +22,8 @@ pub enum IommuError {
     ModificationError(PageTableError),
 }
 
-pub(crate) fn init() -> Result<(), IommuError> {
-    registers::init()?;
+pub(crate) fn init(builder: &IoMemDispatcherBuilder) -> Result<(), IommuError> {
+    registers::init(builder)?;
     invalidate::init();
     dma_remapping::init();
     interrupt_remapping::init();

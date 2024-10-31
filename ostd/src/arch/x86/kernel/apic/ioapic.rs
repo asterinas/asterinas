@@ -12,6 +12,7 @@ use spin::Once;
 
 use crate::{
     arch::{iommu::has_interrupt_remapping, x86::kernel::acpi::ACPI_TABLES},
+    device::dispatcher::io_mem::IoMemDispatcherBuilder,
     mm::paddr_to_vaddr,
     sync::SpinLock,
     trap::IrqLine,
@@ -138,7 +139,8 @@ impl IoApicAccess {
     /// # Safety
     ///
     /// User must ensure the base address is valid.
-    unsafe fn new(base_address: usize) -> Self {
+    unsafe fn new(base_address: usize, builder: &IoMemDispatcherBuilder) -> Self {
+        builder.remove(base_address..(base_address + 0x20));
         let vaddr = paddr_to_vaddr(base_address);
         Self {
             register: vaddr as *mut u32,
@@ -186,7 +188,7 @@ unsafe impl Sync for IoApic {}
 
 pub static IO_APIC: Once<Vec<SpinLock<IoApic>>> = Once::new();
 
-pub fn init() {
+pub fn init(builder: &IoMemDispatcherBuilder) {
     if !ACPI_TABLES.is_completed() {
         IO_APIC.call_once(|| {
             // FIXME: Is it possible to have an address that is not the default 0xFEC0_0000?
@@ -202,7 +204,7 @@ pub fn init() {
                     tdx_guest::unprotect_gpa_range(IO_APIC_DEFAULT_ADDRESS, 1).unwrap();
                 }
             }
-            let mut io_apic = unsafe { IoApicAccess::new(IO_APIC_DEFAULT_ADDRESS) };
+            let mut io_apic = unsafe { IoApicAccess::new(IO_APIC_DEFAULT_ADDRESS, builder) };
             io_apic.set_id(0);
             let id = io_apic.id();
             let version = io_apic.version();
@@ -237,7 +239,7 @@ pub fn init() {
                     }
                 }
                 let interrupt_base = io_apic.global_system_interrupt_base;
-                let mut io_apic = unsafe { IoApicAccess::new(io_apic.address as usize) };
+                let mut io_apic = unsafe { IoApicAccess::new(io_apic.address as usize, builder) };
                 io_apic.set_id(id as u8);
                 let id = io_apic.id();
                 let version = io_apic.version();
