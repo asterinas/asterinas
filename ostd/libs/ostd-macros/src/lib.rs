@@ -30,8 +30,10 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
         #[cfg(not(ktest))]
         #[no_mangle]
         extern "Rust" fn __ostd_main() -> ! {
-            #main_fn_name();
-            ostd::prelude::abort();
+            let _: () = #main_fn_name();
+
+            ostd::task::Task::yield_now();
+            unreachable!("`yield_now` in the boot context should not return");
         }
 
         #[allow(unused)]
@@ -52,8 +54,10 @@ pub fn test_main(_attr: TokenStream, item: TokenStream) -> TokenStream {
     quote!(
         #[no_mangle]
         extern "Rust" fn __ostd_main() -> ! {
-            #main_fn_name();
-            ostd::prelude::abort();
+            let _: () = #main_fn_name();
+
+            ostd::task::Task::yield_now();
+            unreachable!("`yield_now` in the boot context should not return");
         }
 
         #main_fn

@@ -58,7 +58,8 @@ impl<T: CommonSchedInfo + Send + Sync> Scheduler<T> for FifoScheduler<T> {
         }
         rq.queue.push_back(runnable);
 
-        Some(target_cpu)
+        // All tasks are important. Do not preempt the current task without good reason.
+        None
     }
 
     fn local_rq_with(&self, f: &mut dyn FnMut(&dyn LocalRunQueue<T>)) {

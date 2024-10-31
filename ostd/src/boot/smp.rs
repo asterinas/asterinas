@@ -15,6 +15,7 @@ use crate::{
         page::{self, meta::KernelMeta, ContPages},
         PAGE_SIZE,
     },
+    task::Task,
 };
 
 pub(crate) static AP_BOOT_INFO: Once<ApBootInfo> = Once::new();
@@ -37,7 +38,7 @@ struct PerApInfo {
     boot_stack_pages: ContPages<KernelMeta>,
 }
 
-static AP_LATE_ENTRY: Once<fn() -> !> = Once::new();
+static AP_LATE_ENTRY: Once<fn()> = Once::new();
 
 /// Boot all application processors.
 ///
@@ -104,7 +105,7 @@ pub fn boot_all_aps() {
 ///
 /// Once the entry function is registered, all the application processors
 /// will jump to the entry function immediately.
-pub fn register_ap_entry(entry: fn() -> !) {
+pub fn register_ap_entry(entry: fn()) {
     AP_LATE_ENTRY.call_once(|| entry);
 }
 
@@ -150,6 +151,9 @@ fn ap_early_entry(local_apic_id: u32) -> ! {
 
     let ap_late_entry = AP_LATE_ENTRY.wait();
     ap_late_entry();
+
+    Task::yield_now();
+    unreachable!("`yield_now` in the boot context should not return");
 }
 
 fn wait_for_all_aps_started() {

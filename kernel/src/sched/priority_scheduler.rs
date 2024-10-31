@@ -104,6 +104,9 @@ impl<T: Sync + Send + PreemptSchedInfo + FromTask<U>, U: Sync + Send + CommonSch
         if still_in_rq && let Err(_) = entity.task.cpu().set_if_is_none(target_cpu) {
             return None;
         }
+
+        let new_priority = entity.thread.priority();
+
         if entity.thread.is_real_time() {
             rq.real_time_entities.push_back(entity);
         } else if entity.thread.is_lowest() {
@@ -112,7 +115,17 @@ impl<T: Sync + Send + PreemptSchedInfo + FromTask<U>, U: Sync + Send + CommonSch
             rq.normal_entities.push_back(entity);
         }
 
-        Some(target_cpu)
+        // Preempt the current task, but only if the newly queued task has a strictly higher
+        // priority (i.e., a lower value returned by the `priority` method) than the current task.
+        if rq
+            .current
+            .as_ref()
+            .is_some_and(|current| new_priority < current.thread.priority())
+        {
+            Some(target_cpu)
+        } else {
+            None
+        }
     }
 
     fn local_rq_with(&self, f: &mut dyn FnMut(&dyn LocalRunQueue<U>)) {
