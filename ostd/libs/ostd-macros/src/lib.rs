@@ -70,7 +70,6 @@ pub fn miri_main(_attr: TokenStream, item: TokenStream) -> TokenStream {
         #[cfg(miri)]
         #[no_mangle]
         extern "Rust" fn __miri_main() {
-            unsafe { ostd::init() };
             #main_fn_name();
             ostd::prelude::abort();
         }
