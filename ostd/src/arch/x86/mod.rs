@@ -80,11 +80,11 @@ pub(crate) unsafe fn late_init_on_bsp() {
 
     kernel::acpi::init();
 
-    let builder = construct_io_mem_allocator_builder();
+    let io_mem_builder = construct_io_mem_allocator_builder();
 
-    match kernel::apic::init() {
+    match kernel::apic::init(&io_mem_builder) {
         Ok(_) => {
-            ioapic::init();
+            ioapic::init(&io_mem_builder);
         }
         Err(err) => {
             info!("APIC init error:{:?}", err);
@@ -99,7 +99,7 @@ pub(crate) unsafe fn late_init_on_bsp() {
 
     if_tdx_enabled!({
     } else {
-        match iommu::init() {
+        match iommu::init(&io_mem_builder) {
             Ok(_) => {}
             Err(err) => warn!("IOMMU initialization error:{:?}", err),
         }
@@ -110,7 +110,7 @@ pub(crate) unsafe fn late_init_on_bsp() {
 
     // SAFETY: All the system device memory I/Os have been removed from the builder.
     unsafe {
-        crate::io::init(builder);
+        crate::io::init(io_mem_builder);
     }
 }
 
