@@ -93,8 +93,6 @@ pub fn main() {
         ThreadOptions::new(init_thread)
             .priority(Priority::new(PriorityRange::new(PriorityRange::MAX))),
     );
-    // Spawning functions in the bootstrap context will not return.
-    unreachable!()
 }
 
 pub fn init() {
@@ -110,7 +108,7 @@ pub fn init() {
     process::init();
 }
 
-fn ap_init() -> ! {
+fn ap_init() {
     fn ap_idle_thread() {
         let preempt_guard = ostd::task::disable_preempt();
         let cpu_id = preempt_guard.current_cpu();
@@ -129,8 +127,6 @@ fn ap_init() -> ! {
             .cpu_affinity(cpu_id.into())
             .priority(Priority::new(PriorityRange::new(PriorityRange::MAX))),
     );
-    // Spawning functions in the bootstrap context will not return.
-    unreachable!()
 }
 
 fn init_thread() {

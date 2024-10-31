@@ -49,9 +49,7 @@ fn main() {
         };
     };
 
-    let _ = TaskOptions::new(test_task).data(()).spawn();
-
-    unreachable!("The spawn method will NOT return in the boot context")
+    TaskOptions::new(test_task).data(()).spawn().unwrap();
 }
 
 #[ostd::ktest::panic_handler]
