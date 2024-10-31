@@ -80,6 +80,7 @@ jobs:
           - 'smp_syscall_test_mb2'
           - 'test_linux'
           - 'smp_test_mb2'
+          - 'riscv_build'
       fail-fast: false
 
     steps:
@@ -134,6 +135,11 @@ jobs:
         id: smp_test_mb2
         if: ${{ matrix.test_id == 'smp_test_mb2' }}
         run: make run AUTO_TEST=test ENABLE_KVM=1 BOOT_PROTOCOL=multiboot2 RELEASE=1 SMP=4
+
+      - name: RISC-V Build Test
+        id: riscv_build
+        if: ${{ matrix.test_id == 'riscv_build' }}
+        run: make build SCHEME=riscv ARCH=riscv64
 
   integration-test-tdx:
     if: github.event_name == 'schedule'
