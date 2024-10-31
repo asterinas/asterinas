@@ -41,16 +41,15 @@ impl<T: CommonSchedInfo> FifoScheduler<T> {
 
 impl<T: CommonSchedInfo + Send + Sync> Scheduler<T> for FifoScheduler<T> {
     fn enqueue(&self, runnable: Arc<T>, flags: EnqueueFlags) -> Option<CpuId> {
-        let mut still_in_rq = false;
-        let target_cpu = {
-            let mut cpu_id = self.select_cpu();
-            if let Err(task_cpu_id) = runnable.cpu().set_if_is_none(cpu_id) {
-                debug_assert!(flags != EnqueueFlags::Spawn);
-                still_in_rq = true;
-                cpu_id = task_cpu_id;
-            }
+        let (still_in_rq, target_cpu) = {
+            let selected_cpu_id = self.select_cpu();
 
-            cpu_id
+            if let Err(task_cpu_id) = runnable.cpu().set_if_is_none(selected_cpu_id) {
+                debug_assert!(flags != EnqueueFlags::Spawn);
+                (true, task_cpu_id)
+            } else {
+                (false, selected_cpu_id)
+            }
         };
 
         let mut rq = self.rq[target_cpu.as_usize()].disable_irq().lock();
