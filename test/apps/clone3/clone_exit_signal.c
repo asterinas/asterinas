@@ -46,7 +46,8 @@ int main(int argc, char *argv[])
 	 * then the parent process must specify the __WALL or __WCLONE
 	 * options when waiting for the child with wait(2).
 	 */
-	waitpid(pid, NULL, __WALL);
+	if (waitpid(pid, NULL, __WALL) < 0)
+		err(EXIT_FAILURE, "cannot wait child process");
 
 	if (child_exit_recv != 1)
 		errx(EXIT_FAILURE, "did not receive exit signal from child");

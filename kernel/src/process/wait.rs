@@ -21,6 +21,9 @@ bitflags! {
         const WEXITED = 0x4;
         const WCONTINUED = 0x8;
         const WNOWAIT = 0x01000000;
+        const WNOTHREAD = 0x20000000;
+        const WALL = 0x40000000;
+        const WCLONE = 0x80000000;
     }
 }
 
