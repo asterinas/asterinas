@@ -79,11 +79,11 @@ pub(crate) fn init_on_bsp() {
         crate::cpu::set_this_cpu_id(0);
     }
 
-    let builder = construct_io_mem_allocator_builder();
+    let io_mem_builder = construct_io_mem_allocator_builder();
 
-    match kernel::apic::init() {
+    match kernel::apic::init(&io_mem_builder) {
         Ok(_) => {
-            ioapic::init();
+            ioapic::init(&io_mem_builder);
         }
         Err(err) => {
             info!("APIC init error:{:?}", err);
@@ -103,7 +103,7 @@ pub(crate) fn init_on_bsp() {
     cfg_if! {
         if #[cfg(feature = "cvm_guest")] {
             if !tdx_is_enabled() {
-                match iommu::init() {
+                match iommu::init(&io_mem_builder) {
                     Ok(_) => {}
                     Err(err) => warn!("IOMMU initialization error:{:?}", err),
                 }
@@ -121,7 +121,7 @@ pub(crate) fn init_on_bsp() {
 
     // SAFETY: All the system device memory I/Os have been removed from the builder.
     unsafe {
-        crate::io::io_mem::allocator::init(builder);
+        crate::io::io_mem::allocator::init(io_mem_builder);
     }
 }
 
