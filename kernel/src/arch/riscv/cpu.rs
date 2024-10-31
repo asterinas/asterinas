@@ -1,11 +1,25 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::{format, string::String};
+
 use ostd::{
     cpu::{CpuExceptionInfo, RawGeneralRegs, UserContext},
     Pod,
 };
 
 use crate::{cpu::LinuxAbi, thread::exception::PageFaultInfo, vm::perms::VmPerms};
+pub struct CpuInfo {}
+
+impl CpuInfo {
+    pub fn new(processor_id: u32) -> Self {
+        Self {}
+    }
+
+    /// Collect and format CPU information into a `String`
+    pub fn collect_cpu_info(&self) -> String {
+        format!("No info")
+    }
+}
 
 impl LinuxAbi for UserContext {
     fn syscall_num(&self) -> usize {
