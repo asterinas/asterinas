@@ -95,7 +95,7 @@ pub fn sys_timer_create(
     };
 
     let work_func = sent_signal;
-    let work_item = Arc::new(WorkItem::new(work_func));
+    let work_item = WorkItem::new(work_func);
     let func = move || {
         submit_work_item(
             work_item.clone(),

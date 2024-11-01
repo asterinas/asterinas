@@ -64,9 +64,10 @@
 //!
 //! ```
 
+use intrusive_collections::linked_list::LinkedList;
 use ostd::cpu::{CpuId, CpuSet};
 use spin::Once;
-use work_item::WorkItem;
+use work_item::{WorkItem, WorkItemAdapter};
 use worker_pool::WorkerPool;
 
 use crate::prelude::*;
@@ -86,7 +87,7 @@ pub fn submit_work_func<F>(work_func: F, work_priority: WorkPriority)
 where
     F: Fn() + Send + Sync + 'static,
 {
-    let work_item = Arc::new(WorkItem::new(Box::new(work_func)));
+    let work_item = WorkItem::new(Box::new(work_func));
     submit_work_item(work_item, work_priority);
 }
 
@@ -112,7 +113,7 @@ pub struct WorkQueue {
 }
 
 struct WorkQueueInner {
-    pending_work_items: Vec<Arc<WorkItem>>,
+    pending_work_items: LinkedList<WorkItemAdapter>,
 }
 
 impl WorkQueue {
@@ -122,7 +123,7 @@ impl WorkQueue {
         let queue = Arc::new(WorkQueue {
             worker_pool: worker_pool.clone(),
             inner: SpinLock::new(WorkQueueInner {
-                pending_work_items: Vec::new(),
+                pending_work_items: LinkedList::new(WorkItemAdapter::NEW),
             }),
         });
         worker_pool
@@ -141,7 +142,7 @@ impl WorkQueue {
             .disable_irq()
             .lock()
             .pending_work_items
-            .push(work_item);
+            .push_back(work_item);
 
         true
     }
@@ -150,12 +151,16 @@ impl WorkQueue {
     /// the calling worker is located.
     fn dequeue(&self, request_cpu: CpuId) -> Option<Arc<WorkItem>> {
         let mut inner = self.inner.disable_irq().lock();
-        let index = inner
-            .pending_work_items
-            .iter()
-            .position(|item| item.is_valid_cpu(request_cpu))?;
-        let item = inner.pending_work_items.remove(index);
-        Some(item)
+        let mut cursor = inner.pending_work_items.front_mut();
+        while let Some(item) = cursor.get() {
+            if item.is_valid_cpu(request_cpu) {
+                return cursor.remove();
+            }
+
+            cursor.move_next();
+        }
+
+        None
     }
 
     fn has_pending_work_items(&self, request_cpu: CpuId) -> bool {
