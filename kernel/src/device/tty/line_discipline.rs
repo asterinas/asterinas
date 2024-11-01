@@ -92,11 +92,11 @@ impl LineDiscipline {
     pub fn new(send_signal: LdiscSignalSender) -> Arc<Self> {
         Arc::new_cyclic(move |line_ref: &Weak<LineDiscipline>| {
             let line_discipline = line_ref.clone();
-            let work_item = Arc::new(WorkItem::new(Box::new(move || {
+            let work_item = WorkItem::new(Box::new(move || {
                 if let Some(line_discipline) = line_discipline.upgrade() {
                     line_discipline.send_signal_after();
                 }
-            })));
+            }));
             Self {
                 current_line: SpinLock::new(CurrentLine::default()),
                 read_buffer: SpinLock::new(RingBuffer::new(BUFFER_CAPACITY)),
