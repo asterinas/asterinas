@@ -247,28 +247,28 @@ pub trait Pollable {
 
     /// Waits for events and performs event-based operations.
     ///
-    /// If a call to `cond()` succeeds or fails with an error code other than `EAGAIN`, the method
-    /// will return whatever the call to `cond()` returns. Otherwise, the method will wait for some
-    /// interesting events specified in `mask` to happen and try again.
+    /// If a call to `try_op()` succeeds or fails with an error code other than `EAGAIN`, the
+    /// method will return whatever the call to `try_op()` returns. Otherwise, the method will wait
+    /// for some interesting events specified in `mask` to happen and try again.
     ///
     /// This method will fail with `ETIME` if the timeout is specified and the event does not occur
     /// before the timeout expires.
     ///
-    /// The user must ensure that a call to `cond()` does not fail with `EAGAIN` when the
+    /// The user must ensure that a call to `try_op()` does not fail with `EAGAIN` when the
     /// interesting events occur. However, it is allowed to have spurious `EAGAIN` failures due to
-    /// race conditions where the events are consumed by another thread.
+    /// race opitions where the events are consumed by another thread.
     fn wait_events<F, R>(
         &self,
         mask: IoEvents,
         timeout: Option<&Duration>,
-        mut cond: F,
+        mut try_op: F,
     ) -> Result<R>
     where
         Self: Sized,
         F: FnMut() -> Result<R>,
     {
         // Fast path: Return immediately if the operation gives a result.
-        match cond() {
+        match try_op() {
             Err(err) if err.error() == Errno::EAGAIN => (),
             result => return result,
         }
@@ -286,7 +286,7 @@ pub trait Pollable {
 
         loop {
             // Try again after the event happens.
-            match cond() {
+            match try_op() {
                 Err(err) if err.error() == Errno::EAGAIN => (),
                 result => return result,
             };
