@@ -142,9 +142,7 @@ impl WorkQueue {
             .lock()
             .pending_work_items
             .push(work_item);
-        if let Some(worker_pool) = self.worker_pool.upgrade() {
-            worker_pool.schedule()
-        }
+
         true
     }
 
