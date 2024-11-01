@@ -18,6 +18,8 @@ pub struct SigStack {
 
 bitflags! {
     pub struct SigStackFlags: u32 {
+        const SS_ONSTACK = 1 << 0;
+        const SS_DISABLE = 1 << 1;
         const SS_AUTODISARM = 1 << 31;
     }
 }
@@ -57,16 +59,16 @@ impl SigStack {
     }
 
     pub fn status(&self) -> SigStackStatus {
-        if self.handler_counter == 0 {
-            return SigStackStatus::SS_INACTIVE;
-        }
-
         // Learning From [sigaltstack doc](https://man7.org/linux/man-pages/man2/sigaltstack.2.html):
         // If the stack is currently executed on,
         // 1. If the stack was established with flag SS_AUTODISARM, the stack status is DISABLE,
         // 2. otherwise, the stack status is ONSTACK
-        if self.flags.contains(SigStackFlags::SS_AUTODISARM) {
-            SigStackStatus::SS_DISABLE
+        if self.handler_counter == 0 {
+            if self.flags.contains(SigStackFlags::SS_AUTODISARM) {
+                SigStackStatus::SS_DISABLE
+            } else {
+                SigStackStatus::SS_INACTIVE
+            }
         } else {
             SigStackStatus::SS_ONSTACK
         }
@@ -85,11 +87,13 @@ impl SigStack {
 
     /// Determines whether the stack is executed on by any signal handler
     pub fn is_active(&self) -> bool {
-        // FIXME: can DISABLE stack be used?
-        self.handler_counter != 0 && !self.flags.contains(SigStackFlags::SS_AUTODISARM)
+        (self.handler_counter > 0)
+            && !(self.flags.intersects(SigStackFlags::SS_AUTODISARM)
+                || self.flags.intersects(SigStackFlags::SS_DISABLE))
     }
 
     pub fn is_disabled(&self) -> bool {
-        self.handler_counter != 0 && self.flags.contains(SigStackFlags::SS_AUTODISARM)
+        self.flags.contains(SigStackFlags::SS_DISABLE)
+            || (self.handler_counter > 0 && self.flags.contains(SigStackFlags::SS_AUTODISARM))
     }
 }

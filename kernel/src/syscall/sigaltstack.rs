@@ -36,14 +36,23 @@ fn get_old_stack(
         return Ok(());
     }
 
-    let Some(old_stack) = old_stack else {
-        return Ok(());
-    };
+    if let Some(old_stack) = old_stack {
+        debug!("old stack = {:?}", old_stack);
 
-    debug!("old stack = {:?}", old_stack);
+        let stack = stack_t::from(old_stack.clone());
+        ctx.get_user_space()
+            .write_val::<stack_t>(old_sig_stack_addr, &stack)?;
+    } else {
+        let stack = stack_t {
+            sp: 0,
+            flags: SigStackFlags::SS_DISABLE.bits() as i32,
+            size: 0,
+        };
+        ctx.get_user_space()
+            .write_val::<stack_t>(old_sig_stack_addr, &stack)?;
+    }
 
-    let stack = stack_t::from(old_stack.clone());
-    ctx.get_user_space().write_val(old_sig_stack_addr, &stack)
+    Ok(())
 }
 
 fn set_new_stack(sig_stack_addr: Vaddr, old_stack: Option<&SigStack>, ctx: &Context) -> Result<()> {
@@ -88,11 +97,18 @@ impl TryFrom<stack_t> for SigStack {
             return_errno_with_message!(Errno::EINVAL, "negative flags");
         }
 
-        let flags = SigStackFlags::from_bits(stack.flags as u32)
+        let mut flags = SigStackFlags::from_bits(stack.flags as u32)
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
 
+        if flags.contains(SigStackFlags::SS_DISABLE) {
+            return Ok(Self::new(0, flags, 0));
+        }
         if stack.size < MINSTKSZ {
             return_errno_with_message!(Errno::ENOMEM, "stack size is less than MINSTKSZ");
+        }
+
+        if flags.is_empty() {
+            flags.insert(SigStackFlags::SS_ONSTACK);
         }
 
         Ok(Self::new(stack.sp, flags, stack.size))
@@ -102,6 +118,7 @@ impl TryFrom<stack_t> for SigStack {
 impl From<SigStack> for stack_t {
     fn from(stack: SigStack) -> Self {
         let flags = stack.flags().bits() as i32 | stack.status() as i32;
+
         Self {
             sp: stack.base(),
             flags,
