@@ -65,10 +65,16 @@ pub(in crate::mm) static PAGE_ALLOCATOR: Once<SpinLock<CountingFrameAllocator>> 
 ///
 /// The metadata of the page is initialized with the given metadata.
 pub(crate) fn alloc_single<M: PageMeta>(metadata: M) -> Option<Page<M>> {
-    PAGE_ALLOCATOR.get().unwrap().lock().alloc(1).map(|idx| {
-        let paddr = idx * PAGE_SIZE;
-        Page::from_unused(paddr, metadata)
-    })
+    PAGE_ALLOCATOR
+        .get()
+        .unwrap()
+        .disable_irq()
+        .lock()
+        .alloc(1)
+        .map(|idx| {
+            let paddr = idx * PAGE_SIZE;
+            Page::from_unused(paddr, metadata)
+        })
 }
 
 /// Allocate a contiguous range of pages of a given length in bytes.
@@ -88,6 +94,7 @@ where
     PAGE_ALLOCATOR
         .get()
         .unwrap()
+        .disable_irq()
         .lock()
         .alloc(len / PAGE_SIZE)
         .map(|start| {
@@ -113,7 +120,7 @@ where
 {
     assert!(len % PAGE_SIZE == 0);
     let nframes = len / PAGE_SIZE;
-    let mut allocator = PAGE_ALLOCATOR.get().unwrap().lock();
+    let mut allocator = PAGE_ALLOCATOR.get().unwrap().disable_irq().lock();
     let mut vector = Vec::new();
     for _ in 0..nframes {
         let paddr = allocator.alloc(1)? * PAGE_SIZE;
