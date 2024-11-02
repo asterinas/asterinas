@@ -28,12 +28,7 @@
 mod child;
 mod entry;
 
-use core::{
-    cell::SyncUnsafeCell,
-    marker::PhantomData,
-    mem::ManuallyDrop,
-    sync::atomic::{AtomicU8, Ordering},
-};
+use core::{cell::SyncUnsafeCell, marker::PhantomData, mem::ManuallyDrop, sync::atomic::Ordering};
 
 pub(in crate::mm) use self::{child::Child, entry::Entry};
 use super::{nr_subpage_per_huge, PageTableEntryTrait};
@@ -45,6 +40,7 @@ use crate::{
         page_table::{load_pte, store_pte},
         FrameAllocOptions, Infallible, Paddr, PagingConstsTrait, PagingLevel, VmReader,
     },
+    sync::spin,
 };
 
 /// A smart pointer to a page table node.
@@ -69,15 +65,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableNode<E, C> {
     /// that preemption is disabled while the lock is held, or if the page is
     /// not shared with other CPUs.
     pub(super) fn lock(self) -> PageTableLock<E, C> {
-        while self
-            .meta()
-            .lock
-            .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
-            .is_err()
-        {
-            core::hint::spin_loop();
-        }
-
+        unsafe { self.meta().lock.lock() }
         PageTableLock::<E, C> { frame: Some(self) }
     }
 
@@ -187,7 +175,11 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableLock<E, C> {
     /// Unlocks the page table node.
     pub(super) fn unlock(mut self) -> PageTableNode<E, C> {
         // Release the lock.
-        self.meta().lock.store(0, Ordering::Release);
+        // SAFETY:
+        //  - The lock stays at the metadata slot so it's pinned.
+        //  - The constructor of the node guard ensures that the lock is held,
+        //    and no preemption is allowed.
+        unsafe { self.meta().lock.unlock() };
 
         self.frame.take().unwrap()
     }
@@ -291,6 +283,8 @@ pub(in crate::mm) struct PageTablePageMeta<
     E: PageTableEntryTrait = PageTableEntry,
     C: PagingConstsTrait = PagingConsts,
 > {
+    /// The lock for the page table page.
+    pub lock: spin::queued::LockBody,
     /// The number of valid PTEs. It is mutable if the lock is held.
     pub nr_children: SyncUnsafeCell<u16>,
     /// If the page table is detached from its parent.
@@ -302,8 +296,6 @@ pub(in crate::mm) struct PageTablePageMeta<
     /// The level of the page table page. A page table page cannot be
     /// referenced by page tables of different levels.
     pub level: PagingLevel,
-    /// The lock for the page table page.
-    pub lock: AtomicU8,
     /// Whether the pages mapped by the node is tracked.
     pub is_tracked: MapTrackingStatus,
     _phantom: core::marker::PhantomData<(E, C)>,
@@ -331,7 +323,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTablePageMeta<E, C> {
             nr_children: SyncUnsafeCell::new(0),
             astray: SyncUnsafeCell::new(false),
             level,
-            lock: AtomicU8::new(1),
+            lock: spin::queued::LockBody::new_locked(),
             is_tracked,
             _phantom: PhantomData,
         }

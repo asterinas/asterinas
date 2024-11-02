@@ -14,6 +14,7 @@ use super::{
 };
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
+    task::disable_preempt,
     util::SameSizeAs,
     Pod,
 };
@@ -106,7 +107,7 @@ impl PageTable<KernelMode> {
     /// This should be the only way to create the user page table, that is to
     /// duplicate the kernel page table with all the kernel mappings shared.
     pub fn create_user_page_table(&self) -> PageTable<UserMode> {
-        let _preempt_guard = crate::task::disable_preempt();
+        let _preempt_guard = disable_preempt();
         let mut root_node = self.root.clone().lock();
         let mut new_node =
             PageTableLock::alloc(PagingConsts::NR_LEVELS, MapTrackingStatus::NotApplicable);
@@ -144,7 +145,7 @@ impl PageTable<KernelMode> {
         let end = root_index.end;
         debug_assert!(end <= NR_PTES_PER_NODE);
 
-        let _guard = crate::task::disable_preempt();
+        let _guard = disable_preempt();
         let mut root_node = self.root.clone().lock();
         for i in start..end {
             let root_entry = root_node.entry(i);
