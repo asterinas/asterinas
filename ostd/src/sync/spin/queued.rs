@@ -38,8 +38,9 @@ use core::{
 };
 
 use crate::{
-    cpu::{current_cpu_racy, CpuId},
+    cpu::{CpuId, PinCurrentCpu},
     cpu_local, cpu_local_cell,
+    task::atomic_mode::InAtomicMode,
 };
 
 /// A lock body for a queue spinlock.
@@ -179,7 +180,8 @@ impl LockBody {
     /// Otherwise, return a guard that haven't acquired the lock.
     ///
     /// If it returns an acquired guard the critical section can commence.
-    pub(crate) fn try_lock(&self) -> bool {
+    pub(crate) fn try_lock(&self, guard: &dyn InAtomicMode) -> bool {
+        let _ = guard;
         self.try_lock_impl().is_ok()
     }
 
@@ -194,7 +196,6 @@ impl LockBody {
     ///  - The lock is pinned after any one acquired it and before every one
     ///    unlocks it (i.e. no lock-stealing).
     ///  - The lock was acquired by the current CPU for once and not unlocked.
-    ///  - preemption is disabled after the current CPU acquired the lock.
     pub(crate) unsafe fn unlock(&self) {
         // 0,0,1 -> 0,0,0
         unsafe {
@@ -206,12 +207,7 @@ impl LockBody {
     ///
     /// This function will spin until the lock is acquired. When the function
     /// returns, the critical section can commence.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that the current task is pinned to the current
-    /// CPU.
-    pub(crate) unsafe fn lock(&self) {
+    pub(crate) fn lock(&self, guard: &dyn InAtomicMode) {
         // (queue tail, pending bit, lock value)
         //
         //              fast     :    slow                                  :    unlock
@@ -232,13 +228,13 @@ impl LockBody {
             Ok(()) => {}
             Err(val) => {
                 // Slow path. There are pending spinners or queued spinners.
-                self.lock_slow(val);
+                self.lock_slow(val, guard);
             }
         }
     }
 
     /// Acquire the spinlock in a slow path.
-    fn lock_slow(&self, mut lock_val: u32) {
+    fn lock_slow(&self, mut lock_val: u32, guard: &dyn InAtomicMode) {
         // Wait for in-progress pending->locked hand-overs with a bounded
         // number of spins so that we guarantee forward progress.
         // 0,1,0 -> 0,0,1
@@ -257,7 +253,7 @@ impl LockBody {
 
         // If we observe any contention, we enqueue ourselves.
         if lock_val & !Self::LOCKED_MASK != 0 {
-            self.lock_enqueue();
+            self.lock_enqueue(guard);
             return;
         }
 
@@ -272,7 +268,7 @@ impl LockBody {
                     self.pending_ptr().write_volatile(0);
                 };
             }
-            self.lock_enqueue();
+            self.lock_enqueue(guard);
             return;
         }
 
@@ -313,10 +309,8 @@ impl LockBody {
     ///
     /// If we cannot lock optimistically (likely due to contention), we enqueue
     /// ourselves and spin on local MCS nodes.
-    fn lock_enqueue(&self) {
-        // The caller of `lock` ensures that the current task is pinned to the
-        // current CPU.
-        let cur_cpu = current_cpu_racy();
+    fn lock_enqueue(&self, guard: &dyn InAtomicMode) {
+        let cur_cpu = guard.current_cpu();
 
         let top = TOP.load();
         TOP.store(top + 1);

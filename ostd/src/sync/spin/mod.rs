@@ -73,11 +73,7 @@ impl<T: ?Sized, G: SpinGuardian> SpinLock<T, G> {
     pub fn lock(&self) -> SpinLockGuard<T, G> {
         let guard = G::guard();
 
-        // SAFETY: `G::guard()` ensures that the current task is pinned to the
-        // current CPU.
-        unsafe {
-            self.inner.lock.lock();
-        }
+        self.inner.lock.lock(guard.as_atomic_mode_guard());
 
         SpinLockGuard { lock: self, guard }
     }
@@ -85,7 +81,7 @@ impl<T: ?Sized, G: SpinGuardian> SpinLock<T, G> {
     /// Tries acquiring the spin lock immedidately.
     pub fn try_lock(&self) -> Option<SpinLockGuard<T, G>> {
         let guard = G::guard();
-        if self.inner.lock.try_lock() {
+        if self.inner.lock.try_lock(guard.as_atomic_mode_guard()) {
             Some(SpinLockGuard { lock: self, guard })
         } else {
             None
