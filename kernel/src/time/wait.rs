@@ -9,9 +9,14 @@ use crate::prelude::*;
 
 /// A trait that provide the timeout related function for [`Waiter`] and [`WaitQueue`]`.
 pub trait WaitTimeout {
-    /// Waits until some condition returns `Some(_)`, or a given timeout is reached. If
-    /// the condition does not becomes `Some(_)` before the timeout is reached,
-    /// this function will return `ETIME` error.
+    /// Waits until some condition returns `Some(_)` or a given timeout is reached.
+    ///
+    /// # Errors
+    ///
+    /// If the condition does not become `Some(_)` before the timeout is reached, this function
+    /// will return an error with [`ETIME`].
+    ///
+    /// [`ETIME`]: crate::error::Errno::ETIME
     fn wait_until_or_timeout<'a, F, T, R>(&self, mut cond: F, timeout: T) -> Result<R>
     where
         F: FnMut() -> Option<R>,
@@ -26,10 +31,15 @@ pub trait WaitTimeout {
         self.wait_until_or_timeout_cancelled(cond, || Ok(()), timeout_inner)
     }
 
-    /// Waits until some condition returns `Some(_)`, or be cancelled due to
-    /// reaching the timeout or the inputted cancel condition. If the condition
-    /// does not becomes `Some(_)` before the timeout is reached or `cancel_cond`
-    /// returns `Err`, this function will return corresponding `Err`.
+    /// Waits until some condition returns `Some(_)` or is cancelled by the timeout or cancel
+    /// condition.
+    ///
+    /// # Errors
+    ///
+    /// If the condition does not become `Some(_)` before the cancellation, this function
+    /// will return:
+    ///  - an error with [`ETIME`] if the timeout is reached;
+    ///  - the error returned by the cancel condition if the cancel condition returns `Err(_)`.
     #[doc(hidden)]
     fn wait_until_or_timeout_cancelled<F, R, FCancel>(
         &self,
