@@ -28,12 +28,7 @@
 mod child;
 mod entry;
 
-use core::{
-    cell::SyncUnsafeCell,
-    marker::PhantomData,
-    mem::ManuallyDrop,
-    sync::atomic::{AtomicU8, Ordering},
-};
+use core::{cell::SyncUnsafeCell, marker::PhantomData, mem::ManuallyDrop, sync::atomic::Ordering};
 
 pub(in crate::mm) use self::{child::Child, entry::Entry};
 use super::{nr_subpage_per_huge, PageTableEntryTrait};
@@ -45,6 +40,7 @@ use crate::{
         page_table::{load_pte, store_pte},
         FrameAllocOptions, Infallible, Paddr, PagingConstsTrait, PagingLevel, VmReader,
     },
+    sync::spin,
 };
 
 /// The raw handle to a page table node.
@@ -78,21 +74,24 @@ where
     }
 
     /// Converts a raw handle to an accessible handle by pertaining the lock.
+    ///
+    /// This should be an unsafe function that requires the caller to ensure
+    /// that preemption is disabled while the lock is held, or if the page is
+    /// not shared with other CPUs.
+    ///
+    // FIXME: To avoid extra preemption count increment and decrement we should
+    // mark it unsafe. We cannot let this guard take the reference of the preempt
+    // guard because a field cannot reference another field in the same structure.
     pub(super) fn lock(self) -> PageTableNode<E, C> {
         let level = self.level;
         let page: Frame<PageTablePageMeta<E, C>> = self.into();
 
-        // Acquire the lock.
-        let meta = page.meta();
-        while meta
-            .lock
-            .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
-            .is_err()
-        {
-            core::hint::spin_loop();
-        }
-
         debug_assert_eq!(page.meta().level, level);
+
+        // SAFETY: Preemption is disabled.
+        unsafe {
+            page.meta().lock.lock();
+        }
 
         PageTableNode::<E, C> { page }
     }
@@ -277,7 +276,11 @@ where
         let this = ManuallyDrop::new(self);
 
         // Release the lock.
-        this.page.meta().lock.store(0, Ordering::Release);
+        // SAFETY:
+        //  - The lock stays at the metadata slot so it's pinned.
+        //  - The constructor of the node guard ensures that the lock is held,
+        //    and no preemption is allowed.
+        unsafe { this.page.meta().lock.unlock() };
 
         // SAFETY: The provided physical address is valid and the level is
         // correct. The reference count is not changed.
@@ -352,7 +355,13 @@ where
 {
     fn drop(&mut self) {
         // Release the lock.
-        self.page.meta().lock.store(0, Ordering::Release);
+        // SAFETY:
+        //  - The lock stays at the metadata slot so it's pinned.
+        //  - The constructor of the node guard ensures that the lock is held,
+        //    and no preemption is allowed.
+        unsafe {
+            self.page.meta().lock.unlock();
+        }
     }
 }
 
@@ -365,13 +374,13 @@ pub(in crate::mm) struct PageTablePageMeta<
 > where
     [(); C::NR_LEVELS as usize]:,
 {
+    /// The lock for the page table page.
+    pub lock: spin::queued::LockBody,
     /// The number of valid PTEs. It is mutable if the lock is held.
     pub nr_children: SyncUnsafeCell<u16>,
     /// The level of the page table page. A page table page cannot be
     /// referenced by page tables of different levels.
     pub level: PagingLevel,
-    /// The lock for the page table page.
-    pub lock: AtomicU8,
     /// Whether the pages mapped by the node is tracked.
     pub is_tracked: MapTrackingStatus,
     _phantom: core::marker::PhantomData<(E, C)>,
@@ -401,7 +410,7 @@ where
         Self {
             nr_children: SyncUnsafeCell::new(0),
             level,
-            lock: AtomicU8::new(1),
+            lock: spin::queued::LockBody::new_locked(),
             is_tracked,
             _phantom: PhantomData,
         }

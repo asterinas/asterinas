@@ -173,6 +173,16 @@ impl LockBody {
         }
     }
 
+    /// Create a new queued spinlock, which is locked.
+    ///
+    /// To use it, the caller must subsequently call `unlock` to release the
+    /// lock for others.
+    pub(crate) const fn new_locked() -> Self {
+        Self {
+            val: ManuallyDrop::new(UnsafeCell::new(Self::LOCKED_VAL)),
+        }
+    }
+
     /// Try to lock the queued spinlock.
     ///
     /// If the lock is acquired successfully, return an acquired guard.
