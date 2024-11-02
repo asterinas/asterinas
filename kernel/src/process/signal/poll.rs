@@ -209,11 +209,7 @@ impl EventCounter {
             }
         };
 
-        if let Some(timeout) = timeout {
-            waiter.pause_until_or_timeout(cond, timeout)
-        } else {
-            waiter.pause_until(cond)
-        }
+        waiter.pause_until_or_timeout(cond, timeout)
     }
 
     pub fn write(&self) {
