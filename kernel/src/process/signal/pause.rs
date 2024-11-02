@@ -24,12 +24,12 @@ use crate::{
 /// when the waiting thread is interrupted by a POSIX signal.
 /// When this happens, the `pause`-family methods return `Err(EINTR)`.
 pub trait Pause: WaitTimeout {
-    /// Pauses the execution of the current thread until the `cond` is met ( i.e., `cond()`
-    /// returns `Some(_)` ), or some signals are received by the current thread or process.
+    /// Pauses until the condition is met or a signal interrupts.
     ///
     /// # Errors
     ///
-    /// If some signals are received before `cond` is met, this method will return `Err(EINTR)`.
+    /// This method will return an error with [`EINTR`] if a signal is received before the
+    /// condition is met.
     ///
     /// [`EINTR`]: crate::error::Errno::EINTR
     fn pause_until<F, R>(&self, cond: F) -> Result<R>
@@ -39,15 +39,13 @@ pub trait Pause: WaitTimeout {
         self.pause_until_or_timeout_impl(cond, None)
     }
 
-    /// Pauses the execution of the current thread until the `cond` is met ( i.e., `cond()`
-    /// returns `Some(_)` ), or some signals are received by the current thread or process,
-    /// or the given `timeout` is expired.
+    /// Pauses until the condition is met, the timeout is reached, or a signal interrupts.
     ///
     /// # Errors
     ///
-    /// If `timeout` is expired before the `cond` is met or some signals are received,
-    /// this method will return `Err(ETIME)`. If the pausing is interrupted by some signals,
-    /// this method will return `Err(EINTR)`
+    /// Before the condition is met, this method will return an error with
+    ///  - [`EINTR`] if a signal is received;
+    ///  - [`ETIME`] if the timeout is reached.
     ///
     /// [`ETIME`]: crate::error::Errno::ETIME
     /// [`EINTR`]: crate::error::Errno::EINTR
@@ -65,15 +63,13 @@ pub trait Pause: WaitTimeout {
         self.pause_until_or_timeout_impl(cond, timeout_inner)
     }
 
-    /// Pauses the execution of the current thread until the `cond` is met ( i.e., `cond()`
-    /// returns `Some(_)` ), or some signals are received by the current thread or process.
-    /// If the input `timeout` is set, the pausing will finish when the `timeout` is expired.
+    /// Pauses until the condition is met, the timeout is reached, or a signal interrupts.
     ///
     /// # Errors
     ///
-    /// If `timeout` is expired before the `cond` is met or some signals are received,
-    /// this method will return `Err(ETIME)`. If the pausing is interrupted by some signals,
-    /// this method will return `Err(EINTR)`
+    /// Before the condition is met, this method will return an error with
+    ///  - [`EINTR`] if a signal is received;
+    ///  - [`ETIME`] if the timeout is reached.
     ///
     /// [`ETIME`]: crate::error::Errno::ETIME
     /// [`EINTR`]: crate::error::Errno::EINTR
@@ -86,14 +82,17 @@ pub trait Pause: WaitTimeout {
     where
         F: FnMut() -> Option<R>;
 
-    /// Pauses the execution of the current thread until being woken up,
-    /// or some signals are received by the current thread or process.
-    /// If the input `timeout` is set, the pausing will finish when the `timeout` is expired.
+    /// Pauses until the thread is woken up, the timeout is reached, or a signal interrupts.
     ///
     /// # Errors
     ///
-    /// If `timeout` is expired before woken up or some signals are received,
-    /// this method will return [`Errno::ETIME`].
+    /// This method will return an error with [`ETIME`] if the timeout is reached.
+    ///
+    /// Unlike other methods in the trait, this method will _not_ return an error with [`EINTR`] if
+    /// a signal is received (FIXME).
+    ///
+    /// [`ETIME`]: crate::error::Errno::ETIME
+    /// [`EINTR`]: crate::error::Errno::EINTR
     fn pause_timeout<'a>(&self, timeout: impl Into<TimeoutExt<'a>>) -> Result<()>;
 }
 
