@@ -9,7 +9,7 @@ use ostd::{
 };
 use spin::Once;
 
-use crate::{prelude::*, process::Pid, time::wait::TimerBuilder};
+use crate::{prelude::*, process::Pid, time::wait::ManagedTimeout};
 
 type FutexBitSet = u32;
 type FutexBucketRef = Arc<Mutex<FutexBucket>>;
@@ -22,14 +22,14 @@ const FUTEX_BITSET_MATCH_ANY: FutexBitSet = 0xFFFF_FFFF;
 pub fn futex_wait(
     futex_addr: u64,
     futex_val: i32,
-    timer_builder: Option<TimerBuilder>,
+    timeout: Option<ManagedTimeout>,
     ctx: &Context,
     pid: Option<Pid>,
 ) -> Result<()> {
     futex_wait_bitset(
         futex_addr as _,
         futex_val,
-        timer_builder,
+        timeout,
         FUTEX_BITSET_MATCH_ANY,
         ctx,
         pid,
@@ -40,7 +40,7 @@ pub fn futex_wait(
 pub fn futex_wait_bitset(
     futex_addr: Vaddr,
     futex_val: i32,
-    timer_builder: Option<TimerBuilder>,
+    timeout: Option<ManagedTimeout>,
     bitset: FutexBitSet,
     ctx: &Context,
     pid: Option<Pid>,
@@ -73,7 +73,7 @@ pub fn futex_wait_bitset(
     // drop lock
     drop(futex_bucket);
 
-    waiter.pause_timer_timeout(timer_builder.as_ref())
+    waiter.pause_timeout(timeout)
 }
 
 /// Does futex wake

@@ -14,7 +14,7 @@ use crate::{
         clocks::{MonotonicClock, RealTimeClock},
         timer::Timeout,
         timespec_t,
-        wait::TimerBuilder,
+        wait::ManagedTimeout,
     },
 };
 
@@ -40,7 +40,7 @@ pub fn sys_futex(
         Ok(val as usize)
     };
 
-    let get_futex_timer_builder = |timeout_addr: Vaddr| -> Result<Option<TimerBuilder<'static>>> {
+    let get_futex_timeout = |timeout_addr: Vaddr| -> Result<Option<ManagedTimeout<'static>>> {
         if timeout_addr == 0 {
             return Ok(None);
         }
@@ -78,7 +78,7 @@ pub fn sys_futex(
             MonotonicClock::timer_manager()
         };
 
-        Ok(Some(TimerBuilder::new_with_timer_manager(
+        Ok(Some(ManagedTimeout::new_with_manager(
             timeout,
             timer_manager,
         )))
@@ -91,15 +91,15 @@ pub fn sys_futex(
     };
     let res = match futex_op {
         FutexOp::FUTEX_WAIT => {
-            let timer_builder = get_futex_timer_builder(utime_addr)?;
-            futex_wait(futex_addr as _, futex_val as _, timer_builder, ctx, pid).map(|_| 0)
+            let timeout = get_futex_timeout(utime_addr)?;
+            futex_wait(futex_addr as _, futex_val as _, timeout, ctx, pid).map(|_| 0)
         }
         FutexOp::FUTEX_WAIT_BITSET => {
-            let timer_builder = get_futex_timer_builder(utime_addr)?;
+            let timeout = get_futex_timeout(utime_addr)?;
             futex_wait_bitset(
                 futex_addr as _,
                 futex_val as _,
-                timer_builder,
+                timeout,
                 bitset as _,
                 ctx,
                 pid,

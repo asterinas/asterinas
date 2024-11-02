@@ -12,7 +12,7 @@ use crate::{
         clocks::{BootTimeClock, MonotonicClock, RealTimeClock},
         timer::Timeout,
         timespec_t,
-        wait::TimerBuilder,
+        wait::ManagedTimeout,
         TIMER_ABSTIME,
     },
 };
@@ -109,10 +109,11 @@ fn do_clock_nanosleep(
         }
     };
 
-    let timer_builder =
-        TimerBuilder::new_with_timer_manager(Timeout::After(duration), timer_manager);
+    let res = waiter.pause_until_or_timeout(
+        || None,
+        ManagedTimeout::new_with_manager(Timeout::After(duration), timer_manager),
+    );
 
-    let res = waiter.pause_until_or_timer_timeout(|| None, &timer_builder);
     match res {
         Err(e) if e.error() == Errno::ETIME => Ok(SyscallReturn::Return(0)),
         Err(e) if e.error() == Errno::EINTR => {
