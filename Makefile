@@ -32,11 +32,12 @@ GDB_PROFILE_INTERVAL ?= 0.1
 AUTO_TEST ?= none
 EXTRA_BLOCKLISTS_DIRS ?= ""
 SYSCALL_TEST_DIR ?= /tmp
+FEATURES ?=
 # End of auto test features.
 
 # Network settings
 NETDEV ?= user 		# Possible values are user,tap
-VHOST ?= off	
+VHOST ?= off
 # End of network settings
 
 # ========================= End of Makefile options. ==========================
@@ -85,6 +86,10 @@ ifneq ($(SCHEME), "")
 CARGO_OSDK_ARGS += --scheme $(SCHEME)
 else
 CARGO_OSDK_ARGS += --boot-method="$(BOOT_METHOD)"
+endif
+
+ifdef FEATURES
+CARGO_OSDK_ARGS += --features="$(FEATURES)"
 endif
 
 # To test the linux-efi-handover64 boot protocol, we need to use Debian's

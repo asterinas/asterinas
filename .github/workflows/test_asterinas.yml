@@ -24,6 +24,22 @@ jobs:
         id: check
         run: make check
 
+  compilation:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container: asterinas/asterinas:0.9.4
+    steps:
+      - run: echo "Running in asterinas/asterinas:0.9.4"
+
+      - uses: actions/checkout@v4
+
+      # The compilation test builds the project with all features enabled.
+      # In contrast, subsequent tests may choose to enable select features.
+      - name: Compilation
+        id: compilation
+        run: make build FEATURES=all
+
   unit-test:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -52,9 +68,9 @@ jobs:
       image: asterinas/asterinas:0.9.4
       options: --device=/dev/kvm
     strategy:
-      matrix: 
+      matrix:
         # The ids of each test
-        test_id: 
+        test_id:
           - 'boot_test_mb'
           - 'boot_test_linux_legacy32'
           - 'syscall_test'
