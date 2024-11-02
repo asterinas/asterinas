@@ -6,11 +6,17 @@ pub mod local;
 
 use core::fmt::Debug;
 
-use riscv::register::scause::{Exception, Trap};
+use riscv::register::scause::{Exception, Interrupt, Trap};
 
 pub use super::trap::GeneralRegs as RawGeneralRegs;
-use super::trap::{TrapFrame, UserContext as RawUserContext};
-use crate::user::{ReturnReason, UserContextApi, UserContextApiInternal};
+use super::{
+    timer::timer_callback,
+    trap::{TrapFrame, UserContext as RawUserContext},
+};
+use crate::{
+    trap::disable_local,
+    user::{ReturnReason, UserContextApi, UserContextApiInternal},
+};
 
 /// Cpu context, including both general-purpose registers and floating-point registers.
 #[derive(Clone, Copy, Debug)]
@@ -111,7 +117,15 @@ impl UserContextApiInternal for UserContext {
         let ret = loop {
             self.user_context.run();
             match riscv::register::scause::read().cause() {
-                Trap::Interrupt(_) => todo!(),
+                Trap::Interrupt(interrupt) => {
+                    let _guard = disable_local();
+                    match interrupt {
+                        Interrupt::SupervisorSoft => todo!(),
+                        Interrupt::SupervisorTimer => timer_callback(),
+                        Interrupt::SupervisorExternal => todo!(),
+                        Interrupt::Unknown => todo!(),
+                    }
+                }
                 Trap::Exception(Exception::UserEnvCall) => {
                     self.user_context.sepc += 4;
                     break ReturnReason::UserSyscall;

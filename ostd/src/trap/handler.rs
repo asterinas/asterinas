@@ -59,7 +59,7 @@ pub(crate) fn call_irq_callback_functions(trap_frame: &TrapFrame, irq_number: us
 }
 
 cpu_local_cell! {
-    static IN_INTERRUPT_CONTEXT: bool = false;
+    pub(crate) static IN_INTERRUPT_CONTEXT: bool = false;
 }
 
 /// Returns whether we are in the interrupt context.
