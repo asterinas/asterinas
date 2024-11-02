@@ -57,6 +57,7 @@ use crate::{
         CachePolicy, Paddr, PageFlags, PageProperty, PagingConstsTrait, PagingLevel,
         PrivilegedPageFlags, Vaddr, PAGE_SIZE,
     },
+    sync::spin,
 };
 
 /// Represents the usage of a page.
@@ -169,13 +170,7 @@ use private::Sealed;
 
 #[derive(Debug, Default)]
 #[repr(C)]
-pub struct FrameMeta {
-    // If not doing so, the page table metadata would fit
-    // in the front padding of meta slot and make it 12 bytes.
-    // We make it 16 bytes. Further usage of frame metadata
-    // is welcome to exploit this space.
-    _unused_for_layout_padding: [u8; 8],
-}
+pub struct FrameMeta {}
 
 impl Sealed for FrameMeta {}
 
@@ -189,6 +184,8 @@ pub(in crate::mm) struct PageTablePageMeta<
 > where
     [(); C::NR_LEVELS as usize]:,
 {
+    /// The lock for the page table page.
+    pub lock: spin::queued::LockBody,
     /// The number of valid PTEs. It is mutable if the lock is held.
     pub nr_children: UnsafeCell<u16>,
     /// The level of the page table page. A page table page cannot be
@@ -196,8 +193,6 @@ pub(in crate::mm) struct PageTablePageMeta<
     pub level: PagingLevel,
     /// Whether the pages mapped by the node is tracked.
     pub is_tracked: MapTrackingStatus,
-    /// The lock for the page table page.
-    pub lock: AtomicU8,
     _phantom: core::marker::PhantomData<(E, C)>,
 }
 
@@ -223,10 +218,10 @@ where
 {
     pub fn new_locked(level: PagingLevel, is_tracked: MapTrackingStatus) -> Self {
         Self {
+            lock: spin::queued::LockBody::new_locked(),
             nr_children: UnsafeCell::new(0),
             level,
             is_tracked,
-            lock: AtomicU8::new(1),
             _phantom: PhantomData,
         }
     }

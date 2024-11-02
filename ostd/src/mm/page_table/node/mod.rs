@@ -28,7 +28,7 @@
 mod child;
 mod entry;
 
-use core::{marker::PhantomData, mem::ManuallyDrop, sync::atomic::Ordering};
+use core::{marker::PhantomData, mem::ManuallyDrop};
 
 pub(in crate::mm) use self::{child::Child, entry::Entry};
 use super::{nr_subpage_per_huge, PageTableEntryTrait};
@@ -76,21 +76,24 @@ where
     }
 
     /// Converts a raw handle to an accessible handle by pertaining the lock.
+    ///
+    /// This should be an unsafe function that requires the caller to ensure
+    /// that preemption is disabled while the lock is held, or if the page is
+    /// not shared with other CPUs.
+    ///
+    // FIXME: To avoid extra preemption count increment and decrement we should
+    // mark it unsafe. We cannot let this guard take the reference of the preempt
+    // guard because a field cannot reference another field in the same structure.
     pub(super) fn lock(self) -> PageTableNode<E, C> {
         let level = self.level;
         let page: Page<PageTablePageMeta<E, C>> = self.into();
 
-        // Acquire the lock.
-        let meta = page.meta();
-        while meta
-            .lock
-            .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
-            .is_err()
-        {
-            core::hint::spin_loop();
-        }
-
         debug_assert_eq!(page.meta().level, level);
+
+        // SAFETY: Preemption is disabled.
+        unsafe {
+            page.meta().lock.lock();
+        }
 
         PageTableNode::<E, C> { page }
     }
@@ -277,7 +280,11 @@ where
         let this = ManuallyDrop::new(self);
 
         // Release the lock.
-        this.page.meta().lock.store(0, Ordering::Release);
+        // SAFETY:
+        //  - The lock stays at the metadata slot so it's pinned.
+        //  - The constructor of the node guard ensures that the lock is held,
+        //    and no preemption is allowed.
+        unsafe { this.page.meta().lock.unlock() };
 
         // SAFETY: The provided physical address is valid and the level is
         // correct. The reference count is not changed.
@@ -348,7 +355,13 @@ where
 {
     fn drop(&mut self) {
         // Release the lock.
-        self.page.meta().lock.store(0, Ordering::Release);
+        // SAFETY:
+        //  - The lock stays at the metadata slot so it's pinned.
+        //  - The constructor of the node guard ensures that the lock is held,
+        //    and no preemption is allowed.
+        unsafe {
+            self.page.meta().lock.unlock();
+        }
     }
 }
 
