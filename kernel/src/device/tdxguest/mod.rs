@@ -8,7 +8,7 @@ use crate::{
     error::Error,
     events::IoEvents,
     fs::{inode_handle::FileIo, utils::IoctlCmd},
-    process::signal::Poller,
+    process::signal::{Pollable, Poller},
 };
 
 const TDX_REPORTDATA_LEN: usize = 64;
