@@ -14,6 +14,7 @@ use super::{
     trap::{TrapFrame, UserContext as RawUserContext},
 };
 use crate::{
+    task::scheduler,
     trap::disable_local,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
@@ -115,6 +116,7 @@ impl UserContextApiInternal for UserContext {
         F: FnMut() -> bool,
     {
         let ret = loop {
+            scheduler::might_preempt();
             self.user_context.run();
             match riscv::register::scause::read().cause() {
                 Trap::Interrupt(interrupt) => {
