@@ -7,12 +7,17 @@ mod kernel_stack;
 mod preempt;
 mod processor;
 pub mod scheduler;
+mod utils;
 
-use core::{any::Any, cell::SyncUnsafeCell};
+use core::{
+    any::Any,
+    cell::{Cell, SyncUnsafeCell},
+};
 
 use kernel_stack::KernelStack;
 pub(crate) use preempt::cpu_local::reset_preempt_info;
 use processor::current_task;
+use utils::ForceSync;
 
 pub use self::{
     preempt::{disable_preempt, DisabledPreemptGuard},
@@ -28,7 +33,8 @@ use crate::{prelude::*, user::UserSpace};
 /// execute user code. Multiple tasks can share a single user space.
 #[derive(Debug)]
 pub struct Task {
-    func: SyncUnsafeCell<Option<Box<dyn FnOnce() + Send + Sync>>>,
+    #[allow(clippy::type_complexity)]
+    func: ForceSync<Cell<Option<Box<dyn FnOnce() + Send>>>>,
     data: Box<dyn Any + Send + Sync>,
     user_space: Option<Arc<UserSpace>>,
     ctx: SyncUnsafeCell<TaskContext>,
@@ -104,7 +110,7 @@ impl Task {
 
 /// Options to create or spawn a new task.
 pub struct TaskOptions {
-    func: Option<Box<dyn FnOnce() + Send + Sync>>,
+    func: Option<Box<dyn FnOnce() + Send>>,
     data: Option<Box<dyn Any + Send + Sync>>,
     user_space: Option<Arc<UserSpace>>,
 }
@@ -125,7 +131,7 @@ impl TaskOptions {
     /// Sets the function that represents the entry point of the task.
     pub fn func<F>(mut self, func: F) -> Self
     where
-        F: Fn() + Send + Sync + 'static,
+        F: Fn() + Send + 'static,
     {
         self.func = Some(Box::new(func));
         self
@@ -153,9 +159,10 @@ impl TaskOptions {
         extern "C" fn kernel_task_entry() -> ! {
             let current_task = current_task()
                 .expect("no current task, it should have current task in kernel task entry");
-            // SAFETY: The scheduler will ensure that the task is only accessed
-            // by one CPU.
-            let task_func = unsafe { &mut *current_task.func.get() };
+
+            // SAFETY: The `func` field will only be accessed by the current task in the task
+            // context, so the data won't be accessed concurrently.
+            let task_func = unsafe { current_task.func.get() };
             let task_func = task_func
                 .take()
                 .expect("task function is `None` when trying to run");
@@ -186,7 +193,7 @@ impl TaskOptions {
         ctx.get_mut().set_stack_pointer(kstack.end_vaddr() - 16);
 
         let new_task = Task {
-            func: SyncUnsafeCell::new(self.func),
+            func: ForceSync::new(Cell::new(self.func)),
             data: self.data.unwrap(),
             user_space: self.user_space,
             ctx,
