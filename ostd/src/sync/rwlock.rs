@@ -14,6 +14,7 @@ use core::{
 };
 
 use crate::{
+    cpu::{CpuId, PinCurrentCpu},
     task::{disable_preempt, DisabledPreemptGuard},
     trap::{disable_local, DisabledLocalIrqGuard},
 };
@@ -196,7 +197,7 @@ impl<T: ?Sized> RwLock<T> {
         if lock & (WRITER | MAX_READER | BEING_UPGRADED) == 0 {
             Some(RwLockReadGuard {
                 inner: self,
-                inner_guard: InnerGuard::IrqGuard(irq_guard),
+                context_guard: ContextGuard::IrqGuard(irq_guard),
             })
         } else {
             self.lock.fetch_sub(READER, Release);
@@ -219,7 +220,7 @@ impl<T: ?Sized> RwLock<T> {
         {
             Some(RwLockWriteGuard {
                 inner: self,
-                inner_guard: InnerGuard::IrqGuard(irq_guard),
+                context_guard: ContextGuard::IrqGuard(irq_guard),
             })
         } else {
             None
@@ -238,7 +239,7 @@ impl<T: ?Sized> RwLock<T> {
         if lock == 0 {
             return Some(RwLockUpgradeableGuard {
                 inner: self,
-                inner_guard: InnerGuard::IrqGuard(irq_guard),
+                context_guard: ContextGuard::IrqGuard(irq_guard),
             });
         } else if lock == WRITER {
             self.lock.fetch_sub(UPGRADEABLE_READER, Release);
@@ -388,7 +389,7 @@ impl<T: ?Sized> RwLock<T> {
         if lock & (WRITER | MAX_READER | BEING_UPGRADED) == 0 {
             Some(RwLockReadGuard {
                 inner: self,
-                inner_guard: InnerGuard::PreemptGuard(guard),
+                context_guard: ContextGuard::PreemptGuard(guard),
             })
         } else {
             self.lock.fetch_sub(READER, Release);
@@ -408,7 +409,7 @@ impl<T: ?Sized> RwLock<T> {
         if lock & (WRITER | MAX_READER | BEING_UPGRADED) == 0 {
             Some(ArcRwLockReadGuard {
                 inner: self.clone(),
-                inner_guard: InnerGuard::PreemptGuard(guard),
+                context_guard: ContextGuard::PreemptGuard(guard),
             })
         } else {
             self.lock.fetch_sub(READER, Release);
@@ -437,7 +438,7 @@ impl<T: ?Sized> RwLock<T> {
         {
             Some(RwLockWriteGuard {
                 inner: self,
-                inner_guard: InnerGuard::PreemptGuard(guard),
+                context_guard: ContextGuard::PreemptGuard(guard),
             })
         } else {
             None
@@ -459,7 +460,7 @@ impl<T: ?Sized> RwLock<T> {
         {
             Some(ArcRwLockWriteGuard {
                 inner: self.clone(),
-                inner_guard: InnerGuard::PreemptGuard(guard),
+                context_guard: ContextGuard::PreemptGuard(guard),
             })
         } else {
             None
@@ -484,7 +485,7 @@ impl<T: ?Sized> RwLock<T> {
         if lock == 0 {
             return Some(RwLockUpgradeableGuard {
                 inner: self,
-                inner_guard: InnerGuard::PreemptGuard(guard),
+                context_guard: ContextGuard::PreemptGuard(guard),
             });
         } else if lock == WRITER {
             self.lock.fetch_sub(UPGRADEABLE_READER, Release);
@@ -504,7 +505,7 @@ impl<T: ?Sized> RwLock<T> {
         if lock == 0 {
             return Some(ArcRwLockUpgradeableGuard {
                 inner: self.clone(),
-                inner_guard: InnerGuard::PreemptGuard(guard),
+                context_guard: ContextGuard::PreemptGuard(guard),
             });
         } else if lock == WRITER {
             self.lock.fetch_sub(UPGRADEABLE_READER, Release);
@@ -542,21 +543,33 @@ unsafe impl<T: ?Sized + Sync, R: Deref<Target = RwLock<T>> + Clone + Sync> Sync
 {
 }
 
-enum InnerGuard {
+/// A guard that controls the context change while holding the lock.
+pub enum ContextGuard {
     IrqGuard(DisabledLocalIrqGuard),
     PreemptGuard(DisabledPreemptGuard),
 }
 
-impl InnerGuard {
-    /// Transfers the current guard to a new `InnerGuard` instance ensuring atomicity during lock upgrades or downgrades.
+impl ContextGuard {
+    /// Returns the current CPU ID.
+    ///
+    /// Since the context guard at least disables preemption, the current CPU
+    /// will not be changed while the lock is held.
+    pub fn current_cpu(&self) -> CpuId {
+        match self {
+            ContextGuard::IrqGuard(irq_guard) => irq_guard.current_cpu(),
+            ContextGuard::PreemptGuard(preempt_guard) => preempt_guard.current_cpu(),
+        }
+    }
+
+    /// Transfers the current guard to a new `ContextGuard` instance ensuring atomicity during lock upgrades or downgrades.
     ///
     /// This function guarantees that there will be no 'gaps' between the destruction of the old guard and
     /// the creation of the new guard, maintaining the atomicity of lock transitions.
     fn transfer_to(&mut self) -> Self {
         match self {
-            InnerGuard::IrqGuard(irq_guard) => InnerGuard::IrqGuard(irq_guard.transfer_to()),
-            InnerGuard::PreemptGuard(preempt_guard) => {
-                InnerGuard::PreemptGuard(preempt_guard.transfer_to())
+            ContextGuard::IrqGuard(irq_guard) => ContextGuard::IrqGuard(irq_guard.transfer_to()),
+            ContextGuard::PreemptGuard(preempt_guard) => {
+                ContextGuard::PreemptGuard(preempt_guard.transfer_to())
             }
         }
     }
@@ -566,7 +579,7 @@ impl InnerGuard {
 #[clippy::has_significant_drop]
 #[must_use]
 pub struct RwLockReadGuard_<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> {
-    inner_guard: InnerGuard,
+    context_guard: ContextGuard,
     inner: R,
 }
 
@@ -600,7 +613,7 @@ impl<T: ?Sized + fmt::Debug, R: Deref<Target = RwLock<T>> + Clone> fmt::Debug
 
 /// A guard that provides mutable data access.
 pub struct RwLockWriteGuard_<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> {
-    inner_guard: InnerGuard,
+    context_guard: ContextGuard,
     inner: R,
 }
 
@@ -618,6 +631,11 @@ impl<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> Deref for RwLockWriteGuard
 }
 
 impl<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> RwLockWriteGuard_<T, R> {
+    /// Returns the context guard associated with this lock guard.
+    pub fn get_context_guard(&self) -> &ContextGuard {
+        &self.context_guard
+    }
+
     /// Atomically downgrades a write guard to an upgradeable reader guard.
     ///
     /// This method always succeeds because the lock is exclusively held by the writer.
@@ -639,9 +657,12 @@ impl<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> RwLockWriteGuard_<T, R> {
             .lock
             .compare_exchange(WRITER, UPGRADEABLE_READER, AcqRel, Relaxed);
         if res.is_ok() {
-            let inner_guard = self.inner_guard.transfer_to();
+            let context_guard = self.context_guard.transfer_to();
             drop(self);
-            Ok(RwLockUpgradeableGuard_ { inner, inner_guard })
+            Ok(RwLockUpgradeableGuard_ {
+                inner,
+                context_guard,
+            })
         } else {
             Err(self)
         }
@@ -671,7 +692,7 @@ impl<T: ?Sized + fmt::Debug, R: Deref<Target = RwLock<T>> + Clone> fmt::Debug
 /// A guard that provides immutable data access but can be atomically
 /// upgraded to `RwLockWriteGuard`.
 pub struct RwLockUpgradeableGuard_<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> {
-    inner_guard: InnerGuard,
+    context_guard: ContextGuard,
     inner: R,
 }
 
@@ -707,9 +728,12 @@ impl<T: ?Sized, R: Deref<Target = RwLock<T>> + Clone> RwLockUpgradeableGuard_<T,
         );
         if res.is_ok() {
             let inner = self.inner.clone();
-            let inner_guard = self.inner_guard.transfer_to();
+            let context_guard = self.context_guard.transfer_to();
             drop(self);
-            Ok(RwLockWriteGuard_ { inner, inner_guard })
+            Ok(RwLockWriteGuard_ {
+                inner,
+                context_guard,
+            })
         } else {
             Err(self)
         }
