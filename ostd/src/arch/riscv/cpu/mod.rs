@@ -117,7 +117,10 @@ impl UserContextApiInternal for UserContext {
     {
         let ret = loop {
             scheduler::might_preempt();
+            // FIXME: We should disable interrupt in the assembly code, otherwise it will deadlock.
+            let _guard = disable_local();
             self.user_context.run();
+            drop(_guard);
             match riscv::register::scause::read().cause() {
                 Trap::Interrupt(interrupt) => {
                     let _guard = disable_local();
