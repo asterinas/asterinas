@@ -11,7 +11,10 @@ mod utils;
 
 use core::{
     any::Any,
+    borrow::Borrow,
     cell::{Cell, SyncUnsafeCell},
+    ops::Deref,
+    ptr::NonNull,
 };
 
 use kernel_stack::KernelStack;
@@ -49,8 +52,11 @@ impl Task {
     /// Gets the current task.
     ///
     /// It returns `None` if the function is called in the bootstrap context.
-    pub fn current() -> Option<Arc<Task>> {
-        current_task()
+    pub fn current() -> Option<CurrentTask> {
+        let current_task = current_task()?;
+
+        // SAFETY: `current_task` is the current task.
+        Some(unsafe { CurrentTask::new(current_task) })
     }
 
     pub(super) fn ctx(&self) -> &SyncUnsafeCell<TaskContext> {
@@ -157,7 +163,7 @@ impl TaskOptions {
         /// all task will entering this function
         /// this function is mean to executing the task_fn in Task
         extern "C" fn kernel_task_entry() -> ! {
-            let current_task = current_task()
+            let current_task = Task::current()
                 .expect("no current task, it should have current task in kernel task entry");
 
             // SAFETY: The `func` field will only be accessed by the current task in the task
@@ -170,7 +176,10 @@ impl TaskOptions {
 
             // Manually drop all the on-stack variables to prevent memory leakage!
             // This is needed because `scheduler::exit_current()` will never return.
-            drop(current_task);
+            //
+            // However, `current_task` _borrows_ the current task without holding
+            // an extra reference count. So we do nothing here.
+
             scheduler::exit_current();
         }
 
@@ -211,6 +220,57 @@ impl TaskOptions {
         let task = Arc::new(self.build()?);
         task.run();
         Ok(task)
+    }
+}
+
+/// The current task.
+///
+/// This type is not `Send`, so it cannot outlive the current task.
+#[derive(Debug)]
+pub struct CurrentTask(NonNull<Task>);
+
+// The intern `NonNull<Task>` contained by `CurrentTask` implies that `CurrentTask` is `!Send`.
+// But it is still good to do this explicitly because this property is key for soundness.
+impl !Send for CurrentTask {}
+
+impl CurrentTask {
+    /// # Safety
+    ///
+    /// The caller must ensure that `task` is the current task.
+    unsafe fn new(task: NonNull<Task>) -> Self {
+        Self(task)
+    }
+
+    /// Returns a cloned `Arc<Task>`.
+    pub fn cloned(&self) -> Arc<Task> {
+        let ptr = self.0.as_ptr();
+
+        // SAFETY: The current task is always a valid task and it is always contained in an `Arc`.
+        unsafe { Arc::increment_strong_count(ptr) };
+
+        // SAFETY: We've increased the reference count in the current `Arc<Task>` above.
+        unsafe { Arc::from_raw(ptr) }
+    }
+}
+
+impl Deref for CurrentTask {
+    type Target = Task;
+
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: The current task is always a valid task.
+        unsafe { self.0.as_ref() }
+    }
+}
+
+impl AsRef<Task> for CurrentTask {
+    fn as_ref(&self) -> &Task {
+        self
+    }
+}
+
+impl Borrow<Task> for CurrentTask {
+    fn borrow(&self) -> &Task {
+        self
     }
 }
 
