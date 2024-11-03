@@ -4,7 +4,7 @@
 
 //! User space.
 
-use crate::{cpu::UserContext, mm::VmSpace, prelude::*, task::Task, trap::TrapFrame};
+use crate::{cpu::UserContext, mm::VmSpace, prelude::*, trap::TrapFrame};
 
 /// A user space.
 ///
@@ -112,7 +112,6 @@ pub trait UserContextApi {
 /// }
 /// ```
 pub struct UserMode<'a> {
-    current: Arc<Task>,
     user_space: &'a Arc<UserSpace>,
     context: UserContext,
 }
@@ -126,7 +125,6 @@ impl<'a> UserMode<'a> {
     /// Creates a new `UserMode`.
     pub fn new(user_space: &'a Arc<UserSpace>) -> Self {
         Self {
-            current: Task::current().unwrap(),
             user_space,
             context: user_space.init_ctx,
         }
@@ -147,7 +145,6 @@ impl<'a> UserMode<'a> {
     where
         F: FnMut() -> bool,
     {
-        debug_assert!(Arc::ptr_eq(&self.current, &Task::current().unwrap()));
         crate::task::atomic_mode::might_sleep();
         self.context.execute(has_kernel_event)
     }

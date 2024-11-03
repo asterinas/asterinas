@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::sync::Arc;
+use core::ptr::NonNull;
 
 use super::{context_switch, Task, TaskContext};
 use crate::cpu_local_cell;
@@ -16,21 +17,11 @@ cpu_local_cell! {
     static BOOTSTRAP_CONTEXT: TaskContext = TaskContext::new();
 }
 
-/// Retrieves a reference to the current task running on the processor.
+/// Returns a pointer to the current task running on the processor.
 ///
 /// It returns `None` if the function is called in the bootstrap context.
-pub(super) fn current_task() -> Option<Arc<Task>> {
-    let ptr = CURRENT_TASK_PTR.load();
-    if ptr.is_null() {
-        return None;
-    }
-    // SAFETY: The pointer is set by `switch_to_task` and is guaranteed to be
-    // built with `Arc::into_raw`.
-    let restored = unsafe { Arc::from_raw(ptr) };
-    // To let the `CURRENT_TASK_PTR` still own the task, we clone and forget it
-    // to increment the reference count.
-    let _ = core::mem::ManuallyDrop::new(restored.clone());
-    Some(restored)
+pub(super) fn current_task() -> Option<NonNull<Task>> {
+    NonNull::new(CURRENT_TASK_PTR.load().cast_mut())
 }
 
 /// Calls this function to switch to other task
