@@ -12,7 +12,9 @@
 use core::{ops::Range, sync::atomic::Ordering};
 
 use crate::{
-    arch::mm::{current_page_table_paddr, PageTableEntry, PagingConsts},
+    arch::mm::{
+        current_page_table_paddr, tlb_flush_all_excluding_global, PageTableEntry, PagingConsts,
+    },
     cpu::{AtomicCpuSet, CpuExceptionInfo, CpuSet, PinCurrentCpu},
     cpu_local_cell,
     mm::{
@@ -61,6 +63,35 @@ impl VmSpace {
             page_fault_handler: None,
             activation_lock: RwLock::new(()),
             cpus: AtomicCpuSet::new(CpuSet::new_empty()),
+        }
+    }
+
+    /// Clears the user space mappings in the page table.
+    ///
+    /// This method returns error if the page table is activated on any other
+    /// CPUs or there are any cursors alive.
+    pub fn clear(&self) -> core::result::Result<(), VmSpaceClearError> {
+        let preempt_guard = disable_preempt();
+        let _guard = self
+            .activation_lock
+            .try_write()
+            .ok_or(VmSpaceClearError::CursorsAlive)?;
+
+        let cpus = self.cpus.load();
+        let cpu = preempt_guard.current_cpu();
+        let cpus_set_is_empty = cpus.is_empty();
+        let cpus_set_is_single_self = cpus.count() == 1 && cpus.contains(cpu);
+
+        if cpus_set_is_empty || cpus_set_is_single_self {
+            // SAFETY: We have ensured that the page table is not activated on
+            // other CPUs and no cursors are alive.
+            unsafe { self.pt.clear() };
+            if cpus_set_is_single_self {
+                tlb_flush_all_excluding_global();
+            }
+            Ok(())
+        } else {
+            Err(VmSpaceClearError::PageTableActivated(cpus))
         }
     }
 
@@ -193,6 +224,17 @@ impl Default for VmSpace {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// An error that may occur when doing [`VmSpace::clear`].
+#[derive(Debug)]
+pub enum VmSpaceClearError {
+    /// The page table is activated on other CPUs.
+    ///
+    /// The activated CPUs detected are contained in the error.
+    PageTableActivated(CpuSet),
+    /// There are still cursors alive.
+    CursorsAlive,
 }
 
 /// The cursor for querying over the VM space without modifying it.

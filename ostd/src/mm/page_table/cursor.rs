@@ -76,10 +76,7 @@ use super::{
 use crate::{
     mm::{
         kspace::should_map_as_tracked,
-        page::{
-            meta::{MapTrackingStatus, PageTablePageMeta},
-            DynPage, Page,
-        },
+        page::{meta::MapTrackingStatus, DynPage},
         Paddr, PageProperty, Vaddr,
     },
     task::{disable_preempt, DisabledPreemptGuard},
@@ -593,8 +590,11 @@ where
                 continue;
             }
 
-            // Go down if not applicable.
-            if cur_va % page_size::<C>(cur_level) != 0 || cur_va + page_size::<C>(cur_level) > end {
+            // Go down if not applicable or if the entry points to a child page table.
+            if cur_entry.is_node()
+                || cur_va % page_size::<C>(cur_level) != 0
+                || cur_va + page_size::<C>(cur_level) > end
+            {
                 let child = cur_entry.to_owned();
                 match child {
                     Child::PageTable(pt) => {
@@ -645,10 +645,7 @@ where
                         prop,
                     }
                 }
-                Child::PageTable(node) => PageTableItem::PageTableNode {
-                    page: Page::<PageTablePageMeta<E, C>>::from(node).into(),
-                },
-                Child::None => unreachable!(),
+                Child::PageTable(_) | Child::None => unreachable!(),
             };
         }
 
