@@ -339,8 +339,7 @@ impl Vmar_ {
     }
 
     fn clear_vm_space(&self) {
-        let mut cursor = self.vm_space.cursor_mut(&(0..ROOT_VMAR_CAP_ADDR)).unwrap();
-        cursor.unmap(ROOT_VMAR_CAP_ADDR);
+        self.vm_space.clear().unwrap();
     }
 
     pub fn destroy(&self, range: Range<usize>) -> Result<()> {

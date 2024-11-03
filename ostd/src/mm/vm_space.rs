@@ -65,6 +65,27 @@ impl VmSpace {
         }
     }
 
+    /// Clears the user space mappings in the page table.
+    ///
+    /// This method returns error if the page table is activated on any other
+    /// CPUs or there are any cursors alive.
+    pub fn clear(&self) -> core::result::Result<(), VmSpaceClearError> {
+        let activation_lock = self.activation_lock.try_write();
+        let activation_lock = activation_lock.ok_or(VmSpaceClearError::CursorsAlive)?;
+
+        let cpus = self.cpus.load();
+        let cpu = activation_lock.get_context_guard().current_cpu();
+
+        if cpus.is_empty() || cpus.count() == 1 && cpus.contains(cpu) {
+            // SAFETY: We have ensured that the page table is not activated on
+            // other CPUs and no cursors are alive.
+            unsafe { self.pt.clear() };
+            Ok(())
+        } else {
+            Err(VmSpaceClearError::PageTableActivated(cpus))
+        }
+    }
+
     /// Gets an immutable cursor in the virtual address range.
     ///
     /// The cursor behaves like a lock guard, exclusively owning a sub-tree of
@@ -199,6 +220,17 @@ impl Default for VmSpace {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// An error that may occur when doing [`VmSpace::clear`].
+#[derive(Debug)]
+pub enum VmSpaceClearError {
+    /// The page table is activated on other CPUs.
+    ///
+    /// The activated CPUs detected are contained in the error.
+    PageTableActivated(CpuSet),
+    /// There are still cursors alive.
+    CursorsAlive,
 }
 
 /// The cursor for querying over the VM space without modifying it.
