@@ -15,6 +15,7 @@ use log::debug;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use x86::bits64::segmentation::wrfsbase;
+pub use x86::cpuid;
 use x86_64::registers::rflags::RFlags;
 
 pub use super::trap::GeneralRegs as RawGeneralRegs;

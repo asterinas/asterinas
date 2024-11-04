@@ -6,6 +6,7 @@ use loadavg::LoadAvgFileOps;
 use sys::SysDirOps;
 
 use self::{
+    cpuinfo::CpuInfoFileOps,
     meminfo::MemInfoFileOps,
     pid::PidDirOps,
     self_::SelfSymOps,
@@ -21,6 +22,7 @@ use crate::{
     process::{process_table, process_table::PidEvent, Pid},
 };
 
+mod cpuinfo;
 mod filesystems;
 mod loadavg;
 mod meminfo;
@@ -110,6 +112,8 @@ impl DirOps for RootDirOps {
             MemInfoFileOps::new_inode(this_ptr.clone())
         } else if name == "loadavg" {
             LoadAvgFileOps::new_inode(this_ptr.clone())
+        } else if name == "cpuinfo" {
+            CpuInfoFileOps::new_inode(this_ptr.clone())
         } else if let Ok(pid) = name.parse::<Pid>() {
             let process_ref =
                 process_table::get_process(pid).ok_or_else(|| Error::new(Errno::ENOENT))?;
@@ -135,7 +139,8 @@ impl DirOps for RootDirOps {
             .put_entry_if_not_found("meminfo", || MemInfoFileOps::new_inode(this_ptr.clone()));
         cached_children
             .put_entry_if_not_found("loadavg", || LoadAvgFileOps::new_inode(this_ptr.clone()));
-
+        cached_children
+            .put_entry_if_not_found("cpuinfo", || CpuInfoFileOps::new_inode(this_ptr.clone()));
         for process in process_table::process_table_mut().iter() {
             let pid = process.pid().to_string();
             cached_children.put_entry_if_not_found(&pid, || {
