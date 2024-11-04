@@ -34,6 +34,7 @@ TEST_APPS := \
 	pty \
 	signal_c \
 	vsock \
+	map_fork \
 
 # The C head and source files of all the apps, excluding the downloaded mongoose files
 C_SOURCES := \
