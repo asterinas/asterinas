@@ -9,7 +9,7 @@ method = "grub-rescue-iso"
 protocol = "multiboot2"
 
 [qemu]
-args = "$(./tools/qemu_args.sh normal -ovmf)"
+args = "$(./tools/qemu_args.sh normal)"
 
 # Special options for running
 [run.boot]

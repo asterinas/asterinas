@@ -3,9 +3,20 @@
 # SPDX-License-Identifier: MPL-2.0
 
 # This script is used to generate QEMU arguments for OSDK.
-# The positional argument $1 is the scheme.
-# A switch "-ovmf" can be passed as an argument to enable OVMF.
-# The enrivonmental variable VSOCK can be passed as 1 to trigger vsock module.
+# Usage: `qemu_args.sh [scheme]`
+#  - scheme: "normal", "microvm" or "iommu";
+# Other arguments are configured via environmental variables:
+#  - OVMF: "on" or "off";
+#  - NETDEV: "user" or "tap";
+#  - VHOST: "off" or "on";
+#  - VSOCK: "off" or "on";
+#  - SMP: number of CPUs;
+#  - MEM: amount of memory, e.g. "8G".
+
+OVMF=${OVMF:-"on"}
+VHOST=${VHOST:-"off"}
+VSOCK=${VSOCK:-"off"}
+NETDEV=${NETDEV:-"user"}
 
 SSH_RAND_PORT=${SSH_PORT:-$(shuf -i 1024-65535 -n 1)}
 NGINX_RAND_PORT=${NGINX_PORT:-$(shuf -i 1024-65535 -n 1)}
@@ -17,7 +28,7 @@ LMBENCH_TCP_LAT_RAND_PORT=${LMBENCH_TCP_LAT_PORT:-$(shuf -i 1024-65535 -n 1)}
 # QEMU_OPT_ARG_DUMP_PACKETS="-object filter-dump,id=filter0,netdev=net01,file=virtio-net.pcap"
 
 if [[ "$NETDEV" =~ "user" ]]; then
-    echo "[\$1] Forwarded QEMU guest port: $SSH_RAND_PORT->22; $NGINX_RAND_PORT->8080 $REDIS_RAND_PORT->6379 $IPERF_RAND_PORT->5201 $LMBENCH_TCP_LAT_RAND_PORT->31234" 1>&2
+    echo "[$1] Forwarded QEMU guest port: $SSH_RAND_PORT->22; $NGINX_RAND_PORT->8080 $REDIS_RAND_PORT->6379 $IPERF_RAND_PORT->5201 $LMBENCH_TCP_LAT_RAND_PORT->31234" 1>&2
     NETDEV_ARGS="-netdev user,id=net01,hostfwd=tcp::$SSH_RAND_PORT-:22,hostfwd=tcp::$NGINX_RAND_PORT-:8080,hostfwd=tcp::$REDIS_RAND_PORT-:6379,hostfwd=tcp::$IPERF_RAND_PORT-:5201,hostfwd=tcp::$LMBENCH_TCP_LAT_RAND_PORT-:31234"
 elif [[ "$NETDEV" =~ "tap" ]]; then 
     THIS_SCRIPT_DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
@@ -79,7 +90,7 @@ MICROVM_QEMU_ARGS="\
     -device virtconsole,chardev=mux \
 "
 
-if [ "$VSOCK" = "1" ]; then
+if [ "$VSOCK" = "on" ]; then
     # RAND_CID=$(shuf -i 3-65535 -n 1)
     RAND_CID=3
     echo "[$1] Launched QEMU VM with CID $RAND_CID" 1>&2
@@ -103,12 +114,16 @@ if [ "$1" = "microvm" ]; then
     exit 0
 fi
 
-if [ "$1" = "-ovmf" ] || [ "$2" = "-ovmf" ]; then
-    OVMF_PATH="/usr/share/OVMF"
-    QEMU_ARGS="${QEMU_ARGS}\
-        -drive if=pflash,format=raw,unit=0,readonly=on,file=$OVMF_PATH/OVMF_CODE.fd \
-        -drive if=pflash,format=raw,unit=1,file=$OVMF_PATH/OVMF_VARS.fd \
-    "
+if [ "$OVMF" = "on" ]; then
+    if [ "$1" = "test" ]; then
+        echo "We use QEMU direct boot for testing, which does not support OVMF, ignoring OVMF" 1>&2
+    else
+        OVMF_PATH="/usr/share/OVMF"
+        QEMU_ARGS="${QEMU_ARGS} \
+            -drive if=pflash,format=raw,unit=0,readonly=on,file=$OVMF_PATH/OVMF_CODE.fd \
+            -drive if=pflash,format=raw,unit=1,file=$OVMF_PATH/OVMF_VARS.fd \
+        "
+    fi
 fi
 
 echo $QEMU_ARGS
