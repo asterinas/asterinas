@@ -35,7 +35,7 @@ impl PciDeviceId {
         let revision_id = location.read8(PciDeviceCommonCfgOffset::RevisionId as u16);
         let prog_if = location.read8(PciDeviceCommonCfgOffset::ClassCode as u16);
         let subclass = location.read8(PciDeviceCommonCfgOffset::ClassCode as u16 + 1);
-        let class = location.read8(PciDeviceCommonCfgOffset::ClassCode as u16 + 1);
+        let class = location.read8(PciDeviceCommonCfgOffset::ClassCode as u16 + 2);
         let subsystem_vendor_id =
             location.read16(PciDeviceCommonCfgOffset::SubsystemVendorId as u16);
         let subsystem_id = location.read16(PciDeviceCommonCfgOffset::SubsystemId as u16);
