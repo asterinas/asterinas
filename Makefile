@@ -11,6 +11,7 @@ BUILD_SYSCALL_TEST ?= 0
 ENABLE_KVM ?= 1
 INTEL_TDX ?= 0
 MEM ?= 8G
+OVMF ?= on
 RELEASE ?= 0
 RELEASE_LTO ?= 0
 LOG_LEVEL ?= error
@@ -59,7 +60,7 @@ CARGO_OSDK_ARGS += --init-args="/test/run_general_test.sh"
 else ifeq ($(AUTO_TEST), boot)
 CARGO_OSDK_ARGS += --init-args="/test/boot_hello.sh"
 else ifeq ($(AUTO_TEST), vsock)
-export VSOCK=1
+export VSOCK=on
 CARGO_OSDK_ARGS += --init-args="/test/run_vsock_test.sh"
 endif
 
@@ -234,7 +235,7 @@ ktest: initramfs $(CARGO_OSDK)
 	@# Exclude linux-bzimage-setup from ktest since it's hard to be unit tested
 	@for dir in $(OSDK_CRATES); do \
 		[ $$dir = "ostd/libs/linux-bzimage/setup" ] && continue; \
-		(cd $$dir && cargo osdk test) || exit 1; \
+		(cd $$dir && OVMF=off cargo osdk test) || exit 1; \
 		tail --lines 10 qemu.log | grep -q "^\\[ktest runner\\] All crates tested." \
 			|| (echo "Test failed" && exit 1); \
 	done
