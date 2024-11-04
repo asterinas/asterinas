@@ -137,7 +137,7 @@ impl PciDeviceLocation {
 
     pub(super) fn write8(&self, offset: u16, val: u8) {
         let old = self.read32(offset & Self::BIT32_ALIGN_MASK);
-        let dest = offset as usize & 0b11 << 3;
+        let dest = (offset as usize & 0b11) << 3;
         let mask = (0xFF << dest) as u32;
         self.write32(
             offset & Self::BIT32_ALIGN_MASK,
@@ -147,7 +147,7 @@ impl PciDeviceLocation {
 
     pub(super) fn write16(&self, offset: u16, val: u16) {
         let old = self.read32(offset & Self::BIT32_ALIGN_MASK);
-        let dest = offset as usize & 0b10 << 3;
+        let dest = (offset as usize & 0b10) << 3;
         let mask = (0xFFFF << dest) as u32;
         self.write32(
             offset & Self::BIT32_ALIGN_MASK,
