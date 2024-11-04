@@ -176,7 +176,7 @@ where
     /// The caller must ensure that the physical address is valid and points to
     /// a forgotten page table node. A forgotten page table node can only be
     /// restored once. The level must match the level of the page table node.
-    unsafe fn from_raw_parts(paddr: Paddr, level: PagingLevel) -> Self {
+    pub(super) unsafe fn from_raw_parts(paddr: Paddr, level: PagingLevel) -> Self {
         Self {
             raw: paddr,
             level,
