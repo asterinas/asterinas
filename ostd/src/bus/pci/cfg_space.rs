@@ -237,7 +237,7 @@ impl MemoryBar {
             }
         };
         // length
-        let size = !(len_encoded & !0xF).wrapping_add(1);
+        let size = (!(len_encoded & !0xF)).wrapping_add(1);
         let prefetchable = raw & 0b1000 != 0;
         // The BAR is located in I/O memory region
         Ok(MemoryBar {
