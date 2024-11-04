@@ -373,29 +373,33 @@ where
     [(); C::NR_LEVELS as usize]:,
 {
     /// If the current entry is a PageTableNode and is set Copy-On-Write, then copy it.
-    fn do_pt_cow(&mut self) {
+    fn do_pt_cow(&mut self) -> Entry<'_, E, C> {
         debug_assert!(TypeId::of::<Mutable>() == TypeId::of::<Mut>());
-        let entry = self.cur_entry_inner();
+        let mut entry = self.cur_entry_inner();
         let new_pt = {
-            if let Child::PageTable(pt) = entry.to_owned() {
+            if entry.is_node() {
+                let Child::PageTable(pt) = entry.to_owned() else {
+                    unreachable!();
+                };
                 let mut pt = pt.lock();
                 if pt.is_cow() {
                     pt.copy_on_write()
                 } else {
-                    return;
+                    return entry;
                 }
             } else {
-                return;
+                return entry;
             }
         };
         if let Some(new_pt) = new_pt {
-            let _ = entry.replace(Child::PageTable(new_pt.into_raw()));
+            entry.replace(Child::PageTable(new_pt.into_raw()));
         }
+        entry
     }
 
     fn cur_entry(&mut self) -> Entry<'_, E, C> {
         if TypeId::of::<Mutable>() == TypeId::of::<Mut>() {
-            self.do_pt_cow();
+            return self.do_pt_cow();
         }
         self.cur_entry_inner()
     }
@@ -433,7 +437,7 @@ where
         {
             debug_assert!(self.should_map_as_tracked());
             let cur_level = self.level;
-            let cur_entry = self.cur_entry();
+            let mut cur_entry = self.cur_entry();
             match cur_entry.to_owned() {
                 Child::PageTable(pt) => {
                     self.push_level(pt.lock());
@@ -474,7 +478,7 @@ where
         while self.level > src_pt.level() + 1 {
             debug_assert!(self.should_map_as_tracked());
             let cur_level = self.level;
-            let cur_entry = self.cur_entry();
+            let mut cur_entry = self.cur_entry();
             match cur_entry.to_owned() {
                 Child::PageTable(pt) => {
                     self.push_level(pt.lock());
@@ -554,7 +558,7 @@ where
                 || pa % page_size::<C>(self.level) != 0
             {
                 let cur_level = self.level;
-                let cur_entry = self.cur_entry();
+                let mut cur_entry = self.cur_entry();
                 match cur_entry.to_owned() {
                     Child::PageTable(pt) => {
                         self.push_level(pt.lock());
@@ -622,7 +626,7 @@ where
         while self.va < end {
             let cur_va = self.va;
             let cur_level = self.level;
-            let cur_entry = self.cur_entry();
+            let mut cur_entry = self.cur_entry();
 
             // Skip if it is already absent.
             if cur_entry.is_none() {

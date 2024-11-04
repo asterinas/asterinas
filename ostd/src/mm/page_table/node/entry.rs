@@ -88,7 +88,7 @@ where
     ///
     /// The method panics if the given child is not compatible with the node.
     /// The compatibility is specified by the [`Child::is_compatible`].
-    pub(in crate::mm) fn replace(self, new_child: Child<E, C>) -> Child<E, C> {
+    pub(in crate::mm) fn replace(&mut self, new_child: Child<E, C>) -> Child<E, C> {
         assert!(new_child.is_compatible(self.node.level(), self.node.is_tracked()));
 
         // SAFETY: The entry structure represents an existent entry with the
@@ -103,10 +103,14 @@ where
             *self.node.nr_children_mut() -= 1;
         }
 
+        let pte = new_child.into_pte();
+
         // SAFETY:
         //  1. The index is within the bounds.
         //  2. The new PTE is compatible with the page table node, as asserted above.
-        unsafe { self.node.write_pte(self.idx, new_child.into_pte()) };
+        unsafe { self.node.write_pte(self.idx, pte) };
+
+        self.pte = pte;
 
         old_child
     }
@@ -119,7 +123,7 @@ where
     ///
     /// If the entry does not map to a untracked huge page, the method returns
     /// `None`.
-    pub(in crate::mm) fn split_if_untracked_huge(self) -> Option<PageTableNode<E, C>> {
+    pub(in crate::mm) fn split_if_untracked_huge(&mut self) -> Option<PageTableNode<E, C>> {
         let level = self.node.level();
 
         if !(self.pte.is_last(level)

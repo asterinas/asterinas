@@ -371,14 +371,13 @@ where
     /// This function panics if the page table node isn't set to Copy-On-Write
     pub fn copy_on_write(&mut self) -> Option<PageTableNode<E, C>> {
         assert!(self.is_cow());
-        let page: DynPage = self.page.clone().into();
-        let page: Page<PageTablePageMeta> = page.try_into().unwrap();
+        // let page: Page<PageTablePageMeta::<E, C>> = self.page.clone();
 
         // If we are the only reference to the page table page, we can directly set the
         // page writable without copying. In this case, the reference count of the page
         // is 3 (one for the mapping `self.page`, one for `page`, and one for the frame
         // handle itself).
-        let only_reference = page.reference_count() == 3;
+        let only_reference = self.page.reference_count() == 2;
 
         if only_reference {
             self.unset_cow();
