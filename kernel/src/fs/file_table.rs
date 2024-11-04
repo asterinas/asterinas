@@ -78,7 +78,13 @@ impl FileTable {
         let file = self
             .table
             .get(fd as usize)
-            .map(|entry| entry.file.clone())
+            .map(|entry| {
+                entry
+                    .file
+                    .as_ref()
+                    .expect(FILE_IS_NONE_ERROR_MESSAGE)
+                    .clone()
+            })
             .ok_or(Error::with_message(Errno::ENOENT, "No such file"))?;
 
         // Get the lowest-numbered available fd equal to or greater than `new_fd`.
@@ -120,7 +126,7 @@ impl FileTable {
             self.notify_fd_events(&events);
             entry.as_ref().unwrap().notify_fd_events(&events);
         }
-        entry.map(|e| e.file)
+        entry.map(|e| e.file.expect(FILE_IS_NONE_ERROR_MESSAGE))
     }
 
     pub fn close_file(&mut self, fd: FileDesc) -> Option<Arc<dyn FileLike>> {
@@ -130,7 +136,7 @@ impl FileTable {
         self.notify_fd_events(&events);
         removed_entry.notify_fd_events(&events);
 
-        let closed_file = removed_entry.file;
+        let closed_file = removed_entry.file.expect(FILE_IS_NONE_ERROR_MESSAGE);
         if let Some(closed_inode_file) = closed_file.downcast_ref::<InodeHandle>() {
             // FIXME: Operation below should not hold any mutex if `self` is protected by a spinlock externally
             closed_inode_file.release_range_locks();
@@ -168,8 +174,18 @@ impl FileTable {
             let events = FdEvents::Close(fd);
             self.notify_fd_events(&events);
             removed_entry.notify_fd_events(&events);
-            closed_files.push(removed_entry.file.clone());
-            if let Some(inode_file) = removed_entry.file.downcast_ref::<InodeHandle>() {
+            closed_files.push(
+                removed_entry
+                    .file
+                    .as_ref()
+                    .expect(FILE_IS_NONE_ERROR_MESSAGE)
+                    .clone(),
+            );
+            if let Some(inode_file) = removed_entry
+                .file
+                .expect(FILE_IS_NONE_ERROR_MESSAGE)
+                .downcast_ref::<InodeHandle>()
+            {
                 // FIXME: Operation below should not hold any mutex if `self` is protected by a spinlock externally
                 inode_file.release_range_locks();
             }
@@ -181,7 +197,7 @@ impl FileTable {
     pub fn get_file(&self, fd: FileDesc) -> Result<&Arc<dyn FileLike>> {
         self.table
             .get(fd as usize)
-            .map(|entry| &entry.file)
+            .map(|entry| entry.file.as_ref().expect(FILE_IS_NONE_ERROR_MESSAGE))
             .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
     }
 
@@ -205,9 +221,12 @@ impl FileTable {
     }
 
     pub fn fds_and_files(&self) -> impl Iterator<Item = (FileDesc, &'_ Arc<dyn FileLike>)> {
-        self.table
-            .idxes_and_items()
-            .map(|(idx, entry)| (idx as FileDesc, &entry.file))
+        self.table.idxes_and_items().map(|(idx, entry)| {
+            (
+                idx as FileDesc,
+                entry.file.as_ref().expect(FILE_IS_NONE_ERROR_MESSAGE),
+            )
+        })
     }
 
     pub fn register_observer(&self, observer: Weak<dyn Observer<FdEvents>>) {
@@ -220,6 +239,30 @@ impl FileTable {
 
     fn notify_fd_events(&self, events: &FdEvents) {
         self.subject.notify_observers(events);
+    }
+
+    /// Temporarily takes the file out from the file table.
+    ///
+    /// This API is currently intended solely for use with the `poll` syscall.
+    /// The taken file must be returned by invoking [`Self::insert_file_like`] afterwards.
+    ///
+    /// The user of this API must ensure that it has exclusive access to the file table
+    /// between calling this method and [`Self::insert_file_like`].
+    /// Failure to do so may result in a data race.
+    pub fn take_file_like(&mut self, fd: FileDesc) -> Option<Arc<dyn FileLike>> {
+        self.table.get_mut(fd as usize)?.file.take()
+    }
+
+    /// Inserts a file back into the file table.
+    ///
+    /// This method must be used in conjunction with [`Self::take_file_like`].
+    pub fn insert_file_like(&mut self, fd: FileDesc, file_like: Arc<dyn FileLike>) {
+        let _ = self
+            .table
+            .get_mut(fd as usize)
+            .unwrap()
+            .file
+            .insert(file_like);
     }
 }
 
@@ -254,16 +297,28 @@ pub enum FdEvents {
 impl Events for FdEvents {}
 
 pub struct FileTableEntry {
-    file: Arc<dyn FileLike>,
+    // Explanation of why the file can be `None`:
+    //
+    // The `file` may be `None` because the `Arc<dyn FileLike>` can be temporarily
+    // taken when performing a poll operation.
+    // This approach offers a performance benefit:
+    // taking and re-inserting the `Arc<dyn FileLike>` is more efficient than cloning the Arc.
+    // In most cases, the file can be considered `Some(_)`,
+    // as the poll operation will only take files
+    // when the file table can be viewed as exclusively owned by the current thread.
+    // For further details, refer to `crate::syscall::poll::hold_files`.
+    file: Option<Arc<dyn FileLike>>,
     flags: AtomicU8,
     subject: Subject<FdEvents>,
     owner: Option<Owner>,
 }
 
+const FILE_IS_NONE_ERROR_MESSAGE: &str = "[Internal Error] You are trying to get the `Arc<FileLike>`, which is temporarily taken during polling.";
+
 impl FileTableEntry {
     pub fn new(file: Arc<dyn FileLike>, flags: FdFlags) -> Self {
         Self {
-            file,
+            file: Some(file),
             flags: AtomicU8::new(flags.bits()),
             subject: Subject::new(),
             owner: None,
@@ -271,7 +326,7 @@ impl FileTableEntry {
     }
 
     pub fn file(&self) -> &Arc<dyn FileLike> {
-        &self.file
+        self.file.as_ref().expect(FILE_IS_NONE_ERROR_MESSAGE)
     }
 
     pub fn owner(&self) -> Option<Pid> {
@@ -288,7 +343,11 @@ impl FileTableEntry {
             None => {
                 // Unset the owner if the given pid is zero
                 if let Some((_, observer)) = self.owner.as_ref() {
-                    let _ = self.file.unregister_observer(&Arc::downgrade(observer));
+                    let _ = self
+                        .file
+                        .as_ref()
+                        .expect(FILE_IS_NONE_ERROR_MESSAGE)
+                        .unregister_observer(&Arc::downgrade(observer));
                 }
                 let _ = self.owner.take();
             }
@@ -299,11 +358,23 @@ impl FileTableEntry {
                         return Ok(());
                     }
 
-                    let _ = self.file.unregister_observer(&Arc::downgrade(observer));
+                    let _ = self
+                        .file
+                        .as_ref()
+                        .expect(FILE_IS_NONE_ERROR_MESSAGE)
+                        .unregister_observer(&Arc::downgrade(observer));
                 }
 
-                let observer = OwnerObserver::new(self.file.clone(), Arc::downgrade(owner_process));
+                let observer = OwnerObserver::new(
+                    self.file
+                        .as_ref()
+                        .expect(FILE_IS_NONE_ERROR_MESSAGE)
+                        .clone(),
+                    Arc::downgrade(owner_process),
+                );
                 self.file
+                    .as_ref()
+                    .expect(FILE_IS_NONE_ERROR_MESSAGE)
                     .register_observer(observer.weak_self(), IoEvents::empty())?;
                 let _ = self.owner.insert((owner_pid, observer));
             }

@@ -56,19 +56,19 @@ pub fn sys_poll(fds: Vaddr, nfds: u64, timeout: i32, ctx: &Context) -> Result<Sy
 }
 
 pub fn do_poll(poll_fds: &[PollFd], timeout: Option<&Duration>, ctx: &Context) -> Result<usize> {
-    let (result, files) = hold_files(poll_fds, ctx);
+    let (result, held_files) = hold_files(poll_fds, ctx);
     match result {
         FileResult::AllValid => (),
         FileResult::SomeInvalid => {
-            return Ok(count_all_events(poll_fds, &files));
+            return Ok(count_all_events(poll_fds, &held_files.files));
         }
     }
 
-    let poller = match register_poller(poll_fds, files.as_ref()) {
+    let poller = match register_poller(poll_fds, &held_files.files) {
         PollerResult::AllRegistered(poller) => poller,
         PollerResult::EventFoundAt(index) => {
             let next = index + 1;
-            let remaining_events = count_all_events(&poll_fds[next..], &files[next..]);
+            let remaining_events = count_all_events(&poll_fds[next..], &held_files.files[next..]);
             return Ok(1 + remaining_events);
         }
     };
@@ -84,7 +84,7 @@ pub fn do_poll(poll_fds: &[PollFd], timeout: Option<&Duration>, ctx: &Context) -
             Err(e) => return Err(e),
         };
 
-        let num_events = count_all_events(poll_fds, &files);
+        let num_events = count_all_events(poll_fds, &held_files.files);
         if num_events > 0 {
             return Ok(num_events);
         }
@@ -98,9 +98,43 @@ enum FileResult {
     SomeInvalid,
 }
 
+/// Held files.
+///
+/// If file table is exclusive, these files are temporarily removed from file table,
+/// thus these files need to be added back when poll finishes.
+/// Otherwise, these files are cloned from file table.
+struct HeldFiles<'a> {
+    is_file_table_exclusive: bool,
+    poll_fds: &'a [PollFd],
+    files: Vec<Option<Arc<dyn FileLike>>>,
+    ctx: &'a Context<'a>,
+}
+
+impl Drop for HeldFiles<'_> {
+    fn drop(&mut self) {
+        if !self.is_file_table_exclusive {
+            return;
+        }
+
+        let mut file_table = self.ctx.process.file_table().lock();
+        for (poll_fd, file) in self.poll_fds.iter().zip(self.files.drain(..)) {
+            let Some(fd) = poll_fd.fd else {
+                continue;
+            };
+
+            if let Some(file) = file {
+                file_table.insert_file_like(fd, file);
+            }
+        }
+    }
+}
+
 /// Holds all the files we're going to poll.
-fn hold_files(poll_fds: &[PollFd], ctx: &Context) -> (FileResult, Vec<Option<Arc<dyn FileLike>>>) {
-    let file_table = ctx.process.file_table().lock();
+fn hold_files<'a>(poll_fds: &'a [PollFd], ctx: &'a Context) -> (FileResult, HeldFiles<'a>) {
+    let is_file_table_exclusive =
+        Arc::strong_count(ctx.process.file_table()) == 1 && ctx.process.tasks().lock().len() == 1;
+
+    let mut file_table = ctx.process.file_table().lock();
 
     let mut files = Vec::with_capacity(poll_fds.len());
     let mut result = FileResult::AllValid;
@@ -111,18 +145,28 @@ fn hold_files(poll_fds: &[PollFd], ctx: &Context) -> (FileResult, Vec<Option<Arc
             continue;
         };
 
-        let Ok(file) = file_table.get_file(fd) else {
-            poll_fd.revents.set(IoEvents::NVAL);
-            result = FileResult::SomeInvalid;
-
-            files.push(None);
-            continue;
+        let file = if is_file_table_exclusive {
+            file_table.take_file_like(fd)
+        } else {
+            file_table.get_file(fd).ok().map(Arc::clone)
         };
 
-        files.push(Some(file.clone()));
+        if file.is_none() {
+            poll_fd.revents.set(IoEvents::NVAL);
+            result = FileResult::SomeInvalid;
+        }
+
+        files.push(file);
     }
 
-    (result, files)
+    let held_files = HeldFiles {
+        is_file_table_exclusive,
+        poll_fds,
+        files,
+        ctx,
+    };
+
+    (result, held_files)
 }
 
 enum PollerResult {
