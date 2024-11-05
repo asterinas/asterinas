@@ -58,11 +58,16 @@ COMMON_QEMU_ARGS="\
 "
 
 if [ "$1" = "iommu" ]; then
+    if [ "$OVMF" = "off" ]; then
+        echo "Warning: OVMF is off, enabling it for IOMMU support." 1>&2
+        OVMF="on"
+    fi
     IOMMU_DEV_EXTRA=",iommu_platform=on,ats=on"
     IOMMU_EXTRA_ARGS="\
         -device intel-iommu,intremap=on,device-iotlb=on \
-        -device ioh3420,id=pcie.0,chassis=1\
+        -device ioh3420,id=pcie.0,chassis=1 \
     "
+    # TODO: Add support for enabling IOMMU on AMD platforms
 fi
 
 QEMU_ARGS="\
