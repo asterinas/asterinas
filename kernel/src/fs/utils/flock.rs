@@ -2,7 +2,7 @@
 use alloc::fmt;
 use core::ptr;
 
-use ostd::sync::{WaitQueue, Waiter};
+use ostd::sync::{WaitQueue, Waiter, Waker};
 
 use crate::{
     fs::{file_handle::FileLike, inode_handle::InodeHandle},
@@ -96,49 +96,65 @@ impl Debug for FlockItem {
 /// Represents a list of non-POSIX file advisory locks (FLOCK).
 /// The list is used to manage file locks and resolve conflicts between them.
 pub struct FlockList {
-    inner: Mutex<VecDeque<FlockItem>>,
+    inner: Mutex<Vec<FlockItem>>,
 }
 
 impl FlockList {
     /// Creates a new FlockList.
     pub fn new() -> Self {
         Self {
-            inner: Mutex::new(VecDeque::new()),
+            inner: Mutex::new(Vec::new()),
         }
     }
 
     /// Attempts to set a lock on the file.
-    /// If no conflicting locks exist, the lock is set and the function returns Ok(()).
-    /// If is_nonblocking is true and a conflicting lock exists, the function returns EAGAIN.
-    /// Otherwise, the function waits until the lock can be acquired.
-    pub fn set_lock(&self, mut req_lock: FlockItem, is_nonblocking: bool) -> Result<()> {
+    ///
+    /// If no conflicting locks exist, the lock is set and the function returns `Ok(())`.
+    /// If a conflicting lock exists:
+    /// - If waker is not `None`, it is added to the conflicting lock's waitqueue, and the function returns `EAGAIN`.
+    /// - If waker is `None`, the function returns `EAGAIN`.
+    fn try_set_lock(&self, req_lock: &FlockItem, waker: Option<&Arc<Waker>>) -> Result<()> {
+        let mut list = self.inner.lock();
+        if let Some(conflict_lock) = list.iter().find(|l| req_lock.conflict_with(l)) {
+            if let Some(waker) = waker {
+                conflict_lock.waitqueue.enqueue(waker.clone());
+            }
+            return_errno_with_message!(Errno::EAGAIN, "the file is locked");
+        } else {
+            match list.iter().position(|l| req_lock.same_owner_with(l)) {
+                Some(idx) => {
+                    list[idx] = req_lock.clone();
+                }
+                None => {
+                    list.push(req_lock.clone());
+                }
+            }
+            Ok(())
+        }
+    }
+
+    /// Sets a lock on the file.
+    ///
+    /// If no conflicting locks exist, the lock is set and the function returns `Ok(())`.
+    /// If is_nonblocking is true and a conflicting lock exists, the function returns `EAGAIN`.
+    /// Otherwise, the function waits until the lock can be acquired or until it is interrupted by a signal.
+    pub fn set_lock(&self, req_lock: FlockItem, is_nonblocking: bool) -> Result<()> {
         debug!(
             "set_lock with Flock: {:?}, is_nonblocking: {}",
             req_lock, is_nonblocking
         );
-        loop {
-            let (waiter, waker);
-            {
-                let mut list = self.inner.lock();
-                if let Some(existing_lock) = list.iter().find(|l| req_lock.conflict_with(l)) {
-                    if is_nonblocking {
-                        return_errno_with_message!(Errno::EAGAIN, "the file is locked");
-                    }
-                    (waiter, waker) = Waiter::new_pair();
-                    existing_lock.waitqueue.enqueue(waker);
+        if is_nonblocking {
+            self.try_set_lock(&req_lock, None)
+        } else {
+            let (waiter, waker) = Waiter::new_pair();
+            waiter.pause_until(|| {
+                let result = self.try_set_lock(&req_lock, Some(&waker));
+                if result.is_err_and(|err| err.error() == Errno::EAGAIN) {
+                    None
                 } else {
-                    match list.iter().position(|l| req_lock.same_owner_with(l)) {
-                        Some(idx) => {
-                            core::mem::swap(&mut req_lock, &mut list[idx]);
-                        }
-                        None => {
-                            list.push_front(req_lock);
-                        }
-                    }
-                    return Ok(());
+                    Some(result)
                 }
-            }
-            waiter.wait();
+            })?
         }
     }
 

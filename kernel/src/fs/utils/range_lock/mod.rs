@@ -2,7 +2,7 @@
 
 use core::fmt;
 
-use ostd::sync::{RwMutexWriteGuard, WaitQueue, Waiter};
+use ostd::sync::{RwMutexWriteGuard, WaitQueue, Waiter, Waker};
 
 use self::range::FileRangeChange;
 pub use self::{
@@ -189,13 +189,13 @@ impl Clone for RangeLockItem {
 /// New locks with different type will replace or split the overlapping locks
 /// if they have same owner.
 pub struct RangeLockList {
-    inner: RwMutex<VecDeque<RangeLockItem>>,
+    inner: RwMutex<Vec<RangeLockItem>>,
 }
 
 impl RangeLockList {
     pub fn new() -> Self {
         Self {
-            inner: RwMutex::new(VecDeque::new()),
+            inner: RwMutex::new(Vec::new()),
         }
     }
 
@@ -219,46 +219,59 @@ impl RangeLockList {
         req_lock
     }
 
-    /// Set a lock on the file.
+    /// Attempts to set a lock on the file.
+    ///
+    /// If no conflicting locks exist, the lock is set and the function returns `Ok(())`.
+    /// If a conflicting lock exists:
+    /// - If waker is not `None`, it is added to the conflicting lock's waitqueue, and the function returns `EAGAIN`.
+    /// - If waker is `None`, the function returns `EAGAIN`.
+    fn try_set_lock(&self, req_lock: &RangeLockItem, waker: Option<&Arc<Waker>>) -> Result<()> {
+        let mut list = self.inner.write();
+        if let Some(conflict_lock) = list.iter().find(|l| req_lock.conflict_with(l)) {
+            if let Some(waker) = waker {
+                conflict_lock.waitqueue.enqueue(waker.clone());
+            }
+            return_errno_with_message!(Errno::EAGAIN, "the file is locked");
+        } else {
+            Self::insert_lock_into_list(&mut list, req_lock);
+            Ok(())
+        }
+    }
+
+    /// Sets a lock on the file.
     ///
     /// If the lock is non-blocking and there is a conflict, return `Err(Errno::EAGAIN)`.
-    /// Otherwise, block the current process until the lock can be set.
+    /// Otherwise, block the current process until the lock can be set or it is interrupted by a signal.
     pub fn set_lock(&self, req_lock: &RangeLockItem, is_nonblocking: bool) -> Result<()> {
         debug!(
             "set_lock with RangeLock: {:?}, is_nonblocking: {}",
             req_lock, is_nonblocking
         );
-        loop {
-            let (waiter, waker);
-
-            {
-                let mut list = self.inner.write();
-                if let Some(existing_lock) = list.iter().find(|l| req_lock.conflict_with(l)) {
-                    if is_nonblocking {
-                        return_errno_with_message!(Errno::EAGAIN, "the file is locked");
-                    }
-                    (waiter, waker) = Waiter::new_pair();
-                    existing_lock.waitqueue.enqueue(waker);
+        if is_nonblocking {
+            self.try_set_lock(req_lock, None)
+        } else {
+            let (waiter, waker) = Waiter::new_pair();
+            waiter.pause_until(|| {
+                let result = self.try_set_lock(req_lock, Some(&waker));
+                if result.is_err_and(|err| err.error() == Errno::EAGAIN) {
+                    None
                 } else {
-                    Self::insert_lock_into_list(&mut list, req_lock);
-                    return Ok(());
+                    Some(result)
                 }
-            }
-
-            waiter.wait();
+            })?
         }
     }
 
     /// Insert a lock into the list.
     fn insert_lock_into_list(
-        list: &mut RwMutexWriteGuard<VecDeque<RangeLockItem>>,
+        list: &mut RwMutexWriteGuard<Vec<RangeLockItem>>,
         lock: &RangeLockItem,
     ) {
         let first_same_owner_idx = match list.iter().position(|lk| lk.owner() == lock.owner()) {
             Some(idx) => idx,
             None => {
                 // Can't find existing locks with same owner.
-                list.push_front(lock.clone());
+                list.push(lock.clone());
                 return;
             }
         };
@@ -273,8 +286,10 @@ impl RangeLockList {
             if next_idx >= list.len() {
                 break;
             }
-            let pre_lock = list[pre_idx].clone();
-            let next_lock = list[next_idx].clone();
+
+            let (left, right) = list.split_at_mut(next_idx);
+            let pre_lock = &mut left[pre_idx];
+            let next_lock = &mut right[0];
 
             if next_lock.owner() != pre_lock.owner() {
                 break;
@@ -289,7 +304,7 @@ impl RangeLockList {
                     next_idx += 1;
                 } else {
                     // Merge adjacent or overlapping locks
-                    list[next_idx].merge_with(&pre_lock);
+                    next_lock.merge_with(pre_lock);
                     list.remove(pre_idx);
                 }
             } else {
@@ -302,10 +317,10 @@ impl RangeLockList {
                     next_idx += 1;
                 } else {
                     // Split overlapping locks
-                    let overlap_with = pre_lock.overlap_with(&next_lock).unwrap();
+                    let overlap_with = pre_lock.overlap_with(next_lock).unwrap();
                     match overlap_with {
                         OverlapWith::ToLeft => {
-                            list[next_idx].set_start(pre_lock.end());
+                            next_lock.set_start(pre_lock.end());
                             break;
                         }
                         OverlapWith::InMiddle => {
@@ -314,13 +329,13 @@ impl RangeLockList {
                                 r_lk.set_start(pre_lock.end());
                                 r_lk
                             };
-                            list[next_idx].set_end(pre_lock.start());
+                            next_lock.set_end(pre_lock.start());
                             list.swap(pre_idx, next_idx);
                             list.insert(next_idx + 1, right_lk);
                             break;
                         }
                         OverlapWith::ToRight => {
-                            list[next_idx].set_end(pre_lock.start());
+                            next_lock.set_end(pre_lock.start());
                             list.swap(pre_idx, next_idx);
                             pre_idx += 1;
                             next_idx += 1;
