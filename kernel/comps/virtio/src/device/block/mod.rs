@@ -61,7 +61,9 @@ pub struct VirtioBlockConfig {
     /// The number of 512-byte sectors.
     capacity: u64,
     /// The maximum segment size.
-    size_max: u64,
+    size_max: u32,
+    /// The maximum number of segments.
+    seg_max: u32,
     /// The geometry of the device.
     geometry: VirtioBlockGeometry,
     /// The block size. If `logical_block_size` is not given in qemu cmdline,
