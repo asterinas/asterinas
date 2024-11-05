@@ -74,7 +74,8 @@ jobs:
           - 'boot_test_mb'
           - 'boot_test_linux_legacy32'
           - 'syscall_test'
-          - 'syscall_test_at_ext2'
+          - 'syscall_test_at_ext2_microvm'
+          - 'syscall_test_at_ext2_iommu'
           - 'syscall_test_at_exfat_linux'
           - 'smp_syscall_test_mb2'
           - 'test_linux'
@@ -102,9 +103,14 @@ jobs:
         run: make run AUTO_TEST=syscall ENABLE_KVM=1 BOOT_PROTOCOL=linux-efi-handover64 RELEASE=0
 
       - name: Syscall Test at Ext2 (MicroVM)
-        id: syscall_test_at_ext2
-        if: ${{ matrix.test_id == 'syscall_test_at_ext2' }}
+        id: syscall_test_at_ext2_microvm
+        if: ${{ matrix.test_id == 'syscall_test_at_ext2_microvm' }}
         run: make run AUTO_TEST=syscall SYSCALL_TEST_DIR=/ext2 ENABLE_KVM=1 SCHEME=microvm RELEASE=1
+
+      - name: Syscall Test at Ext2 (IOMMU) (Debug Build)
+        id: syscall_test_at_ext2_iommu
+        if: ${{ matrix.test_id == 'syscall_test_at_ext2_iommu' }}
+        run: make run AUTO_TEST=syscall SYSCALL_TEST_DIR=/ext2 ENABLE_KVM=1 SCHEME=iommu RELEASE=0
 
       - name: Syscall Test at Exfat (Multiboot2) (without KVM enabled)
         id: syscall_test_at_exfat_linux
