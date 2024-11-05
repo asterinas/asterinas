@@ -12,9 +12,9 @@ use core::{
 use ostd::sync::{LocalIrqDisabled, RwLock, SpinLock, SpinLockGuard};
 use smoltcp::{
     iface::Context,
-    socket::{udp::UdpMetadata, PollAt},
+    socket::{tcp::State, udp::UdpMetadata, PollAt},
     time::Instant,
-    wire::{IpAddress, IpEndpoint, IpRepr, TcpRepr, UdpRepr},
+    wire::{IpAddress, IpEndpoint, IpRepr, TcpControl, TcpRepr, UdpRepr},
 };
 
 use super::{event::SocketEventObserver, RawTcpSocket, RawUdpSocket};
@@ -102,6 +102,16 @@ impl TcpSocket {
         if socket.in_background && socket.state() == smoltcp::socket::tcp::State::Closed {
             self.is_dead.store(true, Ordering::Relaxed);
         }
+    }
+
+    /// Sets the TCP socket in [`TimeWait`] state as dead.
+    ///
+    /// See [`BoundTcpSocketInner::is_dead`] for the definition of dead TCP sockets.
+    /// 
+    /// [`TimeWait`]: smoltcp::socket::tcp::State::TimeWait
+    fn set_dead_timewait(&self, socket: &RawTcpSocketExt) {
+        debug_assert!(socket.in_background && socket.state() == smoltcp::socket::tcp::State::TimeWait);
+        self.is_dead.store(true, Ordering::Relaxed);
     }
 }
 
@@ -448,6 +458,27 @@ impl<E> BoundTcpSocketInner<E> {
         let mut socket = self.socket.lock();
 
         if !socket.accepts(cx, ip_repr, tcp_repr) {
+            return TcpProcessResult::NotProcessed;
+        }
+
+        // If the socket is in the TimeWait state and a new packet arrives that is a SYN packet
+        // without ack number, the TimeWait socket will be marked as dead,
+        // and the packet will be passed on to any other listening sockets for processing.
+        //
+        // FIXME: Directly marking the TimeWait socket dead is not the correct approach.
+        // In Linux, a TimeWait socket remains alive to handle "old duplicate segments".
+        // If a TimeWait socket receives a new SYN packet, Linux will select a suitable
+        // listening socket from the socket table to respond to that SYN request.
+        // (https://elixir.bootlin.com/linux/v6.0.9/source/net/ipv4/tcp_ipv4.c#L2137)
+        // Moreover, the Initial Sequence Number (ISN) will be set to prevent the TimeWait socket 
+        // from erroneously handling packets from the new connection.
+        // (https://elixir.bootlin.com/linux/v6.0.9/source/net/ipv4/tcp_minisocks.c#L194)
+        // Implementing such behavior is challenging with the current smoltcp APIs.
+        if socket.state() == State::TimeWait
+            && tcp_repr.control == TcpControl::Syn
+            && tcp_repr.ack_number.is_none()
+        {
+            self.socket.set_dead_timewait(&socket);
             return TcpProcessResult::NotProcessed;
         }
 
