@@ -101,7 +101,8 @@ jobs:
         command: |
           make install_osdk
           BENCHMARK_TYPE=$(jq -r '.benchmark_type' test/benchmark/${{ matrix.benchmark }}/config.json)
-          bash test/benchmark/bench_linux_and_aster.sh ${{ matrix.benchmark }} $BENCHMARK_TYPE
+          ASTER_SCHEME=$(jq -r '.aster_scheme' test/benchmark/${{ matrix.benchmark }}/config.json)
+          bash test/benchmark/bench_linux_and_aster.sh ${{ matrix.benchmark }} $BENCHMARK_TYPE $ASTER_SCHEME
 
     - name: Set up benchmark configuration
       run: |
