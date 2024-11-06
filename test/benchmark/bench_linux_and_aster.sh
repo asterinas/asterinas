@@ -24,9 +24,10 @@ parse_results() {
     local result_template="$6"
     local result_file="$7"
 
+    # Extract numeric result from a specific field in the matching line
     local linux_result aster_result
-    linux_result=$(awk "/${search_pattern}/ {result=\$$result_index} END {print result}" "${linux_output}" | tr -d '\r')
-    aster_result=$(awk "/${search_pattern}/ {result=\$$result_index} END {print result}" "${aster_output}" | tr -d '\r')
+    linux_result=$(awk "/${search_pattern}/ {result=\$$result_index} END {print result}" "${linux_output}" | tr -d '\r' | sed 's/[^0-9.]*//g')
+    aster_result=$(awk "/${search_pattern}/ {result=\$$result_index} END {print result}" "${aster_output}" | tr -d '\r' | sed 's/[^0-9.]*//g')
     
     if [ -z "${linux_result}" ] || [ -z "${aster_result}" ]; then
         echo "Error: Failed to parse the results from the benchmark output" >&2
