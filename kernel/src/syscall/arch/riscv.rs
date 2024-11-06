@@ -66,7 +66,7 @@ use crate::syscall::{
     prctl::sys_prctl,
     pread64::sys_pread64,
     preadv::{sys_preadv, sys_preadv2, sys_readv},
-    prlimit64::sys_prlimit64,
+    prlimit64::{sys_getrlimit, sys_prlimit64, sys_setrlimit},
     pselect6::sys_pselect6,
     pwrite64::sys_pwrite64,
     pwritev::{sys_pwritev, sys_pwritev2, sys_writev},
@@ -220,6 +220,8 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_GETGROUPS = 158          => sys_getgroups(args[..2]);
     SYS_SETGROUPS = 159          => sys_setgroups(args[..2]);
     SYS_NEWUNAME = 160           => sys_uname(args[..1]);
+    SYS_GETRLIMIT = 163          => sys_getrlimit(args[..2]);
+    SYS_SETRLIMIT = 164          => sys_setrlimit(args[..2]);
     SYS_GETRUSAGE = 165          => sys_getrusage(args[..2]);
     SYS_UMASK = 166              => sys_umask(args[..1]);
     SYS_PRCTL = 167              => sys_prctl(args[..5]);
@@ -264,6 +266,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_EXECVEAT = 281           => sys_execveat(args[..5], &mut user_ctx);
     SYS_PREADV2 = 286            => sys_preadv2(args[..5]);
     SYS_PWRITEV2 = 287           => sys_pwritev2(args[..5]);
+    SYS_PRLIMIT64 = 302          => sys_prlimit64(args[..4]);
     SYS_CLOCK_GETTIME = 403      => sys_clock_gettime(args[..2]);
     SYS_CLOCK_NANOSLEEP = 407    => sys_clock_nanosleep(args[..4]);
     SYS_TIMER_GETTIME = 408      => sys_timer_gettime(args[..2]);
