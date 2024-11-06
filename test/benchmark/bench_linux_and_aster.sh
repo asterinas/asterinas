@@ -45,8 +45,9 @@ parse_results() {
 run_benchmark() {
     local benchmark="$1"
     local benchmark_type="$2"
-    local search_pattern="$3"
-    local result_index="$4"
+    local aster_scheme="$3"
+    local search_pattern="$4"
+    local result_index="$5"
 
     local linux_output="${BENCHMARK_DIR}/linux_output.txt"
     local aster_output="${BENCHMARK_DIR}/aster_output.txt"
@@ -58,7 +59,11 @@ run_benchmark() {
     echo "Preparing libraries..."
     prepare_libs
 
-    local asterinas_cmd="make run BENCHMARK=${benchmark} ENABLE_KVM=1 RELEASE_LTO=1 2>&1"
+    local aster_scheme_cmd=""
+    if [ -n "$aster_scheme" ] && [ "$aster_scheme" != "null" ]; then
+        aster_scheme_cmd="SCHEME=${aster_scheme}"
+    fi
+    local asterinas_cmd="make run BENCHMARK=${benchmark} ${aster_scheme_cmd} ENABLE_KVM=1 RELEASE_LTO=1 2>&1"
     local linux_cmd="/usr/local/qemu/bin/qemu-system-x86_64 \
         --no-reboot \
         -smp 1 \
@@ -114,6 +119,7 @@ if [ -z "$2" ] || [ "$2" = "null" ]; then
 else
     BENCHMARK_TYPE="$2"
 fi
+ASTER_SCHEME="$3"
 
 echo "Running benchmark ${BENCHMARK}..."
 pwd
@@ -125,6 +131,6 @@ fi
 search_pattern=$(jq -r '.search_pattern' "$BENCHMARK_DIR/$BENCHMARK/config.json")
 result_index=$(jq -r '.result_index' "$BENCHMARK_DIR/$BENCHMARK/config.json")
 
-run_benchmark "$BENCHMARK" "$BENCHMARK_TYPE" "$search_pattern" "$result_index"
+run_benchmark "$BENCHMARK" "$BENCHMARK_TYPE" "$ASTER_SCHEME" "$search_pattern" "$result_index"
 
 echo "Benchmark completed successfully."

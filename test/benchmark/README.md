@@ -84,7 +84,8 @@ To add a new benchmark to the Asternias Continuous Integration (CI) system, foll
         "result_index": "3",
         "description": "lat_syscall null",
         "title": "[Process] The cost of getpid",
-        "benchmark_type": "host_guest"
+        "benchmark_type": "host_guest",
+        "aster_scheme": "iommu"
       } 
      ```
      
@@ -97,6 +98,7 @@ To add a new benchmark to the Asternias Continuous Integration (CI) system, foll
     - `benchmark_type`: This parameter defines the type of benchmark to be executed. The default value is `guest_only`. The available options include `guest_only`, and `host_guest`.
       - `guest_only`: Use this option when the benchmark is intended solely for the guest environment.
       - `host_guest`: Choose this option when the benchmark involves both the host and guest environments. When using this option, you will need to define your own `host.sh` and `bench_runner.sh` scripts to handle the host-side operations and benchmark execution.
+    - `aster_scheme`: Specify the scheme used in Asterinas. The optional values, e.g., `iommu`, are aligned with the `SCHEME` parameter in `asterinas/Makefile`.
 
     For example, if the benchmark output is "Syscall average latency: 1000 ns", the `search_pattern` is "Syscall average latency:", and the `result_index` is "4". `awk` will extract "1000" as the benchmark result. See the `awk` [manual](https://www.gnu.org/software/gawk/manual/gawk.html#Getting-Started) for more information.
 
