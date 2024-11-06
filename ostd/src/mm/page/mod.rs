@@ -59,9 +59,9 @@ impl<M: PageMeta> Page<M> {
         let vaddr = mapping::page_to_meta::<PagingConsts>(paddr);
         let ptr = vaddr as *const MetaSlot;
 
-        // SAFETY: The aligned pointer points to a initialized `MetaSlot`.
+        // SAFETY: The aligned pointer points to an initialized `MetaSlot`.
         let usage = unsafe { &(*ptr).usage };
-        // SAFETY: The aligned pointer points to a initialized `MetaSlot`.
+        // SAFETY: The aligned pointer points to an initialized `MetaSlot`.
         let ref_count = unsafe { &(*ptr).ref_count };
 
         usage
