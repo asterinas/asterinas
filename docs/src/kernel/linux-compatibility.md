@@ -117,7 +117,7 @@ provided by Linux on x86-64 architecture.
 | 94      | lchown           | ✅              |
 | 95      | umask            | ✅              |
 | 96      | gettimeofday     | ✅              |
-| 97      | getrlimit        | ❌              |
+| 97      | getrlimit        | ✅              |
 | 98      | getrusage        | ✅              |
 | 99      | sysinfo          | ❌              |
 | 100     | times            | ❌              |
@@ -180,7 +180,7 @@ provided by Linux on x86-64 architecture.
 | 157     | prctl            | ✅              |
 | 158     | arch_prctl       | ✅              |
 | 159     | adjtimex         | ❌              |
-| 160     | setrlimit        | ❌              |
+| 160     | setrlimit        | ✅              |
 | 161     | chroot           | ✅              |
 | 162     | sync             | ✅              |
 | 163     | acct             | ❌              |

@@ -38,6 +38,7 @@ TESTS ?= \
 	read_test \
 	readv_test \
 	rename_test \
+	rlimits_test \
 	semaphore_test \
 	sendfile_test \
 	sigaltstack_test \
