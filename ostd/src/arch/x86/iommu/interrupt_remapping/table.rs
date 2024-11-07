@@ -157,7 +157,7 @@ impl IrtEntry {
         self.0 = 0
     }
 
-    /// Enable this entry with no validation,
+    /// Enables this entry with no validation,
     /// DST = 0, IM = 0, DLM = 0, TM = 0, RH = 0, DM = 0, FPD = 1, P = 1
     pub fn enable_default(&mut self, vector: u32) {
         self.0 = 0b11 | (vector as u128) << 16;

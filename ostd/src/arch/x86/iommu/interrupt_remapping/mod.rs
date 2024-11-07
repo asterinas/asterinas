@@ -40,7 +40,7 @@ impl IrtEntryHandle {
         self.entry_ref = None;
     }
 
-    /// Create a handle based on index and the interrupt remapping table base virtual address.
+    /// Creates a handle based on index and the interrupt remapping table base virtual address.
     ///
     /// # Safety
     ///

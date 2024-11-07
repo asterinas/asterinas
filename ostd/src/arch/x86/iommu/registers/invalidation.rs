@@ -29,7 +29,7 @@ pub struct InvalidationRegisters {
 }
 
 impl InvalidationRegisters {
-    /// Create an instance from IOMMU base address.
+    /// Creates an instance from IOMMU base address.
     ///
     /// # Safety
     ///

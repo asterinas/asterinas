@@ -35,7 +35,7 @@ impl FaultEventRegisters {
         FaultStatus::from_bits_truncate(self.status.read())
     }
 
-    /// Create an instance from base address.
+    /// Creates an instance from base address.
     ///
     /// # Safety
     ///

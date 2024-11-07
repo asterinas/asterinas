@@ -81,7 +81,7 @@ pub struct IommuRegisters {
 }
 
 impl IommuRegisters {
-    /// Version of IOMMU
+    /// Reads the version of IOMMU
     #[allow(dead_code)]
     pub fn read_version(&self) -> IommuVersion {
         let version = self.version.read();
@@ -91,22 +91,22 @@ impl IommuRegisters {
         }
     }
 
-    /// Capability of IOMMU
+    /// Reads the capability of IOMMU
     pub fn read_capability(&self) -> Capability {
         Capability::new(self.capability.read())
     }
 
-    /// Extended Capability of IOMMU
+    /// Reads the extended Capability of IOMMU
     pub fn read_extended_capability(&self) -> ExtendedCapability {
         ExtendedCapability::new(self.extended_capability.read())
     }
 
-    /// Global Status of IOMMU
+    /// Reads the global Status of IOMMU
     pub fn read_global_status(&self) -> GlobalStatus {
         GlobalStatus::from_bits_truncate(self.global_status.read())
     }
 
-    /// Enable DMA remapping with static RootTable
+    /// Enables DMA remapping with static RootTable
     pub(super) fn enable_dma_remapping(
         &mut self,
         root_table: &'static SpinLock<RootTable, LocalIrqDisabled>,
@@ -122,7 +122,7 @@ impl IommuRegisters {
         while !self.read_global_status().contains(GlobalStatus::TES) {}
     }
 
-    /// Enable Interrupt Remapping with IntRemappingTable
+    /// Enables Interrupt Remapping with IntRemappingTable
     pub(super) fn enable_interrupt_remapping(&mut self, table: &'static IntRemappingTable) {
         assert!(self
             .read_extended_capability()
@@ -223,7 +223,7 @@ impl IommuRegisters {
             .write(0x9000_0000_0000_0000);
     }
 
-    /// Write value to the global command register. This function will not wait until the command
+    /// Writes value to the global command register. This function will not wait until the command
     /// is serviced. User need to check the global status register.
     fn write_global_command(&mut self, command: GlobalCommand, enable: bool) {
         const ONE_SHOT_STATUS_MASK: u32 = 0x96FF_FFFF;
@@ -235,7 +235,7 @@ impl IommuRegisters {
         }
     }
 
-    /// Create an instance from base address
+    /// Creates an instance from base address
     fn new() -> Option<Self> {
         let dmar = Dmar::new()?;
 

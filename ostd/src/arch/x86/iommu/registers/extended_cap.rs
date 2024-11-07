@@ -7,7 +7,7 @@ use bitflags::bitflags;
 pub struct ExtendedCapability(u64);
 
 impl ExtendedCapability {
-    /// Create ExtendedCapability from `value`
+    /// Creates ExtendedCapability from `value`
     pub const fn new(value: u64) -> Self {
         Self(value)
     }
