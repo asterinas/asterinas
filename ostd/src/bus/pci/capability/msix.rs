@@ -10,6 +10,7 @@ use alloc::{sync::Arc, vec::Vec};
 use cfg_if::cfg_if;
 
 use crate::{
+    arch::iommu::has_interrupt_remapping,
     bus::pci::{
         cfg_space::{Bar, Command, MemoryBar},
         common_device::PciCommonDevice,
@@ -59,6 +60,9 @@ impl Clone for CapabilityMsixData {
     }
 }
 
+#[cfg(target_arch = "x86_64")]
+const MSIX_DEFAULT_MSG_ADDR: u32 = 0xFEE0_0000;
+
 impl CapabilityMsixData {
     pub(super) fn new(dev: &mut PciCommonDevice, cap_ptr: u16) -> Self {
         // Get Table and PBA offset, provide functions to modify them
@@ -99,7 +103,7 @@ impl CapabilityMsixData {
 
         let table_size = (dev.location().read16(cap_ptr + 2) & 0b11_1111_1111) + 1;
         // TODO: Different architecture seems to have different, so we should set different address here.
-        let message_address = 0xFEE0_0000u32;
+        let message_address = MSIX_DEFAULT_MSG_ADDR;
         let message_upper_address = 0u32;
 
         // Set message address 0xFEE0_0000
@@ -163,18 +167,45 @@ impl CapabilityMsixData {
     }
 
     /// Enables an interrupt line, it will replace the old handle with the new handle.
-    pub fn set_interrupt_vector(&mut self, handle: IrqLine, index: u16) {
+    pub fn set_interrupt_vector(&mut self, irq: IrqLine, index: u16) {
         if index >= self.table_size {
             return;
         }
-        self.table_bar
-            .io_mem()
-            .write_once(
-                (16 * index + 8) as usize + self.table_offset,
-                &(handle.num() as u32),
-            )
-            .unwrap();
-        let old_handles = core::mem::replace(&mut self.irqs[index as usize], Some(handle));
+
+        // If interrupt remapping is enabled, then we need to change the value of the message address.
+        if has_interrupt_remapping() {
+            let mut handle = irq.inner_irq().bind_remapping_entry().unwrap().lock();
+
+            // Enable irt entry
+            let irt_entry_mut = handle.irt_entry_mut().unwrap();
+            irt_entry_mut.enable_default(irq.num() as u32);
+
+            // Use remappable format. The bits[4:3] should be always set to 1 according to the manual.
+            let mut address = MSIX_DEFAULT_MSG_ADDR | 0b1_1000;
+
+            // Interrupt index[14:0] is on address[19:5] and interrupt index[15] is on address[2].
+            address |= (handle.index() as u32 & 0x7FFF) << 5;
+            address |= (handle.index() as u32 & 0x8000) >> 13;
+
+            self.table_bar
+                .io_mem()
+                .write_once((16 * index) as usize + self.table_offset, &address)
+                .unwrap();
+            self.table_bar
+                .io_mem()
+                .write_once((16 * index + 8) as usize + self.table_offset, &0)
+                .unwrap();
+        } else {
+            self.table_bar
+                .io_mem()
+                .write_once(
+                    (16 * index + 8) as usize + self.table_offset,
+                    &(irq.num() as u32),
+                )
+                .unwrap();
+        }
+
+        let _old_irq = core::mem::replace(&mut self.irqs[index as usize], Some(irq));
         // Enable this msix vector
         self.table_bar
             .io_mem()

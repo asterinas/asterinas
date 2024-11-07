@@ -22,10 +22,19 @@ use volatile::{
     Volatile,
 };
 
-use super::{dma_remapping::RootTable, invalidate::queue::Queue, IommuError};
+use super::{
+    dma_remapping::RootTable, interrupt_remapping::IntRemappingTable, invalidate::queue::Queue,
+    IommuError,
+};
 use crate::{
     arch::{
-        iommu::fault,
+        iommu::{
+            fault,
+            invalidate::{
+                descriptor::{InterruptEntryCache, InvalidationWait},
+                QUEUE,
+            },
+        },
         x86::kernel::acpi::dmar::{Dmar, Remapping},
     },
     mm::paddr_to_vaddr,
@@ -65,6 +74,8 @@ pub struct IommuRegisters {
     root_table_address: Volatile<&'static mut u64, ReadWrite>,
     #[allow(dead_code)]
     context_command: Volatile<&'static mut u64, ReadWrite>,
+
+    interrupt_remapping_table_addr: Volatile<&'static mut u64, ReadWrite>,
 
     invalidate: InvalidationRegisters,
 }
@@ -109,6 +120,48 @@ impl IommuRegisters {
         // Enable DMA remapping
         self.write_global_command(GlobalCommand::TE, true);
         while !self.global_status().contains(GlobalStatus::TES) {}
+    }
+
+    /// Enable Interrupt Remapping with IntRemappingTable
+    pub(super) fn enable_interrupt_remapping(&mut self, table: &'static IntRemappingTable) {
+        assert!(self
+            .extended_capability()
+            .flags()
+            .contains(ExtendedCapabilityFlags::IR));
+        // Set interrupt remapping table address
+        self.interrupt_remapping_table_addr.write(table.encode());
+        self.write_global_command(GlobalCommand::SIRTP, true);
+        while !self.global_status().contains(GlobalStatus::IRTPS) {}
+
+        // Enable Interrupt Remapping
+        self.write_global_command(GlobalCommand::IRE, true);
+        while !self.global_status().contains(GlobalStatus::IRES) {}
+
+        // Invalidate interrupt cache
+        if self.global_status().contains(GlobalStatus::QIES) {
+            let mut queue = QUEUE.get().unwrap().lock();
+
+            // Construct global invalidation of interrupt cache and invalidation wait.
+            queue.append_descriptor(InterruptEntryCache::global_invalidation().0);
+            let tail = queue.tail();
+            self.invalidate.queue_tail.write((tail << 4) as u64);
+            while (self.invalidate.queue_head.read() >> 4) + 1 == tail as u64 {}
+
+            // We need to set the interrupt flag so that the `Invalidation Completion Status Register` can report the completion status.
+            queue.append_descriptor(InvalidationWait::with_interrupt_flag().0);
+            self.invalidate.queue_tail.write((queue.tail() << 4) as u64);
+
+            // Wait for completion
+            while self.invalidate.completion_status.read() == 0 {}
+        } else {
+            self.global_invalidation()
+        }
+
+        // Disable Compatibility format interrupts
+        if self.global_status().contains(GlobalStatus::CFIS) {
+            self.write_global_command(GlobalCommand::CFI, false);
+            while self.global_status().contains(GlobalStatus::CFIS) {}
+        }
     }
 
     pub(super) fn enable_queued_invalidation(&mut self, queue: &Queue) {
@@ -212,6 +265,9 @@ impl IommuRegisters {
             let global_status = Volatile::new_read_only(&*((vaddr + 0x1C) as *const u32));
             let root_table_address = Volatile::new(&mut *((vaddr + 0x20) as *mut u64));
             let context_command = Volatile::new(&mut *((vaddr + 0x28) as *mut u64));
+
+            let interrupt_remapping_table_addr = Volatile::new(&mut *((vaddr + 0xb8) as *mut u64));
+
             Self {
                 version,
                 capability,
@@ -221,6 +277,7 @@ impl IommuRegisters {
                 root_table_address,
                 context_command,
                 invalidate: InvalidationRegisters::new(vaddr),
+                interrupt_remapping_table_addr,
             }
         };
 
