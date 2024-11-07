@@ -76,7 +76,7 @@ run_benchmark() {
         -drive if=none,format=raw,id=x0,file=${BENCHMARK_DIR}/../build/ext2.img \
         -device virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,serial=vext2,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off \
         -append 'console=ttyS0 rdinit=/benchmark/common/bench_runner.sh ${benchmark} linux mitigations=off hugepages=0 transparent_hugepage=never quiet' \
-        -netdev user,id=net01,hostfwd=tcp::5201-:5201,hostfwd=tcp::6379-:6379,hostfwd=tcp::8080-:8080,hostfwd=tcp::31234-:31234 \
+        -netdev user,id=net01,hostfwd=tcp::5201-:5201,hostfwd=tcp::6379-:6379,hostfwd=tcp::8080-:8080,hostfwd=tcp::31234-:31234,hostfwd=tcp::31236-:31236 \
         -device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off,mrg_rxbuf=off,ctrl_rx=off,ctrl_rx_extra=off,ctrl_vlan=off,ctrl_vq=off,ctrl_guest_offloads=off,ctrl_mac_addr=off,event_idx=off,queue_reset=off,guest_announce=off,indirect_desc=off \
         -nographic \
         2>&1"
