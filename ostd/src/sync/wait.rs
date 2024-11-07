@@ -3,7 +3,7 @@
 use alloc::{collections::VecDeque, sync::Arc};
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-use super::SpinLock;
+use super::{LocalIrqDisabled, SpinLock};
 use crate::task::{scheduler, Task};
 
 // # Explanation on the memory orders
@@ -43,7 +43,7 @@ use crate::task::{scheduler, Task};
 pub struct WaitQueue {
     // A copy of `wakers.len()`, used for the lock-free fast path in `wake_one` and `wake_all`.
     num_wakers: AtomicU32,
-    wakers: SpinLock<VecDeque<Arc<Waker>>>,
+    wakers: SpinLock<VecDeque<Arc<Waker>>, LocalIrqDisabled>,
 }
 
 impl WaitQueue {
@@ -92,7 +92,7 @@ impl WaitQueue {
         }
 
         loop {
-            let mut wakers = self.wakers.disable_irq().lock();
+            let mut wakers = self.wakers.lock();
             let Some(waker) = wakers.pop_front() else {
                 return false;
             };
@@ -116,7 +116,7 @@ impl WaitQueue {
         let mut num_woken = 0;
 
         loop {
-            let mut wakers = self.wakers.disable_irq().lock();
+            let mut wakers = self.wakers.lock();
             let Some(waker) = wakers.pop_front() else {
                 break;
             };
@@ -142,7 +142,7 @@ impl WaitQueue {
     /// Enqueues the input [`Waker`] to the wait queue.
     #[doc(hidden)]
     pub fn enqueue(&self, waker: Arc<Waker>) {
-        let mut wakers = self.wakers.disable_irq().lock();
+        let mut wakers = self.wakers.lock();
         wakers.push_back(waker);
         self.num_wakers.fetch_add(1, Ordering::Acquire);
     }
