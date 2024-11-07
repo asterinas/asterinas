@@ -61,8 +61,9 @@ impl NetworkDevice {
         debug!("mac addr = {:x?}, status = {:?}", mac_addr, config.status);
         let caps = init_caps(&features, &config);
 
-        let send_queue = VirtQueue::new(QUEUE_SEND, QUEUE_SIZE, transport.as_mut())
+        let mut send_queue = VirtQueue::new(QUEUE_SEND, QUEUE_SIZE, transport.as_mut())
             .expect("create send queue fails");
+        send_queue.disable_callback();
 
         let mut recv_queue = VirtQueue::new(QUEUE_RECV, QUEUE_SIZE, transport.as_mut())
             .expect("creating recv queue fails");
@@ -115,11 +116,11 @@ impl NetworkDevice {
             .unwrap();
         device
             .transport
-            .register_queue_callback(QUEUE_SEND, Box::new(handle_send_event), false)
+            .register_queue_callback(QUEUE_SEND, Box::new(handle_send_event), true)
             .unwrap();
         device
             .transport
-            .register_queue_callback(QUEUE_RECV, Box::new(handle_recv_event), false)
+            .register_queue_callback(QUEUE_RECV, Box::new(handle_recv_event), true)
             .unwrap();
 
         device.transport.finish_init();
@@ -184,6 +185,19 @@ impl NetworkDevice {
 
         debug_assert!(self.tx_buffers[token as usize].is_none());
         self.tx_buffers[token as usize] = Some(tx_buffer);
+
+        self.free_processed_tx_buffers();
+
+        // If the send queue is not full, we can free the send buffers during the next sending process.
+        // Therefore, there is no need to free the used buffers in the IRQ handlers.
+        // This allows us to temporarily disable the send queue interrupt.
+        // Conversely, if the send queue is full, the send queue interrupt should remain enabled
+        // to free the send buffers as quickly as possible.
+        if !self.can_send() {
+            self.send_queue.enable_callback();
+        } else {
+            self.send_queue.disable_callback();
+        }
 
         Ok(())
     }

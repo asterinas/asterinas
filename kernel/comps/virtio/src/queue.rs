@@ -58,6 +58,8 @@ pub struct VirtQueue {
     avail_idx: u16,
     /// last service used index
     last_used_idx: u16,
+    /// Whether the callback of this queue is enabled
+    is_callback_enabled: bool,
 }
 
 impl VirtQueue {
@@ -141,7 +143,7 @@ impl VirtQueue {
 
         let notify = transport.get_notify_ptr(idx).unwrap();
         field_ptr!(&avail_ring_ptr, AvailRing, flags)
-            .write_once(&(0u16))
+            .write_once(&AvailFlags::empty())
             .unwrap();
         Ok(VirtQueue {
             descs,
@@ -154,6 +156,7 @@ impl VirtQueue {
             free_head: 0,
             avail_idx: 0,
             last_used_idx: 0,
+            is_callback_enabled: true,
         })
     }
 
@@ -342,6 +345,40 @@ impl VirtQueue {
     pub fn notify(&mut self) {
         self.notify.write_once(&self.queue_idx).unwrap();
     }
+
+    /// Disables registered callbacks.
+    ///
+    /// That is to say, the queue won't generate interrupts after calling this method.
+    pub fn disable_callback(&mut self) {
+        if !self.is_callback_enabled {
+            return;
+        }
+
+        let flags_ptr = field_ptr!(&self.avail, AvailRing, flags);
+        let mut flags: AvailFlags = flags_ptr.read_once().unwrap();
+        debug_assert!(!flags.contains(AvailFlags::VIRTQ_AVAIL_F_NO_INTERRUPT));
+        flags.insert(AvailFlags::VIRTQ_AVAIL_F_NO_INTERRUPT);
+        flags_ptr.write_once(&flags).unwrap();
+
+        self.is_callback_enabled = false;
+    }
+
+    /// Enables registered callbacks.
+    ///
+    /// The queue will generate interrupts if any event comes after calling this method.
+    pub fn enable_callback(&mut self) {
+        if self.is_callback_enabled {
+            return;
+        }
+
+        let flags_ptr = field_ptr!(&self.avail, AvailRing, flags);
+        let mut flags: AvailFlags = flags_ptr.read_once().unwrap();
+        debug_assert!(flags.contains(AvailFlags::VIRTQ_AVAIL_F_NO_INTERRUPT));
+        flags.remove(AvailFlags::VIRTQ_AVAIL_F_NO_INTERRUPT);
+        flags_ptr.write_once(&flags).unwrap();
+
+        self.is_callback_enabled = true;
+    }
 }
 
 #[repr(C, align(16))]
@@ -385,7 +422,7 @@ bitflags! {
 #[repr(C, align(2))]
 #[derive(Debug, Copy, Clone, Pod)]
 pub struct AvailRing {
-    flags: u16,
+    flags: AvailFlags,
     /// A driver MUST NOT decrement the idx.
     idx: u16,
     ring: [u16; 64], // actual size: queue_size
@@ -410,4 +447,14 @@ pub struct UsedRing {
 pub struct UsedElem {
     id: u32,
     len: u32,
+}
+
+bitflags! {
+    /// The flags useds in [`AvailRing`]
+    #[repr(C)]
+    #[derive(Pod)]
+    pub struct AvailFlags: u16 {
+        /// The flag used to disable virt queue interrupt
+        const VIRTQ_AVAIL_F_NO_INTERRUPT = 1;
+    }
 }
