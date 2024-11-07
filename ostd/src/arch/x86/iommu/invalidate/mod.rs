@@ -13,7 +13,7 @@ pub mod queue;
 pub(super) fn init() {
     let mut iommu_regs = IOMMU_REGS.get().unwrap().lock();
     if !iommu_regs
-        .extended_capability()
+        .read_extended_capability()
         .flags()
         .contains(ExtendedCapabilityFlags::QI)
     {
