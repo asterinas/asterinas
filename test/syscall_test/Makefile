@@ -51,6 +51,7 @@ TESTS ?= \
 	truncate_test \
 	uidgid_test \
 	unlink_test \
+	uname_test \
 	utimes_test \
 	vdso_clock_gettime_test \
 	write_test \

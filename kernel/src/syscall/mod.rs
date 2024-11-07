@@ -110,6 +110,7 @@ mod setfsgid;
 mod setfsuid;
 mod setgid;
 mod setgroups;
+mod sethostname;
 mod setitimer;
 mod setpgid;
 mod setregid;
