@@ -77,7 +77,7 @@ pub(super) fn init() {
     let mut iommu_regs = IOMMU_REGS.get().unwrap().lock();
 
     // Check if interrupt remapping is supported
-    let extend_cap = iommu_regs.extended_capability();
+    let extend_cap = iommu_regs.read_extended_capability();
     if !extend_cap.flags().contains(ExtendedCapabilityFlags::IR) {
         warn!("[IOMMU] Interrupt remapping not supported");
         return;

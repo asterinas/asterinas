@@ -83,7 +83,7 @@ pub struct IommuRegisters {
 impl IommuRegisters {
     /// Version of IOMMU
     #[allow(dead_code)]
-    pub fn version(&self) -> IommuVersion {
+    pub fn read_version(&self) -> IommuVersion {
         let version = self.version.read();
         IommuVersion {
             major: version.get_bits(4..8) as u8,
@@ -92,17 +92,17 @@ impl IommuRegisters {
     }
 
     /// Capability of IOMMU
-    pub fn capability(&self) -> Capability {
+    pub fn read_capability(&self) -> Capability {
         Capability::new(self.capability.read())
     }
 
     /// Extended Capability of IOMMU
-    pub fn extended_capability(&self) -> ExtendedCapability {
+    pub fn read_extended_capability(&self) -> ExtendedCapability {
         ExtendedCapability::new(self.extended_capability.read())
     }
 
     /// Global Status of IOMMU
-    pub fn global_status(&self) -> GlobalStatus {
+    pub fn read_global_status(&self) -> GlobalStatus {
         GlobalStatus::from_bits_truncate(self.global_status.read())
     }
 
@@ -115,30 +115,30 @@ impl IommuRegisters {
         self.root_table_address
             .write(root_table.lock().root_paddr() as u64);
         self.write_global_command(GlobalCommand::SRTP, true);
-        while !self.global_status().contains(GlobalStatus::RTPS) {}
+        while !self.read_global_status().contains(GlobalStatus::RTPS) {}
 
         // Enable DMA remapping
         self.write_global_command(GlobalCommand::TE, true);
-        while !self.global_status().contains(GlobalStatus::TES) {}
+        while !self.read_global_status().contains(GlobalStatus::TES) {}
     }
 
     /// Enable Interrupt Remapping with IntRemappingTable
     pub(super) fn enable_interrupt_remapping(&mut self, table: &'static IntRemappingTable) {
         assert!(self
-            .extended_capability()
+            .read_extended_capability()
             .flags()
             .contains(ExtendedCapabilityFlags::IR));
         // Set interrupt remapping table address
         self.interrupt_remapping_table_addr.write(table.encode());
         self.write_global_command(GlobalCommand::SIRTP, true);
-        while !self.global_status().contains(GlobalStatus::IRTPS) {}
+        while !self.read_global_status().contains(GlobalStatus::IRTPS) {}
 
         // Enable Interrupt Remapping
         self.write_global_command(GlobalCommand::IRE, true);
-        while !self.global_status().contains(GlobalStatus::IRES) {}
+        while !self.read_global_status().contains(GlobalStatus::IRES) {}
 
         // Invalidate interrupt cache
-        if self.global_status().contains(GlobalStatus::QIES) {
+        if self.read_global_status().contains(GlobalStatus::QIES) {
             let mut queue = QUEUE.get().unwrap().lock();
 
             // Construct global invalidation of interrupt cache and invalidation wait.
@@ -158,15 +158,15 @@ impl IommuRegisters {
         }
 
         // Disable Compatibility format interrupts
-        if self.global_status().contains(GlobalStatus::CFIS) {
+        if self.read_global_status().contains(GlobalStatus::CFIS) {
             self.write_global_command(GlobalCommand::CFI, false);
-            while self.global_status().contains(GlobalStatus::CFIS) {}
+            while self.read_global_status().contains(GlobalStatus::CFIS) {}
         }
     }
 
     pub(super) fn enable_queued_invalidation(&mut self, queue: &Queue) {
         assert!(self
-            .extended_capability()
+            .read_extended_capability()
             .flags()
             .contains(ExtendedCapabilityFlags::QI));
         self.invalidate.queue_tail.write(0);
@@ -204,7 +204,7 @@ impl IommuRegisters {
 
         // Enable Queued invalidation
         self.write_global_command(GlobalCommand::QIE, true);
-        while !self.global_status().contains(GlobalStatus::QIES) {}
+        while !self.read_global_status().contains(GlobalStatus::QIES) {}
     }
 
     fn global_invalidation(&mut self) {
@@ -282,10 +282,10 @@ impl IommuRegisters {
         };
 
         debug!("IOMMU registers:{:#x?}", iommu_regs);
-        debug!("IOMMU capability:{:#x?}", iommu_regs.capability());
+        debug!("IOMMU capability:{:#x?}", iommu_regs.read_capability());
         debug!(
             "IOMMU extend capability:{:#x?}",
-            iommu_regs.extended_capability()
+            iommu_regs.read_extended_capability()
         );
 
         Some(iommu_regs)
