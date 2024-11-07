@@ -98,7 +98,7 @@ impl RootTable {
         Ok(())
     }
 
-    /// Specify the device page table instead of creating a page table if not exists.
+    /// Specifies the device page table instead of creating a page table if not exists.
     ///
     /// This will be useful if we want all the devices to use the same page table.
     /// The original page table will be overwritten.
@@ -195,7 +195,7 @@ impl ContextEntry {
         }
     }
 
-    /// Get the second stage page translation pointer.
+    /// Gets the second stage page translation pointer.
     ///
     /// This function will not right shift the value after the `and` operation.
     pub const fn second_stage_pointer(&self) -> u64 {
