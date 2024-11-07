@@ -29,6 +29,9 @@ elif [[ "$BENCHMARK_PATH" =~ "redis" ]]; then
 elif [[ "$BENCHMARK_PATH" =~ "tcp_virtio_lat" ]]; then
     # Persist lmbench/tcp_lat port
     export LMBENCH_TCP_LAT_PORT=31234
+elif [[ "$BENCHMARK_PATH" =~ "tcp_virtio_bw" ]]; then
+    # Persist lmbench/bw_tcp port
+    export LMBENCH_TCP_BW_PORT=31236
 fi
 
 # Function to run the benchmark
