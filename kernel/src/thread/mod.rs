@@ -25,6 +25,7 @@ pub mod work_queue;
 pub type Tid = u32;
 
 /// A thread is a wrapper on top of task.
+#[derive(Debug)]
 pub struct Thread {
     // immutable part
     /// Low-level info

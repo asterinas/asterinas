@@ -14,12 +14,14 @@ use crate::{cpu::CpuId, task::Task};
 /// define them, such as
 /// [existential types](https://github.com/rust-lang/rfcs/pull/2492) do not
 /// exist yet. So we decide to define them in OSTD.
+#[derive(Debug)]
 pub struct TaskScheduleInfo {
     /// The CPU that the task would like to be running on.
     pub cpu: AtomicCpuId,
 }
 
 /// An atomic CPUID container.
+#[derive(Debug)]
 pub struct AtomicCpuId(AtomicU32);
 
 impl AtomicCpuId {

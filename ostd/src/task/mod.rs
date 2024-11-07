@@ -26,6 +26,7 @@ use crate::{prelude::*, user::UserSpace};
 /// Each task is associated with per-task data and an optional user space.
 /// If having a user space, the task can switch to the user space to
 /// execute user code. Multiple tasks can share a single user space.
+#[derive(Debug)]
 pub struct Task {
     func: SyncUnsafeCell<Option<Box<dyn FnOnce() + Send + Sync>>>,
     data: Box<dyn Any + Send + Sync>,

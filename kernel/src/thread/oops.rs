@@ -22,7 +22,7 @@ use core::{
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
-use ostd::panic;
+use ostd::{cpu::PinCurrentCpu, panic, task::disable_preempt};
 
 use super::Thread;
 
@@ -97,16 +97,27 @@ fn panic_handler(info: &core::panic::PanicInfo) -> ! {
         }
     }
 
+    let preempt_guard = disable_preempt();
+    let thread = Thread::current();
+    let cpu = preempt_guard.current_cpu();
+
     // Halt the system if the panic is not caught.
     if let Some(location) = info.location() {
         log::error!(
-            "Uncaught panic: {}\nat {}:{}",
+            "Uncaught panic:\n\t{}\n\tat {}:{}\n\ton CPU {} by thread {:?}",
             message,
             location.file(),
             location.line(),
+            cpu.as_usize(),
+            thread,
         );
     } else {
-        log::error!("Uncaught panic: {}", message);
+        log::error!(
+            "Uncaught panic:\n\t{}\n\ton CPU {} by thread {:?}",
+            message,
+            cpu.as_usize(),
+            thread,
+        );
     }
 
     if info.can_unwind() {
