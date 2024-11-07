@@ -22,6 +22,19 @@ pub struct Channel<T> {
     consumer: Consumer<T>,
 }
 
+/// Maximum number of bytes guaranteed to be written to a pipe atomically.
+///
+/// If the number of bytes to be written is less than the threshold, the write must be atomic.
+/// A non-blocking atomic write may fail with `EAGAIN`, even if there is room for a partial write.
+/// In other words, a partial write is not allowed for an atomic write.
+///
+/// For more details, see the description of `PIPE_BUF` in
+/// <https://man7.org/linux/man-pages/man7/pipe.7.html>.
+#[cfg(not(ktest))]
+const PIPE_BUF: usize = 4096;
+#[cfg(ktest)]
+const PIPE_BUF: usize = 2;
+
 impl<T> Channel<T> {
     /// Creates a new channel with the given capacity.
     ///
@@ -114,7 +127,7 @@ impl<T> Producer<T> {
     }
 
     fn update_pollee(&self) {
-        // In theory, `rb.is_full()`/`rb.is_empty()`, where the `rb` is taken from either
+        // In theory, `rb.free_len()`/`rb.is_empty()`, where the `rb` is taken from either
         // `this_end` or `peer_end`, should reflect the same state. However, we need to take the
         // correct lock when updating the events to avoid races between the state check and the
         // event update.
@@ -123,7 +136,7 @@ impl<T> Producer<T> {
         let rb = this_end.rb();
         if self.is_shutdown() {
             // The POLLOUT event is always set in this case. Don't try to remove it.
-        } else if rb.is_full() {
+        } else if rb.free_len() < PIPE_BUF {
             this_end.pollee.del_events(IoEvents::OUT);
         }
         drop(rb);
@@ -204,7 +217,7 @@ impl<T> Consumer<T> {
     }
 
     fn update_pollee(&self) {
-        // In theory, `rb.is_full()`/`rb.is_empty()`, where the `rb` is taken from either
+        // In theory, `rb.free_len()`/`rb.is_empty()`, where the `rb` is taken from either
         // `this_end` or `peer_end`, should reflect the same state. However, we need to take the
         // correct lock when updating the events to avoid races between the state check and the
         // event update.
@@ -218,7 +231,7 @@ impl<T> Consumer<T> {
 
         let peer_end = self.peer_end();
         let rb = peer_end.rb();
-        if !rb.is_full() {
+        if rb.free_len() >= PIPE_BUF {
             peer_end.pollee.add_events(IoEvents::OUT);
         }
         drop(rb);
@@ -307,6 +320,10 @@ impl<R: TRights> Fifo<u8, R> {
     #[require(R > Write)]
     pub fn write(&self, reader: &mut dyn MultiRead) -> Result<usize> {
         let mut rb = self.common.producer.rb();
+        if rb.free_len() < reader.sum_lens() && reader.sum_lens() <= PIPE_BUF {
+            // No sufficient space for an atomic write
+            return Ok(0);
+        }
         rb.write_fallible(reader)
     }
 }

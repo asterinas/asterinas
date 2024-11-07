@@ -217,7 +217,7 @@ mod test {
         W: Fn(Arc<PipeWriter>) + Sync + Send + 'static,
         R: Fn(Arc<PipeReader>) + Sync + Send + 'static,
     {
-        let channel = Channel::with_capacity(1);
+        let channel = Channel::with_capacity(2);
         let (writer, readr) = channel.split();
 
         let writer = PipeWriter::new(writer, StatusFlags::empty()).unwrap();
@@ -283,13 +283,13 @@ mod test {
     fn test_write_full() {
         test_blocking(
             |writer| {
-                assert_eq!(writer.write(&mut reader_from(&[1, 2])).unwrap(), 1);
+                assert_eq!(writer.write(&mut reader_from(&[1, 2, 3])).unwrap(), 2);
                 assert_eq!(writer.write(&mut reader_from(&[2])).unwrap(), 1);
             },
             |reader| {
-                let mut buf = [0; 2];
-                assert_eq!(reader.read(&mut writer_from(&mut buf)).unwrap(), 1);
-                assert_eq!(&buf[..1], &[1]);
+                let mut buf = [0; 3];
+                assert_eq!(reader.read(&mut writer_from(&mut buf)).unwrap(), 2);
+                assert_eq!(&buf[..2], &[1, 2]);
                 assert_eq!(reader.read(&mut writer_from(&mut buf)).unwrap(), 1);
                 assert_eq!(&buf[..1], &[2]);
             },
@@ -313,13 +313,31 @@ mod test {
     fn test_write_closed() {
         test_blocking(
             |writer| {
-                assert_eq!(writer.write(&mut reader_from(&[1, 2])).unwrap(), 1);
+                assert_eq!(writer.write(&mut reader_from(&[1, 2, 3])).unwrap(), 2);
                 assert_eq!(
                     writer.write(&mut reader_from(&[2])).unwrap_err().error(),
                     Errno::EPIPE
                 );
             },
             drop,
+            Ordering::WriteThenRead,
+        );
+    }
+
+    #[ktest]
+    fn test_write_atomicity() {
+        test_blocking(
+            |writer| {
+                assert_eq!(writer.write(&mut reader_from(&[1])).unwrap(), 1);
+                assert_eq!(writer.write(&mut reader_from(&[1, 2])).unwrap(), 2);
+            },
+            |reader| {
+                let mut buf = [0; 3];
+                assert_eq!(reader.read(&mut writer_from(&mut buf)).unwrap(), 1);
+                assert_eq!(&buf[..1], &[1]);
+                assert_eq!(reader.read(&mut writer_from(&mut buf)).unwrap(), 2);
+                assert_eq!(&buf[..2], &[1, 2]);
+            },
             Ordering::WriteThenRead,
         );
     }
