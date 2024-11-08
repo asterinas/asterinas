@@ -111,7 +111,7 @@ impl ProcessVm {
     /// Returns a reader for reading contents from
     /// the `InitStack`.
     pub fn init_stack_reader(&self) -> InitStackReader {
-        self.init_stack.reader()
+        self.init_stack.reader(self.root_vmar().vm_space())
     }
 
     /// Returns the top address of the user stack.
