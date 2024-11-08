@@ -54,6 +54,10 @@ jobs:
           - lmbench/ext2_create_delete_files_0k_ops
           - lmbench/ext2_create_delete_files_10k_ops
           - lmbench/ext2_copy_files_bw
+          - fio/ext2_seq_write_bw
+          - fio/ext2_seq_read_bw
+          - fio/ext2_iommu_seq_write_bw
+          - fio/ext2_iommu_seq_read_bw
           # Network-related benchmark
           - lmbench/tcp_loopback_bw_4k
           - lmbench/tcp_loopback_bw_64k
