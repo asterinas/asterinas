@@ -4,5 +4,5 @@
     "search_pattern": "^0k",
     "result_index": "2",
     "description": "lat_fs -s 0k",
-    "title": "[Ramfs] The cost of creating/deleting small files (0KB)"
+    "title": "[Ramfs] The throughput of creating/deleting small files (0KB)"
 }
