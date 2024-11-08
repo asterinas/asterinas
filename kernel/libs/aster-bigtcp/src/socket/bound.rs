@@ -107,10 +107,12 @@ impl TcpSocket {
     /// Sets the TCP socket in [`TimeWait`] state as dead.
     ///
     /// See [`BoundTcpSocketInner::is_dead`] for the definition of dead TCP sockets.
-    /// 
+    ///
     /// [`TimeWait`]: smoltcp::socket::tcp::State::TimeWait
     fn set_dead_timewait(&self, socket: &RawTcpSocketExt) {
-        debug_assert!(socket.in_background && socket.state() == smoltcp::socket::tcp::State::TimeWait);
+        debug_assert!(
+            socket.in_background && socket.state() == smoltcp::socket::tcp::State::TimeWait
+        );
         self.is_dead.store(true, Ordering::Relaxed);
     }
 }
@@ -470,7 +472,7 @@ impl<E> BoundTcpSocketInner<E> {
         // If a TimeWait socket receives a new SYN packet, Linux will select a suitable
         // listening socket from the socket table to respond to that SYN request.
         // (https://elixir.bootlin.com/linux/v6.0.9/source/net/ipv4/tcp_ipv4.c#L2137)
-        // Moreover, the Initial Sequence Number (ISN) will be set to prevent the TimeWait socket 
+        // Moreover, the Initial Sequence Number (ISN) will be set to prevent the TimeWait socket
         // from erroneously handling packets from the new connection.
         // (https://elixir.bootlin.com/linux/v6.0.9/source/net/ipv4/tcp_minisocks.c#L194)
         // Implementing such behavior is challenging with the current smoltcp APIs.
