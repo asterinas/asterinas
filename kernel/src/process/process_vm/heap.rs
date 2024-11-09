@@ -34,20 +34,32 @@ impl Heap {
         }
     }
 
-    /// Inits and maps the heap Vmo
-    pub(super) fn alloc_and_map_vmo(&self, root_vmar: &Vmar<Full>) -> Result<()> {
+    /// Initializes and maps the heap virtual memory.
+    pub(super) fn alloc_and_map_vm(&self, root_vmar: &Vmar<Full>) -> Result<()> {
         let vmar_map_options = {
             let perms = VmPerms::READ | VmPerms::WRITE;
             root_vmar
-                // FIXME: Our current implementation of mapping resize cannot move
-                // existing mappings within the new range, which may cause the resize
-                // operation to fail. Therefore, if there are already mappings within
-                // the heap expansion range, the brk operation will fail.
                 .new_map(PAGE_SIZE, perms)
                 .unwrap()
                 .offset(self.base)
         };
         vmar_map_options.build()?;
+
+        // If we touch another mapped range when we are trying to expand the
+        // heap, we fail.
+        //
+        // So a simple solution is to reserve enough space for the heap by
+        // mapping without any permissions and allow it to be overwritten
+        // later by `brk`. New mappings from `mmap` that overlaps this range
+        // may be moved to another place.
+        let vmar_reserve_options = {
+            let perms = VmPerms::empty();
+            root_vmar
+                .new_map(USER_HEAP_SIZE_LIMIT - PAGE_SIZE, perms)
+                .unwrap()
+                .offset(self.base + PAGE_SIZE)
+        };
+        vmar_reserve_options.build()?;
 
         self.set_uninitialized();
         Ok(())
@@ -63,14 +75,24 @@ impl Heap {
                     return_errno_with_message!(Errno::ENOMEM, "heap size limit was met.");
                 }
                 let current_heap_end = self.current_heap_end.load(Ordering::Acquire);
+
                 if new_heap_end <= current_heap_end {
                     // FIXME: should we allow shrink current user heap?
                     return Ok(current_heap_end);
                 }
-                let old_size = (current_heap_end - self.base).align_up(PAGE_SIZE);
-                let new_size = (new_heap_end - self.base).align_up(PAGE_SIZE);
 
+                let current_heap_end = current_heap_end.align_up(PAGE_SIZE);
+                let new_heap_end = new_heap_end.align_up(PAGE_SIZE);
+
+                // Remove the reserved space.
+                root_vmar.remove_mapping(current_heap_end..new_heap_end)?;
+
+                let old_size = current_heap_end - self.base;
+                let new_size = new_heap_end - self.base;
+
+                // Expand the heap.
                 root_vmar.resize_mapping(self.base, old_size, new_size)?;
+
                 self.current_heap_end.store(new_heap_end, Ordering::Release);
                 Ok(new_heap_end)
             }
