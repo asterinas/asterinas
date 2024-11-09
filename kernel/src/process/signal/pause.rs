@@ -89,7 +89,8 @@ pub trait Pause: WaitTimeout {
     /// This method will return an error with [`ETIME`] if the timeout is reached.
     ///
     /// Unlike other methods in the trait, this method will _not_ return an error with [`EINTR`] if
-    /// a signal is received (FIXME).
+    /// a signal is received (FIXME: See <https://github.com/asterinas/asterinas/pull/1577> for why
+    /// we cannot fix this directly).
     ///
     /// [`ETIME`]: crate::error::Errno::ETIME
     /// [`EINTR`]: crate::error::Errno::EINTR
