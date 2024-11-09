@@ -349,9 +349,6 @@ impl<M: AllocatorSelector + 'static> Drop for KVirtArea<M> {
                 PageTableItem::NotMapped { .. } => {
                     break;
                 }
-                PageTableItem::PageTableNode { .. } => {
-                    panic!("Found page table node in `KVirtArea`");
-                }
             }
         }
 

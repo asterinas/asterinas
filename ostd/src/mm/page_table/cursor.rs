@@ -94,9 +94,6 @@ pub enum PageTableItem {
         page: DynPage,
         prop: PageProperty,
     },
-    PageTableNode {
-        page: DynPage,
-    },
     #[allow(dead_code)]
     MappedUntracked {
         va: Vaddr,
