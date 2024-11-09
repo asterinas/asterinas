@@ -49,8 +49,9 @@ use crate::{
 pub struct VmSpace {
     pt: PageTable<UserMode>,
     page_fault_handler: Option<fn(&VmSpace, &CpuExceptionInfo) -> core::result::Result<(), ()>>,
-    /// A CPU can only activate a `VmSpace` when no mutable cursors are alive.
-    /// Cursors hold read locks and activation require a write lock.
+    /// A CPU can only activate a `VmSpace` when no unmapping cursors are
+    /// alive. Unmapping cursors hold read locks and activation require a
+    /// write lock.
     activation_lock: RwLock<()>,
     cpus: AtomicCpuSet,
 }
@@ -117,13 +118,29 @@ impl VmSpace {
     /// The creation of the cursor may block if another cursor having an
     /// overlapping range is alive. The modification to the mapping by the
     /// cursor may also block or be overridden the mapping of another cursor.
-    pub fn cursor_mut(&self, va: &Range<Vaddr>) -> Result<CursorMut<'_, '_>> {
+    ///
+    /// The arugument `CAN_UNMAP` determines whether the cursor can unmap
+    /// memory, including whether [`CursorMut::unmap`] operation is allowed to
+    /// remove existing mappings.
+    ///
+    /// If `CAN_UNMAP` is `true`, the cursor is blocks other activation of the
+    /// page table, and it can unmap memory.
+    pub fn cursor_mut<const CAN_UNMAP: bool>(
+        &self,
+        va: &Range<Vaddr>,
+    ) -> Result<CursorMut<'_, '_, CAN_UNMAP>> {
         Ok(self.pt.cursor_mut(va).map(|pt_cursor| {
-            let activation_lock = self.activation_lock.read();
+            let activation_lock_guard = if CAN_UNMAP {
+                Some(self.activation_lock.read())
+            } else {
+                None
+            };
 
             CursorMut {
                 pt_cursor,
-                activation_lock,
+                activation_lock_guard,
+                activation_lock: &self.activation_lock,
+                cpus: &self.cpus,
                 flusher: TlbFlusher::new(self.cpus.load(), disable_preempt()),
             }
         })?)
@@ -280,16 +297,16 @@ impl Cursor<'_> {
 ///
 /// It exclusively owns a sub-tree of the page table, preventing others from
 /// reading or modifying the same sub-tree.
-pub struct CursorMut<'a, 'b> {
+pub struct CursorMut<'a, 'b, const CAN_UNMAP: bool = true> {
     pt_cursor: page_table::CursorMut<'a, UserMode, PageTableEntry, PagingConsts>,
+    activation_lock: &'b RwLock<()>,
     #[allow(dead_code)]
-    activation_lock: RwLockReadGuard<'b, ()>,
-    // We have a read lock so the CPU set in the flusher is always a superset
-    // of actual activated CPUs.
+    activation_lock_guard: Option<RwLockReadGuard<'b, ()>>,
+    cpus: &'b AtomicCpuSet,
     flusher: TlbFlusher<DisabledPreemptGuard>,
 }
 
-impl CursorMut<'_, '_> {
+impl<const CAN_UNMAP: bool> CursorMut<'_, '_, CAN_UNMAP> {
     /// Query about the current slot.
     ///
     /// This is the same as [`Cursor::query`].
@@ -323,66 +340,26 @@ impl CursorMut<'_, '_> {
     /// Map a frame into the current slot.
     ///
     /// This method will bring the cursor to the next slot after the modification.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if the specified virtual address already has a
+    /// mapping. Please use [`Self::query`] to check the current slot before
+    /// mapping. And use [`CursorMut::upgrade`] to upgrade the cursor.
     pub fn map(&mut self, frame: Frame, prop: PageProperty) {
         let start_va = self.virt_addr();
         // SAFETY: It is safe to map untyped memory into the userspace.
         let old = unsafe { self.pt_cursor.map(frame.into(), prop) };
 
         if let Some(old) = old {
+            assert!(
+                CAN_UNMAP,
+                "Non-unmapping cursor is trying to unmap memory by mapping"
+            );
             self.flusher
                 .issue_tlb_flush_with(TlbFlushOp::Address(start_va), old);
             self.flusher.dispatch_tlb_flush();
         }
-    }
-
-    /// Clear the mapping starting from the current slot.
-    ///
-    /// This method will bring the cursor forward by `len` bytes in the virtual
-    /// address space after the modification.
-    ///
-    /// Already-absent mappings encountered by the cursor will be skipped. It
-    /// is valid to unmap a range that is not mapped.
-    ///
-    /// It must issue and dispatch a TLB flush after the operation. Otherwise,
-    /// the memory safety will be compromised. Please call this function less
-    /// to avoid the overhead of TLB flush. Using a large `len` is wiser than
-    /// splitting the operation into multiple small ones.
-    ///
-    /// # Panics
-    ///
-    /// This method will panic if `len` is not page-aligned.
-    pub fn unmap(&mut self, len: usize) {
-        assert!(len % super::PAGE_SIZE == 0);
-        let end_va = self.virt_addr() + len;
-        let tlb_prefer_flush_all = len > FLUSH_ALL_RANGE_THRESHOLD;
-
-        loop {
-            // SAFETY: It is safe to un-map memory in the userspace.
-            let result = unsafe { self.pt_cursor.take_next(end_va - self.virt_addr()) };
-            match result {
-                PageTableItem::Mapped { va, page, .. } => {
-                    if !self.flusher.need_remote_flush() && tlb_prefer_flush_all {
-                        // Only on single-CPU cases we can drop the page immediately before flushing.
-                        drop(page);
-                        continue;
-                    }
-                    self.flusher
-                        .issue_tlb_flush_with(TlbFlushOp::Address(va), page);
-                }
-                PageTableItem::NotMapped { .. } => {
-                    break;
-                }
-                PageTableItem::MappedUntracked { .. } => {
-                    panic!("found untracked memory mapped into `VmSpace`");
-                }
-            }
-        }
-
-        if !self.flusher.need_remote_flush() && tlb_prefer_flush_all {
-            self.flusher.issue_tlb_flush(TlbFlushOp::All);
-        }
-
-        self.flusher.dispatch_tlb_flush();
     }
 
     /// Applies the operation to the next slot of mapping within the range.
@@ -447,6 +424,73 @@ impl CursorMut<'_, '_> {
         // SAFETY: Operations on user memory spaces are safe if it doesn't
         // involve dropping any pages.
         unsafe { self.pt_cursor.copy_from(&mut src.pt_cursor, len, op) }
+    }
+}
+
+impl<'a, 'b> CursorMut<'a, 'b, false> {
+    /// Upgrade the cursor to a mutable cursor that can unmap memory.
+    pub fn upgrade(mut self) -> CursorMut<'a, 'b, true> {
+        let guard = self.activation_lock.read();
+        self.flusher.update(self.cpus.load());
+        CursorMut {
+            pt_cursor: self.pt_cursor,
+            activation_lock_guard: Some(guard),
+            activation_lock: self.activation_lock,
+            cpus: self.cpus,
+            flusher: self.flusher,
+        }
+    }
+}
+
+impl CursorMut<'_, '_, true> {
+    /// Clear the mapping starting from the current slot.
+    ///
+    /// This method will bring the cursor forward by `len` bytes in the virtual
+    /// address space after the modification.
+    ///
+    /// Already-absent mappings encountered by the cursor will be skipped. It
+    /// is valid to unmap a range that is not mapped.
+    ///
+    /// It must issue and dispatch a TLB flush after the operation. Otherwise,
+    /// the memory safety will be compromised. Please call this function less
+    /// to avoid the overhead of TLB flush. Using a large `len` is wiser than
+    /// splitting the operation into multiple small ones.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if `len` is not page-aligned.
+    pub fn unmap(&mut self, len: usize) {
+        assert!(len % super::PAGE_SIZE == 0);
+        let end_va = self.virt_addr() + len;
+        let tlb_prefer_flush_all = len > FLUSH_ALL_RANGE_THRESHOLD;
+
+        loop {
+            // SAFETY: It is safe to un-map memory in the userspace.
+            let result = unsafe { self.pt_cursor.take_next(end_va - self.virt_addr()) };
+            match result {
+                PageTableItem::Mapped { va, page, .. } => {
+                    if !self.flusher.need_remote_flush() && tlb_prefer_flush_all {
+                        // Only on single-CPU cases we can drop the page immediately before flushing.
+                        drop(page);
+                        continue;
+                    }
+                    self.flusher
+                        .issue_tlb_flush_with(TlbFlushOp::Address(va), page);
+                }
+                PageTableItem::NotMapped { .. } => {
+                    break;
+                }
+                PageTableItem::MappedUntracked { .. } => {
+                    panic!("found untracked memory mapped into `VmSpace`");
+                }
+            }
+        }
+
+        if !self.flusher.need_remote_flush() && tlb_prefer_flush_all {
+            self.flusher.issue_tlb_flush(TlbFlushOp::All);
+        }
+
+        self.flusher.dispatch_tlb_flush();
     }
 }
 

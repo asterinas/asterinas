@@ -22,7 +22,7 @@ pub struct TlbFlusher<G: PinCurrentCpu> {
     // list brings non-trivial overhead.
     need_remote_flush: bool,
     need_self_flush: bool,
-    _pin_current: G,
+    pin_current_guard: G,
 }
 
 impl<G: PinCurrentCpu> TlbFlusher<G> {
@@ -33,22 +33,35 @@ impl<G: PinCurrentCpu> TlbFlusher<G> {
     pub fn new(target_cpus: CpuSet, pin_current_guard: G) -> Self {
         let current_cpu = pin_current_guard.current_cpu();
 
-        let mut need_self_flush = false;
-        let mut need_remote_flush = false;
+        let need_self_flush = target_cpus.contains(current_cpu);
+        let need_remote_flush = if need_self_flush {
+            target_cpus.count() > 1
+        } else {
+            !target_cpus.is_empty()
+        };
 
-        for cpu in target_cpus.iter() {
-            if cpu == current_cpu {
-                need_self_flush = true;
-            } else {
-                need_remote_flush = true;
-            }
-        }
         Self {
             target_cpus,
             need_remote_flush,
             need_self_flush,
-            _pin_current: pin_current_guard,
+            pin_current_guard,
         }
+    }
+
+    /// Update the TLB flusher with the specified CPUs.
+    pub fn update(&mut self, target_cpus: CpuSet) {
+        let current_cpu = self.pin_current_guard.current_cpu();
+
+        let need_self_flush = target_cpus.contains(current_cpu);
+        let need_remote_flush = if need_self_flush {
+            target_cpus.count() > 1
+        } else {
+            !target_cpus.is_empty()
+        };
+
+        self.target_cpus = target_cpus;
+        self.need_remote_flush = need_remote_flush;
+        self.need_self_flush = need_self_flush;
     }
 
     /// Issues a pending TLB flush request.

@@ -170,7 +170,7 @@ impl VmMapping {
         }
 
         let mut cursor =
-            vm_space.cursor_mut(&(page_aligned_addr..page_aligned_addr + PAGE_SIZE))?;
+            vm_space.cursor_mut::<false>(&(page_aligned_addr..page_aligned_addr + PAGE_SIZE))?;
 
         match cursor.query().unwrap() {
             VmItem::Mapped {
@@ -208,6 +208,7 @@ impl VmMapping {
                 } else {
                     let new_frame = duplicate_frame(&frame)?;
                     prop.flags |= new_flags;
+                    let mut cursor = cursor.upgrade();
                     cursor.map(new_frame, prop);
                 }
             }
@@ -285,7 +286,7 @@ impl VmMapping {
         );
 
         let vm_perms = self.perms - VmPerms::WRITE;
-        let mut cursor = vm_space.cursor_mut(&(start_addr..end_addr))?;
+        let mut cursor = vm_space.cursor_mut::<false>(&(start_addr..end_addr))?;
         let operate = move |commit_fn: &mut dyn FnMut() -> Result<Frame>| {
             if let VmItem::NotMapped { .. } = cursor.query().unwrap() {
                 // We regard all the surrounding pages as accessed, no matter
@@ -405,7 +406,7 @@ impl VmMapping {
     /// Unmaps the mapping from the VM space.
     pub(super) fn unmap(self, vm_space: &VmSpace) -> Result<()> {
         let range = self.range();
-        let mut cursor = vm_space.cursor_mut(&range)?;
+        let mut cursor = vm_space.cursor_mut::<true>(&range)?;
         cursor.unmap(range.len());
 
         Ok(())
@@ -415,7 +416,7 @@ impl VmMapping {
     pub(super) fn protect(self, vm_space: &VmSpace, perms: VmPerms) -> Self {
         let range = self.range();
 
-        let mut cursor = vm_space.cursor_mut(&range).unwrap();
+        let mut cursor = vm_space.cursor_mut::<false>(&range).unwrap();
 
         let op = |p: &mut PageProperty| p.flags = perms.into();
         while cursor.virt_addr() < range.end {

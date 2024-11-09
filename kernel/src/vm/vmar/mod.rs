@@ -434,9 +434,9 @@ impl Vmar_ {
             // Clone mappings.
             let new_vmspace = new_vmar_.vm_space();
             let range = self.base..(self.base + self.size);
-            let mut new_cursor = new_vmspace.cursor_mut(&range).unwrap();
+            let mut new_cursor = new_vmspace.cursor_mut::<false>(&range).unwrap();
             let cur_vmspace = self.vm_space();
-            let mut cur_cursor = cur_vmspace.cursor_mut(&range).unwrap();
+            let mut cur_cursor = cur_vmspace.cursor_mut::<false>(&range).unwrap();
             for vm_mapping in inner.vm_mappings.iter() {
                 let base = vm_mapping.map_to_addr();
 
