@@ -2,12 +2,10 @@
 
 use core::ops::Range;
 
-use aster_rights::{Dup, Rights, TRightSet, TRights};
+use aster_rights::{Dup, Rights, TRightSet, TRights, Write};
 use aster_rights_proc::require;
 
-use super::{
-    options::VmarChildOptions, vm_mapping::VmarMapOptions, VmPerms, Vmar, VmarRightsOp, Vmar_,
-};
+use super::{vm_mapping::VmarMapOptions, VmPerms, Vmar, VmarRightsOp, Vmar_};
 use crate::{
     prelude::*, thread::exception::PageFaultInfo, vm::page_fault_handler::PageFaultHandler,
 };
@@ -59,7 +57,7 @@ impl<R: TRights> Vmar<TRightSet<R>> {
     /// the mapping. For example, if `perms` contains `VmPerms::WRITE`,
     /// then the VMAR must have the Write right.
     /// 2. Similarly, the VMO contains the rights corresponding to the memory
-    /// permissions of the mapping.  
+    /// permissions of the mapping.
     ///
     /// Memory permissions may be changed through the `protect` method,
     /// which ensures that any updated memory permissions do not go beyond
@@ -72,31 +70,6 @@ impl<R: TRights> Vmar<TRightSet<R>> {
     ) -> Result<VmarMapOptions<TRightSet<R>, Rights>> {
         let dup_self = self.dup()?;
         Ok(VmarMapOptions::new(dup_self, size, perms))
-    }
-
-    /// Creates a new child VMAR through a set of VMAR child options.
-    ///
-    /// # Example
-    ///
-    /// ```
-    /// let parent = Vmar::new().unwrap();
-    /// let child_size = 10 * PAGE_SIZE;
-    /// let child = parent.new_child(child_size).alloc().unwrap();
-    /// assert!(child.size() == child_size);
-    /// ```
-    ///
-    /// For more details on the available options, see `VmarChildOptions`.
-    ///
-    /// # Access rights
-    ///
-    /// This method requires the Dup right.
-    ///
-    /// The new VMAR child will be of the same capability class and
-    /// access rights as the parent.
-    #[require(R > Dup)]
-    pub fn new_child(&self, size: usize) -> Result<VmarChildOptions<TRightSet<R>>> {
-        let dup_self = self.dup()?;
-        Ok(VmarChildOptions::new(dup_self, size))
     }
 
     /// Change the permissions of the memory mappings in the specified range.
@@ -113,27 +86,26 @@ impl<R: TRights> Vmar<TRightSet<R>> {
         self.0.protect(perms, range)
     }
 
-    /// clear all mappings and children vmars.
+    /// Clears all mappings.
+    ///
     /// After being cleared, this vmar will become an empty vmar
     pub fn clear(&self) -> Result<()> {
         self.0.clear_root_vmar()
     }
 
-    /// Destroy all mappings and children VMARs that fall within the specified
+    /// Destroys all mappings that fall within the specified
     /// range in bytes.
     ///
     /// The range's start and end addresses must be page-aligned.
     ///
     /// Mappings may fall partially within the range; only the overlapped
     /// portions of the mappings are unmapped.
-    /// As for children VMARs, they must be fully within the range.
-    /// All children VMARs that fall within the range get their `destroy` methods
-    /// called.
-    pub fn destroy(&self, range: Range<usize>) -> Result<()> {
-        self.0.destroy(range)
+    #[require(R > Write)]
+    pub fn remove_mapping(&self, range: Range<usize>) -> Result<()> {
+        self.0.remove_mapping(range)
     }
 
-    /// Duplicate the capability.
+    /// Duplicates the capability.
     ///
     /// # Access rights
     ///
@@ -155,7 +127,7 @@ impl<R: TRights> Vmar<TRightSet<R>> {
         Ok(Vmar(vmar_, TRightSet(R::new())))
     }
 
-    /// Strict the access rights.
+    /// Stricts the access rights.
     #[require(R > R1)]
     pub fn restrict<R1: TRights>(self) -> Vmar<R1> {
         Vmar(self.0, R1::new())

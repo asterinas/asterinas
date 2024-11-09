@@ -70,7 +70,7 @@ pub use pager::Pager;
 /// Compared with `Frame`,
 /// `Vmo` is easier to use (by offering more powerful APIs) and
 /// harder to misuse (thanks to its nature of being capability).
-///
+#[derive(Debug)]
 pub struct Vmo<R = Rights>(pub(super) Arc<Vmo_>, R);
 
 /// Functions exist both for static capbility and dynamic capability
@@ -174,6 +174,15 @@ pub(super) struct Vmo_ {
     flags: VmoFlags,
     /// The virtual pages where the VMO resides.
     pages: Pages,
+}
+
+impl Debug for Vmo_ {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Vmo_")
+            .field("flags", &self.flags)
+            .field("size", &self.size())
+            .finish()
+    }
 }
 
 bitflags! {

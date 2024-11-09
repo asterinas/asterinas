@@ -25,6 +25,6 @@ pub fn sys_munmap(addr: Vaddr, len: usize, ctx: &Context) -> Result<SyscallRetur
         "integer overflow when (addr + len)",
     ))?;
     debug!("unmap range = 0x{:x} - 0x{:x}", addr, end);
-    root_vmar.destroy(addr..end)?;
+    root_vmar.remove_mapping(addr..end)?;
     Ok(SyscallReturn::Return(0))
 }
