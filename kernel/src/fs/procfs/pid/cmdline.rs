@@ -31,9 +31,6 @@ impl FileOps for CmdlineFileOps {
                 return Ok(Vec::new());
             };
             argv_cstrs
-                .into_iter()
-                .flat_map(|c_str| c_str.into_bytes_with_nul().into_iter())
-                .collect()
         };
         Ok(cmdline_output)
     }

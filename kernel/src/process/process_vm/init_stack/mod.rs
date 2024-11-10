@@ -47,6 +47,25 @@ pub const MAX_ARG_LEN: usize = 2048;
 /// The max length of each environmental variable (the total length of key-value pair) to create a new process.
 pub const MAX_ENV_LEN: usize = 128;
 
+/// Struct to encapsulate argument and environment boundaries
+pub struct ArgEnvBoundaries {
+    pub arg_start: Vaddr,
+    pub arg_end: Vaddr,
+    pub env_start: Vaddr,
+    pub env_end: Vaddr,
+}
+
+impl ArgEnvBoundaries {
+    pub fn new(arg_start: Vaddr, arg_end: Vaddr, env_start: Vaddr, env_end: Vaddr) -> Self {
+        Self {
+            arg_start,
+            arg_end,
+            env_start,
+            env_end,
+        }
+    }
+}
+
 /*
  * Illustration of the virtual memory space containing the processes' init stack:
  *
@@ -152,7 +171,7 @@ impl InitStack {
         argv: Vec<CString>,
         envp: Vec<CString>,
         auxvec: AuxVec,
-    ) -> Result<()> {
+    ) -> Result<ArgEnvBoundaries> {
         self.set_uninitialized();
 
         let vmo = {
@@ -183,12 +202,17 @@ impl InitStack {
 
     /// Constructs a reader to parse the content of an `InitStack`.
     /// The `InitStack` should only be read after initialized
-    pub(super) fn reader<'a>(&self, vm_space: &'a Arc<VmSpace>) -> InitStackReader<'a> {
+    pub(super) fn reader<'a>(
+        &self,
+        vm_space: &'a Arc<VmSpace>,
+        arg_env_bound: ArgEnvBoundaries,
+    ) -> InitStackReader<'a> {
         debug_assert!(self.is_initialized());
         InitStackReader {
             base: self.pos(),
             vm_space,
             map_addr: self.initial_top - self.max_size,
+            arg_env_bound,
         }
     }
 
@@ -217,7 +241,7 @@ struct InitStackWriter {
 }
 
 impl InitStackWriter {
-    fn write(mut self) -> Result<()> {
+    fn write(mut self) -> Result<ArgEnvBoundaries> {
         // FIXME: Some OSes may put the first page of executable file here
         // for interpreting elf headers.
 
@@ -236,8 +260,8 @@ impl InitStackWriter {
 
         self.adjust_stack_alignment(&envp_pointers, &argv_pointers)?;
         self.write_aux_vec()?;
-        self.write_envp_pointers(envp_pointers)?;
-        self.write_argv_pointers(argv_pointers)?;
+        self.write_envp_pointers(envp_pointers.clone())?;
+        self.write_argv_pointers(argv_pointers.clone())?;
 
         // write argc
         self.write_u64(argc)?;
@@ -245,7 +269,26 @@ impl InitStackWriter {
         // Ensure stack top is 16-bytes aligned
         debug_assert_eq!(self.pos() & !0xf, self.pos());
 
-        Ok(())
+        // Calculate boundaries of argv and envp
+        let arg_boundaries = self.calculate_boundaries(&argv_pointers, &self.argv)?;
+        let env_boundaries = self.calculate_boundaries(&envp_pointers, &self.envp)?;
+
+        Ok(ArgEnvBoundaries::new(
+            arg_boundaries.0,
+            arg_boundaries.1,
+            env_boundaries.0,
+            env_boundaries.1,
+        ))
+    }
+
+    fn calculate_boundaries(&self, pointers: &[u64], data: &[CString]) -> Result<(Vaddr, Vaddr)> {
+        if let Some(first) = pointers.first() {
+            let last = pointers.last().unwrap();
+            let end_offset = data.last().unwrap().as_bytes().len() as u64;
+            Ok((*first as Vaddr, (*last + end_offset) as Vaddr))
+        } else {
+            Ok((0, 0))
+        }
     }
 
     fn write_envp_strings(&self) -> Result<Vec<u64>> {
@@ -368,6 +411,8 @@ pub struct InitStackReader<'a> {
     vm_space: &'a Arc<VmSpace>,
     /// The mapping address of the `InitStack`.
     map_addr: usize,
+    // The Vaddr of arg and env
+    arg_env_bound: ArgEnvBoundaries,
 }
 
 impl InitStackReader<'_> {
@@ -387,14 +432,14 @@ impl InitStackReader<'_> {
     }
 
     /// Reads argv from the process init stack
-    pub fn argv(&self) -> Result<Vec<CString>> {
-        let argc = self.argc()? as usize;
-        // The reading offset in the initial stack is:
-        // the initial stack bottom address + the size of `argc` in memory
-        let read_offset = self.init_stack_bottom() + size_of::<usize>();
+    pub fn argv(&self) -> Result<Vec<u8>> {
+        let capacity = self.arg_env_bound.arg_end - self.arg_env_bound.arg_start + 1;
+        let mut argv = Vec::with_capacity(capacity);
+        if self.arg_env_bound.arg_start == 0 {
+            return Ok(argv);
+        }
 
-        let mut argv = Vec::with_capacity(argc);
-        let page_base_addr = read_offset.align_down(PAGE_SIZE);
+        let page_base_addr = self.arg_env_bound.arg_start.align_down(PAGE_SIZE);
         let mut cursor = self
             .vm_space
             .cursor(&(page_base_addr..page_base_addr + PAGE_SIZE))?;
@@ -402,34 +447,26 @@ impl InitStackReader<'_> {
             return_errno_with_message!(Errno::EACCES, "Page not accessible");
         };
 
-        let mut arg_ptr_reader = frame.reader().skip(read_offset - page_base_addr);
-        for _ in 0..argc {
-            let arg = {
-                let arg_ptr = arg_ptr_reader.read_val::<Vaddr>()?;
-                let mut arg_reader = frame.reader().skip(arg_ptr - page_base_addr).to_fallible();
-                arg_reader.read_cstring()?
-            };
-            argv.push(arg);
+        let mut arg_reader = frame
+            .reader()
+            .skip(self.arg_env_bound.arg_start - page_base_addr);
+        for _ in 0..capacity {
+            let argv_char = arg_reader.read_val::<u8>()?;
+            argv.push(argv_char);
         }
 
         Ok(argv)
     }
 
     /// Reads envp from the process
-    pub fn envp(&self) -> Result<Vec<CString>> {
-        let argc = self.argc()? as usize;
-        // The reading offset in the initial stack is:
-        // the initial stack bottom address
-        // + the size of argc(8)
-        // + the size of arg pointer(8) * the number of arg(argc)
-        // + the size of null pointer(8)
-        let read_offset = self.init_stack_bottom()
-            + size_of::<usize>()
-            + size_of::<usize>() * argc
-            + size_of::<usize>();
+    pub fn envp(&self) -> Result<Vec<u8>> {
+        let capacity = self.arg_env_bound.env_end - self.arg_env_bound.env_start + 1;
+        let mut envp = Vec::with_capacity(capacity);
+        if self.arg_env_bound.env_start == 0 {
+            return Ok(envp);
+        }
 
-        let mut envp = Vec::new();
-        let page_base_addr = read_offset.align_down(PAGE_SIZE);
+        let page_base_addr = self.arg_env_bound.env_start.align_down(PAGE_SIZE);
         let mut cursor = self
             .vm_space
             .cursor(&(page_base_addr..page_base_addr + PAGE_SIZE))?;
@@ -437,19 +474,12 @@ impl InitStackReader<'_> {
             return_errno_with_message!(Errno::EACCES, "Page not accessible");
         };
 
-        let mut envp_ptr_reader = frame.reader().skip(read_offset - page_base_addr);
-        for _ in 0..MAX_ENVP_NUMBER {
-            let env = {
-                let envp_ptr = envp_ptr_reader.read_val::<Vaddr>()?;
-
-                if envp_ptr == 0 {
-                    break;
-                }
-
-                let mut envp_reader = frame.reader().skip(envp_ptr - page_base_addr).to_fallible();
-                envp_reader.read_cstring()?
-            };
-            envp.push(env);
+        let mut env_reader = frame
+            .reader()
+            .skip(self.arg_env_bound.env_start - page_base_addr);
+        for _ in 0..capacity {
+            let env_char = env_reader.read_val::<u8>()?;
+            envp.push(env_char);
         }
 
         Ok(envp)

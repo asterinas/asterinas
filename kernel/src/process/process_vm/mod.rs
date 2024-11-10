@@ -14,6 +14,7 @@ mod init_stack;
 
 use aster_rights::Full;
 pub use heap::Heap;
+use init_stack::ArgEnvBoundaries;
 
 pub use self::{
     heap::USER_HEAP_SIZE_LIMIT,
@@ -66,6 +67,11 @@ pub struct ProcessVm {
     root_vmar: Vmar<Full>,
     init_stack: InitStack,
     heap: Heap,
+    /// The pointer to arg and env in stack
+    arg_start: RwLock<Vaddr>,
+    arg_end: RwLock<Vaddr>,
+    env_start: RwLock<Vaddr>,
+    env_end: RwLock<Vaddr>,
 }
 
 impl Clone for ProcessVm {
@@ -74,6 +80,10 @@ impl Clone for ProcessVm {
             root_vmar: self.root_vmar.dup().unwrap(),
             init_stack: self.init_stack.clone(),
             heap: self.heap.clone(),
+            arg_start: RwLock::new(*self.arg_start.read()),
+            arg_end: RwLock::new(*self.arg_end.read()),
+            env_start: RwLock::new(*self.env_start.read()),
+            env_end: RwLock::new(*self.env_end.read()),
         }
     }
 }
@@ -89,6 +99,10 @@ impl ProcessVm {
             root_vmar,
             heap,
             init_stack,
+            arg_start: RwLock::new(0),
+            arg_end: RwLock::new(0),
+            env_start: RwLock::new(0),
+            env_end: RwLock::new(0),
         }
     }
 
@@ -101,6 +115,10 @@ impl ProcessVm {
             root_vmar,
             heap: other.heap.clone(),
             init_stack: other.init_stack.clone(),
+            arg_start: RwLock::new(*other.arg_start.read()),
+            arg_end: RwLock::new(*other.arg_end.read()),
+            env_start: RwLock::new(*other.env_start.read()),
+            env_end: RwLock::new(*other.env_end.read()),
         })
     }
 
@@ -111,7 +129,15 @@ impl ProcessVm {
     /// Returns a reader for reading contents from
     /// the `InitStack`.
     pub fn init_stack_reader(&self) -> InitStackReader {
-        self.init_stack.reader(self.root_vmar().vm_space())
+        self.init_stack.reader(
+            self.root_vmar().vm_space(),
+            ArgEnvBoundaries::new(
+                *self.arg_start.read(),
+                *self.arg_end.read(),
+                *self.env_start.read(),
+                *self.env_end.read(),
+            ),
+        )
     }
 
     /// Returns the top address of the user stack.
@@ -125,8 +151,15 @@ impl ProcessVm {
         envp: Vec<CString>,
         aux_vec: AuxVec,
     ) -> Result<()> {
-        self.init_stack
-            .map_and_write(self.root_vmar(), argv, envp, aux_vec)
+        let arg_env_bound = self
+            .init_stack
+            .map_and_write(self.root_vmar(), argv, envp, aux_vec)?;
+        *self.arg_start.write() = arg_env_bound.arg_start;
+        *self.arg_end.write() = arg_env_bound.arg_end;
+        *self.env_start.write() = arg_env_bound.env_start;
+        *self.env_end.write() = arg_env_bound.env_end;
+
+        Ok(())
     }
 
     pub(super) fn heap(&self) -> &Heap {
