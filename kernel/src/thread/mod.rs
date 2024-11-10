@@ -157,10 +157,7 @@ impl Thread {
     }
 
     /// Returns the associated data.
-    ///
-    /// The return type must be borrowed box, otherwise the `downcast_ref` will fail.
-    #[allow(clippy::borrowed_box)]
-    pub fn data(&self) -> &Box<dyn Send + Sync + Any> {
-        &self.data
+    pub fn data(&self) -> &(dyn Send + Sync + Any) {
+        &*self.data
     }
 }
