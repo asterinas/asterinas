@@ -54,6 +54,9 @@ RUN git clone https://github.com/asterinas/lmbench.git
 RUN wget https://www.iozone.org/src/current/iozone3_506.tar
 RUN tar -x -f iozone3_506.tar
 RUN git clone -b fio-3.37 https://github.com/axboe/fio.git
+RUN wget https://launchpad.net/libmemcached/1.0/1.0.18/+download/libmemcached-1.0.18.tar.gz \
+    && tar -zxvf libmemcached-1.0.18.tar.gz \ 
+    && rm libmemcached-1.0.18.tar.gz
 
 # Build sysbench
 WORKDIR /root/sysbench-1.0.20
@@ -98,6 +101,14 @@ RUN ./configure --disable-shm --prefix=/usr/local/benchmark/fio \
     && make -j \ 
     && make install
 
+# Build memaslap for memcached
+WORKDIR /root/libmemcached-1.0.18
+RUN LDFLAGS='-lpthread' CPPFLAGS='-fcommon -fpermissive' CFLAGS='-fpermissive -fcommon' \
+    ./configure --enable-memaslap --prefix=/usr/local/benchmark/libmemcached \ 
+    && CPPFLAGS='-fcommon' make -j \ 
+    && make install \
+    && ldconfig
+
 # Clear cached files
 WORKDIR /root
 RUN rm -rf sysbench-1.0.20 \ 
@@ -107,7 +118,8 @@ RUN rm -rf sysbench-1.0.20 \
     byte-unixbench \
     iozone3_506.tar \
     iozone3_506 \
-    fio
+    fio \
+    libmemcached-1.0.18
 
 #= Install applications =======================================================
 
@@ -166,6 +178,18 @@ RUN wget https://download.redis.io/releases/redis-7.0.15.tar.gz \
 
 RUN rm -rf redis-7.0.15.tar.gz \ 
     redis-7.0.15 
+
+# Install Memcached v1.6.32
+WORKDIR /root
+RUN wget https://www.memcached.org/files/memcached-1.6.32.tar.gz \
+    && tar -xzvf memcached-1.6.32.tar.gz \
+    && cd memcached-1.6.32 \
+    && ./configure --prefix=/usr/local/memcached \
+    && make -j \
+    && make install
+
+RUN rm -rf memcached-1.6.32.tar.gz \
+    memcached-1.6.32
 
 # Install Nginx only with http enabled
 WORKDIR /root
@@ -376,6 +400,7 @@ RUN apt update && apt-get install -y --no-install-recommends \
     {% endif %}
     iptables \ 
     iproute2 \ 
+    libevent-dev        `# running dependency for Memcached` \ 
     libpixman-1-dev     `# running dependency for QEMU` \ 
     mtools              `# used by grub-mkrescue` \ 
     net-tools \ 
