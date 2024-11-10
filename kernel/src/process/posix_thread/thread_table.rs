@@ -7,7 +7,7 @@ static THREAD_TABLE: SpinLock<BTreeMap<Tid, Arc<Thread>>> = SpinLock::new(BTreeM
 
 /// Adds a posix thread to global thread table
 pub fn add_thread(tid: Tid, thread: Arc<Thread>) {
-    debug_assert_eq!(tid, thread.tid());
+    debug_assert_eq!(tid, thread.as_posix_thread().unwrap().tid());
     THREAD_TABLE.lock().insert(tid, thread);
 }
 

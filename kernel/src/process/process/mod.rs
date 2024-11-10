@@ -21,7 +21,7 @@ use crate::{
     fs::{file_table::FileTable, fs_resolver::FsResolver, utils::FileCreationMask},
     prelude::*,
     sched::priority::{AtomicNice, Nice},
-    thread::Thread,
+    thread::{Thread, ThreadExt},
     time::clocks::ProfClock,
     vm::vmar::Vmar,
 };
@@ -174,13 +174,7 @@ impl Process {
     ///  - the function is called in the bootstrap context;
     ///  - or if the current task is not associated with a process.
     pub fn current() -> Option<Arc<Process>> {
-        Some(
-            Task::current()?
-                .data()
-                .downcast_ref::<Arc<Thread>>()?
-                .as_posix_thread()?
-                .process(),
-        )
+        Some(Task::current()?.as_posix_thread()?.process())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -292,7 +286,7 @@ impl Process {
         let task = tasks[0].clone();
         // should not hold the lock when run thread
         drop(tasks);
-        let thread = Thread::borrow_from_task(&task);
+        let thread = task.as_thread().unwrap();
         thread.run();
     }
 
@@ -336,8 +330,10 @@ impl Process {
         self.tasks
             .lock()
             .iter()
-            .find(|task| task.tid() == self.pid)
-            .map(|task| Thread::borrow_from_task(task.as_ref()))
+            .find_map(|task| {
+                let thread = task.as_thread().unwrap();
+                (thread.as_posix_thread().unwrap().tid() == self.pid).then_some(thread)
+            })
             .cloned()
     }
 

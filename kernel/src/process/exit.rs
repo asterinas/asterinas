@@ -7,7 +7,7 @@ use crate::{
         posix_thread::{do_exit, PosixThreadExt},
         signal::signals::kernel::KernelSignal,
     },
-    thread::Thread,
+    thread::ThreadExt,
 };
 
 pub fn do_exit_group(term_status: TermStatus) {
@@ -21,7 +21,7 @@ pub fn do_exit_group(term_status: TermStatus) {
     // Exit all threads
     let tasks = current.tasks().lock().clone();
     for task in tasks {
-        let thread = Thread::borrow_from_task(&task);
+        let thread = task.as_thread().unwrap();
         let posix_thread = thread.as_posix_thread().unwrap();
         if let Err(e) = do_exit(thread, posix_thread, term_status) {
             debug!("Ignore error when call exit: {:?}", e);

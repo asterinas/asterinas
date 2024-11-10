@@ -8,7 +8,7 @@ use super::sig_mask::SigMask;
 use crate::{
     prelude::*,
     process::posix_thread::PosixThreadExt,
-    thread::Thread,
+    thread::ThreadExt,
     time::wait::{ManagedTimeout, TimeoutExt},
 };
 
@@ -109,7 +109,7 @@ impl Pause for Waiter {
         // No fast paths for `Waiter`. If the caller wants a fast path, it should do so _before_
         // the waiter is created.
 
-        let current_thread = self.task().data().downcast_ref::<Arc<Thread>>();
+        let current_thread = self.task().as_thread();
 
         let Some(posix_thread) = current_thread
             .as_ref()
@@ -143,7 +143,7 @@ impl Pause for Waiter {
             })
         });
 
-        let current_thread = self.task().data().downcast_ref::<Arc<Thread>>();
+        let current_thread = self.task().as_thread();
 
         if let Some(posix_thread) = current_thread
             .as_ref()

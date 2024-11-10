@@ -22,7 +22,7 @@ use crate::{
     events::Observer,
     prelude::*,
     process::signal::constants::SIGCONT,
-    thread::{Thread, Tid},
+    thread::{Thread, ThreadExt, Tid},
     time::{clocks::ProfClock, Timer, TimerManager},
 };
 
@@ -277,7 +277,7 @@ impl PosixThread {
         let tasks = process.tasks().lock();
         tasks
             .iter()
-            .all(|task| Thread::borrow_from_task(task).is_exited())
+            .all(|task| task.as_thread().unwrap().is_exited())
     }
 
     /// Gets the read-only credentials of the thread.

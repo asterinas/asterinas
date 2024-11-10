@@ -11,8 +11,7 @@ use super::worker_pool::WorkerPool;
 use crate::{
     prelude::*,
     sched::priority::{Priority, PriorityRange},
-    thread::kernel_thread::ThreadOptions,
-    Thread,
+    thread::{kernel_thread::ThreadOptions, ThreadExt},
 };
 
 /// A worker thread. A `Worker` will attempt to retrieve unfinished
@@ -72,7 +71,7 @@ impl Worker {
     }
 
     pub(super) fn run(&self) {
-        let thread = Thread::borrow_from_task(&self.bound_task);
+        let thread = self.bound_task.as_thread().unwrap();
         thread.run();
     }
 

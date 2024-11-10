@@ -5,7 +5,7 @@ use ostd::{
     task::{Task, TaskOptions},
 };
 
-use super::{oops, status::ThreadStatus, Thread};
+use super::{oops, status::ThreadStatus, Thread, ThreadExt};
 use crate::{prelude::*, sched::priority::Priority};
 
 /// The inner data of a kernel thread.
@@ -77,7 +77,7 @@ impl ThreadOptions {
     /// Builds a new kernel thread and runs it immediately.
     pub fn spawn(self) -> Arc<Thread> {
         let task = self.build();
-        let thread = Thread::borrow_from_task(&task).clone();
+        let thread = task.as_thread().unwrap().clone();
         thread.run();
         thread
     }

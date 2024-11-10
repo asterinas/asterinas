@@ -21,7 +21,7 @@ use crate::{
     get_current_userspace,
     prelude::*,
     process::posix_thread::allocate_posix_tid,
-    thread::{Thread, Tid},
+    thread::{ThreadExt, Tid},
 };
 
 bitflags! {
@@ -183,10 +183,10 @@ pub fn clone_child(
     clone_args.flags.check_unsupported_flags()?;
     if clone_args.flags.contains(CloneFlags::CLONE_THREAD) {
         let child_task = clone_child_task(ctx, parent_context, clone_args)?;
-        let child_thread = Thread::borrow_from_task(&child_task);
+        let child_thread = child_task.as_thread().unwrap();
         child_thread.run();
 
-        let child_tid = child_thread.tid();
+        let child_tid = child_thread.as_posix_thread().unwrap().tid();
         Ok(child_tid)
     } else {
         let child_process = clone_child_process(ctx, parent_context, clone_args)?;

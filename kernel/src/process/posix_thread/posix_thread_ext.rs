@@ -11,17 +11,12 @@ use crate::{
     fs::fs_resolver::{FsPath, FsResolver, AT_FDCWD},
     prelude::*,
     process::{process_vm::ProcessVm, program_loader::load_program_to_vm, Credentials, Process},
-    thread::{Thread, Tid},
+    thread::{Thread, ThreadExt, Tid},
 };
+
+/// An extension trait for some [`PosixThread`]-like types.
 pub trait PosixThreadExt {
-    /// Returns the thread id.
-    ///
-    /// # Panics
-    ///
-    /// If the thread is not posix thread, this method will panic.
-    fn tid(&self) -> Tid {
-        self.as_posix_thread().unwrap().tid()
-    }
+    /// Returns the associated [`PosixThread`].
     fn as_posix_thread(&self) -> Option<&PosixThread>;
 }
 
@@ -31,9 +26,9 @@ impl PosixThreadExt for Thread {
     }
 }
 
-impl PosixThreadExt for Arc<Task> {
+impl PosixThreadExt for Task {
     fn as_posix_thread(&self) -> Option<&PosixThread> {
-        Thread::borrow_from_task(self).as_posix_thread()
+        self.as_thread()?.as_posix_thread()
     }
 }
 
