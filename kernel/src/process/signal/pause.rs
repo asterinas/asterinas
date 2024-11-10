@@ -217,10 +217,7 @@ mod test {
     use ostd::prelude::*;
 
     use super::*;
-    use crate::thread::{
-        kernel_thread::{KernelThreadExt, ThreadOptions},
-        Thread,
-    };
+    use crate::thread::{kernel_thread::ThreadOptions, Thread};
 
     #[ktest]
     fn test_waiter_pause() {
@@ -230,12 +227,13 @@ mod test {
         let boolean = Arc::new(AtomicBool::new(false));
         let boolean_cloned = boolean.clone();
 
-        let thread = Thread::spawn_kernel_thread(ThreadOptions::new(move || {
+        let thread = ThreadOptions::new(move || {
             Thread::yield_now();
 
             boolean_cloned.store(true, Ordering::Relaxed);
             wait_queue_cloned.wake_all();
-        }));
+        })
+        .spawn();
 
         wait_queue
             .pause_until(|| boolean.load(Ordering::Relaxed).then_some(()))

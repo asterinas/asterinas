@@ -215,7 +215,7 @@ impl TaskOptions {
         Ok(new_task)
     }
 
-    /// Builds a new task and run it immediately.
+    /// Builds a new task and runs it immediately.
     pub fn spawn(self) -> Result<Arc<Task>> {
         let task = Arc::new(self.build()?);
         task.run();
