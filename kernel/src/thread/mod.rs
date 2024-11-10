@@ -152,8 +152,20 @@ impl Thread {
         &self.cpu_affinity
     }
 
+    /// Yields the execution to another thread.
+    ///
+    /// This method will return once the current thread is scheduled again.
     pub fn yield_now() {
         Task::yield_now()
+    }
+
+    /// Joins the execution of the thread.
+    ///
+    /// This method will return after the thread exits.
+    pub fn join(&self) {
+        while !self.is_exited() {
+            Self::yield_now();
+        }
     }
 
     /// Returns the associated data.

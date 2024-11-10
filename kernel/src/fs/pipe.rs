@@ -230,10 +230,7 @@ mod test {
     use super::*;
     use crate::{
         fs::utils::Channel,
-        thread::{
-            kernel_thread::{KernelThreadExt, ThreadOptions},
-            Thread,
-        },
+        thread::{kernel_thread::ThreadOptions, Thread},
     };
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -262,7 +259,7 @@ mod test {
         let signal_writer = Arc::new(AtomicBool::new(false));
         let signal_reader = signal_writer.clone();
 
-        let writer = Thread::spawn_kernel_thread(ThreadOptions::new(move || {
+        let writer = ThreadOptions::new(move || {
             let writer = writer_with_lock.lock().take().unwrap();
 
             if ordering == Ordering::ReadThenWrite {
@@ -274,9 +271,10 @@ mod test {
             }
 
             write(writer);
-        }));
+        })
+        .spawn();
 
-        let reader = Thread::spawn_kernel_thread(ThreadOptions::new(move || {
+        let reader = ThreadOptions::new(move || {
             let reader = reader_with_lock.lock().take().unwrap();
 
             if ordering == Ordering::WriteThenRead {
@@ -288,7 +286,8 @@ mod test {
             }
 
             read(reader);
-        }));
+        })
+        .spawn();
 
         writer.join();
         reader.join();

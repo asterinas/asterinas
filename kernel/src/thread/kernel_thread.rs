@@ -8,68 +8,10 @@ use ostd::{
 use super::{oops, status::ThreadStatus, Thread};
 use crate::{prelude::*, sched::priority::Priority};
 
-/// The inner data of a kernel thread
-pub struct KernelThread;
+/// The inner data of a kernel thread.
+struct KernelThread;
 
-pub trait KernelThreadExt {
-    /// Gets the kernel_thread structure
-    fn as_kernel_thread(&self) -> Option<&KernelThread>;
-    /// Creates a new kernel thread, and then run the thread.
-    fn spawn_kernel_thread(thread_options: ThreadOptions) -> Arc<Thread> {
-        let task = create_new_kernel_task(thread_options);
-        let thread = Thread::borrow_from_task(&task).clone();
-        thread.run();
-        thread
-    }
-    /// join a kernel thread, returns if the kernel thread exit
-    fn join(&self);
-}
-
-impl KernelThreadExt for Thread {
-    fn as_kernel_thread(&self) -> Option<&KernelThread> {
-        self.data().downcast_ref::<KernelThread>()
-    }
-
-    fn join(&self) {
-        loop {
-            if self.is_exited() {
-                return;
-            } else {
-                Thread::yield_now();
-            }
-        }
-    }
-}
-
-/// Creates a new task of kernel thread, **NOT** run the thread.
-pub fn create_new_kernel_task(mut thread_options: ThreadOptions) -> Arc<Task> {
-    let task_fn = thread_options.take_func();
-    let thread_fn = move || {
-        let _ = oops::catch_panics_as_oops(task_fn);
-        // Ensure that the thread exits.
-        current_thread!().exit();
-    };
-
-    Arc::new_cyclic(|weak_task| {
-        let thread = {
-            let kernel_thread = KernelThread;
-            let status = ThreadStatus::Init;
-            let priority = thread_options.priority;
-            let cpu_affinity = thread_options.cpu_affinity;
-            Arc::new(Thread::new(
-                weak_task.clone(),
-                kernel_thread,
-                status,
-                priority,
-                cpu_affinity,
-            ))
-        };
-
-        TaskOptions::new(thread_fn).data(thread).build().unwrap()
-    })
-}
-
-/// Options to create or spawn a new thread.
+/// Options to create or spawn a new kernel thread.
 pub struct ThreadOptions {
     func: Option<Box<dyn Fn() + Send + Sync>>,
     priority: Priority,
@@ -77,6 +19,7 @@ pub struct ThreadOptions {
 }
 
 impl ThreadOptions {
+    /// Creates the thread options with the thread function.
     pub fn new<F>(func: F) -> Self
     where
         F: Fn() + Send + Sync + 'static,
@@ -89,25 +32,53 @@ impl ThreadOptions {
         }
     }
 
-    pub fn func<F>(mut self, func: F) -> Self
-    where
-        F: Fn() + Send + Sync + 'static,
-    {
-        self.func = Some(Box::new(func));
-        self
-    }
-
-    fn take_func(&mut self) -> Box<dyn Fn() + Send + Sync> {
-        self.func.take().unwrap()
-    }
-
+    /// Sets the priority of the new thread.
     pub fn priority(mut self, priority: Priority) -> Self {
         self.priority = priority;
         self
     }
 
+    /// Sets the CPU affinity of the new thread.
     pub fn cpu_affinity(mut self, cpu_affinity: CpuSet) -> Self {
         self.cpu_affinity = cpu_affinity;
         self
+    }
+}
+
+impl ThreadOptions {
+    /// Builds a new kernel thread without running it immediately.
+    pub fn build(mut self) -> Arc<Task> {
+        let task_fn = self.func.take().unwrap();
+        let thread_fn = move || {
+            let _ = oops::catch_panics_as_oops(task_fn);
+            // Ensure that the thread exits.
+            current_thread!().exit();
+        };
+
+        Arc::new_cyclic(|weak_task| {
+            let thread = {
+                let kernel_thread = KernelThread;
+                let status = ThreadStatus::Init;
+                let priority = self.priority;
+                let cpu_affinity = self.cpu_affinity;
+                Arc::new(Thread::new(
+                    weak_task.clone(),
+                    kernel_thread,
+                    status,
+                    priority,
+                    cpu_affinity,
+                ))
+            };
+
+            TaskOptions::new(thread_fn).data(thread).build().unwrap()
+        })
+    }
+
+    /// Builds a new kernel thread and runs it immediately.
+    pub fn spawn(self) -> Arc<Thread> {
+        let task = self.build();
+        let thread = Thread::borrow_from_task(&task).clone();
+        thread.run();
+        thread
     }
 }

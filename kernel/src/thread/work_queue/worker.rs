@@ -11,7 +11,7 @@ use super::worker_pool::WorkerPool;
 use crate::{
     prelude::*,
     sched::priority::{Priority, PriorityRange},
-    thread::kernel_thread::{create_new_kernel_task, ThreadOptions},
+    thread::kernel_thread::ThreadOptions,
     Thread,
 };
 
@@ -56,11 +56,10 @@ impl Worker {
                 // FIXME: remove the use of real-time priority.
                 priority = Priority::new(PriorityRange::new(0));
             }
-            let bound_task = create_new_kernel_task(
-                ThreadOptions::new(task_fn)
-                    .cpu_affinity(cpu_affinity)
-                    .priority(priority),
-            );
+            let bound_task = ThreadOptions::new(task_fn)
+                .cpu_affinity(cpu_affinity)
+                .priority(priority)
+                .build();
             Self {
                 worker_pool,
                 bound_task,
