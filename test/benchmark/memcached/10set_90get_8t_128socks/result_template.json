@@ -1,0 +1,14 @@
+[
+    {
+        "name": "Memaslap 10% SET and 90% GET throughput with 8 client threads and 128 concurrency",
+        "unit": "operations per second",
+        "value": 0,
+        "extra": "linux_result"
+    },
+    {
+        "name": "Memaslap 10% SET and 90% GET throughput with 8 client threads and 128 concurrency",
+        "unit": "operations per second",
+        "value": 0,
+        "extra": "aster_result"
+    }
+]

@@ -1,0 +1,5 @@
+{
+    "benchmarks": [
+        "10set_90get_8t_128socks"
+    ]
+}
