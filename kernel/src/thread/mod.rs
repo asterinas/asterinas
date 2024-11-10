@@ -65,24 +65,12 @@ impl Thread {
     /// This function returns `None` if the current task is not associated with
     /// a thread, or if called within the bootstrap context.
     pub fn current() -> Option<Arc<Self>> {
-        Task::current()?
-            .data()
-            .downcast_ref::<Arc<Thread>>()
-            .cloned()
+        Task::current()?.as_thread().cloned()
     }
 
     /// Returns the task associated with this thread.
     pub fn task(&self) -> Arc<Task> {
         self.task.upgrade().unwrap()
-    }
-
-    /// Gets the Thread from task's data.
-    ///
-    /// # Panics
-    ///
-    /// This method panics if the task is not a thread.
-    pub fn borrow_from_task(task: &Task) -> &Arc<Self> {
-        task.data().downcast_ref::<Arc<Thread>>().unwrap()
     }
 
     /// Runs this thread at once.
@@ -171,5 +159,17 @@ impl Thread {
     /// Returns the associated data.
     pub fn data(&self) -> &(dyn Send + Sync + Any) {
         &*self.data
+    }
+}
+
+/// An extension trait for [`Thread`]-like types.
+pub trait ThreadExt {
+    /// Returns the associated [`Thread`].
+    fn as_thread(&self) -> Option<&Arc<Thread>>;
+}
+
+impl ThreadExt for Task {
+    fn as_thread(&self) -> Option<&Arc<Thread>> {
+        self.data().downcast_ref::<Arc<Thread>>()
     }
 }

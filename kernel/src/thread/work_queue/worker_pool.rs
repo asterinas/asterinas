@@ -17,8 +17,7 @@ use super::{simple_scheduler::SimpleScheduler, worker::Worker, WorkItem, WorkPri
 use crate::{
     prelude::*,
     sched::priority::{Priority, PriorityRange},
-    thread::kernel_thread::ThreadOptions,
-    Thread,
+    thread::{kernel_thread::ThreadOptions, ThreadExt},
 };
 
 /// A pool of workers.
@@ -83,7 +82,7 @@ impl LocalWorkerPool {
     fn add_worker(&self) {
         let worker = Worker::new(self.parent.clone(), self.cpu_id);
         self.workers.disable_irq().lock().push_back(worker.clone());
-        Thread::borrow_from_task(worker.bound_task()).run();
+        worker.bound_task().as_thread().unwrap().run();
     }
 
     fn remove_worker(&self) {
@@ -258,7 +257,7 @@ impl Monitor {
     }
 
     pub fn run(&self) {
-        Thread::borrow_from_task(&self.bound_task).run()
+        self.bound_task.as_thread().unwrap().run()
     }
 
     fn run_monitor_loop(self: &Arc<Self>) {

@@ -92,7 +92,7 @@ fn reap_zombie_child(process: &Process, pid: Pid) -> ExitCode {
     let child_process = process.children().lock().remove(&pid).unwrap();
     assert!(child_process.is_zombie());
     for task in &*child_process.tasks().lock() {
-        thread_table::remove_thread(task.tid());
+        thread_table::remove_thread(task.as_posix_thread().unwrap().tid());
     }
 
     // Lock order: session table -> group table -> process table -> group of process
