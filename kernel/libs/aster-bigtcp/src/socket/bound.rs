@@ -288,10 +288,18 @@ impl<E> BoundTcpSocket<E> {
         self.0.update_next_poll_at_ms(PollAt::Now);
     }
 
+    /// Calls `f` with a mutable reference to the associated [`RawTcpSocket`].
+    pub fn raw_with_mut<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut RawTcpSocket) -> R,
+    {
+        let mut socket = self.0.socket.lock();
+        let r = f(&mut socket);
+        self.0.update_next_poll_at_ms(PollAt::Now);
+        r
+    }
+
     /// Calls `f` with an immutable reference to the associated [`RawTcpSocket`].
-    //
-    // NOTE: If a mutable reference is required, add a method above that correctly updates the next
-    // polling time.
     pub fn raw_with<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&RawTcpSocket) -> R,
