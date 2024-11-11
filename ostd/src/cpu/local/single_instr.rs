@@ -27,6 +27,8 @@
 //!
 //! [`CpuLocalCell`]: crate::cpu::local::CpuLocalCell
 
+use crate::trap::DisabledLocalIrqGuard;
+
 /// An interface for architecture-specific single-instruction add operation.
 pub trait SingleInstructionAddAssign<Rhs = Self> {
     /// Adds a value to the per-CPU object.
@@ -39,12 +41,48 @@ pub trait SingleInstructionAddAssign<Rhs = Self> {
     unsafe fn add_assign(offset: *mut Self, rhs: Rhs);
 }
 
+struct LocalValGuard<T>(DisabledLocalIrqGuard, *mut T);
+
+impl<T> LocalValGuard<T> {
+    #[inline(always)]
+    pub unsafe fn write(&self, val: T)
+    where
+        T: Sized,
+    {
+        self.1.write(val);
+    }
+
+    #[inline(always)]
+    pub unsafe fn read(&self) -> T
+    where
+        T: Sized,
+    {
+        // SAFETY: the caller must uphold the safety contract for ``.
+        self.1.read()
+    }
+}
+
+#[cfg(not(miri))]
+#[inline(always)]
+fn get_local_val_guard<T>(offset: *const T) -> LocalValGuard<T> {
+    let guard = crate::trap::disable_local();
+    let base = crate::arch::cpu::local::get_base() as usize;
+    let ptr = (base + offset as usize) as *mut T;
+    LocalValGuard(guard, ptr)
+}
+
+#[cfg(miri)]
+#[inline(always)]
+fn get_local_val_guard<T>(offset: *const T) -> LocalValGuard<T> {
+    let guard = crate::trap::disable_local();
+    let ptr = offset as *mut T;
+    LocalValGuard(guard, ptr)
+}
+
 impl<T: num_traits::WrappingAdd + Copy> SingleInstructionAddAssign<T> for T {
     default unsafe fn add_assign(offset: *mut Self, rhs: T) {
-        let _guard = crate::trap::disable_local();
-        let base = crate::arch::cpu::local::get_base() as usize;
-        let addr = (base + offset as usize) as *mut Self;
-        addr.write(addr.read().wrapping_add(&rhs));
+        let ptr = get_local_val_guard(offset);
+        ptr.write(ptr.read().wrapping_add(&rhs));
     }
 }
 
@@ -62,10 +100,8 @@ pub trait SingleInstructionSubAssign<Rhs = Self> {
 
 impl<T: num_traits::WrappingSub + Copy> SingleInstructionSubAssign<T> for T {
     default unsafe fn sub_assign(offset: *mut Self, rhs: T) {
-        let _guard = crate::trap::disable_local();
-        let base = crate::arch::cpu::local::get_base() as usize;
-        let addr = (base + offset as usize) as *mut Self;
-        addr.write(addr.read().wrapping_sub(&rhs));
+        let ptr = get_local_val_guard(offset);
+        ptr.write(ptr.read().wrapping_sub(&rhs));
     }
 }
 
@@ -81,10 +117,8 @@ pub trait SingleInstructionBitOrAssign<Rhs = Self> {
 
 impl<T: core::ops::BitOr<Output = T> + Copy> SingleInstructionBitOrAssign<T> for T {
     default unsafe fn bitor_assign(offset: *mut Self, rhs: T) {
-        let _guard = crate::trap::disable_local();
-        let base = crate::arch::cpu::local::get_base() as usize;
-        let addr = (base + offset as usize) as *mut Self;
-        addr.write(addr.read() | rhs);
+        let ptr = get_local_val_guard(offset);
+        ptr.write(ptr.read() | rhs);
     }
 }
 
@@ -100,10 +134,8 @@ pub trait SingleInstructionBitAndAssign<Rhs = Self> {
 
 impl<T: core::ops::BitAnd<Output = T> + Copy> SingleInstructionBitAndAssign<T> for T {
     default unsafe fn bitand_assign(offset: *mut Self, rhs: T) {
-        let _guard = crate::trap::disable_local();
-        let base = crate::arch::cpu::local::get_base() as usize;
-        let addr = (base + offset as usize) as *mut Self;
-        addr.write(addr.read() & rhs);
+        let ptr = get_local_val_guard(offset);
+        ptr.write(ptr.read() & rhs);
     }
 }
 
@@ -120,10 +152,8 @@ pub trait SingleInstructionBitXorAssign<Rhs = Self> {
 
 impl<T: core::ops::BitXor<Output = T> + Copy> SingleInstructionBitXorAssign<T> for T {
     default unsafe fn bitxor_assign(offset: *mut Self, rhs: T) {
-        let _guard = crate::trap::disable_local();
-        let base = crate::arch::cpu::local::get_base() as usize;
-        let addr = (base + offset as usize) as *mut Self;
-        addr.write(addr.read() ^ rhs);
+        let ptr = get_local_val_guard(offset);
+        ptr.write(ptr.read() ^ rhs);
     }
 }
 
@@ -139,9 +169,7 @@ pub trait SingleInstructionLoad {
 
 impl<T: Copy> SingleInstructionLoad for T {
     default unsafe fn load(offset: *const Self) -> Self {
-        let _guard = crate::trap::disable_local();
-        let base = crate::arch::cpu::local::get_base() as usize;
-        let ptr = (base + offset as usize) as *const Self;
+        let ptr = get_local_val_guard(offset);
         ptr.read()
     }
 }
@@ -158,9 +186,7 @@ pub trait SingleInstructionStore {
 
 impl<T: Copy> SingleInstructionStore for T {
     default unsafe fn store(offset: *mut Self, val: Self) {
-        let _guard = crate::trap::disable_local();
-        let base = crate::arch::cpu::local::get_base() as usize;
-        let ptr = (base + offset as usize) as *mut Self;
+        let ptr = get_local_val_guard(offset);
         ptr.write(val);
     }
 }

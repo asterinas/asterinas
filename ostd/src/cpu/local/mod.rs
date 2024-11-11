@@ -70,6 +70,7 @@ extern "C" {
 pub(crate) unsafe fn early_init_bsp_local_base() {
     let start_base_va = __cpu_local_start as usize as u64;
 
+    #[cfg(not(miri))]
     // SAFETY: The base to be set is the start of the `.cpu_local` section,
     // where accessing the CPU-local objects have defined behaviors.
     unsafe {
@@ -119,6 +120,7 @@ pub unsafe fn init_on_bsp() {
 
     CPU_LOCAL_STORAGES.call_once(|| cpu_local_storages);
 
+    #[cfg(not(miri))]
     arch::cpu::local::set_base(bsp_base_va as u64);
 
     has_init::set_true();
@@ -138,6 +140,7 @@ pub unsafe fn init_on_ap(cpu_id: u32) {
 
     let ap_pages_ptr = paddr_to_vaddr(ap_pages.start_paddr()) as *mut u32;
 
+    #[cfg(not(miri))]
     // SAFETY: the memory will be dedicated to the AP. And we are on the AP.
     unsafe {
         arch::cpu::local::set_base(ap_pages_ptr as u64);

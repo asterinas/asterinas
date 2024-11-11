@@ -7,6 +7,8 @@ use core::{marker::Sync, ops::Deref};
 use super::{__cpu_local_end, __cpu_local_start};
 use crate::{arch, trap::DisabledLocalIrqGuard};
 
+use cfg_if::cfg_if;
+
 /// Defines a CPU-local variable.
 ///
 /// The accessors of the CPU-local variables are defined with [`CpuLocal`].
@@ -111,13 +113,19 @@ impl<T: 'static> CpuLocal<T> {
     pub(crate) unsafe fn as_ptr(&'static self) -> *const T {
         super::has_init::assert_true();
 
-        let offset = self.get_offset();
+        cfg_if! {
+            if #[cfg(not(miri))] {
+                let offset = self.get_offset();
 
-        let local_base = arch::cpu::local::get_base() as usize;
-        let local_va = local_base + offset;
+                let local_base = arch::cpu::local::get_base() as usize;
+                let local_va = local_base + offset;
 
-        // A sanity check about the alignment.
-        debug_assert_eq!(local_va % core::mem::align_of::<T>(), 0);
+                // A sanity check about the alignment.
+                debug_assert_eq!(local_va % core::mem::align_of::<T>(), 0);
+            } else {
+                let local_va = self as *const _ as usize;
+            }
+        }
 
         local_va as *mut T
     }

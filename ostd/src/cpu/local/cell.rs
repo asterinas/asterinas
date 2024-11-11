@@ -4,6 +4,8 @@
 
 use core::cell::UnsafeCell;
 
+use cfg_if::cfg_if;
+
 use super::{__cpu_local_end, __cpu_local_start, single_instr::*};
 use crate::arch;
 
@@ -78,6 +80,16 @@ macro_rules! cpu_local_cell {
 /// [`super`].
 pub struct CpuLocalCell<T: 'static>(UnsafeCell<T>);
 
+#[cfg(not(miri))]
+fn get_offset<T>(cell: &'static CpuLocalCell<T>) -> usize {
+    cell as *const _ as usize - __cpu_local_start as usize
+}
+
+#[cfg(miri)]
+fn get_offset<T>(cell: &'static CpuLocalCell<T>) -> usize {
+    cell as *const _ as usize
+}
+
 impl<T: 'static> CpuLocalCell<T> {
     /// Initialize a CPU-local object.
     ///
@@ -107,17 +119,21 @@ impl<T: 'static> CpuLocalCell<T> {
     pub unsafe fn as_ptr_mut(&'static self) -> *mut T {
         super::has_init::assert_true();
 
-        let offset = {
-            let bsp_va = self as *const _ as usize;
-            let bsp_base = __cpu_local_start as usize;
-            // The implementation should ensure that the CPU-local object resides in the `.cpu_local`.
-            debug_assert!(bsp_va + core::mem::size_of::<T>() <= __cpu_local_end as usize);
+        cfg_if! { if #[cfg(not(miri))] {
+            let offset = {
+                let bsp_va = self as *const _ as usize;
+                let bsp_base = __cpu_local_start as usize;
+                // The implementation should ensure that the CPU-local object resides in the `.cpu_local`.
+                debug_assert!(bsp_va + core::mem::size_of::<T>() <= __cpu_local_end as usize);
 
-            bsp_va - bsp_base as usize
-        };
+                bsp_va - bsp_base as usize
+            };
 
-        let local_base = arch::cpu::local::get_base() as usize;
-        let local_va = local_base + offset;
+            let local_base = arch::cpu::local::get_base() as usize;
+            let local_va = local_base + offset;
+        } else {
+            let local_va = self as *const _ as usize;
+        }}
 
         // A sanity check about the alignment.
         debug_assert_eq!(local_va % core::mem::align_of::<T>(), 0);
@@ -150,7 +166,7 @@ impl<T: 'static + SingleInstructionAddAssign<T>> CpuLocalCell<T> {
     /// Note that this memory operation will not be elided or reordered by the
     /// compiler since it is a black-box.
     pub fn add_assign(&'static self, rhs: T) {
-        let offset = self as *const _ as usize - __cpu_local_start as usize;
+        let offset = get_offset(self);
         // SAFETY: The CPU-local object is defined in the `.cpu_local` section,
         // so the pointer to the object is valid. And the reference is never shared.
         unsafe {
@@ -167,7 +183,7 @@ impl<T: 'static + SingleInstructionSubAssign<T>> CpuLocalCell<T> {
     /// Note that this memory operation will not be elided or reordered by the
     /// compiler since it is a black-box.
     pub fn sub_assign(&'static self, rhs: T) {
-        let offset = self as *const _ as usize - __cpu_local_start as usize;
+        let offset = get_offset(self);
         // SAFETY: The CPU-local object is defined in the `.cpu_local` section,
         // so the pointer to the object is valid. And the reference is never shared.
         unsafe {
@@ -182,7 +198,7 @@ impl<T: 'static + SingleInstructionBitAndAssign<T>> CpuLocalCell<T> {
     /// Note that this memory operation will not be elided or reordered by the
     /// compiler since it is a black-box.
     pub fn bitand_assign(&'static self, rhs: T) {
-        let offset = self as *const _ as usize - __cpu_local_start as usize;
+        let offset = get_offset(self);
         // SAFETY: The CPU-local object is defined in the `.cpu_local` section,
         // so the pointer to the object is valid. And the reference is never shared.
         unsafe {
@@ -197,7 +213,7 @@ impl<T: 'static + SingleInstructionBitOrAssign<T>> CpuLocalCell<T> {
     /// Note that this memory operation will not be elided or reordered by the
     /// compiler since it is a black-box.
     pub fn bitor_assign(&'static self, rhs: T) {
-        let offset = self as *const _ as usize - __cpu_local_start as usize;
+        let offset = get_offset(self);
         // SAFETY: The CPU-local object is defined in the `.cpu_local` section,
         // so the pointer to the object is valid. And the reference is never shared.
         unsafe {
@@ -213,7 +229,7 @@ impl<T: 'static + SingleInstructionBitXorAssign<T>> CpuLocalCell<T> {
     /// compiler since it is a black-box.
     #[allow(unused)]
     pub fn bitxor_assign(&'static self, rhs: T) {
-        let offset = self as *const _ as usize - __cpu_local_start as usize;
+        let offset = get_offset(self);
         // SAFETY: The CPU-local object is defined in the `.cpu_local` section,
         // so the pointer to the object is valid. And the reference is never shared.
         unsafe {
@@ -228,7 +244,7 @@ impl<T: 'static + SingleInstructionLoad> CpuLocalCell<T> {
     /// Note that this memory operation will not be elided or reordered by the
     /// compiler since it is a black-box.
     pub fn load(&'static self) -> T {
-        let offset = self as *const _ as usize - __cpu_local_start as usize;
+        let offset = get_offset(self);
         // SAFETY: The CPU-local object is defined in the `.cpu_local` section,
         // so the pointer to the object is valid.
         unsafe { T::load(offset as *const T) }
@@ -241,7 +257,7 @@ impl<T: 'static + SingleInstructionStore> CpuLocalCell<T> {
     /// Note that this memory operation will not be elided or reordered by the
     /// compiler since it is a black-box.
     pub fn store(&'static self, val: T) {
-        let offset = self as *const _ as usize - __cpu_local_start as usize;
+        let offset = get_offset(self);
         // SAFETY: The CPU-local object is defined in the `.cpu_local` section,
         // so the pointer to the object is valid. And the reference is never shared.
         unsafe {
