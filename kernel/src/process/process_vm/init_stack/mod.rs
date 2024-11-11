@@ -383,7 +383,12 @@ impl InitStackReader<'_> {
             return_errno_with_message!(Errno::EACCES, "Page not accessible");
         };
 
-        Ok(frame.read_val::<u64>(stack_base - page_base_addr)?)
+        let argc = frame.read_val::<u64>(stack_base - page_base_addr)?;
+        if argc > MAX_ARGV_NUMBER as u64 {
+            return_errno_with_message!(Errno::EINVAL, "argc is corrupted");
+        }
+
+        Ok(argc)
     }
 
     /// Reads argv from the process init stack
@@ -406,7 +411,14 @@ impl InitStackReader<'_> {
         for _ in 0..argc {
             let arg = {
                 let arg_ptr = arg_ptr_reader.read_val::<Vaddr>()?;
-                let mut arg_reader = frame.reader().skip(arg_ptr - page_base_addr).to_fallible();
+                let arg_offset = arg_ptr
+                    .checked_sub(page_base_addr)
+                    .ok_or_else(|| Error::with_message(Errno::EINVAL, "arg_ptr is corrupted"))?;
+                let mut arg_reader = frame
+                    .reader()
+                    .skip(arg_offset)
+                    .to_fallible()
+                    .limit(MAX_ARG_LEN);
                 arg_reader.read_cstring()?
             };
             argv.push(arg);
@@ -446,7 +458,14 @@ impl InitStackReader<'_> {
                     break;
                 }
 
-                let mut envp_reader = frame.reader().skip(envp_ptr - page_base_addr).to_fallible();
+                let envp_offset = envp_ptr
+                    .checked_sub(page_base_addr)
+                    .ok_or_else(|| Error::with_message(Errno::EINVAL, "envp is corrupted"))?;
+                let mut envp_reader = frame
+                    .reader()
+                    .skip(envp_offset)
+                    .to_fallible()
+                    .limit(MAX_ENV_LEN);
                 envp_reader.read_cstring()?
             };
             envp.push(env);
