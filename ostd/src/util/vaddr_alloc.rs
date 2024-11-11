@@ -9,7 +9,7 @@ use crate::{
     Error,
 };
 
-pub struct KVirtAreaFreeNode {
+struct KVirtAreaFreeNode {
     block: Range<Vaddr>,
 }
 
