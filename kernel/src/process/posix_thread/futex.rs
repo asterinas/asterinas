@@ -253,7 +253,9 @@ impl FutexBucket {
             }
 
             let item = item_cursor.remove().unwrap();
-            item.wake();
+            if !item.wake() {
+                continue;
+            }
             count += 1;
         }
 
@@ -323,8 +325,9 @@ impl FutexItem {
         (futex_item, waiter)
     }
 
-    pub fn wake(&self) {
-        self.waker.wake_up();
+    #[must_use]
+    pub fn wake(&self) -> bool {
+        self.waker.wake_up()
     }
 
     pub fn match_up(&self, another: &Self) -> bool {
