@@ -17,7 +17,7 @@ use super::{simple_scheduler::SimpleScheduler, worker::Worker, WorkItem, WorkPri
 use crate::{
     prelude::*,
     sched::priority::{Priority, PriorityRange},
-    thread::{kernel_thread::ThreadOptions, ThreadExt},
+    thread::{kernel_thread::ThreadOptions, AsThread},
 };
 
 /// A pool of workers.

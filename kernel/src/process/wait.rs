@@ -6,7 +6,7 @@ use super::{process_filter::ProcessFilter, signal::constants::SIGCHLD, ExitCode,
 use crate::{
     prelude::*,
     process::{
-        posix_thread::{thread_table, PosixThreadExt},
+        posix_thread::{thread_table, AsPosixThread},
         process_table,
         signal::with_signal_blocked,
     },

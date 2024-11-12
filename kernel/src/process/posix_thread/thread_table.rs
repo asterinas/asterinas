@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::{Thread, Tid};
-use crate::{prelude::*, process::posix_thread::PosixThreadExt};
+use crate::{prelude::*, process::posix_thread::AsPosixThread};
 
 static THREAD_TABLE: SpinLock<BTreeMap<Tid, Arc<Thread>>> = SpinLock::new(BTreeMap::new());
 

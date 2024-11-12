@@ -8,7 +8,7 @@ use super::SyscallReturn;
 use crate::{
     prelude::*,
     process::{
-        posix_thread::{thread_table, PosixThreadExt},
+        posix_thread::{thread_table, AsPosixThread},
         process_table,
     },
     time::{

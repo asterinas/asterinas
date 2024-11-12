@@ -162,13 +162,13 @@ impl Thread {
     }
 }
 
-/// An extension trait for [`Thread`]-like types.
-pub trait ThreadExt {
+/// A trait to provide the `as_thread` method for tasks.
+pub trait AsThread {
     /// Returns the associated [`Thread`].
     fn as_thread(&self) -> Option<&Arc<Thread>>;
 }
 
-impl ThreadExt for Task {
+impl AsThread for Task {
     fn as_thread(&self) -> Option<&Arc<Thread>> {
         self.data().downcast_ref::<Arc<Thread>>()
     }

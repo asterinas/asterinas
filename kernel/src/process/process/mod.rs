@@ -4,7 +4,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use self::timer_manager::PosixTimerManager;
 use super::{
-    posix_thread::{allocate_posix_tid, PosixThreadExt},
+    posix_thread::{allocate_posix_tid, AsPosixThread},
     process_table,
     process_vm::{Heap, InitStackReader, ProcessVm},
     rlimit::ResourceLimits,
@@ -21,7 +21,7 @@ use crate::{
     fs::{file_table::FileTable, fs_resolver::FsResolver, utils::FileCreationMask},
     prelude::*,
     sched::priority::{AtomicNice, Nice},
-    thread::{Thread, ThreadExt},
+    thread::{AsThread, Thread},
     time::clocks::ProfClock,
     vm::vmar::Vmar,
 };
