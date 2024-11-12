@@ -42,10 +42,10 @@ impl VirtioMsixManager {
         )
     }
 
-    /// Get shared interrupt IRQ used by virtqueue. If a virtqueue will not send interrupt frequently.
+    /// Get shared IRQ line used by virtqueue. If a virtqueue will not send interrupt frequently.
     /// Then this virtqueue should use shared interrupt IRQ.
     /// This function will return the MSI-X vector and corresponding IRQ.
-    pub fn shared_interrupt_irq(&mut self) -> (u16, &mut IrqLine) {
+    pub fn shared_irq_line(&mut self) -> (u16, &mut IrqLine) {
         (
             self.shared_interrupt_vector,
             self.msix

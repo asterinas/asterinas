@@ -78,8 +78,12 @@ pub trait VirtioTransport: Sync + Send + Debug {
 
     // ====================Device interrupt APIs=====================
 
-    /// Register queue interrupt callback. The transport will try to allocate single IRQ line if
-    /// `single_interrupt` is set.
+    /// Registers a callback for queue interrupts.
+    ///
+    /// If `single_interrupt` is enabled, the transport will initially
+    /// attempt to allocate a single IRQ line for the callback.
+    /// If no available IRQ lines are found for allocation, the
+    /// transport may assign the callback to a shared IRQ line.
     fn register_queue_callback(
         &mut self,
         index: u16,
