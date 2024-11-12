@@ -5,7 +5,7 @@ use ostd::{
     task::{Task, TaskOptions},
 };
 
-use super::{oops, status::ThreadStatus, Thread, ThreadExt};
+use super::{oops, status::ThreadStatus, AsThread, Thread};
 use crate::{prelude::*, sched::priority::Priority};
 
 /// The inner data of a kernel thread.

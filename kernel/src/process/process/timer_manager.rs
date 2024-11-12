@@ -17,7 +17,7 @@ use ostd::{
 use super::Process;
 use crate::{
     process::{
-        posix_thread::PosixThreadExt,
+        posix_thread::AsPosixThread,
         signal::{constants::SIGALRM, signals::kernel::KernelSignal},
     },
     thread::{

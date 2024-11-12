@@ -10,7 +10,7 @@ use crate::{
     cpu::LinuxAbi,
     get_current_userspace,
     prelude::*,
-    process::{posix_thread::PosixThreadExt, signal::handle_pending_signal},
+    process::{posix_thread::AsPosixThread, signal::handle_pending_signal},
     syscall::handle_syscall,
     thread::exception::handle_exception,
     vm::vmar::is_userspace_vaddr,

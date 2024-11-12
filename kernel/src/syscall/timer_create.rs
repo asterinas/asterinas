@@ -7,7 +7,7 @@ use super::{
 use crate::{
     prelude::*,
     process::{
-        posix_thread::{thread_table, PosixThreadExt},
+        posix_thread::{thread_table, AsPosixThread},
         process_table,
         signal::{
             c_types::{sigevent_t, SigNotify},

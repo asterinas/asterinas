@@ -22,7 +22,7 @@ use crate::{
     events::Observer,
     prelude::*,
     process::signal::constants::SIGCONT,
-    thread::{Thread, ThreadExt, Tid},
+    thread::{AsThread, Thread, Tid},
     time::{clocks::ProfClock, Timer, TimerManager},
 };
 
@@ -37,7 +37,7 @@ pub mod thread_table;
 pub use builder::PosixThreadBuilder;
 pub use exit::do_exit;
 pub use name::{ThreadName, MAX_THREAD_NAME_LEN};
-pub use posix_thread_ext::{create_posix_task_from_executable, PosixThreadExt};
+pub use posix_thread_ext::{create_posix_task_from_executable, AsPosixThread};
 pub use robust_list::RobustListHead;
 
 pub struct PosixThread {

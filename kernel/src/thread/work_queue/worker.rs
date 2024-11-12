@@ -11,7 +11,7 @@ use super::worker_pool::WorkerPool;
 use crate::{
     prelude::*,
     sched::priority::{Priority, PriorityRange},
-    thread::{kernel_thread::ThreadOptions, ThreadExt},
+    thread::{kernel_thread::ThreadOptions, AsThread},
 };
 
 /// A worker thread. A `Worker` will attempt to retrieve unfinished

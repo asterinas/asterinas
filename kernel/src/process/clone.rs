@@ -9,7 +9,7 @@ use ostd::{
 };
 
 use super::{
-    posix_thread::{thread_table, PosixThread, PosixThreadBuilder, PosixThreadExt, ThreadName},
+    posix_thread::{thread_table, AsPosixThread, PosixThread, PosixThreadBuilder, ThreadName},
     process_table,
     process_vm::ProcessVm,
     signal::{constants::SIGCHLD, sig_disposition::SigDispositions, sig_num::SigNum},
@@ -21,7 +21,7 @@ use crate::{
     get_current_userspace,
     prelude::*,
     process::posix_thread::allocate_posix_tid,
-    thread::{ThreadExt, Tid},
+    thread::{AsThread, Tid},
 };
 
 bitflags! {

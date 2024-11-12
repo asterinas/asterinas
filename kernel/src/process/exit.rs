@@ -4,10 +4,10 @@ use super::{process_table, Pid, Process, TermStatus};
 use crate::{
     prelude::*,
     process::{
-        posix_thread::{do_exit, PosixThreadExt},
+        posix_thread::{do_exit, AsPosixThread},
         signal::signals::kernel::KernelSignal,
     },
-    thread::ThreadExt,
+    thread::AsThread,
 };
 
 pub fn do_exit_group(term_status: TermStatus) {

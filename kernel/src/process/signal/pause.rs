@@ -7,8 +7,8 @@ use ostd::sync::{WaitQueue, Waiter};
 use super::sig_mask::SigMask;
 use crate::{
     prelude::*,
-    process::posix_thread::PosixThreadExt,
-    thread::ThreadExt,
+    process::posix_thread::AsPosixThread,
+    thread::AsThread,
     time::wait::{ManagedTimeout, TimeoutExt},
 };
 
