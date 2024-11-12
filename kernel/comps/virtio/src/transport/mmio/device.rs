@@ -273,7 +273,10 @@ impl VirtioTransport for VirtioMmioTransport {
         single_interrupt: bool,
     ) -> Result<(), VirtioTransportError> {
         if single_interrupt {
-            return Err(VirtioTransportError::NotEnoughResources);
+            warn!(
+                "{:?}: `single_interrupt` ignored: no support for virtio-mmio devices",
+                self.device_type()
+            );
         }
         self.multiplex.write().register_queue_callback(func);
         Ok(())

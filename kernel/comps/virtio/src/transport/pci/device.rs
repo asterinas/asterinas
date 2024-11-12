@@ -208,11 +208,17 @@ impl VirtioTransport for VirtioPciTransport {
             return Err(VirtioTransportError::InvalidArgs);
         }
         let (vector, irq) = if single_interrupt {
-            self.msix_manager
-                .pop_unused_irq()
-                .ok_or(VirtioTransportError::NotEnoughResources)?
+            if let Some(unused_irq) = self.msix_manager.pop_unused_irq() {
+                unused_irq
+            } else {
+                warn!(
+                    "{:?}: `single_interrupt` ignored: no more IRQ lines available",
+                    self.device_type()
+                );
+                self.msix_manager.shared_irq_line()
+            }
         } else {
-            self.msix_manager.shared_interrupt_irq()
+            self.msix_manager.shared_irq_line()
         };
         irq.on_active(func);
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, queue_select)
