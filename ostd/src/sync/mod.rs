@@ -14,7 +14,7 @@ pub(crate) use self::{guard::GuardTransfer, rcu::finish_grace_period};
 pub use self::{
     guard::{LocalIrqDisabled, PreemptDisabled, WriteIrqDisabled},
     mutex::{ArcMutexGuard, Mutex, MutexGuard},
-    rcu::{OwnerPtr, Rcu, RcuReadGuard},
+    rcu::{LazyRcu, OwnerPtr, Rcu, RcuReadGuard},
     rwlock::{
         ArcRwLockReadGuard, ArcRwLockUpgradeableGuard, ArcRwLockWriteGuard, RwLock,
         RwLockReadGuard, RwLockUpgradeableGuard, RwLockWriteGuard,

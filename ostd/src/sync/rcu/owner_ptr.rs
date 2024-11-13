@@ -13,6 +13,9 @@ pub trait OwnerPtr: 'static {
     // TODO: allow ?Sized
     type Target;
 
+    /// Creates a new pointer with the given value.
+    fn new(value: Self::Target) -> Self;
+
     /// Converts to a raw pointer.
     ///
     /// If `Self` owns the object that it refers to (e.g., `Box<_>`), then
@@ -31,6 +34,10 @@ pub trait OwnerPtr: 'static {
 impl<T: 'static> OwnerPtr for Box<T> {
     type Target = T;
 
+    fn new(value: Self::Target) -> Self {
+        Box::new(value)
+    }
+
     fn into_raw(self) -> *const Self::Target {
         Box::into_raw(self) as *const _
     }
@@ -42,6 +49,10 @@ impl<T: 'static> OwnerPtr for Box<T> {
 
 impl<T: 'static> OwnerPtr for Arc<T> {
     type Target = T;
+
+    fn new(value: Self::Target) -> Self {
+        Arc::new(value)
+    }
 
     fn into_raw(self) -> *const Self::Target {
         Arc::into_raw(self)
@@ -62,6 +73,10 @@ where
     <P as OwnerPtr>::Target: Sized,
 {
     type Target = P::Target;
+
+    fn new(value: Self::Target) -> Self {
+        Some(P::new(value))
+    }
 
     fn into_raw(self) -> *const Self::Target {
         self.map(|p| <P as OwnerPtr>::into_raw(p))
