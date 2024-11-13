@@ -81,6 +81,9 @@ pub fn do_poll(poll_fds: &[PollFd], timeout: Option<&Duration>, ctx: &Context) -
                 // before any file descriptors became ready
                 return Ok(0);
             }
+            Err(e) if e.error() == Errno::ERESTARTSYS => {
+                return_errno!(Errno::EINTR);
+            }
             Err(e) => return Err(e),
         };
 

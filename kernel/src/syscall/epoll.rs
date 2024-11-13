@@ -116,19 +116,12 @@ fn do_epoll_wait(
     let epoll_file = epoll_file_arc
         .downcast_ref::<EpollFile>()
         .ok_or(Error::with_message(Errno::EINVAL, "not epoll file"))?;
-    let result = epoll_file.wait(max_events, timeout.as_ref());
-
-    // As mentioned in the manual, the return value should be zero if no file descriptor becomes ready
-    // during the requested `timeout` milliseconds. So we ignore `Err(ETIME)` and return an empty vector.
-    //
-    // Manual: <https://www.man7.org/linux/man-pages/man2/epoll_wait.2.html>
-    if result
-        .as_ref()
-        .is_err_and(|err| err.error() == Errno::ETIME)
-    {
-        return Ok(Vec::new());
+    match epoll_file.wait(max_events, timeout.as_ref()) {
+        Ok(v) => Ok(v),
+        Err(e) if e.error() == Errno::ETIME => Ok(Vec::new()),
+        Err(e) if e.error() == Errno::ERESTARTSYS => Err(Error::new(Errno::EINTR)),
+        Err(e) => Err(e),
     }
-    result
 }
 
 pub fn sys_epoll_wait(

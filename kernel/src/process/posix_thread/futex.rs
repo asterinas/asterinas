@@ -68,12 +68,20 @@ pub fn futex_wait_bitset(
         );
     }
 
-    futex_bucket.add_item(futex_item);
+    futex_bucket.add_item(futex_item.clone());
 
     // drop lock
     drop(futex_bucket);
 
-    waiter.pause_timeout(timeout)
+    let res = waiter.pause_timeout(timeout);
+    futex_bucket = futex_bucket_ref.lock();
+    if futex_bucket.remove_item(&futex_item).is_err() {
+        Ok(())
+    } else if res.is_err_and(|e| e.error() == Errno::ETIME) {
+        return_errno!(Errno::ETIME);
+    } else {
+        return_errno!(Errno::ERESTARTSYS);
+    }
 }
 
 /// Does futex wake
@@ -224,18 +232,20 @@ impl FutexBucket {
         self.items.push_back(item);
     }
 
-    pub fn remove_item(&mut self, item: &FutexItem) {
+    pub fn remove_item(&mut self, item: &FutexItem) -> core::result::Result<(), ()> {
         let mut item_cursor = self.items.front_mut();
-        while !item_cursor.is_null() {
+        loop {
+            if item_cursor.is_null() {
+                break Err(());
+            }
             // The item_cursor has been checked not null.
             let futex_item = item_cursor.get().unwrap();
 
             if !futex_item.match_up(item) {
                 item_cursor.move_next();
-                continue;
             } else {
                 let _ = item_cursor.remove();
-                break;
+                break Ok(());
             }
         }
     }
@@ -307,6 +317,7 @@ impl FutexBucket {
     }
 }
 
+#[derive(Clone)]
 struct FutexItem {
     key: FutexKey,
     waker: Arc<Waker>,
@@ -325,13 +336,12 @@ impl FutexItem {
         (futex_item, waiter)
     }
 
-    #[must_use]
     pub fn wake(&self) -> bool {
         self.waker.wake_up()
     }
 
     pub fn match_up(&self, another: &Self) -> bool {
-        self.key.match_up(&another.key)
+        Arc::ptr_eq(&self.waker, &another.waker)
     }
 }
 
