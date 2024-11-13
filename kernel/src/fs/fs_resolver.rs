@@ -202,7 +202,6 @@ impl FsResolver {
             return_errno_with_message!(Errno::ENAMETOOLONG, "path is too long");
         }
         if relative_path.is_empty() {
-            assert!(!lookup_ctx.stop_on_parent);
             return Ok(parent.clone());
         }
 
@@ -335,7 +334,11 @@ impl FsResolver {
         let (follow_tail_link, stop_on_parent) = (false, true);
         let mut lookup_ctx = LookupCtx::new(follow_tail_link, stop_on_parent);
         let parent_dir = self.lookup_inner(path, &mut lookup_ctx)?;
-        let tail_file_name = lookup_ctx.tail_file_name().unwrap();
+        let tail_file_name = lookup_ctx.tail_file_name().ok_or_else(|| {
+            // If the path is the root directory ("/"), there is no basename,
+            // so this operation is not allowed.
+            Error::with_message(Errno::EEXIST, "operation not allowed on root directory")
+        })?;
 
         if parent_dir
             .lookup(tail_file_name.trim_end_matches('/'))
