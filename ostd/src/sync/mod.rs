@@ -11,7 +11,7 @@ mod wait;
 
 pub use self::{
     mutex::{ArcMutexGuard, Mutex, MutexGuard},
-    rcu::{pass_quiescent_state, OwnerPtr, Rcu, RcuReadGuard},
+    rcu::{pass_quiescent_state, LazyRcu, OwnerPtr, Rcu, RcuReadGuard},
     rwlock::{
         ArcRwLockReadGuard, ArcRwLockUpgradeableGuard, ArcRwLockWriteGuard, RwLock,
         RwLockReadGuard, RwLockUpgradeableGuard, RwLockWriteGuard,

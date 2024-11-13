@@ -5,6 +5,7 @@
 use core::{
     marker::PhantomData,
     ops::Deref,
+    ptr::NonNull,
     sync::atomic::{
         AtomicPtr,
         Ordering::{AcqRel, Acquire},
@@ -24,7 +25,7 @@ mod owner_ptr;
 
 pub use owner_ptr::OwnerPtr;
 
-/// Read-Copy Update Synchronization Mechanism
+/// Read-Copy Update Synchronization Object.
 ///
 /// # Overview
 ///
@@ -45,99 +46,242 @@ pub use owner_ptr::OwnerPtr;
 /// It is used when performance of reads is crucial and is an example of space–time
 /// tradeoff, enabling fast operations at the cost of more space.
 ///
-/// Use [`Rcu`] in scenarios that require frequent reads and infrequent
+/// Use [`Rcu_`] in scenarios that require frequent reads and infrequent
 /// updates (read-mostly).
 ///
-/// Use [`Rcu`] in scenarios that require high real-time reading.
+/// Use [`Rcu_`] in scenarios that require high real-time reading.
 ///
-/// Rcu should not to be used in the scenarios that write-mostly and which need
+/// Rcu_ should not to be used in the scenarios that write-mostly and which need
 /// consistent data.
 ///
 /// # Examples
 ///
 /// ```
-/// use aster_frame::sync::{Rcu, RcuReadGuard, RcuReclaimer};
+/// use ostd::sync::Rcu_;
 ///
-/// let rcu = Rcu::new(Box::new(42));
+/// let rcu = Rcu_::new(Box::new(42));
 ///
-/// // Read the data protected by rcu
+/// let rcu_guard = rcu.read();
+///
+/// assert_eq!(*rcu_guard, Some(&42));
+///
+/// rcu_guard.try_compare_update(Box::new(43)).unwrap();
+///
+/// let rcu_guard = rcu.read();
+///
+/// assert_eq!(*rcu_guard, Some(&43));
+/// ```
+pub type Rcu<P> = Rcu_<P, false>;
+
+/// Lazily Initialized RCU.
+///
+/// This is a variant of [`Rcu`] that allows lazy initialization.
+///
+/// # Examples
+///
+/// ```
+/// use ostd::sync::LazyRcu;
+///
+/// // Also allows lazy initialization.
+/// static RCU: LazyRcu<Box<usize>> = LazyRcu::new_uninit();
+///
+/// // Not initialized yet.
 /// {
-///     let rcu_guard = rcu.get();
+///     assert!(RCU.read().check().is_none());
+/// }
+///
+/// // Initialize the data protected by RCU.
+/// RCU.update(Box::new(42));
+///
+/// // Read the data protected by RCU
+/// {
+///     let rcu_guard = RCU.read_maybe_uninit().check().unwrap();
 ///     assert_eq!(*rcu_guard, 42);
 /// }
 ///
-/// // Update the data protected by rcu
+/// // Update the data protected by RCU
 /// {
-///     let reclaimer = rcu.replace(Box::new(43));
+///     let rcu_guard = RCU.read_maybe_uninit().check().unwrap();
 ///
-///     let rcu_guard = rcu.get();
+///     rcu_guard.try_compare_update(Box::new(43)).unwrap();
+///
+///     let rcu_guard = RCU.read_maybe_uninit().check().unwrap();
 ///     assert_eq!(*rcu_guard, 43);
 /// }
 /// ```
-pub struct Rcu<P: OwnerPtr> {
+pub type LazyRcu<P> = Rcu_<P, true>;
+
+/// Read-Copy Update Synchronization Object.
+///
+/// This type implements both initialized and lazy RCU objects.
+/// See [`Rcu`] and [`LazyRcu`] for more details.
+// The representation must be transparent to allow us to assume a maybe
+// uninitialized RCU object initialized.
+#[repr(transparent)]
+pub struct Rcu_<P: OwnerPtr, const MAYBE_UNINIT: bool> {
     ptr: AtomicPtr<<P as OwnerPtr>::Target>,
     marker: PhantomData<P::Target>,
 }
 
-impl<P: OwnerPtr> Rcu<P> {
-    /// Creates a new instance of Rcu with the given pointer.
-    pub fn new(ptr: P) -> Self {
-        let ptr = AtomicPtr::new(OwnerPtr::into_raw(ptr) as *mut _);
+// Initialized RCU object.
+impl<P: OwnerPtr> Rcu_<P, false> {
+    /// Creates a new RCU object with the given pointer.
+    pub fn new(pointer: P) -> Self {
+        let ptr = <P as OwnerPtr>::into_raw(pointer).cast_mut();
+        let ptr = AtomicPtr::new(ptr);
         Self {
             ptr,
             marker: PhantomData,
         }
     }
 
-    /// Retrieves a read guard for the RCU mechanism.
+    /// Retrieves a read guard for the RCU object.
     ///
-    /// This method returns a `RcuReadGuard` which allows read-only access to the
-    /// underlying data protected by the RCU mechanism.
-    pub fn get(&self) -> RcuReadGuard<'_, P> {
+    /// The guard allows read-only access to the data protected by RCU.
+    pub fn read(&self) -> RcuReadGuard<'_, P, false> {
         let guard = disable_preempt();
-        let obj = unsafe { &*self.ptr.load(Acquire) };
         RcuReadGuard {
-            obj,
-            _rcu: self,
+            obj_ptr: self.ptr.load(Acquire),
+            rcu: self,
             _inner_guard: guard,
         }
     }
 }
 
-impl<P: OwnerPtr + Send> Rcu<P> {
-    /// Replaces the current pointer with a new pointer.
-    pub fn replace(&self, new_ptr: P) {
-        let new_ptr = <P as OwnerPtr>::into_raw(new_ptr) as *mut _;
-        let old_ptr = {
-            let old_raw_ptr = self.ptr.swap(new_ptr, AcqRel);
-            // SAFETY: It is valid because it was previously returned by `into_raw`.
-            unsafe { <P as OwnerPtr>::from_raw(old_raw_ptr) }
-        };
+// Maybe uninitialized RCU object.
+impl<P: OwnerPtr> Rcu_<P, true> {
+    /// Creates a new uninitialized RCU object.
+    ///
+    /// Initialization can be done by calling
+    /// [`RcuReadGuard::try_compare_update`] after getting a read
+    /// guard using [`Rcu_::read`]. Then only the first initialization will be
+    /// successful. If initialization can be done multiple times, using
+    /// [`Rcu_::update`] is fine.
+    pub const fn new_uninit() -> Self {
+        let ptr = AtomicPtr::new(core::ptr::null_mut());
+        Self {
+            ptr,
+            marker: PhantomData,
+        }
+    }
 
-        let rcu_monitor = RCU_MONITOR.get().unwrap().lock();
-        rcu_monitor.after_grace_period(move || {
-            drop(old_ptr);
-        });
+    /// Retrieves a read guard for the RCU object.
+    ///
+    /// The guard allows read-only access to the data protected by RCU. If the
+    /// data is not initialized, the guard will behave as `None` before getting
+    /// dereferenced.
+    pub fn read_maybe_uninit(&self) -> RcuReadGuard<'_, P, true> {
+        let guard = disable_preempt();
+        RcuReadGuard {
+            obj_ptr: self.ptr.load(Acquire),
+            rcu: self,
+            _inner_guard: guard,
+        }
     }
 }
 
-/// A guard that allows read-only access to the data protected by the RCU
-/// mechanism.
-///
-/// Note that the data read can be outdated if the data is updated by another
-/// task after acquiring the guard.
-pub struct RcuReadGuard<'a, P: OwnerPtr> {
-    obj: &'a <P as OwnerPtr>::Target,
-    _rcu: &'a Rcu<P>,
+impl<P: OwnerPtr + Send, const MAYBE_UNINIT: bool> Rcu_<P, MAYBE_UNINIT> {
+    /// Replaces the current pointer with a new pointer.
+    ///
+    /// This function updates the pointer to the new pointer regardless of the
+    /// original pointer. If the original pointer is not NULL, it will be
+    /// dropped after the grace period.
+    pub fn update(&self, new_ptr: P) {
+        let new_ptr = <P as OwnerPtr>::into_raw(new_ptr).cast_mut();
+        let old_raw_ptr = self.ptr.swap(new_ptr, AcqRel);
+
+        if let Some(p) = NonNull::new(old_raw_ptr) {
+            // SAFETY: It was previously returned by `into_raw`.
+            unsafe { delay_drop::<P>(p) };
+        }
+    }
+}
+
+/// A guard that allows read-only access to the initialized data protected
+/// by the RCU mechanism.
+pub struct RcuReadGuard<'a, P: OwnerPtr, const MAYBE_UNINIT: bool> {
+    /// If maybe uninitialized, the pointer can be NULL.
+    obj_ptr: *mut <P as OwnerPtr>::Target,
+    rcu: &'a Rcu_<P, MAYBE_UNINIT>,
     _inner_guard: DisabledPreemptGuard,
 }
 
-impl<P: OwnerPtr> Deref for RcuReadGuard<'_, P> {
+// Initialized RCU guard can be dereferenced.
+impl<P: OwnerPtr> Deref for RcuReadGuard<'_, P, false> {
     type Target = <P as OwnerPtr>::Target;
 
     fn deref(&self) -> &Self::Target {
-        self.obj
+        // SAFETY: Since the preemption is disabled, the pointer is valid
+        // because other writers won't update the pointer until this task
+        // passes the quiescent state.
+        // And this pointer is not NULL.
+        unsafe { &*self.obj_ptr }
     }
+}
+
+// Maybe uninitialized RCU guard can be dereferenced after checking.
+impl<'a, P: OwnerPtr> RcuReadGuard<'a, P, true> {
+    /// Get the initialized read guard.
+    ///
+    /// If the RCU object is not initialized, this function will return
+    /// [`Err`] with itself. Otherwise a dereferenceable read guard will be
+    /// returned.
+    pub fn check(self) -> Result<RcuReadGuard<'a, P, false>, Self> {
+        if self.obj_ptr.is_null() {
+            return Err(self);
+        }
+        Ok(RcuReadGuard {
+            obj_ptr: self.obj_ptr,
+            // SAFETY: It is initialized. The layout is the same.
+            rcu: unsafe { core::mem::transmute::<&Rcu_<P, true>, &Rcu_<P, false>>(self.rcu) },
+            _inner_guard: self._inner_guard,
+        })
+    }
+}
+
+impl<P: OwnerPtr + Send, const MAYBE_UNINIT: bool> RcuReadGuard<'_, P, MAYBE_UNINIT> {
+    /// Try to replaces the already read pointer with a new pointer.
+    ///
+    /// If another thread has updated the pointer after the read, this
+    /// function will fail and return the new pointer. Otherwise, it will
+    /// replace the pointer with the new one and drop the old pointer after
+    /// the grace period.
+    ///
+    /// If spinning on this function, it is recommended to relax the CPU
+    /// or yield the task on failure. Otherwise contention will occur.
+    pub fn try_compare_update(self, new_ptr: P) -> Result<(), P> {
+        let new_ptr = <P as OwnerPtr>::into_raw(new_ptr).cast_mut();
+
+        if self
+            .rcu
+            .ptr
+            .compare_exchange(self.obj_ptr, new_ptr, AcqRel, Acquire)
+            .is_err()
+        {
+            // SAFETY: It was previously returned by `into_raw`.
+            return Err(unsafe { <P as OwnerPtr>::from_raw(new_ptr) });
+        }
+
+        if let Some(p) = NonNull::new(self.obj_ptr) {
+            // SAFETY: It was previously returned by `into_raw`.
+            unsafe { delay_drop::<P>(p) };
+        }
+
+        Ok(())
+    }
+}
+
+/// # Safety
+///
+/// The pointer must be previously returned by `into_raw` and the pointer
+/// must be only be dropped once.
+unsafe fn delay_drop<P: OwnerPtr + Send>(pointer: NonNull<<P as OwnerPtr>::Target>) {
+    // SAFETY: The pointer is not NULL.
+    let p = unsafe { <P as OwnerPtr>::from_raw(pointer.as_ptr().cast_const()) };
+    let rcu_monitor = RCU_MONITOR.get().unwrap().lock();
+    rcu_monitor.after_grace_period(move || {
+        drop(p);
+    });
 }
 
 /// Passes the quiescent state to the RCU monitor and.
