@@ -27,7 +27,8 @@ impl Connected {
         Self {
             connection: SpinLock::new(Connection::new(peer_addr, local_addr.port)),
             id: ConnectionID::new(local_addr, peer_addr),
-            pollee: Pollee::new(IoEvents::empty()),
+            // FIXME: We should reuse `Pollee` from `Init`.
+            pollee: Pollee::new(),
         }
     }
 
@@ -35,7 +36,8 @@ impl Connected {
         Self {
             connection: SpinLock::new(Connection::new_from_info(connecting.info())),
             id: connecting.id(),
-            pollee: Pollee::new(IoEvents::empty()),
+            // FIXME: We should reuse `Pollee` from `Init`.
+            pollee: Pollee::new(),
         }
     }
     pub fn peer_addr(&self) -> VsockSocketAddr {
@@ -116,7 +118,11 @@ impl Connected {
 
     pub fn add_connection_buffer(&self, bytes: &[u8]) -> bool {
         let mut connection = self.connection.disable_irq().lock();
-        connection.add(bytes)
+
+        let result = connection.add(bytes);
+        self.pollee.notify(IoEvents::IN);
+
+        result
     }
 
     pub fn set_peer_requested_shutdown(&self) {
@@ -127,16 +133,18 @@ impl Connected {
     }
 
     pub fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        self.pollee.poll(mask, poller)
+        self.pollee
+            .poll_with(mask, poller, || self.check_io_events())
     }
 
-    pub fn update_io_events(&self) {
+    fn check_io_events(&self) -> IoEvents {
         let connection = self.connection.disable_irq().lock();
+
         // receive
         if !connection.buffer.is_empty() {
-            self.pollee.add_events(IoEvents::IN);
+            IoEvents::IN
         } else {
-            self.pollee.del_events(IoEvents::IN);
+            IoEvents::empty()
         }
     }
 }

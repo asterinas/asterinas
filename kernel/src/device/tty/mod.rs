@@ -126,9 +126,6 @@ impl FileIo for Tty {
                 };
 
                 self.set_foreground(&pgid)?;
-                // Some background processes may be waiting on the wait queue,
-                // when set_fg, the background processes may be able to read.
-                self.ldisc.update_readable_state();
                 Ok(0)
             }
             IoctlCmd::TCSETS => {

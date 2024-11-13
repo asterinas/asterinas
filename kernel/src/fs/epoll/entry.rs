@@ -288,7 +288,7 @@ impl ReadySet {
         Self {
             entries: SpinLock::new(VecDeque::new()),
             pop_guard: Mutex::new(PopGuard),
-            pollee: Pollee::new(IoEvents::empty()),
+            pollee: Pollee::new(),
         }
     }
 
@@ -315,7 +315,7 @@ impl ReadySet {
         // Even if the entry is already set to ready,
         // there might be new events that we are interested in.
         // Wake the poller anyway.
-        self.pollee.add_events(IoEvents::IN);
+        self.pollee.notify(IoEvents::IN);
     }
 
     pub(super) fn lock_pop(&self) -> ReadySetPopIter {
@@ -327,7 +327,18 @@ impl ReadySet {
     }
 
     pub(super) fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        self.pollee.poll(mask, poller)
+        self.pollee
+            .poll_with(mask, poller, || self.check_io_events())
+    }
+
+    fn check_io_events(&self) -> IoEvents {
+        let entries = self.entries.lock();
+
+        if !entries.is_empty() {
+            IoEvents::IN
+        } else {
+            IoEvents::empty()
+        }
     }
 }
 
@@ -355,11 +366,6 @@ impl Iterator for ReadySetPopIter<'_> {
             // Pop the front entry. Note that `_pop_guard` and `limit` guarantee that this entry
             // must exist, so we can just unwrap it.
             let weak_entry = entries.pop_front().unwrap();
-
-            // Clear the epoll file's events if there are no ready entries.
-            if entries.len() == 0 {
-                self.ready_set.pollee.del_events(IoEvents::IN);
-            }
 
             let Some(entry) = Weak::upgrade(&weak_entry) else {
                 // The entry has been deleted.

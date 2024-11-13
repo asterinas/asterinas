@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use core::{
-    sync::atomic::{AtomicU32, AtomicUsize, Ordering},
+    sync::atomic::{AtomicUsize, Ordering},
     time::Duration,
 };
 
@@ -12,8 +12,16 @@ use crate::{
     prelude::*,
 };
 
-/// A pollee maintains a set of active events, which can be polled with
-/// pollers or be monitored with observers.
+/// A pollee represents any I/O object (e.g., a file or socket) that can be polled.
+///
+/// `Pollee` provides a standard mechanism to allow
+/// 1. An I/O object to maintain its I/O readiness; and
+/// 2. An interested part to poll the object's I/O readiness.
+///
+/// To correctly use the pollee, you need to call [`Pollee::notify`] whenever a new event arrives.
+///
+/// Then, [`Pollee::poll_with`] can allow you to register a [`Poller`] to wait for certain events,
+/// or register a [`PollAdaptor`] to be notified when certain events occur.
 pub struct Pollee {
     inner: Arc<PolleeInner>,
 }
@@ -21,30 +29,45 @@ pub struct Pollee {
 struct PolleeInner {
     // A subject which is monitored with pollers.
     subject: Subject<IoEvents, IoEvents>,
-    // For efficient manipulation, we use AtomicU32 instead of RwLock<IoEvents>.
-    events: AtomicU32,
+}
+
+impl Default for Pollee {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Pollee {
-    /// Creates a new instance of pollee.
-    pub fn new(init_events: IoEvents) -> Self {
+    /// Creates a new pollee.
+    pub fn new() -> Self {
         let inner = PolleeInner {
             subject: Subject::new(),
-            events: AtomicU32::new(init_events.bits()),
         };
         Self {
             inner: Arc::new(inner),
         }
     }
 
-    /// Returns the current events of the pollee filtered by the given event mask.
+    /// Returns the current events filtered by the given event mask.
     ///
     /// If a poller is provided, the poller will start monitoring the pollee and receive event
     /// notification when the pollee receives interesting events.
     ///
     /// This operation is _atomic_ in the sense that if there are interesting events, either the
     /// events are returned or the poller is notified.
-    pub fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
+    ///
+    /// The above statement about atomicity is true even if `check` contains race conditions (and
+    /// in fact it always will, because even if it holds a lock, the lock will be released when
+    /// `check` returns).
+    pub fn poll_with<F>(
+        &self,
+        mask: IoEvents,
+        poller: Option<&mut PollHandle>,
+        check: F,
+    ) -> IoEvents
+    where
+        F: FnOnce() -> IoEvents,
+    {
         let mask = mask | IoEvents::ALWAYS_POLL;
 
         // Register the provided poller.
@@ -53,7 +76,7 @@ impl Pollee {
         }
 
         // Check events after the registration to prevent race conditions.
-        self.events() & mask
+        check() & mask
     }
 
     fn register_poller(&self, poller: &mut PollHandle, mask: IoEvents) {
@@ -64,41 +87,18 @@ impl Pollee {
         poller.pollees.push(Arc::downgrade(&self.inner));
     }
 
-    /// Add some events to the pollee's state.
+    /// Notifies pollers of some events.
     ///
-    /// This method wakes up all registered pollers that are interested in
-    /// the added events.
-    pub fn add_events(&self, events: IoEvents) {
-        self.inner.events.fetch_or(events.bits(), Ordering::Release);
+    /// This method wakes up all registered pollers that are interested in the events.
+    ///
+    /// The events can be spurious. This way, the caller can avoid expensive calculations and
+    /// simply add all possible ones.
+    pub fn notify(&self, events: IoEvents) {
         self.inner.subject.notify_observers(&events);
-    }
-
-    /// Remove some events from the pollee's state.
-    ///
-    /// This method will not wake up registered pollers even when
-    /// the pollee still has some interesting events to the pollers.
-    pub fn del_events(&self, events: IoEvents) {
-        self.inner
-            .events
-            .fetch_and(!events.bits(), Ordering::Release);
-    }
-
-    /// Reset the pollee's state.
-    ///
-    /// Reset means removing all events on the pollee.
-    pub fn reset_events(&self) {
-        self.inner
-            .events
-            .fetch_and(!IoEvents::all().bits(), Ordering::Release);
-    }
-
-    fn events(&self) -> IoEvents {
-        let event_bits = self.inner.events.load(Ordering::Acquire);
-        IoEvents::from_bits(event_bits).unwrap()
     }
 }
 
-/// An opaque handle that can be used as an argument of the [`Pollee::poll`] method.
+/// An opaque handle that can be used as an argument of the [`Pollable::poll`] method.
 ///
 /// This type can represent an entity of [`PollAdaptor`] or [`Poller`], which is done via the
 /// [`PollAdaptor::as_handle_mut`] and [`Poller::as_handle_mut`] methods.
@@ -146,11 +146,11 @@ impl Drop for PollHandle {
     }
 }
 
-/// An adaptor to make an [`Observer`] usable for [`Pollee::poll`].
+/// An adaptor to make an [`Observer`] usable for [`Pollable::poll`].
 ///
-/// Normally, [`Pollee::poll`] accepts a [`Poller`] which is used to wait for events. By using this
-/// adaptor, it is possible to use any [`Observer`] with [`Pollee::poll`]. The observer will be
-/// notified whenever there are new events.
+/// Normally, [`Pollable::poll`] accepts a [`Poller`] which is used to wait for events. By using
+/// this adaptor, it is possible to use any [`Observer`] with [`Pollable::poll`]. The observer will
+/// be notified whenever there are new events.
 pub struct PollAdaptor<O> {
     // The event observer.
     observer: Arc<O>,
@@ -258,18 +258,18 @@ impl Observer<IoEvents> for EventCounter {
 /// The `Pollable` trait allows for waiting for events and performing event-based operations.
 ///
 /// Implementors are required to provide a method, [`Pollable::poll`], which is usually implemented
-/// by simply calling [`Pollee::poll`] on the internal [`Pollee`]. This trait provides another
+/// by simply calling [`Pollable::poll`] on the internal [`Pollee`]. This trait provides another
 /// method, [`Pollable::wait_events`], to allow waiting for events and performing operations
 /// according to the events.
 ///
 /// This trait is added instead of creating a new method in [`Pollee`] because sometimes we do not
 /// have access to the internal [`Pollee`], but there is a method that provides the same semantics
-/// as [`Pollee::poll`] and we need to perform event-based operations using that method.
+/// as [`Pollable::poll`] and we need to perform event-based operations using that method.
 pub trait Pollable {
     /// Returns the interesting events now and monitors their occurrence in the future if the
     /// poller is provided.
     ///
-    /// This method has the same semantics as [`Pollee::poll`].
+    /// This method has the same semantics as [`Pollee::poll_with`].
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents;
 
     /// Waits for events and performs event-based operations.

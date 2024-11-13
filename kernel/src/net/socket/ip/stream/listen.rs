@@ -5,7 +5,7 @@ use aster_bigtcp::{
 };
 
 use super::connected::ConnectedStream;
-use crate::{events::IoEvents, net::iface::BoundTcpSocket, prelude::*, process::signal::Pollee};
+use crate::{events::IoEvents, net::iface::BoundTcpSocket, prelude::*};
 
 pub struct ListenStream {
     backlog: usize,
@@ -80,22 +80,17 @@ impl ListenStream {
         self.bound_socket.local_endpoint().unwrap()
     }
 
-    pub(super) fn init_pollee(&self, pollee: &Pollee) {
-        pollee.reset_events();
-        self.update_io_events(pollee);
-    }
-
-    pub(super) fn update_io_events(&self, pollee: &Pollee) {
+    pub(super) fn check_io_events(&self) -> IoEvents {
         let backlog_sockets = self.backlog_sockets.read();
 
         let can_accept = backlog_sockets.iter().any(|socket| socket.can_accept());
 
-        // FIXME: If network packets come in simultaneously, the socket state may change in the
-        // middle. This can cause the wrong I/O events to be added or deleted.
+        // If network packets come in simultaneously, the socket state may change in the middle.
+        // However, the current pollee implementation should be able to handle this race condition.
         if can_accept {
-            pollee.add_events(IoEvents::IN);
+            IoEvents::IN
         } else {
-            pollee.del_events(IoEvents::IN);
+            IoEvents::empty()
         }
     }
 }

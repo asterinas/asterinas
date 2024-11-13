@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::sync::atomic::{AtomicBool, Ordering};
+
 use aster_virtio::device::socket::connect::{ConnectionInfo, VsockEvent};
 
 use super::connected::ConnectionID;
@@ -13,6 +15,7 @@ use crate::{
 pub struct Connecting {
     id: ConnectionID,
     info: SpinLock<ConnectionInfo>,
+    is_connected: AtomicBool,
     pollee: Pollee,
 }
 
@@ -21,7 +24,8 @@ impl Connecting {
         Self {
             info: SpinLock::new(ConnectionInfo::new(peer_addr.into(), local_addr.port)),
             id: ConnectionID::new(local_addr, peer_addr),
-            pollee: Pollee::new(IoEvents::empty()),
+            is_connected: AtomicBool::new(false),
+            pollee: Pollee::new(),
         }
     }
 
@@ -46,11 +50,21 @@ impl Connecting {
     }
 
     pub fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        self.pollee.poll(mask, poller)
+        self.pollee
+            .poll_with(mask, poller, || self.check_io_events())
     }
 
-    pub fn add_events(&self, events: IoEvents) {
-        self.pollee.add_events(events)
+    fn check_io_events(&self) -> IoEvents {
+        if self.is_connected.load(Ordering::Relaxed) {
+            IoEvents::IN
+        } else {
+            IoEvents::empty()
+        }
+    }
+
+    pub fn set_connected(&self) {
+        self.is_connected.store(true, Ordering::Relaxed);
+        self.pollee.notify(IoEvents::IN);
     }
 }
 

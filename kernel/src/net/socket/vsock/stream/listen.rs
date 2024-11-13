@@ -18,7 +18,8 @@ impl Listen {
     pub fn new(addr: VsockSocketAddr, backlog: usize) -> Self {
         Self {
             addr,
-            pollee: Pollee::new(IoEvents::empty()),
+            // FIXME: We should reuse `Pollee` from `Init`.
+            pollee: Pollee::new(),
             backlog,
             incoming_connection: SpinLock::new(VecDeque::with_capacity(backlog)),
         }
@@ -33,8 +34,11 @@ impl Listen {
         if incoming_connections.len() >= self.backlog {
             return_errno_with_message!(Errno::ECONNREFUSED, "queue in listenging socket is full")
         }
+
         // FIXME: check if the port is already used
         incoming_connections.push_back(connect);
+        self.pollee.notify(IoEvents::IN);
+
         Ok(())
     }
 
@@ -52,15 +56,17 @@ impl Listen {
     }
 
     pub fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        self.pollee.poll(mask, poller)
+        self.pollee
+            .poll_with(mask, poller, || self.check_io_events())
     }
 
-    pub fn update_io_events(&self) {
+    fn check_io_events(&self) -> IoEvents {
         let incoming_connection = self.incoming_connection.disable_irq().lock();
+
         if !incoming_connection.is_empty() {
-            self.pollee.add_events(IoEvents::IN);
+            IoEvents::IN
         } else {
-            self.pollee.del_events(IoEvents::IN);
+            IoEvents::empty()
         }
     }
 }
