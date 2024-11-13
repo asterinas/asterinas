@@ -19,9 +19,7 @@ pub(super) fn sys_rmdirat(
     path_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let path_addr = ctx
-        .get_user_space()
-        .read_cstring(path_addr, MAX_FILENAME_LEN)?;
+    let path_addr = ctx.user_space().read_cstring(path_addr, MAX_FILENAME_LEN)?;
     debug!("dirfd = {}, path_addr = {:?}", dirfd, path_addr);
 
     let (dir_dentry, name) = {

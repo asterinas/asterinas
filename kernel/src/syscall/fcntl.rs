@@ -92,7 +92,7 @@ fn handle_getlk(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> 
         file_table.get_file(fd)?.clone()
     };
     let lock_mut_ptr = arg as Vaddr;
-    let mut lock_mut_c = ctx.get_user_space().read_val::<c_flock>(lock_mut_ptr)?;
+    let mut lock_mut_c = ctx.user_space().read_val::<c_flock>(lock_mut_ptr)?;
     let lock_type = RangeLockType::try_from(lock_mut_c.l_type)?;
     if lock_type == RangeLockType::Unlock {
         return_errno_with_message!(Errno::EINVAL, "invalid flock type for getlk");
@@ -106,7 +106,7 @@ fn handle_getlk(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> 
         .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;
     lock = inode_file.test_range_lock(lock)?;
     lock_mut_c.copy_from_range_lock(&lock);
-    ctx.get_user_space().write_val(lock_mut_ptr, &lock_mut_c)?;
+    ctx.user_space().write_val(lock_mut_ptr, &lock_mut_c)?;
     Ok(SyscallReturn::Return(0))
 }
 
@@ -121,7 +121,7 @@ fn handle_setlk(
         file_table.get_file(fd)?.clone()
     };
     let lock_mut_ptr = arg as Vaddr;
-    let lock_mut_c = ctx.get_user_space().read_val::<c_flock>(lock_mut_ptr)?;
+    let lock_mut_c = ctx.user_space().read_val::<c_flock>(lock_mut_ptr)?;
     let lock_type = RangeLockType::try_from(lock_mut_c.l_type)?;
     let lock = RangeLockItemBuilder::new()
         .type_(lock_type)

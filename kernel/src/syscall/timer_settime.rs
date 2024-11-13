@@ -19,7 +19,7 @@ pub fn sys_timer_settime(
         return_errno_with_message!(Errno::EINVAL, "invalid pointer to new value");
     }
 
-    let user_space = ctx.get_user_space();
+    let user_space = ctx.user_space();
     let new_itimerspec = user_space.read_val::<itimerspec_t>(new_itimerspec_addr)?;
     let interval = Duration::try_from(new_itimerspec.it_interval)?;
     let expire_time = Duration::try_from(new_itimerspec.it_value)?;
@@ -74,8 +74,7 @@ pub fn sys_timer_gettime(
         it_interval: interval,
         it_value: remain,
     };
-    ctx.get_user_space()
-        .write_val(itimerspec_addr, &itimerspec)?;
+    ctx.user_space().write_val(itimerspec_addr, &itimerspec)?;
 
     Ok(SyscallReturn::Return(0))
 }

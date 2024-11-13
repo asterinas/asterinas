@@ -33,7 +33,7 @@ pub fn sys_fchmodat(
     /* flags: u32, */
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let path = ctx.get_user_space().read_cstring(path_ptr, PATH_MAX)?;
+    let path = ctx.user_space().read_cstring(path_ptr, PATH_MAX)?;
     debug!("dirfd = {}, path = {:?}, mode = 0o{:o}", dirfd, path, mode,);
 
     let dentry = {

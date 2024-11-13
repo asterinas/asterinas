@@ -56,7 +56,7 @@ pub fn sys_fchownat(
     flags: u32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let path = ctx.get_user_space().read_cstring(path_ptr, PATH_MAX)?;
+    let path = ctx.user_space().read_cstring(path_ptr, PATH_MAX)?;
     let flags = ChownFlags::from_bits(flags)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags"))?;
     debug!(

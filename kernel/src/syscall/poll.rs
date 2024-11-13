@@ -11,7 +11,7 @@ use crate::{
 };
 
 pub fn sys_poll(fds: Vaddr, nfds: u64, timeout: i32, ctx: &Context) -> Result<SyscallReturn> {
-    let user_space = ctx.get_user_space();
+    let user_space = ctx.user_space();
 
     let poll_fds = {
         let mut read_addr = fds;

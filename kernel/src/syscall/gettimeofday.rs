@@ -21,7 +21,7 @@ pub fn sys_gettimeofday(
         let time_duration = now.duration_since(&SystemTime::UNIX_EPOCH)?;
         timeval_t::from(time_duration)
     };
-    ctx.get_user_space().write_val(timeval_addr, &time_val)?;
+    ctx.user_space().write_val(timeval_addr, &time_val)?;
 
     Ok(SyscallReturn::Return(0))
 }

@@ -12,7 +12,7 @@ use crate::{
 };
 
 pub fn sys_statfs(path_ptr: Vaddr, statfs_buf_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
-    let user_space = ctx.get_user_space();
+    let user_space = ctx.user_space();
     let path = user_space.read_cstring(path_ptr, PATH_MAX)?;
     debug!("path = {:?}, statfs_buf_ptr = 0x{:x}", path, statfs_buf_ptr,);
 
@@ -39,7 +39,7 @@ pub fn sys_fstatfs(fd: FileDesc, statfs_buf_ptr: Vaddr, ctx: &Context) -> Result
     };
 
     let statfs = Statfs::from(fs.sb());
-    ctx.get_user_space().write_val(statfs_buf_ptr, &statfs)?;
+    ctx.user_space().write_val(statfs_buf_ptr, &statfs)?;
     Ok(SyscallReturn::Return(0))
 }
 

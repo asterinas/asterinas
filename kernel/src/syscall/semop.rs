@@ -36,7 +36,7 @@ pub fn sys_semtimedop(
         None
     } else {
         Some(Duration::try_from(
-            ctx.get_user_space().read_val::<timespec_t>(timeout)?,
+            ctx.user_space().read_val::<timespec_t>(timeout)?,
         )?)
     };
 
@@ -57,7 +57,7 @@ fn do_sys_semtimedop(
         return_errno!(Errno::E2BIG);
     }
 
-    let user_space = ctx.get_user_space();
+    let user_space = ctx.user_space();
     let mut semops = Vec::with_capacity(nsops);
     for i in 0..nsops {
         semops.push(user_space.read_val::<SemBuf>(tsops + size_of::<SemBuf>() * i)?);

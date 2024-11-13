@@ -25,7 +25,7 @@ pub fn sys_mount(
     data: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let user_space = ctx.get_user_space();
+    let user_space = ctx.user_space();
     let devname = user_space.read_cstring(devname_addr, MAX_FILENAME_LEN)?;
     let dirname = user_space.read_cstring(dirname_addr, MAX_FILENAME_LEN)?;
     let mount_flags = MountFlags::from_bits_truncate(flags as u32);
@@ -142,9 +142,7 @@ fn do_new_mount(
         return_errno_with_message!(Errno::ENOTDIR, "mountpoint must be directory");
     };
 
-    let fs_type = ctx
-        .get_user_space()
-        .read_cstring(fs_type, MAX_FILENAME_LEN)?;
+    let fs_type = ctx.user_space().read_cstring(fs_type, MAX_FILENAME_LEN)?;
     if fs_type.is_empty() {
         return_errno_with_message!(Errno::EINVAL, "fs_type is empty");
     }

@@ -37,7 +37,7 @@ pub fn sys_getdents(
     let mut reader = DirentBufferReader::<Dirent>::new(&mut buffer); // Use the non-64-bit reader
     let _ = inode_handle.readdir(&mut reader)?;
     let read_len = reader.read_len();
-    ctx.get_user_space()
+    ctx.user_space()
         .write_bytes(buf_addr, &mut VmReader::from(&buffer[..read_len]))?;
     Ok(SyscallReturn::Return(read_len as _))
 }
@@ -67,7 +67,7 @@ pub fn sys_getdents64(
     let mut reader = DirentBufferReader::<Dirent64>::new(&mut buffer);
     let _ = inode_handle.readdir(&mut reader)?;
     let read_len = reader.read_len();
-    ctx.get_user_space()
+    ctx.user_space()
         .write_bytes(buf_addr, &mut VmReader::from(&buffer[..read_len]))?;
     Ok(SyscallReturn::Return(read_len as _))
 }

@@ -66,7 +66,7 @@ fn do_clock_nanosleep(
 ) -> Result<SyscallReturn> {
     let request_time = {
         let timespec = ctx
-            .get_user_space()
+            .user_space()
             .read_val::<timespec_t>(request_timespec_addr)?;
         Duration::try_from(timespec)?
     };
@@ -126,7 +126,7 @@ fn do_clock_nanosleep(
             if remain_timespec_addr != 0 && !is_abs_time {
                 let remaining_duration = (start_time + duration) - end_time;
                 let remaining_timespec = timespec_t::from(remaining_duration);
-                ctx.get_user_space()
+                ctx.user_space()
                     .write_val(remain_timespec_addr, &remaining_timespec)?;
             }
 

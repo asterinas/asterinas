@@ -17,7 +17,7 @@ pub fn sys_getrandom(buf: Vaddr, count: usize, flags: u32, ctx: &Context) -> Res
     } else {
         device::Urandom::getrandom(&mut buffer)?
     };
-    ctx.get_user_space()
+    ctx.user_space()
         .write_bytes(buf, &mut VmReader::from(buffer.as_slice()))?;
     Ok(SyscallReturn::Return(read_len as isize))
 }

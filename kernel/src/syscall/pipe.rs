@@ -29,7 +29,7 @@ pub fn sys_pipe2(fds: Vaddr, flags: u32, ctx: &Context) -> Result<SyscallReturn>
     };
     debug!("pipe_fds: {:?}", pipe_fds);
 
-    if let Err(err) = ctx.get_user_space().write_val(fds, &pipe_fds) {
+    if let Err(err) = ctx.user_space().write_val(fds, &pipe_fds) {
         file_table.close_file(pipe_fds.reader_fd).unwrap();
         file_table.close_file(pipe_fds.writer_fd).unwrap();
         return Err(err);

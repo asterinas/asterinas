@@ -21,7 +21,7 @@ pub fn sys_sched_getaffinity(
         },
     };
 
-    let bytes_written = write_cpu_set_to(ctx.get_user_space(), &cpu_set, cpuset_size, cpu_set_ptr)?;
+    let bytes_written = write_cpu_set_to(ctx.user_space(), &cpu_set, cpuset_size, cpu_set_ptr)?;
 
     Ok(SyscallReturn::Return(bytes_written as isize))
 }
@@ -36,7 +36,7 @@ pub fn sys_sched_setaffinity(
     cpu_set_ptr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let user_cpu_set = read_cpu_set_from(ctx.get_user_space(), cpuset_size, cpu_set_ptr)?;
+    let user_cpu_set = read_cpu_set_from(ctx.user_space(), cpuset_size, cpu_set_ptr)?;
 
     match tid {
         0 => ctx.thread.atomic_cpu_affinity().store(&user_cpu_set),

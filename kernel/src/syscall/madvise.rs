@@ -38,7 +38,7 @@ pub fn sys_madvise(
         | MadviseBehavior::MADV_WILLNEED => {
             // perform a read at first
             let mut buffer = vec![0u8; len];
-            ctx.get_user_space()
+            ctx.user_space()
                 .read_bytes(start, &mut VmWriter::from(buffer.as_mut_slice()))?;
         }
         MadviseBehavior::MADV_DONTNEED => {

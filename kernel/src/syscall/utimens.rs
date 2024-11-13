@@ -78,7 +78,7 @@ pub fn sys_utime(pathname_ptr: Vaddr, utimbuf_ptr: Vaddr, ctx: &Context) -> Resu
         pathname_ptr, utimbuf_ptr
     );
     let times = if utimbuf_ptr != 0 {
-        let utimbuf = ctx.get_user_space().read_val::<Utimbuf>(utimbuf_ptr)?;
+        let utimbuf = ctx.user_space().read_val::<Utimbuf>(utimbuf_ptr)?;
         let atime = timespec_t {
             sec: utimbuf.actime,
             nsec: 0,
@@ -161,7 +161,7 @@ fn do_utimes(
         String::new()
     } else {
         let cstring = ctx
-            .get_user_space()
+            .user_space()
             .read_cstring(pathname_ptr, MAX_FILENAME_LEN)?;
         cstring.to_string_lossy().into_owned()
     };
@@ -211,7 +211,7 @@ fn do_futimesat(
 
 fn read_time_from_user<T: Pod>(time_ptr: Vaddr, ctx: &Context) -> Result<(T, T)> {
     let mut time_addr = time_ptr;
-    let user_space = ctx.get_user_space();
+    let user_space = ctx.user_space();
     let autime = user_space.read_val::<T>(time_addr)?;
     time_addr += core::mem::size_of::<T>();
     let mutime = user_space.read_val::<T>(time_addr)?;

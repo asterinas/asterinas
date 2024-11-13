@@ -20,7 +20,7 @@ pub fn sys_getcwd(buf: Vaddr, len: usize, ctx: &Context) -> Result<SyscallReturn
     let cwd = CString::new(name)?;
     let bytes = cwd.as_bytes_with_nul();
     let write_len = len.min(bytes.len());
-    ctx.get_user_space()
+    ctx.user_space()
         .write_bytes(buf, &mut VmReader::from(&bytes[..write_len]))?;
 
     Ok(SyscallReturn::Return(write_len as _))
