@@ -121,9 +121,17 @@ impl Clone for InitStack {
 impl InitStack {
     pub(super) fn new() -> Self {
         let nr_pages_padding = {
-            let mut random_nr_pages_padding: u8 = 0;
-            getrandom(random_nr_pages_padding.as_bytes_mut()).unwrap();
-            random_nr_pages_padding as usize
+            // We do not want the stack top too close to MAX_USERSPACE_VADDR.
+            // So we add this fixed padding. Any small value greater than zero will do.
+            const NR_FIXED_PADDING_PAGES: usize = 7;
+
+            // Some random padding pages are added as a simple measure to
+            // make the stack values of a buggy user program harder
+            // to be exploited by attackers.
+            let mut nr_random_padding_pages: u8 = 0;
+            getrandom(nr_random_padding_pages.as_bytes_mut()).unwrap();
+
+            nr_random_padding_pages as usize + NR_FIXED_PADDING_PAGES
         };
         let initial_top = MAX_USERSPACE_VADDR - PAGE_SIZE * nr_pages_padding;
         let max_size = INIT_STACK_SIZE;
