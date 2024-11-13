@@ -8,9 +8,7 @@ use aster_bigtcp::{
 };
 
 use super::bound::BoundDatagram;
-use crate::{
-    events::IoEvents, net::socket::ip::common::bind_socket, prelude::*, process::signal::Pollee,
-};
+use crate::{events::IoEvents, net::socket::ip::common::bind_socket, prelude::*};
 
 pub struct UnboundDatagram {
     unbound_socket: Box<UnboundUdpSocket>,
@@ -44,8 +42,7 @@ impl UnboundDatagram {
         Ok(BoundDatagram::new(bound_socket))
     }
 
-    pub(super) fn init_pollee(&self, pollee: &Pollee) {
-        pollee.reset_events();
-        pollee.add_events(IoEvents::OUT);
+    pub(super) fn check_io_events(&self) -> IoEvents {
+        IoEvents::OUT
     }
 }

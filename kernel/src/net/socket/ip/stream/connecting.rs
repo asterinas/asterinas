@@ -1,21 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_bigtcp::wire::IpEndpoint;
-use ostd::sync::LocalIrqDisabled;
+use aster_bigtcp::{socket::ConnectState, wire::IpEndpoint};
 
 use super::{connected::ConnectedStream, init::InitStream};
-use crate::{events::IoEvents, net::iface::BoundTcpSocket, prelude::*, process::signal::Pollee};
+use crate::{events::IoEvents, net::iface::BoundTcpSocket, prelude::*};
 
 pub struct ConnectingStream {
     bound_socket: BoundTcpSocket,
     remote_endpoint: IpEndpoint,
-    conn_result: SpinLock<Option<ConnResult>, LocalIrqDisabled>,
 }
 
-#[derive(Clone, Copy)]
-enum ConnResult {
-    Connected,
-    Refused,
+pub enum ConnResult {
+    Connecting(ConnectingStream),
+    Connected(ConnectedStream),
+    Refused(InitStream),
 }
 
 impl ConnectingStream {
@@ -41,27 +39,28 @@ impl ConnectingStream {
         Ok(Self {
             bound_socket,
             remote_endpoint,
-            conn_result: SpinLock::new(None),
         })
     }
 
     pub fn has_result(&self) -> bool {
-        self.conn_result.lock().is_some()
+        match self.bound_socket.connect_state() {
+            ConnectState::Connecting => false,
+            ConnectState::Connected => true,
+            ConnectState::Refused => true,
+        }
     }
 
-    pub fn into_result(self) -> core::result::Result<ConnectedStream, (Error, InitStream)> {
-        let conn_result = *self.conn_result.lock();
-        match conn_result {
-            Some(ConnResult::Connected) => Ok(ConnectedStream::new(
+    pub fn into_result(self) -> ConnResult {
+        let next_state = self.bound_socket.connect_state();
+
+        match next_state {
+            ConnectState::Connecting => ConnResult::Connecting(self),
+            ConnectState::Connected => ConnResult::Connected(ConnectedStream::new(
                 self.bound_socket,
                 self.remote_endpoint,
                 true,
             )),
-            Some(ConnResult::Refused) => Err((
-                Error::with_message(Errno::ECONNREFUSED, "the connection is refused"),
-                InitStream::new_bound(self.bound_socket),
-            )),
-            None => unreachable!("`has_result` must be true before calling `into_result`"),
+            ConnectState::Refused => ConnResult::Refused(InitStream::new_bound(self.bound_socket)),
         }
     }
 
@@ -73,43 +72,7 @@ impl ConnectingStream {
         self.remote_endpoint
     }
 
-    pub(super) fn init_pollee(&self, pollee: &Pollee) {
-        pollee.reset_events();
-    }
-
-    pub(super) fn update_io_events(&self, pollee: &Pollee) {
-        if self.conn_result.lock().is_some() {
-            return;
-        }
-
-        self.bound_socket.raw_with(|socket| {
-            let mut result = self.conn_result.lock();
-            if result.is_some() {
-                return;
-            }
-
-            // Connected
-            if socket.can_send() {
-                *result = Some(ConnResult::Connected);
-                pollee.add_events(IoEvents::OUT);
-                return;
-            }
-            // Connecting
-            if socket.is_open() {
-                return;
-            }
-            // Refused
-            *result = Some(ConnResult::Refused);
-            pollee.add_events(IoEvents::OUT);
-
-            // Add `IoEvents::OUT` because the man pages say "EINPROGRESS [..] It is possible to
-            // select(2) or poll(2) for completion by selecting the socket for writing". For
-            // details, see <https://man7.org/linux/man-pages/man2/connect.2.html>.
-            //
-            // TODO: It is better to do the state transition and let `ConnectedStream` or
-            // `InitStream` set the correct I/O events. However, the state transition is delayed
-            // because we're probably in IRQ handlers. Maybe mark the `pollee` as obsolete and
-            // re-calculate the I/O events in `poll`.
-        })
+    pub(super) fn check_io_events(&self) -> IoEvents {
+        IoEvents::empty()
     }
 }

@@ -62,7 +62,6 @@ impl VsockStreamSocket {
         };
 
         let connected = listen.try_accept()?;
-        listen.update_io_events();
 
         let peer_addr = connected.peer_addr();
 
@@ -104,7 +103,6 @@ impl VsockStreamSocket {
         };
 
         let read_size = connected.try_recv(writer)?;
-        connected.update_io_events();
 
         let peer_addr = self.peer_addr()?;
         // If buffer is now empty and the peer requested shutdown, finish shutting down the

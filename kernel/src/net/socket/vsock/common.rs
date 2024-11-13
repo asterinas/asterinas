@@ -16,7 +16,7 @@ use super::{
         listen::Listen,
     },
 };
-use crate::{events::IoEvents, prelude::*, return_errno_with_message, util::MultiRead};
+use crate::{prelude::*, return_errno_with_message, util::MultiRead};
 
 /// Manage all active sockets
 pub struct VsockSpace {
@@ -237,7 +237,6 @@ impl VsockSpace {
                     let connected = Arc::new(Connected::new(peer.into(), listen.addr()));
                     connected.update_info(&event);
                     listen.push_incoming(connected).unwrap();
-                    listen.update_io_events();
                 }
                 VsockEventType::ConnectionResponse => {
                     let connecting_sockets = self.connecting_sockets.disable_irq().lock();
@@ -253,7 +252,7 @@ impl VsockSpace {
                         connecting.local_addr()
                     );
                     connecting.update_info(&event);
-                    connecting.add_events(IoEvents::IN);
+                    connecting.set_connected();
                 }
                 VsockEventType::Disconnected { .. } => {
                     let connected_sockets = self.connected_sockets.read_irq_disabled();
@@ -296,7 +295,6 @@ impl VsockSpace {
                     if !connected.add_connection_buffer(body) {
                         return Err(SocketError::BufferTooShort);
                     }
-                    connected.update_io_events();
                 }
                 Ok(Some(event))
             })

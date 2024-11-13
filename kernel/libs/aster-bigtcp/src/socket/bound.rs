@@ -6,7 +6,7 @@ use alloc::{
 };
 use core::{
     ops::{Deref, DerefMut},
-    sync::atomic::{AtomicBool, AtomicU64, Ordering},
+    sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
 };
 
 use ostd::sync::{LocalIrqDisabled, RwLock, SpinLock, SpinLockGuard};
@@ -17,7 +17,10 @@ use smoltcp::{
     wire::{IpAddress, IpEndpoint, IpRepr, TcpControl, TcpRepr, UdpRepr},
 };
 
-use super::{event::SocketEventObserver, RawTcpSocket, RawUdpSocket};
+use super::{
+    event::{SocketEventObserver, SocketEvents},
+    RawTcpSocket, RawUdpSocket, TcpStateCheck,
+};
 use crate::iface::Iface;
 
 pub struct BoundSocket<T: AnySocket, E>(Arc<BoundSocketInner<T, E>>);
@@ -44,8 +47,8 @@ pub struct BoundSocketInner<T, E> {
     port: u16,
     socket: T,
     observer: RwLock<Weak<dyn SocketEventObserver>>,
+    events: AtomicU8,
     next_poll_at_ms: AtomicU64,
-    has_new_events: AtomicBool,
 }
 
 /// States needed by [`BoundTcpSocketInner`] but not [`BoundUdpSocketInner`].
@@ -56,6 +59,7 @@ pub struct TcpSocket {
 
 struct RawTcpSocketExt {
     socket: Box<RawTcpSocket>,
+    has_connected: bool,
     /// Whether the socket is in the background.
     ///
     /// A background socket is a socket with its corresponding [`BoundSocket`] dropped. This means
@@ -76,6 +80,22 @@ impl Deref for RawTcpSocketExt {
 impl DerefMut for RawTcpSocketExt {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.socket
+    }
+}
+
+impl RawTcpSocketExt {
+    fn on_new_state(&mut self) -> SocketEvents {
+        if self.may_send() {
+            self.has_connected = true;
+        }
+
+        if self.is_peer_closed() {
+            SocketEvents::PEER_CLOSED
+        } else if self.is_closed() {
+            SocketEvents::CLOSED
+        } else {
+            SocketEvents::empty()
+        }
     }
 }
 
@@ -123,6 +143,7 @@ impl AnySocket for TcpSocket {
     fn new(socket: Box<Self::RawSocket>) -> Self {
         let socket_ext = RawTcpSocketExt {
             socket,
+            has_connected: false,
             in_background: false,
         };
 
@@ -184,8 +205,8 @@ impl<T: AnySocket, E> BoundSocket<T, E> {
             port,
             socket: T::new(socket),
             observer: RwLock::new(observer),
+            events: AtomicU8::new(0),
             next_poll_at_ms: AtomicU64::new(u64::MAX),
-            has_new_events: AtomicBool::new(false),
         }))
     }
 
@@ -204,7 +225,7 @@ impl<T: AnySocket, E> BoundSocket<T, E> {
     pub fn set_observer(&self, new_observer: Weak<dyn SocketEventObserver>) {
         *self.0.observer.write_irq_disabled() = new_observer;
 
-        self.0.on_iface_events();
+        self.0.on_events();
     }
 
     /// Returns the observer.
@@ -229,6 +250,12 @@ impl<T: AnySocket, E> BoundSocket<T, E> {
     }
 }
 
+pub enum ConnectState {
+    Connecting,
+    Connected,
+    Refused,
+}
+
 impl<E> BoundTcpSocket<E> {
     /// Connects to a remote endpoint.
     pub fn connect(
@@ -240,11 +267,26 @@ impl<E> BoundTcpSocket<E> {
 
         let mut socket = self.0.socket.lock();
 
-        let result = socket.connect(iface.context(), remote_endpoint, self.0.port);
+        socket.connect(iface.context(), remote_endpoint, self.0.port)?;
+
+        socket.has_connected = false;
         self.0
             .update_next_poll_at_ms(socket.poll_at(iface.context()));
 
-        result
+        Ok(())
+    }
+
+    /// Returns the state of the connecting procedure.
+    pub fn connect_state(&self) -> ConnectState {
+        let socket = self.0.socket.lock();
+
+        if socket.state() == State::SynSent || socket.state() == State::SynReceived {
+            ConnectState::Connecting
+        } else if socket.has_connected {
+            ConnectState::Connected
+        } else {
+            ConnectState::Refused
+        }
     }
 
     /// Listens at a specified endpoint.
@@ -366,20 +408,31 @@ impl<E> BoundUdpSocket<E> {
 }
 
 impl<T, E> BoundSocketInner<T, E> {
-    pub(crate) fn has_new_events(&self) -> bool {
-        self.has_new_events.load(Ordering::Relaxed)
+    pub(crate) fn has_events(&self) -> bool {
+        self.events.load(Ordering::Relaxed) != 0
     }
 
-    pub(crate) fn on_iface_events(&self) {
-        self.has_new_events.store(false, Ordering::Relaxed);
+    pub(crate) fn on_events(&self) {
+        // This method can only be called to process network events, so we assume we are holding the
+        // poll lock and no race conditions can occur.
+        let events = self.events.load(Ordering::Relaxed);
+        self.events.store(0, Ordering::Relaxed);
 
         // We never hold the write lock in IRQ handlers, so we don't need to disable IRQs when we
         // get the read lock.
         let observer = Weak::upgrade(&*self.observer.read());
 
         if let Some(inner) = observer {
-            inner.on_events();
+            inner.on_events(SocketEvents::from_bits_truncate(events));
         }
+    }
+
+    fn add_events(&self, new_events: SocketEvents) {
+        // This method can only be called to add network events, so we assume we are holding the
+        // poll lock and no race conditions can occur.
+        let events = self.events.load(Ordering::Relaxed);
+        self.events
+            .store(events | new_events.bits(), Ordering::Relaxed);
     }
 
     /// Returns the next polling time.
@@ -396,8 +449,6 @@ impl<T, E> BoundSocketInner<T, E> {
     /// method also marks that there may be new events, so that the event observer provided by
     /// [`BoundSocket::set_observer`] can be notified later.
     fn update_next_poll_at_ms(&self, poll_at: PollAt) {
-        self.has_new_events.store(true, Ordering::Relaxed);
-
         match poll_at {
             PollAt::Now => self.next_poll_at_ms.store(0, Ordering::Relaxed),
             PollAt::Time(instant) => self
@@ -484,11 +535,21 @@ impl<E> BoundTcpSocketInner<E> {
             return TcpProcessResult::NotProcessed;
         }
 
+        let old_state = socket.state();
+        // For TCP, receiving an ACK packet can free up space in the queue, allowing more packets
+        // to be queued.
+        let mut events = SocketEvents::CAN_RECV | SocketEvents::CAN_SEND;
+
         let result = match socket.process(cx, ip_repr, tcp_repr) {
             None => TcpProcessResult::Processed,
             Some((ip_repr, tcp_repr)) => TcpProcessResult::ProcessedWithReply(ip_repr, tcp_repr),
         };
 
+        if socket.state() != old_state {
+            events |= socket.on_new_state();
+        }
+
+        self.add_events(events);
         self.update_next_poll_at_ms(socket.poll_at(cx));
         self.socket.update_dead(&socket);
 
@@ -506,6 +567,9 @@ impl<E> BoundTcpSocketInner<E> {
     {
         let mut socket = self.socket.lock();
 
+        let old_state = socket.state();
+        let mut events = SocketEvents::empty();
+
         let mut reply = None;
         socket
             .dispatch(cx, |cx, (ip_repr, tcp_repr)| {
@@ -521,8 +585,14 @@ impl<E> BoundTcpSocketInner<E> {
                 break;
             }
             reply = socket.process(cx, ip_repr, tcp_repr);
+            events |= SocketEvents::CAN_RECV | SocketEvents::CAN_SEND;
         }
 
+        if socket.state() != old_state {
+            events |= socket.on_new_state();
+        }
+
+        self.add_events(events);
         self.update_next_poll_at_ms(socket.poll_at(cx));
         self.socket.update_dead(&socket);
 
@@ -552,6 +622,8 @@ impl<E> BoundUdpSocketInner<E> {
             udp_repr,
             udp_payload,
         );
+
+        self.add_events(SocketEvents::CAN_RECV);
         self.update_next_poll_at_ms(socket.poll_at(cx));
 
         true
@@ -570,6 +642,9 @@ impl<E> BoundUdpSocketInner<E> {
                 Ok::<(), ()>(())
             })
             .unwrap();
+
+        // For UDP, dequeuing a packet means that we can queue more packets.
+        self.add_events(SocketEvents::CAN_SEND);
         self.update_next_poll_at_ms(socket.poll_at(cx));
     }
 }

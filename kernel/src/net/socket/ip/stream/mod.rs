@@ -2,9 +2,12 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use aster_bigtcp::{socket::SocketEventObserver, wire::IpEndpoint};
+use aster_bigtcp::{
+    socket::{SocketEventObserver, SocketEvents},
+    wire::IpEndpoint,
+};
 use connected::ConnectedStream;
-use connecting::ConnectingStream;
+use connecting::{ConnResult, ConnectingStream};
 use init::InitStream;
 use listen::ListenStream;
 use options::{Congestion, MaxSegment, NoDelay, WindowClamp};
@@ -81,27 +84,23 @@ impl StreamSocket {
     pub fn new(nonblocking: bool) -> Arc<Self> {
         Arc::new_cyclic(|me| {
             let init_stream = InitStream::new(me.clone() as _);
-            let pollee = Pollee::new(IoEvents::empty());
-            init_stream.init_pollee(&pollee);
             Self {
                 options: RwLock::new(OptionSet::new()),
                 state: RwLock::new(Takeable::new(State::Init(init_stream))),
                 is_nonblocking: AtomicBool::new(nonblocking),
-                pollee,
+                pollee: Pollee::new(),
             }
         })
     }
 
     fn new_connected(connected_stream: ConnectedStream) -> Arc<Self> {
         Arc::new_cyclic(move |me| {
-            let pollee = Pollee::new(IoEvents::empty());
             connected_stream.set_observer(me.clone() as _);
-            connected_stream.init_pollee(&pollee);
             Self {
                 options: RwLock::new(OptionSet::new()),
                 state: RwLock::new(Takeable::new(State::Connected(connected_stream))),
                 is_nonblocking: AtomicBool::new(false),
-                pollee,
+                pollee: Pollee::new(),
             }
         })
     }
@@ -161,23 +160,26 @@ impl StreamSocket {
             _ => return (options, state),
         }
 
-        let result = state.borrow_result(|owned_state| {
+        state.borrow(|owned_state| {
             let State::Connecting(connecting_stream) = owned_state else {
                 unreachable!("`State::Connecting` is checked before calling `borrow_result`");
             };
 
-            let connected_stream = match connecting_stream.into_result() {
-                Ok(connected_stream) => connected_stream,
-                Err((err, init_stream)) => {
-                    init_stream.init_pollee(&self.pollee);
-                    return (State::Init(init_stream), Err(err));
+            match connecting_stream.into_result() {
+                ConnResult::Connecting(connecting_stream) => State::Connecting(connecting_stream),
+                ConnResult::Connected(connected_stream) => {
+                    options.socket.set_sock_errors(None);
+                    State::Connected(connected_stream)
                 }
-            };
-            connected_stream.init_pollee(&self.pollee);
-
-            (State::Connected(connected_stream), Ok(()))
+                ConnResult::Refused(init_stream) => {
+                    options.socket.set_sock_errors(Some(Error::with_message(
+                        Errno::ECONNREFUSED,
+                        "the connection is refused",
+                    )));
+                    State::Init(init_stream)
+                }
+            }
         });
-        options.socket.set_sock_errors(result.err());
 
         (options, state)
     }
@@ -224,7 +226,6 @@ impl StreamSocket {
                     return (State::Init(init_stream), Some(Err(err)));
                 }
             };
-            connecting_stream.init_pollee(&self.pollee);
 
             (
                 State::Connecting(connecting_stream),
@@ -269,8 +270,6 @@ impl StreamSocket {
         };
 
         let accepted = listen_stream.try_accept().map(|connected_stream| {
-            listen_stream.update_io_events(&self.pollee);
-
             let remote_endpoint = connected_stream.remote_endpoint();
             let accepted_socket = Self::new_connected(connected_stream);
             (accepted_socket as _, remote_endpoint.into())
@@ -354,30 +353,22 @@ impl StreamSocket {
         }
     }
 
-    fn update_io_events(&self) {
-        let state = self.state.read();
-        match state.as_ref() {
-            State::Init(_) => (),
-            State::Connecting(connecting_stream) => {
-                connecting_stream.update_io_events(&self.pollee)
-            }
-            State::Listen(listen_stream) => {
-                listen_stream.update_io_events(&self.pollee);
-            }
-            State::Connected(connected_stream) => {
-                connected_stream.update_io_events(&self.pollee);
-            }
-        }
+    fn check_io_events(&self) -> IoEvents {
+        let state = self.read_updated_state();
 
-        // Note: Network events can cause a state transition from `State::Connecting` to
-        // `State::Connected`/`State::Init`. The state transition is delayed until
-        // `update_connecting`is triggered by user events, see that method for details.
+        match state.as_ref() {
+            State::Init(init_stream) => init_stream.check_io_events(),
+            State::Connecting(connecting_stream) => connecting_stream.check_io_events(),
+            State::Listen(listen_stream) => listen_stream.check_io_events(),
+            State::Connected(connected_stream) => connected_stream.check_io_events(),
+        }
     }
 }
 
 impl Pollable for StreamSocket {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        self.pollee.poll(mask, poller)
+        self.pollee
+            .poll_with(mask, poller, || self.check_io_events())
     }
 }
 
@@ -492,7 +483,6 @@ impl Socket for StreamSocket {
                     return (State::Init(init_stream), Err(err));
                 }
             };
-            listen_stream.init_pollee(&self.pollee);
 
             (State::Listen(listen_stream), Ok(()))
         })
@@ -677,8 +667,26 @@ impl Socket for StreamSocket {
 }
 
 impl SocketEventObserver for StreamSocket {
-    fn on_events(&self) {
-        self.update_io_events();
+    fn on_events(&self, events: SocketEvents) {
+        let mut io_events = IoEvents::empty();
+
+        if events.contains(SocketEvents::CAN_RECV) {
+            io_events |= IoEvents::IN;
+        }
+
+        if events.contains(SocketEvents::CAN_SEND) {
+            io_events |= IoEvents::OUT;
+        }
+
+        if events.contains(SocketEvents::PEER_CLOSED) {
+            io_events |= IoEvents::IN | IoEvents::RDHUP;
+        }
+
+        if events.contains(SocketEvents::CLOSED) {
+            io_events |= IoEvents::IN | IoEvents::OUT | IoEvents::RDHUP | IoEvents::HUP;
+        }
+
+        self.pollee.notify(io_events);
     }
 }
 

@@ -89,7 +89,8 @@ impl CurrentLine {
 
 impl Pollable for LineDiscipline {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        self.pollee.poll(mask, poller)
+        self.pollee
+            .poll_with(mask, poller, || self.check_io_events())
     }
 }
 
@@ -108,7 +109,7 @@ impl LineDiscipline {
                 read_buffer: SpinLock::new(RingBuffer::new(BUFFER_CAPACITY)),
                 termios: SpinLock::new(KernelTermios::default()),
                 winsize: SpinLock::new(WinSize::default()),
-                pollee: Pollee::new(IoEvents::empty()),
+                pollee: Pollee::new(),
                 send_signal,
                 work_item,
                 work_item_para: Arc::new(SpinLock::new(LineDisciplineWorkPara::new())),
@@ -140,7 +141,7 @@ impl LineDiscipline {
         // Raw mode
         if !termios.is_canonical_mode() {
             self.read_buffer.lock().push_overwrite(ch);
-            self.update_readable_state();
+            self.pollee.notify(IoEvents::IN);
             return;
         }
 
@@ -166,6 +167,7 @@ impl LineDiscipline {
             let current_line_chars = current_line.drain();
             for char in current_line_chars {
                 self.read_buffer.lock().push_overwrite(char);
+                self.pollee.notify(IoEvents::IN);
             }
         }
 
@@ -173,8 +175,6 @@ impl LineDiscipline {
             // Printable character
             self.current_line.lock().push_char(ch);
         }
-
-        self.update_readable_state();
     }
 
     fn may_send_signal(&self, termios: &KernelTermios, ch: u8) -> bool {
@@ -198,13 +198,13 @@ impl LineDiscipline {
         true
     }
 
-    pub fn update_readable_state(&self) {
+    fn check_io_events(&self) -> IoEvents {
         let buffer = self.read_buffer.lock();
 
         if !buffer.is_empty() {
-            self.pollee.add_events(IoEvents::IN);
+            IoEvents::IN
         } else {
-            self.pollee.del_events(IoEvents::IN);
+            IoEvents::empty()
         }
     }
 
@@ -265,7 +265,6 @@ impl LineDiscipline {
                 unreachable!()
             }
         };
-        self.update_readable_state();
         Ok(read_len)
     }
 

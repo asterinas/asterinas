@@ -5,7 +5,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use aster_bigtcp::{
     errors::tcp::{RecvError, SendError},
-    socket::{RawTcpSocket, SocketEventObserver, TcpState},
+    socket::{SocketEventObserver, TcpStateCheck},
     wire::IpEndpoint,
 };
 
@@ -61,15 +61,20 @@ impl ConnectedStream {
     }
 
     pub fn shutdown(&self, cmd: SockShutdownCmd, pollee: &Pollee) -> Result<()> {
+        let mut events = IoEvents::empty();
+
         if cmd.shut_read() {
             self.is_receiving_closed.store(true, Ordering::Relaxed);
-            self.update_io_events(pollee);
+            events |= IoEvents::IN | IoEvents::RDHUP;
         }
 
         if cmd.shut_write() {
             self.is_sending_closed.store(true, Ordering::Relaxed);
             self.bound_socket.close();
+            events |= IoEvents::OUT | IoEvents::HUP;
         }
+
+        pollee.notify(events);
 
         Ok(())
     }
@@ -132,17 +137,12 @@ impl ConnectedStream {
         Ok(())
     }
 
-    pub(super) fn init_pollee(&self, pollee: &Pollee) {
-        pollee.reset_events();
-        self.update_io_events(pollee);
-    }
-
-    pub(super) fn update_io_events(&self, pollee: &Pollee) {
+    pub(super) fn check_io_events(&self) -> IoEvents {
         self.bound_socket.raw_with(|socket| {
-            if is_peer_closed(socket) {
+            if socket.is_peer_closed() {
                 // Only the sending side of peer socket is closed
                 self.is_receiving_closed.store(true, Ordering::Relaxed);
-            } else if is_closed(socket) {
+            } else if socket.is_closed() {
                 // The sending side of both peer socket and this socket are closed
                 self.is_receiving_closed.store(true, Ordering::Relaxed);
                 self.is_sending_closed.store(true, Ordering::Relaxed);
@@ -151,50 +151,32 @@ impl ConnectedStream {
             let is_receiving_closed = self.is_receiving_closed.load(Ordering::Relaxed);
             let is_sending_closed = self.is_sending_closed.load(Ordering::Relaxed);
 
+            let mut events = IoEvents::empty();
+
             // If the receiving side is closed, always add events IN and RDHUP;
             // otherwise, check if the socket can receive.
             if is_receiving_closed {
-                pollee.add_events(IoEvents::IN | IoEvents::RDHUP);
+                events |= IoEvents::IN | IoEvents::RDHUP;
             } else if socket.can_recv() {
-                pollee.add_events(IoEvents::IN);
-            } else {
-                pollee.del_events(IoEvents::IN);
+                events |= IoEvents::IN;
             }
 
             // If the sending side is closed, always add an OUT event;
             // otherwise, check if the socket can send.
             if is_sending_closed || socket.can_send() {
-                pollee.add_events(IoEvents::OUT);
-            } else {
-                pollee.del_events(IoEvents::OUT);
+                events |= IoEvents::OUT;
             }
 
             // If both sending and receiving sides are closed, add a HUP event.
             if is_receiving_closed && is_sending_closed {
-                pollee.add_events(IoEvents::HUP);
+                events |= IoEvents::HUP;
             }
-        });
+
+            events
+        })
     }
 
     pub(super) fn set_observer(&self, observer: Weak<dyn SocketEventObserver>) {
         self.bound_socket.set_observer(observer)
     }
-}
-
-/// Checks if the peer socket has closed its sending side.
-///
-/// If the sending side of this socket is also closed, this method will return `false`.
-/// In such cases, you should verify using [`is_closed`].
-fn is_peer_closed(socket: &RawTcpSocket) -> bool {
-    socket.state() == TcpState::CloseWait
-}
-
-/// Checks if the socket is fully closed.
-///
-/// This function returns `true` if both this socket and the peer have closed their sending sides.
-///
-/// This TCP state corresponds to the `Normal Close Sequence` and `Simultaneous Close Sequence`
-/// as outlined in RFC793 (https://datatracker.ietf.org/doc/html/rfc793#page-39).
-fn is_closed(socket: &RawTcpSocket) -> bool {
-    !socket.is_open() || socket.state() == TcpState::Closing || socket.state() == TcpState::LastAck
 }

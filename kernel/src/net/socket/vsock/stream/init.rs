@@ -7,19 +7,17 @@ use crate::{
         VSOCK_GLOBAL,
     },
     prelude::*,
-    process::signal::{PollHandle, Pollee},
+    process::signal::PollHandle,
 };
 
 pub struct Init {
     bound_addr: Mutex<Option<VsockSocketAddr>>,
-    pollee: Pollee,
 }
 
 impl Init {
     pub fn new() -> Self {
         Self {
             bound_addr: Mutex::new(None),
-            pollee: Pollee::new(IoEvents::empty()),
         }
     }
 
@@ -61,8 +59,8 @@ impl Init {
         *self.bound_addr.lock()
     }
 
-    pub fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        self.pollee.poll(mask, poller)
+    pub fn poll(&self, _mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
+        IoEvents::empty()
     }
 }
 

@@ -28,8 +28,8 @@ impl Init {
     pub(super) fn new() -> Self {
         Self {
             addr: None,
-            reader_pollee: Pollee::new(IoEvents::empty()),
-            writer_pollee: Pollee::new(IoEvents::OUT),
+            reader_pollee: Pollee::new(),
+            writer_pollee: Pollee::new(),
             is_read_shutdown: AtomicBool::new(false),
             is_write_shutdown: AtomicBool::new(false),
         }
@@ -87,6 +87,7 @@ impl Init {
             self.writer_pollee,
             backlog,
             self.is_read_shutdown.into_inner(),
+            self.is_write_shutdown.into_inner(),
         ))
     }
 
@@ -94,7 +95,7 @@ impl Init {
         match cmd {
             SockShutdownCmd::SHUT_WR | SockShutdownCmd::SHUT_RDWR => {
                 self.is_write_shutdown.store(true, Ordering::Relaxed);
-                self.writer_pollee.add_events(IoEvents::ERR);
+                self.writer_pollee.notify(IoEvents::ERR);
             }
             SockShutdownCmd::SHUT_RD => (),
         }
@@ -102,7 +103,7 @@ impl Init {
         match cmd {
             SockShutdownCmd::SHUT_RD | SockShutdownCmd::SHUT_RDWR => {
                 self.is_read_shutdown.store(true, Ordering::Relaxed);
-                self.reader_pollee.add_events(IoEvents::HUP);
+                self.reader_pollee.notify(IoEvents::HUP);
             }
             SockShutdownCmd::SHUT_WR => (),
         }
@@ -115,8 +116,22 @@ impl Init {
     pub(super) fn poll(&self, mask: IoEvents, mut poller: Option<&mut PollHandle>) -> IoEvents {
         // To avoid loss of events, this must be compatible with
         // `Connected::poll`/`Listener::poll`.
-        let reader_events = self.reader_pollee.poll(mask, poller.as_deref_mut());
-        let writer_events = self.writer_pollee.poll(mask, poller);
+        let reader_events = self
+            .reader_pollee
+            .poll_with(mask, poller.as_deref_mut(), || {
+                if self.is_read_shutdown.load(Ordering::Relaxed) {
+                    IoEvents::HUP
+                } else {
+                    IoEvents::empty()
+                }
+            });
+        let writer_events = self.writer_pollee.poll_with(mask, poller, || {
+            if self.is_write_shutdown.load(Ordering::Relaxed) {
+                IoEvents::OUT | IoEvents::ERR
+            } else {
+                IoEvents::OUT
+            }
+        });
 
         // According to the Linux implementation, we always have `IoEvents::HUP` in this state.
         // Meanwhile, it is in `IoEvents::ALWAYS_POLL`, so we always return it.

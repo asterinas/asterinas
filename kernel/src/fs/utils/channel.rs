@@ -96,7 +96,9 @@ macro_rules! impl_common_methods_for_channel {
         }
 
         pub fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-            self.this_end().pollee.poll(mask, poller)
+            self.this_end()
+                .pollee
+                .poll_with(mask, poller, || self.check_io_events())
         }
     };
 }
@@ -110,27 +112,17 @@ impl<T> Producer<T> {
         &self.0.common.consumer
     }
 
-    fn update_pollee(&self) {
-        // In theory, `rb.free_len()`/`rb.is_empty()`, where the `rb` is taken from either
-        // `this_end` or `peer_end`, should reflect the same state. However, we need to take the
-        // correct lock when updating the events to avoid races between the state check and the
-        // event update.
-
+    fn check_io_events(&self) -> IoEvents {
         let this_end = self.this_end();
         let rb = this_end.rb();
-        if self.is_shutdown() {
-            // The POLLOUT event is always set in this case. Don't try to remove it.
-        } else if rb.free_len() < PIPE_BUF {
-            this_end.pollee.del_events(IoEvents::OUT);
-        }
-        drop(rb);
 
-        let peer_end = self.peer_end();
-        let rb = peer_end.rb();
-        if !rb.is_empty() {
-            peer_end.pollee.add_events(IoEvents::IN);
+        if self.is_shutdown() {
+            IoEvents::ERR | IoEvents::OUT
+        } else if rb.free_len() > PIPE_BUF {
+            IoEvents::OUT
+        } else {
+            IoEvents::empty()
         }
-        drop(rb);
     }
 
     impl_common_methods_for_channel!();
@@ -153,7 +145,7 @@ impl Producer<u8> {
         }
 
         let written_len = self.0.write(reader)?;
-        self.update_pollee();
+        self.peer_end().pollee.notify(IoEvents::IN);
 
         if written_len > 0 {
             Ok(written_len)
@@ -179,7 +171,7 @@ impl<T: Pod> Producer<T> {
             let err = Error::with_message(Errno::EAGAIN, "the channel is full");
             (err, item)
         })?;
-        self.update_pollee();
+        self.peer_end().pollee.notify(IoEvents::IN);
 
         Ok(())
     }
@@ -200,25 +192,18 @@ impl<T> Consumer<T> {
         &self.0.common.producer
     }
 
-    fn update_pollee(&self) {
-        // In theory, `rb.free_len()`/`rb.is_empty()`, where the `rb` is taken from either
-        // `this_end` or `peer_end`, should reflect the same state. However, we need to take the
-        // correct lock when updating the events to avoid races between the state check and the
-        // event update.
-
+    fn check_io_events(&self) -> IoEvents {
         let this_end = self.this_end();
         let rb = this_end.rb();
-        if rb.is_empty() {
-            this_end.pollee.del_events(IoEvents::IN);
-        }
-        drop(rb);
 
-        let peer_end = self.peer_end();
-        let rb = peer_end.rb();
-        if rb.free_len() >= PIPE_BUF {
-            peer_end.pollee.add_events(IoEvents::OUT);
+        let mut events = IoEvents::empty();
+        if self.is_shutdown() {
+            events |= IoEvents::HUP;
         }
-        drop(rb);
+        if !rb.is_empty() {
+            events |= IoEvents::IN;
+        }
+        events
     }
 
     impl_common_methods_for_channel!();
@@ -239,7 +224,7 @@ impl Consumer<u8> {
         let is_shutdown = self.is_shutdown();
 
         let read_len = self.0.read(writer)?;
-        self.update_pollee();
+        self.peer_end().pollee.notify(IoEvents::OUT);
 
         if read_len > 0 {
             Ok(read_len)
@@ -262,7 +247,7 @@ impl<T: Pod> Consumer<T> {
         let is_shutdown = self.is_shutdown();
 
         let item = self.0.pop();
-        self.update_pollee();
+        self.peer_end().pollee.notify(IoEvents::OUT);
 
         if let Some(item) = item {
             Ok(Some(item))
@@ -346,25 +331,12 @@ impl<T> Common<T> {
         let (rb_producer, rb_consumer) = rb.split();
 
         let producer = {
-            let polee = if let Some(pollee) = producer_pollee {
-                pollee.reset_events();
-                pollee.add_events(IoEvents::OUT);
-                pollee
-            } else {
-                Pollee::new(IoEvents::OUT)
-            };
-
-            FifoInner::new(rb_producer, polee)
+            let pollee = producer_pollee.unwrap_or_default();
+            FifoInner::new(rb_producer, pollee)
         };
 
         let consumer = {
-            let pollee = if let Some(pollee) = consumer_pollee {
-                pollee.reset_events();
-                pollee
-            } else {
-                Pollee::new(IoEvents::empty())
-            };
-
+            let pollee = consumer_pollee.unwrap_or_default();
             FifoInner::new(rb_consumer, pollee)
         };
 
@@ -389,19 +361,11 @@ impl<T> Common<T> {
         }
 
         // The POLLHUP event indicates that the write end is shut down.
-        //
-        // No need to take a lock. There is no race because no one is modifying this particular event.
-        self.consumer.pollee.add_events(IoEvents::HUP);
+        self.consumer.pollee.notify(IoEvents::HUP);
 
         // The POLLERR event indicates that the read end is shut down (so any subsequent writes
         // will fail with an `EPIPE` error).
-        //
-        // The lock is taken because we are also adding the POLLOUT event, which may have races
-        // with the event updates triggered by the writer.
-        let _rb = self.producer.rb();
-        self.producer
-            .pollee
-            .add_events(IoEvents::ERR | IoEvents::OUT);
+        self.producer.pollee.notify(IoEvents::ERR | IoEvents::OUT);
     }
 }
 
