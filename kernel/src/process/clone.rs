@@ -141,6 +141,14 @@ impl CloneArgs {
             ..Default::default()
         }
     }
+
+    pub fn for_vfork() -> Self {
+        Self {
+            flags: CloneFlags::CLONE_VFORK | CloneFlags::CLONE_VM,
+            exit_signal: Some(SIGCHLD),
+            ..Default::default()
+        }
+    }
 }
 
 impl From<u64> for CloneFlags {
@@ -157,6 +165,7 @@ impl CloneFlags {
             | CloneFlags::CLONE_FS
             | CloneFlags::CLONE_FILES
             | CloneFlags::CLONE_SIGHAND
+            | CloneFlags::CLONE_VFORK
             | CloneFlags::CLONE_THREAD
             | CloneFlags::CLONE_SYSVSEM
             | CloneFlags::CLONE_SETTLS
@@ -217,9 +226,17 @@ fn clone_child_task(
 
     let child_user_space = {
         let child_vm_space = child_root_vmar.vm_space().clone();
+        let child_sp = {
+            if !clone_flags.contains(CloneFlags::CLONE_VFORK) {
+                clone_args.stack
+            }
+            else {
+                parent_context.stack_pointer().try_into().unwrap()
+            }
+        };
         let child_cpu_context = clone_cpu_context(
             parent_context,
-            clone_args.stack,
+            child_sp,
             clone_args.stack_size,
             clone_args.tls,
             clone_flags,
@@ -275,9 +292,17 @@ fn clone_child_process(
 
     // clone user space
     let child_user_space = {
+        let child_sp = {
+            if !clone_flags.contains(CloneFlags::CLONE_VFORK) {
+                clone_args.stack
+            }
+            else {
+                parent_context.stack_pointer().try_into().unwrap()
+            }
+        };
         let child_cpu_context = clone_cpu_context(
             parent_context,
-            clone_args.stack,
+            child_sp,
             clone_args.stack_size,
             clone_args.tls,
             clone_flags,
