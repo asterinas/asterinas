@@ -17,7 +17,7 @@ pub fn sys_symlinkat(
     linkpath_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let user_space = ctx.get_user_space();
+    let user_space = ctx.user_space();
     let target = user_space.read_cstring(target_addr, MAX_FILENAME_LEN)?;
     let linkpath = user_space.read_cstring(linkpath_addr, MAX_FILENAME_LEN)?;
     debug!(

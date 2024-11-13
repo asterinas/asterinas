@@ -12,7 +12,7 @@ pub fn sys_time(tloc: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     };
 
     if tloc != 0 {
-        ctx.get_user_space().write_val(tloc, &now_as_secs)?;
+        ctx.user_space().write_val(tloc, &now_as_secs)?;
     }
 
     Ok(SyscallReturn::Return(now_as_secs as _))

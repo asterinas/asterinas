@@ -24,9 +24,7 @@ pub fn sys_rt_sigreturn(ctx: &Context, user_ctx: &mut UserContext) -> Result<Sys
     // However, for most glibc applications, the restorer codes is provided by glibc and RESTORER flag is set.
     debug_assert!(sig_context_addr == user_ctx.stack_pointer() as Vaddr);
 
-    let ucontext = ctx
-        .get_user_space()
-        .read_val::<ucontext_t>(sig_context_addr)?;
+    let ucontext = ctx.user_space().read_val::<ucontext_t>(sig_context_addr)?;
 
     // If the sig stack is active and used by current handler, decrease handler counter.
     if let Some(sig_stack) = posix_thread.sig_stack().lock().as_mut() {

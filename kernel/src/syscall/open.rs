@@ -18,9 +18,7 @@ pub fn sys_openat(
     mode: u16,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let path = ctx
-        .get_user_space()
-        .read_cstring(path_addr, MAX_FILENAME_LEN)?;
+    let path = ctx.user_space().read_cstring(path_addr, MAX_FILENAME_LEN)?;
     debug!(
         "dirfd = {}, path = {:?}, flags = {}, mode = {}",
         dirfd, path, flags, mode

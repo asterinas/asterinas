@@ -18,7 +18,7 @@ pub fn sys_set_robust_list(
             "The len is not equal to the size of robust list head"
         );
     }
-    let robust_list_head: RobustListHead = ctx.get_user_space().read_val(robust_list_head_ptr)?;
+    let robust_list_head: RobustListHead = ctx.user_space().read_val(robust_list_head_ptr)?;
     debug!("{:x?}", robust_list_head);
     let mut robust_list = ctx.posix_thread.robust_list().lock();
     *robust_list = Some(robust_list_head);

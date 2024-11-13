@@ -8,9 +8,7 @@ use crate::{
 };
 
 pub fn sys_chroot(path_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
-    let path = ctx
-        .get_user_space()
-        .read_cstring(path_ptr, MAX_FILENAME_LEN)?;
+    let path = ctx.user_space().read_cstring(path_ptr, MAX_FILENAME_LEN)?;
     debug!("path = {:?}", path);
 
     let mut fs = ctx.process.fs().write();

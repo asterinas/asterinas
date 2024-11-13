@@ -12,7 +12,7 @@ pub fn sys_getresgid(
     debug!("rgid_ptr = 0x{rgid_ptr:x}, egid_ptr = 0x{egid_ptr:x}, sgid_ptr = 0x{sgid_ptr:x}");
 
     let credentials = ctx.posix_thread.credentials();
-    let user_space = ctx.get_user_space();
+    let user_space = ctx.user_space();
 
     let rgid = credentials.rgid();
     user_space.write_val(rgid_ptr, &rgid)?;

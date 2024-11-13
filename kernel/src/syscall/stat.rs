@@ -21,7 +21,7 @@ pub fn sys_fstat(fd: FileDesc, stat_buf_ptr: Vaddr, ctx: &Context) -> Result<Sys
     };
 
     let stat = Stat::from(file.metadata());
-    ctx.get_user_space().write_val(stat_buf_ptr, &stat)?;
+    ctx.user_space().write_val(stat_buf_ptr, &stat)?;
     Ok(SyscallReturn::Return(0))
 }
 
@@ -46,7 +46,7 @@ pub fn sys_fstatat(
     flags: u32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let user_space = ctx.get_user_space();
+    let user_space = ctx.user_space();
     let filename = user_space.read_cstring(filename_ptr, MAX_FILENAME_LEN)?;
     let flags =
         StatFlags::from_bits(flags).ok_or(Error::with_message(Errno::EINVAL, "invalid flags"))?;

@@ -16,7 +16,7 @@ pub fn sys_pselect6(
     sigmask_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let user_space = ctx.get_user_space();
+    let user_space = ctx.user_space();
     let old_simask = if sigmask_addr != 0 {
         let sigmask_with_size: SigMaskWithSize = user_space.read_val(sigmask_addr)?;
 

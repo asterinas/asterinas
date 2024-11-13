@@ -14,7 +14,7 @@ pub fn sys_recvmsg(
     flags: i32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let c_user_msghdr: CUserMsgHdr = ctx.get_user_space().read_val(user_msghdr_ptr)?;
+    let c_user_msghdr: CUserMsgHdr = ctx.user_space().read_val(user_msghdr_ptr)?;
     let flags = SendRecvFlags::from_bits_truncate(flags);
 
     debug!(

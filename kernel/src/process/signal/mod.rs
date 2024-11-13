@@ -159,7 +159,7 @@ pub fn handle_user_signal(
     // To avoid corrupting signal stack, we minus 128 first.
     stack_pointer -= 128;
 
-    let user_space = ctx.get_user_space();
+    let user_space = ctx.user_space();
 
     // 1. write siginfo_t
     stack_pointer -= mem::size_of::<siginfo_t>() as u64;

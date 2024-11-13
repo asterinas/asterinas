@@ -18,7 +18,7 @@ pub fn sys_capset(
     cap_user_data_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let user_space = ctx.get_user_space();
+    let user_space = ctx.user_space();
     let cap_user_header: cap_user_header_t =
         user_space.read_val::<cap_user_header_t>(cap_user_header_addr)?;
 

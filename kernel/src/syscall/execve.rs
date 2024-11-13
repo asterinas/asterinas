@@ -153,7 +153,7 @@ bitflags::bitflags! {
 
 fn read_filename(filename_ptr: Vaddr, ctx: &Context) -> Result<String> {
     let filename = ctx
-        .get_user_space()
+        .user_space()
         .read_cstring(filename_ptr, MAX_FILENAME_LEN)?;
     Ok(filename.into_string().unwrap())
 }
@@ -171,7 +171,7 @@ fn read_cstring_vec(
     }
     let mut read_addr = array_ptr;
     let mut find_null = false;
-    let user_space = ctx.get_user_space();
+    let user_space = ctx.user_space();
     for _ in 0..max_string_number {
         let cstring_ptr = user_space.read_val::<usize>(read_addr)?;
         read_addr += 8;

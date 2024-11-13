@@ -48,7 +48,7 @@ pub fn sys_getrusage(target: i32, rusage_addr: Vaddr, ctx: &Context) -> Result<S
             }
         };
 
-        ctx.get_user_space().write_val(rusage_addr, &rusage)?;
+        ctx.user_space().write_val(rusage_addr, &rusage)?;
     }
 
     Ok(SyscallReturn::Return(0))
