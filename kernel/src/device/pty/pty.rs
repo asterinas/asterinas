@@ -3,6 +3,7 @@
 use alloc::format;
 
 use crate::{
+    current_userspace,
     device::tty::{line_discipline::LineDiscipline, new_job_control_and_ldisc},
     events::IoEvents,
     fs::{
@@ -13,7 +14,6 @@ use crate::{
         inode_handle::FileIo,
         utils::{AccessMode, Inode, InodeMode, IoctlCmd},
     },
-    get_current_userspace,
     prelude::*,
     process::{
         signal::{PollHandle, Pollable, Pollee},
@@ -165,11 +165,11 @@ impl FileIo for PtyMaster {
         match cmd {
             IoctlCmd::TCGETS => {
                 let termios = self.output.termios();
-                get_current_userspace!().write_val(arg, &termios)?;
+                current_userspace!().write_val(arg, &termios)?;
                 Ok(0)
             }
             IoctlCmd::TCSETS => {
-                let termios = get_current_userspace!().read_val(arg)?;
+                let termios = current_userspace!().read_val(arg)?;
                 self.output.set_termios(termios);
                 Ok(0)
             }
@@ -179,7 +179,7 @@ impl FileIo for PtyMaster {
             }
             IoctlCmd::TIOCGPTN => {
                 let idx = self.index();
-                get_current_userspace!().write_val(arg, &idx)?;
+                current_userspace!().write_val(arg, &idx)?;
                 Ok(0)
             }
             IoctlCmd::TIOCGPTPEER => {
@@ -212,11 +212,11 @@ impl FileIo for PtyMaster {
             }
             IoctlCmd::TIOCGWINSZ => {
                 let winsize = self.output.window_size();
-                get_current_userspace!().write_val(arg, &winsize)?;
+                current_userspace!().write_val(arg, &winsize)?;
                 Ok(0)
             }
             IoctlCmd::TIOCSWINSZ => {
-                let winsize = get_current_userspace!().read_val(arg)?;
+                let winsize = current_userspace!().read_val(arg)?;
                 self.output.set_window_size(winsize);
                 Ok(0)
             }
@@ -228,12 +228,12 @@ impl FileIo for PtyMaster {
                     );
                 };
                 let fg_pgid = foreground.pgid();
-                get_current_userspace!().write_val(arg, &fg_pgid)?;
+                current_userspace!().write_val(arg, &fg_pgid)?;
                 Ok(0)
             }
             IoctlCmd::TIOCSPGRP => {
                 let pgid = {
-                    let pgid: i32 = get_current_userspace!().read_val(arg)?;
+                    let pgid: i32 = current_userspace!().read_val(arg)?;
                     if pgid < 0 {
                         return_errno_with_message!(Errno::EINVAL, "negative pgid");
                     }
@@ -253,7 +253,7 @@ impl FileIo for PtyMaster {
             }
             IoctlCmd::FIONREAD => {
                 let len = self.input.lock().len() as i32;
-                get_current_userspace!().write_val(arg, &len)?;
+                current_userspace!().write_val(arg, &len)?;
                 Ok(0)
             }
             _ => Ok(0),
@@ -376,12 +376,12 @@ impl FileIo for PtySlave {
                 };
 
                 let fg_pgid = foreground.pgid();
-                get_current_userspace!().write_val(arg, &fg_pgid)?;
+                current_userspace!().write_val(arg, &fg_pgid)?;
                 Ok(0)
             }
             IoctlCmd::TIOCSPGRP => {
                 let pgid = {
-                    let pgid: i32 = get_current_userspace!().read_val(arg)?;
+                    let pgid: i32 = current_userspace!().read_val(arg)?;
                     if pgid < 0 {
                         return_errno_with_message!(Errno::EINVAL, "negative pgid");
                     }
@@ -401,7 +401,7 @@ impl FileIo for PtySlave {
             }
             IoctlCmd::FIONREAD => {
                 let buffer_len = self.master().slave_buf_len() as i32;
-                get_current_userspace!().write_val(arg, &buffer_len)?;
+                current_userspace!().write_val(arg, &buffer_len)?;
                 Ok(0)
             }
             _ => Ok(0),

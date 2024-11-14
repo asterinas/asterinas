@@ -28,7 +28,7 @@ pub use sig_stack::{SigStack, SigStackFlags};
 
 use super::posix_thread::PosixThread;
 use crate::{
-    get_current_userspace,
+    current_userspace,
     prelude::*,
     process::{do_exit_group, TermStatus},
 };
@@ -249,7 +249,7 @@ fn use_alternate_signal_stack(posix_thread: &PosixThread) -> Option<usize> {
 
 fn write_u64_to_user_stack(rsp: u64, value: u64) -> Result<u64> {
     let rsp = rsp - 8;
-    get_current_userspace!().write_val(rsp as Vaddr, &value)?;
+    current_userspace!().write_val(rsp as Vaddr, &value)?;
     Ok(rsp)
 }
 

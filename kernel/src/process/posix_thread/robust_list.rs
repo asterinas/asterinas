@@ -4,9 +4,7 @@
 
 use ostd::task::Task;
 
-use crate::{
-    get_current_userspace, prelude::*, process::posix_thread::futex::futex_wake, thread::Tid,
-};
+use crate::{current_userspace, prelude::*, process::posix_thread::futex::futex_wake, thread::Tid};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod)]
@@ -105,7 +103,7 @@ impl Iterator for FutexIter<'_> {
             } else {
                 None
             };
-            let Ok(robust_list) = get_current_userspace!().read_val::<RobustList>(self.entry_ptr)
+            let Ok(robust_list) = current_userspace!().read_val::<RobustList>(self.entry_ptr)
             else {
                 return None;
             };

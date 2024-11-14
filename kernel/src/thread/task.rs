@@ -8,7 +8,7 @@ use ostd::{
 use super::{oops, Thread};
 use crate::{
     cpu::LinuxAbi,
-    get_current_userspace,
+    current_userspace,
     prelude::*,
     process::{posix_thread::AsPosixThread, signal::handle_pending_signal},
     syscall::handle_syscall,
@@ -47,7 +47,7 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Arc<Thread>)
         // Make sure the store operation completes before the clone call returns control to user space
         // in the child process.
         if is_userspace_vaddr(child_tid_ptr) {
-            get_current_userspace!()
+            current_userspace!()
                 .write_val(child_tid_ptr, &current_posix_thread.tid())
                 .unwrap();
         }
