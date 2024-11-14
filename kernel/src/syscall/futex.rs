@@ -3,7 +3,7 @@
 use core::time::Duration;
 
 use crate::{
-    get_current_userspace,
+    current_userspace,
     prelude::*,
     process::posix_thread::futex::{
         futex_op_and_flags_from_u32, futex_requeue, futex_wait, futex_wait_bitset, futex_wake,
@@ -46,7 +46,7 @@ pub fn sys_futex(
         }
 
         let timeout = {
-            let time_spec: timespec_t = get_current_userspace!().read_val(timeout_addr)?;
+            let time_spec: timespec_t = current_userspace!().read_val(timeout_addr)?;
             Duration::try_from(time_spec)?
         };
 

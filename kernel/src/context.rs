@@ -41,7 +41,7 @@ pub struct CurrentUserSpace<'a>(&'a VmSpace);
 /// This is slower than [`Context::user_space`]. Don't use this getter
 /// If you get the access to the [`Context`].
 #[macro_export]
-macro_rules! get_current_userspace {
+macro_rules! current_userspace {
     () => {
         CurrentUserSpace::new(&ostd::task::Task::current().unwrap())
     };
@@ -55,7 +55,7 @@ impl<'a> CurrentUserSpace<'a> {
     ///
     /// If you have access to a [`Context`], it is preferable to call [`Context::user_space`].
     ///
-    /// Otherwise, you can use the `get_current_userspace` macro
+    /// Otherwise, you can use the `current_userspace` macro
     /// to obtain an instance of `CurrentUserSpace` if it will only be used once.
     ///
     /// # Panics

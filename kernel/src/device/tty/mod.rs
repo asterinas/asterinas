@@ -7,13 +7,13 @@ use spin::Once;
 
 use self::{driver::TtyDriver, line_discipline::LineDiscipline};
 use crate::{
+    current_userspace,
     events::IoEvents,
     fs::{
         device::{Device, DeviceId, DeviceType},
         inode_handle::FileIo,
         utils::IoctlCmd,
     },
-    get_current_userspace,
     prelude::*,
     process::{
         signal::{signals::kernel::KernelSignal, PollHandle, Pollable},
@@ -103,7 +103,7 @@ impl FileIo for Tty {
                 // Get terminal attributes
                 let termios = self.ldisc.termios();
                 trace!("get termios = {:?}", termios);
-                get_current_userspace!().write_val(arg, &termios)?;
+                current_userspace!().write_val(arg, &termios)?;
                 Ok(0)
             }
             IoctlCmd::TIOCGPGRP => {
@@ -112,13 +112,13 @@ impl FileIo for Tty {
                 };
                 let fg_pgid = foreground.pgid();
                 debug!("fg_pgid = {}", fg_pgid);
-                get_current_userspace!().write_val(arg, &fg_pgid)?;
+                current_userspace!().write_val(arg, &fg_pgid)?;
                 Ok(0)
             }
             IoctlCmd::TIOCSPGRP => {
                 // Set the process group id of fg progress group
                 let pgid = {
-                    let pgid: i32 = get_current_userspace!().read_val(arg)?;
+                    let pgid: i32 = current_userspace!().read_val(arg)?;
                     if pgid < 0 {
                         return_errno_with_message!(Errno::EINVAL, "negative pgid");
                     }
@@ -133,20 +133,20 @@ impl FileIo for Tty {
             }
             IoctlCmd::TCSETS => {
                 // Set terminal attributes
-                let termios = get_current_userspace!().read_val(arg)?;
+                let termios = current_userspace!().read_val(arg)?;
                 debug!("set termios = {:?}", termios);
                 self.ldisc.set_termios(termios);
                 Ok(0)
             }
             IoctlCmd::TCSETSW => {
-                let termios = get_current_userspace!().read_val(arg)?;
+                let termios = current_userspace!().read_val(arg)?;
                 debug!("set termios = {:?}", termios);
                 self.ldisc.set_termios(termios);
                 // TODO: drain output buffer
                 Ok(0)
             }
             IoctlCmd::TCSETSF => {
-                let termios = get_current_userspace!().read_val(arg)?;
+                let termios = current_userspace!().read_val(arg)?;
                 debug!("set termios = {:?}", termios);
                 self.ldisc.set_termios(termios);
                 self.ldisc.drain_input();
@@ -155,11 +155,11 @@ impl FileIo for Tty {
             }
             IoctlCmd::TIOCGWINSZ => {
                 let winsize = self.ldisc.window_size();
-                get_current_userspace!().write_val(arg, &winsize)?;
+                current_userspace!().write_val(arg, &winsize)?;
                 Ok(0)
             }
             IoctlCmd::TIOCSWINSZ => {
-                let winsize = get_current_userspace!().read_val(arg)?;
+                let winsize = current_userspace!().read_val(arg)?;
                 self.ldisc.set_window_size(winsize);
                 Ok(0)
             }
