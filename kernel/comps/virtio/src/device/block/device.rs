@@ -19,7 +19,7 @@ use ostd::{
     Pod,
 };
 
-use super::{BlockFeatures, VirtioBlockConfig};
+use super::{BlockFeatures, VirtioBlockConfig, VirtioBlockFeature};
 use crate::{
     device::{
         block::{ReqType, RespStatus},
@@ -92,6 +92,7 @@ impl aster_block::BlockDevice for BlockDevice {
 #[derive(Debug)]
 struct DeviceInner {
     config: SafePtr<VirtioBlockConfig, IoMem>,
+    features: VirtioBlockFeature,
     queue: SpinLock<VirtQueue>,
     transport: SpinLock<Box<dyn VirtioTransport>>,
     block_requests: DmaStream,
@@ -122,6 +123,7 @@ impl DeviceInner {
                 "Not supporting Multi-Queue Block IO Queueing Mechanism, only using the first queue"
             );
         }
+        let features = VirtioBlockFeature::new(transport.as_ref());
         let queue = VirtQueue::new(0, Self::QUEUE_SIZE, transport.as_mut())
             .expect("create virtqueue failed");
         let block_requests = {
@@ -137,6 +139,7 @@ impl DeviceInner {
 
         let device = Arc::new(Self {
             config,
+            features,
             queue: SpinLock::new(queue),
             transport: SpinLock::new(transport),
             block_requests,
@@ -410,7 +413,7 @@ impl DeviceInner {
     /// Flushes any cached data from the guest to the persistent storage on the host.
     /// This will be ignored if the device doesn't support the `VIRTIO_BLK_F_FLUSH` feature.
     fn flush(&self, bio_request: BioRequest) {
-        if self.transport.lock().read_device_features() & BlockFeatures::FLUSH.bits() == 0 {
+        if self.features.support_flush {
             bio_request.bios().for_each(|bio| {
                 bio.complete(BioStatus::Complete);
             });
