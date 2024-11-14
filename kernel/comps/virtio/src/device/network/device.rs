@@ -51,7 +51,7 @@ impl NetworkDevice {
     pub fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
         let virtio_net_config = VirtioNetConfig::new(transport.as_mut());
         let features = NetworkFeatures::from_bits_truncate(Self::negotiate_features(
-            transport.device_features(),
+            transport.read_device_features(),
         ));
         debug!("virtio_net_config = {:?}", virtio_net_config);
         debug!("features = {:?}", features);
