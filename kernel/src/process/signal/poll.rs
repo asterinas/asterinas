@@ -64,34 +64,6 @@ impl Pollee {
         poller.pollees.push(Arc::downgrade(&self.inner));
     }
 
-    /// Register an IoEvents observer.
-    ///
-    /// A registered observer will get notified (through its `on_events` method)
-    /// every time new events specified by the `mask` argument happen on the
-    /// pollee (through the `add_events` method).
-    ///
-    /// If the given observer has already been registered, then its registered
-    /// event mask will be updated.
-    ///
-    /// Note that the observer will always get notified of the events in
-    /// `IoEvents::ALWAYS_POLL` regardless of the value of `mask`.
-    pub fn register_observer(&self, observer: Weak<dyn Observer<IoEvents>>, mask: IoEvents) {
-        let mask = mask | IoEvents::ALWAYS_POLL;
-        self.inner.subject.register_observer(observer, mask);
-    }
-
-    /// Unregister an IoEvents observer.
-    ///
-    /// If such an observer is found, then the registered observer will be
-    /// removed from the pollee and returned as the return value. Otherwise,
-    /// a `None` will be returned.
-    pub fn unregister_observer(
-        &self,
-        observer: &Weak<dyn Observer<IoEvents>>,
-    ) -> Option<Weak<dyn Observer<IoEvents>>> {
-        self.inner.subject.unregister_observer(observer)
-    }
-
     /// Add some events to the pollee's state.
     ///
     /// This method wakes up all registered pollers that are interested in
