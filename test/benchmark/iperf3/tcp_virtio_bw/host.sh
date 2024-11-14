@@ -14,6 +14,7 @@ stop_guest() {
 trap stop_guest EXIT
 
 # Run iperf3 client
-/usr/local/benchmark/iperf/bin/iperf3 -c 127.0.0.1 -f m
+echo "Running iperf3 client connected to $GUEST_SERVER_IP_ADDRESS"
+/usr/local/benchmark/iperf/bin/iperf3 -c $GUEST_SERVER_IP_ADDRESS -f m
 
 # The trap will automatically stop the guest VM when the script exits

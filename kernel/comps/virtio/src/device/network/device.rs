@@ -10,7 +10,7 @@ use aster_network::{
     AnyNetworkDevice, EthernetAddr, RxBuffer, TxBuffer, VirtioNetError, RX_BUFFER_POOL,
 };
 use aster_util::slot_vec::SlotVec;
-use log::debug;
+use log::{debug, warn};
 use ostd::{
     mm::DmaStream,
     sync::{LocalIrqDisabled, SpinLock},
@@ -44,6 +44,14 @@ impl NetworkDevice {
         let device_features = NetworkFeatures::from_bits_truncate(device_features);
         let supported_features = NetworkFeatures::support_features();
         let network_features = device_features & supported_features;
+
+        if network_features != device_features {
+            warn!(
+                "Virtio net contains unsupported device features: {:?}",
+                device_features.difference(supported_features)
+            );
+        }
+
         debug!("{:?}", network_features);
         network_features.bits()
     }
