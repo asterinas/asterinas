@@ -14,6 +14,7 @@ stop_guest() {
 trap stop_guest EXIT
 
 # Run apache bench
-ab -n 10000 -c 20 http://localhost:8080/index.html
+echo "Running apache bench connected to $GUEST_SERVER_IP_ADDRESS"
+ab -n 10000 -c 20 http://$GUEST_SERVER_IP_ADDRESS:8080/index.html
 
 # The trap will automatically stop the guest VM when the script exits
