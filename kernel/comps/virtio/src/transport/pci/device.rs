@@ -132,7 +132,7 @@ impl VirtioTransport for VirtioPciTransport {
         memory.slice(offset..offset + length)
     }
 
-    fn device_features(&self) -> u64 {
+    fn read_device_features(&self) -> u64 {
         // select low
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, device_feature_select)
             .write_once(&0u32)
@@ -150,7 +150,7 @@ impl VirtioTransport for VirtioPciTransport {
         device_feature_high << 32 | device_feature_low as u64
     }
 
-    fn set_driver_features(&mut self, features: u64) -> Result<(), VirtioTransportError> {
+    fn write_driver_features(&mut self, features: u64) -> Result<(), VirtioTransportError> {
         let low = features as u32;
         let high = (features >> 32) as u32;
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, driver_feature_select)
@@ -168,14 +168,14 @@ impl VirtioTransport for VirtioPciTransport {
         Ok(())
     }
 
-    fn device_status(&self) -> DeviceStatus {
+    fn read_device_status(&self) -> DeviceStatus {
         let status = field_ptr!(&self.common_cfg, VirtioPciCommonCfg, device_status)
             .read_once()
             .unwrap();
         DeviceStatus::from_bits(status).unwrap()
     }
 
-    fn set_device_status(&mut self, status: DeviceStatus) -> Result<(), VirtioTransportError> {
+    fn write_device_status(&mut self, status: DeviceStatus) -> Result<(), VirtioTransportError> {
         field_ptr!(&self.common_cfg, VirtioPciCommonCfg, device_status)
             .write_once(&(status.bits()))
             .unwrap();

@@ -24,23 +24,24 @@ pub mod pci;
 pub trait VirtioTransport: Sync + Send + Debug {
     // ====================Device related APIs=======================
 
+    /// Get device type.
     fn device_type(&self) -> VirtioDeviceType;
 
     /// Get device features.
-    fn device_features(&self) -> u64;
+    fn read_device_features(&self) -> u64;
 
     /// Set driver features.
-    fn set_driver_features(&mut self, features: u64) -> Result<(), VirtioTransportError>;
+    fn write_driver_features(&mut self, features: u64) -> Result<(), VirtioTransportError>;
 
     /// Get device status.
-    fn device_status(&self) -> DeviceStatus;
+    fn read_device_status(&self) -> DeviceStatus;
 
     /// Set device status.
-    fn set_device_status(&mut self, status: DeviceStatus) -> Result<(), VirtioTransportError>;
+    fn write_device_status(&mut self, status: DeviceStatus) -> Result<(), VirtioTransportError>;
 
     // Set to driver ok status
     fn finish_init(&mut self) {
-        self.set_device_status(
+        self.write_device_status(
             DeviceStatus::ACKNOWLEDGE
                 | DeviceStatus::DRIVER
                 | DeviceStatus::FEATURES_OK
