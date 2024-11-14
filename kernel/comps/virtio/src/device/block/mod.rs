@@ -111,6 +111,12 @@ pub struct VirtioBlockTopology {
     opt_io_size: u32,
 }
 
+#[derive(Debug, Copy, Clone)]
+#[repr(C)]
+pub struct VirtioBlockFeature {
+    support_flush: bool,
+}
+
 impl VirtioBlockConfig {
     pub(self) fn new(transport: &dyn VirtioTransport) -> SafePtr<Self, IoMem> {
         let memory = transport.device_config_memory();
@@ -133,5 +139,12 @@ impl VirtioBlockConfig {
         field_ptr!(this, Self, capacity)
             .read_once()
             .map(|val| val as usize)
+    }
+}
+
+impl VirtioBlockFeature {
+    pub(self) fn new(transport: &dyn VirtioTransport) -> Self {
+        let support_flush = transport.read_device_features() & BlockFeatures::FLUSH.bits() == 1;
+        VirtioBlockFeature { support_flush }
     }
 }
