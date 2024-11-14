@@ -6,7 +6,7 @@ use aster_rights::{Read, ReadOp, TRights, Write, WriteOp};
 use aster_rights_proc::require;
 
 use crate::{
-    events::{IoEvents, Observer},
+    events::IoEvents,
     prelude::*,
     process::signal::{PollHandle, Pollee},
     util::{
@@ -97,22 +97,6 @@ macro_rules! impl_common_methods_for_channel {
 
         pub fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
             self.this_end().pollee.poll(mask, poller)
-        }
-
-        pub fn register_observer(
-            &self,
-            observer: Weak<dyn Observer<IoEvents>>,
-            mask: IoEvents,
-        ) -> Result<()> {
-            self.this_end().pollee.register_observer(observer, mask);
-            Ok(())
-        }
-
-        pub fn unregister_observer(
-            &self,
-            observer: &Weak<dyn Observer<IoEvents>>,
-        ) -> Option<Weak<dyn Observer<IoEvents>>> {
-            self.this_end().pollee.unregister_observer(observer)
         }
     };
 }
