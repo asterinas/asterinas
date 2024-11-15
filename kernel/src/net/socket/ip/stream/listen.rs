@@ -58,7 +58,7 @@ impl ListenStream {
 
         let index = backlog_sockets
             .iter()
-            .position(|backlog_socket| backlog_socket.is_active())
+            .position(|backlog_socket| backlog_socket.can_accept())
             .ok_or_else(|| {
                 Error::with_message(Errno::EAGAIN, "no pending connection is available")
             })?;
@@ -86,10 +86,12 @@ impl ListenStream {
     }
 
     pub(super) fn update_io_events(&self, pollee: &Pollee) {
-        // The lock should be held to avoid data races
         let backlog_sockets = self.backlog_sockets.read();
 
-        let can_accept = backlog_sockets.iter().any(|socket| socket.is_active());
+        let can_accept = backlog_sockets.iter().any(|socket| socket.can_accept());
+
+        // FIXME: If network packets come in simultaneously, the socket state may change in the
+        // middle. This can cause the wrong I/O events to be added or deleted.
         if can_accept {
             pollee.add_events(IoEvents::IN);
         } else {
@@ -131,8 +133,19 @@ impl BacklogSocket {
         }
     }
 
-    fn is_active(&self) -> bool {
-        self.bound_socket.raw_with(|socket| socket.is_active())
+    /// Returns whether the backlog socket can be `accept`ed.
+    ///
+    /// According to the Linux implementation, assuming the TCP Fast Open mechanism is off, a
+    /// backlog socket becomes ready to be returned in the `accept` system call when the 3-way
+    /// handshake is complete (i.e., when it enters the ESTABLISHED state).
+    ///
+    /// The Linux kernel implementation can be found at
+    /// <https://elixir.bootlin.com/linux/v6.11.8/source/net/ipv4/tcp_input.c#L7304>.
+    //
+    // FIMXE: Some sockets may be dead (e.g., RSTed), and such sockets can never become alive
+    // again. We need to remove them from the backlog sockets.
+    fn can_accept(&self) -> bool {
+        self.bound_socket.raw_with(|socket| socket.may_send())
     }
 
     fn remote_endpoint(&self) -> Option<IpEndpoint> {
