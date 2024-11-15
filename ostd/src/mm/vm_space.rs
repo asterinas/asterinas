@@ -20,6 +20,7 @@ use crate::{
     mm::{
         io::Fallible,
         kspace::KERNEL_PAGE_TABLE,
+        page::DynPage,
         page_table::{self, PageTable, PageTableItem, UserMode},
         tlb::{TlbFlushOp, TlbFlusher, FLUSH_ALL_RANGE_THRESHOLD},
         Frame, PageProperty, VmReader, VmWriter, MAX_USERSPACE_VADDR,
@@ -117,11 +118,12 @@ impl VmSpace {
     /// The creation of the cursor may block if another cursor having an
     /// overlapping range is alive. The modification to the mapping by the
     /// cursor may also block or be overridden the mapping of another cursor.
-    pub fn cursor_mut(&self, va: &Range<Vaddr>) -> Result<CursorMut<'_, '_>> {
+    pub fn cursor_mut(&self, va: &Range<Vaddr>) -> Result<CursorMut<'_, '_, '_>> {
         Ok(self.pt.cursor_mut(va).map(|pt_cursor| {
             let activation_lock = self.activation_lock.read();
 
             CursorMut {
+                space: self,
                 pt_cursor,
                 activation_lock,
                 flusher: TlbFlusher::new(self.cpus.load(), disable_preempt()),
@@ -280,16 +282,17 @@ impl Cursor<'_> {
 ///
 /// It exclusively owns a sub-tree of the page table, preventing others from
 /// reading or modifying the same sub-tree.
-pub struct CursorMut<'a, 'b> {
-    pt_cursor: page_table::CursorMut<'a, UserMode, PageTableEntry, PagingConsts>,
+pub struct CursorMut<'a, 'b, 'c> {
+    space: &'a VmSpace,
+    pt_cursor: page_table::CursorMut<'b, UserMode, PageTableEntry, PagingConsts>,
     #[allow(dead_code)]
-    activation_lock: RwLockReadGuard<'b, (), PreemptDisabled>,
+    activation_lock: RwLockReadGuard<'c, (), PreemptDisabled>,
     // We have a read lock so the CPU set in the flusher is always a superset
     // of actual activated CPUs.
     flusher: TlbFlusher<DisabledPreemptGuard>,
 }
 
-impl CursorMut<'_, '_> {
+impl CursorMut<'_, '_, '_> {
     /// Query about the current slot.
     ///
     /// This is the same as [`Cursor::query`].
@@ -329,6 +332,9 @@ impl CursorMut<'_, '_> {
         let old = unsafe { self.pt_cursor.map(frame.into(), prop) };
 
         if let Some(old) = old {
+            // Load the current cpu set.
+            self.flusher.update_cpu(self.space.cpus.load());
+
             self.flusher
                 .issue_tlb_flush_with(TlbFlushOp::Address(start_va), old);
             self.flusher.dispatch_tlb_flush();
@@ -356,18 +362,13 @@ impl CursorMut<'_, '_> {
         let end_va = self.virt_addr() + len;
         let tlb_prefer_flush_all = len > FLUSH_ALL_RANGE_THRESHOLD;
 
+        let mut vec_tlb_req = Vec::<(usize, DynPage)>::new();
         loop {
             // SAFETY: It is safe to un-map memory in the userspace.
             let result = unsafe { self.pt_cursor.take_next(end_va - self.virt_addr()) };
             match result {
                 PageTableItem::Mapped { va, page, .. } => {
-                    if !self.flusher.need_remote_flush() && tlb_prefer_flush_all {
-                        // Only on single-CPU cases we can drop the page immediately before flushing.
-                        drop(page);
-                        continue;
-                    }
-                    self.flusher
-                        .issue_tlb_flush_with(TlbFlushOp::Address(va), page);
+                    vec_tlb_req.push((va, page));
                 }
                 PageTableItem::NotMapped { .. } => {
                     break;
@@ -378,8 +379,16 @@ impl CursorMut<'_, '_> {
             }
         }
 
+        // Load the current cpu set.
+        self.flusher.update_cpu(self.space.cpus.load());
+
         if !self.flusher.need_remote_flush() && tlb_prefer_flush_all {
             self.flusher.issue_tlb_flush(TlbFlushOp::All);
+        } else {
+            for (va, page) in vec_tlb_req {
+                self.flusher
+                    .issue_tlb_flush_with(TlbFlushOp::Address(va), page);
+            }
         }
 
         self.flusher.dispatch_tlb_flush();

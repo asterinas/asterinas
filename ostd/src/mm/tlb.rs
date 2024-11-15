@@ -7,7 +7,7 @@ use core::ops::Range;
 
 use super::{page::DynPage, Vaddr, PAGE_SIZE};
 use crate::{
-    cpu::{CpuSet, PinCurrentCpu},
+    cpu::{CpuId, CpuSet, PinCurrentCpu},
     cpu_local,
     sync::SpinLock,
     task::disable_preempt,
@@ -22,6 +22,7 @@ pub struct TlbFlusher<G: PinCurrentCpu> {
     // list brings non-trivial overhead.
     need_remote_flush: bool,
     need_self_flush: bool,
+    current_cpu: CpuId,
     _pin_current: G,
 }
 
@@ -47,8 +48,29 @@ impl<G: PinCurrentCpu> TlbFlusher<G> {
             target_cpus,
             need_remote_flush,
             need_self_flush,
+            current_cpu,
             _pin_current: pin_current_guard,
         }
+    }
+
+    /// Updates the CPU list with the specified CPUs to be flushed.
+    pub(crate) fn update_cpu(&mut self, target_cpus: CpuSet) {
+        let current_cpu = self.current_cpu;
+
+        let mut need_self_flush = false;
+        let mut need_remote_flush = false;
+
+        for cpu in target_cpus.iter() {
+            if cpu == current_cpu {
+                need_self_flush = true;
+            } else {
+                need_remote_flush = true;
+            }
+        }
+
+        self.target_cpus = target_cpus;
+        self.need_self_flush = need_self_flush;
+        self.need_remote_flush = need_remote_flush;
     }
 
     /// Issues a pending TLB flush request.
