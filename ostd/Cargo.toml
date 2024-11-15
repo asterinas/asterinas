@@ -34,7 +34,6 @@ num-derive = { version = "0.4", default-features = false }
 num-traits = { version = "0.2", default-features = false }
 ostd-macros = { version = "0.10.0", path = "libs/ostd-macros" }
 ostd-test = { version = "0.10.0", path = "libs/ostd-test" }
-owo-colors = { version = "3", optional = true }
 ostd-pod = { git = "https://github.com/asterinas/ostd-pod", rev = "c4644be", version = "0.1.1" }
 spin = "0.9.4"
 smallvec = "1.13.2"
@@ -62,7 +61,6 @@ sbi-rt = "0.0.3"
 fdt = { version = "0.1.5", features = ["pretty-printing"] }
 
 [features]
-default = ["cvm_guest", "log_color"]
-log_color = ["dep:owo-colors"]
+default = ["cvm_guest"]
 # The guest OS support for Confidential VMs (CVMs), e.g., Intel TDX
 cvm_guest = ["dep:tdx-guest", "dep:iced-x86"]

@@ -2,36 +2,61 @@
 
 //! Logging support.
 //!
-//! Currently the logger prints the logs to the console.
+//! This module provides a default log implementation while allowing users to inject
+//! their own logger at a higher level.
 //!
-//! This module guarantees _atomicity_ under concurrency: messages are always
-//! printed in their entirety without being mixed with messages generated
-//! concurrently on other cores.
-//!
-//! IRQs are disabled while printing. So do not print long log messages.
+//! Generally IRQs are disabled while printing. So do not print long log messages.
+
+use core::str::FromStr;
 
 use log::{LevelFilter, Metadata, Record};
+use spin::Once;
 
-use crate::{
-    boot::{kcmdline::ModuleArg, kernel_cmdline},
-    timer::Jiffies,
-};
+use crate::boot::{kcmdline::ModuleArg, kernel_cmdline};
 
-const LOGGER: Logger = Logger {};
+static LOGGER: Logger = Logger::new();
 
-struct Logger {}
+struct Logger {
+    backend: Once<&'static dyn log::Log>,
+}
+
+impl Logger {
+    const fn new() -> Self {
+        Self {
+            backend: Once::new(),
+        }
+    }
+}
+
+/// Injects a logger as the global logger backend.
+///
+/// This method allows upper-level users to inject their own implemented loggers,
+/// but only allows injecting once. Subsequent injection will have no effect.
+///
+/// **Caution**: The implementation of log operation in the injected logger should ideally be
+/// heap-free and not involve sleep operations. Otherwise, users should refrain from calling `log`
+/// in sensitive locations, such as during heap allocations, as this may cause the system to block.
+pub fn inject_logger(new_logger: &'static dyn log::Log) {
+    LOGGER.backend.call_once(|| new_logger);
+}
 
 impl log::Log for Logger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        metadata.level() <= log::max_level()
+        if let Some(logger) = self.backend.get() {
+            return logger.enabled(metadata);
+        };
+
+        // Default implementation.
+        true
     }
 
     fn log(&self, record: &Record) {
-        if !self.enabled(record.metadata()) {
-            return;
-        }
+        if let Some(logger) = self.backend.get() {
+            return logger.log(record);
+        };
 
-        let timestamp = Jiffies::elapsed().as_duration().as_secs_f64();
+        // Default implementation.
+
         let level = record.level();
 
         // Use a global lock to prevent interleaving of log messages.
@@ -39,44 +64,19 @@ impl log::Log for Logger {
         static RECORD_LOCK: SpinLock<()> = SpinLock::new(());
         let _lock = RECORD_LOCK.disable_irq().lock();
 
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "log_color")]{
-                use owo_colors::Style;
-
-                let timestamp_style = Style::new().green();
-                let record_style = Style::new().default_color();
-                let level_style = match record.level() {
-                    log::Level::Error => Style::new().red(),
-                    log::Level::Warn => Style::new().bright_yellow(),
-                    log::Level::Info => Style::new().blue(),
-                    log::Level::Debug => Style::new().bright_green(),
-                    log::Level::Trace => Style::new().bright_black(),
-                };
-
-                crate::console::early_print(
-                    format_args!("{} {:<5}: {}\n",
-                    timestamp_style.style(format_args!("[{:>10.3}]", timestamp)),
-                    level_style.style(level),
-                    record_style.style(record.args()))
-                );
-            }else{
-                crate::console::early_print(
-                    format_args!("{} {:<5}: {}\n",
-                    format_args!("[{:>10.3}]", timestamp),
-                    level,
-                    record.args())
-                );
-            }
-        }
+        crate::console::early_print(format_args!("{}: {}\n", level, record.args()));
     }
 
-    fn flush(&self) {}
+    fn flush(&self) {
+        if let Some(logger) = self.backend.get() {
+            logger.flush();
+        };
+    }
 }
 
 /// Initialize the logger. Users should avoid using the log macros before this function is called.
 pub(crate) fn init() {
     let level = get_log_level().unwrap_or(LevelFilter::Off);
-
     log::set_max_level(level);
     log::set_logger(&LOGGER).unwrap();
 }
@@ -84,22 +84,14 @@ pub(crate) fn init() {
 fn get_log_level() -> Option<LevelFilter> {
     let module_args = kernel_cmdline().get_module_args("ostd")?;
 
-    let arg = module_args.iter().find(|arg| match arg {
-        ModuleArg::Arg(_) => false,
-        ModuleArg::KeyVal(name, _) => name.as_bytes() == "log_level".as_bytes(),
-    })?;
-
-    let ModuleArg::KeyVal(_, value) = arg else {
-        unreachable!()
+    let value = {
+        let value = module_args.iter().find_map(|arg| match arg {
+            ModuleArg::KeyVal(name, value) if name.as_bytes() == "log_level".as_bytes() => {
+                Some(value)
+            }
+            _ => None,
+        })?;
+        value.as_c_str().to_str().ok()?
     };
-    let value = value.as_c_str().to_str().unwrap_or("off");
-    Some(match value {
-        "error" => LevelFilter::Error,
-        "warn" => LevelFilter::Warn,
-        "info" => LevelFilter::Info,
-        "debug" => LevelFilter::Debug,
-        "trace" => LevelFilter::Trace,
-        // Otherwise, OFF
-        _ => LevelFilter::Off,
-    })
+    LevelFilter::from_str(value).ok()
 }
