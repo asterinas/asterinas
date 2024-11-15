@@ -89,9 +89,6 @@ impl ConnectedStream {
             Ok(Err(e)) => Err(e),
             Err(RecvError::Finished) => Ok(0),
             Err(RecvError::InvalidState) => {
-                if self.before_established() {
-                    return_errno_with_message!(Errno::EAGAIN, "the connection is not established");
-                }
                 return_errno_with_message!(Errno::ECONNRESET, "the connection is reset")
             }
         }
@@ -110,9 +107,6 @@ impl ConnectedStream {
             Ok(Ok(sent_bytes)) => Ok(sent_bytes),
             Ok(Err(e)) => Err(e),
             Err(SendError::InvalidState) => {
-                if self.before_established() {
-                    return_errno_with_message!(Errno::EAGAIN, "the connection is not established");
-                }
                 // FIXME: `EPIPE` is another possibility, which means that the socket is shut down
                 // for writing. In that case, we should also trigger a `SIGPIPE` if `MSG_NOSIGNAL`
                 // is not specified.
@@ -184,22 +178,6 @@ impl ConnectedStream {
 
     pub(super) fn set_observer(&self, observer: Weak<dyn SocketEventObserver>) {
         self.bound_socket.set_observer(observer)
-    }
-
-    /// Returns whether the connection is before established.
-    ///
-    /// Note that a newly accepted socket may not yet be in the [`TcpState::Established`] state.
-    /// The accept syscall only verifies that a connection request is incoming by ensuring
-    /// that the backlog socket is not in the [`TcpState::Listen`] state.
-    /// However, the socket might still be waiting for further ACKs to complete the establishment process.
-    /// Therefore, it could be in either the [`TcpState::SynSent`] or [`TcpState::SynReceived`] states.
-    /// We must wait until the socket reaches the established state before it can send and receive data.
-    ///
-    /// FIXME: Should we check established state in accept or here?
-    fn before_established(&self) -> bool {
-        self.bound_socket.raw_with(|socket| {
-            socket.state() == TcpState::SynSent || socket.state() == TcpState::SynReceived
-        })
     }
 }
 
