@@ -9,7 +9,8 @@ use aster_bigtcp::socket::{
 use crate::{
     match_sock_option_mut, match_sock_option_ref,
     net::socket::options::{
-        Error as SocketError, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf, SocketOption,
+        Error as SocketError, KeepAlive, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf,
+        SocketOption,
     },
     prelude::*,
 };
@@ -24,6 +25,7 @@ pub struct SocketOptionSet {
     send_buf: u32,
     recv_buf: u32,
     linger: LingerOption,
+    keep_alive: bool,
 }
 
 impl SocketOptionSet {
@@ -36,6 +38,7 @@ impl SocketOptionSet {
             send_buf: TCP_SEND_BUF_LEN as u32,
             recv_buf: TCP_RECV_BUF_LEN as u32,
             linger: LingerOption::default(),
+            keep_alive: false,
         }
     }
 
@@ -48,6 +51,7 @@ impl SocketOptionSet {
             send_buf: UDP_SEND_PAYLOAD_LEN as u32,
             recv_buf: UDP_RECV_PAYLOAD_LEN as u32,
             linger: LingerOption::default(),
+            keep_alive: false,
         }
     }
 
@@ -122,6 +126,10 @@ impl SocketOptionSet {
             socket_linger: Linger => {
                 let linger = socket_linger.get().unwrap();
                 self.set_linger(*linger);
+            },
+            socket_keep_alive: KeepAlive => {
+                let keep_alive = socket_keep_alive.get().unwrap();
+                self.set_keep_alive(*keep_alive);
             },
             _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to be set is unknown")
         });

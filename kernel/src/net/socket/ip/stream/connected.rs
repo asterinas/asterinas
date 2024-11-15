@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::sync::Weak;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::{
+    sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
+};
 
 use aster_bigtcp::{
     errors::tcp::{RecvError, SendError},
@@ -200,6 +203,20 @@ impl ConnectedStream {
         self.bound_socket.raw_with(|socket| {
             socket.state() == TcpState::SynSent || socket.state() == TcpState::SynReceived
         })
+    }
+
+    fn set_keep_alive(&self, keep_alive: bool) {
+        // TODO: This durations should be allowed to set by users.
+        // We should expose it to `/proc/sys/net/ipv4/tcp_keepalive_intvl`.
+        const DURATION: Duration = Duration::from_secs(75);
+
+        self.bound_socket.raw_with_mut(|socket: &mut RawTcpSocket| {
+            if keep_alive {
+                socket.set_keep_alive(Some(DURATION.into()));
+            } else {
+                socket.set_keep_alive(None);
+            }
+        });
     }
 }
 
