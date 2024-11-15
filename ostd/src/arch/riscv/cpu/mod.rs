@@ -7,14 +7,19 @@ pub mod local;
 use core::fmt::Debug;
 
 use riscv::register::{
-    scause::{Exception, Trap},
+    scause::{Exception, Interrupt, Trap},
     sstatus,
 };
 
 pub use super::trap::GeneralRegs as RawGeneralRegs;
-use super::trap::{TrapFrame, UserContext as RawUserContext};
+use super::{
+    irq::TIMER_IRQ_LINE,
+    trap::{TrapFrame, UserContext as RawUserContext},
+};
 use crate::{
     prelude::*,
+    task::scheduler,
+    trap::call_irq_callback_functions,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
 
@@ -115,6 +120,8 @@ impl UserContextApiInternal for UserContext {
         F: FnMut() -> bool,
     {
         let ret = loop {
+            scheduler::might_preempt();
+
             const FS_MASK: usize = 0b11 << 13;
             self.user_context.sstatus =
                 (self.user_context.sstatus & !FS_MASK) | ((self.fpu_state.fs as usize) << 13);
@@ -122,6 +129,9 @@ impl UserContextApiInternal for UserContext {
             self.fpu_state.fs = bits_to_fs((self.user_context.sstatus >> 13) & 0b11);
 
             match riscv::register::scause::read().cause() {
+                Trap::Interrupt(Interrupt::SupervisorTimer) => {
+                    call_irq_callback_functions(&self.as_trap_frame(), TIMER_IRQ_LINE)
+                }
                 Trap::Interrupt(_) => todo!(),
                 Trap::Exception(Exception::UserEnvCall) => {
                     self.user_context.sepc += 4;
@@ -138,6 +148,7 @@ impl UserContextApiInternal for UserContext {
                     break ReturnReason::UserException;
                 }
             }
+            crate::arch::irq::enable_local();
 
             if has_kernel_event() {
                 break ReturnReason::KernelEvent;

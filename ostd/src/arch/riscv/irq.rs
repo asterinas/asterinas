@@ -42,6 +42,9 @@ pub(crate) static IRQ_ALLOCATOR: Once<SpinLock<IdAlloc>> = Once::new();
 
 pub(crate) static IRQ_LIST: Once<Vec<IrqLine>> = Once::new();
 
+// FIXME: use properly managed irq number
+pub(crate) const TIMER_IRQ_LINE: usize = 128;
+
 pub(crate) fn init() {
     let mut list: Vec<IrqLine> = Vec::new();
     for i in 0..256 {

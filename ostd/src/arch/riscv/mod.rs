@@ -50,7 +50,9 @@ pub(crate) unsafe fn init_on_ap() {
 }
 
 pub(crate) fn interrupts_ack(irq_number: usize) {
-    unimplemented!()
+    if irq_number != irq::TIMER_IRQ_LINE {
+        unimplemented!()
+    }
 }
 
 /// Return the frequency of TSC. The unit is Hz.
