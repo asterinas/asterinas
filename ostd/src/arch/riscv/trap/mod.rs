@@ -4,11 +4,14 @@
 
 mod trap;
 
-use riscv::register::scause::{Exception, Trap};
+use riscv::register::scause::{Exception, Interrupt, Trap};
 pub use trap::{GeneralRegs, TrapFrame, UserContext};
 
 use super::ex_table::ExTable;
-use crate::{cpu::CpuExceptionInfo, cpu_local_cell, mm::MAX_USERSPACE_VADDR, task::Task};
+use crate::{
+    arch::irq::TIMER_IRQ_LINE, cpu::CpuExceptionInfo, cpu_local_cell, mm::MAX_USERSPACE_VADDR,
+    task::Task, trap::call_irq_callback_functions,
+};
 
 cpu_local_cell! {
     static IS_KERNEL_INTERRUPTED: bool = false;
@@ -30,9 +33,12 @@ pub fn is_kernel_interrupted() -> bool {
 #[no_mangle]
 extern "C" fn trap_handler(f: &mut TrapFrame) {
     match riscv::register::scause::read().cause() {
-        Trap::Interrupt(_) => {
+        Trap::Interrupt(interrupt) => {
             IS_KERNEL_INTERRUPTED.store(true);
-            todo!();
+            match interrupt {
+                Interrupt::SupervisorTimer => call_irq_callback_functions(f, TIMER_IRQ_LINE),
+                _ => todo!(),
+            }
             IS_KERNEL_INTERRUPTED.store(false);
         }
         Trap::Exception(e) => {
