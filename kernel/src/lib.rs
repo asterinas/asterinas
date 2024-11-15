@@ -51,7 +51,6 @@ extern crate controlled;
 extern crate getset;
 
 pub mod arch;
-pub mod console;
 pub mod context;
 pub mod cpu;
 pub mod device;

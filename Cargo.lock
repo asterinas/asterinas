@@ -81,6 +81,7 @@ name = "aster-block"
 version = "0.1.0"
 dependencies = [
  "align_ext",
+ "aster-logger",
  "aster-util",
  "bitflags 1.3.2",
  "bitvec",
@@ -108,6 +109,7 @@ dependencies = [
 name = "aster-framebuffer"
 version = "0.1.0"
 dependencies = [
+ "aster-logger",
  "component",
  "font8x8",
  "log",
@@ -120,6 +122,7 @@ name = "aster-input"
 version = "0.1.0"
 dependencies = [
  "ascii",
+ "aster-logger",
  "aster-rights",
  "aster-util",
  "bitflags 1.3.2",
@@ -131,11 +134,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "aster-logger"
+version = "0.1.0"
+dependencies = [
+ "aster-console",
+ "cfg-if",
+ "component",
+ "log",
+ "ostd",
+ "owo-colors 3.5.0",
+ "spin 0.9.8",
+]
+
+[[package]]
 name = "aster-network"
 version = "0.1.0"
 dependencies = [
  "align_ext",
  "aster-bigtcp",
+ "aster-logger",
  "aster-rights",
  "aster-util",
  "bitflags 1.3.2",
@@ -158,6 +175,7 @@ dependencies = [
  "aster-console",
  "aster-framebuffer",
  "aster-input",
+ "aster-logger",
  "aster-network",
  "aster-rights",
  "aster-rights-proc",
@@ -223,6 +241,7 @@ dependencies = [
 name = "aster-softirq"
 version = "0.1.0"
 dependencies = [
+ "aster-logger",
  "component",
  "intrusive-collections",
  "ostd",
@@ -233,6 +252,7 @@ dependencies = [
 name = "aster-time"
 version = "0.1.0"
 dependencies = [
+ "aster-logger",
  "aster-util",
  "chrono",
  "component",
@@ -261,6 +281,7 @@ dependencies = [
  "aster-block",
  "aster-console",
  "aster-input",
+ "aster-logger",
  "aster-network",
  "aster-rights",
  "aster-util",
@@ -1153,7 +1174,6 @@ dependencies = [
  "ostd-macros",
  "ostd-pod",
  "ostd-test",
- "owo-colors 3.5.0",
  "riscv",
  "sbi-rt",
  "smallvec",
