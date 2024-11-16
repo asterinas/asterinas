@@ -21,7 +21,11 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Arc<Thread>)
     fn user_task_entry() {
         let current_thread = current_thread!();
         let current_posix_thread = current_thread.as_posix_thread().unwrap();
-        let current_process = current_posix_thread.process();
+        let Some(current_process) = current_posix_thread.process() else {
+            // The process may exit before this thread gets scheduled. So we
+            // just don't run this thread.
+            return;
+        };
         let current_task = Task::current().unwrap();
 
         let user_space = current_task

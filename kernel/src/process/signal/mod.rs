@@ -55,7 +55,7 @@ pub fn handle_pending_signal(user_ctx: &mut UserContext, ctx: &Context) -> Resul
 
     let sig_num = signal.num();
     trace!("sig_num = {:?}, sig_name = {}", sig_num, sig_num.sig_name());
-    let current = posix_thread.process();
+    let current = posix_thread.process().unwrap();
     let mut sig_dispositions = current.sig_dispositions().lock();
     let sig_action = sig_dispositions.get(sig_num);
     trace!("sig action: {:x?}", sig_action);

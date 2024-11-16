@@ -82,8 +82,14 @@ pub struct PosixThread {
 }
 
 impl PosixThread {
-    pub fn process(&self) -> Arc<Process> {
-        self.process.upgrade().unwrap()
+    /// Gets a reference to the process that the thread belongs to.
+    ///
+    /// If it returns [`None`], it means that the owner process may have exited
+    /// while this thread is still alive and haven't yet checked its exit
+    /// status. So a thread may not always have a valid reference to the
+    /// process.
+    pub fn process(&self) -> Option<Arc<Process>> {
+        self.process.upgrade()
     }
 
     pub fn weak_process(&self) -> Weak<Process> {
@@ -152,7 +158,7 @@ impl PosixThread {
         if let Some(signum) = signum
             && *signum == SIGCONT
         {
-            let receiver_sid = self.process().session().unwrap().sid();
+            let receiver_sid = self.process().unwrap().session().unwrap().sid();
             if receiver_sid == sender.sid().unwrap() {
                 return Ok(());
             }
@@ -267,7 +273,7 @@ impl PosixThread {
     }
 
     fn is_main_thread(&self, tid: Tid) -> bool {
-        let process = self.process();
+        let process = self.process.upgrade().unwrap();
         let pid = process.pid();
         tid == pid
     }

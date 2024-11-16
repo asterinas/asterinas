@@ -35,7 +35,8 @@ pub fn do_exit(thread: &Thread, posix_thread: &PosixThread, term_status: TermSta
     // exit the robust list: walk the robust list; mark futex words as dead and do futex wake
     wake_robust_list(posix_thread, tid);
 
-    if tid != posix_thread.process().pid() {
+    let process = posix_thread.process().unwrap();
+    if tid != process.pid() {
         // We don't remove main thread.
         // The main thread is removed when the process is reaped.
         thread_table::remove_thread(tid);
@@ -46,7 +47,7 @@ pub fn do_exit(thread: &Thread, posix_thread: &PosixThread, term_status: TermSta
         do_exit_group(term_status);
     }
 
-    futex_wake(Arc::as_ptr(&posix_thread.process()) as Vaddr, 1, None)?;
+    futex_wake(Arc::as_ptr(&process) as Vaddr, 1, None)?;
     Ok(())
 }
 

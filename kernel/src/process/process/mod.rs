@@ -174,7 +174,7 @@ impl Process {
     ///  - the function is called in the bootstrap context;
     ///  - or if the current task is not associated with a process.
     pub fn current() -> Option<Arc<Process>> {
-        Some(Task::current()?.as_posix_thread()?.process())
+        Task::current()?.as_posix_thread()?.process()
     }
 
     #[allow(clippy::too_many_arguments)]

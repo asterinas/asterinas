@@ -77,10 +77,17 @@ pub fn sys_timer_create(
                         Error::with_message(Errno::EINVAL, "target thread does not exist")
                     })?;
                     let posix_thread = thread.as_posix_thread().unwrap();
-                    if posix_thread.process().pid() != current_process.pid() {
+                    if let Some(process) = posix_thread.process() {
+                        if process.pid() != current_process.pid() {
+                            return_errno_with_message!(
+                                Errno::EINVAL,
+                                "target thread should belong to current process"
+                            );
+                        }
+                    } else {
                         return_errno_with_message!(
-                            Errno::EINVAL,
-                            "target thread should belong to current process"
+                            Errno::EINTR,
+                            "target thread belongs to a killed process"
                         );
                     }
                     let signal = KernelSignal::new(SigNum::try_from(signo as u8)?);
