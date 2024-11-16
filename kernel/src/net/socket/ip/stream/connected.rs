@@ -5,14 +5,14 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use aster_bigtcp::{
     errors::tcp::{RecvError, SendError},
-    socket::{SocketEventObserver, TcpStateCheck},
+    socket::{NeedIfacePoll, SocketEventObserver, TcpStateCheck},
     wire::IpEndpoint,
 };
 
 use crate::{
     events::IoEvents,
     net::{
-        iface::BoundTcpSocket,
+        iface::{BoundTcpSocket, Iface},
         socket::util::{send_recv_flags::SendRecvFlags, shutdown_cmd::SockShutdownCmd},
     },
     prelude::*,
@@ -79,7 +79,11 @@ impl ConnectedStream {
         Ok(())
     }
 
-    pub fn try_recv(&self, writer: &mut dyn MultiWrite, _flags: SendRecvFlags) -> Result<usize> {
+    pub fn try_recv(
+        &self,
+        writer: &mut dyn MultiWrite,
+        _flags: SendRecvFlags,
+    ) -> Result<(usize, NeedIfacePoll)> {
         let result = self.bound_socket.recv(|socket_buffer| {
             match writer.write(&mut VmReader::from(&*socket_buffer)) {
                 Ok(len) => (len, Ok(len)),
@@ -88,18 +92,30 @@ impl ConnectedStream {
         });
 
         match result {
-            Ok(Ok(0)) if self.is_receiving_closed.load(Ordering::Relaxed) => Ok(0),
-            Ok(Ok(0)) => return_errno_with_message!(Errno::EAGAIN, "the receive buffer is empty"),
-            Ok(Ok(recv_bytes)) => Ok(recv_bytes),
-            Ok(Err(e)) => Err(e),
-            Err(RecvError::Finished) => Ok(0),
+            Ok((Ok(0), need_poll)) if self.is_receiving_closed.load(Ordering::Relaxed) => {
+                Ok((0, need_poll))
+            }
+            Ok((Ok(0), need_poll)) => {
+                debug_assert!(!*need_poll);
+                return_errno_with_message!(Errno::EAGAIN, "the receive buffer is empty")
+            }
+            Ok((Ok(recv_bytes), need_poll)) => Ok((recv_bytes, need_poll)),
+            Ok((Err(e), need_poll)) => {
+                debug_assert!(!*need_poll);
+                Err(e)
+            }
+            Err(RecvError::Finished) => Ok((0, NeedIfacePoll::FALSE)),
             Err(RecvError::InvalidState) => {
                 return_errno_with_message!(Errno::ECONNRESET, "the connection is reset")
             }
         }
     }
 
-    pub fn try_send(&self, reader: &mut dyn MultiRead, _flags: SendRecvFlags) -> Result<usize> {
+    pub fn try_send(
+        &self,
+        reader: &mut dyn MultiRead,
+        _flags: SendRecvFlags,
+    ) -> Result<(usize, NeedIfacePoll)> {
         let result = self.bound_socket.send(|socket_buffer| {
             match reader.read(&mut VmWriter::from(socket_buffer)) {
                 Ok(len) => (len, Ok(len)),
@@ -108,9 +124,15 @@ impl ConnectedStream {
         });
 
         match result {
-            Ok(Ok(0)) => return_errno_with_message!(Errno::EAGAIN, "the send buffer is full"),
-            Ok(Ok(sent_bytes)) => Ok(sent_bytes),
-            Ok(Err(e)) => Err(e),
+            Ok((Ok(0), need_poll)) => {
+                debug_assert!(!*need_poll);
+                return_errno_with_message!(Errno::EAGAIN, "the send buffer is full")
+            }
+            Ok((Ok(sent_bytes), need_poll)) => Ok((sent_bytes, need_poll)),
+            Ok((Err(e), need_poll)) => {
+                debug_assert!(!*need_poll);
+                Err(e)
+            }
             Err(SendError::InvalidState) => {
                 // FIXME: `EPIPE` is another possibility, which means that the socket is shut down
                 // for writing. In that case, we should also trigger a `SIGPIPE` if `MSG_NOSIGNAL`
@@ -126,6 +148,10 @@ impl ConnectedStream {
 
     pub fn remote_endpoint(&self) -> IpEndpoint {
         self.remote_endpoint
+    }
+
+    pub fn iface(&self) -> &Arc<Iface> {
+        self.bound_socket.iface()
     }
 
     pub fn check_new(&mut self) -> Result<()> {

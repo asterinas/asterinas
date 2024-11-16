@@ -18,7 +18,7 @@ use crate::{
     },
     match_sock_option_mut,
     net::{
-        iface::poll_ifaces,
+        iface::IfaceEx,
         socket::{
             options::{Error as SocketError, SocketOption},
             util::{
@@ -157,14 +157,9 @@ impl DatagramSocket {
             return_errno_with_message!(Errno::EAGAIN, "the socket is not bound");
         };
 
-        let received = bound_datagram
+        bound_datagram
             .try_recv(writer, flags)
-            .map(|(recv_bytes, remote_endpoint)| (recv_bytes, remote_endpoint.into()));
-
-        drop(inner);
-        poll_ifaces();
-
-        received
+            .map(|(recv_bytes, remote_endpoint)| (recv_bytes, remote_endpoint.into()))
     }
 
     fn recv(
@@ -191,12 +186,13 @@ impl DatagramSocket {
             return_errno_with_message!(Errno::EAGAIN, "the socket is not bound")
         };
 
-        let sent_bytes = bound_datagram.try_send(reader, remote, flags);
+        let sent_bytes = bound_datagram.try_send(reader, remote, flags)?;
+        let iface_to_poll = bound_datagram.iface().clone();
 
         drop(inner);
-        poll_ifaces();
+        iface_to_poll.poll();
 
-        sent_bytes
+        Ok(sent_bytes)
     }
 
     fn check_io_events(&self) -> IoEvents {

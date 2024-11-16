@@ -24,7 +24,7 @@ use crate::{
     },
     match_sock_option_mut, match_sock_option_ref,
     net::{
-        iface::poll_ifaces,
+        iface::IfaceEx,
         socket::{
             options::{Error as SocketError, SocketOption},
             util::{
@@ -190,32 +190,36 @@ impl StreamSocket {
         let is_nonblocking = self.is_nonblocking();
         let mut state = self.write_updated_state();
 
-        let result_or_block = state.borrow_result(|mut owned_state| {
+        let (result_or_block, iface_to_poll) = state.borrow_result(|mut owned_state| {
             let init_stream = match owned_state {
                 State::Init(init_stream) => init_stream,
                 State::Connecting(_) if is_nonblocking => {
                     return (
                         owned_state,
-                        Some(Err(Error::with_message(
-                            Errno::EALREADY,
-                            "the socket is connecting",
-                        ))),
+                        (
+                            Some(Err(Error::with_message(
+                                Errno::EALREADY,
+                                "the socket is connecting",
+                            ))),
+                            None,
+                        ),
                     );
                 }
-                State::Connecting(_) => {
-                    return (owned_state, None);
-                }
+                State::Connecting(_) => return (owned_state, (None, None)),
                 State::Connected(ref mut connected_stream) => {
                     let err = connected_stream.check_new();
-                    return (owned_state, Some(err));
+                    return (owned_state, (Some(err), None));
                 }
                 State::Listen(_) => {
                     return (
                         owned_state,
-                        Some(Err(Error::with_message(
-                            Errno::EISCONN,
-                            "the socket is listening",
-                        ))),
+                        (
+                            Some(Err(Error::with_message(
+                                Errno::EISCONN,
+                                "the socket is listening",
+                            ))),
+                            None,
+                        ),
                     );
                 }
             };
@@ -223,25 +227,30 @@ impl StreamSocket {
             let connecting_stream = match init_stream.connect(remote_endpoint) {
                 Ok(connecting_stream) => connecting_stream,
                 Err((err, init_stream)) => {
-                    return (State::Init(init_stream), Some(Err(err)));
+                    return (State::Init(init_stream), (Some(Err(err)), None));
                 }
             };
 
+            let result_or_block = if is_nonblocking {
+                Some(Err(Error::with_message(
+                    Errno::EINPROGRESS,
+                    "the socket is connecting",
+                )))
+            } else {
+                None
+            };
+            let iface_to_poll = connecting_stream.iface().clone();
+
             (
                 State::Connecting(connecting_stream),
-                if is_nonblocking {
-                    Some(Err(Error::with_message(
-                        Errno::EINPROGRESS,
-                        "the socket is connecting",
-                    )))
-                } else {
-                    None
-                },
+                (result_or_block, Some(iface_to_poll)),
             )
         });
 
         drop(state);
-        poll_ifaces();
+        if let Some(iface) = iface_to_poll {
+            iface.poll();
+        }
 
         result_or_block
     }
@@ -274,9 +283,10 @@ impl StreamSocket {
             let accepted_socket = Self::new_connected(connected_stream);
             (accepted_socket as _, remote_endpoint.into())
         });
+        let iface_to_poll = listen_stream.iface().clone();
 
         drop(state);
-        poll_ifaces();
+        iface_to_poll.poll();
 
         accepted
     }
@@ -298,15 +308,16 @@ impl StreamSocket {
             }
         };
 
-        let received = connected_stream.try_recv(writer, flags).map(|recv_bytes| {
-            let remote_endpoint = connected_stream.remote_endpoint();
-            (recv_bytes, remote_endpoint.into())
-        });
+        let (recv_bytes, need_poll) = connected_stream.try_recv(writer, flags)?;
+        let iface_to_poll = need_poll.then(|| connected_stream.iface().clone());
+        let remote_endpoint = connected_stream.remote_endpoint();
 
         drop(state);
-        poll_ifaces();
+        if let Some(iface) = iface_to_poll {
+            iface.poll();
+        }
 
-        received
+        Ok((recv_bytes, remote_endpoint.into()))
     }
 
     fn recv(
@@ -337,12 +348,15 @@ impl StreamSocket {
             }
         };
 
-        let sent_bytes = connected_stream.try_send(reader, flags);
+        let (sent_bytes, need_poll) = connected_stream.try_send(reader, flags)?;
+        let iface_to_poll = need_poll.then(|| connected_stream.iface().clone());
 
         drop(state);
-        poll_ifaces();
+        if let Some(iface) = iface_to_poll {
+            iface.poll();
+        }
 
-        sent_bytes
+        Ok(sent_bytes)
     }
 
     fn send(&self, reader: &mut dyn MultiRead, flags: SendRecvFlags) -> Result<usize> {
@@ -498,16 +512,20 @@ impl Socket for StreamSocket {
 
     fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
         let state = self.read_updated_state();
-        let res = match state.as_ref() {
-            State::Connected(connected_stream) => connected_stream.shutdown(cmd, &self.pollee),
+
+        let (result, iface_to_poll) = match state.as_ref() {
+            State::Connected(connected_stream) => (
+                connected_stream.shutdown(cmd, &self.pollee),
+                connected_stream.iface().clone(),
+            ),
             // TODO: shutdown listening stream
             _ => return_errno_with_message!(Errno::EINVAL, "cannot shutdown"),
         };
 
         drop(state);
-        poll_ifaces();
+        iface_to_poll.poll();
 
-        res
+        result
     }
 
     fn addr(&self) -> Result<SocketAddr> {
@@ -692,8 +710,18 @@ impl SocketEventObserver for StreamSocket {
 
 impl Drop for StreamSocket {
     fn drop(&mut self) {
-        self.state.write().take();
+        let state = self.state.write().take();
 
-        poll_ifaces();
+        let iface_to_poll = match state {
+            State::Init(_) => None,
+            State::Connecting(ref connecting_stream) => Some(connecting_stream.iface().clone()),
+            State::Connected(ref connected_stream) => Some(connected_stream.iface().clone()),
+            State::Listen(ref listen_stream) => Some(listen_stream.iface().clone()),
+        };
+
+        drop(state);
+        if let Some(iface) = iface_to_poll {
+            iface.poll();
+        }
     }
 }

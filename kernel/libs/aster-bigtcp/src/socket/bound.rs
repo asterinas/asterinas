@@ -256,8 +256,25 @@ pub enum ConnectState {
     Refused,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct NeedIfacePoll(bool);
+
+impl NeedIfacePoll {
+    pub const FALSE: Self = Self(false);
+}
+
+impl Deref for NeedIfacePoll {
+    type Target = bool;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 impl<E> BoundTcpSocket<E> {
     /// Connects to a remote endpoint.
+    ///
+    /// Polling the iface is _always_ required after this method succeeds.
     pub fn connect(
         &self,
         remote_endpoint: IpEndpoint,
@@ -270,8 +287,7 @@ impl<E> BoundTcpSocket<E> {
         socket.connect(iface.context(), remote_endpoint, self.0.port)?;
 
         socket.has_connected = false;
-        self.0
-            .update_next_poll_at_ms(socket.poll_at(iface.context()));
+        self.0.update_next_poll_at_ms(PollAt::Now);
 
         Ok(())
     }
@@ -290,6 +306,8 @@ impl<E> BoundTcpSocket<E> {
     }
 
     /// Listens at a specified endpoint.
+    ///
+    /// Polling the iface is _not_ required after this method succeeds.
     pub fn listen(
         &self,
         local_endpoint: IpEndpoint,
@@ -299,30 +317,49 @@ impl<E> BoundTcpSocket<E> {
         socket.listen(local_endpoint)
     }
 
-    pub fn send<F, R>(&self, f: F) -> Result<R, smoltcp::socket::tcp::SendError>
+    /// Sends some data.
+    ///
+    /// Polling the iface _may_ be required after this method succeeds.
+    pub fn send<F, R>(&self, f: F) -> Result<(R, NeedIfacePoll), smoltcp::socket::tcp::SendError>
     where
         F: FnOnce(&mut [u8]) -> (usize, R),
     {
+        let common = self.iface().common();
+        let mut iface = common.interface();
+
         let mut socket = self.0.socket.lock();
 
-        let result = socket.send(f);
-        self.0.update_next_poll_at_ms(PollAt::Now);
+        let result = socket.send(f)?;
+        let need_poll = self
+            .0
+            .update_next_poll_at_ms(socket.poll_at(iface.context()));
 
-        result
+        Ok((result, need_poll))
     }
 
-    pub fn recv<F, R>(&self, f: F) -> Result<R, smoltcp::socket::tcp::RecvError>
+    /// Receives some data.
+    ///
+    /// Polling the iface _may_ be required after this method succeeds.
+    pub fn recv<F, R>(&self, f: F) -> Result<(R, NeedIfacePoll), smoltcp::socket::tcp::RecvError>
     where
         F: FnOnce(&mut [u8]) -> (usize, R),
     {
+        let common = self.iface().common();
+        let mut iface = common.interface();
+
         let mut socket = self.0.socket.lock();
 
-        let result = socket.recv(f);
-        self.0.update_next_poll_at_ms(PollAt::Now);
+        let result = socket.recv(f)?;
+        let need_poll = self
+            .0
+            .update_next_poll_at_ms(socket.poll_at(iface.context()));
 
-        result
+        Ok((result, need_poll))
     }
 
+    /// Closes the connection.
+    ///
+    /// Polling the iface is _always_ required after this method succeeds.
     pub fn close(&self) {
         let mut socket = self.0.socket.lock();
 
@@ -345,12 +382,17 @@ impl<E> BoundTcpSocket<E> {
 
 impl<E> BoundUdpSocket<E> {
     /// Binds to a specified endpoint.
+    ///
+    /// Polling the iface is _not_ required after this method succeeds.
     pub fn bind(&self, local_endpoint: IpEndpoint) -> Result<(), smoltcp::socket::udp::BindError> {
         let mut socket = self.0.socket.lock();
 
         socket.bind(local_endpoint)
     }
 
+    /// Sends some data.
+    ///
+    /// Polling the iface is _always_ required after this method succeeds.
     pub fn send<F, R>(
         &self,
         size: usize,
@@ -381,6 +423,9 @@ impl<E> BoundUdpSocket<E> {
         Ok(result)
     }
 
+    /// Receives some data.
+    ///
+    /// Polling the iface is _not_ required after this method succeeds.
     pub fn recv<F, R>(&self, f: F) -> Result<R, smoltcp::socket::udp::RecvError>
     where
         F: FnOnce(&[u8], UdpMetadata) -> R,
@@ -389,7 +434,6 @@ impl<E> BoundUdpSocket<E> {
 
         let (data, meta) = socket.recv()?;
         let result = f(data, meta);
-        self.0.update_next_poll_at_ms(PollAt::Now);
 
         Ok(result)
     }
@@ -448,13 +492,25 @@ impl<T, E> BoundSocketInner<T, E> {
     /// The update is typically needed after new network or user events have been handled, so this
     /// method also marks that there may be new events, so that the event observer provided by
     /// [`BoundSocket::set_observer`] can be notified later.
-    fn update_next_poll_at_ms(&self, poll_at: PollAt) {
+    fn update_next_poll_at_ms(&self, poll_at: PollAt) -> NeedIfacePoll {
         match poll_at {
-            PollAt::Now => self.next_poll_at_ms.store(0, Ordering::Relaxed),
-            PollAt::Time(instant) => self
-                .next_poll_at_ms
-                .store(instant.total_millis() as u64, Ordering::Relaxed),
-            PollAt::Ingress => self.next_poll_at_ms.store(u64::MAX, Ordering::Relaxed),
+            PollAt::Now => {
+                self.next_poll_at_ms.store(0, Ordering::Relaxed);
+                NeedIfacePoll(true)
+            }
+            PollAt::Time(instant) => {
+                let old_total_millis = self.next_poll_at_ms.load(Ordering::Relaxed);
+                let new_total_millis = instant.total_millis() as u64;
+
+                self.next_poll_at_ms
+                    .store(new_total_millis, Ordering::Relaxed);
+
+                NeedIfacePoll(new_total_millis < old_total_millis)
+            }
+            PollAt::Ingress => {
+                self.next_poll_at_ms.store(u64::MAX, Ordering::Relaxed);
+                NeedIfacePoll(false)
+            }
         }
     }
 }
