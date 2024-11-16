@@ -5,7 +5,11 @@ use aster_bigtcp::{
 };
 
 use super::connected::ConnectedStream;
-use crate::{events::IoEvents, net::iface::BoundTcpSocket, prelude::*};
+use crate::{
+    events::IoEvents,
+    net::iface::{BoundTcpSocket, Iface},
+    prelude::*,
+};
 
 pub struct ListenStream {
     backlog: usize,
@@ -78,6 +82,10 @@ impl ListenStream {
 
     pub fn local_endpoint(&self) -> IpEndpoint {
         self.bound_socket.local_endpoint().unwrap()
+    }
+
+    pub fn iface(&self) -> &Arc<Iface> {
+        self.bound_socket.iface()
     }
 
     pub(super) fn check_io_events(&self) -> IoEvents {

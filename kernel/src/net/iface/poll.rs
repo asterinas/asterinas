@@ -19,7 +19,7 @@ pub fn lazy_init() {
     }
 }
 
-pub fn poll_ifaces() {
+pub(super) fn poll_ifaces() {
     let ifaces = IFACES.get().unwrap();
 
     for iface in ifaces.iter() {

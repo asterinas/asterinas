@@ -5,7 +5,7 @@ mod event;
 mod state;
 mod unbound;
 
-pub use bound::{BoundTcpSocket, BoundUdpSocket, ConnectState};
+pub use bound::{BoundTcpSocket, BoundUdpSocket, ConnectState, NeedIfacePoll};
 pub(crate) use bound::{BoundTcpSocketInner, BoundUdpSocketInner, TcpProcessResult};
 pub use event::{SocketEventObserver, SocketEvents};
 pub use state::TcpStateCheck;

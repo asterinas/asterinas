@@ -3,7 +3,11 @@
 use aster_bigtcp::{socket::ConnectState, wire::IpEndpoint};
 
 use super::{connected::ConnectedStream, init::InitStream};
-use crate::{events::IoEvents, net::iface::BoundTcpSocket, prelude::*};
+use crate::{
+    events::IoEvents,
+    net::iface::{BoundTcpSocket, Iface},
+    prelude::*,
+};
 
 pub struct ConnectingStream {
     bound_socket: BoundTcpSocket,
@@ -70,6 +74,10 @@ impl ConnectingStream {
 
     pub fn remote_endpoint(&self) -> IpEndpoint {
         self.remote_endpoint
+    }
+
+    pub fn iface(&self) -> &Arc<Iface> {
+        self.bound_socket.iface()
     }
 
     pub(super) fn check_io_events(&self) -> IoEvents {

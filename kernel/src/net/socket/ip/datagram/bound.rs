@@ -7,7 +7,10 @@ use aster_bigtcp::{
 
 use crate::{
     events::IoEvents,
-    net::{iface::BoundUdpSocket, socket::util::send_recv_flags::SendRecvFlags},
+    net::{
+        iface::{BoundUdpSocket, Iface},
+        socket::util::send_recv_flags::SendRecvFlags,
+    },
     prelude::*,
     util::{MultiRead, MultiWrite},
 };
@@ -35,6 +38,10 @@ impl BoundDatagram {
 
     pub fn set_remote_endpoint(&mut self, endpoint: &IpEndpoint) {
         self.remote_endpoint = Some(*endpoint)
+    }
+
+    pub fn iface(&self) -> &Arc<Iface> {
+        self.bound_socket.iface()
     }
 
     pub fn try_recv(
