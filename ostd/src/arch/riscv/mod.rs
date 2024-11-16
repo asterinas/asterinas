@@ -40,6 +40,8 @@ pub(crate) fn init_on_bsp() {
     // we are on the BSP.
     unsafe { crate::cpu::local::init_on_bsp() };
 
+    device::init();
+
     crate::boot::smp::boot_all_aps();
 
     timer::init();
@@ -51,7 +53,7 @@ pub(crate) unsafe fn init_on_ap() {
 
 pub(crate) fn interrupts_ack(irq_number: usize) {
     if irq_number != irq::TIMER_IRQ_LINE {
-        unimplemented!()
+        device::plic::complete_interrupt(irq_number as u16);
     }
 }
 

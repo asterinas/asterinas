@@ -11,7 +11,7 @@ use riscv::register::scause::{Exception, Interrupt, Trap};
 pub use super::trap::GeneralRegs as RawGeneralRegs;
 use super::{
     irq::TIMER_IRQ_LINE,
-    trap::{TrapFrame, UserContext as RawUserContext},
+    trap::{handle_external_interrupts, TrapFrame, UserContext as RawUserContext},
 };
 use crate::{
     task::scheduler,
@@ -125,6 +125,9 @@ impl UserContextApiInternal for UserContext {
             match riscv::register::scause::read().cause() {
                 Trap::Interrupt(Interrupt::SupervisorTimer) => {
                     call_irq_callback_functions(&self.as_trap_frame(), TIMER_IRQ_LINE)
+                }
+                Trap::Interrupt(Interrupt::SupervisorExternal) => {
+                    handle_external_interrupts(&self.as_trap_frame())
                 }
                 Trap::Interrupt(_) => todo!(),
                 Trap::Exception(Exception::UserEnvCall) => {
