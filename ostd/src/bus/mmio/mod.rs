@@ -53,7 +53,7 @@ pub(crate) fn init() {
 
 #[cfg(target_arch = "riscv64")]
 fn riscv64_mmio_probe() {
-    use crate::arch::boot::DEVICE_TREE;
+    use crate::arch::{boot::DEVICE_TREE, device::plic::enable_external_interrupt};
 
     let mut lock = MMIO_BUS.lock();
     for node in DEVICE_TREE
@@ -69,6 +69,7 @@ fn riscv64_mmio_probe() {
             region.starting_address,
             interrupt
         );
+        enable_external_interrupt(interrupt as u16);
 
         let device = MmioCommonDevice::new(region.starting_address as usize, handle);
         lock.register_mmio_device(device);

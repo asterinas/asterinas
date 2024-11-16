@@ -29,6 +29,12 @@ pub fn is_kernel_interrupted() -> bool {
     IS_KERNEL_INTERRUPTED.load()
 }
 
+pub fn handle_external_interrupts(f: &TrapFrame) {
+    while let Some(irq) = super::device::plic::claim_interrupt() {
+        call_irq_callback_functions(f, irq.get() as usize);
+    }
+}
+
 /// Handle traps (only from kernel).
 #[no_mangle]
 extern "C" fn trap_handler(f: &mut TrapFrame) {
@@ -37,6 +43,7 @@ extern "C" fn trap_handler(f: &mut TrapFrame) {
             IS_KERNEL_INTERRUPTED.store(true);
             match interrupt {
                 Interrupt::SupervisorTimer => call_irq_callback_functions(f, TIMER_IRQ_LINE),
+                Interrupt::SupervisorExternal => handle_external_interrupts(f),
                 _ => todo!(),
             }
             IS_KERNEL_INTERRUPTED.store(false);
