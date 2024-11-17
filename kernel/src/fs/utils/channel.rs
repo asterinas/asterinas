@@ -225,6 +225,7 @@ impl Consumer<u8> {
 
         let read_len = self.0.read(writer)?;
         self.peer_end().pollee.notify(IoEvents::OUT);
+        self.this_end().pollee.invalidate();
 
         if read_len > 0 {
             Ok(read_len)
@@ -248,6 +249,7 @@ impl<T: Pod> Consumer<T> {
 
         let item = self.0.pop();
         self.peer_end().pollee.notify(IoEvents::OUT);
+        self.this_end().pollee.invalidate();
 
         if let Some(item) = item {
             Ok(Some(item))
@@ -331,12 +333,16 @@ impl<T> Common<T> {
         let (rb_producer, rb_consumer) = rb.split();
 
         let producer = {
-            let pollee = producer_pollee.unwrap_or_default();
+            let pollee = producer_pollee
+                .inspect(|pollee| pollee.invalidate())
+                .unwrap_or_default();
             FifoInner::new(rb_producer, pollee)
         };
 
         let consumer = {
-            let pollee = consumer_pollee.unwrap_or_default();
+            let pollee = consumer_pollee
+                .inspect(|pollee| pollee.invalidate())
+                .unwrap_or_default();
             FifoInner::new(rb_consumer, pollee)
         };
 

@@ -265,6 +265,7 @@ impl LineDiscipline {
                 unreachable!()
             }
         };
+        self.pollee.invalidate();
         Ok(read_len)
     }
 
@@ -344,6 +345,7 @@ impl LineDiscipline {
     pub fn drain_input(&self) {
         self.current_line.lock().drain();
         self.read_buffer.lock().clear();
+        self.pollee.invalidate();
     }
 
     pub fn buffer_len(&self) -> usize {

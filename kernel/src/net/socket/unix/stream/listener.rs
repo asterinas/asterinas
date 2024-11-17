@@ -38,6 +38,7 @@ impl Listener {
         let backlog = BACKLOG_TABLE
             .add_backlog(addr, reader_pollee, backlog, is_read_shutdown)
             .unwrap();
+        writer_pollee.invalidate();
 
         Self {
             backlog,
@@ -130,6 +131,8 @@ impl BacklogTable {
             return None;
         }
 
+        // Note that the cached events can be correctly inherited from `Init`, so there is no need
+        // to explicitly call `Pollee::invalidate`.
         let new_backlog = Arc::new(Backlog::new(addr, pollee, backlog, is_shutdown));
         backlog_sockets.insert(addr_key, new_backlog.clone());
 

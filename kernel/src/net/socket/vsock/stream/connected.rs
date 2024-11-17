@@ -56,6 +56,7 @@ impl Connected {
         let mut connection = self.connection.disable_irq().lock();
         let bytes_read = connection.buffer.read_fallible(writer)?;
         connection.info.done_forwarding(bytes_read);
+        self.pollee.invalidate();
 
         match bytes_read {
             0 => {

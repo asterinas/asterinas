@@ -248,6 +248,7 @@ impl StreamSocket {
         });
 
         drop(state);
+        self.pollee.invalidate();
         if let Some(iface) = iface_to_poll {
             iface.poll();
         }
@@ -286,6 +287,7 @@ impl StreamSocket {
         let iface_to_poll = listen_stream.iface().clone();
 
         drop(state);
+        self.pollee.invalidate();
         iface_to_poll.poll();
 
         accepted
@@ -313,6 +315,7 @@ impl StreamSocket {
         let remote_endpoint = connected_stream.remote_endpoint();
 
         drop(state);
+        self.pollee.invalidate();
         if let Some(iface) = iface_to_poll {
             iface.poll();
         }
@@ -352,6 +355,7 @@ impl StreamSocket {
         let iface_to_poll = need_poll.then(|| connected_stream.iface().clone());
 
         drop(state);
+        self.pollee.invalidate();
         if let Some(iface) = iface_to_poll {
             iface.poll();
         }
@@ -498,6 +502,7 @@ impl Socket for StreamSocket {
                 }
             };
 
+            self.pollee.invalidate();
             (State::Listen(listen_stream), Ok(()))
         })
     }
@@ -523,6 +528,8 @@ impl Socket for StreamSocket {
         };
 
         drop(state);
+        // No need to call `Pollee::invalidate` because `ConnectedStream::shutdown` will call
+        // `Pollee::notify`.
         iface_to_poll.poll();
 
         result
