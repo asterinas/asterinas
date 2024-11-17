@@ -7,7 +7,7 @@ mod interval_set;
 mod static_cap;
 pub mod vm_mapping;
 
-use core::ops::Range;
+use core::{num::NonZeroUsize, ops::Range};
 
 use align_ext::AlignExt;
 use aster_rights::Rights;
@@ -18,13 +18,16 @@ use ostd::{
 
 use self::{
     interval_set::{Interval, IntervalSet},
-    vm_mapping::VmMapping,
+    vm_mapping::{MappedVmo, VmMapping},
 };
 use super::page_fault_handler::PageFaultHandler;
 use crate::{
     prelude::*,
     thread::exception::{handle_page_fault_from_vm_space, PageFaultInfo},
-    vm::perms::VmPerms,
+    vm::{
+        perms::VmPerms,
+        vmo::{Vmo, VmoRightsOp},
+    },
 };
 
 /// Virtual Memory Address Regions (VMARs) are a type of capability that manages
@@ -364,59 +367,9 @@ impl Vmar_ {
         Ok(())
     }
 
-    fn check_overwrite(&self, mapping_range: Range<usize>, can_overwrite: bool) -> Result<()> {
-        let inner = self.inner.read();
-
-        if !can_overwrite && inner.vm_mappings.find(&mapping_range).next().is_some() {
-            return_errno_with_message!(
-                Errno::EACCES,
-                "mapping range overlapped with another mapping"
-            );
-        }
-
-        Ok(())
-    }
-
     /// Returns the attached `VmSpace`.
     fn vm_space(&self) -> &Arc<VmSpace> {
         &self.vm_space
-    }
-
-    /// Maps a `VmMapping` to this VMAR.
-    fn add_mapping(&self, mapping: VmMapping) {
-        self.inner.write().vm_mappings.insert(mapping);
-    }
-
-    fn allocate_free_region_for_mapping(
-        &self,
-        map_size: usize,
-        offset: Option<usize>,
-        align: usize,
-        can_overwrite: bool,
-    ) -> Result<Vaddr> {
-        trace!("allocate free region, map_size = 0x{:x}, offset = {:x?}, align = 0x{:x}, can_overwrite = {}", map_size, offset, align, can_overwrite);
-
-        if can_overwrite {
-            // If can overwrite, the offset is ensured not to be `None`.
-            let offset = offset.ok_or(Error::with_message(
-                Errno::EINVAL,
-                "offset cannot be None since can overwrite is set",
-            ))?;
-            self.inner.write().alloc_free_region_exact_truncate(
-                &self.vm_space,
-                offset,
-                map_size,
-            )?;
-            Ok(offset)
-        } else if let Some(offset) = offset {
-            self.inner
-                .write()
-                .alloc_free_region_exact(offset, map_size)?;
-            Ok(offset)
-        } else {
-            let free_region = self.inner.write().alloc_free_region(map_size, align)?;
-            Ok(free_region.start)
-        }
     }
 
     pub(super) fn new_fork_root(self: &Arc<Self>) -> Result<Arc<Self>> {
@@ -479,6 +432,231 @@ impl<R> Vmar<R> {
     /// The size of the VMAR in bytes.
     pub fn size(&self) -> usize {
         self.0.size
+    }
+}
+
+/// Options for creating a new mapping. The mapping is not allowed to overlap
+/// with any child VMARs. And unless specified otherwise, it is not allowed
+/// to overlap with any existing mapping, either.
+pub struct VmarMapOptions<R1, R2> {
+    parent: Vmar<R1>,
+    vmo: Option<Vmo<R2>>,
+    perms: VmPerms,
+    vmo_offset: usize,
+    vmo_limit: usize,
+    size: usize,
+    offset: Option<usize>,
+    align: usize,
+    can_overwrite: bool,
+    // Whether the mapping is mapped with `MAP_SHARED`
+    is_shared: bool,
+    // Whether the mapping needs to handle surrounding pages when handling page fault.
+    handle_page_faults_around: bool,
+}
+
+impl<R1, R2> VmarMapOptions<R1, R2> {
+    /// Creates a default set of options with the VMO and the memory access
+    /// permissions.
+    ///
+    /// The VMO must have access rights that correspond to the memory
+    /// access permissions. For example, if `perms` contains `VmPerms::Write`,
+    /// then `vmo.rights()` should contain `Rights::WRITE`.
+    pub fn new(parent: Vmar<R1>, size: usize, perms: VmPerms) -> Self {
+        Self {
+            parent,
+            vmo: None,
+            perms,
+            vmo_offset: 0,
+            vmo_limit: usize::MAX,
+            size,
+            offset: None,
+            align: PAGE_SIZE,
+            can_overwrite: false,
+            is_shared: false,
+            handle_page_faults_around: false,
+        }
+    }
+
+    /// Binds a VMO to the mapping.
+    ///
+    /// If the mapping is a private mapping, its size may not be equal to that of the VMO.
+    /// For example, it is ok to create a mapping whose size is larger than
+    /// that of the VMO, although one cannot read from or write to the
+    /// part of the mapping that is not backed by the VMO.
+    ///
+    /// So you may wonder: what is the point of supporting such _oversized_
+    /// mappings?  The reason is two-fold.
+    ///  1. VMOs are resizable. So even if a mapping is backed by a VMO whose
+    ///     size is equal to that of the mapping initially, we cannot prevent
+    ///     the VMO from shrinking.
+    ///  2. Mappings are not allowed to overlap by default. As a result,
+    ///     oversized mappings can serve as a placeholder to prevent future
+    ///     mappings from occupying some particular address ranges accidentally.
+    pub fn vmo(mut self, vmo: Vmo<R2>) -> Self {
+        self.vmo = Some(vmo);
+
+        self
+    }
+
+    /// Sets the offset of the first memory page in the VMO that is to be
+    /// mapped into the VMAR.
+    ///
+    /// The offset must be page-aligned and within the VMO.
+    ///
+    /// The default value is zero.
+    pub fn vmo_offset(mut self, offset: usize) -> Self {
+        self.vmo_offset = offset;
+        self
+    }
+
+    /// Sets the access limit offset for the binding VMO.
+    pub fn vmo_limit(mut self, limit: usize) -> Self {
+        self.vmo_limit = limit;
+        self
+    }
+
+    /// Sets the mapping's alignment.
+    ///
+    /// The default value is the page size.
+    ///
+    /// The provided alignment must be a power of two and a multiple of the
+    /// page size.
+    pub fn align(mut self, align: usize) -> Self {
+        self.align = align;
+        self
+    }
+
+    /// Sets the mapping's offset inside the VMAR.
+    ///
+    /// The offset must satisfy the alignment requirement.
+    /// Also, the mapping's range `[offset, offset + size)` must be within
+    /// the VMAR.
+    ///
+    /// If not set, the system will choose an offset automatically.
+    pub fn offset(mut self, offset: usize) -> Self {
+        self.offset = Some(offset);
+        self
+    }
+
+    /// Sets whether the mapping can overwrite existing mappings.
+    ///
+    /// The default value is false.
+    ///
+    /// If this option is set to true, then the `offset` option must be
+    /// set.
+    pub fn can_overwrite(mut self, can_overwrite: bool) -> Self {
+        self.can_overwrite = can_overwrite;
+        self
+    }
+
+    /// Sets whether the mapping can be shared with other process.
+    ///
+    /// The default value is false.
+    ///
+    /// If this value is set to true, the mapping will be shared with child
+    /// process when forking.
+    pub fn is_shared(mut self, is_shared: bool) -> Self {
+        self.is_shared = is_shared;
+        self
+    }
+
+    /// Sets the mapping to handle surrounding pages when handling page fault.
+    pub fn handle_page_faults_around(mut self) -> Self {
+        self.handle_page_faults_around = true;
+        self
+    }
+
+    /// Creates the mapping and adds it to the parent VMAR.
+    ///
+    /// All options will be checked at this point.
+    ///
+    /// On success, the virtual address of the new mapping is returned.
+    pub fn build(self) -> Result<Vaddr> {
+        self.check_options()?;
+        let Self {
+            parent,
+            vmo,
+            perms,
+            vmo_offset,
+            vmo_limit,
+            size: map_size,
+            offset,
+            align,
+            can_overwrite,
+            is_shared,
+            handle_page_faults_around,
+        } = self;
+
+        // Allocates a free region.
+        trace!("allocate free region, map_size = 0x{:x}, offset = {:x?}, align = 0x{:x}, can_overwrite = {}", map_size, offset, align, can_overwrite);
+        let mut inner = parent.0.inner.write();
+        let map_to_addr = if can_overwrite {
+            // If can overwrite, the offset is ensured not to be `None`.
+            let offset = offset.ok_or(Error::with_message(
+                Errno::EINVAL,
+                "offset cannot be None since can overwrite is set",
+            ))?;
+            inner.alloc_free_region_exact_truncate(parent.vm_space(), offset, map_size)?;
+            offset
+        } else if let Some(offset) = offset {
+            inner.alloc_free_region_exact(offset, map_size)?;
+            offset
+        } else {
+            let free_region = inner.alloc_free_region(map_size, align)?;
+            free_region.start
+        };
+
+        // Build the mapping.
+        let vmo = vmo.map(|vmo| MappedVmo::new(vmo.to_dyn(), vmo_offset..vmo_limit));
+        let vm_mapping = VmMapping::new(
+            NonZeroUsize::new(map_size).unwrap(),
+            map_to_addr,
+            vmo,
+            is_shared,
+            handle_page_faults_around,
+            perms,
+        );
+
+        // Add the mapping to the VMAR.
+        inner.vm_mappings.insert(vm_mapping);
+
+        Ok(map_to_addr)
+    }
+
+    /// Checks whether all options are valid.
+    fn check_options(&self) -> Result<()> {
+        // Check align.
+        debug_assert!(self.align % PAGE_SIZE == 0);
+        debug_assert!(self.align.is_power_of_two());
+        if self.align % PAGE_SIZE != 0 || !self.align.is_power_of_two() {
+            return_errno_with_message!(Errno::EINVAL, "invalid align");
+        }
+        debug_assert!(self.size % self.align == 0);
+        if self.size % self.align != 0 {
+            return_errno_with_message!(Errno::EINVAL, "invalid mapping size");
+        }
+        debug_assert!(self.vmo_offset % self.align == 0);
+        if self.vmo_offset % self.align != 0 {
+            return_errno_with_message!(Errno::EINVAL, "invalid vmo offset");
+        }
+        if let Some(offset) = self.offset {
+            debug_assert!(offset % self.align == 0);
+            if offset % self.align != 0 {
+                return_errno_with_message!(Errno::EINVAL, "invalid offset");
+            }
+        }
+        self.check_perms()?;
+        Ok(())
+    }
+
+    /// Checks whether the permissions of the mapping is subset of vmo rights.
+    fn check_perms(&self) -> Result<()> {
+        let Some(vmo) = &self.vmo else {
+            return Ok(());
+        };
+
+        let perm_rights = Rights::from(self.perms);
+        vmo.check_rights(perm_rights)
     }
 }
 
