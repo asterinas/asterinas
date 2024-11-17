@@ -157,9 +157,12 @@ impl DatagramSocket {
             return_errno_with_message!(Errno::EAGAIN, "the socket is not bound");
         };
 
-        bound_datagram
+        let recv_bytes = bound_datagram
             .try_recv(writer, flags)
-            .map(|(recv_bytes, remote_endpoint)| (recv_bytes, remote_endpoint.into()))
+            .map(|(recv_bytes, remote_endpoint)| (recv_bytes, remote_endpoint.into()))?;
+        self.pollee.invalidate();
+
+        Ok(recv_bytes)
     }
 
     fn recv(
@@ -190,6 +193,7 @@ impl DatagramSocket {
         let iface_to_poll = bound_datagram.iface().clone();
 
         drop(inner);
+        self.pollee.invalidate();
         iface_to_poll.poll();
 
         Ok(sent_bytes)

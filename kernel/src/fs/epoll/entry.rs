@@ -367,6 +367,11 @@ impl Iterator for ReadySetPopIter<'_> {
             // must exist, so we can just unwrap it.
             let weak_entry = entries.pop_front().unwrap();
 
+            // Clear the epoll file's events if there are no ready entries.
+            if entries.len() == 0 {
+                self.ready_set.pollee.invalidate();
+            }
+
             let Some(entry) = Weak::upgrade(&weak_entry) else {
                 // The entry has been deleted.
                 continue;

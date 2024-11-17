@@ -102,7 +102,10 @@ impl PtyMaster {
             return_errno_with_message!(Errno::EAGAIN, "the buffer is empty");
         }
 
-        input.read_fallible(writer)
+        let read_len = input.read_fallible(writer)?;
+        self.pollee.invalidate();
+
+        Ok(read_len)
     }
 
     fn check_io_events(&self) -> IoEvents {

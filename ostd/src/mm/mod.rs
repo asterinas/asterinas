@@ -100,9 +100,10 @@ pub(crate) const fn nr_base_per_page<C: PagingConstsTrait>(level: PagingLevel) -
 pub const MAX_USERSPACE_VADDR: Vaddr = 0x0000_8000_0000_0000 - PAGE_SIZE;
 
 /// The kernel address space.
+///
 /// There are the high canonical addresses defined in most 48-bit width
 /// architectures.
-pub(crate) const KERNEL_VADDR_RANGE: Range<Vaddr> = 0xffff_8000_0000_0000..0xffff_ffff_ffff_0000;
+pub const KERNEL_VADDR_RANGE: Range<Vaddr> = 0xffff_8000_0000_0000..0xffff_ffff_ffff_0000;
 
 /// Gets physical address trait
 pub trait HasPaddr {

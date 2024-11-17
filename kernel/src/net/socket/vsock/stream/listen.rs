@@ -51,6 +51,7 @@ impl Listen {
             .ok_or_else(|| {
                 Error::with_message(Errno::EAGAIN, "no pending connection is available")
             })?;
+        self.pollee.invalidate();
 
         Ok(connection)
     }
