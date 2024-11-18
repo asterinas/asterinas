@@ -105,7 +105,8 @@ impl Entry {
         let file = self.file()?;
         let inner = self.inner.lock();
 
-        // There are no events if the entry is disabled.
+        // There are no events if the entry is disabled. Note that this check should be done after
+        // locking `Inner` to avoid race conditions.
         if !self.observer.is_enabled() {
             return Some((None, false));
         }
@@ -207,10 +208,9 @@ impl Observer {
 
     /// Returns whether the epoll entry is in the ready list.
     ///
-    /// *Caution:* If this method is called without holding the lock of the ready list, the user
-    /// must ensure that the behavior is desired with respect to the way the ready list might be
-    /// modified concurrently.
-    fn is_ready(&self) -> bool {
+    /// This method needs to be called while holding the lock of the ready list. See also
+    /// [`Self::set_ready`] and [`Self::reset_ready`].
+    fn is_ready(&self, _guard: &SpinLockGuard<VecDeque<Weak<Entry>>, LocalIrqDisabled>) -> bool {
         self.is_ready.load(Ordering::Relaxed)
     }
 
@@ -293,13 +293,12 @@ impl ReadySet {
     }
 
     pub(super) fn push(&self, observer: &Observer) {
-        // Note that we cannot take the `Inner` lock because we are in the callback of the event
+        // Note that we cannot take the `Inner` lock because we may be in the callback of the event
         // observer. Doing so will cause dead locks due to inconsistent locking orders.
         //
         // We don't need to take the lock because
-        // - We always call `file.poll()` immediately after calling `self.set_enabled()` and
-        //   `file.register_observer()`, so all events are caught either here or by the immediate
-        //   poll; in other words, we don't lose any events.
+        // - `set_enabled` is guaranteed to be visible after its following `FileLike::poll`. This
+        //   synchronization relies on the lock in `Subject`. As a result, no events are lost.
         // - Catching spurious events here is always fine because we always check them later before
         //   returning events to the user (in `Entry::poll`).
         if !observer.is_enabled() {
@@ -308,7 +307,7 @@ impl ReadySet {
 
         let mut entries = self.entries.lock();
 
-        if !observer.is_ready() {
+        if !observer.is_ready(&entries) {
             observer.set_ready(&entries);
             entries.push_back(observer.weak_entry().clone())
         }
