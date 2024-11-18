@@ -32,6 +32,7 @@ impl<T: ?Sized> Mutex<T> {
     /// Acquires the mutex.
     ///
     /// This method runs in a block way until the mutex can be acquired.
+    #[track_caller]
     pub fn lock(&self) -> MutexGuard<T> {
         self.queue.wait_until(|| self.try_lock())
     }
