@@ -56,6 +56,13 @@ impl CpuSet {
         self.bits[part_idx] |= 1 << bit_idx;
     }
 
+    /// Adds a set of CPUs to the set.
+    pub fn add_set(&mut self, set: &CpuSet) {
+        for (part, new_part) in self.bits.iter_mut().zip(set.bits.iter()) {
+            *part |= *new_part;
+        }
+    }
+
     /// Removes a CPU from the set.
     pub fn remove(&mut self, cpu_id: CpuId) {
         let part_idx = part_idx(cpu_id);
@@ -185,6 +192,13 @@ impl AtomicCpuSet {
         let bit_idx = bit_idx(cpu_id);
         if part_idx < self.bits.len() {
             self.bits[part_idx].fetch_or(1 << bit_idx, ordering);
+        }
+    }
+
+    /// Atomically adds a set of CPUs with the relaxed ordering.
+    pub fn add_set(&self, set: &CpuSet) {
+        for (part, new_part) in self.bits.iter().zip(set.bits.iter()) {
+            part.fetch_or(*new_part, Ordering::Relaxed);
         }
     }
 

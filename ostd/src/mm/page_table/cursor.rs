@@ -80,7 +80,7 @@ use crate::{
         page::{meta::MapTrackingStatus, DynPage},
         Paddr, PageProperty, Vaddr,
     },
-    task::{disable_preempt, DisabledPreemptGuard},
+    trap::{self, DisabledLocalIrqGuard},
 };
 
 #[derive(Clone, Debug)]
@@ -134,7 +134,7 @@ where
     /// The virtual address range that is locked.
     barrier_va: Range<Vaddr>,
     #[allow(dead_code)]
-    preempt_guard: DisabledPreemptGuard,
+    irq_guard: DisabledLocalIrqGuard,
     _phantom: PhantomData<&'a PageTable<M, E, C>>,
 }
 
@@ -164,7 +164,7 @@ where
             guard_level: C::NR_LEVELS,
             va: va.start,
             barrier_va: va.clone(),
-            preempt_guard: disable_preempt(),
+            irq_guard: trap::disable_local(),
             _phantom: PhantomData,
         };
 

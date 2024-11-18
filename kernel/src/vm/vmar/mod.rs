@@ -320,7 +320,7 @@ impl Vmar_ {
 
     /// Clears all content of the root VMAR.
     fn clear_root_vmar(&self) -> Result<()> {
-        self.vm_space.clear().unwrap();
+        self.vm_space.clear();
         let mut inner = self.inner.write();
         inner.vm_mappings.clear();
         Ok(())
@@ -406,7 +406,6 @@ impl Vmar_ {
                 new_cursor.copy_from(&mut cur_cursor, vm_mapping.map_size(), &mut op);
             }
             cur_cursor.flusher().issue_tlb_flush(TlbFlushOp::All);
-            cur_cursor.flusher().dispatch_tlb_flush();
         }
 
         Ok(new_vmar_)

@@ -87,6 +87,13 @@ where
             .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {
+            // We disabled interrupts while trying to acquire the lock. Someone
+            // may request a shootdown and waiting. So process the pending
+            // shootdowns here while spinning.
+            // It will lead to page table recycling, but we already hold a strong
+            // reference count so it is safe.
+            crate::mm::tlb::process_pending_shootdowns();
+
             core::hint::spin_loop();
         }
 

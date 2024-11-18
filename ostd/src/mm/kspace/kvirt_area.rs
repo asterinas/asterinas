@@ -9,16 +9,15 @@ use align_ext::AlignExt;
 
 use super::{KERNEL_PAGE_TABLE, TRACKED_MAPPED_PAGES_RANGE, VMALLOC_VADDR_RANGE};
 use crate::{
-    cpu::CpuSet,
+    cpu::{AtomicCpuSet, CpuSet},
     mm::{
         page::{meta::PageMeta, DynPage, Page},
         page_prop::PageProperty,
         page_table::PageTableItem,
-        tlb::{TlbFlushOp, TlbFlusher, FLUSH_ALL_RANGE_THRESHOLD},
+        tlb::{TlbFlushOp, TlbFlusher},
         Paddr, Vaddr, PAGE_SIZE,
     },
     sync::SpinLock,
-    task::disable_preempt,
     Error, Result,
 };
 
@@ -213,19 +212,18 @@ impl KVirtArea<Tracked> {
         assert!(self.start() <= range.start && self.end() >= range.end);
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
         let mut cursor = page_table.cursor_mut(&range).unwrap();
-        let flusher = TlbFlusher::new(CpuSet::new_full(), disable_preempt());
+
+        let all_activated_set = AtomicCpuSet::new(CpuSet::new_full());
+        let flusher = TlbFlusher::new(&all_activated_set);
         let mut va = self.start();
         for page in pages.into_iter() {
             // SAFETY: The constructor of the `KVirtArea<Tracked>` structure has already ensured this
             // mapping does not affect kernel's memory safety.
             if let Some(old) = unsafe { cursor.map(page.into(), prop) } {
                 flusher.issue_tlb_flush_with(TlbFlushOp::Address(va), old);
-                flusher.dispatch_tlb_flush();
             }
             va += PAGE_SIZE;
         }
-        flusher.issue_tlb_flush(TlbFlushOp::Range(range));
-        flusher.dispatch_tlb_flush();
     }
 
     /// Gets the mapped tracked page.
@@ -275,13 +273,13 @@ impl KVirtArea<Untracked> {
 
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
         let mut cursor = page_table.cursor_mut(&va_range).unwrap();
-        let flusher = TlbFlusher::new(CpuSet::new_full(), disable_preempt());
+        let all_activated_set = AtomicCpuSet::new(CpuSet::new_full());
+        let flusher = TlbFlusher::new(&all_activated_set);
         // SAFETY: The caller of `map_untracked_pages` has ensured the safety of this mapping.
         unsafe {
             cursor.map_pa(&pa_range, prop);
         }
         flusher.issue_tlb_flush(TlbFlushOp::Range(va_range.clone()));
-        flusher.dispatch_tlb_flush();
     }
 
     /// Gets the mapped untracked page.
@@ -314,19 +312,14 @@ impl<M: AllocatorSelector + 'static> Drop for KVirtArea<M> {
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
         let range = self.start()..self.end();
         let mut cursor = page_table.cursor_mut(&range).unwrap();
-        let flusher = TlbFlusher::new(CpuSet::new_full(), disable_preempt());
-        let tlb_prefer_flush_all = self.end() - self.start() > FLUSH_ALL_RANGE_THRESHOLD;
+        let all_activated_set = AtomicCpuSet::new(CpuSet::new_full());
+        let flusher = TlbFlusher::new(&all_activated_set);
 
         loop {
             let result = unsafe { cursor.take_next(self.end() - cursor.virt_addr()) };
             match result {
                 PageTableItem::Mapped { va, page, .. } => match TypeId::of::<M>() {
                     id if id == TypeId::of::<Tracked>() => {
-                        if !flusher.need_remote_flush() && tlb_prefer_flush_all {
-                            // Only on single-CPU cases we can drop the page immediately before flushing.
-                            drop(page);
-                            continue;
-                        }
                         flusher.issue_tlb_flush_with(TlbFlushOp::Address(va), page);
                     }
                     id if id == TypeId::of::<Untracked>() => {
@@ -336,9 +329,6 @@ impl<M: AllocatorSelector + 'static> Drop for KVirtArea<M> {
                 },
                 PageTableItem::MappedUntracked { va, .. } => match TypeId::of::<M>() {
                     id if id == TypeId::of::<Untracked>() => {
-                        if !flusher.need_remote_flush() && tlb_prefer_flush_all {
-                            continue;
-                        }
                         flusher.issue_tlb_flush(TlbFlushOp::Address(va));
                     }
                     id if id == TypeId::of::<Tracked>() => {
@@ -351,12 +341,6 @@ impl<M: AllocatorSelector + 'static> Drop for KVirtArea<M> {
                 }
             }
         }
-
-        if !flusher.need_remote_flush() && tlb_prefer_flush_all {
-            flusher.issue_tlb_flush(TlbFlushOp::All);
-        }
-
-        flusher.dispatch_tlb_flush();
 
         // 2. free the virtual block
         let allocator = M::select_allocator();
