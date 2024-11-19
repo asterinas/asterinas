@@ -2,6 +2,7 @@
 
 //! APIs for memory statistics.
 
+use super::page::allocator::PageAlloc;
 use crate::mm::page::allocator::PAGE_ALLOCATOR;
 
 /// Total memory available for any usages in the system (in bytes).

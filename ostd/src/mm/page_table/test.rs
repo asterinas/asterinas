@@ -7,13 +7,12 @@ use crate::{
     mm::{
         kspace::LINEAR_MAPPING_BASE_VADDR,
         page,
-        page::{allocator, meta::FrameMeta},
+        page::{allocator, allocator::PageAlloc, meta::FrameMeta},
         page_prop::{CachePolicy, PageFlags},
         MAX_USERSPACE_VADDR,
     },
     prelude::*,
 };
-
 const PAGE_SIZE: usize = 4096;
 
 #[ktest]

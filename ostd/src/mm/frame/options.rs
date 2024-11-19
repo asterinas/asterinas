@@ -11,7 +11,7 @@ use crate::{
     mm::{
         page::{
             self,
-            allocator::{self, alloc_contiguous},
+            allocator::{self, alloc_contiguous, PageAlloc},
             meta::FrameMeta,
         },
         PAGE_SIZE,
