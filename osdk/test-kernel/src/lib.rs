@@ -21,7 +21,6 @@ use ostd::{
     ktest::{
         get_ktest_crate_whitelist, get_ktest_test_whitelist, KtestError, KtestItem, KtestIter,
     },
-    mm::page::allocator::PageAlloc,
 };
 use owo_colors::OwoColorize;
 use path::{KtestPath, SuffixTrie};
@@ -76,11 +75,6 @@ fn panic_handler(info: &core::panic::PanicInfo) -> ! {
     early_println!("An uncaught panic occurred: {:#?}", throw_info);
 
     ostd::prelude::abort();
-}
-
-#[ostd::ktest::page_allocator_init_fn]
-fn init_page_allocator() -> Box<dyn PageAlloc> {
-    aster_page_allocator::init()
 }
 
 /// Run all the tests registered by `#[ktest]` in the `.ktest_array` section.
