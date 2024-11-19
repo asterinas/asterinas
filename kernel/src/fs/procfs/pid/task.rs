@@ -40,6 +40,7 @@ impl DirOps for ThreadDirOps {
     fn lookup_child(&self, this_ptr: Weak<dyn Inode>, name: &str) -> Result<Arc<dyn Inode>> {
         let inode = match name {
             "fd" => FdDirOps::new_inode(self.0.clone(), this_ptr.clone()),
+            "exe" => ExeSymOps::new_inode(self.0.clone(), this_ptr.clone()),
             _ => return_errno!(Errno::ENOENT),
         };
         Ok(inode)
@@ -53,6 +54,9 @@ impl DirOps for ThreadDirOps {
         let mut cached_children = this.cached_children().write();
         cached_children.put_entry_if_not_found("fd", || {
             FdDirOps::new_inode(self.0.clone(), this_ptr.clone())
+        });
+        cached_children.put_entry_if_not_found("exe", || {
+            ExeSymOps::new_inode(self.0.clone(), this_ptr.clone())
         });
     }
 }
