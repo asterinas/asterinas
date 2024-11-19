@@ -39,19 +39,14 @@ pub(super) fn switch_to_task(next_task: Arc<Task>) {
     let irq_guard = crate::trap::disable_local();
 
     let current_task_ptr = CURRENT_TASK_PTR.load();
-    let current_task_ctx_ptr = if current_task_ptr.is_null() {
+    let current_task_ctx_ptr = if !current_task_ptr.is_null() {
+        // SAFETY: The current task is always alive.
+        let current_task = unsafe { &*current_task_ptr };
+        // Throughout this method, the task's context is alive and can be exclusively used.
+        current_task.ctx.get()
+    } else {
         // SAFETY: Interrupts are disabled, so the pointer is safe to be fetched.
         unsafe { BOOTSTRAP_CONTEXT.as_ptr_mut() }
-    } else {
-        // SAFETY: The pointer is not NULL and set as the current task.
-        let cur_task_arc = unsafe {
-            let restored = Arc::from_raw(current_task_ptr);
-            let _ = core::mem::ManuallyDrop::new(restored.clone());
-            restored
-        };
-        let ctx_ptr = cur_task_arc.ctx().get();
-
-        ctx_ptr
     };
 
     let next_task_ctx_ptr = next_task.ctx().get().cast_const();
