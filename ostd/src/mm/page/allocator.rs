@@ -28,8 +28,8 @@ use crate::{
 ///
 /// The PageAlloc Trait provides the interface for the page allocator.
 /// `PageAlloc` Trait decouples the page allocator implementation from the
-/// `ostd`. By corporating with the [`PageAlloc`] trait and
-/// [`page_allocator_init_fn`] procedure macro, page allocator's implementation
+/// `ostd`. By corporating with the [`PageAlloc`] trait and the
+/// [`GlobalPageAllocator::inject`] function, page allocator's implementation
 /// can be decoupled from the OSTD and can be easily replaced to serve
 /// designated purposes.
 ///
@@ -218,12 +218,13 @@ impl PageAlloc for LockedBootFrameAllocator {
 }
 
 /// Global page allocator that wraps the default page allocator and the injected
-/// page allocator. The injected page allocator is implemented out of `ostd`
-/// with safe code and is used to replace the default page allocator.
+/// page allocator.
+///
+/// The injected page allocator is implemented out of `ostd` with safe code and
+/// is used to replace the default page allocator.
 pub struct GlobalPageAllocator {
-    /// Whether the page allocator is injected out of ostd.
-    /// If true, the page allocator is injected; otherwise, it is
-    /// [`LockedBootFrameAllocator`] by default.
+    /// Whether the page allocator is injected. If true, the page allocator is
+    /// injected; otherwise, it is [`LockedBootFrameAllocator`] by default.
     is_injected: AtomicBool,
 
     /// The default page allocator.
@@ -252,6 +253,7 @@ impl GlobalPageAllocator {
     pub fn inject(&self, allocator: Box<dyn PageAlloc>) {
         self.injected_allocator.call_once(|| allocator);
         self.is_injected.store(true, Ordering::Relaxed);
+        info!("Inject the page allocator");
     }
 
     /// Checks whether the page allocator is injected.
@@ -290,10 +292,10 @@ impl PageAlloc for GlobalPageAllocator {
     /// # Notice
     ///
     /// 1. If the page allocator is injected, the injected allocator will be
-    /// used; otherwise, the default allocator will be used.
+    ///    used; otherwise, the default allocator will be used.
     /// 2. The default allocator does not support deallocation. Since the
-    /// deallocated pages' meta will be set to ['FreeMeta'], the injected
-    /// allocator will update deallocation context accordingly.
+    ///    deallocated pages' meta will be set to ['FreeMeta'], the injected
+    ///    allocator will update deallocation context accordingly.
     fn dealloc(&self, addr: Paddr, nr_pages: usize) {
         if self.check_injected() {
             self.injected_allocator
@@ -330,9 +332,9 @@ impl PageAlloc for GlobalPageAllocator {
 ///
 /// 1. Should be called after the [`mm::init_page_meta()`] is finished.
 /// 2. If the page allocator is injected, the injected allocator will be
-/// used; otherwise, the default allocator will be used.
+///    used; otherwise, the default allocator will be used.
 /// 3. While using the default allocator, The align **MUST BE** 4KB,
-/// otherwise it will panic.
+///    otherwise it will panic.
 pub(crate) fn alloc_single<M: PageMeta>(align: usize, metadata: M) -> Option<Page<M>> {
     PAGE_ALLOCATOR
         .get()
@@ -352,9 +354,9 @@ pub(crate) fn alloc_single<M: PageMeta>(align: usize, metadata: M) -> Option<Pag
 /// 1. The function panics if the layout is not base-page-aligned.
 /// 2. Should be called after the [`mm::init_page_meta()`] is finished.
 /// 3. If the page allocator is injected, the injected allocator will be
-/// used; otherwise, the default allocator will be used.
+///    used; otherwise, the default allocator will be used.
 /// 4. While using the default allocator, The align **MUST BE** 4KB,
-/// otherwise it will panic.
+///    otherwise it will panic.
 pub(crate) fn alloc_contiguous<M: PageMeta, F>(
     layout: Layout,
     metadata_fn: F,
@@ -374,5 +376,5 @@ where
 
 pub(crate) fn bootstrap_init() {
     info!("Initializing the bootstrap page allocator");
-    PAGE_ALLOCATOR.call_once(|| GlobalPageAllocator::new());
+    PAGE_ALLOCATOR.call_once(GlobalPageAllocator::new);
 }
