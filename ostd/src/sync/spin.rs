@@ -24,12 +24,15 @@ use crate::{
 /// - if `G` is [`PreemptDisabled`], preemption is disabled;
 /// - if `G` is [`LocalIrqDisabled`], local IRQs are disabled.
 ///
+/// The `G` can also be provided by other crates other than ostd,
+/// if it behaves similar like [`PreemptDisabled`] or [`LocalIrqDisabled`].
+///
 /// The guard behavior can be temporarily upgraded from [`PreemptDisabled`] to
 /// [`LocalIrqDisabled`] using the [`disable_irq`] method.
 ///
 /// [`disable_irq`]: Self::disable_irq
 #[repr(transparent)]
-pub struct SpinLock<T: ?Sized, G = PreemptDisabled> {
+pub struct SpinLock<T: ?Sized, G: Guardian = PreemptDisabled> {
     phantom: PhantomData<G>,
     /// Only the last field of a struct may have a dynamically sized type.
     /// That's why SpinLockInner is put in the last field.
@@ -44,10 +47,21 @@ struct SpinLockInner<T: ?Sized> {
 /// A guardian that denotes the guard behavior for holding the spin lock.
 pub trait Guardian {
     /// The guard type.
-    type Guard;
+    type Guard: GuardTransfer;
 
     /// Creates a new guard.
     fn guard() -> Self::Guard;
+}
+
+/// The Guard can be transferred atomically.
+pub trait GuardTransfer {
+    /// Atomically transfers the current guard to a new instance.
+    ///
+    /// This function ensures that there are no 'gaps' between the destruction of the old guard and
+    /// the creation of the new guard, thereby maintaining the atomicity of guard transitions.
+    ///
+    /// The original guard must be dropped immediately after calling this method.
+    fn transfer_to(&mut self) -> Self;
 }
 
 /// A guardian that disables preemption while holding the spin lock.
@@ -165,15 +179,15 @@ impl<T: ?Sized, G: Guardian> SpinLock<T, G> {
     }
 }
 
-impl<T: ?Sized + fmt::Debug, G> fmt::Debug for SpinLock<T, G> {
+impl<T: ?Sized + fmt::Debug, G: Guardian> fmt::Debug for SpinLock<T, G> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&self.inner.val, f)
     }
 }
 
 // SAFETY: Only a single lock holder is permitted to access the inner data of Spinlock.
-unsafe impl<T: ?Sized + Send, G> Send for SpinLock<T, G> {}
-unsafe impl<T: ?Sized + Send, G> Sync for SpinLock<T, G> {}
+unsafe impl<T: ?Sized + Send, G: Guardian> Send for SpinLock<T, G> {}
+unsafe impl<T: ?Sized + Send, G: Guardian> Sync for SpinLock<T, G> {}
 
 /// A guard that provides exclusive access to the data protected by a [`SpinLock`].
 pub type SpinLockGuard<'a, T, G> = SpinLockGuard_<T, &'a SpinLock<T, G>, G>;

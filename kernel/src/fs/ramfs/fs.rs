@@ -12,7 +12,7 @@ use aster_util::slot_vec::SlotVec;
 use hashbrown::HashMap;
 use ostd::{
     mm::{Frame, VmIo},
-    sync::RwLockWriteGuard,
+    sync::{PreemptDisabled, RwLockWriteGuard},
 };
 
 use super::*;
@@ -1195,8 +1195,8 @@ fn write_lock_two_direntries_by_ino<'a>(
     this: (u64, &'a RwLock<DirEntry>),
     other: (u64, &'a RwLock<DirEntry>),
 ) -> (
-    RwLockWriteGuard<'a, DirEntry>,
-    RwLockWriteGuard<'a, DirEntry>,
+    RwLockWriteGuard<'a, DirEntry, PreemptDisabled>,
+    RwLockWriteGuard<'a, DirEntry, PreemptDisabled>,
 ) {
     if this.0 < other.0 {
         let this = this.1.write();

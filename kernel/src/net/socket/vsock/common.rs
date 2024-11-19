@@ -7,6 +7,7 @@ use aster_virtio::device::socket::{
     device::SocketDevice,
     error::SocketError,
 };
+use ostd::sync::LocalIrqDisabled;
 
 use super::{
     addr::VsockSocketAddr,
@@ -26,7 +27,7 @@ pub struct VsockSpace {
     // (key, value) = (local_addr, listen)
     listen_sockets: SpinLock<BTreeMap<VsockSocketAddr, Arc<Listen>>>,
     // (key, value) = (id(local_addr,peer_addr), connected)
-    connected_sockets: RwLock<BTreeMap<ConnectionID, Arc<Connected>>>,
+    connected_sockets: RwLock<BTreeMap<ConnectionID, Arc<Connected>>, LocalIrqDisabled>,
     // Used ports
     used_ports: SpinLock<BTreeSet<u32>>,
 }
@@ -54,10 +55,7 @@ impl VsockSpace {
                 .disable_irq()
                 .lock()
                 .contains_key(&event.destination.into())
-            || self
-                .connected_sockets
-                .read_irq_disabled()
-                .contains_key(&(*event).into())
+            || self.connected_sockets.read().contains_key(&(*event).into())
     }
 
     /// Alloc an unused port range
@@ -91,13 +89,13 @@ impl VsockSpace {
         id: ConnectionID,
         connected: Arc<Connected>,
     ) -> Option<Arc<Connected>> {
-        let mut connected_sockets = self.connected_sockets.write_irq_disabled();
+        let mut connected_sockets = self.connected_sockets.write();
         connected_sockets.insert(id, connected)
     }
 
     /// Remove a connected socket
     pub fn remove_connected_socket(&self, id: &ConnectionID) -> Option<Arc<Connected>> {
-        let mut connected_sockets = self.connected_sockets.write_irq_disabled();
+        let mut connected_sockets = self.connected_sockets.write();
         connected_sockets.remove(id)
     }
 
@@ -214,11 +212,7 @@ impl VsockSpace {
 
             debug!("vsock receive event: {:?}", event);
             // The socket must be stored in the VsockSpace.
-            if let Some(connected) = self
-                .connected_sockets
-                .read_irq_disabled()
-                .get(&event.into())
-            {
+            if let Some(connected) = self.connected_sockets.read().get(&event.into()) {
                 connected.update_info(&event);
             }
 
@@ -255,7 +249,7 @@ impl VsockSpace {
                     connecting.set_connected();
                 }
                 VsockEventType::Disconnected { .. } => {
-                    let connected_sockets = self.connected_sockets.read_irq_disabled();
+                    let connected_sockets = self.connected_sockets.read();
                     let Some(connected) = connected_sockets.get(&event.into()) else {
                         return_errno_with_message!(Errno::ENOTCONN, "the socket hasn't connected");
                     };
@@ -263,7 +257,7 @@ impl VsockSpace {
                 }
                 VsockEventType::Received { .. } => {}
                 VsockEventType::CreditRequest => {
-                    let connected_sockets = self.connected_sockets.read_irq_disabled();
+                    let connected_sockets = self.connected_sockets.read();
                     let Some(connected) = connected_sockets.get(&event.into()) else {
                         return_errno_with_message!(Errno::ENOTCONN, "the socket hasn't connected");
                     };
@@ -272,7 +266,7 @@ impl VsockSpace {
                     })?;
                 }
                 VsockEventType::CreditUpdate => {
-                    let connected_sockets = self.connected_sockets.read_irq_disabled();
+                    let connected_sockets = self.connected_sockets.read();
                     let Some(connected) = connected_sockets.get(&event.into()) else {
                         return_errno_with_message!(Errno::ENOTCONN, "the socket hasn't connected");
                     };
@@ -289,7 +283,7 @@ impl VsockSpace {
                 // Deal with Received before the buffer are recycled.
                 if let VsockEventType::Received { .. } = event.event_type {
                     // Only consider the connected socket and copy body to buffer
-                    let connected_sockets = self.connected_sockets.read_irq_disabled();
+                    let connected_sockets = self.connected_sockets.read();
                     let connected = connected_sockets.get(&event.into()).unwrap();
                     debug!("Rw matches a connection with id {:?}", connected.id());
                     if !connected.add_connection_buffer(body) {

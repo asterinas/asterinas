@@ -19,7 +19,7 @@ use ostd::{
     io_mem::IoMem,
     mm::{DmaDirection, DmaStream, FrameAllocOptions, HasDaddr, VmIo, PAGE_SIZE},
     offset_of,
-    sync::{RwLock, SpinLock},
+    sync::{LocalIrqDisabled, RwLock, SpinLock},
     trap::TrapFrame,
 };
 
@@ -76,7 +76,7 @@ pub struct InputDevice {
     status_queue: VirtQueue,
     event_table: EventTable,
     #[allow(clippy::type_complexity)]
-    callbacks: RwLock<Vec<Arc<dyn Fn(InputEvent) + Send + Sync + 'static>>>,
+    callbacks: RwLock<Vec<Arc<dyn Fn(InputEvent) + Send + Sync + 'static>>, LocalIrqDisabled>,
     transport: SpinLock<Box<dyn VirtioTransport>>,
 }
 
@@ -209,7 +209,7 @@ impl InputDevice {
     }
 
     fn handle_irq(&self) {
-        let callbacks = self.callbacks.read_irq_disabled();
+        let callbacks = self.callbacks.read();
         // Returns true if there may be more events to handle
         let handle_event = |event: &EventBuf| -> bool {
             event.sync().unwrap();
@@ -295,7 +295,7 @@ impl<T, M: HasDaddr> DmaBuf for SafePtr<T, M> {
 
 impl aster_input::InputDevice for InputDevice {
     fn register_callbacks(&self, function: &'static (dyn Fn(InputEvent) + Send + Sync)) {
-        self.callbacks.write_irq_disabled().push(Arc::new(function))
+        self.callbacks.write().push(Arc::new(function))
     }
 }
 
