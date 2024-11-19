@@ -9,7 +9,11 @@ use page::allocator::PAGE_ALLOCATOR;
 use super::{Frame, Segment};
 use crate::{
     mm::{
-        page::{self, allocator::{self, alloc_contiguous, PageAlloc}, meta::FrameMeta},
+        page::{
+            self,
+            allocator::{self, alloc_contiguous, PageAlloc},
+            meta::FrameMeta,
+        },
         PAGE_SIZE,
     },
     prelude::*,

@@ -21,7 +21,7 @@ use ostd::{
     ktest::{
         get_ktest_crate_whitelist, get_ktest_test_whitelist, KtestError, KtestItem, KtestIter,
     },
-    mm::page::allocator::PageAlloc,
+    mm::page::allocator::PAGE_ALLOCATOR,
 };
 use owo_colors::OwoColorize;
 use path::{KtestPath, SuffixTrie};
@@ -36,6 +36,7 @@ pub enum KtestResult {
 #[ostd::ktest::main]
 fn main() {
     use ostd::task::TaskOptions;
+    init_page_allocator();
 
     let test_task = move || {
         use alloc::string::ToString;
@@ -78,9 +79,11 @@ fn panic_handler(info: &core::panic::PanicInfo) -> ! {
     ostd::prelude::abort();
 }
 
-#[ostd::ktest::page_allocator_init_fn]
-fn init_page_allocator() -> Box<dyn PageAlloc> {
-    aster_page_allocator::init()
+fn init_page_allocator() {
+    PAGE_ALLOCATOR
+        .get()
+        .unwrap()
+        .inject(aster_page_allocator::init())
 }
 
 /// Run all the tests registered by `#[ktest]` in the `.ktest_array` section.

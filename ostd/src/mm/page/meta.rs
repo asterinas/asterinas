@@ -48,7 +48,10 @@ use log::info;
 use num_derive::FromPrimitive;
 use static_assertions::const_assert_eq;
 
-use super::{allocator::{self, PAGE_ALLOCATOR}, Page};
+use super::{
+    allocator::{self, PAGE_ALLOCATOR},
+    Page,
+};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     mm::{

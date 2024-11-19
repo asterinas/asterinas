@@ -6,7 +6,7 @@
 //! # Background
 //!
 //! `OSTD` has provided a page allocator interface, namely [`PageAlloc`] trait
-//! and [`page_allocator_init_fn`] procedure macro, allowing users to plug in
+//! and [`GlobalPageAllocator::inject`] function, allowing users to plug in
 //! their own page allocator wherever they want. You can refer to
 //! `ostd/src/mm/page/allocator.rs` for detailed introduction.
 //!

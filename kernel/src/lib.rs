@@ -36,7 +36,7 @@ use ostd::{
     arch::qemu::{exit_qemu, QemuExitCode},
     boot,
     cpu::PinCurrentCpu,
-    mm::page::allocator::PageAlloc,
+    mm::page::allocator::PAGE_ALLOCATOR,
 };
 use process::Process;
 use sched::priority::PriorityRange;
@@ -93,6 +93,7 @@ pub fn main() {
 }
 
 pub fn init() {
+    init_page_allocator();
     util::random::init();
     driver::init();
     time::init();
@@ -125,9 +126,11 @@ fn ap_init() {
         .spawn();
 }
 
-#[ostd::page_allocator_init_fn]
-fn init_page_allocator() -> Box<dyn PageAlloc> {
-    aster_page_allocator::init()
+fn init_page_allocator() {
+    PAGE_ALLOCATOR
+        .get()
+        .unwrap()
+        .inject(aster_page_allocator::init())
 }
 
 fn init_thread() {
