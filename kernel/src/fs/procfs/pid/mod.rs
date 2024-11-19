@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use self::{cmdline::CmdlineFileOps, comm::CommFileOps, exe::ExeSymOps, fd::FdDirOps};
+use self::{
+    cmdline::CmdlineFileOps, comm::CommFileOps, exe::ExeSymOps, fd::FdDirOps, task::TaskDirOps,
+};
 use super::template::{DirOps, ProcDir, ProcDirBuilder};
 use crate::{
     events::Observer,
@@ -18,6 +20,7 @@ mod exe;
 mod fd;
 mod stat;
 mod status;
+mod task;
 
 /// Represents the inode at `/proc/[pid]`.
 pub struct PidDirOps(Arc<Process>);
@@ -56,6 +59,7 @@ impl DirOps for PidDirOps {
             "cmdline" => CmdlineFileOps::new_inode(self.0.clone(), this_ptr.clone()),
             "status" => status::StatusFileOps::new_inode(self.0.clone(), this_ptr.clone()),
             "stat" => stat::StatFileOps::new_inode(self.0.clone(), this_ptr.clone()),
+            "task" => TaskDirOps::new_inode(self.0.clone(), this_ptr.clone()),
             _ => return_errno!(Errno::ENOENT),
         };
         Ok(inode)
@@ -84,6 +88,9 @@ impl DirOps for PidDirOps {
         });
         cached_children.put_entry_if_not_found("stat", || {
             stat::StatFileOps::new_inode(self.0.clone(), this_ptr.clone())
+        });
+        cached_children.put_entry_if_not_found("task", || {
+            TaskDirOps::new_inode(self.0.clone(), this_ptr.clone())
         });
     }
 }
