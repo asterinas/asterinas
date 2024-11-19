@@ -2,7 +2,7 @@
 
 use core::sync::atomic::Ordering;
 
-use ostd::sync::{RwLockReadGuard, RwLockWriteGuard};
+use ostd::sync::{PreemptDisabled, RwLockReadGuard, RwLockWriteGuard};
 
 use super::{group::AtomicGid, user::AtomicUid, Gid, Uid};
 use crate::{
@@ -387,11 +387,11 @@ impl Credentials_ {
 
     //  ******* Supplementary groups methods *******
 
-    pub(super) fn groups(&self) -> RwLockReadGuard<BTreeSet<Gid>> {
+    pub(super) fn groups(&self) -> RwLockReadGuard<BTreeSet<Gid>, PreemptDisabled> {
         self.supplementary_gids.read()
     }
 
-    pub(super) fn groups_mut(&self) -> RwLockWriteGuard<BTreeSet<Gid>> {
+    pub(super) fn groups_mut(&self) -> RwLockWriteGuard<BTreeSet<Gid>, PreemptDisabled> {
         self.supplementary_gids.write()
     }
 

@@ -290,11 +290,11 @@ pub fn create_sem_set(nsems: usize, mode: u16, credentials: Credentials<ReadOp>)
     Ok(id)
 }
 
-pub fn sem_sets<'a>() -> RwLockReadGuard<'a, BTreeMap<key_t, SemaphoreSet>> {
+pub fn sem_sets<'a>() -> RwLockReadGuard<'a, BTreeMap<key_t, SemaphoreSet>, PreemptDisabled> {
     SEMAPHORE_SETS.read()
 }
 
-pub fn sem_sets_mut<'a>() -> RwLockWriteGuard<'a, BTreeMap<key_t, SemaphoreSet>> {
+pub fn sem_sets_mut<'a>() -> RwLockWriteGuard<'a, BTreeMap<key_t, SemaphoreSet>, PreemptDisabled> {
     SEMAPHORE_SETS.write()
 }
 

@@ -11,7 +11,7 @@ use connecting::{ConnResult, ConnectingStream};
 use init::InitStream;
 use listen::ListenStream;
 use options::{Congestion, MaxSegment, NoDelay, WindowClamp};
-use ostd::sync::{RwLockReadGuard, RwLockWriteGuard};
+use ostd::sync::{LocalIrqDisabled, PreemptDisabled, RwLockReadGuard, RwLockWriteGuard};
 use takeable::Takeable;
 use util::TcpOptionSet;
 
@@ -50,7 +50,7 @@ pub use self::util::CongestionControl;
 
 pub struct StreamSocket {
     options: RwLock<OptionSet>,
-    state: RwLock<Takeable<State>>,
+    state: RwLock<Takeable<State>, LocalIrqDisabled>,
     is_nonblocking: AtomicBool,
     pollee: Pollee,
 }
@@ -116,7 +116,7 @@ impl StreamSocket {
     /// Ensures that the socket state is up to date and obtains a read lock on it.
     ///
     /// For a description of what "up-to-date" means, see [`Self::update_connecting`].
-    fn read_updated_state(&self) -> RwLockReadGuard<Takeable<State>> {
+    fn read_updated_state(&self) -> RwLockReadGuard<Takeable<State>, LocalIrqDisabled> {
         loop {
             let state = self.state.read();
             match state.as_ref() {
@@ -132,7 +132,7 @@ impl StreamSocket {
     /// Ensures that the socket state is up to date and obtains a write lock on it.
     ///
     /// For a description of what "up-to-date" means, see [`Self::update_connecting`].
-    fn write_updated_state(&self) -> RwLockWriteGuard<Takeable<State>> {
+    fn write_updated_state(&self) -> RwLockWriteGuard<Takeable<State>, LocalIrqDisabled> {
         self.update_connecting().1
     }
 
@@ -148,12 +148,12 @@ impl StreamSocket {
     fn update_connecting(
         &self,
     ) -> (
-        RwLockWriteGuard<OptionSet>,
-        RwLockWriteGuard<Takeable<State>>,
+        RwLockWriteGuard<OptionSet, PreemptDisabled>,
+        RwLockWriteGuard<Takeable<State>, LocalIrqDisabled>,
     ) {
         // Hold the lock in advance to avoid race conditions.
         let mut options = self.options.write();
-        let mut state = self.state.write_irq_disabled();
+        let mut state = self.state.write();
 
         match state.as_ref() {
             State::Connecting(connection_stream) if connection_stream.has_result() => (),

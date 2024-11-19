@@ -7,6 +7,7 @@ use core::fmt::Debug;
 use crate::{
     arch::irq::{self, IrqCallbackHandle, IRQ_ALLOCATOR},
     prelude::*,
+    sync::GuardTransfer,
     trap::TrapFrame,
     Error,
 };
@@ -149,10 +150,10 @@ impl DisabledLocalIrqGuard {
         }
         Self { was_enabled }
     }
+}
 
-    /// Transfers the saved IRQ status of this guard to a new guard.
-    /// The saved IRQ status of this guard is cleared.
-    pub fn transfer_to(&mut self) -> Self {
+impl GuardTransfer for DisabledLocalIrqGuard {
+    fn transfer_to(&mut self) -> Self {
         let was_enabled = self.was_enabled;
         self.was_enabled = false;
         Self { was_enabled }

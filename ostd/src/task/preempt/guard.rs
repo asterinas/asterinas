@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use crate::sync::GuardTransfer;
+
 /// A guard for disable preempt.
 #[clippy::has_significant_drop]
 #[must_use]
@@ -16,10 +18,10 @@ impl DisabledPreemptGuard {
         super::cpu_local::inc_guard_count();
         Self { _private: () }
     }
+}
 
-    /// Transfer this guard to a new guard.
-    /// This guard must be dropped after this function.
-    pub fn transfer_to(&self) -> Self {
+impl GuardTransfer for DisabledPreemptGuard {
+    fn transfer_to(&mut self) -> Self {
         disable_preempt()
     }
 }
