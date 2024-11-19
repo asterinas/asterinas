@@ -6,7 +6,11 @@
 //! allocating pages rather untyped memory from this module.
 
 use alloc::boxed::Box;
-use core::{alloc::Layout, ops::Range};
+use core::{
+    alloc::Layout,
+    ops::Range,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use align_ext::AlignExt;
 use log::{info, warn};
@@ -80,58 +84,6 @@ pub trait PageAlloc: Sync + Send {
     fn free_mem(&self) -> usize;
 }
 
-/// The global page allocator, described by the `PageAlloc` trait.
-#[export_name = "PAGE_ALLOCATOR"]
-pub static PAGE_ALLOCATOR: Once<Box<dyn PageAlloc>> = Once::new();
-
-/// Allocate a single page.
-///
-/// The metadata of the page is initialized with the given metadata.
-pub(crate) fn alloc_single<M: PageMeta>(align: usize, metadata: M) -> Option<Page<M>> {
-    PAGE_ALLOCATOR
-        .get()
-        .unwrap()
-        .alloc_page(align)
-        .map(|paddr| Page::from_free(paddr, metadata))
-}
-
-/// Allocate a contiguous range of pages of a given length in bytes.
-///
-/// The caller must provide a closure to initialize metadata for all the pages.
-/// The closure receives the physical address of the page and returns the
-/// metadata, which is similar to [`core::array::from_fn`].
-///
-/// # Panics
-///
-/// The function panics if the length is not base-page-aligned.
-pub(crate) fn alloc_contiguous<M: PageMeta, F>(
-    layout: Layout,
-    metadata_fn: F,
-) -> Option<ContPages<M>>
-where
-    F: FnMut(Paddr) -> M,
-{
-    assert!(layout.size() % PAGE_SIZE == 0);
-    PAGE_ALLOCATOR
-        .get()
-        .unwrap()
-        .alloc(layout)
-        .map(|begin_paddr| {
-            ContPages::from_free(begin_paddr..begin_paddr + layout.size(), metadata_fn)
-        })
-}
-
-pub(crate) fn init() {
-    let allocator: Box<dyn PageAlloc>;
-    unsafe {
-        extern "Rust" {
-            fn __ostd_page_allocator_init_fn() -> Box<dyn PageAlloc>;
-        }
-        allocator = __ostd_page_allocator_init_fn();
-    }
-    PAGE_ALLOCATOR.call_once(|| allocator);
-}
-
 /// The bootstrapping phase page allocator.
 pub(crate) struct BootFrameAllocator {
     // memory region idx: The index for the global memory region indicates the
@@ -149,8 +101,6 @@ pub(crate) struct LockedBootFrameAllocator {
     // The bootstrap frame allocator with a spin lock.
     allocator: SpinLock<BootFrameAllocator>,
 }
-
-pub(in crate::mm) static BOOTSTRAP_PAGE_ALLOCATOR: Once<LockedBootFrameAllocator> = Once::new();
 
 impl BootFrameAllocator {
     pub fn new() -> Self {
@@ -253,7 +203,7 @@ impl PageAlloc for LockedBootFrameAllocator {
     }
 
     fn dealloc(&self, _addr: Paddr, _nr_pages: usize) {
-        panic!("BootFrameAllocator does support frames deallocation!");
+        warn!("BootFrameAllocator does support frames deallocation!");
     }
 
     fn total_mem(&self) -> usize {
@@ -267,36 +217,145 @@ impl PageAlloc for LockedBootFrameAllocator {
     }
 }
 
-pub(crate) fn bootstrap_init() {
-    info!("Initializing the bootstrap page allocator");
-    BOOTSTRAP_PAGE_ALLOCATOR.call_once(LockedBootFrameAllocator::new);
+/// Global page allocator that wraps the default page allocator and the injected
+/// page allocator. The injected page allocator is implemented out of `ostd`
+/// with safe code and is used to replace the default page allocator.
+pub struct GlobalPageAllocator {
+    /// Whether the page allocator is injected out of ostd.
+    /// If true, the page allocator is injected; otherwise, it is
+    /// [`LockedBootFrameAllocator`] by default.
+    is_injected: AtomicBool,
+
+    /// The default page allocator.
+    default_allocator: LockedBootFrameAllocator,
+
+    /// The injected page allocator.
+    injected_allocator: Once<Box<dyn PageAlloc>>,
 }
 
-/// Allocate a single page during the bootstrapping phase.
+/// The global page allocator, described by the `PageAlloc` trait.
+#[export_name = "PAGE_ALLOCATOR"]
+pub static PAGE_ALLOCATOR: Once<GlobalPageAllocator> = Once::new();
+
+impl GlobalPageAllocator {
+    /// Creates a new global page allocator.
+    pub fn new() -> Self {
+        Self {
+            is_injected: AtomicBool::new(false),
+            default_allocator: LockedBootFrameAllocator::new(),
+            injected_allocator: Once::new(),
+        }
+    }
+
+    /// Injects a page allocator, which is used to replace the default page
+    /// allocator.
+    pub fn inject(&self, allocator: Box<dyn PageAlloc>) {
+        self.injected_allocator.call_once(|| allocator);
+        self.is_injected.store(true, Ordering::Relaxed);
+    }
+
+    /// Checks whether the page allocator is injected.
+    pub(crate) fn check_injected(&self) -> bool {
+        self.is_injected.load(Ordering::Relaxed)
+    }
+}
+
+impl Default for GlobalPageAllocator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PageAlloc for GlobalPageAllocator {
+    fn add_free_pages(&self, range: Range<usize>) {
+        if self.check_injected() {
+            self.injected_allocator.get().unwrap().add_free_pages(range);
+        } else {
+            self.default_allocator.add_free_pages(range);
+        }
+    }
+
+    fn alloc(&self, layout: Layout) -> Option<Paddr> {
+        if self.check_injected() {
+            self.injected_allocator.get().unwrap().alloc(layout)
+        } else {
+            self.default_allocator.alloc(layout)
+        }
+    }
+
+    /// Deallocate a contiguous range of pages.
+    /// The caller should provide the physical address of the first page and the
+    /// number of pages to deallocate.
+    ///
+    /// # Notice
+    ///
+    /// 1. If the page allocator is injected, the injected allocator will be
+    /// used; otherwise, the default allocator will be used.
+    /// 2. The default allocator does not support deallocation. Since the
+    /// deallocated pages' meta will be set to ['FreeMeta'], the injected
+    /// allocator will update deallocation context accordingly.
+    fn dealloc(&self, addr: Paddr, nr_pages: usize) {
+        if self.check_injected() {
+            self.injected_allocator
+                .get()
+                .unwrap()
+                .dealloc(addr, nr_pages);
+        } else {
+            self.default_allocator.dealloc(addr, nr_pages);
+        }
+    }
+
+    fn total_mem(&self) -> usize {
+        if self.check_injected() {
+            self.injected_allocator.get().unwrap().total_mem()
+        } else {
+            self.default_allocator.total_mem()
+        }
+    }
+
+    fn free_mem(&self) -> usize {
+        if self.check_injected() {
+            self.injected_allocator.get().unwrap().free_mem()
+        } else {
+            self.default_allocator.free_mem()
+        }
+    }
+}
+
+/// Allocate a single page.
 ///
-/// Similar to [`alloc_single`], but for the bootstrapping phase.
+/// The metadata of the page is initialized with the given metadata.
 ///
 /// # Notice
 ///
 /// 1. Should be called after the [`mm::init_page_meta()`] is finished.
-/// 2. The align **MUST BE** 4KB, otherwise it will panic.
-#[allow(unused)]
-pub(crate) fn alloc_single_boot<M: PageMeta>(align: usize, metadata: M) -> Option<Page<M>> {
-    BOOTSTRAP_PAGE_ALLOCATOR
+/// 2. If the page allocator is injected, the injected allocator will be
+/// used; otherwise, the default allocator will be used.
+/// 3. While using the default allocator, The align **MUST BE** 4KB,
+/// otherwise it will panic.
+pub(crate) fn alloc_single<M: PageMeta>(align: usize, metadata: M) -> Option<Page<M>> {
+    PAGE_ALLOCATOR
         .get()
         .unwrap()
         .alloc_page(align)
         .map(|paddr| Page::from_free(paddr, metadata))
 }
 
-/// Allocate a contiguous range of pages of a given length in bytes during the bootstrapping phase.
+/// Allocate a contiguous range of pages of a given length in bytes.
 ///
-/// Similar to [`alloc_contiguous`], but for the bootstrapping phase.
+/// The caller must provide a closure to initialize metadata for all the
+/// pages. The closure receives the physical address of the page and
+/// returns the metadata, which is similar to [`core::array::from_fn`].
 ///
 /// # Notice
-/// 1. Should be called after the [`mm::init_page_meta()`] is finished.
-/// 2. The align **MUST BE** 4KB, otherwise it will panic.
-pub(crate) fn alloc_contiguous_boot<M: PageMeta, F>(
+///
+/// 1. The function panics if the layout is not base-page-aligned.
+/// 2. Should be called after the [`mm::init_page_meta()`] is finished.
+/// 3. If the page allocator is injected, the injected allocator will be
+/// used; otherwise, the default allocator will be used.
+/// 4. While using the default allocator, The align **MUST BE** 4KB,
+/// otherwise it will panic.
+pub(crate) fn alloc_contiguous<M: PageMeta, F>(
     layout: Layout,
     metadata_fn: F,
 ) -> Option<ContPages<M>>
@@ -304,11 +363,16 @@ where
     F: FnMut(Paddr) -> M,
 {
     assert!(layout.size() % PAGE_SIZE == 0);
-    BOOTSTRAP_PAGE_ALLOCATOR
+    PAGE_ALLOCATOR
         .get()
         .unwrap()
         .alloc(layout)
         .map(|begin_paddr| {
             ContPages::from_free(begin_paddr..begin_paddr + layout.size(), metadata_fn)
         })
+}
+
+pub(crate) fn bootstrap_init() {
+    info!("Initializing the bootstrap page allocator");
+    PAGE_ALLOCATOR.call_once(|| GlobalPageAllocator::new());
 }

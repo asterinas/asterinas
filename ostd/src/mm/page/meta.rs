@@ -44,17 +44,19 @@ use core::{
     sync::atomic::{AtomicU32, AtomicU8, Ordering},
 };
 
-use allocator::{PageAlloc, BOOTSTRAP_PAGE_ALLOCATOR};
 use log::info;
 use num_derive::FromPrimitive;
 use static_assertions::const_assert_eq;
 
-use super::{allocator, Page};
+use super::{
+    allocator::{self, PAGE_ALLOCATOR},
+    Page,
+};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     mm::{
         paddr_to_vaddr,
-        page::MAX_PADDR,
+        page::{allocator::PageAlloc, MAX_PADDR},
         page_size,
         page_table::{boot_pt, PageTableEntryTrait},
         CachePolicy, Paddr, PageFlags, PageProperty, PagingConstsTrait, PagingLevel,
@@ -622,7 +624,7 @@ pub(crate) fn init() -> Vec<Page<MetaPageMeta>> {
 
 fn alloc_meta_pages(nframes: usize) -> Vec<Paddr> {
     let mut meta_pages = Vec::new();
-    let allocator = BOOTSTRAP_PAGE_ALLOCATOR.get().unwrap();
+    let allocator = PAGE_ALLOCATOR.get().unwrap();
     for _ in 0..nframes {
         let frame_paddr = allocator
             .alloc_page(PAGE_SIZE)

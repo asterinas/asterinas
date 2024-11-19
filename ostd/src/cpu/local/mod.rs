@@ -99,7 +99,7 @@ pub unsafe fn init_on_bsp() {
     for _ in 1..num_cpus {
         let ap_pages = {
             let nbytes = (bsp_end_va - bsp_base_va).align_up(PAGE_SIZE);
-            page::allocator::alloc_contiguous_boot(
+            page::allocator::alloc_contiguous(
                 core::alloc::Layout::from_size_align(nbytes, PAGE_SIZE).unwrap(),
                 |_| KernelMeta::default(),
             )

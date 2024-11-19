@@ -18,7 +18,7 @@ use crate::{
     mm::{
         nr_subpage_per_huge, paddr_to_vaddr,
         page::{
-            allocator::{PageAlloc, BOOTSTRAP_PAGE_ALLOCATOR},
+            allocator::{PageAlloc, PAGE_ALLOCATOR},
             meta::BootPageTableMeta,
             Page,
         },
@@ -225,12 +225,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
     }
 
     fn alloc_frame(&mut self) -> FrameNumber {
-        let frame = BOOTSTRAP_PAGE_ALLOCATOR
-            .get()
-            .unwrap()
-            .alloc_page(PAGE_SIZE)
-            .unwrap()
-            / PAGE_SIZE;
+        let frame = PAGE_ALLOCATOR.get().unwrap().alloc_page(PAGE_SIZE).unwrap() / PAGE_SIZE;
         self.frames.push(BootPageTableFrame::Number(frame));
         // Zero it out.
         let vaddr = paddr_to_vaddr(frame * PAGE_SIZE) as *mut u8;
