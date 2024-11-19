@@ -15,10 +15,7 @@ use core::{
 use spin::once::Once;
 
 use self::monitor::RcuMonitor;
-use crate::{
-    sync::SpinLock,
-    task::{disable_preempt, DisabledPreemptGuard},
-};
+use crate::task::{disable_preempt, DisabledPreemptGuard};
 
 mod monitor;
 mod owner_ptr;
@@ -278,7 +275,7 @@ impl<P: OwnerPtr + Send, const MAYBE_UNINIT: bool> RcuReadGuard<'_, P, MAYBE_UNI
 unsafe fn delay_drop<P: OwnerPtr + Send>(pointer: NonNull<<P as OwnerPtr>::Target>) {
     // SAFETY: The pointer is not NULL.
     let p = unsafe { <P as OwnerPtr>::from_raw(pointer.as_ptr().cast_const()) };
-    let rcu_monitor = RCU_MONITOR.get().unwrap().lock();
+    let rcu_monitor = RCU_MONITOR.get().unwrap();
     rcu_monitor.after_grace_period(move || {
         drop(p);
     });
@@ -293,15 +290,19 @@ unsafe fn delay_drop<P: OwnerPtr + Send>(pointer: NonNull<<P as OwnerPtr>::Targe
 /// The caller must ensure that this task is not in a RCU read-side critical
 /// section.
 pub unsafe fn pass_quiescent_state() {
-    let rcu_monitor = RCU_MONITOR.get().unwrap().lock();
+    let rcu_monitor = RCU_MONITOR.get().unwrap();
     // SAFETY: The caller ensures safety.
     unsafe {
         rcu_monitor.pass_quiescent_state();
     }
 }
 
-static RCU_MONITOR: Once<SpinLock<RcuMonitor>> = Once::new();
+/// The global RCU monitor singleton.
+///
+/// It is only used by the page table module. Other usages outside this module
+/// are not recommended.
+pub(crate) static RCU_MONITOR: Once<RcuMonitor> = Once::new();
 
 pub fn init() {
-    RCU_MONITOR.call_once(|| SpinLock::new(RcuMonitor::new()));
+    RCU_MONITOR.call_once(RcuMonitor::new);
 }
