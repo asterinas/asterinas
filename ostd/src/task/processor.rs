@@ -69,7 +69,9 @@ pub(super) fn switch_to_task(next_task: Arc<Task>) {
         drop(unsafe { Arc::from_raw(old_prev) });
     }
 
-    drop(irq_guard);
+    // Keep interrupts disabled during context switching. This will be enabled after switching to
+    // the target task (in the code below or in `kernel_task_entry`).
+    core::mem::forget(irq_guard);
 
     // SAFETY:
     // 1. `ctx` is only used in `reschedule()`. We have exclusive access to both the current task
@@ -85,4 +87,7 @@ pub(super) fn switch_to_task(next_task: Arc<Task>) {
     // always possible. For example, `context_switch` can switch directly to the entry point of the
     // next task. Not dropping is just fine because the only consequence is that we delay the drop
     // to the next task switching.
+
+    // See also `kernel_task_entry`.
+    crate::arch::irq::enable_local();
 }
