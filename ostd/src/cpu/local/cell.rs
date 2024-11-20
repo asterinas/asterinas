@@ -109,7 +109,7 @@ impl<T: 'static> CpuLocalCell<T> {
     ///   data should be done with interrupts disabled. Otherwise, more care
     ///   must be taken to ensure that the borrowing rules are correctly
     ///   enforced, since the interrupts may come asynchronously.
-    pub fn as_ptr_mut(&'static self) -> *mut T {
+    pub fn as_mut_ptr(&'static self) -> *mut T {
         super::has_init::assert_true();
 
         let offset = {

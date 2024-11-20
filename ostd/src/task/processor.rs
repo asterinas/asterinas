@@ -46,7 +46,7 @@ pub(super) fn switch_to_task(next_task: Arc<Task>) {
         current_task.ctx.get()
     } else {
         // Throughout this method, interrupts are disabled and the context can be exclusively used.
-        BOOTSTRAP_CONTEXT.as_ptr_mut()
+        BOOTSTRAP_CONTEXT.as_mut_ptr()
     };
 
     let next_task_ctx_ptr = next_task.ctx().get().cast_const();
