@@ -45,8 +45,8 @@ pub(super) fn switch_to_task(next_task: Arc<Task>) {
         // Throughout this method, the task's context is alive and can be exclusively used.
         current_task.ctx.get()
     } else {
-        // SAFETY: Interrupts are disabled, so the pointer is safe to be fetched.
-        unsafe { BOOTSTRAP_CONTEXT.as_ptr_mut() }
+        // Throughout this method, interrupts are disabled and the context can be exclusively used.
+        BOOTSTRAP_CONTEXT.as_ptr_mut()
     };
 
     let next_task_ctx_ptr = next_task.ctx().get().cast_const();
