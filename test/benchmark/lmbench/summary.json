@@ -27,6 +27,7 @@
     "ramfs_create_delete_files_0k_ops",
     "ramfs_create_delete_files_10k_ops",
     "ext2_copy_files_bw",
+    "tcp_loopback_bw_4k",
     "tcp_loopback_bw_64k",
     "tcp_loopback_lat",
     "tcp_loopback_connect_lat",
