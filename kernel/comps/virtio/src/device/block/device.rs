@@ -322,12 +322,12 @@ impl DeviceInner {
             resp_slice
         };
 
-        let dma_slices: Vec<DmaStreamSlice> = dma_streams
+        let dma_slices: Vec<DmaStreamSlice<_>> = dma_streams
             .iter()
             .map(|(stream, offset, len)| DmaStreamSlice::new(stream, *offset, *len))
             .collect();
         let outputs = {
-            let mut outputs: Vec<&DmaStreamSlice> = Vec::with_capacity(dma_streams.len() + 1);
+            let mut outputs: Vec<&DmaStreamSlice<_>> = Vec::with_capacity(dma_streams.len() + 1);
             outputs.extend(dma_slices.iter());
             outputs.push(&resp_slice);
             outputs
@@ -384,12 +384,12 @@ impl DeviceInner {
             resp_slice
         };
 
-        let dma_slices: Vec<DmaStreamSlice> = dma_streams
+        let dma_slices: Vec<DmaStreamSlice<_>> = dma_streams
             .iter()
             .map(|(stream, offset, len)| DmaStreamSlice::new(stream, *offset, *len))
             .collect();
         let inputs = {
-            let mut inputs: Vec<&DmaStreamSlice> = Vec::with_capacity(dma_streams.len() + 1);
+            let mut inputs: Vec<&DmaStreamSlice<_>> = Vec::with_capacity(dma_streams.len() + 1);
             inputs.push(&req_slice);
             inputs.extend(dma_slices.iter());
             inputs
