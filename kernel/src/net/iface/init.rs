@@ -3,7 +3,7 @@
 use alloc::{borrow::ToOwned, sync::Arc};
 
 use aster_bigtcp::device::WithDevice;
-use ostd::sync::LocalIrqDisabled;
+use aster_softirq::BottomHalfDisabled;
 use spin::Once;
 
 use super::{poll_ifaces, Iface};
@@ -50,7 +50,7 @@ fn new_virtio() -> Arc<Iface> {
 
     let ether_addr = virtio_net.lock().mac_addr().0;
 
-    struct Wrapper(Arc<SpinLock<dyn AnyNetworkDevice, LocalIrqDisabled>>);
+    struct Wrapper(Arc<SpinLock<dyn AnyNetworkDevice, BottomHalfDisabled>>);
 
     impl WithDevice for Wrapper {
         type Device = dyn AnyNetworkDevice;

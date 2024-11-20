@@ -9,8 +9,9 @@ use alloc::{
     sync::Arc,
 };
 
+use aster_softirq::BottomHalfDisabled;
 use keyable_arc::KeyableArc;
-use ostd::sync::{LocalIrqDisabled, PreemptDisabled, SpinLock, SpinLockGuard};
+use ostd::sync::{PreemptDisabled, SpinLock, SpinLockGuard};
 use smoltcp::{
     iface::{packet::Packet, Context},
     phy::Device,
@@ -32,10 +33,10 @@ use crate::{
 };
 
 pub struct IfaceCommon<E> {
-    interface: SpinLock<smoltcp::iface::Interface, LocalIrqDisabled>,
+    interface: SpinLock<smoltcp::iface::Interface, BottomHalfDisabled>,
     used_ports: SpinLock<BTreeMap<u16, usize>, PreemptDisabled>,
-    tcp_sockets: SpinLock<BTreeSet<KeyableArc<BoundTcpSocketInner<E>>>, LocalIrqDisabled>,
-    udp_sockets: SpinLock<BTreeSet<KeyableArc<BoundUdpSocketInner<E>>>, LocalIrqDisabled>,
+    tcp_sockets: SpinLock<BTreeSet<KeyableArc<BoundTcpSocketInner<E>>>, BottomHalfDisabled>,
+    udp_sockets: SpinLock<BTreeSet<KeyableArc<BoundUdpSocketInner<E>>>, BottomHalfDisabled>,
     ext: E,
 }
 
@@ -61,7 +62,7 @@ impl<E> IfaceCommon<E> {
 
 impl<E> IfaceCommon<E> {
     /// Acquires the lock to the interface.
-    pub(crate) fn interface(&self) -> SpinLockGuard<smoltcp::iface::Interface, LocalIrqDisabled> {
+    pub(crate) fn interface(&self) -> SpinLockGuard<smoltcp::iface::Interface, BottomHalfDisabled> {
         self.interface.lock()
     }
 }

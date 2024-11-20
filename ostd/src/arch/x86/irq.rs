@@ -13,7 +13,7 @@ use x86_64::registers::rflags::{self, RFlags};
 use super::iommu::{alloc_irt_entry, has_interrupt_remapping, IrtEntryHandle};
 use crate::{
     cpu::CpuId,
-    sync::{LocalIrqDisabled, Mutex, RwLock, RwLockReadGuard, SpinLock},
+    sync::{LocalIrqDisabled, Mutex, PreemptDisabled, RwLock, RwLockReadGuard, SpinLock},
     trap::TrapFrame,
 };
 
@@ -119,7 +119,9 @@ impl IrqLine {
         self.irq_num
     }
 
-    pub fn callback_list(&self) -> RwLockReadGuard<alloc::vec::Vec<CallbackElement>> {
+    pub fn callback_list(
+        &self,
+    ) -> RwLockReadGuard<alloc::vec::Vec<CallbackElement>, PreemptDisabled> {
         self.callback_list.read()
     }
 

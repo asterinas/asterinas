@@ -3,6 +3,7 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use aster_bigtcp::{socket::SocketEventObserver, wire::IpEndpoint};
+use aster_softirq::BottomHalfDisabled;
 use takeable::Takeable;
 
 use self::{bound::BoundDatagram, unbound::UnboundDatagram};
@@ -48,7 +49,7 @@ impl OptionSet {
 
 pub struct DatagramSocket {
     options: RwLock<OptionSet>,
-    inner: RwLock<Takeable<Inner>>,
+    inner: RwLock<Takeable<Inner>, BottomHalfDisabled>,
     nonblocking: AtomicBool,
     pollee: Pollee,
 }
@@ -133,7 +134,7 @@ impl DatagramSocket {
         }
 
         // Slow path
-        let mut inner = self.inner.write_irq_disabled();
+        let mut inner = self.inner.write();
         inner.borrow_result(|owned_inner| {
             let bound_datagram = match owned_inner.bind_to_ephemeral_endpoint(remote_endpoint) {
                 Ok(bound_datagram) => bound_datagram,
@@ -275,7 +276,7 @@ impl Socket for DatagramSocket {
         let endpoint = socket_addr.try_into()?;
 
         let can_reuse = self.options.read().socket.reuse_addr();
-        let mut inner = self.inner.write_irq_disabled();
+        let mut inner = self.inner.write();
         inner.borrow_result(|owned_inner| {
             let bound_datagram = match owned_inner.bind(&endpoint, can_reuse) {
                 Ok(bound_datagram) => bound_datagram,
@@ -293,7 +294,7 @@ impl Socket for DatagramSocket {
 
         self.try_bind_ephemeral(&endpoint)?;
 
-        let mut inner = self.inner.write_irq_disabled();
+        let mut inner = self.inner.write();
         let Inner::Bound(bound_datagram) = inner.as_mut() else {
             return_errno_with_message!(Errno::EINVAL, "the socket is not bound")
         };

@@ -4,7 +4,7 @@
 
 use aster_rights::{Dup, Read, TRights, Write};
 use aster_rights_proc::require;
-use ostd::sync::{RwLockReadGuard, RwLockWriteGuard};
+use ostd::sync::{PreemptDisabled, RwLockReadGuard, RwLockWriteGuard};
 
 use super::{capabilities::CapSet, credentials_::Credentials_, Credentials, Gid, Uid};
 use crate::prelude::*;
@@ -239,7 +239,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Read` right.
     #[require(R > Read)]
-    pub fn groups(&self) -> RwLockReadGuard<BTreeSet<Gid>> {
+    pub fn groups(&self) -> RwLockReadGuard<BTreeSet<Gid>, PreemptDisabled> {
         self.0.groups()
     }
 
@@ -247,7 +247,7 @@ impl<R: TRights> Credentials<R> {
     ///
     /// This method requires the `Write` right.
     #[require(R > Write)]
-    pub fn groups_mut(&self) -> RwLockWriteGuard<BTreeSet<Gid>> {
+    pub fn groups_mut(&self) -> RwLockWriteGuard<BTreeSet<Gid>, PreemptDisabled> {
         self.0.groups_mut()
     }
 

@@ -2,6 +2,7 @@
 
 use alloc::{collections::linked_list::LinkedList, sync::Arc};
 
+use aster_softirq::BottomHalfDisabled;
 use ostd::{
     mm::{
         Daddr, DmaDirection, DmaStream, FrameAllocOptions, HasDaddr, Infallible, VmReader,
@@ -17,14 +18,14 @@ use crate::dma_pool::{DmaPool, DmaSegment};
 pub struct TxBuffer {
     dma_stream: DmaStream,
     nbytes: usize,
-    pool: &'static SpinLock<LinkedList<DmaStream>, LocalIrqDisabled>,
+    pool: &'static SpinLock<LinkedList<DmaStream>, BottomHalfDisabled>,
 }
 
 impl TxBuffer {
     pub fn new<H: Pod>(
         header: &H,
         packet: &[u8],
-        pool: &'static SpinLock<LinkedList<DmaStream>, LocalIrqDisabled>,
+        pool: &'static SpinLock<LinkedList<DmaStream>, BottomHalfDisabled>,
     ) -> Self {
         let header = header.as_bytes();
         let nbytes = header.len() + packet.len();

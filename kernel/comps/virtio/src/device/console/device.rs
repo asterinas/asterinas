@@ -9,7 +9,7 @@ use log::debug;
 use ostd::{
     io_mem::IoMem,
     mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, VmReader},
-    sync::{RwLock, SpinLock},
+    sync::{LocalIrqDisabled, RwLock, SpinLock},
     trap::TrapFrame,
 };
 
@@ -27,7 +27,7 @@ pub struct ConsoleDevice {
     transmit_queue: SpinLock<VirtQueue>,
     send_buffer: DmaStream,
     receive_buffer: DmaStream,
-    callbacks: RwLock<Vec<&'static ConsoleCallback>>,
+    callbacks: RwLock<Vec<&'static ConsoleCallback>, LocalIrqDisabled>,
 }
 
 impl AnyConsoleDevice for ConsoleDevice {
@@ -54,7 +54,7 @@ impl AnyConsoleDevice for ConsoleDevice {
     }
 
     fn register_callback(&self, callback: &'static ConsoleCallback) {
-        self.callbacks.write_irq_disabled().push(callback);
+        self.callbacks.write().push(callback);
     }
 }
 
@@ -136,7 +136,7 @@ impl ConsoleDevice {
         };
         self.receive_buffer.sync(0..len as usize).unwrap();
 
-        let callbacks = self.callbacks.read_irq_disabled();
+        let callbacks = self.callbacks.read();
         for callback in callbacks.iter() {
             let reader = self.receive_buffer.reader().unwrap().limit(len as usize);
             callback(reader);

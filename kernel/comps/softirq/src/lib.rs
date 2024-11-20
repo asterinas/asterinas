@@ -7,15 +7,20 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
-use core::sync::atomic::{AtomicU8, Ordering};
+use core::{
+    marker::PhantomData,
+    sync::atomic::{AtomicU8, Ordering},
+};
 
 use component::{init_component, ComponentInitError};
 use ostd::{cpu_local_cell, trap::register_bottom_half_handler};
 use spin::Once;
 
+mod lock;
 pub mod softirq_id;
 mod taskless;
 
+pub use lock::{BottomHalfDisabled, DisabledLocalBottomHalfGuard};
 pub use taskless::Taskless;
 
 /// A representation of a software interrupt (softirq) line.
@@ -119,22 +124,35 @@ static ENABLED_MASK: AtomicU8 = AtomicU8::new(0);
 
 cpu_local_cell! {
     static PENDING_MASK: u8 = 0;
-    static IS_ENABLED: bool = true;
+    static DISABLE_SOFTIRQ_COUNT: u32 = 0;
 }
 
-/// Enables softirq in current processor.
-fn enable_softirq_local() {
-    IS_ENABLED.store(true);
+fn increase_disable_softirq_count() {
+    DISABLE_SOFTIRQ_COUNT.add_assign(1);
 }
 
-/// Disables softirq in current processor.
-fn disable_softirq_local() {
-    IS_ENABLED.store(false);
+fn decrease_disable_softirq_count() {
+    DISABLE_SOFTIRQ_COUNT.sub_assign(1);
+}
+
+struct DisabledLocalSoftirqGuard(PhantomData<()>);
+
+impl Drop for DisabledLocalSoftirqGuard {
+    fn drop(&mut self) {
+        decrease_disable_softirq_count();
+    }
 }
 
 /// Checks whether the softirq is enabled in current processor.
 fn is_softirq_enabled() -> bool {
-    IS_ENABLED.load()
+    DISABLE_SOFTIRQ_COUNT.load() == 0
+}
+
+/// Disables softirq on local CPU
+#[must_use]
+fn disable_softirq_local() -> DisabledLocalSoftirqGuard {
+    increase_disable_softirq_count();
+    DisabledLocalSoftirqGuard(PhantomData)
 }
 
 /// Processes pending softirqs.
@@ -148,7 +166,7 @@ pub(crate) fn process_pending() {
         return;
     }
 
-    disable_softirq_local();
+    let guard = disable_softirq_local();
 
     for _i in 0..SOFTIRQ_RUN_TIMES {
         let mut action_mask = {
@@ -167,5 +185,5 @@ pub(crate) fn process_pending() {
         }
     }
 
-    enable_softirq_local();
+    drop(guard);
 }

@@ -63,7 +63,7 @@ run_benchmark() {
     if [ -n "$aster_scheme" ] && [ "$aster_scheme" != "null" ]; then
         aster_scheme_cmd="SCHEME=${aster_scheme}"
     fi
-    local asterinas_cmd="make run BENCHMARK=${benchmark} ${aster_scheme_cmd} ENABLE_KVM=1 RELEASE_LTO=1 2>&1"
+    local asterinas_cmd="make run BENCHMARK=${benchmark} ${aster_scheme_cmd} ENABLE_KVM=1 RELEASE_LTO=1 NETDEV=tap VHOST=on 2>&1"
     local linux_cmd="/usr/local/qemu/bin/qemu-system-x86_64 \
         --no-reboot \
         -smp 1 \
@@ -76,8 +76,8 @@ run_benchmark() {
         -drive if=none,format=raw,id=x0,file=${BENCHMARK_DIR}/../build/ext2.img \
         -device virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,serial=vext2,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off \
         -append 'console=ttyS0 rdinit=/benchmark/common/bench_runner.sh ${benchmark} linux mitigations=off hugepages=0 transparent_hugepage=never quiet' \
-        -netdev user,id=net01,hostfwd=tcp::5201-:5201,hostfwd=tcp::6379-:6379,hostfwd=tcp::8080-:8080,hostfwd=tcp::31234-:31234,hostfwd=tcp::31236-:31236 \
-        -device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off,mrg_rxbuf=off,ctrl_rx=off,ctrl_rx_extra=off,ctrl_vlan=off,ctrl_vq=off,ctrl_guest_offloads=off,ctrl_mac_addr=off,event_idx=off,queue_reset=off,guest_announce=off,indirect_desc=off \
+        -netdev tap,id=net01,script=${BENCHMARK_DIR}/../../tools/net/qemu-ifup.sh,downscript=${BENCHMARK_DIR}/../../tools/net/qemu-ifdown.sh,vhost=on \
+        -device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off,csum=off,guest_csum=off,ctrl_guest_offloads=off,guest_tso4=off,guest_tso6=off,guest_ecn=off,guest_ufo=off,host_tso4=off,host_tso6=off,host_ecn=off,host_ufo=off,mrg_rxbuf=off,ctrl_vq=off,ctrl_rx=off,ctrl_vlan=off,ctrl_rx_extra=off,guest_announce=off,ctrl_mac_addr=off,host_ufo=off,guest_uso4=off,guest_uso6=off,host_uso=off \
         -nographic \
         2>&1"
     case "${benchmark_type}" in

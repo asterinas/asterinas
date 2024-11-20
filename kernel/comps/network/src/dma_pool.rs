@@ -8,6 +8,7 @@ use alloc::{
 };
 use core::ops::Range;
 
+use aster_softirq::BottomHalfDisabled;
 use bitvec::{array::BitArray, prelude::Lsb0};
 use ostd::{
     mm::{
@@ -34,8 +35,8 @@ pub struct DmaPool {
     direction: DmaDirection,
     is_cache_coherent: bool,
     high_watermark: usize,
-    avail_pages: SpinLock<VecDeque<Arc<DmaPage>>>,
-    all_pages: SpinLock<VecDeque<Arc<DmaPage>>>,
+    avail_pages: SpinLock<VecDeque<Arc<DmaPage>>, BottomHalfDisabled>,
+    all_pages: SpinLock<VecDeque<Arc<DmaPage>>, BottomHalfDisabled>,
 }
 
 impl DmaPool {
@@ -98,7 +99,7 @@ impl DmaPool {
     pub fn alloc_segment(self: &Arc<Self>) -> Result<DmaSegment, ostd::Error> {
         // Lock order: pool.avail_pages -> pool.all_pages
         //             pool.avail_pages -> page.allocated_segments
-        let mut avail_pages = self.avail_pages.disable_irq().lock();
+        let mut avail_pages = self.avail_pages.lock();
         if avail_pages.is_empty() {
             /// Allocate a new page
             let new_page = {
@@ -110,7 +111,7 @@ impl DmaPool {
                     pool,
                 )?)
             };
-            let mut all_pages = self.all_pages.disable_irq().lock();
+            let mut all_pages = self.all_pages.lock();
             avail_pages.push_back(new_page.clone());
             all_pages.push_back(new_page);
         }
@@ -125,7 +126,7 @@ impl DmaPool {
 
     /// Returns the number of pages in pool
     fn num_pages(&self) -> usize {
-        self.all_pages.disable_irq().lock().len()
+        self.all_pages.lock().len()
     }
 
     /// Return segment size in pool
@@ -258,8 +259,8 @@ impl Drop for DmaSegment {
 
         // Keep the same lock order as `pool.alloc_segment`
         // Lock order: pool.avail_pages -> pool.all_pages -> page.allocated_segments
-        let mut avail_pages = pool.avail_pages.disable_irq().lock();
-        let mut all_pages = pool.all_pages.disable_irq().lock();
+        let mut avail_pages = pool.avail_pages.lock();
+        let mut all_pages = pool.all_pages.lock();
 
         let mut allocated_segments = page.allocated_segments.disable_irq().lock();
 

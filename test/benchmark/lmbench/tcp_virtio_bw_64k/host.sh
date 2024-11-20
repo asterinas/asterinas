@@ -16,6 +16,7 @@ trap stop_guest EXIT
 
 # Run lmbench tcp client
 echo "Running lmbench tcp client"
-/usr/local/benchmark/lmbench/bw_tcp -m 65536 -P 1 127.0.0.1
+# The -W parameter of bw_tcp refers to the number of bytes transferred during the warm-up phase.
+/usr/local/benchmark/lmbench/bw_tcp -m 65536 -P 1 -W 50000000 -N 100 10.0.2.15
 
 # The trap will automatically stop the guest VM when the script exits

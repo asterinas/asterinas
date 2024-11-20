@@ -14,6 +14,6 @@ stop_guest() {
 trap stop_guest EXIT
 
 # Run apache bench
-/usr/local/redis/bin/redis-benchmark -n 100000 -c 20 -t set
+/usr/local/redis/bin/redis-benchmark -h 10.0.2.15 -n 100000 -c 20 -t set
 
 # The trap will automatically stop the guest VM when the script exits

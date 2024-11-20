@@ -9,7 +9,8 @@ use core::{
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
-use ostd::sync::{LocalIrqDisabled, RwLock, SpinLock, SpinLockGuard};
+use aster_softirq::BottomHalfDisabled;
+use ostd::sync::{RwLock, SpinLock, SpinLockGuard};
 use smoltcp::{
     iface::Context,
     socket::{tcp::State, udp::UdpMetadata, PollAt},
@@ -43,14 +44,14 @@ pub struct BoundSocketInner<T, E> {
     iface: Arc<dyn Iface<E>>,
     port: u16,
     socket: T,
-    observer: RwLock<Weak<dyn SocketEventObserver>>,
+    observer: RwLock<Weak<dyn SocketEventObserver>, BottomHalfDisabled>,
     next_poll_at_ms: AtomicU64,
     has_new_events: AtomicBool,
 }
 
 /// States needed by [`BoundTcpSocketInner`] but not [`BoundUdpSocketInner`].
 pub struct TcpSocket {
-    socket: SpinLock<RawTcpSocketExt, LocalIrqDisabled>,
+    socket: SpinLock<RawTcpSocketExt, BottomHalfDisabled>,
     is_dead: AtomicBool,
 }
 
@@ -80,7 +81,7 @@ impl DerefMut for RawTcpSocketExt {
 }
 
 impl TcpSocket {
-    fn lock(&self) -> SpinLockGuard<RawTcpSocketExt, LocalIrqDisabled> {
+    fn lock(&self) -> SpinLockGuard<RawTcpSocketExt, BottomHalfDisabled> {
         self.socket.lock()
     }
 
@@ -146,7 +147,7 @@ impl AnySocket for TcpSocket {
 }
 
 /// States needed by [`BoundUdpSocketInner`] but not [`BoundTcpSocketInner`].
-type UdpSocket = SpinLock<Box<RawUdpSocket>, LocalIrqDisabled>;
+type UdpSocket = SpinLock<Box<RawUdpSocket>, BottomHalfDisabled>;
 
 impl AnySocket for UdpSocket {
     type RawSocket = RawUdpSocket;
@@ -202,7 +203,7 @@ impl<T: AnySocket, E> BoundSocket<T, E> {
     /// that the old observer will never be called after the setting. Users should be aware of this
     /// and proactively handle the race conditions if necessary.
     pub fn set_observer(&self, new_observer: Weak<dyn SocketEventObserver>) {
-        *self.0.observer.write_irq_disabled() = new_observer;
+        *self.0.observer.write() = new_observer;
 
         self.0.on_iface_events();
     }

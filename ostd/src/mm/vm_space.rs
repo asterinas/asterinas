@@ -25,7 +25,7 @@ use crate::{
         Frame, PageProperty, VmReader, VmWriter, MAX_USERSPACE_VADDR,
     },
     prelude::*,
-    sync::{RwLock, RwLockReadGuard},
+    sync::{PreemptDisabled, RwLock, RwLockReadGuard},
     task::{disable_preempt, DisabledPreemptGuard},
     Error,
 };
@@ -283,7 +283,7 @@ impl Cursor<'_> {
 pub struct CursorMut<'a, 'b> {
     pt_cursor: page_table::CursorMut<'a, UserMode, PageTableEntry, PagingConsts>,
     #[allow(dead_code)]
-    activation_lock: RwLockReadGuard<'b, ()>,
+    activation_lock: RwLockReadGuard<'b, (), PreemptDisabled>,
     // We have a read lock so the CPU set in the flusher is always a superset
     // of actual activated CPUs.
     flusher: TlbFlusher<DisabledPreemptGuard>,

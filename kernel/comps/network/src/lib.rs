@@ -16,13 +16,14 @@ use alloc::{collections::BTreeMap, string::String, sync::Arc, vec::Vec};
 use core::{any::Any, fmt::Debug};
 
 use aster_bigtcp::device::DeviceCapabilities;
+use aster_softirq::{
+    softirq_id::{NETWORK_RX_SOFTIRQ_ID, NETWORK_TX_SOFTIRQ_ID},
+    BottomHalfDisabled, SoftIrqLine,
+};
 pub use buffer::{RxBuffer, TxBuffer, RX_BUFFER_POOL, TX_BUFFER_LEN};
 use component::{init_component, ComponentInitError};
 pub use dma_pool::DmaSegment;
-use ostd::{
-    sync::{LocalIrqDisabled, SpinLock},
-    Pod,
-};
+use ostd::{sync::SpinLock, Pod};
 use spin::Once;
 
 #[derive(Debug, Clone, Copy, Pod)]
@@ -55,31 +56,34 @@ pub trait AnyNetworkDevice: Send + Sync + Any + Debug {
     fn free_processed_tx_buffers(&mut self);
 }
 
-pub trait NetDeviceIrqHandler = Fn() + Send + Sync + 'static;
+pub trait NetDevicePollCallback = Fn() + Send + Sync + 'static;
 
 pub fn register_device(
     name: String,
-    device: Arc<SpinLock<dyn AnyNetworkDevice, LocalIrqDisabled>>,
+    device: Arc<SpinLock<dyn AnyNetworkDevice, BottomHalfDisabled>>,
 ) {
     COMPONENT
         .get()
         .unwrap()
         .network_device_table
         .lock()
-        .insert(name, NetworkDeviceIrqCallbackSet::new(device));
+        .insert(name, NetDeviceCallbackSet::new(device));
 }
 
-pub fn get_device(str: &str) -> Option<Arc<SpinLock<dyn AnyNetworkDevice, LocalIrqDisabled>>> {
+pub fn get_device(str: &str) -> Option<Arc<SpinLock<dyn AnyNetworkDevice, BottomHalfDisabled>>> {
     let table = COMPONENT.get().unwrap().network_device_table.lock();
     let callbacks = table.get(str)?;
     Some(callbacks.device.clone())
 }
 
-/// Registers callback which will be called when receiving message.
+/// Registers a callback that will be invoked when a message is received.
 ///
-/// Since the callback will be called in interrupt context,
-/// the callback function should NOT sleep.
-pub fn register_recv_callback(name: &str, callback: impl NetDeviceIrqHandler) {
+/// Since this callback is executed in a softirq context,
+/// the callback function must NOT block or sleep.
+///
+/// Please note that the callback may not be called every time a packet is received.
+/// The driver may skip certain callbacks for performance optimization.
+pub fn register_recv_callback(name: &str, callback: impl NetDevicePollCallback) {
     let device_table = COMPONENT.get().unwrap().network_device_table.lock();
     let Some(callbacks) = device_table.get(name) else {
         return;
@@ -87,7 +91,15 @@ pub fn register_recv_callback(name: &str, callback: impl NetDeviceIrqHandler) {
     callbacks.recv_callbacks.lock().push(Arc::new(callback));
 }
 
-pub fn register_send_callback(name: &str, callback: impl NetDeviceIrqHandler) {
+/// Registers a callback that will be invoked
+/// when there is room available in the device for sending.
+///
+/// Since this callback is executed in a softirq context,
+/// the callback function must NOT block or sleep.
+///
+/// Please note that the callback may not be called every time a packet is sent.
+/// The driver may skip certain callbacks for performance optimization.
+pub fn register_send_callback(name: &str, callback: impl NetDevicePollCallback) {
     let device_table = COMPONENT.get().unwrap().network_device_table.lock();
     let Some(callbacks) = device_table.get(name) else {
         return;
@@ -95,37 +107,14 @@ pub fn register_send_callback(name: &str, callback: impl NetDeviceIrqHandler) {
     callbacks.send_callbacks.lock().push(Arc::new(callback));
 }
 
-pub fn handle_recv_irq(name: &str) {
-    let device_table = COMPONENT.get().unwrap().network_device_table.lock();
-    let Some(callbacks) = device_table.get(name) else {
-        return;
-    };
-
-    let callbacks = callbacks.recv_callbacks.lock();
-    for callback in callbacks.iter() {
-        callback();
-    }
+/// Raises softirq for handling reception events
+pub fn raise_receive_softirq() {
+    SoftIrqLine::get(NETWORK_RX_SOFTIRQ_ID).raise();
 }
 
-pub fn handle_send_irq(name: &str) {
-    let device_table = COMPONENT.get().unwrap().network_device_table.lock();
-    let Some(callbacks) = device_table.get(name) else {
-        return;
-    };
-
-    let can_send = {
-        let mut device = callbacks.device.lock();
-        device.free_processed_tx_buffers();
-        device.can_send()
-    };
-    if !can_send {
-        return;
-    }
-
-    let callbacks = callbacks.send_callbacks.lock();
-    for callback in callbacks.iter() {
-        callback();
-    }
+/// Raises softirq for handling sending events
+pub fn raise_send_softirq() {
+    SoftIrqLine::get(NETWORK_TX_SOFTIRQ_ID).raise();
 }
 
 pub fn all_devices() -> Vec<(String, NetworkDeviceRef)> {
@@ -137,36 +126,64 @@ pub fn all_devices() -> Vec<(String, NetworkDeviceRef)> {
 }
 
 static COMPONENT: Once<Component> = Once::new();
-pub(crate) static NETWORK_IRQ_HANDLERS: Once<
-    SpinLock<Vec<Arc<dyn NetDeviceIrqHandler>>, LocalIrqDisabled>,
-> = Once::new();
 
 #[init_component]
 fn init() -> Result<(), ComponentInitError> {
     let a = Component::init()?;
     COMPONENT.call_once(|| a);
-    NETWORK_IRQ_HANDLERS.call_once(|| SpinLock::new(Vec::new()));
+    SoftIrqLine::get(NETWORK_RX_SOFTIRQ_ID).enable(handle_rx_softirq);
+    SoftIrqLine::get(NETWORK_TX_SOFTIRQ_ID).enable(handle_tx_softirq);
     buffer::init();
     Ok(())
 }
 
-type NetDeviceIrqHandlerListRef =
-    Arc<SpinLock<Vec<Arc<dyn NetDeviceIrqHandler>>, LocalIrqDisabled>>;
-type NetworkDeviceRef = Arc<SpinLock<dyn AnyNetworkDevice, LocalIrqDisabled>>;
+fn handle_rx_softirq() {
+    let device_table = COMPONENT.get().unwrap().network_device_table.lock();
+    for callback_set in device_table.values() {
+        let recv_callbacks = callback_set.recv_callbacks.lock();
+        for callback in recv_callbacks.iter() {
+            callback();
+        }
+    }
+}
+
+fn handle_tx_softirq() {
+    let device_table = COMPONENT.get().unwrap().network_device_table.lock();
+    for callback_set in device_table.values() {
+        let can_send = {
+            let mut device = callback_set.device.lock();
+            device.free_processed_tx_buffers();
+            device.can_send()
+        };
+
+        if !can_send {
+            return;
+        }
+
+        let send_callbacks = callback_set.send_callbacks.lock();
+        for callback in send_callbacks.iter() {
+            callback();
+        }
+    }
+}
+
+type NetDevicePollCallbackListRef =
+    Arc<SpinLock<Vec<Arc<dyn NetDevicePollCallback>>, BottomHalfDisabled>>;
+type NetworkDeviceRef = Arc<SpinLock<dyn AnyNetworkDevice, BottomHalfDisabled>>;
 
 struct Component {
     /// Device list, the key is device name, value is (callbacks, device);
-    network_device_table: SpinLock<BTreeMap<String, NetworkDeviceIrqCallbackSet>, LocalIrqDisabled>,
+    network_device_table: SpinLock<BTreeMap<String, NetDeviceCallbackSet>, BottomHalfDisabled>,
 }
 
 /// The send callbacks and recv callbacks for a network device
-struct NetworkDeviceIrqCallbackSet {
+struct NetDeviceCallbackSet {
     device: NetworkDeviceRef,
-    recv_callbacks: NetDeviceIrqHandlerListRef,
-    send_callbacks: NetDeviceIrqHandlerListRef,
+    recv_callbacks: NetDevicePollCallbackListRef,
+    send_callbacks: NetDevicePollCallbackListRef,
 }
 
-impl NetworkDeviceIrqCallbackSet {
+impl NetDeviceCallbackSet {
     fn new(device: NetworkDeviceRef) -> Self {
         Self {
             device,

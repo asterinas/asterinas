@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_bigtcp::wire::IpEndpoint;
-use ostd::sync::LocalIrqDisabled;
+use aster_softirq::BottomHalfDisabled;
 
 use super::{connected::ConnectedStream, init::InitStream};
 use crate::{events::IoEvents, net::iface::BoundTcpSocket, prelude::*, process::signal::Pollee};
@@ -9,7 +9,7 @@ use crate::{events::IoEvents, net::iface::BoundTcpSocket, prelude::*, process::s
 pub struct ConnectingStream {
     bound_socket: BoundTcpSocket,
     remote_endpoint: IpEndpoint,
-    conn_result: SpinLock<Option<ConnResult>, LocalIrqDisabled>,
+    conn_result: SpinLock<Option<ConnResult>, BottomHalfDisabled>,
 }
 
 #[derive(Clone, Copy)]
