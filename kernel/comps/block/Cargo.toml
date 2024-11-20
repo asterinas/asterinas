@@ -15,5 +15,6 @@ int-to-c-enum = { path = "../../libs/int-to-c-enum" }
 component = { path = "../../libs/comp-sys/component" }
 log = "0.4"
 static_assertions = "1.1.0"
+bitvec = { version = "1.0.1", default-features = false, features = ["alloc"] }
 
 [features]

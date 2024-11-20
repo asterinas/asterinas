@@ -83,6 +83,7 @@ dependencies = [
  "align_ext",
  "aster-util",
  "bitflags 1.3.2",
+ "bitvec",
  "component",
  "int-to-c-enum",
  "log",

@@ -7,14 +7,13 @@ pub(super) use core::{
 
 pub(super) use align_ext::AlignExt;
 pub(super) use aster_block::{
-    bio::{BioStatus, BioWaiter},
+    bio::{BioDirection, BioSegment, BioStatus, BioWaiter},
     id::Bid,
     BlockDevice, BLOCK_SIZE,
 };
 pub(super) use aster_rights::Full;
-pub(super) use aster_util::segment_slice::SegmentSlice;
 pub(super) use ostd::{
-    mm::{Frame, FrameAllocOptions, VmIo},
+    mm::{Frame, FrameAllocOptions, Segment, VmIo},
     sync::{RwMutex, RwMutexReadGuard, RwMutexWriteGuard},
 };
 pub(super) use static_assertions::const_assert;

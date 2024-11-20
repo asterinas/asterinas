@@ -5,7 +5,11 @@
 
 use core::{num::NonZeroUsize, ops::Range, sync::atomic::AtomicU64};
 
-use aster_block::{bio::BioWaiter, id::BlockId, BlockDevice};
+use aster_block::{
+    bio::{BioDirection, BioSegment, BioWaiter},
+    id::BlockId,
+    BlockDevice,
+};
 use hashbrown::HashMap;
 use lru::LruCache;
 use ostd::mm::Frame;
@@ -368,9 +372,11 @@ impl PageCacheBackend for ExfatFS {
         if self.fs_size() < idx * PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "invalid read size")
         }
+        let bio_segment =
+            BioSegment::new_from_segment(frame.clone().into(), BioDirection::FromDevice);
         let waiter = self
             .block_device
-            .read_block_async(BlockId::new(idx as u64), frame)?;
+            .read_blocks_async(BlockId::new(idx as u64), bio_segment)?;
         Ok(waiter)
     }
 
@@ -378,9 +384,11 @@ impl PageCacheBackend for ExfatFS {
         if self.fs_size() < idx * PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "invalid write size")
         }
+        let bio_segment =
+            BioSegment::new_from_segment(frame.clone().into(), BioDirection::ToDevice);
         let waiter = self
             .block_device
-            .write_block_async(BlockId::new(idx as u64), frame)?;
+            .write_blocks_async(BlockId::new(idx as u64), bio_segment)?;
         Ok(waiter)
     }
 

@@ -42,7 +42,9 @@ impl IndirectBlockCache {
         let fs = self.fs();
         let load_block = || -> Result<IndirectBlock> {
             let mut block = IndirectBlock::alloc_uninit()?;
-            fs.read_block(bid, &block.frame)?;
+            let bio_segment =
+                BioSegment::new_from_segment(block.frame.clone().into(), BioDirection::FromDevice);
+            fs.read_blocks(bid, bio_segment)?;
             block.state = State::UpToDate;
             Ok(block)
         };
@@ -59,7 +61,9 @@ impl IndirectBlockCache {
         let fs = self.fs();
         let load_block = || -> Result<IndirectBlock> {
             let mut block = IndirectBlock::alloc_uninit()?;
-            fs.read_block(bid, &block.frame)?;
+            let bio_segment =
+                BioSegment::new_from_segment(block.frame.clone().into(), BioDirection::FromDevice);
+            fs.read_blocks(bid, bio_segment)?;
             block.state = State::UpToDate;
             Ok(block)
         };
@@ -104,7 +108,11 @@ impl IndirectBlockCache {
         for _ in 0..num {
             let (bid, block) = self.cache.pop_lru().unwrap();
             if block.is_dirty() {
-                bio_waiter.concat(self.fs().write_block_async(bid, &block.frame)?);
+                let bio_segment = BioSegment::new_from_segment(
+                    block.frame.clone().into(),
+                    BioDirection::ToDevice,
+                );
+                bio_waiter.concat(self.fs().write_blocks_async(bid, bio_segment)?);
             }
         }
 

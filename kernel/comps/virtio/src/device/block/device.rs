@@ -11,7 +11,7 @@ use alloc::{
 use core::{fmt::Debug, hint::spin_loop, mem::size_of};
 
 use aster_block::{
-    bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio},
+    bio::{bio_segment_pool_init, BioEnqueueError, BioStatus, BioType, SubmittedBio},
     request_queue::{BioRequest, BioRequestSingleQueue},
     BlockDeviceMeta,
 };
@@ -63,6 +63,8 @@ impl BlockDevice {
         });
 
         aster_block::register_device(device_id, block_device);
+
+        bio_segment_pool_init();
         Ok(())
     }
 
@@ -215,11 +217,14 @@ impl DeviceInner {
             // Synchronize DMA mapping if read from the device
             if let BioType::Read = complete_request.bio_request.type_() {
                 complete_request
-                    .dma_bufs
-                    .iter()
-                    .for_each(|(stream, offset, len)| {
-                        stream.sync(*offset..*offset + *len).unwrap();
-                    });
+                    .bio_request
+                    .bios()
+                    .flat_map(|bio| {
+                        bio.segments()
+                            .iter()
+                            .map(|segment| segment.inner_dma_slice())
+                    })
+                    .for_each(|dma_slice| dma_slice.sync().unwrap());
             }
 
             // Completes the bio request
@@ -301,11 +306,10 @@ impl DeviceInner {
 
     /// Reads data from the device, this function is non-blocking.
     fn read(&self, bio_request: BioRequest) {
-        let dma_streams = Self::dma_stream_map(&bio_request);
-
         let id = self.id_allocator.disable_irq().lock().alloc().unwrap();
         let req_slice = {
-            let req_slice = DmaStreamSlice::new(&self.block_requests, id * REQ_SIZE, REQ_SIZE);
+            let req_slice =
+                DmaStreamSlice::new(self.block_requests.clone(), id * REQ_SIZE, REQ_SIZE);
             let req = BlockReq {
                 type_: ReqType::In as _,
                 reserved: 0,
@@ -317,18 +321,21 @@ impl DeviceInner {
         };
 
         let resp_slice = {
-            let resp_slice = DmaStreamSlice::new(&self.block_responses, id * RESP_SIZE, RESP_SIZE);
+            let resp_slice =
+                DmaStreamSlice::new(self.block_responses.clone(), id * RESP_SIZE, RESP_SIZE);
             resp_slice.write_val(0, &BlockResp::default()).unwrap();
             resp_slice
         };
 
-        let dma_slices: Vec<DmaStreamSlice<_>> = dma_streams
-            .iter()
-            .map(|(stream, offset, len)| DmaStreamSlice::new(stream, *offset, *len))
-            .collect();
         let outputs = {
-            let mut outputs: Vec<&DmaStreamSlice<_>> = Vec::with_capacity(dma_streams.len() + 1);
-            outputs.extend(dma_slices.iter());
+            let mut outputs: Vec<&DmaStreamSlice<_>> =
+                Vec::with_capacity(bio_request.num_segments() + 1);
+            let dma_slices_iter = bio_request.bios().flat_map(|bio| {
+                bio.segments()
+                    .iter()
+                    .map(|segment| segment.inner_dma_slice())
+            });
+            outputs.extend(dma_slices_iter);
             outputs.push(&resp_slice);
             outputs
         };
@@ -352,7 +359,7 @@ impl DeviceInner {
             }
 
             // Records the submitted request
-            let submitted_request = SubmittedRequest::new(id as u16, bio_request, dma_streams);
+            let submitted_request = SubmittedRequest::new(id as u16, bio_request);
             self.submitted_requests
                 .disable_irq()
                 .lock()
@@ -363,11 +370,10 @@ impl DeviceInner {
 
     /// Writes data to the device, this function is non-blocking.
     fn write(&self, bio_request: BioRequest) {
-        let dma_streams = Self::dma_stream_map(&bio_request);
-
         let id = self.id_allocator.disable_irq().lock().alloc().unwrap();
         let req_slice = {
-            let req_slice = DmaStreamSlice::new(&self.block_requests, id * REQ_SIZE, REQ_SIZE);
+            let req_slice =
+                DmaStreamSlice::new(self.block_requests.clone(), id * REQ_SIZE, REQ_SIZE);
             let req = BlockReq {
                 type_: ReqType::Out as _,
                 reserved: 0,
@@ -379,19 +385,22 @@ impl DeviceInner {
         };
 
         let resp_slice = {
-            let resp_slice = DmaStreamSlice::new(&self.block_responses, id * RESP_SIZE, RESP_SIZE);
+            let resp_slice =
+                DmaStreamSlice::new(self.block_responses.clone(), id * RESP_SIZE, RESP_SIZE);
             resp_slice.write_val(0, &BlockResp::default()).unwrap();
             resp_slice
         };
 
-        let dma_slices: Vec<DmaStreamSlice<_>> = dma_streams
-            .iter()
-            .map(|(stream, offset, len)| DmaStreamSlice::new(stream, *offset, *len))
-            .collect();
         let inputs = {
-            let mut inputs: Vec<&DmaStreamSlice<_>> = Vec::with_capacity(dma_streams.len() + 1);
+            let mut inputs: Vec<&DmaStreamSlice<_>> =
+                Vec::with_capacity(bio_request.num_segments() + 1);
             inputs.push(&req_slice);
-            inputs.extend(dma_slices.iter());
+            let dma_slices_iter = bio_request.bios().flat_map(|bio| {
+                bio.segments()
+                    .iter()
+                    .map(|segment| segment.inner_dma_slice())
+            });
+            inputs.extend(dma_slices_iter);
             inputs
         };
 
@@ -413,7 +422,7 @@ impl DeviceInner {
             }
 
             // Records the submitted request
-            let submitted_request = SubmittedRequest::new(id as u16, bio_request, dma_streams);
+            let submitted_request = SubmittedRequest::new(id as u16, bio_request);
             self.submitted_requests
                 .disable_irq()
                 .lock()
@@ -465,34 +474,13 @@ impl DeviceInner {
             }
 
             // Records the submitted request
-            let submitted_request = SubmittedRequest::new(id as u16, bio_request, Vec::new());
+            let submitted_request = SubmittedRequest::new(id as u16, bio_request);
             self.submitted_requests
                 .disable_irq()
                 .lock()
                 .insert(token, submitted_request);
             return;
         }
-    }
-
-    /// Performs DMA mapping for the segments in bio request.
-    fn dma_stream_map(bio_request: &BioRequest) -> Vec<(DmaStream, usize, usize)> {
-        let dma_direction = match bio_request.type_() {
-            BioType::Read => DmaDirection::FromDevice,
-            BioType::Write => DmaDirection::ToDevice,
-            _ => todo!(),
-        };
-
-        bio_request
-            .bios()
-            .flat_map(|bio| {
-                bio.segments().iter().map(|segment| {
-                    let dma_stream =
-                        DmaStream::map(segment.pages().clone().into(), dma_direction, false)
-                            .unwrap();
-                    (dma_stream, segment.offset(), segment.nbytes())
-                })
-            })
-            .collect()
     }
 }
 
@@ -501,16 +489,11 @@ impl DeviceInner {
 struct SubmittedRequest {
     id: u16,
     bio_request: BioRequest,
-    dma_bufs: Vec<(DmaStream, usize, usize)>,
 }
 
 impl SubmittedRequest {
-    pub fn new(id: u16, bio_request: BioRequest, dma_bufs: Vec<(DmaStream, usize, usize)>) -> Self {
-        Self {
-            id,
-            bio_request,
-            dma_bufs,
-        }
+    pub fn new(id: u16, bio_request: BioRequest) -> Self {
+        Self { id, bio_request }
     }
 }
 
