@@ -79,7 +79,7 @@ macro_rules! cpu_local_cell {
 pub struct CpuLocalCell<T: 'static>(UnsafeCell<T>);
 
 impl<T: 'static> CpuLocalCell<T> {
-    /// Initialize a CPU-local object.
+    /// Initializes a CPU-local object.
     ///
     /// Please do not call this function directly. Instead, use the
     /// `cpu_local!` macro.
@@ -94,17 +94,22 @@ impl<T: 'static> CpuLocalCell<T> {
         Self(UnsafeCell::new(val))
     }
 
-    /// Get access to the underlying value through a raw pointer.
+    /// Gets access to the underlying value through a raw pointer.
     ///
     /// This function calculates the virtual address of the CPU-local object
     /// based on the CPU-local base address and the offset in the BSP.
     ///
-    /// # Safety
-    ///
-    /// The caller should ensure that within the entire execution of this
-    /// function, no interrupt or preemption can occur. Otherwise, the
-    /// returned pointer may points to the variable in another CPU.
-    pub unsafe fn as_ptr_mut(&'static self) -> *mut T {
+    /// This method is safe, but using the returned pointer will be unsafe.
+    /// Specifically,
+    /// - Preemption should be disabled from the time this method is called
+    ///   to the time the pointer is used. Otherwise, the pointer may point
+    ///   to the variable on another CPU, making it difficult or impossible
+    ///   to determine if the data can be borrowed.
+    /// - If the variable can be used in interrupt handlers, borrowing the
+    ///   data should be done with interrupts disabled. Otherwise, more care
+    ///   must be taken to ensure that the borrowing rules are correctly
+    ///   enforced, since the interrupts may come asynchronously.
+    pub fn as_ptr_mut(&'static self) -> *mut T {
         super::has_init::assert_true();
 
         let offset = {
