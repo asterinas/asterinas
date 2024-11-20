@@ -52,6 +52,10 @@ pub(super) fn switch_to_task(next_task: Arc<Task>) {
     let next_task_ctx_ptr = next_task.ctx().get().cast_const();
     if let Some(next_user_space) = next_task.user_space() {
         next_user_space.vm_space().activate();
+    } else {
+        // FIXME: If the current task is migrated to another CPU after enabling
+        // IRQ and before switching to the next task, we may miss the TLB flush.
+        next_task.flush_kstack_tlb();
     }
 
     // Change the current task to the next task.

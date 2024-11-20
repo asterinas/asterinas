@@ -63,6 +63,10 @@ impl Task {
         &self.ctx
     }
 
+    pub(super) fn flush_kstack_tlb(&self) {
+        self.kstack.tlb_flush_this_cpu();
+    }
+
     /// Sets thread-local storage pointer.
     pub fn set_tls_pointer(&self, tls: usize) {
         let ctx_ptr = self.ctx.get();

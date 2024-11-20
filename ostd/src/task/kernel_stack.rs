@@ -5,6 +5,7 @@ use crate::{
         kspace::kvirt_area::{KVirtArea, Tracked},
         page::{allocator, meta::KernelStackMeta},
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
+        tlb::TlbFlushOp,
         PAGE_SIZE,
     },
     prelude::*,
@@ -58,6 +59,10 @@ impl KernelStack {
 
     pub fn end_vaddr(&self) -> Vaddr {
         self.end_vaddr
+    }
+
+    pub fn tlb_flush_this_cpu(&self) {
+        TlbFlushOp::Range(self.kvirt_area.range()).perform_on_current();
     }
 }
 
