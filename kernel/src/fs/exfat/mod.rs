@@ -83,6 +83,7 @@ mod test {
             for seg in bio.segments() {
                 let size = match bio.type_() {
                     BioType::Read => seg
+                        .inner_segment()
                         .writer()
                         .write(&mut self.queue.0.reader().skip(cur_device_ofs)),
                     BioType::Write => self
@@ -90,7 +91,7 @@ mod test {
                         .0
                         .writer()
                         .skip(cur_device_ofs)
-                        .write(&mut seg.reader()),
+                        .write(&mut seg.inner_segment().reader()),
                     _ => 0,
                 };
                 cur_device_ofs += size;
