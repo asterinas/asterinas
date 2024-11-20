@@ -19,7 +19,7 @@ impl DmaBuf for DmaStream {
     }
 }
 
-impl DmaBuf for DmaStreamSlice<'_> {
+impl<Dma: AsRef<DmaStream>> DmaBuf for DmaStreamSlice<Dma> {
     fn len(&self) -> usize {
         self.nbytes()
     }

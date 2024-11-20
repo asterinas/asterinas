@@ -48,7 +48,7 @@ struct DmaStreamInner {
 pub enum DmaDirection {
     /// Data flows to the device
     ToDevice,
-    /// Data flows form the device
+    /// Data flows from the device
     FromDevice,
     /// Data flows both from and to the device
     Bidirectional,
@@ -117,14 +117,19 @@ impl DmaStream {
         &self.inner.vm_segment
     }
 
-    /// Returns the number of frames
+    /// Returns the number of frames.
     pub fn nframes(&self) -> usize {
         self.inner.vm_segment.nbytes() / PAGE_SIZE
     }
 
-    /// Returns the number of bytes
+    /// Returns the number of bytes.
     pub fn nbytes(&self) -> usize {
         self.inner.vm_segment.nbytes()
+    }
+
+    /// Returns the DMA direction.
+    pub fn direction(&self) -> DmaDirection {
+        self.inner.direction
     }
 
     /// Synchronizes the streaming DMA mapping with the device.
@@ -242,15 +247,21 @@ impl HasPaddr for DmaStream {
     }
 }
 
+impl AsRef<DmaStream> for DmaStream {
+    fn as_ref(&self) -> &DmaStream {
+        self
+    }
+}
+
 /// A slice of streaming DMA mapping.
 #[derive(Debug)]
-pub struct DmaStreamSlice<'a> {
-    stream: &'a DmaStream,
+pub struct DmaStreamSlice<Dma> {
+    stream: Dma,
     offset: usize,
     len: usize,
 }
 
-impl<'a> DmaStreamSlice<'a> {
+impl<Dma: AsRef<DmaStream>> DmaStreamSlice<Dma> {
     /// Constructs a `DmaStreamSlice` from the [`DmaStream`].
     ///
     /// # Panics
@@ -259,15 +270,25 @@ impl<'a> DmaStreamSlice<'a> {
     /// this method will panic.
     /// If the `offset + len` is greater than the length of the stream,
     /// this method will panic.
-    pub fn new(stream: &'a DmaStream, offset: usize, len: usize) -> Self {
-        assert!(offset < stream.nbytes());
-        assert!(offset + len <= stream.nbytes());
+    pub fn new(stream: Dma, offset: usize, len: usize) -> Self {
+        assert!(offset < stream.as_ref().nbytes());
+        assert!(offset + len <= stream.as_ref().nbytes());
 
         Self {
             stream,
             offset,
             len,
         }
+    }
+
+    /// Returns the underlying `DmaStream`.
+    pub fn stream(&self) -> &DmaStream {
+        self.stream.as_ref()
+    }
+
+    /// Returns the offset of the slice.
+    pub fn offset(&self) -> usize {
+        self.offset
     }
 
     /// Returns the number of bytes.
@@ -277,35 +298,69 @@ impl<'a> DmaStreamSlice<'a> {
 
     /// Synchronizes the slice of streaming DMA mapping with the device.
     pub fn sync(&self) -> Result<(), Error> {
-        self.stream.sync(self.offset..self.offset + self.len)
+        self.stream
+            .as_ref()
+            .sync(self.offset..self.offset + self.len)
+    }
+
+    /// Returns a reader to read data from it.
+    pub fn reader(&self) -> Result<VmReader<Infallible>, Error> {
+        let stream_reader = self
+            .stream
+            .as_ref()
+            .reader()?
+            .skip(self.offset)
+            .limit(self.len);
+        Ok(stream_reader)
+    }
+
+    /// Returns a writer to write data into it.
+    pub fn writer(&self) -> Result<VmWriter<Infallible>, Error> {
+        let stream_writer = self
+            .stream
+            .as_ref()
+            .writer()?
+            .skip(self.offset)
+            .limit(self.len);
+        Ok(stream_writer)
     }
 }
 
-impl VmIo for DmaStreamSlice<'_> {
+impl<Dma: AsRef<DmaStream> + Send + Sync> VmIo for DmaStreamSlice<Dma> {
     fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<(), Error> {
         if writer.avail() + offset > self.len {
             return Err(Error::InvalidArgs);
         }
-        self.stream.read(self.offset + offset, writer)
+        self.stream.as_ref().read(self.offset + offset, writer)
     }
 
     fn write(&self, offset: usize, reader: &mut VmReader) -> Result<(), Error> {
         if reader.remain() + offset > self.len {
             return Err(Error::InvalidArgs);
         }
-        self.stream.write(self.offset + offset, reader)
+        self.stream.as_ref().write(self.offset + offset, reader)
     }
 }
 
-impl HasDaddr for DmaStreamSlice<'_> {
+impl<Dma: AsRef<DmaStream>> HasDaddr for DmaStreamSlice<Dma> {
     fn daddr(&self) -> Daddr {
-        self.stream.daddr() + self.offset
+        self.stream.as_ref().daddr() + self.offset
     }
 }
 
-impl HasPaddr for DmaStreamSlice<'_> {
+impl<Dma: AsRef<DmaStream>> HasPaddr for DmaStreamSlice<Dma> {
     fn paddr(&self) -> Paddr {
-        self.stream.paddr() + self.offset
+        self.stream.as_ref().paddr() + self.offset
+    }
+}
+
+impl Clone for DmaStreamSlice<DmaStream> {
+    fn clone(&self) -> Self {
+        Self {
+            stream: self.stream.clone(),
+            offset: self.offset,
+            len: self.len,
+        }
     }
 }
 
