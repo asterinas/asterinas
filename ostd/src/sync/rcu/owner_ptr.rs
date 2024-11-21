@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::ptr::NonNull;
-
 use crate::prelude::*;
 
 /// A trait that abstracts pointers that have the ownership of the objects they
@@ -10,10 +8,13 @@ use crate::prelude::*;
 /// The most typical examples smart pointer types like `Box<T>` and `Arc<T>`.
 ///
 /// which can be converted to and from the raw pointer type of `*const T`.
-pub trait OwnerPtr {
+pub trait OwnerPtr: 'static {
     /// The target type that this pointer refers to.
     // TODO: allow ?Sized
     type Target;
+
+    /// Creates a new pointer with the given value.
+    fn new(value: Self::Target) -> Self;
 
     /// Converts to a raw pointer.
     ///
@@ -30,8 +31,12 @@ pub trait OwnerPtr {
     unsafe fn from_raw(ptr: *const Self::Target) -> Self;
 }
 
-impl<T> OwnerPtr for Box<T> {
+impl<T: 'static> OwnerPtr for Box<T> {
     type Target = T;
+
+    fn new(value: Self::Target) -> Self {
+        Box::new(value)
+    }
 
     fn into_raw(self) -> *const Self::Target {
         Box::into_raw(self) as *const _
@@ -42,8 +47,12 @@ impl<T> OwnerPtr for Box<T> {
     }
 }
 
-impl<T> OwnerPtr for Arc<T> {
+impl<T: 'static> OwnerPtr for Arc<T> {
     type Target = T;
+
+    fn new(value: Self::Target) -> Self {
+        Arc::new(value)
+    }
 
     fn into_raw(self) -> *const Self::Target {
         Arc::into_raw(self)
@@ -64,6 +73,10 @@ where
     <P as OwnerPtr>::Target: Sized,
 {
     type Target = P::Target;
+
+    fn new(value: Self::Target) -> Self {
+        Some(P::new(value))
+    }
 
     fn into_raw(self) -> *const Self::Target {
         self.map(|p| <P as OwnerPtr>::into_raw(p))
