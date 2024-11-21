@@ -4,10 +4,8 @@ use alloc::{boxed::Box, fmt::Debug, string::ToString, sync::Arc, vec::Vec};
 use core::hint::spin_loop;
 
 use aster_console::{AnyConsoleDevice, ConsoleCallback};
-use aster_util::safe_ptr::SafePtr;
 use log::debug;
 use ostd::{
-    io_mem::IoMem,
     mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, VmReader},
     sync::{LocalIrqDisabled, RwLock, SpinLock},
     trap::TrapFrame,
@@ -17,11 +15,11 @@ use super::{config::VirtioConsoleConfig, DEVICE_NAME};
 use crate::{
     device::{console::config::ConsoleFeatures, VirtioDeviceError},
     queue::VirtQueue,
-    transport::VirtioTransport,
+    transport::{ConfigManager, VirtioTransport},
 };
 
 pub struct ConsoleDevice {
-    config: SafePtr<VirtioConsoleConfig, IoMem>,
+    config_manager: ConfigManager<VirtioConsoleConfig>,
     transport: SpinLock<Box<dyn VirtioTransport>>,
     receive_queue: SpinLock<VirtQueue>,
     transmit_queue: SpinLock<VirtQueue>,
@@ -61,7 +59,7 @@ impl AnyConsoleDevice for ConsoleDevice {
 impl Debug for ConsoleDevice {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("ConsoleDevice")
-            .field("config", &self.config)
+            .field("config", &self.config_manager.read_config())
             .field("transport", &self.transport)
             .field("receive_queue", &self.receive_queue)
             .field("transmit_queue", &self.transmit_queue)
@@ -78,7 +76,9 @@ impl ConsoleDevice {
     }
 
     pub fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
-        let config = VirtioConsoleConfig::new(transport.as_ref());
+        let config_manager = VirtioConsoleConfig::new_manager(transport.as_ref());
+        debug!("virtio_console_config = {:?}", config_manager.read_config());
+
         const RECV0_QUEUE_INDEX: u16 = 0;
         const TRANSMIT0_QUEUE_INDEX: u16 = 1;
         let receive_queue =
@@ -97,7 +97,7 @@ impl ConsoleDevice {
         };
 
         let device = Arc::new(Self {
-            config,
+            config_manager,
             transport: SpinLock::new(transport),
             receive_queue,
             transmit_queue,

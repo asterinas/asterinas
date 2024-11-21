@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{boxed::Box, sync::Arc};
+use alloc::boxed::Box;
 use core::fmt::Debug;
 
 use aster_util::{field_ptr, safe_ptr::SafePtr};
@@ -8,7 +8,8 @@ use log::{info, warn};
 use ostd::{
     bus::{
         pci::{
-            bus::PciDevice, capability::CapabilityData, common_device::PciCommonDevice, PciDeviceId,
+            bus::PciDevice, capability::CapabilityData, cfg_space::Bar,
+            common_device::PciCommonDevice, PciDeviceId,
         },
         BusProbeError,
     },
@@ -23,7 +24,7 @@ use crate::{
     queue::{AvailRing, Descriptor, UsedRing},
     transport::{
         pci::capability::{VirtioPciCapabilityData, VirtioPciCpabilityType},
-        DeviceStatus, VirtioTransport, VirtioTransportError,
+        ConfigManager, DeviceStatus, VirtioTransport, VirtioTransportError,
     },
     VirtioDeviceType,
 };
@@ -39,14 +40,10 @@ pub struct VirtioPciDevice {
     device_id: PciDeviceId,
 }
 
-pub struct VirtioPciTransport {
-    device_type: VirtioDeviceType,
-    common_device: PciCommonDevice,
-    common_cfg: SafePtr<VirtioPciCommonCfg, IoMem>,
-    device_cfg: VirtioPciCapabilityData,
-    notify: VirtioPciNotify,
-    msix_manager: VirtioMsixManager,
-    device: Arc<VirtioPciDevice>,
+impl VirtioPciDevice {
+    pub(super) fn new(device_id: PciDeviceId) -> Self {
+        Self { device_id }
+    }
 }
 
 impl PciDevice for VirtioPciDevice {
@@ -55,15 +52,24 @@ impl PciDevice for VirtioPciDevice {
     }
 }
 
-impl Debug for VirtioPciTransport {
+pub struct VirtioPciModernTransport {
+    device_type: VirtioDeviceType,
+    common_device: PciCommonDevice,
+    common_cfg: SafePtr<VirtioPciCommonCfg, IoMem>,
+    device_cfg: VirtioPciCapabilityData,
+    notify: VirtioPciNotify,
+    msix_manager: VirtioMsixManager,
+}
+
+impl Debug for VirtioPciModernTransport {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.debug_struct("PCIVirtioDevice")
+        f.debug_struct("PCIVirtioModernDevice")
             .field("common_device", &self.common_device)
             .finish()
     }
 }
 
-impl VirtioTransport for VirtioPciTransport {
+impl VirtioTransport for VirtioPciModernTransport {
     fn device_type(&self) -> VirtioDeviceType {
         self.device_type
     }
@@ -108,14 +114,14 @@ impl VirtioTransport for VirtioPciTransport {
         Ok(())
     }
 
-    fn get_notify_ptr(&self, idx: u16) -> Result<SafePtr<u32, IoMem>, VirtioTransportError> {
-        if idx >= self.num_queues() {
-            return Err(VirtioTransportError::InvalidArgs);
-        }
-        Ok(SafePtr::new(
+    fn notify_config(&self, idx: usize) -> ConfigManager<u32> {
+        debug_assert!(idx < self.num_queues() as usize);
+        let safe_ptr = Some(SafePtr::new(
             self.notify.io_memory.clone(),
             (self.notify.offset + self.notify.offset_multiplier * idx as u32) as usize,
-        ))
+        ));
+
+        ConfigManager::new(safe_ptr, None)
     }
 
     fn num_queues(&self) -> u16 {
@@ -124,12 +130,22 @@ impl VirtioTransport for VirtioPciTransport {
             .unwrap()
     }
 
-    fn device_config_memory(&self) -> IoMem {
-        let memory = self.device_cfg.memory_bar().as_ref().unwrap().io_mem();
-
+    fn device_config_mem(&self) -> Option<IoMem> {
         let offset = self.device_cfg.offset() as usize;
         let length = self.device_cfg.length() as usize;
-        memory.slice(offset..offset + length)
+        let io_mem = self
+            .device_cfg
+            .memory_bar()
+            .as_ref()
+            .unwrap()
+            .io_mem()
+            .slice(offset..offset + length);
+
+        Some(io_mem)
+    }
+
+    fn device_config_bar(&self) -> Option<(Bar, usize)> {
+        None
     }
 
     fn read_device_features(&self) -> u64 {
@@ -251,42 +267,22 @@ impl VirtioTransport for VirtioPciTransport {
     }
 }
 
-impl VirtioPciTransport {
-    pub(super) fn pci_device(&self) -> &Arc<VirtioPciDevice> {
-        &self.device
-    }
-
+impl VirtioPciModernTransport {
     #[allow(clippy::result_large_err)]
     pub(super) fn new(
         common_device: PciCommonDevice,
     ) -> Result<Self, (BusProbeError, PciCommonDevice)> {
-        let device_type = match common_device.device_id().device_id {
-            0x1000 => VirtioDeviceType::Network,
-            0x1001 => VirtioDeviceType::Block,
-            0x1002 => VirtioDeviceType::TraditionalMemoryBalloon,
-            0x1003 => VirtioDeviceType::Console,
-            0x1004 => VirtioDeviceType::ScsiHost,
-            0x1005 => VirtioDeviceType::Entropy,
-            0x1009 => VirtioDeviceType::Transport9P,
-            id => {
-                if id <= 0x1040 {
-                    warn!(
-                        "Unrecognized virtio-pci device id:{:x?}",
-                        common_device.device_id().device_id
-                    );
-                    return Err((BusProbeError::DeviceNotMatch, common_device));
-                }
-                let id = id - 0x1040;
-                match VirtioDeviceType::try_from(id as u8) {
-                    Ok(device) => device,
-                    Err(_) => {
-                        warn!(
-                            "Unrecognized virtio-pci device id:{:x?}",
-                            common_device.device_id().device_id
-                        );
-                        return Err((BusProbeError::DeviceNotMatch, common_device));
-                    }
-                }
+        let device_id = common_device.device_id().device_id;
+        if device_id <= 0x1040 {
+            warn!("Unrecognized virtio-pci device id:{:x?}", device_id);
+            return Err((BusProbeError::DeviceNotMatch, common_device));
+        }
+
+        let device_type = match VirtioDeviceType::try_from((device_id - 0x1040) as u8) {
+            Ok(device) => device,
+            Err(_) => {
+                warn!("Unrecognized virtio-pci device id:{:x?}", device_id);
+                return Err((BusProbeError::DeviceNotMatch, common_device));
             }
         };
 
@@ -335,7 +331,6 @@ impl VirtioPciTransport {
         let common_cfg = common_cfg.unwrap();
         let device_cfg = device_cfg.unwrap();
         let msix_manager = VirtioMsixManager::new(msix);
-        let device_id = *common_device.device_id();
         Ok(Self {
             common_device,
             common_cfg,
@@ -343,7 +338,6 @@ impl VirtioPciTransport {
             notify,
             msix_manager,
             device_type,
-            device: Arc::new(VirtioPciDevice { device_id }),
         })
     }
 }

@@ -21,11 +21,11 @@ use super::{config::VirtioNetConfig, header::VirtioNetHdr};
 use crate::{
     device::{network::config::NetworkFeatures, VirtioDeviceError},
     queue::{QueueError, VirtQueue},
-    transport::VirtioTransport,
+    transport::{ConfigManager, VirtioTransport},
 };
 
 pub struct NetworkDevice {
-    config: VirtioNetConfig,
+    config_manager: ConfigManager<VirtioNetConfig>,
     // For smoltcp use
     caps: DeviceCapabilities,
     mac_addr: EthernetAddr,
@@ -57,16 +57,15 @@ impl NetworkDevice {
     }
 
     pub fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
-        let virtio_net_config = VirtioNetConfig::new(transport.as_mut());
+        let config_manager = VirtioNetConfig::new_manager(transport.as_ref());
+        let config = config_manager.read_config();
+        debug!("virtio_net_config = {:?}", config);
+        let mac_addr = config.mac;
         let features = NetworkFeatures::from_bits_truncate(Self::negotiate_features(
             transport.read_device_features(),
         ));
-        debug!("virtio_net_config = {:?}", virtio_net_config);
         debug!("features = {:?}", features);
 
-        let config = VirtioNetConfig::read(&virtio_net_config).unwrap();
-        let mac_addr = config.mac;
-        debug!("mac addr = {:x?}, status = {:?}", mac_addr, config.status);
         let caps = init_caps(&features, &config);
 
         let mut send_queue = VirtQueue::new(QUEUE_SEND, QUEUE_SIZE, transport.as_mut())
@@ -94,7 +93,7 @@ impl NetworkDevice {
         }
 
         let mut device = Self {
-            config,
+            config_manager,
             caps,
             mac_addr,
             send_queue,
@@ -294,7 +293,7 @@ impl AnyNetworkDevice for NetworkDevice {
 impl Debug for NetworkDevice {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("NetworkDevice")
-            .field("config", &self.config)
+            .field("config", &self.config_manager.read_config())
             .field("mac_addr", &self.mac_addr)
             .field("send_queue", &self.send_queue)
             .field("recv_queue", &self.recv_queue)

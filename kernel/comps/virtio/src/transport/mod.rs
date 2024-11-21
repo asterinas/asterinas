@@ -4,7 +4,14 @@ use alloc::boxed::Box;
 use core::fmt::Debug;
 
 use aster_util::safe_ptr::SafePtr;
-use ostd::{io_mem::IoMem, mm::DmaCoherent, trap::IrqCallbackFunction};
+use ostd::{
+    arch::device::io_port::{PortRead, PortWrite},
+    bus::pci::cfg_space::Bar,
+    io_mem::IoMem,
+    mm::{DmaCoherent, PodOnce},
+    trap::IrqCallbackFunction,
+    Pod,
+};
 
 use self::{mmio::virtio_mmio_init, pci::virtio_pci_init};
 use crate::{
@@ -51,7 +58,10 @@ pub trait VirtioTransport: Sync + Send + Debug {
     }
 
     /// Get access to the device config memory.
-    fn device_config_memory(&self) -> IoMem;
+    fn device_config_mem(&self) -> Option<IoMem>;
+
+    /// Get access to the device config BAR space.
+    fn device_config_bar(&self) -> Option<(Bar, usize)>;
 
     // ====================Virtqueue related APIs====================
 
@@ -71,9 +81,9 @@ pub trait VirtioTransport: Sync + Send + Debug {
     /// The max queue size of one virtqueue.
     fn max_queue_size(&self, idx: u16) -> Result<u16, VirtioTransportError>;
 
-    /// Get notify pointer of a virtqueue. User should send notification (e.g. write 0 to the pointer)
+    /// Get notify manager of a virtqueue. User should send notification (e.g. write 0 to the pointer)
     /// after it add buffers into the corresponding virtqueue.
-    fn get_notify_ptr(&self, idx: u16) -> Result<SafePtr<u32, IoMem>, VirtioTransportError>;
+    fn notify_config(&self, idx: usize) -> ConfigManager<u32>;
 
     fn is_legacy_version(&self) -> bool;
 
@@ -97,6 +107,115 @@ pub trait VirtioTransport: Sync + Send + Debug {
         &mut self,
         func: Box<IrqCallbackFunction>,
     ) -> Result<(), VirtioTransportError>;
+}
+
+/// Manage PCI device/notify configuration space (legacy/modern).
+#[derive(Debug)]
+pub struct ConfigManager<T: Pod> {
+    modern_space: Option<SafePtr<T, IoMem>>,
+    legacy_space: Option<(Bar, usize)>,
+}
+
+impl<T: Pod> ConfigManager<T> {
+    pub(super) fn new(
+        modern_space: Option<SafePtr<T, IoMem>>,
+        legacy_space: Option<(Bar, usize)>,
+    ) -> Self {
+        Self {
+            modern_space,
+            legacy_space,
+        }
+    }
+
+    /// Return if the modern configuration space exists.
+    pub(super) fn is_modern(&self) -> bool {
+        self.modern_space.is_some()
+    }
+
+    fn read_modern<V: PodOnce + PortRead>(&self, offset: usize) -> Result<V, VirtioTransportError> {
+        let Some(safe_ptr) = self.modern_space.as_ref() else {
+            return Err(VirtioTransportError::InvalidArgs);
+        };
+
+        let field_ptr: SafePtr<V, &IoMem> = {
+            let mut ptr = safe_ptr.borrow_vm();
+            ptr.byte_add(offset);
+            ptr.cast()
+        };
+
+        field_ptr
+            .read_once()
+            .map_err(|_| VirtioTransportError::DeviceStatusError)
+    }
+
+    fn read_legacy<V: PodOnce + PortRead>(&self, offset: usize) -> Result<V, VirtioTransportError> {
+        let Some((bar, base)) = self.legacy_space.as_ref() else {
+            return Err(VirtioTransportError::InvalidArgs);
+        };
+
+        bar.read_once(base + offset)
+            .map_err(|_| VirtioTransportError::DeviceStatusError)
+    }
+
+    /// Read a specific configuration.
+    pub(super) fn read_once<V: PodOnce + PortRead>(
+        &self,
+        offset: usize,
+    ) -> Result<V, VirtioTransportError> {
+        debug_assert!(offset + size_of::<V>() <= size_of::<T>());
+        if self.is_modern() {
+            self.read_modern(offset)
+        } else {
+            self.read_legacy(offset)
+        }
+    }
+
+    fn write_modern<V: PodOnce + PortWrite>(
+        &self,
+        offset: usize,
+        value: V,
+    ) -> Result<(), VirtioTransportError> {
+        let Some(safe_ptr) = self.modern_space.as_ref() else {
+            return Err(VirtioTransportError::InvalidArgs);
+        };
+
+        let field_ptr: SafePtr<V, &IoMem> = {
+            let mut ptr = safe_ptr.borrow_vm();
+            ptr.byte_add(offset);
+            ptr.cast()
+        };
+
+        field_ptr
+            .write_once(&value)
+            .map_err(|_| VirtioTransportError::DeviceStatusError)
+    }
+
+    fn write_legacy<V: PodOnce + PortWrite>(
+        &self,
+        offset: usize,
+        value: V,
+    ) -> Result<(), VirtioTransportError> {
+        let Some((bar, base)) = self.legacy_space.as_ref() else {
+            return Err(VirtioTransportError::InvalidArgs);
+        };
+
+        bar.write_once(base + offset, value)
+            .map_err(|_| VirtioTransportError::DeviceStatusError)
+    }
+
+    /// Write a specific configuration.
+    pub(super) fn write_once<V: PodOnce + PortWrite>(
+        &self,
+        offset: usize,
+        value: V,
+    ) -> Result<(), VirtioTransportError> {
+        debug_assert!(offset + size_of::<V>() <= size_of::<T>());
+        if self.is_modern() {
+            self.write_modern(offset, value)
+        } else {
+            self.write_legacy(offset, value)
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
