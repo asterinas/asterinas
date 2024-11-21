@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{boxed::Box, collections::BTreeMap, string::String, sync::Arc, vec, vec::Vec};
+use alloc::{
+    boxed::Box,
+    collections::BTreeMap,
+    string::{String, ToString},
+    sync::Arc,
+    vec,
+    vec::Vec,
+};
 use core::{fmt::Debug, hint::spin_loop, mem::size_of};
 
 use aster_block::{
@@ -8,11 +15,9 @@ use aster_block::{
     request_queue::{BioRequest, BioRequestSingleQueue},
     BlockDeviceMeta,
 };
-use aster_util::safe_ptr::SafePtr;
 use id_alloc::IdAlloc;
-use log::info;
+use log::{debug, info};
 use ostd::{
-    io_mem::IoMem,
     mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, VmIo},
     sync::SpinLock,
     trap::TrapFrame,
@@ -26,7 +31,7 @@ use crate::{
         VirtioDeviceError,
     },
     queue::VirtQueue,
-    transport::VirtioTransport,
+    transport::{ConfigManager, VirtioTransport},
 };
 
 #[derive(Debug)]
@@ -39,8 +44,14 @@ pub struct BlockDevice {
 impl BlockDevice {
     /// Creates a new VirtIO-Block driver and registers it.
     pub(crate) fn init(transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
+        let is_legacy = transport.is_legacy_version();
         let device = DeviceInner::init(transport)?;
-        let device_id = device.request_device_id();
+        let device_id = if is_legacy {
+            // FIXME: legacy device do not support `GetId` request.
+            "legacy_blk".to_string()
+        } else {
+            device.request_device_id()
+        };
 
         let block_device = Arc::new(Self {
             device,
@@ -70,9 +81,9 @@ impl BlockDevice {
 
     /// Negotiate features for the device specified bits 0~23
     pub(crate) fn negotiate_features(features: u64) -> u64 {
-        let feature = BlockFeatures::from_bits(features).unwrap();
-        let support_features = BlockFeatures::from_bits(features).unwrap();
-        (feature & support_features).bits
+        let mut support_features = BlockFeatures::from_bits_truncate(features);
+        support_features.remove(BlockFeatures::MQ);
+        support_features.bits
     }
 }
 
@@ -84,14 +95,14 @@ impl aster_block::BlockDevice for BlockDevice {
     fn metadata(&self) -> BlockDeviceMeta {
         BlockDeviceMeta {
             max_nr_segments_per_bio: self.queue.max_nr_segments_per_bio(),
-            nr_sectors: VirtioBlockConfig::read_capacity_sectors(&self.device.config).unwrap(),
+            nr_sectors: self.device.config_manager.capacity_sectors(),
         }
     }
 }
 
 #[derive(Debug)]
 struct DeviceInner {
-    config: SafePtr<VirtioBlockConfig, IoMem>,
+    config_manager: ConfigManager<VirtioBlockConfig>,
     features: VirtioBlockFeature,
     queue: SpinLock<VirtQueue>,
     transport: SpinLock<Box<dyn VirtioTransport>>,
@@ -106,9 +117,10 @@ impl DeviceInner {
 
     /// Creates and inits the device.
     pub fn init(mut transport: Box<dyn VirtioTransport>) -> Result<Arc<Self>, VirtioDeviceError> {
-        let config = VirtioBlockConfig::new(transport.as_mut());
+        let config_manager = VirtioBlockConfig::new_manager(transport.as_ref());
+        debug!("virio_blk_config = {:?}", config_manager.read_config());
         assert_eq!(
-            VirtioBlockConfig::read_block_size(&config).unwrap(),
+            config_manager.block_size(),
             VirtioBlockConfig::sector_size(),
             "currently not support customized device logical block size"
         );
@@ -138,7 +150,7 @@ impl DeviceInner {
         assert!(Self::QUEUE_SIZE as usize * RESP_SIZE <= block_responses.nbytes());
 
         let device = Arc::new(Self {
-            config,
+            config_manager,
             features,
             queue: SpinLock::new(queue),
             transport: SpinLock::new(transport),

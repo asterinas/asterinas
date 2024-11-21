@@ -13,12 +13,14 @@ use aster_util::{field_ptr, safe_ptr::SafePtr};
 use bitflags::bitflags;
 use log::debug;
 use ostd::{
-    io_mem::IoMem,
     mm::{DmaCoherent, FrameAllocOptions},
     offset_of, Pod,
 };
 
-use crate::{dma_buf::DmaBuf, transport::VirtioTransport};
+use crate::{
+    dma_buf::DmaBuf,
+    transport::{pci::legacy::VirtioPciLegacyTransport, ConfigManager, VirtioTransport},
+};
 
 #[derive(Debug)]
 pub enum QueueError {
@@ -40,8 +42,8 @@ pub struct VirtQueue {
     avail: SafePtr<AvailRing, DmaCoherent>,
     /// Used ring
     used: SafePtr<UsedRing, DmaCoherent>,
-    /// point to notify address
-    notify: SafePtr<u32, IoMem>,
+    /// Notify configuration manager
+    notify_config: ConfigManager<u32>,
 
     /// The index of queue
     queue_idx: u32,
@@ -66,7 +68,7 @@ impl VirtQueue {
     /// Create a new VirtQueue.
     pub(crate) fn new(
         idx: u16,
-        size: u16,
+        mut size: u16,
         transport: &mut dyn VirtioTransport,
     ) -> Result<Self, QueueError> {
         if !size.is_power_of_two() {
@@ -74,17 +76,27 @@ impl VirtQueue {
         }
 
         let (descriptor_ptr, avail_ring_ptr, used_ring_ptr) = if transport.is_legacy_version() {
-            // FIXME: How about pci legacy?
             // Currently, we use one Frame to place the descriptors and available rings, one Frame to place used rings
             // because the virtio-mmio legacy required the address to be continuous. The max queue size is 128.
             if size > 128 {
                 return Err(QueueError::InvalidArgs);
             }
-            let desc_size = size_of::<Descriptor>() * size as usize;
+            let queue_size = transport.max_queue_size(idx).unwrap() as usize;
+            let desc_size = size_of::<Descriptor>() * queue_size;
+            size = queue_size as u16;
 
             let (seg1, seg2) = {
-                let segment = FrameAllocOptions::new(2).alloc_contiguous().unwrap();
-                segment.split(ostd::mm::PAGE_SIZE)
+                let align_size = VirtioPciLegacyTransport::QUEUE_ALIGN_SIZE;
+                let total_frames =
+                    VirtioPciLegacyTransport::calc_virtqueue_size_aligned(queue_size) / align_size;
+                let continue_segment = FrameAllocOptions::new(total_frames)
+                    .alloc_contiguous()
+                    .unwrap();
+
+                let avial_size = size_of::<u16>() * (3 + queue_size);
+                let seg1_frames = (desc_size + avial_size).div_ceil(align_size);
+
+                continue_segment.split(seg1_frames * align_size)
             };
             let desc_frame_ptr: SafePtr<Descriptor, DmaCoherent> =
                 SafePtr::new(DmaCoherent::map(seg1, true).unwrap(), 0);
@@ -141,7 +153,7 @@ impl VirtQueue {
             }
         }
 
-        let notify = transport.get_notify_ptr(idx).unwrap();
+        let notify_config = transport.notify_config(idx as usize);
         field_ptr!(&avail_ring_ptr, AvailRing, flags)
             .write_once(&AvailFlags::empty())
             .unwrap();
@@ -149,7 +161,7 @@ impl VirtQueue {
             descs,
             avail: avail_ring_ptr,
             used: used_ring_ptr,
-            notify,
+            notify_config,
             queue_size: size,
             queue_idx: idx as u32,
             num_used: 0,
@@ -343,7 +355,15 @@ impl VirtQueue {
 
     /// notify that there are available rings
     pub fn notify(&mut self) {
-        self.notify.write_once(&self.queue_idx).unwrap();
+        if self.notify_config.is_modern() {
+            self.notify_config
+                .write_once::<u32>(0, self.queue_idx)
+                .unwrap();
+        } else {
+            self.notify_config
+                .write_once::<u16>(0, self.queue_idx as u16)
+                .unwrap();
+        }
     }
 
     /// Disables registered callbacks.

@@ -4,6 +4,7 @@ pub mod capability;
 pub mod common_cfg;
 pub mod device;
 pub mod driver;
+pub mod legacy;
 pub(super) mod msix;
 
 use alloc::sync::Arc;

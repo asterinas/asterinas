@@ -2,13 +2,15 @@
 
 pub mod device;
 
+use core::mem::offset_of;
+
 use aster_block::SECTOR_SIZE;
-use aster_util::{field_ptr, safe_ptr::SafePtr};
+use aster_util::safe_ptr::SafePtr;
 use bitflags::bitflags;
 use int_to_c_enum::TryFromInt;
-use ostd::{io_mem::IoMem, Pod};
+use ostd::Pod;
 
-use crate::transport::VirtioTransport;
+use crate::transport::{ConfigManager, VirtioTransport};
 
 pub static DEVICE_NAME: &str = "Virtio-Block";
 
@@ -73,7 +75,9 @@ pub struct VirtioBlockConfig {
     topology: VirtioBlockTopology,
     /// Writeback mode.
     writeback: u8,
-    unused0: [u8; 3],
+    unused0: u8,
+    /// The number of virtqueues.
+    num_queues: u16,
     /// The maximum discard sectors for one segment.
     max_discard_sectors: u32,
     /// The maximum number of discard segments in a discard command.
@@ -118,27 +122,78 @@ pub struct VirtioBlockFeature {
 }
 
 impl VirtioBlockConfig {
-    pub(self) fn new(transport: &dyn VirtioTransport) -> SafePtr<Self, IoMem> {
-        let memory = transport.device_config_memory();
-        SafePtr::new(memory, 0)
+    pub(self) fn new_manager(transport: &dyn VirtioTransport) -> ConfigManager<Self> {
+        let safe_ptr = transport
+            .device_config_mem()
+            .map(|mem| SafePtr::new(mem, 0));
+        let bar_space = transport.device_config_bar();
+
+        ConfigManager::new(safe_ptr, bar_space)
     }
 
     pub(self) const fn sector_size() -> usize {
         SECTOR_SIZE
     }
+}
 
-    pub(self) fn read_block_size(this: &SafePtr<Self, IoMem>) -> ostd::prelude::Result<usize> {
-        field_ptr!(this, Self, blk_size)
-            .read_once()
-            .map(|val| val as usize)
+impl ConfigManager<VirtioBlockConfig> {
+    pub(super) fn read_config(&self) -> VirtioBlockConfig {
+        let mut blk_config = VirtioBlockConfig::new_uninit();
+        // Only following fields are defined in legacy interface.
+        let cap_low = self
+            .read_once::<u32>(offset_of!(VirtioBlockConfig, capacity))
+            .unwrap() as u64;
+        let cap_high = self
+            .read_once::<u32>(offset_of!(VirtioBlockConfig, capacity) + 4)
+            .unwrap() as u64;
+        blk_config.capacity = cap_high << 32 | cap_low;
+        blk_config.size_max = self
+            .read_once::<u32>(offset_of!(VirtioBlockConfig, size_max))
+            .unwrap();
+        blk_config.seg_max = self
+            .read_once::<u32>(offset_of!(VirtioBlockConfig, seg_max))
+            .unwrap();
+        blk_config.geometry.cylinders = self
+            .read_once::<u16>(
+                offset_of!(VirtioBlockConfig, geometry)
+                    + offset_of!(VirtioBlockGeometry, cylinders),
+            )
+            .unwrap();
+        blk_config.geometry.heads = self
+            .read_once::<u8>(
+                offset_of!(VirtioBlockConfig, geometry) + offset_of!(VirtioBlockGeometry, heads),
+            )
+            .unwrap();
+        blk_config.geometry.sectors = self
+            .read_once::<u8>(
+                offset_of!(VirtioBlockConfig, geometry) + offset_of!(VirtioBlockGeometry, sectors),
+            )
+            .unwrap();
+        blk_config.blk_size = self
+            .read_once::<u32>(offset_of!(VirtioBlockConfig, blk_size))
+            .unwrap();
+
+        if self.is_modern() {
+            // TODO: read more field if modern interface exists.
+        }
+
+        blk_config
     }
 
-    pub(self) fn read_capacity_sectors(
-        this: &SafePtr<Self, IoMem>,
-    ) -> ostd::prelude::Result<usize> {
-        field_ptr!(this, Self, capacity)
-            .read_once()
-            .map(|val| val as usize)
+    pub(self) fn block_size(&self) -> usize {
+        self.read_once::<u32>(offset_of!(VirtioBlockConfig, blk_size))
+            .unwrap() as usize
+    }
+
+    pub(self) fn capacity_sectors(&self) -> usize {
+        let cap_low = self
+            .read_once::<u32>(offset_of!(VirtioBlockConfig, capacity))
+            .unwrap() as usize;
+        let cap_high = self
+            .read_once::<u32>(offset_of!(VirtioBlockConfig, capacity) + 4)
+            .unwrap() as usize;
+
+        cap_high << 32 | cap_low
     }
 }
 

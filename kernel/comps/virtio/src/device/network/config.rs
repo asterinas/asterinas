@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_network::EthernetAddr;
-use aster_util::{field_ptr, safe_ptr::SafePtr};
-use bitflags::bitflags;
-use ostd::{io_mem::IoMem, offset_of, Pod};
+use core::mem::offset_of;
 
-use crate::transport::VirtioTransport;
+use aster_network::EthernetAddr;
+use aster_util::safe_ptr::SafePtr;
+use bitflags::bitflags;
+use ostd::Pod;
+
+use crate::transport::{ConfigManager, VirtioTransport};
 
 bitflags! {
     /// Virtio Net Feature bits.
@@ -77,38 +79,55 @@ pub struct VirtioNetConfig {
 }
 
 impl VirtioNetConfig {
-    pub(super) fn new(transport: &dyn VirtioTransport) -> SafePtr<Self, IoMem> {
-        let memory = transport.device_config_memory();
-        SafePtr::new(memory, 0)
+    pub(super) fn new_manager(transport: &dyn VirtioTransport) -> ConfigManager<Self> {
+        let safe_ptr = transport
+            .device_config_mem()
+            .map(|mem| SafePtr::new(mem, 0));
+        let bar_space = transport.device_config_bar();
+        ConfigManager::new(safe_ptr, bar_space)
     }
+}
 
-    pub(super) fn read(this: &SafePtr<Self, IoMem>) -> ostd::prelude::Result<Self> {
-        // TODO: Add a general API to read this byte-by-byte.
-        let mac_data = {
-            let mut mac_data: [u8; 6] = [0; 6];
-            let mut mac_ptr = field_ptr!(this, Self, mac).cast::<u8>();
-            for byte in &mut mac_data {
-                *byte = mac_ptr.read_once().unwrap();
-                mac_ptr.byte_add(1);
-            }
-            mac_data
-        };
+impl ConfigManager<VirtioNetConfig> {
+    pub(super) fn read_config(&self) -> VirtioNetConfig {
+        let mut net_config = VirtioNetConfig::new_uninit();
+        // Only following fields are defined in legacy interface.
+        for i in 0..6 {
+            net_config.mac.0[i] = self
+                .read_once::<u8>(offset_of!(VirtioNetConfig, mac) + i)
+                .unwrap();
+        }
+        net_config.status.bits = self
+            .read_once::<u16>(offset_of!(VirtioNetConfig, status))
+            .unwrap();
 
-        Ok(Self {
-            mac: aster_network::EthernetAddr(mac_data),
-            status: field_ptr!(this, Self, status).read_once()?,
-            max_virtqueue_pairs: field_ptr!(this, Self, max_virtqueue_pairs).read_once()?,
-            mtu: field_ptr!(this, Self, mtu).read_once()?,
-            speed: field_ptr!(this, Self, speed).read_once()?,
-            duplex: field_ptr!(this, Self, duplex).read_once()?,
-            rss_max_key_size: field_ptr!(this, Self, rss_max_key_size).read_once()?,
-            rss_max_indirection_table_length: field_ptr!(
-                this,
-                Self,
-                rss_max_indirection_table_length
-            )
-            .read_once()?,
-            supported_hash_types: field_ptr!(this, Self, supported_hash_types).read_once()?,
-        })
+        if self.is_modern() {
+            net_config.max_virtqueue_pairs = self
+                .read_once::<u16>(offset_of!(VirtioNetConfig, max_virtqueue_pairs))
+                .unwrap();
+            net_config.mtu = self
+                .read_once::<u16>(offset_of!(VirtioNetConfig, mtu))
+                .unwrap();
+            net_config.speed = self
+                .read_once::<u32>(offset_of!(VirtioNetConfig, speed))
+                .unwrap();
+            net_config.duplex = self
+                .read_once::<u8>(offset_of!(VirtioNetConfig, duplex))
+                .unwrap();
+            net_config.rss_max_key_size = self
+                .read_once::<u8>(offset_of!(VirtioNetConfig, rss_max_key_size))
+                .unwrap();
+            net_config.rss_max_indirection_table_length = self
+                .read_once::<u16>(offset_of!(
+                    VirtioNetConfig,
+                    rss_max_indirection_table_length
+                ))
+                .unwrap();
+            net_config.supported_hash_types = self
+                .read_once::<u32>(offset_of!(VirtioNetConfig, supported_hash_types))
+                .unwrap();
+        }
+
+        net_config
     }
 }
