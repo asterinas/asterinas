@@ -112,6 +112,21 @@ impl Task {
             None
         }
     }
+
+    /// Restores the FP states of the user task.
+    ///
+    /// # Panics
+    ///
+    /// If the task is not a user task.
+    pub fn restore_fp_states(&self) {
+        assert!(self.user_space.is_some());
+        let ctx_ptr = self.ctx.get();
+
+        // SAFETY: it's safe to restore FP states in user context.
+        unsafe {
+            (*ctx_ptr).restore_fp_states();
+        }
+    }
 }
 
 /// Options to create or spawn a new task.

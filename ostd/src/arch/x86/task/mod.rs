@@ -2,16 +2,18 @@
 
 //! The architecture support of context switch.
 
+use super::cpu::FpRegs;
 use crate::task::TaskContextApi;
 
 core::arch::global_asm!(include_str!("switch.S"));
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone)]
 #[repr(C)]
 pub(crate) struct TaskContext {
     pub regs: CalleeRegs,
     pub rip: usize,
     pub fsbase: usize,
+    pub fp_regs: FpRegs,
 }
 
 impl TaskContext {
@@ -20,6 +22,7 @@ impl TaskContext {
             regs: CalleeRegs::new(),
             rip: 0,
             fsbase: 0,
+            fp_regs: FpRegs::new(),
         }
     }
 
@@ -31,6 +34,21 @@ impl TaskContext {
     /// Gets thread-local storage pointer.
     pub fn tls_pointer(&self) -> usize {
         self.fsbase
+    }
+
+    /// Saves the FP states of the task.
+    pub fn save_fp_states(&mut self) {
+        if !self.fp_regs.is_valid() {
+            self.fp_regs.save();
+        }
+    }
+
+    /// Restores the FP states of the task.
+    pub fn restore_fp_states(&mut self) {
+        if self.fp_regs.is_valid() {
+            self.fp_regs.restore();
+            self.fp_regs.clear();
+        }
     }
 }
 

@@ -42,8 +42,16 @@ pub(super) fn switch_to_task(next_task: Arc<Task>) {
     let current_task_ctx_ptr = if !current_task_ptr.is_null() {
         // SAFETY: The current task is always alive.
         let current_task = unsafe { &*current_task_ptr };
+        let current_task_ctx_ptr = current_task.ctx.get();
+        if current_task.user_space().is_some() {
+            // SAFETY: The current task is always alive.
+            unsafe {
+                // Save the current user task's FP states before context switching.
+                (*current_task_ctx_ptr).save_fp_states();
+            }
+        }
         // Throughout this method, the task's context is alive and can be exclusively used.
-        current_task.ctx.get()
+        current_task_ctx_ptr
     } else {
         // Throughout this method, interrupts are disabled and the context can be exclusively used.
         BOOTSTRAP_CONTEXT.as_mut_ptr()

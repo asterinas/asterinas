@@ -62,6 +62,8 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Arc<Thread>)
         };
 
         loop {
+            // Restore the FP state before returning to user space.
+            ctx.task.restore_fp_states();
             let return_reason = user_mode.execute(has_kernel_event_fn);
             let user_ctx = user_mode.context_mut();
             // handle user event:

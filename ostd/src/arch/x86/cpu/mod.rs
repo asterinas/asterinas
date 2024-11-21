@@ -5,7 +5,7 @@
 pub mod local;
 
 use core::{
-    arch::x86_64::{_fxrstor, _fxsave},
+    arch::x86_64::{_fxrstor64, _fxsave64},
     fmt::Debug,
 };
 
@@ -389,7 +389,7 @@ cpu_context_impl_getter_setter!(
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct FpRegs {
-    buf: FxsaveArea,
+    save_area: FpSaveArea,
     is_valid: bool,
 }
 
@@ -398,27 +398,28 @@ impl FpRegs {
     ///
     /// Note that a newly-created instance's floating point state is not
     /// initialized, thus considered invalid (i.e., `self.is_valid() == false`).
-    pub fn new() -> Self {
-        // The buffer address requires 16bytes alignment.
+    pub const fn new() -> Self {
+        let save_area = FpSaveArea {
+            buf: [0; FP_SAVE_AREA_SIZE],
+        };
+        // The save area requires 16-byte alignment.
+        // panic!(save_area.buf.as_ptr() as usize % 16 != 0);
+
         Self {
-            buf: FxsaveArea { data: [0; 512] },
+            save_area,
             is_valid: false,
         }
     }
 
     /// Save CPU's current floating pointer states into this instance.
     pub fn save(&mut self) {
-        debug!("save fpregs");
-        debug!("write addr = 0x{:x}", (&mut self.buf) as *mut _ as usize);
-        let layout = alloc::alloc::Layout::for_value(&self.buf);
-        debug!("layout: {:?}", layout);
-        let ptr = unsafe { alloc::alloc::alloc(layout) } as usize;
-        debug!("ptr = 0x{:x}", ptr);
         unsafe {
-            _fxsave(self.buf.data.as_mut_ptr());
+            _fxsave64(self.save_area.buf.as_mut_ptr());
         }
-        debug!("save fpregs success");
+
         self.is_valid = true;
+
+        debug!("Save FP state");
     }
 
     /// Saves the floating state given by a slice of u8.
@@ -430,7 +431,7 @@ impl FpRegs {
     /// It is the caller's responsibility to ensure that the source slice contains
     /// data that is in xsave/xrstor format. The slice must have a length of 512 bytes.
     pub unsafe fn save_from_slice(&mut self, src: &[u8]) {
-        self.buf.data.copy_from_slice(src);
+        self.save_area.buf.copy_from_slice(src);
         self.is_valid = true;
     }
 
@@ -453,17 +454,18 @@ impl FpRegs {
     ///
     /// If the current state is invalid, the method will panic.
     pub fn restore(&self) {
-        debug!("restore fpregs");
         assert!(self.is_valid);
-        unsafe { _fxrstor(self.buf.data.as_ptr()) };
-        debug!("restore fpregs success");
+
+        unsafe { _fxrstor64(self.save_area.buf.as_ptr()) };
+
+        debug!("Restore FP state");
     }
 
     /// Returns the floating point state as a slice.
     ///
     /// Note that the slice may contain garbage if `self.is_valid() == false`.
     pub fn as_slice(&self) -> &[u8] {
-        &self.buf.data
+        &self.save_area.buf
     }
 }
 
@@ -473,8 +475,12 @@ impl Default for FpRegs {
     }
 }
 
+const FP_SAVE_AREA_SIZE: usize = 512;
+
+/// FP-related states save area.
 #[repr(C, align(16))]
 #[derive(Debug, Clone, Copy)]
-struct FxsaveArea {
-    data: [u8; 512], // 512 bytes
+struct FpSaveArea {
+    /// 512-byte-long 16-byte-aligned memory region.
+    buf: [u8; FP_SAVE_AREA_SIZE],
 }
