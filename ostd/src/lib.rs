@@ -34,8 +34,8 @@ pub mod bus;
 pub mod collections;
 pub mod console;
 pub mod cpu;
+pub mod device;
 mod error;
-pub mod io_mem;
 pub mod logger;
 pub mod mm;
 pub mod panic;
@@ -46,6 +46,7 @@ pub mod task;
 pub mod timer;
 pub mod trap;
 pub mod user;
+pub(crate) mod util;
 
 use core::sync::atomic::AtomicBool;
 

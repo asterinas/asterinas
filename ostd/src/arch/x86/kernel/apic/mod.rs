@@ -8,8 +8,9 @@ use core::{
 
 use bit_field::BitField;
 use spin::Once;
+use xapic::get_xapic_base_address;
 
-use crate::{cpu::PinCurrentCpu, cpu_local};
+use crate::{cpu::PinCurrentCpu, cpu_local, device::dispatcher::io_mem::IoMemDispatcherBuilder};
 
 pub mod ioapic;
 pub mod x2apic;
@@ -346,7 +347,7 @@ pub enum DivideConfig {
     Divide128 = 0b1010,
 }
 
-pub fn init() -> Result<(), ApicInitError> {
+pub fn init(builder: &IoMemDispatcherBuilder) -> Result<(), ApicInitError> {
     crate::arch::x86::kernel::pic::disable_temp();
     if x2apic::X2Apic::has_x2apic() {
         log::info!("x2APIC found!");
@@ -354,6 +355,8 @@ pub fn init() -> Result<(), ApicInitError> {
         Ok(())
     } else if xapic::XApic::has_xapic() {
         log::info!("xAPIC found!");
+        let base_address = get_xapic_base_address();
+        builder.remove(base_address..(base_address + size_of::<[u32; 256]>()));
         APIC_TYPE.call_once(|| ApicType::XApic);
         Ok(())
     } else {

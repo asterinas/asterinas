@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_util::safe_ptr::SafePtr;
-use ostd::{io_mem::IoMem, Pod};
+use ostd::{device::io_mem::IoMem, Pod};
 
 use crate::transport::VirtioTransport;
 

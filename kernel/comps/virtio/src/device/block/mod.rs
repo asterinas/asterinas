@@ -6,7 +6,7 @@ use aster_block::SECTOR_SIZE;
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use bitflags::bitflags;
 use int_to_c_enum::TryFromInt;
-use ostd::{io_mem::IoMem, Pod};
+use ostd::{device::io_mem::IoMem, Pod};
 
 use crate::transport::VirtioTransport;
 

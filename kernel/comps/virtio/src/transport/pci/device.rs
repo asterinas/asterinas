@@ -12,7 +12,7 @@ use ostd::{
         },
         BusProbeError,
     },
-    io_mem::IoMem,
+    device::io_mem::IoMem,
     mm::DmaCoherent,
     offset_of,
     trap::IrqCallbackFunction,
