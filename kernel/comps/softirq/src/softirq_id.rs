@@ -11,3 +11,6 @@ pub const TIMER_SOFTIRQ_ID: u8 = 1;
 
 /// The corresponding softirq line is used to schedule general taskless jobs.
 pub const TASKLESS_SOFTIRQ_ID: u8 = 2;
+
+/// The corresponding softirq line is used for processing log content.
+pub const LOG_SOFTIRQ_ID: u8 = 3;
