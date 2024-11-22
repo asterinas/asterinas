@@ -42,6 +42,7 @@ use crate::{
     mm::{
         frame::{meta::AnyFrameMeta, Frame},
         page_table::PageTableNode,
+        vm_space::Token,
         Paddr, PageProperty, Vaddr,
     },
     task::DisabledPreemptGuard,
@@ -103,6 +104,15 @@ pub enum PageTableItem {
         va: Vaddr,
         len: usize,
     },
+    /// The current slot is marked to be reserved.
+    Marked {
+        /// The virtual address of the slot.
+        va: Vaddr,
+        /// The length of the slot.
+        len: usize,
+        /// A user-provided token.
+        token: Token,
+    },
 }
 
 impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<'a, M, E, C> {
@@ -163,6 +173,13 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<
                         pa,
                         len: page_size::<C>(level),
                         prop,
+                    });
+                }
+                Child::Token(token) => {
+                    return Ok(PageTableItem::Marked {
+                        va,
+                        len: page_size::<C>(level),
+                        token,
                     });
                 }
             }
@@ -368,6 +385,10 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
                 Child::Untracked(_, _, _) => {
                     panic!("Mapping a tracked page in an untracked range");
                 }
+                Child::Token(_) => {
+                    let split_child = cur_entry.split_if_huge_token().unwrap();
+                    self.0.push_level(split_child);
+                }
             }
             continue;
         }
@@ -379,7 +400,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
 
         match old {
             Child::Frame(old_page, _) => Some(old_page),
-            Child::None => None,
+            Child::None | Child::Token(_) => None,
             Child::PageTable(_) => {
                 todo!("Dropping page table nodes while mapping requires TLB flush")
             }
@@ -465,6 +486,10 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
                         let split_child = cur_entry.split_if_untracked_huge().unwrap();
                         self.0.push_level(split_child);
                     }
+                    Child::Token(_) => {
+                        let split_child = cur_entry.split_if_huge_token().unwrap();
+                        self.0.push_level(split_child);
+                    }
                 }
                 continue;
             }
@@ -479,6 +504,93 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
 
             // Move forward.
             pa += page_size::<C>(level);
+            self.0.move_forward();
+        }
+    }
+
+    /// Mark a virtual address range with a token.
+    ///
+    /// It can overwrite existing tokens, but it cannot overwrite existing
+    /// mappings.
+    ///
+    /// # Panics
+    ///
+    /// It panics if
+    ///  - the virtual address range already has mappings;
+    ///  - the virtual address range is out of the range;
+    ///  - the length is not aligned to the page size.
+    pub fn mark(&mut self, len: usize, token: Token) {
+        assert!(len % page_size::<C>(1) == 0);
+        let end = self.0.va + len;
+        assert!(end <= self.0.barrier_va.end);
+
+        while self.0.va < end {
+            if self.0.va % page_size::<C>(self.0.level) != 0
+                || self.0.va + page_size::<C>(self.0.level) > end
+            {
+                let cur_level = self.0.level;
+                let should_track_if_created = if should_map_as_tracked::<M>(self.0.va) {
+                    MapTrackingStatus::Tracked
+                } else {
+                    MapTrackingStatus::Untracked
+                };
+                let cur_entry = self.0.cur_entry();
+                match cur_entry.to_ref() {
+                    Child::PageTableRef(pt) => {
+                        self.0
+                            .push_level(unsafe { PageTableLock::<E, C>::from_raw_paddr(pt) });
+                    }
+                    Child::PageTable(_) => {
+                        unreachable!();
+                    }
+                    Child::None => {
+                        let pt =
+                            PageTableLock::<E, C>::alloc(cur_level - 1, should_track_if_created);
+                        let paddr = pt.into_raw_paddr();
+                        // SAFETY: It was forgotten at the above line.
+                        let _ = cur_entry
+                            .replace(Child::PageTable(unsafe { PageTableNode::from_raw(paddr) }));
+                        // SAFETY: `pt` points to a PT that is attached to a node
+                        self.0
+                            .push_level(unsafe { PageTableLock::from_raw_paddr(paddr) });
+                    }
+                    Child::Frame(_, _) => {
+                        panic!("Marking a smaller page in an already mapped huge page");
+                    }
+                    Child::Untracked(_, _, _) => {
+                        panic!("Marking an already untracked mapped page");
+                    }
+                    Child::Token(_) => {
+                        let split_child = cur_entry.split_if_huge_token().unwrap();
+                        self.0.push_level(split_child);
+                    }
+                }
+                continue;
+            }
+
+            let cur_entry = self.0.cur_entry();
+            match cur_entry.to_ref() {
+                Child::PageTableRef(pt) => {
+                    self.0
+                        .push_level(unsafe { PageTableLock::<E, C>::from_raw_paddr(pt) });
+                    continue;
+                }
+                Child::PageTable(_) => {
+                    unreachable!();
+                }
+                Child::None | Child::Token(_) => {} // Ok to proceed.
+                Child::Frame(_, _) => {
+                    panic!("Marking an already mapped huge page");
+                }
+                Child::Untracked(_, _, _) => {
+                    panic!("Marking an already untracked mapped huge page");
+                }
+            }
+
+            // Mark the current page.
+            let _ = cur_entry.replace(Child::Token(token));
+
+            // Move forward.
             self.0.move_forward();
         }
     }
@@ -562,6 +674,10 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
                         let split_child = cur_entry.split_if_untracked_huge().unwrap();
                         self.0.push_level(split_child);
                     }
+                    Child::Token(_) => {
+                        let split_child = cur_entry.split_if_huge_token().unwrap();
+                        self.0.push_level(split_child);
+                    }
                 }
                 continue;
             }
@@ -583,6 +699,11 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
                         prop,
                     }
                 }
+                Child::Token(token) => PageTableItem::Marked {
+                    va: self.0.va,
+                    len: page_size::<C>(self.0.level),
+                    token,
+                },
                 Child::PageTable(pt) => {
                     let paddr = pt.into_raw();
                     // SAFETY: We must have locked this node.
@@ -646,7 +767,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
     pub unsafe fn protect_next(
         &mut self,
         len: usize,
-        op: &mut impl FnMut(&mut PageProperty),
+        prot_op: &mut impl FnMut(&mut PageProperty),
+        token_op: &mut impl FnMut(&mut Token),
     ) -> Option<Range<Vaddr>> {
         let end = self.0.va + len;
         assert!(end <= self.0.barrier_va.end);
@@ -682,17 +804,21 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
             }
 
             // Go down if the page size is too big and we are protecting part
-            // of untracked huge pages.
+            // of tokens or untracked huge pages.
             if cur_va % page_size::<C>(cur_level) != 0 || cur_va + page_size::<C>(cur_level) > end {
-                let split_child = cur_entry
-                    .split_if_untracked_huge()
-                    .expect("Protecting part of a huge page");
+                let split_child = if cur_entry.is_token() {
+                    cur_entry.split_if_huge_token().unwrap()
+                } else {
+                    cur_entry
+                        .split_if_untracked_huge()
+                        .expect("Protecting part of a huge page")
+                };
                 self.0.push_level(split_child);
                 continue;
             }
 
             // Protect the current page.
-            cur_entry.protect(op);
+            cur_entry.protect(prot_op, token_op);
 
             let protected_va = self.0.va..self.0.va + page_size::<C>(self.0.level);
             self.0.move_forward();
@@ -706,8 +832,11 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
     /// Copies the mapping from the given cursor to the current cursor.
     ///
     /// All the mappings in the current cursor's range must be empty. The
-    /// function allows the source cursor to operate on the mapping before
-    /// the copy happens. So it is equivalent to protect then duplicate.
+    /// function allows the source cursor to operate on the mapping before the
+    /// copy happens. So for mapped pages it is equivalent to protect then
+    /// duplicate. For tokens, it is equivalent to modify the source token
+    /// and set a new token in the destination.
+    ///
     /// Only the mapping is copied, the mapped pages are not copied.
     ///
     /// It can only copy tracked mappings since we consider the untracked
@@ -734,7 +863,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
         &mut self,
         src: &mut Self,
         len: usize,
-        op: &mut impl FnMut(&mut PageProperty),
+        prot_op: &mut impl FnMut(&mut PageProperty),
+        token_op: &mut impl FnMut(&mut Token),
     ) {
         assert!(len % page_size::<C>(1) == 0);
         let this_end = self.0.va + len;
@@ -744,6 +874,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
 
         while self.0.va < this_end && src.0.va < src_end {
             let src_va = src.0.va;
+            let src_level = src.0.level;
             let mut src_entry = src.0.cur_entry();
 
             match src_entry.to_ref() {
@@ -775,10 +906,10 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
                     let mapped_page_size = page.size();
 
                     // Do protection.
-                    src_entry.protect(op);
+                    src_entry.protect(prot_op, token_op);
 
                     // Do copy.
-                    op(&mut prop);
+                    prot_op(&mut prop);
                     self.jump(src_va).unwrap();
                     let original = self.map(page, prop);
                     assert!(original.is_none());
@@ -786,6 +917,17 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
                     // Only move the source cursor forward since `Self::map` will do it.
                     // This assertion is to ensure that they move by the same length.
                     debug_assert_eq!(mapped_page_size, page_size::<C>(src.0.level));
+                    src.0.move_forward();
+                }
+                Child::Token(mut token) => {
+                    // Do protection.
+                    src_entry.protect(prot_op, token_op);
+
+                    // Do copy.
+                    token_op(&mut token);
+                    self.jump(src_va).unwrap();
+                    self.mark(page_size::<C>(src_level), token);
+
                     src.0.move_forward();
                 }
             }

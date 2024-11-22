@@ -10,6 +10,7 @@ use crate::{
     mm::{
         frame::{inc_frame_ref_count, meta::AnyFrameMeta, Frame},
         page_prop::PageProperty,
+        vm_space::Token,
         Paddr, PagingConstsTrait, PagingLevel,
     },
 };
@@ -29,6 +30,7 @@ pub(in crate::mm) enum Child<
     Frame(Frame<dyn AnyFrameMeta>, PageProperty),
     /// Mapped frames that are not tracked by handles.
     Untracked(Paddr, PagingLevel, PageProperty),
+    Token(Token),
     None,
 }
 
@@ -56,7 +58,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> Child<E, C> {
             Child::Untracked(_, level, _) => {
                 node_level == *level && is_tracked == MapTrackingStatus::Untracked
             }
-            Child::None => true,
+            Child::None | Child::Token(_) => true,
         }
     }
 
@@ -84,6 +86,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> Child<E, C> {
             }
             Child::Untracked(pa, level, prop) => E::new_page(pa, level, prop),
             Child::None => E::new_absent(),
+            Child::Token(token) => E::new_token(token),
         }
     }
 
@@ -105,7 +108,13 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> Child<E, C> {
         is_tracked: MapTrackingStatus,
     ) -> Self {
         if !pte.is_present() {
-            return Child::None;
+            let paddr = pte.paddr();
+            if paddr == 0 {
+                return Child::None;
+            } else {
+                // SAFETY: The physical address is written as a valid token.
+                return Child::Token(unsafe { Token::from_raw_inner(paddr) });
+            }
         }
 
         let paddr = pte.paddr();
@@ -154,7 +163,13 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> Child<E, C> {
         clone_raw: bool,
     ) -> Self {
         if !pte.is_present() {
-            return Child::None;
+            let paddr = pte.paddr();
+            if paddr == 0 {
+                return Child::None;
+            } else {
+                // SAFETY: The physical address is written as a valid token.
+                return Child::Token(unsafe { Token::from_raw_inner(paddr) });
+            }
         }
 
         let paddr = pte.paddr();

@@ -195,6 +195,12 @@ impl PageTableEntryTrait for PageTableEntry {
         Self(paddr & Self::PHYS_ADDR_MASK | flags)
     }
 
+    fn new_token(token: crate::mm::vm_space::Token) -> Self {
+        let val = token.into_raw_inner();
+        debug_assert!(val & !Self::PHYS_ADDR_MASK == 0);
+        Self(val & Self::PHYS_ADDR_MASK)
+    }
+
     fn paddr(&self) -> Paddr {
         self.0 & Self::PHYS_ADDR_MASK
     }
@@ -279,6 +285,10 @@ impl PageTableEntryTrait for PageTableEntry {
             _ => panic!("unsupported cache policy"),
         }
         self.0 = self.0 & !Self::PROP_MASK | flags;
+    }
+
+    fn set_paddr(&mut self, paddr: Paddr) {
+        self.0 = self.0 & !Self::PHYS_ADDR_MASK | (paddr & Self::PHYS_ADDR_MASK);
     }
 
     fn is_last(&self, _level: PagingLevel) -> bool {

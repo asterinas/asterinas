@@ -61,7 +61,7 @@ pub fn load_program_to_vm(
         );
     }
 
-    process_vm.clear_and_map();
+    process_vm.clear();
 
     let elf_load_info =
         load_elf_to_vm(process_vm, &*file_header, elf_file, fs_resolver, argv, envp)?;

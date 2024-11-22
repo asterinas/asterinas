@@ -10,15 +10,13 @@ use crate::{
     vm::{perms::VmPerms, vmar::Vmar},
 };
 
-/// The base address of user heap
-pub const USER_HEAP_BASE: Vaddr = 0x0000_0000_1000_0000;
 /// The max allowed size of user heap
 pub const USER_HEAP_SIZE_LIMIT: usize = 16 * 1026 * 1024 * PAGE_SIZE; // 64 GB
 
 #[derive(Debug)]
 pub struct Heap {
-    /// The lowest address of the heap
-    base: Vaddr,
+    /// The base address of the heap
+    base: AtomicUsize,
     /// The heap size limit
     limit: usize,
     /// The current heap highest address
@@ -28,50 +26,62 @@ pub struct Heap {
 impl Heap {
     pub const fn new() -> Self {
         Heap {
-            base: USER_HEAP_BASE,
+            base: AtomicUsize::new(0),
             limit: USER_HEAP_SIZE_LIMIT,
-            current_heap_end: AtomicUsize::new(USER_HEAP_BASE),
+            current_heap_end: AtomicUsize::new(0),
         }
     }
 
     /// Initializes and maps the heap virtual memory.
-    pub(super) fn alloc_and_map_vm(&self, root_vmar: &Vmar<Full>) -> Result<()> {
+    pub(super) fn init(&self, root_vmar: &Vmar<Full>, program_break: Vaddr) -> Result<()> {
+        self.base
+            .compare_exchange(0, program_break, Ordering::AcqRel, Ordering::Relaxed)
+            .expect("heap is already initialized");
+        self.current_heap_end
+            .compare_exchange(
+                0,
+                program_break + PAGE_SIZE,
+                Ordering::AcqRel,
+                Ordering::Relaxed,
+            )
+            .expect("heap is already initialized");
+
         let vmar_map_options = {
             let perms = VmPerms::READ | VmPerms::WRITE;
             root_vmar
                 .new_map(PAGE_SIZE, perms)
                 .unwrap()
-                .offset(self.base)
+                .offset(program_break)
         };
         vmar_map_options.build()?;
 
-        // If we touch another mapped range when we are trying to expand the
-        // heap, we fail.
-        //
-        // So a simple solution is to reserve enough space for the heap by
-        // mapping without any permissions and allow it to be overwritten
-        // later by `brk`. New mappings from `mmap` that overlaps this range
-        // may be moved to another place.
-        let vmar_reserve_options = {
-            let perms = VmPerms::empty();
-            root_vmar
-                .new_map(USER_HEAP_SIZE_LIMIT - PAGE_SIZE, perms)
-                .unwrap()
-                .offset(self.base + PAGE_SIZE)
-        };
-        vmar_reserve_options.build()?;
-
-        self.set_uninitialized();
         Ok(())
     }
 
-    pub fn brk(&self, new_heap_end: Option<Vaddr>, ctx: &Context) -> Result<Vaddr> {
-        let user_space = ctx.user_space();
-        let root_vmar = user_space.root_vmar();
+    pub fn fork(&self) -> Self {
+        let base = self.base.load(Ordering::Relaxed);
+        let current_heap_end = self.current_heap_end.load(Ordering::Relaxed);
+        Self {
+            base: AtomicUsize::new(base),
+            limit: self.limit,
+            current_heap_end: AtomicUsize::new(current_heap_end),
+        }
+    }
+
+    pub fn clear(&self) {
+        self.base.store(0, Ordering::Relaxed);
+        self.current_heap_end.store(0, Ordering::Relaxed);
+    }
+
+    pub fn brk(&self, root_vmar: &Vmar<Full>, new_heap_end: Option<Vaddr>) -> Result<Vaddr> {
         match new_heap_end {
             None => Ok(self.current_heap_end.load(Ordering::Relaxed)),
             Some(new_heap_end) => {
-                if new_heap_end > self.base + self.limit {
+                let base = self.base.load(Ordering::Relaxed);
+                if base == 0 {
+                    panic!("heap is not initialized");
+                }
+                if new_heap_end > base + self.limit {
                     return_errno_with_message!(Errno::ENOMEM, "heap size limit was met.");
                 }
                 let current_heap_end = self.current_heap_end.load(Ordering::Acquire);
@@ -81,37 +91,26 @@ impl Heap {
                     return Ok(current_heap_end);
                 }
 
-                let current_heap_end = current_heap_end.align_up(PAGE_SIZE);
-                let new_heap_end = new_heap_end.align_up(PAGE_SIZE);
+                let old_size = current_heap_end - base;
+                let new_size = new_heap_end - base;
 
-                // Remove the reserved space.
-                root_vmar.remove_mapping(current_heap_end..new_heap_end)?;
+                let extra_size_aligned =
+                    new_size.align_up(PAGE_SIZE) - old_size.align_up(PAGE_SIZE);
 
-                let old_size = current_heap_end - self.base;
-                let new_size = new_heap_end - self.base;
+                if extra_size_aligned == 0 {
+                    return Ok(current_heap_end);
+                }
 
                 // Expand the heap.
-                root_vmar.resize_mapping(self.base, old_size, new_size)?;
+                root_vmar
+                    .new_map(extra_size_aligned, VmPerms::READ | VmPerms::WRITE)
+                    .unwrap()
+                    .offset(current_heap_end.align_up(PAGE_SIZE))
+                    .build()?;
 
                 self.current_heap_end.store(new_heap_end, Ordering::Release);
                 Ok(new_heap_end)
             }
-        }
-    }
-
-    pub(super) fn set_uninitialized(&self) {
-        self.current_heap_end
-            .store(self.base + PAGE_SIZE, Ordering::Relaxed);
-    }
-}
-
-impl Clone for Heap {
-    fn clone(&self) -> Self {
-        let current_heap_end = self.current_heap_end.load(Ordering::Relaxed);
-        Self {
-            base: self.base,
-            limit: self.limit,
-            current_heap_end: AtomicUsize::new(current_heap_end),
         }
     }
 }

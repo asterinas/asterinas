@@ -9,8 +9,8 @@ use core::{
 };
 
 use super::{
-    nr_subpage_per_huge, page_prop::PageProperty, page_size, Paddr, PagingConstsTrait, PagingLevel,
-    PodOnce, Vaddr,
+    nr_subpage_per_huge, page_prop::PageProperty, page_size, vm_space::Token, Paddr,
+    PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
 };
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
@@ -178,8 +178,11 @@ impl PageTable<KernelMode> {
         vaddr: &Range<Vaddr>,
         mut op: impl FnMut(&mut PageProperty),
     ) -> Result<(), PageTableError> {
+        fn token_op(_: &mut Token) {}
         let mut cursor = CursorMut::new(self, vaddr)?;
-        while let Some(range) = cursor.protect_next(vaddr.end - cursor.virt_addr(), &mut op) {
+        while let Some(range) =
+            cursor.protect_next(vaddr.end - cursor.virt_addr(), &mut op, &mut token_op)
+        {
             crate::arch::mm::tlb_flush_addr(range.start);
         }
         Ok(())
@@ -339,9 +342,10 @@ pub trait PageTableEntryTrait:
 
     /// If the flags are present with valid mappings.
     ///
-    /// For PTEs created by [`Self::new_absent`], this method should return
-    /// false. And for PTEs created by [`Self::new_page`] or [`Self::new_pt`]
-    /// and modified with [`Self::set_prop`] this method should return true.
+    /// For PTEs created by [`Self::new_absent`], [`Self::new_token`], this
+    /// method should return false. And for PTEs created by [`Self::new_page`]
+    /// or [`Self::new_pt`], whatever modified with [`Self::set_prop`] or not,
+    /// this method should return true.
     fn is_present(&self) -> bool;
 
     /// Create a new PTE with the given physical address and flags that map to a page.
@@ -350,10 +354,14 @@ pub trait PageTableEntryTrait:
     /// Create a new PTE that map to a child page table.
     fn new_pt(paddr: Paddr) -> Self;
 
+    /// Create a new PTE with the given token value but don't map to anything.
+    fn new_token(token: Token) -> Self;
+
     /// Get the physical address from the PTE.
     /// The physical address recorded in the PTE is either:
-    /// - the physical address of the next level page table;
-    /// - or the physical address of the page it maps to.
+    ///  - the physical address of the next level page table;
+    ///  - the physical address of the page it maps to;
+    ///  - the value of the token.
     fn paddr(&self) -> Paddr;
 
     fn prop(&self) -> PageProperty;
@@ -363,6 +371,11 @@ pub trait PageTableEntryTrait:
     /// This will be only done if the PTE is present. If not, this method will
     /// do nothing.
     fn set_prop(&mut self, prop: PageProperty);
+
+    /// Set the physical address of the PTE.
+    ///
+    /// This can be done for both present and absent PTEs.
+    fn set_paddr(&mut self, paddr: Paddr);
 
     /// If the PTE maps a page rather than a child page table.
     ///

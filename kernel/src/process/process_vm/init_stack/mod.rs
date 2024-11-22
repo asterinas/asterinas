@@ -20,7 +20,7 @@ use core::{
 
 use align_ext::AlignExt;
 use aster_rights::Full;
-use ostd::mm::{vm_space::VmItem, UntypedMem, VmIo, MAX_USERSPACE_VADDR};
+use ostd::mm::{vm_space::VmItem, UntypedMem, VmIo};
 
 use self::aux_vec::{AuxKey, AuxVec};
 use super::ProcessVmarGuard;
@@ -29,7 +29,7 @@ use crate::{
     util::random::getrandom,
     vm::{
         perms::VmPerms,
-        vmar::Vmar,
+        vmar::{Vmar, ROOT_VMAR_GROWUP_BASE},
         vmo::{Vmo, VmoOptions, VmoRightsOp},
     },
 };
@@ -106,23 +106,13 @@ pub struct InitStack {
     /// Before initialized, `pos` points to the `initial_top`,
     /// After initialized, `pos` points to the user stack pointer(rsp)
     /// of the process.
-    pos: Arc<AtomicUsize>,
-}
-
-impl Clone for InitStack {
-    fn clone(&self) -> Self {
-        Self {
-            initial_top: self.initial_top,
-            max_size: self.max_size,
-            pos: Arc::new(AtomicUsize::new(self.pos.load(Ordering::Relaxed))),
-        }
-    }
+    pos: AtomicUsize,
 }
 
 impl InitStack {
     pub(super) fn new() -> Self {
         let nr_pages_padding = {
-            // We do not want the stack top too close to MAX_USERSPACE_VADDR.
+            // We do not want the stack top too close to ROOT_VMAR_GROWUP_BASE.
             // So we add this fixed padding. Any small value greater than zero will do.
             const NR_FIXED_PADDING_PAGES: usize = 7;
 
@@ -134,13 +124,26 @@ impl InitStack {
 
             nr_random_padding_pages as usize + NR_FIXED_PADDING_PAGES
         };
-        let initial_top = MAX_USERSPACE_VADDR - PAGE_SIZE * nr_pages_padding;
+        let initial_top = ROOT_VMAR_GROWUP_BASE - PAGE_SIZE * nr_pages_padding;
         let max_size = INIT_STACK_SIZE;
 
         Self {
             initial_top,
             max_size,
-            pos: Arc::new(AtomicUsize::new(initial_top)),
+            pos: AtomicUsize::new(initial_top),
+        }
+    }
+
+    /// Clears the metadata of the init stack.
+    pub fn clear(&self) {
+        self.set_uninitialized();
+    }
+
+    pub fn fork(&self) -> Self {
+        Self {
+            initial_top: self.initial_top,
+            max_size: self.max_size,
+            pos: AtomicUsize::new(self.pos.load(Ordering::Relaxed)),
         }
     }
 
@@ -162,7 +165,7 @@ impl InitStack {
         envp: Vec<CString>,
         auxvec: AuxVec,
     ) -> Result<()> {
-        self.set_uninitialized();
+        debug_assert!(!self.is_initialized());
 
         let vmo = {
             let vmo_options = VmoOptions::<Full>::new(self.max_size);
@@ -180,7 +183,7 @@ impl InitStack {
         vmar_map_options.build()?;
 
         let writer = InitStackWriter {
-            pos: self.pos.clone(),
+            pos: &self.pos,
             vmo,
             argv,
             envp,
@@ -215,8 +218,8 @@ impl InitStack {
 }
 
 /// A writer to initialize the content of an `InitStack`.
-struct InitStackWriter {
-    pos: Arc<AtomicUsize>,
+struct InitStackWriter<'a> {
+    pos: &'a AtomicUsize,
     vmo: Vmo<Full>,
     argv: Vec<CString>,
     envp: Vec<CString>,
@@ -225,7 +228,7 @@ struct InitStackWriter {
     map_addr: usize,
 }
 
-impl InitStackWriter {
+impl InitStackWriter<'_> {
     fn write(mut self) -> Result<()> {
         // FIXME: Some OSes may put the first page of executable file here
         // for interpreting elf headers.

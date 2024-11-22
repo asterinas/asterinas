@@ -95,6 +95,10 @@ impl PageTableEntryTrait for PageTableEntry {
         )
     }
 
+    fn new_token(token: crate::mm::vm_space::Token) -> Self {
+        unimplemented!()
+    }
+
     fn paddr(&self) -> Paddr {
         (self.0 & Self::PHYS_MASK) as usize
     }
@@ -143,6 +147,10 @@ impl PageTableEntryTrait for PageTableEntry {
             flags |= PageTableFlags::SNOOP;
         }
         self.0 = self.0 & !Self::PROP_MASK | flags.bits();
+    }
+
+    fn set_paddr(&mut self, paddr: Paddr) {
+        self.0 = self.0 & !Self::PHYS_MASK | (paddr as u64 & Self::PHYS_MASK);
     }
 
     fn is_last(&self, level: PagingLevel) -> bool {

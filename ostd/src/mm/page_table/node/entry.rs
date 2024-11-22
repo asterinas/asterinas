@@ -3,7 +3,9 @@
 //! This module provides accessors to the page table entries in a node.
 
 use super::{Child, MapTrackingStatus, PageTableEntryTrait, PageTableLock, PageTableNode};
-use crate::mm::{nr_subpage_per_huge, page_prop::PageProperty, page_size, PagingConstsTrait};
+use crate::mm::{
+    nr_subpage_per_huge, page_prop::PageProperty, page_size, vm_space::Token, PagingConstsTrait,
+};
 
 /// A view of an entry in a page table node.
 ///
@@ -30,7 +32,12 @@ pub(in crate::mm) struct Entry<'a, E: PageTableEntryTrait, C: PagingConstsTrait>
 impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'a, E, C> {
     /// Returns if the entry does not map to anything.
     pub(in crate::mm) fn is_none(&self) -> bool {
-        !self.pte.is_present()
+        !self.pte.is_present() && self.pte.paddr() == 0
+    }
+
+    /// Returns if the entry is marked with a token.
+    pub(in crate::mm) fn is_token(&self) -> bool {
+        !self.pte.is_present() && self.pte.paddr() != 0
     }
 
     /// Returns if the entry maps to a page table node.
@@ -55,20 +62,36 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'a, E, C> {
     /// Operates on the mapping properties of the entry.
     ///
     /// It only modifies the properties if the entry is present.
-    pub(in crate::mm) fn protect(&mut self, op: &mut impl FnMut(&mut PageProperty)) {
-        if !self.pte.is_present() {
-            return;
+    pub(in crate::mm) fn protect(
+        &mut self,
+        prot_op: &mut impl FnMut(&mut PageProperty),
+        token_op: &mut impl FnMut(&mut Token),
+    ) {
+        if self.pte.is_present() {
+            // Protect a proper mapping.
+            let prop = self.pte.prop();
+            let mut new_prop = prop;
+            prot_op(&mut new_prop);
+
+            if prop == new_prop {
+                return;
+            }
+
+            self.pte.set_prop(new_prop);
+        } else {
+            let paddr = self.pte.paddr();
+            if paddr == 0 {
+                // Not mapped.
+                return;
+            } else {
+                // Protect a token.
+
+                // SAFETY: The physical address was written as a valid token.
+                let mut token = unsafe { Token::from_raw_inner(paddr) };
+                token_op(&mut token);
+                self.pte.set_paddr(token.into_raw_inner());
+            }
         }
-
-        let prop = self.pte.prop();
-        let mut new_prop = prop;
-        op(&mut new_prop);
-
-        if prop == new_prop {
-            return;
-        }
-
-        self.pte.set_prop(new_prop);
 
         // SAFETY:
         //  1. The index is within the bounds.
@@ -144,6 +167,32 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'a, E, C> {
         }));
         // SAFETY: `pt_paddr` points to a PT that is attached to the node,
         // so that it is locked and alive.
+        Some(unsafe { PageTableLock::from_raw_paddr(pt_paddr) })
+    }
+
+    /// Splits the entry into a child that is marked with a same token.
+    ///
+    /// This method returns [`None`] if the entry is not marked with a token or
+    /// it is in the last level.
+    pub(in crate::mm) fn split_if_huge_token(self) -> Option<PageTableLock<E, C>> {
+        let level = self.node.level();
+
+        if !(!self.pte.is_present() && level > 1 && self.pte.paddr() != 0) {
+            return None;
+        }
+
+        // SAFETY: The physical address was written as a valid token.
+        let token = unsafe { Token::from_raw_inner(self.pte.paddr()) };
+
+        let mut new_page = PageTableLock::<E, C>::alloc(level - 1, self.node.is_tracked());
+        for i in 0..nr_subpage_per_huge::<C>() {
+            let _ = new_page.entry(i).replace(Child::Token(token));
+        }
+        let pt_paddr = new_page.into_raw_paddr();
+        let _ = self.replace(Child::PageTable(unsafe {
+            PageTableNode::from_raw(pt_paddr)
+        }));
+
         Some(unsafe { PageTableLock::from_raw_paddr(pt_paddr) })
     }
 

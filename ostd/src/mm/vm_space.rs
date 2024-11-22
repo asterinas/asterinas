@@ -11,6 +11,7 @@
 
 use core::{ops::Range, sync::atomic::Ordering};
 
+use super::PAGE_SIZE;
 use crate::{
     arch::mm::{current_page_table_paddr, PageTableEntry, PagingConsts},
     cpu::{AtomicCpuSet, CpuSet, PinCurrentCpu},
@@ -279,6 +280,17 @@ impl<'b> CursorMut<'_, 'b> {
         }
     }
 
+    /// Mark a range from the current slot with a token.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if
+    ///  - `len` is not page-aligned;
+    ///  - the marked range is already mapped with frames.
+    pub fn mark(&mut self, len: usize, token: Token) {
+        self.pt_cursor.mark(len, token);
+    }
+
     /// Clear the mapping starting from the current slot.
     ///
     /// This method will bring the cursor forward by `len` bytes in the virtual
@@ -317,6 +329,9 @@ impl<'b> CursorMut<'_, 'b> {
                     self.flusher
                         .issue_tlb_flush_with(TlbFlushOp::Range(va..va + len), pt);
                 }
+                PageTableItem::Marked { .. } => {
+                    continue;
+                }
             }
         }
 
@@ -349,10 +364,11 @@ impl<'b> CursorMut<'_, 'b> {
     pub fn protect_next(
         &mut self,
         len: usize,
-        mut op: impl FnMut(&mut PageProperty),
+        prot_op: &mut impl FnMut(&mut PageProperty),
+        token_op: &mut impl FnMut(&mut Token),
     ) -> Option<Range<Vaddr>> {
         // SAFETY: It is safe to protect memory in the userspace.
-        unsafe { self.pt_cursor.protect_next(len, &mut op) }
+        unsafe { self.pt_cursor.protect_next(len, prot_op, token_op) }
     }
 
     /// Copies the mapping from the given cursor to the current cursor.
@@ -380,11 +396,15 @@ impl<'b> CursorMut<'_, 'b> {
         &mut self,
         src: &mut Self,
         len: usize,
-        op: &mut impl FnMut(&mut PageProperty),
+        prot_op: &mut impl FnMut(&mut PageProperty),
+        token_op: &mut impl FnMut(&mut Token),
     ) {
         // SAFETY: Operations on user memory spaces are safe if it doesn't
         // involve dropping any pages.
-        unsafe { self.pt_cursor.copy_from(&mut src.pt_cursor, len, op) }
+        unsafe {
+            self.pt_cursor
+                .copy_from(&mut src.pt_cursor, len, prot_op, token_op)
+        }
     }
 }
 
@@ -417,6 +437,59 @@ pub enum VmItem {
         /// The property of the slot.
         prop: PageProperty,
     },
+    /// The current slot is marked to be reserved.
+    Marked {
+        /// The virtual address of the slot.
+        va: Vaddr,
+        /// The length of the slot.
+        len: usize,
+        /// A user-provided token.
+        token: Token,
+    },
+}
+
+/// A token that can be used to mark a slot in the VM space.
+///
+/// The token can be converted to and from a [`usize`] value. Available tokens
+/// are non-zero and capped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Token(usize);
+
+impl Token {
+    /// The mask that marks the available bits in a token.
+    const MASK: usize = ((1 << 39) - 1) / PAGE_SIZE;
+
+    pub(crate) fn into_raw_inner(self) -> usize {
+        self.0
+    }
+
+    /// Creates a new token from a raw value.
+    ///
+    /// # Safety
+    ///
+    /// The raw value must be a valid token created by [`Self::into_raw_inner`].
+    pub(crate) unsafe fn from_raw_inner(raw: usize) -> Self {
+        debug_assert!(raw & !Self::MASK == 0);
+        Self(raw)
+    }
+}
+
+impl TryFrom<usize> for Token {
+    type Error = ();
+
+    fn try_from(value: usize) -> core::result::Result<Self, Self::Error> {
+        if value & Self::MASK == 0 || value != 0 {
+            Ok(Self(value * PAGE_SIZE))
+        } else {
+            Err(())
+        }
+    }
+}
+
+impl From<Token> for usize {
+    fn from(token: Token) -> usize {
+        token.0 / PAGE_SIZE
+    }
 }
 
 impl TryFrom<PageTableItem> for VmItem {
@@ -436,6 +509,7 @@ impl TryFrom<PageTableItem> for VmItem {
                 Err("Found untracked memory mapped into `VmSpace`")
             }
             PageTableItem::StrayPageTable { .. } => Err("Stray page table cannot be query results"),
+            PageTableItem::Marked { va, len, token } => Ok(VmItem::Marked { va, len, token }),
         }
     }
 }

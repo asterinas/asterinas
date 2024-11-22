@@ -23,7 +23,12 @@ use crate::{
         TermStatus,
     },
     vdso::{vdso_vmo, VDSO_VMO_SIZE},
-    vm::{perms::VmPerms, util::duplicate_frame, vmar::Vmar, vmo::VmoRightsOp},
+    vm::{
+        perms::VmPerms,
+        util::duplicate_frame,
+        vmar::{Vmar, ROOT_VMAR_LOWEST_ADDR},
+        vmo::VmoRightsOp,
+    },
 };
 
 /// Loads elf to the process vm.
@@ -54,6 +59,7 @@ pub fn load_elf_to_vm(
             }
 
             process_vm.map_and_write_init_stack(argv, envp, aux_vec)?;
+            process_vm.init_heap(ROOT_VMAR_LOWEST_ADDR)?;
 
             let user_stack_top = process_vm.user_stack_top();
             Ok(ElfLoadInfo {

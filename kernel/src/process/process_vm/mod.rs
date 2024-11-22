@@ -24,7 +24,10 @@ pub use self::{
         MAX_ENV_LEN,
     },
 };
-use crate::{prelude::*, vm::vmar::Vmar};
+use crate::{
+    prelude::*,
+    vm::vmar::{Vmar, ROOT_VMAR_GROWUP_BASE},
+};
 
 /*
  * The user's virtual memory space layout looks like below.
@@ -32,7 +35,7 @@ use crate::{prelude::*, vm::vmar::Vmar};
  * And currently the initial program break is a fixed value.
  *
  *  (high address)
- *  +---------------------+ <------+ The top of Vmar, which is the highest address usable
+ *  +---------------------+ <------+ The top of Vmar non-allocatable address
  *  |                     |          Randomly padded pages
  *  +---------------------+ <------+ The base of the initial user stack
  *  | User stack          |
@@ -94,8 +97,8 @@ impl Clone for ProcessVm {
         let root_vmar = self.lock_root_vmar();
         Self {
             root_vmar: Mutex::new(Some(root_vmar.get().dup().unwrap())),
-            init_stack: self.init_stack.clone(),
-            heap: self.heap.clone(),
+            init_stack: self.init_stack.fork(),
+            heap: self.heap.fork(),
         }
     }
 }
@@ -106,7 +109,6 @@ impl ProcessVm {
         let root_vmar = Vmar::<Full>::new_root();
         let init_stack = InitStack::new();
         let heap = Heap::new();
-        heap.alloc_and_map_vm(&root_vmar).unwrap();
         Self {
             root_vmar: Mutex::new(Some(root_vmar)),
             heap,
@@ -122,8 +124,8 @@ impl ProcessVm {
         let root_vmar = Mutex::new(Some(Vmar::<Full>::fork_from(process_vmar.get())?));
         Ok(Self {
             root_vmar,
-            heap: other.heap.clone(),
-            init_stack: other.init_stack.clone(),
+            heap: other.heap.fork(),
+            init_stack: other.init_stack.fork(),
         })
     }
 
@@ -151,19 +153,26 @@ impl ProcessVm {
         envp: Vec<CString>,
         aux_vec: AuxVec,
     ) -> Result<()> {
-        let root_vmar: ProcessVmarGuard<'_> = self.lock_root_vmar();
+        let root_vmar = self.lock_root_vmar();
         self.init_stack
             .map_and_write(root_vmar.get(), argv, envp, aux_vec)
+    }
+
+    pub(super) fn init_heap(&self, program_break: Vaddr) -> Result<()> {
+        debug_assert!(program_break < ROOT_VMAR_GROWUP_BASE);
+        let root_vmar = self.lock_root_vmar();
+        self.heap.init(root_vmar.get(), program_break)
     }
 
     pub(super) fn heap(&self) -> &Heap {
         &self.heap
     }
 
-    /// Clears existing mappings and then maps stack and heap vmo.
-    pub(super) fn clear_and_map(&self) {
+    /// Clears existing mappings and metadata for stack and heap.
+    pub(super) fn clear(&self) {
         let root_vmar = self.lock_root_vmar();
         root_vmar.get().clear().unwrap();
-        self.heap.alloc_and_map_vm(&root_vmar.get()).unwrap();
+        self.heap.clear();
+        self.init_stack.clear();
     }
 }

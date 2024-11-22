@@ -114,8 +114,12 @@ pub(super) fn lock_range<'a, M: PageTableMode, E: PageTableEntryTrait, C: Paging
                     };
                     cur_pt_addr = pt;
                     level -= 1;
-                } else {
-                    break;
+                } else if cur_entry.is_token() {
+                    let pt = cur_entry.split_if_huge_token().unwrap();
+                    cur_pt_addr = pt.paddr();
+                    level -= 1;
+                    let old = path[level as usize - 1].replace(pt);
+                    debug_assert!(old.is_none());
                 }
             }
         }
@@ -201,7 +205,8 @@ fn dfs_acquire_lock<E: PageTableEntryTrait, C: PagingConstsTrait>(
                 Child::None
                 | Child::Frame(_, _)
                 | Child::Untracked(_, _, _)
-                | Child::PageTable(_) => {}
+                | Child::PageTable(_)
+                | Child::Token(_) => {}
             }
         }
     }
@@ -233,7 +238,8 @@ fn dfs_release_lock<E: PageTableEntryTrait, C: PagingConstsTrait>(
                 Child::None
                 | Child::Frame(_, _)
                 | Child::Untracked(_, _, _)
-                | Child::PageTable(_) => {}
+                | Child::PageTable(_)
+                | Child::Token(_) => {}
             }
         }
     }
@@ -273,7 +279,8 @@ pub(super) unsafe fn dfs_mark_astray<E: PageTableEntryTrait, C: PagingConstsTrai
                 Child::None
                 | Child::Frame(_, _)
                 | Child::Untracked(_, _, _)
-                | Child::PageTable(_) => {}
+                | Child::PageTable(_)
+                | Child::Token(_) => {}
             }
         }
     }
