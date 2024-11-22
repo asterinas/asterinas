@@ -12,6 +12,7 @@ aster-block = { path = "comps/block" }
 aster-network = { path = "comps/network" }
 aster-console = { path = "comps/console" }
 aster-framebuffer = { path = "comps/framebuffer" }
+aster-keyboard = { path = "comps/keyboard" }
 aster-softirq = { path = "comps/softirq" }
 aster-time = { path = "comps/time" }
 aster-virtio = { path = "comps/virtio" }

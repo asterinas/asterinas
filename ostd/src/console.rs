@@ -7,6 +7,7 @@ use core::fmt::Arguments;
 /// Prints formatted arguments to the console.
 pub fn early_print(args: Arguments) {
     crate::arch::serial::print(args);
+    crate::arch::framebuffer::print(args);
 }
 
 /// Prints to the console.

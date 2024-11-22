@@ -9,6 +9,7 @@ softirq = { name = "aster-softirq" }
 time = { name = "aster-time" }
 framebuffer = { name = "aster-framebuffer" }
 network = { name = "aster-network" }
+keyboard = { name = "aster-keyboard" }
 
 [whitelist]
 [whitelist.nix.main]

@@ -133,6 +133,16 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
         ));
     }
 
+    // Add framebuffer region.
+    let screen_info = &boot_params.screen_info;
+    if screen_info.lfb_base != 0 && screen_info.lfb_size != 0 {
+        regions.push(MemoryRegion::new(
+            screen_info.lfb_base as usize,
+            screen_info.lfb_size as usize,
+            MemoryRegionType::Framebuffer,
+        ));
+    }
+
     // Add the kernel region.
     regions.push(MemoryRegion::kernel());
 

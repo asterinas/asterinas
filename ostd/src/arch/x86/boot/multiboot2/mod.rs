@@ -76,15 +76,22 @@ fn init_acpi_arg(acpi: &'static Once<BootloaderAcpiArg>) {
 }
 
 fn init_framebuffer_info(framebuffer_arg: &'static Once<BootloaderFramebufferArg>) {
-    let Some(Ok(fb_tag)) = MB2_INFO.get().unwrap().framebuffer_tag() else {
-        return;
+    let framebuffer = match MB2_INFO.get().unwrap().framebuffer_tag() {
+        Some(Ok(fb_tag)) => BootloaderFramebufferArg {
+            address: fb_tag.address() as usize,
+            width: fb_tag.width() as usize,
+            height: fb_tag.height() as usize,
+            bpp: fb_tag.bpp() as usize,
+        },
+        _ => BootloaderFramebufferArg {
+            address: 0,
+            width: 0,
+            height: 0,
+            bpp: 0,
+        },
     };
-    framebuffer_arg.call_once(|| BootloaderFramebufferArg {
-        address: fb_tag.address() as usize,
-        width: fb_tag.width() as usize,
-        height: fb_tag.height() as usize,
-        bpp: fb_tag.bpp() as usize,
-    });
+
+    framebuffer_arg.call_once(|| framebuffer);
 }
 
 impl From<MemoryAreaType> for MemoryRegionType {

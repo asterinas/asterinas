@@ -108,8 +108,9 @@ dependencies = [
 name = "aster-framebuffer"
 version = "0.1.0"
 dependencies = [
+ "aster-console",
+ "aster-keyboard",
  "component",
- "font8x8",
  "log",
  "ostd",
  "spin 0.9.8",
@@ -126,6 +127,16 @@ dependencies = [
  "component",
  "int-to-c-enum",
  "lazy_static",
+ "log",
+ "ostd",
+ "spin 0.9.8",
+]
+
+[[package]]
+name = "aster-keyboard"
+version = "0.1.0"
+dependencies = [
+ "component",
  "log",
  "ostd",
  "spin 0.9.8",
@@ -159,6 +170,7 @@ dependencies = [
  "aster-console",
  "aster-framebuffer",
  "aster-input",
+ "aster-keyboard",
  "aster-network",
  "aster-rights",
  "aster-rights-proc",
@@ -1140,6 +1152,7 @@ dependencies = [
  "cfg-if",
  "const-assert",
  "fdt",
+ "font8x8",
  "gimli 0.28.0",
  "iced-x86",
  "id-alloc",

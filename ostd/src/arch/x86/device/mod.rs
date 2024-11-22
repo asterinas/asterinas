@@ -5,4 +5,5 @@
 
 pub mod cmos;
 pub mod io_port;
+pub mod keyboard;
 pub mod serial;
