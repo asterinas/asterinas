@@ -14,7 +14,8 @@ use super::{
         signals::Signal,
     },
     status::ProcessStatus,
-    Credentials, TermStatus,
+    task_set::TaskSet,
+    Credentials,
 };
 use crate::{
     device::tty::open_ntty_as_controlling_terminal,
@@ -71,7 +72,7 @@ pub struct Process {
     /// The executable path.
     executable_path: RwLock<String>,
     /// The threads
-    tasks: Mutex<Vec<Arc<Task>>>,
+    tasks: Mutex<TaskSet>,
     /// Process status
     status: ProcessStatus,
     /// Parent process
@@ -174,7 +175,6 @@ impl Process {
     fn new(
         pid: Pid,
         parent: Weak<Process>,
-        tasks: Vec<Arc<Task>>,
         executable_path: String,
         process_vm: ProcessVm,
 
@@ -190,11 +190,11 @@ impl Process {
 
         Arc::new_cyclic(|process_ref: &Weak<Process>| Self {
             pid,
-            tasks: Mutex::new(tasks),
+            tasks: Mutex::new(TaskSet::new()),
             executable_path: RwLock::new(executable_path),
             process_vm,
             children_wait_queue,
-            status: ProcessStatus::new_uninit(),
+            status: ProcessStatus::default(),
             parent: ParentProcess::new(parent),
             children: Mutex::new(BTreeMap::new()),
             process_group: Mutex::new(Weak::new()),
@@ -267,9 +267,9 @@ impl Process {
     pub fn run(&self) {
         let tasks = self.tasks.lock();
         // when run the process, the process should has only one thread
-        debug_assert!(tasks.len() == 1);
-        debug_assert!(self.is_runnable());
-        let task = tasks[0].clone();
+        debug_assert!(tasks.as_slice().len() == 1);
+        debug_assert!(!self.status().is_zombie());
+        let task = tasks.main().clone();
         // should not hold the lock when run thread
         drop(tasks);
         let thread = task.as_thread().unwrap();
@@ -292,7 +292,7 @@ impl Process {
         &self.timer_manager
     }
 
-    pub fn tasks(&self) -> &Mutex<Vec<Arc<Task>>> {
+    pub fn tasks(&self) -> &Mutex<TaskSet> {
         &self.tasks
     }
 
@@ -312,15 +312,8 @@ impl Process {
         &self.nice
     }
 
-    pub fn main_thread(&self) -> Option<Arc<Thread>> {
-        self.tasks
-            .lock()
-            .iter()
-            .find_map(|task| {
-                let thread = task.as_thread().unwrap();
-                (thread.as_posix_thread().unwrap().tid() == self.pid).then_some(thread)
-            })
-            .cloned()
+    pub fn main_thread(&self) -> Arc<Thread> {
+        self.tasks.lock().main().as_thread().unwrap().clone()
     }
 
     // *********** Parent and child ***********
@@ -621,7 +614,7 @@ impl Process {
     ///
     /// TODO: restrict these method with access control tool.
     pub fn enqueue_signal(&self, signal: impl Signal + Clone + 'static) {
-        if self.is_zombie() {
+        if self.status.is_zombie() {
             return;
         }
 
@@ -629,7 +622,7 @@ impl Process {
 
         // Enqueue signal to the first thread that does not block the signal
         let threads = self.tasks.lock();
-        for thread in threads.iter() {
+        for thread in threads.as_slice() {
             let posix_thread = thread.as_posix_thread().unwrap();
             if !posix_thread.has_signal_blocked(signal.num()) {
                 posix_thread.enqueue_signal(Box::new(signal));
@@ -637,8 +630,8 @@ impl Process {
             }
         }
 
-        // If all threads block the signal, enqueue signal to the first thread
-        let thread = threads.iter().next().unwrap();
+        // If all threads block the signal, enqueue signal to the main thread
+        let thread = threads.main();
         let posix_thread = thread.as_posix_thread().unwrap();
         posix_thread.enqueue_signal(Box::new(signal));
     }
@@ -671,24 +664,9 @@ impl Process {
 
     // ******************* Status ********************
 
-    fn set_runnable(&self) {
-        self.status.set_runnable();
-    }
-
-    fn is_runnable(&self) -> bool {
-        self.status.is_runnable()
-    }
-
-    pub fn is_zombie(&self) -> bool {
-        self.status.is_zombie()
-    }
-
-    pub fn set_zombie(&self, term_status: TermStatus) {
-        self.status.set_zombie(term_status);
-    }
-
-    pub fn exit_code(&self) -> ExitCode {
-        self.status.exit_code()
+    /// Returns a reference to the process status.
+    pub fn status(&self) -> &ProcessStatus {
+        &self.status
     }
 }
 
@@ -711,7 +689,6 @@ mod test {
         Process::new(
             pid,
             parent,
-            vec![],
             String::new(),
             ProcessVm::alloc(),
             ResourceLimits::default(),
