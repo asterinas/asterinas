@@ -33,7 +33,7 @@ impl PidDirOps {
             .volatile()
             .build()
             .unwrap();
-        let main_thread = process_ref.main_thread().unwrap();
+        let main_thread = process_ref.main_thread();
         let file_table = main_thread.as_posix_thread().unwrap().file_table().lock();
         let weak_ptr = Arc::downgrade(&pid_inode);
         file_table.register_observer(weak_ptr);

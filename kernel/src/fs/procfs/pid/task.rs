@@ -63,7 +63,7 @@ impl DirOps for ThreadDirOps {
 
 impl DirOps for TaskDirOps {
     fn lookup_child(&self, this_ptr: Weak<dyn Inode>, name: &str) -> Result<Arc<dyn Inode>> {
-        for task in self.0.tasks().lock().iter() {
+        for task in self.0.tasks().lock().as_slice() {
             if task.as_posix_thread().unwrap().tid() != name.parse::<u32>().unwrap() {
                 continue;
             }
@@ -78,7 +78,7 @@ impl DirOps for TaskDirOps {
             this.downcast_ref::<ProcDir<TaskDirOps>>().unwrap().this()
         };
         let mut cached_children = this.cached_children().write();
-        for task in self.0.tasks().lock().iter() {
+        for task in self.0.tasks().lock().as_slice() {
             cached_children.put_entry_if_not_found(
                 &format!("{}", task.as_posix_thread().unwrap().tid()),
                 || ThreadDirOps::new_inode(self.0.clone(), this_ptr.clone()),

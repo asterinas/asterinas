@@ -260,7 +260,11 @@ fn clone_child_task(
         thread_builder.build()
     };
 
-    process.tasks().lock().push(child_task.clone());
+    process
+        .tasks()
+        .lock()
+        .insert(child_task.clone())
+        .map_err(|_| Error::with_message(Errno::EINTR, "the process has exited"))?;
 
     let child_posix_thread = child_task.as_posix_thread().unwrap();
     clone_parent_settid(child_tid, clone_args.parent_tid, clone_flags)?;

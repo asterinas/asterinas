@@ -30,7 +30,7 @@ impl StatFileOps {
 impl FileOps for StatFileOps {
     fn data(&self) -> Result<Vec<u8>> {
         let process = &self.0;
-        let main_thread = process.main_thread().unwrap();
+        let main_thread = process.main_thread();
         let file_table = main_thread.as_posix_thread().unwrap().file_table();
 
         let mut stat_output = String::new();
@@ -43,7 +43,7 @@ impl FileOps for StatFileOps {
             process.parent().pid(),
             process.parent().pid(),
             file_table.lock().len(),
-            process.tasks().lock().len()
+            process.tasks().lock().as_slice().len(),
         )
         .unwrap();
         Ok(stat_output.into_bytes())
