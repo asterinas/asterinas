@@ -19,7 +19,7 @@ use crate::{
     },
     prelude::*,
     process::{
-        do_exit_group,
+        posix_thread::do_exit_group,
         process_vm::{AuxKey, AuxVec, ProcessVm},
         TermStatus,
     },

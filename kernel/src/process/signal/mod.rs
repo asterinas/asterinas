@@ -30,7 +30,7 @@ use super::posix_thread::PosixThread;
 use crate::{
     current_userspace,
     prelude::*,
-    process::{do_exit_group, TermStatus},
+    process::{posix_thread::do_exit_group, TermStatus},
 };
 
 pub trait SignalContext {

@@ -1,59 +1,57 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
+//! The process status.
 
-//! The process status
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-use core::sync::atomic::{AtomicU64, Ordering};
+use super::ExitCode;
 
-use super::{ExitCode, TermStatus};
-
-/// The status of process.
+/// The status of a process.
 ///
-/// The `ProcessStatus` can be viewed as two parts,
-/// the highest 32 bits is the value of `TermStatus`, if any,
-/// the lowest 32 bits is the value of status.
+/// This maintains:
+/// 1. Whether the process is a zombie (i.e., all its threads have exited);
+/// 2. The exit code of the process.
 #[derive(Debug)]
-pub struct ProcessStatus(AtomicU64);
+pub struct ProcessStatus {
+    is_zombie: AtomicBool,
+    exit_code: AtomicU32,
+}
 
-#[repr(u8)]
-enum Status {
-    Uninit = 0,
-    Runnable = 1,
-    Zombie = 2,
+impl Default for ProcessStatus {
+    fn default() -> Self {
+        Self {
+            is_zombie: AtomicBool::new(false),
+            exit_code: AtomicU32::new(0),
+        }
+    }
 }
 
 impl ProcessStatus {
-    const LOW_MASK: u64 = 0xffff_ffff;
-
-    pub fn new_uninit() -> Self {
-        Self(AtomicU64::new(Status::Uninit as u64))
-    }
-
-    pub fn set_zombie(&self, term_status: TermStatus) {
-        let new_val = (term_status.as_u32() as u64) << 32 | Status::Zombie as u64;
-        self.0.store(new_val, Ordering::Relaxed);
-    }
-
+    /// Returns whether the process is a zombie process.
     pub fn is_zombie(&self) -> bool {
-        self.0.load(Ordering::Relaxed) & Self::LOW_MASK == Status::Zombie as u64
+        // Use the `Acquire` memory order to make the exit code visible.
+        self.is_zombie.load(Ordering::Acquire)
     }
 
-    pub fn set_runnable(&self) {
-        let new_val = Status::Runnable as u64;
-        self.0.store(new_val, Ordering::Relaxed);
-    }
-
-    pub fn is_runnable(&self) -> bool {
-        self.0.load(Ordering::Relaxed) & Self::LOW_MASK == Status::Runnable as u64
-    }
-
-    /// Returns the exit code.
+    /// Sets the process to be a zombie process.
     ///
-    /// If the process is not exited, the exit code is zero.
-    /// But if exit code is zero, the process may or may not exit.
+    /// This method should be called when the process completes its exit. The current thread must
+    /// be the last thread in the process, so that no threads belonging to the process can run
+    /// after it.
+    pub(super) fn set_zombie(&self) {
+        // Use the `Release` memory order to make the exit code visible.
+        self.is_zombie.store(true, Ordering::Release);
+    }
+}
+
+impl ProcessStatus {
+    /// Returns the exit code.
     pub fn exit_code(&self) -> ExitCode {
-        let val = self.0.load(Ordering::Relaxed);
-        (val >> 32 & Self::LOW_MASK) as ExitCode
+        self.exit_code.load(Ordering::Relaxed)
+    }
+
+    /// Sets the exit code.
+    pub(super) fn set_exit_code(&self, exit_code: ExitCode) {
+        self.exit_code.store(exit_code, Ordering::Relaxed);
     }
 }
