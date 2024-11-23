@@ -31,7 +31,7 @@ use crate::{
     cpu::LinuxAbi,
     current_userspace,
     prelude::*,
-    process::{do_exit_group, TermStatus},
+    process::{posix_thread::do_exit_group, TermStatus},
 };
 
 pub trait SignalContext {

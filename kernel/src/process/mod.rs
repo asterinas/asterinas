@@ -15,12 +15,12 @@ pub mod rlimit;
 pub mod signal;
 mod status;
 pub mod sync;
+mod task_set;
 mod term_status;
 mod wait;
 
 pub use clone::{clone_child, CloneArgs, CloneFlags};
 pub use credentials::{Credentials, Gid, Uid};
-pub use exit::do_exit_group;
 pub use kill::{kill, kill_all, kill_group, tgkill};
 pub use process::{
     ExitCode, JobControl, Pgid, Pid, Process, ProcessBuilder, ProcessGroup, Session, Sid, Terminal,
