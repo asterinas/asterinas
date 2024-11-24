@@ -74,7 +74,7 @@ if [ "$1" = "tdx" ]; then
 fi
 
 COMMON_QEMU_ARGS="\
-    -cpu Icelake-Server,+x2apic \
+    -cpu host,migratable=off,-pcid,+x2apic \
     -smp ${SMP:-1} \
     -m ${MEM:-8G} \
     --no-reboot \
@@ -88,6 +88,7 @@ COMMON_QEMU_ARGS="\
     -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
     -drive if=none,format=raw,id=x0,file=./test/build/ext2.img \
     -drive if=none,format=raw,id=x1,file=./test/build/exfat.img \
+    -qmp tcp:127.0.0.1:${QMP_PORT-9889},server,nowait
 "
 
 if [ "$1" = "iommu" ]; then

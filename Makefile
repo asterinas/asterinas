@@ -21,7 +21,7 @@ OSTD_TASK_STACK_SIZE_IN_PAGES ?= 64
 FEATURES ?=
 NO_DEFAULT_FEATURES ?= 0
 COVERAGE ?= 0
-ENABLE_BASIC_TEST ?= false
+ENABLE_BASIC_TEST ?= true
 # End of global build options.
 
 # GDB debugging and profiling options.
