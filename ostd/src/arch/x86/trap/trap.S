@@ -57,6 +57,7 @@ trap_handler_table:
 .section .text
 .global trap_common
 trap_common:
+    cld                     # clear DF before calling/returning to any C function to conform to x86-64 calling convention
     push rax
     mov ax, [rsp + 4*8]     # load cs
     and ax, 0x3             # test
