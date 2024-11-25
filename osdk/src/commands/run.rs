@@ -4,12 +4,16 @@ use std::process::exit;
 
 use vsc::VscLaunchConfig;
 
-use super::{build::create_base_and_cached_build, util::DEFAULT_TARGET_RELPATH};
+use super::{
+    build::create_base_and_cached_build,
+    util::{is_tdx_enabled, DEFAULT_TARGET_RELPATH},
+};
 use crate::{
     config::{scheme::ActionChoice, Config},
     error::Errno,
     error_msg,
     util::{get_current_crate_info, get_target_directory},
+    warn_msg,
 };
 
 pub fn execute_run_command(config: &Config, gdb_server_args: Option<&str>) {
@@ -63,6 +67,18 @@ fn adapt_for_gdb_server(config: &mut Config, gdb_server_str: &str) -> Option<Vsc
 
     if gdb_server_args.wait_client {
         config.run.qemu.args += " -S";
+    }
+
+    if is_tdx_enabled() {
+        let target = "-object tdx-guest,";
+        if let Some(pos) = config.run.qemu.args.find(target) {
+            let insert_pos = pos + target.len();
+            config.run.qemu.args.insert_str(insert_pos, "debug=on,");
+        } else {
+            warn_msg!(
+                "TDX is enabled, but the TDX guest object is not found in the QEMU arguments"
+            );
+        }
     }
 
     // Ensure debug info added when debugging in the release profile.
