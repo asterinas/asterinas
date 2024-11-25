@@ -25,3 +25,7 @@ pub fn profile_name_adapter(profile: &str) -> &str {
 pub fn bin_file_name() -> String {
     get_current_crate_info().name + "-osdk-bin"
 }
+
+pub(crate) fn is_tdx_enabled() -> bool {
+    std::env::var("INTEL_TDX").is_ok_and(|s| s == "1")
+}
