@@ -77,7 +77,35 @@ make run INTEL_TDX=1
 ```
 
 If everything goes well,
-Asterinas is now up and running inside a TDVM.
+Asterinas is now up and running inside a TD.
+
+## Using GDB to Debug
+
+A Trust Domain (TD) is debuggable if its `ATTRIBUTES.DEBUG` bit is 1.
+In this mode, the host VMM can use Intel TDX module functions
+to read and modify TD VCPU state and TD private memory,
+which are not accessible when the TD is non-debuggable.
+
+Start Asterinas in a GDB-enabled TD and wait for debugging connection:
+
+```bash
+make gdb_server INTEL_TDX=1
+```
+
+Behind the scene, this command adds `debug=on` configuration to the QEMU parameters
+to enable TD debuggable mode.
+
+The server will listen at the default address specified in `Makefile`,
+i.e., a local TCP port `:1234`.
+
+Start a GDB client in another terminal:
+
+```bash
+make gdb_client INTEL_TDX=1
+```
+
+Note that you must use hardware assisted breakpoints
+because KVM is enabled when debugging a TD.
 
 ## About Intel TDX
 
