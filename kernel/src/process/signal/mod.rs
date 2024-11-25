@@ -218,6 +218,15 @@ pub fn handle_user_signal(
     } else {
         user_ctx.set_arguments(sig_num, 0, 0);
     }
+    // CPU architecture-dependent logic
+    cfg_if::cfg_if! {
+        if #[cfg(target_arch = "x86_64")] {
+            // Clear `DF` flag for C function entry to conform to x86-64 calling convention.
+            // Bit 10 is the DF flag.
+            const X86_RFLAGS_DF: usize = 1 << 10;
+            user_ctx.general_regs_mut().rflags &= !X86_RFLAGS_DF;
+        }
+    }
 
     Ok(())
 }
