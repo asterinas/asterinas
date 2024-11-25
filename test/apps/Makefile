@@ -18,6 +18,7 @@ TEST_APPS := \
 	epoll \
 	eventfd2 \
 	execve \
+	exit \
 	fdatasync \
 	file_io \
 	fork \
