@@ -2,4 +2,6 @@
 
 include ../test_common.mk
 
-EXTRA_C_FLAGS := -static
+# Removed `-static` to enable dynamic linking.
+# Refer to "signal_rflags_df.c" for details on how dynamic linking affects DF flag testing.
+EXTRA_C_FLAGS :=
