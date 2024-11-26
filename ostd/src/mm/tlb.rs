@@ -9,7 +9,7 @@ use super::{page::DynPage, Vaddr, PAGE_SIZE};
 use crate::{
     cpu::{CpuSet, PinCurrentCpu},
     cpu_local,
-    sync::SpinLock,
+    sync::{LocalIrqDisabled, SpinLock},
     task::disable_preempt,
 };
 
@@ -155,8 +155,8 @@ impl TlbFlushOp {
 //
 // Lock ordering: lock FLUSH_OPS before PAGE_KEEPER.
 cpu_local! {
-    static FLUSH_OPS: SpinLock<OpsStack> = SpinLock::new(OpsStack::new());
-    static PAGE_KEEPER: SpinLock<Vec<DynPage>> = SpinLock::new(Vec::new());
+    static FLUSH_OPS: SpinLock<OpsStack, LocalIrqDisabled> = SpinLock::new(OpsStack::new());
+    static PAGE_KEEPER: SpinLock<Vec<DynPage>, LocalIrqDisabled> = SpinLock::new(Vec::new());
 }
 
 fn do_remote_flush() {
