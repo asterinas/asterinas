@@ -1,28 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::SyscallReturn;
-use crate::prelude::*;
+use crate::{net::HOSTNAME, prelude::*};
 
 // We don't use the real name and version of our os here. Instead, we pick up fake values witch is the same as the ones of linux.
 // The values are used to fool glibc since glibc will check the version and os name.
 lazy_static! {
     /// used to fool glibc
     static ref SYS_NAME: CString = CString::new("Linux").unwrap();
-    static ref NODE_NAME: CString = CString::new("WHITLEY").unwrap();
     static ref RELEASE: CString = CString::new("5.13.0").unwrap();
     static ref VERSION: CString = CString::new("5.13.0").unwrap();
     static ref MACHINE: CString = CString::new("x86_64").unwrap();
-    static ref DOMAIN_NAME: CString = CString::new("").unwrap();
-    static ref UTS_NAME: UtsName = {
-        let mut uts_name = UtsName::new();
-        copy_cstring_to_u8_slice(&SYS_NAME, &mut uts_name.sysname);
-        copy_cstring_to_u8_slice(&NODE_NAME, &mut uts_name.nodename);
-        copy_cstring_to_u8_slice(&RELEASE, &mut uts_name.release);
-        copy_cstring_to_u8_slice(&VERSION, &mut uts_name.version);
-        copy_cstring_to_u8_slice(&MACHINE, &mut uts_name.machine);
-        copy_cstring_to_u8_slice(&DOMAIN_NAME, &mut uts_name.domainname);
-        uts_name
-    };
+    static ref DOMAIN_NAME: CString = CString::new("(none)").unwrap();
 }
 
 const UTS_FIELD_LEN: usize = 65;
@@ -59,6 +48,15 @@ fn copy_cstring_to_u8_slice(src: &CStr, dst: &mut [u8]) {
 
 pub fn sys_uname(old_uname_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     debug!("old uname addr = 0x{:x}", old_uname_addr);
-    ctx.user_space().write_val(old_uname_addr, &*UTS_NAME)?;
+    let mut uts_name = UtsName::new();
+    let hostname = HOSTNAME.get().unwrap().read();
+    copy_cstring_to_u8_slice(&SYS_NAME, &mut uts_name.sysname);
+    copy_cstring_to_u8_slice(&hostname, &mut uts_name.nodename);
+    copy_cstring_to_u8_slice(&RELEASE, &mut uts_name.release);
+    copy_cstring_to_u8_slice(&VERSION, &mut uts_name.version);
+    copy_cstring_to_u8_slice(&MACHINE, &mut uts_name.machine);
+    copy_cstring_to_u8_slice(&DOMAIN_NAME, &mut uts_name.domainname);
+
+    ctx.user_space().write_val(old_uname_addr, &uts_name)?;
     Ok(SyscallReturn::Return(0))
 }
