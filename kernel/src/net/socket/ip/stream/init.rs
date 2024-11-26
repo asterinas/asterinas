@@ -15,7 +15,6 @@ use crate::{
         socket::ip::common::{bind_socket, get_ephemeral_endpoint},
     },
     prelude::*,
-    process::signal::Pollee,
 };
 
 pub enum InitStream {
@@ -101,9 +100,8 @@ impl InitStream {
         }
     }
 
-    pub(super) fn init_pollee(&self, pollee: &Pollee) {
-        pollee.reset_events();
+    pub(super) fn check_io_events(&self) -> IoEvents {
         // Linux adds OUT and HUP events for a newly created socket
-        pollee.add_events(IoEvents::OUT | IoEvents::HUP);
+        IoEvents::OUT | IoEvents::HUP
     }
 }

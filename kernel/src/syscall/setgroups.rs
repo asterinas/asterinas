@@ -15,7 +15,7 @@ pub fn sys_setgroups(size: usize, group_list_addr: Vaddr, ctx: &Context) -> Resu
     let mut new_groups = BTreeSet::new();
     for idx in 0..size {
         let addr = group_list_addr + idx * core::mem::size_of::<Gid>();
-        let gid = ctx.get_user_space().read_val(addr)?;
+        let gid = ctx.user_space().read_val(addr)?;
         new_groups.insert(gid);
     }
 

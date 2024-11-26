@@ -28,7 +28,7 @@ pub fn sys_prctl(
                 }
             };
 
-            ctx.get_user_space().write_val(write_to_addr, &write_val)?;
+            ctx.user_space().write_val(write_to_addr, &write_val)?;
         }
         PrctlCmd::PR_GET_DUMPABLE => {
             // TODO: when coredump is supported, return the actual value
@@ -45,7 +45,7 @@ pub fn sys_prctl(
             let thread_name = ctx.posix_thread.thread_name().lock();
             if let Some(thread_name) = &*thread_name {
                 if let Some(thread_name) = thread_name.name()? {
-                    ctx.get_user_space().write_bytes(
+                    ctx.user_space().write_bytes(
                         write_to_addr,
                         &mut VmReader::from(thread_name.to_bytes_with_nul()),
                     )?;
@@ -56,7 +56,7 @@ pub fn sys_prctl(
             let mut thread_name = ctx.posix_thread.thread_name().lock();
             if let Some(thread_name) = &mut *thread_name {
                 let new_thread_name = ctx
-                    .get_user_space()
+                    .user_space()
                     .read_cstring(read_addr, MAX_THREAD_NAME_LEN)?;
                 thread_name.set_name(&new_thread_name)?;
             }

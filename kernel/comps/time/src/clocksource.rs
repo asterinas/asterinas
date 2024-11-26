@@ -14,7 +14,7 @@ use alloc::sync::Arc;
 use core::{cmp::max, ops::Add, time::Duration};
 
 use aster_util::coeff::Coeff;
-use ostd::sync::RwLock;
+use ostd::sync::{LocalIrqDisabled, RwLock};
 
 use crate::NANOS_PER_SECOND;
 
@@ -55,7 +55,7 @@ pub struct ClockSource {
     base: ClockSourceBase,
     coeff: Coeff,
     /// A record to an `Instant` and the corresponding cycles of this `ClockSource`.
-    last_record: RwLock<(Instant, u64)>,
+    last_record: RwLock<(Instant, u64), LocalIrqDisabled>,
 }
 
 impl ClockSource {
@@ -91,7 +91,7 @@ impl ClockSource {
     /// Returns the calculated instant and instant cycles.
     fn calculate_instant(&self) -> (Instant, u64) {
         let (instant_cycles, last_instant, last_cycles) = {
-            let last_record = self.last_record.read_irq_disabled();
+            let last_record = self.last_record.read();
             let (last_instant, last_cycles) = *last_record;
             (self.read_cycles(), last_instant, last_cycles)
         };
@@ -121,7 +121,7 @@ impl ClockSource {
 
     /// Uses an input instant and cycles to update the `last_record` in the `ClockSource`.
     fn update_last_record(&self, record: (Instant, u64)) {
-        *self.last_record.write_irq_disabled() = record;
+        *self.last_record.write() = record;
     }
 
     /// Reads current cycles of the `ClockSource`.
@@ -131,7 +131,7 @@ impl ClockSource {
 
     /// Returns the last instant and last cycles recorded in the `ClockSource`.
     pub fn last_record(&self) -> (Instant, u64) {
-        return *self.last_record.read_irq_disabled();
+        return *self.last_record.read();
     }
 
     /// Returns the maximum delay seconds for updating of the `ClockSource`.

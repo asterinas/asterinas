@@ -22,7 +22,7 @@ use crate::{
     events::Observer,
     prelude::*,
     process::signal::constants::SIGCONT,
-    thread::{Thread, Tid},
+    thread::{AsThread, Thread, Tid},
     time::{clocks::ProfClock, Timer, TimerManager},
 };
 
@@ -37,7 +37,7 @@ pub mod thread_table;
 pub use builder::PosixThreadBuilder;
 pub use exit::do_exit;
 pub use name::{ThreadName, MAX_THREAD_NAME_LEN};
-pub use posix_thread_ext::{create_posix_task_from_executable, PosixThreadExt};
+pub use posix_thread_ext::{create_posix_task_from_executable, AsPosixThread};
 pub use robust_list::RobustListHead;
 
 pub struct PosixThread {
@@ -277,7 +277,7 @@ impl PosixThread {
         let tasks = process.tasks().lock();
         tasks
             .iter()
-            .all(|task| Thread::borrow_from_task(task).is_exited())
+            .all(|task| task.as_thread().unwrap().is_exited())
     }
 
     /// Gets the read-only credentials of the thread.

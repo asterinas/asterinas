@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{boxed::Box, collections::BTreeMap, string::String, sync::Arc, vec, vec::Vec};
+use alloc::{
+    boxed::Box,
+    collections::BTreeMap,
+    string::{String, ToString},
+    sync::Arc,
+    vec,
+    vec::Vec,
+};
 use core::{fmt::Debug, hint::spin_loop, mem::size_of};
 
 use aster_block::{
@@ -8,25 +15,23 @@ use aster_block::{
     request_queue::{BioRequest, BioRequestSingleQueue},
     BlockDeviceMeta,
 };
-use aster_util::safe_ptr::SafePtr;
 use id_alloc::IdAlloc;
-use log::info;
+use log::{debug, info};
 use ostd::{
-    io_mem::IoMem,
     mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, VmIo},
     sync::SpinLock,
     trap::TrapFrame,
     Pod,
 };
 
-use super::{BlockFeatures, VirtioBlockConfig};
+use super::{BlockFeatures, VirtioBlockConfig, VirtioBlockFeature};
 use crate::{
     device::{
         block::{ReqType, RespStatus},
         VirtioDeviceError,
     },
     queue::VirtQueue,
-    transport::VirtioTransport,
+    transport::{ConfigManager, VirtioTransport},
 };
 
 #[derive(Debug)]
@@ -39,8 +44,14 @@ pub struct BlockDevice {
 impl BlockDevice {
     /// Creates a new VirtIO-Block driver and registers it.
     pub(crate) fn init(transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
+        let is_legacy = transport.is_legacy_version();
         let device = DeviceInner::init(transport)?;
-        let device_id = device.request_device_id();
+        let device_id = if is_legacy {
+            // FIXME: legacy device do not support `GetId` request.
+            "legacy_blk".to_string()
+        } else {
+            device.request_device_id()
+        };
 
         let block_device = Arc::new(Self {
             device,
@@ -63,15 +74,16 @@ impl BlockDevice {
         match request.type_() {
             BioType::Read => self.device.read(request),
             BioType::Write => self.device.write(request),
-            BioType::Flush | BioType::Discard => todo!(),
+            BioType::Flush => self.device.flush(request),
+            BioType::Discard => todo!(),
         }
     }
 
     /// Negotiate features for the device specified bits 0~23
     pub(crate) fn negotiate_features(features: u64) -> u64 {
-        let feature = BlockFeatures::from_bits(features).unwrap();
-        let support_features = BlockFeatures::from_bits(features).unwrap();
-        (feature & support_features).bits
+        let mut support_features = BlockFeatures::from_bits_truncate(features);
+        support_features.remove(BlockFeatures::MQ);
+        support_features.bits
     }
 }
 
@@ -83,14 +95,15 @@ impl aster_block::BlockDevice for BlockDevice {
     fn metadata(&self) -> BlockDeviceMeta {
         BlockDeviceMeta {
             max_nr_segments_per_bio: self.queue.max_nr_segments_per_bio(),
-            nr_sectors: VirtioBlockConfig::read_capacity_sectors(&self.device.config).unwrap(),
+            nr_sectors: self.device.config_manager.capacity_sectors(),
         }
     }
 }
 
 #[derive(Debug)]
 struct DeviceInner {
-    config: SafePtr<VirtioBlockConfig, IoMem>,
+    config_manager: ConfigManager<VirtioBlockConfig>,
+    features: VirtioBlockFeature,
     queue: SpinLock<VirtQueue>,
     transport: SpinLock<Box<dyn VirtioTransport>>,
     block_requests: DmaStream,
@@ -104,9 +117,10 @@ impl DeviceInner {
 
     /// Creates and inits the device.
     pub fn init(mut transport: Box<dyn VirtioTransport>) -> Result<Arc<Self>, VirtioDeviceError> {
-        let config = VirtioBlockConfig::new(transport.as_mut());
+        let config_manager = VirtioBlockConfig::new_manager(transport.as_ref());
+        debug!("virio_blk_config = {:?}", config_manager.read_config());
         assert_eq!(
-            VirtioBlockConfig::read_block_size(&config).unwrap(),
+            config_manager.block_size(),
             VirtioBlockConfig::sector_size(),
             "currently not support customized device logical block size"
         );
@@ -121,6 +135,7 @@ impl DeviceInner {
                 "Not supporting Multi-Queue Block IO Queueing Mechanism, only using the first queue"
             );
         }
+        let features = VirtioBlockFeature::new(transport.as_ref());
         let queue = VirtQueue::new(0, Self::QUEUE_SIZE, transport.as_mut())
             .expect("create virtqueue failed");
         let block_requests = {
@@ -135,7 +150,8 @@ impl DeviceInner {
         assert!(Self::QUEUE_SIZE as usize * RESP_SIZE <= block_responses.nbytes());
 
         let device = Arc::new(Self {
-            config,
+            config_manager,
+            features,
             queue: SpinLock::new(queue),
             transport: SpinLock::new(transport),
             block_requests,
@@ -398,6 +414,58 @@ impl DeviceInner {
 
             // Records the submitted request
             let submitted_request = SubmittedRequest::new(id as u16, bio_request, dma_streams);
+            self.submitted_requests
+                .disable_irq()
+                .lock()
+                .insert(token, submitted_request);
+            return;
+        }
+    }
+
+    /// Flushes any cached data from the guest to the persistent storage on the host.
+    /// This will be ignored if the device doesn't support the `VIRTIO_BLK_F_FLUSH` feature.
+    fn flush(&self, bio_request: BioRequest) {
+        if self.features.support_flush {
+            bio_request.bios().for_each(|bio| {
+                bio.complete(BioStatus::Complete);
+            });
+            return;
+        }
+
+        let id = self.id_allocator.disable_irq().lock().alloc().unwrap();
+        let req_slice = {
+            let req_slice = DmaStreamSlice::new(&self.block_requests, id * REQ_SIZE, REQ_SIZE);
+            let req = BlockReq {
+                type_: ReqType::Flush as _,
+                reserved: 0,
+                sector: bio_request.sid_range().start.to_raw(),
+            };
+            req_slice.write_val(0, &req).unwrap();
+            req_slice.sync().unwrap();
+            req_slice
+        };
+
+        let resp_slice = {
+            let resp_slice = DmaStreamSlice::new(&self.block_responses, id * RESP_SIZE, RESP_SIZE);
+            resp_slice.write_val(0, &BlockResp::default()).unwrap();
+            resp_slice
+        };
+
+        let num_used_descs = 1;
+        loop {
+            let mut queue = self.queue.disable_irq().lock();
+            if num_used_descs > queue.available_desc() {
+                continue;
+            }
+            let token = queue
+                .add_dma_buf(&[&req_slice], &[&resp_slice])
+                .expect("add queue failed");
+            if queue.should_notify() {
+                queue.notify();
+            }
+
+            // Records the submitted request
+            let submitted_request = SubmittedRequest::new(id as u16, bio_request, Vec::new());
             self.submitted_requests
                 .disable_irq()
                 .lock()

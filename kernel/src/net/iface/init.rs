@@ -6,7 +6,7 @@ use aster_bigtcp::device::WithDevice;
 use ostd::sync::LocalIrqDisabled;
 use spin::Once;
 
-use super::{poll_ifaces, Iface};
+use super::{poll::poll_ifaces, Iface};
 use crate::{
     net::iface::ext::{IfaceEx, IfaceExt},
     prelude::*,

@@ -22,14 +22,14 @@ pub fn sys_ioctl(fd: FileDesc, cmd: u32, arg: Vaddr, ctx: &Context) -> Result<Sy
     };
     let res = match ioctl_cmd {
         IoctlCmd::FIONBIO => {
-            let is_nonblocking = ctx.get_user_space().read_val::<i32>(arg)? != 0;
+            let is_nonblocking = ctx.user_space().read_val::<i32>(arg)? != 0;
             let mut flags = file.status_flags();
             flags.set(StatusFlags::O_NONBLOCK, is_nonblocking);
             file.set_status_flags(flags)?;
             0
         }
         IoctlCmd::FIOASYNC => {
-            let is_async = ctx.get_user_space().read_val::<i32>(arg)? != 0;
+            let is_async = ctx.user_space().read_val::<i32>(arg)? != 0;
             let mut flags = file.status_flags();
 
             // Set `O_ASYNC` flags will send `SIGIO` signal to a process when

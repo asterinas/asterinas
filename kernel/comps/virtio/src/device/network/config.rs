@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_network::EthernetAddr;
-use aster_util::{field_ptr, safe_ptr::SafePtr};
-use bitflags::bitflags;
-use ostd::{io_mem::IoMem, offset_of, Pod};
+use core::mem::offset_of;
 
-use crate::transport::VirtioTransport;
+use aster_network::EthernetAddr;
+use aster_util::safe_ptr::SafePtr;
+use bitflags::bitflags;
+use ostd::Pod;
+
+use crate::transport::{ConfigManager, VirtioTransport};
 
 bitflags! {
     /// Virtio Net Feature bits.
@@ -32,13 +34,18 @@ bitflags! {
         const VIRTIO_NET_F_GUEST_ANNOUNCE = 1 << 21;    // Driver can send gratuitous packets.
         const VIRTIO_NET_F_MQ = 1 << 22;                // Device supports multiqueue with automatic receive steering.
         const VIRTIO_NET_F_CTRL_MAC_ADDR = 1 << 23;     // Set MAC address through control channel.
-        // const VIRTIO_NET_F_HOST_USO = 1 << 56;          // Device can receive USO packets.
-        // const VIRTIO_NET_F_HASH_REPORT = 1 << 57;       // Device can report per-packet hash value and a type of calculated hash.
-        // const VIRTIO_NET_F_GUEST_HDRLEN = 1 << 59;      // Driver can provide the exact hdr_len value. Device benefits from knowing the exact header length.
-        // const VIRTIO_NET_F_RSS = 1 << 60;               // Device supports RSS (receive-side scaling) with Toeplitz hash calculation and configurable hash parameters for receive steering.
-        // const VIRTIO_NET_F_RSC_EXT = 1 << 61;           // DevicecanprocessduplicatedACKsandreportnumberofcoalescedseg- ments and duplicated ACKs.
-        // const VIRTIO_NET_F_STANDBY = 1 << 62;           // Device may act as a standby for a primary device with the same MAC address.
-        // const VIRTIO_NET_F_SPEED_DUPLEX = 1 << 63;      // Device reports speed and duplex.
+        const VIRTIO_NET_F_HASH_TUNNEL = 1 << 51;       // Device supports inner header hash for encapsulated packets.
+        const VIRTIO_NET_F_VQ_NOTF_COAL = 1 << 52;      // Device supports virtqueue notification coalescing.
+        const VIRTIO_NET_F_NOTF_COAL = 1 << 53;         // Device supports notifications coalescing.
+        const VIRTIO_NET_F_GUEST_USO4 = 1 << 54;        // Driver can receive USOv4 packets.
+        const VIRTIO_NET_F_GUEST_USO6 = 1 << 55;        // Driver can receive USOv6 packets.
+        const VIRTIO_NET_F_HOST_USO = 1 << 56;          // Device can receive USO packets.
+        const VIRTIO_NET_F_HASH_REPORT = 1 << 57;       // Device can report per-packet hash value and a type of calculated hash.
+        const VIRTIO_NET_F_GUEST_HDRLEN = 1 << 59;      // Driver can provide the exact hdr_len value. Device benefits from knowing the exact header length.
+        const VIRTIO_NET_F_RSS = 1 << 60;               // Device supports RSS (receive-side scaling) with Toeplitz hash calculation and configurable hash parameters for receive steering.
+        const VIRTIO_NET_F_RSC_EXT = 1 << 61;           // DevicecanprocessduplicatedACKsandreportnumberofcoalescedseg- ments and duplicated ACKs.
+        const VIRTIO_NET_F_STANDBY = 1 << 62;           // Device may act as a standby for a primary device with the same MAC address.
+        const VIRTIO_NET_F_SPEED_DUPLEX = 1 << 63;      // Device reports speed and duplex.
     }
 }
 
@@ -72,38 +79,55 @@ pub struct VirtioNetConfig {
 }
 
 impl VirtioNetConfig {
-    pub(super) fn new(transport: &dyn VirtioTransport) -> SafePtr<Self, IoMem> {
-        let memory = transport.device_config_memory();
-        SafePtr::new(memory, 0)
+    pub(super) fn new_manager(transport: &dyn VirtioTransport) -> ConfigManager<Self> {
+        let safe_ptr = transport
+            .device_config_mem()
+            .map(|mem| SafePtr::new(mem, 0));
+        let bar_space = transport.device_config_bar();
+        ConfigManager::new(safe_ptr, bar_space)
     }
+}
 
-    pub(super) fn read(this: &SafePtr<Self, IoMem>) -> ostd::prelude::Result<Self> {
-        // TODO: Add a general API to read this byte-by-byte.
-        let mac_data = {
-            let mut mac_data: [u8; 6] = [0; 6];
-            let mut mac_ptr = field_ptr!(this, Self, mac).cast::<u8>();
-            for byte in &mut mac_data {
-                *byte = mac_ptr.read_once().unwrap();
-                mac_ptr.byte_add(1);
-            }
-            mac_data
-        };
+impl ConfigManager<VirtioNetConfig> {
+    pub(super) fn read_config(&self) -> VirtioNetConfig {
+        let mut net_config = VirtioNetConfig::new_uninit();
+        // Only following fields are defined in legacy interface.
+        for i in 0..6 {
+            net_config.mac.0[i] = self
+                .read_once::<u8>(offset_of!(VirtioNetConfig, mac) + i)
+                .unwrap();
+        }
+        net_config.status.bits = self
+            .read_once::<u16>(offset_of!(VirtioNetConfig, status))
+            .unwrap();
 
-        Ok(Self {
-            mac: aster_network::EthernetAddr(mac_data),
-            status: field_ptr!(this, Self, status).read_once()?,
-            max_virtqueue_pairs: field_ptr!(this, Self, max_virtqueue_pairs).read_once()?,
-            mtu: field_ptr!(this, Self, mtu).read_once()?,
-            speed: field_ptr!(this, Self, speed).read_once()?,
-            duplex: field_ptr!(this, Self, duplex).read_once()?,
-            rss_max_key_size: field_ptr!(this, Self, rss_max_key_size).read_once()?,
-            rss_max_indirection_table_length: field_ptr!(
-                this,
-                Self,
-                rss_max_indirection_table_length
-            )
-            .read_once()?,
-            supported_hash_types: field_ptr!(this, Self, supported_hash_types).read_once()?,
-        })
+        if self.is_modern() {
+            net_config.max_virtqueue_pairs = self
+                .read_once::<u16>(offset_of!(VirtioNetConfig, max_virtqueue_pairs))
+                .unwrap();
+            net_config.mtu = self
+                .read_once::<u16>(offset_of!(VirtioNetConfig, mtu))
+                .unwrap();
+            net_config.speed = self
+                .read_once::<u32>(offset_of!(VirtioNetConfig, speed))
+                .unwrap();
+            net_config.duplex = self
+                .read_once::<u8>(offset_of!(VirtioNetConfig, duplex))
+                .unwrap();
+            net_config.rss_max_key_size = self
+                .read_once::<u8>(offset_of!(VirtioNetConfig, rss_max_key_size))
+                .unwrap();
+            net_config.rss_max_indirection_table_length = self
+                .read_once::<u16>(offset_of!(
+                    VirtioNetConfig,
+                    rss_max_indirection_table_length
+                ))
+                .unwrap();
+            net_config.supported_hash_types = self
+                .read_once::<u32>(offset_of!(VirtioNetConfig, supported_hash_types))
+                .unwrap();
+        }
+
+        net_config
     }
 }

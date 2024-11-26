@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::{
-    posix_thread::{thread_table, PosixThreadExt},
+    posix_thread::{thread_table, AsPosixThread},
     process_table,
     signal::{
         constants::SIGCONT,

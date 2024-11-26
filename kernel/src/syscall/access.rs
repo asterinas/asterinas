@@ -60,7 +60,7 @@ pub fn do_faccessat(
     let flags = FaccessatFlags::from_bits(flags)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "Invalid flags"))?;
 
-    let path = ctx.get_user_space().read_cstring(path_ptr, PATH_MAX)?;
+    let path = ctx.user_space().read_cstring(path_ptr, PATH_MAX)?;
     debug!(
         "dirfd = {}, path = {:?}, mode = {:o}, flags = {:?}",
         dirfd, path, mode, flags

@@ -32,7 +32,7 @@ pub fn sys_setitimer(
     if new_itimerval_addr == 0 {
         return_errno_with_message!(Errno::EINVAL, "invalid pointer to new value");
     }
-    let user_space = ctx.get_user_space();
+    let user_space = ctx.user_space();
     let new_itimerval = user_space.read_val::<itimerval_t>(new_itimerval_addr)?;
     let interval = Duration::try_from(new_itimerval.it_interval)?;
     let expire_time = Duration::try_from(new_itimerval.it_value)?;
@@ -92,7 +92,7 @@ pub fn sys_getitimer(
         it_interval: interval,
         it_value: remain,
     };
-    ctx.get_user_space().write_val(itimerval_addr, &itimerval)?;
+    ctx.user_space().write_val(itimerval_addr, &itimerval)?;
 
     Ok(SyscallReturn::Return(0))
 }

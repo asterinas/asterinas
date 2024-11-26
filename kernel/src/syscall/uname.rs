@@ -59,6 +59,6 @@ fn copy_cstring_to_u8_slice(src: &CStr, dst: &mut [u8]) {
 
 pub fn sys_uname(old_uname_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     debug!("old uname addr = 0x{:x}", old_uname_addr);
-    ctx.get_user_space().write_val(old_uname_addr, &*UTS_NAME)?;
+    ctx.user_space().write_val(old_uname_addr, &*UTS_NAME)?;
     Ok(SyscallReturn::Return(0))
 }

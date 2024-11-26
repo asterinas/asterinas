@@ -12,7 +12,7 @@ pub fn sys_getresuid(
     debug!("ruid_ptr = 0x{ruid_ptr:x}, euid_ptr = 0x{euid_ptr:x}, suid_ptr = 0x{suid_ptr:x}");
 
     let credentials = ctx.posix_thread.credentials();
-    let user_space = ctx.get_user_space();
+    let user_space = ctx.user_space();
 
     let ruid = credentials.ruid();
     user_space.write_val(ruid_ptr, &ruid)?;

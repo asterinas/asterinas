@@ -9,10 +9,7 @@ use ostd::timer::Jiffies;
 use super::{ext::IfaceEx, Iface, IFACES};
 use crate::{
     sched::priority::{Priority, PriorityRange},
-    thread::{
-        kernel_thread::{KernelThreadExt, ThreadOptions},
-        Thread,
-    },
+    thread::kernel_thread::ThreadOptions,
     WaitTimeout,
 };
 
@@ -22,7 +19,7 @@ pub fn lazy_init() {
     }
 }
 
-pub fn poll_ifaces() {
+pub(super) fn poll_ifaces() {
     let ifaces = IFACES.get().unwrap();
 
     for iface in ifaces.iter() {
@@ -70,6 +67,7 @@ fn spawn_background_poll_thread(iface: Arc<Iface>) {
     };
 
     // FIXME: remove the use of real-time priority.
-    let options = ThreadOptions::new(task_fn).priority(Priority::new(PriorityRange::new(0)));
-    Thread::spawn_kernel_thread(options);
+    ThreadOptions::new(task_fn)
+        .priority(Priority::new(PriorityRange::new(0)))
+        .spawn();
 }

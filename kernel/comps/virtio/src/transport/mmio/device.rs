@@ -7,9 +7,12 @@ use aster_rights::{ReadOp, WriteOp};
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use log::warn;
 use ostd::{
-    bus::mmio::{
-        bus::MmioDevice,
-        common_device::{MmioCommonDevice, VirtioMmioVersion},
+    bus::{
+        mmio::{
+            bus::MmioDevice,
+            common_device::{MmioCommonDevice, VirtioMmioVersion},
+        },
+        pci::cfg_space::Bar,
     },
     io_mem::IoMem,
     mm::{DmaCoherent, PAGE_SIZE},
@@ -21,7 +24,7 @@ use ostd::{
 use super::{layout::VirtioMmioLayout, multiplex::MultiplexIrq};
 use crate::{
     queue::{AvailRing, Descriptor, UsedRing},
-    transport::{DeviceStatus, VirtioTransport, VirtioTransportError},
+    transport::{ConfigManager, DeviceStatus, VirtioTransport, VirtioTransportError},
     VirtioDeviceType,
 };
 
@@ -170,9 +173,11 @@ impl VirtioTransport for VirtioMmioTransport {
         Ok(())
     }
 
-    fn get_notify_ptr(&self, _idx: u16) -> Result<SafePtr<u32, IoMem>, VirtioTransportError> {
+    fn notify_config(&self, _idx: usize) -> ConfigManager<u32> {
         let offset = offset_of!(VirtioMmioLayout, queue_notify) as usize;
-        Ok(SafePtr::new(self.common_device.io_mem().clone(), offset))
+        let safe_ptr = Some(SafePtr::new(self.common_device.io_mem().clone(), offset));
+
+        ConfigManager::new(safe_ptr, None)
     }
 
     fn num_queues(&self) -> u16 {
@@ -196,12 +201,16 @@ impl VirtioTransport for VirtioMmioTransport {
         todo!()
     }
 
-    fn device_config_memory(&self) -> IoMem {
+    fn device_config_mem(&self) -> Option<IoMem> {
         // offset: 0x100~0x200
-        self.common_device.io_mem().slice(0x100..0x200)
+        Some(self.common_device.io_mem().slice(0x100..0x200))
     }
 
-    fn device_features(&self) -> u64 {
+    fn device_config_bar(&self) -> Option<(Bar, usize)> {
+        None
+    }
+
+    fn read_device_features(&self) -> u64 {
         // select low
         field_ptr!(&self.layout, VirtioMmioLayout, device_features_select)
             .write_once(&0u32)
@@ -219,7 +228,7 @@ impl VirtioTransport for VirtioMmioTransport {
         device_feature_high << 32 | device_feature_low as u64
     }
 
-    fn set_driver_features(&mut self, features: u64) -> Result<(), VirtioTransportError> {
+    fn write_driver_features(&mut self, features: u64) -> Result<(), VirtioTransportError> {
         let low = features as u32;
         let high = (features >> 32) as u32;
         field_ptr!(&self.layout, VirtioMmioLayout, driver_features_select)
@@ -237,7 +246,7 @@ impl VirtioTransport for VirtioMmioTransport {
         Ok(())
     }
 
-    fn device_status(&self) -> DeviceStatus {
+    fn read_device_status(&self) -> DeviceStatus {
         DeviceStatus::from_bits(
             field_ptr!(&self.layout, VirtioMmioLayout, status)
                 .read_once()
@@ -246,7 +255,7 @@ impl VirtioTransport for VirtioMmioTransport {
         .unwrap()
     }
 
-    fn set_device_status(&mut self, status: DeviceStatus) -> Result<(), VirtioTransportError> {
+    fn write_device_status(&mut self, status: DeviceStatus) -> Result<(), VirtioTransportError> {
         field_ptr!(&self.layout, VirtioMmioLayout, status)
             .write_once(&(status.bits() as u32))
             .unwrap();

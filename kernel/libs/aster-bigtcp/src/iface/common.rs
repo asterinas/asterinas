@@ -220,13 +220,13 @@ impl<E> IfaceCommon<E> {
         context.poll_egress(device, dispatch_phy);
 
         tcp_sockets.iter().for_each(|socket| {
-            if socket.has_new_events() {
-                socket.on_iface_events();
+            if socket.has_events() {
+                socket.on_events();
             }
         });
         udp_sockets.iter().for_each(|socket| {
-            if socket.has_new_events() {
-                socket.on_iface_events();
+            if socket.has_events() {
+                socket.on_events();
             }
         });
 

@@ -43,14 +43,14 @@ pub(crate) fn init_cvm_guest() {
     match init_tdx() {
         Ok(td_info) => {
             early_println!(
-                "Intel TDX initialized\ntd gpaw: {}, td attributes: {:?}",
+                "[kernel] Intel TDX initialized\n[kernel] td gpaw: {}, td attributes: {:?}",
                 td_info.gpaw,
                 td_info.attributes
             );
         }
         Err(InitError::TdxGetVpInfoError(td_call_error)) => {
             panic!(
-                "Intel TDX not initialized, Failed to get TD info: {:?}",
+                "[kernel] Intel TDX not initialized, Failed to get TD info: {:?}",
                 td_call_error
             );
         }

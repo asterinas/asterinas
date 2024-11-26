@@ -29,7 +29,7 @@ pub fn sys_wait4(
 
     let (return_pid, exit_code) = (process.pid(), process.exit_code());
     if exit_status_ptr != 0 {
-        ctx.get_user_space()
+        ctx.user_space()
             .write_val(exit_status_ptr as _, &exit_code)?;
     }
 
@@ -40,7 +40,7 @@ pub fn sys_wait4(
             ..Default::default()
         };
 
-        ctx.get_user_space().write_val(rusage_addr, &rusage)?;
+        ctx.user_space().write_val(rusage_addr, &rusage)?;
     }
 
     Ok(SyscallReturn::Return(return_pid as _))

@@ -163,6 +163,9 @@ impl TaskOptions {
         /// all task will entering this function
         /// this function is mean to executing the task_fn in Task
         extern "C" fn kernel_task_entry() -> ! {
+            // See `switch_to_task` for why we need this.
+            crate::arch::irq::enable_local();
+
             let current_task = Task::current()
                 .expect("no current task, it should have current task in kernel task entry");
 
@@ -215,7 +218,7 @@ impl TaskOptions {
         Ok(new_task)
     }
 
-    /// Builds a new task and run it immediately.
+    /// Builds a new task and runs it immediately.
     pub fn spawn(self) -> Result<Arc<Task>> {
         let task = Arc::new(self.build()?);
         task.run();

@@ -77,7 +77,7 @@ pub struct VirtioInputConfig {
 
 impl VirtioInputConfig {
     pub(self) fn new(transport: &dyn VirtioTransport) -> SafePtr<Self, IoMem> {
-        let memory = transport.device_config_memory();
+        let memory = transport.device_config_mem().unwrap();
         SafePtr::new(memory, 0)
     }
 }

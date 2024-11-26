@@ -43,10 +43,7 @@ use sched::priority::PriorityRange;
 use crate::{
     prelude::*,
     sched::priority::Priority,
-    thread::{
-        kernel_thread::{KernelThreadExt, ThreadOptions},
-        Thread,
-    },
+    thread::{kernel_thread::ThreadOptions, Thread},
 };
 
 extern crate alloc;
@@ -89,10 +86,9 @@ pub fn main() {
     ostd::boot::smp::register_ap_entry(ap_init);
 
     // Spawn the first kernel thread on BSP.
-    Thread::spawn_kernel_thread(
-        ThreadOptions::new(init_thread)
-            .priority(Priority::new(PriorityRange::new(PriorityRange::MAX))),
-    );
+    ThreadOptions::new(init_thread)
+        .priority(Priority::new(PriorityRange::new(PriorityRange::MAX)))
+        .spawn();
 }
 
 pub fn init() {
@@ -122,11 +118,10 @@ fn ap_init() {
     let cpu_id = preempt_guard.current_cpu();
     drop(preempt_guard);
 
-    Thread::spawn_kernel_thread(
-        ThreadOptions::new(ap_idle_thread)
-            .cpu_affinity(cpu_id.into())
-            .priority(Priority::new(PriorityRange::new(PriorityRange::MAX))),
-    );
+    ThreadOptions::new(ap_idle_thread)
+        .cpu_affinity(cpu_id.into())
+        .priority(Priority::new(PriorityRange::new(PriorityRange::MAX)))
+        .spawn();
 }
 
 fn init_thread() {
@@ -139,9 +134,10 @@ fn init_thread() {
     fs::lazy_init();
     ipc::init();
     // driver::pci::virtio::block::block_device_test();
-    let thread = Thread::spawn_kernel_thread(ThreadOptions::new(|| {
+    let thread = ThreadOptions::new(|| {
         println!("[kernel] Hello world from kernel!");
-    }));
+    })
+    .spawn();
     thread.join();
 
     print_banner();

@@ -27,7 +27,7 @@ pub fn sys_rt_sigsuspend(
     }
 
     let sigmask = {
-        let mut mask: SigMask = ctx.get_user_space().read_val(sigmask_addr)?;
+        let mut mask: SigMask = ctx.user_space().read_val(sigmask_addr)?;
         // It is not possible to block SIGKILL or SIGSTOP,
         // specifying these signals in mask has no effect.
         mask -= SIGKILL;

@@ -350,7 +350,7 @@ impl FutexKey {
     pub fn load_val(&self, ctx: &Context) -> Result<i32> {
         // FIXME: how to implement a atomic load?
         warn!("implement an atomic load");
-        ctx.get_user_space().read_val(self.addr)
+        ctx.user_space().read_val(self.addr)
     }
 
     pub fn addr(&self) -> Vaddr {

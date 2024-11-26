@@ -7,9 +7,11 @@ use aster_bigtcp::{
 
 use crate::{
     events::IoEvents,
-    net::{iface::BoundUdpSocket, socket::util::send_recv_flags::SendRecvFlags},
+    net::{
+        iface::{BoundUdpSocket, Iface},
+        socket::util::send_recv_flags::SendRecvFlags,
+    },
     prelude::*,
-    process::signal::Pollee,
     util::{MultiRead, MultiWrite},
 };
 
@@ -36,6 +38,10 @@ impl BoundDatagram {
 
     pub fn set_remote_endpoint(&mut self, endpoint: &IpEndpoint) {
         self.remote_endpoint = Some(*endpoint)
+    }
+
+    pub fn iface(&self) -> &Arc<Iface> {
+        self.bound_socket.iface()
     }
 
     pub fn try_recv(
@@ -93,24 +99,19 @@ impl BoundDatagram {
         }
     }
 
-    pub(super) fn init_pollee(&self, pollee: &Pollee) {
-        pollee.reset_events();
-        self.update_io_events(pollee)
-    }
-
-    pub(super) fn update_io_events(&self, pollee: &Pollee) {
+    pub(super) fn check_io_events(&self) -> IoEvents {
         self.bound_socket.raw_with(|socket| {
+            let mut events = IoEvents::empty();
+
             if socket.can_recv() {
-                pollee.add_events(IoEvents::IN);
-            } else {
-                pollee.del_events(IoEvents::IN);
+                events |= IoEvents::IN;
             }
 
             if socket.can_send() {
-                pollee.add_events(IoEvents::OUT);
-            } else {
-                pollee.del_events(IoEvents::OUT);
+                events |= IoEvents::OUT;
             }
-        });
+
+            events
+        })
     }
 }

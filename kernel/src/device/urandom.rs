@@ -47,7 +47,9 @@ impl Pollable for Urandom {
 impl FileIo for Urandom {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         let mut buf = vec![0; writer.avail()];
-        Self::getrandom(buf.as_mut_slice())
+        let size = Self::getrandom(buf.as_mut_slice());
+        writer.write_fallible(&mut buf.as_slice().into())?;
+        size
     }
 
     fn write(&self, reader: &mut VmReader) -> Result<usize> {

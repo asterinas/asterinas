@@ -65,24 +65,12 @@ impl Thread {
     /// This function returns `None` if the current task is not associated with
     /// a thread, or if called within the bootstrap context.
     pub fn current() -> Option<Arc<Self>> {
-        Task::current()?
-            .data()
-            .downcast_ref::<Arc<Thread>>()
-            .cloned()
+        Task::current()?.as_thread().cloned()
     }
 
     /// Returns the task associated with this thread.
     pub fn task(&self) -> Arc<Task> {
         self.task.upgrade().unwrap()
-    }
-
-    /// Gets the Thread from task's data.
-    ///
-    /// # Panics
-    ///
-    /// This method panics if the task is not a thread.
-    pub fn borrow_from_task(task: &Task) -> &Arc<Self> {
-        task.data().downcast_ref::<Arc<Thread>>().unwrap()
     }
 
     /// Runs this thread at once.
@@ -152,15 +140,36 @@ impl Thread {
         &self.cpu_affinity
     }
 
+    /// Yields the execution to another thread.
+    ///
+    /// This method will return once the current thread is scheduled again.
     pub fn yield_now() {
         Task::yield_now()
     }
 
-    /// Returns the associated data.
+    /// Joins the execution of the thread.
     ///
-    /// The return type must be borrowed box, otherwise the `downcast_ref` will fail.
-    #[allow(clippy::borrowed_box)]
-    pub fn data(&self) -> &Box<dyn Send + Sync + Any> {
-        &self.data
+    /// This method will return after the thread exits.
+    pub fn join(&self) {
+        while !self.is_exited() {
+            Self::yield_now();
+        }
+    }
+
+    /// Returns the associated data.
+    pub fn data(&self) -> &(dyn Send + Sync + Any) {
+        &*self.data
+    }
+}
+
+/// A trait to provide the `as_thread` method for tasks.
+pub trait AsThread {
+    /// Returns the associated [`Thread`].
+    fn as_thread(&self) -> Option<&Arc<Thread>>;
+}
+
+impl AsThread for Task {
+    fn as_thread(&self) -> Option<&Arc<Thread>> {
+        self.data().downcast_ref::<Arc<Thread>>()
     }
 }

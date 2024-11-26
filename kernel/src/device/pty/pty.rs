@@ -3,6 +3,7 @@
 use alloc::format;
 
 use crate::{
+    current_userspace,
     device::tty::{line_discipline::LineDiscipline, new_job_control_and_ldisc},
     events::IoEvents,
     fs::{
@@ -13,7 +14,6 @@ use crate::{
         inode_handle::FileIo,
         utils::{AccessMode, Inode, InodeMode, IoctlCmd},
     },
-    get_current_userspace,
     prelude::*,
     process::{
         signal::{PollHandle, Pollable, Pollee},
@@ -48,7 +48,7 @@ impl PtyMaster {
             output: ldisc,
             input: SpinLock::new(RingBuffer::new(BUFFER_CAPACITY)),
             job_control,
-            pollee: Pollee::new(IoEvents::OUT),
+            pollee: Pollee::new(),
             weak_self: weak_ref.clone(),
         })
     }
@@ -64,7 +64,7 @@ impl PtyMaster {
     pub(super) fn slave_push_char(&self, ch: u8) {
         let mut input = self.input.disable_irq().lock();
         input.push_overwrite(ch);
-        self.update_state(&input);
+        self.pollee.notify(IoEvents::IN);
     }
 
     pub(super) fn slave_poll(
@@ -82,7 +82,9 @@ impl PtyMaster {
 
         let poll_out_mask = mask & IoEvents::OUT;
         if !poll_out_mask.is_empty() {
-            let poll_out_status = self.pollee.poll(poll_out_mask, poller);
+            let poll_out_status = self
+                .pollee
+                .poll_with(poll_out_mask, poller, || self.check_io_events());
             poll_status |= poll_out_status;
         }
 
@@ -101,16 +103,18 @@ impl PtyMaster {
         }
 
         let read_len = input.read_fallible(writer)?;
-        self.update_state(&input);
+        self.pollee.invalidate();
 
         Ok(read_len)
     }
 
-    fn update_state(&self, buf: &RingBuffer<u8>) {
-        if buf.is_empty() {
-            self.pollee.del_events(IoEvents::IN)
+    fn check_io_events(&self) -> IoEvents {
+        let input = self.input.disable_irq().lock();
+
+        if !input.is_empty() {
+            IoEvents::IN | IoEvents::OUT
         } else {
-            self.pollee.add_events(IoEvents::IN);
+            IoEvents::OUT
         }
     }
 }
@@ -121,7 +125,11 @@ impl Pollable for PtyMaster {
 
         let poll_in_mask = mask & IoEvents::IN;
         if !poll_in_mask.is_empty() {
-            let poll_in_status = self.pollee.poll(poll_in_mask, poller.as_deref_mut());
+            let poll_in_status = self
+                .pollee
+                .poll_with(poll_in_mask, poller.as_deref_mut(), || {
+                    self.check_io_events()
+                });
             poll_status |= poll_in_status;
         }
 
@@ -157,7 +165,7 @@ impl FileIo for PtyMaster {
             });
         }
 
-        self.update_state(&input);
+        self.pollee.notify(IoEvents::IN);
         Ok(write_len)
     }
 
@@ -165,11 +173,11 @@ impl FileIo for PtyMaster {
         match cmd {
             IoctlCmd::TCGETS => {
                 let termios = self.output.termios();
-                get_current_userspace!().write_val(arg, &termios)?;
+                current_userspace!().write_val(arg, &termios)?;
                 Ok(0)
             }
             IoctlCmd::TCSETS => {
-                let termios = get_current_userspace!().read_val(arg)?;
+                let termios = current_userspace!().read_val(arg)?;
                 self.output.set_termios(termios);
                 Ok(0)
             }
@@ -179,7 +187,7 @@ impl FileIo for PtyMaster {
             }
             IoctlCmd::TIOCGPTN => {
                 let idx = self.index();
-                get_current_userspace!().write_val(arg, &idx)?;
+                current_userspace!().write_val(arg, &idx)?;
                 Ok(0)
             }
             IoctlCmd::TIOCGPTPEER => {
@@ -212,11 +220,11 @@ impl FileIo for PtyMaster {
             }
             IoctlCmd::TIOCGWINSZ => {
                 let winsize = self.output.window_size();
-                get_current_userspace!().write_val(arg, &winsize)?;
+                current_userspace!().write_val(arg, &winsize)?;
                 Ok(0)
             }
             IoctlCmd::TIOCSWINSZ => {
-                let winsize = get_current_userspace!().read_val(arg)?;
+                let winsize = current_userspace!().read_val(arg)?;
                 self.output.set_window_size(winsize);
                 Ok(0)
             }
@@ -228,12 +236,12 @@ impl FileIo for PtyMaster {
                     );
                 };
                 let fg_pgid = foreground.pgid();
-                get_current_userspace!().write_val(arg, &fg_pgid)?;
+                current_userspace!().write_val(arg, &fg_pgid)?;
                 Ok(0)
             }
             IoctlCmd::TIOCSPGRP => {
                 let pgid = {
-                    let pgid: i32 = get_current_userspace!().read_val(arg)?;
+                    let pgid: i32 = current_userspace!().read_val(arg)?;
                     if pgid < 0 {
                         return_errno_with_message!(Errno::EINVAL, "negative pgid");
                     }
@@ -253,7 +261,7 @@ impl FileIo for PtyMaster {
             }
             IoctlCmd::FIONREAD => {
                 let len = self.input.lock().len() as i32;
-                get_current_userspace!().write_val(arg, &len)?;
+                current_userspace!().write_val(arg, &len)?;
                 Ok(0)
             }
             _ => Ok(0),
@@ -376,12 +384,12 @@ impl FileIo for PtySlave {
                 };
 
                 let fg_pgid = foreground.pgid();
-                get_current_userspace!().write_val(arg, &fg_pgid)?;
+                current_userspace!().write_val(arg, &fg_pgid)?;
                 Ok(0)
             }
             IoctlCmd::TIOCSPGRP => {
                 let pgid = {
-                    let pgid: i32 = get_current_userspace!().read_val(arg)?;
+                    let pgid: i32 = current_userspace!().read_val(arg)?;
                     if pgid < 0 {
                         return_errno_with_message!(Errno::EINVAL, "negative pgid");
                     }
@@ -401,7 +409,7 @@ impl FileIo for PtySlave {
             }
             IoctlCmd::FIONREAD => {
                 let buffer_len = self.master().slave_buf_len() as i32;
-                get_current_userspace!().write_val(arg, &buffer_len)?;
+                current_userspace!().write_val(arg, &buffer_len)?;
                 Ok(0)
             }
             _ => Ok(0),

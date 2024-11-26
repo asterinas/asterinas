@@ -5,7 +5,7 @@ use core::ops::Range;
 use aster_rights::{Dup, Rights, TRightSet, TRights, Write};
 use aster_rights_proc::require;
 
-use super::{vm_mapping::VmarMapOptions, VmPerms, Vmar, VmarRightsOp, Vmar_};
+use super::{VmPerms, Vmar, VmarMapOptions, VmarRightsOp, Vmar_};
 use crate::{
     prelude::*, thread::exception::PageFaultInfo, vm::page_fault_handler::PageFaultHandler,
 };

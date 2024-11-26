@@ -48,7 +48,7 @@ pub fn sys_socketpair(
         SocketFds(fd_a, fd_b)
     };
 
-    ctx.get_user_space().write_val(sv, &socket_fds)?;
+    ctx.user_space().write_val(sv, &socket_fds)?;
     Ok(SyscallReturn::Return(0))
 }
 

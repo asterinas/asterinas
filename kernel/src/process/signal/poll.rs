@@ -1,50 +1,99 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use core::{
-    sync::atomic::{AtomicU32, AtomicUsize, Ordering},
+    sync::atomic::{AtomicIsize, AtomicUsize, Ordering},
     time::Duration,
 };
 
-use ostd::sync::{Waiter, Waker};
+use ostd::{
+    sync::{Waiter, Waker},
+    task::Task,
+};
 
 use crate::{
     events::{IoEvents, Observer, Subject},
     prelude::*,
 };
 
-/// A pollee maintains a set of active events, which can be polled with
-/// pollers or be monitored with observers.
+/// A pollee represents any I/O object (e.g., a file or socket) that can be polled.
+///
+/// `Pollee` provides a standard mechanism to allow
+/// 1. An I/O object to maintain its I/O readiness; and
+/// 2. An interested part to poll the object's I/O readiness.
+///
+/// To use the pollee correctly, you must follow the rules below carefully:
+///  * [`Pollee::notify`] needs to be called whenever a new event arrives.
+///  * [`Pollee::invalidate`] needs to be called whenever an old event disappears and no new event
+///    arrives.
+///
+/// Then, [`Pollee::poll_with`] can allow you to register a [`Poller`] to wait for certain events,
+/// or register a [`PollAdaptor`] to be notified when certain events occur.
 pub struct Pollee {
     inner: Arc<PolleeInner>,
 }
 
+const INV_STATE: isize = -1;
+
 struct PolleeInner {
-    // A subject which is monitored with pollers.
+    /// A subject which is monitored with pollers.
     subject: Subject<IoEvents, IoEvents>,
-    // For efficient manipulation, we use AtomicU32 instead of RwLock<IoEvents>.
-    events: AtomicU32,
+    /// A state that describes how events are cached in the pollee.
+    ///
+    /// The meaning of this field depends on its value:
+    ///
+    /// * A non-negative value represents cached events. The events are guaranteed to be
+    ///   up-to-date, i.e., no one has called [`Pollee::notify`] or [`Pollee::invalidate`] since we
+    ///   started checking the events.
+    ///
+    /// * A value of [`INV_STATE`] means no cached events. We may have previously cached some
+    ///   events, but they are no longer valid due to calls of [`Pollee::notify`] or
+    ///   [`Pollee::invalidate`].
+    ///
+    /// * A negative value other than [`INV_STATE`] represents a [`Task`] that is currently
+    ///   checking events. When the task has finished checking and the state is neither invalidated
+    ///   nor overwritten by another task checking events, the state can be used to cache the
+    ///   checked events.
+    state: AtomicIsize,
+}
+
+impl Default for Pollee {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Pollee {
-    /// Creates a new instance of pollee.
-    pub fn new(init_events: IoEvents) -> Self {
+    /// Creates a new pollee.
+    pub fn new() -> Self {
         let inner = PolleeInner {
             subject: Subject::new(),
-            events: AtomicU32::new(init_events.bits()),
+            state: AtomicIsize::new(INV_STATE),
         };
         Self {
             inner: Arc::new(inner),
         }
     }
 
-    /// Returns the current events of the pollee filtered by the given event mask.
+    /// Returns the current events filtered by the given event mask.
     ///
     /// If a poller is provided, the poller will start monitoring the pollee and receive event
     /// notification when the pollee receives interesting events.
     ///
     /// This operation is _atomic_ in the sense that if there are interesting events, either the
     /// events are returned or the poller is notified.
-    pub fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
+    ///
+    /// The above statement about atomicity is true even if `check` contains race conditions (and
+    /// in fact it always will, because even if it holds a lock, the lock will be released when
+    /// `check` returns).
+    pub fn poll_with<F>(
+        &self,
+        mask: IoEvents,
+        poller: Option<&mut PollHandle>,
+        check: F,
+    ) -> IoEvents
+    where
+        F: FnOnce() -> IoEvents,
+    {
         let mask = mask | IoEvents::ALWAYS_POLL;
 
         // Register the provided poller.
@@ -52,8 +101,52 @@ impl Pollee {
             self.register_poller(poller, mask);
         }
 
+        // Return the cached events, if any.
+        let events = self.inner.state.load(Ordering::Acquire);
+        if events >= 0 {
+            return IoEvents::from_bits_truncate(events as _) & mask;
+        }
+
+        // If we know some task is checking the events, let it finish.
+        if events != INV_STATE {
+            return check() & mask;
+        }
+
+        // We will store `task_ptr` in `state` to indicate that we're checking the events. But we
+        // need to make sure it's a negative value.
+        const {
+            use ostd::mm::KERNEL_VADDR_RANGE;
+            assert!((KERNEL_VADDR_RANGE.start as isize) < 0);
+        }
+        let task_ptr = Task::current().unwrap().as_ref() as *const _ as isize;
+
+        // Store `task_ptr` in `state` to indicate we're checking the events.
+        //
+        // Note that:
+        // * If there are race conditions, `state` may contain something other than `INV_STATE` (as
+        //   checked above), but that's okay.
+        // * Given the first point, we only need to do a store here. However, we need the `Acquire`
+        //   order, which forces us to do a `swap` operation. We ignore the returned value to allow
+        //   the compiler to produce better assembly code.
+        let _ = self.inner.state.swap(task_ptr, Ordering::Acquire);
+
         // Check events after the registration to prevent race conditions.
-        self.events() & mask
+        let new_events = check();
+
+        // If this `compare_exchange_weak` succeeds, we can guarantee that we are the only task
+        // trying to cache the checked events, and that the events are not invalidated in the
+        // middle, so we can cache them with confidence.
+        //
+        // Otherwise, we cache nothing, but returning the obsolete events is still okay.
+        let _ = self.inner.state.compare_exchange_weak(
+            task_ptr,
+            new_events.bits() as _,
+            Ordering::Release,
+            Ordering::Relaxed,
+        );
+
+        // Return the events filtered by the mask.
+        new_events & mask
     }
 
     fn register_poller(&self, poller: &mut PollHandle, mask: IoEvents) {
@@ -64,69 +157,32 @@ impl Pollee {
         poller.pollees.push(Arc::downgrade(&self.inner));
     }
 
-    /// Register an IoEvents observer.
+    /// Notifies pollers of some events.
     ///
-    /// A registered observer will get notified (through its `on_events` method)
-    /// every time new events specified by the `mask` argument happen on the
-    /// pollee (through the `add_events` method).
+    /// This method invalidates the (internal) cached events and wakes up all registered pollers
+    /// that are interested in the events.
     ///
-    /// If the given observer has already been registered, then its registered
-    /// event mask will be updated.
-    ///
-    /// Note that the observer will always get notified of the events in
-    /// `IoEvents::ALWAYS_POLL` regardless of the value of `mask`.
-    pub fn register_observer(&self, observer: Weak<dyn Observer<IoEvents>>, mask: IoEvents) {
-        let mask = mask | IoEvents::ALWAYS_POLL;
-        self.inner.subject.register_observer(observer, mask);
-    }
+    /// This method should be called whenever new events arrive. The events can be spurious. This
+    /// way, the caller can avoid expensive calculations and simply add all possible ones.
+    pub fn notify(&self, events: IoEvents) {
+        self.invalidate();
 
-    /// Unregister an IoEvents observer.
-    ///
-    /// If such an observer is found, then the registered observer will be
-    /// removed from the pollee and returned as the return value. Otherwise,
-    /// a `None` will be returned.
-    pub fn unregister_observer(
-        &self,
-        observer: &Weak<dyn Observer<IoEvents>>,
-    ) -> Option<Weak<dyn Observer<IoEvents>>> {
-        self.inner.subject.unregister_observer(observer)
-    }
-
-    /// Add some events to the pollee's state.
-    ///
-    /// This method wakes up all registered pollers that are interested in
-    /// the added events.
-    pub fn add_events(&self, events: IoEvents) {
-        self.inner.events.fetch_or(events.bits(), Ordering::Release);
         self.inner.subject.notify_observers(&events);
     }
 
-    /// Remove some events from the pollee's state.
+    /// Invalidates the (internal) cached events.
     ///
-    /// This method will not wake up registered pollers even when
-    /// the pollee still has some interesting events to the pollers.
-    pub fn del_events(&self, events: IoEvents) {
-        self.inner
-            .events
-            .fetch_and(!events.bits(), Ordering::Release);
-    }
-
-    /// Reset the pollee's state.
-    ///
-    /// Reset means removing all events on the pollee.
-    pub fn reset_events(&self) {
-        self.inner
-            .events
-            .fetch_and(!IoEvents::all().bits(), Ordering::Release);
-    }
-
-    fn events(&self) -> IoEvents {
-        let event_bits = self.inner.events.load(Ordering::Acquire);
-        IoEvents::from_bits(event_bits).unwrap()
+    /// This method should be called whenever old events disappear but no new events arrive. The
+    /// invalidation can be spurious, so the caller can avoid complex calculations and simply
+    /// invalidate even if no events disappear.
+    pub fn invalidate(&self) {
+        // The memory order must be `Release`, so that the reader is guaranteed to see the changes
+        // that trigger the invalidation.
+        self.inner.state.store(INV_STATE, Ordering::Release);
     }
 }
 
-/// An opaque handle that can be used as an argument of the [`Pollee::poll`] method.
+/// An opaque handle that can be used as an argument of the [`Pollable::poll`] method.
 ///
 /// This type can represent an entity of [`PollAdaptor`] or [`Poller`], which is done via the
 /// [`PollAdaptor::as_handle_mut`] and [`Poller::as_handle_mut`] methods.
@@ -174,11 +230,11 @@ impl Drop for PollHandle {
     }
 }
 
-/// An adaptor to make an [`Observer`] usable for [`Pollee::poll`].
+/// An adaptor to make an [`Observer`] usable for [`Pollable::poll`].
 ///
-/// Normally, [`Pollee::poll`] accepts a [`Poller`] which is used to wait for events. By using this
-/// adaptor, it is possible to use any [`Observer`] with [`Pollee::poll`]. The observer will be
-/// notified whenever there are new events.
+/// Normally, [`Pollable::poll`] accepts a [`Poller`] which is used to wait for events. By using
+/// this adaptor, it is possible to use any [`Observer`] with [`Pollable::poll`]. The observer will
+/// be notified whenever there are new events.
 pub struct PollAdaptor<O> {
     // The event observer.
     observer: Arc<O>,
@@ -286,18 +342,18 @@ impl Observer<IoEvents> for EventCounter {
 /// The `Pollable` trait allows for waiting for events and performing event-based operations.
 ///
 /// Implementors are required to provide a method, [`Pollable::poll`], which is usually implemented
-/// by simply calling [`Pollee::poll`] on the internal [`Pollee`]. This trait provides another
+/// by simply calling [`Pollable::poll`] on the internal [`Pollee`]. This trait provides another
 /// method, [`Pollable::wait_events`], to allow waiting for events and performing operations
 /// according to the events.
 ///
 /// This trait is added instead of creating a new method in [`Pollee`] because sometimes we do not
 /// have access to the internal [`Pollee`], but there is a method that provides the same semantics
-/// as [`Pollee::poll`] and we need to perform event-based operations using that method.
+/// as [`Pollable::poll`] and we need to perform event-based operations using that method.
 pub trait Pollable {
     /// Returns the interesting events now and monitors their occurrence in the future if the
     /// poller is provided.
     ///
-    /// This method has the same semantics as [`Pollee::poll`].
+    /// This method has the same semantics as [`Pollee::poll_with`].
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents;
 
     /// Waits for events and performs event-based operations.
@@ -351,5 +407,156 @@ pub trait Pollable {
             // FIXME: We need to update `timeout` since we have waited for some time.
             poller.wait(timeout)?;
         }
+    }
+}
+
+#[cfg(ktest)]
+mod test {
+    use ostd::prelude::*;
+
+    use super::*;
+
+    #[ktest]
+    fn test_notify_before() {
+        let pollee = Pollee::new();
+
+        pollee.notify(IoEvents::OUT);
+
+        assert_eq!(
+            pollee.poll_with(IoEvents::all(), None, || IoEvents::IN),
+            // This is allowed, as we invoke the checking closure.
+            IoEvents::IN
+        );
+
+        assert_eq!(
+            pollee.poll_with(IoEvents::all(), None, || IoEvents::OUT),
+            // This is allowed, as the cached state is still valid.
+            IoEvents::IN
+        );
+    }
+
+    #[ktest]
+    fn test_notify_middle() {
+        let pollee = Pollee::new();
+
+        assert_eq!(
+            pollee.poll_with(IoEvents::all(), None, || {
+                pollee.notify(IoEvents::OUT);
+                IoEvents::IN
+            }),
+            // This is allowed, as we invoke the checking closure.
+            IoEvents::IN
+        );
+
+        assert_eq!(
+            pollee.poll_with(IoEvents::all(), None, || IoEvents::OUT),
+            // This is allowed, as we invoke the checking closure.
+            //
+            // Reusing the cached state is NOT allowed as we've been notified above.
+            IoEvents::OUT
+        );
+    }
+
+    #[ktest]
+    fn test_notify_after() {
+        let pollee = Pollee::new();
+
+        assert_eq!(
+            pollee.poll_with(IoEvents::all(), None, || IoEvents::IN),
+            // This is allowed, as we invoke the checking closure.
+            IoEvents::IN
+        );
+
+        pollee.notify(IoEvents::OUT);
+
+        assert_eq!(
+            pollee.poll_with(IoEvents::all(), None, || IoEvents::OUT),
+            // This is allowed, as we invoke the checking closure.
+            //
+            // Reusing the cached state is NOT allowed as we've been notified above.
+            IoEvents::OUT
+        );
+    }
+
+    #[ktest]
+    fn test_nested_notify_before() {
+        let pollee = Pollee::new();
+
+        pollee.notify(IoEvents::OUT);
+
+        assert_eq!(
+            pollee.poll_with(IoEvents::all(), None, || {
+                assert_eq!(
+                    pollee.poll_with(IoEvents::all(), None, || IoEvents::OUT),
+                    // This is allowed, as we invoke the checking closure.
+                    IoEvents::OUT
+                );
+                IoEvents::IN
+            }),
+            // This is allowed, as we invoke the checking closure.
+            IoEvents::IN
+        );
+
+        assert_eq!(
+            pollee.poll_with(IoEvents::all(), None, || IoEvents::OUT),
+            // This is allowed, as the cached state is still valid.
+            IoEvents::IN
+        );
+    }
+
+    #[ktest]
+    fn test_nested_notify_between() {
+        let pollee = Pollee::new();
+
+        assert_eq!(
+            pollee.poll_with(IoEvents::all(), None, || {
+                pollee.notify(IoEvents::OUT);
+                assert_eq!(
+                    pollee.poll_with(IoEvents::all(), None, || IoEvents::OUT),
+                    // This is allowed, as we invoke the checking closure.
+                    IoEvents::OUT
+                );
+                IoEvents::IN
+            }),
+            // This is allowed, as we invoke the checking closure.
+            IoEvents::IN
+        );
+
+        assert_eq!(
+            pollee.poll_with(IoEvents::all(), None, || IoEvents::OUT),
+            // This is allowed, as we invoke the checking closure.
+            //
+            // Reusing the cached state is NOT allowed as we've been notified above.
+            IoEvents::OUT
+        );
+    }
+
+    #[ktest]
+    fn test_nested_notify_inside() {
+        let pollee = Pollee::new();
+
+        assert_eq!(
+            pollee.poll_with(IoEvents::all(), None, || {
+                assert_eq!(
+                    pollee.poll_with(IoEvents::all(), None, || {
+                        pollee.notify(IoEvents::OUT);
+                        IoEvents::OUT
+                    }),
+                    // This is allowed, as we invoke the checking closure.
+                    IoEvents::OUT
+                );
+                IoEvents::IN
+            }),
+            // This is allowed, as we invoke the checking closure.
+            IoEvents::IN
+        );
+
+        assert_eq!(
+            pollee.poll_with(IoEvents::all(), None, || IoEvents::OUT),
+            // This is allowed, as we invoke the checking closure.
+            //
+            // Reusing the cached state is NOT allowed as we've been notified above.
+            IoEvents::OUT,
+        );
     }
 }

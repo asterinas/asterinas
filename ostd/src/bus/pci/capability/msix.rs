@@ -217,6 +217,12 @@ impl CapabilityMsixData {
     pub fn irq_mut(&mut self, index: usize) -> Option<&mut IrqLine> {
         self.irqs[index].as_mut()
     }
+
+    /// Returns true if MSI-X Enable bit is set.
+    pub fn is_enabled(&self) -> bool {
+        let msg_ctrl = self.loc.read16(self.ptr + 2);
+        msg_ctrl & 0x8000 != 0
+    }
 }
 
 fn set_bit(origin_value: u16, offset: usize, set: bool) -> u16 {

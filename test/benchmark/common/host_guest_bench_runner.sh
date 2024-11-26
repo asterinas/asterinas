@@ -62,6 +62,9 @@ run_benchmark() {
     # Sleep for a short time to ensure the guest is fully ready
     sleep 1
 
+    # The listening server address in guest VM
+    export GUEST_SERVER_IP_ADDRESS=10.0.2.15
+
     # Run the host command and save the output to the specified file.
     bash "${BENCHMARK_PATH}/host.sh" 2>&1 | tee "${output_file}"  
 

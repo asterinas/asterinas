@@ -28,7 +28,7 @@ pub use sig_stack::{SigStack, SigStackFlags};
 
 use super::posix_thread::PosixThread;
 use crate::{
-    get_current_userspace,
+    current_userspace,
     prelude::*,
     process::{do_exit_group, TermStatus},
 };
@@ -159,7 +159,7 @@ pub fn handle_user_signal(
     // To avoid corrupting signal stack, we minus 128 first.
     stack_pointer -= 128;
 
-    let user_space = ctx.get_user_space();
+    let user_space = ctx.user_space();
 
     // 1. write siginfo_t
     stack_pointer -= mem::size_of::<siginfo_t>() as u64;
@@ -218,6 +218,15 @@ pub fn handle_user_signal(
     } else {
         user_ctx.set_arguments(sig_num, 0, 0);
     }
+    // CPU architecture-dependent logic
+    cfg_if::cfg_if! {
+        if #[cfg(target_arch = "x86_64")] {
+            // Clear `DF` flag for C function entry to conform to x86-64 calling convention.
+            // Bit 10 is the DF flag.
+            const X86_RFLAGS_DF: usize = 1 << 10;
+            user_ctx.general_regs_mut().rflags &= !X86_RFLAGS_DF;
+        }
+    }
 
     Ok(())
 }
@@ -249,7 +258,7 @@ fn use_alternate_signal_stack(posix_thread: &PosixThread) -> Option<usize> {
 
 fn write_u64_to_user_stack(rsp: u64, value: u64) -> Result<u64> {
     let rsp = rsp - 8;
-    get_current_userspace!().write_val(rsp as Vaddr, &value)?;
+    current_userspace!().write_val(rsp as Vaddr, &value)?;
     Ok(rsp)
 }
 

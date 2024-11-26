@@ -13,7 +13,10 @@ use super::PciDeviceLocation;
 use crate::{
     arch::device::io_port::{PortRead, PortWrite},
     io_mem::IoMem,
-    mm::page_prop::{CachePolicy, PageFlags},
+    mm::{
+        page_prop::{CachePolicy, PageFlags},
+        PodOnce, VmIoOnce,
+    },
     Error, Result,
 };
 
@@ -174,6 +177,22 @@ impl Bar {
             // IO BAR
             Self::Io(Arc::new(IoBar::new(&location, index)?))
         })
+    }
+
+    /// Reads a value of a specified type at a specified offset.
+    pub fn read_once<T: PodOnce + PortRead>(&self, offset: usize) -> Result<T> {
+        match self {
+            Bar::Memory(mem_bar) => mem_bar.io_mem().read_once(offset),
+            Bar::Io(io_bar) => io_bar.read(offset as u32),
+        }
+    }
+
+    /// Writes a value of a specified type at a specified offset.
+    pub fn write_once<T: PodOnce + PortWrite>(&self, offset: usize, value: T) -> Result<()> {
+        match self {
+            Bar::Memory(mem_bar) => mem_bar.io_mem().write_once(offset, &value),
+            Bar::Io(io_bar) => io_bar.write(offset as u32, value),
+        }
     }
 }
 

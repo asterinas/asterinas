@@ -40,7 +40,7 @@ fn get_old_stack(
         debug!("old stack = {:?}", old_stack);
 
         let stack = stack_t::from(old_stack.clone());
-        ctx.get_user_space()
+        ctx.user_space()
             .write_val::<stack_t>(old_sig_stack_addr, &stack)?;
     } else {
         let stack = stack_t {
@@ -48,7 +48,7 @@ fn get_old_stack(
             flags: SigStackFlags::SS_DISABLE.bits() as i32,
             size: 0,
         };
-        ctx.get_user_space()
+        ctx.user_space()
             .write_val::<stack_t>(old_sig_stack_addr, &stack)?;
     }
 
@@ -67,7 +67,7 @@ fn set_new_stack(sig_stack_addr: Vaddr, old_stack: Option<&SigStack>, ctx: &Cont
     }
 
     let new_stack = {
-        let stack = ctx.get_user_space().read_val::<stack_t>(sig_stack_addr)?;
+        let stack = ctx.user_space().read_val::<stack_t>(sig_stack_addr)?;
         SigStack::try_from(stack)?
     };
 

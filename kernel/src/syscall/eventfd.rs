@@ -85,7 +85,7 @@ impl EventFile {
 
     fn new(init_val: u64, flags: Flags) -> Self {
         let counter = Mutex::new(init_val);
-        let pollee = Pollee::new(IoEvents::OUT);
+        let pollee = Pollee::new();
         let write_wait_queue = WaitQueue::new();
         Self {
             counter,
@@ -99,35 +99,24 @@ impl EventFile {
         self.flags.lock().contains(Flags::EFD_NONBLOCK)
     }
 
-    fn update_io_state(&self, counter: &MutexGuard<u64>) {
-        let is_readable = **counter != 0;
+    fn check_io_events(&self) -> IoEvents {
+        let counter = self.counter.lock();
+
+        let mut events = IoEvents::empty();
+
+        let is_readable = *counter != 0;
+        if is_readable {
+            events |= IoEvents::IN;
+        }
 
         // if it is possible to write a value of at least "1"
         // without blocking, the file is writable
-        let is_writable = **counter < Self::MAX_COUNTER_VALUE;
-
+        let is_writable = *counter < Self::MAX_COUNTER_VALUE;
         if is_writable {
-            if is_readable {
-                self.pollee.add_events(IoEvents::IN | IoEvents::OUT);
-            } else {
-                self.pollee.add_events(IoEvents::OUT);
-                self.pollee.del_events(IoEvents::IN);
-            }
-
-            self.write_wait_queue.wake_all();
-
-            return;
+            events |= IoEvents::OUT;
         }
 
-        if is_readable {
-            self.pollee.add_events(IoEvents::IN);
-            self.pollee.del_events(IoEvents::OUT);
-            return;
-        }
-
-        self.pollee.del_events(IoEvents::IN | IoEvents::OUT);
-
-        // TODO: deal with overflow logic
+        events
     }
 
     fn try_read(&self, writer: &mut VmWriter) -> Result<()> {
@@ -147,7 +136,8 @@ impl EventFile {
             *counter = 0;
         }
 
-        self.update_io_state(&counter);
+        self.pollee.notify(IoEvents::OUT);
+        self.write_wait_queue.wake_all();
 
         Ok(())
     }
@@ -165,7 +155,7 @@ impl EventFile {
 
         if new_value <= Self::MAX_COUNTER_VALUE {
             *counter = new_value;
-            self.update_io_state(&counter);
+            self.pollee.notify(IoEvents::IN);
             return Ok(());
         }
 
@@ -175,7 +165,8 @@ impl EventFile {
 
 impl Pollable for EventFile {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        self.pollee.poll(mask, poller)
+        self.pollee
+            .poll_with(mask, poller, || self.check_io_events())
     }
 }
 
