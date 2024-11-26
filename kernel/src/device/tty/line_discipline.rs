@@ -29,6 +29,11 @@ const BUFFER_CAPACITY: usize = 4096;
 
 pub type LdiscSignalSender = Arc<dyn Fn(KernelSignal) + Send + Sync + 'static>;
 
+// Lock ordering to prevent deadlock (circular dependencies):
+// 1. `termios`
+// 2. `current_line`
+// 3. `read_buffer`
+// 4. `work_item_para`
 pub struct LineDiscipline {
     /// Current line
     current_line: SpinLock<CurrentLine, LocalIrqDisabled>,
@@ -273,6 +278,7 @@ impl LineDiscipline {
     ///
     /// If no bytes are available, this method returns 0 immediately.
     fn poll_read(&self, dst: &mut [u8]) -> usize {
+        let termios = self.termios.lock();
         let mut buffer = self.read_buffer.lock();
         let len = buffer.len();
         let max_read_len = len.min(dst.len());
@@ -282,7 +288,6 @@ impl LineDiscipline {
         let mut read_len = 0;
         for dst_i in dst.iter_mut().take(max_read_len) {
             if let Some(next_char) = buffer.pop() {
-                let termios = self.termios.lock();
                 if termios.is_canonical_mode() {
                     // canonical mode, read until meet new line
                     if is_line_terminator(next_char, &termios) {
