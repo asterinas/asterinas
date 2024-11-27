@@ -29,6 +29,9 @@ pub fn inject_scheduler(scheduler: &'static dyn Scheduler<Task>) {
             if local_rq.update_current(UpdateFlags::Tick) {
                 cpu_local::set_need_preempt();
             }
+
+            crate::mm::tlb::process_pending_shootdowns();
+            crate::mm::tlb::delayed_recycle_pages();
         })
     });
 }
@@ -250,6 +253,9 @@ where
             }
         };
     };
+
+    crate::mm::tlb::process_pending_shootdowns();
+    crate::mm::tlb::delayed_recycle_pages();
 
     // FIXME: At this point, we need to prevent the current task from being scheduled on another
     // CPU core. However, we currently have no way to ensure this. This is a soundness hole and

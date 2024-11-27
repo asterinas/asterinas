@@ -182,7 +182,6 @@ impl VmMapping {
                 if self.is_shared || only_reference {
                     cursor.protect_next(PAGE_SIZE, |p| p.flags |= new_flags);
                     cursor.flusher().issue_tlb_flush(TlbFlushOp::Address(va));
-                    cursor.flusher().dispatch_tlb_flush();
                 } else {
                     let new_frame = duplicate_frame(&frame)?;
                     prop.flags |= new_flags;
@@ -403,7 +402,6 @@ impl VmMapping {
                 break;
             }
         }
-        cursor.flusher().dispatch_tlb_flush();
 
         Self { perms, ..self }
     }
