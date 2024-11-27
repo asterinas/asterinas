@@ -28,17 +28,27 @@
 //! different considerations in different systems.
 
 use acpi::platform::PlatformInfo;
+use cfg_if::cfg_if;
 
-use crate::{
-    arch::x86::kernel::{
-        acpi::ACPI_TABLES,
-        apic::{
-            self, ApicId, DeliveryMode, DeliveryStatus, DestinationMode, DestinationShorthand, Icr,
-            Level, TriggerMode,
-        },
-    },
-    mm::{paddr_to_vaddr, PAGE_SIZE},
-};
+use crate::{arch::x86::kernel::acpi::ACPI_TABLES, mm::paddr_to_vaddr};
+
+cfg_if! {
+    if #[cfg(feature = "cvm_guest")] {
+        use tdx_guest::tdx_is_enabled;
+        use crate::arch::x86::kernel::acpi::AcpiMemoryHandler;
+        use acpi::platform::wakeup_aps;
+    } else {
+        use crate::{
+            arch::x86::kernel::{
+                apic::{
+                    self, ApicId, DeliveryMode, DeliveryStatus, DestinationMode, DestinationShorthand, Icr,
+                    Level, TriggerMode,
+                },
+            },
+            mm::PAGE_SIZE,
+        };
+    }
+}
 
 /// Get the number of processors
 ///
@@ -55,10 +65,27 @@ pub(crate) fn get_num_processors() -> Option<u32> {
 }
 
 /// Brings up all application processors.
-pub(crate) fn bringup_all_aps() {
+pub(crate) fn bringup_all_aps(num_cpus: u32) {
     copy_ap_boot_code();
     init_boot_stack_array();
-    send_boot_ipis();
+    cfg_if! {
+        if #[cfg(feature = "cvm_guest")] {
+            if tdx_is_enabled() {
+                for ap_num in 1..num_cpus {
+                    wakeup_aps(
+                        &ACPI_TABLES.get().unwrap().lock(),
+                        AcpiMemoryHandler {},
+                        ap_num,
+                        AP_BOOT_START_PA as u64,
+                        1000,
+                    )
+                    .unwrap();
+                }
+            }
+        } else {
+            send_boot_ipis();
+        }
+    }
 }
 
 /// This is where the linker load the symbols in the `.ap_boot` section.
@@ -120,6 +147,7 @@ extern "C" {
 /// but send the second SIPI directly (checking whether each core is
 /// started successfully one by one will bring extra overhead). For
 /// APs that have been started, this signal will not bring any cost.
+#[cfg(not(feature = "cvm_guest"))]
 fn send_boot_ipis() {
     send_init_to_all_aps();
 
@@ -138,6 +166,7 @@ fn send_boot_ipis() {
     spin_wait_cycles(20_000_000);
 }
 
+#[cfg(not(feature = "cvm_guest"))]
 fn send_startup_to_all_aps() {
     let icr = Icr::new(
         ApicId::from(0),
@@ -153,6 +182,7 @@ fn send_startup_to_all_aps() {
     apic::with_borrow(|apic| unsafe { apic.send_ipi(icr) });
 }
 
+#[cfg(not(feature = "cvm_guest"))]
 fn send_init_to_all_aps() {
     let icr = Icr::new(
         ApicId::from(0),
@@ -168,6 +198,7 @@ fn send_init_to_all_aps() {
     apic::with_borrow(|apic| unsafe { apic.send_ipi(icr) });
 }
 
+#[cfg(not(feature = "cvm_guest"))]
 fn send_init_deassert() {
     let icr = Icr::new(
         ApicId::from(0),
@@ -187,6 +218,7 @@ fn send_init_deassert() {
 ///
 /// Since the timer requires CPU local storage to be initialized, we
 /// can only wait by spinning.
+#[cfg(not(feature = "cvm_guest"))]
 fn spin_wait_cycles(c: u64) {
     fn duration(from: u64, to: u64) -> u64 {
         if to >= from {
