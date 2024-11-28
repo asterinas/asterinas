@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_rights::WriteOp;
-use ostd::{cpu::UserContext, user::UserContextApi};
+use ostd::{
+    cpu::{FpuState, RawGeneralRegs, UserContext},
+    user::UserContextApi,
+};
 
 use super::{constants::*, SyscallReturn};
 use crate::{
@@ -131,10 +134,14 @@ fn do_execve(
     // set signal disposition to default
     process.sig_dispositions().lock().inherit();
     // set cpu context to default
-    let default_content = UserContext::default();
-    *user_context.general_regs_mut() = *default_content.general_regs();
-    user_context.set_tls_pointer(default_content.tls_pointer());
-    *user_context.fp_regs_mut() = *default_content.fp_regs();
+    *user_context.general_regs_mut() = RawGeneralRegs::default();
+    user_context.set_tls_pointer(0);
+    *user_context.fpu_state_mut() = FpuState::default();
+    // FIXME: how to reset the FPU state correctly? Before returning to the user space,
+    // the kernel will call `handle_pending_signal`, which may update the CPU states so that
+    // when the kernel switches to the user mode, the control of the CPU will be handed over
+    // to the user-registered signal handlers.
+    user_context.fpu_state().restore();
     // set new entry point
     user_context.set_instruction_pointer(elf_load_info.entry_point() as _);
     debug!("entry_point: 0x{:x}", elf_load_info.entry_point());
