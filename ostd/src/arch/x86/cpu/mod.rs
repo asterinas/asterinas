@@ -4,9 +4,11 @@
 
 pub mod local;
 
+use alloc::boxed::Box;
 use core::{
-    arch::x86_64::{_fxrstor, _fxsave},
+    arch::x86_64::{_fxrstor64, _fxsave64, _xrstor64, _xsave64},
     fmt::Debug,
+    sync::atomic::{AtomicBool, Ordering::Relaxed},
 };
 
 use bitflags::bitflags;
@@ -14,12 +16,20 @@ use cfg_if::cfg_if;
 use log::debug;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
+use spin::Once;
 use x86::bits64::segmentation::wrfsbase;
 pub use x86::cpuid;
-use x86_64::registers::rflags::RFlags;
+use x86_64::registers::{
+    control::{Cr0, Cr0Flags},
+    rflags::RFlags,
+    xcontrol::XCr0,
+};
 
 pub use super::trap::GeneralRegs as RawGeneralRegs;
-use super::trap::{TrapFrame, UserContext as RawUserContext};
+use super::{
+    trap::{TrapFrame, UserContext as RawUserContext},
+    CPU_FEATURES,
+};
 use crate::{
     task::scheduler,
     trap::call_irq_callback_functions,
@@ -34,12 +44,12 @@ cfg_if! {
     }
 }
 
-/// Cpu context, including both general-purpose registers and floating-point registers.
-#[derive(Clone, Default, Copy, Debug)]
+/// Cpu context, including both general-purpose registers and FPU state.
+#[derive(Clone, Default, Debug)]
 #[repr(C)]
 pub struct UserContext {
     user_context: RawUserContext,
-    fp_regs: FpRegs,
+    fpu_state: FpuState,
     cpu_exception_info: CpuExceptionInfo,
 }
 
@@ -71,14 +81,14 @@ impl UserContext {
         &self.cpu_exception_info
     }
 
-    /// Returns a reference to the floating point registers
-    pub fn fp_regs(&self) -> &FpRegs {
-        &self.fp_regs
+    /// Returns a reference to the FPU state.
+    pub fn fpu_state(&self) -> &FpuState {
+        &self.fpu_state
     }
 
-    /// Returns a mutable reference to the floating point registers
-    pub fn fp_regs_mut(&mut self) -> &mut FpRegs {
-        &mut self.fp_regs
+    /// Returns a mutable reference to the FPU state.
+    pub fn fpu_state_mut(&mut self) -> &mut FpuState {
+        &mut self.fpu_state
     }
 
     /// Sets thread-local storage pointer.
@@ -385,96 +395,203 @@ cpu_context_impl_getter_setter!(
     [gsbase, set_gsbase]
 );
 
-/// The floating-point state of CPU.
-#[derive(Clone, Copy, Debug)]
-#[repr(C)]
-pub struct FpRegs {
-    buf: FxsaveArea,
-    is_valid: bool,
+/// The FPU state of user task.
+///
+/// This could be used for saving both legacy and modern state format.
+#[derive(Debug)]
+pub struct FpuState {
+    state_area: Box<XSaveArea>,
+    area_size: usize,
+    is_valid: AtomicBool,
 }
 
-impl FpRegs {
-    /// Creates a new instance.
-    ///
-    /// Note that a newly-created instance's floating point state is not
-    /// initialized, thus considered invalid (i.e., `self.is_valid() == false`).
-    pub fn new() -> Self {
-        // The buffer address requires 16bytes alignment.
-        Self {
-            buf: FxsaveArea { data: [0; 512] },
-            is_valid: false,
-        }
-    }
+// The legacy SSE/MMX FPU state format (as saved by `FXSAVE` and restored by the `FXRSTOR` instructions).
+#[repr(C, align(16))]
+#[derive(Clone, Copy, Debug)]
+struct FxSaveArea {
+    control: u16,         // x87 FPU Control Word
+    status: u16,          // x87 FPU Status Word
+    tag: u16,             // x87 FPU Tag Word
+    op: u16,              // x87 FPU Last Instruction Opcode
+    ip: u32,              // x87 FPU Instruction Pointer Offset
+    cs: u32,              // x87 FPU Instruction Pointer Selector
+    dp: u32,              // x87 FPU Instruction Operand (Data) Pointer Offset
+    ds: u32,              // x87 FPU Instruction Operand (Data) Pointer Selector
+    mxcsr: u32,           // MXCSR Register State
+    mxcsr_mask: u32,      // MXCSR Mask
+    st_space: [u32; 32], // x87 FPU or MMX technology registers (ST0-ST7 or MM0-MM7, 128 bits per field)
+    xmm_space: [u32; 64], // XMM registers (XMM0-XMM15, 128 bits per field)
+    padding: [u32; 12],  // Padding
+    reserved: [u32; 12], // Software reserved
+}
 
-    /// Save CPU's current floating pointer states into this instance.
-    pub fn save(&mut self) {
-        debug!("save fpregs");
-        debug!("write addr = 0x{:x}", (&mut self.buf) as *mut _ as usize);
-        let layout = alloc::alloc::Layout::for_value(&self.buf);
-        debug!("layout: {:?}", layout);
-        let ptr = unsafe { alloc::alloc::alloc(layout) } as usize;
-        debug!("ptr = 0x{:x}", ptr);
+/// The modern FPU state format (as saved by the `XSAVE`` and restored by the `XRSTOR` instructions).
+#[repr(C, align(64))]
+#[derive(Clone, Copy, Debug)]
+struct XSaveArea {
+    fxsave_area: FxSaveArea,
+    features: u64,
+    compaction: u64,
+    reserved: [u64; 6],
+    extended_state_area: [u8; MAX_XSAVE_AREA_SIZE - size_of::<FxSaveArea>() - 64],
+}
+
+impl XSaveArea {
+    fn init() -> Box<Self> {
+        let features = if CPU_FEATURES.get().unwrap().has_xsave() {
+            XCr0::read().bits() & XSTATE_MAX_FEATURES.get().unwrap()
+        } else {
+            0
+        };
+
+        let mut xsave_area = Box::<Self>::new_uninit();
+        let ptr = xsave_area.as_mut_ptr();
+        // SAFETY: it's safe to initialize the XSaveArea field then return the instance.
         unsafe {
-            _fxsave(self.buf.data.as_mut_ptr());
+            core::ptr::write_bytes(ptr, 0, 1);
+            (*ptr).fxsave_area.control = 0x37F;
+            (*ptr).fxsave_area.mxcsr = 0x1F80;
+            (*ptr).features = features;
+            xsave_area.assume_init()
         }
-        debug!("save fpregs success");
-        self.is_valid = true;
+    }
+}
+
+impl FpuState {
+    /// Initializes a new instance.
+    pub fn init() -> Self {
+        let mut area_size = size_of::<FxSaveArea>();
+        if CPU_FEATURES.get().unwrap().has_xsave() {
+            area_size = area_size.max(*XSAVE_AREA_SIZE.get().unwrap());
+        }
+
+        Self {
+            state_area: XSaveArea::init(),
+            area_size,
+            is_valid: AtomicBool::new(true),
+        }
     }
 
-    /// Saves the floating state given by a slice of u8.
-    ///
-    /// After calling this method, the state of the instance will be considered valid.
-    ///
-    /// # Safety
-    ///
-    /// It is the caller's responsibility to ensure that the source slice contains
-    /// data that is in xsave/xrstor format. The slice must have a length of 512 bytes.
-    pub unsafe fn save_from_slice(&mut self, src: &[u8]) {
-        self.buf.data.copy_from_slice(src);
-        self.is_valid = true;
-    }
-
-    /// Returns whether the instance can contains data in valid xsave/xrstor format.
+    /// Returns whether the instance can contains valid state.
     pub fn is_valid(&self) -> bool {
-        self.is_valid
+        self.is_valid.load(Relaxed)
+    }
+
+    /// Save CPU's current FPU state into this instance.
+    pub fn save(&self) {
+        let mem_addr = &*self.state_area as *const _ as *mut u8;
+
+        if CPU_FEATURES.get().unwrap().has_xsave() {
+            unsafe { _xsave64(mem_addr, XFEATURE_MASK_USER_RESTORE) };
+        } else {
+            unsafe { _fxsave64(mem_addr) };
+        }
+
+        self.is_valid.store(true, Relaxed);
+
+        debug!("Save FPU state");
+    }
+
+    /// Restores CPU's FPU state from this instance.
+    pub fn restore(&self) {
+        if !self.is_valid() {
+            return;
+        }
+
+        let mem_addr = &*self.state_area as *const _ as *const u8;
+
+        if CPU_FEATURES.get().unwrap().has_xsave() {
+            let rs_mask = XFEATURE_MASK_USER_RESTORE & XSTATE_MAX_FEATURES.get().unwrap();
+
+            unsafe { _xrstor64(mem_addr, rs_mask) };
+        } else {
+            unsafe { _fxrstor64(mem_addr) };
+        }
+
+        self.is_valid.store(false, Relaxed);
+
+        debug!("Restore FPU state");
     }
 
     /// Clears the state of the instance.
     ///
-    /// This method does not reset the underlying buffer that contains the floating
-    /// point state; it only marks the buffer __invalid__.
-    pub fn clear(&mut self) {
-        self.is_valid = false;
-    }
-
-    /// Restores CPU's CPU floating pointer states from this instance.
-    ///
-    /// # Panics
-    ///
-    /// If the current state is invalid, the method will panic.
-    pub fn restore(&self) {
-        debug!("restore fpregs");
-        assert!(self.is_valid);
-        unsafe { _fxrstor(self.buf.data.as_ptr()) };
-        debug!("restore fpregs success");
-    }
-
-    /// Returns the floating point state as a slice.
-    ///
-    /// Note that the slice may contain garbage if `self.is_valid() == false`.
-    pub fn as_slice(&self) -> &[u8] {
-        &self.buf.data
+    /// This method does not reset the underlying buffer that contains the
+    /// FPU state; it only marks the buffer __invalid__.
+    pub fn clear(&self) {
+        self.is_valid.store(false, Relaxed);
     }
 }
 
-impl Default for FpRegs {
+impl Clone for FpuState {
+    fn clone(&self) -> Self {
+        let mut state_area = XSaveArea::init();
+        state_area.fxsave_area = self.state_area.fxsave_area;
+        state_area.features = self.state_area.features;
+        state_area.compaction = self.state_area.compaction;
+        if self.area_size > size_of::<FxSaveArea>() {
+            let len = self.area_size - size_of::<FxSaveArea>() - 64;
+            state_area.extended_state_area[..len]
+                .copy_from_slice(&self.state_area.extended_state_area[..len]);
+        }
+
+        Self {
+            state_area,
+            area_size: self.area_size,
+            is_valid: AtomicBool::new(self.is_valid()),
+        }
+    }
+}
+
+impl Default for FpuState {
     fn default() -> Self {
-        Self::new()
+        Self::init()
     }
 }
 
-#[repr(C, align(16))]
-#[derive(Debug, Clone, Copy)]
-struct FxsaveArea {
-    data: [u8; 512], // 512 bytes
+/// The XSTATE features (user & supervisor) supported by the processor.
+static XSTATE_MAX_FEATURES: Once<u64> = Once::new();
+
+/// Mask features which are restored when returning to user space.
+///
+/// X87 | SSE | AVX | OPMASK | ZMM_HI256 | HI16_ZMM
+const XFEATURE_MASK_USER_RESTORE: u64 = 0b1110_0111;
+
+/// The real size in bytes of the XSAVE area containing all states enabled by XCRO | IA32_XSS.
+static XSAVE_AREA_SIZE: Once<usize> = Once::new();
+
+/// The max size in bytes of the XSAVE area.
+const MAX_XSAVE_AREA_SIZE: usize = 4096;
+
+pub(super) fn enable_essential_features() {
+    XSTATE_MAX_FEATURES.call_once(|| {
+        const XSTATE_CPUID: u32 = 0x0000000d;
+
+        // Find user xstates supported by the processor.
+        let res0 = cpuid::cpuid!(XSTATE_CPUID, 0);
+        let mut features = res0.eax as u64 + ((res0.edx as u64) << 32);
+
+        // Find supervisor xstates supported by the processor.
+        let res1 = cpuid::cpuid!(XSTATE_CPUID, 1);
+        features |= res1.ecx as u64 + ((res1.edx as u64) << 32);
+
+        features
+    });
+
+    XSAVE_AREA_SIZE.call_once(|| {
+        let cpuid = cpuid::CpuId::new();
+        let size = cpuid.get_extended_state_info().unwrap().xsave_size() as usize;
+        debug_assert!(size <= MAX_XSAVE_AREA_SIZE);
+        size
+    });
+
+    if CPU_FEATURES.get().unwrap().has_fpu() {
+        let mut cr0 = Cr0::read();
+        cr0.remove(Cr0Flags::TASK_SWITCHED | Cr0Flags::EMULATE_COPROCESSOR);
+
+        unsafe {
+            Cr0::write(cr0);
+            // Flush out any pending x87 state.
+            core::arch::asm!("fninit");
+        }
+    }
 }

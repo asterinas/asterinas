@@ -112,6 +112,24 @@ impl Task {
             None
         }
     }
+
+    /// Saves the FPU state for user task.
+    pub fn save_fpu_state(&self) {
+        let Some(user_space) = self.user_space.as_ref() else {
+            return;
+        };
+
+        user_space.fpu_state().save();
+    }
+
+    /// Restores the FPU state for user task.
+    pub fn restore_fpu_state(&self) {
+        let Some(user_space) = self.user_space.as_ref() else {
+            return;
+        };
+
+        user_space.fpu_state().restore();
+    }
 }
 
 /// Options to create or spawn a new task.
@@ -168,6 +186,8 @@ impl TaskOptions {
 
             let current_task = Task::current()
                 .expect("no current task, it should have current task in kernel task entry");
+
+            current_task.restore_fpu_state();
 
             // SAFETY: The `func` field will only be accessed by the current task in the task
             // context, so the data won't be accessed concurrently.

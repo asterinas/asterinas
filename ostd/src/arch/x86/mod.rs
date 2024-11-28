@@ -18,6 +18,8 @@ pub mod timer;
 pub mod trap;
 
 use cfg_if::cfg_if;
+use spin::Once;
+use x86::cpuid::{CpuId, FeatureInfo};
 
 cfg_if! {
     if #[cfg(feature = "cvm_guest")] {
@@ -58,6 +60,8 @@ pub(crate) fn init_cvm_guest() {
         Err(_) => {}
     }
 }
+
+static CPU_FEATURES: Once<FeatureInfo> = Once::new();
 
 pub(crate) fn init_on_bsp() {
     // SAFETY: this function is only called once on BSP.
@@ -178,6 +182,14 @@ fn has_avx512() -> bool {
 
 pub(crate) fn enable_cpu_features() {
     use x86_64::registers::{control::Cr4Flags, model_specific::EferFlags, xcontrol::XCr0Flags};
+
+    CPU_FEATURES.call_once(|| {
+        let cpuid = CpuId::new();
+        cpuid.get_feature_info().unwrap()
+    });
+
+    cpu::enable_essential_features();
+
     let mut cr4 = x86_64::registers::control::Cr4::read();
     cr4 |= Cr4Flags::FSGSBASE
         | Cr4Flags::OSXSAVE
@@ -192,8 +204,6 @@ pub(crate) fn enable_cpu_features() {
     xcr0 |= XCr0Flags::AVX | XCr0Flags::SSE;
 
     if has_avx512() {
-        // TODO: Ensure proper saving and restoring of floating-point states
-        // to correctly support advanced instructions like AVX-512.
         xcr0 |= XCr0Flags::OPMASK | XCr0Flags::ZMM_HI256 | XCr0Flags::HI16_ZMM;
     }
 

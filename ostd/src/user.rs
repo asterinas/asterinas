@@ -4,7 +4,12 @@
 
 //! User space.
 
-use crate::{cpu::UserContext, mm::VmSpace, prelude::*, trap::TrapFrame};
+use crate::{
+    cpu::{FpuState, UserContext},
+    mm::VmSpace,
+    prelude::*,
+    trap::TrapFrame,
+};
 
 /// A user space.
 ///
@@ -54,6 +59,11 @@ impl UserSpace {
     /// Gets thread-local storage pointer.
     pub fn tls_pointer(&self) -> usize {
         self.init_ctx.tls_pointer()
+    }
+
+    /// Gets a reference to the FPU state.
+    pub fn fpu_state(&self) -> &FpuState {
+        self.init_ctx.fpu_state()
     }
 }
 
@@ -126,7 +136,7 @@ impl<'a> UserMode<'a> {
     pub fn new(user_space: &'a Arc<UserSpace>) -> Self {
         Self {
             user_space,
-            context: user_space.init_ctx,
+            context: user_space.init_ctx.clone(),
         }
     }
 

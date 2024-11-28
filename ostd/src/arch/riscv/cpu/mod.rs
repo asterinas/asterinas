@@ -12,13 +12,13 @@ pub use super::trap::GeneralRegs as RawGeneralRegs;
 use super::trap::{TrapFrame, UserContext as RawUserContext};
 use crate::user::{ReturnReason, UserContextApi, UserContextApiInternal};
 
-/// Cpu context, including both general-purpose registers and floating-point registers.
+/// Cpu context, including both general-purpose registers and FPU state.
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct UserContext {
     user_context: RawUserContext,
     trap: Trap,
-    fp_regs: (), // TODO
+    fpu_state: (), // TODO
     cpu_exception_info: CpuExceptionInfo,
 }
 
@@ -38,7 +38,7 @@ impl Default for UserContext {
         UserContext {
             user_context: RawUserContext::default(),
             trap: Trap::Exception(Exception::Unknown),
-            fp_regs: (),
+            fpu_state: (),
             cpu_exception_info: CpuExceptionInfo::default(),
         }
     }
@@ -77,14 +77,14 @@ impl UserContext {
         &self.cpu_exception_info
     }
 
-    /// Returns a reference to the floating point registers
-    pub fn fp_regs(&self) -> &() {
-        &self.fp_regs
+    /// Returns a reference to the FPU state.
+    pub fn fpu_state(&self) -> &() {
+        &self.fpu_state
     }
 
-    /// Returns a mutable reference to the floating point registers
-    pub fn fp_regs_mut(&mut self) -> &mut () {
-        &mut self.fp_regs
+    /// Returns a mutable reference to the FPU state.
+    pub fn fpu_state_mut(&mut self) -> &mut () {
+        &mut self.fpu_state
     }
 
     /// Sets thread-local storage pointer.

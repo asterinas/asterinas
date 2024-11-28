@@ -42,6 +42,8 @@ pub(super) fn switch_to_task(next_task: Arc<Task>) {
     let current_task_ctx_ptr = if !current_task_ptr.is_null() {
         // SAFETY: The current task is always alive.
         let current_task = unsafe { &*current_task_ptr };
+        current_task.save_fpu_state();
+
         // Throughout this method, the task's context is alive and can be exclusively used.
         current_task.ctx.get()
     } else {
@@ -90,4 +92,9 @@ pub(super) fn switch_to_task(next_task: Arc<Task>) {
 
     // See also `kernel_task_entry`.
     crate::arch::irq::enable_local();
+
+    // The `next_task` was moved into `CURRENT_TASK_PTR` above, now restore its FPU state.
+    if let Some(current) = Task::current() {
+        current.restore_fpu_state();
+    }
 }
