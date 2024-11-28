@@ -47,8 +47,6 @@ macro_rules! current_thread {
     };
 }
 
-pub(crate) use lazy_static::lazy_static;
-
 pub(crate) use crate::{
     context::{Context, CurrentUserSpace, ReadCString},
     current, current_thread,

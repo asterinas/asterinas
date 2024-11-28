@@ -100,6 +100,7 @@ pub fn init() {
     sched::init();
     fs::rootfs::init(boot::initramfs()).unwrap();
     device::init().unwrap();
+    syscall::init();
     vdso::init();
     process::init();
 }

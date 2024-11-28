@@ -27,7 +27,6 @@ id-alloc = { path = "libs/id-alloc", version = "0.1.0" }
 inherit-methods-macro = { git = "https://github.com/asterinas/inherit-methods-macro", rev = "98f7e3e", version = "0.1.0" }
 int-to-c-enum = { path = "../kernel/libs/int-to-c-enum", version = "0.1.0" }
 intrusive-collections = { version = "0.9.6", features = ["nightly"] }
-lazy_static = { version = "1.0", features = ["spin_no_std"] }
 linux-boot-params = { version = "0.9.4", path = "libs/linux-bzimage/boot-params" }
 log = "0.4"
 num = { version = "0.4", default-features = false }

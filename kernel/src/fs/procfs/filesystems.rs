@@ -2,6 +2,8 @@
 
 use alloc::format;
 
+use spin::Once;
+
 use crate::{
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
@@ -22,7 +24,7 @@ impl FileSystemsFileOps {
 impl FileOps for FileSystemsFileOps {
     fn data(&self) -> Result<Vec<u8>> {
         let mut result = String::new();
-        for fs in FILESYSTEM_TYPES.iter() {
+        for fs in FILESYSTEM_TYPES.get().unwrap().iter() {
             if fs.is_nodev {
                 result.push_str(&format!("nodev\t{}\n", fs.name));
             } else {
@@ -33,25 +35,15 @@ impl FileOps for FileSystemsFileOps {
     }
 }
 
-lazy_static! {
-    static ref FILESYSTEM_TYPES: Vec<FileSystemType> = {
-        vec![
-            FileSystemType::new("proc", true),
-            FileSystemType::new("ramfs", true),
-            FileSystemType::new("devpts", true),
-            FileSystemType::new("ext2", false),
-            FileSystemType::new("exfat", false),
-        ]
-    };
-}
+pub(super) static FILESYSTEM_TYPES: Once<Vec<FileSystemType>> = Once::new();
 
-struct FileSystemType {
+pub(super) struct FileSystemType {
     name: String,
     is_nodev: bool,
 }
 
 impl FileSystemType {
-    fn new(name: &str, is_nodev: bool) -> Self {
+    pub(super) fn new(name: &str, is_nodev: bool) -> Self {
         FileSystemType {
             name: name.to_string(),
             is_nodev,
