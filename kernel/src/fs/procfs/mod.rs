@@ -2,6 +2,7 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
+use filesystems::{FileSystemType, FILESYSTEM_TYPES};
 use loadavg::LoadAvgFileOps;
 use sys::SysDirOps;
 
@@ -30,6 +31,18 @@ mod pid;
 mod self_;
 mod sys;
 mod template;
+
+pub(super) fn init() {
+    FILESYSTEM_TYPES.call_once(|| {
+        vec![
+            FileSystemType::new("proc", true),
+            FileSystemType::new("ramfs", true),
+            FileSystemType::new("devpts", true),
+            FileSystemType::new("ext2", false),
+            FileSystemType::new("exfat", false),
+        ]
+    });
+}
 
 /// Magic number.
 const PROC_MAGIC: u64 = 0x9fa0;

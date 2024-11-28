@@ -65,10 +65,6 @@ fixed = "1.28.0"
 [target.riscv64gc-unknown-none-elf.dependencies]
 riscv = { version = "0.11.1", features = ["s-mode"] }
 
-[dependencies.lazy_static]
-version = "1.0"
-features = ["spin_no_std"]
-
 [features]
 all = ["cvm_guest"]
 

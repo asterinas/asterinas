@@ -17,7 +17,3 @@ log = "0.4"
 ascii = { version = "1.1", default-features = false, features = ["alloc"] }
 
 [features]
-
-[dependencies.lazy_static]
-version = "1.0"
-features = ["spin_no_std"]

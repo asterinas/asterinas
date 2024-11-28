@@ -8,7 +8,7 @@ use spin::Once;
 use super::{
     fs_resolver::{FsPath, FsResolver},
     path::MountNode,
-    procfs::ProcFS,
+    procfs::{self, ProcFS},
     ramfs::RamFS,
     utils::{FileSystem, InodeMode, InodeType},
 };
@@ -17,6 +17,7 @@ use crate::prelude::*;
 /// Unpack and prepare the rootfs from the initramfs CPIO buffer.
 pub fn init(initramfs_buf: &[u8]) -> Result<()> {
     init_root_mount();
+    procfs::init();
 
     println!("[kernel] unpacking the initramfs.cpio.gz to rootfs ...");
     let fs = FsResolver::new();
