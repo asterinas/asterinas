@@ -97,8 +97,10 @@ impl Credentials_ {
             self.ruid.store(uid, Ordering::Relaxed);
             self.euid.store(uid, Ordering::Relaxed);
             self.suid.store(uid, Ordering::Relaxed);
+            self.fsuid.store(uid, Ordering::Relaxed);
         } else {
             self.euid.store(uid, Ordering::Relaxed);
+            self.fsuid.store(uid, Ordering::Relaxed);
         }
     }
 
@@ -254,8 +256,10 @@ impl Credentials_ {
             self.rgid.store(gid, Ordering::Relaxed);
             self.egid.store(gid, Ordering::Relaxed);
             self.sgid.store(gid, Ordering::Relaxed);
+            self.fsgid.store(gid, Ordering::Relaxed);
         } else {
             self.egid.store(gid, Ordering::Relaxed);
+            self.fsgid.store(gid, Ordering::Relaxed);
         }
     }
 
