@@ -4,7 +4,7 @@ use super::RawSocketOption;
 use crate::{
     impl_raw_sock_option_get_only, impl_raw_socket_option,
     net::socket::options::{
-        Error, KeepAlive, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf, SocketOption,
+        Broadcast, Error, KeepAlive, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf, SocketOption,
     },
     prelude::*,
 };
@@ -48,6 +48,7 @@ pub fn new_socket_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
         CSocketOptionName::REUSEPORT => Ok(Box::new(ReusePort::new())),
         CSocketOptionName::LINGER => Ok(Box::new(Linger::new())),
         CSocketOptionName::KEEPALIVE => Ok(Box::new(KeepAlive::new())),
+        CSocketOptionName::BROADCAST => Ok(Box::new(Broadcast::new())),
         _ => todo!(),
     }
 }
@@ -59,3 +60,4 @@ impl_raw_sock_option_get_only!(Error);
 impl_raw_socket_option!(ReusePort);
 impl_raw_socket_option!(Linger);
 impl_raw_socket_option!(KeepAlive);
+impl_raw_socket_option!(Broadcast);
