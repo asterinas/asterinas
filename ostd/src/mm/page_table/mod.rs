@@ -85,7 +85,7 @@ pub struct PageTable<
     E: PageTableEntryTrait = PageTableEntry,
     C: PagingConstsTrait = PagingConsts,
 > {
-    root: RawPageTableNode<E, C>,
+    root: PageTableNode<E, C>,
     _phantom: PhantomData<M>,
 }
 
@@ -106,10 +106,11 @@ impl PageTable<UserMode> {
     ///  1. No other cursors are accessing the page table.
     ///  2. No other CPUs activates the page table.
     pub(in crate::mm) unsafe fn clear(&self) {
-        let mut root_node = self.root.clone_shallow().lock();
+        let _guard = crate::task::disable_preempt();
+        let mut root_node = self.root.lock();
         const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
         for i in 0..NR_PTES_PER_NODE / 2 {
-            let root_entry = root_node.entry(i);
+            let mut root_entry = root_node.entry(i);
             if !root_entry.is_none() {
                 let old = root_entry.replace(Child::None);
                 // Since no others are accessing the old child, dropping it is fine.
@@ -120,61 +121,64 @@ impl PageTable<UserMode> {
 }
 
 impl PageTable<KernelMode> {
+    /// Create a new kernel page table.
+    pub(crate) fn new_kernel_page_table() -> Self {
+        let kpt = Self::empty();
+
+        // Make shared the page tables mapped by the root table in the kernel space.
+        {
+            const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
+            let kernel_space_range = NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE;
+
+            let _guard = crate::task::disable_preempt();
+
+            let mut root_node = kpt.root.lock();
+            for i in kernel_space_range {
+                let mut root_entry = root_node.entry(i);
+                let is_tracked = if super::kspace::should_map_as_tracked(
+                    i * page_size::<PagingConsts>(PagingConsts::NR_LEVELS - 1),
+                ) {
+                    MapTrackingStatus::Tracked
+                } else {
+                    MapTrackingStatus::Untracked
+                };
+                let _ = root_entry.alloc_if_none(is_tracked).unwrap();
+            }
+        }
+
+        kpt
+    }
+
     /// Create a new user page table.
     ///
     /// This should be the only way to create the user page table, that is to
     /// duplicate the kernel page table with all the kernel mappings shared.
     pub fn create_user_page_table(&self) -> PageTable<UserMode> {
-        let mut root_node = self.root.clone_shallow().lock();
-        let mut new_node =
+        let _preempt_guard = crate::task::disable_preempt();
+        let mut root_node = self.root.lock();
+        let new_root =
             PageTableNode::alloc(PagingConsts::NR_LEVELS, MapTrackingStatus::NotApplicable);
+        let mut new_node = new_root.lock();
 
         // Make a shallow copy of the root node in the kernel space range.
         // The user space range is not copied.
         const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
         for i in NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE {
             let root_entry = root_node.entry(i);
-            if !root_entry.is_none() {
-                let _ = new_node.entry(i).replace(root_entry.to_owned());
-            }
+            debug_assert!(!root_entry.is_none());
+            let child = root_entry.to_ref();
+            let Child::PageTableRef(pt) = child else {
+                panic!("The kernel page table doesn't contain shared nodes");
+            };
+            let pt_cloned = pt.clone();
+
+            let _ = new_node.entry(i).replace(Child::PageTable(pt_cloned));
         }
+        drop(new_node);
 
         PageTable::<UserMode> {
-            root: new_node.into_raw(),
+            root: new_root,
             _phantom: PhantomData,
-        }
-    }
-
-    /// Explicitly make a range of virtual addresses shared between the kernel and user
-    /// page tables. Mapped pages before generating user page tables are shared either.
-    /// The virtual address range should be aligned to the root level page size. Considering
-    /// usize overflows, the caller should provide the index range of the root level pages
-    /// instead of the virtual address range.
-    pub fn make_shared_tables(&self, root_index: Range<usize>) {
-        const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
-
-        let start = root_index.start;
-        debug_assert!(start >= NR_PTES_PER_NODE / 2);
-        debug_assert!(start < NR_PTES_PER_NODE);
-
-        let end = root_index.end;
-        debug_assert!(end <= NR_PTES_PER_NODE);
-
-        let mut root_node = self.root.clone_shallow().lock();
-        for i in start..end {
-            let root_entry = root_node.entry(i);
-            if root_entry.is_none() {
-                let nxt_level = PagingConsts::NR_LEVELS - 1;
-                let is_tracked = if super::kspace::should_map_as_tracked(
-                    i * page_size::<PagingConsts>(nxt_level),
-                ) {
-                    MapTrackingStatus::Tracked
-                } else {
-                    MapTrackingStatus::Untracked
-                };
-                let node = PageTableNode::alloc(nxt_level, is_tracked);
-                let _ = root_entry.replace(Child::PageTable(node.into_raw()));
-            }
         }
     }
 
@@ -200,11 +204,12 @@ impl PageTable<KernelMode> {
 }
 
 impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTable<M, E, C> {
-    /// Create a new empty page table. Useful for the kernel page table and IOMMU page tables only.
+    /// Create a new empty page table.
+    ///
+    /// Useful for the IOMMU page tables only.
     pub fn empty() -> Self {
         PageTable {
-            root: PageTableNode::<E, C>::alloc(C::NR_LEVELS, MapTrackingStatus::NotApplicable)
-                .into_raw(),
+            root: PageTableNode::<E, C>::alloc(C::NR_LEVELS, MapTrackingStatus::NotApplicable),
             _phantom: PhantomData,
         }
     }
@@ -218,7 +223,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTab
     /// It is dangerous to directly provide the physical address of the root page table to the
     /// hardware since the page table node may be dropped, resulting in UAF.
     pub unsafe fn root_paddr(&self) -> Paddr {
-        self.root.paddr()
+        self.root.start_paddr()
     }
 
     pub unsafe fn map(
@@ -267,7 +272,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTab
     /// This is only useful for IOMMU page tables. Think twice before using it in other cases.
     pub unsafe fn shallow_copy(&self) -> Self {
         PageTable {
-            root: self.root.clone_shallow(),
+            root: self.root.clone(),
             _phantom: PhantomData,
         }
     }
