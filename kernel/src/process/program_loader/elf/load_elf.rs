@@ -370,11 +370,9 @@ fn check_segment_align(program_header: &ProgramHeader64) -> Result<()> {
         // no align requirement
         return Ok(());
     }
-    debug_assert!(align.is_power_of_two());
     if !align.is_power_of_two() {
         return_errno_with_message!(Errno::ENOEXEC, "segment align is invalid.");
     }
-    debug_assert!(program_header.offset % align == program_header.virtual_addr % align);
     if program_header.offset % align != program_header.virtual_addr % align {
         return_errno_with_message!(Errno::ENOEXEC, "segment align is not satisfied.");
     }
