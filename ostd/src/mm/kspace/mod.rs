@@ -50,7 +50,6 @@ use super::{
         meta::{mapping, KernelMeta, MetaPageMeta},
         Frame, Segment,
     },
-    nr_subpage_per_huge,
     page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
     page_table::{KernelMode, PageTable},
     Paddr, PagingConstsTrait, Vaddr, PAGE_SIZE,
@@ -134,13 +133,7 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
     info!("Initializing the kernel page table");
 
     // Start to initialize the kernel page table.
-    let kpt = PageTable::<KernelMode>::empty();
-
-    // Make shared the page tables mapped by the root table in the kernel space.
-    {
-        let pte_index_max = nr_subpage_per_huge::<PagingConsts>();
-        kpt.make_shared_tables(pte_index_max / 2..pte_index_max);
-    }
+    let kpt = PageTable::<KernelMode>::new_kernel_page_table();
 
     // Do linear mappings for the kernel.
     {

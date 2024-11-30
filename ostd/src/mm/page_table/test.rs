@@ -146,38 +146,30 @@ mod create_page_table {
 
     #[ktest]
     fn create_user_page_table() {
-        let kernel_pt = PageTable::<KernelMode>::empty();
+        let kernel_pt = PageTable::<KernelMode>::new_kernel_page_table();
         let user_pt = kernel_pt.create_user_page_table();
 
-        let mut kernel_root = kernel_pt.root.clone_shallow().lock();
-        let mut user_root = user_pt.root.clone_shallow().lock();
+        let mut kernel_root = kernel_pt.root.lock();
+        let mut user_root = user_pt.root.lock();
 
         const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
         for i in NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE {
             let kernel_entry = kernel_root.entry(i);
             let user_entry = user_root.entry(i);
-            assert_eq!(kernel_entry.is_node(), user_entry.is_node());
-        }
-    }
-
-    #[ktest]
-    fn make_shared_tables() {
-        let kernel_pt = PageTable::<KernelMode>::empty();
-        let shared_range =
-            (nr_subpage_per_huge::<PagingConsts>() / 2)..nr_subpage_per_huge::<PagingConsts>();
-        kernel_pt.make_shared_tables(shared_range.clone());
-
-        // Marks the specified root node index range as shared.
-        let mut root_node = kernel_pt.root.clone_shallow().lock();
-        for i in shared_range {
-            assert!(root_node.entry(i).is_node());
+            let Child::PageTableRef(kernel_node) = kernel_entry.to_ref() else {
+                panic!("Expected a node reference at {} of kernel root PT", i);
+            };
+            let Child::PageTableRef(user_node) = user_entry.to_ref() else {
+                panic!("Expected a node reference at {} of user root PT", i);
+            };
+            assert_eq!(kernel_node.start_paddr(), user_node.start_paddr());
         }
     }
 
     #[ktest]
     fn clear_user_page_table() {
         // Creates a kernel page table.
-        let kernel_pt = PageTable::<KernelMode>::empty();
+        let kernel_pt = PageTable::<KernelMode>::new_kernel_page_table();
 
         // Creates a user page table.
         let user_pt = kernel_pt.create_user_page_table();
@@ -597,9 +589,9 @@ mod tracked_mapping {
         );
 
         // Creates a child page table with copy-on-write protection.
-        let child_pt = {
+        let child_pt = setup_page_table::<UserMode>();
+        {
             let parent_range = 0..MAX_USERSPACE_VADDR;
-            let child_pt = setup_page_table::<UserMode>();
             let mut child_cursor = child_pt.cursor_mut(&parent_range).unwrap();
             let mut parent_cursor = page_table.cursor_mut(&parent_range).unwrap();
             unsafe {
@@ -609,7 +601,6 @@ mod tracked_mapping {
                     &mut remove_write_flag,
                 );
             }
-            child_pt
         };
 
         // Confirms that parent and child VAs map to the same physical address.
@@ -644,9 +635,9 @@ mod tracked_mapping {
         );
 
         // Creates a sibling page table (from the now-modified parent).
-        let sibling_pt = {
+        let sibling_pt = setup_page_table::<UserMode>();
+        {
             let parent_range = 0..MAX_USERSPACE_VADDR;
-            let sibling_pt = setup_page_table::<UserMode>();
             let mut sibling_cursor = sibling_pt.cursor_mut(&parent_range).unwrap();
             let mut parent_cursor = page_table.cursor_mut(&parent_range).unwrap();
             unsafe {
@@ -656,7 +647,6 @@ mod tracked_mapping {
                     &mut remove_write_flag,
                 );
             }
-            sibling_pt
         };
 
         // Verifies that the sibling is unmapped as it was created after the parent unmapped the range.
@@ -771,9 +761,6 @@ mod untracked_mapping {
             let expected_pa_after = physical_range.start + (va_after - virtual_range.start);
             assert_eq!(kernel_pt.query(va_after).unwrap().0, expected_pa_after);
         }
-
-        // Prevents automatic drop to avoid memory leak in the test.
-        let _ = ManuallyDrop::new(kernel_pt);
     }
 
     #[ktest]

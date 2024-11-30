@@ -30,7 +30,7 @@ mod frame {
         assert_eq!(frame.meta().value, 42);
         assert_eq!(frame.reference_count(), 1);
         assert_eq!(frame.size(), PAGE_SIZE);
-        assert_eq!(frame.level(), 1);
+        assert_eq!(frame.map_level(), 1);
     }
 
     #[ktest]
