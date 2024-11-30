@@ -44,7 +44,7 @@ volatile = { version = "0.4.5", features = ["unstable"] }
 xarray = { git = "https://github.com/asterinas/xarray", version = "0.1.0" }
 
 [target.x86_64-unknown-none.dependencies]
-x86_64 = "0.14.2"
+x86_64 = "=0.14.10" # 0.14.13 broken by https://github.com/rust-osdev/x86_64/issues/512, use a newer afterwards
 x86 = "0.52.0"
 acpi = "5.1.0"
 aml = "0.16.3"
