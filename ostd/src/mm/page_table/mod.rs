@@ -85,7 +85,7 @@ pub struct PageTable<
     E: PageTableEntryTrait = PageTableEntry,
     C: PagingConstsTrait = PagingConsts,
 > {
-    root: RawPageTableNode<E, C>,
+    root: PageTableNode<E, C>,
     _phantom: PhantomData<M>,
 }
 
@@ -106,7 +106,8 @@ impl PageTable<UserMode> {
     ///  1. No other cursors are accessing the page table.
     ///  2. No other CPUs activates the page table.
     pub(in crate::mm) unsafe fn clear(&self) {
-        let mut root_node = self.root.clone_shallow().lock();
+        let _guard = crate::task::disable_preempt();
+        let mut root_node = self.root.clone().lock();
         const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
         for i in 0..NR_PTES_PER_NODE / 2 {
             let root_entry = root_node.entry(i);
@@ -116,6 +117,7 @@ impl PageTable<UserMode> {
                 drop(old);
             }
         }
+        let _ = root_node.unlock();
     }
 }
 
@@ -125,9 +127,10 @@ impl PageTable<KernelMode> {
     /// This should be the only way to create the user page table, that is to
     /// duplicate the kernel page table with all the kernel mappings shared.
     pub fn create_user_page_table(&self) -> PageTable<UserMode> {
-        let mut root_node = self.root.clone_shallow().lock();
+        let _preempt_guard = crate::task::disable_preempt();
+        let mut root_node = self.root.clone().lock();
         let mut new_node =
-            PageTableNode::alloc(PagingConsts::NR_LEVELS, MapTrackingStatus::NotApplicable);
+            PageTableLock::alloc(PagingConsts::NR_LEVELS, MapTrackingStatus::NotApplicable);
 
         // Make a shallow copy of the root node in the kernel space range.
         // The user space range is not copied.
@@ -139,8 +142,10 @@ impl PageTable<KernelMode> {
             }
         }
 
+        let _ = root_node.unlock();
+
         PageTable::<UserMode> {
-            root: new_node.into_raw(),
+            root: new_node.unlock(),
             _phantom: PhantomData,
         }
     }
@@ -160,7 +165,8 @@ impl PageTable<KernelMode> {
         let end = root_index.end;
         debug_assert!(end <= NR_PTES_PER_NODE);
 
-        let mut root_node = self.root.clone_shallow().lock();
+        let _guard = crate::task::disable_preempt();
+        let mut root_node = self.root.clone().lock();
         for i in start..end {
             let root_entry = root_node.entry(i);
             if root_entry.is_none() {
@@ -172,10 +178,11 @@ impl PageTable<KernelMode> {
                 } else {
                     MapTrackingStatus::Untracked
                 };
-                let node = PageTableNode::alloc(nxt_level, is_tracked);
-                let _ = root_entry.replace(Child::PageTable(node.into_raw()));
+                let node = PageTableLock::alloc(nxt_level, is_tracked);
+                let _ = root_entry.replace(Child::PageTable(node.unlock()));
             }
         }
+        let _ = root_node.unlock();
     }
 
     /// Protect the given virtual address range in the kernel page table.
@@ -203,8 +210,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTab
     /// Create a new empty page table. Useful for the kernel page table and IOMMU page tables only.
     pub fn empty() -> Self {
         PageTable {
-            root: PageTableNode::<E, C>::alloc(C::NR_LEVELS, MapTrackingStatus::NotApplicable)
-                .into_raw(),
+            root: PageTableLock::<E, C>::alloc(C::NR_LEVELS, MapTrackingStatus::NotApplicable)
+                .unlock(),
             _phantom: PhantomData,
         }
     }
@@ -218,7 +225,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTab
     /// It is dangerous to directly provide the physical address of the root page table to the
     /// hardware since the page table node may be dropped, resulting in UAF.
     pub unsafe fn root_paddr(&self) -> Paddr {
-        self.root.paddr()
+        self.root.start_paddr()
     }
 
     pub unsafe fn map(
@@ -267,7 +274,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTab
     /// This is only useful for IOMMU page tables. Think twice before using it in other cases.
     pub unsafe fn shallow_copy(&self) -> Self {
         PageTable {
-            root: self.root.clone_shallow(),
+            root: self.root.clone(),
             _phantom: PhantomData,
         }
     }
