@@ -44,7 +44,7 @@ volatile = { version = "0.4.5", features = ["unstable"] }
 xarray = { git = "https://github.com/asterinas/xarray", version = "0.1.0" }
 
 [target.x86_64-unknown-none.dependencies]
-x86_64 = "0.14.2"
+x86_64 = "0.14.13"
 x86 = "0.52.0"
 acpi = "5.1.0"
 aml = "0.16.3"

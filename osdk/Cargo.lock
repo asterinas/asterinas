@@ -195,7 +195,6 @@ dependencies = [
  "indexmap",
  "indicatif",
  "inferno",
- "lazy_static",
  "linux-bzimage-builder",
  "log",
  "quote",

@@ -108,9 +108,9 @@ fn do_select(
         let mut poll_fds = Vec::with_capacity(nfds as usize);
         for fd in 0..nfds {
             let events = {
-                let readable = readfds.as_ref().map_or(false, |fds| fds.is_set(fd));
-                let writable = writefds.as_ref().map_or(false, |fds| fds.is_set(fd));
-                let except = exceptfds.as_ref().map_or(false, |fds| fds.is_set(fd));
+                let readable = readfds.as_ref().is_some_and(|fds| fds.is_set(fd));
+                let writable = writefds.as_ref().is_some_and(|fds| fds.is_set(fd));
+                let except = exceptfds.as_ref().is_some_and(|fds| fds.is_set(fd));
                 convert_rwe_to_events(readable, writable, except)
             };
 
