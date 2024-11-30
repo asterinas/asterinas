@@ -3,7 +3,6 @@
 //! The framebuffer of Asterinas.
 #![no_std]
 #![deny(unsafe_code)]
-#![feature(strict_provenance)]
 
 extern crate alloc;
 

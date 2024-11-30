@@ -920,7 +920,7 @@ dependencies = [
  "uart_16550",
  "uefi",
  "uefi-raw",
- "x86_64 0.15.1",
+ "x86_64 0.15.2",
  "xmas-elf 0.9.1",
 ]
 
@@ -1162,7 +1162,7 @@ dependencies = [
  "unwinding",
  "volatile",
  "x86",
- "x86_64 0.14.11",
+ "x86_64 0.14.13",
  "xarray",
 ]
 
@@ -1519,7 +1519,7 @@ dependencies = [
  "iced-x86",
  "lazy_static",
  "raw-cpuid",
- "x86_64 0.14.11",
+ "x86_64 0.14.13",
 ]
 
 [[package]]
@@ -1776,9 +1776,9 @@ dependencies = [
 
 [[package]]
 name = "x86_64"
-version = "0.14.11"
+version = "0.14.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b835097a84e4457323331ec5d6eb23d096066cbfb215d54096dcb4b2e85f500"
+checksum = "c101112411baafbb4bf8d33e4c4a80ab5b02d74d2612331c61e8192fc9710491"
 dependencies = [
  "bit_field",
  "bitflags 2.6.0",
@@ -1788,9 +1788,9 @@ dependencies = [
 
 [[package]]
 name = "x86_64"
-version = "0.15.1"
+version = "0.15.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4bc79523af8abf92fb1a970c3e086c5a343f6bcc1a0eb890f575cbb3b45743df"
+checksum = "0f042214de98141e9c8706e8192b73f56494087cc55ebec28ce10f26c5c364ae"
 dependencies = [
  "bit_field",
  "bitflags 2.6.0",
