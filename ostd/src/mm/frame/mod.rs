@@ -123,14 +123,14 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
         self.slot().frame_paddr()
     }
 
-    /// Gets the paging level of this page.
+    /// Gets the map level of this page.
     ///
     /// This is the level of the page table entry that maps the frame,
     /// which determines the size of the frame.
     ///
     /// Currently, the level is always 1, which means the frame is a regular
     /// page frame.
-    pub const fn level(&self) -> PagingLevel {
+    pub const fn map_level(&self) -> PagingLevel {
         1
     }
 

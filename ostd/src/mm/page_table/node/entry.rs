@@ -2,12 +2,12 @@
 
 //! This module provides accessors to the page table entries in a node.
 
-use super::{Child, MapTrackingStatus, PageTableEntryTrait, PageTableNode};
+use super::{Child, MapTrackingStatus, PageTableEntryTrait, PageTableLock, PageTableNode};
 use crate::mm::{nr_subpage_per_huge, page_prop::PageProperty, page_size, PagingConstsTrait};
 
 /// A view of an entry in a page table node.
 ///
-/// It can be borrowed from a node using the [`PageTableNode::entry`] method.
+/// It can be borrowed from a node using the [`PageTableLock::entry`] method.
 ///
 /// This is a static reference to an entry in a node that does not account for
 /// a dynamic reference count to the child. It can be used to create a owned
@@ -24,7 +24,7 @@ pub(in crate::mm) struct Entry<'a, E: PageTableEntryTrait, C: PagingConstsTrait>
     /// The index of the entry in the node.
     idx: usize,
     /// The node that contains the entry.
-    node: &'a mut PageTableNode<E, C>,
+    node: &'a mut PageTableLock<E, C>,
 }
 
 impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'a, E, C> {
@@ -42,7 +42,14 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'a, E, C> {
     pub(in crate::mm) fn to_owned(&self) -> Child<E, C> {
         // SAFETY: The entry structure represents an existent entry with the
         // right node information.
-        unsafe { Child::clone_from_pte(&self.pte, self.node.level(), self.node.is_tracked()) }
+        unsafe { Child::ref_from_pte(&self.pte, self.node.level(), self.node.is_tracked(), true) }
+    }
+
+    /// Gets a reference to the child.
+    pub(in crate::mm) fn to_ref(&self) -> Child<E, C> {
+        // SAFETY: The entry structure represents an existent entry with the
+        // right node information.
+        unsafe { Child::ref_from_pte(&self.pte, self.node.level(), self.node.is_tracked(), false) }
     }
 
     /// Operates on the mapping properties of the entry.
@@ -110,7 +117,7 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'a, E, C> {
     ///
     /// If the entry does not map to a untracked huge page, the method returns
     /// `None`.
-    pub(in crate::mm) fn split_if_untracked_huge(self) -> Option<PageTableNode<E, C>> {
+    pub(in crate::mm) fn split_if_untracked_huge(self) -> Option<PageTableLock<E, C>> {
         let level = self.node.level();
 
         if !(self.pte.is_last(level)
@@ -123,17 +130,21 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'a, E, C> {
         let pa = self.pte.paddr();
         let prop = self.pte.prop();
 
-        let mut new_page = PageTableNode::<E, C>::alloc(level - 1, MapTrackingStatus::Untracked);
+        let mut new_page = PageTableLock::<E, C>::alloc(level - 1, MapTrackingStatus::Untracked);
         for i in 0..nr_subpage_per_huge::<C>() {
             let small_pa = pa + i * page_size::<C>(level - 1);
             let _ = new_page
                 .entry(i)
                 .replace(Child::Untracked(small_pa, level - 1, prop));
         }
-
-        let _ = self.replace(Child::PageTable(new_page.clone_raw()));
-
-        Some(new_page)
+        let pt_paddr = new_page.into_raw_paddr();
+        // SAFETY: It was forgotten at the above line.
+        let _ = self.replace(Child::PageTable(unsafe {
+            PageTableNode::from_raw(pt_paddr)
+        }));
+        // SAFETY: `pt_paddr` points to a PT that is attached to the node,
+        // so that it is locked and alive.
+        Some(unsafe { PageTableLock::from_raw_paddr(pt_paddr) })
     }
 
     /// Create a new entry at the node.
@@ -141,7 +152,7 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'a, E, C> {
     /// # Safety
     ///
     /// The caller must ensure that the index is within the bounds of the node.
-    pub(super) unsafe fn new_at(node: &'a mut PageTableNode<E, C>, idx: usize) -> Self {
+    pub(super) unsafe fn new_at(node: &'a mut PageTableLock<E, C>, idx: usize) -> Self {
         // SAFETY: The index is within the bound.
         let pte = unsafe { node.read_pte(idx) };
         Self { pte, idx, node }
