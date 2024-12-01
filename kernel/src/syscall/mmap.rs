@@ -116,7 +116,7 @@ fn do_sys_mmap(
             }
         } else {
             let vmo = {
-                let file_table = ctx.process.file_table().lock();
+                let file_table = ctx.posix_thread.file_table().lock();
                 let file = file_table.get_file(fd)?;
                 let inode_handle = file
                     .downcast_ref::<InodeHandle>()

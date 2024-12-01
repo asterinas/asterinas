@@ -35,8 +35,9 @@ pub fn sys_symlinkat(
             return_errno_with_message!(Errno::ENOENT, "linkpath is empty");
         }
         let fs_path = FsPath::new(dirfd, linkpath.as_ref())?;
-        ctx.process
+        ctx.posix_thread
             .fs()
+            .resolver()
             .read()
             .lookup_dir_and_new_basename(&fs_path, false)?
     };

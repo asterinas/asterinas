@@ -15,7 +15,7 @@ pub fn sys_write(
     );
 
     let file = {
-        let file_table = ctx.process.file_table().lock();
+        let file_table = ctx.posix_thread.file_table().lock();
         file_table.get_file(fd)?.clone()
     };
 

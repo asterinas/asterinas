@@ -8,6 +8,7 @@ use crate::{
         utils::Inode,
     },
     prelude::*,
+    process::posix_thread::AsPosixThread,
     Process,
 };
 
@@ -29,6 +30,9 @@ impl StatFileOps {
 impl FileOps for StatFileOps {
     fn data(&self) -> Result<Vec<u8>> {
         let process = &self.0;
+        let main_thread = process.main_thread().unwrap();
+        let file_table = main_thread.as_posix_thread().unwrap().file_table();
+
         let mut stat_output = String::new();
         writeln!(
             stat_output,
@@ -38,7 +42,7 @@ impl FileOps for StatFileOps {
             process.pid(),
             process.parent().pid(),
             process.parent().pid(),
-            process.file_table().lock().len(),
+            file_table.lock().len(),
             process.tasks().lock().len()
         )
         .unwrap();

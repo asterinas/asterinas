@@ -40,7 +40,7 @@ pub fn sys_mount(
             return_errno_with_message!(Errno::ENOENT, "dirname is empty");
         }
         let fs_path = FsPath::new(AT_FDCWD, dirname.as_ref())?;
-        ctx.process.fs().read().lookup(&fs_path)?
+        ctx.posix_thread.fs().resolver().read().lookup(&fs_path)?
     };
 
     if mount_flags.contains(MountFlags::MS_REMOUNT) && mount_flags.contains(MountFlags::MS_BIND) {
@@ -93,7 +93,7 @@ fn do_bind_mount(
             return_errno_with_message!(Errno::ENOENT, "src_name is empty");
         }
         let fs_path = FsPath::new(AT_FDCWD, src_name.as_ref())?;
-        ctx.process.fs().read().lookup(&fs_path)?
+        ctx.posix_thread.fs().resolver().read().lookup(&fs_path)?
     };
 
     if src_dentry.type_() != InodeType::Dir {
@@ -116,7 +116,7 @@ fn do_move_mount_old(src_name: CString, dst_dentry: Dentry, ctx: &Context) -> Re
             return_errno_with_message!(Errno::ENOENT, "src_name is empty");
         }
         let fs_path = FsPath::new(AT_FDCWD, src_name.as_ref())?;
-        ctx.process.fs().read().lookup(&fs_path)?
+        ctx.posix_thread.fs().resolver().read().lookup(&fs_path)?
     };
 
     if !src_dentry.is_root_of_mount() {

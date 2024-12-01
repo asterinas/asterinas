@@ -34,7 +34,7 @@ pub fn sys_sendfile(
     };
 
     let (out_file, in_file) = {
-        let file_table = ctx.process.file_table().lock();
+        let file_table = ctx.posix_thread.file_table().lock();
         let out_file = file_table.get_file(out_fd)?.clone();
         // FIXME: the in_file must support mmap-like operations (i.e., it cannot be a socket).
         let in_file = file_table.get_file(in_fd)?.clone();

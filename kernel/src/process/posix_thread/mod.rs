@@ -20,6 +20,7 @@ use super::{
 };
 use crate::{
     events::Observer,
+    fs::{file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
     process::signal::constants::SIGCONT,
     thread::{AsThread, Thread, Tid},
@@ -57,6 +58,12 @@ pub struct PosixThread {
 
     /// Process credentials. At the kernel level, credentials are a per-thread attribute.
     credentials: Credentials,
+
+    // Files
+    /// File table
+    file_table: Arc<SpinLock<FileTable>>,
+    /// File system
+    fs: Arc<ThreadFsInfo>,
 
     // Signal
     /// Blocked signals
@@ -105,6 +112,14 @@ impl PosixThread {
 
     pub fn clear_child_tid(&self) -> &Mutex<Vaddr> {
         &self.clear_child_tid
+    }
+
+    pub fn file_table(&self) -> &Arc<SpinLock<FileTable>> {
+        &self.file_table
+    }
+
+    pub fn fs(&self) -> &Arc<ThreadFsInfo> {
+        &self.fs
     }
 
     /// Get the reference to the signal mask of the thread.

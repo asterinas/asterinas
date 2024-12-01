@@ -8,6 +8,7 @@ use crate::{
         utils::Inode,
     },
     prelude::*,
+    process::posix_thread::AsPosixThread,
     Process,
 };
 
@@ -71,18 +72,16 @@ impl StatusFileOps {
 impl FileOps for StatusFileOps {
     fn data(&self) -> Result<Vec<u8>> {
         let process = &self.0;
+        let main_thread = process.main_thread().unwrap();
+        let file_table = main_thread.as_posix_thread().unwrap().file_table();
+
         let mut status_output = String::new();
         writeln!(status_output, "Name:\t{}", process.executable_path()).unwrap();
         writeln!(status_output, "Tgid:\t{}", process.pid()).unwrap();
         writeln!(status_output, "Pid:\t{}", process.pid()).unwrap();
         writeln!(status_output, "PPid:\t{}", process.parent().pid()).unwrap();
         writeln!(status_output, "TracerPid:\t{}", process.parent().pid()).unwrap(); // Assuming TracerPid is the same as PPid
-        writeln!(
-            status_output,
-            "FDSize:\t{}",
-            process.file_table().lock().len()
-        )
-        .unwrap();
+        writeln!(status_output, "FDSize:\t{}", file_table.lock().len()).unwrap();
         writeln!(status_output, "Threads:\t{}", process.tasks().lock().len()).unwrap();
         Ok(status_output.into_bytes())
     }

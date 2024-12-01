@@ -11,7 +11,7 @@ pub fn sys_chroot(path_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     let path = ctx.user_space().read_cstring(path_ptr, MAX_FILENAME_LEN)?;
     debug!("path = {:?}", path);
 
-    let mut fs = ctx.process.fs().write();
+    let mut fs = ctx.posix_thread.fs().resolver().write();
     let dentry = {
         let path = path.to_string_lossy();
         if path.is_empty() {

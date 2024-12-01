@@ -10,7 +10,7 @@ use crate::{
 pub fn sys_dup(old_fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
     debug!("old_fd = {}", old_fd);
 
-    let mut file_table = ctx.process.file_table().lock();
+    let mut file_table = ctx.posix_thread.file_table().lock();
     let new_fd = file_table.dup(old_fd, 0, FdFlags::empty())?;
 
     Ok(SyscallReturn::Return(new_fd as _))
@@ -20,7 +20,7 @@ pub fn sys_dup2(old_fd: FileDesc, new_fd: FileDesc, ctx: &Context) -> Result<Sys
     debug!("old_fd = {}, new_fd = {}", old_fd, new_fd);
 
     if old_fd == new_fd {
-        let file_table = ctx.process.file_table().lock();
+        let file_table = ctx.posix_thread.file_table().lock();
         let _ = file_table.get_file(old_fd)?;
         return Ok(SyscallReturn::Return(new_fd as _));
     }
@@ -55,9 +55,9 @@ fn do_dup3(
         return_errno!(Errno::EINVAL);
     }
 
-    let current = ctx.process;
     if new_fd
-        >= current
+        >= ctx
+            .process
             .resource_limits()
             .lock()
             .get_rlimit(ResourceType::RLIMIT_NOFILE)
@@ -66,7 +66,7 @@ fn do_dup3(
         return_errno!(Errno::EBADF);
     }
 
-    let mut file_table = current.file_table().lock();
+    let mut file_table = ctx.posix_thread.file_table().lock();
     let _ = file_table.close_file(new_fd);
     let new_fd = file_table.dup(old_fd, new_fd, flags)?;
 

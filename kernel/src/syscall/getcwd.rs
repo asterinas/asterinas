@@ -7,9 +7,10 @@ use crate::{
 };
 
 pub fn sys_getcwd(buf: Vaddr, len: usize, ctx: &Context) -> Result<SyscallReturn> {
-    let current = ctx.process;
+    let current = ctx.posix_thread;
     let dirent = current
         .fs()
+        .resolver()
         .read()
         .lookup(&FsPath::new(AT_FDCWD, "").unwrap())
         .unwrap();

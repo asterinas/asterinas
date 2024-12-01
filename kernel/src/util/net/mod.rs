@@ -11,10 +11,13 @@ pub use addr::{
 pub use options::{new_raw_socket_option, CSocketOptionLevel};
 pub use socket::{CUserMsgHdr, Protocol, SockFlags, SockType, SOCK_TYPE_MASK};
 
-use crate::{fs::file_table::FileDesc, net::socket::Socket, prelude::*};
+use crate::{
+    fs::file_table::FileDesc, net::socket::Socket, prelude::*, process::posix_thread::AsPosixThread,
+};
 
 pub fn get_socket_from_fd(sockfd: FileDesc) -> Result<Arc<dyn Socket>> {
-    let current = current!();
+    let current = current_thread!();
+    let current = current.as_posix_thread().unwrap();
     let file_table = current.file_table().lock();
     file_table.get_socket(sockfd)
 }

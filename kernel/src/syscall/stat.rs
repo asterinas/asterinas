@@ -16,7 +16,7 @@ pub fn sys_fstat(fd: FileDesc, stat_buf_ptr: Vaddr, ctx: &Context) -> Result<Sys
     debug!("fd = {}, stat_buf_addr = 0x{:x}", fd, stat_buf_ptr);
 
     let file = {
-        let file_table = ctx.process.file_table().lock();
+        let file_table = ctx.posix_thread.file_table().lock();
         file_table.get_file(fd)?.clone()
     };
 
@@ -66,7 +66,7 @@ pub fn sys_fstatat(
     let dentry = {
         let filename = filename.to_string_lossy();
         let fs_path = FsPath::new(dirfd, filename.as_ref())?;
-        let fs = ctx.process.fs().read();
+        let fs = ctx.posix_thread.fs().resolver().read();
         if flags.contains(StatFlags::AT_SYMLINK_NOFOLLOW) {
             fs.lookup_no_follow(&fs_path)?
         } else {

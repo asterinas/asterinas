@@ -14,7 +14,7 @@ pub fn sys_fchmod(fd: FileDesc, mode: u16, ctx: &Context) -> Result<SyscallRetur
     debug!("fd = {}, mode = 0o{:o}", fd, mode);
 
     let file = {
-        let file_table = ctx.process.file_table().lock();
+        let file_table = ctx.posix_thread.file_table().lock();
         file_table.get_file(fd)?.clone()
     };
     file.set_mode(InodeMode::from_bits_truncate(mode))?;
@@ -42,7 +42,7 @@ pub fn sys_fchmodat(
             return_errno_with_message!(Errno::ENOENT, "path is empty");
         }
         let fs_path = FsPath::new(dirfd, path.as_ref())?;
-        ctx.process.fs().read().lookup(&fs_path)?
+        ctx.posix_thread.fs().resolver().read().lookup(&fs_path)?
     };
     dentry.set_mode(InodeMode::from_bits_truncate(mode))?;
     Ok(SyscallReturn::Return(0))

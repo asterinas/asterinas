@@ -18,7 +18,6 @@ use super::{
 };
 use crate::{
     device::tty::open_ntty_as_controlling_terminal,
-    fs::{file_table::FileTable, fs_resolver::FsResolver, utils::FileCreationMask},
     prelude::*,
     sched::priority::{AtomicNice, Nice},
     thread::{AsThread, Thread},
@@ -81,12 +80,6 @@ pub struct Process {
     children: Mutex<BTreeMap<Pid, Arc<Process>>>,
     /// Process group
     pub(super) process_group: Mutex<Weak<ProcessGroup>>,
-    /// File table
-    file_table: Arc<SpinLock<FileTable>>,
-    /// FsResolver
-    fs: Arc<RwMutex<FsResolver>>,
-    /// umask
-    umask: Arc<RwLock<FileCreationMask>>,
     /// resource limits
     resource_limits: Mutex<ResourceLimits>,
     /// Scheduling priority nice value
@@ -185,10 +178,6 @@ impl Process {
         executable_path: String,
         process_vm: ProcessVm,
 
-        fs: Arc<RwMutex<FsResolver>>,
-        file_table: Arc<SpinLock<FileTable>>,
-
-        umask: Arc<RwLock<FileCreationMask>>,
         resource_limits: ResourceLimits,
         nice: Nice,
         sig_dispositions: Arc<Mutex<SigDispositions>>,
@@ -209,9 +198,6 @@ impl Process {
             parent: ParentProcess::new(parent),
             children: Mutex::new(BTreeMap::new()),
             process_group: Mutex::new(Weak::new()),
-            file_table,
-            fs,
-            umask,
             sig_dispositions,
             parent_death_signal: AtomicSigNum::new_empty(),
             exit_signal: AtomicSigNum::new_empty(),
@@ -620,20 +606,6 @@ impl Process {
         self.process_vm.init_stack_reader()
     }
 
-    // ************** File system ****************
-
-    pub fn file_table(&self) -> &Arc<SpinLock<FileTable>> {
-        &self.file_table
-    }
-
-    pub fn fs(&self) -> &Arc<RwMutex<FsResolver>> {
-        &self.fs
-    }
-
-    pub fn umask(&self) -> &Arc<RwLock<FileCreationMask>> {
-        &self.umask
-    }
-
     // ****************** Signal ******************
 
     pub fn sig_dispositions(&self) -> &Arc<Mutex<SigDispositions>> {
@@ -742,9 +714,6 @@ mod test {
             vec![],
             String::new(),
             ProcessVm::alloc(),
-            Arc::new(RwMutex::new(FsResolver::new())),
-            Arc::new(SpinLock::new(FileTable::new())),
-            Arc::new(RwLock::new(FileCreationMask::default())),
             ResourceLimits::default(),
             Nice::default(),
             Arc::new(Mutex::new(SigDispositions::default())),

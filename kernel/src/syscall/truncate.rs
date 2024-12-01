@@ -17,7 +17,7 @@ pub fn sys_ftruncate(fd: FileDesc, len: isize, ctx: &Context) -> Result<SyscallR
     check_length(len, ctx)?;
 
     let file = {
-        let file_table = ctx.process.file_table().lock();
+        let file_table = ctx.posix_thread.file_table().lock();
         file_table.get_file(fd)?.clone()
     };
 
@@ -37,7 +37,7 @@ pub fn sys_truncate(path_ptr: Vaddr, len: isize, ctx: &Context) -> Result<Syscal
             return_errno_with_message!(Errno::ENOENT, "path is empty");
         }
         let fs_path = FsPath::new(AT_FDCWD, path.as_ref())?;
-        ctx.process.fs().read().lookup(&fs_path)?
+        ctx.posix_thread.fs().resolver().read().lookup(&fs_path)?
     };
     dir_dentry.resize(len as usize)?;
     Ok(SyscallReturn::Return(0))

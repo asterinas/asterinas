@@ -34,7 +34,11 @@ pub fn sys_unlinkat(
             return_errno_with_message!(Errno::EISDIR, "unlink on directory");
         }
         let fs_path = FsPath::new(dirfd, path.as_ref())?;
-        ctx.process.fs().read().lookup_dir_and_base_name(&fs_path)?
+        ctx.posix_thread
+            .fs()
+            .resolver()
+            .read()
+            .lookup_dir_and_base_name(&fs_path)?
     };
     dir_dentry.unlink(&name)?;
     Ok(SyscallReturn::Return(0))

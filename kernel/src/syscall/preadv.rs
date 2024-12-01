@@ -66,7 +66,7 @@ fn do_sys_preadv(
     }
 
     let file = {
-        let filetable = ctx.process.file_table().lock();
+        let filetable = ctx.posix_thread.file_table().lock();
         filetable.get_file(fd)?.clone()
     };
 
@@ -128,7 +128,7 @@ fn do_sys_readv(
     );
 
     let file = {
-        let filetable = ctx.process.file_table().lock();
+        let filetable = ctx.posix_thread.file_table().lock();
         filetable.get_file(fd)?.clone()
     };
 

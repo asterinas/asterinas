@@ -100,7 +100,7 @@ enum FileResult {
 
 /// Holds all the files we're going to poll.
 fn hold_files(poll_fds: &[PollFd], ctx: &Context) -> (FileResult, Vec<Option<Arc<dyn FileLike>>>) {
-    let file_table = ctx.process.file_table().lock();
+    let file_table = ctx.posix_thread.file_table().lock();
 
     let mut files = Vec::with_capacity(poll_fds.len());
     let mut result = FileResult::AllValid;
