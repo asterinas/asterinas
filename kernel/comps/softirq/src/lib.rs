@@ -119,36 +119,14 @@ static ENABLED_MASK: AtomicU8 = AtomicU8::new(0);
 
 cpu_local_cell! {
     static PENDING_MASK: u8 = 0;
-    static IS_ENABLED: bool = true;
-}
-
-/// Enables softirq in current processor.
-fn enable_softirq_local() {
-    IS_ENABLED.store(true);
-}
-
-/// Disables softirq in current processor.
-fn disable_softirq_local() {
-    IS_ENABLED.store(false);
-}
-
-/// Checks whether the softirq is enabled in current processor.
-fn is_softirq_enabled() -> bool {
-    IS_ENABLED.load()
 }
 
 /// Processes pending softirqs.
 ///
 /// The processing instructions will iterate for `SOFTIRQ_RUN_TIMES` times. If any softirq
 /// is raised during the iteration, it will be processed.
-pub(crate) fn process_pending() {
+fn process_pending() {
     const SOFTIRQ_RUN_TIMES: u8 = 5;
-
-    if !is_softirq_enabled() {
-        return;
-    }
-
-    disable_softirq_local();
 
     for _i in 0..SOFTIRQ_RUN_TIMES {
         let mut action_mask = {
@@ -166,6 +144,4 @@ pub(crate) fn process_pending() {
             action_mask &= action_mask - 1;
         }
     }
-
-    enable_softirq_local();
 }
