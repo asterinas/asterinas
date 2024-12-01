@@ -4,7 +4,7 @@
 
 use ostd::{cpu::CpuSet, task::Task, user::UserSpace};
 
-use super::{thread_table, PosixThread};
+use super::{thread_table, PosixThread, ThreadLocal};
 use crate::{
     fs::{file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
@@ -126,17 +126,12 @@ impl PosixThreadBuilder {
                     process,
                     tid,
                     name: Mutex::new(thread_name),
-                    set_child_tid: Mutex::new(set_child_tid),
-                    clear_child_tid: Mutex::new(clear_child_tid),
                     credentials,
                     file_table,
                     fs,
                     sig_mask,
                     sig_queues,
-                    sig_context: Mutex::new(None),
-                    sig_stack: Mutex::new(None),
                     signalled_waker: SpinLock::new(None),
-                    robust_list: Mutex::new(None),
                     prof_clock,
                     virtual_timer_manager,
                     prof_timer_manager,
@@ -151,8 +146,10 @@ impl PosixThreadBuilder {
                 cpu_affinity,
             ));
 
+            let thread_local = ThreadLocal::new(set_child_tid, clear_child_tid);
+
             thread_table::add_thread(tid, thread.clone());
-            task::create_new_user_task(user_space, thread)
+            task::create_new_user_task(user_space, thread, thread_local)
         })
     }
 }

@@ -3,7 +3,8 @@
 use ostd::task::{CurrentTask, Task};
 
 use super::{
-    futex::futex_wake, robust_list::wake_robust_futex, thread_table, AsPosixThread, PosixThread,
+    futex::futex_wake, robust_list::wake_robust_futex, thread_table, AsPosixThread, AsThreadLocal,
+    ThreadLocal,
 };
 use crate::{
     current_userspace,
@@ -14,7 +15,7 @@ use crate::{
         task_set::TaskSet,
         TermStatus,
     },
-    thread::AsThread,
+    thread::{AsThread, Tid},
 };
 
 /// Exits the current POSIX thread.
@@ -40,6 +41,7 @@ fn exit_internal(term_status: TermStatus, is_exiting_group: bool) {
     let current_task = Task::current().unwrap();
     let current_thread = current_task.as_thread().unwrap();
     let posix_thread = current_thread.as_posix_thread().unwrap();
+    let thread_local = current_task.as_thread_local().unwrap();
     let posix_process = posix_thread.process();
 
     let is_last_thread = {
@@ -67,9 +69,9 @@ fn exit_internal(term_status: TermStatus, is_exiting_group: bool) {
         tasks.remove_exited(&current_task)
     };
 
-    wake_clear_ctid(posix_thread);
+    wake_clear_ctid(thread_local);
 
-    wake_robust_list(posix_thread);
+    wake_robust_list(thread_local, posix_thread.tid());
 
     // According to Linux behavior, the main thread shouldn't be removed from the table until the
     // process is reaped by its parent.
@@ -97,27 +99,27 @@ fn sigkill_other_threads(current_task: &CurrentTask, task_set: &TaskSet) {
 }
 
 /// Writes zero to `clear_child_tid` and performs a futex wake.
-fn wake_clear_ctid(current_thread: &PosixThread) {
-    let mut clear_ctid = current_thread.clear_child_tid().lock();
+fn wake_clear_ctid(thread_local: &ThreadLocal) {
+    let clear_ctid = thread_local.clear_child_tid().get();
 
-    if *clear_ctid == 0 {
+    if clear_ctid == 0 {
         return;
     }
 
     let _ = current_userspace!()
-        .write_val(*clear_ctid, &0u32)
+        .write_val(clear_ctid, &0u32)
         .inspect_err(|err| debug!("exit: cannot clear the child TID: {:?}", err));
-    let _ = futex_wake(*clear_ctid, 1, None)
+    let _ = futex_wake(clear_ctid, 1, None)
         .inspect_err(|err| debug!("exit: cannot wake the futex on the child TID: {:?}", err));
 
-    *clear_ctid = 0;
+    thread_local.clear_child_tid().set(0);
 }
 
 /// Walks the robust futex list, marking futex dead and waking waiters.
 ///
 /// This corresponds to Linux's `exit_robust_list`. Errors are silently ignored.
-fn wake_robust_list(current_thread: &PosixThread) {
-    let mut robust_list = current_thread.robust_list.lock();
+fn wake_robust_list(thread_local: &ThreadLocal, tid: Tid) {
+    let mut robust_list = thread_local.robust_list().borrow_mut();
 
     let list_head = match *robust_list {
         Some(robust_list_head) => robust_list_head,
@@ -126,7 +128,7 @@ fn wake_robust_list(current_thread: &PosixThread) {
 
     trace!("exit: wake up the rubust list: {:?}", list_head);
     for futex_addr in list_head.futexes() {
-        let _ = wake_robust_futex(futex_addr, current_thread.tid)
+        let _ = wake_robust_futex(futex_addr, tid)
             .inspect_err(|err| debug!("exit: cannot wake up the robust futex: {:?}", err));
     }
 

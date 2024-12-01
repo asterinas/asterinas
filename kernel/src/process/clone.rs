@@ -9,7 +9,7 @@ use ostd::{
 };
 
 use super::{
-    posix_thread::{thread_table, AsPosixThread, PosixThread, PosixThreadBuilder, ThreadName},
+    posix_thread::{AsPosixThread, PosixThreadBuilder, ThreadName},
     process_table,
     process_vm::ProcessVm,
     signal::{constants::SIGCHLD, sig_disposition::SigDispositions, sig_num::SigNum},
@@ -216,8 +216,7 @@ fn clone_child_task(
     let Context {
         process,
         posix_thread,
-        thread: _,
-        task: _,
+        ..
     } = ctx;
 
     // clone system V semaphore
@@ -252,11 +251,17 @@ fn clone_child_task(
             Credentials::new_from(&credentials)
         };
 
-        let thread_builder = PosixThreadBuilder::new(child_tid, child_user_space, credentials)
+        let mut thread_builder = PosixThreadBuilder::new(child_tid, child_user_space, credentials)
             .process(posix_thread.weak_process())
             .sig_mask(sig_mask)
             .file_table(child_file_table)
             .fs(child_fs);
+
+        // Deal with SETTID/CLEARTID flags
+        clone_parent_settid(child_tid, clone_args.parent_tid, clone_flags)?;
+        thread_builder = clone_child_cleartid(thread_builder, clone_args.child_tid, clone_flags);
+        thread_builder = clone_child_settid(thread_builder, clone_args.child_tid, clone_flags);
+
         thread_builder.build()
     };
 
@@ -266,10 +271,6 @@ fn clone_child_task(
         .insert(child_task.clone())
         .map_err(|_| Error::with_message(Errno::EINTR, "the process has exited"))?;
 
-    let child_posix_thread = child_task.as_posix_thread().unwrap();
-    clone_parent_settid(child_tid, clone_args.parent_tid, clone_flags)?;
-    clone_child_cleartid(child_posix_thread, clone_args.child_tid, clone_flags)?;
-    clone_child_settid(child_posix_thread, clone_args.child_tid, clone_flags)?;
     Ok(child_task)
 }
 
@@ -281,8 +282,7 @@ fn clone_child_process(
     let Context {
         process,
         posix_thread,
-        thread: _,
-        task: _,
+        ..
     } = ctx;
 
     let clone_flags = clone_args.flags;
@@ -331,7 +331,7 @@ fn clone_child_process(
 
     let child = {
         let child_elf_path = process.executable_path();
-        let child_thread_builder = {
+        let mut child_thread_builder = {
             let child_thread_name = ThreadName::new_from_executable_path(&child_elf_path)?;
 
             let credentials = {
@@ -345,6 +345,13 @@ fn clone_child_process(
                 .file_table(child_file_table)
                 .fs(child_fs)
         };
+
+        // Deal with SETTID/CLEARTID flags
+        clone_parent_settid(child_tid, clone_args.parent_tid, clone_flags)?;
+        child_thread_builder =
+            clone_child_cleartid(child_thread_builder, clone_args.child_tid, clone_flags);
+        child_thread_builder =
+            clone_child_settid(child_thread_builder, clone_args.child_tid, clone_flags);
 
         let mut process_builder =
             ProcessBuilder::new(child_tid, &child_elf_path, posix_thread.weak_process());
@@ -362,13 +369,6 @@ fn clone_child_process(
         child.set_exit_signal(sig);
     };
 
-    // Deals with clone flags
-    let child_thread = thread_table::get_thread(child_tid).unwrap();
-    let child_posix_thread = child_thread.as_posix_thread().unwrap();
-    clone_parent_settid(child_tid, clone_args.parent_tid, clone_flags)?;
-    clone_child_cleartid(child_posix_thread, clone_args.child_tid, clone_flags)?;
-    clone_child_settid(child_posix_thread, clone_args.child_tid, clone_flags)?;
-
     // Sets parent process and group for child process.
     set_parent_and_group(process, &child);
 
@@ -376,25 +376,27 @@ fn clone_child_process(
 }
 
 fn clone_child_cleartid(
-    child_posix_thread: &PosixThread,
+    child_builder: PosixThreadBuilder,
     child_tidptr: Vaddr,
     clone_flags: CloneFlags,
-) -> Result<()> {
+) -> PosixThreadBuilder {
     if clone_flags.contains(CloneFlags::CLONE_CHILD_CLEARTID) {
-        *child_posix_thread.clear_child_tid().lock() = child_tidptr;
+        child_builder.clear_child_tid(child_tidptr)
+    } else {
+        child_builder
     }
-    Ok(())
 }
 
 fn clone_child_settid(
-    child_posix_thread: &PosixThread,
+    child_builder: PosixThreadBuilder,
     child_tidptr: Vaddr,
     clone_flags: CloneFlags,
-) -> Result<()> {
+) -> PosixThreadBuilder {
     if clone_flags.contains(CloneFlags::CLONE_CHILD_SETTID) {
-        *child_posix_thread.set_child_tid().lock() = child_tidptr;
+        child_builder.set_child_tid(child_tidptr)
+    } else {
+        child_builder
     }
-    Ok(())
 }
 
 fn clone_parent_settid(
