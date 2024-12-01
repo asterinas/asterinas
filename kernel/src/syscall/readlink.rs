@@ -30,7 +30,11 @@ pub fn sys_readlinkat(
             return_errno_with_message!(Errno::ENOENT, "path is empty");
         }
         let fs_path = FsPath::new(dirfd, path.as_ref())?;
-        ctx.process.fs().read().lookup_no_follow(&fs_path)?
+        ctx.posix_thread
+            .fs()
+            .resolver()
+            .read()
+            .lookup_no_follow(&fs_path)?
     };
     let linkpath = dentry.inode().read_link()?;
     let bytes = linkpath.as_bytes();

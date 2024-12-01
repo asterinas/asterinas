@@ -26,7 +26,7 @@ pub fn sys_renameat(
         old_dirfd, old_path, new_dirfd, new_path
     );
 
-    let fs = ctx.process.fs().read();
+    let fs = ctx.posix_thread.fs().resolver().read();
 
     let (old_dir_dentry, old_name) = {
         let old_path = old_path.to_string_lossy();

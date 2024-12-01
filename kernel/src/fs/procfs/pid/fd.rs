@@ -11,6 +11,7 @@ use crate::{
         utils::{DirEntryVecExt, Inode},
     },
     prelude::*,
+    process::posix_thread::AsPosixThread,
     Process,
 };
 
@@ -23,7 +24,8 @@ impl FdDirOps {
             .parent(parent)
             .build()
             .unwrap();
-        let file_table = process_ref.file_table().lock();
+        let main_thread = process_ref.main_thread().unwrap();
+        let file_table = main_thread.as_posix_thread().unwrap().file_table().lock();
         let weak_ptr = Arc::downgrade(&fd_inode);
         file_table.register_observer(weak_ptr);
         fd_inode
@@ -49,7 +51,8 @@ impl DirOps for FdDirOps {
             let fd = name
                 .parse::<FileDesc>()
                 .map_err(|_| Error::new(Errno::ENOENT))?;
-            let file_table = self.0.file_table().lock();
+            let main_thread = self.0.main_thread().unwrap();
+            let file_table = main_thread.as_posix_thread().unwrap().file_table().lock();
             file_table
                 .get_file(fd)
                 .map_err(|_| Error::new(Errno::ENOENT))?
@@ -63,8 +66,9 @@ impl DirOps for FdDirOps {
             let this = this_ptr.upgrade().unwrap();
             this.downcast_ref::<ProcDir<FdDirOps>>().unwrap().this()
         };
-        let file_table = self.0.file_table().lock();
         let mut cached_children = this.cached_children().write();
+        let main_thread = self.0.main_thread().unwrap();
+        let file_table = main_thread.as_posix_thread().unwrap().file_table().lock();
         for (fd, file) in file_table.fds_and_files() {
             cached_children.put_entry_if_not_found(&fd.to_string(), || {
                 FileSymOps::new_inode(file.clone(), this_ptr.clone())

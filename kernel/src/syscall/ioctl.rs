@@ -17,7 +17,7 @@ pub fn sys_ioctl(fd: FileDesc, cmd: u32, arg: Vaddr, ctx: &Context) -> Result<Sy
     );
 
     let file = {
-        let file_table = ctx.process.file_table().lock();
+        let file_table = ctx.posix_thread.file_table().lock();
         file_table.get_file(fd)?.clone()
     };
     let res = match ioctl_cmd {
@@ -44,14 +44,14 @@ pub fn sys_ioctl(fd: FileDesc, cmd: u32, arg: Vaddr, ctx: &Context) -> Result<Sy
             // Follow the implementation of fcntl()
 
             let flags = FdFlags::CLOEXEC;
-            let file_table = ctx.process.file_table().lock();
+            let file_table = ctx.posix_thread.file_table().lock();
             let entry = file_table.get_entry(fd)?;
             entry.set_flags(flags);
             0
         }
         IoctlCmd::FIONCLEX => {
             // Clears the close-on-exec flag of the file.
-            let file_table = ctx.process.file_table().lock();
+            let file_table = ctx.posix_thread.file_table().lock();
             let entry = file_table.get_entry(fd)?;
             entry.set_flags(entry.flags() & (!FdFlags::CLOEXEC));
             0

@@ -21,7 +21,7 @@ pub fn sys_lseek(fd: FileDesc, offset: isize, whence: u32, ctx: &Context) -> Res
         _ => return_errno!(Errno::EINVAL),
     };
     let file = {
-        let file_table = ctx.process.file_table().lock();
+        let file_table = ctx.posix_thread.file_table().lock();
         file_table.get_file(fd)?.clone()
     };
 

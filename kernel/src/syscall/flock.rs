@@ -14,7 +14,7 @@ pub fn sys_flock(fd: FileDesc, ops: i32, ctx: &Context) -> Result<SyscallReturn>
     debug!("flock: fd: {}, ops: {:?}", fd, ops);
 
     let file = {
-        let current = ctx.process;
+        let current = ctx.posix_thread;
         let file_table = current.file_table().lock();
         file_table.get_file(fd)?.clone()
     };

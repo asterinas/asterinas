@@ -61,7 +61,7 @@ fn do_sys_pwritev(
         return_errno_with_message!(Errno::EINVAL, "offset cannot be negative");
     }
     let file = {
-        let filetable = ctx.process.file_table().lock();
+        let filetable = ctx.posix_thread.file_table().lock();
         filetable.get_file(fd)?.clone()
     };
     // TODO: Check (f.file->f_mode & FMODE_PREAD); We don't have f_mode in our FileLike trait
@@ -117,7 +117,7 @@ fn do_sys_writev(
         fd, io_vec_ptr, io_vec_count
     );
     let file = {
-        let filetable = ctx.process.file_table().lock();
+        let filetable = ctx.posix_thread.file_table().lock();
         filetable.get_file(fd)?.clone()
     };
     let mut total_len = 0;

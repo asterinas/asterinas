@@ -20,9 +20,9 @@ pub fn sys_mknodat(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let path = ctx.user_space().read_cstring(path_addr, MAX_FILENAME_LEN)?;
-    let current = ctx.process;
+    let current = ctx.posix_thread;
     let inode_mode = {
-        let mask_mode = mode & !current.umask().read().get();
+        let mask_mode = mode & !current.fs().umask().read().get();
         InodeMode::from_bits_truncate(mask_mode)
     };
     let inode_type = InodeType::from_raw_mode(mode)?;
@@ -39,6 +39,7 @@ pub fn sys_mknodat(
         let fs_path = FsPath::new(dirfd, path.as_ref())?;
         current
             .fs()
+            .resolver()
             .read()
             .lookup_dir_and_new_basename(&fs_path, false)?
     };

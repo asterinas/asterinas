@@ -24,12 +24,16 @@ pub fn sys_openat(
         dirfd, path, flags, mode
     );
 
-    let current = ctx.process;
+    let current = ctx.posix_thread;
     let file_handle = {
         let path = path.to_string_lossy();
         let fs_path = FsPath::new(dirfd, path.as_ref())?;
-        let mask_mode = mode & !current.umask().read().get();
-        let inode_handle = current.fs().read().open(&fs_path, flags, mask_mode)?;
+        let mask_mode = mode & !current.fs().umask().read().get();
+        let inode_handle = current
+            .fs()
+            .resolver()
+            .read()
+            .open(&fs_path, flags, mask_mode)?;
         Arc::new(inode_handle)
     };
     let mut file_table = current.file_table().lock();

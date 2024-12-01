@@ -9,7 +9,7 @@ use super::{
     rootfs::root_mount,
     utils::{AccessMode, CreationFlags, InodeMode, InodeType, StatusFlags, PATH_MAX, SYMLINKS_MAX},
 };
-use crate::prelude::*;
+use crate::{prelude::*, process::posix_thread::AsPosixThread};
 
 /// The file descriptor of the current working directory.
 pub const AT_FDCWD: FileDesc = -100;
@@ -285,7 +285,8 @@ impl FsResolver {
 
     /// Lookups the target dentry according to the given `fd`.
     pub fn lookup_from_fd(&self, fd: FileDesc) -> Result<Dentry> {
-        let current = current!();
+        let current = current_thread!();
+        let current = current.as_posix_thread().unwrap();
         let file_table = current.file_table().lock();
         let inode_handle = file_table
             .get_file(fd)?

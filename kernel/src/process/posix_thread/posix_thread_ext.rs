@@ -8,7 +8,10 @@ use ostd::{
 
 use super::{builder::PosixThreadBuilder, name::ThreadName, PosixThread};
 use crate::{
-    fs::fs_resolver::{FsPath, FsResolver, AT_FDCWD},
+    fs::{
+        fs_resolver::{FsPath, AT_FDCWD},
+        thread_info::ThreadFsInfo,
+    },
     prelude::*,
     process::{process_vm::ProcessVm, program_loader::load_program_to_vm, Credentials, Process},
     thread::{AsThread, Thread, Tid},
@@ -35,22 +38,22 @@ impl AsPosixThread for Task {
 /// Creates a task for running an executable file.
 ///
 /// This function should _only_ be used to create the init user task.
-#[allow(clippy::too_many_arguments)]
 pub fn create_posix_task_from_executable(
     tid: Tid,
     credentials: Credentials,
     process_vm: &ProcessVm,
-    fs_resolver: &FsResolver,
     executable_path: &str,
     process: Weak<Process>,
     argv: Vec<CString>,
     envp: Vec<CString>,
 ) -> Result<Arc<Task>> {
-    let elf_file = {
+    let fs = ThreadFsInfo::default();
+    let (_, elf_load_info) = {
+        let fs_resolver = fs.resolver().read();
         let fs_path = FsPath::new(AT_FDCWD, executable_path)?;
-        fs_resolver.lookup(&fs_path)?
+        let elf_file = fs.resolver().read().lookup(&fs_path)?;
+        load_program_to_vm(process_vm, elf_file, argv, envp, &fs_resolver, 1)?
     };
-    let (_, elf_load_info) = load_program_to_vm(process_vm, elf_file, argv, envp, fs_resolver, 1)?;
 
     let vm_space = process_vm.root_vmar().vm_space().clone();
     let mut cpu_ctx = UserContext::default();
@@ -60,6 +63,7 @@ pub fn create_posix_task_from_executable(
     let thread_name = Some(ThreadName::new_from_executable_path(executable_path)?);
     let thread_builder = PosixThreadBuilder::new(tid, user_space, credentials)
         .thread_name(thread_name)
-        .process(process);
+        .process(process)
+        .fs(Arc::new(fs));
     Ok(thread_builder.build())
 }

@@ -41,8 +41,13 @@ pub fn do_exit_group(term_status: TermStatus) {
         child.enqueue_signal(signal);
     }
 
-    // Close all files then exit the process
-    let files = current.file_table().lock().close_all();
+    // Close all files then exit the process.
+    //
+    // FIXME: This is obviously wrong in a number of ways, since different threads can have
+    // different file tables, and different processes can share the same file table.
+    let main_thread = current.main_thread().unwrap();
+    let mut files = main_thread.as_posix_thread().unwrap().file_table().lock();
+    files.close_all();
     drop(files);
 
     // Move children to the init process
