@@ -202,6 +202,26 @@ fn clone_child_task(
     parent_context: &UserContext,
     clone_args: CloneArgs,
 ) -> Result<Arc<Task>> {
+    let clone_flags = clone_args.flags;
+
+    // This combination is not valid, according to the Linux man pages. See
+    // <https://www.man7.org/linux/man-pages/man2/clone.2.html>.
+    if !clone_flags.contains(CloneFlags::CLONE_VM | CloneFlags::CLONE_SIGHAND) {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "`CLONE_THREAD` without `CLONE_VM` and `CLONE_SIGHAND` is not valid"
+        );
+    }
+
+    // This is valid combination in Linux. But we do not support it yet.
+    if !clone_flags.contains(CloneFlags::CLONE_FILES) || !clone_flags.contains(CloneFlags::CLONE_FS)
+    {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "`CLONE_THREAD` without `CLONE_FILES` or `CLONE_FS` is not supported"
+        );
+    }
+
     let Context {
         process,
         posix_thread,
@@ -209,12 +229,10 @@ fn clone_child_task(
         task: _,
     } = ctx;
 
-    let clone_flags = clone_args.flags;
-    debug_assert!(clone_flags.contains(CloneFlags::CLONE_VM));
-    debug_assert!(clone_flags.contains(CloneFlags::CLONE_FILES));
-    debug_assert!(clone_flags.contains(CloneFlags::CLONE_SIGHAND));
-    let child_root_vmar = process.root_vmar();
+    // clone system V semaphore
+    clone_sysvsem(clone_flags)?;
 
+    let child_root_vmar = process.root_vmar();
     let child_user_space = {
         let child_vm_space = child_root_vmar.vm_space().clone();
         let child_cpu_context = clone_cpu_context(
@@ -226,7 +244,6 @@ fn clone_child_task(
         );
         Arc::new(UserSpace::new(child_vm_space, child_cpu_context))
     };
-    clone_sysvsem(clone_flags)?;
 
     // Inherit sigmask from current thread
     let sig_mask = posix_thread.sig_mask().load(Ordering::Relaxed).into();
