@@ -90,9 +90,9 @@ fn do_execve(
 ) -> Result<()> {
     let Context {
         process,
+        thread_local,
         posix_thread,
-        thread: _,
-        task: _,
+        ..
     } = ctx;
 
     let executable_path = elf_file.abs_path();
@@ -107,7 +107,7 @@ fn do_execve(
         Some(ThreadName::new_from_executable_path(&executable_path)?);
     // clear ctid
     // FIXME: should we clear ctid when execve?
-    *posix_thread.clear_child_tid().lock() = 0;
+    thread_local.clear_child_tid().set(0);
 
     // Ensure that the file descriptors with the close-on-exec flag are closed.
     // FIXME: This is just wrong if the file table is shared with other processes.
@@ -123,10 +123,10 @@ fn do_execve(
 
     // After the program has been successfully loaded, the virtual memory of the current process
     // is initialized. Hence, it is necessary to clear the previously recorded robust list.
-    *posix_thread.robust_list().lock() = None;
+    *thread_local.robust_list().borrow_mut() = None;
     debug!("load elf in execve succeeds");
 
-    let credentials = ctx.posix_thread.credentials_mut();
+    let credentials = posix_thread.credentials_mut();
     set_uid_from_elf(process, &credentials, &elf_file)?;
     set_gid_from_elf(process, &credentials, &elf_file)?;
     credentials.set_keep_capabilities(false);

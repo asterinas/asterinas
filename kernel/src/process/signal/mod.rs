@@ -26,7 +26,7 @@ use sig_mask::SigMask;
 use sig_num::SigNum;
 pub use sig_stack::{SigStack, SigStackFlags};
 
-use super::posix_thread::PosixThread;
+use super::posix_thread::ThreadLocal;
 use crate::{
     cpu::LinuxAbi,
     current_userspace,
@@ -165,7 +165,7 @@ pub fn handle_user_signal(
         .store(old_mask + mask, Ordering::Relaxed);
 
     // Set up signal stack.
-    let mut stack_pointer = if let Some(sp) = use_alternate_signal_stack(ctx.posix_thread) {
+    let mut stack_pointer = if let Some(sp) = use_alternate_signal_stack(ctx.thread_local) {
         sp as u64
     } else {
         // just use user stack
@@ -193,8 +193,8 @@ pub fn handle_user_signal(
         .inner
         .gp_regs
         .copy_from_raw(user_ctx.general_regs());
-    let mut sig_context = ctx.posix_thread.sig_context().lock();
-    if let Some(sig_context_addr) = *sig_context {
+    let sig_context = ctx.thread_local.sig_context().get();
+    if let Some(sig_context_addr) = sig_context {
         ucontext.uc_link = sig_context_addr;
     } else {
         ucontext.uc_link = 0;
@@ -203,7 +203,9 @@ pub fn handle_user_signal(
     user_space.write_val(stack_pointer as _, &ucontext)?;
     let ucontext_addr = stack_pointer;
     // Store the ucontext addr in sig context of current thread.
-    *sig_context = Some(ucontext_addr as Vaddr);
+    ctx.thread_local
+        .sig_context()
+        .set(Some(ucontext_addr as Vaddr));
 
     // 3. Set the address of the trampoline code.
     if flags.contains(SigActionFlags::SA_RESTORER) {
@@ -251,8 +253,8 @@ pub fn handle_user_signal(
 /// It the stack is already active, we just increase the handler counter and return None, since
 /// the stack pointer can be read from context.
 /// It the stack is not used by any handler, we will return the new sp in alternate signal stack.
-fn use_alternate_signal_stack(posix_thread: &PosixThread) -> Option<usize> {
-    let mut sig_stack = posix_thread.sig_stack().lock();
+fn use_alternate_signal_stack(thread_local: &ThreadLocal) -> Option<usize> {
+    let mut sig_stack = thread_local.sig_stack().borrow_mut();
     let sig_stack = (*sig_stack).as_mut()?;
 
     if sig_stack.is_disabled() {
