@@ -165,7 +165,7 @@ install_osdk:
 # This will install OSDK if it is not already installed
 # To update OSDK, we need to run `install_osdk` manually
 $(CARGO_OSDK):
-	@make --no-print-directory install_osdk
+	@$(MAKE) --no-print-directory install_osdk
 
 .PHONY: check_osdk
 check_osdk:
@@ -177,9 +177,13 @@ test_osdk:
 		OSDK_LOCAL_DEV=1 cargo build && \
 		OSDK_LOCAL_DEV=1 cargo test
 
+.PHONY: _initramfs
+_initramfs:
+	@$(MAKE) --no-print-directory -C test
+
 .PHONY: initramfs
-initramfs:
-	@make --no-print-directory -C test
+initramfs: _initramfs
+	$(eval CARGO_OSDK_ARGS += --initramfs=$(shell cat test/build/initramfs_path.txt))
 
 .PHONY: build
 build: initramfs $(CARGO_OSDK)
@@ -254,7 +258,7 @@ docs: $(CARGO_OSDK)
 .PHONY: format
 format:
 	@./tools/format_all.sh
-	@make --no-print-directory -C test format
+	@$(MAKE) --no-print-directory -C test format
 
 .PHONY: check
 check: initramfs $(CARGO_OSDK)
@@ -276,7 +280,7 @@ check: initramfs $(CARGO_OSDK)
 		echo "Checking $$dir"; \
 		(cd $$dir && cargo osdk clippy -- -- -D warnings) || exit 1; \
 	done
-	@make --no-print-directory -C test check
+	@$(MAKE) --no-print-directory -C test check
 	@typos
 
 .PHONY: clean
@@ -288,6 +292,6 @@ clean:
 	@echo "Cleaning up documentation target files"
 	@cd docs && mdbook clean
 	@echo "Cleaning up test target files"
-	@make --no-print-directory -C test clean
+	@$(MAKE) --no-print-directory -C test clean
 	@echo "Uninstalling OSDK"
 	@rm -f $(CARGO_OSDK)

@@ -9,7 +9,21 @@ ATOMIC_WGET := $(CUR_DIR)/../tools/atomic_wget.sh
 BUILD_DIR := $(CUR_DIR)/build
 INITRAMFS := $(BUILD_DIR)/initramfs
 INITRAMFS_FILELIST := $(BUILD_DIR)/initramfs.filelist
-INITRAMFS_IMAGE := $(BUILD_DIR)/initramfs.cpio.gz
+# Supported encodings: `gzip` and `none`
+INITRAMFS_ENCODING ?= gzip
+# Determine the suffix and encoder command
+ifeq ($(INITRAMFS_ENCODING),gzip)
+	INITRAMFS_SUFFIX := .gz
+	INITRAMFS_ENCODER_CMD := gzip
+else ifeq ($(INITRAMFS_ENCODING),none)
+	INITRAMFS_SUFFIX :=
+	# Dummy encoder
+	INITRAMFS_ENCODER_CMD := cat
+else
+	$(error Unsupported INITRAMFS_ENCODING: $(INITRAMFS_ENCODING))
+endif
+INITRAMFS_IMAGE := $(BUILD_DIR)/initramfs.cpio$(INITRAMFS_SUFFIX)
+INITRAMFS_PATH := $(BUILD_DIR)/initramfs_path.txt
 EXT2_IMAGE := $(BUILD_DIR)/ext2.img
 EXFAT_IMAGE := $(BUILD_DIR)/exfat.img
 INITRAMFS_EMPTY_DIRS := \
@@ -104,7 +118,7 @@ $(INITRAMFS)/usr/local:
 
 .PHONY: $(INITRAMFS)/test
 $(INITRAMFS)/test:
-	@make --no-print-directory -C apps
+	@$(MAKE) --no-print-directory -C apps
 
 $(INITRAMFS)/benchmark: | $(INITRAMFS)/benchmark/bin
 	@cp -rf $(CUR_DIR)/benchmark/* $@
@@ -129,11 +143,11 @@ $(INITRAMFS_EMPTY_DIRS):
 
 .PHONY: $(SYSCALL_TEST_DIR)
 $(SYSCALL_TEST_DIR):
-	@make --no-print-directory -C syscall_test
+	@$(MAKE) --no-print-directory -C syscall_test
 
 .PHONY: $(INITRAMFS_IMAGE)
 $(INITRAMFS_IMAGE): $(INITRAMFS_FILELIST)
-	@if ! cmp -s $(INITRAMFS_FILELIST) $(INITRAMFS_FILELIST).previous ; then \
+	@if ! cmp -s $(INITRAMFS_FILELIST) $(INITRAMFS_FILELIST).previous || ! test -f $(INITRAMFS_IMAGE); then \
 		echo "Generating the initramfs image..."; \
 		cp -f $(INITRAMFS_FILELIST) $(INITRAMFS_FILELIST).previous; \
 		( \
@@ -143,9 +157,10 @@ $(INITRAMFS_IMAGE): $(INITRAMFS_FILELIST)
 			# `$(INITRAMFS)` in the second column. This prunes the first \
 			# column and passes the second column to `cpio`. \
 			cut -d " " -f 2- $(INITRAMFS_FILELIST) | \
-				cpio -o -H newc | gzip \
+				cpio -o -H newc | $(INITRAMFS_ENCODER_CMD) \
 		) > $@; \
 	fi
+	@echo $(INITRAMFS_IMAGE) > $(INITRAMFS_PATH)
 
 .PHONY: $(INITRAMFS_FILELIST)
 # If the BUILD_SYSCALL_TEST variable is set, we should depend on the
@@ -170,11 +185,11 @@ build: $(INITRAMFS_IMAGE) $(EXT2_IMAGE) $(EXFAT_IMAGE)
 
 .PHONY: format
 format:
-	@make --no-print-directory -C apps format
+	@$(MAKE) --no-print-directory -C apps format
 
 .PHONY: check
 check:
-	@make --no-print-directory -C apps check
+	@$(MAKE) --no-print-directory -C apps check
 
 .PHONY: clean
 clean:
