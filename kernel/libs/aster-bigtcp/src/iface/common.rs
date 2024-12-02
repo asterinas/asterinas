@@ -86,6 +86,7 @@ impl<E: Ext> IfaceCommon<E> {
         &self,
         iface: Arc<dyn Iface<E>>,
         socket: Box<UnboundTcpSocket>,
+        observer: E::TcpEventObserver,
         config: BindPortConfig,
     ) -> core::result::Result<BoundTcpSocket<E>, (BindError, Box<UnboundTcpSocket>)> {
         let port = match self.bind_port(config) {
@@ -93,7 +94,7 @@ impl<E: Ext> IfaceCommon<E> {
             Err(err) => return Err((err, socket)),
         };
 
-        let (raw_socket, observer) = socket.into_raw();
+        let raw_socket = socket.into_raw();
         let bound_socket = BoundTcpSocket::new(iface, port, raw_socket, observer);
 
         let inserted = self
@@ -109,6 +110,7 @@ impl<E: Ext> IfaceCommon<E> {
         &self,
         iface: Arc<dyn Iface<E>>,
         socket: Box<UnboundUdpSocket>,
+        observer: E::UdpEventObserver,
         config: BindPortConfig,
     ) -> core::result::Result<BoundUdpSocket<E>, (BindError, Box<UnboundUdpSocket>)> {
         let port = match self.bind_port(config) {
@@ -116,7 +118,7 @@ impl<E: Ext> IfaceCommon<E> {
             Err(err) => return Err((err, socket)),
         };
 
-        let (raw_socket, observer) = socket.into_raw();
+        let raw_socket = socket.into_raw();
         let bound_socket = BoundUdpSocket::new(iface, port, raw_socket, observer);
 
         let inserted = self

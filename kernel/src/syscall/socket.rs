@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{file_handle::FileLike, file_table::FdFlags},
     net::socket::{
-        ip::{DatagramSocket, StreamSocket},
+        ip::{datagram::DatagramSocket, stream::StreamSocket},
         unix::UnixStreamSocket,
         vsock::VsockStreamSocket,
     },

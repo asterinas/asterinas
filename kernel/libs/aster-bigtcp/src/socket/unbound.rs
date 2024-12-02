@@ -1,19 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{boxed::Box, sync::Weak, vec};
+use alloc::{boxed::Box, vec};
 
-use super::{event::SocketEventObserver, RawTcpSocket, RawUdpSocket};
+use super::{RawTcpSocket, RawUdpSocket};
 
 pub struct UnboundSocket<T> {
     socket: Box<T>,
-    observer: Weak<dyn SocketEventObserver>,
 }
 
 pub type UnboundTcpSocket = UnboundSocket<RawTcpSocket>;
 pub type UnboundUdpSocket = UnboundSocket<RawUdpSocket>;
 
 impl UnboundTcpSocket {
-    pub fn new(observer: Weak<dyn SocketEventObserver>) -> Self {
+    pub fn new() -> Self {
         let raw_tcp_socket = {
             let rx_buffer = smoltcp::socket::tcp::SocketBuffer::new(vec![0u8; TCP_RECV_BUF_LEN]);
             let tx_buffer = smoltcp::socket::tcp::SocketBuffer::new(vec![0u8; TCP_SEND_BUF_LEN]);
@@ -21,13 +20,18 @@ impl UnboundTcpSocket {
         };
         Self {
             socket: Box::new(raw_tcp_socket),
-            observer,
         }
     }
 }
 
+impl Default for UnboundTcpSocket {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UnboundUdpSocket {
-    pub fn new(observer: Weak<dyn SocketEventObserver>) -> Self {
+    pub fn new() -> Self {
         let raw_udp_socket = {
             let metadata = smoltcp::socket::udp::PacketMetadata::EMPTY;
             let rx_buffer = smoltcp::socket::udp::PacketBuffer::new(
@@ -42,14 +46,19 @@ impl UnboundUdpSocket {
         };
         Self {
             socket: Box::new(raw_udp_socket),
-            observer,
         }
     }
 }
 
+impl Default for UnboundUdpSocket {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T> UnboundSocket<T> {
-    pub(crate) fn into_raw(self) -> (Box<T>, Weak<dyn SocketEventObserver>) {
-        (self.socket, self.observer)
+    pub(crate) fn into_raw(self) -> Box<T> {
+        self.socket
     }
 }
 
