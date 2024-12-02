@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::boxed::Box;
-
 use spin::Once;
 
 use crate::{arch::irq::IRQ_LIST, cpu_local_cell, task::disable_preempt, trap::TrapFrame};
 
-static BOTTOM_HALF_HANDLER: Once<Box<dyn Fn() + Sync + Send>> = Once::new();
+static BOTTOM_HALF_HANDLER: Once<fn()> = Once::new();
 
-/// Register a function to the interrupt bottom half execution.
+/// Registers a function to the interrupt bottom half execution.
 ///
 /// The handling of an interrupt can be divided into two parts: top half and bottom half.
 /// Top half typically performs critical tasks and runs at a high priority.
@@ -18,11 +16,8 @@ static BOTTOM_HALF_HANDLER: Once<Box<dyn Fn() + Sync + Send>> = Once::new();
 /// The bottom half handler will be called after the top half with interrupts enabled.
 ///
 /// This function can only be registered once. Subsequent calls will do nothing.
-pub fn register_bottom_half_handler<F>(func: F)
-where
-    F: Fn() + Sync + Send + 'static,
-{
-    BOTTOM_HALF_HANDLER.call_once(|| Box::new(func));
+pub fn register_bottom_half_handler(func: fn()) {
+    BOTTOM_HALF_HANDLER.call_once(|| func);
 }
 
 fn process_top_half(trap_frame: &TrapFrame, irq_number: usize) {
