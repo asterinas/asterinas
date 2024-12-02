@@ -12,19 +12,19 @@ use crate::arch::x86::device::io_port::{IoPort, ReadWriteAccess, WriteOnlyAccess
 /// Ref: <https://wiki.osdev.org/Serial_Ports>
 pub struct SerialPort {
     /// Data Register
-    data: IoPort<u8, ReadWriteAccess>,
+    data: IoPort<ReadWriteAccess, u8>,
     /// Interrupt Enable Register
-    int_en: IoPort<u8, WriteOnlyAccess>,
+    int_en: IoPort<WriteOnlyAccess, u8>,
     /// First In First Out Control Register
-    fifo_ctrl: IoPort<u8, WriteOnlyAccess>,
+    fifo_ctrl: IoPort<WriteOnlyAccess, u8>,
     /// Line control Register
-    line_ctrl: IoPort<u8, WriteOnlyAccess>,
+    line_ctrl: IoPort<WriteOnlyAccess, u8>,
     /// Modem Control Register
-    modem_ctrl: IoPort<u8, WriteOnlyAccess>,
+    modem_ctrl: IoPort<WriteOnlyAccess, u8>,
     /// Line status Register
-    line_status: IoPort<u8, ReadWriteAccess>,
+    line_status: IoPort<ReadWriteAccess, u8>,
     /// Modem Status Register
-    modem_status: IoPort<u8, ReadWriteAccess>,
+    modem_status: IoPort<ReadWriteAccess, u8>,
 }
 
 impl SerialPort {
