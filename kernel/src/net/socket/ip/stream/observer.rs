@@ -4,6 +4,7 @@ use aster_bigtcp::socket::{SocketEventObserver, SocketEvents};
 
 use crate::{events::IoEvents, process::signal::Pollee};
 
+#[derive(Clone)]
 pub struct StreamObserver(Pollee);
 
 impl StreamObserver {

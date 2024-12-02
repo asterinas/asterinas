@@ -9,6 +9,7 @@ mod poll;
 mod port;
 mod time;
 
+pub use common::BoundPort;
 pub use ext::Ext;
 pub use iface::Iface;
 pub use phy::{EtherIface, IpIface};

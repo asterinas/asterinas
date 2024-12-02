@@ -5,7 +5,7 @@ use crate::socket::SocketEventObserver;
 /// Extension to be implemented by users of this crate.
 pub trait Ext {
     /// The observer type for TCP events.
-    type TcpEventObserver: SocketEventObserver;
+    type TcpEventObserver: SocketEventObserver + Clone;
 
     /// The observer type for UDP events.
     type UdpEventObserver: SocketEventObserver;

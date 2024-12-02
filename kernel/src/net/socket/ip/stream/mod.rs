@@ -89,7 +89,7 @@ impl StreamSocket {
 
     fn new_connected(connected_stream: ConnectedStream) -> Arc<Self> {
         let pollee = Pollee::new();
-        connected_stream.set_observer(StreamObserver::new(pollee.clone()));
+        connected_stream.init_observer(StreamObserver::new(pollee.clone()));
         Arc::new(Self {
             options: RwLock::new(OptionSet::new()),
             state: RwLock::new(Takeable::new(State::Connected(connected_stream))),
@@ -217,7 +217,9 @@ impl StreamSocket {
                 }
             };
 
-            let connecting_stream = match init_stream.connect(remote_endpoint, &self.pollee) {
+            let connecting_stream = match init_stream
+                .connect(remote_endpoint, StreamObserver::new(self.pollee.clone()))
+            {
                 Ok(connecting_stream) => connecting_stream,
                 Err((err, init_stream)) => {
                     return (State::Init(init_stream), (Some(Err(err)), None));
@@ -272,13 +274,11 @@ impl StreamSocket {
             return_errno_with_message!(Errno::EINVAL, "the socket is not listening");
         };
 
-        let accepted = listen_stream
-            .try_accept(&self.pollee)
-            .map(|connected_stream| {
-                let remote_endpoint = connected_stream.remote_endpoint();
-                let accepted_socket = Self::new_connected(connected_stream);
-                (accepted_socket as _, remote_endpoint.into())
-            });
+        let accepted = listen_stream.try_accept().map(|connected_stream| {
+            let remote_endpoint = connected_stream.remote_endpoint();
+            let accepted_socket = Self::new_connected(connected_stream);
+            (accepted_socket as _, remote_endpoint.into())
+        });
         let iface_to_poll = listen_stream.iface().clone();
 
         drop(state);
@@ -449,18 +449,14 @@ impl Socket for StreamSocket {
                 );
             };
 
-            let bound_socket = match init_stream.bind(
-                &endpoint,
-                can_reuse,
-                StreamObserver::new(self.pollee.clone()),
-            ) {
-                Ok(bound_socket) => bound_socket,
+            let bound_port = match init_stream.bind(&endpoint, can_reuse) {
+                Ok(bound_port) => bound_port,
                 Err((err, init_stream)) => {
                     return (State::Init(init_stream), Err(err));
                 }
             };
 
-            (State::Init(InitStream::new_bound(bound_socket)), Ok(()))
+            (State::Init(InitStream::new_bound(bound_port)), Ok(()))
         })
     }
 
@@ -494,12 +490,13 @@ impl Socket for StreamSocket {
                 }
             };
 
-            let listen_stream = match init_stream.listen(backlog, &self.pollee) {
-                Ok(listen_stream) => listen_stream,
-                Err((err, init_stream)) => {
-                    return (State::Init(init_stream), Err(err));
-                }
-            };
+            let listen_stream =
+                match init_stream.listen(backlog, StreamObserver::new(self.pollee.clone())) {
+                    Ok(listen_stream) => listen_stream,
+                    Err((err, init_stream)) => {
+                        return (State::Init(init_stream), Err(err));
+                    }
+                };
 
             self.pollee.invalidate();
             (State::Listen(listen_stream), Ok(()))
