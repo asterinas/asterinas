@@ -12,7 +12,7 @@ use super::StreamObserver;
 use crate::{
     events::IoEvents,
     net::{
-        iface::{BoundTcpSocket, Iface},
+        iface::{Iface, TcpConnection},
         socket::util::{send_recv_flags::SendRecvFlags, shutdown_cmd::SockShutdownCmd},
     },
     prelude::*,
@@ -21,7 +21,7 @@ use crate::{
 };
 
 pub struct ConnectedStream {
-    bound_socket: BoundTcpSocket,
+    tcp_conn: TcpConnection,
     remote_endpoint: IpEndpoint,
     /// Indicates whether this connection is "new" in a `connect()` system call.
     ///
@@ -47,12 +47,12 @@ pub struct ConnectedStream {
 
 impl ConnectedStream {
     pub fn new(
-        bound_socket: BoundTcpSocket,
+        tcp_conn: TcpConnection,
         remote_endpoint: IpEndpoint,
         is_new_connection: bool,
     ) -> Self {
         Self {
-            bound_socket,
+            tcp_conn,
             remote_endpoint,
             is_new_connection,
             is_receiving_closed: AtomicBool::new(false),
@@ -70,7 +70,7 @@ impl ConnectedStream {
 
         if cmd.shut_write() {
             self.is_sending_closed.store(true, Ordering::Relaxed);
-            self.bound_socket.close();
+            self.tcp_conn.close();
             events |= IoEvents::OUT | IoEvents::HUP;
         }
 
@@ -84,7 +84,7 @@ impl ConnectedStream {
         writer: &mut dyn MultiWrite,
         _flags: SendRecvFlags,
     ) -> Result<(usize, NeedIfacePoll)> {
-        let result = self.bound_socket.recv(|socket_buffer| {
+        let result = self.tcp_conn.recv(|socket_buffer| {
             match writer.write(&mut VmReader::from(&*socket_buffer)) {
                 Ok(len) => (len, Ok(len)),
                 Err(e) => (0, Err(e)),
@@ -116,7 +116,7 @@ impl ConnectedStream {
         reader: &mut dyn MultiRead,
         _flags: SendRecvFlags,
     ) -> Result<(usize, NeedIfacePoll)> {
-        let result = self.bound_socket.send(|socket_buffer| {
+        let result = self.tcp_conn.send(|socket_buffer| {
             match reader.read(&mut VmWriter::from(socket_buffer)) {
                 Ok(len) => (len, Ok(len)),
                 Err(e) => (0, Err(e)),
@@ -143,7 +143,7 @@ impl ConnectedStream {
     }
 
     pub fn local_endpoint(&self) -> IpEndpoint {
-        self.bound_socket.local_endpoint().unwrap()
+        self.tcp_conn.local_endpoint().unwrap()
     }
 
     pub fn remote_endpoint(&self) -> IpEndpoint {
@@ -151,7 +151,7 @@ impl ConnectedStream {
     }
 
     pub fn iface(&self) -> &Arc<Iface> {
-        self.bound_socket.iface()
+        self.tcp_conn.iface()
     }
 
     pub fn check_new(&mut self) -> Result<()> {
@@ -163,8 +163,12 @@ impl ConnectedStream {
         Ok(())
     }
 
+    pub(super) fn init_observer(&self, observer: StreamObserver) {
+        self.tcp_conn.init_observer(observer);
+    }
+
     pub(super) fn check_io_events(&self) -> IoEvents {
-        self.bound_socket.raw_with(|socket| {
+        self.tcp_conn.raw_with(|socket| {
             if socket.is_peer_closed() {
                 // Only the sending side of peer socket is closed
                 self.is_receiving_closed.store(true, Ordering::Relaxed);
@@ -202,18 +206,14 @@ impl ConnectedStream {
         })
     }
 
-    pub(super) fn set_observer(&self, observer: StreamObserver) {
-        self.bound_socket.set_observer(observer)
-    }
-
     pub(super) fn set_raw_option<R>(
-        &mut self,
-        set_option: impl Fn(&mut dyn RawTcpSetOption) -> R,
+        &self,
+        set_option: impl FnOnce(&dyn RawTcpSetOption) -> R,
     ) -> R {
-        set_option(&mut self.bound_socket)
+        set_option(&self.tcp_conn)
     }
 
     pub(super) fn raw_with<R>(&self, f: impl FnOnce(&RawTcpSocket) -> R) -> R {
-        self.bound_socket.raw_with(f)
+        self.tcp_conn.raw_with(f)
     }
 }

@@ -18,3 +18,5 @@ smoltcp = { git = "https://github.com/asterinas/smoltcp", tag = "r_2024-11-08_f0
     "socket-udp",
     "socket-tcp",
 ] }
+spin = "0.9.4"
+takeable = "0.2.2"

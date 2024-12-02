@@ -15,7 +15,7 @@ pub trait Ext {
     type ScheduleNextPoll: ScheduleNextPoll;
 
     /// The type for TCP sockets to observe events.
-    type TcpEventObserver: SocketEventObserver;
+    type TcpEventObserver: SocketEventObserver + Clone;
 
     /// The type for UDP sockets to observe events.
     type UdpEventObserver: SocketEventObserver;
