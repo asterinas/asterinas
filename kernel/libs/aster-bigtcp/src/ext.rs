@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::iface::ScheduleNextPoll;
+use crate::{iface::ScheduleNextPoll, socket::SocketEventObserver};
 
 /// Extension to be implemented by users of this crate.
 ///
@@ -13,4 +13,10 @@ use crate::iface::ScheduleNextPoll;
 pub trait Ext {
     /// The type for ifaces to schedule the next poll.
     type ScheduleNextPoll: ScheduleNextPoll;
+
+    /// The type for TCP sockets to observe events.
+    type TcpEventObserver: SocketEventObserver;
+
+    /// The type for UDP sockets to observe events.
+    type UdpEventObserver: SocketEventObserver;
 }

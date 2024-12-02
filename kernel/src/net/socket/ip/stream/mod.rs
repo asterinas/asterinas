@@ -2,10 +2,7 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use aster_bigtcp::{
-    socket::{SocketEventObserver, SocketEvents},
-    wire::IpEndpoint,
-};
+use aster_bigtcp::wire::IpEndpoint;
 use connected::ConnectedStream;
 use connecting::{ConnResult, ConnectingStream};
 use init::InitStream;
@@ -40,9 +37,11 @@ mod connected;
 mod connecting;
 mod init;
 mod listen;
+mod observer;
 pub mod options;
 mod util;
 
+pub(in crate::net) use self::observer::StreamObserver;
 pub use self::util::CongestionControl;
 
 pub struct StreamSocket {
@@ -79,26 +78,23 @@ impl OptionSet {
 
 impl StreamSocket {
     pub fn new(nonblocking: bool) -> Arc<Self> {
-        Arc::new_cyclic(|me| {
-            let init_stream = InitStream::new(me.clone() as _);
-            Self {
-                options: RwLock::new(OptionSet::new()),
-                state: RwLock::new(Takeable::new(State::Init(init_stream))),
-                is_nonblocking: AtomicBool::new(nonblocking),
-                pollee: Pollee::new(),
-            }
+        let init_stream = InitStream::new();
+        Arc::new(Self {
+            options: RwLock::new(OptionSet::new()),
+            state: RwLock::new(Takeable::new(State::Init(init_stream))),
+            is_nonblocking: AtomicBool::new(nonblocking),
+            pollee: Pollee::new(),
         })
     }
 
     fn new_connected(connected_stream: ConnectedStream) -> Arc<Self> {
-        Arc::new_cyclic(move |me| {
-            connected_stream.set_observer(me.clone() as _);
-            Self {
-                options: RwLock::new(OptionSet::new()),
-                state: RwLock::new(Takeable::new(State::Connected(connected_stream))),
-                is_nonblocking: AtomicBool::new(false),
-                pollee: Pollee::new(),
-            }
+        let pollee = Pollee::new();
+        connected_stream.set_observer(StreamObserver::new(pollee.clone()));
+        Arc::new(Self {
+            options: RwLock::new(OptionSet::new()),
+            state: RwLock::new(Takeable::new(State::Connected(connected_stream))),
+            is_nonblocking: AtomicBool::new(false),
+            pollee,
         })
     }
 
@@ -221,7 +217,7 @@ impl StreamSocket {
                 }
             };
 
-            let connecting_stream = match init_stream.connect(remote_endpoint) {
+            let connecting_stream = match init_stream.connect(remote_endpoint, &self.pollee) {
                 Ok(connecting_stream) => connecting_stream,
                 Err((err, init_stream)) => {
                     return (State::Init(init_stream), (Some(Err(err)), None));
@@ -276,11 +272,13 @@ impl StreamSocket {
             return_errno_with_message!(Errno::EINVAL, "the socket is not listening");
         };
 
-        let accepted = listen_stream.try_accept().map(|connected_stream| {
-            let remote_endpoint = connected_stream.remote_endpoint();
-            let accepted_socket = Self::new_connected(connected_stream);
-            (accepted_socket as _, remote_endpoint.into())
-        });
+        let accepted = listen_stream
+            .try_accept(&self.pollee)
+            .map(|connected_stream| {
+                let remote_endpoint = connected_stream.remote_endpoint();
+                let accepted_socket = Self::new_connected(connected_stream);
+                (accepted_socket as _, remote_endpoint.into())
+            });
         let iface_to_poll = listen_stream.iface().clone();
 
         drop(state);
@@ -451,7 +449,11 @@ impl Socket for StreamSocket {
                 );
             };
 
-            let bound_socket = match init_stream.bind(&endpoint, can_reuse) {
+            let bound_socket = match init_stream.bind(
+                &endpoint,
+                can_reuse,
+                StreamObserver::new(self.pollee.clone()),
+            ) {
                 Ok(bound_socket) => bound_socket,
                 Err((err, init_stream)) => {
                     return (State::Init(init_stream), Err(err));
@@ -492,7 +494,7 @@ impl Socket for StreamSocket {
                 }
             };
 
-            let listen_stream = match init_stream.listen(backlog) {
+            let listen_stream = match init_stream.listen(backlog, &self.pollee) {
                 Ok(listen_stream) => listen_stream,
                 Err((err, init_stream)) => {
                     return (State::Init(init_stream), Err(err));
@@ -689,30 +691,6 @@ impl Socket for StreamSocket {
         });
 
         Ok(())
-    }
-}
-
-impl SocketEventObserver for StreamSocket {
-    fn on_events(&self, events: SocketEvents) {
-        let mut io_events = IoEvents::empty();
-
-        if events.contains(SocketEvents::CAN_RECV) {
-            io_events |= IoEvents::IN;
-        }
-
-        if events.contains(SocketEvents::CAN_SEND) {
-            io_events |= IoEvents::OUT;
-        }
-
-        if events.contains(SocketEvents::PEER_CLOSED) {
-            io_events |= IoEvents::IN | IoEvents::RDHUP;
-        }
-
-        if events.contains(SocketEvents::CLOSED) {
-            io_events |= IoEvents::IN | IoEvents::OUT | IoEvents::RDHUP | IoEvents::HUP;
-        }
-
-        self.pollee.notify(io_events);
     }
 }
 
