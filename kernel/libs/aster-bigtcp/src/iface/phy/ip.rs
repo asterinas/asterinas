@@ -16,12 +16,12 @@ use crate::{
     },
 };
 
-pub struct IpIface<D, E> {
+pub struct IpIface<D, E: Ext> {
     driver: D,
     common: IfaceCommon<E>,
 }
 
-impl<D: WithDevice, E> IpIface<D, E> {
+impl<D: WithDevice, E: Ext> IpIface<D, E> {
     pub fn new(driver: D, ip_cidr: Ipv4Cidr, ext: E) -> Arc<Self> {
         let interface = driver.with(|device| {
             let config = Config::new(smoltcp::wire::HardwareAddress::Ip);
@@ -41,7 +41,7 @@ impl<D: WithDevice, E> IpIface<D, E> {
     }
 }
 
-impl<D, E> IfaceInternal<E> for IpIface<D, E> {
+impl<D, E: Ext> IfaceInternal<E> for IpIface<D, E> {
     fn common(&self) -> &IfaceCommon<E> {
         &self.common
     }

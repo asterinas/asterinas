@@ -20,14 +20,14 @@ use crate::{
     },
 };
 
-pub struct EtherIface<D, E> {
+pub struct EtherIface<D, E: Ext> {
     driver: D,
     common: IfaceCommon<E>,
     ether_addr: EthernetAddress,
     arp_table: SpinLock<BTreeMap<Ipv4Address, EthernetAddress>, LocalIrqDisabled>,
 }
 
-impl<D: WithDevice, E> EtherIface<D, E> {
+impl<D: WithDevice, E: Ext> EtherIface<D, E> {
     pub fn new(
         driver: D,
         ether_addr: EthernetAddress,
@@ -62,7 +62,7 @@ impl<D: WithDevice, E> EtherIface<D, E> {
     }
 }
 
-impl<D, E> IfaceInternal<E> for EtherIface<D, E> {
+impl<D, E: Ext> IfaceInternal<E> for EtherIface<D, E> {
     fn common(&self) -> &IfaceCommon<E> {
         &self.common
     }
@@ -81,7 +81,7 @@ impl<D: WithDevice + 'static, E: Ext + Send + Sync> Iface<E> for EtherIface<D, E
     }
 }
 
-impl<D, E> EtherIface<D, E> {
+impl<D, E: Ext> EtherIface<D, E> {
     fn process<'pkt, T: TxToken>(
         &self,
         data: &'pkt [u8],

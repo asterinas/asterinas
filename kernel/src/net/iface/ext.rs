@@ -6,6 +6,8 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use aster_bigtcp::iface;
 use ostd::sync::WaitQueue;
 
+use crate::net::socket::ip::{datagram::DatagramObserver, stream::StreamObserver};
+
 /// The iface extension.
 pub struct IfaceExt {
     /// The name of the iface.
@@ -48,6 +50,9 @@ impl IfaceExt {
 }
 
 impl iface::Ext for IfaceExt {
+    type TcpEventObserver = StreamObserver;
+    type UdpEventObserver = DatagramObserver;
+
     fn schedule_next_poll(&self, poll_at: Option<u64>) {
         let Some(new_instant) = poll_at else {
             self.next_poll_at_ms.store(0, Ordering::Relaxed);

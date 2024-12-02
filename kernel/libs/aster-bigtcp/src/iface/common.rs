@@ -21,7 +21,7 @@ use super::{
     poll::{FnHelper, PollContext},
     port::BindPortConfig,
     time::get_network_timestamp,
-    Iface,
+    Ext, Iface,
 };
 use crate::{
     errors::BindError,
@@ -31,7 +31,7 @@ use crate::{
     },
 };
 
-pub struct IfaceCommon<E> {
+pub struct IfaceCommon<E: Ext> {
     interface: SpinLock<smoltcp::iface::Interface, LocalIrqDisabled>,
     used_ports: SpinLock<BTreeMap<u16, usize>, PreemptDisabled>,
     tcp_sockets: SpinLock<BTreeSet<KeyableArc<BoundTcpSocketInner<E>>>, LocalIrqDisabled>,
@@ -39,7 +39,7 @@ pub struct IfaceCommon<E> {
     ext: E,
 }
 
-impl<E> IfaceCommon<E> {
+impl<E: Ext> IfaceCommon<E> {
     pub(super) fn new(interface: smoltcp::iface::Interface, ext: E) -> Self {
         Self {
             interface: SpinLock::new(interface),
@@ -59,7 +59,7 @@ impl<E> IfaceCommon<E> {
     }
 }
 
-impl<E> IfaceCommon<E> {
+impl<E: Ext> IfaceCommon<E> {
     /// Acquires the lock to the interface.
     pub(crate) fn interface(&self) -> SpinLockGuard<smoltcp::iface::Interface, LocalIrqDisabled> {
         self.interface.lock()
@@ -69,11 +69,12 @@ impl<E> IfaceCommon<E> {
 const IP_LOCAL_PORT_START: u16 = 32768;
 const IP_LOCAL_PORT_END: u16 = 60999;
 
-impl<E> IfaceCommon<E> {
+impl<E: Ext> IfaceCommon<E> {
     pub(super) fn bind_tcp(
         &self,
         iface: Arc<dyn Iface<E>>,
         socket: Box<UnboundTcpSocket>,
+        observer: E::TcpEventObserver,
         config: BindPortConfig,
     ) -> core::result::Result<BoundTcpSocket<E>, (BindError, Box<UnboundTcpSocket>)> {
         let port = match self.bind_port(config) {
@@ -81,7 +82,7 @@ impl<E> IfaceCommon<E> {
             Err(err) => return Err((err, socket)),
         };
 
-        let (raw_socket, observer) = socket.into_raw();
+        let raw_socket = socket.into_raw();
         let bound_socket = BoundTcpSocket::new(iface, port, raw_socket, observer);
 
         let inserted = self
@@ -97,6 +98,7 @@ impl<E> IfaceCommon<E> {
         &self,
         iface: Arc<dyn Iface<E>>,
         socket: Box<UnboundUdpSocket>,
+        observer: E::UdpEventObserver,
         config: BindPortConfig,
     ) -> core::result::Result<BoundUdpSocket<E>, (BindError, Box<UnboundUdpSocket>)> {
         let port = match self.bind_port(config) {
@@ -104,7 +106,7 @@ impl<E> IfaceCommon<E> {
             Err(err) => return Err((err, socket)),
         };
 
-        let (raw_socket, observer) = socket.into_raw();
+        let raw_socket = socket.into_raw();
         let bound_socket = BoundUdpSocket::new(iface, port, raw_socket, observer);
 
         let inserted = self
@@ -159,7 +161,7 @@ impl<E> IfaceCommon<E> {
     }
 }
 
-impl<E> IfaceCommon<E> {
+impl<E: Ext> IfaceCommon<E> {
     #[allow(clippy::mutable_key_type)]
     fn remove_dead_tcp_sockets(&self, sockets: &mut BTreeSet<KeyableArc<BoundTcpSocketInner<E>>>) {
         sockets.retain(|socket| {
@@ -192,7 +194,7 @@ impl<E> IfaceCommon<E> {
     }
 }
 
-impl<E> IfaceCommon<E> {
+impl<E: Ext> IfaceCommon<E> {
     pub(super) fn poll<D, P, Q>(
         &self,
         device: &mut D,
