@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{
-    boxed::Box,
-    sync::{Arc, Weak},
-};
+use alloc::{boxed::Box, sync::Arc};
 use core::{
     ops::{Deref, DerefMut},
     sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
@@ -23,18 +20,20 @@ use super::{
 };
 use crate::{ext::Ext, iface::Iface};
 
-pub struct BoundSocket<T: AnySocket, E: Ext>(Arc<BoundSocketInner<T, E>>);
+pub struct BoundSocket<T: AnySocket<E>, E: Ext>(Arc<BoundSocketInner<T, E>>);
 
 /// [`TcpSocket`] or [`UdpSocket`].
-pub trait AnySocket {
+pub trait AnySocket<E> {
     type RawSocket;
+    type Observer: SocketEventObserver;
 
     /// Called by [`BoundSocket::new`].
     fn new(socket: Box<Self::RawSocket>) -> Self;
 
     /// Called by [`BoundSocket::drop`].
-    fn on_drop<E: Ext>(this: &Arc<BoundSocketInner<Self, E>>)
+    fn on_drop(this: &Arc<BoundSocketInner<Self, E>>)
     where
+        E: Ext,
         Self: Sized;
 }
 
@@ -42,11 +41,11 @@ pub type BoundTcpSocket<E> = BoundSocket<TcpSocket, E>;
 pub type BoundUdpSocket<E> = BoundSocket<UdpSocket, E>;
 
 /// Common states shared by [`BoundTcpSocketInner`] and [`BoundUdpSocketInner`].
-pub struct BoundSocketInner<T, E> {
+pub struct BoundSocketInner<T: AnySocket<E>, E> {
     iface: Arc<dyn Iface<E>>,
     port: u16,
     socket: T,
-    observer: RwLock<Weak<dyn SocketEventObserver>, WriteIrqDisabled>,
+    observer: RwLock<T::Observer, WriteIrqDisabled>,
     events: AtomicU8,
     next_poll_at_ms: AtomicU64,
 }
@@ -137,8 +136,9 @@ impl TcpSocket {
     }
 }
 
-impl AnySocket for TcpSocket {
+impl<E: Ext> AnySocket<E> for TcpSocket {
     type RawSocket = RawTcpSocket;
+    type Observer = E::TcpEventObserver;
 
     fn new(socket: Box<Self::RawSocket>) -> Self {
         let socket_ext = RawTcpSocketExt {
@@ -153,7 +153,7 @@ impl AnySocket for TcpSocket {
         }
     }
 
-    fn on_drop<E>(this: &Arc<BoundSocketInner<Self, E>>) {
+    fn on_drop(this: &Arc<BoundSocketInner<Self, E>>) {
         let mut socket = this.socket.lock();
 
         socket.in_background = true;
@@ -169,14 +169,18 @@ impl AnySocket for TcpSocket {
 /// States needed by [`BoundUdpSocketInner`] but not [`BoundTcpSocketInner`].
 type UdpSocket = SpinLock<Box<RawUdpSocket>, LocalIrqDisabled>;
 
-impl AnySocket for UdpSocket {
+impl<E: Ext> AnySocket<E> for UdpSocket {
     type RawSocket = RawUdpSocket;
+    type Observer = E::UdpEventObserver;
 
     fn new(socket: Box<Self::RawSocket>) -> Self {
         Self::new(socket)
     }
 
-    fn on_drop<E: Ext>(this: &Arc<BoundSocketInner<Self, E>>) {
+    fn on_drop(this: &Arc<BoundSocketInner<Self, E>>)
+    where
+        E: Ext,
+    {
         this.socket.lock().close();
 
         // A UDP socket can be removed immediately.
@@ -184,7 +188,7 @@ impl AnySocket for UdpSocket {
     }
 }
 
-impl<T: AnySocket, E: Ext> Drop for BoundSocket<T, E> {
+impl<T: AnySocket<E>, E: Ext> Drop for BoundSocket<T, E> {
     fn drop(&mut self) {
         T::on_drop(&self.0);
     }
@@ -193,12 +197,12 @@ impl<T: AnySocket, E: Ext> Drop for BoundSocket<T, E> {
 pub(crate) type BoundTcpSocketInner<E> = BoundSocketInner<TcpSocket, E>;
 pub(crate) type BoundUdpSocketInner<E> = BoundSocketInner<UdpSocket, E>;
 
-impl<T: AnySocket, E: Ext> BoundSocket<T, E> {
+impl<T: AnySocket<E>, E: Ext> BoundSocket<T, E> {
     pub(crate) fn new(
         iface: Arc<dyn Iface<E>>,
         port: u16,
         socket: Box<T::RawSocket>,
-        observer: Weak<dyn SocketEventObserver>,
+        observer: T::Observer,
     ) -> Self {
         Self(Arc::new(BoundSocketInner {
             iface,
@@ -215,24 +219,13 @@ impl<T: AnySocket, E: Ext> BoundSocket<T, E> {
     }
 }
 
-impl<T: AnySocket, E: Ext> BoundSocket<T, E> {
-    /// Sets the observer whose `on_events` will be called when certain iface events happen. After
-    /// setting, the new observer will fire once immediately to avoid missing any events.
+impl<T: AnySocket<E>, E: Ext> BoundSocket<T, E> {
+    /// Sets the observer whose `on_events` will be called when certain iface events happen.
     ///
-    /// If there is an existing observer, due to race conditions, this function does not guarantee
-    /// that the old observer will never be called after the setting. Users should be aware of this
-    /// and proactively handle the race conditions if necessary.
-    pub fn set_observer(&self, new_observer: Weak<dyn SocketEventObserver>) {
+    /// The caller needs to be responsible for race conditions if network events can occur
+    /// simultaneously.
+    pub fn set_observer(&self, new_observer: T::Observer) {
         *self.0.observer.write() = new_observer;
-
-        self.0.on_events();
-    }
-
-    /// Returns the observer.
-    ///
-    /// See also [`Self::set_observer`].
-    pub fn observer(&self) -> Weak<dyn SocketEventObserver> {
-        self.0.observer.read().clone()
     }
 
     pub fn local_endpoint(&self) -> Option<IpEndpoint> {
@@ -449,7 +442,7 @@ impl<E: Ext> BoundUdpSocket<E> {
     }
 }
 
-impl<T, E> BoundSocketInner<T, E> {
+impl<T: AnySocket<E>, E> BoundSocketInner<T, E> {
     pub(crate) fn has_events(&self) -> bool {
         self.events.load(Ordering::Relaxed) != 0
     }
@@ -460,13 +453,8 @@ impl<T, E> BoundSocketInner<T, E> {
         let events = self.events.load(Ordering::Relaxed);
         self.events.store(0, Ordering::Relaxed);
 
-        // We never hold the write lock in IRQ handlers, so we don't need to disable IRQs when we
-        // get the read lock.
-        let observer = Weak::upgrade(&*self.observer.read());
-
-        if let Some(inner) = observer {
-            inner.on_events(SocketEvents::from_bits_truncate(events));
-        }
+        let observer = self.observer.read();
+        observer.on_events(SocketEvents::from_bits_truncate(events));
     }
 
     fn add_events(&self, new_events: SocketEvents) {
@@ -513,13 +501,13 @@ impl<T, E> BoundSocketInner<T, E> {
     }
 }
 
-impl<T, E> BoundSocketInner<T, E> {
+impl<T: AnySocket<E>, E> BoundSocketInner<T, E> {
     pub(crate) fn port(&self) -> u16 {
         self.port
     }
 }
 
-impl<E> BoundTcpSocketInner<E> {
+impl<E: Ext> BoundTcpSocketInner<E> {
     /// Returns whether the TCP socket is dead.
     ///
     /// A TCP socket is considered dead if and only if the following two conditions are met:
@@ -531,7 +519,7 @@ impl<E> BoundTcpSocketInner<E> {
     }
 }
 
-impl<T, E> BoundSocketInner<T, E> {
+impl<T: AnySocket<E>, E> BoundSocketInner<T, E> {
     /// Returns whether an incoming packet _may_ be processed by the socket.
     ///
     /// The check is intended to be lock-free and fast, but may have false positives.
@@ -554,7 +542,7 @@ pub(crate) enum TcpProcessResult {
     ProcessedWithReply(IpRepr, TcpRepr<'static>),
 }
 
-impl<E> BoundTcpSocketInner<E> {
+impl<E: Ext> BoundTcpSocketInner<E> {
     /// Tries to process an incoming packet and returns whether the packet is processed.
     pub(crate) fn process(
         &self,
@@ -654,7 +642,7 @@ impl<E> BoundTcpSocketInner<E> {
     }
 }
 
-impl<E> BoundUdpSocketInner<E> {
+impl<E: Ext> BoundUdpSocketInner<E> {
     /// Tries to process an incoming packet and returns whether the packet is processed.
     pub(crate) fn process(
         &self,

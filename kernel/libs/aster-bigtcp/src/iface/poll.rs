@@ -16,15 +16,18 @@ use smoltcp::{
     },
 };
 
-use crate::socket::{BoundTcpSocketInner, BoundUdpSocketInner, TcpProcessResult};
+use crate::{
+    ext::Ext,
+    socket::{BoundTcpSocketInner, BoundUdpSocketInner, TcpProcessResult},
+};
 
-pub(super) struct PollContext<'a, E> {
+pub(super) struct PollContext<'a, E: Ext> {
     iface_cx: &'a mut Context,
     tcp_sockets: &'a BTreeSet<KeyableArc<BoundTcpSocketInner<E>>>,
     udp_sockets: &'a BTreeSet<KeyableArc<BoundUdpSocketInner<E>>>,
 }
 
-impl<'a, E> PollContext<'a, E> {
+impl<'a, E: Ext> PollContext<'a, E> {
     #[allow(clippy::mutable_key_type)]
     pub(super) fn new(
         iface_cx: &'a mut Context,
@@ -44,7 +47,7 @@ impl<'a, E> PollContext<'a, E> {
 pub(super) trait FnHelper<A, B, C, O>: FnMut(A, B, C) -> O {}
 impl<A, B, C, O, F> FnHelper<A, B, C, O> for F where F: FnMut(A, B, C) -> O {}
 
-impl<E> PollContext<'_, E> {
+impl<E: Ext> PollContext<'_, E> {
     pub(super) fn poll_ingress<D, P, Q>(
         &mut self,
         device: &mut D,
@@ -280,7 +283,7 @@ impl<E> PollContext<'_, E> {
     }
 }
 
-impl<E> PollContext<'_, E> {
+impl<E: Ext> PollContext<'_, E> {
     pub(super) fn poll_egress<D, Q>(&mut self, device: &mut D, mut dispatch_phy: Q)
     where
         D: Device + ?Sized,

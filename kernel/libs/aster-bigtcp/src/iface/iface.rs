@@ -37,19 +37,21 @@ impl<E: Ext> dyn Iface<E> {
     pub fn bind_tcp(
         self: &Arc<Self>,
         socket: Box<UnboundTcpSocket>,
+        observer: E::TcpEventObserver,
         config: BindPortConfig,
     ) -> core::result::Result<BoundTcpSocket<E>, (BindError, Box<UnboundTcpSocket>)> {
         let common = self.common();
-        common.bind_tcp(self.clone(), socket, config)
+        common.bind_tcp(self.clone(), socket, observer, config)
     }
 
     pub fn bind_udp(
         self: &Arc<Self>,
         socket: Box<UnboundUdpSocket>,
+        observer: E::UdpEventObserver,
         config: BindPortConfig,
     ) -> core::result::Result<BoundUdpSocket<E>, (BindError, Box<UnboundUdpSocket>)> {
         let common = self.common();
-        common.bind_udp(self.clone(), socket, config)
+        common.bind_udp(self.clone(), socket, observer, config)
     }
 
     /// Gets the name of the iface.
