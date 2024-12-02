@@ -48,7 +48,7 @@ impl Config {
     pub fn component_path(&self, component_ident: &str) -> ComponentName {
         self.components
             .get(component_ident)
-            .expect("Undefinded component name")
+            .expect("Undefined component name")
             .clone()
     }
 
