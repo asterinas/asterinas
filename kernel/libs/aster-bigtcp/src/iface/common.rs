@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{
-    boxed::Box,
     collections::{
         btree_map::{BTreeMap, Entry},
         btree_set::BTreeSet,
     },
     string::String,
     sync::Arc,
+    vec::Vec,
 };
 
 use keyable_arc::KeyableArc;
@@ -15,7 +15,7 @@ use ostd::sync::{LocalIrqDisabled, SpinLock, SpinLockGuard};
 use smoltcp::{
     iface::{packet::Packet, Context},
     phy::Device,
-    wire::{Ipv4Address, Ipv4Packet},
+    wire::{IpAddress, IpEndpoint, Ipv4Address, Ipv4Packet},
 };
 
 use super::{
@@ -27,19 +27,21 @@ use super::{
 use crate::{
     errors::BindError,
     ext::Ext,
-    socket::{
-        BoundTcpSocket, BoundTcpSocketInner, BoundUdpSocket, BoundUdpSocketInner, UnboundTcpSocket,
-        UnboundUdpSocket,
-    },
+    socket::{TcpConnectionBg, TcpListenerBg, UdpSocketBg},
 };
 
 pub struct IfaceCommon<E: Ext> {
     name: String,
     interface: SpinLock<smoltcp::iface::Interface, LocalIrqDisabled>,
     used_ports: SpinLock<BTreeMap<u16, usize>, LocalIrqDisabled>,
-    tcp_sockets: SpinLock<BTreeSet<KeyableArc<BoundTcpSocketInner<E>>>, LocalIrqDisabled>,
-    udp_sockets: SpinLock<BTreeSet<KeyableArc<BoundUdpSocketInner<E>>>, LocalIrqDisabled>,
+    sockets: SpinLock<SocketSet<E>, LocalIrqDisabled>,
     sched_poll: E::ScheduleNextPoll,
+}
+
+pub(super) struct SocketSet<E: Ext> {
+    pub(super) tcp_conn: BTreeSet<KeyableArc<TcpConnectionBg<E>>>,
+    pub(super) tcp_listen: BTreeSet<KeyableArc<TcpListenerBg<E>>>,
+    pub(super) udp: BTreeSet<KeyableArc<UdpSocketBg<E>>>,
 }
 
 impl<E: Ext> IfaceCommon<E> {
@@ -48,12 +50,17 @@ impl<E: Ext> IfaceCommon<E> {
         interface: smoltcp::iface::Interface,
         sched_poll: E::ScheduleNextPoll,
     ) -> Self {
+        let sockets = SocketSet {
+            tcp_conn: BTreeSet::new(),
+            tcp_listen: BTreeSet::new(),
+            udp: BTreeSet::new(),
+        };
+
         Self {
             name,
             interface: SpinLock::new(interface),
             used_ports: SpinLock::new(BTreeMap::new()),
-            tcp_sockets: SpinLock::new(BTreeSet::new()),
-            udp_sockets: SpinLock::new(BTreeSet::new()),
+            sockets: SpinLock::new(sockets),
             sched_poll,
         }
     }
@@ -82,52 +89,13 @@ const IP_LOCAL_PORT_START: u16 = 32768;
 const IP_LOCAL_PORT_END: u16 = 60999;
 
 impl<E: Ext> IfaceCommon<E> {
-    pub(super) fn bind_tcp(
+    pub(super) fn bind(
         &self,
         iface: Arc<dyn Iface<E>>,
-        socket: Box<UnboundTcpSocket>,
-        observer: E::TcpEventObserver,
         config: BindPortConfig,
-    ) -> core::result::Result<BoundTcpSocket<E>, (BindError, Box<UnboundTcpSocket>)> {
-        let port = match self.bind_port(config) {
-            Ok(port) => port,
-            Err(err) => return Err((err, socket)),
-        };
-
-        let raw_socket = socket.into_raw();
-        let bound_socket = BoundTcpSocket::new(iface, port, raw_socket, observer);
-
-        let inserted = self
-            .tcp_sockets
-            .lock()
-            .insert(KeyableArc::from(bound_socket.inner().clone()));
-        assert!(inserted);
-
-        Ok(bound_socket)
-    }
-
-    pub(super) fn bind_udp(
-        &self,
-        iface: Arc<dyn Iface<E>>,
-        socket: Box<UnboundUdpSocket>,
-        observer: E::UdpEventObserver,
-        config: BindPortConfig,
-    ) -> core::result::Result<BoundUdpSocket<E>, (BindError, Box<UnboundUdpSocket>)> {
-        let port = match self.bind_port(config) {
-            Ok(port) => port,
-            Err(err) => return Err((err, socket)),
-        };
-
-        let raw_socket = socket.into_raw();
-        let bound_socket = BoundUdpSocket::new(iface, port, raw_socket, observer);
-
-        let inserted = self
-            .udp_sockets
-            .lock()
-            .insert(KeyableArc::from(bound_socket.inner().clone()));
-        assert!(inserted);
-
-        Ok(bound_socket)
+    ) -> core::result::Result<BoundPort<E>, BindError> {
+        let port = self.bind_port(config)?;
+        Ok(BoundPort { iface, port })
     }
 
     /// Allocates an unused ephemeral port.
@@ -171,29 +139,6 @@ impl<E: Ext> IfaceCommon<E> {
 
         Ok(port)
     }
-}
-
-impl<E: Ext> IfaceCommon<E> {
-    #[allow(clippy::mutable_key_type)]
-    fn remove_dead_tcp_sockets(&self, sockets: &mut BTreeSet<KeyableArc<BoundTcpSocketInner<E>>>) {
-        sockets.retain(|socket| {
-            if socket.is_dead() {
-                self.release_port(socket.port());
-                false
-            } else {
-                true
-            }
-        });
-    }
-
-    pub(crate) fn remove_udp_socket(&self, socket: &Arc<BoundUdpSocketInner<E>>) {
-        let keyable_socket = KeyableArc::from(socket.clone());
-
-        let removed = self.udp_sockets.lock().remove(&keyable_socket);
-        assert!(removed);
-
-        self.release_port(keyable_socket.port());
-    }
 
     /// Releases the port so that it can be used again (if it is not being reused).
     fn release_port(&self, port: u16) {
@@ -207,10 +152,49 @@ impl<E: Ext> IfaceCommon<E> {
 }
 
 impl<E: Ext> IfaceCommon<E> {
+    pub(crate) fn register_tcp_connection(&self, socket: KeyableArc<TcpConnectionBg<E>>) {
+        let mut sockets = self.sockets.lock();
+        let inserted = sockets.tcp_conn.insert(socket);
+        debug_assert!(inserted);
+    }
+
+    pub(crate) fn register_tcp_listener(&self, socket: KeyableArc<TcpListenerBg<E>>) {
+        let mut sockets = self.sockets.lock();
+        let inserted = sockets.tcp_listen.insert(socket);
+        debug_assert!(inserted);
+    }
+
+    pub(crate) fn register_udp_socket(&self, socket: KeyableArc<UdpSocketBg<E>>) {
+        let mut sockets = self.sockets.lock();
+        let inserted = sockets.udp.insert(socket);
+        debug_assert!(inserted);
+    }
+
+    #[allow(clippy::mutable_key_type)]
+    fn remove_dead_tcp_connections(sockets: &mut BTreeSet<KeyableArc<TcpConnectionBg<E>>>) {
+        for socket in sockets.extract_if(|socket| socket.is_dead()) {
+            TcpConnectionBg::on_dead_events(socket);
+        }
+    }
+
+    pub(crate) fn remove_tcp_listener(&self, socket: &KeyableArc<TcpListenerBg<E>>) {
+        let mut sockets = self.sockets.lock();
+        let removed = sockets.tcp_listen.remove(socket);
+        debug_assert!(removed);
+    }
+
+    pub(crate) fn remove_udp_socket(&self, socket: &KeyableArc<UdpSocketBg<E>>) {
+        let mut sockets = self.sockets.lock();
+        let removed = sockets.udp.remove(socket);
+        debug_assert!(removed);
+    }
+}
+
+impl<E: Ext> IfaceCommon<E> {
     pub(super) fn poll<D, P, Q>(
         &self,
         device: &mut D,
-        process_phy: P,
+        mut process_phy: P,
         mut dispatch_phy: Q,
     ) -> Option<u64>
     where
@@ -226,41 +210,85 @@ impl<E: Ext> IfaceCommon<E> {
         let mut interface = self.interface();
         interface.context().now = get_network_timestamp();
 
-        let mut tcp_sockets = self.tcp_sockets.lock();
-        let udp_sockets = self.udp_sockets.lock();
+        let mut sockets = self.sockets.lock();
 
-        let mut context = PollContext::new(interface.context(), &tcp_sockets, &udp_sockets);
-        context.poll_ingress(device, process_phy, &mut dispatch_phy);
-        context.poll_egress(device, dispatch_phy);
+        loop {
+            let mut new_tcp_conns = Vec::new();
 
-        tcp_sockets.iter().for_each(|socket| {
-            if socket.has_events() {
-                socket.on_events();
+            let mut context = PollContext::new(interface.context(), &sockets, &mut new_tcp_conns);
+            context.poll_ingress(device, &mut process_phy, &mut dispatch_phy);
+            context.poll_egress(device, &mut dispatch_phy);
+
+            // New packets sent by new connections are not handled. So if there are new
+            // connections, try again.
+            if new_tcp_conns.is_empty() {
+                break;
+            } else {
+                sockets.tcp_conn.extend(new_tcp_conns);
             }
-        });
-        udp_sockets.iter().for_each(|socket| {
-            if socket.has_events() {
-                socket.on_events();
-            }
-        });
-
-        self.remove_dead_tcp_sockets(&mut tcp_sockets);
-
-        match (
-            tcp_sockets
-                .iter()
-                .map(|socket| socket.next_poll_at_ms())
-                .min(),
-            udp_sockets
-                .iter()
-                .map(|socket| socket.next_poll_at_ms())
-                .min(),
-        ) {
-            (Some(tcp_poll_at), Some(udp_poll_at)) if tcp_poll_at <= udp_poll_at => {
-                Some(tcp_poll_at)
-            }
-            (tcp_poll_at, None) => tcp_poll_at,
-            (_, udp_poll_at) => udp_poll_at,
         }
+
+        Self::remove_dead_tcp_connections(&mut sockets.tcp_conn);
+
+        sockets.tcp_conn.iter().for_each(|socket| {
+            if socket.has_events() {
+                socket.on_events();
+            }
+        });
+        sockets.tcp_listen.iter().for_each(|socket| {
+            if socket.has_events() {
+                socket.on_events();
+            }
+        });
+        sockets.udp.iter().for_each(|socket| {
+            if socket.has_events() {
+                socket.on_events();
+            }
+        });
+
+        // Note that only TCP connections can have timers set, so as far as the time to poll is
+        // concerned, we only need to consider TCP connections.
+        sockets
+            .tcp_conn
+            .iter()
+            .map(|socket| socket.next_poll_at_ms())
+            .min()
+    }
+}
+
+/// A port bound to an iface.
+///
+/// When dropped, the port is automatically released.
+//
+// FIXME: TCP and UDP ports are independent. Find a way to track the protocol here.
+pub struct BoundPort<E: Ext> {
+    iface: Arc<dyn Iface<E>>,
+    port: u16,
+}
+
+impl<E: Ext> BoundPort<E> {
+    /// Returns a reference to the iface.
+    pub fn iface(&self) -> &Arc<dyn Iface<E>> {
+        &self.iface
+    }
+
+    /// Returns the port number.
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
+    /// Returns the bound endpoint.
+    pub fn endpoint(&self) -> Option<IpEndpoint> {
+        let ip_addr = {
+            let ipv4_addr = self.iface().ipv4_addr()?;
+            IpAddress::Ipv4(ipv4_addr)
+        };
+        Some(IpEndpoint::new(ip_addr, self.port))
+    }
+}
+
+impl<E: Ext> Drop for BoundPort<E> {
+    fn drop(&mut self) {
+        self.iface.common().release_port(self.port);
     }
 }

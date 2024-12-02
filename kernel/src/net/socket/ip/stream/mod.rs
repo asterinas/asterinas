@@ -3,14 +3,14 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use aster_bigtcp::{
-    socket::{NeedIfacePoll, RawTcpSetOption},
+    socket::{NeedIfacePoll, RawTcpOption, RawTcpSetOption},
     wire::IpEndpoint,
 };
 use connected::ConnectedStream;
 use connecting::{ConnResult, ConnectingStream};
 use init::InitStream;
 use listen::ListenStream;
-use options::{Congestion, MaxSegment, NoDelay, WindowClamp};
+use options::{Congestion, MaxSegment, NoDelay, WindowClamp, KEEPALIVE_INTERVAL};
 use ostd::sync::{PreemptDisabled, RwLockReadGuard, RwLockWriteGuard};
 use takeable::Takeable;
 use util::TcpOptionSet;
@@ -83,6 +83,13 @@ impl OptionSet {
         let tcp = TcpOptionSet::new();
         OptionSet { socket, tcp }
     }
+
+    fn raw(&self) -> RawTcpOption {
+        RawTcpOption {
+            keep_alive: self.socket.keep_alive().then_some(KEEPALIVE_INTERVAL),
+            is_nagle_enabled: !self.tcp.no_delay(),
+        }
+    }
 }
 
 impl StreamSocket {
@@ -114,7 +121,7 @@ impl StreamSocket {
         });
 
         let pollee = Pollee::new();
-        connected_stream.set_observer(StreamObserver::new(pollee.clone()));
+        connected_stream.init_observer(StreamObserver::new(pollee.clone()));
 
         Arc::new(Self {
             options: RwLock::new(options),
@@ -207,7 +214,9 @@ impl StreamSocket {
     // `Some(_)` if blocking is not necessary or not allowed.
     fn start_connect(&self, remote_endpoint: &IpEndpoint) -> Option<Result<()>> {
         let is_nonblocking = self.is_nonblocking();
-        let mut state = self.write_updated_state();
+        let (options, mut state) = self.update_connecting();
+
+        let raw_option = options.raw();
 
         let (result_or_block, iface_to_poll) = state.borrow_result(|mut owned_state| {
             let init_stream = match owned_state {
@@ -243,7 +252,11 @@ impl StreamSocket {
                 }
             };
 
-            let connecting_stream = match init_stream.connect(remote_endpoint, &self.pollee) {
+            let connecting_stream = match init_stream.connect(
+                remote_endpoint,
+                &raw_option,
+                StreamObserver::new(self.pollee.clone()),
+            ) {
                 Ok(connecting_stream) => connecting_stream,
                 Err((err, init_stream)) => {
                     return (State::Init(init_stream), (Some(Err(err)), None));
@@ -298,13 +311,11 @@ impl StreamSocket {
             return_errno_with_message!(Errno::EINVAL, "the socket is not listening");
         };
 
-        let accepted = listen_stream
-            .try_accept(&self.pollee)
-            .map(|connected_stream| {
-                let remote_endpoint = connected_stream.remote_endpoint();
-                let accepted_socket = Self::new_accepted(connected_stream);
-                (accepted_socket as _, remote_endpoint.into())
-            });
+        let accepted = listen_stream.try_accept().map(|connected_stream| {
+            let remote_endpoint = connected_stream.remote_endpoint();
+            let accepted_socket = Self::new_accepted(connected_stream);
+            (accepted_socket as _, remote_endpoint.into())
+        });
         let iface_to_poll = listen_stream.iface().clone();
 
         drop(state);
@@ -475,18 +486,14 @@ impl Socket for StreamSocket {
                 );
             };
 
-            let bound_socket = match init_stream.bind(
-                &endpoint,
-                can_reuse,
-                StreamObserver::new(self.pollee.clone()),
-            ) {
-                Ok(bound_socket) => bound_socket,
+            let bound_port = match init_stream.bind(&endpoint, can_reuse) {
+                Ok(bound_port) => bound_port,
                 Err((err, init_stream)) => {
                     return (State::Init(init_stream), Err(err));
                 }
             };
 
-            (State::Init(InitStream::new_bound(bound_socket)), Ok(()))
+            (State::Init(InitStream::new_bound(bound_port)), Ok(()))
         })
     }
 
@@ -501,7 +508,9 @@ impl Socket for StreamSocket {
     }
 
     fn listen(&self, backlog: usize) -> Result<()> {
-        let mut state = self.write_updated_state();
+        let (options, mut state) = self.update_connecting();
+
+        let raw_option = options.raw();
 
         state.borrow_result(|owned_state| {
             let init_stream = match owned_state {
@@ -520,7 +529,11 @@ impl Socket for StreamSocket {
                 }
             };
 
-            let listen_stream = match init_stream.listen(backlog, &self.pollee) {
+            let listen_stream = match init_stream.listen(
+                backlog,
+                &raw_option,
+                StreamObserver::new(self.pollee.clone()),
+            ) {
                 Ok(listen_stream) => listen_stream,
                 Err((err, init_stream)) => {
                     return (State::Init(init_stream), Err(err));
@@ -701,7 +714,7 @@ impl Socket for StreamSocket {
             tcp_no_delay: NoDelay => {
                 let no_delay = tcp_no_delay.get().unwrap();
                 options.tcp.set_no_delay(*no_delay);
-                state.set_raw_option(|raw_socket: &mut dyn RawTcpSetOption| raw_socket.set_nagle_enabled(!no_delay));
+                state.set_raw_option(|raw_socket: &dyn RawTcpSetOption| raw_socket.set_nagle_enabled(!no_delay));
             },
             tcp_congestion: Congestion => {
                 let congestion = tcp_congestion.get().unwrap();
@@ -736,14 +749,16 @@ impl Socket for StreamSocket {
 impl State {
     /// Calls `f` to set raw socket option.
     ///
-    /// Note that for listening socket, `f` is called on all backlog sockets in `Listen` State.
-    /// That is to say, `f` won't be called on backlog sockets in `SynReceived` or `Established` state.
-    fn set_raw_option<R>(&mut self, set_option: impl Fn(&mut dyn RawTcpSetOption) -> R) -> R {
+    /// For listening sockets, socket options are inherited by new connections. However, they are
+    /// not updated for connections in the backlog queue.
+    fn set_raw_option<R>(&self, set_option: impl FnOnce(&dyn RawTcpSetOption) -> R) -> Option<R> {
         match self {
-            State::Init(init_stream) => init_stream.set_raw_option(set_option),
-            State::Connecting(connecting_stream) => connecting_stream.set_raw_option(set_option),
-            State::Connected(connected_stream) => connected_stream.set_raw_option(set_option),
-            State::Listen(listen_stream) => listen_stream.set_raw_option(set_option),
+            State::Init(_) => None,
+            State::Connecting(connecting_stream) => {
+                Some(connecting_stream.set_raw_option(set_option))
+            }
+            State::Connected(connected_stream) => Some(connected_stream.set_raw_option(set_option)),
+            State::Listen(listen_stream) => Some(listen_stream.set_raw_option(set_option)),
         }
     }
 
@@ -758,24 +773,17 @@ impl State {
 }
 
 impl SetSocketLevelOption for State {
-    fn set_keep_alive(&mut self, keep_alive: bool) -> NeedIfacePoll {
-        /// The keepalive interval.
-        ///
-        /// The linux value can be found at `/proc/sys/net/ipv4/tcp_keepalive_intvl`,
-        /// which is by default 75 seconds for most Linux distributions.
-        const KEEPALIVE_INTERVAL: aster_bigtcp::time::Duration =
-            aster_bigtcp::time::Duration::from_secs(75);
-
+    fn set_keep_alive(&self, keep_alive: bool) -> NeedIfacePoll {
         let interval = if keep_alive {
             Some(KEEPALIVE_INTERVAL)
         } else {
             None
         };
 
-        let set_keepalive =
-            |raw_socket: &mut dyn RawTcpSetOption| raw_socket.set_keep_alive(interval);
+        let set_keepalive = |raw_socket: &dyn RawTcpSetOption| raw_socket.set_keep_alive(interval);
 
         self.set_raw_option(set_keepalive)
+            .unwrap_or(NeedIfacePoll::FALSE)
     }
 }
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{collections::btree_set::BTreeSet, vec};
+use alloc::{vec, vec::Vec};
 
 use keyable_arc::KeyableArc;
 use smoltcp::{
@@ -16,28 +16,28 @@ use smoltcp::{
     },
 };
 
+use super::common::SocketSet;
 use crate::{
     ext::Ext,
-    socket::{BoundTcpSocketInner, BoundUdpSocketInner, TcpProcessResult},
+    socket::{TcpConnectionBg, TcpListenerBg, TcpProcessResult},
 };
 
 pub(super) struct PollContext<'a, E: Ext> {
     iface_cx: &'a mut Context,
-    tcp_sockets: &'a BTreeSet<KeyableArc<BoundTcpSocketInner<E>>>,
-    udp_sockets: &'a BTreeSet<KeyableArc<BoundUdpSocketInner<E>>>,
+    sockets: &'a SocketSet<E>,
+    new_tcp_conns: &'a mut Vec<KeyableArc<TcpConnectionBg<E>>>,
 }
 
 impl<'a, E: Ext> PollContext<'a, E> {
-    #[allow(clippy::mutable_key_type)]
     pub(super) fn new(
         iface_cx: &'a mut Context,
-        tcp_sockets: &'a BTreeSet<KeyableArc<BoundTcpSocketInner<E>>>,
-        udp_sockets: &'a BTreeSet<KeyableArc<BoundUdpSocketInner<E>>>,
+        sockets: &'a SocketSet<E>,
+        new_tcp_conns: &'a mut Vec<KeyableArc<TcpConnectionBg<E>>>,
     ) -> Self {
         Self {
             iface_cx,
-            tcp_sockets,
-            udp_sockets,
+            sockets,
+            new_tcp_conns,
         }
     }
 }
@@ -51,7 +51,7 @@ impl<E: Ext> PollContext<'_, E> {
     pub(super) fn poll_ingress<D, P, Q>(
         &mut self,
         device: &mut D,
-        mut process_phy: P,
+        process_phy: &mut P,
         dispatch_phy: &mut Q,
     ) where
         D: Device + ?Sized,
@@ -158,16 +158,44 @@ impl<E: Ext> PollContext<'_, E> {
         ip_repr: &IpRepr,
         tcp_repr: &TcpRepr,
     ) -> Option<(IpRepr, TcpRepr<'static>)> {
-        for socket in self.tcp_sockets.iter() {
+        for socket in self
+            .sockets
+            .tcp_conn
+            .iter()
+            .chain(self.new_tcp_conns.iter())
+        {
             if !socket.can_process(tcp_repr.dst_port) {
                 continue;
             }
 
-            match socket.process(self.iface_cx, ip_repr, tcp_repr) {
+            match TcpConnectionBg::process(socket, self.iface_cx, ip_repr, tcp_repr) {
                 TcpProcessResult::NotProcessed => continue,
                 TcpProcessResult::Processed => return None,
                 TcpProcessResult::ProcessedWithReply(ip_repr, tcp_repr) => {
                     return Some((ip_repr, tcp_repr))
+                }
+            }
+        }
+
+        if tcp_repr.control == TcpControl::Syn && tcp_repr.ack_number.is_none() {
+            for socket in self.sockets.tcp_listen.iter() {
+                if !socket.can_process(tcp_repr.dst_port) {
+                    continue;
+                }
+
+                let (processed, new_tcp_conn) =
+                    TcpListenerBg::process(socket, self.iface_cx, ip_repr, tcp_repr);
+
+                if let Some(tcp_conn) = new_tcp_conn {
+                    self.new_tcp_conns.push(tcp_conn);
+                }
+
+                match processed {
+                    TcpProcessResult::NotProcessed => continue,
+                    TcpProcessResult::Processed => return None,
+                    TcpProcessResult::ProcessedWithReply(ip_repr, tcp_repr) => {
+                        return Some((ip_repr, tcp_repr))
+                    }
                 }
             }
         }
@@ -211,7 +239,7 @@ impl<E: Ext> PollContext<'_, E> {
     fn process_udp(&mut self, ip_repr: &IpRepr, udp_repr: &UdpRepr, udp_payload: &[u8]) -> bool {
         let mut processed = false;
 
-        for socket in self.udp_sockets.iter() {
+        for socket in self.sockets.udp.iter() {
             if !socket.can_process(udp_repr.dst_port) {
                 continue;
             }
@@ -284,13 +312,13 @@ impl<E: Ext> PollContext<'_, E> {
 }
 
 impl<E: Ext> PollContext<'_, E> {
-    pub(super) fn poll_egress<D, Q>(&mut self, device: &mut D, mut dispatch_phy: Q)
+    pub(super) fn poll_egress<D, Q>(&mut self, device: &mut D, dispatch_phy: &mut Q)
     where
         D: Device + ?Sized,
         Q: FnMut(&Packet, &mut Context, D::TxToken<'_>),
     {
         while let Some(tx_token) = device.transmit(self.iface_cx.now()) {
-            if !self.dispatch_ipv4(tx_token, &mut dispatch_phy) {
+            if !self.dispatch_ipv4(tx_token, dispatch_phy) {
                 break;
             }
         }
@@ -320,7 +348,9 @@ impl<E: Ext> PollContext<'_, E> {
         let mut tx_token = Some(tx_token);
         let mut did_something = false;
 
-        for socket in self.tcp_sockets.iter() {
+        // We cannot dispatch packets from `new_tcp_conns` because we cannot borrow an immutable
+        // reference at this point. Instead, we will retry after the entire poll is complete.
+        for socket in self.sockets.tcp_conn.iter() {
             if !socket.need_dispatch(self.iface_cx.now()) {
                 continue;
             }
@@ -331,37 +361,38 @@ impl<E: Ext> PollContext<'_, E> {
 
             let mut deferred = None;
 
-            let reply = socket.dispatch(self.iface_cx, |cx, ip_repr, tcp_repr| {
-                let mut this = PollContext::new(cx, self.tcp_sockets, self.udp_sockets);
+            let reply =
+                TcpConnectionBg::dispatch(socket, self.iface_cx, |cx, ip_repr, tcp_repr| {
+                    let mut this = PollContext::new(cx, self.sockets, self.new_tcp_conns);
 
-                if !this.is_unicast_local(ip_repr.dst_addr()) {
-                    dispatch_phy(
-                        &Packet::new(ip_repr.clone(), IpPayload::Tcp(*tcp_repr)),
-                        this.iface_cx,
-                        tx_token.take().unwrap(),
-                    );
-                    return None;
-                }
+                    if !this.is_unicast_local(ip_repr.dst_addr()) {
+                        dispatch_phy(
+                            &Packet::new(ip_repr.clone(), IpPayload::Tcp(*tcp_repr)),
+                            this.iface_cx,
+                            tx_token.take().unwrap(),
+                        );
+                        return None;
+                    }
 
-                if !socket.can_process(tcp_repr.dst_port) {
-                    return this.process_tcp(ip_repr, tcp_repr);
-                }
+                    if !socket.can_process(tcp_repr.dst_port) {
+                        return this.process_tcp(ip_repr, tcp_repr);
+                    }
 
-                // We cannot call `process_tcp` now because it may cause deadlocks. We will copy
-                // the packet and call `process_tcp` after releasing the socket lock.
-                deferred = Some((ip_repr.clone(), {
-                    let mut data = vec![0; tcp_repr.buffer_len()];
-                    tcp_repr.emit(
-                        &mut TcpPacket::new_unchecked(data.as_mut_slice()),
-                        &ip_repr.src_addr(),
-                        &ip_repr.dst_addr(),
-                        &ChecksumCapabilities::ignored(),
-                    );
-                    data
-                }));
+                    // We cannot call `process_tcp` now because it may cause deadlocks. We will copy
+                    // the packet and call `process_tcp` after releasing the socket lock.
+                    deferred = Some((ip_repr.clone(), {
+                        let mut data = vec![0; tcp_repr.buffer_len()];
+                        tcp_repr.emit(
+                            &mut TcpPacket::new_unchecked(data.as_mut_slice()),
+                            &ip_repr.src_addr(),
+                            &ip_repr.dst_addr(),
+                            &ChecksumCapabilities::ignored(),
+                        );
+                        data
+                    }));
 
-                None
-            });
+                    None
+                });
 
             match (deferred, reply) {
                 (None, None) => (),
@@ -411,7 +442,7 @@ impl<E: Ext> PollContext<'_, E> {
         let mut tx_token = Some(tx_token);
         let mut did_something = false;
 
-        for socket in self.udp_sockets.iter() {
+        for socket in self.sockets.udp.iter() {
             if !socket.need_dispatch(self.iface_cx.now()) {
                 continue;
             }
@@ -423,7 +454,7 @@ impl<E: Ext> PollContext<'_, E> {
             let mut deferred = None;
 
             socket.dispatch(self.iface_cx, |cx, ip_repr, udp_repr, udp_payload| {
-                let mut this = PollContext::new(cx, self.tcp_sockets, self.udp_sockets);
+                let mut this = PollContext::new(cx, self.sockets, self.new_tcp_conns);
 
                 if ip_repr.dst_addr().is_broadcast() || !this.is_unicast_local(ip_repr.dst_addr()) {
                     dispatch_phy(
