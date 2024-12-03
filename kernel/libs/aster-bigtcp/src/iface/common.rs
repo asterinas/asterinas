@@ -6,6 +6,7 @@ use alloc::{
         btree_map::{BTreeMap, Entry},
         btree_set::BTreeSet,
     },
+    string::String,
     sync::Arc,
 };
 
@@ -25,41 +26,52 @@ use super::{
 };
 use crate::{
     errors::BindError,
+    ext::Ext,
     socket::{
         BoundTcpSocket, BoundTcpSocketInner, BoundUdpSocket, BoundUdpSocketInner, UnboundTcpSocket,
         UnboundUdpSocket,
     },
 };
 
-pub struct IfaceCommon<E> {
+pub struct IfaceCommon<E: Ext> {
+    name: String,
     interface: SpinLock<smoltcp::iface::Interface, LocalIrqDisabled>,
     used_ports: SpinLock<BTreeMap<u16, usize>, PreemptDisabled>,
     tcp_sockets: SpinLock<BTreeSet<KeyableArc<BoundTcpSocketInner<E>>>, LocalIrqDisabled>,
     udp_sockets: SpinLock<BTreeSet<KeyableArc<BoundUdpSocketInner<E>>>, LocalIrqDisabled>,
-    ext: E,
+    sched_poll: E::ScheduleNextPoll,
 }
 
-impl<E> IfaceCommon<E> {
-    pub(super) fn new(interface: smoltcp::iface::Interface, ext: E) -> Self {
+impl<E: Ext> IfaceCommon<E> {
+    pub(super) fn new(
+        name: String,
+        interface: smoltcp::iface::Interface,
+        sched_poll: E::ScheduleNextPoll,
+    ) -> Self {
         Self {
+            name,
             interface: SpinLock::new(interface),
             used_ports: SpinLock::new(BTreeMap::new()),
             tcp_sockets: SpinLock::new(BTreeSet::new()),
             udp_sockets: SpinLock::new(BTreeSet::new()),
-            ext,
+            sched_poll,
         }
+    }
+
+    pub(super) fn name(&self) -> &str {
+        &self.name
     }
 
     pub(super) fn ipv4_addr(&self) -> Option<Ipv4Address> {
         self.interface.lock().ipv4_addr()
     }
 
-    pub(super) fn ext(&self) -> &E {
-        &self.ext
+    pub(super) fn sched_poll(&self) -> &E::ScheduleNextPoll {
+        &self.sched_poll
     }
 }
 
-impl<E> IfaceCommon<E> {
+impl<E: Ext> IfaceCommon<E> {
     /// Acquires the lock to the interface.
     pub(crate) fn interface(&self) -> SpinLockGuard<smoltcp::iface::Interface, LocalIrqDisabled> {
         self.interface.lock()
@@ -69,7 +81,7 @@ impl<E> IfaceCommon<E> {
 const IP_LOCAL_PORT_START: u16 = 32768;
 const IP_LOCAL_PORT_END: u16 = 60999;
 
-impl<E> IfaceCommon<E> {
+impl<E: Ext> IfaceCommon<E> {
     pub(super) fn bind_tcp(
         &self,
         iface: Arc<dyn Iface<E>>,
@@ -159,7 +171,7 @@ impl<E> IfaceCommon<E> {
     }
 }
 
-impl<E> IfaceCommon<E> {
+impl<E: Ext> IfaceCommon<E> {
     #[allow(clippy::mutable_key_type)]
     fn remove_dead_tcp_sockets(&self, sockets: &mut BTreeSet<KeyableArc<BoundTcpSocketInner<E>>>) {
         sockets.retain(|socket| {
@@ -192,7 +204,7 @@ impl<E> IfaceCommon<E> {
     }
 }
 
-impl<E> IfaceCommon<E> {
+impl<E: Ext> IfaceCommon<E> {
     pub(super) fn poll<D, P, Q>(
         &self,
         device: &mut D,
