@@ -9,7 +9,7 @@ use core::{
     sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
 };
 
-use ostd::sync::{LocalIrqDisabled, RwLock, SpinLock, SpinLockGuard};
+use ostd::sync::{LocalIrqDisabled, RwLock, SpinLock, SpinLockGuard, WriteIrqDisabled};
 use smoltcp::{
     iface::Context,
     socket::{tcp::State, udp::UdpMetadata, PollAt},
@@ -46,7 +46,7 @@ pub struct BoundSocketInner<T, E> {
     iface: Arc<dyn Iface<E>>,
     port: u16,
     socket: T,
-    observer: RwLock<Weak<dyn SocketEventObserver>, LocalIrqDisabled>,
+    observer: RwLock<Weak<dyn SocketEventObserver>, WriteIrqDisabled>,
     events: AtomicU8,
     next_poll_at_ms: AtomicU64,
 }
@@ -232,8 +232,6 @@ impl<T: AnySocket, E> BoundSocket<T, E> {
     ///
     /// See also [`Self::set_observer`].
     pub fn observer(&self) -> Weak<dyn SocketEventObserver> {
-        // We never hold the write lock in IRQ handlers, so we don't need to disable IRQs when we
-        // get the read lock.
         self.0.observer.read().clone()
     }
 

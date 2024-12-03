@@ -3,7 +3,7 @@
 use aster_bigtcp::{
     errors::tcp::ListenError, iface::BindPortConfig, socket::UnboundTcpSocket, wire::IpEndpoint,
 };
-use ostd::sync::LocalIrqDisabled;
+use ostd::sync::WriteIrqDisabled;
 
 use super::connected::ConnectedStream;
 use crate::{
@@ -17,7 +17,7 @@ pub struct ListenStream {
     /// A bound socket held to ensure the TCP port cannot be released
     bound_socket: BoundTcpSocket,
     /// Backlog sockets listening at the local endpoint
-    backlog_sockets: RwLock<Vec<BacklogSocket>, LocalIrqDisabled>,
+    backlog_sockets: RwLock<Vec<BacklogSocket>, WriteIrqDisabled>,
 }
 
 impl ListenStream {

@@ -6,7 +6,7 @@ use aster_bigtcp::{
     socket::{SocketEventObserver, SocketEvents},
     wire::IpEndpoint,
 };
-use ostd::sync::LocalIrqDisabled;
+use ostd::sync::WriteIrqDisabled;
 use takeable::Takeable;
 
 use self::{bound::BoundDatagram, unbound::UnboundDatagram};
@@ -52,7 +52,7 @@ impl OptionSet {
 
 pub struct DatagramSocket {
     options: RwLock<OptionSet>,
-    inner: RwLock<Takeable<Inner>, LocalIrqDisabled>,
+    inner: RwLock<Takeable<Inner>, WriteIrqDisabled>,
     nonblocking: AtomicBool,
     pollee: Pollee,
 }

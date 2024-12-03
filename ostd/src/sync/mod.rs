@@ -15,7 +15,7 @@ mod wait;
 // pub use self::rcu::{pass_quiescent_state, OwnerPtr, Rcu, RcuReadGuard, RcuReclaimer};
 pub(crate) use self::guard::GuardTransfer;
 pub use self::{
-    guard::{LocalIrqDisabled, PreemptDisabled},
+    guard::{LocalIrqDisabled, PreemptDisabled, WriteIrqDisabled},
     mutex::{ArcMutexGuard, Mutex, MutexGuard},
     rwlock::{
         ArcRwLockReadGuard, ArcRwLockUpgradeableGuard, ArcRwLockWriteGuard, RwLock,
