@@ -32,7 +32,7 @@ pub fn main() {
     match osdk_subcommand {
         OsdkSubcommand::New(args) => execute_new_command(args),
         OsdkSubcommand::Build(build_args) => {
-            execute_build_command(&load_config(&build_args.common_args), build_args);
+            execute_build_command(&mut load_config(&build_args.common_args), build_args);
         }
         OsdkSubcommand::Run(run_args) => {
             execute_run_command(
@@ -476,4 +476,10 @@ pub struct CommonArgs {
         global = true
     )]
     pub encoding: Option<PayloadEncoding>,
+    #[arg(
+        long = "skip-build",
+        help = "Skip build phase to speed up QEMU execution",
+        global = true
+    )]
+    pub skip_build: bool,
 }

@@ -26,6 +26,8 @@ pub struct BuildScheme {
     #[serde(default)]
     pub strip_elf: bool,
     pub encoding: Option<PayloadEncoding>,
+    #[serde(default)]
+    pub skip_build: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,6 +44,8 @@ pub struct Build {
     #[serde(default)]
     pub strip_elf: bool,
     pub encoding: PayloadEncoding,
+    #[serde(default)]
+    pub skip_build: bool,
 }
 
 impl Default for Build {
@@ -54,6 +58,7 @@ impl Default for Build {
             linux_x86_legacy_boot: false,
             strip_elf: false,
             encoding: PayloadEncoding::default(),
+            skip_build: false,
         }
     }
 }
@@ -78,6 +83,9 @@ impl Build {
         }
         if let Some(encoding) = common_args.encoding.clone() {
             self.encoding.clone_from(&encoding);
+        }
+        if common_args.skip_build {
+            self.skip_build = true;
         }
     }
 }
@@ -113,6 +121,7 @@ impl BuildScheme {
             linux_x86_legacy_boot: self.linux_x86_legacy_boot,
             strip_elf: self.strip_elf,
             encoding: self.encoding.unwrap_or_default(),
+            skip_build: self.skip_build,
         }
     }
 }

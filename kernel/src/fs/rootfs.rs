@@ -23,7 +23,7 @@ impl<'a> BoxedReader<'a> {
     }
 }
 
-impl<'a> Read for BoxedReader<'a> {
+impl Read for BoxedReader<'_> {
     fn read(&mut self, buf: &mut [u8]) -> core2::io::Result<usize> {
         self.0.read(buf)
     }

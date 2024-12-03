@@ -41,6 +41,16 @@ NETDEV ?= user 		# Possible values are user,tap
 VHOST ?= off
 # End of network settings
 
+# Quick debugging options.
+RERUN ?= 0
+SKIP_BUILD ?= 0
+INITRAMFS_ENCODING ?= gzip
+ifeq ($(RERUN), 1)
+SKIP_BUILD := 1
+INITRAMFS_ENCODING := none
+endif
+# End of quick debugging options.
+
 # ========================= End of Makefile options. ==========================
 
 CARGO_OSDK := ~/.cargo/bin/cargo-osdk
@@ -110,6 +120,10 @@ ifeq ($(ENABLE_KVM), 1)
 CARGO_OSDK_ARGS += --qemu-args="-accel kvm"
 endif
 
+ifeq ($(SKIP_BUILD), 1)
+CARGO_OSDK_ARGS += --skip-build
+endif
+
 # Pass make variables to all subdirectory makes
 export
 
@@ -150,6 +164,9 @@ OSDK_CRATES := \
 	kernel/libs/aster-util \
 	kernel/libs/aster-bigtcp
 
+# OSDK dependencies
+OSDK_FILES := $(shell find osdk -type f)
+
 .PHONY: all
 all: build
 
@@ -164,7 +181,7 @@ install_osdk:
 
 # This will install OSDK if it is not already installed
 # To update OSDK, we need to run `install_osdk` manually
-$(CARGO_OSDK):
+$(CARGO_OSDK): $(OSDK_FILES)
 	@$(MAKE) --no-print-directory install_osdk
 
 .PHONY: check_osdk
@@ -179,7 +196,7 @@ test_osdk:
 
 .PHONY: _initramfs
 _initramfs:
-	@$(MAKE) --no-print-directory -C test
+	@$(MAKE) --no-print-directory -C test INITRAMFS_ENCODING=$(INITRAMFS_ENCODING)
 
 .PHONY: initramfs
 initramfs: _initramfs

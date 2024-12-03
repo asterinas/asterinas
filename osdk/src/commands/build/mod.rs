@@ -31,7 +31,7 @@ use crate::{
     util::{get_cargo_metadata, get_current_crate_info, get_target_directory},
 };
 
-pub fn execute_build_command(config: &Config, build_args: &BuildArgs) {
+pub fn execute_build_command(config: &mut Config, build_args: &BuildArgs) {
     let cargo_target_directory = get_target_directory();
     let osdk_output_directory = build_args
         .output
@@ -48,6 +48,11 @@ pub fn execute_build_command(config: &Config, build_args: &BuildArgs) {
     } else {
         ActionChoice::Run
     };
+
+    if config.build.skip_build {
+        warn!("The \"--skip-build\" option is ignored.");
+        config.build.skip_build = false;
+    }
 
     let _bundle = create_base_and_cached_build(
         bundle_path,
@@ -158,6 +163,7 @@ pub fn do_build(
         &build.override_configs[..],
         &cargo_target_directory,
         rustflags,
+        config.build.skip_build,
     );
 
     match boot.method {
@@ -195,6 +201,7 @@ fn build_kernel_elf(
     override_configs: &[String],
     cargo_target_directory: impl AsRef<Path>,
     rustflags: &[&str],
+    skip_build: bool,
 ) -> AsterBin {
     let target_os_string = OsString::from(&arch.triple());
     let rustc_linker_script_arg = format!("-C link-arg=-T{}.ld", arch);
@@ -245,19 +252,23 @@ fn build_kernel_elf(
         command.arg("--config").arg(override_config);
     }
 
-    info!("Building kernel ELF using command: {:#?}", command);
-
-    let status = command.status().unwrap();
-    if !status.success() {
-        error_msg!("Cargo build failed");
-        process::exit(Errno::ExecuteCommand as _);
-    }
-
     let aster_bin_path = cargo_target_directory
         .as_ref()
         .join(&target_os_string)
         .join(profile_name_adapter(profile))
         .join(get_current_crate_info().name);
+
+    let status = if !skip_build || !aster_bin_path.exists() {
+        info!("Building kernel ELF using command: {:#?}", command);
+        command.status().unwrap().success()
+    } else {
+        info!("Skiping kernel ELF build command: {:#?}", command);
+        true
+    };
+    if !status {
+        error_msg!("Cargo build failed");
+        process::exit(Errno::ExecuteCommand as _);
+    }
 
     AsterBin::new(
         aster_bin_path,

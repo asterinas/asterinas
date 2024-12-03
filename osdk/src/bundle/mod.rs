@@ -286,21 +286,21 @@ impl Bundle {
         }
     }
 
-    /// Move the vm_image into the bundle.
+    /// Copy the vm_image into the bundle.
     pub fn consume_vm_image(&mut self, vm_image: AsterVmImage) {
         if self.manifest.vm_image.is_some() {
             panic!("vm_image already exists");
         }
-        self.manifest.vm_image = Some(vm_image.move_to(&self.path));
+        self.manifest.vm_image = Some(vm_image.copy_to(&self.path));
         self.write_manifest_to_fs();
     }
 
-    /// Move the aster_bin into the bundle.
+    /// Copy the aster_bin into the bundle.
     pub fn consume_aster_bin(&mut self, aster_bin: AsterBin) {
         if self.manifest.aster_bin.is_some() {
             panic!("aster_bin already exists");
         }
-        self.manifest.aster_bin = Some(aster_bin.move_to(&self.path));
+        self.manifest.aster_bin = Some(aster_bin.copy_to(&self.path));
         self.write_manifest_to_fs();
     }
 
