@@ -42,12 +42,20 @@ VHOST ?= off
 # End of network settings
 
 # Quick debugging options.
+# SKIP_BUILD=1: Skip build command if the target already exists
+# OFFLINE=1: Disable network access (user should ensure `make fetch` is run to fetch dependencies)
+# INITRAMFS_ENCODING=none: Disable compression for INITRAMFS
+# RERUN=1: Enable the above options
 RERUN ?= 0
-SKIP_BUILD ?= 0
-INITRAMFS_ENCODING ?= gzip
-ifeq ($(RERUN), 1)
-SKIP_BUILD := 1
-INITRAMFS_ENCODING := none
+ifneq ($(filter fetch, $(MAKECMDGOALS)),)
+undefine RERUN
+undefine SKIP_BUILD
+undefine OFFLINE
+undefine INITRAMFS_ENCODING
+else ifeq ($(RERUN), 1)
+SKIP_BUILD ?= 1
+OFFLINE ?= 1
+INITRAMFS_ENCODING ?= none
 endif
 # End of quick debugging options.
 
@@ -123,6 +131,10 @@ endif
 ifeq ($(SKIP_BUILD), 1)
 CARGO_OSDK_ARGS += --skip-build
 endif
+ifeq ($(OFFLINE), 1)
+CARGO_OFFLINE_OPTION := --offline
+CARGO_OSDK_ARGS += $(CARGO_OFFLINE_OPTION)
+endif
 
 # Pass make variables to all subdirectory makes
 export
@@ -165,7 +177,9 @@ OSDK_CRATES := \
 	kernel/libs/aster-bigtcp
 
 # OSDK dependencies
-OSDK_FILES := $(shell find osdk -type f)
+OSDK_SRC_FILES := \
+	$(shell find osdk/src -type f) \
+	$(shell find osdk -maxdepth 1 -type f -name 'Cargo.*')
 
 .PHONY: all
 all: build
@@ -177,11 +191,10 @@ install_osdk:
 	@# The `OSDK_LOCAL_DEV` environment variable is used for local development
 	@# without the need to publish the changes of OSDK's self-hosted
 	@# dependencies to `crates.io`.
-	@OSDK_LOCAL_DEV=1 cargo install cargo-osdk --path osdk
+	@OSDK_LOCAL_DEV=1 cargo $(CARGO_OFFLINE_OPTION) install cargo-osdk --path osdk
 
-# This will install OSDK if it is not already installed
-# To update OSDK, we need to run `install_osdk` manually
-$(CARGO_OSDK): $(OSDK_FILES)
+# This will install and update OSDK automatically
+$(CARGO_OSDK): $(OSDK_SRC_FILES)
 	@$(MAKE) --no-print-directory install_osdk
 
 .PHONY: check_osdk
@@ -194,17 +207,27 @@ test_osdk:
 		OSDK_LOCAL_DEV=1 cargo build && \
 		OSDK_LOCAL_DEV=1 cargo test
 
+# INITRAMFS_ENCODING is used by _initramfs target
 .PHONY: _initramfs
 _initramfs:
-	@$(MAKE) --no-print-directory -C test INITRAMFS_ENCODING=$(INITRAMFS_ENCODING)
+	@$(MAKE) --no-print-directory -C test
 
 .PHONY: initramfs
 initramfs: _initramfs
-	$(eval CARGO_OSDK_ARGS += --initramfs=$(shell cat test/build/initramfs_path.txt))
+	$(eval CARGO_OSDK_INITRAMFS_OPTION := --initramfs=$(shell cat test/build/initramfs_path.txt))
+	$(eval CARGO_OSDK_ARGS += $(CARGO_OSDK_INITRAMFS_OPTION))
 
 .PHONY: build
 build: initramfs $(CARGO_OSDK)
 	@cargo osdk build $(CARGO_OSDK_ARGS)
+
+# Build all architecture targets and tests to download and cache dependencies
+# Failures are ignored; the goal is to download dependencies
+.PHONY: fetch
+fetch: $(CARGO_OSDK)
+	-@cargo osdk fetch
+	-@$(MAKE) test
+	-@$(MAKE) ktest
 
 .PHONY: tools
 tools:
@@ -233,7 +256,7 @@ gdb_server: initramfs $(CARGO_OSDK)
 	@cargo osdk run $(CARGO_OSDK_ARGS) --gdb-server wait-client,vscode,addr=:$(GDB_TCP_PORT)
 
 .PHONY: gdb_client
-gdb_client: $(CARGO_OSDK)
+gdb_client: initramfs $(CARGO_OSDK)
 	@cargo osdk debug $(CARGO_OSDK_ARGS) --remote :$(GDB_TCP_PORT)
 
 .PHONY: profile_server
@@ -241,14 +264,14 @@ profile_server: initramfs $(CARGO_OSDK)
 	@cargo osdk run $(CARGO_OSDK_ARGS) --gdb-server addr=:$(GDB_TCP_PORT)
 
 .PHONY: profile_client
-profile_client: $(CARGO_OSDK)
+profile_client: initramfs $(CARGO_OSDK)
 	@cargo osdk profile $(CARGO_OSDK_ARGS) --remote :$(GDB_TCP_PORT) \
 		--samples $(GDB_PROFILE_COUNT) --interval $(GDB_PROFILE_INTERVAL) --format $(GDB_PROFILE_FORMAT)
 
 .PHONY: test
 test:
 	@for dir in $(NON_OSDK_CRATES); do \
-		(cd $$dir && cargo test) || exit 1; \
+		(cd $$dir && cargo $(CARGO_OFFLINE_OPTION) test) || exit 1; \
 	done
 
 .PHONY: ktest
@@ -256,7 +279,7 @@ ktest: initramfs $(CARGO_OSDK)
 	@# Exclude linux-bzimage-setup from ktest since it's hard to be unit tested
 	@for dir in $(OSDK_CRATES); do \
 		[ $$dir = "ostd/libs/linux-bzimage/setup" ] && continue; \
-		(cd $$dir && OVMF=off cargo osdk test) || exit 1; \
+		(cd $$dir && OVMF=off cargo osdk test $(CARGO_OFFLINE_OPTION) $(CARGO_OSDK_INITRAMFS_OPTION)) || exit 1; \
 		tail --lines 10 qemu.log | grep -q "^\\[ktest runner\\] All crates tested." \
 			|| (echo "Test failed" && exit 1); \
 	done

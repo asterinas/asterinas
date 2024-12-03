@@ -156,14 +156,13 @@ pub fn do_build(
     };
 
     let aster_elf = build_kernel_elf(
-        config.target_arch,
+        config,
         &build.profile,
         &build.features[..],
         build.no_default_features,
         &build.override_configs[..],
         &cargo_target_directory,
         rustflags,
-        config.build.skip_build,
     );
 
     match boot.method {
@@ -194,15 +193,15 @@ pub fn do_build(
 }
 
 fn build_kernel_elf(
-    arch: Arch,
+    config: &Config,
     profile: &str,
     features: &[String],
     no_default_features: bool,
     override_configs: &[String],
     cargo_target_directory: impl AsRef<Path>,
     rustflags: &[&str],
-    skip_build: bool,
 ) -> AsterBin {
+    let arch = config.target_arch;
     let target_os_string = OsString::from(&arch.triple());
     let rustc_linker_script_arg = format!("-C link-arg=-T{}.ld", arch);
 
@@ -251,6 +250,9 @@ fn build_kernel_elf(
     for override_config in override_configs {
         command.arg("--config").arg(override_config);
     }
+    if config.build.offline {
+        command.arg("--offline");
+    }
 
     let aster_bin_path = cargo_target_directory
         .as_ref()
@@ -258,11 +260,11 @@ fn build_kernel_elf(
         .join(profile_name_adapter(profile))
         .join(get_current_crate_info().name);
 
-    let status = if !skip_build || !aster_bin_path.exists() {
+    let status = if !config.build.skip_build || !aster_bin_path.exists() {
         info!("Building kernel ELF using command: {:#?}", command);
         command.status().unwrap().success()
     } else {
-        info!("Skiping kernel ELF build command: {:#?}", command);
+        info!("Skipping kernel ELF build command: {:#?}", command);
         true
     };
     if !status {

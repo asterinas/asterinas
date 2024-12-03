@@ -28,6 +28,8 @@ pub struct BuildScheme {
     pub encoding: Option<PayloadEncoding>,
     #[serde(default)]
     pub skip_build: bool,
+    #[serde(default)]
+    pub offline: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -46,6 +48,8 @@ pub struct Build {
     pub encoding: PayloadEncoding,
     #[serde(default)]
     pub skip_build: bool,
+    #[serde(default)]
+    pub offline: bool,
 }
 
 impl Default for Build {
@@ -59,6 +63,7 @@ impl Default for Build {
             strip_elf: false,
             encoding: PayloadEncoding::default(),
             skip_build: false,
+            offline: false,
         }
     }
 }
@@ -86,6 +91,9 @@ impl Build {
         }
         if common_args.skip_build {
             self.skip_build = true;
+        }
+        if common_args.offline {
+            self.offline = true;
         }
     }
 }
@@ -122,6 +130,7 @@ impl BuildScheme {
             strip_elf: self.strip_elf,
             encoding: self.encoding.unwrap_or_default(),
             skip_build: self.skip_build,
+            offline: self.offline,
         }
     }
 }

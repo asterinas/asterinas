@@ -7,8 +7,9 @@ use clap::{crate_version, Args, Parser, ValueEnum};
 use crate::{
     arch::Arch,
     commands::{
-        execute_build_command, execute_debug_command, execute_forwarded_command,
-        execute_new_command, execute_profile_command, execute_run_command, execute_test_command,
+        execute_build_command, execute_debug_command, execute_fetch_command,
+        execute_forwarded_command, execute_new_command, execute_profile_command,
+        execute_run_command, execute_test_command,
     },
     config::{
         manifest::{ProjectType, TomlManifest},
@@ -58,6 +59,7 @@ pub fn main() {
         OsdkSubcommand::Check(args) => execute_forwarded_command("check", &args.args, true),
         OsdkSubcommand::Clippy(args) => execute_forwarded_command("clippy", &args.args, true),
         OsdkSubcommand::Doc(args) => execute_forwarded_command("doc", &args.args, false),
+        OsdkSubcommand::Fetch(_) => execute_fetch_command(),
     }
 }
 
@@ -95,6 +97,8 @@ pub enum OsdkSubcommand {
     Clippy(ForwardedArguments),
     #[command(about = "Build a package's documentation")]
     Doc(ForwardedArguments),
+    #[command(about = "Build all architectures to fetch and cache dependencies for offline use")]
+    Fetch(ForwardedArguments),
 }
 
 #[derive(Debug, Parser)]
@@ -482,4 +486,10 @@ pub struct CommonArgs {
         global = true
     )]
     pub skip_build: bool,
+    #[arg(
+        long = "offline",
+        help = "Run without accessing the network",
+        global = true
+    )]
+    pub offline: bool,
 }
