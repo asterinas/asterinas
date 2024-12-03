@@ -32,7 +32,7 @@ use crate::{
 ///
 /// [`disable_irq`]: Self::disable_irq
 #[repr(transparent)]
-pub struct SpinLock<T: ?Sized, G: Guardian = PreemptDisabled> {
+pub struct SpinLock<T: ?Sized, G = PreemptDisabled> {
     phantom: PhantomData<G>,
     /// Only the last field of a struct may have a dynamically sized type.
     /// That's why SpinLockInner is put in the last field.
@@ -92,7 +92,7 @@ impl Guardian for LocalIrqDisabled {
     }
 }
 
-impl<T, G: Guardian> SpinLock<T, G> {
+impl<T, G> SpinLock<T, G> {
     /// Creates a new spin lock.
     pub const fn new(val: T) -> Self {
         let lock_inner = SpinLockInner {
@@ -179,15 +179,15 @@ impl<T: ?Sized, G: Guardian> SpinLock<T, G> {
     }
 }
 
-impl<T: ?Sized + fmt::Debug, G: Guardian> fmt::Debug for SpinLock<T, G> {
+impl<T: ?Sized + fmt::Debug, G> fmt::Debug for SpinLock<T, G> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&self.inner.val, f)
     }
 }
 
 // SAFETY: Only a single lock holder is permitted to access the inner data of Spinlock.
-unsafe impl<T: ?Sized + Send, G: Guardian> Send for SpinLock<T, G> {}
-unsafe impl<T: ?Sized + Send, G: Guardian> Sync for SpinLock<T, G> {}
+unsafe impl<T: ?Sized + Send, G> Send for SpinLock<T, G> {}
+unsafe impl<T: ?Sized + Send, G> Sync for SpinLock<T, G> {}
 
 /// A guard that provides exclusive access to the data protected by a [`SpinLock`].
 pub type SpinLockGuard<'a, T, G> = SpinLockGuard_<T, &'a SpinLock<T, G>, G>;
