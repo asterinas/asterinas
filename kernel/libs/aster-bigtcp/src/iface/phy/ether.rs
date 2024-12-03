@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{collections::btree_map::BTreeMap, sync::Arc};
+use alloc::{collections::btree_map::BTreeMap, string::String, sync::Arc};
 
 use ostd::sync::{LocalIrqDisabled, SpinLock};
 use smoltcp::{
@@ -14,25 +14,28 @@ use smoltcp::{
 
 use crate::{
     device::WithDevice,
+    ext::Ext,
     iface::{
         common::IfaceCommon, iface::internal::IfaceInternal, time::get_network_timestamp, Iface,
+        ScheduleNextPoll,
     },
 };
 
-pub struct EtherIface<D, E> {
+pub struct EtherIface<D, E: Ext> {
     driver: D,
     common: IfaceCommon<E>,
     ether_addr: EthernetAddress,
     arp_table: SpinLock<BTreeMap<Ipv4Address, EthernetAddress>, LocalIrqDisabled>,
 }
 
-impl<D: WithDevice, E> EtherIface<D, E> {
+impl<D: WithDevice, E: Ext> EtherIface<D, E> {
     pub fn new(
         driver: D,
         ether_addr: EthernetAddress,
         ip_cidr: Ipv4Cidr,
         gateway: Ipv4Address,
-        ext: E,
+        name: String,
+        sched_poll: E::ScheduleNextPoll,
     ) -> Arc<Self> {
         let interface = driver.with(|device| {
             let config = Config::new(wire::HardwareAddress::Ethernet(ether_addr));
@@ -50,7 +53,7 @@ impl<D: WithDevice, E> EtherIface<D, E> {
             interface
         });
 
-        let common = IfaceCommon::new(interface, ext);
+        let common = IfaceCommon::new(name, interface, sched_poll);
 
         Arc::new(Self {
             driver,
@@ -61,26 +64,26 @@ impl<D: WithDevice, E> EtherIface<D, E> {
     }
 }
 
-impl<D, E> IfaceInternal<E> for EtherIface<D, E> {
+impl<D, E: Ext> IfaceInternal<E> for EtherIface<D, E> {
     fn common(&self) -> &IfaceCommon<E> {
         &self.common
     }
 }
 
-impl<D: WithDevice + 'static, E: Send + Sync> Iface<E> for EtherIface<D, E> {
-    fn raw_poll(&self, schedule_next_poll: &dyn Fn(Option<u64>)) {
+impl<D: WithDevice + 'static, E: Ext> Iface<E> for EtherIface<D, E> {
+    fn poll(&self) {
         self.driver.with(|device| {
             let next_poll = self.common.poll(
                 &mut *device,
                 |data, iface_cx, tx_token| self.process(data, iface_cx, tx_token),
                 |pkt, iface_cx, tx_token| self.dispatch(pkt, iface_cx, tx_token),
             );
-            schedule_next_poll(next_poll);
+            self.common.sched_poll().schedule_next_poll(next_poll);
         });
     }
 }
 
-impl<D, E> EtherIface<D, E> {
+impl<D, E: Ext> EtherIface<D, E> {
     fn process<'pkt, T: TxToken>(
         &self,
         data: &'pkt [u8],

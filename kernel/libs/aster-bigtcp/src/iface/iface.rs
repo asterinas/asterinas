@@ -7,6 +7,7 @@ use smoltcp::wire::Ipv4Address;
 use super::port::BindPortConfig;
 use crate::{
     errors::BindError,
+    ext::Ext,
     socket::{BoundTcpSocket, BoundUdpSocket, UnboundTcpSocket, UnboundUdpSocket},
 };
 
@@ -18,19 +19,10 @@ use crate::{
 /// private network (VPN) connections.
 pub trait Iface<E>: internal::IfaceInternal<E> + Send + Sync {
     /// Transmits or receives packets queued in the iface, and updates socket status accordingly.
-    ///
-    /// The `schedule_next_poll` callback is invoked with the time at which the next poll should be
-    /// performed, or `None` if no next poll is required. It's up to the caller to determine the
-    /// mechanism to ensure that the next poll happens at the right time (e.g. by setting a timer).
-    fn raw_poll(&self, schedule_next_poll: &dyn Fn(Option<u64>));
+    fn poll(&self);
 }
 
-impl<E> dyn Iface<E> {
-    /// Gets the extension of the iface.
-    pub fn ext(&self) -> &E {
-        self.common().ext()
-    }
-
+impl<E: Ext> dyn Iface<E> {
     /// Binds a socket to the iface.
     ///
     /// After binding the socket to the iface, the iface will handle all packets to and from the
@@ -60,19 +52,33 @@ impl<E> dyn Iface<E> {
         common.bind_udp(self.clone(), socket, config)
     }
 
+    /// Gets the name of the iface.
+    ///
+    /// In Linux, the name is usually the driver name followed by a unit number.
+    pub fn name(&self) -> &str {
+        self.common().name()
+    }
+
     /// Gets the IPv4 address of the iface, if any.
     ///
     /// FIXME: One iface may have multiple IPv4 addresses.
     pub fn ipv4_addr(&self) -> Option<Ipv4Address> {
         self.common().ipv4_addr()
     }
+
+    /// Returns a reference to the associated [`ScheduleNextPoll`].
+    pub fn sched_poll(&self) -> &E::ScheduleNextPoll {
+        self.common().sched_poll()
+    }
 }
 
 pub(super) mod internal {
-    use crate::iface::common::IfaceCommon;
+    use crate::{ext::Ext, iface::common::IfaceCommon};
 
     /// An internal trait that abstracts the common part of different ifaces.
     pub trait IfaceInternal<E> {
-        fn common(&self) -> &IfaceCommon<E>;
+        fn common(&self) -> &IfaceCommon<E>
+        where
+            E: Ext;
     }
 }

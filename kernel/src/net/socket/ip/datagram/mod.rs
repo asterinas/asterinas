@@ -18,16 +18,13 @@ use crate::{
         utils::{InodeMode, Metadata, StatusFlags},
     },
     match_sock_option_mut,
-    net::{
-        iface::IfaceEx,
-        socket::{
-            options::{Error as SocketError, SocketOption},
-            util::{
-                options::SocketOptionSet, send_recv_flags::SendRecvFlags, socket_addr::SocketAddr,
-                MessageHeader,
-            },
-            Socket,
+    net::socket::{
+        options::{Error as SocketError, SocketOption},
+        util::{
+            options::SocketOptionSet, send_recv_flags::SendRecvFlags, socket_addr::SocketAddr,
+            MessageHeader,
         },
+        Socket,
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},

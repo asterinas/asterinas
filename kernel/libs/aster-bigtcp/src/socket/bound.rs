@@ -21,9 +21,9 @@ use super::{
     event::{SocketEventObserver, SocketEvents},
     RawTcpSocket, RawUdpSocket, TcpStateCheck,
 };
-use crate::iface::Iface;
+use crate::{ext::Ext, iface::Iface};
 
-pub struct BoundSocket<T: AnySocket, E>(Arc<BoundSocketInner<T, E>>);
+pub struct BoundSocket<T: AnySocket, E: Ext>(Arc<BoundSocketInner<T, E>>);
 
 /// [`TcpSocket`] or [`UdpSocket`].
 pub trait AnySocket {
@@ -33,7 +33,7 @@ pub trait AnySocket {
     fn new(socket: Box<Self::RawSocket>) -> Self;
 
     /// Called by [`BoundSocket::drop`].
-    fn on_drop<E>(this: &Arc<BoundSocketInner<Self, E>>)
+    fn on_drop<E: Ext>(this: &Arc<BoundSocketInner<Self, E>>)
     where
         Self: Sized;
 }
@@ -176,7 +176,7 @@ impl AnySocket for UdpSocket {
         Self::new(socket)
     }
 
-    fn on_drop<E>(this: &Arc<BoundSocketInner<Self, E>>) {
+    fn on_drop<E: Ext>(this: &Arc<BoundSocketInner<Self, E>>) {
         this.socket.lock().close();
 
         // A UDP socket can be removed immediately.
@@ -184,7 +184,7 @@ impl AnySocket for UdpSocket {
     }
 }
 
-impl<T: AnySocket, E> Drop for BoundSocket<T, E> {
+impl<T: AnySocket, E: Ext> Drop for BoundSocket<T, E> {
     fn drop(&mut self) {
         T::on_drop(&self.0);
     }
@@ -193,7 +193,7 @@ impl<T: AnySocket, E> Drop for BoundSocket<T, E> {
 pub(crate) type BoundTcpSocketInner<E> = BoundSocketInner<TcpSocket, E>;
 pub(crate) type BoundUdpSocketInner<E> = BoundSocketInner<UdpSocket, E>;
 
-impl<T: AnySocket, E> BoundSocket<T, E> {
+impl<T: AnySocket, E: Ext> BoundSocket<T, E> {
     pub(crate) fn new(
         iface: Arc<dyn Iface<E>>,
         port: u16,
@@ -215,7 +215,7 @@ impl<T: AnySocket, E> BoundSocket<T, E> {
     }
 }
 
-impl<T: AnySocket, E> BoundSocket<T, E> {
+impl<T: AnySocket, E: Ext> BoundSocket<T, E> {
     /// Sets the observer whose `on_events` will be called when certain iface events happen. After
     /// setting, the new observer will fire once immediately to avoid missing any events.
     ///
@@ -269,7 +269,7 @@ impl Deref for NeedIfacePoll {
     }
 }
 
-impl<E> BoundTcpSocket<E> {
+impl<E: Ext> BoundTcpSocket<E> {
     /// Connects to a remote endpoint.
     ///
     /// Polling the iface is _always_ required after this method succeeds.
@@ -378,7 +378,7 @@ impl<E> BoundTcpSocket<E> {
     }
 }
 
-impl<E> BoundUdpSocket<E> {
+impl<E: Ext> BoundUdpSocket<E> {
     /// Binds to a specified endpoint.
     ///
     /// Polling the iface is _not_ required after this method succeeds.
