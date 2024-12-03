@@ -15,7 +15,8 @@ use smoltcp::{
 use crate::{
     device::WithDevice,
     iface::{
-        common::IfaceCommon, iface::internal::IfaceInternal, time::get_network_timestamp, Iface,
+        common::IfaceCommon, ext::Ext, iface::internal::IfaceInternal, time::get_network_timestamp,
+        Iface,
     },
 };
 
@@ -67,15 +68,15 @@ impl<D, E> IfaceInternal<E> for EtherIface<D, E> {
     }
 }
 
-impl<D: WithDevice + 'static, E: Send + Sync> Iface<E> for EtherIface<D, E> {
-    fn raw_poll(&self, schedule_next_poll: &dyn Fn(Option<u64>)) {
+impl<D: WithDevice + 'static, E: Ext + Send + Sync> Iface<E> for EtherIface<D, E> {
+    fn poll(&self) {
         self.driver.with(|device| {
             let next_poll = self.common.poll(
                 &mut *device,
                 |data, iface_cx, tx_token| self.process(data, iface_cx, tx_token),
                 |pkt, iface_cx, tx_token| self.dispatch(pkt, iface_cx, tx_token),
             );
-            schedule_next_poll(next_poll);
+            self.common.ext().schedule_next_poll(next_poll);
         });
     }
 }

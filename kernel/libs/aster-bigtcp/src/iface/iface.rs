@@ -18,11 +18,7 @@ use crate::{
 /// private network (VPN) connections.
 pub trait Iface<E>: internal::IfaceInternal<E> + Send + Sync {
     /// Transmits or receives packets queued in the iface, and updates socket status accordingly.
-    ///
-    /// The `schedule_next_poll` callback is invoked with the time at which the next poll should be
-    /// performed, or `None` if no next poll is required. It's up to the caller to determine the
-    /// mechanism to ensure that the next poll happens at the right time (e.g. by setting a timer).
-    fn raw_poll(&self, schedule_next_poll: &dyn Fn(Option<u64>));
+    fn poll(&self);
 }
 
 impl<E> dyn Iface<E> {

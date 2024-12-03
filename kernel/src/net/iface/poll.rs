@@ -6,7 +6,7 @@ use core::time::Duration;
 use log::trace;
 use ostd::timer::Jiffies;
 
-use super::{ext::IfaceEx, Iface, IFACES};
+use super::{Iface, IFACES};
 use crate::{sched::priority::Priority, thread::kernel_thread::ThreadOptions, WaitTimeout};
 
 pub fn lazy_init() {
@@ -25,10 +25,10 @@ pub(super) fn poll_ifaces() {
 
 fn spawn_background_poll_thread(iface: Arc<Iface>) {
     let task_fn = move || {
-        trace!("spawn background poll thread for {}", iface.name());
-
         let iface_ext = iface.ext();
         let wait_queue = iface_ext.polling_wait_queue();
+
+        trace!("spawn background poll thread for {}", iface_ext.name());
 
         loop {
             let next_poll_at_ms = if let Some(next_poll_at_ms) = iface_ext.next_poll_at_ms() {

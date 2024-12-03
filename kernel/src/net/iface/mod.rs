@@ -4,7 +4,6 @@ mod ext;
 mod init;
 mod poll;
 
-pub use ext::IfaceEx;
 pub use init::{init, IFACES};
 pub use poll::lazy_init;
 
