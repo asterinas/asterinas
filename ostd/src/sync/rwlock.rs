@@ -14,7 +14,10 @@ use core::{
     },
 };
 
-use super::{spin::Guardian, GuardTransfer, PreemptDisabled};
+use super::{
+    guard::{GuardTransfer, Guardian},
+    PreemptDisabled,
+};
 
 /// Spin-based Read-write Lock
 ///

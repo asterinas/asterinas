@@ -2,6 +2,7 @@
 
 //! Useful synchronization primitives.
 
+mod guard;
 mod mutex;
 // TODO: refactor this rcu implementation
 // Comment out this module since it raises lint error
@@ -12,7 +13,9 @@ mod spin;
 mod wait;
 
 // pub use self::rcu::{pass_quiescent_state, OwnerPtr, Rcu, RcuReadGuard, RcuReclaimer};
+pub(crate) use self::guard::GuardTransfer;
 pub use self::{
+    guard::{LocalIrqDisabled, PreemptDisabled},
     mutex::{ArcMutexGuard, Mutex, MutexGuard},
     rwlock::{
         ArcRwLockReadGuard, ArcRwLockUpgradeableGuard, ArcRwLockWriteGuard, RwLock,
@@ -22,8 +25,6 @@ pub use self::{
         ArcRwMutexReadGuard, ArcRwMutexUpgradeableGuard, ArcRwMutexWriteGuard, RwMutex,
         RwMutexReadGuard, RwMutexUpgradeableGuard, RwMutexWriteGuard,
     },
-    spin::{
-        ArcSpinLockGuard, GuardTransfer, LocalIrqDisabled, PreemptDisabled, SpinLock, SpinLockGuard,
-    },
+    spin::{ArcSpinLockGuard, SpinLock, SpinLockGuard},
     wait::{WaitQueue, Waiter, Waker},
 };
