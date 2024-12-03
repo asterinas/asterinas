@@ -230,7 +230,7 @@ impl<T: ?Sized, G: Guardian> RwLock<T, G> {
     ///
     /// This function will never spin-wait and will return immediately.
     pub fn try_read(&self) -> Option<RwLockReadGuard<T, G>> {
-        let guard = G::guard();
+        let guard = G::read_guard();
         let lock = self.lock.fetch_add(READER, Acquire);
         if lock & (WRITER | MAX_READER | BEING_UPGRADED) == 0 {
             Some(RwLockReadGuard { inner: self, guard })
@@ -247,7 +247,7 @@ impl<T: ?Sized, G: Guardian> RwLock<T, G> {
     ///
     /// [`try_read`]: Self::try_read
     pub fn try_read_arc(self: &Arc<Self>) -> Option<ArcRwLockReadGuard<T, G>> {
-        let guard = G::guard();
+        let guard = G::read_guard();
         let lock = self.lock.fetch_add(READER, Acquire);
         if lock & (WRITER | MAX_READER | BEING_UPGRADED) == 0 {
             Some(ArcRwLockReadGuard {
@@ -375,7 +375,7 @@ unsafe impl<T: ?Sized + Sync, R: Deref<Target = RwLock<T, G>> + Clone + Sync, G:
 #[clippy::has_significant_drop]
 #[must_use]
 pub struct RwLockReadGuard_<T: ?Sized, R: Deref<Target = RwLock<T, G>> + Clone, G: Guardian> {
-    guard: G::Guard,
+    guard: G::ReadGuard,
     inner: R,
 }
 

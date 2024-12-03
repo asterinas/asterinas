@@ -11,7 +11,7 @@ use connecting::{ConnResult, ConnectingStream};
 use init::InitStream;
 use listen::ListenStream;
 use options::{Congestion, MaxSegment, NoDelay, WindowClamp};
-use ostd::sync::{LocalIrqDisabled, PreemptDisabled, RwLockReadGuard, RwLockWriteGuard};
+use ostd::sync::{PreemptDisabled, RwLockReadGuard, RwLockWriteGuard, WriteIrqDisabled};
 use takeable::Takeable;
 use util::TcpOptionSet;
 
@@ -50,7 +50,7 @@ pub use self::util::CongestionControl;
 
 pub struct StreamSocket {
     options: RwLock<OptionSet>,
-    state: RwLock<Takeable<State>, LocalIrqDisabled>,
+    state: RwLock<Takeable<State>, WriteIrqDisabled>,
     is_nonblocking: AtomicBool,
     pollee: Pollee,
 }
@@ -116,7 +116,7 @@ impl StreamSocket {
     /// Ensures that the socket state is up to date and obtains a read lock on it.
     ///
     /// For a description of what "up-to-date" means, see [`Self::update_connecting`].
-    fn read_updated_state(&self) -> RwLockReadGuard<Takeable<State>, LocalIrqDisabled> {
+    fn read_updated_state(&self) -> RwLockReadGuard<Takeable<State>, WriteIrqDisabled> {
         loop {
             let state = self.state.read();
             match state.as_ref() {
@@ -132,7 +132,7 @@ impl StreamSocket {
     /// Ensures that the socket state is up to date and obtains a write lock on it.
     ///
     /// For a description of what "up-to-date" means, see [`Self::update_connecting`].
-    fn write_updated_state(&self) -> RwLockWriteGuard<Takeable<State>, LocalIrqDisabled> {
+    fn write_updated_state(&self) -> RwLockWriteGuard<Takeable<State>, WriteIrqDisabled> {
         self.update_connecting().1
     }
 
@@ -149,7 +149,7 @@ impl StreamSocket {
         &self,
     ) -> (
         RwLockWriteGuard<OptionSet, PreemptDisabled>,
-        RwLockWriteGuard<Takeable<State>, LocalIrqDisabled>,
+        RwLockWriteGuard<Takeable<State>, WriteIrqDisabled>,
     ) {
         // Hold the lock in advance to avoid race conditions.
         let mut options = self.options.write();
