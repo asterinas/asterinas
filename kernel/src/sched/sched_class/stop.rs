@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::sync::atomic::AtomicBool;
+
 use super::*;
 
 /// The per-cpu run queue for the STOP scheduling class.
@@ -32,6 +34,7 @@ impl SchedClassRq for StopClassRq {
         if self.thread.replace(thread).is_some() {
             panic!("Multiple `stop` threads spawned")
         }
+        self.has_value.store(true, Relaxed);
     }
 
     fn len(&mut self) -> usize {
