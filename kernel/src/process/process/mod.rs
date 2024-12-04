@@ -14,7 +14,7 @@ use super::{
         signals::Signal,
     },
     status::ProcessStatus,
-    Credentials, TermStatus,
+    Credentials, Namespaces, TermStatus,
 };
 use crate::{
     device::tty::open_ntty_as_controlling_terminal,
@@ -87,6 +87,8 @@ pub struct Process {
     fs: Arc<RwMutex<FsResolver>>,
     /// umask
     umask: Arc<RwLock<FileCreationMask>>,
+    /// Namespaces
+    namespaces: Arc<Mutex<Namespaces>>,
     /// resource limits
     resource_limits: Mutex<ResourceLimits>,
     /// Scheduling priority nice value
@@ -189,6 +191,7 @@ impl Process {
         file_table: Arc<SpinLock<FileTable>>,
 
         umask: Arc<RwLock<FileCreationMask>>,
+        namespaces: Arc<Mutex<Namespaces>>,
         resource_limits: ResourceLimits,
         nice: Nice,
         sig_dispositions: Arc<Mutex<SigDispositions>>,
@@ -212,6 +215,7 @@ impl Process {
             file_table,
             fs,
             umask,
+            namespaces,
             sig_dispositions,
             parent_death_signal: AtomicSigNum::new_empty(),
             exit_signal: AtomicSigNum::new_empty(),
@@ -634,6 +638,17 @@ impl Process {
         &self.umask
     }
 
+    // ************** Namespaces ****************
+
+    pub fn namespaces(&self) -> &Arc<Mutex<Namespaces>> {
+        &self.namespaces
+    }
+
+    pub fn switch_namespaces(&self, namespaces: Arc<Mutex<Namespaces>>) {
+        let mut old_ns = self.namespaces.lock();
+        old_ns.reset_namespaces(&namespaces);
+    }
+
     // ****************** Signal ******************
 
     pub fn sig_dispositions(&self) -> &Arc<Mutex<SigDispositions>> {
@@ -745,6 +760,7 @@ mod test {
             Arc::new(RwMutex::new(FsResolver::new())),
             Arc::new(SpinLock::new(FileTable::new())),
             Arc::new(RwLock::new(FileCreationMask::default())),
+            Arc::new(Mutex::new(Namespaces::default())),
             ResourceLimits::default(),
             Nice::default(),
             Arc::new(Mutex::new(SigDispositions::default())),
