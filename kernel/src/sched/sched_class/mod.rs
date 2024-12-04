@@ -170,7 +170,7 @@ impl SchedAttr {
 
     /// Retrieves the current scheduling policy of the thread.
     pub fn policy(&self) -> SchedPolicy {
-        *self.policy.lock()
+        *self.policy.disable_irq().lock()
     }
 
     /// Updates the scheduling policy of the thread.
@@ -178,7 +178,7 @@ impl SchedAttr {
     /// Specifically for real-time policies, if the new policy doesn't
     /// specify a base slice factor for RR, the old one will be kept.
     pub fn set_policy(&self, mut policy: SchedPolicy) {
-        let mut guard = self.policy.lock();
+        let mut guard = self.policy.disable_irq().lock();
         match policy {
             SchedPolicy::RealTime { rt_prio, rt_policy } => {
                 self.real_time.update(rt_prio.get(), rt_policy);
@@ -289,7 +289,7 @@ impl PerCpuClassRqSet {
         let attr = thread.sched_attr();
 
         let cloned = thread.clone();
-        match *attr.policy.lock() {
+        match attr.policy() {
             SchedPolicy::Stop => self.stop.enqueue(cloned, flags),
             SchedPolicy::RealTime { .. } => self.real_time.enqueue(cloned, flags),
             SchedPolicy::Fair(_) => self.fair.enqueue(cloned, flags),
@@ -333,7 +333,7 @@ impl LocalRunQueue for PerCpuClassRqSet {
             rt.update();
             let attr = &cur.sched_attr();
 
-            let (current_expired, lookahead) = match &*attr.policy.lock() {
+            let (current_expired, lookahead) = match attr.policy() {
                 SchedPolicy::Stop => (self.stop.update_current(rt, attr, flags), 0),
                 SchedPolicy::RealTime { .. } => (self.real_time.update_current(rt, attr, flags), 1),
                 SchedPolicy::Fair(_) => (self.fair.update_current(rt, attr, flags), 2),
