@@ -8,12 +8,14 @@ pub mod file_handle;
 pub mod file_table;
 pub mod fs_resolver;
 pub mod inode_handle;
+pub mod kernfs;
 pub mod named_pipe;
 pub mod path;
 pub mod pipe;
 pub mod procfs;
 pub mod ramfs;
 pub mod rootfs;
+pub mod sysfs;
 pub mod utils;
 
 use aster_block::BlockDevice;
