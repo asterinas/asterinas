@@ -443,10 +443,17 @@ impl CursorMut<'_, '_> {
         src: &mut Self,
         len: usize,
         op: &mut impl FnMut(&mut PageProperty),
+        need_pt_copy: bool,
     ) {
-        // SAFETY: Operations on user memory spaces are safe if it doesn't
-        // involve dropping any pages.
-        unsafe { self.pt_cursor.copy_from(&mut src.pt_cursor, len, op) }
+        if need_pt_copy {
+            // SAFETY: Operations on user memory spaces are safe if it doesn't
+            // involve dropping any pages.
+            unsafe { self.pt_cursor.copy_from(&mut src.pt_cursor, len, op) }
+        } else {
+            // SAFETY: Operations on user memory spaces are safe if it doesn't
+            // involve dropping any pages.
+            unsafe { self.pt_cursor.copy_from_cow(&mut src.pt_cursor, len, op) }
+        }
     }
 }
 
