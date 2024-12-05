@@ -143,14 +143,17 @@ pub(crate) fn init() {
             if end <= start {
                 continue;
             }
-            // Add global free pages to the frame allocator.
-            allocator.add_frame(start, end);
-            total += (end - start) * PAGE_SIZE;
-            info!(
-                "Found usable region, start:{:x}, end:{:x}",
-                region.base(),
-                region.base() + region.len()
-            );
+            // FIXME: 0x800000 is used for AP boot in Intel TDX environment.
+            if !((start..end).contains(&(0x80000 / PAGE_SIZE))) {
+                // Add global free pages to the frame allocator.
+                allocator.add_frame(start, end);
+                total += (end - start) * PAGE_SIZE;
+                info!(
+                    "Found usable region, start:{:x}, end:{:x}",
+                    region.base(),
+                    region.base() + region.len()
+                );
+            }
         }
     }
     let counting_allocator = CountingFrameAllocator::new(allocator, total);

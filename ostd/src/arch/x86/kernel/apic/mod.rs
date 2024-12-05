@@ -269,18 +269,22 @@ pub enum DestinationShorthand {
     NoShorthand = 0b00,
     #[allow(dead_code)]
     MySelf = 0b01,
+    #[allow(dead_code)]
     AllIncludingSelf = 0b10,
+    #[allow(dead_code)]
     AllExcludingSelf = 0b11,
 }
 
 #[repr(u64)]
 pub enum TriggerMode {
     Edge = 0,
+    #[allow(dead_code)]
     Level = 1,
 }
 
 #[repr(u64)]
 pub enum Level {
+    #[allow(dead_code)]
     Deassert = 0,
     Assert = 1,
 }
@@ -321,8 +325,10 @@ pub enum DeliveryMode {
     Nmi = 0b100,
     /// Delivers an INIT request to the target processor or processors, which causes them to
     /// perform an initialization.
+    #[allow(dead_code)]
     Init = 0b101,
     /// Start-up Interrupt
+    #[allow(dead_code)]
     StartUp = 0b110,
 }
 
