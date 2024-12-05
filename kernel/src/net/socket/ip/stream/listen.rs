@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_bigtcp::{
-    errors::tcp::ListenError, iface::BindPortConfig, socket::UnboundTcpSocket, wire::IpEndpoint,
+    errors::tcp::ListenError,
+    iface::BindPortConfig,
+    socket::{RawTcpSetOption, TcpState, UnboundTcpSocket},
+    wire::IpEndpoint,
 };
 use ostd::sync::PreemptDisabled;
 
@@ -104,6 +107,30 @@ impl ListenStream {
             IoEvents::empty()
         }
     }
+
+    /// Calls `f` to set socket option on raw socket.
+    ///
+    /// This method will call `f` on the bound socket and each backlog socket that is in `Listen` state  .
+    pub(super) fn set_raw_option<R>(
+        &mut self,
+        set_option: impl Fn(&mut dyn RawTcpSetOption) -> R,
+    ) -> R {
+        self.backlog_sockets.write().iter_mut().for_each(|socket| {
+            if socket
+                .bound_socket
+                .raw_with(|raw_tcp_socket| raw_tcp_socket.state() != TcpState::Listen)
+            {
+                return;
+            }
+
+            // If the socket receives SYN after above check,
+            // we will also set keep alive on the socket that is not in `Listen` state.
+            // But such a race doesn't matter, we just let it happen.
+            set_option(&mut socket.bound_socket);
+        });
+
+        set_option(&mut self.bound_socket)
+    }
 }
 
 struct BacklogSocket {
@@ -119,7 +146,15 @@ impl BacklogSocket {
             "the socket is not bound",
         ))?;
 
-        let unbound_socket = Box::new(UnboundTcpSocket::new());
+        let unbound_socket = {
+            let mut unbound = UnboundTcpSocket::new();
+            unbound.set_keep_alive(bound_socket.raw_with(|socket| socket.keep_alive()));
+            unbound.set_nagle_enabled(bound_socket.raw_with(|socket| socket.nagle_enabled()));
+
+            // TODO: Inherit other options that can be set via `setsockopt` from bound socket
+
+            Box::new(unbound)
+        };
         let bound_socket = {
             let iface = bound_socket.iface();
             let bind_port_config = BindPortConfig::new(local_endpoint.port, true);
