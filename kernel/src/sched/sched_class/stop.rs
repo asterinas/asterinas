@@ -7,20 +7,20 @@ use super::*;
 /// This is a singleton class, meaning that only one thread can be in this class at a time.
 /// This is used for the most critical tasks, such as powering off and rebooting.
 pub(super) struct StopClassRq {
-    thread: SpinLock<Option<Arc<Thread>>>,
+    entity: SpinLock<Option<SchedEntity>>,
 }
 
 impl StopClassRq {
     pub fn new() -> Arc<Self> {
         Arc::new(StopClassRq {
-            thread: SpinLock::new(None),
+            entity: SpinLock::new(None),
         })
     }
 }
 
 impl core::fmt::Debug for StopClassRq {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        if self.thread.lock().is_some() {
+        if self.entity.lock().is_some() {
             write!(f, "Stop: occupied")?;
         } else {
             write!(f, "Stop: empty")?;
@@ -30,8 +30,8 @@ impl core::fmt::Debug for StopClassRq {
 }
 
 impl SchedClassRq for Arc<StopClassRq> {
-    fn enqueue(&mut self, thread: Arc<Thread>, _: Option<EnqueueFlags>) {
-        if self.thread.lock().replace(thread).is_some() {
+    fn enqueue(&mut self, entity: SchedEntity, _: Option<EnqueueFlags>) {
+        if self.entity.lock().replace(entity).is_some() {
             panic!("Multiple `stop` threads spawned")
         }
     }
@@ -41,11 +41,11 @@ impl SchedClassRq for Arc<StopClassRq> {
     }
 
     fn is_empty(&mut self) -> bool {
-        self.thread.lock().is_none()
+        self.entity.lock().is_none()
     }
 
-    fn pick_next(&mut self) -> Option<Arc<Thread>> {
-        self.thread.lock().take()
+    fn pick_next(&mut self) -> Option<SchedEntity> {
+        self.entity.lock().take()
     }
 
     fn update_current(&mut self, _: &CurrentRuntime, _: &SchedAttr, _flags: UpdateFlags) -> bool {

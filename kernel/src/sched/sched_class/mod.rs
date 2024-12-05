@@ -41,6 +41,8 @@ use super::{
 };
 use crate::thread::{AsThread, Thread};
 
+type SchedEntity = (Arc<Task>, Arc<Thread>);
+
 #[allow(unused)]
 pub fn init() {
     inject_scheduler(Box::leak(Box::new(ClassScheduler::new())));
@@ -61,7 +63,7 @@ struct PerCpuClassRqSet {
     real_time: real_time::RealTimeClassRq,
     fair: fair::FairClassRq,
     idle: idle::IdleClassRq,
-    current: Option<(Arc<Task>, CurrentRuntime)>,
+    current: Option<(SchedEntity, CurrentRuntime)>,
 }
 
 /// Stores the runtime information of the current task.
@@ -97,7 +99,7 @@ impl CurrentRuntime {
 /// should implement this trait to function as expected.
 trait SchedClassRq: Send + fmt::Debug {
     /// Enqueues a task into the run queue.
-    fn enqueue(&mut self, thread: Arc<Thread>, flags: Option<EnqueueFlags>);
+    fn enqueue(&mut self, entity: SchedEntity, flags: Option<EnqueueFlags>);
 
     /// Returns the number of threads in the run queue.
     fn len(&mut self) -> usize;
@@ -108,7 +110,7 @@ trait SchedClassRq: Send + fmt::Debug {
     }
 
     /// Picks the next task for running.
-    fn pick_next(&mut self) -> Option<Arc<Thread>>;
+    fn pick_next(&mut self) -> Option<SchedEntity>;
 
     /// Update the information of the current task.
     fn update_current(&mut self, rt: &CurrentRuntime, attr: &SchedAttr, flags: UpdateFlags)
@@ -191,7 +193,7 @@ impl SchedAttr {
 
 impl Scheduler for ClassScheduler {
     fn enqueue(&self, task: Arc<Task>, flags: EnqueueFlags) -> Option<CpuId> {
-        let thread = task.as_thread()?;
+        let thread = task.as_thread()?.clone();
 
         let (still_in_rq, cpu) = {
             let selected_cpu_id = self.select_cpu(thread.atomic_cpu_affinity());
@@ -211,7 +213,7 @@ impl Scheduler for ClassScheduler {
             return None;
         }
 
-        rq.enqueue_thread(thread, Some(flags));
+        rq.enqueue_entity((task, thread), Some(flags));
         Some(cpu)
     }
 
@@ -258,23 +260,20 @@ impl ClassScheduler {
 }
 
 impl PerCpuClassRqSet {
-    fn pick_next_thread(&mut self) -> Option<Arc<Thread>> {
+    fn pick_next_entity(&mut self) -> Option<SchedEntity> {
         (self.stop.pick_next())
             .or_else(|| self.real_time.pick_next())
             .or_else(|| self.fair.pick_next())
             .or_else(|| self.idle.pick_next())
     }
 
-    fn enqueue_thread(&mut self, thread: &Arc<Thread>, flags: Option<EnqueueFlags>) {
-        let attr = thread.sched_attr();
-
-        let cloned = thread.clone();
-        match attr.policy() {
-            SchedPolicy::Stop => self.stop.enqueue(cloned, flags),
-            SchedPolicy::RealTime { .. } => self.real_time.enqueue(cloned, flags),
-            SchedPolicy::Fair(_) => self.fair.enqueue(cloned, flags),
-            SchedPolicy::Idle => self.idle.enqueue(cloned, flags),
-        };
+    fn enqueue_entity(&mut self, entity: SchedEntity, flags: Option<EnqueueFlags>) {
+        match entity.1.sched_attr().policy() {
+            SchedPolicy::Stop => self.stop.enqueue(entity, flags),
+            SchedPolicy::RealTime { .. } => self.real_time.enqueue(entity, flags),
+            SchedPolicy::Fair(_) => self.fair.enqueue(entity, flags),
+            SchedPolicy::Idle => self.idle.enqueue(entity, flags),
+        }
     }
 
     fn nr_queued_and_running(&mut self) -> (u32, u32) {
@@ -286,30 +285,20 @@ impl PerCpuClassRqSet {
 
 impl LocalRunQueue for PerCpuClassRqSet {
     fn current(&self) -> Option<&Arc<Task>> {
-        self.current.as_ref().map(|(task, _)| task)
+        self.current.as_ref().map(|((task, _), _)| task)
     }
 
     fn pick_next_current(&mut self) -> Option<&Arc<Task>> {
-        self.pick_next_thread().and_then(|next| {
-            let next_task = next.task();
-            if let Some((old_task, _)) = self
-                .current
-                .replace((next_task.clone(), CurrentRuntime::new()))
-            {
-                if Arc::ptr_eq(&old_task, &next_task) {
-                    return None;
-                }
-                let old = old_task.as_thread().unwrap();
-                self.enqueue_thread(old, None);
+        self.pick_next_entity().and_then(|next| {
+            if let Some((old, _)) = self.current.replace((next, CurrentRuntime::new())) {
+                self.enqueue_entity(old, None);
             }
-            self.current.as_ref().map(|(task, _)| task)
+            self.current.as_ref().map(|((task, _), _)| task)
         })
     }
 
     fn update_current(&mut self, flags: UpdateFlags) -> bool {
-        if let Some((cur_task, rt)) = &mut self.current
-            && let Some(cur) = cur_task.as_thread()
-        {
+        if let Some(((_, cur), rt)) = &mut self.current {
             rt.update();
             let attr = &cur.sched_attr();
 
@@ -330,7 +319,7 @@ impl LocalRunQueue for PerCpuClassRqSet {
     }
 
     fn dequeue_current(&mut self) -> Option<Arc<Task>> {
-        self.current.take().map(|(cur_task, _)| {
+        self.current.take().map(|((cur_task, _), _)| {
             cur_task.schedule_info().cpu.set_to_none();
             cur_task
         })

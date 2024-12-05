@@ -77,7 +77,7 @@ impl RealTimeAttr {
 
 struct PrioArray {
     map: BitArr![for 100],
-    queue: [VecDeque<Arc<Thread>>; 100],
+    queue: [VecDeque<SchedEntity>; 100],
 }
 
 impl core::fmt::Debug for PrioArray {
@@ -88,7 +88,7 @@ impl core::fmt::Debug for PrioArray {
             })
             .field_with("queue", |f| {
                 f.debug_list()
-                    .entries((self.queue.iter().flatten()).map(|thread| thread.sched_attr()))
+                    .entries((self.queue.iter().flatten()).map(|(_, thread)| thread.sched_attr()))
                     .finish()
             })
             .finish()
@@ -96,7 +96,7 @@ impl core::fmt::Debug for PrioArray {
 }
 
 impl PrioArray {
-    fn enqueue(&mut self, thread: Arc<Thread>, prio: u8) {
+    fn enqueue(&mut self, thread: SchedEntity, prio: u8) {
         let queue = &mut self.queue[usize::from(prio)];
         let is_empty = queue.is_empty();
         queue.push_back(thread);
@@ -105,7 +105,7 @@ impl PrioArray {
         }
     }
 
-    fn pop(&mut self) -> Option<Arc<Thread>> {
+    fn pop(&mut self) -> Option<SchedEntity> {
         let mut iter = self.map.iter_ones();
         let prio = iter.next()? as u8;
 
@@ -164,9 +164,9 @@ impl RealTimeClassRq {
 }
 
 impl SchedClassRq for RealTimeClassRq {
-    fn enqueue(&mut self, thread: Arc<Thread>, _: Option<EnqueueFlags>) {
-        let prio = thread.sched_attr().real_time.prio.load(Relaxed);
-        self.inactive_array().enqueue(thread, prio);
+    fn enqueue(&mut self, entity: SchedEntity, _: Option<EnqueueFlags>) {
+        let prio = entity.1.sched_attr().real_time.prio.load(Relaxed);
+        self.inactive_array().enqueue(entity, prio);
     }
 
     fn len(&mut self) -> usize {
@@ -177,7 +177,7 @@ impl SchedClassRq for RealTimeClassRq {
         self.active_array().map.is_empty() && self.inactive_array().map.is_empty()
     }
 
-    fn pick_next(&mut self) -> Option<Arc<Thread>> {
+    fn pick_next(&mut self) -> Option<SchedEntity> {
         self.active_array().pop().or_else(|| {
             self.swap_arrays();
             self.active_array().pop()
