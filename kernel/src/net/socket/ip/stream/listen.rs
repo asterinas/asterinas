@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_bigtcp::{
-    errors::tcp::ListenError, iface::BindPortConfig, socket::UnboundTcpSocket, wire::IpEndpoint,
+    errors::tcp::ListenError,
+    iface::BindPortConfig,
+    socket::{RawTcpSocket, TcpState, UnboundTcpSocket},
+    wire::IpEndpoint,
 };
 use ostd::sync::WriteIrqDisabled;
 
@@ -102,6 +105,38 @@ impl ListenStream {
             IoEvents::empty()
         }
     }
+
+    /// Calls `f` on each backlog socket that is in listen state.
+    ///
+    /// This method will also call `f` on the bound socket.
+    pub(super) fn for_each_listen_backlog(&mut self, f: impl Fn(&mut RawTcpSocket)) {
+        self.bound_socket
+            .raw_with_mut(|raw_tcp_socket| f(raw_tcp_socket));
+        self.backlog_sockets.write().iter_mut().for_each(|socket| {
+            socket.bound_socket.raw_with_mut(|raw_tcp_socket| {
+                if raw_tcp_socket.state() != TcpState::Listen {
+                    return;
+                }
+                f(raw_tcp_socket);
+            });
+        });
+    }
+
+    /// Calls `f` on each backlog socket, no matter which state the socket is in.
+    ///
+    /// This method will also call `f` on the bound socket.
+    pub(super) fn for_each_backlog(&mut self, f: impl Fn(&mut RawTcpSocket)) {
+        self.bound_socket
+            .raw_with_mut(|raw_tcp_socket| f(raw_tcp_socket));
+        self.backlog_sockets
+            .write()
+            .iter_mut()
+            .for_each(|backlog_socket| {
+                backlog_socket
+                    .bound_socket
+                    .raw_with_mut(|raw_tcp_socket| f(raw_tcp_socket))
+            });
+    }
 }
 
 struct BacklogSocket {
@@ -117,7 +152,18 @@ impl BacklogSocket {
             "the socket is not bound",
         ))?;
 
-        let unbound_socket = Box::new(UnboundTcpSocket::new(bound_socket.observer()));
+        let unbound_socket = {
+            let mut unbound = UnboundTcpSocket::new(bound_socket.observer());
+            unbound.raw_with_mut(|raw_tcp_socket| {
+                raw_tcp_socket.set_keep_alive(bound_socket.raw_with(|socket| socket.keep_alive()));
+                raw_tcp_socket
+                    .set_nagle_enabled(bound_socket.raw_with(|socket| socket.nagle_enabled()));
+
+                // TODO: Inherit other options that can be set via `setsockopt` from bound socket
+            });
+
+            Box::new(unbound)
+        };
         let bound_socket = {
             let iface = bound_socket.iface();
             let bind_port_config = BindPortConfig::new(local_endpoint.port, true);
