@@ -17,7 +17,7 @@ pub type RtPrio = RangedU8<1, 99>;
 pub enum RealTimePolicy {
     Fifo,
     RoundRobin {
-        base_slice_factor: Option<NonZero<u64>>,
+        base_slice_factor: Option<NonZero<u32>>,
     },
 }
 
@@ -34,7 +34,8 @@ impl RealTimePolicy {
         match self {
             RealTimePolicy::RoundRobin { base_slice_factor } => {
                 base_slice_clocks()
-                    * base_slice_factor.map_or(DEFAULT_BASE_SLICE_FACTOR, NonZero::get)
+                    * base_slice_factor
+                        .map_or(DEFAULT_BASE_SLICE_FACTOR, |factor| u64::from(factor.get()))
             }
             RealTimePolicy::Fifo => 0,
         }

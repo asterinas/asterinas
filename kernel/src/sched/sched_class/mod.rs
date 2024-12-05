@@ -3,7 +3,13 @@
 #![warn(unused)]
 
 use alloc::{boxed::Box, sync::Arc};
-use core::{fmt, sync::atomic::AtomicU64};
+use core::{
+    fmt,
+    sync::atomic::{
+        AtomicU64,
+        Ordering::{Relaxed, SeqCst},
+    },
+};
 
 use ostd::{
     cpu::{all_cpus, AtomicCpuSet, CpuId, PinCurrentCpu},
@@ -18,6 +24,7 @@ use ostd::{
     trap::disable_local,
 };
 
+mod policy;
 mod time;
 
 mod fair;
@@ -27,8 +34,9 @@ mod stop;
 
 use ostd::arch::read_tsc as sched_clock;
 
+pub use self::{policy::SchedPolicy, real_time::RealTimePolicy};
 use super::{
-    priority::{Nice, Priority, RangedU8},
+    priority::{Nice, RangedU8},
     stats::SchedulerStats,
 };
 use crate::thread::{AsThread, Thread};
@@ -107,43 +115,13 @@ trait SchedClassRq: Send + fmt::Debug {
         -> bool;
 }
 
-pub use real_time::RealTimePolicy;
-
-/// The User-chosen scheduling policy.
-///
-/// The scheduling policies are specified by the user, usually through its priority.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum SchedPolicy {
-    Stop,
-    RealTime {
-        rt_prio: real_time::RtPrio,
-        rt_policy: RealTimePolicy,
-    },
-    Fair(Nice),
-    Idle,
-}
-
-impl From<Priority> for SchedPolicy {
-    fn from(priority: Priority) -> Self {
-        match priority.range().get() {
-            0 => SchedPolicy::Stop,
-            rt @ 1..=99 => SchedPolicy::RealTime {
-                rt_prio: RangedU8::new(rt),
-                rt_policy: Default::default(),
-            },
-            100..=139 => SchedPolicy::Fair(priority.into()),
-            _ => SchedPolicy::Idle,
-        }
-    }
-}
-
 /// The scheduling attribute for a thread.
 ///
 /// This is used to store the scheduling policy and runtime parameters for each
 /// scheduling class.
 #[derive(Debug)]
 pub struct SchedAttr {
-    policy: SpinLock<SchedPolicy>,
+    policy: AtomicU64,
 
     real_time: real_time::RealTimeAttr,
     fair: fair::FairAttr,
@@ -153,7 +131,7 @@ impl SchedAttr {
     /// Constructs a new `SchedAttr` with the given scheduling policy.
     pub fn new(policy: SchedPolicy) -> Self {
         Self {
-            policy: SpinLock::new(policy),
+            policy: SchedPolicy::into_raw(policy).into(),
             real_time: {
                 let (prio, policy) = match policy {
                     SchedPolicy::RealTime { rt_prio, rt_policy } => (rt_prio.get(), rt_policy),
@@ -170,7 +148,7 @@ impl SchedAttr {
 
     /// Retrieves the current scheduling policy of the thread.
     pub fn policy(&self) -> SchedPolicy {
-        *self.policy.disable_irq().lock()
+        SchedPolicy::from_raw(self.policy.load(Relaxed))
     }
 
     /// Updates the scheduling policy of the thread.
@@ -178,34 +156,36 @@ impl SchedAttr {
     /// Specifically for real-time policies, if the new policy doesn't
     /// specify a base slice factor for RR, the old one will be kept.
     pub fn set_policy(&self, mut policy: SchedPolicy) {
-        let mut guard = self.policy.disable_irq().lock();
-        match policy {
-            SchedPolicy::RealTime { rt_prio, rt_policy } => {
-                self.real_time.update(rt_prio.get(), rt_policy);
+        let _ = self.policy.fetch_update(SeqCst, SeqCst, |raw| {
+            let current = SchedPolicy::from_raw(raw);
+            match policy {
+                SchedPolicy::RealTime { rt_prio, rt_policy } => {
+                    self.real_time.update(rt_prio.get(), rt_policy);
+                }
+                SchedPolicy::Fair(nice) => self.fair.update(nice),
+                _ => {}
             }
-            SchedPolicy::Fair(nice) => self.fair.update(nice),
-            _ => {}
-        }
 
-        // Keep the old base slice factor if the new policy doesn't specify one.
-        if let (
-            SchedPolicy::RealTime {
-                rt_policy:
-                    RealTimePolicy::RoundRobin {
-                        base_slice_factor: slot,
-                    },
-                ..
-            },
-            SchedPolicy::RealTime {
-                rt_policy: RealTimePolicy::RoundRobin { base_slice_factor },
-                ..
-            },
-        ) = (*guard, &mut policy)
-        {
-            *base_slice_factor = slot.or(*base_slice_factor);
-        }
+            // Keep the old base slice factor if the new policy doesn't specify one.
+            if let (
+                SchedPolicy::RealTime {
+                    rt_policy:
+                        RealTimePolicy::RoundRobin {
+                            base_slice_factor: slot,
+                        },
+                    ..
+                },
+                SchedPolicy::RealTime {
+                    rt_policy: RealTimePolicy::RoundRobin { base_slice_factor },
+                    ..
+                },
+            ) = (current, &mut policy)
+            {
+                *base_slice_factor = slot.or(*base_slice_factor);
+            }
 
-        *guard = policy;
+            Some(SchedPolicy::into_raw(policy))
+        });
     }
 }
 
