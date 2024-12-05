@@ -61,9 +61,9 @@ impl CapSet {
         self.bits() as u32
     }
 
-    /// Creates a new `CapSet` with the `SYS_ADMIN` capability set, typically for a root user.
+    /// Creates a new `CapSet` with a full capability set, typically for a root user.
     pub const fn new_root() -> Self {
-        CapSet::SYS_ADMIN
+        CapSet::all()
     }
 
     /// The most significant bit in a 64-bit `CapSet` that may be set to represent a Linux capability.
