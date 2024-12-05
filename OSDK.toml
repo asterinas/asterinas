@@ -68,6 +68,7 @@ qemu.args = """\
     -device virtio-serial,romfile= \
     -device virtconsole,chardev=mux \
     -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+    -device virtio-gpu \
     -monitor chardev:mux \
     -serial chardev:mux \
 """

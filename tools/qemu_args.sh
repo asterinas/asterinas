@@ -81,6 +81,7 @@ QEMU_ARGS="\
     -device virtio-keyboard-pci,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
     -device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off$VIRTIO_NET_FEATURES$IOMMU_DEV_EXTRA \
     -device virtio-serial-pci,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
+    -device virtio-gpu\
     -device virtconsole,chardev=mux \
     $IOMMU_EXTRA_ARGS \
 "
