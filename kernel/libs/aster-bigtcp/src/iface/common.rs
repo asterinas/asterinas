@@ -11,7 +11,7 @@ use alloc::{
 };
 
 use keyable_arc::KeyableArc;
-use ostd::sync::{LocalIrqDisabled, PreemptDisabled, SpinLock, SpinLockGuard};
+use ostd::sync::{LocalIrqDisabled, SpinLock, SpinLockGuard};
 use smoltcp::{
     iface::{packet::Packet, Context},
     phy::Device,
@@ -36,7 +36,7 @@ use crate::{
 pub struct IfaceCommon<E: Ext> {
     name: String,
     interface: SpinLock<smoltcp::iface::Interface, LocalIrqDisabled>,
-    used_ports: SpinLock<BTreeMap<u16, usize>, PreemptDisabled>,
+    used_ports: SpinLock<BTreeMap<u16, usize>, LocalIrqDisabled>,
     tcp_sockets: SpinLock<BTreeSet<KeyableArc<BoundTcpSocketInner<E>>>, LocalIrqDisabled>,
     udp_sockets: SpinLock<BTreeSet<KeyableArc<BoundUdpSocketInner<E>>>, LocalIrqDisabled>,
     sched_poll: E::ScheduleNextPoll,
