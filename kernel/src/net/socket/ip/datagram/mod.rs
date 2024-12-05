@@ -18,7 +18,9 @@ use crate::{
     net::socket::{
         options::{Error as SocketError, SocketOption},
         util::{
-            options::SocketOptionSet, send_recv_flags::SendRecvFlags, socket_addr::SocketAddr,
+            options::{SetSocketLevelOption, SocketOptionSet},
+            send_recv_flags::SendRecvFlags,
+            socket_addr::SocketAddr,
             MessageHeader,
         },
         Socket,
@@ -393,6 +395,30 @@ impl Socket for DatagramSocket {
     }
 
     fn set_option(&self, option: &dyn SocketOption) -> Result<()> {
-        self.options.write().socket.set_option(option)
+        let mut options = self.options.write();
+        let mut inner = self.inner.write();
+
+        match options.socket.set_option(option, inner.as_mut()) {
+            Err(e) => Err(e),
+            Ok(need_iface_poll) => {
+                let iface_to_poll = need_iface_poll
+                    .then(|| match inner.as_ref() {
+                        Inner::Unbound(_) => None,
+                        Inner::Bound(bound_datagram) => Some(bound_datagram.iface().clone()),
+                    })
+                    .flatten();
+
+                drop(inner);
+                drop(options);
+
+                if let Some(iface) = iface_to_poll {
+                    iface.poll();
+                }
+
+                Ok(())
+            }
+        }
     }
 }
+
+impl SetSocketLevelOption for Inner {}

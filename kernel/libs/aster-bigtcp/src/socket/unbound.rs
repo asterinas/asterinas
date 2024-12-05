@@ -2,7 +2,7 @@
 
 use alloc::{boxed::Box, vec};
 
-use super::{RawTcpSocket, RawUdpSocket};
+use super::{option::RawTcpSetOption, NeedIfacePoll, RawTcpSocket, RawUdpSocket};
 
 pub struct UnboundSocket<T> {
     socket: Box<T>,
@@ -27,6 +27,17 @@ impl UnboundTcpSocket {
 impl Default for UnboundTcpSocket {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl RawTcpSetOption for UnboundTcpSocket {
+    fn set_keep_alive(&mut self, interval: Option<smoltcp::time::Duration>) -> NeedIfacePoll {
+        self.socket.set_keep_alive(interval);
+        NeedIfacePoll::FALSE
+    }
+
+    fn set_nagle_enabled(&mut self, enabled: bool) {
+        self.socket.set_nagle_enabled(enabled);
     }
 }
 

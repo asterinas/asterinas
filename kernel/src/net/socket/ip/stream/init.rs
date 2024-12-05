@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_bigtcp::{socket::UnboundTcpSocket, wire::IpEndpoint};
+use aster_bigtcp::{
+    socket::{RawTcpSetOption, UnboundTcpSocket},
+    wire::IpEndpoint,
+};
 
 use super::{connecting::ConnectingStream, listen::ListenStream, StreamObserver};
 use crate::{
@@ -107,5 +110,15 @@ impl InitStream {
     pub(super) fn check_io_events(&self) -> IoEvents {
         // Linux adds OUT and HUP events for a newly created socket
         IoEvents::OUT | IoEvents::HUP
+    }
+
+    pub(super) fn set_raw_option<R>(
+        &mut self,
+        set_option: impl Fn(&mut dyn RawTcpSetOption) -> R,
+    ) -> R {
+        match self {
+            InitStream::Unbound(unbound_socket) => set_option(unbound_socket.as_mut()),
+            InitStream::Bound(bound_socket) => set_option(bound_socket),
+        }
     }
 }

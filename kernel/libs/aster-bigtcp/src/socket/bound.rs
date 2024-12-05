@@ -10,12 +10,13 @@ use ostd::sync::{LocalIrqDisabled, RwLock, SpinLock, SpinLockGuard, WriteIrqDisa
 use smoltcp::{
     iface::Context,
     socket::{tcp::State, udp::UdpMetadata, PollAt},
-    time::Instant,
+    time::{Duration, Instant},
     wire::{IpAddress, IpEndpoint, IpRepr, TcpControl, TcpRepr, UdpRepr},
 };
 
 use super::{
     event::{SocketEventObserver, SocketEvents},
+    option::RawTcpSetOption,
     RawTcpSocket, RawUdpSocket, TcpStateCheck,
 };
 use crate::{ext::Ext, iface::Iface};
@@ -251,6 +252,7 @@ pub enum ConnectState {
 pub struct NeedIfacePoll(bool);
 
 impl NeedIfacePoll {
+    pub const TRUE: Self = Self(true);
     pub const FALSE: Self = Self(false);
 }
 
@@ -368,6 +370,25 @@ impl<E: Ext> BoundTcpSocket<E> {
     {
         let socket = self.0.socket.lock();
         f(&socket)
+    }
+}
+
+impl<E: Ext> RawTcpSetOption for BoundTcpSocket<E> {
+    fn set_keep_alive(&mut self, interval: Option<Duration>) -> NeedIfacePoll {
+        let mut socket = self.0.socket.lock();
+        socket.set_keep_alive(interval);
+
+        if interval.is_some() {
+            self.0.update_next_poll_at_ms(PollAt::Now);
+            NeedIfacePoll::TRUE
+        } else {
+            NeedIfacePoll::FALSE
+        }
+    }
+
+    fn set_nagle_enabled(&mut self, enabled: bool) {
+        let mut socket = self.0.socket.lock();
+        socket.set_nagle_enabled(enabled);
     }
 }
 
