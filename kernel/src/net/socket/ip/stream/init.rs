@@ -3,7 +3,7 @@
 use alloc::sync::Weak;
 
 use aster_bigtcp::{
-    socket::{SocketEventObserver, UnboundTcpSocket},
+    socket::{RawTcpSocket, SocketEventObserver, UnboundTcpSocket},
     wire::IpEndpoint,
 };
 
@@ -103,5 +103,20 @@ impl InitStream {
     pub(super) fn check_io_events(&self) -> IoEvents {
         // Linux adds OUT and HUP events for a newly created socket
         IoEvents::OUT | IoEvents::HUP
+    }
+
+    pub(super) fn for_raw_socket(&mut self, f: impl Fn(&mut RawTcpSocket)) {
+        match self {
+            InitStream::Unbound(unbound_socket) => unbound_socket.raw_with_mut(f),
+            InitStream::Bound(bound_socket) => bound_socket.raw_with_mut(f),
+        }
+    }
+
+    pub(super) fn set_keep_alive(&mut self, interval: Option<aster_bigtcp::time::Duration>) {
+        match self {
+            InitStream::Unbound(unbound_socket) => unbound_socket
+                .raw_with_mut(|raw_tcp_socket| raw_tcp_socket.set_keep_alive(interval)),
+            InitStream::Bound(bound_socket) => bound_socket.set_keep_alive(interval),
+        }
     }
 }

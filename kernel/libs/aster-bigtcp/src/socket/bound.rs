@@ -13,7 +13,7 @@ use ostd::sync::{LocalIrqDisabled, RwLock, SpinLock, SpinLockGuard, WriteIrqDisa
 use smoltcp::{
     iface::Context,
     socket::{tcp::State, udp::UdpMetadata, PollAt},
-    time::Instant,
+    time::{Duration, Instant},
     wire::{IpAddress, IpEndpoint, IpRepr, TcpControl, TcpRepr, UdpRepr},
 };
 
@@ -366,15 +366,38 @@ impl<E> BoundTcpSocket<E> {
     }
 
     /// Calls `f` with an immutable reference to the associated [`RawTcpSocket`].
-    //
-    // NOTE: If a mutable reference is required, add a method above that correctly updates the next
-    // polling time.
     pub fn raw_with<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&RawTcpSocket) -> R,
     {
         let socket = self.0.socket.lock();
         f(&socket)
+    }
+
+    /// Invokes `f` with a mutable reference to the associated [`RawTcpSocket`].
+    ///
+    /// Note that this method does _not_ update the interface's next polling time.
+    /// Therefore, operations that necessitate immediate interface polling, such as
+    /// closing a socket or enabling socket keep-alive, should _not_ use this method.
+    /// Instead, such operations should utilize [`BoundTcpSocket::close`] or
+    /// [`BoundTcpSocket::set_keep_alive`].
+    pub fn raw_with_mut<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut RawTcpSocket) -> R,
+    {
+        let mut socket = self.0.socket.lock();
+        f(&mut socket)
+    }
+
+    /// Sets the keep alive interval.
+    ///
+    /// If the `interval` is some, polling the iface is _always_ required after this method succeeds.
+    pub fn set_keep_alive(&self, interval: Option<Duration>) {
+        let mut socket = self.0.socket.lock();
+        socket.set_keep_alive(interval);
+        if interval.is_some() {
+            self.0.update_next_poll_at_ms(PollAt::Now);
+        }
     }
 }
 

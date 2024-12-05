@@ -23,7 +23,9 @@ use crate::{
         socket::{
             options::{Error as SocketError, SocketOption},
             util::{
-                options::SocketOptionSet, send_recv_flags::SendRecvFlags, socket_addr::SocketAddr,
+                options::{SetSocketLevelOption, SocketOptionSet},
+                send_recv_flags::SendRecvFlags,
+                socket_addr::SocketAddr,
                 MessageHeader,
             },
             Socket,
@@ -385,9 +387,14 @@ impl Socket for DatagramSocket {
     }
 
     fn set_option(&self, option: &dyn SocketOption) -> Result<()> {
-        self.options.write().socket.set_option(option)
+        let mut options = self.options.write();
+        let mut inner = self.inner.write();
+
+        options.socket.set_option(option, inner.as_mut())
     }
 }
+
+impl SetSocketLevelOption for Inner {}
 
 impl SocketEventObserver for DatagramSocket {
     fn on_events(&self, events: SocketEvents) {

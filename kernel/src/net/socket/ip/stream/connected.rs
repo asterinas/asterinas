@@ -5,7 +5,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use aster_bigtcp::{
     errors::tcp::{RecvError, SendError},
-    socket::{NeedIfacePoll, SocketEventObserver, TcpStateCheck},
+    socket::{NeedIfacePoll, RawTcpSocket, SocketEventObserver, TcpStateCheck},
     wire::IpEndpoint,
 };
 
@@ -204,5 +204,13 @@ impl ConnectedStream {
 
     pub(super) fn set_observer(&self, observer: Weak<dyn SocketEventObserver>) {
         self.bound_socket.set_observer(observer)
+    }
+
+    pub(super) fn for_raw_socket<R>(&self, f: impl Fn(&mut RawTcpSocket) -> R) -> R {
+        self.bound_socket.raw_with_mut(f)
+    }
+
+    pub(super) fn set_keep_alive(&self, interval: Option<aster_bigtcp::time::Duration>) {
+        self.bound_socket.set_keep_alive(interval);
     }
 }

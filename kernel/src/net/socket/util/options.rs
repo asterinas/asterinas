@@ -9,7 +9,8 @@ use aster_bigtcp::socket::{
 use crate::{
     match_sock_option_mut, match_sock_option_ref,
     net::socket::options::{
-        Error as SocketError, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf, SocketOption,
+        Error as SocketError, KeepAlive, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf,
+        SocketOption,
     },
     prelude::*,
 };
@@ -24,6 +25,7 @@ pub struct SocketOptionSet {
     send_buf: u32,
     recv_buf: u32,
     linger: LingerOption,
+    keep_alive: bool,
 }
 
 impl SocketOptionSet {
@@ -36,6 +38,7 @@ impl SocketOptionSet {
             send_buf: TCP_SEND_BUF_LEN as u32,
             recv_buf: TCP_RECV_BUF_LEN as u32,
             linger: LingerOption::default(),
+            keep_alive: false,
         }
     }
 
@@ -48,6 +51,7 @@ impl SocketOptionSet {
             send_buf: UDP_SEND_PAYLOAD_LEN as u32,
             recv_buf: UDP_RECV_PAYLOAD_LEN as u32,
             linger: LingerOption::default(),
+            keep_alive: false,
         }
     }
 
@@ -87,13 +91,21 @@ impl SocketOptionSet {
                 let linger = self.linger();
                 socket_linger.set(linger);
             },
+            socket_keepalive: KeepAlive => {
+                let keep_alive = self.keep_alive();
+                socket_keepalive.set(keep_alive);
+            },
             _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to get is unknown")
         });
         Ok(())
     }
 
     /// Sets socket-level options.
-    pub fn set_option(&mut self, option: &dyn SocketOption) -> Result<()> {
+    pub fn set_option(
+        &mut self,
+        option: &dyn SocketOption,
+        socket: &mut dyn SetSocketLevelOption,
+    ) -> Result<()> {
         match_sock_option_ref!(option, {
             socket_recv_buf: RecvBuf => {
                 let recv_buf = socket_recv_buf.get().unwrap();
@@ -123,6 +135,11 @@ impl SocketOptionSet {
                 let linger = socket_linger.get().unwrap();
                 self.set_linger(*linger);
             },
+            socket_keepalive: KeepAlive => {
+                let keep_alive = socket_keepalive.get().unwrap();
+                self.set_keep_alive(*keep_alive);
+                socket.set_keep_alive(*keep_alive);
+            },
             _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to be set is unknown")
         });
 
@@ -151,4 +168,10 @@ impl LingerOption {
     pub fn timeout(&self) -> Duration {
         self.timeout
     }
+}
+
+/// A trait used for setting socket level options on actual sockets.
+pub(in crate::net) trait SetSocketLevelOption {
+    /// Sets whether keepalive messages are enabled.
+    fn set_keep_alive(&mut self, _keep_alive: bool) {}
 }
