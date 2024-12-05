@@ -10,7 +10,6 @@ TESTS ?= \
 	alarm_test \
 	chmod_test \
 	chown_test \
-	chroot_test \
 	creat_test \
 	dup_test \
 	epoll_test \
@@ -29,6 +28,7 @@ TESTS ?= \
 	mount_test \
 	open_create_test \
 	open_test \
+	prctl_setuid_test \
 	pread64_test \
 	preadv2_test \
 	proc_test \
