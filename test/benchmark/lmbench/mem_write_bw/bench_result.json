@@ -1,0 +1,16 @@
+{
+    "alert": {
+        "threshold": "125%",
+        "comparison_method": "customBiggerIsBetter"
+    },
+    "result_extraction": {
+        "search_pattern": "536.87",
+        "result_index": 2
+    },
+    "chart": {
+        "title": "[Memory] The bandwidth of writing integers",
+        "description": "bw_mem fwr",
+        "unit": "MB/s",
+        "legend": "Average memory write bandwidth on {system}"
+    }
+}
