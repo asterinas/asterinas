@@ -314,8 +314,9 @@ impl Socket for UnixStreamSocket {
         message_header: MessageHeader,
         flags: SendRecvFlags,
     ) -> Result<usize> {
-        // TODO: Deal with flags
-        debug_assert!(flags.is_all_supported());
+        if !flags.is_all_supported() {
+            todo!("unsupported flags: {:?}", flags);
+        }
 
         let MessageHeader {
             control_message, ..
@@ -334,8 +335,9 @@ impl Socket for UnixStreamSocket {
         writer: &mut dyn MultiWrite,
         flags: SendRecvFlags,
     ) -> Result<(usize, MessageHeader)> {
-        // TODO: Deal with flags
-        debug_assert!(flags.is_all_supported());
+        if !flags.is_all_supported() {
+            todo!("unsupported flags: {:?}", flags);
+        }
 
         let received_bytes = self.recv(writer, flags)?;
 

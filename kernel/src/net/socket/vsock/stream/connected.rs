@@ -72,7 +72,9 @@ impl Connected {
 
     pub fn send(&self, reader: &mut dyn MultiRead, flags: SendRecvFlags) -> Result<usize> {
         let mut connection = self.connection.disable_irq().lock();
-        debug_assert!(flags.is_all_supported());
+        if !flags.is_all_supported() {
+            todo!("unsupported flags: {:?}", flags);
+        }
         let buf_len = reader.sum_lens();
         VSOCK_GLOBAL
             .get()
