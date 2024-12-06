@@ -14,6 +14,8 @@ use crate::{
     transport::{self, VirtioTransport},
 };
 
+use super::config::VirtioGPUConfig;
+
 pub struct GPUDevice {
     control_queue: SpinLock<VirtQueue>,
     cursor_queue: SpinLock<VirtQueue>,
@@ -28,7 +30,8 @@ impl GPUDevice {
     }
 
     pub fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
-        early_println!("Init GPU device");
+        let config_manager = VirtioGPUConfig::new_manager(transport.as_ref());
+        early_println!("virtio_gpu_config = {:?}", config_manager.read_config());
         return Ok(());
 
         // Initalize the control virtqueue
