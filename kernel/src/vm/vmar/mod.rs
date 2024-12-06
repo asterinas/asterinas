@@ -480,8 +480,8 @@ impl<R> Vmar<R> {
 /// Options for creating a new mapping. The mapping is not allowed to overlap
 /// with any child VMARs. And unless specified otherwise, it is not allowed
 /// to overlap with any existing mapping, either.
-pub struct VmarMapOptions<R1, R2> {
-    parent: Vmar<R1>,
+pub struct VmarMapOptions<'a, R1, R2> {
+    parent: &'a Vmar<R1>,
     vmo: Option<Vmo<R2>>,
     perms: VmPerms,
     vmo_offset: usize,
@@ -496,14 +496,14 @@ pub struct VmarMapOptions<R1, R2> {
     handle_page_faults_around: bool,
 }
 
-impl<R1, R2> VmarMapOptions<R1, R2> {
+impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
     /// Creates a default set of options with the VMO and the memory access
     /// permissions.
     ///
     /// The VMO must have access rights that correspond to the memory
     /// access permissions. For example, if `perms` contains `VmPerms::Write`,
     /// then `vmo.rights()` should contain `Rights::WRITE`.
-    pub fn new(parent: Vmar<R1>, size: usize, perms: VmPerms) -> Self {
+    pub fn new(parent: &'a Vmar<R1>, size: usize, perms: VmPerms) -> Self {
         Self {
             parent,
             vmo: None,
