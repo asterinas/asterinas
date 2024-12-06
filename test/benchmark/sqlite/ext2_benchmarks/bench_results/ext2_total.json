@@ -1,0 +1,16 @@
+{
+    "alert": {
+        "threshold": "125%",
+        "comparison_method": "customSmallerIsBetter"
+    },
+    "result_extraction": {
+        "search_pattern": "TOTAL....",
+        "result_index": 2
+    },
+    "chart": {
+        "title": "[Ext2] The total result of sqlite speedtest",
+        "description": "sqlite-speed-test: total",
+        "unit": "second",
+        "legend": "Total speed on {system} (Ext2)"
+    }
+}
