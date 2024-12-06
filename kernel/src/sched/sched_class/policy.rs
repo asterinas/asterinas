@@ -19,6 +19,14 @@ pub enum SchedPolicy {
     Idle,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum SchedPolicyKind {
+    Stop,
+    RealTime,
+    Fair,
+    Idle,
+}
+
 impl From<Priority> for SchedPolicy {
     fn from(priority: Priority) -> Self {
         match priority.range().get() {
@@ -59,12 +67,16 @@ const RT_TYPE_RR: u64 = 1;
 const RT_FACTOR_MASK: u64 = 0xffff_ffff_0000_0000;
 const RT_FACTOR_SHIFT: u32 = 32;
 
+fn get(raw: u64, mask: u64, shift: u32) -> u64 {
+    (raw & mask) >> shift
+}
+
+fn set(value: u64, mask: u64, shift: u32) -> u64 {
+    (value << shift) & mask
+}
+
 impl SchedPolicy {
     pub(super) fn from_raw(raw: u64) -> Self {
-        fn get(raw: u64, mask: u64, shift: u32) -> u64 {
-            (raw & mask) >> shift
-        }
-
         match get(raw, TYPE_MASK, TYPE_SHIFT) {
             TYPE_STOP => SchedPolicy::Stop,
             TYPE_REAL_TIME => SchedPolicy::RealTime {
@@ -90,10 +102,6 @@ impl SchedPolicy {
     }
 
     pub(super) fn into_raw(this: Self) -> u64 {
-        fn set(value: u64, mask: u64, shift: u32) -> u64 {
-            (value << shift) & mask
-        }
-
         match this {
             SchedPolicy::Stop => set(TYPE_STOP, TYPE_MASK, TYPE_SHIFT),
             SchedPolicy::RealTime { rt_prio, rt_policy } => {
@@ -119,6 +127,18 @@ impl SchedPolicy {
                 ty | nice
             }
             SchedPolicy::Idle => set(TYPE_IDLE, TYPE_MASK, TYPE_SHIFT),
+        }
+    }
+}
+
+impl SchedPolicyKind {
+    pub fn from_raw(raw: u64) -> Self {
+        match get(raw, TYPE_MASK, TYPE_SHIFT) {
+            TYPE_STOP => SchedPolicyKind::Stop,
+            TYPE_REAL_TIME => SchedPolicyKind::RealTime,
+            TYPE_FAIR => SchedPolicyKind::Fair,
+            TYPE_IDLE => SchedPolicyKind::Idle,
+            _ => unreachable!(),
         }
     }
 }

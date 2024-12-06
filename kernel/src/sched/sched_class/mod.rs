@@ -34,6 +34,7 @@ mod stop;
 
 use ostd::arch::read_tsc as sched_clock;
 
+use self::policy::SchedPolicyKind;
 pub use self::{policy::SchedPolicy, real_time::RealTimePolicy};
 use super::{
     priority::{Nice, RangedU8},
@@ -153,6 +154,10 @@ impl SchedAttr {
         SchedPolicy::from_raw(self.policy.load(Relaxed))
     }
 
+    fn policy_kind(&self) -> SchedPolicyKind {
+        SchedPolicyKind::from_raw(self.policy.load(Relaxed))
+    }
+
     /// Updates the scheduling policy of the thread.
     ///
     /// Specifically for real-time policies, if the new policy doesn't
@@ -268,11 +273,11 @@ impl PerCpuClassRqSet {
     }
 
     fn enqueue_entity(&mut self, entity: SchedEntity, flags: Option<EnqueueFlags>) {
-        match entity.1.sched_attr().policy() {
-            SchedPolicy::Stop => self.stop.enqueue(entity, flags),
-            SchedPolicy::RealTime { .. } => self.real_time.enqueue(entity, flags),
-            SchedPolicy::Fair(_) => self.fair.enqueue(entity, flags),
-            SchedPolicy::Idle => self.idle.enqueue(entity, flags),
+        match entity.1.sched_attr().policy_kind() {
+            SchedPolicyKind::Stop => self.stop.enqueue(entity, flags),
+            SchedPolicyKind::RealTime => self.real_time.enqueue(entity, flags),
+            SchedPolicyKind::Fair => self.fair.enqueue(entity, flags),
+            SchedPolicyKind::Idle => self.idle.enqueue(entity, flags),
         }
     }
 
@@ -306,11 +311,11 @@ impl LocalRunQueue for PerCpuClassRqSet {
             rt.update();
             let attr = &cur.sched_attr();
 
-            let (current_expired, lookahead) = match attr.policy() {
-                SchedPolicy::Stop => (self.stop.update_current(rt, attr, flags), 0),
-                SchedPolicy::RealTime { .. } => (self.real_time.update_current(rt, attr, flags), 1),
-                SchedPolicy::Fair(_) => (self.fair.update_current(rt, attr, flags), 2),
-                SchedPolicy::Idle => (self.idle.update_current(rt, attr, flags), 3),
+            let (current_expired, lookahead) = match attr.policy_kind() {
+                SchedPolicyKind::Stop => (self.stop.update_current(rt, attr, flags), 0),
+                SchedPolicyKind::RealTime => (self.real_time.update_current(rt, attr, flags), 1),
+                SchedPolicyKind::Fair => (self.fair.update_current(rt, attr, flags), 2),
+                SchedPolicyKind::Idle => (self.idle.update_current(rt, attr, flags), 3),
             };
 
             current_expired
