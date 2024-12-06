@@ -6,10 +6,10 @@ use crate::queue::QueueError;
 
 pub mod block;
 pub mod console;
+pub mod gpu;
 pub mod input;
 pub mod network;
 pub mod socket;
-pub mod gpu;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, TryFromInt)]
 #[repr(u8)]

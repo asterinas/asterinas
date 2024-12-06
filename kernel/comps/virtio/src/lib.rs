@@ -11,15 +11,21 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
-use ostd::early_println;
 use core::hint::spin_loop;
 
 use bitflags::bitflags;
 use component::{init_component, ComponentInitError};
 use device::{
-    block::device::BlockDevice, console::device::ConsoleDevice, gpu::device::GPUDevice, input::device::InputDevice, network::device::NetworkDevice, socket::{self, device::SocketDevice}, VirtioDeviceType
+    block::device::BlockDevice,
+    console::device::ConsoleDevice,
+    gpu::device::GPUDevice,
+    input::device::InputDevice,
+    network::device::NetworkDevice,
+    socket::{self, device::SocketDevice},
+    VirtioDeviceType,
 };
 use log::{error, warn};
+use ostd::early_println;
 use transport::{mmio::VIRTIO_MMIO_DRIVER, pci::VIRTIO_PCI_DRIVER, DeviceStatus};
 
 use crate::transport::VirtioTransport;
