@@ -81,6 +81,7 @@ To add a new benchmark to the Asternias Continuous Integration (CI) system, foll
         "alert_threshold": "125%",
         "alert_tool": "customSmallerIsBetter",
         "search_pattern": "Simple syscall:",
+        "nth_occurrence": "1",
         "result_index": "3",
         "description": "lat_syscall null",
         "title": "[Process] The cost of getpid",
@@ -93,6 +94,7 @@ To add a new benchmark to the Asternias Continuous Integration (CI) system, foll
     - `alert_threshold`: Set the threshold for alerting. If the benchmark result exceeds this threshold, an alert will be triggered. Note that the threshold should usually be greater than 100%. If your results are not stable, set it to a bigger value.
     - `alert_tool`: Choose the validation tool to use. The available options are `customBiggerIsBetter` and `customSmallerIsBetter`. Refer to [this](https://github.com/benchmark-action/github-action-benchmark?tab=readme-ov-file#tool-required) for more details. If using `customBiggerIsBetter`, the alert will be triggered when `prev.value / current.value` exceeds the threshold. If using `customSmallerIsBetter`, the alert will be triggered when `current.value / prev.value` exceeds the threshold.
     - `search_pattern`: Define a regular expression to extract benchmark results from the output using `awk`. This regular expression is designed to match specific patterns in the output, effectively isolating the benchmark results and producing a set of fragments.
+    - `nth_occurrence`: Specify which of the matched lines contains the results we want. The default value is `1`.
     - `result_index`: Specify the index of the result in the extracted output. This field is aligned with `awk`'s action.
     - `description`: Provide a brief description of the benchmark.
     - `title`: Set the title of the benchmark.
