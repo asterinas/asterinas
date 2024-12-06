@@ -68,8 +68,7 @@ impl<R: TRights> Vmar<TRightSet<R>> {
         size: usize,
         perms: VmPerms,
     ) -> Result<VmarMapOptions<TRightSet<R>, Rights>> {
-        let dup_self = self.dup()?;
-        Ok(VmarMapOptions::new(dup_self, size, perms))
+        Ok(VmarMapOptions::new(self, size, perms))
     }
 
     /// Change the permissions of the memory mappings in the specified range.

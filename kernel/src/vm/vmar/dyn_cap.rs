@@ -58,8 +58,7 @@ impl Vmar<Rights> {
     /// which ensures that any updated memory permissions do not go beyond
     /// the access rights of the underlying VMOs.
     pub fn new_map(&self, size: usize, perms: VmPerms) -> Result<VmarMapOptions<Rights, Rights>> {
-        let dup_self = self.dup()?;
-        Ok(VmarMapOptions::new(dup_self, size, perms))
+        Ok(VmarMapOptions::new(self, size, perms))
     }
 
     /// Changes the permissions of the memory mappings in the specified range.
