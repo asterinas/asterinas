@@ -53,10 +53,11 @@ impl Initramfs {
         }
     }
 
-    /// Move the initramfs to the `base` directory and convert the path to a relative path.
+    /// Copy the initramfs to the `base` directory and convert the path to a relative path.
     pub fn copy_to(self, base: impl AsRef<Path>) -> Self {
         let name = self.path.file_name().unwrap();
         let dest = base.as_ref().join(name);
+        // Do not use hard_link/symlink here, otherwise `cargo build` will fail when initramfs is updated.
         fs::copy(&self.path, dest).unwrap();
         Self {
             path: PathBuf::from(name),

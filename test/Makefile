@@ -104,7 +104,7 @@ $(INITRAMFS)/usr/local:
 
 .PHONY: $(INITRAMFS)/test
 $(INITRAMFS)/test:
-	@make --no-print-directory -C apps
+	@$(MAKE) --no-print-directory -C apps
 
 $(INITRAMFS)/benchmark: | $(INITRAMFS)/benchmark/bin
 	@cp -rf $(CUR_DIR)/benchmark/* $@
@@ -129,7 +129,7 @@ $(INITRAMFS_EMPTY_DIRS):
 
 .PHONY: $(SYSCALL_TEST_DIR)
 $(SYSCALL_TEST_DIR):
-	@make --no-print-directory -C syscall_test
+	@$(MAKE) --no-print-directory -C syscall_test
 
 .PHONY: $(INITRAMFS_IMAGE)
 $(INITRAMFS_IMAGE): $(INITRAMFS_FILELIST)
@@ -170,11 +170,11 @@ build: $(INITRAMFS_IMAGE) $(EXT2_IMAGE) $(EXFAT_IMAGE)
 
 .PHONY: format
 format:
-	@make --no-print-directory -C apps format
+	@$(MAKE) --no-print-directory -C apps format
 
 .PHONY: check
 check:
-	@make --no-print-directory -C apps check
+	@$(MAKE) --no-print-directory -C apps check
 
 .PHONY: clean
 clean:

@@ -41,6 +41,13 @@ NETDEV ?= user 		# Possible values are user,tap
 VHOST ?= off
 # End of network settings
 
+# Quick rebuild options.
+# Track kernel dependencies to hint OSDK that `cargo build` is unnecessary;
+# The `TRACK_SRC_CHANGE` option saves only 0.1s, as `cargo build` also tracks dependencies
+# and avoids rebuilds, and OSDK rechecks if a cached bundle is reusable after `cargo build`.
+TRACK_SRC_CHANGE ?= 1
+# End of quick rebuild options.
+
 # ========================= End of Makefile options. ==========================
 
 CARGO_OSDK := ~/.cargo/bin/cargo-osdk
@@ -151,6 +158,10 @@ OSDK_CRATES := \
 	kernel/libs/aster-util \
 	kernel/libs/aster-bigtcp
 
+# OSDK dependencies
+OSDK_SRC_FILES := \
+	$(shell find osdk/Cargo.toml osdk/Cargo.lock osdk/src -type f)
+
 .PHONY: all
 all: build
 
@@ -163,10 +174,30 @@ install_osdk:
 	@# dependencies to `crates.io`.
 	@OSDK_LOCAL_DEV=1 cargo install cargo-osdk --path osdk
 
-# This will install OSDK if it is not already installed
-# To update OSDK, we need to run `install_osdk` manually
-$(CARGO_OSDK):
-	@make --no-print-directory install_osdk
+# This will install and update OSDK automatically
+$(CARGO_OSDK): $(OSDK_SRC_FILES)
+	@$(MAKE) --no-print-directory install_osdk
+
+.PHONY: kernel_src_deps
+ifeq ($(TRACK_SRC_CHANGE),1)
+# Kernel dependencies
+KERNEL_SRC_FILES := \
+	$(shell find Cargo.toml Cargo.lock kernel ostd "(" -path "*/target" -prune ")" -o \
+		"(" -type f -not -name "*.md" -print ")")
+
+# Dummy target to track changes in kernel dependencies
+_KERNEL_DEPS_DUMMY_TARGET := target
+_KERNEL_DEPS_CHANGED := 0
+
+$(_KERNEL_DEPS_DUMMY_TARGET): $(KERNEL_SRC_FILES)
+	@mkdir -p $@ && touch $@
+	$(eval _KERNEL_DEPS_CHANGED := 1)
+
+kernel_src_deps: $(_KERNEL_DEPS_DUMMY_TARGET)
+	$(eval $(if $(filter 0,$(_KERNEL_DEPS_CHANGED)), CARGO_OSDK_ARGS += --source-unchanged))
+else
+kernel_src_deps:
+endif
 
 .PHONY: check_osdk
 check_osdk:
@@ -180,10 +211,13 @@ test_osdk:
 
 .PHONY: initramfs
 initramfs:
-	@make --no-print-directory -C test
+	@$(MAKE) --no-print-directory -C test
+
+.PHONY: initramfs_and_kernel
+initramfs_and_kernel: initramfs kernel_src_deps
 
 .PHONY: build
-build: initramfs $(CARGO_OSDK)
+build: initramfs_and_kernel $(CARGO_OSDK)
 	@cargo osdk build $(CARGO_OSDK_ARGS)
 
 .PHONY: tools
@@ -191,7 +225,7 @@ tools:
 	@cd kernel/libs/comp-sys && cargo install --path cargo-component
 
 .PHONY: run
-run: initramfs $(CARGO_OSDK)
+run: initramfs_and_kernel $(CARGO_OSDK)
 	@cargo osdk run $(CARGO_OSDK_ARGS)
 # Check the running status of auto tests from the QEMU log
 ifeq ($(AUTO_TEST), syscall)
@@ -209,19 +243,19 @@ else ifeq ($(AUTO_TEST), vsock)
 endif
 
 .PHONY: gdb_server
-gdb_server: initramfs $(CARGO_OSDK)
+gdb_server: initramfs_and_kernel $(CARGO_OSDK)
 	@cargo osdk run $(CARGO_OSDK_ARGS) --gdb-server wait-client,vscode,addr=:$(GDB_TCP_PORT)
 
 .PHONY: gdb_client
-gdb_client: $(CARGO_OSDK)
+gdb_client: initramfs_and_kernel $(CARGO_OSDK)
 	@cargo osdk debug $(CARGO_OSDK_ARGS) --remote :$(GDB_TCP_PORT)
 
 .PHONY: profile_server
-profile_server: initramfs $(CARGO_OSDK)
+profile_server: initramfs_and_kernel $(CARGO_OSDK)
 	@cargo osdk run $(CARGO_OSDK_ARGS) --gdb-server addr=:$(GDB_TCP_PORT)
 
 .PHONY: profile_client
-profile_client: $(CARGO_OSDK)
+profile_client: initramfs_and_kernel $(CARGO_OSDK)
 	@cargo osdk profile $(CARGO_OSDK_ARGS) --remote :$(GDB_TCP_PORT) \
 		--samples $(GDB_PROFILE_COUNT) --interval $(GDB_PROFILE_INTERVAL) --format $(GDB_PROFILE_FORMAT)
 
@@ -232,7 +266,7 @@ test:
 	done
 
 .PHONY: ktest
-ktest: initramfs $(CARGO_OSDK)
+ktest: initramfs_and_kernel $(CARGO_OSDK)
 	@# Exclude linux-bzimage-setup from ktest since it's hard to be unit tested
 	@for dir in $(OSDK_CRATES); do \
 		[ $$dir = "ostd/libs/linux-bzimage/setup" ] && continue; \
@@ -255,10 +289,10 @@ docs: $(CARGO_OSDK)
 .PHONY: format
 format:
 	@./tools/format_all.sh
-	@make --no-print-directory -C test format
+	@$(MAKE) --no-print-directory -C test format
 
 .PHONY: check
-check: initramfs $(CARGO_OSDK)
+check: initramfs_and_kernel $(CARGO_OSDK)
 	@./tools/format_all.sh --check   	# Check Rust format issues
 	@# Check if STD_CRATES and NOSTD_CRATES combined is the same as all workspace members
 	@sed -n '/^\[workspace\]/,/^\[.*\]/{/members = \[/,/\]/p}' Cargo.toml | \
@@ -277,7 +311,7 @@ check: initramfs $(CARGO_OSDK)
 		echo "Checking $$dir"; \
 		(cd $$dir && cargo osdk clippy -- -- -D warnings) || exit 1; \
 	done
-	@make --no-print-directory -C test check
+	@$(MAKE) --no-print-directory -C test check
 	@typos
 
 .PHONY: clean
@@ -289,6 +323,6 @@ clean:
 	@echo "Cleaning up documentation target files"
 	@cd docs && mdbook clean
 	@echo "Cleaning up test target files"
-	@make --no-print-directory -C test clean
+	@$(MAKE) --no-print-directory -C test clean
 	@echo "Uninstalling OSDK"
 	@rm -f $(CARGO_OSDK)
