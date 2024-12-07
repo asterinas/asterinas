@@ -1,0 +1,10 @@
+{
+    "benchmarks": [
+        "request_latency_smp1",
+        "request_latency_smp8",
+        "rps_smp1",
+        "rps_smp8",
+        "wakeup_latency_smp1",
+        "wakeup_latency_smp8"
+    ]
+}

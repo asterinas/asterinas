@@ -18,16 +18,17 @@ source "${BENCHMARK_DIR}/common/prepare_host.sh"
 parse_results() {
     local benchmark="$1"
     local search_pattern="$2"
-    local result_index="$3"
-    local linux_output="$4"
-    local aster_output="$5"
-    local result_template="$6"
-    local result_file="$7"
+    local nth_occurrence="$3"
+    local result_index="$4"
+    local linux_output="$5"
+    local aster_output="$6"
+    local result_template="$7"
+    local result_file="$8"
 
     # Extract numeric result from a specific field in the matching line
     local linux_result aster_result
-    linux_result=$(awk "/${search_pattern}/ {result=\$$result_index} END {print result}" "${linux_output}" | tr -d '\r' | sed 's/[^0-9.]*//g')
-    aster_result=$(awk "/${search_pattern}/ {result=\$$result_index} END {print result}" "${aster_output}" | tr -d '\r' | sed 's/[^0-9.]*//g')
+    linux_result=$(awk "/${search_pattern}/ {print \$$result_index}" "${linux_output}" | tr -d '\r' | sed 's/[^0-9.]*//g' | sed -n "${nth_occurrence}p")
+    aster_result=$(awk "/${search_pattern}/ {print \$$result_index}" "${aster_output}" | tr -d '\r' | sed 's/[^0-9.]*//g' | sed -n "${nth_occurrence}p")
     
     if [ -z "${linux_result}" ] || [ -z "${aster_result}" ]; then
         echo "Error: Failed to parse the results from the benchmark output" >&2
@@ -46,8 +47,10 @@ run_benchmark() {
     local benchmark="$1"
     local benchmark_type="$2"
     local aster_scheme="$3"
-    local search_pattern="$4"
-    local result_index="$5"
+    local smp="$4"
+    local search_pattern="$5"
+    local nth_occurrence="$6"
+    local result_index="$7"
 
     local linux_output="${BENCHMARK_DIR}/linux_output.txt"
     local aster_output="${BENCHMARK_DIR}/aster_output.txt"
@@ -63,10 +66,10 @@ run_benchmark() {
     if [ -n "$aster_scheme" ] && [ "$aster_scheme" != "null" ]; then
         aster_scheme_cmd="SCHEME=${aster_scheme}"
     fi
-    local asterinas_cmd="make run BENCHMARK=${benchmark} ${aster_scheme_cmd} ENABLE_KVM=1 RELEASE_LTO=1 NETDEV=tap VHOST=on 2>&1"
+    local asterinas_cmd="make run BENCHMARK=${benchmark} ${aster_scheme_cmd} ENABLE_KVM=1 RELEASE_LTO=1 NETDEV=tap SMP=${smp} VHOST=on 2>&1"
     local linux_cmd="/usr/local/qemu/bin/qemu-system-x86_64 \
         --no-reboot \
-        -smp 1 \
+        -smp ${smp} \
         -m 8G \
         -machine q35,kernel-irqchip=split \
         -cpu Icelake-Server,-pcid,+x2apic \
@@ -104,7 +107,7 @@ run_benchmark() {
     esac
 
     echo "Parsing results..."
-    parse_results "$benchmark" "$search_pattern" "$result_index" "$linux_output" "$aster_output" "$result_template" "$result_file"
+    parse_results "$benchmark" "$search_pattern" "$nth_occurrence" "$result_index" "$linux_output" "$aster_output" "$result_template" "$result_file"
 
     echo "Cleaning up..."
     rm -f "${linux_output}"
@@ -120,6 +123,11 @@ else
     BENCHMARK_TYPE="$2"
 fi
 ASTER_SCHEME="$3"
+if [ -z "$4" ] || [ "$4" = "null" ]; then
+    SMP="1"
+else
+    SMP="$4"
+fi
 
 echo "Running benchmark ${BENCHMARK}..."
 pwd
@@ -129,8 +137,12 @@ if [ ! -d "$BENCHMARK_DIR/$BENCHMARK" ]; then
 fi
 
 search_pattern=$(jq -r '.search_pattern' "$BENCHMARK_DIR/$BENCHMARK/config.json")
+nth_occurrence=$(jq -r '.nth_occurrence' "$BENCHMARK_DIR/$BENCHMARK/config.json")
+if [ -z "$nth_occurrence" ] || [ "$nth_occurrence" = "null" ]; then
+    nth_occurrence="1"
+fi
 result_index=$(jq -r '.result_index' "$BENCHMARK_DIR/$BENCHMARK/config.json")
 
-run_benchmark "$BENCHMARK" "$BENCHMARK_TYPE" "$ASTER_SCHEME" "$search_pattern" "$result_index"
+run_benchmark "$BENCHMARK" "$BENCHMARK_TYPE" "$ASTER_SCHEME" "$SMP" "$search_pattern" "$nth_occurrence" "$result_index"
 
 echo "Benchmark completed successfully."

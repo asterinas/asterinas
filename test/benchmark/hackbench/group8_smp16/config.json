@@ -1,0 +1,10 @@
+{
+    "alert_threshold": "120%",
+    "alert_tool": "customSmallerIsBetter",
+    "search_pattern": "Time:",
+    "result_index": "2",
+    "description": "hackbench -g 8 -l 1000 -p -T",
+    "title": "HackBench running in threaded mode with 8 groups using pipe and 16 CPUs",
+    "benchmark_type": "guest_only",
+    "smp": "16"
+}

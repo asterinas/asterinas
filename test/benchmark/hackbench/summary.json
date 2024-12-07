@@ -1,0 +1,7 @@
+{
+    "benchmarks": [
+        "group8_smp1",
+        "group8_smp8",
+        "group8_smp16"
+    ]
+}

@@ -1,0 +1,14 @@
+[
+    {
+        "name": "p50 RPS of schbench on Linux",
+        "unit": "requests",
+        "value": 0,
+        "extra": "linux_result"
+    },
+    {
+        "name": "p50 RPS of schbench on Asterinas",
+        "unit": "requests",
+        "value": 0,
+        "extra": "aster_result"
+    }
+]

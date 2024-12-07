@@ -81,17 +81,20 @@ To add a new benchmark to the Asternias Continuous Integration (CI) system, foll
         "alert_threshold": "125%",
         "alert_tool": "customSmallerIsBetter",
         "search_pattern": "Simple syscall:",
+        "nth_occurrence": "1",
         "result_index": "3",
         "description": "lat_syscall null",
         "title": "[Process] The cost of getpid",
         "benchmark_type": "host_guest",
-        "aster_scheme": "iommu"
+        "aster_scheme": "iommu",
+        "smp": "1"
       } 
      ```
      
     - `alert_threshold`: Set the threshold for alerting. If the benchmark result exceeds this threshold, an alert will be triggered. Note that the threshold should usually be greater than 100%. If your results are not stable, set it to a bigger value.
     - `alert_tool`: Choose the validation tool to use. The available options are `customBiggerIsBetter` and `customSmallerIsBetter`. Refer to [this](https://github.com/benchmark-action/github-action-benchmark?tab=readme-ov-file#tool-required) for more details. If using `customBiggerIsBetter`, the alert will be triggered when `prev.value / current.value` exceeds the threshold. If using `customSmallerIsBetter`, the alert will be triggered when `current.value / prev.value` exceeds the threshold.
     - `search_pattern`: Define a regular expression to extract benchmark results from the output using `awk`. This regular expression is designed to match specific patterns in the output, effectively isolating the benchmark results and producing a set of fragments.
+    - `nth_occurrence`: Specify which of the matched lines contains the results we want. The default value is `1`.
     - `result_index`: Specify the index of the result in the extracted output. This field is aligned with `awk`'s action.
     - `description`: Provide a brief description of the benchmark.
     - `title`: Set the title of the benchmark.
@@ -99,6 +102,7 @@ To add a new benchmark to the Asternias Continuous Integration (CI) system, foll
       - `guest_only`: Use this option when the benchmark is intended solely for the guest environment.
       - `host_guest`: Choose this option when the benchmark involves both the host and guest environments. When using this option, you will need to define your own `host.sh` and `bench_runner.sh` scripts to handle the host-side operations and benchmark execution.
     - `aster_scheme`: Specify the scheme used in Asterinas. The optional values, e.g., `iommu`, are aligned with the `SCHEME` parameter in `asterinas/Makefile`.
+    - `smp`: Specify the number of CPUs used in benchmark. The default value is `1`.
 
     For example, if the benchmark output is "Syscall average latency: 1000 ns", the `search_pattern` is "Syscall average latency:", and the `result_index` is "4". `awk` will extract "1000" as the benchmark result. See the `awk` [manual](https://www.gnu.org/software/gawk/manual/gawk.html#Getting-Started) for more information.
 
