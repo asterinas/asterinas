@@ -165,12 +165,11 @@ impl Bundle {
 
         // Compare the initramfs.
         let initramfs_err =
-            "The initramfs in the bundle is different from the one in the run configuration"
-                .to_owned();
+            "The initramfs in the bundle is older than the one in the run configuration".to_owned();
         match (&self.manifest.initramfs, &config_action.boot.initramfs) {
             (Some(initramfs), Some(initramfs_path)) => {
                 let config_initramfs = Initramfs::new(initramfs_path);
-                if initramfs.sha256sum() != config_initramfs.sha256sum() {
+                if initramfs.modified_time() < config_initramfs.modified_time() {
                     return Err(initramfs_err);
                 }
             }

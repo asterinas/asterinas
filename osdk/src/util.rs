@@ -266,7 +266,9 @@ pub fn trace_panic_from_log(qemu_log: File, bin_path: PathBuf) {
 /// - `Err(error)` if an error occurred during the copy operation.
 pub fn fast_copy<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<u64> {
     if fs::hard_link(&from, &to).is_err() {
+        info!("Copying {:?} -> {:?}", from.as_ref(), to.as_ref());
         return fs::copy(from, to);
     }
+    info!("Linking {:?} -> {:?}", from.as_ref(), to.as_ref());
     Ok(0)
 }
