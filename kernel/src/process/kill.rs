@@ -123,7 +123,7 @@ fn kill_process(process: &Process, signal: Option<UserSignal>, ctx: &Context) ->
     let sender_ids = current_thread_sender_ids(signum.as_ref(), ctx);
 
     let mut permitted_thread = None;
-    for task in tasks.iter() {
+    for task in tasks.as_slice() {
         let posix_thread = task.as_posix_thread().unwrap();
 
         // First check permission

@@ -15,6 +15,8 @@ clone3/clone_no_exit_signal
 clone3/clone_process
 cpu_affinity/cpu_affinity
 execve/execve
+exit/exit_code
+exit/exit_procfs
 eventfd2/eventfd2
 fork/fork
 fork_c/fork
