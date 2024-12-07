@@ -51,12 +51,11 @@ SECTIONS
     }
     PROVIDE(__ap_boot_end = __ap_boot_start + SIZEOF(.ap_boot));
 
-    . = BSP_BOOT_LMA + KERNEL_VMA + SIZEOF(.bsp_boot) + SIZEOF(.ap_boot);
-    . = ALIGN(4096);
-
 # --------------------------------------------------------------------------- #
 # Here are the rest of the virtual memory sections which can be relocated.    #
 # --------------------------------------------------------------------------- #
+    . = BSP_BOOT_LMA + KERNEL_VMA + SIZEOF(.bsp_boot) + SIZEOF(.ap_boot);
+    . = ALIGN(4096);
 
     .text                   : AT(ADDR(.text) - KERNEL_VMA) {
         *(.text .text.*)
@@ -95,22 +94,14 @@ SECTIONS
         PROVIDE(__GNU_EH_FRAME_HDR = .);
         KEEP(*(.eh_frame_hdr .eh_frame_hdr.*))
     }
-    . = ALIGN(8);
     .eh_frame               : AT(ADDR(.eh_frame) - KERNEL_VMA) {
         PROVIDE(__eh_frame = .);
         KEEP(*(.eh_frame .eh_frame.*))
     }
+    .gcc_except_table       : AT(ADDR(.gcc_except_table) - KERNEL_VMA) {
+        *(.gcc_except_table .gcc_except_table.*)
+    }
 
-    .gcc_except_table       : AT(ADDR(.gcc_except_table) - KERNEL_VMA) { *(.gcc_except_table .gcc_except_table.*) }
-
-    .data.rel.ro            : AT(ADDR(.data.rel.ro) - KERNEL_VMA) { *(.data.rel.ro .data.rel.ro.*) }
-    .dynamic                : AT(ADDR(.dynamic) - KERNEL_VMA) { *(.dynamic) }
-    
-    .got                    : AT(ADDR(.got) - KERNEL_VMA)  { *(.got .got.*) }
-    .got.plt                : AT(ADDR(.got.plt) - KERNEL_VMA)  { *(.got.plt .got.plt.*) }
-
-    . = DATA_SEGMENT_RELRO_END(0, .);
-    
     .data                   : AT(ADDR(.data) - KERNEL_VMA) { *(.data .data.*) }
 
     # The CPU local data storage. It is readable and writable for the bootstrap
@@ -134,11 +125,6 @@ SECTIONS
         *(.bss .bss.*) *(COMMON)
         __bss_end = .;
     }
-
-    .tdata                  : AT(ADDR(.tdata) - KERNEL_VMA) { *(.tdata .tdata.*) }
-    .tbss                   : AT(ADDR(.tbss) - KERNEL_VMA) { *(.tbss .tbss.*) }
-
-    . = DATA_SEGMENT_END(.);
 
     __kernel_end = .;
 }
