@@ -54,6 +54,8 @@ RUN git clone https://github.com/asterinas/lmbench.git
 RUN wget https://www.iozone.org/src/current/iozone3_506.tar
 RUN tar -x -f iozone3_506.tar
 RUN git clone -b fio-3.37 https://github.com/axboe/fio.git
+RUN git clone https://git.kernel.org/pub/scm/linux/kernel/git/clrkwllms/rt-tests.git
+RUN git clone https://git.kernel.org/pub/scm/linux/kernel/git/mason/schbench.git
 
 # Build sysbench
 WORKDIR /root/sysbench-1.0.20
@@ -98,6 +100,16 @@ RUN ./configure --disable-shm --prefix=/usr/local/benchmark/fio \
     && make -j \ 
     && make install
 
+# Build hackbench
+WORKDIR /root/rt-tests/src/hackbench
+RUN make hackbench \
+    && cp hackbench /usr/local/benchmark
+
+# Build schbench
+WORKDIR /root/schbench
+RUN make \
+    && cp schbench /usr/local/benchmark/
+
 # Clear cached files
 WORKDIR /root
 RUN rm -rf sysbench-1.0.20 \ 
@@ -107,7 +119,9 @@ RUN rm -rf sysbench-1.0.20 \
     byte-unixbench \
     iozone3_506.tar \
     iozone3_506 \
-    fio
+    fio \
+    hackbench \
+    schbench
 
 #= Install applications =======================================================
 
