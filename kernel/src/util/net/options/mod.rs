@@ -53,11 +53,12 @@
 
 use crate::{net::socket::options::SocketOption, prelude::*};
 
+mod ip;
 mod socket;
 mod tcp;
 mod utils;
 
-use self::{socket::new_socket_option, tcp::new_tcp_option};
+use self::{ip::new_ip_option, socket::new_socket_option, tcp::new_tcp_option};
 
 pub trait RawSocketOption: SocketOption {
     fn read_from_user(&mut self, addr: Vaddr, max_len: u32) -> Result<()>;
@@ -134,6 +135,7 @@ pub fn new_raw_socket_option(
     match level {
         CSocketOptionLevel::SOL_SOCKET => new_socket_option(name),
         CSocketOptionLevel::SOL_TCP => new_tcp_option(name),
+        CSocketOptionLevel::SOL_IP => new_ip_option(name),
         _ => todo!(),
     }
 }

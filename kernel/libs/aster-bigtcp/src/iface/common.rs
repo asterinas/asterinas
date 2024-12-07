@@ -14,7 +14,7 @@ use ostd::sync::{LocalIrqDisabled, PreemptDisabled, SpinLock, SpinLockGuard};
 use smoltcp::{
     iface::{packet::Packet, Context},
     phy::Device,
-    wire::{Ipv4Address, Ipv4Packet},
+    wire::{IpProtocol, Ipv4Address, Ipv4Packet},
 };
 
 use super::{
@@ -26,8 +26,8 @@ use super::{
 use crate::{
     errors::BindError,
     socket::{
-        BoundTcpSocket, BoundTcpSocketInner, BoundUdpSocket, BoundUdpSocketInner, UnboundTcpSocket,
-        UnboundUdpSocket,
+        BoundRawSocket, BoundRawSocketInner, BoundTcpSocket, BoundTcpSocketInner, BoundUdpSocket,
+        BoundUdpSocketInner, UnboundRawSocket, UnboundTcpSocket, UnboundUdpSocket,
     },
 };
 
@@ -36,6 +36,7 @@ pub struct IfaceCommon<E> {
     used_ports: SpinLock<BTreeMap<u16, usize>, PreemptDisabled>,
     tcp_sockets: SpinLock<BTreeSet<KeyableArc<BoundTcpSocketInner<E>>>, LocalIrqDisabled>,
     udp_sockets: SpinLock<BTreeSet<KeyableArc<BoundUdpSocketInner<E>>>, LocalIrqDisabled>,
+    raw_sockets: SpinLock<BTreeSet<KeyableArc<BoundRawSocketInner<E>>>, LocalIrqDisabled>,
     ext: E,
 }
 
@@ -46,6 +47,7 @@ impl<E> IfaceCommon<E> {
             used_ports: SpinLock::new(BTreeMap::new()),
             tcp_sockets: SpinLock::new(BTreeSet::new()),
             udp_sockets: SpinLock::new(BTreeSet::new()),
+            raw_sockets: SpinLock::new(BTreeSet::new()),
             ext,
         }
     }
@@ -82,7 +84,7 @@ impl<E> IfaceCommon<E> {
         };
 
         let (raw_socket, observer) = socket.into_raw();
-        let bound_socket = BoundTcpSocket::new(iface, port, raw_socket, observer);
+        let bound_socket = BoundTcpSocket::new(iface, port, raw_socket, observer, IpProtocol::Tcp);
 
         let inserted = self
             .tcp_sockets
@@ -105,7 +107,7 @@ impl<E> IfaceCommon<E> {
         };
 
         let (raw_socket, observer) = socket.into_raw();
-        let bound_socket = BoundUdpSocket::new(iface, port, raw_socket, observer);
+        let bound_socket = BoundUdpSocket::new(iface, port, raw_socket, observer, IpProtocol::Udp);
 
         let inserted = self
             .udp_sockets
@@ -113,6 +115,29 @@ impl<E> IfaceCommon<E> {
             .insert(KeyableArc::from(bound_socket.inner().clone()));
         assert!(inserted);
 
+        Ok(bound_socket)
+    }
+
+    pub(super) fn bind_raw(
+        &self,
+        iface: Arc<dyn Iface<E>>,
+        socket: Box<UnboundRawSocket>,
+        config: BindPortConfig,
+        ip_protocol: IpProtocol,
+    ) -> core::result::Result<BoundRawSocket<E>, (BindError, Box<UnboundRawSocket>)> {
+        let port = match self.bind_port(config) {
+            Ok(port) => port,
+            Err(err) => return Err((err, socket)),
+        };
+
+        let (raw_socket, observer) = socket.into_raw();
+        let bound_socket = BoundRawSocket::new(iface, port, raw_socket, observer, ip_protocol);
+
+        let inserted = self
+            .raw_sockets
+            .lock()
+            .insert(KeyableArc::from(bound_socket.inner().clone()));
+        assert!(inserted);
         Ok(bound_socket)
     }
 
@@ -181,6 +206,15 @@ impl<E> IfaceCommon<E> {
         self.release_port(keyable_socket.port());
     }
 
+    pub(crate) fn remove_raw_socket(&self, socket: &Arc<BoundRawSocketInner<E>>) {
+        let keyable_socket = KeyableArc::from(socket.clone());
+
+        let removed = self.raw_sockets.lock().remove(&keyable_socket);
+        assert!(removed);
+
+        // Raw socket is no need to release port
+    }
+
     /// Releases the port so that it can be used again (if it is not being reused).
     fn release_port(&self, port: u16) {
         let mut used_ports = self.used_ports.lock();
@@ -214,8 +248,14 @@ impl<E> IfaceCommon<E> {
 
         let mut tcp_sockets = self.tcp_sockets.lock();
         let udp_sockets = self.udp_sockets.lock();
+        let raw_sockets = self.raw_sockets.lock();
 
-        let mut context = PollContext::new(interface.context(), &tcp_sockets, &udp_sockets);
+        let mut context = PollContext::new(
+            interface.context(),
+            &tcp_sockets,
+            &udp_sockets,
+            &raw_sockets,
+        );
         context.poll_ingress(device, process_phy, &mut dispatch_phy);
         context.poll_egress(device, dispatch_phy);
 
@@ -225,6 +265,11 @@ impl<E> IfaceCommon<E> {
             }
         });
         udp_sockets.iter().for_each(|socket| {
+            if socket.has_events() {
+                socket.on_events();
+            }
+        });
+        raw_sockets.iter().for_each(|socket| {
             if socket.has_events() {
                 socket.on_events();
             }

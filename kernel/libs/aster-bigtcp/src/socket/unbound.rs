@@ -2,22 +2,25 @@
 
 use alloc::{boxed::Box, sync::Weak, vec};
 
-use super::{event::SocketEventObserver, RawTcpSocket, RawUdpSocket};
+use smoltcp::wire::{IpProtocol, IpVersion};
 
+use super::{event::SocketEventObserver, NativeRawSocket, NativeTcpSocket, NativeUdpSocket};
+#[derive(Debug, Clone)]
 pub struct UnboundSocket<T> {
-    socket: Box<T>,
-    observer: Weak<dyn SocketEventObserver>,
+    pub socket: Box<T>,
+    pub observer: Weak<dyn SocketEventObserver>,
 }
 
-pub type UnboundTcpSocket = UnboundSocket<RawTcpSocket>;
-pub type UnboundUdpSocket = UnboundSocket<RawUdpSocket>;
+pub type UnboundTcpSocket = UnboundSocket<NativeTcpSocket>;
+pub type UnboundUdpSocket = UnboundSocket<NativeUdpSocket>;
+pub type UnboundRawSocket = UnboundSocket<NativeRawSocket>;
 
 impl UnboundTcpSocket {
     pub fn new(observer: Weak<dyn SocketEventObserver>) -> Self {
         let raw_tcp_socket = {
             let rx_buffer = smoltcp::socket::tcp::SocketBuffer::new(vec![0u8; TCP_RECV_BUF_LEN]);
             let tx_buffer = smoltcp::socket::tcp::SocketBuffer::new(vec![0u8; TCP_SEND_BUF_LEN]);
-            RawTcpSocket::new(rx_buffer, tx_buffer)
+            NativeTcpSocket::new(rx_buffer, tx_buffer)
         };
         Self {
             socket: Box::new(raw_tcp_socket),
@@ -38,10 +41,31 @@ impl UnboundUdpSocket {
                 vec![metadata; UDP_METADATA_LEN],
                 vec![0u8; UDP_SEND_PAYLOAD_LEN],
             );
-            RawUdpSocket::new(rx_buffer, tx_buffer)
+            NativeUdpSocket::new(rx_buffer, tx_buffer)
         };
         Self {
             socket: Box::new(raw_udp_socket),
+            observer,
+        }
+    }
+}
+
+impl UnboundRawSocket {
+    pub fn new(observer: Weak<dyn SocketEventObserver>, protocol: IpProtocol) -> Self {
+        let raw_socket = {
+            let metadata = smoltcp::socket::raw::PacketMetadata::EMPTY;
+            let rx_buffer = smoltcp::socket::raw::PacketBuffer::new(
+                vec![metadata; RAW_METADATA_LEN],
+                vec![0u8; RAW_RECV_PAYLOAD_LEN],
+            );
+            let tx_buffer = smoltcp::socket::raw::PacketBuffer::new(
+                vec![metadata; RAW_METADATA_LEN],
+                vec![0u8; RAW_SEND_PAYLOAD_LEN],
+            );
+            NativeRawSocket::new(IpVersion::Ipv4, protocol, rx_buffer, tx_buffer)
+        };
+        Self {
+            socket: Box::new(raw_socket),
             observer,
         }
     }
@@ -73,3 +97,8 @@ pub const TCP_SEND_BUF_LEN: usize = 65536 * 2;
 pub const UDP_SEND_PAYLOAD_LEN: usize = 65536;
 pub const UDP_RECV_PAYLOAD_LEN: usize = 65536;
 const UDP_METADATA_LEN: usize = 256;
+
+// RAW socket buffer sizes:
+pub const RAW_SEND_PAYLOAD_LEN: usize = 65536;
+pub const RAW_RECV_PAYLOAD_LEN: usize = 65536;
+const RAW_METADATA_LEN: usize = 256;

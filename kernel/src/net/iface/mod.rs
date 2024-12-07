@@ -11,3 +11,4 @@ pub use poll::lazy_init;
 pub type Iface = dyn aster_bigtcp::iface::Iface<ext::IfaceExt>;
 pub type BoundTcpSocket = aster_bigtcp::socket::BoundTcpSocket<ext::IfaceExt>;
 pub type BoundUdpSocket = aster_bigtcp::socket::BoundUdpSocket<ext::IfaceExt>;
+pub type BoundRawSocket = aster_bigtcp::socket::BoundRawSocket<ext::IfaceExt>;
