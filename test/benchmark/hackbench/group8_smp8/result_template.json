@@ -1,0 +1,14 @@
+[
+    {
+        "name": "Turnaround time of hackbench on Linux",
+        "unit": "s",
+        "value": 0,
+        "extra": "linux_result"
+    },
+    {
+        "name": "Turnaround time of hackbench on Asterinas",
+        "unit": "s",
+        "value": 0,
+        "extra": "aster_result"
+    }
+]

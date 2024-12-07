@@ -1,0 +1,14 @@
+[
+    {
+        "name": "p99 wakeup latency of schbench on Linux",
+        "unit": "us",
+        "value": 0,
+        "extra": "linux_result"
+    },
+    {
+        "name": "p99 wakeup latency of schbench on Asterinas",
+        "unit": "us",
+        "value": 0,
+        "extra": "aster_result"
+    }
+]

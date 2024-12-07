@@ -1,0 +1,11 @@
+{
+    "alert_threshold": "120%",
+    "alert_tool": "customSmallerIsBetter",
+    "search_pattern": "\\*",
+    "nth_occurrence": "28",
+    "result_index": "3",
+    "description": "schbench -F 256 -n 5 -r 90",
+    "title": "SchBench p99 wakeup latency while max-loading all the 8 cpus",
+    "benchmark_type": "guest_only",
+    "smp": "8"
+} 
