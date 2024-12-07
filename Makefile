@@ -41,6 +41,18 @@ NETDEV ?= user 		# Possible values are user,tap
 VHOST ?= off
 # End of network settings
 
+# Quick rebuild options.
+# Place the option here to inform users that they can tune the log level of OSDK.
+OSDK_LOG_LEVEL ?= warn
+# OFFLINE=1: Disable network access (user should ensure `make fetch` is run to fetch dependencies).
+OFFLINE ?= 0
+ifneq ($(filter fetch, $(MAKECMDGOALS)),)
+undefine OFFLINE
+# Use a nonexistent test name to skip all tests, as the goal is to cache dependencies during build.
+CARGO_OSDK_TESTNAME := nonexistent-test
+endif
+# End of quick rebuild options.
+
 # ========================= End of Makefile options. ==========================
 
 CARGO_OSDK := ~/.cargo/bin/cargo-osdk
@@ -110,6 +122,11 @@ ifeq ($(ENABLE_KVM), 1)
 CARGO_OSDK_ARGS += --qemu-args="-accel kvm"
 endif
 
+ifeq ($(OFFLINE), 1)
+CARGO_OFFLINE_OPTION := --offline
+CARGO_OSDK_ARGS += $(CARGO_OFFLINE_OPTION)
+endif
+
 # Pass make variables to all subdirectory makes
 export
 
@@ -134,7 +151,9 @@ NON_OSDK_CRATES := \
 
 # In contrast, OSDK crates depend on OSTD (or being `ostd` itself)
 # and need to be built or tested with OSDK.
-OSDK_CRATES := \
+# Use `?=` to allow users to override crates and run ktest without needing to
+# `cd` into a directory.
+OSDK_CRATES ?= \
 	osdk/test-kernel \
 	ostd \
 	ostd/libs/linux-bzimage/setup \
@@ -161,7 +180,7 @@ install_osdk:
 	@# The `OSDK_LOCAL_DEV` environment variable is used for local development
 	@# without the need to publish the changes of OSDK's self-hosted
 	@# dependencies to `crates.io`.
-	@OSDK_LOCAL_DEV=1 cargo install cargo-osdk --path osdk
+	@OSDK_LOCAL_DEV=1 cargo $(CARGO_OFFLINE_OPTION) install cargo-osdk --path osdk
 
 # This will install OSDK if it is not already installed
 # To update OSDK, we need to run `install_osdk` manually
@@ -185,6 +204,14 @@ initramfs:
 .PHONY: build
 build: initramfs $(CARGO_OSDK)
 	@cargo osdk build $(CARGO_OSDK_ARGS)
+
+# Build all architecture targets and tests to download and cache dependencies
+# Failures are ignored; the goal is to download dependencies
+.PHONY: fetch
+fetch: $(CARGO_OSDK)
+	-@cargo osdk fetch
+	-@$(MAKE) test
+	-@$(MAKE) ktest
 
 .PHONY: tools
 tools:
@@ -228,7 +255,7 @@ profile_client: $(CARGO_OSDK)
 .PHONY: test
 test:
 	@for dir in $(NON_OSDK_CRATES); do \
-		(cd $$dir && cargo test) || exit 1; \
+		(cd $$dir && cargo $(CARGO_OFFLINE_OPTION) test) || exit 1; \
 	done
 
 .PHONY: ktest
@@ -236,7 +263,7 @@ ktest: initramfs $(CARGO_OSDK)
 	@# Exclude linux-bzimage-setup from ktest since it's hard to be unit tested
 	@for dir in $(OSDK_CRATES); do \
 		[ $$dir = "ostd/libs/linux-bzimage/setup" ] && continue; \
-		(cd $$dir && OVMF=off cargo osdk test) || exit 1; \
+		(cd $$dir && OVMF=off cargo osdk test $(CARGO_OFFLINE_OPTION) $(CARGO_OSDK_TESTNAME)) || exit 1; \
 		tail --lines 10 qemu.log | grep -q "^\\[ktest runner\\] All crates tested." \
 			|| (echo "Test failed" && exit 1); \
 	done
