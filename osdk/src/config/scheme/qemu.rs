@@ -34,7 +34,7 @@ pub struct QemuScheme {
     pub path: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, Serialize, Deserialize)]
 pub struct Qemu {
     pub args: String,
     /// This finalized config has a unorthodox `Option` because
@@ -52,6 +52,20 @@ impl Default for Qemu {
             bootdev_append_options: None,
             path: PathBuf::from(get_default_arch().system_qemu()),
         }
+    }
+}
+
+// Implements `PartialEq` for `Qemu`, comparing `args` while ignoring numeric characters
+// (random ports), and comparing other fields (`bootdev_append_options` and `path`) normally.
+impl PartialEq for Qemu {
+    fn eq(&self, other: &Self) -> bool {
+        fn strip_numbers(input: &str) -> String {
+            input.chars().filter(|c| !c.is_numeric()).collect()
+        }
+
+        strip_numbers(&self.args) == strip_numbers(&other.args)
+            && self.bootdev_append_options == other.bootdev_append_options
+            && self.path == other.path
     }
 }
 

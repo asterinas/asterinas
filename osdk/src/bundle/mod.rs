@@ -165,12 +165,11 @@ impl Bundle {
 
         // Compare the initramfs.
         let initramfs_err =
-            "The initramfs in the bundle is different from the one in the run configuration"
-                .to_owned();
+            "The initramfs in the bundle is older than the one in the run configuration".to_owned();
         match (&self.manifest.initramfs, &config_action.boot.initramfs) {
             (Some(initramfs), Some(initramfs_path)) => {
                 let config_initramfs = Initramfs::new(initramfs_path);
-                if initramfs.sha256sum() != config_initramfs.sha256sum() {
+                if initramfs.modified_time() < config_initramfs.modified_time() {
                     return Err(initramfs_err);
                 }
             }
@@ -291,7 +290,7 @@ impl Bundle {
         if self.manifest.vm_image.is_some() {
             panic!("vm_image already exists");
         }
-        self.manifest.vm_image = Some(vm_image.move_to(&self.path));
+        self.manifest.vm_image = Some(vm_image.copy_to(&self.path));
         self.write_manifest_to_fs();
     }
 
@@ -300,7 +299,7 @@ impl Bundle {
         if self.manifest.aster_bin.is_some() {
             panic!("aster_bin already exists");
         }
-        self.manifest.aster_bin = Some(aster_bin.move_to(&self.path));
+        self.manifest.aster_bin = Some(aster_bin.copy_to(&self.path));
         self.write_manifest_to_fs();
     }
 

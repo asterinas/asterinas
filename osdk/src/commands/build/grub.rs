@@ -16,7 +16,7 @@ use crate::{
         scheme::{ActionChoice, BootProtocol},
         Config,
     },
-    util::get_current_crate_info,
+    util::{fast_copy, get_current_crate_info},
 };
 
 pub fn create_bootdev_image(
@@ -42,7 +42,7 @@ pub fn create_bootdev_image(
 
     // Copy the initramfs to the boot directory.
     if let Some(init_path) = &initramfs_path {
-        fs::copy(
+        fast_copy(
             init_path.as_ref().to_str().unwrap(),
             iso_root.join("boot").join("initramfs.cpio.gz"),
         )
@@ -63,7 +63,7 @@ pub fn create_bootdev_image(
         _ => {
             // Copy the kernel image to the boot directory.
             let target_path = iso_root.join("boot").join(&target_name);
-            fs::copy(aster_bin.path(), target_path).unwrap();
+            fast_copy(aster_bin.path(), target_path).unwrap();
         }
     };
 
