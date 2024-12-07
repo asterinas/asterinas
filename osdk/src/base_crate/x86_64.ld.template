@@ -30,11 +30,11 @@ PHDRS
     # segment to prevent this from happening.
     header PT_LOAD FLAGS(4);      # R__
 
-    # Boot segments.
+    # Boot segments. Addresses are physical.
     bsp_boot PT_LOAD FLAGS(7);    # RWE
     ap_boot PT_LOAD FLAGS(7);     # RWE
 
-    # Normal segments.
+    # Normal segments. Addresses are virtual.
     text PT_LOAD FLAGS(5);        # R_E
     rodata PT_LOAD FLAGS(4);      # R__
     data PT_LOAD FLAGS(6);        # RW_
@@ -57,22 +57,21 @@ SECTIONS
     } : header
 
 # --------------------------------------------------------------------------- #
-# These are 2 boot sections that need specific physical addresses. But they   #
-# should use virtual symbols.                                                 #
+# These are 2 boot sections that need specific physical addresses.            #
 # --------------------------------------------------------------------------- #
-    . = BSP_BOOT_LMA + KERNEL_VMA;
+    . = BSP_BOOT_LMA;
 
     .bsp_boot               : AT(BSP_BOOT_LMA) {
         KEEP(*(.bsp_boot .bsp_boot.*))
         . = ALIGN(4096);
     } : bsp_boot
 
-    . = AP_EXEC_MA + KERNEL_VMA;
+    . = AP_EXEC_MA;
 
     .ap_boot                : AT(BSP_BOOT_LMA + SIZEOF(.bsp_boot)) {
-        __ap_boot_start = . - AP_EXEC_MA + BSP_BOOT_LMA + SIZEOF(.bsp_boot);
+        __ap_boot_start = BSP_BOOT_LMA + SIZEOF(.bsp_boot) + KERNEL_VMA;
         KEEP(*(.ap_boot .ap_boot.*))
-        __ap_boot_end = . - AP_EXEC_MA + BSP_BOOT_LMA + SIZEOF(.bsp_boot);
+        __ap_boot_end = __ap_boot_start + (. - AP_EXEC_MA);
         . = ALIGN(4096);
     } : ap_boot
 

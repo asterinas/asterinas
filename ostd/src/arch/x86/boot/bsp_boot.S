@@ -31,7 +31,7 @@ __linux32_boot:
     cld
 
     // Set the kernel call stack.
-    mov esp, offset boot_stack_top - KERNEL_VMA
+    mov esp, offset boot_stack_top
 
     push 0      // upper 32-bits
     push esi    // boot_params ptr
@@ -47,7 +47,7 @@ __linux32_boot:
 .global __linux64_boot_tag
 __linux64_boot_tag:
     // Set the kernel call stack.
-    lea rsp, [boot_stack_top - KERNEL_VMA]
+    lea rsp, [boot_stack_top]
     push rsi    // boot_params ptr from the loader
     push ENTRYTYPE_LINUX_64
 
@@ -62,7 +62,7 @@ __multiboot_boot:
     cld
 
     // Set the kernel call stack.
-    mov esp, offset boot_stack_top - KERNEL_VMA
+    mov esp, offset boot_stack_top
 
     push 0      // Upper 32-bits.
     push eax    // multiboot magic ptr
@@ -87,11 +87,11 @@ initial_boot_setup:
     // Prepare for far return. We use a far return as a fence after setting GDT.
     mov eax, 24
     push eax
-    lea edx, [protected_mode - KERNEL_VMA]
+    lea edx, [protected_mode]
     push edx
 
     // Switch to our own temporary GDT.
-    lgdt [boot_gdtr - KERNEL_VMA]
+    lgdt [boot_gdtr]
     retf
 
 protected_mode:
@@ -105,8 +105,8 @@ protected_mode:
 page_table_setup:
     // Zero out the page table.
     mov al, 0x00
-    lea edi, [boot_page_table_start - KERNEL_VMA]
-    lea ecx, [boot_page_table_end - KERNEL_VMA]
+    lea edi, [boot_page_table_start]
+    lea ecx, [boot_page_table_end]
     sub ecx, edi
     cld
     rep stosb
@@ -121,8 +121,8 @@ PTE_GLOBAL      = (1 << 8)
     //       0x00000000_40000000 ~ 0x00000000_7fffffff
     //       0x00000000_80000000 ~ 0x00000000_bfffffff
     //       0x00000000_c0000000 ~ 0x00000000_ffffffff
-    lea edi, [boot_pml4 - KERNEL_VMA]
-    lea eax, [boot_pdpt - KERNEL_VMA + (PTE_PRESENT | PTE_WRITE)]
+    lea edi, [boot_pml4]
+    lea eax, [boot_pdpt + (PTE_PRESENT | PTE_WRITE)]
     mov dword ptr [edi], eax
     mov dword ptr [edi + 4], 0
 
@@ -131,56 +131,56 @@ PTE_GLOBAL      = (1 << 8)
     //       0xffff8000_80000000 ~ 0xffff8000_bfffffff
     //       0xffff8000_c0000000 ~ 0xffff8000_ffffffff
     //       0xffff8008_00000000 ~ 0xffff8008_3fffffff
-    lea edi, [boot_pml4 - KERNEL_VMA + 0x100 * 8]
-    lea eax, [boot_pdpt - KERNEL_VMA + (PTE_PRESENT | PTE_WRITE)]
+    lea edi, [boot_pml4 + 0x100 * 8]
+    lea eax, [boot_pdpt + (PTE_PRESENT | PTE_WRITE)]
     mov dword ptr [edi], eax
     mov dword ptr [edi + 4], 0
 
     // PML4: 0xffffffff_80000000 ~ 0xffffffff_bfffffff
     //       0xffffffff_c0000000 ~ 0xffffffff_ffffffff
-    lea edi, [boot_pml4 - KERNEL_VMA + 0x1ff * 8]
-    lea eax, [boot_pdpt - KERNEL_VMA + (PTE_PRESENT | PTE_WRITE)]
+    lea edi, [boot_pml4 + 0x1ff * 8]
+    lea eax, [boot_pdpt + (PTE_PRESENT | PTE_WRITE)]
     mov dword ptr [edi], eax
     mov dword ptr [edi + 4], 0
 
     // PDPT: 0x00000000_00000000 ~ 0x00000000_3fffffff
-    lea edi, [boot_pdpt - KERNEL_VMA]
-    lea eax, [boot_pd_0g_1g - KERNEL_VMA + (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL)]
+    lea edi, [boot_pdpt]
+    lea eax, [boot_pd_0g_1g + (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL)]
     mov dword ptr [edi], eax
     mov dword ptr [edi + 4], 0
 
     // PDPT: 0x00000000_40000000 ~ 0x00000000_7fffffff
-    lea edi, [boot_pdpt - KERNEL_VMA + 0x1 * 8]
-    lea eax, [boot_pd_1g_2g - KERNEL_VMA + (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL)]
+    lea edi, [boot_pdpt + 0x1 * 8]
+    lea eax, [boot_pd_1g_2g + (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL)]
     mov dword ptr [edi], eax
     mov dword ptr [edi + 4], 0
 
     // PDPT: 0x00000000_80000000 ~ 0x00000000_bfffffff
-    lea edi, [boot_pdpt - KERNEL_VMA + 0x2 * 8]
-    lea eax, [boot_pd_2g_3g - KERNEL_VMA + (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL)]
+    lea edi, [boot_pdpt + 0x2 * 8]
+    lea eax, [boot_pd_2g_3g + (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL)]
     mov dword ptr [edi], eax
     mov dword ptr [edi + 4], 0
 
     // PDPT: 0x00000000_c0000000 ~ 0x00000000_ffffffff
-    lea edi, [boot_pdpt - KERNEL_VMA + 0x3 * 8]
-    lea eax, [boot_pd_3g_4g - KERNEL_VMA + (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL)]
+    lea edi, [boot_pdpt + 0x3 * 8]
+    lea eax, [boot_pd_3g_4g + (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL)]
     mov dword ptr [edi], eax
     mov dword ptr [edi + 4], 0
 
     // PDPT: 0xffffffff_80000000 ~ 0xffffffff_bfffffff
-    lea edi, [boot_pdpt - KERNEL_VMA + 0x1fe * 8]
-    lea eax, [boot_pd_0g_1g - KERNEL_VMA + (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL)]
+    lea edi, [boot_pdpt + 0x1fe * 8]
+    lea eax, [boot_pd_0g_1g + (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL)]
     mov dword ptr [edi], eax
     mov dword ptr [edi + 4], 0
 
     // PDPT: 0xffffffff_c0000000 ~ 0xffffffff_ffffffff
-    lea edi, [boot_pdpt - KERNEL_VMA + 0x1ff * 8]
-    lea eax, [boot_pd_1g_2g - KERNEL_VMA + (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL)]
+    lea edi, [boot_pdpt + 0x1ff * 8]
+    lea eax, [boot_pd_1g_2g + (PTE_PRESENT | PTE_WRITE | PTE_GLOBAL)]
     mov dword ptr [edi], eax
     mov dword ptr [edi + 4], 0
 
     // Page Directory: map to low 1 GiB * 4 space
-    lea edi, [boot_pd - KERNEL_VMA]
+    lea edi, [boot_pd]
     mov eax, PTE_PRESENT | PTE_WRITE | PTE_GLOBAL | PTE_HUGE
     mov ecx, 512 * 4 // (of entries in PD) * (number of PD)
 write_pd_entry:
@@ -199,7 +199,7 @@ enable_long_mode:
     mov cr4, eax
 
     // Set the page table address.
-    lea eax, [boot_pml4 - KERNEL_VMA]
+    lea eax, [boot_pml4]
     mov cr3, eax
 
     // Enable long mode.
@@ -211,7 +211,7 @@ enable_long_mode:
     // Prepare for far return.
     mov  eax, 8
     push eax
-    lea  edx, [long_mode_in_low_address - KERNEL_VMA]
+    lea  edx, [long_mode_in_low_address]
     push edx
 
     // Enable paging.
@@ -227,7 +227,7 @@ enable_long_mode:
 .global boot_gdtr
 boot_gdtr:
     .word gdt_end - gdt - 1
-    .quad gdt - KERNEL_VMA
+    .quad gdt
 
 .align 16
 gdt:
@@ -274,13 +274,12 @@ long_mode_in_low_address:
     // Update RSP/RIP to use the virtual address.
     mov rbx, KERNEL_VMA
     or  rsp, rbx
-    lea rax, [long_mode - KERNEL_VMA]
-    or  rax, rbx
+    mov rax, offset long_mode
     jmp rax
 
-//  From here, we're in the .text section: we no longer use physical address.
-.code64
+// From here, we're in the .text section: we no longer use physical address.
 .text
+.code64
 long_mode:
     // Clear .bss section.
     mov al, 0x00
