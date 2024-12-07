@@ -17,6 +17,29 @@ AP_EXEC_MA = 0x8000;
 # The virtual memory offset of the kernel mapping.
 KERNEL_VMA = 0xffffffff80000000;
 
+PHDRS
+{
+    # Make sure that the start address of each segment is aligned with a page
+    # boundary. GRUB is known to misbehave (at least under certain conditions)
+    # if the segments are not aligned to pages.
+    # See also: https://github.com/asterinas/asterinas/pull/1689
+
+    # Headers.
+    # This may not be necessary, but llvm-strip will move sections that are not
+    # part of a segment to the end of the file. We need to have headers as a
+    # segment to prevent this from happening.
+    header PT_LOAD FLAGS(4);      # R__
+
+    # Boot segments.
+    bsp_boot PT_LOAD FLAGS(7);    # RWE
+    ap_boot PT_LOAD FLAGS(7);     # RWE
+
+    # Normal segments.
+    text PT_LOAD FLAGS(5);        # R_E
+    rodata PT_LOAD FLAGS(4);      # R__
+    data PT_LOAD FLAGS(6);        # RW_
+}
+
 SECTIONS
 {
 # --------------------------------------------------------------------------- #
@@ -28,10 +51,10 @@ SECTIONS
 
     .multiboot_header       : AT(ADDR(.multiboot_header) - KERNEL_VMA) {
         KEEP(*(.multiboot_header))
-    }
+    } : header
     .multiboot2_header      : AT(ADDR(.multiboot2_header) - KERNEL_VMA) {
         KEEP(*(.multiboot2_header))
-    }
+    } : header
 
 # --------------------------------------------------------------------------- #
 # These are 2 boot sections that need specific physical addresses. But they   #
@@ -41,26 +64,29 @@ SECTIONS
 
     .bsp_boot               : AT(BSP_BOOT_LMA) {
         KEEP(*(.bsp_boot .bsp_boot.*))
-    }
+        . = ALIGN(4096);
+    } : bsp_boot
 
     . = AP_EXEC_MA + KERNEL_VMA;
 
-    PROVIDE(__ap_boot_start = BSP_BOOT_LMA + SIZEOF(.bsp_boot) + KERNEL_VMA);
     .ap_boot                : AT(BSP_BOOT_LMA + SIZEOF(.bsp_boot)) {
+        __ap_boot_start = . - AP_EXEC_MA + BSP_BOOT_LMA + SIZEOF(.bsp_boot);
         KEEP(*(.ap_boot .ap_boot.*))
-    }
-    PROVIDE(__ap_boot_end = __ap_boot_start + SIZEOF(.ap_boot));
+        __ap_boot_end = . - AP_EXEC_MA + BSP_BOOT_LMA + SIZEOF(.bsp_boot);
+        . = ALIGN(4096);
+    } : ap_boot
 
 # --------------------------------------------------------------------------- #
 # Here are the rest of the virtual memory sections which can be relocated.    #
 # --------------------------------------------------------------------------- #
     . = BSP_BOOT_LMA + KERNEL_VMA + SIZEOF(.bsp_boot) + SIZEOF(.ap_boot);
-    . = ALIGN(4096);
 
     .text                   : AT(ADDR(.text) - KERNEL_VMA) {
         *(.text .text.*)
         PROVIDE(__etext = .);
-    }
+    } : text
+
+    . = ALIGN(4096);
 
     # The section to store exception table (ExTable).
     # This table is used for recovering from specific exception handling faults
@@ -70,7 +96,7 @@ SECTIONS
         __ex_table = .;
         KEEP(*(SORT(.ex_table)))
         __ex_table_end = .;
-    }
+    } : rodata
 
     # The list of unit test function symbols that should be executed while
     # doing `cargo osdk test`.
@@ -78,7 +104,7 @@ SECTIONS
         __ktest_array = .;
         KEEP(*(SORT(.ktest_array)))
         __ktest_array_end = .;
-    }
+    } : rodata
 
     # A list of initialization function symbols. They will be called on OSTD
     # initialization.
@@ -86,23 +112,29 @@ SECTIONS
         __sinit_array = .;
         KEEP(*(SORT(.init_array .init_array.*)))
         __einit_array = .;
-    }
+    } : rodata
 
-    .rodata                 : AT(ADDR(.rodata) - KERNEL_VMA) { *(.rodata .rodata.*) }
+    .rodata                 : AT(ADDR(.rodata) - KERNEL_VMA) {
+        *(.rodata .rodata.*)
+    } : rodata
 
     .eh_frame_hdr           : AT(ADDR(.eh_frame_hdr) - KERNEL_VMA) {
         PROVIDE(__GNU_EH_FRAME_HDR = .);
         KEEP(*(.eh_frame_hdr .eh_frame_hdr.*))
-    }
+    } : rodata
     .eh_frame               : AT(ADDR(.eh_frame) - KERNEL_VMA) {
         PROVIDE(__eh_frame = .);
         KEEP(*(.eh_frame .eh_frame.*))
-    }
+    } : rodata
     .gcc_except_table       : AT(ADDR(.gcc_except_table) - KERNEL_VMA) {
         *(.gcc_except_table .gcc_except_table.*)
-    }
+    } : rodata
 
-    .data                   : AT(ADDR(.data) - KERNEL_VMA) { *(.data .data.*) }
+    . = ALIGN(4096);
+
+    .data                   : AT(ADDR(.data) - KERNEL_VMA) {
+        *(.data .data.*)
+    } : data
 
     # The CPU local data storage. It is readable and writable for the bootstrap
     # processor, while it would be copied to other dynamically allocated memory
@@ -114,17 +146,17 @@ SECTIONS
     # when trap from ring3 to ring0, CPU can switch stack correctly.
     .cpu_local_tss          : AT(ADDR(.cpu_local_tss) - KERNEL_VMA) {
         *(.cpu_local_tss)
-    }
+    } : data
     .cpu_local              : AT(ADDR(.cpu_local) - KERNEL_VMA) {
         KEEP(*(SORT(.cpu_local)))
-    }
+    } : data
     __cpu_local_end = .;
 
     .bss                    : AT(ADDR(.bss) - KERNEL_VMA) {
         __bss = .;
         *(.bss .bss.*) *(COMMON)
         __bss_end = .;
-    }
+    } : data
 
     __kernel_end = .;
 }
