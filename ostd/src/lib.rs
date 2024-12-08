@@ -48,7 +48,9 @@ pub mod user;
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-pub use ostd_macros::{main, panic_handler};
+pub use ostd_macros::{
+    default_page_allocator_init_fn, main, page_allocator_init_fn, panic_handler,
+};
 pub use ostd_pod::Pod;
 
 pub use self::{error::Error, prelude::Result};
@@ -82,8 +84,10 @@ unsafe fn init() {
     boot::init();
     logger::init();
 
+    mm::page::allocator::bootstrap_init();
+    let meta_vec = mm::init_page_meta();
     mm::page::allocator::init();
-    mm::kspace::init_kernel_page_table(mm::init_page_meta());
+    mm::kspace::init_kernel_page_table(meta_vec);
     mm::dma::init();
 
     arch::init_on_bsp();
@@ -156,6 +160,9 @@ pub mod ktest {
     //! It is rather discouraged to use the definitions here directly. The
     //! `ktest` attribute is sufficient for all normal use cases.
 
-    pub use ostd_macros::{test_main as main, test_panic_handler as panic_handler};
+    pub use ostd_macros::{
+        default_page_allocator_init_fn as page_allocator_init_fn, test_main as main,
+        test_panic_handler as panic_handler,
+    };
     pub use ostd_test::*;
 }
