@@ -6,6 +6,7 @@
 
 #![no_std]
 #![forbid(unsafe_code)]
+#![feature(linkage)]
 
 extern crate alloc;
 
@@ -20,6 +21,7 @@ use ostd::{
     ktest::{
         get_ktest_crate_whitelist, get_ktest_test_whitelist, KtestError, KtestItem, KtestIter,
     },
+    mm::page::allocator::PAGE_ALLOCATOR,
 };
 use owo_colors::OwoColorize;
 use path::{KtestPath, SuffixTrie};
@@ -34,6 +36,7 @@ pub enum KtestResult {
 #[ostd::ktest::main]
 fn main() {
     use ostd::task::TaskOptions;
+    init_page_allocator();
 
     let test_task = move || {
         use alloc::string::ToString;
@@ -74,6 +77,13 @@ fn panic_handler(info: &core::panic::PanicInfo) -> ! {
     early_println!("An uncaught panic occurred: {:#?}", throw_info);
 
     ostd::prelude::abort();
+}
+
+fn init_page_allocator() {
+    PAGE_ALLOCATOR
+        .get()
+        .unwrap()
+        .inject(aster_page_allocator::init())
 }
 
 /// Run all the tests registered by `#[ktest]` in the `.ktest_array` section.

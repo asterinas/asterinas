@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #![feature(proc_macro_span)]
+#![feature(linkage)]
 
 use proc_macro::TokenStream;
 use quote::quote;

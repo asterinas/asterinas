@@ -6,13 +6,13 @@ use super::*;
 use crate::{
     mm::{
         kspace::LINEAR_MAPPING_BASE_VADDR,
-        page::{allocator, meta::FrameMeta},
+        page,
+        page::{allocator, allocator::PageAlloc, meta::FrameMeta},
         page_prop::{CachePolicy, PageFlags},
         MAX_USERSPACE_VADDR,
     },
     prelude::*,
 };
-
 const PAGE_SIZE: usize = 4096;
 
 #[ktest]
@@ -31,7 +31,7 @@ fn test_tracked_map_unmap() {
     let pt = PageTable::<UserMode>::empty();
 
     let from = PAGE_SIZE..PAGE_SIZE * 2;
-    let page = allocator::alloc_single(FrameMeta::default()).unwrap();
+    let page = allocator::alloc_single(PAGE_SIZE, FrameMeta::default()).unwrap();
     let start_paddr = page.paddr();
     let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
     unsafe { pt.cursor_mut(&from).unwrap().map(page.into(), prop) };
@@ -87,7 +87,7 @@ fn test_user_copy_on_write() {
 
     let pt = PageTable::<UserMode>::empty();
     let from = PAGE_SIZE..PAGE_SIZE * 2;
-    let page = allocator::alloc_single(FrameMeta::default()).unwrap();
+    let page = allocator::alloc_single(PAGE_SIZE, FrameMeta::default()).unwrap();
     let start_paddr = page.paddr();
     let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
     unsafe { pt.cursor_mut(&from).unwrap().map(page.clone().into(), prop) };
@@ -172,7 +172,18 @@ fn test_base_protect_query() {
 
     let from_ppn = 1..1000;
     let from = PAGE_SIZE * from_ppn.start..PAGE_SIZE * from_ppn.end;
-    let to = allocator::alloc(999 * PAGE_SIZE, |_| FrameMeta::default()).unwrap();
+    let to = {
+        let mut v = Vec::new();
+        let cur_allocator = allocator::PAGE_ALLOCATOR.get().unwrap();
+        for _ in 0..999 {
+            let page = cur_allocator
+                .alloc_page(PAGE_SIZE)
+                .map(|p| page::Page::from_free(p, FrameMeta::default()))
+                .unwrap();
+            v.push(page);
+        }
+        v
+    };
     let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
     unsafe {
         let mut cursor = pt.cursor_mut(&from).unwrap();

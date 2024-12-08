@@ -82,11 +82,16 @@ unsafe fn init() {
     boot::init();
     logger::init();
 
-    mm::page::allocator::init();
-    mm::kspace::init_kernel_page_table(mm::init_page_meta());
-    mm::dma::init();
+    mm::page::allocator::bootstrap_init();
+    let meta_vec = mm::init_page_meta();
+    mm::kspace::init_kernel_page_table(meta_vec);
 
+    // Since the page allocator's local cache depend on the macro
+    // [`ostd::cpu_local!`], we need to initialize the corresponding utilities
+    // first.
     arch::init_on_bsp();
+
+    mm::dma::init();
 
     smp::init();
 
