@@ -77,12 +77,12 @@ impl OptionSet {
 }
 
 impl StreamSocket {
-    pub fn new(nonblocking: bool) -> Arc<Self> {
+    pub fn new(is_nonblocking: bool) -> Arc<Self> {
         let init_stream = InitStream::new();
         Arc::new(Self {
             options: RwLock::new(OptionSet::new()),
             state: RwLock::new(Takeable::new(State::Init(init_stream))),
-            is_nonblocking: AtomicBool::new(nonblocking),
+            is_nonblocking: AtomicBool::new(is_nonblocking),
             pollee: Pollee::new(),
         })
     }
