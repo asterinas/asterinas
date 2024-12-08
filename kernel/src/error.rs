@@ -150,6 +150,8 @@ pub enum Errno {
     ERFKILL = 132, /* Operation not possible due to RF-kill */
 
     EHWPOISON = 133, /* Memory page has hardware error */
+
+    ERESTARTSYS = 512, /* Restart of an interrupted system call. For kernel internal use only. */
 }
 
 /// error used in this crate

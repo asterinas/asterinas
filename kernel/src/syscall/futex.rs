@@ -137,11 +137,10 @@ pub fn sys_futex(
         }
     }
     .map_err(|e| {
-        // From Linux manual, Futex returns `ETIMEDOUT` instead of `ETIME`
-        if e.error() == Errno::ETIME {
-            Error::with_message(Errno::ETIMEDOUT, "futex wait timeout")
-        } else {
-            e
+        match e.error() {
+            // From Linux manual, Futex returns `ETIMEDOUT` instead of `ETIME`
+            Errno::ETIME => Error::with_message(Errno::ETIMEDOUT, "futex wait timeout"),
+            _ => e,
         }
     })?;
 

@@ -64,22 +64,26 @@ pub fn create_new_user_task(user_space: Arc<UserSpace>, thread_ref: Arc<Thread>)
         loop {
             let return_reason = user_mode.execute(has_kernel_event_fn);
             let user_ctx = user_mode.context_mut();
+            let mut syscall_number = None;
             // handle user event:
             match return_reason {
                 ReturnReason::UserException => handle_exception(&ctx, user_ctx),
-                ReturnReason::UserSyscall => handle_syscall(&ctx, user_ctx),
+                ReturnReason::UserSyscall => {
+                    syscall_number = Some(user_ctx.syscall_num());
+                    handle_syscall(&ctx, user_ctx);
+                }
                 ReturnReason::KernelEvent => {}
             };
 
             if current_thread.is_exited() {
                 break;
             }
-            handle_pending_signal(user_ctx, &ctx).unwrap();
+            handle_pending_signal(user_ctx, &ctx, syscall_number).unwrap();
             // If current is suspended, wait for a signal to wake up self
             while current_thread.is_stopped() {
                 Thread::yield_now();
                 debug!("{} is suspended.", current_posix_thread.tid());
-                handle_pending_signal(user_ctx, &ctx).unwrap();
+                handle_pending_signal(user_ctx, &ctx, None).unwrap();
             }
             if current_thread.is_exited() {
                 debug!("exit due to signal");

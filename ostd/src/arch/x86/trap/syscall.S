@@ -18,7 +18,7 @@
 .code64
 
 .text
-    # extern "sysv64" fn syscall_return(&mut GeneralRegs)
+    # extern "sysv64" fn syscall_return(&mut UserContext)
 .global syscall_return
 syscall_return:
     # disable interrupt
@@ -34,7 +34,7 @@ syscall_return:
 
     push rdi                # keep rsp 16 bytes align
     mov gs:4, rsp           # store kernel rsp -> TSS.sp0
-    mov rsp, rdi            # set rsp -> GeneralRegs
+    mov rsp, rdi            # set rsp -> UserContext
 
     # restore user gsbase
     swapgs
@@ -99,8 +99,8 @@ syscall_entry:
     swapgs                  # swap in kernel gs
     mov gs:12, rsp          # store user rsp -> scratch at TSS.sp1
     mov rsp, gs:4           # load kernel rsp <- TSS.sp0
-    pop rsp                 # load rsp -> GeneralRegs
-    add rsp, 21*8           # rsp -> error code of GeneralRegs
+    pop rsp                 # load rsp <- UserContext
+    add rsp, 21*8           # rsp -> error code of UserContext
 
     push 0x100              # push trap_num
     sub rsp, 16             # skip fsbase, gsbase

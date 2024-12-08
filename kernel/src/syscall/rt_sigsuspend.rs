@@ -37,8 +37,7 @@ pub fn sys_rt_sigsuspend(
 
     // Wait until receiving any signal
     let waiter = Waiter::new_pair().0;
-    with_signal_blocked(ctx, sigmask, || waiter.pause_until(|| None::<()>))?;
+    let _ = with_signal_blocked(ctx, sigmask, || waiter.pause_until(|| None::<()>));
 
-    // This syscall should always return `Err(EINTR)`. This path should never be reached.
-    unreachable!("rt_sigsuspend always return EINTR");
+    return_errno!(Errno::EINTR);
 }
