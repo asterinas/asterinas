@@ -50,7 +50,7 @@ impl OptionSet {
 pub struct DatagramSocket {
     options: RwLock<OptionSet>,
     inner: RwLock<Takeable<Inner>, PreemptDisabled>,
-    nonblocking: AtomicBool,
+    is_nonblocking: AtomicBool,
     pollee: Pollee,
 }
 
@@ -98,22 +98,22 @@ impl Inner {
 }
 
 impl DatagramSocket {
-    pub fn new(nonblocking: bool) -> Arc<Self> {
+    pub fn new(is_nonblocking: bool) -> Arc<Self> {
         let unbound_datagram = UnboundDatagram::new();
         Arc::new(Self {
             inner: RwLock::new(Takeable::new(Inner::Unbound(unbound_datagram))),
-            nonblocking: AtomicBool::new(nonblocking),
+            is_nonblocking: AtomicBool::new(is_nonblocking),
             pollee: Pollee::new(),
             options: RwLock::new(OptionSet::new()),
         })
     }
 
     pub fn is_nonblocking(&self) -> bool {
-        self.nonblocking.load(Ordering::SeqCst)
+        self.is_nonblocking.load(Ordering::Relaxed)
     }
 
-    pub fn set_nonblocking(&self, nonblocking: bool) {
-        self.nonblocking.store(nonblocking, Ordering::SeqCst);
+    pub fn set_nonblocking(&self, is_nonblocking: bool) {
+        self.is_nonblocking.store(is_nonblocking, Ordering::Relaxed);
     }
 
     fn remote_endpoint(&self) -> Option<IpEndpoint> {
