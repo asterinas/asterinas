@@ -73,6 +73,7 @@ impl ThreadOptions {
     }
 
     /// Builds a new kernel thread and runs it immediately.
+    #[track_caller]
     pub fn spawn(self) -> Arc<Thread> {
         let task = self.build();
         let thread = task.as_thread().unwrap().clone();

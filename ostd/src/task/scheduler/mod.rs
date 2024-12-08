@@ -105,6 +105,7 @@ pub enum UpdateFlags {
 }
 
 /// Preempts the current task.
+#[track_caller]
 pub(crate) fn might_preempt() {
     if !cpu_local::should_preempt() {
         return;
@@ -116,6 +117,7 @@ pub(crate) fn might_preempt() {
 ///
 /// Note that this method may return due to spurious wake events. It's the caller's responsibility
 /// to detect them (if necessary).
+#[track_caller]
 pub(crate) fn park_current<F>(has_woken: F)
 where
     F: Fn() -> bool,
@@ -168,6 +170,7 @@ pub(crate) fn unpark_target(runnable: Arc<Task>) {
 /// Enqueues a newly built task.
 ///
 /// Note that the new task is not guaranteed to run at once.
+#[track_caller]
 pub(super) fn run_new_task(runnable: Arc<Task>) {
     // FIXME: remove this check for `SCHEDULER`.
     // Currently OSTD cannot know whether its user has injected a scheduler.
@@ -199,6 +202,7 @@ fn set_need_preempt(cpu_id: CpuId) {
 /// Dequeues the current task from its runqueue.
 ///
 /// This should only be called if the current is to exit.
+#[track_caller]
 pub(super) fn exit_current() -> ! {
     reschedule(|local_rq: &mut dyn LocalRunQueue| {
         let _ = local_rq.dequeue_current();
@@ -213,6 +217,7 @@ pub(super) fn exit_current() -> ! {
 }
 
 /// Yields execution.
+#[track_caller]
 pub(super) fn yield_now() {
     reschedule(|local_rq| {
         local_rq.update_current(UpdateFlags::Yield);
@@ -228,6 +233,7 @@ pub(super) fn yield_now() {
 /// user-given closure.
 ///
 /// The closure makes the scheduling decision by taking the local runqueue has its input.
+#[track_caller]
 fn reschedule<F>(mut f: F)
 where
     F: FnMut(&mut dyn LocalRunQueue) -> ReschedAction,

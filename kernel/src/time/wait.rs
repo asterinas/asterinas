@@ -17,6 +17,7 @@ pub trait WaitTimeout {
     /// will return an error with [`ETIME`].
     ///
     /// [`ETIME`]: crate::error::Errno::ETIME
+    #[track_caller]
     fn wait_until_or_timeout<'a, F, T, R>(&self, mut cond: F, timeout: T) -> Result<R>
     where
         F: FnMut() -> Option<R>,
@@ -41,6 +42,7 @@ pub trait WaitTimeout {
     ///  - an error with [`ETIME`] if the timeout is reached;
     ///  - the error returned by the cancel condition if the cancel condition returns `Err(_)`.
     #[doc(hidden)]
+    #[track_caller]
     fn wait_until_or_timeout_cancelled<F, R, FCancel>(
         &self,
         cond: F,

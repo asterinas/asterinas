@@ -32,6 +32,7 @@ use core::sync::atomic::Ordering;
 /// Marks a function as one that might sleep.
 ///
 /// This function will panic if it is executed in atomic mode.
+#[track_caller]
 pub fn might_sleep() {
     let preempt_count = super::preempt::cpu_local::get_guard_count();
     let is_local_irq_enabled = crate::arch::irq::is_local_enabled();

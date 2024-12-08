@@ -32,6 +32,7 @@ pub trait Pause: WaitTimeout {
     /// condition is met.
     ///
     /// [`EINTR`]: crate::error::Errno::EINTR
+    #[track_caller]
     fn pause_until<F, R>(&self, cond: F) -> Result<R>
     where
         F: FnMut() -> Option<R>,
@@ -49,6 +50,7 @@ pub trait Pause: WaitTimeout {
     ///
     /// [`ETIME`]: crate::error::Errno::ETIME
     /// [`EINTR`]: crate::error::Errno::EINTR
+    #[track_caller]
     fn pause_until_or_timeout<'a, F, T, R>(&self, mut cond: F, timeout: T) -> Result<R>
     where
         F: FnMut() -> Option<R>,
@@ -74,6 +76,7 @@ pub trait Pause: WaitTimeout {
     /// [`ETIME`]: crate::error::Errno::ETIME
     /// [`EINTR`]: crate::error::Errno::EINTR
     #[doc(hidden)]
+    #[track_caller]
     fn pause_until_or_timeout_impl<F, R>(
         &self,
         cond: F,
@@ -94,6 +97,7 @@ pub trait Pause: WaitTimeout {
     ///
     /// [`ETIME`]: crate::error::Errno::ETIME
     /// [`EINTR`]: crate::error::Errno::EINTR
+    #[track_caller]
     fn pause_timeout<'a>(&self, timeout: impl Into<TimeoutExt<'a>>) -> Result<()>;
 }
 

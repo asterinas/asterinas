@@ -83,6 +83,7 @@ impl Task {
     ///
     /// Note that this method cannot be simply named "yield" as the name is
     /// a Rust keyword.
+    #[track_caller]
     pub fn yield_now() {
         scheduler::yield_now()
     }
@@ -90,6 +91,7 @@ impl Task {
     /// Kicks the task scheduler to run the task.
     ///
     /// BUG: This method highly depends on the current scheduling policy.
+    #[track_caller]
     pub fn run(self: &Arc<Self>) {
         scheduler::run_new_task(self.clone());
     }
@@ -239,6 +241,7 @@ impl TaskOptions {
     }
 
     /// Builds a new task and runs it immediately.
+    #[track_caller]
     pub fn spawn(self) -> Result<Arc<Task>> {
         let task = Arc::new(self.build()?);
         task.run();

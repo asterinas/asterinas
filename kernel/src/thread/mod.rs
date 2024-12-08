@@ -78,6 +78,7 @@ impl Thread {
     }
 
     /// Runs this thread at once.
+    #[track_caller]
     pub fn run(&self) {
         self.status.store(ThreadStatus::Running, Ordering::Release);
         self.task.upgrade().unwrap().run();
@@ -151,6 +152,7 @@ impl Thread {
     /// Yields the execution to another thread.
     ///
     /// This method will return once the current thread is scheduled again.
+    #[track_caller]
     pub fn yield_now() {
         Task::yield_now()
     }
@@ -158,6 +160,7 @@ impl Thread {
     /// Joins the execution of the thread.
     ///
     /// This method will return after the thread exits.
+    #[track_caller]
     pub fn join(&self) {
         while !self.is_exited() {
             Self::yield_now();

@@ -121,6 +121,7 @@ impl<T: ?Sized> RwMutex<T> {
     /// upreaders present. The implementation of [`WaitQueue`] guarantees the
     /// order in which other concurrent readers or writers waiting simultaneously
     /// will acquire the mutex.
+    #[track_caller]
     pub fn read(&self) -> RwMutexReadGuard<T> {
         self.queue.wait_until(|| self.try_read())
     }
@@ -131,6 +132,7 @@ impl<T: ?Sized> RwMutex<T> {
     /// or readers present. The implementation of [`WaitQueue`] guarantees the
     /// order in which other concurrent readers or writers waiting simultaneously
     /// will acquire the mutex.
+    #[track_caller]
     pub fn write(&self) -> RwMutexWriteGuard<T> {
         self.queue.wait_until(|| self.try_write())
     }
@@ -145,6 +147,7 @@ impl<T: ?Sized> RwMutex<T> {
     /// and reader do not differ before invoking the upgread method. However,
     /// only one upreader can exist at any time to avoid deadlock in the
     /// upgread method.
+    #[track_caller]
     pub fn upread(&self) -> RwMutexUpgradeableGuard<T> {
         self.queue.wait_until(|| self.try_upread())
     }
