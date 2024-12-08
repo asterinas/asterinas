@@ -28,6 +28,7 @@ use crate::{
 ///
 /// Then, [`Pollee::poll_with`] can allow you to register a [`Poller`] to wait for certain events,
 /// or register a [`PollAdaptor`] to be notified when certain events occur.
+#[derive(Clone)]
 pub struct Pollee {
     inner: Arc<PolleeInner>,
 }

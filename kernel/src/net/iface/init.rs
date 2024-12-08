@@ -7,10 +7,7 @@ use ostd::sync::LocalIrqDisabled;
 use spin::Once;
 
 use super::{poll::poll_ifaces, Iface};
-use crate::{
-    net::iface::ext::{IfaceEx, IfaceExt},
-    prelude::*,
-};
+use crate::{net::iface::ext::IfaceExt, prelude::*};
 
 pub static IFACES: Once<Vec<Arc<Iface>>> = Once::new();
 

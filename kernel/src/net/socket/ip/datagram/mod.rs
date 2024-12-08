@@ -2,11 +2,8 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use aster_bigtcp::{
-    socket::{SocketEventObserver, SocketEvents},
-    wire::IpEndpoint,
-};
-use ostd::sync::WriteIrqDisabled;
+use aster_bigtcp::wire::IpEndpoint;
+use ostd::sync::PreemptDisabled;
 use takeable::Takeable;
 
 use self::{bound::BoundDatagram, unbound::UnboundDatagram};
@@ -18,16 +15,13 @@ use crate::{
         utils::{InodeMode, Metadata, StatusFlags},
     },
     match_sock_option_mut,
-    net::{
-        iface::IfaceEx,
-        socket::{
-            options::{Error as SocketError, SocketOption},
-            util::{
-                options::SocketOptionSet, send_recv_flags::SendRecvFlags, socket_addr::SocketAddr,
-                MessageHeader,
-            },
-            Socket,
+    net::socket::{
+        options::{Error as SocketError, SocketOption},
+        util::{
+            options::SocketOptionSet, send_recv_flags::SendRecvFlags, socket_addr::SocketAddr,
+            MessageHeader,
         },
+        Socket,
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},
@@ -35,7 +29,10 @@ use crate::{
 };
 
 mod bound;
+mod observer;
 mod unbound;
+
+pub(in crate::net) use self::observer::DatagramObserver;
 
 #[derive(Debug, Clone)]
 struct OptionSet {
@@ -52,8 +49,8 @@ impl OptionSet {
 
 pub struct DatagramSocket {
     options: RwLock<OptionSet>,
-    inner: RwLock<Takeable<Inner>, WriteIrqDisabled>,
-    nonblocking: AtomicBool,
+    inner: RwLock<Takeable<Inner>, PreemptDisabled>,
+    is_nonblocking: AtomicBool,
     pollee: Pollee,
 }
 
@@ -67,6 +64,7 @@ impl Inner {
         self,
         endpoint: &IpEndpoint,
         can_reuse: bool,
+        observer: DatagramObserver,
     ) -> core::result::Result<BoundDatagram, (Error, Self)> {
         let unbound_datagram = match self {
             Inner::Unbound(unbound_datagram) => unbound_datagram,
@@ -78,7 +76,7 @@ impl Inner {
             }
         };
 
-        let bound_datagram = match unbound_datagram.bind(endpoint, can_reuse) {
+        let bound_datagram = match unbound_datagram.bind(endpoint, can_reuse, observer) {
             Ok(bound_datagram) => bound_datagram,
             Err((err, unbound_datagram)) => return Err((err, Inner::Unbound(unbound_datagram))),
         };
@@ -88,35 +86,34 @@ impl Inner {
     fn bind_to_ephemeral_endpoint(
         self,
         remote_endpoint: &IpEndpoint,
+        observer: DatagramObserver,
     ) -> core::result::Result<BoundDatagram, (Error, Self)> {
         if let Inner::Bound(bound_datagram) = self {
             return Ok(bound_datagram);
         }
 
         let endpoint = get_ephemeral_endpoint(remote_endpoint);
-        self.bind(&endpoint, false)
+        self.bind(&endpoint, false, observer)
     }
 }
 
 impl DatagramSocket {
-    pub fn new(nonblocking: bool) -> Arc<Self> {
-        Arc::new_cyclic(|me| {
-            let unbound_datagram = UnboundDatagram::new(me.clone() as _);
-            Self {
-                inner: RwLock::new(Takeable::new(Inner::Unbound(unbound_datagram))),
-                nonblocking: AtomicBool::new(nonblocking),
-                pollee: Pollee::new(),
-                options: RwLock::new(OptionSet::new()),
-            }
+    pub fn new(is_nonblocking: bool) -> Arc<Self> {
+        let unbound_datagram = UnboundDatagram::new();
+        Arc::new(Self {
+            inner: RwLock::new(Takeable::new(Inner::Unbound(unbound_datagram))),
+            is_nonblocking: AtomicBool::new(is_nonblocking),
+            pollee: Pollee::new(),
+            options: RwLock::new(OptionSet::new()),
         })
     }
 
     pub fn is_nonblocking(&self) -> bool {
-        self.nonblocking.load(Ordering::SeqCst)
+        self.is_nonblocking.load(Ordering::Relaxed)
     }
 
-    pub fn set_nonblocking(&self, nonblocking: bool) {
-        self.nonblocking.store(nonblocking, Ordering::SeqCst);
+    pub fn set_nonblocking(&self, is_nonblocking: bool) {
+        self.is_nonblocking.store(is_nonblocking, Ordering::Relaxed);
     }
 
     fn remote_endpoint(&self) -> Option<IpEndpoint> {
@@ -137,7 +134,10 @@ impl DatagramSocket {
         // Slow path
         let mut inner = self.inner.write();
         inner.borrow_result(|owned_inner| {
-            let bound_datagram = match owned_inner.bind_to_ephemeral_endpoint(remote_endpoint) {
+            let bound_datagram = match owned_inner.bind_to_ephemeral_endpoint(
+                remote_endpoint,
+                DatagramObserver::new(self.pollee.clone()),
+            ) {
                 Ok(bound_datagram) => bound_datagram,
                 Err((err, err_inner)) => {
                     return (err_inner, Err(err));
@@ -280,7 +280,11 @@ impl Socket for DatagramSocket {
         let can_reuse = self.options.read().socket.reuse_addr();
         let mut inner = self.inner.write();
         inner.borrow_result(|owned_inner| {
-            let bound_datagram = match owned_inner.bind(&endpoint, can_reuse) {
+            let bound_datagram = match owned_inner.bind(
+                &endpoint,
+                can_reuse,
+                DatagramObserver::new(self.pollee.clone()),
+            ) {
                 Ok(bound_datagram) => bound_datagram,
                 Err((err, err_inner)) => {
                     return (err_inner, Err(err));
@@ -386,21 +390,5 @@ impl Socket for DatagramSocket {
 
     fn set_option(&self, option: &dyn SocketOption) -> Result<()> {
         self.options.write().socket.set_option(option)
-    }
-}
-
-impl SocketEventObserver for DatagramSocket {
-    fn on_events(&self, events: SocketEvents) {
-        let mut io_events = IoEvents::empty();
-
-        if events.contains(SocketEvents::CAN_RECV) {
-            io_events |= IoEvents::IN;
-        }
-
-        if events.contains(SocketEvents::CAN_SEND) {
-            io_events |= IoEvents::OUT;
-        }
-
-        self.pollee.notify(io_events);
     }
 }

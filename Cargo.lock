@@ -74,6 +74,8 @@ dependencies = [
  "keyable-arc",
  "ostd",
  "smoltcp",
+ "spin 0.9.8",
+ "takeable",
 ]
 
 [[package]]

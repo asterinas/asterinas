@@ -1,43 +1,36 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Weak;
+use aster_bigtcp::{socket::UdpSocket, wire::IpEndpoint};
 
-use aster_bigtcp::{
-    socket::{SocketEventObserver, UnboundUdpSocket},
-    wire::IpEndpoint,
-};
-
-use super::bound::BoundDatagram;
-use crate::{events::IoEvents, net::socket::ip::common::bind_socket, prelude::*};
+use super::{bound::BoundDatagram, DatagramObserver};
+use crate::{events::IoEvents, net::socket::ip::common::bind_port, prelude::*};
 
 pub struct UnboundDatagram {
-    unbound_socket: Box<UnboundUdpSocket>,
+    _private: (),
 }
 
 impl UnboundDatagram {
-    pub fn new(observer: Weak<dyn SocketEventObserver>) -> Self {
-        Self {
-            unbound_socket: Box::new(UnboundUdpSocket::new(observer)),
-        }
+    pub fn new() -> Self {
+        Self { _private: () }
     }
 
     pub fn bind(
         self,
         endpoint: &IpEndpoint,
         can_reuse: bool,
+        observer: DatagramObserver,
     ) -> core::result::Result<BoundDatagram, (Error, Self)> {
-        let bound_socket = match bind_socket(
-            self.unbound_socket,
-            endpoint,
-            can_reuse,
-            |iface, socket, config| iface.bind_udp(socket, config),
-        ) {
-            Ok(bound_socket) => bound_socket,
-            Err((err, unbound_socket)) => return Err((err, Self { unbound_socket })),
+        let bound_port = match bind_port(endpoint, can_reuse) {
+            Ok(bound_port) => bound_port,
+            Err(err) => return Err((err, self)),
         };
 
-        let bound_endpoint = bound_socket.local_endpoint().unwrap();
-        bound_socket.bind(bound_endpoint).unwrap();
+        let bound_socket = match UdpSocket::new_bind(bound_port, observer) {
+            Ok(bound_socket) => bound_socket,
+            Err((_, err)) => {
+                unreachable!("`new_bind fails with {:?}, which should not happen", err)
+            }
+        };
 
         Ok(BoundDatagram::new(bound_socket))
     }
