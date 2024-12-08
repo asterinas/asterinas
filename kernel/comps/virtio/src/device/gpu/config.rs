@@ -3,9 +3,10 @@ use core::mem::offset_of;
 use aster_util::{read_union_fields, safe_ptr::SafePtr};
 use ostd::Pod;
 
-use crate::transport::{ConfigManager, VirtioTransport};
-use crate::bitflags;
-
+use crate::{
+    bitflags,
+    transport::{ConfigManager, VirtioTransport},
+};
 
 bitflags::bitflags! {
     pub struct GPUFeatures: u64{
@@ -22,21 +23,29 @@ bitflags::bitflags! {
     }
 }
 
-bitflags! {
-    #[repr(C)]
-    #[derive(Pod)]
-    pub struct Status: u16 {
-        const VIRTIO_GPU_EVENT_DISPLAY  = 1 << 0;
-    }
+#[derive(Copy, Clone, Debug)]
+#[repr(u16)]
+pub enum Event {
+    /// According to virtio v1.3
+    /// https://docs.oasis-open.org/virtio/virtio/v1.3/csd01/virtio-v1.3-csd01.html#x1-3960007:~:text=value%20is%20zero.-,5.7.4.2%20Events,-VIRTIO_GPU_EVENT_DISPLAY
+    ///
+    /// Display configuration has changed.
+    /// The driver SHOULD use the VIRTIO_GPU_CMD_GET_DISPLAY_INFO command to fetch the information from the device.
+    /// In case EDID support is negotiated (VIRTIO_GPU_F_EDID feature flag) the device SHOULD also fetch the updated EDID blobs using the VIRTIO_GPU_CMD_GET_EDID command.
+    VirtioGPUEventDisplay = 1 << 0,
 }
-
 
 #[derive(Debug, Pod, Clone, Copy)]
 #[repr(C)]
 pub struct VirtioGPUConfig {
+    /// signals pending events to the driver. The driver MUST NOT write to this field.
     pub events_read: u32,
+    /// clears pending events in the device.
+    /// Writing a ’1’ into a bit will clear the corresponding bit in events_read, mimicking write-to-clear behavior.
     pub events_clear: u32,
+    /// specifies the maximum number of scanouts supported by the device. Minimum value is 1, maximum value is 16.
     pub num_scanouts: u32,
+    /// specifies the maximum number of capability sets supported by the device. The minimum value is zero.
     pub num_capsets: u32,
 }
 
