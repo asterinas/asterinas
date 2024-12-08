@@ -3,7 +3,7 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use aster_bigtcp::wire::IpEndpoint;
-use ostd::sync::WriteIrqDisabled;
+use ostd::sync::PreemptDisabled;
 use takeable::Takeable;
 
 use self::{bound::BoundDatagram, unbound::UnboundDatagram};
@@ -49,7 +49,7 @@ impl OptionSet {
 
 pub struct DatagramSocket {
     options: RwLock<OptionSet>,
-    inner: RwLock<Takeable<Inner>, WriteIrqDisabled>,
+    inner: RwLock<Takeable<Inner>, PreemptDisabled>,
     nonblocking: AtomicBool,
     pollee: Pollee,
 }
