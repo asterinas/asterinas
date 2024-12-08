@@ -11,16 +11,17 @@ use smoltcp::{
 use crate::{
     device::WithDevice,
     iface::{
-        common::IfaceCommon, iface::internal::IfaceInternal, time::get_network_timestamp, Iface,
+        common::IfaceCommon, ext::Ext, iface::internal::IfaceInternal, time::get_network_timestamp,
+        Iface,
     },
 };
 
-pub struct IpIface<D, E> {
+pub struct IpIface<D, E: Ext> {
     driver: D,
     common: IfaceCommon<E>,
 }
 
-impl<D: WithDevice, E> IpIface<D, E> {
+impl<D: WithDevice, E: Ext> IpIface<D, E> {
     pub fn new(driver: D, ip_cidr: Ipv4Cidr, ext: E) -> Arc<Self> {
         let interface = driver.with(|device| {
             let config = Config::new(smoltcp::wire::HardwareAddress::Ip);
@@ -40,14 +41,14 @@ impl<D: WithDevice, E> IpIface<D, E> {
     }
 }
 
-impl<D, E> IfaceInternal<E> for IpIface<D, E> {
+impl<D, E: Ext> IfaceInternal<E> for IpIface<D, E> {
     fn common(&self) -> &IfaceCommon<E> {
         &self.common
     }
 }
 
-impl<D: WithDevice + 'static, E: Send + Sync> Iface<E> for IpIface<D, E> {
-    fn raw_poll(&self, schedule_next_poll: &dyn Fn(Option<u64>)) {
+impl<D: WithDevice + 'static, E: Ext + Send + Sync> Iface<E> for IpIface<D, E> {
+    fn poll(&self) {
         self.driver.with(|device| {
             let next_poll = self.common.poll(
                 device,
@@ -64,7 +65,7 @@ impl<D: WithDevice + 'static, E: Send + Sync> Iface<E> for IpIface<D, E> {
                     });
                 },
             );
-            schedule_next_poll(next_poll);
+            self.common.ext().schedule_next_poll(next_poll);
         });
     }
 }

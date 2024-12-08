@@ -3,9 +3,10 @@
 use alloc::string::String;
 use core::sync::atomic::{AtomicU64, Ordering};
 
+use aster_bigtcp::iface;
 use ostd::sync::WaitQueue;
 
-use super::Iface;
+use crate::net::socket::ip::{datagram::DatagramObserver, stream::StreamObserver};
 
 /// The iface extension.
 pub struct IfaceExt {
@@ -27,6 +28,13 @@ impl IfaceExt {
         }
     }
 
+    /// Gets the name of the iface.
+    ///
+    /// In Linux, the name is usually the driver name followed by a unit number.
+    pub(super) fn name(&self) -> &str {
+        &self.name
+    }
+
     pub(super) fn next_poll_at_ms(&self) -> Option<u64> {
         let millis = self.next_poll_at_ms.load(Ordering::Relaxed);
         if millis == 0 {
@@ -39,6 +47,11 @@ impl IfaceExt {
     pub(super) fn polling_wait_queue(&self) -> &WaitQueue {
         &self.polling_wait_queue
     }
+}
+
+impl iface::Ext for IfaceExt {
+    type TcpEventObserver = StreamObserver;
+    type UdpEventObserver = DatagramObserver;
 
     fn schedule_next_poll(&self, poll_at: Option<u64>) {
         let Some(new_instant) = poll_at else {
@@ -52,27 +65,5 @@ impl IfaceExt {
         if old_instant == 0 || new_instant < old_instant {
             self.polling_wait_queue.wake_all();
         }
-    }
-}
-
-pub trait IfaceEx {
-    /// Gets the name of the iface.
-    ///
-    /// In Linux, the name is usually the driver name followed by a unit number.
-    fn name(&self) -> &str;
-
-    /// Transmits or receives packets queued in the iface, and updates socket status accordingly.
-    ///
-    /// The background polling thread is woken up to perform the next poll if necessary.
-    fn poll(&self);
-}
-
-impl IfaceEx for Iface {
-    fn name(&self) -> &str {
-        &self.ext().name
-    }
-
-    fn poll(&self) {
-        self.raw_poll(&|next_poll| self.ext().schedule_next_poll(next_poll));
     }
 }

@@ -15,18 +15,19 @@ use smoltcp::{
 use crate::{
     device::WithDevice,
     iface::{
-        common::IfaceCommon, iface::internal::IfaceInternal, time::get_network_timestamp, Iface,
+        common::IfaceCommon, ext::Ext, iface::internal::IfaceInternal, time::get_network_timestamp,
+        Iface,
     },
 };
 
-pub struct EtherIface<D, E> {
+pub struct EtherIface<D, E: Ext> {
     driver: D,
     common: IfaceCommon<E>,
     ether_addr: EthernetAddress,
     arp_table: SpinLock<BTreeMap<Ipv4Address, EthernetAddress>, LocalIrqDisabled>,
 }
 
-impl<D: WithDevice, E> EtherIface<D, E> {
+impl<D: WithDevice, E: Ext> EtherIface<D, E> {
     pub fn new(
         driver: D,
         ether_addr: EthernetAddress,
@@ -61,26 +62,26 @@ impl<D: WithDevice, E> EtherIface<D, E> {
     }
 }
 
-impl<D, E> IfaceInternal<E> for EtherIface<D, E> {
+impl<D, E: Ext> IfaceInternal<E> for EtherIface<D, E> {
     fn common(&self) -> &IfaceCommon<E> {
         &self.common
     }
 }
 
-impl<D: WithDevice + 'static, E: Send + Sync> Iface<E> for EtherIface<D, E> {
-    fn raw_poll(&self, schedule_next_poll: &dyn Fn(Option<u64>)) {
+impl<D: WithDevice + 'static, E: Ext + Send + Sync> Iface<E> for EtherIface<D, E> {
+    fn poll(&self) {
         self.driver.with(|device| {
             let next_poll = self.common.poll(
                 &mut *device,
                 |data, iface_cx, tx_token| self.process(data, iface_cx, tx_token),
                 |pkt, iface_cx, tx_token| self.dispatch(pkt, iface_cx, tx_token),
             );
-            schedule_next_poll(next_poll);
+            self.common.ext().schedule_next_poll(next_poll);
         });
     }
 }
 
-impl<D, E> EtherIface<D, E> {
+impl<D, E: Ext> EtherIface<D, E> {
     fn process<'pkt, T: TxToken>(
         &self,
         data: &'pkt [u8],
