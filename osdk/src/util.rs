@@ -251,3 +251,42 @@ pub fn trace_panic_from_log(qemu_log: File, bin_path: PathBuf) {
     addr2line_proc.kill().unwrap();
     addr2line_proc.wait().unwrap();
 }
+
+/// A guard that ensures the current working directory is restored
+/// to its original state when the guard goes out of scope.
+pub struct DirGuard(PathBuf);
+
+impl DirGuard {
+    /// Creates a new `DirGuard` that restores the provided directory
+    /// when it goes out of scope.
+    ///
+    /// # Arguments
+    ///
+    /// * `original_dir` - The directory to restore when the guard is dropped.
+    pub fn new(original_dir: PathBuf) -> Self {
+        Self(original_dir)
+    }
+
+    /// Creates a new `DirGuard` using the current working directory as the original directory.
+    pub fn from_current_dir() -> Self {
+        Self::new(std::env::current_dir().unwrap())
+    }
+
+    /// Stores the current directory as the original directory and
+    /// changes the working directory to the specified `new_dir`.
+    ///
+    /// # Arguments
+    ///
+    /// * `new_dir` - The directory to switch to.
+    pub fn change_dir(new_dir: impl AsRef<Path>) -> Self {
+        let original_dir_guard = DirGuard::from_current_dir();
+        std::env::set_current_dir(new_dir.as_ref()).unwrap();
+        original_dir_guard
+    }
+}
+
+impl Drop for DirGuard {
+    fn drop(&mut self) {
+        std::env::set_current_dir(&self.0).unwrap();
+    }
+}

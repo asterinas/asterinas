@@ -22,6 +22,7 @@ use crate::{
     },
     error::Errno,
     error_msg,
+    util::DirGuard,
 };
 
 /// The osdk bundle artifact that stores as `bundle` directory.
@@ -84,8 +85,7 @@ impl Bundle {
         let manifest_file_content = std::fs::read_to_string(manifest_file_path).ok()?;
         let manifest: BundleManifest = toml::from_str(&manifest_file_content).ok()?;
 
-        let original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(&path).unwrap();
+        let _dir_guard = DirGuard::change_dir(&path);
 
         if let Some(aster_bin) = &manifest.aster_bin {
             if !aster_bin.validate() {
@@ -102,8 +102,6 @@ impl Bundle {
                 return None;
             }
         }
-
-        std::env::set_current_dir(original_dir).unwrap();
 
         Some(Self {
             manifest,
