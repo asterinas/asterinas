@@ -939,6 +939,7 @@ dependencies = [
  "libflate",
  "linux-boot-params",
  "log",
+ "tdx-guest",
  "uart_16550",
  "uefi",
  "uefi-raw",
@@ -1532,13 +1533,12 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "tdx-guest"
-version = "0.1.7"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d08fda76b8a438b7d926a92217a709ba39ef9031b8544a9a3f3af08d1b3f87e9"
+checksum = "944d4a19d6093a6f5f7bbd38ab73cc3dc11b0d17387345fc952224878caa7e7f"
 dependencies = [
  "bitflags 1.3.2",
  "iced-x86",
- "lazy_static",
  "raw-cpuid",
  "x86_64 0.14.13",
 ]

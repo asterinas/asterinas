@@ -33,7 +33,7 @@ ascii = { version = "1.1", default-features = false, features = ["alloc"] }
 intrusive-collections = "0.9.5"
 paste = "1.0"
 time = { version = "0.3", default-features = false, features = ["alloc"] }
-tdx-guest = { version = "0.1.7", optional = true }
+tdx-guest = { version = "0.1.8", optional = true }
 
 # parse elf file
 xmas-elf = "0.8.0"

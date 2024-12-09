@@ -26,7 +26,9 @@ log = "0.4.20"
 uefi = { version = "0.32.0", features = ["global_allocator", "panic_handler", "logger", "qemu"]}
 uefi-raw = "0.8.0"
 x86_64 = "0.15.1"
+tdx-guest = { version = "0.1.8", optional = true }
 
 [features]
-default = []
+default = ["cvm_guest"]
 debug_print = []
+cvm_guest = ["dep:tdx-guest"]
