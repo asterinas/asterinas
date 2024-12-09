@@ -375,6 +375,10 @@ impl VmMapping {
         }
         panic!("The mapping does not contain the splitting range.");
     }
+
+    pub fn need_pt_copy(&self) -> bool {
+        self.vmo.is_none()
+    }
 }
 
 /************************** VM Space operations ******************************/

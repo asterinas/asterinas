@@ -104,7 +104,7 @@ impl PageTable<UserMode> {
         let mut root_node = self.root.clone_shallow().lock();
         const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
         for i in 0..NR_PTES_PER_NODE / 2 {
-            let root_entry = root_node.entry(i);
+            let mut root_entry = root_node.entry(i);
             if !root_entry.is_none() {
                 let old = root_entry.replace(Child::None);
                 // Since no others are accessing the old child, dropping it is fine.
@@ -157,7 +157,7 @@ impl PageTable<KernelMode> {
 
         let mut root_node = self.root.clone_shallow().lock();
         for i in start..end {
-            let root_entry = root_node.entry(i);
+            let mut root_entry = root_node.entry(i);
             if root_entry.is_none() {
                 let nxt_level = PagingConsts::NR_LEVELS - 1;
                 let is_tracked = if super::kspace::should_map_as_tracked(
