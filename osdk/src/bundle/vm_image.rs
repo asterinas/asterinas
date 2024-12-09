@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
+
+use crate::util::hard_link_or_copy;
 
 use super::file::BundleFile;
 
@@ -63,8 +62,7 @@ impl AsterVmImage {
     pub fn copy_to(self, base: impl AsRef<Path>) -> Self {
         let file_name = self.path.file_name().unwrap();
         let copied_path = base.as_ref().join(file_name);
-        fs::copy(&self.path, copied_path).unwrap();
-        fs::remove_file(&self.path).unwrap();
+        hard_link_or_copy(&self.path, copied_path).unwrap();
         Self {
             path: PathBuf::from(file_name),
             typ: self.typ,
