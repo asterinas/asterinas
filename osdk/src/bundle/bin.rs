@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::path::{Path, PathBuf};
+use std::{
+    os::unix::fs::MetadataExt,
+    path::{Path, PathBuf},
+    time::SystemTime,
+};
 
 use super::file::BundleFile;
 use crate::{arch::Arch, util::hard_link_or_copy};
@@ -11,7 +15,8 @@ pub struct AsterBin {
     arch: Arch,
     typ: AsterBinType,
     version: String,
-    sha256sum: String,
+    modified_time: SystemTime,
+    size: u64,
     stripped: bool,
 }
 
@@ -41,8 +46,12 @@ impl BundleFile for AsterBin {
         &self.path
     }
 
-    fn sha256sum(&self) -> &String {
-        &self.sha256sum
+    fn modified_time(&self) -> &SystemTime {
+        &self.modified_time
+    }
+
+    fn size(&self) -> &u64 {
+        &self.size
     }
 }
 
@@ -59,11 +68,13 @@ impl AsterBin {
             arch,
             typ,
             version,
-            sha256sum: String::new(),
+            modified_time: SystemTime::UNIX_EPOCH,
+            size: 0,
             stripped,
         };
         Self {
-            sha256sum: created.calculate_sha256sum(),
+            modified_time: created.get_modified_time(),
+            size: created.get_size(),
             ..created
         }
     }
@@ -84,13 +95,15 @@ impl AsterBin {
     pub fn copy_to(self, base: impl AsRef<Path>) -> Self {
         let file_name = self.path.file_name().unwrap();
         let copied_path = base.as_ref().join(file_name);
-        hard_link_or_copy(&self.path, copied_path).unwrap();
+        hard_link_or_copy(&self.path, &copied_path).unwrap();
+        let copied_metadata = copied_path.metadata().unwrap();
         Self {
             path: PathBuf::from(file_name),
             arch: self.arch,
             typ: self.typ,
             version: self.version,
-            sha256sum: self.sha256sum,
+            modified_time: copied_metadata.modified().unwrap(),
+            size: copied_metadata.size(),
             stripped: self.stripped,
         }
     }
