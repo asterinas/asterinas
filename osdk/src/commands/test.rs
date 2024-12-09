@@ -26,7 +26,8 @@ pub fn test_current_crate(config: &Config, args: &TestArgs) {
     let current_crate = get_current_crate_info();
     let cargo_target_directory = get_target_directory();
     let osdk_output_directory = cargo_target_directory.join(DEFAULT_TARGET_RELPATH);
-    let target_crate_dir = osdk_output_directory.join("base");
+    // Use a different name for better separation and reusability of `run` and `test`
+    let target_crate_dir = osdk_output_directory.join("test-base");
 
     // A special case is that we use OSDK to test the OSDK test runner crate
     // itself. We check it by name.
