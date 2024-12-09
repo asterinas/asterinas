@@ -47,9 +47,10 @@ fn add_manifest_dependencies(cargo_metadata: &serde_json::Value, crate_name: &st
     fs::write(manifest_path, content).unwrap();
 }
 
-// Add `target/osdk/base` to `exclude` array of the workspace manifest
+// Add `target/osdk/base` and `target/osdk/test-base` to `exclude` array of the workspace manifest
 fn exclude_osdk_base(metadata: &serde_json::Value) {
-    let osdk_base_path = "target/osdk/base";
+    let osdk_run_base_path = "target/osdk/base";
+    let osdk_test_base_path = "target/osdk/test-base";
 
     let workspace_manifest_path = {
         let workspace_root = metadata.get("workspace_root").unwrap().as_str().unwrap();
@@ -64,17 +65,25 @@ fn exclude_osdk_base(metadata: &serde_json::Value) {
 
         if let Some(exclude) = workspace.get_mut("exclude") {
             let exclude = exclude.as_array_mut().unwrap();
-            if exclude.contains(&toml::Value::String(osdk_base_path.to_string())) {
+            if exclude.contains(&toml::Value::String(osdk_run_base_path.to_string()))
+                || exclude.contains(&toml::Value::String(osdk_test_base_path.to_string()))
+            {
                 return;
             }
 
-            exclude.push(toml::Value::String(osdk_base_path.to_string()));
+            exclude.push(toml::Value::String(osdk_run_base_path.to_string()));
+            exclude.push(toml::Value::String(osdk_test_base_path.to_string()));
         } else {
-            let exclude = vec![toml::Value::String(osdk_base_path.to_string())];
+            let exclude = vec![
+                toml::Value::String(osdk_run_base_path.to_string()),
+                toml::Value::String(osdk_test_base_path.to_string()),
+            ];
             workspace.insert("exclude".to_string(), toml::Value::Array(exclude));
         }
     } else {
-        let exclude = toml::Table::from_str(r#"exclude = ["target/osdk/base"]"#).unwrap();
+        let exclude =
+            toml::Table::from_str(r#"exclude = ["target/osdk/base", "target/osdk/test-base"]"#)
+                .unwrap();
         manifest_toml.insert("workspace".to_string(), toml::Value::Table(exclude));
     }
 
