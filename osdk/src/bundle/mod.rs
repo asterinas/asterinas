@@ -291,7 +291,7 @@ impl Bundle {
         if self.manifest.vm_image.is_some() {
             panic!("vm_image already exists");
         }
-        self.manifest.vm_image = Some(vm_image.move_to(&self.path));
+        self.manifest.vm_image = Some(vm_image.copy_to(&self.path));
         self.write_manifest_to_fs();
     }
 
@@ -300,7 +300,7 @@ impl Bundle {
         if self.manifest.aster_bin.is_some() {
             panic!("aster_bin already exists");
         }
-        self.manifest.aster_bin = Some(aster_bin.move_to(&self.path));
+        self.manifest.aster_bin = Some(aster_bin.copy_to(&self.path));
         self.write_manifest_to_fs();
     }
 
