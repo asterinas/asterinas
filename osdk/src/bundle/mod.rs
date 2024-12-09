@@ -168,7 +168,9 @@ impl Bundle {
         match (&self.manifest.initramfs, &config_action.boot.initramfs) {
             (Some(initramfs), Some(initramfs_path)) => {
                 let config_initramfs = Initramfs::new(initramfs_path);
-                if initramfs.sha256sum() != config_initramfs.sha256sum() {
+                if initramfs.size() != config_initramfs.size()
+                    || initramfs.modified_time() < config_initramfs.modified_time()
+                {
                     return Err(initramfs_err);
                 }
             }

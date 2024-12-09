@@ -140,7 +140,7 @@ pub fn do_cached_build(
 
     // Check the existing bundle's reusability
     if let Some(existing_bundle) = get_reusable_existing_bundle(&bundle_path, config, action) {
-        if get_last_modified_time(aster_elf.path()) < existing_bundle.last_modified_time() {
+        if aster_elf.modified_time() < &existing_bundle.last_modified_time() {
             info!("Reusing existing bundle: aster_elf is unchanged");
             return existing_bundle;
         }
