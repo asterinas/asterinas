@@ -3,6 +3,8 @@ use ostd::Pod;
 
 use super::header::VirtioGpuCtrlHdr;
 
+
+/* VIRTIO_GPU_CMD_DISPLAY_INFO */
 pub(crate) const RESPONSE_SIZE: usize = size_of::<VirtioGpuRespDisplayInfo>();
 
 #[repr(C, packed)]
@@ -55,4 +57,34 @@ impl Default for VirtioGpuRespDisplayInfo {
             }; VIRTIO_GPU_MAX_SCANOUTS],
         }
     }
+}
+
+/* VIRTIO_GPU_CMD_GET_EDID */
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, Pod, Default)]
+pub struct VirtioGpuGetEdid {
+    hdr: VirtioGpuCtrlHdr,
+    scanout: u32,
+    padding: u32,
+}
+
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub struct VirtioGpuRespEdid {
+    hdr: VirtioGpuCtrlHdr,
+    size: u32,
+    padding: u32,
+    edid: [u8; 1024],
+}
+
+impl Default for VirtioGpuRespEdid {
+    fn default() -> Self {
+        VirtioGpuRespEdid {
+            hdr: VirtioGpuCtrlHdr::default(),
+            size: 0,
+            padding: 0,
+            edid: [0; 1024],
+        }
+    }
+    
 }

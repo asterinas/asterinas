@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, sync::Arc};
+use alloc::{boxed::Box, sync::Arc, vec};
 use core::hint::spin_loop;
 
 use log::info;
@@ -17,7 +17,7 @@ use super::{
 use crate::{
     device::{
         gpu::{
-            control::RESPONSE_SIZE,
+            control::{VirtioGpuGetEdid, VirtioGpuRespEdid, RESPONSE_SIZE},
             header::{VirtioGpuCtrlType, REQUEST_SIZE},
         },
         VirtioDeviceError,
@@ -62,6 +62,7 @@ impl GPUDevice {
 
     pub fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
         let config_manager = VirtioGPUConfig::new_manager(transport.as_ref());
+        // TODO: read features and save as a field of device 
         early_println!("virtio_gpu_config = {:?}", config_manager.read_config());
 
         // Initalize virtqueues
@@ -133,7 +134,13 @@ impl GPUDevice {
 
         // Test device
         // test_device(device);
+        
+        // Request display info
         device.request_display_info();
+
+        // Get EDID info
+        // TODO: check feature flag if EDID is set
+        device.request_edid_info();
 
         Ok(())
     }
@@ -145,6 +152,71 @@ impl GPUDevice {
     fn handle_irq(&self) {
         info!("virtio_gpu handle irq");
         // TODO: follow the implementation of virtio_block
+    }
+
+    /// Retrieve the EDID data for a given scanout.
+    ///  
+    /// - Request data is struct virtio_gpu_get_edid).
+    /// - Response type is VIRTIO_GPU_RESP_OK_EDID, response data is struct virtio_gpu_resp_edid.
+    /// 
+    /// Support is optional and negotiated using the VIRTIO_GPU_F_EDID feature flag.
+    /// The response contains the EDID display data blob (as specified by VESA) for the scanout.
+    fn request_edid_info(&self) -> Result<(), VirtioDeviceError> {
+        // Prepare request header DMA buffer
+        let request_header_slice = {
+            let req_slice = DmaStreamSlice::new(&self.control_request, 0, size_of::<VirtioGpuCtrlHdr>());
+            let req = VirtioGpuCtrlHdr {
+                type_: VirtioGpuCtrlType::VIRTIO_GPU_CMD_GET_EDID as u32,
+                ..VirtioGpuCtrlHdr::default()
+            };
+            req_slice.write_val(0, &req).unwrap();
+            req_slice.sync().unwrap();
+            req_slice
+        };
+
+        // Prepare request data DMA buffer
+        let request_data_slice = {
+            let request_data_slice = DmaStreamSlice::new(&self.control_request, 0, size_of::<VirtioGpuGetEdid>());
+            let req_data = VirtioGpuGetEdid::default();
+            request_data_slice.write_val(0, &req_data).unwrap();
+            request_data_slice.sync().unwrap();
+            request_data_slice
+        };
+
+        let inputs = vec![&request_header_slice, &request_data_slice];
+
+        // Prepare response DMA buffer
+        let resp_slice = {
+            let resp_slice = DmaStreamSlice::new(&self.control_response, 0, size_of::<VirtioGpuRespEdid>()); // TODO: response size
+            resp_slice
+                .write_val(0, &VirtioGpuRespEdid::default())
+                .unwrap();
+            resp_slice.sync().unwrap();
+            resp_slice
+        };
+
+        // Add buffer to queue
+        let mut control_queue = self.control_queue.disable_irq().lock();
+        control_queue
+            .add_dma_buf(inputs.as_slice(), &[&resp_slice])
+            .expect("Add buffers to queue failed");
+
+        // Notify
+        if control_queue.should_notify() {
+            control_queue.notify();
+        }
+
+        // Wait for response
+        while !control_queue.can_pop() {
+            early_println!("waiting for response...");
+            spin_loop();
+        }
+        control_queue.pop_used().expect("Pop used failed");
+
+        resp_slice.sync().unwrap();
+        let resp: VirtioGpuRespEdid = resp_slice.read_val(0).unwrap();
+        early_println!("EDID info from virt_gpu device: {:?}", resp);
+        Ok(())
     }
 
     fn request_display_info(&self) -> Result<(), VirtioDeviceError> {
@@ -191,6 +263,7 @@ impl GPUDevice {
         resp_slice.sync().unwrap();
         let resp: VirtioGpuRespDisplayInfo = resp_slice.read_val(0).unwrap();
         early_println!("display info from virt_gpu device: {:?}", resp);
+        // TODO: use the edid info to setup the scanout
         Ok(())
     }
 }
