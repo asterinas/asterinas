@@ -239,6 +239,7 @@ fn build_kernel_elf(
     }
 
     info!("Building kernel ELF using command: {:#?}", command);
+    info!("Building directory: {:?}", std::env::current_dir().unwrap());
 
     let status = command.status().unwrap();
     if !status.success() {
