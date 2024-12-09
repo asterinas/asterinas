@@ -7,6 +7,8 @@ use std::{
 
 use sha2::{Digest, Sha256};
 
+use crate::util::hard_link_or_copy;
+
 /// A trait for files in a bundle. The file in a bundle should have it's digest and be validatable.
 pub trait BundleFile {
     fn path(&self) -> &PathBuf;
@@ -57,7 +59,7 @@ impl Initramfs {
     pub fn copy_to(self, base: impl AsRef<Path>) -> Self {
         let name = self.path.file_name().unwrap();
         let dest = base.as_ref().join(name);
-        fs::copy(&self.path, dest).unwrap();
+        hard_link_or_copy(&self.path, dest).unwrap();
         Self {
             path: PathBuf::from(name),
             ..self

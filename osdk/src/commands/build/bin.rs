@@ -17,7 +17,7 @@ use crate::{
         bin::{AsterBin, AsterBinType, AsterBzImageMeta, AsterElfMeta},
         file::BundleFile,
     },
-    util::get_current_crate_info,
+    util::{get_current_crate_info, hard_link_or_copy},
 };
 
 pub fn make_install_bzimage(
@@ -115,7 +115,7 @@ pub fn make_elf_for_qemu(install_dir: impl AsRef<Path>, elf: &AsterBin, strip: b
         }
     } else {
         // Copy the ELF file.
-        std::fs::copy(elf.path(), &result_elf_path).unwrap();
+        hard_link_or_copy(elf.path(), &result_elf_path).unwrap();
     }
 
     if elf.arch() == Arch::X86_64 {

@@ -1,12 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use super::file::BundleFile;
-use crate::arch::Arch;
+use crate::{arch::Arch, util::hard_link_or_copy};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AsterBin {
@@ -87,7 +84,7 @@ impl AsterBin {
     pub fn copy_to(self, base: impl AsRef<Path>) -> Self {
         let file_name = self.path.file_name().unwrap();
         let copied_path = base.as_ref().join(file_name);
-        fs::copy(&self.path, copied_path).unwrap();
+        hard_link_or_copy(&self.path, copied_path).unwrap();
         Self {
             path: PathBuf::from(file_name),
             arch: self.arch,

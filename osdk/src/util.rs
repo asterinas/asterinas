@@ -3,7 +3,7 @@
 use std::{
     ffi::OsStr,
     fs::{self, File},
-    io::{BufRead, BufReader, Write},
+    io::{BufRead, BufReader, Result, Write},
     path::{Path, PathBuf},
     process::Command,
 };
@@ -289,4 +289,25 @@ impl Drop for DirGuard {
     fn drop(&mut self) {
         std::env::set_current_dir(&self.0).unwrap();
     }
+}
+
+/// Attempts to create a hard link from `from` to `to`.
+/// If the hard link operation fails (e.g., due to crossing file systems),
+/// it falls back to performing a file copy.
+///
+/// # Arguments
+/// - `from`: The source file path.
+/// - `to`: The destination file path.
+///
+/// # Returns
+/// - `Ok(0)` if the hard link is successfully created (no data was copied).
+/// - `Ok(size)` where `size` is the number of bytes copied if the hard link failed and a copy was performed.
+/// - `Err(error)` if an error occurred during the copy operation.
+pub fn hard_link_or_copy<P: AsRef<Path>, Q: AsRef<Path>>(from: P, to: Q) -> Result<u64> {
+    if fs::hard_link(&from, &to).is_err() {
+        info!("Copying {:?} -> {:?}", from.as_ref(), to.as_ref());
+        return fs::copy(from, to);
+    }
+    info!("Linking {:?} -> {:?}", from.as_ref(), to.as_ref());
+    Ok(0)
 }
