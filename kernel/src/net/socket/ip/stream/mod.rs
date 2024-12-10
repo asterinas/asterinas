@@ -567,7 +567,9 @@ impl Socket for StreamSocket {
         flags: SendRecvFlags,
     ) -> Result<usize> {
         // TODO: Deal with flags
-        debug_assert!(flags.is_all_supported());
+        if !flags.is_all_supported() {
+            warn!("unsupported flags: {:?}", flags);
+        }
 
         let MessageHeader {
             control_message, ..
@@ -591,7 +593,9 @@ impl Socket for StreamSocket {
         flags: SendRecvFlags,
     ) -> Result<(usize, MessageHeader)> {
         // TODO: Deal with flags
-        debug_assert!(flags.is_all_supported());
+        if !flags.is_all_supported() {
+            warn!("unsupported flags: {:?}", flags);
+        }
 
         let (received_bytes, _) = self.recv(writer, flags)?;
 
