@@ -127,6 +127,7 @@ mod stat;
 mod statfs;
 mod symlink;
 mod sync;
+mod sysinfo;
 mod tgkill;
 mod time;
 mod timer_create;
