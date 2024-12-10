@@ -9,9 +9,33 @@ use spin::Once;
 
 use crate::{
     cpu::CpuId,
-    sync::{Mutex, PreemptDisabled, SpinLock, SpinLockGuard},
+    sync::{LocalIrqDisabled, Mutex, PreemptDisabled, SpinLock, SpinLockGuard},
     trap::TrapFrame,
 };
+
+pub struct IrtEntry;
+
+impl IrtEntry {
+    pub fn enable_default(&mut self, _vector: u32) {
+        unimplemented!()
+    }
+}
+
+pub struct IrtEntryHandle;
+
+impl IrtEntryHandle {
+    pub fn index(&self) -> u16 {
+        unimplemented!()
+    }
+
+    pub fn irt_entry(&self) -> Option<&IrtEntry> {
+        unimplemented!()
+    }
+
+    pub fn irt_entry_mut(&mut self) -> Option<&mut IrtEntry> {
+        unimplemented!()
+    }
+}
 
 /// The global allocator for software defined IRQ lines.
 pub(crate) static IRQ_ALLOCATOR: Once<SpinLock<IdAlloc>> = Once::new();
@@ -81,6 +105,10 @@ impl IrqLine {
     #[allow(clippy::redundant_allocation)]
     pub unsafe fn acquire(irq_num: u8) -> Arc<&'static Self> {
         Arc::new(IRQ_LIST.get().unwrap().get(irq_num as usize).unwrap())
+    }
+
+    pub fn bind_remapping_entry(&self) -> Option<&Arc<SpinLock<IrtEntryHandle, LocalIrqDisabled>>> {
+        None
     }
 
     /// Get the IRQ number.

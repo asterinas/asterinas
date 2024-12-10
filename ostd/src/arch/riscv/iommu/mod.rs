@@ -28,6 +28,10 @@ pub(crate) fn init() -> Result<(), IommuError> {
     Err(IommuError::NoIommu)
 }
 
+pub fn has_interrupt_remapping() -> bool {
+    false
+}
+
 pub(crate) fn has_dma_remapping() -> bool {
     false
 }
