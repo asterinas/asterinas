@@ -24,6 +24,14 @@ impl UnboundTcpSocket {
             observer,
         }
     }
+
+    pub fn raw_with_mut<F, R>(&mut self, f: F) -> R
+    where
+        F: FnOnce(&mut RawTcpSocket) -> R,
+    {
+        // Since the socket is never bound, we don't need to poll the iface.
+        f(&mut self.socket)
+    }
 }
 
 impl UnboundUdpSocket {

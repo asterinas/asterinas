@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use smoltcp::socket::tcp::State as TcpState;
+pub use smoltcp::socket::tcp::State as TcpState;
 
 use super::RawTcpSocket;
 

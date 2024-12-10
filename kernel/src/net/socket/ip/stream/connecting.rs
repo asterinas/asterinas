@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_bigtcp::{socket::ConnectState, wire::IpEndpoint};
+use aster_bigtcp::{
+    socket::{ConnectState, RawTcpSocket},
+    wire::IpEndpoint,
+};
 
 use super::{connected::ConnectedStream, init::InitStream};
 use crate::{
@@ -82,5 +85,13 @@ impl ConnectingStream {
 
     pub(super) fn check_io_events(&self) -> IoEvents {
         IoEvents::empty()
+    }
+
+    pub(super) fn for_raw_socket(&self, f: impl Fn(&mut RawTcpSocket)) {
+        self.bound_socket.raw_with_mut(f);
+    }
+
+    pub(super) fn set_keep_alive(&self, interval: Option<aster_bigtcp::time::Duration>) {
+        self.bound_socket.set_keep_alive(interval);
     }
 }
