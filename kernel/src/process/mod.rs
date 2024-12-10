@@ -11,7 +11,7 @@ mod process_filter;
 pub mod process_table;
 mod process_vm;
 mod program_loader;
-mod rlimit;
+pub mod rlimit;
 pub mod signal;
 mod status;
 pub mod sync;
