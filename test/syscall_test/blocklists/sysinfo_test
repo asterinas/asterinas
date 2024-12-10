@@ -1,0 +1,4 @@
+SysinfoTest.TotalRamSaneValue
+SysinfoTest.MemunitSet
+SysinfoTest.FreeRamSaneValue
+SysinfoTest.NumProcsSaneValue
