@@ -476,4 +476,10 @@ pub struct CommonArgs {
         global = true
     )]
     pub encoding: Option<PayloadEncoding>,
+    #[arg(
+        long = "source-unchanged",
+        help = "Assume source code is unchanged and eagerly reuse a cached bundle if reusable",
+        global = true
+    )]
+    pub source_unchanged: bool,
 }

@@ -39,6 +39,7 @@ exclude = [
     "kernel/libs/comp-sys/controlled",
     "osdk",
     "target/osdk/base",
+    "target/osdk/base-test",
 ]
 
 # Cargo only looks at the profile settings 

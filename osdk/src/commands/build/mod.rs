@@ -8,7 +8,7 @@ use std::{
     ffi::OsString,
     path::{Path, PathBuf},
     process,
-    time::{Duration, SystemTime},
+    time::SystemTime,
 };
 
 use bin::make_elf_for_qemu;
@@ -19,6 +19,7 @@ use crate::{
     base_crate::new_base_crate,
     bundle::{
         bin::{AsterBin, AsterBinType, AsterElfMeta},
+        file::BundleFile,
         Bundle,
     },
     cli::BuildArgs,
@@ -88,6 +89,31 @@ pub fn create_base_and_cached_build(
     bundle
 }
 
+fn get_reusable_existing_bundle(
+    bundle_path: impl AsRef<Path>,
+    config: &Config,
+    action: ActionChoice,
+) -> Option<Bundle> {
+    let existing_bundle = Bundle::load(&bundle_path);
+    let Some(existing_bundle) = existing_bundle else {
+        info!("Building a new bundle: No cached bundle found or validation of the existing bundle failed");
+        return None;
+    };
+    if let Err(e) = existing_bundle.can_run_with_config(config, action) {
+        info!("Building a new bundle: {}", e);
+        return None;
+    }
+    let workspace_root = {
+        let meta = get_cargo_metadata(None::<&str>, None::<&[&str]>).unwrap();
+        PathBuf::from(meta.get("workspace_root").unwrap().as_str().unwrap())
+    };
+    if existing_bundle.last_modified_time() < get_last_modified_time(&workspace_root) {
+        info!("Building a new bundle: workspace_root has been updated");
+        return None;
+    }
+    Some(existing_bundle)
+}
+
 /// If the source is not since modified and the last build is recent, we can reuse the existing bundle.
 pub fn do_cached_build(
     bundle_path: impl AsRef<Path>,
@@ -108,25 +134,12 @@ pub fn do_cached_build(
         )
     };
 
-    let existing_bundle = Bundle::load(&bundle_path);
-    let Some(existing_bundle) = existing_bundle else {
-        return build_a_new_one();
-    };
-    if existing_bundle.can_run_with_config(config, action).is_err() {
+    if !config.source_unchanged {
         return build_a_new_one();
     }
-    let Ok(built_since) = SystemTime::now().duration_since(existing_bundle.last_modified_time())
-    else {
-        return build_a_new_one();
-    };
-    if built_since > Duration::from_secs(600) {
-        return build_a_new_one();
-    }
-    let workspace_root = {
-        let meta = get_cargo_metadata(None::<&str>, None::<&[&str]>).unwrap();
-        PathBuf::from(meta.get("workspace_root").unwrap().as_str().unwrap())
-    };
-    if get_last_modified_time(workspace_root) < existing_bundle.last_modified_time() {
+
+    if let Some(existing_bundle) = get_reusable_existing_bundle(&bundle_path, config, action) {
+        info!("Reusing existing bundle based on user hint that source code is unchanged");
         return existing_bundle;
     }
     build_a_new_one()
@@ -140,11 +153,6 @@ pub fn do_build(
     action: ActionChoice,
     rustflags: &[&str],
 ) -> Bundle {
-    if bundle_path.as_ref().exists() {
-        std::fs::remove_dir_all(&bundle_path).unwrap();
-    }
-    let mut bundle = Bundle::new(&bundle_path, config, action);
-
     let (build, boot) = match action {
         ActionChoice::Run => (&config.run.build, &config.run.boot),
         ActionChoice::Test => (&config.test.build, &config.test.boot),
@@ -159,6 +167,23 @@ pub fn do_build(
         &cargo_target_directory,
         rustflags,
     );
+
+    // Recheck the existing bundle's reusability if it is not checked (i.e., !config.source_unchanged)
+    if !config.source_unchanged {
+        if let Some(existing_bundle) = get_reusable_existing_bundle(&bundle_path, config, action) {
+            if aster_elf.modified_time() < &existing_bundle.last_modified_time() {
+                info!("Reusing existing bundle: aster_elf is unchanged");
+                return existing_bundle;
+            }
+        }
+    }
+
+    // Build a new bundle
+    info!("Building a new bundle");
+    if bundle_path.as_ref().exists() {
+        std::fs::remove_dir_all(&bundle_path).unwrap();
+    }
+    let mut bundle = Bundle::new(&bundle_path, config, action);
 
     match boot.method {
         BootMethod::GrubRescueIso | BootMethod::GrubQcow2 => {
@@ -246,6 +271,7 @@ fn build_kernel_elf(
     }
 
     info!("Building kernel ELF using command: {:#?}", command);
+    info!("Building directory: {:?}", std::env::current_dir().unwrap());
 
     let status = command.status().unwrap();
     if !status.success() {
@@ -274,6 +300,9 @@ fn build_kernel_elf(
 }
 
 fn get_last_modified_time(path: impl AsRef<Path>) -> SystemTime {
+    if path.as_ref().is_file() {
+        return path.as_ref().metadata().unwrap().modified().unwrap();
+    }
     let mut last_modified = SystemTime::UNIX_EPOCH;
     for entry in std::fs::read_dir(path).unwrap() {
         let entry = entry.unwrap();
