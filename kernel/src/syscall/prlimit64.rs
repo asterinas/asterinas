@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::{Pid, ResourceType},
+    process::{rlimit::RLimit64, Pid, ResourceType},
 };
 
 pub fn sys_getrlimit(resource: u32, rlim_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
@@ -21,7 +21,10 @@ pub fn sys_setrlimit(resource: u32, new_rlim_addr: Vaddr, ctx: &Context) -> Resu
         "resource = {:?}, new_rlim_addr = 0x{:x}",
         resource, new_rlim_addr
     );
-    let new_rlimit = ctx.user_space().read_val(new_rlim_addr)?;
+    let new_rlimit: RLimit64 = ctx.user_space().read_val(new_rlim_addr)?;
+    if !new_rlimit.is_valid() {
+        return_errno_with_message!(Errno::EINVAL, "invalid rlimit");
+    }
     let mut resource_limits = ctx.process.resource_limits().lock();
     *resource_limits.get_rlimit_mut(resource) = new_rlimit;
     Ok(SyscallReturn::Return(0))
@@ -45,7 +48,11 @@ pub fn sys_prlimit64(
         ctx.user_space().write_val(old_rlim_addr, rlimit)?;
     }
     if new_rlim_addr != 0 {
-        let new_rlimit = ctx.user_space().read_val(new_rlim_addr)?;
+        let new_rlimit: RLimit64 = ctx.user_space().read_val(new_rlim_addr)?;
+        debug!("new_rlimit = {:?}", new_rlimit);
+        if !new_rlimit.is_valid() {
+            return_errno_with_message!(Errno::EINVAL, "invalid rlimit");
+        }
         *resource_limits.get_rlimit_mut(resource) = new_rlimit;
     }
     Ok(SyscallReturn::Return(0))
