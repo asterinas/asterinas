@@ -6,11 +6,18 @@ pub mod local;
 
 use core::fmt::Debug;
 
-use riscv::register::scause::{Exception, Trap};
+use riscv::register::scause::{Exception, Interrupt, Trap};
 
 pub use super::trap::GeneralRegs as RawGeneralRegs;
-use super::trap::{TrapFrame, UserContext as RawUserContext};
-use crate::user::{ReturnReason, UserContextApi, UserContextApiInternal};
+use super::{
+    irq::TIMER_IRQ_LINE,
+    trap::{handle_external_interrupts, TrapFrame, UserContext as RawUserContext},
+};
+use crate::{
+    task::scheduler,
+    trap::call_irq_callback_functions,
+    user::{ReturnReason, UserContextApi, UserContextApiInternal},
+};
 
 /// Cpu context, including both general-purpose registers and FPU state.
 #[derive(Clone, Copy, Debug)]
@@ -35,8 +42,12 @@ pub struct CpuExceptionInfo {
 
 impl Default for UserContext {
     fn default() -> Self {
+        let mut user_context = RawUserContext::default();
+        user_context.sstatus |= (riscv::register::sstatus::FS::Clean as usize) << 13;
+        // TODO: save floating registers on context/task switch
+
         UserContext {
-            user_context: RawUserContext::default(),
+            user_context,
             trap: Trap::Exception(Exception::Unknown),
             fpu_state: (),
             cpu_exception_info: CpuExceptionInfo::default(),
@@ -109,8 +120,15 @@ impl UserContextApiInternal for UserContext {
         F: FnMut() -> bool,
     {
         let ret = loop {
+            scheduler::might_preempt();
             self.user_context.run();
             match riscv::register::scause::read().cause() {
+                Trap::Interrupt(Interrupt::SupervisorTimer) => {
+                    call_irq_callback_functions(&self.as_trap_frame(), TIMER_IRQ_LINE)
+                }
+                Trap::Interrupt(Interrupt::SupervisorExternal) => {
+                    handle_external_interrupts(&self.as_trap_frame())
+                }
                 Trap::Interrupt(_) => todo!(),
                 Trap::Exception(Exception::UserEnvCall) => {
                     self.user_context.sepc += 4;

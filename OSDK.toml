@@ -77,7 +77,7 @@ boot.method = "qemu-direct"
 build.strip_elf = false
 
 qemu.args = """\
-    -cpu rv64,zba=true,zbb=true \
+    -cpu rv64,zba=true,zbb=true,svpbmt=true \
     -machine virt \
     -m 8G \
     --no-reboot \
