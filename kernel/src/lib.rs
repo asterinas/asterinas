@@ -33,7 +33,7 @@
 use ostd::{
     arch::qemu::{exit_qemu, QemuExitCode},
     boot,
-    cpu::PinCurrentCpu,
+    cpu::{num_cpus, CpuId, CpuSet, PinCurrentCpu},
 };
 use process::Process;
 
@@ -130,12 +130,8 @@ fn init_thread() {
     fs::lazy_init();
     ipc::init();
     // driver::pci::virtio::block::block_device_test();
-    let thread = ThreadOptions::new(|| {
-        println!("[kernel] Hello world from kernel!");
-    })
-    .spawn();
-    thread.join();
 
+    print_hello_world();
     print_banner();
 
     let karg = boot::kernel_cmdline();
@@ -160,6 +156,26 @@ fn init_thread() {
         QemuExitCode::Failed
     };
     exit_qemu(exit_code);
+}
+
+fn print_hello_world() {
+    for cpu_idx in 0..num_cpus() {
+        let cpu_affinity = CpuSet::from(CpuId::try_from(cpu_idx).unwrap());
+        let spinner = ["/", "-", "\\", "|"];
+        let thread = ThreadOptions::new(move || {
+            if cpu_idx != num_cpus() - 1 {
+                print!(
+                    "\r[kernel] Hello world from kernel! {}",
+                    spinner[cpu_idx % spinner.len()]
+                );
+            } else {
+                println!("\r[kernel] Hello world from kernel!  ");
+            }
+        })
+        .cpu_affinity(cpu_affinity)
+        .spawn();
+        thread.join();
+    }
 }
 
 fn print_banner() {
