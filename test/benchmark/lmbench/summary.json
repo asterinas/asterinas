@@ -24,6 +24,7 @@
     "vfs_fstat_lat",
     "vfs_read_pagecache_bw",
     "vfs_select_lat",
+    "ramfs_copy_files_bw",
     "ramfs_create_delete_files_0k_ops",
     "ramfs_create_delete_files_10k_ops",
     "ext2_copy_files_bw",
