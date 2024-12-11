@@ -2,12 +2,15 @@
 
 use alloc::{boxed::Box, sync::Arc};
 
-use smoltcp::wire::Ipv4Address;
+use smoltcp::wire::{IpProtocol, Ipv4Address};
 
 use super::port::BindPortConfig;
 use crate::{
     errors::BindError,
-    socket::{BoundTcpSocket, BoundUdpSocket, UnboundTcpSocket, UnboundUdpSocket},
+    socket::{
+        BoundRawSocket, BoundTcpSocket, BoundUdpSocket, UnboundRawSocket, UnboundTcpSocket,
+        UnboundUdpSocket,
+    },
 };
 
 /// A network interface.
@@ -58,6 +61,16 @@ impl<E> dyn Iface<E> {
     ) -> core::result::Result<BoundUdpSocket<E>, (BindError, Box<UnboundUdpSocket>)> {
         let common = self.common();
         common.bind_udp(self.clone(), socket, config)
+    }
+
+    pub fn bind_raw(
+        self: &Arc<Self>,
+        socket: Box<UnboundRawSocket>,
+        config: BindPortConfig,
+        ip_protocol: IpProtocol,
+    ) -> core::result::Result<BoundRawSocket<E>, (BindError, Box<UnboundRawSocket>)> {
+        let common = self.common();
+        common.bind_raw(self.clone(), socket, config, ip_protocol)
     }
 
     /// Gets the IPv4 address of the iface, if any.

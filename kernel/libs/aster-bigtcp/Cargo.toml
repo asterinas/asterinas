@@ -17,4 +17,5 @@ smoltcp = { git = "https://github.com/asterinas/smoltcp", tag = "r_2024-11-08_f0
     "proto-ipv4",
     "socket-udp",
     "socket-tcp",
+    "socket-raw",
 ] }

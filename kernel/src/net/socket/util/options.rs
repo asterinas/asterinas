@@ -3,13 +3,15 @@
 use core::time::Duration;
 
 use aster_bigtcp::socket::{
-    TCP_RECV_BUF_LEN, TCP_SEND_BUF_LEN, UDP_RECV_PAYLOAD_LEN, UDP_SEND_PAYLOAD_LEN,
+    RAW_RECV_PAYLOAD_LEN, RAW_SEND_PAYLOAD_LEN, TCP_RECV_BUF_LEN, TCP_SEND_BUF_LEN,
+    UDP_RECV_PAYLOAD_LEN, UDP_SEND_PAYLOAD_LEN,
 };
 
 use crate::{
     match_sock_option_mut, match_sock_option_ref,
     net::socket::options::{
-        Error as SocketError, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf, SocketOption,
+        Error as SocketError, IpHdrIncl, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf,
+        SocketOption,
     },
     prelude::*,
 };
@@ -47,6 +49,18 @@ impl SocketOptionSet {
             reuse_port: false,
             send_buf: UDP_SEND_PAYLOAD_LEN as u32,
             recv_buf: UDP_RECV_PAYLOAD_LEN as u32,
+            linger: LingerOption::default(),
+        }
+    }
+
+    /// Return the default socket level options for raw socket.
+    pub fn new_raw() -> Self {
+        Self {
+            sock_errors: None,
+            reuse_addr: false,
+            reuse_port: false,
+            send_buf: RAW_SEND_PAYLOAD_LEN as u32,
+            recv_buf: RAW_RECV_PAYLOAD_LEN as u32,
             linger: LingerOption::default(),
         }
     }
@@ -150,5 +164,48 @@ impl LingerOption {
 
     pub fn timeout(&self) -> Duration {
         self.timeout
+    }
+}
+
+#[derive(Debug, Clone, CopyGetters, Setters)]
+#[get_copy = "pub"]
+#[set = "pub"]
+pub struct IpSocketOptionSet {
+    ip_hdr_incl: u32,
+}
+
+impl IpSocketOptionSet {
+    /// Return the default ip level options for raw socket.
+    pub fn new_raw() -> Self {
+        Self { ip_hdr_incl: 0 }
+    }
+
+    /// Sets ip-level options.
+    pub fn set_option(&mut self, option: &dyn SocketOption) -> Result<()> {
+        match_sock_option_ref!(option, {
+            ip_hdr_incl: IpHdrIncl => {
+                let hdr_incl = ip_hdr_incl.get().unwrap();
+                self.set_ip_hdr_incl(*hdr_incl);
+            },
+            _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to be set is unknown")
+        });
+
+        Ok(())
+    }
+
+    /// Gets socket-level options.
+    ///
+    /// Note that the socket error has to be handled separately, because it is automatically
+    /// cleared after reading. This method does not handle it. Instead,
+    /// [`Self::get_and_clear_socket_errors`] should be used.
+    pub fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
+        match_sock_option_mut!(option, {
+            ip_hdr_incl: IpHdrIncl => {
+                let hdr_incl = self.ip_hdr_incl;
+                ip_hdr_incl.set(hdr_incl);
+            },
+            _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the ip option to get is unknown")
+        });
+        Ok(())
     }
 }

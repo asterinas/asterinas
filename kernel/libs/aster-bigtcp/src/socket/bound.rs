@@ -12,25 +12,28 @@ use core::{
 use ostd::sync::{LocalIrqDisabled, RwLock, SpinLock, SpinLockGuard, WriteIrqDisabled};
 use smoltcp::{
     iface::Context,
-    socket::{tcp::State, udp::UdpMetadata, PollAt},
+    socket::{raw::RecvError, tcp::State, udp::UdpMetadata, PollAt},
     time::Instant,
-    wire::{IpAddress, IpEndpoint, IpRepr, TcpControl, TcpRepr, UdpRepr},
+    wire::{
+        IpAddress, IpEndpoint, IpProtocol, IpRepr, Ipv4Address, Ipv4Packet, TcpControl, TcpRepr,
+        UdpRepr,
+    },
 };
 
 use super::{
     event::{SocketEventObserver, SocketEvents},
-    RawTcpSocket, RawUdpSocket, TcpStateCheck,
+    NativeRawSocket, NativeTcpSocket, NativeUdpSocket, TcpStateCheck,
 };
 use crate::iface::Iface;
 
 pub struct BoundSocket<T: AnySocket, E>(Arc<BoundSocketInner<T, E>>);
 
-/// [`TcpSocket`] or [`UdpSocket`].
+/// [`TcpSocket`] or [`UdpSocket`] or [`RawSocket`].
 pub trait AnySocket {
-    type RawSocket;
+    type NativeSocket;
 
     /// Called by [`BoundSocket::new`].
-    fn new(socket: Box<Self::RawSocket>) -> Self;
+    fn new(socket: Box<Self::NativeSocket>) -> Self;
 
     /// Called by [`BoundSocket::drop`].
     fn on_drop<E>(this: &Arc<BoundSocketInner<Self, E>>)
@@ -40,8 +43,9 @@ pub trait AnySocket {
 
 pub type BoundTcpSocket<E> = BoundSocket<TcpSocket, E>;
 pub type BoundUdpSocket<E> = BoundSocket<UdpSocket, E>;
+pub type BoundRawSocket<E> = BoundSocket<RawSocket, E>;
 
-/// Common states shared by [`BoundTcpSocketInner`] and [`BoundUdpSocketInner`].
+/// Common states shared by [`BoundTcpSocketInner`] , [`BoundUdpSocketInner`] and [`BoundRawSocketInner`].
 pub struct BoundSocketInner<T, E> {
     iface: Arc<dyn Iface<E>>,
     port: u16,
@@ -49,16 +53,17 @@ pub struct BoundSocketInner<T, E> {
     observer: RwLock<Weak<dyn SocketEventObserver>, WriteIrqDisabled>,
     events: AtomicU8,
     next_poll_at_ms: AtomicU64,
+    ip_protocol: IpProtocol,
 }
 
 /// States needed by [`BoundTcpSocketInner`] but not [`BoundUdpSocketInner`].
 pub struct TcpSocket {
-    socket: SpinLock<RawTcpSocketExt, LocalIrqDisabled>,
+    socket: SpinLock<NativeTcpSocketExt, LocalIrqDisabled>,
     is_dead: AtomicBool,
 }
 
-struct RawTcpSocketExt {
-    socket: Box<RawTcpSocket>,
+struct NativeTcpSocketExt {
+    socket: Box<NativeTcpSocket>,
     has_connected: bool,
     /// Whether the socket is in the background.
     ///
@@ -69,21 +74,21 @@ struct RawTcpSocketExt {
     in_background: bool,
 }
 
-impl Deref for RawTcpSocketExt {
-    type Target = RawTcpSocket;
+impl Deref for NativeTcpSocketExt {
+    type Target = NativeTcpSocket;
 
     fn deref(&self) -> &Self::Target {
         &self.socket
     }
 }
 
-impl DerefMut for RawTcpSocketExt {
+impl DerefMut for NativeTcpSocketExt {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.socket
     }
 }
 
-impl RawTcpSocketExt {
+impl NativeTcpSocketExt {
     fn on_new_state(&mut self) -> SocketEvents {
         if self.may_send() {
             self.has_connected = true;
@@ -100,7 +105,7 @@ impl RawTcpSocketExt {
 }
 
 impl TcpSocket {
-    fn lock(&self) -> SpinLockGuard<RawTcpSocketExt, LocalIrqDisabled> {
+    fn lock(&self) -> SpinLockGuard<NativeTcpSocketExt, LocalIrqDisabled> {
         self.socket.lock()
     }
 
@@ -118,7 +123,7 @@ impl TcpSocket {
     /// This method must be called after handling network events. However, it is not necessary to
     /// call this method after handling non-closing user events, because the socket can never be
     /// dead if user events can reach the socket.
-    fn update_dead(&self, socket: &RawTcpSocketExt) {
+    fn update_dead(&self, socket: &NativeTcpSocketExt) {
         if socket.in_background && socket.state() == smoltcp::socket::tcp::State::Closed {
             self.is_dead.store(true, Ordering::Relaxed);
         }
@@ -129,7 +134,7 @@ impl TcpSocket {
     /// See [`BoundTcpSocketInner::is_dead`] for the definition of dead TCP sockets.
     ///
     /// [`TimeWait`]: smoltcp::socket::tcp::State::TimeWait
-    fn set_dead_timewait(&self, socket: &RawTcpSocketExt) {
+    fn set_dead_timewait(&self, socket: &NativeTcpSocketExt) {
         debug_assert!(
             socket.in_background && socket.state() == smoltcp::socket::tcp::State::TimeWait
         );
@@ -138,10 +143,10 @@ impl TcpSocket {
 }
 
 impl AnySocket for TcpSocket {
-    type RawSocket = RawTcpSocket;
+    type NativeSocket = NativeTcpSocket;
 
-    fn new(socket: Box<Self::RawSocket>) -> Self {
-        let socket_ext = RawTcpSocketExt {
+    fn new(socket: Box<Self::NativeSocket>) -> Self {
+        let socket_ext = NativeTcpSocketExt {
             socket,
             has_connected: false,
             in_background: false,
@@ -167,12 +172,12 @@ impl AnySocket for TcpSocket {
 }
 
 /// States needed by [`BoundUdpSocketInner`] but not [`BoundTcpSocketInner`].
-type UdpSocket = SpinLock<Box<RawUdpSocket>, LocalIrqDisabled>;
+type UdpSocket = SpinLock<Box<NativeUdpSocket>, LocalIrqDisabled>;
 
 impl AnySocket for UdpSocket {
-    type RawSocket = RawUdpSocket;
+    type NativeSocket = NativeUdpSocket;
 
-    fn new(socket: Box<Self::RawSocket>) -> Self {
+    fn new(socket: Box<Self::NativeSocket>) -> Self {
         Self::new(socket)
     }
 
@@ -184,6 +189,24 @@ impl AnySocket for UdpSocket {
     }
 }
 
+/// States needed by [`BoundRawSocketInner`].
+type RawSocket = SpinLock<Box<NativeRawSocket>, LocalIrqDisabled>;
+
+impl AnySocket for RawSocket {
+    type NativeSocket = NativeRawSocket;
+
+    fn new(socket: Box<Self::NativeSocket>) -> Self {
+        Self::new(socket)
+    }
+
+    fn on_drop<E>(this: &Arc<BoundSocketInner<Self, E>>) {
+        drop(this.socket.lock());
+
+        // A RAW socket can be removed immediately.
+        this.iface.common().remove_raw_socket(this);
+    }
+}
+
 impl<T: AnySocket, E> Drop for BoundSocket<T, E> {
     fn drop(&mut self) {
         T::on_drop(&self.0);
@@ -192,13 +215,15 @@ impl<T: AnySocket, E> Drop for BoundSocket<T, E> {
 
 pub(crate) type BoundTcpSocketInner<E> = BoundSocketInner<TcpSocket, E>;
 pub(crate) type BoundUdpSocketInner<E> = BoundSocketInner<UdpSocket, E>;
+pub(crate) type BoundRawSocketInner<E> = BoundSocketInner<RawSocket, E>;
 
 impl<T: AnySocket, E> BoundSocket<T, E> {
     pub(crate) fn new(
         iface: Arc<dyn Iface<E>>,
         port: u16,
-        socket: Box<T::RawSocket>,
+        socket: Box<T::NativeSocket>,
         observer: Weak<dyn SocketEventObserver>,
+        ip_protocol: IpProtocol,
     ) -> Self {
         Self(Arc::new(BoundSocketInner {
             iface,
@@ -207,6 +232,7 @@ impl<T: AnySocket, E> BoundSocket<T, E> {
             observer: RwLock::new(observer),
             events: AtomicU8::new(0),
             next_poll_at_ms: AtomicU64::new(u64::MAX),
+            ip_protocol,
         }))
     }
 
@@ -365,13 +391,13 @@ impl<E> BoundTcpSocket<E> {
         self.0.update_next_poll_at_ms(PollAt::Now);
     }
 
-    /// Calls `f` with an immutable reference to the associated [`RawTcpSocket`].
+    /// Calls `f` with an immutable reference to the associated [`NativeTcpSocket`].
     //
     // NOTE: If a mutable reference is required, add a method above that correctly updates the next
     // polling time.
     pub fn raw_with<F, R>(&self, f: F) -> R
     where
-        F: FnOnce(&RawTcpSocket) -> R,
+        F: FnOnce(&NativeTcpSocket) -> R,
     {
         let socket = self.0.socket.lock();
         f(&socket)
@@ -436,13 +462,60 @@ impl<E> BoundUdpSocket<E> {
         Ok(result)
     }
 
-    /// Calls `f` with an immutable reference to the associated [`RawUdpSocket`].
+    /// Calls `f` with an immutable reference to the associated [`NativeUdpSocket`].
     //
     // NOTE: If a mutable reference is required, add a method above that correctly updates the next
     // polling time.
     pub fn raw_with<F, R>(&self, f: F) -> R
     where
-        F: FnOnce(&RawUdpSocket) -> R,
+        F: FnOnce(&NativeUdpSocket) -> R,
+    {
+        let socket = self.0.socket.lock();
+        f(&socket)
+    }
+}
+
+impl<E> BoundRawSocket<E> {
+    pub fn send(&self, buffer: &[u8]) -> Result<(), smoltcp::socket::raw::SendError> {
+        use smoltcp::socket::raw::SendError;
+
+        let mut socket = self.0.socket.lock();
+
+        let result = match socket.send_slice(buffer) {
+            Ok(()) => Ok(()),
+            Err(SendError::BufferFull) => return Err(SendError::BufferFull),
+        };
+
+        self.0.update_next_poll_at_ms(PollAt::Now);
+
+        result
+    }
+
+    pub fn recv<F, R>(&self, f: F) -> Result<R, smoltcp::socket::raw::RecvError>
+    where
+        F: FnOnce(&[u8], Ipv4Address) -> R,
+    {
+        let mut socket = self.0.socket.lock();
+
+        let data = socket.recv()?;
+        let src_addr = match Ipv4Packet::new_checked(data) {
+            Ok(packet) => packet.src_addr(),
+            Err(_) => return Err(RecvError::Truncated),
+        };
+
+        let result = f(data, src_addr);
+        self.0.update_next_poll_at_ms(PollAt::Now);
+
+        Ok(result)
+    }
+
+    /// Calls `f` with an immutable reference to the associated [`NativeRawSocket`].
+    //
+    // NOTE: If a mutable reference is required, add a method above that correctly updates the next
+    // polling time.
+    pub fn raw_with<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&NativeRawSocket) -> R,
     {
         let socket = self.0.socket.lock();
         f(&socket)
@@ -544,6 +617,10 @@ impl<T, E> BoundSocketInner<T, E> {
     /// The check is intended to be lock-free and fast, but may have false positives.
     pub(crate) fn need_dispatch(&self, now: Instant) -> bool {
         now.total_millis() as u64 >= self.next_poll_at_ms.load(Ordering::Relaxed)
+    }
+
+    pub(crate) fn get_protocol(&self) -> IpProtocol {
+        self.ip_protocol
     }
 }
 
@@ -698,6 +775,41 @@ impl<E> BoundUdpSocketInner<E> {
             .unwrap();
 
         // For UDP, dequeuing a packet means that we can queue more packets.
+        self.add_events(SocketEvents::CAN_SEND);
+        self.update_next_poll_at_ms(socket.poll_at(cx));
+    }
+}
+
+impl<E> BoundRawSocketInner<E> {
+    /// Tries to process an incoming packet and returns whether the packet is processed.
+    pub(crate) fn process(&self, cx: &mut Context, ip_repr: &IpRepr, ip_payload: &[u8]) -> bool {
+        let mut socket = self.socket.lock();
+
+        if !socket.accepts(ip_repr) {
+            return false;
+        }
+        socket.process(cx, ip_repr, ip_payload);
+        self.add_events(SocketEvents::CAN_RECV);
+        self.update_next_poll_at_ms(socket.poll_at(cx));
+
+        true
+    }
+
+    /// Tries to generate an outgoing packet and dispatches the generated packet.
+    pub(crate) fn dispatch<D>(&self, cx: &mut Context, dispatch: D)
+    where
+        D: FnOnce(&mut Context, &IpRepr, &[u8]),
+    {
+        let mut socket = self.socket.lock();
+
+        socket
+            .dispatch(cx, |cx, (ip_repr, udp_payload)| {
+                dispatch(cx, &ip_repr, udp_payload);
+                Ok::<(), ()>(())
+            })
+            .unwrap();
+
+        // For Raw, dequeuing a packet means that we can queue more packets.
         self.add_events(SocketEvents::CAN_SEND);
         self.update_next_poll_at_ms(socket.poll_at(cx));
     }
