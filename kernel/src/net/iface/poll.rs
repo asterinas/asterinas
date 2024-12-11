@@ -6,7 +6,7 @@ use core::time::Duration;
 use log::trace;
 use ostd::timer::Jiffies;
 
-use super::{ext::IfaceEx, Iface, IFACES};
+use super::{Iface, IFACES};
 use crate::{sched::priority::Priority, thread::kernel_thread::ThreadOptions, WaitTimeout};
 
 pub fn lazy_init() {
@@ -27,14 +27,14 @@ fn spawn_background_poll_thread(iface: Arc<Iface>) {
     let task_fn = move || {
         trace!("spawn background poll thread for {}", iface.name());
 
-        let iface_ext = iface.ext();
-        let wait_queue = iface_ext.polling_wait_queue();
+        let sched_poll = iface.sched_poll();
+        let wait_queue = sched_poll.polling_wait_queue();
 
         loop {
-            let next_poll_at_ms = if let Some(next_poll_at_ms) = iface_ext.next_poll_at_ms() {
+            let next_poll_at_ms = if let Some(next_poll_at_ms) = sched_poll.next_poll_at_ms() {
                 next_poll_at_ms
             } else {
-                wait_queue.wait_until(|| iface_ext.next_poll_at_ms())
+                wait_queue.wait_until(|| sched_poll.next_poll_at_ms())
             };
 
             let now_as_ms = Jiffies::elapsed().as_duration().as_millis() as u64;
@@ -54,9 +54,9 @@ fn spawn_background_poll_thread(iface: Arc<Iface>) {
 
             let duration = Duration::from_millis(next_poll_at_ms - now_as_ms);
             let _ = wait_queue.wait_until_or_timeout(
-                // If `iface_ext.next_poll_at_ms()` changes to an earlier time, we will end the
+                // If `sched_poll.next_poll_at_ms()` changes to an earlier time, we will end the
                 // waiting.
-                || (iface_ext.next_poll_at_ms()? < next_poll_at_ms).then_some(()),
+                || (sched_poll.next_poll_at_ms()? < next_poll_at_ms).then_some(()),
                 &duration,
             );
         }

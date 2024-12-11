@@ -16,6 +16,7 @@
 
 pub mod device;
 pub mod errors;
+pub mod ext;
 pub mod iface;
 pub mod socket;
 pub mod time;

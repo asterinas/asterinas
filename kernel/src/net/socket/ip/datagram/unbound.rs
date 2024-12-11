@@ -1,13 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Weak;
+use aster_bigtcp::{socket::UnboundUdpSocket, wire::IpEndpoint};
 
-use aster_bigtcp::{
-    socket::{SocketEventObserver, UnboundUdpSocket},
-    wire::IpEndpoint,
-};
-
-use super::bound::BoundDatagram;
+use super::{bound::BoundDatagram, DatagramObserver};
 use crate::{events::IoEvents, net::socket::ip::common::bind_socket, prelude::*};
 
 pub struct UnboundDatagram {
@@ -15,9 +10,9 @@ pub struct UnboundDatagram {
 }
 
 impl UnboundDatagram {
-    pub fn new(observer: Weak<dyn SocketEventObserver>) -> Self {
+    pub fn new() -> Self {
         Self {
-            unbound_socket: Box::new(UnboundUdpSocket::new(observer)),
+            unbound_socket: Box::new(UnboundUdpSocket::new()),
         }
     }
 
@@ -25,12 +20,13 @@ impl UnboundDatagram {
         self,
         endpoint: &IpEndpoint,
         can_reuse: bool,
+        observer: DatagramObserver,
     ) -> core::result::Result<BoundDatagram, (Error, Self)> {
         let bound_socket = match bind_socket(
             self.unbound_socket,
             endpoint,
             can_reuse,
-            |iface, socket, config| iface.bind_udp(socket, config),
+            |iface, socket, config| iface.bind_udp(socket, observer, config),
         ) {
             Ok(bound_socket) => bound_socket,
             Err((err, unbound_socket)) => return Err((err, Self { unbound_socket })),
