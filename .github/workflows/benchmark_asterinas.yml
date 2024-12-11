@@ -78,6 +78,8 @@ jobs:
           - redis/ping_mbulk_100k_conc20_rps
           - redis/get_100k_conc20_rps
           - redis/set_100k_conc20_rps
+          # SQLite benchmarks
+          - sqlite/ext2_benchmarks
       fail-fast: false
     timeout-minutes: 60
     container: 
