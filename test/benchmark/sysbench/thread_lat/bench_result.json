@@ -1,0 +1,10 @@
+{
+    "alert_threshold": "130%",
+    "alert_tool": "customSmallerIsBetter",
+    "search_pattern": "avg:",
+    "result_index": "NF",
+    "description": "sysbench threads",
+    "title": "[Threads] Threads performance",
+    "unit": "ms",
+    "legend": "Average Execution Time per Thread on {system}"
+}
