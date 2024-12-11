@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_time::read_monotonic_time;
+
 use super::SyscallReturn;
 use crate::prelude::*;
-use aster_time::read_monotonic_time;
 
 #[derive(Debug, Default, Clone, Copy, Pod)]
 #[repr(C)]
@@ -18,13 +19,10 @@ pub struct sysinfo {
     procs: u16,
     totalhigh: u64,
     freehigh: u64,
-    mem_unit: u32
+    mem_unit: u32,
 }
 
-pub fn sys_sysinfo(
-    sysinfo_addr: Vaddr,
-    ctx: &Context,
-) -> Result<SyscallReturn> {
+pub fn sys_sysinfo(sysinfo_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     let info = sysinfo {
         uptime: read_monotonic_time().as_secs() as i64,
         ..Default::default() // TODO: add other system information
