@@ -1,172 +1,261 @@
-# Introduction to benchmarks
+# Asterinas Benchmark Collection
 
-## Overview of supported benchmarks
-The benchmark suite contains several benchmarks that can be used to evaluate the performance of the Asterinas platform. The following benchmarks are supported:
+The Asterinas Benchmark Collection evaluates the performance of Asterinas in comparison to Linux across a range of benchmarking tools (e.g., LMbench, Sysbench, iPerf) and real-world applications (e.g., Nginx, Redis, SQLite). These benchmarks are conducted under various configurations, such as within a single virtual machine (VM) or between a VM and its host.
 
-- [Sysbench](#Sysbench)
-- [Membench](#Membench)
-- [Iperf](#Iperf)
+The benchmarks are run automatically on a nightly basis through continuous integration (CI) pipelines. Results, presented in clear and visually appealing figures and tables, are available [here](https://asterinas.github.io/benchmark/).
 
-### Sysbench
-Sysbench is a scriptable benchmark tool that evaluates system performance. It includes five kinds of tests: CPU, memory, file I/O, mutex performance, and thread performance. Detailed usage and options can be found by using:
-```shell
-sysbench --help
-sysbench --test=<test_name> help
-``` 
-Here we list some general commands for evaluation:
-```shell
-# CPU test
-sysbench --test=cpu --cpu-max-prime=<N> --num-threads=<N> run
+## File Organization
 
-# Thread test
-sysbench --test=threads --thread-yields=<N> --num-threads=<N> --max-time=<N> run
+### Benchmark Suites
 
-# Mutex test
-sysbench --test=mutex --mutex-num=<N> --mutex-locks=<N> --num-threads=<N>
+The benchmark collection is organized into benchmark suites, each dedicated to a specific benchmarking tool or application. These suites focus on comparing the performance of different operating systems using a particular methodology. Currently, there are seven benchmark suites, each located in its own directory:
 
-# File test, the file-total-size and file-num of prepare and run must be consistent 
-sysbench --test=fileio --file-total-size=<N><K,M,G> --file-num=<N> prepare
-sysbench --test=fileio --file-total-size=<N><K,M,G> --file-num=<N> --file-test-mode=<Type> --file-block-size=<N><K,M,G> --max-time=<N> run
+- [lmbench](https://github.com/asterinas/asterinas/tree/main/test/benchmark/lmbench)
+- [sysbench](https://github.com/asterinas/asterinas/tree/main/test/benchmark/sysbench)
+- [fio](https://github.com/asterinas/asterinas/tree/main/test/benchmark/fio)
+- [iperf](https://github.com/asterinas/asterinas/tree/main/test/benchmark/iperf)
+- [sqlite](https://github.com/asterinas/asterinas/tree/main/test/benchmark/sqlite)
+- [redis](https://github.com/asterinas/asterinas/tree/main/test/benchmark/redis)
+- [nginx](https://github.com/asterinas/asterinas/tree/main/test/benchmark/nginx)
 
-# Memory test
-sysbench --test=memory --memory-block-size=<N><K,M,G> --memory-access-mode=<Type> --memory-oper=<Type> run
+Each suite has a corresponding web page (e.g., [LMbench results](https://asterinas.github.io/benchmark/lmbench/)) that publishes the latest performance data. At the top of each page, a summary table showcases the most recent results, configured using the `summary.json` file in the suite's directory.
+
+### Benchmark Jobs
+
+Each benchmark suite is divided into benchmark jobs, which perform specific benchmarking tasks. Benchmark jobs are organized into subdirectories under their parent suite directory:
+
+```plaintext
+<bench_suite>/
+├── <bench_job_a>/
+└── <bench_job_b>/
 ```
 
-### Membench
-Membench is used to establish a baseline for memory bandwidth and latency. For specific usage and options, use:
-```shell
-membench --help
-``` 
-Here we list some general commands to use membench:
-```shell
-# Measure the latency of mmap
-membench -runtime=5 -dir=/dev/zero -size=<N><K,M,G> -engine=mmap_lat
+Benchmark jobs can be executed using the `bench_linux_and_aster.sh` script located in the `test/benchmark/` directory:
 
-# Measure the latency of page fault handling. The size must be consistent with the file size.
-membench -runtime=5 -dir=path_to_a_file -size=<N><K,M,G> -copysize=<N><K,M,G> -mode=<Type> -engine=page_fault 
-
-# This is a easy way to generate a file with target size in Linux.
-# The following command can create a file named 512K.file with the size 512K.
-dd if=/dev/zero of=512K.file bs=1K count=512
+```bash
+./bench_linux_and_aster.sh <bench_suite>/<bench_job>
 ```
 
-### Iperf
-iPerf is a tool for actively measuring the maximum achievable bandwidth on IP networks. Usage and options are detailed in:
-```shell
-iperf3 -h
-``` 
-iperf can run in the following instructions:
-```shell
-export HOST_ADDR=127.0.0.1
-export HOST_PORT=8888
-iperf3 -s -B $HOST_ADDR -p $HOST_PORT -D # Start the server as a daemon
-iperf3 -c $HOST_ADDR -p $HOST_PORT # Start the client
+For example, to measure the latency of the `getppid` system call on both Linux and Asterinas, run:
+
+```bash
+./bench_linux_and_aster.sh lmbench/process_getppid_lat
 ```
-Note that [a variant of iperf3](https://github.com/stefano-garzarella/iperf-vsock) can measure the performance of `vsock`. But the implemented `vsock` has not been verified to work well in it.
 
-## Add benchmark to benchmark CI
+The script starts a VM running either Linux or Asterinas as the guest OS and invokes the `run.sh` script located in the benchmark job's directory to execute the benchmark:
 
-To add a new benchmark to the Asternias Continuous Integration (CI) system, follow these detailed steps:
+```plaintext
+<bench_suite>/
+└── <guest_only_job>/
+    └── run.sh
+```
 
-### Step 1: Add the Benchmark to the `asterinas/test/benchmarks` Directory
+For benchmarks requiring collaboration between the guest VM and the host OS (e.g., server-client scenarios), the job should include a `host.sh` script alongside the `run.sh` script:
 
-1. **Create the Benchmark Directory:**
-   - Navigate to `asterinas/test/benchmarks`.
-   - Create a new directory named after your benchmark, e.g., `lmbench/getpid`.
+```plaintext
+<bench_suite>/
+└── <host_guest_job>/
+    ├── host.sh
+    └── run.sh
+```
 
-2. **Create the Necessary Files:**
-   - **config.json:**
-     ```json
-      {
-        "alert_threshold": "125%",
-        "alert_tool": "customSmallerIsBetter",
-        "search_pattern": "Simple syscall:",
-        "result_index": "3",
-        "description": "lat_syscall null",
-        "title": "[Process] The cost of getpid",
-        "benchmark_type": "host_guest",
+#### Single Result Jobs
+
+For jobs that produce a single result, the directory is structured as follows:
+
+```plaintext
+<bench_suite>/
+└── <single_result_job>/
+    ├── bench_result.json
+    └── run.sh
+```
+
+The `bench_result.json` file contains metadata about the result, including the title, measurement unit, and whether higher or lower values indicate better performance.
+
+#### Multi-Result Jobs
+
+For jobs producing multiple results, the directory includes a `bench_results/` folder:
+
+```plaintext
+<bench_suite>/
+└── <multi_result_job>/
+    ├── bench_results/
+    │   ├── <job_a>.json
+    │   └── <job_b>.json
+    └── run.sh
+```
+
+Each JSON file in the `bench_results/` directory describes a specific result's metadata.
+
+## Adding New Benchmark Jobs
+
+To seamlessly integrate new benchmarks into the Asterinas Benchmark Collection, follow the steps below. These instructions are tailored to the directory structure outlined earlier, where benchmarks are organized under specific suites and jobs.
+
+### Step 1: Add the Directory Structure
+
+Each benchmark job should be added under the corresponding suite in the `test/benchmark` directory.
+
+#### Directory Structure
+
+```plaintext
+<bench_suite>/
+└── <job>/
+    ├── host.sh # Only for host-guest jobs
+    ├── bench_result.json  # or bench_results/ directory for multiple results jobs
+    └── run.sh
+```
+
+### Step 2: Create Necessary Files
+
+In this step, we need to create several files that are essential for running and managing the benchmarks effectively. Below are the detailed instructions for each required file.
+
+#### Running Scripts
+
+Typically, two scripts are required for each benchmark job: `run.sh` and `host.sh` (for host-guest jobs). These scripts are responsible for executing the benchmark within the guest VM and handling host-side operations, respectively.
+
+Below are the contents of each script for a sample `iperf3` benchmark:
+
+`run.sh`:
+```bash
+#!/bin/bash
+
+echo "Running iperf3 server..."
+/benchmark/bin/iperf3 -s -B 10.0.2.15 --one-off
+```
+
+`host.sh`:
+```bash
+#!/bin/bash
+
+echo "Running iperf3 client"
+iperf3 -c $GUEST_SERVER_IP_ADDRESS -f m
+```
+
+#### Configuration Files
+
+The configuration files provide metadata about the benchmark jobs and results, such as the regression alerts, chart details, and result extraction patterns. Typically, these files are in JSON format. For single-result jobs, a `bench_result.json` file is used, while multi-result jobs have individual JSON files under `bench_results/` for each result. Some fields in these files are necessary while some are optional, depending on the benchmark's requirements. For more information, see the [`bench_result.json` format](#the-bench_resultjson-format) section.
+
+Below are the contents of these files for the sample benchmark:
+
+```jsonc
+// fio/ext2_iommu_seq_write_bw/bench_result.json
+{
+    "alert": {
+        "threshold": "125%",
+        "bigger_is_better": true
+    },
+    "result_extraction": {
+        "search_pattern": "bw=",
+        "result_index": 2
+    },
+    "chart": {
+        "title": "[Ext2] The bandwidth of sequential writes (IOMMU enabled on Asterinas)",
+        "description": "fio -filename=/ext2/fio-test -size=1G -bs=1M -direct=1",
+        "unit": "MB/s",
+        "legend": "Average file write bandwidth on {system}"
+    },
+    "runtime_config": {
         "aster_scheme": "iommu"
-      } 
-     ```
-     
-    - `alert_threshold`: Set the threshold for alerting. If the benchmark result exceeds this threshold, an alert will be triggered. Note that the threshold should usually be greater than 100%. If your results are not stable, set it to a bigger value.
-    - `alert_tool`: Choose the validation tool to use. The available options are `customBiggerIsBetter` and `customSmallerIsBetter`. Refer to [this](https://github.com/benchmark-action/github-action-benchmark?tab=readme-ov-file#tool-required) for more details. If using `customBiggerIsBetter`, the alert will be triggered when `prev.value / current.value` exceeds the threshold. If using `customSmallerIsBetter`, the alert will be triggered when `current.value / prev.value` exceeds the threshold.
-    - `search_pattern`: Define a regular expression to extract benchmark results from the output using `awk`. This regular expression is designed to match specific patterns in the output, effectively isolating the benchmark results and producing a set of fragments.
-    - `result_index`: Specify the index of the result in the extracted output. This field is aligned with `awk`'s action.
-    - `description`: Provide a brief description of the benchmark.
-    - `title`: Set the title of the benchmark.
-    - `benchmark_type`: This parameter defines the type of benchmark to be executed. The default value is `guest_only`. The available options include `guest_only`, and `host_guest`.
-      - `guest_only`: Use this option when the benchmark is intended solely for the guest environment.
-      - `host_guest`: Choose this option when the benchmark involves both the host and guest environments. When using this option, you will need to define your own `host.sh` and `bench_runner.sh` scripts to handle the host-side operations and benchmark execution.
-    - `aster_scheme`: Specify the scheme used in Asterinas. The optional values, e.g., `iommu`, are aligned with the `SCHEME` parameter in `asterinas/Makefile`.
-
-    For example, if the benchmark output is "Syscall average latency: 1000 ns", the `search_pattern` is "Syscall average latency:", and the `result_index` is "4". `awk` will extract "1000" as the benchmark result. See the `awk` [manual](https://www.gnu.org/software/gawk/manual/gawk.html#Getting-Started) for more information.
-
-    - **summary.json:**
-    ```json
-    {
-        "benchmarks": [
-            "cpu_lat",
-            "thread_lat"
-        ]
     }
-    ```
-    - List all the benchmarks that are included in the benchmark overview. This file is used to generate the overview chart of the benchmark results. 
-    - The benchmark does not appear in the overview chart if it is not listed in this file. But it will still be included in the detailed benchmark results.
-    - The sequence of the benchmarks in this file will be the same as the sequence in the overview chart.
+}  
+```
 
-   - **result_template.json:**
-     ```json
-     [
-         {
-             "name": "Average Syscall Latency on Linux",
-             "unit": "ns",
-             "value": 0,
-             "extra": "linux_result"
-         },
-         {
-             "name": "Average Syscall Latency on Asterinas",
-             "unit": "ns",
-             "value": 0,
-             "extra": "aster_result"
-         }
-     ]
-     ```
-     - Adjust `name` and `unit` according to your benchmark specifics.
+```jsonc
+// sqlite/ext2_benchmarks/bench_results/ext2_deletes_between.json
+{
+    "result_extraction": {
+        "search_pattern": "10000 DELETEs, numeric BETWEEN, indexed....",
+        "result_index": 8
+    },
+    "chart": {
+    ...
+}
 
-   - **run.sh:**
-     ```bash
-     #!/bin/bash
+// sqlite/ext2_benchmarks/bench_results/ext2_updates_between.json
+{
+    "result_extraction": {
+        "search_pattern": "10000 UPDATES, numeric BETWEEN, indexed....",
+        "result_index": 8
+    },
+    "chart": {
+    ...
+}
+```
 
-     /benchmark/bin/lmbench/lat_syscall -P 1 null
-     ```
-     - This script runs the benchmark. Ensure the path to the benchmark binary is correct. `asterinas/test/Makefile` handles the benchmark binaries.
+### Step 3: Update Suite's `summary.json`
 
-### Step 2: Update the `asterinas/.github/benchmarks.yml` File
+Asterinas is an increasingly continuous improvement project. Consequently, while some benchmarks have been incorporated into the Benchmark Collection, their optimization is still ongoing. We do not wish to display these benchmarks on the overview charts. Therefore, we define the benchmarks that should be shown in the `summary.json` file. Only the benchmarks in the `summary.json` file can be displayed on the overview charts. Note that the standalone benchmark results are still available in the respective benchmark suite's page.
 
-1. **Edit the Benchmarks Configuration:**
-   - Open `asterinas/.github/benchmarks.yml`.
-   - Add your benchmark to the `strategy.matrix.benchmark` list:
-     ```yaml
-     strategy:
-       matrix:
-         benchmark: [lmbench/getpid]
-       fail-fast: false
-     ```
+To include a new benchmark in the suite's summary table, we need to update the `summary.json` file at the root of the suite. Taking `sqlite` for example:
 
-### Step 3: Test the Benchmark Locally
+```jsonc
+// sqlite/summary.json
+{
+    "benchmarks": [
+        "sqlite/ext2_deletes_between",
+        "sqlite/ext2_deletes_individual",
+        "sqlite/ext2_refill_replace",
+        "sqlite/ext2_selects_ipk"
+    ]
+}
+```
 
-1. **Run the Benchmark:**
-   - Execute the following command to test the benchmark locally:
-     ```bash
-     cd asterinas
-     bash test/benchmark/bench_linux_and_aster.sh lmbench/getpid
-     ```
-   - Ensure the benchmark runs successfully and check the results in `asterinas/result_getpid.json`.
+### Step 4: Update the CI Configuration
 
-### Additional Considerations
+Asterinas employs GitHub Actions for continuous integration (CI) to automatically execute benchmark collection every day. To incorporate the new benchmark into the CI pipeline, it is necessary to update `<bench_suite>/<bench_job>` within the `.github/benchmarks.yml` file.
 
-- **Validation:** After adding and testing the benchmark, ensure that the CI pipeline correctly integrates the new benchmark by triggering a CI build.
-- **Documentation:** Update any relevant documentation to include the new benchmark, explaining its purpose and how to interpret its results.
+```yaml
+strategy:
+    matrix:
+    benchmarks:
+        - redis/ping_inline_100k_conc20_rps
+        - sqlite/ext2_benchmarks
+        ...
+```
 
-By following these steps, you will successfully integrate a new benchmark into the Asternias CI system, enhancing its capability to evaluate platform performance.
+### Step 5: Test, Validate and Commit
+
+Before committing the changes, it is essential to test the new benchmark job locally to ensure it runs correctly. This step helps identify any issues or errors that may arise during the benchmark execution. 
+
+Firstly, we can run the benchmark locally to ensure it works as expected. The following command should finally generate the `result_<bench_suite>-<bench_job>.json` under `asterinas/`. 
+
+```bash
+cd asterinas/
+bash test/benchmark/bench_linux_and_aster.sh <bench_suite>/<bench_job>
+```
+
+Secondly, we can validate modifications by running the CI pipeline on our own repository. To do this, we need to modify the `runs-on` field from `self-hosted` to `ubuntu-latest` on `.github/benchmarks.yml`. Then, we can manually trigger the CI pipeline on our own repository to ensure the new benchmark is correctly executed. After validation, we can reverse the `runs-on` field back to `self-hosted`.
+
+Finally, if the new benchmark job runs successfully, we can commit the changes and create a pull request to merge the new benchmark into the main branch.
+
+## The `bench_result.json` Format
+
+The `bench_result.json` file configures how benchmark results are processed and displayed. Below is an example of the file to give you a big-picture understanding:
+
+```jsonc
+{
+    // Configurations for performance alerts.
+    "alert": {
+        "threshold": "130%", // Acceptable performance deviation (e.g., 130% = 30% higher).
+        "bigger_is_better": true // true: Higher values are better; false: Lower values are better.
+    },
+    // Settings for extracting benchmark results from raw outputs.
+    "result_extraction": {
+        "search_pattern": "sender", // Regex or string to locate results.
+        "result_index": 7 // Match index to use (e.g., 7th occurrence).
+    },
+    // Configurations for how the results are displayed in charts.
+    "chart": {
+        "title": "[Network] iperf3 sender performance using TCP", // Title of the chart.
+        "description": "iperf3 -s -B 10.0.2.15", // Context or command associated with the benchmark.
+        "unit": "Mbits/sec", // Measurement unit for the results.
+        "legend": "Average TCP Bandwidth over virtio-net between Host Linux and Guest {system}" // Chart legend with dynamic placeholder {system} supported.
+    },
+    // Optional runtime configurations for the benchmark.
+    "runtime_config": {
+        "aster_scheme": "iommu" // Corresponds to Makefile parameters (e.g., IOMMU support).
+    }
+}
+```
+
+By adhering to this format, we ensure clarity and consistency in benchmarking workflows and reporting systems.
