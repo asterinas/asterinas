@@ -43,6 +43,7 @@ impl<T: ?Sized> Mutex<T> {
     /// for compile-time checked lifetimes of the mutex guard.
     ///
     /// [`lock`]: Self::lock
+    #[track_caller]
     pub fn lock_arc(self: &Arc<Self>) -> ArcMutexGuard<T> {
         self.queue.wait_until(|| self.try_lock_arc())
     }
