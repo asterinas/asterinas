@@ -12,6 +12,7 @@ use crate::{
     fs::{
         fs_resolver::{FsPath, FsResolver, AT_FDCWD},
         path::Dentry,
+        utils::Permission,
     },
     prelude::*,
 };
@@ -77,7 +78,11 @@ pub fn check_executable_file(dentry: &Dentry) -> Result<()> {
         return_errno_with_message!(Errno::EACCES, "the dentry is not a regular file");
     }
 
-    if !dentry.mode()?.is_executable() {
+    if dentry
+        .inode()
+        .check_permission(Permission::MAY_EXEC)
+        .is_err()
+    {
         return_errno_with_message!(Errno::EACCES, "the dentry is not executable");
     }
 
