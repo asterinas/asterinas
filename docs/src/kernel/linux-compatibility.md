@@ -119,7 +119,7 @@ provided by Linux on x86-64 architecture.
 | 96      | gettimeofday     | ✅              |
 | 97      | getrlimit        | ✅              |
 | 98      | getrusage        | ✅              |
-| 99      | sysinfo          | ❌              |
+| 99      | sysinfo          | ✅              |
 | 100     | times            | ❌              |
 | 101     | ptrace           | ❌              |
 | 102     | getuid           | ✅              |
