@@ -7,7 +7,10 @@ use super::{
     inode_handle::InodeHandle,
     path::Dentry,
     rootfs::root_mount,
-    utils::{AccessMode, CreationFlags, InodeMode, InodeType, StatusFlags, PATH_MAX, SYMLINKS_MAX},
+    utils::{
+        AccessMode, CreationFlags, InodeMode, InodeType, Permission, StatusFlags, PATH_MAX,
+        SYMLINKS_MAX,
+    },
 };
 use crate::{prelude::*, process::posix_thread::AsPosixThread};
 
@@ -134,7 +137,12 @@ impl FsResolver {
         let parent = lookup_ctx
             .parent()
             .ok_or_else(|| Error::with_message(Errno::ENOENT, "parent not found"))?;
-        if !parent.mode()?.is_writable() {
+
+        if parent
+            .inode()
+            .check_permission(Permission::MAY_WRITE)
+            .is_err()
+        {
             return_errno_with_message!(Errno::EACCES, "file cannot be created");
         }
 

@@ -15,7 +15,9 @@ use ostd::sync::RwMutexWriteGuard;
 use crate::{
     fs::{
         path::mount::MountNode,
-        utils::{FileSystem, Inode, InodeMode, InodeType, Metadata, MknodType, NAME_MAX},
+        utils::{
+            FileSystem, Inode, InodeMode, InodeType, Metadata, MknodType, Permission, NAME_MAX,
+        },
     },
     prelude::*,
     process::{Gid, Uid},
@@ -461,6 +463,13 @@ impl Dentry {
 
     /// Creates a new `Dentry` to represent the child directory of a file system.
     pub fn new_fs_child(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Self> {
+        if self
+            .inode()
+            .check_permission(Permission::MAY_WRITE)
+            .is_err()
+        {
+            return_errno!(Errno::EACCES);
+        }
         let new_child_dentry = self.inner.create(name, type_, mode)?;
         Ok(Self::new(self.mount_node.clone(), new_child_dentry))
     }
@@ -474,7 +483,7 @@ impl Dentry {
         if self.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
-        if !self.mode()?.is_executable() {
+        if self.inode().check_permission(Permission::MAY_EXEC).is_err() {
             return_errno!(Errno::EACCES);
         }
         if name.len() > NAME_MAX {
