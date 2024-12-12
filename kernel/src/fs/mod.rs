@@ -51,7 +51,6 @@ pub fn lazy_init() {
     //The device name is specified in qemu args as --serial={device_name}
     let ext2_device_name = "vext2";
     let exfat_device_name = "vexfat";
-    let ext2_metis_data = "vmetis_data";
 
     if let Ok(block_device_ext2) = start_block_device(ext2_device_name) {
         let ext2_fs = Ext2::open(block_device_ext2).unwrap();
@@ -65,12 +64,5 @@ pub fn lazy_init() {
         let target_path = FsPath::try_from("/exfat").unwrap();
         println!("[kernel] Mount ExFat fs at {:?} ", target_path);
         self::rootfs::mount_fs_at(exfat_fs, &target_path).unwrap();
-    }
-
-    if let Ok(block_device_metis_data) = start_block_device(ext2_metis_data) {
-        let ext2_fs = Ext2::open(block_device_metis_data).unwrap();
-        let target_path = FsPath::try_from("/benchmark/bin/metis/data").unwrap();
-        println!("[kernel] Mount Ext2 fs at {:?} ", target_path);
-        self::rootfs::mount_fs_at(ext2_fs, &target_path).unwrap();
     }
 }

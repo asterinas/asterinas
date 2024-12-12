@@ -17,7 +17,6 @@ INITRAMFS_IMAGE := $(BUILD_DIR)/initramfs.cpio.gz
 endif
 EXT2_IMAGE := $(BUILD_DIR)/ext2.img
 EXFAT_IMAGE := $(BUILD_DIR)/exfat.img
-METIS_IMAGE := $(BUILD_DIR)/metis.img
 INITRAMFS_EMPTY_DIRS := \
 	$(INITRAMFS)/root \
 	$(INITRAMFS)/tmp \
@@ -134,17 +133,6 @@ $(INITRAMFS)/benchmark/bin:
 	@cp /usr/local/leveldb/benchmark/db_bench_sqlite3 $@
 	@cp /usr/local/benchmark/hackbench $@
 	@cp /usr/local/benchmark/schbench $@
-	@cp -r /root/mosbench/metis/obj/app $@/metis
-	@cp -r /root/mosbench/metis/run_in_vm.sh $@/metis
-	@mkdir -p $@/metis/data
-	@mkdir -p $@/psearchy
-	@cp /root/mosbench/psearchy/mkdb/pedsort $@/psearchy
-	@cp /root/mosbench/psearchy/create_dirs.sh $@/psearchy
-	@cp /root/mosbench/psearchy/run_in_vm.sh $@/psearchy
-	@mkdir -p $@/dedup/data
-	@cp /root/parsec-3.0/pkgs/kernels/dedup/inst/amd64-linux.gcc/bin/dedup $@/dedup
-	@cp /root/parsec-3.0/pkgs/kernels/dedup/run_in_vm.sh $@/dedup
-	@cp /root/parsec-3.0/pkgs/kernels/dedup/inputs/*.dat $@/dedup/data
 	
 # Make necessary directories.
 $(INITRAMFS_EMPTY_DIRS):
@@ -192,15 +180,6 @@ $(EXT2_IMAGE):
 $(EXFAT_IMAGE):
 	@fallocate -l 64M $(EXFAT_IMAGE)
 	@mkfs.exfat $(EXFAT_IMAGE)
-
-$(METIS_IMAGE):
-	@dd if=/dev/zero of=$(METIS_IMAGE) bs=2G count=15 iflag=fullblock
-	@mkfs.ext2 $(METIS_IMAGE)
-	@mkdir -p /mnt/metis_mount
-	@mount -t ext2 $(METIS_IMAGE) /mnt/metis_mount
-	@cp -r /root/mosbench/metis/data/* /mnt/metis_mount/
-	@umount /mnt/metis_mount
-	@rm -rf /mnt/metis_mount/
 
 .PHONY: build
 build: $(INITRAMFS_IMAGE) $(EXT2_IMAGE) $(EXFAT_IMAGE) $(METIS_IMAGE)
