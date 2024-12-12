@@ -1,2 +1,3 @@
 MkdirTest.HonorsUmask
 MkdirTest.HonorsUmask2
+MkdirTest.FailsOnDirWithoutWritePerms

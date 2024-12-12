@@ -134,9 +134,6 @@ impl FsResolver {
         let parent = lookup_ctx
             .parent()
             .ok_or_else(|| Error::with_message(Errno::ENOENT, "parent not found"))?;
-        if !parent.mode()?.is_writable() {
-            return_errno_with_message!(Errno::EACCES, "file cannot be created");
-        }
 
         let tail_file_name = lookup_ctx.tail_file_name().unwrap();
         let new_dentry =
