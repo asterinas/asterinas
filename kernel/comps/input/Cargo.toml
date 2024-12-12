@@ -11,7 +11,6 @@ spin = "0.9.4"
 ostd = { path = "../../../ostd" }
 aster-util = { path = "../../libs/aster-util" }
 aster-rights = { path = "../../libs/aster-rights" }
-aster-logger = { path = "../logger" }
 component = { path = "../../libs/comp-sys/component" }
 int-to-c-enum = { path = "../../libs/int-to-c-enum" }
 log = "0.4"
