@@ -4,7 +4,7 @@ use crate::{
     fs::{
         fs_resolver::{split_path, FsPath},
         path::Dentry,
-        utils::{InodeMode, InodeType},
+        utils::{InodeMode, InodeType, Permission},
     },
     prelude::*,
     process::posix_thread::AsPosixThread,
@@ -19,7 +19,11 @@ pub fn lookup_socket_file(path: &str) -> Result<Dentry> {
         fs.lookup(&fs_path)?
     };
 
-    if !dentry.mode()?.is_readable() || !dentry.mode()?.is_writable() {
+    if dentry
+        .inode()
+        .check_permission(Permission::MAY_READ | Permission::MAY_WRITE)
+        .is_err()
+    {
         return_errno_with_message!(Errno::EACCES, "the socket file cannot be read or written")
     }
 
