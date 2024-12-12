@@ -109,6 +109,14 @@ impl<T: ?Sized, G: Guardian> SpinLock<T, G> {
         None
     }
 
+    /// Returns a mutable reference to the underlying data.
+    ///
+    /// This method is zero-cost: By holding a mutable reference to the lock, the compiler has
+    /// already statically guaranteed that access to the data is exclusive.
+    pub fn get_mut(&mut self) -> &mut T {
+        self.inner.val.get_mut()
+    }
+
     /// Acquires the spin lock, otherwise busy waiting
     fn acquire_lock(&self) {
         while !self.try_acquire_lock() {

@@ -696,7 +696,7 @@ impl Socket for StreamSocket {
 
 impl Drop for StreamSocket {
     fn drop(&mut self) {
-        let state = self.state.write().take();
+        let state = self.state.get_mut().take();
 
         let iface_to_poll = match state {
             State::Init(_) => None,

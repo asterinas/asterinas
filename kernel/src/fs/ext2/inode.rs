@@ -1356,14 +1356,14 @@ impl InodeImpl_ {
             BidPath::Indirect(idx) => {
                 let indirect_bid = self.desc.block_ptrs.indirect();
                 assert!(indirect_bid != 0);
-                let mut indirect_blocks = self.indirect_blocks.write();
+                let indirect_blocks = self.indirect_blocks.get_mut();
                 let indirect_block = indirect_blocks.find_mut(indirect_bid)?;
                 for (i, bid) in device_range.enumerate() {
                     indirect_block.write_bid(idx as usize + i, &bid)?;
                 }
             }
             BidPath::DbIndirect(lvl1_idx, lvl2_idx) => {
-                let mut indirect_blocks = self.indirect_blocks.write();
+                let indirect_blocks = self.indirect_blocks.get_mut();
                 let lvl1_indirect_bid = {
                     let db_indirect_bid = self.desc.block_ptrs.db_indirect();
                     assert!(db_indirect_bid != 0);
@@ -1378,7 +1378,7 @@ impl InodeImpl_ {
                 }
             }
             BidPath::TbIndirect(lvl1_idx, lvl2_idx, lvl3_idx) => {
-                let mut indirect_blocks = self.indirect_blocks.write();
+                let indirect_blocks = self.indirect_blocks.get_mut();
                 let lvl2_indirect_bid = {
                     let lvl1_indirect_bid = {
                         let tb_indirect_bid = self.desc.block_ptrs.tb_indirect();
@@ -1408,7 +1408,7 @@ impl InodeImpl_ {
     fn set_indirect_bids(&mut self, bid: Ext2Bid, indirect_bids: &[Ext2Bid]) -> Result<()> {
         assert!((1..=3).contains(&indirect_bids.len()));
 
-        let mut indirect_blocks = self.indirect_blocks.write();
+        let indirect_blocks = self.indirect_blocks.get_mut();
         let bid_path = BidPath::from(bid);
         for indirect_bid in indirect_bids.iter() {
             let indirect_block = IndirectBlock::alloc()?;
@@ -1543,7 +1543,7 @@ impl InodeImpl_ {
                 }
 
                 self.desc.block_ptrs.set_indirect(0);
-                self.indirect_blocks.write().remove(indirect_bid);
+                self.indirect_blocks.get_mut().remove(indirect_bid);
                 self.fs()
                     .free_blocks(indirect_bid..indirect_bid + 1)
                     .unwrap();
@@ -1554,22 +1554,21 @@ impl InodeImpl_ {
                     return Ok(());
                 }
 
-                let mut indirect_blocks = self.indirect_blocks.write();
+                let fs = self.fs();
+                let indirect_blocks = self.indirect_blocks.get_mut();
                 let lvl1_indirect_bid = {
                     let db_indirect_block = indirect_blocks.find(db_indirect_bid)?;
                     db_indirect_block.read_bid(lvl1_idx as usize)?
                 };
                 if lvl1_indirect_bid != 0 {
                     indirect_blocks.remove(lvl1_indirect_bid);
-                    self.fs()
-                        .free_blocks(lvl1_indirect_bid..lvl1_indirect_bid + 1)
+                    fs.free_blocks(lvl1_indirect_bid..lvl1_indirect_bid + 1)
                         .unwrap();
                 }
                 if lvl1_idx == 0 {
                     self.desc.block_ptrs.set_db_indirect(0);
                     indirect_blocks.remove(db_indirect_bid);
-                    self.fs()
-                        .free_blocks(db_indirect_bid..db_indirect_bid + 1)
+                    fs.free_blocks(db_indirect_bid..db_indirect_bid + 1)
                         .unwrap();
                 }
             }
@@ -1579,7 +1578,8 @@ impl InodeImpl_ {
                     return Ok(());
                 }
 
-                let mut indirect_blocks = self.indirect_blocks.write();
+                let fs = self.fs();
+                let indirect_blocks = self.indirect_blocks.get_mut();
                 let lvl1_indirect_bid = {
                     let tb_indirect_block = indirect_blocks.find(tb_indirect_bid)?;
                     tb_indirect_block.read_bid(lvl1_idx as usize)?
@@ -1591,14 +1591,12 @@ impl InodeImpl_ {
                     };
                     if lvl2_indirect_bid != 0 {
                         indirect_blocks.remove(lvl2_indirect_bid);
-                        self.fs()
-                            .free_blocks(lvl2_indirect_bid..lvl2_indirect_bid + 1)
+                        fs.free_blocks(lvl2_indirect_bid..lvl2_indirect_bid + 1)
                             .unwrap();
                     }
                     if lvl2_idx == 0 {
                         indirect_blocks.remove(lvl1_indirect_bid);
-                        self.fs()
-                            .free_blocks(lvl1_indirect_bid..lvl1_indirect_bid + 1)
+                        fs.free_blocks(lvl1_indirect_bid..lvl1_indirect_bid + 1)
                             .unwrap();
                     }
                 }
@@ -1606,8 +1604,7 @@ impl InodeImpl_ {
                 if lvl2_idx == 0 && lvl1_idx == 0 {
                     self.desc.block_ptrs.set_tb_indirect(0);
                     indirect_blocks.remove(tb_indirect_bid);
-                    self.fs()
-                        .free_blocks(tb_indirect_bid..tb_indirect_bid + 1)
+                    fs.free_blocks(tb_indirect_bid..tb_indirect_bid + 1)
                         .unwrap();
                 }
             }

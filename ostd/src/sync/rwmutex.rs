@@ -192,6 +192,14 @@ impl<T: ?Sized> RwMutex<T> {
         }
         None
     }
+
+    /// Returns a mutable reference to the underlying data.
+    ///
+    /// This method is zero-cost: By holding a mutable reference to the lock, the compiler has
+    /// already statically guaranteed that access to the data is exclusive.
+    pub fn get_mut(&mut self) -> &mut T {
+        self.val.get_mut()
+    }
 }
 
 impl<T: ?Sized + fmt::Debug> fmt::Debug for RwMutex<T> {

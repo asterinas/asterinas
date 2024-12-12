@@ -331,6 +331,14 @@ impl<T: ?Sized, G: Guardian> RwLock<T, G> {
         }
         None
     }
+
+    /// Returns a mutable reference to the underlying data.
+    ///
+    /// This method is zero-cost: By holding a mutable reference to the lock, the compiler has
+    /// already statically guaranteed that access to the data is exclusive.
+    pub fn get_mut(&mut self) -> &mut T {
+        self.val.get_mut()
+    }
 }
 
 impl<T: ?Sized + fmt::Debug, G> fmt::Debug for RwLock<T, G> {

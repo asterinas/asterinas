@@ -365,8 +365,8 @@ impl Socket for VsockStreamSocket {
 impl Drop for VsockStreamSocket {
     fn drop(&mut self) {
         let vsockspace = VSOCK_GLOBAL.get().unwrap();
-        let inner = self.status.read();
-        match &*inner {
+        let inner = self.status.get_mut();
+        match inner {
             Status::Init(init) => {
                 if let Some(addr) = init.bound_addr() {
                     vsockspace.recycle_port(&addr.port);
