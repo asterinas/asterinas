@@ -59,6 +59,8 @@ __linux64_boot_tag:
 .global __multiboot_boot
 __multiboot_boot:
     cli
+    hlt
+    jmp __multiboot_boot
     cld
 
     // Set the kernel call stack.
