@@ -59,8 +59,6 @@ __linux64_boot_tag:
 .global __multiboot_boot
 __multiboot_boot:
     cli
-    hlt
-    jmp __multiboot_boot
     cld
 
     // Set the kernel call stack.
@@ -86,6 +84,10 @@ magic_is_mb2:
     jmp initial_boot_setup
 
 initial_boot_setup:
+    mov al, 'I'
+    mov dx, 0x3f8
+    out dx, al
+
     // Prepare for far return. We use a far return as a fence after setting GDT.
     mov eax, 24
     push eax
@@ -103,6 +105,10 @@ protected_mode:
     mov es, ax
     mov fs, ax
     mov gs, ax
+
+    mov al, 'P'
+    mov dx, 0x3f8
+    out dx, al
 
 page_table_setup:
     // Zero out the page table.
@@ -283,6 +289,10 @@ long_mode_in_low_address:
 .text
 .code64
 long_mode:
+    mov al, 'L'
+    mov dx, 0x3f8
+    out dx, al
+
     // Clear .bss section.
     mov al, 0x00
     lea rdi, [rip + __bss]
@@ -290,6 +300,10 @@ long_mode:
     sub rcx, rdi
     cld
     rep stosb
+
+    mov al, 'N'
+    mov dx, 0x3f8
+    out dx, al
 
     // Call the corresponding Rust entrypoint according to the boot entrypoint
     pop rax
@@ -332,6 +346,10 @@ entry_type_multiboot2:
     pop rdi // multiboot magic
 
     xor rbp, rbp
+
+    mov al, 'E'
+    mov dx, 0x3f8
+    out dx, al
 
     lea  rax, [rip + __multiboot2_entry]  // jump into Rust code
     call rax
