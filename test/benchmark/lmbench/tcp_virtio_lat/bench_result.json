@@ -4,7 +4,7 @@
         "bigger_is_better": false
     },
     "result_extraction": {
-        "search_pattern": "TCP latency using 127.0.0.1:",
+        "search_pattern": "TCP latency using 10.0.2.15:",
         "result_index": 5
     },
     "chart": {
