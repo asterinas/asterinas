@@ -3,7 +3,6 @@
 # AUTOMATICALLY GENERATED FILE, DO NOT EDIT IF YOU KNOW WHAT YOU ARE DOING
 
 # set debug=linux,efi,linuxefi
-set debug=all
 
 set timeout_style=#GRUB_TIMEOUT_STYLE#
 set timeout=#GRUB_TIMEOUT#
