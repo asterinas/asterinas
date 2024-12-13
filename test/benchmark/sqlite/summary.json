@@ -1,14 +1,14 @@
 {
     "benchmarks": [
-        "sqlite/ext2_deletes_between",
-        "sqlite/ext2_deletes_individual",
-        "sqlite/ext2_refill_replace",
-        "sqlite/ext2_selects_ipk",
-        "sqlite/ext2_selects_text_pk",
-        "sqlite/ext2_updates_between",
-        "sqlite/ext2_updates_individual",
-        "sqlite/ext2_updates_big_one",
-        "sqlite/ext2_vacuum",
-        "sqlite/ext2_total"
+        "ext2_deletes_between",
+        "ext2_deletes_individual",
+        "ext2_refill_replace",
+        "ext2_selects_ipk",
+        "ext2_selects_text_pk",
+        "ext2_updates_between",
+        "ext2_updates_individual",
+        "ext2_updates_big_one",
+        "ext2_vacuum",
+        "ext2_total"
     ]
 }
