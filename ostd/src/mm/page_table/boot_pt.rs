@@ -16,7 +16,7 @@ use crate::{
     cpu::num_cpus,
     cpu_local_cell,
     mm::{
-        nr_subpage_per_huge, paddr_to_vaddr, page::allocator::PAGE_ALLOCATOR, PageProperty,
+        nr_subpage_per_huge, paddr_to_vaddr, page::allocator::PAGE_ALLOCATOR, Paddr, PageProperty,
         PagingConstsTrait, Vaddr, PAGE_SIZE,
     },
     sync::SpinLock,
@@ -32,9 +32,9 @@ type FrameNumber = usize;
 ///
 /// The boot page table will be dropped when there's no CPU activating it.
 /// This function will return an [`Err`] if the boot page table is dropped.
-pub(crate) fn with_borrow<F>(f: F) -> Result<(), ()>
+pub(crate) fn with_borrow<F, R>(f: F) -> Result<R, ()>
 where
-    F: FnOnce(&mut BootPageTable),
+    F: FnOnce(&mut BootPageTable) -> R,
 {
     let mut boot_pt = BOOT_PAGE_TABLE.lock();
 
@@ -48,9 +48,9 @@ where
         *boot_pt = Some(unsafe { BootPageTable::from_current_pt() });
     }
 
-    f(boot_pt.as_mut().unwrap());
+    let r = f(boot_pt.as_mut().unwrap());
 
-    Ok(())
+    Ok(r)
 }
 
 /// Dismiss the boot page table.
@@ -113,6 +113,11 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
             frames: Vec::new(),
             _pretend_to_use: core::marker::PhantomData,
         }
+    }
+
+    /// Returns the root physical address of the boot page table.
+    pub(crate) fn root_address(&self) -> Paddr {
+        self.root_pt * C::BASE_PAGE_SIZE
     }
 
     /// Maps a base page to a frame.

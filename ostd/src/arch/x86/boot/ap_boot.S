@@ -83,7 +83,13 @@ x2apic_mode:
     rdmsr
     jmp ap_protect
 
-.code32
+// This is a pointer to the page table used by the APs.
+// The BSP will fill this pointer before kicking the APs.
+.global __boot_page_table_pointer
+.align 4
+__boot_page_table_pointer:
+    .skip 4
+
 ap_protect:
     // Save the local APIC ID in an unused register.
     // We will calculate the stack pointer of this core 
@@ -103,7 +109,7 @@ ap_protect:
     // Set the page table. The application processors use
     // the same page table as the bootstrap processor's
     // boot phase page table.
-    lea eax, [boot_page_table_start]
+    mov eax, __boot_page_table_pointer
     mov cr3, eax
 
     // Enable long mode.
@@ -132,9 +138,9 @@ ap_long_mode_in_low_address:
     mov rax, offset ap_long_mode
     jmp rax
 
+.data
 // This is a pointer to be filled by the BSP when boot stacks
 // of all APs are allocated and initialized.
-.data
 .global __ap_boot_stack_array_pointer
 .align 8
 __ap_boot_stack_array_pointer:
