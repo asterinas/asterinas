@@ -25,7 +25,7 @@ entry_address_tag_start:
     .short 1                // Optional
     .long  entry_address_tag_end - entry_address_tag_start
 .extern __multiboot_boot
-    .long 0xdeadbeef  // entry_addr
+    .long __multiboot_boot  // entry_addr
 entry_address_tag_end:
 
     // Tag: information request
