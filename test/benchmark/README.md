@@ -253,7 +253,8 @@ The `bench_result.json` file configures how benchmark results are processed and 
     },
     // Optional runtime configurations for the benchmark.
     "runtime_config": {
-        "aster_scheme": "null" // Corresponds to Makefile parameters, IOMMU is enabled by default (SCHEME=iommu).
+        "aster_scheme": "null", // Corresponds to Makefile parameters, IOMMU is enabled by default (SCHEME=iommu).
+        "smp": 1 // Number of SMP CPUs (default to 1).
     }
 }
 ```

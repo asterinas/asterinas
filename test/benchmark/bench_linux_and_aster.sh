@@ -74,6 +74,7 @@ run_benchmark() {
     local benchmark="$1"
     local run_mode="$2"
     local aster_scheme="$3"
+    local smp="$4"
 
     echo "Preparing libraries..."
     prepare_libs
@@ -89,10 +90,10 @@ run_benchmark() {
     fi
 
     # Prepare commands for Asterinas and Linux
-    local asterinas_cmd="make run BENCHMARK=${benchmark} ${aster_scheme_cmd} ENABLE_KVM=1 RELEASE_LTO=1 NETDEV=tap VHOST=on 2>&1"
+    local asterinas_cmd="make run BENCHMARK=${benchmark} ${aster_scheme_cmd} SMP=${smp} ENABLE_KVM=1 RELEASE_LTO=1 NETDEV=tap VHOST=on 2>&1"
     local linux_cmd="/usr/local/qemu/bin/qemu-system-x86_64 \
         --no-reboot \
-        -smp 1 \
+        -smp ${smp} \
         -m 8G \
         -machine q35,kernel-irqchip=split \
         -cpu Icelake-Server,-pcid,+x2apic \
@@ -174,8 +175,17 @@ main() {
         done
     fi
 
+    local smp
+    if [[ -f "$bench_result" ]]; then
+        smp=$(jq -r '.runtime_config.smp // 1' "$bench_result")
+    else
+        for job in "${BENCHMARK_ROOT}/${benchmark}"/bench_results/*; do
+            [[ -f "$job" ]] && smp=$(jq -r '.runtime_config.smp // 1' "$job") && break
+        done
+    fi
+
     # Run the benchmark
-    run_benchmark "$benchmark" "$run_mode" "$aster_scheme"
+    run_benchmark "$benchmark" "$run_mode" "$aster_scheme" "$smp"
 
     # Parse results if benchmark configuration exists
     if [[ -f "$bench_result" ]]; then
