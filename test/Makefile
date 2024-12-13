@@ -122,6 +122,8 @@ $(INITRAMFS)/benchmark/bin:
 	@cp /usr/local/leveldb/benchmark/db_bench $@
 	@mv $@/db_bench $@/db_bench_leveldb
 	@cp /usr/local/leveldb/benchmark/db_bench_sqlite3 $@
+	@cp /usr/local/benchmark/hackbench $@
+	@cp /usr/local/benchmark/schbench $@
 
 # Make necessary directories.
 $(INITRAMFS_EMPTY_DIRS):
