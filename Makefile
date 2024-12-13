@@ -160,20 +160,13 @@ all: build
 # To uninstall, do `cargo uninstall cargo-osdk`
 .PHONY: install_osdk
 install_osdk:
-	@apt update
-	@apt-get install -y --no-install-recommends autoconf automake autopoint bison flex gawk gettext libfreetype6-dev pkg-config
-	@cd /root
-	@wget -O grub.tar.xz https://ftp.gnu.org/gnu/grub/grub-2.12.tar.xz
-	@mkdir /root/grub
-	@tar xvf grub.tar.xz --strip-components=1 -C /root/grub
-	@rm grub.tar.xz
-	@cd /root/grub
-	@ls -al
-	@echo depends bli part_gpt > grub-core/extra_deps.lst
-	@./configure --target=x86_64 --disable-efiemu --with-platform=efi --enable-grub-mkfont --prefix=/usr/local/grub --disable-werror
-	@make -j
-	@make install
-	@cd /root/asterinas
+	@apt update && apt-get install -y --no-install-recommends autoconf automake autopoint bison flex gawk gettext libfreetype6-dev pkg-config
+	@wget -O /root/grub.tar.xz https://ftp.gnu.org/gnu/grub/grub-2.12.tar.xz
+	@mkdir /root/grub && tar xvf /root/grub.tar.xz --strip-components=1 -C /root/grub
+	@rm /root/grub.tar.xz
+	@echo depends bli part_gpt > /root/grub/grub-core/extra_deps.lst
+	@cd /root/grub && ./configure --target=x86_64 --disable-efiemu --with-platform=efi --enable-grub-mkfont --prefix=/usr/local/grub --disable-werror
+	@cd /root/grub && make -j && make install
 	@# The `OSDK_LOCAL_DEV` environment variable is used for local development
 	@# without the need to publish the changes of OSDK's self-hosted
 	@# dependencies to `crates.io`.
