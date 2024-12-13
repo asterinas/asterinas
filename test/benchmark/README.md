@@ -242,7 +242,8 @@ The `bench_result.json` file configures how benchmark results are processed and 
     // Settings for extracting benchmark results from raw outputs.
     "result_extraction": {
         "search_pattern": "sender", // Regex or string to locate results.
-        "result_index": 7 // Match index to use (e.g., 7th occurrence).
+        "nth_occurrence": 1, // Optional. Which matched occurrence to use (default to 1).
+        "result_index": 7 // Match index to use.
     },
     // Configurations for how the results are displayed in charts.
     "chart": {
