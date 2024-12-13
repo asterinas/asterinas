@@ -16,13 +16,14 @@ RESULT_TEMPLATE="${BENCHMARK_ROOT}/result_template.json"
 # Parse benchmark results
 parse_raw_results() {
     local search_pattern="$1"
-    local result_index="$2"
-    local result_file="$3"
+    local nth_occurrence="$2"
+    local result_index="$3"
+    local result_file="$4"
 
     # Extract and sanitize numeric results
     local linux_result aster_result
-    linux_result=$(awk "/${search_pattern}/ {result=\$$result_index} END {print result}" "${LINUX_OUTPUT}" | tr -d '\r' | sed 's/[^0-9.]*//g')
-    aster_result=$(awk "/${search_pattern}/ {result=\$$result_index} END {print result}" "${ASTER_OUTPUT}" | tr -d '\r' | sed 's/[^0-9.]*//g')
+    linux_result=$(awk "/${search_pattern}/ {print \$$result_index}" "${LINUX_OUTPUT}" | tr -d '\r' | sed 's/[^0-9.]*//g' | sed -n "${nth_occurrence}p")
+    aster_result=$(awk "/${search_pattern}/ {print \$$result_index}" "${ASTER_OUTPUT}" | tr -d '\r' | sed 's/[^0-9.]*//g' | sed -n "${nth_occurrence}p")
 
     # Ensure both results are valid
     if [ -z "${linux_result}" ] || [ -z "${aster_result}" ]; then
@@ -138,12 +139,13 @@ parse_results() {
     local bench_result="$1"
 
     local search_pattern=$(jq -r '.result_extraction.search_pattern // empty' "$bench_result")
+    local nth_occurrence=$(jq -r '.result_extraction.nth_occurrence // 1' "$bench_result")
     local result_index=$(jq -r '.result_extraction.result_index // empty' "$bench_result")
     local unit=$(jq -r '.chart.unit // empty' "$bench_result")
     local legend=$(jq -r '.chart.legend // {system}' "$bench_result")
 
     generate_template "$unit" "$legend"
-    parse_raw_results "$search_pattern" "$result_index" "$(extract_result_file "$bench_result")"
+    parse_raw_results "$search_pattern" "$nth_occurrence" "$result_index" "$(extract_result_file "$bench_result")"
 }
 
 # Clean up temporary files
