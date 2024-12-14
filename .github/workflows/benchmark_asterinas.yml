@@ -57,8 +57,8 @@ jobs:
           - lmbench/ext2_copy_files_bw
           - fio/ext2_seq_write_bw
           - fio/ext2_seq_read_bw
-          - fio/ext2_iommu_seq_write_bw
-          - fio/ext2_iommu_seq_read_bw
+          - fio/ext2_seq_write_bw_no_iommu
+          - fio/ext2_seq_read_bw_no_iommu
           # Network-related benchmark
           - lmbench/tcp_loopback_bw_4k
           - lmbench/tcp_loopback_bw_64k
