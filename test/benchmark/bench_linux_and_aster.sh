@@ -78,10 +78,14 @@ run_benchmark() {
     echo "Preparing libraries..."
     prepare_libs
 
-    # Set up Asterinas scheme if specified
-    local aster_scheme_cmd=""
-    if [ -n "$aster_scheme" ] && [ "$aster_scheme" != "null" ]; then
-        aster_scheme_cmd="SCHEME=${aster_scheme}"
+    # Set up Asterinas scheme if specified (Default: iommu)
+    local aster_scheme_cmd="SCHEME=iommu"
+    if [ -n "$aster_scheme" ]; then
+        if [ "$aster_scheme" != "null" ]; then
+            aster_scheme_cmd="SCHEME=${aster_scheme}"
+        else
+            aster_scheme_cmd=""
+        fi
     fi
 
     # Prepare commands for Asterinas and Linux
