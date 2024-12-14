@@ -8,12 +8,12 @@
         "result_index": 2
     },
     "chart": {
-        "title": "[Ext2] The bandwidth of sequential reads (IOMMU enabled on Asterinas)",
+        "title": "[Ext2] The bandwidth of sequential writes (IOMMU disabled on Asterinas)",
         "description": "fio -filename=/ext2/fio-test -size=1G -bs=1M -direct=1",
         "unit": "MB/s",
-        "legend": "Average file read bandwidth on {system}"
+        "legend": "Average file write bandwidth on {system}"
     },
     "runtime_config": {
-        "aster_scheme": "iommu"
+        "aster_scheme": "null"
     }
 }
