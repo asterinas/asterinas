@@ -138,7 +138,7 @@ The configuration files provide metadata about the benchmark jobs and results, s
 Below are the contents of these files for the sample benchmark:
 
 ```jsonc
-// fio/ext2_iommu_seq_write_bw/bench_result.json
+// fio/ext2_no_iommu_seq_write_bw/bench_result.json
 {
     "alert": {
         "threshold": "125%",
@@ -149,13 +149,13 @@ Below are the contents of these files for the sample benchmark:
         "result_index": 2
     },
     "chart": {
-        "title": "[Ext2] The bandwidth of sequential writes (IOMMU enabled on Asterinas)",
+        "title": "[Ext2] The bandwidth of sequential writes (IOMMU disabled on Asterinas)",
         "description": "fio -filename=/ext2/fio-test -size=1G -bs=1M -direct=1",
         "unit": "MB/s",
         "legend": "Average file write bandwidth on {system}"
     },
     "runtime_config": {
-        "aster_scheme": "iommu"
+        "aster_scheme": "null"
     }
 }  
 ```
@@ -253,7 +253,7 @@ The `bench_result.json` file configures how benchmark results are processed and 
     },
     // Optional runtime configurations for the benchmark.
     "runtime_config": {
-        "aster_scheme": "iommu" // Corresponds to Makefile parameters (e.g., IOMMU support).
+        "aster_scheme": "null" // Corresponds to Makefile parameters, IOMMU is enabled by default (SCHEME=iommu).
     }
 }
 ```
