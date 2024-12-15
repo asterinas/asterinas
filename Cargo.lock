@@ -175,6 +175,7 @@ dependencies = [
  "aster-input",
  "aster-logger",
  "aster-network",
+ "aster-page-allocator",
  "aster-rights",
  "aster-rights-proc",
  "aster-softirq",
@@ -214,6 +215,16 @@ dependencies = [
  "typeflags-util",
  "vte",
  "xmas-elf 0.8.0",
+]
+
+[[package]]
+name = "aster-page-allocator"
+version = "0.1.0"
+dependencies = [
+ "align_ext",
+ "id-alloc",
+ "log",
+ "ostd",
 ]
 
 [[package]]
@@ -1139,6 +1150,7 @@ checksum = "dd8b5dd2ae5ed71462c540258bedcb51965123ad7e7ccf4b9a8cafaa4a63576d"
 name = "osdk-test-kernel"
 version = "0.10.1"
 dependencies = [
+ "aster-page-allocator",
  "ostd",
  "owo-colors 4.0.0",
 ]

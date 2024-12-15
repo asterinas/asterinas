@@ -21,14 +21,14 @@ pub mod mapping {
     use crate::mm::{kspace::FRAME_METADATA_RANGE, Paddr, PagingConstsTrait, Vaddr, PAGE_SIZE};
 
     /// Converts a physical address of a base page to the virtual address of the metadata slot.
-    pub const fn page_to_meta<C: PagingConstsTrait>(paddr: Paddr) -> Vaddr {
+    pub(crate) const fn page_to_meta<C: PagingConstsTrait>(paddr: Paddr) -> Vaddr {
         let base = FRAME_METADATA_RANGE.start;
         let offset = paddr / PAGE_SIZE;
         base + offset * size_of::<MetaSlot>()
     }
 
     /// Converts a virtual address of the metadata slot to the physical address of the page.
-    pub const fn meta_to_page<C: PagingConstsTrait>(vaddr: Vaddr) -> Paddr {
+    pub(crate) const fn meta_to_page<C: PagingConstsTrait>(vaddr: Vaddr) -> Paddr {
         let base = FRAME_METADATA_RANGE.start;
         let offset = (vaddr - base) / size_of::<MetaSlot>();
         offset * PAGE_SIZE
@@ -44,6 +44,7 @@ use core::{
     sync::atomic::{AtomicU32, AtomicU8, Ordering},
 };
 
+use allocator::{PageAlloc, BOOTSTRAP_PAGE_ALLOCATOR};
 use log::info;
 use num_derive::FromPrimitive;
 use static_assertions::const_assert_eq;
@@ -66,6 +67,7 @@ pub enum PageUsage {
     // The zero variant is reserved for the unused type. Only an unused page
     // can be designated for one of the other purposes.
     #[allow(dead_code)]
+    /// The page is unused.
     Unused = 0,
     /// The page is reserved or unusable. The kernel should not touch it.
     #[allow(dead_code)]
@@ -83,6 +85,10 @@ pub enum PageUsage {
 
     /// The page stores data for kernel stack.
     KernelStack = 67,
+    /// The page is used by the boot page table.
+    BootPageTable = 68,
+    /// The page is used as a heap page.
+    Heap = 69,
 }
 
 #[repr(C)]
@@ -114,16 +120,19 @@ const_assert_eq!(size_of::<MetaSlot>(), 16);
 
 /// All page metadata types must implemented this sealed trait,
 /// which ensures that each fields of `PageUsage` has one and only
-/// one metadata type corresponding to the usage purpose. Any user
-/// outside this module won't be able to add more metadata types
+/// one metadata type corresponding to the usage purpose.
+///
+/// Any user outside this module won't be able to add more metadata types
 /// and break assumptions made by this module.
 ///
 /// If a page type needs specific drop behavior, it should specify
 /// when implementing this trait. When we drop the last handle to
 /// this page, the `on_drop` method will be called.
 pub trait PageMeta: Sync + private::Sealed + Sized {
+    /// The usage of the page.
     const USAGE: PageUsage;
 
+    /// The custom drop behavior of the page.
     fn on_drop(page: &mut Page<Self>);
 }
 
@@ -153,10 +162,12 @@ pub(super) unsafe fn drop_as_last<M: PageMeta>(ptr: *const MetaSlot) {
     // It would return the page to the allocator for further use. This would be done
     // after the release of the metadata to avoid re-allocation before the metadata
     // is reset.
-    allocator::PAGE_ALLOCATOR.get().unwrap().lock().dealloc(
-        mapping::meta_to_page::<PagingConsts>(ptr as Vaddr) / PAGE_SIZE,
-        1,
-    );
+    allocator::PAGE_ALLOCATOR
+        .get()
+        .unwrap()
+        .disable_irq()
+        .lock()
+        .dealloc(mapping::meta_to_page::<PagingConsts>(ptr as Vaddr), 1);
 }
 
 mod private {
@@ -167,6 +178,8 @@ mod private {
 
 use private::Sealed;
 
+/// The metadata of the page used as a frame.
+/// i.e., The corresponding page is a page of untyped memory.
 #[derive(Debug, Default)]
 #[repr(C)]
 pub struct FrameMeta {
@@ -249,7 +262,7 @@ unsafe impl<E: PageTableEntryTrait, C: PagingConstsTrait> Sync for PageTablePage
 
 #[derive(Debug, Default)]
 #[repr(C)]
-pub struct MetaPageMeta {}
+pub(crate) struct MetaPageMeta {}
 
 impl Sealed for MetaPageMeta {}
 impl PageMeta for MetaPageMeta {
@@ -261,7 +274,7 @@ impl PageMeta for MetaPageMeta {
 
 #[derive(Debug, Default)]
 #[repr(C)]
-pub struct KernelMeta {}
+pub(crate) struct KernelMeta {}
 
 impl Sealed for KernelMeta {}
 impl PageMeta for KernelMeta {
@@ -271,6 +284,7 @@ impl PageMeta for KernelMeta {
     }
 }
 
+/// Metadata of a kernel stack page.
 #[derive(Debug, Default)]
 #[repr(C)]
 pub struct KernelStackMeta {}
@@ -279,6 +293,31 @@ impl Sealed for KernelStackMeta {}
 impl PageMeta for KernelStackMeta {
     const USAGE: PageUsage = PageUsage::KernelStack;
     fn on_drop(_page: &mut Page<Self>) {}
+}
+
+#[derive(Debug, Default)]
+#[repr(C)]
+pub(crate) struct BootPageTableMeta {}
+
+impl Sealed for BootPageTableMeta {}
+impl PageMeta for BootPageTableMeta {
+    const USAGE: PageUsage = PageUsage::BootPageTable;
+    fn on_drop(_page: &mut Page<Self>) {
+        // Do noting.
+    }
+}
+
+/// The metadata of a heap page.
+#[derive(Debug, Default)]
+#[repr(C)]
+pub struct HeapMeta {}
+impl Sealed for HeapMeta {}
+impl PageMeta for HeapMeta {
+    const USAGE: PageUsage = PageUsage::Heap;
+    fn on_drop(_page: &mut Page<Self>) {
+        // Nothing should be done so far since dropping the page would
+        // have all taken care of.
+    }
 }
 
 // ======== End of all the specific metadata structures definitions ===========
@@ -317,6 +356,10 @@ pub(crate) fn init() -> Vec<Page<MetaPageMeta>> {
     })
     .unwrap();
     // Now the metadata pages are mapped, we can initialize the metadata.
+    boot_pt::with_borrow(|boot_pt| {
+        boot_pt.manage_frames_with_meta();
+    })
+    .expect("Failed to manage frames with metadata");
     meta_pages
         .into_iter()
         .map(|paddr| Page::<MetaPageMeta>::from_unused(paddr, MetaPageMeta::default()))
@@ -325,19 +368,15 @@ pub(crate) fn init() -> Vec<Page<MetaPageMeta>> {
 
 fn alloc_meta_pages(nframes: usize) -> Vec<Paddr> {
     let mut meta_pages = Vec::new();
-    let start_frame = allocator::PAGE_ALLOCATOR
-        .get()
-        .unwrap()
-        .lock()
-        .alloc(nframes)
-        .unwrap()
-        * PAGE_SIZE;
-    // Zero them out as initialization.
-    let vaddr = paddr_to_vaddr(start_frame) as *mut u8;
-    unsafe { core::ptr::write_bytes(vaddr, 0, PAGE_SIZE * nframes) };
-    for i in 0..nframes {
-        let paddr = start_frame + i * PAGE_SIZE;
-        meta_pages.push(paddr);
+    let mut allocator = BOOTSTRAP_PAGE_ALLOCATOR.get().unwrap().disable_irq().lock();
+    for _ in 0..nframes {
+        let frame_paddr = allocator
+            .alloc_page(PAGE_SIZE)
+            .unwrap_or_else(|| panic!("Failed to allocate metadata pages"));
+        // Zero them out as initialization.
+        let vaddr = paddr_to_vaddr(frame_paddr) as *mut u8;
+        unsafe { core::ptr::write_bytes(vaddr, 0, PAGE_SIZE) };
+        meta_pages.push(frame_paddr);
     }
     meta_pages
 }
