@@ -6,7 +6,7 @@ set -e
 
 WORKSPACE_ROOT="$(dirname "$(readlink -f "$0")")/.."
 
-EXCLUDED_CRATES=$(sed -n '/^\[workspace\]/,/^\[.*\]/{/exclude = \[/,/\]/p}' "$WORKSPACE_ROOT/Cargo.toml" | grep -v "exclude = \[" | tr -d '", \]')
+EXCLUDED_CRATES=$(sed -n -e 's/#.*//; /^\s*$/d' -e '/^\[workspace\]/,/^\[.*\]/{/exclude = \[/,/\]/p}' "$WORKSPACE_ROOT/Cargo.toml" | grep -v "exclude = \[" | tr -d '", \]')
 
 CHECK_MODE=false
 
