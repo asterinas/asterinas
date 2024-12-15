@@ -42,6 +42,14 @@ NETDEV ?= user
 VHOST ?= off
 # End of network settings
 
+# Run options
+# INITRAMFS_ENCODING=none: Disable compression for INITRAMFS
+ifeq ($(INITRAMFS_ENCODING), "")
+# Undefine `INITRAMFS_ENCODING` to let `make initramfs` choose the default encoding
+undefine INITRAMFS_ENCODING
+endif
+# End of run options
+
 # ========================= End of Makefile options. ==========================
 
 CARGO_OSDK := ~/.cargo/bin/cargo-osdk
@@ -183,9 +191,14 @@ test_osdk:
 		OSDK_LOCAL_DEV=1 cargo build && \
 		OSDK_LOCAL_DEV=1 cargo test
 
-.PHONY: initramfs
-initramfs:
+.PHONY: _initramfs
+_initramfs:
 	@$(MAKE) --no-print-directory -C test
+
+.PHONY: initramfs
+initramfs: _initramfs
+	$(eval CARGO_OSDK_INITRAMFS_OPTION := --initramfs=$(shell cat test/build/initramfs_path.txt))
+	$(eval CARGO_OSDK_ARGS += $(CARGO_OSDK_INITRAMFS_OPTION))
 
 .PHONY: build
 build: initramfs $(CARGO_OSDK)
@@ -241,7 +254,7 @@ ktest: initramfs $(CARGO_OSDK)
 	@# Exclude linux-bzimage-setup from ktest since it's hard to be unit tested
 	@for dir in $(OSDK_CRATES); do \
 		[ $$dir = "ostd/libs/linux-bzimage/setup" ] && continue; \
-		(cd $$dir && OVMF=off cargo osdk test) || exit 1; \
+		(cd $$dir && OVMF=off cargo osdk test $(CARGO_OSDK_INITRAMFS_OPTION)) || exit 1; \
 		tail --lines 10 qemu.log | grep -q "^\\[ktest runner\\] All crates tested." \
 			|| (echo "Test failed" && exit 1); \
 	done
