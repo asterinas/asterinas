@@ -112,6 +112,12 @@ ifeq ($(ENABLE_KVM), 1)
 CARGO_OSDK_ARGS += --qemu-args="-accel kvm"
 endif
 
+# Skip GZIP to make encoding and decoding of initramfs faster
+ifeq ($(INITRAMFS_SKIP_GZIP),1)
+CARGO_OSDK_INITRAMFS_OPTION := --initramfs=$(realpath test/build/initramfs.cpio)
+CARGO_OSDK_ARGS += $(CARGO_OSDK_INITRAMFS_OPTION)
+endif
+
 # Pass make variables to all subdirectory makes
 export
 
@@ -243,7 +249,7 @@ ktest: initramfs $(CARGO_OSDK)
 	@# Exclude linux-bzimage-setup from ktest since it's hard to be unit tested
 	@for dir in $(OSDK_CRATES); do \
 		[ $$dir = "ostd/libs/linux-bzimage/setup" ] && continue; \
-		(cd $$dir && OVMF=off cargo osdk test) || exit 1; \
+		(cd $$dir && OVMF=off cargo osdk test $(CARGO_OSDK_INITRAMFS_OPTION)) || exit 1; \
 		tail --lines 10 qemu.log | grep -q "^\\[ktest runner\\] All crates tested." \
 			|| (echo "Test failed" && exit 1); \
 	done
