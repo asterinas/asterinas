@@ -34,6 +34,7 @@ use ostd::{
     arch::qemu::{exit_qemu, QemuExitCode},
     boot,
     cpu::PinCurrentCpu,
+    mm::page::allocator::PageAlloc,
 };
 use process::Process;
 
@@ -118,6 +119,11 @@ fn ap_init() {
         .cpu_affinity(cpu_id.into())
         .priority(Priority::idle())
         .spawn();
+}
+
+#[ostd::page_allocator_init_fn]
+fn init_page_allocator() -> Box<dyn PageAlloc> {
+    aster_page_allocator::init()
 }
 
 fn init_thread() {
