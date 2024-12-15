@@ -6,6 +6,7 @@
 
 #![no_std]
 #![forbid(unsafe_code)]
+#![feature(linkage)]
 
 extern crate alloc;
 

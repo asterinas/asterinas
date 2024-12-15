@@ -34,6 +34,7 @@ use ostd::{
     arch::qemu::{exit_qemu, QemuExitCode},
     boot,
     cpu::PinCurrentCpu,
+    mm::page::allocator::PAGE_ALLOCATOR,
 };
 use process::Process;
 
@@ -87,6 +88,7 @@ pub fn main() {
 }
 
 pub fn init() {
+    init_page_allocator();
     util::random::init();
     driver::init();
     time::init();
@@ -118,6 +120,13 @@ fn ap_init() {
         .cpu_affinity(cpu_id.into())
         .priority(Priority::idle())
         .spawn();
+}
+
+fn init_page_allocator() {
+    PAGE_ALLOCATOR
+        .get()
+        .unwrap()
+        .inject(aster_page_allocator::init())
 }
 
 fn init_thread() {

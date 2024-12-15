@@ -49,7 +49,7 @@ impl<M: PageMeta> Clone for ContPages<M> {
 }
 
 impl<M: PageMeta> ContPages<M> {
-    /// Creates a new `ContPages` from unused pages.
+    /// Creates a new `ContPages` from free pages.
     ///
     /// The caller must provide a closure to initialize metadata for all the pages.
     /// The closure receives the physical address of the page and returns the
@@ -60,13 +60,41 @@ impl<M: PageMeta> ContPages<M> {
     /// The function panics if:
     ///  - the physical address is invalid or not aligned;
     ///  - any of the pages are already in use.
-    pub fn from_unused<F>(range: Range<Paddr>, mut metadata_fn: F) -> Self
+    pub fn from_free<F>(range: Range<Paddr>, mut metadata_fn: F) -> Self
     where
         F: FnMut(Paddr) -> M,
     {
         for paddr in range.clone().step_by(PAGE_SIZE) {
-            let _ = ManuallyDrop::new(Page::<M>::from_unused(paddr, metadata_fn(paddr)));
+            let _ = ManuallyDrop::new(Page::<M>::from_free(paddr, metadata_fn(paddr)));
         }
+        Self {
+            range,
+            _marker: core::marker::PhantomData,
+        }
+    }
+
+    /// Forget the handle and return the raw range.
+    ///
+    /// This is the same as [`Page::into_raw`] and [`DynPage::into_raw`].
+    ///
+    /// This will result in the designated range of pages being leaked without
+    /// calling the custom dropper.
+    ///
+    /// The range of physical address to the page is returned in case the page
+    /// needs to be restored using [`Self::from_raw`] later.
+    pub(in crate::mm) fn into_raw(self) -> Range<Paddr> {
+        let range = self.range.clone();
+        core::mem::forget(self);
+        range
+    }
+
+    /// Restore the handle from the raw range.
+    ///
+    /// # Safety
+    ///
+    /// The safety concerns are the same as [`Page::from_raw`].
+    #[allow(unused)]
+    pub(in crate::mm) fn from_raw(range: Range<Paddr>) -> Self {
         Self {
             range,
             _marker: core::marker::PhantomData,
