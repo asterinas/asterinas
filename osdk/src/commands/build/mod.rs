@@ -129,7 +129,7 @@ pub fn do_cached_build(
     };
 
     let aster_elf = build_kernel_elf(
-        config.target_arch,
+        config,
         &build.profile,
         &build.features[..],
         build.no_default_features,
@@ -181,7 +181,7 @@ pub fn do_cached_build(
 }
 
 fn build_kernel_elf(
-    arch: Arch,
+    config: &Config,
     profile: &str,
     features: &[String],
     no_default_features: bool,
@@ -189,6 +189,7 @@ fn build_kernel_elf(
     cargo_target_directory: impl AsRef<Path>,
     rustflags: &[&str],
 ) -> AsterBin {
+    let arch = config.target_arch;
     let target_os_string = OsString::from(&arch.triple());
     let rustc_linker_script_arg = format!("-C link-arg=-T{}.ld", arch);
 
@@ -236,6 +237,9 @@ fn build_kernel_elf(
     command.arg("--profile=".to_string() + profile);
     for override_config in override_configs {
         command.arg("--config").arg(override_config);
+    }
+    if config.offline {
+        command.arg("--offline");
     }
 
     info!("Building kernel ELF using command: {:#?}", command);

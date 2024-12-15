@@ -18,6 +18,8 @@ LOG_LEVEL ?= error
 SCHEME ?= ""
 SMP ?= 1
 OSTD_TASK_STACK_SIZE_IN_PAGES ?= 64
+# OFFLINE=1: Disable network access (user should ensure `make fetch` is run to fetch dependencies).
+OFFLINE ?= 0
 # End of global build options.
 
 # GDB debugging and profiling options.
@@ -112,6 +114,17 @@ ifeq ($(ENABLE_KVM), 1)
 CARGO_OSDK_ARGS += --qemu-args="-accel kvm"
 endif
 
+ifneq ($(filter fetch, $(MAKECMDGOALS)),)
+undefine OFFLINE
+# Use a nonexistent test name to skip all tests, as the goal is to cache dependencies during build.
+CARGO_OSDK_TESTNAME := nonexistent-test
+endif
+
+ifeq ($(OFFLINE), 1)
+CARGO_OFFLINE_OPTION := --offline
+CARGO_OSDK_ARGS += $(CARGO_OFFLINE_OPTION)
+endif
+
 # Pass make variables to all subdirectory makes
 export
 
@@ -136,7 +149,9 @@ NON_OSDK_CRATES := \
 
 # In contrast, OSDK crates depend on OSTD (or being `ostd` itself)
 # and need to be built or tested with OSDK.
-OSDK_CRATES := \
+# Use `?=` to allow users to override crates and run ktest without needing to
+# `cd` into a directory.
+OSDK_CRATES ?= \
 	osdk/test-kernel \
 	ostd \
 	ostd/libs/linux-bzimage/setup \
@@ -167,7 +182,7 @@ install_osdk:
 	@# The `OSDK_LOCAL_DEV` environment variable is used for local development
 	@# without the need to publish the changes of OSDK's self-hosted
 	@# dependencies to `crates.io`.
-	@OSDK_LOCAL_DEV=1 cargo install cargo-osdk --path osdk
+	@OSDK_LOCAL_DEV=1 cargo $(CARGO_OFFLINE_OPTION) install cargo-osdk --path osdk
 
 # This will install and update OSDK automatically
 $(CARGO_OSDK): $(OSDK_SRC_FILES)
@@ -175,13 +190,13 @@ $(CARGO_OSDK): $(OSDK_SRC_FILES)
 
 .PHONY: check_osdk
 check_osdk:
-	@cd osdk && cargo clippy -- -D warnings
+	@cd osdk && cargo $(CARGO_OFFLINE_OPTION) clippy -- -D warnings
 
 .PHONY: test_osdk
 test_osdk:
 	@cd osdk && \
-		OSDK_LOCAL_DEV=1 cargo build && \
-		OSDK_LOCAL_DEV=1 cargo test
+		OSDK_LOCAL_DEV=1 cargo $(CARGO_OFFLINE_OPTION) build && \
+		OSDK_LOCAL_DEV=1 cargo $(CARGO_OFFLINE_OPTION) test
 
 .PHONY: initramfs
 initramfs:
@@ -190,6 +205,14 @@ initramfs:
 .PHONY: build
 build: initramfs $(CARGO_OSDK)
 	@cargo osdk build $(CARGO_OSDK_ARGS)
+
+# Build all architecture targets and tests to download and cache dependencies
+# Failures are ignored; the goal is to download dependencies
+.PHONY: fetch
+fetch: initramfs $(CARGO_OSDK)
+	-@cargo osdk fetch $(CARGO_OSDK_ARGS)
+	-@$(MAKE) test
+	-@$(MAKE) ktest
 
 .PHONY: tools
 tools:
@@ -233,7 +256,7 @@ profile_client: initramfs $(CARGO_OSDK)
 .PHONY: test
 test:
 	@for dir in $(NON_OSDK_CRATES); do \
-		(cd $$dir && cargo test) || exit 1; \
+		(cd $$dir && cargo $(CARGO_OFFLINE_OPTION) test) || exit 1; \
 	done
 
 .PHONY: ktest
@@ -241,7 +264,7 @@ ktest: initramfs $(CARGO_OSDK)
 	@# Exclude linux-bzimage-setup from ktest since it's hard to be unit tested
 	@for dir in $(OSDK_CRATES); do \
 		[ $$dir = "ostd/libs/linux-bzimage/setup" ] && continue; \
-		(cd $$dir && OVMF=off cargo osdk test) || exit 1; \
+		(cd $$dir && OVMF=off cargo osdk test $(CARGO_OFFLINE_OPTION) $(CARGO_OSDK_TESTNAME)) || exit 1; \
 		tail --lines 10 qemu.log | grep -q "^\\[ktest runner\\] All crates tested." \
 			|| (echo "Test failed" && exit 1); \
 	done
@@ -276,7 +299,7 @@ check: initramfs $(CARGO_OSDK)
 	@rm /tmp/all_crates /tmp/combined_crates
 	@for dir in $(NON_OSDK_CRATES); do \
 		echo "Checking $$dir"; \
-		(cd $$dir && cargo clippy -- -D warnings) || exit 1; \
+		(cd $$dir && cargo $(CARGO_OFFLINE_OPTION) clippy -- -D warnings) || exit 1; \
 	done
 	@for dir in $(OSDK_CRATES); do \
 		echo "Checking $$dir"; \
