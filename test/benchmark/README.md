@@ -192,10 +192,10 @@ To include a new benchmark in the suite's summary table, we need to update the `
 // sqlite/summary.json
 {
     "benchmarks": [
-        "sqlite/ext2_deletes_between",
-        "sqlite/ext2_deletes_individual",
-        "sqlite/ext2_refill_replace",
-        "sqlite/ext2_selects_ipk"
+        "ext2_deletes_between",
+        "ext2_deletes_individual",
+        "ext2_refill_replace",
+        "ext2_selects_ipk"
     ]
 }
 ```
