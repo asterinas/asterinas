@@ -31,3 +31,4 @@ IoctlTest/IoctlTestSIOCGIFCONF.ValidateNoArrayGetsLength/3
 IoctlTest/IoctlTestSIOCGIFCONF.ValidateNoArrayGetsLength/2
 IoctlTest/IoctlTestSIOCGIFCONF.ValidateNoArrayGetsLength/1
 IoctlTest/IoctlTestSIOCGIFCONF.ValidateNoArrayGetsLength/0
+IoctlTest/IoctlTestSIOCGIFCONF.ValidateNestedPointerCheck/*

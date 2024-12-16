@@ -6,6 +6,7 @@ SymlinkTest.CanEvaluateLink
 SymlinkTest.TargetIsNotMapped
 SymlinkTest.PreadFromSymlink
 SymlinkTest.ChmodSymlink
+SymlinkTest.AbsoluteSymlinkDouble
 AbsAndRelTarget/ParamSymlinkTest.OpenLinkCreatesTarget/0
 AbsAndRelTarget/ParamSymlinkTest.OpenLinkCreatesTarget/1
 AbsAndRelTarget/ParamSymlinkTest.CreateExistingSelfLink/0

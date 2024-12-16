@@ -5,11 +5,16 @@ SharedFutexTest.WakeInterprocessFile_NoRandomSave
 
 SharedPrivate/PrivateAndSharedFutexTest.WakeOpCondSuccess_NoRandomSave/*
 SharedPrivate/PrivateAndSharedFutexTest.WakeOpCondFailure_NoRandomSave/*
+SharedPrivate/PrivateAndSharedFutexTest.WakeOpCondSuccess/*
+SharedPrivate/PrivateAndSharedFutexTest.WakeOpCondFailure/*
 SharedPrivate/PrivateAndSharedFutexTest.NoWakeInterprocessPrivateAnon_NoRandomSave/*
+SharedPrivate/PrivateAndSharedFutexTest.NoWakeInterprocessPrivateAnon/*
 SharedPrivate/PrivateAndSharedFutexTest.WakeWrongKind_NoRandomSave/1
+SharedPrivate/PrivateAndSharedFutexTest.WakeWrongKind/*
 
 SharedPrivate/PrivateAndSharedFutexTest.PIBasic/*
 SharedPrivate/PrivateAndSharedFutexTest.PIConcurrency_NoRandomSave/*
+SharedPrivate/PrivateAndSharedFutexTest.PIConcurrency/*
 SharedPrivate/PrivateAndSharedFutexTest.PIWaiters/*
 SharedPrivate/PrivateAndSharedFutexTest.PITryLock/*
 SharedPrivate/PrivateAndSharedFutexTest.PITryLockConcurrency_NoRandomSave/*
@@ -18,3 +23,10 @@ SharedPrivate/PrivateAndSharedFutexTest.WakeAll_NoRandomSave/0
 SharedPrivate/PrivateAndSharedFutexTest.WakeAll_NoRandomSave/1
 # WakeAfterCOWBreak_NoRandomSave/* hangs sometimes
 SharedPrivate/PrivateAndSharedFutexTest.WakeAfterCOWBreak_NoRandomSave/0
+# These 6 groups hang sometimes on Nix-built initrd
+SharedPrivate/PrivateAndSharedFutexTest.Wake1/*
+SharedPrivate/PrivateAndSharedFutexTest.Wake0/*
+SharedPrivate/PrivateAndSharedFutexTest.WaitBitset_Wake/*
+SharedPrivate/PrivateAndSharedFutexTest.Wait_WakeBitset/*
+SharedPrivate/PrivateAndSharedFutexTest.WaitBitset_WakeBitsetMatch/*
+SharedPrivate/PrivateAndSharedFutexTest.WaitBitset_WakeBitsetNoMatch/*

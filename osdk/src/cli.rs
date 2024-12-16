@@ -55,9 +55,9 @@ pub fn main() {
         OsdkSubcommand::Test(test_args) => {
             execute_test_command(&load_config(&test_args.common_args), test_args);
         }
-        OsdkSubcommand::Check(args) => execute_forwarded_command("check", &args.args, true),
-        OsdkSubcommand::Clippy(args) => execute_forwarded_command("clippy", &args.args, true),
-        OsdkSubcommand::Doc(args) => execute_forwarded_command("doc", &args.args, false),
+        OsdkSubcommand::Check(args) => execute_forwarded_command("check", args, true),
+        OsdkSubcommand::Clippy(args) => execute_forwarded_command("clippy", args, true),
+        OsdkSubcommand::Doc(args) => execute_forwarded_command("doc", args, false),
     }
 }
 
@@ -105,6 +105,12 @@ pub struct ForwardedArguments {
         allow_hyphen_values = true
     )]
     pub args: Vec<String>,
+    #[arg(
+        long = "target-arch",
+        value_name = "ARCH",
+        help = "The architecture to build for"
+    )]
+    pub target_arch: Option<Arch>,
 }
 
 #[derive(Debug, Parser)]

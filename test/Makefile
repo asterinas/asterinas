@@ -9,7 +9,6 @@ ATOMIC_WGET := $(CUR_DIR)/../tools/atomic_wget.sh
 BUILD_DIR := $(CUR_DIR)/build
 INITRAMFS := $(BUILD_DIR)/initramfs
 INITRAMFS_FILELIST := $(BUILD_DIR)/initramfs.filelist
-INITRAMFS_IMAGE := $(BUILD_DIR)/initramfs.cpio.gz
 EXT2_IMAGE := $(BUILD_DIR)/ext2.img
 EXFAT_IMAGE := $(BUILD_DIR)/exfat.img
 INITRAMFS_EMPTY_DIRS := \
@@ -35,6 +34,27 @@ SYSCALL_TEST_DIR := $(INITRAMFS)/opt/syscall_test
 
 .PHONY: all
 all: build
+
+# If `INITRAMFS_IMAGE` is not provided, build one
+ifndef INITRAMFS_IMAGE
+INITRAMFS_IMAGE := $(BUILD_DIR)/initramfs.cpio.gz
+
+.PHONY: $(INITRAMFS_IMAGE)
+$(INITRAMFS_IMAGE): $(INITRAMFS_FILELIST) | $(BUILD_DIR)
+	@if ! cmp -s $(INITRAMFS_FILELIST) $(INITRAMFS_FILELIST).previous ; then \
+		echo "Generating the initramfs image..."; \
+		cp -f $(INITRAMFS_FILELIST) $(INITRAMFS_FILELIST).previous; \
+		( \
+			cd $(INITRAMFS); \
+			# `$(INITRAMFS_FILELIST)` contains files' last modification \
+			# time in the first column, and files' relative path to \
+			# `$(INITRAMFS)` in the second column. This prunes the first \
+			# column and passes the second column to `cpio`. \
+			cut -d " " -f 2- $(INITRAMFS_FILELIST) | \
+				cpio -o -H newc | gzip \
+		) > $@; \
+	fi
+endif
 
 $(INITRAMFS)/lib/x86_64-linux-gnu: | $(VDSO_LIB)
 	@mkdir -p $@
@@ -67,10 +87,10 @@ $(INITRAMFS)/lib/x86_64-linux-gnu: | $(VDSO_LIB)
 $(VDSO_LIB): | $(VDSO_DIR) $(BINARY_CACHE_DIR)/vdso64.so
 	@# TODO: use a custom compiled vdso.so file in the future.
 	@cp $(BINARY_CACHE_DIR)/vdso64.so $@
-	
+
 $(VDSO_DIR):
 	@mkdir -p $@
-	
+
 $(BINARY_CACHE_DIR)/vdso64.so:
 	@mkdir -p $(BINARY_CACHE_DIR)
 	@$(ATOMIC_WGET) $@ "https://raw.githubusercontent.com/asterinas/linux_vdso/2a6d2db/vdso64.so"
@@ -131,22 +151,6 @@ $(INITRAMFS_EMPTY_DIRS):
 $(SYSCALL_TEST_DIR):
 	@make --no-print-directory -C syscall_test
 
-.PHONY: $(INITRAMFS_IMAGE)
-$(INITRAMFS_IMAGE): $(INITRAMFS_FILELIST)
-	@if ! cmp -s $(INITRAMFS_FILELIST) $(INITRAMFS_FILELIST).previous ; then \
-		echo "Generating the initramfs image..."; \
-		cp -f $(INITRAMFS_FILELIST) $(INITRAMFS_FILELIST).previous; \
-		( \
-			cd $(INITRAMFS); \
-			# `$(INITRAMFS_FILELIST)` contains files' last modification \
-			# time in the first column, and files' relative path to \
-			# `$(INITRAMFS)` in the second column. This prunes the first \
-			# column and passes the second column to `cpio`. \
-			cut -d " " -f 2- $(INITRAMFS_FILELIST) | \
-				cpio -o -H newc | gzip \
-		) > $@; \
-	fi
-
 .PHONY: $(INITRAMFS_FILELIST)
 # If the BUILD_SYSCALL_TEST variable is set, we should depend on the
 # sub make output to do incremental building.
@@ -157,11 +161,14 @@ $(INITRAMFS_FILELIST): | $(INITRAMFS_ALL_DIRS)
 endif
 	@(cd $(INITRAMFS); find . -printf "%T@ %p\n") > $(INITRAMFS_FILELIST)
 
-$(EXT2_IMAGE):
+$(BUILD_DIR):
+	@mkdir -p $@
+
+$(EXT2_IMAGE): | $(BUILD_DIR)
 	@dd if=/dev/zero of=$(EXT2_IMAGE) bs=2G count=1
 	@mke2fs $(EXT2_IMAGE)
 
-$(EXFAT_IMAGE):
+$(EXFAT_IMAGE): | $(BUILD_DIR)
 	@fallocate -l 64M $(EXFAT_IMAGE)
 	@mkfs.exfat $(EXFAT_IMAGE)
 

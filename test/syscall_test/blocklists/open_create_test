@@ -1,4 +1,5 @@
 CreateTest.HonorsUmask_NoRandomSave
+CreateTest.HonorsUmask
 CreateTest.CreatWithOTrunc
 CreateTest.CreatDirWithOTruncAndReadOnly
 CreateTest.CreateFailsOnUnpermittedDir

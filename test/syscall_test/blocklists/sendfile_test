@@ -4,3 +4,4 @@ SendFileTest.SendPipeWouldBlock
 SendFileTest.SendPipeBlocks
 SendFileTest.SendToNotARegularFile
 SendFileTest.SendToSpecialFile
+SendFileTest.SendFileToSelf

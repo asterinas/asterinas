@@ -1,0 +1,116 @@
+diff --git a/cc_toolchain_config.bzl.tpl b/cc_toolchain_config.bzl.tpl
+index e864fa2..1e2c96d 100644
+--- a/cc_toolchain_config.bzl.tpl
++++ b/cc_toolchain_config.bzl.tpl
+@@ -65,66 +65,13 @@ CPP_VERSION = "%{cpp_version}%"
+ # gcc -dumpversion | cut -f1 -d.
+ GCC_VERSION = %{gcc_version}%
+ 
+-# gcc -E -xc++ - -v
+-CXX_BUILTIN_INCLUDE_DIRECTORIES = {
+-    "k8": [
+-        "/usr/include/c++/%d" % GCC_VERSION,
+-        "/usr/include/x86_64-linux-gnu/c++/%d" % GCC_VERSION,
+-        "/usr/include/c++/%d/backward" % GCC_VERSION,
+-        "/usr/lib/gcc/x86_64-linux-gnu/%d/include" % GCC_VERSION,
+-        "/usr/local/include",
+-        "/usr/lib/gcc/x86_64-linux-gnu/%d/include-fixed" % GCC_VERSION,
+-        "/usr/include/x86_64-linux-gnu",
+-        "/usr/include",
+-    ],
+-    "armv7a": [
+-        "/usr/arm-linux-gnueabihf/include/c++/%d" % GCC_VERSION,
+-        "/usr/arm-linux-gnueabihf/include/c++/%d/arm-linux-gnueabihf" % GCC_VERSION,
+-        "/usr/arm-linux-gnueabihf/include/c++/%d/backward" % GCC_VERSION,
+-        "/usr/lib/gcc-cross/arm-linux-gnueabihf/%d/include" % GCC_VERSION,
+-        "/usr/lib/gcc-cross/arm-linux-gnueabihf/%d/include-fixed" % GCC_VERSION,
+-        "/usr/arm-linux-gnueabihf/include",
+-        "/usr/include/arm-linux-gnueabihf",
+-        "/usr/include"
+-    ],
+-    "armv6": [
+-        "%{bcm2708_toolchain_root}%/arm-linux-gnueabihf/arm-linux-gnueabihf/include/c++/4.9.3",
+-        "%{bcm2708_toolchain_root}%/arm-linux-gnueabihf/arm-linux-gnueabihf/include/c++/4.9.3/arm-linux-gnueabihf",
+-        "%{bcm2708_toolchain_root}%/arm-linux-gnueabihf/arm-linux-gnueabihf/include/c++/4.9.3/backward",
+-        "%{bcm2708_toolchain_root}%/arm-linux-gnueabihf/lib/gcc/arm-linux-gnueabihf/4.9.3/include",
+-        "%{bcm2708_toolchain_root}%/arm-linux-gnueabihf/lib/gcc/arm-linux-gnueabihf/4.9.3/include-fixed",
+-        "%{bcm2708_toolchain_root}%/arm-linux-gnueabihf/arm-linux-gnueabihf/include",
+-        "%{bcm2708_toolchain_root}%/arm-linux-gnueabihf/arm-linux-gnueabihf/sysroot/usr/include",
+-    ],
+-    "aarch64": [
+-        "/usr/aarch64-linux-gnu/include/c++/%d" % GCC_VERSION,
+-        "/usr/aarch64-linux-gnu/include/c++/%d/aarch64-linux-gnu" % GCC_VERSION,
+-        "/usr/aarch64-linux-gnu/include/c++/%d/backward" % GCC_VERSION,
+-        "/usr/lib/gcc-cross/aarch64-linux-gnu/%d/include" % GCC_VERSION,
+-        "/usr/lib/gcc-cross/aarch64-linux-gnu/%d/include-fixed" % GCC_VERSION,
+-        "/usr/aarch64-linux-gnu/include",
+-        "/usr/include/aarch64-linux-gnu",
+-        "/usr/include",
+-    ],
+-    "riscv64": [
+-        "/usr/riscv64-linux-gnu/include/c++/%d" % GCC_VERSION,
+-        "/usr/riscv64-linux-gnu/include/c++/%d/riscv64-linux-gnu" % GCC_VERSION,
+-        "/usr/riscv64-linux-gnu/include/c++/%d/backward" % GCC_VERSION,
+-        "/usr/lib/gcc-cross/riscv64-linux-gnu/%d/include" % GCC_VERSION,
+-        "/usr/lib/gcc-cross/riscv64-linux-gnu/%d/include-fixed" % GCC_VERSION,
+-        "/usr/riscv64-linux-gnu/include",
+-        "/usr/include/riscv64-linux-gnu",
+-        "/usr/include",
+-    ]
+-}
+-
+ ADDITIONAL_SYSTEM_INCLUDE_DIRECTORIES = [%{additional_system_include_directories}%]
+ 
+ TOOL_PATH_PREFIX = {
+-    "k8":      "/usr/bin/x86_64-linux-gnu-",
++    "k8":      "%{toolchain_prefix_k8}%",
+     "armv7a":  "/usr/bin/arm-linux-gnueabihf-",
+     "armv6":   "%{bcm2708_toolchain_root}%/arm-linux-gnueabihf/bin/arm-linux-gnueabihf-",
+-    "aarch64": "/usr/bin/aarch64-linux-gnu-",
++    "aarch64": "%{toolchain_prefix_aarch64}%",
+     "riscv64": "/usr/bin/riscv64-linux-gnu-",
+ }
+ 
+@@ -360,10 +307,7 @@ def _impl(ctx):
+             ],
+             action_configs = [],
+             artifact_name_patterns = [],
+-            cxx_builtin_include_directories = (
+-                ADDITIONAL_SYSTEM_INCLUDE_DIRECTORIES +
+-                CXX_BUILTIN_INCLUDE_DIRECTORIES[ctx.attr.cpu]
+-            ),
++            cxx_builtin_include_directories = ADDITIONAL_SYSTEM_INCLUDE_DIRECTORIES + [ '/nix/store' ],
+             toolchain_identifier = ctx.attr.cpu + '-toolchain',
+             host_system_name = HOST_SYSTEM_NAME,
+             target_system_name = TARGET_SYSTEM_NAME[ctx.attr.cpu],
+diff --git a/configure.bzl b/configure.bzl
+index ff0a930..96db5e0 100644
+--- a/configure.bzl
++++ b/configure.bzl
+@@ -24,6 +24,8 @@ def _impl(repository_ctx):
+ 
+     gcc_version = repository_ctx.execute(["/bin/bash", "-c", "gcc -dumpversion | cut -f1 -d."]).stdout or "0"
+     bcm2708_toolchain_root = repository_ctx.os.environ.get("BCM2708_TOOLCHAIN_ROOT", "/tools/arm-bcm2708")
++    nix_cc = repository_ctx.os.environ.get("NIX_CC", "")
++    nix_cc_aarch64 = repository_ctx.os.environ.get("NIX_CC_AARCH64", "")
+     repository_ctx.template(
+         "cc_toolchain_config.bzl",
+         Label("//:cc_toolchain_config.bzl.tpl"),
+@@ -33,6 +35,8 @@ def _impl(repository_ctx):
+             "%{cpp_version}%": repository_ctx.attr.cpp_version,
+             "%{bcm2708_toolchain_root}%": bcm2708_toolchain_root,
+             "%{additional_system_include_directories}%": additional_include_dirs,
++            "%{toolchain_prefix_k8}%": nix_cc + "/bin/",
++            "%{toolchain_prefix_aarch64}%": nix_cc_aarch64,
+         },
+     )
+     template_vars = configure_windows_toolchain(repository_ctx)
+@@ -45,6 +49,8 @@ def _impl(repository_ctx):
+ cc_crosstool = repository_rule(
+     environ = [
+         "BCM2708_TOOLCHAIN_ROOT",
++        "NIX_CC",
++        "NIX_CC_AARCH64",
+     ],
+     attrs = {
+         # Consult https://gcc.gnu.org/onlinedocs/gcc/C-Dialect-Options.html for

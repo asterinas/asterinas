@@ -47,6 +47,7 @@ VHOST ?= off
 CARGO_OSDK := ~/.cargo/bin/cargo-osdk
 
 CARGO_OSDK_ARGS := --target-arch=$(ARCH) --kcmd-args="ostd.log_level=$(LOG_LEVEL)"
+CARGO_KTEST_ARGS := --target-arch=$(ARCH)
 
 ifeq ($(AUTO_TEST), syscall)
 BUILD_SYSCALL_TEST := 1
@@ -86,6 +87,7 @@ endif
 
 ifneq ($(SCHEME), "")
 CARGO_OSDK_ARGS += --scheme $(SCHEME)
+CARGO_KTEST_ARGS += --scheme $(SCHEME)
 else
 CARGO_OSDK_ARGS += --boot-method="$(BOOT_METHOD)"
 endif
@@ -110,6 +112,12 @@ endif
 
 ifeq ($(ENABLE_KVM), 1)
 CARGO_OSDK_ARGS += --qemu-args="-accel kvm"
+endif
+
+ifdef PREBUILT_INITRAMFS
+INITRAMFS_IMAGE := $(shell realpath $(PREBUILT_INITRAMFS))
+CARGO_KTEST_ARGS += --initramfs="$(INITRAMFS_IMAGE)"
+CARGO_OSDK_ARGS += --initramfs="$(INITRAMFS_IMAGE)"
 endif
 
 # Pass make variables to all subdirectory makes
@@ -241,7 +249,7 @@ ktest: initramfs $(CARGO_OSDK)
 	@# Exclude linux-bzimage-setup from ktest since it's hard to be unit tested
 	@for dir in $(OSDK_CRATES); do \
 		[ $$dir = "ostd/libs/linux-bzimage/setup" ] && continue; \
-		(cd $$dir && OVMF=off cargo osdk test) || exit 1; \
+		(cd $$dir && OVMF=off cargo osdk test $(CARGO_KTEST_ARGS)) || exit 1; \
 		tail --lines 10 qemu.log | grep -q "^\\[ktest runner\\] All crates tested." \
 			|| (echo "Test failed" && exit 1); \
 	done
@@ -280,7 +288,7 @@ check: initramfs $(CARGO_OSDK)
 	done
 	@for dir in $(OSDK_CRATES); do \
 		echo "Checking $$dir"; \
-		(cd $$dir && cargo osdk clippy -- -- -D warnings) || exit 1; \
+		(cd $$dir && cargo osdk clippy --target-arch=$(ARCH) -- -- -D warnings) || exit 1; \
 	done
 	@$(MAKE) --no-print-directory -C test check
 	@typos
