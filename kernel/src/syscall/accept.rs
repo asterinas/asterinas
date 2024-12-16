@@ -49,7 +49,11 @@ fn do_accept(
 ) -> Result<FileDesc> {
     let (connected_socket, socket_addr) = {
         let socket = get_socket_from_fd(sockfd)?;
-        socket.accept()?
+        socket.accept().map_err(|err| match err.error() {
+            // FIXME: `accept` should not be restarted if a timeout has been set on the socket using `setsockopt`.
+            Errno::EINTR => Error::new(Errno::ERESTARTSYS),
+            _ => err,
+        })?
     };
 
     if flags.contains(Flags::SOCK_NONBLOCK) {

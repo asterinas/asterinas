@@ -39,7 +39,13 @@ pub fn sys_sendmsg(
         (io_vec_reader, MessageHeader::new(addr, control_message))
     };
 
-    let total_bytes = socket.sendmsg(&mut io_vec_reader, message_header, flags)?;
+    let total_bytes = socket
+        .sendmsg(&mut io_vec_reader, message_header, flags)
+        .map_err(|err| match err.error() {
+            // FIXME: `sendmsg` should not be restarted if a timeout has been set on the socket using `setsockopt`.
+            Errno::EINTR => Error::new(Errno::ERESTARTSYS),
+            _ => err,
+        })?;
 
     Ok(SyscallReturn::Return(total_bytes as _))
 }

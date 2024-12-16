@@ -56,6 +56,7 @@ pub fn sys_ioctl(fd: FileDesc, cmd: u32, arg: Vaddr, ctx: &Context) -> Result<Sy
             entry.set_flags(entry.flags() & (!FdFlags::CLOEXEC));
             0
         }
+        // FIXME: ioctl operations involving blocking I/O should be able to restart if interrupted
         _ => file.ioctl(ioctl_cmd, arg)?,
     };
     Ok(SyscallReturn::Return(res as _))
