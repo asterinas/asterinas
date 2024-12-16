@@ -40,7 +40,6 @@
 
 pub(crate) mod kvirt_area;
 
-use alloc::vec::Vec;
 use core::ops::Range;
 
 use align_ext::AlignExt;
@@ -51,7 +50,7 @@ use super::{
     nr_subpage_per_huge,
     page::{
         meta::{impl_page_meta, mapping, MetaPageMeta},
-        Page,
+        ContPages, Page,
     },
     page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
     page_table::{KernelMode, PageTable},
@@ -132,7 +131,7 @@ pub static KERNEL_PAGE_TABLE: Once<PageTable<KernelMode, PageTableEntry, PagingC
 ///
 /// This function should be called before:
 ///  - any initializer that modifies the kernel page table.
-pub fn init_kernel_page_table(meta_pages: Vec<Page<MetaPageMeta>>) {
+pub fn init_kernel_page_table(meta_pages: ContPages<MetaPageMeta>) {
     info!("Initializing the kernel page table");
 
     let regions = crate::boot::memory_regions();
@@ -165,7 +164,7 @@ pub fn init_kernel_page_table(meta_pages: Vec<Page<MetaPageMeta>>) {
     // Map the metadata pages.
     {
         let start_va = mapping::page_to_meta::<PagingConsts>(0);
-        let from = start_va..start_va + meta_pages.len() * PAGE_SIZE;
+        let from = start_va..start_va + meta_pages.nbytes();
         let prop = PageProperty {
             flags: PageFlags::RW,
             cache: CachePolicy::Writeback,

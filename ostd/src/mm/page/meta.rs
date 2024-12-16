@@ -35,7 +35,6 @@ pub mod mapping {
     }
 }
 
-use alloc::vec::Vec;
 use core::{
     any::Any,
     cell::UnsafeCell,
@@ -46,7 +45,7 @@ use core::{
 use log::info;
 use static_assertions::const_assert_eq;
 
-use super::{allocator, Page};
+use super::{allocator, ContPages};
 use crate::{
     arch::mm::PagingConsts,
     mm::{
@@ -162,7 +161,7 @@ impl_page_meta!(MetaPageMeta);
 /// Initializes the metadata of all physical pages.
 ///
 /// The function returns a list of `Page`s containing the metadata.
-pub(crate) fn init() -> Vec<Page<MetaPageMeta>> {
+pub(crate) fn init() -> ContPages<MetaPageMeta> {
     let max_paddr = {
         let regions = crate::boot::memory_regions();
         regions.iter().map(|r| r.base() + r.len()).max().unwrap()
@@ -180,7 +179,8 @@ pub(crate) fn init() -> Vec<Page<MetaPageMeta>> {
     let meta_pages = alloc_meta_pages(num_meta_pages);
     // Map the metadata pages.
     boot_pt::with_borrow(|boot_pt| {
-        for (i, frame_paddr) in meta_pages.iter().enumerate() {
+        for i in 0..num_meta_pages {
+            let frame_paddr = meta_pages + i * PAGE_SIZE;
             let vaddr = mapping::page_to_meta::<PagingConsts>(0) + i * PAGE_SIZE;
             let prop = PageProperty {
                 flags: PageFlags::RW,
@@ -193,15 +193,13 @@ pub(crate) fn init() -> Vec<Page<MetaPageMeta>> {
     })
     .unwrap();
     // Now the metadata pages are mapped, we can initialize the metadata.
-    meta_pages
-        .into_iter()
-        .map(|paddr| Page::<MetaPageMeta>::from_unused(paddr, MetaPageMeta::default()))
-        .collect()
+    ContPages::from_unused(meta_pages..meta_pages + num_meta_pages * PAGE_SIZE, |_| {
+        MetaPageMeta {}
+    })
 }
 
-fn alloc_meta_pages(nframes: usize) -> Vec<Paddr> {
-    let mut meta_pages = Vec::new();
-    let start_frame = allocator::PAGE_ALLOCATOR
+fn alloc_meta_pages(nframes: usize) -> Paddr {
+    let start_paddr = allocator::PAGE_ALLOCATOR
         .get()
         .unwrap()
         .lock()
@@ -209,11 +207,7 @@ fn alloc_meta_pages(nframes: usize) -> Vec<Paddr> {
         .unwrap()
         * PAGE_SIZE;
     // Zero them out as initialization.
-    let vaddr = paddr_to_vaddr(start_frame) as *mut u8;
+    let vaddr = paddr_to_vaddr(start_paddr) as *mut u8;
     unsafe { core::ptr::write_bytes(vaddr, 0, PAGE_SIZE * nframes) };
-    for i in 0..nframes {
-        let paddr = start_frame + i * PAGE_SIZE;
-        meta_pages.push(paddr);
-    }
-    meta_pages
+    start_paddr
 }
