@@ -74,6 +74,15 @@ pub fn futex_wait_bitset(
     drop(futex_bucket);
 
     waiter.pause_timeout(timeout)
+
+    // TODO: Ensure the futex item is dequeued and dropped.
+    //
+    // The enqueued futex item remain undequeued
+    // if the futex wait operation is interrupted by a signal or times out.
+    // In such cases, the `Box<FutexItem>` would persist in memory,
+    // leaving our implementation vulnerable to exploitation by user programs
+    // that could repeatedly issue futex wait operations
+    // to exhaust kernel memory.
 }
 
 /// Does futex wake
