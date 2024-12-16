@@ -136,13 +136,10 @@ pub fn sys_futex(
             return_errno_with_message!(Errno::EINVAL, "unsupported futex op");
         }
     }
-    .map_err(|e| {
-        // From Linux manual, Futex returns `ETIMEDOUT` instead of `ETIME`
-        if e.error() == Errno::ETIME {
-            Error::with_message(Errno::ETIMEDOUT, "futex wait timeout")
-        } else {
-            e
-        }
+    .map_err(|err| match err.error() {
+        Errno::ETIME => Error::new(Errno::ETIMEDOUT),
+        Errno::EINTR => Error::new(Errno::ERESTARTSYS),
+        _ => err,
     })?;
 
     debug!("futex returns, tid= {} ", ctx.posix_thread.tid());

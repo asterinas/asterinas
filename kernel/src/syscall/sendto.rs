@@ -34,7 +34,13 @@ pub fn sys_sendto(
         let vm_space = ctx.process.root_vmar().vm_space();
         vm_space.reader(buf, len)?
     };
-    let send_size = socket.sendmsg(&mut reader, message_header, flags)?;
+    let send_size = socket
+        .sendmsg(&mut reader, message_header, flags)
+        .map_err(|err| match err.error() {
+            // FIXME: `sendto` should not be restarted if a timeout has been set on the socket using `setsockopt`.
+            Errno::EINTR => Error::new(Errno::ERESTARTSYS),
+            _ => err,
+        })?;
 
     Ok(SyscallReturn::Return(send_size as _))
 }

@@ -33,7 +33,11 @@ pub fn sys_openat(
             .fs()
             .resolver()
             .read()
-            .open(&fs_path, flags, mask_mode)?;
+            .open(&fs_path, flags, mask_mode)
+            .map_err(|err| match err.error() {
+                Errno::EINTR => Error::new(Errno::ERESTARTSYS),
+                _ => err,
+            })?;
         Arc::new(inode_handle)
     };
     let mut file_table = current.file_table().lock();

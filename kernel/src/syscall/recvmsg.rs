@@ -25,7 +25,13 @@ pub fn sys_recvmsg(
     let (total_bytes, message_header) = {
         let socket = get_socket_from_fd(sockfd)?;
         let mut io_vec_writer = c_user_msghdr.copy_writer_array_from_user(ctx)?;
-        socket.recvmsg(&mut io_vec_writer, flags)?
+        socket
+            .recvmsg(&mut io_vec_writer, flags)
+            .map_err(|err| match err.error() {
+                // FIXME: `recvmsg` should not be restarted if a timeout has been set on the socket using `setsockopt`.
+                Errno::EINTR => Error::new(Errno::ERESTARTSYS),
+                _ => err,
+            })?
     };
 
     if let Some(addr) = message_header.addr() {

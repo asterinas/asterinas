@@ -17,6 +17,12 @@ pub fn sys_connect(
     debug!("fd = {sockfd}, socket_addr = {socket_addr:?}");
 
     let socket = get_socket_from_fd(sockfd)?;
-    socket.connect(socket_addr)?;
+    socket
+        .connect(socket_addr)
+        .map_err(|err| match err.error() {
+            // FIXME: `connect` should not be restarted if a timeout has been set on the socket using `setsockopt`.
+            Errno::EINTR => Error::new(Errno::ERESTARTSYS),
+            _ => err,
+        })?;
     Ok(SyscallReturn::Return(0))
 }
