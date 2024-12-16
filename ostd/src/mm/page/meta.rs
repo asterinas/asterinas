@@ -42,6 +42,7 @@ use core::{
     sync::atomic::{AtomicU32, Ordering},
 };
 
+use align_ext::AlignExt;
 use log::info;
 use static_assertions::const_assert_eq;
 
@@ -49,8 +50,8 @@ use super::{allocator, ContPages};
 use crate::{
     arch::mm::PagingConsts,
     mm::{
-        paddr_to_vaddr, page_size, page_table::boot_pt, CachePolicy, Paddr, PageFlags,
-        PageProperty, PrivilegedPageFlags, Vaddr, PAGE_SIZE,
+        kspace::LINEAR_MAPPING_BASE_VADDR, paddr_to_vaddr, page_size, page_table::boot_pt,
+        CachePolicy, Paddr, PageFlags, PageProperty, PrivilegedPageFlags, Vaddr, PAGE_SIZE,
     },
 };
 
@@ -172,6 +173,8 @@ pub(crate) fn init() -> ContPages<MetaPageMeta> {
         max_paddr
     );
 
+    add_temp_linear_mapping(max_paddr);
+
     super::MAX_PADDR.store(max_paddr, Ordering::Relaxed);
 
     let num_pages = max_paddr / page_size::<PagingConsts>(1);
@@ -210,4 +213,39 @@ fn alloc_meta_pages(nframes: usize) -> Paddr {
     let vaddr = paddr_to_vaddr(start_paddr) as *mut u8;
     unsafe { core::ptr::write_bytes(vaddr, 0, PAGE_SIZE * nframes) };
     start_paddr
+}
+
+/// Adds a temporary linear mapping for the metadata pages.
+///
+/// We only assume boot page table to contain 4G linear mapping. Thus if the
+/// physical memory is huge we end up depleted of linear virtual memory for
+/// initializing metadata.
+fn add_temp_linear_mapping(max_paddr: Paddr) {
+    const PADDR4G: Paddr = 0x1_0000_0000;
+
+    if max_paddr <= PADDR4G {
+        return;
+    }
+
+    // TODO: We don't know if the allocator would allocate from low to high or
+    // not. So we prepare all linear mappings in the boot page table. Hope it
+    // won't drag the boot performance much.
+    let end_paddr = max_paddr.align_up(PAGE_SIZE);
+    let prange = PADDR4G..end_paddr;
+    let prop = PageProperty {
+        flags: PageFlags::RW,
+        cache: CachePolicy::Writeback,
+        priv_flags: PrivilegedPageFlags::GLOBAL,
+    };
+
+    // SAFETY: we are doing the linear mapping for the kernel.
+    unsafe {
+        boot_pt::with_borrow(|boot_pt| {
+            for paddr in prange.step_by(PAGE_SIZE) {
+                let vaddr = LINEAR_MAPPING_BASE_VADDR + paddr;
+                boot_pt.map_base_page(vaddr, paddr / PAGE_SIZE, prop);
+            }
+        })
+        .unwrap();
+    }
 }
