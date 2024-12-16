@@ -308,10 +308,9 @@ FROM build-grub as grub
 # in the GRUB release. The Ubuntu release notoriously modifies the GRUB source code and enforce
 # EFI handover boot, which is deprecated. So we have to build GRUB from source.
 WORKDIR /root
-RUN wget -O grub.tar.xz https://ftp.gnu.org/gnu/grub/grub-2.12.tar.xz \ 
-    && mkdir /root/grub \ 
-    && tar xf grub.tar.xz --strip-components=1 -C /root/grub \ 
-    && rm grub.tar.xz
+# See also: https://github.com/asterinas/asterinas/pull/1710
+RUN git clone --single-branch -b asterinas/2.12 https://github.com/asterinas/grub.git
+    && git -C grub checkout 0633bc8
 # Fetch and install the Unicode font data for grub.
 RUN wget -O unifont.pcf.gz https://unifoundry.com/pub/unifont/unifont-15.1.04/font-builds/unifont-15.1.04.pcf.gz \ 
     && mkdir -pv /usr/share/fonts/unifont \ 
