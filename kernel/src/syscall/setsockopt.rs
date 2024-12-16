@@ -15,7 +15,7 @@ pub fn sys_setsockopt(
     optlen: u32,
     _ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let level = CSocketOptionLevel::try_from(level)?;
+    let level = CSocketOptionLevel::try_from(level).map_err(|_| Errno::EOPNOTSUPP)?;
     if optval == 0 {
         return_errno_with_message!(Errno::EINVAL, "optval is null pointer");
     }

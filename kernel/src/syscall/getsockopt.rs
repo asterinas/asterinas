@@ -15,7 +15,7 @@ pub fn sys_getsockopt(
     optlen_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let level = CSocketOptionLevel::try_from(level)?;
+    let level = CSocketOptionLevel::try_from(level).map_err(|_| Errno::EOPNOTSUPP)?;
     if optval == 0 || optlen_addr == 0 {
         return_errno_with_message!(Errno::EINVAL, "optval or optlen_addr is null pointer");
     }
