@@ -143,6 +143,7 @@ jobs:
   Results:
     runs-on: ubuntu-latest
     needs: Matrix
+    if: always() # Always run regardless of whether the previous job was successful or not.
     strategy:
       matrix:
         benchmark: ${{ fromJson(needs.Matrix.outputs.benchmarks) }}
