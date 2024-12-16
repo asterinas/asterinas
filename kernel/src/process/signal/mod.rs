@@ -28,6 +28,7 @@ pub use sig_stack::{SigStack, SigStackFlags};
 
 use super::posix_thread::PosixThread;
 use crate::{
+    cpu::LinuxAbi,
     current_userspace,
     prelude::*,
     process::{do_exit_group, TermStatus},
@@ -41,7 +42,11 @@ pub trait SignalContext {
 // TODO: This interface of this method is error prone.
 // The method takes an argument for the current thread to optimize its efficiency.
 /// Handle pending signal for current process.
-pub fn handle_pending_signal(user_ctx: &mut UserContext, ctx: &Context) -> Result<()> {
+pub fn handle_pending_signal(
+    user_ctx: &mut UserContext,
+    ctx: &Context,
+    syscall_number: Option<usize>,
+) -> Result<()> {
     // We first deal with signal in current thread, then signal in current process.
     let posix_thread = ctx.posix_thread;
     let signal = {
@@ -69,6 +74,17 @@ pub fn handle_pending_signal(user_ctx: &mut UserContext, ctx: &Context) -> Resul
             restorer_addr,
             mask,
         } => {
+            if let Some(syscall_number) = syscall_number
+                && user_ctx.syscall_ret() == -(Errno::ERESTARTSYS as i32) as usize
+            {
+                if flags.contains(SigActionFlags::SA_RESTART) {
+                    user_ctx.set_syscall_num(syscall_number);
+                    user_ctx.set_instruction_pointer(user_ctx.instruction_pointer() - 2);
+                } else {
+                    user_ctx.set_syscall_ret(-(Errno::EINTR as i32) as usize);
+                }
+            }
+
             if flags.contains(SigActionFlags::SA_RESETHAND) {
                 // In Linux, SA_RESETHAND corresponds to SA_ONESHOT,
                 // which means the user handler will be executed only once and then reset to the default.
