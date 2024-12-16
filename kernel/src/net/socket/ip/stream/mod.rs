@@ -10,7 +10,7 @@ use connected::ConnectedStream;
 use connecting::{ConnResult, ConnectingStream};
 use init::InitStream;
 use listen::ListenStream;
-use options::{Congestion, MaxSegment, NoDelay, WindowClamp, KEEPALIVE_INTERVAL};
+use options::{Congestion, KeepIdle, MaxSegment, NoDelay, WindowClamp, KEEPALIVE_INTERVAL};
 use ostd::sync::{PreemptDisabled, RwLockReadGuard, RwLockWriteGuard};
 use takeable::Takeable;
 use util::TcpOptionSet;
@@ -670,17 +670,21 @@ impl Socket for StreamSocket {
                 let no_delay = options.tcp.no_delay();
                 tcp_no_delay.set(no_delay);
             },
-            tcp_congestion: Congestion => {
-                let congestion = options.tcp.congestion();
-                tcp_congestion.set(congestion);
-            },
             tcp_maxseg: MaxSegment => {
                 let maxseg = options.tcp.maxseg();
                 tcp_maxseg.set(maxseg);
             },
+            tcp_keep_idle: KeepIdle => {
+                let keep_idle = options.tcp.keep_idle();
+                tcp_keep_idle.set(keep_idle);
+            },
             tcp_window_clamp: WindowClamp => {
                 let window_clamp = options.tcp.window_clamp();
                 tcp_window_clamp.set(window_clamp);
+            },
+            tcp_congestion: Congestion => {
+                let congestion = options.tcp.congestion();
+                tcp_congestion.set(congestion);
             },
             _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to get is unknown")
         });
@@ -691,59 +695,77 @@ impl Socket for StreamSocket {
     fn set_option(&self, option: &dyn SocketOption) -> Result<()> {
         let (mut options, mut state) = self.update_connecting();
 
-        match options.socket.set_option(option, state.as_mut()) {
-            Err(err) if err.error() == Errno::ENOPROTOOPT => (),
-            Err(err) => return Err(err),
-            Ok(need_iface_poll) => {
-                let iface_to_poll = need_iface_poll.then(|| state.iface().cloned()).flatten();
-
-                drop(state);
-                drop(options);
-
-                if let Some(iface) = iface_to_poll {
-                    iface.poll();
-                }
-
-                return Ok(());
+        let need_iface_poll = match options.socket.set_option(option, state.as_mut()) {
+            Err(err) if err.error() == Errno::ENOPROTOOPT => {
+                do_tcp_setsockopt(option, &mut options, state.as_mut())?
             }
+            Err(err) => return Err(err),
+            Ok(need_iface_poll) => need_iface_poll,
+        };
+
+        let iface_to_poll = need_iface_poll.then(|| state.iface().cloned()).flatten();
+
+        drop(state);
+        drop(options);
+
+        if let Some(iface) = iface_to_poll {
+            iface.poll();
         }
-
-        // FIXME: Here we have only set the value of the option, without actually
-        // making any real modifications.
-        match_sock_option_ref!(option, {
-            tcp_no_delay: NoDelay => {
-                let no_delay = tcp_no_delay.get().unwrap();
-                options.tcp.set_no_delay(*no_delay);
-                state.set_raw_option(|raw_socket: &dyn RawTcpSetOption| raw_socket.set_nagle_enabled(!no_delay));
-            },
-            tcp_congestion: Congestion => {
-                let congestion = tcp_congestion.get().unwrap();
-                options.tcp.set_congestion(*congestion);
-            },
-            tcp_maxseg: MaxSegment => {
-                const MIN_MAXSEG: u32 = 536;
-                const MAX_MAXSEG: u32 = 65535;
-
-                let maxseg = tcp_maxseg.get().unwrap();
-                if *maxseg < MIN_MAXSEG || *maxseg > MAX_MAXSEG {
-                    return_errno_with_message!(Errno::EINVAL, "the maximum segment size is out of bounds");
-                }
-                options.tcp.set_maxseg(*maxseg);
-            },
-            tcp_window_clamp: WindowClamp => {
-                let window_clamp = tcp_window_clamp.get().unwrap();
-                let half_recv_buf = options.socket.recv_buf() / 2;
-                if *window_clamp <= half_recv_buf {
-                    options.tcp.set_window_clamp(half_recv_buf);
-                } else {
-                    options.tcp.set_window_clamp(*window_clamp);
-                }
-            },
-            _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to be set is unknown")
-        });
 
         Ok(())
     }
+}
+
+fn do_tcp_setsockopt(
+    option: &dyn SocketOption,
+    options: &mut OptionSet,
+    state: &mut State,
+) -> Result<NeedIfacePoll> {
+    match_sock_option_ref!(option, {
+        tcp_no_delay: NoDelay => {
+            let no_delay = tcp_no_delay.get().unwrap();
+            options.tcp.set_no_delay(*no_delay);
+            state.set_raw_option(|raw_socket: &dyn RawTcpSetOption| raw_socket.set_nagle_enabled(!no_delay));
+        },
+        tcp_maxseg: MaxSegment => {
+            const MIN_MAXSEG: u32 = 536;
+            const MAX_MAXSEG: u32 = 65535;
+
+            let maxseg = tcp_maxseg.get().unwrap();
+            if *maxseg < MIN_MAXSEG || *maxseg > MAX_MAXSEG {
+                return_errno_with_message!(Errno::EINVAL, "the maximum segment size is out of bounds");
+            }
+            options.tcp.set_maxseg(*maxseg);
+        },
+        tcp_keep_idle: KeepIdle => {
+            const MIN_KEEP_IDLE: u32 = 1;
+            const MAX_KEEP_IDLE: u32 = 32767;
+
+            let keepidle = tcp_keep_idle.get().unwrap();
+            if *keepidle < MIN_KEEP_IDLE || *keepidle > MAX_KEEP_IDLE {
+                return_errno_with_message!(Errno::EINVAL, "the keep idle time is out of bounds");
+            }
+            options.tcp.set_keep_idle(*keepidle);
+
+            // TODO: Track when the socket becomes idle to actually support keep idle.
+        },
+        tcp_window_clamp: WindowClamp => {
+            let window_clamp = tcp_window_clamp.get().unwrap();
+            let half_recv_buf = options.socket.recv_buf() / 2;
+            if *window_clamp <= half_recv_buf {
+                options.tcp.set_window_clamp(half_recv_buf);
+            } else {
+                options.tcp.set_window_clamp(*window_clamp);
+            }
+        },
+        tcp_congestion: Congestion => {
+            let congestion = tcp_congestion.get().unwrap();
+            options.tcp.set_congestion(*congestion);
+        },
+        _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to be set is unknown")
+    });
+
+    Ok(NeedIfacePoll::FALSE)
 }
 
 impl State {

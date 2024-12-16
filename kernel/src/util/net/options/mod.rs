@@ -134,7 +134,7 @@ pub fn new_raw_socket_option(
     match level {
         CSocketOptionLevel::SOL_SOCKET => new_socket_option(name),
         CSocketOptionLevel::SOL_TCP => new_tcp_option(name),
-        _ => todo!(),
+        _ => return_errno_with_message!(Errno::EOPNOTSUPP, "unsupported option level"),
     }
 }
 

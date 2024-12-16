@@ -5,9 +5,10 @@ use crate::impl_socket_options;
 
 impl_socket_options!(
     pub struct NoDelay(bool);
-    pub struct Congestion(CongestionControl);
     pub struct MaxSegment(u32);
+    pub struct KeepIdle(u32);
     pub struct WindowClamp(u32);
+    pub struct Congestion(CongestionControl);
 );
 
 /// The keepalive interval.

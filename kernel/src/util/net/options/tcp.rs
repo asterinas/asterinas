@@ -3,7 +3,7 @@
 use super::RawSocketOption;
 use crate::{
     impl_raw_socket_option,
-    net::socket::ip::stream::options::{Congestion, MaxSegment, NoDelay, WindowClamp},
+    net::socket::ip::stream::options::{Congestion, KeepIdle, MaxSegment, NoDelay, WindowClamp},
     prelude::*,
     util::net::options::SocketOption,
 };
@@ -26,17 +26,19 @@ pub enum CTcpOptionName {
 }
 
 pub fn new_tcp_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
-    let name = CTcpOptionName::try_from(name)?;
+    let name = CTcpOptionName::try_from(name).map_err(|_| Errno::ENOPROTOOPT)?;
     match name {
         CTcpOptionName::NODELAY => Ok(Box::new(NoDelay::new())),
-        CTcpOptionName::CONGESTION => Ok(Box::new(Congestion::new())),
         CTcpOptionName::MAXSEG => Ok(Box::new(MaxSegment::new())),
+        CTcpOptionName::KEEPIDLE => Ok(Box::new(KeepIdle::new())),
         CTcpOptionName::WINDOW_CLAMP => Ok(Box::new(WindowClamp::new())),
-        _ => todo!(),
+        CTcpOptionName::CONGESTION => Ok(Box::new(Congestion::new())),
+        _ => return_errno_with_message!(Errno::ENOPROTOOPT, "unsupported tcp-level option"),
     }
 }
 
 impl_raw_socket_option!(NoDelay);
-impl_raw_socket_option!(Congestion);
 impl_raw_socket_option!(MaxSegment);
+impl_raw_socket_option!(KeepIdle);
 impl_raw_socket_option!(WindowClamp);
+impl_raw_socket_option!(Congestion);

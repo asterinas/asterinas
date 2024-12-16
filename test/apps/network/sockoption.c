@@ -38,6 +38,26 @@ FN_SETUP(general)
 }
 END_SETUP()
 
+FN_TEST(invalid_socket_option)
+{
+	int res;
+	socklen_t res_len = sizeof(res);
+
+#define INVALID_LEVEL 99999
+	TEST_ERRNO(getsockopt(sk_connected, INVALID_LEVEL, SO_SNDBUF, &res,
+			      &res_len),
+		   EOPNOTSUPP);
+#define INVALID_SOCKET_OPTION 99999
+	TEST_ERRNO(getsockopt(sk_connected, SOL_SOCKET, INVALID_SOCKET_OPTION,
+			      &res, &res_len),
+		   ENOPROTOOPT);
+#define INVALID_TCP_OPTION 99999
+	TEST_ERRNO(getsockopt(sk_connected, IPPROTO_TCP, INVALID_TCP_OPTION,
+			      &res, &res_len),
+		   ENOPROTOOPT);
+}
+END_TEST()
+
 int refresh_connection()
 {
 	close(sk_connected);
@@ -228,5 +248,29 @@ FN_TEST(keepalive)
 	TEST_RES(getsockopt(sk_accepted, SOL_SOCKET, SO_KEEPALIVE, &keepalive,
 			    &keepalive_len),
 		 keepalive == 0);
+}
+END_TEST()
+
+FN_TEST(keepidle)
+{
+	int keepidle;
+	socklen_t keepidle_len = sizeof(keepidle);
+
+	// 1. Check default values
+	refresh_connection();
+	TEST_RES(getsockopt(sk_connected, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle,
+			    &keepidle_len),
+		 keepidle == 7200);
+	TEST_RES(getsockopt(sk_accepted, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle,
+			    &keepidle_len),
+		 keepidle == 7200);
+
+	// 2. Set and Get value
+	int seconds = 200;
+	CHECK(setsockopt(sk_connected, IPPROTO_TCP, TCP_KEEPIDLE, &seconds,
+			 sizeof(seconds)));
+	TEST_RES(getsockopt(sk_connected, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle,
+			    &keepidle_len),
+		 keepidle == 200);
 }
 END_TEST()
