@@ -14,6 +14,8 @@ ProcSelfFdInfo.GetdentsDuplicates
 ProcSelfFdInfo.CorrectFds
 ProcSelfFdInfo.Flags
 ProcCpuinfo.RequiredFieldsArePresent
+ProcCpuinfo.DeniesWriteRoot
+ProcCpuinfo.DeniesWriteNonRoot
 ProcUptime.IsPresent
 ProcMeminfo.ContainsBasicFields
 ProcStat.ContainsBasicFields
