@@ -10,6 +10,7 @@ use ostd::sync::Waker;
 use super::{
     kill::SignalSenderIds,
     signal::{
+        sig_action::SigAction,
         sig_mask::{AtomicSigMask, SigMask, SigSet},
         sig_num::SigNum,
         sig_queues::SigQueues,
@@ -20,6 +21,7 @@ use super::{
 };
 use crate::{
     events::Observer,
+    fs::{file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
     process::signal::constants::SIGCONT,
     thread::{AsThread, Thread, Tid},
@@ -57,6 +59,12 @@ pub struct PosixThread {
 
     /// Process credentials. At the kernel level, credentials are a per-thread attribute.
     credentials: Credentials,
+
+    // Files
+    /// File table
+    file_table: Arc<SpinLock<FileTable>>,
+    /// File system
+    fs: Arc<ThreadFsInfo>,
 
     // Signal
     /// Blocked signals
@@ -105,6 +113,14 @@ impl PosixThread {
 
     pub fn clear_child_tid(&self) -> &Mutex<Vaddr> {
         &self.clear_child_tid
+    }
+
+    pub fn file_table(&self) -> &Arc<SpinLock<FileTable>> {
+        &self.file_table
+    }
+
+    pub fn fs(&self) -> &Arc<ThreadFsInfo> {
+        &self.fs
     }
 
     /// Get the reference to the signal mask of the thread.
@@ -205,8 +221,11 @@ impl PosixThread {
     /// Enqueues a thread-directed signal. This method should only be used for enqueue kernel
     /// signal and fault signal.
     pub fn enqueue_signal(&self, signal: Box<dyn Signal>) {
+        let signal_number = signal.num();
         self.sig_queues.enqueue(signal);
-        if let Some(waker) = &*self.signalled_waker.lock() {
+        if self.process().sig_dispositions().lock().get(signal_number) != SigAction::Ign
+            && let Some(waker) = &*self.signalled_waker.lock()
+        {
             waker.wake_up();
         }
     }

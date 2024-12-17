@@ -57,7 +57,8 @@ pub(crate) fn get_num_processors() -> Option<u32> {
 /// Brings up all application processors.
 pub(crate) fn bringup_all_aps() {
     copy_ap_boot_code();
-    init_boot_stack_array();
+    fill_boot_stack_array_ptr();
+    fill_boot_pt_ptr();
     send_boot_ipis();
 }
 
@@ -85,25 +86,35 @@ fn copy_ap_boot_code() {
 }
 
 /// Initializes the boot stack array in the AP boot code with the given pages.
-fn init_boot_stack_array() {
+fn fill_boot_stack_array_ptr() {
     let pages = &crate::boot::smp::AP_BOOT_INFO
         .get()
         .unwrap()
         .boot_stack_array;
 
-    // This is defined in the boot assembly code.
     extern "C" {
-        fn __ap_boot_stack_array_pointer();
+        static __ap_boot_stack_array_pointer: u64;
     }
-    let ap_boot_stack_arr_ptr: *mut u64 = __ap_boot_stack_array_pointer as usize as *mut u64;
-    log::debug!(
-        "__ap_boot_stack_array_pointer: {:#x?}",
-        ap_boot_stack_arr_ptr
-    );
+
+    // SAFETY: This pointer points to a static variable defined in the `ap_boot.S`.
+    let ptr = unsafe { &__ap_boot_stack_array_pointer as *const u64 as *mut u64 };
+    // SAFETY: We only write to it once.
+    unsafe {
+        ptr.write_volatile(paddr_to_vaddr(pages.start_paddr()) as u64);
+    }
+}
+
+fn fill_boot_pt_ptr() {
+    extern "C" {
+        static __boot_page_table_pointer: u32;
+    }
+    let boot_pt = crate::mm::page_table::boot_pt::with_borrow(|pt| pt.root_address()).unwrap();
 
     // SAFETY: this pointer points to a static variable defined in the `ap_boot.S`.
+    let ptr = unsafe { &__boot_page_table_pointer as *const u32 as *mut u32 };
+    // SAFETY: We only write to it once.
     unsafe {
-        ap_boot_stack_arr_ptr.write_volatile(paddr_to_vaddr(pages.start_paddr()) as u64);
+        ptr.write_volatile(boot_pt as u32);
     }
 }
 

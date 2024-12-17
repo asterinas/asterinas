@@ -6,8 +6,6 @@
 .extern boot_page_table_start
 .extern ap_early_entry
 
-KERNEL_VMA              = 0xffffffff80000000
-
 .section ".ap_boot", "awx"
 .align 4096
 .code16
@@ -23,13 +21,13 @@ ap_real_mode_boot:
     xor ax, ax  // clear ax
     mov ds, ax  // clear ds
 
-    lgdt [ap_gdtr - KERNEL_VMA] // load gdt
+    lgdt [ap_gdtr] // load gdt
 
     mov eax, cr0
     or eax, 1
     mov cr0, eax // enable protected mode
 
-    ljmp 0x8, offset ap_protect_entry - KERNEL_VMA
+    ljmp 0x8, offset ap_protect_entry
 
 // 32-bit AP GDT.
 .align 16
@@ -44,7 +42,7 @@ ap_gdt_end:
 .align 16
 ap_gdtr:
     .word ap_gdt_end - ap_gdt - 1
-    .quad ap_gdt - KERNEL_VMA
+    .quad ap_gdt
 
 .align 4
 .code32
@@ -85,7 +83,13 @@ x2apic_mode:
     rdmsr
     jmp ap_protect
 
-.code32
+// This is a pointer to the page table used by the APs.
+// The BSP will fill this pointer before kicking the APs.
+.global __boot_page_table_pointer
+.align 4
+__boot_page_table_pointer:
+    .skip 4
+
 ap_protect:
     // Save the local APIC ID in an unused register.
     // We will calculate the stack pointer of this core 
@@ -95,7 +99,7 @@ ap_protect:
     // Now we try getting into long mode.
 
     // Use the 64-bit GDT.
-    lgdt [boot_gdtr - KERNEL_VMA]
+    lgdt [boot_gdtr]
 
     // Enable PAE and PGE.
     mov eax, cr4
@@ -105,7 +109,7 @@ ap_protect:
     // Set the page table. The application processors use
     // the same page table as the bootstrap processor's
     // boot phase page table.
-    lea eax, [boot_page_table_start - KERNEL_VMA]
+    mov eax, __boot_page_table_pointer
     mov cr3, eax
 
     // Enable long mode.
@@ -119,10 +123,9 @@ ap_protect:
     or eax, 1 << 31
     mov cr0, eax
 
-    ljmp 0x8, offset ap_long_mode_in_low_address - KERNEL_VMA
+    ljmp 0x8, offset ap_long_mode_in_low_address
 
 .code64
-
 ap_long_mode_in_low_address:
     mov ax, 0
     mov ds, ax
@@ -132,11 +135,10 @@ ap_long_mode_in_low_address:
     mov gs, ax
 
     // Update RIP to use the virtual address.
-    mov rbx, KERNEL_VMA
-    lea rax, [ap_long_mode - KERNEL_VMA]
-    or  rax, rbx
+    mov rax, offset ap_long_mode
     jmp rax
 
+.data
 // This is a pointer to be filled by the BSP when boot stacks
 // of all APs are allocated and initialized.
 .global __ap_boot_stack_array_pointer
@@ -144,6 +146,8 @@ ap_long_mode_in_low_address:
 __ap_boot_stack_array_pointer:
     .skip 8
 
+.text
+.code64
 ap_long_mode:
     // The local APIC ID is in the RDI.
     mov rax, rdi
@@ -158,4 +162,5 @@ ap_long_mode:
     mov rax, offset ap_early_entry
     call rax
 
-    hlt
+.extern halt # bsp_boot.S
+    jmp halt

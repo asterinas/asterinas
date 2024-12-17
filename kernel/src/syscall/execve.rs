@@ -62,7 +62,7 @@ fn lookup_executable_file(
     flags: OpenFlags,
     ctx: &Context,
 ) -> Result<Dentry> {
-    let fs_resolver = ctx.process.fs().read();
+    let fs_resolver = ctx.posix_thread.fs().resolver().read();
     let dentry = if flags.contains(OpenFlags::AT_EMPTY_PATH) && filename.is_empty() {
         fs_resolver.lookup_from_fd(dfd)
     } else {
@@ -110,12 +110,13 @@ fn do_execve(
     *posix_thread.clear_child_tid().lock() = 0;
 
     // Ensure that the file descriptors with the close-on-exec flag are closed.
-    let closed_files = process.file_table().lock().close_files_on_exec();
+    // FIXME: This is just wrong if the file table is shared with other processes.
+    let closed_files = posix_thread.file_table().lock().close_files_on_exec();
     drop(closed_files);
 
     debug!("load program to root vmar");
     let (new_executable_path, elf_load_info) = {
-        let fs_resolver = &*process.fs().read();
+        let fs_resolver = &*posix_thread.fs().resolver().read();
         let process_vm = process.vm();
         load_program_to_vm(process_vm, elf_file.clone(), argv, envp, fs_resolver, 1)?
     };

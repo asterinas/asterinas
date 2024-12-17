@@ -1,15 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_bigtcp::{
-    errors::tcp::ListenError, iface::BindPortConfig, socket::UnboundTcpSocket, wire::IpEndpoint,
+    errors::tcp::ListenError,
+    iface::BindPortConfig,
+    socket::{RawTcpSetOption, TcpState, UnboundTcpSocket},
+    wire::IpEndpoint,
 };
-use ostd::sync::WriteIrqDisabled;
+use ostd::sync::PreemptDisabled;
 
-use super::connected::ConnectedStream;
+use super::{connected::ConnectedStream, StreamObserver};
 use crate::{
     events::IoEvents,
     net::iface::{BoundTcpSocket, Iface},
     prelude::*,
+    process::signal::Pollee,
 };
 
 pub struct ListenStream {
@@ -17,13 +21,14 @@ pub struct ListenStream {
     /// A bound socket held to ensure the TCP port cannot be released
     bound_socket: BoundTcpSocket,
     /// Backlog sockets listening at the local endpoint
-    backlog_sockets: RwLock<Vec<BacklogSocket>, WriteIrqDisabled>,
+    backlog_sockets: RwLock<Vec<BacklogSocket>, PreemptDisabled>,
 }
 
 impl ListenStream {
     pub fn new(
         bound_socket: BoundTcpSocket,
         backlog: usize,
+        pollee: &Pollee,
     ) -> core::result::Result<Self, (Error, BoundTcpSocket)> {
         const SOMAXCONN: usize = 4096;
         let somaxconn = SOMAXCONN.min(backlog);
@@ -33,14 +38,14 @@ impl ListenStream {
             bound_socket,
             backlog_sockets: RwLock::new(Vec::new()),
         };
-        if let Err(err) = listen_stream.fill_backlog_sockets() {
+        if let Err(err) = listen_stream.fill_backlog_sockets(pollee) {
             return Err((err, listen_stream.bound_socket));
         }
         Ok(listen_stream)
     }
 
     /// Append sockets listening at LocalEndPoint to support backlog
-    fn fill_backlog_sockets(&self) -> Result<()> {
+    fn fill_backlog_sockets(&self, pollee: &Pollee) -> Result<()> {
         let mut backlog_sockets = self.backlog_sockets.write();
 
         let backlog = self.backlog;
@@ -51,14 +56,14 @@ impl ListenStream {
         }
 
         for _ in current_backlog_len..backlog {
-            let backlog_socket = BacklogSocket::new(&self.bound_socket)?;
+            let backlog_socket = BacklogSocket::new(&self.bound_socket, pollee)?;
             backlog_sockets.push(backlog_socket);
         }
 
         Ok(())
     }
 
-    pub fn try_accept(&self) -> Result<ConnectedStream> {
+    pub fn try_accept(&self, pollee: &Pollee) -> Result<ConnectedStream> {
         let mut backlog_sockets = self.backlog_sockets.write();
 
         let index = backlog_sockets
@@ -69,7 +74,7 @@ impl ListenStream {
             })?;
         let active_backlog_socket = backlog_sockets.remove(index);
 
-        if let Ok(backlog_socket) = BacklogSocket::new(&self.bound_socket) {
+        if let Ok(backlog_socket) = BacklogSocket::new(&self.bound_socket, pollee) {
             backlog_sockets.push(backlog_socket);
         }
 
@@ -102,6 +107,30 @@ impl ListenStream {
             IoEvents::empty()
         }
     }
+
+    /// Calls `f` to set socket option on raw socket.
+    ///
+    /// This method will call `f` on the bound socket and each backlog socket that is in `Listen` state  .
+    pub(super) fn set_raw_option<R>(
+        &mut self,
+        set_option: impl Fn(&mut dyn RawTcpSetOption) -> R,
+    ) -> R {
+        self.backlog_sockets.write().iter_mut().for_each(|socket| {
+            if socket
+                .bound_socket
+                .raw_with(|raw_tcp_socket| raw_tcp_socket.state() != TcpState::Listen)
+            {
+                return;
+            }
+
+            // If the socket receives SYN after above check,
+            // we will also set keep alive on the socket that is not in `Listen` state.
+            // But such a race doesn't matter, we just let it happen.
+            set_option(&mut socket.bound_socket);
+        });
+
+        set_option(&mut self.bound_socket)
+    }
 }
 
 struct BacklogSocket {
@@ -111,18 +140,30 @@ struct BacklogSocket {
 impl BacklogSocket {
     // FIXME: All of the error codes below seem to have no Linux equivalents, and I see no reason
     // why the error may occur. Perhaps it is better to call `unwrap()` directly?
-    fn new(bound_socket: &BoundTcpSocket) -> Result<Self> {
+    fn new(bound_socket: &BoundTcpSocket, pollee: &Pollee) -> Result<Self> {
         let local_endpoint = bound_socket.local_endpoint().ok_or(Error::with_message(
             Errno::EINVAL,
             "the socket is not bound",
         ))?;
 
-        let unbound_socket = Box::new(UnboundTcpSocket::new(bound_socket.observer()));
+        let unbound_socket = {
+            let mut unbound = UnboundTcpSocket::new();
+            unbound.set_keep_alive(bound_socket.raw_with(|socket| socket.keep_alive()));
+            unbound.set_nagle_enabled(bound_socket.raw_with(|socket| socket.nagle_enabled()));
+
+            // TODO: Inherit other options that can be set via `setsockopt` from bound socket
+
+            Box::new(unbound)
+        };
         let bound_socket = {
             let iface = bound_socket.iface();
             let bind_port_config = BindPortConfig::new(local_endpoint.port, true);
             iface
-                .bind_tcp(unbound_socket, bind_port_config)
+                .bind_tcp(
+                    unbound_socket,
+                    StreamObserver::new(pollee.clone()),
+                    bind_port_config,
+                )
                 .map_err(|(err, _)| err)?
         };
 

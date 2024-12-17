@@ -32,6 +32,7 @@ impl<T: ?Sized> Mutex<T> {
     /// Acquires the mutex.
     ///
     /// This method runs in a block way until the mutex can be acquired.
+    #[track_caller]
     pub fn lock(&self) -> MutexGuard<T> {
         self.queue.wait_until(|| self.try_lock())
     }
@@ -42,6 +43,7 @@ impl<T: ?Sized> Mutex<T> {
     /// for compile-time checked lifetimes of the mutex guard.
     ///
     /// [`lock`]: Self::lock
+    #[track_caller]
     pub fn lock_arc(self: &Arc<Self>) -> ArcMutexGuard<T> {
         self.queue.wait_until(|| self.try_lock_arc())
     }
@@ -65,6 +67,14 @@ impl<T: ?Sized> Mutex<T> {
         self.acquire_lock().then(|| ArcMutexGuard {
             mutex: self.clone(),
         })
+    }
+
+    /// Returns a mutable reference to the underlying data.
+    ///
+    /// This method is zero-cost: By holding a mutable reference to the lock, the compiler has
+    /// already statically guaranteed that access to the data is exclusive.
+    pub fn get_mut(&mut self) -> &mut T {
+        self.val.get_mut()
     }
 
     /// Releases the mutex and wake up one thread which is blocked on this mutex.

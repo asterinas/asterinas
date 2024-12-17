@@ -6,6 +6,7 @@ input = { name = "aster-input" }
 block = { name = "aster-block" }
 console = { name = "aster-console" }
 softirq = { name = "aster-softirq" }
+logger = { name = "aster-logger" }
 time = { name = "aster-time" }
 framebuffer = { name = "aster-framebuffer" }
 network = { name = "aster-network" }

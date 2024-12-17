@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Weak;
-
 use aster_bigtcp::{
-    socket::{SocketEventObserver, UnboundTcpSocket},
+    socket::{RawTcpSetOption, UnboundTcpSocket},
     wire::IpEndpoint,
 };
 
-use super::{connecting::ConnectingStream, listen::ListenStream};
+use super::{connecting::ConnectingStream, listen::ListenStream, StreamObserver};
 use crate::{
     events::IoEvents,
     net::{
@@ -15,6 +13,7 @@ use crate::{
         socket::ip::common::{bind_socket, get_ephemeral_endpoint},
     },
     prelude::*,
+    process::signal::Pollee,
 };
 
 pub enum InitStream {
@@ -23,8 +22,8 @@ pub enum InitStream {
 }
 
 impl InitStream {
-    pub fn new(observer: Weak<dyn SocketEventObserver>) -> Self {
-        InitStream::Unbound(Box::new(UnboundTcpSocket::new(observer)))
+    pub fn new() -> Self {
+        InitStream::Unbound(Box::new(UnboundTcpSocket::new()))
     }
 
     pub fn new_bound(bound_socket: BoundTcpSocket) -> Self {
@@ -35,6 +34,7 @@ impl InitStream {
         self,
         endpoint: &IpEndpoint,
         can_reuse: bool,
+        observer: StreamObserver,
     ) -> core::result::Result<BoundTcpSocket, (Error, Self)> {
         let unbound_socket = match self {
             InitStream::Unbound(unbound_socket) => unbound_socket,
@@ -49,7 +49,7 @@ impl InitStream {
             unbound_socket,
             endpoint,
             can_reuse,
-            |iface, socket, config| iface.bind_tcp(socket, config),
+            |iface, socket, config| iface.bind_tcp(socket, observer, config),
         ) {
             Ok(bound_socket) => bound_socket,
             Err((err, unbound_socket)) => return Err((err, InitStream::Unbound(unbound_socket))),
@@ -60,25 +60,32 @@ impl InitStream {
     fn bind_to_ephemeral_endpoint(
         self,
         remote_endpoint: &IpEndpoint,
+        observer: StreamObserver,
     ) -> core::result::Result<BoundTcpSocket, (Error, Self)> {
         let endpoint = get_ephemeral_endpoint(remote_endpoint);
-        self.bind(&endpoint, false)
+        self.bind(&endpoint, false, observer)
     }
 
     pub fn connect(
         self,
         remote_endpoint: &IpEndpoint,
+        pollee: &Pollee,
     ) -> core::result::Result<ConnectingStream, (Error, Self)> {
         let bound_socket = match self {
             InitStream::Bound(bound_socket) => bound_socket,
-            InitStream::Unbound(_) => self.bind_to_ephemeral_endpoint(remote_endpoint)?,
+            InitStream::Unbound(_) => self
+                .bind_to_ephemeral_endpoint(remote_endpoint, StreamObserver::new(pollee.clone()))?,
         };
 
         ConnectingStream::new(bound_socket, *remote_endpoint)
             .map_err(|(err, bound_socket)| (err, InitStream::Bound(bound_socket)))
     }
 
-    pub fn listen(self, backlog: usize) -> core::result::Result<ListenStream, (Error, Self)> {
+    pub fn listen(
+        self,
+        backlog: usize,
+        pollee: &Pollee,
+    ) -> core::result::Result<ListenStream, (Error, Self)> {
         let InitStream::Bound(bound_socket) = self else {
             // FIXME: The socket should be bound to INADDR_ANY (i.e., 0.0.0.0) with an ephemeral
             // port. However, INADDR_ANY is not yet supported, so we need to return an error first.
@@ -89,7 +96,7 @@ impl InitStream {
             ));
         };
 
-        ListenStream::new(bound_socket, backlog)
+        ListenStream::new(bound_socket, backlog, pollee)
             .map_err(|(err, bound_socket)| (err, InitStream::Bound(bound_socket)))
     }
 
@@ -103,5 +110,15 @@ impl InitStream {
     pub(super) fn check_io_events(&self) -> IoEvents {
         // Linux adds OUT and HUP events for a newly created socket
         IoEvents::OUT | IoEvents::HUP
+    }
+
+    pub(super) fn set_raw_option<R>(
+        &mut self,
+        set_option: impl Fn(&mut dyn RawTcpSetOption) -> R,
+    ) -> R {
+        match self {
+            InitStream::Unbound(unbound_socket) => set_option(unbound_socket.as_mut()),
+            InitStream::Bound(bound_socket) => set_option(bound_socket),
+        }
     }
 }

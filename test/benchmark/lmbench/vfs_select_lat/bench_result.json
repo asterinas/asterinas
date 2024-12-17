@@ -1,0 +1,16 @@
+{
+    "alert": {
+        "threshold": "125%",
+        "bigger_is_better": false
+    },
+    "result_extraction": {
+        "search_pattern": "Select on ",
+        "result_index": 5
+    },
+    "chart": {
+        "title": "[VFS] The cost of select (file fds)",
+        "description": "lat_select",
+        "unit": "\u00b5s",
+        "legend": "Average select file latency on {system}"
+    }
+}

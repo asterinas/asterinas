@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_bigtcp::{socket::ConnectState, wire::IpEndpoint};
+use aster_bigtcp::{
+    socket::{ConnectState, RawTcpSetOption},
+    wire::IpEndpoint,
+};
 
 use super::{connected::ConnectedStream, init::InitStream};
 use crate::{
@@ -82,5 +85,12 @@ impl ConnectingStream {
 
     pub(super) fn check_io_events(&self) -> IoEvents {
         IoEvents::empty()
+    }
+
+    pub(super) fn set_raw_option<R>(
+        &mut self,
+        set_option: impl Fn(&mut dyn RawTcpSetOption) -> R,
+    ) -> R {
+        set_option(&mut self.bound_socket)
     }
 }

@@ -31,6 +31,7 @@ TESTS ?= \
 	open_test \
 	pread64_test \
 	preadv2_test \
+	proc_test \
 	pselect_test \
 	pwrite64_test \
 	pwritev2_test \
@@ -47,6 +48,7 @@ TESTS ?= \
 	statfs_test \
 	symlink_test \
 	sync_test \
+	sysinfo_test \
 	timers_test \
 	truncate_test \
 	uidgid_test \

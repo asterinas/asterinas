@@ -122,39 +122,48 @@ impl UserContextApiInternal for UserContext {
         // set ID flag which means cpu support CPUID instruction
         self.user_context.general.rflags |= (RFlags::INTERRUPT_FLAG | RFlags::ID).bits() as usize;
 
-        const SYSCALL_TRAPNUM: u16 = 0x100;
+        const SYSCALL_TRAPNUM: usize = 0x100;
 
         // return when it is syscall or cpu exception type is Fault or Trap.
         let return_reason = loop {
             scheduler::might_preempt();
             self.user_context.run();
+
             match CpuException::to_cpu_exception(self.user_context.trap_num as u16) {
+                #[cfg(feature = "cvm_guest")]
+                Some(CpuException::VIRTUALIZATION_EXCEPTION) => {
+                    crate::arch::irq::enable_local();
+                    handle_virtualization_exception(self);
+                }
+                Some(exception) if exception.typ().is_fatal_or_trap() => {
+                    crate::arch::irq::enable_local();
+                    break ReturnReason::UserException;
+                }
                 Some(exception) => {
-                    #[cfg(feature = "cvm_guest")]
-                    if exception == CpuException::VIRTUALIZATION_EXCEPTION {
-                        handle_virtualization_exception(self);
-                        continue;
-                    }
-                    match exception.typ() {
-                        CpuExceptionType::FaultOrTrap
-                        | CpuExceptionType::Trap
-                        | CpuExceptionType::Fault => break ReturnReason::UserException,
-                        _ => (),
-                    }
+                    panic!(
+                        "cannot handle user CPU exception: {:?}, trapframe: {:?}",
+                        exception,
+                        self.as_trap_frame()
+                    );
+                }
+                None if self.user_context.trap_num == SYSCALL_TRAPNUM => {
+                    crate::arch::irq::enable_local();
+                    break ReturnReason::UserSyscall;
                 }
                 None => {
-                    if self.user_context.trap_num as u16 == SYSCALL_TRAPNUM {
-                        break ReturnReason::UserSyscall;
-                    }
+                    call_irq_callback_functions(
+                        &self.as_trap_frame(),
+                        self.as_trap_frame().trap_num,
+                    );
+                    crate::arch::irq::enable_local();
                 }
-            };
-            call_irq_callback_functions(&self.as_trap_frame(), self.as_trap_frame().trap_num);
+            }
+
             if has_kernel_event() {
                 break ReturnReason::KernelEvent;
             }
         };
 
-        crate::arch::irq::enable_local();
         if return_reason == ReturnReason::UserException {
             self.cpu_exception_info = CpuExceptionInfo {
                 page_fault_addr: unsafe { x86::controlregs::cr2() },
@@ -219,6 +228,20 @@ pub enum CpuExceptionType {
     Abort,
     /// Reserved for future use
     Reserved,
+}
+
+impl CpuExceptionType {
+    /// Returns whether this exception type is a fault or a trap.
+    pub fn is_fatal_or_trap(self) -> bool {
+        match self {
+            CpuExceptionType::Trap | CpuExceptionType::Fault | CpuExceptionType::FaultOrTrap => {
+                true
+            }
+            CpuExceptionType::Abort | CpuExceptionType::Interrupt | CpuExceptionType::Reserved => {
+                false
+            }
+        }
+    }
 }
 
 macro_rules! define_cpu_exception {

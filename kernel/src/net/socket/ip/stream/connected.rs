@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Weak;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use aster_bigtcp::{
     errors::tcp::{RecvError, SendError},
-    socket::{NeedIfacePoll, SocketEventObserver, TcpStateCheck},
+    socket::{NeedIfacePoll, RawTcpSetOption, RawTcpSocket, TcpStateCheck},
     wire::IpEndpoint,
 };
 
+use super::StreamObserver;
 use crate::{
     events::IoEvents,
     net::{
@@ -202,7 +202,18 @@ impl ConnectedStream {
         })
     }
 
-    pub(super) fn set_observer(&self, observer: Weak<dyn SocketEventObserver>) {
+    pub(super) fn set_observer(&self, observer: StreamObserver) {
         self.bound_socket.set_observer(observer)
+    }
+
+    pub(super) fn set_raw_option<R>(
+        &mut self,
+        set_option: impl Fn(&mut dyn RawTcpSetOption) -> R,
+    ) -> R {
+        set_option(&mut self.bound_socket)
+    }
+
+    pub(super) fn raw_with<R>(&self, f: impl FnOnce(&RawTcpSocket) -> R) -> R {
+        self.bound_socket.raw_with(f)
     }
 }

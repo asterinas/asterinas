@@ -28,6 +28,7 @@ use crate::{
 ///
 /// Then, [`Pollee::poll_with`] can allow you to register a [`Poller`] to wait for certain events,
 /// or register a [`PollAdaptor`] to be notified when certain events occur.
+#[derive(Clone)]
 pub struct Pollee {
     inner: Arc<PolleeInner>,
 }
@@ -368,6 +369,7 @@ pub trait Pollable {
     /// The user must ensure that a call to `try_op()` does not fail with `EAGAIN` when the
     /// interesting events occur. However, it is allowed to have spurious `EAGAIN` failures due to
     /// race opitions where the events are consumed by another thread.
+    #[track_caller]
     fn wait_events<F, R>(
         &self,
         mask: IoEvents,

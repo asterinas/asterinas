@@ -45,7 +45,7 @@ cfg_if! {
 }
 
 cpu_local_cell! {
-    static IS_KERNEL_INTERRUPTED: bool = false;
+    static KERNEL_INTERRUPT_NESTED_LEVEL: u8 = 0;
 }
 
 /// Trap frame of kernel interrupt
@@ -214,42 +214,41 @@ impl UserContext {
 /// and the IRQ occurs while the CPU is executing in the kernel mode.
 /// Otherwise, it returns false.
 pub fn is_kernel_interrupted() -> bool {
-    IS_KERNEL_INTERRUPTED.load()
+    KERNEL_INTERRUPT_NESTED_LEVEL.load() != 0
 }
 
 /// Handle traps (only from kernel).
 #[no_mangle]
 extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
-    if CpuException::is_cpu_exception(f.trap_num as u16) {
-        match CpuException::to_cpu_exception(f.trap_num as u16).unwrap() {
-            #[cfg(feature = "cvm_guest")]
-            CpuException::VIRTUALIZATION_EXCEPTION => {
-                let ve_info = tdcall::get_veinfo().expect("#VE handler: fail to get VE info\n");
-                let mut trapframe_wrapper = TrapFrameWrapper(&mut *f);
-                handle_virtual_exception(&mut trapframe_wrapper, &ve_info);
-                *f = *trapframe_wrapper.0;
-            }
-            CpuException::PAGE_FAULT => {
-                let page_fault_addr = x86_64::registers::control::Cr2::read_raw();
-                // The actual user space implementation should be responsible
-                // for providing mechanism to treat the 0 virtual address.
-                if (0..MAX_USERSPACE_VADDR).contains(&(page_fault_addr as usize)) {
-                    handle_user_page_fault(f, page_fault_addr);
-                } else {
-                    handle_kernel_page_fault(f, page_fault_addr);
-                }
-            }
-            exception => {
-                panic!(
-                    "Cannot handle kernel cpu exception:{:?}. Error code:{:x?}; Trapframe:{:#x?}.",
-                    exception, f.error_code, f
-                );
+    match CpuException::to_cpu_exception(f.trap_num as u16) {
+        #[cfg(feature = "cvm_guest")]
+        Some(CpuException::VIRTUALIZATION_EXCEPTION) => {
+            let ve_info = tdcall::get_veinfo().expect("#VE handler: fail to get VE info\n");
+            let mut trapframe_wrapper = TrapFrameWrapper(&mut *f);
+            handle_virtual_exception(&mut trapframe_wrapper, &ve_info);
+            *f = *trapframe_wrapper.0;
+        }
+        Some(CpuException::PAGE_FAULT) => {
+            let page_fault_addr = x86_64::registers::control::Cr2::read_raw();
+            // The actual user space implementation should be responsible
+            // for providing mechanism to treat the 0 virtual address.
+            if (0..MAX_USERSPACE_VADDR).contains(&(page_fault_addr as usize)) {
+                handle_user_page_fault(f, page_fault_addr);
+            } else {
+                handle_kernel_page_fault(f, page_fault_addr);
             }
         }
-    } else {
-        IS_KERNEL_INTERRUPTED.store(true);
-        call_irq_callback_functions(f, f.trap_num);
-        IS_KERNEL_INTERRUPTED.store(false);
+        Some(exception) => {
+            panic!(
+                "cannot handle kernel CPU exception: {:?}, trapframe: {:?}",
+                exception, f
+            );
+        }
+        None => {
+            KERNEL_INTERRUPT_NESTED_LEVEL.add_assign(1);
+            call_irq_callback_functions(f, f.trap_num);
+            KERNEL_INTERRUPT_NESTED_LEVEL.sub_assign(1);
+        }
     }
 }
 

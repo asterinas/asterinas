@@ -7,6 +7,9 @@ pub trait LinuxAbi {
     /// Get return value of syscall
     fn syscall_ret(&self) -> usize;
 
+    /// Set number of syscall
+    fn set_syscall_num(&mut self, num: usize);
+
     /// Set return value of syscall
     fn set_syscall_ret(&mut self, ret: usize);
 

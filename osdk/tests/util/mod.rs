@@ -57,7 +57,10 @@ pub fn create_workspace(workspace_name: &str, members: &[&str]) {
             .map(|member| toml::Value::String(member.to_string()))
             .collect();
 
-        let exclude = toml::Value::Array(vec![toml::Value::String("target/osdk/base".to_string())]);
+        let exclude = toml::Value::Array(vec![
+            toml::Value::String("target/osdk/base".to_string()),
+            toml::Value::String("target/osdk/test-base".to_string()),
+        ]);
 
         table.insert("members".to_string(), toml::Value::Array(members));
         table.insert("exclude".to_string(), exclude);

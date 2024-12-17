@@ -3,15 +3,16 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use filesystems::{FileSystemType, FILESYSTEM_TYPES};
-use loadavg::LoadAvgFileOps;
-use sys::SysDirOps;
 
 use self::{
     cpuinfo::CpuInfoFileOps,
+    loadavg::LoadAvgFileOps,
     meminfo::MemInfoFileOps,
     pid::PidDirOps,
     self_::SelfSymOps,
+    sys::SysDirOps,
     template::{DirOps, ProcDir, ProcDirBuilder, ProcSymBuilder, SymOps},
+    thread_self::ThreadSelfSymOps,
 };
 use crate::{
     events::Observer,
@@ -20,7 +21,10 @@ use crate::{
         utils::{DirEntryVecExt, FileSystem, FsFlags, Inode, SuperBlock, NAME_MAX},
     },
     prelude::*,
-    process::{process_table, process_table::PidEvent, Pid},
+    process::{
+        process_table::{self, PidEvent},
+        Pid,
+    },
 };
 
 mod cpuinfo;
@@ -31,6 +35,7 @@ mod pid;
 mod self_;
 mod sys;
 mod template;
+mod thread_self;
 
 pub(super) fn init() {
     FILESYSTEM_TYPES.call_once(|| {
@@ -119,6 +124,8 @@ impl DirOps for RootDirOps {
             SelfSymOps::new_inode(this_ptr.clone())
         } else if name == "sys" {
             SysDirOps::new_inode(this_ptr.clone())
+        } else if name == "thread-self" {
+            ThreadSelfSymOps::new_inode(this_ptr.clone())
         } else if name == "filesystems" {
             FileSystemsFileOps::new_inode(this_ptr.clone())
         } else if name == "meminfo" {
@@ -144,6 +151,9 @@ impl DirOps for RootDirOps {
         };
         let mut cached_children = this.cached_children().write();
         cached_children.put_entry_if_not_found("self", || SelfSymOps::new_inode(this_ptr.clone()));
+        cached_children.put_entry_if_not_found("thread-self", || {
+            ThreadSelfSymOps::new_inode(this_ptr.clone())
+        });
         cached_children.put_entry_if_not_found("sys", || SysDirOps::new_inode(this_ptr.clone()));
         cached_children.put_entry_if_not_found("filesystems", || {
             FileSystemsFileOps::new_inode(this_ptr.clone())

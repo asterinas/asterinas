@@ -18,7 +18,10 @@ use crate::{
         utils::{InodeMode, IoctlCmd, Metadata},
     },
     prelude::*,
-    process::signal::{PollHandle, Pollable},
+    process::{
+        posix_thread::AsPosixThread,
+        signal::{PollHandle, Pollable},
+    },
 };
 
 /// A file-like object that provides epoll API.
@@ -61,7 +64,8 @@ impl EpollFile {
         };
 
         let file = {
-            let current = current!();
+            let current = current_thread!();
+            let current = current.as_posix_thread().unwrap();
             let file_table = current.file_table().lock();
             file_table.get_file(fd)?.clone()
         };

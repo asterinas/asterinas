@@ -41,7 +41,7 @@ pub fn sys_epoll_create1(flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     };
 
     let epoll_file: Arc<EpollFile> = EpollFile::new();
-    let mut file_table = ctx.process.file_table().lock();
+    let mut file_table = ctx.posix_thread.file_table().lock();
     let fd = file_table.insert(epoll_file, fd_flags);
     Ok(SyscallReturn::Return(fd as _))
 }
@@ -80,7 +80,7 @@ pub fn sys_epoll_ctl(
     };
 
     let file = {
-        let file_table = ctx.process.file_table().lock();
+        let file_table = ctx.posix_thread.file_table().lock();
         file_table.get_file(epfd)?.clone()
     };
     let epoll_file = file
@@ -110,7 +110,7 @@ fn do_epoll_wait(
     };
 
     let epoll_file_arc = {
-        let file_table = ctx.process.file_table().lock();
+        let file_table = ctx.posix_thread.file_table().lock();
         file_table.get_file(epfd)?.clone()
     };
     let epoll_file = epoll_file_arc

@@ -22,6 +22,7 @@ use crate::{
     },
     error::Errno,
     error_msg,
+    util::DirGuard,
 };
 
 /// The osdk bundle artifact that stores as `bundle` directory.
@@ -84,8 +85,7 @@ impl Bundle {
         let manifest_file_content = std::fs::read_to_string(manifest_file_path).ok()?;
         let manifest: BundleManifest = toml::from_str(&manifest_file_content).ok()?;
 
-        let original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(&path).unwrap();
+        let _dir_guard = DirGuard::change_dir(&path);
 
         if let Some(aster_bin) = &manifest.aster_bin {
             if !aster_bin.validate() {
@@ -102,8 +102,6 @@ impl Bundle {
                 return None;
             }
         }
-
-        std::env::set_current_dir(original_dir).unwrap();
 
         Some(Self {
             manifest,
@@ -170,7 +168,9 @@ impl Bundle {
         match (&self.manifest.initramfs, &config_action.boot.initramfs) {
             (Some(initramfs), Some(initramfs_path)) => {
                 let config_initramfs = Initramfs::new(initramfs_path);
-                if initramfs.sha256sum() != config_initramfs.sha256sum() {
+                if initramfs.size() != config_initramfs.size()
+                    || initramfs.modified_time() < config_initramfs.modified_time()
+                {
                     return Err(initramfs_err);
                 }
             }
@@ -291,7 +291,7 @@ impl Bundle {
         if self.manifest.vm_image.is_some() {
             panic!("vm_image already exists");
         }
-        self.manifest.vm_image = Some(vm_image.move_to(&self.path));
+        self.manifest.vm_image = Some(vm_image.copy_to(&self.path));
         self.write_manifest_to_fs();
     }
 
@@ -300,7 +300,7 @@ impl Bundle {
         if self.manifest.aster_bin.is_some() {
             panic!("aster_bin already exists");
         }
-        self.manifest.aster_bin = Some(aster_bin.move_to(&self.path));
+        self.manifest.aster_bin = Some(aster_bin.copy_to(&self.path));
         self.write_manifest_to_fs();
     }
 

@@ -168,7 +168,7 @@ fn do_utimes(
     let dentry = {
         // Determine the file system path and the corresponding entry
         let fs_path = FsPath::new(dirfd, pathname.as_ref())?;
-        let fs = ctx.process.fs().read();
+        let fs = ctx.posix_thread.fs().resolver().read();
         if flags.contains(UtimensFlags::AT_SYMLINK_NOFOLLOW) {
             fs.lookup_no_follow(&fs_path)?
         } else {

@@ -28,7 +28,11 @@ pub(super) fn sys_rmdirat(
             return_errno_with_message!(Errno::EBUSY, "is root directory");
         }
         let fs_path = FsPath::new(dirfd, path_addr.as_ref())?;
-        ctx.process.fs().read().lookup_dir_and_base_name(&fs_path)?
+        ctx.posix_thread
+            .fs()
+            .resolver()
+            .read()
+            .lookup_dir_and_base_name(&fs_path)?
     };
     dir_dentry.rmdir(name.trim_end_matches('/'))?;
     Ok(SyscallReturn::Return(0))

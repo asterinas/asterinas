@@ -4,7 +4,6 @@
 
 use super::{Pid, Process};
 use crate::{
-    fs::{file_table::FileTable, fs_resolver::FsResolver, utils::FileCreationMask},
     prelude::*,
     process::{
         posix_thread::{create_posix_task_from_executable, PosixThreadBuilder},
@@ -27,9 +26,6 @@ pub struct ProcessBuilder<'a> {
     argv: Option<Vec<CString>>,
     envp: Option<Vec<CString>>,
     process_vm: Option<ProcessVm>,
-    file_table: Option<Arc<SpinLock<FileTable>>>,
-    fs: Option<Arc<RwMutex<FsResolver>>>,
-    umask: Option<Arc<RwLock<FileCreationMask>>>,
     resource_limits: Option<ResourceLimits>,
     sig_dispositions: Option<Arc<Mutex<SigDispositions>>>,
     credentials: Option<Credentials>,
@@ -46,9 +42,6 @@ impl<'a> ProcessBuilder<'a> {
             argv: None,
             envp: None,
             process_vm: None,
-            file_table: None,
-            fs: None,
-            umask: None,
             resource_limits: None,
             sig_dispositions: None,
             credentials: None,
@@ -63,21 +56,6 @@ impl<'a> ProcessBuilder<'a> {
 
     pub fn process_vm(&mut self, process_vm: ProcessVm) -> &mut Self {
         self.process_vm = Some(process_vm);
-        self
-    }
-
-    pub fn file_table(&mut self, file_table: Arc<SpinLock<FileTable>>) -> &mut Self {
-        self.file_table = Some(file_table);
-        self
-    }
-
-    pub fn fs(&mut self, fs: Arc<RwMutex<FsResolver>>) -> &mut Self {
-        self.fs = Some(fs);
-        self
-    }
-
-    pub fn umask(&mut self, umask: Arc<RwLock<FileCreationMask>>) -> &mut Self {
-        self.umask = Some(umask);
         self
     }
 
@@ -139,9 +117,6 @@ impl<'a> ProcessBuilder<'a> {
             argv,
             envp,
             process_vm,
-            file_table,
-            fs,
-            umask,
             resource_limits,
             sig_dispositions,
             credentials,
@@ -149,18 +124,6 @@ impl<'a> ProcessBuilder<'a> {
         } = self;
 
         let process_vm = process_vm.or_else(|| Some(ProcessVm::alloc())).unwrap();
-
-        let file_table = file_table
-            .or_else(|| Some(Arc::new(SpinLock::new(FileTable::new_with_stdio()))))
-            .unwrap();
-
-        let fs = fs
-            .or_else(|| Some(Arc::new(RwMutex::new(FsResolver::new()))))
-            .unwrap();
-
-        let umask = umask
-            .or_else(|| Some(Arc::new(RwLock::new(FileCreationMask::default()))))
-            .unwrap();
 
         let resource_limits = resource_limits
             .or_else(|| Some(ResourceLimits::default()))
@@ -180,9 +143,6 @@ impl<'a> ProcessBuilder<'a> {
                 threads,
                 executable_path.to_string(),
                 process_vm,
-                fs,
-                file_table,
-                umask,
                 resource_limits,
                 nice,
                 sig_dispositions,
@@ -197,7 +157,6 @@ impl<'a> ProcessBuilder<'a> {
                 pid,
                 credentials.unwrap(),
                 process.vm(),
-                &process.fs().read(),
                 executable_path,
                 Arc::downgrade(&process),
                 argv.unwrap(),

@@ -28,7 +28,12 @@
 mod child;
 mod entry;
 
-use core::{marker::PhantomData, mem::ManuallyDrop, sync::atomic::Ordering};
+use core::{
+    cell::SyncUnsafeCell,
+    marker::PhantomData,
+    mem::ManuallyDrop,
+    sync::atomic::{AtomicU8, Ordering},
+};
 
 pub(in crate::mm) use self::{child::Child, entry::Entry};
 use super::{nr_subpage_per_huge, PageTableEntryTrait};
@@ -36,11 +41,7 @@ use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     mm::{
         paddr_to_vaddr,
-        page::{
-            self, inc_page_ref_count,
-            meta::{MapTrackingStatus, PageMeta, PageTablePageMeta, PageUsage},
-            DynPage, Page,
-        },
+        page::{self, inc_page_ref_count, meta::PageMeta, DynPage, Page},
         Paddr, PagingConstsTrait, PagingLevel, PAGE_SIZE,
     },
 };
@@ -352,23 +353,73 @@ where
     }
 }
 
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageMeta for PageTablePageMeta<E, C>
+/// The metadata of any kinds of page table pages.
+/// Make sure the the generic parameters don't effect the memory layout.
+#[derive(Debug)]
+pub(in crate::mm) struct PageTablePageMeta<
+    E: PageTableEntryTrait = PageTableEntry,
+    C: PagingConstsTrait = PagingConsts,
+> where
+    [(); C::NR_LEVELS as usize]:,
+{
+    /// The number of valid PTEs. It is mutable if the lock is held.
+    pub nr_children: SyncUnsafeCell<u16>,
+    /// The level of the page table page. A page table page cannot be
+    /// referenced by page tables of different levels.
+    pub level: PagingLevel,
+    /// The lock for the page table page.
+    pub lock: AtomicU8,
+    /// Whether the pages mapped by the node is tracked.
+    pub is_tracked: MapTrackingStatus,
+    _phantom: core::marker::PhantomData<(E, C)>,
+}
+
+/// Describe if the physical address recorded in this page table refers to a
+/// page tracked by metadata.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub(in crate::mm) enum MapTrackingStatus {
+    /// The page table node cannot contain references to any pages. It can only
+    /// contain references to child page table nodes.
+    NotApplicable,
+    /// The mapped pages are not tracked by metadata. If any child page table
+    /// nodes exist, they should also be tracked.
+    Untracked,
+    /// The mapped pages are tracked by metadata. If any child page table nodes
+    /// exist, they should also be tracked.
+    Tracked,
+}
+
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTablePageMeta<E, C>
 where
     [(); C::NR_LEVELS as usize]:,
 {
-    const USAGE: PageUsage = PageUsage::PageTable;
+    pub fn new_locked(level: PagingLevel, is_tracked: MapTrackingStatus) -> Self {
+        Self {
+            nr_children: SyncUnsafeCell::new(0),
+            level,
+            lock: AtomicU8::new(1),
+            is_tracked,
+            _phantom: PhantomData,
+        }
+    }
+}
 
-    fn on_drop(page: &mut Page<Self>) {
-        // SAFETY: This is the last reference so we have an exclusive access.
-        let nr_children = unsafe { *page.meta().nr_children.get() };
+// SAFETY: The layout of the `PageTablePageMeta` is ensured to be the same for
+// all possible generic parameters. And the layout fits the requirements.
+unsafe impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageMeta for PageTablePageMeta<E, C>
+where
+    [(); C::NR_LEVELS as usize]:,
+{
+    fn on_drop(&mut self, paddr: Paddr) {
+        let nr_children = self.nr_children.get_mut();
 
-        if nr_children == 0 {
+        if *nr_children == 0 {
             return;
         }
 
-        let paddr = page.paddr();
-        let level = page.meta().level;
-        let is_tracked = page.meta().is_tracked;
+        let level = self.level;
+        let is_tracked = self.is_tracked;
 
         // Drop the children.
         for i in 0..nr_subpage_per_huge::<C>() {

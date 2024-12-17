@@ -14,7 +14,7 @@ pub fn sys_flock(fd: FileDesc, ops: i32, ctx: &Context) -> Result<SyscallReturn>
     debug!("flock: fd: {}, ops: {:?}", fd, ops);
 
     let file = {
-        let current = ctx.process;
+        let current = ctx.posix_thread;
         let file_table = current.file_table().lock();
         file_table.get_file(fd)?.clone()
     };
@@ -30,7 +30,12 @@ pub fn sys_flock(fd: FileDesc, ops: i32, ctx: &Context) -> Result<SyscallReturn>
             let type_ = FlockType::from(ops);
             FlockItem::new(&file, type_)
         };
-        inode_file.set_flock(flock, is_nonblocking)?;
+        inode_file
+            .set_flock(flock, is_nonblocking)
+            .map_err(|err| match err.error() {
+                Errno::EINTR => Error::new(Errno::ERESTARTSYS),
+                _ => err,
+            })?;
     }
     Ok(SyscallReturn::Return(0))
 }
