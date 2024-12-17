@@ -18,3 +18,9 @@ pub trait WithDevice: Send + Sync {
     where
         F: FnOnce(&mut Self::Device) -> R;
 }
+
+/// A trait for notifying device drivers about the polling process.
+pub trait NotifyDevice {
+    /// Notifies the device driver that polling has ended.
+    fn notify_poll_end(&mut self);
+}
