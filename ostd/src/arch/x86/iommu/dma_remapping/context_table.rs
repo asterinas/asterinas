@@ -15,7 +15,7 @@ use crate::{
         dma::Daddr,
         page_prop::{CachePolicy, PageProperty, PrivilegedPageFlags as PrivFlags},
         page_table::{PageTableError, PageTableItem},
-        Frame, FrameAllocOptions, Paddr, PageFlags, PageTable, VmIo, PAGE_SIZE,
+        FrameAllocOptions, Paddr, PageFlags, PageTable, UntypedFrame, VmIo, PAGE_SIZE,
     },
 };
 
@@ -38,7 +38,7 @@ impl RootEntry {
 
 pub struct RootTable {
     /// Total 256 bus, each entry is 128 bits.
-    root_frame: Frame,
+    root_frame: UntypedFrame,
     // TODO: Use radix tree instead.
     context_tables: BTreeMap<Paddr, ContextTable>,
 }
@@ -236,7 +236,7 @@ pub enum AddressWidth {
 
 pub struct ContextTable {
     /// Total 32 devices, each device has 8 functions.
-    entries_frame: Frame,
+    entries_frame: UntypedFrame,
     page_tables: BTreeMap<Paddr, PageTable<DeviceMode, PageTableEntry, PagingConsts>>,
 }
 

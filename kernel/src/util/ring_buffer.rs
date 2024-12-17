@@ -8,12 +8,12 @@ use core::{
 
 use align_ext::AlignExt;
 use inherit_methods_macro::inherit_methods;
-use ostd::mm::{FrameAllocOptions, Segment, VmIo};
+use ostd::mm::{FrameAllocOptions, UntypedSegment, VmIo};
 
 use super::{MultiRead, MultiWrite};
 use crate::prelude::*;
 
-/// A lock-free SPSC FIFO ring buffer backed by a [`Segment`].
+/// A lock-free SPSC FIFO ring buffer backed by a [`UntypedSegment`].
 ///
 /// The ring buffer supports `push`/`pop` any `T: Pod` items, also
 /// supports `write`/`read` any bytes data based on [`VmReader`]/[`VmWriter`].
@@ -46,7 +46,7 @@ use crate::prelude::*;
 /// }
 /// ```
 pub struct RingBuffer<T> {
-    segment: Segment,
+    segment: UntypedSegment,
     capacity: usize,
     tail: AtomicUsize,
     head: AtomicUsize,

@@ -47,11 +47,11 @@ use log::info;
 use spin::Once;
 
 use super::{
-    nr_subpage_per_huge,
-    page::{
-        meta::{impl_page_meta, mapping, MetaPageMeta},
-        ContPages, Page,
+    frame::{
+        meta::{impl_frame_meta_for, mapping, MetaPageMeta},
+        Frame, Segment,
     },
+    nr_subpage_per_huge,
     page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
     page_table::{KernelMode, PageTable},
     Paddr, PagingConstsTrait, Vaddr, PAGE_SIZE,
@@ -111,7 +111,7 @@ pub fn paddr_to_vaddr(pa: Paddr) -> usize {
 
 /// Returns whether the given address should be mapped as tracked.
 ///
-/// About what is tracked mapping, see [`crate::mm::page::meta::MapTrackingStatus`].
+/// About what is tracked mapping, see [`crate::mm::frame::meta::MapTrackingStatus`].
 pub(crate) fn should_map_as_tracked(addr: Vaddr) -> bool {
     !(LINEAR_MAPPING_VADDR_RANGE.contains(&addr) || VMALLOC_VADDR_RANGE.contains(&addr))
 }
@@ -131,7 +131,7 @@ pub static KERNEL_PAGE_TABLE: Once<PageTable<KernelMode, PageTableEntry, PagingC
 ///
 /// This function should be called before:
 ///  - any initializer that modifies the kernel page table.
-pub fn init_kernel_page_table(meta_pages: ContPages<MetaPageMeta>) {
+pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
     info!("Initializing the kernel page table");
 
     let regions = crate::boot::memory_regions();
@@ -214,7 +214,7 @@ pub fn init_kernel_page_table(meta_pages: ContPages<MetaPageMeta>) {
         };
         let mut cursor = kpt.cursor_mut(&from).unwrap();
         for frame_paddr in to.step_by(PAGE_SIZE) {
-            let page = Page::<KernelMeta>::from_unused(frame_paddr, KernelMeta::default());
+            let page = Frame::<KernelMeta>::from_unused(frame_paddr, KernelMeta::default());
             // SAFETY: we are doing mappings for the kernel.
             unsafe {
                 let _old = cursor.map(page.into(), prop);
@@ -251,4 +251,4 @@ pub unsafe fn activate_kernel_page_table() {
 #[derive(Debug, Default)]
 pub struct KernelMeta {}
 
-impl_page_meta!(KernelMeta);
+impl_frame_meta_for!(KernelMeta);

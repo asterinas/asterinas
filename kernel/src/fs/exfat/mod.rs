@@ -22,7 +22,7 @@ mod test {
         BlockDevice, BlockDeviceMeta,
     };
     use ostd::{
-        mm::{FrameAllocOptions, Segment, VmIo, PAGE_SIZE},
+        mm::{FrameAllocOptions, UntypedSegment, VmIo, PAGE_SIZE},
         prelude::*,
     };
     use rand::{rngs::SmallRng, RngCore, SeedableRng};
@@ -40,10 +40,10 @@ mod test {
 
     /// Followings are implementations of memory simulated block device
     pub const SECTOR_SIZE: usize = 512;
-    struct ExfatMemoryBioQueue(Segment);
+    struct ExfatMemoryBioQueue(UntypedSegment);
 
     impl ExfatMemoryBioQueue {
-        pub fn new(segment: Segment) -> Self {
+        pub fn new(segment: UntypedSegment) -> Self {
             ExfatMemoryBioQueue(segment)
         }
 
@@ -57,7 +57,7 @@ mod test {
     }
 
     impl ExfatMemoryDisk {
-        pub fn new(segment: Segment) -> Self {
+        pub fn new(segment: UntypedSegment) -> Self {
             ExfatMemoryDisk {
                 queue: ExfatMemoryBioQueue::new(segment),
             }
@@ -111,7 +111,7 @@ mod test {
     static EXFAT_IMAGE: &[u8] = include_bytes!("../../../../test/build/exfat.img");
 
     /// Read exfat disk image
-    fn new_vm_segment_from_image() -> Segment {
+    fn new_vm_segment_from_image() -> UntypedSegment {
         let vm_segment = FrameAllocOptions::new(EXFAT_IMAGE.len().div_ceil(PAGE_SIZE))
             .uninit(true)
             .alloc_contiguous()

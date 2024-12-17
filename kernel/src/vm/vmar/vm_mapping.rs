@@ -8,8 +8,8 @@ use core::{
 
 use align_ext::AlignExt;
 use ostd::mm::{
-    tlb::TlbFlushOp, vm_space::VmItem, CachePolicy, Frame, FrameAllocOptions, PageFlags,
-    PageProperty, VmSpace,
+    tlb::TlbFlushOp, vm_space::VmItem, CachePolicy, FrameAllocOptions, PageFlags, PageProperty,
+    UntypedFrame, VmSpace,
 };
 
 use super::interval_set::Interval;
@@ -216,7 +216,7 @@ impl VmMapping {
         Ok(())
     }
 
-    fn prepare_page(&self, page_fault_addr: Vaddr, write: bool) -> Result<(Frame, bool)> {
+    fn prepare_page(&self, page_fault_addr: Vaddr, write: bool) -> Result<(UntypedFrame, bool)> {
         let mut is_readonly = false;
         let Some(vmo) = &self.vmo else {
             return Ok((FrameAllocOptions::new(1).alloc_single()?, is_readonly));
@@ -264,7 +264,7 @@ impl VmMapping {
 
         let vm_perms = self.perms - VmPerms::WRITE;
         let mut cursor = vm_space.cursor_mut(&(start_addr..end_addr))?;
-        let operate = move |commit_fn: &mut dyn FnMut() -> Result<Frame>| {
+        let operate = move |commit_fn: &mut dyn FnMut() -> Result<UntypedFrame>| {
             if let VmItem::NotMapped { .. } = cursor.query().unwrap() {
                 // We regard all the surrounding pages as accessed, no matter
                 // if it is really so. Then the hardware won't bother to update
@@ -432,7 +432,7 @@ impl MappedVmo {
     ///
     /// If the VMO has not committed a frame at this index, it will commit
     /// one first and return it.
-    fn get_committed_frame(&self, page_offset: usize) -> Result<Frame> {
+    fn get_committed_frame(&self, page_offset: usize) -> Result<UntypedFrame> {
         debug_assert!(page_offset < self.range.len());
         debug_assert!(page_offset % PAGE_SIZE == 0);
         self.vmo.commit_page(self.range.start + page_offset)
@@ -444,7 +444,7 @@ impl MappedVmo {
     /// perform other operations.
     fn operate_on_range<F>(&self, range: &Range<usize>, operate: F) -> Result<()>
     where
-        F: FnMut(&mut dyn FnMut() -> Result<Frame>) -> Result<()>,
+        F: FnMut(&mut dyn FnMut() -> Result<UntypedFrame>) -> Result<()>,
     {
         debug_assert!(range.start < self.range.len());
         debug_assert!(range.end <= self.range.len());

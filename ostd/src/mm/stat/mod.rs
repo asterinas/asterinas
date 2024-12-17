@@ -2,7 +2,7 @@
 
 //! APIs for memory statistics.
 
-use crate::mm::page::allocator::PAGE_ALLOCATOR;
+use crate::mm::frame::allocator::PAGE_ALLOCATOR;
 
 /// Total memory available for any usages in the system (in bytes).
 ///

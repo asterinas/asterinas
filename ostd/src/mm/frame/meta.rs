@@ -11,7 +11,7 @@
 //! address. It is faster, simpler, safer and more versatile compared with an actual static array
 //! implementation.
 
-pub mod mapping {
+pub(crate) mod mapping {
     //! The metadata of each physical page is linear mapped to fixed virtual addresses
     //! in [`FRAME_METADATA_RANGE`].
 
@@ -21,14 +21,14 @@ pub mod mapping {
     use crate::mm::{kspace::FRAME_METADATA_RANGE, Paddr, PagingConstsTrait, Vaddr, PAGE_SIZE};
 
     /// Converts a physical address of a base page to the virtual address of the metadata slot.
-    pub const fn page_to_meta<C: PagingConstsTrait>(paddr: Paddr) -> Vaddr {
+    pub(crate) const fn page_to_meta<C: PagingConstsTrait>(paddr: Paddr) -> Vaddr {
         let base = FRAME_METADATA_RANGE.start;
         let offset = paddr / PAGE_SIZE;
         base + offset * size_of::<MetaSlot>()
     }
 
     /// Converts a virtual address of the metadata slot to the physical address of the page.
-    pub const fn meta_to_page<C: PagingConstsTrait>(vaddr: Vaddr) -> Paddr {
+    pub(crate) const fn meta_to_page<C: PagingConstsTrait>(vaddr: Vaddr) -> Paddr {
         let base = FRAME_METADATA_RANGE.start;
         let offset = (vaddr - base) / size_of::<MetaSlot>();
         offset * PAGE_SIZE
@@ -46,7 +46,7 @@ use align_ext::AlignExt;
 use log::info;
 use static_assertions::const_assert_eq;
 
-use super::{allocator, ContPages};
+use super::{allocator, Segment};
 use crate::{
     arch::mm::PagingConsts,
     mm::{
@@ -58,7 +58,7 @@ use crate::{
 
 /// The maximum number of bytes of the metadata of a page.
 pub const PAGE_METADATA_MAX_SIZE: usize =
-    META_SLOT_SIZE - size_of::<AtomicU32>() - size_of::<PageMetaVtablePtr>();
+    META_SLOT_SIZE - size_of::<AtomicU32>() - size_of::<FrameMetaVtablePtr>();
 /// The maximum alignment in bytes of the metadata of a page.
 pub const PAGE_METADATA_MAX_ALIGN: usize = align_of::<MetaSlot>();
 
@@ -70,7 +70,7 @@ pub(in crate::mm) struct MetaSlot {
     ///
     /// It is placed at the beginning of a slot because:
     ///  - the implementation can simply cast a `*const MetaSlot`
-    ///    to a `*const PageMeta` for manipulation;
+    ///    to a `*const FrameMeta` for manipulation;
     ///  - if the metadata need special alignment, we can provide
     ///    at most `PAGE_METADATA_ALIGN` bytes of alignment;
     ///  - the subsequent fields can utilize the padding of the
@@ -79,24 +79,24 @@ pub(in crate::mm) struct MetaSlot {
     /// The reference count of the page.
     ///
     /// Specifically, the reference count has the following meaning:
-    /// * `REF_COUNT_UNUSED`: The page is not in use.
-    /// * `0`: The page is being constructed ([`Page::from_unused`])
-    ///   or destructured ([`drop_last_in_place`]).
-    /// * `1..REF_COUNT_MAX`: The page is in use.
-    /// * `REF_COUNT_MAX..REF_COUNT_UNUSED`: Illegal values to
-    ///   prevent the reference count from overflowing. Otherwise,
-    ///   overflowing the reference count will cause soundness issue.
+    ///  * `REF_COUNT_UNUSED`: The page is not in use.
+    ///  * `0`: The page is being constructed ([`Page::from_unused`])
+    ///    or destructured ([`drop_last_in_place`]).
+    ///  * `1..REF_COUNT_MAX`: The page is in use.
+    ///  * `REF_COUNT_MAX..REF_COUNT_UNUSED`: Illegal values to
+    ///    prevent the reference count from overflowing. Otherwise,
+    ///    overflowing the reference count will cause soundness issue.
     ///
-    /// [`Page::from_unused`]: super::Page::from_unused
+    /// [`Frame::from_unused`]: super::Frame::from_unused
     pub(super) ref_count: AtomicU32,
     /// The virtual table that indicates the type of the metadata.
-    pub(super) vtable_ptr: UnsafeCell<MaybeUninit<PageMetaVtablePtr>>,
+    pub(super) vtable_ptr: UnsafeCell<MaybeUninit<FrameMetaVtablePtr>>,
 }
 
 pub(super) const REF_COUNT_UNUSED: u32 = u32::MAX;
 const REF_COUNT_MAX: u32 = i32::MAX as u32;
 
-type PageMetaVtablePtr = core::ptr::DynMetadata<dyn PageMeta>;
+type FrameMetaVtablePtr = core::ptr::DynMetadata<dyn FrameMeta>;
 
 const_assert_eq!(PAGE_SIZE % META_SLOT_SIZE, 0);
 const_assert_eq!(size_of::<MetaSlot>(), META_SLOT_SIZE);
@@ -113,29 +113,30 @@ const_assert_eq!(size_of::<MetaSlot>(), META_SLOT_SIZE);
 /// The implemented structure must have a size less than or equal to
 /// [`PAGE_METADATA_MAX_SIZE`] and an alignment less than or equal to
 /// [`PAGE_METADATA_MAX_ALIGN`].
-pub unsafe trait PageMeta: Any + Send + Sync + 'static {
+pub unsafe trait FrameMeta: Any + Send + Sync + 'static {
+    /// Called when the last handle to the page is dropped.
     fn on_drop(&mut self, _paddr: Paddr) {}
 }
 
 /// Makes a structure usable as a page metadata.
 ///
-/// Directly implementing [`PageMeta`] is not safe since the size and alignment
+/// Directly implementing [`FrameMeta`] is not safe since the size and alignment
 /// must be checked. This macro provides a safe way to implement the trait with
 /// compile-time checks.
 #[macro_export]
-macro_rules! impl_page_meta {
+macro_rules! impl_frame_meta_for {
     ($($t:ty),*) => {
         $(
             use static_assertions::const_assert;
-            const_assert!(size_of::<$t>() <= $crate::mm::page::meta::PAGE_METADATA_MAX_SIZE);
-            const_assert!(align_of::<$t>() <= $crate::mm::page::meta::PAGE_METADATA_MAX_ALIGN);
+            const_assert!(size_of::<$t>() <= $crate::mm::frame::meta::PAGE_METADATA_MAX_SIZE);
+            const_assert!(align_of::<$t>() <= $crate::mm::frame::meta::PAGE_METADATA_MAX_ALIGN);
             // SAFETY: The size and alignment of the structure are checked.
-            unsafe impl $crate::mm::page::meta::PageMeta for $t {}
+            unsafe impl $crate::mm::frame::meta::FrameMeta for $t {}
         )*
     };
 }
 
-pub use impl_page_meta;
+pub use impl_frame_meta_for;
 
 impl MetaSlot {
     /// Increases the page reference count by one.
@@ -178,7 +179,7 @@ pub(super) unsafe fn drop_last_in_place(ptr: *mut MetaSlot) {
     // SAFETY: The page metadata is initialized and valid.
     let vtable_ptr = unsafe { vtable_ptr.assume_init_read() };
 
-    let meta_ptr: *mut dyn PageMeta = core::ptr::from_raw_parts_mut(ptr, vtable_ptr);
+    let meta_ptr: *mut dyn FrameMeta = core::ptr::from_raw_parts_mut(ptr, vtable_ptr);
 
     // SAFETY: `ptr` points to the metadata storage which is valid to be mutably borrowed under
     // `vtable_ptr` because the metadata is valid, the vtable is correct, and we have the exclusive
@@ -209,12 +210,12 @@ pub(super) unsafe fn drop_last_in_place(ptr: *mut MetaSlot) {
 #[derive(Debug, Default)]
 pub struct MetaPageMeta {}
 
-impl_page_meta!(MetaPageMeta);
+impl_frame_meta_for!(MetaPageMeta);
 
 /// Initializes the metadata of all physical pages.
 ///
-/// The function returns a list of `Page`s containing the metadata.
-pub(crate) fn init() -> ContPages<MetaPageMeta> {
+/// The function returns a list of `Frame`s containing the metadata.
+pub(crate) fn init() -> Segment<MetaPageMeta> {
     let max_paddr = {
         let regions = crate::boot::memory_regions();
         regions.iter().map(|r| r.base() + r.len()).max().unwrap()
@@ -249,7 +250,7 @@ pub(crate) fn init() -> ContPages<MetaPageMeta> {
     .unwrap();
 
     // Now the metadata pages are mapped, we can initialize the metadata.
-    ContPages::from_unused(meta_pages..meta_pages + num_meta_pages * PAGE_SIZE, |_| {
+    Segment::from_unused(meta_pages..meta_pages + num_meta_pages * PAGE_SIZE, |_| {
         MetaPageMeta {}
     })
 }

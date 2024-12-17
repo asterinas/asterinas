@@ -40,7 +40,7 @@ fn create_user_space(program: &[u8]) -> UserSpace {
             .alloc_contiguous()
             .unwrap();
         // Physical memory pages can be only accessed
-        // via the `Frame` or `Segment` abstraction.
+        // via the `UntypedFrame` or `UntypedSegment` abstraction.
         segment.write_bytes(0, program).unwrap();
         segment
     };
