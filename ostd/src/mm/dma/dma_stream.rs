@@ -11,7 +11,7 @@ use crate::{
     error::Error,
     mm::{
         dma::{dma_type, Daddr, DmaType},
-        HasPaddr, Infallible, Paddr, Segment, VmIo, VmReader, VmWriter, PAGE_SIZE,
+        HasPaddr, Infallible, Paddr, UntypedSegment, VmIo, VmReader, VmWriter, PAGE_SIZE,
     },
 };
 
@@ -34,7 +34,7 @@ pub struct DmaStream {
 
 #[derive(Debug)]
 struct DmaStreamInner {
-    vm_segment: Segment,
+    vm_segment: UntypedSegment,
     start_daddr: Daddr,
     /// TODO: remove this field when on x86.
     #[allow(unused)]
@@ -55,11 +55,11 @@ pub enum DmaDirection {
 }
 
 impl DmaStream {
-    /// Establishes DMA stream mapping for a given [`Segment`].
+    /// Establishes DMA stream mapping for a given [`UntypedSegment`].
     ///
     /// The method fails if the segment already belongs to a DMA mapping.
     pub fn map(
-        vm_segment: Segment,
+        vm_segment: UntypedSegment,
         direction: DmaDirection,
         is_cache_coherent: bool,
     ) -> Result<Self, DmaError> {
@@ -107,13 +107,13 @@ impl DmaStream {
         })
     }
 
-    /// Gets the underlying [`Segment`].
+    /// Gets the underlying [`UntypedSegment`].
     ///
     /// Usually, the CPU side should not access the memory
     /// after the DMA mapping is established because
     /// there is a chance that the device is updating
     /// the memory. Do this at your own risk.
-    pub fn vm_segment(&self) -> &Segment {
+    pub fn vm_segment(&self) -> &UntypedSegment {
         &self.inner.vm_segment
     }
 

@@ -5,8 +5,8 @@ use bitvec::array::BitArray;
 use int_to_c_enum::TryFromInt;
 use ostd::{
     mm::{
-        DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, Infallible, Segment, VmIo,
-        VmReader, VmWriter,
+        DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, Infallible, UntypedSegment,
+        VmIo, VmReader, VmWriter,
     },
     sync::{SpinLock, WaitQueue},
     Error,
@@ -442,8 +442,8 @@ impl<'a> BioSegment {
         }
     }
 
-    /// Constructs a new `BioSegment` with a given `Segment` and the bio direction.
-    pub fn new_from_segment(segment: Segment, direction: BioDirection) -> Self {
+    /// Constructs a new `BioSegment` with a given `UntypedSegment` and the bio direction.
+    pub fn new_from_segment(segment: UntypedSegment, direction: BioDirection) -> Self {
         let len = segment.nbytes();
         let dma_stream = DmaStream::map(segment, direction.into(), false).unwrap();
         Self {
@@ -481,7 +481,7 @@ impl<'a> BioSegment {
 
     /// Returns the inner VM segment.
     #[cfg(ktest)]
-    pub fn inner_segment(&self) -> &Segment {
+    pub fn inner_segment(&self) -> &UntypedSegment {
         self.inner.dma_slice.stream().vm_segment()
     }
 

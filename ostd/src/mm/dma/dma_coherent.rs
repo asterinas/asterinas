@@ -13,7 +13,7 @@ use crate::{
         io::VmIoOnce,
         kspace::{paddr_to_vaddr, KERNEL_PAGE_TABLE},
         page_prop::CachePolicy,
-        HasPaddr, Infallible, Paddr, PodOnce, Segment, VmIo, VmReader, VmWriter, PAGE_SIZE,
+        HasPaddr, Infallible, Paddr, PodOnce, UntypedSegment, VmIo, VmReader, VmWriter, PAGE_SIZE,
     },
     prelude::*,
 };
@@ -38,7 +38,7 @@ pub struct DmaCoherent {
 
 #[derive(Debug)]
 struct DmaCoherentInner {
-    vm_segment: Segment,
+    vm_segment: UntypedSegment,
     start_daddr: Daddr,
     is_cache_coherent: bool,
 }
@@ -54,7 +54,7 @@ impl DmaCoherent {
     /// The method fails if any part of the given `vm_segment`
     /// already belongs to a DMA mapping.
     pub fn map(
-        vm_segment: Segment,
+        vm_segment: UntypedSegment,
         is_cache_coherent: bool,
     ) -> core::result::Result<Self, DmaError> {
         let frame_count = vm_segment.nbytes() / PAGE_SIZE;
@@ -123,7 +123,7 @@ impl HasDaddr for DmaCoherent {
 }
 
 impl Deref for DmaCoherent {
-    type Target = Segment;
+    type Target = UntypedSegment;
     fn deref(&self) -> &Self::Target {
         &self.inner.vm_segment
     }
