@@ -4,7 +4,7 @@
         "bigger_is_better": false
     },
     "result_extraction": {
-        "search_pattern": "One big UPDATE of the whole 500000-row table....",
+        "search_pattern": "One big UPDATE of the whole [0-9]+-row table....",
         "result_index": 11
     },
     "chart": {

@@ -4,7 +4,7 @@
         "bigger_is_better": false
     },
     "result_extraction": {
-        "search_pattern": "Signal handler installation:",
+        "search_pattern": "Signal handler installation: +[0-9.]+",
         "result_index": 4
     },
     "chart": {
