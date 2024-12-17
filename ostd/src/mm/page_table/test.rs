@@ -173,12 +173,12 @@ fn test_base_protect_query() {
 
     let from_ppn = 1..1000;
     let from = PAGE_SIZE * from_ppn.start..PAGE_SIZE * from_ppn.end;
-    let to = allocator::alloc(999 * PAGE_SIZE, |_| FrameMeta::default()).unwrap();
+    let to = allocator::alloc_contiguous(999 * PAGE_SIZE, |_| FrameMeta::default()).unwrap();
     let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
     unsafe {
         let mut cursor = pt.cursor_mut(&from).unwrap();
         for page in to {
-            cursor.map(page.clone().into(), prop);
+            cursor.map(page.into(), prop);
         }
     }
     for (item, i) in pt.cursor(&from).unwrap().zip(from_ppn) {
