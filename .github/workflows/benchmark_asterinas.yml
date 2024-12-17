@@ -117,6 +117,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.BENCHMARK_ARTIFACT }}
+          if-no-files-found: error # Fail the benchmark job if no file is found.
           path: |
             result_*.json
 
