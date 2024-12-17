@@ -318,6 +318,7 @@ RUN wget -O unifont.pcf.gz https://unifoundry.com/pub/unifont/unifont-15.1.04/fo
     && rm unifont.pcf.gz
 WORKDIR /root/grub
 RUN echo depends bli part_gpt > grub-core/extra_deps.lst \ 
+    && ./bootstrap \
     && ./configure \ 
         --target=x86_64 \ 
         --disable-efiemu \ 
