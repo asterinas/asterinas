@@ -164,7 +164,7 @@ Below are the contents of these files for the sample benchmark:
 // sqlite/ext2_benchmarks/bench_results/ext2_deletes_between.json
 {
     "result_extraction": {
-        "search_pattern": "10000 DELETEs, numeric BETWEEN, indexed....",
+        "search_pattern": "[0-9]+ DELETEs, numeric BETWEEN, indexed....",
         "result_index": 8
     },
     "chart": {
@@ -174,7 +174,7 @@ Below are the contents of these files for the sample benchmark:
 // sqlite/ext2_benchmarks/bench_results/ext2_updates_between.json
 {
     "result_extraction": {
-        "search_pattern": "10000 UPDATES, numeric BETWEEN, indexed....",
+        "search_pattern": "[0-9]+ UPDATES, numeric BETWEEN, indexed....",
         "result_index": 8
     },
     "chart": {

@@ -4,7 +4,7 @@
         "bigger_is_better": false
     },
     "result_extraction": {
-        "search_pattern": "18 ",
+        "search_pattern": "18 +[0-9.]+",
         "result_index": 2
     },
     "chart": {
