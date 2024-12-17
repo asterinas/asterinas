@@ -3,12 +3,12 @@
 use core::mem::size_of;
 
 use crate::{
-    mm::{FrameAllocOptions, Segment, VmIo, PAGE_SIZE},
+    mm::{ExternalSegment, FrameAllocOptions, VmIo, PAGE_SIZE},
     prelude::Paddr,
 };
 
 pub struct Queue {
-    segment: Segment,
+    segment: ExternalSegment,
     queue_size: usize,
     tail: usize,
 }
