@@ -40,9 +40,8 @@ use super::{nr_subpage_per_huge, PageTableEntryTrait};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     mm::{
-        paddr_to_vaddr,
-        page::{self, inc_page_ref_count, meta::PageMeta, DynPage, Page},
-        Paddr, PagingConstsTrait, PagingLevel, PAGE_SIZE,
+        frame::{self, inc_page_ref_count, meta::FrameMeta, AnyFrame, Frame},
+        paddr_to_vaddr, Paddr, PagingConstsTrait, PagingLevel, PAGE_SIZE,
     },
 };
 
@@ -79,7 +78,7 @@ where
     /// Converts a raw handle to an accessible handle by pertaining the lock.
     pub(super) fn lock(self) -> PageTableNode<E, C> {
         let level = self.level;
-        let page: Page<PageTablePageMeta<E, C>> = self.into();
+        let page: Frame<PageTablePageMeta<E, C>> = self.into();
 
         // Acquire the lock.
         let meta = page.meta();
@@ -187,7 +186,7 @@ where
 }
 
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> From<RawPageTableNode<E, C>>
-    for Page<PageTablePageMeta<E, C>>
+    for Frame<PageTablePageMeta<E, C>>
 where
     [(); C::NR_LEVELS as usize]:,
 {
@@ -196,7 +195,7 @@ where
         // SAFETY: The physical address in the raw handle is valid and we are
         // transferring the ownership to a new handle. No increment of the reference
         // count is needed.
-        unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(raw.paddr()) }
+        unsafe { Frame::<PageTablePageMeta<E, C>>::from_raw(raw.paddr()) }
     }
 }
 
@@ -207,7 +206,7 @@ where
     fn drop(&mut self) {
         // SAFETY: The physical address in the raw handle is valid. The restored
         // handle is dropped to decrement the reference count.
-        drop(unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(self.paddr()) });
+        drop(unsafe { Frame::<PageTablePageMeta<E, C>>::from_raw(self.paddr()) });
     }
 }
 
@@ -225,7 +224,7 @@ pub(super) struct PageTableNode<
 > where
     [(); C::NR_LEVELS as usize]:,
 {
-    page: Page<PageTablePageMeta<E, C>>,
+    page: Frame<PageTablePageMeta<E, C>>,
 }
 
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableNode<E, C>
@@ -261,7 +260,7 @@ where
     /// extra unnecessary expensive operation.
     pub(super) fn alloc(level: PagingLevel, is_tracked: MapTrackingStatus) -> Self {
         let meta = PageTablePageMeta::new_locked(level, is_tracked);
-        let page = page::allocator::alloc_single::<PageTablePageMeta<E, C>>(meta).unwrap();
+        let page = frame::allocator::alloc_single::<PageTablePageMeta<E, C>>(meta).unwrap();
 
         // Zero out the page table node.
         let ptr = paddr_to_vaddr(page.paddr()) as *mut u8;
@@ -407,7 +406,7 @@ where
 
 // SAFETY: The layout of the `PageTablePageMeta` is ensured to be the same for
 // all possible generic parameters. And the layout fits the requirements.
-unsafe impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageMeta for PageTablePageMeta<E, C>
+unsafe impl<E: PageTableEntryTrait, C: PagingConstsTrait> FrameMeta for PageTablePageMeta<E, C>
 where
     [(); C::NR_LEVELS as usize]:,
 {
@@ -439,11 +438,11 @@ where
                 if !pte.is_last(level) {
                     // SAFETY: The PTE points to a page table node. The ownership
                     // of the child is transferred to the child then dropped.
-                    drop(unsafe { Page::<Self>::from_raw(paddr) });
+                    drop(unsafe { Frame::<Self>::from_raw(paddr) });
                 } else if is_tracked == MapTrackingStatus::Tracked {
                     // SAFETY: The PTE points to a tracked page. The ownership
                     // of the child is transferred to the child then dropped.
-                    drop(unsafe { DynPage::from_raw(paddr) });
+                    drop(unsafe { AnyFrame::from_raw(paddr) });
                 }
             }
         }

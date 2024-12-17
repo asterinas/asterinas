@@ -9,7 +9,7 @@ use int_to_c_enum::TryFromInt;
 
 use super::IrtEntryHandle;
 use crate::{
-    mm::{paddr_to_vaddr, FrameAllocOptions, Segment, PAGE_SIZE},
+    mm::{paddr_to_vaddr, FrameAllocOptions, UntypedSegment, PAGE_SIZE},
     sync::{LocalIrqDisabled, SpinLock},
 };
 
@@ -23,7 +23,7 @@ enum ExtendedInterruptMode {
 pub struct IntRemappingTable {
     size: u16,
     extended_interrupt_mode: ExtendedInterruptMode,
-    frames: Segment,
+    frames: UntypedSegment,
     /// The global allocator for Interrupt remapping entry.
     allocator: SpinLock<IdAlloc, LocalIrqDisabled>,
     handles: Vec<Arc<SpinLock<IrtEntryHandle, LocalIrqDisabled>>>,
@@ -35,7 +35,7 @@ impl IntRemappingTable {
         Some(self.handles.get(id).unwrap().clone())
     }
 
-    /// Creates an Interrupt Remapping Table with one Frame (default).
+    /// Creates an Interrupt Remapping Table with one UntypedFrame (default).
     pub(super) fn new() -> Self {
         const DEFAULT_PAGES: usize = 1;
         let segment = FrameAllocOptions::new(DEFAULT_PAGES)

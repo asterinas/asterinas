@@ -1733,7 +1733,7 @@ impl InodeImpl {
         writer: &mut VmWriter,
     ) -> Result<BioWaiter>;
     pub fn read_blocks(&self, bid: Ext2Bid, nblocks: usize, writer: &mut VmWriter) -> Result<()>;
-    pub fn read_block_async(&self, bid: Ext2Bid, frame: &Frame) -> Result<BioWaiter>;
+    pub fn read_block_async(&self, bid: Ext2Bid, frame: &UntypedFrame) -> Result<BioWaiter>;
     pub fn write_blocks_async(
         &self,
         bid: Ext2Bid,
@@ -1741,7 +1741,7 @@ impl InodeImpl {
         reader: &mut VmReader,
     ) -> Result<BioWaiter>;
     pub fn write_blocks(&self, bid: Ext2Bid, nblocks: usize, reader: &mut VmReader) -> Result<()>;
-    pub fn write_block_async(&self, bid: Ext2Bid, frame: &Frame) -> Result<BioWaiter>;
+    pub fn write_block_async(&self, bid: Ext2Bid, frame: &UntypedFrame) -> Result<BioWaiter>;
 }
 
 /// Manages the inode blocks and block I/O operations.
@@ -1789,7 +1789,7 @@ impl InodeBlockManager {
         }
     }
 
-    pub fn read_block_async(&self, bid: Ext2Bid, frame: &Frame) -> Result<BioWaiter> {
+    pub fn read_block_async(&self, bid: Ext2Bid, frame: &UntypedFrame) -> Result<BioWaiter> {
         let mut bio_waiter = BioWaiter::new();
 
         for dev_range in DeviceRangeReader::new(self, bid..bid + 1 as Ext2Bid)? {
@@ -1834,7 +1834,7 @@ impl InodeBlockManager {
         }
     }
 
-    pub fn write_block_async(&self, bid: Ext2Bid, frame: &Frame) -> Result<BioWaiter> {
+    pub fn write_block_async(&self, bid: Ext2Bid, frame: &UntypedFrame) -> Result<BioWaiter> {
         let mut bio_waiter = BioWaiter::new();
 
         for dev_range in DeviceRangeReader::new(self, bid..bid + 1 as Ext2Bid)? {
@@ -1858,12 +1858,12 @@ impl InodeBlockManager {
 }
 
 impl PageCacheBackend for InodeBlockManager {
-    fn read_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
+    fn read_page_async(&self, idx: usize, frame: &UntypedFrame) -> Result<BioWaiter> {
         let bid = idx as Ext2Bid;
         self.read_block_async(bid, frame)
     }
 
-    fn write_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
+    fn write_page_async(&self, idx: usize, frame: &UntypedFrame) -> Result<BioWaiter> {
         let bid = idx as Ext2Bid;
         self.write_block_async(bid, frame)
     }

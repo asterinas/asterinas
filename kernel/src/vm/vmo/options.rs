@@ -8,7 +8,7 @@ use align_ext::AlignExt;
 use aster_rights::{Rights, TRightSet, TRights};
 use ostd::{
     collections::xarray::XArray,
-    mm::{Frame, FrameAllocOptions},
+    mm::{FrameAllocOptions, UntypedFrame},
 };
 
 use super::{Pager, Pages, Vmo, VmoFlags};
@@ -137,7 +137,7 @@ fn alloc_vmo_(size: usize, flags: VmoFlags, pager: Option<Arc<dyn Pager>>) -> Re
     })
 }
 
-fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<XArray<Frame>> {
+fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<XArray<UntypedFrame>> {
     if flags.contains(VmoFlags::CONTIGUOUS) {
         // if the vmo is continuous, we need to allocate frames for the vmo
         let frames_num = size / PAGE_SIZE;

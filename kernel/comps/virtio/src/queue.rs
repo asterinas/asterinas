@@ -76,7 +76,7 @@ impl VirtQueue {
         }
 
         let (descriptor_ptr, avail_ring_ptr, used_ring_ptr) = if transport.is_legacy_version() {
-            // Currently, we use one Frame to place the descriptors and available rings, one Frame to place used rings
+            // Currently, we use one UntypedFrame to place the descriptors and available rings, one UntypedFrame to place used rings
             // because the virtio-mmio legacy required the address to be continuous. The max queue size is 128.
             if size > 128 {
                 return Err(QueueError::InvalidArgs);

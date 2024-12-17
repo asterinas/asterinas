@@ -2,41 +2,41 @@
 
 // SPDX-License-Identifier: MPL-2.0
 
-//! Provides [`SegmentSlice`] for quick duplication and slicing over [`Segment`].
+//! Provides [`SegmentSlice`] for quick duplication and slicing over [`UntypedSegment`].
 
 use alloc::sync::Arc;
 use core::ops::Range;
 
 use ostd::{
     mm::{
-        FallibleVmRead, FallibleVmWrite, Frame, Infallible, Paddr, Segment, VmIo, VmReader,
-        VmWriter, PAGE_SIZE,
+        FallibleVmRead, FallibleVmWrite, Infallible, Paddr, UntypedFrame, UntypedSegment, VmIo,
+        VmReader, VmWriter, PAGE_SIZE,
     },
     Error, Result,
 };
 
-/// A reference to a slice of a [`Segment`].
+/// A reference to a slice of a [`UntypedSegment`].
 ///
 /// Cloning a [`SegmentSlice`] is cheap, as it only increments one reference
-/// count. While cloning a [`Segment`] will increment the reference count of
+/// count. While cloning a [`UntypedSegment`] will increment the reference count of
 /// many underlying pages.
 ///
 /// The downside is that the [`SegmentSlice`] requires heap allocation. Also,
-/// if any [`SegmentSlice`] of the original [`Segment`] is alive, all pages in
-/// the original [`Segment`], including the pages that are not referenced, will
+/// if any [`SegmentSlice`] of the original [`UntypedSegment`] is alive, all pages in
+/// the original [`UntypedSegment`], including the pages that are not referenced, will
 /// not be freed.
 #[derive(Debug, Clone)]
 pub struct SegmentSlice {
-    inner: Arc<Segment>,
+    inner: Arc<UntypedSegment>,
     range: Range<usize>,
 }
 
 impl SegmentSlice {
-    /// Returns a part of the `Segment`.
+    /// Returns a part of the `UntypedSegment`.
     ///
     /// # Panics
     ///
-    /// If `range` is not within the range of this `Segment`,
+    /// If `range` is not within the range of this `UntypedSegment`,
     /// then the method panics.
     pub fn range(&self, range: Range<usize>) -> Self {
         let orig_range = &self.range;
@@ -124,8 +124,8 @@ impl VmIo for SegmentSlice {
     }
 }
 
-impl From<Segment> for SegmentSlice {
-    fn from(segment: Segment) -> Self {
+impl From<UntypedSegment> for SegmentSlice {
+    fn from(segment: UntypedSegment) -> Self {
         let range = 0..segment.nbytes() / PAGE_SIZE;
         Self {
             inner: Arc::new(segment),
@@ -134,7 +134,7 @@ impl From<Segment> for SegmentSlice {
     }
 }
 
-impl From<SegmentSlice> for Segment {
+impl From<SegmentSlice> for UntypedSegment {
     fn from(slice: SegmentSlice) -> Self {
         let start = slice.range.start * PAGE_SIZE;
         let end = slice.range.end * PAGE_SIZE;
@@ -142,8 +142,8 @@ impl From<SegmentSlice> for Segment {
     }
 }
 
-impl From<Frame> for SegmentSlice {
-    fn from(frame: Frame) -> Self {
-        SegmentSlice::from(Segment::from(frame))
+impl From<UntypedFrame> for SegmentSlice {
+    fn from(frame: UntypedFrame) -> Self {
+        SegmentSlice::from(UntypedSegment::from(frame))
     }
 }

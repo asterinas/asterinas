@@ -16,7 +16,7 @@ use crate::{
     cpu::num_cpus,
     cpu_local_cell,
     mm::{
-        nr_subpage_per_huge, paddr_to_vaddr, page::allocator::PAGE_ALLOCATOR, Paddr, PageProperty,
+        frame::allocator::PAGE_ALLOCATOR, nr_subpage_per_huge, paddr_to_vaddr, Paddr, PageProperty,
         PagingConstsTrait, Vaddr, PAGE_SIZE,
     },
     sync::SpinLock,

@@ -2,9 +2,9 @@
 
 //! Options for allocating frames
 
-use super::{Frame, Segment};
+use super::{UntypedFrame, UntypedSegment};
 use crate::{
-    mm::{frame::FrameMeta, page, PAGE_SIZE},
+    mm::{frame, frame::untyped::UntypedMeta, PAGE_SIZE},
     prelude::*,
     Error,
 };
@@ -52,13 +52,13 @@ impl FrameAllocOptions {
     }
 
     /// Allocates a single page frame according to the given options.
-    pub fn alloc_single(&self) -> Result<Frame> {
+    pub fn alloc_single(&self) -> Result<UntypedFrame> {
         if self.nframes != 1 {
             return Err(Error::InvalidArgs);
         }
 
-        let page = page::allocator::alloc_single(FrameMeta::default()).ok_or(Error::NoMemory)?;
-        let frame = Frame { page };
+        let page = frame::allocator::alloc_single(UntypedMeta::default()).ok_or(Error::NoMemory)?;
+        let frame = UntypedFrame { page };
         if !self.uninit {
             frame.writer().fill(0);
         }
@@ -68,17 +68,19 @@ impl FrameAllocOptions {
 
     /// Allocates a contiguous range of page frames according to the given options.
     ///
-    /// The returned [`Segment`] contains at least one page frame.
-    pub fn alloc_contiguous(&self) -> Result<Segment> {
+    /// The returned [`UntypedSegment`] contains at least one page frame.
+    pub fn alloc_contiguous(&self) -> Result<UntypedSegment> {
         // It's no use to checking `self.is_contiguous` here.
         if self.nframes == 0 {
             return Err(Error::InvalidArgs);
         }
 
-        let segment: Segment =
-            page::allocator::alloc_contiguous(self.nframes * PAGE_SIZE, |_| FrameMeta::default())
-                .ok_or(Error::NoMemory)?
-                .into();
+        let segment: UntypedSegment =
+            frame::allocator::alloc_contiguous(self.nframes * PAGE_SIZE, |_| {
+                UntypedMeta::default()
+            })
+            .ok_or(Error::NoMemory)?
+            .into();
         if !self.uninit {
             segment.writer().fill(0);
         }

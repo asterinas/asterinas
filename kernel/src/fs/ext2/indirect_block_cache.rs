@@ -132,7 +132,7 @@ impl IndirectBlockCache {
 /// Represents a single indirect block buffer cached by the `IndirectCache`.
 #[derive(Clone, Debug)]
 pub struct IndirectBlock {
-    frame: Frame,
+    frame: UntypedFrame,
     state: State,
 }
 
