@@ -76,10 +76,20 @@ pub(in crate::mm) struct MetaSlot {
     ///    reference count to save space.
     storage: UnsafeCell<[u8; PAGE_METADATA_MAX_SIZE]>,
     /// The reference count of the page.
+    ///
+    /// Specifically, the reference count has the following meaning:
+    /// * `REF_COUNT_UNUSED`: The page is not in use.
+    /// * `0`: The page is being constructed ([`Page::from_unused`])
+    ///   or destructured ([`drop_last_in_place`]).
+    /// * `1..u32::MAX`: The page is in use.
+    ///
+    /// [`Page::from_unused`]: super::Page::from_unused
     pub(super) ref_count: AtomicU32,
     /// The virtual table that indicates the type of the metadata.
     pub(super) vtable_ptr: UnsafeCell<MaybeUninit<PageMetaVtablePtr>>,
 }
+
+pub(super) const REF_COUNT_UNUSED: u32 = u32::MAX;
 
 type PageMetaVtablePtr = core::ptr::DynMetadata<dyn PageMeta>;
 
@@ -156,6 +166,10 @@ pub(super) unsafe fn drop_last_in_place(ptr: *mut MetaSlot) {
         core::ptr::drop_in_place(meta_ptr);
     }
 
+    // `Release` pairs with the `Acquire` in `Page::from_unused` and ensures `drop_in_place` won't
+    // be reordered after this memory store.
+    slot.ref_count.store(REF_COUNT_UNUSED, Ordering::Release);
+
     // Deallocate the page.
     // It would return the page to the allocator for further use. This would be done
     // after the release of the metadata to avoid re-allocation before the metadata
@@ -192,8 +206,8 @@ pub(crate) fn init() -> ContPages<MetaPageMeta> {
     super::MAX_PADDR.store(max_paddr, Ordering::Relaxed);
 
     let num_pages = max_paddr / page_size::<PagingConsts>(1);
-    let num_meta_pages = (num_pages * size_of::<MetaSlot>()).div_ceil(PAGE_SIZE);
-    let meta_pages = alloc_meta_pages(num_meta_pages);
+    let (num_meta_pages, meta_pages) = alloc_meta_pages(num_pages);
+
     // Map the metadata pages.
     boot_pt::with_borrow(|boot_pt| {
         for i in 0..num_meta_pages {
@@ -209,24 +223,44 @@ pub(crate) fn init() -> ContPages<MetaPageMeta> {
         }
     })
     .unwrap();
+
     // Now the metadata pages are mapped, we can initialize the metadata.
     ContPages::from_unused(meta_pages..meta_pages + num_meta_pages * PAGE_SIZE, |_| {
         MetaPageMeta {}
     })
 }
 
-fn alloc_meta_pages(nframes: usize) -> Paddr {
+fn alloc_meta_pages(num_pages: usize) -> (usize, Paddr) {
+    let num_meta_pages = num_pages
+        .checked_mul(size_of::<MetaSlot>())
+        .unwrap()
+        .div_ceil(PAGE_SIZE);
     let start_paddr = allocator::PAGE_ALLOCATOR
         .get()
         .unwrap()
         .lock()
-        .alloc(nframes)
+        .alloc(num_meta_pages)
         .unwrap()
         * PAGE_SIZE;
-    // Zero them out as initialization.
-    let vaddr = paddr_to_vaddr(start_paddr) as *mut u8;
-    unsafe { core::ptr::write_bytes(vaddr, 0, PAGE_SIZE * nframes) };
-    start_paddr
+
+    let slots = paddr_to_vaddr(start_paddr) as *mut MetaSlot;
+    for i in 0..num_pages {
+        // SAFETY: The memory is successfully allocated with `num_pages` slots so the index must be
+        // within the range.
+        let slot = unsafe { slots.add(i) };
+
+        // SAFETY: The memory is just allocated so we have exclusive access and it's valid for
+        // writing.
+        unsafe {
+            slot.write(MetaSlot {
+                storage: UnsafeCell::new([0; PAGE_METADATA_MAX_SIZE]),
+                ref_count: AtomicU32::new(REF_COUNT_UNUSED),
+                vtable_ptr: UnsafeCell::new(MaybeUninit::uninit()),
+            });
+        }
+    }
+
+    (num_meta_pages, start_paddr)
 }
 
 /// Adds a temporary linear mapping for the metadata pages.

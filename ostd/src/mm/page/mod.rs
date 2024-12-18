@@ -26,7 +26,9 @@ use core::{
 };
 
 pub use cont_pages::ContPages;
-use meta::{mapping, MetaSlot, PageMeta, PAGE_METADATA_MAX_ALIGN, PAGE_METADATA_MAX_SIZE};
+use meta::{
+    mapping, MetaSlot, PageMeta, PAGE_METADATA_MAX_ALIGN, PAGE_METADATA_MAX_SIZE, REF_COUNT_UNUSED,
+};
 
 use super::{frame::FrameMeta, Frame, PagingLevel, PAGE_SIZE};
 use crate::mm::{Paddr, PagingConsts, Vaddr};
@@ -69,8 +71,10 @@ impl<M: PageMeta> Page<M> {
         // immutable reference to it is always safe.
         let slot = unsafe { &*ptr };
 
+        // `Acquire` pairs with the `Release` in `drop_last_in_place` and ensures the metadata
+        // initialization won't be reordered before this memory compare-and-exchange.
         slot.ref_count
-            .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
+            .compare_exchange(REF_COUNT_UNUSED, 0, Ordering::Acquire, Ordering::Relaxed)
             .expect("Page already in use when trying to get a new handle");
 
         // SAFETY: We have exclusive access to the page metadata.
@@ -84,6 +88,11 @@ impl<M: PageMeta> Page<M> {
         //    (guaranteed by the safety requirement of the `PageMeta` trait).
         // 3. We have exclusive access to the metadata storage (guaranteed by the reference count).
         unsafe { ptr.cast::<M>().cast_mut().write(metadata) };
+
+        // Assuming no one can create a `Page` instance directly from the page address, `Relaxed`
+        // is fine here. Otherwise, we should use `Release` to ensure that the metadata
+        // initialization won't be reordered after this memory store.
+        slot.ref_count.store(1, Ordering::Relaxed);
 
         Self {
             ptr,
@@ -191,7 +200,8 @@ impl<M: PageMeta> Clone for Page<M> {
 impl<M: PageMeta> Drop for Page<M> {
     fn drop(&mut self) {
         let last_ref_cnt = self.slot().ref_count.fetch_sub(1, Ordering::Release);
-        debug_assert!(last_ref_cnt > 0);
+        debug_assert!(last_ref_cnt != 0 && last_ref_cnt != REF_COUNT_UNUSED);
+
         if last_ref_cnt == 1 {
             // A fence is needed here with the same reasons stated in the implementation of
             // `Arc::drop`: <https://doc.rust-lang.org/std/sync/struct.Arc.html#method.drop>.
@@ -329,7 +339,8 @@ impl Clone for DynPage {
 impl Drop for DynPage {
     fn drop(&mut self) {
         let last_ref_cnt = self.slot().ref_count.fetch_sub(1, Ordering::Release);
-        debug_assert!(last_ref_cnt > 0);
+        debug_assert!(last_ref_cnt != 0 && last_ref_cnt != REF_COUNT_UNUSED);
+
         if last_ref_cnt == 1 {
             // A fence is needed here with the same reasons stated in the implementation of
             // `Arc::drop`: <https://doc.rust-lang.org/std/sync/struct.Arc.html#method.drop>.
