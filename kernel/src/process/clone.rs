@@ -165,7 +165,7 @@ impl CloneFlags {
             | CloneFlags::CLONE_CHILD_CLEARTID;
         let unsupported_flags = *self - supported_flags;
         if !unsupported_flags.is_empty() {
-            panic!("contains unsupported clone flags: {:?}", unsupported_flags);
+            warn!("contains unsupported clone flags: {:?}", unsupported_flags);
         }
         Ok(())
     }
