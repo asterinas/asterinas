@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: false
+  threshold: 125%
+chart:
+  description: lat_connect
+  legend: Average unix connect latency on {system}
+  title: '[Unix sockets] The latency of connect'
+  unit: "\xB5s"   # Unicode for microsecond
+result_extraction:
+  result_index: 4
+  search_pattern: 'UNIX connection cost: +[0-9.]+'

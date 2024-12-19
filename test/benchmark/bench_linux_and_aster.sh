@@ -6,7 +6,7 @@ set -e
 set -o pipefail
 
 # Ensure all dependencies are installed
-command -v jq >/dev/null 2>&1 || { echo >&2 "jq is not installed. Aborting."; exit 1; }
+command -v jq >/dev/null 2>&1 || command -v yq >/dev/null 2>&1 || { echo >&2 "tools are not installed. Aborting."; exit 1; }
 
 # Set up paths
 BENCHMARK_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
@@ -65,7 +65,8 @@ extract_result_file() {
         local second_part=$(dirname "$bench_result" | awk -F"/benchmark/$first_dir/" '{print $2}' | cut -d'/' -f1)
         echo "result_${first_dir}-${second_part}.json"
     else
-        echo "result_${relative_path//\//-}"
+        local result_file="result_${relative_path//\//-}"
+        echo "${result_file/.json}"
     fi
 }
 
@@ -136,10 +137,10 @@ run_benchmark() {
 parse_results() {
     local bench_result="$1"
 
-    local search_pattern=$(jq -r '.result_extraction.search_pattern // empty' "$bench_result")
-    local result_index=$(jq -r '.result_extraction.result_index // empty' "$bench_result")
-    local unit=$(jq -r '.chart.unit // empty' "$bench_result")
-    local legend=$(jq -r '.chart.legend // {system}' "$bench_result")
+    local search_pattern=$(yq -r '.result_extraction.search_pattern // empty' "$bench_result")
+    local result_index=$(yq -r '.result_extraction.result_index // empty' "$bench_result")
+    local unit=$(yq -r '.chart.unit // empty' "$bench_result")
+    local legend=$(yq -r '.chart.legend // {system}' "$bench_result")
 
     generate_template "$unit" "$legend"
     parse_raw_results "$search_pattern" "$result_index" "$(extract_result_file "$bench_result")"
@@ -164,13 +165,13 @@ main() {
     local run_mode="guest_only"
     [[ -f "${BENCHMARK_ROOT}/${benchmark}/host.sh" ]] && run_mode="host_guest"
 
-    local bench_result="${BENCHMARK_ROOT}/${benchmark}/bench_result.json"
+    local bench_result="${BENCHMARK_ROOT}/${benchmark}/bench_result.yaml"
     local aster_scheme
     if [[ -f "$bench_result" ]]; then
-        aster_scheme=$(jq -r '.runtime_config.aster_scheme // ""' "$bench_result")
+        aster_scheme=$(yq -r '.runtime_config.aster_scheme // ""' "$bench_result")
     else
         for job in "${BENCHMARK_ROOT}/${benchmark}"/bench_results/*; do
-            [[ -f "$job" ]] && aster_scheme=$(jq -r '.runtime_config.aster_scheme // ""' "$job") && break
+            [[ -f "$job" ]] && aster_scheme=$(yq -r '.runtime_config.aster_scheme // ""' "$job") && break
         done
     fi
 

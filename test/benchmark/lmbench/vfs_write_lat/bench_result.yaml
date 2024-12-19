@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: false
+  threshold: 150%
+chart:
+  description: lat_syscall write
+  legend: Average write latency on {system}
+  title: '[VFS] The cost of write (/dev/null)'
+  unit: "\xB5s"   # Unicode for microsecond
+result_extraction:
+  result_index: 3
+  search_pattern: 'Simple write: +[0-9.]+'
