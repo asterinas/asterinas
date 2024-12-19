@@ -24,7 +24,8 @@ use crate::{
         named_pipe::NamedPipe,
         utils::{
             CStr256, DirentVisitor, Extension, FallocMode, FileSystem, FsFlags, Inode, InodeMode,
-            InodeType, IoctlCmd, Metadata, MknodType, PageCache, PageCacheBackend, SuperBlock,
+            InodeType, IoctlCmd, Metadata, MknodType, PageCache, PageCacheBackend, Permission,
+            SuperBlock,
         },
     },
     prelude::*,
@@ -1188,6 +1189,17 @@ impl Inode for RamInode {
 
     fn extension(&self) -> Option<&Extension> {
         Some(&self.extension)
+    }
+
+    fn check_permission(&self, perm: Permission) -> Result<()> {
+        let mode = self.mode().unwrap();
+        if (perm.may_read() && !mode.is_owner_readable())
+            || (perm.may_write() && !mode.is_owner_writable())
+            || (perm.may_exec() && !mode.is_owner_executable())
+        {
+            return_errno!(Errno::EACCES);
+        }
+        Ok(())
     }
 }
 

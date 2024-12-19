@@ -5,7 +5,7 @@ use crate::{
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
-        utils::PATH_MAX,
+        utils::{Permission, PATH_MAX},
     },
     prelude::*,
 };
@@ -81,19 +81,19 @@ pub fn do_faccessat(
         return Ok(SyscallReturn::Return(0));
     }
 
-    let inode_mode = dentry.mode()?;
+    let inode = dentry.inode();
 
     // FIXME: The current implementation is dummy
-    if mode.contains(AccessMode::R_OK) && !inode_mode.is_readable() {
-        return_errno_with_message!(Errno::EACCES, "Read permission denied");
+    if mode.contains(AccessMode::R_OK) {
+        inode.check_permission(Permission::MAY_READ)?;
     }
 
-    if mode.contains(AccessMode::W_OK) && !inode_mode.is_writable() {
-        return_errno_with_message!(Errno::EACCES, "Write permission denied");
+    if mode.contains(AccessMode::W_OK) {
+        inode.check_permission(Permission::MAY_WRITE)?;
     }
 
-    if mode.contains(AccessMode::X_OK) && !inode_mode.is_executable() {
-        return_errno_with_message!(Errno::EACCES, "Execute permission denied");
+    if mode.contains(AccessMode::X_OK) {
+        inode.check_permission(Permission::MAY_EXEC)?;
     }
 
     Ok(SyscallReturn::Return(0))
