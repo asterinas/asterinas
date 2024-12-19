@@ -893,7 +893,11 @@ impl<E: Ext> TcpListenerBg<E> {
         // `connected.len()`. We currently limit it to `connected.len() + connecting.len()` for
         // simplicity.
         if backlog.connected.len() + backlog.connecting.len() >= backlog.max_conn {
-            return (TcpProcessResult::Processed, None);
+            let (ip_repr, tcp_repr) = RawTcpSocket::rst_reply(ip_repr, tcp_repr);
+            return (
+                TcpProcessResult::ProcessedWithReply(ip_repr, tcp_repr),
+                None,
+            );
         }
 
         let result = match backlog.socket.process(cx, ip_repr, tcp_repr) {
