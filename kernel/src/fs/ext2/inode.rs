@@ -1139,7 +1139,7 @@ impl InodeImpl_ {
         }
     }
 
-    pub fn read_block_async(&self, bid: Ext2Bid, frame: &Frame) -> Result<BioWaiter> {
+    pub fn read_block_async(&self, bid: Ext2Bid, frame: &ExternalFrame) -> Result<BioWaiter> {
         let mut bio_waiter = BioWaiter::new();
 
         for dev_range in DeviceRangeReader::new(self, bid..bid + 1 as Ext2Bid)? {
@@ -1183,7 +1183,7 @@ impl InodeImpl_ {
         }
     }
 
-    pub fn write_block_async(&self, bid: Ext2Bid, frame: &Frame) -> Result<BioWaiter> {
+    pub fn write_block_async(&self, bid: Ext2Bid, frame: &ExternalFrame) -> Result<BioWaiter> {
         let mut bio_waiter = BioWaiter::new();
 
         for dev_range in DeviceRangeReader::new(self, bid..bid + 1 as Ext2Bid)? {
@@ -1857,7 +1857,7 @@ impl InodeImpl {
         self.0.read().read_blocks(bid, nblocks, writer)
     }
 
-    pub fn read_block_async(&self, bid: Ext2Bid, frame: &Frame) -> Result<BioWaiter> {
+    pub fn read_block_async(&self, bid: Ext2Bid, frame: &ExternalFrame) -> Result<BioWaiter> {
         self.0.read().read_block_async(bid, frame)
     }
 
@@ -1875,7 +1875,7 @@ impl InodeImpl {
         self.0.read().write_blocks(bid, nblocks, reader)
     }
 
-    pub fn write_block_async(&self, bid: Ext2Bid, frame: &Frame) -> Result<BioWaiter> {
+    pub fn write_block_async(&self, bid: Ext2Bid, frame: &ExternalFrame) -> Result<BioWaiter> {
         self.0.read().write_block_async(bid, frame)
     }
 
@@ -1938,12 +1938,12 @@ impl InodeImpl {
 }
 
 impl PageCacheBackend for InodeImpl {
-    fn read_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
+    fn read_page_async(&self, idx: usize, frame: &ExternalFrame) -> Result<BioWaiter> {
         let bid = idx as Ext2Bid;
         self.read_block_async(bid, frame)
     }
 
-    fn write_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
+    fn write_page_async(&self, idx: usize, frame: &ExternalFrame) -> Result<BioWaiter> {
         let bid = idx as Ext2Bid;
         self.write_block_async(bid, frame)
     }

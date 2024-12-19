@@ -5,7 +5,7 @@
 use alloc::vec::Vec;
 use core::ops::Range;
 
-use super::{page::DynPage, Vaddr, PAGE_SIZE};
+use super::{frame::DynPage, Vaddr, PAGE_SIZE};
 use crate::{
     cpu::{CpuSet, PinCurrentCpu},
     cpu_local,

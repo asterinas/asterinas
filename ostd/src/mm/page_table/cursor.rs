@@ -76,7 +76,7 @@ use super::{
 };
 use crate::{
     mm::{
-        kspace::should_map_as_tracked, paddr_to_vaddr, page::DynPage, Paddr, PageProperty, Vaddr,
+        frame::DynPage, kspace::should_map_as_tracked, paddr_to_vaddr, Paddr, PageProperty, Vaddr,
     },
     task::{disable_preempt, DisabledPreemptGuard},
 };
@@ -231,7 +231,7 @@ where
                         len: page_size::<C>(level),
                     });
                 }
-                Child::Page(page, prop) => {
+                Child::Frame(page, prop) => {
                     return Ok(PageTableItem::Mapped { va, page, prop });
                 }
                 Child::Untracked(pa, plevel, prop) => {
@@ -437,7 +437,7 @@ where
                     let _ = cur_entry.replace(Child::PageTable(pt.clone_raw()));
                     self.0.push_level(pt);
                 }
-                Child::Page(_, _) => {
+                Child::Frame(_, _) => {
                     panic!("Mapping a smaller page in an already mapped huge page");
                 }
                 Child::Untracked(_, _, _) => {
@@ -449,11 +449,11 @@ where
         debug_assert_eq!(self.0.level, page.level());
 
         // Map the current page.
-        let old = self.0.cur_entry().replace(Child::Page(page, prop));
+        let old = self.0.cur_entry().replace(Child::Frame(page, prop));
         self.0.move_forward();
 
         match old {
-            Child::Page(old_page, _) => Some(old_page),
+            Child::Frame(old_page, _) => Some(old_page),
             Child::None => None,
             Child::PageTable(_) => {
                 todo!("Dropping page table nodes while mapping requires TLB flush")
@@ -520,7 +520,7 @@ where
                         let _ = cur_entry.replace(Child::PageTable(pt.clone_raw()));
                         self.0.push_level(pt);
                     }
-                    Child::Page(_, _) => {
+                    Child::Frame(_, _) => {
                         panic!("Mapping a smaller page in an already mapped huge page");
                     }
                     Child::Untracked(_, _, _) => {
@@ -614,7 +614,7 @@ where
                     Child::None => {
                         unreachable!("Already checked");
                     }
-                    Child::Page(_, _) => {
+                    Child::Frame(_, _) => {
                         panic!("Removing part of a huge page");
                     }
                     Child::Untracked(_, _, _) => {
@@ -631,7 +631,7 @@ where
             self.0.move_forward();
 
             return match old {
-                Child::Page(page, prop) => PageTableItem::Mapped {
+                Child::Frame(page, prop) => PageTableItem::Mapped {
                     va: self.0.va,
                     page,
                     prop,
@@ -796,7 +796,7 @@ where
                 Child::Untracked(_, _, _) => {
                     panic!("Copying untracked mappings");
                 }
-                Child::Page(page, mut prop) => {
+                Child::Frame(page, mut prop) => {
                     let mapped_page_size = page.size();
 
                     // Do protection.

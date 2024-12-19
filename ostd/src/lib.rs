@@ -84,7 +84,7 @@ unsafe fn init() {
     boot::init();
     logger::init();
 
-    mm::page::allocator::init();
+    mm::frame::allocator::init();
     mm::kspace::init_kernel_page_table(mm::init_page_meta());
     mm::dma::init();
 
