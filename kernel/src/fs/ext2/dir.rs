@@ -156,6 +156,7 @@ impl From<DirEntryFileType> for InodeType {
 /// A reader for reading `DirEntry` from the page cache.
 pub struct DirEntryReader<'a> {
     page_cache: &'a PageCache,
+    name_buf: [u8; MAX_FNAME_LEN],
     offset: usize,
 }
 
@@ -164,6 +165,7 @@ impl<'a> DirEntryReader<'a> {
     pub(super) fn new(page_cache: &'a PageCache, from_offset: usize) -> Self {
         Self {
             page_cache,
+            name_buf: [0u8; MAX_FNAME_LEN],
             offset: from_offset,
         }
     }
@@ -178,13 +180,14 @@ impl<'a> DirEntryReader<'a> {
             return_errno!(Errno::ENOENT);
         }
 
-        let mut name = vec![0u8; header.name_len as _];
-        self.page_cache
-            .pages()
-            .read_bytes(self.offset + DirEntry::header_len(), &mut name)?;
+        let name_len = header.name_len as usize;
+        self.page_cache.pages().read_bytes(
+            self.offset + DirEntry::header_len(),
+            &mut self.name_buf[..name_len],
+        )?;
         let entry = DirEntry {
             header,
-            name: CStr256::from(name.as_slice()),
+            name: CStr256::from(&self.name_buf[..name_len]),
         };
         self.offset += entry.record_len();
 
@@ -214,6 +217,7 @@ pub struct DirEntryWriter<'a> {
     offset: usize,
 }
 
+// TODO: Improve the efficiency of the writer operations.
 impl<'a> DirEntryWriter<'a> {
     /// Constructs a writer with the given page cache and offset.
     pub(super) fn new(page_cache: &'a PageCache, from_offset: usize) -> Self {
