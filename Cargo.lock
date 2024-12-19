@@ -915,11 +915,11 @@ dependencies = [
 
 [[package]]
 name = "linux-boot-params"
-version = "0.10.2"
+version = "0.10.3"
 
 [[package]]
 name = "linux-bzimage-builder"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "bitflags 1.3.2",
  "bytemuck",
@@ -930,7 +930,7 @@ dependencies = [
 
 [[package]]
 name = "linux-bzimage-setup"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "bitflags 2.6.0",
  "cfg-if",
@@ -1139,7 +1139,7 @@ checksum = "dd8b5dd2ae5ed71462c540258bedcb51965123ad7e7ccf4b9a8cafaa4a63576d"
 
 [[package]]
 name = "osdk-test-kernel"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "ostd",
  "owo-colors 4.0.0",
@@ -1147,7 +1147,7 @@ dependencies = [
 
 [[package]]
 name = "ostd"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "acpi",
  "align_ext",
@@ -1189,7 +1189,7 @@ dependencies = [
 
 [[package]]
 name = "ostd-macros"
-version = "0.10.2"
+version = "0.10.3"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1217,7 +1217,7 @@ dependencies = [
 
 [[package]]
 name = "ostd-test"
-version = "0.10.2"
+version = "0.10.3"
 
 [[package]]
 name = "owo-colors"
