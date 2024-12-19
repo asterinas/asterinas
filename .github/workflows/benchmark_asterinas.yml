@@ -59,7 +59,7 @@ jobs:
           - fio/ext2_seq_read_bw
           - fio/ext2_seq_write_bw_no_iommu
           - fio/ext2_seq_read_bw_no_iommu
-          # Network-related benchmark
+          # Network-related benchmarks
           - lmbench/tcp_loopback_bw_4k
           - lmbench/tcp_loopback_bw_64k
           - lmbench/tcp_loopback_lat
@@ -70,6 +70,13 @@ jobs:
           - lmbench/tcp_virtio_lat
           - lmbench/udp_loopback_lat
           - iperf3/tcp_virtio_bw
+          # Scheduler-related benchmarks
+          - hackbench/group8_smp1
+          # FIXME: hackbench panics on multi-core settings now.
+          # - hackbench/group8_smp8
+          # - hackbench/group8_smp16
+          - schbench/smp1
+          - schbench/smp8
           # Nginx benchmarks
           - nginx/http_req10k_conc1_bw
           - nginx/http_req10k_conc20_bw
