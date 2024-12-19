@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: false
+  threshold: 125%
+chart:
+  description: lat_sig install
+  legend: Average Signal handler install latency on {system}
+  title: '[Signals] The cost of installing a signal handler'
+  unit: "\xB5s"   # Unicode for microsecond
+result_extraction:
+  result_index: 4
+  search_pattern: 'Signal handler installation: +[0-9.]+'

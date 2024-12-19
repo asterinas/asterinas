@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: false
+  threshold: 125%
+chart:
+  description: lat_select
+  legend: Average select TCP latency on {system}
+  title: '[Network] The cost of select (TCP fds)'
+  unit: "\xB5s"   # Unicode for microsecond
+result_extraction:
+  result_index: 6
+  search_pattern: 'Select on [0-9.]+ tcp fd''s: +[0-9.]+'
