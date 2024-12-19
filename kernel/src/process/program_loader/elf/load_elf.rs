@@ -27,7 +27,7 @@ use crate::{
     vm::{perms::VmPerms, util::duplicate_frame, vmar::Vmar, vmo::VmoRightsOp},
 };
 
-/// Loads elf to the process vm.   
+/// Loads elf to the process vm.
 ///
 /// This function will map elf segments and
 /// initialize process init stack.
@@ -328,15 +328,17 @@ fn map_segment_vmo(
     }
 
     let perms = parse_segment_perm(program_header.flags);
-    let mut vm_map_options = root_vmar
-        .new_map(segment_size, perms)?
-        .vmo(segment_vmo)
-        .vmo_offset(segment_offset)
-        .vmo_limit(segment_offset + segment_size)
-        .can_overwrite(true);
     let offset = base_addr + (program_header.virtual_addr as Vaddr).align_down(PAGE_SIZE);
-    vm_map_options = vm_map_options.offset(offset).handle_page_faults_around();
-    let map_addr = vm_map_options.build()?;
+    if segment_size != 0 {
+        let mut vm_map_options = root_vmar
+            .new_map(segment_size, perms)?
+            .vmo(segment_vmo)
+            .vmo_offset(segment_offset)
+            .vmo_limit(segment_offset + segment_size)
+            .can_overwrite(true);
+        vm_map_options = vm_map_options.offset(offset).handle_page_faults_around();
+        vm_map_options.build()?;
+    }
 
     let anonymous_map_size: usize = total_map_size.saturating_sub(segment_size);
 
