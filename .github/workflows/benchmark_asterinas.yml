@@ -70,6 +70,7 @@ jobs:
           - lmbench/tcp_virtio_connect_lat
           - lmbench/tcp_virtio_lat
           - lmbench/udp_loopback_lat
+          - lmbench/udp_virtio_lat 
           - iperf3/tcp_virtio_bw
           # Scheduler-related benchmarks
           - hackbench/group8_smp1
