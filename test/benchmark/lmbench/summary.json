@@ -35,6 +35,7 @@
         "tcp_loopback_select_lat",
         "tcp_loopback_http_bw",
         "tcp_virtio_bw_64k",
+        "tcp_virtio_connect_lat",
         "udp_loopback_lat"
     ]
 }
