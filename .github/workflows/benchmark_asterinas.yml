@@ -67,6 +67,7 @@ jobs:
           - lmbench/tcp_loopback_select_lat
           - lmbench/tcp_loopback_http_bw
           - lmbench/tcp_virtio_bw_64k
+          - lmbench/tcp_virtio_connect_lat
           - lmbench/tcp_virtio_lat
           - lmbench/udp_loopback_lat
           - iperf3/tcp_virtio_bw
