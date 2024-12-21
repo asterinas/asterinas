@@ -177,6 +177,10 @@ fn apply_args_after_finalize(action: &mut Action, args: &CommonArgs) {
     if args.display_grub_menu {
         action.grub.display_grub_menu = true;
     }
+    if args.coverage {
+        action.qemu.args += " --no-shutdown";
+        action.qemu.with_monitor = true;
+    }
 }
 
 impl Config {

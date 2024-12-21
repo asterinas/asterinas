@@ -18,6 +18,7 @@ LOG_LEVEL ?= error
 SCHEME ?= ""
 SMP ?= 1
 OSTD_TASK_STACK_SIZE_IN_PAGES ?= 64
+COVERAGE ?= 0
 # End of global build options.
 
 # GDB debugging and profiling options.
@@ -88,6 +89,10 @@ ifneq ($(SCHEME), "")
 CARGO_OSDK_ARGS += --scheme $(SCHEME)
 else
 CARGO_OSDK_ARGS += --boot-method="$(BOOT_METHOD)"
+endif
+
+ifeq ($(COVERAGE), 1)
+CARGO_OSDK_ARGS += --coverage
 endif
 
 ifdef FEATURES
