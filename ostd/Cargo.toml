@@ -42,6 +42,8 @@ unwinding = { version = "0.2.3", default-features = false, features = ["fde-gnu-
 volatile = { version = "0.4.5", features = ["unstable"] }
 xarray = { git = "https://github.com/asterinas/xarray", version = "0.1.0" }
 
+minicov = { git = "https://github.com/YanWQ-monad/minicov", rev = "dcfafdc", version = "0.3", optional = true }
+
 [target.x86_64-unknown-none.dependencies]
 x86_64 = "0.14.13"
 x86 = "0.52.0"
@@ -64,3 +66,4 @@ fdt = { version = "0.1.5", features = ["pretty-printing"] }
 default = ["cvm_guest"]
 # The guest OS support for Confidential VMs (CVMs), e.g., Intel TDX
 cvm_guest = ["dep:tdx-guest", "dep:iced-x86"]
+coverage = ["minicov"]
