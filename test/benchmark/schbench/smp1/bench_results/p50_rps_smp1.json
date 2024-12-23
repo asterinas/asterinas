@@ -9,7 +9,7 @@
         "result_index": 3
     },
     "chart": {
-        "title": "[Scheduler] P50 RPS while max-loading the only CPU",
+        "title": "[Scheduler] P50 RPS while max-loading the only CPU (SMP=1)",
         "description": "schbench -F 256 -n 5 -r 90",
         "unit": "requests per second",
         "legend": "P50 RPS of schbench on {system}"

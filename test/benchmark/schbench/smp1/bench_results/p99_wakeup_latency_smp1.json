@@ -9,7 +9,7 @@
         "result_index": 3
     },
     "chart": {
-        "title": "[Scheduler] P99 wakeup latency while max-loading the only CPU",
+        "title": "[Scheduler] P99 wakeup latency while max-loading the only CPU (SMP=1)",
         "description": "schbench -F 256 -n 5 -r 90",
         "unit": "\u00b5s",
         "legend": "P99 wakeup latency of schbench on {system}"
