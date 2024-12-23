@@ -189,7 +189,9 @@ impl<M: PageMeta> Page<M> {
 
 impl<M: PageMeta> Clone for Page<M> {
     fn clone(&self) -> Self {
-        self.slot().ref_count.fetch_add(1, Ordering::Relaxed);
+        // SAFETY: We have already held a reference to the page.
+        unsafe { self.slot().inc_ref_count() };
+
         Self {
             ptr: self.ptr,
             _marker: PhantomData,
@@ -331,7 +333,9 @@ impl From<Frame> for DynPage {
 
 impl Clone for DynPage {
     fn clone(&self) -> Self {
-        self.slot().ref_count.fetch_add(1, Ordering::Relaxed);
+        // SAFETY: We have already held a reference to the page.
+        unsafe { self.slot().inc_ref_count() };
+
         Self { ptr: self.ptr }
     }
 }
@@ -370,6 +374,6 @@ pub(in crate::mm) unsafe fn inc_page_ref_count(paddr: Paddr) {
     // an immutable reference to it is always safe.
     let slot = unsafe { &*(vaddr as *const MetaSlot) };
 
-    let old = slot.ref_count.fetch_add(1, Ordering::Relaxed);
-    debug_assert!(old > 0);
+    // SAFETY: We have already held a reference to the page.
+    unsafe { slot.inc_ref_count() };
 }
