@@ -32,6 +32,9 @@ elif [[ "$BENCHMARK_PATH" =~ "tcp_virtio_lat" ]]; then
 elif [[ "$BENCHMARK_PATH" =~ "tcp_virtio_bw" ]]; then
     # Persist lmbench/bw_tcp port
     export LMBENCH_TCP_BW_PORT=31236
+elif [[ "$BENCHMARK_PATH" =~ "memcached" ]]; then
+    # Persist Memcached port
+    export MEMCACHED_PORT=11211
 fi
 
 # Function to run the benchmark

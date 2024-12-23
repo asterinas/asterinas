@@ -1,0 +1,7 @@
+{
+    "benchmarks": [
+        "8_t_128_conc_10k_window",
+        "8_t_128_conc_20k_window",
+        "16_t_512_conc_10k_window"
+    ]
+}
