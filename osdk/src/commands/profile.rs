@@ -16,7 +16,14 @@ use crate::{
     util::{get_current_crate_info, get_target_directory},
 };
 use regex::Regex;
-use std::{collections::HashMap, fs::File, io::Write, path::PathBuf, process::Command};
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::{BufRead, Write},
+    path::PathBuf,
+    process::{Command, Stdio},
+    thread, time,
+};
 
 pub fn execute_profile_command(_profile: &str, args: &ProfileArgs) {
     if let Some(parse_input) = &args.parse {
@@ -55,31 +62,60 @@ fn do_collect_stack_traces(args: &ProfileArgs) {
     let mut profile_buffer = ProfileBuffer::new();
 
     println!("Profiling \"{}\" at \"{}\".", file_path.display(), remote);
+    // Use GDB to halt the remote, get stack traces, and resume
+    let mut gdb_process = {
+        let file_cmd = format!("file {}", file_path.display());
+        let target_cmd = format!("target remote {}", remote);
+        let backtrace_cmd_seq = vec![
+            "-ex",
+            "thread apply all bt -frame-arguments presence -frame-info short-location",
+            "-ex",
+            "echo bt done\n",
+            "-ex",
+            "continue",
+        ];
+
+        let mut gdb_args = vec![
+            "-batch",
+            "-ex",
+            "set pagination 0",
+            "-ex",
+            &file_cmd,
+            "-ex",
+            &target_cmd,
+        ];
+        gdb_args.append(&mut vec![backtrace_cmd_seq; *samples].concat());
+
+        Command::new("gdb")
+            .args(gdb_args)
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("Failed to execute gdb")
+    };
+
+    let gdb_stdout = gdb_process.stdout.take().unwrap();
+    let mut gdb_stdout_reader = std::io::BufReader::new(gdb_stdout);
+    let mut gdb_stdout_buf = String::new();
+    let mut gdb_output = String::new();
     use indicatif::{ProgressIterator, ProgressStyle};
     let style = ProgressStyle::default_bar().progress_chars("#>-");
     for _ in (0..*samples).progress_with_style(style) {
-        // Use GDB to halt the remote, get stack traces, and resume
-        let output = Command::new("gdb")
-            .args([
-                "-batch",
-                "-ex",
-                "set pagination 0",
-                "-ex",
-                &format!("file {}", file_path.display()),
-                "-ex",
-                &format!("target remote {}", remote),
-                "-ex",
-                "thread apply all bt -frame-arguments presence -frame-info short-location",
-            ])
-            .output()
-            .expect("Failed to execute gdb");
-
-        for line in String::from_utf8_lossy(&output.stdout).lines() {
+        loop {
+            let _ = gdb_stdout_reader.read_line(&mut gdb_stdout_buf);
+            gdb_output.push_str(&gdb_stdout_buf);
+            if gdb_stdout_buf == "bt done\n" {
+                break;
+            }
+            gdb_stdout_buf.clear();
+        }
+        let _ = Command::new("kill")
+            .args(["-INT", &format!("{}", gdb_process.id())])
+            .spawn();
+        for line in gdb_output.lines() {
             profile_buffer.append_raw_line(line);
         }
-
-        // Sleep between samples
-        std::thread::sleep(std::time::Duration::from_secs_f64(*interval));
+        gdb_output.clear();
+        thread::sleep(time::Duration::from_secs_f64(*interval));
     }
 
     let out_args = &args.out_args;
@@ -196,7 +232,7 @@ impl ProfileBuffer {
             // Otherwise it may initiate a new capture or a new CPU stack trace
 
             // Check if this is a new CPU trace (starts with `Thread` and contains `CPU#N`)
-            if line.starts_with("Thread") {
+            if line.ends_with("[running])):") {
                 let cpu_id_idx = line.find("CPU#").unwrap();
                 let cpu_id = line[cpu_id_idx + 4..]
                     .split_whitespace()
