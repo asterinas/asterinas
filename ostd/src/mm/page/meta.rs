@@ -53,6 +53,7 @@ use crate::{
         kspace::LINEAR_MAPPING_BASE_VADDR, paddr_to_vaddr, page_size, page_table::boot_pt,
         CachePolicy, Paddr, PageFlags, PageProperty, PrivilegedPageFlags, Vaddr, PAGE_SIZE,
     },
+    panic::abort,
 };
 
 /// The maximum number of bytes of the metadata of a page.
@@ -81,7 +82,10 @@ pub(in crate::mm) struct MetaSlot {
     /// * `REF_COUNT_UNUSED`: The page is not in use.
     /// * `0`: The page is being constructed ([`Page::from_unused`])
     ///   or destructured ([`drop_last_in_place`]).
-    /// * `1..u32::MAX`: The page is in use.
+    /// * `1..REF_COUNT_MAX`: The page is in use.
+    /// * `REF_COUNT_MAX..REF_COUNT_UNUSED`: Illegal values to
+    ///   prevent the reference count from overflowing. Otherwise,
+    ///   overflowing the reference count will cause soundness issue.
     ///
     /// [`Page::from_unused`]: super::Page::from_unused
     pub(super) ref_count: AtomicU32,
@@ -90,6 +94,7 @@ pub(in crate::mm) struct MetaSlot {
 }
 
 pub(super) const REF_COUNT_UNUSED: u32 = u32::MAX;
+const REF_COUNT_MAX: u32 = i32::MAX as u32;
 
 type PageMetaVtablePtr = core::ptr::DynMetadata<dyn PageMeta>;
 
@@ -131,6 +136,25 @@ macro_rules! impl_page_meta {
 }
 
 pub use impl_page_meta;
+
+impl MetaSlot {
+    /// Increases the page reference count by one.
+    ///
+    /// # Safety
+    ///
+    /// The caller must have already held a reference to the page.
+    pub(super) unsafe fn inc_ref_count(&self) {
+        let last_ref_cnt = self.ref_count.fetch_add(1, Ordering::Relaxed);
+        debug_assert!(last_ref_cnt != 0 && last_ref_cnt != REF_COUNT_UNUSED);
+
+        if last_ref_cnt >= REF_COUNT_MAX {
+            // This follows the same principle as the `Arc::clone` implementation to prevent the
+            // reference count from overflowing. See also
+            // <https://doc.rust-lang.org/std/sync/struct.Arc.html#method.clone>.
+            abort();
+        }
+    }
+}
 
 /// An internal routine in dropping implementations.
 ///
