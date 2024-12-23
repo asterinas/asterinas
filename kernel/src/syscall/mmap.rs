@@ -11,6 +11,7 @@ use crate::{
     prelude::*,
     vm::{
         perms::VmPerms,
+        vmar::is_userspace_vaddr,
         vmo::{VmoOptions, VmoRightsOp},
     },
 };
@@ -42,7 +43,7 @@ fn do_sys_mmap(
     addr: Vaddr,
     len: usize,
     vm_perms: VmPerms,
-    option: MMapOptions,
+    mut option: MMapOptions,
     fd: FileDesc,
     offset: usize,
     ctx: &Context,
@@ -52,7 +53,11 @@ fn do_sys_mmap(
         addr, len, vm_perms, option, fd, offset
     );
 
-    check_option(&option)?;
+    if option.flags.contains(MMapFlags::MAP_FIXED_NOREPLACE) {
+        option.flags.insert(MMapFlags::MAP_FIXED);
+    }
+
+    check_option(addr, &option)?;
 
     if len == 0 {
         return_errno_with_message!(Errno::EINVAL, "mmap len cannot be zero");
@@ -156,9 +161,13 @@ fn do_sys_mmap(
     Ok(map_addr)
 }
 
-fn check_option(option: &MMapOptions) -> Result<()> {
+fn check_option(addr: Vaddr, option: &MMapOptions) -> Result<()> {
     if option.typ() == MMapType::File {
         return_errno_with_message!(Errno::EINVAL, "Invalid mmap type");
+    }
+
+    if option.flags().contains(MMapFlags::MAP_FIXED) && !is_userspace_vaddr(addr) {
+        return_errno_with_message!(Errno::EINVAL, "Invalid mmap fixed addr");
     }
 
     Ok(())
