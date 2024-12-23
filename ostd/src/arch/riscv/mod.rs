@@ -5,6 +5,7 @@
 pub mod boot;
 pub(crate) mod cpu;
 pub mod device;
+pub(crate) mod ex_table;
 pub mod iommu;
 pub(crate) mod irq;
 pub(crate) mod mm;
@@ -39,6 +40,8 @@ pub(crate) fn init_on_bsp() {
     // we are on the BSP.
     unsafe { crate::cpu::local::init_on_bsp() };
 
+    device::init();
+
     crate::boot::smp::boot_all_aps();
 
     timer::init();
@@ -49,7 +52,9 @@ pub(crate) unsafe fn init_on_ap() {
 }
 
 pub(crate) fn interrupts_ack(irq_number: usize) {
-    unimplemented!()
+    if irq_number != irq::TIMER_IRQ_LINE {
+        device::plic::complete_interrupt(irq_number as u16);
+    }
 }
 
 /// Return the frequency of TSC. The unit is Hz.

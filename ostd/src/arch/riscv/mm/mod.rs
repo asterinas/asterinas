@@ -3,6 +3,8 @@
 use alloc::fmt;
 use core::ops::Range;
 
+pub(crate) use util::{__memcpy_fallible, __memset_fallible};
+
 use crate::{
     mm::{
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
@@ -11,6 +13,8 @@ use crate::{
     },
     Pod,
 };
+
+mod util;
 
 pub(crate) const NR_ENTRIES_PER_PAGE: usize = 512;
 
@@ -208,22 +212,4 @@ impl fmt::Debug for PageTableEntry {
             .field("prop", &self.prop())
             .finish()
     }
-}
-
-pub(crate) fn __memcpy_fallible(dst: *mut u8, src: *const u8, size: usize) -> usize {
-    // TODO: implement fallible
-    unsafe {
-        riscv::register::sstatus::set_sum();
-    }
-    unsafe { core::ptr::copy(src, dst, size) };
-    0
-}
-
-pub(crate) fn __memset_fallible(dst: *mut u8, value: u8, size: usize) -> usize {
-    // TODO: implement fallible
-    unsafe {
-        riscv::register::sstatus::set_sum();
-    }
-    unsafe { core::ptr::write_bytes(dst, value, size) };
-    0
 }
