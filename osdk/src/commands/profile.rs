@@ -16,7 +16,14 @@ use crate::{
     util::{get_current_crate_info, get_target_directory},
 };
 use regex::Regex;
-use std::{collections::HashMap, fs::File, io::Write, path::PathBuf, process::Command};
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::{Read, Write},
+    path::PathBuf,
+    process::{Command, Stdio},
+    thread, time,
+};
 
 pub fn execute_profile_command(_profile: &str, args: &ProfileArgs) {
     if let Some(parse_input) = &args.parse {
@@ -55,31 +62,62 @@ fn do_collect_stack_traces(args: &ProfileArgs) {
     let mut profile_buffer = ProfileBuffer::new();
 
     println!("Profiling \"{}\" at \"{}\".", file_path.display(), remote);
+    // Use GDB to halt the remote, get stack traces, and resume
+    let mut gdb_process = {
+        let file_cmd = format!("file {}", file_path.display());
+        let target_cmd = format!("target remote {}", remote);
+        let backtrace_cmd_seq = vec![
+            "-ex",
+            "thread apply all bt -frame-arguments presence -frame-info short-location",
+            "-ex",
+            "continue",
+        ];
+
+        let mut gdb_args = vec![
+            "-batch",
+            "-ex",
+            "set pagination 0",
+            "-ex",
+            &file_cmd,
+            "-ex",
+            &target_cmd,
+        ];
+        gdb_args.append(&mut vec![backtrace_cmd_seq; *samples].concat());
+
+        Command::new("gdb")
+            .args(gdb_args)
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("Failed to execute gdb")
+    };
+
+    let gdb_output = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let reader_thread = {
+        let mut stdout = gdb_process.stdout.take().unwrap();
+        let output = gdb_output.clone();
+        thread::spawn(move || stdout.read_to_end(&mut output.lock().unwrap()))
+    };
+
+    // Sleep for a while until gdb finishes loading symbols and connecting to target.
+    thread::sleep(time::Duration::from_secs_f64(5.0));
     use indicatif::{ProgressIterator, ProgressStyle};
     let style = ProgressStyle::default_bar().progress_chars("#>-");
     for _ in (0..*samples).progress_with_style(style) {
-        // Use GDB to halt the remote, get stack traces, and resume
-        let output = Command::new("gdb")
-            .args([
-                "-batch",
-                "-ex",
-                "set pagination 0",
-                "-ex",
-                &format!("file {}", file_path.display()),
-                "-ex",
-                &format!("target remote {}", remote),
-                "-ex",
-                "thread apply all bt -frame-arguments presence -frame-info short-location",
-            ])
-            .output()
-            .expect("Failed to execute gdb");
+        let _ = Command::new("kill")
+            .args(["-INT", &format!("{}", gdb_process.id())])
+            .spawn();
+        thread::sleep(time::Duration::from_secs_f64(*interval));
+    }
+    // Sleep for a while until gdb process fully exits, otherwise we kill it explicitly.
+    thread::sleep(time::Duration::from_secs_f64(5.0));
+    if let Ok(None) = gdb_process.try_wait() {
+        println!("We sent SIGINT either too fast or too slow. The result may contain less samples than you expected.");
+        let _ = gdb_process.kill();
+        let _ = reader_thread.join();
+    }
 
-        for line in String::from_utf8_lossy(&output.stdout).lines() {
-            profile_buffer.append_raw_line(line);
-        }
-
-        // Sleep between samples
-        std::thread::sleep(std::time::Duration::from_secs_f64(*interval));
+    for line in String::from_utf8_lossy(&gdb_output.lock().unwrap()).lines() {
+        profile_buffer.append_raw_line(line);
     }
 
     let out_args = &args.out_args;
