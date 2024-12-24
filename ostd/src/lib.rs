@@ -35,6 +35,7 @@ pub mod bus;
 pub mod collections;
 pub mod console;
 pub mod cpu;
+pub mod device;
 mod error;
 pub mod io_mem;
 pub mod logger;
@@ -87,6 +88,8 @@ unsafe fn init() {
     mm::page::allocator::init();
     mm::kspace::init_kernel_page_table(mm::init_page_meta());
     mm::dma::init();
+
+    device::dispatcher::init();
 
     arch::init_on_bsp();
 
