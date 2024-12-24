@@ -43,11 +43,7 @@ use spin::Once;
 
 use crate::{
     arch,
-    mm::{
-        frame::{self, Segment},
-        kspace::KernelMeta,
-        paddr_to_vaddr, PAGE_SIZE,
-    },
+    mm::{frame::Segment, kspace::KernelMeta, paddr_to_vaddr, FrameAllocOptions, PAGE_SIZE},
 };
 
 // These symbols are provided by the linker script.
@@ -99,7 +95,10 @@ pub unsafe fn init_on_bsp() {
     for _ in 1..num_cpus {
         let ap_pages = {
             let nbytes = (bsp_end_va - bsp_base_va).align_up(PAGE_SIZE);
-            frame::allocator::alloc_contiguous(nbytes, |_| KernelMeta::default()).unwrap()
+            FrameAllocOptions::new()
+                .zeroed(false)
+                .alloc_segment_with(nbytes / PAGE_SIZE, |_| KernelMeta)
+                .unwrap()
         };
         let ap_pages_ptr = paddr_to_vaddr(ap_pages.start_paddr()) as *mut u8;
 

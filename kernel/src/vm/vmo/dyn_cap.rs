@@ -3,14 +3,14 @@
 use core::ops::Range;
 
 use aster_rights::{Rights, TRights};
-use ostd::mm::{UntypedFrame, VmIo};
+use ostd::mm::{DynUFrame, VmIo};
 
 use super::{CommitFlags, Vmo, VmoRightsOp};
 use crate::prelude::*;
 
 impl Vmo<Rights> {
     /// Commits a page at specific offset
-    pub fn commit_page(&self, offset: usize) -> Result<UntypedFrame> {
+    pub fn commit_page(&self, offset: usize) -> Result<DynUFrame> {
         self.check_rights(Rights::WRITE)?;
         self.0.commit_page(offset)
     }
@@ -39,7 +39,7 @@ impl Vmo<Rights> {
     /// perform other operations.
     pub(in crate::vm) fn operate_on_range<F>(&self, range: &Range<usize>, operate: F) -> Result<()>
     where
-        F: FnMut(&mut dyn FnMut() -> Result<UntypedFrame>) -> Result<()>,
+        F: FnMut(&mut dyn FnMut() -> Result<DynUFrame>) -> Result<()>,
     {
         self.check_rights(Rights::WRITE)?;
         self.0
@@ -112,7 +112,7 @@ impl Vmo<Rights> {
     /// # Access rights
     ///
     /// The method requires the Write right.
-    pub fn replace(&self, page: UntypedFrame, page_idx: usize) -> Result<()> {
+    pub fn replace(&self, page: DynUFrame, page_idx: usize) -> Result<()> {
         self.check_rights(Rights::WRITE)?;
         self.0.replace(page, page_idx)
     }

@@ -7,11 +7,11 @@
 //! The core virtual memory (VM) access APIs provided by this module are [`VmReader`] and
 //! [`VmWriter`], which allow for writing to or reading from a region of memory _safely_.
 //! `VmReader` and `VmWriter` objects can be constructed from memory regions of either typed memory
-//! (e.g., `&[u8]`) or untyped memory (e.g, [`UntypedFrame`]). Behind the scene, `VmReader` and `VmWriter`
+//! (e.g., `&[u8]`) or untyped memory (e.g, [`DynUFrame`]). Behind the scene, `VmReader` and `VmWriter`
 //! must be constructed via their [`from_user_space`] and [`from_kernel_space`] methods, whose
 //! safety depends on whether the given memory regions are _valid_ or not.
 //!
-//! [`UntypedFrame`]: crate::mm::UntypedFrame
+//! [`DynUFrame`]: crate::mm::DynUFrame
 //! [`from_user_space`]: `VmReader::from_user_space`
 //! [`from_kernel_space`]: `VmReader::from_kernel_space`
 //!
@@ -58,7 +58,7 @@ use crate::{
 };
 
 /// A trait that enables reading/writing data from/to a VM object,
-/// e.g., [`UntypedSegment`], [`Vec<UntypedFrame>`] and [`UntypedFrame`].
+/// e.g., [`DynUSegment`], [`Vec<DynUFrame>`] and [`DynUFrame`].
 ///
 /// # Concurrency
 ///
@@ -67,8 +67,8 @@ use crate::{
 /// desire predictability or atomicity, the users should add extra mechanism
 /// for such properties.
 ///
-/// [`UntypedSegment`]: crate::mm::UntypedSegment
-/// [`UntypedFrame`]: crate::mm::UntypedFrame
+/// [`DynUSegment`]: crate::mm::DynUSegment
+/// [`DynUFrame`]: crate::mm::DynUFrame
 pub trait VmIo: Send + Sync {
     /// Reads requested data at a specified offset into a given `VmWriter`.
     ///

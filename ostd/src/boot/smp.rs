@@ -10,11 +10,7 @@ use spin::Once;
 use crate::{
     arch::boot::smp::{bringup_all_aps, get_num_processors},
     cpu,
-    mm::{
-        frame::{self, Segment},
-        kspace::KernelMeta,
-        paddr_to_vaddr, PAGE_SIZE,
-    },
+    mm::{frame::Segment, kspace::KernelMeta, paddr_to_vaddr, FrameAllocOptions, PAGE_SIZE},
     task::Task,
 };
 
@@ -62,14 +58,17 @@ pub fn boot_all_aps() {
     AP_BOOT_INFO.call_once(|| {
         let mut per_ap_info = BTreeMap::new();
         // Use two pages to place stack pointers of all APs, thus support up to 1024 APs.
-        let boot_stack_array =
-            frame::allocator::alloc_contiguous(2 * PAGE_SIZE, |_| KernelMeta::default()).unwrap();
+        let boot_stack_array = FrameAllocOptions::new()
+            .zeroed(false)
+            .alloc_segment_with(2, |_| KernelMeta)
+            .unwrap();
         assert!(num_cpus < 1024);
 
         for ap in 1..num_cpus {
-            let boot_stack_pages =
-                frame::allocator::alloc_contiguous(AP_BOOT_STACK_SIZE, |_| KernelMeta::default())
-                    .unwrap();
+            let boot_stack_pages = FrameAllocOptions::new()
+                .zeroed(false)
+                .alloc_segment_with(AP_BOOT_STACK_SIZE / PAGE_SIZE, |_| KernelMeta)
+                .unwrap();
             let boot_stack_ptr = paddr_to_vaddr(boot_stack_pages.end_paddr());
             let stack_array_ptr = paddr_to_vaddr(boot_stack_array.start_paddr()) as *mut u64;
             // SAFETY: The `stack_array_ptr` is valid and aligned.

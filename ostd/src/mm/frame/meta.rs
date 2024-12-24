@@ -60,7 +60,7 @@ use crate::{
 
 /// The maximum number of bytes of the metadata of a page.
 pub const PAGE_METADATA_MAX_SIZE: usize =
-    META_SLOT_SIZE - size_of::<AtomicU32>() - size_of::<FrameMetaVtablePtr>();
+    META_SLOT_SIZE - size_of::<bool>() - size_of::<AtomicU32>() - size_of::<FrameMetaVtablePtr>();
 /// The maximum alignment in bytes of the metadata of a page.
 pub const PAGE_METADATA_MAX_ALIGN: usize = align_of::<MetaSlot>();
 
@@ -77,19 +77,24 @@ pub(in crate::mm) struct MetaSlot {
     ///    at most `PAGE_METADATA_ALIGN` bytes of alignment;
     ///  - the subsequent fields can utilize the padding of the
     ///    reference count to save space.
-    storage: UnsafeCell<[u8; PAGE_METADATA_MAX_SIZE]>,
+    ///
+    /// Don't access this field by a reference to the slot.
+    _storage: UnsafeCell<[u8; PAGE_METADATA_MAX_SIZE]>,
     /// The reference count of the page.
     ///
     /// Specifically, the reference count has the following meaning:
-    ///  * `REF_COUNT_UNUSED`: The page is not in use.
-    ///  * `0`: The page is being constructed ([`Page::from_unused`])
+    ///  - `REF_COUNT_UNUSED`: The page is not in use.
+    ///  - `0`: The page is being constructed ([`Frame::from_unused`])
     ///    or destructured ([`drop_last_in_place`]).
-    ///  * `1..REF_COUNT_MAX`: The page is in use.
-    ///  * `REF_COUNT_MAX..REF_COUNT_UNUSED`: Illegal values to
+    ///  - `1..REF_COUNT_MAX`: The page is in use.
+    ///  - `REF_COUNT_MAX..REF_COUNT_UNUSED`: Illegal values to
     ///    prevent the reference count from overflowing. Otherwise,
     ///    overflowing the reference count will cause soundness issue.
     ///
     /// [`Frame::from_unused`]: super::Frame::from_unused
+    //
+    // Other than this field the fields should be `MaybeUninit`.
+    // See initialization in `alloc_meta_pages`.
     pub(super) ref_count: AtomicU32,
     /// The virtual table that indicates the type of the metadata.
     pub(super) vtable_ptr: UnsafeCell<MaybeUninit<FrameMetaVtablePtr>>,
@@ -122,6 +127,16 @@ pub unsafe trait FrameMeta: Any + Send + Sync + Debug + 'static {
     /// Called when the last handle to the page is dropped.
     fn on_drop(&mut self, reader: &mut VmReader<Infallible>) {
         let _ = reader;
+    }
+
+    /// Whether the metadata's associated frame is untyped.
+    ///
+    /// If a type implements [`UFrameMeta`], this should be `true`.
+    /// Otherwise, it should be `false`.
+    ///
+    /// [`UFrameMeta`]: super::untyped::UFrameMeta
+    fn is_untyped(&self) -> bool {
+        false
     }
 }
 
@@ -202,7 +217,7 @@ pub(super) unsafe fn drop_last_in_place(ptr: *mut MetaSlot) {
         core::ptr::drop_in_place(meta_ptr);
     }
 
-    // `Release` pairs with the `Acquire` in `Page::from_unused` and ensures `drop_in_place` won't
+    // `Release` pairs with the `Acquire` in `Frame::from_unused` and ensures `drop_in_place` won't
     // be reordered after this memory store.
     slot.ref_count.store(REF_COUNT_UNUSED, Ordering::Release);
 
@@ -280,20 +295,15 @@ fn alloc_meta_pages(num_pages: usize) -> (usize, Paddr) {
         * PAGE_SIZE;
 
     let slots = paddr_to_vaddr(start_paddr) as *mut MetaSlot;
-    for i in 0..num_pages {
-        // SAFETY: The memory is successfully allocated with `num_pages` slots so the index must be
-        // within the range.
-        let slot = unsafe { slots.add(i) };
 
-        // SAFETY: The memory is just allocated so we have exclusive access and it's valid for
-        // writing.
-        unsafe {
-            slot.write(MetaSlot {
-                storage: UnsafeCell::new([0; PAGE_METADATA_MAX_SIZE]),
-                ref_count: AtomicU32::new(REF_COUNT_UNUSED),
-                vtable_ptr: UnsafeCell::new(MaybeUninit::uninit()),
-            });
-        }
+    // Fill the metadata pages with a byte pattern of `REF_COUNT_UNUSED`.
+    debug_assert_eq!(REF_COUNT_UNUSED.to_ne_bytes(), [0xff, 0xff, 0xff, 0xff]);
+    // SAFETY: `slots` and the length is a valid region for the metadata pages
+    // that are going to be treated as metadata slots. The byte pattern is
+    // valid as the initial value of the reference count (other fields are
+    // either not accessed or `MaybeUninit`).
+    unsafe {
+        core::ptr::write_bytes(slots as *mut u8, 0xff, num_pages * size_of::<MetaSlot>());
     }
 
     (num_meta_pages, start_paddr)

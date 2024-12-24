@@ -16,12 +16,11 @@
 
 pub mod allocator;
 pub mod meta;
-mod segment;
+pub mod segment;
 pub mod untyped;
 
 use core::{
     marker::PhantomData,
-    mem::ManuallyDrop,
     sync::atomic::{AtomicU32, AtomicUsize, Ordering},
 };
 
@@ -29,20 +28,27 @@ use meta::{
     mapping, FrameMeta, MetaSlot, PAGE_METADATA_MAX_ALIGN, PAGE_METADATA_MAX_SIZE, REF_COUNT_UNUSED,
 };
 pub use segment::Segment;
-use untyped::UntypedMeta;
+use untyped::{DynUFrame, UFrameMeta};
 
-use super::{PagingLevel, UntypedFrame, PAGE_SIZE};
+use super::{PagingLevel, PAGE_SIZE};
 use crate::mm::{Paddr, PagingConsts, Vaddr};
 
 static MAX_PADDR: AtomicUsize = AtomicUsize::new(0);
 
-/// A page with a statically-known usage, whose metadata is represented by `M`.
+/// A physical memory frame with a statically-known usage, whose metadata is represented by `M`.
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct Frame<M: FrameMeta + ?Sized> {
     pub(super) ptr: *const MetaSlot,
     pub(super) _marker: PhantomData<M>,
 }
+
+/// A physical memory frame with a dynamically-known usage.
+///
+/// The usage of this frame will not be changed while this object is alive. But the
+/// usage is not known at compile time. An [`DynFrame`] as a parameter accepts any
+/// type of frames.
+pub type DynFrame = Frame<dyn FrameMeta>;
 
 unsafe impl<M: FrameMeta + ?Sized> Send for Frame<M> {}
 
@@ -79,7 +85,8 @@ impl<M: FrameMeta> Frame<M> {
             .compare_exchange(REF_COUNT_UNUSED, 0, Ordering::Acquire, Ordering::Relaxed)
             .expect("Frame already in use when trying to get a new handle");
 
-        // SAFETY: We have exclusive access to the page metadata.
+        // SAFETY: We have exclusive access to the page metadata. These fields are mutably
+        // borrowed only once.
         let vtable_ptr = unsafe { &mut *slot.vtable_ptr.get() };
         vtable_ptr.write(core::ptr::metadata(&metadata as &dyn FrameMeta));
 
@@ -114,7 +121,7 @@ impl<M: FrameMeta> Frame<M> {
 
 impl<M: FrameMeta + ?Sized> Frame<M> {
     /// Get the physical address.
-    pub fn paddr(&self) -> Paddr {
+    pub fn start_paddr(&self) -> Paddr {
         mapping::meta_to_page::<PagingConsts>(self.ptr as Vaddr)
     }
 
@@ -183,7 +190,7 @@ impl<M: FrameMeta + ?Sized> Frame<M> {
     /// data structures need to hold the page handle such as the page table.
     #[allow(unused)]
     pub(in crate::mm) fn into_raw(self) -> Paddr {
-        let paddr = self.paddr();
+        let paddr = self.start_paddr();
         core::mem::forget(self);
         paddr
     }
@@ -256,12 +263,8 @@ impl<M: FrameMeta> TryFrom<Frame<dyn FrameMeta>> for Frame<M> {
     /// return the dynamic page itself as is.
     fn try_from(dyn_frame: Frame<dyn FrameMeta>) -> Result<Self, Self::Error> {
         if (dyn_frame.dyn_meta() as &dyn core::any::Any).is::<M>() {
-            let result = Frame {
-                ptr: dyn_frame.ptr,
-                _marker: PhantomData,
-            };
-            let _ = ManuallyDrop::new(dyn_frame);
-            Ok(result)
+            // SAFETY: The metadata is coerceable and the struct is transmutable.
+            Ok(unsafe { core::mem::transmute::<Frame<dyn FrameMeta>, Frame<M>>(dyn_frame) })
         } else {
             Err(dyn_frame)
         }
@@ -270,18 +273,46 @@ impl<M: FrameMeta> TryFrom<Frame<dyn FrameMeta>> for Frame<M> {
 
 impl<M: FrameMeta> From<Frame<M>> for Frame<dyn FrameMeta> {
     fn from(frame: Frame<M>) -> Self {
-        let result = Self {
-            ptr: frame.ptr,
-            _marker: PhantomData,
-        };
-        let _ = ManuallyDrop::new(frame);
-        result
+        // SAFETY: The metadata is coerceable and the struct is transmutable.
+        unsafe { core::mem::transmute(frame) }
     }
 }
 
-impl From<UntypedFrame> for Frame<dyn FrameMeta> {
-    fn from(frame: UntypedFrame) -> Self {
-        Frame::<UntypedMeta>::from(frame).into()
+impl<M: UFrameMeta> From<Frame<M>> for DynUFrame {
+    fn from(frame: Frame<M>) -> Self {
+        // SAFETY: The metadata is coerceable and the struct is transmutable.
+        unsafe { core::mem::transmute(frame) }
+    }
+}
+
+impl<M: UFrameMeta> From<&Frame<M>> for &DynUFrame {
+    fn from(frame: &Frame<M>) -> Self {
+        // SAFETY: The metadata is coerceable and the struct is transmutable.
+        unsafe { core::mem::transmute(frame) }
+    }
+}
+
+impl From<DynUFrame> for Frame<dyn FrameMeta> {
+    fn from(frame: DynUFrame) -> Self {
+        // SAFETY: The metadata is coerceable and the struct is transmutable.
+        unsafe { core::mem::transmute(frame) }
+    }
+}
+
+impl TryFrom<Frame<dyn FrameMeta>> for DynUFrame {
+    type Error = Frame<dyn FrameMeta>;
+
+    /// Try converting a [`Frame<dyn FrameMeta>`] into [`DynUFrame`].
+    ///
+    /// If the usage of the page is not the same as the expected usage, it will
+    /// return the dynamic page itself as is.
+    fn try_from(dyn_frame: Frame<dyn FrameMeta>) -> Result<Self, Self::Error> {
+        if dyn_frame.dyn_meta().is_untyped() {
+            // SAFETY: The metadata is coerceable and the struct is transmutable.
+            Ok(unsafe { core::mem::transmute::<Frame<dyn FrameMeta>, DynUFrame>(dyn_frame) })
+        } else {
+            Err(dyn_frame)
+        }
     }
 }
 

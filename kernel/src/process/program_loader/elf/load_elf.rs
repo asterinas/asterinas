@@ -306,7 +306,7 @@ fn map_segment_vmo(
             new_frame
         };
         let head_idx = segment_offset / PAGE_SIZE;
-        segment_vmo.replace(new_frame, head_idx)?;
+        segment_vmo.replace(new_frame.into(), head_idx)?;
     }
 
     // Tail padding.
@@ -324,7 +324,7 @@ fn map_segment_vmo(
         };
 
         let tail_idx = (segment_offset + tail_padding_offset) / PAGE_SIZE;
-        segment_vmo.replace(new_frame, tail_idx).unwrap();
+        segment_vmo.replace(new_frame.into(), tail_idx).unwrap();
     }
 
     let perms = parse_segment_perm(program_header.flags);

@@ -40,8 +40,9 @@ use super::{nr_subpage_per_huge, PageTableEntryTrait};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     mm::{
-        frame::{self, inc_page_ref_count, meta::FrameMeta, Frame},
-        paddr_to_vaddr, Infallible, Paddr, PagingConstsTrait, PagingLevel, VmReader, PAGE_SIZE,
+        frame::{inc_page_ref_count, meta::FrameMeta, Frame},
+        paddr_to_vaddr, FrameAllocOptions, Infallible, Paddr, PagingConstsTrait, PagingLevel,
+        VmReader,
     },
 };
 
@@ -260,13 +261,11 @@ where
     /// extra unnecessary expensive operation.
     pub(super) fn alloc(level: PagingLevel, is_tracked: MapTrackingStatus) -> Self {
         let meta = PageTablePageMeta::new_locked(level, is_tracked);
-        let page = frame::allocator::alloc_single::<PageTablePageMeta<E, C>>(meta).unwrap();
-
-        // Zero out the page table node.
-        let ptr = paddr_to_vaddr(page.paddr()) as *mut u8;
-        // SAFETY: The page is exclusively owned here. Pointers are valid also.
-        // We rely on the fact that 0 represents an absent entry to speed up `memset`.
-        unsafe { core::ptr::write_bytes(ptr, 0, PAGE_SIZE) };
+        let page = FrameAllocOptions::new()
+            .zeroed(true)
+            .alloc_frame_with(meta)
+            .expect("Failed to allocate a page table node");
+        // The allocated frame is zeroed. Make sure zero is absent PTE.
         debug_assert!(E::new_absent().as_bytes().iter().all(|&b| b == 0));
 
         Self { page }
@@ -281,7 +280,7 @@ where
 
         // SAFETY: The provided physical address is valid and the level is
         // correct. The reference count is not changed.
-        unsafe { RawPageTableNode::from_raw_parts(this.page.paddr(), this.page.meta().level) }
+        unsafe { RawPageTableNode::from_raw_parts(this.page.start_paddr(), this.page.meta().level) }
     }
 
     /// Gets a raw handle while still preserving the original handle.
@@ -290,7 +289,7 @@ where
 
         // SAFETY: The provided physical address is valid and the level is
         // correct. The reference count is increased by one.
-        unsafe { RawPageTableNode::from_raw_parts(page.paddr(), page.meta().level) }
+        unsafe { RawPageTableNode::from_raw_parts(page.start_paddr(), page.meta().level) }
     }
 
     /// Gets the number of valid PTEs in the node.
@@ -310,7 +309,7 @@ where
     /// The caller must ensure that the index is within the bound.
     unsafe fn read_pte(&self, idx: usize) -> E {
         debug_assert!(idx < nr_subpage_per_huge::<C>());
-        let ptr = paddr_to_vaddr(self.page.paddr()) as *const E;
+        let ptr = paddr_to_vaddr(self.page.start_paddr()) as *const E;
         // SAFETY: The index is within the bound and the PTE is plain-old-data.
         unsafe { ptr.add(idx).read() }
     }
@@ -330,7 +329,7 @@ where
     ///     (see [`Child::is_compatible`]).
     unsafe fn write_pte(&mut self, idx: usize, pte: E) {
         debug_assert!(idx < nr_subpage_per_huge::<C>());
-        let ptr = paddr_to_vaddr(self.page.paddr()) as *mut E;
+        let ptr = paddr_to_vaddr(self.page.start_paddr()) as *mut E;
         // SAFETY: The index is within the bound and the PTE is plain-old-data.
         unsafe { ptr.add(idx).write(pte) }
     }

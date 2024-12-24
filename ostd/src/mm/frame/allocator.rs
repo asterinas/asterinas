@@ -13,9 +13,134 @@ use spin::Once;
 use super::{meta::FrameMeta, segment::Segment, Frame};
 use crate::{
     boot::memory_region::MemoryRegionType,
-    mm::{Paddr, PAGE_SIZE},
+    error::Error,
+    mm::{paddr_to_vaddr, Paddr, PAGE_SIZE},
+    prelude::*,
     sync::SpinLock,
 };
+
+/// Options for allocating physical memory frames.
+pub struct FrameAllocOptions {
+    zeroed: bool,
+}
+
+impl Default for FrameAllocOptions {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FrameAllocOptions {
+    /// Creates new options for allocating the specified number of frames.
+    pub fn new() -> Self {
+        Self { zeroed: true }
+    }
+
+    /// Sets whether the allocated frames should be initialized with zeros.
+    ///
+    /// If `zeroed` is `true`, the allocated frames are filled with zeros.
+    /// If not, the allocated frames will contain sensitive data and the caller
+    /// should clear them before sharing them with other components.
+    ///
+    /// By default, the frames are zero-initialized.
+    pub fn zeroed(&mut self, zeroed: bool) -> &mut Self {
+        self.zeroed = zeroed;
+        self
+    }
+
+    /// Allocates a single untyped frame without metadata.
+    pub fn alloc_frame(&self) -> Result<Frame<()>> {
+        self.alloc_frame_with(())
+    }
+
+    /// Allocates a single frame with additional metadata.
+    pub fn alloc_frame_with<M: FrameMeta>(&self, metadata: M) -> Result<Frame<M>> {
+        let frame = PAGE_ALLOCATOR
+            .get()
+            .unwrap()
+            .disable_irq()
+            .lock()
+            .alloc(1)
+            .map(|idx| {
+                let paddr = idx * PAGE_SIZE;
+                Frame::from_unused(paddr, metadata)
+            })
+            .ok_or(Error::NoMemory)?;
+
+        if self.zeroed {
+            let addr = paddr_to_vaddr(frame.start_paddr()) as *mut u8;
+            // SAFETY: The newly allocated frame is guaranteed to be valid.
+            unsafe { core::ptr::write_bytes(addr, 0, PAGE_SIZE) }
+        }
+
+        Ok(frame)
+    }
+
+    /// Allocates a contiguous range of untyped frames without metadata.
+    pub fn alloc_segment(&self, nframes: usize) -> Result<Segment<()>> {
+        self.alloc_segment_with(nframes, |_| ())
+    }
+
+    /// Allocates a contiguous range of frames with additional metadata.
+    ///
+    /// The returned [`Segment`] contains at least one frame. The method returns
+    /// an error if the number of frames is zero.
+    pub fn alloc_segment_with<M: FrameMeta, F>(
+        &self,
+        nframes: usize,
+        metadata_fn: F,
+    ) -> Result<Segment<M>>
+    where
+        F: FnMut(Paddr) -> M,
+    {
+        if nframes == 0 {
+            return Err(Error::InvalidArgs);
+        }
+        let segment = PAGE_ALLOCATOR
+            .get()
+            .unwrap()
+            .disable_irq()
+            .lock()
+            .alloc(nframes)
+            .map(|start| {
+                Segment::from_unused(
+                    start * PAGE_SIZE..start * PAGE_SIZE + nframes * PAGE_SIZE,
+                    metadata_fn,
+                )
+            })
+            .ok_or(Error::NoMemory)?;
+
+        if self.zeroed {
+            let addr = paddr_to_vaddr(segment.start_paddr()) as *mut u8;
+            // SAFETY: The newly allocated segment is guaranteed to be valid.
+            unsafe { core::ptr::write_bytes(addr, 0, nframes * PAGE_SIZE) }
+        }
+
+        Ok(segment)
+    }
+}
+
+#[cfg(ktest)]
+#[ktest]
+fn test_alloc_dealloc() {
+    // Here we allocate and deallocate frames in random orders to test the allocator.
+    // We expect the test to fail if the underlying implementation panics.
+    let single_options = FrameAllocOptions::new();
+    let mut contiguous_options = FrameAllocOptions::new();
+    contiguous_options.zeroed(false);
+    let mut remember_vec = Vec::new();
+    for _ in 0..10 {
+        for i in 0..10 {
+            let single_frame = single_options.alloc_frame().unwrap();
+            if i % 3 == 0 {
+                remember_vec.push(single_frame);
+            }
+        }
+        let contiguous_segment = contiguous_options.alloc_segment(10).unwrap();
+        drop(contiguous_segment);
+        remember_vec.pop();
+    }
+}
 
 /// FrameAllocator with a counter for allocated memory
 pub(in crate::mm) struct CountingFrameAllocator {
@@ -58,45 +183,6 @@ impl CountingFrameAllocator {
 }
 
 pub(in crate::mm) static PAGE_ALLOCATOR: Once<SpinLock<CountingFrameAllocator>> = Once::new();
-
-/// Allocate a single page.
-///
-/// The metadata of the page is initialized with the given metadata.
-pub(crate) fn alloc_single<M: FrameMeta>(metadata: M) -> Option<Frame<M>> {
-    PAGE_ALLOCATOR
-        .get()
-        .unwrap()
-        .disable_irq()
-        .lock()
-        .alloc(1)
-        .map(|idx| {
-            let paddr = idx * PAGE_SIZE;
-            Frame::from_unused(paddr, metadata)
-        })
-}
-
-/// Allocate a contiguous range of pages of a given length in bytes.
-///
-/// The caller must provide a closure to initialize metadata for all the pages.
-/// The closure receives the physical address of the page and returns the
-/// metadata, which is similar to [`core::array::from_fn`].
-///
-/// # Panics
-///
-/// The function panics if the length is not base-page-aligned.
-pub(crate) fn alloc_contiguous<M: FrameMeta, F>(len: usize, metadata_fn: F) -> Option<Segment<M>>
-where
-    F: FnMut(Paddr) -> M,
-{
-    assert!(len % PAGE_SIZE == 0);
-    PAGE_ALLOCATOR
-        .get()
-        .unwrap()
-        .disable_irq()
-        .lock()
-        .alloc(len / PAGE_SIZE)
-        .map(|start| Segment::from_unused(start * PAGE_SIZE..start * PAGE_SIZE + len, metadata_fn))
-}
 
 pub(crate) fn init() {
     let regions = crate::boot::memory_regions();

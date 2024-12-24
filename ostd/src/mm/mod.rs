@@ -24,7 +24,12 @@ use core::{fmt::Debug, ops::Range};
 
 pub use self::{
     dma::{Daddr, DmaCoherent, DmaDirection, DmaStream, DmaStreamSlice, HasDaddr},
-    frame::untyped::{options::FrameAllocOptions, UntypedFrame, UntypedSegment},
+    frame::{
+        allocator::FrameAllocOptions,
+        segment::{DynSegment, DynUSegment, Segment},
+        untyped::{DynUFrame, UFrameMeta, UntypedMem},
+        DynFrame, Frame,
+    },
     io::{
         Fallible, FallibleVmRead, FallibleVmWrite, Infallible, PodOnce, VmIo, VmIoOnce, VmReader,
         VmWriter,

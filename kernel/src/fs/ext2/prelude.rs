@@ -13,7 +13,7 @@ pub(super) use aster_block::{
 };
 pub(super) use aster_rights::Full;
 pub(super) use ostd::{
-    mm::{FrameAllocOptions, UntypedFrame, UntypedSegment, VmIo},
+    mm::{DynUFrame, DynUSegment, Frame, FrameAllocOptions, Segment, VmIo},
     sync::{RwMutex, RwMutexReadGuard, RwMutexWriteGuard},
 };
 pub(super) use static_assertions::const_assert;
