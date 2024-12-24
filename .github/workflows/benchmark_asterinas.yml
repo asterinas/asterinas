@@ -88,6 +88,10 @@ jobs:
           # SQLite benchmarks
           - sqlite/ext2_benchmarks
           - sqlite/ramfs_benchmarks
+          # Memcached benchmarks
+          - memcached/8_t_128_conc_10k_window
+          - memcached/8_t_128_conc_20k_window
+          - memcached/16_t_512_conc_10k_window
       fail-fast: false
     timeout-minutes: 60
     container: 
