@@ -24,7 +24,7 @@ OSTD_TASK_STACK_SIZE_IN_PAGES ?= 64
 GDB_TCP_PORT ?= 1234
 GDB_PROFILE_FORMAT ?= flame-graph
 GDB_PROFILE_COUNT ?= 200
-GDB_PROFILE_INTERVAL ?= 0.1
+GDB_PROFILE_INTERVAL ?= 0.2
 # End of GDB options.
 
 # The Makefile provides a way to run arbitrary tests in the kernel
