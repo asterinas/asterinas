@@ -6,7 +6,13 @@ pub mod vm_image;
 
 use bin::AsterBin;
 use file::{BundleFile, Initramfs};
-use std::process;
+use std::{
+    io::{BufRead, BufReader, Write},
+    os::unix::net::UnixStream,
+    process,
+    time::Duration,
+};
+use tempfile::NamedTempFile;
 use vm_image::{AsterVmImage, AsterVmImageType};
 
 use std::{
@@ -247,6 +253,12 @@ impl Bundle {
             }
         };
 
+        let qemu_socket = NamedTempFile::new().unwrap().into_temp_path();
+        qemu_cmd.arg("-monitor").arg(format!(
+            "unix:{},server,nowait",
+            qemu_socket.to_string_lossy()
+        ));
+
         match shlex::split(&action.qemu.args) {
             Some(v) => {
                 for arg in v {
@@ -260,18 +272,39 @@ impl Bundle {
         }
 
         info!("Running QEMU: {:#?}", qemu_cmd);
+        let mut child = qemu_cmd.spawn().unwrap();
+        std::thread::sleep(Duration::from_secs(1)); // Wait for QEMU to start
+        let mut stream = UnixStream::connect(qemu_socket).unwrap();
 
-        let exit_status = qemu_cmd.status().unwrap();
+        // Check VM status every 0.1 seconds and break the loop if the VM is stopped.
+        while stream.write_all(b"info status\n").is_ok() {
+            let status = BufReader::new(&stream)
+                .lines()
+                .find(|line| line.as_ref().is_ok_and(|s| s.starts_with("VM status:")));
+            if status.is_none_or(|status| status.unwrap() == "VM status: paused (shutdown)") {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        info!("VM is stopped");
 
         // Find the QEMU output in "qemu.log", read it and check if it failed with a panic.
         // Setting a QEMU log is required for source line stack trace because piping the output
         // is less desirable when running QEMU with serial redirected to standard I/O.
         let qemu_log_path = config.work_dir.join("qemu.log");
-        if let Ok(file) = std::fs::File::open(qemu_log_path) {
+        if let Ok(file) = std::fs::File::open(&qemu_log_path) {
             if let Some(aster_bin) = &self.manifest.aster_bin {
                 crate::util::trace_panic_from_log(file, self.path.join(aster_bin.path()));
             }
         }
+
+        // Find the coverage data information in "qemu.log", and dump it if found.
+        if let Ok(file) = std::fs::File::open(&qemu_log_path) {
+            crate::util::dump_coverage_from_qemu(file, &mut stream);
+        }
+
+        let _ = stream.write_all(b"quit\n");
+        let exit_status = child.wait().unwrap();
 
         // FIXME: When panicking it sometimes returns success, why?
         if !exit_status.success() {

@@ -4,6 +4,7 @@ use std::{
     ffi::OsStr,
     fs::{self, File},
     io::{BufRead, BufReader, Result, Write},
+    os::unix::net::UnixStream,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -250,6 +251,30 @@ pub fn trace_panic_from_log(qemu_log: File, bin_path: PathBuf) {
     }
     addr2line_proc.kill().unwrap();
     addr2line_proc.wait().unwrap();
+}
+
+/// Dump the coverage data from QEMU if the coverage information is found in the log.
+pub fn dump_coverage_from_qemu(qemu_log: File, monitor_socket: &mut UnixStream) {
+    const COVERAGE_SIGNATRUE: &str = "#### Coverage: ";
+    let reader = rev_buf_reader::RevBufReader::new(qemu_log);
+
+    let Some(line) = reader
+        .lines()
+        .find(|l| l.as_ref().unwrap().starts_with(COVERAGE_SIGNATRUE))
+        .map(|l| l.unwrap())
+    else {
+        return;
+    };
+
+    let line = line.strip_prefix(COVERAGE_SIGNATRUE).unwrap();
+    let (addr, size) = line.split_once(' ').unwrap();
+    let addr = usize::from_str_radix(addr.strip_prefix("0x").unwrap(), 16).unwrap();
+    let size: usize = size.parse().unwrap();
+
+    let cmd = format!("memsave 0x{addr:x} {size} coverage.profraw\n");
+    if monitor_socket.write_all(cmd.as_bytes()).is_ok() {
+        info!("Coverage data saved to coverage.profraw");
+    }
 }
 
 /// A guard that ensures the current working directory is restored
