@@ -16,8 +16,8 @@ use core::mem::ManuallyDrop;
 pub use segment::UntypedSegment;
 
 use super::{
-    meta::{impl_frame_meta_for, MetaSlot},
-    AnyFrame, Frame,
+    meta::{impl_frame_meta_for, FrameMeta, MetaSlot},
+    Frame,
 };
 use crate::{
     mm::{
@@ -100,14 +100,14 @@ impl From<Frame<UntypedMeta>> for UntypedFrame {
     }
 }
 
-impl TryFrom<AnyFrame> for UntypedFrame {
-    type Error = AnyFrame;
+impl TryFrom<Frame<dyn FrameMeta>> for UntypedFrame {
+    type Error = Frame<dyn FrameMeta>;
 
-    /// Try converting a [`AnyFrame`] into the statically-typed [`UntypedFrame`].
+    /// Try converting a [`Frame<dyn FrameMeta>`] into the statically-typed [`UntypedFrame`].
     ///
     /// If the dynamic page is not used as an untyped page frame, it will
     /// return the dynamic page itself as is.
-    fn try_from(page: AnyFrame) -> core::result::Result<Self, Self::Error> {
+    fn try_from(page: Frame<dyn FrameMeta>) -> core::result::Result<Self, Self::Error> {
         page.try_into().map(|p: Frame<UntypedMeta>| p.into())
     }
 }

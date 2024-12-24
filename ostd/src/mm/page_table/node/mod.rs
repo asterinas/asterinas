@@ -40,7 +40,7 @@ use super::{nr_subpage_per_huge, PageTableEntryTrait};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     mm::{
-        frame::{self, inc_page_ref_count, meta::FrameMeta, AnyFrame, Frame},
+        frame::{self, inc_page_ref_count, meta::FrameMeta, Frame},
         paddr_to_vaddr, Paddr, PagingConstsTrait, PagingLevel, PAGE_SIZE,
     },
 };
@@ -442,7 +442,7 @@ where
                 } else if is_tracked == MapTrackingStatus::Tracked {
                     // SAFETY: The PTE points to a tracked page. The ownership
                     // of the child is transferred to the child then dropped.
-                    drop(unsafe { AnyFrame::from_raw(paddr) });
+                    drop(unsafe { Frame::<dyn FrameMeta>::from_raw(paddr) });
                 }
             }
         }
