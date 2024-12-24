@@ -18,7 +18,7 @@ use super::{
 };
 use crate::{
     fs::utils::{Extension, FallocMode, InodeMode, Metadata},
-    process::{Gid, Uid},
+    process::{posix_thread::AsPosixThread, Gid, Uid},
 };
 
 /// Max length of file name.
@@ -2075,11 +2075,12 @@ impl TryFrom<RawInode> for InodeDesc {
 impl InodeDesc {
     pub fn new(type_: InodeType, perm: FilePerm) -> Dirty<Self> {
         let now = now();
+        let credentials = current_thread!().as_posix_thread().unwrap().credentials();
         Dirty::new_dirty(Self {
             type_,
             perm,
-            uid: 0,
-            gid: 0,
+            uid: credentials.fsuid().into(),
+            gid: credentials.fsgid().into(),
             size: 0,
             atime: now,
             ctime: now,
