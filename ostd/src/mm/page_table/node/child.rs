@@ -8,7 +8,7 @@ use super::{MapTrackingStatus, PageTableEntryTrait, RawPageTableNode};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     mm::{
-        frame::{inc_page_ref_count, AnyFrame},
+        frame::{inc_page_ref_count, meta::FrameMeta, Frame},
         page_prop::PageProperty,
         Paddr, PagingConstsTrait, PagingLevel,
     },
@@ -27,7 +27,7 @@ pub(in crate::mm) enum Child<
     [(); C::NR_LEVELS as usize]:,
 {
     PageTable(RawPageTableNode<E, C>),
-    Frame(AnyFrame, PageProperty),
+    Frame(Frame<dyn FrameMeta>, PageProperty),
     /// Pages not tracked by handles.
     Untracked(Paddr, PagingLevel, PageProperty),
     None,
@@ -119,7 +119,7 @@ where
         match is_tracked {
             MapTrackingStatus::Tracked => {
                 // SAFETY: The physical address points to a valid page.
-                let page = unsafe { AnyFrame::from_raw(paddr) };
+                let page = unsafe { Frame::<dyn FrameMeta>::from_raw(paddr) };
                 Child::Frame(page, pte.prop())
             }
             MapTrackingStatus::Untracked => Child::Untracked(paddr, level, pte.prop()),
@@ -162,7 +162,7 @@ where
                 // the reference to the page.
                 unsafe { inc_page_ref_count(paddr) };
                 // SAFETY: The physical address points to a valid page.
-                let page = unsafe { AnyFrame::from_raw(paddr) };
+                let page = unsafe { Frame::<dyn FrameMeta>::from_raw(paddr) };
                 Child::Frame(page, pte.prop())
             }
             MapTrackingStatus::Untracked => Child::Untracked(paddr, level, pte.prop()),
