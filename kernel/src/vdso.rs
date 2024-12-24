@@ -21,7 +21,7 @@ use aster_rights::Rights;
 use aster_time::{read_monotonic_time, Instant};
 use aster_util::coeff::Coeff;
 use ostd::{
-    mm::{UntypedFrame, VmIo, PAGE_SIZE},
+    mm::{DynUFrame, VmIo, PAGE_SIZE},
     sync::SpinLock,
     Pod,
 };
@@ -199,9 +199,9 @@ struct Vdso {
     data: SpinLock<VdsoData>,
     /// The VMO of the entire VDSO, including the library text and the VDSO data.
     vmo: Arc<Vmo>,
-    /// The `UntypedFrame` that contains the VDSO data. This frame is contained in and
+    /// The `DynUFrame` that contains the VDSO data. This frame is contained in and
     /// will not be removed from the VDSO VMO.
-    data_frame: UntypedFrame,
+    data_frame: DynUFrame,
 }
 
 /// A `SpinLock` for the `seq` field in `VdsoData`.

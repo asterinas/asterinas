@@ -3,10 +3,9 @@
 use crate::{
     impl_frame_meta_for,
     mm::{
-        frame::allocator,
         kspace::kvirt_area::{KVirtArea, Tracked},
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
-        PAGE_SIZE,
+        FrameAllocOptions, PAGE_SIZE,
     },
     prelude::*,
 };
@@ -36,7 +35,7 @@ pub struct KernelStack {
 }
 
 #[derive(Debug, Default)]
-struct KernelStackMeta {}
+struct KernelStackMeta;
 
 impl_frame_meta_for!(KernelStackMeta);
 
@@ -47,8 +46,9 @@ impl KernelStack {
         let mut new_kvirt_area = KVirtArea::<Tracked>::new(KERNEL_STACK_SIZE + 4 * PAGE_SIZE);
         let mapped_start = new_kvirt_area.range().start + 2 * PAGE_SIZE;
         let mapped_end = mapped_start + KERNEL_STACK_SIZE;
-        let pages =
-            allocator::alloc_contiguous(KERNEL_STACK_SIZE, |_| KernelStackMeta::default()).unwrap();
+        let pages = FrameAllocOptions::new()
+            .zeroed(false)
+            .alloc_segment_with(KERNEL_STACK_SIZE / PAGE_SIZE, |_| KernelStackMeta)?;
         let prop = PageProperty {
             flags: PageFlags::RW,
             cache: CachePolicy::Writeback,

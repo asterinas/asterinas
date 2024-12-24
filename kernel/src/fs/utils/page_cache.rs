@@ -8,7 +8,7 @@ use align_ext::AlignExt;
 use aster_block::bio::{BioStatus, BioWaiter};
 use aster_rights::Full;
 use lru::LruCache;
-use ostd::mm::{FrameAllocOptions, UntypedFrame, VmIo};
+use ostd::mm::{DynUFrame, Frame, FrameAllocOptions, VmIo};
 
 use crate::{
     prelude::*,
@@ -305,7 +305,7 @@ impl ReadaheadState {
         };
         for async_idx in window.readahead_range() {
             let mut async_page = Page::alloc()?;
-            let pg_waiter = backend.read_page_async(async_idx, async_page.frame())?;
+            let pg_waiter = backend.read_page_async(async_idx, async_page.frame().into())?;
             if pg_waiter.nreqs() > 0 {
                 self.waiter.concat(pg_waiter);
             } else {
@@ -361,7 +361,7 @@ impl PageCacheManager {
         for idx in page_idx_range.start..page_idx_range.end {
             if let Some(page) = pages.peek(&idx) {
                 if *page.state() == PageState::Dirty && idx < backend_npages {
-                    let waiter = backend.write_page_async(idx, page.frame())?;
+                    let waiter = backend.write_page_async(idx, page.frame().into())?;
                     bio_waiter.concat(waiter);
                 }
             }
@@ -381,7 +381,7 @@ impl PageCacheManager {
         Ok(())
     }
 
-    fn ondemand_readahead(&self, idx: usize) -> Result<UntypedFrame> {
+    fn ondemand_readahead(&self, idx: usize) -> Result<DynUFrame> {
         let mut pages = self.pages.lock();
         let mut ra_state = self.ra_state.lock();
         let backend = self.backend();
@@ -410,7 +410,7 @@ impl PageCacheManager {
             // Conducts the sync read operation.
             let page = if idx < backend.npages() {
                 let mut page = Page::alloc()?;
-                backend.read_page(idx, page.frame())?;
+                backend.read_page(idx, page.frame().into())?;
                 page.set_state(PageState::UpToDate);
                 page
             } else {
@@ -425,7 +425,7 @@ impl PageCacheManager {
             ra_state.conduct_readahead(&mut pages, backend)?;
         }
         ra_state.set_prev_page(idx);
-        Ok(frame)
+        Ok(frame.into())
     }
 }
 
@@ -438,7 +438,7 @@ impl Debug for PageCacheManager {
 }
 
 impl Pager for PageCacheManager {
-    fn commit_page(&self, idx: usize) -> Result<UntypedFrame> {
+    fn commit_page(&self, idx: usize) -> Result<DynUFrame> {
         self.ondemand_readahead(idx)
     }
 
@@ -461,7 +461,7 @@ impl Pager for PageCacheManager {
                     return Ok(());
                 };
                 if idx < backend.npages() {
-                    backend.write_page(idx, page.frame())?;
+                    backend.write_page(idx, page.frame().into())?;
                 }
             }
         }
@@ -469,25 +469,31 @@ impl Pager for PageCacheManager {
         Ok(())
     }
 
-    fn commit_overwrite(&self, idx: usize) -> Result<UntypedFrame> {
+    fn commit_overwrite(&self, idx: usize) -> Result<DynUFrame> {
         if let Some(page) = self.pages.lock().get(&idx) {
-            return Ok(page.frame.clone());
+            return Ok(page.frame.clone().into());
         }
 
         let page = Page::alloc_zero()?;
-        Ok(self.pages.lock().get_or_insert(idx, || page).frame.clone())
+        Ok(self
+            .pages
+            .lock()
+            .get_or_insert(idx, || page)
+            .frame
+            .clone()
+            .into())
     }
 }
 
 #[derive(Debug)]
 struct Page {
-    frame: UntypedFrame,
+    frame: Frame<()>,
     state: PageState,
 }
 
 impl Page {
     pub fn alloc() -> Result<Self> {
-        let frame = FrameAllocOptions::new(1).uninit(true).alloc_single()?;
+        let frame = FrameAllocOptions::new().zeroed(false).alloc_frame()?;
         Ok(Self {
             frame,
             state: PageState::Uninit,
@@ -495,14 +501,14 @@ impl Page {
     }
 
     pub fn alloc_zero() -> Result<Self> {
-        let frame = FrameAllocOptions::new(1).alloc_single()?;
+        let frame = FrameAllocOptions::new().alloc_frame()?;
         Ok(Self {
             frame,
             state: PageState::Dirty,
         })
     }
 
-    pub fn frame(&self) -> &UntypedFrame {
+    pub fn frame(&self) -> &Frame<()> {
         &self.frame
     }
 
@@ -531,16 +537,16 @@ enum PageState {
 /// This trait represents the backend for the page cache.
 pub trait PageCacheBackend: Sync + Send {
     /// Reads a page from the backend asynchronously.
-    fn read_page_async(&self, idx: usize, frame: &UntypedFrame) -> Result<BioWaiter>;
+    fn read_page_async(&self, idx: usize, frame: &DynUFrame) -> Result<BioWaiter>;
     /// Writes a page to the backend asynchronously.
-    fn write_page_async(&self, idx: usize, frame: &UntypedFrame) -> Result<BioWaiter>;
+    fn write_page_async(&self, idx: usize, frame: &DynUFrame) -> Result<BioWaiter>;
     /// Returns the number of pages in the backend.
     fn npages(&self) -> usize;
 }
 
 impl dyn PageCacheBackend {
     /// Reads a page from the backend synchronously.
-    fn read_page(&self, idx: usize, frame: &UntypedFrame) -> Result<()> {
+    fn read_page(&self, idx: usize, frame: &DynUFrame) -> Result<()> {
         let waiter = self.read_page_async(idx, frame)?;
         match waiter.wait() {
             Some(BioStatus::Complete) => Ok(()),
@@ -548,7 +554,7 @@ impl dyn PageCacheBackend {
         }
     }
     /// Writes a page to the backend synchronously.
-    fn write_page(&self, idx: usize, frame: &UntypedFrame) -> Result<()> {
+    fn write_page(&self, idx: usize, frame: &DynUFrame) -> Result<()> {
         let waiter = self.write_page_async(idx, frame)?;
         match waiter.wait() {
             Some(BioStatus::Complete) => Ok(()),

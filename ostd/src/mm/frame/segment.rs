@@ -2,11 +2,10 @@
 
 //! A contiguous range of pages.
 
-use alloc::vec::Vec;
 use core::{mem::ManuallyDrop, ops::Range};
 
 use super::{inc_page_ref_count, meta::FrameMeta, Frame};
-use crate::mm::{Paddr, PAGE_SIZE};
+use crate::mm::{Paddr, UFrameMeta, PAGE_SIZE};
 
 /// A contiguous range of homogeneous physical memory pages.
 ///
@@ -21,10 +20,29 @@ use crate::mm::{Paddr, PAGE_SIZE};
 /// All the metadata of the pages are homogeneous, i.e., they are of the same
 /// type.
 #[derive(Debug)]
+#[repr(transparent)]
 pub struct Segment<M: FrameMeta + ?Sized> {
     range: Range<Paddr>,
     _marker: core::marker::PhantomData<M>,
 }
+
+/// A contiguous range of homogeneous physical memory frames that have any metadata.
+///
+/// In other words, the metadata of the frames are of the same type but the type
+/// is not known at compile time. An [`DynSegment`] as a parameter accepts any
+/// type of segments.
+///
+/// The usage of this frame will not be changed while this object is alive.
+pub type DynSegment = Segment<dyn FrameMeta>;
+
+/// A contiguous range of homogeneous untyped physical memory pages that have any metadata.
+///
+/// In other words, the metadata of the frames are of the same type, and they
+/// are untyped, but the type of metadata is not known at compile time. An
+/// [`DynUSegment`] as a parameter accepts any untyped segments.
+///
+/// The usage of this frame will not be changed while this object is alive.
+pub type DynUSegment = Segment<dyn UFrameMeta>;
 
 impl<M: FrameMeta + ?Sized> Drop for Segment<M> {
     fn drop(&mut self) {
@@ -89,7 +107,7 @@ impl<M: FrameMeta + ?Sized> Segment<M> {
     }
 
     /// Gets the length in bytes of the contiguous pages.
-    pub fn nbytes(&self) -> usize {
+    pub fn size(&self) -> usize {
         self.range.end - self.range.start
     }
 
@@ -104,7 +122,7 @@ impl<M: FrameMeta + ?Sized> Segment<M> {
     /// not base-page-aligned.
     pub fn split(self, offset: usize) -> (Self, Self) {
         assert!(offset % PAGE_SIZE == 0);
-        assert!(0 < offset && offset < self.nbytes());
+        assert!(0 < offset && offset < self.size());
 
         let old = ManuallyDrop::new(self);
         let at = old.range.start + offset;
@@ -152,28 +170,12 @@ impl<M: FrameMeta + ?Sized> Segment<M> {
 
 impl<M: FrameMeta + ?Sized> From<Frame<M>> for Segment<M> {
     fn from(page: Frame<M>) -> Self {
-        let pa = page.paddr();
+        let pa = page.start_paddr();
         let _ = ManuallyDrop::new(page);
         Self {
             range: pa..pa + PAGE_SIZE,
             _marker: core::marker::PhantomData,
         }
-    }
-}
-
-impl<M: FrameMeta + ?Sized> From<Segment<M>> for Vec<Frame<M>> {
-    fn from(pages: Segment<M>) -> Self {
-        let vector = pages
-            .range
-            .clone()
-            .step_by(PAGE_SIZE)
-            .map(|i|
-            // SAFETY: for each page there would be a forgotten handle
-            // when creating the `Segment` object.
-            unsafe { Frame::<M>::from_raw(i) })
-            .collect();
-        let _ = ManuallyDrop::new(pages);
-        vector
     }
 }
 
@@ -192,5 +194,85 @@ impl<M: FrameMeta + ?Sized> Iterator for Segment<M> {
         } else {
             None
         }
+    }
+}
+
+impl<M: FrameMeta> From<Segment<M>> for DynSegment {
+    fn from(seg: Segment<M>) -> Self {
+        let seg = ManuallyDrop::new(seg);
+        Self {
+            range: seg.range.clone(),
+            _marker: core::marker::PhantomData,
+        }
+    }
+}
+
+impl<M: FrameMeta> TryFrom<DynSegment> for Segment<M> {
+    type Error = DynSegment;
+
+    fn try_from(seg: DynSegment) -> core::result::Result<Self, Self::Error> {
+        // SAFETY: for each page there would be a forgotten handle
+        // when creating the `Segment` object.
+        let first_frame = unsafe { Frame::<dyn FrameMeta>::from_raw(seg.range.start) };
+        let first_frame = ManuallyDrop::new(first_frame);
+        if !(first_frame.dyn_meta() as &dyn core::any::Any).is::<M>() {
+            return Err(seg);
+        }
+        // Since segments are homogeneous, we can safely assume that the rest
+        // of the frames are of the same type. We just debug-check here.
+        #[cfg(debug_assertions)]
+        {
+            for paddr in seg.range.clone().step_by(PAGE_SIZE) {
+                let frame = unsafe { Frame::<dyn FrameMeta>::from_raw(paddr) };
+                let frame = ManuallyDrop::new(frame);
+                debug_assert!((frame.dyn_meta() as &dyn core::any::Any).is::<M>());
+            }
+        }
+        // SAFETY: The metadata is coerceable and the struct is transmutable.
+        Ok(unsafe { core::mem::transmute::<DynSegment, Segment<M>>(seg) })
+    }
+}
+
+impl<M: UFrameMeta> From<Segment<M>> for DynUSegment {
+    fn from(seg: Segment<M>) -> Self {
+        // SAFETY: The metadata is coerceable and the struct is transmutable.
+        unsafe { core::mem::transmute(seg) }
+    }
+}
+
+impl<M: UFrameMeta> From<&Segment<M>> for &DynUSegment {
+    fn from(seg: &Segment<M>) -> Self {
+        // SAFETY: The metadata is coerceable and the struct is transmutable.
+        unsafe { core::mem::transmute(seg) }
+    }
+}
+
+impl TryFrom<DynSegment> for DynUSegment {
+    type Error = DynSegment;
+
+    /// Try converting a [`DynSegment`] into [`DynUSegment`].
+    ///
+    /// If the usage of the page is not the same as the expected usage, it will
+    /// return the dynamic page itself as is.
+    fn try_from(seg: DynSegment) -> core::result::Result<Self, Self::Error> {
+        // SAFETY: for each page there would be a forgotten handle
+        // when creating the `Segment` object.
+        let first_frame = unsafe { Frame::<dyn FrameMeta>::from_raw(seg.range.start) };
+        let first_frame = ManuallyDrop::new(first_frame);
+        if !first_frame.dyn_meta().is_untyped() {
+            return Err(seg);
+        }
+        // Since segments are homogeneous, we can safely assume that the rest
+        // of the frames are of the same type. We just debug-check here.
+        #[cfg(debug_assertions)]
+        {
+            for paddr in seg.range.clone().step_by(PAGE_SIZE) {
+                let frame = unsafe { Frame::<dyn FrameMeta>::from_raw(paddr) };
+                let frame = ManuallyDrop::new(frame);
+                debug_assert!(frame.dyn_meta().is_untyped());
+            }
+        }
+        // SAFETY: The metadata is coerceable and the struct is transmutable.
+        Ok(unsafe { core::mem::transmute::<DynSegment, DynUSegment>(seg) })
     }
 }

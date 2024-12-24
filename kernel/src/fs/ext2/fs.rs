@@ -23,7 +23,7 @@ pub struct Ext2 {
     blocks_per_group: Ext2Bid,
     inode_size: usize,
     block_size: usize,
-    group_descriptors_segment: UntypedSegment,
+    group_descriptors_segment: DynUSegment,
     self_ref: Weak<Self>,
 }
 
@@ -46,11 +46,11 @@ impl Ext2 {
             let npages = ((super_block.block_groups_count() as usize)
                 * core::mem::size_of::<RawGroupDescriptor>())
             .div_ceil(BLOCK_SIZE);
-            let segment = FrameAllocOptions::new(npages)
-                .uninit(true)
-                .alloc_contiguous()?;
+            let segment = FrameAllocOptions::new()
+                .zeroed(false)
+                .alloc_segment(npages)?;
             let bio_segment =
-                BioSegment::new_from_segment(segment.clone(), BioDirection::FromDevice);
+                BioSegment::new_from_segment(segment.clone().into(), BioDirection::FromDevice);
             match block_device.read_blocks(super_block.group_descriptors_bid(0), bio_segment)? {
                 BioStatus::Complete => (),
                 err_status => {
@@ -63,7 +63,7 @@ impl Ext2 {
         // Load the block groups information
         let load_block_groups = |fs: Weak<Ext2>,
                                  block_device: &dyn BlockDevice,
-                                 group_descriptors_segment: &UntypedSegment|
+                                 group_descriptors_segment: &DynUSegment|
          -> Result<Vec<BlockGroup>> {
             let block_groups_count = super_block.block_groups_count() as usize;
             let mut block_groups = Vec::with_capacity(block_groups_count);
@@ -88,12 +88,12 @@ impl Ext2 {
             block_groups: load_block_groups(
                 weak_ref.clone(),
                 block_device.as_ref(),
-                &group_descriptors_segment,
+                (&group_descriptors_segment).into(),
             )
             .unwrap(),
             block_device,
             super_block: RwMutex::new(Dirty::new(super_block)),
-            group_descriptors_segment,
+            group_descriptors_segment: group_descriptors_segment.into(),
             self_ref: weak_ref.clone(),
         });
         Ok(ext2)
