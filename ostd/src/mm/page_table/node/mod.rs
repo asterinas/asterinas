@@ -41,7 +41,7 @@ use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     mm::{
         frame::{self, inc_page_ref_count, meta::FrameMeta, Frame},
-        paddr_to_vaddr, Paddr, PagingConstsTrait, PagingLevel, PAGE_SIZE,
+        paddr_to_vaddr, Infallible, Paddr, PagingConstsTrait, PagingLevel, VmReader, PAGE_SIZE,
     },
 };
 
@@ -410,7 +410,7 @@ unsafe impl<E: PageTableEntryTrait, C: PagingConstsTrait> FrameMeta for PageTabl
 where
     [(); C::NR_LEVELS as usize]:,
 {
-    fn on_drop(&mut self, paddr: Paddr) {
+    fn on_drop(&mut self, reader: &mut VmReader<Infallible>) {
         let nr_children = self.nr_children.get_mut();
 
         if *nr_children == 0 {
@@ -421,14 +421,7 @@ where
         let is_tracked = self.is_tracked;
 
         // Drop the children.
-        for i in 0..nr_subpage_per_huge::<C>() {
-            // SAFETY: The index is within the bound and PTE is plain-old-data. The
-            // address is aligned as well. We also have an exclusive access ensured
-            // by reference counting.
-            let pte_ptr = unsafe { (paddr_to_vaddr(paddr) as *const E).add(i) };
-            // SAFETY: The pointer is valid and the PTE is plain-old-data.
-            let pte = unsafe { pte_ptr.read() };
-
+        while let Ok(pte) = reader.read_once::<E>() {
             // Here if we use directly `Child::from_pte` we would experience a
             // 50% increase in the overhead of the `drop` function. It seems that
             // Rust is very conservative about inlining and optimizing dead code
