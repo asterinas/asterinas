@@ -11,7 +11,10 @@ use core::fmt::Write;
 use log::debug;
 use spin::Once;
 
-use super::{device::serial::SerialPort, kernel::IO_APIC};
+use super::{
+    device::serial::SerialPort,
+    kernel::{self, IO_APIC},
+};
 use crate::{
     sync::SpinLock,
     trap::{IrqLine, TrapFrame},
@@ -63,15 +66,21 @@ pub(crate) fn init() {
 }
 
 pub(crate) fn callback_init() {
-    let mut irq = if !IO_APIC.is_completed() {
-        crate::arch::x86::kernel::pic::allocate_irq(4).unwrap()
+    let irq = if !IO_APIC.is_completed() {
+        let mut irq = crate::arch::x86::kernel::pic::allocate_irq(4).unwrap();
+        irq.on_active(|trapframe: &TrapFrame| {
+            handle_serial_input(trapframe);
+            kernel::pic::ack();
+        });
+        irq
     } else {
-        let irq = IrqLine::alloc().unwrap();
+        let mut irq = IrqLine::alloc().unwrap();
         let mut io_apic = IO_APIC.get().unwrap().first().unwrap().lock();
         io_apic.enable(4, irq.clone()).unwrap();
+        irq.on_active(handle_serial_input);
         irq
     };
-    irq.on_active(handle_serial_input);
+
     CONSOLE_IRQ_CALLBACK.call_once(|| SpinLock::new(irq));
 }
 
