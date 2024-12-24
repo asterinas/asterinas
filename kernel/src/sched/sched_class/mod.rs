@@ -49,7 +49,7 @@ pub struct ClassScheduler {
 /// scheduling classes in its corresponding CPU core. The current task of this CPU
 /// core is also stored in this structure.
 struct PerCpuClassRqSet {
-    stop: Arc<stop::StopClassRq>,
+    stop: stop::StopClassRq,
     real_time: real_time::RealTimeClassRq,
     fair: fair::FairClassRq,
     idle: idle::IdleClassRq,
@@ -249,10 +249,9 @@ impl Scheduler for ClassScheduler {
 
 impl ClassScheduler {
     pub fn new() -> Self {
-        let stop = stop::StopClassRq::new();
         let class_rq = |cpu| {
             SpinLock::new(PerCpuClassRqSet {
-                stop: stop.clone(),
+                stop: stop::StopClassRq::new(),
                 real_time: real_time::RealTimeClassRq::new(cpu),
                 fair: fair::FairClassRq::new(cpu),
                 idle: idle::IdleClassRq::new(),
