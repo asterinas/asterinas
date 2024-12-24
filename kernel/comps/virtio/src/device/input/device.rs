@@ -261,14 +261,14 @@ impl EventTable {
     fn new(num_events: usize) -> Self {
         assert!(num_events * mem::size_of::<VirtioInputEvent>() <= PAGE_SIZE);
 
-        let vm_segment = FrameAllocOptions::new(1).alloc_contiguous().unwrap();
+        let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
 
         let default_event = VirtioInputEvent::default();
         let iter = iter::repeat(&default_event).take(EVENT_SIZE);
-        let nr_written = vm_segment.write_vals(0, iter, 0).unwrap();
+        let nr_written = segment.write_vals(0, iter, 0).unwrap();
         assert_eq!(nr_written, EVENT_SIZE);
 
-        let stream = DmaStream::map(vm_segment, DmaDirection::FromDevice, false).unwrap();
+        let stream = DmaStream::map(segment.into(), DmaDirection::FromDevice, false).unwrap();
         Self { stream, num_events }
     }
 

@@ -36,11 +36,11 @@ pub fn main() {
 fn create_user_space(program: &[u8]) -> UserSpace {
     let nbytes = program.len().align_up(PAGE_SIZE);
     let user_pages = {
-        let segment = FrameAllocOptions::new(nbytes / PAGE_SIZE)
-            .alloc_contiguous()
+        let segment = FrameAllocOptions::new()
+            .alloc_segment(nbytes / PAGE_SIZE)
             .unwrap();
         // Physical memory pages can be only accessed
-        // via the `Frame` or `Segment` abstraction.
+        // via the `Frame<dyn UntypedMeta>` or `Segment<dyn UntypedMeta>` abstraction.
         segment.write_bytes(0, program).unwrap();
         segment
     };

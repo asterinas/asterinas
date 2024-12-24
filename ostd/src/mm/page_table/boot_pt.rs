@@ -16,7 +16,7 @@ use crate::{
     cpu::num_cpus,
     cpu_local_cell,
     mm::{
-        nr_subpage_per_huge, paddr_to_vaddr, page::allocator::PAGE_ALLOCATOR, Paddr, PageProperty,
+        frame::allocator::PAGE_ALLOCATOR, nr_subpage_per_huge, paddr_to_vaddr, Paddr, PageProperty,
         PagingConstsTrait, Vaddr, PAGE_SIZE,
     },
     sync::SpinLock,
@@ -250,7 +250,7 @@ fn test_boot_pt_map_protect() {
         mm::{CachePolicy, FrameAllocOptions, PageFlags},
     };
 
-    let root_frame = FrameAllocOptions::new(1).alloc_single().unwrap();
+    let root_frame = FrameAllocOptions::new().alloc_frame().unwrap();
     let root_paddr = root_frame.start_paddr();
 
     let mut boot_pt = BootPageTable::<PageTableEntry, PagingConsts> {

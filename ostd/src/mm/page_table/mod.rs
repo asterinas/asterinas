@@ -4,7 +4,7 @@ use core::{fmt::Debug, marker::PhantomData, ops::Range};
 
 use super::{
     nr_subpage_per_huge, page_prop::PageProperty, page_size, Paddr, PagingConstsTrait, PagingLevel,
-    Vaddr,
+    PodOnce, Vaddr,
 };
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
@@ -339,7 +339,7 @@ pub(super) unsafe fn page_walk<E: PageTableEntryTrait, C: PagingConstsTrait>(
 ///
 /// Note that a default PTE should be a PTE that points to nothing.
 pub trait PageTableEntryTrait:
-    Clone + Copy + Debug + Default + Pod + Sized + Send + Sync + 'static
+    Clone + Copy + Debug + Default + Pod + PodOnce + Sized + Send + Sync + 'static
 {
     /// Create a set of new invalid page table flags that indicates an absent page.
     ///
