@@ -52,7 +52,8 @@ use crate::{
     arch::mm::PagingConsts,
     mm::{
         kspace::LINEAR_MAPPING_BASE_VADDR, paddr_to_vaddr, page_size, page_table::boot_pt,
-        CachePolicy, Paddr, PageFlags, PageProperty, PrivilegedPageFlags, Vaddr, PAGE_SIZE,
+        CachePolicy, Infallible, Paddr, PageFlags, PageProperty, PrivilegedPageFlags, Vaddr,
+        VmReader, PAGE_SIZE,
     },
 };
 
@@ -99,9 +100,14 @@ const_assert_eq!(size_of::<MetaSlot>(), META_SLOT_SIZE);
 /// The implemented structure must have a size less than or equal to
 /// [`PAGE_METADATA_MAX_SIZE`] and an alignment less than or equal to
 /// [`PAGE_METADATA_MAX_ALIGN`].
+///
+/// The implementer of the `on_drop` method should ensure that the frame is
+/// safe to be read.
 pub unsafe trait FrameMeta: Any + Send + Sync + Debug + 'static {
     /// Called when the last handle to the page is dropped.
-    fn on_drop(&mut self, _paddr: Paddr) {}
+    fn on_drop(&mut self, reader: VmReader<Infallible>) {
+        let _ = reader;
+    }
 }
 
 /// Makes a structure usable as a page metadata.
@@ -111,14 +117,13 @@ pub unsafe trait FrameMeta: Any + Send + Sync + Debug + 'static {
 /// compile-time checks.
 #[macro_export]
 macro_rules! impl_frame_meta_for {
-    ($($t:ty),*) => {
-        $(
-            use static_assertions::const_assert;
-            const_assert!(size_of::<$t>() <= $crate::mm::frame::meta::PAGE_METADATA_MAX_SIZE);
-            const_assert!(align_of::<$t>() <= $crate::mm::frame::meta::PAGE_METADATA_MAX_ALIGN);
-            // SAFETY: The size and alignment of the structure are checked.
-            unsafe impl $crate::mm::frame::meta::FrameMeta for $t {}
-        )*
+    // Implement without specifying the drop behavior.
+    ($t:ty) => {
+        use static_assertions::const_assert;
+        const_assert!(size_of::<$t>() <= $crate::mm::frame::meta::PAGE_METADATA_MAX_SIZE);
+        const_assert!(align_of::<$t>() <= $crate::mm::frame::meta::PAGE_METADATA_MAX_ALIGN);
+        // SAFETY: The size and alignment of the structure are checked.
+        unsafe impl $crate::mm::frame::meta::FrameMeta for $t {}
     };
 }
 
@@ -140,7 +145,11 @@ pub(super) unsafe fn drop_last_in_place(ptr: *mut MetaSlot) {
     let meta_ptr: *mut dyn FrameMeta = core::ptr::from_raw_parts_mut(ptr, *(*ptr).vtable_ptr.get());
 
     // Let the custom dropper handle the drop.
-    (*meta_ptr).on_drop(paddr);
+    // SAFETY: The implementer of the frame metadata decides that if the frame
+    // is safe to be read or not.
+    let reader =
+        unsafe { VmReader::from_kernel_space(paddr_to_vaddr(paddr) as *const u8, PAGE_SIZE) };
+    (*meta_ptr).on_drop(reader);
 
     // Drop the metadata.
     core::ptr::drop_in_place(meta_ptr);
