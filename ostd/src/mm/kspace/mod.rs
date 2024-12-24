@@ -164,7 +164,7 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
     // Map the metadata pages.
     {
         let start_va = mapping::page_to_meta::<PagingConsts>(0);
-        let from = start_va..start_va + meta_pages.nbytes();
+        let from = start_va..start_va + meta_pages.size();
         let prop = PageProperty {
             flags: PageFlags::RW,
             cache: CachePolicy::Writeback,
@@ -214,7 +214,7 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
         };
         let mut cursor = kpt.cursor_mut(&from).unwrap();
         for frame_paddr in to.step_by(PAGE_SIZE) {
-            let page = Frame::<KernelMeta>::from_unused(frame_paddr, KernelMeta::default());
+            let page = Frame::<KernelMeta>::from_unused(frame_paddr, KernelMeta);
             // SAFETY: we are doing mappings for the kernel.
             unsafe {
                 let _old = cursor.map(page.into(), prop);
@@ -249,6 +249,6 @@ pub unsafe fn activate_kernel_page_table() {
 
 /// The metadata of pages that contains the kernel itself.
 #[derive(Debug, Default)]
-pub struct KernelMeta {}
+pub struct KernelMeta;
 
 impl_frame_meta_for!(KernelMeta);

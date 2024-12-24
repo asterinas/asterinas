@@ -2,11 +2,17 @@
 
 //! A contiguous range of pages.
 
-use alloc::vec::Vec;
 use core::{mem::ManuallyDrop, ops::Range};
 
-use super::{inc_page_ref_count, meta::FrameMeta, Frame};
-use crate::mm::{Paddr, PAGE_SIZE};
+use super::{
+    inc_page_ref_count,
+    meta::{self, FrameMeta},
+    Frame,
+};
+use crate::{
+    arch::mm::PagingConsts,
+    mm::{Paddr, UntypedMeta, PAGE_SIZE},
+};
 
 /// A contiguous range of homogeneous physical memory pages.
 ///
@@ -21,6 +27,7 @@ use crate::mm::{Paddr, PAGE_SIZE};
 /// All the metadata of the pages are homogeneous, i.e., they are of the same
 /// type.
 #[derive(Debug)]
+#[repr(transparent)]
 pub struct Segment<M: FrameMeta + ?Sized> {
     range: Range<Paddr>,
     _marker: core::marker::PhantomData<M>,
@@ -89,7 +96,7 @@ impl<M: FrameMeta + ?Sized> Segment<M> {
     }
 
     /// Gets the length in bytes of the contiguous pages.
-    pub fn nbytes(&self) -> usize {
+    pub fn size(&self) -> usize {
         self.range.end - self.range.start
     }
 
@@ -104,7 +111,7 @@ impl<M: FrameMeta + ?Sized> Segment<M> {
     /// not base-page-aligned.
     pub fn split(self, offset: usize) -> (Self, Self) {
         assert!(offset % PAGE_SIZE == 0);
-        assert!(0 < offset && offset < self.nbytes());
+        assert!(0 < offset && offset < self.size());
 
         let old = ManuallyDrop::new(self);
         let at = old.range.start + offset;
@@ -152,28 +159,12 @@ impl<M: FrameMeta + ?Sized> Segment<M> {
 
 impl<M: FrameMeta + ?Sized> From<Frame<M>> for Segment<M> {
     fn from(page: Frame<M>) -> Self {
-        let pa = page.paddr();
+        let pa = page.start_paddr();
         let _ = ManuallyDrop::new(page);
         Self {
             range: pa..pa + PAGE_SIZE,
             _marker: core::marker::PhantomData,
         }
-    }
-}
-
-impl<M: FrameMeta + ?Sized> From<Segment<M>> for Vec<Frame<M>> {
-    fn from(pages: Segment<M>) -> Self {
-        let vector = pages
-            .range
-            .clone()
-            .step_by(PAGE_SIZE)
-            .map(|i|
-            // SAFETY: for each page there would be a forgotten handle
-            // when creating the `Segment` object.
-            unsafe { Frame::<M>::from_raw(i) })
-            .collect();
-        let _ = ManuallyDrop::new(pages);
-        vector
     }
 }
 
@@ -192,5 +183,78 @@ impl<M: FrameMeta + ?Sized> Iterator for Segment<M> {
         } else {
             None
         }
+    }
+}
+
+impl<M: FrameMeta> From<Segment<M>> for Segment<dyn FrameMeta> {
+    fn from(seg: Segment<M>) -> Self {
+        let seg = ManuallyDrop::new(seg);
+        Self {
+            range: seg.range.clone(),
+            _marker: core::marker::PhantomData,
+        }
+    }
+}
+
+impl<M: FrameMeta> TryFrom<Segment<dyn FrameMeta>> for Segment<M> {
+    type Error = Segment<dyn FrameMeta>;
+
+    fn try_from(seg: Segment<dyn FrameMeta>) -> core::result::Result<Self, Self::Error> {
+        for paddr in seg.range.clone().step_by(PAGE_SIZE) {
+            // SAFETY: for each page there would be a forgotten handle
+            // when creating the `Segment` object.
+            let frame = unsafe { Frame::<dyn FrameMeta>::from_raw(paddr) };
+            let frame = ManuallyDrop::new(frame);
+            if !(frame.dyn_meta() as &dyn core::any::Any).is::<M>() {
+                return Err(seg);
+            }
+        }
+        let seg = ManuallyDrop::new(seg);
+        Ok(Self {
+            range: seg.range.clone(),
+            _marker: core::marker::PhantomData,
+        })
+    }
+}
+
+impl<M: UntypedMeta> From<Segment<M>> for Segment<dyn UntypedMeta> {
+    fn from(seg: Segment<M>) -> Self {
+        let seg = ManuallyDrop::new(seg);
+        Self {
+            range: seg.range.clone(),
+            _marker: core::marker::PhantomData,
+        }
+    }
+}
+
+impl<M: UntypedMeta> From<&Segment<M>> for &Segment<dyn UntypedMeta> {
+    fn from(seg: &Segment<M>) -> Self {
+        // SAFETY: The type is correct and the reference is valid.
+        unsafe { core::mem::transmute(seg) }
+    }
+}
+
+impl TryFrom<Segment<dyn FrameMeta>> for Segment<dyn UntypedMeta> {
+    type Error = Segment<dyn FrameMeta>;
+
+    /// Try converting a [`Segment<dyn FrameMeta>`] into [`Segment<dyn UntypedMeta>`].
+    ///
+    /// If the usage of the page is not the same as the expected usage, it will
+    /// return the dynamic page itself as is.
+    fn try_from(seg: Segment<dyn FrameMeta>) -> core::result::Result<Self, Self::Error> {
+        for paddr in seg.range.clone().step_by(PAGE_SIZE) {
+            let slot_ptr =
+                meta::mapping::page_to_meta::<PagingConsts>(paddr) as *mut meta::MetaSlot;
+            // SAFETY: The are no writers after initialization. So, it is safe to read.
+            let is_untyped = unsafe { *(*slot_ptr).is_untyped.get() };
+            if !is_untyped {
+                return Err(seg);
+            }
+        }
+        let seg = ManuallyDrop::new(seg);
+        Ok(Self {
+            range: seg.range.clone(),
+            _marker: core::marker::PhantomData,
+        })
     }
 }

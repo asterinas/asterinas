@@ -5,10 +5,9 @@ use core::mem::ManuallyDrop;
 use super::*;
 use crate::{
     mm::{
-        frame::{allocator, untyped::UntypedMeta},
         kspace::LINEAR_MAPPING_BASE_VADDR,
         page_prop::{CachePolicy, PageFlags},
-        MAX_USERSPACE_VADDR,
+        FrameAllocOptions, MAX_USERSPACE_VADDR,
     },
     prelude::*,
 };
@@ -31,8 +30,8 @@ fn test_tracked_map_unmap() {
     let pt = PageTable::<UserMode>::empty();
 
     let from = PAGE_SIZE..PAGE_SIZE * 2;
-    let page = allocator::alloc_single(UntypedMeta::default()).unwrap();
-    let start_paddr = page.paddr();
+    let page = FrameAllocOptions::new().alloc_frame().unwrap();
+    let start_paddr = page.start_paddr();
     let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
     unsafe { pt.cursor_mut(&from).unwrap().map(page.into(), prop) };
     assert_eq!(pt.query(from.start + 10).unwrap().0, start_paddr + 10);
@@ -87,8 +86,8 @@ fn test_user_copy_on_write() {
 
     let pt = PageTable::<UserMode>::empty();
     let from = PAGE_SIZE..PAGE_SIZE * 2;
-    let page = allocator::alloc_single(UntypedMeta::default()).unwrap();
-    let start_paddr = page.paddr();
+    let page = FrameAllocOptions::new().alloc_frame().unwrap();
+    let start_paddr = page.start_paddr();
     let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
     unsafe { pt.cursor_mut(&from).unwrap().map(page.clone().into(), prop) };
     assert_eq!(pt.query(from.start + 10).unwrap().0, start_paddr + 10);
@@ -172,7 +171,7 @@ fn test_base_protect_query() {
 
     let from_ppn = 1..1000;
     let from = PAGE_SIZE * from_ppn.start..PAGE_SIZE * from_ppn.end;
-    let to = allocator::alloc_contiguous(999 * PAGE_SIZE, |_| UntypedMeta::default()).unwrap();
+    let to = FrameAllocOptions::new().alloc_segment(999).unwrap();
     let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
     unsafe {
         let mut cursor = pt.cursor_mut(&from).unwrap();

@@ -34,10 +34,10 @@ impl TxBuffer {
         let dma_stream = if let Some(stream) = pool.lock().pop_front() {
             stream
         } else {
-            let segment = FrameAllocOptions::new(TX_BUFFER_LEN / PAGE_SIZE)
-                .alloc_contiguous()
+            let segment = FrameAllocOptions::new()
+                .alloc_segment(TX_BUFFER_LEN / PAGE_SIZE)
                 .unwrap();
-            DmaStream::map(segment, DmaDirection::ToDevice, false).unwrap()
+            DmaStream::map(segment.into(), DmaDirection::ToDevice, false).unwrap()
         };
 
         let tx_buffer = {

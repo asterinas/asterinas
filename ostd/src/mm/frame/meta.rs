@@ -59,7 +59,7 @@ use crate::{
 
 /// The maximum number of bytes of the metadata of a page.
 pub const PAGE_METADATA_MAX_SIZE: usize =
-    META_SLOT_SIZE - size_of::<AtomicU32>() - size_of::<PageMetaVtablePtr>();
+    META_SLOT_SIZE - size_of::<bool>() - size_of::<AtomicU32>() - size_of::<PageMetaVtablePtr>();
 /// The maximum alignment in bytes of the metadata of a page.
 pub const PAGE_METADATA_MAX_ALIGN: usize = align_of::<MetaSlot>();
 
@@ -77,6 +77,8 @@ pub(in crate::mm) struct MetaSlot {
     ///  - the subsequent fields can utilize the padding of the
     ///    reference count to save space.
     storage: UnsafeCell<[u8; PAGE_METADATA_MAX_SIZE]>,
+    /// Whether the page is untyped.
+    pub(super) is_untyped: UnsafeCell<bool>,
     /// The reference count of the page.
     pub(super) ref_count: AtomicU32,
     /// The virtual table that indicates the type of the metadata.

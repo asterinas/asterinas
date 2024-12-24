@@ -27,7 +27,7 @@ use core::{
 
 use meta::{mapping, FrameMeta, MetaSlot, PAGE_METADATA_MAX_ALIGN, PAGE_METADATA_MAX_SIZE};
 pub use segment::Segment;
-use untyped::{UntypedFrame, UntypedMeta};
+use untyped::UntypedMeta;
 
 use crate::mm::{Paddr, PagingConsts, PagingLevel, Vaddr, PAGE_SIZE};
 
@@ -79,6 +79,11 @@ impl<M: FrameMeta> Frame<M> {
         // SAFETY: The pointer is valid and we have the exclusive access.
         unsafe { vtable_ptr.write(core::ptr::metadata(&metadata as &dyn FrameMeta)) };
 
+        // SAFETY: The aligned pointer points to a initialized `MetaSlot`.
+        // We are the sole owner so this is writable.
+        let is_untyped = unsafe { &mut *(*ptr).is_untyped.get() };
+        *is_untyped = untyped::is_untyped::<M>();
+
         // Initialize the metadata
         // SAFETY: The pointer points to the first byte of the `MetaSlot`
         // structure, and layout ensured enough space for `M`. The original
@@ -100,7 +105,7 @@ impl<M: FrameMeta> Frame<M> {
 
 impl<M: FrameMeta + ?Sized> Frame<M> {
     /// Get the physical address.
-    pub fn paddr(&self) -> Paddr {
+    pub fn start_paddr(&self) -> Paddr {
         mapping::meta_to_page::<PagingConsts>(self.ptr as Vaddr)
     }
 
@@ -161,7 +166,7 @@ impl<M: FrameMeta + ?Sized> Frame<M> {
     /// data structures need to hold the page handle such as the page table.
     #[allow(unused)]
     pub(in crate::mm) fn into_raw(self) -> Paddr {
-        let paddr = self.paddr();
+        let paddr = self.start_paddr();
         core::mem::forget(self);
         paddr
     }
@@ -248,9 +253,55 @@ impl<M: FrameMeta> From<Frame<M>> for Frame<dyn FrameMeta> {
     }
 }
 
-impl From<UntypedFrame> for Frame<dyn FrameMeta> {
-    fn from(frame: UntypedFrame) -> Self {
-        Frame::<UntypedMeta>::from(frame).into()
+impl<M: FrameMeta> From<Frame<M>> for Frame<dyn UntypedMeta> {
+    fn from(frame: Frame<M>) -> Self {
+        let result = Self {
+            ptr: frame.ptr,
+            _marker: PhantomData,
+        };
+        let _ = ManuallyDrop::new(frame);
+        result
+    }
+}
+
+impl<M: FrameMeta> From<&Frame<M>> for &Frame<dyn UntypedMeta> {
+    fn from(frame: &Frame<M>) -> Self {
+        // SAFETY: The frame is transmutable and the type is correct.
+        unsafe { core::mem::transmute(frame) }
+    }
+}
+
+impl From<Frame<dyn UntypedMeta>> for Frame<dyn FrameMeta> {
+    fn from(frame: Frame<dyn UntypedMeta>) -> Self {
+        let result = Self {
+            ptr: frame.ptr,
+            _marker: PhantomData,
+        };
+        let _ = ManuallyDrop::new(frame);
+        result
+    }
+}
+
+impl TryFrom<Frame<dyn FrameMeta>> for Frame<dyn UntypedMeta> {
+    type Error = Frame<dyn FrameMeta>;
+
+    /// Try converting a [`Frame<dyn FrameMeta>`] into [`Frame<dyn UntypedMeta>`].
+    ///
+    /// If the usage of the page is not the same as the expected usage, it will
+    /// return the dynamic page itself as is.
+    fn try_from(dyn_frame: Frame<dyn FrameMeta>) -> Result<Self, Self::Error> {
+        // SAFETY: The are no writers after initialization. So, it is safe to read.
+        let is_untyped = unsafe { *(*dyn_frame.ptr).is_untyped.get() };
+        if is_untyped {
+            let result = Frame {
+                ptr: dyn_frame.ptr,
+                _marker: PhantomData,
+            };
+            let _ = ManuallyDrop::new(dyn_frame);
+            Ok(result)
+        } else {
+            Err(dyn_frame)
+        }
     }
 }
 

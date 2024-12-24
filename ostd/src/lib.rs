@@ -13,10 +13,10 @@
 #![feature(iter_from_coroutine)]
 #![feature(let_chains)]
 #![feature(linkage)]
-#![feature(min_specialization)]
 #![feature(negative_impls)]
 #![feature(ptr_metadata)]
 #![feature(ptr_sub_ptr)]
+#![feature(specialization)]
 #![feature(sync_unsafe_cell)]
 #![feature(trait_upcasting)]
 // The `generic_const_exprs` feature is incomplete however required for the page table

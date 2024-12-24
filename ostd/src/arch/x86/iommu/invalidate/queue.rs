@@ -3,12 +3,12 @@
 use core::mem::size_of;
 
 use crate::{
-    mm::{FrameAllocOptions, UntypedSegment, VmIo, PAGE_SIZE},
+    mm::{FrameAllocOptions, Segment, VmIo, PAGE_SIZE},
     prelude::Paddr,
 };
 
 pub struct Queue {
-    segment: UntypedSegment,
+    segment: Segment<()>,
     queue_size: usize,
     tail: usize,
 }
@@ -38,9 +38,8 @@ impl Queue {
 
     pub(super) fn new() -> Self {
         const DEFAULT_PAGES: usize = 1;
-        let segment = FrameAllocOptions::new(DEFAULT_PAGES)
-            .is_contiguous(true)
-            .alloc_contiguous()
+        let segment = FrameAllocOptions::new()
+            .alloc_segment(DEFAULT_PAGES)
             .unwrap();
         Self {
             segment,
