@@ -8,7 +8,7 @@ use core::{mem::ManuallyDrop, ops::Range};
 use super::{inc_page_ref_count, meta::FrameMeta, Frame};
 use crate::mm::{Paddr, PAGE_SIZE};
 
-/// A contiguous range of physical memory pages.
+/// A contiguous range of homogeneous physical memory pages.
 ///
 /// This is a handle to many contiguous pages. It will be more lightweight
 /// than owning an array of page handles.
@@ -17,13 +17,16 @@ use crate::mm::{Paddr, PAGE_SIZE};
 /// When constructing a `Segment`, the page handles are created then
 /// forgotten, leaving the reference count. When dropping a it, the page
 /// handles are restored and dropped, decrementing the reference count.
+///
+/// All the metadata of the pages are homogeneous, i.e., they are of the same
+/// type.
 #[derive(Debug)]
-pub struct Segment<M: FrameMeta> {
+pub struct Segment<M: FrameMeta + ?Sized> {
     range: Range<Paddr>,
     _marker: core::marker::PhantomData<M>,
 }
 
-impl<M: FrameMeta> Drop for Segment<M> {
+impl<M: FrameMeta + ?Sized> Drop for Segment<M> {
     fn drop(&mut self) {
         for paddr in self.range.clone().step_by(PAGE_SIZE) {
             // SAFETY: for each page there would be a forgotten handle
@@ -33,7 +36,7 @@ impl<M: FrameMeta> Drop for Segment<M> {
     }
 }
 
-impl<M: FrameMeta> Clone for Segment<M> {
+impl<M: FrameMeta + ?Sized> Clone for Segment<M> {
     fn clone(&self) -> Self {
         for paddr in self.range.clone().step_by(PAGE_SIZE) {
             // SAFETY: for each page there would be a forgotten handle
@@ -72,7 +75,9 @@ impl<M: FrameMeta> Segment<M> {
             _marker: core::marker::PhantomData,
         }
     }
+}
 
+impl<M: FrameMeta + ?Sized> Segment<M> {
     /// Gets the start physical address of the contiguous pages.
     pub fn start_paddr(&self) -> Paddr {
         self.range.start
@@ -145,7 +150,7 @@ impl<M: FrameMeta> Segment<M> {
     }
 }
 
-impl<M: FrameMeta> From<Frame<M>> for Segment<M> {
+impl<M: FrameMeta + ?Sized> From<Frame<M>> for Segment<M> {
     fn from(page: Frame<M>) -> Self {
         let pa = page.paddr();
         let _ = ManuallyDrop::new(page);
@@ -156,7 +161,7 @@ impl<M: FrameMeta> From<Frame<M>> for Segment<M> {
     }
 }
 
-impl<M: FrameMeta> From<Segment<M>> for Vec<Frame<M>> {
+impl<M: FrameMeta + ?Sized> From<Segment<M>> for Vec<Frame<M>> {
     fn from(pages: Segment<M>) -> Self {
         let vector = pages
             .range
@@ -172,7 +177,7 @@ impl<M: FrameMeta> From<Segment<M>> for Vec<Frame<M>> {
     }
 }
 
-impl<M: FrameMeta> Iterator for Segment<M> {
+impl<M: FrameMeta + ?Sized> Iterator for Segment<M> {
     type Item = Frame<M>;
 
     fn next(&mut self) -> Option<Self::Item> {
