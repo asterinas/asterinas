@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{boxed::Box, collections::btree_set::BTreeSet, sync::Arc, vec::Vec};
+use alloc::{boxed::Box, collections::btree_map::BTreeMap, sync::Arc, vec::Vec};
 use core::{
-    borrow::Borrow,
     ops::{Deref, DerefMut},
     sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
 };
 
-use keyable_arc::KeyableArc;
 use ostd::sync::{LocalIrqDisabled, SpinLock, SpinLockGuard};
 use smoltcp::{
     iface::Context,
@@ -15,7 +13,7 @@ use smoltcp::{
     time::{Duration, Instant},
     wire::{IpEndpoint, IpRepr, TcpControl, TcpRepr, UdpRepr},
 };
-use spin::Once;
+use spin::once::Once;
 use takeable::Takeable;
 
 use super::{
@@ -27,38 +25,17 @@ use super::{
 use crate::{
     ext::Ext,
     iface::{BindPortConfig, BoundPort, Iface},
+    inet_hashtable::{ConnectionKey, ListenerKey, SocketHash, UdpSocketKey},
 };
 
-pub struct Socket<T: Inner<E>, E: Ext>(Takeable<KeyableArc<SocketBg<T, E>>>);
-
-impl<T: Inner<E>, E: Ext> PartialEq for Socket<T, E> {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.eq(&other.0)
-    }
-}
-impl<T: Inner<E>, E: Ext> Eq for Socket<T, E> {}
-impl<T: Inner<E>, E: Ext> PartialOrd for Socket<T, E> {
-    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-impl<T: Inner<E>, E: Ext> Ord for Socket<T, E> {
-    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
-        self.0.cmp(&other.0)
-    }
-}
-impl<T: Inner<E>, E: Ext> Borrow<KeyableArc<SocketBg<T, E>>> for Socket<T, E> {
-    fn borrow(&self) -> &KeyableArc<SocketBg<T, E>> {
-        self.0.as_ref()
-    }
-}
+pub struct Socket<T: Inner<E>, E: Ext>(Takeable<Arc<SocketBg<T, E>>>);
 
 /// [`TcpConnectionInner`] or [`UdpSocketInner`].
 pub trait Inner<E: Ext> {
     type Observer: SocketEventObserver;
 
     /// Called by [`Socket::drop`].
-    fn on_drop(this: &KeyableArc<SocketBg<Self, E>>)
+    fn on_drop(this: &Arc<SocketBg<Self, E>>)
     where
         E: Ext,
         Self: Sized;
@@ -85,6 +62,8 @@ pub struct SocketBg<T: Inner<E>, E: Ext> {
 pub struct TcpConnectionInner<E: Ext> {
     socket: SpinLock<RawTcpSocketExt<E>, LocalIrqDisabled>,
     is_dead: AtomicBool,
+    connection_key: ConnectionKey,
+    connection_hash: SocketHash,
 }
 
 struct RawTcpSocketExt<E: Ext> {
@@ -108,13 +87,13 @@ impl<E: Ext> DerefMut for RawTcpSocketExt<E> {
 }
 
 impl<E: Ext> RawTcpSocketExt<E> {
-    fn on_new_state(&mut self, this: &KeyableArc<TcpConnectionBg<E>>) -> SocketEvents {
+    fn on_new_state(&mut self, this: &Arc<TcpConnectionBg<E>>) -> SocketEvents {
         if self.may_send() && !self.has_connected {
             self.has_connected = true;
 
             if let Some(ref listener) = self.listener {
-                let mut backlog = listener.inner.lock();
-                if let Some(value) = backlog.connecting.take(this) {
+                let mut backlog = listener.inner.backlog.lock();
+                if let Some(value) = backlog.connecting.remove(&this.connection_key()) {
                     backlog.connected.push(value);
                 }
                 listener.add_events(SocketEvents::CAN_RECV);
@@ -139,7 +118,7 @@ impl<E: Ext> RawTcpSocketExt<E> {
     /// This method must be called after handling network events. However, it is not necessary to
     /// call this method after handling non-closing user events, because the socket can never be
     /// dead if it is not closed.
-    fn update_dead(&self, this: &KeyableArc<TcpConnectionBg<E>>) {
+    fn update_dead(&self, this: &Arc<TcpConnectionBg<E>>) {
         if self.state() == smoltcp::socket::tcp::State::Closed {
             this.inner.is_dead.store(true, Ordering::Relaxed);
         }
@@ -150,9 +129,9 @@ impl<E: Ext> RawTcpSocketExt<E> {
             this.inner.is_dead.store(true, Ordering::Relaxed);
 
             if let Some(ref listener) = self.listener {
-                let mut backlog = listener.inner.lock();
+                let mut backlog = listener.inner.backlog.lock();
                 // This may fail due to race conditions, but it's fine.
-                let _ = backlog.connecting.remove(this);
+                let _ = backlog.connecting.remove(&this.inner.connection_key);
             }
         }
     }
@@ -160,6 +139,15 @@ impl<E: Ext> RawTcpSocketExt<E> {
 
 impl<E: Ext> TcpConnectionInner<E> {
     fn new(socket: Box<RawTcpSocket>, listener: Option<Arc<TcpListenerBg<E>>>) -> Self {
+        let connection_key = {
+            // Since the socket is connected, the following unwrap can never fail
+            let local_endpoint = socket.local_endpoint().unwrap();
+            let remote_endpoint = socket.remote_endpoint().unwrap();
+            ConnectionKey::from((local_endpoint, remote_endpoint))
+        };
+
+        let connection_hash = connection_key.calc_hash();
+
         let socket_ext = RawTcpSocketExt {
             socket,
             listener,
@@ -169,6 +157,8 @@ impl<E: Ext> TcpConnectionInner<E> {
         TcpConnectionInner {
             socket: SpinLock::new(socket_ext),
             is_dead: AtomicBool::new(false),
+            connection_key,
+            connection_hash,
         }
     }
 
@@ -197,7 +187,7 @@ impl<E: Ext> TcpConnectionInner<E> {
 impl<E: Ext> Inner<E> for TcpConnectionInner<E> {
     type Observer = E::TcpEventObserver;
 
-    fn on_drop(this: &KeyableArc<SocketBg<Self, E>>) {
+    fn on_drop(this: &Arc<SocketBg<Self, E>>) {
         let mut socket = this.inner.lock();
 
         // FIXME: Send RSTs when there is unread data.
@@ -213,21 +203,42 @@ impl<E: Ext> Inner<E> for TcpConnectionInner<E> {
 pub struct TcpBacklog<E: Ext> {
     socket: Box<RawTcpSocket>,
     max_conn: usize,
-    connecting: BTreeSet<TcpConnection<E>>,
+    connecting: BTreeMap<ConnectionKey, TcpConnection<E>>,
     connected: Vec<TcpConnection<E>>,
 }
 
-pub type TcpListenerInner<E> = SpinLock<TcpBacklog<E>, LocalIrqDisabled>;
+pub struct TcpListenerInner<E: Ext> {
+    backlog: SpinLock<TcpBacklog<E>, LocalIrqDisabled>,
+    listener_key: ListenerKey,
+    listener_hash: SocketHash,
+}
+
+impl<E: Ext> TcpListenerInner<E> {
+    fn new(backlog: TcpBacklog<E>) -> Self {
+        let listener_key = {
+            let listen_endpoint = backlog.socket.listen_endpoint();
+            ListenerKey::from(listen_endpoint)
+        };
+
+        let listener_hash = listener_key.calc_hash();
+
+        Self {
+            backlog: SpinLock::new(backlog),
+            listener_key,
+            listener_hash,
+        }
+    }
+}
 
 impl<E: Ext> Inner<E> for TcpListenerInner<E> {
     type Observer = E::TcpEventObserver;
 
-    fn on_drop(this: &KeyableArc<SocketBg<Self, E>>) {
+    fn on_drop(this: &Arc<SocketBg<Self, E>>) {
         // A TCP listener can be removed immediately.
         this.bound.iface().common().remove_tcp_listener(this);
 
         let (connecting, connected) = {
-            let mut socket = this.inner.lock();
+            let mut socket = this.inner.backlog.lock();
             (
                 core::mem::take(&mut socket.connecting),
                 core::mem::take(&mut socket.connected),
@@ -244,16 +255,42 @@ impl<E: Ext> Inner<E> for TcpListenerInner<E> {
 }
 
 /// States needed by [`UdpSocketBg`] but not [`TcpConnectionBg`].
-type UdpSocketInner = SpinLock<Box<RawUdpSocket>, LocalIrqDisabled>;
+pub struct UdpSocketInner {
+    socket: SpinLock<Box<RawUdpSocket>, LocalIrqDisabled>,
+    udp_socket_key: UdpSocketKey,
+    udp_socket_hash: SocketHash,
+}
+
+impl UdpSocketInner {
+    fn new(raw_socket: Box<RawUdpSocket>) -> Self {
+        let udp_socket_key = UdpSocketKey::from(raw_socket.endpoint());
+        let udp_socket_hash = udp_socket_key.calc_hash();
+        Self {
+            socket: SpinLock::new(raw_socket),
+            udp_socket_key,
+            udp_socket_hash,
+        }
+    }
+}
 
 impl<E: Ext> Inner<E> for UdpSocketInner {
     type Observer = E::UdpEventObserver;
 
-    fn on_drop(this: &KeyableArc<SocketBg<Self, E>>) {
-        this.inner.lock().close();
+    fn on_drop(this: &Arc<SocketBg<Self, E>>) {
+        this.inner.socket.lock().close();
 
         // A UDP socket can be removed immediately.
         this.bound.iface().common().remove_udp_socket(this);
+    }
+}
+
+impl<E: Ext> UdpSocketBg<E> {
+    pub(crate) fn udp_socket_key(&self) -> UdpSocketKey {
+        self.inner.udp_socket_key
+    }
+
+    pub(crate) fn udp_socket_hash(&self) -> SocketHash {
+        self.inner.udp_socket_hash
     }
 }
 
@@ -271,7 +308,7 @@ pub(crate) type UdpSocketBg<E> = SocketBg<UdpSocketInner, E>;
 
 impl<T: Inner<E>, E: Ext> Socket<T, E> {
     pub(crate) fn new(bound: BoundPort<E>, inner: T) -> Self {
-        Self(Takeable::new(KeyableArc::new(SocketBg {
+        Self(Takeable::new(Arc::new(SocketBg {
             bound,
             inner,
             observer: Once::new(),
@@ -280,7 +317,7 @@ impl<T: Inner<E>, E: Ext> Socket<T, E> {
         })))
     }
 
-    pub(crate) fn inner(&self) -> &KeyableArc<SocketBg<T, E>> {
+    pub(crate) fn inner(&self) -> &Arc<SocketBg<T, E>> {
         &self.0
     }
 }
@@ -375,7 +412,7 @@ impl<E: Ext> TcpConnection<E> {
             ConnectState::Connecting
         } else if socket.has_connected {
             ConnectState::Connected
-        } else if KeyableArc::strong_count(self.0.as_ref()) > 1 {
+        } else if Arc::strong_count(self.0.as_ref()) > 1 {
             // Now we should return `ConnectState::Refused`. However, when we do this, we must
             // guarantee that `into_bound_port` can succeed (see the method's doc comments). We can
             // only guarantee this after we have removed all `Arc<TcpConnectionBg>` in the iface's
@@ -396,7 +433,7 @@ impl<E: Ext> TcpConnection<E> {
     /// this connection. We guarantee that this method will always succeed if
     /// [`Self::connect_state`] returns [`ConnectState::Refused`].
     pub fn into_bound_port(mut self) -> Option<BoundPort<E>> {
-        let this: TcpConnectionBg<E> = Arc::into_inner(self.0.take().into())?;
+        let this: TcpConnectionBg<E> = Arc::into_inner(self.0.take())?;
         Some(this.bound)
     }
 
@@ -509,12 +546,16 @@ impl<E: Ext> TcpListener<E> {
             socket
         };
 
-        let inner = TcpListenerInner::new(TcpBacklog {
-            socket,
-            max_conn,
-            connecting: BTreeSet::new(),
-            connected: Vec::new(),
-        });
+        let inner = {
+            let backlog = TcpBacklog {
+                socket,
+                max_conn,
+                connecting: BTreeMap::new(),
+                connected: Vec::new(),
+            };
+
+            TcpListenerInner::new(backlog)
+        };
 
         let listener = Self::new(bound, inner);
         listener.init_observer(observer);
@@ -531,7 +572,7 @@ impl<E: Ext> TcpListener<E> {
     /// Polling the iface is _not_ required after this method succeeds.
     pub fn accept(&self) -> Option<(TcpConnection<E>, IpEndpoint)> {
         let accepted = {
-            let mut backlog = self.0.inner.lock();
+            let mut backlog = self.0.inner.backlog.lock();
             backlog.connected.pop()?
         };
 
@@ -551,20 +592,20 @@ impl<E: Ext> TcpListener<E> {
     ///
     /// It's the caller's responsibility to deal with race conditions when using this method.
     pub fn can_accept(&self) -> bool {
-        !self.0.inner.lock().connected.is_empty()
+        !self.0.inner.backlog.lock().connected.is_empty()
     }
 }
 
 impl<E: Ext> RawTcpSetOption for TcpListener<E> {
     fn set_keep_alive(&self, interval: Option<Duration>) -> NeedIfacePoll {
-        let mut backlog = self.0.inner.lock();
+        let mut backlog = self.0.inner.backlog.lock();
         backlog.socket.set_keep_alive(interval);
 
         NeedIfacePoll::FALSE
     }
 
     fn set_nagle_enabled(&self, enabled: bool) {
-        let mut backlog = self.0.inner.lock();
+        let mut backlog = self.0.inner.backlog.lock();
         backlog.socket.set_nagle_enabled(enabled);
     }
 }
@@ -619,7 +660,7 @@ impl<E: Ext> UdpSocket<E> {
 
         use crate::errors::udp::SendError;
 
-        let mut socket = self.0.inner.lock();
+        let mut socket = self.0.inner.socket.lock();
 
         if size > socket.packet_send_capacity() {
             return Err(SendError::TooLarge);
@@ -643,7 +684,7 @@ impl<E: Ext> UdpSocket<E> {
     where
         F: FnOnce(&[u8], UdpMetadata) -> R,
     {
-        let mut socket = self.0.inner.lock();
+        let mut socket = self.0.inner.socket.lock();
 
         let (data, meta) = socket.recv()?;
         let result = f(data, meta);
@@ -659,7 +700,7 @@ impl<E: Ext> UdpSocket<E> {
     where
         F: FnOnce(&RawUdpSocket) -> R,
     {
-        let socket = self.0.inner.lock();
+        let socket = self.0.inner.socket.lock();
         f(&socket)
     }
 }
@@ -680,17 +721,17 @@ impl<T: Inner<E>, E: Ext> SocketBg<T, E> {
         }
     }
 
-    pub(crate) fn on_dead_events(this: KeyableArc<Self>)
+    pub(crate) fn on_dead_events(self: Arc<Self>)
     where
         T::Observer: Clone,
     {
         // This method can only be called to process network events, so we assume we are holding the
         // poll lock and no race conditions can occur.
-        let events = this.events.load(Ordering::Relaxed);
-        this.events.store(0, Ordering::Relaxed);
+        let events = self.events.load(Ordering::Relaxed);
+        self.events.store(0, Ordering::Relaxed);
 
-        let observer = this.observer.get().cloned();
-        drop(this);
+        let observer = self.observer.get().cloned();
+        drop(self);
 
         // Notify dead events after the `Arc` is dropped to ensure the observer sees this event
         // with the expected reference count. See `TcpConnection::connect_state` for an example.
@@ -752,6 +793,24 @@ impl<E: Ext> TcpConnectionBg<E> {
     pub(crate) fn is_dead(&self) -> bool {
         self.inner.is_dead()
     }
+
+    pub(crate) const fn connection_key(&self) -> ConnectionKey {
+        self.inner.connection_key
+    }
+
+    pub(crate) const fn connection_hash(&self) -> SocketHash {
+        self.inner.connection_hash
+    }
+}
+
+impl<E: Ext> TcpListenerBg<E> {
+    pub(crate) const fn listener_key(&self) -> ListenerKey {
+        self.inner.listener_key
+    }
+
+    pub(crate) const fn listener_hash(&self) -> SocketHash {
+        self.inner.listener_hash
+    }
 }
 
 impl<T: Inner<E>, E: Ext> SocketBg<T, E> {
@@ -780,12 +839,12 @@ pub(crate) enum TcpProcessResult {
 impl<E: Ext> TcpConnectionBg<E> {
     /// Tries to process an incoming packet and returns whether the packet is processed.
     pub(crate) fn process(
-        this: &KeyableArc<Self>,
+        self: &Arc<Self>,
         cx: &mut Context,
         ip_repr: &IpRepr,
         tcp_repr: &TcpRepr,
     ) -> TcpProcessResult {
-        let mut socket = this.inner.lock();
+        let mut socket = self.inner.lock();
 
         if !socket.accepts(cx, ip_repr, tcp_repr) {
             return TcpProcessResult::NotProcessed;
@@ -808,7 +867,7 @@ impl<E: Ext> TcpConnectionBg<E> {
             && tcp_repr.control == TcpControl::Syn
             && tcp_repr.ack_number.is_none()
         {
-            this.inner.set_dead_timewait(&socket);
+            self.inner.set_dead_timewait(&socket);
             return TcpProcessResult::NotProcessed;
         }
 
@@ -823,18 +882,18 @@ impl<E: Ext> TcpConnectionBg<E> {
         };
 
         if socket.state() != old_state {
-            events |= socket.on_new_state(this);
+            events |= socket.on_new_state(self);
         }
 
-        this.add_events(events);
-        this.update_next_poll_at_ms(socket.poll_at(cx));
+        self.add_events(events);
+        self.update_next_poll_at_ms(socket.poll_at(cx));
 
         result
     }
 
     /// Tries to generate an outgoing packet and dispatches the generated packet.
     pub(crate) fn dispatch<D>(
-        this: &KeyableArc<Self>,
+        this: &Arc<Self>,
         cx: &mut Context,
         dispatch: D,
     ) -> Option<(IpRepr, TcpRepr<'static>)>
@@ -878,12 +937,12 @@ impl<E: Ext> TcpConnectionBg<E> {
 impl<E: Ext> TcpListenerBg<E> {
     /// Tries to process an incoming packet and returns whether the packet is processed.
     pub(crate) fn process(
-        this: &KeyableArc<Self>,
+        self: &Arc<Self>,
         cx: &mut Context,
         ip_repr: &IpRepr,
         tcp_repr: &TcpRepr,
-    ) -> (TcpProcessResult, Option<KeyableArc<TcpConnectionBg<E>>>) {
-        let mut backlog = this.inner.lock();
+    ) -> (TcpProcessResult, Option<Arc<TcpConnectionBg<E>>>) {
+        let mut backlog = self.inner.backlog.lock();
 
         if !backlog.socket.accepts(cx, ip_repr, tcp_repr) {
             return (TcpProcessResult::NotProcessed, None);
@@ -914,19 +973,19 @@ impl<E: Ext> TcpListenerBg<E> {
 
         let inner = TcpConnectionInner::new(
             core::mem::replace(&mut backlog.socket, new_socket),
-            Some(this.clone().into()),
+            Some(self.clone()),
         );
         let conn = TcpConnection::new(
-            this.bound
+            self.bound
                 .iface()
-                .bind(BindPortConfig::CanReuse(this.bound.port()))
+                .bind(BindPortConfig::CanReuse(self.bound.port()))
                 .unwrap(),
             inner,
         );
         let conn_bg = conn.inner().clone();
 
-        let inserted = backlog.connecting.insert(conn);
-        assert!(inserted);
+        let old_conn = backlog.connecting.insert(conn_bg.connection_key(), conn);
+        debug_assert!(old_conn.is_none());
 
         conn_bg.update_next_poll_at_ms(PollAt::Now);
 
@@ -943,7 +1002,7 @@ impl<E: Ext> UdpSocketBg<E> {
         udp_repr: &UdpRepr,
         udp_payload: &[u8],
     ) -> bool {
-        let mut socket = self.inner.lock();
+        let mut socket = self.inner.socket.lock();
 
         if !socket.accepts(cx, ip_repr, udp_repr) {
             return false;
@@ -968,7 +1027,7 @@ impl<E: Ext> UdpSocketBg<E> {
     where
         D: FnOnce(&mut Context, &IpRepr, &UdpRepr, &[u8]),
     {
-        let mut socket = self.inner.lock();
+        let mut socket = self.inner.socket.lock();
 
         socket
             .dispatch(cx, |cx, _meta, (ip_repr, udp_repr, udp_payload)| {

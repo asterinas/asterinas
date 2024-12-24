@@ -1,16 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{
-    collections::{
-        btree_map::{BTreeMap, Entry},
-        btree_set::BTreeSet,
-    },
+    collections::btree_map::{BTreeMap, Entry},
     string::String,
     sync::Arc,
     vec::Vec,
 };
 
-use keyable_arc::KeyableArc;
 use ostd::sync::{LocalIrqDisabled, SpinLock, SpinLockGuard};
 use smoltcp::{
     iface::{packet::Packet, Context},
@@ -27,6 +23,7 @@ use super::{
 use crate::{
     errors::BindError,
     ext::Ext,
+    inet_hashtable::SocketTable,
     socket::{TcpConnectionBg, TcpListenerBg, UdpSocketBg},
 };
 
@@ -34,14 +31,8 @@ pub struct IfaceCommon<E: Ext> {
     name: String,
     interface: SpinLock<smoltcp::iface::Interface, LocalIrqDisabled>,
     used_ports: SpinLock<BTreeMap<u16, usize>, LocalIrqDisabled>,
-    sockets: SpinLock<SocketSet<E>, LocalIrqDisabled>,
+    sockets: SpinLock<SocketTable<E>, LocalIrqDisabled>,
     sched_poll: E::ScheduleNextPoll,
-}
-
-pub(super) struct SocketSet<E: Ext> {
-    pub(super) tcp_conn: BTreeSet<KeyableArc<TcpConnectionBg<E>>>,
-    pub(super) tcp_listen: BTreeSet<KeyableArc<TcpListenerBg<E>>>,
-    pub(super) udp: BTreeSet<KeyableArc<UdpSocketBg<E>>>,
 }
 
 impl<E: Ext> IfaceCommon<E> {
@@ -50,11 +41,7 @@ impl<E: Ext> IfaceCommon<E> {
         interface: smoltcp::iface::Interface,
         sched_poll: E::ScheduleNextPoll,
     ) -> Self {
-        let sockets = SocketSet {
-            tcp_conn: BTreeSet::new(),
-            tcp_listen: BTreeSet::new(),
-            udp: BTreeSet::new(),
-        };
+        let sockets = SocketTable::new();
 
         Self {
             name,
@@ -152,41 +139,34 @@ impl<E: Ext> IfaceCommon<E> {
 }
 
 impl<E: Ext> IfaceCommon<E> {
-    pub(crate) fn register_tcp_connection(&self, socket: KeyableArc<TcpConnectionBg<E>>) {
+    pub(crate) fn register_tcp_connection(&self, socket: Arc<TcpConnectionBg<E>>) {
         let mut sockets = self.sockets.lock();
-        let inserted = sockets.tcp_conn.insert(socket);
+        let inserted = sockets.insert_connection(socket);
         debug_assert!(inserted);
     }
 
-    pub(crate) fn register_tcp_listener(&self, socket: KeyableArc<TcpListenerBg<E>>) {
+    pub(crate) fn register_tcp_listener(&self, socket: Arc<TcpListenerBg<E>>) {
         let mut sockets = self.sockets.lock();
-        let inserted = sockets.tcp_listen.insert(socket);
+        let inserted = sockets.insert_listener(socket);
         debug_assert!(inserted);
     }
 
-    pub(crate) fn register_udp_socket(&self, socket: KeyableArc<UdpSocketBg<E>>) {
+    pub(crate) fn register_udp_socket(&self, socket: Arc<UdpSocketBg<E>>) {
         let mut sockets = self.sockets.lock();
-        let inserted = sockets.udp.insert(socket);
+        let inserted = sockets.insert_udp_socket(socket);
         debug_assert!(inserted);
     }
 
-    #[allow(clippy::mutable_key_type)]
-    fn remove_dead_tcp_connections(sockets: &mut BTreeSet<KeyableArc<TcpConnectionBg<E>>>) {
-        for socket in sockets.extract_if(|socket| socket.is_dead()) {
-            TcpConnectionBg::on_dead_events(socket);
-        }
+    pub(crate) fn remove_tcp_listener(&self, socket: &Arc<TcpListenerBg<E>>) {
+        let mut sockets = self.sockets.lock();
+        let removed = sockets.remove_listener(socket);
+        debug_assert!(removed.is_some());
     }
 
-    pub(crate) fn remove_tcp_listener(&self, socket: &KeyableArc<TcpListenerBg<E>>) {
+    pub(crate) fn remove_udp_socket(&self, socket: &Arc<UdpSocketBg<E>>) {
         let mut sockets = self.sockets.lock();
-        let removed = sockets.tcp_listen.remove(socket);
-        debug_assert!(removed);
-    }
-
-    pub(crate) fn remove_udp_socket(&self, socket: &KeyableArc<UdpSocketBg<E>>) {
-        let mut sockets = self.sockets.lock();
-        let removed = sockets.udp.remove(socket);
-        debug_assert!(removed);
+        let removed = sockets.remove_udp_socket(socket);
+        debug_assert!(removed.is_some());
     }
 }
 
@@ -224,33 +204,20 @@ impl<E: Ext> IfaceCommon<E> {
             if new_tcp_conns.is_empty() {
                 break;
             } else {
-                sockets.tcp_conn.extend(new_tcp_conns);
+                new_tcp_conns.into_iter().for_each(|tcp_conn| {
+                    sockets.insert_connection(tcp_conn);
+                });
             }
         }
 
-        Self::remove_dead_tcp_connections(&mut sockets.tcp_conn);
+        sockets.remove_dead_tcp_connections();
 
-        sockets.tcp_conn.iter().for_each(|socket| {
-            if socket.has_events() {
-                socket.on_events();
-            }
-        });
-        sockets.tcp_listen.iter().for_each(|socket| {
-            if socket.has_events() {
-                socket.on_events();
-            }
-        });
-        sockets.udp.iter().for_each(|socket| {
-            if socket.has_events() {
-                socket.on_events();
-            }
-        });
+        sockets.on_each_socket_events();
 
         // Note that only TCP connections can have timers set, so as far as the time to poll is
         // concerned, we only need to consider TCP connections.
         sockets
-            .tcp_conn
-            .iter()
+            .tcp_conn_iter()
             .map(|socket| socket.next_poll_at_ms())
             .min()
     }
