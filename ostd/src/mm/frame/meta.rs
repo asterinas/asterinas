@@ -38,6 +38,7 @@ pub(crate) mod mapping {
 use core::{
     any::Any,
     cell::UnsafeCell,
+    fmt::Debug,
     mem::{size_of, MaybeUninit},
     sync::atomic::{AtomicU32, Ordering},
 };
@@ -113,7 +114,7 @@ const_assert_eq!(size_of::<MetaSlot>(), META_SLOT_SIZE);
 /// The implemented structure must have a size less than or equal to
 /// [`PAGE_METADATA_MAX_SIZE`] and an alignment less than or equal to
 /// [`PAGE_METADATA_MAX_ALIGN`].
-pub unsafe trait FrameMeta: Any + Send + Sync + 'static {
+pub unsafe trait FrameMeta: Any + Send + Sync + Debug + 'static {
     /// Called when the last handle to the page is dropped.
     fn on_drop(&mut self, _paddr: Paddr) {}
 }
