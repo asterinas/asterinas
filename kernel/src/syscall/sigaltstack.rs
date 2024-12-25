@@ -106,6 +106,9 @@ impl TryFrom<stack_t> for SigStack {
         if stack.size < MINSTKSZ {
             return_errno_with_message!(Errno::ENOMEM, "stack size is less than MINSTKSZ");
         }
+        if stack.sp.checked_add(stack.size).is_none() {
+            return_errno_with_message!(Errno::EINVAL, "overflow for given stack addr and size");
+        }
 
         if flags.is_empty() {
             flags.insert(SigStackFlags::SS_ONSTACK);
