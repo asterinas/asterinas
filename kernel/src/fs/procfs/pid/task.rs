@@ -63,8 +63,12 @@ impl DirOps for ThreadDirOps {
 
 impl DirOps for TaskDirOps {
     fn lookup_child(&self, this_ptr: Weak<dyn Inode>, name: &str) -> Result<Arc<dyn Inode>> {
+        let Ok(tid) = name.parse::<u32>() else {
+            return_errno_with_message!(Errno::ENOENT, "Can not parse name to u32 type");
+        };
+
         for task in self.0.tasks().lock().as_slice() {
-            if task.as_posix_thread().unwrap().tid() != name.parse::<u32>().unwrap() {
+            if task.as_posix_thread().unwrap().tid() != tid {
                 continue;
             }
             return Ok(ThreadDirOps::new_inode(self.0.clone(), this_ptr));
