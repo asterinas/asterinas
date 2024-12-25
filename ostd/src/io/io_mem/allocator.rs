@@ -11,12 +11,12 @@ use spin::Once;
 use crate::{
     io::io_mem::IoMem,
     mm::{CachePolicy, PageFlags},
-    util::vaddr_alloc::VirtAddrAllocator,
+    util::range_alloc::RangeAllocator,
 };
 
 /// I/O memory allocator that allocates memory I/O access to device drivers.
 pub struct IoMemAllocator {
-    allocators: Vec<VirtAddrAllocator>,
+    allocators: Vec<RangeAllocator>,
 }
 
 impl IoMemAllocator {
@@ -53,7 +53,7 @@ impl IoMemAllocator {
     /// # Safety
     ///
     /// User must ensure the range doesn't belong to physical memory or system device I/O.
-    unsafe fn new(allocators: Vec<VirtAddrAllocator>) -> Self {
+    unsafe fn new(allocators: Vec<RangeAllocator>) -> Self {
         Self { allocators }
     }
 }
@@ -63,7 +63,7 @@ impl IoMemAllocator {
 /// The builder must contains the memory I/O regions that don't belong to the physical memory. Also, OSTD
 /// must exclude the memory I/O regions of the system device before building the `IoMemAllocator`.
 pub(crate) struct IoMemAllocatorBuilder {
-    allocators: Vec<VirtAddrAllocator>,
+    allocators: Vec<RangeAllocator>,
 }
 
 impl IoMemAllocatorBuilder {
@@ -79,7 +79,7 @@ impl IoMemAllocatorBuilder {
         );
         let mut allocators = Vec::with_capacity(ranges.len());
         for range in ranges {
-            allocators.push(VirtAddrAllocator::new(range));
+            allocators.push(RangeAllocator::new(range));
         }
         Self { allocators }
     }
@@ -118,9 +118,9 @@ pub(crate) unsafe fn init(io_mem_builder: IoMemAllocatorBuilder) {
 }
 
 fn find_allocator<'a>(
-    allocators: &'a [VirtAddrAllocator],
+    allocators: &'a [RangeAllocator],
     range: &Range<usize>,
-) -> Option<&'a VirtAddrAllocator> {
+) -> Option<&'a RangeAllocator> {
     for allocator in allocators.iter() {
         let allocator_range = allocator.fullrange();
         if allocator_range.start >= range.end || allocator_range.end <= range.start {
