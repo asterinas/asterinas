@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 use core::ops::Range;
 
 use super::{
-    frame::{meta::FrameMeta, Frame},
+    frame::{meta::AnyFrameMeta, Frame},
     Vaddr, PAGE_SIZE,
 };
 use crate::{
@@ -80,7 +80,7 @@ impl<G: PinCurrentCpu> TlbFlusher<G> {
     /// flushed. Otherwise if the page is recycled for other purposes, the user
     /// space program can still access the page through the TLB entries. This
     /// method is designed to be used in such cases.
-    pub fn issue_tlb_flush_with(&self, op: TlbFlushOp, drop_after_flush: Frame<dyn FrameMeta>) {
+    pub fn issue_tlb_flush_with(&self, op: TlbFlushOp, drop_after_flush: Frame<dyn AnyFrameMeta>) {
         self.issue_tlb_flush_(op, Some(drop_after_flush));
     }
 
@@ -94,7 +94,7 @@ impl<G: PinCurrentCpu> TlbFlusher<G> {
         self.need_self_flush
     }
 
-    fn issue_tlb_flush_(&self, op: TlbFlushOp, drop_after_flush: Option<Frame<dyn FrameMeta>>) {
+    fn issue_tlb_flush_(&self, op: TlbFlushOp, drop_after_flush: Option<Frame<dyn AnyFrameMeta>>) {
         let op = op.optimize_for_large_range();
 
         // Fast path for single CPU cases.
@@ -159,7 +159,7 @@ impl TlbFlushOp {
 // Lock ordering: lock FLUSH_OPS before PAGE_KEEPER.
 cpu_local! {
     static FLUSH_OPS: SpinLock<OpsStack, LocalIrqDisabled> = SpinLock::new(OpsStack::new());
-    static PAGE_KEEPER: SpinLock<Vec<Frame<dyn FrameMeta>>, LocalIrqDisabled> = SpinLock::new(Vec::new());
+    static PAGE_KEEPER: SpinLock<Vec<Frame<dyn AnyFrameMeta>>, LocalIrqDisabled> = SpinLock::new(Vec::new());
 }
 
 fn do_remote_flush() {

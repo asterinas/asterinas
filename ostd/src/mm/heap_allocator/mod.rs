@@ -11,7 +11,7 @@ use spin::Once;
 
 use super::paddr_to_vaddr;
 use crate::{
-    mm::{frame::allocator::PAGE_ALLOCATOR, PAGE_SIZE},
+    mm::{frame::allocator::FRAME_ALLOCATOR, PAGE_SIZE},
     prelude::*,
     sync::SpinLock,
     trap::disable_local,
@@ -94,7 +94,7 @@ impl LockedHeapWithRescue {
         };
 
         let allocation_start = {
-            let mut page_allocator = PAGE_ALLOCATOR.get().unwrap().lock();
+            let mut page_allocator = FRAME_ALLOCATOR.get().unwrap().lock();
             if num_frames >= MIN_NUM_FRAMES {
                 page_allocator.alloc(num_frames).ok_or(Error::NoMemory)?
             } else {

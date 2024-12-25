@@ -23,7 +23,7 @@ pub struct Ext2 {
     blocks_per_group: Ext2Bid,
     inode_size: usize,
     block_size: usize,
-    group_descriptors_segment: DynUSegment,
+    group_descriptors_segment: USegment,
     self_ref: Weak<Self>,
 }
 
@@ -63,7 +63,7 @@ impl Ext2 {
         // Load the block groups information
         let load_block_groups = |fs: Weak<Ext2>,
                                  block_device: &dyn BlockDevice,
-                                 group_descriptors_segment: &DynUSegment|
+                                 group_descriptors_segment: &USegment|
          -> Result<Vec<BlockGroup>> {
             let block_groups_count = super_block.block_groups_count() as usize;
             let mut block_groups = Vec::with_capacity(block_groups_count);

@@ -76,7 +76,7 @@ use super::{
 };
 use crate::{
     mm::{
-        frame::{meta::FrameMeta, Frame},
+        frame::{meta::AnyFrameMeta, Frame},
         kspace::should_map_as_tracked,
         paddr_to_vaddr, Paddr, PageProperty, Vaddr,
     },
@@ -91,7 +91,7 @@ pub enum PageTableItem {
     },
     Mapped {
         va: Vaddr,
-        page: Frame<dyn FrameMeta>,
+        page: Frame<dyn AnyFrameMeta>,
         prop: PageProperty,
     },
     #[allow(dead_code)]
@@ -402,9 +402,9 @@ where
         self.0.query()
     }
 
-    /// Maps the range starting from the current address to a [`Frame<dyn FrameMeta>`].
+    /// Maps the range starting from the current address to a [`Frame<dyn AnyFrameMeta>`].
     ///
-    /// It returns the previously mapped [`Frame<dyn FrameMeta>`] if that exists.
+    /// It returns the previously mapped [`Frame<dyn AnyFrameMeta>`] if that exists.
     ///
     /// # Panics
     ///
@@ -419,9 +419,9 @@ where
     /// not affect kernel's memory safety.
     pub unsafe fn map(
         &mut self,
-        page: Frame<dyn FrameMeta>,
+        page: Frame<dyn AnyFrameMeta>,
         prop: PageProperty,
-    ) -> Option<Frame<dyn FrameMeta>> {
+    ) -> Option<Frame<dyn AnyFrameMeta>> {
         let end = self.0.va + page.size();
         assert!(end <= self.0.barrier_va.end);
 

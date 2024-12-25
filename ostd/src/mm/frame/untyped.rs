@@ -2,13 +2,12 @@
 
 //! Untyped physical memory management.
 //!
-//! A frame is a special page that is _untyped_ memory.
-//! It is used to store data irrelevant to the integrity of the kernel.
-//! All pages mapped to the virtual address space of the users are backed by
-//! frames. Frames, with all the properties of pages, can additionally be safely
-//! read and written by the kernel or the user.
+//! As detailed in [`crate::mm::frame`], untyped memory can be accessed with
+//! relaxed rules but we cannot create references to them. This module provides
+//! the declaration of untyped frames and segments, and the implementation of
+//! extra functionalities (such as [`VmIo`]) for them.
 
-use super::{meta::FrameMeta, Frame, Segment};
+use super::{meta::AnyFrameMeta, Frame, Segment};
 use crate::{
     mm::{
         io::{FallibleVmRead, FallibleVmWrite, VmIo, VmReader, VmWriter},
@@ -19,24 +18,25 @@ use crate::{
 
 /// The metadata of untyped frame.
 ///
-/// If a structure `M` implements [`UFrameMeta`], it can be used as the
+/// If a structure `M` implements [`AnyUFrameMeta`], it can be used as the
 /// metadata of a type of untyped frames [`Frame<M>`]. All frames of such type
 /// will be accessible as untyped memory.
-pub trait UFrameMeta: FrameMeta {}
+pub trait AnyUFrameMeta: AnyFrameMeta {}
 
-/// An untyped frame with any metadata.
+/// A smart pointer to an untyped frame with any metadata.
+///
+/// The metadata of the frame is not known at compile time but the frame must
+/// be an untyped one. An [`UFrame`] as a parameter accepts any type of
+/// untyped frame metadata.
 ///
 /// The usage of this frame will not be changed while this object is alive.
-/// The metadata of the frame is not known at compile time but the frame must
-/// be an untyped one. An [`DynUFrame`] as a parameter accepts any type of
-/// untyped frame metadata.
-pub type DynUFrame = Frame<dyn UFrameMeta>;
+pub type UFrame = Frame<dyn AnyUFrameMeta>;
 
 /// Makes a structure usable as untyped frame metadata.
 ///
-/// Directly implementing [`FrameMeta`] is not safe since the size and
+/// Directly implementing [`AnyFrameMeta`] is not safe since the size and
 /// alignment must be checked. This macro provides a safe way to implement both
-/// [`FrameMeta`] and [`UFrameMeta`] with compile-time checks.
+/// [`AnyFrameMeta`] and [`AnyUFrameMeta`] with compile-time checks.
 ///
 /// If this macro is used for built-in typed frame metadata, it won't compile.
 #[macro_export]
@@ -44,25 +44,25 @@ macro_rules! impl_untyped_frame_meta_for {
     // Implement without specifying the drop behavior.
     ($t:ty) => {
         use static_assertions::const_assert;
-        const_assert!(size_of::<$t>() <= $crate::mm::frame::meta::PAGE_METADATA_MAX_SIZE);
-        const_assert!(align_of::<$t>() <= $crate::mm::frame::meta::PAGE_METADATA_MAX_ALIGN);
+        const_assert!(size_of::<$t>() <= $crate::mm::frame::meta::FRAME_METADATA_MAX_SIZE);
+        const_assert!(align_of::<$t>() <= $crate::mm::frame::meta::FRAME_METADATA_MAX_ALIGN);
         // SAFETY: The size and alignment of the structure are checked.
-        unsafe impl $crate::mm::frame::meta::FrameMeta for $t {
+        unsafe impl $crate::mm::frame::meta::AnyFrameMeta for $t {
             fn is_untyped(&self) -> bool {
                 true
             }
         }
-        impl $crate::mm::frame::untyped::UFrameMeta for $t {}
+        impl $crate::mm::frame::untyped::AnyUFrameMeta for $t {}
     };
     // Implement with a customized drop function.
     ($t:ty, $body:expr) => {
         use static_assertions::const_assert;
-        const_assert!(size_of::<$t>() <= $crate::mm::frame::meta::PAGE_METADATA_MAX_SIZE);
-        const_assert!(align_of::<$t>() <= $crate::mm::frame::meta::PAGE_METADATA_MAX_ALIGN);
+        const_assert!(size_of::<$t>() <= $crate::mm::frame::meta::FRAME_METADATA_MAX_SIZE);
+        const_assert!(align_of::<$t>() <= $crate::mm::frame::meta::FRAME_METADATA_MAX_ALIGN);
         // SAFETY: The size and alignment of the structure are checked.
         // Outside OSTD the user cannot implement a `on_drop` method for typed
         // frames. And untyped frames can be safely read.
-        unsafe impl $crate::mm::frame::meta::FrameMeta for $t {
+        unsafe impl $crate::mm::frame::meta::AnyFrameMeta for $t {
             fn on_drop(&mut self, reader: &mut $crate::mm::VmReader<$crate::mm::Infallible>) {
                 $body
             }
@@ -71,7 +71,7 @@ macro_rules! impl_untyped_frame_meta_for {
                 true
             }
         }
-        impl $crate::mm::frame::untyped::UFrameMeta for $t {}
+        impl $crate::mm::frame::untyped::AnyUFrameMeta for $t {}
     };
 }
 
@@ -91,7 +91,7 @@ pub trait UntypedMem {
 
 macro_rules! impl_untyped_for {
     ($t:ident) => {
-        impl<UM: UFrameMeta + ?Sized> UntypedMem for $t<UM> {
+        impl<UM: AnyUFrameMeta + ?Sized> UntypedMem for $t<UM> {
             fn reader(&self) -> VmReader<'_, Infallible> {
                 let ptr = paddr_to_vaddr(self.start_paddr()) as *const u8;
                 // SAFETY: Only untyped frames are allowed to be read.
@@ -105,7 +105,7 @@ macro_rules! impl_untyped_for {
             }
         }
 
-        impl<UM: UFrameMeta + ?Sized> VmIo for $t<UM> {
+        impl<UM: AnyUFrameMeta + ?Sized> VmIo for $t<UM> {
             fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<()> {
                 let read_len = writer.avail().min(self.size().saturating_sub(offset));
                 // Do bound check with potential integer overflow in mind
@@ -151,12 +151,12 @@ use core::{marker::PhantomData, mem::ManuallyDrop, ops::Deref};
 /// `FrameRef` is a struct that can work as `&'a Frame<m>`.
 ///
 /// This is solely useful for [`crate::collections::xarray`].
-pub struct FrameRef<'a, M: UFrameMeta + ?Sized> {
+pub struct FrameRef<'a, M: AnyUFrameMeta + ?Sized> {
     inner: ManuallyDrop<Frame<M>>,
     _marker: PhantomData<&'a Frame<M>>,
 }
 
-impl<M: UFrameMeta + ?Sized> Deref for FrameRef<'_, M> {
+impl<M: AnyUFrameMeta + ?Sized> Deref for FrameRef<'_, M> {
     type Target = Frame<M>;
 
     fn deref(&self) -> &Self::Target {
@@ -166,7 +166,7 @@ impl<M: UFrameMeta + ?Sized> Deref for FrameRef<'_, M> {
 
 // SAFETY: `Frame` is essentially an `*const MetaSlot` that could be used as a `*const` pointer.
 // The pointer is also aligned to 4.
-unsafe impl<M: UFrameMeta + ?Sized> xarray::ItemEntry for Frame<M> {
+unsafe impl<M: AnyUFrameMeta + ?Sized> xarray::ItemEntry for Frame<M> {
     type Ref<'a>
         = FrameRef<'a, M>
     where

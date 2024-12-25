@@ -11,7 +11,7 @@ use crate::{
     error::Error,
     mm::{
         dma::{dma_type, Daddr, DmaType},
-        DynUSegment, HasPaddr, Infallible, Paddr, UntypedMem, VmIo, VmReader, VmWriter, PAGE_SIZE,
+        HasPaddr, Infallible, Paddr, USegment, UntypedMem, VmIo, VmReader, VmWriter, PAGE_SIZE,
     },
 };
 
@@ -34,7 +34,7 @@ pub struct DmaStream {
 
 #[derive(Debug)]
 struct DmaStreamInner {
-    segment: DynUSegment,
+    segment: USegment,
     start_daddr: Daddr,
     /// TODO: remove this field when on x86.
     #[allow(unused)]
@@ -55,11 +55,11 @@ pub enum DmaDirection {
 }
 
 impl DmaStream {
-    /// Establishes DMA stream mapping for a given [`DynUSegment`].
+    /// Establishes DMA stream mapping for a given [`USegment`].
     ///
     /// The method fails if the segment already belongs to a DMA mapping.
     pub fn map(
-        segment: DynUSegment,
+        segment: USegment,
         direction: DmaDirection,
         is_cache_coherent: bool,
     ) -> Result<Self, DmaError> {
@@ -107,13 +107,13 @@ impl DmaStream {
         })
     }
 
-    /// Gets the underlying [`DynUSegment`].
+    /// Gets the underlying [`USegment`].
     ///
     /// Usually, the CPU side should not access the memory
     /// after the DMA mapping is established because
     /// there is a chance that the device is updating
     /// the memory. Do this at your own risk.
-    pub fn segment(&self) -> &DynUSegment {
+    pub fn segment(&self) -> &USegment {
         &self.inner.segment
     }
 

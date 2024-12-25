@@ -40,7 +40,7 @@ fn create_user_space(program: &[u8]) -> UserSpace {
             .alloc_segment(nbytes / PAGE_SIZE)
             .unwrap();
         // Physical memory pages can be only accessed
-        // via the `DynUFrame` or `DynUSegment` abstraction.
+        // via the `UFrame` or `USegment` abstraction.
         segment.write_bytes(0, program).unwrap();
         segment
     };

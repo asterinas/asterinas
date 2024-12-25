@@ -26,9 +26,9 @@ pub use self::{
     dma::{Daddr, DmaCoherent, DmaDirection, DmaStream, DmaStreamSlice, HasDaddr},
     frame::{
         allocator::FrameAllocOptions,
-        segment::{DynSegment, DynUSegment, Segment},
-        untyped::{DynUFrame, UFrameMeta, UntypedMem},
-        DynFrame, Frame,
+        segment::{Segment, USegment},
+        untyped::{AnyUFrameMeta, UFrame, UntypedMem},
+        Frame,
     },
     io::{
         Fallible, FallibleVmRead, FallibleVmWrite, Infallible, PodOnce, VmIo, VmIoOnce, VmReader,

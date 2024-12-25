@@ -35,7 +35,7 @@ impl IntRemappingTable {
         Some(self.handles.get(id).unwrap().clone())
     }
 
-    /// Creates an Interrupt Remapping Table with one DynUFrame (default).
+    /// Creates an Interrupt Remapping Table with one `Segment` (default).
     pub(super) fn new() -> Self {
         const DEFAULT_PAGES: usize = 1;
         let segment = FrameAllocOptions::new()
