@@ -15,13 +15,12 @@ use crate::{
         Paddr, Vaddr, PAGE_SIZE,
     },
     task::disable_preempt,
-    util::vaddr_alloc::VirtAddrAllocator,
+    util::range_alloc::RangeAllocator,
 };
 
-static KVIRT_AREA_TRACKED_ALLOCATOR: VirtAddrAllocator =
-    VirtAddrAllocator::new(TRACKED_MAPPED_PAGES_RANGE);
-static KVIRT_AREA_UNTRACKED_ALLOCATOR: VirtAddrAllocator =
-    VirtAddrAllocator::new(VMALLOC_VADDR_RANGE);
+static KVIRT_AREA_TRACKED_ALLOCATOR: RangeAllocator =
+    RangeAllocator::new(TRACKED_MAPPED_PAGES_RANGE);
+static KVIRT_AREA_UNTRACKED_ALLOCATOR: RangeAllocator = RangeAllocator::new(VMALLOC_VADDR_RANGE);
 
 #[derive(Debug)]
 pub struct Tracked;
@@ -29,17 +28,17 @@ pub struct Tracked;
 pub struct Untracked;
 
 pub trait AllocatorSelector {
-    fn select_allocator() -> &'static VirtAddrAllocator;
+    fn select_allocator() -> &'static RangeAllocator;
 }
 
 impl AllocatorSelector for Tracked {
-    fn select_allocator() -> &'static VirtAddrAllocator {
+    fn select_allocator() -> &'static RangeAllocator {
         &KVIRT_AREA_TRACKED_ALLOCATOR
     }
 }
 
 impl AllocatorSelector for Untracked {
-    fn select_allocator() -> &'static VirtAddrAllocator {
+    fn select_allocator() -> &'static RangeAllocator {
         &KVIRT_AREA_UNTRACKED_ALLOCATOR
     }
 }
