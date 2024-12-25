@@ -14,7 +14,7 @@ use aster_rights::Full;
 use lru::LruCache;
 use ostd::{
     impl_untyped_frame_meta_for,
-    mm::{DynUFrame, Frame, FrameAllocOptions, UntypedMem, VmIo},
+    mm::{Frame, FrameAllocOptions, UFrame, UntypedMem, VmIo},
 };
 
 use crate::{
@@ -388,7 +388,7 @@ impl PageCacheManager {
         Ok(())
     }
 
-    fn ondemand_readahead(&self, idx: usize) -> Result<DynUFrame> {
+    fn ondemand_readahead(&self, idx: usize) -> Result<UFrame> {
         let mut pages = self.pages.lock();
         let mut ra_state = self.ra_state.lock();
         let backend = self.backend();
@@ -445,7 +445,7 @@ impl Debug for PageCacheManager {
 }
 
 impl Pager for PageCacheManager {
-    fn commit_page(&self, idx: usize) -> Result<DynUFrame> {
+    fn commit_page(&self, idx: usize) -> Result<UFrame> {
         self.ondemand_readahead(idx)
     }
 
@@ -476,7 +476,7 @@ impl Pager for PageCacheManager {
         Ok(())
     }
 
-    fn commit_overwrite(&self, idx: usize) -> Result<DynUFrame> {
+    fn commit_overwrite(&self, idx: usize) -> Result<UFrame> {
         if let Some(page) = self.pages.lock().get(&idx) {
             return Ok(page.clone().into());
         }
@@ -573,16 +573,16 @@ impl AtomicPageState {
 /// This trait represents the backend for the page cache.
 pub trait PageCacheBackend: Sync + Send {
     /// Reads a page from the backend asynchronously.
-    fn read_page_async(&self, idx: usize, frame: &DynUFrame) -> Result<BioWaiter>;
+    fn read_page_async(&self, idx: usize, frame: &UFrame) -> Result<BioWaiter>;
     /// Writes a page to the backend asynchronously.
-    fn write_page_async(&self, idx: usize, frame: &DynUFrame) -> Result<BioWaiter>;
+    fn write_page_async(&self, idx: usize, frame: &UFrame) -> Result<BioWaiter>;
     /// Returns the number of pages in the backend.
     fn npages(&self) -> usize;
 }
 
 impl dyn PageCacheBackend {
     /// Reads a page from the backend synchronously.
-    fn read_page(&self, idx: usize, frame: &DynUFrame) -> Result<()> {
+    fn read_page(&self, idx: usize, frame: &UFrame) -> Result<()> {
         let waiter = self.read_page_async(idx, frame)?;
         match waiter.wait() {
             Some(BioStatus::Complete) => Ok(()),
@@ -590,7 +590,7 @@ impl dyn PageCacheBackend {
         }
     }
     /// Writes a page to the backend synchronously.
-    fn write_page(&self, idx: usize, frame: &DynUFrame) -> Result<()> {
+    fn write_page(&self, idx: usize, frame: &UFrame) -> Result<()> {
         let waiter = self.write_page_async(idx, frame)?;
         match waiter.wait() {
             Some(BioStatus::Complete) => Ok(()),

@@ -11,7 +11,7 @@ use aster_rights::Full;
 use aster_util::slot_vec::SlotVec;
 use hashbrown::HashMap;
 use ostd::{
-    mm::{DynUFrame, UntypedMem, VmIo},
+    mm::{UFrame, UntypedMem, VmIo},
     sync::{PreemptDisabled, RwLockWriteGuard},
 };
 
@@ -484,7 +484,7 @@ impl RamInode {
 }
 
 impl PageCacheBackend for RamInode {
-    fn read_page_async(&self, _idx: usize, frame: &DynUFrame) -> Result<BioWaiter> {
+    fn read_page_async(&self, _idx: usize, frame: &UFrame) -> Result<BioWaiter> {
         // Initially, any block/page in a RamFs inode contains all zeros
         frame
             .writer()
@@ -494,7 +494,7 @@ impl PageCacheBackend for RamInode {
         Ok(BioWaiter::new())
     }
 
-    fn write_page_async(&self, _idx: usize, _frame: &DynUFrame) -> Result<BioWaiter> {
+    fn write_page_async(&self, _idx: usize, _frame: &UFrame) -> Result<BioWaiter> {
         // do nothing
         Ok(BioWaiter::new())
     }

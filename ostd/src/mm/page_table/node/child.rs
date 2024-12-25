@@ -8,7 +8,7 @@ use super::{MapTrackingStatus, PageTableEntryTrait, RawPageTableNode};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     mm::{
-        frame::{inc_page_ref_count, meta::FrameMeta, Frame},
+        frame::{inc_frame_ref_count, meta::AnyFrameMeta, Frame},
         page_prop::PageProperty,
         Paddr, PagingConstsTrait, PagingLevel,
     },
@@ -27,7 +27,7 @@ pub(in crate::mm) enum Child<
     [(); C::NR_LEVELS as usize]:,
 {
     PageTable(RawPageTableNode<E, C>),
-    Frame(Frame<dyn FrameMeta>, PageProperty),
+    Frame(Frame<dyn AnyFrameMeta>, PageProperty),
     /// Pages not tracked by handles.
     Untracked(Paddr, PagingLevel, PageProperty),
     None,
@@ -119,7 +119,7 @@ where
         match is_tracked {
             MapTrackingStatus::Tracked => {
                 // SAFETY: The physical address points to a valid page.
-                let page = unsafe { Frame::<dyn FrameMeta>::from_raw(paddr) };
+                let page = unsafe { Frame::<dyn AnyFrameMeta>::from_raw(paddr) };
                 Child::Frame(page, pte.prop())
             }
             MapTrackingStatus::Untracked => Child::Untracked(paddr, level, pte.prop()),
@@ -150,7 +150,7 @@ where
         if !pte.is_last(level) {
             // SAFETY: The physical address is valid and the PTE already owns
             // the reference to the page.
-            unsafe { inc_page_ref_count(paddr) };
+            unsafe { inc_frame_ref_count(paddr) };
             // SAFETY: The physical address points to a valid page table node
             // at the given level.
             return Child::PageTable(unsafe { RawPageTableNode::from_raw_parts(paddr, level - 1) });
@@ -160,9 +160,9 @@ where
             MapTrackingStatus::Tracked => {
                 // SAFETY: The physical address is valid and the PTE already owns
                 // the reference to the page.
-                unsafe { inc_page_ref_count(paddr) };
+                unsafe { inc_frame_ref_count(paddr) };
                 // SAFETY: The physical address points to a valid page.
-                let page = unsafe { Frame::<dyn FrameMeta>::from_raw(paddr) };
+                let page = unsafe { Frame::<dyn AnyFrameMeta>::from_raw(paddr) };
                 Child::Frame(page, pte.prop())
             }
             MapTrackingStatus::Untracked => Child::Untracked(paddr, level, pte.prop()),

@@ -16,8 +16,8 @@ use crate::{
     cpu::num_cpus,
     cpu_local_cell,
     mm::{
-        frame::allocator::PAGE_ALLOCATOR, nr_subpage_per_huge, paddr_to_vaddr, Paddr, PageProperty,
-        PagingConstsTrait, Vaddr, PAGE_SIZE,
+        frame::allocator::FRAME_ALLOCATOR, nr_subpage_per_huge, paddr_to_vaddr, Paddr,
+        PageProperty, PagingConstsTrait, Vaddr, PAGE_SIZE,
     },
     sync::SpinLock,
 };
@@ -221,7 +221,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
     }
 
     fn alloc_frame(&mut self) -> FrameNumber {
-        let frame = PAGE_ALLOCATOR.get().unwrap().lock().alloc(1).unwrap();
+        let frame = FRAME_ALLOCATOR.get().unwrap().lock().alloc(1).unwrap();
         self.frames.push(frame);
         // Zero it out.
         let vaddr = paddr_to_vaddr(frame * PAGE_SIZE) as *mut u8;
@@ -233,7 +233,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for BootPageTable<E, C> {
     fn drop(&mut self) {
         for frame in &self.frames {
-            PAGE_ALLOCATOR.get().unwrap().lock().dealloc(*frame, 1);
+            FRAME_ALLOCATOR.get().unwrap().lock().dealloc(*frame, 1);
         }
     }
 }

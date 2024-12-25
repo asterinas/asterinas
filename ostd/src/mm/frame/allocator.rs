@@ -1,16 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! The physical page memory allocator.
-//!
-//! TODO: Decouple it with the frame allocator in [`crate::mm::frame::options`] by
-//! allocating pages rather untyped memory from this module.
+//! The physical memory allocator.
 
 use align_ext::AlignExt;
 use buddy_system_allocator::FrameAllocator;
 use log::info;
 use spin::Once;
 
-use super::{meta::FrameMeta, segment::Segment, Frame};
+use super::{meta::AnyFrameMeta, segment::Segment, Frame};
 use crate::{
     boot::memory_region::MemoryRegionType,
     error::Error,
@@ -54,8 +51,8 @@ impl FrameAllocOptions {
     }
 
     /// Allocates a single frame with additional metadata.
-    pub fn alloc_frame_with<M: FrameMeta>(&self, metadata: M) -> Result<Frame<M>> {
-        let frame = PAGE_ALLOCATOR
+    pub fn alloc_frame_with<M: AnyFrameMeta>(&self, metadata: M) -> Result<Frame<M>> {
+        let frame = FRAME_ALLOCATOR
             .get()
             .unwrap()
             .disable_irq()
@@ -85,7 +82,7 @@ impl FrameAllocOptions {
     ///
     /// The returned [`Segment`] contains at least one frame. The method returns
     /// an error if the number of frames is zero.
-    pub fn alloc_segment_with<M: FrameMeta, F>(
+    pub fn alloc_segment_with<M: AnyFrameMeta, F>(
         &self,
         nframes: usize,
         metadata_fn: F,
@@ -96,7 +93,7 @@ impl FrameAllocOptions {
         if nframes == 0 {
             return Err(Error::InvalidArgs);
         }
-        let segment = PAGE_ALLOCATOR
+        let segment = FRAME_ALLOCATOR
             .get()
             .unwrap()
             .disable_irq()
@@ -168,6 +165,8 @@ impl CountingFrameAllocator {
         }
     }
 
+    // TODO: this method should be marked unsafe as invalid arguments will mess
+    // up the underlying allocator.
     pub fn dealloc(&mut self, start_frame: usize, count: usize) {
         self.allocator.dealloc(start_frame, count);
         self.allocated -= count * PAGE_SIZE;
@@ -182,7 +181,7 @@ impl CountingFrameAllocator {
     }
 }
 
-pub(in crate::mm) static PAGE_ALLOCATOR: Once<SpinLock<CountingFrameAllocator>> = Once::new();
+pub(in crate::mm) static FRAME_ALLOCATOR: Once<SpinLock<CountingFrameAllocator>> = Once::new();
 
 pub(crate) fn init() {
     let regions = crate::boot::memory_regions();
@@ -208,5 +207,5 @@ pub(crate) fn init() {
         }
     }
     let counting_allocator = CountingFrameAllocator::new(allocator, total);
-    PAGE_ALLOCATOR.call_once(|| SpinLock::new(counting_allocator));
+    FRAME_ALLOCATOR.call_once(|| SpinLock::new(counting_allocator));
 }

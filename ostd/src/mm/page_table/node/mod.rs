@@ -40,7 +40,7 @@ use super::{nr_subpage_per_huge, PageTableEntryTrait};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     mm::{
-        frame::{inc_page_ref_count, meta::FrameMeta, Frame},
+        frame::{inc_frame_ref_count, meta::AnyFrameMeta, Frame},
         paddr_to_vaddr, FrameAllocOptions, Infallible, Paddr, PagingConstsTrait, PagingLevel,
         VmReader,
     },
@@ -166,7 +166,7 @@ where
         // SAFETY: We have a reference count to the page and can safely increase the reference
         // count by one more.
         unsafe {
-            inc_page_ref_count(self.paddr());
+            inc_frame_ref_count(self.paddr());
         }
     }
 
@@ -405,7 +405,7 @@ where
 
 // SAFETY: The layout of the `PageTablePageMeta` is ensured to be the same for
 // all possible generic parameters. And the layout fits the requirements.
-unsafe impl<E: PageTableEntryTrait, C: PagingConstsTrait> FrameMeta for PageTablePageMeta<E, C>
+unsafe impl<E: PageTableEntryTrait, C: PagingConstsTrait> AnyFrameMeta for PageTablePageMeta<E, C>
 where
     [(); C::NR_LEVELS as usize]:,
 {
@@ -434,7 +434,7 @@ where
                 } else if is_tracked == MapTrackingStatus::Tracked {
                     // SAFETY: The PTE points to a tracked page. The ownership
                     // of the child is transferred to the child then dropped.
-                    drop(unsafe { Frame::<dyn FrameMeta>::from_raw(paddr) });
+                    drop(unsafe { Frame::<dyn AnyFrameMeta>::from_raw(paddr) });
                 }
             }
         }
