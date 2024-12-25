@@ -2,13 +2,20 @@
 
 #![allow(dead_code)]
 
-use core::{iter, ops::Range};
+use core::{
+    iter,
+    ops::Range,
+    sync::atomic::{AtomicU8, Ordering},
+};
 
 use align_ext::AlignExt;
 use aster_block::bio::{BioStatus, BioWaiter};
 use aster_rights::Full;
 use lru::LruCache;
-use ostd::mm::{DynUFrame, Frame, FrameAllocOptions, VmIo};
+use ostd::{
+    impl_untyped_frame_meta_for,
+    mm::{DynUFrame, Frame, FrameAllocOptions, UntypedMem, VmIo},
+};
 
 use crate::{
     prelude::*,
@@ -242,7 +249,7 @@ impl ReadaheadState {
     /// Waits for the previous readahead.
     pub fn wait_for_prev_readahead(
         &mut self,
-        pages: &mut MutexGuard<LruCache<usize, Page>>,
+        pages: &mut MutexGuard<LruCache<usize, CachePage>>,
     ) -> Result<()> {
         if matches!(self.waiter.wait(), Some(BioStatus::Complete)) {
             let Some(window) = &self.ra_window else {
@@ -250,7 +257,7 @@ impl ReadaheadState {
             };
             for idx in window.readahead_range() {
                 if let Some(page) = pages.get_mut(&idx) {
-                    page.set_state(PageState::UpToDate);
+                    page.store_state(PageState::UpToDate);
                 }
             }
             self.waiter.clear();
@@ -297,20 +304,20 @@ impl ReadaheadState {
     /// Sends the relevant read request and sets the relevant page in the page cache to `Uninit`.
     pub fn conduct_readahead(
         &mut self,
-        pages: &mut MutexGuard<LruCache<usize, Page>>,
+        pages: &mut MutexGuard<LruCache<usize, CachePage>>,
         backend: Arc<dyn PageCacheBackend>,
     ) -> Result<()> {
         let Some(window) = &self.ra_window else {
             return_errno!(Errno::EINVAL)
         };
         for async_idx in window.readahead_range() {
-            let mut async_page = Page::alloc()?;
-            let pg_waiter = backend.read_page_async(async_idx, async_page.frame().into())?;
+            let mut async_page = CachePage::alloc()?;
+            let pg_waiter = backend.read_page_async(async_idx, (&async_page).into())?;
             if pg_waiter.nreqs() > 0 {
                 self.waiter.concat(pg_waiter);
             } else {
                 // Some backends (e.g. RamFS) do not issue requests, but fill the page directly.
-                async_page.set_state(PageState::UpToDate);
+                async_page.store_state(PageState::UpToDate);
             }
             pages.put(async_idx, async_page);
         }
@@ -324,7 +331,7 @@ impl ReadaheadState {
 }
 
 struct PageCacheManager {
-    pages: Mutex<LruCache<usize, Page>>,
+    pages: Mutex<LruCache<usize, CachePage>>,
     backend: Weak<dyn PageCacheBackend>,
     ra_state: Mutex<ReadaheadState>,
 }
@@ -360,8 +367,8 @@ impl PageCacheManager {
         let backend_npages = backend.npages();
         for idx in page_idx_range.start..page_idx_range.end {
             if let Some(page) = pages.peek(&idx) {
-                if *page.state() == PageState::Dirty && idx < backend_npages {
-                    let waiter = backend.write_page_async(idx, page.frame().into())?;
+                if page.load_state() == PageState::Dirty && idx < backend_npages {
+                    let waiter = backend.write_page_async(idx, page.into())?;
                     bio_waiter.concat(waiter);
                 }
             }
@@ -376,7 +383,7 @@ impl PageCacheManager {
             .iter_mut()
             .filter(|(idx, _)| page_idx_range.contains(*idx))
         {
-            page.set_state(PageState::UpToDate);
+            page.store_state(PageState::UpToDate);
         }
         Ok(())
     }
@@ -395,28 +402,28 @@ impl PageCacheManager {
         // 3. The requested page is on disk, need a sync read operation here.
         let frame = if let Some(page) = pages.get(&idx) {
             // Cond 1 & 2.
-            if let PageState::Uninit = page.state() {
+            if let PageState::Uninit = page.load_state() {
                 // Cond 2: We should wait for the previous readahead.
                 // If there is no previous readahead, an error must have occurred somewhere.
                 assert!(ra_state.request_number() != 0);
                 ra_state.wait_for_prev_readahead(&mut pages)?;
-                pages.get(&idx).unwrap().frame().clone()
+                pages.get(&idx).unwrap().clone()
             } else {
                 // Cond 1.
-                page.frame().clone()
+                page.clone()
             }
         } else {
             // Cond 3.
             // Conducts the sync read operation.
             let page = if idx < backend.npages() {
-                let mut page = Page::alloc()?;
-                backend.read_page(idx, page.frame().into())?;
-                page.set_state(PageState::UpToDate);
+                let mut page = CachePage::alloc()?;
+                backend.read_page(idx, (&page).into())?;
+                page.store_state(PageState::UpToDate);
                 page
             } else {
-                Page::alloc_zero()?
+                CachePage::alloc_zero()?
             };
-            let frame = page.frame().clone();
+            let frame = page.clone();
             pages.put(idx, page);
             frame
         };
@@ -445,7 +452,7 @@ impl Pager for PageCacheManager {
     fn update_page(&self, idx: usize) -> Result<()> {
         let mut pages = self.pages.lock();
         if let Some(page) = pages.get_mut(&idx) {
-            page.set_state(PageState::Dirty);
+            page.store_state(PageState::Dirty);
         } else {
             warn!("The page {} is not in page cache", idx);
         }
@@ -456,12 +463,12 @@ impl Pager for PageCacheManager {
     fn decommit_page(&self, idx: usize) -> Result<()> {
         let page_result = self.pages.lock().pop(&idx);
         if let Some(page) = page_result {
-            if let PageState::Dirty = page.state() {
+            if let PageState::Dirty = page.load_state() {
                 let Some(backend) = self.backend.upgrade() else {
                     return Ok(());
                 };
                 if idx < backend.npages() {
-                    backend.write_page(idx, page.frame().into())?;
+                    backend.write_page(idx, (&page).into())?;
                 }
             }
         }
@@ -471,67 +478,96 @@ impl Pager for PageCacheManager {
 
     fn commit_overwrite(&self, idx: usize) -> Result<DynUFrame> {
         if let Some(page) = self.pages.lock().get(&idx) {
-            return Ok(page.frame.clone().into());
+            return Ok(page.clone().into());
         }
 
-        let page = Page::alloc_zero()?;
-        Ok(self
-            .pages
-            .lock()
-            .get_or_insert(idx, || page)
-            .frame
-            .clone()
-            .into())
+        let page = CachePage::alloc_zero()?;
+        Ok(self.pages.lock().get_or_insert(idx, || page).clone().into())
     }
 }
 
+/// A page in the page cache.
+pub type CachePage = Frame<CachePageMeta>;
+
+/// Metadata for a page in the page cache.
 #[derive(Debug)]
-struct Page {
-    frame: Frame<()>,
-    state: PageState,
+pub struct CachePageMeta {
+    pub state: AtomicPageState,
+    // TODO: Add a reverse mapping from the page to VMO for eviction.
 }
 
-impl Page {
-    pub fn alloc() -> Result<Self> {
-        let frame = FrameAllocOptions::new().zeroed(false).alloc_frame()?;
-        Ok(Self {
-            frame,
-            state: PageState::Uninit,
-        })
+impl_untyped_frame_meta_for!(CachePageMeta);
+
+pub trait CachePageExt {
+    fn metadata(&self) -> &CachePageMeta;
+
+    fn alloc() -> Result<CachePage> {
+        let meta = CachePageMeta {
+            state: AtomicPageState {
+                state: AtomicU8::new(PageState::Uninit as u8),
+            },
+        };
+        let page = FrameAllocOptions::new()
+            .zeroed(false)
+            .alloc_frame_with(meta)?;
+        Ok(page)
     }
 
-    pub fn alloc_zero() -> Result<Self> {
-        let frame = FrameAllocOptions::new().alloc_frame()?;
-        Ok(Self {
-            frame,
-            state: PageState::Dirty,
-        })
+    fn alloc_zero() -> Result<CachePage> {
+        let page = Self::alloc()?;
+        page.writer().fill(0);
+        Ok(page)
     }
 
-    pub fn frame(&self) -> &Frame<()> {
-        &self.frame
+    fn load_state(&self) -> PageState {
+        self.metadata().state.load(Ordering::Relaxed)
     }
 
-    pub fn state(&self) -> &PageState {
-        &self.state
+    fn store_state(&mut self, new_state: PageState) {
+        self.metadata().state.store(new_state, Ordering::Relaxed);
     }
+}
 
-    pub fn set_state(&mut self, new_state: PageState) {
-        self.state = new_state;
+impl CachePageExt for CachePage {
+    fn metadata(&self) -> &CachePageMeta {
+        self.meta()
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PageState {
+#[repr(u8)]
+pub enum PageState {
     /// `Uninit` indicates a new allocated page which content has not been initialized.
     /// The page is available to write, not available to read.
-    Uninit,
+    Uninit = 0,
     /// `UpToDate` indicates a page which content is consistent with corresponding disk content.
     /// The page is available to read and write.
-    UpToDate,
+    UpToDate = 1,
     /// `Dirty` indicates a page which content has been updated and not written back to underlying disk.
     /// The page is available to read and write.
-    Dirty,
+    Dirty = 2,
+}
+
+/// A page state with atomic operations.
+#[derive(Debug)]
+pub struct AtomicPageState {
+    state: AtomicU8,
+}
+
+impl AtomicPageState {
+    pub fn load(&self, order: Ordering) -> PageState {
+        let val = self.state.load(order);
+        match val {
+            0 => PageState::Uninit,
+            1 => PageState::UpToDate,
+            2 => PageState::Dirty,
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn store(&self, val: PageState, order: Ordering) {
+        self.state.store(val as u8, order);
+    }
 }
 
 /// This trait represents the backend for the page cache.
