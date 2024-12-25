@@ -43,13 +43,15 @@ impl RobustListHead {
         if self.list_op_pending == 0 {
             None
         } else {
-            Some(self.futex_addr(self.list_op_pending))
+            self.futex_addr(self.list_op_pending)
         }
     }
 
     /// Get the futex address
-    fn futex_addr(&self, entry_ptr: Vaddr) -> Vaddr {
-        (entry_ptr as isize + self.futex_offset) as _
+    fn futex_addr(&self, entry_ptr: Vaddr) -> Option<Vaddr> {
+        self.futex_offset
+            .checked_add(entry_ptr as isize)
+            .map(|result| result as Vaddr)
     }
 }
 
@@ -99,7 +101,7 @@ impl Iterator for FutexIter<'_> {
                 return None;
             }
             let futex_addr = if self.entry_ptr != self.robust_list.list_op_pending {
-                Some(self.robust_list.futex_addr(self.entry_ptr))
+                self.robust_list.futex_addr(self.entry_ptr)
             } else {
                 None
             };
