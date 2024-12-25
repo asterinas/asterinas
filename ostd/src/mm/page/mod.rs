@@ -22,7 +22,7 @@ use core::{
     any::Any,
     marker::PhantomData,
     mem::ManuallyDrop,
-    sync::atomic::{AtomicU32, AtomicUsize, Ordering},
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
 pub use cont_pages::ContPages;
@@ -65,24 +65,25 @@ impl<M: PageMeta> Page<M> {
         let vaddr = mapping::page_to_meta::<PagingConsts>(paddr);
         let ptr = vaddr as *const MetaSlot;
 
-        // SAFETY: The aligned pointer points to a initialized `MetaSlot`.
-        let ref_count = unsafe { &(*ptr).ref_count };
+        // SAFETY: `ptr` points to a valid `MetaSlot` that will never be mutably borrowed, so taking an
+        // immutable reference to it is always safe.
+        let slot = unsafe { &*ptr };
 
-        ref_count
+        slot.ref_count
             .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
             .expect("Page already in use when trying to get a new handle");
 
-        // SAFETY: The aligned pointer points to a initialized `MetaSlot`.
-        let vtable_ptr = unsafe { (*ptr).vtable_ptr.get() };
+        // SAFETY: We have exclusive access to the page metadata.
+        let vtable_ptr = unsafe { &mut *slot.vtable_ptr.get() };
+        vtable_ptr.write(core::ptr::metadata(&metadata as &dyn PageMeta));
 
-        // SAFETY: The pointer is valid and we have the exclusive access.
-        unsafe { vtable_ptr.write(core::ptr::metadata(&metadata as &dyn PageMeta)) };
-
-        // Initialize the metadata
-        // SAFETY: The pointer points to the first byte of the `MetaSlot`
-        // structure, and layout ensured enough space for `M`. The original
-        // value does not represent any object that's needed to be dropped.
-        unsafe { (ptr as *mut M).write(metadata) };
+        // SAFETY:
+        // 1. `ptr` points to the first field of `MetaSlot` (guaranteed by `repr(C)`), which is the
+        //    metadata storage.
+        // 2. The size and the alignment of the metadata storage is large enough to hold `M`
+        //    (guaranteed by the safety requirement of the `PageMeta` trait).
+        // 3. We have exclusive access to the metadata storage (guaranteed by the reference count).
+        unsafe { ptr.cast::<M>().cast_mut().write(metadata) };
 
         Self {
             ptr,
@@ -149,7 +150,10 @@ impl<M: PageMeta> Page<M> {
 
     /// Get the metadata of this page.
     pub fn meta(&self) -> &M {
-        unsafe { &*(self.ptr as *const M) }
+        // SAFETY: `self.ptr` points to the metadata storage which is valid to be immutably
+        // borrowed as `M` because the type is correct, it lives under the given lifetime, and no
+        // one will mutably borrow the page metadata after initialization.
+        unsafe { &*self.ptr.cast() }
     }
 
     /// Get the reference count of the page.
@@ -164,17 +168,19 @@ impl<M: PageMeta> Page<M> {
     /// reference count can be changed by other threads at any time including
     /// potentially between calling this method and acting on the result.
     pub fn reference_count(&self) -> u32 {
-        self.ref_count().load(Ordering::Relaxed)
+        self.slot().ref_count.load(Ordering::Relaxed)
     }
 
-    fn ref_count(&self) -> &AtomicU32 {
-        unsafe { &(*self.ptr).ref_count }
+    fn slot(&self) -> &MetaSlot {
+        // SAFETY: `ptr` points to a valid `MetaSlot` that will never be mutably borrowed, so taking an
+        // immutable reference to it is always safe.
+        unsafe { &*self.ptr }
     }
 }
 
 impl<M: PageMeta> Clone for Page<M> {
     fn clone(&self) -> Self {
-        self.ref_count().fetch_add(1, Ordering::Relaxed);
+        self.slot().ref_count.fetch_add(1, Ordering::Relaxed);
         Self {
             ptr: self.ptr,
             _marker: PhantomData,
@@ -184,7 +190,7 @@ impl<M: PageMeta> Clone for Page<M> {
 
 impl<M: PageMeta> Drop for Page<M> {
     fn drop(&mut self) {
-        let last_ref_cnt = self.ref_count().fetch_sub(1, Ordering::Release);
+        let last_ref_cnt = self.slot().ref_count.fetch_sub(1, Ordering::Release);
         debug_assert!(last_ref_cnt > 0);
         if last_ref_cnt == 1 {
             // A fence is needed here with the same reasons stated in the implementation of
@@ -239,13 +245,20 @@ impl DynPage {
 
     /// Get the metadata of this page.
     pub fn meta(&self) -> &dyn Any {
-        // SAFETY: The pointer is valid and no other writes will be done to it.
-        let vtable_ptr = unsafe { *(*self.ptr).vtable_ptr.get() };
+        let slot = self.slot();
+
+        // SAFETY: The page metadata is valid to be borrowed immutably, since it will never be
+        // borrowed mutably after initialization.
+        let vtable_ptr = unsafe { &*slot.vtable_ptr.get() };
+
+        // SAFETY: The page metadata is initialized and valid.
+        let vtable_ptr = *unsafe { vtable_ptr.assume_init_ref() };
 
         let meta_ptr: *const dyn PageMeta = core::ptr::from_raw_parts(self.ptr, vtable_ptr);
 
-        // SAFETY: The pointer is valid and the type is correct for the stored
-        // metadata.
+        // SAFETY: `self.ptr` points to the metadata storage which is valid to be immutably
+        // borrowed under `vtable_ptr` because the vtable is correct, it lives under the given
+        // lifetime, and no one will mutably borrow the page metadata after initialization.
         (unsafe { &*meta_ptr }) as &dyn Any
     }
 
@@ -264,8 +277,10 @@ impl DynPage {
         PAGE_SIZE
     }
 
-    fn ref_count(&self) -> &AtomicU32 {
-        unsafe { &(*self.ptr).ref_count }
+    fn slot(&self) -> &MetaSlot {
+        // SAFETY: `ptr` points to a valid `MetaSlot` that will never be mutably borrowed, so taking an
+        // immutable reference to it is always safe.
+        unsafe { &*self.ptr }
     }
 }
 
@@ -306,14 +321,14 @@ impl From<Frame> for DynPage {
 
 impl Clone for DynPage {
     fn clone(&self) -> Self {
-        self.ref_count().fetch_add(1, Ordering::Relaxed);
+        self.slot().ref_count.fetch_add(1, Ordering::Relaxed);
         Self { ptr: self.ptr }
     }
 }
 
 impl Drop for DynPage {
     fn drop(&mut self) {
-        let last_ref_cnt = self.ref_count().fetch_sub(1, Ordering::Release);
+        let last_ref_cnt = self.slot().ref_count.fetch_sub(1, Ordering::Release);
         debug_assert!(last_ref_cnt > 0);
         if last_ref_cnt == 1 {
             // A fence is needed here with the same reasons stated in the implementation of
@@ -340,9 +355,10 @@ pub(in crate::mm) unsafe fn inc_page_ref_count(paddr: Paddr) {
     debug_assert!(paddr < MAX_PADDR.load(Ordering::Relaxed) as Paddr);
 
     let vaddr: Vaddr = mapping::page_to_meta::<PagingConsts>(paddr);
-    // SAFETY: The virtual address points to an initialized metadata slot.
+    // SAFETY: `vaddr` points to a valid `MetaSlot` that will never be mutably borrowed, so taking
+    // an immutable reference to it is always safe.
     let slot = unsafe { &*(vaddr as *const MetaSlot) };
-    let old = slot.ref_count.fetch_add(1, Ordering::Relaxed);
 
+    let old = slot.ref_count.fetch_add(1, Ordering::Relaxed);
     debug_assert!(old > 0);
 }

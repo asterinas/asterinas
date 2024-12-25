@@ -38,7 +38,7 @@ pub mod mapping {
 use core::{
     any::Any,
     cell::UnsafeCell,
-    mem::size_of,
+    mem::{size_of, MaybeUninit},
     sync::atomic::{AtomicU32, Ordering},
 };
 
@@ -78,7 +78,7 @@ pub(in crate::mm) struct MetaSlot {
     /// The reference count of the page.
     pub(super) ref_count: AtomicU32,
     /// The virtual table that indicates the type of the metadata.
-    pub(super) vtable_ptr: UnsafeCell<PageMetaVtablePtr>,
+    pub(super) vtable_ptr: UnsafeCell<MaybeUninit<PageMetaVtablePtr>>,
 }
 
 type PageMetaVtablePtr = core::ptr::DynMetadata<dyn PageMeta>;
@@ -130,18 +130,31 @@ pub use impl_page_meta;
 /// page should have a last handle to the page, and the page is about to be dropped,
 /// as the metadata slot after this operation becomes uninitialized.
 pub(super) unsafe fn drop_last_in_place(ptr: *mut MetaSlot) {
-    // This would be guaranteed as a safety requirement.
-    debug_assert_eq!((*ptr).ref_count.load(Ordering::Relaxed), 0);
+    // SAFETY: `ptr` points to a valid `MetaSlot` that will never be mutably borrowed, so taking an
+    // immutable reference to it is always safe.
+    let slot = unsafe { &*ptr };
+
+    // This should be guaranteed as a safety requirement.
+    debug_assert_eq!(slot.ref_count.load(Ordering::Relaxed), 0);
 
     let paddr = mapping::meta_to_page::<PagingConsts>(ptr as Vaddr);
 
-    let meta_ptr: *mut dyn PageMeta = core::ptr::from_raw_parts_mut(ptr, *(*ptr).vtable_ptr.get());
+    // SAFETY: We have exclusive access to the page metadata.
+    let vtable_ptr = unsafe { &mut *slot.vtable_ptr.get() };
+    // SAFETY: The page metadata is initialized and valid.
+    let vtable_ptr = unsafe { vtable_ptr.assume_init_read() };
 
-    // Let the custom dropper handle the drop.
-    (*meta_ptr).on_drop(paddr);
+    let meta_ptr: *mut dyn PageMeta = core::ptr::from_raw_parts_mut(ptr, vtable_ptr);
 
-    // Drop the metadata.
-    core::ptr::drop_in_place(meta_ptr);
+    // SAFETY: `ptr` points to the metadata storage which is valid to be mutably borrowed under
+    // `vtable_ptr` because the metadata is valid, the vtable is correct, and we have the exclusive
+    // access to the page metadata.
+    unsafe {
+        // Invoke the custom `on_drop` handler.
+        (*meta_ptr).on_drop(paddr);
+        // Drop the page metadata.
+        core::ptr::drop_in_place(meta_ptr);
+    }
 
     // Deallocate the page.
     // It would return the page to the allocator for further use. This would be done
@@ -153,6 +166,7 @@ pub(super) unsafe fn drop_last_in_place(ptr: *mut MetaSlot) {
         .lock()
         .dealloc(paddr / PAGE_SIZE, 1);
 }
+
 /// The metadata of pages that holds metadata of pages.
 #[derive(Debug, Default)]
 pub struct MetaPageMeta {}
