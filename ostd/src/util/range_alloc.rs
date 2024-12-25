@@ -9,35 +9,25 @@ use crate::{
     Error,
 };
 
-struct KVirtAreaFreeNode {
-    block: Range<Vaddr>,
+pub struct RangeAllocator {
+    fullrange: Range<usize>,
+    freelist: SpinLock<Option<BTreeMap<usize, FreeRange>>>,
 }
 
-impl KVirtAreaFreeNode {
-    const fn new(range: Range<Vaddr>) -> Self {
-        Self { block: range }
-    }
-}
-
-pub struct VirtAddrAllocator {
-    fullrange: Range<Vaddr>,
-    freelist: SpinLock<Option<BTreeMap<Vaddr, KVirtAreaFreeNode>>>,
-}
-
-impl VirtAddrAllocator {
-    pub const fn new(fullrange: Range<Vaddr>) -> Self {
+impl RangeAllocator {
+    pub const fn new(fullrange: Range<usize>) -> Self {
         Self {
             fullrange,
             freelist: SpinLock::new(None),
         }
     }
 
-    pub const fn fullrange(&self) -> &Range<Vaddr> {
+    pub const fn fullrange(&self) -> &Range<usize> {
         &self.fullrange
     }
 
     /// Allocates a specific kernel virtual area.
-    pub fn alloc_specific(&self, allocate_range: &Range<Vaddr>) -> Result<()> {
+    pub fn alloc_specific(&self, allocate_range: &Range<usize>) -> Result<()> {
         debug_assert!(allocate_range.start < allocate_range.end);
 
         let mut lock_guard = self.get_freelist_guard();
@@ -65,7 +55,7 @@ impl VirtAddrAllocator {
             if right_length != 0 {
                 freelist.insert(
                     allocate_range.end,
-                    KVirtAreaFreeNode::new(allocate_range.end..(allocate_range.end + right_length)),
+                    FreeRange::new(allocate_range.end..(allocate_range.end + right_length)),
                 );
             }
         }
@@ -77,10 +67,10 @@ impl VirtAddrAllocator {
         }
     }
 
-    /// Allocates a kernel virtual area.
+    /// Allocates a range specific by the `size`.
     ///
     /// This is currently implemented with a simple FIRST-FIT algorithm.
-    pub fn alloc(&self, size: usize) -> Result<Range<Vaddr>> {
+    pub fn alloc(&self, size: usize) -> Result<Range<usize>> {
         let mut lock_guard = self.get_freelist_guard();
         let freelist = lock_guard.as_mut().unwrap();
         let mut allocate_range = None;
@@ -111,8 +101,8 @@ impl VirtAddrAllocator {
         }
     }
 
-    /// Frees a kernel virtual area.
-    pub fn free(&self, range: Range<Vaddr>) {
+    /// Frees a `range`.
+    pub fn free(&self, range: Range<usize>) {
         let mut lock_guard = self.freelist.lock();
         let freelist = lock_guard.as_mut().unwrap_or_else(|| {
             panic!("Free a 'KVirtArea' when 'VirtAddrAllocator' has not been initialized.")
@@ -132,7 +122,7 @@ impl VirtAddrAllocator {
                 freelist.remove(&prev_va);
             }
         }
-        freelist.insert(free_range.start, KVirtAreaFreeNode::new(free_range.clone()));
+        freelist.insert(free_range.start, FreeRange::new(free_range.clone()));
 
         // 2. check if we can merge the current block with the next block, if we can, do so.
         if let Some((next_va, next_node)) = freelist
@@ -150,16 +140,23 @@ impl VirtAddrAllocator {
 
     fn get_freelist_guard(
         &self,
-    ) -> SpinLockGuard<Option<BTreeMap<usize, KVirtAreaFreeNode>>, PreemptDisabled> {
+    ) -> SpinLockGuard<Option<BTreeMap<usize, FreeRange>>, PreemptDisabled> {
         let mut lock_guard = self.freelist.lock();
         if lock_guard.is_none() {
-            let mut freelist: BTreeMap<Vaddr, KVirtAreaFreeNode> = BTreeMap::new();
-            freelist.insert(
-                self.fullrange.start,
-                KVirtAreaFreeNode::new(self.fullrange.clone()),
-            );
+            let mut freelist: BTreeMap<usize, FreeRange> = BTreeMap::new();
+            freelist.insert(self.fullrange.start, FreeRange::new(self.fullrange.clone()));
             *lock_guard = Some(freelist);
         }
         lock_guard
+    }
+}
+
+struct FreeRange {
+    block: Range<usize>,
+}
+
+impl FreeRange {
+    const fn new(range: Range<usize>) -> Self {
+        Self { block: range }
     }
 }
