@@ -134,8 +134,4 @@ impl FileLike for InodeHandle<Rights> {
         }
         self.0.fallocate(mode, offset, len)
     }
-
-    fn as_device(&self) -> Option<Arc<dyn Device>> {
-        self.dentry().inode().as_device()
-    }
 }

@@ -5,10 +5,7 @@
 //! Opened File Handle
 
 use crate::{
-    fs::{
-        device::Device,
-        utils::{AccessMode, FallocMode, InodeMode, IoctlCmd, Metadata, SeekFrom, StatusFlags},
-    },
+    fs::utils::{AccessMode, FallocMode, InodeMode, IoctlCmd, Metadata, SeekFrom, StatusFlags},
     net::socket::Socket,
     prelude::*,
     process::{signal::Pollable, Gid, Uid},
@@ -101,10 +98,6 @@ pub trait FileLike: Pollable + Send + Sync + Any {
     }
 
     fn as_socket(self: Arc<Self>) -> Option<Arc<dyn Socket>> {
-        None
-    }
-
-    fn as_device(&self) -> Option<Arc<dyn Device>> {
         None
     }
 }
