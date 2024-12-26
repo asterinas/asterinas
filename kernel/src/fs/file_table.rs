@@ -15,7 +15,6 @@ use super::{
 use crate::{
     events::{Events, IoEvents, Observer, Subject},
     fs::utils::StatusFlags,
-    net::socket::Socket,
     prelude::*,
     process::{
         signal::{constants::SIGIO, signals::kernel::KernelSignal, PollAdaptor},
@@ -183,13 +182,6 @@ impl FileTable {
             .get(fd as usize)
             .map(|entry| &entry.file)
             .ok_or(Error::with_message(Errno::EBADF, "fd not exits"))
-    }
-
-    pub fn get_socket(&self, sockfd: FileDesc) -> Result<Arc<dyn Socket>> {
-        let file_like = self.get_file(sockfd)?.clone();
-        file_like
-            .as_socket()
-            .ok_or_else(|| Error::with_message(Errno::ENOTSOCK, "the fd is not a socket"))
     }
 
     pub fn get_entry(&self, fd: FileDesc) -> Result<&FileTableEntry> {

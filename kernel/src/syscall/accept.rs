@@ -7,7 +7,7 @@ use crate::{
         utils::{CreationFlags, StatusFlags},
     },
     prelude::*,
-    util::net::{get_socket_from_fd, write_socket_addr_to_user},
+    util::net::write_socket_addr_to_user,
 };
 
 pub fn sys_accept(
@@ -47,8 +47,13 @@ fn do_accept(
     flags: Flags,
     ctx: &Context,
 ) -> Result<FileDesc> {
+    let file = {
+        let file_table = ctx.posix_thread.file_table().lock();
+        file_table.get_file(sockfd)?.clone()
+    };
+    let socket = file.as_socket_or_err()?;
+
     let (connected_socket, socket_addr) = {
-        let socket = get_socket_from_fd(sockfd)?;
         socket.accept().map_err(|err| match err.error() {
             // FIXME: `accept` should not be restarted if a timeout has been set on the socket using `setsockopt`.
             Errno::EINTR => Error::new(Errno::ERESTARTSYS),

@@ -5,7 +5,7 @@ use crate::{
     fs::file_table::FileDesc,
     net::socket::{MessageHeader, SendRecvFlags},
     prelude::*,
-    util::net::{get_socket_from_fd, read_socket_addr_from_user},
+    util::net::read_socket_addr_from_user,
 };
 
 pub fn sys_sendto(
@@ -26,7 +26,11 @@ pub fn sys_sendto(
     };
     debug!("sockfd = {sockfd}, buf = 0x{buf:x}, len = 0x{len:x}, flags = {flags:?}, socket_addr = {socket_addr:?}");
 
-    let socket = get_socket_from_fd(sockfd)?;
+    let file = {
+        let file_table = ctx.posix_thread.file_table().lock();
+        file_table.get_file(sockfd)?.clone()
+    };
+    let socket = file.as_socket_or_err()?;
 
     let message_header = MessageHeader::new(socket_addr, None);
 
