@@ -5,7 +5,7 @@ use crate::{
     fs::file_table::FileDesc,
     net::socket::{MessageHeader, SendRecvFlags},
     prelude::*,
-    util::net::{get_socket_from_fd, CUserMsgHdr},
+    util::net::CUserMsgHdr,
 };
 
 pub fn sys_sendmsg(
@@ -22,7 +22,11 @@ pub fn sys_sendmsg(
         sockfd, c_user_msghdr, flags
     );
 
-    let socket = get_socket_from_fd(sockfd)?;
+    let file = {
+        let file_table = ctx.posix_thread.file_table().lock();
+        file_table.get_file(sockfd)?.clone()
+    };
+    let socket = file.as_socket_or_err()?;
 
     let (mut io_vec_reader, message_header) = {
         let addr = c_user_msghdr.read_socket_addr_from_user()?;

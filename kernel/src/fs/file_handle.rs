@@ -97,7 +97,7 @@ pub trait FileLike: Pollable + Send + Sync + Any {
         return_errno_with_message!(Errno::EOPNOTSUPP, "fallocate is not supported");
     }
 
-    fn as_socket(self: Arc<Self>) -> Option<Arc<dyn Socket>> {
+    fn as_socket(&self) -> Option<&dyn Socket> {
         None
     }
 }
@@ -125,5 +125,10 @@ impl dyn FileLike {
     pub fn write_bytes_at(&self, offset: usize, buf: &[u8]) -> Result<usize> {
         let mut reader = VmReader::from(buf).to_fallible();
         self.write_at(offset, &mut reader)
+    }
+
+    pub fn as_socket_or_err(&self) -> Result<&dyn Socket> {
+        self.as_socket()
+            .ok_or_else(|| Error::with_message(Errno::ENOTSOCK, "the file is not a socket"))
     }
 }

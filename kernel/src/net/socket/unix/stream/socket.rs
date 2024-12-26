@@ -164,7 +164,7 @@ impl Pollable for UnixStreamSocket {
 }
 
 impl FileLike for UnixStreamSocket {
-    fn as_socket(self: Arc<Self>) -> Option<Arc<dyn Socket>> {
+    fn as_socket(&self) -> Option<&dyn Socket> {
         Some(self)
     }
 

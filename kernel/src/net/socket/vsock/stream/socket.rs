@@ -139,7 +139,7 @@ impl Pollable for VsockStreamSocket {
 }
 
 impl FileLike for VsockStreamSocket {
-    fn as_socket(self: Arc<Self>) -> Option<Arc<dyn Socket>> {
+    fn as_socket(&self) -> Option<&dyn Socket> {
         Some(self)
     }
 
