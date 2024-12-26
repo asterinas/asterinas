@@ -17,6 +17,7 @@ RUN apt update && apt-get install -y --no-install-recommends \
     curl \ 
     git-core \ 
     gnupg \ 
+    libevent-dev \ 
     libssl-dev \ 
     jq \
     python3-pip \ 
@@ -414,7 +415,6 @@ RUN apt update && apt-get install -y --no-install-recommends \
     {% endif %}
     iptables \ 
     iproute2 \ 
-    libevent-dev        `# running dependency for Memcached` \ 
     libpixman-1-dev     `# running dependency for QEMU` \ 
     mtools              `# used by grub-mkrescue` \ 
     net-tools \ 
