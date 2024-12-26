@@ -95,16 +95,18 @@ impl Inode {
     }
 
     pub fn resize(&self, new_size: usize) -> Result<()> {
-        let inner = self.inner.upread();
-        if inner.inode_type() != InodeType::File {
+        if self.type_ != InodeType::File {
             return_errno!(Errno::EISDIR);
         }
+
+        let inner = self.inner.upread();
         if new_size == inner.file_size() {
             return Ok(());
         }
 
         let mut inner = inner.upgrade();
         inner.resize(new_size)?;
+
         let now = now();
         inner.set_mtime(now);
         inner.set_ctime(now);
@@ -121,11 +123,11 @@ impl Inode {
         if name.len() > MAX_FNAME_LEN {
             return_errno!(Errno::ENAMETOOLONG);
         }
-
-        let inner = self.inner.upread();
-        if inner.inode_type() != InodeType::Dir {
+        if self.type_ != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
+
+        let inner = self.inner.upread();
         if inner.hard_links() == 0 {
             return_errno_with_message!(Errno::ENOENT, "dir removed");
         }
@@ -171,11 +173,11 @@ impl Inode {
         if name.len() > MAX_FNAME_LEN {
             return_errno!(Errno::ENAMETOOLONG);
         }
-
-        let inner = self.inner.read();
-        if inner.inode_type() != InodeType::Dir {
+        if self.type_ != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
+
+        let inner = self.inner.read();
         if inner.hard_links() == 0 {
             return_errno_with_message!(Errno::ENOENT, "dir removed");
         }
@@ -192,11 +194,11 @@ impl Inode {
         if name.len() > MAX_FNAME_LEN {
             return_errno!(Errno::ENAMETOOLONG);
         }
-
-        let inner = self.inner.upread();
-        if inner.inode_type() != InodeType::Dir {
+        if self.type_ != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
+
+        let inner = self.inner.upread();
         if inner.hard_links() == 0 {
             return_errno_with_message!(Errno::ENOENT, "dir removed");
         }
@@ -315,10 +317,11 @@ impl Inode {
 
     /// Rename within its own directory.
     fn rename_within(&self, old_name: &str, new_name: &str) -> Result<()> {
-        let self_inner = self.inner.upread();
-        if self_inner.inode_type() != InodeType::Dir {
+        if self.type_ != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
+
+        let self_inner = self.inner.upread();
         if self_inner.hard_links() == 0 {
             return_errno_with_message!(Errno::ENOENT, "dir removed");
         }
@@ -598,11 +601,12 @@ impl Inode {
     }
 
     pub fn readdir_at(&self, offset: usize, visitor: &mut dyn DirentVisitor) -> Result<usize> {
+        if self.type_ != InodeType::Dir {
+            return_errno!(Errno::ENOTDIR);
+        }
+
         let offset_read = {
             let inner = self.inner.read();
-            if inner.inode_type() != InodeType::Dir {
-                return_errno!(Errno::ENOTDIR);
-            }
             if inner.hard_links() == 0 {
                 return_errno_with_message!(Errno::ENOENT, "dir removed");
             }
@@ -635,53 +639,48 @@ impl Inode {
     }
 
     pub fn write_link(&self, target: &str) -> Result<()> {
-        let mut inner = self.inner.write();
-        if inner.inode_type() != InodeType::SymLink {
+        if self.type_ != InodeType::SymLink {
             return_errno!(Errno::EISDIR);
         }
 
-        inner.write_link(target)?;
-        Ok(())
+        let mut inner = self.inner.write();
+        inner.write_link(target)
     }
 
     pub fn read_link(&self) -> Result<String> {
-        let inner = self.inner.read();
-        if inner.inode_type() != InodeType::SymLink {
+        if self.type_ != InodeType::SymLink {
             return_errno!(Errno::EISDIR);
         }
 
+        let inner = self.inner.read();
         inner.read_link()
     }
 
     pub fn set_device_id(&self, device_id: u64) -> Result<()> {
-        let mut inner = self.inner.write();
-        let inode_type = inner.inode_type();
-        if inode_type != InodeType::BlockDevice && inode_type != InodeType::CharDevice {
+        if self.type_ != InodeType::BlockDevice && self.type_ != InodeType::CharDevice {
             return_errno!(Errno::EISDIR);
         }
 
+        let mut inner = self.inner.write();
         inner.set_device_id(device_id);
         Ok(())
     }
 
     pub fn device_id(&self) -> u64 {
-        let inner = self.inner.read();
-        let inode_type = inner.inode_type();
-        if inode_type != InodeType::BlockDevice && inode_type != InodeType::CharDevice {
+        if self.type_ != InodeType::BlockDevice && self.type_ != InodeType::CharDevice {
             return 0;
         }
+
+        let inner = self.inner.read();
         inner.device_id()
     }
 
     pub fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        let bytes_read = {
-            let inner = self.inner.read();
-            if inner.inode_type() != InodeType::File {
-                return_errno!(Errno::EISDIR);
-            }
+        if self.type_ != InodeType::File {
+            return_errno!(Errno::EISDIR);
+        }
 
-            inner.read_at(offset, writer)?
-        };
+        let bytes_read = self.inner.read().read_at(offset, writer)?;
 
         self.set_atime(now());
 
@@ -690,17 +689,14 @@ impl Inode {
 
     // The offset and the length of buffer must be multiples of the block size.
     pub fn read_direct_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
-        let bytes_read = {
-            let inner = self.inner.read();
-            if inner.inode_type() != InodeType::File {
-                return_errno!(Errno::EISDIR);
-            }
-            if !is_block_aligned(offset) || !is_block_aligned(writer.avail()) {
-                return_errno_with_message!(Errno::EINVAL, "not block-aligned");
-            }
+        if self.type_ != InodeType::File {
+            return_errno!(Errno::EISDIR);
+        }
+        if !is_block_aligned(offset) || !is_block_aligned(writer.avail()) {
+            return_errno_with_message!(Errno::EINVAL, "not block-aligned");
+        }
 
-            inner.read_direct_at(offset, writer)?
-        };
+        let bytes_read = self.inner.read().read_direct_at(offset, writer)?;
 
         self.set_atime(now());
 
@@ -708,47 +704,45 @@ impl Inode {
     }
 
     pub fn write_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
-        let bytes_written = {
-            let inner = self.inner.upread();
-            if inner.inode_type() != InodeType::File {
-                return_errno!(Errno::EISDIR);
-            }
+        if self.type_ != InodeType::File {
+            return_errno!(Errno::EISDIR);
+        }
 
-            let file_size = inner.file_size();
-            let new_size = offset + reader.remain();
-            if new_size > file_size {
-                let mut inner = inner.upgrade();
-                inner.extend_write_at(offset, reader)?
-            } else {
-                inner.write_at(offset, reader)?
-            }
+        let inner = self.inner.upread();
+        let file_size = inner.file_size();
+        let new_size = offset + reader.remain();
+
+        let (bytes_written, mut upgraded_inner) = if new_size > file_size {
+            let mut inner = inner.upgrade();
+            let len = inner.extend_write_at(offset, reader)?;
+            (len, inner)
+        } else {
+            let len = inner.write_at(offset, reader)?;
+            (len, inner.upgrade())
         };
 
         let now = now();
-        self.set_mtime(now);
-        self.set_ctime(now);
+        upgraded_inner.set_mtime(now);
+        upgraded_inner.set_ctime(now);
 
         Ok(bytes_written)
     }
 
     // The offset and the length of buffer must be multiples of the block size.
     pub fn write_direct_at(&self, offset: usize, reader: &mut VmReader) -> Result<usize> {
-        let bytes_written = {
-            let inner = self.inner.upread();
-            if inner.inode_type() != InodeType::File {
-                return_errno!(Errno::EISDIR);
-            }
-            if !is_block_aligned(offset) || !is_block_aligned(reader.remain()) {
-                return_errno_with_message!(Errno::EINVAL, "not block aligned");
-            }
+        if self.type_ != InodeType::File {
+            return_errno!(Errno::EISDIR);
+        }
+        if !is_block_aligned(offset) || !is_block_aligned(reader.remain()) {
+            return_errno_with_message!(Errno::EINVAL, "not block aligned");
+        }
 
-            let mut inner = inner.upgrade();
-            inner.write_direct_at(offset, reader)?
-        };
+        let mut inner = self.inner.write();
+        let bytes_written = inner.write_direct_at(offset, reader)?;
 
         let now = now();
-        self.set_mtime(now);
-        self.set_ctime(now);
+        inner.set_mtime(now);
+        inner.set_ctime(now);
 
         Ok(bytes_written)
     }
@@ -783,7 +777,7 @@ impl Inode {
     }
 
     pub fn fallocate(&self, mode: FallocMode, offset: usize, len: usize) -> Result<()> {
-        if self.inode_type() != InodeType::File {
+        if self.type_ != InodeType::File {
             return_errno_with_message!(Errno::EISDIR, "not regular file");
         }
 
@@ -880,10 +874,15 @@ fn write_lock_two_inodes<'a>(
     RwMutexWriteGuard<'a, InodeInner>,
     RwMutexWriteGuard<'a, InodeInner>,
 ) {
-    let mut write_guards = write_lock_multiple_inodes(vec![this, other]);
-    let other_guard = write_guards.pop().unwrap();
-    let this_guard = write_guards.pop().unwrap();
-    (this_guard, other_guard)
+    if this.ino < other.ino {
+        let this = this.inner.write();
+        let other = other.inner.write();
+        (this, other)
+    } else {
+        let other = other.inner.write();
+        let this = this.inner.write();
+        (this, other)
+    }
 }
 
 fn write_lock_multiple_inodes(inodes: Vec<&Inode>) -> Vec<RwMutexWriteGuard<'_, InodeInner>> {
