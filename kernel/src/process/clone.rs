@@ -4,6 +4,7 @@ use core::{num::NonZeroU64, sync::atomic::Ordering};
 
 use ostd::{
     cpu::UserContext,
+    sync::RwArc,
     task::Task,
     user::{UserContextApi, UserSpace},
 };
@@ -215,6 +216,7 @@ fn clone_child_task(
 
     let Context {
         process,
+        thread_local,
         posix_thread,
         ..
     } = ctx;
@@ -223,7 +225,7 @@ fn clone_child_task(
     clone_sysvsem(clone_flags)?;
 
     // clone file table
-    let child_file_table = clone_files(posix_thread.file_table(), clone_flags);
+    let child_file_table = clone_files(&thread_local.file_table().borrow(), clone_flags);
 
     // clone fs
     let child_fs = clone_fs(posix_thread.fs(), clone_flags);
@@ -281,6 +283,7 @@ fn clone_child_process(
 ) -> Result<Arc<Process>> {
     let Context {
         process,
+        thread_local,
         posix_thread,
         ..
     } = ctx;
@@ -310,7 +313,7 @@ fn clone_child_process(
     };
 
     // clone file table
-    let child_file_table = clone_files(posix_thread.file_table(), clone_flags);
+    let child_file_table = clone_files(&thread_local.file_table().borrow(), clone_flags);
 
     // clone fs
     let child_fs = clone_fs(posix_thread.fs(), clone_flags);
@@ -466,17 +469,14 @@ fn clone_fs(parent_fs: &Arc<ThreadFsInfo>, clone_flags: CloneFlags) -> Arc<Threa
     }
 }
 
-fn clone_files(
-    parent_file_table: &Arc<SpinLock<FileTable>>,
-    clone_flags: CloneFlags,
-) -> Arc<SpinLock<FileTable>> {
+fn clone_files(parent_file_table: &RwArc<FileTable>, clone_flags: CloneFlags) -> RwArc<FileTable> {
     // if CLONE_FILES is set, the child and parent shares the same file table
     // Otherwise, the child will deep copy a new file table.
     // FIXME: the clone may not be deep copy.
     if clone_flags.contains(CloneFlags::CLONE_FILES) {
         parent_file_table.clone()
     } else {
-        Arc::new(SpinLock::new(parent_file_table.lock().clone()))
+        RwArc::new(parent_file_table.read().clone())
     }
 }
 

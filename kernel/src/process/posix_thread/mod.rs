@@ -5,7 +5,7 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use aster_rights::{ReadOp, WriteOp};
-use ostd::sync::Waker;
+use ostd::sync::{RoArc, Waker};
 
 use super::{
     kill::SignalSenderIds,
@@ -57,7 +57,7 @@ pub struct PosixThread {
 
     // Files
     /// File table
-    file_table: Arc<SpinLock<FileTable>>,
+    file_table: RoArc<FileTable>,
     /// File system
     fs: Arc<ThreadFsInfo>,
 
@@ -98,7 +98,7 @@ impl PosixThread {
         &self.name
     }
 
-    pub fn file_table(&self) -> &Arc<SpinLock<FileTable>> {
+    pub fn file_table(&self) -> &RoArc<FileTable> {
         &self.file_table
     }
 

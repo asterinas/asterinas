@@ -9,10 +9,9 @@ use ostd::{
 use super::{constants::*, SyscallReturn};
 use crate::{
     fs::{
-        file_table::FileDesc,
+        file_table::{get_file_fast, FileDesc},
         fs_resolver::{FsPath, AT_FDCWD},
         path::Dentry,
-        utils::InodeType,
     },
     prelude::*,
     process::{
@@ -62,22 +61,22 @@ fn lookup_executable_file(
     flags: OpenFlags,
     ctx: &Context,
 ) -> Result<Dentry> {
-    let fs_resolver = ctx.posix_thread.fs().resolver().read();
     let dentry = if flags.contains(OpenFlags::AT_EMPTY_PATH) && filename.is_empty() {
-        fs_resolver.lookup_from_fd(dfd)
+        let mut file_table = ctx.thread_local.file_table().borrow_mut();
+        let file = get_file_fast!(&mut file_table, dfd);
+        file.as_inode_or_err()?.dentry().clone()
     } else {
+        let fs_resolver = ctx.posix_thread.fs().resolver().read();
         let fs_path = FsPath::new(dfd, &filename)?;
         if flags.contains(OpenFlags::AT_SYMLINK_NOFOLLOW) {
-            let dentry = fs_resolver.lookup_no_follow(&fs_path)?;
-            if dentry.type_() == InodeType::SymLink {
-                return_errno_with_message!(Errno::ELOOP, "the executable file is a symlink");
-            }
-            Ok(dentry)
+            fs_resolver.lookup_no_follow(&fs_path)?
         } else {
-            fs_resolver.lookup(&fs_path)
+            fs_resolver.lookup(&fs_path)?
         }
-    }?;
+    };
+
     check_executable_file(&dentry)?;
+
     Ok(dentry)
 }
 
@@ -111,7 +110,11 @@ fn do_execve(
 
     // Ensure that the file descriptors with the close-on-exec flag are closed.
     // FIXME: This is just wrong if the file table is shared with other processes.
-    let closed_files = posix_thread.file_table().lock().close_files_on_exec();
+    let closed_files = thread_local
+        .file_table()
+        .borrow()
+        .write()
+        .close_files_on_exec();
     drop(closed_files);
 
     debug!("load program to root vmar");

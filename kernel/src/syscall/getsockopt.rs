@@ -2,7 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::FileDesc,
+    fs::file_table::{get_file_fast, FileDesc},
     prelude::*,
     util::net::{new_raw_socket_option, CSocketOptionLevel},
 };
@@ -25,10 +25,8 @@ pub fn sys_getsockopt(
 
     debug!("level = {level:?}, sockfd = {sockfd}, optname = {optname:?}, optlen = {optlen}");
 
-    let file = {
-        let file_table = ctx.posix_thread.file_table().lock();
-        file_table.get_file(sockfd)?.clone()
-    };
+    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let file = get_file_fast!(&mut file_table, sockfd);
     let socket = file.as_socket_or_err()?;
 
     let mut raw_option = new_raw_socket_option(level, optname)?;

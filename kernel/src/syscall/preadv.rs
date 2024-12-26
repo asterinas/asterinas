@@ -2,7 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::FileDesc,
+    fs::file_table::{get_file_fast, FileDesc},
     prelude::*,
     util::{MultiWrite, VmWriterArray},
 };
@@ -65,10 +65,8 @@ fn do_sys_preadv(
         return_errno_with_message!(Errno::EINVAL, "offset cannot be negative");
     }
 
-    let file = {
-        let filetable = ctx.posix_thread.file_table().lock();
-        filetable.get_file(fd)?.clone()
-    };
+    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let file = get_file_fast!(&mut file_table, fd);
 
     if io_vec_count == 0 {
         return Ok(0);
@@ -127,10 +125,8 @@ fn do_sys_readv(
         fd, io_vec_ptr, io_vec_count
     );
 
-    let file = {
-        let filetable = ctx.posix_thread.file_table().lock();
-        filetable.get_file(fd)?.clone()
-    };
+    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let file = get_file_fast!(&mut file_table, fd);
 
     if io_vec_count == 0 {
         return Ok(0);

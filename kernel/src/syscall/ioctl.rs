@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_table::{FdFlags, FileDesc},
+        file_table::{get_file_fast, FdFlags, FileDesc, WithFileTable},
         utils::{IoctlCmd, StatusFlags},
     },
     prelude::*,
@@ -16,10 +16,8 @@ pub fn sys_ioctl(fd: FileDesc, cmd: u32, arg: Vaddr, ctx: &Context) -> Result<Sy
         fd, ioctl_cmd, arg
     );
 
-    let file = {
-        let file_table = ctx.posix_thread.file_table().lock();
-        file_table.get_file(fd)?.clone()
-    };
+    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let file = get_file_fast!(&mut file_table, fd);
     let res = match ioctl_cmd {
         IoctlCmd::FIONBIO => {
             let is_nonblocking = ctx.user_space().read_val::<i32>(arg)? != 0;
@@ -43,21 +41,31 @@ pub fn sys_ioctl(fd: FileDesc, cmd: u32, arg: Vaddr, ctx: &Context) -> Result<Sy
             // Sets the close-on-exec flag of the file.
             // Follow the implementation of fcntl()
 
-            let flags = FdFlags::CLOEXEC;
-            let file_table = ctx.posix_thread.file_table().lock();
-            let entry = file_table.get_entry(fd)?;
-            entry.set_flags(flags);
-            0
+            file_table.read_with(|inner| {
+                let entry = inner.get_entry(fd)?;
+                entry.set_flags(entry.flags() | FdFlags::CLOEXEC);
+                Ok::<_, Error>(0)
+            })?
         }
         IoctlCmd::FIONCLEX => {
             // Clears the close-on-exec flag of the file.
-            let file_table = ctx.posix_thread.file_table().lock();
-            let entry = file_table.get_entry(fd)?;
-            entry.set_flags(entry.flags() & (!FdFlags::CLOEXEC));
-            0
+            // Follow the implementation of fcntl()
+
+            file_table.read_with(|inner| {
+                let entry = inner.get_entry(fd)?;
+                entry.set_flags(entry.flags() - FdFlags::CLOEXEC);
+                Ok::<_, Error>(0)
+            })?
         }
         // FIXME: ioctl operations involving blocking I/O should be able to restart if interrupted
-        _ => file.ioctl(ioctl_cmd, arg)?,
+        _ => {
+            let file_owned = file.into_owned();
+            // We have to drop `file_table` because some I/O command will modify the file table
+            // (e.g., TIOCGPTPEER).
+            drop(file_table);
+
+            file_owned.ioctl(ioctl_cmd, arg)?
+        }
     };
     Ok(SyscallReturn::Return(res as _))
 }

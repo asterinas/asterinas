@@ -2,10 +2,10 @@
 
 use core::cell::{Cell, RefCell};
 
-use ostd::{mm::Vaddr, task::CurrentTask};
+use ostd::{mm::Vaddr, sync::RwArc, task::CurrentTask};
 
 use super::RobustListHead;
-use crate::process::signal::SigStack;
+use crate::{fs::file_table::FileTable, process::signal::SigStack};
 
 /// Local data for a POSIX thread.
 pub struct ThreadLocal {
@@ -18,6 +18,9 @@ pub struct ThreadLocal {
     // https://man7.org/linux/man-pages/man2/get_robust_list.2.html
     robust_list: RefCell<Option<RobustListHead>>,
 
+    // Files.
+    file_table: RefCell<RwArc<FileTable>>,
+
     // Signal.
     /// `ucontext` address for the signal handler.
     // FIXME: This field may be removed. For glibc applications with RESTORER flag set, the
@@ -28,11 +31,16 @@ pub struct ThreadLocal {
 }
 
 impl ThreadLocal {
-    pub(super) fn new(set_child_tid: Vaddr, clear_child_tid: Vaddr) -> Self {
+    pub(super) fn new(
+        set_child_tid: Vaddr,
+        clear_child_tid: Vaddr,
+        file_table: RwArc<FileTable>,
+    ) -> Self {
         Self {
             set_child_tid: Cell::new(set_child_tid),
             clear_child_tid: Cell::new(clear_child_tid),
             robust_list: RefCell::new(None),
+            file_table: RefCell::new(file_table),
             sig_context: Cell::new(None),
             sig_stack: RefCell::new(None),
         }
@@ -48,6 +56,10 @@ impl ThreadLocal {
 
     pub fn robust_list(&self) -> &RefCell<Option<RobustListHead>> {
         &self.robust_list
+    }
+
+    pub fn file_table(&self) -> &RefCell<RwArc<FileTable>> {
+        &self.file_table
     }
 
     pub fn sig_context(&self) -> &Cell<Option<Vaddr>> {

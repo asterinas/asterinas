@@ -81,7 +81,7 @@ impl FileOps for StatusFileOps {
         writeln!(status_output, "Pid:\t{}", process.pid()).unwrap();
         writeln!(status_output, "PPid:\t{}", process.parent().pid()).unwrap();
         writeln!(status_output, "TracerPid:\t{}", process.parent().pid()).unwrap(); // Assuming TracerPid is the same as PPid
-        writeln!(status_output, "FDSize:\t{}", file_table.lock().len()).unwrap();
+        writeln!(status_output, "FDSize:\t{}", file_table.read().len()).unwrap();
         writeln!(
             status_output,
             "Threads:\t{}",

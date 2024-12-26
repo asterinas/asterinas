@@ -14,12 +14,12 @@ use crate::{
     events::IoEvents,
     fs::{
         file_handle::FileLike,
-        file_table::FileDesc,
+        file_table::{get_file_fast, FileDesc},
         utils::{InodeMode, IoctlCmd, Metadata},
     },
     prelude::*,
     process::{
-        posix_thread::AsPosixThread,
+        posix_thread::ThreadLocal,
         signal::{PollHandle, Pollable},
     },
 };
@@ -56,19 +56,16 @@ impl EpollFile {
     }
 
     /// Controls the interest list of the epoll file.
-    pub fn control(&self, cmd: &EpollCtl) -> Result<()> {
+    pub fn control(&self, thread_local: &ThreadLocal, cmd: &EpollCtl) -> Result<()> {
         let fd = match cmd {
             EpollCtl::Add(fd, ..) => *fd,
             EpollCtl::Del(fd) => *fd,
             EpollCtl::Mod(fd, ..) => *fd,
         };
 
-        let file = {
-            let current = current_thread!();
-            let current = current.as_posix_thread().unwrap();
-            let file_table = current.file_table().lock();
-            file_table.get_file(fd)?.clone()
-        };
+        let mut file_table = thread_local.file_table().borrow_mut();
+        let file = get_file_fast!(&mut file_table, fd).into_owned();
+        drop(file_table);
 
         match *cmd {
             EpollCtl::Add(fd, ep_event, ep_flags) => {
