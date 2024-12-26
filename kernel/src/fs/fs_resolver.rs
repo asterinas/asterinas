@@ -2,14 +2,16 @@
 
 use alloc::str;
 
+use ostd::task::Task;
+
 use super::{
-    file_table::FileDesc,
+    file_table::{get_file_fast, FileDesc},
     inode_handle::InodeHandle,
     path::Dentry,
     rootfs::root_mount,
     utils::{AccessMode, CreationFlags, InodeMode, InodeType, StatusFlags, PATH_MAX, SYMLINKS_MAX},
 };
-use crate::{prelude::*, process::posix_thread::AsPosixThread};
+use crate::{prelude::*, process::posix_thread::AsThreadLocal};
 
 /// The file descriptor of the current working directory.
 pub const AT_FDCWD: FileDesc = -100;
@@ -166,10 +168,17 @@ impl FsResolver {
             }
             FsPathInner::Cwd => self.cwd.clone(),
             FsPathInner::FdRelative(fd, path) => {
-                let parent = self.lookup_from_fd(fd)?;
-                self.lookup_from_parent(&parent, path, lookup_ctx)?
+                let task = Task::current().unwrap();
+                let mut file_table = task.as_thread_local().unwrap().file_table().borrow_mut();
+                let file = get_file_fast!(&mut file_table, fd);
+                self.lookup_from_parent(file.as_inode_or_err()?.dentry(), path, lookup_ctx)?
             }
-            FsPathInner::Fd(fd) => self.lookup_from_fd(fd)?,
+            FsPathInner::Fd(fd) => {
+                let task = Task::current().unwrap();
+                let mut file_table = task.as_thread_local().unwrap().file_table().borrow_mut();
+                let file = get_file_fast!(&mut file_table, fd);
+                file.as_inode_or_err()?.dentry().clone()
+            }
         };
 
         Ok(dentry)
@@ -278,18 +287,6 @@ impl FsResolver {
         }
 
         Ok(dentry)
-    }
-
-    /// Lookups the target dentry according to the given `fd`.
-    pub fn lookup_from_fd(&self, fd: FileDesc) -> Result<Dentry> {
-        let current = current_thread!();
-        let current = current.as_posix_thread().unwrap();
-        let file_table = current.file_table().lock();
-        let inode_handle = file_table
-            .get_file(fd)?
-            .downcast_ref::<InodeHandle>()
-            .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;
-        Ok(inode_handle.dentry().clone())
     }
 
     /// Lookups the target parent directory dentry and

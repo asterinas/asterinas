@@ -2,7 +2,7 @@
 
 #![allow(dead_code)]
 
-use ostd::{cpu::CpuSet, task::Task, user::UserSpace};
+use ostd::{cpu::CpuSet, sync::RwArc, task::Task, user::UserSpace};
 
 use super::{thread_table, PosixThread, ThreadLocal};
 use crate::{
@@ -30,7 +30,7 @@ pub struct PosixThreadBuilder {
     thread_name: Option<ThreadName>,
     set_child_tid: Vaddr,
     clear_child_tid: Vaddr,
-    file_table: Option<Arc<SpinLock<FileTable>>>,
+    file_table: Option<RwArc<FileTable>>,
     fs: Option<Arc<ThreadFsInfo>>,
     sig_mask: AtomicSigMask,
     sig_queues: SigQueues,
@@ -75,7 +75,7 @@ impl PosixThreadBuilder {
         self
     }
 
-    pub fn file_table(mut self, file_table: Arc<SpinLock<FileTable>>) -> Self {
+    pub fn file_table(mut self, file_table: RwArc<FileTable>) -> Self {
         self.file_table = Some(file_table);
         self
     }
@@ -111,8 +111,7 @@ impl PosixThreadBuilder {
             priority,
         } = self;
 
-        let file_table =
-            file_table.unwrap_or_else(|| Arc::new(SpinLock::new(FileTable::new_with_stdio())));
+        let file_table = file_table.unwrap_or_else(|| RwArc::new(FileTable::new_with_stdio()));
 
         let fs = fs.unwrap_or_else(|| Arc::new(ThreadFsInfo::default()));
 
@@ -127,7 +126,7 @@ impl PosixThreadBuilder {
                     tid,
                     name: Mutex::new(thread_name),
                     credentials,
-                    file_table,
+                    file_table: file_table.clone_ro(),
                     fs,
                     sig_mask,
                     sig_queues,
@@ -146,7 +145,7 @@ impl PosixThreadBuilder {
                 cpu_affinity,
             ));
 
-            let thread_local = ThreadLocal::new(set_child_tid, clear_child_tid);
+            let thread_local = ThreadLocal::new(set_child_tid, clear_child_tid, file_table);
 
             thread_table::add_thread(tid, thread.clone());
             task::create_new_user_task(user_space, thread, thread_local)

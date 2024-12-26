@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::SyscallReturn;
-use crate::{fs::file_table::FileDesc, prelude::*, util::net::read_socket_addr_from_user};
+use crate::{
+    fs::file_table::{get_file_fast, FileDesc},
+    prelude::*,
+    util::net::read_socket_addr_from_user,
+};
 
 pub fn sys_bind(
     sockfd: FileDesc,
@@ -12,10 +16,8 @@ pub fn sys_bind(
     let socket_addr = read_socket_addr_from_user(sockaddr_ptr, addrlen as usize)?;
     debug!("sockfd = {sockfd}, socket_addr = {socket_addr:?}");
 
-    let file = {
-        let file_table = ctx.posix_thread.file_table().lock();
-        file_table.get_file(sockfd)?.clone()
-    };
+    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let file = get_file_fast!(&mut file_table, sockfd);
     let socket = file.as_socket_or_err()?;
 
     socket.bind(socket_addr)?;

@@ -4,8 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{
         file_handle::FileLike,
-        file_table::{FdFlags, FileDesc},
-        inode_handle::InodeHandle,
+        file_table::{get_file_fast, FdFlags, FileDesc, WithFileTable},
         utils::{
             FileRange, RangeLockItem, RangeLockItemBuilder, RangeLockType, StatusFlags, OFFSET_MAX,
         },
@@ -36,16 +35,17 @@ pub fn sys_fcntl(fd: FileDesc, cmd: i32, arg: u64, ctx: &Context) -> Result<Sysc
 }
 
 fn handle_dupfd(fd: FileDesc, arg: u64, flags: FdFlags, ctx: &Context) -> Result<SyscallReturn> {
-    let mut file_table = ctx.posix_thread.file_table().lock();
-    let new_fd = file_table.dup(fd, arg as FileDesc, flags)?;
+    let file_table = ctx.thread_local.file_table().borrow();
+    let new_fd = file_table.write().dup(fd, arg as FileDesc, flags)?;
     Ok(SyscallReturn::Return(new_fd as _))
 }
 
 fn handle_getfd(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
-    let file_table = ctx.posix_thread.file_table().lock();
-    let entry = file_table.get_entry(fd)?;
-    let fd_flags = entry.flags();
-    Ok(SyscallReturn::Return(fd_flags.bits() as _))
+    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    file_table.read_with(|inner| {
+        let fd_flags = inner.get_entry(fd)?.flags();
+        Ok(SyscallReturn::Return(fd_flags.bits() as _))
+    })
 }
 
 fn handle_setfd(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
@@ -54,17 +54,16 @@ fn handle_setfd(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> 
     } else {
         FdFlags::from_bits(arg as u8).ok_or(Error::with_message(Errno::EINVAL, "invalid flags"))?
     };
-    let file_table = ctx.posix_thread.file_table().lock();
-    let entry = file_table.get_entry(fd)?;
-    entry.set_flags(flags);
-    Ok(SyscallReturn::Return(0))
+    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    file_table.read_with(|inner| {
+        inner.get_entry(fd)?.set_flags(flags);
+        Ok(SyscallReturn::Return(0))
+    })
 }
 
 fn handle_getfl(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
-    let file = {
-        let file_table = ctx.posix_thread.file_table().lock();
-        file_table.get_file(fd)?.clone()
-    };
+    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let file = get_file_fast!(&mut file_table, fd);
     let status_flags = file.status_flags();
     let access_mode = file.access_mode();
     Ok(SyscallReturn::Return(
@@ -73,10 +72,8 @@ fn handle_getfl(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
 }
 
 fn handle_setfl(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
-    let file = {
-        let file_table = ctx.posix_thread.file_table().lock();
-        file_table.get_file(fd)?.clone()
-    };
+    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let file = get_file_fast!(&mut file_table, fd);
     let valid_flags_mask = StatusFlags::O_APPEND
         | StatusFlags::O_ASYNC
         | StatusFlags::O_DIRECT
@@ -90,10 +87,8 @@ fn handle_setfl(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> 
 }
 
 fn handle_getlk(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
-    let file = {
-        let file_table = ctx.posix_thread.file_table().lock();
-        file_table.get_file(fd)?.clone()
-    };
+    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let file = get_file_fast!(&mut file_table, fd);
     let lock_mut_ptr = arg as Vaddr;
     let mut lock_mut_c = ctx.user_space().read_val::<c_flock>(lock_mut_ptr)?;
     let lock_type = RangeLockType::try_from(lock_mut_c.l_type)?;
@@ -102,11 +97,9 @@ fn handle_getlk(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> 
     }
     let mut lock = RangeLockItemBuilder::new()
         .type_(lock_type)
-        .range(from_c_flock_and_file(&lock_mut_c, file.clone())?)
+        .range(from_c_flock_and_file(&lock_mut_c, &**file)?)
         .build()?;
-    let inode_file = file
-        .downcast_ref::<InodeHandle>()
-        .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;
+    let inode_file = file.as_inode_or_err()?;
     lock = inode_file.test_range_lock(lock)?;
     lock_mut_c.copy_from_range_lock(&lock);
     ctx.user_space().write_val(lock_mut_ptr, &lock_mut_c)?;
@@ -119,29 +112,26 @@ fn handle_setlk(
     is_nonblocking: bool,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let file = {
-        let file_table = ctx.posix_thread.file_table().lock();
-        file_table.get_file(fd)?.clone()
-    };
+    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let file = get_file_fast!(&mut file_table, fd);
     let lock_mut_ptr = arg as Vaddr;
     let lock_mut_c = ctx.user_space().read_val::<c_flock>(lock_mut_ptr)?;
     let lock_type = RangeLockType::try_from(lock_mut_c.l_type)?;
     let lock = RangeLockItemBuilder::new()
         .type_(lock_type)
-        .range(from_c_flock_and_file(&lock_mut_c, file.clone())?)
+        .range(from_c_flock_and_file(&lock_mut_c, &**file)?)
         .build()?;
-    let inode_file = file
-        .downcast_ref::<InodeHandle>()
-        .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;
+    let inode_file = file.as_inode_or_err()?;
     inode_file.set_range_lock(&lock, is_nonblocking)?;
     Ok(SyscallReturn::Return(0))
 }
 
 fn handle_getown(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
-    let file_table = ctx.posix_thread.file_table().lock();
-    let file_entry = file_table.get_entry(fd)?;
-    let pid = file_entry.owner().unwrap_or(0);
-    Ok(SyscallReturn::Return(pid as _))
+    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    file_table.read_with(|inner| {
+        let pid = inner.get_entry(fd)?.owner().unwrap_or(0);
+        Ok(SyscallReturn::Return(pid as _))
+    })
 }
 
 fn handle_setown(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
@@ -162,8 +152,9 @@ fn handle_setown(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn>
         ))?)
     };
 
-    let mut file_table = ctx.posix_thread.file_table().lock();
-    let file_entry = file_table.get_entry_mut(fd)?;
+    let file_table = ctx.thread_local.file_table().borrow();
+    let mut file_table_locked = file_table.write();
+    let file_entry = file_table_locked.get_entry_mut(fd)?;
     file_entry.set_owner(owner_process.as_ref())?;
     Ok(SyscallReturn::Return(0))
 }
@@ -230,15 +221,12 @@ impl c_flock {
 }
 
 /// Create the file range through C flock and opened file reference
-fn from_c_flock_and_file(lock: &c_flock, file: Arc<dyn FileLike>) -> Result<FileRange> {
+fn from_c_flock_and_file(lock: &c_flock, file: &dyn FileLike) -> Result<FileRange> {
     let start = {
         let whence = RangeLockWhence::try_from(lock.l_whence)?;
         match whence {
             RangeLockWhence::SEEK_SET => lock.l_start,
-            RangeLockWhence::SEEK_CUR => (file
-                .downcast_ref::<InodeHandle>()
-                .ok_or(Error::with_message(Errno::EBADF, "not inode"))?
-                .offset() as off_t)
+            RangeLockWhence::SEEK_CUR => (file.as_inode_or_err()?.offset() as off_t)
                 .checked_add(lock.l_start)
                 .ok_or(Error::with_message(Errno::EOVERFLOW, "start overflow"))?,
 

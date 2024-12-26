@@ -5,6 +5,7 @@
 use core::sync::atomic::{AtomicU8, Ordering};
 
 use aster_util::slot_vec::SlotVec;
+use ostd::sync::RwArc;
 
 use super::{
     file_handle::FileLike,
@@ -236,6 +237,67 @@ impl Drop for FileTable {
         self.subject.notify_observers(&events);
     }
 }
+
+/// A helper trait that provides methods to operate the file table.
+pub trait WithFileTable {
+    /// Calls `f` with the file table.
+    ///
+    /// This method is lockless if the file table is not shared. Otherwise, `f` is called while
+    /// holding the read lock on the file table.
+    fn read_with<R>(&mut self, f: impl FnOnce(&FileTable) -> R) -> R;
+}
+
+impl WithFileTable for RwArc<FileTable> {
+    fn read_with<R>(&mut self, f: impl FnOnce(&FileTable) -> R) -> R {
+        if let Some(inner) = self.get() {
+            f(inner)
+        } else {
+            f(&self.read())
+        }
+    }
+}
+
+/// Gets a file from a file descriptor as fast as possible.
+///
+/// `file_table` should be a mutable borrow of the file table contained in the `file_table` field
+/// (which is a [`RefCell`]) in [`ThreadLocal`]. A mutable borrow is required because its
+/// exclusivity can be useful for achieving lockless file lookups.
+///
+/// If the file table is not shared with another thread, this macro will be free of locks
+/// ([`RwArc::read`]) and free of reference counting ([`Arc::clone`]).
+///
+/// If the file table is shared, the read lock is taken, the file is cloned, and then the read lock
+/// is released. Cloning and releasing the lock is necessary because we cannot hold such locks when
+/// operating on files, since many operations on files can block.
+///
+/// Note: This has to be a macro due to a limitation in the Rust borrow check implementation. Once
+/// <https://github.com/rust-lang/rust/issues/58910> is fixed, we can try to convert this macro to
+/// a function.
+///
+/// [`RefCell`]: core::cell::RefCell
+/// [`ThreadLocal`]: crate::process::posix_thread::ThreadLocal
+macro_rules! get_file_fast {
+    ($file_table:expr, $file_desc:expr) => {{
+        use alloc::borrow::Cow;
+
+        use ostd::sync::RwArc;
+
+        use crate::fs::file_table::{FileDesc, FileTable};
+
+        let file_table: &mut RwArc<FileTable> = $file_table;
+        let file_desc: FileDesc = $file_desc;
+
+        if let Some(inner) = file_table.get() {
+            // Fast path: The file table is not shared, we can get the file in a lockless way.
+            Cow::Borrowed(inner.get_file(file_desc)?)
+        } else {
+            // Slow path: The file table is shared, we need to hold the lock and clone the file.
+            Cow::Owned(file_table.read().get_file(file_desc)?.clone())
+        }
+    }};
+}
+
+pub(crate) use get_file_fast;
 
 #[derive(Copy, Clone, Debug)]
 pub enum FdEvents {

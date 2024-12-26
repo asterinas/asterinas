@@ -3,9 +3,8 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_table::FileDesc,
+        file_table::{get_file_fast, FileDesc},
         fs_resolver::FsPath,
-        inode_handle::InodeHandle,
         utils::{SuperBlock, PATH_MAX},
     },
     prelude::*,
@@ -30,12 +29,9 @@ pub fn sys_fstatfs(fd: FileDesc, statfs_buf_ptr: Vaddr, ctx: &Context) -> Result
     debug!("fd = {}, statfs_buf_addr = 0x{:x}", fd, statfs_buf_ptr);
 
     let fs = {
-        let file_table = ctx.posix_thread.file_table().lock();
-        let file = file_table.get_file(fd)?;
-        let inode_handle = file
-            .downcast_ref::<InodeHandle>()
-            .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;
-        inode_handle.dentry().fs()
+        let mut file_table = ctx.thread_local.file_table().borrow_mut();
+        let file = get_file_fast!(&mut file_table, fd);
+        file.as_inode_or_err()?.dentry().fs()
     };
 
     let statfs = Statfs::from(fs.sb());

@@ -80,7 +80,7 @@ fn exit_internal(term_status: TermStatus, is_exiting_group: bool) {
     }
 
     if is_last_thread {
-        exit_process(posix_thread, &posix_process);
+        exit_process(thread_local, &posix_process);
     }
 }
 
