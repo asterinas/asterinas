@@ -17,6 +17,7 @@ use core::{mem, sync::atomic::Ordering};
 
 use align_ext::AlignExt;
 use c_types::{siginfo_t, ucontext_t};
+use constants::SIGKILL;
 pub use events::{SigEvents, SigEventsFilter};
 use ostd::{cpu::UserContext, user::UserContextApi};
 pub use pause::{with_signal_blocked, Pause};
@@ -46,7 +47,7 @@ pub fn handle_pending_signal(
     user_ctx: &mut UserContext,
     ctx: &Context,
     syscall_number: Option<usize>,
-) -> Result<()> {
+) {
     // We first deal with signal in current thread, then signal in current process.
     let posix_thread = ctx.posix_thread;
     let signal = {
@@ -54,7 +55,7 @@ pub fn handle_pending_signal(
         if let Some(signal) = posix_thread.dequeue_signal(&sig_mask) {
             signal
         } else {
-            return Ok(());
+            return;
         }
     };
 
@@ -93,8 +94,7 @@ pub fn handle_pending_signal(
             }
 
             drop(sig_dispositions);
-
-            handle_user_signal(
+            if let Err(e) = handle_user_signal(
                 ctx,
                 sig_num,
                 handler_addr,
@@ -103,7 +103,10 @@ pub fn handle_pending_signal(
                 mask,
                 user_ctx,
                 signal.to_info(),
-            )?
+            ) {
+                debug!("Failed to handle user signal: {:?}", e);
+                do_exit_group(TermStatus::Killed(SIGKILL));
+            }
         }
         SigAction::Dfl => {
             drop(sig_dispositions);
@@ -130,7 +133,6 @@ pub fn handle_pending_signal(
             }
         }
     }
-    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
