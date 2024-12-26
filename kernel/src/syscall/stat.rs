@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_table::FileDesc,
+        file_table::{get_file_fast, FileDesc},
         fs_resolver::{FsPath, AT_FDCWD},
         utils::Metadata,
     },
@@ -15,13 +15,11 @@ use crate::{
 pub fn sys_fstat(fd: FileDesc, stat_buf_ptr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}, stat_buf_addr = 0x{:x}", fd, stat_buf_ptr);
 
-    let file = {
-        let file_table = ctx.posix_thread.file_table().lock();
-        file_table.get_file(fd)?.clone()
-    };
+    get_file_fast! { let (file_table, file) = fd @ ctx.thread_local };
 
     let stat = Stat::from(file.metadata());
     ctx.user_space().write_val(stat_buf_ptr, &stat)?;
+
     Ok(SyscallReturn::Return(0))
 }
 

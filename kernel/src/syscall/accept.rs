@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_table::{FdFlags, FileDesc},
+        file_table::{get_file_fast, FdFlags, FileDesc},
         utils::{CreationFlags, StatusFlags},
     },
     prelude::*,
@@ -47,10 +47,7 @@ fn do_accept(
     flags: Flags,
     ctx: &Context,
 ) -> Result<FileDesc> {
-    let file = {
-        let file_table = ctx.posix_thread.file_table().lock();
-        file_table.get_file(sockfd)?.clone()
-    };
+    get_file_fast! { let (file_table, file) = sockfd @ ctx.thread_local };
     let socket = file.as_socket_or_err()?;
 
     let (connected_socket, socket_addr) = {
@@ -76,8 +73,8 @@ fn do_accept(
     }
 
     let fd = {
-        let mut file_table = ctx.posix_thread.file_table().lock();
-        file_table.insert(connected_socket, fd_flags)
+        let mut file_table_locked = file_table.write();
+        file_table_locked.insert(connected_socket, fd_flags)
     };
 
     Ok(fd)

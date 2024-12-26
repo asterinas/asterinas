@@ -12,7 +12,7 @@ use crate::{
     fs::{
         fs_resolver::{FsPath, FsResolver, AT_FDCWD},
         path::Dentry,
-        utils::Permission,
+        utils::{InodeType, Permission},
     },
     prelude::*,
 };
@@ -72,6 +72,10 @@ pub fn load_program_to_vm(
 pub fn check_executable_file(dentry: &Dentry) -> Result<()> {
     if dentry.type_().is_directory() {
         return_errno_with_message!(Errno::EISDIR, "the file is a directory");
+    }
+
+    if dentry.type_() == InodeType::SymLink {
+        return_errno_with_message!(Errno::ELOOP, "the file is a symbolic link");
     }
 
     if !dentry.type_().is_regular_file() {

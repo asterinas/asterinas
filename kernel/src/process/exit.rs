@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{posix_thread::PosixThread, process_table, Pid, Process};
+use super::{posix_thread::ThreadLocal, process_table, Pid, Process};
 use crate::{prelude::*, process::signal::signals::kernel::KernelSignal};
 
 /// Exits the current POSIX process.
@@ -10,12 +10,12 @@ use crate::{prelude::*, process::signal::signals::kernel::KernelSignal};
 ///
 /// [`do_exit`]: crate::process::posix_thread::do_exit
 /// [`do_exit_group`]: crate::process::posix_thread::do_exit_group
-pub(super) fn exit_process(current_thread: &PosixThread, current_process: &Process) {
+pub(super) fn exit_process(thread_local: &ThreadLocal, current_process: &Process) {
     current_process.status().set_zombie();
 
     // FIXME: This is obviously wrong in a number of ways, since different threads can have
     // different file tables, and different processes can share the same file table.
-    current_thread.file_table().lock().close_all();
+    thread_local.file_table().borrow().write().close_all();
 
     send_parent_death_signal(current_process);
 

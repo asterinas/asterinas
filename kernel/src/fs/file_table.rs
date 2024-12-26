@@ -5,6 +5,7 @@
 use core::sync::atomic::{AtomicU8, Ordering};
 
 use aster_util::slot_vec::SlotVec;
+use ostd::sync::RwArc;
 
 use super::{
     file_handle::FileLike,
@@ -236,6 +237,58 @@ impl Drop for FileTable {
         self.subject.notify_observers(&events);
     }
 }
+
+/// A helper trait that provides methods to operate the file table.
+pub trait WithFileTable {
+    /// Calls `f` with the file table.
+    ///
+    /// This method is lockless if the file table is not shared. Otherwise, `f` is called while
+    /// holding the read lock on the file table.
+    fn read_with<R>(&mut self, f: impl FnOnce(&FileTable) -> R) -> R;
+}
+
+impl WithFileTable for RwArc<FileTable> {
+    fn read_with<R>(&mut self, f: impl FnOnce(&FileTable) -> R) -> R {
+        if let Some(inner) = self.get() {
+            f(inner)
+        } else {
+            f(&self.read())
+        }
+    }
+}
+
+/// Gets a file from a file descriptor as fast as possible.
+///
+/// If the file table is not shared with another thread, this macro will be free of locks
+/// ([`RwArc::read`]) and free of reference counting ([`Arc::clone`]).
+///
+/// If the file table is shared, the read lock is taken, the file is cloned, and then the read lock
+/// is released. This is because many operations on files can block, so we cannot hold such locks
+/// when operating on files.
+///
+/// # Panics
+///
+/// This macro will cause an immediate panic if the [`RefCell`] that stores the file table in
+/// [`ThreadLocal`] is already borrowed. Note that this also means that calling this macro twice
+/// without releasing the [`RefMut`] of the file table will cause a panic.
+///
+/// [`RefCell`]: core::cell::RefCell
+/// [`RefMut`]: core::cell::RefMut
+/// [`ThreadLocal`]: crate::process::posix_thread::ThreadLocal
+macro_rules! get_file_fast {
+    { let ($file_table:ident, $file:ident) = $file_desc:ident @ $thread_local:expr } => {
+        use alloc::borrow::Cow;
+
+        let mut $file_table = $thread_local.file_table().borrow_mut();
+        let $file = if let Some(file_table) = $file_table.get() {
+            Cow::Borrowed(file_table.get_file($file_desc)?)
+        } else {
+            Cow::Owned($file_table.read().get_file($file_desc)?.clone())
+        };
+    };
+}
+
+pub(crate) use get_file_fast;
 
 #[derive(Copy, Clone, Debug)]
 pub enum FdEvents {

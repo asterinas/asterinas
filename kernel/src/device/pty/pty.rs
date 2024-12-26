@@ -2,6 +2,8 @@
 
 use alloc::format;
 
+use ostd::task::Task;
+
 use crate::{
     current_userspace,
     device::tty::{line_discipline::LineDiscipline, new_job_control_and_ldisc},
@@ -16,7 +18,7 @@ use crate::{
     },
     prelude::*,
     process::{
-        posix_thread::AsPosixThread,
+        posix_thread::{AsPosixThread, AsThreadLocal},
         signal::{PollHandle, Pollable, Pollee},
         JobControl, Terminal,
     },
@@ -192,8 +194,9 @@ impl FileIo for PtyMaster {
                 Ok(0)
             }
             IoctlCmd::TIOCGPTPEER => {
-                let current = current_thread!();
-                let current = current.as_posix_thread().unwrap();
+                let current_task = Task::current().unwrap();
+                let posix_thread = current_task.as_posix_thread().unwrap();
+                let thread_local = current_task.as_thread_local().unwrap();
 
                 // TODO: deal with open options
                 let slave = {
@@ -205,7 +208,7 @@ impl FileIo for PtyMaster {
                     let fs_path = FsPath::try_from(slave_name.as_str())?;
 
                     let inode_handle = {
-                        let fs = current.fs().resolver().read();
+                        let fs = posix_thread.fs().resolver().read();
                         let flags = AccessMode::O_RDWR as u32;
                         let mode = (InodeMode::S_IRUSR | InodeMode::S_IWUSR).bits();
                         fs.open(&fs_path, flags, mode)?
@@ -214,9 +217,10 @@ impl FileIo for PtyMaster {
                 };
 
                 let fd = {
-                    let mut file_table = current.file_table().lock();
+                    let file_table = thread_local.file_table().borrow();
+                    let mut file_table_locked = file_table.write();
                     // TODO: deal with the O_CLOEXEC flag
-                    file_table.insert(slave, FdFlags::empty())
+                    file_table_locked.insert(slave, FdFlags::empty())
                 };
                 Ok(fd)
             }

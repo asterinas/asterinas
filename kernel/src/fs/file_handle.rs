@@ -4,6 +4,7 @@
 
 //! Opened File Handle
 
+use super::inode_handle::InodeHandle;
 use crate::{
     fs::utils::{AccessMode, FallocMode, InodeMode, IoctlCmd, Metadata, SeekFrom, StatusFlags},
     net::socket::Socket,
@@ -130,5 +131,11 @@ impl dyn FileLike {
     pub fn as_socket_or_err(&self) -> Result<&dyn Socket> {
         self.as_socket()
             .ok_or_else(|| Error::with_message(Errno::ENOTSOCK, "the file is not a socket"))
+    }
+
+    pub fn as_inode_or_err(&self) -> Result<&InodeHandle> {
+        self.downcast_ref().ok_or_else(|| {
+            Error::with_message(Errno::EINVAL, "the file is not related to an inode")
+        })
     }
 }

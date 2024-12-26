@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::SyscallReturn;
-use crate::{fs::file_table::FileDesc, prelude::*};
+use crate::{
+    fs::file_table::{get_file_fast, FileDesc},
+    prelude::*,
+};
 
 pub fn sys_write(
     fd: FileDesc,
@@ -14,10 +17,7 @@ pub fn sys_write(
         fd, user_buf_ptr, user_buf_len
     );
 
-    let file = {
-        let file_table = ctx.posix_thread.file_table().lock();
-        file_table.get_file(fd)?.clone()
-    };
+    get_file_fast! { let (file_table, file) = fd @ ctx.thread_local };
 
     // According to <https://man7.org/linux/man-pages/man2/write.2.html>, if
     // the user specified an empty buffer, we should detect errors by checking

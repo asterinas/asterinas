@@ -2,7 +2,9 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::FileDesc, net::socket::SendRecvFlags, prelude::*,
+    fs::file_table::{get_file_fast, FileDesc},
+    net::socket::SendRecvFlags,
+    prelude::*,
     util::net::write_socket_addr_to_user,
 };
 
@@ -18,10 +20,7 @@ pub fn sys_recvfrom(
     let flags = SendRecvFlags::from_bits_truncate(flags);
     debug!("sockfd = {sockfd}, buf = 0x{buf:x}, len = {len}, flags = {flags:?}, src_addr = 0x{src_addr:x}, addrlen_ptr = 0x{addrlen_ptr:x}");
 
-    let file = {
-        let file_table = ctx.posix_thread.file_table().lock();
-        file_table.get_file(sockfd)?.clone()
-    };
+    get_file_fast! { let (file_table, file) = sockfd @ ctx.thread_local };
     let socket = file.as_socket_or_err()?;
 
     let mut writers = {

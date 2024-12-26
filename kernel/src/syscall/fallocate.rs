@@ -2,7 +2,10 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::{file_table::FileDesc, utils::FallocMode},
+    fs::{
+        file_table::{get_file_fast, FileDesc},
+        utils::FallocMode,
+    },
     prelude::*,
     process::ResourceType,
 };
@@ -21,10 +24,7 @@ pub fn sys_fallocate(
 
     check_offset_and_len(offset, len, ctx)?;
 
-    let file = {
-        let file_table = ctx.posix_thread.file_table().lock();
-        file_table.get_file(fd)?.clone()
-    };
+    get_file_fast! { let (file_table, file) = fd @ ctx.thread_local };
 
     let falloc_mode = FallocMode::try_from(
         RawFallocMode::from_bits(mode as _)
