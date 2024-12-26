@@ -87,12 +87,12 @@ pub fn create_new_user_task(
             if current_thread.is_exited() {
                 break;
             }
-            handle_pending_signal(user_ctx, &ctx, syscall_number).unwrap();
+            handle_pending_signal(user_ctx, &ctx, syscall_number);
             // If current is suspended, wait for a signal to wake up self
             while current_thread.is_stopped() {
                 Thread::yield_now();
                 debug!("{} is suspended.", current_posix_thread.tid());
-                handle_pending_signal(user_ctx, &ctx, None).unwrap();
+                handle_pending_signal(user_ctx, &ctx, None);
             }
             if current_thread.is_exited() {
                 debug!("exit due to signal");
