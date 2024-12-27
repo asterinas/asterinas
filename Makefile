@@ -129,6 +129,7 @@ NON_OSDK_CRATES := \
 	kernel/libs/int-to-c-enum/derive \
 	kernel/libs/aster-rights \
 	kernel/libs/aster-rights-proc \
+	kernel/libs/jhash \
 	kernel/libs/keyable-arc \
 	kernel/libs/typeflags \
 	kernel/libs/typeflags-util \
