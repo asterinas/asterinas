@@ -307,13 +307,6 @@ impl<M: AnyUFrameMeta> From<Frame<M>> for UFrame {
     }
 }
 
-impl<M: AnyUFrameMeta> From<&Frame<M>> for &UFrame {
-    fn from(frame: &Frame<M>) -> Self {
-        // SAFETY: The metadata is coerceable and the struct is transmutable.
-        unsafe { core::mem::transmute(frame) }
-    }
-}
-
 impl From<UFrame> for Frame<dyn AnyFrameMeta> {
     fn from(frame: UFrame) -> Self {
         // SAFETY: The metadata is coerceable and the struct is transmutable.

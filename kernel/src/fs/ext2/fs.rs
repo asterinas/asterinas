@@ -42,7 +42,7 @@ impl Ext2 {
             "currently only support 4096-byte block size"
         );
 
-        let group_descriptors_segment = {
+        let group_descriptors_segment: USegment = {
             let npages = ((super_block.block_groups_count() as usize)
                 * core::mem::size_of::<RawGroupDescriptor>())
             .div_ceil(BLOCK_SIZE);
@@ -57,7 +57,7 @@ impl Ext2 {
                     return Err(Error::from(err_status));
                 }
             }
-            segment
+            segment.into()
         };
 
         // Load the block groups information
@@ -88,12 +88,12 @@ impl Ext2 {
             block_groups: load_block_groups(
                 weak_ref.clone(),
                 block_device.as_ref(),
-                (&group_descriptors_segment).into(),
+                &group_descriptors_segment,
             )
             .unwrap(),
             block_device,
             super_block: RwMutex::new(Dirty::new(super_block)),
-            group_descriptors_segment: group_descriptors_segment.into(),
+            group_descriptors_segment,
             self_ref: weak_ref.clone(),
         });
         Ok(ext2)

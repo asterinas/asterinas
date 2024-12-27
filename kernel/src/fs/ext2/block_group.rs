@@ -318,20 +318,24 @@ impl Debug for BlockGroup {
 }
 
 impl PageCacheBackend for BlockGroupImpl {
-    fn read_page_async(&self, idx: usize, frame: &UFrame) -> Result<BioWaiter> {
+    fn read_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
         let bid = self.inode_table_bid + idx as Ext2Bid;
-        let bio_segment =
-            BioSegment::new_from_segment(frame.clone().into(), BioDirection::FromDevice);
+        let bio_segment = BioSegment::new_from_segment(
+            Segment::from(frame.clone()).into(),
+            BioDirection::FromDevice,
+        );
         self.fs
             .upgrade()
             .unwrap()
             .read_blocks_async(bid, bio_segment)
     }
 
-    fn write_page_async(&self, idx: usize, frame: &UFrame) -> Result<BioWaiter> {
+    fn write_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
         let bid = self.inode_table_bid + idx as Ext2Bid;
-        let bio_segment =
-            BioSegment::new_from_segment(frame.clone().into(), BioDirection::ToDevice);
+        let bio_segment = BioSegment::new_from_segment(
+            Segment::from(frame.clone()).into(),
+            BioDirection::ToDevice,
+        );
         self.fs
             .upgrade()
             .unwrap()
