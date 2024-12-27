@@ -231,13 +231,6 @@ impl<M: AnyUFrameMeta> From<Segment<M>> for USegment {
     }
 }
 
-impl<M: AnyUFrameMeta> From<&Segment<M>> for &USegment {
-    fn from(seg: &Segment<M>) -> Self {
-        // SAFETY: The metadata is coerceable and the struct is transmutable.
-        unsafe { core::mem::transmute(seg) }
-    }
-}
-
 impl TryFrom<Segment<dyn AnyFrameMeta>> for USegment {
     type Error = Segment<dyn AnyFrameMeta>;
 
