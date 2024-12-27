@@ -88,7 +88,10 @@ impl InitStream {
             ));
         };
 
-        Ok(ListenStream::new(bound_port, backlog, option, observer))
+        match ListenStream::new(bound_port, backlog, option, observer) {
+            Ok(listen_stream) => Ok(listen_stream),
+            Err((bound_port, error)) => Err((error, Self::Bound(bound_port))),
+        }
     }
 
     pub fn local_endpoint(&self) -> Option<IpEndpoint> {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_bigtcp::{
+    errors::tcp::ListenError,
     socket::{RawTcpOption, RawTcpSetOption},
     wire::IpEndpoint,
 };
@@ -22,18 +23,20 @@ impl ListenStream {
         backlog: usize,
         option: &RawTcpOption,
         observer: StreamObserver,
-    ) -> Self {
+    ) -> core::result::Result<Self, (BoundPort, Error)> {
         const SOMAXCONN: usize = 4096;
         let max_conn = SOMAXCONN.min(backlog);
 
-        let tcp_listener = match TcpListener::new_listen(bound_port, max_conn, option, observer) {
-            Ok(tcp_listener) => tcp_listener,
+        match TcpListener::new_listen(bound_port, max_conn, option, observer) {
+            Ok(tcp_listener) => Ok(Self { tcp_listener }),
+            Err((bound_port, ListenError::AddressInUse)) => Err((
+                bound_port,
+                Error::with_message(Errno::EADDRINUSE, "listener key conflicts"),
+            )),
             Err((_, err)) => {
                 unreachable!("`new_listen` fails with {:?}, which should not happen", err)
             }
-        };
-
-        Self { tcp_listener }
+        }
     }
 
     pub fn try_accept(&self) -> Result<ConnectedStream> {

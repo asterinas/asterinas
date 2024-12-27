@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{vec, vec::Vec};
+use alloc::{sync::Arc, vec, vec::Vec};
 
-use keyable_arc::KeyableArc;
 use smoltcp::{
     iface::{
         packet::{icmp_reply_payload_len, IpPayload, Packet},
@@ -16,23 +15,23 @@ use smoltcp::{
     },
 };
 
-use super::common::SocketSet;
 use crate::{
     ext::Ext,
-    socket::{TcpConnectionBg, TcpListenerBg, TcpProcessResult},
+    socket::{TcpConnectionBg, TcpProcessResult},
+    socket_table::{ConnectionKey, ListenerKey, SocketTable},
 };
 
 pub(super) struct PollContext<'a, E: Ext> {
     iface_cx: &'a mut Context,
-    sockets: &'a SocketSet<E>,
-    new_tcp_conns: &'a mut Vec<KeyableArc<TcpConnectionBg<E>>>,
+    sockets: &'a SocketTable<E>,
+    new_tcp_conns: &'a mut Vec<Arc<TcpConnectionBg<E>>>,
 }
 
 impl<'a, E: Ext> PollContext<'a, E> {
     pub(super) fn new(
         iface_cx: &'a mut Context,
-        sockets: &'a SocketSet<E>,
-        new_tcp_conns: &'a mut Vec<KeyableArc<TcpConnectionBg<E>>>,
+        sockets: &'a SocketTable<E>,
+        new_tcp_conns: &'a mut Vec<Arc<TcpConnectionBg<E>>>,
     ) -> Self {
         Self {
             iface_cx,
@@ -158,44 +157,47 @@ impl<E: Ext> PollContext<'_, E> {
         ip_repr: &IpRepr,
         tcp_repr: &TcpRepr,
     ) -> Option<(IpRepr, TcpRepr<'static>)> {
-        for socket in self
-            .sockets
-            .tcp_conn
-            .iter()
-            .chain(self.new_tcp_conns.iter())
-        {
-            if !socket.can_process(tcp_repr.dst_port) {
-                continue;
-            }
-
-            match TcpConnectionBg::process(socket, self.iface_cx, ip_repr, tcp_repr) {
-                TcpProcessResult::NotProcessed => continue,
-                TcpProcessResult::Processed => return None,
-                TcpProcessResult::ProcessedWithReply(ip_repr, tcp_repr) => {
-                    return Some((ip_repr, tcp_repr))
-                }
-            }
-        }
-
+        // Process packets that request to create new connections first.
         if tcp_repr.control == TcpControl::Syn && tcp_repr.ack_number.is_none() {
-            for socket in self.sockets.tcp_listen.iter() {
-                if !socket.can_process(tcp_repr.dst_port) {
-                    continue;
-                }
-
-                let (processed, new_tcp_conn) =
-                    TcpListenerBg::process(socket, self.iface_cx, ip_repr, tcp_repr);
+            let listener_key = ListenerKey::new(ip_repr.dst_addr(), tcp_repr.dst_port);
+            if let Some(listener) = self.sockets.lookup_listener(&listener_key) {
+                let (processed, new_tcp_conn) = listener.process(self.iface_cx, ip_repr, tcp_repr);
 
                 if let Some(tcp_conn) = new_tcp_conn {
                     self.new_tcp_conns.push(tcp_conn);
                 }
 
                 match processed {
-                    TcpProcessResult::NotProcessed => continue,
+                    TcpProcessResult::NotProcessed => {}
                     TcpProcessResult::Processed => return None,
                     TcpProcessResult::ProcessedWithReply(ip_repr, tcp_repr) => {
                         return Some((ip_repr, tcp_repr))
                     }
+                }
+            }
+        }
+
+        // Process packets belonging to existing connections second.
+        let connection_key = ConnectionKey::new(
+            ip_repr.dst_addr(),
+            tcp_repr.dst_port,
+            ip_repr.src_addr(),
+            tcp_repr.src_port,
+        );
+        let connection = if let Some(connection) = self.sockets.lookup_connection(&connection_key) {
+            Some(connection)
+        } else {
+            self.new_tcp_conns
+                .iter()
+                .find(|tcp_conn| tcp_conn.connection_key() == &connection_key)
+        };
+
+        if let Some(connection) = connection {
+            match connection.process(self.iface_cx, ip_repr, tcp_repr) {
+                TcpProcessResult::NotProcessed => {}
+                TcpProcessResult::Processed => return None,
+                TcpProcessResult::ProcessedWithReply(ip_repr, tcp_repr) => {
+                    return Some((ip_repr, tcp_repr))
                 }
             }
         }
@@ -239,7 +241,7 @@ impl<E: Ext> PollContext<'_, E> {
     fn process_udp(&mut self, ip_repr: &IpRepr, udp_repr: &UdpRepr, udp_payload: &[u8]) -> bool {
         let mut processed = false;
 
-        for socket in self.sockets.udp.iter() {
+        for socket in self.sockets.udp_socket_iter() {
             if !socket.can_process(udp_repr.dst_port) {
                 continue;
             }
@@ -350,7 +352,7 @@ impl<E: Ext> PollContext<'_, E> {
 
         // We cannot dispatch packets from `new_tcp_conns` because we cannot borrow an immutable
         // reference at this point. Instead, we will retry after the entire poll is complete.
-        for socket in self.sockets.tcp_conn.iter() {
+        for socket in self.sockets.tcp_conn_iter() {
             if !socket.need_dispatch(self.iface_cx.now()) {
                 continue;
             }
@@ -442,7 +444,7 @@ impl<E: Ext> PollContext<'_, E> {
         let mut tx_token = Some(tx_token);
         let mut did_something = false;
 
-        for socket in self.sockets.udp.iter() {
+        for socket in self.sockets.udp_socket_iter() {
             if !socket.need_dispatch(self.iface_cx.now()) {
                 continue;
             }
