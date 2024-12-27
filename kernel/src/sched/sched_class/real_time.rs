@@ -135,6 +135,7 @@ pub(super) struct RealTimeClassRq {
     cpu: CpuId,
     index: bool,
     array: [PrioArray; 2],
+    nr_running: usize,
 }
 
 impl RealTimeClassRq {
@@ -146,6 +147,7 @@ impl RealTimeClassRq {
                 map: bitarr![0; 100],
                 queue: array::from_fn(|_| VecDeque::new()),
             }),
+            nr_running: 0,
         }
     }
 
@@ -166,21 +168,31 @@ impl SchedClassRq for RealTimeClassRq {
     fn enqueue(&mut self, thread: Arc<Thread>, _: Option<EnqueueFlags>) {
         let prio = thread.sched_attr().real_time.prio.load(Relaxed);
         self.inactive_array().enqueue(thread, prio);
+        self.nr_running += 1;
     }
 
     fn len(&mut self) -> usize {
-        self.active_array().map.count_ones() + self.inactive_array().map.count_ones()
+        self.nr_running
     }
 
     fn is_empty(&mut self) -> bool {
-        self.active_array().map.is_empty() && self.inactive_array().map.is_empty()
+        self.nr_running == 0
     }
 
     fn pick_next(&mut self) -> Option<Arc<Thread>> {
-        self.active_array().pop().or_else(|| {
+        if self.nr_running == 0 {
+            return None;
+        }
+
+        let res = self.active_array().pop().or_else(|| {
             self.swap_arrays();
             self.active_array().pop()
-        })
+        });
+        if res.is_some() {
+            self.nr_running -= 1;
+        }
+
+        res
     }
 
     fn update_current(
