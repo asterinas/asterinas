@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_bigtcp::{
+    errors::tcp::ConnectError,
     socket::{ConnectState, RawTcpOption, RawTcpSetOption},
     wire::IpEndpoint,
 };
@@ -30,22 +31,30 @@ impl ConnectingStream {
         option: &RawTcpOption,
         observer: StreamObserver,
     ) -> core::result::Result<Self, (Error, BoundPort)> {
-        // The only reason this method might fail is because we're trying to connect to an
-        // unspecified address (i.e. 0.0.0.0). We currently have no support for binding to,
-        // listening on, or connecting to the unspecified address.
-        //
-        // We assume the remote will just refuse to connect, so we return `ECONNREFUSED`.
         let tcp_conn =
             match TcpConnection::new_connect(bound_port, remote_endpoint, option, observer) {
                 Ok(tcp_conn) => tcp_conn,
+                Err((bound_port, ConnectError::AddressInUse)) => {
+                    return Err((
+                        Error::with_message(Errno::EADDRNOTAVAIL, "connection key conflicts"),
+                        bound_port,
+                    ))
+                }
                 Err((bound_port, _)) => {
+                    // The only reason this method might go to this branch is because
+                    // we're trying to connect to an unspecified address (i.e. 0.0.0.0).
+                    // We currently have no support for binding to,
+                    // listening on, or connecting to the unspecified address.
+                    //
+                    // We assume the remote will just refuse to connect,
+                    // so we return `ECONNREFUSED`.
                     return Err((
                         Error::with_message(
                             Errno::ECONNREFUSED,
                             "connecting to an unspecified address is not supported",
                         ),
                         bound_port,
-                    ))
+                    ));
                 }
             };
 
