@@ -77,7 +77,7 @@ impl RealTimeAttr {
 
 struct PrioArray {
     map: BitArr![for 100],
-    queue: [VecDeque<SchedEntity>; 100],
+    queue: [VecDeque<Arc<Task>>; 100],
 }
 
 impl core::fmt::Debug for PrioArray {
@@ -88,7 +88,10 @@ impl core::fmt::Debug for PrioArray {
             })
             .field_with("queue", |f| {
                 f.debug_list()
-                    .entries((self.queue.iter().flatten()).map(|(_, thread)| thread.sched_attr()))
+                    .entries(
+                        (self.queue.iter().flatten())
+                            .map(|task| task.as_thread().unwrap().sched_attr()),
+                    )
                     .finish()
             })
             .finish()
@@ -96,7 +99,7 @@ impl core::fmt::Debug for PrioArray {
 }
 
 impl PrioArray {
-    fn enqueue(&mut self, thread: SchedEntity, prio: u8) {
+    fn enqueue(&mut self, thread: Arc<Task>, prio: u8) {
         let queue = &mut self.queue[usize::from(prio)];
         let is_empty = queue.is_empty();
         queue.push_back(thread);
@@ -105,7 +108,7 @@ impl PrioArray {
         }
     }
 
-    fn pop(&mut self) -> Option<SchedEntity> {
+    fn pop(&mut self) -> Option<Arc<Task>> {
         let mut iter = self.map.iter_ones();
         let prio = iter.next()? as u8;
 
@@ -166,8 +169,9 @@ impl RealTimeClassRq {
 }
 
 impl SchedClassRq for RealTimeClassRq {
-    fn enqueue(&mut self, entity: SchedEntity, _: Option<EnqueueFlags>) {
-        let prio = entity.1.sched_attr().real_time.prio.load(Relaxed);
+    fn enqueue(&mut self, entity: Arc<Task>, _: Option<EnqueueFlags>) {
+        let sched_attr = entity.as_thread().unwrap().sched_attr();
+        let prio = sched_attr.real_time.prio.load(Relaxed);
         self.inactive_array().enqueue(entity, prio);
         self.nr_running += 1;
     }
@@ -180,20 +184,17 @@ impl SchedClassRq for RealTimeClassRq {
         self.nr_running == 0
     }
 
-    fn pick_next(&mut self) -> Option<SchedEntity> {
+    fn pick_next(&mut self) -> Option<Arc<Task>> {
         if self.nr_running == 0 {
             return None;
         }
 
-        let res = self.active_array().pop().or_else(|| {
-            self.swap_arrays();
-            self.active_array().pop()
-        });
-        if res.is_some() {
-            self.nr_running -= 1;
-        }
-
-        res
+        (self.active_array().pop())
+            .or_else(|| {
+                self.swap_arrays();
+                self.active_array().pop()
+            })
+            .inspect(|_| self.nr_running -= 1)
     }
 
     fn update_current(

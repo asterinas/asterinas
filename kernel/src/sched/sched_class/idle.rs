@@ -6,7 +6,7 @@ use super::*;
 ///
 /// This run queue is used for the per-cpu idle entity, if any.
 pub(super) struct IdleClassRq {
-    entity: Option<SchedEntity>,
+    entity: Option<Arc<Task>>,
 }
 
 impl IdleClassRq {
@@ -27,10 +27,10 @@ impl core::fmt::Debug for IdleClassRq {
 }
 
 impl SchedClassRq for IdleClassRq {
-    fn enqueue(&mut self, entity: SchedEntity, _: Option<EnqueueFlags>) {
-        let ptr = Arc::as_ptr(&entity.0);
+    fn enqueue(&mut self, entity: Arc<Task>, _: Option<EnqueueFlags>) {
+        let ptr = Arc::as_ptr(&entity);
         if let Some(t) = self.entity.replace(entity)
-            && ptr != Arc::as_ptr(&t.0)
+            && ptr != Arc::as_ptr(&t)
         {
             panic!("Multiple `idle` entities spawned")
         }
@@ -44,7 +44,7 @@ impl SchedClassRq for IdleClassRq {
         self.entity.is_none()
     }
 
-    fn pick_next(&mut self) -> Option<SchedEntity> {
+    fn pick_next(&mut self) -> Option<Arc<Task>> {
         self.entity.clone()
     }
 
