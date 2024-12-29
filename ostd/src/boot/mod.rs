@@ -12,12 +12,12 @@ pub mod kcmdline;
 pub mod memory_region;
 pub mod smp;
 
-use alloc::{string::String, vec::Vec};
+use alloc::string::String;
 
 use kcmdline::KCmdlineArg;
 use spin::Once;
 
-use self::memory_region::MemoryRegion;
+use self::memory_region::MemoryRegionArray;
 
 /// ACPI information from the bootloader.
 ///
@@ -99,7 +99,7 @@ define_global_static_boot_arguments!(
     initramfs,              INITRAMFS,          &'static [u8];
     acpi_arg,               ACPI_ARG,           BootloaderAcpiArg;
     framebuffer_arg,        FRAMEBUFFER_ARG,    BootloaderFramebufferArg;
-    memory_regions,         MEMORY_REGIONS,     Vec<MemoryRegion>;
+    memory_regions,         MEMORY_REGIONS,     MemoryRegionArray;
 );
 
 /// The initialization method of the boot module.

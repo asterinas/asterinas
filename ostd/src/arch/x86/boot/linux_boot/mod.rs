@@ -3,7 +3,7 @@
 //! The Linux 64-bit Boot Protocol supporting module.
 //!
 
-use alloc::{borrow::ToOwned, format, string::String, vec::Vec};
+use alloc::{borrow::ToOwned, format, string::String};
 use core::ffi::CStr;
 
 use linux_boot_params::{BootParams, E820Type, LINUX_BOOT_HEADER_MAGIC};
@@ -12,7 +12,7 @@ use spin::Once;
 use crate::{
     boot::{
         kcmdline::KCmdlineArg,
-        memory_region::{non_overlapping_regions_from, MemoryRegion, MemoryRegionType},
+        memory_region::{MemoryRegion, MemoryRegionArray, MemoryRegionType},
         BootloaderAcpiArg, BootloaderFramebufferArg,
     },
     mm::kspace::{paddr_to_vaddr, LINEAR_MAPPING_BASE_VADDR},
@@ -118,39 +118,45 @@ impl From<E820Type> for MemoryRegionType {
     }
 }
 
-fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
-    let mut regions = Vec::<MemoryRegion>::new();
+fn init_memory_regions(memory_regions: &'static Once<MemoryRegionArray>) {
+    let mut regions = MemoryRegionArray::new();
 
     let boot_params = BOOT_PARAMS.get().unwrap();
 
     // Add regions from E820.
     let num_entries = boot_params.e820_entries as usize;
     for e820_entry in &boot_params.e820_table[0..num_entries] {
-        regions.push(MemoryRegion::new(
-            e820_entry.addr as usize,
-            e820_entry.size as usize,
-            e820_entry.typ.into(),
-        ));
+        regions
+            .push(MemoryRegion::new(
+                e820_entry.addr as usize,
+                e820_entry.size as usize,
+                e820_entry.typ.into(),
+            ))
+            .unwrap();
     }
 
     // Add the kernel region.
-    regions.push(MemoryRegion::kernel());
+    regions.push(MemoryRegion::kernel()).unwrap();
 
     // Add the initramfs region.
-    regions.push(MemoryRegion::new(
-        boot_params.hdr.ramdisk_image as usize,
-        boot_params.hdr.ramdisk_size as usize,
-        MemoryRegionType::Module,
-    ));
+    regions
+        .push(MemoryRegion::new(
+            boot_params.hdr.ramdisk_image as usize,
+            boot_params.hdr.ramdisk_size as usize,
+            MemoryRegionType::Module,
+        ))
+        .unwrap();
 
     // Add the AP boot code region that will be copied into by the BSP.
-    regions.push(MemoryRegion::new(
-        super::smp::AP_BOOT_START_PA,
-        super::smp::ap_boot_code_size(),
-        MemoryRegionType::Reclaimable,
-    ));
+    regions
+        .push(MemoryRegion::new(
+            super::smp::AP_BOOT_START_PA,
+            super::smp::ap_boot_code_size(),
+            MemoryRegionType::Reclaimable,
+        ))
+        .unwrap();
 
-    memory_regions.call_once(|| non_overlapping_regions_from(regions.as_ref()));
+    memory_regions.call_once(|| regions.into_non_overlapping());
 }
 
 /// The entry point of the Rust code portion of Asterinas.

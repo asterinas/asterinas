@@ -38,7 +38,7 @@ pub(crate) fn init() {
     let mut writer = {
         let framebuffer = boot::framebuffer_arg();
         let mut size = 0;
-        for region in memory_regions() {
+        for region in memory_regions().iter() {
             if region.typ() == MemoryRegionType::Framebuffer {
                 size = region.len();
             }

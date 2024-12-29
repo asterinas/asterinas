@@ -4,7 +4,7 @@
 
 pub mod smp;
 
-use alloc::{string::String, vec::Vec};
+use alloc::string::String;
 use core::arch::global_asm;
 
 use fdt::Fdt;
@@ -13,7 +13,10 @@ use spin::Once;
 use crate::{
     boot::{
         kcmdline::KCmdlineArg,
-        memory_region::{non_overlapping_regions_from, MemoryRegion, MemoryRegionType},
+        memory_region::{
+            non_overlapping_regions_from, MemoryRegion, MemoryRegionArray, MemoryRegionType,
+            MAX_REGIONS,
+        },
         BootloaderAcpiArg, BootloaderFramebufferArg,
     },
     early_println,
@@ -50,8 +53,8 @@ fn init_acpi_arg(acpi: &'static Once<BootloaderAcpiArg>) {
 
 fn init_framebuffer_info(_framebuffer_arg: &'static Once<BootloaderFramebufferArg>) {}
 
-fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
-    let mut regions = Vec::<MemoryRegion>::new();
+fn init_memory_regions(memory_regions: &'static Once<MemoryRegionArray>) {
+    let mut regions = MemoryRegionArray::new();
 
     for region in DEVICE_TREE.get().unwrap().memory().regions() {
         if region.size.unwrap_or(0) > 0 {
@@ -89,7 +92,7 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
         ));
     }
 
-    memory_regions.call_once(|| non_overlapping_regions_from(regions.as_ref()));
+    memory_regions.call_once(|| regions.into_non_overlapping());
 }
 
 fn parse_initramfs_range() -> Option<(usize, usize)> {
