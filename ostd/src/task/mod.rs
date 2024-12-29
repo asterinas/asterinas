@@ -18,7 +18,6 @@ use core::{
 };
 
 use kernel_stack::KernelStack;
-pub(crate) use preempt::cpu_local::reset_preempt_info;
 use processor::current_task;
 use utils::ForceSync;
 

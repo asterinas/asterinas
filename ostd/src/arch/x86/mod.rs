@@ -88,11 +88,9 @@ pub(crate) fn init_on_bsp() {
     }
     serial::callback_init();
 
-    // SAFETY: no CPU local objects have been accessed by this far. And
-    // we are on the BSP.
-    unsafe { crate::cpu::local::init_on_bsp() };
-
-    // SAFETY: we're on the BSP and we're ready to boot all APs.
+    // SAFETY:
+    // 1. We're on the BSP and we're ready to boot all APs.
+    // 2. No CPU-local objects have been accessed so far.
     unsafe { crate::boot::smp::boot_all_aps() };
 
     timer::init();

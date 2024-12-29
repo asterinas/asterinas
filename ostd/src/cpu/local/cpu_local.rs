@@ -109,7 +109,7 @@ impl<T: 'static> CpuLocal<T> {
     ///
     /// The caller must ensure that the reference to `self` is static.
     pub(crate) unsafe fn as_ptr(&'static self) -> *const T {
-        super::has_init::assert_true();
+        super::is_used::debug_set_true();
 
         let offset = self.get_offset();
 
@@ -140,7 +140,7 @@ impl<T: 'static + Sync> CpuLocal<T> {
     ///
     /// Panics if the CPU ID is out of range.
     pub fn get_on_cpu(&'static self, cpu_id: CpuId) -> &'static T {
-        super::has_init::assert_true();
+        super::is_used::debug_set_true();
 
         let cpu_id = cpu_id.as_usize();
 
