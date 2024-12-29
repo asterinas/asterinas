@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::collections::binary_heap::BinaryHeap;
+use alloc::{collections::binary_heap::BinaryHeap, sync::Arc};
 use core::{
     cmp::{self, Reverse},
     sync::atomic::{AtomicU64, Ordering::*},
@@ -8,14 +8,20 @@ use core::{
 
 use ostd::{
     cpu::{num_cpus, CpuId},
-    task::scheduler::{EnqueueFlags, UpdateFlags},
+    task::{
+        scheduler::{EnqueueFlags, UpdateFlags},
+        Task,
+    },
 };
 
 use super::{
     time::{base_slice_clocks, min_period_clocks},
-    CurrentRuntime, SchedAttr, SchedClassRq, SchedEntity,
+    CurrentRuntime, SchedAttr, SchedClassRq,
 };
-use crate::sched::priority::{Nice, NiceRange};
+use crate::{
+    sched::priority::{Nice, NiceRange},
+    thread::AsThread,
+};
 
 const WEIGHT_0: u64 = 1024;
 pub const fn nice_to_weight(nice: Nice) -> u64 {
@@ -117,7 +123,7 @@ impl FairAttr {
 ///
 /// This structure is used to provide the capability for keying in the
 /// run queue implemented by `BTreeSet` in the `FairClassRq`.
-struct FairQueueItem(SchedEntity);
+struct FairQueueItem(Arc<Task>, u64);
 
 impl core::fmt::Debug for FairQueueItem {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -127,7 +133,7 @@ impl core::fmt::Debug for FairQueueItem {
 
 impl FairQueueItem {
     fn key(&self) -> u64 {
-        self.0 .1.sched_attr().fair.vruntime.load(Relaxed)
+        self.1
     }
 }
 
@@ -214,16 +220,19 @@ impl FairClassRq {
 }
 
 impl SchedClassRq for FairClassRq {
-    fn enqueue(&mut self, entity: SchedEntity, flags: Option<EnqueueFlags>) {
-        let fair_attr = &entity.1.sched_attr().fair;
+    fn enqueue(&mut self, entity: Arc<Task>, flags: Option<EnqueueFlags>) {
+        let fair_attr = &entity.as_thread().unwrap().sched_attr().fair;
         let vruntime = match flags {
             Some(EnqueueFlags::Spawn) => self.min_vruntime + self.vtime_slice(),
             _ => self.min_vruntime,
         };
-        fair_attr.vruntime.fetch_max(vruntime, Relaxed);
+        let vruntime = fair_attr
+            .vruntime
+            .fetch_max(vruntime, Relaxed)
+            .max(vruntime);
 
         self.total_weight += fair_attr.weight.load(Relaxed);
-        self.entities.push(Reverse(FairQueueItem(entity)));
+        self.entities.push(Reverse(FairQueueItem(entity, vruntime)));
     }
 
     fn len(&mut self) -> usize {
@@ -234,10 +243,11 @@ impl SchedClassRq for FairClassRq {
         self.entities.is_empty()
     }
 
-    fn pick_next(&mut self) -> Option<SchedEntity> {
-        let Reverse(FairQueueItem(entity)) = self.entities.pop()?;
+    fn pick_next(&mut self) -> Option<Arc<Task>> {
+        let Reverse(FairQueueItem(entity, _)) = self.entities.pop()?;
 
-        self.total_weight -= entity.1.sched_attr().fair.weight.load(Relaxed);
+        let sched_attr = entity.as_thread().unwrap().sched_attr();
+        self.total_weight -= sched_attr.fair.weight.load(Relaxed);
 
         Some(entity)
     }
