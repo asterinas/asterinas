@@ -4,20 +4,6 @@
 
 use x86_64::registers::segmentation::{Segment64, GS};
 
-/// Sets the base address for the CPU local storage by writing to the GS base model-specific register.
-/// This operation is marked as `unsafe` because it directly interfaces with low-level CPU registers.
-///
-/// # Safety
-///
-///  - This function is safe to call provided that the GS register is dedicated entirely for CPU local storage
-///    and is not concurrently accessed for other purposes.
-///  - The caller must ensure that `addr` is a valid address and properly aligned, as required by the CPU.
-///  - This function should only be called in contexts where the CPU is in a state to accept such changes,
-///    such as during processor initialization.
-pub(crate) unsafe fn set_base(addr: u64) {
-    GS::write_base(x86_64::addr::VirtAddr::new(addr));
-}
-
 /// Gets the base address for the CPU local storage by reading the GS base model-specific register.
 pub(crate) fn get_base() -> u64 {
     GS::read_base().as_u64()

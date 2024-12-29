@@ -5,10 +5,6 @@
 .global ap_boot_from_real_mode
 .global ap_boot_from_long_mode
 
-.extern boot_gdtr
-.extern boot_page_table_start
-.extern ap_early_entry
-
 .section ".ap_boot", "awx"
 .align 4096
 
@@ -18,6 +14,7 @@ MMIO_XAPIC_APICID = 0xFEE00020
 
 .macro setup_64bit_gdt_and_page_table eax
     // Use the 64-bit GDT.
+.extern boot_gdtr
     lgdt [boot_gdtr]
 
     // Enable PAE and PGE.
@@ -62,7 +59,7 @@ ap_boot_from_long_mode:
     retf // 32-bit far return
 .align 8
 retf_stack_bottom:
-.long ap_long_mode
+.long ap_long_mode_in_low_address
 .long 0x8
 retf_stack_top:
 
@@ -161,10 +158,10 @@ ap_protect:
     or eax, 1 << 31
     mov cr0, eax
 
-    ljmp 0x8, offset ap_long_mode
+    ljmp 0x8, offset ap_long_mode_in_low_address
 
 .code64
-ap_long_mode:
+ap_long_mode_in_low_address:
     mov ax, 0
     mov ds, ax
     mov ss, ax
@@ -172,26 +169,40 @@ ap_long_mode:
     mov fs, ax
     mov gs, ax
 
+    // Update RIP to use the virtual address.
+    mov rax, offset ap_long_mode
+    jmp rax
+
+.data
+// This is a pointer to be filled by the BSP when boot information
+// of all APs are allocated and initialized.
+.global __ap_boot_info_array_pointer
+.align 8
+__ap_boot_info_array_pointer:
+    .skip 8
+
+.text
+.code64
+ap_long_mode:
     // The local APIC ID is in the RDI.
     mov rax, rdi
-    shl rax, 3
+    shl rax, 4                   // 16-byte `PerApRawInfo`
 
+    mov rbx, [rip + __ap_boot_info_array_pointer]
     // Setup the stack.
-    mov rbx, [__ap_boot_stack_array_pointer]
-    mov rsp, [rbx + rax]
-    xor rbp, rbp
+    mov rsp, [rbx + rax - 16]    // raw_info[cpu_id - 1].stack_top
+    // Setup the GS base (the CPU-local address).
+    mov rax, [rbx + rax - 8]     // raw_info[cpu_id - 1].cpu_local
+    mov rdx, rax
+    shr rdx, 32          // EDX:EAX = raw_info.cpu_local
+    mov ecx, 0xC0000101  // ECX = GS.base
+    wrmsr
 
     // Go to Rust code.
+.extern ap_early_entry
+    xor rbp, rbp
     mov rax, offset ap_early_entry
     call rax
 
 .extern halt # bsp_boot.S
     jmp halt
-
-.data
-// This is a pointer to be filled by the BSP when boot stacks
-// of all APs are allocated and initialized.
-.global __ap_boot_stack_array_pointer
-.align 8
-__ap_boot_stack_array_pointer:
-    .skip 8

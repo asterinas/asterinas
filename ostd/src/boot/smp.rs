@@ -2,14 +2,14 @@
 
 //! Symmetric multiprocessing (SMP) boot support.
 
-use alloc::collections::BTreeMap;
+use alloc::{boxed::Box, vec::Vec};
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use spin::Once;
 
 use crate::{
     arch::boot::smp::bringup_all_aps,
-    cpu::{self, num_cpus},
+    cpu,
     mm::{
         frame::{meta::KernelMeta, Segment},
         paddr_to_vaddr, FrameAllocOptions, PAGE_SIZE,
@@ -17,15 +17,15 @@ use crate::{
     task::Task,
 };
 
-pub(crate) static AP_BOOT_INFO: Once<ApBootInfo> = Once::new();
+static AP_BOOT_INFO: Once<ApBootInfo> = Once::new();
 
 const AP_BOOT_STACK_SIZE: usize = PAGE_SIZE * 64;
 
-pub(crate) struct ApBootInfo {
-    /// It holds the boot stack top pointers used by all APs.
-    pub(crate) boot_stack_array: Segment<KernelMeta>,
-    /// `per_ap_info` maps each AP's ID to its associated boot information.
-    per_ap_info: BTreeMap<u32, PerApInfo>,
+struct ApBootInfo {
+    /// Raw boot information for each AP.
+    per_ap_raw_info: Segment<KernelMeta>,
+    /// Boot information for each AP.
+    per_ap_info: Box<[PerApInfo]>,
 }
 
 struct PerApInfo {
@@ -36,6 +36,18 @@ struct PerApInfo {
     // to the frame allocator).
     #[expect(dead_code)]
     boot_stack_pages: Segment<KernelMeta>,
+}
+
+/// Raw boot information for APs.
+///
+/// This is "raw" information that the assembly code (run by APs at startup,
+/// before ever entering the Rust entry point) will directly access. So the
+/// layout is important. **Update the assembly code if the layout is changed!**
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub(crate) struct PerApRawInfo {
+    stack_top: *mut u8,
+    cpu_local: *mut u8,
 }
 
 static AP_LATE_ENTRY: Once<fn()> = Once::new();
@@ -50,57 +62,70 @@ static AP_LATE_ENTRY: Once<fn()> = Once::new();
 ///
 /// This function can only be called in the boot context of the BSP where APs have
 /// not yet been booted.
-pub fn boot_all_aps() {
-    let num_cpus = num_cpus() as u32;
+pub(crate) unsafe fn boot_all_aps() {
+    let num_cpus = crate::cpu::num_cpus();
+
     if num_cpus == 1 {
         return;
     }
-    log::info!("Booting {} processors.", num_cpus - 1);
+    log::info!("Booting {} processors", num_cpus - 1);
 
-    // We currently assumes that bootstrap processor (BSP) have always the
-    // processor ID 0. And the processor ID starts from 0 to `num_cpus - 1`.
+    // We currently assume that
+    // 1. the bootstrap processor (BSP) has the processor ID 0;
+    // 2. the processor ID starts from `0` to `num_cpus - 1`.
 
-    AP_BOOT_INFO.call_once(|| {
-        let mut per_ap_info = BTreeMap::new();
-        // Use two pages to place stack pointers of all APs, thus support up to 1024 APs.
-        let boot_stack_array = FrameAllocOptions::new()
+    let mut per_ap_info = Vec::new();
+
+    let per_ap_raw_info = FrameAllocOptions::new()
+        .zeroed(false)
+        .alloc_segment_with(
+            num_cpus
+                .saturating_sub(1)
+                .checked_mul(core::mem::size_of::<PerApRawInfo>())
+                .unwrap()
+                .div_ceil(PAGE_SIZE),
+            |_| KernelMeta,
+        )
+        .unwrap();
+    let raw_info_ptr = paddr_to_vaddr(per_ap_raw_info.start_paddr()) as *mut PerApRawInfo;
+
+    for ap in 1..num_cpus {
+        let boot_stack_pages = FrameAllocOptions::new()
             .zeroed(false)
-            .alloc_segment_with(2, |_| KernelMeta)
+            .alloc_segment_with(AP_BOOT_STACK_SIZE / PAGE_SIZE, |_| KernelMeta)
             .unwrap();
-        assert!(num_cpus < 1024);
 
-        for ap in 1..num_cpus {
-            let boot_stack_pages = FrameAllocOptions::new()
-                .zeroed(false)
-                .alloc_segment_with(AP_BOOT_STACK_SIZE / PAGE_SIZE, |_| KernelMeta)
-                .unwrap();
-            let boot_stack_ptr = paddr_to_vaddr(boot_stack_pages.end_paddr());
-            let stack_array_ptr = paddr_to_vaddr(boot_stack_array.start_paddr()) as *mut u64;
-            // SAFETY: The `stack_array_ptr` is valid and aligned.
-            unsafe {
-                stack_array_ptr
-                    .add(ap as usize)
-                    .write_volatile(boot_stack_ptr as u64);
-            }
-            per_ap_info.insert(
-                ap,
-                PerApInfo {
-                    is_started: AtomicBool::new(false),
-                    boot_stack_pages,
-                },
-            );
-        }
+        let raw_info = PerApRawInfo {
+            stack_top: paddr_to_vaddr(boot_stack_pages.end_paddr()) as *mut u8,
+            cpu_local: paddr_to_vaddr(crate::cpu::local::get_ap(ap.try_into().unwrap())) as *mut u8,
+        };
 
-        ApBootInfo {
-            boot_stack_array,
-            per_ap_info,
-        }
+        // SAFETY: The index is in range because we allocated enough memory.
+        let ptr = unsafe { raw_info_ptr.add(ap - 1) };
+        // SAFETY: The memory is valid for writing because it was just allocated.
+        unsafe { ptr.write(raw_info) };
+
+        per_ap_info.push(PerApInfo {
+            is_started: AtomicBool::new(false),
+            boot_stack_pages,
+        });
+    }
+
+    assert!(!AP_BOOT_INFO.is_completed());
+    AP_BOOT_INFO.call_once(move || ApBootInfo {
+        per_ap_raw_info,
+        per_ap_info: per_ap_info.into_boxed_slice(),
     });
 
     log::info!("Booting all application processors...");
 
-    // SAFETY: The safety is upheld by the caller.
-    unsafe { bringup_all_aps(num_cpus) };
+    let info_ptr = paddr_to_vaddr(AP_BOOT_INFO.get().unwrap().per_ap_raw_info.start_paddr())
+        as *mut PerApRawInfo;
+    let pt_ptr = crate::mm::page_table::boot_pt::with_borrow(|pt| pt.root_address()).unwrap();
+    // SAFETY: It's the right time to boot APs (guaranteed by the caller) and
+    // the arguments are valid to boot APs (generated above).
+    unsafe { bringup_all_aps(info_ptr, pt_ptr, num_cpus as u32) };
+
     wait_for_all_aps_started();
 
     log::info!("All application processors started. The BSP continues to run.");
@@ -121,7 +146,6 @@ fn ap_early_entry(local_apic_id: u32) -> ! {
     // SAFETY: we are on the AP and they are only called once with the correct
     // CPU ID.
     unsafe {
-        cpu::local::init_on_ap(local_apic_id);
         cpu::set_this_cpu_id(local_apic_id);
     }
 
@@ -145,10 +169,7 @@ fn ap_early_entry(local_apic_id: u32) -> ! {
 
     // Mark the AP as started.
     let ap_boot_info = AP_BOOT_INFO.get().unwrap();
-    ap_boot_info
-        .per_ap_info
-        .get(&local_apic_id)
-        .unwrap()
+    ap_boot_info.per_ap_info[local_apic_id as usize - 1]
         .is_started
         .store(true, Ordering::Release);
 
@@ -166,7 +187,7 @@ fn wait_for_all_aps_started() {
         let ap_boot_info = AP_BOOT_INFO.get().unwrap();
         ap_boot_info
             .per_ap_info
-            .values()
+            .iter()
             .all(|info| info.is_started.load(Ordering::Acquire))
     }
 

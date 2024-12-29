@@ -110,7 +110,7 @@ impl<T: 'static> CpuLocalCell<T> {
     ///   must be taken to ensure that the borrowing rules are correctly
     ///   enforced, since the interrupts may come asynchronously.
     pub fn as_mut_ptr(&'static self) -> *mut T {
-        super::has_init::assert_true();
+        super::is_used::debug_set_true();
 
         let offset = {
             let bsp_va = self as *const _ as usize;
