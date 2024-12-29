@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{string::String, vec::Vec};
+use alloc::string::String;
 use core::arch::global_asm;
 
 use spin::Once;
@@ -8,7 +8,7 @@ use spin::Once;
 use crate::{
     boot::{
         kcmdline::KCmdlineArg,
-        memory_region::{non_overlapping_regions_from, MemoryRegion, MemoryRegionType},
+        memory_region::{MemoryRegion, MemoryRegionArray, MemoryRegionType},
         BootloaderAcpiArg, BootloaderFramebufferArg,
     },
     mm::{
@@ -103,8 +103,8 @@ fn init_framebuffer_info(framebuffer_arg: &'static Once<BootloaderFramebufferArg
     });
 }
 
-fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
-    let mut regions = Vec::<MemoryRegion>::new();
+fn init_memory_regions(memory_regions: &'static Once<MemoryRegionArray>) {
+    let mut regions = MemoryRegionArray::new();
 
     let info = MB1_INFO.get().unwrap();
 
@@ -116,7 +116,7 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
             entry.length().try_into().unwrap(),
             entry.memory_type(),
         );
-        regions.push(region);
+        regions.push(region).unwrap();
     }
 
     // Add the framebuffer region.
@@ -126,14 +126,16 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
         height: info.framebuffer_table.height as usize,
         bpp: info.framebuffer_table.bpp as usize,
     };
-    regions.push(MemoryRegion::new(
-        fb.address,
-        (fb.width * fb.height * fb.bpp + 7) / 8, // round up when divide with 8 (bits/Byte)
-        MemoryRegionType::Framebuffer,
-    ));
+    regions
+        .push(MemoryRegion::new(
+            fb.address,
+            (fb.width * fb.height * fb.bpp + 7) / 8, // round up when divide with 8 (bits/Byte)
+            MemoryRegionType::Framebuffer,
+        ))
+        .unwrap();
 
     // Add the kernel region.
-    regions.push(MemoryRegion::kernel());
+    regions.push(MemoryRegion::kernel()).unwrap();
 
     // Add the initramfs area.
     if info.mods_count != 0 {
@@ -145,22 +147,26 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
                 (*(paddr_to_vaddr(modules_addr + 4) as *const u32)) as usize,
             )
         };
-        regions.push(MemoryRegion::new(
-            start,
-            end - start,
-            MemoryRegionType::Module,
-        ));
+        regions
+            .push(MemoryRegion::new(
+                start,
+                end - start,
+                MemoryRegionType::Module,
+            ))
+            .unwrap();
     }
 
     // Add the AP boot code region that will be copied into by the BSP.
-    regions.push(MemoryRegion::new(
-        super::smp::AP_BOOT_START_PA,
-        super::smp::ap_boot_code_size(),
-        MemoryRegionType::Reclaimable,
-    ));
+    regions
+        .push(MemoryRegion::new(
+            super::smp::AP_BOOT_START_PA,
+            super::smp::ap_boot_code_size(),
+            MemoryRegionType::Reclaimable,
+        ))
+        .unwrap();
 
     // Initialize with non-overlapping regions.
-    memory_regions.call_once(move || non_overlapping_regions_from(regions.as_ref()));
+    memory_regions.call_once(move || regions.into_non_overlapping());
 }
 
 /// Representation of Multiboot Information according to specification.

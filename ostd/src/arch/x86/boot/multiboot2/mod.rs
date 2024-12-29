@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{
-    string::{String, ToString},
-    vec::Vec,
-};
+use alloc::string::{String, ToString};
 use core::arch::global_asm;
 
 use multiboot2::{BootInformation, BootInformationHeader, MemoryAreaType};
@@ -12,7 +9,7 @@ use spin::Once;
 use crate::{
     boot::{
         kcmdline::KCmdlineArg,
-        memory_region::{non_overlapping_regions_from, MemoryRegion, MemoryRegionType},
+        memory_region::{MemoryRegion, MemoryRegionArray, MemoryRegionType},
         BootloaderAcpiArg, BootloaderFramebufferArg,
     },
     mm::kspace::paddr_to_vaddr,
@@ -99,8 +96,8 @@ impl From<MemoryAreaType> for MemoryRegionType {
     }
 }
 
-fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
-    let mut regions = Vec::<MemoryRegion>::new();
+fn init_memory_regions(memory_regions: &'static Once<MemoryRegionArray>) {
+    let mut regions = MemoryRegionArray::new();
 
     let mb2_info = MB2_INFO.get().unwrap();
 
@@ -117,7 +114,7 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
             (end - start).try_into().unwrap(),
             area_typ,
         );
-        regions.push(region);
+        regions.push(region).unwrap();
     }
 
     if let Some(Ok(fb_tag)) = mb2_info.framebuffer_tag() {
@@ -128,35 +125,41 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
             height: fb_tag.height() as usize,
             bpp: fb_tag.bpp() as usize,
         };
-        regions.push(MemoryRegion::new(
-            fb.address,
-            (fb.width * fb.height * fb.bpp + 7) / 8, // round up when divide with 8 (bits/Byte)
-            MemoryRegionType::Framebuffer,
-        ));
+        regions
+            .push(MemoryRegion::new(
+                fb.address,
+                (fb.width * fb.height * fb.bpp + 7) / 8, // round up when divide with 8 (bits/Byte)
+                MemoryRegionType::Framebuffer,
+            ))
+            .unwrap();
     }
 
     // Add the kernel region since Grub does not specify it.
-    regions.push(MemoryRegion::kernel());
+    regions.push(MemoryRegion::kernel()).unwrap();
 
     // Add the boot module region since Grub does not specify it.
     let mb2_module_tag = mb2_info.module_tags();
     for module in mb2_module_tag {
-        regions.push(MemoryRegion::new(
-            module.start_address() as usize,
-            module.module_size() as usize,
-            MemoryRegionType::Module,
-        ));
+        regions
+            .push(MemoryRegion::new(
+                module.start_address() as usize,
+                module.module_size() as usize,
+                MemoryRegionType::Module,
+            ))
+            .unwrap();
     }
 
     // Add the AP boot code region that will be copied into by the BSP.
-    regions.push(MemoryRegion::new(
-        super::smp::AP_BOOT_START_PA,
-        super::smp::ap_boot_code_size(),
-        MemoryRegionType::Reclaimable,
-    ));
+    regions
+        .push(MemoryRegion::new(
+            super::smp::AP_BOOT_START_PA,
+            super::smp::ap_boot_code_size(),
+            MemoryRegionType::Reclaimable,
+        ))
+        .unwrap();
 
     // Initialize with non-overlapping regions.
-    memory_regions.call_once(move || non_overlapping_regions_from(regions.as_ref()));
+    memory_regions.call_once(move || regions.into_non_overlapping());
 }
 
 /// The entry point of Rust code called by inline asm.
