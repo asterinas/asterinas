@@ -84,11 +84,13 @@ unsafe fn init() {
 
     logger::init();
 
-    // SAFETY: They are only called once on BSP and ACPI has been initialized.
-    // No CPU local objects have been accessed by this far.
+    // SAFETY:
+    // 1. They are only called once in the boot context of the BSP.
+    // 2. The number of CPUs are available because ACPI has been initialized.
+    // 3. No CPU-local objects have been accessed yet.
     unsafe {
         cpu::init_num_cpus();
-        cpu::local::init_on_bsp();
+        cpu::local::copy_bsp_for_ap();
         cpu::set_this_cpu_id(0);
     }
 

@@ -35,14 +35,17 @@ use crate::{
             Level, TriggerMode,
         },
     },
-    mm::{paddr_to_vaddr, PAGE_SIZE},
+    boot::smp::PerApRawInfo,
+    mm::{Paddr, PAGE_SIZE},
 };
 
 /// Get the number of processors
 ///
 /// This function needs to be called after the OS initializes the ACPI table.
 pub(crate) fn get_num_processors() -> Option<u32> {
+    // TODO: support boot protocols without ACPI tables, e.g., Multiboot
     let acpi_tables = get_acpi_tables()?;
+
     let mut local_apic_counts = 0;
     acpi_tables
         .find_table::<acpi::madt::Madt>()
@@ -63,15 +66,16 @@ pub(crate) fn get_num_processors() -> Option<u32> {
 /// # Safety
 ///
 /// The caller must ensure that
-/// 1. we're in the boot context of the BSP, and
-/// 2. all APs have not yet been booted.
-pub(crate) unsafe fn bringup_all_aps() {
+/// 1. we're in the boot context of the BSP,
+/// 2. all APs have not yet been booted, and
+/// 3. the arguments are valid to boot APs.
+pub(crate) unsafe fn bringup_all_aps(info_ptr: *mut PerApRawInfo, pt_ptr: Paddr) {
     // SAFETY: The code and data to boot AP is valid to write because
     // there are no readers and we are the only writer at this point.
     unsafe {
         copy_ap_boot_code();
-        fill_boot_stack_array_ptr();
-        fill_boot_pt_ptr();
+        fill_boot_info_ptr(info_ptr);
+        fill_boot_pt_ptr(pt_ptr);
     }
 
     // SAFETY: We've properly prepared all the resources to boot APs.
@@ -112,39 +116,30 @@ unsafe fn copy_ap_boot_code() {
 /// # Safety
 ///
 /// The caller must ensure the pointer to be filled is valid to write.
-unsafe fn fill_boot_stack_array_ptr() {
-    let pages = &crate::boot::smp::AP_BOOT_INFO
-        .get()
-        .unwrap()
-        .boot_stack_array;
-    let vaddr = paddr_to_vaddr(pages.start_paddr());
-
+unsafe fn fill_boot_info_ptr(info_ptr: *mut PerApRawInfo) {
     extern "C" {
-        static mut __ap_boot_stack_array_pointer: usize;
+        static mut __ap_boot_info_array_pointer: *mut PerApRawInfo;
     }
 
     // SAFETY: The safety is upheld by the caller.
     unsafe {
-        __ap_boot_stack_array_pointer = vaddr;
+        __ap_boot_info_array_pointer = info_ptr;
     }
 }
 
 /// # Safety
 ///
 /// The caller must ensure the pointer to be filled is valid to write.
-unsafe fn fill_boot_pt_ptr() {
+unsafe fn fill_boot_pt_ptr(pt_ptr: Paddr) {
     extern "C" {
         static mut __boot_page_table_pointer: u32;
     }
 
-    let boot_pt = crate::mm::page_table::boot_pt::with_borrow(|pt| pt.root_address())
-        .unwrap()
-        .try_into()
-        .unwrap();
+    let pt_ptr32 = pt_ptr.try_into().unwrap();
 
     // SAFETY: The safety is upheld by the caller.
     unsafe {
-        __boot_page_table_pointer = boot_pt;
+        __boot_page_table_pointer = pt_ptr32;
     }
 }
 
