@@ -12,6 +12,9 @@ pub enum BindError {
 pub mod tcp {
     pub use smoltcp::socket::tcp::{RecvError, SendError};
 
+    /// An error returned by [`TcpListener::new_listen`].
+    ///
+    /// [`TcpListener::new_listen`]: crate::socket::TcpListener::new_listen
     #[derive(Debug, PartialEq, Eq, Clone, Copy)]
     pub enum ListenError {
         InvalidState,
@@ -29,6 +32,9 @@ pub mod tcp {
         }
     }
 
+    /// An error returned by [`TcpConnection::new_connect`].
+    ///
+    /// [`TcpConnection::new_connect`]: crate::socket::TcpConnection::new_connect
     #[derive(Debug, PartialEq, Eq, Clone, Copy)]
     pub enum ConnectError {
         InvalidState,
@@ -50,13 +56,23 @@ pub mod tcp {
 pub mod udp {
     pub use smoltcp::socket::udp::RecvError;
 
-    /// An error returned by [`BoundTcpSocket::recv`].
+    /// An error returned by [`UdpSocket::send`].
     ///
-    /// [`BoundTcpSocket::recv`]: crate::socket::BoundTcpSocket::recv
+    /// [`UdpSocket::send`]: crate::socket::UdpSocket::send
     #[derive(Debug, PartialEq, Eq, Clone, Copy)]
     pub enum SendError {
-        TooLarge,
         Unaddressable,
         BufferFull,
+        /// The packet is too large.
+        TooLarge,
+    }
+
+    impl From<smoltcp::socket::udp::SendError> for SendError {
+        fn from(value: smoltcp::socket::udp::SendError) -> Self {
+            match value {
+                smoltcp::socket::udp::SendError::Unaddressable => Self::Unaddressable,
+                smoltcp::socket::udp::SendError::BufferFull => Self::BufferFull,
+            }
+        }
     }
 }
