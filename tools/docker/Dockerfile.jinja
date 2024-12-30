@@ -233,6 +233,47 @@ RUN wget https://www.memcached.org/files/memcached-1.6.32.tar.gz \
 RUN rm -rf memcached-1.6.32.tar.gz \
     memcached-1.6.32
 
+# Install Apache httpd v2.4.62
+WORKDIR /root
+RUN apt-get install -y --no-install-recommends libapr1-dev libaprutil1-dev libpcre2-dev
+RUN wget https://dlcdn.apache.org/httpd/httpd-2.4.62.tar.bz2 \ 
+    && tar xvf httpd-2.4.62.tar.bz2 \
+    && cd httpd-2.4.62 \ 
+    && ./configure \ 
+    --disable-authn-file \
+    --disable-authz-groupfile \
+    --disable-authz-user \
+    --disable-access-compat \
+    --disable-auth-basic \
+    --disable-reqtimeout \
+    --disable-filter \
+    --disable-charset-lite \
+    --disable-mime \
+    --disable-log-config \
+    --disable-env \
+    --disable-headers \
+    --disable-setenvif \
+    --disable-version \
+    --disable-status \
+    --disable-autoindex \
+    --disable-dir \
+    --disable-alias \ 
+    && make -j \ 
+    && make install 
+
+RUN rm -rf httpd-2.4.62.tar.bz2 \
+    httpd-2.4.62
+
+# Install wrk
+WORKDIR /root
+RUN git clone https://github.com/wg/wrk.git \ 
+    && cd wrk \
+    && make -j \
+    && mkdir -p /usr/local/wrk \
+    && cp wrk /usr/local/wrk
+
+RUN rm -rf wrk
+
 #= Build syscall test =========================================================
 
 FROM build-base as build-bazel
@@ -464,6 +505,8 @@ COPY --from=build-applications /usr/local/leveldb /usr/local/leveldb
 COPY --from=build-applications /usr/local/speedtest1 /usr/local/benchmark/sqlite-speedtest1
 COPY --from=build-applications /lib/x86_64-linux-gnu/libsqlite3.so /lib/x86_64-linux-gnu/libsqlite3.so
 COPY --from=build-applications /usr/local/memcached /usr/local/memcached
+COPY --from=build-applications /usr/local/apache2 /usr/local/apache2
+COPY --from=build-applications /usr/local/wrk /usr/local/wrk
 
 # Add the path of Asterinas tools
 ENV PATH="/root/asterinas/target/bin:${PATH}"
