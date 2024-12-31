@@ -12,7 +12,7 @@ use core::str::FromStr;
 use log::{LevelFilter, Metadata, Record};
 use spin::Once;
 
-use crate::boot::{kcmdline::ModuleArg, kernel_cmdline};
+use crate::boot::{boot_info, kcmdline::ModuleArg};
 
 static LOGGER: Logger = Logger::new();
 
@@ -82,7 +82,7 @@ pub(crate) fn init() {
 }
 
 fn get_log_level() -> Option<LevelFilter> {
-    let module_args = kernel_cmdline().get_module_args("ostd")?;
+    let module_args = boot_info().kernel_cmdline.get_module_args("ostd")?;
 
     let value = {
         let value = module_args.iter().find_map(|arg| match arg {

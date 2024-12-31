@@ -134,7 +134,7 @@ pub static KERNEL_PAGE_TABLE: Once<PageTable<KernelMode, PageTableEntry, PagingC
 pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
     info!("Initializing the kernel page table");
 
-    let regions = crate::boot::memory_regions();
+    let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
     let phys_mem_cap = regions.iter().map(|r| r.base() + r.len()).max().unwrap();
 
     // Start to initialize the kernel page table.

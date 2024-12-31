@@ -7,7 +7,7 @@ mod tests {
 
     #[ktest]
     fn it_works() {
-        let memory_regions = ostd::boot::memory_regions();
+        let memory_regions = &ostd::boot::boot_info().memory_regions;
         assert!(!memory_regions.is_empty());
     }
 }

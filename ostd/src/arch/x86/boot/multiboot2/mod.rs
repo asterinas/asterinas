@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::string::{String, ToString};
 use core::arch::global_asm;
 
 use multiboot2::{BootInformation, BootInformationHeader, MemoryAreaType};
@@ -8,7 +7,6 @@ use spin::Once;
 
 use crate::{
     boot::{
-        kcmdline::KCmdlineArg,
         memory_region::{MemoryRegion, MemoryRegionArray, MemoryRegionType},
         BootloaderAcpiArg, BootloaderFramebufferArg,
     },
@@ -21,67 +19,57 @@ pub(super) const MULTIBOOT2_ENTRY_MAGIC: u32 = 0x36d76289;
 
 static MB2_INFO: Once<BootInformation> = Once::new();
 
-fn init_bootloader_name(bootloader_name: &'static Once<String>) {
-    bootloader_name.call_once(|| {
-        MB2_INFO
-            .get()
-            .unwrap()
-            .boot_loader_name_tag()
-            .expect("Bootloader name not found from the Multiboot2 header!")
-            .name()
-            .expect("UTF-8 error: failed to parse bootloader name!")
-            .to_string()
-    });
+fn parse_bootloader_name() -> &'static str {
+    MB2_INFO
+        .get()
+        .unwrap()
+        .boot_loader_name_tag()
+        .expect("Bootloader name not found from the Multiboot2 header!")
+        .name()
+        .expect("UTF-8 error: failed to parse bootloader name!")
 }
 
-fn init_kernel_commandline(kernel_cmdline: &'static Once<KCmdlineArg>) {
-    kernel_cmdline.call_once(|| {
-        MB2_INFO
-            .get()
-            .unwrap()
-            .command_line_tag()
-            .expect("Kernel command-line not found from the Multiboot2 header!")
-            .cmdline()
-            .expect("UTF-8 error: failed to parse kernel command-line!")
-            .into()
-    });
+fn parse_kernel_commandline() -> &'static str {
+    MB2_INFO
+        .get()
+        .unwrap()
+        .command_line_tag()
+        .expect("Kernel command-line not found from the Multiboot2 header!")
+        .cmdline()
+        .expect("UTF-8 error: failed to parse kernel command-line!")
 }
 
-fn init_initramfs(initramfs: &'static Once<&'static [u8]>) {
-    let Some(mb2_module_tag) = MB2_INFO.get().unwrap().module_tags().next() else {
-        return;
-    };
+fn parse_initramfs() -> Option<&'static [u8]> {
+    let mb2_module_tag = MB2_INFO.get().unwrap().module_tags().next()?;
     let base_addr = mb2_module_tag.start_address() as usize;
     // We must return a slice composed by VA since kernel should read everything in VA.
     let base_va = paddr_to_vaddr(base_addr);
     let length = mb2_module_tag.module_size() as usize;
-    initramfs.call_once(|| unsafe { core::slice::from_raw_parts(base_va as *const u8, length) });
+    Some(unsafe { core::slice::from_raw_parts(base_va as *const u8, length) })
 }
 
-fn init_acpi_arg(acpi: &'static Once<BootloaderAcpiArg>) {
-    acpi.call_once(|| {
-        if let Some(v2_tag) = MB2_INFO.get().unwrap().rsdp_v2_tag() {
-            // check for rsdp v2
-            BootloaderAcpiArg::Xsdt(v2_tag.xsdt_address())
-        } else if let Some(v1_tag) = MB2_INFO.get().unwrap().rsdp_v1_tag() {
-            // fall back to rsdp v1
-            BootloaderAcpiArg::Rsdt(v1_tag.rsdt_address())
-        } else {
-            panic!("No ACPI RDSP information found!");
-        }
-    });
+fn parse_acpi_arg() -> BootloaderAcpiArg {
+    if let Some(v2_tag) = MB2_INFO.get().unwrap().rsdp_v2_tag() {
+        // check for rsdp v2
+        BootloaderAcpiArg::Xsdt(v2_tag.xsdt_address())
+    } else if let Some(v1_tag) = MB2_INFO.get().unwrap().rsdp_v1_tag() {
+        // fall back to rsdp v1
+        BootloaderAcpiArg::Rsdt(v1_tag.rsdt_address())
+    } else {
+        BootloaderAcpiArg::NotProvided
+    }
 }
 
-fn init_framebuffer_info(framebuffer_arg: &'static Once<BootloaderFramebufferArg>) {
+fn parse_framebuffer_info() -> Option<BootloaderFramebufferArg> {
     let Some(Ok(fb_tag)) = MB2_INFO.get().unwrap().framebuffer_tag() else {
-        return;
+        return None;
     };
-    framebuffer_arg.call_once(|| BootloaderFramebufferArg {
+    Some(BootloaderFramebufferArg {
         address: fb_tag.address() as usize,
         width: fb_tag.width() as usize,
         height: fb_tag.height() as usize,
         bpp: fb_tag.bpp() as usize,
-    });
+    })
 }
 
 impl From<MemoryAreaType> for MemoryRegionType {
@@ -96,7 +84,7 @@ impl From<MemoryAreaType> for MemoryRegionType {
     }
 }
 
-fn init_memory_regions(memory_regions: &'static Once<MemoryRegionArray>) {
+fn parse_memory_regions() -> MemoryRegionArray {
     let mut regions = MemoryRegionArray::new();
 
     let mb2_info = MB2_INFO.get().unwrap();
@@ -158,8 +146,7 @@ fn init_memory_regions(memory_regions: &'static Once<MemoryRegionArray>) {
         ))
         .unwrap();
 
-    // Initialize with non-overlapping regions.
-    memory_regions.call_once(move || regions.into_non_overlapping());
+    regions.into_non_overlapping()
 }
 
 /// The entry point of Rust code called by inline asm.
@@ -169,13 +156,17 @@ unsafe extern "sysv64" fn __multiboot2_entry(boot_magic: u32, boot_params: u64) 
     MB2_INFO.call_once(|| unsafe {
         BootInformation::load(boot_params as *const BootInformationHeader).unwrap()
     });
-    crate::boot::register_boot_init_callbacks(
-        init_bootloader_name,
-        init_kernel_commandline,
-        init_initramfs,
-        init_acpi_arg,
-        init_framebuffer_info,
-        init_memory_regions,
-    );
-    crate::boot::call_ostd_main();
+
+    use crate::boot::{call_ostd_main, EarlyBootInfo, EARLY_INFO};
+
+    EARLY_INFO.call_once(|| EarlyBootInfo {
+        bootloader_name: parse_bootloader_name(),
+        kernel_cmdline: parse_kernel_commandline(),
+        initramfs: parse_initramfs(),
+        acpi_arg: parse_acpi_arg(),
+        framebuffer_arg: parse_framebuffer_info(),
+        memory_regions: parse_memory_regions(),
+    });
+
+    call_ostd_main();
 }

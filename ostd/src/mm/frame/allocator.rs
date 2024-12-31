@@ -184,7 +184,7 @@ impl CountingFrameAllocator {
 pub(in crate::mm) static FRAME_ALLOCATOR: Once<SpinLock<CountingFrameAllocator>> = Once::new();
 
 pub(crate) fn init() {
-    let regions = crate::boot::memory_regions();
+    let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
     let mut total: usize = 0;
     let mut allocator = FrameAllocator::<32>::new();
     for region in regions.iter() {
