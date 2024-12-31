@@ -4,7 +4,7 @@
 
 set -e
 
-echo "Running lmbench UDP latency over virtio-net..."
+echo "Running lmbench UDP latency test over virtio-net..."
 
 # Start the server
 /benchmark/bin/lmbench/lat_udp -s 10.0.2.15
