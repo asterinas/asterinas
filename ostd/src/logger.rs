@@ -12,7 +12,7 @@ use core::str::FromStr;
 use log::{LevelFilter, Metadata, Record};
 use spin::Once;
 
-use crate::boot::BOOT_TIME_INFO;
+use crate::boot::EARLY_INFO;
 
 static LOGGER: Logger = Logger::new();
 
@@ -82,7 +82,7 @@ pub(crate) fn init() {
 }
 
 fn get_log_level() -> Option<LevelFilter> {
-    let kcmdline = BOOT_TIME_INFO.get().unwrap().kernel_cmdline;
+    let kcmdline = EARLY_INFO.get().unwrap().kernel_cmdline;
 
     // Although OSTD is agnostic of the parsing of the kernel command line,
     // the logger assumes that it follows the Linux kernel command line format.

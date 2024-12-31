@@ -38,13 +38,10 @@ fn parse_bootloader_name(mb1_info: &MultibootLegacyInfo) -> &str {
 fn parse_kernel_commandline(mb1_info: &MultibootLegacyInfo) -> &str {
     let mut cmdline = "";
     if mb1_info.cmdline != 0 {
+        let ptr = paddr_to_vaddr(mb1_info.cmdline as usize) as *const i8;
         // SAFETY: the command line is C-style zero-terminated string.
-        unsafe {
-            let cstr = paddr_to_vaddr(mb1_info.cmdline as usize) as *const i8;
-            let cstr = core::ffi::CStr::from_ptr(cstr);
-
-            cmdline = cstr.to_str().unwrap();
-        }
+        let cstr = unsafe { core::ffi::CStr::from_ptr(ptr) };
+        cmdline = cstr.to_str().unwrap();
     }
     cmdline
 }

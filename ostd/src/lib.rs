@@ -75,14 +75,15 @@ unsafe fn init() {
     #[cfg(feature = "cvm_guest")]
     arch::init_cvm_guest();
 
+    logger::init();
+
     // SAFETY: This function is called only once and only on the BSP.
     unsafe { cpu::local::early_init_bsp_local_base() };
 
     // SAFETY: This function is called only once and only on the BSP.
     unsafe { mm::heap_allocator::init() };
 
-    boot::init();
-    logger::init();
+    boot::init_after_heap();
 
     mm::frame::allocator::init();
     mm::kspace::init_kernel_page_table(mm::init_page_meta());
