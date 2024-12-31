@@ -4,7 +4,7 @@
 
 set -e
 
-echo "Running lmbench TCP latency over virtio-net..."
+echo "Running lmbench TCP latency test over virtio-net..."
 
 # Start the server
 /benchmark/bin/lmbench/lat_tcp -s 10.0.2.15 -b 1
