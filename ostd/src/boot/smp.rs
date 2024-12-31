@@ -31,6 +31,7 @@ struct PerApInfo {
     // no longer be used, and the `Segment` can be deallocated (this problem also
     // exists in the boot processor, but the memory it occupies should be returned
     // to the frame allocator).
+    #[allow(dead_code)]
     boot_stack_pages: Segment<KernelMeta>,
 }
 

@@ -32,7 +32,7 @@
 
 use ostd::{
     arch::qemu::{exit_qemu, QemuExitCode},
-    boot,
+    boot::boot_info,
     cpu::{CpuId, CpuSet, PinCurrentCpu},
 };
 use process::Process;
@@ -96,7 +96,7 @@ pub fn init() {
     #[cfg(target_arch = "x86_64")]
     net::init();
     sched::init();
-    fs::rootfs::init(boot::initramfs()).unwrap();
+    fs::rootfs::init(boot_info().initramfs.expect("No initramfs found!")).unwrap();
     device::init().unwrap();
     syscall::init();
     vdso::init();
@@ -141,7 +141,7 @@ fn init_thread() {
 
     print_banner();
 
-    let karg = boot::kernel_cmdline();
+    let karg = &boot_info().kernel_cmdline;
 
     let initproc = Process::spawn_user_process(
         karg.get_initproc_path().unwrap(),

@@ -246,7 +246,7 @@ impl_frame_meta_for!(MetaPageMeta);
 /// The function returns a list of `Frame`s containing the metadata.
 pub(crate) fn init() -> Segment<MetaPageMeta> {
     let max_paddr = {
-        let regions = crate::boot::memory_regions();
+        let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
         regions.iter().map(|r| r.base() + r.len()).max().unwrap()
     };
 
