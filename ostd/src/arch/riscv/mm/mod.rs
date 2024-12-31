@@ -47,6 +47,12 @@ bitflags::bitflags! {
         const ACCESSED =        1 << 6;
         /// Whether the memory area represented by this entry is modified.
         const DIRTY =           1 << 7;
+
+        // First bit ignored by MMU.
+        const RSV1 =            1 << 8;
+        // Second bit ignored by MMU.
+        const RSV2 =            1 << 9;
+
         // PBMT: Non-cacheable, idempotent, weakly-ordered (RVWMO), main memory
         const PBMT_NC =         1 << 61;
         // PBMT: Non-cacheable, non-idempotent, strongly-ordered (I/O ordering), I/O
@@ -144,7 +150,9 @@ impl PageTableEntryTrait for PageTableEntry {
             | parse_flags!(self.0, PageTableFlags::WRITABLE, PageFlags::W)
             | parse_flags!(self.0, PageTableFlags::EXECUTABLE, PageFlags::X)
             | parse_flags!(self.0, PageTableFlags::ACCESSED, PageFlags::ACCESSED)
-            | parse_flags!(self.0, PageTableFlags::DIRTY, PageFlags::DIRTY);
+            | parse_flags!(self.0, PageTableFlags::DIRTY, PageFlags::DIRTY)
+            | parse_flags!(self.0, PageTableFlags::RSV1, PageFlags::AVAIL1)
+            | parse_flags!(self.0, PageTableFlags::RSV2, PageFlags::AVAIL2);
         let priv_flags = parse_flags!(self.0, PageTableFlags::USER, PrivFlags::USER)
             | parse_flags!(self.0, PageTableFlags::GLOBAL, PrivFlags::GLOBAL);
 
@@ -175,6 +183,16 @@ impl PageTableEntryTrait for PageTableEntry {
                 prop.priv_flags.bits(),
                 PrivFlags::GLOBAL,
                 PageTableFlags::GLOBAL
+            )
+            | parse_flags!(
+                prop.flags.AVAIL1.bits(),
+                PageFlags::AVAIL1,
+                PageTableFlags::RSV1
+            )
+            | parse_flags!(
+                prop.flags.AVAIL2.bits(),
+                PageFlags::AVAIL2,
+                PageTableFlags::RSV2
             );
 
         match prop.cache {
