@@ -6,7 +6,6 @@
 //!  2. the routine booting into the actual kernel;
 //!  3. the routine booting the other processors in the SMP context.
 
-pub mod kcmdline;
 pub mod memory_region;
 pub mod smp;
 
@@ -15,7 +14,6 @@ use alloc::{
     vec::Vec,
 };
 
-use kcmdline::KCmdlineArg;
 use memory_region::{MemoryRegion, MemoryRegionArray};
 use spin::Once;
 
@@ -24,7 +22,7 @@ pub struct BootInfo {
     /// The name of the bootloader.
     pub bootloader_name: String,
     /// The kernel command line arguments.
-    pub kernel_cmdline: KCmdlineArg,
+    pub kernel_cmdline: String,
     /// The initial ramfs raw bytes.
     pub initramfs: Option<&'static [u8]>,
     /// The framebuffer arguments.
@@ -100,7 +98,7 @@ pub(crate) fn init() {
 
     INFO.call_once(|| BootInfo {
         bootloader_name: boot_time_info.bootloader_name.to_string(),
-        kernel_cmdline: boot_time_info.kernel_cmdline.into(),
+        kernel_cmdline: boot_time_info.kernel_cmdline.to_string(),
         initramfs: boot_time_info.initramfs,
         framebuffer_arg: boot_time_info.framebuffer_arg,
         memory_regions: boot_time_info.memory_regions.to_vec(),

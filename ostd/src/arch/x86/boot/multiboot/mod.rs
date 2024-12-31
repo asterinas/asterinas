@@ -40,14 +40,10 @@ fn parse_kernel_commandline(mb1_info: &MultibootLegacyInfo) -> &str {
     if mb1_info.cmdline != 0 {
         // SAFETY: the command line is C-style zero-terminated string.
         unsafe {
-            let cstr = paddr_to_vaddr(mb1_info.cmdline as usize) as *const u8;
-            let mut len = 0;
-            while cstr.add(len).read() != 0 {
-                len += 1;
-            }
+            let cstr = paddr_to_vaddr(mb1_info.cmdline as usize) as *const i8;
+            let cstr = core::ffi::CStr::from_ptr(cstr);
 
-            cmdline = core::str::from_utf8(core::slice::from_raw_parts(cstr, len))
-                .expect("cmdline is not a utf-8 string");
+            cmdline = cstr.to_str().unwrap();
         }
     }
     cmdline
