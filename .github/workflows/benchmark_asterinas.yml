@@ -85,6 +85,11 @@ jobs:
           # Nginx benchmarks
           - nginx/http_req10k_conc1_bw
           - nginx/http_req10k_conc20_bw
+          - nginx/http_file4KB_bw
+          - nginx/http_file8KB_bw
+          - nginx/http_file16KB_bw
+          - nginx/http_file32KB_bw
+          - nginx/http_file64KB_bw
           # Redis benchmarks
           - redis/ping_inline_100k_conc20_rps
           - redis/ping_mbulk_100k_conc20_rps

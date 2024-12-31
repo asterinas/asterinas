@@ -122,7 +122,10 @@ impl<E: Ext> RawTcpSocketExt<E> {
     /// call this method after handling non-closing user events, because the socket can never be
     /// dead if it is not closed.
     fn update_dead(&self, this: &Arc<TcpConnectionBg<E>>) {
-        if self.state() == smoltcp::socket::tcp::State::Closed {
+        // FIXME: This is a temporary workaround to mark TimeWait socket as dead.
+        if self.state() == smoltcp::socket::tcp::State::Closed
+            || self.state() == smoltcp::socket::tcp::State::TimeWait
+        {
             this.inner.is_dead.store(true, Ordering::Relaxed);
         }
 
