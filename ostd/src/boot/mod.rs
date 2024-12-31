@@ -32,6 +32,8 @@ pub struct BootInfo {
 }
 
 /// Gets the boot information.
+///
+/// This function is usable after initialization with [`init_after_heap`].
 pub fn boot_info() -> &'static BootInfo {
     INFO.get().unwrap()
 }
@@ -90,10 +92,11 @@ pub(crate) struct EarlyBootInfo {
 /// The boot-time information.
 pub(crate) static EARLY_INFO: Once<EarlyBootInfo> = Once::new();
 
-/// Initializes the runtime information.
+/// Initializes the boot information.
 ///
-/// This function allows the run-time getters to work properly.
-pub(crate) fn init() {
+/// This function copies the boot-time accessible information to the heap to
+/// allow [`boot_info`] to work properly.
+pub(crate) fn init_after_heap() {
     let boot_time_info = EARLY_INFO.get().unwrap();
 
     INFO.call_once(|| BootInfo {
