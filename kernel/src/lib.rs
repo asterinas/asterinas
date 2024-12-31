@@ -30,6 +30,7 @@
 #![feature(trait_upcasting)]
 #![register_tool(component_access_control)]
 
+use kcmdline::KCmdlineArg;
 use ostd::{
     arch::qemu::{exit_qemu, QemuExitCode},
     boot::boot_info,
@@ -59,6 +60,7 @@ pub mod error;
 pub mod events;
 pub mod fs;
 pub mod ipc;
+pub mod kcmdline;
 pub mod net;
 pub mod prelude;
 mod process;
@@ -141,7 +143,7 @@ fn init_thread() {
 
     print_banner();
 
-    let karg = &boot_info().kernel_cmdline;
+    let karg: KCmdlineArg = boot_info().kernel_cmdline.as_str().into();
 
     let initproc = Process::spawn_user_process(
         karg.get_initproc_path().unwrap(),
