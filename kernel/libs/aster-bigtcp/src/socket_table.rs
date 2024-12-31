@@ -147,9 +147,11 @@ pub(crate) struct SocketTable<E: Ext> {
 // On Linux, the number of buckets is determined at runtime based on the available memory.
 // For simplicity, we use fixed values here.
 // The bucket count should be a power of 2 to ensure efficient modulo calculations.
-const LISTENER_BUCKET_COUNT: u32 = 64;
+// FIXME: We have reduced the bucket count to 2 because iterating over all buckets has become a bottleneck.
+// Once we can avoid such iterations, we should set more meaningful bucket counts.
+const LISTENER_BUCKET_COUNT: u32 = 2;
 const LISTENER_BUCKET_MASK: u32 = LISTENER_BUCKET_COUNT - 1;
-const CONNECTION_BUCKET_COUNT: u32 = 8192;
+const CONNECTION_BUCKET_COUNT: u32 = 2;
 const CONNECTION_BUCKET_MASK: u32 = CONNECTION_BUCKET_COUNT - 1;
 
 const_assert!(LISTENER_BUCKET_COUNT.is_power_of_two());
