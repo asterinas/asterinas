@@ -15,6 +15,7 @@ ND   = "ND"
 Fo   = "Fo"
 Inh  = "Inh"
 DELET = "DELET"
+wrk = "wrk"
 
 # Files with svg suffix are ignored to check. 
 [type.svg]
