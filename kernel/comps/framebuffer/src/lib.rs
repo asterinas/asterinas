@@ -16,7 +16,7 @@ use component::{init_component, ComponentInitError};
 use font8x8::UnicodeFonts;
 use ostd::{
     boot::{self, memory_region::MemoryRegionType, memory_regions},
-    io_mem::IoMem,
+    io::io_mem::IoMem,
     mm::{VmIo, PAGE_SIZE},
     sync::SpinLock,
 };

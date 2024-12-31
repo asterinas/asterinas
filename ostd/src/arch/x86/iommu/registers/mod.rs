@@ -24,7 +24,7 @@ use volatile::{
 
 use super::{
     dma_remapping::RootTable, interrupt_remapping::IntRemappingTable, invalidate::queue::Queue,
-    IommuError,
+    IoMemAllocatorBuilder, IommuError,
 };
 use crate::{
     arch::{
@@ -37,7 +37,7 @@ use crate::{
         },
         x86::kernel::acpi::dmar::{Dmar, Remapping},
     },
-    mm::paddr_to_vaddr,
+    mm::{paddr_to_vaddr, PAGE_SIZE},
     sync::{LocalIrqDisabled, SpinLock},
 };
 
@@ -236,7 +236,7 @@ impl IommuRegisters {
     }
 
     /// Creates an instance from base address
-    fn new() -> Option<Self> {
+    fn new(io_mem_builder: &IoMemAllocatorBuilder) -> Option<Self> {
         let dmar = Dmar::new()?;
 
         debug!("DMAR:{:#x?}", dmar);
@@ -252,6 +252,8 @@ impl IommuRegisters {
             }
             addr
         };
+
+        io_mem_builder.remove(base_address as usize..(base_address as usize + PAGE_SIZE));
 
         let vaddr: usize = paddr_to_vaddr(base_address as usize);
         // SAFETY: All offsets and sizes are strictly adhered to in the manual, and the base address is obtained from Drhd.
@@ -294,8 +296,8 @@ impl IommuRegisters {
 
 pub(super) static IOMMU_REGS: Once<SpinLock<IommuRegisters, LocalIrqDisabled>> = Once::new();
 
-pub(super) fn init() -> Result<(), IommuError> {
-    let iommu_regs = IommuRegisters::new().ok_or(IommuError::NoIommu)?;
+pub(super) fn init(io_mem_builder: &IoMemAllocatorBuilder) -> Result<(), IommuError> {
+    let iommu_regs = IommuRegisters::new(io_mem_builder).ok_or(IommuError::NoIommu)?;
     IOMMU_REGS.call_once(|| SpinLock::new(iommu_regs));
     Ok(())
 }
