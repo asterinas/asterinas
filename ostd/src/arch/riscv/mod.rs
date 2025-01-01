@@ -29,7 +29,8 @@ pub(crate) unsafe fn late_init_on_bsp() {
     }
     irq::init();
 
-    crate::boot::smp::boot_all_aps();
+    // SAFETY: we're on the BSP and we're ready to boot all APs.
+    unsafe { crate::boot::smp::boot_all_aps() };
 
     timer::init();
     let _ = pci::init();

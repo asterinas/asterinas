@@ -95,7 +95,8 @@ pub(crate) unsafe fn late_init_on_bsp() {
     kernel::tsc::init_tsc_freq();
     timer::init_bsp();
 
-    crate::boot::smp::boot_all_aps();
+    // SAFETY: we're on the BSP and we're ready to boot all APs.
+    unsafe { crate::boot::smp::boot_all_aps() };
 
     if_tdx_enabled!({
     } else {
