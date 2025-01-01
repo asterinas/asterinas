@@ -39,7 +39,8 @@ pub(crate) fn init_on_bsp() {
     // we are on the BSP.
     unsafe { crate::cpu::local::init_on_bsp() };
 
-    crate::boot::smp::boot_all_aps();
+    // SAFETY: we're on the BSP and we're ready to boot all APs.
+    unsafe { crate::boot::smp::boot_all_aps() };
 
     timer::init();
 }
