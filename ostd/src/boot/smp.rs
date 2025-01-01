@@ -40,14 +40,16 @@ struct PerApInfo {
 
 static AP_LATE_ENTRY: Once<fn()> = Once::new();
 
-/// Boot all application processors.
+/// Boots all application processors.
 ///
 /// This function should be called late in the system startup. The system must at
 /// least ensure that the scheduler, ACPI table, memory allocation, and IPI module
 /// have been initialized.
 ///
-/// However, the function need to be called before any `cpu_local!` variables are
-/// accessed, including the APIC instance.
+/// # Safety
+///
+/// This function can only be called in the boot context of the BSP where APs have
+/// not yet been booted.
 pub fn boot_all_aps() {
     let num_cpus = num_cpus() as u32;
     if num_cpus == 1 {
@@ -97,7 +99,8 @@ pub fn boot_all_aps() {
 
     log::info!("Booting all application processors...");
 
-    bringup_all_aps(num_cpus);
+    // SAFETY: The safety is upheld by the caller.
+    unsafe { bringup_all_aps(num_cpus) };
     wait_for_all_aps_started();
 
     log::info!("All application processors started. The BSP continues to run.");
