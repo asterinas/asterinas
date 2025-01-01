@@ -35,7 +35,7 @@ pub trait SingleInstructionAddAssign<Rhs = Self> {
     ///
     /// # Safety
     ///
-    ///
+    /// Please refer to the module-level documentation of [`self`].
     unsafe fn add_assign(offset: *mut Self, rhs: Rhs);
 }
 
@@ -44,7 +44,12 @@ impl<T: num_traits::WrappingAdd + Copy> SingleInstructionAddAssign<T> for T {
         let _guard = crate::trap::disable_local();
         let base = crate::arch::cpu::local::get_base() as usize;
         let addr = (base + offset as usize) as *mut Self;
-        addr.write(addr.read().wrapping_add(&rhs));
+        // SAFETY:
+        // 1. `addr` represents the address of a CPU-local variable.
+        // 2. The variable is only accessible in the current CPU, is
+        //    `Copy`, and is is never borrowed, so it is valid to
+        //    read/write.
+        unsafe { addr.write(addr.read().wrapping_add(&rhs)) };
     }
 }
 
@@ -65,7 +70,8 @@ impl<T: num_traits::WrappingSub + Copy> SingleInstructionSubAssign<T> for T {
         let _guard = crate::trap::disable_local();
         let base = crate::arch::cpu::local::get_base() as usize;
         let addr = (base + offset as usize) as *mut Self;
-        addr.write(addr.read().wrapping_sub(&rhs));
+        // SAFETY: Same as `add_assign`.
+        unsafe { addr.write(addr.read().wrapping_sub(&rhs)) };
     }
 }
 
@@ -84,7 +90,8 @@ impl<T: core::ops::BitOr<Output = T> + Copy> SingleInstructionBitOrAssign<T> for
         let _guard = crate::trap::disable_local();
         let base = crate::arch::cpu::local::get_base() as usize;
         let addr = (base + offset as usize) as *mut Self;
-        addr.write(addr.read() | rhs);
+        // SAFETY: Same as `add_assign`.
+        unsafe { addr.write(addr.read() | rhs) };
     }
 }
 
@@ -103,7 +110,8 @@ impl<T: core::ops::BitAnd<Output = T> + Copy> SingleInstructionBitAndAssign<T> f
         let _guard = crate::trap::disable_local();
         let base = crate::arch::cpu::local::get_base() as usize;
         let addr = (base + offset as usize) as *mut Self;
-        addr.write(addr.read() & rhs);
+        // SAFETY: Same as `add_assign`.
+        unsafe { addr.write(addr.read() & rhs) };
     }
 }
 
@@ -122,7 +130,8 @@ impl<T: core::ops::BitXor<Output = T> + Copy> SingleInstructionBitXorAssign<T> f
         let _guard = crate::trap::disable_local();
         let base = crate::arch::cpu::local::get_base() as usize;
         let addr = (base + offset as usize) as *mut Self;
-        addr.write(addr.read() ^ rhs);
+        // SAFETY: Same as `add_assign`.
+        unsafe { addr.write(addr.read() ^ rhs) };
     }
 }
 
@@ -141,7 +150,8 @@ impl<T: Copy> SingleInstructionLoad for T {
         let _guard = crate::trap::disable_local();
         let base = crate::arch::cpu::local::get_base() as usize;
         let ptr = (base + offset as usize) as *const Self;
-        ptr.read()
+        // SAFETY: Same as `add_assign`.
+        unsafe { ptr.read() }
     }
 }
 
@@ -160,6 +170,7 @@ impl<T: Copy> SingleInstructionStore for T {
         let _guard = crate::trap::disable_local();
         let base = crate::arch::cpu::local::get_base() as usize;
         let ptr = (base + offset as usize) as *mut Self;
-        ptr.write(val);
+        // SAFETY: Same as `add_assign`.
+        unsafe { ptr.write(val) };
     }
 }
