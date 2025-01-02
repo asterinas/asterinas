@@ -41,7 +41,7 @@ pub unsafe fn init() {
     // SAFETY: The HEAP_SPACE is a static memory range, so it's always valid.
     unsafe {
         #[allow(static_mut_refs)]
-        HEAP_ALLOCATOR.init(HEAP_SPACE.0.as_ptr(), INIT_KERNEL_HEAP_SIZE);
+        HEAP_ALLOCATOR.init(HEAP_SPACE.0.as_mut_ptr(), INIT_KERNEL_HEAP_SIZE);
     }
 }
 
@@ -56,7 +56,7 @@ impl LockedHeapWithRescue {
     }
 
     /// SAFETY: The range [start, start + size) must be a valid memory region.
-    pub unsafe fn init(&self, start: *const u8, size: usize) {
+    pub unsafe fn init(&self, start: *mut u8, size: usize) {
         self.heap
             .call_once(|| SpinLock::new(Heap::new(start as usize, size)));
     }
