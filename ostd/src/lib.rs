@@ -48,6 +48,9 @@ pub mod timer;
 pub mod trap;
 pub mod user;
 
+#[cfg(feature = "coverage")]
+mod coverage;
+
 use core::sync::atomic::{AtomicBool, Ordering};
 
 pub use ostd_macros::{main, panic_handler};

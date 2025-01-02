@@ -6,7 +6,13 @@ pub mod vm_image;
 
 use bin::AsterBin;
 use file::{BundleFile, Initramfs};
-use std::process;
+use std::{
+    io::{BufRead, BufReader, Write},
+    os::unix::net::UnixStream,
+    process,
+    time::Duration,
+};
+use tempfile::NamedTempFile;
 use vm_image::{AsterVmImage, AsterVmImageType};
 
 use std::{
@@ -259,19 +265,40 @@ impl Bundle {
             }
         }
 
-        info!("Running QEMU: {:#?}", qemu_cmd);
+        let exit_status = if action.qemu.with_monitor {
+            let qemu_socket = NamedTempFile::new().unwrap().into_temp_path();
+            qemu_cmd.arg("-monitor").arg(format!(
+                "unix:{},server,nowait",
+                qemu_socket.to_string_lossy()
+            ));
 
-        let exit_status = qemu_cmd.status().unwrap();
+            info!("Running QEMU: {:#?}", qemu_cmd);
+            let mut qemu_child = qemu_cmd.spawn().unwrap();
+            std::thread::sleep(Duration::from_secs(1)); // Wait for QEMU to start
+            let mut qemu_monitor_stream = UnixStream::connect(qemu_socket).unwrap();
 
-        // Find the QEMU output in "qemu.log", read it and check if it failed with a panic.
-        // Setting a QEMU log is required for source line stack trace because piping the output
-        // is less desirable when running QEMU with serial redirected to standard I/O.
-        let qemu_log_path = config.work_dir.join("qemu.log");
-        if let Ok(file) = std::fs::File::open(qemu_log_path) {
-            if let Some(aster_bin) = &self.manifest.aster_bin {
-                crate::util::trace_panic_from_log(file, self.path.join(aster_bin.path()));
+            // Check VM status every 0.1 seconds and break the loop if the VM is stopped.
+            while qemu_monitor_stream.write_all(b"info status\n").is_ok() {
+                let status = BufReader::new(&qemu_monitor_stream)
+                    .lines()
+                    .find(|line| line.as_ref().is_ok_and(|s| s.starts_with("VM status:")));
+                if status.is_some_and(|msg| msg.unwrap() == "VM status: paused (shutdown)") {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(100));
             }
-        }
+            info!("VM is paused (shutdown)");
+
+            self.post_run_action(config, Some(&mut qemu_monitor_stream));
+
+            let _ = qemu_monitor_stream.write_all(b"quit\n");
+            qemu_child.wait().unwrap()
+        } else {
+            info!("Running QEMU: {:#?}", qemu_cmd);
+            let exit_status = qemu_cmd.status().unwrap();
+            self.post_run_action(config, None);
+            exit_status
+        };
 
         // FIXME: When panicking it sometimes returns success, why?
         if !exit_status.success() {
@@ -309,5 +336,24 @@ impl Bundle {
         let manifest_file_content = toml::to_string(&self.manifest).unwrap();
         let manifest_file_path = self.path.join("bundle.toml");
         std::fs::write(manifest_file_path, manifest_file_content).unwrap();
+    }
+
+    fn post_run_action(&self, config: &Config, qemu_monitor_stream: Option<&mut UnixStream>) {
+        // Find the QEMU output in "qemu.log", read it and check if it failed with a panic.
+        // Setting a QEMU log is required for source line stack trace because piping the output
+        // is less desirable when running QEMU with serial redirected to standard I/O.
+        let qemu_log_path = config.work_dir.join("qemu.log");
+        if let Ok(file) = std::fs::File::open(&qemu_log_path) {
+            if let Some(aster_bin) = &self.manifest.aster_bin {
+                crate::util::trace_panic_from_log(file, self.path.join(aster_bin.path()));
+            }
+        }
+
+        // Find the coverage data information in "qemu.log", and dump it if found.
+        if let Some(qemu_monitor_stream) = qemu_monitor_stream {
+            if let Ok(file) = std::fs::File::open(&qemu_log_path) {
+                crate::util::dump_coverage_from_qemu(file, qemu_monitor_stream);
+            }
+        }
     }
 }

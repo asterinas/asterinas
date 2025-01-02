@@ -23,7 +23,11 @@ pub fn main() {
     let load_config = |common_args: &CommonArgs| {
         let manifest = TomlManifest::load();
         let scheme = manifest.get_scheme(common_args.scheme.as_ref());
-        Config::new(scheme, common_args)
+        let mut config = Config::new(scheme, common_args);
+        config
+            .build
+            .append_rustflags(&std::env::var("RUSTFLAGS").unwrap_or_default());
+        config
     };
 
     let cli = Cli::parse();
@@ -476,4 +480,6 @@ pub struct CommonArgs {
         global = true
     )]
     pub encoding: Option<PayloadEncoding>,
+    #[arg(long = "coverage", help = "Enable coverage", global = true)]
+    pub coverage: bool,
 }
