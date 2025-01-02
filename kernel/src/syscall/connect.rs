@@ -2,21 +2,23 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::FileDesc,
+    fs::file_table::{get_file_fast, FileDesc},
     prelude::*,
-    util::net::{get_socket_from_fd, read_socket_addr_from_user},
+    util::net::read_socket_addr_from_user,
 };
 
 pub fn sys_connect(
     sockfd: FileDesc,
     sockaddr_ptr: Vaddr,
     addr_len: u32,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     let socket_addr = read_socket_addr_from_user(sockaddr_ptr, addr_len as _)?;
     debug!("fd = {sockfd}, socket_addr = {socket_addr:?}");
 
-    let socket = get_socket_from_fd(sockfd)?;
+    get_file_fast! { let (file_table, file) = sockfd @ ctx.thread_local };
+    let socket = file.as_socket_or_err()?;
+
     socket
         .connect(socket_addr)
         .map_err(|err| match err.error() {
@@ -24,5 +26,6 @@ pub fn sys_connect(
             Errno::EINTR => Error::new(Errno::ERESTARTSYS),
             _ => err,
         })?;
+
     Ok(SyscallReturn::Return(0))
 }

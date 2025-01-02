@@ -7,6 +7,7 @@ mod mutex;
 // TODO: refactor this rcu implementation
 // Comment out this module since it raises lint error
 // mod rcu;
+mod rwarc;
 mod rwlock;
 mod rwmutex;
 mod spin;
@@ -17,6 +18,7 @@ pub(crate) use self::guard::GuardTransfer;
 pub use self::{
     guard::{LocalIrqDisabled, PreemptDisabled, WriteIrqDisabled},
     mutex::{ArcMutexGuard, Mutex, MutexGuard},
+    rwarc::{RoArc, RwArc},
     rwlock::{
         ArcRwLockReadGuard, ArcRwLockUpgradeableGuard, ArcRwLockWriteGuard, RwLock,
         RwLockReadGuard, RwLockUpgradeableGuard, RwLockWriteGuard,

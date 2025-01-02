@@ -2,9 +2,9 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::FileDesc,
+    fs::file_table::{get_file_fast, FileDesc},
     prelude::*,
-    util::net::{get_socket_from_fd, new_raw_socket_option, CSocketOptionLevel},
+    util::net::{new_raw_socket_option, CSocketOptionLevel},
 };
 
 pub fn sys_getsockopt(
@@ -19,21 +19,21 @@ pub fn sys_getsockopt(
     if optval == 0 || optlen_addr == 0 {
         return_errno_with_message!(Errno::EINVAL, "optval or optlen_addr is null pointer");
     }
-    let user_space = ctx.user_space();
 
+    let user_space = ctx.user_space();
     let optlen: u32 = user_space.read_val(optlen_addr)?;
+
     debug!("level = {level:?}, sockfd = {sockfd}, optname = {optname:?}, optlen = {optlen}");
 
-    let socket = get_socket_from_fd(sockfd)?;
+    get_file_fast! { let (file_table, file) = sockfd @ ctx.thread_local };
+    let socket = file.as_socket_or_err()?;
 
     let mut raw_option = new_raw_socket_option(level, optname)?;
-
     debug!("raw option: {:?}", raw_option);
 
     socket.get_option(raw_option.as_sock_option_mut())?;
 
     let write_len = raw_option.write_to_user(optval, optlen)?;
-
     user_space.write_val(optlen_addr, &(write_len as u32))?;
 
     Ok(SyscallReturn::Return(0))

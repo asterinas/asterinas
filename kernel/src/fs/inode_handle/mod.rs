@@ -15,7 +15,6 @@ use inherit_methods_macro::inherit_methods;
 use crate::{
     events::IoEvents,
     fs::{
-        device::Device,
         file_handle::FileLike,
         path::Dentry,
         utils::{

@@ -2,25 +2,25 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::FileDesc,
+    fs::file_table::{get_file_fast, FileDesc},
     prelude::*,
-    util::net::{get_socket_from_fd, write_socket_addr_to_user},
+    util::net::write_socket_addr_to_user,
 };
 
 pub fn sys_getsockname(
     sockfd: FileDesc,
     addr: Vaddr,
     addrlen_ptr: Vaddr,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<SyscallReturn> {
     debug!("sockfd = {sockfd}, addr = 0x{addr:x}, addrlen_ptr = 0x{addrlen_ptr:x}");
 
-    let socket_addr = {
-        let socket = get_socket_from_fd(sockfd)?;
-        socket.addr()?
-    };
+    get_file_fast! { let (file_table, file) = sockfd @ ctx.thread_local };
+    let socket = file.as_socket_or_err()?;
 
+    let socket_addr = socket.addr()?;
     // FIXME: trunscate write len if addrlen is not big enough
     write_socket_addr_to_user(&socket_addr, addr, addrlen_ptr)?;
+
     Ok(SyscallReturn::Return(0))
 }

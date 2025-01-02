@@ -453,7 +453,7 @@ impl FileLike for StreamSocket {
         Ok(())
     }
 
-    fn as_socket(self: Arc<Self>) -> Option<Arc<dyn Socket>> {
+    fn as_socket(&self) -> Option<&dyn Socket> {
         Some(self)
     }
 

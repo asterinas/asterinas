@@ -7,7 +7,10 @@ use aster_rights::Rights;
 
 use super::SyscallReturn;
 use crate::{
-    fs::{file_handle::FileLike, file_table::FileDesc, inode_handle::InodeHandle},
+    fs::{
+        file_handle::FileLike,
+        file_table::{get_file_fast, FileDesc},
+    },
     prelude::*,
     vm::{
         perms::VmPerms,
@@ -121,11 +124,8 @@ fn do_sys_mmap(
             }
         } else {
             let vmo = {
-                let file_table = ctx.posix_thread.file_table().lock();
-                let file = file_table.get_file(fd)?;
-                let inode_handle = file
-                    .downcast_ref::<InodeHandle>()
-                    .ok_or(Error::with_message(Errno::EINVAL, "no inode"))?;
+                get_file_fast! { let (file_table, file) = fd @ ctx.thread_local };
+                let inode_handle = file.as_inode_or_err()?;
 
                 let access_mode = inode_handle.access_mode();
                 if vm_perms.contains(VmPerms::READ) && !access_mode.is_readable() {
