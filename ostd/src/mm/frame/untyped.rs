@@ -43,9 +43,12 @@ pub type UFrame = Frame<dyn AnyUFrameMeta>;
 macro_rules! impl_untyped_frame_meta_for {
     // Implement without specifying the drop behavior.
     ($t:ty) => {
-        use static_assertions::const_assert;
-        const_assert!(size_of::<$t>() <= $crate::mm::frame::meta::FRAME_METADATA_MAX_SIZE);
-        const_assert!(align_of::<$t>() <= $crate::mm::frame::meta::FRAME_METADATA_MAX_ALIGN);
+        static_assertions::const_assert!(
+            size_of::<$t>() <= $crate::mm::frame::meta::FRAME_METADATA_MAX_SIZE
+        );
+        static_assertions::const_assert!(
+            align_of::<$t>() <= $crate::mm::frame::meta::FRAME_METADATA_MAX_ALIGN
+        );
         // SAFETY: The size and alignment of the structure are checked.
         unsafe impl $crate::mm::frame::meta::AnyFrameMeta for $t {
             fn is_untyped(&self) -> bool {
@@ -56,9 +59,12 @@ macro_rules! impl_untyped_frame_meta_for {
     };
     // Implement with a customized drop function.
     ($t:ty, $body:expr) => {
-        use static_assertions::const_assert;
-        const_assert!(size_of::<$t>() <= $crate::mm::frame::meta::FRAME_METADATA_MAX_SIZE);
-        const_assert!(align_of::<$t>() <= $crate::mm::frame::meta::FRAME_METADATA_MAX_ALIGN);
+        static_assertions::const_assert!(
+            size_of::<$t>() <= $crate::mm::frame::meta::FRAME_METADATA_MAX_SIZE
+        );
+        static_assertions::const_assert!(
+            align_of::<$t>() <= $crate::mm::frame::meta::FRAME_METADATA_MAX_ALIGN
+        );
         // SAFETY: The size and alignment of the structure are checked.
         // Outside OSTD the user cannot implement a `on_drop` method for typed
         // frames. And untyped frames can be safely read.
