@@ -3,7 +3,6 @@
 // The boot routine executed by the application processor.
 
 .extern boot_gdtr
-.extern boot_page_table_start
 .extern ap_early_entry
 
 .section ".ap_boot", "awx"

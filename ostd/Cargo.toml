@@ -46,7 +46,7 @@ xarray = { git = "https://github.com/asterinas/xarray", version = "0.1.0" }
 [target.x86_64-unknown-none.dependencies]
 x86_64 = "0.14.13"
 x86 = "0.52.0"
-acpi = "5.1.0"
+acpi = { git = "https://github.com/rust-osdev/acpi", rev = "49b0da8" }
 aml = "0.16.3"
 multiboot2 = "0.23.0"
 iced-x86 = { version = "1.21.0", default-features = false, features = [
