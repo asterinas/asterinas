@@ -19,3 +19,25 @@ pub fn mem_total() -> usize {
 pub fn mem_available() -> usize {
     FRAME_ALLOCATOR.get().unwrap().lock().mem_available()
 }
+
+#[cfg(ktest)]
+mod allocator_tests {
+    use super::*;
+    use crate::{
+        mm::{FrameAllocOptions, PAGE_SIZE},
+        prelude::*,
+    };
+
+    #[ktest]
+    fn allocator_counting() {
+        let mem_total = mem_total();
+        assert_ne!(mem_total, 0);
+        let initial_available = mem_available();
+        let frame = FrameAllocOptions::new().alloc_frame_with(()).unwrap();
+        let after_alloc = mem_available();
+        assert_eq!(initial_available - after_alloc, PAGE_SIZE);
+        drop(frame);
+        let after_free = mem_available();
+        assert_eq!(after_free, initial_available);
+    }
+}
