@@ -43,6 +43,7 @@ use core::{
     cell::UnsafeCell,
     fmt::Debug,
     mem::{size_of, MaybeUninit},
+    result::Result,
     sync::atomic::{AtomicU32, Ordering},
 };
 
@@ -81,20 +82,23 @@ pub(in crate::mm) struct MetaSlot {
     ///  - the subsequent fields can utilize the padding of the
     ///    reference count to save space.
     ///
-    /// Don't access this field with a reference to the slot.
-    _storage: UnsafeCell<[u8; FRAME_METADATA_MAX_SIZE]>,
+    /// Don't interpret this field as an array of bytes. It is a
+    /// placeholder for the metadata of a frame.
+    storage: UnsafeCell<[u8; FRAME_METADATA_MAX_SIZE]>,
     /// The reference count of the page.
     ///
     /// Specifically, the reference count has the following meaning:
     ///  - `REF_COUNT_UNUSED`: The page is not in use.
+    ///  - `REF_COUNT_UNIQUE`: The page is owned by a [`UniqueFrame`].
     ///  - `0`: The page is being constructed ([`Frame::from_unused`])
     ///    or destructured ([`drop_last_in_place`]).
     ///  - `1..REF_COUNT_MAX`: The page is in use.
-    ///  - `REF_COUNT_MAX..REF_COUNT_UNUSED`: Illegal values to
+    ///  - `REF_COUNT_MAX..REF_COUNT_UNIQUE`: Illegal values to
     ///    prevent the reference count from overflowing. Otherwise,
     ///    overflowing the reference count will cause soundness issue.
     ///
     /// [`Frame::from_unused`]: super::Frame::from_unused
+    /// [`UniqueFrame`]: super::unique::UniqueFrame
     //
     // Other than this field the fields should be `MaybeUninit`.
     // See initialization in `alloc_meta_frames`.
@@ -104,7 +108,8 @@ pub(in crate::mm) struct MetaSlot {
 }
 
 pub(super) const REF_COUNT_UNUSED: u32 = u32::MAX;
-const REF_COUNT_MAX: u32 = i32::MAX as u32;
+pub(super) const REF_COUNT_UNIQUE: u32 = u32::MAX - 1;
+pub(super) const REF_COUNT_MAX: u32 = i32::MAX as u32;
 
 type FrameMetaVtablePtr = core::ptr::DynMetadata<dyn AnyFrameMeta>;
 
@@ -162,7 +167,122 @@ macro_rules! impl_frame_meta_for {
 
 pub use impl_frame_meta_for;
 
+/// The error type for getting the frame from a physical address.
+#[derive(Debug)]
+pub enum GetFrameError {
+    /// The frame is in use.
+    InUse,
+    /// The frame is not in use.
+    Unused,
+    /// The frame is being initialized or destructed.
+    Busy,
+    /// The frame is private to an owner of [`UniqueFrame`].
+    ///
+    /// [`UniqueFrame`]: super::unique::UniqueFrame
+    Unique,
+    /// The provided physical address is out of bound.
+    OutOfBound,
+    /// The provided physical address is not aligned.
+    NotAligned,
+}
+
+/// Gets the reference to a metadata slot.
+pub(super) fn get_slot(paddr: Paddr) -> Result<&'static MetaSlot, GetFrameError> {
+    if paddr % PAGE_SIZE != 0 {
+        return Err(GetFrameError::NotAligned);
+    }
+    if paddr >= super::MAX_PADDR.load(Ordering::Relaxed) as Paddr {
+        return Err(GetFrameError::OutOfBound);
+    }
+
+    let vaddr = mapping::frame_to_meta::<PagingConsts>(paddr);
+    let ptr = vaddr as *mut MetaSlot;
+
+    // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
+    // mutably borrowed, so taking an immutable reference to it is safe.
+    Ok(unsafe { &*ptr })
+}
+
 impl MetaSlot {
+    /// Initializes the metadata slot of a frame assuming it is unused.
+    ///
+    /// If successful, the function returns a pointer to the metadata slot.
+    /// And the slot is initialized with the given metadata.
+    ///
+    /// The resulting reference count held by the returned pointer is
+    /// [`REF_COUNT_UNIQUE`] if `as_unique_ptr` is `true`, otherwise `1`.
+    pub(super) fn get_from_unused<M: AnyFrameMeta>(
+        paddr: Paddr,
+        metadata: M,
+        as_unique_ptr: bool,
+    ) -> Result<*const Self, GetFrameError> {
+        let slot = get_slot(paddr)?;
+
+        // `Acquire` pairs with the `Release` in `drop_last_in_place` and ensures the metadata
+        // initialization won't be reordered before this memory compare-and-exchange.
+        slot.ref_count
+            .compare_exchange(REF_COUNT_UNUSED, 0, Ordering::Acquire, Ordering::Relaxed)
+            .map_err(|val| match val {
+                REF_COUNT_UNIQUE => GetFrameError::Unique,
+                0 => GetFrameError::Busy,
+                _ => GetFrameError::InUse,
+            })?;
+
+        // SAFETY: The slot now has a reference count of `0`, other threads will
+        // not access the metadata slot so it is safe to have a mutable reference.
+        unsafe { slot.write_meta(metadata) };
+
+        if as_unique_ptr {
+            // No one can create a `Frame` instance directly from the page
+            // address, so `Relaxed` is fine here.
+            slot.ref_count.store(REF_COUNT_UNIQUE, Ordering::Relaxed);
+        } else {
+            // `Release` is used to ensure that the metadata initialization
+            // won't be reordered after this memory store.
+            slot.ref_count.store(1, Ordering::Release);
+        }
+
+        Ok(slot as *const MetaSlot)
+    }
+
+    /// Gets another owning pointer to the metadata slot from the given page.
+    pub(super) fn get_from_in_use(paddr: Paddr) -> Result<*const Self, GetFrameError> {
+        let slot = get_slot(paddr)?;
+
+        // Try to increase the reference count for an in-use frame. Otherwise fail.
+        loop {
+            match slot.ref_count.load(Ordering::Relaxed) {
+                REF_COUNT_UNUSED => return Err(GetFrameError::Unused),
+                REF_COUNT_UNIQUE => return Err(GetFrameError::Unique),
+                0 => return Err(GetFrameError::Busy),
+                last_ref_cnt => {
+                    if last_ref_cnt >= REF_COUNT_MAX {
+                        // See `Self::inc_ref_count` for the explanation.
+                        abort();
+                    }
+                    // Using `Acquire` here to pair with `get_from_unused` or
+                    // `<Frame<M> as From<UniqueFrame<M>>>::from` (who must be
+                    // performed after writing the metadata).
+                    //
+                    // It ensures that the written metadata will be visible to us.
+                    if slot
+                        .ref_count
+                        .compare_exchange_weak(
+                            last_ref_cnt,
+                            last_ref_cnt + 1,
+                            Ordering::Acquire,
+                            Ordering::Relaxed,
+                        )
+                        .is_ok()
+                    {
+                        return Ok(slot as *const MetaSlot);
+                    }
+                }
+            }
+            core::hint::spin_loop();
+        }
+    }
+
     /// Increases the frame reference count by one.
     ///
     /// # Safety
@@ -179,60 +299,138 @@ impl MetaSlot {
             abort();
         }
     }
-}
 
-/// An internal routine in dropping implementations.
-///
-/// # Safety
-///
-/// The caller should ensure that the pointer points to a frame's metadata slot. The
-/// frame should have a last handle to the frame, and the frame is about to be dropped,
-/// as the metadata slot after this operation becomes uninitialized.
-pub(super) unsafe fn drop_last_in_place(ptr: *mut MetaSlot) {
-    // SAFETY: `ptr` points to a valid `MetaSlot` that will never be mutably borrowed, so taking an
-    // immutable reference to it is always safe.
-    let slot = unsafe { &*ptr };
-
-    // This should be guaranteed as a safety requirement.
-    debug_assert_eq!(slot.ref_count.load(Ordering::Relaxed), 0);
-
-    let paddr = mapping::meta_to_frame::<PagingConsts>(ptr as Vaddr);
-
-    // SAFETY: We have exclusive access to the frame metadata.
-    let vtable_ptr = unsafe { &mut *slot.vtable_ptr.get() };
-    // SAFETY: The frame metadata is initialized and valid.
-    let vtable_ptr = unsafe { vtable_ptr.assume_init_read() };
-
-    let meta_ptr: *mut dyn AnyFrameMeta = core::ptr::from_raw_parts_mut(ptr, vtable_ptr);
-
-    // SAFETY: The implementer of the frame metadata decides that if the frame
-    // is safe to be read or not.
-    let mut reader =
-        unsafe { VmReader::from_kernel_space(paddr_to_vaddr(paddr) as *const u8, PAGE_SIZE) };
-
-    // SAFETY: `ptr` points to the metadata storage which is valid to be mutably borrowed under
-    // `vtable_ptr` because the metadata is valid, the vtable is correct, and we have the exclusive
-    // access to the frame metadata.
-    unsafe {
-        // Invoke the custom `on_drop` handler.
-        (*meta_ptr).on_drop(&mut reader);
-        // Drop the frame metadata.
-        core::ptr::drop_in_place(meta_ptr);
+    /// Gets the corresponding frame's physical address.
+    pub(super) fn frame_paddr(&self) -> Paddr {
+        mapping::meta_to_frame::<PagingConsts>(self as *const MetaSlot as Vaddr)
     }
 
-    // `Release` pairs with the `Acquire` in `Frame::from_unused` and ensures `drop_in_place` won't
-    // be reordered after this memory store.
-    slot.ref_count.store(REF_COUNT_UNUSED, Ordering::Release);
+    /// Gets a dynamically typed pointer to the stored metadata.
+    ///
+    /// # Safety
+    ///
+    /// The caller should ensure that:
+    ///  - the stored metadata is initialized (by [`Self::write_meta`]) and valid.
+    ///
+    /// The returned pointer should not be dereferenced as mutable unless having
+    /// exclusive access to the metadata slot.
+    pub(super) unsafe fn dyn_meta_ptr(&self) -> *mut dyn AnyFrameMeta {
+        // SAFETY: The page metadata is valid to be borrowed mutably, since it will never be
+        // borrowed immutably after initialization.
+        let vtable_ptr = unsafe { *self.vtable_ptr.get() };
 
-    // Deallocate the frame.
-    // It would return the frame to the allocator for further use. This would be done
-    // after the release of the metadata to avoid re-allocation before the metadata
-    // is reset.
-    allocator::FRAME_ALLOCATOR
-        .get()
-        .unwrap()
-        .lock()
-        .dealloc(paddr / PAGE_SIZE, 1);
+        // SAFETY: The page metadata is initialized and valid.
+        let vtable_ptr = *unsafe { vtable_ptr.assume_init_ref() };
+
+        let meta_ptr: *mut dyn AnyFrameMeta =
+            core::ptr::from_raw_parts_mut(self as *const MetaSlot as *mut MetaSlot, vtable_ptr);
+
+        meta_ptr
+    }
+
+    /// Gets the stored metadata as type `M`.
+    ///
+    /// Calling the method should be safe, but using the returned pointer would
+    /// be unsafe. Specifically, the derefernecer should ensure that:
+    ///  - the stored metadata is initialized (by [`Self::write_meta`]) and
+    ///    valid;
+    ///  - the initialized metadata is of type `M`;
+    ///  - the returned pointer should not be dereferenced as mutable unless
+    ///    having exclusive access to the metadata slot.
+    pub(super) fn as_meta_ptr<M: AnyFrameMeta>(&self) -> *mut M {
+        self.storage.get() as *mut M
+    }
+
+    /// Writes the metadata to the slot without reading or dropping the previous value.
+    ///
+    /// # Safety
+    ///
+    /// The caller should have exclusive access to the metadata slot's fields.
+    pub(super) unsafe fn write_meta<M: AnyFrameMeta>(&self, metadata: M) {
+        // Checking unsafe preconditions of the `AnyFrameMeta` trait.
+        // We can't debug assert until we fix the constant generic bonds in
+        // the linked list meta.
+        assert!(size_of::<M>() <= FRAME_METADATA_MAX_SIZE);
+        assert!(align_of::<M>() <= FRAME_METADATA_MAX_ALIGN);
+
+        // SAFETY: Caller ensures that the access to the fields are exclusive.
+        let vtable_ptr = unsafe { &mut *self.vtable_ptr.get() };
+        vtable_ptr.write(core::ptr::metadata(&metadata as &dyn AnyFrameMeta));
+
+        let ptr = self.storage.get();
+        // SAFETY:
+        // 1. `ptr` points to the metadata storage.
+        // 2. The size and the alignment of the metadata storage is large enough to hold `M`
+        //    (guaranteed by the safety requirement of the `AnyFrameMeta` trait).
+        // 3. We have exclusive access to the metadata storage (guaranteed by the caller).
+        unsafe { ptr.cast::<M>().write(metadata) };
+    }
+
+    /// Drops the metadata and deallocates the frame.
+    ///
+    /// # Safety
+    ///
+    /// The caller should ensure that:
+    ///  - the reference count is `0` (so we are the sole owner of the frame);
+    ///  - the metadata is initialized;
+    pub(super) unsafe fn drop_last_in_place(&self) {
+        // This should be guaranteed as a safety requirement.
+        debug_assert_eq!(self.ref_count.load(Ordering::Relaxed), 0);
+
+        // SAFETY: The caller ensures safety.
+        unsafe { self.drop_meta_in_place() };
+
+        // `Release` pairs with the `Acquire` in `Frame::from_unused` and ensures
+        // `drop_meta_in_place` won't be reordered after this memory store.
+        self.ref_count.store(REF_COUNT_UNUSED, Ordering::Release);
+
+        // Deallocate the frame.
+        // It would return the frame to the allocator for further use. This would be done
+        // after the release of the metadata to avoid re-allocation before the metadata
+        // is reset.
+        allocator::FRAME_ALLOCATOR
+            .get()
+            .unwrap()
+            .lock()
+            .dealloc(self.frame_paddr() / PAGE_SIZE, 1);
+    }
+
+    /// Drops the metadata of a slot in place.
+    ///
+    /// After this operation, the metadata becomes uninitialized. Any access to the
+    /// metadata is undefined behavior unless it is re-initialized by [`Self::write_meta`].
+    ///
+    /// # Safety
+    ///
+    /// The caller should ensure that:
+    ///  - the reference count is `0` (so we are the sole owner of the frame);
+    ///  - the metadata is initialized;
+    pub(super) unsafe fn drop_meta_in_place(&self) {
+        let paddr = self.frame_paddr();
+
+        // SAFETY: We have exclusive access to the frame metadata.
+        let vtable_ptr = unsafe { &mut *self.vtable_ptr.get() };
+        // SAFETY: The frame metadata is initialized and valid.
+        let vtable_ptr = unsafe { vtable_ptr.assume_init_read() };
+
+        let meta_ptr: *mut dyn AnyFrameMeta =
+            core::ptr::from_raw_parts_mut(self.storage.get(), vtable_ptr);
+
+        // SAFETY: The implementer of the frame metadata decides that if the frame
+        // is safe to be read or not.
+        let mut reader =
+            unsafe { VmReader::from_kernel_space(paddr_to_vaddr(paddr) as *const u8, PAGE_SIZE) };
+
+        // SAFETY: `ptr` points to the metadata storage which is valid to be mutably borrowed under
+        // `vtable_ptr` because the metadata is valid, the vtable is correct, and we have the exclusive
+        // access to the frame metadata.
+        unsafe {
+            // Invoke the custom `on_drop` handler.
+            (*meta_ptr).on_drop(&mut reader);
+            // Drop the frame metadata.
+            core::ptr::drop_in_place(meta_ptr);
+        }
+    }
 }
 
 /// The metadata of frames that holds metadata of frames.

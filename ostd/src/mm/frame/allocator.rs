@@ -60,7 +60,7 @@ impl FrameAllocOptions {
             .alloc(1)
             .map(|idx| {
                 let paddr = idx * PAGE_SIZE;
-                Frame::from_unused(paddr, metadata)
+                Frame::from_unused(paddr, metadata).unwrap()
             })
             .ok_or(Error::NoMemory)?;
 
