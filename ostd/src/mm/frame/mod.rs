@@ -32,6 +32,7 @@
 //! can create custom metadata types by implementing the [`AnyFrameMeta`] trait.
 
 pub mod allocator;
+pub mod linked_list;
 pub mod meta;
 pub mod segment;
 pub mod unique;
@@ -162,9 +163,8 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
     /// restored using [`Frame::from_raw`] later. This is useful when some architectural
     /// data structures need to hold the frame handle such as the page table.
     pub(in crate::mm) fn into_raw(self) -> Paddr {
-        let paddr = self.start_paddr();
-        let _ = ManuallyDrop::new(self);
-        paddr
+        let this = ManuallyDrop::new(self);
+        this.start_paddr()
     }
 
     /// Restores a forgotten [`Frame`] from a physical address.

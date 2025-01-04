@@ -2,13 +2,13 @@
 
 //! The unique frame pointer that is not shared with others.
 
-use core::{marker::PhantomData, sync::atomic::Ordering};
+use core::{marker::PhantomData, mem::ManuallyDrop, sync::atomic::Ordering};
 
 use super::{
     meta::{GetFrameError, REF_COUNT_UNIQUE},
     AnyFrameMeta, Frame, MetaSlot,
 };
-use crate::mm::{Paddr, PagingLevel, PAGE_SIZE};
+use crate::mm::{frame::mapping, Paddr, PagingConsts, PagingLevel, PAGE_SIZE};
 
 /// An owning frame pointer.
 ///
@@ -99,7 +99,29 @@ impl<M: AnyFrameMeta + ?Sized> UniqueFrame<M> {
         unsafe { &mut *self.slot().dyn_meta_ptr() }
     }
 
-    fn slot(&self) -> &MetaSlot {
+    /// Converts this frame into a raw physical address.
+    pub(crate) fn into_raw(self) -> Paddr {
+        let this = ManuallyDrop::new(self);
+        this.start_paddr()
+    }
+
+    /// Restores a raw physical address back into a unique frame.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the physical address is valid and points to
+    /// a forgotten frame that was previously casted by [`Self::into_raw`].
+    pub(crate) unsafe fn from_raw(paddr: Paddr) -> Self {
+        let vaddr = mapping::frame_to_meta::<PagingConsts>(paddr);
+        let ptr = vaddr as *const MetaSlot;
+
+        Self {
+            ptr,
+            _marker: PhantomData,
+        }
+    }
+
+    pub(super) fn slot(&self) -> &MetaSlot {
         // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
         // mutably borrowed, so taking an immutable reference to it is safe.
         unsafe { &*self.ptr }
