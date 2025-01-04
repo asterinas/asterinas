@@ -228,7 +228,7 @@ fn add_manifest_dependency(
         let dep_str = match option_env!("OSDK_LOCAL_DEV") {
             Some("1") => {
                 let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-                let test_kernel_dir = crate_dir.join("test-kernel");
+                let test_kernel_dir = crate_dir.join("deps").join("test-kernel");
                 format!(
                     "osdk-test-kernel = {{ path = \"{}\" }}",
                     test_kernel_dir.display()
