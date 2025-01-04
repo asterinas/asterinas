@@ -34,17 +34,16 @@
 pub mod allocator;
 pub mod meta;
 pub mod segment;
+pub mod unique;
 pub mod untyped;
 
 use core::{
     marker::PhantomData,
-    sync::atomic::{AtomicU32, AtomicUsize, Ordering},
+    mem::ManuallyDrop,
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
-use meta::{
-    mapping, AnyFrameMeta, MetaSlot, FRAME_METADATA_MAX_ALIGN, FRAME_METADATA_MAX_SIZE,
-    REF_COUNT_UNUSED,
-};
+use meta::{mapping, AnyFrameMeta, GetFrameError, MetaSlot, REF_COUNT_UNUSED};
 pub use segment::Segment;
 use untyped::{AnyUFrameMeta, UFrame};
 
@@ -64,10 +63,6 @@ static MAX_PADDR: AtomicUsize = AtomicUsize::new(0);
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct Frame<M: AnyFrameMeta + ?Sized> {
-    // TODO: We may use a `NonNull<M>` here to make the frame a maybe-fat
-    // pointer and implement `CoerceUnsized` to avoid `From`s. However this is
-    // not quite feasible currently because we cannot cast a must-be-fat
-    // pointer (`*const dyn AnyFrameMeta`) to a maybe-fat pointer (`NonNull<M>`).
     ptr: *const MetaSlot,
     _marker: PhantomData<M>,
 }
@@ -81,70 +76,41 @@ impl<M: AnyFrameMeta> Frame<M> {
     ///
     /// The caller should provide the initial metadata of the page.
     ///
-    /// # Panics
-    ///
-    /// The function panics if:
-    ///  - the physical address is out of bound or not aligned;
-    ///  - the page is already in use.
-    pub fn from_unused(paddr: Paddr, metadata: M) -> Self {
-        assert!(paddr % PAGE_SIZE == 0);
-        assert!(paddr < MAX_PADDR.load(Ordering::Relaxed) as Paddr);
-
-        // Checking unsafe preconditions of the `AnyFrameMeta` trait.
-        debug_assert!(size_of::<M>() <= FRAME_METADATA_MAX_SIZE);
-        debug_assert!(align_of::<M>() <= FRAME_METADATA_MAX_ALIGN);
-
-        let vaddr = mapping::frame_to_meta::<PagingConsts>(paddr);
-        let ptr = vaddr as *const MetaSlot;
-
-        // SAFETY: `ptr` points to a valid `MetaSlot` that will never be mutably borrowed, so taking an
-        // immutable reference to it is always safe.
-        let slot = unsafe { &*ptr };
-
-        // `Acquire` pairs with the `Release` in `drop_last_in_place` and ensures the metadata
-        // initialization won't be reordered before this memory compare-and-exchange.
-        slot.ref_count
-            .compare_exchange(REF_COUNT_UNUSED, 0, Ordering::Acquire, Ordering::Relaxed)
-            .expect("Frame already in use when trying to get a new handle");
-
-        // SAFETY: We have exclusive access to the page metadata. These fields are mutably
-        // borrowed only once.
-        let vtable_ptr = unsafe { &mut *slot.vtable_ptr.get() };
-        vtable_ptr.write(core::ptr::metadata(&metadata as &dyn AnyFrameMeta));
-
-        // SAFETY:
-        // 1. `ptr` points to the first field of `MetaSlot` (guaranteed by `repr(C)`), which is the
-        //    metadata storage.
-        // 2. The size and the alignment of the metadata storage is large enough to hold `M`
-        //    (guaranteed by the safety requirement of the `AnyFrameMeta` trait).
-        // 3. We have exclusive access to the metadata storage (guaranteed by the reference count).
-        unsafe { ptr.cast::<M>().cast_mut().write(metadata) };
-
-        // Assuming no one can create a `Frame` instance directly from the page address, `Relaxed`
-        // is fine here. Otherwise, we should use `Release` to ensure that the metadata
-        // initialization won't be reordered after this memory store.
-        slot.ref_count.store(1, Ordering::Relaxed);
-
-        Self {
-            ptr,
+    /// If the provided frame is not truly unused at the moment, it will return
+    /// an error. If wanting to acquire a frame that is already in use, use
+    /// [`Frame::from_in_use`] instead.
+    pub fn from_unused(paddr: Paddr, metadata: M) -> Result<Self, GetFrameError> {
+        Ok(Self {
+            ptr: MetaSlot::get_from_unused(paddr, metadata, false)?,
             _marker: PhantomData,
-        }
+        })
     }
 
     /// Gets the metadata of this page.
     pub fn meta(&self) -> &M {
-        // SAFETY: `self.ptr` points to the metadata storage which is valid to
-        // be immutably borrowed as `M` because the type is correct, it lives
-        // under the given lifetime, and no one will mutably borrow the page
-        // metadata after initialization.
-        unsafe { &*self.ptr.cast() }
+        // SAFETY: The type is tracked by the type system.
+        unsafe { &*self.slot().as_meta_ptr::<M>() }
+    }
+}
+
+impl Frame<dyn AnyFrameMeta> {
+    /// Gets a dynamically typed [`Frame`] from a raw, in-use page.
+    ///
+    /// If the provided frame is not in use at the moment, it will return an error.
+    ///
+    /// The returned frame will have an extra reference count to the frame.
+    pub fn from_in_use(paddr: Paddr) -> Result<Self, GetFrameError> {
+        Ok(Self {
+            ptr: MetaSlot::get_from_in_use(paddr)?,
+            _marker: PhantomData,
+        })
     }
 }
 
 impl<M: AnyFrameMeta + ?Sized> Frame<M> {
     /// Gets the physical address of the start of the frame.
     pub fn start_paddr(&self) -> Paddr {
-        mapping::meta_to_frame::<PagingConsts>(self.ptr as Vaddr)
+        self.slot().frame_paddr()
     }
 
     /// Gets the paging level of this page.
@@ -167,21 +133,8 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
     ///
     /// If the type is known at compile time, use [`Frame::meta`] instead.
     pub fn dyn_meta(&self) -> &dyn AnyFrameMeta {
-        let slot = self.slot();
-
-        // SAFETY: The page metadata is valid to be borrowed immutably, since it will never be
-        // borrowed mutably after initialization.
-        let vtable_ptr = unsafe { &*slot.vtable_ptr.get() };
-
-        // SAFETY: The page metadata is initialized and valid.
-        let vtable_ptr = *unsafe { vtable_ptr.assume_init_ref() };
-
-        let meta_ptr: *const dyn AnyFrameMeta = core::ptr::from_raw_parts(self.ptr, vtable_ptr);
-
-        // SAFETY: `self.ptr` points to the metadata storage which is valid to be immutably
-        // borrowed under `vtable_ptr` because the vtable is correct, it lives under the given
-        // lifetime, and no one will mutably borrow the page metadata after initialization.
-        unsafe { &*meta_ptr }
+        // SAFETY: The metadata is initialized and valid.
+        unsafe { &*self.slot().dyn_meta_ptr() }
     }
 
     /// Gets the reference count of the frame.
@@ -196,11 +149,9 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
     /// reference count can be changed by other threads at any time including
     /// potentially between calling this method and acting on the result.
     pub fn reference_count(&self) -> u32 {
-        self.ref_count().load(Ordering::Relaxed)
-    }
-
-    fn ref_count(&self) -> &AtomicU32 {
-        unsafe { &(*self.ptr).ref_count }
+        let refcnt = self.slot().ref_count.load(Ordering::Relaxed);
+        debug_assert!(refcnt < meta::REF_COUNT_MAX);
+        refcnt
     }
 
     /// Forgets the handle to the frame.
@@ -212,11 +163,11 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
     /// data structures need to hold the frame handle such as the page table.
     pub(in crate::mm) fn into_raw(self) -> Paddr {
         let paddr = self.start_paddr();
-        core::mem::forget(self);
+        let _ = ManuallyDrop::new(self);
         paddr
     }
 
-    /// Restores a forgotten `Frame` from a physical address.
+    /// Restores a forgotten [`Frame`] from a physical address.
     ///
     /// # Safety
     ///
@@ -224,7 +175,7 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
     /// [`Frame::into_raw`].
     ///
     /// And the restoring operation should only be done once for a forgotten
-    /// `Frame`. Otherwise double-free will happen.
+    /// [`Frame`]. Otherwise double-free will happen.
     ///
     /// Also, the caller ensures that the usage of the frame is correct. There's
     /// no checking of the usage in this function.
@@ -268,9 +219,7 @@ impl<M: AnyFrameMeta + ?Sized> Drop for Frame<M> {
             core::sync::atomic::fence(Ordering::Acquire);
 
             // SAFETY: this is the last reference and is about to be dropped.
-            unsafe {
-                meta::drop_last_in_place(self.ptr as *mut MetaSlot);
-            }
+            unsafe { self.slot().drop_last_in_place() };
         }
     }
 }
