@@ -65,8 +65,11 @@ static CPU_LOCAL_STORAGES: Once<&'static [Paddr]> = Once::new();
 /// function to copy it for the APs. Otherwise, the copied data will
 /// contain non-constant (also non-`Copy`) data, resulting in undefined
 /// behavior when it's loaded on the APs.
-pub(crate) unsafe fn copy_bsp_for_ap() {
-    let num_aps = super::num_cpus() - 1; // BSP does not need allocated storage.
+///
+/// The caller must ensure that the `num_cpus` matches the number of all
+/// CPUs that will access the CPU-local storage.
+pub(crate) unsafe fn copy_bsp_for_ap(num_cpus: usize) {
+    let num_aps = num_cpus - 1; // BSP does not need allocated storage.
     if num_aps == 0 {
         return;
     }

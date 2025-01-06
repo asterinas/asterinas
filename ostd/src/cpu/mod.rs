@@ -5,6 +5,8 @@
 pub mod local;
 pub mod set;
 
+pub use set::{AtomicCpuSet, CpuSet};
+
 cfg_if::cfg_if! {
     if #[cfg(target_arch = "x86_64")] {
         pub use crate::arch::x86::cpu::*;
@@ -13,13 +15,7 @@ cfg_if::cfg_if! {
     }
 }
 
-pub use set::{AtomicCpuSet, CpuSet};
-use spin::Once;
-
-use crate::{
-    arch::boot::smp::get_num_processors, cpu_local_cell, task::DisabledPreemptGuard,
-    trap::DisabledLocalIrqGuard,
-};
+use crate::{cpu_local_cell, task::DisabledPreemptGuard, trap::DisabledLocalIrqGuard};
 
 /// The ID of a CPU in the system.
 ///
@@ -53,44 +49,60 @@ impl TryFrom<usize> for CpuId {
 }
 
 /// The number of CPUs.
-static NUM_CPUS: Once<u32> = Once::new();
+static mut NUM_CPUS: u32 = 1;
 
 /// Initializes the number of CPUs.
 ///
 /// # Safety
 ///
-/// The caller must ensure that this function is called only once on the BSP
-/// at the correct time when the number of CPUs is available from the platform.
-pub(crate) unsafe fn init_num_cpus() {
-    let num_processors = get_num_processors().unwrap_or(1);
-    NUM_CPUS.call_once(|| num_processors);
-}
+/// The caller must ensure that
+/// 1. We're in the boot context of the BSP and APs have not yet booted.
+/// 2. The argument is the correct value of the number of CPUs (which
+///    is a constant, since we don't support CPU hot-plugging anyway).
+unsafe fn init_num_cpus(num_cpus: u32) {
+    assert!(num_cpus >= 1);
 
-/// Initializes the number of the current CPU.
-///
-/// # Safety
-///
-/// The caller must ensure that this function is called only once on the
-/// correct CPU with the correct CPU ID.
-pub(crate) unsafe fn set_this_cpu_id(id: u32) {
-    CURRENT_CPU.store(id);
+    // SAFETY: It is safe to mutate this global variable because we
+    // are in the boot context.
+    unsafe { NUM_CPUS = num_cpus };
+
+    // Note that decreasing the number of CPUs may break existing
+    // `CpuId`s (which have a type invariant to say that the ID is
+    // less than the number of CPUs).
+    //
+    // However, this never happens: due to the safety conditions
+    // it's only legal to call this function to increase the number
+    // of CPUs from one (the initial value) to the actual number of
+    // CPUs.
 }
 
 /// Returns the number of CPUs.
 pub fn num_cpus() -> usize {
-    debug_assert!(
-        NUM_CPUS.get().is_some(),
-        "The number of CPUs is not initialized"
-    );
-    // SAFETY: The number of CPUs is initialized. The unsafe version is used
-    // to avoid the overhead of the check.
-    let num = unsafe { *NUM_CPUS.get_unchecked() };
-    num as usize
+    // SAFETY: As far as the safe APIs are concerned, `NUM_CPUS` is
+    // read-only, so it is always valid to read.
+    (unsafe { NUM_CPUS }) as usize
 }
 
 /// Returns an iterator over all CPUs.
 pub fn all_cpus() -> impl Iterator<Item = CpuId> {
     (0..num_cpus()).map(|id| CpuId(id as u32))
+}
+
+cpu_local_cell! {
+    /// The ID of the current CPU.
+    static CURRENT_CPU: u32 = 0;
+}
+
+/// Initializes the ID of the current CPU.
+///
+/// This method only needs to be called on application processors.
+///
+/// # Safety
+///
+/// The caller must ensure that this function is called with
+/// the correct value of the CPU ID.
+unsafe fn set_this_cpu_id(id: u32) {
+    CURRENT_CPU.store(id);
 }
 
 /// A marker trait for guard types that can "pin" the current task to the
@@ -108,9 +120,7 @@ pub fn all_cpus() -> impl Iterator<Item = CpuId> {
 pub unsafe trait PinCurrentCpu {
     /// Returns the number of the current CPU.
     fn current_cpu(&self) -> CpuId {
-        let id = CURRENT_CPU.load();
-        debug_assert_ne!(id, u32::MAX, "This CPU is not initialized");
-        CpuId(id)
+        CpuId(CURRENT_CPU.load())
     }
 }
 
@@ -122,7 +132,37 @@ unsafe impl PinCurrentCpu for DisabledLocalIrqGuard {}
 // to another CPU.
 unsafe impl PinCurrentCpu for DisabledPreemptGuard {}
 
-cpu_local_cell! {
-    /// The number of the current CPU.
-    static CURRENT_CPU: u32 = u32::MAX;
+/// # Safety
+///
+/// The caller must ensure that
+/// 1. We're in the boot context of the BSP and APs have not yet booted.
+/// 2. The number of available processors is available.
+/// 3. No CPU-local objects have been accessed.
+pub(crate) unsafe fn init_on_bsp() {
+    let num_cpus = crate::arch::boot::smp::get_num_processors().unwrap_or(1);
+
+    // SAFETY: The safety is upheld by the caller and
+    // the correctness of the `get_num_processors` method.
+    unsafe {
+        local::copy_bsp_for_ap(num_cpus as usize);
+
+        // Note that `init_num_cpus` should be called after `copy_bsp_for_ap`.
+        // This helps to build the safety reasoning in `CpuLocal::get_on_cpu`.
+        // See its implementation for details.
+        init_num_cpus(num_cpus);
+    }
+}
+
+/// # Safety
+///
+/// The caller must ensure that:
+/// 1. We're in the boot context of an AP.
+/// 2. The CPU ID of the AP is `cpu_id`.
+pub(crate) unsafe fn init_on_ap(cpu_id: u32) {
+    // SAFETY: The safety is upheld by the caller.
+    unsafe {
+        // FIXME: This is a global invariant,
+        // better set before entering `ap_early_entry'.
+        set_this_cpu_id(cpu_id);
+    }
 }
