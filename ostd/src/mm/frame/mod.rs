@@ -148,7 +148,7 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
     /// The function is safe to call, but using it requires extra care. The
     /// reference count can be changed by other threads at any time including
     /// potentially between calling this method and acting on the result.
-    pub fn reference_count(&self) -> u32 {
+    pub fn reference_count(&self) -> u64 {
         let refcnt = self.slot().ref_count.load(Ordering::Relaxed);
         debug_assert!(refcnt < meta::REF_COUNT_MAX);
         refcnt

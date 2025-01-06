@@ -44,7 +44,7 @@ use core::{
     fmt::Debug,
     mem::{size_of, MaybeUninit},
     result::Result,
-    sync::atomic::{AtomicU32, Ordering},
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 use align_ext::AlignExt;
@@ -64,9 +64,9 @@ use crate::{
 
 /// The maximum number of bytes of the metadata of a frame.
 pub const FRAME_METADATA_MAX_SIZE: usize =
-    META_SLOT_SIZE - size_of::<bool>() - size_of::<AtomicU32>() - size_of::<FrameMetaVtablePtr>();
+    META_SLOT_SIZE - size_of::<AtomicU64>() - size_of::<FrameMetaVtablePtr>();
 /// The maximum alignment in bytes of the metadata of a frame.
-pub const FRAME_METADATA_MAX_ALIGN: usize = align_of::<MetaSlot>();
+pub const FRAME_METADATA_MAX_ALIGN: usize = META_SLOT_SIZE;
 
 const META_SLOT_SIZE: usize = 64;
 
@@ -102,14 +102,14 @@ pub(in crate::mm) struct MetaSlot {
     //
     // Other than this field the fields should be `MaybeUninit`.
     // See initialization in `alloc_meta_frames`.
-    pub(super) ref_count: AtomicU32,
+    pub(super) ref_count: AtomicU64,
     /// The virtual table that indicates the type of the metadata.
     pub(super) vtable_ptr: UnsafeCell<MaybeUninit<FrameMetaVtablePtr>>,
 }
 
-pub(super) const REF_COUNT_UNUSED: u32 = u32::MAX;
-pub(super) const REF_COUNT_UNIQUE: u32 = u32::MAX - 1;
-pub(super) const REF_COUNT_MAX: u32 = i32::MAX as u32;
+pub(super) const REF_COUNT_UNUSED: u64 = u64::MAX;
+pub(super) const REF_COUNT_UNIQUE: u64 = u64::MAX - 1;
+pub(super) const REF_COUNT_MAX: u64 = i64::MAX as u64;
 
 type FrameMetaVtablePtr = core::ptr::DynMetadata<dyn AnyFrameMeta>;
 
@@ -498,7 +498,7 @@ fn alloc_meta_frames(tot_nr_frames: usize) -> (usize, Paddr) {
     let slots = paddr_to_vaddr(start_paddr) as *mut MetaSlot;
 
     // Fill the metadata frames with a byte pattern of `REF_COUNT_UNUSED`.
-    debug_assert_eq!(REF_COUNT_UNUSED.to_ne_bytes(), [0xff, 0xff, 0xff, 0xff]);
+    debug_assert_eq!(REF_COUNT_UNUSED.to_ne_bytes(), [0xff; 8]);
     // SAFETY: `slots` and the length is a valid region for the metadata frames
     // that are going to be treated as metadata slots. The byte pattern is
     // valid as the initial value of the reference count (other fields are
