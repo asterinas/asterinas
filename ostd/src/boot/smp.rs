@@ -9,7 +9,7 @@ use spin::Once;
 
 use crate::{
     arch::boot::smp::{bringup_all_aps, get_num_processors},
-    cpu,
+    cpu::{self, init_num_cpus},
     mm::{frame::Segment, kspace::KernelMeta, paddr_to_vaddr, FrameAllocOptions, PAGE_SIZE},
     task::Task,
 };
@@ -121,6 +121,14 @@ pub(crate) unsafe fn boot_all_aps() {
         per_ap_info: per_ap_info.into_boxed_slice(),
     });
 
+    // SAFETY: `num_cpus` is the correct value of the number of CPUs.
+    unsafe {
+        // Note that `init_num_cpus` should be called after `copy_bsp_for_ap`.
+        // This helps to build the safety reasoning in `CpuLocal::get_on_cpu`.
+        // See its implementation for details.
+        init_num_cpus(num_cpus);
+    }
+
     log::info!("Booting all application processors...");
 
     let info_ptr = paddr_to_vaddr(AP_BOOT_INFO.get().unwrap().per_ap_raw_info.start_paddr())
@@ -144,14 +152,15 @@ pub fn register_ap_entry(entry: fn()) {
 }
 
 #[no_mangle]
-fn ap_early_entry(local_apic_id: u32) -> ! {
-    crate::arch::enable_cpu_features();
-
-    // SAFETY: we are on the AP and they are only called once with the correct
-    // CPU ID.
+fn ap_early_entry(cpu_id: u32) -> ! {
+    // SAFETY: `cpu_id` is the correct value of the CPU ID.
     unsafe {
-        cpu::set_this_cpu_id(local_apic_id);
+        // FIXME: This is a global invariant,
+        // better set before entering `ap_early_entry'.
+        cpu::set_this_cpu_id(cpu_id);
     }
+
+    crate::arch::enable_cpu_features();
 
     // SAFETY: this function is only called once on this AP.
     unsafe {
@@ -173,11 +182,11 @@ fn ap_early_entry(local_apic_id: u32) -> ! {
 
     // Mark the AP as started.
     let ap_boot_info = AP_BOOT_INFO.get().unwrap();
-    ap_boot_info.per_ap_info[local_apic_id as usize - 1]
+    ap_boot_info.per_ap_info[cpu_id as usize - 1]
         .is_started
         .store(true, Ordering::Release);
 
-    log::info!("Processor {} started. Spinning for tasks.", local_apic_id);
+    log::info!("Processor {} started. Spinning for tasks.", cpu_id);
 
     let ap_late_entry = AP_LATE_ENTRY.wait();
     ap_late_entry();

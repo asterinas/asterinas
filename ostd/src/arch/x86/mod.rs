@@ -71,12 +71,6 @@ pub(crate) fn init_on_bsp() {
     irq::init();
     kernel::acpi::init();
 
-    // SAFETY: they are only called once on BSP and ACPI has been initialized.
-    unsafe {
-        crate::cpu::init_num_cpus();
-        crate::cpu::set_this_cpu_id(0);
-    }
-
     match kernel::apic::init() {
         Ok(_) => {
             ioapic::init();
