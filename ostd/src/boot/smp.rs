@@ -140,14 +140,13 @@ pub fn register_ap_entry(entry: fn()) {
 }
 
 #[no_mangle]
-fn ap_early_entry(local_apic_id: u32) -> ! {
-    crate::arch::enable_cpu_features();
-
-    // SAFETY: we are on the AP and they are only called once with the correct
-    // CPU ID.
+fn ap_early_entry(cpu_id: u32) -> ! {
+    // SAFETY: `cpu_id` is the correct value of the CPU ID.
     unsafe {
-        cpu::set_this_cpu_id(local_apic_id);
+        cpu::init_on_ap(cpu_id);
     }
+
+    crate::arch::enable_cpu_features();
 
     // SAFETY: this function is only called once on this AP.
     unsafe {
@@ -169,11 +168,11 @@ fn ap_early_entry(local_apic_id: u32) -> ! {
 
     // Mark the AP as started.
     let ap_boot_info = AP_BOOT_INFO.get().unwrap();
-    ap_boot_info.per_ap_info[local_apic_id as usize - 1]
+    ap_boot_info.per_ap_info[cpu_id as usize - 1]
         .is_started
         .store(true, Ordering::Release);
 
-    log::info!("Processor {} started. Spinning for tasks.", local_apic_id);
+    log::info!("Processor {} started. Spinning for tasks.", cpu_id);
 
     let ap_late_entry = AP_LATE_ENTRY.wait();
     ap_late_entry();
