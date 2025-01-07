@@ -7,10 +7,12 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
+use core::ops::Deref;
 
 use aster_console::{AnyConsoleDevice, ConsoleCallback};
+use aster_keyboard::InputKey;
 use component::{init_component, ComponentInitError};
-use ostd::sync::SpinLock;
+use ostd::{mm::VmReader, sync::SpinLock};
 use spin::Once;
 
 pub static CONSOLE_NAME: &str = "Framebuffer-Console";
@@ -20,6 +22,7 @@ static CONSOLE_CALLBACKS: Once<SpinLock<Vec<&'static ConsoleCallback>>> = Once::
 #[init_component]
 fn framebuffer_init() -> Result<(), ComponentInitError> {
     CONSOLE_CALLBACKS.call_once(|| SpinLock::new(Vec::new()));
+    aster_keyboard::register_callback(&handle_keyboard_input);
     Ok(())
 }
 
@@ -49,5 +52,21 @@ impl AnyConsoleDevice for FramebufferConsole {
         };
 
         callbacks.disable_irq().lock().push(callback);
+    }
+}
+
+fn handle_keyboard_input(key: InputKey) {
+    if key == InputKey::Nul {
+        return;
+    }
+
+    let Some(callbacks) = CONSOLE_CALLBACKS.get() else {
+        return;
+    };
+
+    let buffer = key.deref();
+    for callback in callbacks.disable_irq().lock().iter() {
+        let reader = VmReader::from(buffer);
+        callback(reader);
     }
 }
