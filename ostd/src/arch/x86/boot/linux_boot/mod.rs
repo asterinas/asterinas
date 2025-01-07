@@ -119,6 +119,18 @@ fn parse_memory_regions(boot_params: &BootParams) -> MemoryRegionArray {
             .unwrap();
     }
 
+    // Add framebuffer region.
+    let screen_info = &boot_params.screen_info;
+    if screen_info.lfb_base != 0 && screen_info.lfb_size != 0 {
+        regions
+            .push(MemoryRegion::new(
+                screen_info.lfb_base as usize,
+                screen_info.lfb_size as usize,
+                MemoryRegionType::Framebuffer,
+            ))
+            .unwrap();
+    }
+
     // Add the kernel region.
     regions.push(MemoryRegion::kernel()).unwrap();
 

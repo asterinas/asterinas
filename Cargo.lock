@@ -146,9 +146,9 @@ dependencies = [
 name = "aster-framebuffer"
 version = "0.1.0"
 dependencies = [
+ "aster-console",
  "aster-logger",
  "component",
- "font8x8",
  "log",
  "ostd",
  "spin",
@@ -1344,6 +1344,7 @@ dependencies = [
  "cfg-if",
  "const-assert",
  "fdt",
+ "font8x8",
  "gimli 0.28.1",
  "iced-x86",
  "id-alloc",
