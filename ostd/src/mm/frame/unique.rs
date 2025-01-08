@@ -99,6 +99,26 @@ impl<M: AnyFrameMeta + ?Sized> UniqueFrame<M> {
         unsafe { &mut *self.slot().dyn_meta_ptr() }
     }
 
+    /// Resets the frame to unused without up-calling the allocator.
+    ///
+    /// This is solely useful for the allocator implementation and highly
+    /// experimental. Usage of this function is discouraged.
+    ///
+    /// Usage of this function other than the allocator would actually leak
+    /// the frame since the allocator would not be aware of the frame.
+    //
+    // FIXME: We may have a better `Segment` and `UniqueSegment` design to
+    // allow the allocator hold the ownership of all the frames in a chunk
+    // instead of the head. Then this weird public API can be removed.
+    pub fn reset_as_unused(self) {
+        let this = ManuallyDrop::new(self);
+
+        this.slot().ref_count.store(0, Ordering::Release);
+        // SAFETY: We are the sole owner and the reference count is 0.
+        // The slot is initialized.
+        unsafe { this.slot().drop_last_in_place() };
+    }
+
     /// Converts this frame into a raw physical address.
     pub(crate) fn into_raw(self) -> Paddr {
         let this = ManuallyDrop::new(self);
@@ -134,6 +154,8 @@ impl<M: AnyFrameMeta + ?Sized> Drop for UniqueFrame<M> {
         // SAFETY: We are the sole owner and the reference count is 0.
         // The slot is initialized.
         unsafe { self.slot().drop_last_in_place() };
+
+        super::allocator::dealloc_upcall(self.start_paddr(), PAGE_SIZE);
     }
 }
 

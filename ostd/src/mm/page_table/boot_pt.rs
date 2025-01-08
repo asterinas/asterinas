@@ -5,6 +5,8 @@
 //! in order to initialize the running phase page tables.
 
 use core::{
+    alloc::Layout,
+    mem::ManuallyDrop,
     result::Result,
     sync::atomic::{AtomicU32, Ordering},
 };
@@ -13,10 +15,10 @@ use super::{pte_index, PageTableEntryTrait};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     cpu::num_cpus,
-    cpu_local_cell,
+    cpu_local_cell, impl_frame_meta_for,
     mm::{
-        frame::allocator::FRAME_ALLOCATOR, nr_subpage_per_huge, paddr_to_vaddr, Paddr, PageFlags,
-        PageProperty, PagingConstsTrait, PagingLevel, Vaddr, PAGE_SIZE,
+        frame::allocator, nr_subpage_per_huge, paddr_to_vaddr, Frame, FrameAllocOptions, Paddr,
+        PageFlags, PageProperty, PagingConstsTrait, PagingLevel, Vaddr, PAGE_SIZE,
     },
     sync::SpinLock,
 };
@@ -96,6 +98,11 @@ pub(crate) struct BootPageTable<
     root_pt: FrameNumber,
     _pretend_to_use: core::marker::PhantomData<(E, C)>,
 }
+
+#[derive(Debug)]
+struct BootPageTableMeta;
+
+impl_frame_meta_for!(BootPageTableMeta);
 
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
     /// Creates a new boot page table from the current page table root
@@ -230,12 +237,23 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
     }
 
     fn alloc_child(&mut self) -> E {
-        let frame = FRAME_ALLOCATOR.get().unwrap().lock().alloc(1).unwrap();
+        let frame_paddr = if allocator::is_initialized() {
+            let frame = FrameAllocOptions::new()
+                .alloc_frame_with(BootPageTableMeta)
+                .unwrap();
+            frame.into_raw()
+        } else {
+            allocator::early_alloc(
+                Layout::from_size_align(C::BASE_PAGE_SIZE, C::BASE_PAGE_SIZE).unwrap(),
+            )
+            .unwrap()
+        };
+
         // Zero it out.
-        let vaddr = paddr_to_vaddr(frame * PAGE_SIZE) as *mut u8;
+        let vaddr = paddr_to_vaddr(frame_paddr) as *mut u8;
         unsafe { core::ptr::write_bytes(vaddr, 0, PAGE_SIZE) };
 
-        let mut pte = E::new_pt(frame * C::BASE_PAGE_SIZE);
+        let mut pte = E::new_pt(frame_paddr);
         let prop = pte.prop();
         pte.set_prop(PageProperty::new(
             prop.flags | PageFlags::AVAIL1,
@@ -243,6 +261,24 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
         ));
 
         pte
+    }
+
+    /// Initializes the metadata of the boot page table.
+    ///
+    /// In the early phase the frame allocator can't have metadata. But we later
+    /// use frame metadata to track the life cycle of page table frames.
+    ///
+    /// # Safety
+    ///
+    /// This function should be called only once after the metadata system is
+    /// initialized and before [`crate::mm::frame::allocator::init`].
+    pub(in crate::mm) unsafe fn initialize_metadata(&mut self) {
+        dfs_walk_on_leave::<E, C>(self.root_pt, C::NR_LEVELS, &mut |pte| {
+            if pte.prop().flags.contains(PageFlags::AVAIL1) {
+                let frame = Frame::<BootPageTableMeta>::from_unused(pte.paddr(), BootPageTableMeta);
+                let _ = ManuallyDrop::new(frame);
+            }
+        });
     }
 }
 
@@ -271,8 +307,8 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for BootPageTable<E, C> 
     fn drop(&mut self) {
         dfs_walk_on_leave::<E, C>(self.root_pt, C::NR_LEVELS, &mut |pte| {
             if pte.prop().flags.contains(PageFlags::AVAIL1) {
-                let pt = pte.paddr() / C::BASE_PAGE_SIZE;
-                FRAME_ALLOCATOR.get().unwrap().lock().dealloc(pt, 1);
+                // SAFETY: The pointed frame is allocated and forgotten with `into_raw`.
+                drop(unsafe { Frame::<BootPageTableMeta>::from_raw(pte.paddr()) })
             }
             // Firmware provided page tables may be a DAG instead of a tree.
             // Clear it to avoid double-free when we meet it the second time.
