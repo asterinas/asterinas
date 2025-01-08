@@ -148,6 +148,18 @@ fn parse_memory_regions(mb1_info: &MultibootLegacyInfo) -> MemoryRegionArray {
         ))
         .unwrap();
 
+    // Add the kernel cmdline and boot loader name region since Grub does not specify it.
+    regions
+        .push(MemoryRegion::from_early_str(parse_kernel_commandline(
+            mb1_info,
+        )))
+        .unwrap();
+    regions
+        .push(MemoryRegion::from_early_str(parse_bootloader_name(
+            mb1_info,
+        )))
+        .unwrap();
+
     regions.into_non_overlapping()
 }
 
