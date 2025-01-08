@@ -57,19 +57,5 @@ cpu_local_cell! {
     static PREEMPT_INFO: u32 = NEED_PREEMPT_MASK;
 }
 
-/// Resets the preempt info to the initial state.
-///
-/// # Safety
-///
-/// This function is only useful for the initialization of application
-/// processors' CPU-local storage. Because that the BSP should access the CPU-
-/// local storage (`PREEMPT_INFO`) (when doing heap allocation) before we can
-/// initialize the CPU-local storage for APs, the value of the AP's
-/// `PREEMPT_INFO` would be that of the BSP's. Therefore, we need to reset the
-/// `PREEMPT_INFO` to the initial state on APs' initialization.
-pub(crate) unsafe fn reset_preempt_info() {
-    PREEMPT_INFO.store(NEED_PREEMPT_MASK);
-}
-
 const NEED_PREEMPT_MASK: u32 = 1 << 31;
 const GUARD_COUNT_MASK: u32 = (1 << 31) - 1;
