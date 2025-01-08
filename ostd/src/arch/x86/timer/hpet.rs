@@ -11,7 +11,7 @@ use volatile::{
 };
 
 use crate::{
-    arch::x86::kernel::{acpi::ACPI_TABLES, apic::ioapic},
+    arch::x86::kernel::{acpi::get_acpi_tables, apic::ioapic},
     mm::paddr_to_vaddr,
     trap::IrqLine,
 };
@@ -135,11 +135,9 @@ impl Hpet {
 /// HPET init, need to init IOAPIC before init this function
 #[expect(dead_code)]
 pub fn init() -> Result<(), AcpiError> {
-    let hpet_info = {
-        let lock = ACPI_TABLES.get().unwrap().lock();
-        HpetInfo::new(&*lock)?
-    };
+    let tables = get_acpi_tables().unwrap();
 
+    let hpet_info = HpetInfo::new(&tables)?;
     assert_ne!(hpet_info.base_address, 0, "HPET address should not be zero");
 
     let base = NonNull::new(paddr_to_vaddr(hpet_info.base_address) as *mut u8).unwrap();
