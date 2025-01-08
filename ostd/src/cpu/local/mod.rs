@@ -34,16 +34,17 @@ mod cpu_local;
 
 pub(crate) mod single_instr;
 
-use alloc::vec::Vec;
+use core::alloc::Layout;
 
 use align_ext::AlignExt;
 pub use cell::CpuLocalCell;
 pub use cpu_local::{CpuLocal, CpuLocalDerefGuard};
 use spin::Once;
 
+use super::CpuId;
 use crate::{
     arch,
-    mm::{frame::Segment, kspace::KernelMeta, paddr_to_vaddr, FrameAllocOptions, PAGE_SIZE},
+    mm::{frame::allocator, paddr_to_vaddr, Paddr, PAGE_SIZE},
 };
 
 // These symbols are provided by the linker script.
@@ -52,29 +53,59 @@ extern "C" {
     fn __cpu_local_end();
 }
 
-/// Sets the base address of the CPU-local storage for the bootstrap processor.
-///
-/// It should be called early to let [`crate::task::disable_preempt`] work,
-/// which needs to update a CPU-local preemption info. Otherwise it may
-/// panic when calling [`crate::task::disable_preempt`]. It is needed since
-/// heap allocations need to disable preemption, which would happen in the
-/// very early stage of the kernel.
-///
-/// # Safety
-///
-/// It should be called only once and only on the BSP.
-pub(crate) unsafe fn early_init_bsp_local_base() {
-    let start_base_va = __cpu_local_start as usize as u64;
+/// The BSP initializes the CPU-local areas for APs.
+static CPU_LOCAL_STORAGES: Once<CpuLocalStoragePointers> = Once::new();
 
-    // SAFETY: The base to be set is the start of the `.cpu_local` section,
-    // where accessing the CPU-local objects have defined behaviors.
-    unsafe {
-        arch::cpu::local::set_base(start_base_va);
+struct CpuLocalStoragePointers(*mut Paddr);
+
+/// SAFETY: We only read from it once shared with APs.
+unsafe impl Sync for CpuLocalStoragePointers {}
+unsafe impl Send for CpuLocalStoragePointers {}
+
+impl CpuLocalStoragePointers {
+    fn allocate(num_cpus: usize) -> Self {
+        let num_cpus = num_cpus - 1; // BSP does not need allocated storage.
+
+        if num_cpus == 0 {
+            return Self(core::ptr::null_mut());
+        }
+
+        let size = (core::mem::size_of::<Paddr>() * num_cpus).align_up(PAGE_SIZE);
+        let addr =
+            allocator::early_alloc(Layout::from_size_align(size, PAGE_SIZE).unwrap()).unwrap();
+        let ptr = paddr_to_vaddr(addr) as *mut Paddr;
+        // SAFETY: The memory is allocated and the pointer is valid.
+        unsafe {
+            core::ptr::write_bytes(ptr as *mut u8, 0, size);
+        }
+        Self(ptr)
+    }
+
+    fn write(&mut self, cpu_id: CpuId, paddr: Paddr) {
+        if cpu_id.as_usize() == 0 {
+            panic!("The BSP does not have allocated CPU-local storage");
+        }
+        let offset = cpu_id.as_usize() - 1;
+        // SAFETY: The ID must be valid so the offset is in range.
+        unsafe { *self.0.add(offset) = paddr };
+    }
+
+    fn get(&self, cpu_id: CpuId) -> Paddr {
+        if cpu_id.as_usize() == 0 {
+            panic!("The BSP does not have allocated CPU-local storage");
+        }
+        let offset = cpu_id.as_usize() - 1;
+        // SAFETY: The ID must be valid so the offset is in range.
+        let paddr = unsafe { *self.0.add(offset) };
+        if paddr == 0 {
+            panic!(
+                "The CPU-local storage for CPU {} is not allocated",
+                cpu_id.as_usize()
+            );
+        }
+        paddr
     }
 }
-
-/// The BSP initializes the CPU-local areas for APs.
-static CPU_LOCAL_STORAGES: Once<Vec<Segment<KernelMeta>>> = Once::new();
 
 /// Initializes the CPU local data for the bootstrap processor (BSP).
 ///
@@ -91,16 +122,13 @@ pub unsafe fn init_on_bsp() {
 
     let num_cpus = super::num_cpus();
 
-    let mut cpu_local_storages = Vec::with_capacity(num_cpus - 1);
-    for _ in 1..num_cpus {
+    let mut cpu_local_storages = CpuLocalStoragePointers::allocate(num_cpus);
+    for id in 1..num_cpus {
         let ap_pages = {
             let nbytes = (bsp_end_va - bsp_base_va).align_up(PAGE_SIZE);
-            FrameAllocOptions::new()
-                .zeroed(false)
-                .alloc_segment_with(nbytes / PAGE_SIZE, |_| KernelMeta)
-                .unwrap()
+            allocator::early_alloc(Layout::from_size_align(nbytes, PAGE_SIZE).unwrap()).unwrap()
         };
-        let ap_pages_ptr = paddr_to_vaddr(ap_pages.start_paddr()) as *mut u8;
+        let ap_pages_ptr = paddr_to_vaddr(ap_pages) as *mut u8;
 
         // SAFETY: The BSP has not initialized the CPU-local area, so the objects in
         // in the `.cpu_local` section can be bitwise bulk copied to the AP's local
@@ -113,7 +141,7 @@ pub unsafe fn init_on_bsp() {
             );
         }
 
-        cpu_local_storages.push(ap_pages);
+        cpu_local_storages.write(CpuId::try_from(id).unwrap(), ap_pages);
     }
 
     CPU_LOCAL_STORAGES.call_once(|| cpu_local_storages);
@@ -132,17 +160,14 @@ pub unsafe fn init_on_ap(cpu_id: u32) {
     let ap_pages = CPU_LOCAL_STORAGES
         .get()
         .unwrap()
-        .get(cpu_id as usize - 1)
-        .unwrap();
+        .get(CpuId::try_from(cpu_id as usize).unwrap());
 
-    let ap_pages_ptr = paddr_to_vaddr(ap_pages.start_paddr()) as *mut u32;
+    let ap_pages_ptr = paddr_to_vaddr(ap_pages) as *mut u32;
 
     // SAFETY: the memory will be dedicated to the AP. And we are on the AP.
     unsafe {
         arch::cpu::local::set_base(ap_pages_ptr as u64);
     }
-
-    crate::task::reset_preempt_info();
 }
 
 mod has_init {

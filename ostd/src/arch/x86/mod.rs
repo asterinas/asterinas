@@ -63,19 +63,21 @@ pub(crate) fn init_cvm_guest() {
 
 static CPU_FEATURES: Once<FeatureInfo> = Once::new();
 
-pub(crate) fn init_on_bsp() {
+/// Architecture-specific initialization on the bootstrapping processor.
+///
+/// It should be called when the heap and frame allocators are available.
+///
+/// # Safety
+///
+/// This function must be called only once on the bootstrapping processor.
+pub(crate) unsafe fn late_init_on_bsp() {
     // SAFETY: this function is only called once on BSP.
     unsafe {
         crate::arch::trap::init(true);
     }
     irq::init();
-    kernel::acpi::init();
 
-    // SAFETY: they are only called once on BSP and ACPI has been initialized.
-    unsafe {
-        crate::cpu::init_num_cpus();
-        crate::cpu::set_this_cpu_id(0);
-    }
+    kernel::acpi::init();
 
     match kernel::apic::init() {
         Ok(_) => {
@@ -87,10 +89,6 @@ pub(crate) fn init_on_bsp() {
         }
     }
     serial::callback_init();
-
-    // SAFETY: no CPU local objects have been accessed by this far. And
-    // we are on the BSP.
-    unsafe { crate::cpu::local::init_on_bsp() };
 
     crate::boot::smp::boot_all_aps();
 
