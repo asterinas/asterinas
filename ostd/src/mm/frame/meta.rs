@@ -480,6 +480,7 @@ pub(crate) fn init() -> Segment<MetaPageMeta> {
     Segment::from_unused(meta_pages..meta_pages + nr_meta_pages * PAGE_SIZE, |_| {
         MetaPageMeta {}
     })
+    .unwrap()
 }
 
 fn alloc_meta_frames(tot_nr_frames: usize) -> (usize, Paddr) {
