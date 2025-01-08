@@ -39,6 +39,7 @@ pub(crate) mod mapping {
 }
 
 use core::{
+    alloc::Layout,
     any::Any,
     cell::UnsafeCell,
     fmt::Debug,
@@ -51,13 +52,12 @@ use align_ext::AlignExt;
 use log::info;
 use static_assertions::const_assert_eq;
 
-use super::{allocator, Segment};
 use crate::{
     arch::mm::PagingConsts,
     mm::{
-        kspace::LINEAR_MAPPING_BASE_VADDR, paddr_to_vaddr, page_size, page_table::boot_pt,
-        CachePolicy, Infallible, Paddr, PageFlags, PageProperty, PrivilegedPageFlags, Vaddr,
-        VmReader, PAGE_SIZE,
+        frame::allocator, kspace::LINEAR_MAPPING_BASE_VADDR, paddr_to_vaddr, page_size,
+        page_table::boot_pt, CachePolicy, Infallible, Paddr, PageFlags, PageProperty,
+        PrivilegedPageFlags, Segment, Vaddr, VmReader, PAGE_SIZE,
     },
     panic::abort,
 };
@@ -394,16 +394,6 @@ impl MetaSlot {
         // `Release` pairs with the `Acquire` in `Frame::from_unused` and ensures
         // `drop_meta_in_place` won't be reordered after this memory store.
         self.ref_count.store(REF_COUNT_UNUSED, Ordering::Release);
-
-        // Deallocate the frame.
-        // It would return the frame to the allocator for further use. This would be done
-        // after the release of the metadata to avoid re-allocation before the metadata
-        // is reset.
-        allocator::FRAME_ALLOCATOR
-            .get()
-            .unwrap()
-            .lock()
-            .dealloc(self.frame_paddr() / PAGE_SIZE, 1);
     }
 
     /// Drops the metadata of a slot in place.
@@ -488,6 +478,10 @@ pub(crate) fn init() -> Segment<MetaPageMeta> {
     .unwrap();
 
     // Now the metadata frames are mapped, we can initialize the metadata.
+
+    // SAFETY: The metadata system is initialized and the frame allocator isn't initialized yet.
+    boot_pt::with_borrow(|boot_pt| unsafe { boot_pt.initialize_metadata() }).unwrap();
+
     Segment::from_unused(meta_pages..meta_pages + nr_meta_pages * PAGE_SIZE, |_| {
         MetaPageMeta {}
     })
@@ -499,13 +493,10 @@ fn alloc_meta_frames(tot_nr_frames: usize) -> (usize, Paddr) {
         .checked_mul(size_of::<MetaSlot>())
         .unwrap()
         .div_ceil(PAGE_SIZE);
-    let start_paddr = allocator::FRAME_ALLOCATOR
-        .get()
-        .unwrap()
-        .lock()
-        .alloc(nr_meta_pages)
-        .unwrap()
-        * PAGE_SIZE;
+    let start_paddr = allocator::early_alloc(
+        Layout::from_size_align(nr_meta_pages * PAGE_SIZE, PAGE_SIZE).unwrap(),
+    )
+    .unwrap();
 
     let slots = paddr_to_vaddr(start_paddr) as *mut MetaSlot;
 
