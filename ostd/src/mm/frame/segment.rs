@@ -2,9 +2,13 @@
 
 //! A contiguous range of frames.
 
-use core::{mem::ManuallyDrop, ops::Range};
+use core::{mem::ManuallyDrop, ops::Range, sync::atomic::Ordering};
 
-use super::{inc_frame_ref_count, meta::AnyFrameMeta, Frame};
+use super::{
+    inc_frame_ref_count,
+    meta::{AnyFrameMeta, GetFrameError},
+    Frame,
+};
 use crate::mm::{AnyUFrameMeta, Paddr, PAGE_SIZE};
 
 /// A contiguous range of homogeneous physical memory frames.
@@ -67,22 +71,36 @@ impl<M: AnyFrameMeta> Segment<M> {
     /// The closure receives the physical address of the frame and returns the
     /// metadata, which is similar to [`core::array::from_fn`].
     ///
+    /// It returns an error if:
+    ///  - the physical address is invalid or not aligned;
+    ///  - any of the frames cannot be created with a specific reason.
+    ///
     /// # Panics
     ///
-    /// The function panics if:
-    ///  - the physical address is invalid or not aligned;
-    ///  - any of the frames are already in use.
-    pub fn from_unused<F>(range: Range<Paddr>, mut metadata_fn: F) -> Self
+    /// It panics if the range is empty.
+    pub fn from_unused<F>(range: Range<Paddr>, mut metadata_fn: F) -> Result<Self, GetFrameError>
     where
         F: FnMut(Paddr) -> M,
     {
-        for paddr in range.clone().step_by(PAGE_SIZE) {
-            let _ = ManuallyDrop::new(Frame::<M>::from_unused(paddr, metadata_fn(paddr)));
+        if range.start % PAGE_SIZE != 0 || range.end % PAGE_SIZE != 0 {
+            return Err(GetFrameError::NotAligned);
         }
-        Self {
-            range,
+        if range.end >= super::MAX_PADDR.load(Ordering::Relaxed) {
+            return Err(GetFrameError::OutOfBound);
+        }
+        assert!(range.start < range.end);
+        // Construct a segment early to recycle previously forgotten frames if
+        // the subsequent operations fails in the middle.
+        let mut segment = Self {
+            range: range.start..range.start,
             _marker: core::marker::PhantomData,
+        };
+        for paddr in range.step_by(PAGE_SIZE) {
+            let frame = Frame::<M>::from_unused(paddr, metadata_fn(paddr))?;
+            let _ = ManuallyDrop::new(frame);
+            segment.range.end = paddr + PAGE_SIZE;
         }
+        Ok(segment)
     }
 }
 

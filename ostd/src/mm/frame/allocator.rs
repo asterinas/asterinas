@@ -104,6 +104,7 @@ impl FrameAllocOptions {
                     start * PAGE_SIZE..start * PAGE_SIZE + nframes * PAGE_SIZE,
                     metadata_fn,
                 )
+                .unwrap()
             })
             .ok_or(Error::NoMemory)?;
 
