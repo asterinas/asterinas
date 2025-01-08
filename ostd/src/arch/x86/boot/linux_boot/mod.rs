@@ -12,7 +12,7 @@ use crate::{
         memory_region::{MemoryRegion, MemoryRegionArray, MemoryRegionType},
         BootloaderAcpiArg, BootloaderFramebufferArg,
     },
-    mm::kspace::{paddr_to_vaddr, LINEAR_MAPPING_BASE_VADDR},
+    mm::kspace::{paddr_to_vaddr, KERNEL_CODE_BASE_VADDR, LINEAR_MAPPING_BASE_VADDR},
 };
 
 fn parse_bootloader_name(boot_params: &BootParams) -> &str {
@@ -140,17 +140,22 @@ fn parse_memory_regions(boot_params: &BootParams) -> MemoryRegionArray {
         ))
         .unwrap();
 
-    // Add the kernel cmdline and boot loader name region.
-    regions
-        .push(MemoryRegion::from_early_str(parse_kernel_commandline(
-            boot_params,
-        )))
-        .unwrap();
-    regions
-        .push(MemoryRegion::from_early_str(parse_bootloader_name(
-            boot_params,
-        )))
-        .unwrap();
+    // Add the region of the kernel cmdline since some bootloaders do not provide it.
+    let kcmdline_str = parse_kernel_commandline(boot_params);
+    let mut start_addr = kcmdline_str.as_ptr() as usize;
+    let len = kcmdline_str.len();
+    if start_addr < KERNEL_CODE_BASE_VADDR {
+        if start_addr >= LINEAR_MAPPING_BASE_VADDR {
+            start_addr -= LINEAR_MAPPING_BASE_VADDR;
+        }
+        regions
+            .push(MemoryRegion::new(
+                start_addr,
+                len,
+                MemoryRegionType::Reclaimable,
+            ))
+            .unwrap();
+    }
 
     regions.into_non_overlapping()
 }

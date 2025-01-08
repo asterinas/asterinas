@@ -39,25 +39,25 @@ pub(crate) mod mapping {
 }
 
 use core::{
+    alloc::Layout,
     any::Any,
     cell::UnsafeCell,
     fmt::Debug,
     mem::{size_of, MaybeUninit},
     result::Result,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
 use align_ext::AlignExt;
 use log::info;
 use static_assertions::const_assert_eq;
 
-use super::{allocator, Segment};
 use crate::{
     arch::mm::PagingConsts,
     mm::{
-        kspace::LINEAR_MAPPING_BASE_VADDR, paddr_to_vaddr, page_size, page_table::boot_pt,
-        CachePolicy, Infallible, Paddr, PageFlags, PageProperty, PrivilegedPageFlags, Vaddr,
-        VmReader, PAGE_SIZE,
+        frame::allocator, kspace::LINEAR_MAPPING_BASE_VADDR, paddr_to_vaddr, page_size,
+        page_table::boot_pt, CachePolicy, Infallible, Paddr, PageFlags, PageProperty,
+        PrivilegedPageFlags, Segment, Vaddr, VmReader, PAGE_SIZE,
     },
     panic::abort,
 };
@@ -397,16 +397,6 @@ impl MetaSlot {
         // `Release` pairs with the `Acquire` in `Frame::from_unused` and ensures
         // `drop_meta_in_place` won't be reordered after this memory store.
         self.ref_count.store(REF_COUNT_UNUSED, Ordering::Release);
-
-        // Deallocate the frame.
-        // It would return the frame to the allocator for further use. This would be done
-        // after the release of the metadata to avoid re-allocation before the metadata
-        // is reset.
-        allocator::FRAME_ALLOCATOR
-            .get()
-            .unwrap()
-            .lock()
-            .dealloc(self.frame_paddr() / PAGE_SIZE, 1);
     }
 
     /// Drops the metadata of a slot in place.
@@ -474,10 +464,10 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
 
     add_temp_linear_mapping(max_paddr);
 
-    super::MAX_PADDR.store(max_paddr, Ordering::Relaxed);
-
     let tot_nr_frames = max_paddr / page_size::<PagingConsts>(1);
     let (nr_meta_pages, meta_pages) = alloc_meta_frames(tot_nr_frames);
+
+    super::MAX_PADDR.store(max_paddr, Ordering::Relaxed);
 
     // Map the metadata frames.
     boot_pt::with_borrow(|boot_pt| {
@@ -496,10 +486,30 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
     .unwrap();
 
     // Now the metadata frames are mapped, we can initialize the metadata.
-    Segment::from_unused(meta_pages..meta_pages + nr_meta_pages * PAGE_SIZE, |_| {
+
+    boot_pt::with_borrow(|boot_pt| boot_pt.initialize_frame_metadata()).unwrap();
+
+    // SAFETY: It is required to be called here once.
+    unsafe { crate::cpu::local::initialize_frame_metadata() };
+
+    let meta_seg = Segment::from_unused(meta_pages..meta_pages + nr_meta_pages * PAGE_SIZE, |_| {
         MetaPageMeta {}
     })
-    .unwrap()
+    .unwrap();
+
+    IS_INITIALIZED.store(true, Ordering::Relaxed);
+
+    meta_seg
+}
+
+static IS_INITIALIZED: AtomicBool = AtomicBool::new(false);
+
+/// Returns whether the global frame allocator is initialized.
+pub(in crate::mm) fn is_initialized() -> bool {
+    // `init` sets it with relaxed ordering somewhere in the middle. But due
+    // to the safety requirement of the `init` function, we can assume that
+    // there is no race conditions.
+    IS_INITIALIZED.load(Ordering::Relaxed)
 }
 
 fn alloc_meta_frames(tot_nr_frames: usize) -> (usize, Paddr) {
@@ -507,13 +517,10 @@ fn alloc_meta_frames(tot_nr_frames: usize) -> (usize, Paddr) {
         .checked_mul(size_of::<MetaSlot>())
         .unwrap()
         .div_ceil(PAGE_SIZE);
-    let start_paddr = allocator::FRAME_ALLOCATOR
-        .get()
-        .unwrap()
-        .lock()
-        .alloc(nr_meta_pages)
-        .unwrap()
-        * PAGE_SIZE;
+    let start_paddr = allocator::early_alloc(
+        Layout::from_size_align(nr_meta_pages * PAGE_SIZE, PAGE_SIZE).unwrap(),
+    )
+    .unwrap();
 
     let slots = paddr_to_vaddr(start_paddr) as *mut MetaSlot;
 
@@ -535,14 +542,6 @@ fn alloc_meta_frames(tot_nr_frames: usize) -> (usize, Paddr) {
     }
 
     (nr_meta_pages, start_paddr)
-}
-
-/// Returns whether the global frame allocator is initialized.
-pub(in crate::mm) fn is_initialized() -> bool {
-    // `init` sets it somewhere in the middle. But due to the safety
-    // requirement of the `init` function, we can assume that there
-    // is no race condition.
-    super::MAX_PADDR.load(Ordering::Relaxed) != 0
 }
 
 /// Adds a temporary linear mapping for the metadata frames.

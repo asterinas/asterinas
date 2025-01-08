@@ -5,10 +5,7 @@
 
 use core::ops::Deref;
 
-use crate::mm::{
-    kspace::{kernel_loaded_offset, KERNEL_CODE_BASE_VADDR, LINEAR_MAPPING_BASE_VADDR},
-    Paddr,
-};
+use crate::mm::kspace::kernel_loaded_offset;
 
 /// The type of initial memory regions that are needed for the kernel.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -69,26 +66,6 @@ impl MemoryRegion {
             base: __kernel_start as usize - kernel_loaded_offset(),
             len: __kernel_end as usize - __kernel_start as usize,
             typ: MemoryRegionType::Kernel,
-        }
-    }
-
-    /// Constructs a memory region from a slice of early boot data.
-    ///
-    /// This helps marking the memory containing early boot data, as it may not
-    /// be sent to the frame allocator but it is reclaimable after boot.
-    pub fn from_early_str(slice: &str) -> Self {
-        let mut base = slice.as_ptr() as Paddr;
-
-        if base > KERNEL_CODE_BASE_VADDR {
-            base -= KERNEL_CODE_BASE_VADDR;
-        } else if base > LINEAR_MAPPING_BASE_VADDR {
-            base -= LINEAR_MAPPING_BASE_VADDR;
-        }
-
-        MemoryRegion {
-            base,
-            len: slice.len(),
-            typ: MemoryRegionType::Reclaimable,
         }
     }
 
