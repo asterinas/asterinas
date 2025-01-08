@@ -8,7 +8,7 @@
         "result_index": 6
     },
     "chart": {
-        "title": "[TCP sockets] The latency of connect",
+        "title": "[TCP sockets] The latency of connect (loopback)",
         "description": "lat_connect",
         "unit": "\u00b5s",
         "legend": "Average TCP connection latency on {system}"
