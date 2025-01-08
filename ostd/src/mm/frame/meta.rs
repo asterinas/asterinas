@@ -442,7 +442,12 @@ impl_frame_meta_for!(MetaPageMeta);
 /// Initializes the metadata of all physical frames.
 ///
 /// The function returns a list of `Frame`s containing the metadata.
-pub(crate) fn init() -> Segment<MetaPageMeta> {
+///
+/// # Safety
+///
+/// This function should be called only once and only on the BSP,
+/// before any APs are started.
+pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
     let max_paddr = {
         let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
         regions.iter().map(|r| r.base() + r.len()).max().unwrap()
@@ -516,6 +521,14 @@ fn alloc_meta_frames(tot_nr_frames: usize) -> (usize, Paddr) {
     }
 
     (nr_meta_pages, start_paddr)
+}
+
+/// Returns whether the global frame allocator is initialized.
+pub(in crate::mm) fn is_initialized() -> bool {
+    // `init` sets it somewhere in the middle. But due to the safety
+    // requirement of the `init` function, we can assume that there
+    // is no race condition.
+    super::MAX_PADDR.load(Ordering::Relaxed) != 0
 }
 
 /// Adds a temporary linear mapping for the metadata frames.

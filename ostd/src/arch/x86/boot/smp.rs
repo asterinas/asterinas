@@ -27,11 +27,9 @@
 //! This sequence does not need to be strictly followed, and there may be
 //! different considerations in different systems.
 
-use acpi::platform::PlatformInfo;
-
 use crate::{
     arch::x86::kernel::{
-        acpi::ACPI_TABLES,
+        acpi::get_acpi_tables,
         apic::{
             self, ApicId, DeliveryMode, DeliveryStatus, DestinationMode, DestinationShorthand, Icr,
             Level, TriggerMode,
@@ -44,14 +42,19 @@ use crate::{
 ///
 /// This function needs to be called after the OS initializes the ACPI table.
 pub(crate) fn get_num_processors() -> Option<u32> {
-    if !ACPI_TABLES.is_completed() {
-        return None;
-    }
-    let processor_info = PlatformInfo::new(&*ACPI_TABLES.get().unwrap().lock())
+    let acpi_tables = get_acpi_tables()?;
+    let mut local_apic_counts = 0;
+    acpi_tables
+        .find_table::<acpi::madt::Madt>()
         .unwrap()
-        .processor_info
-        .unwrap();
-    Some(processor_info.application_processors.len() as u32 + 1)
+        .entries()
+        .for_each(|entry| {
+            if let acpi::madt::MadtEntry::LocalApic(_) = entry {
+                local_apic_counts += 1;
+            }
+        });
+
+    Some(local_apic_counts)
 }
 
 /// Brings up all application processors.
