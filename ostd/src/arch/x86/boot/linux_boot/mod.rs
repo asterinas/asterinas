@@ -12,7 +12,10 @@ use crate::{
         memory_region::{MemoryRegion, MemoryRegionArray, MemoryRegionType},
         BootloaderAcpiArg, BootloaderFramebufferArg,
     },
-    mm::kspace::{paddr_to_vaddr, LINEAR_MAPPING_BASE_VADDR},
+    mm::{
+        kspace::{paddr_to_vaddr, LINEAR_MAPPING_BASE_VADDR},
+        Paddr,
+    },
 };
 
 fn parse_bootloader_name(boot_params: &BootParams) -> &str {
@@ -44,8 +47,9 @@ fn parse_bootloader_name(boot_params: &BootParams) -> &str {
 }
 
 fn parse_kernel_commandline(boot_params: &BootParams) -> &str {
+    let ptr = paddr_to_vaddr(boot_params.hdr.cmd_line_ptr as usize) as *const i8;
     // SAFETY: The pointer in the header points to a valid C string.
-    let cmdline_c_str: &CStr = unsafe { CStr::from_ptr(boot_params.hdr.cmd_line_ptr as *const i8) };
+    let cmdline_c_str: &CStr = unsafe { CStr::from_ptr(ptr) };
     let cmdline_str = cmdline_c_str.to_str().unwrap();
     cmdline_str
 }
@@ -136,6 +140,16 @@ fn parse_memory_regions(boot_params: &BootParams) -> MemoryRegionArray {
         .push(MemoryRegion::new(
             super::smp::AP_BOOT_START_PA,
             super::smp::ap_boot_code_size(),
+            MemoryRegionType::Reclaimable,
+        ))
+        .unwrap();
+
+    // Add the region of the kernel cmdline since some bootloaders do not provide it.
+    let kcmdline_str = parse_kernel_commandline(boot_params);
+    regions
+        .push(MemoryRegion::new(
+            kcmdline_str.as_ptr() as Paddr - LINEAR_MAPPING_BASE_VADDR,
+            kcmdline_str.len(),
             MemoryRegionType::Reclaimable,
         ))
         .unwrap();

@@ -10,7 +10,10 @@ use crate::{
         memory_region::{MemoryRegion, MemoryRegionArray, MemoryRegionType},
         BootloaderAcpiArg, BootloaderFramebufferArg,
     },
-    mm::kspace::paddr_to_vaddr,
+    mm::{
+        kspace::{paddr_to_vaddr, LINEAR_MAPPING_BASE_VADDR},
+        Paddr,
+    },
 };
 
 global_asm!(include_str!("header.S"));
@@ -20,23 +23,41 @@ pub(super) const MULTIBOOT2_ENTRY_MAGIC: u32 = 0x36d76289;
 static MB2_INFO: Once<BootInformation> = Once::new();
 
 fn parse_bootloader_name() -> &'static str {
-    MB2_INFO
+    let s = MB2_INFO
         .get()
         .unwrap()
         .boot_loader_name_tag()
         .expect("Bootloader name not found from the Multiboot2 header!")
         .name()
-        .expect("UTF-8 error: failed to parse bootloader name!")
+        .expect("UTF-8 error: failed to parse bootloader name!");
+    let pa = s.as_ptr() as Paddr;
+    // SAFETY: We just convert this to virtual address.
+    unsafe {
+        core::str::from_utf8(core::slice::from_raw_parts(
+            paddr_to_vaddr(pa) as *const u8,
+            s.len(),
+        ))
+        .unwrap()
+    }
 }
 
 fn parse_kernel_commandline() -> &'static str {
-    MB2_INFO
+    let s = MB2_INFO
         .get()
         .unwrap()
         .command_line_tag()
         .expect("Kernel command-line not found from the Multiboot2 header!")
         .cmdline()
-        .expect("UTF-8 error: failed to parse kernel command-line!")
+        .expect("UTF-8 error: failed to parse kernel command-line!");
+    let pa = s.as_ptr() as Paddr;
+    // SAFETY: We just convert this to virtual address.
+    unsafe {
+        core::str::from_utf8(core::slice::from_raw_parts(
+            paddr_to_vaddr(pa) as *const u8,
+            s.len(),
+        ))
+        .unwrap()
+    }
 }
 
 fn parse_initramfs() -> Option<&'static [u8]> {
@@ -142,6 +163,24 @@ fn parse_memory_regions() -> MemoryRegionArray {
         .push(MemoryRegion::new(
             super::smp::AP_BOOT_START_PA,
             super::smp::ap_boot_code_size(),
+            MemoryRegionType::Reclaimable,
+        ))
+        .unwrap();
+
+    // Add the kernel cmdline and boot loader name region since Grub does not specify it.
+    let kcmdline = parse_kernel_commandline();
+    regions
+        .push(MemoryRegion::new(
+            kcmdline.as_ptr() as Paddr - LINEAR_MAPPING_BASE_VADDR,
+            kcmdline.len(),
+            MemoryRegionType::Reclaimable,
+        ))
+        .unwrap();
+    let bootloader_name = parse_bootloader_name();
+    regions
+        .push(MemoryRegion::new(
+            bootloader_name.as_ptr() as Paddr - LINEAR_MAPPING_BASE_VADDR,
+            bootloader_name.len(),
             MemoryRegionType::Reclaimable,
         ))
         .unwrap();
