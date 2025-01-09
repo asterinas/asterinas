@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::RawSocketOption;
+use super::OrigSocketOption;
 use crate::{
-    impl_raw_sock_option_get_only, impl_raw_socket_option,
+    impl_orig_sock_option_get_only, impl_orig_socket_option,
     net::socket::options::{
         Error, KeepAlive, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf, SocketOption,
     },
@@ -38,7 +38,7 @@ enum CSocketOptionName {
     SNDTIMEO_NEW = 67,
 }
 
-pub fn new_socket_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
+pub fn new_socket_option(name: i32) -> Result<Box<dyn OrigSocketOption>> {
     let name = CSocketOptionName::try_from(name).map_err(|_| Errno::ENOPROTOOPT)?;
     match name {
         CSocketOptionName::SNDBUF => Ok(Box::new(SendBuf::new())),
@@ -52,10 +52,10 @@ pub fn new_socket_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
     }
 }
 
-impl_raw_socket_option!(SendBuf);
-impl_raw_socket_option!(RecvBuf);
-impl_raw_socket_option!(ReuseAddr);
-impl_raw_sock_option_get_only!(Error);
-impl_raw_socket_option!(ReusePort);
-impl_raw_socket_option!(Linger);
-impl_raw_socket_option!(KeepAlive);
+impl_orig_socket_option!(SendBuf);
+impl_orig_socket_option!(RecvBuf);
+impl_orig_socket_option!(ReuseAddr);
+impl_orig_sock_option_get_only!(Error);
+impl_orig_socket_option!(ReusePort);
+impl_orig_socket_option!(Linger);
+impl_orig_socket_option!(KeepAlive);

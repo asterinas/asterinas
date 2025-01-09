@@ -12,9 +12,9 @@
 //! space and user space. For example, for the option `ReusePort`, the user space may use an i32 while
 //! the kernel space may use a bool.
 //!
-//! We introduce the `RawSocketOption` trait for reading/writing socket options from/to user space. It
+//! We introduce the `OrigSocketOption` trait for reading/writing socket options from/to user space. It
 //! can read/write values of different types and can convert the user type to the kernel type when
-//! reading from the user space and vice versa when writing to the user space. The `RawSocketOption`
+//! reading from the user space and vice versa when writing to the user space. The `OrigSocketOption`
 //! should not be implemented for a type by hand, and we provide macros to automatically implement the
 //! trait.
 //!
@@ -41,11 +41,11 @@
 //! }
 //! ```
 //!
-//! At last, we can implement `RawSocketOption` for `TcpNodelay` so that it can be read/from
+//! At last, we can implement `OrigSocketOption` for `TcpNodelay` so that it can be read/from
 //! user space.
 //!
 //! ```rust no_run
-//! impl_raw_socket_option!(TcpNodeley);
+//! impl_orig_socket_option!(TcpNodeley);
 //! ```
 //!
 //! At the syscall level, the interface is unified for all options and does not need to be modified.
@@ -59,7 +59,7 @@ mod utils;
 
 use self::{socket::new_socket_option, tcp::new_tcp_option};
 
-pub trait RawSocketOption: SocketOption {
+pub trait OrigSocketOption: SocketOption {
     fn read_from_user(&mut self, addr: Vaddr, max_len: u32) -> Result<()>;
 
     fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize>;
@@ -69,11 +69,11 @@ pub trait RawSocketOption: SocketOption {
     fn as_sock_option(&self) -> &dyn SocketOption;
 }
 
-/// Impl `RawSocketOption` for a struct which implements `SocketOption`.
+/// Impl `OrigSocketOption` for a struct which implements `SocketOption`.
 #[macro_export]
-macro_rules! impl_raw_socket_option {
+macro_rules! impl_orig_socket_option {
     ($option:ty) => {
-        impl RawSocketOption for $option {
+        impl OrigSocketOption for $option {
             fn read_from_user(&mut self, addr: Vaddr, max_len: u32) -> Result<()> {
                 use $crate::util::net::options::utils::ReadFromUser;
 
@@ -100,11 +100,11 @@ macro_rules! impl_raw_socket_option {
     };
 }
 
-/// Impl `RawSocketOption` for a struct which is for only `getsockopt` and implements `SocketOption`.
+/// Impl `OrigSocketOption` for a struct which is for only `getsockopt` and implements `SocketOption`.
 #[macro_export]
-macro_rules! impl_raw_sock_option_get_only {
+macro_rules! impl_orig_sock_option_get_only {
     ($option:ty) => {
-        impl RawSocketOption for $option {
+        impl OrigSocketOption for $option {
             fn read_from_user(&mut self, _addr: Vaddr, _max_len: u32) -> Result<()> {
                 return_errno_with_message!(Errno::ENOPROTOOPT, "the option is getter-only");
             }
@@ -127,10 +127,10 @@ macro_rules! impl_raw_sock_option_get_only {
     };
 }
 
-pub fn new_raw_socket_option(
+pub fn new_orig_socket_option(
     level: CSocketOptionLevel,
     name: i32,
-) -> Result<Box<dyn RawSocketOption>> {
+) -> Result<Box<dyn OrigSocketOption>> {
     match level {
         CSocketOptionLevel::SOL_SOCKET => new_socket_option(name),
         CSocketOptionLevel::SOL_TCP => new_tcp_option(name),
