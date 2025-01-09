@@ -18,9 +18,9 @@ use takeable::Takeable;
 
 use super::{
     event::{SocketEventObserver, SocketEvents},
-    option::{RawTcpOption, RawTcpSetOption},
+    option::{SmolTcpOption, SmolTcpSetOption},
     unbound::{new_tcp_socket, new_udp_socket},
-    RawTcpSocket, RawUdpSocket, TcpStateCheck,
+    SmolTcpSocket, SmolUdpSocket, TcpStateCheck,
 };
 use crate::{
     errors::{
@@ -64,32 +64,32 @@ pub struct SocketBg<T: Inner<E>, E: Ext> {
 
 /// States needed by [`TcpConnectionBg`].
 pub struct TcpConnectionInner<E: Ext> {
-    socket: SpinLock<RawTcpSocketExt<E>, LocalIrqDisabled>,
+    socket: SpinLock<SmolTcpSocketExt<E>, LocalIrqDisabled>,
     is_dead: AtomicBool,
     connection_key: ConnectionKey,
 }
 
-struct RawTcpSocketExt<E: Ext> {
-    socket: Box<RawTcpSocket>,
+struct SmolTcpSocketExt<E: Ext> {
+    socket: Box<SmolTcpSocket>,
     listener: Option<Arc<TcpListenerBg<E>>>,
     has_connected: bool,
 }
 
-impl<E: Ext> Deref for RawTcpSocketExt<E> {
-    type Target = RawTcpSocket;
+impl<E: Ext> Deref for SmolTcpSocketExt<E> {
+    type Target = SmolTcpSocket;
 
     fn deref(&self) -> &Self::Target {
         &self.socket
     }
 }
 
-impl<E: Ext> DerefMut for RawTcpSocketExt<E> {
+impl<E: Ext> DerefMut for SmolTcpSocketExt<E> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.socket
     }
 }
 
-impl<E: Ext> RawTcpSocketExt<E> {
+impl<E: Ext> SmolTcpSocketExt<E> {
     fn on_new_state(&mut self, this: &Arc<TcpConnectionBg<E>>) -> SocketEvents {
         if self.may_send() && !self.has_connected {
             self.has_connected = true;
@@ -144,7 +144,7 @@ impl<E: Ext> RawTcpSocketExt<E> {
 }
 
 impl<E: Ext> TcpConnectionInner<E> {
-    fn new(socket: Box<RawTcpSocket>, listener: Option<Arc<TcpListenerBg<E>>>) -> Self {
+    fn new(socket: Box<SmolTcpSocket>, listener: Option<Arc<TcpListenerBg<E>>>) -> Self {
         let connection_key = {
             // Since the socket is connected, the following unwrap can never fail
             let local_endpoint = socket.local_endpoint().unwrap();
@@ -152,7 +152,7 @@ impl<E: Ext> TcpConnectionInner<E> {
             ConnectionKey::from((local_endpoint, remote_endpoint))
         };
 
-        let socket_ext = RawTcpSocketExt {
+        let socket_ext = SmolTcpSocketExt {
             socket,
             listener,
             has_connected: false,
@@ -165,7 +165,7 @@ impl<E: Ext> TcpConnectionInner<E> {
         }
     }
 
-    fn lock(&self) -> SpinLockGuard<RawTcpSocketExt<E>, LocalIrqDisabled> {
+    fn lock(&self) -> SpinLockGuard<SmolTcpSocketExt<E>, LocalIrqDisabled> {
         self.socket.lock()
     }
 
@@ -181,7 +181,7 @@ impl<E: Ext> TcpConnectionInner<E> {
     /// See [`TcpConnectionBg::is_dead`] for the definition of dead TCP connections.
     ///
     /// [`TimeWait`]: smoltcp::socket::tcp::State::TimeWait
-    fn set_dead_timewait(&self, socket: &RawTcpSocketExt<E>) {
+    fn set_dead_timewait(&self, socket: &SmolTcpSocketExt<E>) {
         debug_assert!(socket.state() == smoltcp::socket::tcp::State::TimeWait);
         self.is_dead.store(true, Ordering::Relaxed);
     }
@@ -204,7 +204,7 @@ impl<E: Ext> Inner<E> for TcpConnectionInner<E> {
 }
 
 pub struct TcpBacklog<E: Ext> {
-    socket: Box<RawTcpSocket>,
+    socket: Box<SmolTcpSocket>,
     max_conn: usize,
     connecting: BTreeMap<ConnectionKey, TcpConnection<E>>,
     connected: Vec<TcpConnection<E>>,
@@ -250,7 +250,7 @@ impl<E: Ext> Inner<E> for TcpListenerInner<E> {
 }
 
 /// States needed by [`UdpSocketBg`].
-type UdpSocketInner = SpinLock<Box<RawUdpSocket>, LocalIrqDisabled>;
+type UdpSocketInner = SpinLock<Box<SmolUdpSocket>, LocalIrqDisabled>;
 
 impl<E: Ext> Inner<E> for UdpSocketInner {
     type Observer = E::UdpEventObserver;
@@ -341,7 +341,7 @@ impl<E: Ext> TcpConnection<E> {
     pub fn new_connect(
         bound: BoundPort<E>,
         remote_endpoint: IpEndpoint,
-        option: &RawTcpOption,
+        option: &SmolTcpOption,
         observer: E::TcpEventObserver,
     ) -> Result<Self, (BoundPort<E>, ConnectError)> {
         let Some(local_endpoint) = bound.endpoint() else {
@@ -467,20 +467,20 @@ impl<E: Ext> TcpConnection<E> {
         self.0.update_next_poll_at_ms(PollAt::Now);
     }
 
-    /// Calls `f` with an immutable reference to the associated [`RawTcpSocket`].
+    /// Calls `f` with an immutable reference to the associated [`SmolTcpSocket`].
     //
     // NOTE: If a mutable reference is required, add a method above that correctly updates the next
     // polling time.
-    pub fn raw_with<F, R>(&self, f: F) -> R
+    pub fn smol_with<F, R>(&self, f: F) -> R
     where
-        F: FnOnce(&RawTcpSocket) -> R,
+        F: FnOnce(&SmolTcpSocket) -> R,
     {
         let socket = self.0.inner.lock();
         f(&socket)
     }
 }
 
-impl<E: Ext> RawTcpSetOption for TcpConnection<E> {
+impl<E: Ext> SmolTcpSetOption for TcpConnection<E> {
     fn set_keep_alive(&self, interval: Option<Duration>) -> NeedIfacePoll {
         let mut socket = self.0.inner.lock();
         socket.set_keep_alive(interval);
@@ -506,7 +506,7 @@ impl<E: Ext> TcpListener<E> {
     pub fn new_listen(
         bound: BoundPort<E>,
         max_conn: usize,
-        option: &RawTcpOption,
+        option: &SmolTcpOption,
         observer: E::TcpEventObserver,
     ) -> Result<Self, (BoundPort<E>, ListenError)> {
         let Some(local_endpoint) = bound.endpoint() else {
@@ -582,7 +582,7 @@ impl<E: Ext> TcpListener<E> {
     }
 }
 
-impl<E: Ext> RawTcpSetOption for TcpListener<E> {
+impl<E: Ext> SmolTcpSetOption for TcpListener<E> {
     fn set_keep_alive(&self, interval: Option<Duration>) -> NeedIfacePoll {
         let mut backlog = self.0.inner.backlog.lock();
         backlog.socket.set_keep_alive(interval);
@@ -673,13 +673,13 @@ impl<E: Ext> UdpSocket<E> {
         Ok(result)
     }
 
-    /// Calls `f` with an immutable reference to the associated [`RawUdpSocket`].
+    /// Calls `f` with an immutable reference to the associated [`SmolUdpSocket`].
     //
     // NOTE: If a mutable reference is required, add a method above that correctly updates the next
     // polling time.
-    pub fn raw_with<F, R>(&self, f: F) -> R
+    pub fn smol_with<F, R>(&self, f: F) -> R
     where
-        F: FnOnce(&RawUdpSocket) -> R,
+        F: FnOnce(&SmolUdpSocket) -> R,
     {
         let socket = self.0.inner.lock();
         f(&socket)
@@ -939,7 +939,7 @@ impl<E: Ext> TcpListenerBg<E> {
 
         let new_socket = {
             let mut socket = new_tcp_socket();
-            RawTcpOption::inherit(&backlog.socket, &mut socket);
+            SmolTcpOption::inherit(&backlog.socket, &mut socket);
             socket.listen(backlog.socket.listen_endpoint()).unwrap();
             socket
         };

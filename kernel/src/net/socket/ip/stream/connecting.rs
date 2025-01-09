@@ -2,7 +2,7 @@
 
 use aster_bigtcp::{
     errors::tcp::ConnectError,
-    socket::{ConnectState, RawTcpOption, RawTcpSetOption},
+    socket::{ConnectState, SmolTcpOption, SmolTcpSetOption},
     wire::IpEndpoint,
 };
 
@@ -28,7 +28,7 @@ impl ConnectingStream {
     pub fn new(
         bound_port: BoundPort,
         remote_endpoint: IpEndpoint,
-        option: &RawTcpOption,
+        option: &SmolTcpOption,
         observer: StreamObserver,
     ) -> core::result::Result<Self, (Error, BoundPort)> {
         let tcp_conn =
@@ -104,9 +104,9 @@ impl ConnectingStream {
         IoEvents::empty()
     }
 
-    pub(super) fn set_raw_option<R>(
+    pub(super) fn set_smol_option<R>(
         &self,
-        set_option: impl FnOnce(&dyn RawTcpSetOption) -> R,
+        set_option: impl FnOnce(&dyn SmolTcpSetOption) -> R,
     ) -> R {
         set_option(&self.tcp_conn)
     }

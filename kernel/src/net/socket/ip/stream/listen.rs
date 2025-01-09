@@ -2,7 +2,7 @@
 
 use aster_bigtcp::{
     errors::tcp::ListenError,
-    socket::{RawTcpOption, RawTcpSetOption},
+    socket::{SmolTcpOption, SmolTcpSetOption},
     wire::IpEndpoint,
 };
 
@@ -21,7 +21,7 @@ impl ListenStream {
     pub fn new(
         bound_port: BoundPort,
         backlog: usize,
-        option: &RawTcpOption,
+        option: &SmolTcpOption,
         observer: StreamObserver,
     ) -> core::result::Result<Self, (BoundPort, Error)> {
         const SOMAXCONN: usize = 4096;
@@ -67,9 +67,9 @@ impl ListenStream {
         }
     }
 
-    pub(super) fn set_raw_option<R>(
+    pub(super) fn set_smol_option<R>(
         &self,
-        set_option: impl FnOnce(&dyn RawTcpSetOption) -> R,
+        set_option: impl FnOnce(&dyn SmolTcpSetOption) -> R,
     ) -> R {
         set_option(&self.tcp_listener)
     }
