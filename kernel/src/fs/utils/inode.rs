@@ -497,7 +497,7 @@ pub trait Inode: Any + Sync + Send {
         None
     }
 
-    ///  Used to check for read/write/execute permissions on a file.
+    /// Used to check for read/write/execute permissions on a file.
     ///
     /// Similar to Linux, using "fsuid" here allows setting filesystem permissions
     /// without changing the "normal" uids for other tasks.
@@ -512,16 +512,17 @@ pub trait Inode: Any + Sync + Send {
 
         perm =
             perm.intersection(Permission::MAY_READ | Permission::MAY_WRITE | Permission::MAY_EXEC);
-        let mode = self.mode().unwrap();
+        let metadata = self.metadata();
+        let mode = metadata.mode;
 
-        if self.metadata().uid == creds.fsuid() {
+        if metadata.uid == creds.fsuid() {
             if (perm.may_read() && !mode.is_owner_readable())
                 || (perm.may_write() && !mode.is_owner_writable())
                 || (perm.may_exec() && !mode.is_owner_executable())
             {
                 return_errno_with_message!(Errno::EACCES, "owner permission check failed");
             }
-        } else if self.metadata().gid == creds.fsgid() {
+        } else if metadata.gid == creds.fsgid() {
             if (perm.may_read() && !mode.is_group_readable())
                 || (perm.may_write() && !mode.is_group_writable())
                 || (perm.may_exec() && !mode.is_group_executable())
