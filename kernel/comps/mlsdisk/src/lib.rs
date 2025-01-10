@@ -16,7 +16,7 @@ mod util;
 
 extern crate alloc;
 
-use alloc::{sync::Arc, vec};
+use alloc::{string::ToString, sync::Arc, vec};
 use core::ops::Range;
 
 use aster_block::{
@@ -24,6 +24,7 @@ use aster_block::{
     id::Sid,
     BlockDevice, SECTOR_SIZE,
 };
+use component::{init_component, ComponentInitError};
 use ostd::{mm::VmIo, prelude::*};
 
 pub use self::{
@@ -35,6 +36,20 @@ pub use self::{
     os::{Aead, AeadIv, AeadKey, AeadMac, Rng},
     util::{Aead as _, RandomInit, Rng as _},
 };
+
+#[init_component]
+fn init() -> core::result::Result<(), ComponentInitError> {
+    // FIXME: add a virtio-blk-pci device in qemu and a image file.
+    let Some(device) = aster_block::get_device("raw_mlsdisk") else {
+        return Err(ComponentInitError::Unknown);
+    };
+    let raw_disk = RawDisk::new(device);
+    let root_key = AeadKey::random();
+    let device =
+        MlsDisk::create(raw_disk, root_key, None).map_err(|_| ComponentInitError::Unknown)?;
+    aster_block::register_device("mlsdisk".to_string(), Arc::new(device));
+    Ok(())
+}
 
 #[derive(Clone, Debug)]
 struct RawDisk {
