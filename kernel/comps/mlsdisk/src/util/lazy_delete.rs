@@ -27,7 +27,7 @@ use crate::prelude::*;
 /// Here is a simple example.
 ///
 /// ```
-/// use sworndisk_v2::lazy_delete::*;
+/// use crate::util::LazyDelete;
 ///
 /// let lazy_delete_u32 = LazyDelete::new(123_u32, |obj| {
 ///     println!("the real deletion happens in this closure");

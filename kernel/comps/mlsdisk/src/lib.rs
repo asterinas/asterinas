@@ -20,7 +20,7 @@ pub use self::{
     error::{Errno, Error},
     layers::{
         bio::{BlockId, BlockSet, Buf, BufMut, BufRef, BLOCK_SIZE},
-        disk::SwornDisk,
+        disk::MlsDisk,
     },
     os::{Aead, AeadIv, AeadKey, AeadMac, Rng},
     util::{Aead as _, RandomInit, Rng as _},

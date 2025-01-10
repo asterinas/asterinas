@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! SwornDisk as a block device.
+//! MlsDisk as a block device.
 //!
 //! API: submit_bio(), submit_bio_sync(), create(), open(),
 //! read(), readv(), write(), writev(), sync().
@@ -42,12 +42,12 @@ pub type Lba = BlockId;
 /// Host Block Address.
 pub type Hba = BlockId;
 
-/// SwornDisk.
-pub struct SwornDisk<D: BlockSet> {
+/// MlsDisk.
+pub struct MlsDisk<D: BlockSet> {
     inner: Arc<DiskInner<D>>,
 }
 
-/// Inner structures of `SwornDisk`.
+/// Inner structures of `MlsDisk`.
 struct DiskInner<D: BlockSet> {
     /// Block I/O request queue.
     bio_req_queue: BioReqQueue,
@@ -63,13 +63,13 @@ struct DiskInner<D: BlockSet> {
     data_buf: DataBuf,
     /// Root encryption key.
     root_key: Key,
-    /// Whether `SwornDisk` is dropped.
+    /// Whether `MlsDisk` is dropped.
     is_dropped: AtomicBool,
     /// Scope lock for control write and sync operation.
     write_sync_region: RwLock<()>,
 }
 
-impl<D: BlockSet + 'static> aster_block::BlockDevice for SwornDisk<D> {
+impl<D: BlockSet + 'static> aster_block::BlockDevice for MlsDisk<D> {
     fn enqueue(
         &self,
         bio: aster_block::bio::SubmittedBio,
@@ -165,7 +165,7 @@ impl<D: BlockSet + 'static> aster_block::BlockDevice for SwornDisk<D> {
     }
 }
 
-impl<D: BlockSet + 'static> SwornDisk<D> {
+impl<D: BlockSet + 'static> MlsDisk<D> {
     /// Read a specified number of blocks at a logical block address on the device.
     /// The block contents will be read into a single contiguous buffer.
     pub fn read(&self, lba: Lba, buf: BufMut) -> Result<()> {
@@ -202,7 +202,7 @@ impl<D: BlockSet + 'static> SwornDisk<D> {
         // TODO: Error handling the sync operation
         self.inner.sync().unwrap();
 
-        trace!("[SwornDisk] Sync completed. {self:?}");
+        trace!("[MlsDisk] Sync completed. {self:?}");
         Ok(())
     }
 
@@ -211,7 +211,7 @@ impl<D: BlockSet + 'static> SwornDisk<D> {
         self.inner.user_data_disk.nblocks()
     }
 
-    /// Creates a new `SwornDisk` on the given disk, with the root encryption key.
+    /// Creates a new `MlsDisk` on the given disk, with the root encryption key.
     pub fn create(
         disk: D,
         root_key: Key,
@@ -257,12 +257,12 @@ impl<D: BlockSet + 'static> SwornDisk<D> {
             }),
         };
 
-        info!("[SwornDisk] Created successfully! {:?}", &new_self);
+        info!("[MlsDisk] Created successfully! {:?}", &new_self);
         // XXX: Would `disk::drop()` bring unexpected behavior?
         Ok(new_self)
     }
 
-    /// Opens the `SwornDisk` on the given disk, with the root encryption key.
+    /// Opens the `MlsDisk` on the given disk, with the root encryption key.
     pub fn open(
         disk: D,
         root_key: Key,
@@ -309,7 +309,7 @@ impl<D: BlockSet + 'static> SwornDisk<D> {
             }),
         };
 
-        info!("[SwornDisk] Opened successfully! {:?}", &opened_self);
+        info!("[MlsDisk] Opened successfully! {:?}", &opened_self);
         Ok(opened_self)
     }
 
@@ -360,7 +360,7 @@ impl<D: BlockSet + 'static> DiskInner<D> {
         if let Err(e) = &res
             && e.errno() == NotFound
         {
-            warn!("[SwornDisk] read contains empty read on lba {lba}");
+            warn!("[MlsDisk] read contains empty read on lba {lba}");
             return Ok(());
         }
         res
@@ -375,7 +375,7 @@ impl<D: BlockSet + 'static> DiskInner<D> {
         if let Err(e) = &res
             && e.errno() == NotFound
         {
-            warn!("[SwornDisk] readv contains empty read on lba {lba}");
+            warn!("[MlsDisk] readv contains empty read on lba {lba}");
             return Ok(());
         }
         res
@@ -622,15 +622,15 @@ impl<D: BlockSet + 'static> DiskInner<D> {
     }
 }
 
-impl<D: BlockSet> Drop for SwornDisk<D> {
+impl<D: BlockSet> Drop for MlsDisk<D> {
     fn drop(&mut self) {
         self.inner.is_dropped.store(true, Ordering::Release);
     }
 }
 
-impl<D: BlockSet + 'static> Debug for SwornDisk<D> {
+impl<D: BlockSet + 'static> Debug for MlsDisk<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SwornDisk")
+        f.debug_struct("MlsDisk")
             .field("user_data_nblocks", &self.inner.user_data_disk.nblocks())
             .field("logical_block_table", &self.inner.logical_block_table)
             .finish()
@@ -835,12 +835,12 @@ mod tests {
     use crate::layers::{bio::MemDisk, disk::bio::BioReqBuilder};
 
     #[test]
-    fn sworndisk_fns() -> Result<()> {
+    fn mlsdisk_fns() -> Result<()> {
         let nblocks = 64 * 1024;
         let mem_disk = MemDisk::create(nblocks)?;
         let root_key = Key::random();
-        // Create a new `SwornDisk` then do some writes
-        let sworndisk = SwornDisk::create(mem_disk.clone(), root_key, None)?;
+        // Create a new `MlsDisk` then do some writes
+        let mlsdisk = MlsDisk::create(mem_disk.clone(), root_key, None)?;
         let num_rw = 1024;
 
         // Submit a write block I/O request
@@ -854,23 +854,23 @@ mod tests {
             .addr(0 as BlockId)
             .bufs(bufs)
             .build();
-        sworndisk.submit_bio_sync(bio_req)?;
+        mlsdisk.submit_bio_sync(bio_req)?;
 
-        // Sync the `SwornDisk` then do some reads
-        sworndisk.submit_bio_sync(BioReqBuilder::new(BioType::Sync).build())?;
+        // Sync the `MlsDisk` then do some reads
+        mlsdisk.submit_bio_sync(BioReqBuilder::new(BioType::Sync).build())?;
 
         let mut rbuf = Buf::alloc(1)?;
         for i in 0..num_rw {
-            sworndisk.read(i as Lba, rbuf.as_mut())?;
+            mlsdisk.read(i as Lba, rbuf.as_mut())?;
             assert_eq!(rbuf.as_slice()[0], i as u8);
         }
 
-        // Open the closed `SwornDisk` then test its data's existence
-        drop(sworndisk);
+        // Open the closed `MlsDisk` then test its data's existence
+        drop(mlsdisk);
         thread::spawn(move || -> Result<()> {
-            let opened_sworndisk = SwornDisk::open(mem_disk, root_key, None)?;
+            let opened_mlsdisk = MlsDisk::open(mem_disk, root_key, None)?;
             let mut rbuf = Buf::alloc(2)?;
-            opened_sworndisk.read(5 as Lba, rbuf.as_mut())?;
+            opened_mlsdisk.read(5 as Lba, rbuf.as_mut())?;
             assert_eq!(rbuf.as_slice()[0], 5u8);
             assert_eq!(rbuf.as_slice()[4096], 6u8);
             Ok(())
