@@ -10,6 +10,12 @@ inherit-methods-macro = {git = "https://github.com/asterinas/inherit-methods-mac
 ostd-pod = { git = "https://github.com/asterinas/ostd-pod", rev = "c4644be", version = "0.1.1" }
 aster-block = { path = "../block" }
 ostd = { path = "../../../ostd" }
+# Enable `force-soft` feature to disable `AES-NI` and `CLMUL` intrinsics, ensuring that the implementation
+# relies solely on software, and in the software implementation, unsafe code is rarely used.
+# FIXME: to utilize `AES-NI` and `CLMUL` intrinsics, some specific flags must be added to `RUSTFLAGS`,
+# i.e. `-Ctarget-cpu=sandybridge -Ctarget-feature=+aes,+sse2,+sse4.1,+ssse3`.
+# This suggests that `Asterinas` should support saving and restoring the `FPU` state within the kernel context,
+# a capability it currently lacks.
 aes-gcm = { version = "0.9.4", features = ["force-soft"] }
 bittle = "0.5.6"
 ctr = "0.8.0"
