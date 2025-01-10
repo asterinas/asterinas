@@ -311,7 +311,7 @@ impl<K: RecordKey<K>, V: RecordValue, D: BlockSet + 'static> TreeInner<K, V, D> 
 
         recov_self.do_migration_tx()?;
 
-        debug!("[SwornDisk TxLsmTree] Recovery completed: {recov_self:?}");
+        debug!("[MlsDisk TxLsmTree] Recovery completed: {recov_self:?}");
         Ok(recov_self)
     }
 
@@ -539,7 +539,7 @@ impl<K: RecordKey<K>, V: RecordValue, D: BlockSet + 'static> TreeInner<K, V, D> 
 
         self.sst_manager.write().insert(new_sst, LsmLevel::L0);
 
-        debug!("[SwornDisk TxLsmTree] Minor Compaction completed: {self:?}");
+        debug!("[MlsDisk TxLsmTree] Minor Compaction completed: {self:?}");
         Ok(())
     }
 
@@ -638,7 +638,7 @@ impl<K: RecordKey<K>, V: RecordValue, D: BlockSet + 'static> TreeInner<K, V, D> 
             deleted_ssts.into_iter(),
         );
 
-        debug!("[SwornDisk TxLsmTree] Major Compaction completed: {self:?}");
+        debug!("[MlsDisk TxLsmTree] Major Compaction completed: {self:?}");
 
         // Continue to do major compaction if necessary
         if self.sst_manager.read().require_major_compaction(to_level) {
