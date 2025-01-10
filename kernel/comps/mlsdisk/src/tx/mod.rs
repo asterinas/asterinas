@@ -90,7 +90,7 @@ impl TxProvider {
         let init_fn = initializer_map
             .get(&TypeId::of::<T>())
             .unwrap()
-            .downcast_ref::<Box<dyn Fn() -> T>>()
+            .downcast_ref::<Box<dyn Fn() -> T + Send + Sync>>()
             .unwrap();
         init_fn()
     }
