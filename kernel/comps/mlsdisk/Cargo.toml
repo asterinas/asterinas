@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 inherit-methods-macro = {git = "https://github.com/asterinas/inherit-methods-macro", rev = "98f7e3e"}
 ostd-pod = { git = "https://github.com/asterinas/ostd-pod", rev = "c4644be", version = "0.1.1" }
+component = { path = "../../libs/comp-sys/component" }
 aster-block = { path = "../block" }
 ostd = { path = "../../../ostd" }
 # Enable `force-soft` feature to disable `AES-NI` and `CLMUL` intrinsics, ensuring that the implementation

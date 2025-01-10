@@ -151,6 +151,7 @@ dependencies = [
  "aes-gcm",
  "aster-block",
  "bittle",
+ "component",
  "ctr",
  "hashbrown 0.14.5",
  "inherit-methods-macro",
