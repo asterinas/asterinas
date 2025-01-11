@@ -5,8 +5,7 @@ use core::marker::PhantomData;
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_table::FileDesc,
-        inode_handle::InodeHandle,
+        file_table::{get_file_fast, FileDesc},
         utils::{DirentVisitor, InodeType},
     },
     prelude::*,
@@ -23,13 +22,9 @@ pub fn sys_getdents(
         fd, buf_addr, buf_len
     );
 
-    let file = {
-        let file_table = ctx.posix_thread.file_table().lock();
-        file_table.get_file(fd)?.clone()
-    };
-    let inode_handle = file
-        .downcast_ref::<InodeHandle>()
-        .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;
+    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let file = get_file_fast!(&mut file_table, fd);
+    let inode_handle = file.as_inode_or_err()?;
     if inode_handle.dentry().type_() != InodeType::Dir {
         return_errno!(Errno::ENOTDIR);
     }
@@ -53,13 +48,9 @@ pub fn sys_getdents64(
         fd, buf_addr, buf_len
     );
 
-    let file = {
-        let file_table = ctx.posix_thread.file_table().lock();
-        file_table.get_file(fd)?.clone()
-    };
-    let inode_handle = file
-        .downcast_ref::<InodeHandle>()
-        .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;
+    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let file = get_file_fast!(&mut file_table, fd);
+    let inode_handle = file.as_inode_or_err()?;
     if inode_handle.dentry().type_() != InodeType::Dir {
         return_errno!(Errno::ENOTDIR);
     }

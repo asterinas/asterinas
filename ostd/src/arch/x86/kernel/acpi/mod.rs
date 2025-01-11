@@ -5,7 +5,6 @@
 pub mod dmar;
 pub mod remapping;
 
-use alloc::borrow::ToOwned;
 use core::ptr::NonNull;
 
 use acpi::{rsdp::Rsdp, AcpiHandler, AcpiTables};
@@ -43,7 +42,7 @@ impl AcpiHandler for AcpiMemoryHandler {
 }
 
 pub fn init() {
-    let acpi_tables = match boot::acpi_arg().to_owned() {
+    let acpi_tables = match boot::EARLY_INFO.get().unwrap().acpi_arg {
         BootloaderAcpiArg::Rsdp(addr) => unsafe {
             AcpiTables::from_rsdp(AcpiMemoryHandler {}, addr).unwrap()
         },

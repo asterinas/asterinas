@@ -17,6 +17,7 @@ RUN apt update && apt-get install -y --no-install-recommends \
     curl \ 
     git-core \ 
     gnupg \ 
+    libevent-dev \ 
     libssl-dev \ 
     jq \
     python3-pip \ 
@@ -25,6 +26,7 @@ RUN apt update && apt-get install -y --no-install-recommends \
     unzip \
     wget \
     zip
+RUN pip install yq
 
 #= Download dependency =====================================================
 
@@ -54,6 +56,11 @@ RUN git clone https://github.com/asterinas/lmbench.git
 RUN wget https://www.iozone.org/src/current/iozone3_506.tar
 RUN tar -x -f iozone3_506.tar
 RUN git clone -b fio-3.37 https://github.com/axboe/fio.git
+RUN git clone https://git.kernel.org/pub/scm/linux/kernel/git/clrkwllms/rt-tests.git
+RUN git clone https://git.kernel.org/pub/scm/linux/kernel/git/mason/schbench.git
+RUN wget https://launchpad.net/libmemcached/1.0/1.0.18/+download/libmemcached-1.0.18.tar.gz \
+    && tar -zxvf libmemcached-1.0.18.tar.gz \ 
+    && rm libmemcached-1.0.18.tar.gz
 
 # Build sysbench
 WORKDIR /root/sysbench-1.0.20
@@ -98,6 +105,23 @@ RUN ./configure --disable-shm --prefix=/usr/local/benchmark/fio \
     && make -j \ 
     && make install
 
+# Build hackbench
+WORKDIR /root/rt-tests/src/hackbench
+RUN make hackbench \
+    && cp hackbench /usr/local/benchmark
+
+# Build schbench
+WORKDIR /root/schbench
+RUN make \
+    && cp schbench /usr/local/benchmark/
+
+# Build memaslap for memcached
+WORKDIR /root/libmemcached-1.0.18
+RUN LDFLAGS='-lpthread' CPPFLAGS='-fcommon -fpermissive' CFLAGS='-fpermissive -fcommon' \
+    ./configure --enable-memaslap --prefix=/usr/local/benchmark/libmemcached \ 
+    && CPPFLAGS='-fcommon' make -j \ 
+    && make install
+
 # Clear cached files
 WORKDIR /root
 RUN rm -rf sysbench-1.0.20 \ 
@@ -107,7 +131,10 @@ RUN rm -rf sysbench-1.0.20 \
     byte-unixbench \
     iozone3_506.tar \
     iozone3_506 \
-    fio
+    fio \
+    hackbench \
+    schbench \
+    libmemcached-1.0.18
 
 #= Install applications =======================================================
 
@@ -193,6 +220,59 @@ RUN make -j \
 WORKDIR /root
 RUN rm -rf nginx-1.26.2.tar.gz \
     nginx-1.26.2
+
+# Install Memcached v1.6.32
+WORKDIR /root
+RUN wget https://www.memcached.org/files/memcached-1.6.32.tar.gz \
+    && tar -xzvf memcached-1.6.32.tar.gz \
+    && cd memcached-1.6.32 \
+    && ./configure --prefix=/usr/local/memcached \
+    && make -j \
+    && make install
+
+RUN rm -rf memcached-1.6.32.tar.gz \
+    memcached-1.6.32
+
+# Install Apache httpd v2.4.62
+WORKDIR /root
+RUN apt-get install -y --no-install-recommends libapr1-dev libaprutil1-dev libpcre2-dev
+RUN wget https://dlcdn.apache.org/httpd/httpd-2.4.62.tar.bz2 \ 
+    && tar xvf httpd-2.4.62.tar.bz2 \
+    && cd httpd-2.4.62 \ 
+    && ./configure \ 
+    --disable-authn-file \
+    --disable-authz-groupfile \
+    --disable-authz-user \
+    --disable-access-compat \
+    --disable-auth-basic \
+    --disable-reqtimeout \
+    --disable-filter \
+    --disable-charset-lite \
+    --disable-mime \
+    --disable-log-config \
+    --disable-env \
+    --disable-headers \
+    --disable-setenvif \
+    --disable-version \
+    --disable-status \
+    --disable-autoindex \
+    --disable-dir \
+    --disable-alias \ 
+    && make -j \ 
+    && make install 
+
+RUN rm -rf httpd-2.4.62.tar.bz2 \
+    httpd-2.4.62
+
+# Install wrk
+WORKDIR /root
+RUN git clone https://github.com/wg/wrk.git \ 
+    && cd wrk \
+    && make -j \
+    && mkdir -p /usr/local/wrk \
+    && cp wrk /usr/local/wrk
+
+RUN rm -rf wrk
 
 #= Build syscall test =========================================================
 
@@ -294,10 +374,9 @@ FROM build-grub as grub
 # in the GRUB release. The Ubuntu release notoriously modifies the GRUB source code and enforce
 # EFI handover boot, which is deprecated. So we have to build GRUB from source.
 WORKDIR /root
-RUN wget -O grub.tar.xz https://ftp.gnu.org/gnu/grub/grub-2.12.tar.xz \ 
-    && mkdir /root/grub \ 
-    && tar xf grub.tar.xz --strip-components=1 -C /root/grub \ 
-    && rm grub.tar.xz
+# See also: https://github.com/asterinas/asterinas/pull/1710
+RUN git clone --single-branch -b asterinas/2.12 https://github.com/asterinas/grub.git \
+    && git -C grub checkout 0633bc8
 # Fetch and install the Unicode font data for grub.
 RUN wget -O unifont.pcf.gz https://unifoundry.com/pub/unifont/unifont-15.1.04/font-builds/unifont-15.1.04.pcf.gz \ 
     && mkdir -pv /usr/share/fonts/unifont \ 
@@ -305,6 +384,7 @@ RUN wget -O unifont.pcf.gz https://unifoundry.com/pub/unifont/unifont-15.1.04/fo
     && rm unifont.pcf.gz
 WORKDIR /root/grub
 RUN echo depends bli part_gpt > grub-core/extra_deps.lst \ 
+    && ./bootstrap \
     && ./configure \ 
         --target=x86_64 \ 
         --disable-efiemu \ 
@@ -424,6 +504,9 @@ COPY --from=build-applications /usr/local/nginx /usr/local/nginx
 COPY --from=build-applications /usr/local/leveldb /usr/local/leveldb
 COPY --from=build-applications /usr/local/speedtest1 /usr/local/benchmark/sqlite-speedtest1
 COPY --from=build-applications /lib/x86_64-linux-gnu/libsqlite3.so /lib/x86_64-linux-gnu/libsqlite3.so
+COPY --from=build-applications /usr/local/memcached /usr/local/memcached
+COPY --from=build-applications /usr/local/apache2 /usr/local/apache2
+COPY --from=build-applications /usr/local/wrk /usr/local/wrk
 
 # Add the path of Asterinas tools
 ENV PATH="/root/asterinas/target/bin:${PATH}"

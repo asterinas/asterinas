@@ -14,7 +14,6 @@ pub(crate) mod heap_allocator;
 mod io;
 pub(crate) mod kspace;
 mod offset;
-pub(crate) mod page;
 pub(crate) mod page_prop;
 pub(crate) mod page_table;
 pub mod stat;
@@ -25,7 +24,12 @@ use core::{fmt::Debug, ops::Range};
 
 pub use self::{
     dma::{Daddr, DmaCoherent, DmaDirection, DmaStream, DmaStreamSlice, HasDaddr},
-    frame::{options::FrameAllocOptions, Frame, Segment},
+    frame::{
+        allocator::FrameAllocOptions,
+        segment::{Segment, USegment},
+        untyped::{AnyUFrameMeta, UFrame, UntypedMem},
+        Frame,
+    },
     io::{
         Fallible, FallibleVmRead, FallibleVmWrite, Infallible, PodOnce, VmIo, VmIoOnce, VmReader,
         VmWriter,
@@ -34,7 +38,7 @@ pub use self::{
     vm_space::VmSpace,
 };
 pub(crate) use self::{
-    kspace::paddr_to_vaddr, page::meta::init as init_page_meta, page_prop::PrivilegedPageFlags,
+    frame::meta::init as init_page_meta, kspace::paddr_to_vaddr, page_prop::PrivilegedPageFlags,
     page_table::PageTable,
 };
 use crate::arch::mm::PagingConsts;
@@ -44,7 +48,7 @@ pub type PagingLevel = u8;
 
 /// A minimal set of constants that determines the paging system.
 /// This provides an abstraction over most paging modes in common architectures.
-pub(crate) trait PagingConstsTrait: Clone + Debug + Default + Sync + 'static {
+pub(crate) trait PagingConstsTrait: Clone + Debug + Default + Send + Sync + 'static {
     /// The smallest page size.
     /// This is also the page size at level 1 page tables.
     const BASE_PAGE_SIZE: usize;

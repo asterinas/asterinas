@@ -18,6 +18,7 @@ use ostd::{
     trap::disable_local,
 };
 
+mod policy;
 mod time;
 
 mod fair;
@@ -27,11 +28,15 @@ mod stop;
 
 use ostd::arch::read_tsc as sched_clock;
 
+pub use self::policy::*;
+use self::policy::{SchedPolicyKind, SchedPolicyState};
 use super::{
-    priority::{Nice, Priority, RangedU8},
+    priority::{Nice, RangedU8},
     stats::SchedulerStats,
 };
 use crate::thread::{AsThread, Thread};
+
+type SchedEntity = (Arc<Task>, Arc<Thread>);
 
 #[allow(unused)]
 pub fn init() {
@@ -49,11 +54,11 @@ pub struct ClassScheduler {
 /// scheduling classes in its corresponding CPU core. The current task of this CPU
 /// core is also stored in this structure.
 struct PerCpuClassRqSet {
-    stop: Arc<stop::StopClassRq>,
+    stop: stop::StopClassRq,
     real_time: real_time::RealTimeClassRq,
     fair: fair::FairClassRq,
     idle: idle::IdleClassRq,
-    current: Option<(Arc<Task>, CurrentRuntime)>,
+    current: Option<(SchedEntity, CurrentRuntime)>,
 }
 
 /// Stores the runtime information of the current task.
@@ -89,7 +94,7 @@ impl CurrentRuntime {
 /// should implement this trait to function as expected.
 trait SchedClassRq: Send + fmt::Debug {
     /// Enqueues a task into the run queue.
-    fn enqueue(&mut self, thread: Arc<Thread>, flags: Option<EnqueueFlags>);
+    fn enqueue(&mut self, task: Arc<Task>, flags: Option<EnqueueFlags>);
 
     /// Returns the number of threads in the run queue.
     fn len(&mut self) -> usize;
@@ -100,41 +105,11 @@ trait SchedClassRq: Send + fmt::Debug {
     }
 
     /// Picks the next task for running.
-    fn pick_next(&mut self) -> Option<Arc<Thread>>;
+    fn pick_next(&mut self) -> Option<Arc<Task>>;
 
     /// Update the information of the current task.
     fn update_current(&mut self, rt: &CurrentRuntime, attr: &SchedAttr, flags: UpdateFlags)
         -> bool;
-}
-
-pub use real_time::RealTimePolicy;
-
-/// The User-chosen scheduling policy.
-///
-/// The scheduling policies are specified by the user, usually through its priority.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum SchedPolicy {
-    Stop,
-    RealTime {
-        rt_prio: real_time::RtPrio,
-        rt_policy: RealTimePolicy,
-    },
-    Fair(Nice),
-    Idle,
-}
-
-impl From<Priority> for SchedPolicy {
-    fn from(priority: Priority) -> Self {
-        match priority.range().get() {
-            0 => SchedPolicy::Stop,
-            rt @ 1..=99 => SchedPolicy::RealTime {
-                rt_prio: RangedU8::new(rt),
-                rt_policy: Default::default(),
-            },
-            100..=139 => SchedPolicy::Fair(priority.into()),
-            _ => SchedPolicy::Idle,
-        }
-    }
 }
 
 /// The scheduling attribute for a thread.
@@ -143,7 +118,7 @@ impl From<Priority> for SchedPolicy {
 /// scheduling class.
 #[derive(Debug)]
 pub struct SchedAttr {
-    policy: SpinLock<SchedPolicy>,
+    policy: SchedPolicyState,
 
     real_time: real_time::RealTimeAttr,
     fair: fair::FairAttr,
@@ -153,7 +128,7 @@ impl SchedAttr {
     /// Constructs a new `SchedAttr` with the given scheduling policy.
     pub fn new(policy: SchedPolicy) -> Self {
         Self {
-            policy: SpinLock::new(policy),
+            policy: SchedPolicyState::new(policy),
             real_time: {
                 let (prio, policy) = match policy {
                     SchedPolicy::RealTime { rt_prio, rt_policy } => (rt_prio.get(), rt_policy),
@@ -170,48 +145,31 @@ impl SchedAttr {
 
     /// Retrieves the current scheduling policy of the thread.
     pub fn policy(&self) -> SchedPolicy {
-        *self.policy.lock()
+        self.policy.get()
+    }
+
+    fn policy_kind(&self) -> SchedPolicyKind {
+        self.policy.kind()
     }
 
     /// Updates the scheduling policy of the thread.
     ///
     /// Specifically for real-time policies, if the new policy doesn't
     /// specify a base slice factor for RR, the old one will be kept.
-    pub fn set_policy(&self, mut policy: SchedPolicy) {
-        let mut guard = self.policy.lock();
-        match policy {
+    pub fn set_policy(&self, policy: SchedPolicy) {
+        self.policy.set(policy, |policy| match policy {
             SchedPolicy::RealTime { rt_prio, rt_policy } => {
                 self.real_time.update(rt_prio.get(), rt_policy);
             }
             SchedPolicy::Fair(nice) => self.fair.update(nice),
             _ => {}
-        }
-
-        // Keep the old base slice factor if the new policy doesn't specify one.
-        if let (
-            SchedPolicy::RealTime {
-                rt_policy:
-                    RealTimePolicy::RoundRobin {
-                        base_slice_factor: slot,
-                    },
-                ..
-            },
-            SchedPolicy::RealTime {
-                rt_policy: RealTimePolicy::RoundRobin { base_slice_factor },
-                ..
-            },
-        ) = (*guard, &mut policy)
-        {
-            *base_slice_factor = slot.or(*base_slice_factor);
-        }
-
-        *guard = policy;
+        });
     }
 }
 
 impl Scheduler for ClassScheduler {
     fn enqueue(&self, task: Arc<Task>, flags: EnqueueFlags) -> Option<CpuId> {
-        let thread = task.as_thread()?;
+        let thread = task.as_thread()?.clone();
 
         let (still_in_rq, cpu) = {
             let selected_cpu_id = self.select_cpu(thread.atomic_cpu_affinity());
@@ -231,7 +189,7 @@ impl Scheduler for ClassScheduler {
             return None;
         }
 
-        rq.enqueue_thread(thread, Some(flags));
+        rq.enqueue_entity((task, thread), Some(flags));
         Some(cpu)
     }
 
@@ -249,10 +207,9 @@ impl Scheduler for ClassScheduler {
 
 impl ClassScheduler {
     pub fn new() -> Self {
-        let stop = stop::StopClassRq::new();
         let class_rq = |cpu| {
             SpinLock::new(PerCpuClassRqSet {
-                stop: stop.clone(),
+                stop: stop::StopClassRq::new(),
                 real_time: real_time::RealTimeClassRq::new(cpu),
                 fair: fair::FairClassRq::new(cpu),
                 idle: idle::IdleClassRq::new(),
@@ -278,23 +235,24 @@ impl ClassScheduler {
 }
 
 impl PerCpuClassRqSet {
-    fn pick_next_thread(&mut self) -> Option<Arc<Thread>> {
+    fn pick_next_entity(&mut self) -> Option<SchedEntity> {
         (self.stop.pick_next())
             .or_else(|| self.real_time.pick_next())
             .or_else(|| self.fair.pick_next())
             .or_else(|| self.idle.pick_next())
+            .and_then(|task| {
+                let thread = task.as_thread()?.clone();
+                Some((task, thread))
+            })
     }
 
-    fn enqueue_thread(&mut self, thread: &Arc<Thread>, flags: Option<EnqueueFlags>) {
-        let attr = thread.sched_attr();
-
-        let cloned = thread.clone();
-        match *attr.policy.lock() {
-            SchedPolicy::Stop => self.stop.enqueue(cloned, flags),
-            SchedPolicy::RealTime { .. } => self.real_time.enqueue(cloned, flags),
-            SchedPolicy::Fair(_) => self.fair.enqueue(cloned, flags),
-            SchedPolicy::Idle => self.idle.enqueue(cloned, flags),
-        };
+    fn enqueue_entity(&mut self, (task, thread): SchedEntity, flags: Option<EnqueueFlags>) {
+        match thread.sched_attr().policy_kind() {
+            SchedPolicyKind::Stop => self.stop.enqueue(task, flags),
+            SchedPolicyKind::RealTime => self.real_time.enqueue(task, flags),
+            SchedPolicyKind::Fair => self.fair.enqueue(task, flags),
+            SchedPolicyKind::Idle => self.idle.enqueue(task, flags),
+        }
     }
 
     fn nr_queued_and_running(&mut self) -> (u32, u32) {
@@ -306,38 +264,32 @@ impl PerCpuClassRqSet {
 
 impl LocalRunQueue for PerCpuClassRqSet {
     fn current(&self) -> Option<&Arc<Task>> {
-        self.current.as_ref().map(|(task, _)| task)
+        self.current.as_ref().map(|((task, _), _)| task)
     }
 
     fn pick_next_current(&mut self) -> Option<&Arc<Task>> {
-        self.pick_next_thread().and_then(|next| {
-            let next_task = next.task();
-            if let Some((old_task, _)) = self
-                .current
-                .replace((next_task.clone(), CurrentRuntime::new()))
-            {
-                if Arc::ptr_eq(&old_task, &next_task) {
+        self.pick_next_entity().and_then(|next| {
+            let next_ptr = Arc::as_ptr(&next.0);
+            if let Some((old, _)) = self.current.replace((next, CurrentRuntime::new())) {
+                if Arc::as_ptr(&old.0) == next_ptr {
                     return None;
                 }
-                let old = old_task.as_thread().unwrap();
-                self.enqueue_thread(old, None);
+                self.enqueue_entity(old, None);
             }
-            self.current.as_ref().map(|(task, _)| task)
+            self.current.as_ref().map(|((task, _), _)| task)
         })
     }
 
     fn update_current(&mut self, flags: UpdateFlags) -> bool {
-        if let Some((cur_task, rt)) = &mut self.current
-            && let Some(cur) = cur_task.as_thread()
-        {
+        if let Some(((_, cur), rt)) = &mut self.current {
             rt.update();
             let attr = &cur.sched_attr();
 
-            let (current_expired, lookahead) = match &*attr.policy.lock() {
-                SchedPolicy::Stop => (self.stop.update_current(rt, attr, flags), 0),
-                SchedPolicy::RealTime { .. } => (self.real_time.update_current(rt, attr, flags), 1),
-                SchedPolicy::Fair(_) => (self.fair.update_current(rt, attr, flags), 2),
-                SchedPolicy::Idle => (self.idle.update_current(rt, attr, flags), 3),
+            let (current_expired, lookahead) = match attr.policy_kind() {
+                SchedPolicyKind::Stop => (self.stop.update_current(rt, attr, flags), 0),
+                SchedPolicyKind::RealTime => (self.real_time.update_current(rt, attr, flags), 1),
+                SchedPolicyKind::Fair => (self.fair.update_current(rt, attr, flags), 2),
+                SchedPolicyKind::Idle => (self.idle.update_current(rt, attr, flags), 3),
             };
 
             current_expired
@@ -350,7 +302,7 @@ impl LocalRunQueue for PerCpuClassRqSet {
     }
 
     fn dequeue_current(&mut self) -> Option<Arc<Task>> {
-        self.current.take().map(|(cur_task, _)| {
+        self.current.take().map(|((cur_task, _), _)| {
             cur_task.schedule_info().cpu.set_to_none();
             cur_task
         })

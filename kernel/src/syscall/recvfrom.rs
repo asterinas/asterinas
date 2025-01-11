@@ -2,10 +2,10 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::FileDesc,
+    fs::file_table::{get_file_fast, FileDesc},
     net::socket::SendRecvFlags,
     prelude::*,
-    util::net::{get_socket_from_fd, write_socket_addr_to_user},
+    util::net::write_socket_addr_to_user,
 };
 
 pub fn sys_recvfrom(
@@ -20,14 +20,23 @@ pub fn sys_recvfrom(
     let flags = SendRecvFlags::from_bits_truncate(flags);
     debug!("sockfd = {sockfd}, buf = 0x{buf:x}, len = {len}, flags = {flags:?}, src_addr = 0x{src_addr:x}, addrlen_ptr = 0x{addrlen_ptr:x}");
 
-    let socket = get_socket_from_fd(sockfd)?;
+    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let file = get_file_fast!(&mut file_table, sockfd);
+    let socket = file.as_socket_or_err()?;
 
     let mut writers = {
         let vm_space = ctx.process.root_vmar().vm_space();
         vm_space.writer(buf, len)?
     };
 
-    let (recv_size, message_header) = socket.recvmsg(&mut writers, flags)?;
+    let (recv_size, message_header) =
+        socket
+            .recvmsg(&mut writers, flags)
+            .map_err(|err| match err.error() {
+                // FIXME: `recvfrom` should not be restarted if a timeout has been set on the socket using `setsockopt`.
+                Errno::EINTR => Error::new(Errno::ERESTARTSYS),
+                _ => err,
+            })?;
 
     if let Some(socket_addr) = message_header.addr()
         && src_addr != 0

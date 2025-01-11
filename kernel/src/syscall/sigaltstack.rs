@@ -16,10 +16,7 @@ pub fn sys_sigaltstack(
         sig_stack_addr, old_sig_stack_addr
     );
 
-    let old_stack = {
-        let sig_stack = ctx.posix_thread.sig_stack().lock();
-        sig_stack.clone()
-    };
+    let old_stack = ctx.thread_local.sig_stack().borrow().clone();
 
     get_old_stack(old_sig_stack_addr, old_stack.as_ref(), ctx)?;
     set_new_stack(sig_stack_addr, old_stack.as_ref(), ctx)?;
@@ -73,7 +70,7 @@ fn set_new_stack(sig_stack_addr: Vaddr, old_stack: Option<&SigStack>, ctx: &Cont
 
     debug!("new_stack = {:?}", new_stack);
 
-    *ctx.posix_thread.sig_stack().lock() = Some(new_stack);
+    *ctx.thread_local.sig_stack().borrow_mut() = Some(new_stack);
 
     Ok(())
 }
@@ -105,6 +102,9 @@ impl TryFrom<stack_t> for SigStack {
         }
         if stack.size < MINSTKSZ {
             return_errno_with_message!(Errno::ENOMEM, "stack size is less than MINSTKSZ");
+        }
+        if stack.sp.checked_add(stack.size).is_none() {
+            return_errno_with_message!(Errno::EINVAL, "overflow for given stack addr and size");
         }
 
         if flags.is_empty() {

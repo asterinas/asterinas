@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::mm::Frame;
+use ostd::mm::UFrame;
 
 use crate::prelude::*;
 
@@ -26,7 +26,7 @@ pub trait Pager: Send + Sync {
     /// whatever frame that may or may not be the same as the last time.
     ///
     /// It is up to the pager to decide the range of valid indices.
-    fn commit_page(&self, idx: usize) -> Result<Frame>;
+    fn commit_page(&self, idx: usize) -> Result<UFrame>;
 
     /// Notify the pager that the frame at a specified index has been updated.
     ///
@@ -54,5 +54,5 @@ pub trait Pager: Send + Sync {
     /// Ask the pager to provide a frame at a specified index.
     /// Notify the pager that the frame will be fully overwritten soon, so pager can
     /// choose not to initialize it.
-    fn commit_overwrite(&self, idx: usize) -> Result<Frame>;
+    fn commit_overwrite(&self, idx: usize) -> Result<UFrame>;
 }

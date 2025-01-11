@@ -43,11 +43,7 @@ use spin::Once;
 
 use crate::{
     arch,
-    mm::{
-        paddr_to_vaddr,
-        page::{self, meta::KernelMeta, ContPages},
-        PAGE_SIZE,
-    },
+    mm::{frame::Segment, kspace::KernelMeta, paddr_to_vaddr, FrameAllocOptions, PAGE_SIZE},
 };
 
 // These symbols are provided by the linker script.
@@ -78,7 +74,7 @@ pub(crate) unsafe fn early_init_bsp_local_base() {
 }
 
 /// The BSP initializes the CPU-local areas for APs.
-static CPU_LOCAL_STORAGES: Once<Vec<ContPages<KernelMeta>>> = Once::new();
+static CPU_LOCAL_STORAGES: Once<Vec<Segment<KernelMeta>>> = Once::new();
 
 /// Initializes the CPU local data for the bootstrap processor (BSP).
 ///
@@ -99,7 +95,10 @@ pub unsafe fn init_on_bsp() {
     for _ in 1..num_cpus {
         let ap_pages = {
             let nbytes = (bsp_end_va - bsp_base_va).align_up(PAGE_SIZE);
-            page::allocator::alloc_contiguous(nbytes, |_| KernelMeta::default()).unwrap()
+            FrameAllocOptions::new()
+                .zeroed(false)
+                .alloc_segment_with(nbytes / PAGE_SIZE, |_| KernelMeta)
+                .unwrap()
         };
         let ap_pages_ptr = paddr_to_vaddr(ap_pages.start_paddr()) as *mut u8;
 

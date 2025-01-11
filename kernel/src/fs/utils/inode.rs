@@ -6,13 +6,14 @@ use core::{any::TypeId, time::Duration};
 
 use aster_rights::Full;
 use core2::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, Write};
+use ostd::task::Task;
 
-use super::{DirentVisitor, FallocMode, FileSystem, IoctlCmd};
+use super::{AccessMode, DirentVisitor, FallocMode, FileSystem, IoctlCmd};
 use crate::{
     events::IoEvents,
     fs::device::{Device, DeviceType},
     prelude::*,
-    process::{signal::PollHandle, Gid, Uid},
+    process::{posix_thread::AsPosixThread, signal::PollHandle, Gid, Uid},
     time::clocks::RealTimeCoarseClock,
     vm::vmo::Vmo,
 };
@@ -81,6 +82,43 @@ impl From<DeviceType> for InodeType {
 }
 
 bitflags! {
+    pub struct Permission: u16 {
+        // This implementation refers the implementation of linux
+        // https://elixir.bootlin.com/linux/v6.0.9/source/include/linux/fs.h#L95
+        const MAY_EXEC		= 0x0001;
+        const MAY_WRITE		= 0x0002;
+        const MAY_READ		= 0x0004;
+        const MAY_APPEND    = 0x0008;
+        const MAY_ACCESS	= 0x0010;
+        const MAY_OPEN		= 0x0020;
+        const MAY_CHDIR		= 0x0040;
+        const MAY_NOT_BLOCK	= 0x0080;
+    }
+}
+impl Permission {
+    pub fn may_read(&self) -> bool {
+        self.contains(Self::MAY_READ)
+    }
+
+    pub fn may_write(&self) -> bool {
+        self.contains(Self::MAY_WRITE)
+    }
+
+    pub fn may_exec(&self) -> bool {
+        self.contains(Self::MAY_EXEC)
+    }
+}
+impl From<AccessMode> for Permission {
+    fn from(access_mode: AccessMode) -> Permission {
+        match access_mode {
+            AccessMode::O_RDONLY => Permission::MAY_READ,
+            AccessMode::O_WRONLY => Permission::MAY_WRITE,
+            AccessMode::O_RDWR => Permission::MAY_READ | Permission::MAY_WRITE,
+        }
+    }
+}
+
+bitflags! {
     pub struct InodeMode: u16 {
         /// set-user-ID
         const S_ISUID = 0o4000;
@@ -110,16 +148,40 @@ bitflags! {
 }
 
 impl InodeMode {
-    pub fn is_readable(&self) -> bool {
+    pub fn is_owner_readable(&self) -> bool {
         self.contains(Self::S_IRUSR)
     }
 
-    pub fn is_writable(&self) -> bool {
+    pub fn is_owner_writable(&self) -> bool {
         self.contains(Self::S_IWUSR)
     }
 
-    pub fn is_executable(&self) -> bool {
+    pub fn is_owner_executable(&self) -> bool {
         self.contains(Self::S_IXUSR)
+    }
+
+    pub fn is_group_readable(&self) -> bool {
+        self.contains(Self::S_IRGRP)
+    }
+
+    pub fn is_group_writable(&self) -> bool {
+        self.contains(Self::S_IWGRP)
+    }
+
+    pub fn is_group_executable(&self) -> bool {
+        self.contains(Self::S_IXGRP)
+    }
+
+    pub fn is_other_readable(&self) -> bool {
+        self.contains(Self::S_IROTH)
+    }
+
+    pub fn is_other_writable(&self) -> bool {
+        self.contains(Self::S_IWOTH)
+    }
+
+    pub fn is_other_executable(&self) -> bool {
+        self.contains(Self::S_IXOTH)
     }
 
     pub fn has_sticky_bit(&self) -> bool {
@@ -433,6 +495,48 @@ pub trait Inode: Any + Sync + Send {
     /// Get the extension of this inode
     fn extension(&self) -> Option<&Extension> {
         None
+    }
+
+    /// Used to check for read/write/execute permissions on a file.
+    ///
+    /// Similar to Linux, using "fsuid" here allows setting filesystem permissions
+    /// without changing the "normal" uids for other tasks.
+    fn check_permission(&self, mut perm: Permission) -> Result<()> {
+        let creds = match Task::current() {
+            Some(task) => match task.as_posix_thread() {
+                Some(thread) => thread.credentials(),
+                None => return Ok(()),
+            },
+            None => return Ok(()),
+        };
+
+        perm =
+            perm.intersection(Permission::MAY_READ | Permission::MAY_WRITE | Permission::MAY_EXEC);
+        let metadata = self.metadata();
+        let mode = metadata.mode;
+
+        if metadata.uid == creds.fsuid() {
+            if (perm.may_read() && !mode.is_owner_readable())
+                || (perm.may_write() && !mode.is_owner_writable())
+                || (perm.may_exec() && !mode.is_owner_executable())
+            {
+                return_errno_with_message!(Errno::EACCES, "owner permission check failed");
+            }
+        } else if metadata.gid == creds.fsgid() {
+            if (perm.may_read() && !mode.is_group_readable())
+                || (perm.may_write() && !mode.is_group_writable())
+                || (perm.may_exec() && !mode.is_group_executable())
+            {
+                return_errno_with_message!(Errno::EACCES, "group permission check failed");
+            }
+        } else if (perm.may_read() && !mode.is_other_readable())
+            || (perm.may_write() && !mode.is_other_writable())
+            || (perm.may_exec() && !mode.is_other_executable())
+        {
+            return_errno_with_message!(Errno::EACCES, "other permission check failed");
+        }
+
+        Ok(())
     }
 }
 

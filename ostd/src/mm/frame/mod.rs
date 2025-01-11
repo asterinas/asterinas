@@ -1,88 +1,194 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Untyped physical memory management.
+//! Frame (physical memory page) management.
 //!
-//! A frame is a special page that is _untyped_ memory.
-//! It is used to store data irrelevant to the integrity of the kernel.
-//! All pages mapped to the virtual address space of the users are backed by
-//! frames. Frames, with all the properties of pages, can additionally be safely
-//! read and written by the kernel or the user.
+//! A frame is an aligned, contiguous range of bytes in physical memory. The
+//! sizes of base frames and huge frames (that are mapped as "huge pages") are
+//! architecture-dependent. A frame can be mapped to virtual address spaces
+//! using the page table.
+//!
+//! Frames can be accessed through frame handles, namely, [`Frame`]. A frame
+//! handle is a reference-counted pointer to a frame. When all handles to a
+//! frame are dropped, the frame is released and can be reused.  Contiguous
+//! frames are managed with [`Segment`].
+//!
+//! There are various kinds of frames. The top-level grouping of frame kinds
+//! are "typed" frames and "untyped" frames. Typed frames host Rust objects
+//! that must follow the visibility, lifetime and borrow rules of Rust, thus
+//! not being able to be directly manipulated. Untyped frames are raw memory
+//! that can be manipulated directly. So only untyped frames can be
+//!  - safely shared to external entities such as device drivers or user-space
+//!    applications.
+//!  - or directly manipulated with readers and writers that neglect Rust's
+//!    "alias XOR mutability" rule.
+//!
+//! The kind of a frame is determined by the type of its metadata. Untyped
+//! frames have its metadata type that implements the [`UntypedFrameMeta`]
+//! trait, while typed frames don't.
+//!
+//! Frames can have dedicated metadata, which is implemented in the [`meta`]
+//! module. The reference count and usage of a frame are stored in the metadata
+//! as well, leaving the handle only a pointer to the metadata slot. Users
+//! can create custom metadata types by implementing the [`AnyFrameMeta`] trait.
 
-pub mod options;
-mod segment;
+pub mod allocator;
+pub mod meta;
+pub mod segment;
+pub mod untyped;
 
-use core::mem::ManuallyDrop;
+use core::{
+    marker::PhantomData,
+    sync::atomic::{AtomicU32, AtomicUsize, Ordering},
+};
 
+use meta::{
+    mapping, AnyFrameMeta, MetaSlot, FRAME_METADATA_MAX_ALIGN, FRAME_METADATA_MAX_SIZE,
+    REF_COUNT_UNUSED,
+};
 pub use segment::Segment;
+use untyped::{AnyUFrameMeta, UFrame};
 
-use super::page::{
-    meta::{FrameMeta, MetaSlot, PageMeta, PageUsage},
-    DynPage, Page,
-};
-use crate::{
-    mm::{
-        io::{FallibleVmRead, FallibleVmWrite, VmIo, VmReader, VmWriter},
-        paddr_to_vaddr, HasPaddr, Infallible, Paddr, PAGE_SIZE,
-    },
-    Error, Result,
-};
+use super::{PagingLevel, PAGE_SIZE};
+use crate::mm::{Paddr, PagingConsts, Vaddr};
 
-/// A handle to a physical memory page of untyped memory.
+static MAX_PADDR: AtomicUsize = AtomicUsize::new(0);
+
+/// A smart pointer to a frame.
 ///
-/// An instance of `Frame` is a handle to a page frame (a physical memory
-/// page). A cloned `Frame` refers to the same page frame as the original.
-/// As the original and cloned instances point to the same physical address,  
-/// they are treated as equal to each other. Behind the scene, a reference
-/// counter is maintained for each page frame so that when all instances of
-/// `Frame` that refer to the same page frame are dropped, the page frame
-/// will be globally freed.
-#[derive(Debug, Clone)]
-pub struct Frame {
-    page: Page<FrameMeta>,
+/// A frame is a contiguous range of bytes in physical memory. The [`Frame`]
+/// type is a smart pointer to a frame that is reference-counted.
+///
+/// Frames are associated with metadata. The type of the metadata `M` is
+/// determines the kind of the frame. If `M` implements [`AnyUFrameMeta`], the
+/// frame is a untyped frame. Otherwise, it is a typed frame.
+#[derive(Debug)]
+#[repr(transparent)]
+pub struct Frame<M: AnyFrameMeta + ?Sized> {
+    // TODO: We may use a `NonNull<M>` here to make the frame a maybe-fat
+    // pointer and implement `CoerceUnsized` to avoid `From`s. However this is
+    // not quite feasible currently because we cannot cast a must-be-fat
+    // pointer (`*const dyn AnyFrameMeta`) to a maybe-fat pointer (`NonNull<M>`).
+    ptr: *const MetaSlot,
+    _marker: PhantomData<M>,
 }
 
-impl Frame {
-    /// Returns the physical address of the page frame.
-    pub fn start_paddr(&self) -> Paddr {
-        self.page.paddr()
-    }
+unsafe impl<M: AnyFrameMeta + ?Sized> Send for Frame<M> {}
 
-    /// Returns the end physical address of the page frame.
-    pub fn end_paddr(&self) -> Paddr {
-        self.start_paddr() + PAGE_SIZE
-    }
+unsafe impl<M: AnyFrameMeta + ?Sized> Sync for Frame<M> {}
 
-    /// Returns the size of the frame
-    pub const fn size(&self) -> usize {
-        self.page.size()
-    }
-
-    /// Returns a raw pointer to the starting virtual address of the frame.
-    pub fn as_ptr(&self) -> *const u8 {
-        paddr_to_vaddr(self.start_paddr()) as *const u8
-    }
-
-    /// Returns a mutable raw pointer to the starting virtual address of the frame.
-    pub fn as_mut_ptr(&self) -> *mut u8 {
-        paddr_to_vaddr(self.start_paddr()) as *mut u8
-    }
-
-    /// Copies the content of `src` to the frame.
-    pub fn copy_from(&self, src: &Frame) {
-        if self.paddr() == src.paddr() {
-            return;
-        }
-        // SAFETY: the source and the destination does not overlap.
-        unsafe {
-            core::ptr::copy_nonoverlapping(src.as_ptr(), self.as_mut_ptr(), self.size());
-        }
-    }
-
-    /// Get the reference count of the frame.
+impl<M: AnyFrameMeta> Frame<M> {
+    /// Gets a [`Frame`] with a specific usage from a raw, unused page.
     ///
-    /// It returns the number of all references to the page, including all the
-    /// existing page handles ([`Frame`]) and all the mappings in the page
-    /// table that points to the page.
+    /// The caller should provide the initial metadata of the page.
+    ///
+    /// # Panics
+    ///
+    /// The function panics if:
+    ///  - the physical address is out of bound or not aligned;
+    ///  - the page is already in use.
+    pub fn from_unused(paddr: Paddr, metadata: M) -> Self {
+        assert!(paddr % PAGE_SIZE == 0);
+        assert!(paddr < MAX_PADDR.load(Ordering::Relaxed) as Paddr);
+
+        // Checking unsafe preconditions of the `AnyFrameMeta` trait.
+        debug_assert!(size_of::<M>() <= FRAME_METADATA_MAX_SIZE);
+        debug_assert!(align_of::<M>() <= FRAME_METADATA_MAX_ALIGN);
+
+        let vaddr = mapping::frame_to_meta::<PagingConsts>(paddr);
+        let ptr = vaddr as *const MetaSlot;
+
+        // SAFETY: `ptr` points to a valid `MetaSlot` that will never be mutably borrowed, so taking an
+        // immutable reference to it is always safe.
+        let slot = unsafe { &*ptr };
+
+        // `Acquire` pairs with the `Release` in `drop_last_in_place` and ensures the metadata
+        // initialization won't be reordered before this memory compare-and-exchange.
+        slot.ref_count
+            .compare_exchange(REF_COUNT_UNUSED, 0, Ordering::Acquire, Ordering::Relaxed)
+            .expect("Frame already in use when trying to get a new handle");
+
+        // SAFETY: We have exclusive access to the page metadata. These fields are mutably
+        // borrowed only once.
+        let vtable_ptr = unsafe { &mut *slot.vtable_ptr.get() };
+        vtable_ptr.write(core::ptr::metadata(&metadata as &dyn AnyFrameMeta));
+
+        // SAFETY:
+        // 1. `ptr` points to the first field of `MetaSlot` (guaranteed by `repr(C)`), which is the
+        //    metadata storage.
+        // 2. The size and the alignment of the metadata storage is large enough to hold `M`
+        //    (guaranteed by the safety requirement of the `AnyFrameMeta` trait).
+        // 3. We have exclusive access to the metadata storage (guaranteed by the reference count).
+        unsafe { ptr.cast::<M>().cast_mut().write(metadata) };
+
+        // Assuming no one can create a `Frame` instance directly from the page address, `Relaxed`
+        // is fine here. Otherwise, we should use `Release` to ensure that the metadata
+        // initialization won't be reordered after this memory store.
+        slot.ref_count.store(1, Ordering::Relaxed);
+
+        Self {
+            ptr,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Gets the metadata of this page.
+    pub fn meta(&self) -> &M {
+        // SAFETY: `self.ptr` points to the metadata storage which is valid to
+        // be immutably borrowed as `M` because the type is correct, it lives
+        // under the given lifetime, and no one will mutably borrow the page
+        // metadata after initialization.
+        unsafe { &*self.ptr.cast() }
+    }
+}
+
+impl<M: AnyFrameMeta + ?Sized> Frame<M> {
+    /// Gets the physical address of the start of the frame.
+    pub fn start_paddr(&self) -> Paddr {
+        mapping::meta_to_frame::<PagingConsts>(self.ptr as Vaddr)
+    }
+
+    /// Gets the paging level of this page.
+    ///
+    /// This is the level of the page table entry that maps the frame,
+    /// which determines the size of the frame.
+    ///
+    /// Currently, the level is always 1, which means the frame is a regular
+    /// page frame.
+    pub const fn level(&self) -> PagingLevel {
+        1
+    }
+
+    /// Gets the size of this page in bytes.
+    pub const fn size(&self) -> usize {
+        PAGE_SIZE
+    }
+
+    /// Gets the dyncamically-typed metadata of this frame.
+    ///
+    /// If the type is known at compile time, use [`Frame::meta`] instead.
+    pub fn dyn_meta(&self) -> &dyn AnyFrameMeta {
+        let slot = self.slot();
+
+        // SAFETY: The page metadata is valid to be borrowed immutably, since it will never be
+        // borrowed mutably after initialization.
+        let vtable_ptr = unsafe { &*slot.vtable_ptr.get() };
+
+        // SAFETY: The page metadata is initialized and valid.
+        let vtable_ptr = *unsafe { vtable_ptr.assume_init_ref() };
+
+        let meta_ptr: *const dyn AnyFrameMeta = core::ptr::from_raw_parts(self.ptr, vtable_ptr);
+
+        // SAFETY: `self.ptr` points to the metadata storage which is valid to be immutably
+        // borrowed under `vtable_ptr` because the vtable is correct, it lives under the given
+        // lifetime, and no one will mutably borrow the page metadata after initialization.
+        unsafe { &*meta_ptr }
+    }
+
+    /// Gets the reference count of the frame.
+    ///
+    /// It returns the number of all references to the frame, including all the
+    /// existing frame handles ([`Frame`], [`Frame<dyn AnyFrameMeta>`]), and all
+    /// the mappings in the page table that points to the frame.
     ///
     /// # Safety
     ///
@@ -90,150 +196,157 @@ impl Frame {
     /// reference count can be changed by other threads at any time including
     /// potentially between calling this method and acting on the result.
     pub fn reference_count(&self) -> u32 {
-        self.page.reference_count()
+        self.ref_count().load(Ordering::Relaxed)
     }
-}
 
-impl From<Page<FrameMeta>> for Frame {
-    fn from(page: Page<FrameMeta>) -> Self {
-        Self { page }
+    fn ref_count(&self) -> &AtomicU32 {
+        unsafe { &(*self.ptr).ref_count }
     }
-}
 
-impl TryFrom<DynPage> for Frame {
-    type Error = DynPage;
-
-    /// Try converting a [`DynPage`] into the statically-typed [`Frame`].
+    /// Forgets the handle to the frame.
     ///
-    /// If the dynamic page is not used as an untyped page frame, it will
-    /// return the dynamic page itself as is.
-    fn try_from(page: DynPage) -> core::result::Result<Self, Self::Error> {
-        page.try_into().map(|p: Page<FrameMeta>| p.into())
-    }
-}
-
-impl From<Frame> for Page<FrameMeta> {
-    fn from(frame: Frame) -> Self {
-        frame.page
-    }
-}
-
-impl HasPaddr for Frame {
-    fn paddr(&self) -> Paddr {
-        self.start_paddr()
-    }
-}
-
-impl<'a> Frame {
-    /// Returns a reader to read data from it.
-    pub fn reader(&'a self) -> VmReader<'a, Infallible> {
-        // SAFETY:
-        // - The memory range points to untyped memory.
-        // - The frame is alive during the lifetime `'a`.
-        // - Using `VmReader` and `VmWriter` is the only way to access the frame.
-        unsafe { VmReader::from_kernel_space(self.as_ptr(), self.size()) }
-    }
-
-    /// Returns a writer to write data into it.
-    pub fn writer(&'a self) -> VmWriter<'a, Infallible> {
-        // SAFETY:
-        // - The memory range points to untyped memory.
-        // - The frame is alive during the lifetime `'a`.
-        // - Using `VmReader` and `VmWriter` is the only way to access the frame.
-        unsafe { VmWriter::from_kernel_space(self.as_mut_ptr(), self.size()) }
-    }
-}
-
-impl VmIo for Frame {
-    fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<()> {
-        let read_len = writer.avail().min(self.size().saturating_sub(offset));
-        // Do bound check with potential integer overflow in mind
-        let max_offset = offset.checked_add(read_len).ok_or(Error::Overflow)?;
-        if max_offset > self.size() {
-            return Err(Error::InvalidArgs);
-        }
-        let len = self
-            .reader()
-            .skip(offset)
-            .read_fallible(writer)
-            .map_err(|(e, _)| e)?;
-        debug_assert!(len == read_len);
-        Ok(())
-    }
-
-    fn write(&self, offset: usize, reader: &mut VmReader) -> Result<()> {
-        let write_len = reader.remain().min(self.size().saturating_sub(offset));
-        // Do bound check with potential integer overflow in mind
-        let max_offset = offset.checked_add(write_len).ok_or(Error::Overflow)?;
-        if max_offset > self.size() {
-            return Err(Error::InvalidArgs);
-        }
-        let len = self
-            .writer()
-            .skip(offset)
-            .write_fallible(reader)
-            .map_err(|(e, _)| e)?;
-        debug_assert!(len == write_len);
-        Ok(())
-    }
-}
-
-impl PageMeta for FrameMeta {
-    const USAGE: PageUsage = PageUsage::Frame;
-
-    fn on_drop(_page: &mut Page<Self>) {
-        // Nothing should be done so far since dropping the page would
-        // have all taken care of.
-    }
-}
-
-// Here are implementations for `xarray`.
-
-use core::{marker::PhantomData, ops::Deref};
-
-/// `FrameRef` is a struct that can work as `&'a Frame`.
-///
-/// This is solely useful for [`crate::collections::xarray`].
-pub struct FrameRef<'a> {
-    inner: ManuallyDrop<Frame>,
-    _marker: PhantomData<&'a Frame>,
-}
-
-impl Deref for FrameRef<'_> {
-    type Target = Frame;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-// SAFETY: `Frame` is essentially an `*const MetaSlot` that could be used as a `*const` pointer.
-// The pointer is also aligned to 4.
-unsafe impl xarray::ItemEntry for Frame {
-    type Ref<'a>
-        = FrameRef<'a>
-    where
-        Self: 'a;
-
-    fn into_raw(self) -> *const () {
-        let ptr = self.page.ptr;
+    /// This will result in the frame being leaked without calling the custom dropper.
+    ///
+    /// A physical address to the frame is returned in case the frame needs to be
+    /// restored using [`Frame::from_raw`] later. This is useful when some architectural
+    /// data structures need to hold the frame handle such as the page table.
+    #[allow(unused)]
+    pub(in crate::mm) fn into_raw(self) -> Paddr {
+        let paddr = self.start_paddr();
         core::mem::forget(self);
-        ptr as *const ()
+        paddr
     }
 
-    unsafe fn from_raw(raw: *const ()) -> Self {
+    /// Restores a forgotten `Frame` from a physical address.
+    ///
+    /// # Safety
+    ///
+    /// The caller should only restore a `Frame` that was previously forgotten using
+    /// [`Frame::into_raw`].
+    ///
+    /// And the restoring operation should only be done once for a forgotten
+    /// `Frame`. Otherwise double-free will happen.
+    ///
+    /// Also, the caller ensures that the usage of the frame is correct. There's
+    /// no checking of the usage in this function.
+    pub(in crate::mm) unsafe fn from_raw(paddr: Paddr) -> Self {
+        let vaddr = mapping::frame_to_meta::<PagingConsts>(paddr);
+        let ptr = vaddr as *const MetaSlot;
+
         Self {
-            page: Page::<FrameMeta> {
-                ptr: raw as *mut MetaSlot,
-                _marker: PhantomData,
-            },
-        }
-    }
-
-    unsafe fn raw_as_ref<'a>(raw: *const ()) -> Self::Ref<'a> {
-        Self::Ref {
-            inner: ManuallyDrop::new(Frame::from_raw(raw)),
+            ptr,
             _marker: PhantomData,
         }
     }
+
+    fn slot(&self) -> &MetaSlot {
+        // SAFETY: `ptr` points to a valid `MetaSlot` that will never be
+        // mutably borrowed, so taking an immutable reference to it is safe.
+        unsafe { &*self.ptr }
+    }
+}
+
+impl<M: AnyFrameMeta + ?Sized> Clone for Frame<M> {
+    fn clone(&self) -> Self {
+        // SAFETY: We have already held a reference to the frame.
+        unsafe { self.slot().inc_ref_count() };
+
+        Self {
+            ptr: self.ptr,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<M: AnyFrameMeta + ?Sized> Drop for Frame<M> {
+    fn drop(&mut self) {
+        let last_ref_cnt = self.slot().ref_count.fetch_sub(1, Ordering::Release);
+        debug_assert!(last_ref_cnt != 0 && last_ref_cnt != REF_COUNT_UNUSED);
+
+        if last_ref_cnt == 1 {
+            // A fence is needed here with the same reasons stated in the implementation of
+            // `Arc::drop`: <https://doc.rust-lang.org/std/sync/struct.Arc.html#method.drop>.
+            core::sync::atomic::fence(Ordering::Acquire);
+
+            // SAFETY: this is the last reference and is about to be dropped.
+            unsafe {
+                meta::drop_last_in_place(self.ptr as *mut MetaSlot);
+            }
+        }
+    }
+}
+
+impl<M: AnyFrameMeta> TryFrom<Frame<dyn AnyFrameMeta>> for Frame<M> {
+    type Error = Frame<dyn AnyFrameMeta>;
+
+    /// Tries converting a [`Frame<dyn AnyFrameMeta>`] into the statically-typed [`Frame`].
+    ///
+    /// If the usage of the frame is not the same as the expected usage, it will
+    /// return the dynamic frame itself as is.
+    fn try_from(dyn_frame: Frame<dyn AnyFrameMeta>) -> Result<Self, Self::Error> {
+        if (dyn_frame.dyn_meta() as &dyn core::any::Any).is::<M>() {
+            // SAFETY: The metadata is coerceable and the struct is transmutable.
+            Ok(unsafe { core::mem::transmute::<Frame<dyn AnyFrameMeta>, Frame<M>>(dyn_frame) })
+        } else {
+            Err(dyn_frame)
+        }
+    }
+}
+
+impl<M: AnyFrameMeta> From<Frame<M>> for Frame<dyn AnyFrameMeta> {
+    fn from(frame: Frame<M>) -> Self {
+        // SAFETY: The metadata is coerceable and the struct is transmutable.
+        unsafe { core::mem::transmute(frame) }
+    }
+}
+
+impl<M: AnyUFrameMeta> From<Frame<M>> for UFrame {
+    fn from(frame: Frame<M>) -> Self {
+        // SAFETY: The metadata is coerceable and the struct is transmutable.
+        unsafe { core::mem::transmute(frame) }
+    }
+}
+
+impl From<UFrame> for Frame<dyn AnyFrameMeta> {
+    fn from(frame: UFrame) -> Self {
+        // SAFETY: The metadata is coerceable and the struct is transmutable.
+        unsafe { core::mem::transmute(frame) }
+    }
+}
+
+impl TryFrom<Frame<dyn AnyFrameMeta>> for UFrame {
+    type Error = Frame<dyn AnyFrameMeta>;
+
+    /// Tries converting a [`Frame<dyn AnyFrameMeta>`] into [`UFrame`].
+    ///
+    /// If the usage of the frame is not the same as the expected usage, it will
+    /// return the dynamic frame itself as is.
+    fn try_from(dyn_frame: Frame<dyn AnyFrameMeta>) -> Result<Self, Self::Error> {
+        if dyn_frame.dyn_meta().is_untyped() {
+            // SAFETY: The metadata is coerceable and the struct is transmutable.
+            Ok(unsafe { core::mem::transmute::<Frame<dyn AnyFrameMeta>, UFrame>(dyn_frame) })
+        } else {
+            Err(dyn_frame)
+        }
+    }
+}
+
+/// Increases the reference count of the frame by one.
+///
+/// # Safety
+///
+/// The caller should ensure the following conditions:
+///  1. The physical address must represent a valid frame;
+///  2. The caller must have already held a reference to the frame.
+pub(in crate::mm) unsafe fn inc_frame_ref_count(paddr: Paddr) {
+    debug_assert!(paddr % PAGE_SIZE == 0);
+    debug_assert!(paddr < MAX_PADDR.load(Ordering::Relaxed) as Paddr);
+
+    let vaddr: Vaddr = mapping::frame_to_meta::<PagingConsts>(paddr);
+    // SAFETY: `vaddr` points to a valid `MetaSlot` that will never be mutably borrowed, so taking
+    // an immutable reference to it is always safe.
+    let slot = unsafe { &*(vaddr as *const MetaSlot) };
+
+    // SAFETY: We have already held a reference to the frame.
+    unsafe { slot.inc_ref_count() };
 }

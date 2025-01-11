@@ -8,8 +8,8 @@ use core::{
 
 use align_ext::AlignExt;
 use ostd::mm::{
-    tlb::TlbFlushOp, vm_space::VmItem, CachePolicy, Frame, FrameAllocOptions, PageFlags,
-    PageProperty, VmSpace,
+    tlb::TlbFlushOp, vm_space::VmItem, CachePolicy, FrameAllocOptions, PageFlags, PageProperty,
+    UFrame, VmSpace,
 };
 
 use super::interval_set::Interval;
@@ -186,7 +186,7 @@ impl VmMapping {
                 } else {
                     let new_frame = duplicate_frame(&frame)?;
                     prop.flags |= new_flags;
-                    cursor.map(new_frame, prop);
+                    cursor.map(new_frame.into(), prop);
                 }
             }
             VmItem::NotMapped { .. } => {
@@ -216,17 +216,17 @@ impl VmMapping {
         Ok(())
     }
 
-    fn prepare_page(&self, page_fault_addr: Vaddr, write: bool) -> Result<(Frame, bool)> {
+    fn prepare_page(&self, page_fault_addr: Vaddr, write: bool) -> Result<(UFrame, bool)> {
         let mut is_readonly = false;
         let Some(vmo) = &self.vmo else {
-            return Ok((FrameAllocOptions::new(1).alloc_single()?, is_readonly));
+            return Ok((FrameAllocOptions::new().alloc_frame()?.into(), is_readonly));
         };
 
         let page_offset = page_fault_addr.align_down(PAGE_SIZE) - self.map_to_addr;
         let Ok(page) = vmo.get_committed_frame(page_offset) else {
             if !self.is_shared {
                 // The page index is outside the VMO. This is only allowed in private mapping.
-                return Ok((FrameAllocOptions::new(1).alloc_single()?, is_readonly));
+                return Ok((FrameAllocOptions::new().alloc_frame()?.into(), is_readonly));
             } else {
                 return_errno_with_message!(
                     Errno::EFAULT,
@@ -237,7 +237,7 @@ impl VmMapping {
 
         if !self.is_shared && write {
             // Write access to private VMO-backed mapping. Performs COW directly.
-            Ok((duplicate_frame(&page)?, is_readonly))
+            Ok((duplicate_frame(&page)?.into(), is_readonly))
         } else {
             // Operations to shared mapping or read access to private VMO-backed mapping.
             // If read access to private VMO-backed mapping triggers a page fault,
@@ -264,7 +264,7 @@ impl VmMapping {
 
         let vm_perms = self.perms - VmPerms::WRITE;
         let mut cursor = vm_space.cursor_mut(&(start_addr..end_addr))?;
-        let operate = move |commit_fn: &mut dyn FnMut() -> Result<Frame>| {
+        let operate = move |commit_fn: &mut dyn FnMut() -> Result<UFrame>| {
             if let VmItem::NotMapped { .. } = cursor.query().unwrap() {
                 // We regard all the surrounding pages as accessed, no matter
                 // if it is really so. Then the hardware won't bother to update
@@ -432,7 +432,7 @@ impl MappedVmo {
     ///
     /// If the VMO has not committed a frame at this index, it will commit
     /// one first and return it.
-    fn get_committed_frame(&self, page_offset: usize) -> Result<Frame> {
+    fn get_committed_frame(&self, page_offset: usize) -> Result<UFrame> {
         debug_assert!(page_offset < self.range.len());
         debug_assert!(page_offset % PAGE_SIZE == 0);
         self.vmo.commit_page(self.range.start + page_offset)
@@ -444,7 +444,7 @@ impl MappedVmo {
     /// perform other operations.
     fn operate_on_range<F>(&self, range: &Range<usize>, operate: F) -> Result<()>
     where
-        F: FnMut(&mut dyn FnMut() -> Result<Frame>) -> Result<()>,
+        F: FnMut(&mut dyn FnMut() -> Result<UFrame>) -> Result<()>,
     {
         debug_assert!(range.start < self.range.len());
         debug_assert!(range.end <= self.range.len());

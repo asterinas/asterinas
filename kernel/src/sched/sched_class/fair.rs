@@ -8,7 +8,10 @@ use core::{
 
 use ostd::{
     cpu::{num_cpus, CpuId},
-    task::scheduler::{EnqueueFlags, UpdateFlags},
+    task::{
+        scheduler::{EnqueueFlags, UpdateFlags},
+        Task,
+    },
 };
 
 use super::{
@@ -17,7 +20,7 @@ use super::{
 };
 use crate::{
     sched::priority::{Nice, NiceRange},
-    thread::Thread,
+    thread::AsThread,
 };
 
 const WEIGHT_0: u64 = 1024;
@@ -120,7 +123,7 @@ impl FairAttr {
 ///
 /// This structure is used to provide the capability for keying in the
 /// run queue implemented by `BTreeSet` in the `FairClassRq`.
-struct FairQueueItem(Arc<Thread>);
+struct FairQueueItem(Arc<Task>, u64);
 
 impl core::fmt::Debug for FairQueueItem {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -130,7 +133,7 @@ impl core::fmt::Debug for FairQueueItem {
 
 impl FairQueueItem {
     fn key(&self) -> u64 {
-        self.0.sched_attr().fair.vruntime.load(Relaxed)
+        self.1
     }
 }
 
@@ -165,7 +168,7 @@ pub(super) struct FairClassRq {
     #[allow(unused)]
     cpu: CpuId,
     /// The ready-to-run threads.
-    threads: BinaryHeap<Reverse<FairQueueItem>>,
+    entities: BinaryHeap<Reverse<FairQueueItem>>,
     /// The minimum of vruntime in the run queue. Serves as the initial
     /// value of newly-enqueued threads.
     min_vruntime: u64,
@@ -176,7 +179,7 @@ impl FairClassRq {
     pub fn new(cpu: CpuId) -> Self {
         Self {
             cpu,
-            threads: BinaryHeap::new(),
+            entities: BinaryHeap::new(),
             min_vruntime: 0,
             total_weight: 0,
         }
@@ -201,13 +204,13 @@ impl FairClassRq {
 
         // `+ 1` means including the current running thread.
         let period_single_cpu =
-            (base_slice_clks * (self.threads.len() + 1) as u64).max(min_period_clks);
+            (base_slice_clks * (self.entities.len() + 1) as u64).max(min_period_clks);
         period_single_cpu * u64::from((1 + num_cpus()).ilog2())
     }
 
     /// The virtual time slice for each thread in the run queue, measured in vruntime clocks.
     fn vtime_slice(&self) -> u64 {
-        self.period() / (self.threads.len() + 1) as u64
+        self.period() / (self.entities.len() + 1) as u64
     }
 
     /// The time slice for each thread in the run queue, measured in sched clocks.
@@ -217,32 +220,36 @@ impl FairClassRq {
 }
 
 impl SchedClassRq for FairClassRq {
-    fn enqueue(&mut self, thread: Arc<Thread>, flags: Option<EnqueueFlags>) {
-        let fair_attr = &thread.sched_attr().fair;
+    fn enqueue(&mut self, entity: Arc<Task>, flags: Option<EnqueueFlags>) {
+        let fair_attr = &entity.as_thread().unwrap().sched_attr().fair;
         let vruntime = match flags {
             Some(EnqueueFlags::Spawn) => self.min_vruntime + self.vtime_slice(),
             _ => self.min_vruntime,
         };
-        fair_attr.vruntime.fetch_max(vruntime, Relaxed);
+        let vruntime = fair_attr
+            .vruntime
+            .fetch_max(vruntime, Relaxed)
+            .max(vruntime);
 
         self.total_weight += fair_attr.weight.load(Relaxed);
-        self.threads.push(Reverse(FairQueueItem(thread)));
+        self.entities.push(Reverse(FairQueueItem(entity, vruntime)));
     }
 
     fn len(&mut self) -> usize {
-        self.threads.len()
+        self.entities.len()
     }
 
     fn is_empty(&mut self) -> bool {
-        self.threads.is_empty()
+        self.entities.is_empty()
     }
 
-    fn pick_next(&mut self) -> Option<Arc<Thread>> {
-        let Reverse(FairQueueItem(thread)) = self.threads.pop()?;
+    fn pick_next(&mut self) -> Option<Arc<Task>> {
+        let Reverse(FairQueueItem(entity, _)) = self.entities.pop()?;
 
-        self.total_weight -= thread.sched_attr().fair.weight.load(Relaxed);
+        let sched_attr = entity.as_thread().unwrap().sched_attr();
+        self.total_weight -= sched_attr.fair.weight.load(Relaxed);
 
-        Some(thread)
+        Some(entity)
     }
 
     fn update_current(
@@ -255,7 +262,7 @@ impl SchedClassRq for FairClassRq {
             UpdateFlags::Yield => true,
             UpdateFlags::Tick | UpdateFlags::Wait => {
                 let (vruntime, weight) = attr.fair.update_vruntime(rt.delta);
-                self.min_vruntime = match self.threads.peek() {
+                self.min_vruntime = match self.entities.peek() {
                     Some(Reverse(leftmost)) => vruntime.min(leftmost.key()),
                     None => vruntime,
                 };

@@ -8,12 +8,12 @@ use core::{
 
 use align_ext::AlignExt;
 use inherit_methods_macro::inherit_methods;
-use ostd::mm::{FrameAllocOptions, Segment, VmIo};
+use ostd::mm::{FrameAllocOptions, Segment, UntypedMem, VmIo};
 
 use super::{MultiRead, MultiWrite};
 use crate::prelude::*;
 
-/// A lock-free SPSC FIFO ring buffer backed by a [`Segment`].
+/// A lock-free SPSC FIFO ring buffer backed by a [`Segment<()>`].
 ///
 /// The ring buffer supports `push`/`pop` any `T: Pod` items, also
 /// supports `write`/`read` any bytes data based on [`VmReader`]/[`VmWriter`].
@@ -46,7 +46,7 @@ use crate::prelude::*;
 /// }
 /// ```
 pub struct RingBuffer<T> {
-    segment: Segment,
+    segment: Segment<()>,
     capacity: usize,
     tail: AtomicUsize,
     head: AtomicUsize,
@@ -78,9 +78,9 @@ impl<T> RingBuffer<T> {
             "capacity must be a power of two"
         );
         let nframes = capacity.saturating_mul(Self::T_SIZE).align_up(PAGE_SIZE) / PAGE_SIZE;
-        let segment = FrameAllocOptions::new(nframes)
-            .uninit(true)
-            .alloc_contiguous()
+        let segment = FrameAllocOptions::new()
+            .zeroed(false)
+            .alloc_segment(nframes)
             .unwrap();
         Self {
             segment,

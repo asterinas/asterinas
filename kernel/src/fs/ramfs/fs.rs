@@ -11,7 +11,7 @@ use aster_rights::Full;
 use aster_util::slot_vec::SlotVec;
 use hashbrown::HashMap;
 use ostd::{
-    mm::{Frame, VmIo},
+    mm::{UntypedMem, VmIo},
     sync::{PreemptDisabled, RwLockWriteGuard},
 };
 
@@ -23,8 +23,9 @@ use crate::{
         file_handle::FileLike,
         named_pipe::NamedPipe,
         utils::{
-            CStr256, DirentVisitor, Extension, FallocMode, FileSystem, FsFlags, Inode, InodeMode,
-            InodeType, IoctlCmd, Metadata, MknodType, PageCache, PageCacheBackend, SuperBlock,
+            CStr256, CachePage, DirentVisitor, Extension, FallocMode, FileSystem, FsFlags, Inode,
+            InodeMode, InodeType, IoctlCmd, Metadata, MknodType, PageCache, PageCacheBackend,
+            SuperBlock,
         },
     },
     prelude::*,
@@ -484,7 +485,7 @@ impl RamInode {
 }
 
 impl PageCacheBackend for RamInode {
-    fn read_page_async(&self, _idx: usize, frame: &Frame) -> Result<BioWaiter> {
+    fn read_page_async(&self, _idx: usize, frame: &CachePage) -> Result<BioWaiter> {
         // Initially, any block/page in a RamFs inode contains all zeros
         frame
             .writer()
@@ -494,7 +495,7 @@ impl PageCacheBackend for RamInode {
         Ok(BioWaiter::new())
     }
 
-    fn write_page_async(&self, _idx: usize, _frame: &Frame) -> Result<BioWaiter> {
+    fn write_page_async(&self, _idx: usize, _frame: &CachePage) -> Result<BioWaiter> {
         // do nothing
         Ok(BioWaiter::new())
     }

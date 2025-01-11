@@ -5,16 +5,17 @@
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use aster_rights::{ReadOp, WriteOp};
-use ostd::sync::Waker;
+use ostd::sync::{RoArc, Waker};
 
 use super::{
     kill::SignalSenderIds,
     signal::{
+        sig_action::SigAction,
         sig_mask::{AtomicSigMask, SigMask, SigSet},
         sig_num::SigNum,
         sig_queues::SigQueues,
         signals::Signal,
-        SigEvents, SigEventsFilter, SigStack,
+        SigEvents, SigEventsFilter,
     },
     Credentials, Process,
 };
@@ -23,7 +24,7 @@ use crate::{
     fs::{file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
     process::signal::constants::SIGCONT,
-    thread::{AsThread, Thread, Tid},
+    thread::{Thread, Tid},
     time::{clocks::ProfClock, Timer, TimerManager},
 };
 
@@ -33,13 +34,15 @@ pub mod futex;
 mod name;
 mod posix_thread_ext;
 mod robust_list;
+mod thread_local;
 pub mod thread_table;
 
 pub use builder::PosixThreadBuilder;
-pub use exit::do_exit;
+pub use exit::{do_exit, do_exit_group};
 pub use name::{ThreadName, MAX_THREAD_NAME_LEN};
 pub use posix_thread_ext::{create_posix_task_from_executable, AsPosixThread};
 pub use robust_list::RobustListHead;
+pub use thread_local::{AsThreadLocal, ThreadLocal};
 
 pub struct PosixThread {
     // Immutable part
@@ -49,19 +52,12 @@ pub struct PosixThread {
     // Mutable part
     name: Mutex<Option<ThreadName>>,
 
-    // Linux specific attributes.
-    // https://man7.org/linux/man-pages/man2/set_tid_address.2.html
-    set_child_tid: Mutex<Vaddr>,
-    clear_child_tid: Mutex<Vaddr>,
-
-    robust_list: Mutex<Option<RobustListHead>>,
-
     /// Process credentials. At the kernel level, credentials are a per-thread attribute.
     credentials: Credentials,
 
     // Files
     /// File table
-    file_table: Arc<SpinLock<FileTable>>,
+    file_table: RoArc<FileTable>,
     /// File system
     fs: Arc<ThreadFsInfo>,
 
@@ -70,10 +66,6 @@ pub struct PosixThread {
     sig_mask: AtomicSigMask,
     /// Thread-directed sigqueue
     sig_queues: SigQueues,
-    /// Signal handler ucontext address
-    /// FIXME: This field may be removed. For glibc applications with RESTORER flag set, the sig_context is always equals with rsp.
-    sig_context: Mutex<Option<Vaddr>>,
-    sig_stack: Mutex<Option<SigStack>>,
     /// The per-thread signal [`Waker`], which will be used to wake up the thread
     /// when enqueuing a signal.
     signalled_waker: SpinLock<Option<Arc<Waker>>>,
@@ -106,15 +98,7 @@ impl PosixThread {
         &self.name
     }
 
-    pub fn set_child_tid(&self) -> &Mutex<Vaddr> {
-        &self.set_child_tid
-    }
-
-    pub fn clear_child_tid(&self) -> &Mutex<Vaddr> {
-        &self.clear_child_tid
-    }
-
-    pub fn file_table(&self) -> &Arc<SpinLock<FileTable>> {
+    pub fn file_table(&self) -> &RoArc<FileTable> {
         &self.file_table
     }
 
@@ -220,8 +204,11 @@ impl PosixThread {
     /// Enqueues a thread-directed signal. This method should only be used for enqueue kernel
     /// signal and fault signal.
     pub fn enqueue_signal(&self, signal: Box<dyn Signal>) {
+        let signal_number = signal.num();
         self.sig_queues.enqueue(signal);
-        if let Some(waker) = &*self.signalled_waker.lock() {
+        if self.process().sig_dispositions().lock().get(signal_number) != SigAction::Ign
+            && let Some(waker) = &*self.signalled_waker.lock()
+        {
             waker.wake_up();
         }
     }
@@ -267,32 +254,6 @@ impl PosixThread {
 
     pub fn unregister_sigqueue_observer(&self, observer: &Weak<dyn Observer<SigEvents>>) {
         self.sig_queues.unregister_observer(observer);
-    }
-
-    pub fn sig_context(&self) -> &Mutex<Option<Vaddr>> {
-        &self.sig_context
-    }
-
-    pub fn sig_stack(&self) -> &Mutex<Option<SigStack>> {
-        &self.sig_stack
-    }
-
-    pub fn robust_list(&self) -> &Mutex<Option<RobustListHead>> {
-        &self.robust_list
-    }
-
-    fn is_main_thread(&self, tid: Tid) -> bool {
-        let process = self.process();
-        let pid = process.pid();
-        tid == pid
-    }
-
-    fn is_last_thread(&self) -> bool {
-        let process = self.process.upgrade().unwrap();
-        let tasks = process.tasks().lock();
-        tasks
-            .iter()
-            .all(|task| task.as_thread().unwrap().is_exited())
     }
 
     /// Gets the read-only credentials of the thread.

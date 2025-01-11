@@ -14,6 +14,7 @@ aster-console = { path = "comps/console" }
 aster-framebuffer = { path = "comps/framebuffer" }
 aster-softirq = { path = "comps/softirq" }
 aster-logger = { path = "comps/logger" }
+aster-mlsdisk = { path = "comps/mlsdisk" }
 aster-time = { path = "comps/time" }
 aster-virtio = { path = "comps/virtio" }
 aster-rights = { path = "libs/aster-rights" }
@@ -33,7 +34,7 @@ ascii = { version = "1.1", default-features = false, features = ["alloc"] }
 intrusive-collections = "0.9.5"
 paste = "1.0"
 time = { version = "0.3", default-features = false, features = ["alloc"] }
-tdx-guest = { version = "0.1.7", optional = true }
+tdx-guest = { version = "0.1.8", optional = true }
 
 # parse elf file
 xmas-elf = "0.8.0"

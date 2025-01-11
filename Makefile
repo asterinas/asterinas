@@ -37,7 +37,8 @@ FEATURES ?=
 # End of auto test features.
 
 # Network settings
-NETDEV ?= user 		# Possible values are user,tap
+# NETDEV possible values are user,tap
+NETDEV ?= user
 VHOST ?= off
 # End of network settings
 
@@ -98,7 +99,8 @@ endif
 ifeq ($(BOOT_PROTOCOL), linux-efi-handover64)
 CARGO_OSDK_ARGS += --grub-mkrescue=/usr/bin/grub-mkrescue
 CARGO_OSDK_ARGS += --grub-boot-protocol="linux"
-CARGO_OSDK_ARGS += --encoding raw # FIXME: GZIP self-decompression triggers CPU faults
+# FIXME: GZIP self-decompression (--encoding gzip) triggers CPU faults
+CARGO_OSDK_ARGS += --encoding raw
 else ifeq ($(BOOT_PROTOCOL), linux-legacy32)
 CARGO_OSDK_ARGS += --linux-x86-legacy-boot
 CARGO_OSDK_ARGS += --grub-boot-protocol="linux"
@@ -127,6 +129,7 @@ NON_OSDK_CRATES := \
 	kernel/libs/int-to-c-enum/derive \
 	kernel/libs/aster-rights \
 	kernel/libs/aster-rights-proc \
+	kernel/libs/jhash \
 	kernel/libs/keyable-arc \
 	kernel/libs/typeflags \
 	kernel/libs/typeflags-util \
@@ -146,10 +149,15 @@ OSDK_CRATES := \
 	kernel/comps/network \
 	kernel/comps/softirq \
 	kernel/comps/logger \
+	kernel/comps/mlsdisk \
 	kernel/comps/time \
 	kernel/comps/virtio \
 	kernel/libs/aster-util \
 	kernel/libs/aster-bigtcp
+
+# OSDK dependencies
+OSDK_SRC_FILES := \
+	$(shell find osdk/Cargo.toml osdk/Cargo.lock osdk/src -type f)
 
 .PHONY: all
 all: build
@@ -163,10 +171,9 @@ install_osdk:
 	@# dependencies to `crates.io`.
 	@OSDK_LOCAL_DEV=1 cargo install cargo-osdk --path osdk
 
-# This will install OSDK if it is not already installed
-# To update OSDK, we need to run `install_osdk` manually
-$(CARGO_OSDK):
-	@make --no-print-directory install_osdk
+# This will install and update OSDK automatically
+$(CARGO_OSDK): $(OSDK_SRC_FILES)
+	@$(MAKE) --no-print-directory install_osdk
 
 .PHONY: check_osdk
 check_osdk:
@@ -180,7 +187,7 @@ test_osdk:
 
 .PHONY: initramfs
 initramfs:
-	@make --no-print-directory -C test
+	@$(MAKE) --no-print-directory -C test
 
 .PHONY: build
 build: initramfs $(CARGO_OSDK)
@@ -213,7 +220,7 @@ gdb_server: initramfs $(CARGO_OSDK)
 	@cargo osdk run $(CARGO_OSDK_ARGS) --gdb-server wait-client,vscode,addr=:$(GDB_TCP_PORT)
 
 .PHONY: gdb_client
-gdb_client: $(CARGO_OSDK)
+gdb_client: initramfs $(CARGO_OSDK)
 	@cargo osdk debug $(CARGO_OSDK_ARGS) --remote :$(GDB_TCP_PORT)
 
 .PHONY: profile_server
@@ -221,7 +228,7 @@ profile_server: initramfs $(CARGO_OSDK)
 	@cargo osdk run $(CARGO_OSDK_ARGS) --gdb-server addr=:$(GDB_TCP_PORT)
 
 .PHONY: profile_client
-profile_client: $(CARGO_OSDK)
+profile_client: initramfs $(CARGO_OSDK)
 	@cargo osdk profile $(CARGO_OSDK_ARGS) --remote :$(GDB_TCP_PORT) \
 		--samples $(GDB_PROFILE_COUNT) --interval $(GDB_PROFILE_INTERVAL) --format $(GDB_PROFILE_FORMAT)
 
@@ -255,7 +262,7 @@ docs: $(CARGO_OSDK)
 .PHONY: format
 format:
 	@./tools/format_all.sh
-	@make --no-print-directory -C test format
+	@$(MAKE) --no-print-directory -C test format
 
 .PHONY: check
 check: initramfs $(CARGO_OSDK)
@@ -277,7 +284,7 @@ check: initramfs $(CARGO_OSDK)
 		echo "Checking $$dir"; \
 		(cd $$dir && cargo osdk clippy -- -- -D warnings) || exit 1; \
 	done
-	@make --no-print-directory -C test check
+	@$(MAKE) --no-print-directory -C test check
 	@typos
 
 .PHONY: clean
@@ -289,6 +296,6 @@ clean:
 	@echo "Cleaning up documentation target files"
 	@cd docs && mdbook clean
 	@echo "Cleaning up test target files"
-	@make --no-print-directory -C test clean
+	@$(MAKE) --no-print-directory -C test clean
 	@echo "Uninstalling OSDK"
 	@rm -f $(CARGO_OSDK)

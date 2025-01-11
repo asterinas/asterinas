@@ -5,7 +5,7 @@ use bitvec::array::BitArray;
 use int_to_c_enum::TryFromInt;
 use ostd::{
     mm::{
-        DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, Infallible, Segment, VmIo,
+        DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, Infallible, USegment, VmIo,
         VmReader, VmWriter,
     },
     sync::{SpinLock, WaitQueue},
@@ -426,11 +426,11 @@ impl<'a> BioSegment {
         let bio_segment_inner = target_pool(direction)
             .and_then(|pool| pool.alloc(nblocks, offset_within_first_block, len))
             .unwrap_or_else(|| {
-                let segment = FrameAllocOptions::new(nblocks)
-                    .uninit(true)
-                    .alloc_contiguous()
+                let segment = FrameAllocOptions::new()
+                    .zeroed(false)
+                    .alloc_segment(nblocks)
                     .unwrap();
-                let dma_stream = DmaStream::map(segment, direction.into(), false).unwrap();
+                let dma_stream = DmaStream::map(segment.into(), direction.into(), false).unwrap();
                 BioSegmentInner {
                     dma_slice: DmaStreamSlice::new(dma_stream, offset_within_first_block, len),
                     from_pool: false,
@@ -442,9 +442,9 @@ impl<'a> BioSegment {
         }
     }
 
-    /// Constructs a new `BioSegment` with a given `Segment` and the bio direction.
-    pub fn new_from_segment(segment: Segment, direction: BioDirection) -> Self {
-        let len = segment.nbytes();
+    /// Constructs a new `BioSegment` with a given `USegment` and the bio direction.
+    pub fn new_from_segment(segment: USegment, direction: BioDirection) -> Self {
+        let len = segment.size();
         let dma_stream = DmaStream::map(segment, direction.into(), false).unwrap();
         Self {
             inner: Arc::new(BioSegmentInner {
@@ -481,8 +481,8 @@ impl<'a> BioSegment {
 
     /// Returns the inner VM segment.
     #[cfg(ktest)]
-    pub fn inner_segment(&self) -> &Segment {
-        self.inner.dma_slice.stream().vm_segment()
+    pub fn inner_segment(&self) -> &USegment {
+        self.inner.dma_slice.stream().segment()
     }
 
     /// Returns a reader to read data from it.
@@ -560,11 +560,11 @@ impl BioSegmentPool {
     pub fn new(direction: BioDirection) -> Self {
         let total_blocks = POOL_DEFAULT_NBLOCKS;
         let pool = {
-            let segment = FrameAllocOptions::new(total_blocks)
-                .uninit(true)
-                .alloc_contiguous()
+            let segment = FrameAllocOptions::new()
+                .zeroed(false)
+                .alloc_segment(total_blocks)
                 .unwrap();
-            DmaStream::map(segment, direction.into(), false).unwrap()
+            DmaStream::map(segment.into(), direction.into(), false).unwrap()
         };
         let manager = SpinLock::new(PoolSlotManager {
             occupied: BitArray::ZERO,

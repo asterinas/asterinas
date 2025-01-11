@@ -12,12 +12,14 @@
 
 #![no_std]
 #![deny(unsafe_code)]
-#![feature(btree_extract_if)]
+#![feature(extract_if)]
 
 pub mod device;
 pub mod errors;
+pub mod ext;
 pub mod iface;
 pub mod socket;
+pub mod socket_table;
 pub mod time;
 pub mod wire;
 

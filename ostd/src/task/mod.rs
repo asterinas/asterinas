@@ -27,7 +27,7 @@ pub use self::{
     scheduler::info::{AtomicCpuId, TaskScheduleInfo},
 };
 pub(crate) use crate::arch::task::{context_switch, TaskContext};
-use crate::{prelude::*, user::UserSpace};
+use crate::{prelude::*, trap::in_interrupt_context, user::UserSpace};
 
 /// A task that executes a function to the end.
 ///
@@ -38,7 +38,10 @@ use crate::{prelude::*, user::UserSpace};
 pub struct Task {
     #[allow(clippy::type_complexity)]
     func: ForceSync<Cell<Option<Box<dyn FnOnce() + Send>>>>,
+
     data: Box<dyn Any + Send + Sync>,
+    local_data: ForceSync<Box<dyn Any + Send>>,
+
     user_space: Option<Arc<UserSpace>>,
     ctx: SyncUnsafeCell<TaskContext>,
     /// kernel stack, note that the top is SyscallFrame/TrapFrame
@@ -83,6 +86,7 @@ impl Task {
     ///
     /// Note that this method cannot be simply named "yield" as the name is
     /// a Rust keyword.
+    #[track_caller]
     pub fn yield_now() {
         scheduler::yield_now()
     }
@@ -90,6 +94,7 @@ impl Task {
     /// Kicks the task scheduler to run the task.
     ///
     /// BUG: This method highly depends on the current scheduling policy.
+    #[track_caller]
     pub fn run(self: &Arc<Self>) {
         scheduler::run_new_task(self.clone());
     }
@@ -136,6 +141,7 @@ impl Task {
 pub struct TaskOptions {
     func: Option<Box<dyn FnOnce() + Send>>,
     data: Option<Box<dyn Any + Send + Sync>>,
+    local_data: Option<Box<dyn Any + Send>>,
     user_space: Option<Arc<UserSpace>>,
 }
 
@@ -148,6 +154,7 @@ impl TaskOptions {
         Self {
             func: Some(Box::new(func)),
             data: None,
+            local_data: None,
             user_space: None,
         }
     }
@@ -167,6 +174,15 @@ impl TaskOptions {
         T: Any + Send + Sync,
     {
         self.data = Some(Box::new(data));
+        self
+    }
+
+    /// Sets the local data associated with the task.
+    pub fn local_data<T>(mut self, data: T) -> Self
+    where
+        T: Any + Send,
+    {
+        self.local_data = Some(Box::new(data));
         self
     }
 
@@ -226,7 +242,8 @@ impl TaskOptions {
 
         let new_task = Task {
             func: ForceSync::new(Cell::new(self.func)),
-            data: self.data.unwrap(),
+            data: self.data.unwrap_or_else(|| Box::new(())),
+            local_data: ForceSync::new(self.local_data.unwrap_or_else(|| Box::new(()))),
             user_space: self.user_space,
             ctx,
             kstack,
@@ -239,6 +256,7 @@ impl TaskOptions {
     }
 
     /// Builds a new task and runs it immediately.
+    #[track_caller]
     pub fn spawn(self) -> Result<Arc<Task>> {
         let task = Arc::new(self.build()?);
         task.run();
@@ -249,12 +267,16 @@ impl TaskOptions {
 /// The current task.
 ///
 /// This type is not `Send`, so it cannot outlive the current task.
+///
+/// This type is also not `Sync`, so it can provide access to the local data of the current task.
 #[derive(Debug)]
 pub struct CurrentTask(NonNull<Task>);
 
-// The intern `NonNull<Task>` contained by `CurrentTask` implies that `CurrentTask` is `!Send`.
-// But it is still good to do this explicitly because this property is key for soundness.
+// The intern `NonNull<Task>` contained by `CurrentTask` implies that `CurrentTask` is `!Send` and
+// `!Sync`. But it is still good to do this explicitly because these properties are key for
+// soundness.
 impl !Send for CurrentTask {}
+impl !Sync for CurrentTask {}
 
 impl CurrentTask {
     /// # Safety
@@ -262,6 +284,25 @@ impl CurrentTask {
     /// The caller must ensure that `task` is the current task.
     unsafe fn new(task: NonNull<Task>) -> Self {
         Self(task)
+    }
+
+    /// Returns the local data of the current task.
+    ///
+    /// Note that the local data is only accessible in the task context. Although there is a
+    /// current task in the non-task context (e.g. IRQ handlers), access to the local data is
+    /// forbidden as it may cause soundness problems.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if called in a non-task context.
+    pub fn local_data(&self) -> &(dyn Any + Send) {
+        assert!(!in_interrupt_context());
+
+        let local_data = &self.local_data;
+
+        // SAFETY: The `local_data` field will only be accessed by the current task in the task
+        // context, so the data won't be accessed concurrently.
+        &**unsafe { local_data.get() }
     }
 
     /// Returns a cloned `Arc<Task>`.

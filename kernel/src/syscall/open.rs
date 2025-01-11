@@ -33,19 +33,26 @@ pub fn sys_openat(
             .fs()
             .resolver()
             .read()
-            .open(&fs_path, flags, mask_mode)?;
+            .open(&fs_path, flags, mask_mode)
+            .map_err(|err| match err.error() {
+                Errno::EINTR => Error::new(Errno::ERESTARTSYS),
+                _ => err,
+            })?;
         Arc::new(inode_handle)
     };
-    let mut file_table = current.file_table().lock();
+
     let fd = {
+        let file_table = ctx.thread_local.file_table().borrow();
+        let mut file_table_locked = file_table.write();
         let fd_flags =
             if CreationFlags::from_bits_truncate(flags).contains(CreationFlags::O_CLOEXEC) {
                 FdFlags::CLOEXEC
             } else {
                 FdFlags::empty()
             };
-        file_table.insert(file_handle, fd_flags)
+        file_table_locked.insert(file_handle, fd_flags)
     };
+
     Ok(SyscallReturn::Return(fd as _))
 }
 

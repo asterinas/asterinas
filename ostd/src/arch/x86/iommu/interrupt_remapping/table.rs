@@ -23,7 +23,7 @@ enum ExtendedInterruptMode {
 pub struct IntRemappingTable {
     size: u16,
     extended_interrupt_mode: ExtendedInterruptMode,
-    frames: Segment,
+    frames: Segment<()>,
     /// The global allocator for Interrupt remapping entry.
     allocator: SpinLock<IdAlloc, LocalIrqDisabled>,
     handles: Vec<Arc<SpinLock<IrtEntryHandle, LocalIrqDisabled>>>,
@@ -35,12 +35,11 @@ impl IntRemappingTable {
         Some(self.handles.get(id).unwrap().clone())
     }
 
-    /// Creates an Interrupt Remapping Table with one Frame (default).
+    /// Creates an Interrupt Remapping Table with one `Segment` (default).
     pub(super) fn new() -> Self {
         const DEFAULT_PAGES: usize = 1;
-        let segment = FrameAllocOptions::new(DEFAULT_PAGES)
-            .is_contiguous(true)
-            .alloc_contiguous()
+        let segment = FrameAllocOptions::new()
+            .alloc_segment(DEFAULT_PAGES)
             .unwrap();
         let entry_number = (DEFAULT_PAGES * PAGE_SIZE / size_of::<u128>()) as u16;
 

@@ -1,14 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{string::String, vec::Vec};
 use core::arch::global_asm;
-
-use spin::Once;
 
 use crate::{
     boot::{
-        kcmdline::KCmdlineArg,
-        memory_region::{non_overlapping_regions_from, MemoryRegion, MemoryRegionType},
+        memory_region::{MemoryRegion, MemoryRegionArray, MemoryRegionType},
         BootloaderAcpiArg, BootloaderFramebufferArg,
     },
     mm::{
@@ -21,55 +17,41 @@ global_asm!(include_str!("header.S"));
 
 pub(super) const MULTIBOOT_ENTRY_MAGIC: u32 = 0x2BADB002;
 
-fn init_bootloader_name(bootloader_name: &'static Once<String>) {
-    bootloader_name.call_once(|| {
-        let mut name = "";
-        let info = MB1_INFO.get().unwrap();
-        if info.boot_loader_name != 0 {
-            // SAFETY: the bootloader name is C-style zero-terminated string.
-            unsafe {
-                let cstr = paddr_to_vaddr(info.boot_loader_name as usize) as *const u8;
-                let mut len = 0;
-                while cstr.add(len).read() != 0 {
-                    len += 1;
-                }
-
-                name = core::str::from_utf8(core::slice::from_raw_parts(cstr, len))
-                    .expect("cmdline is not a utf-8 string");
+fn parse_bootloader_name(mb1_info: &MultibootLegacyInfo) -> &str {
+    let mut name = "Unknown Multiboot loader";
+    if mb1_info.boot_loader_name != 0 {
+        // SAFETY: the bootloader name is C-style zero-terminated string.
+        unsafe {
+            let cstr = paddr_to_vaddr(mb1_info.boot_loader_name as usize) as *const u8;
+            let mut len = 0;
+            while cstr.add(len).read() != 0 {
+                len += 1;
             }
+
+            name = core::str::from_utf8(core::slice::from_raw_parts(cstr, len))
+                .expect("cmdline is not a utf-8 string");
         }
-        name.into()
-    });
-}
-
-fn init_kernel_commandline(kernel_cmdline: &'static Once<KCmdlineArg>) {
-    kernel_cmdline.call_once(|| {
-        let mut cmdline = "";
-        let info = MB1_INFO.get().unwrap();
-        if info.cmdline != 0 {
-            // SAFETY: the command line is C-style zero-terminated string.
-            unsafe {
-                let cstr = paddr_to_vaddr(info.cmdline as usize) as *const u8;
-                let mut len = 0;
-                while cstr.add(len).read() != 0 {
-                    len += 1;
-                }
-
-                cmdline = core::str::from_utf8(core::slice::from_raw_parts(cstr, len))
-                    .expect("cmdline is not a utf-8 string");
-            }
-        }
-        cmdline.into()
-    });
-}
-
-fn init_initramfs(initramfs: &'static Once<&'static [u8]>) {
-    let info = MB1_INFO.get().unwrap();
-    // FIXME: We think all modules are initramfs, can this cause problems?
-    if info.mods_count == 0 {
-        return;
     }
-    let modules_addr = info.mods_addr as usize;
+    name
+}
+
+fn parse_kernel_commandline(mb1_info: &MultibootLegacyInfo) -> &str {
+    let mut cmdline = "";
+    if mb1_info.cmdline != 0 {
+        let ptr = paddr_to_vaddr(mb1_info.cmdline as usize) as *const i8;
+        // SAFETY: the command line is C-style zero-terminated string.
+        let cstr = unsafe { core::ffi::CStr::from_ptr(ptr) };
+        cmdline = cstr.to_str().unwrap();
+    }
+    cmdline
+}
+
+fn parse_initramfs(mb1_info: &MultibootLegacyInfo) -> Option<&[u8]> {
+    // FIXME: We think all modules are initramfs, can this cause problems?
+    if mb1_info.mods_count == 0 {
+        return None;
+    }
+    let modules_addr = mb1_info.mods_addr as usize;
     // We only use one module
     let (start, end) = unsafe {
         (
@@ -84,60 +66,63 @@ fn init_initramfs(initramfs: &'static Once<&'static [u8]>) {
         start
     };
     let length = end - start;
-    initramfs.call_once(|| unsafe { core::slice::from_raw_parts(base_va as *const u8, length) });
+
+    Some(unsafe { core::slice::from_raw_parts(base_va as *const u8, length) })
 }
 
-fn init_acpi_arg(acpi: &'static Once<BootloaderAcpiArg>) {
+fn parse_acpi_arg(_mb1_info: &MultibootLegacyInfo) -> BootloaderAcpiArg {
     // The multiboot protocol does not contain RSDP address.
     // TODO: What about UEFI?
-    acpi.call_once(|| BootloaderAcpiArg::NotProvided);
+    BootloaderAcpiArg::NotProvided
 }
 
-fn init_framebuffer_info(framebuffer_arg: &'static Once<BootloaderFramebufferArg>) {
-    let info = MB1_INFO.get().unwrap();
-    framebuffer_arg.call_once(|| BootloaderFramebufferArg {
-        address: info.framebuffer_table.addr as usize,
-        width: info.framebuffer_table.width as usize,
-        height: info.framebuffer_table.height as usize,
-        bpp: info.framebuffer_table.bpp as usize,
-    });
+fn parse_framebuffer_info(mb1_info: &MultibootLegacyInfo) -> Option<BootloaderFramebufferArg> {
+    if mb1_info.framebuffer_table.addr == 0 {
+        return None;
+    }
+    Some(BootloaderFramebufferArg {
+        address: mb1_info.framebuffer_table.addr as usize,
+        width: mb1_info.framebuffer_table.width as usize,
+        height: mb1_info.framebuffer_table.height as usize,
+        bpp: mb1_info.framebuffer_table.bpp as usize,
+    })
 }
 
-fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
-    let mut regions = Vec::<MemoryRegion>::new();
-
-    let info = MB1_INFO.get().unwrap();
+fn parse_memory_regions(mb1_info: &MultibootLegacyInfo) -> MemoryRegionArray {
+    let mut regions = MemoryRegionArray::new();
 
     // Add the regions in the multiboot protocol.
-    for entry in info.get_memory_map() {
+    for entry in mb1_info.get_memory_map() {
         let start = entry.base_addr();
         let region = MemoryRegion::new(
             start.try_into().unwrap(),
             entry.length().try_into().unwrap(),
             entry.memory_type(),
         );
-        regions.push(region);
+        regions.push(region).unwrap();
     }
 
     // Add the framebuffer region.
     let fb = BootloaderFramebufferArg {
-        address: info.framebuffer_table.addr as usize,
-        width: info.framebuffer_table.width as usize,
-        height: info.framebuffer_table.height as usize,
-        bpp: info.framebuffer_table.bpp as usize,
+        address: mb1_info.framebuffer_table.addr as usize,
+        width: mb1_info.framebuffer_table.width as usize,
+        height: mb1_info.framebuffer_table.height as usize,
+        bpp: mb1_info.framebuffer_table.bpp as usize,
     };
-    regions.push(MemoryRegion::new(
-        fb.address,
-        (fb.width * fb.height * fb.bpp + 7) / 8, // round up when divide with 8 (bits/Byte)
-        MemoryRegionType::Framebuffer,
-    ));
+    regions
+        .push(MemoryRegion::new(
+            fb.address,
+            (fb.width * fb.height * fb.bpp + 7) / 8, // round up when divide with 8 (bits/Byte)
+            MemoryRegionType::Framebuffer,
+        ))
+        .unwrap();
 
     // Add the kernel region.
-    regions.push(MemoryRegion::kernel());
+    regions.push(MemoryRegion::kernel()).unwrap();
 
     // Add the initramfs area.
-    if info.mods_count != 0 {
-        let modules_addr = info.mods_addr as usize;
+    if mb1_info.mods_count != 0 {
+        let modules_addr = mb1_info.mods_addr as usize;
         // We only use one module
         let (start, end) = unsafe {
             (
@@ -145,22 +130,25 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
                 (*(paddr_to_vaddr(modules_addr + 4) as *const u32)) as usize,
             )
         };
-        regions.push(MemoryRegion::new(
-            start,
-            end - start,
-            MemoryRegionType::Module,
-        ));
+        regions
+            .push(MemoryRegion::new(
+                start,
+                end - start,
+                MemoryRegionType::Module,
+            ))
+            .unwrap();
     }
 
     // Add the AP boot code region that will be copied into by the BSP.
-    regions.push(MemoryRegion::new(
-        super::smp::AP_BOOT_START_PA,
-        super::smp::ap_boot_code_size(),
-        MemoryRegionType::Reclaimable,
-    ));
+    regions
+        .push(MemoryRegion::new(
+            super::smp::AP_BOOT_START_PA,
+            super::smp::ap_boot_code_size(),
+            MemoryRegionType::Reclaimable,
+        ))
+        .unwrap();
 
-    // Initialize with non-overlapping regions.
-    memory_regions.call_once(move || non_overlapping_regions_from(regions.as_ref()));
+    regions.into_non_overlapping()
 }
 
 /// Representation of Multiboot Information according to specification.
@@ -396,20 +384,23 @@ impl Iterator for MemoryEntryIter {
     }
 }
 
-static MB1_INFO: Once<&'static MultibootLegacyInfo> = Once::new();
-
 /// The entry point of Rust code called by inline asm.
 #[no_mangle]
 unsafe extern "sysv64" fn __multiboot_entry(boot_magic: u32, boot_params: u64) -> ! {
     assert_eq!(boot_magic, MULTIBOOT_ENTRY_MAGIC);
-    MB1_INFO.call_once(|| &*(paddr_to_vaddr(boot_params as usize) as *const MultibootLegacyInfo));
-    crate::boot::register_boot_init_callbacks(
-        init_bootloader_name,
-        init_kernel_commandline,
-        init_initramfs,
-        init_acpi_arg,
-        init_framebuffer_info,
-        init_memory_regions,
-    );
-    crate::boot::call_ostd_main();
+    let mb1_info =
+        unsafe { &*(paddr_to_vaddr(boot_params as usize) as *const MultibootLegacyInfo) };
+
+    use crate::boot::{call_ostd_main, EarlyBootInfo, EARLY_INFO};
+
+    EARLY_INFO.call_once(|| EarlyBootInfo {
+        bootloader_name: parse_bootloader_name(mb1_info),
+        kernel_cmdline: parse_kernel_commandline(mb1_info),
+        initramfs: parse_initramfs(mb1_info),
+        acpi_arg: parse_acpi_arg(mb1_info),
+        framebuffer_arg: parse_framebuffer_info(mb1_info),
+        memory_regions: parse_memory_regions(mb1_info),
+    });
+
+    call_ostd_main();
 }

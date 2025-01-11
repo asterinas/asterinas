@@ -4,20 +4,20 @@ use super::*;
 
 /// The per-cpu run queue for the IDLE scheduling class.
 ///
-/// This run queue is used for the per-cpu idle thread, if any.
+/// This run queue is used for the per-cpu idle entity, if any.
 pub(super) struct IdleClassRq {
-    thread: Option<Arc<Thread>>,
+    entity: Option<Arc<Task>>,
 }
 
 impl IdleClassRq {
     pub fn new() -> Self {
-        Self { thread: None }
+        Self { entity: None }
     }
 }
 
 impl core::fmt::Debug for IdleClassRq {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        if self.thread.is_some() {
+        if self.entity.is_some() {
             write!(f, "Idle: occupied")?;
         } else {
             write!(f, "Idle: empty")?;
@@ -27,12 +27,12 @@ impl core::fmt::Debug for IdleClassRq {
 }
 
 impl SchedClassRq for IdleClassRq {
-    fn enqueue(&mut self, thread: Arc<Thread>, _: Option<EnqueueFlags>) {
-        let ptr = Arc::as_ptr(&thread);
-        if let Some(t) = self.thread.replace(thread)
+    fn enqueue(&mut self, entity: Arc<Task>, _: Option<EnqueueFlags>) {
+        let ptr = Arc::as_ptr(&entity);
+        if let Some(t) = self.entity.replace(entity)
             && ptr != Arc::as_ptr(&t)
         {
-            panic!("Multiple `idle` threads spawned")
+            panic!("Multiple `idle` entities spawned")
         }
     }
 
@@ -41,15 +41,15 @@ impl SchedClassRq for IdleClassRq {
     }
 
     fn is_empty(&mut self) -> bool {
-        self.thread.is_none()
+        self.entity.is_none()
     }
 
-    fn pick_next(&mut self) -> Option<Arc<Thread>> {
-        self.thread.clone()
+    fn pick_next(&mut self) -> Option<Arc<Task>> {
+        self.entity.clone()
     }
 
     fn update_current(&mut self, _: &CurrentRuntime, _: &SchedAttr, _flags: UpdateFlags) -> bool {
-        // Idle threads has the greatest priority value. They should always be preempted.
+        // Idle entities has the greatest priority value. They should always be preempted.
         true
     }
 }

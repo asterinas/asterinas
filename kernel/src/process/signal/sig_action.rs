@@ -90,9 +90,6 @@ impl TryFrom<u32> for SigActionFlags {
     fn try_from(bits: u32) -> Result<Self> {
         let flags = SigActionFlags::from_bits(bits)
             .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid sig action flag"))?;
-        if flags.contains(SigActionFlags::SA_RESTART) {
-            warn!("SA_RESTART is not supported");
-        }
         Ok(flags)
     }
 }

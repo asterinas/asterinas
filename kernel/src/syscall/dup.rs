@@ -2,7 +2,7 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::{FdFlags, FileDesc},
+    fs::file_table::{get_file_fast, FdFlags, FileDesc},
     prelude::*,
     process::ResourceType,
 };
@@ -10,8 +10,9 @@ use crate::{
 pub fn sys_dup(old_fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
     debug!("old_fd = {}", old_fd);
 
-    let mut file_table = ctx.posix_thread.file_table().lock();
-    let new_fd = file_table.dup(old_fd, 0, FdFlags::empty())?;
+    let file_table = ctx.thread_local.file_table().borrow();
+    let mut file_table_locked = file_table.write();
+    let new_fd = file_table_locked.dup(old_fd, 0, FdFlags::empty())?;
 
     Ok(SyscallReturn::Return(new_fd as _))
 }
@@ -20,8 +21,8 @@ pub fn sys_dup2(old_fd: FileDesc, new_fd: FileDesc, ctx: &Context) -> Result<Sys
     debug!("old_fd = {}, new_fd = {}", old_fd, new_fd);
 
     if old_fd == new_fd {
-        let file_table = ctx.posix_thread.file_table().lock();
-        let _ = file_table.get_file(old_fd)?;
+        let mut file_table = ctx.thread_local.file_table().borrow_mut();
+        let _file = get_file_fast!(&mut file_table, old_fd);
         return Ok(SyscallReturn::Return(new_fd as _));
     }
 
@@ -66,9 +67,10 @@ fn do_dup3(
         return_errno!(Errno::EBADF);
     }
 
-    let mut file_table = ctx.posix_thread.file_table().lock();
-    let _ = file_table.close_file(new_fd);
-    let new_fd = file_table.dup(old_fd, new_fd, flags)?;
+    let file_table = ctx.thread_local.file_table().borrow();
+    let mut file_table_locked = file_table.write();
+    let _ = file_table_locked.close_file(new_fd);
+    let new_fd = file_table_locked.dup(old_fd, new_fd, flags)?;
 
     Ok(SyscallReturn::Return(new_fd as _))
 }

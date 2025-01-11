@@ -40,7 +40,6 @@
 
 pub(crate) mod kvirt_area;
 
-use alloc::vec::Vec;
 use core::ops::Range;
 
 use align_ext::AlignExt;
@@ -48,11 +47,11 @@ use log::info;
 use spin::Once;
 
 use super::{
-    nr_subpage_per_huge,
-    page::{
-        meta::{mapping, KernelMeta, MetaPageMeta},
-        Page,
+    frame::{
+        meta::{impl_frame_meta_for, mapping, MetaPageMeta},
+        Frame, Segment,
     },
+    nr_subpage_per_huge,
     page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
     page_table::{KernelMode, PageTable},
     Paddr, PagingConstsTrait, Vaddr, PAGE_SIZE,
@@ -112,7 +111,7 @@ pub fn paddr_to_vaddr(pa: Paddr) -> usize {
 
 /// Returns whether the given address should be mapped as tracked.
 ///
-/// About what is tracked mapping, see [`crate::mm::page::meta::MapTrackingStatus`].
+/// About what is tracked mapping, see [`crate::mm::frame::meta::MapTrackingStatus`].
 pub(crate) fn should_map_as_tracked(addr: Vaddr) -> bool {
     !(LINEAR_MAPPING_VADDR_RANGE.contains(&addr) || VMALLOC_VADDR_RANGE.contains(&addr))
 }
@@ -132,10 +131,10 @@ pub static KERNEL_PAGE_TABLE: Once<PageTable<KernelMode, PageTableEntry, PagingC
 ///
 /// This function should be called before:
 ///  - any initializer that modifies the kernel page table.
-pub fn init_kernel_page_table(meta_pages: Vec<Page<MetaPageMeta>>) {
+pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
     info!("Initializing the kernel page table");
 
-    let regions = crate::boot::memory_regions();
+    let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
     let phys_mem_cap = regions.iter().map(|r| r.base() + r.len()).max().unwrap();
 
     // Start to initialize the kernel page table.
@@ -164,8 +163,8 @@ pub fn init_kernel_page_table(meta_pages: Vec<Page<MetaPageMeta>>) {
 
     // Map the metadata pages.
     {
-        let start_va = mapping::page_to_meta::<PagingConsts>(0);
-        let from = start_va..start_va + meta_pages.len() * PAGE_SIZE;
+        let start_va = mapping::frame_to_meta::<PagingConsts>(0);
+        let from = start_va..start_va + meta_pages.size();
         let prop = PageProperty {
             flags: PageFlags::RW,
             cache: CachePolicy::Writeback,
@@ -215,7 +214,7 @@ pub fn init_kernel_page_table(meta_pages: Vec<Page<MetaPageMeta>>) {
         };
         let mut cursor = kpt.cursor_mut(&from).unwrap();
         for frame_paddr in to.step_by(PAGE_SIZE) {
-            let page = Page::<KernelMeta>::from_unused(frame_paddr, KernelMeta::default());
+            let page = Frame::<KernelMeta>::from_unused(frame_paddr, KernelMeta);
             // SAFETY: we are doing mappings for the kernel.
             unsafe {
                 let _old = cursor.map(page.into(), prop);
@@ -247,3 +246,9 @@ pub unsafe fn activate_kernel_page_table() {
         crate::mm::page_table::boot_pt::dismiss();
     }
 }
+
+/// The metadata of pages that contains the kernel itself.
+#[derive(Debug, Default)]
+pub struct KernelMeta;
+
+impl_frame_meta_for!(KernelMeta);

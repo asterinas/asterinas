@@ -139,7 +139,7 @@ impl Pollable for VsockStreamSocket {
 }
 
 impl FileLike for VsockStreamSocket {
-    fn as_socket(self: Arc<Self>) -> Option<Arc<dyn Socket>> {
+    fn as_socket(&self) -> Option<&dyn Socket> {
         Some(self)
     }
 
@@ -303,7 +303,9 @@ impl Socket for VsockStreamSocket {
         flags: SendRecvFlags,
     ) -> Result<usize> {
         // TODO: Deal with flags
-        debug_assert!(flags.is_all_supported());
+        if !flags.is_all_supported() {
+            warn!("unsupported flags: {:?}", flags);
+        }
 
         let MessageHeader {
             control_message, ..
@@ -323,7 +325,9 @@ impl Socket for VsockStreamSocket {
         flags: SendRecvFlags,
     ) -> Result<(usize, MessageHeader)> {
         // TODO: Deal with flags
-        debug_assert!(flags.is_all_supported());
+        if !flags.is_all_supported() {
+            warn!("unsupported flags: {:?}", flags);
+        }
 
         let (received_bytes, _) = self.recv(writer, flags)?;
 
@@ -361,8 +365,8 @@ impl Socket for VsockStreamSocket {
 impl Drop for VsockStreamSocket {
     fn drop(&mut self) {
         let vsockspace = VSOCK_GLOBAL.get().unwrap();
-        let inner = self.status.read();
-        match &*inner {
+        let inner = self.status.get_mut();
+        match inner {
             Status::Init(init) => {
                 if let Some(addr) = init.bound_addr() {
                     vsockspace.recycle_port(&addr.port);

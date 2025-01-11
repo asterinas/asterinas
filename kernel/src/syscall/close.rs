@@ -7,9 +7,10 @@ pub fn sys_close(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}", fd);
 
     let file = {
-        let mut file_table = ctx.posix_thread.file_table().lock();
-        let _ = file_table.get_file(fd)?;
-        file_table.close_file(fd).unwrap()
+        let file_table = ctx.thread_local.file_table().borrow();
+        let mut file_table_locked = file_table.write();
+        let _ = file_table_locked.get_file(fd)?;
+        file_table_locked.close_file(fd).unwrap()
     };
 
     // Cleanup work needs to be done in the `Drop` impl.

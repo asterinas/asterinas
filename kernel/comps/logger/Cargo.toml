@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 component = { path = "../../libs/comp-sys/component" }
 aster-console = { path = "../console" }
+aster-virtio = { path = "../virtio" }
 log = "0.4"
 ostd = { path = "../../../ostd" }
 spin = "0.9.4"

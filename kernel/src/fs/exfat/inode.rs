@@ -13,7 +13,7 @@ use aster_block::{
     BLOCK_SIZE,
 };
 use aster_rights::Full;
-use ostd::mm::{Frame, VmIo};
+use ostd::mm::{Segment, VmIo};
 
 use super::{
     constants::*,
@@ -30,8 +30,8 @@ use crate::{
     fs::{
         exfat::{dentry::ExfatDentryIterator, fat::ExfatChain, fs::ExfatFS},
         utils::{
-            DirentVisitor, Extension, Inode, InodeMode, InodeType, IoctlCmd, Metadata, MknodType,
-            PageCache, PageCacheBackend,
+            CachePage, DirentVisitor, Extension, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
+            MknodType, PageCache, PageCacheBackend,
         },
     },
     prelude::*,
@@ -135,14 +135,16 @@ struct ExfatInodeInner {
 }
 
 impl PageCacheBackend for ExfatInode {
-    fn read_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
+    fn read_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
         let inner = self.inner.read();
         if inner.size < idx * PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "Invalid read size")
         }
         let sector_id = inner.get_sector_id(idx * PAGE_SIZE / inner.fs().sector_size())?;
-        let bio_segment =
-            BioSegment::new_from_segment(frame.clone().into(), BioDirection::FromDevice);
+        let bio_segment = BioSegment::new_from_segment(
+            Segment::from(frame.clone()).into(),
+            BioDirection::FromDevice,
+        );
         let waiter = inner.fs().block_device().read_blocks_async(
             BlockId::from_offset(sector_id * inner.fs().sector_size()),
             bio_segment,
@@ -150,7 +152,7 @@ impl PageCacheBackend for ExfatInode {
         Ok(waiter)
     }
 
-    fn write_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
+    fn write_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
         let inner = self.inner.read();
         let sector_size = inner.fs().sector_size();
 
@@ -158,8 +160,10 @@ impl PageCacheBackend for ExfatInode {
 
         // FIXME: We may need to truncate the file if write_page fails.
         // To fix this issue, we need to change the interface of the PageCacheBackend trait.
-        let bio_segment =
-            BioSegment::new_from_segment(frame.clone().into(), BioDirection::ToDevice);
+        let bio_segment = BioSegment::new_from_segment(
+            Segment::from(frame.clone()).into(),
+            BioDirection::ToDevice,
+        );
         let waiter = inner.fs().block_device().write_blocks_async(
             BlockId::from_offset(sector_id * inner.fs().sector_size()),
             bio_segment,

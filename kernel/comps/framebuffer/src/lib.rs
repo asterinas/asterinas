@@ -15,7 +15,7 @@ use core::{
 use component::{init_component, ComponentInitError};
 use font8x8::UnicodeFonts;
 use ostd::{
-    boot::{self, memory_region::MemoryRegionType, memory_regions},
+    boot::{boot_info, memory_region::MemoryRegionType},
     io_mem::IoMem,
     mm::{VmIo, PAGE_SIZE},
     sync::SpinLock,
@@ -36,9 +36,11 @@ pub(crate) static WRITER: Once<SpinLock<Writer>> = Once::new();
 #[allow(clippy::diverging_sub_expression)]
 pub(crate) fn init() {
     let mut writer = {
-        let framebuffer = boot::framebuffer_arg();
+        let Some(framebuffer) = boot_info().framebuffer_arg else {
+            return;
+        };
         let mut size = 0;
-        for region in memory_regions() {
+        for region in boot_info().memory_regions.iter() {
             if region.typ() == MemoryRegionType::Framebuffer {
                 size = region.len();
             }
@@ -56,9 +58,9 @@ pub(crate) fn init() {
             io_mem,
             x_pos: 0,
             y_pos: 0,
-            bytes_per_pixel: (framebuffer.bpp / 8) as usize,
-            width: framebuffer.width as usize,
-            height: framebuffer.height as usize,
+            bytes_per_pixel: (framebuffer.bpp / 8),
+            width: framebuffer.width,
+            height: framebuffer.height,
             buffer: buffer.leak(),
         }
     };

@@ -33,6 +33,7 @@ pub(super) fn current_task() -> Option<NonNull<Task>> {
 ///
 /// This function will panic if called while holding preemption locks or with
 /// local IRQ disabled.
+#[track_caller]
 pub(super) fn switch_to_task(next_task: Arc<Task>) {
     super::atomic_mode::might_sleep();
 

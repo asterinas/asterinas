@@ -4,12 +4,13 @@ use core::{num::NonZeroU64, sync::atomic::Ordering};
 
 use ostd::{
     cpu::UserContext,
+    sync::RwArc,
     task::Task,
     user::{UserContextApi, UserSpace},
 };
 
 use super::{
-    posix_thread::{thread_table, AsPosixThread, PosixThread, PosixThreadBuilder, ThreadName},
+    posix_thread::{AsPosixThread, PosixThreadBuilder, ThreadName},
     process_table,
     process_vm::ProcessVm,
     signal::{constants::SIGCHLD, sig_disposition::SigDispositions, sig_num::SigNum},
@@ -165,7 +166,7 @@ impl CloneFlags {
             | CloneFlags::CLONE_CHILD_CLEARTID;
         let unsupported_flags = *self - supported_flags;
         if !unsupported_flags.is_empty() {
-            panic!("contains unsupported clone flags: {:?}", unsupported_flags);
+            warn!("contains unsupported clone flags: {:?}", unsupported_flags);
         }
         Ok(())
     }
@@ -215,16 +216,16 @@ fn clone_child_task(
 
     let Context {
         process,
+        thread_local,
         posix_thread,
-        thread: _,
-        task: _,
+        ..
     } = ctx;
 
     // clone system V semaphore
     clone_sysvsem(clone_flags)?;
 
     // clone file table
-    let child_file_table = clone_files(posix_thread.file_table(), clone_flags);
+    let child_file_table = clone_files(&thread_local.file_table().borrow(), clone_flags);
 
     // clone fs
     let child_fs = clone_fs(posix_thread.fs(), clone_flags);
@@ -252,20 +253,26 @@ fn clone_child_task(
             Credentials::new_from(&credentials)
         };
 
-        let thread_builder = PosixThreadBuilder::new(child_tid, child_user_space, credentials)
+        let mut thread_builder = PosixThreadBuilder::new(child_tid, child_user_space, credentials)
             .process(posix_thread.weak_process())
             .sig_mask(sig_mask)
             .file_table(child_file_table)
             .fs(child_fs);
+
+        // Deal with SETTID/CLEARTID flags
+        clone_parent_settid(child_tid, clone_args.parent_tid, clone_flags)?;
+        thread_builder = clone_child_cleartid(thread_builder, clone_args.child_tid, clone_flags);
+        thread_builder = clone_child_settid(thread_builder, clone_args.child_tid, clone_flags);
+
         thread_builder.build()
     };
 
-    process.tasks().lock().push(child_task.clone());
+    process
+        .tasks()
+        .lock()
+        .insert(child_task.clone())
+        .map_err(|_| Error::with_message(Errno::EINTR, "the process has exited"))?;
 
-    let child_posix_thread = child_task.as_posix_thread().unwrap();
-    clone_parent_settid(child_tid, clone_args.parent_tid, clone_flags)?;
-    clone_child_cleartid(child_posix_thread, clone_args.child_tid, clone_flags)?;
-    clone_child_settid(child_posix_thread, clone_args.child_tid, clone_flags)?;
     Ok(child_task)
 }
 
@@ -276,9 +283,9 @@ fn clone_child_process(
 ) -> Result<Arc<Process>> {
     let Context {
         process,
+        thread_local,
         posix_thread,
-        thread: _,
-        task: _,
+        ..
     } = ctx;
 
     let clone_flags = clone_args.flags;
@@ -306,7 +313,7 @@ fn clone_child_process(
     };
 
     // clone file table
-    let child_file_table = clone_files(posix_thread.file_table(), clone_flags);
+    let child_file_table = clone_files(&thread_local.file_table().borrow(), clone_flags);
 
     // clone fs
     let child_fs = clone_fs(posix_thread.fs(), clone_flags);
@@ -327,7 +334,7 @@ fn clone_child_process(
 
     let child = {
         let child_elf_path = process.executable_path();
-        let child_thread_builder = {
+        let mut child_thread_builder = {
             let child_thread_name = ThreadName::new_from_executable_path(&child_elf_path)?;
 
             let credentials = {
@@ -341,6 +348,13 @@ fn clone_child_process(
                 .file_table(child_file_table)
                 .fs(child_fs)
         };
+
+        // Deal with SETTID/CLEARTID flags
+        clone_parent_settid(child_tid, clone_args.parent_tid, clone_flags)?;
+        child_thread_builder =
+            clone_child_cleartid(child_thread_builder, clone_args.child_tid, clone_flags);
+        child_thread_builder =
+            clone_child_settid(child_thread_builder, clone_args.child_tid, clone_flags);
 
         let mut process_builder =
             ProcessBuilder::new(child_tid, &child_elf_path, posix_thread.weak_process());
@@ -358,13 +372,6 @@ fn clone_child_process(
         child.set_exit_signal(sig);
     };
 
-    // Deals with clone flags
-    let child_thread = thread_table::get_thread(child_tid).unwrap();
-    let child_posix_thread = child_thread.as_posix_thread().unwrap();
-    clone_parent_settid(child_tid, clone_args.parent_tid, clone_flags)?;
-    clone_child_cleartid(child_posix_thread, clone_args.child_tid, clone_flags)?;
-    clone_child_settid(child_posix_thread, clone_args.child_tid, clone_flags)?;
-
     // Sets parent process and group for child process.
     set_parent_and_group(process, &child);
 
@@ -372,25 +379,27 @@ fn clone_child_process(
 }
 
 fn clone_child_cleartid(
-    child_posix_thread: &PosixThread,
+    child_builder: PosixThreadBuilder,
     child_tidptr: Vaddr,
     clone_flags: CloneFlags,
-) -> Result<()> {
+) -> PosixThreadBuilder {
     if clone_flags.contains(CloneFlags::CLONE_CHILD_CLEARTID) {
-        *child_posix_thread.clear_child_tid().lock() = child_tidptr;
+        child_builder.clear_child_tid(child_tidptr)
+    } else {
+        child_builder
     }
-    Ok(())
 }
 
 fn clone_child_settid(
-    child_posix_thread: &PosixThread,
+    child_builder: PosixThreadBuilder,
     child_tidptr: Vaddr,
     clone_flags: CloneFlags,
-) -> Result<()> {
+) -> PosixThreadBuilder {
     if clone_flags.contains(CloneFlags::CLONE_CHILD_SETTID) {
-        *child_posix_thread.set_child_tid().lock() = child_tidptr;
+        child_builder.set_child_tid(child_tidptr)
+    } else {
+        child_builder
     }
-    Ok(())
 }
 
 fn clone_parent_settid(
@@ -460,17 +469,14 @@ fn clone_fs(parent_fs: &Arc<ThreadFsInfo>, clone_flags: CloneFlags) -> Arc<Threa
     }
 }
 
-fn clone_files(
-    parent_file_table: &Arc<SpinLock<FileTable>>,
-    clone_flags: CloneFlags,
-) -> Arc<SpinLock<FileTable>> {
+fn clone_files(parent_file_table: &RwArc<FileTable>, clone_flags: CloneFlags) -> RwArc<FileTable> {
     // if CLONE_FILES is set, the child and parent shares the same file table
     // Otherwise, the child will deep copy a new file table.
     // FIXME: the clone may not be deep copy.
     if clone_flags.contains(CloneFlags::CLONE_FILES) {
         parent_file_table.clone()
     } else {
-        Arc::new(SpinLock::new(parent_file_table.lock().clone()))
+        RwArc::new(parent_file_table.read().clone())
     }
 }
 

@@ -22,7 +22,7 @@ use crate::{
         kspace::KERNEL_PAGE_TABLE,
         page_table::{self, PageTable, PageTableItem, UserMode},
         tlb::{TlbFlushOp, TlbFlusher, FLUSH_ALL_RANGE_THRESHOLD},
-        Frame, PageProperty, VmReader, VmWriter, MAX_USERSPACE_VADDR,
+        PageProperty, UFrame, VmReader, VmWriter, MAX_USERSPACE_VADDR,
     },
     prelude::*,
     sync::{PreemptDisabled, RwLock, RwLockReadGuard},
@@ -40,7 +40,7 @@ use crate::{
 ///
 /// A newly-created `VmSpace` is not backed by any physical memory pages. To
 /// provide memory pages for a `VmSpace`, one can allocate and map physical
-/// memory ([`Frame`]s) to the `VmSpace` using the cursor.
+/// memory ([`UFrame`]s) to the `VmSpace` using the cursor.
 ///
 /// A `VmSpace` can also attach a page fault handler, which will be invoked to
 /// handle page faults generated from user space.
@@ -323,7 +323,7 @@ impl CursorMut<'_, '_> {
     /// Map a frame into the current slot.
     ///
     /// This method will bring the cursor to the next slot after the modification.
-    pub fn map(&mut self, frame: Frame, prop: PageProperty) {
+    pub fn map(&mut self, frame: UFrame, prop: PageProperty) {
         let start_va = self.virt_addr();
         // SAFETY: It is safe to map untyped memory into the userspace.
         let old = unsafe { self.pt_cursor.map(frame.into(), prop) };
@@ -475,7 +475,7 @@ pub enum VmItem {
         /// The virtual address of the slot.
         va: Vaddr,
         /// The mapped frame.
-        frame: Frame,
+        frame: UFrame,
         /// The property of the slot.
         prop: PageProperty,
     },

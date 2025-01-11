@@ -4,14 +4,14 @@ use core::ops::Range;
 
 use aster_rights::{Dup, Rights, TRightSet, TRights, Write};
 use aster_rights_proc::require;
-use ostd::mm::{Frame, VmIo};
+use ostd::mm::{UFrame, VmIo};
 
 use super::{CommitFlags, Vmo, VmoRightsOp};
 use crate::prelude::*;
 
 impl<R: TRights> Vmo<TRightSet<R>> {
     /// Commits a page at specific offset.
-    pub fn commit_page(&self, offset: usize) -> Result<Frame> {
+    pub fn commit_page(&self, offset: usize) -> Result<UFrame> {
         self.check_rights(Rights::WRITE)?;
         self.0.commit_page(offset)
     }
@@ -41,7 +41,7 @@ impl<R: TRights> Vmo<TRightSet<R>> {
     #[require(R > Write)]
     pub(in crate::vm) fn operate_on_range<F>(&self, range: &Range<usize>, operate: F) -> Result<()>
     where
-        F: FnMut(&mut dyn FnMut() -> Result<Frame>) -> Result<()>,
+        F: FnMut(&mut dyn FnMut() -> Result<UFrame>) -> Result<()>,
     {
         self.0
             .operate_on_range(range, operate, CommitFlags::empty())
@@ -114,7 +114,7 @@ impl<R: TRights> Vmo<TRightSet<R>> {
     ///
     /// The method requires the Write right.
     #[require(R > Write)]
-    pub fn replace(&self, page: Frame, page_idx: usize) -> Result<()> {
+    pub fn replace(&self, page: UFrame, page_idx: usize) -> Result<()> {
         self.0.replace(page, page_idx)
     }
 

@@ -2,7 +2,10 @@
 
 use alloc::vec;
 
-use aster_bigtcp::{device, time::Instant};
+use aster_bigtcp::{
+    device::{self, NotifyDevice},
+    time::Instant,
+};
 use ostd::mm::VmWriter;
 
 use crate::{buffer::RxBuffer, AnyNetworkDevice};
@@ -32,6 +35,13 @@ impl device::Device for dyn AnyNetworkDevice {
         self.capabilities()
     }
 }
+
+impl NotifyDevice for dyn AnyNetworkDevice {
+    fn notify_poll_end(&mut self) {
+        self.notify_poll_end();
+    }
+}
+
 pub struct RxToken(RxBuffer);
 
 impl device::RxToken for RxToken {

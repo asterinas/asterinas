@@ -10,6 +10,7 @@ logger = { name = "aster-logger" }
 time = { name = "aster-time" }
 framebuffer = { name = "aster-framebuffer" }
 network = { name = "aster-network" }
+mlsdisk = { name = "aster-mlsdisk" }
 
 [whitelist]
 [whitelist.nix.main]

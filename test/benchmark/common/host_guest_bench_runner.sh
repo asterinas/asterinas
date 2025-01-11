@@ -14,8 +14,8 @@ LINUX_OUTPUT=$5
 READY_MESSAGE="The VM is ready for the benchmark."
 
 # Import the common functions
-BENCHMARK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)/../"
-source "${BENCHMARK_DIR}/common/prepare_host.sh"
+BENCHMARK_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)/../"
+source "${BENCHMARK_ROOT}/common/prepare_host.sh"
 
 if [[ "$BENCHMARK_PATH" =~ "iperf" ]]; then 
     # Persist Iperf port
@@ -32,6 +32,9 @@ elif [[ "$BENCHMARK_PATH" =~ "tcp_virtio_lat" ]]; then
 elif [[ "$BENCHMARK_PATH" =~ "tcp_virtio_bw" ]]; then
     # Persist lmbench/bw_tcp port
     export LMBENCH_TCP_BW_PORT=31236
+elif [[ "$BENCHMARK_PATH" =~ "memcached" ]]; then
+    # Persist Memcached port
+    export MEMCACHED_PORT=11211
 fi
 
 # Function to run the benchmark

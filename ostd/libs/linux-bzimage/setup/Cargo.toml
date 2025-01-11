@@ -1,6 +1,6 @@
 [package]
 name = "linux-bzimage-setup"
-version = "0.10.0"
+version = "0.11.1"
 edition = "2021"
 description = "The linux bzImage setup binary"
 license = "MPL-2.0"
@@ -16,7 +16,7 @@ path = "src/main.rs"
 cfg-if = "1.0.0"
 core2 = { version = "0.4.0", default-features = false, features = ["nightly"] }
 libflate = { version = "2.1.0", default-features = false }
-linux-boot-params = { version = "0.10.0", path = "../boot-params" }
+linux-boot-params = { version = "0.11.1", path = "../boot-params" }
 uart_16550 = "0.3.0"
 xmas-elf = "0.9.1"
 
@@ -26,7 +26,9 @@ log = "0.4.20"
 uefi = { version = "0.32.0", features = ["global_allocator", "panic_handler", "logger", "qemu"]}
 uefi-raw = "0.8.0"
 x86_64 = "0.15.1"
+tdx-guest = { version = "0.1.8", optional = true }
 
 [features]
-default = []
+default = ["cvm_guest"]
 debug_print = []
+cvm_guest = ["dep:tdx-guest"]

@@ -7,21 +7,24 @@ use crate::prelude::*;
 #[set = "pub"]
 pub struct TcpOptionSet {
     no_delay: bool,
-    congestion: CongestionControl,
     maxseg: u32,
+    keep_idle: u32,
     window_clamp: u32,
+    congestion: CongestionControl,
 }
 
 pub const DEFAULT_MAXSEG: u32 = 536;
+pub const DEFAULT_KEEP_IDLE: u32 = 7200;
 pub const DEFAULT_WINDOW_CLAMP: u32 = 0x8000_0000;
 
 impl TcpOptionSet {
     pub fn new() -> Self {
         Self {
             no_delay: false,
-            congestion: CongestionControl::Reno,
             maxseg: DEFAULT_MAXSEG,
+            keep_idle: DEFAULT_KEEP_IDLE,
             window_clamp: DEFAULT_WINDOW_CLAMP,
+            congestion: CongestionControl::Reno,
         }
     }
 }

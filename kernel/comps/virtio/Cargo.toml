@@ -12,7 +12,6 @@ bytes = { version = "1.4.0", default-features = false }
 align_ext = { path = "../../../ostd/libs/align_ext" }
 aster-input = { path = "../input" }
 aster-block = { path = "../block" }
-aster-logger = { path = "../logger" }
 aster-network = { path = "../network" }
 aster-console = { path = "../console" }
 aster-util = { path = "../../libs/aster-util" }

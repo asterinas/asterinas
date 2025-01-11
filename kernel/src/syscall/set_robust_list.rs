@@ -12,15 +12,18 @@ pub fn sys_set_robust_list(
         "robust list head ptr: 0x{:x}, len = {}",
         robust_list_head_ptr, len
     );
+
     if len != core::mem::size_of::<RobustListHead>() {
         return_errno_with_message!(
             Errno::EINVAL,
-            "The len is not equal to the size of robust list head"
+            "the length is not equal to the size of the robust list head"
         );
     }
+
     let robust_list_head: RobustListHead = ctx.user_space().read_val(robust_list_head_ptr)?;
-    debug!("{:x?}", robust_list_head);
-    let mut robust_list = ctx.posix_thread.robust_list().lock();
-    *robust_list = Some(robust_list_head);
+    debug!("robust list head: {:x?}", robust_list_head);
+
+    *ctx.thread_local.robust_list().borrow_mut() = Some(robust_list_head);
+
     Ok(SyscallReturn::Return(0))
 }

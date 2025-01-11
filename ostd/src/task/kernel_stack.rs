@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::{
+    impl_frame_meta_for,
     mm::{
         kspace::kvirt_area::{KVirtArea, Tracked},
-        page::{allocator, meta::KernelStackMeta},
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
-        PAGE_SIZE,
+        FrameAllocOptions, PAGE_SIZE,
     },
     prelude::*,
 };
@@ -34,6 +34,11 @@ pub struct KernelStack {
     has_guard_page: bool,
 }
 
+#[derive(Debug, Default)]
+struct KernelStackMeta;
+
+impl_frame_meta_for!(KernelStackMeta);
+
 impl KernelStack {
     /// Generates a kernel stack with guard pages.
     /// 4 additional pages are allocated and regarded as guard pages, which should not be accessed.
@@ -41,13 +46,15 @@ impl KernelStack {
         let mut new_kvirt_area = KVirtArea::<Tracked>::new(KERNEL_STACK_SIZE + 4 * PAGE_SIZE);
         let mapped_start = new_kvirt_area.range().start + 2 * PAGE_SIZE;
         let mapped_end = mapped_start + KERNEL_STACK_SIZE;
-        let pages = allocator::alloc(KERNEL_STACK_SIZE, |_| KernelStackMeta::default()).unwrap();
+        let pages = FrameAllocOptions::new()
+            .zeroed(false)
+            .alloc_segment_with(KERNEL_STACK_SIZE / PAGE_SIZE, |_| KernelStackMeta)?;
         let prop = PageProperty {
             flags: PageFlags::RW,
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::empty(),
         };
-        new_kvirt_area.map_pages(mapped_start..mapped_end, pages.iter().cloned(), prop);
+        new_kvirt_area.map_pages(mapped_start..mapped_end, pages, prop);
 
         Ok(Self {
             kvirt_area: new_kvirt_area,

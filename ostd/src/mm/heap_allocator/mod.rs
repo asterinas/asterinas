@@ -11,7 +11,7 @@ use spin::Once;
 
 use super::paddr_to_vaddr;
 use crate::{
-    mm::{page::allocator::PAGE_ALLOCATOR, PAGE_SIZE},
+    mm::{frame::allocator::FRAME_ALLOCATOR, PAGE_SIZE},
     prelude::*,
     sync::SpinLock,
     trap::disable_local,
@@ -41,7 +41,7 @@ pub unsafe fn init() {
     // SAFETY: The HEAP_SPACE is a static memory range, so it's always valid.
     unsafe {
         #[allow(static_mut_refs)]
-        HEAP_ALLOCATOR.init(HEAP_SPACE.0.as_ptr(), INIT_KERNEL_HEAP_SIZE);
+        HEAP_ALLOCATOR.init(HEAP_SPACE.0.as_mut_ptr(), INIT_KERNEL_HEAP_SIZE);
     }
 }
 
@@ -56,7 +56,7 @@ impl LockedHeapWithRescue {
     }
 
     /// SAFETY: The range [start, start + size) must be a valid memory region.
-    pub unsafe fn init(&self, start: *const u8, size: usize) {
+    pub unsafe fn init(&self, start: *mut u8, size: usize) {
         self.heap
             .call_once(|| SpinLock::new(Heap::new(start as usize, size)));
     }
@@ -94,7 +94,7 @@ impl LockedHeapWithRescue {
         };
 
         let allocation_start = {
-            let mut page_allocator = PAGE_ALLOCATOR.get().unwrap().lock();
+            let mut page_allocator = FRAME_ALLOCATOR.get().unwrap().lock();
             if num_frames >= MIN_NUM_FRAMES {
                 page_allocator.alloc(num_frames).ok_or(Error::NoMemory)?
             } else {

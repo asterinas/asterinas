@@ -15,6 +15,8 @@ use super::{
     relocation::apply_rela_relocations,
 };
 
+const PAGE_SIZE: u64 = 4096;
+
 // Suppress warnings since using todo!.
 #[allow(unreachable_code)]
 #[allow(unused_variables)]
@@ -143,13 +145,23 @@ fn efi_phase_runtime(memory_map: MemoryMapOwned, boot_params: &mut BootParams) -
         }
         e820_table[e820_entries] = linux_boot_params::BootE820Entry {
             addr: md.phys_start,
-            size: md.page_count * 4096,
+            size: md.page_count * PAGE_SIZE,
             typ: match md.ty {
                 uefi::table::boot::MemoryType::CONVENTIONAL => linux_boot_params::E820Type::Ram,
                 uefi::table::boot::MemoryType::RESERVED => linux_boot_params::E820Type::Reserved,
                 uefi::table::boot::MemoryType::ACPI_RECLAIM => linux_boot_params::E820Type::Acpi,
                 uefi::table::boot::MemoryType::ACPI_NON_VOLATILE => {
                     linux_boot_params::E820Type::Nvs
+                }
+                #[cfg(feature = "cvm_guest")]
+                uefi::table::boot::MemoryType::UNACCEPTED => {
+                    unsafe {
+                        for page_idx in 0..md.page_count {
+                            tdx_guest::tdcall::accept_page(0, md.phys_start + page_idx * PAGE_SIZE)
+                                .unwrap();
+                        }
+                    };
+                    linux_boot_params::E820Type::Ram
                 }
                 _ => linux_boot_params::E820Type::Unusable,
             },
@@ -176,27 +188,27 @@ fn efi_phase_runtime(memory_map: MemoryMapOwned, boot_params: &mut BootParams) -
     //  - 0xffffffff_80000000: linear map 2GiB to low 2 GiB;
     //  - 0xffff8008_00000000: linear map 1GiB to 0x00000008_00000000.
     let flags = Ia32eFlags::PRESENT | Ia32eFlags::WRITABLE;
-    for i in 0..4 * 1024 * 1024 * 1024 / 4096 {
-        let from_vpn = PageNumber::from_addr(i * 4096);
-        let from_vpn2 = PageNumber::from_addr(i * 4096 + 0xffff8000_00000000);
-        let to_low_pfn = PageNumber::from_addr(i * 4096);
+    for i in 0..4 * 1024 * 1024 * 1024 / PAGE_SIZE {
+        let from_vpn = PageNumber::from_addr(i * PAGE_SIZE);
+        let from_vpn2 = PageNumber::from_addr(i * PAGE_SIZE + 0xffff8000_00000000);
+        let to_low_pfn = PageNumber::from_addr(i * PAGE_SIZE);
         creator.map(from_vpn, to_low_pfn, flags);
         creator.map(from_vpn2, to_low_pfn, flags);
     }
-    for i in 0..2 * 1024 * 1024 * 1024 / 4096 {
-        let from_vpn = PageNumber::from_addr(i * 4096 + 0xffffffff_80000000);
-        let to_low_pfn = PageNumber::from_addr(i * 4096);
+    for i in 0..2 * 1024 * 1024 * 1024 / PAGE_SIZE {
+        let from_vpn = PageNumber::from_addr(i * PAGE_SIZE + 0xffffffff_80000000);
+        let to_low_pfn = PageNumber::from_addr(i * PAGE_SIZE);
         creator.map(from_vpn, to_low_pfn, flags);
     }
-    for i in 0..1024 * 1024 * 1024 / 4096 {
-        let from_vpn = PageNumber::from_addr(i * 4096 + 0xffff8008_00000000);
-        let to_pfn = PageNumber::from_addr(i * 4096 + 0x00000008_00000000);
+    for i in 0..1024 * 1024 * 1024 / PAGE_SIZE {
+        let from_vpn = PageNumber::from_addr(i * PAGE_SIZE + 0xffff8008_00000000);
+        let to_pfn = PageNumber::from_addr(i * PAGE_SIZE + 0x00000008_00000000);
         creator.map(from_vpn, to_pfn, flags);
     }
     // Mark this as reserved in e820 table.
     e820_table[e820_entries] = linux_boot_params::BootE820Entry {
         addr: 0x4000000,
-        size: creator.nr_frames_used() as u64 * 4096,
+        size: creator.nr_frames_used() as u64 * PAGE_SIZE,
         typ: linux_boot_params::E820Type::Reserved,
     };
     e820_entries += 1;

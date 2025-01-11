@@ -11,7 +11,10 @@ use ostd::{
 
 use crate::{
     prelude::*,
-    process::{posix_thread::PosixThread, Process},
+    process::{
+        posix_thread::{PosixThread, ThreadLocal},
+        Process,
+    },
     thread::Thread,
 };
 
@@ -19,6 +22,7 @@ use crate::{
 #[derive(Clone)]
 pub struct Context<'a> {
     pub process: &'a Process,
+    pub thread_local: &'a ThreadLocal,
     pub posix_thread: &'a PosixThread,
     pub thread: &'a Thread,
     pub task: &'a Task,

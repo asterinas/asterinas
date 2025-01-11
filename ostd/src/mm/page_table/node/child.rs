@@ -4,11 +4,11 @@
 
 use core::{mem::ManuallyDrop, panic};
 
-use super::{PageTableEntryTrait, RawPageTableNode};
+use super::{MapTrackingStatus, PageTableEntryTrait, RawPageTableNode};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     mm::{
-        page::{inc_page_ref_count, meta::MapTrackingStatus, DynPage},
+        frame::{inc_frame_ref_count, meta::AnyFrameMeta, Frame},
         page_prop::PageProperty,
         Paddr, PagingConstsTrait, PagingLevel,
     },
@@ -27,7 +27,7 @@ pub(in crate::mm) enum Child<
     [(); C::NR_LEVELS as usize]:,
 {
     PageTable(RawPageTableNode<E, C>),
-    Page(DynPage, PageProperty),
+    Frame(Frame<dyn AnyFrameMeta>, PageProperty),
     /// Pages not tracked by handles.
     Untracked(Paddr, PagingLevel, PageProperty),
     None,
@@ -53,7 +53,7 @@ where
     ) -> bool {
         match self {
             Child::PageTable(pt) => node_level == pt.level() + 1,
-            Child::Page(p, _) => {
+            Child::Frame(p, _) => {
                 node_level == p.level() && is_tracked == MapTrackingStatus::Tracked
             }
             Child::Untracked(_, level, _) => {
@@ -78,7 +78,7 @@ where
                 let pt = ManuallyDrop::new(pt);
                 E::new_pt(pt.paddr())
             }
-            Child::Page(page, prop) => {
+            Child::Frame(page, prop) => {
                 let level = page.level();
                 E::new_page(page.into_raw(), level, prop)
             }
@@ -119,8 +119,8 @@ where
         match is_tracked {
             MapTrackingStatus::Tracked => {
                 // SAFETY: The physical address points to a valid page.
-                let page = unsafe { DynPage::from_raw(paddr) };
-                Child::Page(page, pte.prop())
+                let page = unsafe { Frame::<dyn AnyFrameMeta>::from_raw(paddr) };
+                Child::Frame(page, pte.prop())
             }
             MapTrackingStatus::Untracked => Child::Untracked(paddr, level, pte.prop()),
             MapTrackingStatus::NotApplicable => panic!("Invalid tracking status"),
@@ -150,7 +150,7 @@ where
         if !pte.is_last(level) {
             // SAFETY: The physical address is valid and the PTE already owns
             // the reference to the page.
-            unsafe { inc_page_ref_count(paddr) };
+            unsafe { inc_frame_ref_count(paddr) };
             // SAFETY: The physical address points to a valid page table node
             // at the given level.
             return Child::PageTable(unsafe { RawPageTableNode::from_raw_parts(paddr, level - 1) });
@@ -160,10 +160,10 @@ where
             MapTrackingStatus::Tracked => {
                 // SAFETY: The physical address is valid and the PTE already owns
                 // the reference to the page.
-                unsafe { inc_page_ref_count(paddr) };
+                unsafe { inc_frame_ref_count(paddr) };
                 // SAFETY: The physical address points to a valid page.
-                let page = unsafe { DynPage::from_raw(paddr) };
-                Child::Page(page, pte.prop())
+                let page = unsafe { Frame::<dyn AnyFrameMeta>::from_raw(paddr) };
+                Child::Frame(page, pte.prop())
             }
             MapTrackingStatus::Untracked => Child::Untracked(paddr, level, pte.prop()),
             MapTrackingStatus::NotApplicable => panic!("Invalid tracking status"),

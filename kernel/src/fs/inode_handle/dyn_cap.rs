@@ -8,14 +8,8 @@ use crate::{prelude::*, process::signal::Pollable};
 
 impl InodeHandle<Rights> {
     pub fn new(dentry: Dentry, access_mode: AccessMode, status_flags: StatusFlags) -> Result<Self> {
-        let inode_mode = dentry.inode().mode()?;
-        if access_mode.is_readable() && !inode_mode.is_readable() {
-            return_errno_with_message!(Errno::EACCES, "file is not readable");
-        }
-        if access_mode.is_writable() && !inode_mode.is_writable() {
-            return_errno_with_message!(Errno::EACCES, "file is not writable");
-        }
-
+        let inode = dentry.inode();
+        inode.check_permission(access_mode.into())?;
         Self::new_unchecked_access(dentry, access_mode, status_flags)
     }
 
@@ -139,9 +133,5 @@ impl FileLike for InodeHandle<Rights> {
             return_errno_with_message!(Errno::EBADF, "file is not writable");
         }
         self.0.fallocate(mode, offset, len)
-    }
-
-    fn as_device(&self) -> Option<Arc<dyn Device>> {
-        self.dentry().inode().as_device()
     }
 }

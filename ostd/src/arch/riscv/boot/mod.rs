@@ -4,7 +4,6 @@
 
 pub mod smp;
 
-use alloc::{string::String, vec::Vec};
 use core::arch::global_asm;
 
 use fdt::Fdt;
@@ -12,8 +11,7 @@ use spin::Once;
 
 use crate::{
     boot::{
-        kcmdline::KCmdlineArg,
-        memory_region::{non_overlapping_regions_from, MemoryRegion, MemoryRegionType},
+        memory_region::{MemoryRegion, MemoryRegionArray, MemoryRegionType},
         BootloaderAcpiArg, BootloaderFramebufferArg,
     },
     early_println,
@@ -25,33 +23,34 @@ global_asm!(include_str!("boot.S"));
 /// The Flattened Device Tree of the platform.
 pub static DEVICE_TREE: Once<Fdt> = Once::new();
 
-fn init_bootloader_name(bootloader_name: &'static Once<String>) {
-    bootloader_name.call_once(|| "Unknown".into());
+fn parse_bootloader_name() -> &'static str {
+    "Unknown"
 }
 
-fn init_kernel_commandline(kernel_cmdline: &'static Once<KCmdlineArg>) {
-    let bootargs = DEVICE_TREE.get().unwrap().chosen().bootargs().unwrap_or("");
-    kernel_cmdline.call_once(|| bootargs.into());
+fn parse_kernel_commandline() -> &'static str {
+    DEVICE_TREE.get().unwrap().chosen().bootargs().unwrap_or("")
 }
 
-fn init_initramfs(initramfs: &'static Once<&'static [u8]>) {
+fn parse_initramfs() -> Option<&'static [u8]> {
     let Some((start, end)) = parse_initramfs_range() else {
-        return;
+        return None;
     };
 
     let base_va = paddr_to_vaddr(start);
     let length = end - start;
-    initramfs.call_once(|| unsafe { core::slice::from_raw_parts(base_va as *const u8, length) });
+    Some(unsafe { core::slice::from_raw_parts(base_va as *const u8, length) })
 }
 
-fn init_acpi_arg(acpi: &'static Once<BootloaderAcpiArg>) {
-    acpi.call_once(|| BootloaderAcpiArg::NotProvided);
+fn parse_acpi_arg() -> BootloaderAcpiArg {
+    BootloaderAcpiArg::NotProvided
 }
 
-fn init_framebuffer_info(_framebuffer_arg: &'static Once<BootloaderFramebufferArg>) {}
+fn parse_framebuffer_info() -> Option<BootloaderFramebufferArg> {
+    None
+}
 
-fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
-    let mut regions = Vec::<MemoryRegion>::new();
+fn parse_memory_regions() -> MemoryRegionArray {
+    let mut regions = MemoryRegionArray::new();
 
     for region in DEVICE_TREE.get().unwrap().memory().regions() {
         if region.size.unwrap_or(0) > 0 {
@@ -89,7 +88,7 @@ fn init_memory_regions(memory_regions: &'static Once<Vec<MemoryRegion>>) {
         ));
     }
 
-    memory_regions.call_once(|| non_overlapping_regions_from(regions.as_ref()));
+    regions.into_non_overlapping()
 }
 
 fn parse_initramfs_range() -> Option<(usize, usize)> {
@@ -108,14 +107,16 @@ pub extern "C" fn riscv_boot(_hart_id: usize, device_tree_paddr: usize) -> ! {
     let fdt = unsafe { fdt::Fdt::from_ptr(device_tree_ptr).unwrap() };
     DEVICE_TREE.call_once(|| fdt);
 
-    crate::boot::register_boot_init_callbacks(
-        init_bootloader_name,
-        init_kernel_commandline,
-        init_initramfs,
-        init_acpi_arg,
-        init_framebuffer_info,
-        init_memory_regions,
-    );
+    use crate::boot::{call_ostd_main, EarlyBootInfo, EARLY_INFO};
 
-    crate::boot::call_ostd_main();
+    EARLY_INFO.call_once(|| EarlyBootInfo {
+        bootloader_name: parse_bootloader_name(),
+        kernel_cmdline: parse_kernel_commandline(),
+        initramfs: parse_initramfs(),
+        acpi_arg: parse_acpi_arg(),
+        framebuffer_arg: parse_framebuffer_info(),
+        memory_regions: parse_memory_regions(),
+    });
+
+    call_ostd_main();
 }

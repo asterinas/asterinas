@@ -64,6 +64,12 @@ bitflags::bitflags! {
         /// TDX shared bit.
         #[cfg(feature = "cvm_guest")]
         const SHARED =          1 << 51;
+
+        /// Ignored by the hardware. Free to use.
+        const HIGH_IGN1 =       1 << 52;
+        /// Ignored by the hardware. Free to use.
+        const HIGH_IGN2 =       1 << 53;
+
         /// Forbid execute codes on the page. The NXE bits in EFER msr must be set.
         const NO_EXECUTE =      1 << 63;
     }
@@ -192,7 +198,9 @@ impl PageTableEntryTrait for PageTableEntry {
             | parse_flags!(self.0, PageTableFlags::WRITABLE, PageFlags::W)
             | parse_flags!(!self.0, PageTableFlags::NO_EXECUTE, PageFlags::X)
             | parse_flags!(self.0, PageTableFlags::ACCESSED, PageFlags::ACCESSED)
-            | parse_flags!(self.0, PageTableFlags::DIRTY, PageFlags::DIRTY);
+            | parse_flags!(self.0, PageTableFlags::DIRTY, PageFlags::DIRTY)
+            | parse_flags!(self.0, PageTableFlags::HIGH_IGN1, PageFlags::AVAIL1)
+            | parse_flags!(self.0, PageTableFlags::HIGH_IGN2, PageFlags::AVAIL2);
         let priv_flags = parse_flags!(self.0, PageTableFlags::USER, PrivFlags::USER)
             | parse_flags!(self.0, PageTableFlags::GLOBAL, PrivFlags::GLOBAL);
         #[cfg(feature = "cvm_guest")]
@@ -226,6 +234,16 @@ impl PageTableEntryTrait for PageTableEntry {
                 PageTableFlags::ACCESSED
             )
             | parse_flags!(prop.flags.bits(), PageFlags::DIRTY, PageTableFlags::DIRTY)
+            | parse_flags!(
+                prop.flags.bits(),
+                PageFlags::AVAIL1,
+                PageTableFlags::HIGH_IGN1
+            )
+            | parse_flags!(
+                prop.flags.bits(),
+                PageFlags::AVAIL2,
+                PageTableFlags::HIGH_IGN2
+            )
             | parse_flags!(
                 prop.priv_flags.bits(),
                 PrivFlags::USER,
