@@ -3,10 +3,7 @@ use core::hint::spin_loop;
 
 use log::info;
 use ostd::{
-    early_println,
-    mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, VmIo},
-    sync::SpinLock,
-    trap::TrapFrame,
+    early_println, mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, VmIo}, sync::SpinLock, task::scheduler::info, trap::TrapFrame
 };
 
 use super::{
@@ -124,19 +121,18 @@ impl GPUDevice {
         // Done: query the display information from the device using the VIRTIO_GPU_CMD_GET_DISPLAY_INFO command,
         //      and use that information for the initial scanout setup.
 
-        // TODO: fetch the EDID information using the VIRTIO_GPU_CMD_GET_EDID command,
+        // TODO: (Taojie) fetch the EDID information using the VIRTIO_GPU_CMD_GET_EDID command,
         //      If no information is available or all displays are disabled the driver MAY choose to use a fallback, such as 1024x768 at display 0.
 
-        // TODO: query all shared memory regions supported by the device.
+        // TODO: (Taojie) query all shared memory regions supported by the device.
         //      If the device supports shared memory, the shmid of a region MUST be one of:
         //      - VIRTIO_GPU_SHM_ID_UNDEFINED  = 0
         //      - VIRTIO_GPU_SHM_ID_HOST_VISIBLE = 1
+        // Taojie: I think the above requirement is too complex to implement.
 
+        // Taojie: we directly test gpu functionality here rather than writing a user application.
         // Test device
-        // test_device(device);
-        
-        // Request display info
-        device.request_display_info();
+        test_device(Arc::clone(&device));
 
         // Get EDID info
         // TODO: check feature flag if EDID is set
@@ -219,7 +215,13 @@ impl GPUDevice {
         Ok(())
     }
 
-    fn request_display_info(&self) -> Result<(), VirtioDeviceError> {
+    fn resolution(&self) -> Result<(u32, u32), VirtioDeviceError> {
+        let display_info = self.request_display_info()?;
+        let rect = display_info.get_rect(0).unwrap();
+        Ok((rect.width(), rect.height()))
+    }
+
+    fn request_display_info(&self) -> Result<VirtioGpuRespDisplayInfo, VirtioDeviceError> {
         // Prepare request DMA buffer
         let req_slice = {
             let req_slice = DmaStreamSlice::new(&self.control_request, 0, REQUEST_SIZE);
@@ -255,19 +257,31 @@ impl GPUDevice {
 
         // Wait for response
         while !control_queue.can_pop() {
-            early_println!("waiting for response...");
+            // early_println!("waiting for response...");
             spin_loop();
         }
         control_queue.pop_used().expect("Pop used failed");
 
         resp_slice.sync().unwrap();
         let resp: VirtioGpuRespDisplayInfo = resp_slice.read_val(0).unwrap();
-        early_println!("display info from virt_gpu device: {:?}", resp);
-        // TODO: use the edid info to setup the scanout
+        // early_println!("display info from virt_gpu device: {:?}", resp);
+        Ok(resp)
+    }
+
+    pub fn setup_framebuffer(&self) -> Result<(), VirtioDeviceError> {
+        // get display info
+        let display_info = self.request_display_info()?;
+        let rect = display_info.get_rect(0).unwrap();
+
+        // create resource 2d
+
         Ok(())
     }
 }
 
+/// Test the functionality of gpu device and driver.
 fn test_device(device: Arc<GPUDevice>) {
-    unimplemented!()
+    let (width, height) = device.resolution().expect("failed to get resolution");
+    early_println!("resolution: {}x{}", width, height);
+    device.setup_framebuffer().expect("failed to setup framebuffer");
 }

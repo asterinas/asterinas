@@ -9,7 +9,7 @@ pub(crate) const RESPONSE_SIZE: usize = size_of::<VirtioGpuRespDisplayInfo>();
 
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy, Pod)]
-struct VirtioGpuRect {
+pub(crate) struct VirtioGpuRect {
     /// For any coordinates given 0,0 is top left, larger x moves right, larger y moves down.
     x: u32,
     /// For any coordinates given 0,0 is top left, larger x moves right, larger y moves down.
@@ -20,6 +20,16 @@ struct VirtioGpuRect {
     /// similar to the native panel resolution in EDID display information,
     /// except that in the virtual machine case the size can change when the host window representing the guest display gets resized.
     height: u32,
+}
+
+impl VirtioGpuRect {
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
+    }
 }
 
 pub const VIRTIO_GPU_MAX_SCANOUTS: usize = 16;
@@ -87,4 +97,9 @@ impl Default for VirtioGpuRespEdid {
         }
     }
     
+}
+impl VirtioGpuRespDisplayInfo {
+    pub fn get_rect(&self, index: usize) -> Option<VirtioGpuRect> {
+        Some(self.pmodes[index].r)
+    }
 }
