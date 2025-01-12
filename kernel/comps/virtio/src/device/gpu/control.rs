@@ -277,3 +277,52 @@ impl Default for VirtioGpuRespSetScanout {
         }
     }
 }
+
+// VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D
+// Transfer from guest memory to host resource.
+// Request data is struct virtio_gpu_transfer_to_host_2d. Response type is VIRTIO_GPU_RESP_OK_NODATA.
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub(crate) struct VirtioGpuTransferToHost2D {
+    hdr: VirtioGpuCtrlHdr,
+    r: VirtioGpuRect,
+    offset: u64,
+    resource_id: u32,
+    padding: u32,
+}
+
+impl VirtioGpuTransferToHost2D {
+    pub(crate) fn new(
+        r: VirtioGpuRect,
+        offset: u64,
+        resource_id: u32,
+    ) -> VirtioGpuTransferToHost2D {
+        VirtioGpuTransferToHost2D {
+            hdr: VirtioGpuCtrlHdr::from_type(VirtioGpuCtrlType::VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D),
+            r,
+            offset,
+            resource_id,
+            padding: 0,
+        }
+    }
+}
+
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub struct VirtioGpuRespTransferToHost2D {
+    hdr: VirtioGpuCtrlHdr,
+}
+
+impl VirtioGpuRespTransferToHost2D {
+    pub fn header_type(&self) -> u32 {
+        self.hdr.type_
+    }
+}
+
+impl Default for VirtioGpuRespTransferToHost2D {
+    fn default() -> Self {
+        VirtioGpuRespTransferToHost2D {
+            hdr: VirtioGpuCtrlHdr::default(),
+        }
+    }
+}

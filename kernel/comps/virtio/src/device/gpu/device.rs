@@ -14,7 +14,8 @@ use super::{
     control::{
         VirtioGpuFormat, VirtioGpuMemEntry, VirtioGpuRect, VirtioGpuResourceAttachBacking,
         VirtioGpuResourceCreate2D, VirtioGpuRespAttachBacking, VirtioGpuRespDisplayInfo,
-        VirtioGpuRespSetScanout, VirtioGpuSetScanout,
+        VirtioGpuRespSetScanout, VirtioGpuRespTransferToHost2D, VirtioGpuSetScanout,
+        VirtioGpuTransferToHost2D,
     },
     header::VirtioGpuCtrlHdr,
 };
@@ -359,7 +360,7 @@ impl GPUDevice {
         Ok(())
     }
 
-    pub fn setup_framebuffer(&self) -> Result<(), VirtioDeviceError> {
+    pub fn setup_framebuffer(&self) -> Result<Arc<DmaStream>, VirtioDeviceError> {
         // get display info
         let display_info = self.request_display_info()?;
         let rect = display_info.get_rect(0).unwrap();
@@ -383,7 +384,8 @@ impl GPUDevice {
         // map frame buffer to screen
         self.set_scanout(rect, 0, 0xbabe)?;
 
-        Ok(())
+        // return dma to be written
+        Ok(Arc::new(frame_buffer_dma))
     }
 
     fn resource_attch_backing(
@@ -519,14 +521,108 @@ impl GPUDevice {
 
         Ok(())
     }
+
+    pub fn flush(&self) -> Result<(), VirtioDeviceError> {
+        // get rect info
+        let display_info = self.request_display_info()?;
+        let rect = display_info.get_rect(0).unwrap();
+
+        // transfer from guest memmory to host resource
+        self.transfer_to_host_2d(rect, 0, 0xbabe)?;
+        early_println!("transfer to host 2d done");
+
+        Ok(())
+    }
+
+    fn transfer_to_host_2d(
+        &self,
+        rect: VirtioGpuRect,
+        offset: i32,
+        resource_id: i32,
+    ) -> Result<(), VirtioDeviceError> {
+        // Prepare request data DMA buffer
+        let req_data_slice = {
+            let req_data_slice = DmaStreamSlice::new(
+                &self.control_request,
+                0,
+                size_of::<VirtioGpuTransferToHost2D>(),
+            );
+            let req_data = VirtioGpuTransferToHost2D::new(rect, offset as u64, resource_id as u32);
+            req_data_slice.write_val(0, &req_data).unwrap();
+            req_data_slice.sync().unwrap();
+            req_data_slice
+        };
+
+        // Prepare response DMA buffer
+        let resp_slice = {
+            let resp_slice = DmaStreamSlice::new(
+                &self.control_response,
+                0,
+                size_of::<VirtioGpuRespTransferToHost2D>(),
+            );
+            resp_slice
+                .write_val(0, &VirtioGpuRespTransferToHost2D::default())
+                .unwrap();
+            resp_slice.sync().unwrap();
+            resp_slice
+        };
+
+        // Add buffer to queue
+        let mut control_queue = self.control_queue.disable_irq().lock();
+        control_queue
+            .add_dma_buf(&[&req_data_slice], &[&resp_slice])
+            .expect("Add buffers to queue failed");
+
+        // Notify
+        if control_queue.should_notify() {
+            control_queue.notify();
+        }
+
+        // Wait for response
+        while !control_queue.can_pop() {
+            spin_loop();
+        }
+        control_queue.pop_used().expect("Pop used failed");
+
+        resp_slice.sync().unwrap();
+        let resp: VirtioGpuRespSetScanout = resp_slice.read_val(0).unwrap();
+
+        // check response with type OK_NODATA
+        if resp.header_type() != VirtioGpuCtrlType::VIRTIO_GPU_RESP_OK_NODATA as u32 {
+            return Err(VirtioDeviceError::QueueUnknownError);
+        }
+
+        Ok(())
+    }
 }
 
 /// Test the functionality of gpu device and driver.
 fn test_device(device: Arc<GPUDevice>) {
+    // get resolution
     let (width, height) = device.resolution().expect("failed to get resolution");
-    early_println!("resolution: {}x{}", width, height);
+    early_println!("[INFO] resolution: {}x{}", width, height);
+
+    // test: get edid info
     device.request_edid_info().expect("failed to get edid info");
-    device
+
+    // setup framebuffer
+    let buf = device
         .setup_framebuffer()
         .expect("failed to setup framebuffer");
+
+    // write content into buffer
+    for x in 0..height {
+        for y in 0..width {
+            let offset = (x * width + y) * 4;
+            let color = if x % 2 == 0 && y % 2 == 0 {
+                0x00ff_0000
+            } else {
+                0x0000_ff00
+            };
+            buf.write_val(offset as usize, &color).unwrap();
+        }
+    }
+
+    // flush to screen
+    device.flush().expect("failed to flush");
 }
