@@ -83,6 +83,7 @@ QEMU_ARGS="\
     -device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off$VIRTIO_NET_FEATURES$IOMMU_DEV_EXTRA \
     -device virtio-serial-pci,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
     -device virtconsole,chardev=mux \
+    -device virtio-gpu \
     $IOMMU_EXTRA_ARGS \
 "
 
@@ -97,6 +98,7 @@ MICROVM_QEMU_ARGS="\
     -device virtio-net-device,netdev=net01 \
     -device virtio-serial-device \
     -device virtconsole,chardev=mux \
+    -device virtio-gpu \
 "
 
 if [ "$VSOCK" = "on" ]; then
