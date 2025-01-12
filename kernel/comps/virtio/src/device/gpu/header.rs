@@ -1,6 +1,5 @@
 use core::mem::size_of;
 
-use int_to_c_enum::TryFromInt;
 use ostd::Pod;
 
 pub(crate) const REQUEST_SIZE: usize = size_of::<VirtioGpuCtrlHdr>();
@@ -34,7 +33,8 @@ pub enum VirtioGpuCtrlType {
     // VIRTIO_GPU_CMD_MOVE_CURSOR = 0x0301,
 
     /* success responses */
-    // TODO:
+    VIRTIO_GPU_RESP_OK_NODATA = 0x1100,
+    VIRTIO_GPU_RESP_OK_EDID = 0x1104,
 
     /* error responses */
     // TODO:
@@ -63,6 +63,19 @@ pub struct VirtioGpuCtrlHdr {
     /// For more details, refer to spec.
     pub ring_idx: u8,
     pub padding: [u8; 3],
+}
+
+impl VirtioGpuCtrlHdr {
+    pub(crate) fn from_type(type_: VirtioGpuCtrlType) -> VirtioGpuCtrlHdr {
+        VirtioGpuCtrlHdr {
+            type_: type_ as u32,
+            flags: 0,
+            fence_id: 0,
+            ctx_id: 0,
+            ring_idx: 0,
+            padding: [0; 3],
+        }
+    }
 }
 
 impl Default for VirtioGpuCtrlHdr {

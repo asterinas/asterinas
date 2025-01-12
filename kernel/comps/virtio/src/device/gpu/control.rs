@@ -1,7 +1,7 @@
 use bitflags::bitflags;
 use ostd::Pod;
 
-use super::header::VirtioGpuCtrlHdr;
+use super::header::{VirtioGpuCtrlHdr, VirtioGpuCtrlType};
 
 
 /* VIRTIO_GPU_CMD_DISPLAY_INFO */
@@ -51,6 +51,12 @@ pub struct VirtioGpuRespDisplayInfo {
     pmodes: [VirtioGpuDisplayOne; VIRTIO_GPU_MAX_SCANOUTS],
 }
 
+impl VirtioGpuRespDisplayInfo {
+    pub fn header_type(&self) -> u32 {
+        self.hdr.type_
+    }
+}
+
 impl Default for VirtioGpuRespDisplayInfo {
     fn default() -> Self {
         VirtioGpuRespDisplayInfo {
@@ -71,11 +77,22 @@ impl Default for VirtioGpuRespDisplayInfo {
 
 /* VIRTIO_GPU_CMD_GET_EDID */
 #[repr(C, packed)]
-#[derive(Debug, Clone, Copy, Pod, Default)]
+#[derive(Debug, Clone, Copy, Pod)]
 pub struct VirtioGpuGetEdid {
     hdr: VirtioGpuCtrlHdr,
     scanout: u32,
     padding: u32,
+}
+
+impl Default for VirtioGpuGetEdid {
+    fn default() -> Self {
+        VirtioGpuGetEdid {
+            hdr: VirtioGpuCtrlHdr::from_type(VirtioGpuCtrlType::VIRTIO_GPU_CMD_GET_EDID),
+            scanout: 0,
+            padding: 0,
+        }
+    }
+    
 }
 
 #[repr(C, packed)]
@@ -85,6 +102,11 @@ pub struct VirtioGpuRespEdid {
     size: u32,
     padding: u32,
     edid: [u8; 1024],
+}
+impl VirtioGpuRespEdid {
+    pub(crate) fn header_type(&self) -> u32 {
+        self.hdr.type_
+    }
 }
 
 impl Default for VirtioGpuRespEdid {
@@ -99,7 +121,58 @@ impl Default for VirtioGpuRespEdid {
     
 }
 impl VirtioGpuRespDisplayInfo {
-    pub fn get_rect(&self, index: usize) -> Option<VirtioGpuRect> {
+    pub(crate) fn get_rect(&self, index: usize) -> Option<VirtioGpuRect> {
         Some(self.pmodes[index].r)
+    }
+}
+
+// VIRTIO_GPU_CMD_RESOURCE_CREATE_2D
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, Pod, Default)]
+pub struct VirtioGpuResourceCreate2D {
+    hdr: VirtioGpuCtrlHdr,
+    resource_id: u32,
+    format: u32,
+    width: u32,
+    height: u32,
+}
+
+impl VirtioGpuResourceCreate2D {
+    pub fn new(resource_id: u32, format: VirtioGpuFormat, width: u32, height: u32) -> Self {
+        VirtioGpuResourceCreate2D {
+            hdr: VirtioGpuCtrlHdr::from_type(VirtioGpuCtrlType::VIRTIO_GPU_CMD_RESOURCE_CREATE_2D),
+            resource_id,
+            format: format as u32,
+            width,
+            height,
+        }
+    }
+    
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
+#[allow(non_camel_case_types)]
+pub enum VirtioGpuFormat {
+    VIRTIO_GPU_FORMAT_B8G8R8A8_UNORM  = 1, 
+}
+
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub struct VirtioGpuRespResourceCreate2D {
+    hdr: VirtioGpuCtrlHdr,
+}
+
+impl VirtioGpuRespResourceCreate2D {
+    pub fn header_type(&self) -> u32 {
+        self.hdr.type_
+    }
+}
+
+impl Default for VirtioGpuRespResourceCreate2D {
+    fn default() -> Self {
+        VirtioGpuRespResourceCreate2D {
+            hdr: VirtioGpuCtrlHdr::default(),
+        }
     }
 }
