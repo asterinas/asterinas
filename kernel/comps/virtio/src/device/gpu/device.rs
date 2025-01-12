@@ -3,7 +3,7 @@ use core::hint::spin_loop;
 
 use log::info;
 use ostd::{
-    early_println, mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, VmIo}, sync::SpinLock, trap::TrapFrame
+    early_println, mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, HasPaddr, VmIo}, sync::SpinLock, trap::TrapFrame
 };
 
 use super::{
@@ -332,8 +332,18 @@ impl GPUDevice {
 
         // create resource 2d
         self.resource_create_2d(0xbabe, rect.width(), rect.height())?;
-        early_println!("create 2d resource success!");
 
+        // alloc continuous memory for framebuffer
+        // Each pixel is 4 bytes (32 bits) in RGBA format.
+        let size = rect.width() as usize * rect.height() as usize * 4;
+        let fracme_num = size / 4096 + 1;  // TODO: (Taojie) use Asterinas API to represent page size.
+        let frame_buffer_dma = {
+            let vm_segment = FrameAllocOptions::new().alloc_segment(fracme_num).unwrap();
+            DmaStream::map(vm_segment.into(), DmaDirection::ToDevice, false).unwrap()
+        };
+
+        // TODO: attach backing storage
+    
         Ok(())
     }
 }
