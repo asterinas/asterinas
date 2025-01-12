@@ -3,7 +3,6 @@ use ostd::Pod;
 
 use super::header::{VirtioGpuCtrlHdr, VirtioGpuCtrlType};
 
-
 /* VIRTIO_GPU_CMD_DISPLAY_INFO */
 pub(crate) const RESPONSE_SIZE: usize = size_of::<VirtioGpuRespDisplayInfo>();
 
@@ -92,7 +91,6 @@ impl Default for VirtioGpuGetEdid {
             padding: 0,
         }
     }
-    
 }
 
 #[repr(C, packed)]
@@ -118,7 +116,6 @@ impl Default for VirtioGpuRespEdid {
             edid: [0; 1024],
         }
     }
-    
 }
 impl VirtioGpuRespDisplayInfo {
     pub(crate) fn get_rect(&self, index: usize) -> Option<VirtioGpuRect> {
@@ -147,14 +144,13 @@ impl VirtioGpuResourceCreate2D {
             height,
         }
     }
-    
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 #[allow(non_camel_case_types)]
 pub enum VirtioGpuFormat {
-    VIRTIO_GPU_FORMAT_B8G8R8A8_UNORM  = 1, 
+    VIRTIO_GPU_FORMAT_B8G8R8A8_UNORM = 1,
 }
 
 #[repr(C, packed)]
@@ -172,6 +168,68 @@ impl VirtioGpuRespResourceCreate2D {
 impl Default for VirtioGpuRespResourceCreate2D {
     fn default() -> Self {
         VirtioGpuRespResourceCreate2D {
+            hdr: VirtioGpuCtrlHdr::default(),
+        }
+    }
+}
+
+// VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING
+// Assign backing pages to a resource.
+// Request data is struct virtio_gpu_resource_attach_backing, followed by struct virtio_gpu_mem_entry entries.
+// Response type is VIRTIO_GPU_RESP_OK_NODATA.
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub(crate) struct VirtioGpuResourceAttachBacking {
+    hdr: VirtioGpuCtrlHdr,
+    resource_id: u32,
+    nr_entries: u32,
+}
+
+impl VirtioGpuResourceAttachBacking {
+    pub(crate) fn new(resource_id: u32, nr_entries: u32) -> VirtioGpuResourceAttachBacking {
+        VirtioGpuResourceAttachBacking {
+            hdr: VirtioGpuCtrlHdr::from_type(
+                VirtioGpuCtrlType::VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING,
+            ),
+            resource_id,
+            nr_entries,
+        }
+    }
+}
+
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub(crate) struct VirtioGpuMemEntry {
+    addr: u64,
+    length: u32,
+    padding: u32,
+}
+
+impl VirtioGpuMemEntry {
+    pub(crate) fn new(addr: usize, length: u32) -> VirtioGpuMemEntry {
+        VirtioGpuMemEntry {
+            addr: addr as u64,
+            length,
+            padding: 0,
+        }
+    }
+}
+
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub struct VirtioGpuRespAttachBacking {
+    hdr: VirtioGpuCtrlHdr,
+}
+
+impl VirtioGpuRespAttachBacking {
+    pub fn header_type(&self) -> u32 {
+        self.hdr.type_
+    }
+}
+
+impl Default for VirtioGpuRespAttachBacking {
+    fn default() -> Self {
+        VirtioGpuRespAttachBacking {
             hdr: VirtioGpuCtrlHdr::default(),
         }
     }

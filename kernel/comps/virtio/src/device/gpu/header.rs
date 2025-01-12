@@ -35,11 +35,9 @@ pub enum VirtioGpuCtrlType {
     /* success responses */
     VIRTIO_GPU_RESP_OK_NODATA = 0x1100,
     VIRTIO_GPU_RESP_OK_EDID = 0x1104,
-
     /* error responses */
     // TODO:
 }
-
 
 /// All requests and responses on the virt queues have a fixed header using the following layout structure.
 /// Referece: spec 5.7.6.7 Device Operation: Request header
