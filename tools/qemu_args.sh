@@ -50,7 +50,7 @@ COMMON_QEMU_ARGS="\
     -m ${MEM:-8G} \
     --no-reboot \
     -nographic \
-    -display none \
+    -display gtk \
     -serial chardev:mux \
     -monitor chardev:mux \
     -chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log \
@@ -82,7 +82,7 @@ QEMU_ARGS="\
     -device virtio-keyboard-pci,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
     -device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off$VIRTIO_NET_FEATURES$IOMMU_DEV_EXTRA \
     -device virtio-serial-pci,disable-legacy=on,disable-modern=off$IOMMU_DEV_EXTRA \
-    -device virtio-gpu\
+    -device virtio-gpu -vga none\
     -device virtconsole,chardev=mux \
     $IOMMU_EXTRA_ARGS \
 "
