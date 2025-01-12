@@ -234,3 +234,46 @@ impl Default for VirtioGpuRespAttachBacking {
         }
     }
 }
+
+// VIRTIO_GPU_CMD_SET_SCANOUT
+// Set the scanout parameters for a single output.
+// Request data is struct virtio_gpu_set_scanout. Response type is VIRTIO_GPU_RESP_OK_NODATA.
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub(crate) struct VirtioGpuSetScanout {
+    hdr: VirtioGpuCtrlHdr,
+    r: VirtioGpuRect,
+    scanout_id: u32,
+    resource_id: u32,
+}
+
+impl VirtioGpuSetScanout {
+    pub(crate) fn new(scanout_id: u32, resource_id: u32, r: VirtioGpuRect) -> VirtioGpuSetScanout {
+        VirtioGpuSetScanout {
+            hdr: VirtioGpuCtrlHdr::from_type(VirtioGpuCtrlType::VIRTIO_GPU_CMD_SET_SCANOUT),
+            r,
+            scanout_id,
+            resource_id,
+        }
+    }
+}
+
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub struct VirtioGpuRespSetScanout {
+    hdr: VirtioGpuCtrlHdr,
+}
+
+impl VirtioGpuRespSetScanout {
+    pub fn header_type(&self) -> u32 {
+        self.hdr.type_
+    }
+}
+
+impl Default for VirtioGpuRespSetScanout {
+    fn default() -> Self {
+        VirtioGpuRespSetScanout {
+            hdr: VirtioGpuCtrlHdr::default(),
+        }
+    }
+}

@@ -12,8 +12,9 @@ use ostd::{
 use super::{
     config::{GPUFeatures, VirtioGPUConfig},
     control::{
-        VirtioGpuFormat, VirtioGpuMemEntry, VirtioGpuResourceAttachBacking,
+        VirtioGpuFormat, VirtioGpuMemEntry, VirtioGpuRect, VirtioGpuResourceAttachBacking,
         VirtioGpuResourceCreate2D, VirtioGpuRespAttachBacking, VirtioGpuRespDisplayInfo,
+        VirtioGpuRespSetScanout, VirtioGpuSetScanout,
     },
     header::VirtioGpuCtrlHdr,
 };
@@ -379,6 +380,9 @@ impl GPUDevice {
         // TODO: (Taojie) excapsulate 0xbabe
         self.resource_attch_backing(0xbabe, frame_buffer_dma.paddr(), size as u32)?;
 
+        // map frame buffer to screen
+        self.set_scanout(rect, 0, 0xbabe)?;
+
         Ok(())
     }
 
@@ -449,6 +453,64 @@ impl GPUDevice {
 
         resp_slice.sync().unwrap();
         let resp: VirtioGpuRespAttachBacking = resp_slice.read_val(0).unwrap();
+
+        // check response with type OK_NODATA
+        if resp.header_type() != VirtioGpuCtrlType::VIRTIO_GPU_RESP_OK_NODATA as u32 {
+            return Err(VirtioDeviceError::QueueUnknownError);
+        }
+
+        Ok(())
+    }
+
+    fn set_scanout(
+        &self,
+        rect: VirtioGpuRect,
+        scanout_id: i32,
+        resource_id: i32,
+    ) -> Result<(), VirtioDeviceError> {
+        // Prepare request data DMA buffer
+        let req_data_slice = {
+            let req_data_slice =
+                DmaStreamSlice::new(&self.control_request, 0, size_of::<VirtioGpuSetScanout>());
+            let req_data = VirtioGpuSetScanout::new(scanout_id as u32, resource_id as u32, rect);
+            req_data_slice.write_val(0, &req_data).unwrap();
+            req_data_slice.sync().unwrap();
+            req_data_slice
+        };
+
+        // Prepare response DMA buffer
+        let resp_slice = {
+            let resp_slice = DmaStreamSlice::new(
+                &self.control_response,
+                0,
+                size_of::<VirtioGpuRespSetScanout>(),
+            );
+            resp_slice
+                .write_val(0, &VirtioGpuRespSetScanout::default())
+                .unwrap();
+            resp_slice.sync().unwrap();
+            resp_slice
+        };
+
+        // Add buffer to queue
+        let mut control_queue = self.control_queue.disable_irq().lock();
+        control_queue
+            .add_dma_buf(&[&req_data_slice], &[&resp_slice])
+            .expect("Add buffers to queue failed");
+
+        // Notify
+        if control_queue.should_notify() {
+            control_queue.notify();
+        }
+
+        // Wait for response
+        while !control_queue.can_pop() {
+            spin_loop();
+        }
+        control_queue.pop_used().expect("Pop used failed");
+
+        resp_slice.sync().unwrap();
+        let resp: VirtioGpuRespSetScanout = resp_slice.read_val(0).unwrap();
 
         // check response with type OK_NODATA
         if resp.header_type() != VirtioGpuCtrlType::VIRTIO_GPU_RESP_OK_NODATA as u32 {
