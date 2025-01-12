@@ -12,10 +12,7 @@ use ostd::{
 use super::{
     config::{GPUFeatures, VirtioGPUConfig},
     control::{
-        VirtioGpuFormat, VirtioGpuMemEntry, VirtioGpuRect, VirtioGpuResourceAttachBacking,
-        VirtioGpuResourceCreate2D, VirtioGpuRespAttachBacking, VirtioGpuRespDisplayInfo,
-        VirtioGpuRespSetScanout, VirtioGpuRespTransferToHost2D, VirtioGpuSetScanout,
-        VirtioGpuTransferToHost2D,
+        VirtioGpuFormat, VirtioGpuMemEntry, VirtioGpuRect, VirtioGpuResourceAttachBacking, VirtioGpuResourceCreate2D, VirtioGpuResourceFlush, VirtioGpuRespAttachBacking, VirtioGpuRespDisplayInfo, VirtioGpuRespResourceFlush, VirtioGpuRespSetScanout, VirtioGpuRespTransferToHost2D, VirtioGpuSetScanout, VirtioGpuTransferToHost2D
     },
     header::VirtioGpuCtrlHdr,
 };
@@ -529,8 +526,9 @@ impl GPUDevice {
 
         // transfer from guest memmory to host resource
         self.transfer_to_host_2d(rect, 0, 0xbabe)?;
-        early_println!("transfer to host 2d done");
 
+        // resource flush
+        self.resource_flush(rect, 0xbabe)?;
         Ok(())
     }
 
@@ -594,6 +592,61 @@ impl GPUDevice {
 
         Ok(())
     }
+    
+    fn resource_flush(&self, rect: VirtioGpuRect, resource_id: i32) -> Result<(), VirtioDeviceError> {
+        // Prepare request data DMA buffer
+        let req_data_slice = {
+            let req_data_slice = DmaStreamSlice::new(
+                &self.control_request,
+                0,
+                size_of::<VirtioGpuResourceFlush>(),
+            );
+            let req_data = VirtioGpuResourceFlush::new(rect, resource_id as u32);
+            req_data_slice.write_val(0, &req_data).unwrap();
+            req_data_slice.sync().unwrap();
+            req_data_slice
+        };
+
+        // Prepare response DMA buffer
+        let resp_slice = {
+            let resp_slice = DmaStreamSlice::new(
+                &self.control_response,
+                0,
+                size_of::<VirtioGpuRespResourceFlush>(),
+            );
+            resp_slice
+                .write_val(0, &VirtioGpuRespResourceFlush::default())
+                .unwrap();
+            resp_slice.sync().unwrap();
+            resp_slice
+        };
+
+        // Add buffer to queue
+        let mut control_queue = self.control_queue.disable_irq().lock();
+        control_queue
+            .add_dma_buf(&[&req_data_slice], &[&resp_slice])
+            .expect("Add buffers to queue failed");
+
+        // Notify
+        if control_queue.should_notify() {
+            control_queue.notify();
+        }
+
+        // Wait for response
+        while !control_queue.can_pop() {
+            spin_loop();
+        }
+        control_queue.pop_used().expect("Pop used failed");
+
+        resp_slice.sync().unwrap();
+        let resp: VirtioGpuRespSetScanout = resp_slice.read_val(0).unwrap();
+
+        // check response with type OK_NODATA
+        if resp.header_type() != VirtioGpuCtrlType::VIRTIO_GPU_RESP_OK_NODATA as u32 {
+            return Err(VirtioDeviceError::QueueUnknownError);
+        }
+        Ok(())
+    }
 }
 
 /// Test the functionality of gpu device and driver.
@@ -625,4 +678,5 @@ fn test_device(device: Arc<GPUDevice>) {
 
     // flush to screen
     device.flush().expect("failed to flush");
+    early_println!("flushed to screen");
 }

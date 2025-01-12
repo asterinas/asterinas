@@ -326,3 +326,48 @@ impl Default for VirtioGpuRespTransferToHost2D {
         }
     }
 }
+
+// VIRTIO_GPU_CMD_RESOURCE_FLUSH
+// Flush a scanout resource.
+// Request data is struct virtio_gpu_resource_flush. Response type is VIRTIO_GPU_RESP_OK_NODATA.
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub(crate) struct VirtioGpuResourceFlush {
+    hdr: VirtioGpuCtrlHdr,
+    r: VirtioGpuRect,
+    resource_id: u32,
+    padding: u32,
+}
+
+impl VirtioGpuResourceFlush {
+    pub(crate) fn new(r: VirtioGpuRect, resource_id: u32) -> VirtioGpuResourceFlush {
+        VirtioGpuResourceFlush {
+            hdr: VirtioGpuCtrlHdr::from_type(VirtioGpuCtrlType::VIRTIO_GPU_CMD_RESOURCE_FLUSH),
+            r,
+            resource_id,
+            padding: 0,
+        }
+    }
+}
+
+
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub struct VirtioGpuRespResourceFlush {
+    hdr: VirtioGpuCtrlHdr,
+}
+
+impl VirtioGpuRespResourceFlush {
+    pub fn header_type(&self) -> u32 {
+        self.hdr.type_
+    }
+}
+
+impl Default for VirtioGpuRespResourceFlush {
+    fn default() -> Self {
+        VirtioGpuRespResourceFlush {
+            hdr: VirtioGpuCtrlHdr::default(),
+        }
+    }
+}
+
