@@ -5,6 +5,22 @@ use ostd::Pod;
 
 use crate::transport::{ConfigManager, VirtioTransport};
 
+bitflags::bitflags! {
+    pub struct GPUFeatures: u64{
+        // 支持 Virgl 3D 模式
+        const VIRTIO_GPU_F_VIRGL = 1 << 0;
+        // 需要支持 EDID（扩展显示识别数据）
+		const VIRTIO_GPU_F_EDID = 1 << 1;
+        // GPU 资源支持 UUID 分配，即能够为 GPU 资源（如纹理、缓冲区等）分配唯一的标识符（UUID），
+        // 并支持将这些资源导出到其他 Virtio 设备。
+		const VIRTIO_GPU_F_RESOURCE_UUID = 1 << 2;
+        // 支持基于大小的资源 Blob
+		const VIRTIO_GPU_F_RESOURCE_BLOB = 1 << 3;
+        // 需要支持上下文初始化
+		const VIRTIO_GPU_F_CONTEXT_INIT = 1 << 4;
+    }
+}
+
 #[derive(Debug, Pod, Clone, Copy)]
 #[repr(C)]
 pub struct VirtioGPUConfig {
