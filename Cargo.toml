@@ -13,6 +13,7 @@ members = [
     "kernel",
     "kernel/comps/block",
     "kernel/comps/console",
+    "kernel/comps/crypto",
     "kernel/comps/framebuffer",
     "kernel/comps/input",
     "kernel/comps/network",

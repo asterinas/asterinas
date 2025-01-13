@@ -5,6 +5,7 @@ virtio = { name = "aster-virtio" }
 input = { name = "aster-input" }
 block = { name = "aster-block" }
 console = { name = "aster-console" }
+crypto = { name = "aster-crypto" }
 softirq = { name = "aster-softirq" }
 logger = { name = "aster-logger" }
 time = { name = "aster-time" }

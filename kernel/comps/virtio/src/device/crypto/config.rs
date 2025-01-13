@@ -7,7 +7,6 @@ use aster_util::safe_ptr::SafePtr;
 use crate::transport::{ConfigManager, VirtioTransport};
 
 bitflags::bitflags! {
-
     pub struct CryptoFeatures: u64{
         /// Revision 1 has a specific request format and other enhancements (which result in some additional requirements).
         const VIRTIO_CRYPTO_F_REVISION_1            = 1 << 0;
@@ -19,6 +18,12 @@ bitflags::bitflags! {
         const VIRTIO_CRYPTO_F_MAC_STATELESS_MODE    = 1 << 3;
         /// stateless mode requests are supported by the AEAD service.
         const VIRTIO_CRYPTO_F_AEAD_STATELESS_MODE   = 1 << 4;
+    }
+}
+
+impl CryptoFeatures {
+    pub fn support_features() -> Self {
+        CryptoFeatures::VIRTIO_CRYPTO_F_REVISION_1
     }
 }
 
@@ -37,27 +42,15 @@ bitflags::bitflags! {
     }
 }
 
-// bitflags::bitflags! {
-//     #[repr(C)]
-//     #[derive(Pod)]
-//     pub struct CipherAlgo: u64 {
-//         const VIRTIO_CRYPTO_NO_CIPHER = 1 << 0;
-//         const VIRTIO_CRYPTO_CIPHER_ARC4 = 1 << 1;
-//         const VIRTIO_CRYPTO_CIPHER_AES_ECB = 1 << 2;
-//         const VIRTIO_CRYPTO_CIPHER_AES_CBC = 1 << 3;
-//         const VIRTIO_CRYPTO_CIPHER_AES_CTR = 1 << 4;
-//         const VIRTIO_CRYPTO_CIPHER_DES_ECB = 1 << 5;
-//         const VIRTIO_CRYPTO_CIPHER_DES_CBC = 1 << 6;
-//         const VIRTIO_CRYPTO_CIPHER_3DES_ECB = 1 << 7;
-//         const VIRTIO_CRYPTO_CIPHER_3DES_CBC = 1 << 8;
-//         const VIRTIO_CRYPTO_CIPHER_3DES_CTR = 1 << 9;
-//         const VIRTIO_CRYPTO_CIPHER_KASUMI_F8 = 1 << 10;
-//         const VIRTIO_CRYPTO_CIPHER_SNOW3G_UEA2 = 1 << 11;
-//         const VIRTIO_CRYPTO_CIPHER_AES_F8 = 1 << 12;
-//         const VIRTIO_CRYPTO_CIPHER_AES_XTS = 1 << 13;
-//         const VIRTIO_CRYPTO_CIPHER_ZUC_EEA3 = 1 << 14;
-//     }
-// }
+enum VirtioCryptoStatus { 
+    Ok = 0,             // success
+    Err = 1,            // any failure not mentioned above occurs
+    BadMsg = 2,         // authentication failed (only when AEAD decryption)
+    NotSupp = 3,        // operation or algorithm is unsupported
+    InvSess = 4,        // invalid session ID when executing crypto operations
+    NoSpc = 5,          // no free session ID.
+    Max 
+}
 
 #[derive(Debug, Pod, Clone, Copy)]
 #[repr(C)]
