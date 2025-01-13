@@ -1,12 +1,9 @@
 use core::mem::offset_of;
 
-use aster_util::{read_union_fields, safe_ptr::SafePtr};
+use aster_util::safe_ptr::SafePtr;
 use ostd::Pod;
 
-use crate::{
-    bitflags,
-    transport::{ConfigManager, VirtioTransport},
-};
+use crate::transport::{ConfigManager, VirtioTransport};
 
 bitflags::bitflags! {
     pub struct GPUFeatures: u64{

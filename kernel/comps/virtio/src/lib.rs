@@ -24,7 +24,7 @@ use device::{
     socket::{self, device::SocketDevice},
     VirtioDeviceType,
 };
-use log::{error, warn};
+use log::error;
 use ostd::early_println;
 use transport::{mmio::VIRTIO_MMIO_DRIVER, pci::VIRTIO_PCI_DRIVER, DeviceStatus};
 

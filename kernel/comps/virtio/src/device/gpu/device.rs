@@ -664,15 +664,26 @@ fn test_device(device: Arc<GPUDevice>) {
         .expect("failed to setup framebuffer");
 
     // write content into buffer
-    for x in 0..height {
-        for y in 0..width {
-            let offset = (x * width + y) * 4;
-            let color = if x % 2 == 0 && y % 2 == 0 {
-                0x00ff_0000
-            } else {
-                0x0000_ff00
-            };
-            buf.write_val(offset as usize, &color).unwrap();
+    // for x in 0..height {
+    //     for y in 0..width {
+    //         let offset = (x * width + y) * 4;
+    //         let color = if x % 2 == 0 && y % 2 == 0 {
+    //             0x00ff_0000
+    //         } else {
+    //             0x0000_ff00
+    //         };
+    //         buf.write_val(offset as usize, &color).unwrap();
+    //     }
+    // }
+    for y in 0..height {    //height=800
+        for x in 0..width { //width=1280
+            let offset = (y * width + x) * 4;
+            // fb[idx] = x as u8;
+            // fb[idx + 1] = y as u8;
+            // fb[idx + 2] = (x + y) as u8;
+            buf.write_val(offset as usize, &x).expect("error writing frame buffer");
+            buf.write_val((offset + 1) as usize, &y).expect("error writing frame buffer");
+            buf.write_val((offset + 2) as usize, &(x+y)).expect("error writing frame buffer");
         }
     }
 

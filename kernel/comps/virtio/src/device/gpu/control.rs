@@ -1,4 +1,3 @@
-use bitflags::bitflags;
 use ostd::Pod;
 
 use super::header::{VirtioGpuCtrlHdr, VirtioGpuCtrlType};
