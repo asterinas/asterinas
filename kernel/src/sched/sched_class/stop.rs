@@ -41,11 +41,11 @@ impl SchedClassRq for StopClassRq {
         }
     }
 
-    fn len(&mut self) -> usize {
+    fn len(&self) -> usize {
         usize::from(!self.is_empty())
     }
 
-    fn is_empty(&mut self) -> bool {
+    fn is_empty(&self) -> bool {
         self.thread.is_none()
     }
 
