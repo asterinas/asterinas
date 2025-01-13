@@ -10,7 +10,7 @@ pub type Paddr = usize;
 
 pub(crate) mod dma;
 pub mod frame;
-pub(crate) mod heap_allocator;
+pub mod heap;
 mod io;
 pub(crate) mod kspace;
 mod offset;

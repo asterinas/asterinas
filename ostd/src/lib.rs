@@ -47,7 +47,7 @@ mod util;
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-pub use ostd_macros::{global_frame_allocator, main, panic_handler};
+pub use ostd_macros::{global_frame_allocator, global_heap_allocator, main, panic_handler};
 pub use ostd_pod::Pod;
 
 pub use self::{error::Error, prelude::Result};
@@ -90,9 +90,6 @@ unsafe fn init() {
     unsafe { mm::frame::allocator::init() };
 
     mm::kspace::init_kernel_page_table(meta_pages);
-
-    // SAFETY: This function is called only once and only on the BSP.
-    unsafe { mm::heap_allocator::init() };
 
     crate::sync::init();
 
