@@ -147,7 +147,7 @@ const_assert!(size_of::<MetaSlot>() == META_SLOT_SIZE);
 ///
 /// If `on_drop` reads the page using the provided `VmReader`, the
 /// implementer must ensure that the frame is safe to read.
-pub unsafe trait AnyFrameMeta: Any + Send + Sync + Debug + 'static {
+pub unsafe trait AnyFrameMeta: Any + Send + Sync {
     /// Called when the last handle to the frame is dropped.
     fn on_drop(&mut self, _reader: &mut VmReader<Infallible>) {}
 
