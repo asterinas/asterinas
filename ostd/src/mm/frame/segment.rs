@@ -107,6 +107,20 @@ impl<M: AnyFrameMeta> Segment<M> {
         }
         Ok(segment)
     }
+
+    /// Restores the [`Segment`] from the raw physical address range.
+    ///
+    /// # Safety
+    ///
+    /// The range must be a forgotten [`Segment`] that matches the type `M`.
+    /// It could be manually forgotten by [`core::mem::forget`],
+    /// [`ManuallyDrop`], or [`Self::into_raw`].
+    pub(crate) unsafe fn from_raw(range: Range<Paddr>) -> Self {
+        Self {
+            range,
+            _marker: core::marker::PhantomData,
+        }
+    }
 }
 
 impl<M: AnyFrameMeta + ?Sized> Segment<M> {
@@ -179,6 +193,13 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
             range: start..end,
             _marker: core::marker::PhantomData,
         }
+    }
+
+    /// Forgets the [`Segment`] and gets a raw range of physical addresses.
+    pub(crate) fn into_raw(self) -> Range<Paddr> {
+        let range = self.range.clone();
+        let _ = ManuallyDrop::new(self);
+        range
     }
 }
 

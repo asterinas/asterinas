@@ -20,6 +20,7 @@ aster-rights = { path = "libs/aster-rights" }
 component = { path = "libs/comp-sys/component" }
 controlled = { path = "libs/comp-sys/controlled" }
 osdk-frame-allocator = { path = "../osdk/deps/frame-allocator" }
+osdk-heap-allocator = { path = "../osdk/deps/heap-allocator" }
 ostd = { path = "../ostd" }
 typeflags = { path = "libs/typeflags" }
 typeflags-util = { path = "libs/typeflags-util" }

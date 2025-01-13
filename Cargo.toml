@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "osdk/deps/frame-allocator",
+    "osdk/deps/heap-allocator",
     "osdk/deps/test-kernel",
     "ostd",
     "ostd/libs/align_ext",
