@@ -18,7 +18,7 @@ use crate::{
 
 use super::{
     config::{GPUFeatures, VirtioGPUConfig},
-    header::VirtioGPUHdr,
+    header::VirtioGPUCtrlHdr,
 };
 
 pub struct GPUDevice {

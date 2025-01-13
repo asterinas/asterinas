@@ -5,9 +5,9 @@ use ostd::Pod;
 
 #[repr(C)]
 #[derive(Default, Debug, Clone, Copy, Pod)]
-pub struct VirtioGPUHdr {
+pub struct VirtioGPUCtrlHdr {
     ctrl_type: u32,     // specify request/response type
-    flags: Flags,       // see usages
+    flags: u8,       // see usages
     fence_id: u64,      
     // if FLAG_FENCE is set, device must copy fence_id from request to response
     ctx_id: u32,
@@ -73,5 +73,18 @@ bitflags! {
     pub struct Flags: u8 {
         const VIRTIO_GPU_FLAG_FENCE = 1;
         const VIRTIO_GPU_FLAG_INFO_RING_IDX = 2;
+    }
+}
+
+impl VirtioGPUCtrlHdr {
+    pub fn from_type(ctrl_type: VirtioGPUCtrlType) -> Self {
+        VirtioGPUCtrlHdr {
+            ctrl_type: ctrl_type as u32,
+            flags: 0,
+            fence_id: 0,
+            ctx_id: 0,
+            ring_idx: 0,
+            padding: [0; 3],
+        }
     }
 }
