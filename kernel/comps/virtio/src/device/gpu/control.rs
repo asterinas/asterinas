@@ -3,6 +3,11 @@
 /// All structs are public here, BUT attributes are all private.
 /// If later development needs a direct access to attributes, please add public functions in control.rs,
 /// or directly set the attributes to public.
+
+/* AWARE: NO error detection yet!!!!!! */
+/// But I think it should be implemented in device.rs 
+/// (i.e. 由顶层模块检测错误并向 host 发送错误信息，而 control 模块只负责包装消息并发送)
+
 use bitflags::bitflags;
 use ostd::Pod;
 use super::header::{VirtioGPUCtrlHdr, VirtioGPUCtrlType};
@@ -16,6 +21,12 @@ pub struct VirtioGpuRect {
     y: u32, // 起始点的 Y 坐标
     width: u32, // 矩形的宽度
     height: u32, // 矩形的高度
+}
+
+impl VirtioGpuRect {
+    pub fn new(x: u32, y: u32, width: u32, height: u32) -> Self {
+        VirtioGpuRect{x, y, width, height}
+    }
 }
 
 /// VIRTIO_GPU_CMD_GET_DISPLAY_INFO
@@ -51,8 +62,18 @@ pub struct VirtioGPURespDisplayInfo {
 #[derive(Debug, Clone, Copy, Pod)]
 pub struct VirtioGPUGetEdid {
     hdr: VirtioGPUCtrlHdr,
-    scanout: u32,
-    padding: u32
+    scanout: u32,           // 显示设备的编号
+    padding: u32            // 多余填充字段，默认为0
+}
+
+impl VirtioGPUGetEdid {
+    pub fn new(scanout: u32, padding: u32) -> Self {
+        VirtioGPUGetEdid {
+            hdr: VirtioGPUCtrlHdr::from_type(VirtioGPUCtrlType::VIRTIO_GPU_CMD_GET_EDID),
+            scanout,
+            padding
+        }
+    }
 }
 
 #[repr(C)]
@@ -64,8 +85,7 @@ pub struct VirtioGPURespEdid {
     edid: [u8; 1024]
 }
 
-
-
+// TODO: impl VirtioGPURespEdid
 
 
 /// VIRTIO_GPU_CMD_RESOURCE_CREATE_2D: Create a 2D resource on the host. 
@@ -110,7 +130,6 @@ impl VirtioGPUResourceCreate2d {
     }
 }
 
-
 /// VIRTIO_GPU_CMD_RESOURCE_UNREF: Destroy a resource. 
 /// 
 /// Request data is struct virtio_gpu_resource_unref. 
@@ -119,8 +138,17 @@ impl VirtioGPUResourceCreate2d {
 #[derive(Debug, Clone, Copy, Pod)]
 pub struct VirtioGPUResourceUnref {
     hdr: VirtioGPUCtrlHdr,
-    resouce_id: u32,
+    resource_id: u32,
     padding: u32,
+}
+
+impl VirtioGPUResourceUnref {
+    pub fn new(resource_id: u32, padding: u32) -> Self {
+        VirtioGPUResourceUnref {
+            hdr: VirtioGPUCtrlHdr::from_type(VirtioGPUCtrlType::VIRTIO_GPU_CMD_RESOURCE_CREATE_2D),
+            resource_id, padding
+        }
+    }
 }
 
 /// VIRTIO_GPU_CMD_SET_SCANOUT: Set the scanout parameters for a single output. 
@@ -136,6 +164,17 @@ pub struct VirtioGPUSetScanout {
     resource_id: u32,
 }
 
+impl VirtioGPUSetScanout {
+    pub fn new(scanout_id: u32, resource_id: u32, rect: VirtioGpuRect) -> Self {
+        VirtioGPUSetScanout {
+            hdr: VirtioGPUCtrlHdr::from_type(VirtioGPUCtrlType::VIRTIO_GPU_CMD_SET_SCANOUT),
+            scanout_id,
+            resource_id,
+            r: rect,
+        }
+    }
+}
+
 /// VIRTIO_GPU_CMD_RESOURCE_FLUSH: Flush a scanout resource.
 /// 
 /// Request data is struct virtio_gpu_resource_flush. 
@@ -147,6 +186,17 @@ pub struct VirtioGPUResourceFlush {
     r: VirtioGpuRect,
     resource_id: u32,
     padding: u32,
+}
+
+impl VirtioGPUResourceFlush {
+    pub fn new(resource_id: u32, rect: VirtioGpuRect, padding: u32) -> Self {
+        VirtioGPUResourceFlush {
+            hdr: VirtioGPUCtrlHdr::from_type(VirtioGPUCtrlType::VIRTIO_GPU_CMD_RESOURCE_FLUSH),
+            resource_id,
+            r: rect,
+            padding,
+        }
+    }
 }
 
 /// VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D: Transfer from guest memory to host resource. 
@@ -163,6 +213,18 @@ pub struct VirtioGPUTransferToHost2d {
     padding: u32,
 }
 
+impl VirtioGPUTransferToHost2d {
+    pub fn new(resource_id: u32, rect: VirtioGpuRect, offset: u64, padding: u32) -> Self {
+        VirtioGPUTransferToHost2d {
+            hdr: VirtioGPUCtrlHdr::from_type(VirtioGPUCtrlType::VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D),
+            resource_id,
+            r: rect,
+            offset,
+            padding,
+        }
+    }
+}
+
 /// VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING: Assign backing pages to a resource. 
 /// 
 /// Request data is struct virtio_gpu_resource_attach_backing, followed by struct virtio_gpu_mem_entry entries. 
@@ -175,8 +237,18 @@ pub struct VirtioGPUResourceAttachBacking {
     nr_entries: u32
 }
 
+impl VirtioGPUResourceAttachBacking {
+    pub fn new(resource_id: u32, nr_entries: u32) -> Self {
+        VirtioGPUResourceAttachBacking {
+            hdr: VirtioGPUCtrlHdr::from_type(VirtioGPUCtrlType::VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING),
+            resource_id,
+            nr_entries,
+        }
+    }
+}
+
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Default, Debug, Clone, Copy, Pod)]
 pub struct VirtioGPUMemEntry {
     addr: u64,
     length: u32,
@@ -190,6 +262,16 @@ pub struct VirtioGPUResourceDetachBacking {
     hdr: VirtioGPUCtrlHdr,
     resource_id: u32,
     padding: u32,
+}
+
+impl VirtioGPUResourceDetachBacking {
+    pub fn new(resource_id: u32, padding: u32) -> Self {
+        VirtioGPUResourceDetachBacking {
+            hdr: VirtioGPUCtrlHdr::from_type(VirtioGPUCtrlType::VIRTIO_GPU_CMD_RESOURCE_DETACH_BACKING),
+            resource_id,
+            padding,
+        }
+    }
 }
 
 /// VIRTIO_GPU_CMD_GET_CAPSET_INFO
@@ -212,6 +294,16 @@ pub struct VirtioGPUGetCapsetInfo {
     padding: u32,
 }
 
+impl VirtioGPUGetCapsetInfo {
+    pub fn new(capset_index: CapsetIndex, padding: u32) -> Self {
+        VirtioGPUGetCapsetInfo {
+            hdr: VirtioGPUCtrlHdr::from_type(VirtioGPUCtrlType::VIRTIO_GPU_CMD_GET_CAPSET_INFO),
+            capset_index: capset_index as u32,
+            padding,
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod)]
 pub struct VirtioGPURespCapsetInfo {
@@ -222,6 +314,8 @@ pub struct VirtioGPURespCapsetInfo {
     padding: u32,
 }
 
+// TODO: impl VirtioGPURespCapsetInfo
+
 // VIRTIO_GPU_CMD_GET_CAPSET
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod)]
@@ -229,6 +323,16 @@ pub struct VirtioGPUGetCapset {
     hdr: VirtioGPUCtrlHdr,
     capset_id: u32,
     capset_version: u32,
+}
+
+impl VirtioGPUGetCapset {
+    pub fn new(capset_id: u32, capset_version: u32) -> Self {
+        VirtioGPUGetCapset {
+            hdr: VirtioGPUCtrlHdr::from_type(VirtioGPUCtrlType::VIRTIO_GPU_CMD_GET_CAPSET),
+            capset_id,
+            capset_version,
+        }
+    }
 }
 
 #[repr(C)]
@@ -249,6 +353,16 @@ pub struct VirtioGPUResourceAssignUuid {
     padding: u32,
 }
 
+impl VirtioGPUResourceAssignUuid {
+    pub fn new(resource_id: u32, padding: u32) -> Self {
+        VirtioGPUResourceAssignUuid {
+            hdr: VirtioGPUCtrlHdr::from_type(VirtioGPUCtrlType::VIRTIO_GPU_CMD_RESOURCE_ASSIGN_UUID),
+            resource_id,
+            padding,
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod)]
 pub struct VirtioGPURespResourceUuid {
@@ -256,7 +370,7 @@ pub struct VirtioGPURespResourceUuid {
     uuid: [u8; 16],
 }
 
-
+// TODO: impl VirtioGPURespResourceUuid
 
 // VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB
 bitflags! {
@@ -284,6 +398,27 @@ pub struct VirtioGPUResourceCreateBlob {
     size: u64,
 }
 
+impl VirtioGPUResourceCreateBlob {
+    pub fn new(
+        resource_id: u32,
+        blob_mem: BlobMem,
+        blob_flags: BlobFlags,
+        nr_entries: u32,
+        blob_id: u64,
+        size: u64,
+    ) -> Self {
+        VirtioGPUResourceCreateBlob {
+            hdr: VirtioGPUCtrlHdr::from_type(VirtioGPUCtrlType::VIRTIO_GPU_CMD_RESOURCE_CREATE_BLOB),
+            resource_id,
+            blob_mem: blob_mem.bits(),
+            blob_flags: blob_flags.bits(),
+            nr_entries,
+            blob_id,
+            size,
+        }
+    }
+}
+
 /// VIRTIO_GPU_CMD_SET_SCANOUT_BLOB
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod)]
@@ -300,3 +435,29 @@ pub struct VirtioGPUSetScanoutBlob {
     offsets: [u32; 4],
 }
 
+impl VirtioGPUSetScanoutBlob {
+    pub fn new(
+        scanout_id: u32,
+        resource_id: u32,
+        width: u32,
+        height: u32,
+        format: u32,
+        padding: u32,
+        rect: VirtioGpuRect,
+        strides: [u32; 4],
+        offsets: [u32; 4],
+    ) -> Self {
+        VirtioGPUSetScanoutBlob {
+            hdr: VirtioGPUCtrlHdr::from_type(VirtioGPUCtrlType::VIRTIO_GPU_CMD_SET_SCANOUT_BLOB),
+            r: rect,
+            scanout_id,
+            resource_id,
+            width,
+            height,
+            format,
+            padding,
+            strides,
+            offsets,
+        }
+    }
+}
