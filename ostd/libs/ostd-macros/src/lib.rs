@@ -68,11 +68,12 @@ pub fn test_main(_attr: TokenStream, item: TokenStream) -> TokenStream {
 /// A macro attribute for the global frame allocator.
 ///
 /// The attributed static variable will be used to provide frame allocation
-/// for the kernel. The variable should have type `ostd::mm::GlobalFrameAllocator`.
+/// for the kernel.
 ///
 /// # Example
 ///
 /// ```ignore
+/// use core::alloc::Layout;
 /// use ostd::{mm::{frame::GlobalFrameAllocator, Paddr}, global_frame_allocator};
 ///
 /// // Of course it won't work because all allocations will fail.
@@ -83,8 +84,8 @@ pub fn test_main(_attr: TokenStream, item: TokenStream) -> TokenStream {
 /// struct MyFrameAllocator;
 ///
 /// impl GlobalFrameAllocator for MyFrameAllocator {
-///     fn alloc(&self) -> Option<Paddr> { None }
-///     fn dealloc(&self, _paddr: Paddr) {}
+///     fn alloc(&self, _layout: Layout) -> Option<Paddr> { None }
+///     fn dealloc(&self, _paddr: Paddr, _size: usize) {}
 /// }
 /// ```
 #[proc_macro_attribute]
@@ -97,6 +98,44 @@ pub fn global_frame_allocator(_attr: TokenStream, item: TokenStream) -> TokenStr
     quote!(
         #[no_mangle]
         static __GLOBAL_FRAME_ALLOCATOR_REF: &'static dyn ostd::mm::frame::GlobalFrameAllocator = &#static_name;
+        #item
+    )
+    .into()
+}
+
+/// A macro attribute for the global heap allocator.
+///
+/// The attributed static variable will be used to provide heap allocation
+/// for the kernel.
+///
+/// # Example
+///
+/// ```ignore
+/// use core::alloc::{AllocError, Layout};
+/// use ostd::{mm::heap::{GlobalHeapAllocator, HeapSlot}, global_heap_allocator};
+///
+/// // Of course it won't work and all allocations will fail.
+/// // It's just an example.
+/// #[global_heap_allocator]
+/// static ALLOCATOR: MyHeapAllocator = MyHeapAllocator;
+///
+/// struct MyHeapAllocator;
+///
+/// impl GlobalHeapAllocator for MyHeapAllocator {
+///     fn alloc(&self, _layout: Layout) -> Result<HeapSlot, AllocError> { None }
+///     fn dealloc(&self, _slot: HeapSlot) -> Result<(), AllocError> {}
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn global_heap_allocator(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    // Make a `static __GLOBAL_HEAP_ALLOCATOR_REF: &'static dyn GlobalHeapAllocator`
+    // That points to the annotated static variable.
+    let item = parse_macro_input!(item as syn::ItemStatic);
+    let static_name = &item.ident;
+
+    quote!(
+        #[no_mangle]
+        static __GLOBAL_HEAP_ALLOCATOR_REF: &'static dyn ostd::mm::heap::GlobalHeapAllocator = &#static_name;
         #item
     )
     .into()
