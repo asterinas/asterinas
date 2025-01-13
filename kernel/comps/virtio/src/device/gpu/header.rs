@@ -29,8 +29,8 @@ pub enum VirtioGpuCtrlType {
     // TODO:
 
     /* cursor commands */
-    // VIRTIO_GPU_CMD_UPDATE_CURSOR = 0x0300,
-    // VIRTIO_GPU_CMD_MOVE_CURSOR = 0x0301,
+    VIRTIO_GPU_CMD_UPDATE_CURSOR = 0x0300,
+    VIRTIO_GPU_CMD_MOVE_CURSOR,
 
     /* success responses */
     VIRTIO_GPU_RESP_OK_NODATA = 0x1100,

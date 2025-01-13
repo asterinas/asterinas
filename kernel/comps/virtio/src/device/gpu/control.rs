@@ -21,6 +21,10 @@ pub(crate) struct VirtioGpuRect {
 }
 
 impl VirtioGpuRect {
+    pub fn new(x: u32, y: u32, width: u32, height: u32) -> Self {
+        VirtioGpuRect { x, y, width, height }
+    }
+
     pub fn width(&self) -> u32 {
         self.width
     }
@@ -52,6 +56,10 @@ pub struct VirtioGpuRespDisplayInfo {
 impl VirtioGpuRespDisplayInfo {
     pub fn header_type(&self) -> u32 {
         self.hdr.type_
+    }
+
+    pub(crate) fn get_rect(&self, index: usize) -> Option<VirtioGpuRect> {
+        Some(self.pmodes[index].r)
     }
 }
 
@@ -114,11 +122,6 @@ impl Default for VirtioGpuRespEdid {
             padding: 0,
             edid: [0; 1024],
         }
-    }
-}
-impl VirtioGpuRespDisplayInfo {
-    pub(crate) fn get_rect(&self, index: usize) -> Option<VirtioGpuRect> {
-        Some(self.pmodes[index].r)
     }
 }
 
@@ -370,3 +373,75 @@ impl Default for VirtioGpuRespResourceFlush {
     }
 }
 
+
+/* VIRTIO_GPU_CMD_UPDATE_CURSOR */
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, Pod)]
+struct VirtioGpuCursorPos {
+    scanout_id: u32,
+    x: u32,
+    y: u32,
+    padding: u32,
+}
+
+impl Default for VirtioGpuCursorPos {
+    fn default() -> Self {
+        VirtioGpuCursorPos {
+            scanout_id: 0,
+            x: 0,
+            y: 0,
+            padding: 0,
+        }
+    }
+}
+
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub struct VirtioGpuUpdateCursor {
+    hdr: VirtioGpuCtrlHdr,
+    pos: VirtioGpuCursorPos,
+    resource_id: u32,
+    hot_x: u32,
+    hot_y: u32,
+    padding: u32,
+}
+
+impl VirtioGpuUpdateCursor {
+    pub fn new(scanout_id: u32, x: u32, y: u32, resource_id: u32, hot_x: u32, hot_y: u32) -> Self {
+        VirtioGpuUpdateCursor {
+            hdr: VirtioGpuCtrlHdr::from_type(VirtioGpuCtrlType::VIRTIO_GPU_CMD_UPDATE_CURSOR),
+            pos: VirtioGpuCursorPos {
+                scanout_id,
+                x,
+                y,
+                padding: 0,
+            },
+            resource_id,
+            hot_x,
+            hot_y,
+            padding: 0,
+        }
+    }
+    
+}
+
+
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub struct VirtioGpuRespUpdateCursor {
+    hdr: VirtioGpuCtrlHdr,
+}
+
+impl VirtioGpuRespUpdateCursor {
+    pub fn header_type(&self) -> u32 {
+        self.hdr.type_
+    }
+}
+
+impl Default for VirtioGpuRespUpdateCursor {
+    fn default() -> Self {
+        VirtioGpuRespUpdateCursor {
+            hdr: VirtioGpuCtrlHdr::default(),
+        }
+    }
+}
