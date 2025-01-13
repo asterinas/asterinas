@@ -64,7 +64,7 @@ fn virtio_component_init() -> Result<(), ComponentInitError> {
             VirtioDeviceType::Network => NetworkDevice::init(transport),
             VirtioDeviceType::Console => ConsoleDevice::init(transport),
             VirtioDeviceType::Socket => SocketDevice::init(transport),
-            VirtioDeviceType::Crypto => VirtioDeviceType::init(transport),
+            VirtioDeviceType::Crypto => CryptoDevice::init(transport),
             _ => {
                 warn!("[Virtio]: Found unimplemented device:{:?}", device_type);
                 Ok(())

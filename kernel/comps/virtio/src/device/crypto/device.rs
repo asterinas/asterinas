@@ -24,7 +24,7 @@ impl CryptoDevice {
 
     pub fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
         let config_manager = VirtioCryptoConfig::new_manager(transport.as_ref());
-        ostd::early_println!("virtio_crypto_config = {:?}", config_manager.read_config());
+        debug!("virtio_crypto_config = {:?}", config_manager.read_config());
         transport.finish_init();
         
         drop(transport);
