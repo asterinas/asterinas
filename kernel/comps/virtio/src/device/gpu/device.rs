@@ -39,6 +39,9 @@ impl GPUDevice {
     pub fn negotiate_features(features: u64) -> u64 {
         let mut features = GPUFeatures::from_bits_truncate(features);
         debug!("GPUFeature negotiate: {:?}", features);
+        // tmep: not support 3D mode
+        features.remove(GPUFeatures::VIRTIO_GPU_F_VIRGL);
+        features.remove(GPUFeatures::VIRTIO_GPU_F_CONTEXT_INIT);
         features.bits()
     }
 
@@ -49,9 +52,9 @@ impl GPUDevice {
         // init queue
         const CONTROL_QUEUE_INDEX: u16 = 0;
         const CURSOR_QUEUE_INDEX: u16 = 1;
-        let receive_queue =
+        let control_queue =
             SpinLock::new(VirtQueue::new(CONTROL_QUEUE_INDEX, Self::QUEUE_SIZE, transport.as_mut()).unwrap());
-        let transmit_queue =
+        let cursor_queue =
             SpinLock::new(VirtQueue::new(CURSOR_QUEUE_INDEX, Self::QUEUE_SIZE, transport.as_mut()).unwrap());
 
         // init buffer
@@ -67,7 +70,7 @@ impl GPUDevice {
         // init device
         let device = Arc::new(Self {
             config_manager,
-            transport,
+            transport: SpinLock::new(transport),
             control_queue,
             cursor_queue,
             controlq_receiver,

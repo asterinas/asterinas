@@ -1,5 +1,4 @@
 use bitflags::bitflags;
-use core::clone;
 // use int_to_c_enum::TryFromInt;  // error!
 use ostd::Pod;
 /* Ref. network::header */

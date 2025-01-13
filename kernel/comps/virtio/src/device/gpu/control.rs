@@ -1,11 +1,11 @@
 use bitflags::bitflags;
 use ostd::Pod;
-use super::header::{VirtioGpuCtrlHdr, VirtioGpuCtrlType};
+use super::header::{VirtioGPUHdr, VirtioGPUCtrlType};
 
 pub const VIRTIO_GPU_MAX_SCANOUTS: usize = 16;
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Pod)]
 pub struct VirtioGpuRect {
     x: u32, // 起始点的 X 坐标
     y: u32, // 起始点的 Y 坐标
@@ -25,6 +25,6 @@ pub struct VirtioGPUDisplayOne {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod)]
 pub struct VirtioGPURespDisplayInfo {
-    header: VirtioGpuCtrlHdr,
+    header: VirtioGPUHdr,
     pmodes: [VirtioGPUDisplayOne; VIRTIO_GPU_MAX_SCANOUTS],
 }
