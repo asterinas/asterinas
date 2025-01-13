@@ -17,6 +17,7 @@
 //! as zero-cost capabilities.
 
 use osdk_frame_allocator::FrameAllocator;
+use osdk_heap_allocator::{type_from_layout, HeapAllocator};
 
 pub mod page_fault_handler;
 pub mod perms;
@@ -26,6 +27,14 @@ pub mod vmo;
 
 #[ostd::global_frame_allocator]
 static FRAME_ALLOCATOR: FrameAllocator = FrameAllocator;
+
+#[ostd::global_heap_allocator]
+static HEAP_ALLOCATOR: HeapAllocator = HeapAllocator;
+
+#[ostd::global_heap_allocator_slot_type_map]
+const fn slot_type_from_layout(layout: core::alloc::Layout) -> Option<ostd::mm::heap::SlotInfo> {
+    type_from_layout(layout)
+}
 
 /// Total physical memory in the entire system in bytes.
 pub fn mem_total() -> usize {

@@ -238,6 +238,12 @@ fn add_manifest_dependency(
         Path::new("deps").join("frame-allocator"),
     );
 
+    add_manifest_dependency_to(
+        dependencies,
+        "osdk-heap-allocator",
+        Path::new("deps").join("heap-allocator"),
+    );
+
     add_manifest_dependency_to(dependencies, "ostd", Path::new("..").join("ostd"));
 
     let content = toml::to_string(&manifest).unwrap();
