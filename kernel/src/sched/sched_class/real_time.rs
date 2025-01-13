@@ -184,11 +184,11 @@ impl SchedClassRq for RealTimeClassRq {
         self.nr_running += 1;
     }
 
-    fn len(&mut self) -> usize {
+    fn len(&self) -> usize {
         self.nr_running
     }
 
-    fn is_empty(&mut self) -> bool {
+    fn is_empty(&self) -> bool {
         self.nr_running == 0
     }
 

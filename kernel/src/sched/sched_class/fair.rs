@@ -235,11 +235,11 @@ impl SchedClassRq for FairClassRq {
         self.entities.push(Reverse(FairQueueItem(entity, vruntime)));
     }
 
-    fn len(&mut self) -> usize {
+    fn len(&self) -> usize {
         self.entities.len()
     }
 
-    fn is_empty(&mut self) -> bool {
+    fn is_empty(&self) -> bool {
         self.entities.is_empty()
     }
 
