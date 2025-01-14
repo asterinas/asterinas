@@ -1,5 +1,8 @@
-use alloc::{boxed::Box, sync::Arc, vec};
+use alloc::vec;
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::hint::spin_loop;
+use tinybmp::Bmp;
+use embedded_graphics::pixelcolor::Rgb888;
 
 use log::info;
 use ostd::{
@@ -20,7 +23,7 @@ use crate::{
     device::{
         gpu::{
             control::{
-                VirtioGpuGetEdid, VirtioGpuRespEdid, VirtioGpuRespResourceCreate2D, RESPONSE_SIZE,
+                VirtioGpuCursorPos, VirtioGpuGetEdid, VirtioGpuRespEdid, VirtioGpuRespResourceCreate2D, RESPONSE_SIZE
             },
             header::{VirtioGpuCtrlType, REQUEST_SIZE},
         },
@@ -132,12 +135,12 @@ impl GPUDevice {
 
         // Register irq callbacks
         let mut transport = device.transport.lock();
-        transport
-            .register_queue_callback(CONTROL_QUEUE_INDEX, Box::new(handle_irq_ctl), false)
-            .unwrap();
-        transport
-            .register_queue_callback(CURSOR_QUEUE_INDEX, Box::new(handle_irq_cursor), false)
-            .unwrap();
+        // transport
+        //     .register_queue_callback(CONTROL_QUEUE_INDEX, Box::new(handle_irq_ctl), false)
+        //     .unwrap();
+        // transport
+        //     .register_queue_callback(CURSOR_QUEUE_INDEX, Box::new(handle_irq_cursor), false)
+        //     .unwrap();
         transport
             .register_cfg_callback(Box::new(handle_config_change))
             .unwrap();
@@ -605,7 +608,7 @@ impl GPUDevice {
         control_queue.pop_used().expect("Pop used failed");
 
         resp_slice.sync().unwrap();
-        let resp: VirtioGpuRespSetScanout = resp_slice.read_val(0).unwrap();
+        let resp: VirtioGpuRespTransferToHost2D = resp_slice.read_val(0).unwrap();
 
         // check response with type OK_NODATA
         if resp.header_type() != VirtioGpuCtrlType::VIRTIO_GPU_RESP_OK_NODATA as u32 {
@@ -661,7 +664,7 @@ impl GPUDevice {
         control_queue.pop_used().expect("Pop used failed");
 
         resp_slice.sync().unwrap();
-        let resp: VirtioGpuRespSetScanout = resp_slice.read_val(0).unwrap();
+        let resp: VirtioGpuRespResourceFlush = resp_slice.read_val(0).unwrap();
 
         // check response with type OK_NODATA
         if resp.header_type() != VirtioGpuCtrlType::VIRTIO_GPU_RESP_OK_NODATA as u32 {
@@ -670,16 +673,17 @@ impl GPUDevice {
         Ok(())
     }
 
-    pub fn update_cursor(&self, resource_id: u32, scanout_id: u32, pos_x: u32, pos_y: u32, hot_x: u32, hot_y: u32, move_only: bool) -> Result<(), VirtioDeviceError> {
+    pub fn update_cursor(&self, resource_id: u32, scanout_id: u32, pos_x: u32, pos_y: u32, hot_x: u32, hot_y: u32) -> Result<(), VirtioDeviceError> {
         // Prepare request data DMA buffer
-        // TODO: (Taojie) implement move cursor onlys
+        // TODO: (Taojie) implement move cursor
         let req_data_slice = {
             let req_data_slice = DmaStreamSlice::new(
                 &self.cursor_request,
                 0,
                 size_of::<VirtioGpuUpdateCursor>(),
             );
-            let req_data = VirtioGpuUpdateCursor::new(resource_id, scanout_id, pos_x, pos_y, hot_x, hot_y);
+            let cursor_pos = VirtioGpuCursorPos::new(scanout_id, pos_x, pos_y);
+            let req_data = VirtioGpuUpdateCursor::new(cursor_pos, resource_id, hot_x, hot_y);
             req_data_slice.write_val(0, &req_data).unwrap();
             req_data_slice.sync().unwrap();
             req_data_slice
@@ -716,19 +720,18 @@ impl GPUDevice {
         }
         cursor_queue.pop_used().expect("Pop used failed");
 
-        resp_slice.sync().unwrap();
-        let resp: VirtioGpuRespUpdateCursor = resp_slice.read_val(0).unwrap();
+        // Taojie: qemu cursor command does not return response.
+        //      This could be a bug of qemu.
 
-        // check response with type OK_NODATA
-        early_println!("update cursor response: {:?}", resp);
-        if resp.header_type() != VirtioGpuCtrlType::VIRTIO_GPU_RESP_OK_NODATA as u32 {
-            return Err(VirtioDeviceError::QueueUnknownError);
-        }
+        // resp_slice.sync().unwrap();
+        // let resp: VirtioGpuRespUpdateCursor = resp_slice.read_val(0).unwrap();
+        // early_println!("update cursor response: {:?}", resp);
 
         Ok(())
     }
 }
 
+static BMP_DATA: &[u8] = include_bytes!("mouse.bmp");
 /// Test the functionality of rendering cursor.
 fn test_cursor(device: Arc<GPUDevice>) {
     // setup cursor
@@ -742,27 +745,35 @@ fn test_cursor(device: Arc<GPUDevice>) {
         DmaStream::map(vm_segment.into(), DmaDirection::ToDevice, false).unwrap()
     };
 
-    // write content into the cursor buffer: all black
-    for y in 0..cursor_rect.height() {
-        for x in 0..cursor_rect.width() {
-            let offset = (y * cursor_rect.width() + x) * 4;
-            let color = 0x00000000;
-            cursor_dma_buffer.write_val(offset as usize, &color).unwrap();
+    // write content into the cursor buffer: image
+    let bmp = Bmp::<Rgb888>::from_slice(BMP_DATA).unwrap();
+    let raw = bmp.as_raw();
+    let mut b = Vec::new();
+    for i in raw.image_data().chunks(3) {
+        let mut v = i.to_vec();
+        b.append(&mut v);
+        if i == [255, 255, 255] {
+            b.push(0x0)
+        } else {
+            b.push(0xff)
         }
     }
+    if b.len() != size {
+        panic!("cursor size not match");
+    }
+    cursor_dma_buffer.write_slice(0, &b).unwrap();
     
-    // create cursor resource, attach backing storage and transfer to host
+    // create cursor resource, attach backing storage and transfer to host via control queue
     device.resource_create_2d(0xdade, cursor_rect.width(), cursor_rect.height()).unwrap();       // TODO: (Taojie) replace dade with cursor resource id, which is customized.
     device.resource_attch_backing(0xdade, cursor_dma_buffer.paddr(), size as u32).unwrap();
     device.transfer_to_host_2d(cursor_rect, 0, 0xdade).unwrap();
-
     early_println!("cursor setup done");
 
-    // update current cursor
-    // device.update_cursor(0xdade, 0, 0, 0, 0, 0, false).unwrap();
-
-
-
+    // update cursor image
+    // for _ in 0..1000000 {
+    //     device.update_cursor(0xdade, 0, 0, 0, 0, 0).unwrap();
+    // }
+    device.update_cursor(0xdade, 0, 0, 0, 0, 0).unwrap();
 }
 
 
@@ -795,12 +806,13 @@ fn test_frame_buffer(device: Arc<GPUDevice>) {
     for y in 0..height {    //height=800
         for x in 0..width { //width=1280
             let offset = (y * width + x) * 4;
-            // fb[idx] = x as u8;
-            // fb[idx + 1] = y as u8;
-            // fb[idx + 2] = (x + y) as u8;
             buf.write_val(offset as usize, &x).expect("error writing frame buffer");
             buf.write_val((offset + 1) as usize, &y).expect("error writing frame buffer");
             buf.write_val((offset + 2) as usize, &(x+y)).expect("error writing frame buffer");
+            // let black = 0x00000000;
+            // buf.write_val(offset as usize, &black).expect("error writing frame buffer");
+            // buf.write_val((offset + 1) as usize, &black).expect("error writing frame buffer");
+            // buf.write_val((offset + 2) as usize, &black).expect("error writing frame buffer");
         }
     }
 
