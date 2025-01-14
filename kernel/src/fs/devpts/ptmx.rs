@@ -163,6 +163,10 @@ impl Inode for Ptmx {
     fn as_device(&self) -> Option<Arc<dyn Device>> {
         Some(Arc::new(self.inner.clone()))
     }
+
+    fn is_dentry_cacheable(&self) -> bool {
+        false
+    }
 }
 
 impl Device for Inner {

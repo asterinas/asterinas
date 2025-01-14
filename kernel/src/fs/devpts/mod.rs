@@ -299,4 +299,8 @@ impl Inode for RootInode {
     fn fs(&self) -> Arc<dyn FileSystem> {
         self.fs.upgrade().unwrap()
     }
+
+    fn is_dentry_cacheable(&self) -> bool {
+        false
+    }
 }

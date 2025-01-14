@@ -35,8 +35,9 @@ pub struct Dentry {
 /// to accelerate the path lookup.
 pub struct Dentry_ {
     inode: Arc<dyn Inode>,
+    type_: InodeType,
     name_and_parent: RwLock<Option<(String, Arc<Dentry_>)>>,
-    children: RwMutex<Children>,
+    children: RwMutex<DentryChildren>,
     flags: AtomicU32,
     this: Weak<Dentry_>,
 }
@@ -52,15 +53,21 @@ impl Dentry_ {
 
     fn new(inode: Arc<dyn Inode>, options: DentryOptions) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| Self {
+            type_: inode.type_(),
             inode,
-            flags: AtomicU32::new(DentryFlags::empty().bits()),
             name_and_parent: match options {
                 DentryOptions::Leaf(name_and_parent) => RwLock::new(Some(name_and_parent)),
                 _ => RwLock::new(None),
             },
+            children: RwMutex::new(DentryChildren::new()),
+            flags: AtomicU32::new(DentryFlags::empty().bits()),
             this: weak_self.clone(),
-            children: RwMutex::new(Children::new()),
         })
+    }
+
+    /// Gets the type of the `Dentry_`.
+    pub fn type_(&self) -> InodeType {
+        self.type_
     }
 
     /// Gets the name of the `Dentry_`.
@@ -146,7 +153,7 @@ impl Dentry_ {
         }
 
         let children = self.children.upread();
-        if children.contains(name) {
+        if children.contains_valid(name) {
             return_errno!(Errno::EEXIST);
         }
 
@@ -154,13 +161,15 @@ impl Dentry_ {
         let name = String::from(name);
         let new_child = Dentry_::new(new_inode, DentryOptions::Leaf((name.clone(), self.this())));
 
-        let mut children = children.upgrade();
-        children.insert(name, new_child.clone());
+        if new_child.is_dentry_cacheable() {
+            children.upgrade().insert(name, new_child.clone());
+        }
+
         Ok(new_child)
     }
 
     /// Lookups a target `Dentry_` from the cache in children.
-    pub fn lookup_via_cache(&self, name: &str) -> Option<Arc<Dentry_>> {
+    pub fn lookup_via_cache(&self, name: &str) -> Result<Option<Arc<Dentry_>>> {
         let children = self.children.read();
         children.find(name)
     }
@@ -169,12 +178,22 @@ impl Dentry_ {
     pub fn lookup_via_fs(&self, name: &str) -> Result<Arc<Dentry_>> {
         let children = self.children.upread();
 
-        let inode = self.inode.lookup(name)?;
+        let inode = match self.inode.lookup(name) {
+            Ok(inode) => inode,
+            Err(e) => {
+                if e.error() == Errno::ENOENT && self.is_dentry_cacheable() {
+                    children.upgrade().insert_negative(String::from(name));
+                }
+                return Err(e);
+            }
+        };
         let name = String::from(name);
         let target = Self::new(inode, DentryOptions::Leaf((name.clone(), self.this())));
 
-        let mut children = children.upgrade();
-        children.insert(name, target.clone());
+        if target.is_dentry_cacheable() {
+            children.upgrade().insert(name, target.clone());
+        }
+
         Ok(target)
     }
 
@@ -185,7 +204,7 @@ impl Dentry_ {
         }
 
         let children = self.children.upread();
-        if children.contains(name) {
+        if children.contains_valid(name) {
             return_errno!(Errno::EEXIST);
         }
 
@@ -193,8 +212,10 @@ impl Dentry_ {
         let name = String::from(name);
         let new_child = Dentry_::new(inode, DentryOptions::Leaf((name.clone(), self.this())));
 
-        let mut children = children.upgrade();
-        children.insert(name, new_child.clone());
+        if new_child.is_dentry_cacheable() {
+            children.upgrade().insert(name, new_child.clone());
+        }
+
         Ok(new_child)
     }
 
@@ -205,7 +226,7 @@ impl Dentry_ {
         }
 
         let children = self.children.upread();
-        if children.contains(name) {
+        if children.contains_valid(name) {
             return_errno!(Errno::EEXIST);
         }
 
@@ -217,8 +238,9 @@ impl Dentry_ {
             DentryOptions::Leaf((name.clone(), self.this())),
         );
 
-        let mut children = children.upgrade();
-        children.insert(name, dentry);
+        if dentry.is_dentry_cacheable() {
+            children.upgrade().insert(name, dentry.clone());
+        }
         Ok(())
     }
 
@@ -280,7 +302,9 @@ impl Dentry_ {
                 Some(dentry) => {
                     children.delete(old_name);
                     dentry.set_name_and_parent(new_name, self.this());
-                    children.insert(new_name.to_string(), dentry.clone());
+                    if dentry.is_dentry_cacheable() {
+                        children.insert(String::from(new_name), dentry.clone());
+                    }
                 }
                 None => {
                     children.delete(new_name);
@@ -298,7 +322,9 @@ impl Dentry_ {
                 Some(dentry) => {
                     self_children.delete(old_name);
                     dentry.set_name_and_parent(new_name, new_dir.this());
-                    new_dir_children.insert(new_name.to_string(), dentry.clone());
+                    if dentry.is_dentry_cacheable() {
+                        new_dir_children.insert(String::from(new_name), dentry.clone());
+                    }
                 }
                 None => {
                     new_dir_children.delete(new_name);
@@ -315,7 +341,6 @@ impl Dentry_ {
     pub fn sync_all(&self) -> Result<()>;
     pub fn sync_data(&self) -> Result<()>;
     pub fn metadata(&self) -> Metadata;
-    pub fn type_(&self) -> InodeType;
     pub fn mode(&self) -> Result<InodeMode>;
     pub fn set_mode(&self, mode: InodeMode) -> Result<()>;
     pub fn size(&self) -> usize;
@@ -330,6 +355,7 @@ impl Dentry_ {
     pub fn set_mtime(&self, time: Duration);
     pub fn ctime(&self) -> Duration;
     pub fn set_ctime(&self, time: Duration);
+    pub fn is_dentry_cacheable(&self) -> bool;
 }
 
 impl Debug for Dentry_ {
@@ -376,45 +402,64 @@ enum DentryOptions {
     Leaf((String, Arc<Dentry_>)),
 }
 
-struct Children {
-    dentries: HashMap<String, Arc<Dentry_>>,
+/// Manages child dentries, including both valid and negative entries.
+///
+/// A _negative_ dentry reflects a failed filename lookup, saving potential
+/// repeated and costly lookups in the future.
+// TODO: Address the issue of negative dentry bloating. See the reference
+// https://lwn.net/Articles/894098/ for more details.
+struct DentryChildren {
+    dentries: HashMap<String, Option<Arc<Dentry_>>>,
 }
 
-impl Children {
+impl DentryChildren {
+    /// Creates an empty dentry cache.
     pub fn new() -> Self {
         Self {
             dentries: HashMap::new(),
         }
     }
 
-    pub fn len(&self) -> usize {
-        self.dentries.len()
+    /// Checks if a valid dentry with the given name exists.
+    pub fn contains_valid(&self, name: &str) -> bool {
+        self.dentries.get(name).is_some_and(|child| child.is_some())
     }
 
-    pub fn contains(&self, name: &str) -> bool {
-        self.dentries.contains_key(name)
+    /// Checks if a negative dentry with the given name exists.
+    pub fn contains_negative(&self, name: &str) -> bool {
+        self.dentries.get(name).is_some_and(|child| child.is_none())
     }
 
-    pub fn find(&self, name: &str) -> Option<Arc<Dentry_>> {
-        self.dentries.get(name).cloned()
-    }
-
-    pub fn insert(&mut self, name: String, dentry: Arc<Dentry_>) {
-        // Do not cache it in the children if is not cacheable.
-        // When we lookup it from the parent, it will always be newly created.
-        if !dentry.inode.is_dentry_cacheable() {
-            return;
+    /// Finds a dentry by name. Returns error for negative entries.
+    pub fn find(&self, name: &str) -> Result<Option<Arc<Dentry_>>> {
+        match self.dentries.get(name) {
+            Some(Some(child)) => Ok(Some(child.clone())),
+            Some(None) => return_errno_with_message!(Errno::ENOENT, "found a negative dentry"),
+            None => Ok(None),
         }
-
-        let _ = self.dentries.insert(name, dentry);
     }
 
+    /// Inserts a valid cacheable dentry.
+    pub fn insert(&mut self, name: String, dentry: Arc<Dentry_>) {
+        // Assume the caller has checked that the dentry is cacheable
+        // and will be newly created if looked up from the parent.
+        debug_assert!(dentry.is_dentry_cacheable());
+        let _ = self.dentries.insert(name, Some(dentry));
+    }
+
+    /// Inserts a negative dentry.
+    pub fn insert_negative(&mut self, name: String) {
+        let _ = self.dentries.insert(name, None);
+    }
+
+    /// Deletes a dentry by name, turning it into a negative entry if exists.
     pub fn delete(&mut self, name: &str) -> Option<Arc<Dentry_>> {
-        self.dentries.remove(name)
+        self.dentries.get_mut(name).and_then(Option::take)
     }
 
+    /// Checks whether the dentry is a mount point. Returns an error if it is.
     pub fn check_mountpoint(&self, name: &str) -> Result<()> {
-        if let Some(dentry) = self.dentries.get(name) {
+        if let Some(Some(dentry)) = self.dentries.get(name) {
             if dentry.is_mountpoint() {
                 return_errno_with_message!(Errno::EBUSY, "dentry is mountpint");
             }
@@ -422,16 +467,18 @@ impl Children {
         Ok(())
     }
 
+    /// Checks if dentry is a mount point, then retrieves it.
     pub fn check_mountpoint_then_find(&self, name: &str) -> Result<Option<Arc<Dentry_>>> {
-        let dentry = if let Some(dentry) = self.dentries.get(name) {
-            if dentry.is_mountpoint() {
-                return_errno_with_message!(Errno::EBUSY, "dentry is mountpint");
+        match self.dentries.get(name) {
+            Some(Some(dentry)) => {
+                if dentry.is_mountpoint() {
+                    return_errno_with_message!(Errno::EBUSY, "dentry is mountpoint");
+                }
+                Ok(Some(dentry.clone()))
             }
-            Some(dentry.clone())
-        } else {
-            None
-        };
-        Ok(dentry)
+            Some(None) => return_errno_with_message!(Errno::ENOENT, "found a negative dentry"),
+            None => Ok(None),
+        }
     }
 }
 
@@ -439,8 +486,8 @@ fn write_lock_children_on_two_dentries<'a>(
     this: &'a Dentry_,
     other: &'a Dentry_,
 ) -> (
-    RwMutexWriteGuard<'a, Children>,
-    RwMutexWriteGuard<'a, Children>,
+    RwMutexWriteGuard<'a, DentryChildren>,
+    RwMutexWriteGuard<'a, DentryChildren>,
 ) {
     let this_key = this.key();
     let other_key = other.key();
@@ -496,7 +543,7 @@ impl Dentry {
         } else if is_dotdot(name) {
             self.effective_parent().unwrap_or_else(|| self.this())
         } else {
-            let target_inner_opt = self.inner.lookup_via_cache(name);
+            let target_inner_opt = self.inner.lookup_via_cache(name)?;
             match target_inner_opt {
                 Some(target_inner) => Self::new(self.mount_node.clone(), target_inner),
                 None => {
