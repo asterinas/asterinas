@@ -19,6 +19,7 @@ use spin::Once;
 pub trait AnyCryptoDevice: Send + Sync + Any + Debug {
     // fn send(&self, buf: &[u8]);
     // fn register_callback(&self, callback: &'static CryptoCallback);
+    fn test_device(&self);
 }
 
 pub fn register_device(name: String, device: Arc<dyn AnyCryptoDevice>) {
@@ -32,16 +33,24 @@ pub fn register_device(name: String, device: Arc<dyn AnyCryptoDevice>) {
 }
 
 pub fn all_devices() -> Vec<(String, Arc<dyn AnyCryptoDevice>)> {
-    let console_devs = COMPONENT
+    let crypto_devs = COMPONENT
         .get()
         .unwrap()
         .crypto_device_table
         .disable_irq()
         .lock();
-    console_devs
+    crypto_devs
         .iter()
         .map(|(name, device)| (name.clone(), device.clone()))
         .collect()
+}
+
+pub fn handle_request_irq(){
+    
+}
+
+pub fn handle_session_irq(){
+
 }
 
 static COMPONENT: Once<Component> = Once::new();

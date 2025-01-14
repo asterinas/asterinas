@@ -143,6 +143,13 @@ fn init_thread() {
 
     print_banner();
 
+
+    let crypto_dev = aster_crypto::all_devices();
+    let dev = &crypto_dev[0].1;
+    dev.test_device();
+
+    exit_qemu(QemuExitCode::Success);
+
     let karg: KCmdlineArg = boot_info().kernel_cmdline.as_str().into();
 
     let initproc = Process::spawn_user_process(
