@@ -234,56 +234,6 @@ impl VirtioGPUSetScanout {
     }
 }
 
-/// VIRTIO_GPU_CMD_RESOURCE_FLUSH: Flush a scanout resource.
-/// 
-/// Request data is struct virtio_gpu_resource_flush. 
-/// Response type is VIRTIO_GPU_RESP_OK_NODATA.
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
-pub struct VirtioGPUResourceFlush {
-    hdr: VirtioGPUCtrlHdr,
-    r: VirtioGPURect,
-    resource_id: u32,
-    padding: u32,
-}
-
-impl VirtioGPUResourceFlush {
-    pub fn new(resource_id: u32, rect: VirtioGPURect, padding: u32) -> Self {
-        VirtioGPUResourceFlush {
-            hdr: VirtioGPUCtrlHdr::from_type(VirtioGPUCtrlType::VIRTIO_GPU_CMD_RESOURCE_FLUSH),
-            resource_id,
-            r: rect,
-            padding,
-        }
-    }
-}
-
-/// VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D: Transfer from guest memory to host resource. 
-/// 
-/// Request data is struct virtio_gpu_transfer_to_host_2d. 
-/// Response type is VIRTIO_GPU_RESP_OK_NODATA.
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Pod)]
-pub struct VirtioGPUTransferToHost2d {
-    hdr: VirtioGPUCtrlHdr,
-    r: VirtioGPURect,
-    offset: u64,
-    resource_id: u32,
-    padding: u32,
-}
-
-impl VirtioGPUTransferToHost2d {
-    pub fn new(resource_id: u32, rect: VirtioGPURect, offset: u64, padding: u32) -> Self {
-        VirtioGPUTransferToHost2d {
-            hdr: VirtioGPUCtrlHdr::from_type(VirtioGPUCtrlType::VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D),
-            resource_id,
-            r: rect,
-            offset,
-            padding,
-        }
-    }
-}
-
 /// VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING: Assign backing pages to a resource. 
 /// 
 /// Request data is struct virtio_gpu_resource_attach_backing, followed by struct virtio_gpu_mem_entry entries. 
@@ -565,6 +515,86 @@ impl VirtioGPURespAttachBacking {
 impl Default for VirtioGPURespAttachBacking {
     fn default() -> Self {
         VirtioGPURespAttachBacking {
+            hdr: VirtioGPUCtrlHdr::default(),
+        }
+    }
+}
+
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub(crate) struct VirtioGPUTransferToHost2D {
+    hdr: VirtioGPUCtrlHdr,
+    r: VirtioGPURect,
+    offset: u64,
+    resource_id: u32,
+    padding: u32,
+}
+
+impl VirtioGPUTransferToHost2D {
+    pub fn new(r: VirtioGPURect,
+        offset: u64,
+        resource_id: u32,
+    ) -> VirtioGPUTransferToHost2D {
+        VirtioGPUTransferToHost2D {
+            hdr: VirtioGPUCtrlHdr::from_type(VirtioGPUCtrlType::VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D),
+            r,
+            offset,
+            resource_id,
+            padding: 0,
+        }
+    }
+}
+
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub struct VirtioGPURespTransferToHost2D {
+    hdr: VirtioGPUCtrlHdr,
+}
+impl VirtioGPURespTransferToHost2D {
+    pub fn get_type(&self) -> u32 {
+        self.hdr.ctrl_type
+    }
+}
+impl Default for VirtioGPURespTransferToHost2D {
+    fn default() -> Self {
+        VirtioGPURespTransferToHost2D {
+            hdr: VirtioGPUCtrlHdr::default(),
+        }
+    }
+}
+
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub(crate) struct VirtioGPUResourceFlush {
+    hdr: VirtioGPUCtrlHdr,
+    r: VirtioGPURect,
+    resource_id: u32,
+    padding: u32,
+}
+impl VirtioGPUResourceFlush {
+    pub(crate) fn new(r: VirtioGPURect, resource_id: u32) -> VirtioGPUResourceFlush {
+        VirtioGPUResourceFlush {
+            hdr: VirtioGPUCtrlHdr::from_type(VirtioGPUCtrlType::VIRTIO_GPU_CMD_RESOURCE_FLUSH),
+            r,
+            resource_id,
+            padding: 0,
+        }
+    }
+}
+
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub struct VirtioGPURespResourceFlush {
+    hdr: VirtioGPUCtrlHdr,
+}
+impl VirtioGPURespResourceFlush {
+    pub fn get_type(&self) -> u32 {
+        self.hdr.ctrl_type
+    }
+}
+impl Default for VirtioGPURespResourceFlush {
+    fn default() -> Self {
+        VirtioGPURespResourceFlush {
             hdr: VirtioGPUCtrlHdr::default(),
         }
     }

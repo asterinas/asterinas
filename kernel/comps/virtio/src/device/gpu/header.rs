@@ -3,6 +3,8 @@ use bitflags::bitflags;
 use ostd::Pod;
 /* Ref. network::header */
 
+pub const kBlockSize: u32 = 4096;
+
 #[repr(C)]
 #[derive(Default, Debug, Clone, Copy, Pod)]
 pub struct VirtioGPUCtrlHdr {

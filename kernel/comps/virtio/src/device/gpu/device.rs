@@ -28,9 +28,11 @@ use crate::{
             control::{
                 VirtioGPUFormats, VirtioGPUResourceCreate2D, VirtioGPUGetEdid, VirtioGPURespEdid,
                 VirtioGPURespSetScanout, VirtioGPUSetScanout, VirtioGPURect, VirtioGPURespResourceCreate2D,
-                VirtioGPUResourceAttachBacking, VirtioGPURespAttachBacking, VirtioGPUMemEntry, VirtioGPURespDisplayInfo
+                VirtioGPUResourceAttachBacking, VirtioGPURespAttachBacking, VirtioGPUMemEntry, VirtioGPURespDisplayInfo,
+                VirtioGPUTransferToHost2D, VirtioGPURespTransferToHost2D,
+                VirtioGPUResourceFlush, VirtioGPURespResourceFlush,
             },
-            header::{VirtioGPUCtrlType},
+            header::{VirtioGPUCtrlType, kBlockSize},
         },
     }
 };
@@ -114,7 +116,35 @@ impl GPUDevice {
             .register_queue_callback(0, Box::new(handle_irq), false)
             .unwrap();
         transport.finish_init();
-        test_basic_config(Arc::clone(&device));
+        
+        /* Create framebuffer */
+        let addr1: u32 = 0x1111;
+        let display_info = device.get_display_info().unwrap();
+        let rect = display_info.get_rect(0).unwrap();
+        early_println!("width: {}, height: {}", rect.width, rect.height);
+        device.resource_create_2d(addr1, rect.width, rect.height).unwrap();
+        let byte_cnt = rect.width * rect.height * 4 as u32;
+        let frame_cnt = (byte_cnt + kBlockSize - 1) / kBlockSize as u32;
+        let frames = {
+            let segment = FrameAllocOptions::new().alloc_segment(frame_cnt as usize).unwrap();
+            DmaStream::map(segment.into(), DmaDirection::ToDevice, false).unwrap()
+        };
+        device.resource_attach_backing(addr1, frames.paddr(), byte_cnt);
+        device.set_scanout(rect, 0, addr1);
+        for i in 0..rect.width {
+            for j in 0..rect.height {
+                let idx = (j * rect.width + i) * 4 as u32;
+                let zero : u8 = 0;
+                let _255 : u8 = 255; // all red
+                frames.write_val(idx as usize, &zero).unwrap();
+                frames.write_val((idx + 1) as usize, &zero).unwrap();
+                frames.write_val((idx + 2) as usize, &_255).unwrap();
+                frames.write_val((idx + 3) as usize, &zero).unwrap();
+            }
+        }
+        device.transfer_to_host_2d(rect, 0, addr1).unwrap();
+        device.resource_flush(rect, addr1).unwrap();
+        early_println!("flushed");
         Ok(())
     }
 
@@ -157,7 +187,7 @@ impl GPUDevice {
         while !queue.can_pop() {
             spin_loop();
         }
-        queue.pop_used().expect("pop used failed");
+        queue.pop_used_with_token(_token).expect("pop used failed");
         resp_slice.sync().unwrap();
         let resp: VirtioGPURespDisplayInfo = resp_slice.read_val(0).unwrap();
         Ok(resp)
@@ -246,7 +276,7 @@ impl GPUDevice {
         while !queue.can_pop() {
             spin_loop();
         }
-        queue.pop_used().expect("pop used failed");
+        queue.pop_used_with_token(_token).expect("pop used failed");
 
         resp_slice.sync().unwrap();
         let resp: VirtioGPURespResourceCreate2D = resp_slice.read_val(0).unwrap();
@@ -259,14 +289,14 @@ impl GPUDevice {
 
     fn resource_attach_backing(
         &self,
-        resource_id: i32,
+        resource_id: u32,
         paddr: usize,
         size: u32,
     ) -> Result<(), VirtioDeviceError> {
         let req_slice = {
             let req_slice = DmaStreamSlice::new(
                 &self.control_request, 0, size_of::<VirtioGPUResourceAttachBacking>());
-            let req = VirtioGPUResourceAttachBacking::new(resource_id as u32, 1);
+            let req = VirtioGPUResourceAttachBacking::new(resource_id, 1);
             req_slice.write_val(0, &req).unwrap();
             req_slice.sync().unwrap();
             req_slice
@@ -308,8 +338,7 @@ impl GPUDevice {
         while !queue.can_pop() {
             spin_loop();
         }
-        queue.pop_used().expect("pop used failed");
-
+        queue.pop_used_with_token(_token).expect("pop used failed");
         resp_slice.sync().unwrap();
         let resp: VirtioGPURespAttachBacking  = resp_slice.read_val(0).unwrap();
         if resp.get_type() == VirtioGPUCtrlType::VIRTIO_GPU_RESP_OK_NODATA as u32 {
@@ -321,13 +350,13 @@ impl GPUDevice {
     fn set_scanout(
         &self,
         rect: VirtioGPURect,
-        scanout_id: i32,
-        resource_id: i32,
+        scanout_id: u32,
+        resource_id: u32,
     ) -> Result<(), VirtioDeviceError> {
         let req_slice = {
             let req_slice = DmaStreamSlice::new(
                 &self.control_request, 0, size_of::<VirtioGPUSetScanout>());
-            let req = VirtioGPUSetScanout::new(scanout_id as u32, resource_id as u32, rect);
+            let req = VirtioGPUSetScanout::new(scanout_id, resource_id, rect);
             req_slice.write_val(0, &req).unwrap();
             req_slice.sync().unwrap();
             req_slice
@@ -342,20 +371,17 @@ impl GPUDevice {
             resp_slice.sync().unwrap();
             resp_slice
         };
-
         let mut queue = self.control_queue.disable_irq().lock();
         let _token = queue
             .add_dma_buf(&[&req_slice], &[&resp_slice])
             .expect("add queue failed");
-
         if queue.should_notify() {
             queue.notify();
         }
         while !queue.can_pop() {
             spin_loop();
         }
-        queue.pop_used().expect("pop used failed");
-
+        queue.pop_used_with_token(_token).expect("pop used failed");
         resp_slice.sync().unwrap();
         let resp: VirtioGPURespSetScanout = resp_slice.read_val(0).unwrap();
         if resp.get_type() == VirtioGPUCtrlType::VIRTIO_GPU_RESP_OK_NODATA as u32 {
@@ -364,9 +390,79 @@ impl GPUDevice {
             Err(VirtioDeviceError::QueueUnknownError)
         }
     }
-}
-
-fn test_basic_config(d: Arc<GPUDevice>) {
-    d.print_resolution();
-    d.get_edid().unwrap();
+    fn transfer_to_host_2d(
+        &self,
+        rect: VirtioGPURect,
+        offset: u32,
+        resource_id: u32,
+    ) -> Result<(), VirtioDeviceError> {
+        let req_slice = {
+            let req_slice = DmaStreamSlice::new(
+                &self.control_request, 0, size_of::<VirtioGPUTransferToHost2D>());
+            let req = VirtioGPUTransferToHost2D::new(rect, offset as u64, resource_id);
+            req_slice.write_val(0, &req).unwrap();
+            req_slice.sync().unwrap();
+            req_slice
+        };
+        let resp_slice = {
+            let resp_slice = DmaStreamSlice::new(
+                &self.control_response, 0, size_of::<VirtioGPURespTransferToHost2D>());
+            resp_slice.write_val(0, &VirtioGPURespTransferToHost2D::default()).unwrap();
+            resp_slice.sync().unwrap();
+            resp_slice
+        };
+        let mut queue = self.control_queue.disable_irq().lock();
+        let _token = queue
+            .add_dma_buf(&[&req_slice], &[&resp_slice])
+            .expect("add queue failed");
+        if queue.should_notify() {
+            queue.notify();
+        }
+        while !queue.can_pop() {
+            spin_loop();
+        }
+        queue.pop_used_with_token(_token).expect("pop used failed");
+        resp_slice.sync().unwrap();
+        let resp: VirtioGPURespSetScanout = resp_slice.read_val(0).unwrap();
+        if resp.get_type() == VirtioGPUCtrlType::VIRTIO_GPU_RESP_OK_NODATA as u32 {
+            Ok(())
+        } else {
+            Err(VirtioDeviceError::QueueUnknownError)
+        }
+    }
+    fn resource_flush(&self, rect: VirtioGPURect, resource_id: u32) -> Result<(), VirtioDeviceError> {
+        let req_slice = {
+            let req_slice = DmaStreamSlice::new(
+                &self.control_request, 0, size_of::<VirtioGPUResourceFlush>());
+            let req = VirtioGPUResourceFlush::new(rect, resource_id);
+            req_slice.write_val(0, &req).unwrap();
+            req_slice.sync().unwrap();
+            req_slice
+        };
+        let resp_slice = {
+            let resp_slice = DmaStreamSlice::new(
+                &self.control_response, 0, size_of::<VirtioGPURespResourceFlush>());
+            resp_slice.write_val(0, &VirtioGPURespResourceFlush::default()).unwrap();
+            resp_slice.sync().unwrap();
+            resp_slice
+        };
+        let mut queue = self.control_queue.disable_irq().lock();
+        let _token = queue
+            .add_dma_buf(&[&req_slice], &[&resp_slice])
+            .expect("add queue failed");
+        if queue.should_notify() {
+            queue.notify();
+        }
+        while !queue.can_pop() {
+            spin_loop();
+        }
+        queue.pop_used_with_token(_token).expect("pop used failed");
+        resp_slice.sync().unwrap();
+        let resp: VirtioGPURespSetScanout = resp_slice.read_val(0).unwrap();
+        if resp.get_type() == VirtioGPUCtrlType::VIRTIO_GPU_RESP_OK_NODATA as u32 {
+            Ok(())
+        } else {
+            Err(VirtioDeviceError::QueueUnknownError)
+        }
+    }
 }
