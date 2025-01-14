@@ -146,8 +146,15 @@ fn init_thread() {
     let crypto_dev = aster_crypto::all_devices();
     let dev = &crypto_dev[0].1;
     let res1 = dev.create_hash_session(aster_crypto::CryptoHashAlgorithm::Sha256, 64);
-    let res2 = dev.create_hash_session(aster_crypto::CryptoHashAlgorithm::Sha1, 64);
-    debug!("session result:{:?}, {:?}", res1, res2);
+    debug!("try to create hash session:{:?}", res1);
+    let res2 = 
+        dev.create_cipher_session(aster_crypto::CryptoCipherAlgorithm::AesEcb, 
+                                    aster_crypto::CryptoOperation::Encrypt, &[0; 16]);
+    debug!("try to create cipher session:{:?}", res2);
+    let res3 = 
+        dev.create_cipher_session(aster_crypto::CryptoCipherAlgorithm::AesEcb, 
+                                    aster_crypto::CryptoOperation::Encrypt, &[0; 24]);
+    debug!("try to create cipher session:{:?}", res3);
 
     exit_qemu(QemuExitCode::Success);
 

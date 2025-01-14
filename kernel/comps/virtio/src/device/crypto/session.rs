@@ -97,39 +97,70 @@ impl VirtioCryptoSessionInput{
 #[repr(C)]
 pub struct CryptoHashSessionReq {
 	pub header: CryptoCtrlHeader,
-	pub flf: VirtioCryptoHashCreateSessionReq,
+	pub flf: VirtioCryptoHashCreateSessionFlf,
     pub padding: [i32; 12]
 }
 
-#[derive(Debug, Pod, Clone, Copy)]
-#[repr(C)]
-pub struct VirtioCryptoHashSessionPara {
-    pub algo: i32,
-    pub hash_result_len: u32,
+enum CryptoSymOp{
+    None = 0,
+    Cipher = 1,
+    AlgorithmChaining = 2,
 }
 
 #[derive(Debug, Pod, Clone, Copy)]
 #[repr(C)]
-pub struct VirtioCryptoCipherSessionPara {
+pub struct CryptoCipherSessionReq {
+	pub header: CryptoCtrlHeader,
+	pub flf: VirtioCryptoCipherCreateSessionFlf,
+    pub op_type: i32,
+    pub padding: i32,
+}
+
+impl CryptoCipherSessionReq{
+    pub fn new(header: CryptoCtrlHeader, algo: CryptoCipherAlgorithm, key_len: i32, op: CryptoOperation)->Self{
+        Self { 
+            header, 
+            flf: VirtioCryptoCipherCreateSessionFlf::new(algo, key_len, op), 
+            op_type: CryptoSymOp::Cipher as _, 
+            padding: 0
+        }
+    }
+}
+
+#[derive(Debug, Pod, Clone, Copy)]
+#[repr(C)]
+pub struct VirtioCryptoCipherCreateSessionFlf {
     pub algo: i32,
-    pub keylen: i32,
+    pub key_len: i32,
     pub op: i32,
     pub padding: u32,
+    pub long_padding: [i8; 32],
+}
+
+impl VirtioCryptoCipherCreateSessionFlf{
+    pub fn new(algo: CryptoCipherAlgorithm, key_len: i32, op: CryptoOperation)->Self{
+        Self { 
+            algo: algo as _, 
+            key_len, 
+            op: op as _, 
+            padding: 0,
+            long_padding: [0; 32], 
+        }
+    }
 }
 
 #[derive(Debug, Pod, Clone, Copy)]
 #[repr(C)]
-pub struct VirtioCryptoHashCreateSessionReq {
-    pub para: VirtioCryptoHashSessionPara,
+pub struct VirtioCryptoHashCreateSessionFlf {
+    pub algo: i32,
+    pub hash_result_len: u32
 }
 
-impl VirtioCryptoHashCreateSessionReq{
+impl VirtioCryptoHashCreateSessionFlf{
     pub fn new(algo: CryptoHashAlgorithm, result_len: u32)->Self{
         Self { 
-            para: VirtioCryptoHashSessionPara{
-                algo: algo as _,
-                hash_result_len: result_len
-            } 
+            algo: algo as _,
+            hash_result_len: result_len
         }
     }
 }

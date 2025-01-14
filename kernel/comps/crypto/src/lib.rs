@@ -92,7 +92,8 @@ pub trait AnyCryptoDevice: Send + Sync + Any + Debug {
 
     //Create Hash session, return session id.
     fn create_hash_session(&self, algo: CryptoHashAlgorithm, result_len: u32)->Result<i64, CryptoError>;
-    // fn create_cipher_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, key_len: i32)->Result<i64, CryptoError>;
+
+    fn create_cipher_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, key: &[u8])->Result<i64, CryptoError>;
 }
 
 pub fn register_device(name: String, device: Arc<dyn AnyCryptoDevice>) {
@@ -116,14 +117,6 @@ pub fn all_devices() -> Vec<(String, Arc<dyn AnyCryptoDevice>)> {
         .iter()
         .map(|(name, device)| (name.clone(), device.clone()))
         .collect()
-}
-
-pub fn handle_request_irq(){
-    
-}
-
-pub fn handle_session_irq(){
-
 }
 
 static COMPONENT: Once<Component> = Once::new();
