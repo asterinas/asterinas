@@ -112,6 +112,7 @@ use crate::syscall::{
     setsid::sys_setsid,
     setsockopt::sys_setsockopt,
     setuid::sys_setuid,
+    show_red::sys_show_red,
     shutdown::sys_shutdown,
     sigaltstack::sys_sigaltstack,
     socket::sys_socket,
@@ -319,4 +320,5 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_PREADV2 = 327          => sys_preadv2(args[..5]);
     SYS_PWRITEV2 = 328         => sys_pwritev2(args[..5]);
     SYS_CLONE3 = 435           => sys_clone3(args[..2], &user_ctx);
+    SYS_SHOWRED = 5090         => sys_show_red(args[..0]);
 }
