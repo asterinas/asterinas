@@ -17,6 +17,7 @@ pub enum VirtioCryptoStatus {
     NotSupp = 3,        // operation or algorithm is unsupported
     InvSess = 4,        // invalid session ID when executing crypto operations
     NoSpc = 5,          // no free session ID.
+    KeyReject = 6,      // signature verification failed (only when AKCIPHER verification)
 }
 
 impl TryFrom<i32> for VirtioCryptoStatus {
@@ -44,6 +45,7 @@ impl VirtioCryptoStatus{
             VirtioCryptoStatus::NotSupp => Err(CryptoError::NotSupport),
             VirtioCryptoStatus::InvSess => Err(CryptoError::InvalidSession),
             VirtioCryptoStatus::NoSpc => Err(CryptoError::NoFreeSession),
+            VirtioCryptoStatus::KeyReject => Err(CryptoError::KeyReject)
         }
     }
 }

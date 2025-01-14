@@ -20,8 +20,7 @@ pub struct CryptoDevice{
     config_manager: ConfigManager<VirtioCryptoConfig>,
     data_queue: SpinLock<VirtQueue>,
     control_queue: SpinLock<VirtQueue>,
-    pub control_buffer: DmaStream,
-    ctrl_resp_buffer: DmaStream,
+    control_buffer: DmaStream,
     data_buffer: DmaStream
 }
 
@@ -38,7 +37,7 @@ impl CryptoDevice {
             );
         }
 
-        debug!("{:?}", crypto_features);
+        debug!("crypto features = {:?}", crypto_features);
         crypto_features.bits()
     }
 
@@ -59,17 +58,12 @@ impl CryptoDevice {
 
         let control_buffer = {
             let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
-            DmaStream::map(segment.into(), DmaDirection::ToDevice, false).unwrap()
-        };
-
-        let ctrl_resp_buffer = {
-            let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
-            DmaStream::map(segment.into(), DmaDirection::FromDevice, false).unwrap()
+            DmaStream::map(segment.into(), DmaDirection::Bidirectional, false).unwrap()
         };
 
         let data_buffer = {
             let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
-            DmaStream::map(segment.into(), DmaDirection::ToDevice, false).unwrap()
+            DmaStream::map(segment.into(), DmaDirection::Bidirectional, false).unwrap()
         };
         
         let device = Arc::new(Self{
@@ -77,7 +71,6 @@ impl CryptoDevice {
             control_queue,
             data_queue,
             control_buffer,
-            ctrl_resp_buffer,
             data_buffer,
             transport: SpinLock::new(transport),
         });
@@ -111,8 +104,6 @@ impl Debug for CryptoDevice {
     }
 }
 
-
-
 impl AnyCryptoDevice for CryptoDevice{
     fn test_device(&self){
         //test hash session create
@@ -120,13 +111,13 @@ impl AnyCryptoDevice for CryptoDevice{
         debug!("test begin!");
 
         let ctrl_slice = DmaStreamSlice::new(&self.control_buffer, 0, 72);
-        let ctrl_resp_slice = DmaStreamSlice::new(&self.ctrl_resp_buffer, 0, 16);
+        let ctrl_resp_slice = DmaStreamSlice::new(&self.control_buffer, 72, 16);
         self.control_queue.lock().add_dma_buf(&[&ctrl_slice], &[&ctrl_resp_slice]).unwrap();
 
         let algo = CryptoHashAlgorithm::Sha256;
     
         let header = CryptoCtrlHeader { 
-            opcode: CryptoSessionOperation::HashCreate as i32, 
+            opcode: CryptoSessionOperation::AeadCreate as i32, 
             algo: algo as _,
             flag: 0, 
             reserved: 0
@@ -149,9 +140,9 @@ impl AnyCryptoDevice for CryptoDevice{
         }
     
         self.control_queue.lock().pop_used().unwrap();
-        self.ctrl_resp_buffer.sync(0..16).unwrap();
+        ctrl_resp_slice.sync().unwrap();
     
-        let mut reader = self.ctrl_resp_buffer.reader().unwrap();
+        let mut reader = ctrl_resp_slice.reader().unwrap();
         let res = reader.read_val::<VirtioCryptoSessionInput>().unwrap();
     
         debug!("get session result: {:?}", res);
@@ -161,7 +152,7 @@ impl AnyCryptoDevice for CryptoDevice{
         debug!("[CRYPTO] trying to create hash session");
 
         let ctrl_slice = DmaStreamSlice::new(&self.control_buffer, 0, 72);
-        let ctrl_resp_slice = DmaStreamSlice::new(&self.ctrl_resp_buffer, 0, 16);
+        let ctrl_resp_slice = DmaStreamSlice::new(&self.control_buffer, 72, 88);
         self.control_queue.lock().add_dma_buf(&[&ctrl_slice], &[&ctrl_resp_slice]).unwrap();
     
         let header = CryptoCtrlHeader { 
@@ -190,9 +181,9 @@ impl AnyCryptoDevice for CryptoDevice{
         }
     
         self.control_queue.lock().pop_used().unwrap();
-        self.ctrl_resp_buffer.sync(0..16).unwrap();
+        ctrl_resp_slice.sync().unwrap();
     
-        let mut reader = self.ctrl_resp_buffer.reader().unwrap();
+        let mut reader = ctrl_resp_slice.reader().unwrap();
         let res = reader.read_val::<VirtioCryptoSessionInput>().unwrap();
         
         debug!("receive feedback:{:?}", res);

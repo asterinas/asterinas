@@ -23,16 +23,18 @@ pub enum CryptoError{
     NotSupport,
     InvalidSession,
     NoFreeSession,
+    KeyReject,
 }
 
 impl Display for CryptoError{
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             CryptoError::UnknownError => write!(f, "Unknown error occurred"),
-            CryptoError::BadMessage => write!(f, "Bad message format"),
+            CryptoError::BadMessage => write!(f, "Authentication failed for AEAD"),
             CryptoError::NotSupport => write!(f, "Operation not supported"),
-            CryptoError::InvalidSession => write!(f, "Invalid session"),
+            CryptoError::InvalidSession => write!(f, "Invalid session ID"),
             CryptoError::NoFreeSession => write!(f, "No free session available"),
+            CryptoError::KeyReject => write!(f, "Signature verification failed"),
         }
     }
 }

@@ -23,7 +23,7 @@ bitflags::bitflags! {
 
 impl CryptoFeatures {
     pub fn support_features() -> Self {
-        CryptoFeatures::VIRTIO_CRYPTO_F_REVISION_1
+        Self::empty()
     }
 }
 
@@ -64,7 +64,7 @@ pub struct VirtioCryptoConfig {
 
     /* Maximum length of authenticated key in bytes */ 
     pub max_auth_key_len: u32,
-    pub reserved: u32,
+    pub akcipher_algo: u32,
     /* Maximum size of each crypto request’s content in bytes */ 
     pub max_size: u64,
 }
@@ -139,8 +139,8 @@ impl ConfigManager<VirtioCryptoConfig> {
         crypto_config.max_auth_key_len = self
             .read_once::<u32>(offset_of!(VirtioCryptoConfig, max_auth_key_len))
             .unwrap();
-        crypto_config.reserved = self
-            .read_once::<u32>(offset_of!(VirtioCryptoConfig, reserved))
+        crypto_config.akcipher_algo = self
+            .read_once::<u32>(offset_of!(VirtioCryptoConfig, akcipher_algo))
             .unwrap();
 
         let max_size_low = self
