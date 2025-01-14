@@ -1,5 +1,6 @@
 use alloc::vec;
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
+use spin::Once;
 use core::hint::spin_loop;
 use tinybmp::Bmp;
 use embedded_graphics::pixelcolor::Rgb888;
@@ -19,6 +20,7 @@ use super::{
     },
     header::VirtioGpuCtrlHdr,
 };
+use crate::device::gpu::GPU_DEVICE;
 use crate::{
     device::{
         gpu::{
@@ -146,6 +148,7 @@ impl GPUDevice {
             .unwrap();
 
         transport.finish_init();
+        drop(transport);
 
         // Done: query the display information from the device using the VIRTIO_GPU_CMD_GET_DISPLAY_INFO command,
         //      and use that information for the initial scanout setup.
@@ -163,6 +166,10 @@ impl GPUDevice {
         // Test device
         test_frame_buffer(Arc::clone(&device));
         test_cursor(Arc::clone(&device));
+
+        // TODO: (Taojie) make device a global static variable
+        // GPU_DEVICE.call_once(|| device);
+        GPU_DEVICE.call_once(|| SpinLock::new(device));
         Ok(())
     }
 
@@ -248,7 +255,7 @@ impl GPUDevice {
         Ok(())
     }
 
-    fn resolution(&self) -> Result<(u32, u32), VirtioDeviceError> {
+    pub fn resolution(&self) -> Result<(u32, u32), VirtioDeviceError> {
         let display_info = self.request_display_info()?;
         let rect = display_info.get_rect(0).unwrap();
         Ok((rect.width(), rect.height()))
