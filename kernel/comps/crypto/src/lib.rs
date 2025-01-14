@@ -8,7 +8,7 @@
 extern crate alloc;
 
 use alloc::{collections::BTreeMap, fmt::Debug, string::String, sync::Arc, vec::Vec};
-use core::any::Any;
+use core::{any::Any, error::Error, fmt::Display};
 
 use component::{init_component, ComponentInitError};
 use ostd::sync::SpinLock;
@@ -16,10 +16,81 @@ use spin::Once;
 
 // pub type CryptoCallback = dyn Fn(VmReader<Infallible>) + Send + Sync;
 
+#[derive(Debug)]
+pub enum CryptoError{
+    UnknownError,
+    BadMessage,
+    NotSupport,
+    InvalidSession,
+    NoFreeSession,
+}
+
+impl Display for CryptoError{
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            CryptoError::UnknownError => write!(f, "Unknown error occurred"),
+            CryptoError::BadMessage => write!(f, "Bad message format"),
+            CryptoError::NotSupport => write!(f, "Operation not supported"),
+            CryptoError::InvalidSession => write!(f, "Invalid session"),
+            CryptoError::NoFreeSession => write!(f, "No free session available"),
+        }
+    }
+}
+
+impl Error for CryptoError {}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(i32)]
+pub enum CryptoHashAlgorithm {
+    NoHash = 0,
+    Md5 = 1,
+    Sha1 = 2,
+    Sha224 = 3,
+    Sha256 = 4,
+    Sha384 = 5,
+    Sha512 = 6,
+    Sha3_224 = 7,
+    Sha3_256 = 8,
+    Sha3_384 = 9,
+    Sha3_512 = 10,
+    Sha3Shake128 = 11,
+    Sha3Shake256 = 12,
+}
+
+#[repr(u32)]
+#[derive(Debug, Clone, Copy)]
+pub enum CryptoCipherAlgorithm {
+    NoCipher = 0,
+    Arc4 = 1,
+    AesEcb = 2,
+    AesCbc = 3,
+    AesCtr = 4,
+    DesEcb = 5,
+    DesCbc = 6,
+    ThreeDesEcb = 7,
+    ThreeDesCbc = 8,
+    ThreeDesCtr = 9,
+    KasumiF8 = 10,
+    Snow3gUea2 = 11,
+    AesF8 = 12,
+    AesXts = 13,
+    ZucEea3 = 14,
+}
+
+#[repr(u32)]
+#[derive(Debug)]
+pub enum CryptoOperation {
+    Encrypt = 1,
+    Decrypt = 2,
+}
+
 pub trait AnyCryptoDevice: Send + Sync + Any + Debug {
-    // fn send(&self, buf: &[u8]);
-    // fn register_callback(&self, callback: &'static CryptoCallback);
+    //Test device function 
     fn test_device(&self);
+
+    //Create Hash session, return session id.
+    fn create_hash_session(&self, algo: CryptoHashAlgorithm, result_len: u32)->Result<i64, CryptoError>;
+    // fn create_cipher_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, key_len: i32)->Result<i64, CryptoError>;
 }
 
 pub fn register_device(name: String, device: Arc<dyn AnyCryptoDevice>) {

@@ -39,17 +39,9 @@ bitflags::bitflags! {
         const VIRTIO_CRYPTO_SERVICE_MAC = 1 << 2;
         /// AEAD (Authenticated Encryption with Associated Data) service
         const VIRTIO_CRYPTO_SERVICE_AEAD = 1 << 3;
+        /// ???
+        const VIRTIO_CRYPTO_SERVICE_AKCIPHER = 1 << 4;
     }
-}
-
-enum VirtioCryptoStatus { 
-    Ok = 0,             // success
-    Err = 1,            // any failure not mentioned above occurs
-    BadMsg = 2,         // authentication failed (only when AEAD decryption)
-    NotSupp = 3,        // operation or algorithm is unsupported
-    InvSess = 4,        // invalid session ID when executing crypto operations
-    NoSpc = 5,          // no free session ID.
-    Max 
 }
 
 #[derive(Debug, Pod, Clone, Copy)]

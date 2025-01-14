@@ -143,10 +143,11 @@ fn init_thread() {
 
     print_banner();
 
-
     let crypto_dev = aster_crypto::all_devices();
     let dev = &crypto_dev[0].1;
-    dev.test_device();
+    let res1 = dev.create_hash_session(aster_crypto::CryptoHashAlgorithm::Sha256, 64);
+    let res2 = dev.create_hash_session(aster_crypto::CryptoHashAlgorithm::Sha1, 64);
+    debug!("session result:{:?}, {:?}", res1, res2);
 
     exit_qemu(QemuExitCode::Success);
 

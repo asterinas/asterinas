@@ -1,4 +1,5 @@
 
+use aster_crypto::{CryptoCipherAlgorithm, CryptoError, CryptoHashAlgorithm, CryptoOperation};
 use ostd::Pod;
 
 enum CryptoService{
@@ -6,6 +7,45 @@ enum CryptoService{
     Hash = 1,
     Mac = 2,
     Aead = 3,
+    AkCipher = 4,
+}
+
+pub enum VirtioCryptoStatus { 
+    Ok = 0,             // success
+    Err = 1,            // any failure not mentioned above occurs
+    BadMsg = 2,         // authentication failed (only when AEAD decryption)
+    NotSupp = 3,        // operation or algorithm is unsupported
+    InvSess = 4,        // invalid session ID when executing crypto operations
+    NoSpc = 5,          // no free session ID.
+}
+
+impl TryFrom<i32> for VirtioCryptoStatus {
+    type Error = CryptoError;
+
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Ok),
+            1 => Ok(Self::Err),
+            2 => Ok(Self::BadMsg),
+            3 => Ok(Self::NotSupp),
+            4 => Ok(Self::InvSess),
+            5 => Ok(Self::NoSpc),
+            _ => Err(CryptoError::UnknownError),
+        }
+    }
+}
+
+impl VirtioCryptoStatus{
+    pub fn get_or_error<T>(&self, val: T)->Result<T, CryptoError>{
+        match self {
+            VirtioCryptoStatus::Ok => Ok(val),
+            VirtioCryptoStatus::Err => Err(CryptoError::UnknownError),
+            VirtioCryptoStatus::BadMsg => Err(CryptoError::BadMessage),
+            VirtioCryptoStatus::NotSupp => Err(CryptoError::NotSupport),
+            VirtioCryptoStatus::InvSess => Err(CryptoError::InvalidSession),
+            VirtioCryptoStatus::NoSpc => Err(CryptoError::NoFreeSession),
+        }
+    }
 }
 
 const fn crypto_services_opcode(service: CryptoService, op: i32)-> i32{
@@ -36,6 +76,23 @@ pub struct CryptoCtrlHeader{
 
 #[derive(Debug, Pod, Clone, Copy)]
 #[repr(C)]
+pub struct VirtioCryptoSessionInput{
+    pub session_id: i64,
+    pub status: i32,
+    pub padding: i32,
+}
+
+impl VirtioCryptoSessionInput{
+    pub fn get_result(&self)->Result<i64, CryptoError>{
+        match VirtioCryptoStatus::try_from(self.status){
+            Ok(code) => code.get_or_error(self.session_id),
+            Err(err) => Err(err)
+        }
+    }
+}
+
+#[derive(Debug, Pod, Clone, Copy)]
+#[repr(C)]
 pub struct CryptoHashSessionReq {
 	pub header: CryptoCtrlHeader,
 	pub flf: VirtioCryptoHashCreateSessionReq,
@@ -44,35 +101,18 @@ pub struct CryptoHashSessionReq {
 
 #[derive(Debug, Pod, Clone, Copy)]
 #[repr(C)]
-pub struct VirtioCryptoSessionInput{
-    pub session_id: i64,
-    pub status: i32,
-    pub padding: i32,
-}
-
-#[derive(Debug, Clone, Copy)]
-#[repr(i32)]
-pub enum CryptoHashAlgorithm {
-    NoHash = 0,
-    Md5 = 1,
-    Sha1 = 2,
-    Sha224 = 3,
-    Sha256 = 4,
-    Sha384 = 5,
-    Sha512 = 6,
-    Sha3_224 = 7,
-    Sha3_256 = 8,
-    Sha3_384 = 9,
-    Sha3_512 = 10,
-    Sha3Shake128 = 11,
-    Sha3Shake256 = 12,
+pub struct VirtioCryptoHashSessionPara {
+    pub algo: i32,
+    pub hash_result_len: u32,
 }
 
 #[derive(Debug, Pod, Clone, Copy)]
 #[repr(C)]
-pub struct VirtioCryptoHashSessionPara {
+pub struct VirtioCryptoCipherSessionPara {
     pub algo: i32,
-    pub hash_result_len: u32,
+    pub keylen: i32,
+    pub op: i32,
+    pub padding: u32,
 }
 
 #[derive(Debug, Pod, Clone, Copy)]
