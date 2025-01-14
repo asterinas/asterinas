@@ -135,12 +135,12 @@ impl GPUDevice {
 
         // Register irq callbacks
         let mut transport = device.transport.lock();
-        // transport
-        //     .register_queue_callback(CONTROL_QUEUE_INDEX, Box::new(handle_irq_ctl), false)
-        //     .unwrap();
-        // transport
-        //     .register_queue_callback(CURSOR_QUEUE_INDEX, Box::new(handle_irq_cursor), false)
-        //     .unwrap();
+        transport
+            .register_queue_callback(CONTROL_QUEUE_INDEX, Box::new(handle_irq_ctl), false)
+            .unwrap();
+        transport
+            .register_queue_callback(CURSOR_QUEUE_INDEX, Box::new(handle_irq_cursor), false)
+            .unwrap();
         transport
             .register_cfg_callback(Box::new(handle_config_change))
             .unwrap();
