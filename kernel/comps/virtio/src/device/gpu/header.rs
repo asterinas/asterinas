@@ -6,15 +6,15 @@ use ostd::Pod;
 #[repr(C)]
 #[derive(Default, Debug, Clone, Copy, Pod)]
 pub struct VirtioGPUCtrlHdr {
-    ctrl_type: u32,     // specify request/response type
-    flags: u8,       // see usages
-    fence_id: u64,      
+    pub ctrl_type: u32,     // specify request/response type
+    pub flags: u8,       // see usages
+    pub fence_id: u64,      
     // if FLAG_FENCE is set, device must copy fence_id from request to response
-    ctx_id: u32,
-    ring_idx: u8,       
+    pub ctx_id: u32,
+    pub ring_idx: u8,       
     // if INFO_RING_IDX is set and vio_GPU_F_CONTEXT_INIT is supported,
     // driver MAY set FLAG_INFO_RING_IDX in request flags.(range 0-63)
-    padding: [u8; 3],
+    pub padding: [u8; 3],
 }
 
 #[repr(u32)]
