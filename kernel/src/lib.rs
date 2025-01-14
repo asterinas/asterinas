@@ -156,6 +156,9 @@ fn init_thread() {
                                     aster_crypto::CryptoOperation::Encrypt, &[0; 24]);
     debug!("try to create cipher session:{:?}", res3);
 
+    let res4 = dev.destroy_cipher_session(res3.unwrap());
+    debug!("try to destroy cipher session:{:?}", res4);
+
     exit_qemu(QemuExitCode::Success);
 
     let karg: KCmdlineArg = boot_info().kernel_cmdline.as_str().into();

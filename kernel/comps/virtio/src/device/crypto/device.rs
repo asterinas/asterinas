@@ -104,6 +104,55 @@ impl Debug for CryptoDevice {
     }
 }
 
+impl CryptoDevice {
+
+    pub fn destroy_session(&self, operation: CryptoSessionOperation, session_id: i64) -> Result<u8, CryptoError>{
+        let ctrl_slice = DmaStreamSlice::new(&self.control_buffer, 0, 72);
+        let ctrl_resp_slice = DmaStreamSlice::new(&self.control_buffer, 72, 88);
+        self.control_queue.lock().add_dma_buf(&[&ctrl_slice], &[&ctrl_resp_slice]).unwrap();
+
+        let header = CryptoCtrlHeader {
+            opcode : operation as i32,
+            algo : 0 as _,
+            flag : 0,
+            reserved : 0
+        };
+
+        let req = CryptoDestroySessionReq {
+            header,
+            flf : VirtioCryptoDestroySessionFlf {
+                para : VirtioCryptoDestroySessionPara {
+                    session_id : session_id
+                },
+                padding : [0; 12]
+            }
+        };
+
+        debug!("send header: bytes: {:?}, len = {:?}, supp_bits:{:?}", 
+                req.as_bytes(), req.as_bytes().len(), self.config_manager.read_config().cipher_algo_l);
+        
+        ctrl_slice.write_val(0, &req).unwrap();
+
+        if self.control_queue.lock().should_notify() {
+            self.control_queue.lock().notify();
+        }
+    
+        while ! self.control_queue.lock().can_pop(){
+            spin_loop();
+        }
+    
+        self.control_queue.lock().pop_used().unwrap();
+        ctrl_resp_slice.sync().unwrap();
+    
+        let mut reader = ctrl_resp_slice.reader().unwrap();
+        let res = reader.read_val::<VirtioCryptoDestroySessionInput>().unwrap();
+        
+        debug!("receive feedback:{:?}", res);
+
+        res.get_result()
+    }
+}
+
 impl AnyCryptoDevice for CryptoDevice{
     fn test_device(&self){
         //test hash session create
@@ -233,5 +282,10 @@ impl AnyCryptoDevice for CryptoDevice{
         debug!("receive feedback:{:?}", res);
 
         res.get_result()
+    }
+
+    fn destroy_cipher_session(&self, session_id: i64) -> Result<u8, CryptoError> {
+        self.destroy_session(CryptoSessionOperation::CipherDestroy, session_id)
+    
     }
 }

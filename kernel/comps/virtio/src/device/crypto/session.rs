@@ -164,3 +164,36 @@ impl VirtioCryptoHashCreateSessionFlf{
         }
     }
 }
+
+#[derive(Debug, Pod, Clone, Copy)]
+#[repr(C)]
+pub struct VirtioCryptoDestroySessionPara {
+    pub session_id : i64
+}
+#[derive(Debug, Pod, Clone, Copy)]
+#[repr(C)]
+pub struct VirtioCryptoDestroySessionFlf {
+    pub para : VirtioCryptoDestroySessionPara,
+    pub padding : [i32 ; 12]
+}
+
+#[derive(Debug, Pod, Clone, Copy)]
+#[repr(C)]
+pub struct VirtioCryptoDestroySessionInput {
+    pub status : u8
+}
+
+impl VirtioCryptoDestroySessionInput {
+    pub fn get_result(&self) -> Result<u8, CryptoError> {
+        match VirtioCryptoStatus::try_from(self.status as i32){
+            Ok(code) => code.get_or_error(self.status),
+            Err(err) => Err(err)
+        }
+    }
+}
+#[derive(Debug, Pod, Clone, Copy)]
+#[repr(C)]
+pub struct CryptoDestroySessionReq {
+    pub header: CryptoCtrlHeader,
+	pub flf: VirtioCryptoDestroySessionFlf,
+}

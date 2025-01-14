@@ -94,6 +94,8 @@ pub trait AnyCryptoDevice: Send + Sync + Any + Debug {
     fn create_hash_session(&self, algo: CryptoHashAlgorithm, result_len: u32)->Result<i64, CryptoError>;
 
     fn create_cipher_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, key: &[u8])->Result<i64, CryptoError>;
+
+    fn destroy_cipher_session(&self, session_id: i64) -> Result<u8, CryptoError>;
 }
 
 pub fn register_device(name: String, device: Arc<dyn AnyCryptoDevice>) {
