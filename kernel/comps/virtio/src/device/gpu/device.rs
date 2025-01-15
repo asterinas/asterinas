@@ -45,8 +45,6 @@ use tinybmp::Bmp;
 use embedded_graphics::pixelcolor::Rgb888;
 use alloc::vec::Vec;
 
-static CURSOR: &[u8] = include_bytes!("_cursor.bmp");
-
 pub struct GPUDevice {
     config_manager: ConfigManager<VirtioGPUConfig>,
     transport: SpinLock<Box<dyn VirtioTransport>>,
@@ -166,38 +164,6 @@ impl GPUDevice {
         device.transfer_to_host_2d(rect, 0, addr1).unwrap();
         device.resource_flush(rect, addr1).unwrap();
         early_println!("flushed");
-        {
-            let addr2 : u32 = 0x2222;
-            let rect: VirtioGPURect = VirtioGPURect::new(0, 0, 260, 260);
-            let byte_cnt = rect.width * rect.height * 4 as u32;
-            let frame_cnt = (byte_cnt + kBlockSize - 1) / kBlockSize as u32;
-            let frames = {
-                let segment = FrameAllocOptions::new().alloc_segment(frame_cnt as usize).unwrap();
-                DmaStream::map(segment.into(), DmaDirection::ToDevice, false).unwrap()
-            };
-            let bmp = Bmp::<Rgb888>::from_slice(CURSOR).unwrap();
-            let raw = bmp.as_raw();
-            let mut vec = Vec::new();
-            let image_data = raw.image_data();
-            let mut index = 0;
-            while index < image_data.len() {
-                let chunk = &image_data[index..index + 3];
-                let mut v = chunk.to_vec();
-                vec.append(&mut v);
-                if chunk == [255, 255, 255] {
-                    vec.push(0x0);
-                } else {
-                    vec.push(0xff);
-                }
-                index += 3;
-            }
-            frames.write_slice(0, &vec).unwrap();
-            device.resource_create_2d(addr2, rect.width, rect.height).unwrap();
-            device.resource_attach_backing(addr2, frames.paddr(), byte_cnt).unwrap();
-            device.transfer_to_host_2d(rect, 0, addr2).unwrap();
-            device.update_cursor(addr2, 0, 0, 0, 0, 0).unwrap();
-            early_println!("cursor updated");
-        }
         GPU_DEVICE.call_once(|| SpinLock::new(device));
         Ok(())
     }
@@ -347,7 +313,6 @@ impl GPUDevice {
         paddr: usize,
         size: u32,
     ) -> Result<(), VirtioDeviceError> {
-        early_println!("!! {} ?? {}", paddr, size);
         let req_slice = {
             let req_slice = DmaStreamSlice::new(
                 &self.control_request, 0, size_of::<VirtioGPUResourceAttachBacking>());
