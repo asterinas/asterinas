@@ -152,8 +152,8 @@ impl GPUDevice {
         for i in 0..rect.width {
             for j in 0..rect.height {
                 let idx = (j * rect.width + i) * 4 as u32;
-                let zero : u8 = 0;
-                let _255 : u8 = 255; // all red
+                let zero : u8 = 100;
+                let _255 : u8 = 100; // all red
                 frames.write_val(idx as usize, &zero).unwrap();
                 frames.write_val((idx + 1) as usize, &zero).unwrap();
                 frames.write_val((idx + 2) as usize, &_255).unwrap();
