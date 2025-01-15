@@ -59,6 +59,28 @@ pub enum CryptoHashAlgorithm {
     Sha3Shake256 = 12,
 }
 
+#[derive(Debug, Clone, Copy)]
+#[repr(i32)]
+pub enum CryptoMacAlgorithm {
+    NoMac = 0,
+    HmacMd5 = 1,
+    HmacSha1 = 2,
+    HmacSha224 = 3,
+    HmacSha256 = 4,
+    HmacSha384 = 5,
+    HmacSha512 = 6,
+    Cmac3Des = 25,
+    CmacAes = 26,
+    KasumiF9 = 27,
+    Snow3gUia2 = 28,
+    GmacAes = 41,
+    GmacTwofish = 42,
+    CbcMacAes = 49,
+    CbcMacKasumiF9 = 50,
+    XcbcAes = 53,
+    ZucEia3 = 54,
+}
+
 #[repr(u32)]
 #[derive(Debug, Clone, Copy)]
 pub enum CryptoCipherAlgorithm {
@@ -86,15 +108,42 @@ pub enum CryptoOperation {
     Decrypt = 2,
 }
 
+#[repr(u32)]
+#[derive(Debug)]
+pub enum CryptoSymOp{
+    None = 0,
+    Cipher = 1,
+    AlgorithmChaining = 2,
+}
+
+#[repr(u32)]
+#[derive(Debug)]
+pub enum CryptoSymAlgChainOrder {
+    HashThenCipher = 1,
+    CipherThenHash = 2
+}
+
+#[repr(u32)]
+#[derive(Debug)]
+pub enum CryptoSymHashMode {
+    Plain = 1, 
+    Auth = 2,
+    Nested = 3
+}
+
 pub trait AnyCryptoDevice: Send + Sync + Any + Debug {
     //Test device function 
     fn test_device(&self);
 
     //Create Hash session, return session id.
     fn create_hash_session(&self, algo: CryptoHashAlgorithm, result_len: u32)->Result<i64, CryptoError>;
-
+    fn create_mac_session(&self, algo: CryptoMacAlgorithm, result_len: u32, auth_key: &[u8])->Result<i64, CryptoError>;
     fn create_cipher_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, key: &[u8])->Result<i64, CryptoError>;
 
+    // fn create_alg_chain_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, alg_chain_order: CryptoSymAlgChainOrder, hash_mode: CryptoSymHashMode, hash_algo: i32, result_len: u32, aad_len: i32, cipher_key: &[u8], auth_key: &[u8])->Result<i64, CryptoError>;
+    fn create_alg_chain_auth_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, alg_chain_order: CryptoSymAlgChainOrder, mac_algo: CryptoMacAlgorithm, result_len: u32, aad_len: i32, cipher_key: &[u8], auth_key: &[u8])->Result<i64, CryptoError>;
+    fn create_alg_chain_plain_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, alg_chain_order: CryptoSymAlgChainOrder, hash_algo: CryptoHashAlgorithm, result_len: u32, aad_len: i32, cipher_key: &[u8])->Result<i64, CryptoError>;
+    
     fn destroy_cipher_session(&self, session_id: i64) -> Result<u8, CryptoError>;
 }
 

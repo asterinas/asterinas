@@ -2,7 +2,7 @@
 use core::hash;
 
 use alloc::vec::Vec;
-use aster_crypto::{CryptoCipherAlgorithm, CryptoError, CryptoHashAlgorithm, CryptoOperation};
+use aster_crypto::{CryptoCipherAlgorithm, CryptoError, CryptoHashAlgorithm, CryptoMacAlgorithm, CryptoSymAlgChainOrder, CryptoSymHashMode, CryptoOperation, CryptoSymOp};
 use ostd::Pod;
 
 pub enum CryptoService{
@@ -110,7 +110,7 @@ impl VirtioCryptoSessionInput{
 #[repr(C)]
 pub struct CryptoHashSessionReq {
 	pub header: CryptoCtrlHeader,
-	pub flf: VirtioCryptoHashCreateSessionFlf,
+	pub flf: VirtioCryptoHashSessionFlf,
 }
 
 impl CryptoSessionRequest for CryptoHashSessionReq{
@@ -121,27 +121,117 @@ impl CryptoSessionRequest for CryptoHashSessionReq{
     }
 }
 
-pub enum CryptoSymOp{
-    None = 0,
-    Cipher = 1,
-    AlgorithmChaining = 2,
+#[derive(Debug, Pod, Clone, Copy)]
+#[repr(C)]
+pub struct VirtioCryptoHashSessionFlf {
+    pub algo: i32,
+    pub hash_result_len: u32
+}
+
+impl VirtioCryptoHashSessionFlf{
+    pub fn new(algo: CryptoHashAlgorithm, result_len: u32)->Self{
+        Self { 
+            algo: algo as _,
+            hash_result_len: result_len
+        }
+    }
+}
+
+impl VirtioCryptoHashSessionFlf {
+    pub fn to_bytes(&self, padding: bool) -> Vec<u8> {
+        let res = <Self as Pod>::as_bytes(&self);
+        let mut vec = Vec::from(res);
+        if padding {
+            vec.resize(56, 0);
+        }
+        vec
+    }
 }
 
 #[derive(Debug, Pod, Clone, Copy)]
 #[repr(C)]
+pub struct CryptoMacSessionReq{
+    pub header: CryptoCtrlHeader,
+    pub flf: VirtioCryptoMacSessionFlf
+}
+
+impl CryptoSessionRequest for CryptoMacSessionReq{
+    fn to_bytes(&self, padding: bool)->Vec<u8> {
+        let header_bytes = self.header.to_bytes(padding);
+        let flf_bytes = self.flf.to_bytes(padding);
+        return [header_bytes, flf_bytes].concat();      
+    }
+}
+
+#[derive(Debug, Pod, Clone, Copy)]
+#[repr(C)]
+pub struct VirtioCryptoMacSessionFlf{
+    pub algo: i32,
+    pub mac_result_len: u32,
+    pub auth_key_len: u32,
+    pub padding: i32,
+}
+
+impl VirtioCryptoMacSessionFlf{
+
+    pub fn new(algo: CryptoMacAlgorithm, mac_result_len: u32, auth_key_len: u32)->Self{
+        Self{algo: algo as _, mac_result_len, auth_key_len, padding: 0}
+    }
+
+    pub fn to_bytes(&self, padding: bool) -> Vec<u8> {
+        let res = <Self as Pod>::as_bytes(&self);
+        let mut vec = Vec::from(res);
+        if padding {
+            vec.resize(56, 0);
+        }
+        vec
+    }  
+}
+
+#[derive(Pod, Clone, Copy)]
+#[repr(C)]
 pub struct CryptoCipherSessionReq {
 	pub header: CryptoCtrlHeader,
-	pub flf: VirtioCryptoCipherCreateSessionFlf,
+	pub flf: VirtioCryptoSymCreateSessionFlf,
     pub op_type: i32,
     pub padding: i32,
 }
 
 impl CryptoCipherSessionReq{
-    pub fn new(header: CryptoCtrlHeader, algo: CryptoCipherAlgorithm, key_len: i32, op: CryptoOperation)->Self{
-        Self { 
-            header, 
-            flf: VirtioCryptoCipherCreateSessionFlf::new(algo, key_len, op), 
-            op_type: CryptoSymOp::Cipher as _, 
+    // pub fn new(header: CryptoCtrlHeader, algo: CryptoCipherAlgorithm, key_len: i32, op: CryptoOperation, sym_op: CryptoSymOp, hash_op: CryptoSymHashMode)->Self{
+    //     if sym_op == CryptoSymOp::Cipher {
+    //         Self { 
+    //             header, 
+    //             flf: VirtioCryptoCipherSessionFlf::new(algo, key_len, op), 
+    //             op_type: CryptoSymOp::Cipher as _, 
+    //             padding: 0
+    //         }
+    //     }
+    //     else if sym_op == CryptoSymOp::AlgorithmChaining {
+    //         let cipher_flf = VirtioCryptoCipherSessionFlf::new(algo, key_len, op);
+
+    //         Self {
+    //             header,
+    //             flf: VirtioCryptoAlgChainSessionFlf {
+    //                 alg_chain_order
+    //             }
+    //         }
+    //     }
+    //     else if sym_op == CryptoSymOp::None {
+    //         Self {
+    //             header,
+    //             flf: VirtioCryptoCipherSessionFlf::new(algo, key_len, op),
+    //             op_type: CryptoSymOp::None as _,
+    //             padding: 0
+    //         }
+    //     }
+        
+    // }
+    pub fn new(header: CryptoCtrlHeader, flf: VirtioCryptoSymCreateSessionFlf, sym_op: CryptoSymOp) -> Self {
+        Self {
+            header,
+            flf,
+            op_type : sym_op as _,
             padding: 0
         }
     }
@@ -153,54 +243,68 @@ impl CryptoSessionRequest for CryptoCipherSessionReq{
     }
 }
 
+#[derive(Pod, Clone, Copy)]
+#[repr(C)]
+pub union VirtioCryptoSymCreateSessionFlf {
+    pub CipherFlf : VirtioCryptoCipherSessionFlf,
+    pub AlgChainFlf : VirtioCryptoAlgChainSessionFlf
+}
+
 #[derive(Debug, Pod, Clone, Copy)]
 #[repr(C)]
-pub struct VirtioCryptoCipherCreateSessionFlf {
+pub struct VirtioCryptoCipherSessionFlf {
     pub algo: i32,
     pub key_len: i32,
     pub op: i32,
-    pub padding: u32,
-    pub long_padding: [i8; 32],
+    pub padding: u32
 }
 
-impl VirtioCryptoCipherCreateSessionFlf{
+impl VirtioCryptoCipherSessionFlf{
     pub fn new(algo: CryptoCipherAlgorithm, key_len: i32, op: CryptoOperation)->Self{
         Self { 
             algo: algo as _, 
             key_len, 
             op: op as _, 
             padding: 0,
-            long_padding: [0; 32], 
         }
     }
 }
 
-#[derive(Debug, Pod, Clone, Copy)]
+
+#[derive(Pod, Clone, Copy)]
 #[repr(C)]
-pub struct VirtioCryptoHashCreateSessionFlf {
-    pub algo: i32,
-    pub hash_result_len: u32
+pub struct VirtioCryptoAlgChainSessionFlf {
+    pub alg_chain_order : i32,
+    pub hash_mode : i32,
+    pub cipher_hdr : VirtioCryptoCipherSessionFlf,
+    pub algo_flf : VirtioCryptoAlgChainSessionAlgo,
+    pub aad_len : i32,
+    pub padding : i32
 }
 
-impl VirtioCryptoHashCreateSessionFlf{
-    pub fn new(algo: CryptoHashAlgorithm, result_len: u32)->Self{
-        Self { 
-            algo: algo as _,
-            hash_result_len: result_len
+impl VirtioCryptoAlgChainSessionFlf {
+    pub fn new(alg_chain_order: CryptoSymAlgChainOrder, hash_mode: CryptoSymHashMode, cipher_hdr: VirtioCryptoCipherSessionFlf
+        , algo_flf: VirtioCryptoAlgChainSessionAlgo, aad_len: i32) -> Self {
+            Self {
+                alg_chain_order: alg_chain_order as _,
+                hash_mode: hash_mode as _,
+                cipher_hdr,
+                algo_flf,
+                aad_len,
+                padding: 0
+            }
         }
-    }
 }
 
-impl VirtioCryptoHashCreateSessionFlf {
-    pub fn to_bytes(&self, padding: bool) -> Vec<u8> {
-        let res = <Self as Pod>::as_bytes(&self);
-        let mut vec = Vec::from(res);
-        if padding {
-            vec.resize(56, 0);
-        }
-        vec
-    }
+#[derive(Pod, Clone, Copy)]
+#[repr(C)]
+pub union VirtioCryptoAlgChainSessionAlgo {
+    pub hash_flf: VirtioCryptoHashSessionFlf,
+    pub mac_flf: VirtioCryptoMacSessionFlf,
+    pub padding: [u8; 16]
 }
+
+
 
 // #[derive(Debug, Pod, Clone, Copy)]
 // #[repr(C)]

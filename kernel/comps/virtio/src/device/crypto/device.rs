@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 
-use core::hint::spin_loop;
+use core::{hash, hint::spin_loop};
 
 use alloc::{boxed::Box, fmt::Debug, string::ToString, sync::Arc};
-use aster_crypto::{AnyCryptoDevice, CryptoCipherAlgorithm, CryptoError, CryptoHashAlgorithm, CryptoOperation};
+use aster_crypto::{AnyCryptoDevice, CryptoCipherAlgorithm, CryptoError, CryptoHashAlgorithm, CryptoMacAlgorithm, CryptoSymAlgChainOrder, CryptoSymHashMode, CryptoOperation, CryptoSymOp};
 use log::{debug, warn};
 use ostd::{mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, VmIo}, sync::SpinLock, trap::TrapFrame, Pod};
 use crate::{
@@ -209,10 +209,28 @@ impl AnyCryptoDevice for CryptoDevice{
     
         let req = CryptoHashSessionReq{
             header,
-            flf: VirtioCryptoHashCreateSessionFlf::new(algo, result_len),
+            flf: VirtioCryptoHashSessionFlf::new(algo, result_len),
         };
         
         self.create_session(req, &[], true)
+    }
+
+    fn create_mac_session(&self, algo: aster_crypto::CryptoMacAlgorithm, result_len: u32, auth_key: &[u8])->Result<i64, CryptoError> {
+        debug!("[CRYPTO] trying to create mac session");
+
+        let key_len: u32 = auth_key.len() as _;
+        let header = CryptoCtrlHeader{
+            opcode: CryptoSessionOperation::MacCreate as i32, 
+            algo: algo as _,
+            flag: 0, 
+            reserved: 0            
+        };
+
+        let req = CryptoMacSessionReq{
+            header, flf: VirtioCryptoMacSessionFlf::new(algo, result_len, key_len)
+        };
+
+        self.create_session(req, auth_key, true)
     }
 
     fn create_cipher_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, key: &[u8])->Result<i64, CryptoError>{
@@ -226,10 +244,90 @@ impl AnyCryptoDevice for CryptoDevice{
             reserved: 0
         };
     
-        let req = CryptoCipherSessionReq::new(header, algo, key_len, op);
+        let flf = VirtioCryptoCipherSessionFlf::new(algo, key_len, op);
+        let req = CryptoCipherSessionReq::new(header, VirtioCryptoSymCreateSessionFlf{CipherFlf: flf}, CryptoSymOp::Cipher as _);
 
         self.create_session(req, key, true)
     }
+
+    fn create_alg_chain_auth_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, alg_chain_order: CryptoSymAlgChainOrder, mac_algo: CryptoMacAlgorithm, result_len: u32, aad_len: i32, cipher_key: &[u8], auth_key: &[u8])->Result<i64, CryptoError> {
+        debug!("[CRYPTO] trying to create alg chain auth session");
+        let hash_mode = CryptoSymHashMode::Auth;
+        let header = CryptoCtrlHeader { 
+            opcode: CryptoSessionOperation::CipherCreate as i32, 
+            algo: algo as _,
+            flag: 0, 
+            reserved: 0
+        };
+        let key_len: u32 = cipher_key.len() as _;
+
+        let cipher_flf = VirtioCryptoCipherSessionFlf::new(algo, key_len as _, op);
+        let auth_key_len: u32 = auth_key.len() as _;
+        let mac_flf = VirtioCryptoMacSessionFlf::new(mac_algo, result_len, auth_key_len);
+        let flf = VirtioCryptoAlgChainSessionFlf::new(alg_chain_order, hash_mode, cipher_flf, VirtioCryptoAlgChainSessionAlgo{mac_flf}, aad_len);
+        let req = CryptoCipherSessionReq::new(
+            header, 
+            VirtioCryptoSymCreateSessionFlf{AlgChainFlf: flf}, 
+            CryptoSymOp::AlgorithmChaining
+        );
+
+        self.create_session(req, &[cipher_key, auth_key].concat(), true)
+    }
+
+    fn create_alg_chain_plain_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, alg_chain_order: CryptoSymAlgChainOrder, hash_algo: CryptoHashAlgorithm, result_len: u32, aad_len: i32, cipher_key: &[u8])->Result<i64, CryptoError> {
+        debug!("[CRYPTO] trying to create alg chain plain session");
+        let hash_mode = CryptoSymHashMode::Plain;
+        let header = CryptoCtrlHeader { 
+            opcode: CryptoSessionOperation::CipherCreate as i32, 
+            algo: algo as _,
+            flag: 0, 
+            reserved: 0
+        };
+        let key_len: u32 = cipher_key.len() as _;
+        let cipher_flf = VirtioCryptoCipherSessionFlf::new(algo, key_len as _, op);
+        let hash_flf = VirtioCryptoHashSessionFlf::new(hash_algo, result_len);
+        let flf = VirtioCryptoAlgChainSessionFlf::new(alg_chain_order, hash_mode, cipher_flf, VirtioCryptoAlgChainSessionAlgo{hash_flf}, aad_len);
+        let req = CryptoCipherSessionReq::new(
+            header, 
+            VirtioCryptoSymCreateSessionFlf{AlgChainFlf: flf}, 
+            CryptoSymOp::AlgorithmChaining
+        );
+
+        self.create_session(req, cipher_key, true)
+    }
+
+    // fn create_alg_chain_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, alg_chain_order: CryptoSymAlgChainOrder, hash_mode: CryptoSymHashMode, hash_algo: i32, result_len: u32, aad_len: i32, cipher_key: &[u8], auth_key: &[u8])->Result<i64, CryptoError> {
+    //     debug!("[CRYPTO] trying to create alg chain session");
+
+    //     let header = CryptoCtrlHeader { 
+    //         opcode: CryptoSessionOperation::CipherCreate as i32, 
+    //         algo: algo as _,
+    //         flag: 0, 
+    //         reserved: 0
+    //     };
+    //     let key_len: u32 = cipher_key.len() as _;
+
+    //     let cipher_flf = VirtioCryptoCipherSessionFlf::new(algo, key_len as _, op);
+    //     if let CryptoSymHashMode::Auth = hash_mode {
+            
+    //         let auth_key_len: u32 = auth_key.len() as _;
+    //         let mac_flf = VirtioCryptoMacSessionFlf::new(Cryp, result_len, auth_key_len);
+    //         let flf = VirtioCryptoAlgChainSessionFlf::new(alg_chain_order, hash_mode, cipher_flf, VirtioCryptoAlgChainSessionAlgo{mac_flf}, aad_len);
+    //         let req = CryptoCipherSessionReq::new(
+    //             header, 
+    //             VirtioCryptoSymCreateSessionFlf{AlgChainFlf: flf}, 
+    //             CryptoSymOp::AlgorithmChaining
+    //         );
+
+    //         self.create_session(req, [&cipher_key, &auth_key].concat(), padding)
+    //     }
+    //     else if let CryptoSymHashMode::Plain = hash_mode {
+
+    //     }
+    //     else {
+    //         Err(CryptoError::NotSupport)
+    //     }
+    // }
 
     fn destroy_cipher_session(&self, session_id: i64) -> Result<u8, CryptoError> {
         self.destroy_session(CryptoSessionOperation::CipherDestroy, session_id)
