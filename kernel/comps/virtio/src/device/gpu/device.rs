@@ -157,10 +157,10 @@ impl GPUDevice {
         for i in 0..rect.width {
             for j in 0..rect.height {
                 let idx = (j * rect.width + i) * 4 as u32;
-                frames.write_val(idx as usize, &i).unwrap();
-                frames.write_val((idx + 1) as usize, &j).unwrap();
-                frames.write_val((idx + 2) as usize, &(i + j)).unwrap();
-                frames.write_val((idx + 3) as usize, &(i + 2 * j)).unwrap();
+                frames.write_val(idx as usize, &(i + 2 * j)).unwrap();
+                frames.write_val((idx + 1) as usize, &(2 * i + j)).unwrap();
+                frames.write_val((idx + 2) as usize, &i).unwrap();
+                frames.write_val((idx + 3) as usize, &j).unwrap();
             }
         }
         device.transfer_to_host_2d(rect, 0, addr1).unwrap();
@@ -178,14 +178,18 @@ impl GPUDevice {
             let bmp = Bmp::<Rgb888>::from_slice(CURSOR).unwrap();
             let raw = bmp.as_raw();
             let mut vec = Vec::new();
-            for i in raw.image_data().chunks(3) {
-                let mut v = i.to_vec();
+            let image_data = raw.image_data();
+            let mut index = 0;
+            while index < image_data.len() {
+                let chunk = &image_data[index..index + 3];
+                let mut v = chunk.to_vec();
                 vec.append(&mut v);
-                if i == [255, 255, 255] {
-                    vec.push(0x0)
+                if chunk == [255, 255, 255] {
+                    vec.push(0x0);
                 } else {
-                    vec.push(0xff)
+                    vec.push(0xff);
                 }
+                index += 3;
             }
             frames.write_slice(0, &vec).unwrap();
             device.resource_create_2d(addr2, rect.width, rect.height).unwrap();
