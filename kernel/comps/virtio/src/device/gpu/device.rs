@@ -132,7 +132,7 @@ impl GPUDevice {
             .register_cfg_callback(Box::new(handle_config_change))
             .unwrap();
         transport.finish_init();
-        
+        drop(transport);
         /* Create framebuffer */
         let addr1: u32 = 0x1111;
         let display_info = device.get_display_info().unwrap();
