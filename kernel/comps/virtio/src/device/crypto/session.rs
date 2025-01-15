@@ -166,6 +166,38 @@ impl VirtioCryptoMacSessionFlf{
 
 #[derive(Pod, Clone, Copy)]
 #[repr(C)]
+pub struct CryptoAeadSessionReq {
+    pub header: CryptoCtrlHeader,
+    pub flf: VirtioCryptoAeadCreateSessionFlf
+}
+
+impl CryptoSessionRequest for CryptoAeadSessionReq {
+    fn to_bytes(&self, padding: bool)->Vec<u8> {
+        [self.header.to_bytes(padding), self.flf.to_bytes(padding)].concat()
+    }
+}
+#[derive(Pod, Clone, Copy)]
+#[repr(C)]
+pub struct VirtioCryptoAeadCreateSessionFlf {
+    pub algo : i32,
+    pub key_len : i32,
+    pub tag_len : i32,
+    pub aad_len : i32,
+    pub op : i32,
+    pub padding : i32
+}
+
+impl VirtioCryptoAeadCreateSessionFlf {
+    pub fn to_bytes(&self, padding : bool) -> Vec<u8> {
+        let res = <Self as Pod>::as_bytes(&self);
+        let mut vec = Vec::from(res);
+        vec.resize(56, 0);
+        vec
+    }
+}
+
+#[derive(Pod, Clone, Copy)]
+#[repr(C)]
 pub struct CryptoCipherSessionReq {
 	pub header: CryptoCtrlHeader,
 	pub flf: VirtioCryptoSymCreateSessionFlf,

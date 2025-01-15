@@ -161,6 +161,39 @@ impl VirtioCryptoAlgChainDataFlf {
 
 #[derive(Debug, Pod, Clone, Copy)]
 #[repr(C)]
+pub struct CryptoAeadServiceReq {
+    pub header : CryptoServiceHeader,
+    pub flf : VirtioCryptoAeadDataFlf
+}
+
+impl CryptoServiceRequest for CryptoAeadServiceReq {
+    fn to_bytes(&self, padding: bool)->Vec<u8> {
+        [self.header.to_bytes(padding), self.flf.to_bytes(padding)].concat()
+    }
+}
+
+#[derive(Debug, Pod, Clone, Copy)]
+#[repr(C)]
+pub struct VirtioCryptoAeadDataFlf {
+    pub iv_len : i32,
+    pub aad_len : i32,
+    pub src_data_len : i32,
+    pub dst_data_len : i32,
+    pub tag_len : i32,
+    pub reserved : i32
+}
+
+impl VirtioCryptoAeadDataFlf {
+    pub fn to_bytes(&self, padding : bool) -> Vec<u8> {
+        let mut res = Vec::from(<Self as Pod>::as_bytes(&self));
+        if padding {
+            res.resize(48, 0);
+        }
+        res
+    }
+}
+#[derive(Debug, Pod, Clone, Copy)]
+#[repr(C)]
 pub struct CryptoAkCipherServiceReq {
     pub header : CryptoServiceHeader,
     pub flf : VirtioCryptoAkcipherDataFlf

@@ -4,7 +4,6 @@
 use core::{hash, hint::spin_loop};
 
 use alloc::{boxed::Box, fmt::Debug, string::ToString, sync::Arc, vec, vec::Vec};
-// use aster_crypto::{AnyCryptoDevice, CryptoCurve, CryptoAkCipherAlgorithm, CryptoAkCipherKeyType, CryptoCipherAlgorithm, CryptoError, CryptoHashAlgorithm, CryptoMacAlgorithm, CryptoSymAlgChainOrder, CryptoSymHashMode, CryptoOperation, CryptoSymOp, CryptoHashAlgo, CryptoPaddingAlgo};
 use aster_crypto::*;
 use log::{debug, warn};
 use ostd::{mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, VmIo}, sync::SpinLock, trap::TrapFrame, Pod};
@@ -234,16 +233,50 @@ impl AnyCryptoDevice for CryptoDevice{
     fn test_device(&self){
         let res1 = self.create_hash_session(CryptoHashAlgorithm::Sha256, 64);
         debug!("try to create hash session:{:?}", res1);
+
+        let res1 = self.create_mac_session(CryptoMacAlgorithm::CbcMacAes, 16, &[0;16]);
+        debug!("try to create mac session:{:?}", res1);
+
         let res2 = 
             self.create_cipher_session(CryptoCipherAlgorithm::AesEcb, 
                                         CryptoOperation::Encrypt, &[1; 16]);
         debug!("try to create cipher session:{:?}", res2);
 
         let id2 = &res2.unwrap();
-        let res3=self.handle_cipher_service_req(CryptoServiceOperation::CipherEncrypt, CryptoCipherAlgorithm::AesEcb, id2.clone(), &[0; 16], &[2; 16], 16);
-        debug!("try to call cipher service:{:?}", res3);
+        let res3=
+            self.handle_cipher_service_req(
+                CryptoServiceOperation::CipherEncrypt,  CryptoCipherAlgorithm::AesEcb, 
+                id2.clone(),  &[0; 16], &[2; 16], 16
+            );
+        debug!("try to call AES ECB encrypt service:{:?}", res3);
 
-        // let res4 = self.handle
+        let res4 = 
+            self.handle_cipher_service_req(
+                CryptoServiceOperation::CipherDecrypt, CryptoCipherAlgorithm::AesEcb,
+                id2.clone(), &[0;16], &res3.unwrap(), 16);
+        debug!("try to call AES ECB decrypt service: {:?}", res4);
+
+        let res1 = self.destroy_cipher_session(id2.clone());
+        debug!("try to destroy session {:?} : {:?}", id2, res4);
+
+        let res1 = self.create_akcipher_rsa_session(
+            CryptoAkCipherAlgorithm::AkCipherRSA, CryptoOperation::Encrypt, 
+            CryptoPaddingAlgo::RAW, CryptoHashAlgo::NoHash, CryptoAkCipherKeyType::Public, 
+            &[0; 128]
+        );
+
+        debug!("try to create akcipher session:{:?}", res1);
+
+        let res1 = res1.unwrap();
+        let res2 = 
+            self.handle_akcipher_serivce_req(
+                CryptoServiceOperation::AkCipherEncrypt, CryptoAkCipherAlgorithm::AkCipherRSA, res1,
+                &[5; 100], 128
+            );
+        debug!("try to call RSA encrypt: {:?}", res2);
+
+        let res3 = self.destroy_akcipher_session(res1);
+        debug!("try to destroy RSA session: {:?}", res3);
     }
 
     fn create_hash_session(&self, algo: CryptoHashAlgorithm, result_len: u32)->Result<i64, CryptoError>{
@@ -332,6 +365,61 @@ impl AnyCryptoDevice for CryptoDevice{
     fn destroy_mac_session(&self, session_id : i64) -> Result<u8, CryptoError> {
         debug!("[CRYPTO] trying to destroy mac session");
         self.destroy_session(CryptoSessionOperation::MacDestroy, session_id)
+    }
+
+    fn create_aead_session(&self, algo: CryptoAeadAlgorithm, op: CryptoOperation, tag_len: i32, aad_len: i32, key: &[u8]) -> Result<i64, CryptoError> {
+        debug!("[CRYPTO] trying to create aead session");
+        let key_len = key.len() as _;
+        let header = CryptoCtrlHeader {
+            opcode : CryptoSessionOperation::AeadCreate as i32,
+            algo: algo as _,
+            flag: 0,
+            reserved: 0
+        };
+        let flf = VirtioCryptoAeadCreateSessionFlf {
+            algo: algo as _,
+            key_len,
+            tag_len,
+            aad_len,
+            op: op as _,
+            padding: 0
+        };
+        let req = CryptoAeadSessionReq {
+            header,
+            flf
+        };
+        self.create_session(req, key, true)
+    }
+
+    fn handel_aead_service_req(&self, op : CryptoServiceOperation, algo : CryptoAeadAlgorithm, session_id : i64, iv: &[u8], src_data: &[u8], aad : &[u8], dst_data_len : i32, tag_len: i32) -> Result<Vec<u8>, CryptoError> {
+        debug!("[CRYPTO] trying to handle aead service request");
+        let header = CryptoServiceHeader {
+            opcode: op as _,
+            algo: algo as _,
+            session_id,
+            flag : 1,
+            padding : 0
+        };
+        let iv_len = iv.len() as i32;
+        let src_data_len = src_data.len() as i32;
+        let aad_len = aad.len() as i32;
+        let flf = VirtioCryptoAeadDataFlf{
+            iv_len,
+            aad_len,
+            src_data_len,
+            dst_data_len,
+            tag_len,
+            reserved : 0
+        };
+        let req = CryptoAeadServiceReq{
+            header,
+            flf
+        };
+        self.handle_service(req, &[iv, src_data, aad].concat(), dst_data_len, true)
+    }
+
+    fn destroy_aead_session(&self, session_id : i64) -> Result<u8, CryptoError> {
+        self.destroy_session(CryptoSessionOperation::AeadDestroy, session_id)
     }
 
     fn create_cipher_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, key: &[u8])->Result<i64, CryptoError>{
