@@ -3,7 +3,7 @@
 
 use core::{hash, hint::spin_loop};
 
-use alloc::{boxed::Box, fmt::Debug, string::ToString, sync::Arc};
+use alloc::{boxed::Box, fmt::Debug, string::ToString, sync::Arc, vec, vec::Vec};
 use aster_crypto::{AnyCryptoDevice, CryptoCipherAlgorithm, CryptoError, CryptoHashAlgorithm, CryptoMacAlgorithm, CryptoSymAlgChainOrder, CryptoSymHashMode, CryptoOperation, CryptoSymOp};
 use log::{debug, warn};
 use ostd::{mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, VmIo}, sync::SpinLock, trap::TrapFrame, Pod};
@@ -191,12 +191,13 @@ impl CryptoDevice {
         res.get_result()
     }
 
-    fn handle_service<T: CryptoServiceRequest>(&self, req: T, vlf: &[u8], padding: bool)->Result<u8, CryptoError> {
+    fn handle_service<T: CryptoServiceRequest>(&self, req: T, vlf: &[u8], rst_len: i32, padding: bool)->Result<Vec<u8>, CryptoError> {
         let vlf_len = vlf.len() as i32;
         let service_slice = DmaStreamSlice::new(&self.data_buffer, 0, 72);
-        let service_resp_slice = DmaStreamSlice::new(&self.data_buffer, (72 + vlf_len) as _, 2);
+        let service_resp_slice = DmaStreamSlice::new(&self.data_buffer, (72 + vlf_len + rst_len) as _, 2);
         let service_vlf_slice = DmaStreamSlice::new(&self.data_buffer, 72, vlf_len as _);
-        self.data_queue.lock().add_dma_buf(&[&service_slice, &service_vlf_slice], &[&service_resp_slice]).unwrap();
+        let service_rst_slice = DmaStreamSlice::new(&self.data_buffer, (72 + vlf_len) as _, rst_len as _);
+        self.data_queue.lock().add_dma_buf(&[&service_slice, &service_vlf_slice], &[&service_rst_slice, &service_resp_slice]).unwrap();
 
         debug!("send header: bytes: {:?}, len = {:?}", 
                 req.as_bytes(), req.as_bytes().len());
@@ -216,11 +217,15 @@ impl CryptoDevice {
         service_resp_slice.sync().unwrap();
     
         let mut reader = service_resp_slice.reader().unwrap();
-        let res = reader.read_val::<VirtioCryptoInhdr>().unwrap();
-        
-        debug!("receive feedback:{:?}", res);
+        let status = reader.read_val::<VirtioCryptoInhdr>().unwrap();
 
-        res.get_result()
+        if let Err(err) = status.get_result() {
+            return Err(err);
+        }
+        let mut res: Vec<u8> = vec![0; rst_len as _];
+        service_rst_slice.read_bytes(0, &mut res[..]).unwrap();
+        debug!("receive feedback:{:?}", res);
+        Ok(res)
     }
 }
 
@@ -328,7 +333,7 @@ impl AnyCryptoDevice for CryptoDevice{
         self.create_session(req, cipher_key, true)
     }
 
-    fn handle_cipher_service_req(&self, encrypt : bool, algo: CryptoCipherAlgorithm, session_id : i64, iv : &[u8], src_data : &[u8], dst_data : &[u8]) -> Result<u8, CryptoError> {
+    fn handle_cipher_service_req(&self, encrypt : bool, algo: CryptoCipherAlgorithm, session_id : i64, iv : &[u8], src_data : &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError> {
 
         debug!("[CRYPTO] trying to handle cipher service request");
         let header = CryptoServiceHeader {
@@ -339,7 +344,6 @@ impl AnyCryptoDevice for CryptoDevice{
             padding : 0
         };
         let src_data_len = src_data.len() as i32;
-        let dst_data_len = dst_data.len() as i32;
         let iv_len = iv.len() as i32;
         let flf = VirtioCryptoCipherDataFlf::new(iv_len, src_data_len, dst_data_len);
         let req = CryptoCipherServiceReq {
@@ -351,9 +355,10 @@ impl AnyCryptoDevice for CryptoDevice{
             }
         };
 
-        let vlf = &[iv, src_data, dst_data].concat();
+        let vlf = &[iv, src_data].concat();
 
-        self.handle_service(req, vlf, true)
+        let dst_data = self.handle_service(req, vlf, dst_data_len, true);
+        dst_data
 
     }
 
