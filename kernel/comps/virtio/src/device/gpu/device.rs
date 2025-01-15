@@ -11,6 +11,8 @@ use ostd::{
     mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, HasPaddr, VmIo},
     trap::TrapFrame,
 };
+use crate::device::gpu::GPU_DEVICE;
+
 use crate::{
     device::VirtioDeviceError, 
     queue::VirtQueue, 
