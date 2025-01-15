@@ -1,24 +1,11 @@
 use core::hash;
 
 use alloc::vec::Vec;
-use aster_crypto::{CryptoCipherAlgorithm, CryptoError, CryptoHashAlgorithm, CryptoOperation};
+use aster_crypto::*;
 use ostd::Pod;
 use crate::device::crypto::session::*;
 
-#[derive(Debug, Clone, Copy)]
-#[repr(i32)]
-pub enum CryptoServiceOperation{
-    CipherEncrypt = crypto_services_opcode(CryptoService::Cipher, 0x00),
-    CipherDecrypt = crypto_services_opcode(CryptoService::Cipher, 0x01),
-    Hash = crypto_services_opcode(CryptoService::Hash, 0x00),
-    Mac = crypto_services_opcode(CryptoService::Mac, 0x00),
-    AeadEncrypt = crypto_services_opcode(CryptoService::Aead, 0x00),
-    AeadDecrypt = crypto_services_opcode(CryptoService::Aead, 0x01),
-    AkCipherEncrypt = crypto_services_opcode(CryptoService::AkCipher, 0x00),
-    AkCipherDecrypt = crypto_services_opcode(CryptoService::AkCipher, 0x01),
-    AkCipherSign = crypto_services_opcode(CryptoService::AkCipher, 0x02),
-    AkCipherVerify = crypto_services_opcode(CryptoService::AkCipher, 0x03),
-}
+
 #[derive(Debug, Pod, Clone, Copy)]
 #[repr(C)]
 pub struct CryptoServiceHeader {
@@ -53,6 +40,43 @@ impl VirtioCryptoInhdr {
 pub trait CryptoServiceRequest: Pod {
     fn to_bytes(&self, padding: bool)->Vec<u8>;
 }
+
+#[derive(Pod, Clone, Copy)]
+#[repr(C)]
+pub struct CryptoHashServiceReq {
+    pub header : CryptoServiceHeader,
+    pub flf : VirtioCryptoHashDataFlf
+}
+
+impl CryptoServiceRequest for CryptoHashServiceReq {
+    fn to_bytes(&self, padding: bool)->Vec<u8> {
+        [self.header.to_bytes(padding), self.flf.to_bytes(padding)].concat()
+    }
+}
+
+#[derive(Pod, Clone, Copy)]
+#[repr(C)]
+pub struct VirtioCryptoHashDataFlf{
+    pub src_data_len : i32,
+    pub hash_result_len : i32 
+}
+
+impl VirtioCryptoHashDataFlf {
+    pub fn to_bytes(&self, padding : bool) -> Vec<u8> {
+        let mut res = Vec::from(<Self as Pod>::as_bytes(&self));
+        if padding {
+            res.resize(48, 0);
+        }
+        res
+    }
+    pub fn new(src_data_len : i32, hash_result_len : i32) -> Self {
+        Self {
+            src_data_len,
+            hash_result_len
+        }
+    }
+}
+
 
 
 #[derive(Pod, Clone, Copy)]

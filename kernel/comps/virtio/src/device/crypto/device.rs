@@ -4,7 +4,8 @@
 use core::{hash, hint::spin_loop};
 
 use alloc::{boxed::Box, fmt::Debug, string::ToString, sync::Arc, vec, vec::Vec};
-use aster_crypto::{AnyCryptoDevice, CryptoCurve, CryptoAkCipherAlgorithm, CryptoAkCipherKeyType, CryptoCipherAlgorithm, CryptoError, CryptoHashAlgorithm, CryptoMacAlgorithm, CryptoSymAlgChainOrder, CryptoSymHashMode, CryptoOperation, CryptoSymOp, CryptoHashAlgo, CryptoPaddingAlgo};
+// use aster_crypto::{AnyCryptoDevice, CryptoCurve, CryptoAkCipherAlgorithm, CryptoAkCipherKeyType, CryptoCipherAlgorithm, CryptoError, CryptoHashAlgorithm, CryptoMacAlgorithm, CryptoSymAlgChainOrder, CryptoSymHashMode, CryptoOperation, CryptoSymOp, CryptoHashAlgo, CryptoPaddingAlgo};
+use aster_crypto::*;
 use log::{debug, warn};
 use ostd::{mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, VmIo}, sync::SpinLock, trap::TrapFrame, Pod};
 use crate::{
@@ -239,7 +240,7 @@ impl AnyCryptoDevice for CryptoDevice{
         debug!("try to create cipher session:{:?}", res2);
 
         let id2 = &res2.unwrap();
-        let res3=self.handle_cipher_service_req(true, CryptoCipherAlgorithm::AesEcb, id2.clone(), &[0; 16], &[2; 16], 16);
+        let res3=self.handle_cipher_service_req(CryptoServiceOperation::CipherEncrypt, CryptoCipherAlgorithm::AesEcb, id2.clone(), &[0; 16], &[2; 16], 16);
         debug!("try to call cipher service:{:?}", res3);
 
         // let res4 = self.handle
@@ -263,6 +264,30 @@ impl AnyCryptoDevice for CryptoDevice{
         self.create_session(req, &[], true)
     }
 
+    fn handle_hash_serive_req(&self, op : CryptoServiceOperation, algo: CryptoHashAlgorithm, session_id : i64, src_data: &[u8], hash_result_len: i32) -> Result<Vec<u8>, CryptoError> {
+        let header = CryptoServiceHeader {
+            opcode: op as _,
+            algo: algo as _,
+            session_id,
+            flag : 1,
+            padding : 0
+        };
+        let src_data_len = src_data.len() as i32;
+        let flf = VirtioCryptoHashDataFlf {
+            src_data_len,
+            hash_result_len
+        };
+        let req = CryptoHashServiceReq{
+            header,
+            flf
+        };
+        self.handle_service(req, src_data, hash_result_len, true)
+    }
+
+    fn destroy_hash_session(&self, session_id : i64) -> Result<u8, CryptoError> {
+        self.destroy_session(CryptoSessionOperation::HashDestroy, session_id)
+    }
+
     fn create_mac_session(&self, algo: aster_crypto::CryptoMacAlgorithm, result_len: u32, auth_key: &[u8])->Result<i64, CryptoError> {
         debug!("[CRYPTO] trying to create mac session");
 
@@ -279,6 +304,10 @@ impl AnyCryptoDevice for CryptoDevice{
         };
 
         self.create_session(req, auth_key, true)
+    }
+
+    fn destroy_mac_session(&self, session_id : i64) -> Result<u8, CryptoError> {
+        self.destroy_session(CryptoSessionOperation::MacDestroy, session_id)
     }
 
     fn create_cipher_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, key: &[u8])->Result<i64, CryptoError>{
@@ -344,11 +373,11 @@ impl AnyCryptoDevice for CryptoDevice{
         self.create_session(req, cipher_key, true)
     }
 
-    fn handle_cipher_service_req(&self, encrypt : bool, algo: CryptoCipherAlgorithm, session_id : i64, iv : &[u8], src_data : &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError> {
+    fn handle_cipher_service_req(&self, op : CryptoServiceOperation, algo: CryptoCipherAlgorithm, session_id : i64, iv : &[u8], src_data : &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError> {
 
         debug!("[CRYPTO] trying to handle cipher service request");
         let header = CryptoServiceHeader {
-            opcode : if encrypt {CryptoServiceOperation::CipherEncrypt} else  {CryptoServiceOperation::CipherDecrypt} as _,
+            opcode : op as _,
             algo : algo as _,
             session_id,
             flag : 1, // VIRTIO_CRYPTO_FLAG_SESSION_MODE
@@ -373,10 +402,10 @@ impl AnyCryptoDevice for CryptoDevice{
 
     }
 
-    fn handle_alg_chain_service_req(&self, encrypt : bool, algo: CryptoCipherAlgorithm, session_id: i64, iv : &[u8], src_data : &[u8], dst_data_len: i32, cipher_start_src_offset: i32, len_to_cipher: i32, hash_start_src_offset: i32, len_to_hash: i32, aad_len: i32, hash_result_len: i32) -> Result<(Vec<u8>, Vec<u8>), CryptoError> {
+    fn handle_alg_chain_service_req(&self, op : CryptoServiceOperation, algo: CryptoCipherAlgorithm, session_id: i64, iv : &[u8], src_data : &[u8], dst_data_len: i32, cipher_start_src_offset: i32, len_to_cipher: i32, hash_start_src_offset: i32, len_to_hash: i32, aad_len: i32, hash_result_len: i32) -> Result<(Vec<u8>, Vec<u8>), CryptoError> {
         debug!("[CRYPTO] trying to handle cipher service request");
         let header = CryptoServiceHeader {
-            opcode : if encrypt {CryptoServiceOperation::CipherEncrypt} else  {CryptoServiceOperation::CipherDecrypt} as _,
+            opcode : op as _,
             algo : algo as _,
             session_id,
             flag : 1, // VIRTIO_CRYPTO_FLAG_SESSION_MODE
@@ -481,10 +510,10 @@ impl AnyCryptoDevice for CryptoDevice{
         self.create_session(req, &key, true)
     }
 
-    fn handle_akcipher_serivce_req(&self, encrypt : bool, algo: CryptoAkCipherAlgorithm, session_id: i64, src_data : &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError> {
+    fn handle_akcipher_serivce_req(&self, op : CryptoServiceOperation, algo: CryptoAkCipherAlgorithm, session_id: i64, src_data : &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError> {
         debug!("[CRYPTO] trying to handle akcipher service request");
         let header = CryptoServiceHeader {
-            opcode : if encrypt {CryptoServiceOperation::CipherEncrypt} else  {CryptoServiceOperation::CipherDecrypt} as _,
+            opcode : op as _,
             algo : algo as _,
             session_id,
             flag : 1, // VIRTIO_CRYPTO_FLAG_SESSION_MODE

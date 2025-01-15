@@ -6,14 +6,6 @@ use alloc::vec::Vec;
 use aster_crypto::*;
 use ostd::Pod;
 
-pub enum CryptoService{
-    Cipher = 0,
-    Hash = 1,
-    Mac = 2,
-    Aead = 3,
-    AkCipher = 4,
-}
-
 pub enum VirtioCryptoStatus { 
     Ok = 0,             // success
     Err = 1,            // any failure not mentioned above occurs
@@ -52,25 +44,6 @@ impl VirtioCryptoStatus{
             VirtioCryptoStatus::KeyReject => Err(CryptoError::KeyReject)
         }
     }
-}
-
-pub const fn crypto_services_opcode(service: CryptoService, op: i32)-> i32{
-    ((service as i32) << 8) | op
-}
-
-#[derive(Debug, Clone, Copy)]
-#[repr(i32)]
-pub enum CryptoSessionOperation{
-    CipherCreate = crypto_services_opcode(CryptoService::Cipher, 0x02),
-    CipherDestroy = crypto_services_opcode(CryptoService::Cipher, 0x03),
-    HashCreate = crypto_services_opcode(CryptoService::Hash, 0x02),
-    HashDestroy = crypto_services_opcode(CryptoService::Hash, 0x03),
-    MacCreate = crypto_services_opcode(CryptoService::Mac, 0x02),
-    MacDestroy = crypto_services_opcode(CryptoService::Mac, 0x03),
-    AeadCreate = crypto_services_opcode(CryptoService::Aead, 0x02),
-    AeadDestroy = crypto_services_opcode(CryptoService::Aead, 0x03),
-    AkCipherCreate = crypto_services_opcode(CryptoService::AkCipher, 0x04),
-    AkCipherDestroy = crypto_services_opcode(CryptoService::AkCipher, 0x05),
 }
 
 #[derive(Debug, Pod, Clone, Copy)]

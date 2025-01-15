@@ -182,24 +182,68 @@ pub enum CryptoSymHashMode {
     Nested = 3
 }
 
+
+pub enum CryptoService{
+    Cipher = 0,
+    Hash = 1,
+    Mac = 2,
+    Aead = 3,
+    AkCipher = 4,
+}
+
+pub const fn crypto_services_opcode(service: CryptoService, op: i32)-> i32{
+    ((service as i32) << 8) | op
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(i32)]
+pub enum CryptoSessionOperation{
+    CipherCreate = crypto_services_opcode(CryptoService::Cipher, 0x02),
+    CipherDestroy = crypto_services_opcode(CryptoService::Cipher, 0x03),
+    HashCreate = crypto_services_opcode(CryptoService::Hash, 0x02),
+    HashDestroy = crypto_services_opcode(CryptoService::Hash, 0x03),
+    MacCreate = crypto_services_opcode(CryptoService::Mac, 0x02),
+    MacDestroy = crypto_services_opcode(CryptoService::Mac, 0x03),
+    AeadCreate = crypto_services_opcode(CryptoService::Aead, 0x02),
+    AeadDestroy = crypto_services_opcode(CryptoService::Aead, 0x03),
+    AkCipherCreate = crypto_services_opcode(CryptoService::AkCipher, 0x04),
+    AkCipherDestroy = crypto_services_opcode(CryptoService::AkCipher, 0x05),
+}
+
+#[derive(Debug, Clone, Copy)]
+#[repr(i32)]
+pub enum CryptoServiceOperation{
+    CipherEncrypt = crypto_services_opcode(CryptoService::Cipher, 0x00),
+    CipherDecrypt = crypto_services_opcode(CryptoService::Cipher, 0x01),
+    Hash = crypto_services_opcode(CryptoService::Hash, 0x00),
+    Mac = crypto_services_opcode(CryptoService::Mac, 0x00),
+    AeadEncrypt = crypto_services_opcode(CryptoService::Aead, 0x00),
+    AeadDecrypt = crypto_services_opcode(CryptoService::Aead, 0x01),
+    AkCipherEncrypt = crypto_services_opcode(CryptoService::AkCipher, 0x00),
+    AkCipherDecrypt = crypto_services_opcode(CryptoService::AkCipher, 0x01),
+    AkCipherSign = crypto_services_opcode(CryptoService::AkCipher, 0x02),
+    AkCipherVerify = crypto_services_opcode(CryptoService::AkCipher, 0x03),
+}
+
 pub trait AnyCryptoDevice: Send + Sync + Any + Debug {
     //Test device function 
     fn test_device(&self);
 
     //Create Hash session, return session id.
     fn create_hash_session(&self, algo: CryptoHashAlgorithm, result_len: u32)->Result<i64, CryptoError>;
-    fn create_mac_session(&self, algo: CryptoMacAlgorithm, result_len: u32, auth_key: &[u8])->Result<i64, CryptoError>;
-    fn create_cipher_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, key: &[u8])->Result<i64, CryptoError>;
+    fn handle_hash_serive_req(&self, op : CryptoServiceOperation, algo: CryptoHashAlgorithm, session_id : i64, src_data: &[u8], hash_result_len: i32) -> Result<Vec<u8>, CryptoError>;
+    fn destroy_hash_session(&self, session_id : i64) -> Result<u8, CryptoError>;
 
-    // fn create_alg_chain_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, alg_chain_order: CryptoSymAlgChainOrder, hash_mode: CryptoSymHashMode, hash_algo: i32, result_len: u32, aad_len: i32, cipher_key: &[u8], auth_key: &[u8])->Result<i64, CryptoError>;
+    fn create_mac_session(&self, algo: CryptoMacAlgorithm, result_len: u32, auth_key: &[u8])->Result<i64, CryptoError>;
+    fn destroy_mac_session(&self, session_id : i64) -> Result<u8, CryptoError>;
+    
+    fn create_cipher_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, key: &[u8])->Result<i64, CryptoError>;
     fn create_alg_chain_auth_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, alg_chain_order: CryptoSymAlgChainOrder, mac_algo: CryptoMacAlgorithm, result_len: u32, aad_len: i32, cipher_key: &[u8], auth_key: &[u8])->Result<i64, CryptoError>;
     fn create_alg_chain_plain_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, alg_chain_order: CryptoSymAlgChainOrder, hash_algo: CryptoHashAlgorithm, result_len: u32, aad_len: i32, cipher_key: &[u8])->Result<i64, CryptoError>;
-    
+    fn handle_cipher_service_req(&self, op : CryptoServiceOperation, algo: CryptoCipherAlgorithm, session_id : i64, iv : &[u8], src_data : &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError>;
+    fn handle_alg_chain_service_req(&self, op : CryptoServiceOperation, algo: CryptoCipherAlgorithm, session_id: i64, iv : &[u8], src_data : &[u8], dst_data_len: i32, cipher_start_src_offset: i32, len_to_cipher: i32, hash_start_src_offset: i32, len_to_hash: i32, aad_len: i32, hash_result_len: i32) -> Result<(Vec<u8>, Vec<u8>), CryptoError>;
     fn destroy_cipher_session(&self, session_id: i64) -> Result<u8, CryptoError>;
-
-    fn handle_cipher_service_req(&self, encrypt : bool, algo: CryptoCipherAlgorithm, session_id : i64, iv : &[u8], src_data : &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError>;
-
-    fn handle_alg_chain_service_req(&self, encrypt : bool, algo: CryptoCipherAlgorithm, session_id: i64, iv : &[u8], src_data : &[u8], dst_data_len: i32, cipher_start_src_offset: i32, len_to_cipher: i32, hash_start_src_offset: i32, len_to_hash: i32, aad_len: i32, hash_result_len: i32) -> Result<(Vec<u8>, Vec<u8>), CryptoError>;
+    
 
     fn create_akcipher_ecdsa_session(&self, algo: CryptoAkCipherAlgorithm,
         op: CryptoOperation,
@@ -207,7 +251,6 @@ pub trait AnyCryptoDevice: Send + Sync + Any + Debug {
         key_type: CryptoAkCipherKeyType,
         key: &[u8],
     ) -> Result<i64, CryptoError>;
-
     fn create_akcipher_rsa_session(&self, algo: CryptoAkCipherAlgorithm,
         op: CryptoOperation,
         padding_algo: CryptoPaddingAlgo,
@@ -215,9 +258,7 @@ pub trait AnyCryptoDevice: Send + Sync + Any + Debug {
         key_type: CryptoAkCipherKeyType,
         key: &[u8],
     ) -> Result<i64, CryptoError>;
-
-    fn handle_akcipher_serivce_req(&self, encrypt : bool, algo: CryptoAkCipherAlgorithm, session_id: i64, src_data : &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError>;
-
+    fn handle_akcipher_serivce_req(&self, op : CryptoServiceOperation, algo: CryptoAkCipherAlgorithm, session_id: i64, src_data : &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError>;
     fn destroy_akcipher_session(&self, session_id: i64) -> Result<u8, CryptoError>;
 }
 
