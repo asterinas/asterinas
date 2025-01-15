@@ -264,7 +264,8 @@ impl AnyCryptoDevice for CryptoDevice{
         self.create_session(req, &[], true)
     }
 
-    fn handle_hash_serive_req(&self, op : CryptoServiceOperation, algo: CryptoHashAlgorithm, session_id : i64, src_data: &[u8], hash_result_len: i32) -> Result<Vec<u8>, CryptoError> {
+    fn handle_hash_service_req(&self, op : CryptoServiceOperation, algo: CryptoHashAlgorithm, session_id : i64, src_data: &[u8], hash_result_len: i32) -> Result<Vec<u8>, CryptoError> {
+        debug!("[CRYPTO] trying to handle hash service request");
         let header = CryptoServiceHeader {
             opcode: op as _,
             algo: algo as _,
@@ -285,6 +286,7 @@ impl AnyCryptoDevice for CryptoDevice{
     }
 
     fn destroy_hash_session(&self, session_id : i64) -> Result<u8, CryptoError> {
+        debug!("[CRYPTO] trying to destroy hash session");
         self.destroy_session(CryptoSessionOperation::HashDestroy, session_id)
     }
 
@@ -306,7 +308,29 @@ impl AnyCryptoDevice for CryptoDevice{
         self.create_session(req, auth_key, true)
     }
 
+    fn handle_mac_service_req(&self, op : CryptoServiceOperation, algo: CryptoMacAlgorithm, session_id : i64, src_data: &[u8], hash_result_len: i32) -> Result<Vec<u8>, CryptoError> {
+        debug!("[CRYPTO] trying to handle mac service request");
+        let header = CryptoServiceHeader {
+            opcode: op as _,
+            algo: algo as _,
+            session_id,
+            flag : 1,
+            padding : 0
+        };
+        let src_data_len = src_data.len() as i32;
+        let flf = VirtioCryptoHashDataFlf {
+            src_data_len,
+            hash_result_len
+        };
+        let req = CryptoHashServiceReq{
+            header,
+            flf
+        };
+        self.handle_service(req, src_data, hash_result_len, true)
+    }
+
     fn destroy_mac_session(&self, session_id : i64) -> Result<u8, CryptoError> {
+        debug!("[CRYPTO] trying to destroy mac session");
         self.destroy_session(CryptoSessionOperation::MacDestroy, session_id)
     }
 
@@ -446,6 +470,7 @@ impl AnyCryptoDevice for CryptoDevice{
     }
 
     fn destroy_cipher_session(&self, session_id: i64) -> Result<u8, CryptoError> {
+        debug!("[CRYPTO] trying to destroy cipher session");
         self.destroy_session(CryptoSessionOperation::CipherDestroy, session_id)
     
     }
@@ -533,6 +558,7 @@ impl AnyCryptoDevice for CryptoDevice{
     }
 
     fn destroy_akcipher_session(&self, session_id: i64) -> Result<u8, CryptoError> {
+        debug!("[CRYPTO] trying to destroy akcipher session");
         self.destroy_session(CryptoSessionOperation::AkCipherDestroy, session_id)
     }
 }
