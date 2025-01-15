@@ -111,7 +111,10 @@ impl GPUDevice {
         let handle_irq = move |_: &TrapFrame| {
             cloned_device.handle_irq();
         };
-
+        let clone_device = device.clone();
+        let handle_irq_cursor = move |_: &TrapFrame| {
+            clone_device.handle_irq();
+        };
         let cloned_device = device.clone();
         let handle_config_change = move |_: &TrapFrame| {
             cloned_device.handle_config_change();
@@ -120,10 +123,13 @@ impl GPUDevice {
         // Register callback
         let mut transport = device.transport.lock();
         transport
-            .register_cfg_callback(Box::new(handle_config_change))
+            .register_queue_callback(0, Box::new(handle_irq), false)
             .unwrap();
         transport
-            .register_queue_callback(0, Box::new(handle_irq), false)
+            .register_queue_callback(1, Box::new(handle_irq_cursor), false)
+            .unwrap();
+        transport
+            .register_cfg_callback(Box::new(handle_config_change))
             .unwrap();
         transport.finish_init();
         
@@ -156,6 +162,7 @@ impl GPUDevice {
         device.resource_flush(rect, addr1).unwrap();
         early_println!("flushed");
         test_cursor(Arc::clone(&device));
+        let addr2 = 0x2222;
         device.update_cursor(addr2, 0, 0, 0, 0, 0).unwrap();
         early_println!("cursor updated");
         Ok(())
@@ -306,6 +313,7 @@ impl GPUDevice {
         paddr: usize,
         size: u32,
     ) -> Result<(), VirtioDeviceError> {
+        early_println!("!! {} ?? {}", paddr, size);
         let req_slice = {
             let req_slice = DmaStreamSlice::new(
                 &self.control_request, 0, size_of::<VirtioGPUResourceAttachBacking>());
@@ -353,7 +361,7 @@ impl GPUDevice {
         }
         queue.pop_used_with_token(_token).expect("pop used failed");
         resp_slice.sync().unwrap();
-        let resp: VirtioGPURespAttachBacking  = resp_slice.read_val(0).unwrap();
+        let resp: VirtioGPURespAttachBacking = resp_slice.read_val(0).unwrap();
         if resp.get_type() == VirtioGPUCtrlType::VIRTIO_GPU_RESP_OK_NODATA as u32 {
             Ok(())
         } else {
@@ -507,4 +515,35 @@ impl GPUDevice {
         queue.pop_used_with_token(_token).unwrap();
         Ok(())
     }
+}
+use tinybmp::Bmp;
+use embedded_graphics::pixelcolor::Rgb888;
+use alloc::vec::Vec;
+
+static CURSOR: &[u8] = include_bytes!("_cursor.bmp");
+fn test_cursor(device: Arc<GPUDevice>) {
+    let addr2 : u32 = 0x2222;
+    let rect: VirtioGPURect = VirtioGPURect::new(0, 0, 260, 260);
+    let byte_cnt = rect.width * rect.height * 4 as u32;
+    let frame_cnt = (byte_cnt + kBlockSize - 1) / kBlockSize as u32;
+    let frames = {
+        let segment = FrameAllocOptions::new().alloc_segment(frame_cnt as usize).unwrap();
+        DmaStream::map(segment.into(), DmaDirection::ToDevice, false).unwrap()
+    };
+    let bmp = Bmp::<Rgb888>::from_slice(CURSOR).unwrap();
+    let raw = bmp.as_raw();
+    let mut vec = Vec::new();
+    for i in raw.image_data().chunks(3) {
+        let mut v = i.to_vec();
+        vec.append(&mut v);
+        if i == [255, 255, 255] {
+            vec.push(0x0)
+        } else {
+            vec.push(0xff)
+        }
+    }
+    frames.write_slice(0, &vec).unwrap();
+    device.resource_create_2d(addr2, rect.width, rect.height).unwrap();
+    device.resource_attach_backing(addr2, frames.paddr(), byte_cnt).unwrap();
+    device.transfer_to_host_2d(rect, 0, addr2).unwrap();
 }
