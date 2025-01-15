@@ -362,7 +362,38 @@ impl AnyCryptoDevice for CryptoDevice{
 
     }
 
-    // fn handle_
+    fn handle_alg_chain_service_req(&self, encrypt : bool, algo: CryptoCipherAlgorithm, session_id: i64, iv : &[u8], src_data : &[u8], dst_data_len: i32, cipher_start_src_offset: i32, len_to_cipher: i32, hash_start_src_offset: i32, len_to_hash: i32, aad_len: i32, hash_result_len: i32) -> Result<(Vec<u8>, Vec<u8>), CryptoError> {
+        debug!("[CRYPTO] trying to handle cipher service request");
+        let header = CryptoServiceHeader {
+            opcode : if encrypt {CryptoServiceOperation::CipherEncrypt} else  {CryptoServiceOperation::CipherDecrypt} as _,
+            algo : algo as _,
+            session_id,
+            flag : 1, // VIRTIO_CRYPTO_FLAG_SESSION_MODE
+            padding : 0
+        };
+        let src_data_len = src_data.len() as i32;
+        let iv_len = iv.len() as i32;
+        let flf = VirtioCryptoAlgChainDataFlf::new(iv_len, src_data_len, dst_data_len, cipher_start_src_offset, len_to_cipher, hash_start_src_offset, len_to_hash, aad_len, hash_result_len);
+        let req = CryptoCipherServiceReq {
+            header,
+            op_flf : VirtioCryptoSymDataFlf {
+                op_type_flf : VirtioCryptoSymDataFlfWrapper{ AlgChainFlf : flf},
+                op_type : CryptoSymOp::AlgorithmChaining as _,
+                padding : 0
+            }
+        };
+
+        let vlf = &[iv, src_data].concat();
+
+        let dst_data = self.handle_service(req, vlf, dst_data_len + hash_result_len, true);
+        match dst_data {
+            Ok(data) => {
+                let (fi, sc) = data.split_at(dst_data_len as _);
+                Ok((fi.to_vec(), sc.to_vec()))
+            }
+            Err(err) => Err(err)
+        }
+    }
 
     fn destroy_cipher_session(&self, session_id: i64) -> Result<u8, CryptoError> {
         self.destroy_session(CryptoSessionOperation::CipherDestroy, session_id)

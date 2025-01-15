@@ -147,6 +147,8 @@ pub trait AnyCryptoDevice: Send + Sync + Any + Debug {
     fn destroy_cipher_session(&self, session_id: i64) -> Result<u8, CryptoError>;
 
     fn handle_cipher_service_req(&self, encrypt : bool, algo: CryptoCipherAlgorithm, session_id : i64, iv : &[u8], src_data : &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError>;
+
+    fn handle_alg_chain_service_req(&self, encrypt : bool, algo: CryptoCipherAlgorithm, session_id: i64, iv : &[u8], src_data : &[u8], dst_data_len: i32, cipher_start_src_offset: i32, len_to_cipher: i32, hash_start_src_offset: i32, len_to_hash: i32, aad_len: i32, hash_result_len: i32) -> Result<(Vec<u8>, Vec<u8>), CryptoError>;
 }
 
 pub fn register_device(name: String, device: Arc<dyn AnyCryptoDevice>) {
