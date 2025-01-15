@@ -161,10 +161,11 @@ impl GPUDevice {
         device.transfer_to_host_2d(rect, 0, addr1).unwrap();
         device.resource_flush(rect, addr1).unwrap();
         early_println!("flushed");
-        test_cursor(Arc::clone(&device));
-        let addr2 = 0x2222;
-        device.update_cursor(addr2, 0, 0, 0, 0, 0).unwrap();
-        early_println!("cursor updated");
+        // test_cursor(Arc::clone(&device));
+        // let addr2 = 0x2222;
+        // device.update_cursor(addr2, 0, 0, 0, 0, 0).unwrap();
+        // early_println!("cursor updated");
+        GPU_DEVICE.call_once(|| SpinLock::new(device));
         Ok(())
     }
 
