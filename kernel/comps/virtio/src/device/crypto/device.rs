@@ -481,6 +481,28 @@ impl AnyCryptoDevice for CryptoDevice{
         self.create_session(req, &key, true)
     }
 
+    fn handle_akcipher_serivce_req(&self, encrypt : bool, algo: CryptoAkCipherAlgorithm, session_id: i64, src_data : &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError> {
+        debug!("[CRYPTO] trying to handle akcipher service request");
+        let header = CryptoServiceHeader {
+            opcode : if encrypt {CryptoServiceOperation::CipherEncrypt} else  {CryptoServiceOperation::CipherDecrypt} as _,
+            algo : algo as _,
+            session_id,
+            flag : 1, // VIRTIO_CRYPTO_FLAG_SESSION_MODE
+            padding : 0
+        };
+        let src_data_len = src_data.len() as i32;
+        let flf = VirtioCryptoAkcipherDataFlf::new(src_data_len, dst_data_len);
+        let req = CryptoAkCipherServiceReq {
+            header,
+            flf
+        };
+
+        let vlf = src_data;
+
+        let dst_data = self.handle_service(req, vlf, dst_data_len, true);
+        dst_data
+    }
+
     fn destroy_akcipher_session(&self, session_id: i64) -> Result<u8, CryptoError> {
         self.destroy_session(CryptoSessionOperation::AkCipherDestroy, session_id)
     }

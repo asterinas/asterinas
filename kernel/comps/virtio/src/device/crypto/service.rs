@@ -29,6 +29,12 @@ pub struct CryptoServiceHeader {
     pub padding : i32
 }
 
+impl CryptoServiceHeader {
+    pub fn to_bytes(&self,  padding : bool) -> Vec<u8> {
+        Vec::from(<Self as Pod>::as_bytes(&self))
+    }
+}
+
 #[derive(Debug, Pod, Clone, Copy)]
 #[repr(C)]
 pub struct VirtioCryptoInhdr {
@@ -128,6 +134,47 @@ impl VirtioCryptoAlgChainDataFlf {
         }
     }
 }
+
+#[derive(Debug, Pod, Clone, Copy)]
+#[repr(C)]
+pub struct CryptoAkCipherServiceReq {
+    pub header : CryptoServiceHeader,
+    pub flf : VirtioCryptoAkcipherDataFlf
+}
+
+impl CryptoServiceRequest for CryptoAkCipherServiceReq {
+    fn to_bytes(&self, padding: bool)->Vec<u8> {
+        let vec1 = self.header.to_bytes(padding);
+        let vec2 = self.flf.to_bytes(padding);
+        [vec1, vec2].concat()
+    }
+}
+
+#[derive(Debug, Pod, Clone, Copy)]
+#[repr(C)]
+pub struct VirtioCryptoAkcipherDataFlf {
+    src_data_len : i32,
+    dst_data_len : i32
+}
+
+impl VirtioCryptoAkcipherDataFlf {
+    pub fn to_bytes(&self, padding : bool) -> Vec<u8>{
+        let mut res = Vec::from(<Self as Pod>::as_bytes(&self));
+        if padding {
+            res.resize(48, 0);
+        }
+        res
+    }
+    pub fn new(src_data_len : i32, dst_data_len : i32) -> Self {
+        Self {
+            src_data_len,
+            dst_data_len
+        }
+    }
+}
+
+
+
 
 
 

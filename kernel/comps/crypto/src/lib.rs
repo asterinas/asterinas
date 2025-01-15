@@ -216,6 +216,8 @@ pub trait AnyCryptoDevice: Send + Sync + Any + Debug {
         key: &[u8],
     ) -> Result<i64, CryptoError>;
 
+    fn handle_akcipher_serivce_req(&self, encrypt : bool, algo: CryptoAkCipherAlgorithm, session_id: i64, src_data : &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError>;
+
     fn destroy_akcipher_session(&self, session_id: i64) -> Result<u8, CryptoError>;
 }
 
