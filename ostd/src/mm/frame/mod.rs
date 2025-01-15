@@ -36,6 +36,9 @@ pub mod meta;
 pub mod segment;
 pub mod untyped;
 
+#[cfg(ktest)]
+mod test;
+
 use core::{
     marker::PhantomData,
     sync::atomic::{AtomicU32, AtomicUsize, Ordering},
