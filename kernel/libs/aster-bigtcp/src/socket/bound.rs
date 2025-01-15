@@ -3,7 +3,7 @@
 use alloc::{boxed::Box, collections::btree_map::BTreeMap, sync::Arc, vec::Vec};
 use core::{
     ops::{Deref, DerefMut},
-    sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
+    sync::atomic::{AtomicU64, AtomicU8, Ordering},
 };
 
 use ostd::sync::{LocalIrqDisabled, SpinLock, SpinLockGuard};
@@ -23,6 +23,7 @@ use super::{
     RawTcpSocket, RawUdpSocket, TcpStateCheck,
 };
 use crate::{
+    define_boolean_value,
     errors::{
         tcp::{ConnectError, ListenError},
         udp::SendError,
@@ -65,7 +66,6 @@ pub struct SocketBg<T: Inner<E>, E: Ext> {
 /// States needed by [`TcpConnectionBg`].
 pub struct TcpConnectionInner<E: Ext> {
     socket: SpinLock<RawTcpSocketExt<E>, LocalIrqDisabled>,
-    is_dead: AtomicBool,
     connection_key: ConnectionKey,
 }
 
@@ -89,8 +89,16 @@ impl<E: Ext> DerefMut for RawTcpSocketExt<E> {
     }
 }
 
+define_boolean_value!(
+    /// Whether the TCP connection became dead.
+    TcpConnBecameDead
+);
+
 impl<E: Ext> RawTcpSocketExt<E> {
-    fn on_new_state(&mut self, this: &Arc<TcpConnectionBg<E>>) -> SocketEvents {
+    fn on_new_state(
+        &mut self,
+        this: &Arc<TcpConnectionBg<E>>,
+    ) -> (SocketEvents, TcpConnBecameDead) {
         if self.may_send() && !self.has_connected {
             self.has_connected = true;
 
@@ -103,43 +111,49 @@ impl<E: Ext> RawTcpSocketExt<E> {
             }
         }
 
-        self.update_dead(this);
+        let became_dead = self.check_dead(this);
 
-        if self.is_peer_closed() {
+        let events = if self.is_peer_closed() {
             SocketEvents::PEER_CLOSED
         } else if self.is_closed() {
             SocketEvents::CLOSED
         } else {
             SocketEvents::empty()
-        }
+        };
+
+        (events, became_dead)
     }
 
-    /// Updates whether the TCP connection is dead.
+    /// Checks whether the TCP connection becomes dead.
     ///
-    /// See [`TcpConnectionBg::is_dead`] for the definition of dead TCP connections.
+    /// A TCP connection is considered dead when and only when the TCP socket is in the closed
+    /// state, meaning it's no longer accepting packets from the network. This is different from
+    /// the socket file being closed, which only initiates the socket close process.
     ///
     /// This method must be called after handling network events. However, it is not necessary to
     /// call this method after handling non-closing user events, because the socket can never be
     /// dead if it is not closed.
-    fn update_dead(&self, this: &Arc<TcpConnectionBg<E>>) {
+    fn check_dead(&self, this: &Arc<TcpConnectionBg<E>>) -> TcpConnBecameDead {
         // FIXME: This is a temporary workaround to mark TimeWait socket as dead.
         if self.state() == smoltcp::socket::tcp::State::Closed
             || self.state() == smoltcp::socket::tcp::State::TimeWait
         {
-            this.inner.is_dead.store(true, Ordering::Relaxed);
+            return TcpConnBecameDead::TRUE;
         }
 
         // According to the current smoltcp implementation, a backlog socket will return back to
         // the `Listen` state if the connection is RSTed before its establishment.
         if self.state() == smoltcp::socket::tcp::State::Listen {
-            this.inner.is_dead.store(true, Ordering::Relaxed);
-
             if let Some(ref listener) = self.listener {
                 let mut backlog = listener.inner.backlog.lock();
                 // This may fail due to race conditions, but it's fine.
                 let _ = backlog.connecting.remove(&this.inner.connection_key);
             }
+
+            return TcpConnBecameDead::TRUE;
         }
+
+        TcpConnBecameDead::FALSE
     }
 }
 
@@ -160,7 +174,6 @@ impl<E: Ext> TcpConnectionInner<E> {
 
         TcpConnectionInner {
             socket: SpinLock::new(socket_ext),
-            is_dead: AtomicBool::new(false),
             connection_key,
         }
     }
@@ -168,38 +181,31 @@ impl<E: Ext> TcpConnectionInner<E> {
     fn lock(&self) -> SpinLockGuard<RawTcpSocketExt<E>, LocalIrqDisabled> {
         self.socket.lock()
     }
-
-    /// Returns whether the TCP connection is dead.
-    ///
-    /// See [`TcpConnectionBg::is_dead`] for the definition of dead TCP connections.
-    fn is_dead(&self) -> bool {
-        self.is_dead.load(Ordering::Relaxed)
-    }
-
-    /// Sets the TCP connection in [`TimeWait`] state as dead.
-    ///
-    /// See [`TcpConnectionBg::is_dead`] for the definition of dead TCP connections.
-    ///
-    /// [`TimeWait`]: smoltcp::socket::tcp::State::TimeWait
-    fn set_dead_timewait(&self, socket: &RawTcpSocketExt<E>) {
-        debug_assert!(socket.state() == smoltcp::socket::tcp::State::TimeWait);
-        self.is_dead.store(true, Ordering::Relaxed);
-    }
 }
 
 impl<E: Ext> Inner<E> for TcpConnectionInner<E> {
     type Observer = E::TcpEventObserver;
 
     fn on_drop(this: &Arc<SocketBg<Self, E>>) {
-        let mut socket = this.inner.lock();
+        let became_dead = {
+            let mut socket = this.inner.lock();
 
-        // FIXME: Send RSTs when there is unread data.
-        socket.close();
+            // FIXME: Send RSTs when there is unread data.
+            socket.close();
 
-        // A TCP connection may not be appropriate for immediate removal. We leave the removal
-        // decision to the polling logic.
-        this.update_next_poll_at_ms(PollAt::Now);
-        socket.update_dead(this);
+            if *socket.check_dead(this) {
+                true
+            } else {
+                // A TCP connection may not be appropriate for immediate removal. We leave the removal
+                // decision to the polling logic.
+                this.update_next_poll_at_ms(PollAt::Now);
+                false
+            }
+        };
+
+        if became_dead {
+            this.bound.iface().common().remove_dead_tcp_connection(this);
+        }
     }
 }
 
@@ -318,21 +324,10 @@ pub enum ConnectState {
     Refused,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct NeedIfacePoll(bool);
-
-impl NeedIfacePoll {
-    pub const TRUE: Self = Self(true);
-    pub const FALSE: Self = Self(false);
-}
-
-impl Deref for NeedIfacePoll {
-    type Target = bool;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
+define_boolean_value!(
+    /// Whether the iface needs to be polled
+    NeedIfacePoll
+);
 
 impl<E: Ext> TcpConnection<E> {
     /// Connects to a remote endpoint.
@@ -746,7 +741,7 @@ impl<T: Inner<E>, E: Ext> SocketBg<T, E> {
         match poll_at {
             PollAt::Now => {
                 self.next_poll_at_ms.store(0, Ordering::Relaxed);
-                NeedIfacePoll(true)
+                NeedIfacePoll::TRUE
             }
             PollAt::Time(instant) => {
                 let old_total_millis = self.next_poll_at_ms.load(Ordering::Relaxed);
@@ -759,22 +754,13 @@ impl<T: Inner<E>, E: Ext> SocketBg<T, E> {
             }
             PollAt::Ingress => {
                 self.next_poll_at_ms.store(u64::MAX, Ordering::Relaxed);
-                NeedIfacePoll(false)
+                NeedIfacePoll::FALSE
             }
         }
     }
 }
 
 impl<E: Ext> TcpConnectionBg<E> {
-    /// Returns whether the TCP connection is dead.
-    ///
-    /// A TCP connection is considered dead when and only when the TCP socket is in the closed
-    /// state, meaning it's no longer accepting packets from the network. This is different from
-    /// the socket file being closed, which only initiates the socket close process.
-    pub(crate) fn is_dead(&self) -> bool {
-        self.inner.is_dead()
-    }
-
     pub(crate) const fn connection_key(&self) -> &ConnectionKey {
         &self.inner.connection_key
     }
@@ -816,11 +802,11 @@ impl<E: Ext> TcpConnectionBg<E> {
         cx: &mut Context,
         ip_repr: &IpRepr,
         tcp_repr: &TcpRepr,
-    ) -> TcpProcessResult {
+    ) -> (TcpProcessResult, TcpConnBecameDead) {
         let mut socket = self.inner.lock();
 
         if !socket.accepts(cx, ip_repr, tcp_repr) {
-            return TcpProcessResult::NotProcessed;
+            return (TcpProcessResult::NotProcessed, TcpConnBecameDead::FALSE);
         }
 
         // If the socket is in the TimeWait state and a new packet arrives that is a SYN packet
@@ -840,8 +826,7 @@ impl<E: Ext> TcpConnectionBg<E> {
             && tcp_repr.control == TcpControl::Syn
             && tcp_repr.ack_number.is_none()
         {
-            self.inner.set_dead_timewait(&socket);
-            return TcpProcessResult::NotProcessed;
+            return (TcpProcessResult::NotProcessed, TcpConnBecameDead::TRUE);
         }
 
         let old_state = socket.state();
@@ -854,14 +839,18 @@ impl<E: Ext> TcpConnectionBg<E> {
             Some((ip_repr, tcp_repr)) => TcpProcessResult::ProcessedWithReply(ip_repr, tcp_repr),
         };
 
-        if socket.state() != old_state {
-            events |= socket.on_new_state(self);
-        }
+        let became_dead = if socket.state() != old_state {
+            let (new_events, became_dead) = socket.on_new_state(self);
+            events |= new_events;
+            became_dead
+        } else {
+            TcpConnBecameDead::FALSE
+        };
 
         self.add_events(events);
         self.update_next_poll_at_ms(socket.poll_at(cx));
 
-        result
+        (result, became_dead)
     }
 
     /// Tries to generate an outgoing packet and dispatches the generated packet.
@@ -869,7 +858,7 @@ impl<E: Ext> TcpConnectionBg<E> {
         this: &Arc<Self>,
         cx: &mut Context,
         dispatch: D,
-    ) -> Option<(IpRepr, TcpRepr<'static>)>
+    ) -> (Option<(IpRepr, TcpRepr<'static>)>, TcpConnBecameDead)
     where
         D: FnOnce(&mut Context, &IpRepr, &TcpRepr) -> Option<(IpRepr, TcpRepr<'static>)>,
     {
@@ -896,14 +885,18 @@ impl<E: Ext> TcpConnectionBg<E> {
             events |= SocketEvents::CAN_RECV | SocketEvents::CAN_SEND;
         }
 
-        if socket.state() != old_state {
-            events |= socket.on_new_state(this);
-        }
+        let became_dead = if socket.state() != old_state {
+            let (new_events, became_dead) = socket.on_new_state(this);
+            events |= new_events;
+            became_dead
+        } else {
+            TcpConnBecameDead::FALSE
+        };
 
         this.add_events(events);
         this.update_next_poll_at_ms(socket.poll_at(cx));
 
-        reply
+        (reply, became_dead)
     }
 }
 

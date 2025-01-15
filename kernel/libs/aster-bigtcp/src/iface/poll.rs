@@ -25,6 +25,7 @@ pub(super) struct PollContext<'a, E: Ext> {
     iface_cx: &'a mut Context,
     sockets: &'a SocketTable<E>,
     new_tcp_conns: &'a mut Vec<Arc<TcpConnectionBg<E>>>,
+    dead_tcp_conns: &'a mut Vec<ConnectionKey>,
 }
 
 impl<'a, E: Ext> PollContext<'a, E> {
@@ -32,11 +33,13 @@ impl<'a, E: Ext> PollContext<'a, E> {
         iface_cx: &'a mut Context,
         sockets: &'a SocketTable<E>,
         new_tcp_conns: &'a mut Vec<Arc<TcpConnectionBg<E>>>,
+        dead_tcp_conns: &'a mut Vec<ConnectionKey>,
     ) -> Self {
         Self {
             iface_cx,
             sockets,
             new_tcp_conns,
+            dead_tcp_conns,
         }
     }
 }
@@ -193,7 +196,12 @@ impl<E: Ext> PollContext<'_, E> {
         };
 
         if let Some(connection) = connection {
-            match connection.process(self.iface_cx, ip_repr, tcp_repr) {
+            let (process_result, became_dead) =
+                connection.process(self.iface_cx, ip_repr, tcp_repr);
+            if *became_dead {
+                self.dead_tcp_conns.push(*connection.connection_key());
+            }
+            match process_result {
                 TcpProcessResult::NotProcessed => {}
                 TcpProcessResult::Processed => return None,
                 TcpProcessResult::ProcessedWithReply(ip_repr, tcp_repr) => {
@@ -349,6 +357,7 @@ impl<E: Ext> PollContext<'_, E> {
     {
         let mut tx_token = Some(tx_token);
         let mut did_something = false;
+        let mut dead_conns = Vec::new();
 
         // We cannot dispatch packets from `new_tcp_conns` because we cannot borrow an immutable
         // reference at this point. Instead, we will retry after the entire poll is complete.
@@ -363,9 +372,10 @@ impl<E: Ext> PollContext<'_, E> {
 
             let mut deferred = None;
 
-            let reply =
+            let (reply, became_dead) =
                 TcpConnectionBg::dispatch(socket, self.iface_cx, |cx, ip_repr, tcp_repr| {
-                    let mut this = PollContext::new(cx, self.sockets, self.new_tcp_conns);
+                    let mut this =
+                        PollContext::new(cx, self.sockets, self.new_tcp_conns, &mut dead_conns);
 
                     if !this.is_unicast_local(ip_repr.dst_addr()) {
                         dispatch_phy(
@@ -395,6 +405,10 @@ impl<E: Ext> PollContext<'_, E> {
 
                     None
                 });
+
+            if *became_dead {
+                self.dead_tcp_conns.push(*socket.connection_key());
+            }
 
             match (deferred, reply) {
                 (None, None) => (),
@@ -433,6 +447,8 @@ impl<E: Ext> PollContext<'_, E> {
             }
         }
 
+        self.dead_tcp_conns.append(&mut dead_conns);
+
         (did_something, tx_token)
     }
 
@@ -443,6 +459,7 @@ impl<E: Ext> PollContext<'_, E> {
     {
         let mut tx_token = Some(tx_token);
         let mut did_something = false;
+        let mut dead_conns = Vec::new();
 
         for socket in self.sockets.udp_socket_iter() {
             if !socket.need_dispatch(self.iface_cx.now()) {
@@ -456,7 +473,8 @@ impl<E: Ext> PollContext<'_, E> {
             let mut deferred = None;
 
             socket.dispatch(self.iface_cx, |cx, ip_repr, udp_repr, udp_payload| {
-                let mut this = PollContext::new(cx, self.sockets, self.new_tcp_conns);
+                let mut this =
+                    PollContext::new(cx, self.sockets, self.new_tcp_conns, &mut dead_conns);
 
                 if ip_repr.dst_addr().is_broadcast() || !this.is_unicast_local(ip_repr.dst_addr()) {
                     dispatch_phy(
@@ -506,6 +524,11 @@ impl<E: Ext> PollContext<'_, E> {
                 break;
             }
         }
+
+        // `dead_conns` should be empty,
+        // because we are using UDP sockets,
+        // and the `dead_conns` contains only dead TCP connections.
+        debug_assert!(dead_conns.is_empty());
 
         (did_something, tx_token)
     }
