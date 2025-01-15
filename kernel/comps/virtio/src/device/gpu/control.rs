@@ -599,3 +599,63 @@ impl Default for VirtioGPURespResourceFlush {
         }
     }
 }
+
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub(crate) struct VirtioGPUCursorPos {
+    scanout_id: u32,
+    x: u32,
+    y: u32,
+    padding: u32,
+}
+impl VirtioGPUCursorPos {
+    pub(crate) fn new(scanout_id: u32, x: u32, y: u32) -> VirtioGPUCursorPos {
+        VirtioGPUCursorPos {scanout_id, x, y, padding: 0}
+    }
+}
+
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub(crate) struct VirtioGPUUpdateCursor {
+    hdr: VirtioGPUCtrlHdr,
+    pos: VirtioGPUCursorPos,
+    resource_id: u32,
+    hot_x: u32,
+    hot_y: u32,
+    padding: u32,
+}
+impl VirtioGPUUpdateCursor {
+    pub(crate) fn new(
+        pos: VirtioGPUCursorPos,
+        resource_id: u32,
+        hot_x: u32,
+        hot_y: u32,
+    ) -> VirtioGPUUpdateCursor {
+        VirtioGPUUpdateCursor {
+            hdr: VirtioGPUCtrlHdr::from_type(VirtioGPUCtrlType::VIRTIO_GPU_CMD_UPDATE_CURSOR),
+            pos,
+            resource_id,
+            hot_x,
+            hot_y,
+            padding: 0,
+        }
+    }
+}
+
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub struct VirtioGPURespUpdateCursor {
+    hdr: VirtioGPUCtrlHdr,
+}
+impl VirtioGPURespUpdateCursor {
+    pub fn get_type(&self) -> u32 {
+        self.hdr.ctrl_type
+    }
+}
+impl Default for VirtioGPURespUpdateCursor {
+    fn default() -> Self {
+        VirtioGPURespUpdateCursor {
+            hdr: VirtioGPUCtrlHdr::default(),
+        }
+    }
+}

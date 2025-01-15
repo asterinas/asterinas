@@ -31,6 +31,7 @@ use crate::{
                 VirtioGPUResourceAttachBacking, VirtioGPURespAttachBacking, VirtioGPUMemEntry, VirtioGPURespDisplayInfo,
                 VirtioGPUTransferToHost2D, VirtioGPURespTransferToHost2D,
                 VirtioGPUResourceFlush, VirtioGPURespResourceFlush,
+                VirtioGPUCursorPos, VirtioGPUUpdateCursor, VirtioGPURespUpdateCursor,
             },
             header::{VirtioGPUCtrlType, kBlockSize},
         },
@@ -46,8 +47,8 @@ pub struct GPUDevice {
     cursor_queue: SpinLock<VirtQueue>,
     control_request: DmaStream,
     control_response: DmaStream,
-    // cursor_receiver: DmaStream,          // TODO: ?
-    // cursor_sender: DmaStream,
+    cursor_request: DmaStream,
+    cursor_response: DmaStream,
     // callback                             // FIXME: necessary?
 }
 
@@ -84,6 +85,14 @@ impl GPUDevice {
             let vm_segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
             DmaStream::map(vm_segment.into(), DmaDirection::Bidirectional, false).unwrap()
         };
+        let cursor_request = {
+            let vm_segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
+            DmaStream::map(vm_segment.into(), DmaDirection::Bidirectional, false).unwrap()
+        };
+        let cursor_response = {
+            let vm_segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
+            DmaStream::map(vm_segment.into(), DmaDirection::Bidirectional, false).unwrap()
+        };
 
         // init device
         let device = Arc::new(Self {
@@ -92,8 +101,9 @@ impl GPUDevice {
             control_queue,
             cursor_queue,
             control_request,
-            control_response
-            // TODO: ...
+            control_response,
+            cursor_request,
+            cursor_response
         });
 
         // Handle interrupt (ref. block device)
@@ -145,6 +155,9 @@ impl GPUDevice {
         device.transfer_to_host_2d(rect, 0, addr1).unwrap();
         device.resource_flush(rect, addr1).unwrap();
         early_println!("flushed");
+        test_cursor(Arc::clone(&device));
+        device.update_cursor(addr2, 0, 0, 0, 0, 0).unwrap();
+        early_println!("cursor updated");
         Ok(())
     }
 
@@ -464,5 +477,34 @@ impl GPUDevice {
         } else {
             Err(VirtioDeviceError::QueueUnknownError)
         }
+    }
+    pub fn update_cursor(&self, resource_id: u32, scanout_id: u32, pos_x: u32, pos_y: u32, hot_x: u32, hot_y: u32) -> Result<(), VirtioDeviceError> {
+        let req_slice = {
+            let req_slice = DmaStreamSlice::new(
+                &self.cursor_request, 0, size_of::<VirtioGPUUpdateCursor>());
+            let req = VirtioGPUUpdateCursor::new(VirtioGPUCursorPos::new(scanout_id, pos_x, pos_y), resource_id, hot_x, hot_y);
+            req_slice.write_val(0, &req).unwrap();
+            req_slice.sync().unwrap();
+            req_slice
+        };
+        let resp_slice = {
+            let resp_slice = DmaStreamSlice::new(
+                &self.cursor_response, 0, size_of::<VirtioGPURespUpdateCursor>());
+            resp_slice.write_val(0, &VirtioGPURespUpdateCursor::default()).unwrap();
+            resp_slice.sync().unwrap();
+            resp_slice
+        };
+        let mut queue = self.cursor_queue.disable_irq().lock();
+        let _token = queue
+            .add_dma_buf(&[&req_slice], &[&resp_slice])
+            .expect("add queue failed");
+        if queue.should_notify() {
+            queue.notify();
+        }
+        while !queue.can_pop() {
+            spin_loop();
+        }
+        queue.pop_used_with_token(_token).unwrap();
+        Ok(())
     }
 }
