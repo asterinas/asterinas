@@ -275,12 +275,7 @@ impl GPUDevice {
         // get resolution
         let (width, height) = self.resolution().expect("failed to get resolution");
 
-        // setup framebuffer
-        // TODO: we set up framebuffer every time, a waste of resources.
-        // let buf: Arc<DmaStream> = self
-        //     .setup_framebuffer(0xbade)
-        //     .expect("failed to setup framebuffer");
-
+        // get frame buffer
         let buf = self.frame_buffer.as_ref().expect("frame buffer not initialized");
 
         // write content into buffer
@@ -290,8 +285,47 @@ impl GPUDevice {
                 let color = if x % 2 == 0 && y % 2 == 0 {
                     0x00ff_0000
                 } else {
-                    0x0000_ff00
+                    0x00ff_0000
                 };
+                buf.write_val(offset as usize, &color).unwrap();
+            }
+        }
+        // for y in 0..height {    //height=800
+        //     for x in 0..width { //width=1280
+        //         let offset = (y * width + x) * 4;
+        //         buf.write_val(offset as usize, &x).expect("error writing frame buffer");
+        //         buf.write_val((offset + 1) as usize, &y).expect("error writing frame buffer");
+        //         buf.write_val((offset + 2) as usize, &(x+y)).expect("error writing frame buffer");
+        //         // let black = 0x00000000;
+        //         // buf.write_val(offset as usize, &black).expect("error writing frame buffer");
+        //         // buf.write_val((offset + 1) as usize, &black).expect("error writing frame buffer");
+        //         // buf.write_val((offset + 2) as usize, &black).expect("error writing frame buffer");
+        //     }
+        // }
+
+        // flush to screen
+        self.flush().expect("failed to flush");
+        early_println!("flushed to screen");
+        Ok(())
+
+    }
+
+    pub fn show_color(&self, color: i32) -> Result<(), VirtioDeviceError> {
+        // get resolution
+        let (width, height) = self.resolution().expect("failed to get resolution");
+
+        // get frame buffer
+        let buf = self.frame_buffer.as_ref().expect("frame buffer not initialized");
+
+        // write content into buffer
+        for x in 0..height {
+            for y in 0..width {
+                let offset = (x * width + y) * 4;
+                // let color = if x % 2 == 0 && y % 2 == 0 {
+                //     0x00ff_0000
+                // } else {
+                //     0x00ff_0000
+                // };
                 buf.write_val(offset as usize, &color).unwrap();
             }
         }

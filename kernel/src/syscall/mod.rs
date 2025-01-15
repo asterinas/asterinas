@@ -120,6 +120,7 @@ mod setsid;
 mod setsockopt;
 mod setuid;
 mod shutdown;
+mod show_color;
 mod show_red;
 mod sigaltstack;
 mod socket;
