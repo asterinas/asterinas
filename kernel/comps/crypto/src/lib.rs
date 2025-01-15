@@ -145,6 +145,8 @@ pub trait AnyCryptoDevice: Send + Sync + Any + Debug {
     fn create_alg_chain_plain_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, alg_chain_order: CryptoSymAlgChainOrder, hash_algo: CryptoHashAlgorithm, result_len: u32, aad_len: i32, cipher_key: &[u8])->Result<i64, CryptoError>;
     
     fn destroy_cipher_session(&self, session_id: i64) -> Result<u8, CryptoError>;
+
+    fn handle_cipher_service_req(&self, encrypt : bool, algo: CryptoCipherAlgorithm, session_id : i64, iv : &[u8], src_data : &[u8], dst_data : &[u8]) -> Result<u8, CryptoError>;
 }
 
 pub fn register_device(name: String, device: Arc<dyn AnyCryptoDevice>) {

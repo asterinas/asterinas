@@ -14,7 +14,7 @@ use crate::{
 };
 use crate::device::crypto::session::*;
 use crate::device::crypto::service::*;
-use super::config::VirtioCryptoConfig;
+use super::{config::VirtioCryptoConfig, session};
 
 pub struct CryptoDevice{
     transport: SpinLock<Box<dyn VirtioTransport>>,
@@ -190,6 +190,38 @@ impl CryptoDevice {
 
         res.get_result()
     }
+
+    fn handle_service<T: CryptoServiceRequest>(&self, req: T, vlf: &[u8], padding: bool)->Result<u8, CryptoError> {
+        let vlf_len = vlf.len() as i32;
+        let service_slice = DmaStreamSlice::new(&self.data_buffer, 0, 72);
+        let service_resp_slice = DmaStreamSlice::new(&self.data_buffer, (72 + vlf_len) as _, 2);
+        let service_vlf_slice = DmaStreamSlice::new(&self.data_buffer, 72, vlf_len as _);
+        self.data_queue.lock().add_dma_buf(&[&service_slice, &service_vlf_slice], &[&service_resp_slice]).unwrap();
+
+        debug!("send header: bytes: {:?}, len = {:?}", 
+                req.as_bytes(), req.as_bytes().len());
+        
+        service_slice.write_val(0, &req).unwrap();
+        service_vlf_slice.write_bytes(0, vlf).unwrap();
+
+        if self.data_queue.lock().should_notify() {
+            self.data_queue.lock().notify();
+        }
+    
+        while ! self.data_queue.lock().can_pop(){
+            spin_loop();
+        }
+    
+        self.data_queue.lock().pop_used().unwrap();
+        service_resp_slice.sync().unwrap();
+    
+        let mut reader = service_resp_slice.reader().unwrap();
+        let res = reader.read_val::<VirtioCryptoInhdr>().unwrap();
+        
+        debug!("receive feedback:{:?}", res);
+
+        res.get_result()
+    }
 }
 
 impl AnyCryptoDevice for CryptoDevice{
@@ -296,38 +328,36 @@ impl AnyCryptoDevice for CryptoDevice{
         self.create_session(req, cipher_key, true)
     }
 
-    // fn create_alg_chain_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, alg_chain_order: CryptoSymAlgChainOrder, hash_mode: CryptoSymHashMode, hash_algo: i32, result_len: u32, aad_len: i32, cipher_key: &[u8], auth_key: &[u8])->Result<i64, CryptoError> {
-    //     debug!("[CRYPTO] trying to create alg chain session");
+    fn handle_cipher_service_req(&self, encrypt : bool, algo: CryptoCipherAlgorithm, session_id : i64, iv : &[u8], src_data : &[u8], dst_data : &[u8]) -> Result<u8, CryptoError> {
 
-    //     let header = CryptoCtrlHeader { 
-    //         opcode: CryptoSessionOperation::CipherCreate as i32, 
-    //         algo: algo as _,
-    //         flag: 0, 
-    //         reserved: 0
-    //     };
-    //     let key_len: u32 = cipher_key.len() as _;
+        debug!("[CRYPTO] trying to handle cipher service request");
+        let header = CryptoServiceHeader {
+            opcode : if encrypt {CryptoServiceOperation::CipherEncrypt} else  {CryptoServiceOperation::CipherDecrypt} as _,
+            algo : algo as _,
+            session_id,
+            flag : 1, // VIRTIO_CRYPTO_FLAG_SESSION_MODE
+            padding : 0
+        };
+        let src_data_len = src_data.len() as i32;
+        let dst_data_len = dst_data.len() as i32;
+        let iv_len = iv.len() as i32;
+        let flf = VirtioCryptoCipherDataFlf::new(iv_len, src_data_len, dst_data_len);
+        let req = CryptoCipherServiceReq {
+            header,
+            op_flf : VirtioCryptoSymDataFlf {
+                op_type_flf : VirtioCryptoSymDataFlfWrapper{ CipherFlf : flf},
+                op_type : CryptoSymOp::Cipher as _,
+                padding : 0
+            }
+        };
 
-    //     let cipher_flf = VirtioCryptoCipherSessionFlf::new(algo, key_len as _, op);
-    //     if let CryptoSymHashMode::Auth = hash_mode {
-            
-    //         let auth_key_len: u32 = auth_key.len() as _;
-    //         let mac_flf = VirtioCryptoMacSessionFlf::new(Cryp, result_len, auth_key_len);
-    //         let flf = VirtioCryptoAlgChainSessionFlf::new(alg_chain_order, hash_mode, cipher_flf, VirtioCryptoAlgChainSessionAlgo{mac_flf}, aad_len);
-    //         let req = CryptoCipherSessionReq::new(
-    //             header, 
-    //             VirtioCryptoSymCreateSessionFlf{AlgChainFlf: flf}, 
-    //             CryptoSymOp::AlgorithmChaining
-    //         );
+        let vlf = &[iv, src_data, dst_data].concat();
 
-    //         self.create_session(req, [&cipher_key, &auth_key].concat(), padding)
-    //     }
-    //     else if let CryptoSymHashMode::Plain = hash_mode {
+        self.handle_service(req, vlf, true)
 
-    //     }
-    //     else {
-    //         Err(CryptoError::NotSupport)
-    //     }
-    // }
+    }
+
+    // fn handle_
 
     fn destroy_cipher_session(&self, session_id: i64) -> Result<u8, CryptoError> {
         self.destroy_session(CryptoSessionOperation::CipherDestroy, session_id)

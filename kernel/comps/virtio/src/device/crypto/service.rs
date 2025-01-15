@@ -22,76 +22,113 @@ pub enum CryptoServiceOperation{
 #[derive(Debug, Pod, Clone, Copy)]
 #[repr(C)]
 pub struct CryptoServiceHeader {
-    opcode : i32,
-    algo : i32,
-    session_id : i64,
-    flag : i32,
-    padding : i32
+    pub opcode : i32,
+    pub algo : i32,
+    pub session_id : i64,
+    pub flag : i32,
+    pub padding : i32
 }
 
 #[derive(Debug, Pod, Clone, Copy)]
 #[repr(C)]
-pub struct CryptoSeriviceResp {
-    status : u8
+pub struct VirtioCryptoInhdr {
+    pub status : u8
+}
+
+impl VirtioCryptoInhdr {
+    pub fn get_result(&self) -> Result<u8, CryptoError> {
+        match VirtioCryptoStatus::try_from(self.status as i32){
+            Ok(code) => code.get_or_error(self.status),
+            Err(err) => Err(err)
+        }
+    }
+}
+
+pub trait CryptoServiceRequest: Pod {
+    fn to_bytes(&self, padding: bool)->Vec<u8>;
 }
 
 
-#[derive(Debug, Pod, Clone, Copy)]
+#[derive(Pod, Clone, Copy)]
 #[repr(C)]
 pub struct CryptoCipherServiceReq {
-    header : CryptoServiceHeader,
-    op_flf : VirtioCryptoSymDataFlf,
+    pub header : CryptoServiceHeader,
+    pub op_flf : VirtioCryptoSymDataFlf,
 }
 
-#[derive(Debug, Pod, Clone, Copy)]
+impl CryptoServiceRequest for CryptoCipherServiceReq {
+    fn to_bytes(&self, padding: bool)->Vec<u8> {
+        Vec::from(<Self as Pod>::as_bytes(&self))
+    }
+}
+
+#[derive(Pod, Clone, Copy)]
 #[repr(C)]
 pub struct VirtioCryptoSymDataFlf {
-    op_type_flf : [u8 ; 40],
-    op_type : i32,
-    padding : i32
+    pub op_type_flf : VirtioCryptoSymDataFlfWrapper,
+    pub op_type : i32,
+    pub padding : i32
 }
+
+#[derive(Pod, Clone, Copy)]
+#[repr(C)]
+pub union VirtioCryptoSymDataFlfWrapper {
+    pub CipherFlf : VirtioCryptoCipherDataFlf,
+    pub AlgChainFlf : VirtioCryptoAlgChainDataFlf
+} 
 
 #[derive(Debug, Pod, Clone, Copy)]
 #[repr(C)]
 pub struct VirtioCryptoCipherDataFlf {
-    iv_len : i32,
-    src_data_len : i32,
-    dst_data_len : i32,
-    padding : i32
+    pub iv_len : i32,
+    pub src_data_len : i32,
+    pub dst_data_len : i32,
+    pub padding : i32
+}
+
+impl VirtioCryptoCipherDataFlf {
+    pub fn new(iv_len : i32, src_data_len : i32, dst_data_len : i32) -> Self {
+        Self {
+            iv_len,
+            src_data_len,
+            dst_data_len,
+            padding : 0
+        }
+    }
 }
 
 #[derive(Debug, Pod, Clone, Copy)]
 #[repr(C)]
 pub struct VirtioCryptoAlgChainDataFlf {
-    iv_len : i32,
-    src_data_len : i32,
-    dst_data_len : i32,
-    cipher_start_src_offset : i32,
-    len_to_cipher : i32,
-    hash_start_src_offset : i32,
-    len_to_hash : i32,
-    aad_len : i32,
-    hash_result_len : i32,
-    reserved : i32
+    pub iv_len : i32,
+    pub src_data_len : i32,
+    pub dst_data_len : i32,
+    pub cipher_start_src_offset : i32,
+    pub len_to_cipher : i32,
+    pub hash_start_src_offset : i32,
+    pub len_to_hash : i32,
+    pub aad_len : i32,
+    pub hash_result_len : i32,
+    pub reserved : i32
 }
 
-pub struct VirtioCryptoSymDataVlf {
-    op_type_vlf : Vec<u8>
+impl VirtioCryptoAlgChainDataFlf {
+    pub fn new(iv_len : i32, src_data_len : i32, dst_data_len : i32, cipher_start_src_offset : i32, len_to_cipher : i32, hash_start_src_offset : i32, len_to_hash : i32, aad_len : i32, hash_result_len : i32) -> Self {
+        Self {
+            iv_len,
+            src_data_len,
+            dst_data_len,
+            cipher_start_src_offset,
+            len_to_cipher,
+            hash_start_src_offset,
+            len_to_hash,
+            aad_len,
+            hash_result_len,
+            reserved: 0
+        }
+    }
 }
 
-pub struct VirtioCryptoCipherDataVlf {
-    iv : Vec<u8>,
-    src_data : Vec<u8>,
-    dst_data : Vec<u8>
-}
-
-pub struct VirtioCryptoAlgChainDataVlf {
-    iv : Vec<u8>,
-    src_data : Vec<u8>,
-    aad : Vec<u8>,
-    dst_data : Vec<u8>,
-    hash_result : Vec<u8>
-}
 
 
 

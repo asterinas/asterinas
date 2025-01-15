@@ -198,35 +198,6 @@ pub struct CryptoCipherSessionReq {
 }
 
 impl CryptoCipherSessionReq{
-    // pub fn new(header: CryptoCtrlHeader, algo: CryptoCipherAlgorithm, key_len: i32, op: CryptoOperation, sym_op: CryptoSymOp, hash_op: CryptoSymHashMode)->Self{
-    //     if sym_op == CryptoSymOp::Cipher {
-    //         Self { 
-    //             header, 
-    //             flf: VirtioCryptoCipherSessionFlf::new(algo, key_len, op), 
-    //             op_type: CryptoSymOp::Cipher as _, 
-    //             padding: 0
-    //         }
-    //     }
-    //     else if sym_op == CryptoSymOp::AlgorithmChaining {
-    //         let cipher_flf = VirtioCryptoCipherSessionFlf::new(algo, key_len, op);
-
-    //         Self {
-    //             header,
-    //             flf: VirtioCryptoAlgChainSessionFlf {
-    //                 alg_chain_order
-    //             }
-    //         }
-    //     }
-    //     else if sym_op == CryptoSymOp::None {
-    //         Self {
-    //             header,
-    //             flf: VirtioCryptoCipherSessionFlf::new(algo, key_len, op),
-    //             op_type: CryptoSymOp::None as _,
-    //             padding: 0
-    //         }
-    //     }
-        
-    // }
     pub fn new(header: CryptoCtrlHeader, flf: VirtioCryptoSymCreateSessionFlf, sym_op: CryptoSymOp) -> Self {
         Self {
             header,
@@ -304,19 +275,6 @@ pub union VirtioCryptoAlgChainSessionAlgo {
     pub padding: [u8; 16]
 }
 
-
-
-// #[derive(Debug, Pod, Clone, Copy)]
-// #[repr(C)]
-// pub struct VirtioCryptoDestroySessionPara {
-//     pub session_id : i64
-// }
-// #[derive(Debug, Pod, Clone, Copy)]
-// #[repr(C)]
-// pub struct VirtioCryptoDestroySessionFlf {
-//     pub para : VirtioCryptoDestroySessionPara,
-//     pub padding : [i32 ; 12]
-// }
 
 #[derive(Debug, Pod, Clone, Copy)]
 #[repr(C)]
