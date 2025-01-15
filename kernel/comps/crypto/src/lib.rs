@@ -101,6 +101,57 @@ pub enum CryptoCipherAlgorithm {
     ZucEea3 = 14,
 }
 
+
+#[repr(u32)]
+#[derive(Debug, Clone, Copy)]
+pub enum CryptoHashAlgo {
+    NoHash = 0,
+    MD2 = 1,
+    MD3 = 2,
+    MD4 = 3,
+    MD5 = 4,
+    SHA1 = 5,
+    SHA256 = 6,
+    SHA384 = 7,
+    SHA512 = 8,
+    SHA224 = 9,
+}
+
+
+#[repr(u32)]
+#[derive(Debug, Clone, Copy)]
+pub enum CryptoAkCipherAlgorithm {
+    NoAkCipher = 0,
+    AkCipherRSA = 1,
+    AkCipherECDSA = 2,
+}
+
+#[repr(u32)]
+#[derive(Debug, Clone, Copy)]
+pub enum CryptoPaddingAlgo {
+    RAW = 0,
+    PKCS1 = 1,
+}
+
+#[repr(u32)]
+#[derive(Debug, Clone, Copy)]
+pub enum CryptoCurve {
+    Unknown = 0,
+    NistP192 = 1,
+    NistP224 = 2,
+    NistP256 = 3,
+    NistP384 = 4,
+    NistP521 = 5,
+}
+
+
+#[repr(u32)]
+#[derive(Debug, Clone, Copy)]
+pub enum CryptoAkCipherKeyType {
+    Public = 1,
+    Private = 2,
+}
+
 #[repr(u32)]
 #[derive(Debug)]
 pub enum CryptoOperation {
@@ -149,6 +200,23 @@ pub trait AnyCryptoDevice: Send + Sync + Any + Debug {
     fn handle_cipher_service_req(&self, encrypt : bool, algo: CryptoCipherAlgorithm, session_id : i64, iv : &[u8], src_data : &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError>;
 
     fn handle_alg_chain_service_req(&self, encrypt : bool, algo: CryptoCipherAlgorithm, session_id: i64, iv : &[u8], src_data : &[u8], dst_data_len: i32, cipher_start_src_offset: i32, len_to_cipher: i32, hash_start_src_offset: i32, len_to_hash: i32, aad_len: i32, hash_result_len: i32) -> Result<(Vec<u8>, Vec<u8>), CryptoError>;
+
+    fn create_akcipher_ecdsa_session(&self, algo: CryptoAkCipherAlgorithm,
+        op: CryptoOperation,
+        curve_id: CryptoCurve,
+        key_type: CryptoAkCipherKeyType,
+        key: &[u8],
+    ) -> Result<i64, CryptoError>;
+
+    fn create_akcipher_rsa_session(&self, algo: CryptoAkCipherAlgorithm,
+        op: CryptoOperation,
+        padding_algo: CryptoPaddingAlgo,
+        hash_algo: CryptoHashAlgo,
+        key_type: CryptoAkCipherKeyType,
+        key: &[u8],
+    ) -> Result<i64, CryptoError>;
+
+    fn destroy_akcipher_session(&self, session_id: i64) -> Result<u8, CryptoError>;
 }
 
 pub fn register_device(name: String, device: Arc<dyn AnyCryptoDevice>) {

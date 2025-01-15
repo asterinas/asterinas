@@ -4,7 +4,7 @@
 use core::{hash, hint::spin_loop};
 
 use alloc::{boxed::Box, fmt::Debug, string::ToString, sync::Arc, vec, vec::Vec};
-use aster_crypto::{AnyCryptoDevice, CryptoCipherAlgorithm, CryptoError, CryptoHashAlgorithm, CryptoMacAlgorithm, CryptoSymAlgChainOrder, CryptoSymHashMode, CryptoOperation, CryptoSymOp};
+use aster_crypto::{AnyCryptoDevice, CryptoCurve, CryptoAkCipherAlgorithm, CryptoAkCipherKeyType, CryptoCipherAlgorithm, CryptoError, CryptoHashAlgorithm, CryptoMacAlgorithm, CryptoSymAlgChainOrder, CryptoSymHashMode, CryptoOperation, CryptoSymOp, CryptoHashAlgo, CryptoPaddingAlgo};
 use log::{debug, warn};
 use ostd::{mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, VmIo}, sync::SpinLock, trap::TrapFrame, Pod};
 use crate::{
@@ -231,7 +231,18 @@ impl CryptoDevice {
 
 impl AnyCryptoDevice for CryptoDevice{
     fn test_device(&self){
-        //
+        let res1 = self.create_hash_session(CryptoHashAlgorithm::Sha256, 64);
+        debug!("try to create hash session:{:?}", res1);
+        let res2 = 
+            self.create_cipher_session(CryptoCipherAlgorithm::AesEcb, 
+                                        CryptoOperation::Encrypt, &[1; 16]);
+        debug!("try to create cipher session:{:?}", res2);
+
+        let id2 = &res2.unwrap();
+        let res3=self.handle_cipher_service_req(true, CryptoCipherAlgorithm::AesEcb, id2.clone(), &[0; 16], &[2; 16], 16);
+        debug!("try to call cipher service:{:?}", res3);
+
+        // let res4 = self.handle
     }
 
     fn create_hash_session(&self, algo: CryptoHashAlgorithm, result_len: u32)->Result<i64, CryptoError>{
@@ -373,7 +384,17 @@ impl AnyCryptoDevice for CryptoDevice{
         };
         let src_data_len = src_data.len() as i32;
         let iv_len = iv.len() as i32;
-        let flf = VirtioCryptoAlgChainDataFlf::new(iv_len, src_data_len, dst_data_len, cipher_start_src_offset, len_to_cipher, hash_start_src_offset, len_to_hash, aad_len, hash_result_len);
+        let flf = VirtioCryptoAlgChainDataFlf::new(
+            iv_len, 
+            src_data_len, 
+            dst_data_len, 
+            cipher_start_src_offset, 
+            len_to_cipher, 
+            hash_start_src_offset, 
+            len_to_hash, 
+            aad_len, 
+            hash_result_len
+        );
         let req = CryptoCipherServiceReq {
             header,
             op_flf : VirtioCryptoSymDataFlf {
@@ -398,5 +419,69 @@ impl AnyCryptoDevice for CryptoDevice{
     fn destroy_cipher_session(&self, session_id: i64) -> Result<u8, CryptoError> {
         self.destroy_session(CryptoSessionOperation::CipherDestroy, session_id)
     
+    }
+
+    fn create_akcipher_rsa_session(&self, algo: CryptoAkCipherAlgorithm,
+                                   op: CryptoOperation,
+                                   padding_algo: CryptoPaddingAlgo,
+                                   hash_algo: CryptoHashAlgo,
+                                   key_type: CryptoAkCipherKeyType,
+                                   key: &[u8],
+    ) -> Result<i64, CryptoError> {
+        debug!("[CRYPTO] trying to create akcipher rsa session");
+
+        let header = CryptoCtrlHeader {
+            opcode: CryptoSessionOperation::AkCipherCreate as i32,
+            algo: algo as _,
+            flag: 0,
+            reserved: 0,
+        };
+
+        let key_len : u32 = key.len() as _;
+        let para = VirtioCryptoRSAPara {
+            padding_algo: padding_algo as _,
+            hash_algo: hash_algo as _,
+        };
+        let algo_flf = VirtioCryptoAlgoFif { rsa: para };
+        let flf = VirtioCryptoAkCipherSessionFlf::new(algo, key_type, key_len, algo_flf);
+        let req = CryptoAkCipherSessionReq {
+            header,
+            flf,
+        };
+
+        self.create_session(req, &key, true)
+    }
+
+    fn create_akcipher_ecdsa_session(&self, algo: CryptoAkCipherAlgorithm,
+                                     op: CryptoOperation,
+                                     curve_id: CryptoCurve,
+                                     key_type: CryptoAkCipherKeyType,
+                                     key: &[u8],
+    ) -> Result<i64, CryptoError> {
+        debug!("[CRYPTO] trying to create akcipher ecdsa session");
+
+        let header = CryptoCtrlHeader {
+            opcode: CryptoSessionOperation::AkCipherCreate as i32,
+            algo: algo as _,
+            flag: 0,
+            reserved: 0,
+        };
+
+        let key_len : u32 = key.len() as _;
+        let para = VirtioCryptoECDSAPara {
+            curve_id: curve_id as _,
+        };
+        let algo_flf = VirtioCryptoAlgoFif { ecdsa: para };
+        let flf = VirtioCryptoAkCipherSessionFlf::new(algo, key_type, key_len, algo_flf);
+        let req = CryptoAkCipherSessionReq {
+            header,
+            flf,
+        };
+
+        self.create_session(req, &key, true)
+    }
+
+    fn destroy_akcipher_session(&self, session_id: i64) -> Result<u8, CryptoError> {
+        self.destroy_session(CryptoSessionOperation::AkCipherDestroy, session_id)
     }
 }

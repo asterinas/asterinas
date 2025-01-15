@@ -2,7 +2,8 @@
 use core::hash;
 
 use alloc::vec::Vec;
-use aster_crypto::{CryptoCipherAlgorithm, CryptoError, CryptoHashAlgorithm, CryptoMacAlgorithm, CryptoSymAlgChainOrder, CryptoSymHashMode, CryptoOperation, CryptoSymOp};
+// use aster_crypto::{CryptoCipherAlgorithm, CryptoError, CryptoHashAlgorithm, CryptoMacAlgorithm, CryptoSymAlgChainOrder, CryptoSymHashMode, CryptoOperation, CryptoSymOp};
+use aster_crypto::*;
 use ostd::Pod;
 
 pub enum CryptoService{
@@ -68,6 +69,8 @@ pub enum CryptoSessionOperation{
     MacDestroy = crypto_services_opcode(CryptoService::Mac, 0x03),
     AeadCreate = crypto_services_opcode(CryptoService::Aead, 0x02),
     AeadDestroy = crypto_services_opcode(CryptoService::Aead, 0x03),
+    AkCipherCreate = crypto_services_opcode(CryptoService::AkCipher, 0x04),
+    AkCipherDestroy = crypto_services_opcode(CryptoService::AkCipher, 0x05),
 }
 
 #[derive(Debug, Pod, Clone, Copy)]
@@ -318,6 +321,67 @@ pub struct CryptoDestroySessionReq {
 
 impl CryptoDestroySessionReq {
     pub fn to_bytes(&self, padding: bool) -> Vec<u8> {
+        let header_bytes = self.header.to_bytes(padding);
+        let flf_bytes = self.flf.to_bytes(padding);
+        return [header_bytes, flf_bytes].concat();
+    }
+}
+
+#[derive(Pod, Clone, Copy)]
+#[repr(C)]
+pub struct VirtioCryptoAkCipherSessionFlf {
+    pub algo: i32,
+    pub key_type: i32,
+    pub key_len: u32,
+    pub algo_flf: VirtioCryptoAlgoFif,
+}
+
+impl VirtioCryptoAkCipherSessionFlf {
+    pub fn new(algo: CryptoAkCipherAlgorithm, key_type: CryptoAkCipherKeyType, key_len: u32, algo_flf: VirtioCryptoAlgoFif) -> Self {
+        Self {
+            algo: algo as _,
+            key_type: key_type as _,
+            key_len,
+            algo_flf,
+        }
+    }
+    pub fn to_bytes(&self, padding: bool) -> Vec<u8> {
+        let res = <Self as Pod>::as_bytes(&self);
+        let mut vec = Vec::from(res);
+        vec.resize(56, 0);
+        vec
+    }
+}
+
+#[derive(Debug, Pod, Clone, Copy)]
+#[repr(C)]
+pub struct VirtioCryptoRSAPara {
+    pub padding_algo: i32,
+    pub hash_algo: i32,
+}
+
+#[derive(Debug, Pod, Clone, Copy)]
+#[repr(C)]
+pub struct VirtioCryptoECDSAPara {
+    pub curve_id: i32,
+}
+
+#[derive(Pod, Clone, Copy)]
+#[repr(C)]
+pub union VirtioCryptoAlgoFif {
+    pub rsa: VirtioCryptoRSAPara,
+    pub ecdsa: VirtioCryptoECDSAPara,
+}
+
+#[derive(Pod, Clone, Copy)]
+#[repr(C)]
+pub struct CryptoAkCipherSessionReq {
+    pub header: CryptoCtrlHeader,
+    pub flf: VirtioCryptoAkCipherSessionFlf,
+}
+
+impl CryptoSessionRequest for CryptoAkCipherSessionReq {
+    fn to_bytes(&self, padding: bool) -> Vec<u8> {
         let header_bytes = self.header.to_bytes(padding);
         let flf_bytes = self.flf.to_bytes(padding);
         return [header_bytes, flf_bytes].concat();
