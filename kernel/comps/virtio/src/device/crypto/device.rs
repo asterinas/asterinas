@@ -121,17 +121,14 @@ impl CryptoDevice {
         let req = CryptoDestroySessionReq {
             header,
             flf : VirtioCryptoDestroySessionFlf {
-                para : VirtioCryptoDestroySessionPara {
-                    session_id : session_id
-                },
-                padding : [0; 12]
+                session_id : session_id
             }
         };
 
         debug!("send header: bytes: {:?}, len = {:?}, supp_bits:{:?}", 
-                req.as_bytes(), req.as_bytes().len(), self.config_manager.read_config().cipher_algo_l);
+                req.as_bytes(), &req.to_bytes(true).len(), self.config_manager.read_config().cipher_algo_l);
         
-        ctrl_slice.write_val(0, &req).unwrap();
+        ctrl_slice.write_bytes(0, &req.to_bytes(true)).unwrap();
 
         if self.control_queue.lock().should_notify() {
             self.control_queue.lock().notify();

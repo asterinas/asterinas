@@ -1,4 +1,7 @@
 
+use core::hash;
+
+use alloc::vec::Vec;
 use aster_crypto::{CryptoCipherAlgorithm, CryptoError, CryptoHashAlgorithm, CryptoOperation};
 use ostd::Pod;
 
@@ -74,6 +77,12 @@ pub struct CryptoCtrlHeader{
     pub algo: i32,
     pub flag: i32,
     pub reserved: i32,
+}
+
+impl CryptoCtrlHeader {
+    pub fn to_bytes(&self, padding: bool) -> Vec<u8> {
+        <Self as Pod>::as_bytes(&self).to_vec()
+    }
 }
 
 #[derive(Debug, Pod, Clone, Copy)]
@@ -165,18 +174,35 @@ impl VirtioCryptoHashCreateSessionFlf{
     }
 }
 
-#[derive(Debug, Pod, Clone, Copy)]
-#[repr(C)]
-pub struct VirtioCryptoDestroySessionPara {
-    pub session_id : i64
-}
+// #[derive(Debug, Pod, Clone, Copy)]
+// #[repr(C)]
+// pub struct VirtioCryptoDestroySessionPara {
+//     pub session_id : i64
+// }
+// #[derive(Debug, Pod, Clone, Copy)]
+// #[repr(C)]
+// pub struct VirtioCryptoDestroySessionFlf {
+//     pub para : VirtioCryptoDestroySessionPara,
+//     pub padding : [i32 ; 12]
+// }
+
 #[derive(Debug, Pod, Clone, Copy)]
 #[repr(C)]
 pub struct VirtioCryptoDestroySessionFlf {
-    pub para : VirtioCryptoDestroySessionPara,
-    pub padding : [i32 ; 12]
+    pub session_id : i64
 }
 
+
+impl VirtioCryptoDestroySessionFlf {
+    pub fn to_bytes(&self, padding: bool) -> Vec<u8> {
+        let res = <Self as Pod>::as_bytes(&self);
+        let mut vec = Vec::from(res);
+        if padding {
+            vec.resize(56, 0);
+        }
+        vec
+    }
+}
 #[derive(Debug, Pod, Clone, Copy)]
 #[repr(C)]
 pub struct VirtioCryptoDestroySessionInput {
@@ -196,4 +222,13 @@ impl VirtioCryptoDestroySessionInput {
 pub struct CryptoDestroySessionReq {
     pub header: CryptoCtrlHeader,
 	pub flf: VirtioCryptoDestroySessionFlf,
+}
+
+impl CryptoDestroySessionReq {
+    pub fn to_bytes(&self, padding: bool) -> Vec<u8> {
+            // let res = <self as Pod>::as_bytes(&self);
+        let header_bytes = self.header.to_bytes(padding);
+        let flf_bytes = self.flf.to_bytes(padding);
+        return [header_bytes, flf_bytes].concat();
+    }
 }
