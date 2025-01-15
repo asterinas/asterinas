@@ -23,7 +23,6 @@ use super::{
     config::{GPUFeatures, VirtioGPUConfig},
     header::VirtioGPUCtrlHdr,
 };
-
 use crate::{
     device::{
         gpu::{
@@ -41,6 +40,12 @@ use crate::{
 };
 
 use::core::hint::spin_loop;
+
+use tinybmp::Bmp;
+use embedded_graphics::pixelcolor::Rgb888;
+use alloc::vec::Vec;
+
+static CURSOR: &[u8] = include_bytes!("_cursor.bmp");
 
 pub struct GPUDevice {
     config_manager: ConfigManager<VirtioGPUConfig>,
@@ -152,21 +157,43 @@ impl GPUDevice {
         for i in 0..rect.width {
             for j in 0..rect.height {
                 let idx = (j * rect.width + i) * 4 as u32;
-                let zero : u8 = 100;
-                let _255 : u8 = 100; // all red
-                frames.write_val(idx as usize, &zero).unwrap();
-                frames.write_val((idx + 1) as usize, &zero).unwrap();
-                frames.write_val((idx + 2) as usize, &_255).unwrap();
-                frames.write_val((idx + 3) as usize, &zero).unwrap();
+                frames.write_val(idx as usize, &i).unwrap();
+                frames.write_val((idx + 1) as usize, &j).unwrap();
+                frames.write_val((idx + 2) as usize, &(i + j)).unwrap();
+                frames.write_val((idx + 3) as usize, &(i + 2 * j)).unwrap();
             }
         }
         device.transfer_to_host_2d(rect, 0, addr1).unwrap();
         device.resource_flush(rect, addr1).unwrap();
         early_println!("flushed");
-        // test_cursor(Arc::clone(&device));
-        // let addr2 = 0x2222;
-        // device.update_cursor(addr2, 0, 0, 0, 0, 0).unwrap();
-        // early_println!("cursor updated");
+        {
+            let addr2 : u32 = 0x2222;
+            let rect: VirtioGPURect = VirtioGPURect::new(0, 0, 260, 260);
+            let byte_cnt = rect.width * rect.height * 4 as u32;
+            let frame_cnt = (byte_cnt + kBlockSize - 1) / kBlockSize as u32;
+            let frames = {
+                let segment = FrameAllocOptions::new().alloc_segment(frame_cnt as usize).unwrap();
+                DmaStream::map(segment.into(), DmaDirection::ToDevice, false).unwrap()
+            };
+            let bmp = Bmp::<Rgb888>::from_slice(CURSOR).unwrap();
+            let raw = bmp.as_raw();
+            let mut vec = Vec::new();
+            for i in raw.image_data().chunks(3) {
+                let mut v = i.to_vec();
+                vec.append(&mut v);
+                if i == [255, 255, 255] {
+                    vec.push(0x0)
+                } else {
+                    vec.push(0xff)
+                }
+            }
+            frames.write_slice(0, &vec).unwrap();
+            device.resource_create_2d(addr2, rect.width, rect.height).unwrap();
+            device.resource_attach_backing(addr2, frames.paddr(), byte_cnt).unwrap();
+            device.transfer_to_host_2d(rect, 0, addr2).unwrap();
+            device.update_cursor(addr2, 0, 0, 0, 0, 0).unwrap();
+            early_println!("cursor updated");
+        }
         GPU_DEVICE.call_once(|| SpinLock::new(device));
         Ok(())
     }
@@ -518,35 +545,4 @@ impl GPUDevice {
         queue.pop_used_with_token(_token).unwrap();
         Ok(())
     }
-}
-use tinybmp::Bmp;
-use embedded_graphics::pixelcolor::Rgb888;
-use alloc::vec::Vec;
-
-static CURSOR: &[u8] = include_bytes!("_cursor.bmp");
-fn test_cursor(device: Arc<GPUDevice>) {
-    let addr2 : u32 = 0x2222;
-    let rect: VirtioGPURect = VirtioGPURect::new(0, 0, 260, 260);
-    let byte_cnt = rect.width * rect.height * 4 as u32;
-    let frame_cnt = (byte_cnt + kBlockSize - 1) / kBlockSize as u32;
-    let frames = {
-        let segment = FrameAllocOptions::new().alloc_segment(frame_cnt as usize).unwrap();
-        DmaStream::map(segment.into(), DmaDirection::ToDevice, false).unwrap()
-    };
-    let bmp = Bmp::<Rgb888>::from_slice(CURSOR).unwrap();
-    let raw = bmp.as_raw();
-    let mut vec = Vec::new();
-    for i in raw.image_data().chunks(3) {
-        let mut v = i.to_vec();
-        vec.append(&mut v);
-        if i == [255, 255, 255] {
-            vec.push(0x0)
-        } else {
-            vec.push(0xff)
-        }
-    }
-    frames.write_slice(0, &vec).unwrap();
-    device.resource_create_2d(addr2, rect.width, rect.height).unwrap();
-    device.resource_attach_backing(addr2, frames.paddr(), byte_cnt).unwrap();
-    device.transfer_to_host_2d(rect, 0, addr2).unwrap();
 }
