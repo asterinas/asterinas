@@ -33,7 +33,7 @@ impl VirtioGPURect {
 /// 
 /// Retrieve the current output configuration. No request data (just bare struct virtio_gpu_ctrl_hdr). 
 /// Response type is VIRTIO_GPU_RESP_OK_DISPLAY_INFO, response data is struct virtio_gpu_resp_display_info.
-#[repr(C)]
+#[repr(C, packed)]
 #[derive(Debug, Clone, Copy, Pod)]
 pub struct VirtioGPUDisplayOne {
     pub r: VirtioGPURect,
@@ -42,7 +42,7 @@ pub struct VirtioGPUDisplayOne {
     pub flags: u32,
 }
 
-#[repr(C)]
+#[repr(C, packed)]
 #[derive(Debug, Clone, Copy, Pod)]
 pub struct VirtioGPURespDisplayInfo {
     hdr: VirtioGPUCtrlHdr,
@@ -78,7 +78,7 @@ impl VirtioGPURespDisplayInfo {
 /// Request data is struct virtio_gpu_get_edid). 
 /// Response type is VIRTIO_GPU_RESP_OK_EDID, response data is struct virtio_gpu_resp_edid. 
 /// Support is optional and negotiated using the VIRTIO_GPU_F_EDID feature flag.
-#[repr(C)]
+#[repr(C, packed)]
 #[derive(Debug, Clone, Copy, Pod)]
 pub struct VirtioGPUGetEdid {
     hdr: VirtioGPUCtrlHdr,
@@ -104,7 +104,7 @@ impl VirtioGPUGetEdid {
     }
 }
 
-#[repr(C)]
+#[repr(C, packed)]
 #[derive(Debug, Clone, Copy, Pod)]
 pub struct VirtioGPURespEdid {
     hdr: VirtioGPUCtrlHdr,
@@ -193,7 +193,7 @@ impl Default for VirtioGPURespResourceCreate2D {
 /// 
 /// Request data is struct virtio_gpu_resource_unref. 
 /// Response type is VIRTIO_GPU_RESP_OK_NODATA.
-#[repr(C)]
+#[repr(C, packed)]
 #[derive(Debug, Clone, Copy, Pod)]
 pub struct VirtioGPUResourceUnref {
     hdr: VirtioGPUCtrlHdr,
@@ -214,7 +214,7 @@ impl VirtioGPUResourceUnref {
 /// 
 /// Request data is struct virtio_gpu_set_scanout. 
 /// Response type is VIRTIO_GPU_RESP_OK_NODATA.
-#[repr(C)]
+#[repr(C, packed)]
 #[derive(Debug, Clone, Copy, Pod)]
 pub struct VirtioGPUSetScanout {
     hdr: VirtioGPUCtrlHdr,
@@ -238,7 +238,7 @@ impl VirtioGPUSetScanout {
 /// 
 /// Request data is struct virtio_gpu_resource_attach_backing, followed by struct virtio_gpu_mem_entry entries. 
 /// Response type is VIRTIO_GPU_RESP_OK_NODATA.
-#[repr(C)]
+#[repr(C, packed)]
 #[derive(Debug, Clone, Copy, Pod)]
 pub struct VirtioGPUResourceAttachBacking {
     hdr: VirtioGPUCtrlHdr,
@@ -256,7 +256,7 @@ impl VirtioGPUResourceAttachBacking {
     }
 }
 
-#[repr(C)]
+#[repr(C, packed)]
 #[derive(Default, Debug, Clone, Copy, Pod)]
 pub struct VirtioGPUMemEntry {
     addr: u64,
@@ -274,7 +274,7 @@ impl VirtioGPUMemEntry {
     }
 }
 /// VIRTIO_GPU_CMD_RESOURCE_DETACH_BACKING
-#[repr(C)]
+#[repr(C, packed)]
 #[derive(Debug, Clone, Copy, Pod)]
 pub struct VirtioGPUResourceDetachBacking {
     hdr: VirtioGPUCtrlHdr,
@@ -304,7 +304,7 @@ pub enum CapsetIndex {
     VIRTIO_GPU_CAPSET_CROSS_DOMAIN = 5,
 }
 
-#[repr(C)]
+#[repr(C, packed)]
 #[derive(Debug, Clone, Copy, Pod)]
 pub struct VirtioGPUGetCapsetInfo {
     hdr: VirtioGPUCtrlHdr,
@@ -322,7 +322,7 @@ impl VirtioGPUGetCapsetInfo {
     }
 }
 
-#[repr(C)]
+#[repr(C, packed)]
 #[derive(Debug, Clone, Copy, Pod)]
 pub struct VirtioGPURespCapsetInfo {
     hdr: VirtioGPUCtrlHdr,
@@ -335,7 +335,7 @@ pub struct VirtioGPURespCapsetInfo {
 // TODO: impl VirtioGPURespCapsetInfo
 
 // VIRTIO_GPU_CMD_GET_CAPSET
-#[repr(C)]
+#[repr(C, packed)]
 #[derive(Debug, Clone, Copy, Pod)]
 pub struct VirtioGPUGetCapset {
     hdr: VirtioGPUCtrlHdr,
@@ -353,17 +353,8 @@ impl VirtioGPUGetCapset {
     }
 }
 
-#[repr(C)]
-#[derive(Debug)]   // capset data doesn't have fixed size, unabling Clone, Copy and Pod
-pub struct VirtioGPURespCapset {
-    hdr: VirtioGPUCtrlHdr,
-    capset_data: [u8],
-}
-
-
-
 /// VIRTIO_GPU_CMD_RESOURCE_ASSIGN_UUID
-#[repr(C)]
+#[repr(C, packed)]
 #[derive(Debug, Clone, Copy, Pod)]
 pub struct VirtioGPUResourceAssignUuid {
     hdr: VirtioGPUCtrlHdr,
@@ -381,7 +372,7 @@ impl VirtioGPUResourceAssignUuid {
     }
 }
 
-#[repr(C)]
+#[repr(C, packed)]
 #[derive(Debug, Clone, Copy, Pod)]
 pub struct VirtioGPURespResourceUuid {
     hdr: VirtioGPUCtrlHdr,
@@ -404,7 +395,7 @@ bitflags! {
     }
 }
 
-#[repr(C)]
+#[repr(C, packed)]
 #[derive(Debug, Clone, Copy, Pod)]
 pub struct VirtioGPUResourceCreateBlob {
     hdr: VirtioGPUCtrlHdr,
@@ -438,7 +429,7 @@ impl VirtioGPUResourceCreateBlob {
 }
 
 /// VIRTIO_GPU_CMD_SET_SCANOUT_BLOB
-#[repr(C)]
+#[repr(C, packed)]
 #[derive(Debug, Clone, Copy, Pod)]
 pub struct VirtioGPUSetScanoutBlob {
     hdr: VirtioGPUCtrlHdr,
