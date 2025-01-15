@@ -238,7 +238,6 @@ pub trait AnyCryptoDevice: Send + Sync + Any + Debug {
     //Test device function 
     fn test_device(&self);
 
-    //Create Hash session, return session id.
     fn create_hash_session(&self, algo: CryptoHashAlgorithm, result_len: u32)->Result<i64, CryptoError>;
     fn handle_hash_service_req(&self, op : CryptoServiceOperation, algo: CryptoHashAlgorithm, session_id : i64, src_data: &[u8], hash_result_len: i32) -> Result<Vec<u8>, CryptoError>;
     fn destroy_hash_session(&self, session_id : i64) -> Result<u8, CryptoError>;
@@ -259,19 +258,8 @@ pub trait AnyCryptoDevice: Send + Sync + Any + Debug {
     fn destroy_cipher_session(&self, session_id: i64) -> Result<u8, CryptoError>;
     
 
-    fn create_akcipher_ecdsa_session(&self, algo: CryptoAkCipherAlgorithm,
-        op: CryptoOperation,
-        curve_id: CryptoCurve,
-        key_type: CryptoAkCipherKeyType,
-        key: &[u8],
-    ) -> Result<i64, CryptoError>;
-    fn create_akcipher_rsa_session(&self, algo: CryptoAkCipherAlgorithm,
-        op: CryptoOperation,
-        padding_algo: CryptoPaddingAlgo,
-        hash_algo: CryptoHashAlgo,
-        key_type: CryptoAkCipherKeyType,
-        key: &[u8],
-    ) -> Result<i64, CryptoError>;
+    fn create_akcipher_ecdsa_session(&self, algo: CryptoAkCipherAlgorithm, op: CryptoOperation, curve_id: CryptoCurve, key_type: CryptoAkCipherKeyType, key: &[u8]) -> Result<i64, CryptoError>;
+    fn create_akcipher_rsa_session(&self, algo: CryptoAkCipherAlgorithm, op: CryptoOperation, padding_algo: CryptoPaddingAlgo, hash_algo: CryptoHashAlgo, key_type: CryptoAkCipherKeyType, key: &[u8]) -> Result<i64, CryptoError>;
     fn handle_akcipher_serivce_req(&self, op : CryptoServiceOperation, algo: CryptoAkCipherAlgorithm, session_id: i64, src_data : &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError>;
     fn destroy_akcipher_session(&self, session_id: i64) -> Result<u8, CryptoError>;
 }
