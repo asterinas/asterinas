@@ -353,7 +353,10 @@ impl VirtioCryptoAkCipherSessionFlf {
     pub fn to_bytes(&self, padding: bool) -> Vec<u8> {
         let res = <Self as Pod>::as_bytes(&self);
         let mut vec = Vec::from(res);
-        vec.resize(56, 0);
+        if padding {
+            vec.resize(56, 0);
+        }
+        
         vec
     }
 }

@@ -165,7 +165,7 @@ impl CryptoDevice {
         };
 
         debug!("send header: bytes: {:?}, len = {:?}", 
-                req.as_bytes(), req.as_bytes().len());
+                req.as_bytes(), req.to_bytes(true).len());
         
         ctrl_slice.write_bytes(0, &req.to_bytes(padding)).unwrap();
         if let Some(ctrl_vlf_slice) = ctrl_vlf_slice{
@@ -200,9 +200,10 @@ impl CryptoDevice {
         self.data_queue.lock().add_dma_buf(&[&service_slice, &service_vlf_slice], &[&service_rst_slice, &service_resp_slice]).unwrap();
 
         debug!("send header: bytes: {:?}, len = {:?}", 
-                req.as_bytes(), req.as_bytes().len());
+                req.as_bytes(), req.to_bytes(padding).len());
         
-        service_slice.write_val(0, &req).unwrap();
+        // service_slice.write_val(0, &req).unwrap();
+        service_slice.write_bytes(0, &req.to_bytes(padding)).unwrap();
         service_vlf_slice.write_bytes(0, vlf).unwrap();
 
         if self.data_queue.lock().should_notify() {
@@ -231,52 +232,58 @@ impl CryptoDevice {
 
 impl AnyCryptoDevice for CryptoDevice{
     fn test_device(&self){
-        let res1 = self.create_hash_session(CryptoHashAlgorithm::Sha256, 64);
-        debug!("try to create hash session:{:?}", res1);
+        let res = self.create_hash_session(CryptoHashAlgorithm::Sha256, 64);
+        debug!("try to create hash session:{:?}", res);
 
-        let res1 = self.create_mac_session(CryptoMacAlgorithm::CbcMacAes, 16, &[0;16]);
-        debug!("try to create mac session:{:?}", res1);
+        let res = self.create_mac_session(CryptoMacAlgorithm::CbcMacAes, 16, &[0;16]);
+        debug!("try to create mac session:{:?}", res);
 
-        let res2 = 
+        let res = 
             self.create_cipher_session(CryptoCipherAlgorithm::AesEcb, 
                                         CryptoOperation::Encrypt, &[1; 16]);
-        debug!("try to create cipher session:{:?}", res2);
+        debug!("try to create cipher session:{:?}", res);
 
-        let id2 = &res2.unwrap();
-        let res3=
+        let id1 = res.unwrap();
+        let res=
             self.handle_cipher_service_req(
                 CryptoServiceOperation::CipherEncrypt,  CryptoCipherAlgorithm::AesEcb, 
-                id2.clone(),  &[0; 16], &[2; 16], 16
+                id1,  &[0; 16], &[2; 16], 16
             );
-        debug!("try to call AES ECB encrypt service:{:?}", res3);
+        debug!("try to call AES ECB encrypt service:{:?}", res);
+        let encrypt = res.unwrap();
 
-        let res4 = 
+        let res= self.create_cipher_session(CryptoCipherAlgorithm::AesEcb, 
+            CryptoOperation::Decrypt, &[1; 16]);
+        debug!("try to create cipher session:{:?}", res);
+        let id2 = res.unwrap();
+
+        let res = 
             self.handle_cipher_service_req(
                 CryptoServiceOperation::CipherDecrypt, CryptoCipherAlgorithm::AesEcb,
-                id2.clone(), &[0;16], &res3.unwrap(), 16);
-        debug!("try to call AES ECB decrypt service: {:?}", res4);
+                id2, &[0;16], &encrypt, 16);
+        debug!("try to call AES ECB decrypt service: {:?}", res);
 
-        let res1 = self.destroy_cipher_session(id2.clone());
-        debug!("try to destroy session {:?} : {:?}", id2, res4);
+        let res = self.destroy_cipher_session(id2);
+        debug!("try to destroy session {:?} : {:?}", id2, res);
 
-        let res1 = self.create_akcipher_rsa_session(
+        let res = self.create_akcipher_rsa_session(
             CryptoAkCipherAlgorithm::AkCipherRSA, CryptoOperation::Encrypt, 
             CryptoPaddingAlgo::RAW, CryptoHashAlgo::NoHash, CryptoAkCipherKeyType::Public, 
-            &[0; 128]
+            &[48, 92, 48, 13, 6, 9, 42, 134, 72, 134, 247, 13, 1, 1, 1, 5, 0, 3, 75, 0, 48, 72, 2, 65, 0, 173, 112, 121, 225, 211, 91, 131, 152, 93, 33, 126, 83, 59, 38, 128, 87, 211, 146, 212, 208, 135, 174, 121, 99, 104, 167, 144, 51, 209, 91, 131, 221, 207, 23, 89, 234, 135, 252, 132, 153, 22, 99, 3, 228, 127, 118, 43, 218, 59, 117, 70, 17, 53, 111, 10, 83, 245, 133, 56, 192, 238, 153, 39, 141, 2, 3, 1, 0, 1]
         );
 
-        debug!("try to create akcipher session:{:?}", res1);
+        debug!("try to create akcipher session:{:?}", res);
 
-        let res1 = res1.unwrap();
-        let res2 = 
-            self.handle_akcipher_serivce_req(
-                CryptoServiceOperation::AkCipherEncrypt, CryptoAkCipherAlgorithm::AkCipherRSA, res1,
-                &[5; 100], 128
-            );
-        debug!("try to call RSA encrypt: {:?}", res2);
+        // let res = res1.unwrap();
+        // let res2 = 
+        //     self.handle_akcipher_serivce_req(
+        //         CryptoServiceOperation::AkCipherEncrypt, CryptoAkCipherAlgorithm::AkCipherRSA, res1,
+        //         &[5; 100], 128
+        //     );
+        // debug!("try to call RSA encrypt: {:?}", res2);
 
-        let res3 = self.destroy_akcipher_session(res1);
-        debug!("try to destroy RSA session: {:?}", res3);
+        // let res3 = self.destroy_akcipher_session(res1);
+        // debug!("try to destroy RSA session: {:?}", res3);
     }
 
     fn create_hash_session(&self, algo: CryptoHashAlgorithm, result_len: u32)->Result<i64, CryptoError>{
