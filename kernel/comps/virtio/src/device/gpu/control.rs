@@ -413,9 +413,15 @@ impl VirtioGpuUpdateCursor {
         resource_id: u32,
         hot_x: u32,
         hot_y: u32,
+        is_move: bool,
     ) -> VirtioGpuUpdateCursor {
+        let hdr_type = if is_move {
+            VirtioGpuCtrlType::VIRTIO_GPU_CMD_MOVE_CURSOR
+        } else {
+            VirtioGpuCtrlType::VIRTIO_GPU_CMD_UPDATE_CURSOR
+        };
         VirtioGpuUpdateCursor {
-            hdr: VirtioGpuCtrlHdr::from_type(VirtioGpuCtrlType::VIRTIO_GPU_CMD_UPDATE_CURSOR),
+            hdr: VirtioGpuCtrlHdr::from_type(hdr_type),
             pos,
             resource_id,
             hot_x,

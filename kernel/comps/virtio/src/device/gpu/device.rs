@@ -775,7 +775,7 @@ impl GPUDevice {
         Ok(())
     }
 
-    pub fn update_cursor(&self, resource_id: u32, scanout_id: u32, pos_x: u32, pos_y: u32, hot_x: u32, hot_y: u32) -> Result<(), VirtioDeviceError> {
+    pub fn update_cursor(&self, resource_id: u32, scanout_id: u32, pos_x: u32, pos_y: u32, hot_x: u32, hot_y: u32, is_move: bool) -> Result<(), VirtioDeviceError> {
         // Prepare request data DMA buffer
         // TODO: (Taojie) implement move cursor
         let req_data_slice = {
@@ -785,7 +785,7 @@ impl GPUDevice {
                 size_of::<VirtioGpuUpdateCursor>(),
             );
             let cursor_pos = VirtioGpuCursorPos::new(scanout_id, pos_x, pos_y);
-            let req_data = VirtioGpuUpdateCursor::new(cursor_pos, resource_id, hot_x, hot_y);
+            let req_data = VirtioGpuUpdateCursor::new(cursor_pos, resource_id, hot_x, hot_y, is_move);
             req_data_slice.write_val(0, &req_data).unwrap();
             req_data_slice.sync().unwrap();
             req_data_slice
@@ -875,7 +875,7 @@ fn test_cursor(device: Arc<GPUDevice>) {
     // for _ in 0..1000000 {
     //     device.update_cursor(0xdade, 0, 0, 0, 0, 0).unwrap();
     // }
-    device.update_cursor(0xdade, 0, 0, 0, 0, 0).unwrap();
+    device.update_cursor(0xdade, 0, 0, 0, 0, 0, false).unwrap();
 }
 
 
