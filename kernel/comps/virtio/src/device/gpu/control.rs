@@ -451,3 +451,45 @@ impl Default for VirtioGpuRespUpdateCursor {
     }
 }
 
+
+// VIRTIO_GPU_CMD_RESOURCE_DETACH_BACKING
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub(crate) struct VirtioGpuResourceDetachBacking {
+    hdr: VirtioGpuCtrlHdr,
+    resource_id: u32,
+    padding: u32,
+}
+
+impl VirtioGpuResourceDetachBacking {
+    pub(crate) fn new(resource_id: u32) -> VirtioGpuResourceDetachBacking {
+        VirtioGpuResourceDetachBacking {
+            hdr: VirtioGpuCtrlHdr::from_type(
+                VirtioGpuCtrlType::VIRTIO_GPU_CMD_RESOURCE_DETACH_BACKING,
+            ),
+            resource_id,
+            padding: 0,
+        }
+    }
+}
+
+#[repr(C, packed)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub struct VirtioGpuRespDetachBacking {
+    hdr: VirtioGpuCtrlHdr,
+}
+
+impl VirtioGpuRespDetachBacking {
+    pub fn header_type(&self) -> u32 {
+        self.hdr.type_
+    }
+}
+
+impl Default for VirtioGpuRespDetachBacking {
+    fn default() -> Self {
+        VirtioGpuRespDetachBacking {
+            hdr: VirtioGpuCtrlHdr::default(),
+        }
+    }
+}
+

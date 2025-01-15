@@ -12,6 +12,7 @@ use ostd::{
     trap::TrapFrame,
 };
 
+use super::control::{VirtioGpuResourceDetachBacking, VirtioGpuRespDetachBacking};
 use super::{
     config::{GPUFeatures, VirtioGPUConfig},
     control::{
@@ -68,7 +69,8 @@ impl GPUDevice {
     const QUEUE_SIZE: u16 = 64;
 
     pub fn negotiate_features(features: u64) -> u64 {
-        let features = GPUFeatures::from_bits_truncate(features);
+        let mut features = GPUFeatures::from_bits_truncate(features);
+        features.insert(GPUFeatures::VIRTIO_GPU_F_VIRGL);
         early_println!("virtio_gpu_features = {:?}", features);
         features.bits()
     }
@@ -176,6 +178,7 @@ impl GPUDevice {
         // Test device
         test_frame_buffer(Arc::clone(&device))?;
         test_cursor(Arc::clone(&device));
+        test_attach_and_detach(Arc::clone(&device))?;
 
         // TODO: (Taojie) make device a global static variable
         // GPU_DEVICE.call_once(|| device);
@@ -480,15 +483,12 @@ impl GPUDevice {
 
     pub fn setup_framebuffer(&self, resource_id: u32) -> Result<(), VirtioDeviceError> {
         // get display info
-        early_println!("checkpoint 1");
         let display_info = self.request_display_info()?;
         let rect = display_info.get_rect(0).unwrap();
 
-        early_println!("checkpoint 2");
         // create resource 2d
         self.resource_create_2d(resource_id, rect.width(), rect.height())?;
 
-        early_println!("checkpoint 3");
         // alloc continuous memory for framebuffer
         // Each pixel is 4 bytes (32 bits) in RGBA format.
         let size = rect.width() as usize * rect.height() as usize * 4;
@@ -499,12 +499,10 @@ impl GPUDevice {
         // };
         let frame_buffer_dma = self.frame_buffer.as_ref().expect("frame buffer not initialized");
 
-        early_println!("checkpoint 4");
         // attach backing storage
         // TODO: (Taojie) excapsulate 0xbabe
         self.resource_attch_backing(resource_id, frame_buffer_dma.paddr(), size as u32)?;
 
-        early_println!("checkpoint 5");
         // map frame buffer to screen
         self.set_scanout(rect, 0, resource_id)?;
 
@@ -581,6 +579,7 @@ impl GPUDevice {
         let resp: VirtioGpuRespAttachBacking = resp_slice.read_val(0).unwrap();
 
         // check response with type OK_NODATA
+        early_println!("the response from attach backing: {:?}", resp);
         if resp.header_type() != VirtioGpuCtrlType::VIRTIO_GPU_RESP_OK_NODATA as u32 {
             return Err(VirtioDeviceError::QueueUnknownError);
         }
@@ -777,7 +776,6 @@ impl GPUDevice {
 
     pub fn update_cursor(&self, resource_id: u32, scanout_id: u32, pos_x: u32, pos_y: u32, hot_x: u32, hot_y: u32, is_move: bool) -> Result<(), VirtioDeviceError> {
         // Prepare request data DMA buffer
-        // TODO: (Taojie) implement move cursor
         let req_data_slice = {
             let req_data_slice = DmaStreamSlice::new(
                 &self.cursor_request,
@@ -831,6 +829,94 @@ impl GPUDevice {
 
         Ok(())
     }
+
+    fn resource_detach_backing(&self, resource_id: u32) -> Result<(), VirtioDeviceError>  {
+        // Prepare request data DMA buffer
+        let req_data_slice = {
+            let req_data_slice = DmaStreamSlice::new(
+                &self.cursor_request,
+                0,
+                size_of::<VirtioGpuResourceDetachBacking>(),
+            );
+            let req_data = VirtioGpuResourceDetachBacking::new(resource_id);
+            req_data_slice.write_val(0, &req_data).unwrap();
+            req_data_slice.sync().unwrap();
+            req_data_slice
+        };
+
+        // Prepare response DMA buffer
+        let resp_slice: DmaStreamSlice<&DmaStream> = {
+            let resp_slice = DmaStreamSlice::new(
+                &self.cursor_response,
+                0,
+                size_of::<VirtioGpuRespDetachBacking>(),
+            );
+            resp_slice
+                .write_val(0, &VirtioGpuRespDetachBacking::default())
+                .unwrap();
+            resp_slice.sync().unwrap();
+            resp_slice
+        };
+
+        // Add buffer to queue
+        let mut cursor_queue = self.cursor_queue.disable_irq().lock();
+        cursor_queue
+            .add_dma_buf(&[&req_data_slice], &[&resp_slice])
+            .expect("Add buffers to queue failed");
+
+        // Notify
+        if cursor_queue.should_notify() {
+            cursor_queue.notify();
+        }
+
+        // Wait for response
+        while !cursor_queue.can_pop() {
+            spin_loop();
+        }
+        cursor_queue.pop_used().expect("Pop used failed");
+
+        resp_slice.sync().unwrap();
+        let _resp: VirtioGpuRespDetachBacking = resp_slice.read_val(0).unwrap();
+
+
+        // Taojie: detach backing does not return anything as response.
+        //     This is likely to be another bug of qemu.
+
+        // check response with type OK_NODATA
+        // early_println!("resp: {:?}", resp);
+        // if resp.header_type() != VirtioGpuCtrlType::VIRTIO_GPU_RESP_OK_NODATA as u32 {
+        //     return Err(VirtioDeviceError::QueueUnknownError);
+        // }
+
+        Ok(())
+    }
+}
+
+fn test_attach_and_detach(device: Arc<GPUDevice>) -> Result<(), VirtioDeviceError> {
+    // create dummy stuff
+    let resource_id = 0xeeee;
+
+    // get display info
+    let display_info = device.request_display_info()?;
+    let rect = display_info.get_rect(0).unwrap();
+
+    // create resource 2d
+    device.resource_create_2d(resource_id, rect.width(), rect.height())?;
+
+    // alloc continuous memory for framebuffer
+    // Each pixel is 4 bytes (32 bits) in RGBA format.
+    let size = rect.width() as usize * rect.height() as usize * 4;
+    let fracme_num = size / 4096 + 1;
+    let frame_buffer_dma = {
+        let vm_segment = FrameAllocOptions::new().alloc_segment(fracme_num).unwrap();
+        DmaStream::map(vm_segment.into(), DmaDirection::ToDevice, false).unwrap()
+    };
+
+    // attach backing storage
+    device.resource_attch_backing(resource_id, frame_buffer_dma.paddr(), size as u32)?;
+    device.resource_detach_backing(resource_id)?;
+    early_println!("detach backing test passed");
+    Ok(())
 }
 
 static BMP_DATA: &[u8] = include_bytes!("mouse.bmp");

@@ -11,7 +11,7 @@ _start:
 
 print_asterinas:
     mov     $5070, %rax             # syscall number of write
-    mov     $0x00000000, %rdi       # 设置第一个参数为 0x00000000
+    mov     $0x000000ff, %rdi       # 设置第一个参数为 0x00000000
     syscall                         # 执行系统调用
     ret
 
