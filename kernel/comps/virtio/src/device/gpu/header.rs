@@ -9,7 +9,7 @@ pub const kBlockSize: u32 = 4096;
 #[derive(Default, Debug, Clone, Copy, Pod)]
 pub struct VirtioGPUCtrlHdr {
     pub ctrl_type: u32,     // specify request/response type
-    pub flags: u8,       // see usages
+    pub flags: u32,       // see usages
     pub fence_id: u64,      
     // if FLAG_FENCE is set, device must copy fence_id from request to response
     pub ctx_id: u32,
@@ -82,7 +82,7 @@ impl VirtioGPUCtrlHdr {
     pub fn from_type(ctrl_type: VirtioGPUCtrlType) -> Self {
         VirtioGPUCtrlHdr {
             ctrl_type: ctrl_type as u32,
-            flags: 0,
+            flags: 0 as u32,
             fence_id: 0,
             ctx_id: 0,
             ring_idx: 0,
