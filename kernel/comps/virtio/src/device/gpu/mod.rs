@@ -1,4 +1,5 @@
 use alloc::sync::Arc;
+
 use device::GPUDevice;
 use ostd::sync::SpinLock;
 use spin::Once;

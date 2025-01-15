@@ -22,7 +22,12 @@ pub(crate) struct VirtioGpuRect {
 
 impl VirtioGpuRect {
     pub fn new(x: u32, y: u32, width: u32, height: u32) -> Self {
-        VirtioGpuRect { x, y, width, height }
+        VirtioGpuRect {
+            x,
+            y,
+            width,
+            height,
+        }
     }
 
     pub fn width(&self) -> u32 {
@@ -352,7 +357,6 @@ impl VirtioGpuResourceFlush {
     }
 }
 
-
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy, Pod)]
 pub struct VirtioGpuRespResourceFlush {
@@ -373,7 +377,6 @@ impl Default for VirtioGpuRespResourceFlush {
     }
 }
 
-
 // VIRTIO_GPU_CMD_UPDATE_CURSOR and VIRTIO_GPU_CMD_MOVE_CURSOR
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy, Pod)]
@@ -393,7 +396,6 @@ impl VirtioGpuCursorPos {
             padding: 0,
         }
     }
-    
 }
 
 #[repr(C, packed)]
@@ -451,7 +453,6 @@ impl Default for VirtioGpuRespUpdateCursor {
     }
 }
 
-
 // VIRTIO_GPU_CMD_RESOURCE_DETACH_BACKING
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy, Pod)]
@@ -492,4 +493,3 @@ impl Default for VirtioGpuRespDetachBacking {
         }
     }
 }
-

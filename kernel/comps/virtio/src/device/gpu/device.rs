@@ -1,9 +1,7 @@
-use alloc::vec;
-use alloc::{boxed::Box, sync::Arc, vec::Vec};
+use alloc::{boxed::Box, sync::Arc, vec, vec::Vec};
 use core::hint::spin_loop;
-use tinybmp::Bmp;
-use embedded_graphics::pixelcolor::Rgb888;
 
+use embedded_graphics::pixelcolor::Rgb888;
 use log::info;
 use ostd::{
     early_println,
@@ -11,23 +9,29 @@ use ostd::{
     sync::SpinLock,
     trap::TrapFrame,
 };
+use tinybmp::Bmp;
 
-use super::control::{VirtioGpuResourceDetachBacking, VirtioGpuRespDetachBacking};
 use super::{
     config::{GPUFeatures, VirtioGPUConfig},
     control::{
-        VirtioGpuFormat, VirtioGpuMemEntry, VirtioGpuRect, VirtioGpuResourceAttachBacking, VirtioGpuResourceCreate2D, VirtioGpuResourceFlush, VirtioGpuRespAttachBacking, VirtioGpuRespDisplayInfo, VirtioGpuRespResourceFlush, VirtioGpuRespSetScanout, VirtioGpuRespTransferToHost2D, VirtioGpuRespUpdateCursor, VirtioGpuSetScanout, VirtioGpuTransferToHost2D, VirtioGpuUpdateCursor
+        VirtioGpuFormat, VirtioGpuMemEntry, VirtioGpuRect, VirtioGpuResourceAttachBacking,
+        VirtioGpuResourceCreate2D, VirtioGpuResourceDetachBacking, VirtioGpuResourceFlush,
+        VirtioGpuRespAttachBacking, VirtioGpuRespDetachBacking, VirtioGpuRespDisplayInfo,
+        VirtioGpuRespResourceFlush, VirtioGpuRespSetScanout, VirtioGpuRespTransferToHost2D,
+        VirtioGpuRespUpdateCursor, VirtioGpuSetScanout, VirtioGpuTransferToHost2D,
+        VirtioGpuUpdateCursor,
     },
     header::VirtioGpuCtrlHdr,
 };
-use crate::device::gpu::GPU_DEVICE;
 use crate::{
     device::{
         gpu::{
             control::{
-                VirtioGpuCursorPos, VirtioGpuGetEdid, VirtioGpuRespEdid, VirtioGpuRespResourceCreate2D, RESPONSE_SIZE
+                VirtioGpuCursorPos, VirtioGpuGetEdid, VirtioGpuRespEdid,
+                VirtioGpuRespResourceCreate2D, RESPONSE_SIZE,
             },
             header::{VirtioGpuCtrlType, REQUEST_SIZE},
+            GPU_DEVICE,
         },
         VirtioDeviceError,
     },
@@ -69,8 +73,7 @@ impl GPUDevice {
     const QUEUE_SIZE: u16 = 64;
 
     pub fn negotiate_features(features: u64) -> u64 {
-        let mut features = GPUFeatures::from_bits_truncate(features);
-        features.insert(GPUFeatures::VIRTIO_GPU_F_VIRGL);
+        let features = GPUFeatures::from_bits_truncate(features);
         early_println!("virtio_gpu_features = {:?}", features);
         features.bits()
     }
@@ -178,7 +181,7 @@ impl GPUDevice {
         // Test device
         test_frame_buffer(Arc::clone(&device))?;
         test_cursor(Arc::clone(&device));
-        test_attach_and_detach(Arc::clone(&device))?;
+        // test_attach_and_detach(Arc::clone(&device))?;
 
         // TODO: (Taojie) make device a global static variable
         // GPU_DEVICE.call_once(|| device);
@@ -279,7 +282,10 @@ impl GPUDevice {
         let (width, height) = self.resolution().expect("failed to get resolution");
 
         // get frame buffer
-        let buf = self.frame_buffer.as_ref().expect("frame buffer not initialized");
+        let buf = self
+            .frame_buffer
+            .as_ref()
+            .expect("frame buffer not initialized");
 
         // write content into buffer
         for x in 0..height {
@@ -310,7 +316,6 @@ impl GPUDevice {
         self.flush().expect("failed to flush");
         early_println!("flushed to screen");
         Ok(())
-
     }
 
     pub fn show_color(&self, color: i32) -> Result<(), VirtioDeviceError> {
@@ -318,7 +323,10 @@ impl GPUDevice {
         let (width, height) = self.resolution().expect("failed to get resolution");
 
         // get frame buffer
-        let buf = self.frame_buffer.as_ref().expect("frame buffer not initialized");
+        let buf = self
+            .frame_buffer
+            .as_ref()
+            .expect("frame buffer not initialized");
 
         // write content into buffer
         for x in 0..height {
@@ -349,7 +357,6 @@ impl GPUDevice {
         self.flush().expect("failed to flush");
         early_println!("flushed to screen");
         Ok(())
-
     }
 
     fn request_display_info(&self) -> Result<VirtioGpuRespDisplayInfo, VirtioDeviceError> {
@@ -469,12 +476,10 @@ impl GPUDevice {
             spin_loop();
         }
         control_queue.pop_used().expect("Pop used failed");
-
         resp_slice.sync().unwrap();
         let resp: VirtioGpuRespResourceCreate2D = resp_slice.read_val(0).unwrap();
 
         // check response with type OK_NODATA
-        early_println!("resource create 2d response: {:?}", resp);
         if resp.header_type() != VirtioGpuCtrlType::VIRTIO_GPU_RESP_OK_NODATA as u32 {
             return Err(VirtioDeviceError::QueueUnknownError);
         }
@@ -491,13 +496,16 @@ impl GPUDevice {
 
         // alloc continuous memory for framebuffer
         // Each pixel is 4 bytes (32 bits) in RGBA format.
-        let size = rect.width() as usize * rect.height() as usize * 4;
+        let size: usize = rect.width() as usize * rect.height() as usize * 4;
         // let fracme_num = size / 4096 + 1; // TODO: (Taojie) use Asterinas API to represent page size.
         // let frame_buffer_dma = {
         //     let vm_segment = FrameAllocOptions::new().alloc_segment(fracme_num).unwrap();
         //     DmaStream::map(vm_segment.into(), DmaDirection::ToDevice, false).unwrap()
         // };
-        let frame_buffer_dma = self.frame_buffer.as_ref().expect("frame buffer not initialized");
+        let frame_buffer_dma = self
+            .frame_buffer
+            .as_ref()
+            .expect("frame buffer not initialized");
 
         // attach backing storage
         // TODO: (Taojie) excapsulate 0xbabe
@@ -718,8 +726,12 @@ impl GPUDevice {
 
         Ok(())
     }
-    
-    fn resource_flush(&self, rect: VirtioGpuRect, resource_id: i32) -> Result<(), VirtioDeviceError> {
+
+    fn resource_flush(
+        &self,
+        rect: VirtioGpuRect,
+        resource_id: i32,
+    ) -> Result<(), VirtioDeviceError> {
         // Prepare request data DMA buffer
         let req_data_slice = {
             let req_data_slice = DmaStreamSlice::new(
@@ -774,16 +786,23 @@ impl GPUDevice {
         Ok(())
     }
 
-    pub fn update_cursor(&self, resource_id: u32, scanout_id: u32, pos_x: u32, pos_y: u32, hot_x: u32, hot_y: u32, is_move: bool) -> Result<(), VirtioDeviceError> {
+    pub fn update_cursor(
+        &self,
+        resource_id: u32,
+        scanout_id: u32,
+        pos_x: u32,
+        pos_y: u32,
+        hot_x: u32,
+        hot_y: u32,
+        is_move: bool,
+    ) -> Result<(), VirtioDeviceError> {
         // Prepare request data DMA buffer
         let req_data_slice = {
-            let req_data_slice = DmaStreamSlice::new(
-                &self.cursor_request,
-                0,
-                size_of::<VirtioGpuUpdateCursor>(),
-            );
+            let req_data_slice =
+                DmaStreamSlice::new(&self.cursor_request, 0, size_of::<VirtioGpuUpdateCursor>());
             let cursor_pos = VirtioGpuCursorPos::new(scanout_id, pos_x, pos_y);
-            let req_data = VirtioGpuUpdateCursor::new(cursor_pos, resource_id, hot_x, hot_y, is_move);
+            let req_data =
+                VirtioGpuUpdateCursor::new(cursor_pos, resource_id, hot_x, hot_y, is_move);
             req_data_slice.write_val(0, &req_data).unwrap();
             req_data_slice.sync().unwrap();
             req_data_slice
@@ -830,7 +849,7 @@ impl GPUDevice {
         Ok(())
     }
 
-    fn resource_detach_backing(&self, resource_id: u32) -> Result<(), VirtioDeviceError>  {
+    fn resource_detach_backing(&self, resource_id: u32) -> Result<(), VirtioDeviceError> {
         // Prepare request data DMA buffer
         let req_data_slice = {
             let req_data_slice = DmaStreamSlice::new(
@@ -878,7 +897,6 @@ impl GPUDevice {
         resp_slice.sync().unwrap();
         let _resp: VirtioGpuRespDetachBacking = resp_slice.read_val(0).unwrap();
 
-
         // Taojie: detach backing does not return anything as response.
         //     This is likely to be another bug of qemu.
 
@@ -923,13 +941,15 @@ static BMP_DATA: &[u8] = include_bytes!("mouse.bmp");
 /// Test the functionality of rendering cursor.
 fn test_cursor(device: Arc<GPUDevice>) {
     // setup cursor
-    // from spec: The mouse cursor image is a normal resource, except that it must be 64x64 in size. 
-    // The driver MUST create and populate the resource (using the usual VIRTIO_GPU_CMD_RESOURCE_CREATE_2D, VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING and VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D controlq commands) 
+    // from spec: The mouse cursor image is a normal resource, except that it must be 64x64 in size.
+    // The driver MUST create and populate the resource (using the usual VIRTIO_GPU_CMD_RESOURCE_CREATE_2D, VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING and VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D controlq commands)
     // and make sure they are completed (using VIRTIO_GPU_FLAG_FENCE).
     let cursor_rect: VirtioGpuRect = VirtioGpuRect::new(0, 0, 64, 64);
     let size = cursor_rect.width() as usize * cursor_rect.height() as usize * 4;
     let cursor_dma_buffer = {
-        let vm_segment = FrameAllocOptions::new().alloc_segment(size / 4096 + 1).unwrap();
+        let vm_segment = FrameAllocOptions::new()
+            .alloc_segment(size / 4096 + 1)
+            .unwrap();
         DmaStream::map(vm_segment.into(), DmaDirection::ToDevice, false).unwrap()
     };
 
@@ -950,10 +970,14 @@ fn test_cursor(device: Arc<GPUDevice>) {
         panic!("cursor size not match");
     }
     cursor_dma_buffer.write_slice(0, &b).unwrap();
-    
+
     // create cursor resource, attach backing storage and transfer to host via control queue
-    device.resource_create_2d(0xdade, cursor_rect.width(), cursor_rect.height()).unwrap();       // TODO: (Taojie) replace dade with cursor resource id, which is customized.
-    device.resource_attch_backing(0xdade, cursor_dma_buffer.paddr(), size as u32).unwrap();
+    device
+        .resource_create_2d(0xdade, cursor_rect.width(), cursor_rect.height())
+        .unwrap(); // TODO: (Taojie) replace dade with cursor resource id, which is customized.
+    device
+        .resource_attch_backing(0xdade, cursor_dma_buffer.paddr(), size as u32)
+        .unwrap();
     device.transfer_to_host_2d(cursor_rect, 0, 0xdade).unwrap();
     early_println!("cursor setup done");
 
@@ -963,7 +987,6 @@ fn test_cursor(device: Arc<GPUDevice>) {
     // }
     device.update_cursor(0xdade, 0, 0, 0, 0, 0, false).unwrap();
 }
-
 
 /// Test the functionality of gpu device and driver.
 fn test_frame_buffer(device: Arc<GPUDevice>) -> Result<(), VirtioDeviceError> {
@@ -979,7 +1002,10 @@ fn test_frame_buffer(device: Arc<GPUDevice>) -> Result<(), VirtioDeviceError> {
     //     .setup_framebuffer(0xbabe)
     //     .expect("failed to setup framebuffer");
     device.setup_framebuffer(0xbabe)?;
-    let buf = device.frame_buffer.as_ref().expect("frame buffer not initialized");
+    let buf = device
+        .frame_buffer
+        .as_ref()
+        .expect("frame buffer not initialized");
 
     // write content into buffer
     // for x in 0..height {
@@ -993,12 +1019,17 @@ fn test_frame_buffer(device: Arc<GPUDevice>) -> Result<(), VirtioDeviceError> {
     //         buf.write_val(offset as usize, &color).unwrap();
     //     }
     // }
-    for y in 0..height {    //height=800
-        for x in 0..width { //width=1280
+    for y in 0..height {
+        //height=800
+        for x in 0..width {
+            //width=1280
             let offset = (y * width + x) * 4;
-            buf.write_val(offset as usize, &x).expect("error writing frame buffer");
-            buf.write_val((offset + 1) as usize, &y).expect("error writing frame buffer");
-            buf.write_val((offset + 2) as usize, &(x+y)).expect("error writing frame buffer");
+            buf.write_val(offset as usize, &x)
+                .expect("error writing frame buffer");
+            buf.write_val((offset + 1) as usize, &y)
+                .expect("error writing frame buffer");
+            buf.write_val((offset + 2) as usize, &(x + y))
+                .expect("error writing frame buffer");
             // let black = 0x00000000;
             // buf.write_val(offset as usize, &black).expect("error writing frame buffer");
             // buf.write_val((offset + 1) as usize, &black).expect("error writing frame buffer");
