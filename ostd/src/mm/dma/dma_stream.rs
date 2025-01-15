@@ -346,7 +346,7 @@ impl<Dma: AsRef<DmaStream>> HasPaddr for DmaStreamSlice<Dma> {
     }
 }
 
-impl Clone for DmaStreamSlice<DmaStream> {
+impl<Dma: AsRef<DmaStream> + Clone> Clone for DmaStreamSlice<Dma> {
     fn clone(&self) -> Self {
         Self {
             stream: self.stream.clone(),
