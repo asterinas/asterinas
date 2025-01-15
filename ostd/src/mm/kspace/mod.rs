@@ -45,6 +45,8 @@ use core::ops::Range;
 use align_ext::AlignExt;
 use log::info;
 use spin::Once;
+#[cfg(ktest)]
+mod test;
 
 use super::{
     frame::{
