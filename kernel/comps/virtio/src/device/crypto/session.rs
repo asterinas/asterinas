@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 use aster_crypto::{CryptoCipherAlgorithm, CryptoError, CryptoHashAlgorithm, CryptoOperation};
 use ostd::Pod;
 
-enum CryptoService{
+pub enum CryptoService{
     Cipher = 0,
     Hash = 1,
     Mac = 2,
@@ -53,7 +53,7 @@ impl VirtioCryptoStatus{
     }
 }
 
-const fn crypto_services_opcode(service: CryptoService, op: i32)-> i32{
+pub const fn crypto_services_opcode(service: CryptoService, op: i32)-> i32{
     ((service as i32) << 8) | op
 }
 
@@ -85,6 +85,10 @@ impl CryptoCtrlHeader {
     }
 }
 
+pub trait CryptoSessionRequest: Pod{
+    fn to_bytes(&self, padding: bool)->Vec<u8>;
+}
+
 #[derive(Debug, Pod, Clone, Copy)]
 #[repr(C)]
 pub struct VirtioCryptoSessionInput{
@@ -107,10 +111,17 @@ impl VirtioCryptoSessionInput{
 pub struct CryptoHashSessionReq {
 	pub header: CryptoCtrlHeader,
 	pub flf: VirtioCryptoHashCreateSessionFlf,
-    pub padding: [i32; 12]
 }
 
-enum CryptoSymOp{
+impl CryptoSessionRequest for CryptoHashSessionReq{
+    fn to_bytes(&self, padding: bool)->Vec<u8> {
+        let header_bytes = self.header.to_bytes(padding);
+        let flf_bytes = self.flf.to_bytes(padding);
+        return [header_bytes, flf_bytes].concat();        
+    }
+}
+
+pub enum CryptoSymOp{
     None = 0,
     Cipher = 1,
     AlgorithmChaining = 2,
@@ -133,6 +144,12 @@ impl CryptoCipherSessionReq{
             op_type: CryptoSymOp::Cipher as _, 
             padding: 0
         }
+    }
+}
+
+impl CryptoSessionRequest for CryptoCipherSessionReq{
+    fn to_bytes(&self, padding: bool)->Vec<u8> {
+        Vec::from(<Self as Pod>::as_bytes(&self))    
     }
 }
 
@@ -174,6 +191,17 @@ impl VirtioCryptoHashCreateSessionFlf{
     }
 }
 
+impl VirtioCryptoHashCreateSessionFlf {
+    pub fn to_bytes(&self, padding: bool) -> Vec<u8> {
+        let res = <Self as Pod>::as_bytes(&self);
+        let mut vec = Vec::from(res);
+        if padding {
+            vec.resize(56, 0);
+        }
+        vec
+    }
+}
+
 // #[derive(Debug, Pod, Clone, Copy)]
 // #[repr(C)]
 // pub struct VirtioCryptoDestroySessionPara {
@@ -203,6 +231,8 @@ impl VirtioCryptoDestroySessionFlf {
         vec
     }
 }
+
+
 #[derive(Debug, Pod, Clone, Copy)]
 #[repr(C)]
 pub struct VirtioCryptoDestroySessionInput {
@@ -226,7 +256,6 @@ pub struct CryptoDestroySessionReq {
 
 impl CryptoDestroySessionReq {
     pub fn to_bytes(&self, padding: bool) -> Vec<u8> {
-            // let res = <self as Pod>::as_bytes(&self);
         let header_bytes = self.header.to_bytes(padding);
         let flf_bytes = self.flf.to_bytes(padding);
         return [header_bytes, flf_bytes].concat();

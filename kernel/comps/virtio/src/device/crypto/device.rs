@@ -13,6 +13,7 @@ use crate::{
     transport::{ConfigManager, VirtioTransport},
 };
 use crate::device::crypto::session::*;
+use crate::device::crypto::service::*;
 use super::config::VirtioCryptoConfig;
 
 pub struct CryptoDevice{
@@ -148,39 +149,33 @@ impl CryptoDevice {
 
         res.get_result()
     }
-}
 
-impl AnyCryptoDevice for CryptoDevice{
-    fn test_device(&self){
-        //test hash session create
-        
-        debug!("test begin!");
-
+    fn create_session<T: CryptoSessionRequest>(&self, req: T, vlf: &[u8], padding: bool)->Result<i64, CryptoError>{
+        let vlf_len: i32 = vlf.len() as _;
         let ctrl_slice = DmaStreamSlice::new(&self.control_buffer, 0, 72);
-        let ctrl_resp_slice = DmaStreamSlice::new(&self.control_buffer, 72, 16);
-        self.control_queue.lock().add_dma_buf(&[&ctrl_slice], &[&ctrl_resp_slice]).unwrap();
-
-        let algo = CryptoHashAlgorithm::Sha256;
-    
-        let header = CryptoCtrlHeader { 
-            opcode: CryptoSessionOperation::AeadCreate as i32, 
-            algo: algo as _,
-            flag: 0, 
-            reserved: 0
+        let ctrl_resp_slice = DmaStreamSlice::new(&self.control_buffer, (72 + vlf_len) as _, 16);
+        
+        let ctrl_vlf_slice = if vlf.len() > 0{
+            let ctrl_vlf_slice = DmaStreamSlice::new(&self.control_buffer, 72, vlf_len as _);
+            self.control_queue.lock().add_dma_buf(&[&ctrl_slice, &ctrl_vlf_slice], &[&ctrl_resp_slice]).unwrap();
+            Some(ctrl_vlf_slice)
+        }else{
+            self.control_queue.lock().add_dma_buf(&[&ctrl_slice], &[&ctrl_resp_slice]).unwrap();
+            None
         };
-    
-        let req = CryptoHashSessionReq{
-            header,
-            flf: VirtioCryptoHashCreateSessionFlf::new(algo, 64),
-            padding: [0; 12]
-        };
-    
-        let mut writer = self.control_buffer.writer().unwrap();
-        let send_res = writer.write_val(&req);
-    
-        debug!("send header: bytes: {:?}, len = {:?}, resp: {:?}, supp_bits:{:?}", req.as_bytes(), req.as_bytes().len(), send_res, self.config_manager.read_config().hash_algo);
-        self.control_queue.lock().notify();
 
+        debug!("send header: bytes: {:?}, len = {:?}", 
+                req.as_bytes(), req.as_bytes().len());
+        
+        ctrl_slice.write_bytes(0, &req.to_bytes(padding)).unwrap();
+        if let Some(ctrl_vlf_slice) = ctrl_vlf_slice{
+            ctrl_vlf_slice.write_bytes(0, vlf).unwrap();
+        }
+
+        if self.control_queue.lock().should_notify() {
+            self.control_queue.lock().notify();
+        }
+    
         while ! self.control_queue.lock().can_pop(){
             spin_loop();
         }
@@ -190,16 +185,20 @@ impl AnyCryptoDevice for CryptoDevice{
     
         let mut reader = ctrl_resp_slice.reader().unwrap();
         let res = reader.read_val::<VirtioCryptoSessionInput>().unwrap();
-    
-        debug!("get session result: {:?}", res);
+        
+        debug!("receive feedback:{:?}", res);
+
+        res.get_result()
+    }
+}
+
+impl AnyCryptoDevice for CryptoDevice{
+    fn test_device(&self){
+        //
     }
 
     fn create_hash_session(&self, algo: CryptoHashAlgorithm, result_len: u32)->Result<i64, CryptoError>{
         debug!("[CRYPTO] trying to create hash session");
-
-        let ctrl_slice = DmaStreamSlice::new(&self.control_buffer, 0, 72);
-        let ctrl_resp_slice = DmaStreamSlice::new(&self.control_buffer, 72, 16);
-        self.control_queue.lock().add_dma_buf(&[&ctrl_slice], &[&ctrl_resp_slice]).unwrap();
     
         let header = CryptoCtrlHeader { 
             opcode: CryptoSessionOperation::HashCreate as i32, 
@@ -211,42 +210,15 @@ impl AnyCryptoDevice for CryptoDevice{
         let req = CryptoHashSessionReq{
             header,
             flf: VirtioCryptoHashCreateSessionFlf::new(algo, result_len),
-            padding: [0; 12]
         };
         
-        ctrl_slice.write_val(0, &req).unwrap();
-
-        debug!("send header: bytes: {:?}, len = {:?}, supp_bits:{:?}", 
-                req.as_bytes(), req.as_bytes().len(), self.config_manager.read_config().hash_algo);
-        
-        if self.control_queue.lock().should_notify() {
-            self.control_queue.lock().notify();
-        }
-    
-        while ! self.control_queue.lock().can_pop(){
-            spin_loop();
-        }
-    
-        self.control_queue.lock().pop_used().unwrap();
-        ctrl_resp_slice.sync().unwrap();
-    
-        let mut reader = ctrl_resp_slice.reader().unwrap();
-        let res = reader.read_val::<VirtioCryptoSessionInput>().unwrap();
-        
-        debug!("receive feedback:{:?}", res);
-
-        res.get_result()
+        self.create_session(req, &[], true)
     }
 
     fn create_cipher_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, key: &[u8])->Result<i64, CryptoError>{
         debug!("[CRYPTO] trying to create cipher session");
 
         let key_len: i32 = key.len() as _;
-        let ctrl_slice = DmaStreamSlice::new(&self.control_buffer, 0, 72);
-        let ctrl_vlf_slice = DmaStreamSlice::new(&self.control_buffer, 72, key_len as _);
-        let ctrl_resp_slice = DmaStreamSlice::new(&self.control_buffer, (72 + key_len) as _, 16);
-        self.control_queue.lock().add_dma_buf(&[&ctrl_slice, &ctrl_vlf_slice], &[&ctrl_resp_slice]).unwrap();
-    
         let header = CryptoCtrlHeader { 
             opcode: CryptoSessionOperation::CipherCreate as i32, 
             algo: algo as _,
@@ -256,29 +228,7 @@ impl AnyCryptoDevice for CryptoDevice{
     
         let req = CryptoCipherSessionReq::new(header, algo, key_len, op);
 
-        debug!("send header: bytes: {:?}, len = {:?}, supp_bits:{:?}", 
-                req.as_bytes(), req.as_bytes().len(), self.config_manager.read_config().cipher_algo_l);
-        
-        ctrl_slice.write_val(0, &req).unwrap();
-        ctrl_vlf_slice.write_bytes(0, key).unwrap();
-
-        if self.control_queue.lock().should_notify() {
-            self.control_queue.lock().notify();
-        }
-    
-        while ! self.control_queue.lock().can_pop(){
-            spin_loop();
-        }
-    
-        self.control_queue.lock().pop_used().unwrap();
-        ctrl_resp_slice.sync().unwrap();
-    
-        let mut reader = ctrl_resp_slice.reader().unwrap();
-        let res = reader.read_val::<VirtioCryptoSessionInput>().unwrap();
-        
-        debug!("receive feedback:{:?}", res);
-
-        res.get_result()
+        self.create_session(req, key, true)
     }
 
     fn destroy_cipher_session(&self, session_id: i64) -> Result<u8, CryptoError> {

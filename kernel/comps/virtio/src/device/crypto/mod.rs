@@ -3,5 +3,6 @@
 pub mod device;
 pub mod config;
 pub mod session;
+pub mod service;
 
 pub static DEVICE_NAME: &str = "Virtio-Crypto";
