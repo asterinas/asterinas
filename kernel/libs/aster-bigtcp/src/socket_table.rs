@@ -265,12 +265,7 @@ impl<E: Ext> SocketTable<E> {
             .find(|connection| connection.connection_key() == key)
     }
 
-    pub(crate) fn remove_listener(
-        &mut self,
-        listener: &TcpListenerBg<E>,
-    ) -> Option<Arc<TcpListenerBg<E>>> {
-        let key = listener.listener_key();
-
+    pub(crate) fn remove_listener(&mut self, key: &ListenerKey) -> Option<Arc<TcpListenerBg<E>>> {
         let bucket = {
             let hash = key.hash();
             let bucket_index = hash & LISTENER_BUCKET_MASK;
@@ -280,8 +275,25 @@ impl<E: Ext> SocketTable<E> {
         let index = bucket
             .listeners
             .iter()
-            .position(|tcp_listener| tcp_listener.listener_key() == listener.listener_key())?;
+            .position(|tcp_listener| tcp_listener.listener_key() == key)?;
         Some(bucket.listeners.swap_remove(index))
+    }
+
+    pub(crate) fn remove_dead_tcp_connection(&mut self, key: &ConnectionKey) {
+        let bucket = {
+            let hash = key.hash();
+            let bucket_index = hash & CONNECTION_BUCKET_MASK;
+            &mut self.connection_buckets[bucket_index as usize]
+        };
+
+        if let Some(index) = bucket
+            .connections
+            .iter()
+            .position(|tcp_connection| tcp_connection.connection_key() == key)
+        {
+            let connection = bucket.connections.swap_remove(index);
+            connection.on_dead_events();
+        }
     }
 
     pub(crate) fn remove_udp_socket(
@@ -293,17 +305,6 @@ impl<E: Ext> SocketTable<E> {
             .iter()
             .position(|udp_socket| Arc::ptr_eq(udp_socket, socket))?;
         Some(self.udp_sockets.swap_remove(index))
-    }
-
-    pub(crate) fn remove_dead_tcp_connections(&mut self) {
-        for connection_bucket in self.connection_buckets.iter_mut() {
-            for tcp_conn in connection_bucket
-                .connections
-                .extract_if(|connection| connection.is_dead())
-            {
-                tcp_conn.on_dead_events();
-            }
-        }
     }
 
     pub(crate) fn tcp_listener_iter(&self) -> impl Iterator<Item = &Arc<TcpListenerBg<E>>> {

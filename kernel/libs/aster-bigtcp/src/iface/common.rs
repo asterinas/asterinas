@@ -23,7 +23,7 @@ use super::{
 use crate::{
     errors::BindError,
     ext::Ext,
-    socket::{TcpListenerBg, UdpSocketBg},
+    socket::{TcpConnectionBg, TcpListenerBg, UdpSocketBg},
     socket_table::SocketTable,
 };
 
@@ -152,8 +152,13 @@ impl<E: Ext> IfaceCommon<E> {
 
     pub(crate) fn remove_tcp_listener(&self, socket: &Arc<TcpListenerBg<E>>) {
         let mut sockets = self.sockets.lock();
-        let removed = sockets.remove_listener(socket);
+        let removed = sockets.remove_listener(socket.listener_key());
         debug_assert!(removed.is_some());
+    }
+
+    pub(crate) fn remove_dead_tcp_connection(&self, socket: &Arc<TcpConnectionBg<E>>) {
+        let mut sockets = self.sockets.lock();
+        sockets.remove_dead_tcp_connection(socket.connection_key());
     }
 
     pub(crate) fn remove_udp_socket(&self, socket: &Arc<UdpSocketBg<E>>) {
@@ -184,11 +189,17 @@ impl<E: Ext> IfaceCommon<E> {
         interface.context().now = get_network_timestamp();
 
         let mut sockets = self.sockets.lock();
+        let mut dead_tcp_conns = Vec::new();
 
         loop {
             let mut new_tcp_conns = Vec::new();
 
-            let mut context = PollContext::new(interface.context(), &sockets, &mut new_tcp_conns);
+            let mut context = PollContext::new(
+                interface.context(),
+                &sockets,
+                &mut new_tcp_conns,
+                &mut dead_tcp_conns,
+            );
             context.poll_ingress(device, &mut process_phy, &mut dispatch_phy);
             context.poll_egress(device, &mut dispatch_phy);
 
@@ -204,7 +215,9 @@ impl<E: Ext> IfaceCommon<E> {
             }
         }
 
-        sockets.remove_dead_tcp_connections();
+        for dead_conn_key in dead_tcp_conns.into_iter() {
+            sockets.remove_dead_tcp_connection(&dead_conn_key);
+        }
 
         for socket in sockets.tcp_listener_iter() {
             if socket.has_events() {
