@@ -61,7 +61,7 @@ pub struct GPUDevice {
     transport: SpinLock<Box<dyn VirtioTransport>>,
 
     // frame buffer for syscall manipulation
-    frame_buffer: Option<Arc<DmaStream>>,
+    frame_buffer: Option<DmaStream>,
 }
 
 impl GPUDevice {
@@ -109,8 +109,15 @@ impl GPUDevice {
             DmaStream::map(vm_segment.into(), DmaDirection::Bidirectional, false).unwrap()
         };
 
+        let size = 640 * 480 * 4;
+        let fracme_num = size / 4096 + 1; // Taojie: this is a workaround, assume that we know the resolution beforehand.
+        let frame_buffer_dma = {
+            let vm_segment = FrameAllocOptions::new().alloc_segment(fracme_num).unwrap();
+            DmaStream::map(vm_segment.into(), DmaDirection::ToDevice, false).unwrap()
+        };
+
         // Create device: Arc<Mutex<GPUDevice>>
-        let mut device = Arc::new(Self {
+        let device = Arc::new(Self {
             config_manager,
             control_queue,
             cursor_queue,
@@ -120,35 +127,35 @@ impl GPUDevice {
             cursor_response,
             header: VirtioGpuCtrlHdr::default(),
             transport: SpinLock::new(transport),
-            frame_buffer: None,
+            frame_buffer: Some(frame_buffer_dma),
         });
 
         // Interrupt handler
-        // let clone_device = device.clone();
-        // let handle_irq_ctl = move |_: &TrapFrame| {
-        //     clone_device.handle_irq();
-        // };
-        // let clone_device = device.clone();
-        // let handle_irq_cursor = move |_: &TrapFrame| {
-        //     clone_device.handle_irq();
-        // };
+        let clone_device = device.clone();
+        let handle_irq_ctl = move |_: &TrapFrame| {
+            clone_device.handle_irq();
+        };
+        let clone_device = device.clone();
+        let handle_irq_cursor = move |_: &TrapFrame| {
+            clone_device.handle_irq();
+        };
 
-        // let clone_device = device.clone();
-        // let handle_config_change = move |_: &TrapFrame| {
-        //     clone_device.handle_config_change();
-        // };
+        let clone_device = device.clone();
+        let handle_config_change = move |_: &TrapFrame| {
+            clone_device.handle_config_change();
+        };
 
         // Register irq callbacks
         let mut transport = device.transport.lock();
-        // transport
-        //     .register_queue_callback(CONTROL_QUEUE_INDEX, Box::new(handle_irq_ctl), false)
-        //     .unwrap();
-        // transport
-        //     .register_queue_callback(CURSOR_QUEUE_INDEX, Box::new(handle_irq_cursor), false)
-        //     .unwrap();
-        // transport
-        //     .register_cfg_callback(Box::new(handle_config_change))
-        //     .unwrap();
+        transport
+            .register_queue_callback(CONTROL_QUEUE_INDEX, Box::new(handle_irq_ctl), false)
+            .unwrap();
+        transport
+            .register_queue_callback(CURSOR_QUEUE_INDEX, Box::new(handle_irq_cursor), false)
+            .unwrap();
+        transport
+            .register_cfg_callback(Box::new(handle_config_change))
+            .unwrap();
 
         transport.finish_init();
         drop(transport);
@@ -167,13 +174,7 @@ impl GPUDevice {
 
         // Taojie: we directly test gpu functionality here rather than writing a user application.
         // Test device
-        let buf = test_frame_buffer(Arc::clone(&device));
-        if let Some(device_mut) = Arc::get_mut(&mut device) {
-            device_mut.frame_buffer = Some(buf);
-        } else {
-            early_println!("ref count: {}", Arc::strong_count(&device));
-            panic!("failed to get mutable reference of device");
-        }        
+        test_frame_buffer(Arc::clone(&device))?;
         test_cursor(Arc::clone(&device));
 
         // TODO: (Taojie) make device a global static variable
@@ -443,7 +444,7 @@ impl GPUDevice {
         Ok(())
     }
 
-    pub fn setup_framebuffer(&self, resource_id: u32) -> Result<Arc<DmaStream>, VirtioDeviceError> {
+    pub fn setup_framebuffer(&self, resource_id: u32) -> Result<(), VirtioDeviceError> {
         // get display info
         early_println!("checkpoint 1");
         let display_info = self.request_display_info()?;
@@ -457,11 +458,12 @@ impl GPUDevice {
         // alloc continuous memory for framebuffer
         // Each pixel is 4 bytes (32 bits) in RGBA format.
         let size = rect.width() as usize * rect.height() as usize * 4;
-        let fracme_num = size / 4096 + 1; // TODO: (Taojie) use Asterinas API to represent page size.
-        let frame_buffer_dma = {
-            let vm_segment = FrameAllocOptions::new().alloc_segment(fracme_num).unwrap();
-            DmaStream::map(vm_segment.into(), DmaDirection::ToDevice, false).unwrap()
-        };
+        // let fracme_num = size / 4096 + 1; // TODO: (Taojie) use Asterinas API to represent page size.
+        // let frame_buffer_dma = {
+        //     let vm_segment = FrameAllocOptions::new().alloc_segment(fracme_num).unwrap();
+        //     DmaStream::map(vm_segment.into(), DmaDirection::ToDevice, false).unwrap()
+        // };
+        let frame_buffer_dma = self.frame_buffer.as_ref().expect("frame buffer not initialized");
 
         early_println!("checkpoint 4");
         // attach backing storage
@@ -473,7 +475,7 @@ impl GPUDevice {
         self.set_scanout(rect, 0, resource_id)?;
 
         // return dma to be written
-        Ok(Arc::new(frame_buffer_dma))
+        Ok(())
     }
 
     fn resource_attch_backing(
@@ -844,7 +846,7 @@ fn test_cursor(device: Arc<GPUDevice>) {
 
 
 /// Test the functionality of gpu device and driver.
-fn test_frame_buffer(device: Arc<GPUDevice>) ->  Arc<DmaStream>{
+fn test_frame_buffer(device: Arc<GPUDevice>) -> Result<(), VirtioDeviceError> {
     // get resolution
     let (width, height) = device.resolution().expect("failed to get resolution");
     early_println!("[INFO] resolution: {}x{}", width, height);
@@ -853,9 +855,11 @@ fn test_frame_buffer(device: Arc<GPUDevice>) ->  Arc<DmaStream>{
     device.request_edid_info().expect("failed to get edid info");
 
     // setup framebuffer
-    let buf: Arc<DmaStream> = device
-        .setup_framebuffer(0xbabe)
-        .expect("failed to setup framebuffer");
+    // let buf: Arc<DmaStream> = device
+    //     .setup_framebuffer(0xbabe)
+    //     .expect("failed to setup framebuffer");
+    device.setup_framebuffer(0xbabe)?;
+    let buf = device.frame_buffer.as_ref().expect("frame buffer not initialized");
 
     // write content into buffer
     // for x in 0..height {
@@ -886,5 +890,5 @@ fn test_frame_buffer(device: Arc<GPUDevice>) ->  Arc<DmaStream>{
     device.flush().expect("failed to flush");
     early_println!("flushed to screen");
 
-    buf
+    Ok(())
 }
