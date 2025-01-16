@@ -17,7 +17,10 @@ use super::{
     utils::now,
 };
 use crate::{
-    fs::utils::{Extension, FallocMode, InodeMode, Metadata},
+    fs::{
+        path::{is_dot, is_dot_or_dotdot, is_dotdot},
+        utils::{Extension, FallocMode, InodeMode, Metadata},
+    },
     process::{posix_thread::AsPosixThread, Gid, Uid},
 };
 
@@ -228,7 +231,7 @@ impl Inode {
     }
 
     pub fn unlink(&self, name: &str) -> Result<()> {
-        if name == "." || name == ".." {
+        if is_dot_or_dotdot(name) {
             return_errno!(Errno::EISDIR);
         }
 
@@ -265,10 +268,10 @@ impl Inode {
     }
 
     pub fn rmdir(&self, name: &str) -> Result<()> {
-        if name == "." {
+        if is_dot(name) {
             return_errno_with_message!(Errno::EINVAL, "rmdir on .");
         }
-        if name == ".." {
+        if is_dotdot(name) {
             return_errno_with_message!(Errno::ENOTEMPTY, "rmdir on ..");
         }
 
@@ -421,10 +424,10 @@ impl Inode {
     }
 
     pub fn rename(&self, old_name: &str, target: &Inode, new_name: &str) -> Result<()> {
-        if old_name == "." || old_name == ".." || new_name == "." || new_name == ".." {
+        if is_dot_or_dotdot(old_name) || is_dot_or_dotdot(new_name) {
             return_errno!(Errno::EISDIR);
         }
-        if new_name.len() > MAX_FNAME_LEN || new_name.len() > MAX_FNAME_LEN {
+        if old_name.len() > MAX_FNAME_LEN || new_name.len() > MAX_FNAME_LEN {
             return_errno!(Errno::ENAMETOOLONG);
         }
 

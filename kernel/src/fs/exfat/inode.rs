@@ -29,6 +29,7 @@ use crate::{
     events::IoEvents,
     fs::{
         exfat::{dentry::ExfatDentryIterator, fat::ExfatChain, fs::ExfatFS},
+        path::{is_dot, is_dot_or_dotdot, is_dotdot},
         utils::{
             CachePage, DirentVisitor, Extension, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
             MknodType, PageCache, PageCacheBackend,
@@ -1517,7 +1518,7 @@ impl Inode for ExfatInode {
         if name.len() > MAX_NAME_LENGTH {
             return_errno!(Errno::ENAMETOOLONG)
         }
-        if name == "." || name == ".." {
+        if is_dot_or_dotdot(name) {
             return_errno!(Errno::EISDIR)
         }
 
@@ -1545,10 +1546,10 @@ impl Inode for ExfatInode {
         if !self.inner.read().inode_type.is_directory() {
             return_errno!(Errno::ENOTDIR)
         }
-        if name == "." {
+        if is_dot(name) {
             return_errno_with_message!(Errno::EINVAL, "rmdir on .")
         }
-        if name == ".." {
+        if is_dotdot(name) {
             return_errno_with_message!(Errno::ENOTEMPTY, "rmdir on ..")
         }
         if name.len() > MAX_NAME_LENGTH {
@@ -1601,7 +1602,7 @@ impl Inode for ExfatInode {
     }
 
     fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
-        if old_name == "." || old_name == ".." || new_name == "." || new_name == ".." {
+        if is_dot_or_dotdot(old_name) || is_dot_or_dotdot(new_name) {
             return_errno!(Errno::EISDIR);
         }
         if old_name.len() > MAX_NAME_LENGTH || new_name.len() > MAX_NAME_LENGTH {
