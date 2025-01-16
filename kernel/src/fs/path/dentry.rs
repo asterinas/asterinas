@@ -12,6 +12,7 @@ use hashbrown::HashMap;
 use inherit_methods_macro::inherit_methods;
 use ostd::sync::RwMutexWriteGuard;
 
+use super::{is_dot, is_dot_or_dotdot, is_dotdot};
 use crate::{
     fs::{
         path::mount::MountNode,
@@ -255,7 +256,7 @@ impl Dentry_ {
 
     /// Renames a `Dentry_` to the new `Dentry_` by `rename()` the inner inode.
     pub fn rename(&self, old_name: &str, new_dir: &Arc<Self>, new_name: &str) -> Result<()> {
-        if old_name == "." || old_name == ".." || new_name == "." || new_name == ".." {
+        if is_dot_or_dotdot(old_name) || is_dot_or_dotdot(new_name) {
             return_errno_with_message!(Errno::EISDIR, "old_name or new_name is a directory");
         }
         if self.type_() != InodeType::Dir || new_dir.type_() != InodeType::Dir {
@@ -490,17 +491,17 @@ impl Dentry {
             return_errno!(Errno::ENAMETOOLONG);
         }
 
-        let target_dentry = match name {
-            "." => self.this(),
-            ".." => self.effective_parent().unwrap_or_else(|| self.this()),
-            name => {
-                let target_inner_opt = self.inner.lookup_via_cache(name);
-                match target_inner_opt {
-                    Some(target_inner) => Self::new(self.mount_node.clone(), target_inner),
-                    None => {
-                        let target_inner = self.inner.lookup_via_fs(name)?;
-                        Self::new(self.mount_node.clone(), target_inner)
-                    }
+        let target_dentry = if is_dot(name) {
+            self.this()
+        } else if is_dotdot(name) {
+            self.effective_parent().unwrap_or_else(|| self.this())
+        } else {
+            let target_inner_opt = self.inner.lookup_via_cache(name);
+            match target_inner_opt {
+                Some(target_inner) => Self::new(self.mount_node.clone(), target_inner),
+                None => {
+                    let target_inner = self.inner.lookup_via_fs(name)?;
+                    Self::new(self.mount_node.clone(), target_inner)
                 }
             }
         };

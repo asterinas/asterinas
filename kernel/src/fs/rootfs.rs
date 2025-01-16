@@ -12,7 +12,7 @@ use super::{
     ramfs::RamFS,
     utils::{FileSystem, InodeMode, InodeType},
 };
-use crate::prelude::*;
+use crate::{fs::path::is_dot, prelude::*};
 
 /// Unpack and prepare the rootfs from the initramfs CPIO buffer.
 pub fn init(initramfs_buf: &[u8]) -> Result<()> {
@@ -38,7 +38,7 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
         if entry_name.is_empty() {
             return_errno_with_message!(Errno::EINVAL, "invalid entry name");
         }
-        if entry_name == "." {
+        if is_dot(entry_name) {
             continue;
         }
 
