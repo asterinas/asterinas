@@ -40,9 +40,13 @@ fn mem_available() -> usize {
 
 impl FileOps for MemInfoFileOps {
     fn data(&self) -> Result<Vec<u8>> {
-        let total = mem_total();
-        let available = mem_available();
-        let output = format!("MemTotal:\t{}\nMemAvailable:\t{}\n", total, available);
+        let total = mem_total() / 1024;
+        let available = mem_available() / 1024;
+        let free = total - available;
+        let output = format!(
+            "MemTotal:\t{} kB\nMemFree:\t{} kB\nMemAvailable:\t{} kB\n",
+            total, free, available
+        );
         Ok(output.into_bytes())
     }
 }
