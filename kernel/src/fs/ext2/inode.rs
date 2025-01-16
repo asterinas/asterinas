@@ -10,7 +10,7 @@ use inherit_methods_macro::inherit_methods;
 
 use super::{
     block_ptr::{BidPath, BlockPtrs, Ext2Bid, BID_SIZE, MAX_BLOCK_PTRS},
-    dir::{DirEntry, DirEntryItem, DirEntryReader, DirEntryWriter},
+    dir::{DirEntryHeader, DirEntryItem, DirEntryReader, DirEntryWriter},
     fs::Ext2,
     indirect_block_cache::{IndirectBlock, IndirectBlockCache},
     prelude::*,
@@ -134,9 +134,6 @@ impl Inode {
         if inner.hard_links() == 0 {
             return_errno_with_message!(Errno::ENOENT, "dir removed");
         }
-        if inner.contains_entry(name) {
-            return_errno!(Errno::EEXIST);
-        }
 
         let inode = self
             .fs()
@@ -146,13 +143,13 @@ impl Inode {
             self.fs().free_inode(inode.ino, is_dir).unwrap();
             return Err(e);
         }
-        let new_entry = DirEntry::new(inode.ino, name, inode_type);
 
         let mut inner = inner.upgrade();
-        if let Err(e) = inner.append_entry(new_entry, inode_type, name) {
+        if let Err(e) = inner.append_new_entry(inode.ino, inode_type, name, true) {
             self.fs().free_inode(inode.ino, is_dir).unwrap();
             return Err(e);
         }
+
         let now = now();
         inner.set_mtime(now);
         inner.set_ctime(now);
@@ -211,13 +208,8 @@ impl Inode {
             return_errno!(Errno::EPERM);
         }
 
-        if inner.contains_entry(name) {
-            return_errno!(Errno::EEXIST);
-        }
-
-        let new_entry = DirEntry::new(inode.ino, name, inode_type);
         let mut inner = inner.upgrade();
-        inner.append_entry(new_entry, inode_type, name)?;
+        inner.append_new_entry(inode.ino, inode_type, name, true)?;
         let now = now();
         inner.set_mtime(now);
         inner.set_ctime(now);
@@ -490,8 +482,7 @@ impl Inode {
             }
 
             self_inner.remove_entry_at(old_name, src_offset)?;
-            let new_entry = DirEntry::new(src_inode.ino, new_name, src_inode_typ);
-            target_inner.append_entry(new_entry, src_inode_typ, new_name)?;
+            target_inner.append_new_entry(src_inode.ino, src_inode_typ, new_name, false)?;
             let now = now();
             self_inner.set_mtime(now);
             self_inner.set_ctime(now);
@@ -578,8 +569,7 @@ impl Inode {
 
         self_inner.remove_entry_at(old_name, src_offset)?;
         target_inner.remove_entry_at(new_name, dst_offset)?;
-        let new_entry = DirEntry::new(src_inode.ino, new_name, src_inode_typ);
-        target_inner.append_entry(new_entry, src_inode_typ, new_name)?;
+        target_inner.append_new_entry(src_inode.ino, src_inode_typ, new_name, false)?;
         dst_inner.dec_hard_links();
         let now = now();
         self_inner.set_mtime(now);
@@ -1032,8 +1022,8 @@ impl InodeInner {
 
     fn init_dir(&mut self, self_ino: u32, parent_ino: u32) -> Result<()> {
         debug_assert_eq!(self.inode_type(), InodeType::Dir);
-        self.append_entry(DirEntry::self_entry(self_ino), InodeType::Dir, ".")?;
-        self.append_entry(DirEntry::parent_entry(parent_ino), InodeType::Dir, "..")?;
+        DirEntryWriter::new(&self.page_cache, 0).init_dir(self_ino, parent_ino)?;
+        self.inc_hard_links(); // for ".."
         Ok(())
     }
 
@@ -1049,15 +1039,20 @@ impl InodeInner {
         DirEntryReader::new(&self.page_cache, 0).entry_count()
     }
 
-    pub fn append_entry(
+    pub fn append_new_entry(
         &mut self,
-        entry: DirEntry,
+        ino: u32,
         inode_type: InodeType,
         name: &str,
+        check_existence: bool,
     ) -> Result<()> {
-        debug_assert!(inode_type == entry.type_() && entry.name() == name);
+        let entry_header = DirEntryHeader::new(ino, inode_type, name.len());
+        DirEntryWriter::new(&self.page_cache, 0).append_new_entry(
+            entry_header,
+            name,
+            check_existence,
+        )?;
 
-        DirEntryWriter::new(&self.page_cache, 0).append_entry(entry)?;
         let file_size = self.file_size();
         let page_cache_size = self.page_cache.pages().size();
         if page_cache_size > file_size {
@@ -1073,14 +1068,13 @@ impl InodeInner {
     }
 
     pub fn remove_entry_at(&mut self, name: &str, offset: usize) -> Result<()> {
-        let entry = DirEntryWriter::new(&self.page_cache, offset).remove_entry(name)?;
-        let is_dir = entry.type_() == InodeType::Dir;
+        let removed_entry = DirEntryWriter::new(&self.page_cache, offset).remove_entry(name)?;
         let file_size = self.file_size();
         let page_cache_size = self.page_cache.pages().size();
         if page_cache_size < file_size {
             self.inode_impl.resize(page_cache_size)?;
         }
-        if is_dir {
+        if removed_entry.type_() == InodeType::Dir {
             self.dec_hard_links(); // for ".."
         }
         Ok(())
