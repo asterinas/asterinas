@@ -51,8 +51,11 @@
 //! At the syscall level, the interface is unified for all options and does not need to be modified.
 //!
 
+use ip::new_ip_option;
+
 use crate::{net::socket::options::SocketOption, prelude::*};
 
+mod ip;
 mod socket;
 mod tcp;
 mod utils;
@@ -133,6 +136,7 @@ pub fn new_raw_socket_option(
 ) -> Result<Box<dyn RawSocketOption>> {
     match level {
         CSocketOptionLevel::SOL_SOCKET => new_socket_option(name),
+        CSocketOptionLevel::SOL_IP => new_ip_option(name),
         CSocketOptionLevel::SOL_TCP => new_tcp_option(name),
         _ => return_errno_with_message!(Errno::EOPNOTSUPP, "unsupported option level"),
     }
