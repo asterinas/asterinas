@@ -29,7 +29,7 @@ pub(super) fn get_iface_to_bind(ip_addr: &IpAddress) -> Option<Arc<Iface>> {
 /// Get a suitable iface to deal with sendto/connect request if the socket is not bound to an iface.
 /// If the remote address is the same as that of some iface, we will use the iface.
 /// Otherwise, we will use a default interface.
-fn get_ephemeral_iface(remote_ip_addr: &IpAddress) -> Arc<Iface> {
+pub(super) fn get_ephemeral_iface(remote_ip_addr: &IpAddress) -> Arc<Iface> {
     let ifaces = IFACES.get().unwrap();
     let IpAddress::Ipv4(remote_ipv4_addr) = remote_ip_addr;
     if let Some(iface) = ifaces.iter().find(|iface| {

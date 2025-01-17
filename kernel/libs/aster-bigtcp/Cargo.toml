@@ -17,6 +17,7 @@ smoltcp = { git = "https://github.com/asterinas/smoltcp", tag = "r_2024-11-08_f0
     "proto-ipv4",
     "socket-udp",
     "socket-tcp",
+    "socket-raw",
 ] }
 spin = "0.9.4"
 static_assertions = "1.1.0"

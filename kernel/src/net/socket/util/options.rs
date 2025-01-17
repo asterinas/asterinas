@@ -3,13 +3,14 @@
 use core::time::Duration;
 
 use aster_bigtcp::socket::{
-    NeedIfacePoll, TCP_RECV_BUF_LEN, TCP_SEND_BUF_LEN, UDP_RECV_PAYLOAD_LEN, UDP_SEND_PAYLOAD_LEN,
+    NeedIfacePoll, RAW_RECV_PAYLOAD_LEN, RAW_SEND_PAYLOAD_LEN, TCP_RECV_BUF_LEN, TCP_SEND_BUF_LEN,
+    UDP_RECV_PAYLOAD_LEN, UDP_SEND_PAYLOAD_LEN,
 };
 
 use crate::{
     match_sock_option_mut, match_sock_option_ref,
     net::socket::options::{
-        Error as SocketError, KeepAlive, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf,
+        Error as SocketError, IpHdrIncl, KeepAlive, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf,
         SocketOption,
     },
     prelude::*,
@@ -50,6 +51,19 @@ impl SocketOptionSet {
             reuse_port: false,
             send_buf: UDP_SEND_PAYLOAD_LEN as u32,
             recv_buf: UDP_RECV_PAYLOAD_LEN as u32,
+            linger: LingerOption::default(),
+            keep_alive: false,
+        }
+    }
+
+    /// Return the default socket level options for raw sockets.
+    pub fn new_raw() -> Self {
+        Self {
+            sock_errors: None,
+            reuse_addr: false,
+            reuse_port: false,
+            send_buf: RAW_SEND_PAYLOAD_LEN as u32,
+            recv_buf: RAW_RECV_PAYLOAD_LEN as u32,
             linger: LingerOption::default(),
             keep_alive: false,
         }
@@ -175,5 +189,44 @@ pub(in crate::net) trait SetSocketLevelOption {
     /// Sets whether keepalive messages are enabled.
     fn set_keep_alive(&self, _keep_alive: bool) -> NeedIfacePoll {
         NeedIfacePoll::FALSE
+    }
+}
+
+#[derive(Debug, Clone, CopyGetters, Setters)]
+#[get_copy = "pub"]
+#[set = "pub"]
+pub struct IpSocketOptionSet {
+    ip_hdr_incl: u32,
+}
+
+impl IpSocketOptionSet {
+    /// Return the default ip level options for raw sockets.
+    pub fn new_raw() -> Self {
+        Self { ip_hdr_incl: 0 }
+    }
+
+    /// Sets ip-level options.
+    pub fn set_option(&mut self, option: &dyn SocketOption) -> Result<()> {
+        match_sock_option_ref!(option, {
+            ip_hdr_incl: IpHdrIncl => {
+                let hdr_incl = ip_hdr_incl.get().unwrap();
+                self.set_ip_hdr_incl(*hdr_incl);
+            },
+            _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to be set is unknown")
+        });
+
+        Ok(())
+    }
+
+    /// Gets ip-level options.
+    pub fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
+        match_sock_option_mut!(option, {
+            ip_hdr_incl: IpHdrIncl => {
+                let hdr_incl = self.ip_hdr_incl;
+                ip_hdr_incl.set(hdr_incl);
+            },
+            _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the ip option to get is unknown")
+        });
+        Ok(())
     }
 }

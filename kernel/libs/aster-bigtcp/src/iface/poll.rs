@@ -9,9 +9,9 @@ use smoltcp::{
     },
     phy::{ChecksumCapabilities, Device, RxToken, TxToken},
     wire::{
-        Icmpv4DstUnreachable, Icmpv4Repr, IpAddress, IpProtocol, IpRepr, Ipv4Address, Ipv4Packet,
-        Ipv4Repr, TcpControl, TcpPacket, TcpRepr, UdpPacket, UdpRepr, IPV4_HEADER_LEN,
-        IPV4_MIN_MTU,
+        Icmpv4DstUnreachable, Icmpv4Packet, Icmpv4Repr, IpAddress, IpProtocol, IpRepr, Ipv4Address,
+        Ipv4AddressExt, Ipv4Packet, Ipv4Repr, TcpControl, TcpPacket, TcpRepr, UdpPacket, UdpRepr,
+        IPV4_HEADER_LEN, IPV4_MIN_MTU,
     },
 };
 
@@ -92,7 +92,10 @@ impl<E: Ext> PollContext<'_, E> {
             );
         }
 
+        self.process_raw(&IpRepr::Ipv4(repr), pkt.payload());
+
         match repr.next_header {
+            IpProtocol::Icmp => self.process_icmpv4(&IpRepr::Ipv4(repr), pkt.payload()),
             IpProtocol::Tcp => self.parse_and_process_tcp(
                 &IpRepr::Ipv4(repr),
                 pkt.payload(),
@@ -140,16 +143,16 @@ impl<E: Ext> PollContext<'_, E> {
         tcp_repr: &TcpRepr,
     ) -> Option<(IpRepr, TcpRepr<'static>)> {
         let (mut ip_repr, mut tcp_repr) = self.process_tcp(ip_repr, tcp_repr)?;
+        self.process_raw_from_tcp(&ip_repr, &tcp_repr);
 
-        loop {
-            if !self.is_unicast_local(ip_repr.dst_addr()) {
-                return Some((ip_repr, tcp_repr));
-            }
-
+        while self.is_unicast_local(ip_repr.dst_addr()) {
             let (new_ip_repr, new_tcp_repr) = self.process_tcp(&ip_repr, &tcp_repr)?;
+            self.process_raw_from_tcp(&new_ip_repr, &new_tcp_repr);
+
             ip_repr = new_ip_repr;
             tcp_repr = new_tcp_repr;
         }
+        Some((ip_repr, tcp_repr))
     }
 
     fn process_tcp(
@@ -255,6 +258,87 @@ impl<E: Ext> PollContext<'_, E> {
         processed
     }
 
+    fn process_raw(&mut self, ip_repr: &IpRepr, ip_payload: &[u8]) {
+        // Pass each IP packet to all the registered raw sockets.
+        for socket in self.sockets.raw_socket_iter() {
+            socket.process(self.iface_cx, ip_repr, ip_payload);
+        }
+    }
+
+    fn process_raw_from_tcp(&mut self, ip_repr: &IpRepr, tcp_repr: &TcpRepr) {
+        // In the TCP processing flow, the generated local response is passed to raw sockets while being passed to the TCP socket.
+        if !self.sockets.raw_sockets().is_empty() {
+            let pay_load = {
+                let mut data = vec![0; tcp_repr.buffer_len()];
+                tcp_repr.emit(
+                    &mut TcpPacket::new_unchecked(data.as_mut_slice()),
+                    &ip_repr.src_addr(),
+                    &ip_repr.dst_addr(),
+                    &ChecksumCapabilities::ignored(),
+                );
+                data
+            };
+            self.process_raw(ip_repr, pay_load.as_slice());
+        }
+    }
+
+    pub(super) fn process_icmpv4<'pkt>(
+        &self,
+        ip_repr: &IpRepr,
+        ip_payload: &'pkt [u8],
+    ) -> Option<Packet<'pkt>> {
+        let icmp_packet = Icmpv4Packet::new_checked(ip_payload).ok()?;
+        let icmp_repr = Icmpv4Repr::parse(&icmp_packet, &self.iface_cx.checksum_caps()).ok()?;
+
+        // TODO: Process icmp packets here when icmp sockets are supported.
+
+        match ip_repr {
+            IpRepr::Ipv4(ipv4_repr) => self.generate_icmpv4_reply(ipv4_repr, icmp_repr),
+            #[allow(unreachable_patterns)]
+            _ => unreachable!(),
+        }
+    }
+
+    pub(super) fn generate_icmpv4_reply<'pkt, 'icmp: 'pkt>(
+        &self,
+        ipv4_repr: &Ipv4Repr,
+        icmp_repr: Icmpv4Repr<'icmp>,
+    ) -> Option<Packet<'pkt>> {
+        match icmp_repr {
+            Icmpv4Repr::EchoRequest {
+                ident,
+                seq_no,
+                data,
+            } => {
+                let icmp_reply_repr = Icmpv4Repr::EchoReply {
+                    ident,
+                    seq_no,
+                    data,
+                };
+                if ipv4_repr.src_addr.x_is_unicast() && ipv4_repr.dst_addr.x_is_unicast() {
+                    // Reply it if src_addr and dst_addr are both unicast.
+                    let ipv4_reply_repr = Ipv4Repr {
+                        src_addr: ipv4_repr.dst_addr,
+                        dst_addr: ipv4_repr.src_addr,
+                        next_header: IpProtocol::Icmp,
+                        payload_len: icmp_reply_repr.buffer_len(),
+                        hop_limit: 64,
+                    };
+
+                    Some(Packet::new_ipv4(
+                        ipv4_reply_repr,
+                        IpPayload::Icmpv4(icmp_reply_repr),
+                    ))
+                } else {
+                    // RFC 1122: 3.2.2.6 An ICMP Echo Request destined to an IP broadcast or IP multicast address MAY be silently discarded.
+                    None
+                }
+            }
+            // TODO: Implement other ICMPv4 messages, such as timestamp request/reply.
+            _ => None,
+        }
+    }
+
     fn generate_icmp_unreachable<'pkt>(
         &self,
         ip_repr: &IpRepr,
@@ -337,9 +421,14 @@ impl<E: Ext> PollContext<'_, E> {
             return did_something_tcp;
         };
 
-        let (did_something_udp, _tx_token) = self.dispatch_udp(tx_token, dispatch_phy);
+        let (did_something_udp, tx_token) = self.dispatch_udp(tx_token, dispatch_phy);
+        let Some(tx_token) = tx_token else {
+            return did_something_udp;
+        };
 
-        did_something_tcp || did_something_udp
+        let (did_something_raw, _tx_token) = self.dispatch_raw(tx_token, dispatch_phy);
+
+        did_something_tcp || did_something_udp || did_something_raw
     }
 
     fn dispatch_tcp<T, Q>(&mut self, tx_token: T, dispatch_phy: &mut Q) -> (bool, Option<T>)
@@ -376,6 +465,21 @@ impl<E: Ext> PollContext<'_, E> {
                         return None;
                     }
 
+                    // Filter packets sent to loopback to raw sockets, if raw sockets exist.
+                    if !self.sockets.raw_sockets().is_empty() {
+                        let pay_load = {
+                            let mut data = vec![0; tcp_repr.buffer_len()];
+                            tcp_repr.emit(
+                                &mut TcpPacket::new_unchecked(data.as_mut_slice()),
+                                &ip_repr.src_addr(),
+                                &ip_repr.dst_addr(),
+                                &ChecksumCapabilities::ignored(),
+                            );
+                            data
+                        };
+                        this.process_raw(ip_repr, pay_load.as_slice());
+                    }
+
                     if !socket.can_process(tcp_repr.dst_port) {
                         return this.process_tcp(ip_repr, tcp_repr);
                     }
@@ -399,6 +503,7 @@ impl<E: Ext> PollContext<'_, E> {
             match (deferred, reply) {
                 (None, None) => (),
                 (Some((ip_repr, ip_payload)), None) => {
+                    self.process_raw(&ip_repr, &ip_payload);
                     if let Some(reply) = self.parse_and_process_tcp(
                         &ip_repr,
                         &ip_payload,
@@ -469,6 +574,23 @@ impl<E: Ext> PollContext<'_, E> {
                     }
                 }
 
+                // Filter packets sent to loopback to raw sockets, if raw sockets exist.
+                if !self.sockets.raw_sockets().is_empty() {
+                    let pay_load = {
+                        let mut data = vec![0; udp_repr.header_len() + udp_payload.len()];
+                        udp_repr.emit(
+                            &mut UdpPacket::new_unchecked(data.as_mut_slice()),
+                            &ip_repr.src_addr(),
+                            &ip_repr.dst_addr(),
+                            udp_payload.len(),
+                            |payload| payload.copy_from_slice(udp_payload),
+                            &ChecksumCapabilities::ignored(),
+                        );
+                        data
+                    };
+                    this.process_raw(ip_repr, pay_load.as_slice());
+                }
+
                 if !socket.can_process(udp_repr.dst_port) {
                     // TODO: Generate the ICMP message here once we're able to handle incoming ICMP
                     // messages.
@@ -493,6 +615,7 @@ impl<E: Ext> PollContext<'_, E> {
             });
 
             if let Some((ip_repr, ip_payload)) = deferred {
+                self.process_raw(&ip_repr, &ip_payload);
                 if let Some(reply) = self.parse_and_process_udp(
                     &ip_repr,
                     &ip_payload,
@@ -500,6 +623,77 @@ impl<E: Ext> PollContext<'_, E> {
                 ) {
                     dispatch_phy(&reply, self.iface_cx, tx_token.take().unwrap());
                 }
+            }
+
+            if tx_token.is_none() {
+                break;
+            }
+        }
+
+        (did_something, tx_token)
+    }
+
+    fn dispatch_raw<T, Q>(&mut self, tx_token: T, dispatch_phy: &mut Q) -> (bool, Option<T>)
+    where
+        T: TxToken,
+        Q: FnMut(&Packet, &mut Context, T),
+    {
+        let mut tx_token = Some(tx_token);
+        let mut did_something = false;
+        for socket in self.sockets.raw_socket_iter() {
+            if !socket.need_dispatch(self.iface_cx.now()) {
+                continue;
+            }
+
+            // We set `did_something` even if no packets are actually generated. This is because a
+            // timer can expire, but no packets are actually generated.
+            did_something = true;
+
+            let mut deferred = None;
+
+            socket.dispatch(self.iface_cx, |cx, ip_repr, ip_payload| {
+                let this = PollContext::new(cx, self.sockets, self.new_tcp_conns);
+                if ip_repr.dst_addr().is_broadcast() || !this.is_unicast_local(ip_repr.dst_addr()) {
+                    dispatch_phy(
+                        &Packet::new(ip_repr.clone(), IpPayload::Raw(ip_payload)),
+                        this.iface_cx,
+                        tx_token.take().unwrap(),
+                    );
+
+                    if !ip_repr.dst_addr().is_broadcast() {
+                        return;
+                    }
+                }
+                deferred = Some((ip_repr.clone(), {
+                    let mut icmp_buf = vec![0; ip_payload.len()];
+                    icmp_buf.copy_from_slice(ip_payload);
+                    icmp_buf
+                }));
+            });
+
+            if let Some((ip_repr, ip_payload)) = deferred {
+                let mut buf = vec![0_u8; ip_repr.header_len() + ip_payload.len()];
+                ip_repr.emit(
+                    &mut buf[..ip_repr.header_len()],
+                    &self.iface_cx.checksum_caps(),
+                );
+
+                if let Some(pkt) = self.process_icmpv4(&ip_repr, ip_payload.as_slice()) {
+                    pkt.emit_payload(
+                        &ip_repr,
+                        &mut buf[ip_repr.header_len()..],
+                        &self.iface_cx.caps,
+                    );
+                    self.parse_and_process_ipv4(Ipv4Packet::new_unchecked(&buf));
+                }
+                // Generate ICMP Echo Reply packet and process it.
+                let pkt = Packet::new(ip_repr.clone(), IpPayload::Raw(ip_payload.as_slice()));
+                pkt.emit_payload(
+                    &ip_repr,
+                    &mut buf[ip_repr.header_len()..],
+                    &self.iface_cx.caps,
+                );
+                self.parse_and_process_ipv4(Ipv4Packet::new_unchecked(&buf));
             }
 
             if tx_token.is_none() {
