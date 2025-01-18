@@ -3,7 +3,7 @@ use core::hash;
 use alloc::vec::Vec;
 use aster_crypto::*;
 use ostd::Pod;
-use crate::device::crypto::session::*;
+use crate::device::crypto::header::*;
 
 
 #[derive(Debug, Pod, Clone, Copy)]

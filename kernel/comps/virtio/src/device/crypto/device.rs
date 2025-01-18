@@ -1,28 +1,29 @@
 // SPDX-License-Identifier: MPL-2.0
 
 
-use core::{hash, hint::spin_loop};
+use core::hint::spin_loop;
 
 use alloc::{boxed::Box, fmt::Debug, string::ToString, sync::Arc, vec, vec::Vec};
 use aster_crypto::*;
 use log::{debug, warn};
-use ostd::{mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, VmIo}, sync::SpinLock, trap::TrapFrame, Pod};
+use ostd::{mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, VmIo}, sync::SpinLock, trap::TrapFrame};
 use crate::{
     device::{crypto::config::CryptoFeatures, VirtioDeviceError},
     queue::VirtQueue,
     transport::{ConfigManager, VirtioTransport},
 };
-use crate::device::crypto::session::*;
+use crate::device::crypto::header::*;
 use crate::device::crypto::service::*;
-use super::{config::VirtioCryptoConfig, session};
+use super::config::VirtioCryptoConfig;
 
 pub struct CryptoDevice{
     transport: SpinLock<Box<dyn VirtioTransport>>,
     config_manager: ConfigManager<VirtioCryptoConfig>,
-    data_queue: SpinLock<VirtQueue>,
     control_queue: SpinLock<VirtQueue>,
+    data_queue: SpinLock<VirtQueue>,
     control_buffer: DmaStream,
-    data_buffer: DmaStream
+    data_buffer: DmaStream,
+    revision_1: bool
 }
 
 impl CryptoDevice {
@@ -45,6 +46,9 @@ impl CryptoDevice {
     pub fn init(mut transport: Box<dyn VirtioTransport>) -> Result<(), VirtioDeviceError> {
         let config_manager = VirtioCryptoConfig::new_manager(transport.as_ref());
         let config = config_manager.read_config();
+        let features = CryptoFeatures::from_bits_truncate(Self::negotiate_features(
+            transport.read_device_features(),
+        ));
         debug!("virtio_crypto_config = {:?}", config);
 
         // let max_queue_num = config.max_dataqueues as u16;
@@ -74,6 +78,7 @@ impl CryptoDevice {
             control_buffer,
             data_buffer,
             transport: SpinLock::new(transport),
+            revision_1: features.contains(CryptoFeatures::VIRTIO_CRYPTO_F_REVISION_1)
         });
 
         fn config_space_change(_: &TrapFrame) {
@@ -106,57 +111,16 @@ impl Debug for CryptoDevice {
 }
 
 impl CryptoDevice {
-
-    pub fn destroy_session(&self, operation: CryptoSessionOperation, session_id: i64) -> Result<u8, CryptoError>{
-        let ctrl_slice = DmaStreamSlice::new(&self.control_buffer, 0, 72);
-        let ctrl_resp_slice = DmaStreamSlice::new(&self.control_buffer, 72, 88);
-        self.control_queue.lock().add_dma_buf(&[&ctrl_slice], &[&ctrl_resp_slice]).unwrap();
-
-        let header = CryptoCtrlHeader {
-            opcode : operation as i32,
-            algo : 0 as _,
-            flag : 0,
-            reserved : 0
-        };
-
-        let req = CryptoDestroySessionReq {
-            header,
-            flf : VirtioCryptoDestroySessionFlf {
-                session_id : session_id
-            }
-        };
-
-        debug!("send header: bytes: {:?}, len = {:?}, supp_bits:{:?}", 
-                req.as_bytes(), &req.to_bytes(true).len(), self.config_manager.read_config().cipher_algo_l);
-        
-        ctrl_slice.write_bytes(0, &req.to_bytes(true)).unwrap();
-
-        if self.control_queue.lock().should_notify() {
-            self.control_queue.lock().notify();
-        }
-    
-        while ! self.control_queue.lock().can_pop(){
-            spin_loop();
-        }
-    
-        self.control_queue.lock().pop_used().unwrap();
-        ctrl_resp_slice.sync().unwrap();
-    
-        let mut reader = ctrl_resp_slice.reader().unwrap();
-        let res = reader.read_val::<VirtioCryptoDestroySessionInput>().unwrap();
-        
-        debug!("receive feedback:{:?}", res);
-
-        res.get_result()
-    }
-
-    fn create_session<T: CryptoSessionRequest>(&self, req: T, vlf: &[u8], padding: bool)->Result<i64, CryptoError>{
+    fn create_session<T: AutoPadding>(&self, req: CryptoSessionRequest<T>, vlf: &[u8])->Result<i64, CryptoError>{
         let vlf_len: i32 = vlf.len() as _;
-        let ctrl_slice = DmaStreamSlice::new(&self.control_buffer, 0, 72);
-        let ctrl_resp_slice = DmaStreamSlice::new(&self.control_buffer, (72 + vlf_len) as _, 16);
+        let req_len: i32 = if self.revision_1 {req.len() as _} else {72};
+        let padding = !self.revision_1;
+
+        let ctrl_slice = DmaStreamSlice::new(&self.control_buffer, 0, req_len as _);
+        let ctrl_resp_slice = DmaStreamSlice::new(&self.control_buffer, (req_len + vlf_len) as _, 16);
         
         let ctrl_vlf_slice = if vlf.len() > 0{
-            let ctrl_vlf_slice = DmaStreamSlice::new(&self.control_buffer, 72, vlf_len as _);
+            let ctrl_vlf_slice = DmaStreamSlice::new(&self.control_buffer, req_len as _, vlf_len as _);
             self.control_queue.lock().add_dma_buf(&[&ctrl_slice, &ctrl_vlf_slice], &[&ctrl_resp_slice]).unwrap();
             Some(ctrl_vlf_slice)
         }else{
@@ -165,7 +129,7 @@ impl CryptoDevice {
         };
 
         debug!("send header: bytes: {:?}, len = {:?}", 
-                req.as_bytes(), req.to_bytes(true).len());
+                &req.to_bytes(true), req.to_bytes(true).len());
         
         ctrl_slice.write_bytes(0, &req.to_bytes(padding)).unwrap();
         if let Some(ctrl_vlf_slice) = ctrl_vlf_slice{
@@ -185,6 +149,50 @@ impl CryptoDevice {
     
         let mut reader = ctrl_resp_slice.reader().unwrap();
         let res = reader.read_val::<VirtioCryptoSessionInput>().unwrap();
+        
+        debug!("receive feedback:{:?}", res);
+
+        res.get_result()
+    }
+
+    pub fn destroy_session(&self, operation: CryptoSessionOperation, session_id: i64) -> Result<u8, CryptoError>{
+
+        let header = CryptoCtrlHeader {
+            opcode : operation as i32,
+            algo : 0 as _,
+            flag : 0,
+            reserved : 0
+        };
+
+        let req = CryptoSessionRequest {
+            header,
+            flf : CryptoDestroySessionFlf{session_id}
+        };
+
+        let req_len: i32 = if self.revision_1 {req.len() as _} else {72};
+
+        let ctrl_slice = DmaStreamSlice::new(&self.control_buffer, 0, req_len as _);
+        let ctrl_resp_slice = DmaStreamSlice::new(&self.control_buffer, req_len as _, 16);
+        self.control_queue.lock().add_dma_buf(&[&ctrl_slice], &[&ctrl_resp_slice]).unwrap();
+
+        debug!("send header: bytes: {:?}, len = {:?}, supp_bits:{:?}", 
+            &req.to_bytes(true), &req.to_bytes(true).len(), self.config_manager.read_config().cipher_algo_l);
+        
+        ctrl_slice.write_bytes(0, &req.to_bytes(true)).unwrap();
+
+        if self.control_queue.lock().should_notify() {
+            self.control_queue.lock().notify();
+        }
+    
+        while ! self.control_queue.lock().can_pop(){
+            spin_loop();
+        }
+    
+        self.control_queue.lock().pop_used().unwrap();
+        ctrl_resp_slice.sync().unwrap();
+    
+        let mut reader = ctrl_resp_slice.reader().unwrap();
+        let res = reader.read_val::<VirtioCryptoDestroySessionInput>().unwrap();
         
         debug!("receive feedback:{:?}", res);
 
@@ -232,58 +240,75 @@ impl CryptoDevice {
 
 impl AnyCryptoDevice for CryptoDevice{
     fn test_device(&self){
-        let res = self.create_hash_session(CryptoHashAlgorithm::Sha256, 64);
-        debug!("try to create hash session:{:?}", res);
+        //session create&destroy
+        {
+            let res = self.create_hash_session(CryptoHashAlgorithm::Sha256, 64);
+            debug!("try to create hash session:{:?}", res);
 
-        let res = self.create_mac_session(CryptoMacAlgorithm::CbcMacAes, 16, &[0;16]);
-        debug!("try to create mac session:{:?}", res);
+            let res = self.create_mac_session(CryptoMacAlgorithm::CbcMacAes, 16, &[0;16]);
+            debug!("try to create mac session:{:?}", res);
 
-        let res = 
+            let res = self.create_aead_session(
+                CryptoAeadAlgorithm::AeadCcm, CryptoOperation::Encrypt, 16, 16, &[0; 16]);
+            debug!("try to create aead session:{:?}", res);
+
+            let res = self.create_akcipher_rsa_session(
+                CryptoAkCipherAlgorithm::AkCipherRSA, CryptoOperation::Encrypt, CryptoPaddingAlgo::RAW, 
+                CryptoHashAlgo::NoHash, CryptoAkCipherKeyType::Public, &[0; 64]);
+            debug!("try to create akcipher session:{:?}", res);
+
+            let res = self.create_alg_chain_plain_session(
+                CryptoCipherAlgorithm::AesEcb, CryptoOperation::Encrypt, CryptoSymAlgChainOrder::CipherThenHash,
+                CryptoHashAlgorithm::Sha256, 32, 32, &[0; 32]);
+            debug!("try to create alg chain plain session:{:?}", res);
+        }
+
+        //Cipher encrypt&decrypt
+        {
+            //create encrypt session
+            let res = 
             self.create_cipher_session(CryptoCipherAlgorithm::AesEcb, 
                                         CryptoOperation::Encrypt, &[1; 16]);
-        debug!("try to create cipher session:{:?}", res);
+            debug!("try to create cipher session:{:?}", res);
+            
+            let encrypt_session_id = res.unwrap();
+            debug!("encrypt cipher session id: {:?}", encrypt_session_id);
+            
+            //encrypt service
+            let res=
+                self.handle_cipher_service_req(
+                    CryptoServiceOperation::CipherEncrypt,  CryptoCipherAlgorithm::AesEcb, 
+                    encrypt_session_id,  &[0; 16], &[2; 16], 16
+                );
+            
+            let encrypted = res.unwrap();
+            debug!("AES ECB encrypted data: {:?}", encrypted);
+            
+            //create decrypt session
+            let res= self.create_cipher_session(CryptoCipherAlgorithm::AesEcb, 
+                CryptoOperation::Decrypt, &[1; 16]);
+            
+            let decrypt_session_id = res.unwrap();
+            debug!("decrypt session id: {:?}", decrypt_session_id);
+            
+            //decrypt service
+            let res = 
+                self.handle_cipher_service_req(
+                    CryptoServiceOperation::CipherDecrypt, CryptoCipherAlgorithm::AesEcb,
+                    decrypt_session_id, &[0;16], &encrypted, 16
+                );
+            
+            let decrypted = res.unwrap();
+            debug!("AES ECB decrypted data: {:?}", decrypted);
+            
+            //destroy all session
+            let res = self.destroy_cipher_session(encrypt_session_id);
+            debug!("try to destroy session {:?} : {:?}", encrypt_session_id, res);
+            let res = self.destroy_cipher_session(decrypt_session_id);
+            debug!("try to destroy session {:?} : {:?}", decrypt_session_id, res);
+        }
+    
 
-        let id1 = res.unwrap();
-        let res=
-            self.handle_cipher_service_req(
-                CryptoServiceOperation::CipherEncrypt,  CryptoCipherAlgorithm::AesEcb, 
-                id1,  &[0; 16], &[2; 16], 16
-            );
-        debug!("try to call AES ECB encrypt service:{:?}", res);
-        let encrypt = res.unwrap();
-
-        let res= self.create_cipher_session(CryptoCipherAlgorithm::AesEcb, 
-            CryptoOperation::Decrypt, &[1; 16]);
-        debug!("try to create cipher session:{:?}", res);
-        let id2 = res.unwrap();
-
-        let res = 
-            self.handle_cipher_service_req(
-                CryptoServiceOperation::CipherDecrypt, CryptoCipherAlgorithm::AesEcb,
-                id2, &[0;16], &encrypt, 16);
-        debug!("try to call AES ECB decrypt service: {:?}", res);
-
-        let res = self.destroy_cipher_session(id2);
-        debug!("try to destroy session {:?} : {:?}", id2, res);
-
-        let res = self.create_akcipher_rsa_session(
-            CryptoAkCipherAlgorithm::AkCipherRSA, CryptoOperation::Encrypt, 
-            CryptoPaddingAlgo::RAW, CryptoHashAlgo::NoHash, CryptoAkCipherKeyType::Public, 
-            &[48, 92, 48, 13, 6, 9, 42, 134, 72, 134, 247, 13, 1, 1, 1, 5, 0, 3, 75, 0, 48, 72, 2, 65, 0, 173, 112, 121, 225, 211, 91, 131, 152, 93, 33, 126, 83, 59, 38, 128, 87, 211, 146, 212, 208, 135, 174, 121, 99, 104, 167, 144, 51, 209, 91, 131, 221, 207, 23, 89, 234, 135, 252, 132, 153, 22, 99, 3, 228, 127, 118, 43, 218, 59, 117, 70, 17, 53, 111, 10, 83, 245, 133, 56, 192, 238, 153, 39, 141, 2, 3, 1, 0, 1]
-        );
-
-        debug!("try to create akcipher session:{:?}", res);
-
-        // let res = res1.unwrap();
-        // let res2 = 
-        //     self.handle_akcipher_serivce_req(
-        //         CryptoServiceOperation::AkCipherEncrypt, CryptoAkCipherAlgorithm::AkCipherRSA, res1,
-        //         &[5; 100], 128
-        //     );
-        // debug!("try to call RSA encrypt: {:?}", res2);
-
-        // let res3 = self.destroy_akcipher_session(res1);
-        // debug!("try to destroy RSA session: {:?}", res3);
     }
 
     fn create_hash_session(&self, algo: CryptoHashAlgorithm, result_len: u32)->Result<i64, CryptoError>{
@@ -296,12 +321,12 @@ impl AnyCryptoDevice for CryptoDevice{
             reserved: 0
         };
     
-        let req = CryptoHashSessionReq{
+        let req = CryptoSessionRequest{
             header,
-            flf: VirtioCryptoHashSessionFlf::new(algo, result_len),
+            flf: CryptoHashSessionFlf{algo: algo as _, hash_result_len: result_len},
         };
         
-        self.create_session(req, &[], true)
+        self.create_session(req, &[])
     }
 
     fn handle_hash_service_req(&self, op : CryptoServiceOperation, algo: CryptoHashAlgorithm, session_id : i64, src_data: &[u8], hash_result_len: i32) -> Result<Vec<u8>, CryptoError> {
@@ -341,11 +366,17 @@ impl AnyCryptoDevice for CryptoDevice{
             reserved: 0            
         };
 
-        let req = CryptoMacSessionReq{
-            header, flf: VirtioCryptoMacSessionFlf::new(algo, result_len, key_len)
+        let req = CryptoSessionRequest{
+            header,
+            flf: CryptoMacSessionFlf{
+                algo: algo as _,
+                mac_result_len: result_len,
+                auth_key_len: key_len,
+                padding: 0
+            }
         };
 
-        self.create_session(req, auth_key, true)
+        self.create_session(req, auth_key)
     }
 
     fn handle_mac_service_req(&self, op : CryptoServiceOperation, algo: CryptoMacAlgorithm, session_id : i64, src_data: &[u8], hash_result_len: i32) -> Result<Vec<u8>, CryptoError> {
@@ -383,7 +414,7 @@ impl AnyCryptoDevice for CryptoDevice{
             flag: 0,
             reserved: 0
         };
-        let flf = VirtioCryptoAeadCreateSessionFlf {
+        let flf = CryptoAeadSessionFlf {
             algo: algo as _,
             key_len,
             tag_len,
@@ -391,14 +422,11 @@ impl AnyCryptoDevice for CryptoDevice{
             op: op as _,
             padding: 0
         };
-        let req = CryptoAeadSessionReq {
-            header,
-            flf
-        };
-        self.create_session(req, key, true)
+        let req = CryptoSessionRequest{header, flf};
+        self.create_session(req, key)
     }
 
-    fn handel_aead_service_req(&self, op : CryptoServiceOperation, algo : CryptoAeadAlgorithm, session_id : i64, iv: &[u8], src_data: &[u8], aad : &[u8], dst_data_len : i32, tag_len: i32) -> Result<Vec<u8>, CryptoError> {
+    fn handle_aead_service_req(&self, op : CryptoServiceOperation, algo : CryptoAeadAlgorithm, session_id : i64, iv: &[u8], src_data: &[u8], aad : &[u8], dst_data_len : i32, tag_len: i32) -> Result<Vec<u8>, CryptoError> {
         debug!("[CRYPTO] trying to handle aead service request");
         let header = CryptoServiceHeader {
             opcode: op as _,
@@ -440,10 +468,19 @@ impl AnyCryptoDevice for CryptoDevice{
             reserved: 0
         };
     
-        let flf = VirtioCryptoCipherSessionFlf::new(algo, key_len, op);
-        let req = CryptoCipherSessionReq::new(header, VirtioCryptoSymCreateSessionFlf{CipherFlf: flf}, CryptoSymOp::Cipher as _);
+        let flf = CryptoCipherSessionFlf{
+            algo: algo as _, key_len, op: op as _, padding: 0
+        };
+        let req = CryptoSessionRequest{
+            header,
+            flf: CryptoSymCreateSessionFlf{
+                op_flf: CryptoSymSessionOpFlf{cipher_flf: flf},
+                op_type: CryptoSymOp::Cipher as _,
+                padding: 0
+            }
+        };
 
-        self.create_session(req, key, true)
+        self.create_session(req, key)
     }
 
     fn create_alg_chain_auth_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, alg_chain_order: CryptoSymAlgChainOrder, mac_algo: CryptoMacAlgorithm, result_len: u32, aad_len: i32, cipher_key: &[u8], auth_key: &[u8])->Result<i64, CryptoError> {
@@ -457,17 +494,28 @@ impl AnyCryptoDevice for CryptoDevice{
         };
         let key_len: u32 = cipher_key.len() as _;
 
-        let cipher_flf = VirtioCryptoCipherSessionFlf::new(algo, key_len as _, op);
+        let cipher_flf = CryptoCipherSessionFlf{
+            algo: algo as _, key_len: key_len as _, op: op as _, padding: 0
+        };
         let auth_key_len: u32 = auth_key.len() as _;
-        let mac_flf = VirtioCryptoMacSessionFlf::new(mac_algo, result_len, auth_key_len);
-        let flf = VirtioCryptoAlgChainSessionFlf::new(alg_chain_order, hash_mode, cipher_flf, VirtioCryptoAlgChainSessionAlgo{mac_flf}, aad_len);
-        let req = CryptoCipherSessionReq::new(
+        let mac_flf = CryptoMacSessionFlf{
+            algo: mac_algo as _, mac_result_len: result_len, auth_key_len, padding: 0
+        };
+        let flf = 
+            CryptoAlgChainSessionFlf::new(
+                alg_chain_order, hash_mode, cipher_flf, CryptoAlgChainSessionAlgo{mac_flf}, aad_len
+            );
+        
+        let req = CryptoSessionRequest{
             header, 
-            VirtioCryptoSymCreateSessionFlf{AlgChainFlf: flf}, 
-            CryptoSymOp::AlgorithmChaining
-        );
+            flf: CryptoSymCreateSessionFlf{
+                op_flf: CryptoSymSessionOpFlf{alg_chain_flf: flf},
+                op_type: CryptoSymOp::AlgorithmChaining as _,
+                padding: 0                
+            }
+        };
 
-        self.create_session(req, &[cipher_key, auth_key].concat(), true)
+        self.create_session(req, &[cipher_key, auth_key].concat())
     }
 
     fn create_alg_chain_plain_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, alg_chain_order: CryptoSymAlgChainOrder, hash_algo: CryptoHashAlgorithm, result_len: u32, aad_len: i32, cipher_key: &[u8])->Result<i64, CryptoError> {
@@ -480,16 +528,23 @@ impl AnyCryptoDevice for CryptoDevice{
             reserved: 0
         };
         let key_len: u32 = cipher_key.len() as _;
-        let cipher_flf = VirtioCryptoCipherSessionFlf::new(algo, key_len as _, op);
-        let hash_flf = VirtioCryptoHashSessionFlf::new(hash_algo, result_len);
-        let flf = VirtioCryptoAlgChainSessionFlf::new(alg_chain_order, hash_mode, cipher_flf, VirtioCryptoAlgChainSessionAlgo{hash_flf}, aad_len);
-        let req = CryptoCipherSessionReq::new(
-            header, 
-            VirtioCryptoSymCreateSessionFlf{AlgChainFlf: flf}, 
-            CryptoSymOp::AlgorithmChaining
+        let cipher_flf = CryptoCipherSessionFlf{
+            algo: algo as _, key_len: key_len as _, op: op as _, padding: 0 
+        };
+        let hash_flf = CryptoHashSessionFlf{algo: hash_algo as _, hash_result_len: result_len};
+        let flf = CryptoAlgChainSessionFlf::new(
+            alg_chain_order, hash_mode, cipher_flf, CryptoAlgChainSessionAlgo{hash_flf}, aad_len
         );
+        let req = CryptoSessionRequest{
+            header, 
+            flf: CryptoSymCreateSessionFlf{
+                op_flf: CryptoSymSessionOpFlf{alg_chain_flf: flf},
+                op_type: CryptoSymOp::AlgorithmChaining as _,
+                padding: 0                
+            }
+        };
 
-        self.create_session(req, cipher_key, true)
+        self.create_session(req, cipher_key)
     }
 
     fn handle_cipher_service_req(&self, op : CryptoServiceOperation, algo: CryptoCipherAlgorithm, session_id : i64, iv : &[u8], src_data : &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError> {
@@ -587,18 +642,20 @@ impl AnyCryptoDevice for CryptoDevice{
         };
 
         let key_len : u32 = key.len() as _;
-        let para = VirtioCryptoRSAPara {
+        let para = CryptoRSAPara {
             padding_algo: padding_algo as _,
             hash_algo: hash_algo as _,
         };
-        let algo_flf = VirtioCryptoAlgoFif { rsa: para };
-        let flf = VirtioCryptoAkCipherSessionFlf::new(algo, key_type, key_len, algo_flf);
-        let req = CryptoAkCipherSessionReq {
+        let algo_flf = CryptoAkCipherAlgoFlf { rsa: para };
+        let flf = CryptoAkCipherSessionFlf{
+            algo: algo as _, key_type: key_type as _, key_len, algo_flf
+        };
+        let req = CryptoSessionRequest {
             header,
             flf,
         };
 
-        self.create_session(req, &key, true)
+        self.create_session(req, &key)
     }
 
     fn create_akcipher_ecdsa_session(&self, algo: CryptoAkCipherAlgorithm,
@@ -617,17 +674,19 @@ impl AnyCryptoDevice for CryptoDevice{
         };
 
         let key_len : u32 = key.len() as _;
-        let para = VirtioCryptoECDSAPara {
+        let para = CryptoECDSAPara {
             curve_id: curve_id as _,
         };
-        let algo_flf = VirtioCryptoAlgoFif { ecdsa: para };
-        let flf = VirtioCryptoAkCipherSessionFlf::new(algo, key_type, key_len, algo_flf);
-        let req = CryptoAkCipherSessionReq {
+        let algo_flf = CryptoAkCipherAlgoFlf { ecdsa: para };
+        let flf = CryptoAkCipherSessionFlf{
+            algo: algo as _, key_type: key_type as _, key_len, algo_flf
+        };
+        let req = CryptoSessionRequest {
             header,
             flf,
         };
 
-        self.create_session(req, &key, true)
+        self.create_session(req, &key)
     }
 
     fn handle_akcipher_serivce_req(&self, op : CryptoServiceOperation, algo: CryptoAkCipherAlgorithm, session_id: i64, src_data : &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError> {

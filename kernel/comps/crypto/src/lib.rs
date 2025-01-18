@@ -247,7 +247,7 @@ pub trait AnyCryptoDevice: Send + Sync + Any + Debug {
     fn destroy_mac_session(&self, session_id : i64) -> Result<u8, CryptoError>;
     
     fn create_aead_session(&self, algo: CryptoAeadAlgorithm, op: CryptoOperation, tag_len: i32, aad_len: i32, key: &[u8]) -> Result<i64, CryptoError>;
-    fn handel_aead_service_req(&self, op : CryptoServiceOperation, algo : CryptoAeadAlgorithm, session_id : i64, iv: &[u8], src_data: &[u8], aad : &[u8], tag_len: i32, dst_data_len : i32) -> Result<Vec<u8>, CryptoError>;
+    fn handle_aead_service_req(&self, op : CryptoServiceOperation, algo : CryptoAeadAlgorithm, session_id : i64, iv: &[u8], src_data: &[u8], aad : &[u8], tag_len: i32, dst_data_len : i32) -> Result<Vec<u8>, CryptoError>;
     fn destroy_aead_session(&self, session_id : i64) -> Result<u8, CryptoError>;
 
     fn create_cipher_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, key: &[u8])->Result<i64, CryptoError>;
