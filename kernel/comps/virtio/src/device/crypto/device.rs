@@ -13,7 +13,7 @@ use crate::{
     transport::{ConfigManager, VirtioTransport},
 };
 use crate::device::crypto::header::*;
-use crate::device::crypto::service::*;
+// use crate::device::crypto::service::*;
 use super::config::VirtioCryptoConfig;
 
 pub struct CryptoDevice{
@@ -111,10 +111,10 @@ impl Debug for CryptoDevice {
 }
 
 impl CryptoDevice {
-    fn create_session<T: AutoPadding>(&self, req: CryptoSessionRequest<T>, vlf: &[u8])->Result<i64, CryptoError>{
+    fn create_session<T: CtrlFlfPadding>(&self, req: CryptoSessionRequest<T>, vlf: &[u8])->Result<i64, CryptoError>{
         let vlf_len: i32 = vlf.len() as _;
         let req_len: i32 = if self.revision_1 {req.len() as _} else {72};
-        let padding = !self.revision_1;
+        let revision_1 = self.revision_1;
 
         let ctrl_slice = DmaStreamSlice::new(&self.control_buffer, 0, req_len as _);
         let ctrl_resp_slice = DmaStreamSlice::new(&self.control_buffer, (req_len + vlf_len) as _, 16);
@@ -129,9 +129,9 @@ impl CryptoDevice {
         };
 
         debug!("send header: bytes: {:?}, len = {:?}", 
-                &req.to_bytes(true), req.to_bytes(true).len());
+                &req.to_bytes(revision_1), req.to_bytes(revision_1).len());
         
-        ctrl_slice.write_bytes(0, &req.to_bytes(padding)).unwrap();
+        ctrl_slice.write_bytes(0, &req.to_bytes(revision_1)).unwrap();
         if let Some(ctrl_vlf_slice) = ctrl_vlf_slice{
             ctrl_vlf_slice.write_bytes(0, vlf).unwrap();
         }
@@ -148,7 +148,7 @@ impl CryptoDevice {
         ctrl_resp_slice.sync().unwrap();
     
         let mut reader = ctrl_resp_slice.reader().unwrap();
-        let res = reader.read_val::<VirtioCryptoSessionInput>().unwrap();
+        let res = reader.read_val::<CryptoSessionInput>().unwrap();
         
         debug!("receive feedback:{:?}", res);
 
@@ -156,6 +156,8 @@ impl CryptoDevice {
     }
 
     pub fn destroy_session(&self, operation: CryptoSessionOperation, session_id: i64) -> Result<u8, CryptoError>{
+
+        let revision_1 = self.revision_1;
 
         let header = CryptoCtrlHeader {
             opcode : operation as i32,
@@ -166,7 +168,7 @@ impl CryptoDevice {
 
         let req = CryptoSessionRequest {
             header,
-            flf : CryptoDestroySessionFlf{session_id}
+            flf : CryptoDestroySessionFlf{ session_id }
         };
 
         let req_len: i32 = if self.revision_1 {req.len() as _} else {72};
@@ -176,9 +178,9 @@ impl CryptoDevice {
         self.control_queue.lock().add_dma_buf(&[&ctrl_slice], &[&ctrl_resp_slice]).unwrap();
 
         debug!("send header: bytes: {:?}, len = {:?}, supp_bits:{:?}", 
-            &req.to_bytes(true), &req.to_bytes(true).len(), self.config_manager.read_config().cipher_algo_l);
+            &req.to_bytes(revision_1), &req.to_bytes(revision_1).len(), self.config_manager.read_config().cipher_algo_l);
         
-        ctrl_slice.write_bytes(0, &req.to_bytes(true)).unwrap();
+        ctrl_slice.write_bytes(0, &req.to_bytes(revision_1)).unwrap();
 
         if self.control_queue.lock().should_notify() {
             self.control_queue.lock().notify();
@@ -192,14 +194,16 @@ impl CryptoDevice {
         ctrl_resp_slice.sync().unwrap();
     
         let mut reader = ctrl_resp_slice.reader().unwrap();
-        let res = reader.read_val::<VirtioCryptoDestroySessionInput>().unwrap();
+        let res = reader.read_val::<CryptoDestroySessionInput>().unwrap();
         
         debug!("receive feedback:{:?}", res);
 
         res.get_result()
     }
 
-    fn handle_service<T: CryptoServiceRequest>(&self, req: T, vlf: &[u8], rst_len: i32, padding: bool)->Result<Vec<u8>, CryptoError> {
+    fn handle_service<T: DataFlfPadding>(&self, req: CryptoServiceRequest<T>, vlf: &[u8], rst_len: i32)->Result<Vec<u8>, CryptoError> {
+        let revision_1 = self.revision_1;
+
         let vlf_len = vlf.len() as i32;
         let service_slice = DmaStreamSlice::new(&self.data_buffer, 0, 72);
         let service_resp_slice = DmaStreamSlice::new(&self.data_buffer, (72 + vlf_len + rst_len) as _, 2);
@@ -208,10 +212,9 @@ impl CryptoDevice {
         self.data_queue.lock().add_dma_buf(&[&service_slice, &service_vlf_slice], &[&service_rst_slice, &service_resp_slice]).unwrap();
 
         debug!("send header: bytes: {:?}, len = {:?}", 
-                req.as_bytes(), req.to_bytes(padding).len());
+                req.to_bytes(revision_1), req.to_bytes(revision_1).len());
         
-        // service_slice.write_val(0, &req).unwrap();
-        service_slice.write_bytes(0, &req.to_bytes(padding)).unwrap();
+        service_slice.write_bytes(0, &req.to_bytes(revision_1)).unwrap();
         service_vlf_slice.write_bytes(0, vlf).unwrap();
 
         if self.data_queue.lock().should_notify() {
@@ -226,7 +229,7 @@ impl CryptoDevice {
         service_resp_slice.sync().unwrap();
     
         let mut reader = service_resp_slice.reader().unwrap();
-        let status = reader.read_val::<VirtioCryptoInhdr>().unwrap();
+        let status = reader.read_val::<CryptoInhdr>().unwrap();
 
         if let Err(err) = status.get_result() {
             return Err(err);
@@ -339,15 +342,15 @@ impl AnyCryptoDevice for CryptoDevice{
             padding : 0
         };
         let src_data_len = src_data.len() as i32;
-        let flf = VirtioCryptoHashDataFlf {
+        let flf = CryptoHashDataFlf {
             src_data_len,
             hash_result_len
         };
-        let req = CryptoHashServiceReq{
+        let req = CryptoServiceRequest {
             header,
             flf
         };
-        self.handle_service(req, src_data, hash_result_len, true)
+        self.handle_service(req, src_data, hash_result_len)
     }
 
     fn destroy_hash_session(&self, session_id : i64) -> Result<u8, CryptoError> {
@@ -389,15 +392,15 @@ impl AnyCryptoDevice for CryptoDevice{
             padding : 0
         };
         let src_data_len = src_data.len() as i32;
-        let flf = VirtioCryptoHashDataFlf {
+        let flf = CryptoHashDataFlf {
             src_data_len,
             hash_result_len
         };
-        let req = CryptoHashServiceReq{
+        let req = CryptoServiceRequest{
             header,
             flf
         };
-        self.handle_service(req, src_data, hash_result_len, true)
+        self.handle_service(req, src_data, hash_result_len)
     }
 
     fn destroy_mac_session(&self, session_id : i64) -> Result<u8, CryptoError> {
@@ -438,7 +441,7 @@ impl AnyCryptoDevice for CryptoDevice{
         let iv_len = iv.len() as i32;
         let src_data_len = src_data.len() as i32;
         let aad_len = aad.len() as i32;
-        let flf = VirtioCryptoAeadDataFlf{
+        let flf = CryptoAeadDataFlf {
             iv_len,
             aad_len,
             src_data_len,
@@ -446,11 +449,11 @@ impl AnyCryptoDevice for CryptoDevice{
             tag_len,
             reserved : 0
         };
-        let req = CryptoAeadServiceReq{
+        let req = CryptoServiceRequest{
             header,
             flf
         };
-        self.handle_service(req, &[iv, src_data, aad].concat(), dst_data_len, true)
+        self.handle_service(req, &[iv, src_data, aad].concat(), dst_data_len)
     }
 
     fn destroy_aead_session(&self, session_id : i64) -> Result<u8, CryptoError> {
@@ -473,7 +476,7 @@ impl AnyCryptoDevice for CryptoDevice{
         };
         let req = CryptoSessionRequest{
             header,
-            flf: CryptoSymCreateSessionFlf{
+            flf: CryptoSymSessionFlf{
                 op_flf: CryptoSymSessionOpFlf{cipher_flf: flf},
                 op_type: CryptoSymOp::Cipher as _,
                 padding: 0
@@ -508,7 +511,7 @@ impl AnyCryptoDevice for CryptoDevice{
         
         let req = CryptoSessionRequest{
             header, 
-            flf: CryptoSymCreateSessionFlf{
+            flf: CryptoSymSessionFlf{
                 op_flf: CryptoSymSessionOpFlf{alg_chain_flf: flf},
                 op_type: CryptoSymOp::AlgorithmChaining as _,
                 padding: 0                
@@ -537,7 +540,7 @@ impl AnyCryptoDevice for CryptoDevice{
         );
         let req = CryptoSessionRequest{
             header, 
-            flf: CryptoSymCreateSessionFlf{
+            flf: CryptoSymSessionFlf{
                 op_flf: CryptoSymSessionOpFlf{alg_chain_flf: flf},
                 op_type: CryptoSymOp::AlgorithmChaining as _,
                 padding: 0                
@@ -559,11 +562,11 @@ impl AnyCryptoDevice for CryptoDevice{
         };
         let src_data_len = src_data.len() as i32;
         let iv_len = iv.len() as i32;
-        let flf = VirtioCryptoCipherDataFlf::new(iv_len, src_data_len, dst_data_len);
-        let req = CryptoCipherServiceReq {
+        let flf = CryptoCipherDataPara::new(iv_len, src_data_len, dst_data_len);
+        let req = CryptoServiceRequest {
             header,
-            op_flf : VirtioCryptoSymDataFlf {
-                op_type_flf : VirtioCryptoSymDataFlfWrapper{ CipherFlf : flf},
+            flf : CryptoSymDataFlf {
+                op_type_flf : CryptoSymDataOpFlf{ CipherFlf : flf},
                 op_type : CryptoSymOp::Cipher as _,
                 padding : 0
             }
@@ -571,7 +574,7 @@ impl AnyCryptoDevice for CryptoDevice{
 
         let vlf = &[iv, src_data].concat();
 
-        let dst_data = self.handle_service(req, vlf, dst_data_len, true);
+        let dst_data = self.handle_service(req, vlf, dst_data_len);
         dst_data
 
     }
@@ -587,7 +590,7 @@ impl AnyCryptoDevice for CryptoDevice{
         };
         let src_data_len = src_data.len() as i32;
         let iv_len = iv.len() as i32;
-        let flf = VirtioCryptoAlgChainDataFlf::new(
+        let flf = CryptoAlgChainDataPara::new(
             iv_len, 
             src_data_len, 
             dst_data_len, 
@@ -598,10 +601,10 @@ impl AnyCryptoDevice for CryptoDevice{
             aad_len, 
             hash_result_len
         );
-        let req = CryptoCipherServiceReq {
+        let req = CryptoServiceRequest {
             header,
-            op_flf : VirtioCryptoSymDataFlf {
-                op_type_flf : VirtioCryptoSymDataFlfWrapper{ AlgChainFlf : flf},
+            flf : CryptoSymDataFlf {
+                op_type_flf : CryptoSymDataOpFlf { AlgChainFlf : flf},
                 op_type : CryptoSymOp::AlgorithmChaining as _,
                 padding : 0
             }
@@ -609,7 +612,7 @@ impl AnyCryptoDevice for CryptoDevice{
 
         let vlf = &[iv, src_data].concat();
 
-        let dst_data = self.handle_service(req, vlf, dst_data_len + hash_result_len, true);
+        let dst_data = self.handle_service(req, vlf, dst_data_len + hash_result_len);
         match dst_data {
             Ok(data) => {
                 let (fi, sc) = data.split_at(dst_data_len as _);
@@ -699,15 +702,18 @@ impl AnyCryptoDevice for CryptoDevice{
             padding : 0
         };
         let src_data_len = src_data.len() as i32;
-        let flf = VirtioCryptoAkcipherDataFlf::new(src_data_len, dst_data_len);
-        let req = CryptoAkCipherServiceReq {
+        let flf = CryptoAkcipherDataFlf {
+            src_data_len,
+            dst_data_len
+        };
+        let req = CryptoServiceRequest {
             header,
             flf
         };
 
         let vlf = src_data;
 
-        let dst_data = self.handle_service(req, vlf, dst_data_len, true);
+        let dst_data = self.handle_service(req, vlf, dst_data_len);
         dst_data
     }
 
