@@ -13,7 +13,6 @@ use crate::{
     transport::{ConfigManager, VirtioTransport},
 };
 use crate::device::crypto::header::*;
-// use crate::device::crypto::service::*;
 use super::config::VirtioCryptoConfig;
 
 pub struct CryptoDevice{
@@ -252,16 +251,16 @@ impl AnyCryptoDevice for CryptoDevice{
             debug!("try to create mac session:{:?}", res);
 
             let res = self.create_aead_session(
-                CryptoAeadAlgorithm::AeadCcm, CryptoOperation::Encrypt, 16, 16, &[0; 16]);
+                CryptoAeadAlgorithm::AeadCcm, CryptoDirection::Encrypt, 16, 16, &[0; 16]);
             debug!("try to create aead session:{:?}", res);
 
             let res = self.create_akcipher_rsa_session(
-                CryptoAkCipherAlgorithm::AkCipherRSA, CryptoOperation::Encrypt, CryptoPaddingAlgo::RAW, 
-                CryptoHashAlgo::NoHash, CryptoAkCipherKeyType::Public, &[0; 64]);
+                CryptoAkCipherAlgorithm::AkCipherRSA, CryptoDirection::Encrypt, CryptoRsaPaddingAlgo::RAW, 
+                CryptoRsaHashAlgo::NoHash, CryptoAkCipherKeyType::Public, &[0; 64]);
             debug!("try to create akcipher session:{:?}", res);
 
             let res = self.create_alg_chain_plain_session(
-                CryptoCipherAlgorithm::AesEcb, CryptoOperation::Encrypt, CryptoSymAlgChainOrder::CipherThenHash,
+                CryptoCipherAlgorithm::AesEcb, CryptoDirection::Encrypt, CryptoSymAlgChainOrder::CipherThenHash,
                 CryptoHashAlgorithm::Sha256, 32, 32, &[0; 32]);
             debug!("try to create alg chain plain session:{:?}", res);
         }
@@ -271,7 +270,7 @@ impl AnyCryptoDevice for CryptoDevice{
             //create encrypt session
             let res = 
             self.create_cipher_session(CryptoCipherAlgorithm::AesEcb, 
-                                        CryptoOperation::Encrypt, &[1; 16]);
+                                        CryptoDirection::Encrypt, &[1; 16]);
             debug!("try to create cipher session:{:?}", res);
             
             let encrypt_session_id = res.unwrap();
@@ -289,7 +288,7 @@ impl AnyCryptoDevice for CryptoDevice{
             
             //create decrypt session
             let res= self.create_cipher_session(CryptoCipherAlgorithm::AesEcb, 
-                CryptoOperation::Decrypt, &[1; 16]);
+                CryptoDirection::Decrypt, &[1; 16]);
             
             let decrypt_session_id = res.unwrap();
             debug!("decrypt session id: {:?}", decrypt_session_id);
@@ -408,7 +407,7 @@ impl AnyCryptoDevice for CryptoDevice{
         self.destroy_session(CryptoSessionOperation::MacDestroy, session_id)
     }
 
-    fn create_aead_session(&self, algo: CryptoAeadAlgorithm, op: CryptoOperation, tag_len: i32, aad_len: i32, key: &[u8]) -> Result<i64, CryptoError> {
+    fn create_aead_session(&self, algo: CryptoAeadAlgorithm, op: CryptoDirection, tag_len: i32, aad_len: i32, key: &[u8]) -> Result<i64, CryptoError> {
         debug!("[CRYPTO] trying to create aead session");
         let key_len = key.len() as _;
         let header = CryptoCtrlHeader {
@@ -460,7 +459,7 @@ impl AnyCryptoDevice for CryptoDevice{
         self.destroy_session(CryptoSessionOperation::AeadDestroy, session_id)
     }
 
-    fn create_cipher_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, key: &[u8])->Result<i64, CryptoError>{
+    fn create_cipher_session(&self, algo: CryptoCipherAlgorithm, op: CryptoDirection, key: &[u8])->Result<i64, CryptoError>{
         debug!("[CRYPTO] trying to create cipher session");
 
         let key_len: i32 = key.len() as _;
@@ -478,7 +477,7 @@ impl AnyCryptoDevice for CryptoDevice{
             header,
             flf: CryptoSymSessionFlf{
                 op_flf: CryptoSymSessionOpFlf{cipher_flf: flf},
-                op_type: CryptoSymOp::Cipher as _,
+                op_type: CryptoSymOpType::Cipher as _,
                 padding: 0
             }
         };
@@ -486,7 +485,7 @@ impl AnyCryptoDevice for CryptoDevice{
         self.create_session(req, key)
     }
 
-    fn create_alg_chain_auth_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, alg_chain_order: CryptoSymAlgChainOrder, mac_algo: CryptoMacAlgorithm, result_len: u32, aad_len: i32, cipher_key: &[u8], auth_key: &[u8])->Result<i64, CryptoError> {
+    fn create_alg_chain_auth_session(&self, algo: CryptoCipherAlgorithm, op: CryptoDirection, alg_chain_order: CryptoSymAlgChainOrder, mac_algo: CryptoMacAlgorithm, result_len: u32, aad_len: i32, cipher_key: &[u8], auth_key: &[u8])->Result<i64, CryptoError> {
         debug!("[CRYPTO] trying to create alg chain auth session");
         let hash_mode = CryptoSymHashMode::Auth;
         let header = CryptoCtrlHeader { 
@@ -513,7 +512,7 @@ impl AnyCryptoDevice for CryptoDevice{
             header, 
             flf: CryptoSymSessionFlf{
                 op_flf: CryptoSymSessionOpFlf{alg_chain_flf: flf},
-                op_type: CryptoSymOp::AlgorithmChaining as _,
+                op_type: CryptoSymOpType::AlgorithmChaining as _,
                 padding: 0                
             }
         };
@@ -521,7 +520,7 @@ impl AnyCryptoDevice for CryptoDevice{
         self.create_session(req, &[cipher_key, auth_key].concat())
     }
 
-    fn create_alg_chain_plain_session(&self, algo: CryptoCipherAlgorithm, op: CryptoOperation, alg_chain_order: CryptoSymAlgChainOrder, hash_algo: CryptoHashAlgorithm, result_len: u32, aad_len: i32, cipher_key: &[u8])->Result<i64, CryptoError> {
+    fn create_alg_chain_plain_session(&self, algo: CryptoCipherAlgorithm, op: CryptoDirection, alg_chain_order: CryptoSymAlgChainOrder, hash_algo: CryptoHashAlgorithm, result_len: u32, aad_len: i32, cipher_key: &[u8])->Result<i64, CryptoError> {
         debug!("[CRYPTO] trying to create alg chain plain session");
         let hash_mode = CryptoSymHashMode::Plain;
         let header = CryptoCtrlHeader { 
@@ -542,7 +541,7 @@ impl AnyCryptoDevice for CryptoDevice{
             header, 
             flf: CryptoSymSessionFlf{
                 op_flf: CryptoSymSessionOpFlf{alg_chain_flf: flf},
-                op_type: CryptoSymOp::AlgorithmChaining as _,
+                op_type: CryptoSymOpType::AlgorithmChaining as _,
                 padding: 0                
             }
         };
@@ -567,7 +566,7 @@ impl AnyCryptoDevice for CryptoDevice{
             header,
             flf : CryptoSymDataFlf {
                 op_type_flf : CryptoSymDataOpFlf{ CipherFlf : flf},
-                op_type : CryptoSymOp::Cipher as _,
+                op_type : CryptoSymOpType::Cipher as _,
                 padding : 0
             }
         };
@@ -605,7 +604,7 @@ impl AnyCryptoDevice for CryptoDevice{
             header,
             flf : CryptoSymDataFlf {
                 op_type_flf : CryptoSymDataOpFlf { AlgChainFlf : flf},
-                op_type : CryptoSymOp::AlgorithmChaining as _,
+                op_type : CryptoSymOpType::AlgorithmChaining as _,
                 padding : 0
             }
         };
@@ -629,9 +628,9 @@ impl AnyCryptoDevice for CryptoDevice{
     }
 
     fn create_akcipher_rsa_session(&self, algo: CryptoAkCipherAlgorithm,
-                                   op: CryptoOperation,
-                                   padding_algo: CryptoPaddingAlgo,
-                                   hash_algo: CryptoHashAlgo,
+                                   op: CryptoDirection,
+                                   padding_algo: CryptoRsaPaddingAlgo,
+                                   hash_algo: CryptoRsaHashAlgo,
                                    key_type: CryptoAkCipherKeyType,
                                    key: &[u8],
     ) -> Result<i64, CryptoError> {
@@ -662,8 +661,8 @@ impl AnyCryptoDevice for CryptoDevice{
     }
 
     fn create_akcipher_ecdsa_session(&self, algo: CryptoAkCipherAlgorithm,
-                                     op: CryptoOperation,
-                                     curve_id: CryptoCurve,
+                                     op: CryptoDirection,
+                                     curve_id: CryptoEcdsaCurve,
                                      key_type: CryptoAkCipherKeyType,
                                      key: &[u8],
     ) -> Result<i64, CryptoError> {

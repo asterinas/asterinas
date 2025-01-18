@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use aster_crypto::*;
 use ostd::Pod;
 
-pub enum VirtioCryptoStatus { 
+pub enum CryptoStatus { 
     Ok = 0,             // success
     Err = 1,            // any failure not mentioned above occurs
     BadMsg = 2,         // authentication failed (only when AEAD decryption)
@@ -14,7 +14,7 @@ pub enum VirtioCryptoStatus {
     KeyReject = 6,      // signature verification failed (only when AKCIPHER verification)
 }
 
-impl TryFrom<i32> for VirtioCryptoStatus {
+impl TryFrom<i32> for CryptoStatus {
     type Error = CryptoError;
 
     fn try_from(value: i32) -> Result<Self, Self::Error> {
@@ -31,16 +31,16 @@ impl TryFrom<i32> for VirtioCryptoStatus {
     }
 }
 
-impl VirtioCryptoStatus{
+impl CryptoStatus{
     pub fn get_or_error<T>(&self, val: T)->Result<T, CryptoError>{
         match self {
-            VirtioCryptoStatus::Ok => Ok(val),
-            VirtioCryptoStatus::Err => Err(CryptoError::UnknownError),
-            VirtioCryptoStatus::BadMsg => Err(CryptoError::BadMessage),
-            VirtioCryptoStatus::NotSupp => Err(CryptoError::NotSupport),
-            VirtioCryptoStatus::InvSess => Err(CryptoError::InvalidSession),
-            VirtioCryptoStatus::NoSpc => Err(CryptoError::NoFreeSession),
-            VirtioCryptoStatus::KeyReject => Err(CryptoError::KeyReject)
+            CryptoStatus::Ok => Ok(val),
+            CryptoStatus::Err => Err(CryptoError::UnknownError),
+            CryptoStatus::BadMsg => Err(CryptoError::BadMessage),
+            CryptoStatus::NotSupp => Err(CryptoError::NotSupport),
+            CryptoStatus::InvSess => Err(CryptoError::InvalidSession),
+            CryptoStatus::NoSpc => Err(CryptoError::NoFreeSession),
+            CryptoStatus::KeyReject => Err(CryptoError::KeyReject)
         }
     }
 }
@@ -239,7 +239,7 @@ pub struct CryptoSessionInput{
 
 impl CryptoSessionInput{
     pub fn get_result(&self)->Result<i64, CryptoError>{
-        match VirtioCryptoStatus::try_from(self.status){
+        match CryptoStatus::try_from(self.status){
             Ok(code) => code.get_or_error(self.session_id),
             Err(err) => Err(err)
         }
@@ -263,7 +263,7 @@ pub struct CryptoDestroySessionInput {
 
 impl CryptoDestroySessionInput {
     pub fn get_result(&self) -> Result<u8, CryptoError> {
-        match VirtioCryptoStatus::try_from(self.status as i32){
+        match CryptoStatus::try_from(self.status as i32){
             Ok(code) => code.get_or_error(self.status),
             Err(err) => Err(err)
         }
@@ -298,7 +298,7 @@ pub struct CryptoInhdr {
 
 impl CryptoInhdr {
     pub fn get_result(&self) -> Result<u8, CryptoError> {
-        match VirtioCryptoStatus::try_from(self.status as i32){
+        match CryptoStatus::try_from(self.status as i32){
             Ok(code) => code.get_or_error(self.status),
             Err(err) => Err(err)
         }
