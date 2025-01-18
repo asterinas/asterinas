@@ -149,7 +149,7 @@ impl TaskOptions {
     /// Creates a set of options for a task.
     pub fn new<F>(func: F) -> Self
     where
-        F: FnOnce() + Send + Sync + 'static,
+        F: FnOnce() + Send + 'static,
     {
         Self {
             func: Some(Box::new(func)),

@@ -13,7 +13,7 @@ struct KernelThread;
 
 /// Options to create or spawn a new kernel thread.
 pub struct ThreadOptions {
-    func: Option<Box<dyn Fn() + Send + Sync>>,
+    func: Option<Box<dyn FnOnce() + Send>>,
     priority: Priority,
     cpu_affinity: CpuSet,
 }
@@ -22,7 +22,7 @@ impl ThreadOptions {
     /// Creates the thread options with the thread function.
     pub fn new<F>(func: F) -> Self
     where
-        F: Fn() + Send + Sync + 'static,
+        F: FnOnce() + Send + 'static,
     {
         let cpu_affinity = CpuSet::new_full();
         Self {
