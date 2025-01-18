@@ -258,7 +258,7 @@ impl AnyCryptoDevice for CryptoDevice{
             debug!("try to create aead session:{:?}", res);
 
             let res = self.create_akcipher_rsa_session(
-                CryptoAkCipherAlgorithm::AkCipherRSA, CryptoDirection::Encrypt, CryptoRsaPaddingAlgo::RAW, 
+                CryptoAkCipherAlgorithm::AkCipherRSA, CryptoRsaPaddingAlgo::RAW, 
                 CryptoRsaHashAlgo::NoHash, CryptoAkCipherKeyType::Public, &[0; 64]);
             debug!("try to create akcipher session:{:?}", res);
 
@@ -631,7 +631,6 @@ impl AnyCryptoDevice for CryptoDevice{
     }
 
     fn create_akcipher_rsa_session(&self, algo: CryptoAkCipherAlgorithm,
-                                   op: CryptoDirection,
                                    padding_algo: CryptoRsaPaddingAlgo,
                                    hash_algo: CryptoRsaHashAlgo,
                                    key_type: CryptoAkCipherKeyType,
@@ -664,7 +663,6 @@ impl AnyCryptoDevice for CryptoDevice{
     }
 
     fn create_akcipher_ecdsa_session(&self, algo: CryptoAkCipherAlgorithm,
-                                     op: CryptoDirection,
                                      curve_id: CryptoEcdsaCurve,
                                      key_type: CryptoAkCipherKeyType,
                                      key: &[u8],
