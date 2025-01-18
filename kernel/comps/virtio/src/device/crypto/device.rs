@@ -202,12 +202,12 @@ impl CryptoDevice {
 
     fn handle_service<T: DataFlfPadding>(&self, req: CryptoServiceRequest<T>, vlf: &[u8], rst_len: i32)->Result<Vec<u8>, CryptoError> {
         let revision_1 = self.revision_1;
-
-        let vlf_len = vlf.len() as i32;
-        let service_slice = DmaStreamSlice::new(&self.data_buffer, 0, 72);
-        let service_resp_slice = DmaStreamSlice::new(&self.data_buffer, (72 + vlf_len + rst_len) as _, 2);
-        let service_vlf_slice = DmaStreamSlice::new(&self.data_buffer, 72, vlf_len as _);
-        let service_rst_slice = DmaStreamSlice::new(&self.data_buffer, (72 + vlf_len) as _, rst_len as _);
+        let req_len: i32 = if revision_1 {req.len() as _} else {72};
+        let vlf_len: i32 = vlf.len();
+        let service_slice = DmaStreamSlice::new(&self.data_buffer, 0, req_len as _);
+        let service_resp_slice = DmaStreamSlice::new(&self.data_buffer, (req_len + vlf_len + rst_len) as _, 2);
+        let service_vlf_slice = DmaStreamSlice::new(&self.data_buffer, re_len as _, vlf_len as _);
+        let service_rst_slice = DmaStreamSlice::new(&self.data_buffer, (req_len + vlf_len) as _, rst_len as _);
         self.data_queue.lock().add_dma_buf(&[&service_slice, &service_vlf_slice], &[&service_rst_slice, &service_resp_slice]).unwrap();
 
         debug!("send header: bytes: {:?}, len = {:?}", 
