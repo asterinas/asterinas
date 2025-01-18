@@ -262,7 +262,7 @@ impl AnyCryptoDevice for CryptoDevice{
                 CryptoRsaHashAlgo::NoHash, CryptoAkCipherKeyType::Public, &[0; 64]);
             debug!("try to create akcipher session:{:?}", res);
 
-            let res = self.create_alg_chain_plain_session(
+            let res = self.create_alg_chain_hash_session(
                 CryptoCipherAlgorithm::AesEcb, CryptoDirection::Encrypt, CryptoSymAlgChainOrder::CipherThenHash,
                 CryptoHashAlgorithm::Sha256, 32, 32, &[0; 32]);
             debug!("try to create alg chain plain session:{:?}", res);
@@ -488,7 +488,7 @@ impl AnyCryptoDevice for CryptoDevice{
         self.create_session(req, key)
     }
 
-    fn create_alg_chain_auth_session(&self, algo: CryptoCipherAlgorithm, op: CryptoDirection, alg_chain_order: CryptoSymAlgChainOrder, mac_algo: CryptoMacAlgorithm, result_len: u32, aad_len: i32, cipher_key: &[u8], auth_key: &[u8])->Result<i64, CryptoError> {
+    fn create_alg_chain_mac_session(&self, algo: CryptoCipherAlgorithm, op: CryptoDirection, alg_chain_order: CryptoSymAlgChainOrder, mac_algo: CryptoMacAlgorithm, result_len: u32, aad_len: i32, cipher_key: &[u8], auth_key: &[u8])->Result<i64, CryptoError> {
         debug!("[CRYPTO] trying to create alg chain auth session");
         let hash_mode = CryptoSymHashMode::Auth;
         let header = CryptoCtrlHeader { 
@@ -523,7 +523,7 @@ impl AnyCryptoDevice for CryptoDevice{
         self.create_session(req, &[cipher_key, auth_key].concat())
     }
 
-    fn create_alg_chain_plain_session(&self, algo: CryptoCipherAlgorithm, op: CryptoDirection, alg_chain_order: CryptoSymAlgChainOrder, hash_algo: CryptoHashAlgorithm, result_len: u32, aad_len: i32, cipher_key: &[u8])->Result<i64, CryptoError> {
+    fn create_alg_chain_hash_session(&self, algo: CryptoCipherAlgorithm, op: CryptoDirection, alg_chain_order: CryptoSymAlgChainOrder, hash_algo: CryptoHashAlgorithm, result_len: u32, aad_len: i32, cipher_key: &[u8])->Result<i64, CryptoError> {
         debug!("[CRYPTO] trying to create alg chain plain session");
         let hash_mode = CryptoSymHashMode::Plain;
         let header = CryptoCtrlHeader { 
@@ -692,7 +692,7 @@ impl AnyCryptoDevice for CryptoDevice{
         self.create_session(req, &key)
     }
 
-    fn handle_akcipher_serivce_req(&self, op : CryptoServiceOperation, algo: CryptoAkCipherAlgorithm, session_id: i64, src_data : &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError> {
+    fn handle_akcipher_service_req(&self, op : CryptoServiceOperation, algo: CryptoAkCipherAlgorithm, session_id: i64, src_data : &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError> {
         debug!("[CRYPTO] trying to handle akcipher service request");
         let header = CryptoServiceHeader {
             opcode : op as _,

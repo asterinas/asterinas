@@ -237,27 +237,49 @@ pub trait AnyCryptoDevice: Send + Sync + Any + Debug {
 
     fn create_hash_session(&self, algo: CryptoHashAlgorithm, result_len: u32)->Result<i64, CryptoError>;
     fn handle_hash_service_req(&self, op : CryptoServiceOperation, algo: CryptoHashAlgorithm, session_id : i64, src_data: &[u8], hash_result_len: i32) -> Result<Vec<u8>, CryptoError>;
+    // fn handle_hash_service_req_stateless(&self, op : CryptoServiceOperation, algo : CryptoHashAlgorithm, src_data : &[u8], hash_result_len : i32) -> Result<Vec<u8>, CryptoError>;
     fn destroy_hash_session(&self, session_id : i64) -> Result<(), CryptoError>;
 
     fn create_mac_session(&self, algo: CryptoMacAlgorithm, result_len: u32, auth_key: &[u8])->Result<i64, CryptoError>;
     fn handle_mac_service_req(&self, op : CryptoServiceOperation, algo: CryptoMacAlgorithm, session_id : i64, src_data: &[u8], hash_result_len: i32) -> Result<Vec<u8>, CryptoError>;
+    // fn handle_mac_service_req_stateless(&self, op : CryptoServiceOperation, algo : CryptoMacAlgorithm, src_data : &[u8], auth_key : &[u8], hash_result_len : i32) -> Result<Vec<u8>, CryptoError>;
     fn destroy_mac_session(&self, session_id : i64) -> Result<(), CryptoError>;
     
     fn create_aead_session(&self, algo: CryptoAeadAlgorithm, op: CryptoDirection, tag_len: i32, aad_len: i32, key: &[u8]) -> Result<i64, CryptoError>;
     fn handle_aead_service_req(&self, op : CryptoServiceOperation, algo : CryptoAeadAlgorithm, session_id : i64, iv: &[u8], src_data: &[u8], aad : &[u8], tag_len: i32, dst_data_len : i32) -> Result<Vec<u8>, CryptoError>;
+    // fn handle_aead_service_req_stateless(&self, op : CryptoServiceOperation, algo : CryptoAeadAlgorithm, key : &[u8], dir : CryptoDirection, iv: &[u8], tag_len: i32, aad: &[u8], src_data: &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError>;
     fn destroy_aead_session(&self, session_id : i64) -> Result<(), CryptoError>;
 
     fn create_cipher_session(&self, algo: CryptoCipherAlgorithm, dir: CryptoDirection, key: &[u8])->Result<i64, CryptoError>;
-    fn create_alg_chain_auth_session(&self, algo: CryptoCipherAlgorithm, dir: CryptoDirection, alg_chain_order: CryptoSymAlgChainOrder, mac_algo: CryptoMacAlgorithm, result_len: u32, aad_len: i32, cipher_key: &[u8], auth_key: &[u8])->Result<i64, CryptoError>;
-    fn create_alg_chain_plain_session(&self, algo: CryptoCipherAlgorithm, dir: CryptoDirection, alg_chain_order: CryptoSymAlgChainOrder, hash_algo: CryptoHashAlgorithm, result_len: u32, aad_len: i32, cipher_key: &[u8])->Result<i64, CryptoError>;
+    fn create_alg_chain_mac_session(&self, algo: CryptoCipherAlgorithm, dir: CryptoDirection, alg_chain_order: CryptoSymAlgChainOrder, mac_algo: CryptoMacAlgorithm, result_len: u32, aad_len: i32, cipher_key: &[u8], auth_key: &[u8])->Result<i64, CryptoError>;
+    fn create_alg_chain_hash_session(&self, algo: CryptoCipherAlgorithm, dir: CryptoDirection, alg_chain_order: CryptoSymAlgChainOrder, hash_algo: CryptoHashAlgorithm, result_len: u32, aad_len: i32, cipher_key: &[u8])->Result<i64, CryptoError>;
     fn handle_cipher_service_req(&self, op : CryptoServiceOperation, algo: CryptoCipherAlgorithm, session_id : i64, iv : &[u8], src_data : &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError>;
     fn handle_alg_chain_service_req(&self, op : CryptoServiceOperation, algo: CryptoCipherAlgorithm, session_id: i64, iv : &[u8], src_data : &[u8], dst_data_len: i32, cipher_start_src_offset: i32, len_to_cipher: i32, hash_start_src_offset: i32, len_to_hash: i32, aad_len: i32, hash_result_len: i32) -> Result<(Vec<u8>, Vec<u8>), CryptoError>;
+    // fn handle_cipher_service_req_stateless(&self, op : CryptoServiceOperation, algo : CryptoCipherAlgorithm, key: &[u8], dir : CryptoDirection, iv : &[u8], src_data: &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError>;
+    // fn handle_alg_chain_service_req_stateless(
+    //     &self, op : CryptoServiceOperation, algo : CryptoCipherAlgorithm, 
+    //     alg_chain_order: CryptoSymAlgChainOrder, aad : &[u8], 
+    //     cipher_key : &[u8], dir : CryptoDirection, 
+    //     hash_algo: i32, auth_key: &[u8], hash_mode : CryptoSymHashMode, 
+    //     iv : &[u8], src_data : &[u8], dst_data_len : &[u8], 
+    //     len_to_cipher: i32, hash_start_src_offset: i32, len_to_hash: i32, hash_result_len: i32
+    // )->Result<(Vec<u8>, Vec<u8>), CryptoError>;
     fn destroy_cipher_session(&self, session_id: i64) -> Result<(), CryptoError>;
     
 
     fn create_akcipher_ecdsa_session(&self, algo: CryptoAkCipherAlgorithm, curve_id: CryptoEcdsaCurve, key_type: CryptoAkCipherKeyType, key: &[u8]) -> Result<i64, CryptoError>;
     fn create_akcipher_rsa_session(&self, algo: CryptoAkCipherAlgorithm, padding_algo: CryptoRsaPaddingAlgo, hash_algo: CryptoRsaHashAlgo, key_type: CryptoAkCipherKeyType, key: &[u8]) -> Result<i64, CryptoError>;
-    fn handle_akcipher_serivce_req(&self, op : CryptoServiceOperation, algo: CryptoAkCipherAlgorithm, session_id: i64, src_data : &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError>;
+    fn handle_akcipher_service_req(&self, op : CryptoServiceOperation, algo: CryptoAkCipherAlgorithm, session_id: i64, src_data : &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError>;
+    // fn handle_akcipher_rsa_service_req_stateless(
+    //     &self, op : CryptoServiceOperation, algo : CryptoAkCipherAlgorithm, key_type : CryptoAkCipherKeyType, akcipher_key : &[u8], 
+    //     padding_algo: CryptoRsaPaddingAlgo, hash_algo: CryptoRsaHashAlgo,
+    //     src_data : &[u8], dst_data_len : i32
+    // ) -> Result<Vec<u8>, CryptoError>;
+    // fn handle_akcipher_ecdsa_service_req_stateless(
+    //     &self, op : CryptoServiceOperation, algo : CryptoAkCipherAlgorithm, key_type : CryptoAkCipherKeyType, akcipher_key : &[u8], 
+    //     curve_id: CryptoEcdsaCurve, 
+    //     src_data : &[u8], dst_data_len : i32
+    // ) -> Result<Vec<u8>, CryptoError>;
     fn destroy_akcipher_session(&self, session_id: i64) -> Result<(), CryptoError>;
 }
 
