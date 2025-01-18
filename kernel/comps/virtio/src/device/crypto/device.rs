@@ -154,7 +154,7 @@ impl CryptoDevice {
         res.get_result()
     }
 
-    pub fn destroy_session(&self, operation: CryptoSessionOperation, session_id: i64) -> Result<u8, CryptoError>{
+    pub fn destroy_session(&self, operation: CryptoSessionOperation, session_id: i64) -> Result<(), CryptoError>{
 
         let revision_1 = self.revision_1;
 
@@ -197,16 +197,19 @@ impl CryptoDevice {
         
         debug!("receive feedback:{:?}", res);
 
-        res.get_result()
+        match res.get_result() {
+            Ok(status) => Ok(()),
+            Err(err) => Err(err)
+        }
     }
 
     fn handle_service<T: DataFlfPadding>(&self, req: CryptoServiceRequest<T>, vlf: &[u8], rst_len: i32)->Result<Vec<u8>, CryptoError> {
         let revision_1 = self.revision_1;
         let req_len: i32 = if revision_1 {req.len() as _} else {72};
-        let vlf_len: i32 = vlf.len();
+        let vlf_len: i32 = vlf.len() as _;
         let service_slice = DmaStreamSlice::new(&self.data_buffer, 0, req_len as _);
         let service_resp_slice = DmaStreamSlice::new(&self.data_buffer, (req_len + vlf_len + rst_len) as _, 2);
-        let service_vlf_slice = DmaStreamSlice::new(&self.data_buffer, re_len as _, vlf_len as _);
+        let service_vlf_slice = DmaStreamSlice::new(&self.data_buffer, req_len as _, vlf_len as _);
         let service_rst_slice = DmaStreamSlice::new(&self.data_buffer, (req_len + vlf_len) as _, rst_len as _);
         self.data_queue.lock().add_dma_buf(&[&service_slice, &service_vlf_slice], &[&service_rst_slice, &service_resp_slice]).unwrap();
 
@@ -352,7 +355,7 @@ impl AnyCryptoDevice for CryptoDevice{
         self.handle_service(req, src_data, hash_result_len)
     }
 
-    fn destroy_hash_session(&self, session_id : i64) -> Result<u8, CryptoError> {
+    fn destroy_hash_session(&self, session_id : i64) -> Result<(), CryptoError> {
         debug!("[CRYPTO] trying to destroy hash session");
         self.destroy_session(CryptoSessionOperation::HashDestroy, session_id)
     }
@@ -402,7 +405,7 @@ impl AnyCryptoDevice for CryptoDevice{
         self.handle_service(req, src_data, hash_result_len)
     }
 
-    fn destroy_mac_session(&self, session_id : i64) -> Result<u8, CryptoError> {
+    fn destroy_mac_session(&self, session_id : i64) -> Result<(), CryptoError> {
         debug!("[CRYPTO] trying to destroy mac session");
         self.destroy_session(CryptoSessionOperation::MacDestroy, session_id)
     }
@@ -455,7 +458,7 @@ impl AnyCryptoDevice for CryptoDevice{
         self.handle_service(req, &[iv, src_data, aad].concat(), dst_data_len)
     }
 
-    fn destroy_aead_session(&self, session_id : i64) -> Result<u8, CryptoError> {
+    fn destroy_aead_session(&self, session_id : i64) -> Result<(), CryptoError> {
         self.destroy_session(CryptoSessionOperation::AeadDestroy, session_id)
     }
 
@@ -621,7 +624,7 @@ impl AnyCryptoDevice for CryptoDevice{
         }
     }
 
-    fn destroy_cipher_session(&self, session_id: i64) -> Result<u8, CryptoError> {
+    fn destroy_cipher_session(&self, session_id: i64) -> Result<(), CryptoError> {
         debug!("[CRYPTO] trying to destroy cipher session");
         self.destroy_session(CryptoSessionOperation::CipherDestroy, session_id)
     
@@ -716,7 +719,7 @@ impl AnyCryptoDevice for CryptoDevice{
         dst_data
     }
 
-    fn destroy_akcipher_session(&self, session_id: i64) -> Result<u8, CryptoError> {
+    fn destroy_akcipher_session(&self, session_id: i64) -> Result<(), CryptoError> {
         debug!("[CRYPTO] trying to destroy akcipher session");
         self.destroy_session(CryptoSessionOperation::AkCipherDestroy, session_id)
     }
