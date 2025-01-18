@@ -564,11 +564,11 @@ impl AnyCryptoDevice for CryptoDevice{
         };
         let src_data_len = src_data.len() as i32;
         let iv_len = iv.len() as i32;
-        let flf = CryptoCipherDataPara::new(iv_len, src_data_len, dst_data_len);
+        let flf = CryptoCipherDataFlf::new(iv_len, src_data_len, dst_data_len);
         let req = CryptoServiceRequest {
             header,
             flf : CryptoSymDataFlf {
-                op_type_flf : CryptoSymDataOpFlf{ CipherFlf : flf},
+                op_type_flf : CryptoSymDataOpFlf{ cipher_flf : flf},
                 op_type : CryptoSymOpType::Cipher as _,
                 padding : 0
             }
@@ -592,7 +592,7 @@ impl AnyCryptoDevice for CryptoDevice{
         };
         let src_data_len = src_data.len() as i32;
         let iv_len = iv.len() as i32;
-        let flf = CryptoAlgChainDataPara::new(
+        let flf = CryptoAlgChainDataFlf::new(
             iv_len, 
             src_data_len, 
             dst_data_len, 
@@ -606,7 +606,7 @@ impl AnyCryptoDevice for CryptoDevice{
         let req = CryptoServiceRequest {
             header,
             flf : CryptoSymDataFlf {
-                op_type_flf : CryptoSymDataOpFlf { AlgChainFlf : flf},
+                op_type_flf : CryptoSymDataOpFlf { alg_chain_flf : flf},
                 op_type : CryptoSymOpType::AlgorithmChaining as _,
                 padding : 0
             }

@@ -350,20 +350,20 @@ impl DataFlfPadding for CryptoSymDataFlf {}
 #[derive(Pod, Clone, Copy)]
 #[repr(C)]
 pub union CryptoSymDataOpFlf {
-    pub CipherFlf : CryptoCipherDataPara,
-    pub AlgChainFlf : CryptoAlgChainDataPara
+    pub cipher_flf : CryptoCipherDataFlf,
+    pub alg_chain_flf : CryptoAlgChainDataFlf
 } 
 
 #[derive(Debug, Pod, Clone, Copy)]
 #[repr(C)]
-pub struct CryptoCipherDataPara {
+pub struct CryptoCipherDataFlf {
     pub iv_len : i32,
     pub src_data_len : i32,
     pub dst_data_len : i32,
     pub padding : i32
 }
 
-impl CryptoCipherDataPara {
+impl CryptoCipherDataFlf {
     pub fn new(iv_len : i32, src_data_len : i32, dst_data_len : i32) -> Self {
         Self {
             iv_len,
@@ -376,7 +376,7 @@ impl CryptoCipherDataPara {
 
 #[derive(Debug, Pod, Clone, Copy)]
 #[repr(C)]
-pub struct CryptoAlgChainDataPara {
+pub struct CryptoAlgChainDataFlf {
     pub iv_len : i32,
     pub src_data_len : i32,
     pub dst_data_len : i32,
@@ -389,7 +389,7 @@ pub struct CryptoAlgChainDataPara {
     pub reserved : i32
 }
 
-impl CryptoAlgChainDataPara {
+impl CryptoAlgChainDataFlf {
     pub fn new(iv_len : i32, 
         src_data_len : i32, 
         dst_data_len : i32, 
@@ -437,3 +437,125 @@ pub struct CryptoAkcipherDataFlf {
 
 impl AutoPadding for CryptoAkcipherDataFlf {}
 impl DataFlfPadding for CryptoAkcipherDataFlf {}
+
+#[derive(Debug, Pod, Clone, Copy)]
+#[repr(C)]
+pub struct CryptoHashDataFlfStateless {
+    pub session_algo : i32,
+
+    pub src_data_len : i32,
+    pub hash_result_len : i32,
+    pub reserved : i32
+}
+
+impl AutoPadding for CryptoHashDataFlfStateless {}
+impl DataFlfPadding for CryptoHashDataFlfStateless {
+    const PADDING_BYTES: usize = size_of::<CryptoHashDataFlfStateless>();
+}
+
+#[derive(Debug, Pod, Clone, Copy)]
+#[repr(C)]
+pub struct CryptoMacDataFlfStateless {
+    pub session_algo : i32,
+    pub session_auth_key_len : i32,
+
+    pub src_data_len : i32,
+    pub hash_result_len : i32
+}
+
+impl AutoPadding for CryptoMacDataFlfStateless {}
+impl DataFlfPadding for CryptoMacDataFlfStateless {
+    const PADDING_BYTES: usize = size_of::<CryptoMacDataFlfStateless>();
+}
+
+#[derive(Pod, Clone, Copy)]
+#[repr(C)]
+pub struct CryptoSymDataFlfStateless {
+    pub op_type_flf : CryptoSymDataOpFlfStateless,
+    pub op_type : i32
+}
+
+impl AutoPadding for CryptoSymDataFlfStateless {}
+impl DataFlfPadding for CryptoSymDataFlfStateless {
+    const PADDING_BYTES: usize = size_of::<CryptoSymDataFlfStateless>();
+}
+
+
+#[derive(Pod, Clone, Copy)]
+#[repr(C)]
+pub union CryptoSymDataOpFlfStateless {
+    pub cipher_flf : CryptoCipherDataFlfStateless,
+    pub alg_chain_flf : CryptoAlgChainDataFlfStateless
+}
+
+#[derive(Debug, Pod, Clone, Copy)]
+#[repr(C)]
+pub struct CryptoCipherDataFlfStateless {
+    pub session_algo : i32,
+    pub session_key_len : i32,
+    pub session_op : i32,
+
+    pub iv_len : i32,
+    pub src_data_len : i32,
+    pub dst_data_len : i32
+}
+
+#[derive(Debug, Pod, Clone, Copy)]
+#[repr(C)]
+pub struct CryptoAlgChainDataFlfStateless {
+    pub session_alg_chain_order : i32,
+    pub session_aad_len : i32,
+    pub session_cipher_algo : i32,
+    pub session_cipher_key_len : i32,
+    pub session_cipher_op : i32,
+    pub session_hash_algo : i32,
+    pub session_hash_auth_key_len : i32,
+    pub session_hash_mode : i32,
+    
+    pub iv_len : i32,
+    pub src_data_len : i32,
+    pub dst_data_len : i32,
+    pub cipher_start_src_offset : i32,
+    pub len_to_cipher : i32,
+    pub hash_start_src_offset : i32,
+    pub len_to_hash : i32,
+    pub aad_len : i32,
+    pub hash_result_len : i32,
+    pub reserved : i32
+}
+
+#[derive(Debug, Pod, Clone, Copy)]
+#[repr(C)]
+pub struct CryptoAeadDataFlfStateless {
+    pub session_algo : i32,
+    pub session_key_len : i32,
+    pub session_op : i32,
+
+    pub iv_len : i32,
+    pub tag_len : i32,
+    pub aad_len : i32,
+    pub src_data_len : i32,
+    pub dst_data_len : i32
+}
+
+impl AutoPadding for CryptoAeadDataFlfStateless {}
+impl DataFlfPadding for CryptoAeadDataFlfStateless {
+    const PADDING_BYTES: usize = size_of::<CryptoAeadDataFlfStateless>();
+}
+
+#[derive(Pod, Clone, Copy)]
+#[repr(C)]
+pub struct CryptoAkcipherDataFlfStateless {
+    pub session_algo : i32,
+    pub session_key_type : i32,
+    pub session_key_len : i32,
+    pub session_u : CryptoAkCipherAlgoFlf,
+
+    pub src_data_len : i32,
+    pub dst_data_len : i32
+}
+
+impl AutoPadding for CryptoAkcipherDataFlfStateless {}
+impl DataFlfPadding for CryptoAkcipherDataFlfStateless {
+    const PADDING_BYTES: usize = size_of::<CryptoAkcipherDataFlfStateless>();
+}
