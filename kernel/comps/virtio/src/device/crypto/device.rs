@@ -5,6 +5,7 @@ use core::hint::spin_loop;
 
 use alloc::{boxed::Box, fmt::Debug, string::ToString, sync::Arc, vec, vec::Vec};
 use aster_crypto::*;
+use aster_input::key;
 use log::{debug, warn};
 use ostd::{mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, VmIo}, sync::SpinLock, trap::TrapFrame};
 use crate::{
@@ -355,6 +356,29 @@ impl AnyCryptoDevice for CryptoDevice{
         self.handle_service(req, src_data, hash_result_len)
     }
 
+    fn handle_hash_service_req_stateless(&self, op : CryptoServiceOperation, algo : CryptoHashAlgorithm, src_data : &[u8], hash_result_len : i32) -> Result<Vec<u8>, CryptoError> {
+        debug!("[CRYPTO] trying to handle stateless hash service request");
+        let header = CryptoServiceHeader {
+            opcode : op as _,
+            algo : algo as _,
+            session_id : 0,
+            flag : 0,
+            padding : 0
+        };
+        let src_data_len = src_data.len() as i32;
+        let flf = CryptoHashDataFlfStateless {
+            session_algo : algo as _,
+            src_data_len,
+            hash_result_len,
+            reserved : 0
+        };
+        let req = CryptoServiceRequest {
+            header,
+            flf
+        };
+        self.handle_service(req, src_data, hash_result_len)
+    }
+
     fn destroy_hash_session(&self, session_id : i64) -> Result<(), CryptoError> {
         debug!("[CRYPTO] trying to destroy hash session");
         self.destroy_session(CryptoSessionOperation::HashDestroy, session_id)
@@ -403,6 +427,31 @@ impl AnyCryptoDevice for CryptoDevice{
             flf
         };
         self.handle_service(req, src_data, hash_result_len)
+    }
+
+    fn handle_mac_service_req_stateless(&self, op : CryptoServiceOperation, algo : CryptoMacAlgorithm, src_data : &[u8], auth_key : &[u8], hash_result_len : i32) -> Result<Vec<u8>, CryptoError> {
+        debug!("[CRYPTO] trying to handle stateless mac service request");
+        let header = CryptoServiceHeader {
+            opcode: op as _,
+            algo: algo as _,
+            session_id : 0,
+            flag : 0,
+            padding : 0
+        };
+        let auth_key_len = auth_key.len() as i32;
+        let src_data_len = src_data.len() as i32;
+        let flf = CryptoMacDataFlfStateless {
+            session_algo : algo as _,
+            session_auth_key_len : auth_key_len,
+            src_data_len,
+            hash_result_len
+        };
+        let req = CryptoServiceRequest {
+            header,
+            flf
+        };
+        let vlf = &[auth_key, src_data].concat();
+        self.handle_service(req, vlf, hash_result_len)
     }
 
     fn destroy_mac_session(&self, session_id : i64) -> Result<(), CryptoError> {
@@ -456,6 +505,37 @@ impl AnyCryptoDevice for CryptoDevice{
             flf
         };
         self.handle_service(req, &[iv, src_data, aad].concat(), dst_data_len)
+    }
+
+    fn handle_aead_service_req_stateless(&self, op : CryptoServiceOperation, algo : CryptoAeadAlgorithm, key : &[u8], dir : CryptoDirection, iv: &[u8], tag_len: i32, aad: &[u8], src_data: &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError> {
+        debug!("[CRYPTO] trying to handle stateless aead service request");
+        let header = CryptoServiceHeader {
+            opcode: op as _,
+            algo : algo as _,
+            session_id: 0,
+            flag: 0,
+            padding: 0
+        };
+        let key_len = key.len() as i32;
+        let iv_len = iv.len() as i32;
+        let aad_len = aad.len() as i32;
+        let src_data_len = src_data.len() as i32;
+        let flf = CryptoAeadDataFlfStateless {
+            session_algo : algo as _,
+            session_key_len : key_len,
+            session_op : dir as _,
+            iv_len,
+            tag_len,
+            src_data_len,
+            dst_data_len,
+            aad_len
+        };
+        let req = CryptoServiceRequest {
+            header,
+            flf
+        };
+        let vlf = &[key, iv, src_data, aad].concat();
+        self.handle_service(req, vlf, dst_data_len)
     }
 
     fn destroy_aead_session(&self, session_id : i64) -> Result<(), CryptoError> {
@@ -553,7 +633,6 @@ impl AnyCryptoDevice for CryptoDevice{
     }
 
     fn handle_cipher_service_req(&self, op : CryptoServiceOperation, algo: CryptoCipherAlgorithm, session_id : i64, iv : &[u8], src_data : &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError> {
-
         debug!("[CRYPTO] trying to handle cipher service request");
         let header = CryptoServiceHeader {
             opcode : op as _,
@@ -581,8 +660,40 @@ impl AnyCryptoDevice for CryptoDevice{
 
     }
 
+    fn handle_cipher_service_req_stateless(&self, op : CryptoServiceOperation, algo : CryptoCipherAlgorithm, key: &[u8], dir : CryptoDirection, iv : &[u8], src_data: &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError> {
+        debug!("[CRYPTO] trying to handle stateless cipher service request");
+        let header = CryptoServiceHeader {
+            opcode : op as _,
+            algo : algo as _,
+            session_id : 0,
+            flag : 0,
+            padding : 0
+        };
+        let key_len = key.len() as i32;
+        let iv_len = iv.len() as i32;
+        let src_data_len = src_data.len() as i32;
+        let cipher_flf = CryptoCipherDataFlfStateless {
+            session_algo : algo as _,
+            session_key_len : key_len,
+            session_op : dir as _,
+            iv_len,
+            src_data_len,
+            dst_data_len
+        };
+        let flf = CryptoSymDataFlfStateless {
+            op_type_flf : CryptoSymDataOpFlfStateless {cipher_flf},
+            op_type : CryptoSymOpType::Cipher as _
+        };
+        let req = CryptoServiceRequest {
+            header,
+            flf
+        };
+        let vlf = &[key, iv, src_data].concat();
+        self.handle_service(req, vlf, dst_data_len)
+    }
+
     fn handle_alg_chain_service_req(&self, op : CryptoServiceOperation, algo: CryptoCipherAlgorithm, session_id: i64, iv : &[u8], src_data : &[u8], dst_data_len: i32, cipher_start_src_offset: i32, len_to_cipher: i32, hash_start_src_offset: i32, len_to_hash: i32, aad_len: i32, hash_result_len: i32) -> Result<(Vec<u8>, Vec<u8>), CryptoError> {
-        debug!("[CRYPTO] trying to handle cipher service request");
+        debug!("[CRYPTO] trying to handle alg chain service request");
         let header = CryptoServiceHeader {
             opcode : op as _,
             algo : algo as _,
@@ -622,6 +733,67 @@ impl AnyCryptoDevice for CryptoDevice{
             }
             Err(err) => Err(err)
         }
+    }
+
+    fn handle_alg_chain_service_req_stateless(
+            &self, op : CryptoServiceOperation, algo : CryptoCipherAlgorithm, 
+            alg_chain_order: CryptoSymAlgChainOrder, aad : &[u8], 
+            cipher_key : &[u8], dir : CryptoDirection, 
+            hash_algo: i32, auth_key: &[u8], hash_mode : CryptoSymHashMode, 
+            iv : &[u8], src_data : &[u8], dst_data_len : i32, 
+            cipher_start_src_offset: i32, len_to_cipher: i32, hash_start_src_offset: i32, len_to_hash: i32, hash_result_len: i32
+        )->Result<(Vec<u8>, Vec<u8>), CryptoError> {
+        debug!("[CRYPTO] trying to handle stateless alg chain service request");
+        let header = CryptoServiceHeader {
+            opcode : op as _,
+            algo : algo as _,
+            session_id : 0,
+            flag : 0,
+            padding : 0
+        };
+        let aad_len = aad.len() as i32;
+        let key_len = cipher_key.len() as i32;
+        let hash_auth_key_len = auth_key.len() as i32;
+        let iv_len = iv.len() as i32;
+        let src_data_len = src_data.len() as i32;
+        let alg_chain_flf = CryptoAlgChainDataFlfStateless {
+            session_alg_chain_order : alg_chain_order as _,
+            session_aad_len : aad_len,
+            session_cipher_algo : algo as _,
+            session_cipher_key_len : key_len,
+            session_cipher_op : dir as _,
+            session_hash_algo : hash_algo as _,
+            session_hash_auth_key_len : hash_auth_key_len, 
+            session_hash_mode : hash_mode as _,
+            iv_len,
+            src_data_len,
+            dst_data_len,
+            cipher_start_src_offset,
+            len_to_cipher,
+            hash_start_src_offset,
+            len_to_hash,
+            aad_len,
+            hash_result_len,
+            reserved : 0
+        };
+        let flf = CryptoSymDataFlfStateless {
+            op_type_flf : CryptoSymDataOpFlfStateless {alg_chain_flf},
+            op_type : CryptoSymOpType::Cipher as _
+        };
+        let req = CryptoServiceRequest {
+            header,
+            flf
+        };
+        let vlf = &[cipher_key, auth_key, iv, aad, src_data].concat();
+        let dst_data = self.handle_service(req, vlf, dst_data_len + hash_result_len);
+        match dst_data {
+            Ok(data) => {
+                let (fi, sc) = data.split_at(dst_data_len as _);
+                Ok((fi.to_vec(), sc.to_vec()))
+            }
+            Err(err) => Err(err)
+        }
+
     }
 
     fn destroy_cipher_session(&self, session_id: i64) -> Result<(), CryptoError> {
