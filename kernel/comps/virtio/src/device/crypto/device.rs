@@ -818,7 +818,7 @@ impl AnyCryptoDevice for CryptoDevice{
         };
 
         let key_len : u32 = key.len() as _;
-        let para = CryptoRSAPara {
+        let para = CryptoRsaPara {
             padding_algo: padding_algo as _,
             hash_algo: hash_algo as _,
         };
@@ -849,7 +849,7 @@ impl AnyCryptoDevice for CryptoDevice{
         };
 
         let key_len : u32 = key.len() as _;
-        let para = CryptoECDSAPara {
+        let para = CryptoEcdsaPara {
             curve_id: curve_id as _,
         };
         let algo_flf = CryptoAkCipherAlgoFlf { ecdsa: para };
@@ -862,6 +862,39 @@ impl AnyCryptoDevice for CryptoDevice{
         };
 
         self.create_session(req, &key)
+    }
+
+    fn handle_akcipher_ecdsa_service_req_stateless(
+            &self, op : CryptoServiceOperation, algo : CryptoAkCipherAlgorithm, key_type : CryptoAkCipherKeyType, akcipher_key : &[u8], 
+            curve_id: CryptoEcdsaCurve, 
+            src_data : &[u8], dst_data_len : i32
+        ) -> Result<Vec<u8>, CryptoError> {
+        let header = CryptoServiceHeader {
+            opcode : op as _,
+            algo : algo as _,
+            session_id : 0,
+            flag : 0,
+            padding : 0
+        };
+        let ecdsa_flf = CryptoEcdsaPara {
+            curve_id : curve_id as _
+        };
+        let key_len = akcipher_key.len() as i32;
+        let src_data_len = src_data.len() as i32;
+        let flf = CryptoAkcipherDataFlfStateless {
+            session_algo : algo as _,
+            session_key_type : key_type as _,
+            session_key_len : key_len, 
+            session_u : CryptoAkCipherAlgoFlf {ecdsa : ecdsa_flf},
+            src_data_len,
+            dst_data_len
+        };
+        let req = CryptoServiceRequest {
+            header,
+            flf
+        };
+        let vlf = &[akcipher_key, src_data].concat();
+        self.handle_service(req, vlf, dst_data_len)
     }
 
     fn handle_akcipher_service_req(&self, op : CryptoServiceOperation, algo: CryptoAkCipherAlgorithm, session_id: i64, src_data : &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError> {
@@ -887,6 +920,40 @@ impl AnyCryptoDevice for CryptoDevice{
 
         let dst_data = self.handle_service(req, vlf, dst_data_len);
         dst_data
+    }
+
+    fn handle_akcipher_rsa_service_req_stateless(
+            &self, op : CryptoServiceOperation, algo : CryptoAkCipherAlgorithm, key_type : CryptoAkCipherKeyType, akcipher_key : &[u8], 
+            padding_algo: CryptoRsaPaddingAlgo, hash_algo: CryptoRsaHashAlgo,
+            src_data : &[u8], dst_data_len : i32
+        ) -> Result<Vec<u8>, CryptoError> {
+        let header = CryptoServiceHeader {
+            opcode : op as _,
+            algo : algo as _,
+            session_id : 0,
+            flag : 0,
+            padding : 0
+        };
+        let rsa_flf = CryptoRsaPara {
+            padding_algo : padding_algo as _,
+            hash_algo : hash_algo as _
+        };
+        let key_len = akcipher_key.len() as i32;
+        let src_data_len = src_data.len() as i32;
+        let flf = CryptoAkcipherDataFlfStateless {
+            session_algo : algo as _,
+            session_key_type : key_type as _,
+            session_u : CryptoAkCipherAlgoFlf {rsa : rsa_flf},
+            session_key_len : key_len,
+            src_data_len,
+            dst_data_len
+        };
+        let req = CryptoServiceRequest {
+            header,
+            flf
+        };
+        let vlf = &[akcipher_key, src_data].concat();
+        self.handle_service(req, vlf, dst_data_len)
     }
 
     fn destroy_akcipher_session(&self, session_id: i64) -> Result<(), CryptoError> {

@@ -212,20 +212,20 @@ impl CtrlFlfPadding for CryptoAkCipherSessionFlf {}
 #[derive(Pod, Clone, Copy)]
 #[repr(C)]
 pub union CryptoAkCipherAlgoFlf {
-    pub rsa: CryptoRSAPara,
-    pub ecdsa: CryptoECDSAPara,
+    pub rsa: CryptoRsaPara,
+    pub ecdsa: CryptoEcdsaPara,
 }
 
 #[derive(Debug, Pod, Clone, Copy)]
 #[repr(C)]
-pub struct CryptoRSAPara {
+pub struct CryptoRsaPara {
     pub padding_algo: i32,
     pub hash_algo: i32,
 }
 
 #[derive(Debug, Pod, Clone, Copy)]
 #[repr(C)]
-pub struct CryptoECDSAPara {
+pub struct CryptoEcdsaPara {
     pub curve_id: i32,
 }
 

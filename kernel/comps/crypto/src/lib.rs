@@ -272,16 +272,16 @@ pub trait AnyCryptoDevice: Send + Sync + Any + Debug {
     fn create_akcipher_ecdsa_session(&self, algo: CryptoAkCipherAlgorithm, curve_id: CryptoEcdsaCurve, key_type: CryptoAkCipherKeyType, key: &[u8]) -> Result<i64, CryptoError>;
     fn create_akcipher_rsa_session(&self, algo: CryptoAkCipherAlgorithm, padding_algo: CryptoRsaPaddingAlgo, hash_algo: CryptoRsaHashAlgo, key_type: CryptoAkCipherKeyType, key: &[u8]) -> Result<i64, CryptoError>;
     fn handle_akcipher_service_req(&self, op : CryptoServiceOperation, algo: CryptoAkCipherAlgorithm, session_id: i64, src_data : &[u8], dst_data_len : i32) -> Result<Vec<u8>, CryptoError>;
-    // fn handle_akcipher_rsa_service_req_stateless(
-    //     &self, op : CryptoServiceOperation, algo : CryptoAkCipherAlgorithm, key_type : CryptoAkCipherKeyType, akcipher_key : &[u8], 
-    //     padding_algo: CryptoRsaPaddingAlgo, hash_algo: CryptoRsaHashAlgo,
-    //     src_data : &[u8], dst_data_len : i32
-    // ) -> Result<Vec<u8>, CryptoError>;
-    // fn handle_akcipher_ecdsa_service_req_stateless(
-    //     &self, op : CryptoServiceOperation, algo : CryptoAkCipherAlgorithm, key_type : CryptoAkCipherKeyType, akcipher_key : &[u8], 
-    //     curve_id: CryptoEcdsaCurve, 
-    //     src_data : &[u8], dst_data_len : i32
-    // ) -> Result<Vec<u8>, CryptoError>;
+    fn handle_akcipher_rsa_service_req_stateless(
+        &self, op : CryptoServiceOperation, algo : CryptoAkCipherAlgorithm, key_type : CryptoAkCipherKeyType, akcipher_key : &[u8], 
+        padding_algo: CryptoRsaPaddingAlgo, hash_algo: CryptoRsaHashAlgo,
+        src_data : &[u8], dst_data_len : i32
+    ) -> Result<Vec<u8>, CryptoError>;
+    fn handle_akcipher_ecdsa_service_req_stateless(
+        &self, op : CryptoServiceOperation, algo : CryptoAkCipherAlgorithm, key_type : CryptoAkCipherKeyType, akcipher_key : &[u8], 
+        curve_id: CryptoEcdsaCurve, 
+        src_data : &[u8], dst_data_len : i32
+    ) -> Result<Vec<u8>, CryptoError>;
     fn destroy_akcipher_session(&self, session_id: i64) -> Result<(), CryptoError>;
 }
 
