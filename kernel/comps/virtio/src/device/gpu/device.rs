@@ -206,17 +206,6 @@ impl GPUDevice {
     /// Support is optional and negotiated using the VIRTIO_GPU_F_EDID feature flag.
     /// The response contains the EDID display data blob (as specified by VESA) for the scanout.
     fn request_edid_info(&self) -> Result<(), VirtioDeviceError> {
-        // Prepare request header DMA buffer
-        // let request_header_slice = {
-        //     let req_slice = DmaStreamSlice::new(&self.control_request, 0, size_of::<VirtioGpuCtrlHdr>());
-        //     let req = VirtioGpuCtrlHdr {
-        //         type_: VirtioGpuCtrlType::VIRTIO_GPU_CMD_GET_EDID as u32,
-        //         ..VirtioGpuCtrlHdr::default()
-        //     };
-        //     req_slice.write_val(0, &req).unwrap();
-        //     req_slice.sync().unwrap();
-        //     req_slice
-        // };
 
         // Prepare request data DMA buffer
         let request_data_slice = {
@@ -299,18 +288,6 @@ impl GPUDevice {
                 buf.write_val(offset as usize, &color).unwrap();
             }
         }
-        // for y in 0..height {    //height=800
-        //     for x in 0..width { //width=1280
-        //         let offset = (y * width + x) * 4;
-        //         buf.write_val(offset as usize, &x).expect("error writing frame buffer");
-        //         buf.write_val((offset + 1) as usize, &y).expect("error writing frame buffer");
-        //         buf.write_val((offset + 2) as usize, &(x+y)).expect("error writing frame buffer");
-        //         // let black = 0x00000000;
-        //         // buf.write_val(offset as usize, &black).expect("error writing frame buffer");
-        //         // buf.write_val((offset + 1) as usize, &black).expect("error writing frame buffer");
-        //         // buf.write_val((offset + 2) as usize, &black).expect("error writing frame buffer");
-        //     }
-        // }
 
         // flush to screen
         self.flush().expect("failed to flush");
@@ -332,26 +309,9 @@ impl GPUDevice {
         for x in 0..height {
             for y in 0..width {
                 let offset = (x * width + y) * 4;
-                // let color = if x % 2 == 0 && y % 2 == 0 {
-                //     0x00ff_0000
-                // } else {
-                //     0x00ff_0000
-                // };
                 buf.write_val(offset as usize, &color).unwrap();
             }
         }
-        // for y in 0..height {    //height=800
-        //     for x in 0..width { //width=1280
-        //         let offset = (y * width + x) * 4;
-        //         buf.write_val(offset as usize, &x).expect("error writing frame buffer");
-        //         buf.write_val((offset + 1) as usize, &y).expect("error writing frame buffer");
-        //         buf.write_val((offset + 2) as usize, &(x+y)).expect("error writing frame buffer");
-        //         // let black = 0x00000000;
-        //         // buf.write_val(offset as usize, &black).expect("error writing frame buffer");
-        //         // buf.write_val((offset + 1) as usize, &black).expect("error writing frame buffer");
-        //         // buf.write_val((offset + 2) as usize, &black).expect("error writing frame buffer");
-        //     }
-        // }
 
         // flush to screen
         self.flush().expect("failed to flush");
@@ -508,7 +468,6 @@ impl GPUDevice {
             .expect("frame buffer not initialized");
 
         // attach backing storage
-        // TODO: (Taojie) excapsulate 0xbabe
         self.resource_attch_backing(resource_id, frame_buffer_dma.paddr(), size as u32)?;
 
         // map frame buffer to screen
@@ -1008,17 +967,6 @@ fn test_frame_buffer(device: Arc<GPUDevice>) -> Result<(), VirtioDeviceError> {
         .expect("frame buffer not initialized");
 
     // write content into buffer
-    // for x in 0..height {
-    //     for y in 0..width {
-    //         let offset = (x * width + y) * 4;
-    //         let color = if x % 2 == 0 && y % 2 == 0 {
-    //             0x00ff_0000
-    //         } else {
-    //             0x0000_ff00
-    //         };
-    //         buf.write_val(offset as usize, &color).unwrap();
-    //     }
-    // }
     for y in 0..height {
         //height=800
         for x in 0..width {
@@ -1030,10 +978,6 @@ fn test_frame_buffer(device: Arc<GPUDevice>) -> Result<(), VirtioDeviceError> {
                 .expect("error writing frame buffer");
             buf.write_val((offset + 2) as usize, &(x + y))
                 .expect("error writing frame buffer");
-            // let black = 0x00000000;
-            // buf.write_val(offset as usize, &black).expect("error writing frame buffer");
-            // buf.write_val((offset + 1) as usize, &black).expect("error writing frame buffer");
-            // buf.write_val((offset + 2) as usize, &black).expect("error writing frame buffer");
         }
     }
 
