@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: false
+  threshold: 130%
+chart:
+  description: hackbench -g 8 -l 1000 -p -T
+  legend: Turnaround time of hackbench on {system}
+  title: '[Scheduler] Turnaround time of 8 groups using 1 CPU'
+  unit: sec
+result_extraction:
+  result_index: 2
+  search_pattern: 'Time:'
