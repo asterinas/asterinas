@@ -19,6 +19,7 @@
 #![feature(ptr_sub_ptr)]
 #![feature(sync_unsafe_cell)]
 #![feature(trait_upcasting)]
+#![feature(iter_advance_by)]
 // The `generic_const_exprs` feature is incomplete however required for the page table
 // const generic implementation. We are using this feature in a conservative manner.
 #![expect(incomplete_features)]
