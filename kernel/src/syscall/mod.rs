@@ -119,8 +119,6 @@ mod setreuid;
 mod setsid;
 mod setsockopt;
 mod setuid;
-mod show_color;
-mod show_red;
 mod shutdown;
 mod sigaltstack;
 mod socket;

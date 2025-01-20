@@ -37,8 +37,6 @@ TEST_APPS := \
 	shm \
 	signal_c \
 	vsock \
-	gpu \
-	gpu_color \
 
 # The C head and source files of all the apps, excluding the downloaded mongoose files
 C_SOURCES := \
