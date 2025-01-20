@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use core::mem::offset_of;
 
 use aster_util::safe_ptr::SafePtr;
