@@ -6,8 +6,8 @@ use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use int_to_c_enum::TryFromInt;
 use ostd::sync::SpinLock;
 
-pub use super::real_time::RealTimePolicy;
-use crate::sched::priority::{Nice, Priority, RangedU8};
+pub use super::real_time::{RealTimePolicy, RtPrio};
+use crate::sched::priority::{Nice, Priority};
 
 /// The User-chosen scheduling policy.
 ///
@@ -35,13 +35,12 @@ pub(super) enum SchedPolicyKind {
 impl From<Priority> for SchedPolicy {
     fn from(priority: Priority) -> Self {
         match priority.range().get() {
-            0 => SchedPolicy::Stop,
-            rt @ 1..=99 => SchedPolicy::RealTime {
-                rt_prio: RangedU8::new(rt),
+            rt @ 0..=99 => SchedPolicy::RealTime {
+                rt_prio: RtPrio::new(rt as u8),
                 rt_policy: Default::default(),
             },
             100..=139 => SchedPolicy::Fair(priority.into()),
-            _ => SchedPolicy::Idle,
+            _ => unreachable!(),
         }
     }
 }

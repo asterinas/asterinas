@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::*;
+use alloc::sync::Arc;
+
+use ostd::task::{
+    scheduler::{EnqueueFlags, UpdateFlags},
+    Task,
+};
+
+use super::{CurrentRuntime, SchedAttr, SchedClassRq};
 
 /// The per-cpu run queue for the IDLE scheduling class.
 ///

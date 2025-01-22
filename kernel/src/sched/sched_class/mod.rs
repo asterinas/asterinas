@@ -3,9 +3,10 @@
 #![warn(unused)]
 
 use alloc::{boxed::Box, sync::Arc};
-use core::{fmt, sync::atomic::AtomicU64};
+use core::fmt;
 
 use ostd::{
+    arch::read_tsc as sched_clock,
     cpu::{all_cpus, AtomicCpuSet, CpuId, PinCurrentCpu},
     sync::SpinLock,
     task::{
@@ -18,6 +19,9 @@ use ostd::{
     trap::disable_local,
 };
 
+use super::{priority::Nice, stats::SchedulerStats};
+use crate::thread::{AsThread, Thread};
+
 mod policy;
 mod time;
 
@@ -26,15 +30,7 @@ mod idle;
 mod real_time;
 mod stop;
 
-use ostd::arch::read_tsc as sched_clock;
-
-pub use self::policy::*;
-use self::policy::{SchedPolicyKind, SchedPolicyState};
-use super::{
-    priority::{Nice, RangedU8},
-    stats::SchedulerStats,
-};
-use crate::thread::{AsThread, Thread};
+use self::policy::{SchedPolicy, SchedPolicyKind, SchedPolicyState};
 
 type SchedEntity = (Arc<Task>, Arc<Thread>);
 

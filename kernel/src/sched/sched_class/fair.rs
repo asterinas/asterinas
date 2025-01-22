@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{collections::binary_heap::BinaryHeap, sync::Arc};
+use alloc::{collections::BinaryHeap, sync::Arc};
 use core::{
     cmp::{self, Reverse},
-    sync::atomic::{AtomicU64, Ordering::*},
+    sync::atomic::{AtomicU64, Ordering::Relaxed},
 };
 
 use ostd::{

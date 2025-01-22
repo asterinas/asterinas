@@ -57,7 +57,7 @@ impl TryFrom<i8> for Nice {
 ///
 /// It is an integer in the range of [0, 139]. Here we follow the Linux
 /// priority mappings: the relation between [`Priority`] and [`Nice`] is
-/// as such - prio = nice + 120 while the priority of [0, 100] are
+/// as such - prio = nice + 120 while the priority of [0, 99] are
 /// reserved for real-time tasks.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Priority(PriorityRange);
@@ -70,16 +70,10 @@ define_atomic_version_of_integer_like_type!(Priority, try_from = true, {
 });
 
 impl Priority {
+    pub const MIN_NORMAL: Self = Self::new(PriorityRange::new(100));
+
     pub const fn new(range: PriorityRange) -> Self {
         Self(range)
-    }
-
-    pub const fn default_real_time() -> Self {
-        Self::new(PriorityRange::new(50))
-    }
-
-    pub const fn idle() -> Self {
-        Self::new(PriorityRange::new(PriorityRange::MAX))
     }
 
     pub const fn range(&self) -> &PriorityRange {
@@ -92,14 +86,14 @@ impl Priority {
 }
 
 impl From<Nice> for Priority {
-    fn from(value: Nice) -> Self {
-        Self::new(PriorityRange::new(value.range().get() as u8 + 120))
+    fn from(nice: Nice) -> Self {
+        Self::new(PriorityRange::new((nice.range().get() as i16 + 120) as u8))
     }
 }
 
 impl From<Priority> for Nice {
     fn from(priority: Priority) -> Self {
-        Self::new(NiceRange::new((priority.range().get() - 100) as i8 - 20))
+        Self::new(NiceRange::new(((priority.range().get() as i16 - 100) - 20) as i8))
     }
 }
 
