@@ -19,7 +19,7 @@ use super::{
     CurrentRuntime, SchedAttr, SchedClassRq,
 };
 use crate::{
-    sched::priority::{Nice, NiceRange},
+    sched::nice::{Nice, NiceValue},
     thread::AsThread,
 };
 
@@ -38,8 +38,8 @@ pub const fn nice_to_weight(nice: Nice) -> u64 {
         let mut ret = [0; 40];
 
         let mut index = 0;
-        let mut nice = NiceRange::MIN;
-        while nice <= NiceRange::MAX {
+        let mut nice = NiceValue::MIN.get();
+        while nice <= NiceValue::MAX.get() {
             ret[index] = match nice {
                 0 => WEIGHT_0,
                 nice @ 1.. => {
@@ -60,7 +60,7 @@ pub const fn nice_to_weight(nice: Nice) -> u64 {
         ret
     };
 
-    NICE_TO_WEIGHT[(nice.range().get() + 20) as usize]
+    NICE_TO_WEIGHT[(nice.value().get() + 20) as usize]
 }
 
 /// The scheduling entity for the FAIR scheduling class.

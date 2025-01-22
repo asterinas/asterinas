@@ -7,7 +7,7 @@ use int_to_c_enum::TryFromInt;
 use ostd::sync::SpinLock;
 
 pub use super::real_time::{RealTimePolicy, RtPrio};
-use crate::sched::priority::{Nice, Priority};
+use crate::sched::nice::Nice;
 
 /// The User-chosen scheduling policy.
 ///
@@ -16,7 +16,7 @@ use crate::sched::priority::{Nice, Priority};
 pub enum SchedPolicy {
     Stop,
     RealTime {
-        rt_prio: super::real_time::RtPrio,
+        rt_prio: RtPrio,
         rt_policy: RealTimePolicy,
     },
     Fair(Nice),
@@ -30,19 +30,6 @@ pub(super) enum SchedPolicyKind {
     RealTime = 1,
     Fair = 2,
     Idle = 3,
-}
-
-impl From<Priority> for SchedPolicy {
-    fn from(priority: Priority) -> Self {
-        match priority.range().get() {
-            rt @ 0..=99 => SchedPolicy::RealTime {
-                rt_prio: RtPrio::new(rt as u8),
-                rt_policy: Default::default(),
-            },
-            100..=139 => SchedPolicy::Fair(priority.into()),
-            _ => unreachable!(),
-        }
-    }
 }
 
 impl SchedPolicy {

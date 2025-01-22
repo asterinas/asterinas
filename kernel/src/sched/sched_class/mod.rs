@@ -19,7 +19,10 @@ use ostd::{
     trap::disable_local,
 };
 
-use super::{priority::Nice, stats::SchedulerStats};
+use super::{
+    nice::Nice,
+    stats::{set_stats_from_scheduler, SchedulerStats},
+};
 use crate::thread::{AsThread, Thread};
 
 mod policy;
@@ -30,13 +33,21 @@ mod idle;
 mod real_time;
 mod stop;
 
-use self::policy::{SchedPolicy, SchedPolicyKind, SchedPolicyState};
+pub use self::policy::SchedPolicy;
+use self::policy::{SchedPolicyKind, SchedPolicyState};
 
 type SchedEntity = (Arc<Task>, Arc<Thread>);
 
-#[expect(unused)]
 pub fn init() {
-    inject_scheduler(Box::leak(Box::new(ClassScheduler::new())));
+    let scheduler = Box::leak(Box::new(ClassScheduler::new()));
+
+    // Inject the scheduler into the ostd for actual scheduling work.
+    inject_scheduler(scheduler);
+
+    // Set the scheduler into the system for statistics.
+    // We set this after injecting the scheduler into ostd,
+    // so that the loadavg statistics are updated after the scheduler is used.
+    set_stats_from_scheduler(scheduler);
 }
 
 /// Represents the middle layer between scheduling classes and generic scheduler
@@ -128,7 +139,7 @@ impl SchedAttr {
             real_time: {
                 let (prio, policy) = match policy {
                     SchedPolicy::RealTime { rt_prio, rt_policy } => (rt_prio.get(), rt_policy),
-                    _ => (real_time::RtPrio::MAX, Default::default()),
+                    _ => (real_time::RtPrio::MAX.get(), Default::default()),
                 };
                 real_time::RealTimeAttr::new(prio, policy)
             },

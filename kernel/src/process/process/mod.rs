@@ -20,7 +20,7 @@ use super::{
 use crate::{
     device::tty::open_ntty_as_controlling_terminal,
     prelude::*,
-    sched::priority::{AtomicNice, Nice},
+    sched::{AtomicNice, Nice},
     thread::{AsThread, Thread},
     time::clocks::ProfClock,
     vm::vmar::Vmar,

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicI8, AtomicU8};
+use core::sync::atomic::AtomicI8;
 
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 
@@ -9,9 +9,9 @@ use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 /// It is an integer in the range of [-20, 19]. Process with a smaller nice
 /// value is more favorable in scheduling.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub struct Nice(NiceRange);
+pub struct Nice(NiceValue);
 
-pub type NiceRange = RangedI8<-20, 19>;
+pub type NiceValue = RangedI8<-20, 19>;
 
 define_atomic_version_of_integer_like_type!(Nice, try_from = true, {
     #[derive(Debug)]
@@ -19,22 +19,25 @@ define_atomic_version_of_integer_like_type!(Nice, try_from = true, {
 });
 
 impl Nice {
-    pub const fn new(range: NiceRange) -> Self {
+    pub const MIN: Self = Nice::new(NiceValue::MIN);
+    pub const MAX: Self = Nice::new(NiceValue::MAX);
+
+    pub const fn new(range: NiceValue) -> Self {
         Self(range)
     }
 
-    pub const fn range(&self) -> &NiceRange {
+    pub const fn value(&self) -> &NiceValue {
         &self.0
     }
 
-    pub fn range_mut(&mut self) -> &mut NiceRange {
+    pub fn value_mut(&mut self) -> &mut NiceValue {
         &mut self.0
     }
 }
 
 impl Default for Nice {
     fn default() -> Self {
-        Self::new(NiceRange::new(0))
+        Self::new(NiceValue::new(0))
     }
 }
 
@@ -45,74 +48,9 @@ impl From<Nice> for i8 {
 }
 
 impl TryFrom<i8> for Nice {
-    type Error = <NiceRange as TryFrom<i8>>::Error;
+    type Error = <NiceValue as TryFrom<i8>>::Error;
 
     fn try_from(value: i8) -> Result<Self, Self::Error> {
-        let range = value.try_into()?;
-        Ok(Self::new(range))
-    }
-}
-
-/// The thread scheduling priority value.
-///
-/// It is an integer in the range of [0, 139]. Here we follow the Linux
-/// priority mappings: the relation between [`Priority`] and [`Nice`] is
-/// as such - prio = nice + 120 while the priority of [0, 99] are
-/// reserved for real-time tasks.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub struct Priority(PriorityRange);
-
-pub type PriorityRange = RangedU8<0, 139>;
-
-define_atomic_version_of_integer_like_type!(Priority, try_from = true, {
-    #[derive(Debug)]
-    pub struct AtomicPriority(AtomicU8);
-});
-
-impl Priority {
-    pub const MIN_NORMAL: Self = Self::new(PriorityRange::new(100));
-
-    pub const fn new(range: PriorityRange) -> Self {
-        Self(range)
-    }
-
-    pub const fn range(&self) -> &PriorityRange {
-        &self.0
-    }
-
-    pub fn range_mut(&mut self) -> &mut PriorityRange {
-        &mut self.0
-    }
-}
-
-impl From<Nice> for Priority {
-    fn from(nice: Nice) -> Self {
-        Self::new(PriorityRange::new((nice.range().get() as i16 + 120) as u8))
-    }
-}
-
-impl From<Priority> for Nice {
-    fn from(priority: Priority) -> Self {
-        Self::new(NiceRange::new(((priority.range().get() as i16 - 100) - 20) as i8))
-    }
-}
-
-impl Default for Priority {
-    fn default() -> Self {
-        Nice::default().into()
-    }
-}
-
-impl From<Priority> for u8 {
-    fn from(value: Priority) -> Self {
-        value.0.into()
-    }
-}
-
-impl TryFrom<u8> for Priority {
-    type Error = <PriorityRange as TryFrom<u8>>::Error;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
         let range = value.try_into()?;
         Ok(Self::new(range))
     }
@@ -124,8 +62,8 @@ macro_rules! define_ranged_integer {
         $visibility struct $name<const MIN: $type, const MAX: $type>($type);
 
         impl<const MIN: $type, const MAX: $type> $name<MIN, MAX> {
-            $visibility const MIN: $type = MIN as $type;
-            $visibility const MAX: $type = MAX as $type;
+            $visibility const MIN: Self = Self::new(MIN);
+            $visibility const MAX: Self = Self::new(MAX);
 
             $visibility const fn new(val: $type) -> Self {
                 assert!(val >= MIN && val <= MAX);
@@ -152,7 +90,7 @@ macro_rules! define_ranged_integer {
             type Error = &'static str;
 
             fn try_from(value: $type) -> Result<Self, Self::Error> {
-                if value < Self::MIN || value > Self::MAX {
+                if value < MIN || value > MAX {
                     Err("Initialized with out-of-range value.")
                 } else {
                     Ok(Self(value))

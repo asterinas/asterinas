@@ -6,14 +6,17 @@ use super::SyscallReturn;
 use crate::{
     prelude::*,
     process::{posix_thread::AsPosixThread, process_table, Pgid, Pid, Process, Uid},
-    sched::priority::{Nice, NiceRange},
+    sched::Nice,
 };
 
 pub fn sys_set_priority(which: i32, who: u32, prio: i32, ctx: &Context) -> Result<SyscallReturn> {
     let prio_target = PriorityTarget::new(which, who, ctx)?;
-    let new_nice = {
-        let nice_raw = prio.clamp(NiceRange::MIN as i32, NiceRange::MAX as i32) as i8;
-        Nice::new(NiceRange::new(nice_raw))
+    let new_nice: Nice = {
+        let nice_raw = prio.clamp(
+            Nice::MIN.value().get() as i32,
+            Nice::MAX.value().get() as i32,
+        ) as i8;
+        nice_raw.try_into().unwrap()
     };
 
     debug!(
@@ -35,9 +38,9 @@ pub fn sys_get_priority(which: i32, who: u32, ctx: &Context) -> Result<SyscallRe
 
     let processes = get_processes(prio_target)?;
     let highest_prio = {
-        let mut nice = NiceRange::MAX;
+        let mut nice = Nice::MAX.value().get();
         for process in processes.iter() {
-            let proc_nice = process.nice().load(Ordering::Relaxed).range().get();
+            let proc_nice = process.nice().load(Ordering::Relaxed).value().get();
             // Returns the highest priority enjoyed by the processes
             if proc_nice < nice {
                 nice = proc_nice;

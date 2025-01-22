@@ -13,7 +13,7 @@ use crate::{
         signal::{sig_mask::AtomicSigMask, sig_queues::SigQueues},
         Credentials, Process,
     },
-    sched::priority::Priority,
+    sched::{Nice, SchedPolicy},
     thread::{task, Thread, Tid},
     time::{clocks::ProfClock, TimerManager},
 };
@@ -34,7 +34,7 @@ pub struct PosixThreadBuilder {
     fs: Option<Arc<ThreadFsInfo>>,
     sig_mask: AtomicSigMask,
     sig_queues: SigQueues,
-    priority: Priority,
+    sched_policy: SchedPolicy,
 }
 
 impl PosixThreadBuilder {
@@ -51,7 +51,7 @@ impl PosixThreadBuilder {
             fs: None,
             sig_mask: AtomicSigMask::new_empty(),
             sig_queues: SigQueues::new(),
-            priority: Priority::default(),
+            sched_policy: SchedPolicy::Fair(Nice::default()),
         }
     }
 
@@ -90,8 +90,8 @@ impl PosixThreadBuilder {
         self
     }
 
-    pub fn priority(mut self, priority: Priority) -> Self {
-        self.priority = priority;
+    pub fn sched_policy(mut self, sched_policy: SchedPolicy) -> Self {
+        self.sched_policy = sched_policy;
         self
     }
 
@@ -108,7 +108,7 @@ impl PosixThreadBuilder {
             fs,
             sig_mask,
             sig_queues,
-            priority,
+            sched_policy,
         } = self;
 
         let file_table = file_table.unwrap_or_else(|| RwArc::new(FileTable::new_with_stdio()));
@@ -141,8 +141,8 @@ impl PosixThreadBuilder {
             let thread = Arc::new(Thread::new(
                 weak_task.clone(),
                 posix_thread,
-                priority,
                 cpu_affinity,
+                sched_policy,
             ));
 
             let thread_local = ThreadLocal::new(set_child_tid, clear_child_tid, file_table);
