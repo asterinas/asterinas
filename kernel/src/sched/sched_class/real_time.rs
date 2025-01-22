@@ -17,7 +17,7 @@ use ostd::{
 };
 
 use super::{time::base_slice_clocks, CurrentRuntime, SchedAttr, SchedClassRq};
-use crate::{sched::priority::RangedU8, thread::AsThread};
+use crate::{sched::nice::RangedU8, thread::AsThread};
 
 pub type RtPrio = RangedU8<0, 99>;
 

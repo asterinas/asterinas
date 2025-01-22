@@ -37,10 +37,10 @@ use ostd::{
     cpu::{CpuId, CpuSet, PinCurrentCpu},
 };
 use process::Process;
+use sched::SchedPolicy;
 
 use crate::{
     prelude::*,
-    sched::priority::Priority,
     thread::{kernel_thread::ThreadOptions, Thread},
 };
 
@@ -86,8 +86,8 @@ pub fn main() {
     let mut affinity = CpuSet::new_empty();
     affinity.add(CpuId::bsp());
     ThreadOptions::new(init_thread)
-        .priority(Priority::idle())
         .cpu_affinity(affinity)
+        .sched_policy(SchedPolicy::Idle)
         .spawn();
 }
 
@@ -121,7 +121,7 @@ fn ap_init() {
 
     ThreadOptions::new(ap_idle_thread)
         .cpu_affinity(cpu_id.into())
-        .priority(Priority::idle())
+        .sched_policy(SchedPolicy::Idle)
         .spawn();
 }
 
