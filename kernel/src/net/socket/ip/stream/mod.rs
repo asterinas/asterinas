@@ -18,15 +18,13 @@ use util::TcpOptionSet;
 use super::UNSPECIFIED_LOCAL_ENDPOINT;
 use crate::{
     events::IoEvents,
-    fs::{
-        file_handle::FileLike,
-        utils::{InodeMode, Metadata, StatusFlags},
-    },
+    fs::file_handle::FileLike,
     match_sock_option_mut, match_sock_option_ref,
     net::{
         iface::Iface,
         socket::{
             options::{Error as SocketError, SocketOption},
+            private::SocketPrivate,
             util::{
                 options::{SetSocketLevelOption, SocketOptionSet},
                 send_recv_flags::SendRecvFlags,
@@ -129,14 +127,6 @@ impl StreamSocket {
             is_nonblocking: AtomicBool::new(false),
             pollee,
         })
-    }
-
-    fn is_nonblocking(&self) -> bool {
-        self.is_nonblocking.load(Ordering::Relaxed)
-    }
-
-    fn set_nonblocking(&self, nonblocking: bool) {
-        self.is_nonblocking.store(nonblocking, Ordering::Relaxed);
     }
 
     /// Ensures that the socket state is up to date and obtains a read lock on it.
@@ -355,18 +345,6 @@ impl StreamSocket {
         Ok((recv_bytes, remote_endpoint.into()))
     }
 
-    fn recv(
-        &self,
-        writer: &mut dyn MultiWrite,
-        flags: SendRecvFlags,
-    ) -> Result<(usize, SocketAddr)> {
-        if self.is_nonblocking() {
-            self.try_recv(writer, flags)
-        } else {
-            self.wait_events(IoEvents::IN, None, || self.try_recv(writer, flags))
-        }
-    }
-
     fn try_send(&self, reader: &mut dyn MultiRead, flags: SendRecvFlags) -> Result<usize> {
         let state = self.read_updated_state();
 
@@ -395,14 +373,6 @@ impl StreamSocket {
         Ok(sent_bytes)
     }
 
-    fn send(&self, reader: &mut dyn MultiRead, flags: SendRecvFlags) -> Result<usize> {
-        if self.is_nonblocking() {
-            self.try_send(reader, flags)
-        } else {
-            self.wait_events(IoEvents::OUT, None, || self.try_send(reader, flags))
-        }
-    }
-
     fn check_io_events(&self) -> IoEvents {
         let state = self.read_updated_state();
 
@@ -422,49 +392,13 @@ impl Pollable for StreamSocket {
     }
 }
 
-impl FileLike for StreamSocket {
-    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        // TODO: Set correct flags
-        let flags = SendRecvFlags::empty();
-        self.recv(writer, flags).map(|(len, _)| len)
+impl SocketPrivate for StreamSocket {
+    fn is_nonblocking(&self) -> bool {
+        self.is_nonblocking.load(Ordering::Relaxed)
     }
 
-    fn write(&self, reader: &mut VmReader) -> Result<usize> {
-        // TODO: Set correct flags
-        let flags = SendRecvFlags::empty();
-        self.send(reader, flags)
-    }
-
-    fn status_flags(&self) -> StatusFlags {
-        // TODO: when we fully support O_ASYNC, return the flag
-        if self.is_nonblocking() {
-            StatusFlags::O_NONBLOCK
-        } else {
-            StatusFlags::empty()
-        }
-    }
-
-    fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {
-        if new_flags.contains(StatusFlags::O_NONBLOCK) {
-            self.set_nonblocking(true);
-        } else {
-            self.set_nonblocking(false);
-        }
-        Ok(())
-    }
-
-    fn as_socket(&self) -> Option<&dyn Socket> {
-        Some(self)
-    }
-
-    fn metadata(&self) -> Metadata {
-        // This is a dummy implementation.
-        // TODO: Add "SockFS" and link `StreamSocket` to it.
-        Metadata::new_socket(
-            0,
-            InodeMode::from_bits_truncate(0o140777),
-            aster_block::BLOCK_SIZE,
-        )
+    fn set_nonblocking(&self, nonblocking: bool) {
+        self.is_nonblocking.store(nonblocking, Ordering::Relaxed);
     }
 }
 
@@ -546,11 +480,7 @@ impl Socket for StreamSocket {
     }
 
     fn accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
-        if self.is_nonblocking() {
-            self.try_accept()
-        } else {
-            self.wait_events(IoEvents::IN, None, || self.try_accept())
-        }
+        self.block_on(IoEvents::IN, || self.try_accept())
     }
 
     fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
@@ -622,7 +552,7 @@ impl Socket for StreamSocket {
             warn!("sending control message is not supported");
         }
 
-        self.send(reader, flags)
+        self.block_on(IoEvents::OUT, || self.try_send(reader, flags))
     }
 
     fn recvmsg(
@@ -635,7 +565,7 @@ impl Socket for StreamSocket {
             warn!("unsupported flags: {:?}", flags);
         }
 
-        let (received_bytes, _) = self.recv(writer, flags)?;
+        let (received_bytes, _) = self.block_on(IoEvents::IN, || self.try_recv(writer, flags))?;
 
         // TODO: Receive control message
 

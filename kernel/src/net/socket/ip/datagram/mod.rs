@@ -10,13 +10,10 @@ use self::{bound::BoundDatagram, unbound::UnboundDatagram};
 use super::{common::get_ephemeral_endpoint, UNSPECIFIED_LOCAL_ENDPOINT};
 use crate::{
     events::IoEvents,
-    fs::{
-        file_handle::FileLike,
-        utils::{InodeMode, Metadata, StatusFlags},
-    },
     match_sock_option_mut,
     net::socket::{
         options::{Error as SocketError, SocketOption},
+        private::SocketPrivate,
         util::{
             options::{SetSocketLevelOption, SocketOptionSet},
             send_recv_flags::SendRecvFlags,
@@ -110,14 +107,6 @@ impl DatagramSocket {
         })
     }
 
-    pub fn is_nonblocking(&self) -> bool {
-        self.is_nonblocking.load(Ordering::Relaxed)
-    }
-
-    pub fn set_nonblocking(&self, is_nonblocking: bool) {
-        self.is_nonblocking.store(is_nonblocking, Ordering::Relaxed);
-    }
-
     fn remote_endpoint(&self) -> Option<IpEndpoint> {
         let inner = self.inner.read();
 
@@ -168,18 +157,6 @@ impl DatagramSocket {
         Ok(recv_bytes)
     }
 
-    fn recv(
-        &self,
-        writer: &mut dyn MultiWrite,
-        flags: SendRecvFlags,
-    ) -> Result<(usize, SocketAddr)> {
-        if self.is_nonblocking() {
-            self.try_recv(writer, flags)
-        } else {
-            self.wait_events(IoEvents::IN, None, || self.try_recv(writer, flags))
-        }
-    }
-
     fn try_send(
         &self,
         reader: &mut dyn MultiRead,
@@ -219,59 +196,13 @@ impl Pollable for DatagramSocket {
     }
 }
 
-impl FileLike for DatagramSocket {
-    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        // TODO: set correct flags
-        let flags = SendRecvFlags::empty();
-        let read_len = self.recv(writer, flags).map(|(len, _)| len)?;
-        Ok(read_len)
+impl SocketPrivate for DatagramSocket {
+    fn is_nonblocking(&self) -> bool {
+        self.is_nonblocking.load(Ordering::Relaxed)
     }
 
-    fn write(&self, reader: &mut VmReader) -> Result<usize> {
-        let remote = self.remote_endpoint().ok_or_else(|| {
-            Error::with_message(
-                Errno::EDESTADDRREQ,
-                "the destination address is not specified",
-            )
-        })?;
-
-        // TODO: Set correct flags
-        let flags = SendRecvFlags::empty();
-
-        // TODO: Block if send buffer is full
-        self.try_send(reader, &remote, flags)
-    }
-
-    fn as_socket(&self) -> Option<&dyn Socket> {
-        Some(self)
-    }
-
-    fn status_flags(&self) -> StatusFlags {
-        // TODO: when we fully support O_ASYNC, return the flag
-        if self.is_nonblocking() {
-            StatusFlags::O_NONBLOCK
-        } else {
-            StatusFlags::empty()
-        }
-    }
-
-    fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {
-        if new_flags.contains(StatusFlags::O_NONBLOCK) {
-            self.set_nonblocking(true);
-        } else {
-            self.set_nonblocking(false);
-        }
-        Ok(())
-    }
-
-    fn metadata(&self) -> Metadata {
-        // This is a dummy implementation.
-        // TODO: Add "SockFS" and link `DatagramSocket` to it.
-        Metadata::new_socket(
-            0,
-            InodeMode::from_bits_truncate(0o140777),
-            aster_block::BLOCK_SIZE,
-        )
+    fn set_nonblocking(&self, is_nonblocking: bool) {
+        self.is_nonblocking.store(is_nonblocking, Ordering::Relaxed);
     }
 }
 
@@ -373,7 +304,8 @@ impl Socket for DatagramSocket {
             warn!("unsupported flags: {:?}", flags);
         }
 
-        let (received_bytes, peer_addr) = self.recv(writer, flags)?;
+        let (received_bytes, peer_addr) =
+            self.block_on(IoEvents::IN, || self.try_recv(writer, flags))?;
 
         // TODO: Receive control message
 

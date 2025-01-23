@@ -6,7 +6,10 @@ pub use self::util::{
     socket_addr::SocketAddr, MessageHeader,
 };
 use crate::{
-    fs::file_handle::FileLike,
+    fs::{
+        file_handle::FileLike,
+        utils::{InodeMode, Metadata, StatusFlags},
+    },
     prelude::*,
     util::{MultiRead, MultiWrite},
 };
@@ -17,8 +20,43 @@ pub mod unix;
 mod util;
 pub mod vsock;
 
+mod private {
+    use crate::{events::IoEvents, prelude::*, process::signal::Pollable};
+
+    /// Common methods for sockets, but private to the network module.
+    ///
+    /// These are implementation details of sockets, so shouldn't be accessed outside the network
+    /// module. Therefore, the whole trait is sealed.
+    pub trait SocketPrivate: Pollable {
+        /// Returns whether the socket is in non-blocking mode.
+        fn is_nonblocking(&self) -> bool;
+
+        /// Sets whether the socket is in non-blocking mode.
+        fn set_nonblocking(&self, nonblocking: bool);
+
+        /// Blocks until some events occur to complete I/O operations.
+        ///
+        /// If the socket is in non-blocking mode and the I/O operations cannot be completed
+        /// immediately, this method will fail with [`EAGAIN`] instead of blocking.
+        ///
+        /// [`EAGAIN`]: crate::error::Errno::EAGAIN
+        #[track_caller]
+        fn block_on<F, R>(&self, events: IoEvents, mut try_op: F) -> Result<R>
+        where
+            Self: Sized,
+            F: FnMut() -> Result<R>,
+        {
+            if self.is_nonblocking() {
+                try_op()
+            } else {
+                self.wait_events(events, None, try_op)
+            }
+        }
+    }
+}
+
 /// Operations defined on a socket.
-pub trait Socket: FileLike + Send + Sync {
+pub trait Socket: private::SocketPrivate + Send + Sync {
     /// Assigns the specified address to the socket.
     fn bind(&self, _socket_addr: SocketAddr) -> Result<()> {
         return_errno_with_message!(Errno::EOPNOTSUPP, "bind() is not supported");
@@ -84,4 +122,57 @@ pub trait Socket: FileLike + Send + Sync {
         writers: &mut dyn MultiWrite,
         flags: SendRecvFlags,
     ) -> Result<(usize, MessageHeader)>;
+}
+
+impl<T: Socket + 'static> FileLike for T {
+    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+        // TODO: Set correct flags
+        self.recvmsg(writer, SendRecvFlags::empty())
+            .map(|(len, _)| len)
+    }
+
+    fn write(&self, reader: &mut VmReader) -> Result<usize> {
+        // TODO: Set correct flags
+        self.sendmsg(
+            reader,
+            MessageHeader {
+                addr: None,
+                control_message: None,
+            },
+            SendRecvFlags::empty(),
+        )
+    }
+
+    fn status_flags(&self) -> StatusFlags {
+        // TODO: Support other flags (e.g., `O_ASYNC`)
+        if self.is_nonblocking() {
+            StatusFlags::O_NONBLOCK
+        } else {
+            StatusFlags::empty()
+        }
+    }
+
+    fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {
+        // TODO: Support other flags (e.g., `O_ASYNC`)
+        if new_flags.contains(StatusFlags::O_NONBLOCK) {
+            self.set_nonblocking(true);
+        } else {
+            self.set_nonblocking(false);
+        }
+        Ok(())
+    }
+
+    fn as_socket(&self) -> Option<&dyn Socket> {
+        Some(self)
+    }
+
+    fn metadata(&self) -> Metadata {
+        // This is a dummy implementation.
+        // TODO: Add "SockFS" and link `Socket` to it.
+        Metadata::new_socket(
+            0,
+            InodeMode::from_bits_truncate(0o140777),
+            aster_block::BLOCK_SIZE,
+        )
+    }
 }
