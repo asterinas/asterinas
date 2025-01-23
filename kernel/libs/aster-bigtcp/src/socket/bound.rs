@@ -453,13 +453,22 @@ impl<E: Ext> TcpConnection<E> {
 
     /// Closes the connection.
     ///
+    /// This method returns `false` if the socket is closed _before_ calling this method.
+    ///
     /// Polling the iface is _always_ required after this method succeeds.
-    pub fn close(&self) {
+    pub fn close(&self) -> bool {
         let mut socket = self.0.inner.lock();
 
         socket.listener = None;
+
+        if socket.is_closed() {
+            return false;
+        }
+
         socket.close();
         self.0.update_next_poll_at_ms(PollAt::Now);
+
+        true
     }
 
     /// Calls `f` with an immutable reference to the associated [`RawTcpSocket`].

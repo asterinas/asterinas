@@ -7,8 +7,12 @@ impl_socket_options!(
     pub struct NoDelay(bool);
     pub struct MaxSegment(u32);
     pub struct KeepIdle(u32);
+    pub struct SynCnt(u8);
+    pub struct DeferAccept(u32);
     pub struct WindowClamp(u32);
     pub struct Congestion(CongestionControl);
+    pub struct UserTimeout(u32);
+    pub struct Inq(bool);
 );
 
 /// The keepalive interval.
