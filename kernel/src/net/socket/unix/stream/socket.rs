@@ -11,11 +11,9 @@ use super::{
 };
 use crate::{
     events::IoEvents,
-    fs::{
-        file_handle::FileLike,
-        utils::{InodeMode, Metadata, StatusFlags},
-    },
+    fs::file_handle::FileLike,
     net::socket::{
+        private::SocketPrivate,
         unix::UnixSocketAddr,
         util::{send_recv_flags::SendRecvFlags, socket_addr::SocketAddr, MessageHeader},
         SockShutdownCmd, Socket,
@@ -65,28 +63,12 @@ impl UnixStreamSocket {
         )
     }
 
-    fn send(&self, reader: &mut dyn MultiRead, flags: SendRecvFlags) -> Result<usize> {
-        if self.is_nonblocking() {
-            self.try_send(reader, flags)
-        } else {
-            self.wait_events(IoEvents::OUT, None, || self.try_send(reader, flags))
-        }
-    }
-
     fn try_send(&self, buf: &mut dyn MultiRead, _flags: SendRecvFlags) -> Result<usize> {
         match self.state.read().as_ref() {
             State::Connected(connected) => connected.try_write(buf),
             State::Init(_) | State::Listen(_) => {
                 return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected")
             }
-        }
-    }
-
-    fn recv(&self, writer: &mut dyn MultiWrite, flags: SendRecvFlags) -> Result<usize> {
-        if self.is_nonblocking() {
-            self.try_recv(writer, flags)
-        } else {
-            self.wait_events(IoEvents::IN, None, || self.try_recv(writer, flags))
         }
     }
 
@@ -142,14 +124,6 @@ impl UnixStreamSocket {
             }
         }
     }
-
-    fn is_nonblocking(&self) -> bool {
-        self.is_nonblocking.load(Ordering::Relaxed)
-    }
-
-    fn set_nonblocking(&self, nonblocking: bool) {
-        self.is_nonblocking.store(nonblocking, Ordering::Relaxed);
-    }
 }
 
 impl Pollable for UnixStreamSocket {
@@ -163,45 +137,13 @@ impl Pollable for UnixStreamSocket {
     }
 }
 
-impl FileLike for UnixStreamSocket {
-    fn as_socket(&self) -> Option<&dyn Socket> {
-        Some(self)
+impl SocketPrivate for UnixStreamSocket {
+    fn is_nonblocking(&self) -> bool {
+        self.is_nonblocking.load(Ordering::Relaxed)
     }
 
-    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        // TODO: Set correct flags
-        let flags = SendRecvFlags::empty();
-        let read_len = self.recv(writer, flags)?;
-        Ok(read_len)
-    }
-
-    fn write(&self, reader: &mut VmReader) -> Result<usize> {
-        // TODO: Set correct flags
-        let flags = SendRecvFlags::empty();
-        self.send(reader, flags)
-    }
-
-    fn status_flags(&self) -> StatusFlags {
-        if self.is_nonblocking() {
-            StatusFlags::O_NONBLOCK
-        } else {
-            StatusFlags::empty()
-        }
-    }
-
-    fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {
-        self.set_nonblocking(new_flags.contains(StatusFlags::O_NONBLOCK));
-        Ok(())
-    }
-
-    fn metadata(&self) -> Metadata {
-        // This is a dummy implementation.
-        // TODO: Add "SockFS" and link `UnixStreamSocket` to it.
-        Metadata::new_socket(
-            0,
-            InodeMode::from_bits_truncate(0o140777),
-            aster_block::BLOCK_SIZE,
-        )
+    fn set_nonblocking(&self, nonblocking: bool) {
+        self.is_nonblocking.store(nonblocking, Ordering::Relaxed);
     }
 }
 
@@ -270,11 +212,7 @@ impl Socket for UnixStreamSocket {
     }
 
     fn accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
-        if self.is_nonblocking() {
-            self.try_accept()
-        } else {
-            self.wait_events(IoEvents::IN, None, || self.try_accept())
-        }
+        self.block_on(IoEvents::IN, || self.try_accept())
     }
 
     fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
@@ -328,7 +266,7 @@ impl Socket for UnixStreamSocket {
             warn!("sending control message is not supported");
         }
 
-        self.send(reader, flags)
+        self.block_on(IoEvents::OUT, || self.try_send(reader, flags))
     }
 
     fn recvmsg(
@@ -341,7 +279,7 @@ impl Socket for UnixStreamSocket {
             warn!("unsupported flags: {:?}", flags);
         }
 
-        let received_bytes = self.recv(writer, flags)?;
+        let received_bytes = self.block_on(IoEvents::IN, || self.try_recv(writer, flags))?;
 
         // TODO: Receive control message
 
