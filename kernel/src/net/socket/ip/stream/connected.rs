@@ -70,7 +70,9 @@ impl ConnectedStream {
 
         if cmd.shut_write() {
             self.is_sending_closed.store(true, Ordering::Relaxed);
-            self.tcp_conn.close();
+            if !self.tcp_conn.close() {
+                return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected");
+            }
             events |= IoEvents::OUT | IoEvents::HUP;
         }
 
@@ -116,6 +118,10 @@ impl ConnectedStream {
         reader: &mut dyn MultiRead,
         _flags: SendRecvFlags,
     ) -> Result<(usize, NeedIfacePoll)> {
+        if reader.is_empty() {
+            return Ok((0, NeedIfacePoll::FALSE));
+        }
+
         let result = self.tcp_conn.send(|socket_buffer| {
             match reader.read(&mut VmWriter::from(socket_buffer)) {
                 Ok(len) => (len, Ok(len)),

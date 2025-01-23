@@ -10,10 +10,13 @@ use connected::ConnectedStream;
 use connecting::{ConnResult, ConnectingStream};
 use init::InitStream;
 use listen::ListenStream;
-use options::{Congestion, KeepIdle, MaxSegment, NoDelay, WindowClamp, KEEPALIVE_INTERVAL};
+use options::{
+    Congestion, DeferAccept, Inq, KeepIdle, MaxSegment, NoDelay, SynCnt, UserTimeout, WindowClamp,
+    KEEPALIVE_INTERVAL,
+};
 use ostd::sync::{PreemptDisabled, RwLockReadGuard, RwLockWriteGuard};
 use takeable::Takeable;
-use util::TcpOptionSet;
+use util::{Retrans, TcpOptionSet};
 
 use super::UNSPECIFIED_LOCAL_ENDPOINT;
 use crate::{
@@ -204,7 +207,7 @@ impl StreamSocket {
     // `Some(_)` if blocking is not necessary or not allowed.
     fn start_connect(&self, remote_endpoint: &IpEndpoint) -> Option<Result<()>> {
         let is_nonblocking = self.is_nonblocking();
-        let (options, mut state) = self.update_connecting();
+        let (mut options, mut state) = self.update_connecting();
 
         let raw_option = options.raw();
 
@@ -248,7 +251,13 @@ impl StreamSocket {
                 StreamObserver::new(self.pollee.clone()),
             ) {
                 Ok(connecting_stream) => connecting_stream,
-                Err((err, init_stream)) => {
+                Err((mut err, init_stream)) => {
+                    // If the socket is nonblocking, we should return EINPROGRESS instead.
+                    if is_nonblocking {
+                        options.socket.set_sock_errors(Some(err));
+                        err = Error::new(Errno::EINPROGRESS);
+                    }
+
                     return (State::Init(init_stream), (Some(Err(err)), None));
                 }
             };
@@ -601,12 +610,32 @@ impl Socket for StreamSocket {
                 tcp_no_delay.set(no_delay);
             },
             tcp_maxseg: MaxSegment => {
+                const DEFAULT_MAX_SEGMEMT: u32 = 536;
+                // For an unconnected socket,
+                // older Linux versions (e.g., v6.0) return
+                // the default MSS value defined above.
+                // However, newer Linux versions (e.g., v6.11)
+                // return the user-set MSS value if it is set.
+                // Here, we adopt the behavior of the latest Linux versions.
                 let maxseg = options.tcp.maxseg();
-                tcp_maxseg.set(maxseg);
+                if maxseg == 0 {
+                    tcp_maxseg.set(DEFAULT_MAX_SEGMEMT);
+                } else {
+                    tcp_maxseg.set(maxseg);
+                }
             },
             tcp_keep_idle: KeepIdle => {
                 let keep_idle = options.tcp.keep_idle();
                 tcp_keep_idle.set(keep_idle);
+            },
+            tcp_syn_cnt: SynCnt => {
+                let syn_cnt = options.tcp.syn_cnt();
+                tcp_syn_cnt.set(syn_cnt);
+            },
+            tcp_defer_accept: DeferAccept => {
+                let defer_accept = options.tcp.defer_accept();
+                let seconds = defer_accept.to_secs();
+                tcp_defer_accept.set(seconds);
             },
             tcp_window_clamp: WindowClamp => {
                 let window_clamp = options.tcp.window_clamp();
@@ -615,6 +644,14 @@ impl Socket for StreamSocket {
             tcp_congestion: Congestion => {
                 let congestion = options.tcp.congestion();
                 tcp_congestion.set(congestion);
+            },
+            tcp_user_timeout: UserTimeout => {
+                let user_timeout = options.tcp.user_timeout();
+                tcp_user_timeout.set(user_timeout);
+            },
+            tcp_inq: Inq => {
+                let inq = options.tcp.receive_inq();
+                tcp_inq.set(inq);
             },
             _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to get is unknown")
         });
@@ -679,6 +716,23 @@ fn do_tcp_setsockopt(
 
             // TODO: Track when the socket becomes idle to actually support keep idle.
         },
+        tcp_syn_cnt: SynCnt => {
+            const MAX_TCP_SYN_CNT: u8 = 127;
+
+            let syncnt = tcp_syn_cnt.get().unwrap();
+            if *syncnt < 1 || *syncnt > MAX_TCP_SYN_CNT {
+                return_errno_with_message!(Errno::EINVAL, "the SYN count is out of bounds");
+            }
+            options.tcp.set_syn_cnt(*syncnt);
+        },
+        tcp_defer_accept: DeferAccept => {
+            let mut seconds = *(tcp_defer_accept.get().unwrap());
+            if (seconds as i32) < 0 {
+                seconds = 0;
+            }
+            let retrans = Retrans::from_secs(seconds);
+            options.tcp.set_defer_accept(retrans);
+        },
         tcp_window_clamp: WindowClamp => {
             let window_clamp = tcp_window_clamp.get().unwrap();
             let half_recv_buf = options.socket.recv_buf() / 2;
@@ -691,6 +745,17 @@ fn do_tcp_setsockopt(
         tcp_congestion: Congestion => {
             let congestion = tcp_congestion.get().unwrap();
             options.tcp.set_congestion(*congestion);
+        },
+        tcp_user_timeout: UserTimeout => {
+            let user_timeout = tcp_user_timeout.get().unwrap();
+            if (*user_timeout as i32) < 0 {
+                return_errno_with_message!(Errno::EINVAL, "the user timeout cannot be negative");
+            }
+            options.tcp.set_user_timeout(*user_timeout);
+        },
+        tcp_inq: Inq => {
+            let inq = tcp_inq.get().unwrap();
+            options.tcp.set_receive_inq(*inq);
         },
         _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to be set is unknown")
     });
