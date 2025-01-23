@@ -107,15 +107,6 @@ impl DatagramSocket {
         })
     }
 
-    fn remote_endpoint(&self) -> Option<IpEndpoint> {
-        let inner = self.inner.read();
-
-        match inner.as_ref() {
-            Inner::Bound(bound_datagram) => bound_datagram.remote_endpoint(),
-            Inner::Unbound(_) => None,
-        }
-    }
-
     fn try_bind_ephemeral(&self, remote_endpoint: &IpEndpoint) -> Result<()> {
         // Fast path
         if let Inner::Bound(_) = self.inner.read().as_ref() {
@@ -136,6 +127,65 @@ impl DatagramSocket {
             };
             (Inner::Bound(bound_datagram), Ok(()))
         })
+    }
+
+    /// Selects the remote endpoint and binds if the socket is not bound.
+    ///
+    /// The remote endpoint specified in the system call (e.g., `sendto`) argument is preferred,
+    /// otherwise the connected endpoint of the socket is used. If there are no remote endpoints
+    /// available, this method will fail with [`EDESTADDRREQ`].
+    ///
+    /// If the remote endpoint is specified but the socket is not bound, this method will try to
+    /// bind the socket to an ephemeral endpoint.
+    ///
+    /// If the above steps succeed, `op` will be called with the bound socket and the selected
+    /// remote endpoint.
+    ///
+    /// [`EDESTADDRREQ`]: crate::error::Errno::EDESTADDRREQ
+    fn select_remote_and_bind<F, R>(&self, remote: Option<&IpEndpoint>, op: F) -> Result<R>
+    where
+        F: FnOnce(&BoundDatagram, &IpEndpoint) -> Result<R>,
+    {
+        let mut inner = self.inner.read();
+
+        // Not really a loop, since we always break on the first iteration. But we need to use
+        // `loop` here because we want to use `break` later.
+        #[expect(clippy::never_loop)]
+        let bound_datagram = loop {
+            // Fast path: The socket is already bound.
+            if let Inner::Bound(bound_datagram) = inner.as_ref() {
+                break bound_datagram;
+            }
+
+            // Slow path: Try to bind the socket to an ephemeral endpoint.
+            drop(inner);
+            if let Some(remote_endpoint) = remote {
+                self.try_bind_ephemeral(remote_endpoint)?;
+            } else {
+                return_errno_with_message!(
+                    Errno::EDESTADDRREQ,
+                    "the destination address is not specified"
+                );
+            }
+            inner = self.inner.read();
+
+            // Now the socket must be bound.
+            if let Inner::Bound(bound_datagram) = inner.as_ref() {
+                break bound_datagram;
+            }
+            unreachable!("`try_bind_ephemeral` succeeds so the socket cannot be unbound");
+        };
+
+        let remote_endpoint = remote
+            .or_else(|| bound_datagram.remote_endpoint())
+            .ok_or_else(|| {
+                Error::with_message(
+                    Errno::EDESTADDRREQ,
+                    "the destination address is not specified",
+                )
+            })?;
+
+        op(bound_datagram, remote_endpoint)
     }
 
     fn try_recv(
@@ -160,19 +210,16 @@ impl DatagramSocket {
     fn try_send(
         &self,
         reader: &mut dyn MultiRead,
-        remote: &IpEndpoint,
+        remote: Option<&IpEndpoint>,
         flags: SendRecvFlags,
     ) -> Result<usize> {
-        let inner = self.inner.read();
+        let (sent_bytes, iface_to_poll) =
+            self.select_remote_and_bind(remote, |bound_datagram, remote_endpoint| {
+                let sent_bytes = bound_datagram.try_send(reader, remote_endpoint, flags)?;
+                let iface_to_poll = bound_datagram.iface().clone();
+                Ok((sent_bytes, iface_to_poll))
+            })?;
 
-        let Inner::Bound(bound_datagram) = inner.as_ref() else {
-            return_errno_with_message!(Errno::EAGAIN, "the socket is not bound")
-        };
-
-        let sent_bytes = bound_datagram.try_send(reader, remote, flags)?;
-        let iface_to_poll = bound_datagram.iface().clone();
-
-        drop(inner);
         self.pollee.invalidate();
         iface_to_poll.poll();
 
@@ -250,8 +297,15 @@ impl Socket for DatagramSocket {
     }
 
     fn peer_addr(&self) -> Result<SocketAddr> {
-        self.remote_endpoint()
-            .map(|endpoint| endpoint.into())
+        let inner = self.inner.read();
+
+        let remote_endpoint = match inner.as_ref() {
+            Inner::Unbound(_) => None,
+            Inner::Bound(bound_datagram) => bound_datagram.remote_endpoint(),
+        };
+
+        remote_endpoint
+            .map(|endpoint| (*endpoint).into())
             .ok_or_else(|| Error::with_message(Errno::ENOTCONN, "the socket is not connected"))
     }
 
@@ -271,18 +325,9 @@ impl Socket for DatagramSocket {
             control_message,
         } = message_header;
 
-        let remote_endpoint = match addr {
-            Some(remote_addr) => {
-                let endpoint = remote_addr.try_into()?;
-                self.try_bind_ephemeral(&endpoint)?;
-                endpoint
-            }
-            None => self.remote_endpoint().ok_or_else(|| {
-                Error::with_message(
-                    Errno::EDESTADDRREQ,
-                    "the destination address is not specified",
-                )
-            })?,
+        let endpoint = match addr {
+            Some(addr) => Some(addr.try_into()?),
+            None => None,
         };
 
         if control_message.is_some() {
@@ -291,7 +336,7 @@ impl Socket for DatagramSocket {
         }
 
         // TODO: Block if the send buffer is full
-        self.try_send(reader, &remote_endpoint, flags)
+        self.try_send(reader, endpoint.as_ref(), flags)
     }
 
     fn recvmsg(

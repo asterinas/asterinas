@@ -32,8 +32,8 @@ impl BoundDatagram {
         self.bound_socket.local_endpoint().unwrap()
     }
 
-    pub fn remote_endpoint(&self) -> Option<IpEndpoint> {
-        self.remote_endpoint
+    pub fn remote_endpoint(&self) -> Option<&IpEndpoint> {
+        self.remote_endpoint.as_ref()
     }
 
     pub fn set_remote_endpoint(&mut self, endpoint: &IpEndpoint) {
