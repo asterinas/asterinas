@@ -3,7 +3,7 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use aster_bigtcp::{
-    socket::{NeedIfacePoll, RawTcpOption, RawTcpSetOption},
+    socket::{NeedIfacePoll, SmolTcpOption, SmolTcpSetOption},
     wire::IpEndpoint,
 };
 use connected::ConnectedStream;
@@ -84,8 +84,8 @@ impl OptionSet {
         OptionSet { socket, tcp }
     }
 
-    fn raw(&self) -> RawTcpOption {
-        RawTcpOption {
+    fn smol(&self) -> SmolTcpOption {
+        SmolTcpOption {
             keep_alive: self.socket.keep_alive().then_some(KEEPALIVE_INTERVAL),
             is_nagle_enabled: !self.tcp.no_delay(),
         }
@@ -104,14 +104,14 @@ impl StreamSocket {
     }
 
     fn new_accepted(connected_stream: ConnectedStream) -> Arc<Self> {
-        let options = connected_stream.raw_with(|raw_tcp_socket| {
+        let options = connected_stream.smol_with(|smol_tcp_socket| {
             let mut options = OptionSet::new();
 
-            if raw_tcp_socket.keep_alive().is_some() {
+            if smol_tcp_socket.keep_alive().is_some() {
                 options.socket.set_keep_alive(true);
             }
 
-            if !raw_tcp_socket.nagle_enabled() {
+            if !smol_tcp_socket.nagle_enabled() {
                 options.tcp.set_no_delay(true);
             }
 
@@ -216,7 +216,7 @@ impl StreamSocket {
         let is_nonblocking = self.is_nonblocking();
         let (options, mut state) = self.update_connecting();
 
-        let raw_option = options.raw();
+        let smol_option = options.smol();
 
         let (result_or_block, iface_to_poll) = state.borrow_result(|mut owned_state| {
             let init_stream = match owned_state {
@@ -254,7 +254,7 @@ impl StreamSocket {
 
             let connecting_stream = match init_stream.connect(
                 remote_endpoint,
-                &raw_option,
+                &smol_option,
                 StreamObserver::new(self.pollee.clone()),
             ) {
                 Ok(connecting_stream) => connecting_stream,
@@ -510,7 +510,7 @@ impl Socket for StreamSocket {
     fn listen(&self, backlog: usize) -> Result<()> {
         let (options, mut state) = self.update_connecting();
 
-        let raw_option = options.raw();
+        let smol_option = options.smol();
 
         state.borrow_result(|owned_state| {
             let init_stream = match owned_state {
@@ -531,7 +531,7 @@ impl Socket for StreamSocket {
 
             let listen_stream = match init_stream.listen(
                 backlog,
-                &raw_option,
+                &smol_option,
                 StreamObserver::new(self.pollee.clone()),
             ) {
                 Ok(listen_stream) => listen_stream,
@@ -725,7 +725,7 @@ fn do_tcp_setsockopt(
         tcp_no_delay: NoDelay => {
             let no_delay = tcp_no_delay.get().unwrap();
             options.tcp.set_no_delay(*no_delay);
-            state.set_raw_option(|raw_socket: &dyn RawTcpSetOption| raw_socket.set_nagle_enabled(!no_delay));
+            state.set_smol_option(|smol_socket: &dyn SmolTcpSetOption| smol_socket.set_nagle_enabled(!no_delay));
         },
         tcp_maxseg: MaxSegment => {
             const MIN_MAXSEG: u32 = 536;
@@ -769,18 +769,20 @@ fn do_tcp_setsockopt(
 }
 
 impl State {
-    /// Calls `f` to set raw socket option.
+    /// Calls `f` to set smoltcp socket option.
     ///
     /// For listening sockets, socket options are inherited by new connections. However, they are
     /// not updated for connections in the backlog queue.
-    fn set_raw_option<R>(&self, set_option: impl FnOnce(&dyn RawTcpSetOption) -> R) -> Option<R> {
+    fn set_smol_option<R>(&self, set_option: impl FnOnce(&dyn SmolTcpSetOption) -> R) -> Option<R> {
         match self {
             State::Init(_) => None,
             State::Connecting(connecting_stream) => {
-                Some(connecting_stream.set_raw_option(set_option))
+                Some(connecting_stream.set_smol_option(set_option))
             }
-            State::Connected(connected_stream) => Some(connected_stream.set_raw_option(set_option)),
-            State::Listen(listen_stream) => Some(listen_stream.set_raw_option(set_option)),
+            State::Connected(connected_stream) => {
+                Some(connected_stream.set_smol_option(set_option))
+            }
+            State::Listen(listen_stream) => Some(listen_stream.set_smol_option(set_option)),
         }
     }
 
@@ -802,9 +804,10 @@ impl SetSocketLevelOption for State {
             None
         };
 
-        let set_keepalive = |raw_socket: &dyn RawTcpSetOption| raw_socket.set_keep_alive(interval);
+        let set_keepalive =
+            |smol_socket: &dyn SmolTcpSetOption| smol_socket.set_keep_alive(interval);
 
-        self.set_raw_option(set_keepalive)
+        self.set_smol_option(set_keepalive)
             .unwrap_or(NeedIfacePoll::FALSE)
     }
 }

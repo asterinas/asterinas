@@ -4,7 +4,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use aster_bigtcp::{
     errors::tcp::{RecvError, SendError},
-    socket::{NeedIfacePoll, RawTcpSetOption, RawTcpSocket, TcpStateCheck},
+    socket::{NeedIfacePoll, SmolTcpSetOption, SmolTcpSocket, TcpStateCheck},
     wire::IpEndpoint,
 };
 
@@ -168,7 +168,7 @@ impl ConnectedStream {
     }
 
     pub(super) fn check_io_events(&self) -> IoEvents {
-        self.tcp_conn.raw_with(|socket| {
+        self.tcp_conn.smol_with(|socket| {
             if socket.is_peer_closed() {
                 // Only the sending side of peer socket is closed
                 self.is_receiving_closed.store(true, Ordering::Relaxed);
@@ -206,14 +206,14 @@ impl ConnectedStream {
         })
     }
 
-    pub(super) fn set_raw_option<R>(
+    pub(super) fn set_smol_option<R>(
         &self,
-        set_option: impl FnOnce(&dyn RawTcpSetOption) -> R,
+        set_option: impl FnOnce(&dyn SmolTcpSetOption) -> R,
     ) -> R {
         set_option(&self.tcp_conn)
     }
 
-    pub(super) fn raw_with<R>(&self, f: impl FnOnce(&RawTcpSocket) -> R) -> R {
-        self.tcp_conn.raw_with(f)
+    pub(super) fn smol_with<R>(&self, f: impl FnOnce(&SmolTcpSocket) -> R) -> R {
+        self.tcp_conn.smol_with(f)
     }
 }

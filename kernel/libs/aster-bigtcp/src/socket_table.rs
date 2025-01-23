@@ -12,7 +12,7 @@ use static_assertions::const_assert;
 
 use crate::{
     ext::Ext,
-    socket::{TcpConnectionBg, TcpListenerBg, UdpSocketBg},
+    socket::{RawSocketBg, TcpConnectionBg, TcpListenerBg, UdpSocketBg},
     wire::PortNum,
 };
 
@@ -142,6 +142,7 @@ pub(crate) struct SocketTable<E: Ext> {
     // Note that multiple UDP sockets can be bound to the same address,
     // so we cannot use (addr, port) as a _unique_ key for UDP sockets.
     udp_sockets: Vec<Arc<UdpSocketBg<E>>>,
+    raw_sockets: Vec<Arc<RawSocketBg<E>>>,
 }
 
 // On Linux, the number of buckets is determined at runtime based on the available memory.
@@ -168,11 +169,13 @@ impl<E: Ext> SocketTable<E> {
             .collect();
 
         let udp_sockets = Vec::new();
+        let raw_sockets = Vec::new();
 
         Self {
             listener_buckets,
             connection_buckets,
             udp_sockets,
+            raw_sockets,
         }
     }
 
@@ -236,6 +239,14 @@ impl<E: Ext> SocketTable<E> {
         self.udp_sockets.push(udp_socket);
     }
 
+    pub(crate) fn insert_raw_socket(&mut self, raw_socket: Arc<RawSocketBg<E>>) {
+        debug_assert!(!self
+            .raw_sockets
+            .iter()
+            .any(|socket| Arc::ptr_eq(socket, &raw_socket)));
+        self.raw_sockets.push(raw_socket);
+    }
+
     pub(crate) fn lookup_listener(&self, key: &ListenerKey) -> Option<&Arc<TcpListenerBg<E>>> {
         let bucket = {
             let hash = key.hash();
@@ -295,6 +306,17 @@ impl<E: Ext> SocketTable<E> {
         Some(self.udp_sockets.swap_remove(index))
     }
 
+    pub(crate) fn remove_raw_socket(
+        &mut self,
+        socket: &Arc<RawSocketBg<E>>,
+    ) -> Option<Arc<RawSocketBg<E>>> {
+        let index = self
+            .raw_sockets
+            .iter()
+            .position(|raw_socket| Arc::ptr_eq(raw_socket, socket))?;
+        Some(self.raw_sockets.swap_remove(index))
+    }
+
     pub(crate) fn remove_dead_tcp_connections(&mut self) {
         for connection_bucket in self.connection_buckets.iter_mut() {
             for tcp_conn in connection_bucket
@@ -320,6 +342,14 @@ impl<E: Ext> SocketTable<E> {
 
     pub(crate) fn udp_socket_iter(&self) -> impl Iterator<Item = &Arc<UdpSocketBg<E>>> {
         self.udp_sockets.iter()
+    }
+
+    pub(crate) fn raw_socket_iter(&self) -> impl Iterator<Item = &Arc<RawSocketBg<E>>> {
+        self.raw_sockets.iter()
+    }
+
+    pub(crate) fn raw_sockets(&self) -> &Vec<Arc<RawSocketBg<E>>> {
+        &self.raw_sockets
     }
 }
 

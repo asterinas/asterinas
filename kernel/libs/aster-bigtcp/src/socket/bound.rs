@@ -11,19 +11,20 @@ use smoltcp::{
     iface::Context,
     socket::{tcp::State, udp::UdpMetadata, PollAt},
     time::{Duration, Instant},
-    wire::{IpEndpoint, IpRepr, TcpControl, TcpRepr, UdpRepr},
+    wire::{IpEndpoint, IpProtocol, IpRepr, Ipv4Address, Ipv4Packet, TcpControl, TcpRepr, UdpRepr},
 };
 use spin::once::Once;
 use takeable::Takeable;
 
 use super::{
     event::{SocketEventObserver, SocketEvents},
-    option::{RawTcpOption, RawTcpSetOption},
-    unbound::{new_tcp_socket, new_udp_socket},
-    RawTcpSocket, RawUdpSocket, TcpStateCheck,
+    option::{SmolTcpOption, SmolTcpSetOption},
+    unbound::{new_raw_socket, new_tcp_socket, new_udp_socket},
+    SmolRawSocket, SmolTcpSocket, SmolUdpSocket, TcpStateCheck,
 };
 use crate::{
     errors::{
+        raw::SendError as RawSendError,
         tcp::{ConnectError, ListenError},
         udp::SendError,
     },
@@ -48,8 +49,9 @@ pub trait Inner<E: Ext> {
 pub type TcpConnection<E> = Socket<TcpConnectionInner<E>, E>;
 pub type TcpListener<E> = Socket<TcpListenerInner<E>, E>;
 pub type UdpSocket<E> = Socket<UdpSocketInner, E>;
+pub type RawSocket<E> = Socket<RawSocketInner, E>;
 
-/// Common states shared by [`TcpConnectionBg`] and [`UdpSocketBg`].
+/// Common states shared by [`TcpConnectionBg`], [`UdpSocketBg`], and [`RawSocketBg`].
 ///
 /// In the type name, `Bg` means "background". Its meaning is described below:
 /// - A foreground socket (e.g., [`TcpConnection`]) handles system calls from the user program.
@@ -64,32 +66,32 @@ pub struct SocketBg<T: Inner<E>, E: Ext> {
 
 /// States needed by [`TcpConnectionBg`].
 pub struct TcpConnectionInner<E: Ext> {
-    socket: SpinLock<RawTcpSocketExt<E>, LocalIrqDisabled>,
+    socket: SpinLock<SmolTcpSocketExt<E>, LocalIrqDisabled>,
     is_dead: AtomicBool,
     connection_key: ConnectionKey,
 }
 
-struct RawTcpSocketExt<E: Ext> {
-    socket: Box<RawTcpSocket>,
+struct SmolTcpSocketExt<E: Ext> {
+    socket: Box<SmolTcpSocket>,
     listener: Option<Arc<TcpListenerBg<E>>>,
     has_connected: bool,
 }
 
-impl<E: Ext> Deref for RawTcpSocketExt<E> {
-    type Target = RawTcpSocket;
+impl<E: Ext> Deref for SmolTcpSocketExt<E> {
+    type Target = SmolTcpSocket;
 
     fn deref(&self) -> &Self::Target {
         &self.socket
     }
 }
 
-impl<E: Ext> DerefMut for RawTcpSocketExt<E> {
+impl<E: Ext> DerefMut for SmolTcpSocketExt<E> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.socket
     }
 }
 
-impl<E: Ext> RawTcpSocketExt<E> {
+impl<E: Ext> SmolTcpSocketExt<E> {
     fn on_new_state(&mut self, this: &Arc<TcpConnectionBg<E>>) -> SocketEvents {
         if self.may_send() && !self.has_connected {
             self.has_connected = true;
@@ -144,7 +146,7 @@ impl<E: Ext> RawTcpSocketExt<E> {
 }
 
 impl<E: Ext> TcpConnectionInner<E> {
-    fn new(socket: Box<RawTcpSocket>, listener: Option<Arc<TcpListenerBg<E>>>) -> Self {
+    fn new(socket: Box<SmolTcpSocket>, listener: Option<Arc<TcpListenerBg<E>>>) -> Self {
         let connection_key = {
             // Since the socket is connected, the following unwrap can never fail
             let local_endpoint = socket.local_endpoint().unwrap();
@@ -152,7 +154,7 @@ impl<E: Ext> TcpConnectionInner<E> {
             ConnectionKey::from((local_endpoint, remote_endpoint))
         };
 
-        let socket_ext = RawTcpSocketExt {
+        let socket_ext = SmolTcpSocketExt {
             socket,
             listener,
             has_connected: false,
@@ -165,7 +167,7 @@ impl<E: Ext> TcpConnectionInner<E> {
         }
     }
 
-    fn lock(&self) -> SpinLockGuard<RawTcpSocketExt<E>, LocalIrqDisabled> {
+    fn lock(&self) -> SpinLockGuard<SmolTcpSocketExt<E>, LocalIrqDisabled> {
         self.socket.lock()
     }
 
@@ -181,7 +183,7 @@ impl<E: Ext> TcpConnectionInner<E> {
     /// See [`TcpConnectionBg::is_dead`] for the definition of dead TCP connections.
     ///
     /// [`TimeWait`]: smoltcp::socket::tcp::State::TimeWait
-    fn set_dead_timewait(&self, socket: &RawTcpSocketExt<E>) {
+    fn set_dead_timewait(&self, socket: &SmolTcpSocketExt<E>) {
         debug_assert!(socket.state() == smoltcp::socket::tcp::State::TimeWait);
         self.is_dead.store(true, Ordering::Relaxed);
     }
@@ -204,7 +206,7 @@ impl<E: Ext> Inner<E> for TcpConnectionInner<E> {
 }
 
 pub struct TcpBacklog<E: Ext> {
-    socket: Box<RawTcpSocket>,
+    socket: Box<SmolTcpSocket>,
     max_conn: usize,
     connecting: BTreeMap<ConnectionKey, TcpConnection<E>>,
     connected: Vec<TcpConnection<E>>,
@@ -250,7 +252,7 @@ impl<E: Ext> Inner<E> for TcpListenerInner<E> {
 }
 
 /// States needed by [`UdpSocketBg`].
-type UdpSocketInner = SpinLock<Box<RawUdpSocket>, LocalIrqDisabled>;
+type UdpSocketInner = SpinLock<Box<SmolUdpSocket>, LocalIrqDisabled>;
 
 impl<E: Ext> Inner<E> for UdpSocketInner {
     type Observer = E::UdpEventObserver;
@@ -260,6 +262,18 @@ impl<E: Ext> Inner<E> for UdpSocketInner {
 
         // A UDP socket can be removed immediately.
         this.bound.iface().common().remove_udp_socket(this);
+    }
+}
+
+/// States needed by [`RawSocketBg`].
+type RawSocketInner = SpinLock<Box<SmolRawSocket>, LocalIrqDisabled>;
+
+impl<E: Ext> Inner<E> for RawSocketInner {
+    type Observer = E::RawEventObserver;
+
+    fn on_drop(this: &Arc<SocketBg<Self, E>>) {
+        // A RAW socket can be removed immediately.
+        this.bound.iface().common().remove_raw_socket(this);
     }
 }
 
@@ -274,6 +288,7 @@ impl<T: Inner<E>, E: Ext> Drop for Socket<T, E> {
 pub(crate) type TcpConnectionBg<E> = SocketBg<TcpConnectionInner<E>, E>;
 pub(crate) type TcpListenerBg<E> = SocketBg<TcpListenerInner<E>, E>;
 pub(crate) type UdpSocketBg<E> = SocketBg<UdpSocketInner, E>;
+pub(crate) type RawSocketBg<E> = SocketBg<RawSocketInner, E>;
 
 impl<T: Inner<E>, E: Ext> Socket<T, E> {
     pub(crate) fn new(bound: BoundPort<E>, inner: T) -> Self {
@@ -341,7 +356,7 @@ impl<E: Ext> TcpConnection<E> {
     pub fn new_connect(
         bound: BoundPort<E>,
         remote_endpoint: IpEndpoint,
-        option: &RawTcpOption,
+        option: &SmolTcpOption,
         observer: E::TcpEventObserver,
     ) -> Result<Self, (BoundPort<E>, ConnectError)> {
         let Some(local_endpoint) = bound.endpoint() else {
@@ -467,20 +482,20 @@ impl<E: Ext> TcpConnection<E> {
         self.0.update_next_poll_at_ms(PollAt::Now);
     }
 
-    /// Calls `f` with an immutable reference to the associated [`RawTcpSocket`].
+    /// Calls `f` with an immutable reference to the associated [`SmolTcpSocket`].
     //
     // NOTE: If a mutable reference is required, add a method above that correctly updates the next
     // polling time.
-    pub fn raw_with<F, R>(&self, f: F) -> R
+    pub fn smol_with<F, R>(&self, f: F) -> R
     where
-        F: FnOnce(&RawTcpSocket) -> R,
+        F: FnOnce(&SmolTcpSocket) -> R,
     {
         let socket = self.0.inner.lock();
         f(&socket)
     }
 }
 
-impl<E: Ext> RawTcpSetOption for TcpConnection<E> {
+impl<E: Ext> SmolTcpSetOption for TcpConnection<E> {
     fn set_keep_alive(&self, interval: Option<Duration>) -> NeedIfacePoll {
         let mut socket = self.0.inner.lock();
         socket.set_keep_alive(interval);
@@ -506,7 +521,7 @@ impl<E: Ext> TcpListener<E> {
     pub fn new_listen(
         bound: BoundPort<E>,
         max_conn: usize,
-        option: &RawTcpOption,
+        option: &SmolTcpOption,
         observer: E::TcpEventObserver,
     ) -> Result<Self, (BoundPort<E>, ListenError)> {
         let Some(local_endpoint) = bound.endpoint() else {
@@ -582,7 +597,7 @@ impl<E: Ext> TcpListener<E> {
     }
 }
 
-impl<E: Ext> RawTcpSetOption for TcpListener<E> {
+impl<E: Ext> SmolTcpSetOption for TcpListener<E> {
     fn set_keep_alive(&self, interval: Option<Duration>) -> NeedIfacePoll {
         let mut backlog = self.0.inner.backlog.lock();
         backlog.socket.set_keep_alive(interval);
@@ -673,13 +688,100 @@ impl<E: Ext> UdpSocket<E> {
         Ok(result)
     }
 
-    /// Calls `f` with an immutable reference to the associated [`RawUdpSocket`].
+    /// Calls `f` with an immutable reference to the associated [`SmolUdpSocket`].
     //
     // NOTE: If a mutable reference is required, add a method above that correctly updates the next
     // polling time.
-    pub fn raw_with<F, R>(&self, f: F) -> R
+    pub fn smol_with<F, R>(&self, f: F) -> R
     where
-        F: FnOnce(&RawUdpSocket) -> R,
+        F: FnOnce(&SmolUdpSocket) -> R,
+    {
+        let socket = self.0.inner.lock();
+        f(&socket)
+    }
+}
+
+impl<E: Ext> RawSocket<E> {
+    /// Binds to a specified endpoint.
+    ///
+    /// Polling the iface is _not_ required after this method succeeds.
+    ///
+    /// FIXME: This is a dummy implementation, raw sockets in smoltcp does not need bind().
+    /// This function needs to be rewritten to support multiple calls to bind().
+    pub fn new_bind(
+        bound: BoundPort<E>,
+        observer: E::RawEventObserver,
+        ip_protocol: IpProtocol,
+    ) -> Result<Self, (BoundPort<E>, smoltcp::socket::raw::BindError)> {
+        let Some(_) = bound.endpoint() else {
+            return Err((bound, smoltcp::socket::raw::BindError::Unaddressable));
+        };
+
+        let socket = new_raw_socket(ip_protocol);
+        let inner = RawSocketInner::new(socket);
+
+        let socket = Self::new(bound, inner);
+        socket.init_observer(observer);
+        socket
+            .iface()
+            .common()
+            .register_raw_socket(socket.inner().clone());
+
+        Ok(socket)
+    }
+
+    /// Sends some data.
+    ///
+    /// Polling the iface is _always_ required after this method succeeds.
+    pub fn send<F, R>(&self, size: usize, f: F) -> Result<R, RawSendError>
+    where
+        F: FnOnce(&mut [u8]) -> R,
+    {
+        let mut socket = self.0.inner.lock();
+
+        if size > socket.packet_send_capacity() {
+            return Err(RawSendError::TooLarge);
+        }
+
+        let buffer = match socket.send(size) {
+            Ok(data) => data,
+            Err(err) => return Err(err.into()),
+        };
+        let result = f(buffer);
+
+        self.0.update_next_poll_at_ms(PollAt::Now);
+
+        Ok(result)
+    }
+
+    /// Receives some data.
+    ///
+    /// Polling the iface is _not_ required after this method succeeds.
+    pub fn recv<F, R>(&self, f: F) -> Result<R, smoltcp::socket::raw::RecvError>
+    where
+        F: FnOnce(&[u8], Ipv4Address) -> R,
+    {
+        let mut socket = self.0.inner.lock();
+
+        let data = socket.recv()?;
+        let src_addr = match Ipv4Packet::new_checked(data) {
+            Ok(packet) => packet.src_addr(),
+            Err(_) => return Err(smoltcp::socket::raw::RecvError::Truncated),
+        };
+
+        let result = f(data, src_addr);
+        self.0.update_next_poll_at_ms(PollAt::Now);
+
+        Ok(result)
+    }
+
+    /// Calls `f` with an immutable reference to the associated [`SmolRawSocket`].
+    //
+    // NOTE: If a mutable reference is required, add a method above that correctly updates the next
+    // polling time.
+    pub fn smol_with<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&SmolRawSocket) -> R,
     {
         let socket = self.0.inner.lock();
         f(&socket)
@@ -939,7 +1041,7 @@ impl<E: Ext> TcpListenerBg<E> {
 
         let new_socket = {
             let mut socket = new_tcp_socket();
-            RawTcpOption::inherit(&backlog.socket, &mut socket);
+            SmolTcpOption::inherit(&backlog.socket, &mut socket);
             socket.listen(backlog.socket.listen_endpoint()).unwrap();
             socket
         };
@@ -1010,6 +1112,42 @@ impl<E: Ext> UdpSocketBg<E> {
             .unwrap();
 
         // For UDP, dequeuing a packet means that we can queue more packets.
+        self.add_events(SocketEvents::CAN_SEND);
+        self.update_next_poll_at_ms(socket.poll_at(cx));
+    }
+}
+
+impl<E: Ext> RawSocketBg<E> {
+    /// Tries to process an incoming packet and returns whether the packet is processed.
+    pub(crate) fn process(&self, cx: &mut Context, ip_repr: &IpRepr, ip_payload: &[u8]) -> bool {
+        let mut socket = self.inner.lock();
+
+        if !socket.accepts(ip_repr) || socket.ip_protocol() != ip_repr.next_header() {
+            return false;
+        }
+        socket.process(cx, ip_repr, ip_payload);
+
+        self.add_events(SocketEvents::CAN_RECV);
+        self.update_next_poll_at_ms(socket.poll_at(cx));
+
+        true
+    }
+
+    /// Tries to generate an outgoing packet and dispatches the generated packet.
+    pub(crate) fn dispatch<D>(&self, cx: &mut Context, dispatch: D)
+    where
+        D: FnOnce(&mut Context, &IpRepr, &[u8]),
+    {
+        let mut socket = self.inner.lock();
+
+        socket
+            .dispatch(cx, |cx, (ip_repr, ip_payload)| {
+                dispatch(cx, &ip_repr, ip_payload);
+                Ok::<(), ()>(())
+            })
+            .unwrap();
+
+        // For raw sockets, dequeuing a packet means that we can queue more packets.
         self.add_events(SocketEvents::CAN_SEND);
         self.update_next_poll_at_ms(socket.poll_at(cx));
     }

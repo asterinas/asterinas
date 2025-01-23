@@ -76,3 +76,25 @@ pub mod udp {
         }
     }
 }
+
+pub mod raw {
+    pub use smoltcp::socket::raw::RecvError;
+
+    /// An error returned by [`RawSocket::send`].
+    ///
+    /// [`RawSocket::send`]: crate::socket::RawSocket::send
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+    pub enum SendError {
+        BufferFull,
+        /// The packet is too large.
+        TooLarge,
+    }
+
+    impl From<smoltcp::socket::raw::SendError> for SendError {
+        fn from(value: smoltcp::socket::raw::SendError) -> Self {
+            match value {
+                smoltcp::socket::raw::SendError::BufferFull => Self::BufferFull,
+            }
+        }
+    }
+}

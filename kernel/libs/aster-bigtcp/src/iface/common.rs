@@ -23,7 +23,7 @@ use super::{
 use crate::{
     errors::BindError,
     ext::Ext,
-    socket::{TcpListenerBg, UdpSocketBg},
+    socket::{RawSocketBg, TcpListenerBg, UdpSocketBg},
     socket_table::SocketTable,
 };
 
@@ -150,6 +150,11 @@ impl<E: Ext> IfaceCommon<E> {
         sockets.insert_udp_socket(socket);
     }
 
+    pub(crate) fn register_raw_socket(&self, socket: Arc<RawSocketBg<E>>) {
+        let mut sockets = self.sockets.lock();
+        sockets.insert_raw_socket(socket)
+    }
+
     pub(crate) fn remove_tcp_listener(&self, socket: &Arc<TcpListenerBg<E>>) {
         let mut sockets = self.sockets.lock();
         let removed = sockets.remove_listener(socket);
@@ -159,6 +164,12 @@ impl<E: Ext> IfaceCommon<E> {
     pub(crate) fn remove_udp_socket(&self, socket: &Arc<UdpSocketBg<E>>) {
         let mut sockets = self.sockets.lock();
         let removed = sockets.remove_udp_socket(socket);
+        debug_assert!(removed.is_some());
+    }
+
+    pub(crate) fn remove_raw_socket(&self, socket: &Arc<RawSocketBg<E>>) {
+        let mut sockets = self.sockets.lock();
+        let removed = sockets.remove_raw_socket(socket);
         debug_assert!(removed.is_some());
     }
 }
@@ -224,6 +235,12 @@ impl<E: Ext> IfaceCommon<E> {
             }
         }
 
+        for socket in sockets.raw_socket_iter() {
+            if socket.has_events() {
+                socket.on_events();
+            }
+        }
+
         // Note that only TCP connections can have timers set, so as far as the time to poll is
         // concerned, we only need to consider TCP connections.
         sockets
@@ -239,8 +256,8 @@ impl<E: Ext> IfaceCommon<E> {
 //
 // FIXME: TCP and UDP ports are independent. Find a way to track the protocol here.
 pub struct BoundPort<E: Ext> {
-    iface: Arc<dyn Iface<E>>,
-    port: u16,
+    pub iface: Arc<dyn Iface<E>>,
+    pub port: u16,
 }
 
 impl<E: Ext> BoundPort<E> {

@@ -100,7 +100,7 @@ impl BoundDatagram {
     }
 
     pub(super) fn check_io_events(&self) -> IoEvents {
-        self.bound_socket.raw_with(|socket| {
+        self.bound_socket.smol_with(|socket| {
             let mut events = IoEvents::empty();
 
             if socket.can_recv() {

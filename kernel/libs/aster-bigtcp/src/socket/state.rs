@@ -2,7 +2,7 @@
 
 pub use smoltcp::socket::tcp::State as TcpState;
 
-use super::RawTcpSocket;
+use super::SmolTcpSocket;
 
 pub trait TcpStateCheck {
     /// Checks if the peer socket has closed its sending side.
@@ -20,7 +20,7 @@ pub trait TcpStateCheck {
     fn is_closed(&self) -> bool;
 }
 
-impl TcpStateCheck for RawTcpSocket {
+impl TcpStateCheck for SmolTcpSocket {
     fn is_peer_closed(&self) -> bool {
         self.state() == TcpState::CloseWait
     }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_bigtcp::{socket::RawTcpOption, wire::IpEndpoint};
+use aster_bigtcp::{socket::SmolTcpOption, wire::IpEndpoint};
 
 use super::{connecting::ConnectingStream, listen::ListenStream, StreamObserver};
 use crate::{
@@ -60,7 +60,7 @@ impl InitStream {
     pub fn connect(
         self,
         remote_endpoint: &IpEndpoint,
-        option: &RawTcpOption,
+        option: &SmolTcpOption,
         observer: StreamObserver,
     ) -> core::result::Result<ConnectingStream, (Error, Self)> {
         let bound_port = match self {
@@ -75,7 +75,7 @@ impl InitStream {
     pub fn listen(
         self,
         backlog: usize,
-        option: &RawTcpOption,
+        option: &SmolTcpOption,
         observer: StreamObserver,
     ) -> core::result::Result<ListenStream, (Error, Self)> {
         let InitStream::Bound(bound_port) = self else {

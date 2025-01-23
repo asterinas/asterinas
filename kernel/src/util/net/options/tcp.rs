@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::RawSocketOption;
+use super::OrigSocketOption;
 use crate::{
-    impl_raw_socket_option,
+    impl_orig_socket_option,
     net::socket::ip::stream::options::{Congestion, KeepIdle, MaxSegment, NoDelay, WindowClamp},
     prelude::*,
     util::net::options::SocketOption,
@@ -10,7 +10,7 @@ use crate::{
 
 /// Sock options for tcp socket.
 ///
-/// The raw definition is from https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/linux/tcp.h#L92
+/// The definition is from https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/linux/tcp.h#L92
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, TryFromInt)]
 #[allow(non_camel_case_types)]
@@ -25,7 +25,7 @@ pub enum CTcpOptionName {
     CONGESTION = 13,   /* Congestion control algorithm */
 }
 
-pub fn new_tcp_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
+pub fn new_tcp_option(name: i32) -> Result<Box<dyn OrigSocketOption>> {
     let name = CTcpOptionName::try_from(name).map_err(|_| Errno::ENOPROTOOPT)?;
     match name {
         CTcpOptionName::NODELAY => Ok(Box::new(NoDelay::new())),
@@ -37,8 +37,8 @@ pub fn new_tcp_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
     }
 }
 
-impl_raw_socket_option!(NoDelay);
-impl_raw_socket_option!(MaxSegment);
-impl_raw_socket_option!(KeepIdle);
-impl_raw_socket_option!(WindowClamp);
-impl_raw_socket_option!(Congestion);
+impl_orig_socket_option!(NoDelay);
+impl_orig_socket_option!(MaxSegment);
+impl_orig_socket_option!(KeepIdle);
+impl_orig_socket_option!(WindowClamp);
+impl_orig_socket_option!(Congestion);

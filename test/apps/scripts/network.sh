@@ -17,6 +17,16 @@ sleep 0.2
 sleep 0.2
 ./udp_client
 
+./raw_tcp_server &
+sleep 0.2
+./raw_tcp_client
+
+./raw_udp_server &
+sleep 0.2
+./raw_udp_client
+
+./raw_icmp
+
 ./unix_server &
 sleep 0.2
 ./unix_client
@@ -32,6 +42,7 @@ sleep 0.2
 ./tcp_err
 ./tcp_poll
 ./udp_err
+./raw_err
 ./unix_err
 
 echo "All network test passed"

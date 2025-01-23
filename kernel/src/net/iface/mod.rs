@@ -14,3 +14,4 @@ pub type BoundPort = aster_bigtcp::iface::BoundPort<ext::BigtcpExt>;
 pub type TcpConnection = aster_bigtcp::socket::TcpConnection<ext::BigtcpExt>;
 pub type TcpListener = aster_bigtcp::socket::TcpListener<ext::BigtcpExt>;
 pub type UdpSocket = aster_bigtcp::socket::UdpSocket<ext::BigtcpExt>;
+pub type RawSocket = aster_bigtcp::socket::RawSocket<ext::BigtcpExt>;

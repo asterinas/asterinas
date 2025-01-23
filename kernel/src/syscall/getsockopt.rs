@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::file_table::{get_file_fast, FileDesc},
     prelude::*,
-    util::net::{new_raw_socket_option, CSocketOptionLevel},
+    util::net::{new_orig_socket_option, CSocketOptionLevel},
 };
 
 pub fn sys_getsockopt(
@@ -29,12 +29,12 @@ pub fn sys_getsockopt(
     let file = get_file_fast!(&mut file_table, sockfd);
     let socket = file.as_socket_or_err()?;
 
-    let mut raw_option = new_raw_socket_option(level, optname)?;
-    debug!("raw option: {:?}", raw_option);
+    let mut original_option = new_orig_socket_option(level, optname)?;
+    debug!("original option: {:?}", original_option);
 
-    socket.get_option(raw_option.as_sock_option_mut())?;
+    socket.get_option(original_option.as_sock_option_mut())?;
 
-    let write_len = raw_option.write_to_user(optval, optlen)?;
+    let write_len = original_option.write_to_user(optval, optlen)?;
     user_space.write_val(optlen_addr, &(write_len as u32))?;
 
     Ok(SyscallReturn::Return(0))

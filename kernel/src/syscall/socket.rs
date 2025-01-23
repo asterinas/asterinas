@@ -4,7 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::{file_handle::FileLike, file_table::FdFlags},
     net::socket::{
-        ip::{datagram::DatagramSocket, stream::StreamSocket},
+        ip::{datagram::DatagramSocket, raw::RawSocket, stream::StreamSocket},
         unix::UnixStreamSocket,
         vsock::VsockStreamSocket,
     },
@@ -37,6 +37,11 @@ pub fn sys_socket(domain: i32, type_: i32, protocol: i32, ctx: &Context) -> Resu
             SockType::SOCK_DGRAM,
             Protocol::IPPROTO_IP | Protocol::IPPROTO_UDP,
         ) => DatagramSocket::new(nonblocking) as Arc<dyn FileLike>,
+        (
+            CSocketAddrFamily::AF_INET,
+            SockType::SOCK_RAW,
+            Protocol::IPPROTO_TCP | Protocol::IPPROTO_UDP | Protocol::IPPROTO_ICMP,
+        ) => RawSocket::new(nonblocking, protocol) as Arc<dyn FileLike>,
         (CSocketAddrFamily::AF_VSOCK, SockType::SOCK_STREAM, _) => {
             Arc::new(VsockStreamSocket::new(nonblocking)) as Arc<dyn FileLike>
         }
