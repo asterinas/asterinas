@@ -19,53 +19,54 @@ pub mod vsock;
 
 /// Operations defined on a socket.
 pub trait Socket: FileLike + Send + Sync {
-    /// Assign the address specified by socket_addr to the socket
+    /// Assigns the specified address to the socket.
     fn bind(&self, _socket_addr: SocketAddr) -> Result<()> {
         return_errno_with_message!(Errno::EOPNOTSUPP, "bind() is not supported");
     }
 
-    /// Build connection for a given address
+    /// Builds a connection for the given address
     fn connect(&self, _socket_addr: SocketAddr) -> Result<()> {
         return_errno_with_message!(Errno::EOPNOTSUPP, "connect() is not supported");
     }
 
-    /// Listen for connections on a socket
+    /// Listens for connections on the socket.
     fn listen(&self, _backlog: usize) -> Result<()> {
         return_errno_with_message!(Errno::EOPNOTSUPP, "listen() is not supported");
     }
 
-    /// Accept a connection on a socket
+    /// Accepts a connection on the socket.
     fn accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
         return_errno_with_message!(Errno::EOPNOTSUPP, "accept() is not supported");
     }
 
-    /// Shut down part of a full-duplex connection
+    /// Shuts down part of a full-duplex connection.
     fn shutdown(&self, _cmd: SockShutdownCmd) -> Result<()> {
         return_errno_with_message!(Errno::EOPNOTSUPP, "shutdown() is not supported");
     }
 
-    /// Get address of this socket.
+    /// Gets the address of this socket.
     fn addr(&self) -> Result<SocketAddr> {
         return_errno_with_message!(Errno::EOPNOTSUPP, "getsockname() is not supported");
     }
 
-    /// Get address of peer socket
+    /// Gets the address of the peer socket.
     fn peer_addr(&self) -> Result<SocketAddr> {
         return_errno_with_message!(Errno::EOPNOTSUPP, "getpeername() is not supported");
     }
 
-    /// Get options on the socket. The resulted option will put in the `option` parameter, if
-    /// this method returns success.
+    /// Gets options on the socket.
+    ///
+    /// If the method succeeds, the result will be stored in the `option` parameter.
     fn get_option(&self, _option: &mut dyn SocketOption) -> Result<()> {
         return_errno_with_message!(Errno::EOPNOTSUPP, "getsockopt() is not supported");
     }
 
-    /// Set options on the socket.
+    /// Sets options on the socket.
     fn set_option(&self, _option: &dyn SocketOption) -> Result<()> {
         return_errno_with_message!(Errno::EOPNOTSUPP, "setsockopt() is not supported");
     }
 
-    /// Sends a message on a socket.
+    /// Sends a message on the socket.
     fn sendmsg(
         &self,
         reader: &mut dyn MultiRead,
@@ -73,7 +74,7 @@ pub trait Socket: FileLike + Send + Sync {
         flags: SendRecvFlags,
     ) -> Result<usize>;
 
-    /// Receives a message from a socket.
+    /// Receives a message from the socket.
     ///
     /// If successful, the `io_vecs` buffer will be filled with the received content.
     /// This method returns the length of the received message,
