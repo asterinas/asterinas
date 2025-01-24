@@ -85,7 +85,6 @@ pub unsafe fn init(on_bsp: bool) {
 // The linker script ensure that cpu_local_tss section is right
 // at the beginning of cpu_local area, so that gsbase (offset zero)
 // points to LOCAL_TSS.
-#[allow(dead_code)]
 #[link_section = ".cpu_local_tss"]
 static LOCAL_TSS: SyncUnsafeCell<TaskStateSegment> = SyncUnsafeCell::new(TaskStateSegment::new());
 

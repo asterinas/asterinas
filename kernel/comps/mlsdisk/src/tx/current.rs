@@ -117,7 +117,6 @@ impl<'a> CurrentTx<'a> {
     ///
     /// In addition, the `get_current_mut_with` method must _not_ be called
     /// recursively.
-    #[allow(dropping_references)]
     fn get_current_mut_with<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&mut Tx) -> R,

@@ -94,7 +94,6 @@ pub enum PageTableItem {
         page: Frame<dyn AnyFrameMeta>,
         prop: PageProperty,
     },
-    #[allow(dead_code)]
     MappedUntracked {
         va: Vaddr,
         pa: Paddr,

@@ -45,12 +45,10 @@ impl<const BLK_SIZE: usize> Slab<BLK_SIZE> {
         }
     }
 
-    #[allow(unused)]
     pub fn total_blocks(&self) -> usize {
         self.total_blocks
     }
 
-    #[allow(unused)]
     pub fn used_blocks(&self) -> usize {
         self.total_blocks - self.free_block_list.len()
     }

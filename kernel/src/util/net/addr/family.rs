@@ -13,7 +13,6 @@ use crate::{current_userspace, net::socket::SocketAddr, prelude::*};
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, TryFromInt, PartialEq, Eq)]
 #[allow(non_camel_case_types)]
-#[allow(dead_code)]
 pub enum CSocketAddrFamily {
     AF_UNSPEC = 0,
     /// Unix domain sockets

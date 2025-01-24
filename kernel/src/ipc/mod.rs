@@ -41,7 +41,6 @@ pub enum IpcControlCmd {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct IpcPermission {
     key: key_t,
     /// Owner's UID

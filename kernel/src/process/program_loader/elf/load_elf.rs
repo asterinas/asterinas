@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
 #![allow(dead_code)]
-#![allow(unused_variables)]
 
 //! This module is used to parse elf file content to get elf_load_info.
 //! When create a process from elf file, we will use the elf_load_info to construct the VmSpace

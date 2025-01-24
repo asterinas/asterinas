@@ -210,7 +210,6 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
     /// A physical address to the frame is returned in case the frame needs to be
     /// restored using [`Frame::from_raw`] later. This is useful when some architectural
     /// data structures need to hold the frame handle such as the page table.
-    #[allow(unused)]
     pub(in crate::mm) fn into_raw(self) -> Paddr {
         let paddr = self.start_paddr();
         core::mem::forget(self);
