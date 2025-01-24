@@ -51,7 +51,6 @@
 //! ```
 
 #![feature(proc_macro_diagnostic)]
-#![allow(dead_code)]
 
 use syn::parse_macro_input;
 
