@@ -75,7 +75,6 @@ fn set_new_stack(sig_stack_addr: Vaddr, old_stack: Option<&SigStack>, ctx: &Cont
     Ok(())
 }
 
-#[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, Pod)]
 #[repr(C)]
 struct stack_t {

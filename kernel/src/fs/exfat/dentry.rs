@@ -58,7 +58,6 @@ const EXFAT_UNUSED: u8 = 0x00;
 #[allow(dead_code)]
 const EXFAT_INVAL: u8 = 0x80;
 const EXFAT_BITMAP: u8 = 0x81;
-#[allow(dead_code)]
 const EXFAT_UPCASE: u8 = 0x82;
 #[allow(dead_code)]
 const EXFAT_VOLUME: u8 = 0x83;

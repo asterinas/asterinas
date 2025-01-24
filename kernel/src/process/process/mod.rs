@@ -171,7 +171,6 @@ impl Process {
         Some(Task::current()?.as_posix_thread()?.process())
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn new(
         pid: Pid,
         parent: Weak<Process>,

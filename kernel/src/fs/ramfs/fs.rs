@@ -109,7 +109,6 @@ struct RamInode {
 }
 
 /// Inode inner specifics.
-#[allow(clippy::large_enum_variant)]
 enum Inner {
     Dir(RwLock<DirEntry>),
     File(PageCache),

@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(unused_variables)]
-
 use super::{inode::MAX_FNAME_LEN, prelude::*};
 
 /// The data structure in a directory's data block. It is stored in a linked list.

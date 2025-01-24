@@ -42,7 +42,6 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
 pub struct IommuVersion {
     major: u8,
     minor: u8,
@@ -65,14 +64,12 @@ impl IommuVersion {
 /// Important registers used by IOMMU.
 #[derive(Debug)]
 pub struct IommuRegisters {
-    #[allow(dead_code)]
     version: Volatile<&'static u32, ReadOnly>,
     capability: Volatile<&'static u64, ReadOnly>,
     extended_capability: Volatile<&'static u64, ReadOnly>,
     global_command: Volatile<&'static mut u32, WriteOnly>,
     global_status: Volatile<&'static u32, ReadOnly>,
     root_table_address: Volatile<&'static mut u64, ReadWrite>,
-    #[allow(dead_code)]
     context_command: Volatile<&'static mut u64, ReadWrite>,
 
     interrupt_remapping_table_addr: Volatile<&'static mut u64, ReadWrite>,

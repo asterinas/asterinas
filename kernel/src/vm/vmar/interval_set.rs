@@ -36,7 +36,6 @@ where
     }
 }
 
-#[allow(dead_code)]
 impl<K, V> IntervalSet<K, V>
 where
     K: Clone + Ord,

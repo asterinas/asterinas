@@ -258,7 +258,6 @@ impl Heap {
     }
 
     /// Returns total memory size in bytes of the heap.
-    #[allow(unused)]
     pub fn total_bytes(&self) -> usize {
         self.slab_64_bytes.total_blocks() * 64
             + self.slab_128_bytes.total_blocks() * 128
@@ -271,7 +270,6 @@ impl Heap {
     }
 
     /// Returns allocated memory size in bytes.
-    #[allow(unused)]
     pub fn used_bytes(&self) -> usize {
         self.slab_64_bytes.used_blocks() * 64
             + self.slab_128_bytes.used_blocks() * 128
