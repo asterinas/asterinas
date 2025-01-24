@@ -10,3 +10,6 @@ repository = "https://github.com/asterinas/asterinas"
 
 [dependencies]
 bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
+
+[lints]
+workspace = true

@@ -16,4 +16,5 @@ int-to-c-enum = { path = "../../libs/int-to-c-enum" }
 log = "0.4"
 ascii = { version = "1.1", default-features = false, features = ["alloc"] }
 
-[features]
+[lints]
+workspace = true

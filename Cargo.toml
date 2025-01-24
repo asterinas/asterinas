@@ -46,6 +46,9 @@ exclude = [
     "target/osdk/test-base",
 ]
 
+[workspace.lints.clippy]
+allow_attributes = "warn"
+
 # Cargo only looks at the profile settings 
 # in the Cargo.toml manifest at the root of the workspace
 

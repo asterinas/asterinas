@@ -13,4 +13,5 @@ aster-util = { path = "../../libs/aster-util" }
 component = { path = "../../libs/comp-sys/component" }
 log = "0.4"
 
-[features]
+[lints]
+workspace = true

@@ -15,3 +15,6 @@ int-to-c-enum-derive = { path = "derive", optional = true, version = "0.1.0"}
 [features]
 default = ["derive"]
 derive = ["int-to-c-enum-derive"]
+
+[lints]
+workspace = true

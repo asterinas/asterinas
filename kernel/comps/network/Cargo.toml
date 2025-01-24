@@ -17,3 +17,6 @@ int-to-c-enum = { path = "../../libs/int-to-c-enum" }
 log = "0.4"
 ostd = { path = "../../../ostd" }
 spin = "0.9.4"
+
+[lints]
+workspace = true

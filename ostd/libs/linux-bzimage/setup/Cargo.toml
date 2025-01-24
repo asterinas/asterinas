@@ -32,3 +32,6 @@ tdx-guest = { version = "0.1.8", optional = true }
 default = ["cvm_guest"]
 debug_print = []
 cvm_guest = ["dep:tdx-guest"]
+
+[lints]
+workspace = true
