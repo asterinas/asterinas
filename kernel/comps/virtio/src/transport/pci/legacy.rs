@@ -53,6 +53,7 @@ const QUEUE_SIZE_OFFSET: usize = 0x0c;
 const QUEUE_SELECT_OFFSET: usize = 0x0e;
 const QUEUE_NOTIFY_OFFSET: usize = 0x10;
 const DEVICE_STATUS_OFFSET: usize = 0x12;
+#[expect(dead_code)]
 const ISR_STATUS_OFFSET: usize = 0x13;
 // If MSI-X is enabled for the device, there are two additional fields.
 const CONFIG_MSIX_VECTOR_OFFSET: usize = 0x14;

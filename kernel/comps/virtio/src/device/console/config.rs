@@ -63,6 +63,7 @@ impl ConfigManager<VirtioConsoleConfig> {
     /// If `VIRTIO_CONSOLE_F_EMERG_WRITE` is supported then the driver can
     /// use emergency write to output a single character without initializing
     /// virtio queues, or even acknowledging the feature.
+    #[expect(dead_code)]
     pub(super) fn emerg_write(&self, value: u32) {
         if self.is_modern() {
             self.write_once(offset_of!(VirtioConsoleConfig, emerg_wr), value)

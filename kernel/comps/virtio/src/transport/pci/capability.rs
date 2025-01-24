@@ -2,9 +2,10 @@
 
 use alloc::sync::Arc;
 
+use log::warn;
 use ostd::bus::pci::{
     capability::vendor::CapabilityVndrData,
-    cfg_space::{Bar, IoBar, MemoryBar},
+    cfg_space::{Bar, MemoryBar},
     common_device::BarManager,
 };
 
@@ -26,16 +27,11 @@ pub struct VirtioPciCapabilityData {
     length: u32,
     option: Option<u32>,
     memory_bar: Option<Arc<MemoryBar>>,
-    io_bar: Option<Arc<IoBar>>,
 }
 
 impl VirtioPciCapabilityData {
     pub fn memory_bar(&self) -> &Option<Arc<MemoryBar>> {
         &self.memory_bar
-    }
-
-    pub fn io_bar(&self) -> &Option<Arc<IoBar>> {
-        &self.io_bar
     }
 
     pub fn offset(&self) -> u32 {
@@ -74,15 +70,14 @@ impl VirtioPciCapabilityData {
             None
         };
 
-        let mut io_bar = None;
         let mut memory_bar = None;
         if let Some(bar) = bar_manager.bar(bar) {
             match bar {
                 Bar::Memory(memory) => {
                     memory_bar = Some(memory);
                 }
-                Bar::Io(io) => {
-                    io_bar = Some(io);
+                Bar::Io(_) => {
+                    warn!("`Bar::Io` is not supported")
                 }
             }
         };
@@ -92,7 +87,6 @@ impl VirtioPciCapabilityData {
             length,
             option,
             memory_bar,
-            io_bar,
         }
     }
 }
