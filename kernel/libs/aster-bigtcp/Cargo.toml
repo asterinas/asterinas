@@ -21,3 +21,6 @@ smoltcp = { git = "https://github.com/asterinas/smoltcp", tag = "r_2024-11-08_f0
 spin = "0.9.4"
 static_assertions = "1.1.0"
 takeable = "0.2.2"
+
+[lints]
+workspace = true

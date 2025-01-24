@@ -65,3 +65,6 @@ fdt = { version = "0.1.5", features = ["pretty-printing"] }
 default = ["cvm_guest"]
 # The guest OS support for Confidential VMs (CVMs), e.g., Intel TDX
 cvm_guest = ["dep:tdx-guest", "dep:iced-x86"]
+
+[lints]
+workspace = true

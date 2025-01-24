@@ -11,3 +11,6 @@ repository ="https://github.com/asterinas/asterinas"
 [dependencies]
 ostd = { version = "0.11.1", path = "../../ostd" }
 owo-colors = "4.0.0"
+
+[lints]
+workspace = true

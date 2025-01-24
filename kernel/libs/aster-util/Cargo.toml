@@ -12,4 +12,5 @@ aster-rights-proc = { path = "../aster-rights-proc" }
 aster-rights = { path = "../aster-rights" }
 inherit-methods-macro = { git = "https://github.com/asterinas/inherit-methods-macro", rev = "98f7e3e" }
 
-[features]
+[lints]
+workspace = true

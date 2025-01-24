@@ -15,4 +15,5 @@ font8x8 = { version = "0.2.5", default-features = false, features = [
     "unicode",
 ] }
 
-[features]
+[lints]
+workspace = true

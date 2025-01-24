@@ -9,3 +9,6 @@ edition = "2021"
 int-to-c-enum = { path = "../../libs/int-to-c-enum" }
 core2 = { version = "0.4", default-features = false, features = ["alloc"] }
 lending-iterator = "0.1.7"
+
+[lints]
+workspace = true
