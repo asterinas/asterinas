@@ -18,12 +18,14 @@ use component::{init_component, ComponentInitError};
 use device::{
     block::device::BlockDevice,
     console::device::ConsoleDevice,
+    gpu::device::GPUDevice,
     input::device::InputDevice,
     network::device::NetworkDevice,
     socket::{self, device::SocketDevice},
     VirtioDeviceType,
 };
-use log::{error, warn};
+use log::error;
+use ostd::early_println;
 use transport::{mmio::VIRTIO_MMIO_DRIVER, pci::VIRTIO_PCI_DRIVER, DeviceStatus};
 
 use crate::transport::VirtioTransport;
@@ -69,8 +71,9 @@ fn virtio_component_init() -> Result<(), ComponentInitError> {
             VirtioDeviceType::Network => NetworkDevice::init(transport),
             VirtioDeviceType::Console => ConsoleDevice::init(transport),
             VirtioDeviceType::Socket => SocketDevice::init(transport),
+            VirtioDeviceType::GPU => GPUDevice::init(transport),
             _ => {
-                warn!("[Virtio]: Found unimplemented device:{:?}", device_type);
+                early_println!("[Virtio]: Found unimplemented device:{:?}", device_type);
                 Ok(())
             }
         };
@@ -104,6 +107,7 @@ fn negotiate_features(transport: &mut Box<dyn VirtioTransport>) {
         VirtioDeviceType::Input => InputDevice::negotiate_features(device_specified_features),
         VirtioDeviceType::Console => ConsoleDevice::negotiate_features(device_specified_features),
         VirtioDeviceType::Socket => SocketDevice::negotiate_features(device_specified_features),
+        VirtioDeviceType::GPU => GPUDevice::negotiate_features(device_specified_features),
         _ => device_specified_features,
     };
     let mut support_feature = Feature::from_bits_truncate(features);
