@@ -96,7 +96,7 @@ const PR_GET_NAME: i32 = 16;
 const PR_SET_TIMERSLACK: i32 = 29;
 const PR_GET_TIMERSLACK: i32 = 30;
 
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 #[derive(Debug, Clone, Copy)]
 pub enum PrctlCmd {
     PR_SET_PDEATHSIG(SigNum),
@@ -105,9 +105,9 @@ pub enum PrctlCmd {
     PR_GET_NAME(Vaddr),
     PR_GET_KEEPCAPS,
     PR_SET_KEEPCAPS(u32),
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     PR_SET_TIMERSLACK(u64),
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     PR_GET_TIMERSLACK,
     PR_SET_DUMPABLE(Dumpable),
     PR_GET_DUMPABLE,

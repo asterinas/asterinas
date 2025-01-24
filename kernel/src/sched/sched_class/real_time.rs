@@ -135,7 +135,7 @@ impl PrioArray {
 /// is empty, the 2 arrays are swapped by `index`.
 #[derive(Debug)]
 pub(super) struct RealTimeClassRq {
-    #[allow(unused)]
+    #[expect(unused)]
     cpu: CpuId,
     index: bool,
     array: [PrioArray; 2],

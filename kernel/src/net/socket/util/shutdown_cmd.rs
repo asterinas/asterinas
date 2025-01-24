@@ -6,7 +6,7 @@ use crate::prelude::*;
 /// From <https://elixir.bootlin.com/linux/v6.0.9/source/include/linux/net.h>
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromInt)]
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 pub enum SockShutdownCmd {
     /// Shutdown receptions
     SHUT_RD = 0,

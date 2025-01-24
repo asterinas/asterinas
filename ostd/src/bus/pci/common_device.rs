@@ -2,8 +2,8 @@
 
 //! PCI device common definitions or functions.
 
-#![allow(dead_code)]
-#![allow(unused_variables)]
+#![expect(dead_code)]
+#![expect(unused_variables)]
 
 use alloc::vec::Vec;
 

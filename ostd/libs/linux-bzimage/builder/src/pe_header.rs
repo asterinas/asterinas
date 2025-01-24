@@ -167,7 +167,7 @@ bitflags::bitflags! {
 
 // The `flags` field choices in the PE section header.
 // We follow the Linux naming, thus ignoring the clippy name warnings.
-#[allow(clippy::enum_variant_names)]
+#[expect(clippy::enum_variant_names)]
 #[derive(Serialize, Clone, Copy)]
 #[repr(u32)]
 enum PeSectionHdrFlagsAlign {

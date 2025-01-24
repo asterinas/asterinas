@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
+#![expect(dead_code)]
 
 //! The init stack for the process.
 //! The init stack is used to store the `argv` and `envp` and auxiliary vectors.

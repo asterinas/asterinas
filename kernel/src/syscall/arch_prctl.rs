@@ -5,7 +5,7 @@ use ostd::cpu::UserContext;
 use super::SyscallReturn;
 use crate::prelude::*;
 
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 #[repr(u64)]
 #[derive(Debug, TryFromInt)]
 pub enum ArchPrctlCode {

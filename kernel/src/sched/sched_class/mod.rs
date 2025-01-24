@@ -38,7 +38,7 @@ use crate::thread::{AsThread, Thread};
 
 type SchedEntity = (Arc<Task>, Arc<Thread>);
 
-#[allow(unused)]
+#[expect(unused)]
 pub fn init() {
     inject_scheduler(Box::leak(Box::new(ClassScheduler::new())));
 }

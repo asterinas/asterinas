@@ -60,7 +60,7 @@ fn madv_free(start: Vaddr, end: Vaddr, ctx: &Context) -> Result<()> {
 
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, TryFromInt)]
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 /// This definition is the same from linux
 pub enum MadviseBehavior {
     MADV_NORMAL = 0,     /* no further special treatment */

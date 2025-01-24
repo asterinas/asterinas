@@ -13,7 +13,7 @@ use crate::{
     sync::{LocalIrqDisabled, SpinLock},
 };
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 #[derive(Debug)]
 enum ExtendedInterruptMode {
     XApic,
@@ -146,12 +146,12 @@ enum DeliveryMode {
 pub struct IrtEntry(u128);
 
 impl IrtEntry {
-    #[allow(unused)]
+    #[expect(unused)]
     pub const fn new(value: u128) -> Self {
         Self(value)
     }
 
-    #[allow(unused)]
+    #[expect(unused)]
     pub fn clear(&mut self) {
         self.0 = 0
     }

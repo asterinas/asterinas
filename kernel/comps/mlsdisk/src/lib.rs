@@ -5,7 +5,7 @@
 #![feature(let_chains)]
 #![feature(negative_impls)]
 #![feature(slice_as_chunks)]
-#![allow(dead_code, unused_imports)]
+#![expect(dead_code, unused_imports)]
 
 mod error;
 mod layers;

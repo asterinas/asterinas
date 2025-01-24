@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-#![allow(unused_variables)]
+#![expect(dead_code)]
+#![expect(unused_variables)]
 
 //! The Virtual Dynamic Shared Object (VDSO) module enables user space applications to access kernel space routines
 //! without the need for context switching. This is particularly useful for frequently invoked operations such as

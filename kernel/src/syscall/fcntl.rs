@@ -161,7 +161,7 @@ fn handle_setown(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn>
 
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, TryFromInt)]
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 enum FcntlCmd {
     F_DUPFD = 0,
     F_GETFD = 1,
@@ -176,10 +176,10 @@ enum FcntlCmd {
     F_DUPFD_CLOEXEC = 1030,
 }
 
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 pub type off_t = i64;
 
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 #[derive(Debug, Copy, Clone, TryFromInt)]
 #[repr(u16)]
 pub enum RangeLockWhence {

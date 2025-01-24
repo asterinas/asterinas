@@ -13,8 +13,8 @@ use crate::{
 /// The raw definition is from https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/linux/tcp.h#L92
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, TryFromInt)]
-#[allow(non_camel_case_types)]
-#[allow(clippy::upper_case_acronyms)]
+#[expect(non_camel_case_types)]
+#[expect(clippy::upper_case_acronyms)]
 pub enum CTcpOptionName {
     NODELAY = 1,       /* Turn off Nagle's algorithm. */
     MAXSEG = 2,        /* Limit MSS */

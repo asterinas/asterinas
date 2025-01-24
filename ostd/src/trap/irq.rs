@@ -24,7 +24,7 @@ pub type IrqCallbackFunction = dyn Fn(&TrapFrame) + Sync + Send + 'static;
 #[must_use]
 pub struct IrqLine {
     irq_num: u8,
-    #[allow(clippy::redundant_allocation)]
+    #[expect(clippy::redundant_allocation)]
     inner_irq: Arc<&'static irq::IrqLine>,
     callbacks: Vec<IrqCallbackHandle>,
 }

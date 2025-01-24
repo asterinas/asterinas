@@ -49,13 +49,13 @@ pub struct IommuVersion {
 
 impl IommuVersion {
     /// Major version number
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub fn major(&self) -> u8 {
         self.major
     }
 
     /// Minor version number
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub fn minor(&self) -> u8 {
         self.minor
     }
@@ -79,7 +79,7 @@ pub struct IommuRegisters {
 
 impl IommuRegisters {
     /// Reads the version of IOMMU
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub fn read_version(&self) -> IommuVersion {
         let version = self.version.read();
         IommuVersion {

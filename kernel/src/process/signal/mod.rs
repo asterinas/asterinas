@@ -135,7 +135,7 @@ pub fn handle_pending_signal(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn handle_user_signal(
     ctx: &Context,
     sig_num: SigNum,

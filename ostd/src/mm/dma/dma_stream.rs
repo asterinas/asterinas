@@ -37,7 +37,7 @@ struct DmaStreamInner {
     segment: USegment,
     start_daddr: Daddr,
     /// TODO: remove this field when on x86.
-    #[allow(unused)]
+    #[expect(unused)]
     is_cache_coherent: bool,
     direction: DmaDirection,
 }

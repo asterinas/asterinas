@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
+#![expect(dead_code)]
 
 use ostd::{cpu::CpuSet, sync::RwArc, task::Task, user::UserSpace};
 

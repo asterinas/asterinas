@@ -2,8 +2,8 @@
 
 //! The console I/O.
 
-#![allow(dead_code)]
-#![allow(unused_variables)]
+#![expect(dead_code)]
+#![expect(unused_variables)]
 
 use alloc::{fmt, sync::Arc, vec::Vec};
 use core::fmt::Write;

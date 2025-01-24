@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-#![allow(unused_variables)]
+#![expect(dead_code)]
+#![expect(unused_variables)]
 
 use alloc::string::String;
 use core::{cmp::Ordering, time::Duration};
@@ -491,7 +491,7 @@ impl ExfatInodeInner {
         };
 
         // FIXME: This isn't expected by the compiler.
-        #[allow(non_local_definitions)]
+        #[expect(non_local_definitions)]
         impl DirentVisitor for Vec<(String, usize)> {
             fn visit(
                 &mut self,
@@ -1011,7 +1011,7 @@ impl ExfatInode {
         let sub_dir = inner.num_sub_inodes;
         let mut child_offsets: Vec<usize> = vec![];
         // FIXME: This isn't expected by the compiler.
-        #[allow(non_local_definitions)]
+        #[expect(non_local_definitions)]
         impl DirentVisitor for Vec<usize> {
             fn visit(
                 &mut self,

@@ -27,7 +27,7 @@ pub const DEFAULT_STACK_SIZE_IN_PAGES: u32 = 128;
 pub static KERNEL_STACK_SIZE: usize = STACK_SIZE_IN_PAGES as usize * PAGE_SIZE;
 
 #[derive(Debug)]
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub struct KernelStack {
     kvirt_area: KVirtArea<Tracked>,
     end_vaddr: Vaddr,

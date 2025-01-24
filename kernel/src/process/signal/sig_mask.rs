@@ -84,7 +84,7 @@ impl<T: Into<SigSet>> ops::BitOrAssign<T> for SigSet {
     }
 }
 
-#[allow(clippy::suspicious_arithmetic_impl)]
+#[expect(clippy::suspicious_arithmetic_impl)]
 impl<T: Into<SigSet>> ops::Add<T> for SigSet {
     type Output = Self;
 
@@ -95,7 +95,7 @@ impl<T: Into<SigSet>> ops::Add<T> for SigSet {
     }
 }
 
-#[allow(clippy::suspicious_op_assign_impl)]
+#[expect(clippy::suspicious_op_assign_impl)]
 impl<T: Into<SigSet>> ops::AddAssign<T> for SigSet {
     fn add_assign(&mut self, rhs: T) {
         self.bits |= rhs.into().bits;

@@ -132,7 +132,7 @@ where
     va: Vaddr,
     /// The virtual address range that is locked.
     barrier_va: Range<Vaddr>,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     preempt_guard: DisabledPreemptGuard,
     _phantom: PhantomData<&'a PageTable<M, E, C>>,
 }

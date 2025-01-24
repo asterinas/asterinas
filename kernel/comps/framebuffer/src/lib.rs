@@ -31,9 +31,9 @@ fn framebuffer_init() -> Result<(), ComponentInitError> {
 pub(crate) static WRITER: Once<SpinLock<Writer>> = Once::new();
 
 // ignore the warnings since we use the `todo!` macro.
-#[allow(unused_variables)]
-#[allow(unreachable_code)]
-#[allow(clippy::diverging_sub_expression)]
+#[expect(unused_variables)]
+#[expect(unreachable_code)]
+#[expect(clippy::diverging_sub_expression)]
 pub(crate) fn init() {
     let mut writer = {
         let Some(framebuffer) = boot_info().framebuffer_arg else {
