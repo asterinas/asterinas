@@ -10,7 +10,6 @@ use ostd::{
 use spin::Once;
 
 const RX_BUFFER_LEN: usize = 4096;
-const TX_BUFFER_LEN: usize = 4096;
 pub static RX_BUFFER_POOL: Once<Arc<DmaPool>> = Once::new();
 pub static TX_BUFFER_POOL: Once<SpinLock<LinkedList<DmaStream>, LocalIrqDisabled>> = Once::new();
 
