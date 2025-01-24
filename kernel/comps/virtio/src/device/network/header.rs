@@ -34,7 +34,7 @@ bitflags! {
 
 #[repr(u8)]
 #[derive(Default, Debug, Clone, Copy, TryFromInt)]
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 pub enum GsoType {
     #[default]
     VIRTIO_NET_HDR_GSO_NONE = 0,

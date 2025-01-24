@@ -126,6 +126,6 @@ impl From<SigStack> for stack_t {
     }
 }
 
-#[allow(unused)]
+#[expect(unused)]
 const SIGSTKSZ: usize = 8192;
 const MINSTKSZ: usize = 2048;

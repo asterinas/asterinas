@@ -2,7 +2,7 @@
 
 //! MMIO bus.
 
-#![allow(unused_variables)]
+#![expect(unused_variables)]
 
 use alloc::{collections::VecDeque, fmt::Debug, sync::Arc, vec::Vec};
 

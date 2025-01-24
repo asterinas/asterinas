@@ -39,7 +39,7 @@ pub fn sys_clock_gettime(
 // The hard-coded clock IDs.
 #[derive(Debug, Copy, Clone, TryFromInt, PartialEq)]
 #[repr(i32)]
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 pub enum ClockId {
     CLOCK_REALTIME = 0,
     CLOCK_MONOTONIC = 1,
@@ -68,7 +68,7 @@ pub enum ClockId {
 pub enum DynamicClockIdInfo {
     Pid(u32, DynamicClockType),
     Tid(u32, DynamicClockType),
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     Fd(u32),
 }
 

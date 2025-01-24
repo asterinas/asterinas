@@ -11,7 +11,7 @@ use ostd::bus::pci::{
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
-#[allow(clippy::enum_variant_names)]
+#[expect(clippy::enum_variant_names)]
 pub enum VirtioPciCpabilityType {
     CommonCfg = 1,
     NotifyCfg = 2,

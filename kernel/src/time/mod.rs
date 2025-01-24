@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(non_camel_case_types)]
+#![expect(non_camel_case_types)]
 
 pub use core::{timer, Clock};
 

@@ -18,9 +18,9 @@ use super::{
 const PAGE_SIZE: u64 = 4096;
 
 // Suppress warnings since using todo!.
-#[allow(unreachable_code)]
-#[allow(unused_variables)]
-#[allow(clippy::diverging_sub_expression)]
+#[expect(unreachable_code)]
+#[expect(unused_variables)]
+#[expect(clippy::diverging_sub_expression)]
 #[export_name = "efi_stub_entry"]
 extern "sysv64" fn efi_stub_entry(handle: Handle, system_table: *const SystemTable) -> ! {
     // SAFETY: handle and system_table are valid pointers. It is only called once.

@@ -44,7 +44,7 @@ use crate::{
 ///
 /// A `VmSpace` can also attach a page fault handler, which will be invoked to
 /// handle page faults generated from user space.
-#[allow(clippy::type_complexity)]
+#[expect(clippy::type_complexity)]
 #[derive(Debug)]
 pub struct VmSpace {
     pt: PageTable<UserMode>,
@@ -282,7 +282,7 @@ impl Cursor<'_> {
 /// reading or modifying the same sub-tree.
 pub struct CursorMut<'a, 'b> {
     pt_cursor: page_table::CursorMut<'a, UserMode, PageTableEntry, PagingConsts>,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     activation_lock: RwLockReadGuard<'b, (), PreemptDisabled>,
     // We have a read lock so the CPU set in the flusher is always a superset
     // of actual activated CPUs.

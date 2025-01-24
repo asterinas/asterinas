@@ -126,7 +126,7 @@ impl PriorityTarget {
     }
 }
 
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 #[derive(Clone, Debug, TryFromInt)]
 #[repr(i32)]
 enum Which {

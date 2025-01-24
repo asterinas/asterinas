@@ -167,7 +167,7 @@ enum ApicType {
 pub struct Icr(u64);
 
 impl Icr {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         destination: ApicId,
         destination_shorthand: DestinationShorthand,
@@ -217,7 +217,7 @@ impl ApicId {
     /// In x2APIC mode, the 32-bit logical x2APIC ID, which can be read from
     /// LDR, is derived from the 32-bit local x2APIC ID:
     /// Logical x2APIC ID = [(x2APIC ID[19:4] << 16) | (1 << x2APIC ID[3:0])]
-    #[allow(unused)]
+    #[expect(unused)]
     pub fn x2apic_logical_id(&self) -> u32 {
         self.x2apic_logical_cluster_id() << 16 | 1 << self.x2apic_logical_field_id()
     }
@@ -267,7 +267,7 @@ impl From<u32> for ApicId {
 #[repr(u64)]
 pub enum DestinationShorthand {
     NoShorthand = 0b00,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     MySelf = 0b01,
     AllIncludingSelf = 0b10,
     AllExcludingSelf = 0b11,
@@ -291,14 +291,14 @@ pub enum Level {
 #[repr(u64)]
 pub enum DeliveryStatus {
     Idle = 0,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     SendPending = 1,
 }
 
 #[repr(u64)]
 pub enum DestinationMode {
     Physical = 0,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     Logical = 1,
 }
 
@@ -310,14 +310,14 @@ pub enum DeliveryMode {
     /// the lowest priority among the set of processors specified in the destination field. The
     /// ability for a processor to send a lowest priority IPI is model specific and should be
     /// avoided by BIOS and operating system software.
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     LowestPriority = 0b001,
     /// Non-Maskable Interrupt
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     Smi = 0b010,
     _Reserved = 0b011,
     /// System Management Interrupt
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     Nmi = 0b100,
     /// Delivers an INIT request to the target processor or processors, which causes them to
     /// perform an initialization.
@@ -334,7 +334,7 @@ pub enum ApicInitError {
 
 #[derive(Debug)]
 #[repr(u32)]
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub enum DivideConfig {
     Divide1 = 0b1011,
     Divide2 = 0b0000,

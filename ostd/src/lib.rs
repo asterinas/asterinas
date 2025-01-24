@@ -21,8 +21,8 @@
 #![feature(trait_upcasting)]
 // The `generic_const_exprs` feature is incomplete however required for the page table
 // const generic implementation. We are using this feature in a conservative manner.
-#![allow(incomplete_features)]
-#![allow(internal_features)]
+#![expect(incomplete_features)]
+#![expect(internal_features)]
 #![no_std]
 #![warn(missing_docs)]
 
@@ -133,7 +133,7 @@ mod test {
     use crate::prelude::*;
 
     #[ktest]
-    #[allow(clippy::eq_op)]
+    #[expect(clippy::eq_op)]
     fn trivial_assertion() {
         assert_eq!(0, 0);
     }

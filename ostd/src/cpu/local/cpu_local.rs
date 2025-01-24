@@ -192,7 +192,7 @@ impl<T: 'static> !Send for CpuLocal<T> {}
 #[must_use]
 pub struct CpuLocalDerefGuard<'a, T: 'static> {
     cpu_local: &'static CpuLocal<T>,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     guard: &'a DisabledLocalIrqGuard,
 }
 

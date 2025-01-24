@@ -40,7 +40,7 @@ use crate::prelude::*;
 /// // The deletion operation will be carried out when it is dropped
 /// drop(lazy_delete_u32);
 /// ```
-#[allow(clippy::type_complexity)]
+#[expect(clippy::type_complexity)]
 pub struct LazyDelete<T> {
     obj: T,
     is_deleted: AtomicBool,

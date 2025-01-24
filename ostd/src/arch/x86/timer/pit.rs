@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
+#![expect(dead_code)]
 
 //! The Programmable Interval Timer (PIT) chip (Intel 8253/8254) basically consists of an oscillator,
 //! a prescaler and 3 independent frequency dividers. Each frequency divider has an output, which is
@@ -143,13 +143,13 @@ static CHANNEL0_PORT: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x40) }
 ///
 /// On later machines, the DRAM refresh is done with dedicated hardware and this channel
 /// is no longer used.
-#[allow(unused)]
+#[expect(unused)]
 static CHANNEL1_PORT: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x41) };
 
 /// The output from PIT channel 2 is connected to the PC speaker, so the frequency of the
 /// output determines the frequency of the sound produced by the speaker. For more information,
 /// check https://wiki.osdev.org/PC_Speaker.
-#[allow(unused)]
+#[expect(unused)]
 static CHANNEL2_PORT: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x42) };
 
 /// PIT command port.

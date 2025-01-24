@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 mod common;
-#[allow(clippy::module_inception)]
+#[expect(clippy::module_inception)]
 mod iface;
 mod phy;
 mod poll;

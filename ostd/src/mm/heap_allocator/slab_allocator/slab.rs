@@ -120,7 +120,7 @@ impl<const BLK_SIZE: usize> FreeBlockList<BLK_SIZE> {
     }
 
     fn pop(&mut self) -> Option<&'static mut FreeBlock> {
-        #[allow(clippy::manual_inspect)]
+        #[expect(clippy::manual_inspect)]
         self.head.take().map(|node| {
             self.head = node.next.take();
             self.len -= 1;
@@ -134,7 +134,7 @@ impl<const BLK_SIZE: usize> FreeBlockList<BLK_SIZE> {
         self.head = Some(free_block);
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     fn is_empty(&self) -> bool {
         self.head.is_none()
     }

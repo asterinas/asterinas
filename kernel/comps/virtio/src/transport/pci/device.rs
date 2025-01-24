@@ -268,7 +268,7 @@ impl VirtioTransport for VirtioPciModernTransport {
 }
 
 impl VirtioPciModernTransport {
-    #[allow(clippy::result_large_err)]
+    #[expect(clippy::result_large_err)]
     pub(super) fn new(
         common_device: PciCommonDevice,
     ) -> Result<Self, (BusProbeError, PciCommonDevice)> {

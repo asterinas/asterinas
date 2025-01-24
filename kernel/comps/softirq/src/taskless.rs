@@ -80,7 +80,7 @@ impl Taskless {
         // Since the same taskless will not be executed concurrently,
         // it is safe to use a `RefCell` here though the `Taskless` will
         // be put into an `Arc`.
-        #[allow(clippy::arc_with_non_send_sync)]
+        #[expect(clippy::arc_with_non_send_sync)]
         Arc::new(Self {
             is_scheduled: AtomicBool::new(false),
             is_running: AtomicBool::new(false),

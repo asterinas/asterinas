@@ -5,7 +5,7 @@ pub mod credentials;
 mod exit;
 mod kill;
 pub mod posix_thread;
-#[allow(clippy::module_inception)]
+#[expect(clippy::module_inception)]
 mod process;
 mod process_filter;
 pub mod process_table;

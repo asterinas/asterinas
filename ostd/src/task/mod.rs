@@ -36,7 +36,7 @@ use crate::{prelude::*, trap::in_interrupt_context, user::UserSpace};
 /// execute user code. Multiple tasks can share a single user space.
 #[derive(Debug)]
 pub struct Task {
-    #[allow(clippy::type_complexity)]
+    #[expect(clippy::type_complexity)]
     func: ForceSync<Cell<Option<Box<dyn FnOnce() + Send>>>>,
 
     data: Box<dyn Any + Send + Sync>,
@@ -45,7 +45,7 @@ pub struct Task {
     user_space: Option<Arc<UserSpace>>,
     ctx: SyncUnsafeCell<TaskContext>,
     /// kernel stack, note that the top is SyscallFrame/TrapFrame
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     kstack: KernelStack,
 
     schedule_info: TaskScheduleInfo,
@@ -359,7 +359,7 @@ mod test {
 
     #[ktest]
     fn create_task() {
-        #[allow(clippy::eq_op)]
+        #[expect(clippy::eq_op)]
         let task = || {
             assert_eq!(1, 1);
         };
@@ -374,7 +374,7 @@ mod test {
 
     #[ktest]
     fn spawn_task() {
-        #[allow(clippy::eq_op)]
+        #[expect(clippy::eq_op)]
         let task = || {
             assert_eq!(1, 1);
         };

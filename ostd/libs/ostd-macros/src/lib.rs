@@ -36,7 +36,7 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
             unreachable!("`yield_now` in the boot context should not return");
         }
 
-        #[allow(unused)]
+        #[expect(unused)]
         #main_fn
     )
     .into()
@@ -82,7 +82,7 @@ pub fn panic_handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
             #handler_fn_name(info);
         }
 
-        #[allow(unused)]
+        #[expect(unused)]
         #handler_fn
     )
     .into()

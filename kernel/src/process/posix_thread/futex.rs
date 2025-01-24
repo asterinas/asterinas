@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
+#![expect(dead_code)]
 
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListAtomicLink};
 use ostd::{
@@ -382,7 +382,7 @@ impl FutexKey {
 // The implementation is from occlum
 
 #[derive(PartialEq, Debug, Clone, Copy)]
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 pub enum FutexOp {
     FUTEX_WAIT = 0,
     FUTEX_WAKE = 1,

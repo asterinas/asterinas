@@ -41,7 +41,7 @@ impl Write for Stdout {
 ///
 /// [`init()`] must be called before it and there should be no race conditions.
 pub unsafe fn print_str(s: &str) {
-    #[allow(static_mut_refs)]
+    #[expect(static_mut_refs)]
     STDOUT.write_str(s).unwrap();
 }
 
@@ -53,7 +53,7 @@ pub unsafe fn print_str(s: &str) {
 ///
 /// [`init()`] must be called before it and there should be no race conditions.
 unsafe fn print_char(c: char) {
-    #[allow(static_mut_refs)]
+    #[expect(static_mut_refs)]
     STDOUT.serial_port.send(c as u8);
 }
 

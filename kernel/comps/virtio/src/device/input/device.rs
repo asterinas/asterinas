@@ -75,7 +75,7 @@ pub struct InputDevice {
     event_queue: SpinLock<VirtQueue>,
     status_queue: VirtQueue,
     event_table: EventTable,
-    #[allow(clippy::type_complexity)]
+    #[expect(clippy::type_complexity)]
     callbacks: RwLock<Vec<Arc<dyn Fn(InputEvent) + Send + Sync + 'static>>, LocalIrqDisabled>,
     transport: SpinLock<Box<dyn VirtioTransport>>,
 }

@@ -73,7 +73,7 @@ pub struct VirtioPciLegacyTransport {
 impl VirtioPciLegacyTransport {
     pub const QUEUE_ALIGN_SIZE: usize = 4096;
 
-    #[allow(clippy::result_large_err)]
+    #[expect(clippy::result_large_err)]
     pub(super) fn new(
         common_device: PciCommonDevice,
     ) -> Result<Self, (BusProbeError, PciCommonDevice)> {

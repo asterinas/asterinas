@@ -141,7 +141,7 @@ pub fn new_raw_socket_option(
 /// Sock Opt level. The definition is from https://elixir.bootlin.com/linux/v6.0.9/source/include/linux/socket.h#L343
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, TryFromInt, PartialEq, Eq)]
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 pub enum CSocketOptionLevel {
     SOL_IP = 0,
     SOL_SOCKET = 1,

@@ -247,7 +247,7 @@ impl CpuExceptionType {
 macro_rules! define_cpu_exception {
     ( $([ $name: ident = $exception_id:tt, $exception_type:tt]),* ) => {
         /// CPU exception.
-        #[allow(non_camel_case_types)]
+        #[expect(non_camel_case_types)]
         #[derive(Debug, Copy, Clone, Eq, PartialEq, FromPrimitive)]
         pub enum CpuException {
             $(

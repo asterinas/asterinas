@@ -165,7 +165,7 @@ impl Ord for FairQueueItem {
 /// ensure the efficiency for finding next-to-run threads.
 #[derive(Debug)]
 pub(super) struct FairClassRq {
-    #[allow(unused)]
+    #[expect(unused)]
     cpu: CpuId,
     /// The ready-to-run threads.
     entities: BinaryHeap<Reverse<FairQueueItem>>,

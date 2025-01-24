@@ -68,7 +68,7 @@ cpu_local_cell! {
 /// ```
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C)]
-#[allow(missing_docs)]
+#[expect(missing_docs)]
 pub struct TrapFrame {
     // Pushed by 'trap.S'
     pub rax: usize,
@@ -127,7 +127,7 @@ pub unsafe fn init(on_bsp: bool) {
 /// User space context.
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
 #[repr(C)]
-#[allow(missing_docs)]
+#[expect(missing_docs)]
 pub struct UserContext {
     pub general: GeneralRegs,
     pub trap_num: usize,
@@ -137,7 +137,7 @@ pub struct UserContext {
 /// General registers.
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
 #[repr(C)]
-#[allow(missing_docs)]
+#[expect(missing_docs)]
 pub struct GeneralRegs {
     pub rax: usize,
     pub rbx: usize,

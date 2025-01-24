@@ -7,7 +7,7 @@
 //! Reference: <https://wiki.osdev.org/CMOS>
 //!
 
-#![allow(unused_variables)]
+#![expect(unused_variables)]
 
 use acpi::fadt::Fadt;
 use x86_64::instructions::port::{ReadOnlyAccess, WriteOnlyAccess};

@@ -40,7 +40,7 @@ pub unsafe fn init() {
     static mut HEAP_SPACE: InitHeapSpace = InitHeapSpace([0; INIT_KERNEL_HEAP_SIZE]);
     // SAFETY: The HEAP_SPACE is a static memory range, so it's always valid.
     unsafe {
-        #[allow(static_mut_refs)]
+        #[expect(static_mut_refs)]
         HEAP_ALLOCATOR.init(HEAP_SPACE.0.as_mut_ptr(), INIT_KERNEL_HEAP_SIZE);
     }
 }
