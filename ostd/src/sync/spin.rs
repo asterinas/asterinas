@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(dead_code)]
-
 use core::{
     cell::UnsafeCell,
     fmt,
@@ -137,6 +135,7 @@ pub type SpinLockGuard<'a, T, G> = SpinLockGuard_<T, &'a SpinLock<T, G>, G>;
 #[clippy::has_significant_drop]
 #[must_use]
 pub struct SpinLockGuard_<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: Guardian> {
+    #[expect(dead_code)]
     guard: G::Guard,
     lock: R,
 }
