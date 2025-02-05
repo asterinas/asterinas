@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
 use core::{
     cell::UnsafeCell,
     fmt,
@@ -80,21 +79,6 @@ impl<T: ?Sized, G: SpinGuardian> SpinLock<T, G> {
         }
     }
 
-    /// Acquires the spin lock through an [`Arc`].
-    ///
-    /// The method is similar to [`lock`], but it doesn't have the requirement
-    /// for compile-time checked lifetimes of the lock guard.
-    ///
-    /// [`lock`]: Self::lock
-    pub fn lock_arc(self: &Arc<Self>) -> ArcSpinLockGuard<T, G> {
-        let inner_guard = G::guard();
-        self.acquire_lock();
-        SpinLockGuard_ {
-            lock: self.clone(),
-            guard: inner_guard,
-        }
-    }
-
     /// Tries acquiring the spin lock immedidately.
     pub fn try_lock(&self) -> Option<SpinLockGuard<T, G>> {
         let inner_guard = G::guard();
@@ -147,8 +131,6 @@ unsafe impl<T: ?Sized + Send, G> Sync for SpinLock<T, G> {}
 
 /// A guard that provides exclusive access to the data protected by a [`SpinLock`].
 pub type SpinLockGuard<'a, T, G> = SpinLockGuard_<T, &'a SpinLock<T, G>, G>;
-/// A guard that provides exclusive access to the data protected by a `Arc<SpinLock>`.
-pub type ArcSpinLockGuard<T, G> = SpinLockGuard_<T, Arc<SpinLock<T, G>>, G>;
 
 /// The guard of a spin lock.
 #[clippy::has_significant_drop]
