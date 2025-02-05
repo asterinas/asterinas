@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
 use core::{
     cell::UnsafeCell,
     fmt,
@@ -37,17 +36,6 @@ impl<T: ?Sized> Mutex<T> {
         self.queue.wait_until(|| self.try_lock())
     }
 
-    /// Acquires the mutex through an [`Arc`].
-    ///
-    /// The method is similar to [`lock`], but it doesn't have the requirement
-    /// for compile-time checked lifetimes of the mutex guard.
-    ///
-    /// [`lock`]: Self::lock
-    #[track_caller]
-    pub fn lock_arc(self: &Arc<Self>) -> ArcMutexGuard<T> {
-        self.queue.wait_until(|| self.try_lock_arc())
-    }
-
     /// Tries Acquire the mutex immedidately.
     pub fn try_lock(&self) -> Option<MutexGuard<T>> {
         // Cannot be reduced to `then_some`, or the possible dropping of the temporary
@@ -55,18 +43,6 @@ impl<T: ?Sized> Mutex<T> {
         // SAFETY: The lock is successfully acquired when creating the guard.
         self.acquire_lock()
             .then(|| unsafe { MutexGuard::new(self) })
-    }
-
-    /// Tries acquire the mutex through an [`Arc`].
-    ///
-    /// The method is similar to [`try_lock`], but it doesn't have the requirement
-    /// for compile-time checked lifetimes of the mutex guard.
-    ///
-    /// [`try_lock`]: Self::try_lock
-    pub fn try_lock_arc(self: &Arc<Self>) -> Option<ArcMutexGuard<T>> {
-        self.acquire_lock().then(|| ArcMutexGuard {
-            mutex: self.clone(),
-        })
     }
 
     /// Returns a mutable reference to the underlying data.
@@ -121,9 +97,6 @@ impl<'a, T: ?Sized> MutexGuard<'a, T> {
         MutexGuard { mutex }
     }
 }
-
-/// An guard that provides exclusive access to the data protected by a `Arc<Mutex>`.
-pub type ArcMutexGuard<T> = MutexGuard_<T, Arc<Mutex<T>>>;
 
 impl<T: ?Sized, R: Deref<Target = Mutex<T>>> Deref for MutexGuard_<T, R> {
     type Target = T;
