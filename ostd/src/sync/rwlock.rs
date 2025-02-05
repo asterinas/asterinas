@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(dead_code)]
-
 use core::{
     cell::UnsafeCell,
     fmt,
@@ -280,6 +278,7 @@ unsafe impl<T: ?Sized + Sync, R: Deref<Target = RwLock<T, G>> + Clone + Sync, G:
 #[clippy::has_significant_drop]
 #[must_use]
 pub struct RwLockReadGuard_<T: ?Sized, R: Deref<Target = RwLock<T, G>> + Clone, G: Guardian> {
+    #[expect(dead_code)]
     guard: G::ReadGuard,
     inner: R,
 }
