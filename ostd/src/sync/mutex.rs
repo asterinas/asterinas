@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
 use core::{
     cell::UnsafeCell,
     fmt,
@@ -37,17 +36,6 @@ impl<T: ?Sized> Mutex<T> {
         self.queue.wait_until(|| self.try_lock())
     }
 
-    /// Acquires the mutex through an [`Arc`].
-    ///
-    /// The method is similar to [`lock`], but it doesn't have the requirement
-    /// for compile-time checked lifetimes of the mutex guard.
-    ///
-    /// [`lock`]: Self::lock
-    #[track_caller]
-    pub fn lock_arc(self: &Arc<Self>) -> ArcMutexGuard<T> {
-        self.queue.wait_until(|| self.try_lock_arc())
-    }
-
     /// Tries Acquire the mutex immedidately.
     pub fn try_lock(&self) -> Option<MutexGuard<T>> {
         // Cannot be reduced to `then_some`, or the possible dropping of the temporary
@@ -55,18 +43,6 @@ impl<T: ?Sized> Mutex<T> {
         // SAFETY: The lock is successfully acquired when creating the guard.
         self.acquire_lock()
             .then(|| unsafe { MutexGuard::new(self) })
-    }
-
-    /// Tries acquire the mutex through an [`Arc`].
-    ///
-    /// The method is similar to [`try_lock`], but it doesn't have the requirement
-    /// for compile-time checked lifetimes of the mutex guard.
-    ///
-    /// [`try_lock`]: Self::try_lock
-    pub fn try_lock_arc(self: &Arc<Self>) -> Option<ArcMutexGuard<T>> {
-        self.acquire_lock().then(|| ArcMutexGuard {
-            mutex: self.clone(),
-        })
     }
 
     /// Returns a mutable reference to the underlying data.
@@ -103,14 +79,12 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for Mutex<T> {
 unsafe impl<T: ?Sized + Send> Send for Mutex<T> {}
 unsafe impl<T: ?Sized + Send> Sync for Mutex<T> {}
 
+/// A guard that provides exclusive access to the data protected by a [`Mutex`].
 #[clippy::has_significant_drop]
 #[must_use]
-pub struct MutexGuard_<T: ?Sized, R: Deref<Target = Mutex<T>>> {
-    mutex: R,
+pub struct MutexGuard<'a, T: ?Sized> {
+    mutex: &'a Mutex<T>,
 }
-
-/// A guard that provides exclusive access to the data protected by a [`Mutex`].
-pub type MutexGuard<'a, T> = MutexGuard_<T, &'a Mutex<T>>;
 
 impl<'a, T: ?Sized> MutexGuard<'a, T> {
     /// # Safety
@@ -122,10 +96,7 @@ impl<'a, T: ?Sized> MutexGuard<'a, T> {
     }
 }
 
-/// An guard that provides exclusive access to the data protected by a `Arc<Mutex>`.
-pub type ArcMutexGuard<T> = MutexGuard_<T, Arc<Mutex<T>>>;
-
-impl<T: ?Sized, R: Deref<Target = Mutex<T>>> Deref for MutexGuard_<T, R> {
+impl<T: ?Sized> Deref for MutexGuard<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -133,29 +104,30 @@ impl<T: ?Sized, R: Deref<Target = Mutex<T>>> Deref for MutexGuard_<T, R> {
     }
 }
 
-impl<T: ?Sized, R: Deref<Target = Mutex<T>>> DerefMut for MutexGuard_<T, R> {
+impl<T: ?Sized> DerefMut for MutexGuard<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.mutex.val.get() }
     }
 }
 
-impl<T: ?Sized, R: Deref<Target = Mutex<T>>> Drop for MutexGuard_<T, R> {
+impl<T: ?Sized> Drop for MutexGuard<'_, T> {
     fn drop(&mut self) {
         self.mutex.unlock();
     }
 }
 
-impl<T: ?Sized + fmt::Debug, R: Deref<Target = Mutex<T>>> fmt::Debug for MutexGuard_<T, R> {
+impl<T: ?Sized + fmt::Debug> fmt::Debug for MutexGuard<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
     }
 }
 
-impl<T: ?Sized, R: Deref<Target = Mutex<T>>> !Send for MutexGuard_<T, R> {}
+impl<T: ?Sized> !Send for MutexGuard<'_, T> {}
 
-unsafe impl<T: ?Sized + Sync, R: Deref<Target = Mutex<T>> + Sync> Sync for MutexGuard_<T, R> {}
+unsafe impl<T: ?Sized + Sync> Sync for MutexGuard<'_, T> {}
 
 impl<'a, T: ?Sized> MutexGuard<'a, T> {
+    /// Returns the [`Mutex`] associated with this guard.
     pub fn get_lock(guard: &MutexGuard<'a, T>) -> &'a Mutex<T> {
         guard.mutex
     }

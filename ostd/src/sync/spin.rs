@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
 use core::{
     cell::UnsafeCell,
     fmt,
@@ -70,36 +69,21 @@ impl<T: ?Sized> SpinLock<T, PreemptDisabled> {
 
 impl<T: ?Sized, G: SpinGuardian> SpinLock<T, G> {
     /// Acquires the spin lock.
-    pub fn lock(&self) -> SpinLockGuard<T, G> {
+    pub fn lock(&self) -> SpinLockGuard<'_, T, G> {
         // Notice the guard must be created before acquiring the lock.
         let inner_guard = G::guard();
         self.acquire_lock();
-        SpinLockGuard_ {
+        SpinLockGuard {
             lock: self,
             guard: inner_guard,
         }
     }
 
-    /// Acquires the spin lock through an [`Arc`].
-    ///
-    /// The method is similar to [`lock`], but it doesn't have the requirement
-    /// for compile-time checked lifetimes of the lock guard.
-    ///
-    /// [`lock`]: Self::lock
-    pub fn lock_arc(self: &Arc<Self>) -> ArcSpinLockGuard<T, G> {
-        let inner_guard = G::guard();
-        self.acquire_lock();
-        SpinLockGuard_ {
-            lock: self.clone(),
-            guard: inner_guard,
-        }
-    }
-
     /// Tries acquiring the spin lock immedidately.
-    pub fn try_lock(&self) -> Option<SpinLockGuard<T, G>> {
+    pub fn try_lock(&self) -> Option<SpinLockGuard<'_, T, G>> {
         let inner_guard = G::guard();
         if self.try_acquire_lock() {
-            let lock_guard = SpinLockGuard_ {
+            let lock_guard = SpinLockGuard {
                 lock: self,
                 guard: inner_guard,
             };
@@ -146,29 +130,20 @@ unsafe impl<T: ?Sized + Send, G> Send for SpinLock<T, G> {}
 unsafe impl<T: ?Sized + Send, G> Sync for SpinLock<T, G> {}
 
 /// A guard that provides exclusive access to the data protected by a [`SpinLock`].
-pub type SpinLockGuard<'a, T, G> = SpinLockGuard_<T, &'a SpinLock<T, G>, G>;
-/// A guard that provides exclusive access to the data protected by a `Arc<SpinLock>`.
-pub type ArcSpinLockGuard<T, G> = SpinLockGuard_<T, Arc<SpinLock<T, G>>, G>;
-
-/// The guard of a spin lock.
 #[clippy::has_significant_drop]
 #[must_use]
-pub struct SpinLockGuard_<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: SpinGuardian> {
+pub struct SpinLockGuard<'a, T: ?Sized, G: SpinGuardian> {
     guard: G::Guard,
-    lock: R,
+    lock: &'a SpinLock<T, G>,
 }
 
-impl<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: SpinGuardian> AsAtomicModeGuard
-    for SpinLockGuard_<T, R, G>
-{
+impl<T: ?Sized, G: SpinGuardian> AsAtomicModeGuard for SpinLockGuard<'_, T, G> {
     fn as_atomic_mode_guard(&self) -> &dyn crate::task::atomic_mode::InAtomicMode {
         self.guard.as_atomic_mode_guard()
     }
 }
 
-impl<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: SpinGuardian> Deref
-    for SpinLockGuard_<T, R, G>
-{
+impl<T: ?Sized, G: SpinGuardian> Deref for SpinLockGuard<'_, T, G> {
     type Target = T;
 
     fn deref(&self) -> &T {
@@ -176,38 +151,26 @@ impl<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: SpinGuardian> Deref
     }
 }
 
-impl<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: SpinGuardian> DerefMut
-    for SpinLockGuard_<T, R, G>
-{
+impl<T: ?Sized, G: SpinGuardian> DerefMut for SpinLockGuard<'_, T, G> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.lock.inner.val.get() }
     }
 }
 
-impl<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: SpinGuardian> Drop
-    for SpinLockGuard_<T, R, G>
-{
+impl<T: ?Sized, G: SpinGuardian> Drop for SpinLockGuard<'_, T, G> {
     fn drop(&mut self) {
         self.lock.release_lock();
     }
 }
 
-impl<T: ?Sized + fmt::Debug, R: Deref<Target = SpinLock<T, G>>, G: SpinGuardian> fmt::Debug
-    for SpinLockGuard_<T, R, G>
-{
+impl<T: ?Sized + fmt::Debug, G: SpinGuardian> fmt::Debug for SpinLockGuard<'_, T, G> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
     }
 }
 
-impl<T: ?Sized, R: Deref<Target = SpinLock<T, G>>, G: SpinGuardian> !Send
-    for SpinLockGuard_<T, R, G>
-{
-}
+impl<T: ?Sized, G: SpinGuardian> !Send for SpinLockGuard<'_, T, G> {}
 
-// SAFETY: `SpinLockGuard_` can be shared between tasks/threads in same CPU.
+// SAFETY: `SpinLockGuard` can be shared between tasks/threads in same CPU.
 // As `lock()` is only called when there are no race conditions caused by interrupts.
-unsafe impl<T: ?Sized + Sync, R: Deref<Target = SpinLock<T, G>> + Sync, G: SpinGuardian> Sync
-    for SpinLockGuard_<T, R, G>
-{
-}
+unsafe impl<T: ?Sized + Sync, G: SpinGuardian> Sync for SpinLockGuard<'_, T, G> {}
