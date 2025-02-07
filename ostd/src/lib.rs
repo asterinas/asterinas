@@ -98,6 +98,8 @@ unsafe fn init() {
         mm::kspace::activate_kernel_page_table();
     }
 
+    arch::framebuffer::init();
+
     bus::init();
 
     arch::irq::enable_local();

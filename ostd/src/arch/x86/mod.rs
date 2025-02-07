@@ -6,6 +6,7 @@ pub mod boot;
 pub(crate) mod cpu;
 pub mod device;
 pub(crate) mod ex_table;
+pub mod framebuffer;
 pub mod iommu;
 pub(crate) mod irq;
 pub(crate) mod kernel;
@@ -18,6 +19,7 @@ pub mod timer;
 pub mod trap;
 
 use cfg_if::cfg_if;
+use device::i8042_keyboard;
 use spin::Once;
 use x86::cpuid::{CpuId, FeatureInfo};
 
@@ -87,6 +89,7 @@ pub(crate) fn init_on_bsp() {
         }
     }
     serial::callback_init();
+    i8042_keyboard::init();
 
     // SAFETY: no CPU local objects have been accessed by this far. And
     // we are on the BSP.
