@@ -32,6 +32,7 @@ pthread/pthread_test
 pty/open_pty
 shm/posix_shm
 signal_c/parent_death_signal
+signal_c/signal_fpu
 signal_c/signal_test
 "
 
