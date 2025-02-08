@@ -31,9 +31,9 @@
 
 虽然通往生产级操作系统内核的路上注定充满艰险，
 但我们坚信正朝着正确的方向迈进。
-当前，星绽仅支持x86-64虚拟机；
-[我们2024年的目标](https://asterinas.github.io/book/kernel/roadmap.html)是
-使星绽在x86-64虚拟机环境中达到生产可用。
+在2024年期间，我们大幅提升了Asterinas的成熟度，
+详细内容请参阅我们的[年终报告](https://asterinas.github.io/2025/01/20/asterinas-in-2024.html)。
+2025年，我们的主要目标是让Asterinas在x86-64虚拟机上达到生产级水平，并吸引真正的用户！
 
 ## 快速上手
 

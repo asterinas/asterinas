@@ -32,11 +32,13 @@ and (3) choose between releasing their kernel modules as open source
 or keeping them proprietary,
 thanks to the flexibility offered by [MPL](#License).
 
-While the journey towards a production-grade OS kernel can be challenging,
-we are steadfastly progressing towards our goal.
-Currently, Asterinas only supports x86-64 VMs.
-However, [our aim for 2024](https://asterinas.github.io/book/kernel/roadmap.html) is
-to make Asterinas production-ready on x86-64 VMs.
+While the journey towards a production-grade OS kernel is challenging,
+we are steadfastly progressing towards this goal.
+Over the course of 2024,
+we significantly enhanced Asterinas's maturity,
+as detailed in [our end-year report](https://asterinas.github.io/2025/01/20/asterinas-in-2024.html).
+In 2025, our primary goal is to make Asterinas production-ready on x86-64 virtual machines
+and attract real users!
 
 ## Getting Started
 
