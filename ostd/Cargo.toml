@@ -19,7 +19,6 @@ align_ext = { path = "libs/align_ext", version = "0.1.0" }
 bit_field = "0.10.1"
 buddy_system_allocator = { version = "0.10", default-features = false, features = ["alloc"] }
 bitflags = "1.3"
-bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
 cfg-if = "1.0"
 const-assert = "1.0"
 gimli = { version = "0.28", default-features = false, features = ["read-core"] }
@@ -47,7 +46,6 @@ xarray = { git = "https://github.com/asterinas/xarray", version = "0.1.0" }
 x86_64 = "0.14.13"
 x86 = "0.52.0"
 acpi = "5.1.0"
-aml = "0.16.3"
 multiboot2 = "0.23.0"
 iced-x86 = { version = "1.21.0", default-features = false, features = [
     "no_std",
