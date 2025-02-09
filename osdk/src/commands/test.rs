@@ -4,12 +4,12 @@ use std::fs;
 
 use super::{build::do_cached_build, util::DEFAULT_TARGET_RELPATH};
 use crate::{
-    base_crate::new_base_crate,
+    base_crate::{new_base_crate, BaseCrateType},
     cli::TestArgs,
     config::{scheme::ActionChoice, Config},
     error::Errno,
     error_msg,
-    util::{get_current_crates, get_target_directory},
+    util::{get_current_crates, get_target_directory, DirGuard},
 };
 
 pub fn execute_test_command(config: &Config, args: &TestArgs) {
@@ -24,8 +24,6 @@ pub fn test_current_crate(config: &Config, args: &TestArgs) {
     let current_crate = get_current_crates().remove(0);
     let cargo_target_directory = get_target_directory();
     let osdk_output_directory = cargo_target_directory.join(DEFAULT_TARGET_RELPATH);
-    // Use a different name for better separation and reusability of `run` and `test`
-    let target_crate_dir = osdk_output_directory.join("test-base");
 
     // A special case is that we use OSDK to test the OSDK test runner crate
     // itself. We check it by name.
@@ -40,8 +38,9 @@ pub fn test_current_crate(config: &Config, args: &TestArgs) {
         false
     };
 
-    new_base_crate(
-        &target_crate_dir,
+    let target_crate_dir = new_base_crate(
+        BaseCrateType::Test,
+        osdk_output_directory.join(&current_crate.name),
         &current_crate.name,
         &current_crate.path,
         !runner_self_test,
@@ -54,7 +53,7 @@ pub fn test_current_crate(config: &Config, args: &TestArgs) {
         None => r#"None"#.to_string(),
     };
 
-    let mut ktest_crate_whitelist = vec![current_crate.name];
+    let mut ktest_crate_whitelist = vec![current_crate.name.clone()];
     if let Some(name) = &args.test_name {
         ktest_crate_whitelist.push(name.clone());
     }
@@ -85,10 +84,8 @@ pub static KTEST_CRATE_WHITELIST: Option<&[&str]> = Some(&{:#?});
     fs::write(&main_rs_path, main_rs_content).unwrap();
 
     // Build the kernel with the given base crate
-    let target_name = get_current_crates().remove(0).name;
-    let default_bundle_directory = osdk_output_directory.join(target_name);
-    let original_dir = std::env::current_dir().unwrap();
-    std::env::set_current_dir(&target_crate_dir).unwrap();
+    let default_bundle_directory = osdk_output_directory.join(&current_crate.name);
+    let dir_guard = DirGuard::change_dir(&target_crate_dir);
     let bundle = do_cached_build(
         default_bundle_directory,
         &osdk_output_directory,
@@ -98,7 +95,7 @@ pub static KTEST_CRATE_WHITELIST: Option<&[&str]> = Some(&{:#?});
         &["--cfg ktest"],
     );
     std::env::remove_var("RUSTFLAGS");
-    std::env::set_current_dir(original_dir).unwrap();
+    drop(dir_guard);
 
     bundle.run(config, ActionChoice::Test);
 }

@@ -21,15 +21,15 @@ pub fn execute_run_command(config: &Config, gdb_server_args: Option<&str>) {
     let osdk_output_directory = cargo_target_directory.join(DEFAULT_TARGET_RELPATH);
 
     let targets = get_current_crates();
-    let mut target_name = None;
+    let mut target_info = None;
     for target in targets {
         if target.is_kernel_crate {
-            target_name = Some(target.name);
+            target_info = Some(target);
             break;
         }
     }
 
-    let target_name = target_name.unwrap_or_else(|| {
+    let target_info = target_info.unwrap_or_else(|| {
         error_msg!("No kernel crate found in the current workspace");
         exit(Errno::NoKernelCrate as _);
     });
@@ -42,8 +42,9 @@ pub fn execute_run_command(config: &Config, gdb_server_args: Option<&str>) {
         None
     };
 
-    let default_bundle_directory = osdk_output_directory.join(target_name);
+    let default_bundle_directory = osdk_output_directory.join(&target_info.name);
     let bundle = create_base_and_cached_build(
+        target_info,
         default_bundle_directory,
         &osdk_output_directory,
         &cargo_target_directory,
