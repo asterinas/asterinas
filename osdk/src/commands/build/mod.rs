@@ -16,7 +16,7 @@ use bin::make_elf_for_qemu;
 use super::util::{cargo, profile_name_adapter, COMMON_CARGO_ARGS, DEFAULT_TARGET_RELPATH};
 use crate::{
     arch::Arch,
-    base_crate::new_base_crate,
+    base_crate::{new_base_crate, BaseCrateType},
     bundle::{
         bin::{AsterBin, AsterBinType, AsterElfMeta},
         file::BundleFile,
@@ -29,7 +29,7 @@ use crate::{
     },
     error::Errno,
     error_msg,
-    util::{get_cargo_metadata, get_current_crates, get_target_directory},
+    util::{get_cargo_metadata, get_current_crates, get_target_directory, CrateInfo, DirGuard},
 };
 
 pub fn execute_build_command(config: &Config, build_args: &BuildArgs) {
@@ -65,6 +65,7 @@ pub fn execute_build_command(config: &Config, build_args: &BuildArgs) {
     };
 
     let _bundle = create_base_and_cached_build(
+        target_info,
         bundle_path,
         &osdk_output_directory,
         &cargo_target_directory,
@@ -75,6 +76,7 @@ pub fn execute_build_command(config: &Config, build_args: &BuildArgs) {
 }
 
 pub fn create_base_and_cached_build(
+    target_crate: CrateInfo,
     bundle_path: impl AsRef<Path>,
     osdk_output_directory: impl AsRef<Path>,
     cargo_target_directory: impl AsRef<Path>,
@@ -82,25 +84,25 @@ pub fn create_base_and_cached_build(
     action: ActionChoice,
     rustflags: &[&str],
 ) -> Bundle {
-    let base_crate_path = osdk_output_directory.as_ref().join("base");
-    new_base_crate(
-        &base_crate_path,
-        &get_current_crates().remove(0).name,
-        get_current_crates().remove(0).path,
+    let base_crate_path = new_base_crate(
+        match action {
+            ActionChoice::Run => BaseCrateType::Run,
+            ActionChoice::Test => BaseCrateType::Test,
+        },
+        osdk_output_directory.as_ref().join(&target_crate.name),
+        &target_crate.name,
+        target_crate.path,
         false,
     );
-    let original_dir = std::env::current_dir().unwrap();
-    std::env::set_current_dir(&base_crate_path).unwrap();
-    let bundle = do_cached_build(
+    let _dir_guard = DirGuard::change_dir(&base_crate_path);
+    do_cached_build(
         &bundle_path,
         &osdk_output_directory,
         &cargo_target_directory,
         config,
         action,
         rustflags,
-    );
-    std::env::set_current_dir(original_dir).unwrap();
-    bundle
+    )
 }
 
 fn get_reusable_existing_bundle(
