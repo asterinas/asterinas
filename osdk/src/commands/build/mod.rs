@@ -29,7 +29,7 @@ use crate::{
     },
     error::Errno,
     error_msg,
-    util::{get_cargo_metadata, get_current_crate_info, get_target_directory},
+    util::{get_cargo_metadata, get_current_crates, get_target_directory},
 };
 
 pub fn execute_build_command(config: &Config, build_args: &BuildArgs) {
@@ -41,8 +41,22 @@ pub fn execute_build_command(config: &Config, build_args: &BuildArgs) {
     if !osdk_output_directory.exists() {
         std::fs::create_dir_all(&osdk_output_directory).unwrap();
     }
-    let target_info = get_current_crate_info();
-    let bundle_path = osdk_output_directory.join(target_info.name);
+
+    let targets = get_current_crates();
+    let mut target_info = None;
+    for target in targets {
+        if target.is_kernel_crate {
+            target_info = Some(target);
+            break;
+        }
+    }
+
+    let target_info = target_info.unwrap_or_else(|| {
+        error_msg!("No kernel crate found in the current workspace");
+        process::exit(Errno::NoKernelCrate as _);
+    });
+
+    let bundle_path = osdk_output_directory.join(target_info.name.clone());
 
     let action = if build_args.for_test {
         ActionChoice::Test
@@ -71,8 +85,8 @@ pub fn create_base_and_cached_build(
     let base_crate_path = osdk_output_directory.as_ref().join("base");
     new_base_crate(
         &base_crate_path,
-        &get_current_crate_info().name,
-        get_current_crate_info().path,
+        &get_current_crates().remove(0).name,
+        get_current_crates().remove(0).path,
         false,
     );
     let original_dir = std::env::current_dir().unwrap();
@@ -251,7 +265,7 @@ fn build_kernel_elf(
         .as_ref()
         .join(&target_os_string)
         .join(profile_name_adapter(profile))
-        .join(get_current_crate_info().name);
+        .join(get_current_crates().remove(0).name);
 
     AsterBin::new(
         aster_bin_path,
@@ -262,7 +276,7 @@ fn build_kernel_elf(
             has_multiboot_header: true,
             has_multiboot2_header: true,
         }),
-        get_current_crate_info().version,
+        get_current_crates().remove(0).version,
         false,
     )
 }
