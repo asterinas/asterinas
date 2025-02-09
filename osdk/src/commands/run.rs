@@ -12,14 +12,27 @@ use crate::{
     config::{scheme::ActionChoice, Config},
     error::Errno,
     error_msg,
-    util::{get_current_crate_info, get_target_directory},
+    util::{get_current_crates, get_target_directory},
     warn_msg,
 };
 
 pub fn execute_run_command(config: &Config, gdb_server_args: Option<&str>) {
     let cargo_target_directory = get_target_directory();
     let osdk_output_directory = cargo_target_directory.join(DEFAULT_TARGET_RELPATH);
-    let target_name = get_current_crate_info().name;
+
+    let targets = get_current_crates();
+    let mut target_name = None;
+    for target in targets {
+        if target.is_kernel_crate {
+            target_name = Some(target.name);
+            break;
+        }
+    }
+
+    let target_name = target_name.unwrap_or_else(|| {
+        error_msg!("No kernel crate found in the current workspace");
+        exit(Errno::NoKernelCrate as _);
+    });
 
     let mut config = config.clone();
 
@@ -173,7 +186,7 @@ mod gdb {
 mod vsc {
     use crate::{
         commands::util::bin_file_name,
-        util::{get_cargo_metadata, get_current_crate_info},
+        util::{get_cargo_metadata, get_current_crates},
     };
     use serde_json::{from_str, Value};
     use std::{
@@ -287,7 +300,7 @@ mod vsc {
     ) -> Result<(), std::io::Error> {
         let contents = include_str!("launch.json.template")
             .replace("#PROFILE#", profile)
-            .replace("#CRATE_NAME#", &get_current_crate_info().name)
+            .replace("#CRATE_NAME#", &get_current_crates().remove(0).name)
             .replace("#BIN_NAME#", &bin_file_name())
             .replace(
                 "#ADDR_PORT#",

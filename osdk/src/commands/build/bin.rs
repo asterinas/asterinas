@@ -17,7 +17,7 @@ use crate::{
         bin::{AsterBin, AsterBinType, AsterBzImageMeta, AsterElfMeta},
         file::BundleFile,
     },
-    util::{get_current_crate_info, hard_link_or_copy},
+    util::{get_current_crates, hard_link_or_copy},
 };
 
 pub fn make_install_bzimage(
@@ -27,7 +27,7 @@ pub fn make_install_bzimage(
     linux_x86_legacy_boot: bool,
     encoding: PayloadEncoding,
 ) -> AsterBin {
-    let target_name = get_current_crate_info().name;
+    let target_name = get_current_crates().remove(0).name;
     let image_type = if linux_x86_legacy_boot {
         BzImageType::Legacy32
     } else {

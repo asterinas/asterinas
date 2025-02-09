@@ -303,7 +303,7 @@ impl DebugProfileOutArgs {
                         .display()
                 )
             } else {
-                let crate_name = crate::util::get_current_crate_info().name;
+                let crate_name = crate::util::get_current_crates().remove(0).name;
                 let time_stamp = std::time::SystemTime::now();
                 let time_stamp: DateTime<Local> = time_stamp.into();
                 let time_stamp = time_stamp.format("%H%M%S");

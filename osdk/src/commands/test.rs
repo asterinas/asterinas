@@ -9,21 +9,19 @@ use crate::{
     config::{scheme::ActionChoice, Config},
     error::Errno,
     error_msg,
-    util::{
-        get_cargo_metadata, get_current_crate_info, get_target_directory, parse_package_id_string,
-    },
+    util::{get_current_crates, get_target_directory},
 };
 
 pub fn execute_test_command(config: &Config, args: &TestArgs) {
-    let crates = get_workspace_default_members();
-    for crate_path in crates {
-        std::env::set_current_dir(crate_path).unwrap();
+    let crates = get_current_crates();
+    for crate_info in crates {
+        std::env::set_current_dir(crate_info.path).unwrap();
         test_current_crate(config, args);
     }
 }
 
 pub fn test_current_crate(config: &Config, args: &TestArgs) {
-    let current_crate = get_current_crate_info();
+    let current_crate = get_current_crates().remove(0);
     let cargo_target_directory = get_target_directory();
     let osdk_output_directory = cargo_target_directory.join(DEFAULT_TARGET_RELPATH);
     // Use a different name for better separation and reusability of `run` and `test`
@@ -87,7 +85,7 @@ pub static KTEST_CRATE_WHITELIST: Option<&[&str]> = Some(&{:#?});
     fs::write(&main_rs_path, main_rs_content).unwrap();
 
     // Build the kernel with the given base crate
-    let target_name = get_current_crate_info().name;
+    let target_name = get_current_crates().remove(0).name;
     let default_bundle_directory = osdk_output_directory.join(target_name);
     let original_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(&target_crate_dir).unwrap();
@@ -103,21 +101,4 @@ pub static KTEST_CRATE_WHITELIST: Option<&[&str]> = Some(&{:#?});
     std::env::set_current_dir(original_dir).unwrap();
 
     bundle.run(config, ActionChoice::Test);
-}
-
-fn get_workspace_default_members() -> Vec<String> {
-    let metadata = get_cargo_metadata(None::<&str>, None::<&[&str]>).unwrap();
-    let default_members = metadata
-        .get("workspace_default_members")
-        .unwrap()
-        .as_array()
-        .unwrap();
-    default_members
-        .iter()
-        .map(|value| {
-            let default_member = value.as_str().unwrap();
-            let crate_info = parse_package_id_string(default_member);
-            crate_info.path
-        })
-        .collect()
 }

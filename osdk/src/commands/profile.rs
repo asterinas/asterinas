@@ -13,7 +13,7 @@ use inferno::flamegraph;
 use crate::{
     cli::{ProfileArgs, ProfileFormat},
     commands::util::bin_file_name,
-    util::{get_current_crate_info, get_target_directory},
+    util::{get_current_crates, get_target_directory},
 };
 use regex::Regex;
 use std::{collections::HashMap, fs::File, io::Write, path::PathBuf, process::Command};
@@ -45,7 +45,7 @@ fn do_parse_stack_traces(target_file: &PathBuf, args: &ProfileArgs) {
 fn do_collect_stack_traces(args: &ProfileArgs) {
     let file_path = get_target_directory()
         .join("osdk")
-        .join(get_current_crate_info().name)
+        .join(get_current_crates().remove(0).name)
         .join(bin_file_name());
 
     let remote = &args.remote;
