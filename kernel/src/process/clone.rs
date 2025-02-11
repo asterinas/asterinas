@@ -432,6 +432,12 @@ fn clone_cpu_context(
     tls: u64,
     clone_flags: CloneFlags,
 ) -> UserContext {
+    // New threads inherit the FPU state of the parent thread and the state is private
+    // to the thread thereafter. Save the parent's FPU state before cloning.
+    if let Some(fpu_state) = Task::current().unwrap().fpu_state() {
+        fpu_state.borrow_mut().save();
+    }
+
     let mut child_context = parent_context.clone();
     // The return value of child thread is zero
     child_context.set_syscall_ret(0);
@@ -453,10 +459,6 @@ fn clone_cpu_context(
     if clone_flags.contains(CloneFlags::CLONE_SETTLS) {
         child_context.set_tls_pointer(tls as usize);
     }
-
-    // New threads inherit the FPU state of the parent thread and
-    // the state is private to the thread thereafter.
-    child_context.fpu_state().save();
 
     child_context
 }

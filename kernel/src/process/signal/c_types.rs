@@ -6,10 +6,10 @@
 use core::mem::{self, size_of};
 
 use aster_util::{read_union_fields, union_read_ptr::UnionReadPtr};
+use ostd::cpu::{UserContext, XSaveArea};
 
 use super::sig_num::SigNum;
 use crate::{
-    arch::cpu::GpRegs,
     prelude::*,
     process::{Pid, Uid},
 };
@@ -158,7 +158,7 @@ union siginfo_addr_bnd_t {
     upper: Vaddr, // *const c_void,
 }
 
-#[derive(Clone, Copy, Debug, Pod)]
+#[derive(Clone, Copy, Debug, Default, Pod)]
 #[repr(C)]
 pub struct ucontext_t {
     pub uc_flags: u64,
@@ -166,20 +166,7 @@ pub struct ucontext_t {
     pub uc_stack: stack_t,
     pub uc_mcontext: mcontext_t,
     pub uc_sigmask: sigset_t,
-    pub fpregs: [u8; 64 * 8], //fxsave structure
-}
-
-impl Default for ucontext_t {
-    fn default() -> Self {
-        Self {
-            uc_flags: Default::default(),
-            uc_link: Default::default(),
-            uc_stack: Default::default(),
-            uc_mcontext: Default::default(),
-            uc_sigmask: Default::default(),
-            fpregs: [0u8; 64 * 8],
-        }
-    }
+    pub xsave_area: XSaveArea,
 }
 
 pub type stack_t = sigaltstack_t;
@@ -195,20 +182,73 @@ pub struct sigaltstack_t {
 #[derive(Debug, Clone, Copy, Pod, Default)]
 #[repr(C)]
 pub struct mcontext_t {
-    pub inner: SignalCpuContext,
-    // TODO: the fields should be csgsfs, err, trapno, oldmask, and cr2
-    _unused0: [u64; 5],
-    // TODO: this field should be `fpregs: fpregset_t,`
-    _unused1: usize,
-    _reserved: [u64; 8],
+    pub r8: usize,
+    pub r9: usize,
+    pub r10: usize,
+    pub r11: usize,
+    pub r12: usize,
+    pub r13: usize,
+    pub r14: usize,
+    pub r15: usize,
+    pub rdi: usize,
+    pub rsi: usize,
+    pub rbp: usize,
+    pub rbx: usize,
+    pub rdx: usize,
+    pub rax: usize,
+    pub rcx: usize,
+    pub rsp: usize,
+    pub rip: usize,
+    pub rflags: usize,
+    pub cs: u16,
+    pub gs: u16,
+    pub fs: u16,
+    pub ss: u16,
+    pub error_code: usize,
+    pub trap_num: usize,
+    pub old_mask: u64,
+    pub page_fault_addr: usize,
+    pub fpu_state: Vaddr, // *mut XSaveArea
+    reserved: [u64; 8],
 }
 
-#[derive(Debug, Clone, Copy, Pod, Default)]
-#[repr(C)]
-pub struct SignalCpuContext {
-    pub gp_regs: GpRegs,
-    pub fpregs_on_heap: u64,
-    pub fpregs: Vaddr, // *mut FpRegs,
+macro_rules! copy_gp_regs {
+    ($src: ident, $dst: ident, [$($field: ident,)*]) => {
+        $(
+            $dst.$field = $src.$field;
+        )*
+    };
+}
+
+impl mcontext_t {
+    pub fn copy_to_context(&self, context: &mut UserContext) {
+        let gp_regs = context.general_regs_mut();
+        copy_gp_regs!(
+            self,
+            gp_regs,
+            [
+                r8, r9, r10, r11, r12, r13, r14, r15, rdi, rsi, rbp, rbx, rdx, rax, rcx, rsp, rip,
+                rflags,
+            ]
+        );
+    }
+
+    pub fn copy_from_context(&mut self, context: &UserContext) {
+        let gp_regs = context.general_regs();
+        copy_gp_regs!(
+            gp_regs,
+            self,
+            [
+                r8, r9, r10, r11, r12, r13, r14, r15, rdi, rsi, rbp, rbx, rdx, rax, rcx, rsp, rip,
+                rflags,
+            ]
+        );
+
+        let trap_info = context.trap_information();
+        self.trap_num = trap_info.id;
+        self.error_code = trap_info.error_code;
+        self.page_fault_addr = trap_info.page_fault_addr;
+    }
 }
 
 #[derive(Clone, Copy, Pod)]
