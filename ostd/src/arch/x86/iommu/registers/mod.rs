@@ -103,20 +103,41 @@ impl IommuRegisters {
         GlobalStatus::from_bits_truncate(self.global_status.read())
     }
 
-    /// Enables DMA remapping with static RootTable
-    pub(super) fn enable_dma_remapping(
+    /// Enables abort-dma mode
+    pub(super) fn enable_abort_dma_mode(&mut self) {
+        // Check if hardware supports abort-dma mode.
+        if !self
+            .read_extended_capability()
+            .flags()
+            .contains(ExtendedCapabilityFlags::ADMS)
+        {
+            return;
+        }
+
+        const ABORT_DMA_MODE: u64 = 0xC00;
+        // SAFETY:
+        // 1. We have checked that the hardware supports abort-dma mode, the value is valid.
+        // 2. According to the manual: "In abort-dma mode, hardware will abort all DMA operations
+        // without the need to set up a root-table with each entry marked as not-present." In this case,
+        // there will be no soundness problems related to DMA (All access is aborted).
+        unsafe {
+            self.enable_dma_with_address_register(ABORT_DMA_MODE);
+        }
+    }
+
+    /// Enables DMA remapping with static RootTable.
+    ///
+    /// # Safety
+    ///
+    /// The user must ensure that all the entry inside the root table is set to not-present.
+    pub(super) unsafe fn enable_dma_remapping(
         &mut self,
         root_table: &'static SpinLock<RootTable, LocalIrqDisabled>,
     ) {
-        // Set root table address
-        self.root_table_address
-            .write(root_table.lock().root_paddr() as u64);
-        self.write_global_command(GlobalCommand::SRTP, true);
-        while !self.read_global_status().contains(GlobalStatus::RTPS) {}
-
-        // Enable DMA remapping
-        self.write_global_command(GlobalCommand::TE, true);
-        while !self.read_global_status().contains(GlobalStatus::TES) {}
+        // SAFETY: the root table address is valid, and all the entry is set to not-present.
+        unsafe {
+            self.enable_dma_with_address_register(root_table.lock().root_paddr() as u64);
+        }
     }
 
     /// Enables Interrupt Remapping with IntRemappingTable
@@ -202,6 +223,24 @@ impl IommuRegisters {
         // Enable Queued invalidation
         self.write_global_command(GlobalCommand::QIE, true);
         while !self.read_global_status().contains(GlobalStatus::QIES) {}
+    }
+
+    /// Enables DMA remapping based on the root table address register (`value`).
+    ///
+    /// # Safety
+    ///
+    /// The user must ensure:
+    /// 1. The correctness of the `value`.
+    /// 2. After enabling DMA remapping, there won't be soundness problems related to DMA.
+    unsafe fn enable_dma_with_address_register(&mut self, value: u64) {
+        // Set root table address
+        self.root_table_address.write(value);
+        self.write_global_command(GlobalCommand::SRTP, true);
+        while !self.read_global_status().contains(GlobalStatus::RTPS) {}
+
+        // Enable DMA remapping
+        self.write_global_command(GlobalCommand::TE, true);
+        while !self.read_global_status().contains(GlobalStatus::TES) {}
     }
 
     fn global_invalidation(&mut self) {

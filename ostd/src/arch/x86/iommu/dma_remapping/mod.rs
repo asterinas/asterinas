@@ -59,6 +59,11 @@ pub fn unmap(daddr: Daddr) -> Result<(), IommuError> {
 }
 
 pub fn init() {
+    let mut iommu_regs = IOMMU_REGS.get().unwrap().lock();
+
+    // Before setting up DMA remapping, we should set up abort-dma mode if the hardware supports it.
+    iommu_regs.enable_abort_dma_mode();
+
     // Create Root Table instance
     let mut root_table = RootTable::new();
     // For all PCI Device, use the same page table.
@@ -69,8 +74,12 @@ pub fn init() {
     PAGE_TABLE.call_once(|| SpinLock::new(root_table));
 
     // Enable DMA remapping
-    let mut iommu_regs = IOMMU_REGS.get().unwrap().lock();
-    iommu_regs.enable_dma_remapping(PAGE_TABLE.get().unwrap());
+    //
+    // SAFETY: The page table is initialized with an empty page table for all devices.
+    // All DMA access is illegal after setting the page table.
+    unsafe {
+        iommu_regs.enable_dma_remapping(PAGE_TABLE.get().unwrap());
+    }
     info!("[IOMMU] DMA remapping enabled");
 }
 
