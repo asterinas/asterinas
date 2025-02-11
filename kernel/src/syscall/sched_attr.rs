@@ -8,7 +8,7 @@ use super::SyscallReturn;
 use crate::{
     prelude::*,
     process::posix_thread::thread_table,
-    sched::{Nice, RealTimePolicy, SchedPolicy},
+    sched::{Nice, RealTimePolicy, RealTimePriority, SchedPolicy},
     thread::Tid,
 };
 
@@ -188,6 +188,28 @@ pub fn sys_sched_setattr(
     }
 
     Ok(SyscallReturn::Return(0))
+}
+
+pub fn sys_sched_get_priority_min(policy: u32, _: &Context) -> Result<SyscallReturn> {
+    match policy {
+        SCHED_FIFO | SCHED_RR => Ok(SyscallReturn::Return(RealTimePriority::MIN.get().into())),
+        SCHED_IDLE | SCHED_NORMAL => Ok(SyscallReturn::Return(0)),
+        _ => Err(Error::with_message(
+            Errno::EINVAL,
+            "invalid scheduling policy",
+        )),
+    }
+}
+
+pub fn sys_sched_get_priority_max(policy: u32, _: &Context) -> Result<SyscallReturn> {
+    match policy {
+        SCHED_FIFO | SCHED_RR => Ok(SyscallReturn::Return(RealTimePriority::MAX.get().into())),
+        SCHED_IDLE | SCHED_NORMAL => Ok(SyscallReturn::Return(0)),
+        _ => Err(Error::with_message(
+            Errno::EINVAL,
+            "invalid scheduling policy",
+        )),
+    }
 }
 
 pub fn sys_sched_getparam(tid: Tid, addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {

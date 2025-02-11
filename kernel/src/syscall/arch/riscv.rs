@@ -81,8 +81,9 @@ use crate::syscall::{
     rt_sigsuspend::sys_rt_sigsuspend,
     sched_affinity::{sys_sched_getaffinity, sys_sched_setaffinity},
     sched_attr::{
-        sys_sched_getattr, sys_sched_getparam, sys_sched_getscheduler, sys_sched_setattr,
-        sys_sched_setparam, sys_sched_setscheduler,
+        sys_sched_get_priority_max, sys_sched_get_priority_min, sys_sched_getattr,
+        sys_sched_getparam, sys_sched_getscheduler, sys_sched_setattr, sys_sched_setparam,
+        sys_sched_setscheduler,
     },
     sched_yield::sys_sched_yield,
     semctl::sys_semctl,
@@ -202,6 +203,8 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_SCHED_SETAFFINITY = 122  => sys_sched_setaffinity(args[..3]);
     SYS_SCHED_GETAFFINITY = 123  => sys_sched_getaffinity(args[..3]);
     SYS_SCHED_YIELD = 124        => sys_sched_yield(args[..0]);
+    SYS_SCHED_GET_PRIORITY_MAX = 125 => sys_sched_get_priority_max(args[..1]);
+    SYS_SCHED_GET_PRIORITY_MIN = 126 => sys_sched_get_priority_min(args[..1]);
     SYS_KILL = 129               => sys_kill(args[..2]);
     SYS_TGKILL = 131             => sys_tgkill(args[..3]);
     SYS_SIGALTSTACK = 132        => sys_sigaltstack(args[..2]);

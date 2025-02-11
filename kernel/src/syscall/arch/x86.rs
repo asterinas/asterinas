@@ -89,8 +89,9 @@ use crate::syscall::{
     rt_sigsuspend::sys_rt_sigsuspend,
     sched_affinity::{sys_sched_getaffinity, sys_sched_setaffinity},
     sched_attr::{
-        sys_sched_getattr, sys_sched_getparam, sys_sched_getscheduler, sys_sched_setattr,
-        sys_sched_setparam, sys_sched_setscheduler,
+        sys_sched_get_priority_max, sys_sched_get_priority_min, sys_sched_getattr,
+        sys_sched_getparam, sys_sched_getscheduler, sys_sched_setattr, sys_sched_setparam,
+        sys_sched_setscheduler,
     },
     sched_yield::sys_sched_yield,
     select::sys_select,
@@ -267,6 +268,8 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_SCHED_GETPARAM = 143   => sys_sched_getparam(args[..2]);
     SYS_SCHED_SETSCHEDULER = 144 => sys_sched_setscheduler(args[..3]);
     SYS_SCHED_GETSCHEDULER = 145 => sys_sched_getscheduler(args[..1]);
+    SYS_SCHED_GET_PRIORITY_MAX = 146 => sys_sched_get_priority_max(args[..1]);
+    SYS_SCHED_GET_PRIORITY_MIN = 147 => sys_sched_get_priority_min(args[..1]);
     SYS_PRCTL = 157            => sys_prctl(args[..5]);
     SYS_ARCH_PRCTL = 158       => sys_arch_prctl(args[..2], &mut user_ctx);
     SYS_SETRLIMIT = 160        => sys_setrlimit(args[..2]);
