@@ -36,6 +36,7 @@ TEST_APPS := \
 	prctl \
 	pthread \
 	pty \
+	sched \
 	shm \
 	signal_c \
 	vsock \

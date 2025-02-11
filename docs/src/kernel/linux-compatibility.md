@@ -162,12 +162,12 @@ provided by Linux on x86-64 architecture.
 | 139     | sysfs            | ❌              |
 | 140     | getpriority      | ✅              |
 | 141     | setpriority      | ✅              |
-| 142     | sched_setparam   | ❌              |
-| 143     | sched_getparam   | ❌              |
-| 144     | sched_setscheduler | ❌            |
-| 145     | sched_getscheduler | ❌            |
-| 146     | sched_get_priority_max | ❌        |
-| 147     | sched_get_priority_min | ❌        |
+| 142     | sched_setparam   | ✅              |
+| 143     | sched_getparam   | ✅              |
+| 144     | sched_setscheduler | ✅            |
+| 145     | sched_getscheduler | ✅            |
+| 146     | sched_get_priority_max | ✅        |
+| 147     | sched_get_priority_min | ✅        |
 | 148     | sched_rr_get_interval | ❌         |
 | 149     | mlock            | ❌              |
 | 150     | munlock          | ❌              |
@@ -334,6 +334,8 @@ provided by Linux on x86-64 architecture.
 | 311	  | process_vm_writev | ❌              |
 | 312	  | kcmp             | ❌              |
 | 313	  | finit_module     | ❌              |
+| 314	  | sched_setattr    | ✅              |
+| 315	  | sched_getattr    | ✅              |
 | 318	  | getrandom        | ✅              |
 | 322	  | execveat         | ✅              |
 | 327	  | preadv2          | ✅              |
