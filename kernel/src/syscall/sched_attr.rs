@@ -80,12 +80,6 @@ impl TryFrom<PosixSchedAttr> for SchedPolicy {
 
     fn try_from(value: PosixSchedAttr) -> Result<Self> {
         Ok(match value.sched_policy {
-            SCHED_NORMAL => SchedPolicy::Fair(Nice::new(
-                i8::try_from(value.sched_nice)?
-                    .try_into()
-                    .map_err(|msg| Error::with_message(Errno::EINVAL, msg))?,
-            )),
-
             SCHED_FIFO | SCHED_RR => SchedPolicy::RealTime {
                 rt_prio: u8::try_from(value.sched_priority)?
                     .try_into()
@@ -98,6 +92,19 @@ impl TryFrom<PosixSchedAttr> for SchedPolicy {
                     _ => unreachable!(),
                 },
             },
+
+            _ if value.sched_priority != 0 => {
+                return Err(Error::with_message(
+                    Errno::EINVAL,
+                    "Invalid scheduling priority",
+                ))
+            }
+
+            SCHED_NORMAL => SchedPolicy::Fair(Nice::new(
+                i8::try_from(value.sched_nice)?
+                    .try_into()
+                    .map_err(|msg| Error::with_message(Errno::EINVAL, msg))?,
+            )),
 
             SCHED_IDLE => SchedPolicy::Idle,
 
@@ -228,6 +235,48 @@ pub fn sys_sched_setparam(tid: Tid, addr: Vaddr, ctx: &Context) -> Result<Syscal
             .ok_or_else(|| Error::with_message(Errno::ESRCH, "thread does not exist"))?
             .sched_attr()
             .update_policy(update)?,
+    }
+
+    Ok(SyscallReturn::Return(0))
+}
+
+pub fn sys_sched_getscheduler(tid: Tid, ctx: &Context) -> Result<SyscallReturn> {
+    let policy = match tid {
+        0 => ctx.thread.sched_attr().policy(),
+        _ => thread_table::get_thread(tid)
+            .ok_or_else(|| Error::with_message(Errno::ESRCH, "thread does not exist"))?
+            .sched_attr()
+            .policy(),
+    };
+
+    let policy = PosixSchedAttr::try_from(policy)?.sched_policy;
+    Ok(SyscallReturn::Return(policy as isize))
+}
+
+pub fn sys_sched_setscheduler(
+    tid: Tid,
+    policy: i32,
+    addr: Vaddr,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
+    let task = Task::current().unwrap();
+    let space = CurrentUserSpace::new(&task);
+    let prio = space.read_val(addr)?;
+
+    let attr = PosixSchedAttr {
+        sched_policy: policy as u32,
+        sched_priority: prio,
+        ..Default::default()
+    };
+
+    let policy = attr.try_into()?;
+
+    match tid {
+        0 => ctx.thread.sched_attr().set_policy(policy),
+        _ => thread_table::get_thread(tid)
+            .ok_or_else(|| Error::with_message(Errno::ESRCH, "thread does not exist"))?
+            .sched_attr()
+            .set_policy(policy),
     }
 
     Ok(SyscallReturn::Return(0))

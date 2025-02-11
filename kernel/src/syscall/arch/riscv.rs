@@ -80,7 +80,10 @@ use crate::syscall::{
     rt_sigprocmask::sys_rt_sigprocmask,
     rt_sigsuspend::sys_rt_sigsuspend,
     sched_affinity::{sys_sched_getaffinity, sys_sched_setaffinity},
-    sched_attr::{sys_sched_getattr, sys_sched_getparam, sys_sched_setattr, sys_sched_setparam},
+    sched_attr::{
+        sys_sched_getattr, sys_sched_getparam, sys_sched_getscheduler, sys_sched_setattr,
+        sys_sched_setparam, sys_sched_setscheduler,
+    },
     sched_yield::sys_sched_yield,
     semctl::sys_semctl,
     semget::sys_semget,
@@ -193,6 +196,8 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_TIMER_CREATE = 107       => sys_timer_create(args[..3]);
     SYS_TIMER_DELETE = 111       => sys_timer_delete(args[..1]);
     SYS_SCHED_SETPARAM = 118     => sys_sched_setparam(args[..2]);
+    SYS_SCHED_SETSCHEDULER = 119 => sys_sched_setscheduler(args[..3]);
+    SYS_SCHED_GETSCHEDULER = 120 => sys_sched_getscheduler(args[..1]);
     SYS_SCHED_GETPARAM = 121     => sys_sched_getparam(args[..2]);
     SYS_SCHED_SETAFFINITY = 122  => sys_sched_setaffinity(args[..3]);
     SYS_SCHED_GETAFFINITY = 123  => sys_sched_getaffinity(args[..3]);
