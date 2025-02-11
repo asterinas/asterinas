@@ -33,8 +33,8 @@ mod idle;
 mod real_time;
 mod stop;
 
-pub use self::policy::SchedPolicy;
 use self::policy::{SchedPolicyKind, SchedPolicyState};
+pub use self::{policy::SchedPolicy, real_time::RealTimePolicy};
 
 type SchedEntity = (Arc<Task>, Arc<Thread>);
 

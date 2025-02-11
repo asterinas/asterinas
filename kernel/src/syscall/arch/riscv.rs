@@ -80,6 +80,7 @@ use crate::syscall::{
     rt_sigprocmask::sys_rt_sigprocmask,
     rt_sigsuspend::sys_rt_sigsuspend,
     sched_affinity::{sys_sched_getaffinity, sys_sched_setaffinity},
+    sched_attr::{sys_sched_getattr, sys_sched_setattr},
     sched_yield::sys_sched_yield,
     semctl::sys_semctl,
     semget::sys_semget,
@@ -262,6 +263,8 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_ACCEPT4 = 242            => sys_accept4(args[..4]);
     SYS_WAIT4 = 260              => sys_wait4(args[..4]);
     SYS_PRLIMIT64 = 261          => sys_prlimit64(args[..4]);
+    SYS_SCHED_SETATTR = 274      => sys_sched_setattr(args[..3]);
+    SYS_SCHED_GETATTR = 275      => sys_sched_getattr(args[..4]);
     SYS_GETRANDOM = 278          => sys_getrandom(args[..3]);
     SYS_EXECVEAT = 281           => sys_execveat(args[..5], &mut user_ctx);
     SYS_PREADV2 = 286            => sys_preadv2(args[..5]);
