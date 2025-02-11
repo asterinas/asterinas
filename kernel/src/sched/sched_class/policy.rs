@@ -101,4 +101,8 @@ impl SchedPolicyState {
         self.kind.store(policy.kind(), Relaxed);
         *this = policy;
     }
+
+    pub fn update<T>(&self, update: impl FnOnce(&mut SchedPolicy) -> T) -> T {
+        update(&mut *self.policy.disable_irq().lock())
+    }
 }

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 use core::mem;
 
 use ostd::task::Task;
@@ -111,7 +113,7 @@ impl TryFrom<PosixSchedAttr> for SchedPolicy {
 
 impl PosixSchedAttr {
     fn read_from_user(addr: Vaddr) -> Result<Self> {
-        let task = Task::current().ok_or_else(|| Error::new(Errno::ESRCH))?;
+        let task = Task::current().unwrap();
         let space = CurrentUserSpace::new(&task);
 
         Ok(space.read_val(addr)?)
@@ -120,7 +122,7 @@ impl PosixSchedAttr {
     fn write_to_user(mut self, addr: Vaddr, user_size: u32) -> Result<()> {
         const _: () = assert!(mem::size_of::<PosixSchedAttr>() <= u32::MAX as usize);
 
-        let task = Task::current().ok_or_else(|| Error::new(Errno::ESRCH))?;
+        let task = Task::current().unwrap();
         let space = CurrentUserSpace::new(&task);
 
         self.size = (mem::size_of::<PosixSchedAttr>() as u32).min(user_size);
@@ -176,6 +178,56 @@ pub fn sys_sched_setattr(
             .ok_or_else(|| Error::with_message(Errno::ESRCH, "thread does not exist"))?
             .sched_attr()
             .set_policy(policy),
+    }
+
+    Ok(SyscallReturn::Return(0))
+}
+
+pub fn sys_sched_getparam(tid: Tid, addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+    let policy = match tid {
+        0 => ctx.thread.sched_attr().policy(),
+        _ => thread_table::get_thread(tid)
+            .ok_or_else(|| Error::with_message(Errno::ESRCH, "thread does not exist"))?
+            .sched_attr()
+            .policy(),
+    };
+
+    let rt_prio = i32::from(match policy {
+        SchedPolicy::RealTime { rt_prio, .. } => rt_prio.get(),
+        _ => 0,
+    });
+
+    let task = Task::current().unwrap();
+    let space = CurrentUserSpace::new(&task);
+    space.write_val(addr, &rt_prio)?;
+
+    Ok(SyscallReturn::Return(0))
+}
+
+pub fn sys_sched_setparam(tid: Tid, addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+    let task = Task::current().unwrap();
+    let space = CurrentUserSpace::new(&task);
+    let prio: i32 = space.read_val(addr)?;
+
+    let update = |policy: &mut SchedPolicy| {
+        match policy {
+            SchedPolicy::RealTime { rt_prio, .. } => {
+                *rt_prio = u8::try_from(prio)?
+                    .try_into()
+                    .map_err(|msg| Error::with_message(Errno::EINVAL, msg))?;
+            }
+            _ if prio != 0 => return Err(Error::with_message(Errno::EINVAL, "invalid priority")),
+            _ => {}
+        }
+        Ok(())
+    };
+
+    match tid {
+        0 => ctx.thread.sched_attr().update_policy(update)?,
+        _ => thread_table::get_thread(tid)
+            .ok_or_else(|| Error::with_message(Errno::ESRCH, "thread does not exist"))?
+            .sched_attr()
+            .update_policy(update)?,
     }
 
     Ok(SyscallReturn::Return(0))

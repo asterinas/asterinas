@@ -172,6 +172,10 @@ impl SchedAttr {
             _ => {}
         });
     }
+
+    pub fn update_policy<T>(&self, f: impl FnOnce(&mut SchedPolicy) -> T) -> T {
+        self.policy.update(f)
+    }
 }
 
 impl Scheduler for ClassScheduler {

@@ -88,7 +88,7 @@ use crate::syscall::{
     rt_sigreturn::sys_rt_sigreturn,
     rt_sigsuspend::sys_rt_sigsuspend,
     sched_affinity::{sys_sched_getaffinity, sys_sched_setaffinity},
-    sched_attr::{sys_sched_getattr, sys_sched_setattr},
+    sched_attr::{sys_sched_getattr, sys_sched_getparam, sys_sched_setattr, sys_sched_setparam},
     sched_yield::sys_sched_yield,
     select::sys_select,
     semctl::sys_semctl,
@@ -260,6 +260,8 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_FSTATFS = 138          => sys_fstatfs(args[..2]);
     SYS_GET_PRIORITY = 140     => sys_get_priority(args[..2]);
     SYS_SET_PRIORITY = 141     => sys_set_priority(args[..3]);
+    SYS_SCHED_SETPARAM = 142   => sys_sched_setparam(args[..2]);
+    SYS_SCHED_GETPARAM = 143   => sys_sched_getparam(args[..2]);
     SYS_PRCTL = 157            => sys_prctl(args[..5]);
     SYS_ARCH_PRCTL = 158       => sys_arch_prctl(args[..2], &mut user_ctx);
     SYS_SETRLIMIT = 160        => sys_setrlimit(args[..2]);
