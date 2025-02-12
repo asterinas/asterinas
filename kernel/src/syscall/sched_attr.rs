@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::mem;
+use core::{mem, ops::RangeInclusive};
 
 use super::SyscallReturn;
 use crate::{
@@ -13,27 +13,43 @@ use crate::{
 const SCHED_NORMAL: u32 = 0;
 const SCHED_FIFO: u32 = 1;
 const SCHED_RR: u32 = 2;
-// const SCHED_BATCH: u32 = 3; // not supported yet.
+// const SCHED_BATCH: u32 = 3; // not supported (never).
 // SCHED_ISO: reserved but not implemented yet on Linux.
 const SCHED_IDLE: u32 = 5;
 // const SCHED_DEADLINE: u32 = 6; // not supported yet.
-// const SCHED_EXT: u32 = 7; // not supported yet.
+// const SCHED_EXT: u32 = 7; // not supported (never).
+
+const RT_PRIORITY_RANGE: RangeInclusive<u32> =
+    (RealTimePriority::MIN.get() as u32)..=(RealTimePriority::MAX.get() as u32);
+const SCHED_PRIORITY_RANGE: &[RangeInclusive<u32>] = &[
+    0..=0,             // SCHED_NORMAL
+    RT_PRIORITY_RANGE, // SCHED_FIFO
+    RT_PRIORITY_RANGE, // SCHED_RR
+    0..=0,             // SCHED_BATCH
+    0..=0,             // SCHED_ISO
+    0..=0,             // SCHED_IDLE
+    0..=0,             // SCHED_DEADLINE
+    0..=0,             // SCHED_EXT
+];
 
 #[derive(Default, Debug, Pod, Clone, Copy)]
 #[repr(C)]
-struct PosixSchedAttr {
+struct LinuxSchedAttr {
+    // Size of this structure
     size: u32,
 
+    // Policy (SCHED_*)
     sched_policy: u32,
+    // Flags
     sched_flags: u64,
 
-    // SCHED_NORMAL, SCHED_BATCH
+    // Nice value (SCHED_NORMAL, SCHED_BATCH)
     sched_nice: i32,
 
-    // SCHED_FIFO, SCHED_RR
+    // Static priority (SCHED_FIFO, SCHED_RR)
     sched_priority: u32,
 
-    // SCHED_DEADLINE
+    // For SCHED_DEADLINE
     sched_runtime: u64,
     sched_deadline: u64,
     sched_period: u64,
@@ -43,14 +59,14 @@ struct PosixSchedAttr {
     sched_util_max: u32,
 }
 
-impl TryFrom<SchedPolicy> for PosixSchedAttr {
+impl TryFrom<SchedPolicy> for LinuxSchedAttr {
     type Error = Error;
 
     fn try_from(value: SchedPolicy) -> Result<Self> {
         Ok(match value {
             SchedPolicy::Stop => return Err(Error::new(Errno::EACCES)),
 
-            SchedPolicy::RealTime { rt_prio, rt_policy } => PosixSchedAttr {
+            SchedPolicy::RealTime { rt_prio, rt_policy } => LinuxSchedAttr {
                 sched_policy: match rt_policy {
                     RealTimePolicy::Fifo => SCHED_FIFO,
                     RealTimePolicy::RoundRobin { .. } => SCHED_RR,
@@ -59,13 +75,13 @@ impl TryFrom<SchedPolicy> for PosixSchedAttr {
                 ..Default::default()
             },
 
-            SchedPolicy::Fair(nice) => PosixSchedAttr {
+            SchedPolicy::Fair(nice) => LinuxSchedAttr {
                 sched_policy: SCHED_NORMAL,
                 sched_nice: i32::from(nice.value().get()),
                 ..Default::default()
             },
 
-            SchedPolicy::Idle => PosixSchedAttr {
+            SchedPolicy::Idle => LinuxSchedAttr {
                 sched_policy: SCHED_IDLE,
                 ..Default::default()
             },
@@ -73,10 +89,10 @@ impl TryFrom<SchedPolicy> for PosixSchedAttr {
     }
 }
 
-impl TryFrom<PosixSchedAttr> for SchedPolicy {
+impl TryFrom<LinuxSchedAttr> for SchedPolicy {
     type Error = Error;
 
-    fn try_from(value: PosixSchedAttr) -> Result<Self> {
+    fn try_from(value: LinuxSchedAttr) -> Result<Self> {
         Ok(match value.sched_policy {
             SCHED_FIFO | SCHED_RR => SchedPolicy::RealTime {
                 rt_prio: u8::try_from(value.sched_priority)?
@@ -116,13 +132,18 @@ impl TryFrom<PosixSchedAttr> for SchedPolicy {
     }
 }
 
-impl PosixSchedAttr {
+impl LinuxSchedAttr {
     fn write_to_user(mut self, addr: Vaddr, user_size: u32, ctx: &Context) -> Result<()> {
-        const _: () = assert!(mem::size_of::<PosixSchedAttr>() <= u32::MAX as usize);
-
         let space = CurrentUserSpace::new(ctx.task);
 
-        self.size = (mem::size_of::<PosixSchedAttr>() as u32).min(user_size);
+        self.size = (mem::size_of::<LinuxSchedAttr>() as u32).min(user_size);
+
+        let range = SCHED_PRIORITY_RANGE
+            .get(self.sched_policy as usize)
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid scheduling policy"))?;
+        self.sched_util_min = *range.start();
+        self.sched_util_max = *range.end();
+
         space.write_bytes(
             addr,
             &mut VmReader::from(&self.as_bytes()[..self.size as usize]),
@@ -131,7 +152,11 @@ impl PosixSchedAttr {
     }
 }
 
-fn sched_attr<T>(tid: Tid, ctx: &Context, f: impl FnOnce(&SchedAttr) -> Result<T>) -> Result<T> {
+fn access_sched_attr_with<T>(
+    tid: Tid,
+    ctx: &Context,
+    f: impl FnOnce(&SchedAttr) -> Result<T>,
+) -> Result<T> {
     match tid {
         0 => f(&ctx.thread.sched_attr()),
         _ => f(&thread_table::get_thread(tid)
@@ -148,11 +173,12 @@ pub fn sys_sched_getattr(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     if flags != 0 {
+        // TODO: support flags soch as `RESET_ON_FORK`.
         return Err(Error::with_message(Errno::EINVAL, "unsupported flags"));
     }
 
-    let policy = sched_attr(tid, ctx, |attr| Ok(attr.policy()))?;
-    let attr: PosixSchedAttr = policy.try_into()?;
+    let policy = access_sched_attr_with(tid, ctx, |attr| Ok(attr.policy()))?;
+    let attr: LinuxSchedAttr = policy.try_into()?;
     attr.write_to_user(addr, user_size, ctx)?;
 
     Ok(SyscallReturn::Return(0))
@@ -165,13 +191,14 @@ pub fn sys_sched_setattr(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     if flags != 0 {
+        // TODO: support flags soch as `RESET_ON_FORK`.
         return Err(Error::with_message(Errno::EINVAL, "unsupported flags"));
     }
 
     let space = CurrentUserSpace::new(ctx.task);
-    let attr: PosixSchedAttr = space.read_val(addr)?;
+    let attr: LinuxSchedAttr = space.read_val(addr)?;
     let policy = SchedPolicy::try_from(attr)?;
-    sched_attr(tid, ctx, |attr| {
+    access_sched_attr_with(tid, ctx, |attr| {
         attr.set_policy(policy);
         Ok(())
     })?;
@@ -180,29 +207,21 @@ pub fn sys_sched_setattr(
 }
 
 pub fn sys_sched_get_priority_min(policy: u32, _: &Context) -> Result<SyscallReturn> {
-    match policy {
-        SCHED_FIFO | SCHED_RR => Ok(SyscallReturn::Return(RealTimePriority::MIN.get().into())),
-        SCHED_IDLE | SCHED_NORMAL => Ok(SyscallReturn::Return(0)),
-        _ => Err(Error::with_message(
-            Errno::EINVAL,
-            "invalid scheduling policy",
-        )),
-    }
+    let range = SCHED_PRIORITY_RANGE
+        .get(policy as usize)
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid scheduling policy"))?;
+    Ok(SyscallReturn::Return(*range.start() as isize))
 }
 
 pub fn sys_sched_get_priority_max(policy: u32, _: &Context) -> Result<SyscallReturn> {
-    match policy {
-        SCHED_FIFO | SCHED_RR => Ok(SyscallReturn::Return(RealTimePriority::MAX.get().into())),
-        SCHED_IDLE | SCHED_NORMAL => Ok(SyscallReturn::Return(0)),
-        _ => Err(Error::with_message(
-            Errno::EINVAL,
-            "invalid scheduling policy",
-        )),
-    }
+    let range = SCHED_PRIORITY_RANGE
+        .get(policy as usize)
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid scheduling policy"))?;
+    Ok(SyscallReturn::Return(*range.end() as isize))
 }
 
 pub fn sys_sched_getparam(tid: Tid, addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
-    let policy = sched_attr(tid, ctx, |attr| Ok(attr.policy()))?;
+    let policy = access_sched_attr_with(tid, ctx, |attr| Ok(attr.policy()))?;
     let rt_prio = i32::from(match policy {
         SchedPolicy::RealTime { rt_prio, .. } => rt_prio.get(),
         _ => 0,
@@ -230,14 +249,14 @@ pub fn sys_sched_setparam(tid: Tid, addr: Vaddr, ctx: &Context) -> Result<Syscal
         }
         Ok(())
     };
-    sched_attr(tid, ctx, |attr| attr.update_policy(update))?;
+    access_sched_attr_with(tid, ctx, |attr| attr.update_policy(update))?;
 
     Ok(SyscallReturn::Return(0))
 }
 
 pub fn sys_sched_getscheduler(tid: Tid, ctx: &Context) -> Result<SyscallReturn> {
-    let policy = sched_attr(tid, ctx, |attr| Ok(attr.policy()))?;
-    let policy = PosixSchedAttr::try_from(policy)?.sched_policy;
+    let policy = access_sched_attr_with(tid, ctx, |attr| Ok(attr.policy()))?;
+    let policy = LinuxSchedAttr::try_from(policy)?.sched_policy;
     Ok(SyscallReturn::Return(policy as isize))
 }
 
@@ -250,14 +269,14 @@ pub fn sys_sched_setscheduler(
     let space = CurrentUserSpace::new(&ctx.task);
     let prio = space.read_val(addr)?;
 
-    let attr = PosixSchedAttr {
+    let attr = LinuxSchedAttr {
         sched_policy: policy as u32,
         sched_priority: prio,
         ..Default::default()
     };
 
     let policy = attr.try_into()?;
-    sched_attr(tid, ctx, |attr| {
+    access_sched_attr_with(tid, ctx, |attr| {
         attr.set_policy(policy);
         Ok(())
     })?;
