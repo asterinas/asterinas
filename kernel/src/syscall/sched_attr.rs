@@ -8,7 +8,7 @@ use super::SyscallReturn;
 use crate::{
     prelude::*,
     process::posix_thread::thread_table,
-    sched::{Nice, RealTimePolicy, RealTimePriority, SchedPolicy},
+    sched::{Nice, RealTimePolicy, RealTimePriority, SchedAttr, SchedPolicy},
     thread::Tid,
 };
 
@@ -141,6 +141,15 @@ impl PosixSchedAttr {
     }
 }
 
+fn sched_attr<T>(tid: Tid, ctx: &Context, f: impl FnOnce(&SchedAttr) -> Result<T>) -> Result<T> {
+    match tid {
+        0 => f(&ctx.thread.sched_attr()),
+        _ => f(&thread_table::get_thread(tid)
+            .ok_or_else(|| Error::with_message(Errno::ESRCH, "thread does not exist"))?
+            .sched_attr()),
+    }
+}
+
 pub fn sys_sched_getattr(
     tid: Tid,
     addr: Vaddr,
@@ -152,14 +161,7 @@ pub fn sys_sched_getattr(
         return Err(Error::with_message(Errno::EINVAL, "unsupported flags"));
     }
 
-    let policy = match tid {
-        0 => ctx.thread.sched_attr().policy(),
-        _ => thread_table::get_thread(tid)
-            .ok_or_else(|| Error::with_message(Errno::ESRCH, "thread does not exist"))?
-            .sched_attr()
-            .policy(),
-    };
-
+    let policy = sched_attr(tid, ctx, |attr| Ok(attr.policy()))?;
     let attr: PosixSchedAttr = policy.try_into()?;
     attr.write_to_user(addr, user_size)?;
 
@@ -178,14 +180,10 @@ pub fn sys_sched_setattr(
 
     let attr = PosixSchedAttr::read_from_user(addr)?;
     let policy = SchedPolicy::try_from(attr)?;
-
-    match tid {
-        0 => ctx.thread.sched_attr().set_policy(policy),
-        _ => thread_table::get_thread(tid)
-            .ok_or_else(|| Error::with_message(Errno::ESRCH, "thread does not exist"))?
-            .sched_attr()
-            .set_policy(policy),
-    }
+    sched_attr(tid, ctx, |attr| {
+        attr.set_policy(policy);
+        Ok(())
+    })?;
 
     Ok(SyscallReturn::Return(0))
 }
@@ -213,14 +211,7 @@ pub fn sys_sched_get_priority_max(policy: u32, _: &Context) -> Result<SyscallRet
 }
 
 pub fn sys_sched_getparam(tid: Tid, addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
-    let policy = match tid {
-        0 => ctx.thread.sched_attr().policy(),
-        _ => thread_table::get_thread(tid)
-            .ok_or_else(|| Error::with_message(Errno::ESRCH, "thread does not exist"))?
-            .sched_attr()
-            .policy(),
-    };
-
+    let policy = sched_attr(tid, ctx, |attr| Ok(attr.policy()))?;
     let rt_prio = i32::from(match policy {
         SchedPolicy::RealTime { rt_prio, .. } => rt_prio.get(),
         _ => 0,
@@ -250,27 +241,13 @@ pub fn sys_sched_setparam(tid: Tid, addr: Vaddr, ctx: &Context) -> Result<Syscal
         }
         Ok(())
     };
-
-    match tid {
-        0 => ctx.thread.sched_attr().update_policy(update)?,
-        _ => thread_table::get_thread(tid)
-            .ok_or_else(|| Error::with_message(Errno::ESRCH, "thread does not exist"))?
-            .sched_attr()
-            .update_policy(update)?,
-    }
+    sched_attr(tid, ctx, |attr| attr.update_policy(update))?;
 
     Ok(SyscallReturn::Return(0))
 }
 
 pub fn sys_sched_getscheduler(tid: Tid, ctx: &Context) -> Result<SyscallReturn> {
-    let policy = match tid {
-        0 => ctx.thread.sched_attr().policy(),
-        _ => thread_table::get_thread(tid)
-            .ok_or_else(|| Error::with_message(Errno::ESRCH, "thread does not exist"))?
-            .sched_attr()
-            .policy(),
-    };
-
+    let policy = sched_attr(tid, ctx, |attr| Ok(attr.policy()))?;
     let policy = PosixSchedAttr::try_from(policy)?.sched_policy;
     Ok(SyscallReturn::Return(policy as isize))
 }
@@ -292,14 +269,10 @@ pub fn sys_sched_setscheduler(
     };
 
     let policy = attr.try_into()?;
-
-    match tid {
-        0 => ctx.thread.sched_attr().set_policy(policy),
-        _ => thread_table::get_thread(tid)
-            .ok_or_else(|| Error::with_message(Errno::ESRCH, "thread does not exist"))?
-            .sched_attr()
-            .set_policy(policy),
-    }
+    sched_attr(tid, ctx, |attr| {
+        attr.set_policy(policy);
+        Ok(())
+    })?;
 
     Ok(SyscallReturn::Return(0))
 }
