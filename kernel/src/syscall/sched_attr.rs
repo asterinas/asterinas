@@ -2,8 +2,6 @@
 
 use core::mem;
 
-use ostd::task::Task;
-
 use super::SyscallReturn;
 use crate::{
     prelude::*,
@@ -119,18 +117,10 @@ impl TryFrom<PosixSchedAttr> for SchedPolicy {
 }
 
 impl PosixSchedAttr {
-    fn read_from_user(addr: Vaddr) -> Result<Self> {
-        let task = Task::current().unwrap();
-        let space = CurrentUserSpace::new(&task);
-
-        Ok(space.read_val(addr)?)
-    }
-
-    fn write_to_user(mut self, addr: Vaddr, user_size: u32) -> Result<()> {
+    fn write_to_user(mut self, addr: Vaddr, user_size: u32, ctx: &Context) -> Result<()> {
         const _: () = assert!(mem::size_of::<PosixSchedAttr>() <= u32::MAX as usize);
 
-        let task = Task::current().unwrap();
-        let space = CurrentUserSpace::new(&task);
+        let space = CurrentUserSpace::new(ctx.task);
 
         self.size = (mem::size_of::<PosixSchedAttr>() as u32).min(user_size);
         space.write_bytes(
@@ -163,7 +153,7 @@ pub fn sys_sched_getattr(
 
     let policy = sched_attr(tid, ctx, |attr| Ok(attr.policy()))?;
     let attr: PosixSchedAttr = policy.try_into()?;
-    attr.write_to_user(addr, user_size)?;
+    attr.write_to_user(addr, user_size, ctx)?;
 
     Ok(SyscallReturn::Return(0))
 }
@@ -178,7 +168,8 @@ pub fn sys_sched_setattr(
         return Err(Error::with_message(Errno::EINVAL, "unsupported flags"));
     }
 
-    let attr = PosixSchedAttr::read_from_user(addr)?;
+    let space = CurrentUserSpace::new(ctx.task);
+    let attr: PosixSchedAttr = space.read_val(addr)?;
     let policy = SchedPolicy::try_from(attr)?;
     sched_attr(tid, ctx, |attr| {
         attr.set_policy(policy);
@@ -217,16 +208,14 @@ pub fn sys_sched_getparam(tid: Tid, addr: Vaddr, ctx: &Context) -> Result<Syscal
         _ => 0,
     });
 
-    let task = Task::current().unwrap();
-    let space = CurrentUserSpace::new(&task);
+    let space = CurrentUserSpace::new(ctx.task);
     space.write_val(addr, &rt_prio)?;
 
     Ok(SyscallReturn::Return(0))
 }
 
 pub fn sys_sched_setparam(tid: Tid, addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
-    let task = Task::current().unwrap();
-    let space = CurrentUserSpace::new(&task);
+    let space = CurrentUserSpace::new(ctx.task);
     let prio: i32 = space.read_val(addr)?;
 
     let update = |policy: &mut SchedPolicy| {
@@ -258,8 +247,7 @@ pub fn sys_sched_setscheduler(
     addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let task = Task::current().unwrap();
-    let space = CurrentUserSpace::new(&task);
+    let space = CurrentUserSpace::new(&ctx.task);
     let prio = space.read_val(addr)?;
 
     let attr = PosixSchedAttr {
