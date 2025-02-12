@@ -40,7 +40,7 @@ cfg_if! {
     if #[cfg(feature = "cvm_guest")] {
         mod tdx;
 
-        use tdx::handle_virtualization_exception;
+        use tdx::VirtualizationExceptionHandler;
     }
 }
 
@@ -132,8 +132,11 @@ impl UserContextApiInternal for UserContext {
             match CpuException::to_cpu_exception(self.user_context.trap_num as u16) {
                 #[cfg(feature = "cvm_guest")]
                 Some(CpuException::VIRTUALIZATION_EXCEPTION) => {
+                    let ve_handler = VirtualizationExceptionHandler::new();
+                    // Check out the doc of `VirtualizationExceptionHandler::new` to
+                    // see why IRQs must enabled _after_ instantiating a `VirtualizationExceptionHandler`.
                     crate::arch::irq::enable_local();
-                    handle_virtualization_exception(self);
+                    ve_handler.handle(self);
                 }
                 Some(exception) if exception.typ().is_fatal_or_trap() => {
                     crate::arch::irq::enable_local();

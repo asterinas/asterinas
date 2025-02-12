@@ -1,14 +1,37 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use tdx_guest::{handle_virtual_exception as do_handle_virtual_exception, tdcall, TdxTrapFrame};
+use tdx_guest::{
+    handle_virtual_exception as do_handle_virtual_exception, tdcall, TdgVeInfo, TdxTrapFrame,
+};
 
 use crate::cpu::{RawGeneralRegs, UserContext};
 
-pub(crate) fn handle_virtualization_exception(user_context: &mut UserContext) {
-    let ve_info = tdcall::get_veinfo().expect("#VE handler: fail to get VE info\n");
-    let mut generalrags_wrapper = GeneralRegsWrapper(&mut *user_context.general_regs_mut());
-    do_handle_virtual_exception(&mut generalrags_wrapper, &ve_info);
-    *user_context.general_regs_mut() = *generalrags_wrapper.0;
+pub(crate) struct VirtualizationExceptionHandler {
+    ve_info: TdgVeInfo,
+}
+
+impl VirtualizationExceptionHandler {
+    /// Creates a VE handler.
+    ///
+    /// It is important that such a handler is created immediately after a VE happens,
+    /// before the local IRQs are re-enabled. This is because the handler needs to retrieve more information
+    /// about the last VE from the trusted Intel TDX module. If another VE happens, the information about
+    /// the last one held by Intel TDX module would be overridden and lost!
+    ///
+    /// This constructor method retrieves the VE information from
+    /// Intel TDX module and saved into the newly-created instance.
+    /// So after instantiating a `VirtualizationExceptionHandler`,
+    /// we won't need to worry about triggering a new VE.
+    pub fn new() -> Self {
+        let ve_info = tdcall::get_veinfo().expect("#VE handler: fail to get VE info\n");
+        Self { ve_info }
+    }
+
+    pub fn handle(&self, ctx: &mut UserContext) {
+        let mut generalrags_wrapper = GeneralRegsWrapper(&mut *ctx.general_regs_mut());
+        do_handle_virtual_exception(&mut generalrags_wrapper, &self.ve_info);
+        *ctx.general_regs_mut() = *generalrags_wrapper.0;
+    }
 }
 
 struct GeneralRegsWrapper<'a>(&'a mut RawGeneralRegs);
