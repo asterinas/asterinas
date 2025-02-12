@@ -64,7 +64,11 @@ impl TryFrom<SchedPolicy> for LinuxSchedAttr {
 
     fn try_from(value: SchedPolicy) -> Result<Self> {
         Ok(match value {
-            SchedPolicy::Stop => return Err(Error::new(Errno::EACCES)),
+            SchedPolicy::Stop => LinuxSchedAttr {
+                sched_policy: SCHED_FIFO,
+                sched_priority: 99, // Linux uses 99 as the default priority for STOP tasks.
+                ..Default::default()
+            },
 
             SchedPolicy::RealTime { rt_prio, rt_policy } => LinuxSchedAttr {
                 sched_policy: match rt_policy {
@@ -133,6 +137,33 @@ impl TryFrom<LinuxSchedAttr> for SchedPolicy {
 }
 
 impl LinuxSchedAttr {
+    fn read_from_user(addr: Vaddr, ctx: &Context) -> Result<Self> {
+        let type_size = mem::size_of::<LinuxSchedAttr>();
+
+        let space = CurrentUserSpace::new(ctx.task);
+
+        let mut attr = LinuxSchedAttr::default();
+
+        space.read_bytes(
+            addr,
+            &mut VmWriter::from(&mut attr.as_bytes_mut()[..mem::size_of::<u32>()]),
+        )?;
+
+        let size = type_size.min(attr.size as usize);
+        space.read_bytes(addr, &mut VmWriter::from(&mut attr.as_bytes_mut()[..size]))?;
+
+        if let Some(additional_size) = attr.size.checked_sub(type_size as u32) {
+            let mut buf = vec![0; additional_size as usize];
+            space.read_bytes(addr + type_size, &mut VmWriter::from(&mut *buf))?;
+
+            if buf.iter().any(|&b| b != 0) {
+                return Err(Error::with_message(Errno::E2BIG, "too big sched_attr"));
+            }
+        }
+
+        Ok(attr)
+    }
+
     fn write_to_user(mut self, addr: Vaddr, user_size: u32, ctx: &Context) -> Result<()> {
         let space = CurrentUserSpace::new(ctx.task);
 
@@ -195,8 +226,7 @@ pub fn sys_sched_setattr(
         return Err(Error::with_message(Errno::EINVAL, "unsupported flags"));
     }
 
-    let space = CurrentUserSpace::new(ctx.task);
-    let attr: LinuxSchedAttr = space.read_val(addr)?;
+    let attr = LinuxSchedAttr::read_from_user(addr, ctx)?;
     let policy = SchedPolicy::try_from(attr)?;
     access_sched_attr_with(tid, ctx, |attr| {
         attr.set_policy(policy);
