@@ -73,7 +73,7 @@ pub fn futex_wait_bitset(
     // drop lock
     drop(futex_bucket);
 
-    let result = waiter.pause_timeout(timeout);
+    let result = waiter.pause_timeout(&timeout.into());
     match result {
         // FIXME: If the futex is woken up and a signal comes at the same time, we should succeed
         // instead of failing with `EINTR`. The code below is of course wrong, but was needed to
