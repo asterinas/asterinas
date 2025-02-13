@@ -8,7 +8,7 @@
         "result_index": 5
     },
     "chart": {
-        "title": "Memaslap 10% SET and 90% GET throughput with 8 client threads, 32 concurrency and 20k window",
+        "title": "Memaslap 10% SET and 90% GET throughput (virtio-net, 8 client threads, 32 concurrency, 20k window)",
         "description": "memaslap -t 30s -T 8 -c 32 -w 20k -S 1s",
         "unit": "operations per second",
         "legend": "Average OPS of SET and GET over virtio-net between Host Linux and Guest {system}"

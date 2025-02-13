@@ -8,7 +8,7 @@
         "result_index": 5
     },
     "chart": {
-        "title": "[TCP sockets] The latency of write+read",
+        "title": "[TCP sockets] The latency of write+read (loopback, 1B message)",
         "description": "lat_tcp",
         "unit": "\u00b5s",
         "legend": "Average TCP latency on {system}"

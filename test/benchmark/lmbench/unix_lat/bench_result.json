@@ -8,7 +8,7 @@
         "result_index": 5
     },
     "chart": {
-        "title": "[Unix sockets] The latency of write+read",
+        "title": "[Unix sockets] The latency of write+read (1B message)",
         "description": "lat_unix",
         "unit": "\u00b5s",
         "legend": "Average unix latency on {system}"
