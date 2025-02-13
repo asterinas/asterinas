@@ -8,7 +8,7 @@
         "result_index": 8
     },
     "chart": {
-        "title": "[HTTP] The bandwidth",
+        "title": "[HTTP] The bandwidth (loopback)",
         "description": "bw_http",
         "unit": "MB/s",
         "legend": "Average simple HTTP transaction bandwidth on {system}"
