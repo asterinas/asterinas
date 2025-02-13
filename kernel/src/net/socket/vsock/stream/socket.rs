@@ -171,12 +171,12 @@ impl Socket for VsockStreamSocket {
         vsockspace.request(&connecting.info()).unwrap();
         // wait for response from driver
         // TODO: Add timeout
-        let mut poller = Poller::new();
+        let mut poller = Poller::new(None);
         if !connecting
             .poll(IoEvents::IN, Some(poller.as_handle_mut()))
             .contains(IoEvents::IN)
         {
-            if let Err(e) = poller.wait(None) {
+            if let Err(e) = poller.wait() {
                 vsockspace
                     .remove_connecting_socket(&connecting.local_addr())
                     .unwrap();
