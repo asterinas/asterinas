@@ -34,6 +34,7 @@
         * [cargo osdk run](osdk/reference/commands/run.md)
         * [cargo osdk test](osdk/reference/commands/test.md)
         * [cargo osdk debug](osdk/reference/commands/debug.md)
+        * [cargo osdk profile](osdk/reference/commands/profile.md)
     * [Manifest](osdk/reference/manifest.md)
 
 # How to Contribute

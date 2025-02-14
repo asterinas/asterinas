@@ -12,7 +12,7 @@ use core::str::FromStr;
 use log::{LevelFilter, Metadata, Record};
 use spin::Once;
 
-use crate::boot::{kcmdline::ModuleArg, kernel_cmdline};
+use crate::boot::EARLY_INFO;
 
 static LOGGER: Logger = Logger::new();
 
@@ -82,16 +82,15 @@ pub(crate) fn init() {
 }
 
 fn get_log_level() -> Option<LevelFilter> {
-    let module_args = kernel_cmdline().get_module_args("ostd")?;
+    let kcmdline = EARLY_INFO.get().unwrap().kernel_cmdline;
 
-    let value = {
-        let value = module_args.iter().find_map(|arg| match arg {
-            ModuleArg::KeyVal(name, value) if name.as_bytes() == "log_level".as_bytes() => {
-                Some(value)
-            }
-            _ => None,
-        })?;
-        value.as_c_str().to_str().ok()?
-    };
+    // Although OSTD is agnostic of the parsing of the kernel command line,
+    // the logger assumes that it follows the Linux kernel command line format.
+    // We search for the `ostd.log_level=ARGUMENT` pattern in string.
+    let value = kcmdline
+        .split(' ')
+        .find(|arg| arg.starts_with("ostd.log_level="))
+        .map(|arg| arg.split('=').last().unwrap_or_default())?;
+
     LevelFilter::from_str(value).ok()
 }

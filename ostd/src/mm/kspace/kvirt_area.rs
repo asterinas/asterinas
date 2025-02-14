@@ -11,7 +11,7 @@ use super::{KERNEL_PAGE_TABLE, TRACKED_MAPPED_PAGES_RANGE, VMALLOC_VADDR_RANGE};
 use crate::{
     cpu::CpuSet,
     mm::{
-        page::{meta::PageMeta, DynPage, Page},
+        frame::{meta::AnyFrameMeta, Frame},
         page_prop::PageProperty,
         page_table::PageTableItem,
         tlb::{TlbFlushOp, TlbFlusher, FLUSH_ALL_RANGE_THRESHOLD},
@@ -204,10 +204,10 @@ impl<M: AllocatorSelector + 'static> KVirtArea<M> {
 
 impl KVirtArea<Tracked> {
     /// Maps pages into the kernel virtual area.
-    pub fn map_pages<T: PageMeta>(
+    pub fn map_pages<T: AnyFrameMeta>(
         &mut self,
         range: Range<Vaddr>,
-        pages: impl Iterator<Item = Page<T>>,
+        pages: impl Iterator<Item = Frame<T>>,
         prop: PageProperty,
     ) {
         assert!(self.start() <= range.start && self.end() >= range.end);
@@ -232,7 +232,7 @@ impl KVirtArea<Tracked> {
     ///
     /// This function returns None if the address is not mapped (`NotMapped`),
     /// while panics if the address is mapped to a `MappedUntracked` or `PageTableNode` page.
-    pub fn get_page(&self, addr: Vaddr) -> Option<DynPage> {
+    pub fn get_page(&self, addr: Vaddr) -> Option<Frame<dyn AnyFrameMeta>> {
         let query_result = self.query_page(addr);
         match query_result {
             PageTableItem::Mapped {

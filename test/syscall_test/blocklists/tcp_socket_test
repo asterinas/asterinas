@@ -1,0 +1,16 @@
+AllInetTests/*/1
+AllInetTests/TcpSocketTest.ZeroWriteAllowed/0
+AllInetTests/TcpSocketTest.FullBuffer/0
+AllInetTests/TcpSocketTest.TcpSCMPriority/0
+AllInetTests/TcpSocketTest.Tiocinq/0
+AllInetTests/TcpSocketTest.TcpInq/0
+AllInetTests/TcpSocketTest.MsgTruncPeek/0
+AllInetTests/TcpSocketTest.MsgTruncLargeSize/0
+AllInetTests/TcpSocketTest.MsgTruncWithCtrunc/0
+AllInetTests/TcpSocketTest.MsgTrunc/0
+
+AllInetTests/SimpleTcpSocketTest.SetMaxSeg/0
+AllInetTests/SimpleTcpSocketTest.CleanupOnConnectionRefused/0
+AllInetTests/SimpleTcpSocketTest.SetTCPWindowClampZeroClosedSocket/0
+AllInetTests/SimpleTcpSocketTest.SetSocketAttachDetachFilter/0
+AllInetTests/SimpleTcpSocketTest.SetSocketDetachFilterNoInstalledFilter/0

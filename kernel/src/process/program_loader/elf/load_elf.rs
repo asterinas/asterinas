@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-#![allow(unused_variables)]
+#![expect(dead_code)]
 
 //! This module is used to parse elf file content to get elf_load_info.
 //! When create a process from elf file, we will use the elf_load_info to construct the VmSpace
@@ -19,7 +18,7 @@ use crate::{
     },
     prelude::*,
     process::{
-        do_exit_group,
+        posix_thread::do_exit_group,
         process_vm::{AuxKey, AuxVec, ProcessVm},
         TermStatus,
     },
@@ -27,7 +26,7 @@ use crate::{
     vm::{perms::VmPerms, util::duplicate_frame, vmar::Vmar, vmo::VmoRightsOp},
 };
 
-/// Loads elf to the process vm.   
+/// Loads elf to the process vm.
 ///
 /// This function will map elf segments and
 /// initialize process init stack.
@@ -306,7 +305,7 @@ fn map_segment_vmo(
             new_frame
         };
         let head_idx = segment_offset / PAGE_SIZE;
-        segment_vmo.replace(new_frame, head_idx)?;
+        segment_vmo.replace(new_frame.into(), head_idx)?;
     }
 
     // Tail padding.
@@ -324,19 +323,21 @@ fn map_segment_vmo(
         };
 
         let tail_idx = (segment_offset + tail_padding_offset) / PAGE_SIZE;
-        segment_vmo.replace(new_frame, tail_idx).unwrap();
+        segment_vmo.replace(new_frame.into(), tail_idx).unwrap();
     }
 
     let perms = parse_segment_perm(program_header.flags);
-    let mut vm_map_options = root_vmar
-        .new_map(segment_size, perms)?
-        .vmo(segment_vmo)
-        .vmo_offset(segment_offset)
-        .vmo_limit(segment_offset + segment_size)
-        .can_overwrite(true);
     let offset = base_addr + (program_header.virtual_addr as Vaddr).align_down(PAGE_SIZE);
-    vm_map_options = vm_map_options.offset(offset).handle_page_faults_around();
-    let map_addr = vm_map_options.build()?;
+    if segment_size != 0 {
+        let mut vm_map_options = root_vmar
+            .new_map(segment_size, perms)?
+            .vmo(segment_vmo)
+            .vmo_offset(segment_offset)
+            .vmo_limit(segment_offset + segment_size)
+            .can_overwrite(true);
+        vm_map_options = vm_map_options.offset(offset).handle_page_faults_around();
+        vm_map_options.build()?;
+    }
 
     let anonymous_map_size: usize = total_map_size.saturating_sub(segment_size);
 

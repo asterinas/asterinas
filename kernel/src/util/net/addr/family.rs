@@ -12,8 +12,7 @@ use crate::{current_userspace, net::socket::SocketAddr, prelude::*};
 /// See <https://elixir.bootlin.com/linux/v6.0.9/source/include/linux/socket.h>.
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, TryFromInt, PartialEq, Eq)]
-#[allow(non_camel_case_types)]
-#[allow(dead_code)]
+#[expect(non_camel_case_types)]
 pub enum CSocketAddrFamily {
     AF_UNSPEC = 0,
     /// Unix domain sockets

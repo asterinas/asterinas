@@ -11,7 +11,7 @@ use crate::{
 /// From https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/linux/in.h.
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, TryFromInt)]
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 pub enum Protocol {
     IPPROTO_IP = 0,         /* Dummy protocol for TCP		*/
     IPPROTO_ICMP = 1,       /* Internet Control Message Protocol	*/
@@ -44,7 +44,7 @@ pub enum Protocol {
 /// Socket types.
 /// From https://elixir.bootlin.com/linux/v6.0.9/source/include/linux/net.h
 #[repr(i32)]
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, TryFromInt)]
 pub enum SockType {
     /// Stream socket

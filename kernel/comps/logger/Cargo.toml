@@ -8,13 +8,13 @@ edition = "2021"
 [dependencies]
 component = { path = "../../libs/comp-sys/component" }
 aster-console = { path = "../console" }
-aster-virtio = { path = "../virtio" }
 log = "0.4"
 ostd = { path = "../../../ostd" }
-spin = "0.9.4"
 owo-colors = { version = "3", optional = true }
-cfg-if = "1.0"
 
 [features]
 default = ["log_color"]
 log_color = ["dep:owo-colors"]
+
+[lints]
+workspace = true

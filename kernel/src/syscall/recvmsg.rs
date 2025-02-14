@@ -2,10 +2,10 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::FileDesc,
+    fs::file_table::{get_file_fast, FileDesc},
     net::socket::SendRecvFlags,
     prelude::*,
-    util::net::{get_socket_from_fd, CUserMsgHdr},
+    util::net::CUserMsgHdr,
 };
 
 pub fn sys_recvmsg(
@@ -22,8 +22,11 @@ pub fn sys_recvmsg(
         sockfd, c_user_msghdr, flags
     );
 
+    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let file = get_file_fast!(&mut file_table, sockfd);
+    let socket = file.as_socket_or_err()?;
+
     let (total_bytes, message_header) = {
-        let socket = get_socket_from_fd(sockfd)?;
         let mut io_vec_writer = c_user_msghdr.copy_writer_array_from_user(ctx)?;
         socket
             .recvmsg(&mut io_vec_writer, flags)

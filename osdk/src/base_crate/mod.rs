@@ -44,20 +44,43 @@ fn are_files_identical(file1: &PathBuf, file2: &PathBuf) -> Result<bool> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BaseCrateType {
+    /// The base crate is for running the target kernel crate.
+    Run,
+    /// The base crate is for testing the target crate.
+    Test,
+    /// The base crate is for other actions using Cargo.
+    Other,
+}
+
 /// Create a new base crate that will be built by cargo.
 ///
 /// The dependencies of the base crate will be the target crate. If
 /// `link_unit_test_runner` is set to true, the base crate will also depend on
 /// the `ostd-test-runner` crate.
+///
+/// It returns the path to the base crate.
 pub fn new_base_crate(
-    base_crate_path: impl AsRef<Path>,
+    base_type: BaseCrateType,
+    base_crate_path_stem: impl AsRef<Path>,
     dep_crate_name: &str,
     dep_crate_path: impl AsRef<Path>,
     link_unit_test_runner: bool,
-) {
-    // Check if the existing crate base is reusable. Crate bases for ktest are never reusable.
-    if !base_crate_path.as_ref().ends_with("test-base") && base_crate_path.as_ref().exists() {
-        let base_crate_tmp_path = base_crate_path.as_ref().join("tmp");
+) -> PathBuf {
+    let base_crate_path: PathBuf = PathBuf::from(
+        (base_crate_path_stem.as_ref().as_os_str().to_string_lossy()
+            + match base_type {
+                BaseCrateType::Run => "-run-base",
+                BaseCrateType::Test => "-test-base",
+                BaseCrateType::Other => "-base",
+            })
+        .to_string(),
+    );
+    // Check if the existing crate base is reusable.
+    if base_type == BaseCrateType::Run && base_crate_path.exists() {
+        // Reuse the existing base crate if it is identical to the new one.
+        let base_crate_tmp_path = base_crate_path.join("tmp");
         do_new_base_crate(
             &base_crate_tmp_path,
             dep_crate_name,
@@ -65,25 +88,27 @@ pub fn new_base_crate(
             link_unit_test_runner,
         );
         let cargo_result = are_files_identical(
-            &base_crate_path.as_ref().join("Cargo.toml"),
+            &base_crate_path.join("Cargo.toml"),
             &base_crate_tmp_path.join("Cargo.toml"),
         );
         let main_rs_result = are_files_identical(
-            &base_crate_path.as_ref().join("src").join("main.rs"),
+            &base_crate_path.join("src").join("main.rs"),
             &base_crate_tmp_path.join("src").join("main.rs"),
         );
         std::fs::remove_dir_all(&base_crate_tmp_path).unwrap();
         if cargo_result.is_ok_and(|res| res) && main_rs_result.is_ok_and(|res| res) {
             info!("Reusing existing base crate");
-            return;
+            return base_crate_path;
         }
     }
     do_new_base_crate(
-        base_crate_path,
+        &base_crate_path,
         dep_crate_name,
         dep_crate_path,
         link_unit_test_runner,
     );
+
+    base_crate_path
 }
 
 fn do_new_base_crate(

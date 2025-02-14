@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::{
-    impl_page_meta,
+    impl_frame_meta_for,
     mm::{
         kspace::kvirt_area::{KVirtArea, Tracked},
-        page::allocator,
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
-        PAGE_SIZE,
+        FrameAllocOptions, PAGE_SIZE,
     },
     prelude::*,
 };
@@ -28,7 +27,7 @@ pub const DEFAULT_STACK_SIZE_IN_PAGES: u32 = 128;
 pub static KERNEL_STACK_SIZE: usize = STACK_SIZE_IN_PAGES as usize * PAGE_SIZE;
 
 #[derive(Debug)]
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub struct KernelStack {
     kvirt_area: KVirtArea<Tracked>,
     end_vaddr: Vaddr,
@@ -36,9 +35,9 @@ pub struct KernelStack {
 }
 
 #[derive(Debug, Default)]
-struct KernelStackMeta {}
+struct KernelStackMeta;
 
-impl_page_meta!(KernelStackMeta);
+impl_frame_meta_for!(KernelStackMeta);
 
 impl KernelStack {
     /// Generates a kernel stack with guard pages.
@@ -47,13 +46,15 @@ impl KernelStack {
         let mut new_kvirt_area = KVirtArea::<Tracked>::new(KERNEL_STACK_SIZE + 4 * PAGE_SIZE);
         let mapped_start = new_kvirt_area.range().start + 2 * PAGE_SIZE;
         let mapped_end = mapped_start + KERNEL_STACK_SIZE;
-        let pages = allocator::alloc(KERNEL_STACK_SIZE, |_| KernelStackMeta::default()).unwrap();
+        let pages = FrameAllocOptions::new()
+            .zeroed(false)
+            .alloc_segment_with(KERNEL_STACK_SIZE / PAGE_SIZE, |_| KernelStackMeta)?;
         let prop = PageProperty {
             flags: PageFlags::RW,
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::empty(),
         };
-        new_kvirt_area.map_pages(mapped_start..mapped_end, pages.iter().cloned(), prop);
+        new_kvirt_area.map_pages(mapped_start..mapped_end, pages, prop);
 
         Ok(Self {
             kvirt_area: new_kvirt_area,

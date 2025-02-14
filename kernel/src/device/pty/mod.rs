@@ -10,7 +10,7 @@ use crate::{
     prelude::*,
 };
 
-#[allow(clippy::module_inception)]
+#[expect(clippy::module_inception)]
 mod pty;
 
 pub use pty::{PtyMaster, PtySlave};

@@ -1,15 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{boxed::Box, sync::Arc};
+use alloc::sync::Arc;
 
 use smoltcp::wire::Ipv4Address;
 
-use super::port::BindPortConfig;
-use crate::{
-    errors::BindError,
-    ext::Ext,
-    socket::{BoundTcpSocket, BoundUdpSocket, UnboundTcpSocket, UnboundUdpSocket},
-};
+use super::{port::BindPortConfig, BoundPort};
+use crate::{errors::BindError, ext::Ext};
 
 /// A network interface.
 ///
@@ -34,24 +30,12 @@ impl<E: Ext> dyn Iface<E> {
     /// FIXME: The reason for binding the socket and the iface together is because there are
     /// limitations inside smoltcp. See discussion at
     /// <https://github.com/smoltcp-rs/smoltcp/issues/779>.
-    pub fn bind_tcp(
+    pub fn bind(
         self: &Arc<Self>,
-        socket: Box<UnboundTcpSocket>,
-        observer: E::TcpEventObserver,
         config: BindPortConfig,
-    ) -> core::result::Result<BoundTcpSocket<E>, (BindError, Box<UnboundTcpSocket>)> {
+    ) -> core::result::Result<BoundPort<E>, BindError> {
         let common = self.common();
-        common.bind_tcp(self.clone(), socket, observer, config)
-    }
-
-    pub fn bind_udp(
-        self: &Arc<Self>,
-        socket: Box<UnboundUdpSocket>,
-        observer: E::UdpEventObserver,
-        config: BindPortConfig,
-    ) -> core::result::Result<BoundUdpSocket<E>, (BindError, Box<UnboundUdpSocket>)> {
-        let common = self.common();
-        common.bind_udp(self.clone(), socket, observer, config)
+        common.bind(self.clone(), config)
     }
 
     /// Gets the name of the iface.

@@ -11,7 +11,7 @@ use aster_rights::Full;
 use aster_util::slot_vec::SlotVec;
 use hashbrown::HashMap;
 use ostd::{
-    mm::{Frame, VmIo},
+    mm::{UntypedMem, VmIo},
     sync::{PreemptDisabled, RwLockWriteGuard},
 };
 
@@ -22,9 +22,11 @@ use crate::{
         device::Device,
         file_handle::FileLike,
         named_pipe::NamedPipe,
+        path::{is_dot, is_dot_or_dotdot, is_dotdot},
         utils::{
-            CStr256, DirentVisitor, Extension, FallocMode, FileSystem, FsFlags, Inode, InodeMode,
-            InodeType, IoctlCmd, Metadata, MknodType, PageCache, PageCacheBackend, SuperBlock,
+            CStr256, CachePage, DirentVisitor, Extension, FallocMode, FileSystem, FsFlags, Inode,
+            InodeMode, InodeType, IoctlCmd, Metadata, MknodType, PageCache, PageCacheBackend,
+            SuperBlock,
         },
     },
     prelude::*,
@@ -107,7 +109,6 @@ struct RamInode {
 }
 
 /// Inode inner specifics.
-#[allow(clippy::large_enum_variant)]
 enum Inner {
     Dir(RwLock<DirEntry>),
     File(PageCache),
@@ -287,7 +288,7 @@ impl DirEntry {
     }
 
     fn contains_entry(&self, name: &str) -> bool {
-        if name == "." || name == ".." {
+        if is_dot_or_dotdot(name) {
             true
         } else {
             self.idx_map.contains_key(name.as_bytes())
@@ -295,9 +296,9 @@ impl DirEntry {
     }
 
     fn get_entry(&self, name: &str) -> Option<(usize, Arc<RamInode>)> {
-        if name == "." {
+        if is_dot(name) {
             Some((0, self.this.upgrade().unwrap()))
-        } else if name == ".." {
+        } else if is_dotdot(name) {
             Some((1, self.parent.upgrade().unwrap()))
         } else {
             let idx = *self.idx_map.get(name.as_bytes())?;
@@ -484,7 +485,7 @@ impl RamInode {
 }
 
 impl PageCacheBackend for RamInode {
-    fn read_page_async(&self, _idx: usize, frame: &Frame) -> Result<BioWaiter> {
+    fn read_page_async(&self, _idx: usize, frame: &CachePage) -> Result<BioWaiter> {
         // Initially, any block/page in a RamFs inode contains all zeros
         frame
             .writer()
@@ -494,7 +495,7 @@ impl PageCacheBackend for RamInode {
         Ok(BioWaiter::new())
     }
 
-    fn write_page_async(&self, _idx: usize, _frame: &Frame) -> Result<BioWaiter> {
+    fn write_page_async(&self, _idx: usize, _frame: &CachePage) -> Result<BioWaiter> {
         // do nothing
         Ok(BioWaiter::new())
     }
@@ -822,7 +823,7 @@ impl Inode for RamInode {
     }
 
     fn unlink(&self, name: &str) -> Result<()> {
-        if name == "." || name == ".." {
+        if is_dot_or_dotdot(name) {
             return_errno_with_message!(Errno::EISDIR, "unlink . or ..");
         }
 
@@ -854,10 +855,10 @@ impl Inode for RamInode {
     }
 
     fn rmdir(&self, name: &str) -> Result<()> {
-        if name == "." {
+        if is_dot(name) {
             return_errno_with_message!(Errno::EINVAL, "rmdir on .");
         }
-        if name == ".." {
+        if is_dotdot(name) {
             return_errno_with_message!(Errno::ENOTEMPTY, "rmdir on ..");
         }
 
@@ -902,10 +903,10 @@ impl Inode for RamInode {
     }
 
     fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
-        if old_name == "." || old_name == ".." {
+        if is_dot_or_dotdot(old_name) {
             return_errno_with_message!(Errno::EISDIR, "old_name is . or ..");
         }
-        if new_name == "." || new_name == ".." {
+        if is_dot_or_dotdot(new_name) {
             return_errno_with_message!(Errno::EISDIR, "new_name is . or ..");
         }
 

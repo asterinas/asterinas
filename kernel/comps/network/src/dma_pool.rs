@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(unused)]
+#![expect(unused)]
 
 use alloc::{
     collections::VecDeque,
@@ -152,9 +152,9 @@ impl DmaPage {
         pool: Weak<DmaPool>,
     ) -> Result<Self, ostd::Error> {
         let dma_stream = {
-            let segment = FrameAllocOptions::new(1).alloc_contiguous()?;
+            let segment = FrameAllocOptions::new().alloc_segment(1)?;
 
-            DmaStream::map(segment, direction, is_cache_coherent)
+            DmaStream::map(segment.into(), direction, is_cache_coherent)
                 .map_err(|_| ostd::Error::AccessDenied)?
         };
 

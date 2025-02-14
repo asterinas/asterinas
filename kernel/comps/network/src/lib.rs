@@ -47,12 +47,23 @@ pub trait AnyNetworkDevice: Send + Sync + Any + Debug {
 
     fn can_receive(&self) -> bool;
     fn can_send(&self) -> bool;
-    /// Receive a packet from network. If packet is ready, returns a RxBuffer containing the packet.
-    /// Otherwise, return NotReady error.
+
+    /// Receives a packet from network. If packet is ready, returns a `RxBuffer` containing the packet.
+    /// Otherwise, return [`VirtioNetError::NotReady`].
     fn receive(&mut self) -> Result<RxBuffer, VirtioNetError>;
-    /// Send a packet to network. Return until the request completes.
+
+    /// Sends a packet to network.
     fn send(&mut self, packet: &[u8]) -> Result<(), VirtioNetError>;
+
+    /// Frees processes tx buffers.
     fn free_processed_tx_buffers(&mut self);
+
+    /// Notifies the device driver that a polling operation has ended.
+    ///
+    /// The driver can assume that the device remains protected by acquiring a poll lock
+    /// for the entire duration of the polling process.
+    /// Thus two polling process cannot happen simultaneously.
+    fn notify_poll_end(&mut self);
 }
 
 pub trait NetDeviceIrqHandler = Fn() + Send + Sync + 'static;

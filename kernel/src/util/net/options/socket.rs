@@ -14,8 +14,8 @@ use crate::{
 /// The definition is from https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/asm-generic/socket.h.
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, TryFromInt, PartialEq, Eq, PartialOrd, Ord)]
-#[allow(non_camel_case_types)]
-#[allow(clippy::upper_case_acronyms)]
+#[expect(non_camel_case_types)]
+#[expect(clippy::upper_case_acronyms)]
 enum CSocketOptionName {
     DEBUG = 1,
     REUSEADDR = 2,
@@ -39,7 +39,7 @@ enum CSocketOptionName {
 }
 
 pub fn new_socket_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
-    let name = CSocketOptionName::try_from(name)?;
+    let name = CSocketOptionName::try_from(name).map_err(|_| Errno::ENOPROTOOPT)?;
     match name {
         CSocketOptionName::SNDBUF => Ok(Box::new(SendBuf::new())),
         CSocketOptionName::RCVBUF => Ok(Box::new(RecvBuf::new())),
@@ -48,7 +48,7 @@ pub fn new_socket_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
         CSocketOptionName::REUSEPORT => Ok(Box::new(ReusePort::new())),
         CSocketOptionName::LINGER => Ok(Box::new(Linger::new())),
         CSocketOptionName::KEEPALIVE => Ok(Box::new(KeepAlive::new())),
-        _ => todo!(),
+        _ => return_errno_with_message!(Errno::ENOPROTOOPT, "unsupported socket-level option"),
     }
 }
 

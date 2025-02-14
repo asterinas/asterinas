@@ -3,8 +3,7 @@
 //! Information of memory regions in the boot phase.
 //!
 
-use alloc::{vec, vec::Vec};
-use core::mem::swap;
+use core::ops::Deref;
 
 use crate::mm::kspace::kernel_loaded_offset;
 
@@ -40,8 +39,17 @@ pub struct MemoryRegion {
 
 impl MemoryRegion {
     /// Constructs a valid memory region.
-    pub fn new(base: usize, len: usize, typ: MemoryRegionType) -> Self {
+    pub const fn new(base: usize, len: usize, typ: MemoryRegionType) -> Self {
         MemoryRegion { base, len, typ }
+    }
+
+    /// Constructs a bad memory region.
+    pub const fn bad() -> Self {
+        MemoryRegion {
+            base: 0,
+            len: 0,
+            typ: MemoryRegionType::BadMemory,
+        }
     }
 
     /// Constructs a memory region where kernel sections are loaded.
@@ -83,11 +91,11 @@ impl MemoryRegion {
 
     /// Removes range `t` from self, resulting in 0, 1 or 2 truncated ranges.
     /// We need to have this method since memory regions can overlap.
-    pub fn truncate(&self, t: &MemoryRegion) -> Vec<MemoryRegion> {
+    pub fn truncate(&self, t: &MemoryRegion) -> MemoryRegionArray<2> {
         if self.base < t.base {
             if self.base + self.len > t.base {
                 if self.base + self.len > t.base + t.len {
-                    vec![
+                    MemoryRegionArray::from(&[
                         MemoryRegion {
                             base: self.base,
                             len: t.base - self.base,
@@ -98,72 +106,153 @@ impl MemoryRegion {
                             len: self.base + self.len - (t.base + t.len),
                             typ: self.typ,
                         },
-                    ]
+                    ])
                 } else {
-                    vec![MemoryRegion {
+                    MemoryRegionArray::from(&[MemoryRegion {
                         base: self.base,
                         len: t.base - self.base,
                         typ: self.typ,
-                    }]
+                    }])
                 }
             } else {
-                vec![*self]
+                MemoryRegionArray::from(&[*self])
             }
         } else if self.base < t.base + t.len {
             if self.base + self.len > t.base + t.len {
-                vec![MemoryRegion {
+                MemoryRegionArray::from(&[MemoryRegion {
                     base: t.base + t.len,
                     len: self.base + self.len - (t.base + t.len),
                     typ: self.typ,
-                }]
+                }])
             } else {
-                vec![]
+                MemoryRegionArray::new()
             }
         } else {
-            vec![*self]
+            MemoryRegionArray::from(&[*self])
         }
     }
 }
 
-/// Truncates regions, resulting in a set of regions that does not overlap.
+/// The maximum number of regions that can be handled.
 ///
-/// The truncation will be done according to the type of the regions, that
-/// usable and reclaimable regions will be truncated by the unusable regions.
-pub fn non_overlapping_regions_from(regions: &[MemoryRegion]) -> Vec<MemoryRegion> {
-    // We should later use regions in `regions_unusable` to truncate all
-    // regions in `regions_usable`.
-    // The difference is that regions in `regions_usable` could be used by
-    // the frame allocator.
-    let mut regions_usable = Vec::<MemoryRegion>::new();
-    let mut regions_unusable = Vec::<MemoryRegion>::new();
+/// The choice of 512 is probably fine since old Linux boot protocol only
+/// allows 128 regions.
+//
+// TODO: confirm the number or make it configurable.
+pub const MAX_REGIONS: usize = 512;
 
-    for r in regions {
-        match r.typ {
-            MemoryRegionType::Usable | MemoryRegionType::Reclaimable => {
-                regions_usable.push(*r);
-            }
-            _ => {
-                regions_unusable.push(*r);
-            }
+/// A heapless set of memory regions.
+///
+/// The set cannot contain more than `LEN` regions.
+pub struct MemoryRegionArray<const LEN: usize = MAX_REGIONS> {
+    regions: [MemoryRegion; LEN],
+    count: usize,
+}
+
+impl<const LEN: usize> Default for MemoryRegionArray<LEN> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<const LEN: usize> Deref for MemoryRegionArray<LEN> {
+    type Target = [MemoryRegion];
+
+    fn deref(&self) -> &Self::Target {
+        &self.regions[..self.count]
+    }
+}
+
+impl<const LEN: usize> MemoryRegionArray<LEN> {
+    /// Constructs an empty set.
+    pub const fn new() -> Self {
+        Self {
+            regions: [MemoryRegion::bad(); LEN],
+            count: 0,
         }
     }
 
-    // `regions_*` are 2 rolling vectors since we are going to truncate
-    // the regions in a iterative manner.
-    let mut regions = Vec::<MemoryRegion>::new();
-    let regions_src = &mut regions_usable;
-    let regions_dst = &mut regions;
-    // Truncate the usable regions.
-    for &r_unusable in &regions_unusable {
-        regions_dst.clear();
-        for r_usable in &*regions_src {
-            regions_dst.append(&mut r_usable.truncate(&r_unusable));
+    /// Constructs from an array of regions.
+    pub fn from(array: &[MemoryRegion]) -> Self {
+        Self {
+            regions: core::array::from_fn(|i| {
+                if i < array.len() {
+                    array[i]
+                } else {
+                    MemoryRegion::bad()
+                }
+            }),
+            count: array.len(),
         }
-        swap(regions_src, regions_dst);
     }
 
-    // Combine all the regions processed.
-    let mut all_regions = regions_unusable;
-    all_regions.append(&mut regions_usable);
-    all_regions
+    /// Appends a region to the set.
+    ///
+    /// If the set is full, an error is returned.
+    pub fn push(&mut self, region: MemoryRegion) -> Result<(), &'static str> {
+        if self.count < self.regions.len() {
+            self.regions[self.count] = region;
+            self.count += 1;
+            Ok(())
+        } else {
+            Err("MemoryRegionArray is full")
+        }
+    }
+
+    /// Clears the set.
+    pub fn clear(&mut self) {
+        self.count = 0;
+    }
+
+    /// Truncates regions, resulting in a set of regions that does not overlap.
+    ///
+    /// The truncation will be done according to the type of the regions, that
+    /// usable and reclaimable regions will be truncated by the unusable regions.
+    ///
+    /// If the output regions are more than `LEN`, the extra regions will be ignored.
+    pub fn into_non_overlapping(self) -> Self {
+        // We should later use regions in `regions_unusable` to truncate all
+        // regions in `regions_usable`.
+        // The difference is that regions in `regions_usable` could be used by
+        // the frame allocator.
+        let mut regions_usable = MemoryRegionArray::<LEN>::new();
+        let mut regions_unusable = MemoryRegionArray::<LEN>::new();
+
+        for r in self.iter() {
+            match r.typ {
+                MemoryRegionType::Usable | MemoryRegionType::Reclaimable => {
+                    // If usable memory regions exceeded it's fine to ignore the rest.
+                    let _ = regions_usable.push(*r);
+                }
+                _ => {
+                    regions_unusable
+                        .push(*r)
+                        .expect("Too many unusable memory regions");
+                }
+            }
+        }
+
+        // `regions_*` are 2 rolling vectors since we are going to truncate
+        // the regions in a iterative manner.
+        let mut regions = MemoryRegionArray::<LEN>::new();
+        let regions_src = &mut regions_usable;
+        let regions_dst = &mut regions;
+        // Truncate the usable regions.
+        for r_unusable in regions_unusable.iter() {
+            regions_dst.clear();
+            for r_usable in regions_src.iter() {
+                for truncated in r_usable.truncate(r_unusable).iter() {
+                    let _ = regions_dst.push(*truncated);
+                }
+            }
+            core::mem::swap(regions_src, regions_dst);
+        }
+
+        // Combine all the regions processed.
+        let mut all_regions = regions_unusable;
+        for r in regions_usable.iter() {
+            let _ = all_regions.push(*r);
+        }
+        all_regions
+    }
 }

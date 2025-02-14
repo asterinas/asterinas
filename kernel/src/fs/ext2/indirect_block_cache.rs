@@ -42,8 +42,10 @@ impl IndirectBlockCache {
         let fs = self.fs();
         let load_block = || -> Result<IndirectBlock> {
             let mut block = IndirectBlock::alloc_uninit()?;
-            let bio_segment =
-                BioSegment::new_from_segment(block.frame.clone().into(), BioDirection::FromDevice);
+            let bio_segment = BioSegment::new_from_segment(
+                Segment::<()>::from(block.frame.clone()).into(),
+                BioDirection::FromDevice,
+            );
             fs.read_blocks(bid, bio_segment)?;
             block.state = State::UpToDate;
             Ok(block)
@@ -61,8 +63,10 @@ impl IndirectBlockCache {
         let fs = self.fs();
         let load_block = || -> Result<IndirectBlock> {
             let mut block = IndirectBlock::alloc_uninit()?;
-            let bio_segment =
-                BioSegment::new_from_segment(block.frame.clone().into(), BioDirection::FromDevice);
+            let bio_segment = BioSegment::new_from_segment(
+                Segment::<()>::from(block.frame.clone()).into(),
+                BioDirection::FromDevice,
+            );
             fs.read_blocks(bid, bio_segment)?;
             block.state = State::UpToDate;
             Ok(block)
@@ -109,7 +113,7 @@ impl IndirectBlockCache {
             let (bid, block) = self.cache.pop_lru().unwrap();
             if block.is_dirty() {
                 let bio_segment = BioSegment::new_from_segment(
-                    block.frame.clone().into(),
+                    Segment::<()>::from(block.frame.clone()).into(),
                     BioDirection::ToDevice,
                 );
                 bio_waiter.concat(self.fs().write_blocks_async(bid, bio_segment)?);
@@ -132,7 +136,7 @@ impl IndirectBlockCache {
 /// Represents a single indirect block buffer cached by the `IndirectCache`.
 #[derive(Clone, Debug)]
 pub struct IndirectBlock {
-    frame: Frame,
+    frame: Frame<()>,
     state: State,
 }
 
@@ -140,7 +144,7 @@ impl IndirectBlock {
     /// Allocates an uninitialized block whose bytes are to be populated with
     /// data loaded from the disk.
     fn alloc_uninit() -> Result<Self> {
-        let frame = FrameAllocOptions::new(1).uninit(true).alloc_single()?;
+        let frame = FrameAllocOptions::new().zeroed(false).alloc_frame()?;
         Ok(Self {
             frame,
             state: State::Uninit,
@@ -149,7 +153,7 @@ impl IndirectBlock {
 
     /// Allocates a new block with its bytes initialized to zero.
     pub fn alloc() -> Result<Self> {
-        let frame = FrameAllocOptions::new(1).alloc_single()?;
+        let frame = FrameAllocOptions::new().alloc_frame()?;
         Ok(Self {
             frame,
             state: State::Dirty,

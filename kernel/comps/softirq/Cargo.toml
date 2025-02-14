@@ -8,8 +8,8 @@ edition = "2021"
 [dependencies]
 ostd = { path = "../../../ostd" }
 component = { path = "../../libs/comp-sys/component" }
-aster-logger = { path = "../logger" }
 intrusive-collections = "0.9.5"
 spin = "0.9.4"
 
-[features]
+[lints]
+workspace = true

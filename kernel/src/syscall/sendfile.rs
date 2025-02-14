@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::SyscallReturn;
-use crate::{fs::file_table::FileDesc, prelude::*};
+use crate::{
+    fs::file_table::{FileDesc, WithFileTable},
+    prelude::*,
+};
 
 pub fn sys_sendfile(
     out_fd: FileDesc,
@@ -33,13 +36,16 @@ pub fn sys_sendfile(
         count as usize
     };
 
-    let (out_file, in_file) = {
-        let file_table = ctx.posix_thread.file_table().lock();
-        let out_file = file_table.get_file(out_fd)?.clone();
-        // FIXME: the in_file must support mmap-like operations (i.e., it cannot be a socket).
-        let in_file = file_table.get_file(in_fd)?.clone();
-        (out_file, in_file)
-    };
+    let (out_file, in_file) = ctx
+        .thread_local
+        .file_table()
+        .borrow_mut()
+        .read_with(|inner| {
+            let out_file = inner.get_file(out_fd)?.clone();
+            // FIXME: the in_file must support mmap-like operations (i.e., it cannot be a socket).
+            let in_file = inner.get_file(in_fd)?.clone();
+            Ok::<_, Error>((out_file, in_file))
+        })?;
 
     // sendfile can send at most `MAX_COUNT` bytes
     const MAX_COUNT: usize = 0x7fff_f000;

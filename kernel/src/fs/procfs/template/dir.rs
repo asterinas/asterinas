@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(unused_variables)]
+#![expect(unused_variables)]
 
 use core::time::Duration;
 
@@ -9,7 +9,10 @@ use inherit_methods_macro::inherit_methods;
 
 use super::{Common, ProcFS};
 use crate::{
-    fs::utils::{DirentVisitor, FileSystem, Inode, InodeMode, InodeType, Metadata, MknodType},
+    fs::{
+        path::{is_dot, is_dotdot},
+        utils::{DirentVisitor, FileSystem, Inode, InodeMode, InodeType, Metadata, MknodType},
+    },
     prelude::*,
     process::{Gid, Uid},
 };
@@ -152,21 +155,21 @@ impl<D: DirOps + 'static> Inode for ProcDir<D> {
     }
 
     fn lookup(&self, name: &str) -> Result<Arc<dyn Inode>> {
-        let inode = match name {
-            "." => self.this(),
-            ".." => self.parent().unwrap_or(self.this()),
-            name => {
-                let mut cached_children = self.cached_children.write();
-                if let Some((_, inode)) = cached_children
-                    .iter()
-                    .find(|(child_name, inode)| child_name.as_str() == name)
-                {
-                    return Ok(inode.clone());
-                }
-                let inode = self.inner.lookup_child(self.this.clone(), name)?;
-                cached_children.put((String::from(name), inode.clone()));
-                inode
+        let inode = if is_dot(name) {
+            self.this()
+        } else if is_dotdot(name) {
+            self.parent().unwrap_or(self.this())
+        } else {
+            let mut cached_children = self.cached_children.write();
+            if let Some((_, inode)) = cached_children
+                .iter()
+                .find(|(child_name, inode)| child_name.as_str() == name)
+            {
+                return Ok(inode.clone());
             }
+            let inode = self.inner.lookup_child(self.this.clone(), name)?;
+            cached_children.put((String::from(name), inode.clone()));
+            inode
         };
         Ok(inode)
     }

@@ -4,7 +4,7 @@
         "bigger_is_better": false
     },
     "result_extraction": {
-        "search_pattern": "avg:",
+        "search_pattern": "avg: +[0-9.]+",
         "result_index": "NF"
     },
     "chart": {

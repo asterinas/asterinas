@@ -3,11 +3,11 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_table::{FdFlags, FileDesc},
+        file_table::{get_file_fast, FdFlags, FileDesc},
         utils::{CreationFlags, StatusFlags},
     },
     prelude::*,
-    util::net::{get_socket_from_fd, write_socket_addr_to_user},
+    util::net::write_socket_addr_to_user,
 };
 
 pub fn sys_accept(
@@ -47,8 +47,11 @@ fn do_accept(
     flags: Flags,
     ctx: &Context,
 ) -> Result<FileDesc> {
+    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let file = get_file_fast!(&mut file_table, sockfd);
+    let socket = file.as_socket_or_err()?;
+
     let (connected_socket, socket_addr) = {
-        let socket = get_socket_from_fd(sockfd)?;
         socket.accept().map_err(|err| match err.error() {
             // FIXME: `accept` should not be restarted if a timeout has been set on the socket using `setsockopt`.
             Errno::EINTR => Error::new(Errno::ERESTARTSYS),
@@ -71,8 +74,8 @@ fn do_accept(
     }
 
     let fd = {
-        let mut file_table = ctx.posix_thread.file_table().lock();
-        file_table.insert(connected_socket, fd_flags)
+        let mut file_table_locked = file_table.write();
+        file_table_locked.insert(connected_socket, fd_flags)
     };
 
     Ok(fd)

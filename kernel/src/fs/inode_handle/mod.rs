@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(unused_variables)]
+#![expect(unused_variables)]
 
 //! Opened Inode-backed File Handle
 
@@ -15,7 +15,6 @@ use inherit_methods_macro::inherit_methods;
 use crate::{
     events::IoEvents,
     fs::{
-        device::Device,
         file_handle::FileLike,
         path::Dentry,
         utils::{

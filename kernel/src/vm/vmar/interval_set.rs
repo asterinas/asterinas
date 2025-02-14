@@ -36,7 +36,6 @@ where
     }
 }
 
-#[allow(dead_code)]
 impl<K, V> IntervalSet<K, V>
 where
     K: Clone + Ord,
@@ -101,6 +100,7 @@ where
     ///
     /// If no such item exists, returns [`None`]. Otherwise, returns the item
     /// that contains the point.
+    #[cfg(ktest)]
     pub fn take_one(&mut self, point: &K) -> Option<V> {
         let mut cursor = self
             .btree
@@ -123,6 +123,7 @@ where
     ///
     /// This method returns a draining iterator that removes the items from the
     /// interval set.
+    #[cfg(ktest)]
     pub fn take<'a>(&'a mut self, range: &Range<K>) -> IntervalDrain<'a, K, V> {
         let cursor = self
             .btree

@@ -40,9 +40,9 @@ use super::{nr_subpage_per_huge, PageTableEntryTrait};
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     mm::{
-        paddr_to_vaddr,
-        page::{self, inc_page_ref_count, meta::PageMeta, DynPage, Page},
-        Paddr, PagingConstsTrait, PagingLevel, PAGE_SIZE,
+        frame::{inc_frame_ref_count, meta::AnyFrameMeta, Frame},
+        paddr_to_vaddr, FrameAllocOptions, Infallible, Paddr, PagingConstsTrait, PagingLevel,
+        VmReader,
     },
 };
 
@@ -79,7 +79,7 @@ where
     /// Converts a raw handle to an accessible handle by pertaining the lock.
     pub(super) fn lock(self) -> PageTableNode<E, C> {
         let level = self.level;
-        let page: Page<PageTablePageMeta<E, C>> = self.into();
+        let page: Frame<PageTablePageMeta<E, C>> = self.into();
 
         // Acquire the lock.
         let meta = page.meta();
@@ -166,7 +166,7 @@ where
         // SAFETY: We have a reference count to the page and can safely increase the reference
         // count by one more.
         unsafe {
-            inc_page_ref_count(self.paddr());
+            inc_frame_ref_count(self.paddr());
         }
     }
 
@@ -187,7 +187,7 @@ where
 }
 
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> From<RawPageTableNode<E, C>>
-    for Page<PageTablePageMeta<E, C>>
+    for Frame<PageTablePageMeta<E, C>>
 where
     [(); C::NR_LEVELS as usize]:,
 {
@@ -196,7 +196,7 @@ where
         // SAFETY: The physical address in the raw handle is valid and we are
         // transferring the ownership to a new handle. No increment of the reference
         // count is needed.
-        unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(raw.paddr()) }
+        unsafe { Frame::<PageTablePageMeta<E, C>>::from_raw(raw.paddr()) }
     }
 }
 
@@ -207,7 +207,7 @@ where
     fn drop(&mut self) {
         // SAFETY: The physical address in the raw handle is valid. The restored
         // handle is dropped to decrement the reference count.
-        drop(unsafe { Page::<PageTablePageMeta<E, C>>::from_raw(self.paddr()) });
+        drop(unsafe { Frame::<PageTablePageMeta<E, C>>::from_raw(self.paddr()) });
     }
 }
 
@@ -225,7 +225,7 @@ pub(super) struct PageTableNode<
 > where
     [(); C::NR_LEVELS as usize]:,
 {
-    page: Page<PageTablePageMeta<E, C>>,
+    page: Frame<PageTablePageMeta<E, C>>,
 }
 
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableNode<E, C>
@@ -261,13 +261,11 @@ where
     /// extra unnecessary expensive operation.
     pub(super) fn alloc(level: PagingLevel, is_tracked: MapTrackingStatus) -> Self {
         let meta = PageTablePageMeta::new_locked(level, is_tracked);
-        let page = page::allocator::alloc_single::<PageTablePageMeta<E, C>>(meta).unwrap();
-
-        // Zero out the page table node.
-        let ptr = paddr_to_vaddr(page.paddr()) as *mut u8;
-        // SAFETY: The page is exclusively owned here. Pointers are valid also.
-        // We rely on the fact that 0 represents an absent entry to speed up `memset`.
-        unsafe { core::ptr::write_bytes(ptr, 0, PAGE_SIZE) };
+        let page = FrameAllocOptions::new()
+            .zeroed(true)
+            .alloc_frame_with(meta)
+            .expect("Failed to allocate a page table node");
+        // The allocated frame is zeroed. Make sure zero is absent PTE.
         debug_assert!(E::new_absent().as_bytes().iter().all(|&b| b == 0));
 
         Self { page }
@@ -282,7 +280,7 @@ where
 
         // SAFETY: The provided physical address is valid and the level is
         // correct. The reference count is not changed.
-        unsafe { RawPageTableNode::from_raw_parts(this.page.paddr(), this.page.meta().level) }
+        unsafe { RawPageTableNode::from_raw_parts(this.page.start_paddr(), this.page.meta().level) }
     }
 
     /// Gets a raw handle while still preserving the original handle.
@@ -291,7 +289,7 @@ where
 
         // SAFETY: The provided physical address is valid and the level is
         // correct. The reference count is increased by one.
-        unsafe { RawPageTableNode::from_raw_parts(page.paddr(), page.meta().level) }
+        unsafe { RawPageTableNode::from_raw_parts(page.start_paddr(), page.meta().level) }
     }
 
     /// Gets the number of valid PTEs in the node.
@@ -311,7 +309,7 @@ where
     /// The caller must ensure that the index is within the bound.
     unsafe fn read_pte(&self, idx: usize) -> E {
         debug_assert!(idx < nr_subpage_per_huge::<C>());
-        let ptr = paddr_to_vaddr(self.page.paddr()) as *const E;
+        let ptr = paddr_to_vaddr(self.page.start_paddr()) as *const E;
         // SAFETY: The index is within the bound and the PTE is plain-old-data.
         unsafe { ptr.add(idx).read() }
     }
@@ -331,7 +329,7 @@ where
     ///     (see [`Child::is_compatible`]).
     unsafe fn write_pte(&mut self, idx: usize, pte: E) {
         debug_assert!(idx < nr_subpage_per_huge::<C>());
-        let ptr = paddr_to_vaddr(self.page.paddr()) as *mut E;
+        let ptr = paddr_to_vaddr(self.page.start_paddr()) as *mut E;
         // SAFETY: The index is within the bound and the PTE is plain-old-data.
         unsafe { ptr.add(idx).write(pte) }
     }
@@ -407,11 +405,11 @@ where
 
 // SAFETY: The layout of the `PageTablePageMeta` is ensured to be the same for
 // all possible generic parameters. And the layout fits the requirements.
-unsafe impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageMeta for PageTablePageMeta<E, C>
+unsafe impl<E: PageTableEntryTrait, C: PagingConstsTrait> AnyFrameMeta for PageTablePageMeta<E, C>
 where
     [(); C::NR_LEVELS as usize]:,
 {
-    fn on_drop(&mut self, paddr: Paddr) {
+    fn on_drop(&mut self, reader: &mut VmReader<Infallible>) {
         let nr_children = self.nr_children.get_mut();
 
         if *nr_children == 0 {
@@ -422,14 +420,7 @@ where
         let is_tracked = self.is_tracked;
 
         // Drop the children.
-        for i in 0..nr_subpage_per_huge::<C>() {
-            // SAFETY: The index is within the bound and PTE is plain-old-data. The
-            // address is aligned as well. We also have an exclusive access ensured
-            // by reference counting.
-            let pte_ptr = unsafe { (paddr_to_vaddr(paddr) as *const E).add(i) };
-            // SAFETY: The pointer is valid and the PTE is plain-old-data.
-            let pte = unsafe { pte_ptr.read() };
-
+        while let Ok(pte) = reader.read_once::<E>() {
             // Here if we use directly `Child::from_pte` we would experience a
             // 50% increase in the overhead of the `drop` function. It seems that
             // Rust is very conservative about inlining and optimizing dead code
@@ -439,11 +430,11 @@ where
                 if !pte.is_last(level) {
                     // SAFETY: The PTE points to a page table node. The ownership
                     // of the child is transferred to the child then dropped.
-                    drop(unsafe { Page::<Self>::from_raw(paddr) });
+                    drop(unsafe { Frame::<Self>::from_raw(paddr) });
                 } else if is_tracked == MapTrackingStatus::Tracked {
                     // SAFETY: The PTE points to a tracked page. The ownership
                     // of the child is transferred to the child then dropped.
-                    drop(unsafe { DynPage::from_raw(paddr) });
+                    drop(unsafe { Frame::<dyn AnyFrameMeta>::from_raw(paddr) });
                 }
             }
         }

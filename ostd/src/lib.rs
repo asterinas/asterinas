@@ -21,8 +21,8 @@
 #![feature(trait_upcasting)]
 // The `generic_const_exprs` feature is incomplete however required for the page table
 // const generic implementation. We are using this feature in a conservative manner.
-#![allow(incomplete_features)]
-#![allow(internal_features)]
+#![expect(incomplete_features)]
+#![expect(internal_features)]
 #![no_std]
 #![warn(missing_docs)]
 
@@ -75,16 +75,17 @@ unsafe fn init() {
     #[cfg(feature = "cvm_guest")]
     arch::init_cvm_guest();
 
+    logger::init();
+
     // SAFETY: This function is called only once and only on the BSP.
     unsafe { cpu::local::early_init_bsp_local_base() };
 
     // SAFETY: This function is called only once and only on the BSP.
     unsafe { mm::heap_allocator::init() };
 
-    boot::init();
-    logger::init();
+    boot::init_after_heap();
 
-    mm::page::allocator::init();
+    mm::frame::allocator::init();
     mm::kspace::init_kernel_page_table(mm::init_page_meta());
     mm::dma::init();
 
@@ -132,7 +133,7 @@ mod test {
     use crate::prelude::*;
 
     #[ktest]
-    #[allow(clippy::eq_op)]
+    #[expect(clippy::eq_op)]
     fn trivial_assertion() {
         assert_eq!(0, 0);
     }

@@ -78,7 +78,7 @@ impl IrqLine {
     ///
     /// This function is marked unsafe as manipulating interrupt lines is
     /// considered a dangerous operation.
-    #[allow(clippy::redundant_allocation)]
+    #[expect(clippy::redundant_allocation)]
     pub unsafe fn acquire(irq_num: u8) -> Arc<&'static Self> {
         Arc::new(IRQ_LIST.get().unwrap().get(irq_num as usize).unwrap())
     }

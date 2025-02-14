@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-#![allow(unused_variables)]
+#![expect(dead_code)]
+#![expect(unused_variables)]
 
 //! The Virtual Dynamic Shared Object (VDSO) module enables user space applications to access kernel space routines
 //! without the need for context switching. This is particularly useful for frequently invoked operations such as
@@ -21,7 +21,7 @@ use aster_rights::Rights;
 use aster_time::{read_monotonic_time, Instant};
 use aster_util::coeff::Coeff;
 use ostd::{
-    mm::{Frame, VmIo, PAGE_SIZE},
+    mm::{UFrame, VmIo, PAGE_SIZE},
     sync::SpinLock,
     Pod,
 };
@@ -199,9 +199,9 @@ struct Vdso {
     data: SpinLock<VdsoData>,
     /// The VMO of the entire VDSO, including the library text and the VDSO data.
     vmo: Arc<Vmo>,
-    /// The `Frame` that contains the VDSO data. This frame is contained in and
+    /// The `UFrame` that contains the VDSO data. This frame is contained in and
     /// will not be removed from the VDSO VMO.
-    data_frame: Frame,
+    data_frame: UFrame,
 }
 
 /// A `SpinLock` for the `seq` field in `VdsoData`.

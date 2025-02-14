@@ -7,7 +7,6 @@ use ostd::mm::{DmaCoherent, DmaStream, DmaStreamSlice, HasDaddr};
 ///
 /// Any type implements this trait should also implements `HasDaddr` trait,
 /// and provides the exact length of DMA area.
-#[allow(clippy::len_without_is_empty)]
 pub trait DmaBuf: HasDaddr {
     /// The length of Dma area, in bytes
     fn len(&self) -> usize;

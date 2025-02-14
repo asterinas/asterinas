@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(unused)]
+#![expect(unused)]
 
 pub(crate) use alloc::{
     boxed::Box,

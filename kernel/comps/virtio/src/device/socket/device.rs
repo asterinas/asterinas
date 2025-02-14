@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{boxed::Box, string::ToString, sync::Arc, vec, vec::Vec};
+use alloc::{boxed::Box, string::ToString, sync::Arc, vec};
 use core::{fmt::Debug, hint::spin_loop, mem::size_of};
 
 use aster_network::{RxBuffer, TxBuffer};
@@ -13,7 +13,6 @@ use super::{
     connect::{ConnectionInfo, VsockEvent},
     error::SocketError,
     header::{VirtioVsockHdr, VirtioVsockOp, VIRTIO_VSOCK_HDR_LEN},
-    VsockDeviceIrqHandler,
 };
 use crate::{
     device::{
@@ -44,7 +43,6 @@ pub struct SocketDevice {
 
     rx_buffers: SlotVec<RxBuffer>,
     transport: Box<dyn VirtioTransport>,
-    callbacks: Vec<Box<dyn VsockDeviceIrqHandler>>,
 }
 
 impl SocketDevice {
@@ -90,7 +88,6 @@ impl SocketDevice {
             event_queue,
             rx_buffers,
             transport,
-            callbacks: Vec::new(),
         };
 
         // Interrupt handler if vsock device config space changes

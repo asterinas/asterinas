@@ -2,7 +2,10 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::{file_table::FileDesc, utils::SeekFrom},
+    fs::{
+        file_table::{get_file_fast, FileDesc},
+        utils::SeekFrom,
+    },
     prelude::*,
 };
 
@@ -20,10 +23,8 @@ pub fn sys_lseek(fd: FileDesc, offset: isize, whence: u32, ctx: &Context) -> Res
         2 => SeekFrom::End(offset),
         _ => return_errno!(Errno::EINVAL),
     };
-    let file = {
-        let file_table = ctx.posix_thread.file_table().lock();
-        file_table.get_file(fd)?.clone()
-    };
+    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let file = get_file_fast!(&mut file_table, fd);
 
     let offset = file.seek(seek_from)?;
     Ok(SyscallReturn::Return(offset as _))

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-#![allow(unused_variables)]
+#![expect(dead_code)]
+#![expect(unused_variables)]
 
 use alloc::vec::Vec;
 use core::fmt::Debug;
@@ -176,7 +176,7 @@ pub enum FaultRequestType {
 
 #[derive(Debug)]
 #[repr(u8)]
-#[allow(clippy::enum_variant_names)]
+#[expect(clippy::enum_variant_names)]
 pub enum FaultAddressType {
     UntranslatedRequest = 0,
     TranslationRequest = 1,

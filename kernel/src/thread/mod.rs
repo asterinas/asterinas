@@ -12,10 +12,7 @@ use ostd::{
 use self::status::{AtomicThreadStatus, ThreadStatus};
 use crate::{
     prelude::*,
-    sched::{
-        priority::{AtomicPriority, Priority},
-        SchedAttr,
-    },
+    sched::{SchedAttr, SchedPolicy},
 };
 
 pub mod exception;
@@ -39,8 +36,6 @@ pub struct Thread {
     // mutable part
     /// Thread status
     status: AtomicThreadStatus,
-    /// Thread priority
-    priority: AtomicPriority,
     /// Thread CPU affinity
     cpu_affinity: AtomicCpuSet,
     sched_attr: SchedAttr,
@@ -51,16 +46,15 @@ impl Thread {
     pub fn new(
         task: Weak<Task>,
         data: impl Send + Sync + Any,
-        priority: Priority,
         cpu_affinity: CpuSet,
+        sched_policy: SchedPolicy,
     ) -> Self {
         Thread {
             task,
             data: Box::new(data),
             status: AtomicThreadStatus::new(ThreadStatus::Init),
-            priority: AtomicPriority::new(priority),
             cpu_affinity: AtomicCpuSet::new(cpu_affinity),
-            sched_attr: SchedAttr::new(priority.into()),
+            sched_attr: SchedAttr::new(sched_policy),
         }
     }
 
@@ -133,11 +127,6 @@ impl Thread {
 
     pub(super) fn exit(&self) {
         self.status.store(ThreadStatus::Exited, Ordering::Release);
-    }
-
-    /// Returns the reference to the atomic priority.
-    pub fn atomic_priority(&self) -> &AtomicPriority {
-        &self.priority
     }
 
     /// Returns the reference to the atomic CPU affinity.

@@ -13,14 +13,16 @@ pub(super) use aster_block::{
 };
 pub(super) use aster_rights::Full;
 pub(super) use ostd::{
-    mm::{Frame, FrameAllocOptions, Segment, VmIo},
+    mm::{Frame, FrameAllocOptions, Segment, USegment, VmIo},
     sync::{RwMutex, RwMutexReadGuard, RwMutexWriteGuard},
 };
 pub(super) use static_assertions::const_assert;
 
 pub(super) use super::utils::{Dirty, IsPowerOf};
 pub(super) use crate::{
-    fs::utils::{CStr256, DirentVisitor, InodeType, PageCache, PageCacheBackend, Str16, Str64},
+    fs::utils::{
+        CStr256, CachePage, DirentVisitor, InodeType, PageCache, PageCacheBackend, Str16, Str64,
+    },
     prelude::*,
     time::UnixTime,
     vm::vmo::Vmo,

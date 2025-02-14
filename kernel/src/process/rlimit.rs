@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 // FIXME: The resource limits should be respected by the corresponding subsystems of the kernel.
 
-#![allow(non_camel_case_types)]
+#![expect(non_camel_case_types)]
 
 use super::process_vm::{INIT_STACK_SIZE, USER_HEAP_SIZE_LIMIT};
 use crate::prelude::*;

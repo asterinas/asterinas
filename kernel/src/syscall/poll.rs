@@ -5,7 +5,10 @@ use core::{cell::Cell, time::Duration};
 use super::SyscallReturn;
 use crate::{
     events::IoEvents,
-    fs::{file_handle::FileLike, file_table::FileDesc},
+    fs::{
+        file_handle::FileLike,
+        file_table::{FileDesc, FileTable},
+    },
     prelude::*,
     process::signal::Poller,
 };
@@ -56,21 +59,18 @@ pub fn sys_poll(fds: Vaddr, nfds: u64, timeout: i32, ctx: &Context) -> Result<Sy
 }
 
 pub fn do_poll(poll_fds: &[PollFd], timeout: Option<&Duration>, ctx: &Context) -> Result<usize> {
-    let (result, files) = hold_files(poll_fds, ctx);
-    match result {
-        FileResult::AllValid => (),
-        FileResult::SomeInvalid => {
-            return Ok(count_all_events(poll_fds, &files));
-        }
-    }
+    let mut file_table = ctx.thread_local.file_table().borrow_mut();
 
-    let poller = match register_poller(poll_fds, files.as_ref()) {
-        PollerResult::AllRegistered(poller) => poller,
-        PollerResult::EventFoundAt(index) => {
-            let next = index + 1;
-            let remaining_events = count_all_events(&poll_fds[next..], &files[next..]);
-            return Ok(1 + remaining_events);
-        }
+    let poll_files = if let Some(file_table_inner) = file_table.get() {
+        PollFiles::new_borrowed(poll_fds, file_table_inner)
+    } else {
+        let file_table_locked = file_table.read();
+        PollFiles::new_owned(poll_fds, &file_table_locked)
+    };
+
+    let poller = match poll_files.register_poller() {
+        PollerResult::Registered(poller) => poller,
+        PollerResult::FoundEvents(num_events) => return Ok(num_events),
     };
 
     loop {
@@ -84,7 +84,7 @@ pub fn do_poll(poll_fds: &[PollFd], timeout: Option<&Duration>, ctx: &Context) -
             Err(e) => return Err(e),
         };
 
-        let num_events = count_all_events(poll_fds, &files);
+        let num_events = poll_files.count_events();
         if num_events > 0 {
             return Ok(num_events);
         }
@@ -93,87 +93,108 @@ pub fn do_poll(poll_fds: &[PollFd], timeout: Option<&Duration>, ctx: &Context) -
     }
 }
 
-enum FileResult {
-    AllValid,
-    SomeInvalid,
+struct PollFiles<'a> {
+    poll_fds: &'a [PollFd],
+    files: CowFiles<'a>,
 }
 
-/// Holds all the files we're going to poll.
-fn hold_files(poll_fds: &[PollFd], ctx: &Context) -> (FileResult, Vec<Option<Arc<dyn FileLike>>>) {
-    let file_table = ctx.posix_thread.file_table().lock();
+enum CowFiles<'a> {
+    Borrowed(&'a FileTable),
+    Owned(Vec<Option<Arc<dyn FileLike>>>),
+}
 
-    let mut files = Vec::with_capacity(poll_fds.len());
-    let mut result = FileResult::AllValid;
-
-    for poll_fd in poll_fds.iter() {
-        let Some(fd) = poll_fd.fd() else {
-            files.push(None);
-            continue;
-        };
-
-        let Ok(file) = file_table.get_file(fd) else {
-            poll_fd.revents.set(IoEvents::NVAL);
-            result = FileResult::SomeInvalid;
-
-            files.push(None);
-            continue;
-        };
-
-        files.push(Some(file.clone()));
+impl<'a> PollFiles<'a> {
+    /// Creates `PollFiles` by holding the file table reference.
+    fn new_borrowed(poll_fds: &'a [PollFd], file_table: &'a FileTable) -> Self {
+        Self {
+            poll_fds,
+            files: CowFiles::Borrowed(file_table),
+        }
     }
 
-    (result, files)
+    /// Creates `PollFiles` by cloning all files that we're going to poll.
+    fn new_owned(poll_fds: &'a [PollFd], file_table: &FileTable) -> Self {
+        let files = poll_fds
+            .iter()
+            .map(|poll_fd| {
+                poll_fd
+                    .fd()
+                    .and_then(|fd| file_table.get_file(fd).ok().cloned())
+            })
+            .collect();
+        Self {
+            poll_fds,
+            files: CowFiles::Owned(files),
+        }
+    }
 }
 
 enum PollerResult {
-    AllRegistered(Poller),
-    EventFoundAt(usize),
+    Registered(Poller),
+    FoundEvents(usize),
 }
 
-/// Registers the files with a poller, or exits early if some events are detected.
-fn register_poller(poll_fds: &[PollFd], files: &[Option<Arc<dyn FileLike>>]) -> PollerResult {
-    let mut poller = Poller::new();
+impl PollFiles<'_> {
+    /// Registers the files with a poller, or exits early if some events are detected.
+    fn register_poller(&self) -> PollerResult {
+        let mut poller = Poller::new();
 
-    for (i, (poll_fd, file)) in poll_fds.iter().zip(files.iter()).enumerate() {
-        let Some(file) = file else {
-            continue;
-        };
+        for (index, poll_fd) in self.poll_fds.iter().enumerate() {
+            let events = if let Some(file) = self.file_at(index) {
+                file.poll(poll_fd.events(), Some(poller.as_handle_mut()))
+            } else {
+                IoEvents::NVAL
+            };
 
-        let events = file.poll(poll_fd.events(), Some(poller.as_handle_mut()));
-        if events.is_empty() {
-            continue;
-        }
-
-        poll_fd.revents().set(events);
-        return PollerResult::EventFoundAt(i);
-    }
-
-    PollerResult::AllRegistered(poller)
-}
-
-/// Counts the number of the ready files.
-fn count_all_events(poll_fds: &[PollFd], files: &[Option<Arc<dyn FileLike>>]) -> usize {
-    let mut counter = 0;
-
-    for (poll_fd, file) in poll_fds.iter().zip(files.iter()) {
-        let Some(file) = file else {
-            if !poll_fd.revents.get().is_empty() {
-                // This is only possible for POLLNVAL.
-                counter += 1;
+            if events.is_empty() {
+                continue;
             }
-            continue;
-        };
 
-        let events = file.poll(poll_fd.events(), None);
-        if events.is_empty() {
-            continue;
+            poll_fd.revents().set(events);
+            return PollerResult::FoundEvents(1 + self.count_events_from(1 + index));
         }
 
-        poll_fd.revents().set(events);
-        counter += 1;
+        PollerResult::Registered(poller)
     }
 
-    counter
+    /// Counts the number of the ready files.
+    fn count_events(&self) -> usize {
+        self.count_events_from(0)
+    }
+
+    /// Counts the number of the ready files from the given index.
+    fn count_events_from(&self, start: usize) -> usize {
+        let mut counter = 0;
+
+        for index in start..self.poll_fds.len() {
+            let poll_fd = &self.poll_fds[index];
+
+            let events = if let Some(file) = self.file_at(index) {
+                file.poll(poll_fd.events(), None)
+            } else {
+                IoEvents::NVAL
+            };
+
+            if events.is_empty() {
+                continue;
+            }
+
+            poll_fd.revents().set(events);
+            counter += 1;
+        }
+
+        counter
+    }
+
+    fn file_at(&self, index: usize) -> Option<&dyn FileLike> {
+        match &self.files {
+            CowFiles::Borrowed(table) => self.poll_fds[index]
+                .fd()
+                .and_then(|fd| table.get_file(fd).ok())
+                .map(Arc::as_ref),
+            CowFiles::Owned(files) => files[index].as_deref(),
+        }
+    }
 }
 
 // https://github.com/torvalds/linux/blob/master/include/uapi/asm-generic/poll.h

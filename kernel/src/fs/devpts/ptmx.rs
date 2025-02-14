@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-#![allow(unused_variables)]
+#![expect(dead_code)]
+#![expect(unused_variables)]
 
 use super::*;
 use crate::{
@@ -162,6 +162,10 @@ impl Inode for Ptmx {
 
     fn as_device(&self) -> Option<Arc<dyn Device>> {
         Some(Arc::new(self.inner.clone()))
+    }
+
+    fn is_dentry_cacheable(&self) -> bool {
+        false
     }
 }
 

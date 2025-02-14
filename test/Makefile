@@ -9,7 +9,12 @@ ATOMIC_WGET := $(CUR_DIR)/../tools/atomic_wget.sh
 BUILD_DIR := $(CUR_DIR)/build
 INITRAMFS := $(BUILD_DIR)/initramfs
 INITRAMFS_FILELIST := $(BUILD_DIR)/initramfs.filelist
+INITRAMFS_SKIP_GZIP ?= 0
+ifeq ($(INITRAMFS_SKIP_GZIP),1)
+INITRAMFS_IMAGE := $(BUILD_DIR)/initramfs.cpio
+else
 INITRAMFS_IMAGE := $(BUILD_DIR)/initramfs.cpio.gz
+endif
 EXT2_IMAGE := $(BUILD_DIR)/ext2.img
 EXFAT_IMAGE := $(BUILD_DIR)/exfat.img
 INITRAMFS_EMPTY_DIRS := \
@@ -61,6 +66,8 @@ $(INITRAMFS)/lib/x86_64-linux-gnu: | $(VDSO_LIB)
 	@cp -L /lib/x86_64-linux-gnu/libresolv.so.2 $@
 	@# required for LevelDB-db_bench_sqlite3
 	@cp -L /lib/x86_64-linux-gnu/libsqlite3.so $@
+	@# required for memcached
+	@cp -L /lib/x86_64-linux-gnu/libevent-2.1.so.7 $@
 	@# required for VDSO
 	@cp -L $(VDSO_LIB) $@
 
@@ -101,10 +108,11 @@ $(INITRAMFS)/usr/local:
 	@mkdir -p $@
 	@cp -r /usr/local/nginx $@
 	@cp -r /usr/local/redis $@
+	@cp -r /usr/local/memcached $@
 
 .PHONY: $(INITRAMFS)/test
 $(INITRAMFS)/test:
-	@make --no-print-directory -C apps
+	@$(MAKE) --no-print-directory -C apps
 
 $(INITRAMFS)/benchmark: | $(INITRAMFS)/benchmark/bin
 	@cp -rf $(CUR_DIR)/benchmark/* $@
@@ -122,6 +130,8 @@ $(INITRAMFS)/benchmark/bin:
 	@cp /usr/local/leveldb/benchmark/db_bench $@
 	@mv $@/db_bench $@/db_bench_leveldb
 	@cp /usr/local/leveldb/benchmark/db_bench_sqlite3 $@
+	@cp /usr/local/benchmark/hackbench $@
+	@cp /usr/local/benchmark/schbench $@
 
 # Make necessary directories.
 $(INITRAMFS_EMPTY_DIRS):
@@ -129,11 +139,11 @@ $(INITRAMFS_EMPTY_DIRS):
 
 .PHONY: $(SYSCALL_TEST_DIR)
 $(SYSCALL_TEST_DIR):
-	@make --no-print-directory -C syscall_test
+	@$(MAKE) --no-print-directory -C syscall_test
 
 .PHONY: $(INITRAMFS_IMAGE)
 $(INITRAMFS_IMAGE): $(INITRAMFS_FILELIST)
-	@if ! cmp -s $(INITRAMFS_FILELIST) $(INITRAMFS_FILELIST).previous ; then \
+	@if ! cmp -s $(INITRAMFS_FILELIST) $(INITRAMFS_FILELIST).previous || ! test -f $@; then \
 		echo "Generating the initramfs image..."; \
 		cp -f $(INITRAMFS_FILELIST) $(INITRAMFS_FILELIST).previous; \
 		( \
@@ -143,7 +153,12 @@ $(INITRAMFS_IMAGE): $(INITRAMFS_FILELIST)
 			# `$(INITRAMFS)` in the second column. This prunes the first \
 			# column and passes the second column to `cpio`. \
 			cut -d " " -f 2- $(INITRAMFS_FILELIST) | \
-				cpio -o -H newc | gzip \
+				cpio -o -H newc | \
+					if [ "$(INITRAMFS_SKIP_GZIP)" != 1 ]; then \
+						gzip; \
+					else \
+						cat; \
+					fi \
 		) > $@; \
 	fi
 
@@ -170,11 +185,11 @@ build: $(INITRAMFS_IMAGE) $(EXT2_IMAGE) $(EXFAT_IMAGE)
 
 .PHONY: format
 format:
-	@make --no-print-directory -C apps format
+	@$(MAKE) --no-print-directory -C apps format
 
 .PHONY: check
 check:
-	@make --no-print-directory -C apps check
+	@$(MAKE) --no-print-directory -C apps check
 
 .PHONY: clean
 clean:

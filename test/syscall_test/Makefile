@@ -7,10 +7,7 @@
 # Please keep the list sorted by name.
 TESTS ?= \
 	access_test \
-	alarm_test \
-	chmod_test \
 	chown_test \
-	chroot_test \
 	creat_test \
 	dup_test \
 	epoll_test \
@@ -29,6 +26,7 @@ TESTS ?= \
 	mount_test \
 	open_create_test \
 	open_test \
+	prctl_setuid_test \
 	pread64_test \
 	preadv2_test \
 	proc_test \
@@ -49,6 +47,7 @@ TESTS ?= \
 	symlink_test \
 	sync_test \
 	sysinfo_test \
+	tcp_socket_test \
 	timers_test \
 	truncate_test \
 	uidgid_test \

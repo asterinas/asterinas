@@ -3,8 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        file_table::FileDesc,
-        inode_handle::InodeHandle,
+        file_table::{get_file_fast, FileDesc},
         utils::{FlockItem, FlockType},
     },
     prelude::*,
@@ -13,14 +12,9 @@ use crate::{
 pub fn sys_flock(fd: FileDesc, ops: i32, ctx: &Context) -> Result<SyscallReturn> {
     debug!("flock: fd: {}, ops: {:?}", fd, ops);
 
-    let file = {
-        let current = ctx.posix_thread;
-        let file_table = current.file_table().lock();
-        file_table.get_file(fd)?.clone()
-    };
-    let inode_file = file
-        .downcast_ref::<InodeHandle>()
-        .ok_or(Error::with_message(Errno::EBADF, "not inode"))?;
+    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let file = get_file_fast!(&mut file_table, fd);
+    let inode_file = file.as_inode_or_err()?;
     let ops: FlockOps = FlockOps::from_i32(ops)?;
     if ops.contains(FlockOps::LOCK_UN) {
         inode_file.unlock_flock();

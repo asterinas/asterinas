@@ -14,7 +14,6 @@ pub(crate) mod heap_allocator;
 mod io;
 pub(crate) mod kspace;
 mod offset;
-pub(crate) mod page;
 pub(crate) mod page_prop;
 pub(crate) mod page_table;
 pub mod stat;
@@ -25,7 +24,12 @@ use core::{fmt::Debug, ops::Range};
 
 pub use self::{
     dma::{Daddr, DmaCoherent, DmaDirection, DmaStream, DmaStreamSlice, HasDaddr},
-    frame::{options::FrameAllocOptions, Frame, Segment},
+    frame::{
+        allocator::FrameAllocOptions,
+        segment::{Segment, USegment},
+        untyped::{AnyUFrameMeta, UFrame, UntypedMem},
+        Frame,
+    },
     io::{
         Fallible, FallibleVmRead, FallibleVmWrite, Infallible, PodOnce, VmIo, VmIoOnce, VmReader,
         VmWriter,
@@ -34,7 +38,7 @@ pub use self::{
     vm_space::VmSpace,
 };
 pub(crate) use self::{
-    kspace::paddr_to_vaddr, page::meta::init as init_page_meta, page_prop::PrivilegedPageFlags,
+    frame::meta::init as init_page_meta, kspace::paddr_to_vaddr, page_prop::PrivilegedPageFlags,
     page_table::PageTable,
 };
 use crate::arch::mm::PagingConsts;
@@ -82,7 +86,7 @@ pub(crate) const fn nr_subpage_per_huge<C: PagingConstsTrait>() -> usize {
 }
 
 /// The number of base pages in a huge page at a given level.
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub(crate) const fn nr_base_per_page<C: PagingConstsTrait>(level: PagingLevel) -> usize {
     page_size::<C>(level) / C::BASE_PAGE_SIZE
 }

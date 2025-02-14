@@ -73,7 +73,6 @@
 //! ```
 
 #![feature(proc_macro_diagnostic)]
-#![allow(dead_code)]
 
 use require_item::RequireItem;
 use syn::parse_macro_input;

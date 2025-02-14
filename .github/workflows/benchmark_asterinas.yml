@@ -57,22 +57,39 @@ jobs:
           - lmbench/ext2_copy_files_bw
           - fio/ext2_seq_write_bw
           - fio/ext2_seq_read_bw
-          - fio/ext2_iommu_seq_write_bw
-          - fio/ext2_iommu_seq_read_bw
-          # Network-related benchmark
+          - fio/ext2_seq_write_bw_no_iommu
+          - fio/ext2_seq_read_bw_no_iommu
+          # Loopback-related network benchmarks
+          - lmbench/tcp_loopback_bw_128
           - lmbench/tcp_loopback_bw_4k
           - lmbench/tcp_loopback_bw_64k
           - lmbench/tcp_loopback_lat
           - lmbench/tcp_loopback_connect_lat
           - lmbench/tcp_loopback_select_lat
           - lmbench/tcp_loopback_http_bw
-          - lmbench/tcp_virtio_bw_64k
-          - lmbench/tcp_virtio_lat
           - lmbench/udp_loopback_lat
+          # VirtIO-net-related network benchmarks
+          - lmbench/tcp_virtio_bw_128
+          - lmbench/tcp_virtio_bw_64k
+          - lmbench/tcp_virtio_connect_lat
+          - lmbench/tcp_virtio_lat
+          - lmbench/udp_virtio_lat 
           - iperf3/tcp_virtio_bw
+          # Scheduler-related benchmarks
+          - hackbench/group8_smp1
+          # FIXME: hackbench panics on multi-core settings now.
+          # - hackbench/group8_smp8
+          # - hackbench/group8_smp16
+          - schbench/smp1
+          - schbench/smp8
           # Nginx benchmarks
           - nginx/http_req10k_conc1_bw
           - nginx/http_req10k_conc20_bw
+          - nginx/http_file4KB_bw
+          - nginx/http_file8KB_bw
+          - nginx/http_file16KB_bw
+          - nginx/http_file32KB_bw
+          - nginx/http_file64KB_bw
           # Redis benchmarks
           - redis/ping_inline_100k_conc20_rps
           - redis/ping_mbulk_100k_conc20_rps
@@ -81,10 +98,14 @@ jobs:
           # SQLite benchmarks
           - sqlite/ext2_benchmarks
           - sqlite/ramfs_benchmarks
+          # Memcached benchmarks
+          - memcached/t8_conc32_window10k
+          - memcached/t8_conc32_window20k
+          - memcached/t16_conc64_window10k
       fail-fast: false
     timeout-minutes: 60
     container: 
-      image: asterinas/asterinas:0.10.2
+      image: asterinas/asterinas:0.11.1
       options: --device=/dev/kvm --privileged
     env:
       # Need to set up proxy since the self-hosted CI server is located in China,
@@ -117,6 +138,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.BENCHMARK_ARTIFACT }}
+          if-no-files-found: error # Fail the benchmark job if no file is found.
           path: |
             result_*.json
 
@@ -163,7 +185,7 @@ jobs:
         run: |
           BENCHMARK_DIR=$(echo ${{ matrix.benchmark }} | sed 's/-/\//g')
           BENCHMARK_SUITE=$(echo $BENCHMARK_DIR | awk -F'/' '{print $1}')
-          BENCHMARK_NAME=$(basename "$BENCHMARK_DIR")
+          BENCHMARK_NAME=$(echo "$BENCHMARK_DIR" | sed -E 's|^[^/]+/||; s|/bench_results||g; s|/|_|g')
           BENCH_RESULT="test/benchmark/${BENCHMARK_DIR}/bench_result.json"
           [ -f "$BENCH_RESULT" ] || BENCH_RESULT="test/benchmark/${BENCHMARK_DIR}.json"
           ALERT_THRESHOLD=$(jq -r '.alert.threshold // "130%"' "$BENCH_RESULT")

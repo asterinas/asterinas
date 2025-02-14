@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
+#![expect(dead_code)]
 
 use alloc::sync::Arc;
 use core::{
@@ -338,6 +338,14 @@ impl<T: ?Sized, G: Guardian> RwLock<T, G> {
     /// already statically guaranteed that access to the data is exclusive.
     pub fn get_mut(&mut self) -> &mut T {
         self.val.get_mut()
+    }
+
+    /// Returns a raw pointer to the underlying data.
+    ///
+    /// This method is safe, but it's up to the caller to ensure that access to the data behind it
+    /// is still safe.
+    pub(super) fn as_ptr(&self) -> *mut T {
+        self.val.get()
     }
 }
 

@@ -1,23 +1,44 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-
 //! The architecture-independent boot module, which provides
 //!  1. a universal information getter interface from the bootloader to the
 //!     rest of OSTD;
 //!  2. the routine booting into the actual kernel;
 //!  3. the routine booting the other processors in the SMP context.
 
-pub mod kcmdline;
 pub mod memory_region;
 pub mod smp;
 
-use alloc::{string::String, vec::Vec};
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 
-use kcmdline::KCmdlineArg;
+use memory_region::{MemoryRegion, MemoryRegionArray};
 use spin::Once;
 
-use self::memory_region::MemoryRegion;
+/// The boot information provided by the bootloader.
+pub struct BootInfo {
+    /// The name of the bootloader.
+    pub bootloader_name: String,
+    /// The kernel command line arguments.
+    pub kernel_cmdline: String,
+    /// The initial ramfs raw bytes.
+    pub initramfs: Option<&'static [u8]>,
+    /// The framebuffer arguments.
+    pub framebuffer_arg: Option<BootloaderFramebufferArg>,
+    /// The memory regions provided by the bootloader.
+    pub memory_regions: Vec<MemoryRegion>,
+}
+
+/// Gets the boot information.
+///
+/// This function is usable after initialization with [`init_after_heap`].
+pub fn boot_info() -> &'static BootInfo {
+    INFO.get().unwrap()
+}
+
+static INFO: Once<BootInfo> = Once::new();
 
 /// ACPI information from the bootloader.
 ///
@@ -49,66 +70,42 @@ pub struct BootloaderFramebufferArg {
     pub bpp: usize,
 }
 
-macro_rules! define_global_static_boot_arguments {
-    ( $( $lower:ident, $upper:ident, $typ:ty; )* ) => {
-        // Define statics and corresponding public getter APIs.
-        $(
-            static $upper: Once<$typ> = Once::new();
-            /// Macro generated public getter API.
-            pub fn $lower() -> &'static $typ {
-                $upper.get().unwrap()
-            }
-        )*
+/*************************** Boot-time information ***************************/
 
-        struct BootInitCallBacks {
-            $( $lower: fn(&'static Once<$typ>) -> (), )*
-        }
-
-        static BOOT_INIT_CALLBACKS: Once<BootInitCallBacks> = Once::new();
-
-        /// The macro generated boot init callbacks registering interface.
-        ///
-        /// For the introduction of a new boot protocol, the entry point could be a novel
-        /// one. The entry point function should register all the boot initialization
-        /// methods before `ostd::main` is called. A boot initialization method takes a
-        /// reference of the global static boot information variable and initialize it,
-        /// so that the boot information it represents could be accessed in the kernel
-        /// anywhere.
-        ///
-        /// The reason why the entry point function is not designed to directly initialize
-        /// the boot information variables is simply that the heap is not initialized at
-        /// that moment.
-        pub fn register_boot_init_callbacks($( $lower: fn(&'static Once<$typ>) -> (), )* ) {
-            BOOT_INIT_CALLBACKS.call_once(|| {
-                BootInitCallBacks { $( $lower, )* }
-            });
-        }
-
-        fn call_all_boot_init_callbacks() {
-            let callbacks = &BOOT_INIT_CALLBACKS.get().unwrap();
-            $( (callbacks.$lower)(&$upper); )*
-        }
-    };
+/// The boot-time boot information.
+///
+/// When supporting multiple boot protocols with a single build, the entrypoint
+/// and boot information getters are dynamically decided. The entry point
+/// function should initializer all arguments at [`EARLY_INFO`].
+///
+/// All the references in this structure should be valid in the boot context.
+/// After the kernel is booted, users should use [`BootInfo`] instead.
+pub(crate) struct EarlyBootInfo {
+    pub(crate) bootloader_name: &'static str,
+    pub(crate) kernel_cmdline: &'static str,
+    pub(crate) initramfs: Option<&'static [u8]>,
+    pub(crate) acpi_arg: BootloaderAcpiArg,
+    pub(crate) framebuffer_arg: Option<BootloaderFramebufferArg>,
+    pub(crate) memory_regions: MemoryRegionArray,
 }
 
-// Define a series of static variables and their getter APIs.
-define_global_static_boot_arguments!(
-    //  Getter Names     |  Static Variables  | Variable Types
-    bootloader_name,        BOOTLOADER_NAME,    String;
-    kernel_cmdline,         KERNEL_CMDLINE,     KCmdlineArg;
-    initramfs,              INITRAMFS,          &'static [u8];
-    acpi_arg,               ACPI_ARG,           BootloaderAcpiArg;
-    framebuffer_arg,        FRAMEBUFFER_ARG,    BootloaderFramebufferArg;
-    memory_regions,         MEMORY_REGIONS,     Vec<MemoryRegion>;
-);
+/// The boot-time information.
+pub(crate) static EARLY_INFO: Once<EarlyBootInfo> = Once::new();
 
-/// The initialization method of the boot module.
+/// Initializes the boot information.
 ///
-/// After initializing the boot module, the get functions could be called.
-/// The initialization must be done after the heap is set and before physical
-/// mappings are cancelled.
-pub fn init() {
-    call_all_boot_init_callbacks();
+/// This function copies the boot-time accessible information to the heap to
+/// allow [`boot_info`] to work properly.
+pub(crate) fn init_after_heap() {
+    let boot_time_info = EARLY_INFO.get().unwrap();
+
+    INFO.call_once(|| BootInfo {
+        bootloader_name: boot_time_info.bootloader_name.to_string(),
+        kernel_cmdline: boot_time_info.kernel_cmdline.to_string(),
+        initramfs: boot_time_info.initramfs,
+        framebuffer_arg: boot_time_info.framebuffer_arg,
+        memory_regions: boot_time_info.memory_regions.to_vec(),
+    });
 }
 
 /// Calls the OSTD-user defined entrypoint of the actual kernel.

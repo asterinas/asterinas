@@ -76,7 +76,7 @@ impl VirtQueue {
         }
 
         let (descriptor_ptr, avail_ring_ptr, used_ring_ptr) = if transport.is_legacy_version() {
-            // Currently, we use one Frame to place the descriptors and available rings, one Frame to place used rings
+            // Currently, we use one UFrame to place the descriptors and available rings, one UFrame to place used rings
             // because the virtio-mmio legacy required the address to be continuous. The max queue size is 128.
             if size > 128 {
                 return Err(QueueError::InvalidArgs);
@@ -89,8 +89,8 @@ impl VirtQueue {
                 let align_size = VirtioPciLegacyTransport::QUEUE_ALIGN_SIZE;
                 let total_frames =
                     VirtioPciLegacyTransport::calc_virtqueue_size_aligned(queue_size) / align_size;
-                let continue_segment = FrameAllocOptions::new(total_frames)
-                    .alloc_contiguous()
+                let continue_segment = FrameAllocOptions::new()
+                    .alloc_segment(total_frames)
                     .unwrap();
 
                 let avial_size = size_of::<u16>() * (3 + queue_size);
@@ -99,12 +99,12 @@ impl VirtQueue {
                 continue_segment.split(seg1_frames * align_size)
             };
             let desc_frame_ptr: SafePtr<Descriptor, DmaCoherent> =
-                SafePtr::new(DmaCoherent::map(seg1, true).unwrap(), 0);
+                SafePtr::new(DmaCoherent::map(seg1.into(), true).unwrap(), 0);
             let mut avail_frame_ptr: SafePtr<AvailRing, DmaCoherent> =
                 desc_frame_ptr.clone().cast();
             avail_frame_ptr.byte_add(desc_size);
             let used_frame_ptr: SafePtr<UsedRing, DmaCoherent> =
-                SafePtr::new(DmaCoherent::map(seg2, true).unwrap(), 0);
+                SafePtr::new(DmaCoherent::map(seg2.into(), true).unwrap(), 0);
             (desc_frame_ptr, avail_frame_ptr, used_frame_ptr)
         } else {
             if size > 256 {
@@ -112,18 +112,27 @@ impl VirtQueue {
             }
             (
                 SafePtr::new(
-                    DmaCoherent::map(FrameAllocOptions::new(1).alloc_contiguous().unwrap(), true)
-                        .unwrap(),
+                    DmaCoherent::map(
+                        FrameAllocOptions::new().alloc_segment(1).unwrap().into(),
+                        true,
+                    )
+                    .unwrap(),
                     0,
                 ),
                 SafePtr::new(
-                    DmaCoherent::map(FrameAllocOptions::new(1).alloc_contiguous().unwrap(), true)
-                        .unwrap(),
+                    DmaCoherent::map(
+                        FrameAllocOptions::new().alloc_segment(1).unwrap().into(),
+                        true,
+                    )
+                    .unwrap(),
                     0,
                 ),
                 SafePtr::new(
-                    DmaCoherent::map(FrameAllocOptions::new(1).alloc_contiguous().unwrap(), true)
-                        .unwrap(),
+                    DmaCoherent::map(
+                        FrameAllocOptions::new().alloc_segment(1).unwrap().into(),
+                        true,
+                    )
+                    .unwrap(),
                     0,
                 ),
             )

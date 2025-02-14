@@ -115,6 +115,11 @@ bitflags! {
         const ACCESSED  = 0b00001000;
         /// Has the memory page been written.
         const DIRTY     = 0b00010000;
+
+        /// The first bit available for software use.
+        const AVAIL1    = 0b01000000;
+        /// The second bit available for software use.
+        const AVAIL2    = 0b10000000;
     }
 }
 

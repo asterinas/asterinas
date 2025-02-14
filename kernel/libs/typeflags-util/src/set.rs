@@ -17,7 +17,7 @@ pub trait Set {}
 pub struct Cons<T, S: Set>(PhantomData<(T, S)>);
 
 impl<T, S: Set> Cons<T, S> {
-    #[allow(clippy::new_without_default)]
+    #[expect(clippy::new_without_default)]
     pub fn new() -> Self {
         Cons(PhantomData)
     }

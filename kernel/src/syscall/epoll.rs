@@ -7,7 +7,7 @@ use crate::{
     events::IoEvents,
     fs::{
         epoll::{EpollCtl, EpollEvent, EpollFile, EpollFlags},
-        file_table::{FdFlags, FileDesc},
+        file_table::{get_file_fast, FdFlags, FileDesc},
         utils::CreationFlags,
     },
     prelude::*,
@@ -41,8 +41,8 @@ pub fn sys_epoll_create1(flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     };
 
     let epoll_file: Arc<EpollFile> = EpollFile::new();
-    let mut file_table = ctx.posix_thread.file_table().lock();
-    let fd = file_table.insert(epoll_file, fd_flags);
+    let file_table = ctx.thread_local.file_table().borrow();
+    let fd = file_table.write().insert(epoll_file, fd_flags);
     Ok(SyscallReturn::Return(fd as _))
 }
 
@@ -79,14 +79,15 @@ pub fn sys_epoll_ctl(
         _ => return_errno_with_message!(Errno::EINVAL, "invalid op"),
     };
 
-    let file = {
-        let file_table = ctx.posix_thread.file_table().lock();
-        file_table.get_file(epfd)?.clone()
-    };
+    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let file = get_file_fast!(&mut file_table, epfd).into_owned();
+    // Drop `file_table` as `EpollFile::control` also performs `file_table().borrow_mut()`.
+    drop(file_table);
+
     let epoll_file = file
         .downcast_ref::<EpollFile>()
         .ok_or(Error::with_message(Errno::EINVAL, "not epoll file"))?;
-    epoll_file.control(&cmd)?;
+    epoll_file.control(ctx.thread_local, &cmd)?;
 
     Ok(SyscallReturn::Return(0 as _))
 }
@@ -109,13 +110,12 @@ fn do_epoll_wait(
         None
     };
 
-    let epoll_file_arc = {
-        let file_table = ctx.posix_thread.file_table().lock();
-        file_table.get_file(epfd)?.clone()
-    };
-    let epoll_file = epoll_file_arc
+    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let file = get_file_fast!(&mut file_table, epfd);
+    let epoll_file = file
         .downcast_ref::<EpollFile>()
         .ok_or(Error::with_message(Errno::EINVAL, "not epoll file"))?;
+
     let result = epoll_file.wait(max_events, timeout.as_ref());
 
     // As mentioned in the manual, the return value should be zero if no file descriptor becomes ready

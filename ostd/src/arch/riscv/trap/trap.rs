@@ -129,7 +129,7 @@ impl UserContext {
 /// General registers
 #[derive(Debug, Default, Clone, Copy, Pod)]
 #[repr(C)]
-#[allow(missing_docs)]
+#[expect(missing_docs)]
 pub struct GeneralRegs {
     pub zero: usize,
     pub ra: usize,
@@ -214,7 +214,7 @@ impl UserContext {
     }
 }
 
-#[allow(improper_ctypes)]
+#[expect(improper_ctypes)]
 extern "C" {
     fn trap_entry();
     fn run_user(regs: &mut UserContext);

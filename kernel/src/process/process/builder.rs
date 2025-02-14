@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
+#![expect(dead_code)]
 
 use super::{Pid, Process};
 use crate::{
@@ -12,7 +12,7 @@ use crate::{
         signal::sig_disposition::SigDispositions,
         Credentials,
     },
-    sched::priority::Nice,
+    sched::Nice,
 };
 
 pub struct ProcessBuilder<'a> {
@@ -135,19 +135,15 @@ impl<'a> ProcessBuilder<'a> {
 
         let nice = nice.or_else(|| Some(Nice::default())).unwrap();
 
-        let process = {
-            let threads = Vec::new();
-            Process::new(
-                pid,
-                parent,
-                threads,
-                executable_path.to_string(),
-                process_vm,
-                resource_limits,
-                nice,
-                sig_dispositions,
-            )
-        };
+        let process = Process::new(
+            pid,
+            parent,
+            executable_path.to_string(),
+            process_vm,
+            resource_limits,
+            nice,
+            sig_dispositions,
+        );
 
         let task = if let Some(thread_builder) = main_thread_builder {
             let builder = thread_builder.process(Arc::downgrade(&process));
@@ -164,9 +160,7 @@ impl<'a> ProcessBuilder<'a> {
             )?
         };
 
-        process.tasks().lock().push(task);
-
-        process.set_runnable();
+        process.tasks().lock().insert(task).unwrap();
 
         Ok(process)
     }

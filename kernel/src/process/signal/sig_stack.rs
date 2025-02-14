@@ -25,7 +25,7 @@ bitflags! {
 }
 
 #[repr(u8)]
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum SigStackStatus {
     #[default]

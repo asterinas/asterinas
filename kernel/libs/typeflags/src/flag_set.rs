@@ -7,9 +7,6 @@ use syn::Expr;
 
 use crate::type_flag::TypeFlagDef;
 
-const EMPTY_SET_NAME: &str = "::typeflags_util::Nil";
-const SET_NAME: &str = "::typeflags_util::Cons";
-
 /// A flagSet represent the combination of different flag item.
 /// e.g. [Read, Write], [Read], [] are all flag sets.
 /// The order of flagItem does not matters. So flag sets with same sets of items should be viewed as the same set.

@@ -5,6 +5,7 @@ use cfg_if::cfg_if;
 mod null;
 mod pty;
 mod random;
+mod shm;
 pub mod tty;
 mod urandom;
 mod zero;
@@ -54,6 +55,7 @@ pub fn init() -> Result<()> {
     let urandom = Arc::new(urandom::Urandom);
     add_node(urandom, "urandom")?;
     pty::init()?;
+    shm::init()?;
     Ok(())
 }
 

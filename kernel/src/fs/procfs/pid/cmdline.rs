@@ -23,7 +23,7 @@ impl CmdlineFileOps {
 
 impl FileOps for CmdlineFileOps {
     fn data(&self) -> Result<Vec<u8>> {
-        let cmdline_output = if self.0.is_zombie() {
+        let cmdline_output = if self.0.status().is_zombie() {
             // Returns 0 characters for zombie process.
             Vec::new()
         } else {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
+#![expect(dead_code)]
 
 //! A global table stores the pid to process mapping.
 //! This table can be used to get process with pid.

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-#![allow(unused_variables)]
+#![expect(dead_code)]
+#![expect(unused_variables)]
 
 use alloc::string::String;
 use core::{cmp::Ordering, time::Duration};
@@ -13,7 +13,7 @@ use aster_block::{
     BLOCK_SIZE,
 };
 use aster_rights::Full;
-use ostd::mm::{Frame, VmIo};
+use ostd::mm::{Segment, VmIo};
 
 use super::{
     constants::*,
@@ -29,9 +29,10 @@ use crate::{
     events::IoEvents,
     fs::{
         exfat::{dentry::ExfatDentryIterator, fat::ExfatChain, fs::ExfatFS},
+        path::{is_dot, is_dot_or_dotdot, is_dotdot},
         utils::{
-            DirentVisitor, Extension, Inode, InodeMode, InodeType, IoctlCmd, Metadata, MknodType,
-            PageCache, PageCacheBackend,
+            CachePage, DirentVisitor, Extension, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
+            MknodType, PageCache, PageCacheBackend,
         },
     },
     prelude::*,
@@ -135,14 +136,16 @@ struct ExfatInodeInner {
 }
 
 impl PageCacheBackend for ExfatInode {
-    fn read_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
+    fn read_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
         let inner = self.inner.read();
         if inner.size < idx * PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "Invalid read size")
         }
         let sector_id = inner.get_sector_id(idx * PAGE_SIZE / inner.fs().sector_size())?;
-        let bio_segment =
-            BioSegment::new_from_segment(frame.clone().into(), BioDirection::FromDevice);
+        let bio_segment = BioSegment::new_from_segment(
+            Segment::from(frame.clone()).into(),
+            BioDirection::FromDevice,
+        );
         let waiter = inner.fs().block_device().read_blocks_async(
             BlockId::from_offset(sector_id * inner.fs().sector_size()),
             bio_segment,
@@ -150,7 +153,7 @@ impl PageCacheBackend for ExfatInode {
         Ok(waiter)
     }
 
-    fn write_page_async(&self, idx: usize, frame: &Frame) -> Result<BioWaiter> {
+    fn write_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
         let inner = self.inner.read();
         let sector_size = inner.fs().sector_size();
 
@@ -158,8 +161,10 @@ impl PageCacheBackend for ExfatInode {
 
         // FIXME: We may need to truncate the file if write_page fails.
         // To fix this issue, we need to change the interface of the PageCacheBackend trait.
-        let bio_segment =
-            BioSegment::new_from_segment(frame.clone().into(), BioDirection::ToDevice);
+        let bio_segment = BioSegment::new_from_segment(
+            Segment::from(frame.clone()).into(),
+            BioDirection::ToDevice,
+        );
         let waiter = inner.fs().block_device().write_blocks_async(
             BlockId::from_offset(sector_id * inner.fs().sector_size()),
             bio_segment,
@@ -486,7 +491,7 @@ impl ExfatInodeInner {
         };
 
         // FIXME: This isn't expected by the compiler.
-        #[allow(non_local_definitions)]
+        #[expect(non_local_definitions)]
         impl DirentVisitor for Vec<(String, usize)> {
             fn visit(
                 &mut self,
@@ -1006,7 +1011,7 @@ impl ExfatInode {
         let sub_dir = inner.num_sub_inodes;
         let mut child_offsets: Vec<usize> = vec![];
         // FIXME: This isn't expected by the compiler.
-        #[allow(non_local_definitions)]
+        #[expect(non_local_definitions)]
         impl DirentVisitor for Vec<usize> {
             fn visit(
                 &mut self,
@@ -1513,7 +1518,7 @@ impl Inode for ExfatInode {
         if name.len() > MAX_NAME_LENGTH {
             return_errno!(Errno::ENAMETOOLONG)
         }
-        if name == "." || name == ".." {
+        if is_dot_or_dotdot(name) {
             return_errno!(Errno::EISDIR)
         }
 
@@ -1541,10 +1546,10 @@ impl Inode for ExfatInode {
         if !self.inner.read().inode_type.is_directory() {
             return_errno!(Errno::ENOTDIR)
         }
-        if name == "." {
+        if is_dot(name) {
             return_errno_with_message!(Errno::EINVAL, "rmdir on .")
         }
-        if name == ".." {
+        if is_dotdot(name) {
             return_errno_with_message!(Errno::ENOTEMPTY, "rmdir on ..")
         }
         if name.len() > MAX_NAME_LENGTH {
@@ -1597,7 +1602,7 @@ impl Inode for ExfatInode {
     }
 
     fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
-        if old_name == "." || old_name == ".." || new_name == "." || new_name == ".." {
+        if is_dot_or_dotdot(old_name) || is_dot_or_dotdot(new_name) {
             return_errno!(Errno::EISDIR);
         }
         if old_name.len() > MAX_NAME_LENGTH || new_name.len() > MAX_NAME_LENGTH {

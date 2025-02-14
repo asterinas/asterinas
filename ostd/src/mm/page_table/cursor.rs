@@ -76,7 +76,9 @@ use super::{
 };
 use crate::{
     mm::{
-        kspace::should_map_as_tracked, paddr_to_vaddr, page::DynPage, Paddr, PageProperty, Vaddr,
+        frame::{meta::AnyFrameMeta, Frame},
+        kspace::should_map_as_tracked,
+        paddr_to_vaddr, Paddr, PageProperty, Vaddr,
     },
     task::{disable_preempt, DisabledPreemptGuard},
 };
@@ -89,10 +91,9 @@ pub enum PageTableItem {
     },
     Mapped {
         va: Vaddr,
-        page: DynPage,
+        page: Frame<dyn AnyFrameMeta>,
         prop: PageProperty,
     },
-    #[allow(dead_code)]
     MappedUntracked {
         va: Vaddr,
         pa: Paddr,
@@ -131,7 +132,7 @@ where
     va: Vaddr,
     /// The virtual address range that is locked.
     barrier_va: Range<Vaddr>,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     preempt_guard: DisabledPreemptGuard,
     _phantom: PhantomData<&'a PageTable<M, E, C>>,
 }
@@ -231,7 +232,7 @@ where
                         len: page_size::<C>(level),
                     });
                 }
-                Child::Page(page, prop) => {
+                Child::Frame(page, prop) => {
                     return Ok(PageTableItem::Mapped { va, page, prop });
                 }
                 Child::Untracked(pa, plevel, prop) => {
@@ -400,9 +401,9 @@ where
         self.0.query()
     }
 
-    /// Maps the range starting from the current address to a [`DynPage`].
+    /// Maps the range starting from the current address to a [`Frame<dyn AnyFrameMeta>`].
     ///
-    /// It returns the previously mapped [`DynPage`] if that exists.
+    /// It returns the previously mapped [`Frame<dyn AnyFrameMeta>`] if that exists.
     ///
     /// # Panics
     ///
@@ -415,7 +416,11 @@ where
     ///
     /// The caller should ensure that the virtual range being mapped does
     /// not affect kernel's memory safety.
-    pub unsafe fn map(&mut self, page: DynPage, prop: PageProperty) -> Option<DynPage> {
+    pub unsafe fn map(
+        &mut self,
+        page: Frame<dyn AnyFrameMeta>,
+        prop: PageProperty,
+    ) -> Option<Frame<dyn AnyFrameMeta>> {
         let end = self.0.va + page.size();
         assert!(end <= self.0.barrier_va.end);
 
@@ -437,7 +442,7 @@ where
                     let _ = cur_entry.replace(Child::PageTable(pt.clone_raw()));
                     self.0.push_level(pt);
                 }
-                Child::Page(_, _) => {
+                Child::Frame(_, _) => {
                     panic!("Mapping a smaller page in an already mapped huge page");
                 }
                 Child::Untracked(_, _, _) => {
@@ -449,11 +454,11 @@ where
         debug_assert_eq!(self.0.level, page.level());
 
         // Map the current page.
-        let old = self.0.cur_entry().replace(Child::Page(page, prop));
+        let old = self.0.cur_entry().replace(Child::Frame(page, prop));
         self.0.move_forward();
 
         match old {
-            Child::Page(old_page, _) => Some(old_page),
+            Child::Frame(old_page, _) => Some(old_page),
             Child::None => None,
             Child::PageTable(_) => {
                 todo!("Dropping page table nodes while mapping requires TLB flush")
@@ -520,7 +525,7 @@ where
                         let _ = cur_entry.replace(Child::PageTable(pt.clone_raw()));
                         self.0.push_level(pt);
                     }
-                    Child::Page(_, _) => {
+                    Child::Frame(_, _) => {
                         panic!("Mapping a smaller page in an already mapped huge page");
                     }
                     Child::Untracked(_, _, _) => {
@@ -614,7 +619,7 @@ where
                     Child::None => {
                         unreachable!("Already checked");
                     }
-                    Child::Page(_, _) => {
+                    Child::Frame(_, _) => {
                         panic!("Removing part of a huge page");
                     }
                     Child::Untracked(_, _, _) => {
@@ -631,7 +636,7 @@ where
             self.0.move_forward();
 
             return match old {
-                Child::Page(page, prop) => PageTableItem::Mapped {
+                Child::Frame(page, prop) => PageTableItem::Mapped {
                     va: self.0.va,
                     page,
                     prop,
@@ -796,7 +801,7 @@ where
                 Child::Untracked(_, _, _) => {
                     panic!("Copying untracked mappings");
                 }
-                Child::Page(page, mut prop) => {
+                Child::Frame(page, mut prop) => {
                     let mapped_page_size = page.size();
 
                     // Do protection.

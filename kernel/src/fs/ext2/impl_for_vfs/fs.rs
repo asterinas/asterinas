@@ -14,6 +14,8 @@ impl FileSystem for Ext2 {
     fn sync(&self) -> Result<()> {
         self.sync_all_inodes()?;
         self.sync_metadata()?;
+
+        self.block_device().sync()?;
         Ok(())
     }
 

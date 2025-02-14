@@ -40,15 +40,15 @@ mod test {
 
     /// Followings are implementations of memory simulated block device
     pub const SECTOR_SIZE: usize = 512;
-    struct ExfatMemoryBioQueue(Segment);
+    struct ExfatMemoryBioQueue(Segment<()>);
 
     impl ExfatMemoryBioQueue {
-        pub fn new(segment: Segment) -> Self {
+        pub fn new(segment: Segment<()>) -> Self {
             ExfatMemoryBioQueue(segment)
         }
 
         pub fn sectors_count(&self) -> usize {
-            self.0.nbytes() / SECTOR_SIZE
+            self.0.size() / SECTOR_SIZE
         }
     }
 
@@ -57,7 +57,7 @@ mod test {
     }
 
     impl ExfatMemoryDisk {
-        pub fn new(segment: Segment) -> Self {
+        pub fn new(segment: Segment<()>) -> Self {
             ExfatMemoryDisk {
                 queue: ExfatMemoryBioQueue::new(segment),
             }
@@ -111,20 +111,20 @@ mod test {
     static EXFAT_IMAGE: &[u8] = include_bytes!("../../../../test/build/exfat.img");
 
     /// Read exfat disk image
-    fn new_vm_segment_from_image() -> Segment {
-        let vm_segment = FrameAllocOptions::new(EXFAT_IMAGE.len().div_ceil(PAGE_SIZE))
-            .uninit(true)
-            .alloc_contiguous()
+    fn new_vm_segment_from_image() -> Segment<()> {
+        let segment = FrameAllocOptions::new()
+            .zeroed(false)
+            .alloc_segment(EXFAT_IMAGE.len().div_ceil(PAGE_SIZE))
             .unwrap();
 
-        vm_segment.write_bytes(0, EXFAT_IMAGE).unwrap();
-        vm_segment
+        segment.write_bytes(0, EXFAT_IMAGE).unwrap();
+        segment
     }
 
     // Generate a simulated exfat file system
     fn load_exfat() -> Arc<ExfatFS> {
-        let vm_segment = new_vm_segment_from_image();
-        let disk = ExfatMemoryDisk::new(vm_segment);
+        let segment = new_vm_segment_from_image();
+        let disk = ExfatMemoryDisk::new(segment);
         let mount_option = ExfatMountOptions::default();
         let fs = ExfatFS::open(Arc::new(disk), mount_option);
         assert!(fs.is_ok(), "Fs failed to init:{:?}", fs.unwrap_err());

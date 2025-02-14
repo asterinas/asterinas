@@ -16,13 +16,14 @@ RESULT_TEMPLATE="${BENCHMARK_ROOT}/result_template.json"
 # Parse benchmark results
 parse_raw_results() {
     local search_pattern="$1"
-    local result_index="$2"
-    local result_file="$3"
+    local nth_occurrence="$2"
+    local result_index="$3"
+    local result_file="$4"
 
     # Extract and sanitize numeric results
     local linux_result aster_result
-    linux_result=$(awk "/${search_pattern}/ {result=\$$result_index} END {print result}" "${LINUX_OUTPUT}" | tr -d '\r' | sed 's/[^0-9.]*//g')
-    aster_result=$(awk "/${search_pattern}/ {result=\$$result_index} END {print result}" "${ASTER_OUTPUT}" | tr -d '\r' | sed 's/[^0-9.]*//g')
+    linux_result=$(awk "/${search_pattern}/ {print \$$result_index}" "${LINUX_OUTPUT}" | tr -d '\r' | sed 's/[^0-9.]*//g' | sed -n "${nth_occurrence}p")
+    aster_result=$(awk "/${search_pattern}/ {print \$$result_index}" "${ASTER_OUTPUT}" | tr -d '\r' | sed 's/[^0-9.]*//g' | sed -n "${nth_occurrence}p")
 
     # Ensure both results are valid
     if [ -z "${linux_result}" ] || [ -z "${aster_result}" ]; then
@@ -74,21 +75,26 @@ run_benchmark() {
     local benchmark="$1"
     local run_mode="$2"
     local aster_scheme="$3"
+    local smp="$4"
 
     echo "Preparing libraries..."
     prepare_libs
 
-    # Set up Asterinas scheme if specified
-    local aster_scheme_cmd=""
-    if [ -n "$aster_scheme" ] && [ "$aster_scheme" != "null" ]; then
-        aster_scheme_cmd="SCHEME=${aster_scheme}"
+    # Set up Asterinas scheme if specified (Default: iommu)
+    local aster_scheme_cmd="SCHEME=iommu"
+    if [ -n "$aster_scheme" ]; then
+        if [ "$aster_scheme" != "null" ]; then
+            aster_scheme_cmd="SCHEME=${aster_scheme}"
+        else
+            aster_scheme_cmd=""
+        fi
     fi
 
     # Prepare commands for Asterinas and Linux
-    local asterinas_cmd="make run BENCHMARK=${benchmark} ${aster_scheme_cmd} ENABLE_KVM=1 RELEASE_LTO=1 NETDEV=tap VHOST=on 2>&1"
+    local asterinas_cmd="make run BENCHMARK=${benchmark} ${aster_scheme_cmd} SMP=${smp} ENABLE_KVM=1 RELEASE_LTO=1 NETDEV=tap VHOST=on 2>&1"
     local linux_cmd="/usr/local/qemu/bin/qemu-system-x86_64 \
         --no-reboot \
-        -smp 1 \
+        -smp ${smp} \
         -m 8G \
         -machine q35,kernel-irqchip=split \
         -cpu Icelake-Server,-pcid,+x2apic \
@@ -133,12 +139,13 @@ parse_results() {
     local bench_result="$1"
 
     local search_pattern=$(jq -r '.result_extraction.search_pattern // empty' "$bench_result")
+    local nth_occurrence=$(jq -r '.result_extraction.nth_occurrence // 1' "$bench_result")
     local result_index=$(jq -r '.result_extraction.result_index // empty' "$bench_result")
     local unit=$(jq -r '.chart.unit // empty' "$bench_result")
     local legend=$(jq -r '.chart.legend // {system}' "$bench_result")
 
     generate_template "$unit" "$legend"
-    parse_raw_results "$search_pattern" "$result_index" "$(extract_result_file "$bench_result")"
+    parse_raw_results "$search_pattern" "$nth_occurrence" "$result_index" "$(extract_result_file "$bench_result")"
 }
 
 # Clean up temporary files
@@ -170,8 +177,17 @@ main() {
         done
     fi
 
+    local smp
+    if [[ -f "$bench_result" ]]; then
+        smp=$(jq -r '.runtime_config.smp // 1' "$bench_result")
+    else
+        for job in "${BENCHMARK_ROOT}/${benchmark}"/bench_results/*; do
+            [[ -f "$job" ]] && smp=$(jq -r '.runtime_config.smp // 1' "$job") && break
+        done
+    fi
+
     # Run the benchmark
-    run_benchmark "$benchmark" "$run_mode" "$aster_scheme"
+    run_benchmark "$benchmark" "$run_mode" "$aster_scheme" "$smp"
 
     # Parse results if benchmark configuration exists
     if [[ -f "$bench_result" ]]; then

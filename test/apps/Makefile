@@ -18,6 +18,7 @@ TEST_APPS := \
 	epoll \
 	eventfd2 \
 	execve \
+	exit \
 	fdatasync \
 	file_io \
 	fork \
@@ -33,6 +34,7 @@ TEST_APPS := \
 	pipe \
 	pthread \
 	pty \
+	shm \
 	signal_c \
 	vsock \
 

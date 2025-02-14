@@ -85,7 +85,6 @@ pub unsafe fn init(on_bsp: bool) {
 // The linker script ensure that cpu_local_tss section is right
 // at the beginning of cpu_local area, so that gsbase (offset zero)
 // points to LOCAL_TSS.
-#[allow(dead_code)]
 #[link_section = ".cpu_local_tss"]
 static LOCAL_TSS: SyncUnsafeCell<TaskStateSegment> = SyncUnsafeCell::new(TaskStateSegment::new());
 
@@ -114,7 +113,7 @@ static mut USER_CS: u16 = 0;
 const KCODE64: u64 = 0x00209800_00000000; // EXECUTABLE | USER_SEGMENT | PRESENT | LONG_MODE
 const UCODE64: u64 = 0x0020F800_00000000; // EXECUTABLE | USER_SEGMENT | USER_MODE | PRESENT | LONG_MODE
 const KDATA64: u64 = 0x00009200_00000000; // DATA_WRITABLE | USER_SEGMENT | PRESENT
-#[allow(dead_code)]
+#[expect(dead_code)]
 const UDATA64: u64 = 0x0000F200_00000000; // DATA_WRITABLE | USER_SEGMENT | USER_MODE | PRESENT
 const UCODE32: u64 = 0x00cffa00_0000ffff; // EXECUTABLE | USER_SEGMENT | USER_MODE | PRESENT
 const UDATA32: u64 = 0x00cff200_0000ffff; // EXECUTABLE | USER_SEGMENT | USER_MODE | PRESENT

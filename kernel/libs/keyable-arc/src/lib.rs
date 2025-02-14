@@ -138,8 +138,21 @@ impl<T: ?Sized> KeyableArc<T> {
     }
 
     /// Creates a new `KeyableWeak` pointer to this allocation.
+    #[inline]
     pub fn downgrade(this: &Self) -> KeyableWeak<T> {
         Arc::downgrade(&this.0).into()
+    }
+
+    /// Gets the number of strong pointers pointing to this allocation.
+    #[inline]
+    pub fn strong_count(this: &Self) -> usize {
+        Arc::strong_count(&this.0)
+    }
+
+    /// Gets the number of weak pointers pointing to this allocation.
+    #[inline]
+    pub fn weak_count(this: &Self) -> usize {
+        Arc::weak_count(&this.0)
     }
 }
 
@@ -235,7 +248,7 @@ impl<T> KeyableWeak<T> {
     /// Constructs a new `KeyableWeak<T>`, without allocating any memory.
     /// Calling `upgrade` on the return value always gives `None`.
     #[inline]
-    #[allow(clippy::new_without_default)]
+    #[expect(clippy::new_without_default)]
     pub fn new() -> Self {
         Self(Weak::new())
     }

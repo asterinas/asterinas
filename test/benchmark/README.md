@@ -1,6 +1,6 @@
 # Asterinas Benchmark Collection
 
-The Asterinas Benchmark Collection evaluates the performance of Asterinas in comparison to Linux across a range of benchmarking tools (e.g., LMbench, Sysbench, iPerf) and real-world applications (e.g., Nginx, Redis, SQLite). These benchmarks are conducted under various configurations, such as within a single virtual machine (VM) or between a VM and its host.
+The Asterinas Benchmark Collection evaluates the performance of Asterinas in comparison to Linux across a range of benchmarking tools (e.g., LMbench, Sysbench, iPerf) and real-world applications (e.g., Nginx, Redis, SQLite, Memcached). These benchmarks are conducted under various configurations, such as within a single virtual machine (VM) or between a VM and its host.
 
 The benchmarks are run automatically on a nightly basis through continuous integration (CI) pipelines. Results, presented in clear and visually appealing figures and tables, are available [here](https://asterinas.github.io/benchmark/).
 
@@ -8,7 +8,7 @@ The benchmarks are run automatically on a nightly basis through continuous integ
 
 ### Benchmark Suites
 
-The benchmark collection is organized into benchmark suites, each dedicated to a specific benchmarking tool or application. These suites focus on comparing the performance of different operating systems using a particular methodology. Currently, there are seven benchmark suites, each located in its own directory:
+The benchmark collection is organized into benchmark suites, each dedicated to a specific benchmarking tool or application. These suites focus on comparing the performance of different operating systems using a particular methodology. Currently, there are eight benchmark suites, each located in its own directory:
 
 - [lmbench](https://github.com/asterinas/asterinas/tree/main/test/benchmark/lmbench)
 - [sysbench](https://github.com/asterinas/asterinas/tree/main/test/benchmark/sysbench)
@@ -17,6 +17,7 @@ The benchmark collection is organized into benchmark suites, each dedicated to a
 - [sqlite](https://github.com/asterinas/asterinas/tree/main/test/benchmark/sqlite)
 - [redis](https://github.com/asterinas/asterinas/tree/main/test/benchmark/redis)
 - [nginx](https://github.com/asterinas/asterinas/tree/main/test/benchmark/nginx)
+- [memcached](https://github.com/asterinas/asterinas/tree/main/test/benchmark/memcached)
 
 Each suite has a corresponding web page (e.g., [LMbench results](https://asterinas.github.io/benchmark/lmbench/)) that publishes the latest performance data. At the top of each page, a summary table showcases the most recent results, configured using the `summary.json` file in the suite's directory.
 
@@ -138,7 +139,7 @@ The configuration files provide metadata about the benchmark jobs and results, s
 Below are the contents of these files for the sample benchmark:
 
 ```jsonc
-// fio/ext2_iommu_seq_write_bw/bench_result.json
+// fio/ext2_no_iommu_seq_write_bw/bench_result.json
 {
     "alert": {
         "threshold": "125%",
@@ -149,13 +150,13 @@ Below are the contents of these files for the sample benchmark:
         "result_index": 2
     },
     "chart": {
-        "title": "[Ext2] The bandwidth of sequential writes (IOMMU enabled on Asterinas)",
+        "title": "[Ext2] The bandwidth of sequential writes (IOMMU disabled on Asterinas)",
         "description": "fio -filename=/ext2/fio-test -size=1G -bs=1M -direct=1",
         "unit": "MB/s",
         "legend": "Average file write bandwidth on {system}"
     },
     "runtime_config": {
-        "aster_scheme": "iommu"
+        "aster_scheme": "null"
     }
 }  
 ```
@@ -164,7 +165,7 @@ Below are the contents of these files for the sample benchmark:
 // sqlite/ext2_benchmarks/bench_results/ext2_deletes_between.json
 {
     "result_extraction": {
-        "search_pattern": "10000 DELETEs, numeric BETWEEN, indexed....",
+        "search_pattern": "[0-9]+ DELETEs, numeric BETWEEN, indexed....",
         "result_index": 8
     },
     "chart": {
@@ -174,7 +175,7 @@ Below are the contents of these files for the sample benchmark:
 // sqlite/ext2_benchmarks/bench_results/ext2_updates_between.json
 {
     "result_extraction": {
-        "search_pattern": "10000 UPDATES, numeric BETWEEN, indexed....",
+        "search_pattern": "[0-9]+ UPDATES, numeric BETWEEN, indexed....",
         "result_index": 8
     },
     "chart": {
@@ -242,7 +243,8 @@ The `bench_result.json` file configures how benchmark results are processed and 
     // Settings for extracting benchmark results from raw outputs.
     "result_extraction": {
         "search_pattern": "sender", // Regex or string to locate results.
-        "result_index": 7 // Match index to use (e.g., 7th occurrence).
+        "nth_occurrence": 1, // Optional. Which matched occurrence to use (default to 1).
+        "result_index": 7 // Match index to use.
     },
     // Configurations for how the results are displayed in charts.
     "chart": {
@@ -253,7 +255,8 @@ The `bench_result.json` file configures how benchmark results are processed and 
     },
     // Optional runtime configurations for the benchmark.
     "runtime_config": {
-        "aster_scheme": "iommu" // Corresponds to Makefile parameters (e.g., IOMMU support).
+        "aster_scheme": "null", // Corresponds to Makefile parameters, IOMMU is enabled by default (SCHEME=iommu).
+        "smp": 1 // Number of SMP CPUs (default to 1).
     }
 }
 ```

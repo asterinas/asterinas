@@ -173,7 +173,7 @@ impl LingerOption {
 /// A trait used for setting socket level options on actual sockets.
 pub(in crate::net) trait SetSocketLevelOption {
     /// Sets whether keepalive messages are enabled.
-    fn set_keep_alive(&mut self, _keep_alive: bool) -> NeedIfacePoll {
+    fn set_keep_alive(&self, _keep_alive: bool) -> NeedIfacePoll {
         NeedIfacePoll::FALSE
     }
 }

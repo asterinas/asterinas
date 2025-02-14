@@ -222,7 +222,7 @@ impl Heap {
 
     /// Returns bounds on the guaranteed usable size of a successful
     /// allocation created with the specified `layout`.
-    #[allow(unused)]
+    #[expect(unused)]
     pub fn usable_size(&self, layout: Layout) -> (usize, usize) {
         match Heap::layout_to_allocator(&layout) {
             HeapAllocator::Slab64Bytes => (layout.size(), 64),
@@ -258,7 +258,6 @@ impl Heap {
     }
 
     /// Returns total memory size in bytes of the heap.
-    #[allow(unused)]
     pub fn total_bytes(&self) -> usize {
         self.slab_64_bytes.total_blocks() * 64
             + self.slab_128_bytes.total_blocks() * 128
@@ -271,7 +270,6 @@ impl Heap {
     }
 
     /// Returns allocated memory size in bytes.
-    #[allow(unused)]
     pub fn used_bytes(&self) -> usize {
         self.slab_64_bytes.used_blocks() * 64
             + self.slab_128_bytes.used_blocks() * 128
@@ -284,7 +282,7 @@ impl Heap {
     }
 
     /// Returns available memory size in bytes.
-    #[allow(unused)]
+    #[expect(unused)]
     pub fn available_bytes(&self) -> usize {
         self.total_bytes() - self.used_bytes()
     }

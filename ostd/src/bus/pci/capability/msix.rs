@@ -2,8 +2,8 @@
 
 //! MSI-X capability support.
 
-#![allow(dead_code)]
-#![allow(unused_variables)]
+#![expect(dead_code)]
+#![expect(unused_variables)]
 
 use alloc::{sync::Arc, vec::Vec};
 

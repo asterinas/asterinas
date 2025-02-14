@@ -7,7 +7,7 @@ use crate::{
 
 pub mod semaphore;
 
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 pub type key_t = i32;
 
 bitflags! {
@@ -25,7 +25,7 @@ bitflags! {
 
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, TryFromInt)]
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 pub enum IpcControlCmd {
     IPC_RMID = 0,
     IPC_SET = 1,
@@ -41,7 +41,6 @@ pub enum IpcControlCmd {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct IpcPermission {
     key: key_t,
     /// Owner's UID

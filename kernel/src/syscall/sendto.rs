@@ -2,10 +2,10 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::FileDesc,
+    fs::file_table::{get_file_fast, FileDesc},
     net::socket::{MessageHeader, SendRecvFlags},
     prelude::*,
-    util::net::{get_socket_from_fd, read_socket_addr_from_user},
+    util::net::read_socket_addr_from_user,
 };
 
 pub fn sys_sendto(
@@ -26,7 +26,9 @@ pub fn sys_sendto(
     };
     debug!("sockfd = {sockfd}, buf = 0x{buf:x}, len = 0x{len:x}, flags = {flags:?}, socket_addr = {socket_addr:?}");
 
-    let socket = get_socket_from_fd(sockfd)?;
+    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let file = get_file_fast!(&mut file_table, sockfd);
+    let socket = file.as_socket_or_err()?;
 
     let message_header = MessageHeader::new(socket_addr, None);
 

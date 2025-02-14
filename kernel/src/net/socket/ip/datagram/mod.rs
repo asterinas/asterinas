@@ -10,13 +10,10 @@ use self::{bound::BoundDatagram, unbound::UnboundDatagram};
 use super::{common::get_ephemeral_endpoint, UNSPECIFIED_LOCAL_ENDPOINT};
 use crate::{
     events::IoEvents,
-    fs::{
-        file_handle::FileLike,
-        utils::{InodeMode, Metadata, StatusFlags},
-    },
     match_sock_option_mut,
     net::socket::{
         options::{Error as SocketError, SocketOption},
+        private::SocketPrivate,
         util::{
             options::{SetSocketLevelOption, SocketOptionSet},
             send_recv_flags::SendRecvFlags,
@@ -110,23 +107,6 @@ impl DatagramSocket {
         })
     }
 
-    pub fn is_nonblocking(&self) -> bool {
-        self.is_nonblocking.load(Ordering::Relaxed)
-    }
-
-    pub fn set_nonblocking(&self, is_nonblocking: bool) {
-        self.is_nonblocking.store(is_nonblocking, Ordering::Relaxed);
-    }
-
-    fn remote_endpoint(&self) -> Option<IpEndpoint> {
-        let inner = self.inner.read();
-
-        match inner.as_ref() {
-            Inner::Bound(bound_datagram) => bound_datagram.remote_endpoint(),
-            Inner::Unbound(_) => None,
-        }
-    }
-
     fn try_bind_ephemeral(&self, remote_endpoint: &IpEndpoint) -> Result<()> {
         // Fast path
         if let Inner::Bound(_) = self.inner.read().as_ref() {
@@ -149,6 +129,65 @@ impl DatagramSocket {
         })
     }
 
+    /// Selects the remote endpoint and binds if the socket is not bound.
+    ///
+    /// The remote endpoint specified in the system call (e.g., `sendto`) argument is preferred,
+    /// otherwise the connected endpoint of the socket is used. If there are no remote endpoints
+    /// available, this method will fail with [`EDESTADDRREQ`].
+    ///
+    /// If the remote endpoint is specified but the socket is not bound, this method will try to
+    /// bind the socket to an ephemeral endpoint.
+    ///
+    /// If the above steps succeed, `op` will be called with the bound socket and the selected
+    /// remote endpoint.
+    ///
+    /// [`EDESTADDRREQ`]: crate::error::Errno::EDESTADDRREQ
+    fn select_remote_and_bind<F, R>(&self, remote: Option<&IpEndpoint>, op: F) -> Result<R>
+    where
+        F: FnOnce(&BoundDatagram, &IpEndpoint) -> Result<R>,
+    {
+        let mut inner = self.inner.read();
+
+        // Not really a loop, since we always break on the first iteration. But we need to use
+        // `loop` here because we want to use `break` later.
+        #[expect(clippy::never_loop)]
+        let bound_datagram = loop {
+            // Fast path: The socket is already bound.
+            if let Inner::Bound(bound_datagram) = inner.as_ref() {
+                break bound_datagram;
+            }
+
+            // Slow path: Try to bind the socket to an ephemeral endpoint.
+            drop(inner);
+            if let Some(remote_endpoint) = remote {
+                self.try_bind_ephemeral(remote_endpoint)?;
+            } else {
+                return_errno_with_message!(
+                    Errno::EDESTADDRREQ,
+                    "the destination address is not specified"
+                );
+            }
+            inner = self.inner.read();
+
+            // Now the socket must be bound.
+            if let Inner::Bound(bound_datagram) = inner.as_ref() {
+                break bound_datagram;
+            }
+            unreachable!("`try_bind_ephemeral` succeeds so the socket cannot be unbound");
+        };
+
+        let remote_endpoint = remote
+            .or_else(|| bound_datagram.remote_endpoint())
+            .ok_or_else(|| {
+                Error::with_message(
+                    Errno::EDESTADDRREQ,
+                    "the destination address is not specified",
+                )
+            })?;
+
+        op(bound_datagram, remote_endpoint)
+    }
+
     fn try_recv(
         &self,
         writer: &mut dyn MultiWrite,
@@ -168,34 +207,19 @@ impl DatagramSocket {
         Ok(recv_bytes)
     }
 
-    fn recv(
-        &self,
-        writer: &mut dyn MultiWrite,
-        flags: SendRecvFlags,
-    ) -> Result<(usize, SocketAddr)> {
-        if self.is_nonblocking() {
-            self.try_recv(writer, flags)
-        } else {
-            self.wait_events(IoEvents::IN, None, || self.try_recv(writer, flags))
-        }
-    }
-
     fn try_send(
         &self,
         reader: &mut dyn MultiRead,
-        remote: &IpEndpoint,
+        remote: Option<&IpEndpoint>,
         flags: SendRecvFlags,
     ) -> Result<usize> {
-        let inner = self.inner.read();
+        let (sent_bytes, iface_to_poll) =
+            self.select_remote_and_bind(remote, |bound_datagram, remote_endpoint| {
+                let sent_bytes = bound_datagram.try_send(reader, remote_endpoint, flags)?;
+                let iface_to_poll = bound_datagram.iface().clone();
+                Ok((sent_bytes, iface_to_poll))
+            })?;
 
-        let Inner::Bound(bound_datagram) = inner.as_ref() else {
-            return_errno_with_message!(Errno::EAGAIN, "the socket is not bound")
-        };
-
-        let sent_bytes = bound_datagram.try_send(reader, remote, flags)?;
-        let iface_to_poll = bound_datagram.iface().clone();
-
-        drop(inner);
         self.pollee.invalidate();
         iface_to_poll.poll();
 
@@ -219,59 +243,13 @@ impl Pollable for DatagramSocket {
     }
 }
 
-impl FileLike for DatagramSocket {
-    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        // TODO: set correct flags
-        let flags = SendRecvFlags::empty();
-        let read_len = self.recv(writer, flags).map(|(len, _)| len)?;
-        Ok(read_len)
+impl SocketPrivate for DatagramSocket {
+    fn is_nonblocking(&self) -> bool {
+        self.is_nonblocking.load(Ordering::Relaxed)
     }
 
-    fn write(&self, reader: &mut VmReader) -> Result<usize> {
-        let remote = self.remote_endpoint().ok_or_else(|| {
-            Error::with_message(
-                Errno::EDESTADDRREQ,
-                "the destination address is not specified",
-            )
-        })?;
-
-        // TODO: Set correct flags
-        let flags = SendRecvFlags::empty();
-
-        // TODO: Block if send buffer is full
-        self.try_send(reader, &remote, flags)
-    }
-
-    fn as_socket(self: Arc<Self>) -> Option<Arc<dyn Socket>> {
-        Some(self)
-    }
-
-    fn status_flags(&self) -> StatusFlags {
-        // TODO: when we fully support O_ASYNC, return the flag
-        if self.is_nonblocking() {
-            StatusFlags::O_NONBLOCK
-        } else {
-            StatusFlags::empty()
-        }
-    }
-
-    fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {
-        if new_flags.contains(StatusFlags::O_NONBLOCK) {
-            self.set_nonblocking(true);
-        } else {
-            self.set_nonblocking(false);
-        }
-        Ok(())
-    }
-
-    fn metadata(&self) -> Metadata {
-        // This is a dummy implementation.
-        // TODO: Add "SockFS" and link `DatagramSocket` to it.
-        Metadata::new_socket(
-            0,
-            InodeMode::from_bits_truncate(0o140777),
-            aster_block::BLOCK_SIZE,
-        )
+    fn set_nonblocking(&self, is_nonblocking: bool) {
+        self.is_nonblocking.store(is_nonblocking, Ordering::Relaxed);
     }
 }
 
@@ -319,8 +297,15 @@ impl Socket for DatagramSocket {
     }
 
     fn peer_addr(&self) -> Result<SocketAddr> {
-        self.remote_endpoint()
-            .map(|endpoint| endpoint.into())
+        let inner = self.inner.read();
+
+        let remote_endpoint = match inner.as_ref() {
+            Inner::Unbound(_) => None,
+            Inner::Bound(bound_datagram) => bound_datagram.remote_endpoint(),
+        };
+
+        remote_endpoint
+            .map(|endpoint| (*endpoint).into())
             .ok_or_else(|| Error::with_message(Errno::ENOTCONN, "the socket is not connected"))
     }
 
@@ -340,18 +325,9 @@ impl Socket for DatagramSocket {
             control_message,
         } = message_header;
 
-        let remote_endpoint = match addr {
-            Some(remote_addr) => {
-                let endpoint = remote_addr.try_into()?;
-                self.try_bind_ephemeral(&endpoint)?;
-                endpoint
-            }
-            None => self.remote_endpoint().ok_or_else(|| {
-                Error::with_message(
-                    Errno::EDESTADDRREQ,
-                    "the destination address is not specified",
-                )
-            })?,
+        let endpoint = match addr {
+            Some(addr) => Some(addr.try_into()?),
+            None => None,
         };
 
         if control_message.is_some() {
@@ -360,7 +336,7 @@ impl Socket for DatagramSocket {
         }
 
         // TODO: Block if the send buffer is full
-        self.try_send(reader, &remote_endpoint, flags)
+        self.try_send(reader, endpoint.as_ref(), flags)
     }
 
     fn recvmsg(
@@ -373,7 +349,8 @@ impl Socket for DatagramSocket {
             warn!("unsupported flags: {:?}", flags);
         }
 
-        let (received_bytes, peer_addr) = self.recv(writer, flags)?;
+        let (received_bytes, peer_addr) =
+            self.block_on(IoEvents::IN, || self.try_recv(writer, flags))?;
 
         // TODO: Receive control message
 
