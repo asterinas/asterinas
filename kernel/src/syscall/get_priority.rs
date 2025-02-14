@@ -5,43 +5,9 @@ use core::sync::atomic::Ordering;
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::{
-        posix_thread::AsPosixThread, process_table, Pgid, Pid, Process, ResourceType::RLIMIT_NICE,
-        Uid,
-    },
+    process::{posix_thread::AsPosixThread, process_table, Pgid, Pid, Process, Uid},
     sched::Nice,
 };
-
-pub fn sys_set_priority(which: i32, who: u32, prio: i32, ctx: &Context) -> Result<SyscallReturn> {
-    let prio_target = PriorityTarget::new(which, who, ctx)?;
-    let new_nice: Nice = {
-        let nice_raw = prio.clamp(
-            Nice::MIN.value().get() as i32,
-            Nice::MAX.value().get() as i32,
-        ) as i8;
-        nice_raw.try_into().unwrap()
-    };
-
-    debug!(
-        "set_priority prio_target: {:?}, new_nice: {:?}",
-        prio_target, new_nice
-    );
-
-    let processes = get_processes(prio_target)?;
-    for process in processes.iter() {
-        let rlimit = process.resource_limits().lock();
-        let limit = (rlimit.get_rlimit(RLIMIT_NICE).get_cur() as i8)
-            .try_into()
-            .map_err(|msg| Error::with_message(Errno::EINVAL, msg))?;
-
-        if new_nice < limit {
-            return_errno!(Errno::EACCES);
-        }
-        process.nice().store(new_nice, Ordering::Relaxed);
-    }
-
-    Ok(SyscallReturn::Return(0))
-}
 
 pub fn sys_get_priority(which: i32, who: u32, ctx: &Context) -> Result<SyscallReturn> {
     let prio_target = PriorityTarget::new(which, who, ctx)?;
@@ -66,7 +32,7 @@ pub fn sys_get_priority(which: i32, who: u32, ctx: &Context) -> Result<SyscallRe
     Ok(SyscallReturn::Return(highest_prio as _))
 }
 
-fn get_processes(prio_target: PriorityTarget) -> Result<Vec<Arc<Process>>> {
+pub(super) fn get_processes(prio_target: PriorityTarget) -> Result<Vec<Arc<Process>>> {
     Ok(match prio_target {
         PriorityTarget::Process(pid) => {
             let process = process_table::get_process(pid).ok_or(Error::new(Errno::ESRCH))?;
@@ -101,14 +67,14 @@ fn get_processes(prio_target: PriorityTarget) -> Result<Vec<Arc<Process>>> {
 }
 
 #[derive(Debug)]
-enum PriorityTarget {
+pub(super) enum PriorityTarget {
     Process(Pid),
     ProcessGroup(Pgid),
     User(Uid),
 }
 
 impl PriorityTarget {
-    fn new(which: i32, who: u32, ctx: &Context) -> Result<Self> {
+    pub(super) fn new(which: i32, who: u32, ctx: &Context) -> Result<Self> {
         let which = Which::try_from(which)
             .map_err(|_| Error::with_message(Errno::EINVAL, "invalid which value"))?;
         Ok(match which {
@@ -143,7 +109,7 @@ impl PriorityTarget {
 #[expect(non_camel_case_types)]
 #[derive(Clone, Debug, TryFromInt)]
 #[repr(i32)]
-enum Which {
+pub(super) enum Which {
     PRIO_PROCESS = 0,
     PRIO_PGRP = 1,
     PRIO_USER = 2,
