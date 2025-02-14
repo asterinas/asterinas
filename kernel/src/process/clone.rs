@@ -4,7 +4,7 @@ use core::{num::NonZeroU64, sync::atomic::Ordering};
 
 use ostd::{
     cpu::UserContext,
-    sync::RwArc,
+    sync::{RwArc, Waiter},
     task::Task,
     user::{UserContextApi, UserSpace},
 };
@@ -203,6 +203,13 @@ pub fn clone_child(
     } else {
         let child_process = clone_child_process(ctx, parent_context, clone_args)?;
         child_process.run();
+
+        let (waiter, waker) = Waiter::new_pair();
+        {
+            let mut val = child_process.vfork_done().lock();
+            *val = Some(waker);
+        }
+        waiter.wait();
 
         let child_pid = child_process.pid();
         Ok(child_pid)
