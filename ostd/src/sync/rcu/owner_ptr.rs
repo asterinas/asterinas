@@ -1,14 +1,23 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::ptr::NonNull;
+
 use crate::prelude::*;
 
 /// A trait that abstracts pointers that have the ownership of the objects they
 /// refer to.
 ///
-/// The most typical examples smart pointer types like `Box<T>` and `Arc<T>`.
-///
+/// The most typical examples smart pointer types like `Box<T>` and `Arc<T>`,
 /// which can be converted to and from the raw pointer type of `*const T`.
-pub trait OwnerPtr: 'static {
+///
+/// # Safety
+///
+/// This trait must be implemented correctly (according to the doc comments for
+/// each method). Types like [`Rcu`] rely on this assumption to safely use the
+/// raw pointers.
+///
+/// [`Rcu`]: super::Rcu
+pub unsafe trait OwnerPtr: 'static {
     /// The target type that this pointer refers to.
     // TODO: allow ?Sized
     type Target;
@@ -18,76 +27,68 @@ pub trait OwnerPtr: 'static {
 
     /// Converts to a raw pointer.
     ///
-    /// If `Self` owns the object that it refers to (e.g., `Box<_>`), then
-    /// each call to `into_raw` must be paired with a call to `from_raw`
+    /// Each call to `into_raw` must be paired with a call to `from_raw`
     /// in order to avoid memory leakage.
-    fn into_raw(self) -> *const Self::Target;
+    ///
+    /// The resulting raw pointer must be valid to be immutably accessed
+    /// or borrowed until `from_raw` is called.
+    fn into_raw(self) -> NonNull<Self::Target>;
 
     /// Converts back from a raw pointer.
     ///
     /// # Safety
     ///
-    /// The raw pointer must have been previously returned by a call to `into_raw`.
-    unsafe fn from_raw(ptr: *const Self::Target) -> Self;
+    /// 1. The raw pointer must have been previously returned by a call to
+    ///    `into_raw`.
+    /// 2. The raw pointer must not be used after calling `from_raw`.
+    ///
+    /// Note that the second point is a hard requirement: Even if the
+    /// resulting value has not (yet) been dropped, the pointer cannot be
+    /// used because it may break Rust aliasing rules (e.g., `Box<T>`
+    /// requires the pointer to be unique and thus _never_ aliased).
+    unsafe fn from_raw(ptr: NonNull<Self::Target>) -> Self;
 }
 
-impl<T: 'static> OwnerPtr for Box<T> {
+unsafe impl<T: 'static> OwnerPtr for Box<T> {
     type Target = T;
 
     fn new(value: Self::Target) -> Self {
         Box::new(value)
     }
 
-    fn into_raw(self) -> *const Self::Target {
-        Box::into_raw(self) as *const _
+    fn into_raw(self) -> NonNull<Self::Target> {
+        let ptr = Box::into_raw(self);
+
+        // SAFETY: The pointer representing a `Box` can never be NULL.
+        unsafe { NonNull::new_unchecked(ptr) }
     }
 
-    unsafe fn from_raw(ptr: *const Self::Target) -> Self {
-        Box::from_raw(ptr as *mut _)
+    unsafe fn from_raw(ptr: NonNull<Self::Target>) -> Self {
+        let ptr = ptr.as_ptr();
+
+        // SAFETY: The safety is upheld by the caller.
+        unsafe { Box::from_raw(ptr) }
     }
 }
 
-impl<T: 'static> OwnerPtr for Arc<T> {
+unsafe impl<T: 'static> OwnerPtr for Arc<T> {
     type Target = T;
 
     fn new(value: Self::Target) -> Self {
         Arc::new(value)
     }
 
-    fn into_raw(self) -> *const Self::Target {
-        Arc::into_raw(self)
+    fn into_raw(self) -> NonNull<Self::Target> {
+        let ptr = Arc::into_raw(self).cast_mut();
+
+        // SAFETY: The pointer representing an `Arc` can never be NULL.
+        unsafe { NonNull::new_unchecked(ptr) }
     }
 
-    unsafe fn from_raw(ptr: *const Self::Target) -> Self {
-        Arc::from_raw(ptr)
-    }
-}
+    unsafe fn from_raw(ptr: NonNull<Self::Target>) -> Self {
+        let ptr = ptr.as_ptr().cast_const();
 
-impl<P> OwnerPtr for Option<P>
-where
-    P: OwnerPtr,
-    // We cannot support fat pointers, e.g., when `Target: dyn Trait`.
-    // This is because Rust does not allow fat null pointers. Yet,
-    // we need the null pointer to represent `None`.
-    // See https://github.com/rust-lang/rust/issues/66316.
-    <P as OwnerPtr>::Target: Sized,
-{
-    type Target = P::Target;
-
-    fn new(value: Self::Target) -> Self {
-        Some(P::new(value))
-    }
-
-    fn into_raw(self) -> *const Self::Target {
-        self.map(|p| <P as OwnerPtr>::into_raw(p))
-            .unwrap_or(core::ptr::null())
-    }
-
-    unsafe fn from_raw(ptr: *const Self::Target) -> Self {
-        if ptr.is_null() {
-            Some(<P as OwnerPtr>::from_raw(ptr))
-        } else {
-            None
-        }
+        // SAFETY: The safety is upheld by the caller.
+        unsafe { Arc::from_raw(ptr) }
     }
 }
