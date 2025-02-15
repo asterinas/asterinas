@@ -124,7 +124,7 @@ unsafe impl<P: OwnerPtr, const NULLABLE: bool> Sync for Rcu<P, NULLABLE> where
 impl<P: OwnerPtr> Rcu<P, false> {
     /// Creates a new RCU cell with the given pointer.
     pub fn new(pointer: P) -> Self {
-        let ptr = <P as OwnerPtr>::into_raw(pointer).cast_mut();
+        let ptr = <P as OwnerPtr>::into_raw(pointer).as_ptr();
         let ptr = AtomicPtr::new(ptr);
         Self {
             ptr,
@@ -162,7 +162,7 @@ impl<P: OwnerPtr + Send, const NULLABLE: bool> Rcu<P, NULLABLE> {
     /// synchronized writes with locks. Otherwise, you can use [`Self::read`]
     /// and then [`RcuReadGuard::compare_exchange`] to update the pointer.
     pub fn update(&self, new_ptr: P) {
-        let new_ptr = <P as OwnerPtr>::into_raw(new_ptr).cast_mut();
+        let new_ptr = <P as OwnerPtr>::into_raw(new_ptr).as_ptr();
         let old_raw_ptr = self.ptr.swap(new_ptr, AcqRel);
 
         if let Some(p) = NonNull::new(old_raw_ptr) {
@@ -245,15 +245,18 @@ impl<P: OwnerPtr + Send, const NULLABLE: bool> RcuReadGuard<'_, P, NULLABLE> {
     /// This API does not help to avoid
     /// [the ABA problem](https://en.wikipedia.org/wiki/ABA_problem).
     pub fn compare_exchange(self, new_ptr: P) -> Result<(), P> {
-        let new_ptr = <P as OwnerPtr>::into_raw(new_ptr).cast_mut();
+        let new_ptr = <P as OwnerPtr>::into_raw(new_ptr);
 
         if self
             .rcu
             .ptr
-            .compare_exchange(self.obj_ptr, new_ptr, AcqRel, Acquire)
+            .compare_exchange(self.obj_ptr, new_ptr.as_ptr(), AcqRel, Acquire)
             .is_err()
         {
-            // SAFETY: It was previously returned by `into_raw`.
+            // SAFETY:
+            // 1. It was previously returned by `into_raw`.
+            // 2. The `compare_exchange` fails so the pointer will not
+            //    be used anymore.
             return Err(unsafe { <P as OwnerPtr>::from_raw(new_ptr) });
         }
 
@@ -271,10 +274,25 @@ impl<P: OwnerPtr + Send, const NULLABLE: bool> RcuReadGuard<'_, P, NULLABLE> {
 /// The pointer must be previously returned by `into_raw` and the pointer
 /// must be only be dropped once.
 unsafe fn delay_drop<P: OwnerPtr + Send>(pointer: NonNull<<P as OwnerPtr>::Target>) {
-    // SAFETY: The pointer is not NULL.
-    let p = unsafe { <P as OwnerPtr>::from_raw(pointer.as_ptr().cast_const()) };
+    struct ForceSend<P: OwnerPtr>(NonNull<<P as OwnerPtr>::Target>);
+    // SAFETY: Sending a raw pointer to another task is safe as long as
+    // the pointer access in another task is safe (guaranteed by the trait
+    // bound `P: Send`).
+    unsafe impl<P: OwnerPtr + Send> Send for ForceSend<P> {}
+
+    let pointer: ForceSend<P> = ForceSend(pointer);
+
     let rcu_monitor = RCU_MONITOR.get().unwrap();
     rcu_monitor.after_grace_period(move || {
+        // This is necessary to make the Rust compiler to move the entire
+        // `ForceSend` structure into the closure.
+        let pointer = pointer;
+
+        // SAFETY:
+        // 1. The pointer was previously returned by `into_raw`.
+        // 2. The pointer won't be used anymore since the grace period has
+        //    finished and this is the only time the pointer gets dropped.
+        let p = unsafe { <P as OwnerPtr>::from_raw(pointer.0) };
         drop(p);
     });
 }
