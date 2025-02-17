@@ -3,12 +3,13 @@
 #![expect(dead_code)]
 
 use alloc::vec::Vec;
+use core::ptr::NonNull;
 
 use acpi::{AcpiError, HpetInfo};
 use spin::Once;
 use volatile::{
     access::{ReadOnly, ReadWrite},
-    Volatile,
+    VolatileRef,
 };
 
 use crate::{
@@ -34,46 +35,58 @@ struct HpetTimerRegister {
 }
 
 struct Hpet {
-    information_register: Volatile<&'static u32, ReadOnly>,
-    general_configuration_register: Volatile<&'static mut u32, ReadWrite>,
-    general_interrupt_status_register: Volatile<&'static mut u32, ReadWrite>,
+    information_register: VolatileRef<'static, u32, ReadOnly>,
+    general_configuration_register: VolatileRef<'static, u32, ReadWrite>,
+    general_interrupt_status_register: VolatileRef<'static, u32, ReadWrite>,
 
-    timer_registers: Vec<Volatile<&'static mut HpetTimerRegister, ReadWrite>>,
+    timer_registers: Vec<VolatileRef<'static, HpetTimerRegister, ReadWrite>>,
     irq: IrqLine,
 }
 
 impl Hpet {
-    fn new(base_address: usize) -> Hpet {
-        let information_register_ref = unsafe {
-            &*(paddr_to_vaddr(base_address + OFFSET_ID_REGISTER) as *mut usize as *mut u32)
+    /// # Safety
+    ///
+    /// The caller must ensure that the address is valid and points to the HPET MMIO region.
+    unsafe fn new(base_address: NonNull<u8>) -> Hpet {
+        // SAFETY: The safety is upheld by the caller.
+        let (
+            information_register,
+            general_configuration_register,
+            general_interrupt_status_register,
+        ) = unsafe {
+            (
+                VolatileRef::new_read_only(base_address.add(OFFSET_ID_REGISTER).cast::<u32>()),
+                VolatileRef::new(
+                    base_address
+                        .add(OFFSET_CONFIGURATION_REGISTER)
+                        .cast::<u32>(),
+                ),
+                VolatileRef::new(
+                    base_address
+                        .add(OFFSET_INTERRUPT_STATUS_REGISTER)
+                        .cast::<u32>(),
+                ),
+            )
         };
-        let general_configuration_register_ref = unsafe {
-            &mut *(paddr_to_vaddr(base_address + OFFSET_CONFIGURATION_REGISTER) as *mut usize
-                as *mut u32)
-        };
-        let general_interrupt_status_register_ref = unsafe {
-            &mut *(paddr_to_vaddr(base_address + OFFSET_INTERRUPT_STATUS_REGISTER) as *mut usize
-                as *mut u32)
-        };
 
-        let information_register = Volatile::new_read_only(information_register_ref);
-        let general_configuration_register = Volatile::new(general_configuration_register_ref);
-        let general_interrupt_status_register =
-            Volatile::new(general_interrupt_status_register_ref);
+        let num_comparator = ((information_register.as_ptr().read() & 0x1F00) >> 8) as u8 + 1;
+        let num_comparator = num_comparator as usize;
 
-        let num_comparator = ((information_register.read() & 0x1F00) >> 8) as u8 + 1;
+        // FIXME: We now trust the hardware. We should instead find a way to check that
+        // `num_comparator` are reasonable values before proceeding.
 
-        let mut comparators = Vec::with_capacity(num_comparator as usize);
-
-        // Ensure that the addresses in the loop will not overflow
-        base_address
-            .checked_add(0x100 + num_comparator as usize * 0x20)
-            .unwrap();
+        let mut comparators = Vec::with_capacity(num_comparator);
         for i in 0..num_comparator {
-            let comp = Volatile::new(unsafe {
-                &mut *(paddr_to_vaddr(base_address + 0x100 + i as usize * 0x20) as *mut usize
-                    as *mut HpetTimerRegister)
-            });
+            // SAFETY: The safety is upheld by the caller and the correctness of the information
+            // value.
+            let comp = unsafe {
+                VolatileRef::new(
+                    base_address
+                        .add(0x100)
+                        .add(i * 0x20)
+                        .cast::<HpetTimerRegister>(),
+                )
+            };
             comparators.push(comp);
         }
 
@@ -93,34 +106,39 @@ impl Hpet {
     }
 
     pub fn hardware_rev(&self) -> u8 {
-        (self.information_register.read() & 0xFF) as u8
+        (self.information_register.as_ptr().read() & 0xFF) as u8
     }
 
     pub fn num_comparators(&self) -> u8 {
-        ((self.information_register.read() & 0x1F00) >> 8) as u8 + 1
+        ((self.information_register.as_ptr().read() & 0x1F00) >> 8) as u8 + 1
     }
 
     pub fn main_counter_is_64bits(&self) -> bool {
-        (self.information_register.read() & 0x2000) != 0
+        (self.information_register.as_ptr().read() & 0x2000) != 0
     }
 
     pub fn legacy_irq_capable(&self) -> bool {
-        (self.information_register.read() & 0x8000) != 0
+        (self.information_register.as_ptr().read() & 0x8000) != 0
     }
 
     pub fn pci_vendor_id(&self) -> u16 {
-        ((self.information_register.read() & 0xFFFF_0000) >> 16) as u16
+        ((self.information_register.as_ptr().read() & 0xFFFF_0000) >> 16) as u16
     }
 }
 
 /// HPET init, need to init IOAPIC before init this function
 pub fn init() -> Result<(), AcpiError> {
-    let lock = ACPI_TABLES.get().unwrap().lock();
+    let hpet_info = {
+        let lock = ACPI_TABLES.get().unwrap().lock();
+        HpetInfo::new(&*lock)?
+    };
 
-    let hpet_info = HpetInfo::new(&*lock)?;
+    assert_ne!(hpet_info.base_address, 0, "HPET address should not be zero");
 
-    // config IO APIC entry
-    let hpet = Hpet::new(hpet_info.base_address);
+    let base = NonNull::new(paddr_to_vaddr(hpet_info.base_address) as *mut u8).unwrap();
+    // SAFETY: The base address is from the ACPI table and points to the HPET MMIO region.
+    let hpet = unsafe { Hpet::new(base) };
     HPET_INSTANCE.call_once(|| hpet);
+
     Ok(())
 }
