@@ -207,9 +207,10 @@ impl<M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTable<M
 
     /// The physical address of the root page table.
     ///
-    /// It is dangerous to directly provide the physical address of the root page table to the
-    /// hardware since the page table node may be dropped, resulting in UAF.
-    pub unsafe fn root_paddr(&self) -> Paddr {
+    /// Obtaining the physical address of the root page table is safe, however, using it or
+    /// providing it to the hardware will be unsafe since the page table node may be dropped,
+    /// resulting in UAF.
+    pub fn root_paddr(&self) -> Paddr {
         self.root.start_paddr()
     }
 
