@@ -105,5 +105,7 @@ pub(crate) unsafe fn send_ipi(hw_cpu_id: HwCpuId, irq_num: u8, guard: &dyn PinCu
     );
 
     let apic = apic::get_or_init(guard);
-    apic.send_ipi(icr);
+    // SAFETY: The ICR is valid to generate the request IPI. Generating the request IPI is safe
+    // as guaranteed by the caller.
+    unsafe { apic.send_ipi(icr) };
 }

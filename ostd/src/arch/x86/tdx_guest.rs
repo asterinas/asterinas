@@ -57,13 +57,18 @@ pub unsafe fn unprotect_gpa_range(gpa: Paddr, page_num: usize) -> Result<(), Pag
     let _ = boot_pt::with_borrow(|boot_pt| {
         for i in 0..page_num {
             let vaddr = paddr_to_vaddr(gpa + i * PAGE_SIZE);
-            boot_pt.protect_base_page(vaddr, protect_op);
+            // SAFETY: The caller ensures that the address range exists in the linear mapping and
+            // can be mapped as shared pages.
+            unsafe { boot_pt.protect_base_page(vaddr, protect_op) };
         }
     });
+
     // Protect the page in the kernel page table.
     let pt = KERNEL_PAGE_TABLE.get().unwrap();
     let vaddr = paddr_to_vaddr(gpa);
-    pt.protect_flush_tlb(&(vaddr..vaddr + page_num * PAGE_SIZE), protect_op)
+    // SAFETY: The caller ensures that the address range exists in the linear mapping and can be
+    // mapped as shared pages.
+    unsafe { pt.protect_flush_tlb(&(vaddr..vaddr + page_num * PAGE_SIZE), protect_op) }
         .map_err(|_| PageConvertError::PageTable)?;
 
     map_gpa(
@@ -106,21 +111,28 @@ pub unsafe fn protect_gpa_range(gpa: Paddr, page_num: usize) -> Result<(), PageC
     let _ = boot_pt::with_borrow(|boot_pt| {
         for i in 0..page_num {
             let vaddr = paddr_to_vaddr(gpa + i * PAGE_SIZE);
-            boot_pt.protect_base_page(vaddr, protect_op);
+            // SAFETY: The caller ensures that the address range exists in the linear mapping and
+            // can be mapped as non-shared pages.
+            unsafe { boot_pt.protect_base_page(vaddr, protect_op) };
         }
     });
+
     // Protect the page in the kernel page table.
     let pt = KERNEL_PAGE_TABLE.get().unwrap();
     let vaddr = paddr_to_vaddr(gpa);
-    pt.protect_flush_tlb(&(vaddr..vaddr + page_num * PAGE_SIZE), protect_op)
+    // SAFETY: The caller ensures that the address range exists in the linear mapping and can be
+    // mapped as non-shared pages.
+    unsafe { pt.protect_flush_tlb(&(vaddr..vaddr + page_num * PAGE_SIZE), protect_op) }
         .map_err(|_| PageConvertError::PageTable)?;
 
     map_gpa((gpa & PAGE_MASK) as u64, (page_num * PAGE_SIZE) as u64)
         .map_err(|_| PageConvertError::TdVmcall)?;
     for i in 0..page_num {
+        // SAFETY: The caller ensures that the address range represents physical memory so the
+        // memory can be accepted.
         unsafe {
-            accept_page(0, (gpa + i * PAGE_SIZE) as u64).map_err(|_| PageConvertError::TdCall)?;
-        }
+            accept_page(0, (gpa + i * PAGE_SIZE) as u64).map_err(|_| PageConvertError::TdCall)?
+        };
     }
     Ok(())
 }
