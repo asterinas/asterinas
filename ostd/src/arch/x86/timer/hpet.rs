@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(dead_code)]
-
 use alloc::vec::Vec;
 use core::ptr::NonNull;
 
@@ -17,13 +15,16 @@ use crate::{
     mm::paddr_to_vaddr,
     trap::IrqLine,
 };
+
 static HPET_INSTANCE: Once<Hpet> = Once::new();
 
 const OFFSET_ID_REGISTER: usize = 0x000;
 const OFFSET_CONFIGURATION_REGISTER: usize = 0x010;
 const OFFSET_INTERRUPT_STATUS_REGISTER: usize = 0x020;
+#[expect(dead_code)]
 const OFFSET_MAIN_COUNTER_VALUE_REGISTER: usize = 0x0F0;
 
+#[expect(dead_code)]
 const HPET_FREQ: usize = 1_000_000_000_000_000;
 
 #[derive(Debug)]
@@ -36,11 +37,11 @@ struct HpetTimerRegister {
 
 struct Hpet {
     information_register: VolatileRef<'static, u32, ReadOnly>,
-    general_configuration_register: VolatileRef<'static, u32, ReadWrite>,
-    general_interrupt_status_register: VolatileRef<'static, u32, ReadWrite>,
+    _general_configuration_register: VolatileRef<'static, u32, ReadWrite>,
+    _general_interrupt_status_register: VolatileRef<'static, u32, ReadWrite>,
 
-    timer_registers: Vec<VolatileRef<'static, HpetTimerRegister, ReadWrite>>,
-    irq: IrqLine,
+    _timer_registers: Vec<VolatileRef<'static, HpetTimerRegister, ReadWrite>>,
+    _irq: IrqLine,
 }
 
 impl Hpet {
@@ -98,35 +99,41 @@ impl Hpet {
 
         Hpet {
             information_register,
-            general_configuration_register,
-            general_interrupt_status_register,
-            timer_registers: comparators,
-            irq,
+            _general_configuration_register: general_configuration_register,
+            _general_interrupt_status_register: general_interrupt_status_register,
+            _timer_registers: comparators,
+            _irq: irq,
         }
     }
 
+    #[expect(dead_code)]
     pub fn hardware_rev(&self) -> u8 {
         (self.information_register.as_ptr().read() & 0xFF) as u8
     }
 
+    #[expect(dead_code)]
     pub fn num_comparators(&self) -> u8 {
         ((self.information_register.as_ptr().read() & 0x1F00) >> 8) as u8 + 1
     }
 
+    #[expect(dead_code)]
     pub fn main_counter_is_64bits(&self) -> bool {
         (self.information_register.as_ptr().read() & 0x2000) != 0
     }
 
+    #[expect(dead_code)]
     pub fn legacy_irq_capable(&self) -> bool {
         (self.information_register.as_ptr().read() & 0x8000) != 0
     }
 
+    #[expect(dead_code)]
     pub fn pci_vendor_id(&self) -> u16 {
         ((self.information_register.as_ptr().read() & 0xFFFF_0000) >> 16) as u16
     }
 }
 
 /// HPET init, need to init IOAPIC before init this function
+#[expect(dead_code)]
 pub fn init() -> Result<(), AcpiError> {
     let hpet_info = {
         let lock = ACPI_TABLES.get().unwrap().lock();

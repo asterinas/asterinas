@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(dead_code)]
-#![expect(unused_variables)]
-
 use alloc::vec::Vec;
 use core::{fmt::Debug, ptr::NonNull};
 
@@ -21,13 +18,13 @@ use crate::trap::{IrqLine, TrapFrame};
 pub struct FaultEventRegisters {
     status: VolatileRef<'static, u32, ReadOnly>,
     /// bit31: Interrupt Mask; bit30: Interrupt Pending.
-    control: VolatileRef<'static, u32, ReadWrite>,
-    data: VolatileRef<'static, u32, ReadWrite>,
-    address: VolatileRef<'static, u32, ReadWrite>,
-    upper_address: VolatileRef<'static, u32, ReadWrite>,
+    _control: VolatileRef<'static, u32, ReadWrite>,
+    _data: VolatileRef<'static, u32, ReadWrite>,
+    _address: VolatileRef<'static, u32, ReadWrite>,
+    _upper_address: VolatileRef<'static, u32, ReadWrite>,
     recordings: Vec<VolatileRef<'static, u128, ReadOnly>>,
 
-    fault_irq: IrqLine,
+    _fault_irq: IrqLine,
 }
 
 impl FaultEventRegisters {
@@ -72,10 +69,7 @@ impl FaultEventRegisters {
             // value.
             recordings.push(unsafe {
                 VolatileRef::new_read_only(
-                    base_register_vaddr
-                        .add(offset)
-                        .add(i * 16)
-                        .cast::<u128>(),
+                    base_register_vaddr.add(offset).add(i * 16).cast::<u128>(),
                 )
             })
         }
@@ -90,12 +84,12 @@ impl FaultEventRegisters {
 
         FaultEventRegisters {
             status,
-            control,
-            data,
-            address,
-            upper_address,
+            _control: control,
+            _data: data,
+            _address: address,
+            _upper_address: upper_address,
             recordings,
-            fault_irq,
+            _fault_irq: fault_irq,
         }
     }
 }
@@ -148,6 +142,7 @@ impl FaultRecording {
         ((self.0 & 0xFFFF_FFFF_FFFF_F000) >> 12) as u64
     }
 
+    #[expect(dead_code)]
     pub fn pasid_value(&self) -> u32 {
         // bit 123:104
         ((self.0 & 0x00FF_FFF0_0000_0000_0000_0000_0000_0000) >> 104) as u32
@@ -158,16 +153,19 @@ impl FaultRecording {
         ((self.0 & 0xF_0000_0000_0000_0000_0000_0000) >> 96) as u8
     }
 
+    #[expect(dead_code)]
     pub fn pasid_present(&self) -> bool {
         // bit 95
         (self.0 & 0x8000_0000_0000_0000_0000_0000) != 0
     }
 
+    #[expect(dead_code)]
     pub fn execute_permission_request(&self) -> bool {
         // bit 94
         (self.0 & 0x4000_0000_0000_0000_0000_0000) != 0
     }
 
+    #[expect(dead_code)]
     pub fn privilege_mode_request(&self) -> bool {
         // bit 93
         (self.0 & 0x2000_0000_0000_0000_0000_0000) != 0
@@ -235,7 +233,7 @@ pub(super) unsafe fn init(base_register_vaddr: NonNull<u8>) {
     FAULT_EVENT_REGS.call_once(|| FaultEventRegisters::new(base_register_vaddr));
 }
 
-fn iommu_page_fault_handler(frame: &TrapFrame) {
+fn iommu_page_fault_handler(_frame: &TrapFrame) {
     let fault_event = FAULT_EVENT_REGS.get().unwrap();
     let index = (fault_event.status().bits & FaultStatus::FRI.bits) >> 8;
     let recording = FaultRecording(fault_event.recordings[index as usize].as_ptr().read());
