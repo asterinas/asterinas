@@ -191,6 +191,8 @@ pub(crate) unsafe fn send_ipi(cpu_id: CpuId, irq_num: u8) {
         irq_num,
     );
     apic::with_borrow(|apic| {
-        apic.send_ipi(icr);
+        // SAFETY: The ICR is valid to generate the request IPI. Generating the request IPI is safe
+        // as guaranteed by the caller.
+        unsafe { apic.send_ipi(icr) };
     });
 }
