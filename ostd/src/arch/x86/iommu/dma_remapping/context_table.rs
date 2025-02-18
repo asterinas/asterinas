@@ -5,7 +5,6 @@
 use alloc::collections::BTreeMap;
 use core::mem::size_of;
 
-use log::warn;
 use ostd_pod::Pod;
 
 use super::second_stage::{DeviceMode, PageTableEntry, PagingConsts};
@@ -116,9 +115,12 @@ impl RootTable {
                     * size_of::<ContextEntry>(),
             )
             .unwrap();
+
         if bus_entry.is_present() {
-            warn!("IOMMU: Overwriting the existing device page table");
+            panic!("existing device page tables should not be overridden");
         }
+
+        // Activate page table.
         let address = unsafe { page_table.root_paddr() };
         context_table.page_tables.insert(address, page_table);
         let entry = ContextEntry(address as u128 | 1 | 0x1_0000_0000_0000_0000);
