@@ -132,7 +132,6 @@ impl RootTable {
                 &entry,
             )
             .unwrap();
-        context_table.page_tables.get_mut(&address).unwrap();
     }
 
     fn get_or_create_context_table(&mut self, device_id: PciDeviceLocation) -> &mut ContextTable {
