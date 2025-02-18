@@ -12,14 +12,17 @@ extern crate alloc;
 mod path;
 mod tree;
 
-use alloc::{boxed::Box, collections::BTreeSet, string::String, vec::Vec};
+use alloc::{boxed::Box, collections::BTreeSet, string::String, sync::Arc, vec::Vec};
 use core::{any::Any, format_args};
 
 use ostd::{
+    cpu::UserContext,
     early_print, early_println,
     ktest::{
         get_ktest_crate_whitelist, get_ktest_test_whitelist, KtestError, KtestItem, KtestIter,
     },
+    mm::VmSpace,
+    user::UserSpace,
 };
 use owo_colors::OwoColorize;
 use path::{KtestPath, SuffixTrie};
@@ -49,7 +52,14 @@ fn main() {
         };
     };
 
-    TaskOptions::new(test_task).data(()).spawn().unwrap();
+    TaskOptions::new(test_task)
+        .data(())
+        .user_space(Some(Arc::new(UserSpace::new(
+            Arc::new(VmSpace::new()),
+            UserContext::default(),
+        ))))
+        .spawn()
+        .unwrap();
 }
 
 #[ostd::ktest::panic_handler]
