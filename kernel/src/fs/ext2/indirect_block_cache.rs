@@ -19,6 +19,7 @@ pub struct IndirectBlockCache {
     fs: Weak<Ext2>,
 }
 
+// TODO: Should we allocate the bio segments from the pool for the I/O on indirect blocks?
 impl IndirectBlockCache {
     /// The upper bound on the size of the cache.
     ///
