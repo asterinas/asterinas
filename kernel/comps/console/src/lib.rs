@@ -13,7 +13,7 @@ use core::any::Any;
 use component::{init_component, ComponentInitError};
 use ostd::{
     mm::{Infallible, VmReader},
-    sync::SpinLock,
+    sync::{LocalIrqDisabled, SpinLock, SpinLockGuard},
 };
 use spin::Once;
 
@@ -50,6 +50,16 @@ pub fn all_devices() -> Vec<(String, Arc<dyn AnyConsoleDevice>)> {
         .iter()
         .map(|(name, device)| (name.clone(), device.clone()))
         .collect()
+}
+
+pub fn all_devices_lock<'a>(
+) -> SpinLockGuard<'a, BTreeMap<String, Arc<dyn AnyConsoleDevice>>, LocalIrqDisabled> {
+    COMPONENT
+        .get()
+        .unwrap()
+        .console_device_table
+        .disable_irq()
+        .lock()
 }
 
 static COMPONENT: Once<Component> = Once::new();
