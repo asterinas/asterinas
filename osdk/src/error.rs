@@ -13,6 +13,7 @@ pub enum Errno {
     RunBundle = 8,
     BadCrateName = 9,
     NoKernelCrate = 10,
+    TooManyCrates = 11,
 }
 
 /// Print error message to console

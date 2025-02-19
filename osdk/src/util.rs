@@ -144,6 +144,25 @@ pub fn get_current_crates() -> Vec<CrateInfo> {
     result
 }
 
+/// Get the kernel crate in the current directory.
+///
+/// If the current directory is a virtual workspace and no/multiple kernel
+/// crate is found, This function will print an error message and exit the
+/// process.
+pub fn get_kernel_crate() -> CrateInfo {
+    let crates = get_current_crates();
+    let kernel_crates: Vec<_> = crates.iter().filter(|c| c.is_kernel_crate).collect();
+    if kernel_crates.len() == 1 {
+        kernel_crates[0].clone()
+    } else if kernel_crates.is_empty() {
+        error_msg!("No kernel crate found in the current workspace");
+        std::process::exit(Errno::NoKernelCrate as _);
+    } else {
+        error_msg!("Multiple kernel crates found in the current workspace");
+        std::process::exit(Errno::TooManyCrates as _);
+    }
+}
+
 fn package_contains_ostd_main(package: &serde_json::Value) -> bool {
     let src_path = {
         let targets = package.get("targets").unwrap().as_array().unwrap();
