@@ -36,7 +36,7 @@ pub mod collections;
 pub mod console;
 pub mod cpu;
 mod error;
-pub mod io_mem;
+pub mod io;
 pub mod logger;
 pub mod mm;
 pub mod panic;
@@ -47,6 +47,7 @@ pub mod task;
 pub mod timer;
 pub mod trap;
 pub mod user;
+pub(crate) mod util;
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
