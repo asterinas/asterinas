@@ -17,7 +17,7 @@ pub fn sys_sched_setattr(
         return Err(Error::with_message(Errno::EINVAL, "unsupported flags"));
     }
 
-    let attr = LinuxSchedAttr::read_from_user(addr, ctx)?;
+    let attr = LinuxSchedAttr::read_from_user(addr, ctx).map_err(|_| Error::new(Errno::EINVAL))?;
     let policy = SchedPolicy::try_from(attr)?;
     access_sched_attr_with(tid, ctx, |attr| {
         attr.set_policy(policy);

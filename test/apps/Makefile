@@ -34,6 +34,7 @@ TEST_APPS := \
 	pipe \
 	pthread \
 	pty \
+	sched \
 	shm \
 	signal_c \
 	vsock \

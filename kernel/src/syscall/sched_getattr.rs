@@ -182,6 +182,7 @@ pub(super) fn access_sched_attr_with<T>(
 ) -> Result<T> {
     match tid {
         0 => f(&ctx.thread.sched_attr()),
+        _ if tid > (i32::MAX as u32) => Err(Error::with_message(Errno::EINVAL, "invalid tid")),
         _ => f(&thread_table::get_thread(tid)
             .ok_or_else(|| Error::with_message(Errno::ESRCH, "thread does not exist"))?
             .sched_attr()),
@@ -202,7 +203,8 @@ pub fn sys_sched_getattr(
 
     let policy = access_sched_attr_with(tid, ctx, |attr| Ok(attr.policy()))?;
     let attr: LinuxSchedAttr = policy.try_into()?;
-    attr.write_to_user(addr, user_size, ctx)?;
+    attr.write_to_user(addr, user_size, ctx)
+        .map_err(|_| Error::new(Errno::EINVAL))?;
 
     Ok(SyscallReturn::Return(0))
 }

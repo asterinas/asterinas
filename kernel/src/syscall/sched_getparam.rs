@@ -11,7 +11,9 @@ pub fn sys_sched_getparam(tid: Tid, addr: Vaddr, ctx: &Context) -> Result<Syscal
     });
 
     let space = CurrentUserSpace::new(ctx.task);
-    space.write_val(addr, &rt_prio)?;
+    space
+        .write_val(addr, &rt_prio)
+        .map_err(|_| Error::new(Errno::EINVAL))?;
 
     Ok(SyscallReturn::Return(0))
 }

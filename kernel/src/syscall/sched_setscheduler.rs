@@ -13,7 +13,9 @@ pub fn sys_sched_setscheduler(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let space = CurrentUserSpace::new(&ctx.task);
-    let prio = space.read_val(addr)?;
+    let prio = space
+        .read_val(addr)
+        .map_err(|_| Error::new(Errno::EINVAL))?;
 
     let attr = LinuxSchedAttr {
         sched_policy: policy as u32,

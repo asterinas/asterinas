@@ -5,7 +5,9 @@ use crate::{prelude::*, sched::SchedPolicy, thread::Tid};
 
 pub fn sys_sched_setparam(tid: Tid, addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     let space = CurrentUserSpace::new(ctx.task);
-    let prio: i32 = space.read_val(addr)?;
+    let prio: i32 = space
+        .read_val(addr)
+        .map_err(|_| Error::new(Errno::EINVAL))?;
 
     let update = |policy: &mut SchedPolicy| {
         match policy {
