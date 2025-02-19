@@ -4,7 +4,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use aster_bigtcp::{
     errors::tcp::{RecvError, SendError},
-    socket::{NeedIfacePoll, RawTcpSetOption, RawTcpSocket, TcpStateCheck},
+    socket::{NeedIfacePoll, RawTcpSetOption},
     wire::IpEndpoint,
 };
 
@@ -12,7 +12,7 @@ use super::StreamObserver;
 use crate::{
     events::IoEvents,
     net::{
-        iface::{Iface, TcpConnection},
+        iface::{Iface, RawTcpSocketExt, TcpConnection},
         socket::util::{send_recv_flags::SendRecvFlags, shutdown_cmd::SockShutdownCmd},
     },
     prelude::*,
@@ -34,15 +34,8 @@ pub struct ConnectedStream {
     /// connection is established asynchronously will succeed and any subsequent `connect()` will
     /// fail.
     is_new_connection: bool,
-    /// Indicates if the receiving side of this socket is closed.
-    ///
-    /// The receiving side may be closed if this side disables reading
-    /// or if the peer side closes its sending half.
-    is_receiving_closed: AtomicBool,
-    /// Indicates if the sending side of this socket is closed.
-    ///
-    /// The sending side can only be closed if this side disables writing.
-    is_sending_closed: AtomicBool,
+    /// Indicates if the receiving side of this socket is shut down by the user.
+    is_receiving_shut: AtomicBool,
 }
 
 impl ConnectedStream {
@@ -55,8 +48,7 @@ impl ConnectedStream {
             tcp_conn,
             remote_endpoint,
             is_new_connection,
-            is_receiving_closed: AtomicBool::new(false),
-            is_sending_closed: AtomicBool::new(false),
+            is_receiving_shut: AtomicBool::new(false),
         }
     }
 
@@ -64,12 +56,11 @@ impl ConnectedStream {
         let mut events = IoEvents::empty();
 
         if cmd.shut_read() {
-            self.is_receiving_closed.store(true, Ordering::Relaxed);
+            self.is_receiving_shut.store(true, Ordering::Relaxed);
             events |= IoEvents::IN | IoEvents::RDHUP;
         }
 
         if cmd.shut_write() {
-            self.is_sending_closed.store(true, Ordering::Relaxed);
             if !self.tcp_conn.close() {
                 return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected");
             }
@@ -94,7 +85,7 @@ impl ConnectedStream {
         });
 
         match result {
-            Ok((Ok(0), need_poll)) if self.is_receiving_closed.load(Ordering::Relaxed) => {
+            Ok((Ok(0), need_poll)) if self.is_receiving_shut.load(Ordering::Relaxed) => {
                 Ok((0, need_poll))
             }
             Ok((Ok(0), need_poll)) => {
@@ -175,17 +166,9 @@ impl ConnectedStream {
 
     pub(super) fn check_io_events(&self) -> IoEvents {
         self.tcp_conn.raw_with(|socket| {
-            if socket.is_peer_closed() {
-                // Only the sending side of peer socket is closed
-                self.is_receiving_closed.store(true, Ordering::Relaxed);
-            } else if socket.is_closed() {
-                // The sending side of both peer socket and this socket are closed
-                self.is_receiving_closed.store(true, Ordering::Relaxed);
-                self.is_sending_closed.store(true, Ordering::Relaxed);
-            }
-
-            let is_receiving_closed = self.is_receiving_closed.load(Ordering::Relaxed);
-            let is_sending_closed = self.is_sending_closed.load(Ordering::Relaxed);
+            let is_receiving_closed =
+                self.is_receiving_shut.load(Ordering::Relaxed) || !socket.may_recv_new();
+            let is_sending_closed = !socket.may_send();
 
             let mut events = IoEvents::empty();
 
@@ -219,7 +202,7 @@ impl ConnectedStream {
         set_option(&self.tcp_conn)
     }
 
-    pub(super) fn raw_with<R>(&self, f: impl FnOnce(&RawTcpSocket) -> R) -> R {
+    pub(super) fn raw_with<R>(&self, f: impl FnOnce(&RawTcpSocketExt) -> R) -> R {
         self.tcp_conn.raw_with(f)
     }
 }

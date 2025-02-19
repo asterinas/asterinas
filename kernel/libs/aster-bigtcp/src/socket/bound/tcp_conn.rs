@@ -23,8 +23,7 @@ use crate::{
     socket::{
         event::SocketEvents,
         option::{RawTcpOption, RawTcpSetOption},
-        unbound::new_tcp_socket,
-        RawTcpSocket, TcpStateCheck,
+        unbound::{new_tcp_socket, RawTcpSocket},
     },
     socket_table::ConnectionKey,
 };
@@ -37,7 +36,7 @@ pub struct TcpConnectionInner<E: Ext> {
     connection_key: ConnectionKey,
 }
 
-pub(super) struct RawTcpSocketExt<E: Ext> {
+pub struct RawTcpSocketExt<E: Ext> {
     socket: Box<RawTcpSocket>,
     pub(super) listener: Option<Arc<TcpListenerBg<E>>>,
     has_connected: bool,
@@ -57,6 +56,25 @@ impl<E: Ext> DerefMut for RawTcpSocketExt<E> {
     }
 }
 
+impl<E: Ext> RawTcpSocketExt<E> {
+    /// Checks if the socket may receive any new data.
+    ///
+    /// This is similar to [`RawTcpSocket::may_recv`]. However, this method checks if there can be
+    /// _new_ data. In other words, if there is already buffered data in the socket,
+    /// [`RawTcpSocket::may_recv`] will always return true since it is possible to receive the
+    /// buffered data, but this method may return false if the peer has closed its sending half (so
+    /// no new data can come in).
+    pub fn may_recv_new(&self) -> bool {
+        // See also the implementation of `RawTcpSocket::may_recv`.
+        match self.state() {
+            State::Established => true,
+            // Our sending half is closed, but the peer's sending half is still active.
+            State::FinWait1 | State::FinWait2 => true,
+            _ => false,
+        }
+    }
+}
+
 define_boolean_value!(
     /// Whether the TCP connection became dead.
     TcpConnBecameDead
@@ -67,7 +85,9 @@ impl<E: Ext> RawTcpSocketExt<E> {
         &mut self,
         this: &Arc<TcpConnectionBg<E>>,
     ) -> (SocketEvents, TcpConnBecameDead) {
-        if self.may_send() && !self.has_connected {
+        let may_send = self.may_send();
+
+        if may_send && !self.has_connected {
             self.has_connected = true;
 
             if let Some(ref listener) = self.listener {
@@ -81,13 +101,13 @@ impl<E: Ext> RawTcpSocketExt<E> {
 
         let became_dead = self.check_dead(this);
 
-        let events = if self.is_peer_closed() {
-            SocketEvents::PEER_CLOSED
-        } else if self.is_closed() {
-            SocketEvents::CLOSED
-        } else {
-            SocketEvents::empty()
-        };
+        let mut events = SocketEvents::empty();
+        if !self.may_recv_new() {
+            events |= SocketEvents::CLOSED_RECV;
+        }
+        if !may_send {
+            events |= SocketEvents::CLOSED_SEND;
+        }
 
         (events, became_dead)
     }
@@ -317,7 +337,7 @@ impl<E: Ext> TcpConnection<E> {
 
         socket.listener = None;
 
-        if socket.is_closed() {
+        if socket.state() == State::Closed {
             return false;
         }
 
@@ -333,7 +353,7 @@ impl<E: Ext> TcpConnection<E> {
     // polling time.
     pub fn raw_with<F, R>(&self, f: F) -> R
     where
-        F: FnOnce(&RawTcpSocket) -> R,
+        F: FnOnce(&RawTcpSocketExt<E>) -> R,
     {
         let socket = self.0.inner.lock();
         f(&socket)
