@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::{
+    net::Ipv4Addr,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use aster_bigtcp::{socket::RawTcpOption, wire::IpEndpoint};
 
@@ -9,7 +12,10 @@ use crate::{
     events::IoEvents,
     net::{
         iface::BoundPort,
-        socket::ip::common::{bind_port, get_ephemeral_endpoint},
+        socket::{
+            ip::common::{bind_port, get_ephemeral_endpoint},
+            SocketAddr,
+        },
     },
     prelude::*,
 };
@@ -33,7 +39,8 @@ pub struct InitStream {
     /// Indicates whether the socket error is `ECONNREFUSED`.
     ///
     /// This boolean value is set to true when the connection is refused and set to false when the
-    /// error code is reported via either `getsockopt(SOL_SOCKET, SO_ERROR)` or `connect()`.
+    /// error code is reported via `getsockopt(SOL_SOCKET, SO_ERROR)`, `send()`, `recv()`, or
+    /// `connect()`.
     is_conn_refused: AtomicBool,
 }
 
@@ -157,6 +164,33 @@ impl InitStream {
         }
     }
 
+    pub fn try_recv(&self) -> Result<(usize, SocketAddr)> {
+        // FIXME: Linux does not return addresses for `recvfrom` on connection-oriented sockets.
+        // This is a placeholder that has no Linux equivalent. (Note also that in this case
+        // `getpeeraddr` will simply fail with `ENOTCONN`).
+        const UNSPECIFIED_SOCKET_ADDR: SocketAddr = SocketAddr::IPv4(Ipv4Addr::UNSPECIFIED, 0);
+
+        // Below are some magic checks to make our behavior identical to Linux.
+
+        if self.is_connect_done {
+            return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected");
+        }
+
+        if let Some(err) = self.test_and_clear_error() {
+            return Err(err);
+        }
+
+        Ok((0, UNSPECIFIED_SOCKET_ADDR))
+    }
+
+    pub fn try_send(&self) -> Result<usize> {
+        if let Some(err) = self.test_and_clear_error() {
+            return Err(err);
+        }
+
+        return_errno_with_message!(Errno::EPIPE, "the socket is not connected");
+    }
+
     pub fn local_endpoint(&self) -> Option<IpEndpoint> {
         self.bound_port
             .as_ref()
@@ -165,7 +199,13 @@ impl InitStream {
 
     pub(super) fn check_io_events(&self) -> IoEvents {
         // Linux adds OUT and HUP events for a newly created socket
-        IoEvents::OUT | IoEvents::HUP
+        let mut events = IoEvents::OUT | IoEvents::HUP;
+
+        if self.is_conn_refused.load(Ordering::Relaxed) {
+            events |= IoEvents::ERR;
+        }
+
+        events
     }
 
     pub(super) fn test_and_clear_error(&self) -> Option<Error> {

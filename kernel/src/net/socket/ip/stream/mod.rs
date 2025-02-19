@@ -313,7 +313,12 @@ impl StreamSocket {
 
         let connected_stream = match state.as_ref() {
             State::Connected(connected_stream) => connected_stream,
-            State::Init(_) | State::Listen(_) => {
+            State::Init(init_stream) => {
+                let result = init_stream.try_recv();
+                self.pollee.invalidate();
+                return result;
+            }
+            State::Listen(_) => {
                 return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected")
             }
             State::Connecting(_) => {
@@ -339,7 +344,12 @@ impl StreamSocket {
 
         let connected_stream = match state.as_ref() {
             State::Connected(connected_stream) => connected_stream,
-            State::Init(_) | State::Listen(_) => {
+            State::Init(init_stream) => {
+                let result = init_stream.try_send();
+                self.pollee.invalidate();
+                return result;
+            }
+            State::Listen(_) => {
                 // TODO: Trigger `SIGPIPE` if `MSG_NOSIGNAL` is not specified
                 return_errno_with_message!(Errno::EPIPE, "the socket is not connected");
             }
@@ -376,10 +386,12 @@ impl StreamSocket {
     fn test_and_clear_error(&self) -> Option<Error> {
         let state = self.read_updated_state();
 
-        match state.as_ref() {
+        let error = match state.as_ref() {
             State::Init(init_stream) => init_stream.test_and_clear_error(),
             State::Connecting(_) | State::Listen(_) | State::Connected(_) => None,
-        }
+        };
+        self.pollee.invalidate();
+        error
     }
 }
 
