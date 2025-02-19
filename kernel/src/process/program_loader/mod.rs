@@ -31,6 +31,7 @@ pub fn load_program_to_vm(
     envp: Vec<CString>,
     fs_resolver: &FsResolver,
     recursion_limit: usize,
+    ctx: Option<&Context>,
 ) -> Result<(String, ElfLoadInfo)> {
     let abs_path = elf_file.abs_path();
     let inode = elf_file.inode();
@@ -58,10 +59,11 @@ pub fn load_program_to_vm(
             envp,
             fs_resolver,
             recursion_limit - 1,
+            ctx,
         );
     }
 
-    process_vm.clear_and_map();
+    process_vm.clear_and_map(ctx);
 
     let elf_load_info =
         load_elf_to_vm(process_vm, &*file_header, elf_file, fs_resolver, argv, envp)?;

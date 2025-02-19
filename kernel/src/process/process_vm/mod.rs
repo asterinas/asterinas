@@ -14,6 +14,7 @@ mod init_stack;
 
 use aster_rights::Full;
 pub use heap::Heap;
+use ostd::sync::MutexGuard;
 
 pub use self::{
     heap::USER_HEAP_SIZE_LIMIT,
@@ -61,17 +62,43 @@ use crate::{prelude::*, vm::vmar::Vmar};
  *  (low address)
  */
 
-// The process user space virtual memory
+/// The process user space virtual memory
 pub struct ProcessVm {
-    root_vmar: Vmar<Full>,
+    root_vmar: Mutex<Option<Vmar<Full>>>,
     init_stack: InitStack,
     heap: Heap,
 }
 
+/// A handle to the [`Vmar`] used by a process.
+///
+/// It is bound to a [`ProcessVm`] and can only be accessed through
+/// the [`ProcessVm::root_vmar`] method.
+pub struct ProcessVmar<'a> {
+    inner: MutexGuard<'a, Option<Vmar<Full>>>,
+}
+
+impl ProcessVmar<'_> {
+    /// Gets a reference to the process VMAR.
+    pub fn get(&self) -> &Vmar<Full> {
+        self.inner.as_ref().unwrap()
+    }
+
+    /// Sets a new VMAR for the binding process.
+    pub fn set_new_vmar(&mut self, new_vmar: Vmar<Full>) {
+        *self.inner = Some(new_vmar);
+    }
+
+    /// Clears the VMAR of the binding process.
+    pub fn clear(&mut self) {
+        *self.inner = None;
+    }
+}
+
 impl Clone for ProcessVm {
     fn clone(&self) -> Self {
+        let root_vmar = self.root_vmar();
         Self {
-            root_vmar: self.root_vmar.dup().unwrap(),
+            root_vmar: Mutex::new(Some(root_vmar.get().dup().unwrap())),
             init_stack: self.init_stack.clone(),
             heap: self.heap.clone(),
         }
@@ -86,7 +113,7 @@ impl ProcessVm {
         let heap = Heap::new();
         heap.alloc_and_map_vm(&root_vmar).unwrap();
         Self {
-            root_vmar,
+            root_vmar: Mutex::new(Some(root_vmar)),
             heap,
             init_stack,
         }
@@ -96,7 +123,8 @@ impl ProcessVm {
     ///
     /// The returned `ProcessVm` will have a forked `Vmar`.
     pub fn fork_from(other: &ProcessVm) -> Result<Self> {
-        let root_vmar = Vmar::<Full>::fork_from(&other.root_vmar)?;
+        let process_vmar = other.root_vmar();
+        let root_vmar = Mutex::new(Some(Vmar::<Full>::fork_from(process_vmar.get())?));
         Ok(Self {
             root_vmar,
             heap: other.heap.clone(),
@@ -104,14 +132,17 @@ impl ProcessVm {
         })
     }
 
-    pub fn root_vmar(&self) -> &Vmar<Full> {
-        &self.root_vmar
+    /// Gets a handler to the root VMAR.
+    pub fn root_vmar(&self) -> ProcessVmar {
+        ProcessVmar {
+            inner: self.root_vmar.lock(),
+        }
     }
 
     /// Returns a reader for reading contents from
     /// the `InitStack`.
     pub fn init_stack_reader(&self) -> InitStackReader {
-        self.init_stack.reader(self.root_vmar().vm_space())
+        self.init_stack.reader(self.root_vmar())
     }
 
     /// Returns the top address of the user stack.
@@ -125,8 +156,9 @@ impl ProcessVm {
         envp: Vec<CString>,
         aux_vec: AuxVec,
     ) -> Result<()> {
+        let root_vmar = self.root_vmar();
         self.init_stack
-            .map_and_write(self.root_vmar(), argv, envp, aux_vec)
+            .map_and_write(root_vmar.get(), argv, envp, aux_vec)
     }
 
     pub(super) fn heap(&self) -> &Heap {
@@ -134,8 +166,21 @@ impl ProcessVm {
     }
 
     /// Clears existing mappings and then maps stack and heap vmo.
-    pub(super) fn clear_and_map(&self) {
-        self.root_vmar.clear().unwrap();
-        self.heap.alloc_and_map_vm(&self.root_vmar).unwrap();
+    ///
+    /// If the `ctx` is `Some()`, the method will replace the VMAR of the
+    /// current process with a new empty VMAR.
+    pub(super) fn clear_and_map(&self, ctx: Option<&Context>) {
+        let mut root_vmar = self.root_vmar();
+        if let Some(ctx) = ctx {
+            let new_vmar = Vmar::<Full>::new_root();
+            *ctx.task.user_space().unwrap().vm_space() = new_vmar.vm_space().clone();
+            *ctx.thread_local.root_vmar().borrow_mut() = Some(new_vmar.dup().unwrap());
+            new_vmar.vm_space().activate();
+            root_vmar.set_new_vmar(new_vmar);
+        } else {
+            root_vmar.get().clear().unwrap();
+        }
+
+        self.heap.alloc_and_map_vm(root_vmar.get()).unwrap();
     }
 }
