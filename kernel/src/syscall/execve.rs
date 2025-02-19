@@ -124,6 +124,13 @@ fn do_execve(
         load_program_to_vm(process_vm, elf_file.clone(), argv, envp, fs_resolver, 1)?
     };
 
+    // Unstops the parent process.
+    if process.status().is_vfork() {
+        process.status().set_vfork_status(false);
+        let parent = process.parent().lock().process().upgrade().unwrap();
+        parent.children_wait_queue().wake_all();
+    }
+
     // After the program has been successfully loaded, the virtual memory of the current process
     // is initialized. Hence, it is necessary to clear the previously recorded robust list.
     *thread_local.robust_list().borrow_mut() = None;

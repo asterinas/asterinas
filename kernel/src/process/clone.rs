@@ -200,8 +200,22 @@ pub fn clone_child(
         Ok(child_tid)
     } else {
         let child_process = clone_child_process(ctx, parent_context, clone_args)?;
-        child_process.run();
+        if clone_args.flags.contains(CloneFlags::CLONE_VFORK) {
+            child_process.status().set_vfork_status(true);
+        }
 
+        child_process.run();
+        if child_process.status().is_vfork() {
+            let cond = || {
+                if child_process.status().is_vfork() {
+                    None
+                } else {
+                    Some(())
+                }
+            };
+            let current = ctx.process;
+            current.children_wait_queue().wait_until(cond);
+        }
         let child_pid = child_process.pid();
         Ok(child_pid)
     }
