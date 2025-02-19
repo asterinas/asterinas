@@ -24,8 +24,59 @@
 //! [`GlobalFrameAllocator`]: ostd::mm::GlobalFrameAllocator
 //! [`global_frame_allocator`]: ostd::global_frame_allocator
 
-mod allocator;
+use core::{
+    alloc::Layout,
+    sync::atomic::{AtomicIsize, Ordering},
+};
+
+use ostd::{
+    cpu_local,
+    mm::{frame::GlobalFrameAllocator, Paddr},
+    trap,
+};
+
+mod cache;
 mod chunk;
+mod pools;
 mod set;
 
-pub use allocator::{load_total_free_size, FrameAllocator};
+cpu_local! {
+    static TOTAL_FREE_SIZE: AtomicIsize = AtomicIsize::new(0);
+}
+
+/// Loads the total size (in bytes) of free memory in the allocator.
+pub fn load_total_free_size() -> usize {
+    let mut total: isize = 0;
+    for cpu in ostd::cpu::all_cpus() {
+        total += TOTAL_FREE_SIZE.get_on_cpu(cpu).load(Ordering::Relaxed);
+    }
+    total as usize
+}
+
+/// The global frame allocator provided by OSDK.
+///
+/// It is a singleton that provides frame allocation for the kernel. If
+/// multiple instances of this struct are created, all the member functions
+/// will eventually access the same allocator.
+pub struct FrameAllocator;
+
+impl GlobalFrameAllocator for FrameAllocator {
+    fn alloc(&self, layout: Layout) -> Option<Paddr> {
+        let guard = trap::disable_local();
+        let res = cache::alloc(&guard, layout);
+        if res.is_some() {
+            TOTAL_FREE_SIZE
+                .get_with(&guard)
+                .fetch_sub(layout.size() as isize, Ordering::Relaxed);
+        }
+        res
+    }
+
+    fn dealloc(&self, addr: Paddr, size: usize) {
+        let guard = trap::disable_local();
+        TOTAL_FREE_SIZE
+            .get_with(&guard)
+            .fetch_add(size as isize, Ordering::Relaxed);
+        cache::dealloc(&guard, addr, size);
+    }
+}
