@@ -160,7 +160,7 @@ impl ConnectedStream {
         self.tcp_conn.iface()
     }
 
-    pub fn check_new(&mut self) -> Result<()> {
+    pub fn finish_last_connect(&mut self) -> Result<()> {
         if !self.is_new_connection {
             return_errno_with_message!(Errno::EISCONN, "the socket is already connected");
         }
