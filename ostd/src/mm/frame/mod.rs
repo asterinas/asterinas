@@ -222,7 +222,7 @@ impl<M: AnyFrameMeta + ?Sized> Drop for Frame<M> {
             // SAFETY: this is the last reference and is about to be dropped.
             unsafe { self.slot().drop_last_in_place() };
 
-            allocator::add_free_memory_upcall(self.start_paddr(), PAGE_SIZE);
+            allocator::get_global_frame_allocator().dealloc(self.start_paddr(), PAGE_SIZE);
         }
     }
 }

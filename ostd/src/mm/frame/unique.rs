@@ -155,7 +155,7 @@ impl<M: AnyFrameMeta + ?Sized> Drop for UniqueFrame<M> {
         // The slot is initialized.
         unsafe { self.slot().drop_last_in_place() };
 
-        super::allocator::add_free_memory_upcall(self.start_paddr(), PAGE_SIZE);
+        super::allocator::get_global_frame_allocator().dealloc(self.start_paddr(), PAGE_SIZE);
     }
 }
 
