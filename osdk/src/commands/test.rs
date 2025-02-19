@@ -21,7 +21,13 @@ pub fn execute_test_command(config: &Config, args: &TestArgs) {
 }
 
 pub fn test_current_crate(config: &Config, args: &TestArgs) {
+    let current_crates = get_current_crates();
+    if current_crates.len() != 1 {
+        error_msg!("The current directory contains more than one crate");
+        std::process::exit(Errno::TooManyCrates as _);
+    }
     let current_crate = get_current_crates().remove(0);
+
     let cargo_target_directory = get_target_directory();
     let osdk_output_directory = cargo_target_directory.join(DEFAULT_TARGET_RELPATH);
 
