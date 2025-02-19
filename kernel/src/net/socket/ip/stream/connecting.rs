@@ -82,7 +82,7 @@ impl ConnectingStream {
                 self.remote_endpoint,
                 true,
             )),
-            ConnectState::Refused => ConnResult::Refused(InitStream::new_bound(
+            ConnectState::Refused => ConnResult::Refused(InitStream::new_refused(
                 self.tcp_conn.into_bound_port().unwrap(),
             )),
         }
