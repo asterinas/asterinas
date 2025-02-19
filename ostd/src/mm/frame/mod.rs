@@ -44,6 +44,7 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
+pub use allocator::GlobalFrameAllocator;
 use meta::{mapping, AnyFrameMeta, GetFrameError, MetaSlot, REF_COUNT_UNUSED};
 pub use segment::Segment;
 use untyped::{AnyUFrameMeta, UFrame};
@@ -220,6 +221,8 @@ impl<M: AnyFrameMeta + ?Sized> Drop for Frame<M> {
 
             // SAFETY: this is the last reference and is about to be dropped.
             unsafe { self.slot().drop_last_in_place() };
+
+            allocator::dealloc_upcall(self.start_paddr(), PAGE_SIZE);
         }
     }
 }

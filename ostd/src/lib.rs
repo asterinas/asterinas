@@ -50,7 +50,7 @@ pub mod user;
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-pub use ostd_macros::{main, panic_handler};
+pub use ostd_macros::{global_frame_allocator, main, panic_handler};
 pub use ostd_pod::Pod;
 
 pub use self::{error::Error, prelude::Result};
@@ -77,19 +77,29 @@ unsafe fn init() {
 
     logger::init();
 
-    // SAFETY: This function is called only once and only on the BSP.
-    unsafe { cpu::local::early_init_bsp_local_base() };
+    // SAFETY: They are only called once on BSP and ACPI has been initialized.
+    // No CPU local objects have been accessed by this far.
+    unsafe {
+        cpu::init_num_cpus();
+        cpu::local::init_on_bsp();
+        cpu::set_this_cpu_id(0);
+    }
+
+    let meta_pages = mm::init_page_meta();
+
+    // SAFETY: This function is called only once.
+    unsafe { mm::frame::allocator::init() };
+
+    mm::kspace::init_kernel_page_table(meta_pages);
 
     // SAFETY: This function is called only once and only on the BSP.
     unsafe { mm::heap_allocator::init() };
 
     boot::init_after_heap();
 
-    mm::frame::allocator::init();
-    mm::kspace::init_kernel_page_table(mm::init_page_meta());
     mm::dma::init();
 
-    arch::init_on_bsp();
+    unsafe { arch::late_init_on_bsp() };
 
     smp::init();
 

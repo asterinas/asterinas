@@ -140,6 +140,18 @@ fn parse_memory_regions(boot_params: &BootParams) -> MemoryRegionArray {
         ))
         .unwrap();
 
+    // Add the kernel cmdline and boot loader name region.
+    regions
+        .push(MemoryRegion::from_early_str(parse_kernel_commandline(
+            boot_params,
+        )))
+        .unwrap();
+    regions
+        .push(MemoryRegion::from_early_str(parse_bootloader_name(
+            boot_params,
+        )))
+        .unwrap();
+
     regions.into_non_overlapping()
 }
 
