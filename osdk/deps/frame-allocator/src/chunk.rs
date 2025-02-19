@@ -15,6 +15,30 @@ pub(crate) const fn size_of_order(order: BuddyOrder) -> usize {
     (1 << order) * PAGE_SIZE
 }
 
+/// Returns an order that covers at least the given size.
+pub(crate) fn greater_order_of(size: usize) -> BuddyOrder {
+    let size = size / PAGE_SIZE;
+    size.next_power_of_two().trailing_zeros() as BuddyOrder
+}
+
+/// Returns a order that covers at most the given size.
+pub(crate) fn lesser_order_of(size: usize) -> BuddyOrder {
+    let size = size / PAGE_SIZE;
+    (usize::BITS - size.leading_zeros() - 1) as BuddyOrder
+}
+
+/// Returns the maximum order starting from the address.
+///
+/// If the start address is not aligned to the order, the address/order pair
+/// cannot form a buddy chunk.
+///
+/// # Panics
+///
+/// Panics if the address is not page-aligned in debug mode.
+pub(crate) fn max_order_from(addr: Paddr) -> BuddyOrder {
+    (addr.trailing_zeros() - PAGE_SIZE.trailing_zeros()) as BuddyOrder
+}
+
 /// The metadata of the head frame in a free buddy chunk.
 #[derive(Debug)]
 pub(crate) struct FreeHeadMeta {

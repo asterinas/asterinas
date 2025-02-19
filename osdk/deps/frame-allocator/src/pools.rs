@@ -8,14 +8,14 @@ use core::{
 };
 
 use ostd::{
-    cpu::{all_cpus, PinCurrentCpu},
+    cpu::PinCurrentCpu,
     cpu_local,
-    mm::{frame::GlobalFrameAllocator, Paddr, PAGE_SIZE},
+    mm::Paddr,
     sync::{LocalIrqDisabled, SpinLock},
-    trap,
+    trap::DisabledLocalIrqGuard,
 };
 
-use crate::chunk::{size_of_order, BuddyOrder};
+use crate::chunk::{greater_order_of, lesser_order_of, max_order_from, size_of_order, BuddyOrder};
 
 use super::set::BuddySet;
 
@@ -50,81 +50,83 @@ const MAX_BUDDY_ORDER: BuddyOrder = 32;
 /// chunks.
 const MAX_LOCAL_BUDDY_ORDER: BuddyOrder = 18;
 
-/// The global frame allocator provided by OSDK.
-///
-/// It is a singleton that provides frame allocation for the kernel. If
-/// multiple instances of this struct are created, all the member functions
-/// will eventually access the same allocator.
-pub struct FrameAllocator;
+pub(super) fn alloc(guard: &DisabledLocalIrqGuard, layout: Layout) -> Option<Paddr> {
+    let local_pool_cell = LOCAL_POOL.get_with(guard);
+    let mut local_pool = local_pool_cell.borrow_mut();
 
-impl GlobalFrameAllocator for FrameAllocator {
-    fn alloc(&self, layout: Layout) -> Option<Paddr> {
-        let irq_guard = trap::disable_local();
-        let local_pool_cell = LOCAL_POOL.get_with(&irq_guard);
-        let mut local_pool = local_pool_cell.borrow_mut();
+    let size_order = greater_order_of(layout.size());
+    let align_order = greater_order_of(layout.align());
 
-        let size_order = greater_order_of(layout.size());
-        let align_order = greater_order_of(layout.align());
+    let order = size_order.max(align_order);
+    let mut chunk_addr = None;
 
-        let order = size_order.max(align_order);
-        let mut chunk_addr = None;
-
-        if order < MAX_LOCAL_BUDDY_ORDER {
-            chunk_addr = local_pool.alloc_chunk(order);
-        }
-
-        // Fall back to the global free lists if the local free lists are empty.
-        if chunk_addr.is_none() {
-            chunk_addr = alloc_from_global_pool(order);
-        }
-        // TODO: On memory pressure the global pool may be not enough. We may need
-        // to merge all buddy chunks from the local pools to the global pool and
-        // try again.
-
-        // If the alignment order is larger than the size order, we need to split
-        // the chunk and return the rest part back to the free lists.
-        if align_order > size_order {
-            if let Some(chunk_addr) = chunk_addr {
-                let addr = chunk_addr + size_of_order(size_order);
-                let size = size_of_order(align_order) - size_of_order(size_order);
-                self.add_free_memory(addr, size);
-            }
-        } else {
-            balancing::balance(local_pool.deref_mut());
-        }
-
-        LOCAL_POOL_SIZE
-            .get_on_cpu(irq_guard.current_cpu())
-            .store(local_pool.total_size(), Ordering::Relaxed);
-
-        chunk_addr
+    if order < MAX_LOCAL_BUDDY_ORDER {
+        chunk_addr = local_pool.alloc_chunk(order);
     }
 
-    fn add_free_memory(&self, mut addr: Paddr, mut size: usize) {
-        let irq_guard = trap::disable_local();
-        let local_pool_cell = LOCAL_POOL.get_with(&irq_guard);
-        let mut local_pool = local_pool_cell.borrow_mut();
+    // Fall back to the global free lists if the local free lists are empty.
+    if chunk_addr.is_none() {
+        chunk_addr = alloc_from_global_pool(order);
+    }
+    // TODO: On memory pressure the global pool may be not enough. We may need
+    // to merge all buddy chunks from the local pools to the global pool and
+    // try again.
 
-        // Split the range into chunks and return them to the local free lists
-        // respectively.
-        while size > 0 {
-            let next_chunk_order = max_order_from(addr).min(lesser_order_of(size));
-
-            if next_chunk_order >= MAX_LOCAL_BUDDY_ORDER {
-                dealloc_to_global_pool(addr, next_chunk_order);
-            } else {
-                local_pool.insert_chunk(addr, next_chunk_order);
-            }
-
-            size -= size_of_order(next_chunk_order);
-            addr += size_of_order(next_chunk_order);
+    // If the alignment order is larger than the size order, we need to split
+    // the chunk and return the rest part back to the free lists.
+    let allocated_size = size_of_order(order);
+    if allocated_size > layout.size() {
+        if let Some(chunk_addr) = chunk_addr {
+            dealloc_in(
+                &mut local_pool,
+                guard,
+                chunk_addr + layout.size(),
+                allocated_size - layout.size(),
+            );
         }
-
+    } else {
         balancing::balance(local_pool.deref_mut());
-        LOCAL_POOL_SIZE
-            .get_on_cpu(irq_guard.current_cpu())
-            .store(local_pool.total_size(), Ordering::Relaxed);
     }
+
+    LOCAL_POOL_SIZE
+        .get_on_cpu(guard.current_cpu())
+        .store(local_pool.total_size(), Ordering::Relaxed);
+
+    chunk_addr
+}
+
+pub(super) fn add_free_memory(guard: &DisabledLocalIrqGuard, addr: Paddr, size: usize) {
+    let local_pool_cell = LOCAL_POOL.get_with(guard);
+    let mut local_pool = local_pool_cell.borrow_mut();
+
+    dealloc_in(&mut local_pool, guard, addr, size);
+}
+
+fn dealloc_in(
+    local_pool: &mut BuddySet<MAX_LOCAL_BUDDY_ORDER>,
+    guard: &DisabledLocalIrqGuard,
+    mut addr: Paddr,
+    mut size: usize,
+) {
+    // Split the range into chunks and return them to the local free lists
+    // respectively.
+    while size > 0 {
+        let next_chunk_order = max_order_from(addr).min(lesser_order_of(size));
+
+        if next_chunk_order >= MAX_LOCAL_BUDDY_ORDER {
+            dealloc_to_global_pool(addr, next_chunk_order);
+        } else {
+            local_pool.insert_chunk(addr, next_chunk_order);
+        }
+
+        size -= size_of_order(next_chunk_order);
+        addr += size_of_order(next_chunk_order);
+    }
+
+    balancing::balance(local_pool);
+    LOCAL_POOL_SIZE
+        .get_on_cpu(guard.current_cpu())
+        .store(local_pool.total_size(), Ordering::Relaxed);
 }
 
 fn alloc_from_global_pool(order: BuddyOrder) -> Option<Paddr> {
@@ -138,40 +140,6 @@ fn dealloc_to_global_pool(addr: Paddr, order: BuddyOrder) {
     let mut lock_guard = GLOBAL_POOL.lock();
     lock_guard.insert_chunk(addr, order);
     GLOBAL_POOL_SIZE.store(lock_guard.total_size(), Ordering::Relaxed);
-}
-
-/// Loads the total size (in bytes) of free memory in the allocator.
-pub fn load_total_free_size() -> usize {
-    let mut total = 0;
-    total += GLOBAL_POOL_SIZE.load(Ordering::Relaxed);
-    for cpu in all_cpus() {
-        total += LOCAL_POOL_SIZE.get_on_cpu(cpu).load(Ordering::Relaxed);
-    }
-    total
-}
-
-/// Returns an order that covers at least the given size.
-fn greater_order_of(size: usize) -> BuddyOrder {
-    let size = size / PAGE_SIZE;
-    size.next_power_of_two().trailing_zeros() as BuddyOrder
-}
-
-/// Returns a order that covers at most the given size.
-fn lesser_order_of(size: usize) -> BuddyOrder {
-    let size = size / PAGE_SIZE;
-    (usize::BITS - size.leading_zeros() - 1) as BuddyOrder
-}
-
-/// Returns the maximum order starting from the address.
-///
-/// If the start address is not aligned to the order, the address/order pair
-/// cannot form a buddy chunk.
-///
-/// # Panics
-///
-/// Panics if the address is not page-aligned in debug mode.
-fn max_order_from(addr: Paddr) -> BuddyOrder {
-    (addr.trailing_zeros() - PAGE_SIZE.trailing_zeros()) as BuddyOrder
 }
 
 pub mod balancing {

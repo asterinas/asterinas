@@ -53,7 +53,8 @@ impl FrameAllocOptions {
     /// Allocates a single frame with additional metadata.
     pub fn alloc_frame_with<M: AnyFrameMeta>(&self, metadata: M) -> Result<Frame<M>> {
         let single_layout = Layout::from_size_align(PAGE_SIZE, PAGE_SIZE).unwrap();
-        let frame = alloc_upcall(single_layout)
+        let frame = get_global_frame_allocator()
+            .alloc(single_layout)
             .map(|paddr| Frame::from_unused(paddr, metadata).unwrap())
             .ok_or(Error::NoMemory)?;
 
@@ -87,7 +88,8 @@ impl FrameAllocOptions {
             return Err(Error::InvalidArgs);
         }
         let layout = Layout::from_size_align(nframes * PAGE_SIZE, PAGE_SIZE).unwrap();
-        let segment = alloc_upcall(layout)
+        let segment = get_global_frame_allocator()
+            .alloc(layout)
             .map(|start| {
                 Segment::from_unused(start..start + nframes * PAGE_SIZE, metadata_fn).unwrap()
             })
@@ -132,12 +134,12 @@ fn test_alloc_dealloc() {
 ///
 /// The API mimics the standard Rust allocator API ([`GlobalAlloc`] and
 /// [`global_allocator`]). However, this trait is much safer. Double free
-/// or freeing in-use memory through this trait only mess up the allocator's
+/// or freeing in-use memory through this trait only messes up the allocator's
 /// state rather than causing undefined behavior.
 ///
 /// Whenever OSTD or other modules need to allocate or deallocate frames via
 /// [`FrameAllocOptions`], they are forwarded to the global frame allocator.
-/// It is not encoraged to call the global allocator directly.
+/// It is not encouraged to call the global allocator directly.
 ///
 /// [`global_frame_allocator`]: crate::global_frame_allocator
 /// [`GlobalAlloc`]: core::alloc::GlobalAlloc
@@ -146,21 +148,30 @@ pub trait GlobalFrameAllocator: Sync {
     ///
     /// The caller guarantees that `layout.size()` is aligned to [`PAGE_SIZE`].
     ///
-    /// When the allocated memory is not in use, OSTD return them by calling
-    /// [`GlobalFrameAllocator::add_free_memory`].
+    /// When any of the allocated memory is not in use, OSTD returns them by
+    /// calling [`GlobalFrameAllocator::dealloc`]. If multiple frames are
+    /// allocated, they may be returned in any order with any number of calls.
     fn alloc(&self, layout: Layout) -> Option<Paddr>;
+
+    /// Deallocates a contiguous range of frames.
+    ///
+    /// The caller guarantees that `addr` and `size` are both aligned to
+    /// [`PAGE_SIZE`]. The deallocated memory should always be allocated by
+    /// [`GlobalFrameAllocator::alloc`]. However, if
+    /// [`GlobalFrameAllocator::alloc`] returns multiple frames, it is possible
+    /// that some of them are deallocated before others. The deallocated memory
+    /// must never overlap with any memory that is already deallocated or
+    /// added, without being allocated in between.
+    ///
+    /// The deallocated memory can be uninitialized.
+    fn dealloc(&self, addr: Paddr, size: usize);
 
     /// Adds a contiguous range of frames to the allocator.
     ///
-    /// The caller guarantees that `addr` and `size` are both aligned to
-    /// [`PAGE_SIZE`]. The added memory can be uninitialized.
+    /// The memory being added must never overlap with any memory that was
+    /// added before.
     ///
-    /// The memory being added would never overlap with any memory that is
-    /// already added, i.e., a frame cannot be added twice without being
-    /// allocated in between.
-    ///
-    /// However, if [`GlobalFrameAllocator::alloc`] returns multiple frames,
-    /// it is possible that some of them are added back before others.
+    /// The added memory can be uninitialized.
     fn add_free_memory(&self, addr: Paddr, size: usize);
 }
 
@@ -170,24 +181,11 @@ extern "Rust" {
     static __GLOBAL_FRAME_ALLOCATOR_REF: &'static dyn GlobalFrameAllocator;
 }
 
-/// Directly allocates a contiguous range of frames.
-fn alloc_upcall(layout: core::alloc::Layout) -> Option<Paddr> {
-    // SAFETY: We believe that the global frame allocator is set up correctly
-    // with the `global_frame_allocator` attribute. If they use safe code only
-    // then the up-call is safe.
-    unsafe { __GLOBAL_FRAME_ALLOCATOR_REF.alloc(layout) }
-}
-
-/// Up-call to add a range of frames to the global frame allocator.
-///
-/// It would return the frame to the allocator for further use. This would like
-/// to be done after the release of the metadata to avoid re-allocation before
-/// the metadata is reset.
-pub(super) fn add_free_memory_upcall(addr: Paddr, size: usize) {
-    // SAFETY: We believe that the global frame allocator is set up correctly
-    // with the `global_frame_allocator` attribute. If they use safe code only
-    // then the up-call is safe.
-    unsafe { __GLOBAL_FRAME_ALLOCATOR_REF.add_free_memory(addr, size) }
+pub(super) fn get_global_frame_allocator() -> &'static dyn GlobalFrameAllocator {
+    // SAFETY: The global frame allocator is set up correctly with the
+    // `global_frame_allocator` attribute. If they use safe code only, the
+    // up-call is safe.
+    unsafe { __GLOBAL_FRAME_ALLOCATOR_REF }
 }
 
 /// Initializes the global frame allocator.
@@ -215,7 +213,7 @@ pub(crate) unsafe fn init() {
             for r1 in range_difference(&(region.base()..region.end()), &range_1) {
                 for r2 in range_difference(&r1, &range_2) {
                     log::info!("Adding free frames to the allocator: {:x?}", r2);
-                    add_free_memory_upcall(r2.start, r2.len());
+                    get_global_frame_allocator().add_free_memory(r2.start, r2.len());
                 }
             }
         }
