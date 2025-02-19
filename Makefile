@@ -144,7 +144,9 @@ NON_OSDK_CRATES := \
 # In contrast, OSDK crates depend on OSTD (or being `ostd` itself)
 # and need to be built or tested with OSDK.
 OSDK_CRATES := \
-	osdk/test-kernel \
+	osdk/deps/frame-allocator \
+	osdk/deps/heap-allocator \
+	osdk/deps/test-kernel \
 	ostd \
 	ostd/libs/linux-bzimage/setup \
 	kernel \

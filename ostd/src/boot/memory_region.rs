@@ -5,7 +5,10 @@
 
 use core::ops::Deref;
 
-use crate::mm::kspace::kernel_loaded_offset;
+use crate::mm::{
+    kspace::{kernel_loaded_offset, KERNEL_CODE_BASE_VADDR, LINEAR_MAPPING_BASE_VADDR},
+    Paddr,
+};
 
 /// The type of initial memory regions that are needed for the kernel.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -69,6 +72,26 @@ impl MemoryRegion {
         }
     }
 
+    /// Constructs a memory region from a slice of early boot data.
+    ///
+    /// This helps marking the memory containing early boot data, as it may not
+    /// be sent to the frame allocator but it is reclaimable after boot.
+    pub fn from_early_str(slice: &str) -> Self {
+        let mut base = slice.as_ptr() as Paddr;
+
+        if base > KERNEL_CODE_BASE_VADDR {
+            base -= KERNEL_CODE_BASE_VADDR;
+        } else if base > LINEAR_MAPPING_BASE_VADDR {
+            base -= LINEAR_MAPPING_BASE_VADDR;
+        }
+
+        MemoryRegion {
+            base,
+            len: slice.len(),
+            typ: MemoryRegionType::Reclaimable,
+        }
+    }
+
     /// The physical address of the base of the region.
     pub fn base(&self) -> usize {
         self.base
@@ -77,6 +100,11 @@ impl MemoryRegion {
     /// The length in bytes of the region.
     pub fn len(&self) -> usize {
         self.len
+    }
+
+    /// The physical address of the end of the region.
+    pub fn end(&self) -> usize {
+        self.base + self.len
     }
 
     /// Checks whether the region is empty
@@ -220,7 +248,7 @@ impl<const LEN: usize> MemoryRegionArray<LEN> {
 
         for r in self.iter() {
             match r.typ {
-                MemoryRegionType::Usable | MemoryRegionType::Reclaimable => {
+                MemoryRegionType::Usable => {
                     // If usable memory regions exceeded it's fine to ignore the rest.
                     let _ = regions_usable.push(*r);
                 }
