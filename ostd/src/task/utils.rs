@@ -3,7 +3,7 @@
 use alloc::fmt;
 
 /// Always [`Sync`], but unsafe to reference the data.
-pub(super) struct ForceSync<T>(T);
+pub(crate) struct ForceSync<T>(T);
 
 impl<T> fmt::Debug for ForceSync<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -17,7 +17,7 @@ unsafe impl<T> Sync for ForceSync<T> {}
 
 impl<T> ForceSync<T> {
     /// Creates an instance with `data` as the inner data.
-    pub(super) fn new(data: T) -> Self {
+    pub(crate) fn new(data: T) -> Self {
         Self(data)
     }
 
@@ -27,7 +27,19 @@ impl<T> ForceSync<T> {
     ///
     /// If the data type is not [`Sync`], the caller must ensure that the data is not accessed
     /// concurrently.
-    pub(super) unsafe fn get(&self) -> &T {
+    pub(crate) unsafe fn get(&self) -> &T {
         &self.0
+    }
+}
+
+impl<T: Clone> Clone for ForceSync<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
+impl<T: Default> Default for ForceSync<T> {
+    fn default() -> Self {
+        Self(T::default())
     }
 }
