@@ -55,6 +55,10 @@ FN_TEST(invalid_socket_option)
 	TEST_ERRNO(getsockopt(sk_connected, IPPROTO_TCP, INVALID_TCP_OPTION,
 			      &res, &res_len),
 		   ENOPROTOOPT);
+#define INVALID_IP_OPTION 99999
+	TEST_ERRNO(getsockopt(sk_connected, IPPROTO_IP, INVALID_IP_OPTION, &res,
+			      &res_len),
+		   ENOPROTOOPT);
 }
 END_TEST()
 
@@ -272,5 +276,87 @@ FN_TEST(keepidle)
 	TEST_RES(getsockopt(sk_connected, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle,
 			    &keepidle_len),
 		 keepidle == 200);
+}
+END_TEST()
+
+FN_TEST(ip_tos)
+{
+	int tos;
+	socklen_t tos_len = sizeof(tos);
+
+	// 1. Check default value
+	TEST_RES(getsockopt(sk_unbound, IPPROTO_IP, IP_TOS, &tos, &tos_len),
+		 tos == 0 && tos_len == 4);
+
+	// 2. Set and get value
+	tos = 0x10;
+	CHECK(setsockopt(sk_unbound, IPPROTO_IP, IP_TOS, &tos, tos_len));
+	tos = 0;
+	TEST_RES(getsockopt(sk_unbound, IPPROTO_IP, IP_TOS, &tos, &tos_len),
+		 tos == 0x10 && tos_len == 4);
+
+	tos = 0x123;
+	CHECK(setsockopt(sk_unbound, IPPROTO_IP, IP_TOS, &tos, tos_len));
+	tos = 0;
+	TEST_RES(getsockopt(sk_unbound, IPPROTO_IP, IP_TOS, &tos, &tos_len),
+		 tos == 32 && tos_len == 4);
+
+	tos = 0x1111;
+	CHECK(setsockopt(sk_unbound, IPPROTO_IP, IP_TOS, &tos, tos_len));
+	tos = 0;
+	TEST_RES(getsockopt(sk_unbound, IPPROTO_IP, IP_TOS, &tos, &tos_len),
+		 tos == 16 && tos_len == 4);
+}
+END_TEST()
+
+FN_TEST(ip_ttl)
+{
+	int ttl;
+	socklen_t ttl_len = sizeof(ttl);
+
+	// 1. Check default value
+	TEST_RES(getsockopt(sk_unbound, IPPROTO_IP, IP_TTL, &ttl, &ttl_len),
+		 ttl == 64 && ttl_len == 4);
+
+	// 2. Set and get value
+	ttl = 0x0;
+	TEST_ERRNO(setsockopt(sk_unbound, IPPROTO_IP, IP_TTL, &ttl, ttl_len),
+		   EINVAL);
+
+	ttl = 0x100;
+	TEST_ERRNO(setsockopt(sk_unbound, IPPROTO_IP, IP_TTL, &ttl, ttl_len),
+		   EINVAL);
+
+	ttl = 0x10;
+	CHECK(setsockopt(sk_unbound, IPPROTO_IP, IP_TTL, &ttl, ttl_len));
+
+	ttl = 0;
+	TEST_RES(getsockopt(sk_unbound, IPPROTO_IP, IP_TTL, &ttl, &ttl_len),
+		 ttl == 0x10 && ttl_len == 4);
+
+	ttl = -1;
+	CHECK(setsockopt(sk_unbound, IPPROTO_IP, IP_TTL, &ttl, ttl_len));
+
+	ttl = 0;
+	TEST_RES(getsockopt(sk_unbound, IPPROTO_IP, IP_TTL, &ttl, &ttl_len),
+		 ttl == 64 && ttl_len == 4);
+}
+END_TEST()
+
+FN_TEST(ip_hdrincl)
+{
+	int hdrincl;
+	socklen_t hdrincl_len = sizeof(hdrincl);
+
+	// 1. Check default value
+	TEST_RES(getsockopt(sk_unbound, IPPROTO_IP, IP_HDRINCL, &hdrincl,
+			    &hdrincl_len),
+		 hdrincl == 0 && hdrincl_len == 4);
+
+	// 2. Set value
+	hdrincl = 0x10;
+	TEST_ERRNO(setsockopt(sk_unbound, IPPROTO_IP, IP_HDRINCL, &hdrincl,
+			      hdrincl_len),
+		   ENOPROTOOPT);
 }
 END_TEST()
