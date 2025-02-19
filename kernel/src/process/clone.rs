@@ -142,6 +142,14 @@ impl CloneArgs {
             ..Default::default()
         }
     }
+
+    pub fn for_vfork() -> Self {
+        Self {
+            flags: CloneFlags::CLONE_VFORK | CloneFlags::CLONE_VM,
+            exit_signal: Some(SIGCHLD),
+            ..Default::default()
+        }
+    }
 }
 
 impl From<u64> for CloneFlags {
@@ -163,7 +171,8 @@ impl CloneFlags {
             | CloneFlags::CLONE_SETTLS
             | CloneFlags::CLONE_PARENT_SETTID
             | CloneFlags::CLONE_CHILD_SETTID
-            | CloneFlags::CLONE_CHILD_CLEARTID;
+            | CloneFlags::CLONE_CHILD_CLEARTID
+            | CloneFlags::CLONE_VFORK;
         let unsupported_flags = *self - supported_flags;
         if !unsupported_flags.is_empty() {
             warn!("contains unsupported clone flags: {:?}", unsupported_flags);
