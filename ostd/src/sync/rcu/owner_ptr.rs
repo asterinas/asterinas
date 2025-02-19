@@ -17,7 +17,7 @@ use crate::prelude::*;
 /// raw pointers.
 ///
 /// [`Rcu`]: super::Rcu
-pub unsafe trait OwnerPtr: 'static {
+pub unsafe trait OwnerPtr: Send + 'static {
     /// The target type that this pointer refers to.
     // TODO: allow ?Sized
     type Target;
@@ -49,7 +49,7 @@ pub unsafe trait OwnerPtr: 'static {
     unsafe fn from_raw(ptr: NonNull<Self::Target>) -> Self;
 }
 
-unsafe impl<T: 'static> OwnerPtr for Box<T> {
+unsafe impl<T: Send + 'static> OwnerPtr for Box<T> {
     type Target = T;
 
     fn new(value: Self::Target) -> Self {
@@ -71,7 +71,7 @@ unsafe impl<T: 'static> OwnerPtr for Box<T> {
     }
 }
 
-unsafe impl<T: 'static> OwnerPtr for Arc<T> {
+unsafe impl<T: Send + Sync + 'static> OwnerPtr for Arc<T> {
     type Target = T;
 
     fn new(value: Self::Target) -> Self {
