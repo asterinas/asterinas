@@ -30,7 +30,8 @@ impl SocketEventObserver for StreamObserver {
         }
 
         if events.contains(SocketEvents::CLOSED) {
-            io_events |= IoEvents::IN | IoEvents::OUT | IoEvents::RDHUP | IoEvents::HUP;
+            io_events |= IoEvents::IN | IoEvents::OUT;
+            io_events |= IoEvents::RDHUP | IoEvents::HUP | IoEvents::ERR;
         }
 
         self.0.notify(io_events);
