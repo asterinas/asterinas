@@ -89,11 +89,9 @@ pub trait Pause: WaitTimeout {
     ///
     /// # Errors
     ///
-    /// This method will return an error with [`ETIME`] if the timeout is reached.
-    ///
-    /// Unlike other methods in the trait, this method will _not_ return an error with [`EINTR`] if
-    /// a signal is received (FIXME: See <https://github.com/asterinas/asterinas/pull/1577> for why
-    /// we cannot fix this directly).
+    /// This method will return an error with
+    ///  - [`EINTR`] if a signal is received;
+    ///  - [`ETIME`] if the timeout is reached.
     ///
     /// [`ETIME`]: crate::error::Errno::ETIME
     /// [`EINTR`]: crate::error::Errno::EINTR
@@ -113,10 +111,9 @@ impl Pause for Waiter {
         // No fast paths for `Waiter`. If the caller wants a fast path, it should do so _before_
         // the waiter is created.
 
-        let current_thread = self.task().as_thread();
-
-        let Some(posix_thread) = current_thread
-            .as_ref()
+        let Some(posix_thread) = self
+            .task()
+            .as_thread()
             .and_then(|thread| thread.as_posix_thread())
         else {
             return self.wait_until_or_timeout_cancelled(cond, || Ok(()), timeout);
@@ -147,12 +144,12 @@ impl Pause for Waiter {
             })
         });
 
-        let current_thread = self.task().as_thread();
+        let posix_thread_opt = self
+            .task()
+            .as_thread()
+            .and_then(|thread| thread.as_posix_thread());
 
-        if let Some(posix_thread) = current_thread
-            .as_ref()
-            .and_then(|thread| thread.as_posix_thread())
-        {
+        if let Some(posix_thread) = posix_thread_opt {
             posix_thread.set_signalled_waker(self.waker());
             self.wait();
             posix_thread.clear_signalled_waker();
@@ -166,6 +163,16 @@ impl Pause for Waiter {
             }
             // If the timeout is not expired, cancel the timer manually.
             timer.cancel();
+        }
+
+        if posix_thread_opt
+            .as_ref()
+            .is_some_and(|posix_thread| posix_thread.has_pending())
+        {
+            return_errno_with_message!(
+                Errno::EINTR,
+                "the current thread is interrupted by a signal"
+            );
         }
 
         Ok(())
