@@ -2,10 +2,6 @@
 
 // The boot routine executed by the application processor.
 
-.extern boot_gdtr
-.extern boot_page_table_start
-.extern ap_early_entry
-
 .section ".ap_boot", "awx"
 .align 4096
 .code16
@@ -99,6 +95,7 @@ ap_protect:
     // Now we try getting into long mode.
 
     // Use the 64-bit GDT.
+.extern boot_gdtr
     lgdt [boot_gdtr]
 
     // Enable PAE and PGE.
@@ -139,11 +136,11 @@ ap_long_mode_in_low_address:
     jmp rax
 
 .data
-// This is a pointer to be filled by the BSP when boot stacks
+// This is a pointer to be filled by the BSP when boot information
 // of all APs are allocated and initialized.
-.global __ap_boot_stack_array_pointer
+.global __ap_boot_info_array_pointer
 .align 8
-__ap_boot_stack_array_pointer:
+__ap_boot_info_array_pointer:
     .skip 8
 
 .text
@@ -151,14 +148,21 @@ __ap_boot_stack_array_pointer:
 ap_long_mode:
     // The local APIC ID is in the RDI.
     mov rax, rdi
-    shl rax, 3
+    shl rax, 4                   // 16-byte `PerApRawInfo`
 
+    mov rbx, [rip + __ap_boot_info_array_pointer]
     // Setup the stack.
-    mov rbx, [__ap_boot_stack_array_pointer]
-    mov rsp, [rbx + rax]
-    xor rbp, rbp
+    mov rsp, [rbx + rax - 16]    // raw_info[cpu_id - 1].stack_top
+    // Setup the GS base (the CPU-local address).
+    mov rax, [rbx + rax - 8]     // raw_info[cpu_id - 1].cpu_local
+    mov rdx, rax
+    shr rdx, 32          // EDX:EAX = raw_info.cpu_local
+    mov ecx, 0xC0000101  // ECX = GS.base
+    wrmsr
 
     // Go to Rust code.
+.extern ap_early_entry
+    xor rbp, rbp
     mov rax, offset ap_early_entry
     call rax
 
