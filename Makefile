@@ -249,6 +249,7 @@ ktest: initramfs $(CARGO_OSDK)
 	@# Exclude linux-bzimage-setup from ktest since it's hard to be unit tested
 	@for dir in $(OSDK_CRATES); do \
 		[ $$dir = "ostd/libs/linux-bzimage/setup" ] && continue; \
+		echo "[make] Testing $$dir"; \
 		(cd $$dir && OVMF=off cargo osdk test $(CARGO_OSDK_INITRAMFS_OPTION)) || exit 1; \
 		tail --lines 10 qemu.log | grep -q "^\\[ktest runner\\] All crates tested." \
 			|| (echo "Test failed" && exit 1); \
