@@ -6,10 +6,16 @@ use aster_bigtcp::device::WithDevice;
 use ostd::sync::LocalIrqDisabled;
 use spin::Once;
 
-use super::{poll::poll_ifaces, Iface};
-use crate::{net::iface::sched::PollScheduler, prelude::*};
+use super::{configurable::ConfigurableIface, poll::poll_ifaces, Iface};
+use crate::{
+    net::{
+        iface::{configurable::ConfigurableIfaceBuilder, sched::PollScheduler},
+        socket::netlink::{NetDeviceFlags, NetDeviceType},
+    },
+    prelude::*,
+};
 
-pub static IFACES: Once<Vec<Arc<Iface>>> = Once::new();
+pub static IFACES: Once<Vec<ConfigurableIface>> = Once::new();
 
 pub fn init() {
     IFACES.call_once(|| {
@@ -21,7 +27,7 @@ pub fn init() {
     for (name, _) in aster_network::all_devices() {
         let callback = || {
             // TODO: further check that the irq num is the same as iface's irq num
-            let iface_virtio = &IFACES.get().unwrap()[0];
+            let iface_virtio = IFACES.get().unwrap()[0].iface();
             iface_virtio.poll();
         };
         aster_network::register_recv_callback(&name, callback);
@@ -31,7 +37,7 @@ pub fn init() {
     poll_ifaces();
 }
 
-fn new_virtio() -> Arc<Iface> {
+fn new_virtio() -> ConfigurableIface {
     use aster_bigtcp::{
         iface::EtherIface,
         wire::{EthernetAddress, Ipv4Address, Ipv4Cidr},
@@ -61,17 +67,27 @@ fn new_virtio() -> Arc<Iface> {
         }
     }
 
-    EtherIface::new(
+    let iface = EtherIface::new(
         Wrapper(virtio_net),
         EthernetAddress(ether_addr),
         Ipv4Cidr::new(VIRTIO_ADDRESS, VIRTIO_ADDRESS_PREFIX_LEN),
         VIRTIO_GATEWAY,
         "virtio".to_owned(),
         PollScheduler::new(),
-    )
+    ) as Arc<Iface>;
+
+    ConfigurableIfaceBuilder::new(iface, NetDeviceType::ETHER)
+        .flags(
+            NetDeviceFlags::UP
+                | NetDeviceFlags::BROADCAST
+                | NetDeviceFlags::RUNNING
+                | NetDeviceFlags::MULTICAST
+                | NetDeviceFlags::LOWER_UP,
+        )
+        .build()
 }
 
-fn new_loopback() -> Arc<Iface> {
+fn new_loopback() -> ConfigurableIface {
     use aster_bigtcp::{
         device::{Loopback, Medium},
         iface::IpIface,
@@ -95,10 +111,22 @@ fn new_loopback() -> Arc<Iface> {
         }
     }
 
-    IpIface::new(
+    let iface = IpIface::new(
         Wrapper(Mutex::new(Loopback::new(Medium::Ip))),
         Ipv4Cidr::new(LOOPBACK_ADDRESS, LOOPBACK_ADDRESS_PREFIX_LEN),
         "lo".to_owned(),
         PollScheduler::new(),
-    ) as _
+    ) as Arc<Iface>;
+
+    // FIXME: These are just hardcoded values.
+    // We should set appropriate values in the future.
+    ConfigurableIfaceBuilder::new(iface, NetDeviceType::LOOPBACK)
+        .flags(
+            NetDeviceFlags::UP
+                | NetDeviceFlags::LOOPBACK
+                | NetDeviceFlags::RUNNING
+                | NetDeviceFlags::LOWER_UP,
+        )
+        .txqlen(1000)
+        .build()
 }

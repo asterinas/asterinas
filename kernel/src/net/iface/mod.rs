@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
+mod configurable;
 mod ext;
 mod init;
 mod poll;
 mod sched;
 
+pub use configurable::ConfigurableIface;
 pub use init::{init, IFACES};
 pub use poll::lazy_init;
 

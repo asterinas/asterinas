@@ -76,7 +76,7 @@ impl Connected {
         if !flags.is_all_supported() {
             warn!("unsupported flags: {:?}", flags);
         }
-        let buf_len = reader.sum_lens();
+        let buf_len = reader.remain();
         VSOCK_GLOBAL
             .get()
             .unwrap()

@@ -15,6 +15,7 @@ use crate::{
 };
 
 pub mod ip;
+pub mod netlink;
 pub mod options;
 pub mod unix;
 mod util;

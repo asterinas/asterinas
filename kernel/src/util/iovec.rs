@@ -142,11 +142,29 @@ pub trait MultiRead {
     fn read(&mut self, writer: &mut VmWriter<'_, Infallible>) -> Result<usize>;
 
     /// Calculates the total length of data remaining to read.
-    fn sum_lens(&self) -> usize;
+    fn remain(&self) -> usize;
 
     /// Checks if the data remaining to read is empty.
     fn is_empty(&self) -> bool {
-        self.sum_lens() == 0
+        self.remain() == 0
+    }
+
+    /// Returns the current cursor
+    fn cursor(&self) -> *const u8;
+}
+
+impl dyn MultiRead + '_ {
+    /// Reads an value of `T` from `self`.
+    ///
+    /// If the return value is `Ok(_)`,
+    /// then we must have read `size_of::<T>()` bytes from userspace.
+    pub fn read_val<T: Pod>(&mut self) -> Result<T> {
+        let mut val = T::new_zeroed();
+
+        let mut writer = VmWriter::from(val.as_bytes_mut());
+        self.read(&mut writer)?;
+
+        Ok(val)
     }
 }
 
@@ -173,6 +191,19 @@ pub trait MultiWrite {
     }
 }
 
+impl dyn MultiWrite + '_ {
+    /// Writes an value of `T` to `self`.
+    ///
+    /// If the return value is `Ok()`,
+    /// then we must have writen `size_of::<T>()` bytes from userspace.
+    pub fn write_val<T: Pod>(&mut self, val: &T) -> Result<()> {
+        let mut reader = VmReader::from(val.as_bytes());
+        self.write(&mut reader)?;
+
+        Ok(())
+    }
+}
+
 impl MultiRead for VmReaderArray<'_> {
     fn read(&mut self, writer: &mut VmWriter<'_, Infallible>) -> Result<usize> {
         let mut total_len = 0;
@@ -187,8 +218,22 @@ impl MultiRead for VmReaderArray<'_> {
         Ok(total_len)
     }
 
-    fn sum_lens(&self) -> usize {
+    fn remain(&self) -> usize {
         self.0.iter().map(|vm_reader| vm_reader.remain()).sum()
+    }
+
+    fn cursor(&self) -> *const u8 {
+        let mut cursor = 0 as *const u8;
+
+        for vm_reader in self.0.iter() {
+            cursor = VmReader::cursor(vm_reader);
+            if vm_reader.has_remain() {
+                return cursor;
+            }
+        }
+
+        debug_assert_ne!(cursor as usize, 0);
+        return cursor;
     }
 }
 
@@ -197,8 +242,12 @@ impl MultiRead for VmReader<'_> {
         Ok(self.read_fallible(writer)?)
     }
 
-    fn sum_lens(&self) -> usize {
+    fn remain(&self) -> usize {
         self.remain()
+    }
+
+    fn cursor(&self) -> *const u8 {
+        VmReader::cursor(self)
     }
 }
 

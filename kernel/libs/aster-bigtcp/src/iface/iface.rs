@@ -52,6 +52,14 @@ impl<E: Ext> dyn Iface<E> {
         self.common().ipv4_addr()
     }
 
+    /// Retrieves the prefix length of the interface's IPv4 address.
+    ///
+    /// Both [`Self::ipv4_addr`] and this method will either return `Some(_)`
+    /// or both will return `None`.
+    pub fn prefix_len(&self) -> Option<u8> {
+        self.common().prefix_len()
+    }
+
     /// Returns a reference to the associated [`ScheduleNextPoll`].
     pub fn sched_poll(&self) -> &E::ScheduleNextPoll {
         self.common().sched_poll()

@@ -7,7 +7,7 @@ use aster_bigtcp::{
 };
 
 use crate::{
-    net::iface::{BoundPort, Iface, IFACES},
+    net::iface::{BoundPort, ConfigurableIface, Iface, IFACES},
     prelude::*,
 };
 
@@ -16,6 +16,7 @@ pub(super) fn get_iface_to_bind(ip_addr: &IpAddress) -> Option<Arc<Iface>> {
     let IpAddress::Ipv4(ipv4_addr) = ip_addr;
     ifaces
         .iter()
+        .map(ConfigurableIface::iface)
         .find(|iface| {
             if let Some(iface_ipv4_addr) = iface.ipv4_addr() {
                 iface_ipv4_addr == *ipv4_addr
@@ -32,7 +33,7 @@ pub(super) fn get_iface_to_bind(ip_addr: &IpAddress) -> Option<Arc<Iface>> {
 fn get_ephemeral_iface(remote_ip_addr: &IpAddress) -> Arc<Iface> {
     let ifaces = IFACES.get().unwrap();
     let IpAddress::Ipv4(remote_ipv4_addr) = remote_ip_addr;
-    if let Some(iface) = ifaces.iter().find(|iface| {
+    if let Some(iface) = ifaces.iter().map(ConfigurableIface::iface).find(|iface| {
         if let Some(iface_ipv4_addr) = iface.ipv4_addr() {
             iface_ipv4_addr == *remote_ipv4_addr
         } else {
@@ -42,7 +43,7 @@ fn get_ephemeral_iface(remote_ip_addr: &IpAddress) -> Arc<Iface> {
         return iface.clone();
     }
     // FIXME: use the virtio-net as the default interface
-    ifaces[0].clone()
+    ifaces[0].iface().clone()
 }
 
 pub(super) fn bind_port(endpoint: &IpEndpoint, can_reuse: bool) -> Result<BoundPort> {
