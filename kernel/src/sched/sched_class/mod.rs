@@ -33,8 +33,11 @@ mod idle;
 mod real_time;
 mod stop;
 
-pub use self::policy::SchedPolicy;
 use self::policy::{SchedPolicyKind, SchedPolicyState};
+pub use self::{
+    policy::SchedPolicy,
+    real_time::{RealTimePolicy, RealTimePriority},
+};
 
 type SchedEntity = (Arc<Task>, Arc<Thread>);
 
@@ -139,7 +142,7 @@ impl SchedAttr {
             real_time: {
                 let (prio, policy) = match policy {
                     SchedPolicy::RealTime { rt_prio, rt_policy } => (rt_prio.get(), rt_policy),
-                    _ => (real_time::RtPrio::MAX.get(), Default::default()),
+                    _ => (real_time::RealTimePriority::MAX.get(), Default::default()),
                 };
                 real_time::RealTimeAttr::new(prio, policy)
             },
@@ -171,6 +174,10 @@ impl SchedAttr {
             SchedPolicy::Fair(nice) => self.fair.update(nice),
             _ => {}
         });
+    }
+
+    pub fn update_policy<T>(&self, f: impl FnOnce(&mut SchedPolicy) -> T) -> T {
+        self.policy.update(f)
     }
 }
 

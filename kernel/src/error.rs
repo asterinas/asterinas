@@ -246,6 +246,12 @@ impl From<aster_block::bio::BioStatus> for Error {
     }
 }
 
+impl From<core::num::TryFromIntError> for Error {
+    fn from(_: core::num::TryFromIntError) -> Self {
+        Error::with_message(Errno::EINVAL, "Invalid integer")
+    }
+}
+
 impl From<core::str::Utf8Error> for Error {
     fn from(_: core::str::Utf8Error) -> Self {
         Error::with_message(Errno::EINVAL, "Invalid utf-8 string")
