@@ -809,7 +809,8 @@ where
 
                     // Do copy.
                     op(&mut prop);
-                    self.jump(src_va).unwrap();
+                    self.jump(self.0.barrier_va.start + src_va - src.0.barrier_va.start)
+                        .expect("Jumping to the source address");
                     let original = self.map(page, prop);
                     assert!(original.is_none());
 
