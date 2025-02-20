@@ -6,7 +6,8 @@ use alloc::{
 };
 use core::ops::{Deref, DerefMut};
 
-use ostd::sync::{LocalIrqDisabled, SpinLock, SpinLockGuard};
+use aster_softirq::BottomHalfDisabled;
+use ostd::sync::{SpinLock, SpinLockGuard};
 use smoltcp::{
     socket::{tcp::State, PollAt},
     time::Duration,
@@ -34,7 +35,7 @@ pub type TcpConnection<E> = Socket<TcpConnectionInner<E>, E>;
 
 /// States needed by [`TcpConnectionBg`].
 pub struct TcpConnectionInner<E: Ext> {
-    socket: SpinLock<RawTcpSocketExt<E>, LocalIrqDisabled>,
+    socket: SpinLock<RawTcpSocketExt<E>, BottomHalfDisabled>,
     poll_key: PollKey,
     connection_key: ConnectionKey,
 }
@@ -243,7 +244,7 @@ impl<E: Ext> TcpConnectionInner<E> {
         }
     }
 
-    pub(super) fn lock(&self) -> SpinLockGuard<RawTcpSocketExt<E>, LocalIrqDisabled> {
+    pub(super) fn lock(&self) -> SpinLockGuard<RawTcpSocketExt<E>, BottomHalfDisabled> {
         self.socket.lock()
     }
 }
