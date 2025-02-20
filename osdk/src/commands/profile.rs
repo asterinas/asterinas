@@ -49,6 +49,12 @@ fn do_parse_stack_traces(target_file: &PathBuf, args: &ProfileArgs) {
     profile.serialize_to(out_format, out_args.cpu_mask, out_file);
 }
 
+macro_rules! profile_round_delimiter {
+    () => {
+        "-<!OSDK_PROF_BT_ROUND!>-"
+    };
+}
+
 fn do_collect_stack_traces(args: &ProfileArgs) {
     let file_path = get_target_directory()
         .join("osdk")
@@ -68,9 +74,9 @@ fn do_collect_stack_traces(args: &ProfileArgs) {
         let target_cmd = format!("target remote {}", remote);
         let backtrace_cmd_seq = vec![
             "-ex",
-            "thread apply all bt -frame-arguments presence -frame-info short-location",
+            "t a a bt -frame-arguments presence -frame-info short-location",
             "-ex",
-            "echo bt done\n",
+            concat!("echo ", profile_round_delimiter!(), "\n"),
             "-ex",
             "continue",
         ];
@@ -103,7 +109,7 @@ fn do_collect_stack_traces(args: &ProfileArgs) {
         loop {
             let _ = gdb_stdout_reader.read_line(&mut gdb_stdout_buf);
             gdb_output.push_str(&gdb_stdout_buf);
-            if gdb_stdout_buf == "bt done\n" {
+            if gdb_stdout_buf.contains(profile_round_delimiter!()) {
                 break;
             }
             gdb_stdout_buf.clear();
@@ -121,7 +127,8 @@ fn do_collect_stack_traces(args: &ProfileArgs) {
     let out_args = &args.out_args;
     let out_path = out_args.output_path(None);
     println!(
-        "Profile data collected. Writing the output to \"{}\".",
+        "{} profile samples collected. Writing the output to \"{}\".",
+        profile_buffer.cur_profile.nr_stack_traces(),
         out_path.display()
     );
 
@@ -204,6 +211,10 @@ impl Profile {
 
         folded
     }
+
+    fn nr_stack_traces(&self) -> usize {
+        self.stack_traces.len()
+    }
 }
 
 #[derive(Debug)]
@@ -232,7 +243,7 @@ impl ProfileBuffer {
             // Otherwise it may initiate a new capture or a new CPU stack trace
 
             // Check if this is a new CPU trace (starts with `Thread` and contains `CPU#N`)
-            if line.ends_with("[running])):") {
+            if line.ends_with("[running])):") || line.ends_with("[halted ])):") {
                 let cpu_id_idx = line.find("CPU#").unwrap();
                 let cpu_id = line[cpu_id_idx + 4..]
                     .split_whitespace()
