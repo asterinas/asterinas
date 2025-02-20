@@ -2,7 +2,8 @@
 
 use alloc::{boxed::Box, collections::btree_map::BTreeMap, sync::Arc, vec::Vec};
 
-use ostd::sync::{LocalIrqDisabled, SpinLock};
+use aster_softirq::BottomHalfDisabled;
+use ostd::sync::SpinLock;
 use smoltcp::{
     iface::Context,
     socket::PollAt,
@@ -37,7 +38,7 @@ pub struct TcpBacklog<E: Ext> {
 
 /// States needed by [`TcpListenerBg`].
 pub struct TcpListenerInner<E: Ext> {
-    pub(super) backlog: SpinLock<TcpBacklog<E>, LocalIrqDisabled>,
+    pub(super) backlog: SpinLock<TcpBacklog<E>, BottomHalfDisabled>,
     listener_key: ListenerKey,
 }
 
