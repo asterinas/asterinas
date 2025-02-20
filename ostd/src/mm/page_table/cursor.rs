@@ -65,7 +65,9 @@
 //! table cursor should add additional entry point checks to prevent these defined
 //! behaviors if they are not wanted.
 
-use core::{any::TypeId, marker::PhantomData, mem::ManuallyDrop, ops::Range};
+use core::{
+    any::TypeId, marker::PhantomData, mem::ManuallyDrop, ops::Range, sync::atomic::Ordering,
+};
 
 use align_ext::AlignExt;
 
@@ -185,10 +187,12 @@ where
             }
 
             let cur_pt_ptr = paddr_to_vaddr(cur_pt_addr) as *mut E;
-            // SAFETY: The pointer and index is valid since the root page table
-            // does not short-live it. The child page table node won't be
-            // recycled by another thread while we are using it.
-            let cur_pte = unsafe { cur_pt_ptr.add(start_idx).read() };
+            // SAFETY:
+            // - The page table node is alive because (1) the root node is alive and (2) all child nodes cannot
+            //   be recycled if there are cursors.
+            // - The index is inside the bound, so the page table entry is valid.
+            // - All page table entries are aligned and accessed with atomic operations only.
+            let cur_pte = unsafe { super::load_pte(cur_pt_ptr.add(start_idx), Ordering::Acquire) };
             if cur_pte.is_present() {
                 if cur_pte.is_last(cursor.level) {
                     break;

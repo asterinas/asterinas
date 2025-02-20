@@ -1,13 +1,20 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::{fmt::Debug, marker::PhantomData, ops::Range};
+use core::{
+    fmt::Debug,
+    intrinsics::transmute_unchecked,
+    marker::PhantomData,
+    ops::Range,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use super::{
-    nr_subpage_per_huge, page_prop::PageProperty, page_size, Paddr, PagingConstsTrait, PagingLevel,
-    PodOnce, Vaddr,
+    io::PodOnce, nr_subpage_per_huge, page_prop::PageProperty, page_size, Paddr, PagingConstsTrait,
+    PagingLevel, Vaddr,
 };
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
+    util::SameSizeAs,
     Pod,
 };
 
@@ -339,7 +346,7 @@ pub(super) unsafe fn page_walk<E: PageTableEntryTrait, C: PagingConstsTrait>(
 ///
 /// Note that a default PTE should be a PTE that points to nothing.
 pub trait PageTableEntryTrait:
-    Clone + Copy + Debug + Default + Pod + PodOnce + Sized + Send + Sync + 'static
+    Clone + Copy + Debug + Default + Pod + PodOnce + SameSizeAs<usize> + Sized + Send + Sync + 'static
 {
     /// Create a set of new invalid page table flags that indicates an absent page.
     ///
@@ -380,4 +387,40 @@ pub trait PageTableEntryTrait:
     /// The level of the page table the entry resides is given since architectures
     /// like amd64 only uses a huge bit in intermediate levels.
     fn is_last(&self, level: PagingLevel) -> bool;
+
+    /// Converts the PTE into its corresponding `usize` value.
+    fn as_usize(self) -> usize {
+        // SAFETY: `Self` is `Pod` and has the same memory representation as `usize`.
+        unsafe { transmute_unchecked(self) }
+    }
+
+    /// Converts a usize `pte_raw` into a PTE.
+    fn from_usize(pte_raw: usize) -> Self {
+        // SAFETY: `Self` is `Pod` and has the same memory representation as `usize`.
+        unsafe { transmute_unchecked(pte_raw) }
+    }
+}
+
+/// Loads a page table entry with an atomic instruction.
+///
+/// # Safety
+///
+/// The safety preconditions are same as those of [`AtomicUsize::from_ptr`].
+pub unsafe fn load_pte<E: PageTableEntryTrait>(ptr: *mut E, ordering: Ordering) -> E {
+    // SAFETY: The safety is upheld by the caller.
+    let atomic = unsafe { AtomicUsize::from_ptr(ptr.cast()) };
+    let pte_raw = atomic.load(ordering);
+    E::from_usize(pte_raw)
+}
+
+/// Stores a page table entry with an atomic instruction.
+///
+/// # Safety
+///
+/// The safety preconditions are same as those of [`AtomicUsize::from_ptr`].
+pub unsafe fn store_pte<E: PageTableEntryTrait>(ptr: *mut E, new_val: E, ordering: Ordering) {
+    let new_raw = new_val.as_usize();
+    // SAFETY: The safety is upheld by the caller.
+    let atomic = unsafe { AtomicUsize::from_ptr(ptr.cast()) };
+    atomic.store(new_raw, ordering)
 }
