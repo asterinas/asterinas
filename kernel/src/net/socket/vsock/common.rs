@@ -2,12 +2,12 @@
 
 use alloc::collections::BTreeSet;
 
+use aster_softirq::BottomHalfDisabled;
 use aster_virtio::device::socket::{
     connect::{ConnectionInfo, VsockEvent, VsockEventType},
     device::SocketDevice,
     error::SocketError,
 };
-use ostd::sync::LocalIrqDisabled;
 
 use super::{
     addr::VsockSocketAddr,
@@ -27,7 +27,7 @@ pub struct VsockSpace {
     // (key, value) = (local_addr, listen)
     listen_sockets: SpinLock<BTreeMap<VsockSocketAddr, Arc<Listen>>>,
     // (key, value) = (id(local_addr,peer_addr), connected)
-    connected_sockets: RwLock<BTreeMap<ConnectionID, Arc<Connected>>, LocalIrqDisabled>,
+    connected_sockets: RwLock<BTreeMap<ConnectionID, Arc<Connected>>, BottomHalfDisabled>,
     // Used ports
     used_ports: SpinLock<BTreeSet<u32>>,
 }

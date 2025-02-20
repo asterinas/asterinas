@@ -2,7 +2,8 @@
 
 use alloc::{boxed::Box, sync::Arc};
 
-use ostd::sync::{LocalIrqDisabled, SpinLock};
+use aster_softirq::BottomHalfDisabled;
+use ostd::sync::SpinLock;
 use smoltcp::{
     iface::Context,
     socket::{udp::UdpMetadata, PollAt},
@@ -20,7 +21,7 @@ use crate::{
 pub type UdpSocket<E> = Socket<UdpSocketInner, E>;
 
 /// States needed by [`UdpSocketBg`].
-type UdpSocketInner = SpinLock<Box<RawUdpSocket>, LocalIrqDisabled>;
+type UdpSocketInner = SpinLock<Box<RawUdpSocket>, BottomHalfDisabled>;
 
 impl<E: Ext> Inner<E> for UdpSocketInner {
     type Observer = E::UdpEventObserver;
