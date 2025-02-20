@@ -2,7 +2,8 @@
 
 use alloc::{collections::btree_map::BTreeMap, string::String, sync::Arc};
 
-use ostd::sync::{LocalIrqDisabled, SpinLock};
+use aster_softirq::BottomHalfDisabled;
+use ostd::sync::SpinLock;
 use smoltcp::{
     iface::{packet::Packet, Config, Context},
     phy::{DeviceCapabilities, TxToken},
@@ -25,7 +26,7 @@ pub struct EtherIface<D, E: Ext> {
     driver: D,
     common: IfaceCommon<E>,
     ether_addr: EthernetAddress,
-    arp_table: SpinLock<BTreeMap<Ipv4Address, EthernetAddress>, LocalIrqDisabled>,
+    arp_table: SpinLock<BTreeMap<Ipv4Address, EthernetAddress>, BottomHalfDisabled>,
 }
 
 impl<D: WithDevice, E: Ext> EtherIface<D, E> {

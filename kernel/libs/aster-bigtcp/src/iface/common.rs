@@ -7,7 +7,8 @@ use alloc::{
     vec::Vec,
 };
 
-use ostd::sync::{LocalIrqDisabled, SpinLock, SpinLockGuard};
+use aster_softirq::BottomHalfDisabled;
+use ostd::sync::{SpinLock, SpinLockGuard};
 use smoltcp::{
     iface::{packet::Packet, Context},
     phy::Device,
@@ -30,9 +31,9 @@ use crate::{
 
 pub struct IfaceCommon<E: Ext> {
     name: String,
-    interface: SpinLock<PollableIface<E>, LocalIrqDisabled>,
-    used_ports: SpinLock<BTreeMap<u16, usize>, LocalIrqDisabled>,
-    sockets: SpinLock<SocketTable<E>, LocalIrqDisabled>,
+    interface: SpinLock<PollableIface<E>, BottomHalfDisabled>,
+    used_ports: SpinLock<BTreeMap<u16, usize>, BottomHalfDisabled>,
+    sockets: SpinLock<SocketTable<E>, BottomHalfDisabled>,
     sched_poll: E::ScheduleNextPoll,
 }
 
@@ -67,12 +68,12 @@ impl<E: Ext> IfaceCommon<E> {
 // Lock order: `interface` -> `sockets`
 impl<E: Ext> IfaceCommon<E> {
     /// Acquires the lock to the interface.
-    pub(crate) fn interface(&self) -> SpinLockGuard<'_, PollableIface<E>, LocalIrqDisabled> {
+    pub(crate) fn interface(&self) -> SpinLockGuard<'_, PollableIface<E>, BottomHalfDisabled> {
         self.interface.lock()
     }
 
     /// Acquires the lock to the socket table.
-    pub(crate) fn sockets(&self) -> SpinLockGuard<'_, SocketTable<E>, LocalIrqDisabled> {
+    pub(crate) fn sockets(&self) -> SpinLockGuard<'_, SocketTable<E>, BottomHalfDisabled> {
         self.sockets.lock()
     }
 }
