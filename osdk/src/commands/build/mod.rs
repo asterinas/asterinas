@@ -29,7 +29,10 @@ use crate::{
     },
     error::Errno,
     error_msg,
-    util::{get_cargo_metadata, get_current_crates, get_target_directory, CrateInfo, DirGuard},
+    util::{
+        get_cargo_metadata, get_current_crates, get_kernel_crate, get_target_directory, CrateInfo,
+        DirGuard,
+    },
 };
 
 pub fn execute_build_command(config: &Config, build_args: &BuildArgs) {
@@ -42,19 +45,7 @@ pub fn execute_build_command(config: &Config, build_args: &BuildArgs) {
         std::fs::create_dir_all(&osdk_output_directory).unwrap();
     }
 
-    let targets = get_current_crates();
-    let mut target_info = None;
-    for target in targets {
-        if target.is_kernel_crate {
-            target_info = Some(target);
-            break;
-        }
-    }
-
-    let target_info = target_info.unwrap_or_else(|| {
-        error_msg!("No kernel crate found in the current workspace");
-        process::exit(Errno::NoKernelCrate as _);
-    });
+    let target_info = get_kernel_crate();
 
     let bundle_path = osdk_output_directory.join(target_info.name.clone());
 
@@ -91,7 +82,7 @@ pub fn create_base_and_cached_build(
         },
         osdk_output_directory.as_ref().join(&target_crate.name),
         &target_crate.name,
-        target_crate.path,
+        &target_crate.path,
         false,
     );
     let _dir_guard = DirGuard::change_dir(&base_crate_path);
