@@ -10,12 +10,18 @@ use alloc::boxed::Box;
 use core::sync::atomic::{AtomicU8, Ordering};
 
 use component::{init_component, ComponentInitError};
-use ostd::{cpu_local_cell, trap::register_bottom_half_handler};
+use lock::is_softirq_enabled;
+use ostd::{
+    cpu_local_cell,
+    trap::{disable_local, register_bottom_half_handler, DisabledLocalIrqGuard},
+};
 use spin::Once;
 
+mod lock;
 pub mod softirq_id;
 mod taskless;
 
+pub use lock::{BottomHalfDisabled, DisableLocalBottomHalfGuard};
 pub use taskless::Taskless;
 
 /// A representation of a software interrupt (softirq) line.
@@ -122,10 +128,19 @@ cpu_local_cell! {
 }
 
 /// Processes pending softirqs.
+fn process_pending(irq_guard: DisabledLocalIrqGuard) -> DisabledLocalIrqGuard {
+    if !is_softirq_enabled() {
+        return irq_guard;
+    }
+
+    process_all_pending(irq_guard)
+}
+
+/// Processes all pending softirqs regardless of whether softirqs are disabled.
 ///
 /// The processing instructions will iterate for `SOFTIRQ_RUN_TIMES` times. If any softirq
 /// is raised during the iteration, it will be processed.
-fn process_pending() {
+fn process_all_pending(mut irq_guard: DisabledLocalIrqGuard) -> DisabledLocalIrqGuard {
     const SOFTIRQ_RUN_TIMES: u8 = 5;
 
     for _i in 0..SOFTIRQ_RUN_TIMES {
@@ -138,10 +153,19 @@ fn process_pending() {
         if action_mask == 0 {
             break;
         }
+
+        drop(irq_guard);
+
         while action_mask > 0 {
             let action_id = u8::trailing_zeros(action_mask) as u8;
             SoftIrqLine::get(action_id).callback.get().unwrap()();
             action_mask &= action_mask - 1;
         }
+
+        irq_guard = disable_local();
     }
+
+    // TODO: Wake up ksoftirqd if some softirqs are still pending.
+
+    irq_guard
 }
