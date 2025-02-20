@@ -15,6 +15,7 @@ aster-console = { path = "../console" }
 aster-util = { path = "../../libs/aster-util" }
 aster-rights = { path = "../../libs/aster-rights" }
 aster-bigtcp = { path = "../../libs/aster-bigtcp" }
+aster-softirq = { path = "../softirq"}
 id-alloc = { path = "../../../ostd/libs/id-alloc" }
 typeflags-util = { path = "../../libs/typeflags-util" }
 ostd = { path = "../../../ostd" }

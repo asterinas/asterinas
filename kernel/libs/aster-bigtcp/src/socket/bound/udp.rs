@@ -3,7 +3,8 @@
 use alloc::{boxed::Box, sync::Arc};
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use ostd::sync::{LocalIrqDisabled, SpinLock};
+use aster_softirq::BottomHalfDisabled;
+use ostd::sync::SpinLock;
 use smoltcp::{
     iface::Context,
     socket::udp::UdpMetadata,
@@ -22,7 +23,7 @@ pub type UdpSocket<E> = Socket<UdpSocketInner, E>;
 
 /// States needed by [`UdpSocketBg`].
 pub struct UdpSocketInner {
-    socket: SpinLock<Box<RawUdpSocket>, LocalIrqDisabled>,
+    socket: SpinLock<Box<RawUdpSocket>, BottomHalfDisabled>,
     need_dispatch: AtomicBool,
 }
 
