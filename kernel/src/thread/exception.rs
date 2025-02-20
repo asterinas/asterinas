@@ -3,7 +3,7 @@
 #![expect(unused_variables)]
 
 use aster_rights::Full;
-use ostd::{cpu::*, mm::VmSpace};
+use ostd::{cpu::*, mm::VmSpace, task::Task};
 
 use crate::{
     prelude::*,
@@ -31,7 +31,9 @@ pub fn handle_exception(ctx: &Context, context: &UserContext) {
     log_trap_info(trap_info);
 
     if let Ok(page_fault_info) = PageFaultInfo::try_from(trap_info) {
-        if handle_page_fault_from_vmar(ctx.process.root_vmar(), &page_fault_info).is_ok() {
+        let user_space = ctx.user_space();
+        let root_vmar = user_space.root_vmar();
+        if handle_page_fault_from_vmar(root_vmar, &page_fault_info).is_ok() {
             return;
         }
     }
@@ -44,8 +46,9 @@ pub(crate) fn handle_page_fault_from_vm_space(
     vm_space: &VmSpace,
     page_fault_info: &PageFaultInfo,
 ) -> core::result::Result<(), ()> {
-    let current = current!();
-    let root_vmar = current.root_vmar();
+    let task = Task::current().unwrap();
+    let current_root_vmar = task.as_thread_local().unwrap().root_vmar().borrow();
+    let root_vmar = current_root_vmar.as_ref().unwrap();
 
     // If page is not present or due to write access, we should ask the vmar try to commit this page
     debug_assert_eq!(

@@ -20,9 +20,10 @@ use core::{
 
 use align_ext::AlignExt;
 use aster_rights::Full;
-use ostd::mm::{vm_space::VmItem, UntypedMem, VmIo, VmSpace, MAX_USERSPACE_VADDR};
+use ostd::mm::{vm_space::VmItem, UntypedMem, VmIo, MAX_USERSPACE_VADDR};
 
 use self::aux_vec::{AuxKey, AuxVec};
+use super::ProcessVmar;
 use crate::{
     prelude::*,
     util::random::getrandom,
@@ -191,11 +192,11 @@ impl InitStack {
 
     /// Constructs a reader to parse the content of an `InitStack`.
     /// The `InitStack` should only be read after initialized
-    pub(super) fn reader<'a>(&self, vm_space: &'a Arc<VmSpace>) -> InitStackReader<'a> {
+    pub(super) fn reader<'a>(&self, vmar: ProcessVmar<'a>) -> InitStackReader<'a> {
         debug_assert!(self.is_initialized());
         InitStackReader {
             base: self.pos(),
-            vm_space,
+            vmar,
             map_addr: self.initial_top - self.max_size,
         }
     }
@@ -204,7 +205,7 @@ impl InitStack {
         self.pos() != self.initial_top
     }
 
-    fn set_uninitialized(&self) {
+    pub fn set_uninitialized(&self) {
         self.pos.store(self.initial_top, Ordering::Relaxed);
     }
 
@@ -373,7 +374,7 @@ fn generate_random_for_aux_vec() -> [u8; 16] {
 /// A reader to parse the content of an `InitStack`.
 pub struct InitStackReader<'a> {
     base: Vaddr,
-    vm_space: &'a Arc<VmSpace>,
+    vmar: ProcessVmar<'a>,
     /// The mapping address of the `InitStack`.
     map_addr: usize,
 }
@@ -384,9 +385,8 @@ impl InitStackReader<'_> {
         let stack_base = self.init_stack_bottom();
         let page_base_addr = stack_base.align_down(PAGE_SIZE);
 
-        let mut cursor = self
-            .vm_space
-            .cursor(&(page_base_addr..page_base_addr + PAGE_SIZE))?;
+        let vm_space = self.vmar.get().vm_space();
+        let mut cursor = vm_space.cursor(&(page_base_addr..page_base_addr + PAGE_SIZE))?;
         let VmItem::Mapped { frame, .. } = cursor.query()? else {
             return_errno_with_message!(Errno::EACCES, "Page not accessible");
         };
@@ -408,9 +408,9 @@ impl InitStackReader<'_> {
 
         let mut argv = Vec::with_capacity(argc);
         let page_base_addr = read_offset.align_down(PAGE_SIZE);
-        let mut cursor = self
-            .vm_space
-            .cursor(&(page_base_addr..page_base_addr + PAGE_SIZE))?;
+
+        let vm_space = self.vmar.get().vm_space();
+        let mut cursor = vm_space.cursor(&(page_base_addr..page_base_addr + PAGE_SIZE))?;
         let VmItem::Mapped { frame, .. } = cursor.query()? else {
             return_errno_with_message!(Errno::EACCES, "Page not accessible");
         };
@@ -450,9 +450,9 @@ impl InitStackReader<'_> {
 
         let mut envp = Vec::new();
         let page_base_addr = read_offset.align_down(PAGE_SIZE);
-        let mut cursor = self
-            .vm_space
-            .cursor(&(page_base_addr..page_base_addr + PAGE_SIZE))?;
+
+        let vm_space = self.vmar.get().vm_space();
+        let mut cursor = vm_space.cursor(&(page_base_addr..page_base_addr + PAGE_SIZE))?;
         let VmItem::Mapped { frame, .. } = cursor.query()? else {
             return_errno_with_message!(Errno::EACCES, "Page not accessible");
         };
