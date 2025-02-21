@@ -14,9 +14,8 @@ mod spin;
 mod wait;
 
 // pub use self::rcu::{pass_quiescent_state, OwnerPtr, Rcu, RcuReadGuard, RcuReclaimer};
-pub(crate) use self::guard::GuardTransfer;
 pub use self::{
-    guard::{LocalIrqDisabled, PreemptDisabled, WriteIrqDisabled},
+    guard::{GuardTransfer, Guardian, LocalIrqDisabled, PreemptDisabled, WriteIrqDisabled},
     mutex::{ArcMutexGuard, Mutex, MutexGuard},
     rwarc::{RoArc, RwArc},
     rwlock::{

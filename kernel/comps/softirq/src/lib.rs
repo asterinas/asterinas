@@ -7,15 +7,23 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
-use core::sync::atomic::{AtomicU8, Ordering};
+use core::{
+    marker::PhantomData,
+    sync::atomic::{AtomicU8, Ordering},
+};
 
 use component::{init_component, ComponentInitError};
-use ostd::{cpu_local_cell, trap::register_bottom_half_handler};
+use ostd::{
+    cpu_local_cell,
+    trap::{in_interrupt_context, register_bottom_half_handler},
+};
 use spin::Once;
 
+mod lock;
 pub mod softirq_id;
 mod taskless;
 
+pub use lock::{BottomHalfDisabled, DisableLocalBottomHalfGuard};
 pub use taskless::Taskless;
 
 /// A representation of a software interrupt (softirq) line.
@@ -119,6 +127,43 @@ static ENABLED_MASK: AtomicU8 = AtomicU8::new(0);
 
 cpu_local_cell! {
     static PENDING_MASK: u8 = 0;
+    static DISABLE_SOFTIRQ_COUNT: u8 = 0;
+}
+
+fn increase_disable_softirq_count() {
+    DISABLE_SOFTIRQ_COUNT.add_assign(1);
+}
+
+fn decrease_disable_softirq_count() {
+    DISABLE_SOFTIRQ_COUNT.sub_assign(1);
+}
+
+#[clippy::has_significant_drop]
+#[must_use]
+struct DisableLocalSoftirqGuard(PhantomData<()>);
+
+impl Drop for DisableLocalSoftirqGuard {
+    fn drop(&mut self) {
+        decrease_disable_softirq_count();
+
+        // Once the guard is dropped, we will process pending items within
+        // the current thread's context. This behavior is similar to how
+        // Linux handles pending softirqs.
+        if is_softirq_enabled() && !in_interrupt_context() {
+            process_pending();
+        }
+    }
+}
+
+/// Disables softirq on current processor.
+fn disable_softirq_local() -> DisableLocalSoftirqGuard {
+    increase_disable_softirq_count();
+    DisableLocalSoftirqGuard(PhantomData)
+}
+
+/// Checks whether the softirq is enabled on current processor
+fn is_softirq_enabled() -> bool {
+    DISABLE_SOFTIRQ_COUNT.load() == 0
 }
 
 /// Processes pending softirqs.
@@ -127,6 +172,22 @@ cpu_local_cell! {
 /// is raised during the iteration, it will be processed.
 fn process_pending() {
     const SOFTIRQ_RUN_TIMES: u8 = 5;
+
+    if !is_softirq_enabled() {
+        return;
+    }
+
+    let in_interrupt_context = in_interrupt_context();
+
+    // If we are in an interrupt context here,
+    // note that the OSTD has already disabled nested interrupts,
+    // so we don't need to disable softirq in this case.
+    if !in_interrupt_context {
+        // We cannot call `disable_softirq_local` here,
+        // because dropping the returned `DisableLocalSoftirqGuard`
+        // will call `process_pending` again, causing endless recursion.
+        increase_disable_softirq_count();
+    }
 
     for _i in 0..SOFTIRQ_RUN_TIMES {
         let mut action_mask = {
@@ -143,5 +204,9 @@ fn process_pending() {
             SoftIrqLine::get(action_id).callback.get().unwrap()();
             action_mask &= action_mask - 1;
         }
+    }
+
+    if !in_interrupt_context {
+        decrease_disable_softirq_count();
     }
 }
