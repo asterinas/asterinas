@@ -73,4 +73,8 @@ impl ListenStream {
     ) -> R {
         set_option(&self.tcp_listener)
     }
+
+    pub(super) fn into_listener(self) -> TcpListener {
+        self.tcp_listener
+    }
 }
