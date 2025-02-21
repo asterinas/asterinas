@@ -40,6 +40,8 @@ pub struct RawTcpSocketExt<E: Ext> {
     socket: Box<RawTcpSocket>,
     pub(super) listener: Option<Arc<TcpListenerBg<E>>>,
     has_connected: bool,
+    /// Indicates if the receiving side of this socket is shut down by the user.
+    is_recv_shut: bool,
 }
 
 impl<E: Ext> Deref for RawTcpSocketExt<E> {
@@ -73,6 +75,23 @@ impl<E: Ext> RawTcpSocketExt<E> {
             _ => false,
         }
     }
+
+    /// Checks if the socket is closing.
+    ///
+    /// More specifically, we say a socket is closing if and only if it has sent its FIN packet but
+    /// is still waiting for an ACK packet from the peer to acknowledge the FIN it sent.
+    pub fn is_closing(&self) -> bool {
+        let state = self.state();
+        matches!(state, State::FinWait1 | State::Closing | State::LastAck)
+    }
+
+    /// Returns whether the receiving half of the socket is shut down.
+    ///
+    /// This method will return true if and only if [`TcpConnection::shut_recv`] or
+    /// [`TcpConnection::close`] is called.
+    pub fn is_recv_shut(&self) -> bool {
+        self.is_recv_shut
+    }
 }
 
 define_boolean_value!(
@@ -81,10 +100,40 @@ define_boolean_value!(
 );
 
 impl<E: Ext> RawTcpSocketExt<E> {
-    fn on_new_state(
+    /// Checks the TCP state for additional events and whether the connection is dead.
+    fn check_state(
         &mut self,
         this: &Arc<TcpConnectionBg<E>>,
+        old_state: State,
+        old_recv_queue: usize,
     ) -> (SocketEvents, TcpConnBecameDead) {
+        let became_dead = if self.state() != State::Established {
+            // After the connection is closed by the user, no new data can be read, and such unread
+            // data will immediately cause the connection to be reset.
+            // Note that "closed" here means that either (1) `close()` or (2) both `shut_send()`
+            // and `shut_recv()` are called. In the latter case, there may be some buffered data.
+            if self.is_recv_shut
+                // These are states where the sending half is closed but new data can come in.
+                && matches!(old_state, State::FinWait1 | State::FinWait2)
+                && self.recv_queue() > old_recv_queue
+            {
+                self.abort();
+            }
+            self.check_dead(this)
+        } else {
+            TcpConnBecameDead::FALSE
+        };
+
+        let events = if self.state() != old_state {
+            self.on_new_state(this)
+        } else {
+            SocketEvents::empty()
+        };
+
+        (events, became_dead)
+    }
+
+    fn on_new_state(&mut self, this: &Arc<TcpConnectionBg<E>>) -> SocketEvents {
         let may_send = self.may_send();
 
         if may_send && !self.has_connected {
@@ -99,8 +148,6 @@ impl<E: Ext> RawTcpSocketExt<E> {
             }
         }
 
-        let became_dead = self.check_dead(this);
-
         let mut events = SocketEvents::empty();
         if !self.may_recv_new() {
             events |= SocketEvents::CLOSED_RECV;
@@ -109,7 +156,7 @@ impl<E: Ext> RawTcpSocketExt<E> {
             events |= SocketEvents::CLOSED_SEND;
         }
 
-        (events, became_dead)
+        events
     }
 
     /// Checks whether the TCP connection becomes dead.
@@ -123,15 +170,20 @@ impl<E: Ext> RawTcpSocketExt<E> {
     /// dead if it is not closed.
     fn check_dead(&self, this: &Arc<TcpConnectionBg<E>>) -> TcpConnBecameDead {
         // FIXME: This is a temporary workaround to mark TimeWait socket as dead.
-        if self.state() == smoltcp::socket::tcp::State::Closed
-            || self.state() == smoltcp::socket::tcp::State::TimeWait
-        {
+        if self.state() == State::TimeWait {
+            return TcpConnBecameDead::TRUE;
+        }
+
+        // According to the current smoltcp implementation, a socket in the CLOSED state with the
+        // remote endpoint set means that an outgoing RST packet is pending. We cannot simply mark
+        // such a socket as dead.
+        if self.state() == State::Closed && self.remote_endpoint().is_none() {
             return TcpConnBecameDead::TRUE;
         }
 
         // According to the current smoltcp implementation, a backlog socket will return back to
         // the `Listen` state if the connection is RSTed before its establishment.
-        if self.state() == smoltcp::socket::tcp::State::Listen {
+        if self.state() == State::Listen {
             if let Some(ref listener) = self.listener {
                 let mut backlog = listener.inner.backlog.lock();
                 // This may fail due to race conditions, but it's fine.
@@ -158,6 +210,7 @@ impl<E: Ext> TcpConnectionInner<E> {
             socket,
             listener,
             has_connected: false,
+            is_recv_shut: false,
         };
 
         TcpConnectionInner {
@@ -175,25 +228,26 @@ impl<E: Ext> Inner<E> for TcpConnectionInner<E> {
     type Observer = E::TcpEventObserver;
 
     fn on_drop(this: &Arc<SocketBg<Self, E>>) {
-        let became_dead = {
-            let mut socket = this.inner.lock();
-
-            // FIXME: Send RSTs when there is unread data.
-            socket.close();
-
-            if *socket.check_dead(this) {
-                true
-            } else {
-                // A TCP connection may not be appropriate for immediate removal. We leave the removal
-                // decision to the polling logic.
-                this.update_next_poll_at_ms(PollAt::Now);
-                false
-            }
-        };
-
-        if became_dead {
-            this.bound.iface().common().remove_dead_tcp_connection(this);
-        }
+        debug_assert!(
+            {
+                let socket = this.inner.lock();
+                if socket.state() == State::Closed {
+                    // (1) The socket is fully closed.
+                    true
+                } else {
+                    // (2) The receiving half is closed and the sending half is closing.
+                    socket.is_recv_shut
+                        && !matches!(
+                            socket.state(),
+                            State::SynSent
+                                | State::SynReceived
+                                | State::Established
+                                | State::CloseWait,
+                        )
+                }
+            },
+            "a connection must be either closed or reset before dropping"
+        );
     }
 }
 
@@ -319,6 +373,10 @@ impl<E: Ext> TcpConnection<E> {
 
         let mut socket = self.0.inner.lock();
 
+        if socket.is_recv_shut && socket.recv_queue() == 0 {
+            return Err(smoltcp::socket::tcp::RecvError::Finished);
+        }
+
         let result = socket.recv(f)?;
         let need_poll = self
             .0
@@ -327,17 +385,15 @@ impl<E: Ext> TcpConnection<E> {
         Ok((result, need_poll))
     }
 
-    /// Closes the connection.
+    /// Shuts down the sending half of the connection.
     ///
-    /// This method returns `false` if the socket is closed _before_ calling this method.
+    /// This method will return `false` if the socket is in the CLOSED or TIME_WAIT state.
     ///
     /// Polling the iface is _always_ required after this method succeeds.
-    pub fn close(&self) -> bool {
+    pub fn shut_send(&self) -> bool {
         let mut socket = self.0.inner.lock();
 
-        socket.listener = None;
-
-        if socket.state() == State::Closed {
+        if matches!(socket.state(), State::Closed | State::TimeWait) {
             return false;
         }
 
@@ -345,6 +401,56 @@ impl<E: Ext> TcpConnection<E> {
         self.0.update_next_poll_at_ms(PollAt::Now);
 
         true
+    }
+
+    /// Shuts down the receiving half of the connection.
+    ///
+    /// This method will return `false` if the socket is in the CLOSED or TIME_WAIT state.
+    ///
+    /// Polling the iface is _not_ required after this method succeeds.
+    pub fn shut_recv(&self) -> bool {
+        let mut socket = self.0.inner.lock();
+
+        if matches!(socket.state(), State::Closed | State::TimeWait) {
+            return false;
+        }
+
+        socket.is_recv_shut = true;
+
+        true
+    }
+
+    /// Closes the connection.
+    ///
+    /// Polling the iface is _always_ required after this method succeeds.
+    ///
+    /// Note that either this method or [`Self::reset`] must be called before dropping the TCP
+    /// connection to avoid resource leakage.
+    pub fn close(&self) {
+        let mut socket = self.0.inner.lock();
+
+        socket.is_recv_shut = true;
+
+        if socket.recv_queue() != 0 {
+            // If there is unread data, reset the connection immediately.
+            socket.abort();
+        } else {
+            socket.close();
+        }
+        self.0.update_next_poll_at_ms(PollAt::Now);
+    }
+
+    /// Resets the connection.
+    ///
+    /// Polling the iface is _always_ required after this method succeeds.
+    ///
+    /// Note that either this method or [`Self::close`] must be called before dropping the TCP
+    /// connection to avoid resource leakage.
+    pub fn reset(&self) {
+        let mut socket = self.0.inner.lock();
+
+        socket.abort();
+        self.0.update_next_poll_at_ms(PollAt::Now);
     }
 
     /// Calls `f` with an immutable reference to the associated [`RawTcpSocket`].
@@ -427,6 +533,7 @@ impl<E: Ext> TcpConnectionBg<E> {
         }
 
         let old_state = socket.state();
+        let old_recv_queue = socket.recv_queue();
         // For TCP, receiving an ACK packet can free up space in the queue, allowing more packets
         // to be queued.
         let mut events = SocketEvents::CAN_RECV | SocketEvents::CAN_SEND;
@@ -436,13 +543,8 @@ impl<E: Ext> TcpConnectionBg<E> {
             Some((ip_repr, tcp_repr)) => TcpProcessResult::ProcessedWithReply(ip_repr, tcp_repr),
         };
 
-        let became_dead = if socket.state() != old_state {
-            let (new_events, became_dead) = socket.on_new_state(self);
-            events |= new_events;
-            became_dead
-        } else {
-            TcpConnBecameDead::FALSE
-        };
+        let (state_events, became_dead) = socket.check_state(self, old_state, old_recv_queue);
+        events |= state_events;
 
         self.add_events(events);
         self.update_next_poll_at_ms(socket.poll_at(cx));
@@ -452,16 +554,17 @@ impl<E: Ext> TcpConnectionBg<E> {
 
     /// Tries to generate an outgoing packet and dispatches the generated packet.
     pub(crate) fn dispatch<D>(
-        this: &Arc<Self>,
+        self: &Arc<Self>,
         cx: &mut Context,
         dispatch: D,
     ) -> (Option<(IpRepr, TcpRepr<'static>)>, TcpConnBecameDead)
     where
         D: FnOnce(&mut Context, &IpRepr, &TcpRepr) -> Option<(IpRepr, TcpRepr<'static>)>,
     {
-        let mut socket = this.inner.lock();
+        let mut socket = self.inner.lock();
 
         let old_state = socket.state();
+        let old_recv_queue = socket.recv_queue();
         let mut events = SocketEvents::empty();
 
         let mut reply = None;
@@ -482,16 +585,11 @@ impl<E: Ext> TcpConnectionBg<E> {
             events |= SocketEvents::CAN_RECV | SocketEvents::CAN_SEND;
         }
 
-        let became_dead = if socket.state() != old_state {
-            let (new_events, became_dead) = socket.on_new_state(this);
-            events |= new_events;
-            became_dead
-        } else {
-            TcpConnBecameDead::FALSE
-        };
+        let (state_events, became_dead) = socket.check_state(self, old_state, old_recv_queue);
+        events |= state_events;
 
-        this.add_events(events);
-        this.update_next_poll_at_ms(socket.poll_at(cx));
+        self.add_events(events);
+        self.update_next_poll_at_ms(socket.poll_at(cx));
 
         (reply, became_dead)
     }

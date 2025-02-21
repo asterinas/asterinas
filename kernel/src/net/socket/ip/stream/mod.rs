@@ -6,7 +6,7 @@ use aster_bigtcp::{
     socket::{NeedIfacePoll, RawTcpOption, RawTcpSetOption},
     wire::IpEndpoint,
 };
-use connected::ConnectedStream;
+use connected::{close_and_linger, ConnectedStream};
 use connecting::{ConnResult, ConnectingStream};
 use init::InitStream;
 use listen::ListenStream;
@@ -825,14 +825,19 @@ impl Drop for StreamSocket {
     fn drop(&mut self) {
         let state = self.state.get_mut().take();
 
-        let iface_to_poll = state.iface().cloned();
+        let conn = match state {
+            State::Init(_) => return,
+            State::Connecting(connecting_stream) => connecting_stream.into_connection(),
+            State::Connected(connected_stream) => connected_stream.into_connection(),
+            State::Listen(listen_stream) => {
+                let listener = listen_stream.into_listener();
+                listener.close();
+                listener.iface().poll();
+                return;
+            }
+        };
 
-        // Dropping the state will drop the sockets. This will trigger the socket close process (if
-        // needed) and require immediate iface polling afterwards.
-        drop(state);
-
-        if let Some(iface) = iface_to_poll {
-            iface.poll();
-        }
+        let linger = self.options.get_mut().socket.linger();
+        close_and_linger(conn, linger, &self.pollee);
     }
 }
