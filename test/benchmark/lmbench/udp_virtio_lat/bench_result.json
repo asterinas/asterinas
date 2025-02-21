@@ -8,7 +8,7 @@
         "result_index": 5
     },
     "chart": {
-        "title": "[UDP sockets] The latency of write+read (virtio-net)",
+        "title": "[UDP sockets] The latency of write+read (virtio-net, 4B message)",
         "description": "lat_udp",
         "unit": "\u00b5s",
         "legend": "Average UDP latency over virtio-net on {system}"

@@ -10,6 +10,7 @@ use crate::{
         page_table::{PageTableEntryTrait, PageTableMode},
         Paddr, PageProperty, PagingConstsTrait, PagingLevel, Vaddr,
     },
+    util::SameSizeAs,
     Pod,
 };
 
@@ -73,6 +74,9 @@ impl PageTableEntry {
     const PHYS_MASK: u64 = 0xFFFF_FFFF_F000;
     const PROP_MASK: u64 = !Self::PHYS_MASK & !PageTableFlags::LAST_PAGE.bits();
 }
+
+// SAFETY: `PageTableEntry` has the same size as `usize` in our supported x86 architecture.
+unsafe impl SameSizeAs<usize> for PageTableEntry {}
 
 impl PageTableEntryTrait for PageTableEntry {
     fn new_page(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self {

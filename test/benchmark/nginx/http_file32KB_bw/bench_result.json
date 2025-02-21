@@ -8,7 +8,7 @@
         "result_index": 4
     },
     "chart": {
-        "title": "Nginx HTTP request performance with 32K bytes file size",
+        "title": "Nginx HTTP request performance (virtio-net, 32KB file size)",
         "description": "ab -n 10000 -c 1 http://10.0.2.15:8080/32768bytes.html",
         "unit": "Requests per second",
         "legend": "Average HTTP Bandwidth over virtio-net between Host Linux and Guest {system}"

@@ -9,6 +9,7 @@ use crate::{
         page_table::PageTableEntryTrait,
         Paddr, PagingConstsTrait, PagingLevel, Vaddr, PAGE_SIZE,
     },
+    util::SameSizeAs,
     Pod,
 };
 
@@ -121,6 +122,9 @@ macro_rules! parse_flags {
         ($val as usize & $from.bits() as usize) >> $from.bits().ilog2() << $to.bits().ilog2()
     };
 }
+
+// SAFETY: `PageTableEntry` has the same size as `usize`
+unsafe impl SameSizeAs<usize> for PageTableEntry {}
 
 impl PageTableEntryTrait for PageTableEntry {
     fn is_present(&self) -> bool {

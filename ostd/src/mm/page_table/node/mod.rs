@@ -41,8 +41,9 @@ use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     mm::{
         frame::{inc_frame_ref_count, meta::AnyFrameMeta, Frame},
-        paddr_to_vaddr, FrameAllocOptions, Infallible, Paddr, PagingConstsTrait, PagingLevel,
-        VmReader,
+        paddr_to_vaddr,
+        page_table::{load_pte, store_pte},
+        FrameAllocOptions, Infallible, Paddr, PagingConstsTrait, PagingLevel, VmReader,
     },
 };
 
@@ -309,9 +310,11 @@ where
     /// The caller must ensure that the index is within the bound.
     unsafe fn read_pte(&self, idx: usize) -> E {
         debug_assert!(idx < nr_subpage_per_huge::<C>());
-        let ptr = paddr_to_vaddr(self.page.start_paddr()) as *const E;
-        // SAFETY: The index is within the bound and the PTE is plain-old-data.
-        unsafe { ptr.add(idx).read() }
+        let ptr = paddr_to_vaddr(self.page.start_paddr()) as *mut E;
+        // SAFETY:
+        // - The page table node is alive. The index is inside the bound, so the page table entry is valid.
+        // - All page table entries are aligned and accessed with atomic operations only.
+        unsafe { load_pte(ptr.add(idx), Ordering::Relaxed) }
     }
 
     /// Writes a page table entry at a given index.
@@ -330,8 +333,10 @@ where
     unsafe fn write_pte(&mut self, idx: usize, pte: E) {
         debug_assert!(idx < nr_subpage_per_huge::<C>());
         let ptr = paddr_to_vaddr(self.page.start_paddr()) as *mut E;
-        // SAFETY: The index is within the bound and the PTE is plain-old-data.
-        unsafe { ptr.add(idx).write(pte) }
+        // SAFETY:
+        // - The page table node is alive. The index is inside the bound, so the page table entry is valid.
+        // - All page table entries are aligned and accessed with atomic operations only.
+        unsafe { store_pte(ptr.add(idx), pte, Ordering::Release) }
     }
 
     /// Gets the mutable reference to the number of valid PTEs in the node.

@@ -8,7 +8,7 @@
         "result_index": 7
     },
     "chart": {
-        "title": "[Network] iperf3 sender performance using TCP",
+        "title": "[Network] iperf3 sender performance using TCP (virtio-net)",
         "description": "iperf3 -s -B 10.0.2.15",
         "unit": "Mbits/sec",
         "legend": "Average TCP Bandwidth over virtio-net between Host Linux and Guest {system}"

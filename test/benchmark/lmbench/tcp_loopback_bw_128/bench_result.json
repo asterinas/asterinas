@@ -8,7 +8,7 @@
         "result_index": 2
     },
     "chart": {
-        "title": "[TCP sockets] The bandwidth (localhost, 128B message)",
+        "title": "[TCP sockets] The bandwidth (loopback, 128B message)",
         "description": "bw_tcp -l",
         "unit": "MB/s",
         "legend": "Average TCP bandwidth on {system}"

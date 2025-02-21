@@ -27,6 +27,7 @@ pub use self::{
     frame::{
         allocator::FrameAllocOptions,
         segment::{Segment, USegment},
+        unique::UniqueFrame,
         untyped::{AnyUFrameMeta, UFrame, UntypedMem},
         Frame,
     },
