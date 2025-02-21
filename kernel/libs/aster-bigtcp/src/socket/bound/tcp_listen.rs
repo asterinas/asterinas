@@ -53,23 +53,11 @@ impl<E: Ext> Inner<E> for TcpListenerInner<E> {
     type Observer = E::TcpEventObserver;
 
     fn on_drop(this: &Arc<SocketBg<Self, E>>) {
-        // A TCP listener can be removed immediately.
-        this.bound.iface().common().remove_tcp_listener(this);
-
-        let (connecting, connected) = {
-            let mut socket = this.inner.backlog.lock();
-            (
-                core::mem::take(&mut socket.connecting),
-                core::mem::take(&mut socket.connected),
-            )
-        };
-
-        // The lock on `connecting`/`connected` cannot be locked after locking `self`, otherwise we
-        // might get a deadlock. due to inconsistent lock order problems.
-        //
-        // FIXME: Send RSTs instead of going through the normal socket close process.
-        drop(connecting);
-        drop(connected);
+        debug_assert_eq!(
+            Arc::strong_count(this),
+            1,
+            "a listener must be closed before dropping"
+        );
     }
 }
 
@@ -140,7 +128,7 @@ impl<E: Ext> TcpListener<E> {
 
         let remote_endpoint = {
             // The lock on `accepted` cannot be locked after locking `self`, otherwise we might get
-            // a deadlock. due to inconsistent lock order problems.
+            // a deadlock due to inconsistent lock order problems.
             let mut socket = accepted.0.inner.lock();
 
             socket.listener = None;
@@ -155,6 +143,30 @@ impl<E: Ext> TcpListener<E> {
     /// It's the caller's responsibility to deal with race conditions when using this method.
     pub fn can_accept(&self) -> bool {
         !self.0.inner.backlog.lock().connected.is_empty()
+    }
+
+    /// Closes the listener.
+    ///
+    /// Polling the iface is _always_ required after this method succeeds.
+    ///
+    /// Note that this method must be called before dropping the TCP listener to avoid resource
+    /// leakage.
+    pub fn close(&self) {
+        // A TCP listener can be removed immediately.
+        self.0.bound.iface().common().remove_tcp_listener(&self.0);
+
+        let (connecting, connected) = {
+            let mut socket = self.0.inner.backlog.lock();
+            (
+                core::mem::take(&mut socket.connecting),
+                core::mem::take(&mut socket.connected),
+            )
+        };
+
+        // The lock on `connecting`/`connected` cannot be locked after locking `self`, otherwise we
+        // might get a deadlock. due to inconsistent lock order problems.
+        connecting.values().for_each(|socket| socket.reset());
+        connected.iter().for_each(|socket| socket.reset());
     }
 }
 

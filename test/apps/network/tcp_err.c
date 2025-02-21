@@ -611,3 +611,40 @@ FN_TEST(bind_and_connect_same_address)
 	TEST_SUCC(close(sk_connect2));
 }
 END_TEST()
+
+#define SETUP_CONN                                                 \
+	sk_addr.sin_port = S_PORT;                                 \
+                                                                   \
+	sk_connect = TEST_SUCC(socket(PF_INET, SOCK_STREAM, 0));   \
+	TEST_SUCC(connect(sk_connect, (struct sockaddr *)&sk_addr, \
+			  sizeof(sk_addr)));                       \
+                                                                   \
+	len = sizeof(sk_addr);                                     \
+	sk_accept = TEST_SUCC(                                     \
+		accept(sk_listen, (struct sockaddr *)&sk_addr, &len));
+
+FN_TEST(shutdown_shutdown)
+{
+	int sk_accept;
+	int sk_connect;
+	socklen_t len;
+
+	SETUP_CONN;
+
+	// Test 1: Perform `shutdown` multiple times
+	TEST_SUCC(shutdown(sk_accept, SHUT_RDWR));
+	TEST_SUCC(shutdown(sk_accept, SHUT_RDWR));
+
+	// Test 2: Perform `shutdown` after the connection is closed
+	TEST_SUCC(shutdown(sk_connect, SHUT_RDWR));
+	TEST_ERRNO(shutdown(sk_connect, SHUT_RD), ENOTCONN);
+	TEST_ERRNO(shutdown(sk_connect, SHUT_WR), ENOTCONN);
+	TEST_ERRNO(shutdown(sk_accept, SHUT_RD), ENOTCONN);
+	TEST_ERRNO(shutdown(sk_accept, SHUT_WR), ENOTCONN);
+
+	TEST_SUCC(close(sk_accept));
+	TEST_SUCC(close(sk_connect));
+}
+END_TEST()
+
+#undef SETUP_CONN

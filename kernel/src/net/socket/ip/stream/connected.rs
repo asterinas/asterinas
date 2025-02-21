@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicBool, Ordering};
-
 use aster_bigtcp::{
     errors::tcp::{RecvError, SendError},
     socket::{NeedIfacePoll, RawTcpSetOption},
@@ -13,10 +11,13 @@ use crate::{
     events::IoEvents,
     net::{
         iface::{Iface, RawTcpSocketExt, TcpConnection},
-        socket::util::{send_recv_flags::SendRecvFlags, shutdown_cmd::SockShutdownCmd},
+        socket::{
+            util::{send_recv_flags::SendRecvFlags, shutdown_cmd::SockShutdownCmd},
+            LingerOption,
+        },
     },
     prelude::*,
-    process::signal::Pollee,
+    process::signal::{Pollee, Poller},
     util::{MultiRead, MultiWrite},
 };
 
@@ -34,8 +35,6 @@ pub struct ConnectedStream {
     /// connection is established asynchronously will succeed and any subsequent `connect()` will
     /// fail.
     is_new_connection: bool,
-    /// Indicates if the receiving side of this socket is shut down by the user.
-    is_receiving_shut: AtomicBool,
 }
 
 impl ConnectedStream {
@@ -48,7 +47,6 @@ impl ConnectedStream {
             tcp_conn,
             remote_endpoint,
             is_new_connection,
-            is_receiving_shut: AtomicBool::new(false),
         }
     }
 
@@ -56,12 +54,14 @@ impl ConnectedStream {
         let mut events = IoEvents::empty();
 
         if cmd.shut_read() {
-            self.is_receiving_shut.store(true, Ordering::Relaxed);
+            if !self.tcp_conn.shut_recv() {
+                return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected");
+            }
             events |= IoEvents::IN | IoEvents::RDHUP;
         }
 
         if cmd.shut_write() {
-            if !self.tcp_conn.close() {
+            if !self.tcp_conn.shut_send() {
                 return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected");
             }
             events |= IoEvents::OUT | IoEvents::HUP;
@@ -85,9 +85,6 @@ impl ConnectedStream {
         });
 
         match result {
-            Ok((Ok(0), need_poll)) if self.is_receiving_shut.load(Ordering::Relaxed) => {
-                Ok((0, need_poll))
-            }
             Ok((Ok(0), need_poll)) => {
                 debug_assert!(!*need_poll);
                 return_errno_with_message!(Errno::EAGAIN, "the receive buffer is empty")
@@ -166,8 +163,7 @@ impl ConnectedStream {
 
     pub(super) fn check_io_events(&self) -> IoEvents {
         self.tcp_conn.raw_with(|socket| {
-            let is_receiving_closed =
-                self.is_receiving_shut.load(Ordering::Relaxed) || !socket.may_recv_new();
+            let is_receiving_closed = socket.is_recv_shut() || !socket.may_recv_new();
             let is_sending_closed = !socket.may_send();
 
             let mut events = IoEvents::empty();
@@ -204,5 +200,43 @@ impl ConnectedStream {
 
     pub(super) fn raw_with<R>(&self, f: impl FnOnce(&RawTcpSocketExt) -> R) -> R {
         self.tcp_conn.raw_with(f)
+    }
+
+    pub(super) fn into_connection(self) -> TcpConnection {
+        self.tcp_conn
+    }
+}
+
+pub(super) fn close_and_linger(tcp_conn: TcpConnection, linger: LingerOption, pollee: &Pollee) {
+    let timeout = match (linger.is_on(), linger.timeout()) {
+        // No linger. Drain the send buffer in the background.
+        (false, _) => {
+            tcp_conn.close();
+            tcp_conn.iface().poll();
+            return;
+        }
+        // Linger with a zero timeout. Reset the connection immediately.
+        (true, duration) if duration.is_zero() => {
+            tcp_conn.reset();
+            tcp_conn.iface().poll();
+            return;
+        }
+        // Linger with a non-zero timeout. See below.
+        (true, duration) => {
+            tcp_conn.close();
+            tcp_conn.iface().poll();
+            duration
+        }
+    };
+
+    let mut poller = Poller::new(Some(&timeout));
+    pollee.register_poller(poller.as_handle_mut(), IoEvents::HUP);
+
+    // Now wait for the ACK packet to acknowledge the FIN packet we sent. If the timeout expires or
+    // we are interrupted by signals, the remaining task is done in the background.
+    while tcp_conn.raw_with(|socket| socket.is_closing()) {
+        if poller.wait().is_err() {
+            break;
+        }
     }
 }
