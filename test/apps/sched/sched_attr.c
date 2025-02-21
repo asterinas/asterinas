@@ -25,7 +25,7 @@ FN_TEST(sched_param)
 	TEST_RES(sched_getparam(0, &param),
 		 _ret == 0 && param.sched_priority == 0);
 
-	param.sched_priority = 98;
+	param.sched_priority = 50;
 	TEST_ERRNO(sched_setscheduler(0, SCHED_FIFO, NULL), EINVAL);
 	TEST_ERRNO(sched_setscheduler(0, 1234567890, &param), EINVAL);
 	TEST_ERRNO(sched_setscheduler(-100, SCHED_FIFO, &param), EINVAL);
@@ -35,19 +35,19 @@ FN_TEST(sched_param)
 
 	TEST_RES(sched_getscheduler(0), _ret == SCHED_FIFO);
 	TEST_RES(sched_getparam(0, &param),
-		 _ret == 0 && param.sched_priority == 98);
+		 _ret == 0 && param.sched_priority == 50);
 
 	param.sched_priority = 1234567890;
 	TEST_ERRNO(sched_setparam(0, NULL), EINVAL);
 	TEST_ERRNO(sched_setparam(-100, &param), EINVAL);
 	TEST_ERRNO(sched_setparam(1234567890, &param), ESRCH);
 	TEST_ERRNO(sched_setparam(0, &param), EINVAL);
-	param.sched_priority = 96;
+	param.sched_priority = 51;
 	TEST_RES(sched_setparam(0, &param), _ret == 0);
 	sleep(1);
 
 	TEST_RES(sched_getparam(0, &param),
-		 _ret == 0 && param.sched_priority == 96);
+		 _ret == 0 && param.sched_priority == 51);
 }
 END_TEST()
 

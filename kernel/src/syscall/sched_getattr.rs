@@ -2,7 +2,10 @@
 
 use core::mem;
 
-use super::{sched_get_priority_max::SCHED_PRIORITY_RANGE, SyscallReturn};
+use super::{
+    sched_get_priority_max::{rt_to_static, static_to_rt, SCHED_PRIORITY_RANGE},
+    SyscallReturn,
+};
 use crate::{
     prelude::*,
     process::posix_thread::thread_table,
@@ -62,7 +65,7 @@ impl TryFrom<SchedPolicy> for LinuxSchedAttr {
                     RealTimePolicy::Fifo => SCHED_FIFO,
                     RealTimePolicy::RoundRobin { .. } => SCHED_RR,
                 },
-                sched_priority: u32::from(rt_prio.get()),
+                sched_priority: rt_to_static(rt_prio),
                 ..Default::default()
             },
 
@@ -86,9 +89,7 @@ impl TryFrom<LinuxSchedAttr> for SchedPolicy {
     fn try_from(value: LinuxSchedAttr) -> Result<Self> {
         Ok(match value.sched_policy {
             SCHED_FIFO | SCHED_RR => SchedPolicy::RealTime {
-                rt_prio: u8::try_from(value.sched_priority)?
-                    .try_into()
-                    .map_err(|msg| Error::with_message(Errno::EINVAL, msg))?,
+                rt_prio: static_to_rt(value.sched_priority)?,
                 rt_policy: match value.sched_policy {
                     SCHED_FIFO => RealTimePolicy::Fifo,
                     SCHED_RR => RealTimePolicy::RoundRobin {
