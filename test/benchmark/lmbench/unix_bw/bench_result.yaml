@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: true
+  threshold: 125%
+chart:
+  description: bw_unix
+  legend: Average unix bandwidth on {system}
+  title: '[Unix sockets] The bandwidth (64KB message)'
+  unit: MB/s
+result_extraction:
+  result_index: 5
+  search_pattern: 'sock stream bandwidth: +[0-9.]+'

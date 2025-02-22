@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: false
+  threshold: 125%
+chart:
+  description: 'sqlite-speed-test: Refill two 50000-row tables using REPLACE'
+  legend: The speed of refill-replace on {system} (Ext2)
+  title: '[Ext2] The refill-replace result of sqlite speedtest'
+  unit: second
+result_extraction:
+  result_index: 9
+  search_pattern: Refill two [0-9]+-row tables using REPLACE....

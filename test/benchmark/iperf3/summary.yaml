@@ -1,0 +1,2 @@
+benchmarks:
+  - tcp_virtio_bw
