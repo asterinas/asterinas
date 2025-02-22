@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: true
+  threshold: 130%
+chart:
+  description: iperf3 -s -B 10.0.2.15
+  legend: Average TCP Bandwidth over virtio-net between Host Linux and Guest {system}
+  title: '[Network] iperf3 sender performance using TCP (virtio-net)'
+  unit: Mbits/sec
+result_extraction:
+  result_index: 7
+  search_pattern: sender

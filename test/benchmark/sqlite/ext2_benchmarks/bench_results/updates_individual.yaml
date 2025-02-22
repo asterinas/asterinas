@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: false
+  threshold: 125%
+chart:
+  description: 'sqlite-speed-test: 50000 UPDATES of individual rows'
+  legend: The speed of updates-individual on {system} (Ext2)
+  title: '[Ext2] The updates-individual result of sqlite speedtest'
+  unit: second
+result_extraction:
+  result_index: 8
+  search_pattern: '[0-9]+ UPDATES of individual rows....'

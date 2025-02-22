@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: false
+  threshold: 125%
+chart:
+  description: lat_ctx 2
+  legend: Average context switch latency on {system}
+  title: '[Process] The cost of context switching'
+  unit: "\xB5s"   # Unicode for microsecond
+result_extraction:
+  result_index: 2
+  search_pattern: 18 +[0-9.]+

@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: false
+  threshold: 125%
+chart:
+  description: 'sqlite-speed-test: 70000 SELECTS on a TEXT PK'
+  legend: The speed of selects-text-pk on {system} (Ramfs)
+  title: '[Ramfs] The selects-text-pk result of sqlite speedtest'
+  unit: second
+result_extraction:
+  result_index: 9
+  search_pattern: '[0-9]+ SELECTS on a TEXT PK....'

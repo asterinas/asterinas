@@ -6,7 +6,7 @@ set -e
 set -o pipefail
 
 # Ensure all dependencies are installed
-command -v jq >/dev/null 2>&1 || { echo >&2 "jq is not installed. Aborting."; exit 1; }
+command -v yq >/dev/null 2>&1 || command -v yq >/dev/null 2>&1 || { echo >&2 "tools are not installed. Aborting."; exit 1; }
 
 # Set up paths
 BENCHMARK_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
@@ -32,10 +32,11 @@ parse_raw_results() {
     fi
 
     # Write the results into the template
-    jq --arg linux_result "${linux_result}" --arg aster_result "${aster_result}" \
+    yq --arg linux_result "${linux_result}" --arg aster_result "${aster_result}" \
         '(.[] | select(.extra == "linux_result") | .value) |= $linux_result |
          (.[] | select(.extra == "aster_result") | .value) |= $aster_result' \
         "${RESULT_TEMPLATE}" > "${result_file}"
+    echo "Results written to ${result_file}"
 }
 
 # Generate a new result template based on unit and legend
@@ -48,7 +49,7 @@ generate_template() {
     local asterinas_legend=${legend//"{system}"/"Asterinas"}
 
     # Generate the result template JSON
-    jq -n --arg linux "$linux_legend" --arg aster "$asterinas_legend" --arg unit "$unit" '[
+    yq -n --arg linux "$linux_legend" --arg aster "$asterinas_legend" --arg unit "$unit" '[
         { "name": $linux, "unit": $unit, "value": 0, "extra": "linux_result" },
         { "name": $aster, "unit": $unit, "value": 0, "extra": "aster_result" }
     ]' > "${RESULT_TEMPLATE}"
@@ -66,7 +67,8 @@ extract_result_file() {
         local second_part=$(dirname "$bench_result" | awk -F"/benchmark/$first_dir/" '{print $2}' | cut -d'/' -f1)
         echo "result_${first_dir}-${second_part}.json"
     else
-        echo "result_${relative_path//\//-}"
+        local result_file="result_${relative_path//\//-}"
+        echo "${result_file/.yaml/.json}"
     fi
 }
 
@@ -138,11 +140,11 @@ run_benchmark() {
 parse_results() {
     local bench_result="$1"
 
-    local search_pattern=$(jq -r '.result_extraction.search_pattern // empty' "$bench_result")
-    local nth_occurrence=$(jq -r '.result_extraction.nth_occurrence // 1' "$bench_result")
-    local result_index=$(jq -r '.result_extraction.result_index // empty' "$bench_result")
-    local unit=$(jq -r '.chart.unit // empty' "$bench_result")
-    local legend=$(jq -r '.chart.legend // {system}' "$bench_result")
+    local search_pattern=$(yq -r '.result_extraction.search_pattern // empty' "$bench_result")
+    local nth_occurrence=$(yq -r '.result_extraction.nth_occurrence // 1' "$bench_result")
+    local result_index=$(yq -r '.result_extraction.result_index // empty' "$bench_result")
+    local unit=$(yq -r '.chart.unit // empty' "$bench_result")
+    local legend=$(yq -r '.chart.legend // {system}' "$bench_result")
 
     generate_template "$unit" "$legend"
     parse_raw_results "$search_pattern" "$nth_occurrence" "$result_index" "$(extract_result_file "$bench_result")"
@@ -167,22 +169,22 @@ main() {
     local run_mode="guest_only"
     [[ -f "${BENCHMARK_ROOT}/${benchmark}/host.sh" ]] && run_mode="host_guest"
 
-    local bench_result="${BENCHMARK_ROOT}/${benchmark}/bench_result.json"
+    local bench_result="${BENCHMARK_ROOT}/${benchmark}/bench_result.yaml"
     local aster_scheme
     if [[ -f "$bench_result" ]]; then
-        aster_scheme=$(jq -r '.runtime_config.aster_scheme // ""' "$bench_result")
+        aster_scheme=$(yq -r '.runtime_config.aster_scheme // ""' "$bench_result")
     else
         for job in "${BENCHMARK_ROOT}/${benchmark}"/bench_results/*; do
-            [[ -f "$job" ]] && aster_scheme=$(jq -r '.runtime_config.aster_scheme // ""' "$job") && break
+            [[ -f "$job" ]] && aster_scheme=$(yq -r '.runtime_config.aster_scheme // ""' "$job") && break
         done
     fi
 
     local smp
     if [[ -f "$bench_result" ]]; then
-        smp=$(jq -r '.runtime_config.smp // 1' "$bench_result")
+        smp=$(yq -r '.runtime_config.smp // 1' "$bench_result")
     else
         for job in "${BENCHMARK_ROOT}/${benchmark}"/bench_results/*; do
-            [[ -f "$job" ]] && smp=$(jq -r '.runtime_config.smp // 1' "$job") && break
+            [[ -f "$job" ]] && smp=$(yq -r '.runtime_config.smp // 1' "$job") && break
         done
     fi
 

@@ -180,24 +180,29 @@ jobs:
           pattern: results_*
           path: ./results
           merge-multiple: true
+      
+      - name: Set up the environment
+        run: |
+          sudo apt-get update && sudo apt-get install -y yq
 
       - name: Set up benchmark configuration
         run: |
           BENCHMARK_DIR=$(echo ${{ matrix.benchmark }} | sed 's/-/\//g')
           BENCHMARK_SUITE=$(echo $BENCHMARK_DIR | awk -F'/' '{print $1}')
           BENCHMARK_NAME=$(echo "$BENCHMARK_DIR" | sed -E 's|^[^/]+/||; s|/bench_results||g; s|/|_|g')
-          BENCH_RESULT="test/benchmark/${BENCHMARK_DIR}/bench_result.json"
-          [ -f "$BENCH_RESULT" ] || BENCH_RESULT="test/benchmark/${BENCHMARK_DIR}.json"
-          ALERT_THRESHOLD=$(jq -r '.alert.threshold // "130%"' "$BENCH_RESULT")
-          ALERT_TOOL=$(jq -r 'if .alert.bigger_is_better == true then "customBiggerIsBetter" else "customSmallerIsBetter" end' "$BENCH_RESULT")
-          TITLE=$(jq -r '.chart.title // "Undefined"' "$BENCH_RESULT")
-          DESCRIPTION=$(jq -r '.chart.description // "No description provided"' "$BENCH_RESULT")
+          BENCH_RESULT="test/benchmark/${BENCHMARK_DIR}/bench_result.yaml"
+          [ -f "$BENCH_RESULT" ] || BENCH_RESULT="test/benchmark/${BENCHMARK_DIR}.yaml"
+          ALERT_THRESHOLD=$(yq -r '.alert.threshold // "130%"' "$BENCH_RESULT")
+          ALERT_TOOL=$(yq -r 'if (.alert.bigger_is_better == true) then "customBiggerIsBetter" else "customSmallerIsBetter" end' "$BENCH_RESULT")
+          TITLE=$(yq -r '.chart.title // "Undefined"' "$BENCH_RESULT")
+          DESCRIPTION=$(yq -r '.chart.description // "No description provided"' "$BENCH_RESULT")
           echo "BENCHMARK_SUITE=$BENCHMARK_SUITE" >> $GITHUB_ENV
           echo "BENCHMARK_NAME=$BENCHMARK_NAME" >> $GITHUB_ENV
           echo "ALERT_THRESHOLD=$ALERT_THRESHOLD" >> $GITHUB_ENV
           echo "ALERT_TOOL=$ALERT_TOOL" >> $GITHUB_ENV
           echo "TITLE=$TITLE" >> $GITHUB_ENV
           echo "DESCRIPTION=$DESCRIPTION" >> $GITHUB_ENV
+          yq . test/benchmark/$BENCHMARK_SUITE/summary.yaml > test/benchmark/$BENCHMARK_SUITE/summary.json
 
       - name: Store benchmark results
         uses: asterinas/github-action-benchmark@v4

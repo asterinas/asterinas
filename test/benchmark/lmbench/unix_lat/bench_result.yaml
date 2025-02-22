@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: false
+  threshold: 125%
+chart:
+  description: lat_unix
+  legend: Average unix latency on {system}
+  title: '[Unix sockets] The latency of write+read (1B message)'
+  unit: "\xB5s"
+result_extraction:
+  result_index: 5
+  search_pattern: 'sock stream latency: +[0-9.]+'

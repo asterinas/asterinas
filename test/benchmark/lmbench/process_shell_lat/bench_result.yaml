@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: false
+  threshold: 125%
+chart:
+  description: lat_proc shell
+  legend: Average shell latency on {system}
+  title: '[Process] The cost of fork+exec+shell+exit'
+  unit: "\xB5s"   # Unicode for microsecond
+result_extraction:
+  result_index: 4
+  search_pattern: Process fork\+\/bin\/sh
