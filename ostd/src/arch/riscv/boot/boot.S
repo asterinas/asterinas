@@ -28,7 +28,11 @@ _start:
     # 2. set sp (BSP only)
     lga    sp, boot_stack_top
 
-    # 3. jump to rust riscv_boot
+    # 3. set gp (CPU-local address)
+.extern __cpu_local_start
+    lga    gp, __cpu_local_start
+
+    # 4. jump to rust riscv_boot
     lga    t0, riscv_boot
     jr     t0
 

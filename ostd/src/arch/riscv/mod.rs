@@ -29,17 +29,10 @@ pub(crate) fn init_on_bsp() {
     }
     irq::init();
 
-    // SAFETY: they are only called once on BSP and ACPI has been initialized.
-    unsafe {
-        crate::cpu::init_num_cpus();
-        crate::cpu::set_this_cpu_id(0);
-    }
-
-    // SAFETY: no CPU local objects have been accessed by this far. And
-    // we are on the BSP.
-    unsafe { crate::cpu::local::init_on_bsp() };
-
-    crate::boot::smp::boot_all_aps();
+    // SAFETY:
+    // 1. We're on the BSP and we're ready to boot all APs.
+    // 2. No CPU-local objects have been accessed so far.
+    unsafe { crate::boot::smp::boot_all_aps() };
 
     timer::init();
 }

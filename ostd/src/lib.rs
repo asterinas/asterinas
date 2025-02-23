@@ -80,9 +80,6 @@ unsafe fn init() {
     logger::init();
 
     // SAFETY: This function is called only once and only on the BSP.
-    unsafe { cpu::local::early_init_bsp_local_base() };
-
-    // SAFETY: This function is called only once and only on the BSP.
     unsafe { mm::heap_allocator::init() };
 
     boot::init_after_heap();
