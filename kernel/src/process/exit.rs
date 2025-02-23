@@ -13,6 +13,9 @@ use crate::{prelude::*, process::signal::signals::kernel::KernelSignal};
 pub(super) fn exit_process(thread_local: &ThreadLocal, current_process: &Process) {
     current_process.status().set_zombie();
 
+    if current_process.status().is_vfork() {
+        current_process.status().set_vfork_status(false);
+    }
     // FIXME: This is obviously wrong in a number of ways, since different threads can have
     // different file tables, and different processes can share the same file table.
     thread_local.file_table().borrow().write().close_all();
@@ -22,6 +25,8 @@ pub(super) fn exit_process(thread_local: &ThreadLocal, current_process: &Process
     move_children_to_init(current_process);
 
     send_child_death_signal(current_process);
+
+    current_process.root_vmar().clear();
 }
 
 /// Sends parent-death signals to the children.
