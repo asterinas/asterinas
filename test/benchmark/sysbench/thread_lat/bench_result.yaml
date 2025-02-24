@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: false
+  threshold: 130%
+chart:
+  description: sysbench threads
+  legend: Average Execution Time per Thread on {system}
+  title: '[Threads] Threads performance'
+  unit: ms
+result_extraction:
+  result_index: NF
+  search_pattern: 'avg: +[0-9.]+'

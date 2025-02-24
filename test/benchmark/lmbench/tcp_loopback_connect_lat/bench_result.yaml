@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: false
+  threshold: 125%
+chart:
+  description: lat_connect
+  legend: Average TCP connection latency on {system}
+  title: '[TCP sockets] The latency of connect (loopback)'
+  unit: "\xB5s"   # Unicode for microsecond
+result_extraction:
+  result_index: 6
+  search_pattern: 'TCP\/IP connection cost to [0-9.]+: +[0-9.]+'

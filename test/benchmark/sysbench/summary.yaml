@@ -1,0 +1,3 @@
+benchmarks:
+- cpu_lat
+- thread_lat

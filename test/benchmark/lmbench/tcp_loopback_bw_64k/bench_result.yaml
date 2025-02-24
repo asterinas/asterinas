@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: true
+  threshold: 125%
+chart:
+  description: bw_tcp -l
+  legend: Average TCP bandwidth on {system}
+  title: '[TCP sockets] The bandwidth (loopback, 64KB message)'
+  unit: MB/s
+result_extraction:
+  result_index: 2
+  search_pattern: 0.065536 +[0-9.]+ +MB

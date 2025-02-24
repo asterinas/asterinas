@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: false
+  threshold: 125%
+chart:
+  description: lat_syscall null
+  legend: Average syscall latency on {system}
+  title: '[Process] The cost of getppid'
+  unit: "\xB5s"   # Unicode for microsecond
+result_extraction:
+  result_index: 3
+  search_pattern: 'Simple syscall: +[0-9.]+'
