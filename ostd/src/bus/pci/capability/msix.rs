@@ -62,6 +62,8 @@ impl Clone for CapabilityMsixData {
 
 #[cfg(target_arch = "x86_64")]
 const MSIX_DEFAULT_MSG_ADDR: u32 = 0xFEE0_0000;
+#[cfg(target_arch = "riscv64")]
+const MSIX_DEFAULT_MSG_ADDR: u32 = 0x0000_0000;
 
 impl CapabilityMsixData {
     pub(super) fn new(dev: &mut PciCommonDevice, cap_ptr: u16) -> Self {

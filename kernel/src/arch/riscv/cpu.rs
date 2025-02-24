@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::string::String;
+
 use ostd::{
     cpu::{CpuExceptionInfo, RawGeneralRegs, UserContext},
     Pod,
@@ -144,5 +146,19 @@ impl TryFrom<&CpuExceptionInfo> for PageFaultInfo {
             address: value.page_fault_addr,
             required_perms,
         })
+    }
+}
+
+/// CPU Information structure
+pub struct CpuInfo;
+
+impl CpuInfo {
+    pub fn new(processor_id: u32) -> Self {
+        Self {}
+    }
+
+    /// Collect and format CPU information into a `String`
+    pub fn collect_cpu_info(&self) -> String {
+        String::new()
     }
 }
