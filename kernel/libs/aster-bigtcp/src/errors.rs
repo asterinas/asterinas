@@ -10,8 +10,6 @@ pub enum BindError {
 }
 
 pub mod tcp {
-    pub use smoltcp::socket::tcp::{RecvError, SendError};
-
     /// An error returned by [`TcpListener::new_listen`].
     ///
     /// [`TcpListener::new_listen`]: crate::socket::TcpListener::new_listen
@@ -48,6 +46,44 @@ pub mod tcp {
             match value {
                 smoltcp::socket::tcp::ConnectError::InvalidState => Self::InvalidState,
                 smoltcp::socket::tcp::ConnectError::Unaddressable => Self::Unaddressable,
+            }
+        }
+    }
+
+    /// An error returned by [`TcpConnection::send`].
+    ///
+    /// [`TcpConnection::send`]: crate::socket::TcpConnection::send
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+    pub enum SendError {
+        InvalidState,
+        /// The connection is reset.
+        ConnReset,
+    }
+
+    impl From<smoltcp::socket::tcp::SendError> for SendError {
+        fn from(value: smoltcp::socket::tcp::SendError) -> Self {
+            match value {
+                smoltcp::socket::tcp::SendError::InvalidState => Self::InvalidState,
+            }
+        }
+    }
+
+    /// An error returned by [`TcpConnection::recv`].
+    ///
+    /// [`TcpConnection::recv`]: crate::socket::TcpConnection::recv
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+    pub enum RecvError {
+        InvalidState,
+        Finished,
+        /// The connection is reset.
+        ConnReset,
+    }
+
+    impl From<smoltcp::socket::tcp::RecvError> for RecvError {
+        fn from(value: smoltcp::socket::tcp::RecvError) -> Self {
+            match value {
+                smoltcp::socket::tcp::RecvError::InvalidState => Self::InvalidState,
+                smoltcp::socket::tcp::RecvError::Finished => Self::Finished,
             }
         }
     }

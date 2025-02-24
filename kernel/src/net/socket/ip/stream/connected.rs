@@ -94,8 +94,12 @@ impl ConnectedStream {
                 debug_assert!(!*need_poll);
                 Err(e)
             }
-            Err(RecvError::Finished) => Ok((0, NeedIfacePoll::FALSE)),
-            Err(RecvError::InvalidState) => {
+            Err(RecvError::Finished) | Err(RecvError::InvalidState) => {
+                // `InvalidState` occurs when the connection is reset but `ECONNRESET` was reported
+                // earlier. Linux returns EOF in this case, so we follow it.
+                Ok((0, NeedIfacePoll::FALSE))
+            }
+            Err(RecvError::ConnReset) => {
                 return_errno_with_message!(Errno::ECONNRESET, "the connection is reset")
             }
         }
@@ -106,10 +110,6 @@ impl ConnectedStream {
         reader: &mut dyn MultiRead,
         _flags: SendRecvFlags,
     ) -> Result<(usize, NeedIfacePoll)> {
-        if reader.is_empty() {
-            return Ok((0, NeedIfacePoll::FALSE));
-        }
-
         let result = self.tcp_conn.send(|socket_buffer| {
             match reader.read(&mut VmWriter::from(socket_buffer)) {
                 Ok(len) => (len, Ok(len)),
@@ -128,9 +128,9 @@ impl ConnectedStream {
                 Err(e)
             }
             Err(SendError::InvalidState) => {
-                // FIXME: `EPIPE` is another possibility, which means that the socket is shut down
-                // for writing. In that case, we should also trigger a `SIGPIPE` if `MSG_NOSIGNAL`
-                // is not specified.
+                return_errno_with_message!(Errno::EPIPE, "the connection is closed");
+            }
+            Err(SendError::ConnReset) => {
                 return_errno_with_message!(Errno::ECONNRESET, "the connection is reset");
             }
         }
@@ -187,8 +187,24 @@ impl ConnectedStream {
                 events |= IoEvents::HUP;
             }
 
+            // If the connection is reset, add an ERR event.
+            if socket.is_rst_closed() {
+                events |= IoEvents::ERR;
+            }
+
             events
         })
+    }
+
+    pub(super) fn test_and_clear_error(&self) -> Option<Error> {
+        if self.tcp_conn.clear_rst_closed() {
+            Some(Error::with_message(
+                Errno::ECONNRESET,
+                "the connection is reset",
+            ))
+        } else {
+            None
+        }
     }
 
     pub(super) fn set_raw_option<R>(
