@@ -7,7 +7,7 @@ use ostd::sync::RwMutex;
 use crate::{
     events::{Events, EventsFilter, Observer, Subject},
     fs::{
-        kernfs::{DataProvider, KernfsNode, KernfsNodeFlag, PseudoFileSystem, PseudoNode},
+        kernfs::{DataProvider, KernfsNode, PseudoFileSystem, PseudoNode},
         utils::{Inode, InodeMode, InodeType},
     },
     prelude::*,
@@ -94,7 +94,6 @@ impl KObject {
         let node = KernfsNode::new_dir(
             name,
             Some(mode),
-            KernfsNodeFlag::empty(),
             Arc::downgrade(&parent_node),
         )?;
 
@@ -123,7 +122,6 @@ impl KObject {
         let parent_node: Arc<dyn PseudoNode> = parent.as_ref().and_then(|p| p.upgrade()).unwrap();
         let node = KernfsNode::new_symlink(
             name,
-            KernfsNodeFlag::empty(),
             target,
             Arc::downgrade(&parent_node),
         )?;
@@ -152,7 +150,6 @@ impl KObject {
         let node = KernfsNode::new_attr(
             name,
             Some(mode),
-            KernfsNodeFlag::empty(),
             Arc::downgrade(&parent_node),
         )?;
 
@@ -458,7 +455,7 @@ impl Inode for KObject {
     fn poll(
         &self,
         mask: crate::events::IoEvents,
-        _poller: Option<&mut crate::process::signal::Poller>,
+        _poller: Option<&mut crate::process::signal::PollHandle>,
     ) -> crate::events::IoEvents {
         let events = crate::events::IoEvents::IN | crate::events::IoEvents::OUT;
         events & mask

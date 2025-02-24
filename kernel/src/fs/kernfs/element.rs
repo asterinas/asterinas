@@ -7,8 +7,6 @@ use core::{
     time::Duration,
 };
 
-use ostd::sync::{RwLock, RwMutex, RwMutexReadGuard};
-
 use super::KernfsNode;
 use crate::{
     events::{Events, Observer, Subject},

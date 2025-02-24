@@ -7,7 +7,7 @@ mod inode;
 use alloc::sync::Arc;
 
 pub use element::{DataProvider, KernfsElem};
-pub use inode::{KernfsNode, KernfsNodeFlag};
+pub use inode::KernfsNode;
 
 use super::utils::{FileSystem, Inode};
 use crate::prelude::*;
@@ -96,7 +96,7 @@ mod tests {
 
     use crate::{
         fs::{
-            kernfs::{DataProvider, KernfsNode, KernfsNodeFlag, PseudoFileSystem, PseudoNode},
+            kernfs::{DataProvider, KernfsNode, PseudoFileSystem, PseudoNode},
             utils::{FileSystem, FsFlags, Inode, SuperBlock, NAME_MAX},
         },
         prelude::*,
@@ -137,12 +137,11 @@ mod tests {
             let root = self.root_inode();
             let root = root.downcast_ref::<KernfsNode>().unwrap();
             let kernel =
-                KernfsNode::new_dir("kernel", None, KernfsNodeFlag::empty(), root.this_weak())?;
+                KernfsNode::new_dir("kernel", None, root.this_weak())?;
             root.this().insert("kernel".to_string(), kernel.clone())?;
             let ab = KernfsNode::new_attr(
                 "address_bits",
                 None,
-                KernfsNodeFlag::empty(),
                 kernel.this_weak(),
             )?;
             ab.set_data(Box::new(AddressBits)).unwrap();
@@ -150,7 +149,6 @@ mod tests {
             let cpu_byteorder = KernfsNode::new_attr(
                 "byteorder",
                 None,
-                KernfsNodeFlag::empty(),
                 kernel.this_weak(),
             )?;
             cpu_byteorder

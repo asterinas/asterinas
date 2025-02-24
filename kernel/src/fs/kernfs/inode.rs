@@ -8,7 +8,7 @@ use alloc::{
 };
 use core::time::Duration;
 
-use ostd::sync::RwLock;
+use ostd::sync::RwMutex;
 
 use super::{
     element::{DataProvider, KernfsElem},
@@ -25,29 +25,12 @@ use crate::{
         Errno,
     },
     prelude::*,
-    process::{signal::Poller, Gid, Uid},
+    process::{signal::PollHandle, Gid, Uid},
 };
-
-bitflags! {
-    /// Some flags in Linux are used to indicate the status of the node. We don't need them.
-    pub struct KernfsNodeFlag: u16 {
-        /// Indicates that the node supports namespaces.
-        const KERNFS_NS         = 0x0020;
-        /// Indicates that the node supports the `seq_file` interface.
-        const KERNFS_HAS_SEQ_SHOW = 0x0040;
-        /// Indicates that the node supports the `mmap` operation.
-        const KERNFS_HAS_MMAP   = 0x0080;
-        /// Indicates that the node has lock dependency tracking enabled.
-        const KERNFS_LOCKDEP    = 0x0100;
-        /// Indicates that the node is hidden.
-        const KERNFS_HIDDEN     = 0x0200;
-    }
-}
 
 #[derive(Debug)]
 struct Inner {
     name: String,
-    flags: KernfsNodeFlag,
     metadata: Metadata,
     elem: KernfsElem,
     fs: Weak<dyn PseudoFileSystem>,
@@ -61,7 +44,7 @@ struct Inner {
 /// regular files, and special files in the kernel's pseudo-filesystem.
 #[derive(Debug)]
 pub struct KernfsNode {
-    inner: RwLock<Inner>,
+    inner: RwMutex<Inner>,
     parent: Option<Weak<dyn PseudoNode>>,
     this: Weak<KernfsNode>,
 }
@@ -74,9 +57,8 @@ impl KernfsNode {
         blk_size: usize,
     ) -> Arc<Self> {
         Arc::new_cyclic(|weak_self| Self {
-            inner: RwLock::new(Inner {
+            inner: RwMutex::new(Inner {
                 name: name.to_string(),
-                flags: KernfsNodeFlag::empty(),
                 metadata: Metadata::new_dir(
                     root_ino,
                     InodeMode::from_bits_truncate(0o555),
@@ -93,7 +75,6 @@ impl KernfsNode {
     pub fn new_attr(
         name: &str,
         mode: Option<InodeMode>,
-        flags: KernfsNodeFlag,
         parent: Weak<dyn PseudoNode>,
     ) -> Result<Arc<Self>> {
         let arc_parent = parent.upgrade().unwrap();
@@ -103,9 +84,8 @@ impl KernfsNode {
         let metadata = Metadata::new_file(ino, mode, BLOCK_SIZE);
 
         let new_inode = Arc::new_cyclic(|weak_self| Self {
-            inner: RwLock::new(Inner {
+            inner: RwMutex::new(Inner {
                 name: name.to_string(),
-                flags,
                 metadata,
                 elem: KernfsElem::new_attr(),
                 fs: Arc::downgrade(&arc_parent.pseudo_fs()),
@@ -120,7 +100,6 @@ impl KernfsNode {
     pub fn new_dir(
         name: &str,
         mode: Option<InodeMode>,
-        flags: KernfsNodeFlag,
         parent: Weak<dyn PseudoNode>,
     ) -> Result<Arc<Self>> {
         let arc_parent = parent.upgrade().unwrap();
@@ -129,9 +108,8 @@ impl KernfsNode {
         let metadata = Metadata::new_dir(ino, mode, BLOCK_SIZE);
 
         let new_inode = Arc::new_cyclic(|weak_self| Self {
-            inner: RwLock::new(Inner {
+            inner: RwMutex::new(Inner {
                 name: name.to_string(),
-                flags: KernfsNodeFlag::empty(),
                 metadata,
                 elem: KernfsElem::new_dir(),
                 fs: Arc::downgrade(&arc_parent.pseudo_fs()),
@@ -144,7 +122,6 @@ impl KernfsNode {
 
     pub fn new_symlink(
         name: &str,
-        flags: KernfsNodeFlag,
         target: Arc<dyn PseudoNode>,
         parent: Weak<dyn PseudoNode>,
     ) -> Result<Arc<Self>> {
@@ -154,9 +131,8 @@ impl KernfsNode {
         let metadata = Metadata::new_symlink(ino, mode, BLOCK_SIZE);
 
         let new_inode = Arc::new_cyclic(|weak_self| Self {
-            inner: RwLock::new(Inner {
+            inner: RwMutex::new(Inner {
                 name: name.to_string(),
-                flags: KernfsNodeFlag::empty(),
                 metadata,
                 elem: KernfsElem::new_symlink(target.name()),
                 fs: Arc::downgrade(&arc_parent.pseudo_fs()),
@@ -342,14 +318,13 @@ impl Inode for KernfsNode {
         }
         let new_node = match type_ {
             InodeType::Dir => {
-                KernfsNode::new_dir(name, Some(mode), KernfsNodeFlag::empty(), self.this_weak())
+                KernfsNode::new_dir(name, Some(mode), self.this_weak())
             }
             InodeType::File => {
-                KernfsNode::new_attr(name, Some(mode), KernfsNodeFlag::empty(), self.this_weak())
+                KernfsNode::new_attr(name, Some(mode), self.this_weak())
             }
             InodeType::SymLink => KernfsNode::new_symlink(
                 name,
-                KernfsNodeFlag::empty(),
                 self.this(),
                 self.this_weak(),
             ),
@@ -414,7 +389,7 @@ impl Inode for KernfsNode {
             .ok_or(Error::new(Errno::EXDEV))?
             .this();
         let new_node =
-            KernfsNode::new_symlink(name, KernfsNodeFlag::empty(), target, self.this_weak())?;
+            KernfsNode::new_symlink(name, target, self.this_weak())?;
         Ok(())
     }
 
@@ -489,7 +464,7 @@ impl Inode for KernfsNode {
         return_errno!(Errno::EOPNOTSUPP);
     }
 
-    fn poll(&self, mask: IoEvents, _poller: Option<&mut Poller>) -> IoEvents {
+    fn poll(&self, mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
         let events = IoEvents::IN | IoEvents::OUT;
         events & mask
     }
