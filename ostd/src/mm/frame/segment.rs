@@ -2,7 +2,7 @@
 
 //! A contiguous range of frames.
 
-use core::{mem::ManuallyDrop, ops::Range, sync::atomic::Ordering};
+use core::{fmt::Debug, mem::ManuallyDrop, ops::Range, sync::atomic::Ordering};
 
 use super::{
     inc_frame_ref_count,
@@ -23,11 +23,16 @@ use crate::mm::{AnyUFrameMeta, Paddr, PAGE_SIZE};
 ///
 /// All the metadata of the frames are homogeneous, i.e., they are of the same
 /// type.
-#[derive(Debug)]
 #[repr(transparent)]
 pub struct Segment<M: AnyFrameMeta + ?Sized> {
     range: Range<Paddr>,
     _marker: core::marker::PhantomData<M>,
+}
+
+impl<M: AnyFrameMeta + ?Sized> Debug for Segment<M> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "Segment({:#x}..{:#x})", self.range.start, self.range.end)
+    }
 }
 
 /// A contiguous range of homogeneous untyped physical memory frames that have any metadata.
@@ -102,6 +107,18 @@ impl<M: AnyFrameMeta> Segment<M> {
         }
         Ok(segment)
     }
+
+    /// Restores the [`Segment`] from the raw physical address range.
+    ///
+    /// # Safety
+    ///
+    /// The range must be a forgotten [`Segment`] that matches the type `M`.
+    pub(crate) unsafe fn from_raw(range: Range<Paddr>) -> Self {
+        Self {
+            range,
+            _marker: core::marker::PhantomData,
+        }
+    }
 }
 
 impl<M: AnyFrameMeta + ?Sized> Segment<M> {
@@ -174,6 +191,13 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
             range: start..end,
             _marker: core::marker::PhantomData,
         }
+    }
+
+    /// Forgets the [`Segment`] and gets a raw range of physical addresses.
+    pub(crate) fn into_raw(self) -> Range<Paddr> {
+        let range = self.range.clone();
+        let _ = ManuallyDrop::new(self);
+        range
     }
 }
 

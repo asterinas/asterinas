@@ -140,25 +140,17 @@ impl<T: 'static + Sync> CpuLocal<T> {
     ///
     /// Panics if the CPU ID is out of range.
     pub fn get_on_cpu(&'static self, cpu_id: CpuId) -> &'static T {
-        super::has_init::assert_true();
-
-        let cpu_id = cpu_id.as_usize();
-
         // If on the BSP, just use the statically linked storage.
-        if cpu_id == 0 {
+        if cpu_id.as_usize() == 0 {
             return &self.0;
         }
+
+        super::has_init::assert_true();
 
         // SAFETY: Here we use `Once::get_unchecked` to make getting the CPU-
         // local base faster. The storages must be initialized here so it is
         // safe to do so.
-        let base = unsafe {
-            super::CPU_LOCAL_STORAGES
-                .get_unchecked()
-                .get(cpu_id - 1)
-                .unwrap()
-                .start_paddr()
-        };
+        let base = unsafe { super::CPU_LOCAL_STORAGES.get_unchecked().get(cpu_id) };
         let base = crate::mm::paddr_to_vaddr(base);
 
         let offset = self.get_offset();
