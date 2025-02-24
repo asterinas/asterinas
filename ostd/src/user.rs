@@ -6,9 +6,7 @@
 
 use crate::{
     cpu::{FpuState, UserContext},
-    mm::VmSpace,
     prelude::*,
-    sync::{PreemptDisabled, SpinLock, SpinLockGuard},
     trap::TrapFrame,
 };
 
@@ -18,8 +16,6 @@ use crate::{
 /// user mode.
 #[derive(Debug)]
 pub struct UserSpace {
-    /// vm space
-    vm_space: SpinLock<Arc<VmSpace>>,
     /// cpu context before entering user space
     init_ctx: UserContext,
 }
@@ -29,16 +25,8 @@ impl UserSpace {
     ///
     /// Each instance maintains a VM address space and the CPU state to enable
     /// execution in the user space.
-    pub fn new(vm_space: Arc<VmSpace>, init_ctx: UserContext) -> Self {
-        Self {
-            vm_space: SpinLock::new(vm_space),
-            init_ctx,
-        }
-    }
-
-    /// Returns the VM address space.
-    pub fn vm_space(&self) -> SpinLockGuard<Arc<VmSpace>, PreemptDisabled> {
-        self.vm_space.lock()
+    pub fn new(init_ctx: UserContext) -> Self {
+        Self { init_ctx }
     }
 
     /// Returns the user mode that is bound to the current task and user space.

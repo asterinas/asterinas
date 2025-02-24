@@ -173,7 +173,6 @@ impl ProcessVm {
         let mut root_vmar = self.root_vmar();
         if let Some(ctx) = ctx {
             let new_vmar = Vmar::<Full>::new_root();
-            *ctx.task.user_space().unwrap().vm_space() = new_vmar.vm_space().clone();
             *ctx.thread_local.root_vmar().borrow_mut() = Some(new_vmar.dup().unwrap());
             new_vmar.vm_space().activate();
             root_vmar.set_new_vmar(new_vmar);

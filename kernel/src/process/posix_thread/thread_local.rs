@@ -1,9 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::cell::{Cell, RefCell};
+use alloc::sync::Arc;
+use core::{
+    any::Any,
+    cell::{Cell, Ref, RefCell},
+};
 
 use aster_rights::Full;
-use ostd::{mm::Vaddr, sync::RwArc, task::CurrentTask};
+use ostd::{
+    mm::{Vaddr, VmSpace},
+    sync::RwArc,
+    task::{CurrentTask, TaskLocalData},
+};
 
 use super::RobustListHead;
 use crate::{fs::file_table::FileTable, process::signal::SigStack, vm::vmar::Vmar};
@@ -81,6 +89,15 @@ impl ThreadLocal {
     }
 }
 
+impl TaskLocalData for ThreadLocal {
+    fn vm_space(&self) -> Option<Ref<'_, Arc<VmSpace>>> {
+        let root_vmar = self.root_vmar.borrow();
+        Some(Ref::map(root_vmar, |vmar| {
+            vmar.as_ref().unwrap().vm_space()
+        }))
+    }
+}
+
 /// A trait to provide the `as_thread_local` method for tasks.
 pub trait AsThreadLocal {
     /// Returns the associated [`ThreadLocal`].
@@ -89,6 +106,6 @@ pub trait AsThreadLocal {
 
 impl AsThreadLocal for CurrentTask {
     fn as_thread_local(&self) -> Option<&ThreadLocal> {
-        self.local_data().downcast_ref()
+        <dyn Any>::downcast_ref(self.local_data())
     }
 }

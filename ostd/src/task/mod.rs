@@ -12,7 +12,7 @@ mod utils;
 use core::{
     any::Any,
     borrow::Borrow,
-    cell::{Cell, SyncUnsafeCell},
+    cell::{Cell, Ref, SyncUnsafeCell},
     ops::Deref,
     ptr::NonNull,
 };
@@ -27,7 +27,7 @@ pub use self::{
     scheduler::info::{AtomicCpuId, TaskScheduleInfo},
 };
 pub(crate) use crate::arch::task::{context_switch, TaskContext};
-use crate::{prelude::*, trap::in_interrupt_context, user::UserSpace};
+use crate::{mm::VmSpace, prelude::*, trap::in_interrupt_context, user::UserSpace};
 
 /// A task that executes a function to the end.
 ///
@@ -40,7 +40,7 @@ pub struct Task {
     func: ForceSync<Cell<Option<Box<dyn FnOnce() + Send>>>>,
 
     data: Box<dyn Any + Send + Sync>,
-    local_data: ForceSync<Box<dyn Any + Send>>,
+    local_data: ForceSync<Box<dyn TaskLocalData>>,
 
     user_space: Option<Arc<UserSpace>>,
     ctx: SyncUnsafeCell<TaskContext>,
@@ -141,7 +141,7 @@ impl Task {
 pub struct TaskOptions {
     func: Option<Box<dyn FnOnce() + Send>>,
     data: Option<Box<dyn Any + Send + Sync>>,
-    local_data: Option<Box<dyn Any + Send>>,
+    local_data: Option<Box<dyn TaskLocalData>>,
     user_space: Option<Arc<UserSpace>>,
 }
 
@@ -180,7 +180,7 @@ impl TaskOptions {
     /// Sets the local data associated with the task.
     pub fn local_data<T>(mut self, data: T) -> Self
     where
-        T: Any + Send,
+        T: TaskLocalData,
     {
         self.local_data = Some(Box::new(data));
         self
@@ -282,7 +282,7 @@ impl CurrentTask {
     /// # Safety
     ///
     /// The caller must ensure that `task` is the current task.
-    unsafe fn new(task: NonNull<Task>) -> Self {
+    pub(super) unsafe fn new(task: NonNull<Task>) -> Self {
         Self(task)
     }
 
@@ -295,7 +295,7 @@ impl CurrentTask {
     /// # Panics
     ///
     /// This method will panic if called in a non-task context.
-    pub fn local_data(&self) -> &(dyn Any + Send) {
+    pub fn local_data(&self) -> &(dyn TaskLocalData) {
         assert!(!in_interrupt_context());
 
         let local_data = &self.local_data;
@@ -335,6 +335,20 @@ impl AsRef<Task> for CurrentTask {
 impl Borrow<Task> for CurrentTask {
     fn borrow(&self) -> &Task {
         self
+    }
+}
+
+/// Represents the local data in a [`Task`].
+pub trait TaskLocalData: Any + Send {
+    /// Returns a reference to the [`VmSpace`] of the task.
+    ///
+    /// If the task is not bound to a `VmSpace`, returns `None`.
+    fn vm_space(&self) -> Option<Ref<'_, Arc<VmSpace>>>;
+}
+
+impl TaskLocalData for () {
+    fn vm_space(&self) -> Option<Ref<'_, Arc<VmSpace>>> {
+        None
     }
 }
 
