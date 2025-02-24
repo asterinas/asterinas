@@ -230,14 +230,27 @@ FN_TEST(poll_shutdown_readwrite)
 
 	CHECK(write(sk_connect, buf, 4096));
 
-	// TODO: The following test cannot be passed on Asterinas due to the following reasons:
-	// 1. On Linux, an RST packet is generated when attempting to write to a closed socket.
-	//    However, Asterinas currently does not generate this packet.
-	// 2. RST packets cause a POLLERR on Linux, but Asterinas currently lack support for this.
+	// 1. An RST packet is generated when attempting to write to a closed socket.
+	// 2. The RST packet will cause a POLLERR.
+	pfd.fd = sk_connect;
+	TEST_RES(poll(&pfd, 1, 0),
+		 pfd.revents ==
+			 (POLLIN | POLLOUT | POLLRDHUP | POLLHUP | POLLERR));
+	pfd.fd = sk_accept;
+	TEST_RES(poll(&pfd, 1, 0),
+		 pfd.revents ==
+			 (POLLIN | POLLOUT | POLLRDHUP | POLLHUP | POLLERR));
 
-	// TEST_RES(poll(&pfd, 1, 0),
-	// 	 pfd.revents ==
-	// 		 (POLLIN | POLLOUT | POLLRDHUP | POLLHUP | POLLERR));
+	int err = 0;
+	socklen_t errlen = sizeof(err);
+	// FIXME: This socket error should be `EPIPE`, but in Asterinas it is
+	// `ECONNRESET`. See the Linux implementation for details:
+	// <https://github.com/torvalds/linux/blob/848e076317446f9c663771ddec142d7c2eb4cb43/net/ipv4/tcp_input.c#L4553-L4555>.
+	//
+	// TEST_RES(getsockopt(sk_connect, SOL_SOCKET, SO_ERROR, &err, &errlen),
+	// 	 errlen == sizeof(err) && err == EPIPE);
+	TEST_RES(getsockopt(sk_accept, SOL_SOCKET, SO_ERROR, &err, &errlen),
+		 errlen == sizeof(err) && err == ECONNRESET);
 }
 END_TEST()
 
