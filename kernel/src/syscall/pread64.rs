@@ -34,11 +34,8 @@ pub fn sys_pread64(
     }
 
     let read_len = {
-        let mut writer = ctx
-            .process
-            .root_vmar()
-            .vm_space()
-            .writer(user_buf_ptr, user_buf_len)?;
+        let current_userspace = ctx.user_space();
+        let mut writer = current_userspace.writer(user_buf_ptr, user_buf_len)?;
         file.read_at(offset as usize, &mut writer)?
     };
 

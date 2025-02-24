@@ -69,7 +69,7 @@ fn create_user_space(program: &[u8]) -> UserSpace {
         user_cpu_state.set_rip(ENTRY_POINT);
         user_cpu_state
     };
-    UserSpace::new(user_address_space, user_cpu_state)
+    UserSpace::new(user_cpu_state)
 }
 
 fn create_user_task(user_space: Arc<UserSpace>) -> Arc<Task> {

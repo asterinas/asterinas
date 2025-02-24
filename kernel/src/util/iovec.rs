@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_rights::Full;
 use ostd::mm::{Infallible, VmSpace};
 
-use crate::prelude::*;
+use crate::{prelude::*, vm::vmar::Vmar};
 
 /// A kernel space IO vector.
 #[derive(Debug, Clone, Copy)]
@@ -55,12 +56,12 @@ impl IoVec {
 
 /// The util function for create [`VmReader`]/[`VmWriter`]s.
 fn copy_iovs_and_convert<'a, T: 'a>(
-    ctx: &'a Context,
+    root_vmar: &'a Vmar<Full>,
     start_addr: Vaddr,
     count: usize,
     convert_iovec: impl Fn(&IoVec, &'a VmSpace) -> Result<T>,
 ) -> Result<Box<[T]>> {
-    let vm_space = ctx.process.root_vmar().vm_space();
+    let vm_space = root_vmar.vm_space();
 
     let mut v = Vec::with_capacity(count);
     for idx in 0..count {
@@ -96,11 +97,11 @@ pub struct VmWriterArray<'a>(Box<[VmWriter<'a>]>);
 impl<'a> VmReaderArray<'a> {
     /// Creates a new `IoVecReader` from user-provided io vec buffer.
     pub fn from_user_io_vecs(
-        ctx: &'a Context<'a>,
+        root_vmar: &'a Vmar<Full>,
         start_addr: Vaddr,
         count: usize,
     ) -> Result<Self> {
-        let readers = copy_iovs_and_convert(ctx, start_addr, count, IoVec::reader)?;
+        let readers = copy_iovs_and_convert(root_vmar, start_addr, count, IoVec::reader)?;
         Ok(Self(readers))
     }
 
@@ -113,11 +114,11 @@ impl<'a> VmReaderArray<'a> {
 impl<'a> VmWriterArray<'a> {
     /// Creates a new `IoVecWriter` from user-provided io vec buffer.
     pub fn from_user_io_vecs(
-        ctx: &'a Context<'a>,
+        root_vmar: &'a Vmar<Full>,
         start_addr: Vaddr,
         count: usize,
     ) -> Result<Self> {
-        let writers = copy_iovs_and_convert(ctx, start_addr, count, IoVec::writer)?;
+        let writers = copy_iovs_and_convert(root_vmar, start_addr, count, IoVec::writer)?;
         Ok(Self(writers))
     }
 

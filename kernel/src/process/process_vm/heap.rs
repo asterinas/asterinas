@@ -65,9 +65,9 @@ impl Heap {
         Ok(())
     }
 
-    pub fn brk(&self, new_heap_end: Option<Vaddr>) -> Result<Vaddr> {
-        let current = current!();
-        let root_vmar = current.root_vmar();
+    pub fn brk(&self, new_heap_end: Option<Vaddr>, ctx: &Context) -> Result<Vaddr> {
+        let root_vmar_ref = ctx.thread_local.root_vmar().borrow();
+        let root_vmar = root_vmar_ref.as_ref().unwrap();
         match new_heap_end {
             None => Ok(self.current_heap_end.load(Ordering::Relaxed)),
             Some(new_heap_end) => {
