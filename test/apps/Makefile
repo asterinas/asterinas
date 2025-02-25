@@ -14,6 +14,7 @@ TEST_APPS := \
 	alarm \
 	capability \
 	clone3 \
+	cpu \
 	cpu_affinity \
 	epoll \
 	eventfd2 \
