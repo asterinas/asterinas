@@ -3,6 +3,11 @@
 
 #![expect(non_camel_case_types)]
 
+use core::{
+    array,
+    sync::atomic::{AtomicU64, Ordering},
+};
+
 use super::process_vm::{INIT_STACK_SIZE, USER_HEAP_SIZE_LIMIT};
 use crate::prelude::*;
 
@@ -30,16 +35,11 @@ impl ResourceLimits {
     pub fn get_rlimit(&self, resource: ResourceType) -> &RLimit64 {
         &self.rlimits[resource as usize]
     }
-
-    // Get a mutable reference to a specific resource limit
-    pub fn get_rlimit_mut(&mut self, resource: ResourceType) -> &mut RLimit64 {
-        &mut self.rlimits[resource as usize]
-    }
 }
 
 impl Default for ResourceLimits {
     fn default() -> Self {
-        let mut rlimits = [RLimit64::default(); RLIMIT_COUNT];
+        let mut rlimits: [RLimit64; RLIMIT_COUNT] = array::from_fn(|_| RLimit64::default());
 
         // Setting the resource limits with predefined values
         rlimits[ResourceType::RLIMIT_CPU as usize] = RLimit64::new(RLIM_INFINITY, RLIM_INFINITY);
@@ -95,36 +95,52 @@ pub enum ResourceType {
 
 pub const RLIMIT_COUNT: usize = 16;
 
-#[derive(Debug, Clone, Copy, Pod)]
+#[derive(Debug)]
 #[repr(C)]
 pub struct RLimit64 {
-    cur: u64,
-    max: u64,
+    cur: AtomicU64,
+    max: AtomicU64,
 }
 
 impl RLimit64 {
-    pub fn new(cur: u64, max: u64) -> Self {
-        Self { cur, max }
+    pub fn new(cur_: u64, max_: u64) -> Self {
+        Self {
+            cur: AtomicU64::new(cur_),
+            max: AtomicU64::new(max_),
+        }
     }
 
     pub fn get_cur(&self) -> u64 {
-        self.cur
+        self.cur.load(Ordering::Relaxed)
     }
 
     pub fn get_max(&self) -> u64 {
-        self.max
+        self.max.load(Ordering::Relaxed)
+    }
+
+    pub fn get_pod(&self) -> [u64; 2] {
+        [self.get_cur(), self.get_max()]
+    }
+
+    pub fn set_from_pod(&self, rlim_pod: [u64; 2]) {
+        self.cur.store(rlim_pod[0], Ordering::Relaxed);
+        self.max.store(rlim_pod[1], Ordering::Relaxed);
     }
 
     pub fn is_valid(&self) -> bool {
-        self.cur <= self.max
+        self.get_cur() <= self.get_max()
+    }
+
+    pub fn is_valid_pod(rlim_pod: &[u64; 2]) -> bool {
+        rlim_pod[0] <= rlim_pod[1]
     }
 }
 
 impl Default for RLimit64 {
     fn default() -> Self {
         Self {
-            cur: RLIM_INFINITY,
-            max: RLIM_INFINITY,
+            cur: AtomicU64::new(RLIM_INFINITY),
+            max: AtomicU64::new(RLIM_INFINITY),
         }
     }
 }
