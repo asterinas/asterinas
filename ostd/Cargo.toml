@@ -37,8 +37,7 @@ ostd-pod = { git = "https://github.com/asterinas/ostd-pod", rev = "c4644be", ver
 spin = "0.9.4"
 smallvec = "1.13.2"
 static_assertions = "1.1.0"
-# The version is pinned to "0.2.3" due to a compilation error with version "0.2.5". Unpin it once the issue is resolved.
-unwinding = { version = "=0.2.3", default-features = false, features = ["fde-gnu-eh-frame-hdr", "hide-trace", "panic", "personality", "unwinder"] }
+unwinding = { version = "0.2.5", default-features = false, features = ["fde-gnu-eh-frame-hdr", "hide-trace", "panic", "personality", "unwinder"] }
 volatile = "0.6.1"
 xarray = { git = "https://github.com/asterinas/xarray", version = "0.1.0" }
 
