@@ -11,7 +11,11 @@ struct VirtioConsolesPrinter;
 
 impl Write for VirtioConsolesPrinter {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        for (_, device) in aster_console::all_devices() {
+        // We must call `all_devices_lock` instead of `all_devices` here, as `all_devices` invokes
+        // the clone method of String and Arc, which may lead to a deadlock when there is low memory
+        // in the heap (The heap allocator will log a message when memory is low.).
+        let devices = aster_console::all_devices_lock();
+        for (_, device) in devices.iter() {
             device.send(s.as_bytes());
         }
         Ok(())
