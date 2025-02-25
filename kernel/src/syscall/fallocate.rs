@@ -48,7 +48,7 @@ fn check_offset_and_len(offset: i64, len: i64, ctx: &Context) -> Result<()> {
     }
 
     let max_file_size = {
-        let resource_limits = ctx.process.resource_limits().lock();
+        let resource_limits = ctx.process.resource_limits();
         resource_limits
             .get_rlimit(ResourceType::RLIMIT_FSIZE)
             .get_cur() as usize

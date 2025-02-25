@@ -60,7 +60,6 @@ fn do_dup3(
         >= ctx
             .process
             .resource_limits()
-            .lock()
             .get_rlimit(ResourceType::RLIMIT_NOFILE)
             .get_cur() as FileDesc
     {
