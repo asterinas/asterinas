@@ -82,7 +82,7 @@ pub struct Process {
     /// Process group
     pub(super) process_group: Mutex<Weak<ProcessGroup>>,
     /// resource limits
-    resource_limits: Mutex<ResourceLimits>,
+    resource_limits: ResourceLimits,
     /// Scheduling priority nice value
     /// According to POSIX.1, the nice value is a per-process attribute,
     /// the threads in a process should share a nice value.
@@ -200,7 +200,7 @@ impl Process {
             sig_dispositions,
             parent_death_signal: AtomicSigNum::new_empty(),
             exit_signal: AtomicSigNum::new_empty(),
-            resource_limits: Mutex::new(resource_limits),
+            resource_limits,
             nice: AtomicNice::new(nice),
             timer_manager: PosixTimerManager::new(&prof_clock, process_ref),
             prof_clock,
@@ -303,7 +303,7 @@ impl Process {
         *self.executable_path.write() = executable_path;
     }
 
-    pub fn resource_limits(&self) -> &Mutex<ResourceLimits> {
+    pub fn resource_limits(&self) -> &ResourceLimits {
         &self.resource_limits
     }
 
