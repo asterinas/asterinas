@@ -29,6 +29,7 @@ use crate::syscall::{
     fork::sys_fork,
     fsync::{sys_fdatasync, sys_fsync},
     futex::sys_futex,
+    getcpu::sys_getcpu,
     getcwd::sys_getcwd,
     getdents64::{sys_getdents, sys_getdents64},
     getegid::sys_getegid,
@@ -314,6 +315,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_PREADV = 295           => sys_preadv(args[..4]);
     SYS_PWRITEV = 296          => sys_pwritev(args[..4]);
     SYS_PRLIMIT64 = 302        => sys_prlimit64(args[..4]);
+    SYS_GETCPU = 309           => sys_getcpu(args[..3]);
     SYS_GETRANDOM = 318        => sys_getrandom(args[..3]);
     SYS_EXECVEAT = 322         => sys_execveat(args[..5], &mut user_ctx);
     SYS_PREADV2 = 327          => sys_preadv2(args[..5]);
