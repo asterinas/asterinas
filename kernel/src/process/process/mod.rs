@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use self::timer_manager::PosixTimerManager;
 use super::{
@@ -87,6 +87,20 @@ pub struct Process {
     /// According to POSIX.1, the nice value is a per-process attribute,
     /// the threads in a process should share a nice value.
     nice: AtomicNice,
+
+    // Child reaper attribute
+    /// Whether the process is a child subreaper.
+    ///
+    /// A subreaper prevents orphaned processes from becoming zombies
+    /// by reaping them when their immediate parent terminates.
+    is_child_subreaper: AtomicBool,
+
+    /// Whether the process has a subreaper that will reap it when the
+    /// process becomes orphaned.
+    ///  
+    /// If `has_child_subreaper` is true in a `Process`, this attribute should
+    /// also be true for all of its descendants.
+    has_child_subreaper: AtomicBool,
 
     // Signal
     /// Sig dispositions
@@ -179,6 +193,7 @@ impl Process {
 
         resource_limits: ResourceLimits,
         nice: Nice,
+        has_child_subreaper: bool,
         sig_dispositions: Arc<Mutex<SigDispositions>>,
     ) -> Arc<Self> {
         // SIGCHID does not interrupt pauser. Child process will
@@ -197,6 +212,8 @@ impl Process {
             parent: ParentProcess::new(parent),
             children: Mutex::new(BTreeMap::new()),
             process_group: Mutex::new(Weak::new()),
+            is_child_subreaper: AtomicBool::new(false),
+            has_child_subreaper: AtomicBool::new(has_child_subreaper),
             sig_dispositions,
             parent_death_signal: AtomicSigNum::new_empty(),
             exit_signal: AtomicSigNum::new_empty(),
@@ -324,7 +341,7 @@ impl Process {
         self.parent.lock().process().upgrade().is_none()
     }
 
-    pub(super) fn children(&self) -> &Mutex<BTreeMap<Pid, Arc<Process>>> {
+    pub fn children(&self) -> &Mutex<BTreeMap<Pid, Arc<Process>>> {
         &self.children
     }
 
@@ -667,6 +684,18 @@ impl Process {
     pub fn status(&self) -> &ProcessStatus {
         &self.status
     }
+
+    // ******************* Attribute ********************
+
+    /// Returns a reference to the `is_child_subreaper` attribute.
+    pub fn is_child_subreaper(&self) -> &AtomicBool {
+        &self.is_child_subreaper
+    }
+
+    /// Returns a reference to the `has_child_subreaper` attribute.
+    pub fn has_child_subreaper(&self) -> &AtomicBool {
+        &self.has_child_subreaper
+    }
 }
 
 #[cfg(ktest)]
@@ -692,6 +721,7 @@ mod test {
             ProcessVm::alloc(),
             ResourceLimits::default(),
             Nice::default(),
+            false,
             Arc::new(Mutex::new(SigDispositions::default())),
         )
     }
