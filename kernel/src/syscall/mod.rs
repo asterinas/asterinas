@@ -37,6 +37,7 @@ mod flock;
 mod fork;
 mod fsync;
 mod futex;
+mod getcpu;
 mod getcwd;
 mod getdents64;
 mod getegid;
