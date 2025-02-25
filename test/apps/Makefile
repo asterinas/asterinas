@@ -33,6 +33,7 @@ TEST_APPS := \
 	mongoose \
 	network \
 	pipe \
+	prctl \
 	pthread \
 	pty \
 	shm \
