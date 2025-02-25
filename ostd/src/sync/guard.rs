@@ -30,7 +30,7 @@ pub trait GuardTransfer {
 }
 
 /// A guardian that disables preemption while holding a lock.
-pub struct PreemptDisabled;
+pub enum PreemptDisabled {}
 
 impl Guardian for PreemptDisabled {
     type Guard = DisabledPreemptGuard;
@@ -51,7 +51,7 @@ impl Guardian for PreemptDisabled {
 /// IRQ handlers are allowed to get executed while holding the
 /// lock. For example, if a lock is never used in the interrupt
 /// context, then it is ok not to use this guardian in the process context.
-pub struct LocalIrqDisabled;
+pub enum LocalIrqDisabled {}
 
 impl Guardian for LocalIrqDisabled {
     type Guard = DisabledLocalIrqGuard;
@@ -77,7 +77,7 @@ impl Guardian for LocalIrqDisabled {
 ///
 /// [`RwLock`]: super::RwLock
 /// [`SpinLock`]: super::SpinLock
-pub struct WriteIrqDisabled;
+pub enum WriteIrqDisabled {}
 
 impl Guardian for WriteIrqDisabled {
     type Guard = DisabledLocalIrqGuard;
