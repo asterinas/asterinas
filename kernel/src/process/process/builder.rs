@@ -20,6 +20,7 @@ pub struct ProcessBuilder<'a> {
     pid: Pid,
     executable_path: &'a str,
     parent: Weak<Process>,
+    has_child_subreaper: bool,
 
     // Optional parts
     main_thread_builder: Option<PosixThreadBuilder>,
@@ -38,6 +39,7 @@ impl<'a> ProcessBuilder<'a> {
             pid,
             executable_path,
             parent,
+            has_child_subreaper: false,
             main_thread_builder: None,
             argv: None,
             envp: None,
@@ -89,6 +91,11 @@ impl<'a> ProcessBuilder<'a> {
         self
     }
 
+    pub fn has_child_subreaper(&mut self, has_child_subreaper: bool) -> &mut Self {
+        self.has_child_subreaper = has_child_subreaper;
+        self
+    }
+
     fn check_build(&self) -> Result<()> {
         if self.main_thread_builder.is_some() {
             debug_assert!(self.parent.upgrade().is_some());
@@ -113,6 +120,7 @@ impl<'a> ProcessBuilder<'a> {
             pid,
             executable_path,
             parent,
+            has_child_subreaper,
             main_thread_builder,
             argv,
             envp,
@@ -142,6 +150,7 @@ impl<'a> ProcessBuilder<'a> {
             process_vm,
             resource_limits,
             nice,
+            has_child_subreaper,
             sig_dispositions,
         );
 
