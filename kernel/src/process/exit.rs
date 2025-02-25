@@ -22,6 +22,12 @@ pub(super) fn exit_process(thread_local: &ThreadLocal, current_process: &Process
     move_children_to_init(current_process);
 
     send_child_death_signal(current_process);
+
+    let _val = current_process
+        .vfork_done()
+        .lock()
+        .as_ref()
+        .is_some_and(|x| x.wake_up());
 }
 
 /// Sends parent-death signals to the children.

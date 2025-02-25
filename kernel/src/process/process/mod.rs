@@ -37,7 +37,10 @@ use aster_rights::Full;
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 pub use builder::ProcessBuilder;
 pub use job_control::JobControl;
-use ostd::{sync::WaitQueue, task::Task};
+use ostd::{
+    sync::{Waker, WaitQueue}, 
+    task::Task
+};
 pub use process_group::ProcessGroup;
 pub use session::Session;
 pub use terminal::Terminal;
@@ -69,6 +72,7 @@ pub struct Process {
     children_wait_queue: WaitQueue,
 
     // Mutable Part
+    vfork_done: Mutex<Option<Arc<Waker>>>,
     /// The executable path.
     executable_path: RwLock<String>,
     /// The threads
@@ -193,6 +197,7 @@ impl Process {
             executable_path: RwLock::new(executable_path),
             process_vm,
             children_wait_queue,
+            vfork_done: Mutex::new(None),
             status: ProcessStatus::default(),
             parent: ParentProcess::new(parent),
             children: Mutex::new(BTreeMap::new()),
@@ -334,6 +339,10 @@ impl Process {
 
     pub fn children_wait_queue(&self) -> &WaitQueue {
         &self.children_wait_queue
+    }
+
+    pub fn vfork_done(&self) -> &Mutex<Option<Arc<Waker>>> {
+        &self.vfork_done
     }
 
     // *********** Process group & Session***********
