@@ -38,6 +38,8 @@ TESTS ?= \
 	readv_test \
 	rename_test \
 	rlimits_test \
+	sched_test \
+	sched_yield_test \
 	semaphore_test \
 	sendfile_test \
 	sigaltstack_test \

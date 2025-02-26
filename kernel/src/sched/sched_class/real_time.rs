@@ -19,7 +19,7 @@ use ostd::{
 use super::{time::base_slice_clocks, CurrentRuntime, SchedAttr, SchedClassRq};
 use crate::{sched::nice::RangedU8, thread::AsThread};
 
-pub type RtPrio = RangedU8<0, 99>;
+pub type RealTimePriority = RangedU8<1, 99>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RealTimePolicy {
