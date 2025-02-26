@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(unused_variables)]
-
 pub mod dmar;
 pub mod remapping;
 
@@ -29,16 +27,19 @@ impl AcpiHandler for AcpiMemoryHandler {
         physical_address: usize,
         size: usize,
     ) -> acpi::PhysicalMapping<Self, T> {
-        acpi::PhysicalMapping::new(
-            physical_address,
-            NonNull::new(paddr_to_vaddr(physical_address) as *mut T).unwrap(),
-            size,
-            size,
-            self.clone(),
-        )
+        let virtual_address = NonNull::new(paddr_to_vaddr(physical_address) as *mut T).unwrap();
+
+        // SAFETY: The caller should guarantee that `physical_address..physical_address + size` is
+        // part of the ACPI table. Then the memory region is mapped to `virtual_address` and is
+        // valid for read and immutable dereferencing.
+        // FIXME: The caller guarantee only holds if we trust the hardware to provide a valid ACPI
+        // table. Otherwise, if the table is corrupted, it may reference arbitrary memory regions.
+        unsafe {
+            acpi::PhysicalMapping::new(physical_address, virtual_address, size, size, self.clone())
+        }
     }
 
-    fn unmap_physical_region<T>(region: &acpi::PhysicalMapping<Self, T>) {}
+    fn unmap_physical_region<T>(_region: &acpi::PhysicalMapping<Self, T>) {}
 }
 
 pub fn init() {
