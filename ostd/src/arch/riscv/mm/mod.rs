@@ -150,15 +150,15 @@ impl PageTableEntryTrait for PageTableEntry {
     }
 
     fn prop(&self) -> PageProperty {
-        let flags = parse_flags!(self.0, PageTableFlags::READABLE, PageFlags::R)
-            | parse_flags!(self.0, PageTableFlags::WRITABLE, PageFlags::W)
-            | parse_flags!(self.0, PageTableFlags::EXECUTABLE, PageFlags::X)
-            | parse_flags!(self.0, PageTableFlags::ACCESSED, PageFlags::ACCESSED)
-            | parse_flags!(self.0, PageTableFlags::DIRTY, PageFlags::DIRTY)
-            | parse_flags!(self.0, PageTableFlags::RSV1, PageFlags::AVAIL1)
-            | parse_flags!(self.0, PageTableFlags::RSV2, PageFlags::AVAIL2);
-        let priv_flags = parse_flags!(self.0, PageTableFlags::USER, PrivFlags::USER)
-            | parse_flags!(self.0, PageTableFlags::GLOBAL, PrivFlags::GLOBAL);
+        let flags = (parse_flags!(self.0, PageTableFlags::READABLE, PageFlags::R))
+            | (parse_flags!(self.0, PageTableFlags::WRITABLE, PageFlags::W))
+            | (parse_flags!(self.0, PageTableFlags::EXECUTABLE, PageFlags::X))
+            | (parse_flags!(self.0, PageTableFlags::ACCESSED, PageFlags::ACCESSED))
+            | (parse_flags!(self.0, PageTableFlags::DIRTY, PageFlags::DIRTY))
+            | (parse_flags!(self.0, PageTableFlags::RSV1, PageFlags::AVAIL1))
+            | (parse_flags!(self.0, PageTableFlags::RSV2, PageFlags::AVAIL2));
+        let priv_flags = (parse_flags!(self.0, PageTableFlags::USER, PrivFlags::USER))
+            | (parse_flags!(self.0, PageTableFlags::GLOBAL, PrivFlags::GLOBAL));
 
         let cache = if self.0 & PageTableFlags::PBMT_IO.bits() != 0 {
             CachePolicy::Uncacheable

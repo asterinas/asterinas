@@ -182,7 +182,7 @@ impl Clone for RangeLockItem {
 /// Rule of ordering:
 /// Locks are sorted by owner process, then by the starting offset.
 ///
-/// Rule of mergeing:
+/// Rule of merging:
 /// Adjacent and overlapping locks with same owner and type will be merged.
 ///
 /// Rule of updating:

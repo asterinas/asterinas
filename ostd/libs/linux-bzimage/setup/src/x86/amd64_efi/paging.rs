@@ -185,7 +185,7 @@ impl PageTableCreator {
 impl Ia32eTable {
     fn index(&mut self, level: usize, va: u64) -> &mut Ia32eEntry {
         debug_assert!((1..=5).contains(&level));
-        let index = va as usize >> (12 + 9 * (level - 1)) & (TABLE_ENTRY_COUNT - 1);
+        let index = (va as usize >> (12 + 9 * (level - 1))) & (TABLE_ENTRY_COUNT - 1);
         &mut self.0[index]
     }
 }

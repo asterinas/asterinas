@@ -139,7 +139,7 @@ mod gdb {
         Tcp,  // IP_ADDR:PORT
     }
     pub fn stub_type_of(stub: &str) -> StubAddrType {
-        if stub.split(':').last().unwrap().parse::<u16>().is_ok() {
+        if stub.split(':').next_back().unwrap().parse::<u16>().is_ok() {
             return StubAddrType::Tcp;
         }
         StubAddrType::Unix

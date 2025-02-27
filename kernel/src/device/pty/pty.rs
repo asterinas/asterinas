@@ -27,7 +27,7 @@ use crate::{
 
 const BUFFER_CAPACITY: usize = 4096;
 
-/// Pesudo terminal master.
+/// Pseudo terminal master.
 /// Internally, it has two buffers.
 /// One is inside ldisc, which is written by master and read by slave,
 /// the other is a ring buffer, which is written by slave and read by master.

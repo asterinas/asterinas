@@ -183,12 +183,12 @@ impl Icr {
             ApicId::X2Apic(d) => (d as u64) << 32,
         };
         Icr(dest
-            | (destination_shorthand as u64) << 18
-            | (trigger_mode as u64) << 15
-            | (level as u64) << 14
-            | (delivery_status as u64) << 12
-            | (destination_mode as u64) << 11
-            | (delivery_mode as u64) << 8
+            | ((destination_shorthand as u64) << 18)
+            | ((trigger_mode as u64) << 15)
+            | ((level as u64) << 14)
+            | ((delivery_status as u64) << 12)
+            | ((destination_mode as u64) << 11)
+            | ((delivery_mode as u64) << 8)
             | (vector as u64))
     }
 
@@ -219,7 +219,7 @@ impl ApicId {
     /// Logical x2APIC ID = [(x2APIC ID[19:4] << 16) | (1 << x2APIC ID[3:0])]
     #[expect(unused)]
     pub fn x2apic_logical_id(&self) -> u32 {
-        self.x2apic_logical_cluster_id() << 16 | 1 << self.x2apic_logical_field_id()
+        (self.x2apic_logical_cluster_id() << 16) | (1 << self.x2apic_logical_field_id())
     }
 
     /// Returns the logical x2apic cluster ID.

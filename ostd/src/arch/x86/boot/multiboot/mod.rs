@@ -112,7 +112,7 @@ fn parse_memory_regions(mb1_info: &MultibootLegacyInfo) -> MemoryRegionArray {
     regions
         .push(MemoryRegion::new(
             fb.address,
-            (fb.width * fb.height * fb.bpp + 7) / 8, // round up when divide with 8 (bits/Byte)
+            (fb.width * fb.height * fb.bpp).div_ceil(8), // round up when divide with 8 (bits/Byte)
             MemoryRegionType::Framebuffer,
         ))
         .unwrap();

@@ -53,10 +53,10 @@ impl SocketDevice {
         let guest_cid = field_ptr!(&virtio_vsock_config, VirtioVsockConfig, guest_cid_low)
             .read_once()
             .unwrap() as u64
-            | (field_ptr!(&virtio_vsock_config, VirtioVsockConfig, guest_cid_high)
+            | ((field_ptr!(&virtio_vsock_config, VirtioVsockConfig, guest_cid_high)
                 .read_once()
                 .unwrap() as u64)
-                << 32;
+                << 32);
 
         let mut recv_queue = VirtQueue::new(QUEUE_RECV, QUEUE_SIZE, transport.as_mut())
             .expect("creating recv queue fails");
