@@ -329,6 +329,7 @@ fn clone_child_process(
 
     // inherit parent's nice value
     let child_nice = process.nice().load(Ordering::Relaxed);
+    let child_has_subreaper = process.has_child_subreaper().load(Ordering::Relaxed);
 
     let child_tid = allocate_posix_tid();
 
@@ -363,6 +364,7 @@ fn clone_child_process(
             .main_thread_builder(child_thread_builder)
             .process_vm(child_process_vm)
             .sig_dispositions(child_sig_dispositions)
+            .has_child_subreaper(child_has_subreaper)
             .nice(child_nice);
 
         process_builder.build()?
