@@ -6,19 +6,30 @@ pub mod local;
 
 use core::fmt::Debug;
 
-use riscv::register::scause::{Exception, Trap};
+use riscv::register::{
+    scause::{Exception, Interrupt, Trap},
+    sstatus,
+};
 
 pub use super::trap::GeneralRegs as RawGeneralRegs;
-use super::trap::{TrapFrame, UserContext as RawUserContext};
-use crate::user::{ReturnReason, UserContextApi, UserContextApiInternal};
+use super::{
+    irq::TIMER_IRQ_LINE,
+    trap::{handle_external_interrupts, TrapFrame, UserContext as RawUserContext},
+};
+use crate::{
+    prelude::*,
+    task::scheduler,
+    trap::call_irq_callback_functions,
+    user::{ReturnReason, UserContextApi, UserContextApiInternal},
+};
 
 /// Cpu context, including both general-purpose registers and FPU state.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 #[repr(C)]
 pub struct UserContext {
     user_context: RawUserContext,
     trap: Trap,
-    fpu_state: (), // TODO
+    fpu_state: FpuState,
     cpu_exception_info: CpuExceptionInfo,
 }
 
@@ -38,7 +49,7 @@ impl Default for UserContext {
         UserContext {
             user_context: RawUserContext::default(),
             trap: Trap::Exception(Exception::Unknown),
-            fpu_state: (),
+            fpu_state: FpuState::default(),
             cpu_exception_info: CpuExceptionInfo::default(),
         }
     }
@@ -78,12 +89,12 @@ impl UserContext {
     }
 
     /// Returns a reference to the FPU state.
-    pub fn fpu_state(&self) -> &() {
+    pub fn fpu_state(&self) -> &FpuState {
         &self.fpu_state
     }
 
     /// Returns a mutable reference to the FPU state.
-    pub fn fpu_state_mut(&mut self) -> &mut () {
+    pub fn fpu_state_mut(&mut self) -> &mut FpuState {
         &mut self.fpu_state
     }
 
@@ -109,8 +120,21 @@ impl UserContextApiInternal for UserContext {
         F: FnMut() -> bool,
     {
         let ret = loop {
+            scheduler::might_preempt();
+
+            const FS_MASK: usize = 0b11 << 13;
+            self.user_context.sstatus =
+                (self.user_context.sstatus & !FS_MASK) | ((self.fpu_state.fs as usize) << 13);
             self.user_context.run();
+            self.fpu_state.fs = bits_to_fs((self.user_context.sstatus >> 13) & 0b11);
+
             match riscv::register::scause::read().cause() {
+                Trap::Interrupt(Interrupt::SupervisorTimer) => {
+                    call_irq_callback_functions(&self.as_trap_frame(), TIMER_IRQ_LINE)
+                }
+                Trap::Interrupt(Interrupt::SupervisorExternal) => {
+                    handle_external_interrupts(&self.as_trap_frame())
+                }
                 Trap::Interrupt(_) => todo!(),
                 Trap::Exception(Exception::UserEnvCall) => {
                     self.user_context.sepc += 4;
@@ -127,6 +151,7 @@ impl UserContextApiInternal for UserContext {
                     break ReturnReason::UserException;
                 }
             }
+            crate::arch::irq::enable_local();
 
             if has_kernel_event() {
                 break ReturnReason::KernelEvent;
@@ -225,6 +250,83 @@ cpu_context_impl_getter_setter!(
     [t5, set_t5],
     [t6, set_t6]
 );
+
+core::arch::global_asm!(include_str!("fpu.S"));
+
+extern "C" {
+    fn fstate_save(buf: *mut FpRegs);
+    fn fstate_restore(buf: &FpRegs);
+}
+
+/// The FPU state of user task.
+#[derive(Debug, Clone)]
+pub struct FpuState {
+    fs: sstatus::FS,
+    floating_state: Box<FpRegs>,
+}
+
+#[derive(Debug, Clone, Default)]
+#[repr(C)]
+pub struct FpRegs {
+    fregs: [f64; 32],
+    fcsr: u64, // Floating-Point Control and Status Register
+}
+
+impl FpuState {
+    /// Save CPU's current FPU state into this instance.
+    pub fn save(&self) {
+        if self.fs == sstatus::FS::Dirty {
+            self.floating_state.save();
+        }
+        log::trace!("FPU state saved");
+    }
+
+    /// Restores CPU's FPU state from this instance.
+    pub fn restore(&self) {
+        self.floating_state.restore();
+
+        // TODO: uncomment this line to reduce context-swap overhead once `&mut self` is allowed
+        // self.fs = sstatus::FS::Clean;
+
+        log::trace!("FPU state restored");
+    }
+}
+
+impl Default for FpuState {
+    fn default() -> Self {
+        FpuState {
+            fs: sstatus::FS::Initial,
+            floating_state: Box::new(FpRegs::default()),
+        }
+    }
+}
+
+impl FpRegs {
+    /// Save CPU's floating point registers into this instance.
+    pub fn save(&self) {
+        // FIXME: I don't know why `FpuState::save` is called without `&mut`.
+        unsafe {
+            fstate_save(self as *const FpRegs as *mut FpRegs);
+        }
+    }
+
+    /// Restores CPU's floating point registers from this instance.
+    pub fn restore(&self) {
+        unsafe {
+            fstate_restore(self);
+        }
+    }
+}
+
+fn bits_to_fs(bits: usize) -> sstatus::FS {
+    match bits {
+        0 => sstatus::FS::Off,
+        1 => sstatus::FS::Initial,
+        2 => sstatus::FS::Clean,
+        3 => sstatus::FS::Dirty,
+        _ => unreachable!(),
+    }
+}
 
 /// CPU exception.
 pub type CpuException = Exception;
