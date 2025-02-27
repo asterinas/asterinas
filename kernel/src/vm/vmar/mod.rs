@@ -249,9 +249,7 @@ impl Vmar_ {
     }
 
     fn new_root() -> Arc<Self> {
-        let vmar_inner = VmarInner {
-            vm_mappings: IntervalSet::new(),
-        };
+        let vmar_inner = VmarInner::new();
         let mut vm_space = VmSpace::new();
         vm_space.register_page_fault_handler(handle_page_fault_wrapper);
         Vmar_::new(vmar_inner, Arc::new(vm_space), 0, ROOT_VMAR_CAP_ADDR)

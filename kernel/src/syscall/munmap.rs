@@ -18,7 +18,8 @@ pub fn sys_munmap(addr: Vaddr, len: usize, ctx: &Context) -> Result<SyscallRetur
         return_errno_with_message!(Errno::ENOMEM, "munmap len align overflow");
     }
 
-    let root_vmar = ctx.process.root_vmar();
+    let user_space = ctx.user_space();
+    let root_vmar = user_space.root_vmar();
     let len = len.align_up(PAGE_SIZE);
     let end = addr.checked_add(len).ok_or(Error::with_message(
         Errno::EINVAL,

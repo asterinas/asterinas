@@ -1,11 +1,20 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::cell::{Cell, RefCell};
+use alloc::sync::Arc;
+use core::{
+    any::Any,
+    cell::{Cell, Ref, RefCell},
+};
 
-use ostd::{mm::Vaddr, sync::RwArc, task::CurrentTask};
+use aster_rights::Full;
+use ostd::{
+    mm::{Vaddr, VmSpace},
+    sync::RwArc,
+    task::{CurrentTask, TaskLocalData},
+};
 
 use super::RobustListHead;
-use crate::{fs::file_table::FileTable, process::signal::SigStack};
+use crate::{fs::file_table::FileTable, process::signal::SigStack, vm::vmar::Vmar};
 
 /// Local data for a POSIX thread.
 pub struct ThreadLocal {
@@ -13,6 +22,9 @@ pub struct ThreadLocal {
     // https://man7.org/linux/man-pages/man2/set_tid_address.2.html
     set_child_tid: Cell<Vaddr>,
     clear_child_tid: Cell<Vaddr>,
+
+    // Virtual memory address regions.
+    root_vmar: RefCell<Option<Vmar<Full>>>,
 
     // Robust futexes.
     // https://man7.org/linux/man-pages/man2/get_robust_list.2.html
@@ -35,10 +47,12 @@ impl ThreadLocal {
         set_child_tid: Vaddr,
         clear_child_tid: Vaddr,
         file_table: RwArc<FileTable>,
+        root_vmar: Option<Vmar<Full>>,
     ) -> Self {
         Self {
             set_child_tid: Cell::new(set_child_tid),
             clear_child_tid: Cell::new(clear_child_tid),
+            root_vmar: RefCell::new(root_vmar),
             robust_list: RefCell::new(None),
             file_table: RefCell::new(file_table),
             sig_context: Cell::new(None),
@@ -52,6 +66,10 @@ impl ThreadLocal {
 
     pub fn clear_child_tid(&self) -> &Cell<Vaddr> {
         &self.clear_child_tid
+    }
+
+    pub fn root_vmar(&self) -> &RefCell<Option<Vmar<Full>>> {
+        &self.root_vmar
     }
 
     pub fn robust_list(&self) -> &RefCell<Option<RobustListHead>> {
@@ -71,6 +89,15 @@ impl ThreadLocal {
     }
 }
 
+impl TaskLocalData for ThreadLocal {
+    fn vm_space(&self) -> Option<Ref<'_, Arc<VmSpace>>> {
+        let root_vmar = self.root_vmar.borrow();
+        Some(Ref::map(root_vmar, |vmar| {
+            vmar.as_ref().unwrap().vm_space()
+        }))
+    }
+}
+
 /// A trait to provide the `as_thread_local` method for tasks.
 pub trait AsThreadLocal {
     /// Returns the associated [`ThreadLocal`].
@@ -79,6 +106,6 @@ pub trait AsThreadLocal {
 
 impl AsThreadLocal for CurrentTask {
     fn as_thread_local(&self) -> Option<&ThreadLocal> {
-        self.local_data().downcast_ref()
+        <dyn Any>::downcast_ref(self.local_data())
     }
 }
