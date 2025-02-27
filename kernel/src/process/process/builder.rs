@@ -6,6 +6,7 @@ use super::{Pid, Process};
 use crate::{
     prelude::*,
     process::{
+        namespaces::Namespaces,
         posix_thread::{create_posix_task_from_executable, PosixThreadBuilder},
         process_vm::ProcessVm,
         rlimit::ResourceLimits,
@@ -26,6 +27,7 @@ pub struct ProcessBuilder<'a> {
     argv: Option<Vec<CString>>,
     envp: Option<Vec<CString>>,
     process_vm: Option<ProcessVm>,
+    namespaces: Option<Arc<Mutex<Namespaces>>>,
     resource_limits: Option<ResourceLimits>,
     sig_dispositions: Option<Arc<Mutex<SigDispositions>>>,
     credentials: Option<Credentials>,
@@ -42,6 +44,7 @@ impl<'a> ProcessBuilder<'a> {
             argv: None,
             envp: None,
             process_vm: None,
+            namespaces: None,
             resource_limits: None,
             sig_dispositions: None,
             credentials: None,
@@ -56,6 +59,11 @@ impl<'a> ProcessBuilder<'a> {
 
     pub fn process_vm(&mut self, process_vm: ProcessVm) -> &mut Self {
         self.process_vm = Some(process_vm);
+        self
+    }
+
+    pub fn namespaces(&mut self, namespaces: Arc<Mutex<Namespaces>>) -> &mut Self {
+        self.namespaces = Some(namespaces);
         self
     }
 
@@ -117,6 +125,7 @@ impl<'a> ProcessBuilder<'a> {
             argv,
             envp,
             process_vm,
+            namespaces,
             resource_limits,
             sig_dispositions,
             credentials,
@@ -124,6 +133,10 @@ impl<'a> ProcessBuilder<'a> {
         } = self;
 
         let process_vm = process_vm.or_else(|| Some(ProcessVm::alloc())).unwrap();
+
+        let namespaces = namespaces
+            .or_else(|| Some(Arc::new(Mutex::new(Namespaces::default()))))
+            .unwrap();
 
         let resource_limits = resource_limits
             .or_else(|| Some(ResourceLimits::default()))
@@ -140,6 +153,7 @@ impl<'a> ProcessBuilder<'a> {
             parent,
             executable_path.to_string(),
             process_vm,
+            namespaces,
             resource_limits,
             nice,
             sig_dispositions,
