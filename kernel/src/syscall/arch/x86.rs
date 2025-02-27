@@ -26,7 +26,7 @@ use crate::syscall::{
     fallocate::sys_fallocate,
     fcntl::sys_fcntl,
     flock::sys_flock,
-    fork::sys_fork,
+    fork::{sys_fork, sys_vfork},
     fsync::{sys_fdatasync, sys_fsync},
     futex::sys_futex,
     getcpu::sys_getcpu,
@@ -191,6 +191,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_GETSOCKOPT = 55        => sys_getsockopt(args[..5]);
     SYS_CLONE = 56             => sys_clone(args[..5], &user_ctx);
     SYS_FORK = 57              => sys_fork(args[..0], &user_ctx);
+    SYS_VFORK = 58             => sys_vfork(args[..0], &user_ctx);
     SYS_EXECVE = 59            => sys_execve(args[..3], &mut user_ctx);
     SYS_EXIT = 60              => sys_exit(args[..1]);
     SYS_WAIT4 = 61             => sys_wait4(args[..4]);

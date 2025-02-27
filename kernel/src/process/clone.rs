@@ -142,6 +142,14 @@ impl CloneArgs {
             ..Default::default()
         }
     }
+
+    pub fn for_vfork() -> Self {
+        Self {
+            flags: CloneFlags::CLONE_VFORK | CloneFlags::CLONE_VM,
+            exit_signal: Some(SIGCHLD),
+            ..Default::default()
+        }
+    }
 }
 
 impl From<u64> for CloneFlags {
@@ -163,7 +171,8 @@ impl CloneFlags {
             | CloneFlags::CLONE_SETTLS
             | CloneFlags::CLONE_PARENT_SETTID
             | CloneFlags::CLONE_CHILD_SETTID
-            | CloneFlags::CLONE_CHILD_CLEARTID;
+            | CloneFlags::CLONE_CHILD_CLEARTID
+            | CloneFlags::CLONE_VFORK;
         let unsupported_flags = *self - supported_flags;
         if !unsupported_flags.is_empty() {
             warn!("contains unsupported clone flags: {:?}", unsupported_flags);
@@ -191,8 +200,22 @@ pub fn clone_child(
         Ok(child_tid)
     } else {
         let child_process = clone_child_process(ctx, parent_context, clone_args)?;
-        child_process.run();
+        if clone_args.flags.contains(CloneFlags::CLONE_VFORK) {
+            child_process.status().set_vfork_status(true);
+        }
 
+        child_process.run();
+        if child_process.status().is_vfork() {
+            let cond = || {
+                if child_process.status().is_vfork() {
+                    None
+                } else {
+                    Some(())
+                }
+            };
+            let current = ctx.process;
+            current.children_wait_queue().wait_until(cond);
+        }
         let child_pid = child_process.pid();
         Ok(child_pid)
     }
@@ -230,7 +253,8 @@ fn clone_child_task(
     // clone fs
     let child_fs = clone_fs(posix_thread.fs(), clone_flags);
 
-    let child_root_vmar = process.root_vmar();
+    let user_space = ctx.user_space();
+    let child_root_vmar = user_space.root_vmar();
     let child_user_space = {
         let child_vm_space = child_root_vmar.vm_space().clone();
         let child_cpu_context = clone_cpu_context(
@@ -307,7 +331,7 @@ fn clone_child_process(
         );
         let child_vm_space = {
             let child_root_vmar = child_process_vm.root_vmar();
-            child_root_vmar.vm_space().clone()
+            child_root_vmar.get().vm_space().clone()
         };
         Arc::new(UserSpace::new(child_vm_space, child_cpu_context))
     };
@@ -437,8 +461,11 @@ fn clone_cpu_context(
     child_context.set_syscall_ret(0);
 
     if clone_flags.contains(CloneFlags::CLONE_VM) {
-        // if parent and child shares the same address space, a new stack must be specified.
-        debug_assert!(new_sp != 0);
+        if !clone_flags.contains(CloneFlags::CLONE_VFORK) {
+            // if parent and child shares the same address space and not in vfork situation,
+            // a new stack must be specified.
+            debug_assert!(new_sp != 0);
+        }
     }
     if new_sp != 0 {
         // If stack size is not 0, the `new_sp` points to the BOTTOMMOST byte of stack.

@@ -118,11 +118,36 @@ fn do_execve(
     drop(closed_files);
 
     debug!("load program to root vmar");
+
+    // FIXME: Currently, the efficiency of replacing the VMAR is lower than that
+    // of directly clearing the VMAR. Therefore, we only replace the VMAR in the
+    // case of vfork here.
+    let new_vmar_context = if process.status().is_vfork() {
+        Some(ctx)
+    } else {
+        None
+    };
     let (new_executable_path, elf_load_info) = {
         let fs_resolver = &*posix_thread.fs().resolver().read();
         let process_vm = process.vm();
-        load_program_to_vm(process_vm, elf_file.clone(), argv, envp, fs_resolver, 1)?
+
+        load_program_to_vm(
+            process_vm,
+            elf_file.clone(),
+            argv,
+            envp,
+            fs_resolver,
+            1,
+            new_vmar_context,
+        )?
     };
+
+    // Unstops the parent process.
+    if process.status().is_vfork() {
+        process.status().set_vfork_status(false);
+        let parent = process.parent().lock().process().upgrade().unwrap();
+        parent.children_wait_queue().wake_all();
+    }
 
     // After the program has been successfully loaded, the virtual memory of the current process
     // is initialized. Hence, it is necessary to clear the previously recorded robust list.

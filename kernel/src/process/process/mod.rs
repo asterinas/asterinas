@@ -6,7 +6,7 @@ use self::timer_manager::PosixTimerManager;
 use super::{
     posix_thread::{allocate_posix_tid, AsPosixThread},
     process_table,
-    process_vm::{Heap, InitStackReader, ProcessVm},
+    process_vm::{Heap, InitStackReader, ProcessVm, ProcessVmar},
     rlimit::ResourceLimits,
     signal::{
         sig_disposition::SigDispositions,
@@ -23,7 +23,6 @@ use crate::{
     sched::{AtomicNice, Nice},
     thread::{AsThread, Thread},
     time::clocks::ProfClock,
-    vm::vmar::Vmar,
 };
 
 mod builder;
@@ -33,7 +32,6 @@ mod session;
 mod terminal;
 mod timer_manager;
 
-use aster_rights::Full;
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 pub use builder::ProcessBuilder;
 pub use job_control::JobControl;
@@ -586,7 +584,7 @@ impl Process {
         &self.process_vm
     }
 
-    pub fn root_vmar(&self) -> &Vmar<Full> {
+    pub fn root_vmar(&self) -> ProcessVmar {
         self.process_vm.root_vmar()
     }
 
