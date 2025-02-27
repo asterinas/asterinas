@@ -88,6 +88,11 @@ fn parse_memory_regions() -> MemoryRegionArray {
         ));
     }
 
+    // Add the kernel cmdline region since we don't want it to be overwritten.
+    regions
+        .push(MemoryRegion::from_early_str(parse_kernel_commandline()))
+        .unwrap();
+
     regions.into_non_overlapping()
 }
 

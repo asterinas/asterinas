@@ -146,6 +146,14 @@ fn parse_memory_regions() -> MemoryRegionArray {
         ))
         .unwrap();
 
+    // Add the kernel cmdline and boot loader name region since Grub does not specify it.
+    regions
+        .push(MemoryRegion::from_early_str(parse_kernel_commandline()))
+        .unwrap();
+    regions
+        .push(MemoryRegion::from_early_str(parse_bootloader_name()))
+        .unwrap();
+
     regions.into_non_overlapping()
 }
 
