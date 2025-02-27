@@ -1067,8 +1067,8 @@ impl ExfatInode {
     }
 }
 
-struct EmptyVistor;
-impl DirentVisitor for EmptyVistor {
+struct EmptyVisitor;
+impl DirentVisitor for EmptyVisitor {
     fn visit(&mut self, name: &str, ino: u64, type_: InodeType, offset: usize) -> Result<()> {
         Ok(())
     }
@@ -1458,7 +1458,7 @@ impl Inode for ExfatInode {
             return Ok(0);
         }
 
-        let mut empty_visitor = EmptyVistor;
+        let mut empty_visitor = EmptyVisitor;
 
         let dir_read = {
             let fs = inner.fs();

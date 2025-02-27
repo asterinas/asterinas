@@ -264,7 +264,7 @@ impl EventTable {
         let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
 
         let default_event = VirtioInputEvent::default();
-        let iter = iter::repeat(&default_event).take(EVENT_SIZE);
+        let iter = iter::repeat_n(&default_event, EVENT_SIZE);
         let nr_written = segment.write_vals(0, iter, 0).unwrap();
         assert_eq!(nr_written, EVENT_SIZE);
 

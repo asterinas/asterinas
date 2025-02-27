@@ -70,8 +70,8 @@ impl Config {
 
     /// ensure the config to be valid. We will check three things.
     /// 1. The component ident and library name(The last segment of component path) cannot be duplicate.
-    /// 2. The controlled type in whilelist should be in one of defined components.
-    /// 3. The components in whilelist should be defined.
+    /// 2. The controlled type in whitelist should be in one of defined components.
+    /// 3. The components in whitelist should be defined.
     pub fn check_config(&self) {
         let mut component_idents = HashSet::new();
         let mut lib_names = HashSet::new();
@@ -89,14 +89,14 @@ impl Config {
             lib_names.insert(lib_name);
         }
 
-        for (type_, whilelist) in &self.whitelists {
+        for (type_, whitelist) in &self.whitelists {
             // check 2
             let component_ident = type_.iter().nth(0).unwrap();
             if !component_idents.contains(component_ident) {
                 panic!("The controlled type is not in any component.");
             }
             // check 3
-            for (component_name, _) in whilelist.iter() {
+            for (component_name, _) in whitelist.iter() {
                 if !component_idents.contains(component_name) {
                     panic!("The component in whitelist is not defined");
                 }

@@ -50,7 +50,7 @@ impl XApic {
         set_apic_base_address(get_apic_base_address());
 
         // Set SVR, Enable APIC and set Spurious Vector to 15 (Reserved irq number)
-        let svr: u32 = 1 << 8 | 15;
+        let svr: u32 = (1 << 8) | 15;
         self.write(xapic::XAPIC_SVR, svr);
     }
 
@@ -83,7 +83,7 @@ impl super::Apic for XApic {
         self.write(xapic::XAPIC_ICR0, icr.lower());
         loop {
             let icr = self.read(xapic::XAPIC_ICR0);
-            if (icr >> 12 & 0x1) == 0 {
+            if ((icr >> 12) & 0x1) == 0 {
                 break;
             }
             if self.read(xapic::XAPIC_ESR) > 0 {

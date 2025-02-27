@@ -90,7 +90,7 @@ fn get_log_level() -> Option<LevelFilter> {
     let value = kcmdline
         .split(' ')
         .find(|arg| arg.starts_with("ostd.log_level="))
-        .map(|arg| arg.split('=').last().unwrap_or_default())?;
+        .map(|arg| arg.split('=').next_back().unwrap_or_default())?;
 
     LevelFilter::from_str(value).ok()
 }

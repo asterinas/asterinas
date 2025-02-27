@@ -168,8 +168,8 @@ pub(crate) fn init(operating_mode: OperatingMode) {
     // Bit 0 is BCD/binary mode, which is always set to binary mode(value: 0)
     MODE_COMMAND_PORT.write(
         ((operating_mode as u8) << 1)
-            | (AccessMode::LowAndHighByte as u8) << 4
-            | (Channel::Channel0 as u8) << 6,
+            | ((AccessMode::LowAndHighByte as u8) << 4)
+            | ((Channel::Channel0 as u8) << 6),
     );
 
     // Set timer frequency
