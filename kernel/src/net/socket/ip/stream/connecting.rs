@@ -82,7 +82,7 @@ impl ConnectingStream {
                 self.remote_endpoint,
                 true,
             )),
-            ConnectState::Refused => ConnResult::Refused(InitStream::new_bound(
+            ConnectState::Refused => ConnResult::Refused(InitStream::new_refused(
                 self.tcp_conn.into_bound_port().unwrap(),
             )),
         }
@@ -109,5 +109,9 @@ impl ConnectingStream {
         set_option: impl FnOnce(&dyn RawTcpSetOption) -> R,
     ) -> R {
         set_option(&self.tcp_conn)
+    }
+
+    pub(super) fn into_connection(self) -> TcpConnection {
+        self.tcp_conn
     }
 }

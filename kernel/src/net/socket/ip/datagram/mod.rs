@@ -362,7 +362,8 @@ impl Socket for DatagramSocket {
     fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
         match_sock_option_mut!(option, {
             socket_errors: SocketError => {
-                self.options.write().socket.get_and_clear_sock_errors(socket_errors);
+                // TODO: Support socket errors for UDP sockets
+                socket_errors.set(None);
                 return Ok(());
             },
             _ => ()
