@@ -153,6 +153,15 @@ fn do_execve(
     // set new user stack top
     user_context.set_stack_pointer(elf_load_info.user_stack_top() as _);
     debug!("user stack top: 0x{:x}", elf_load_info.user_stack_top());
+
+    {
+        let _val = process
+            .vfork_done()
+            .lock()
+            .as_ref()
+            .is_some_and(|x| x.wake_up());
+    }
+    
     Ok(())
 }
 
