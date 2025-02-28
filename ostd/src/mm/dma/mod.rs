@@ -2,6 +2,8 @@
 
 mod dma_coherent;
 mod dma_stream;
+#[cfg(ktest)]
+mod test;
 
 use alloc::collections::BTreeSet;
 
