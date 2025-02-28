@@ -26,6 +26,7 @@ use log::debug;
 
 use super::ex_table::ExTable;
 use crate::{
+    arch::irq::{disable_local, enable_local},
     cpu::{CpuException, CpuExceptionInfo, PageFaultErrorCode},
     cpu_local_cell,
     mm::{
@@ -220,7 +221,17 @@ pub fn is_kernel_interrupted() -> bool {
 /// Handle traps (only from kernel).
 #[no_mangle]
 extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
-    match CpuException::to_cpu_exception(f.trap_num as u16) {
+    let cpu_exception = CpuException::to_cpu_exception(f.trap_num as u16);
+
+    // Ensures that the IRQ state during the trap that handles exceptions remains
+    // consistent with the state before entering.
+    let is_trap_irq_enabled = cpu_exception.is_some()
+        && (f.rflags as u64 & x86_64::registers::rflags::RFlags::INTERRUPT_FLAG.bits() > 0);
+    if is_trap_irq_enabled {
+        enable_local();
+    }
+
+    match cpu_exception {
         #[cfg(feature = "cvm_guest")]
         Some(CpuException::VIRTUALIZATION_EXCEPTION) => {
             let ve_info = tdcall::get_veinfo().expect("#VE handler: fail to get VE info\n");
@@ -249,6 +260,10 @@ extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
             call_irq_callback_functions(f, f.trap_num);
             KERNEL_INTERRUPT_NESTED_LEVEL.sub_assign(1);
         }
+    }
+
+    if is_trap_irq_enabled {
+        disable_local();
     }
 }
 
