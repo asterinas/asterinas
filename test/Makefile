@@ -33,6 +33,7 @@ INITRAMFS_ALL_DIRS := \
 	$(INITRAMFS)/sbin \
 	$(INITRAMFS)/usr/bin \
 	$(INITRAMFS)/usr/local \
+	$(INITRAMFS)/usr/lib \
 	$(INITRAMFS)/test \
 	$(INITRAMFS)/benchmark \
 	$(INITRAMFS_EMPTY_DIRS)
@@ -48,6 +49,7 @@ $(INITRAMFS)/lib/x86_64-linux-gnu: | $(VDSO_LIB)
 	@cp -L /lib/x86_64-linux-gnu/libm.so.6 $@
 	@cp -L /lib/x86_64-linux-gnu/libgcc_s.so.1 $@
 	@cp -L /lib/x86_64-linux-gnu/libpthread.so.0 $@
+	@cp -L /lib/x86_64-linux-gnu/libexpat.so.1 $@
 	@# required for benchmarks
 	@cp -L /lib/x86_64-linux-gnu/libcrypto.so.3 $@
 	@cp -L /lib/x86_64-linux-gnu/libcrypt.so.1 $@
@@ -94,6 +96,9 @@ $(INITRAMFS)/etc:
 $(INITRAMFS)/bin:
 	@mkdir -p $@
 	@/bin/busybox --install -s $@
+	@cp /bin/python $@
+	@cp /bin/python3 $@
+	@cp /bin/python3.10 $@
 
 $(INITRAMFS)/sbin:
 	@mkdir -p $@
@@ -109,6 +114,10 @@ $(INITRAMFS)/usr/local:
 	@cp -r /usr/local/nginx $@
 	@cp -r /usr/local/redis $@
 	@cp -r /usr/local/memcached $@
+
+$(INITRAMFS)/usr/lib:
+	@mkdir -p $@
+	@cp -r /usr/lib/python3.10 $@
 
 .PHONY: $(INITRAMFS)/test
 $(INITRAMFS)/test:
