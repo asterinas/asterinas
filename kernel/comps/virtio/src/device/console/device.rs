@@ -7,7 +7,7 @@ use aster_console::{AnyConsoleDevice, ConsoleCallback};
 use log::debug;
 use ostd::{
     mm::{DmaDirection, DmaStream, DmaStreamSlice, FrameAllocOptions, VmReader},
-    sync::{LocalIrqDisabled, RwLock, SpinLock},
+    sync::{Rcu, SpinLock},
     trap::TrapFrame,
 };
 
@@ -25,7 +25,8 @@ pub struct ConsoleDevice {
     transmit_queue: SpinLock<VirtQueue>,
     send_buffer: DmaStream,
     receive_buffer: DmaStream,
-    callbacks: RwLock<Vec<&'static ConsoleCallback>, LocalIrqDisabled>,
+    #[expect(clippy::box_collection)]
+    callbacks: Rcu<Box<Vec<&'static ConsoleCallback>>>,
 }
 
 impl AnyConsoleDevice for ConsoleDevice {
@@ -52,7 +53,19 @@ impl AnyConsoleDevice for ConsoleDevice {
     }
 
     fn register_callback(&self, callback: &'static ConsoleCallback) {
-        self.callbacks.write().push(callback);
+        loop {
+            let callbacks = self.callbacks.read();
+            let mut callbacks_cloned = callbacks.clone();
+            callbacks_cloned.push(callback);
+            if callbacks
+                .compare_exchange(Box::new(callbacks_cloned))
+                .is_ok()
+            {
+                break;
+            }
+            // Contention on pushing, retry.
+            core::hint::spin_loop();
+        }
     }
 }
 
@@ -103,7 +116,7 @@ impl ConsoleDevice {
             transmit_queue,
             send_buffer,
             receive_buffer,
-            callbacks: RwLock::new(Vec::new()),
+            callbacks: Rcu::new(Box::new(Vec::new())),
         });
 
         device.activate_receive_buffer(&mut device.receive_queue.disable_irq().lock());
