@@ -9,7 +9,6 @@
 #![feature(core_intrinsics)]
 #![feature(coroutines)]
 #![feature(fn_traits)]
-#![feature(generic_const_exprs)]
 #![feature(iter_from_coroutine)]
 #![feature(let_chains)]
 #![feature(linkage)]
@@ -20,9 +19,6 @@
 #![feature(sync_unsafe_cell)]
 #![feature(trait_upcasting)]
 #![feature(iter_advance_by)]
-// The `generic_const_exprs` feature is incomplete however required for the page table
-// const generic implementation. We are using this feature in a conservative manner.
-#![expect(incomplete_features)]
 #![expect(internal_features)]
 #![no_std]
 #![warn(missing_docs)]

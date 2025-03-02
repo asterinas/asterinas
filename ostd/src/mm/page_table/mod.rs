@@ -9,8 +9,8 @@ use core::{
 };
 
 use super::{
-    io::PodOnce, nr_subpage_per_huge, page_prop::PageProperty, page_size, Paddr, PagingConstsTrait,
-    PagingLevel, Vaddr,
+    nr_subpage_per_huge, page_prop::PageProperty, page_size, Paddr, PagingConstsTrait, PagingLevel,
+    PodOnce, Vaddr,
 };
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
@@ -84,9 +84,7 @@ pub struct PageTable<
     M: PageTableMode,
     E: PageTableEntryTrait = PageTableEntry,
     C: PagingConstsTrait = PagingConsts,
-> where
-    [(); C::NR_LEVELS as usize]:,
-{
+> {
     root: RawPageTableNode<E, C>,
     _phantom: PhantomData<M>,
 }
@@ -201,10 +199,7 @@ impl PageTable<KernelMode> {
     }
 }
 
-impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTable<M, E, C>
-where
-    [(); C::NR_LEVELS as usize]:,
-{
+impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTable<M, E, C> {
     /// Create a new empty page table. Useful for the kernel page table and IOMMU page tables only.
     pub fn empty() -> Self {
         PageTable {

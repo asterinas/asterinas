@@ -114,10 +114,7 @@ pub enum PageTableItem {
 /// simulate the recursion, and adpot a page table locking protocol to
 /// provide concurrency.
 #[derive(Debug)]
-pub struct Cursor<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait>
-where
-    [(); C::NR_LEVELS as usize]:,
-{
+pub struct Cursor<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> {
     /// The lock guards of the cursor. The level 1 page table lock guard is at
     /// index 0, and the level N page table lock guard is at index N - 1.
     ///
@@ -125,7 +122,7 @@ where
     /// from low to high, exactly the reverse order of the acquisition.
     /// This behavior is ensured by the default drop implementation of Rust:
     /// <https://doc.rust-lang.org/reference/destructors.html>.
-    guards: [Option<PageTableNode<E, C>>; C::NR_LEVELS as usize],
+    guards: [Option<PageTableNode<E, C>>; MAX_NR_LEVELS],
     /// The level of the page table that the cursor points to.
     level: PagingLevel,
     /// From `guard_level` to `level`, the locks are held in `guards`.
@@ -139,10 +136,10 @@ where
     _phantom: PhantomData<&'a PageTable<M, E, C>>,
 }
 
-impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<'a, M, E, C>
-where
-    [(); C::NR_LEVELS as usize]:,
-{
+/// The maximum value of `PagingConstsTrait::NR_LEVELS`.
+const MAX_NR_LEVELS: usize = 4;
+
+impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<'a, M, E, C> {
     /// Creates a cursor claiming the read access for the given range.
     ///
     /// The cursor created will only be able to query or jump within the given
@@ -158,6 +155,8 @@ where
         if va.start % C::BASE_PAGE_SIZE != 0 || va.end % C::BASE_PAGE_SIZE != 0 {
             return Err(PageTableError::UnalignedVaddr);
         }
+
+        const { assert!(C::NR_LEVELS as usize <= MAX_NR_LEVELS) };
 
         let mut cursor = Self {
             guards: core::array::from_fn(|_| None),
@@ -340,8 +339,6 @@ where
 
 impl<M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Iterator
     for Cursor<'_, M, E, C>
-where
-    [(); C::NR_LEVELS as usize]:,
 {
     type Item = PageTableItem;
 
@@ -361,14 +358,9 @@ where
 #[derive(Debug)]
 pub struct CursorMut<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait>(
     Cursor<'a, M, E, C>,
-)
-where
-    [(); C::NR_LEVELS as usize]:;
+);
 
-impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorMut<'a, M, E, C>
-where
-    [(); C::NR_LEVELS as usize]:,
-{
+impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorMut<'a, M, E, C> {
     /// Creates a cursor claiming the write access for the given range.
     ///
     /// The cursor created will only be able to map, query or jump within the given

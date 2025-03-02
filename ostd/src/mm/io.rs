@@ -44,7 +44,6 @@ use alloc::vec;
 use core::marker::PhantomData;
 
 use align_ext::AlignExt;
-use const_assert::{Assert, IsTrue};
 use inherit_methods_macro::inherit_methods;
 
 use crate::{
@@ -525,6 +524,8 @@ impl<'a> VmReader<'a, Infallible> {
         let cursor = self.cursor.cast::<T>();
         assert!(cursor.is_aligned());
 
+        const { assert!(pod_once_impls::is_non_tearing::<T>()) };
+
         // SAFETY: We have checked that the number of bytes remaining is at least the size of `T`
         // and that the cursor is properly aligned with respect to the type `T`. All other safety
         // requirements are the same as for `Self::read`.
@@ -746,6 +747,8 @@ impl<'a> VmWriter<'a, Infallible> {
         let cursor = self.cursor.cast::<T>();
         assert!(cursor.is_aligned());
 
+        const { assert!(pod_once_impls::is_non_tearing::<T>()) };
+
         // SAFETY: We have checked that the number of bytes remaining is at least the size of `T`
         // and that the cursor is properly aligned with respect to the type `T`. All other safety
         // requirements are the same as for `Self::writer`.
@@ -926,27 +929,35 @@ impl<'a> From<&'a mut [u8]> for VmWriter<'a, Infallible> {
 
 /// A marker trait for POD types that can be read or written with one instruction.
 ///
-/// We currently rely on this trait to ensure that the memory operation created by
-/// `ptr::read_volatile` and `ptr::write_volatile` doesn't tear. However, the Rust documentation
-/// makes no such guarantee, and even the wording in the LLVM LangRef is ambiguous.
-///
-/// At this point, we can only _hope_ that this doesn't break in future versions of the Rust or
-/// LLVM compilers. However, this is unlikely to happen in practice, since the Linux kernel also
-/// uses "volatile" semantics to implement `READ_ONCE`/`WRITE_ONCE`.
+/// This trait is mostly a hint, since it's safe and can be implemented for _any_ POD type. If it
+/// is implemented for a type that cannot be read or written with a single instruction, calling
+/// `read_once`/`write_once` will lead to a failed compile-time assertion.
 pub trait PodOnce: Pod {}
 
-impl<T: Pod> PodOnce for T where Assert<{ is_pod_once::<T>() }>: IsTrue {}
+#[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
+mod pod_once_impls {
+    use super::PodOnce;
 
-#[cfg(target_arch = "x86_64")]
-const fn is_pod_once<T: Pod>() -> bool {
-    let size = size_of::<T>();
+    impl PodOnce for u8 {}
+    impl PodOnce for u16 {}
+    impl PodOnce for u32 {}
+    impl PodOnce for u64 {}
+    impl PodOnce for usize {}
+    impl PodOnce for i8 {}
+    impl PodOnce for i16 {}
+    impl PodOnce for i32 {}
+    impl PodOnce for i64 {}
+    impl PodOnce for isize {}
 
-    size == 1 || size == 2 || size == 4 || size == 8
-}
+    /// Checks whether the memory operation created by `ptr::read_volatile` and
+    /// `ptr::write_volatile` doesn't tear.
+    ///
+    /// Note that the Rust documentation makes no such guarantee, and even the wording in the LLVM
+    /// LangRef is ambiguous. But this is unlikely to break in practice because the Linux kernel
+    /// also uses "volatile" semantics to implement `READ_ONCE`/`WRITE_ONCE`.
+    pub(super) const fn is_non_tearing<T>() -> bool {
+        let size = core::mem::size_of::<T>();
 
-#[cfg(target_arch = "riscv64")]
-const fn is_pod_once<T: Pod>() -> bool {
-    let size = size_of::<T>();
-
-    size == 1 || size == 2 || size == 4 || size == 8
+        size == 1 || size == 2 || size == 4 || size == 8
+    }
 }

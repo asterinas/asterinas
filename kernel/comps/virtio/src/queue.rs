@@ -13,7 +13,7 @@ use aster_util::{field_ptr, safe_ptr::SafePtr};
 use bitflags::bitflags;
 use log::debug;
 use ostd::{
-    mm::{DmaCoherent, FrameAllocOptions},
+    mm::{DmaCoherent, FrameAllocOptions, PodOnce},
     offset_of, Pod,
 };
 
@@ -445,6 +445,8 @@ bitflags! {
     }
 }
 
+impl PodOnce for DescFlags {}
+
 /// The driver uses the available ring to offer buffers to the device:
 /// each ring entry refers to the head of a descriptor chain.
 /// It is only written by the driver and read by the device.
@@ -487,3 +489,5 @@ bitflags! {
         const VIRTQ_AVAIL_F_NO_INTERRUPT = 1;
     }
 }
+
+impl PodOnce for AvailFlags {}

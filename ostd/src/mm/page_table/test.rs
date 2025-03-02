@@ -146,10 +146,7 @@ fn test_user_copy_on_write() {
     assert!(child_pt.query(from.start + 10).is_none());
 }
 
-impl<M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTable<M, E, C>
-where
-    [(); C::NR_LEVELS as usize]:,
-{
+impl<M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTable<M, E, C> {
     fn protect(&self, range: &Range<Vaddr>, mut op: impl FnMut(&mut PageProperty)) {
         let mut cursor = self.cursor_mut(range).unwrap();
         loop {
