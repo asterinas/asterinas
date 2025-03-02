@@ -3,12 +3,17 @@
 #![expect(dead_code)]
 
 use alloc::{vec, vec::Vec};
+use core::ptr::NonNull;
 
 use acpi::PlatformInfo;
 use bit_field::BitField;
 use cfg_if::cfg_if;
 use log::info;
 use spin::Once;
+use volatile::{
+    access::{ReadWrite, WriteOnly},
+    VolatileRef,
+};
 
 use crate::{
     arch::{iommu::has_interrupt_remapping, x86::kernel::acpi::ACPI_TABLES},
@@ -117,7 +122,7 @@ impl IoApic {
     }
 
     pub fn vaddr(&self) -> usize {
-        self.access.register.addr()
+        self.access.register.as_ptr().as_raw_ptr().addr().get()
     }
 
     fn new(io_apic_access: IoApicAccess, interrupt_base: u32) -> Self {
@@ -130,8 +135,8 @@ impl IoApic {
 }
 
 struct IoApicAccess {
-    register: *mut u32,
-    data: *mut u32,
+    register: VolatileRef<'static, u32, WriteOnly>,
+    data: VolatileRef<'static, u32, ReadWrite>,
 }
 
 impl IoApicAccess {
@@ -139,27 +144,20 @@ impl IoApicAccess {
     ///
     /// User must ensure the base address is valid.
     unsafe fn new(base_address: usize) -> Self {
-        let vaddr = paddr_to_vaddr(base_address);
-        Self {
-            register: vaddr as *mut u32,
-            data: (vaddr + 0x10) as *mut u32,
-        }
+        let base = NonNull::new(paddr_to_vaddr(base_address) as *mut u8).unwrap();
+        let register = VolatileRef::new_restricted(WriteOnly, base.cast::<u32>());
+        let data = VolatileRef::new(base.add(0x10).cast::<u32>());
+        Self { register, data }
     }
 
     pub fn read(&mut self, register: u8) -> u32 {
-        // SAFETY: Since the base address is valid, the read/write should be safe.
-        unsafe {
-            self.register.write_volatile(register as u32);
-            self.data.read_volatile()
-        }
+        self.register.as_mut_ptr().write(register as u32);
+        self.data.as_ptr().read()
     }
 
     pub fn write(&mut self, register: u8, data: u32) {
-        // SAFETY: Since the base address is valid, the read/write should be safe.
-        unsafe {
-            self.register.write_volatile(register as u32);
-            self.data.write_volatile(data);
-        }
+        self.register.as_mut_ptr().write(register as u32);
+        self.data.as_mut_ptr().write(data);
     }
 
     pub fn id(&mut self) -> u8 {
@@ -178,11 +176,6 @@ impl IoApicAccess {
         (self.read(1).get_bits(16..24) + 1) as u8
     }
 }
-
-/// # Safety: The pointer inside the IoApic will not change
-unsafe impl Send for IoApic {}
-/// # Safety: The pointer inside the IoApic will not change
-unsafe impl Sync for IoApic {}
 
 pub static IO_APIC: Once<Vec<SpinLock<IoApic>>> = Once::new();
 
