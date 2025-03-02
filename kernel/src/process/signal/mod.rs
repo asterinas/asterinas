@@ -48,8 +48,19 @@ pub fn handle_pending_signal(
     ctx: &Context,
     syscall_number: Option<usize>,
 ) {
-    // We first deal with signal in current thread, then signal in current process.
+    let syscall_restart = if let Some(syscall_number) = syscall_number
+        && user_ctx.syscall_ret() == -(Errno::ERESTARTSYS as i32) as usize
+    {
+        // We should never return `ERESTARTSYS` to the userspace.
+        user_ctx.set_syscall_ret(-(Errno::EINTR as i32) as usize);
+        Some(syscall_number)
+    } else {
+        None
+    };
+
     let posix_thread = ctx.posix_thread;
+    let current = ctx.process;
+
     let signal = {
         let sig_mask = posix_thread.sig_mask().load(Ordering::Relaxed);
         if let Some(signal) = posix_thread.dequeue_signal(&sig_mask) {
@@ -58,13 +69,14 @@ pub fn handle_pending_signal(
             return;
         }
     };
-
     let sig_num = signal.num();
     trace!("sig_num = {:?}, sig_name = {}", sig_num, sig_num.sig_name());
-    let current = posix_thread.process();
+
     let mut sig_dispositions = current.sig_dispositions().lock();
+
     let sig_action = sig_dispositions.get(sig_num);
     trace!("sig action: {:x?}", sig_action);
+
     match sig_action {
         SigAction::Ign => {
             trace!("Ignore signal {:?}", sig_num);
@@ -75,15 +87,17 @@ pub fn handle_pending_signal(
             restorer_addr,
             mask,
         } => {
-            if let Some(syscall_number) = syscall_number
-                && user_ctx.syscall_ret() == -(Errno::ERESTARTSYS as i32) as usize
+            if let Some(syscall_number) = syscall_restart
+                && flags.contains(SigActionFlags::SA_RESTART)
             {
-                if flags.contains(SigActionFlags::SA_RESTART) {
-                    user_ctx.set_syscall_num(syscall_number);
-                    user_ctx.set_instruction_pointer(user_ctx.instruction_pointer() - 2);
-                } else {
-                    user_ctx.set_syscall_ret(-(Errno::EINTR as i32) as usize);
-                }
+                #[cfg(target_arch = "x86_64")]
+                const SYSCALL_INSTR_LEN: usize = 2; // syscall
+                #[cfg(target_arch = "riscv64")]
+                const SYSCALL_INSTR_LEN: usize = 4; // ecall
+
+                user_ctx.set_syscall_num(syscall_number);
+                user_ctx
+                    .set_instruction_pointer(user_ctx.instruction_pointer() - SYSCALL_INSTR_LEN);
             }
 
             if flags.contains(SigActionFlags::SA_RESETHAND) {

@@ -85,7 +85,7 @@ impl<M: AnyFrameMeta> Segment<M> {
         if range.start % PAGE_SIZE != 0 || range.end % PAGE_SIZE != 0 {
             return Err(GetFrameError::NotAligned);
         }
-        if range.end >= super::MAX_PADDR.load(Ordering::Relaxed) {
+        if range.end > super::MAX_PADDR.load(Ordering::Relaxed) {
             return Err(GetFrameError::OutOfBound);
         }
         assert!(range.start < range.end);

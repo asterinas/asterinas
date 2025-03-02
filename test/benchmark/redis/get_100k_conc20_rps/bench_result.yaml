@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: true
+  threshold: 125%
+chart:
+  description: redis-benchmark -n 100000 -c 20 -t get
+  legend: Average RPS of GET over virtio-net between Host Linux and Guest {system}
+  title: Redis GET performance (virtio-net, 20 concurrency, 100K requests)
+  unit: request per second
+result_extraction:
+  result_index: 3
+  search_pattern: 'throughput summary: +[0-9.]+'

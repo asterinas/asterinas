@@ -1,0 +1,13 @@
+alert:
+  bigger_is_better: true
+  threshold: 125%
+chart:
+  description: memaslap -t 30s -T 8 -c 32 -w 20k -S 1s
+  legend: Average OPS of SET and GET over virtio-net between Host Linux and Guest
+    {system}
+  title: Memaslap 10% SET and 90% GET throughput (virtio-net, 8 client threads, 32
+    concurrency, 20k window)
+  unit: operations per second
+result_extraction:
+  result_index: 5
+  search_pattern: 'Run time: [0-9]+'

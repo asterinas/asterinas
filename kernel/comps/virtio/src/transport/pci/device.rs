@@ -163,7 +163,7 @@ impl VirtioTransport for VirtioPciModernTransport {
         let device_feature_high = field_ptr!(&self.common_cfg, VirtioPciCommonCfg, device_features)
             .read_once()
             .unwrap() as u64;
-        device_feature_high << 32 | device_feature_low as u64
+        (device_feature_high << 32) | device_feature_low as u64
     }
 
     fn write_driver_features(&mut self, features: u64) -> Result<(), VirtioTransportError> {

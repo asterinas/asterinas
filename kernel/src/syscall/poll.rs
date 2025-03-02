@@ -68,28 +68,24 @@ pub fn do_poll(poll_fds: &[PollFd], timeout: Option<&Duration>, ctx: &Context) -
         PollFiles::new_owned(poll_fds, &file_table_locked)
     };
 
-    let poller = match poll_files.register_poller() {
+    let poller = match poll_files.register_poller(timeout) {
         PollerResult::Registered(poller) => poller,
         PollerResult::FoundEvents(num_events) => return Ok(num_events),
     };
 
     loop {
-        match poller.wait(timeout) {
-            Ok(_) => {}
-            Err(e) if e.error() == Errno::ETIME => {
-                // The return value is zero if the timeout expires
-                // before any file descriptors became ready
-                return Ok(0);
-            }
-            Err(e) => return Err(e),
+        match poller.wait() {
+            Ok(()) => (),
+            // We should return zero if the timeout expires
+            // before any file descriptors are ready.
+            Err(err) if err.error() == Errno::ETIME => return Ok(0),
+            Err(err) => return Err(err),
         };
 
         let num_events = poll_files.count_events();
         if num_events > 0 {
             return Ok(num_events);
         }
-
-        // FIXME: We need to update `timeout` since we have waited for some time.
     }
 }
 
@@ -136,8 +132,8 @@ enum PollerResult {
 
 impl PollFiles<'_> {
     /// Registers the files with a poller, or exits early if some events are detected.
-    fn register_poller(&self) -> PollerResult {
-        let mut poller = Poller::new();
+    fn register_poller(&self, timeout: Option<&Duration>) -> PollerResult {
+        let mut poller = Poller::new(timeout);
 
         for (index, poll_fd) in self.poll_fds.iter().enumerate() {
             let events = if let Some(file) = self.file_at(index) {

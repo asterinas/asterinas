@@ -31,7 +31,7 @@ const HPET_FREQ: usize = 1_000_000_000_000_000;
 #[repr(C)]
 struct HpetTimerRegister {
     configuration_and_capabilities_register: u32,
-    timer_compartor_value_register: u32,
+    timer_comparator_value_register: u32,
     fsb_interrupt_route_register: u32,
 }
 

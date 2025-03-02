@@ -30,6 +30,7 @@ use crate::syscall::{
     fsync::{sys_fdatasync, sys_fsync},
     futex::sys_futex,
     get_priority::sys_get_priority,
+    getcpu::sys_getcpu,
     getcwd::sys_getcwd,
     getdents64::{sys_getdents, sys_getdents64},
     getegid::sys_getegid,
@@ -329,6 +330,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_PREADV = 295           => sys_preadv(args[..4]);
     SYS_PWRITEV = 296          => sys_pwritev(args[..4]);
     SYS_PRLIMIT64 = 302        => sys_prlimit64(args[..4]);
+    SYS_GETCPU = 309           => sys_getcpu(args[..3]);
     SYS_SCHED_SETATTR = 314    => sys_sched_setattr(args[..3]);
     SYS_SCHED_GETATTR = 315    => sys_sched_getattr(args[..4]);
     SYS_GETRANDOM = 318        => sys_getrandom(args[..3]);

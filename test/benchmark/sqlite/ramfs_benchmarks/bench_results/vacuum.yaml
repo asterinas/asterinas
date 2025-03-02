@@ -1,0 +1,12 @@
+alert:
+  bigger_is_better: false
+  threshold: 125%
+chart:
+  description: 'sqlite-speed-test: repacking database file into a minimal amount of
+    disk space'
+  legend: The speed of VACUUM on {system} (Ramfs)
+  title: '[Ramfs] The ''VACUUM'' result of sqlite speedtest'
+  unit: second
+result_extraction:
+  result_index: 4
+  search_pattern: VACUUM....

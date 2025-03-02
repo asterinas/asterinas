@@ -38,6 +38,7 @@ mod fork;
 mod fsync;
 mod futex;
 mod get_priority;
+mod getcpu;
 mod getcwd;
 mod getdents64;
 mod getegid;

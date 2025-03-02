@@ -1,0 +1,8 @@
+benchmarks:
+  - http_file4KB_bw
+  - http_file8KB_bw
+  - http_file16KB_bw
+  - http_file32KB_bw
+  - http_file64KB_bw
+  # - http_req10k_conc1_bw
+  # - http_req10k_conc20_bw

@@ -13,6 +13,7 @@ RUN apt update && apt-get install -y --no-install-recommends \
     apache2-utils \
     build-essential \ 
     ca-certificates \ 
+    clang \
     cmake \
     curl \ 
     git-core \ 
@@ -26,7 +27,7 @@ RUN apt update && apt-get install -y --no-install-recommends \
     unzip \
     wget \
     zip
-RUN pip install yq
+RUN pip3 install yq tomli
 
 #= Download dependency =====================================================
 
@@ -236,9 +237,9 @@ RUN rm -rf memcached-1.6.32.tar.gz \
 # Install Apache httpd v2.4.62
 WORKDIR /root
 RUN apt-get install -y --no-install-recommends libapr1-dev libaprutil1-dev libpcre2-dev
-RUN wget https://dlcdn.apache.org/httpd/httpd-2.4.62.tar.bz2 \ 
-    && tar xvf httpd-2.4.62.tar.bz2 \
-    && cd httpd-2.4.62 \ 
+RUN wget https://dlcdn.apache.org/httpd/httpd-2.4.63.tar.bz2 \ 
+    && tar xvf httpd-2.4.63.tar.bz2 \
+    && cd httpd-2.4.63 \ 
     && ./configure \ 
     --disable-authn-file \
     --disable-authz-groupfile \
@@ -261,8 +262,8 @@ RUN wget https://dlcdn.apache.org/httpd/httpd-2.4.62.tar.bz2 \
     && make -j \ 
     && make install 
 
-RUN rm -rf httpd-2.4.62.tar.bz2 \
-    httpd-2.4.62
+RUN rm -rf httpd-2.4.63.tar.bz2 \
+    httpd-2.4.63
 
 # Install wrk
 WORKDIR /root
@@ -316,7 +317,7 @@ FROM build-qemu as qemu
 # The QEMU version in the Ubuntu 22.04 repository is 6.*, which has a bug to cause OVMF debug to fail.
 # The libslirp dependency is for QEMU's network backend.
 WORKDIR /root
-RUN wget -O qemu.tar.xz https://download.qemu.org/qemu-8.2.1.tar.xz \ 
+RUN wget -O qemu.tar.xz https://download.qemu.org/qemu-9.1.0.tar.xz \ 
     && mkdir /root/qemu \ 
     && tar xf qemu.tar.xz --strip-components=1 -C /root/qemu \ 
     && rm qemu.tar.xz

@@ -1,0 +1,45 @@
+benchmarks:
+  - mem_pagefault_lat
+  - mem_mmap_bw
+  - mem_mmap_lat
+  - process_getppid_lat
+  - process_ctx_lat
+  - process_fork_lat
+  - process_exec_lat
+  - process_shell_lat
+  - signal_install_lat
+  - signal_catch_lat
+  - signal_prot_lat
+  - pipe_lat
+  - pipe_bw
+  - fifo_lat
+  - unix_lat
+  - unix_bw
+  - unix_connect_lat
+  - vfs_open_lat
+  - vfs_read_lat
+  - vfs_write_lat
+  - vfs_stat_lat
+  - vfs_fstat_lat
+  - vfs_read_pagecache_bw
+  - vfs_select_lat
+  - ramfs_copy_files_bw
+  - ramfs_create_delete_files_0k_ops
+  - ramfs_create_delete_files_10k_ops
+  - ext2_copy_files_bw
+  - tcp_loopback_bw_128
+  - tcp_loopback_bw_4k
+  - tcp_loopback_bw_64k
+  - tcp_loopback_lat
+  - tcp_loopback_select_lat
+  - tcp_loopback_http_bw
+  - udp_loopback_lat
+  - tcp_virtio_bw_128
+  - tcp_virtio_bw_64k
+  - tcp_virtio_connect_lat
+  - tcp_virtio_lat
+  - udp_virtio_lat
+  - # mem_copy_bw
+  - # mem_read_bw
+  - # mem_write_bw
+  - # vfs_fcntl_lat

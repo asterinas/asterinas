@@ -73,7 +73,7 @@ const fn nr_pte_index_bits<C: PagingConstsTrait>() -> usize {
 
 /// The index of a VA's PTE in a page table node at the given level.
 const fn pte_index<C: PagingConstsTrait>(va: Vaddr, level: PagingLevel) -> usize {
-    va >> (C::BASE_PAGE_SIZE.ilog2() as usize + nr_pte_index_bits::<C>() * (level as usize - 1))
+    (va >> (C::BASE_PAGE_SIZE.ilog2() as usize + nr_pte_index_bits::<C>() * (level as usize - 1)))
         & (nr_subpage_per_huge::<C>() - 1)
 }
 

@@ -27,6 +27,7 @@ use crate::syscall::{
     fsync::{sys_fdatasync, sys_fsync},
     futex::sys_futex,
     get_priority::sys_get_priority,
+    getcpu::sys_getcpu,
     getcwd::sys_getcwd,
     getdents64::sys_getdents64,
     getegid::sys_getegid,
@@ -240,6 +241,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_GETRUSAGE = 165          => sys_getrusage(args[..2]);
     SYS_UMASK = 166              => sys_umask(args[..1]);
     SYS_PRCTL = 167              => sys_prctl(args[..5]);
+    SYS_GETCPU = 168             => sys_getcpu(args[..3]);
     SYS_GETTIMEOFDAY = 169       => sys_gettimeofday(args[..1]);
     SYS_GETPID = 172             => sys_getpid(args[..0]);
     SYS_GETPPID = 173            => sys_getppid(args[..0]);

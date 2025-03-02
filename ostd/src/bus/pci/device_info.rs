@@ -141,7 +141,7 @@ impl PciDeviceLocation {
         let mask = (0xFF << dest) as u32;
         self.write32(
             offset & Self::BIT32_ALIGN_MASK,
-            ((val as u32) << dest | (old & !mask)).to_le(),
+            (((val as u32) << dest) | (old & !mask)).to_le(),
         );
     }
 
@@ -151,7 +151,7 @@ impl PciDeviceLocation {
         let mask = (0xFFFF << dest) as u32;
         self.write32(
             offset & Self::BIT32_ALIGN_MASK,
-            ((val as u32) << dest | (old & !mask)).to_le(),
+            (((val as u32) << dest) | (old & !mask)).to_le(),
         );
     }
 

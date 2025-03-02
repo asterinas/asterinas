@@ -13,7 +13,7 @@ use inferno::flamegraph;
 use crate::{
     cli::{ProfileArgs, ProfileFormat},
     commands::util::bin_file_name,
-    util::{get_current_crates, get_target_directory},
+    util::{get_kernel_crate, get_target_directory},
 };
 use regex::Regex;
 use std::{
@@ -58,7 +58,7 @@ macro_rules! profile_round_delimiter {
 fn do_collect_stack_traces(args: &ProfileArgs) {
     let file_path = get_target_directory()
         .join("osdk")
-        .join(get_current_crates().remove(0).name)
+        .join(get_kernel_crate().name)
         .join(bin_file_name());
 
     let remote = &args.remote;
