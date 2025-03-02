@@ -8,7 +8,7 @@ use crate::{
     mm::{
         page_prop::{CachePolicy, PageFlags, PrivilegedPageFlags as PrivFlags},
         page_table::{PageTableEntryTrait, PageTableMode},
-        Paddr, PageProperty, PagingConstsTrait, PagingLevel, Vaddr,
+        Paddr, PageProperty, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
     },
     util::SameSizeAs,
     Pod,
@@ -77,6 +77,8 @@ impl PageTableEntry {
 
 // SAFETY: `PageTableEntry` has the same size as `usize` in our supported x86 architecture.
 unsafe impl SameSizeAs<usize> for PageTableEntry {}
+
+impl PodOnce for PageTableEntry {}
 
 impl PageTableEntryTrait for PageTableEntry {
     fn new_page(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self {

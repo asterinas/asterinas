@@ -13,7 +13,7 @@ use crate::{
     mm::{
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags as PrivFlags},
         page_table::PageTableEntryTrait,
-        Paddr, PagingConstsTrait, PagingLevel, Vaddr, PAGE_SIZE,
+        Paddr, PagingConstsTrait, PagingLevel, PodOnce, Vaddr, PAGE_SIZE,
     },
     util::SameSizeAs,
     Pod,
@@ -166,6 +166,8 @@ macro_rules! parse_flags {
 
 // SAFETY: `PageTableEntry` has the same size as `usize`
 unsafe impl SameSizeAs<usize> for PageTableEntry {}
+
+impl PodOnce for PageTableEntry {}
 
 impl PageTableEntryTrait for PageTableEntry {
     fn is_present(&self) -> bool {

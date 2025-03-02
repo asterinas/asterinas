@@ -23,9 +23,7 @@ use crate::{
 pub(in crate::mm) enum Child<
     E: PageTableEntryTrait = PageTableEntry,
     C: PagingConstsTrait = PagingConsts,
-> where
-    [(); C::NR_LEVELS as usize]:,
-{
+> {
     PageTable(RawPageTableNode<E, C>),
     Frame(Frame<dyn AnyFrameMeta>, PageProperty),
     /// Pages not tracked by handles.
@@ -33,10 +31,7 @@ pub(in crate::mm) enum Child<
     None,
 }
 
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> Child<E, C>
-where
-    [(); C::NR_LEVELS as usize]:,
-{
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> Child<E, C> {
     /// Returns whether the child does not map to anything.
     pub(in crate::mm) fn is_none(&self) -> bool {
         matches!(self, Child::None)
