@@ -304,23 +304,25 @@ where
 
     /// Goes up a level.
     ///
-    /// We release the current page if it has no mappings since the cursor
-    /// only moves forward. And if needed we will do the final cleanup using
-    /// this method after re-walk when the cursor is dropped.
-    ///
-    /// This method requires locks acquired before calling it. The discarded
-    /// level will be unlocked.
+    /// This method releases the previously acquired lock at the discarded level.
     fn pop_level(&mut self) {
+        debug_assert!(self.guards[self.level as usize - 1].is_some());
         self.guards[self.level as usize - 1] = None;
+
         self.level += 1;
 
-        // TODO: Drop page tables if page tables become empty.
+        // TODO: Drop the page table if it is empty (it may be necessary to
+        // rewalk from the top if all the locks have been released).
     }
 
     /// Goes down a level to a child page table.
+    ///
+    /// The lock on the child page table is held until the next [`Self::pop_level`]
+    /// call at the same level.
     fn push_level(&mut self, child_pt: PageTableNode<E, C>) {
         self.level -= 1;
         debug_assert_eq!(self.level, child_pt.level());
+
         self.guards[self.level as usize - 1] = Some(child_pt);
     }
 
