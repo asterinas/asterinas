@@ -375,6 +375,13 @@ fn clone_child_process(
     // Sets parent process and group for child process.
     set_parent_and_group(process, &child);
 
+    // Updates `has_child_subreaper` for the child process after inserting
+    // it to its parent's children to make sure the `has_child_subreaper`
+    // state of the child process will be consistent with its parent.
+    if process.has_child_subreaper.load(Ordering::Relaxed) {
+        child.has_child_subreaper.store(true, Ordering::Relaxed);
+    }
+
     Ok(child)
 }
 
