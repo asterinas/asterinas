@@ -17,6 +17,7 @@ Inh  = "Inh"
 DELET = "DELET"
 wrk = "wrk"
 rto = "rto"
+typ = "typ"
 
 # Files with svg suffix are ignored to check. 
 [type.svg]
