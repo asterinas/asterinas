@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use self::timer_manager::PosixTimerManager;
 use super::{
@@ -87,6 +87,21 @@ pub struct Process {
     /// According to POSIX.1, the nice value is a per-process attribute,
     /// the threads in a process should share a nice value.
     nice: AtomicNice,
+
+    // Child reaper attribute
+    /// Whether the process is a child subreaper.
+    ///
+    /// A subreaper can be considered as a sort of "sub-init".
+    /// Instead of letting the init process to reap all orphan zombie processes,
+    /// a subreaper can reap orphan zombie processes among its descendants.
+    is_child_subreaper: AtomicBool,
+
+    /// Whether the process has a subreaper that will reap it when the
+    /// process becomes orphaned.
+    ///  
+    /// If `has_child_subreaper` is true in a `Process`, this attribute should
+    /// also be true for all of its descendants.
+    pub(super) has_child_subreaper: AtomicBool,
 
     // Signal
     /// Sig dispositions
@@ -197,6 +212,8 @@ impl Process {
             parent: ParentProcess::new(parent),
             children: Mutex::new(BTreeMap::new()),
             process_group: Mutex::new(Weak::new()),
+            is_child_subreaper: AtomicBool::new(false),
+            has_child_subreaper: AtomicBool::new(false),
             sig_dispositions,
             parent_death_signal: AtomicSigNum::new_empty(),
             exit_signal: AtomicSigNum::new_empty(),
@@ -666,6 +683,48 @@ impl Process {
     /// Returns a reference to the process status.
     pub fn status(&self) -> &ProcessStatus {
         &self.status
+    }
+
+    // ******************* Subreaper ********************
+
+    /// Sets the child subreaper attribute of the current process.
+    pub fn set_child_subreaper(&self) {
+        self.is_child_subreaper.store(true, Ordering::Release);
+        let has_child_subreaper = self.has_child_subreaper.fetch_or(true, Ordering::AcqRel);
+        if !has_child_subreaper {
+            self.propagate_has_child_subreaper();
+        }
+    }
+
+    /// Unsets the child subreaper attribute of the current process.
+    pub fn unset_child_subreaper(&self) {
+        self.is_child_subreaper.store(false, Ordering::Release);
+    }
+
+    /// Returns whether this process is a child subreaper.
+    pub fn is_child_subreaper(&self) -> bool {
+        self.is_child_subreaper.load(Ordering::Acquire)
+    }
+
+    /// Sets all descendants of the current process as having child subreaper.
+    fn propagate_has_child_subreaper(&self) {
+        let mut process_queue = VecDeque::new();
+        let children = self.children().lock();
+        for child_process in children.values() {
+            if !child_process.has_child_subreaper.load(Ordering::Acquire) {
+                process_queue.push_back(child_process.clone());
+            }
+        }
+
+        while let Some(process) = process_queue.pop_front() {
+            process.has_child_subreaper.store(true, Ordering::Release);
+            let children = process.children().lock();
+            for child_process in children.values() {
+                if !child_process.has_child_subreaper.load(Ordering::Acquire) {
+                    process_queue.push_back(child_process.clone());
+                }
+            }
+        }
     }
 }
 
