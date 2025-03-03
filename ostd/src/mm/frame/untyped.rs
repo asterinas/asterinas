@@ -34,19 +34,12 @@ pub type UFrame = Frame<dyn AnyUFrameMeta>;
 
 /// Makes a structure usable as untyped frame metadata.
 ///
-/// Directly implementing [`AnyFrameMeta`] is not safe since the size and
-/// alignment must be checked. This macro provides a safe way to implement both
-/// [`AnyFrameMeta`] and [`AnyUFrameMeta`] with compile-time checks.
-///
 /// If this macro is used for built-in typed frame metadata, it won't compile.
 #[macro_export]
 macro_rules! impl_untyped_frame_meta_for {
     // Implement without specifying the drop behavior.
     ($t:ty) => {
-        use static_assertions::const_assert;
-        const_assert!(size_of::<$t>() <= $crate::mm::frame::meta::FRAME_METADATA_MAX_SIZE);
-        const_assert!(align_of::<$t>() <= $crate::mm::frame::meta::FRAME_METADATA_MAX_ALIGN);
-        // SAFETY: The size and alignment of the structure are checked.
+        // SAFETY: Untyped frames can be safely read.
         unsafe impl $crate::mm::frame::meta::AnyFrameMeta for $t {
             fn is_untyped(&self) -> bool {
                 true
@@ -56,12 +49,7 @@ macro_rules! impl_untyped_frame_meta_for {
     };
     // Implement with a customized drop function.
     ($t:ty, $body:expr) => {
-        use static_assertions::const_assert;
-        const_assert!(size_of::<$t>() <= $crate::mm::frame::meta::FRAME_METADATA_MAX_SIZE);
-        const_assert!(align_of::<$t>() <= $crate::mm::frame::meta::FRAME_METADATA_MAX_ALIGN);
-        // SAFETY: The size and alignment of the structure are checked.
-        // Outside OSTD the user cannot implement a `on_drop` method for typed
-        // frames. And untyped frames can be safely read.
+        // SAFETY: Untyped frames can be safely read.
         unsafe impl $crate::mm::frame::meta::AnyFrameMeta for $t {
             fn on_drop(&mut self, reader: &mut $crate::mm::VmReader<$crate::mm::Infallible>) {
                 $body
