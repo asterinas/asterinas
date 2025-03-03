@@ -8,7 +8,6 @@ use core::net::Ipv4Addr;
 
 use jhash::{jhash_1vals, jhash_3vals};
 use smoltcp::wire::{IpAddress, IpEndpoint, IpListenEndpoint};
-use static_assertions::const_assert;
 
 use crate::{
     ext::Ext,
@@ -154,8 +153,8 @@ const LISTENER_BUCKET_MASK: u32 = LISTENER_BUCKET_COUNT - 1;
 const CONNECTION_BUCKET_COUNT: u32 = 2;
 const CONNECTION_BUCKET_MASK: u32 = CONNECTION_BUCKET_COUNT - 1;
 
-const_assert!(LISTENER_BUCKET_COUNT.is_power_of_two());
-const_assert!(CONNECTION_BUCKET_COUNT.is_power_of_two());
+const _: () = assert!(LISTENER_BUCKET_COUNT.is_power_of_two());
+const _: () = assert!(CONNECTION_BUCKET_COUNT.is_power_of_two());
 
 impl<E: Ext> SocketTable<E> {
     pub(crate) fn new() -> Self {

@@ -482,7 +482,8 @@ impl From<RawGroupDescriptor> for GroupDescriptor {
     }
 }
 
-const_assert!(core::mem::size_of::<RawGroupDescriptor>() == 32);
+// FIXME: Use `assert_eq!` once it's usable in the `const` block.
+const _: () = assert!(core::mem::size_of::<RawGroupDescriptor>() == 32);
 
 /// The raw block group descriptor.
 ///

@@ -49,7 +49,6 @@ use core::{
 
 use align_ext::AlignExt;
 use log::info;
-use static_assertions::const_assert_eq;
 
 use super::{allocator, Segment};
 use crate::{
@@ -124,8 +123,9 @@ pub(super) const REF_COUNT_MAX: u64 = i64::MAX as u64;
 
 type FrameMetaVtablePtr = core::ptr::DynMetadata<dyn AnyFrameMeta>;
 
-const_assert_eq!(PAGE_SIZE % META_SLOT_SIZE, 0);
-const_assert_eq!(size_of::<MetaSlot>(), META_SLOT_SIZE);
+// FIXME: Use `assert_eq!` once it's usable in the `const` block.
+const _: () = assert!(PAGE_SIZE % META_SLOT_SIZE == 0);
+const _: () = assert!(size_of::<MetaSlot>() == META_SLOT_SIZE);
 
 /// All frame metadata types must implement this trait.
 ///

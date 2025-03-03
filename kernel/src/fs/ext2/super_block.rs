@@ -415,7 +415,8 @@ pub enum RevLevel {
     Dynamic = 1,
 }
 
-const_assert!(core::mem::size_of::<RawSuperBlock>() == SUPER_BLOCK_SIZE);
+// FIXME: Use `assert_eq!` once it's usable in the `const` block.
+const _: () = assert!(core::mem::size_of::<RawSuperBlock>() == SUPER_BLOCK_SIZE);
 
 /// The raw superblock, it must be exactly 1024 bytes in length.
 #[repr(C)]

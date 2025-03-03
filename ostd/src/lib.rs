@@ -24,7 +24,6 @@
 #![warn(missing_docs)]
 
 extern crate alloc;
-extern crate static_assertions;
 
 pub mod arch;
 pub mod boot;

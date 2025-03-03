@@ -2218,7 +2218,7 @@ bitflags! {
     }
 }
 
-const_assert!(core::mem::size_of::<RawInode>() == 128);
+const _: () = assert!(core::mem::size_of::<RawInode>() == 128);
 
 /// The raw inode on device.
 #[repr(C)]

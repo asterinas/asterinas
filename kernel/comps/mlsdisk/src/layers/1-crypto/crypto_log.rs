@@ -5,7 +5,6 @@ use core::{any::Any, mem::size_of};
 
 use ostd_pod::Pod;
 use serde::{Deserialize, Serialize};
-use static_assertions::const_assert;
 
 use super::{Iv, Key, Mac};
 use crate::{
@@ -117,7 +116,7 @@ struct MhtNode {
     header: MhtNodeHeader,
     entries: [MhtNodeEntry; MHT_NBRANCHES],
 }
-const_assert!(size_of::<MhtNode>() <= BLOCK_SIZE);
+const _: () = assert!(size_of::<MhtNode>() <= BLOCK_SIZE);
 
 /// The header contains metadata of the current MHT node.
 #[repr(C)]
