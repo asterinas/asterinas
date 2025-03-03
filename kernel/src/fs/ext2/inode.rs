@@ -7,6 +7,7 @@ use alloc::{borrow::ToOwned, rc::Rc};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use inherit_methods_macro::inherit_methods;
+use ostd::mm::UntypedMem;
 
 use super::{
     block_ptr::{BidPath, BlockPtrs, Ext2Bid, BID_SIZE, MAX_BLOCK_PTRS},
@@ -1809,6 +1810,8 @@ impl InodeBlockManager {
 
         for dev_range in DeviceRangeReader::new(self, bid..bid + 1 as Ext2Bid)? {
             let start_bid = dev_range.start as Ext2Bid;
+            // TODO: Should we allocate the bio segment from the pool on reads?
+            // This may require an additional copy to the requested frame in the completion callback.
             let bio_segment = BioSegment::new_from_segment(
                 Segment::from(frame.clone()).into(),
                 BioDirection::FromDevice,
@@ -1856,10 +1859,12 @@ impl InodeBlockManager {
 
         for dev_range in DeviceRangeReader::new(self, bid..bid + 1 as Ext2Bid)? {
             let start_bid = dev_range.start as Ext2Bid;
-            let bio_segment = BioSegment::new_from_segment(
-                Segment::from(frame.clone()).into(),
-                BioDirection::ToDevice,
-            );
+            let bio_segment = BioSegment::alloc(1, BioDirection::ToDevice);
+            // This requires an additional copy to the pooled bio segment.
+            bio_segment
+                .writer()
+                .unwrap()
+                .write_fallible(&mut frame.reader().to_fallible())?;
             let waiter = self.fs().write_blocks_async(start_bid, bio_segment)?;
             bio_waiter.concat(waiter);
         }
