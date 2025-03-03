@@ -320,34 +320,89 @@ FN_TEST(async_connect)
 {
 	struct pollfd pfd = { .fd = sk_bound, .events = POLLOUT };
 	int err;
-	socklen_t errlen = sizeof(err);
+	socklen_t errlen;
 
 	sk_addr.sin_port = 0xbeef;
+
+#define ASYNC_CONNECT                                             \
+	TEST_ERRNO(connect(sk_bound, (struct sockaddr *)&sk_addr, \
+			   sizeof(sk_addr)),                      \
+		   EINPROGRESS);                                  \
+	TEST_RES(poll(&pfd, 1, 60),                               \
+		 pfd.revents == (POLLOUT | POLLHUP | POLLERR));
+
+	ASYNC_CONNECT;
+
+	// `getpeername` will fail with `ENOTCONN` even before the second `connect`.
+	errlen = sizeof(sk_addr);
+	TEST_ERRNO(getpeername(sk_bound, (struct sockaddr *)&sk_addr, &errlen),
+		   ENOTCONN);
+
+	// The second `connect` will fail with `ECONNREFUSED`.
 	TEST_ERRNO(connect(sk_bound, (struct sockaddr *)&sk_addr,
 			   sizeof(sk_addr)),
-		   EINPROGRESS);
+		   ECONNREFUSED);
 
-	TEST_RES(poll(&pfd, 1, 60), pfd.revents & POLLOUT);
-
-	TEST_RES(getsockopt(sk_bound, SOL_SOCKET, SO_ERROR, &err, &errlen),
-		 errlen == sizeof(err) && err == ECONNREFUSED);
+	ASYNC_CONNECT;
 
 	// Reading the socket error will cause it to be cleared
+	errlen = sizeof(err);
+	TEST_RES(getsockopt(sk_bound, SOL_SOCKET, SO_ERROR, &err, &errlen),
+		 errlen == sizeof(err) && err == ECONNREFUSED);
 	TEST_RES(getsockopt(sk_bound, SOL_SOCKET, SO_ERROR, &err, &errlen),
 		 errlen == sizeof(err) && err == 0);
+	TEST_RES(poll(&pfd, 1, 0), pfd.revents == (POLLOUT | POLLHUP));
+
+	// `listen` won't succeed until the second `connect`.
+	TEST_ERRNO(listen(sk_bound, 10), EINVAL);
+
+	// The second `connect` will fail with `ECONNABORTED` if the socket
+	// error is cleared.
+	TEST_ERRNO(connect(sk_bound, (struct sockaddr *)&sk_addr,
+			   sizeof(sk_addr)),
+		   ECONNABORTED);
+
+	ASYNC_CONNECT;
+
+	// Testing `send` behavior before and after the second `connect`.
+	TEST_ERRNO(send(sk_bound, &err, 0, 0), ECONNREFUSED);
+	TEST_ERRNO(send(sk_bound, &err, 0, 0), EPIPE);
+	TEST_ERRNO(connect(sk_bound, (struct sockaddr *)&sk_addr,
+			   sizeof(sk_addr)),
+		   ECONNABORTED);
+	TEST_ERRNO(send(sk_bound, &err, 0, 0), EPIPE);
+
+	ASYNC_CONNECT;
+
+	// Testing `recv` behavior before and after the second `connect`.
+	TEST_ERRNO(recv(sk_bound, &err, 0, 0), ECONNREFUSED);
+	TEST_RES(recv(sk_bound, &err, 0, 0), _ret == 0);
+	TEST_ERRNO(connect(sk_bound, (struct sockaddr *)&sk_addr,
+			   sizeof(sk_addr)),
+		   ECONNABORTED);
+	TEST_ERRNO(recv(sk_bound, &err, 0, 0), ENOTCONN);
+
+#undef ASYNC_CONNECT
 }
 END_TEST()
 
-void set_blocking(int sockfd)
+static void set_blocking(int sockfd, int is_blocking)
 {
 	int flags = CHECK(fcntl(sockfd, F_GETFL, 0));
-	CHECK(fcntl(sockfd, F_SETFL, flags & (~O_NONBLOCK)));
+
+	if (is_blocking) {
+		flags &= ~O_NONBLOCK;
+	} else {
+		flags |= O_NONBLOCK;
+	}
+
+	CHECK(fcntl(sockfd, F_SETFL, flags));
 }
 
 FN_SETUP(enter_blocking_mode)
 {
-	set_blocking(sk_connected);
-	set_blocking(sk_bound);
+	set_blocking(sk_connected, 1);
+	set_blocking(sk_bound, 1);
 }
 END_SETUP()
 
@@ -536,9 +591,17 @@ FN_TEST(bind_and_connect_same_address)
 
 	TEST_SUCC(listen(sk_listen, 3));
 
+	// For blocking sockets, conflict addresses result in `EADDRNOTAVAIL`.
 	sk_addr.sin_port = htons(listen_port);
 	TEST_SUCC(connect(sk_connect1, (struct sockaddr *)&sk_addr,
 			  sizeof(sk_addr)));
+	TEST_ERRNO(connect(sk_connect2, (struct sockaddr *)&sk_addr,
+			   sizeof(sk_addr)),
+		   EADDRNOTAVAIL);
+
+	// For non-blocking sockets, conflict addresses also result in `EADDRNOTAVAIL`.
+	// (`EINPROGRESS` should _not_ be returned in this case.)
+	set_blocking(sk_connect2, 0);
 	TEST_ERRNO(connect(sk_connect2, (struct sockaddr *)&sk_addr,
 			   sizeof(sk_addr)),
 		   EADDRNOTAVAIL);
