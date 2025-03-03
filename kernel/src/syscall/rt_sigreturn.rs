@@ -2,7 +2,10 @@
 
 use core::sync::atomic::Ordering;
 
-use ostd::{cpu::UserContext, user::UserContextApi};
+use ostd::{
+    cpu::{FpuState, UserContext},
+    user::UserContextApi,
+};
 
 use super::SyscallReturn;
 use crate::{prelude::*, process::signal::c_types::ucontext_t};
@@ -41,11 +44,8 @@ pub fn sys_rt_sigreturn(ctx: &Context, user_ctx: &mut UserContext) -> Result<Sys
     } else {
         thread_local.sig_context().set(Some(ucontext.uc_link));
     };
-    ucontext
-        .uc_mcontext
-        .inner
-        .gp_regs
-        .copy_to_raw(user_ctx.general_regs_mut());
+    ucontext.uc_mcontext.copy_to_context(user_ctx);
+    FpuState::restore_from(&ucontext.xsave_area);
 
     // unblock sig mask
     let sig_mask = ucontext.uc_sigmask;
