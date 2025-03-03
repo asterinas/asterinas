@@ -220,3 +220,4 @@ jobs:
           chart-title: ${{ env.TITLE }}
           chart-description: ${{ env.DESCRIPTION }}
           summary-json-path: test/benchmark/${{ env.BENCHMARK_SUITE }}/summary.json
+          ref: ${{ github.sha }}
