@@ -43,7 +43,7 @@ use core::{
     any::Any,
     cell::UnsafeCell,
     fmt::Debug,
-    mem::{size_of, MaybeUninit},
+    mem::{size_of, ManuallyDrop, MaybeUninit},
     result::Result,
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
 };
@@ -492,6 +492,8 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
     // SAFETY: It is required to be called here once.
     unsafe { crate::cpu::local::initialize_frame_metadata() };
 
+    mark_unusable_ranges();
+
     let meta_seg = Segment::from_unused(meta_pages..meta_pages + nr_meta_pages * PAGE_SIZE, |_| {
         MetaPageMeta {}
     })
@@ -542,6 +544,49 @@ fn alloc_meta_frames(tot_nr_frames: usize) -> (usize, Paddr) {
     }
 
     (nr_meta_pages, start_paddr)
+}
+
+/// The metadata of physical pages that are not usable for the kernel.
+#[derive(Debug)]
+pub struct UnusableMemoryMeta;
+impl_frame_meta_for!(UnusableMemoryMeta);
+
+/// The metadata of physical pages that I/O devices use.
+#[derive(Debug)]
+pub struct IOMemoryMeta;
+impl_frame_meta_for!(IOMemoryMeta);
+
+/// The metadata of physical pages that contains the kernel itself.
+#[derive(Debug, Default)]
+pub struct KernelMeta;
+impl_frame_meta_for!(KernelMeta);
+
+macro_rules! mark_ranges {
+    ($region: expr, $typ: expr) => {{
+        let start = $region.base().align_down(PAGE_SIZE);
+        let end = (start + $region.len()).align_up(PAGE_SIZE);
+
+        let seg = Segment::from_unused(start..end, |_| $typ).unwrap();
+        let _ = ManuallyDrop::new(seg);
+    }};
+}
+
+fn mark_unusable_ranges() {
+    let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
+
+    for region in regions.iter() {
+        use crate::boot::memory_region::MemoryRegionType;
+        match region.typ() {
+            MemoryRegionType::BadMemory => mark_ranges!(region, UnusableMemoryMeta),
+            MemoryRegionType::NonVolatileSleep => mark_ranges!(region, UnusableMemoryMeta),
+            MemoryRegionType::Reserved => mark_ranges!(region, UnusableMemoryMeta),
+            MemoryRegionType::Kernel => mark_ranges!(region, KernelMeta),
+            MemoryRegionType::Module => mark_ranges!(region, UnusableMemoryMeta),
+            MemoryRegionType::Framebuffer => mark_ranges!(region, IOMemoryMeta),
+            MemoryRegionType::Reclaimable => mark_ranges!(region, UnusableMemoryMeta),
+            MemoryRegionType::Usable => {} // By default it is initialized as usable.
+        }
+    }
 }
 
 /// Adds a temporary linear mapping for the metadata frames.
