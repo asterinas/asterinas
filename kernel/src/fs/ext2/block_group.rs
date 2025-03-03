@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use id_alloc::IdAlloc;
-use ostd::mm::UntypedMem;
+use ostd::{const_assert, mm::UntypedMem};
 
 use super::{
     block_ptr::Ext2Bid,

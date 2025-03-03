@@ -5,9 +5,9 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use smallvec::SmallVec;
-use static_assertions::const_assert_eq;
 
 use super::{num_cpus, CpuId};
+use crate::const_assert;
 
 /// A subset of all CPUs in the system.
 #[derive(Clone, Debug, Default)]
@@ -159,7 +159,7 @@ pub struct AtomicCpuSet {
 }
 
 type AtomicInnerPart = AtomicU64;
-const_assert_eq!(core::mem::size_of::<AtomicInnerPart>() * 8, BITS_PER_PART);
+const_assert!(core::mem::size_of::<AtomicInnerPart>() * 8 == BITS_PER_PART);
 
 impl AtomicCpuSet {
     /// Creates a new `AtomicCpuSet` with an initial value.

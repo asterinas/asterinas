@@ -52,7 +52,6 @@ rand = { version = "0.8.5", default-features = false, features = [
     "small_rng",
     "std_rng",
 ] }
-static_assertions = "1.1.0"
 inherit-methods-macro = { git = "https://github.com/asterinas/inherit-methods-macro", rev = "98f7e3e" }
 getset = "0.1.2"
 takeable = "0.2.2"

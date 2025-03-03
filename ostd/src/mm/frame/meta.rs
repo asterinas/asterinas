@@ -49,11 +49,11 @@ use core::{
 
 use align_ext::AlignExt;
 use log::info;
-use static_assertions::const_assert_eq;
 
 use super::{allocator, Segment};
 use crate::{
     arch::mm::PagingConsts,
+    const_assert,
     mm::{
         kspace::LINEAR_MAPPING_BASE_VADDR, paddr_to_vaddr, page_size, page_table::boot_pt,
         CachePolicy, Infallible, Paddr, PageFlags, PageProperty, PrivilegedPageFlags, Vaddr,
@@ -124,8 +124,8 @@ pub(super) const REF_COUNT_MAX: u64 = i64::MAX as u64;
 
 type FrameMetaVtablePtr = core::ptr::DynMetadata<dyn AnyFrameMeta>;
 
-const_assert_eq!(PAGE_SIZE % META_SLOT_SIZE, 0);
-const_assert_eq!(size_of::<MetaSlot>(), META_SLOT_SIZE);
+const_assert!(PAGE_SIZE % META_SLOT_SIZE == 0);
+const_assert!(size_of::<MetaSlot>() == META_SLOT_SIZE);
 
 /// All frame metadata types must implement this trait.
 ///
