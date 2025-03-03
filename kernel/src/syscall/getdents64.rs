@@ -28,6 +28,11 @@ pub fn sys_getdents(
     if inode_handle.dentry().type_() != InodeType::Dir {
         return_errno!(Errno::ENOTDIR);
     }
+
+    const MAX_GETDENTS_BUF_SIZE: usize = ((i32::MAX as usize) & !(0xFFF)) >> 1;
+    if buf_len > MAX_GETDENTS_BUF_SIZE {
+        return_errno_with_message!(Errno::EINVAL, "count is too large");
+    }
     let mut buffer = vec![0u8; buf_len];
     let mut reader = DirentBufferReader::<Dirent>::new(&mut buffer); // Use the non-64-bit reader
     let _ = inode_handle.readdir(&mut reader)?;
@@ -53,6 +58,11 @@ pub fn sys_getdents64(
     let inode_handle = file.as_inode_or_err()?;
     if inode_handle.dentry().type_() != InodeType::Dir {
         return_errno!(Errno::ENOTDIR);
+    }
+
+    const MAX_GETDENTS_BUF_SIZE: usize = ((i32::MAX as usize) & !(0xFFF)) >> 1;
+    if buf_len > MAX_GETDENTS_BUF_SIZE {
+        return_errno_with_message!(Errno::EINVAL, "count is too large");
     }
     let mut buffer = vec![0u8; buf_len];
     let mut reader = DirentBufferReader::<Dirent64>::new(&mut buffer);
