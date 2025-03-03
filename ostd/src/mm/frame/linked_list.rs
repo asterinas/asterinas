@@ -449,16 +449,8 @@ impl<M> Link<M> {
     }
 }
 
-// SAFETY: The size and alignment of `Link<M>` must be within the limits.
-// Also, if `M` is typed, `Link<M>` must not be untyped.
-//
-// FIXME: We would appreciate constant trait bounds very much, just like:
-// ```
-// Assert<{ core::mem::size_of::<Link<M>>() < FRAME_METADATA_MAX_SIZE }>: IsTrue,
-// Assert<{ core::mem::align_of::<Link<M>>() <= FRAME_METADATA_MAX_ALIGN }>: IsTrue,
-// ```
-// But due to the broken implementation of `generic_const_exprs` we can't do that.
-// It works for `M` that is declared inside OSTD but not for outside types.
+// SAFETY: If `M::on_drop` reads the page using the provided `VmReader`,
+// the safety is upheld by the one who implements `AnyFrameMeta` for `M`.
 unsafe impl<M> AnyFrameMeta for Link<M>
 where
     M: AnyFrameMeta,
