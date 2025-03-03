@@ -7,8 +7,8 @@ use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::net::Ipv4Addr;
 
 use jhash::{jhash_1vals, jhash_3vals};
+use ostd::const_assert;
 use smoltcp::wire::{IpAddress, IpEndpoint, IpListenEndpoint};
-use static_assertions::const_assert;
 
 use crate::{
     ext::Ext,

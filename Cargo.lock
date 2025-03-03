@@ -85,7 +85,6 @@ dependencies = [
  "ostd",
  "smoltcp",
  "spin",
- "static_assertions",
  "takeable",
 ]
 
@@ -100,7 +99,6 @@ dependencies = [
  "log",
  "ostd",
  "spin",
- "static_assertions",
 ]
 
 [[package]]
@@ -162,7 +160,6 @@ dependencies = [
  "ostd-pod",
  "postcard",
  "serde",
- "static_assertions",
 ]
 
 [[package]]
@@ -219,7 +216,6 @@ dependencies = [
  "rand",
  "riscv",
  "spin",
- "static_assertions",
  "takeable",
  "tdx-guest",
  "time",
@@ -1296,7 +1292,6 @@ dependencies = [
  "sbi-rt",
  "smallvec",
  "spin",
- "static_assertions",
  "tdx-guest",
  "unwinding",
  "volatile 0.6.1",
@@ -1631,12 +1626,6 @@ name = "stable_deref_trait"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
-
-[[package]]
-name = "static_assertions"
-version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "strsim"

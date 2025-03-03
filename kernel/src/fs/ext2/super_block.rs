@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use ostd::const_assert;
+
 use super::{inode::RawInode, prelude::*};
 
 /// The magic number of Ext2.
