@@ -8,4 +8,4 @@ chart:
   unit: number
 result_extraction:
   result_index: 2
-  search_pattern: ^0k\t[0-9]+
+  search_pattern: ^10k\t[0-9]+
