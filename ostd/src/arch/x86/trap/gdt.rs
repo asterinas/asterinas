@@ -61,6 +61,7 @@ pub unsafe fn init(on_bsp: bool) {
     //   STAR[47:32] = K_CS   = K_SS - 8
     //   STAR[63:48] = U_CS32 = U_SS32 - 8 = U_CS - 16
     let mut gdt = Vec::from(old_gdt);
+    gdt.resize(20, 0);
     gdt.extend([tss0, tss1, KCODE64, KDATA64, UCODE32, UDATA32, UCODE64].iter());
     let gdt = Vec::leak(gdt);
 
@@ -69,13 +70,10 @@ pub unsafe fn init(on_bsp: bool) {
         limit: gdt.len() as u16 * 8 - 1,
         base: VirtAddr::new(gdt.as_ptr() as _),
     });
-    load_tss(SegmentSelector::new(
-        entry_count as u16,
-        PrivilegeLevel::Ring0,
-    ));
+    load_tss(SegmentSelector::new(20, PrivilegeLevel::Ring0));
 
-    let sysret = SegmentSelector::new(entry_count as u16 + 4, PrivilegeLevel::Ring3).0;
-    let syscall = SegmentSelector::new(entry_count as u16 + 2, PrivilegeLevel::Ring0).0;
+    let sysret = SegmentSelector::new(20 + 4, PrivilegeLevel::Ring3).0;
+    let syscall = SegmentSelector::new(20 + 2, PrivilegeLevel::Ring0).0;
     Star::write_raw(sysret, syscall);
 
     USER_SS = sysret + 8;
