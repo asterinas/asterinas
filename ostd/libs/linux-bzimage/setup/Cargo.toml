@@ -21,11 +21,9 @@ uart_16550 = "0.3.0"
 xmas-elf = "0.9.1"
 
 [target.x86_64-unknown-none.dependencies]
-bitflags = "2.4.1"
 log = "0.4.20"
 uefi = { version = "0.32.0", features = ["global_allocator", "panic_handler", "logger", "qemu"]}
 uefi-raw = "0.8.0"
-x86_64 = "0.15.1"
 tdx-guest = { version = "0.2.1", optional = true }
 
 [features]
