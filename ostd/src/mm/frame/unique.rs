@@ -14,7 +14,6 @@ use crate::mm::{frame::mapping, Paddr, PagingConsts, PagingLevel, PAGE_SIZE};
 ///
 /// Unlike [`Frame`], the frame pointed to by this pointer is not shared with
 /// others. So a mutable reference to the metadata is available for the frame.
-#[derive(Debug)]
 #[repr(transparent)]
 pub struct UniqueFrame<M: AnyFrameMeta + ?Sized> {
     ptr: *const MetaSlot,
@@ -24,6 +23,12 @@ pub struct UniqueFrame<M: AnyFrameMeta + ?Sized> {
 unsafe impl<M: AnyFrameMeta + ?Sized> Send for UniqueFrame<M> {}
 
 unsafe impl<M: AnyFrameMeta + ?Sized> Sync for UniqueFrame<M> {}
+
+impl<M: AnyFrameMeta + ?Sized> core::fmt::Debug for UniqueFrame<M> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "UniqueFrame({:#x})", self.start_paddr())
+    }
+}
 
 impl<M: AnyFrameMeta> UniqueFrame<M> {
     /// Gets a [`UniqueFrame`] with a specific usage from a raw, unused page.
@@ -99,6 +104,26 @@ impl<M: AnyFrameMeta + ?Sized> UniqueFrame<M> {
         unsafe { &mut *self.slot().dyn_meta_ptr() }
     }
 
+    /// Resets the frame to unused without up-calling the allocator.
+    ///
+    /// This is solely useful for the allocator implementation and highly
+    /// experimental. Usage of this function is discouraged.
+    ///
+    /// Usage of this function other than the allocator would actually leak
+    /// the frame since the allocator would not be aware of the frame.
+    //
+    // FIXME: We may have a better `Segment` and `UniqueSegment` design to
+    // allow the allocator hold the ownership of all the frames in a chunk
+    // instead of the head. Then this weird public API can be removed.
+    pub fn reset_as_unused(self) {
+        let this = ManuallyDrop::new(self);
+
+        this.slot().ref_count.store(0, Ordering::Release);
+        // SAFETY: We are the sole owner and the reference count is 0.
+        // The slot is initialized.
+        unsafe { this.slot().drop_last_in_place() };
+    }
+
     /// Converts this frame into a raw physical address.
     pub(crate) fn into_raw(self) -> Paddr {
         let this = ManuallyDrop::new(self);
@@ -134,6 +159,8 @@ impl<M: AnyFrameMeta + ?Sized> Drop for UniqueFrame<M> {
         // SAFETY: We are the sole owner and the reference count is 0.
         // The slot is initialized.
         unsafe { self.slot().drop_last_in_place() };
+
+        super::allocator::dealloc_upcall(self.start_paddr(), PAGE_SIZE);
     }
 }
 

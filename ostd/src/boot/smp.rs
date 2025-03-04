@@ -10,7 +10,10 @@ use spin::Once;
 use crate::{
     arch::boot::smp::{bringup_all_aps, get_num_processors},
     cpu,
-    mm::{frame::Segment, kspace::KernelMeta, paddr_to_vaddr, FrameAllocOptions, PAGE_SIZE},
+    mm::{
+        frame::{meta::KernelMeta, Segment},
+        paddr_to_vaddr, FrameAllocOptions, PAGE_SIZE,
+    },
     task::Task,
 };
 
