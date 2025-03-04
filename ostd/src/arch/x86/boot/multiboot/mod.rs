@@ -8,7 +8,7 @@ use crate::{
         BootloaderAcpiArg, BootloaderFramebufferArg,
     },
     mm::{
-        kspace::{paddr_to_vaddr, LINEAR_MAPPING_BASE_VADDR},
+        kspace::{paddr_to_vaddr, KERNEL_CODE_BASE_VADDR, LINEAR_MAPPING_BASE_VADDR},
         Paddr, Vaddr,
     },
 };
@@ -147,6 +147,26 @@ fn parse_memory_regions(mb1_info: &MultibootLegacyInfo) -> MemoryRegionArray {
             MemoryRegionType::Reclaimable,
         ))
         .unwrap();
+
+    // Add the kernel cmdline and boot loader name region since Grub does not specify it.
+    let mut add_str_region = |s: &str| {
+        let mut start_addr = s.as_ptr() as usize;
+        let len = s.len();
+        if start_addr < KERNEL_CODE_BASE_VADDR {
+            if start_addr > LINEAR_MAPPING_BASE_VADDR {
+                start_addr -= LINEAR_MAPPING_BASE_VADDR;
+            }
+            regions
+                .push(MemoryRegion::new(
+                    start_addr,
+                    len,
+                    MemoryRegionType::Reclaimable,
+                ))
+                .unwrap();
+        }
+    };
+    add_str_region(parse_kernel_commandline(mb1_info));
+    add_str_region(parse_bootloader_name(mb1_info));
 
     regions.into_non_overlapping()
 }
