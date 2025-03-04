@@ -49,7 +49,6 @@ use core::{
 
 use align_ext::AlignExt;
 use log::info;
-use static_assertions::const_assert_eq;
 
 use super::{allocator, Segment};
 use crate::{
@@ -124,8 +123,9 @@ pub(super) const REF_COUNT_MAX: u64 = i64::MAX as u64;
 
 type FrameMetaVtablePtr = core::ptr::DynMetadata<dyn AnyFrameMeta>;
 
-const_assert_eq!(PAGE_SIZE % META_SLOT_SIZE, 0);
-const_assert_eq!(size_of::<MetaSlot>(), META_SLOT_SIZE);
+// FIXME: Use `assert_eq!` once it's usable in the `const` block.
+const _: () = assert!(PAGE_SIZE % META_SLOT_SIZE == 0);
+const _: () = assert!(size_of::<MetaSlot>() == META_SLOT_SIZE);
 
 /// All frame metadata types must implement this trait.
 ///
@@ -134,19 +134,18 @@ const_assert_eq!(size_of::<MetaSlot>(), META_SLOT_SIZE);
 /// this frame, the `on_drop` method will be called. The `on_drop`
 /// method is called with the physical address of the frame.
 ///
+/// The implemented structure should have a size less than or equal to
+/// [`FRAME_METADATA_MAX_SIZE`] and an alignment less than or equal to
+/// [`FRAME_METADATA_MAX_ALIGN`]. Otherwise, the metadata type cannot
+/// be used because storing it will fail compile-time assertions.
+///
 /// # Safety
 ///
-/// The implemented structure must have a size less than or equal to
-/// [`FRAME_METADATA_MAX_SIZE`] and an alignment less than or equal to
-/// [`FRAME_METADATA_MAX_ALIGN`].
-///
-/// The implementer of the `on_drop` method should ensure that the frame is
-/// safe to be read.
+/// If `on_drop` reads the page using the provided `VmReader`, the
+/// implementer must ensure that the frame is safe to read.
 pub unsafe trait AnyFrameMeta: Any + Send + Sync + Debug + 'static {
     /// Called when the last handle to the frame is dropped.
-    fn on_drop(&mut self, reader: &mut VmReader<Infallible>) {
-        let _ = reader;
-    }
+    fn on_drop(&mut self, _reader: &mut VmReader<Infallible>) {}
 
     /// Whether the metadata's associated frame is untyped.
     ///
@@ -160,18 +159,11 @@ pub unsafe trait AnyFrameMeta: Any + Send + Sync + Debug + 'static {
 }
 
 /// Makes a structure usable as a frame metadata.
-///
-/// Directly implementing [`AnyFrameMeta`] is not safe since the size and alignment
-/// must be checked. This macro provides a safe way to implement the trait with
-/// compile-time checks.
 #[macro_export]
 macro_rules! impl_frame_meta_for {
     // Implement without specifying the drop behavior.
     ($t:ty) => {
-        use static_assertions::const_assert;
-        const_assert!(size_of::<$t>() <= $crate::mm::frame::meta::FRAME_METADATA_MAX_SIZE);
-        const_assert!(align_of::<$t>() <= $crate::mm::frame::meta::FRAME_METADATA_MAX_ALIGN);
-        // SAFETY: The size and alignment of the structure are checked.
+        // SAFETY: `on_drop` won't read the page.
         unsafe impl $crate::mm::frame::meta::AnyFrameMeta for $t {}
     };
 }
@@ -358,11 +350,8 @@ impl MetaSlot {
     ///
     /// The caller should have exclusive access to the metadata slot's fields.
     pub(super) unsafe fn write_meta<M: AnyFrameMeta>(&self, metadata: M) {
-        // Checking unsafe preconditions of the `AnyFrameMeta` trait.
-        // We can't debug assert until we fix the constant generic bonds in
-        // the linked list meta.
-        assert!(size_of::<M>() <= FRAME_METADATA_MAX_SIZE);
-        assert!(align_of::<M>() <= FRAME_METADATA_MAX_ALIGN);
+        const { assert!(size_of::<M>() <= FRAME_METADATA_MAX_SIZE) };
+        const { assert!(align_of::<M>() <= FRAME_METADATA_MAX_ALIGN) };
 
         // SAFETY: Caller ensures that the access to the fields are exclusive.
         let vtable_ptr = unsafe { &mut *self.vtable_ptr.get() };

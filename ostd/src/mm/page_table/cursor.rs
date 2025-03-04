@@ -114,10 +114,7 @@ pub enum PageTableItem {
 /// simulate the recursion, and adpot a page table locking protocol to
 /// provide concurrency.
 #[derive(Debug)]
-pub struct Cursor<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait>
-where
-    [(); C::NR_LEVELS as usize]:,
-{
+pub struct Cursor<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> {
     /// The lock guards of the cursor. The level 1 page table lock guard is at
     /// index 0, and the level N page table lock guard is at index N - 1.
     ///
@@ -125,7 +122,7 @@ where
     /// from low to high, exactly the reverse order of the acquisition.
     /// This behavior is ensured by the default drop implementation of Rust:
     /// <https://doc.rust-lang.org/reference/destructors.html>.
-    guards: [Option<PageTableNode<E, C>>; C::NR_LEVELS as usize],
+    guards: [Option<PageTableNode<E, C>>; MAX_NR_LEVELS],
     /// The level of the page table that the cursor points to.
     level: PagingLevel,
     /// From `guard_level` to `level`, the locks are held in `guards`.
@@ -139,10 +136,10 @@ where
     _phantom: PhantomData<&'a PageTable<M, E, C>>,
 }
 
-impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<'a, M, E, C>
-where
-    [(); C::NR_LEVELS as usize]:,
-{
+/// The maximum value of `PagingConstsTrait::NR_LEVELS`.
+const MAX_NR_LEVELS: usize = 4;
+
+impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Cursor<'a, M, E, C> {
     /// Creates a cursor claiming the read access for the given range.
     ///
     /// The cursor created will only be able to query or jump within the given
@@ -158,6 +155,8 @@ where
         if va.start % C::BASE_PAGE_SIZE != 0 || va.end % C::BASE_PAGE_SIZE != 0 {
             return Err(PageTableError::UnalignedVaddr);
         }
+
+        const { assert!(C::NR_LEVELS as usize <= MAX_NR_LEVELS) };
 
         let mut cursor = Self {
             guards: core::array::from_fn(|_| None),
@@ -304,23 +303,25 @@ where
 
     /// Goes up a level.
     ///
-    /// We release the current page if it has no mappings since the cursor
-    /// only moves forward. And if needed we will do the final cleanup using
-    /// this method after re-walk when the cursor is dropped.
-    ///
-    /// This method requires locks acquired before calling it. The discarded
-    /// level will be unlocked.
+    /// This method releases the previously acquired lock at the discarded level.
     fn pop_level(&mut self) {
+        debug_assert!(self.guards[self.level as usize - 1].is_some());
         self.guards[self.level as usize - 1] = None;
+
         self.level += 1;
 
-        // TODO: Drop page tables if page tables become empty.
+        // TODO: Drop the page table if it is empty (it may be necessary to
+        // rewalk from the top if all the locks have been released).
     }
 
     /// Goes down a level to a child page table.
+    ///
+    /// The lock on the child page table is held until the next [`Self::pop_level`]
+    /// call at the same level.
     fn push_level(&mut self, child_pt: PageTableNode<E, C>) {
         self.level -= 1;
         debug_assert_eq!(self.level, child_pt.level());
+
         self.guards[self.level as usize - 1] = Some(child_pt);
     }
 
@@ -338,8 +339,6 @@ where
 
 impl<M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> Iterator
     for Cursor<'_, M, E, C>
-where
-    [(); C::NR_LEVELS as usize]:,
 {
     type Item = PageTableItem;
 
@@ -359,14 +358,9 @@ where
 #[derive(Debug)]
 pub struct CursorMut<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait>(
     Cursor<'a, M, E, C>,
-)
-where
-    [(); C::NR_LEVELS as usize]:;
+);
 
-impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorMut<'a, M, E, C>
-where
-    [(); C::NR_LEVELS as usize]:,
-{
+impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorMut<'a, M, E, C> {
     /// Creates a cursor claiming the write access for the given range.
     ///
     /// The cursor created will only be able to map, query or jump within the given

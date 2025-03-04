@@ -26,7 +26,6 @@ log = "0.4"
 lru = "0.12.3"
 postcard = "1.0.6"
 serde = { version = "1.0.192", default-features = false, features = ["alloc", "derive"] }
-static_assertions = "1.1.0"
 
 [lints]
 workspace = true

@@ -6,7 +6,6 @@ use core::{
 };
 
 use ostd::Pod;
-use static_assertions::const_assert;
 
 /// The block index used in the filesystem.
 pub type Bid = BlockId<BLOCK_SIZE>;
@@ -21,7 +20,7 @@ impl From<Bid> for Sid {
 
 const BLOCK_SIZE: u16 = super::BLOCK_SIZE as u16;
 const SECTOR_SIZE: u16 = super::SECTOR_SIZE as u16;
-const_assert!(BLOCK_SIZE / SECTOR_SIZE >= 1);
+const _: () = assert!(BLOCK_SIZE / SECTOR_SIZE >= 1);
 
 /// An index of a block.
 ///
