@@ -16,8 +16,23 @@
 //! In Asterinas, VMARs and VMOs, as well as other capabilities, are implemented
 //! as zero-cost capabilities.
 
+use ostd::{cpu::CpuExceptionInfo, task::Task};
+
+use crate::prelude::*;
+
 pub mod page_fault_handler;
 pub mod perms;
 pub mod util;
 pub mod vmar;
 pub mod vmo;
+
+fn page_fault_handler(info: &CpuExceptionInfo) -> core::result::Result<(), ()> {
+    let task = Task::current().unwrap();
+    let root_vmar = task.as_thread_local().unwrap().root_vmar().borrow();
+    let vm_space = root_vmar.as_ref().unwrap().vm_space();
+    vm_space.handle_page_fault(info)
+}
+
+pub(super) fn init() {
+    ostd::arch::trap::inject_user_page_fault_handler(page_fault_handler);
+}
