@@ -26,6 +26,7 @@ use crate::syscall::{
     flock::sys_flock,
     fsync::{sys_fdatasync, sys_fsync},
     futex::sys_futex,
+    get_priority::sys_get_priority,
     getcpu::sys_getcpu,
     getcwd::sys_getcwd,
     getdents64::sys_getdents64,
@@ -81,6 +82,14 @@ use crate::syscall::{
     rt_sigprocmask::sys_rt_sigprocmask,
     rt_sigsuspend::sys_rt_sigsuspend,
     sched_affinity::{sys_sched_getaffinity, sys_sched_setaffinity},
+    sched_get_priority_max::sys_sched_get_priority_max,
+    sched_get_priority_min::sys_sched_get_priority_min,
+    sched_getattr::sys_sched_getattr,
+    sched_getparam::sys_sched_getparam,
+    sched_getscheduler::sys_sched_getscheduler,
+    sched_setattr::sys_sched_setattr,
+    sched_setparam::sys_sched_setparam,
+    sched_setscheduler::sys_sched_setscheduler,
     sched_yield::sys_sched_yield,
     semctl::sys_semctl,
     semget::sys_semget,
@@ -88,7 +97,7 @@ use crate::syscall::{
     sendfile::sys_sendfile,
     sendmsg::sys_sendmsg,
     sendto::sys_sendto,
-    set_get_priority::{sys_get_priority, sys_set_priority},
+    set_priority::sys_set_priority,
     set_robust_list::sys_set_robust_list,
     set_tid_address::sys_set_tid_address,
     setfsgid::sys_setfsgid,
@@ -192,9 +201,15 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_SETITIMER = 103          => sys_setitimer(args[..3]);
     SYS_TIMER_CREATE = 107       => sys_timer_create(args[..3]);
     SYS_TIMER_DELETE = 111       => sys_timer_delete(args[..1]);
+    SYS_SCHED_SETPARAM = 118     => sys_sched_setparam(args[..2]);
+    SYS_SCHED_SETSCHEDULER = 119 => sys_sched_setscheduler(args[..3]);
+    SYS_SCHED_GETSCHEDULER = 120 => sys_sched_getscheduler(args[..1]);
+    SYS_SCHED_GETPARAM = 121     => sys_sched_getparam(args[..2]);
     SYS_SCHED_SETAFFINITY = 122  => sys_sched_setaffinity(args[..3]);
     SYS_SCHED_GETAFFINITY = 123  => sys_sched_getaffinity(args[..3]);
     SYS_SCHED_YIELD = 124        => sys_sched_yield(args[..0]);
+    SYS_SCHED_GET_PRIORITY_MAX = 125 => sys_sched_get_priority_max(args[..1]);
+    SYS_SCHED_GET_PRIORITY_MIN = 126 => sys_sched_get_priority_min(args[..1]);
     SYS_KILL = 129               => sys_kill(args[..2]);
     SYS_TGKILL = 131             => sys_tgkill(args[..3]);
     SYS_SIGALTSTACK = 132        => sys_sigaltstack(args[..2]);
@@ -264,6 +279,8 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_ACCEPT4 = 242            => sys_accept4(args[..4]);
     SYS_WAIT4 = 260              => sys_wait4(args[..4]);
     SYS_PRLIMIT64 = 261          => sys_prlimit64(args[..4]);
+    SYS_SCHED_SETATTR = 274      => sys_sched_setattr(args[..3]);
+    SYS_SCHED_GETATTR = 275      => sys_sched_getattr(args[..4]);
     SYS_GETRANDOM = 278          => sys_getrandom(args[..3]);
     SYS_EXECVEAT = 281           => sys_execveat(args[..5], &mut user_ctx);
     SYS_PREADV2 = 286            => sys_preadv2(args[..5]);
