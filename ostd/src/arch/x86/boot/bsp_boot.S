@@ -44,15 +44,31 @@ __linux32_boot:
 // Must be located at 0x8001200, ABI immutable!
 .code64
 .org 0x200
-.global __linux64_boot_tag
-__linux64_boot_tag:
+.global __linux64_boot
+__linux64_boot:
+    cli
+    cld
+
     // Set the kernel call stack.
-    lea rsp, [boot_stack_top]
+    lea rsp, [rip + boot_stack_top]
     push rsi    // boot_params ptr from the loader
     push ENTRYTYPE_LINUX_64
 
-    // Here RSP/RIP are still using low address.
-    jmp long_mode_in_low_address
+    // Set up the page table and load it.
+    call page_table_setup_64
+    lea rdx, [rip + boot_pml4]
+    mov cr3, rdx
+
+    // Prepare far return. The default operation size of
+    // far returns is 32 bits even in long mode.
+    lea edx, [rip + long_mode_in_low_address]
+    mov rax, (8 << 32)
+    or rdx, rax
+    push rdx
+
+    // Switch to our own temporary GDT.
+    lgdt [boot_gdtr]
+    retf
 
 // The multiboot & multiboot2 entry point.
 .code32
@@ -85,8 +101,7 @@ magic_is_mb2:
 
 initial_boot_setup:
     // Prepare for far return. We use a far return as a fence after setting GDT.
-    mov eax, 24
-    push eax
+    push 24
     lea edx, [protected_mode]
     push edx
 
@@ -102,13 +117,44 @@ protected_mode:
     mov fs, ax
     mov gs, ax
 
-page_table_setup:
+    // Set up the page table.
+    call page_table_setup_32
+
+    // Enable PAE and PGE.
+    mov eax, cr4
+    or  eax, 0xa0
+    mov cr4, eax
+
+    // Set the page table address.
+    lea eax, [boot_pml4]
+    mov cr3, eax
+
+    // Enable long mode.
+    mov ecx, 0xc0000080
+    rdmsr
+    or  eax, 0x0100
+    wrmsr
+
+    // Prepare for far return.
+    push 8
+    lea  edx, [long_mode_in_low_address]
+    push edx
+
+    // Enable paging.
+    mov eax, cr0
+    or  eax, 0x80000000
+    mov cr0, eax
+
+    retf
+
+.macro define_page_table_setup bits
+.code\bits
+page_table_setup_\bits:
     // Zero out the page table.
     mov al, 0x00
     lea edi, [boot_page_table_start]
     lea ecx, [boot_page_table_end]
     sub ecx, edi
-    cld
     rep stosb
 
 // PTE flags used in this file.
@@ -183,43 +229,18 @@ PTE_GLOBAL      = (1 << 8)
     lea edi, [boot_pd]
     mov eax, PTE_PRESENT | PTE_WRITE | PTE_GLOBAL | PTE_HUGE
     mov ecx, 512 * 4 // (of entries in PD) * (number of PD)
-write_pd_entry:
+write_pd_entry_\bits:
     mov dword ptr [edi], eax
     mov dword ptr [edi + 4], 0
     add eax, 0x200000 // +2MiB
     add edi, 8
-    loop write_pd_entry
+    loop write_pd_entry_\bits
 
-    jmp enable_long_mode
+    ret
+.endm
 
-enable_long_mode:
-    // Enable PAE and PGE.
-    mov eax, cr4
-    or  eax, 0xa0
-    mov cr4, eax
-
-    // Set the page table address.
-    lea eax, [boot_pml4]
-    mov cr3, eax
-
-    // Enable long mode.
-    mov ecx, 0xc0000080
-    rdmsr
-    or  eax, 0x0100
-    wrmsr
-
-    // Prepare for far return.
-    mov  eax, 8
-    push eax
-    lea  edx, [long_mode_in_low_address]
-    push edx
-
-    // Enable paging.
-    mov eax, cr0
-    or  eax, 0x80000000
-    mov cr0, eax
-
-    retf
+define_page_table_setup 32
+define_page_table_setup 64
 
 // Temporary GDTR/GDT entries. This must be located in the .boot section as its
 // address (gdt) must be physical to load.
@@ -286,7 +307,6 @@ long_mode:
     lea rdi, [rip + __bss]
     lea rcx, [rip + __bss_end]
     sub rcx, rdi
-    cld
     rep stosb
 
     // Call the corresponding Rust entrypoint according to the boot entrypoint
