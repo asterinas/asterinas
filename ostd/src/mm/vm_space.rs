@@ -30,13 +30,26 @@ use crate::{
     Error,
 };
 
-/// Virtual memory space.
+/// Represents a virtual address space for user-mode tasks, enabling safe manipulation
+/// of user-space memory.
 ///
-/// A virtual memory space (`VmSpace`) can be created and assigned to a user
-/// space so that the virtual memory of the user space can be manipulated
-/// safely. For example,  given an arbitrary user-space pointer, one can read
-/// and write the memory location referred to by the user-space pointer without
-/// the risk of breaking the memory safety of the kernel space.
+/// The `VmSpace` type provides memory isolation guarantees between user-space and
+/// kernel-space. For example, given an arbitrary user-space pointer, one can read and
+/// write the memory location referred to by the user-space pointer without the risk of
+/// breaking the memory safety of the kernel space.
+///
+/// # Task Association Semantics
+///
+/// A `VmSpace` can be activated within a valid task context. Once activated via
+/// [`activate`](VmSpace::activate), it becomes the effective user-space memory for the
+/// current task.
+///
+/// A [`Task`](crate::task::Task) is not restricted to always being bound to the same `VmSpace`
+/// as its user-space. However, for the sake of execution correctness, once a new `VmSpace` is
+/// activated in the task, users must ensure the user-space register states is sanitized before
+/// returning to user mode.
+///
+/// # Memory Backing
 ///
 /// A newly-created `VmSpace` is not backed by any physical memory pages. To
 /// provide memory pages for a `VmSpace`, one can allocate and map physical
@@ -55,6 +68,7 @@ pub struct VmSpace {
     cpus: AtomicCpuSet,
 }
 
+#[expect(clippy::result_unit_err)]
 impl VmSpace {
     /// Creates a new VM address space.
     pub fn new() -> Self {
@@ -130,7 +144,7 @@ impl VmSpace {
     }
 
     /// Activates the page table on the current CPU.
-    pub(crate) fn activate(self: &Arc<Self>) {
+    pub fn activate(self: &Arc<Self>) {
         let preempt_guard = disable_preempt();
         let cpu = preempt_guard.current_cpu();
 
@@ -159,10 +173,10 @@ impl VmSpace {
         self.pt.activate();
     }
 
-    pub(crate) fn handle_page_fault(
-        &self,
-        info: &CpuExceptionInfo,
-    ) -> core::result::Result<(), ()> {
+    /// Handles the page fault occurs in this `VmSpace`.
+    ///
+    /// If there is not a registered page fault handler, returns `Err` directly.
+    pub fn handle_page_fault(&self, info: &CpuExceptionInfo) -> core::result::Result<(), ()> {
         if let Some(func) = self.page_fault_handler {
             return func(self, info);
         }
@@ -181,6 +195,9 @@ impl VmSpace {
     ///
     /// Returns `Err` if this `VmSpace` is not belonged to the user space of the current task
     /// or the `vaddr` and `len` do not represent a user space memory range.
+    ///
+    /// Users must ensure that no other page table is activated in the current task during the
+    /// lifetime of the created `VmReader`. This guarantees that the `VmReader` can operate correctly.
     pub fn reader(&self, vaddr: Vaddr, len: usize) -> Result<VmReader<'_, Fallible>> {
         if current_page_table_paddr() != unsafe { self.pt.root_paddr() } {
             return Err(Error::AccessDenied);
@@ -190,10 +207,6 @@ impl VmSpace {
             return Err(Error::AccessDenied);
         }
 
-        // `VmReader` is neither `Sync` nor `Send`, so it will not live longer than the current
-        // task. This ensures that the correct page table is activated during the usage period of
-        // the `VmReader`.
-        //
         // SAFETY: The memory range is in user space, as checked above.
         Ok(unsafe { VmReader::<Fallible>::from_user_space(vaddr as *const u8, len) })
     }
@@ -202,6 +215,9 @@ impl VmSpace {
     ///
     /// Returns `Err` if this `VmSpace` is not belonged to the user space of the current task
     /// or the `vaddr` and `len` do not represent a user space memory range.
+    ///
+    /// Users must ensure that no other page table is activated in the current task during the
+    /// lifetime of the created `VmWriter`. This guarantees that the `VmWriter` can operate correctly.
     pub fn writer(&self, vaddr: Vaddr, len: usize) -> Result<VmWriter<'_, Fallible>> {
         if current_page_table_paddr() != unsafe { self.pt.root_paddr() } {
             return Err(Error::AccessDenied);

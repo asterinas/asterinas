@@ -3,7 +3,7 @@
 use alloc::sync::Arc;
 use core::ptr::NonNull;
 
-use super::{context_switch, Task, TaskContext};
+use super::{context_switch, Task, TaskContext, POST_SCHEDULE_HANDLER};
 use crate::cpu_local_cell;
 
 cpu_local_cell! {
@@ -59,9 +59,6 @@ pub(super) fn switch_to_task(next_task: Arc<Task>) {
     };
 
     let next_task_ctx_ptr = next_task.ctx().get().cast_const();
-    if let Some(next_user_space) = next_task.user_space() {
-        next_user_space.vm_space().activate();
-    }
 
     // Change the current task to the next task.
     //
@@ -71,6 +68,11 @@ pub(super) fn switch_to_task(next_task: Arc<Task>) {
     let old_prev = PREVIOUS_TASK_PTR.load();
     PREVIOUS_TASK_PTR.store(current_task_ptr);
     CURRENT_TASK_PTR.store(Arc::into_raw(next_task));
+
+    if let Some(handler) = POST_SCHEDULE_HANDLER.get() {
+        handler();
+    }
+
     // Drop the old-previously running task.
     if !old_prev.is_null() {
         // SAFETY: The pointer is set by `switch_to_task` and is guaranteed to be
