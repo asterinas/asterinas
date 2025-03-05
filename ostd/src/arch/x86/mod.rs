@@ -119,7 +119,7 @@ pub(crate) unsafe fn init_on_ap() {
 }
 
 pub(crate) fn interrupts_ack(irq_number: usize) {
-    if !cpu::CpuException::is_cpu_exception(irq_number as u16) {
+    if !cpu::context::CpuException::is_cpu_exception(irq_number as u16) {
         kernel::apic::with_borrow(|apic| {
             apic.eoi();
         });
@@ -178,7 +178,7 @@ pub(crate) fn enable_cpu_features() {
         cpuid.get_feature_info().unwrap()
     });
 
-    cpu::enable_essential_features();
+    cpu::context::enable_essential_features();
 
     let mut cr4 = x86_64::registers::control::Cr4::read();
     cr4 |= Cr4Flags::FSGSBASE
