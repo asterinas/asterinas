@@ -23,6 +23,7 @@ use self::{
 use super::page_fault_handler::PageFaultHandler;
 use crate::{
     prelude::*,
+    process::{Process, ResourceType},
     thread::exception::{handle_page_fault_from_vm_space, PageFaultInfo},
     vm::{
         perms::VmPerms,
@@ -120,13 +121,67 @@ pub(super) struct Vmar_ {
 struct VmarInner {
     /// The mapped pages and associated metadata.
     vm_mappings: IntervalSet<Vaddr, VmMapping>,
+    /// The total mapped memory in bytes.
+    total_vm: usize,
 }
 
 impl VmarInner {
     const fn new() -> Self {
         Self {
             vm_mappings: IntervalSet::new(),
+            total_vm: 0,
         }
+    }
+
+    /// Returns `Ok` if the calling process may expand its mapped
+    /// memory by the passed size.
+    fn check_expand_size(&mut self, expand_size: usize) -> Result<()> {
+        let Some(process) = Process::current() else {
+            // When building a `Process`, the kernel task needs to build
+            // some `VmMapping`s, in which case this branch is reachable.
+            return Ok(());
+        };
+
+        let rlimt_as = process
+            .resource_limits()
+            .get_rlimit(ResourceType::RLIMIT_AS)
+            .get_cur();
+
+        let new_total_vm = self
+            .total_vm
+            .checked_add(expand_size)
+            .ok_or(Errno::ENOMEM)?;
+        if new_total_vm > rlimt_as as usize {
+            return_errno_with_message!(Errno::ENOMEM, "address space limit overflow");
+        }
+        Ok(())
+    }
+
+    /// Inserts a `VmMapping` into the `Vmar`.
+    ///
+    /// Make sure the insertion doesn't exceed address space limit.
+    fn insert(&mut self, vm_mapping: VmMapping) {
+        self.total_vm += vm_mapping.map_size();
+        self.vm_mappings.insert(vm_mapping);
+    }
+
+    /// Removes a `VmMapping` based on the provided key from the `Vmar`.
+    fn remove(&mut self, key: &Vaddr) -> Option<VmMapping> {
+        let vm_mapping = self.vm_mappings.remove(key)?;
+        self.total_vm -= vm_mapping.map_size();
+        Some(vm_mapping)
+    }
+
+    /// Calculates the total amount of overlap between `VmMapping`s
+    /// and the provided range.
+    fn count_overlap_size(&self, range: Range<Vaddr>) -> usize {
+        let mut sum_overlap_size = 0;
+        for vm_mapping in self.vm_mappings.find(&range) {
+            let vm_mapping_range = vm_mapping.range();
+            let intersected_range = get_intersected_range(&range, &vm_mapping_range);
+            sum_overlap_size += intersected_range.end - intersected_range.start;
+        }
+        sum_overlap_size
     }
 
     /// Allocates a free region for mapping with a specific offset and size.
@@ -162,16 +217,16 @@ impl VmarInner {
         }
 
         for vm_mapping_addr in mappings_to_remove {
-            let vm_mapping = self.vm_mappings.remove(&vm_mapping_addr).unwrap();
+            let vm_mapping = self.remove(&vm_mapping_addr).unwrap();
             let vm_mapping_range = vm_mapping.range();
             let intersected_range = get_intersected_range(&range, &vm_mapping_range);
 
             let (left, taken, right) = vm_mapping.split_range(&intersected_range)?;
             if let Some(left) = left {
-                self.vm_mappings.insert(left);
+                self.insert(left);
             }
             if let Some(right) = right {
-                self.vm_mappings.insert(right);
+                self.insert(right);
             }
 
             taken.unmap(vm_space)?;
@@ -249,9 +304,7 @@ impl Vmar_ {
     }
 
     fn new_root() -> Arc<Self> {
-        let vmar_inner = VmarInner {
-            vm_mappings: IntervalSet::new(),
-        };
+        let vmar_inner = VmarInner::new();
         let mut vm_space = VmSpace::new();
         vm_space.register_page_fault_handler(handle_page_fault_wrapper);
         Vmar_::new(vmar_inner, Arc::new(vm_space), 0, ROOT_VMAR_CAP_ADDR)
@@ -279,7 +332,7 @@ impl Vmar_ {
             if perms == vm_mapping_perms {
                 continue;
             }
-            let vm_mapping = inner.vm_mappings.remove(&vm_mapping_addr).unwrap();
+            let vm_mapping = inner.remove(&vm_mapping_addr).unwrap();
             let vm_mapping_range = vm_mapping.range();
             let intersected_range = get_intersected_range(&range, &vm_mapping_range);
 
@@ -287,14 +340,14 @@ impl Vmar_ {
             let (left, taken, right) = vm_mapping.split_range(&intersected_range)?;
 
             let taken = taken.protect(vm_space.as_ref(), perms);
-            inner.vm_mappings.insert(taken);
+            inner.insert(taken);
 
             // And put the rest back.
             if let Some(left) = left {
-                inner.vm_mappings.insert(left);
+                inner.insert(left);
             }
             if let Some(right) = right {
-                inner.vm_mappings.insert(right);
+                inner.insert(right);
             }
         }
 
@@ -358,12 +411,14 @@ impl Vmar_ {
         let mut inner = self.inner.write();
         let last_mapping = inner.vm_mappings.find_one(&(old_map_end - 1)).unwrap();
         let last_mapping_addr = last_mapping.map_to_addr();
-        let last_mapping = inner.vm_mappings.remove(&last_mapping_addr).unwrap();
-
         let extra_mapping_start = last_mapping.map_end();
+
+        inner.check_expand_size(new_map_end - extra_mapping_start)?;
+
+        let last_mapping = inner.remove(&last_mapping_addr).unwrap();
         inner.alloc_free_region_exact(extra_mapping_start, new_map_end - extra_mapping_start)?;
         let last_mapping = last_mapping.enlarge(new_map_end - extra_mapping_start);
-        inner.vm_mappings.insert(last_mapping);
+        inner.insert(last_mapping);
         Ok(())
     }
 
@@ -395,7 +450,7 @@ impl Vmar_ {
 
                 // Clone the `VmMapping` to the new VMAR.
                 let new_mapping = vm_mapping.new_fork()?;
-                new_inner.vm_mappings.insert(new_mapping);
+                new_inner.insert(new_mapping);
 
                 // Protect the mapping and copy to the new page table for COW.
                 cur_cursor.jump(base).unwrap();
@@ -587,9 +642,24 @@ impl<R1, R2> VmarMapOptions<R1, R2> {
             handle_page_faults_around,
         } = self;
 
+        let mut inner = parent.0.inner.write();
+
+        inner.check_expand_size(map_size).or_else(|e| {
+            if can_overwrite {
+                let offset = offset.ok_or(Error::with_message(
+                    Errno::EINVAL,
+                    "offset cannot be None since can overwrite is set",
+                ))?;
+                // MAP_FIXED may remove pages overlapped with requested mapping.
+                let expand_size = map_size - inner.count_overlap_size(offset..offset + map_size);
+                inner.check_expand_size(expand_size)
+            } else {
+                Err(e)
+            }
+        })?;
+
         // Allocates a free region.
         trace!("allocate free region, map_size = 0x{:x}, offset = {:x?}, align = 0x{:x}, can_overwrite = {}", map_size, offset, align, can_overwrite);
-        let mut inner = parent.0.inner.write();
         let map_to_addr = if can_overwrite {
             // If can overwrite, the offset is ensured not to be `None`.
             let offset = offset.ok_or(Error::with_message(
@@ -618,7 +688,7 @@ impl<R1, R2> VmarMapOptions<R1, R2> {
         );
 
         // Add the mapping to the VMAR.
-        inner.vm_mappings.insert(vm_mapping);
+        inner.insert(vm_mapping);
 
         Ok(map_to_addr)
     }
