@@ -3,13 +3,14 @@
 #![warn(unused)]
 
 use alloc::{boxed::Box, sync::Arc};
-use core::fmt;
+use core::{fmt, sync::atomic::Ordering};
 
 use ostd::{
     arch::read_tsc as sched_clock,
-    cpu::{all_cpus, CpuId, PinCurrentCpu},
+    cpu::{all_cpus, CpuId, CpuSet, PinCurrentCpu},
     sync::SpinLock,
     task::{
+        disable_preempt,
         scheduler::{
             info::CommonSchedInfo, inject_scheduler, EnqueueFlags, LocalRunQueue, Scheduler,
             UpdateFlags,
@@ -22,6 +23,7 @@ use ostd::{
 use super::{
     nice::Nice,
     stats::{set_stats_from_scheduler, SchedulerStats},
+    IS_IDLE,
 };
 use crate::thread::{AsThread, Thread};
 
@@ -193,6 +195,8 @@ impl SchedAttr {
 
 impl Scheduler for ClassScheduler {
     fn enqueue(&self, task: Arc<Task>, flags: EnqueueFlags) -> Option<CpuId> {
+        let preempt_guard = disable_preempt();
+
         let thread = task.as_thread()?.clone();
 
         let (still_in_rq, cpu) = {
@@ -215,6 +219,15 @@ impl Scheduler for ClassScheduler {
 
         thread.sched_attr().set_last_cpu(cpu);
         rq.enqueue_entity((task, thread), Some(flags));
+
+        drop(rq);
+
+        let cur_cpu = preempt_guard.current_cpu();
+        if cpu != cur_cpu && IS_IDLE.get_on_cpu(cur_cpu).load(Ordering::Relaxed) {
+            // IPI it to wake it immediately.
+            ostd::smp::inter_processor_call(&CpuSet::from(cur_cpu), || {});
+        }
+
         Some(cpu)
     }
 
