@@ -4,7 +4,7 @@ use tdx_guest::{
     handle_virtual_exception as do_handle_virtual_exception, tdcall, TdgVeInfo, TdxTrapFrame,
 };
 
-use crate::cpu::{RawGeneralRegs, UserContext};
+use crate::cpu::context::{RawGeneralRegs, UserContext};
 
 pub(crate) struct VirtualizationExceptionHandler {
     ve_info: TdgVeInfo,

@@ -27,7 +27,7 @@ pub use self::{
     scheduler::info::{AtomicCpuId, TaskScheduleInfo},
 };
 pub(crate) use crate::arch::task::{context_switch, TaskContext};
-use crate::{cpu::UserContext, prelude::*, trap::in_interrupt_context};
+use crate::{cpu::context::UserContext, prelude::*, trap::in_interrupt_context};
 
 static POST_SCHEDULE_HANDLER: Once<fn()> = Once::new();
 

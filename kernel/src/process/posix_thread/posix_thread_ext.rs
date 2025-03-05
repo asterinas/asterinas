@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::{cpu::UserContext, task::Task, user::UserContextApi};
+use ostd::{cpu::context::UserContext, task::Task, user::UserContextApi};
 
 use super::{builder::PosixThreadBuilder, name::ThreadName, PosixThread};
 use crate::{

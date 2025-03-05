@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use ostd::{
-    cpu::UserContext,
+    cpu::context::UserContext,
     task::{Task, TaskOptions},
     user::{ReturnReason, UserContextApi, UserMode},
 };

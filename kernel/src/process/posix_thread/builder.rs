@@ -3,7 +3,7 @@
 #![expect(dead_code)]
 
 use ostd::{
-    cpu::{CpuSet, UserContext},
+    cpu::{context::UserContext, CpuSet},
     sync::RwArc,
     task::Task,
 };
