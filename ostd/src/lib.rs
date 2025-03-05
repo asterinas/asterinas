@@ -8,6 +8,7 @@
 #![feature(const_trait_impl)]
 #![feature(core_intrinsics)]
 #![feature(coroutines)]
+#![feature(downcast_unchecked)]
 #![feature(fn_traits)]
 #![feature(generic_const_exprs)]
 #![feature(iter_from_coroutine)]

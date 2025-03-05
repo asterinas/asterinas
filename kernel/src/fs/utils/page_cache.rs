@@ -5,22 +5,238 @@
 use core::{
     iter,
     ops::Range,
-    sync::atomic::{AtomicU8, Ordering},
+    sync::atomic::{AtomicBool, AtomicU8, Ordering},
 };
 
 use align_ext::AlignExt;
 use aster_block::bio::{BioStatus, BioWaiter};
 use aster_rights::Full;
+use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListLink};
 use lru::LruCache;
 use ostd::{
     impl_untyped_frame_meta_for,
-    mm::{Frame, FrameAllocOptions, UFrame, VmIo},
+    mm::{stat::mem_available, Frame, FrameAllocOptions, UFrame, VmIo},
 };
 
 use crate::{
     prelude::*,
-    vm::vmo::{get_page_idx_range, Pager, Vmo, VmoFlags, VmoOptions},
+    vm::vmo::{get_page_idx_range, Vmo, VmoFlags, VmoOptions, Vmo_},
 };
+
+pub struct LruListNode {
+    pub page: CachePage,
+    link: LinkedListLink,
+}
+
+intrusive_adapter!(pub LruNodeAdapter = Box<LruListNode>: LruListNode { link: LinkedListLink });
+
+pub struct LRULists {
+    // MAX SIZE of FILE PAGES CACHE
+    capacity: usize,
+    // THRESHOLD FOR TRIGGERING RECLAMATION
+    threshold1: usize,
+    // THRESHOLD FOR TRIGGERING DEMOTION
+    threshold2: usize,
+    // LRU_ACTIVE_FILE
+    active_list: LinkedList<LruNodeAdapter>,
+    // SIZE OF ACTIVE LIST
+    active_size: usize,
+    // LRU_INACTIVE_FILE
+    pub inactive_list: LinkedList<LruNodeAdapter>,
+    // SIZE OF INACTIVE LIST
+    inactive_size: usize,
+    // SIZE OF ACTIVE + INACTIVE LIST
+    size: usize,
+}
+
+impl LRULists {
+    fn new(capacity: usize, threshold1: usize, threshold2: usize) -> Self {
+        LRULists {
+            capacity,
+            threshold1,
+            threshold2,
+            active_list: LinkedList::new(LruNodeAdapter::new()),
+            inactive_list: LinkedList::new(LruNodeAdapter::new()),
+            active_size: 0,
+            inactive_size: 0,
+            size: 0,
+        }
+    }
+
+    // Reclaim one page in the tail part of the inactive list
+    fn reclaim(&mut self) {
+        // 1. Trigger reclaim_one();
+        // 2. Find a suitable page to reclaim(is_mapped == false)
+        // 3. Look for the dirty info(page.PageState)
+        // page -> vmo -> pager(pagecachemanager) -> evict(dirty)
+        // page -> vmo -> pager(pagecachemanager) -> discard(dirty)
+        // 4. Remove page in LruLists
+        // 5. size -= page.size()
+        // 6. [in]active_size -= page.size()
+
+        let mut reclaimed = false;
+        let mut cursor = self.inactive_list.back_mut();
+        // Traverse the inactive_list from the end until finding a page with metadata.is_mmapped == false
+        while let Some(node) = cursor.get() {
+            if !node.page.metadata().is_mmapped.load(Ordering::Relaxed) {
+                let size = node.page.size();
+                //let pager = node.page.metadata().reverse_map.read().clone().unwrap().pager();
+                let reverse_map = node.page.metadata().reverse_map.read().clone();
+                if !reverse_map.is_none() {
+                    let pager = reverse_map.unwrap().pager();
+                    if node.page.metadata().state.load(Ordering::Relaxed) == PageState::Dirty {
+                        let _ = pager.unwrap().evict_range(
+                            node.page.start_paddr()..node.page.start_paddr() + PAGE_SIZE,
+                        );
+                    } else {
+                        let _ = pager.unwrap().discard_range(
+                            node.page.start_paddr()..node.page.start_paddr() + PAGE_SIZE,
+                        );
+                    }
+                    self.size -= size;
+                    self.inactive_size -= size;
+                    cursor.remove();
+                    reclaimed = true;
+                    break;
+                }
+            }
+            cursor.move_prev();
+        }
+
+        // If no suitable page is found in inactive_list, find one in active_list to delete.
+        if !reclaimed {
+            let mut cursor = self.active_list.back_mut();
+            while let Some(node) = cursor.get() {
+                if !node.page.metadata().is_mmapped.load(Ordering::Relaxed) {
+                    let size = node.page.size();
+                    let reverse_map = node.page.metadata().reverse_map.read().clone();
+                    if !reverse_map.is_none() {
+                        let pager = reverse_map.unwrap().pager();
+                        if node.page.metadata().state.load(Ordering::Relaxed) == PageState::Dirty {
+                            let _ = pager.unwrap().evict_range(
+                                node.page.start_paddr()..node.page.start_paddr() + PAGE_SIZE,
+                            );
+                        } else {
+                            let _ = pager.unwrap().discard_range(
+                                node.page.start_paddr()..node.page.start_paddr() + PAGE_SIZE,
+                            );
+                        }
+                        self.size -= size;
+                        self.active_size -= size;
+                        cursor.remove();
+                        reclaimed = true;
+                        break;
+                    }
+                }
+                cursor.move_prev();
+            }
+
+            if !reclaimed {
+                panic!("No page to reclaim");
+            }
+        }
+    }
+
+    fn load_page(&mut self, page: CachePage) {
+        //log::error!("Size:{}", self.size);
+        while mem_available() < 1024 * 1024 * 1024 /* 1024MB */ || self.size >= self.capacity {
+            self.reclaim();
+            log::error!("Page Cache Size:{}", self.size);
+        }
+        let size = page.size();
+        // Load page to the head of the inactive list
+        let node = Box::new(LruListNode {
+            page,
+            link: LinkedListLink::new(),
+        });
+        self.inactive_list.push_front(node);
+
+        self.size += size;
+        self.inactive_size += size;
+    }
+
+    fn demotion(&mut self) {
+        // Move page at the tail of active list to the head of
+        // the inactive list
+        let node = self.active_list.pop_back().unwrap();
+        let size = node.page.size();
+        self.inactive_list.push_front(node);
+        self.active_size -= size;
+        self.inactive_size += size;
+    }
+
+    fn promotion_from_inactive(&mut self, page: CachePage) {
+        // Move the page (which is originally at the inactive_list)
+        // to the head of the active_list
+        let mut cursor = self.inactive_list.front_mut();
+        while let Some(node) = cursor.get() {
+            if node.page.start_paddr() == page.start_paddr() {
+                //println!("{}", page.start_paddr());
+                cursor.remove();
+                break;
+            }
+            cursor.move_next();
+        }
+        let size = page.size();
+        let node = Box::new(LruListNode {
+            page,
+            link: LinkedListLink::new(),
+        });
+        self.active_list.push_front(node);
+        //println!("A:{}, {}", self.inactive_size, size);
+        self.inactive_size -= size;
+        //println!("B:{}, {}", self.inactive_size, size);
+        self.active_size += size;
+        if self.active_size * 100 > self.capacity * self.threshold2 {
+            self.demotion();
+        }
+    }
+
+    fn promotion_from_active(&mut self, page: CachePage) {
+        // Move the page (which is originally at the active_list)
+        // to the head of the active_list
+        let mut cursor = self.active_list.front_mut();
+        while let Some(node) = cursor.get() {
+            if node.page.start_paddr() == page.start_paddr() {
+                cursor.remove();
+                break;
+            }
+            cursor.move_next();
+        }
+        let node = Box::new(LruListNode {
+            page,
+            link: LinkedListLink::new(),
+        });
+        self.active_list.push_front(node);
+    }
+
+    fn in_active(&self, page: CachePage) -> bool {
+        for node in self.active_list.iter() {
+            if node.page.start_paddr() == page.start_paddr() {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    fn in_inactive(&self, page: CachePage) -> bool {
+        for node in self.inactive_list.iter() {
+            if node.page.start_paddr() == page.start_paddr() {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
+static LRU_LISTS: spin::Once<Mutex<LRULists>> = spin::Once::new();
+
+pub fn get_lru_lists() -> &'static Mutex<LRULists> {
+    if !LRU_LISTS.is_completed() {
+        LRU_LISTS.call_once(|| Mutex::new(LRULists::new(mem_available(), 90, 70)));
+    }
+    LRU_LISTS.get().unwrap()
+}
 
 pub struct PageCache {
     pages: Vmo<Full>,
@@ -330,7 +546,7 @@ impl ReadaheadState {
     }
 }
 
-struct PageCacheManager {
+pub struct PageCacheManager {
     pages: Mutex<LruCache<usize, CachePage>>,
     backend: Weak<dyn PageCacheBackend>,
     ra_state: Mutex<ReadaheadState>,
@@ -425,6 +641,8 @@ impl PageCacheManager {
             };
             let frame = page.clone();
             pages.put(idx, page);
+            // Load page to LRULists.
+            get_lru_lists().lock().load_page(frame.clone());
             frame
         };
         if ra_state.should_readahead(idx, backend.npages()) {
@@ -444,12 +662,12 @@ impl Debug for PageCacheManager {
     }
 }
 
-impl Pager for PageCacheManager {
-    fn commit_page(&self, idx: usize) -> Result<UFrame> {
+impl PageCacheManager {
+    pub fn commit_page(&self, idx: usize) -> Result<UFrame> {
         self.ondemand_readahead(idx)
     }
 
-    fn update_page(&self, idx: usize) -> Result<()> {
+    pub fn update_page(&self, idx: usize) -> Result<()> {
         let mut pages = self.pages.lock();
         if let Some(page) = pages.get_mut(&idx) {
             page.store_state(PageState::Dirty);
@@ -460,7 +678,30 @@ impl Pager for PageCacheManager {
         Ok(())
     }
 
-    fn decommit_page(&self, idx: usize) -> Result<()> {
+    // LRULists related: Promotion.
+    // Place this function after read/write from VMO.
+    pub fn lru_promotion(&self, idx: usize) -> Result<()> {
+        let mut pages = self.pages.lock();
+        if let Some(page) = pages.get(&idx) {
+            // If page is in active_list, promotion_from_active;
+            // else promotion_from_inactive.
+            let page_ = page.clone();
+            let page__ = page.clone();
+            let page___ = page.clone();
+            if get_lru_lists().lock().in_active(page_) {
+                get_lru_lists().lock().promotion_from_active(page__);
+            } else if get_lru_lists().lock().in_inactive(page___) {
+                get_lru_lists().lock().promotion_from_inactive(page__);
+            } else {
+            }
+        } else {
+            warn!("The page {} is not in page cache", idx);
+        }
+
+        Ok(())
+    }
+
+    pub fn decommit_page(&self, idx: usize) -> Result<()> {
         let page_result = self.pages.lock().pop(&idx);
         if let Some(page) = page_result {
             if let PageState::Dirty = page.load_state() {
@@ -476,13 +717,16 @@ impl Pager for PageCacheManager {
         Ok(())
     }
 
-    fn commit_overwrite(&self, idx: usize) -> Result<UFrame> {
+    pub fn commit_overwrite(&self, idx: usize) -> Result<UFrame> {
         if let Some(page) = self.pages.lock().get(&idx) {
             return Ok(page.clone().into());
         }
 
         let page = CachePage::alloc_uninit()?;
-        Ok(self.pages.lock().get_or_insert(idx, || page).clone().into())
+        let page_tmp = self.pages.lock().get_or_insert(idx, || page).clone();
+        // Load page to LRULists.
+        get_lru_lists().lock().load_page(page_tmp.clone());
+        Ok(page_tmp.into())
     }
 }
 
@@ -493,7 +737,8 @@ pub type CachePage = Frame<CachePageMeta>;
 #[derive(Debug)]
 pub struct CachePageMeta {
     pub state: AtomicPageState,
-    // TODO: Add a reverse mapping from the page to VMO for eviction.
+    pub reverse_map: RwLock<Option<Arc<Vmo_>>>,
+    pub is_mmapped: AtomicBool,
 }
 
 impl_untyped_frame_meta_for!(CachePageMeta);
@@ -506,10 +751,13 @@ pub trait CachePageExt {
     fn alloc_uninit() -> Result<CachePage> {
         let meta = CachePageMeta {
             state: AtomicPageState::new(PageState::Uninit),
+            reverse_map: RwLock::new(None),
+            is_mmapped: AtomicBool::new(false),
         };
         let page = FrameAllocOptions::new()
             .zeroed(false)
             .alloc_frame_with(meta)?;
+        //get_lru_lists().lock().load_page(page.clone());
         Ok(page)
     }
 
@@ -517,6 +765,8 @@ pub trait CachePageExt {
     fn alloc_zero(state: PageState) -> Result<CachePage> {
         let meta = CachePageMeta {
             state: AtomicPageState::new(state),
+            reverse_map: RwLock::new(None),
+            is_mmapped: AtomicBool::new(false),
         };
         let page = FrameAllocOptions::new()
             .zeroed(true)
