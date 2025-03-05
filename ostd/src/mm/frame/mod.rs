@@ -38,6 +38,9 @@ pub mod segment;
 pub mod unique;
 pub mod untyped;
 
+#[cfg(ktest)]
+mod test;
+
 use core::{
     marker::PhantomData,
     mem::ManuallyDrop,
