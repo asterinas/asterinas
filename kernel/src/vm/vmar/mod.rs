@@ -12,7 +12,7 @@ use core::{num::NonZeroUsize, ops::Range};
 use align_ext::AlignExt;
 use aster_rights::Rights;
 use ostd::{
-    cpu::CpuExceptionInfo,
+    cpu::context::CpuExceptionInfo,
     mm::{tlb::TlbFlushOp, PageFlags, PageProperty, VmSpace, MAX_USERSPACE_VADDR},
 };
 

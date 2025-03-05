@@ -3,7 +3,10 @@
 #![expect(unused_variables)]
 
 use aster_rights::Full;
-use ostd::{cpu::*, mm::VmSpace};
+use ostd::{
+    cpu::context::{CpuExceptionInfo, UserContext},
+    mm::VmSpace,
+};
 
 use crate::{
     prelude::*,

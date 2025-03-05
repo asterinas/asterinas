@@ -15,7 +15,7 @@ use crate::{
     arch::mm::{
         current_page_table_paddr, tlb_flush_all_excluding_global, PageTableEntry, PagingConsts,
     },
-    cpu::{AtomicCpuSet, CpuExceptionInfo, CpuSet, PinCurrentCpu},
+    cpu::{context::CpuExceptionInfo, AtomicCpuSet, CpuSet, PinCurrentCpu},
     cpu_local_cell,
     mm::{
         io::Fallible,
