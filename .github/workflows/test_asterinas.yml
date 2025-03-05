@@ -159,34 +159,58 @@ jobs:
           git config --global --add safe.directory /__w/asterinas/asterinas
           git config --global http.sslVerify false
           git config --global http.version HTTP/1.1
-      - name: Boot Test (Linux EFI Handover Boot Protocol)
+      - name: TDX Boot Test
         uses: nick-invision/retry@v2
-        id: boot_test_linux_efi_handover64
+        id: tdx_boot_test
         with:
           timeout_minutes: 20
           max_attempts: 3
-          command: make run AUTO_TEST=boot INTEL_TDX=1
+          command: make run AUTO_TEST=boot RELEASE=1 INTEL_TDX=1
 
-      - name: Syscall Test (Linux EFI Handover Boot Protocol)
+      - name: TDX Syscall Test
         uses: nick-invision/retry@v2
-        id: syscall_test
+        id: tdx_syscall_test
         with:
           timeout_minutes: 20
           max_attempts: 3
-          command: make run AUTO_TEST=syscall INTEL_TDX=1
+          command: make run AUTO_TEST=syscall RELEASE=1 INTEL_TDX=1
 
-      - name: Syscall Test at Exfat
+      - name: TDX Syscall Test at Exfat
         uses: nick-invision/retry@v2
-        id: syscall_test_at_exfat_linux
+        id: tdx_syscall_test_at_exfat
         with:
           timeout_minutes: 20
           max_attempts: 3
-          command: make run AUTO_TEST=syscall SYSCALL_TEST_DIR=/exfat EXTRA_BLOCKLISTS_DIRS=blocklists.exfat INTEL_TDX=1
+          command: make run AUTO_TEST=syscall SYSCALL_TEST_DIR=/exfat EXTRA_BLOCKLISTS_DIRS=blocklists.exfat RELEASE=1 INTEL_TDX=1
 
-      - name: General Test (Linux EFI Handover Boot Protocol)
+      - name: TDX General Test
         uses: nick-invision/retry@v2
-        id: test_linux
+        id: tdx_general_test
         with:
           timeout_minutes: 20
           max_attempts: 3
-          command: make run AUTO_TEST=test INTEL_TDX=1
+          command: make run AUTO_TEST=test RELEASE=1 INTEL_TDX=1
+
+      - name: TDX SMP Boot Test
+        uses: nick-invision/retry@v2
+        id: tdx_smp_boot_test
+        with:
+          timeout_minutes: 20
+          max_attempts: 3
+          command: make run AUTO_TEST=boot INTEL_TDX=1 RELEASE=1 SMP=4 NETDEV=tap
+
+      - name: TDX SMP General Test
+        uses: nick-invision/retry@v2
+        id: tdx_smp_general_test
+        with:
+          timeout_minutes: 20
+          max_attempts: 3
+          command: make run AUTO_TEST=test INTEL_TDX=1 RELEASE=1 SMP=4 NETDEV=tap
+
+      - name: TDX SMP Syscall Test
+        uses: nick-invision/retry@v2
+        id: tdx_smp_syscall_test
+        with:
+          timeout_minutes: 20
+          max_attempts: 3
+          command: make run AUTO_TEST=syscall INTEL_TDX=1 RELEASE=1 SMP=4 NETDEV=tap
