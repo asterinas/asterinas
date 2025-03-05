@@ -12,7 +12,7 @@ use spin::Once;
 
 use super::{preempt::cpu_local, processor, Task};
 use crate::{
-    cpu::{CpuId, PinCurrentCpu},
+    cpu::{CpuId, CpuSet, PinCurrentCpu},
     prelude::*,
     task::disable_preempt,
     timer,
@@ -195,7 +195,9 @@ fn set_need_preempt(cpu_id: CpuId) {
     if preempt_guard.current_cpu() == cpu_id {
         cpu_local::set_need_preempt();
     } else {
-        // TODO: Send IPIs to set remote CPU's `need_preempt`
+        crate::smp::inter_processor_call(&CpuSet::from(cpu_id), || {
+            cpu_local::set_need_preempt();
+        });
     }
 }
 

@@ -39,10 +39,7 @@ use ostd::{
 use process::Process;
 use sched::SchedPolicy;
 
-use crate::{
-    prelude::*,
-    thread::{kernel_thread::ThreadOptions, Thread},
-};
+use crate::{prelude::*, thread::kernel_thread::ThreadOptions};
 
 extern crate alloc;
 extern crate lru;
@@ -112,8 +109,10 @@ fn ap_init() {
         let cpu_id = preempt_guard.current_cpu();
         drop(preempt_guard);
         log::info!("Kernel idle thread for CPU #{} started.", cpu_id.as_usize());
+
         loop {
-            Thread::yield_now();
+            crate::thread::Thread::yield_now();
+            ostd::cpu::sleep_for_interrupt();
         }
     }
     let preempt_guard = ostd::task::disable_preempt();
@@ -154,9 +153,8 @@ fn init_thread() {
     .expect("Run init process failed.");
     // Wait till initproc become zombie.
     while !initproc.status().is_zombie() {
-        // We don't have preemptive scheduler now.
-        // The long running init thread should yield its own execution to allow other tasks to go on.
-        Thread::yield_now();
+        crate::thread::Thread::yield_now();
+        ostd::cpu::sleep_for_interrupt();
     }
 
     // TODO: exit via qemu isa debug device should not be the only way.
