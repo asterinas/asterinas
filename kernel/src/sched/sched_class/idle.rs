@@ -35,11 +35,8 @@ impl core::fmt::Debug for IdleClassRq {
 
 impl SchedClassRq for IdleClassRq {
     fn enqueue(&mut self, entity: Arc<Task>, _: Option<EnqueueFlags>) {
-        let ptr = Arc::as_ptr(&entity);
-        if let Some(t) = self.entity.replace(entity)
-            && ptr != Arc::as_ptr(&t)
-        {
-            panic!("Multiple `idle` entities spawned")
+        if self.entity.replace(entity).is_some() {
+            panic!("Multiple `idle` threads spawned")
         }
     }
 
@@ -52,7 +49,7 @@ impl SchedClassRq for IdleClassRq {
     }
 
     fn pick_next(&mut self) -> Option<Arc<Task>> {
-        self.entity.clone()
+        self.entity.take()
     }
 
     fn update_current(&mut self, _: &CurrentRuntime, _: &SchedAttr, _flags: UpdateFlags) -> bool {
