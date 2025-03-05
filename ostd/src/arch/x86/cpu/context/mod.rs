@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! CPU.
-
-pub mod local;
+//! CPU execution context control.
 
 use alloc::boxed::Box;
 use core::{
@@ -18,19 +16,14 @@ use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 use spin::Once;
 use x86::bits64::segmentation::wrfsbase;
-pub use x86::cpuid;
 use x86_64::registers::{
     control::{Cr0, Cr0Flags},
     rflags::RFlags,
     xcontrol::XCr0,
 };
 
-pub use super::trap::GeneralRegs as RawGeneralRegs;
-use super::{
-    trap::{TrapFrame, UserContext as RawUserContext},
-    CPU_FEATURES,
-};
 use crate::{
+    arch::x86::CPU_FEATURES,
     task::scheduler,
     trap::call_irq_callback_functions,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
@@ -43,6 +36,12 @@ cfg_if! {
         use tdx::VirtualizationExceptionHandler;
     }
 }
+
+pub use x86::cpuid;
+
+pub use crate::arch::trap::{
+    GeneralRegs as RawGeneralRegs, TrapFrame, UserContext as RawUserContext,
+};
 
 /// Cpu context, including both general-purpose registers and FPU state.
 #[derive(Clone, Default, Debug)]
@@ -588,7 +587,7 @@ static XSAVE_AREA_SIZE: Once<usize> = Once::new();
 /// The max size in bytes of the XSAVE area.
 const MAX_XSAVE_AREA_SIZE: usize = 4096;
 
-pub(super) fn enable_essential_features() {
+pub(in crate::arch::x86) fn enable_essential_features() {
     XSTATE_MAX_FEATURES.call_once(|| {
         const XSTATE_CPUID: u32 = 0x0000000d;
 

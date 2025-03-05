@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! CPU
-
-pub mod local;
+//! CPU execution context control.
 
 use core::fmt::Debug;
 
 use riscv::register::scause::{Exception, Trap};
 
-pub use super::trap::GeneralRegs as RawGeneralRegs;
-use super::trap::{TrapFrame, UserContext as RawUserContext};
-use crate::user::{ReturnReason, UserContextApi, UserContextApiInternal};
+pub use crate::arch::riscv::trap::GeneralRegs as RawGeneralRegs;
+use crate::{
+    arch::riscv::trap::{TrapFrame, UserContext as RawUserContext},
+    user::{ReturnReason, UserContextApi, UserContextApiInternal},
+};
 
 /// Cpu context, including both general-purpose registers and FPU state.
 #[derive(Clone, Copy, Debug)]

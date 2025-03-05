@@ -3,7 +3,7 @@
 use core::{num::NonZeroU64, sync::atomic::Ordering};
 
 use ostd::{
-    cpu::UserContext,
+    cpu::context::UserContext,
     sync::RwArc,
     task::Task,
     user::{UserContextApi, UserSpace},

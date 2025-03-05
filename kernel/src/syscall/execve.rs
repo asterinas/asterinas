@@ -2,7 +2,7 @@
 
 use aster_rights::WriteOp;
 use ostd::{
-    cpu::{FpuState, RawGeneralRegs, UserContext},
+    cpu::context::{FpuState, RawGeneralRegs, UserContext},
     user::UserContextApi,
 };
 

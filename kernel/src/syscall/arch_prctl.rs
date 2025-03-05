@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::cpu::UserContext;
+use ostd::cpu::context::UserContext;
 
 use super::SyscallReturn;
 use crate::prelude::*;
