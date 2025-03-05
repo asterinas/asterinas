@@ -94,9 +94,9 @@ pub(crate) fn init_on_bsp() {
 
     crate::sync::init();
 
-    crate::boot::smp::boot_all_aps();
+    timer::init_global_and_bsp();
 
-    timer::init();
+    crate::boot::smp::boot_all_aps();
 
     cfg_if! {
         if #[cfg(feature = "cvm_guest")] {
@@ -125,8 +125,7 @@ pub(crate) fn init_on_bsp() {
 /// This function must be called only once on each application processor.
 /// And it should be called after the BSP's call to [`init_on_bsp`].
 pub(crate) unsafe fn init_on_ap() {
-    // Trigger the initialization of the local APIC.
-    crate::arch::x86::kernel::apic::with_borrow(|_| {});
+    timer::init_ap();
 }
 
 pub(crate) fn interrupts_ack(irq_number: usize) {
