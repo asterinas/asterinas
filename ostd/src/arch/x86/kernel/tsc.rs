@@ -19,7 +19,7 @@ use crate::{
 };
 
 /// The frequency of TSC(Hz)
-pub(crate) static TSC_FREQ: AtomicU64 = AtomicU64::new(0);
+pub(in crate::arch::x86) static TSC_FREQ: AtomicU64 = AtomicU64::new(0);
 
 pub fn init_tsc_freq() {
     let tsc_freq =

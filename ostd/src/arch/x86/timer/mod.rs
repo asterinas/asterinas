@@ -10,9 +10,9 @@ use core::sync::atomic::Ordering;
 
 use spin::Once;
 
-use self::apic::APIC_TIMER_CALLBACK;
 use crate::{
     arch::x86::kernel,
+    cpu::{CpuId, PinCurrentCpu},
     timer::INTERRUPT_CALLBACKS,
     trap::{self, IrqLine, TrapFrame},
 };
@@ -33,17 +33,19 @@ pub const TIMER_FREQ: u64 = 1000;
 
 static TIMER_IRQ: Once<IrqLine> = Once::new();
 
-pub(super) fn init() {
-    /// In PIT mode, channel 0 is connected directly to IRQ0, which is
-    /// the `IrqLine` with the `irq_num` 32 (0-31 `IrqLine`s are reserved).
-    ///
-    /// Ref: https://wiki.osdev.org/Programmable_Interval_Timer#Outputs.
-    const PIT_MODE_TIMER_IRQ_NUM: u8 = 32;
-
+/// Initializes the timer state and enable timer interrupts on BSP.
+pub(super) fn init_bsp() {
     let mut timer_irq = if kernel::apic::exists() {
-        apic::init()
+        apic::init_bsp()
     } else {
         pit::init(pit::OperatingMode::SquareWaveGenerator);
+
+        /// In PIT mode, channel 0 is connected directly to IRQ0, which is
+        /// the `IrqLine` with the `irq_num` 32 (0-31 `IrqLine`s are reserved).
+        ///
+        /// Ref: https://wiki.osdev.org/Programmable_Interval_Timer#Outputs.
+        const PIT_MODE_TIMER_IRQ_NUM: u8 = 32;
+
         IrqLine::alloc_specific(PIT_MODE_TIMER_IRQ_NUM).unwrap()
     };
 
@@ -51,17 +53,24 @@ pub(super) fn init() {
     TIMER_IRQ.call_once(|| timer_irq);
 }
 
-fn timer_callback(_: &TrapFrame) {
-    crate::timer::jiffies::ELAPSED.fetch_add(1, Ordering::SeqCst);
+/// Enables timer interrupt on this AP.
+pub(super) fn init_ap() {
+    if kernel::apic::exists() {
+        apic::init_ap(TIMER_IRQ.get().unwrap());
+    }
+}
 
+fn timer_callback(_: &TrapFrame) {
     let irq_guard = trap::disable_local();
+    if irq_guard.current_cpu() == CpuId::bsp() {
+        crate::timer::jiffies::ELAPSED.fetch_add(1, Ordering::SeqCst);
+    }
+
     let callbacks_guard = INTERRUPT_CALLBACKS.get_with(&irq_guard);
     for callback in callbacks_guard.borrow().iter() {
         (callback)();
     }
     drop(callbacks_guard);
 
-    if APIC_TIMER_CALLBACK.is_completed() {
-        APIC_TIMER_CALLBACK.get().unwrap().call(());
-    }
+    apic::timer_callback();
 }
