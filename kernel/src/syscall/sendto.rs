@@ -32,10 +32,8 @@ pub fn sys_sendto(
 
     let message_header = MessageHeader::new(socket_addr, None);
 
-    let mut reader = {
-        let vm_space = ctx.process.root_vmar().vm_space();
-        vm_space.reader(buf, len)?
-    };
+    let current_userspace = ctx.user_space();
+    let mut reader = current_userspace.reader(buf, len)?;
     let send_size = socket
         .sendmsg(&mut reader, message_header, flags)
         .map_err(|err| match err.error() {
