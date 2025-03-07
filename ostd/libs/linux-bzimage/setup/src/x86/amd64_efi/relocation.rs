@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::x86::get_image_loaded_offset;
+use crate::x86::image_load_offset;
 
 /// Apply the relocations in the `.rela.*` sections.
 ///
@@ -18,7 +18,7 @@ use crate::x86::get_image_loaded_offset;
 /// Failure to do relocations will cause `dyn Trait` objects to break.
 pub unsafe fn apply_rela_relocations() {
     use core::arch::asm;
-    let image_loaded_offset = get_image_loaded_offset();
+    let image_loaded_offset = image_load_offset();
 
     let mut start: usize;
     let end: usize;

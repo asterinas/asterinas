@@ -17,24 +17,8 @@ use super::{
 
 const PAGE_SIZE: u64 = 4096;
 
-// Suppress warnings since using todo!.
-#[expect(unreachable_code)]
-#[expect(unused_variables)]
-#[expect(clippy::diverging_sub_expression)]
-#[export_name = "efi_stub_entry"]
-extern "sysv64" fn efi_stub_entry(handle: Handle, system_table: *const SystemTable) -> ! {
-    // SAFETY: handle and system_table are valid pointers. It is only called once.
-    unsafe { system_init(handle, system_table) };
-
-    uefi::helpers::init().unwrap();
-
-    let boot_params = todo!("Use EFI boot services to fill boot params");
-
-    efi_phase_boot(boot_params);
-}
-
-#[export_name = "efi_handover_entry"]
-extern "sysv64" fn efi_handover_entry(
+#[export_name = "main_efi_handover64"]
+extern "sysv64" fn main_efi_handover64(
     handle: Handle,
     system_table: *const SystemTable,
     boot_params_ptr: *mut BootParams,
@@ -78,7 +62,7 @@ fn efi_phase_boot(boot_params: &mut BootParams) -> ! {
     uefi::println!("[EFI stub] Relocations applied.");
     uefi::println!(
         "[EFI stub] Stub loaded at {:#x?}",
-        crate::x86::get_image_loaded_offset()
+        crate::x86::image_load_offset()
     );
 
     // Fill the boot params with the RSDP address if it is not provided.
