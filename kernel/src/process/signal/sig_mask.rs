@@ -118,6 +118,14 @@ impl<T: Into<SigSet>> ops::SubAssign<T> for SigSet {
     }
 }
 
+impl ops::Not for SigSet {
+    type Output = Self;
+
+    fn not(self) -> Self {
+        SigSet { bits: !self.bits }
+    }
+}
+
 impl SigSet {
     pub fn new_empty() -> Self {
         SigSet { bits: 0 }
@@ -142,6 +150,11 @@ impl SigSet {
     pub fn contains(&self, set: impl Into<Self>) -> bool {
         let set = set.into();
         self.bits & set.bits == set.bits
+    }
+
+    pub fn intersects(&self, set: impl Into<Self>) -> bool {
+        let set = set.into();
+        self.bits & set.bits != 0
     }
 }
 
