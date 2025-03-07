@@ -3,6 +3,7 @@
 use aster_rights::WriteOp;
 use ostd::{
     cpu::{FpuState, RawGeneralRegs, UserContext},
+    task::Task,
     user::UserContextApi,
 };
 
@@ -141,12 +142,12 @@ fn do_execve(
     // set cpu context to default
     *user_context.general_regs_mut() = RawGeneralRegs::default();
     user_context.set_tls_pointer(0);
-    *user_context.fpu_state_mut() = FpuState::default();
-    // FIXME: how to reset the FPU state correctly? Before returning to the user space,
-    // the kernel will call `handle_pending_signal`, which may update the CPU states so that
-    // when the kernel switches to the user mode, the control of the CPU will be handed over
-    // to the user-registered signal handlers.
-    user_context.fpu_state().restore();
+    // reset the CPU's FPU state
+    if let Some(fpu_state) = Task::current().unwrap().fpu_state() {
+        let mut fpu_state = fpu_state.borrow_mut();
+        *fpu_state = FpuState::default();
+        fpu_state.restore();
+    }
     // set new entry point
     user_context.set_instruction_pointer(elf_load_info.entry_point() as _);
     debug!("entry_point: 0x{:x}", elf_load_info.entry_point());

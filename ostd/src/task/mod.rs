@@ -12,7 +12,7 @@ mod utils;
 use core::{
     any::Any,
     borrow::Borrow,
-    cell::{Cell, SyncUnsafeCell},
+    cell::{Cell, RefCell, SyncUnsafeCell},
     ops::Deref,
     ptr::NonNull,
 };
@@ -20,14 +20,14 @@ use core::{
 use kernel_stack::KernelStack;
 pub(crate) use preempt::cpu_local::reset_preempt_info;
 use processor::current_task;
-use utils::ForceSync;
+pub(crate) use utils::ForceSync;
 
 pub use self::{
     preempt::{disable_preempt, DisabledPreemptGuard},
     scheduler::info::{AtomicCpuId, TaskScheduleInfo},
 };
 pub(crate) use crate::arch::task::{context_switch, TaskContext};
-use crate::{prelude::*, trap::in_interrupt_context, user::UserSpace};
+use crate::{cpu::FpuState, prelude::*, trap::in_interrupt_context, user::UserSpace};
 
 /// A task that executes a function to the end.
 ///
@@ -117,24 +117,6 @@ impl Task {
             None
         }
     }
-
-    /// Saves the FPU state for user task.
-    pub fn save_fpu_state(&self) {
-        let Some(user_space) = self.user_space.as_ref() else {
-            return;
-        };
-
-        user_space.fpu_state().save();
-    }
-
-    /// Restores the FPU state for user task.
-    pub fn restore_fpu_state(&self) {
-        let Some(user_space) = self.user_space.as_ref() else {
-            return;
-        };
-
-        user_space.fpu_state().restore();
-    }
 }
 
 /// Options to create or spawn a new task.
@@ -203,7 +185,9 @@ impl TaskOptions {
             let current_task = Task::current()
                 .expect("no current task, it should have current task in kernel task entry");
 
-            current_task.restore_fpu_state();
+            if let Some(fpu_state) = current_task.fpu_state() {
+                fpu_state.borrow().restore();
+            }
 
             // SAFETY: The `func` field will only be accessed by the current task in the task
             // context, so the data won't be accessed concurrently.
@@ -314,6 +298,13 @@ impl CurrentTask {
 
         // SAFETY: We've increased the reference count in the current `Arc<Task>` above.
         unsafe { Arc::from_raw(ptr) }
+    }
+
+    /// Returns the fpu state of the current task, if it has.
+    pub fn fpu_state(&self) -> Option<&RefCell<FpuState>> {
+        // SAFETY: The `fpu_state` will only be accessed by the current task, so
+        // it won't be accessed concurrently.
+        unsafe { self.user_space().map(|user_space| user_space.fpu_state()) }
     }
 }
 
