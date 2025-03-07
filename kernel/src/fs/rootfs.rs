@@ -11,6 +11,7 @@ use super::{
     path::MountNode,
     procfs::{self, ProcFS},
     ramfs::RamFS,
+    sysfs::SysFS,
     utils::{FileSystem, InodeMode, InodeType},
 };
 use crate::{fs::path::is_dot, prelude::*};
@@ -113,6 +114,10 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
     // Mount DevFS
     let dev_dentry = fs.lookup(&FsPath::try_from("/dev")?)?;
     dev_dentry.mount(RamFS::new())?;
+    // Mount SysFS
+    let sys_dentry = fs.lookup(&FsPath::try_from("/sys")?)?;
+    let sysfs: Arc<SysFS> = SysFS::new();
+    sys_dentry.mount(sysfs.clone())?;
 
     println!("[kernel] rootfs is ready");
 
