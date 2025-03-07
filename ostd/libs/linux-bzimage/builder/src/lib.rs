@@ -124,11 +124,17 @@ fn to_flat_binary(elf_file: &[u8]) -> Vec<u8> {
             let dst_file_offset = usize::from(SetupFileOffset::from(SetupVA::from(
                 program.virtual_addr() as usize,
             )));
-            let dst_file_length = program.file_size() as usize;
-            if bin.len() < dst_file_offset + dst_file_length {
-                bin.resize(dst_file_offset + dst_file_length, 0);
+
+            // Note that `mem_size` can be greater than `file_size`. The remaining part must be
+            // filled with zeros.
+            let mem_length = program.mem_size() as usize;
+            if bin.len() < dst_file_offset + mem_length {
+                bin.resize(dst_file_offset + mem_length, 0);
             }
-            let dest_slice = bin[dst_file_offset..dst_file_offset + dst_file_length].as_mut();
+
+            // Copy the bytes in the `file_size` part.
+            let file_length = program.file_size() as usize;
+            let dest_slice = bin[dst_file_offset..dst_file_offset + file_length].as_mut();
             dest_slice.copy_from_slice(header_data);
         }
     }
