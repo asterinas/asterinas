@@ -611,3 +611,146 @@ FN_TEST(bind_and_connect_same_address)
 	TEST_SUCC(close(sk_connect2));
 }
 END_TEST()
+
+#define SETUP_CONN                                                 \
+	sk_addr.sin_port = S_PORT;                                 \
+                                                                   \
+	sk_connect = TEST_SUCC(socket(PF_INET, SOCK_STREAM, 0));   \
+	pfd.fd = sk_connect;                                       \
+	TEST_SUCC(connect(sk_connect, (struct sockaddr *)&sk_addr, \
+			  sizeof(sk_addr)));                       \
+                                                                   \
+	len = sizeof(sk_addr);                                     \
+	sk_accept = TEST_SUCC(                                     \
+		accept(sk_listen, (struct sockaddr *)&sk_addr, &len));
+
+FN_TEST(shutdown_shutdown)
+{
+	int sk_accept;
+	int sk_connect;
+	socklen_t len;
+	struct pollfd pfd __attribute__((unused));
+
+	SETUP_CONN;
+
+	// Test 1: Perform `shutdown` multiple times
+	TEST_SUCC(shutdown(sk_accept, SHUT_RDWR));
+	TEST_SUCC(shutdown(sk_accept, SHUT_RDWR));
+
+	// Test 2: Perform `shutdown` after the connection is closed
+	TEST_SUCC(shutdown(sk_connect, SHUT_RDWR));
+	TEST_ERRNO(shutdown(sk_connect, SHUT_RD), ENOTCONN);
+	TEST_ERRNO(shutdown(sk_connect, SHUT_WR), ENOTCONN);
+	TEST_ERRNO(shutdown(sk_accept, SHUT_RD), ENOTCONN);
+	TEST_ERRNO(shutdown(sk_accept, SHUT_WR), ENOTCONN);
+
+	TEST_SUCC(close(sk_accept));
+	TEST_SUCC(close(sk_connect));
+}
+END_TEST()
+
+FN_TEST(connreset)
+{
+	int sk_accept;
+	int sk_connect;
+	struct linger lin = { .l_onoff = 1, .l_linger = 0 };
+	struct pollfd pfd = { .events = POLLIN | POLLOUT };
+	char buf[6] = "hello";
+	int err;
+	socklen_t len;
+
+#define RESET_CONN                                                   \
+	TEST_SUCC(setsockopt(sk_accept, SOL_SOCKET, SO_LINGER, &lin, \
+			     sizeof(lin)));                          \
+	TEST_SUCC(close(sk_accept));
+
+#define EV_ERR (POLLIN | POLLOUT | POLLHUP | POLLERR)
+#define EV_NO_ERR (POLLIN | POLLOUT | POLLHUP)
+
+	// Test 1: `recv` should fail with `ECONNRESET`
+
+	SETUP_CONN;
+	RESET_CONN;
+
+	TEST_RES(poll(&pfd, 1, 0), pfd.revents == EV_ERR);
+	TEST_ERRNO(recv(sk_connect, buf, 0, 0), ECONNRESET);
+	TEST_RES(poll(&pfd, 1, 0), pfd.revents == EV_NO_ERR);
+
+	TEST_RES(recv(sk_connect, buf, 0, 0), _ret == 0);
+	TEST_SUCC(close(sk_connect));
+
+	// Test 2: `send` should fail with `ECONNRESET`
+
+	SETUP_CONN;
+	RESET_CONN;
+
+	TEST_RES(poll(&pfd, 1, 0), pfd.revents == EV_ERR);
+	TEST_ERRNO(send(sk_connect, buf, 0, 0), ECONNRESET);
+	TEST_RES(poll(&pfd, 1, 0), pfd.revents == EV_NO_ERR);
+
+	TEST_ERRNO(send(sk_connect, buf, 0, 0), EPIPE);
+	TEST_SUCC(close(sk_connect));
+
+	// Test 3: `recv` should drain the buffer, then fail with `ECONNRESET`
+
+	SETUP_CONN;
+	TEST_RES(send(sk_accept, buf, sizeof(buf), 0), _ret == sizeof(buf));
+	RESET_CONN;
+
+	TEST_RES(recv(sk_connect, buf, 4, 0),
+		 _ret == 4 && memcmp(buf, "hell", 4) == 0);
+	TEST_RES(recv(sk_connect, buf, sizeof(buf), 0),
+		 _ret == 2 && memcmp(buf, "o", 2) == 0);
+	TEST_ERRNO(recv(sk_connect, buf, sizeof(buf), 0), ECONNRESET);
+
+	TEST_RES(recv(sk_connect, buf, 0, 0), _ret == 0);
+	TEST_SUCC(close(sk_connect));
+
+	// Test 3: `getsockopt(SO_ERROR)` should report `ECONNRESET`
+
+	SETUP_CONN;
+	RESET_CONN;
+
+	TEST_RES(poll(&pfd, 1, 0), pfd.revents == EV_ERR);
+	len = sizeof(err);
+	TEST_RES(getsockopt(sk_connect, SOL_SOCKET, SO_ERROR, &err, &len),
+		 len == sizeof(err) && err == ECONNRESET);
+	TEST_RES(poll(&pfd, 1, 0), pfd.revents == EV_NO_ERR);
+
+	TEST_RES(getsockopt(sk_connect, SOL_SOCKET, SO_ERROR, &err, &len),
+		 len == sizeof(err) && err == 0);
+	TEST_SUCC(close(sk_connect));
+
+#undef EV_ERR
+#undef EV_NO_ERR
+
+#undef RESET_CONN
+}
+END_TEST()
+
+#undef SETUP_CONN
+
+FN_TEST(listen_close)
+{
+	int sk_listen;
+	int sk_connect;
+
+	sk_addr.sin_port = htons(0x4321);
+
+	sk_listen = TEST_SUCC(socket(PF_INET, SOCK_STREAM, 0));
+	TEST_SUCC(
+		bind(sk_listen, (struct sockaddr *)&sk_addr, sizeof(sk_addr)));
+	TEST_SUCC(listen(sk_listen, 10));
+
+	sk_connect = TEST_SUCC(socket(PF_INET, SOCK_STREAM, 0));
+	TEST_SUCC(connect(sk_connect, (struct sockaddr *)&sk_addr,
+			  sizeof(sk_addr)));
+
+	// Test: `close(sk_listen)` will reset all connections in the backlog
+	TEST_SUCC(close(sk_listen));
+	TEST_ERRNO(send(sk_connect, &sk_connect, sizeof(sk_connect), 0),
+		   ECONNRESET);
+
+	TEST_SUCC(close(sk_connect));
+}
+END_TEST()

@@ -6,7 +6,7 @@ use aster_bigtcp::{
     socket::{NeedIfacePoll, RawTcpOption, RawTcpSetOption},
     wire::IpEndpoint,
 };
-use connected::ConnectedStream;
+use connected::{close_and_linger, ConnectedStream};
 use connecting::{ConnResult, ConnectingStream};
 use init::InitStream;
 use listen::ListenStream;
@@ -331,7 +331,10 @@ impl StreamSocket {
             }
         };
 
-        let (recv_bytes, need_poll) = connected_stream.try_recv(writer, flags)?;
+        let result = connected_stream.try_recv(writer, flags);
+        self.pollee.invalidate();
+
+        let (recv_bytes, need_poll) = result?;
         let iface_to_poll = need_poll.then(|| connected_stream.iface().clone());
         let remote_endpoint = connected_stream.remote_endpoint();
 
@@ -355,7 +358,6 @@ impl StreamSocket {
                 return result;
             }
             State::Listen(_) => {
-                // TODO: Trigger `SIGPIPE` if `MSG_NOSIGNAL` is not specified
                 return_errno_with_message!(Errno::EPIPE, "the socket is not connected");
             }
             State::Connecting(_) => {
@@ -365,11 +367,13 @@ impl StreamSocket {
             }
         };
 
-        let (sent_bytes, need_poll) = connected_stream.try_send(reader, flags)?;
+        let result = connected_stream.try_send(reader, flags);
+        self.pollee.invalidate();
+
+        let (sent_bytes, need_poll) = result?;
         let iface_to_poll = need_poll.then(|| connected_stream.iface().clone());
 
         drop(state);
-        self.pollee.invalidate();
         if let Some(iface) = iface_to_poll {
             iface.poll();
         }
@@ -393,7 +397,8 @@ impl StreamSocket {
 
         let error = match state.as_ref() {
             State::Init(init_stream) => init_stream.test_and_clear_error(),
-            State::Connecting(_) | State::Listen(_) | State::Connected(_) => None,
+            State::Connected(connected_stream) => connected_stream.test_and_clear_error(),
+            State::Connecting(_) | State::Listen(_) => None,
         };
         self.pollee.invalidate();
         error
@@ -553,6 +558,8 @@ impl Socket for StreamSocket {
         }
 
         self.block_on(IoEvents::OUT, || self.try_send(reader, flags))
+
+        // TODO: Trigger `SIGPIPE` if the error code is `EPIPE` and `MSG_NOSIGNAL` is not specified
     }
 
     fn recvmsg(
@@ -825,14 +832,19 @@ impl Drop for StreamSocket {
     fn drop(&mut self) {
         let state = self.state.get_mut().take();
 
-        let iface_to_poll = state.iface().cloned();
+        let conn = match state {
+            State::Init(_) => return,
+            State::Connecting(connecting_stream) => connecting_stream.into_connection(),
+            State::Connected(connected_stream) => connected_stream.into_connection(),
+            State::Listen(listen_stream) => {
+                let listener = listen_stream.into_listener();
+                listener.close();
+                listener.iface().poll();
+                return;
+            }
+        };
 
-        // Dropping the state will drop the sockets. This will trigger the socket close process (if
-        // needed) and require immediate iface polling afterwards.
-        drop(state);
-
-        if let Some(iface) = iface_to_poll {
-            iface.poll();
-        }
+        let linger = self.options.get_mut().socket.linger();
+        close_and_linger(conn, linger, &self.pollee);
     }
 }

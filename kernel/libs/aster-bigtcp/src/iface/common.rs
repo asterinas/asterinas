@@ -23,7 +23,7 @@ use super::{
 use crate::{
     errors::BindError,
     ext::Ext,
-    socket::{TcpConnectionBg, TcpListenerBg, UdpSocketBg},
+    socket::{TcpListenerBg, UdpSocketBg},
     socket_table::SocketTable,
 };
 
@@ -154,11 +154,6 @@ impl<E: Ext> IfaceCommon<E> {
         let mut sockets = self.sockets.lock();
         let removed = sockets.remove_listener(socket.listener_key());
         debug_assert!(removed.is_some());
-    }
-
-    pub(crate) fn remove_dead_tcp_connection(&self, socket: &Arc<TcpConnectionBg<E>>) {
-        let mut sockets = self.sockets.lock();
-        sockets.remove_dead_tcp_connection(socket.connection_key());
     }
 
     pub(crate) fn remove_udp_socket(&self, socket: &Arc<UdpSocketBg<E>>) {

@@ -110,4 +110,8 @@ impl ConnectingStream {
     ) -> R {
         set_option(&self.tcp_conn)
     }
+
+    pub(super) fn into_connection(self) -> TcpConnection {
+        self.tcp_conn
+    }
 }

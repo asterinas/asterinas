@@ -151,7 +151,12 @@ impl Pollee {
         new_events & mask
     }
 
-    fn register_poller(&self, poller: &mut PollHandle, mask: IoEvents) {
+    /// Registers a poller to listen notification for new events.
+    ///
+    /// The functionality of this method is a subset of calling [`Self::poll_with`] and providing
+    /// the same poller. Unlike [`Self::poll_with`], this method performs poller registration
+    /// without checking (and perhaps caching) the current events.
+    pub fn register_poller(&self, poller: &mut PollHandle, mask: IoEvents) {
         self.inner
             .subject
             .register_observer(poller.observer.clone(), mask);
