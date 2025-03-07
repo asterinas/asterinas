@@ -1,43 +1,74 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 
+// The load address of the setup section is CODE32_START (0x100000).
+// See the linker script.
 .section ".setup", "ax"
+
+.code32
+.global entry_legacy32
+entry_legacy32:
+    // This is the 32-bit Linux legacy entry point.
+
+    // Not supported. However, there doesn't seem to be a way to disable this
+    // entry point in the header, so provide a dummy implementation here.
+    hlt
+    jmp entry_legacy32
+
+.global entry_efi_handover32
+entry_efi_handover32:
+    // This is the 32-bit EFI handover entry point.
+
+    // Not supported. This entry point is not enabled in the header, so it
+    // should not be reachable. We declare the entry point anyway, because
+    // its offset is needed in the header. We provide a dummy implementation
+    // just in case.
+    jmp entry_legacy32
+
+// The 64-bit Linux legacy entry point must be 0x200 bytes after the 32-bit
+// one. This is required by the x86 Linux boot protocol.
+.skip 0x200 - (. - entry_legacy32)
+
 .code64
-// start_of_setup32 should be loaded at CODE32_START, which is our base.
-.global start_of_setup32
-start_of_setup32:
+entry_legacy64:
+    // This is the 64-bit Linux legacy entry point.
 
-// `efi_handover_setup_entry64` should be at efi_handover_setup_entry32 + 0x200, but
-// we could provide the 32 bit dummy entry point as the 64 bit entry point - 0x200
-// since we do not provide 32-bit entry point in the x86_64 specific implementation.
-.org 0x210
-.global efi_handover_setup_entry
-efi_handover_setup_entry:
-    // The 3 parameters of is stored in rdi, rsi and rdx (sysv64).
-    // Do not use them.
+    // Not supported. We need to enable this entry point in the header,
+    // otherwise the boot loader will think the kernel does not support
+    // 64-bit.
+    jmp halt
 
-    // Setup the stack.
-    lea rsp, [rip + setup_stack_top]
-    lea rax, [rip + halt]
-    push rax                        # the return address
-    mov rbp, rsp
-    add rbp, -4
-    push rbp
-    mov rbp, rsp
+// The 64-bit EFI handover entry point must be 0x200 bytes after the 32-bit
+// one. This is required by the x86 Linux boot protocol.
+.skip 0x200 - (. - entry_efi_handover32)
 
-.extern efi_handover_entry
-    lea rax, [rip + efi_handover_entry]
-    call rax
+entry_efi_handover64:
+    // This is the 64-bit EFI handover entry point.
+    //
+    // Arguments:
+    //  RDI: void *handle
+    //  RSI: efi_system_table_t *table
+    //  RDX: struct boot_params *bp
 
-    // Unreachable here.
+    // We can reuse the stack provided by the UEFI firmware until a short time
+    // after exiting the UEFI boot services. So we don't build our own stack.
+    //
+    // But the stack must be 16-byte aligned! So we drop the return address.
+    add rsp, 8
+
+    // Call the Rust main routine.
+    call main_efi_handover64
+
+    // The main routine should not return. If it does, there is nothing we can
+    // do but stop the machine.
+    jmp halt
+
+.global entry_efi_pe64
+entry_efi_pe64:
+    // This is the 64-bit EFI PE/COFF entry point.
+
+    // Not supported yet. Just stop the machine.
+    jmp halt
+
 halt:
     hlt
     jmp halt
-
-// A small stack for the setup code.
-.section .data
-.align 0x1000 / 8
-.global setup_stack
-setup_stack:
-    .skip 0x1000
-.global setup_stack_top
-setup_stack_top:
