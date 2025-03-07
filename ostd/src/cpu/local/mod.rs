@@ -34,7 +34,7 @@ mod cpu_local;
 
 pub(crate) mod single_instr;
 
-use core::{alloc::Layout, mem::ManuallyDrop};
+use core::alloc::Layout;
 
 use align_ext::AlignExt;
 pub use cell::CpuLocalCell;
@@ -43,11 +43,8 @@ use spin::Once;
 
 use super::CpuId;
 use crate::{
-    arch, impl_frame_meta_for,
-    mm::{
-        frame::allocator, kspace::LINEAR_MAPPING_BASE_VADDR, paddr_to_vaddr, Paddr, Segment,
-        PAGE_SIZE,
-    },
+    arch,
+    mm::{frame::allocator, paddr_to_vaddr, Paddr, PAGE_SIZE},
 };
 
 // These symbols are provided by the linker script.
@@ -60,12 +57,6 @@ extern "C" {
 static CPU_LOCAL_STORAGES: Once<CpuLocalStoragePointers> = Once::new();
 
 struct CpuLocalStoragePointers(&'static mut [Paddr]);
-
-/// Metadata for frames that contain data related to CPU-local storage.
-#[derive(Debug)]
-struct CpuLocalStorageMeta;
-
-impl_frame_meta_for!(CpuLocalStorageMeta);
 
 impl CpuLocalStoragePointers {
     /// Allocates frames for storing CPU-local data for each AP.

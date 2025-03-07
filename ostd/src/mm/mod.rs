@@ -16,7 +16,6 @@ pub(crate) mod kspace;
 mod offset;
 pub(crate) mod page_prop;
 pub(crate) mod page_table;
-pub mod stat;
 pub mod tlb;
 pub mod vm_space;
 

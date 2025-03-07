@@ -85,7 +85,7 @@ unsafe fn init() {
     // SAFETY: We are on the BSP and APs are not yet started.
     let meta_pages = unsafe { mm::frame::meta::init() };
     // The frame allocator should be initialized immediately after the metadata
-    // is initialized.
+    // is initialized. Otherwise the boot page table can't allocate frames.
     // SAFETY: This function is called only once.
     unsafe { mm::frame::allocator::init() };
 
