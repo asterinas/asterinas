@@ -371,13 +371,13 @@ impl<P: OwnerPtr> RcuOptionReadGuard<'_, P> {
 /// The pointer must be previously returned by `into_raw` and the pointer
 /// must be only be dropped once.
 unsafe fn delay_drop<P: OwnerPtr>(pointer: NonNull<<P as OwnerPtr>::Target>) {
-    struct ForceSend<P: OwnerPtr>(NonNull<<P as OwnerPtr>::Target>);
+    struct ForceSend(NonNull<()>);
     // SAFETY: Sending a raw pointer to another task is safe as long as
     // the pointer access in another task is safe (guaranteed by the trait
     // bound `P: Send`).
-    unsafe impl<P: OwnerPtr> Send for ForceSend<P> {}
+    unsafe impl Send for ForceSend {}
 
-    let pointer: ForceSend<P> = ForceSend(pointer);
+    let pointer: ForceSend = ForceSend(pointer.cast());
 
     let rcu_monitor = RCU_MONITOR.get().unwrap();
     rcu_monitor.after_grace_period(move || {
@@ -389,7 +389,7 @@ unsafe fn delay_drop<P: OwnerPtr>(pointer: NonNull<<P as OwnerPtr>::Target>) {
         // 1. The pointer was previously returned by `into_raw`.
         // 2. The pointer won't be used anymore since the grace period has
         //    finished and this is the only time the pointer gets dropped.
-        let p = unsafe { <P as OwnerPtr>::from_raw(pointer.0) };
+        let p = unsafe { <P as OwnerPtr>::from_raw(pointer.0.cast()) };
         drop(p);
     });
 }
