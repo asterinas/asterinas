@@ -30,8 +30,9 @@ halt:
     hlt
     jmp halt
 
-// A small stack for the 32-bit code.
-.section ".stack", "aw"
+// A small stack for the setup code.
+.bss
 .align 8
+__stack_bottom:
     .space 0x1000
 __stack_top:
