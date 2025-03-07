@@ -7,8 +7,6 @@ mod relocation;
 
 use core::arch::{asm, global_asm};
 
-global_asm!(include_str!("header.S"));
-
 global_asm!(include_str!("setup.S"));
 
 pub const ASTER_ENTRY_POINT: u32 = 0x8001200;

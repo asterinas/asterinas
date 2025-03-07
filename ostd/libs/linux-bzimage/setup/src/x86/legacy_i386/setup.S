@@ -1,25 +1,31 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 
-// 32-bit setup code starts here, and will be loaded at CODE32_START.
+// The load address of the setup section is CODE32_START (0x100000).
+// See the linker script.
 .section ".setup", "ax"
+
 .code32
-.global start_of_setup32
-start_of_setup32:
-    mov eax, offset __stack_top
-    mov esp, eax
-    mov eax, offset halt
-    push eax                        # the return address
-    mov ebp, esp
-    add ebp, -4
-    push ebp
-    mov ebp, esp
+.global entry_legacy32
+entry_legacy32:
+    // This is the 32-bit Linux legacy entry point.
+    //
+    // Arguments:
+    //  RSI: struct boot_params *bp
 
-// The rust entrypoint of the bzImage
-.extern _bzimage_entry_32
-    push esi                        # the boot_params pointer
-    call _bzimage_entry_32
+    // Set up the stack.
+    mov esp, offset __stack_top
 
-    // Unreachable here.
+    // Call the Rust main routine.
+    push esi
+    call main_legacy32
+
+    // The main routine should not return. If it does, there is nothing we can
+    // do but stop the machine.
+    jmp halt
+
+// All other types of entry points are not enabled in the header.
+// So we don't care about them.
+
 halt:
     hlt
     jmp halt
