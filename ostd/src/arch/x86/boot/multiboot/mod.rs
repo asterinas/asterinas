@@ -20,16 +20,11 @@ pub(super) const MULTIBOOT_ENTRY_MAGIC: u32 = 0x2BADB002;
 fn parse_bootloader_name(mb1_info: &MultibootLegacyInfo) -> &str {
     let mut name = "Unknown Multiboot loader";
     if mb1_info.boot_loader_name != 0 {
+        let ptr = paddr_to_vaddr(mb1_info.boot_loader_name as usize) as *const i8;
         // SAFETY: the bootloader name is C-style zero-terminated string.
-        unsafe {
-            let cstr = paddr_to_vaddr(mb1_info.boot_loader_name as usize) as *const u8;
-            let mut len = 0;
-            while cstr.add(len).read() != 0 {
-                len += 1;
-            }
-
-            name = core::str::from_utf8(core::slice::from_raw_parts(cstr, len))
-                .expect("cmdline is not a utf-8 string");
+        let cstr = unsafe { core::ffi::CStr::from_ptr(ptr) };
+        if let Ok(s) = cstr.to_str() {
+            name = s;
         }
     }
     name
@@ -144,6 +139,24 @@ fn parse_memory_regions(mb1_info: &MultibootLegacyInfo) -> MemoryRegionArray {
         .push(MemoryRegion::new(
             super::smp::AP_BOOT_START_PA,
             super::smp::ap_boot_code_size(),
+            MemoryRegionType::Reclaimable,
+        ))
+        .unwrap();
+
+    // Add the kernel cmdline and boot loader name region since Grub does not specify it.
+    let kcmdline = parse_kernel_commandline(mb1_info);
+    regions
+        .push(MemoryRegion::new(
+            kcmdline.as_ptr() as Paddr - LINEAR_MAPPING_BASE_VADDR,
+            kcmdline.len(),
+            MemoryRegionType::Reclaimable,
+        ))
+        .unwrap();
+    let bootloader_name = parse_bootloader_name(mb1_info);
+    regions
+        .push(MemoryRegion::new(
+            bootloader_name.as_ptr() as Paddr - LINEAR_MAPPING_BASE_VADDR,
+            bootloader_name.len(),
             MemoryRegionType::Reclaimable,
         ))
         .unwrap();
