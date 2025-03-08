@@ -23,6 +23,7 @@ use std::{
     path::Path,
 };
 
+use align_ext::AlignExt;
 pub use encoder::{encode_kernel, PayloadEncoding};
 use mapping::{SetupFileOffset, SetupVA};
 use xmas_elf::program::SegmentData;
@@ -49,8 +50,8 @@ pub fn make_bzimage(target_image_path: &Path, image_type: BzImageType, setup_elf
         .read_to_end(&mut setup_elf)
         .unwrap();
     let mut setup = to_flat_binary(&setup_elf);
-    // Pad the header with 8-byte alignment.
-    setup.resize((setup.len() + 7) & !7, 0x00);
+    // Align the flat binary to `SECTION_ALIGNMENT`.
+    setup.resize(setup.len().align_up(pe_header::SECTION_ALIGNMENT), 0x00);
 
     let mut kernel_image = File::create(target_image_path).unwrap();
     kernel_image.write_all(&setup).unwrap();
@@ -59,18 +60,11 @@ pub fn make_bzimage(target_image_path: &Path, image_type: BzImageType, setup_elf
         // Write the PE/COFF header to the start of the file.
         // Since the Linux boot header starts at 0x1f1, we can write the PE/COFF header directly to the
         // start of the file without overwriting the Linux boot header.
-        let pe_header = pe_header::make_pe_coff_header(&setup_elf, setup.len());
-        assert!(
-            pe_header.header_at_zero.len() <= 0x1f1,
-            "PE/COFF header is too large"
-        );
+        let pe_header = pe_header::make_pe_coff_header(&setup_elf);
+        assert!(pe_header.len() <= 0x1f1, "PE/COFF header is too large");
 
         kernel_image.seek(SeekFrom::Start(0)).unwrap();
-        kernel_image.write_all(&pe_header.header_at_zero).unwrap();
-        kernel_image
-            .seek(SeekFrom::Start(usize::from(pe_header.relocs.0) as u64))
-            .unwrap();
-        kernel_image.write_all(&pe_header.relocs.1).unwrap();
+        kernel_image.write_all(&pe_header).unwrap();
     }
 }
 
