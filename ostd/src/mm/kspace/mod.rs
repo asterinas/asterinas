@@ -48,7 +48,7 @@ use spin::Once;
 
 use super::{
     frame::{
-        meta::{impl_frame_meta_for, mapping, MetaPageMeta},
+        meta::{mapping, KernelMeta, MetaPageMeta},
         Frame, Segment,
     },
     nr_subpage_per_huge,
@@ -82,9 +82,9 @@ pub fn kernel_loaded_offset() -> usize {
 }
 
 #[cfg(target_arch = "x86_64")]
-const KERNEL_CODE_BASE_VADDR: usize = 0xffff_ffff_8000_0000 << ADDR_WIDTH_SHIFT;
+pub(crate) const KERNEL_CODE_BASE_VADDR: usize = 0xffff_ffff_8000_0000 << ADDR_WIDTH_SHIFT;
 #[cfg(target_arch = "riscv64")]
-const KERNEL_CODE_BASE_VADDR: usize = 0xffff_ffff_0000_0000 << ADDR_WIDTH_SHIFT;
+pub(crate) const KERNEL_CODE_BASE_VADDR: usize = 0xffff_ffff_0000_0000 << ADDR_WIDTH_SHIFT;
 
 const FRAME_METADATA_CAP_VADDR: Vaddr = 0xffff_e100_0000_0000 << ADDR_WIDTH_SHIFT;
 const FRAME_METADATA_BASE_VADDR: Vaddr = 0xffff_e000_0000_0000 << ADDR_WIDTH_SHIFT;
@@ -214,7 +214,8 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
         };
         let mut cursor = kpt.cursor_mut(&from).unwrap();
         for frame_paddr in to.step_by(PAGE_SIZE) {
-            let page = Frame::<KernelMeta>::from_unused(frame_paddr, KernelMeta).unwrap();
+            // SAFETY: They were initialized at `super::frame::meta::init`.
+            let page = unsafe { Frame::<KernelMeta>::from_raw(frame_paddr) };
             // SAFETY: we are doing mappings for the kernel.
             unsafe {
                 let _old = cursor.map(page.into(), prop);
@@ -246,9 +247,3 @@ pub unsafe fn activate_kernel_page_table() {
         crate::mm::page_table::boot_pt::dismiss();
     }
 }
-
-/// The metadata of pages that contains the kernel itself.
-#[derive(Debug, Default)]
-pub struct KernelMeta;
-
-impl_frame_meta_for!(KernelMeta);

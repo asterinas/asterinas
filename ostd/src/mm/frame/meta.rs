@@ -39,27 +39,31 @@ pub(crate) mod mapping {
 }
 
 use core::{
+    alloc::Layout,
     any::Any,
     cell::UnsafeCell,
     fmt::Debug,
-    mem::{size_of, MaybeUninit},
+    mem::{size_of, ManuallyDrop, MaybeUninit},
     result::Result,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
 use align_ext::AlignExt;
 use log::info;
 
-use super::{allocator, Segment};
 use crate::{
     arch::mm::PagingConsts,
     const_assert,
     mm::{
-        kspace::LINEAR_MAPPING_BASE_VADDR, paddr_to_vaddr, page_size, page_table::boot_pt,
-        CachePolicy, Infallible, Paddr, PageFlags, PageProperty, PrivilegedPageFlags, Vaddr,
-        VmReader, PAGE_SIZE,
+        frame::allocator::{self, EarlyAllocatedFrameMeta},
+        kspace::LINEAR_MAPPING_BASE_VADDR,
+        paddr_to_vaddr, page_size,
+        page_table::boot_pt,
+        CachePolicy, Infallible, Paddr, PageFlags, PageProperty, PrivilegedPageFlags, Segment,
+        Vaddr, VmReader, PAGE_SIZE,
     },
     panic::abort,
+    util::range_difference,
 };
 
 /// The maximum number of bytes of the metadata of a frame.
@@ -143,7 +147,7 @@ const_assert!(size_of::<MetaSlot>() == META_SLOT_SIZE);
 ///
 /// If `on_drop` reads the page using the provided `VmReader`, the
 /// implementer must ensure that the frame is safe to read.
-pub unsafe trait AnyFrameMeta: Any + Send + Sync + Debug + 'static {
+pub unsafe trait AnyFrameMeta: Any + Send + Sync {
     /// Called when the last handle to the frame is dropped.
     fn on_drop(&mut self, _reader: &mut VmReader<Infallible>) {}
 
@@ -383,16 +387,6 @@ impl MetaSlot {
         // `Release` pairs with the `Acquire` in `Frame::from_unused` and ensures
         // `drop_meta_in_place` won't be reordered after this memory store.
         self.ref_count.store(REF_COUNT_UNUSED, Ordering::Release);
-
-        // Deallocate the frame.
-        // It would return the frame to the allocator for further use. This would be done
-        // after the release of the metadata to avoid re-allocation before the metadata
-        // is reset.
-        allocator::FRAME_ALLOCATOR
-            .get()
-            .unwrap()
-            .lock()
-            .dealloc(self.frame_paddr() / PAGE_SIZE, 1);
     }
 
     /// Drops the metadata of a slot in place.
@@ -442,7 +436,12 @@ impl_frame_meta_for!(MetaPageMeta);
 /// Initializes the metadata of all physical frames.
 ///
 /// The function returns a list of `Frame`s containing the metadata.
-pub(crate) fn init() -> Segment<MetaPageMeta> {
+///
+/// # Safety
+///
+/// This function should be called only once and only on the BSP,
+/// before any APs are started.
+pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
     let max_paddr = {
         let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
         regions.iter().map(|r| r.base() + r.len()).max().unwrap()
@@ -455,10 +454,10 @@ pub(crate) fn init() -> Segment<MetaPageMeta> {
 
     add_temp_linear_mapping(max_paddr);
 
-    super::MAX_PADDR.store(max_paddr, Ordering::Relaxed);
-
     let tot_nr_frames = max_paddr / page_size::<PagingConsts>(1);
     let (nr_meta_pages, meta_pages) = alloc_meta_frames(tot_nr_frames);
+
+    super::MAX_PADDR.store(max_paddr, Ordering::Relaxed);
 
     // Map the metadata frames.
     boot_pt::with_borrow(|boot_pt| {
@@ -477,10 +476,41 @@ pub(crate) fn init() -> Segment<MetaPageMeta> {
     .unwrap();
 
     // Now the metadata frames are mapped, we can initialize the metadata.
-    Segment::from_unused(meta_pages..meta_pages + nr_meta_pages * PAGE_SIZE, |_| {
-        MetaPageMeta {}
-    })
-    .unwrap()
+    let meta_page_range = meta_pages..meta_pages + nr_meta_pages * PAGE_SIZE;
+
+    let (range_1, range_2) = allocator::EARLY_ALLOCATOR
+        .lock()
+        .as_ref()
+        .unwrap()
+        .allocated_regions();
+    for r in range_difference(&range_1, &meta_page_range) {
+        let early_seg = Segment::from_unused(r, |_| EarlyAllocatedFrameMeta).unwrap();
+        let _ = ManuallyDrop::new(early_seg);
+    }
+    if let Some(range_2) = range_2 {
+        for r in range_difference(&range_2, &meta_page_range) {
+            let early_seg = Segment::from_unused(r, |_| EarlyAllocatedFrameMeta).unwrap();
+            let _ = ManuallyDrop::new(early_seg);
+        }
+    }
+
+    mark_unusable_ranges();
+
+    let meta_seg = Segment::from_unused(meta_page_range, |_| MetaPageMeta {}).unwrap();
+
+    IS_INITIALIZED.store(true, Ordering::Relaxed);
+
+    meta_seg
+}
+
+static IS_INITIALIZED: AtomicBool = AtomicBool::new(false);
+
+/// Returns whether the global frame allocator is initialized.
+pub(in crate::mm) fn is_initialized() -> bool {
+    // `init` sets it with relaxed ordering somewhere in the middle. But due
+    // to the safety requirement of the `init` function, we can assume that
+    // there is no race conditions.
+    IS_INITIALIZED.load(Ordering::Relaxed)
 }
 
 fn alloc_meta_frames(tot_nr_frames: usize) -> (usize, Paddr) {
@@ -488,13 +518,10 @@ fn alloc_meta_frames(tot_nr_frames: usize) -> (usize, Paddr) {
         .checked_mul(size_of::<MetaSlot>())
         .unwrap()
         .div_ceil(PAGE_SIZE);
-    let start_paddr = allocator::FRAME_ALLOCATOR
-        .get()
-        .unwrap()
-        .lock()
-        .alloc(nr_meta_pages)
-        .unwrap()
-        * PAGE_SIZE;
+    let start_paddr = allocator::early_alloc(
+        Layout::from_size_align(nr_meta_pages * PAGE_SIZE, PAGE_SIZE).unwrap(),
+    )
+    .unwrap();
 
     let slots = paddr_to_vaddr(start_paddr) as *mut MetaSlot;
 
@@ -516,6 +543,50 @@ fn alloc_meta_frames(tot_nr_frames: usize) -> (usize, Paddr) {
     }
 
     (nr_meta_pages, start_paddr)
+}
+
+/// The metadata of physical pages that are not usable for the kernel.
+#[derive(Debug)]
+pub struct UnusableMemoryMeta;
+impl_frame_meta_for!(UnusableMemoryMeta);
+
+/// The metadata of physical pages that I/O devices use.
+#[derive(Debug)]
+pub struct IOMemoryMeta;
+impl_frame_meta_for!(IOMemoryMeta);
+
+/// The metadata of physical pages that contains the kernel itself.
+#[derive(Debug, Default)]
+pub struct KernelMeta;
+impl_frame_meta_for!(KernelMeta);
+
+macro_rules! mark_ranges {
+    ($region: expr, $typ: expr) => {{
+        debug_assert!($region.base() % PAGE_SIZE == 0);
+        debug_assert!($region.len() % PAGE_SIZE == 0);
+
+        let seg = Segment::from_unused($region.base()..$region.end(), |_| $typ).unwrap();
+        let _ = ManuallyDrop::new(seg);
+    }};
+}
+
+fn mark_unusable_ranges() {
+    let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
+
+    for region in regions.iter() {
+        use crate::boot::memory_region::MemoryRegionType;
+        match region.typ() {
+            MemoryRegionType::BadMemory => mark_ranges!(region, UnusableMemoryMeta),
+            MemoryRegionType::Unknown => mark_ranges!(region, UnusableMemoryMeta),
+            MemoryRegionType::NonVolatileSleep => mark_ranges!(region, UnusableMemoryMeta),
+            MemoryRegionType::Reserved => mark_ranges!(region, UnusableMemoryMeta),
+            MemoryRegionType::Kernel => mark_ranges!(region, KernelMeta),
+            MemoryRegionType::Module => mark_ranges!(region, UnusableMemoryMeta),
+            MemoryRegionType::Framebuffer => mark_ranges!(region, IOMemoryMeta),
+            MemoryRegionType::Reclaimable => mark_ranges!(region, UnusableMemoryMeta),
+            MemoryRegionType::Usable => {} // By default it is initialized as usable.
+        }
+    }
 }
 
 /// Adds a temporary linear mapping for the metadata frames.
