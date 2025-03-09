@@ -23,8 +23,7 @@ use std::{
     path::Path,
 };
 
-use encoder::encode_kernel;
-pub use encoder::PayloadEncoding;
+pub use encoder::{encode_kernel, PayloadEncoding};
 use mapping::{SetupFileOffset, SetupVA};
 use xmas_elf::program::SegmentData;
 
@@ -41,17 +40,9 @@ pub enum BzImageType {
 /// Explanations for the arguments:
 ///  - `target_image_path`: The path to the target bzImage;
 ///  - `image_type`: The type of the bzImage that we are building;
-///  - `kernel_path`: The path to the kernel ELF;
 ///  - `setup_elf_path`: The path to the setup ELF;
-///  - `encoding`: The encoding format for compressing the kernel ELF.
 ///
-pub fn make_bzimage(
-    target_image_path: &Path,
-    image_type: BzImageType,
-    kernel_path: &Path,
-    setup_elf_path: &Path,
-    encoding: PayloadEncoding,
-) {
+pub fn make_bzimage(target_image_path: &Path, image_type: BzImageType, setup_elf_path: &Path) {
     let mut setup_elf = Vec::new();
     File::open(setup_elf_path)
         .unwrap()
@@ -61,32 +52,14 @@ pub fn make_bzimage(
     // Pad the header with 8-byte alignment.
     setup.resize((setup.len() + 7) & !7, 0x00);
 
-    let mut kernel = Vec::new();
-    File::open(kernel_path)
-        .unwrap()
-        .read_to_end(&mut kernel)
-        .unwrap();
-    let payload = match image_type {
-        BzImageType::Legacy32 => kernel,
-        BzImageType::Efi64 => encode_kernel(kernel, encoding),
-    };
-
-    let setup_len = setup.len();
-    let payload_len = payload.len();
-    let payload_offset = SetupFileOffset::from(setup_len);
-    fill_legacy_header_fields(&mut setup, payload_len, setup_len, payload_offset.into());
-
     let mut kernel_image = File::create(target_image_path).unwrap();
     kernel_image.write_all(&setup).unwrap();
-    kernel_image.write_all(&payload).unwrap();
-
-    let image_size = setup_len + payload_len;
 
     if matches!(image_type, BzImageType::Efi64) {
         // Write the PE/COFF header to the start of the file.
         // Since the Linux boot header starts at 0x1f1, we can write the PE/COFF header directly to the
         // start of the file without overwriting the Linux boot header.
-        let pe_header = pe_header::make_pe_coff_header(&setup_elf, image_size);
+        let pe_header = pe_header::make_pe_coff_header(&setup_elf, setup.len());
         assert!(
             pe_header.header_at_zero.len() <= 0x1f1,
             "PE/COFF header is too large"
@@ -140,45 +113,4 @@ fn to_flat_binary(elf_file: &[u8]) -> Vec<u8> {
     }
 
     bin
-}
-
-/// This function should be used when generating the Linux x86 Boot setup header.
-/// Some fields in the Linux x86 Boot setup header should be filled after assembled.
-/// And the filled fields must have the bytes with values of 0xAB. See
-/// `ostd/src/arch/x86/boot/linux_boot/setup/src/header.S` for more
-/// info on this mechanism.
-fn fill_header_field(header: &mut [u8], offset: usize, value: &[u8]) {
-    let size = value.len();
-    assert_eq!(
-        &header[offset..offset + size],
-        vec![0xABu8; size].as_slice(),
-        "The field {:#x} to be filled must be marked with 0xAB",
-        offset
-    );
-    header[offset..offset + size].copy_from_slice(value);
-}
-
-fn fill_legacy_header_fields(
-    header: &mut [u8],
-    kernel_len: usize,
-    setup_len: usize,
-    payload_offset: SetupVA,
-) {
-    fill_header_field(
-        header,
-        0x248, /* payload_offset */
-        &(usize::from(payload_offset) as u32).to_le_bytes(),
-    );
-
-    fill_header_field(
-        header,
-        0x24C, /* payload_length */
-        &(kernel_len as u32).to_le_bytes(),
-    );
-
-    fill_header_field(
-        header,
-        0x260, /* init_size */
-        &((setup_len + kernel_len) as u32).to_le_bytes(),
-    );
 }
