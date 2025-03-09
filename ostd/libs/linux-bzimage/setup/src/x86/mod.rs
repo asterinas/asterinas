@@ -32,3 +32,25 @@ pub fn image_load_offset() -> isize {
 
     (entry_legacy32 as usize as isize) - CODE32_START
 }
+
+global_asm!(
+    ".section \".payload\", \"a\"",
+    concat!(".incbin \"", env!("PAYLOAD_FILE"), "\""),
+);
+
+/// Returns an immutable slice containing the payload (i.e., the kernel).
+fn payload() -> &'static [u8] {
+    extern "C" {
+        fn __payload_start();
+        fn __payload_end();
+    }
+
+    // SAFETY: The memory region is part of the "rodata" segment, which is initialized, live for
+    // `'static`, and never mutated.
+    unsafe {
+        core::slice::from_raw_parts(
+            __payload_start as *const u8,
+            __payload_end as usize - __payload_start as usize,
+        )
+    }
+}

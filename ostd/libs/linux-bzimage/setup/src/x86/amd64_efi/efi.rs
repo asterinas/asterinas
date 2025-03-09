@@ -67,8 +67,7 @@ fn efi_phase_boot(boot_params: &mut BootParams) -> ! {
     }
 
     // Load the kernel payload to memory.
-    let payload = crate::get_payload(boot_params);
-    let kernel = decode_payload(payload);
+    let kernel = decode_payload(crate::x86::payload());
 
     uefi::println!("[EFI stub] Loading payload.");
     crate::loader::load_elf(&kernel);
