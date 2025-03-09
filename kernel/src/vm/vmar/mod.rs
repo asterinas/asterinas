@@ -4,18 +4,19 @@
 
 mod dyn_cap;
 mod static_cap;
+mod vm_allocator;
 pub mod vm_mapping;
 
 use core::{
     num::NonZeroUsize,
     ops::Range,
-    sync::atomic::{AtomicU32, AtomicUsize, Ordering},
+    sync::atomic::{AtomicU32, Ordering},
 };
 
 use align_ext::AlignExt;
 use aster_rights::Rights;
 use ostd::{
-    cpu::{CpuId, PinCurrentCpu},
+    cpu::CpuId,
     mm::{
         tlb::TlbFlushOp,
         vm_space::{largest_pages, CursorMut, Status, VmItem, VmSpace},
@@ -23,6 +24,11 @@ use ostd::{
     },
     task::disable_preempt,
 };
+#[cfg(feature = "dist_vmar_alloc")]
+use vm_allocator::PerCpuAllocator;
+#[cfg(not(feature = "dist_vmar_alloc"))]
+use vm_allocator::SimpleAllocator;
+use vm_allocator::VmAllocator;
 
 use self::vm_mapping::{MappedVmo, VmMarker, VmoBackedVMA};
 use crate::{
@@ -142,119 +148,19 @@ pub(super) struct Vmar_ {
     size: usize,
     /// The attached `VmSpace`
     vm_space: Arc<VmSpace>,
+
     /// Virtual memory allocator for this VMAR.
+    #[cfg(feature = "dist_vmar_alloc")]
     allocator: PerCpuAllocator,
+    #[cfg(not(feature = "dist_vmar_alloc"))]
+    allocator: SimpleAllocator,
+
     /// The ID allocator for VMO mappings.
     vmo_backed_id_alloc: AtomicU32,
     /// The map from the VMO-backed ID to the VMA structure.
     vma_map: RwLock<BTreeMap<u32, VmoBackedVMA>>,
     /// The RSS counters.
     rss_counters: [PerCpuCounter; NUM_RSS_COUNTERS],
-}
-
-// Make it cache-line aligned so there is no false sharing.
-#[repr(align(64))]
-struct PerCpuLast {
-    range: Range<Vaddr>,
-    /// From this address to the cap the new mappings can be allocated.
-    alloc_last: AtomicUsize,
-}
-
-impl PerCpuLast {
-    fn alloc(&self, size: usize, align: usize) -> Result<usize> {
-        self.alloc_last
-            .fetch_update(Ordering::Release, Ordering::Acquire, |last| {
-                let allocated = last.align_up(align);
-                let new_end = allocated + size;
-                if new_end >= self.range.end {
-                    None
-                } else {
-                    Some(new_end)
-                }
-            })
-            .map(|last| last.align_up(align))
-            .map_err(|_| Error::new(Errno::ENOMEM))
-    }
-}
-
-struct PerCpuAllocator(Vec<PerCpuLast>);
-
-impl PerCpuAllocator {
-    fn new() -> Self {
-        let nr_cpus = ostd::cpu::num_cpus();
-        let mut cur_base = ROOT_VMAR_LOWEST_ADDR;
-        let per_cpu_size: usize =
-            ((INIT_STACK_CLEARANCE - ROOT_VMAR_LOWEST_ADDR) / nr_cpus).align_down(PAGE_SIZE);
-        let mut alloc_bases = Vec::with_capacity(nr_cpus);
-        for _ in 0..nr_cpus {
-            alloc_bases.push(PerCpuLast {
-                range: cur_base..cur_base + per_cpu_size,
-                alloc_last: AtomicUsize::new(cur_base),
-            });
-            cur_base += per_cpu_size;
-        }
-        PerCpuAllocator(alloc_bases)
-    }
-
-    fn clear(&self) {
-        for i in self.0.iter() {
-            i.alloc_last.store(i.range.start, Ordering::Release);
-        }
-    }
-
-    fn allocate(&self, size: usize, align: usize) -> Result<usize> {
-        let preempt_guard = disable_preempt();
-        let cur_cpu = preempt_guard.current_cpu();
-        let fastpath_res = self.0[cur_cpu.as_usize()].alloc(size, align);
-
-        if fastpath_res.is_ok() {
-            return fastpath_res;
-        }
-
-        // fastpath failed, try to find a new range
-        for percpulast in self.0.iter() {
-            let allocated = percpulast.alloc(size, align);
-            if allocated.is_ok() {
-                return allocated;
-            }
-        }
-
-        // all failed
-        Err(Error::new(Errno::ENOMEM))
-    }
-
-    fn maintain_alloc_start(&self, start: usize, end: usize) {
-        // find the cpu that the size belongs to
-        for percpulast in self.0.iter() {
-            let range = &percpulast.range;
-            if range.contains(&end) {
-                percpulast
-                    .alloc_last
-                    .fetch_update(Ordering::Release, Ordering::Acquire, |last| {
-                        if last < end {
-                            Some(end)
-                        } else {
-                            Some(last)
-                        }
-                    })
-                    .unwrap();
-            } else if range.contains(&start) {
-                // contains the start but not the end
-                percpulast.alloc_last.store(range.end, Ordering::Release);
-            }
-        }
-    }
-
-    fn fork(&self) -> Self {
-        let mut alloc_bases = Vec::with_capacity(self.0.len());
-        for i in self.0.iter() {
-            alloc_bases.push(PerCpuLast {
-                range: i.range.clone(),
-                alloc_last: AtomicUsize::new(i.alloc_last.load(Ordering::Acquire)),
-            });
-        }
-        PerCpuAllocator(alloc_bases)
-    }
 }
 
 pub const ROOT_VMAR_LOWEST_ADDR: Vaddr = 0x001_0000; // 64 KiB is the Linux configurable default
@@ -271,8 +177,8 @@ impl Vmar_ {
         self.allocator.allocate(size, align)
     }
 
-    fn maintain_alloc_start(&self, start: usize, end: usize) {
-        self.allocator.maintain_alloc_start(start, end);
+    fn allocate_fixed(&self, start: usize, end: usize) {
+        self.allocator.allocate_fixed(start, end);
     }
 
     fn new_root() -> Arc<Self> {
@@ -285,7 +191,10 @@ impl Vmar_ {
             size: ROOT_VMAR_CAP_ADDR - ROOT_VMAR_LOWEST_ADDR,
             vm_space,
 
+            #[cfg(feature = "dist_vmar_alloc")]
             allocator: PerCpuAllocator::new(),
+            #[cfg(not(feature = "dist_vmar_alloc"))]
+            allocator: SimpleAllocator::new(),
 
             vmo_backed_id_alloc: AtomicU32::new(1),
             vma_map: RwLock::new(BTreeMap::new()),
@@ -972,10 +881,10 @@ where
                 Errno::EINVAL,
                 "offset cannot be None since can overwrite is set",
             ))?;
-            parent.0.maintain_alloc_start(offset, offset + map_size);
+            parent.0.allocate_fixed(offset, offset + map_size);
             offset
         } else if let Some(offset) = offset {
-            parent.0.maintain_alloc_start(offset, offset + map_size);
+            parent.0.allocate_fixed(offset, offset + map_size);
             offset
         } else {
             parent.0.alloc_growup_region(map_size, align)?
