@@ -38,11 +38,17 @@ SECTIONS
 
     // Text segment.
     . = SETUP32_LMA;
+    __executable_start = .;
     .setup                  : { KEEP(*(.setup)) } : text
     .text                   : { *(.text .text.*) } : text
 
     // Rodata segment.
     . = ALIGN(4096);
+    .payload                : {
+        PROVIDE(__payload_start = .);
+        KEEP(*(.payload))
+        PROVIDE(__payload_end = .);
+    } : rodata
     .rodata                 : { *(.rodata .rodata.*) } : rodata
     .rela                   : {
         PROVIDE(__rela_start = .);
@@ -59,6 +65,8 @@ SECTIONS
         *(.bss .bss.*) *(COMMON)
         PROVIDE(__bss_end = .);
     } : data
+    __executable_end = .;
+    __executable_size = __executable_end - __executable_start;
 
     . = ALIGN(4096);
     // Section names. ELF files must have them.

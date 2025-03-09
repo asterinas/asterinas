@@ -22,22 +22,8 @@
 #![no_std]
 #![no_main]
 
-use linux_boot_params::BootParams;
-
 mod console;
 mod loader;
 
 // The entry points are defined in `x86/*/setup.S`.
 mod x86;
-
-fn get_payload(boot_params: &BootParams) -> &'static [u8] {
-    let hdr = &boot_params.hdr;
-    // The payload_offset field is not recorded in the relocation table, so we need to
-    // calculate the loaded offset manually.
-    let loaded_offset = x86::image_load_offset();
-    let payload_offset = (loaded_offset + hdr.payload_offset as isize) as usize;
-    let payload_length = hdr.payload_length as usize;
-    // SAFETY: the payload_offset and payload_length is valid if we assume that the
-    // boot_params struct is correct.
-    unsafe { core::slice::from_raw_parts_mut(payload_offset as *mut u8, payload_length) }
-}

@@ -4,10 +4,8 @@
 // See https://www.kernel.org/doc/html/v5.6/x86/boot.html for
 // more information on the Linux x86 Boot Protocol.
 
-// Some of the fields filled with a 0xab* values should be filled
-// by the torjan builder.
-// Asterinas will use only a few of these fields, and some of them
-// are filled by the loader and will be read by Asterinas.
+// The bootloader may fill some fields at runtime, which can
+// be read by the kernel (via `boot_params.hdr`).
 
 .section ".header", "a"
 
@@ -63,11 +61,11 @@ xloadflags:             .word 0
 cmdline_size:           .long 4096 - 1
 hardware_subarch:       .long 0
 hardware_subarch_data:  .quad 0
-payload_offset:         .long 0xabababab # at 0x248/4, to be filled by the builder
-payload_length:         .long 0xabababab # at 0x24c/4, to be filled by the builder
+payload_offset:         .long 0  # Not used.
+payload_length:         .long 0  # Not used.
 setup_data:             .quad 0
 pref_address:           .quad CODE32_START
-init_size:              .long 0xabababab # at 0x260/4, to be filled by the builder
+init_size:              .long __executable_size
 
 .if {CFG_TARGET_ARCH_X86_64}
 handover_offset:        .long (entry_efi_handover32 - entry_legacy32)
