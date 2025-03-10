@@ -4,16 +4,18 @@ use core::{
     cmp::{max, min},
     num::NonZeroUsize,
     ops::Range,
+    sync::atomic::Ordering,
 };
 
 use align_ext::AlignExt;
 use ostd::mm::{
     tlb::TlbFlushOp, vm_space::VmItem, CachePolicy, FrameAllocOptions, PageFlags, PageProperty,
-    UFrame, VmSpace,
+    UFrame, UntypedMem, VmSpace,
 };
 
 use super::interval_set::Interval;
 use crate::{
+    fs::utils::CachePageMeta,
     prelude::*,
     thread::exception::PageFaultInfo,
     vm::{perms::VmPerms, util::duplicate_frame, vmo::Vmo},
@@ -184,7 +186,8 @@ impl VmMapping {
                     cursor.flusher().issue_tlb_flush(TlbFlushOp::Address(va));
                     cursor.flusher().dispatch_tlb_flush();
                 } else {
-                    let new_frame = duplicate_frame(&frame)?;
+                    let new_frame = FrameAllocOptions::new().zeroed(false).alloc_frame()?;
+                    new_frame.writer().write(&mut frame.reader());
                     prop.flags |= new_flags;
                     cursor.map(new_frame.into(), prop);
                 }
@@ -209,8 +212,16 @@ impl VmMapping {
                     page_flags |= PageFlags::DIRTY;
                 }
                 let map_prop = PageProperty::new(page_flags, CachePolicy::Writeback);
-
-                cursor.map(frame, map_prop);
+                match (frame.dyn_meta() as &dyn Any).downcast_ref::<CachePageMeta>() {
+                    Some(meta) => {
+                        meta.is_mmapped.store(true, Ordering::Relaxed);
+                        cursor.map(frame, map_prop);
+                    }
+                    None => {
+                        cursor.map(frame, map_prop);
+                    }
+                }
+                //cursor.map(frame, map_prop);
             }
         }
         Ok(())
@@ -272,7 +283,15 @@ impl VmMapping {
                 let page_flags = PageFlags::from(vm_perms) | PageFlags::ACCESSED;
                 let page_prop = PageProperty::new(page_flags, CachePolicy::Writeback);
                 let frame = commit_fn()?;
-                cursor.map(frame, page_prop);
+                match (frame.dyn_meta() as &dyn Any).downcast_ref::<CachePageMeta>() {
+                    Some(meta) => {
+                        meta.is_mmapped.store(true, Ordering::Relaxed);
+                        cursor.map(frame, page_prop);
+                    }
+                    None => {
+                        cursor.map(frame, page_prop);
+                    }
+                }
             } else {
                 let next_addr = cursor.virt_addr() + PAGE_SIZE;
                 if next_addr < end_addr {
