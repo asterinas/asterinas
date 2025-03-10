@@ -4,24 +4,22 @@ use core::arch::{asm, global_asm};
 
 global_asm!(include_str!("setup.S"));
 
-use crate::console::{print_hex, print_str};
-
 pub const ASTER_ENTRY_POINT: u32 = 0x8001000;
 
 #[export_name = "main_legacy32"]
 extern "cdecl" fn main_legacy32(boot_params_ptr: u32) -> ! {
-    // SAFETY: this init function is only called once.
-    unsafe { crate::console::init() };
+    crate::println!(
+        "[setup] Loaded with offset {:#x}",
+        crate::x86::image_load_offset(),
+    );
 
-    // println!("[setup] bzImage loaded at {:#x}", x86::relocation::image_load_offset());
-    unsafe {
-        print_str("[setup] bzImage loaded offset: ");
-        print_hex(crate::x86::image_load_offset() as u64);
-        print_str("\n");
-    }
-
+    crate::println!("[setup] Loading the payload as an ELF file");
     crate::loader::load_elf(crate::x86::payload());
 
+    crate::println!(
+        "[setup] Entering the Asterinas entry point at {:#x}",
+        ASTER_ENTRY_POINT,
+    );
     // SAFETY: the entrypoint and the ptr is valid.
     unsafe { call_aster_entrypoint(ASTER_ENTRY_POINT, boot_params_ptr.try_into().unwrap()) };
 }
@@ -35,6 +33,11 @@ unsafe fn call_aster_entrypoint(entrypoint: u32, boot_params_ptr: u32) -> ! {
 }
 
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    crate::println!("[PANIC]: {}", info);
+
+    loop {
+        // SAFETY: `hlt` has no effect other than to stop the CPU and wait for another interrupt.
+        unsafe { asm!("hlt", options(nomem, nostack, preserves_flags)) };
+    }
 }

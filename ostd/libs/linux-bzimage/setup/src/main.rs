@@ -24,6 +24,7 @@
 
 mod console;
 mod loader;
+mod sync;
 
 // The entry points are defined in `x86/*/setup.S`.
 mod x86;

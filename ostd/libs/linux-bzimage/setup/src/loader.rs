@@ -26,20 +26,12 @@ fn load_segment(file: &xmas_elf::ElfFile, program: &xmas_elf::program::ProgramHe
     let dst_slice = unsafe {
         core::slice::from_raw_parts_mut(program.physical_addr as *mut u8, program.mem_size as usize)
     };
-    /* crate::println!(
-        "[setup loader debug] loading ELF segment at {:#x}, size = {:#x}",
+    #[cfg(feature = "debug_print")]
+    crate::println!(
+        "[setup] Loading an ELF segment: addr={:#x}, size={:#x}",
         program.physical_addr,
         program.mem_size,
-    ); */
-    #[cfg(feature = "debug_print")]
-    unsafe {
-        use crate::console::{print_hex, print_str};
-        print_str("[setup loader debug] loading ELF segment at ");
-        print_hex(program.physical_addr as u64);
-        print_str(", size = ");
-        print_hex(program.mem_size as u64);
-        print_str("\n");
-    }
+    );
     // SAFETY: the ELF file is valid
     // dst_slice[..program.file_size as usize].copy_from_slice(header_data);
     unsafe {
