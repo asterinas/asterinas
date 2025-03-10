@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 mod slab_allocator;
+#[cfg(ktest)]
+mod test;
 
 use core::alloc::{GlobalAlloc, Layout};
 
