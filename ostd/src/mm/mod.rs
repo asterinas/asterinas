@@ -10,13 +10,12 @@ pub type Paddr = usize;
 
 pub(crate) mod dma;
 pub mod frame;
-pub(crate) mod heap_allocator;
+pub mod heap;
 mod io;
 pub(crate) mod kspace;
 mod offset;
 pub(crate) mod page_prop;
 pub(crate) mod page_table;
-pub mod stat;
 pub mod tlb;
 pub mod vm_space;
 
@@ -39,8 +38,7 @@ pub use self::{
     vm_space::VmSpace,
 };
 pub(crate) use self::{
-    frame::meta::init as init_page_meta, kspace::paddr_to_vaddr, page_prop::PrivilegedPageFlags,
-    page_table::PageTable,
+    kspace::paddr_to_vaddr, page_prop::PrivilegedPageFlags, page_table::PageTable,
 };
 use crate::arch::mm::PagingConsts;
 

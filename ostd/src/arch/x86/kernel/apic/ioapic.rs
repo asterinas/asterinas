@@ -5,7 +5,6 @@
 use alloc::{vec, vec::Vec};
 use core::ptr::NonNull;
 
-use acpi::PlatformInfo;
 use bit_field::BitField;
 use cfg_if::cfg_if;
 use log::info;
@@ -16,7 +15,7 @@ use volatile::{
 };
 
 use crate::{
-    arch::{iommu::has_interrupt_remapping, x86::kernel::acpi::ACPI_TABLES},
+    arch::{iommu::has_interrupt_remapping, x86::kernel::acpi::get_platform_info},
     mm::paddr_to_vaddr,
     sync::SpinLock,
     trap::IrqLine,
@@ -180,7 +179,7 @@ impl IoApicAccess {
 pub static IO_APIC: Once<Vec<SpinLock<IoApic>>> = Once::new();
 
 pub fn init() {
-    if !ACPI_TABLES.is_completed() {
+    let Some(platform_info) = get_platform_info() else {
         IO_APIC.call_once(|| {
             // FIXME: Is it possible to have an address that is not the default 0xFEC0_0000?
             // Need to find a way to determine if it is a valid address or not.
@@ -211,10 +210,8 @@ pub fn init() {
             vec![SpinLock::new(IoApic::new(io_apic, 0))]
         });
         return;
-    }
-    let table = ACPI_TABLES.get().unwrap().lock();
-    let platform_info = PlatformInfo::new(&*table).unwrap();
-    match platform_info.interrupt_model {
+    };
+    match &platform_info.interrupt_model {
         acpi::InterruptModel::Unknown => panic!("not found APIC in ACPI Table"),
         acpi::InterruptModel::Apic(apic) => {
             let mut vec = Vec::new();

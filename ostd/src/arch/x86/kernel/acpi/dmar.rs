@@ -74,9 +74,9 @@ unsafe impl AcpiTable for DmarHeader {
 impl Dmar {
     /// Creates a instance from ACPI table.
     pub fn new() -> Option<Self> {
-        let acpi_table_lock = super::ACPI_TABLES.get()?.lock();
+        let acpi_table = super::get_acpi_tables()?;
 
-        let dmar_mapping = acpi_table_lock.find_table::<DmarHeader>().ok()?;
+        let dmar_mapping = acpi_table.find_table::<DmarHeader>().ok()?;
 
         let header = *dmar_mapping;
         // SAFETY: `find_table` returns a region of memory that belongs to the ACPI table. This
