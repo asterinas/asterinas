@@ -1,12 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use linux_boot_params::BootParams;
-use uefi::{
-    boot::{exit_boot_services, open_protocol_exclusive},
-    mem::memory_map::{MemoryMap, MemoryMapOwned},
-    prelude::*,
-    proto::loaded_image::LoadedImage,
-};
+use uefi::{boot::exit_boot_services, mem::memory_map::MemoryMap, prelude::*};
 use uefi_raw::table::system::SystemTable;
 
 use super::decoder::decode_payload;
@@ -19,33 +14,28 @@ extern "sysv64" fn main_efi_handover64(
     system_table: *const SystemTable,
     boot_params_ptr: *mut BootParams,
 ) -> ! {
-    // SAFETY: handle and system_table are valid pointers. It is only called once.
-    unsafe { system_init(handle, system_table) };
-
-    uefi::helpers::init().unwrap();
-
-    // SAFETY: boot_params is a valid pointer.
-    let boot_params = unsafe { &mut *boot_params_ptr };
-
-    efi_phase_boot(boot_params)
-}
-
-/// Initialize the system.
-///
-/// # Safety
-///
-/// This function should be called only once with valid parameters before all
-/// operations.
-unsafe fn system_init(handle: Handle, system_table: *const SystemTable) {
-    // SAFETY: The handle and system_table are valid pointers. They are passed
-    // from the UEFI firmware. They are only called once.
+    // SAFETY: We get `handle` and `system_table` from the UEFI firmware, so by contract the
+    // pointers are valid and correct.
     unsafe {
         boot::set_image_handle(handle);
         uefi::table::set_system_table(system_table);
     }
+
+    uefi::helpers::init().unwrap();
+
+    // SAFETY: We get boot parameters from the boot loader, so by contract the pointer is valid and
+    // the underlying memory is initialized. We are an exclusive owner of the memory region, so we
+    // can create a mutable reference of the plain-old-data type.
+    let boot_params = unsafe { &mut *boot_params_ptr };
+
+    efi_phase_boot(boot_params);
+
+    // SAFETY: We do not open boot service protocols or maintain references to boot service code
+    // and data.
+    unsafe { efi_phase_runtime(boot_params) };
 }
 
-fn efi_phase_boot(boot_params: &mut BootParams) -> ! {
+fn efi_phase_boot(boot_params: &mut BootParams) {
     uefi::println!(
         "[EFI stub] Loaded with offset {:#x}",
         crate::x86::image_load_offset(),
@@ -53,30 +43,40 @@ fn efi_phase_boot(boot_params: &mut BootParams) -> ! {
 
     // Fill the boot params with the RSDP address if it is not provided.
     if boot_params.acpi_rsdp_addr == 0 {
-        boot_params.acpi_rsdp_addr = get_rsdp_addr();
+        boot_params.acpi_rsdp_addr =
+            find_rsdp_addr().expect("ACPI RSDP address is not available") as usize as u64;
     }
 
-    // Load the kernel payload to memory.
+    // Decode the payload and load it as an ELF file.
+    uefi::println!("[EFI stub] Decoding the kernel payload");
     let kernel = decode_payload(crate::x86::payload());
-
     uefi::println!("[EFI stub] Loading the payload as an ELF file");
     crate::loader::load_elf(&kernel);
-
-    uefi::println!("[EFI stub] Exiting EFI boot services");
-    let memory_type = {
-        let Ok(loaded_image) = open_protocol_exclusive::<LoadedImage>(boot::image_handle()) else {
-            panic!("Failed to open LoadedImage protocol");
-        };
-        loaded_image.data_type()
-    };
-    // SAFETY: All allocations in the boot services phase are not used after
-    // this point.
-    let memory_map = unsafe { exit_boot_services(memory_type) };
-
-    efi_phase_runtime(memory_map, boot_params);
 }
 
-fn efi_phase_runtime(memory_map: MemoryMapOwned, boot_params: &mut BootParams) -> ! {
+fn find_rsdp_addr() -> Option<*const ()> {
+    use uefi::table::cfg::{ACPI2_GUID, ACPI_GUID};
+
+    // Prefer ACPI2 over ACPI.
+    for acpi_guid in [ACPI2_GUID, ACPI_GUID] {
+        if let Some(rsdp_addr) = uefi::system::with_config_table(|table| {
+            table
+                .iter()
+                .find(|entry| entry.guid == acpi_guid)
+                .map(|entry| entry.address.cast::<()>())
+        }) {
+            return Some(rsdp_addr);
+        }
+    }
+
+    None
+}
+
+unsafe fn efi_phase_runtime(boot_params: &mut BootParams) -> ! {
+    uefi::println!("[EFI stub] Exiting EFI boot services");
+    // SAFETY: The safety is upheld by the caller.
+    let memory_map = unsafe { exit_boot_services(uefi::table::boot::MemoryType::LOADER_DATA) };
+
     crate::println!(
         "[EFI stub] Processing {} memory map entries",
         memory_map.entries().len()
@@ -94,7 +94,7 @@ fn efi_phase_runtime(memory_map: MemoryMapOwned, boot_params: &mut BootParams) -
         })
     }
 
-    // Write memory map to e820 table in boot_params.
+    // Write the memory map to the E820 table in `boot_params`.
     let e820_table = &mut boot_params.e820_table;
     let mut e820_entries = 0usize;
     for md in memory_map.entries() {
@@ -131,29 +131,11 @@ fn efi_phase_runtime(memory_map: MemoryMapOwned, boot_params: &mut BootParams) -
     boot_params.e820_entries = e820_entries as u8;
 
     crate::println!(
-        "[EFI stub] Entering the Asterinas entry point at {:#x}",
+        "[EFI stub] Entering the Asterinas entry point at {:p}",
         super::ASTER_ENTRY_POINT,
     );
-    unsafe {
-        super::call_aster_entrypoint(
-            super::ASTER_ENTRY_POINT as u64,
-            boot_params as *const _ as u64,
-        )
-    }
-}
-
-fn get_rsdp_addr() -> u64 {
-    use uefi::table::cfg::{ACPI2_GUID, ACPI_GUID};
-    uefi::system::with_config_table(|table| {
-        for entry in table {
-            // Prefer ACPI2 over ACPI.
-            if entry.guid == ACPI2_GUID {
-                return entry.address as usize as u64;
-            }
-            if entry.guid == ACPI_GUID {
-                return entry.address as usize as u64;
-            }
-        }
-        panic!("ACPI RSDP not found");
-    })
+    // SAFETY:
+    // 1. The entry point address is correct and matches the kernel ELF file.
+    // 2. The boot parameter pointer is valid and points to the correct boot parameters.
+    unsafe { super::call_aster_entrypoint(super::ASTER_ENTRY_POINT, boot_params) }
 }
