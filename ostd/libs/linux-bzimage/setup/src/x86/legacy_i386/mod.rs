@@ -2,12 +2,14 @@
 
 use core::arch::{asm, global_asm};
 
+use linux_boot_params::BootParams;
+
 global_asm!(include_str!("setup.S"));
 
-pub const ASTER_ENTRY_POINT: u32 = 0x8001000;
+const ASTER_ENTRY_POINT: *const () = 0x8001000 as _;
 
 #[export_name = "main_legacy32"]
-extern "cdecl" fn main_legacy32(boot_params_ptr: u32) -> ! {
+extern "cdecl" fn main_legacy32(boot_params_ptr: *mut BootParams) -> ! {
     crate::println!(
         "[setup] Loaded with offset {:#x}",
         crate::x86::image_load_offset(),
@@ -17,19 +19,26 @@ extern "cdecl" fn main_legacy32(boot_params_ptr: u32) -> ! {
     crate::loader::load_elf(crate::x86::payload());
 
     crate::println!(
-        "[setup] Entering the Asterinas entry point at {:#x}",
+        "[setup] Entering the Asterinas entry point at {:p}",
         ASTER_ENTRY_POINT,
     );
-    // SAFETY: the entrypoint and the ptr is valid.
-    unsafe { call_aster_entrypoint(ASTER_ENTRY_POINT, boot_params_ptr.try_into().unwrap()) };
+    // SAFETY:
+    // 1. The entry point address is correct and matches the kernel ELF file.
+    // 2. The boot parameter pointer is valid and points to the correct boot parameters.
+    unsafe { call_aster_entrypoint(ASTER_ENTRY_POINT, boot_params_ptr) };
 }
 
-unsafe fn call_aster_entrypoint(entrypoint: u32, boot_params_ptr: u32) -> ! {
-    asm!("mov esi, {}", in(reg) boot_params_ptr);
-    asm!("mov eax, {}", in(reg) entrypoint);
-    asm!("jmp eax");
-
-    unreachable!();
+unsafe fn call_aster_entrypoint(entrypoint: *const (), boot_params_ptr: *mut BootParams) -> ! {
+    unsafe {
+        asm!(
+            "mov esi, {1}",
+            "mov eax, {0}",
+            "jmp eax",
+            in(reg) entrypoint,
+            in(reg) boot_params_ptr,
+            options(noreturn),
+        )
+    }
 }
 
 #[panic_handler]
