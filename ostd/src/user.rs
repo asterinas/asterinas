@@ -4,6 +4,8 @@
 
 //! User space.
 
+use core::cell::RefCell;
+
 use crate::{
     cpu::{FpuState, UserContext},
     mm::VmSpace,
@@ -62,7 +64,11 @@ impl UserSpace {
     }
 
     /// Gets a reference to the FPU state.
-    pub fn fpu_state(&self) -> &FpuState {
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the FPU state is not accessed concurrently.
+    pub unsafe fn fpu_state(&self) -> &RefCell<FpuState> {
         self.init_ctx.fpu_state()
     }
 }
