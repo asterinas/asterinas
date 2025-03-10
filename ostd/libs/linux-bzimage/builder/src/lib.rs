@@ -26,7 +26,7 @@ use std::{
 use align_ext::AlignExt;
 pub use encoder::{encode_kernel, PayloadEncoding};
 use mapping::{SetupFileOffset, SetupVA};
-use xmas_elf::program::SegmentData;
+use xmas_elf::{program::SegmentData, sections::SectionData};
 
 /// The type of the bzImage that we are building through `make_bzimage`.
 ///
@@ -57,6 +57,8 @@ pub fn make_bzimage(target_image_path: &Path, image_type: BzImageType, setup_elf
     kernel_image.write_all(&setup).unwrap();
 
     if matches!(image_type, BzImageType::Efi64) {
+        assert_elf64_reloc_supported(&setup_elf);
+
         // Write the PE/COFF header to the start of the file.
         // Since the Linux boot header starts at 0x1f1, we can write the PE/COFF header directly to the
         // start of the file without overwriting the Linux boot header.
@@ -107,4 +109,27 @@ fn to_flat_binary(elf_file: &[u8]) -> Vec<u8> {
     }
 
     bin
+}
+
+fn assert_elf64_reloc_supported(elf_file: &[u8]) {
+    const R_X86_64_RELATIVE: u32 = 8;
+
+    let elf = xmas_elf::ElfFile::new(elf_file).unwrap();
+
+    let SectionData::Rela64(rela64) = elf
+        .find_section_by_name(".rela")
+        .unwrap()
+        .get_data(&elf)
+        .unwrap()
+    else {
+        panic!("the ELF64 relocation data is not of the correct type");
+    };
+
+    rela64.iter().for_each(|r| {
+        assert_eq!(
+            r.get_type(),
+            R_X86_64_RELATIVE,
+            "the ELF64 relocation type is not supported"
+        )
+    });
 }
