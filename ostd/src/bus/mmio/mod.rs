@@ -46,6 +46,34 @@ pub(crate) fn init() {
     // FIXME: The address 0xFEB0_0000 is obtained from an instance of microvm, and it may not work in other architecture.
     #[cfg(target_arch = "x86_64")]
     iter_range(0xFEB0_0000..0xFEB0_4000);
+
+    #[cfg(target_arch = "riscv64")]
+    riscv64_mmio_probe();
+}
+
+#[cfg(target_arch = "riscv64")]
+fn riscv64_mmio_probe() {
+    use crate::arch::{boot::DEVICE_TREE, device::plic::enable_external_interrupt};
+
+    let mut lock = MMIO_BUS.lock();
+    for node in DEVICE_TREE
+        .get()
+        .unwrap()
+        .find_all_nodes("/soc/virtio_mmio")
+    {
+        let region = node.reg().unwrap().next().unwrap();
+        let interrupt = node.interrupts().unwrap().next().unwrap();
+        let handle = IrqLine::alloc_specific(interrupt as u8).unwrap();
+        log::debug!(
+            "Initialize Virtio MMIO at {:#x?}, interrupt: {}",
+            region.starting_address,
+            interrupt
+        );
+        enable_external_interrupt(interrupt as u16);
+
+        let device = MmioCommonDevice::new(region.starting_address as usize, handle);
+        lock.register_mmio_device(device);
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
