@@ -5,7 +5,7 @@
 use ostd::early_print;
 use spin::Once;
 
-use self::{driver::TtyDriver, line_discipline::LineDiscipline};
+use self::{driver::TtyDriver, export_sys::register_tty, line_discipline::LineDiscipline};
 use crate::{
     current_userspace,
     events::IoEvents,
@@ -23,6 +23,7 @@ use crate::{
 
 mod device;
 pub mod driver;
+mod export_sys;
 pub mod line_discipline;
 pub mod termio;
 
@@ -33,8 +34,9 @@ static N_TTY: Once<Arc<Tty>> = Once::new();
 pub(super) fn init() {
     let name = CString::new("console").unwrap();
     let tty = Tty::new(name);
-    N_TTY.call_once(|| tty);
+    N_TTY.call_once(|| tty.clone());
     driver::init();
+    register_tty(tty).expect("failed to register tty under sysfs");
 }
 
 pub struct Tty {
@@ -58,6 +60,10 @@ impl Tty {
             driver: SpinLock::new(Weak::new()),
             weak_self: weak_ref.clone(),
         })
+    }
+
+    pub fn name(&self) -> String {
+        self.name.clone().into_string().unwrap()
     }
 
     pub fn set_driver(&self, driver: Weak<TtyDriver>) {
