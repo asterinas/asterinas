@@ -2,7 +2,10 @@
 
 mod slab_allocator;
 
-use core::alloc::{GlobalAlloc, Layout};
+use core::{
+    alloc::{GlobalAlloc, Layout},
+    mem::ManuallyDrop,
+};
 
 use align_ext::AlignExt;
 use log::debug;
@@ -11,11 +14,11 @@ use spin::Once;
 
 use super::paddr_to_vaddr;
 use crate::{
-    mm::{frame::allocator::FRAME_ALLOCATOR, PAGE_SIZE},
+    impl_frame_meta_for,
+    mm::{FrameAllocOptions, PAGE_SIZE},
     prelude::*,
     sync::SpinLock,
     trap::disable_local,
-    Error,
 };
 
 #[global_allocator]
@@ -48,6 +51,12 @@ pub unsafe fn init() {
 struct LockedHeapWithRescue {
     heap: Once<SpinLock<Heap>>,
 }
+
+/// The metadata for the kernel heap frames.
+#[derive(Debug)]
+pub struct KernelHeapMeta;
+
+impl_frame_meta_for!(KernelHeapMeta);
 
 impl LockedHeapWithRescue {
     /// Creates an new heap
@@ -94,22 +103,26 @@ impl LockedHeapWithRescue {
         };
 
         let allocation_start = {
-            let mut page_allocator = FRAME_ALLOCATOR.get().unwrap().lock();
-            if num_frames >= MIN_NUM_FRAMES {
-                page_allocator.alloc(num_frames).ok_or(Error::NoMemory)?
+            let mut options = FrameAllocOptions::new();
+            options.zeroed(false);
+            let segment = if num_frames >= MIN_NUM_FRAMES {
+                options
+                    .alloc_segment_with(num_frames, |_| KernelHeapMeta)
+                    .unwrap()
             } else {
-                match page_allocator.alloc(MIN_NUM_FRAMES) {
-                    None => page_allocator.alloc(num_frames).ok_or(Error::NoMemory)?,
-                    Some(start) => {
+                match options.alloc_segment_with(MIN_NUM_FRAMES, |_| KernelHeapMeta) {
+                    Ok(seg) => {
                         num_frames = MIN_NUM_FRAMES;
-                        start
+                        seg
                     }
+                    Err(_) => options.alloc_segment_with(num_frames, |_| KernelHeapMeta)?,
                 }
-            }
+            };
+            let paddr = segment.start_paddr();
+            let _ = ManuallyDrop::new(segment);
+            paddr
         };
-        // FIXME: the alloc function internally allocates heap memory(inside FrameAllocator).
-        // So if the heap is nearly run out, allocating frame will fail too.
-        let vaddr = paddr_to_vaddr(allocation_start * PAGE_SIZE);
+        let vaddr = paddr_to_vaddr(allocation_start);
 
         // SAFETY: the frame is allocated from FrameAllocator and never be deallocated,
         // so the addr is always valid.
