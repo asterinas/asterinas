@@ -4,7 +4,7 @@
 
 extern crate alloc;
 
-pub use alloc::vec::Vec;
+use alloc::vec::Vec;
 use core::convert::TryFrom;
 
 use core2::io::Read;
@@ -16,20 +16,23 @@ enum MagicNumber {
     Zlib,
 }
 
+#[derive(Debug)]
+struct InvalidMagicNumber;
+
 impl TryFrom<&[u8]> for MagicNumber {
-    type Error = &'static str;
+    type Error = InvalidMagicNumber;
 
     fn try_from(slice: &[u8]) -> Result<Self, Self::Error> {
         match *slice {
             [0x7F, 0x45, 0x4C, 0x46, ..] => Ok(Self::Elf),
             [0x1F, 0x8B, ..] => Ok(Self::Gzip),
             [0x78, 0x9C, ..] => Ok(Self::Zlib),
-            _ => Err("Unsupported payload type"),
+            _ => Err(InvalidMagicNumber),
         }
     }
 }
 
-/// Checking the encoding format and matching decoding methods to decode payload.
+/// Detects the format used to encode the payload and decodes the payload accordingly.
 pub fn decode_payload(payload: &[u8]) -> Vec<u8> {
     let mut kernel = Vec::new();
     let magic = MagicNumber::try_from(payload).unwrap();

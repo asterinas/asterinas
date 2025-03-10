@@ -5,14 +5,21 @@ mod efi;
 
 use core::arch::{asm, global_asm};
 
+use linux_boot_params::BootParams;
+
 global_asm!(include_str!("setup.S"));
 
-pub const ASTER_ENTRY_POINT: u32 = 0x8001200;
+const ASTER_ENTRY_POINT: *const () = 0x8001200 as _;
 
-unsafe fn call_aster_entrypoint(entrypoint: u64, boot_params_ptr: u64) -> ! {
-    asm!("mov rsi, {}", in(reg) boot_params_ptr);
-    asm!("mov rax, {}", in(reg) entrypoint);
-    asm!("jmp rax");
-
-    unreachable!();
+unsafe fn call_aster_entrypoint(entrypoint: *const (), boot_params_ptr: *mut BootParams) -> ! {
+    unsafe {
+        asm!(
+            "mov rsi, {1}",
+            "mov rax, {0}",
+            "jmp rax",
+            in(reg) entrypoint,
+            in(reg) boot_params_ptr,
+            options(noreturn),
+        )
+    }
 }
