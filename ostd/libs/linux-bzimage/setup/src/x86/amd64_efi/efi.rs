@@ -9,7 +9,7 @@ use uefi::{
 };
 use uefi_raw::table::system::SystemTable;
 
-use super::{decoder::decode_payload, relocation::apply_rela_relocations};
+use super::decoder::decode_payload;
 
 const PAGE_SIZE: u64 = 4096;
 
@@ -43,9 +43,6 @@ unsafe fn system_init(handle: Handle, system_table: *const SystemTable) {
         crate::console::init();
     }
 
-    // SAFETY: This is the right time to apply relocations.
-    unsafe { apply_rela_relocations() };
-
     // SAFETY: The handle and system_table are valid pointers. They are passed
     // from the UEFI firmware. They are only called once.
     unsafe {
@@ -55,7 +52,6 @@ unsafe fn system_init(handle: Handle, system_table: *const SystemTable) {
 }
 
 fn efi_phase_boot(boot_params: &mut BootParams) -> ! {
-    uefi::println!("[EFI stub] Relocations applied.");
     uefi::println!(
         "[EFI stub] Stub loaded at {:#x?}",
         crate::x86::image_load_offset()

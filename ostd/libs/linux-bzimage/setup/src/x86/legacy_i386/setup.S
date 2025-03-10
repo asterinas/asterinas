@@ -12,6 +12,15 @@ entry_legacy32:
     // Arguments:
     //  RSI: struct boot_params *bp
 
+    // We don't do reloactions, so let's make sure we're at the right address.
+    // Otherwise, we'd better stop here.
+    lea esp, [esi + 0x1e8]  // scratch: u32 (offset 0x1e4)
+    call load_address
+load_address:
+    pop eax
+    cmp eax, offset load_address
+    jne halt
+
     // Set up the stack.
     mov esp, offset __stack_top
 
