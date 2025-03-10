@@ -130,7 +130,7 @@ impl VmSpace {
     }
 
     /// Activates the page table on the current CPU.
-    pub(crate) fn activate(self: &Arc<Self>) {
+    pub fn activate(self: &Arc<Self>) {
         let preempt_guard = disable_preempt();
         let cpu = preempt_guard.current_cpu();
 

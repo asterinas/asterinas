@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_rights::Full;
+
 use super::read_socket_addr_from_user;
 use crate::{
     net::socket::SocketAddr,
     prelude::*,
     util::{net::write_socket_addr_with_max_len, VmReaderArray, VmWriterArray},
+    vm::vmar::Vmar,
 };
 
 /// Standard well-defined IP protocols.
@@ -112,11 +115,17 @@ impl CUserMsgHdr {
         Ok(())
     }
 
-    pub fn copy_reader_array_from_user<'a>(&self, ctx: &'a Context) -> Result<VmReaderArray<'a>> {
-        VmReaderArray::from_user_io_vecs(ctx, self.msg_iov, self.msg_iovlen as usize)
+    pub fn copy_reader_array_from_user<'a>(
+        &self,
+        root_vmar: &'a Vmar<Full>,
+    ) -> Result<VmReaderArray<'a>> {
+        VmReaderArray::from_user_io_vecs(root_vmar, self.msg_iov, self.msg_iovlen as usize)
     }
 
-    pub fn copy_writer_array_from_user<'a>(&self, ctx: &'a Context) -> Result<VmWriterArray<'a>> {
-        VmWriterArray::from_user_io_vecs(ctx, self.msg_iov, self.msg_iovlen as usize)
+    pub fn copy_writer_array_from_user<'a>(
+        &self,
+        root_vmar: &'a Vmar<Full>,
+    ) -> Result<VmWriterArray<'a>> {
+        VmWriterArray::from_user_io_vecs(root_vmar, self.msg_iov, self.msg_iovlen as usize)
     }
 }

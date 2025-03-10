@@ -52,10 +52,10 @@ pub fn create_posix_task_from_executable(
         let fs_resolver = fs.resolver().read();
         let fs_path = FsPath::new(AT_FDCWD, executable_path)?;
         let elf_file = fs.resolver().read().lookup(&fs_path)?;
-        load_program_to_vm(process_vm, elf_file, argv, envp, &fs_resolver, 1)?
+        load_program_to_vm(process_vm, elf_file, argv, envp, &fs_resolver, 1, None)?
     };
 
-    let vm_space = process_vm.root_vmar().vm_space().clone();
+    let vm_space = process_vm.root_vmar().get().vm_space().clone();
     let mut cpu_ctx = UserContext::default();
     cpu_ctx.set_instruction_pointer(elf_load_info.entry_point() as _);
     cpu_ctx.set_stack_pointer(elf_load_info.user_stack_top() as _);
