@@ -37,12 +37,6 @@ extern "sysv64" fn main_efi_handover64(
 /// This function should be called only once with valid parameters before all
 /// operations.
 unsafe fn system_init(handle: Handle, system_table: *const SystemTable) {
-    // SAFETY: This is the right time to initialize the console and it is only
-    // called once here before all console operations.
-    unsafe {
-        crate::console::init();
-    }
-
     // SAFETY: The handle and system_table are valid pointers. They are passed
     // from the UEFI firmware. They are only called once.
     unsafe {
@@ -53,8 +47,8 @@ unsafe fn system_init(handle: Handle, system_table: *const SystemTable) {
 
 fn efi_phase_boot(boot_params: &mut BootParams) -> ! {
     uefi::println!(
-        "[EFI stub] Stub loaded at {:#x?}",
-        crate::x86::image_load_offset()
+        "[EFI stub] Loaded with offset {:#x}",
+        crate::x86::image_load_offset(),
     );
 
     // Fill the boot params with the RSDP address if it is not provided.
@@ -65,10 +59,10 @@ fn efi_phase_boot(boot_params: &mut BootParams) -> ! {
     // Load the kernel payload to memory.
     let kernel = decode_payload(crate::x86::payload());
 
-    uefi::println!("[EFI stub] Loading payload.");
+    uefi::println!("[EFI stub] Loading the payload as an ELF file");
     crate::loader::load_elf(&kernel);
 
-    uefi::println!("[EFI stub] Exiting EFI boot services.");
+    uefi::println!("[EFI stub] Exiting EFI boot services");
     let memory_type = {
         let Ok(loaded_image) = open_protocol_exclusive::<LoadedImage>(boot::image_handle()) else {
             panic!("Failed to open LoadedImage protocol");
@@ -83,27 +77,21 @@ fn efi_phase_boot(boot_params: &mut BootParams) -> ! {
 }
 
 fn efi_phase_runtime(memory_map: MemoryMapOwned, boot_params: &mut BootParams) -> ! {
-    unsafe {
-        crate::console::print_str("[EFI stub] Entered runtime services.\n");
-    }
-
+    crate::println!(
+        "[EFI stub] Processing {} memory map entries",
+        memory_map.entries().len()
+    );
     #[cfg(feature = "debug_print")]
-    unsafe {
-        use crate::console::{print_hex, print_str};
-        print_str("[EFI stub debug] EFI Memory map:\n");
-        for md in memory_map.entries() {
-            // crate::println!("    [{:#x}] {:#x} ({:#x})", md.ty.0, md.phys_start, md.page_count);
-            print_str("    [");
-            print_hex(md.ty.0 as u64);
-            print_str("]");
-            print_hex(md.phys_start);
-            print_str("(size=");
-            print_hex(md.page_count);
-            print_str(")");
-            print_str("{flags=");
-            print_hex(md.att.bits());
-            print_str("}\n");
-        }
+    {
+        memory_map.entries().for_each(|entry| {
+            crate::println!(
+                "    [{:#x}] {:#x} (size={:#x}) {{flags={:#x}}}",
+                entry.ty.0,
+                entry.phys_start,
+                entry.page_count,
+                entry.att.bits()
+            );
+        })
     }
 
     // Write memory map to e820 table in boot_params.
@@ -111,11 +99,7 @@ fn efi_phase_runtime(memory_map: MemoryMapOwned, boot_params: &mut BootParams) -
     let mut e820_entries = 0usize;
     for md in memory_map.entries() {
         if e820_entries >= e820_table.len() || e820_entries >= 127 {
-            unsafe {
-                crate::console::print_str(
-                    "[EFI stub] Warning: number of E820 entries exceeded 128!\n",
-                );
-            }
+            crate::println!("[EFI stub] Warning: The number of E820 entries exceeded 128!");
             break;
         }
         e820_table[e820_entries] = linux_boot_params::BootE820Entry {
@@ -131,7 +115,7 @@ fn efi_phase_runtime(memory_map: MemoryMapOwned, boot_params: &mut BootParams) -
                 #[cfg(feature = "cvm_guest")]
                 uefi::table::boot::MemoryType::UNACCEPTED => {
                     unsafe {
-                        crate::console::print_str("[EFI stub] Accepting pending pages...\n");
+                        crate::println!("[EFI stub] Accepting pending pages");
                         for page_idx in 0..md.page_count {
                             tdx_guest::tdcall::accept_page(0, md.phys_start + page_idx * PAGE_SIZE)
                                 .unwrap();
@@ -146,13 +130,10 @@ fn efi_phase_runtime(memory_map: MemoryMapOwned, boot_params: &mut BootParams) -
     }
     boot_params.e820_entries = e820_entries as u8;
 
-    unsafe {
-        use crate::console::{print_hex, print_str};
-        print_str("[EFI stub] Entering Asterinas entrypoint at ");
-        print_hex(super::ASTER_ENTRY_POINT as u64);
-        print_str("\n");
-    }
-
+    crate::println!(
+        "[EFI stub] Entering the Asterinas entry point at {:#x}",
+        super::ASTER_ENTRY_POINT,
+    );
     unsafe {
         super::call_aster_entrypoint(
             super::ASTER_ENTRY_POINT as u64,
