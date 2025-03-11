@@ -111,6 +111,7 @@ LINUX_BZIMAGE_BUILDER_CARGO_TOML_PATH=${ASTER_SRC_DIR}/ostd/libs/linux-bzimage/b
 LINUX_BZIMAGE_SETUP_CARGO_TOML_PATH=${ASTER_SRC_DIR}/ostd/libs/linux-bzimage/setup/Cargo.toml
 OSDK_CARGO_TOML_PATH=${ASTER_SRC_DIR}/osdk/Cargo.toml
 OSDK_TEST_RUNNER_CARGO_TOML_PATH=${ASTER_SRC_DIR}/osdk/deps/test-kernel/Cargo.toml
+OSDK_FRAME_ALLOCATOR_CARGO_TOML_PATH=${ASTER_SRC_DIR}/osdk/deps/frame-allocator/Cargo.toml
 VERSION_PATH=${ASTER_SRC_DIR}/VERSION
 
 current_version=$(cat ${VERSION_PATH})
@@ -131,13 +132,16 @@ update_package_version ${OSTD_CARGO_TOML_PATH}
 update_package_version ${LINUX_BOOT_PARAMS_CARGO_TOML_PATH}
 update_package_version ${LINUX_BZIMAGE_BUILDER_CARGO_TOML_PATH}
 update_package_version ${LINUX_BZIMAGE_SETUP_CARGO_TOML_PATH}
+update_package_version ${OSDK_CARGO_TOML_PATH}
+update_package_version ${OSDK_TEST_RUNNER_CARGO_TOML_PATH}
+update_package_version ${OSDK_FRAME_ALLOCATOR_CARGO_TOML_PATH}
+
+update_dep_version ${OSDK_TEST_RUNNER_CARGO_TOML_PATH} ostd
+update_dep_version ${OSDK_FRAME_ALLOCATOR_CARGO_TOML_PATH} ostd
 update_dep_version ${OSTD_CARGO_TOML_PATH} ostd-test
 update_dep_version ${OSTD_CARGO_TOML_PATH} linux-boot-params
 update_dep_version ${OSTD_CARGO_TOML_PATH} ostd-macros
 update_dep_version ${LINUX_BZIMAGE_SETUP_CARGO_TOML_PATH} linux-boot-params
-update_package_version ${OSDK_CARGO_TOML_PATH}
-update_package_version ${OSDK_TEST_RUNNER_CARGO_TOML_PATH}
-update_dep_version ${OSDK_TEST_RUNNER_CARGO_TOML_PATH} ostd
 update_dep_version ${OSDK_CARGO_TOML_PATH} linux-bzimage-builder
 
 # Automatically bump Cargo.lock files

@@ -8,8 +8,6 @@
 
 use alloc::format;
 
-use ostd::mm::stat;
-
 use crate::{
     fs::{
         procfs::template::{FileOps, ProcFileBuilder},
@@ -27,21 +25,17 @@ impl MemInfoFileOps {
     }
 }
 
-/// Total memory in the entire system in bytes.
-fn mem_total() -> usize {
-    stat::mem_total()
-}
-
-/// An estimation of how much memory is available for starting new
-/// applications, without disk operations.
-fn mem_available() -> usize {
-    stat::mem_available()
-}
-
 impl FileOps for MemInfoFileOps {
     fn data(&self) -> Result<Vec<u8>> {
-        let total = mem_total() / 1024;
-        let available = mem_available() / 1024;
+        // The total amount of physical memory available to the system.
+        let total = crate::vm::mem_total();
+        // An estimation of how much memory is available for starting new
+        // applications, without disk operations.
+        let available = osdk_frame_allocator::load_total_free_size();
+
+        // Convert the values to KiB.
+        let total = total / 1024;
+        let available = available / 1024;
         let free = total - available;
         let output = format!(
             "MemTotal:\t{} kB\nMemFree:\t{} kB\nMemAvailable:\t{} kB\n",

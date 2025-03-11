@@ -1,6 +1,8 @@
 #![no_std]
 #![no_main]
 
+#![feature(linkage)]
+
 extern crate #TARGET_NAME#;
 
 #[panic_handler]
@@ -10,3 +12,12 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     }
     unsafe { __ostd_panic_handler(info); }
 }
+
+use ostd::mm::frame::GlobalFrameAllocator;
+
+use osdk_frame_allocator::FrameAllocator;
+static FRAME_ALLOCATOR: FrameAllocator = FrameAllocator;
+
+#[no_mangle]
+#[linkage = "weak"]
+static __GLOBAL_FRAME_ALLOCATOR_REF: &'static dyn GlobalFrameAllocator = &FRAME_ALLOCATOR;

@@ -5,6 +5,7 @@
 //! in order to initialize the running phase page tables.
 
 use core::{
+    alloc::Layout,
     result::Result,
     sync::atomic::{AtomicU32, Ordering},
 };
@@ -15,7 +16,11 @@ use crate::{
     cpu::num_cpus,
     cpu_local_cell,
     mm::{
-        frame::allocator::FRAME_ALLOCATOR, nr_subpage_per_huge, paddr_to_vaddr, Paddr, PageFlags,
+        frame::{
+            self,
+            allocator::{self, EarlyAllocatedFrameMeta},
+        },
+        nr_subpage_per_huge, paddr_to_vaddr, Frame, FrameAllocOptions, Paddr, PageFlags,
         PageProperty, PagingConstsTrait, PagingLevel, Vaddr, PAGE_SIZE,
     },
     sync::SpinLock,
@@ -62,13 +67,27 @@ where
 /// The caller should ensure that:
 ///  - another legitimate page table is activated on this CPU;
 ///  - this function should be called only once per CPU;
-///  - no [`with`] calls are performed on this CPU after this dismissal;
-///  - no [`with`] calls are performed on this CPU after the activation of
-///    another page table and before this dismissal.
+///  - no [`with_borrow`] calls are performed on this CPU after this dismissal;
+///  - no [`with_borrow`] calls are performed on this CPU after the activation
+///    of another page table and before this dismissal.
 pub(crate) unsafe fn dismiss() {
     IS_DISMISSED.store(true);
     if DISMISS_COUNT.fetch_add(1, Ordering::SeqCst) as usize == num_cpus() - 1 {
-        BOOT_PAGE_TABLE.lock().take();
+        let boot_pt = BOOT_PAGE_TABLE.lock().take().unwrap();
+
+        dfs_walk_on_leave::<PageTableEntry, PagingConsts>(
+            boot_pt.root_pt,
+            PagingConsts::NR_LEVELS,
+            &mut |pte| {
+                if !pte.prop().flags.contains(PTE_POINTS_TO_FIRMWARE_PT) {
+                    // SAFETY: The pointed frame is allocated and forgotten with `into_raw`.
+                    drop(unsafe { Frame::<EarlyAllocatedFrameMeta>::from_raw(pte.paddr()) })
+                }
+                // Firmware provided page tables may be a DAG instead of a tree.
+                // Clear it to avoid double-free when we meet it the second time.
+                *pte = PageTableEntry::new_absent();
+            },
+        );
     }
 }
 
@@ -97,6 +116,13 @@ pub(crate) struct BootPageTable<
     _pretend_to_use: core::marker::PhantomData<(E, C)>,
 }
 
+// We use extra two available bits in the boot PT for memory management.
+//
+// The first available bit is used to differentiate firmware page tables from
+// the page tables allocated here. The second is for identifying double-visits
+// when walking the page tables since the PT can be a DAG.
+const PTE_POINTS_TO_FIRMWARE_PT: PageFlags = PageFlags::AVAIL1;
+
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
     /// Creates a new boot page table from the current page table root
     /// physical address.
@@ -108,15 +134,13 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
     /// by the firmware, loader or the setup code.
     unsafe fn from_current_pt() -> Self {
         let root_pt = crate::arch::mm::current_page_table_paddr() / C::BASE_PAGE_SIZE;
-        // Make sure the first available bit is not set for firmware page tables.
+        // Make sure the 2 available bits are not set for firmware page tables.
         dfs_walk_on_leave::<E, C>(root_pt, C::NR_LEVELS, &mut |pte: &mut E| {
             let prop = pte.prop();
-            if prop.flags.contains(PageFlags::AVAIL1) {
-                pte.set_prop(PageProperty::new(
-                    prop.flags - PageFlags::AVAIL1,
-                    prop.cache,
-                ));
-            }
+            pte.set_prop(PageProperty::new(
+                prop.flags | PTE_POINTS_TO_FIRMWARE_PT,
+                prop.cache,
+            ));
         });
         Self {
             root_pt,
@@ -230,17 +254,26 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
     }
 
     fn alloc_child(&mut self) -> E {
-        let frame = FRAME_ALLOCATOR.get().unwrap().lock().alloc(1).unwrap();
+        let frame_paddr = if frame::meta::is_initialized() {
+            let frame = FrameAllocOptions::new()
+                .zeroed(false)
+                .alloc_frame_with(EarlyAllocatedFrameMeta)
+                .unwrap();
+            frame.into_raw()
+        } else {
+            allocator::early_alloc(
+                Layout::from_size_align(C::BASE_PAGE_SIZE, C::BASE_PAGE_SIZE).unwrap(),
+            )
+            .unwrap()
+        };
+
         // Zero it out.
-        let vaddr = paddr_to_vaddr(frame * PAGE_SIZE) as *mut u8;
+        let vaddr = paddr_to_vaddr(frame_paddr) as *mut u8;
         unsafe { core::ptr::write_bytes(vaddr, 0, PAGE_SIZE) };
 
-        let mut pte = E::new_pt(frame * C::BASE_PAGE_SIZE);
+        let mut pte = E::new_pt(frame_paddr);
         let prop = pte.prop();
-        pte.set_prop(PageProperty::new(
-            prop.flags | PageFlags::AVAIL1,
-            prop.cache,
-        ));
+        pte.set_prop(PageProperty::new(prop.flags, prop.cache));
 
         pte
     }
@@ -264,20 +297,6 @@ fn dfs_walk_on_leave<E: PageTableEntryTrait, C: PagingConstsTrait>(
                 op(pte)
             }
         }
-    }
-}
-
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for BootPageTable<E, C> {
-    fn drop(&mut self) {
-        dfs_walk_on_leave::<E, C>(self.root_pt, C::NR_LEVELS, &mut |pte| {
-            if pte.prop().flags.contains(PageFlags::AVAIL1) {
-                let pt = pte.paddr() / C::BASE_PAGE_SIZE;
-                FRAME_ALLOCATOR.get().unwrap().lock().dealloc(pt, 1);
-            }
-            // Firmware provided page tables may be a DAG instead of a tree.
-            // Clear it to avoid double-free when we meet it the second time.
-            *pte = E::new_absent();
-        });
     }
 }
 

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use aster_time::read_monotonic_time;
-use ostd::mm::stat::{mem_available, mem_total};
 
 use super::SyscallReturn;
 use crate::prelude::*;
@@ -26,8 +25,8 @@ pub struct sysinfo {
 pub fn sys_sysinfo(sysinfo_addr: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
     let info = sysinfo {
         uptime: read_monotonic_time().as_secs() as i64,
-        totalram: mem_total() as u64,
-        freeram: mem_available() as u64,
+        totalram: crate::vm::mem_total() as u64,
+        freeram: osdk_frame_allocator::load_total_free_size() as u64,
         ..Default::default() // TODO: add other system information
     };
     ctx.user_space().write_val(sysinfo_addr, &info)?;
