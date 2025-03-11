@@ -67,6 +67,13 @@ pub use self::{error::Error, prelude::Result};
 #[doc(hidden)]
 unsafe fn init() {
     arch::enable_cpu_features();
+
+    // SAFETY: This function is called only once, before `allocator::init`
+    // and after memory regions are initialized.
+    unsafe {
+        mm::frame::allocator::init_early_allocator();
+    }
+
     arch::serial::init();
 
     #[cfg(feature = "cvm_guest")]

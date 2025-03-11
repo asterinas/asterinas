@@ -83,6 +83,7 @@ for TARGET in $TARGETS; do
     do_publish_for ostd/libs/ostd-test $TARGET
     do_publish_for ostd/libs/linux-bzimage/setup $TARGET
     do_publish_for ostd $TARGET
+    do_publish_for osdk/deps/frame-allocator $TARGET
     do_publish_for osdk/deps/test-kernel $TARGET
 
     # For actual publishing, we should only publish once. Using any target that
