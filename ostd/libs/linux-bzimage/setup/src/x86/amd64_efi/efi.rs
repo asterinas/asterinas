@@ -96,39 +96,46 @@ unsafe fn efi_phase_runtime(boot_params: &mut BootParams) -> ! {
 
     // Write the memory map to the E820 table in `boot_params`.
     let e820_table = &mut boot_params.e820_table;
-    let mut e820_entries = 0usize;
-    for md in memory_map.entries() {
-        if e820_entries >= e820_table.len() || e820_entries >= 127 {
+    let mut num_entries = 0usize;
+    for entry in memory_map.entries() {
+        let typ = if let Some(e820_type) = parse_memory_type(entry.ty) {
+            e820_type
+        } else {
+            // The memory region is unaccepted (i.e., `MemoryType::UNACCEPTED`).
+            crate::println!("[EFI stub] Accepting pending pages");
+            for page_idx in 0..entry.page_count {
+                // SAFETY: The page to accept represents a page that has not been accepted
+                // (according to the memory map returned by the UEFI firmware).
+                unsafe {
+                    tdx_guest::tdcall::accept_page(0, entry.phys_start + page_idx * PAGE_SIZE)
+                        .unwrap();
+                }
+            }
+            linux_boot_params::E820Type::Ram
+        };
+
+        if num_entries != 0 {
+            let last_entry = &mut e820_table[num_entries - 1];
+            let last_typ = last_entry.typ;
+            if last_typ == typ && last_entry.addr + last_entry.size == entry.phys_start {
+                last_entry.size += entry.page_count * PAGE_SIZE;
+                continue;
+            }
+        }
+
+        if num_entries >= e820_table.len() {
             crate::println!("[EFI stub] Warning: The number of E820 entries exceeded 128!");
             break;
         }
-        e820_table[e820_entries] = linux_boot_params::BootE820Entry {
-            addr: md.phys_start,
-            size: md.page_count * PAGE_SIZE,
-            typ: match md.ty {
-                uefi::table::boot::MemoryType::CONVENTIONAL => linux_boot_params::E820Type::Ram,
-                uefi::table::boot::MemoryType::RESERVED => linux_boot_params::E820Type::Reserved,
-                uefi::table::boot::MemoryType::ACPI_RECLAIM => linux_boot_params::E820Type::Acpi,
-                uefi::table::boot::MemoryType::ACPI_NON_VOLATILE => {
-                    linux_boot_params::E820Type::Nvs
-                }
-                #[cfg(feature = "cvm_guest")]
-                uefi::table::boot::MemoryType::UNACCEPTED => {
-                    unsafe {
-                        crate::println!("[EFI stub] Accepting pending pages");
-                        for page_idx in 0..md.page_count {
-                            tdx_guest::tdcall::accept_page(0, md.phys_start + page_idx * PAGE_SIZE)
-                                .unwrap();
-                        }
-                    };
-                    linux_boot_params::E820Type::Ram
-                }
-                _ => linux_boot_params::E820Type::Unusable,
-            },
+
+        e820_table[num_entries] = linux_boot_params::BootE820Entry {
+            addr: entry.phys_start,
+            size: entry.page_count * PAGE_SIZE,
+            typ,
         };
-        e820_entries += 1;
+        num_entries += 1;
     }
-    boot_params.e820_entries = e820_entries as u8;
+    boot_params.e820_entries = num_entries as u8;
 
     crate::println!(
         "[EFI stub] Entering the Asterinas entry point at {:p}",
@@ -138,4 +145,43 @@ unsafe fn efi_phase_runtime(boot_params: &mut BootParams) -> ! {
     // 1. The entry point address is correct and matches the kernel ELF file.
     // 2. The boot parameter pointer is valid and points to the correct boot parameters.
     unsafe { super::call_aster_entrypoint(super::ASTER_ENTRY_POINT, boot_params) }
+}
+
+fn parse_memory_type(
+    mem_type: uefi::table::boot::MemoryType,
+) -> Option<linux_boot_params::E820Type> {
+    use linux_boot_params::E820Type;
+    use uefi::table::boot::MemoryType;
+
+    match mem_type {
+        // UEFI Specification, 7.2 Memory Allocation Services:
+        //   Following the ExitBootServices() call, the image implicitly owns all unused memory in
+        //   the map. This includes memory types EfiLoaderCode, EfiLoaderData, EfiBootServicesCode,
+        //   EfiBootServicesData, and EfiConventionalMemory
+        //
+        // Note that this includes the loaded kernel! The kernel itself should take care of this.
+        //
+        // TODO: Linux takes memory attributes into account. See
+        // <https://github.com/torvalds/linux/blob/b7f94fcf55469ad3ef8a74c35b488dbfa314d1bb/arch/x86/platform/efi/efi.c#L133-L139>.
+        MemoryType::LOADER_CODE
+        | MemoryType::LOADER_DATA
+        | MemoryType::BOOT_SERVICES_CODE
+        | MemoryType::BOOT_SERVICES_DATA
+        | MemoryType::CONVENTIONAL => Some(E820Type::Ram),
+
+        // Some memory types have special meanings.
+        MemoryType::PERSISTENT_MEMORY => Some(E820Type::Pmem),
+        MemoryType::ACPI_RECLAIM => Some(E820Type::Acpi),
+        MemoryType::ACPI_NON_VOLATILE => Some(E820Type::Nvs),
+        MemoryType::UNUSABLE => Some(E820Type::Unusable),
+        MemoryType::UNACCEPTED => None,
+
+        // Other memory types are treated as reserved.
+        MemoryType::RESERVED
+        | MemoryType::RUNTIME_SERVICES_CODE
+        | MemoryType::RUNTIME_SERVICES_DATA
+        | MemoryType::MMIO
+        | MemoryType::MMIO_PORT_SPACE => Some(E820Type::Reserved),
+        _ => Some(E820Type::Reserved),
+    }
 }
