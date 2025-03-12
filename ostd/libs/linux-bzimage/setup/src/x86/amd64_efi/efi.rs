@@ -6,7 +6,7 @@ use uefi_raw::table::system::SystemTable;
 
 use super::decoder::decode_payload;
 
-const PAGE_SIZE: u64 = 4096;
+pub(super) const PAGE_SIZE: u64 = 4096;
 
 #[export_name = "main_efi_handover64"]
 extern "sysv64" fn main_efi_handover64(

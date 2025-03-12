@@ -4,6 +4,8 @@ use core::arch::{asm, global_asm};
 
 use linux_boot_params::BootParams;
 
+pub(super) mod alloc;
+
 global_asm!(include_str!("setup.S"));
 
 const ASTER_ENTRY_POINT: *const () = 0x8001000 as _;
@@ -14,6 +16,13 @@ extern "cdecl" fn main_legacy32(boot_params_ptr: *mut BootParams) -> ! {
         "[setup] Loaded with offset {:#x}",
         crate::x86::image_load_offset(),
     );
+
+    // SAFETY: We get boot parameters from the boot loader, so by contract the pointer is valid and
+    // the underlying memory is initialized. We never mutate the boot parameters, so we can create
+    // an immutable reference of the plain-old-data type.
+    let boot_params = unsafe { &*boot_params_ptr };
+    // SAFETY: We get boot parameters from the boot loader. By contract they are correct.
+    unsafe { alloc::init(boot_params) };
 
     crate::println!("[setup] Loading the payload as an ELF file");
     crate::loader::load_elf(crate::x86::payload());
