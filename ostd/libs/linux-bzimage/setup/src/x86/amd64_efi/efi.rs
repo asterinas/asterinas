@@ -135,6 +135,7 @@ fn efi_phase_runtime(memory_map: MemoryMapOwned, boot_params: &mut BootParams) -
                 #[cfg(feature = "cvm_guest")]
                 uefi::table::boot::MemoryType::UNACCEPTED => {
                     unsafe {
+                        crate::console::print_str("[EFI stub] Accepting pending pages...\n");
                         for page_idx in 0..md.page_count {
                             tdx_guest::tdcall::accept_page(0, md.phys_start + page_idx * PAGE_SIZE)
                                 .unwrap();
