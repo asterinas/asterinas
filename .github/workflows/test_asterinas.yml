@@ -99,10 +99,10 @@ jobs:
         if: ${{ matrix.test_id == 'boot_test_linux_legacy32' }}
         run: make run AUTO_TEST=boot ENABLE_KVM=1 BOOT_PROTOCOL=linux-legacy32 RELEASE=1 SMP=4 NETDEV=tap
 
-      - name: Syscall Test (Linux EFI Handover Boot Protocol) (Debug Build)
+      - name: Syscall Test (Linux EFI PE/COFF Boot Protocol) (Debug Build)
         id: syscall_test
         if: ${{ matrix.test_id == 'syscall_test' }}
-        run: make run AUTO_TEST=syscall ENABLE_KVM=1 BOOT_PROTOCOL=linux-efi-handover64 RELEASE=0 NETDEV=tap
+        run: make run AUTO_TEST=syscall ENABLE_KVM=1 BOOT_PROTOCOL=linux-efi-pe64 RELEASE=0 NETDEV=tap
 
       - name: Syscall Test at Ext2 (MicroVM)
         id: syscall_test_at_ext2_microvm

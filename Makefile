@@ -105,6 +105,9 @@ CARGO_OSDK_ARGS += --grub-mkrescue=/usr/bin/grub-mkrescue
 CARGO_OSDK_ARGS += --grub-boot-protocol="linux"
 # FIXME: GZIP self-decompression (--encoding gzip) triggers CPU faults
 CARGO_OSDK_ARGS += --encoding raw
+else ifeq ($(BOOT_PROTOCOL), linux-efi-pe64)
+CARGO_OSDK_ARGS += --grub-boot-protocol="linux"
+CARGO_OSDK_ARGS += --encoding raw
 else ifeq ($(BOOT_PROTOCOL), linux-legacy32)
 CARGO_OSDK_ARGS += --linux-x86-legacy-boot
 CARGO_OSDK_ARGS += --grub-boot-protocol="linux"
