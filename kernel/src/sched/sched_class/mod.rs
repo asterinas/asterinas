@@ -55,6 +55,7 @@ pub fn init() {
 /// information may also be stored here.
 pub struct ClassScheduler {
     rqs: Box<[SpinLock<PerCpuClassRqSet>]>,
+    last_chosen_cpu: AtomicCpuId,
 }
 
 /// Represents the run queue for each CPU core. It stores a list of run queues for
@@ -235,6 +236,7 @@ impl ClassScheduler {
         };
         ClassScheduler {
             rqs: all_cpus().map(class_rq).collect(),
+            last_chosen_cpu: AtomicCpuId::default(),
         }
     }
 
@@ -244,11 +246,28 @@ impl ClassScheduler {
             return last_cpu;
         }
         debug_assert!(flags == EnqueueFlags::Spawn);
-        let affinity = thread.atomic_cpu_affinity();
         let guard = disable_local();
+        let affinity = thread.atomic_cpu_affinity().load();
         let mut selected = guard.current_cpu();
         let mut minimum_load = u32::MAX;
-        for candidate in affinity.load().iter() {
+        let last_chosen = match self.last_chosen_cpu.get() {
+            Some(cpu) => cpu.as_usize() as isize,
+            None => -1,
+        };
+        // Simulate a round-robin selection starting from the last chosen CPU.
+        //
+        // It still checks every CPU to find the one with the minimum load, but
+        // avoids keeping selecting the same CPU when there are multiple equally
+        // idle CPUs.
+        let affinity_iter = affinity
+            .iter()
+            .filter(|&cpu| cpu.as_usize() as isize > last_chosen)
+            .chain(
+                affinity
+                    .iter()
+                    .filter(|&cpu| cpu.as_usize() as isize <= last_chosen),
+            );
+        for candidate in affinity_iter {
             let rq = self.rqs[candidate.as_usize()].lock();
             let (load, _) = rq.nr_queued_and_running();
             if load < minimum_load {
@@ -256,6 +275,7 @@ impl ClassScheduler {
                 selected = candidate;
             }
         }
+        self.last_chosen_cpu.set_anyway(selected);
         selected
     }
 }
