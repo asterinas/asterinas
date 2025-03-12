@@ -4,7 +4,7 @@ alert:
 chart:
   description: schbench -F 256 -n 5 -r 90
   legend: P99 request latency of schbench on {system}
-  title: '[Scheduler] P99 request latency while max-loading the only CPU (SMP=8)'
+  title: '[Scheduler] P99 request latency while max-loading all CPUs (SMP=8)'
   unit: "\xB5s"
 result_extraction:
   nth_occurrence: 2
