@@ -21,6 +21,8 @@
 
 #![no_std]
 #![no_main]
+#![feature(maybe_uninit_fill)]
+#![feature(maybe_uninit_write_slice)]
 
 mod console;
 mod loader;
