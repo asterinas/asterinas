@@ -21,10 +21,10 @@ use alloc::{boxed::Box, vec::Vec};
 use core::cell::SyncUnsafeCell;
 
 use x86_64::{
-    instructions::tables::{lgdt, load_tss, sgdt},
+    instructions::tables::{lgdt, load_tss},
     registers::{
         model_specific::Star,
-        segmentation::{Segment64, GS},
+        segmentation::{Segment, Segment64, CS, GS},
     },
     structures::{
         gdt::{Descriptor, SegmentSelector},
@@ -50,18 +50,13 @@ pub unsafe fn init(on_bsp: bool) {
     };
     // FIXME: the segment limit assumed by x86_64 does not include the I/O port bitmap.
 
-    // Get current GDT.
-    let gdtp = sgdt();
-    let entry_count = (gdtp.limit + 1) as usize / size_of::<u64>();
-    let old_gdt = core::slice::from_raw_parts(gdtp.base.as_ptr::<u64>(), entry_count);
-
-    // Allocate new GDT with 7 more entries.
+    // Allocate new GDT with 8 entries.
     //
     // NOTICE: for fast syscall:
     //   STAR[47:32] = K_CS   = K_SS - 8
     //   STAR[63:48] = U_CS32 = U_SS32 - 8 = U_CS - 16
-    let mut gdt = Vec::from(old_gdt);
-    gdt.extend([tss0, tss1, KCODE64, KDATA64, UCODE32, UDATA32, UCODE64].iter());
+    let mut gdt = Vec::<u64>::new();
+    gdt.extend([0, KCODE64, KDATA64, UCODE32, UDATA32, UCODE64, tss0, tss1].iter());
     let gdt = Vec::leak(gdt);
 
     // Load new GDT and TSS.
@@ -69,13 +64,11 @@ pub unsafe fn init(on_bsp: bool) {
         limit: gdt.len() as u16 * 8 - 1,
         base: VirtAddr::new(gdt.as_ptr() as _),
     });
-    load_tss(SegmentSelector::new(
-        entry_count as u16,
-        PrivilegeLevel::Ring0,
-    ));
+    load_tss(SegmentSelector::new(6, PrivilegeLevel::Ring0));
+    CS::set_reg(SegmentSelector::new(1, PrivilegeLevel::Ring0));
 
-    let sysret = SegmentSelector::new(entry_count as u16 + 4, PrivilegeLevel::Ring3).0;
-    let syscall = SegmentSelector::new(entry_count as u16 + 2, PrivilegeLevel::Ring0).0;
+    let sysret = SegmentSelector::new(3, PrivilegeLevel::Ring3).0;
+    let syscall = SegmentSelector::new(1, PrivilegeLevel::Ring0).0;
     Star::write_raw(sysret, syscall);
 
     USER_SS = sysret + 8;
@@ -113,6 +106,7 @@ static mut USER_CS: u16 = 0;
 const KCODE64: u64 = 0x00209800_00000000; // EXECUTABLE | USER_SEGMENT | PRESENT | LONG_MODE
 const UCODE64: u64 = 0x0020F800_00000000; // EXECUTABLE | USER_SEGMENT | USER_MODE | PRESENT | LONG_MODE
 const KDATA64: u64 = 0x00009200_00000000; // DATA_WRITABLE | USER_SEGMENT | PRESENT
+
 #[expect(dead_code)]
 const UDATA64: u64 = 0x0000F200_00000000; // DATA_WRITABLE | USER_SEGMENT | USER_MODE | PRESENT
 const UCODE32: u64 = 0x00cffa00_0000ffff; // EXECUTABLE | USER_SEGMENT | USER_MODE | PRESENT
