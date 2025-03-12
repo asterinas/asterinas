@@ -24,12 +24,7 @@ fn load_segment(file: &xmas_elf::ElfFile, program: &xmas_elf::program::ProgramHe
         panic!("[setup] Unexpected segment data type!");
     };
 
-    // FIXME: This can be unsafe if the memory region overlaps with allocated memory or memory
-    // reserved by the firmware. We need to query UEFI or check the memory map ourselves to prevent
-    // this from happening.
-    let dst_slice = unsafe {
-        core::slice::from_raw_parts_mut(program.physical_addr as *mut u8, program.mem_size as usize)
-    };
+    let dst_slice = crate::x86::alloc_at(program.physical_addr as usize, program.mem_size as usize);
 
     #[cfg(feature = "debug_print")]
     crate::println!(

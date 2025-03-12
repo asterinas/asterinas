@@ -6,9 +6,13 @@ cfg_if::cfg_if! {
     if #[cfg(target_arch = "x86_64")] {
         mod amd64_efi;
 
+        pub use amd64_efi::alloc::alloc_at;
+
         const CFG_TARGET_ARCH_X86_64: usize = 1;
     } else if #[cfg(target_arch = "x86")] {
         mod legacy_i386;
+
+        pub use legacy_i386::alloc::alloc_at;
 
         const CFG_TARGET_ARCH_X86_64: usize = 0;
     } else {
