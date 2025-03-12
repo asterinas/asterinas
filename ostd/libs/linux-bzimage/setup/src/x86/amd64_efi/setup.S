@@ -50,6 +50,22 @@ entry_efi_handover64:
     //  RSI: efi_system_table_t *table
     //  RDX: struct boot_params *bp
 
+    jmp efi_common64
+
+.global entry_efi_pe64
+entry_efi_pe64:
+    // This is the 64-bit EFI PE/COFF entry point.
+    //
+    // Arguments:
+    //  RCX: void *handle
+    //  RDX: efi_system_table_t *table
+
+    mov rdi, rcx
+    mov rsi, rdx
+    xor rdx, rdx
+    jmp efi_common64
+
+efi_common64:
     // We can reuse the stack provided by the UEFI firmware until a short time
     // after exiting the UEFI boot services. So we don't build our own stack.
     //
@@ -83,17 +99,10 @@ reloc_iter:
 reloc_done:
 
     // Call the Rust main routine.
-    call main_efi_handover64
+    call main_efi_common64
 
     // The main routine should not return. If it does, there is nothing we can
     // do but stop the machine.
-    jmp halt
-
-.global entry_efi_pe64
-entry_efi_pe64:
-    // This is the 64-bit EFI PE/COFF entry point.
-
-    // Not supported yet. Just stop the machine.
     jmp halt
 
 halt:
