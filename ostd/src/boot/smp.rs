@@ -11,7 +11,7 @@ use spin::Once;
 use crate::mm::frame::allocator;
 use crate::{
     arch::boot::smp::{bringup_all_aps, get_num_processors},
-    cpu,
+    cpu, if_tdx_enabled,
     mm::{frame::Segment, kspace::KernelMeta, paddr_to_vaddr, FrameAllocOptions, PAGE_SIZE},
     task::Task,
 };
@@ -100,8 +100,9 @@ pub fn boot_all_aps() {
     bringup_all_aps(num_cpus);
     wait_for_all_aps_started();
 
-    #[cfg(feature = "cvm_guest")]
-    allocator::reclaim_tdx_ap_boot_memory();
+    if_tdx_enabled!({
+        allocator::reclaim_tdx_ap_boot_memory();
+    });
 
     log::info!("All application processors started. The BSP continues to run.");
 }

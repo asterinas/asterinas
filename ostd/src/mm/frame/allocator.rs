@@ -11,6 +11,7 @@ use super::{meta::AnyFrameMeta, segment::Segment, Frame};
 use crate::{
     boot::memory_region::MemoryRegionType,
     error::Error,
+    if_tdx_enabled,
     mm::{paddr_to_vaddr, Paddr, PAGE_SIZE},
     prelude::*,
     sync::SpinLock,
@@ -200,10 +201,11 @@ pub(crate) fn init() {
 
             // FIXME: 0x800000 is temporarily used for AP boot in Intel TDX environment.
             // We may be able to optimize the memory initialization process.
-            #[cfg(feature = "cvm_guest")]
-            if (start..end).contains(&(0x800000 / PAGE_SIZE)) {
-                continue;
-            }
+            if_tdx_enabled!({
+                if (start..end).contains(&(0x800000 / PAGE_SIZE)) {
+                    continue;
+                }
+            });
 
             // Add global free pages to the frame allocator.
             allocator.add_frame(start, end);

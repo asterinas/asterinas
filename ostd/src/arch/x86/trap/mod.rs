@@ -28,7 +28,7 @@ use super::ex_table::ExTable;
 use crate::{
     arch::irq::{disable_local, enable_local},
     cpu::{CpuException, CpuExceptionInfo, PageFaultErrorCode},
-    cpu_local_cell,
+    cpu_local_cell, if_tdx_enabled,
     mm::{
         kspace::{KERNEL_PAGE_TABLE, LINEAR_MAPPING_BASE_VADDR, LINEAR_MAPPING_VADDR_RANGE},
         page_prop::{CachePolicy, PageProperty},
@@ -40,7 +40,7 @@ use crate::{
 
 cfg_if! {
     if #[cfg(feature = "cvm_guest")] {
-        use tdx_guest::{tdcall, tdx_is_enabled, handle_virtual_exception};
+        use tdx_guest::{tdcall, handle_virtual_exception};
         use crate::arch::tdx_guest::TrapFrameWrapper;
     }
 }
@@ -343,17 +343,11 @@ fn handle_kernel_page_fault(f: &TrapFrame, page_fault_vaddr: u64) {
     let vaddr = (page_fault_vaddr as usize).align_down(PAGE_SIZE);
     let paddr = vaddr - LINEAR_MAPPING_BASE_VADDR;
 
-    cfg_if! {
-        if #[cfg(feature = "cvm_guest")] {
-            let priv_flags = if tdx_is_enabled() {
-                PrivFlags::SHARED | PrivFlags::GLOBAL
-            } else {
-                PrivFlags::GLOBAL
-            };
-        } else {
-            let priv_flags = PrivFlags::GLOBAL;
-        }
-    }
+    let priv_flags = if_tdx_enabled!({
+        PrivFlags::SHARED | PrivFlags::GLOBAL
+    } else {
+        PrivFlags::GLOBAL
+    });
 
     // SAFETY:
     // 1. We have checked that the page fault address falls within the address range of the direct

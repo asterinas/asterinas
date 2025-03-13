@@ -38,12 +38,12 @@ use crate::{
             Level, TriggerMode,
         },
     },
+    if_tdx_enabled,
     mm::{paddr_to_vaddr, PAGE_SIZE},
 };
 
 cfg_if! {
     if #[cfg(feature = "cvm_guest")] {
-        use tdx_guest::tdx_is_enabled;
         use crate::arch::x86::kernel::acpi::AcpiMemoryHandler;
         use acpi::platform::wakeup_aps;
     }
@@ -68,26 +68,20 @@ pub(crate) fn bringup_all_aps(num_cpus: u32) {
     copy_ap_boot_code();
     fill_boot_stack_array_ptr();
     fill_boot_pt_ptr();
-    cfg_if! {
-        if #[cfg(feature = "cvm_guest")] {
-            if tdx_is_enabled() {
-                for ap_num in 1..num_cpus {
-                    wakeup_aps(
-                        &ACPI_TABLES.get().unwrap().lock(),
-                        AcpiMemoryHandler {},
-                        ap_num,
-                        AP_BOOT_START_PA as u64,
-                        1000,
-                    )
-                    .unwrap();
-                }
-            } else {
-                send_boot_ipis();
-            }
-        } else {
-            send_boot_ipis();
+    if_tdx_enabled!({
+        for ap_num in 1..num_cpus {
+            wakeup_aps(
+                &ACPI_TABLES.get().unwrap().lock(),
+                AcpiMemoryHandler {},
+                ap_num,
+                AP_BOOT_START_PA as u64,
+                1000,
+            )
+            .unwrap();
         }
-    }
+    } else {
+        send_boot_ipis();
+    });
 }
 
 /// This is where the linker load the symbols in the `.ap_boot` section.
