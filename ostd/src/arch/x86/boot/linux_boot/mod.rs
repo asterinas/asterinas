@@ -8,10 +8,12 @@ use core::ffi::CStr;
 use linux_boot_params::{BootParams, E820Type, LINUX_BOOT_HEADER_MAGIC};
 
 use crate::{
+    arch::init_cvm_guest,
     boot::{
         memory_region::{MemoryRegion, MemoryRegionArray, MemoryRegionType},
         BootloaderAcpiArg, BootloaderFramebufferArg,
     },
+    if_tdx_enabled,
     mm::{
         kspace::{paddr_to_vaddr, LINEAR_MAPPING_BASE_VADDR},
         Paddr,
@@ -114,6 +116,18 @@ fn parse_memory_regions(boot_params: &BootParams) -> MemoryRegionArray {
     // Add regions from E820.
     let num_entries = boot_params.e820_entries as usize;
     for e820_entry in &boot_params.e820_table[0..num_entries] {
+        if_tdx_enabled!({
+            if (e820_entry.addr..(e820_entry.addr + e820_entry.size)).contains(&0x800000) {
+                regions
+                    .push(MemoryRegion::new(
+                        e820_entry.addr as usize,
+                        e820_entry.size as usize,
+                        MemoryRegionType::Reclaimable,
+                    ))
+                    .unwrap();
+                continue;
+            }
+        });
         regions
             .push(MemoryRegion::new(
                 e820_entry.addr as usize,
@@ -164,6 +178,9 @@ unsafe extern "sysv64" fn __linux_boot(params_ptr: *const BootParams) -> ! {
     assert_eq!({ params.hdr.header }, LINUX_BOOT_HEADER_MAGIC);
 
     use crate::boot::{call_ostd_main, EarlyBootInfo, EARLY_INFO};
+
+    #[cfg(feature = "cvm_guest")]
+    init_cvm_guest();
 
     EARLY_INFO.call_once(|| EarlyBootInfo {
         bootloader_name: parse_bootloader_name(params),

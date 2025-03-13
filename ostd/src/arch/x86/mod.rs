@@ -21,13 +21,15 @@ use cfg_if::cfg_if;
 use spin::Once;
 use x86::cpuid::{CpuId, FeatureInfo};
 
+use crate::if_tdx_enabled;
+
 cfg_if! {
     if #[cfg(feature = "cvm_guest")] {
         pub(crate) mod tdx_guest;
 
         use {
             crate::early_println,
-            ::tdx_guest::{init_tdx, tdcall::InitError, tdx_is_enabled},
+            ::tdx_guest::{init_tdx, tdcall::InitError},
         };
     }
 }
@@ -94,21 +96,13 @@ pub(crate) unsafe fn late_init_on_bsp() {
 
     timer::init();
 
-    cfg_if! {
-        if #[cfg(feature = "cvm_guest")] {
-            if !tdx_is_enabled() {
-                match iommu::init() {
-                    Ok(_) => {}
-                    Err(err) => warn!("IOMMU initialization error:{:?}", err),
-                }
-            }
-        } else {
-            match iommu::init() {
-                Ok(_) => {}
-                Err(err) => warn!("IOMMU initialization error:{:?}", err),
-            }
+    if_tdx_enabled!({
+    } else {
+        match iommu::init() {
+            Ok(_) => {}
+            Err(err) => warn!("IOMMU initialization error:{:?}", err),
         }
-    }
+    });
 
     // Some driver like serial may use PIC
     kernel::pic::init();
@@ -214,4 +208,40 @@ pub(crate) fn enable_cpu_features() {
             *efer |= EferFlags::NO_EXECUTE_ENABLE;
         });
     }
+}
+
+/// Inserts a TDX-specific code block.
+///
+/// This macro conditionally executes a TDX-specific code block based on the following conditions:
+/// (1) The `cvm_guest` feature is enabled at compile time.
+/// (2) The TDX feature is detected at runtime via `::tdx_guest::tdx_is_enabled()`.
+///
+/// If both conditions are met, the `if_block` is executed. If an `else_block` is provided, it will be executed
+/// when either the `cvm_guest` feature is not enabled or the TDX feature is not detected at runtime.
+#[macro_export]
+macro_rules! if_tdx_enabled {
+    // Match when there is an else block
+    ($if_block:block else $else_block:block) => {{
+        #[cfg(feature = "cvm_guest")]
+        {
+            if ::tdx_guest::tdx_is_enabled() {
+                $if_block
+            } else {
+                $else_block
+            }
+        }
+        #[cfg(not(feature = "cvm_guest"))]
+        {
+            $else_block
+        }
+    }};
+    // Match when there is no else block
+    ($if_block:block) => {{
+        #[cfg(feature = "cvm_guest")]
+        {
+            if ::tdx_guest::tdx_is_enabled() {
+                $if_block
+            }
+        }
+    }};
 }

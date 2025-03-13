@@ -7,8 +7,6 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use spin::Once;
 
-#[cfg(feature = "cvm_guest")]
-use crate::mm::frame::allocator;
 use crate::{
     arch::boot::smp::{bringup_all_aps, get_num_processors},
     cpu,
@@ -102,9 +100,6 @@ pub fn boot_all_aps() {
 
     bringup_all_aps(num_cpus);
     wait_for_all_aps_started();
-
-    #[cfg(feature = "cvm_guest")]
-    allocator::reclaim_tdx_ap_boot_memory();
 
     log::info!("All application processors started. The BSP continues to run.");
 }
