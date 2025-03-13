@@ -79,9 +79,6 @@ unsafe fn init() {
 
     arch::serial::init();
 
-    #[cfg(feature = "cvm_guest")]
-    arch::init_cvm_guest();
-
     logger::init();
 
     // SAFETY: They are only called once on BSP and ACPI has been initialized.

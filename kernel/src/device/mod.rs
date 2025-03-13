@@ -14,12 +14,11 @@ cfg_if! {
     if #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))] {
         mod tdxguest;
 
-        use tdx_guest::tdx_is_enabled;
-
         pub use tdxguest::TdxGuest;
     }
 }
 
+use ostd::if_tdx_enabled;
 pub use pty::{new_pty_pair, PtyMaster, PtySlave};
 pub use random::Random;
 pub use urandom::Urandom;
@@ -41,15 +40,10 @@ pub fn init() -> Result<()> {
     add_node(console, "console")?;
     let tty = Arc::new(tty::TtyDevice);
     add_node(tty, "tty")?;
-    cfg_if! {
-        if #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))] {
-            let tdx_guest = Arc::new(tdxguest::TdxGuest);
-
-            if tdx_is_enabled() {
-                add_node(tdx_guest, "tdx_guest")?;
-            }
-        }
-    }
+    if_tdx_enabled!({
+        #[cfg(target_arch = "x86_64")]
+        add_node(Arc::new(tdxguest::TdxGuest), "tdx_guest")?;
+    });
     let random = Arc::new(random::Random);
     add_node(random, "random")?;
     let urandom = Arc::new(urandom::Urandom);

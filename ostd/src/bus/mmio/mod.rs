@@ -15,12 +15,12 @@ use log::debug;
 
 use self::bus::MmioBus;
 use crate::{
-    bus::mmio::common_device::MmioCommonDevice, mm::paddr_to_vaddr, sync::SpinLock, trap::IrqLine,
+    bus::mmio::common_device::MmioCommonDevice, if_tdx_enabled, mm::paddr_to_vaddr, sync::SpinLock,
+    trap::IrqLine,
 };
 
 cfg_if! {
     if #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))] {
-        use ::tdx_guest::tdx_is_enabled;
         use crate::arch::tdx_guest;
     }
 }
@@ -32,17 +32,17 @@ pub static MMIO_BUS: SpinLock<MmioBus> = SpinLock::new(MmioBus::new());
 static IRQS: SpinLock<Vec<IrqLine>> = SpinLock::new(Vec::new());
 
 pub(crate) fn init() {
-    #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
-    // SAFETY:
-    // This is safe because we are ensuring that the address range 0xFEB0_0000 to 0xFEB0_4000 is valid before this operation.
-    // The address range is page-aligned and falls within the MMIO range, which is a requirement for the `unprotect_gpa_range` function.
-    // We are also ensuring that we are only unprotecting four pages.
-    // Therefore, we are not causing any undefined behavior or violating any of the requirements of the `unprotect_gpa_range` function.
-    if tdx_is_enabled() {
+    if_tdx_enabled!({
+        #[cfg(target_arch = "x86_64")]
+        // SAFETY:
+        // This is safe because we are ensuring that the address range 0xFEB0_0000 to 0xFEB0_4000 is valid before this operation.
+        // The address range is page-aligned and falls within the MMIO range, which is a requirement for the `unprotect_gpa_range` function.
+        // We are also ensuring that we are only unprotecting four pages.
+        // Therefore, we are not causing any undefined behavior or violating any of the requirements of the `unprotect_gpa_range` function.
         unsafe {
             tdx_guest::unprotect_gpa_range(0xFEB0_0000, 4).unwrap();
         }
-    }
+    });
     // FIXME: The address 0xFEB0_0000 is obtained from an instance of microvm, and it may not work in other architecture.
     #[cfg(target_arch = "x86_64")]
     iter_range(0xFEB0_0000..0xFEB0_4000);

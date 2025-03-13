@@ -9,6 +9,7 @@ use super::{check_and_insert_dma_mapping, remove_dma_mapping, DmaError, HasDaddr
 use crate::{
     arch::iommu,
     error::Error,
+    if_tdx_enabled,
     mm::{
         dma::{dma_type, Daddr, DmaType},
         HasPaddr, Infallible, Paddr, USegment, UntypedMem, VmIo, VmReader, VmWriter, PAGE_SIZE,
@@ -17,7 +18,6 @@ use crate::{
 
 cfg_if! {
     if #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))] {
-        use ::tdx_guest::tdx_is_enabled;
         use crate::arch::tdx_guest;
     }
 }
@@ -72,17 +72,17 @@ impl DmaStream {
         start_paddr.checked_add(frame_count * PAGE_SIZE).unwrap();
         let start_daddr = match dma_type() {
             DmaType::Direct => {
-                #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
-                // SAFETY:
-                // This is safe because we are ensuring that the physical address range specified by `start_paddr` and `frame_count` is valid before these operations.
-                // The `check_and_insert_dma_mapping` function checks if the physical address range is already mapped.
-                // We are also ensuring that we are only modifying the page table entries corresponding to the physical address range specified by `start_paddr` and `frame_count`.
-                // Therefore, we are not causing any undefined behavior or violating any of the requirements of the 'unprotect_gpa_range' function.
-                if tdx_is_enabled() {
+                if_tdx_enabled!({
+                    #[cfg(target_arch = "x86_64")]
+                    // SAFETY:
+                    // This is safe because we are ensuring that the physical address range specified by `start_paddr` and `frame_count` is valid before these operations.
+                    // The `check_and_insert_dma_mapping` function checks if the physical address range is already mapped.
+                    // We are also ensuring that we are only modifying the page table entries corresponding to the physical address range specified by `start_paddr` and `frame_count`.
+                    // Therefore, we are not causing any undefined behavior or violating any of the requirements of the 'unprotect_gpa_range' function.
                     unsafe {
                         tdx_guest::unprotect_gpa_range(start_paddr, frame_count).unwrap();
                     }
-                }
+                });
                 start_paddr as Daddr
             }
             DmaType::Iommu => {
@@ -182,17 +182,17 @@ impl Drop for DmaStreamInner {
         start_paddr.checked_add(frame_count * PAGE_SIZE).unwrap();
         match dma_type() {
             DmaType::Direct => {
-                #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
-                // SAFETY:
-                // This is safe because we are ensuring that the physical address range specified by `start_paddr` and `frame_count` is valid before these operations.
-                // The `start_paddr()` ensures the `start_paddr` is page-aligned.
-                // We are also ensuring that we are only modifying the page table entries corresponding to the physical address range specified by `start_paddr` and `frame_count`.
-                // Therefore, we are not causing any undefined behavior or violating any of the requirements of the `protect_gpa_range` function.
-                if tdx_is_enabled() {
+                if_tdx_enabled!({
+                    #[cfg(target_arch = "x86_64")]
+                    // SAFETY:
+                    // This is safe because we are ensuring that the physical address range specified by `start_paddr` and `frame_count` is valid before these operations.
+                    // The `start_paddr()` ensures the `start_paddr` is page-aligned.
+                    // We are also ensuring that we are only modifying the page table entries corresponding to the physical address range specified by `start_paddr` and `frame_count`.
+                    // Therefore, we are not causing any undefined behavior or violating any of the requirements of the `protect_gpa_range` function.
                     unsafe {
                         tdx_guest::protect_gpa_range(start_paddr, frame_count).unwrap();
                     }
-                }
+                });
             }
             DmaType::Iommu => {
                 for i in 0..frame_count {
