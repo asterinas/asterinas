@@ -75,7 +75,8 @@ fn do_sys_preadv(
     let mut total_len: usize = 0;
     let mut cur_offset = offset as usize;
 
-    let mut writer_array = VmWriterArray::from_user_io_vecs(ctx, io_vec_ptr, io_vec_count)?;
+    let user_space = ctx.user_space();
+    let mut writer_array = VmWriterArray::from_user_io_vecs(&user_space, io_vec_ptr, io_vec_count)?;
     for writer in writer_array.writers_mut() {
         if !writer.has_avail() {
             continue;
@@ -134,7 +135,8 @@ fn do_sys_readv(
 
     let mut total_len = 0;
 
-    let mut writer_array = VmWriterArray::from_user_io_vecs(ctx, io_vec_ptr, io_vec_count)?;
+    let user_space = ctx.user_space();
+    let mut writer_array = VmWriterArray::from_user_io_vecs(&user_space, io_vec_ptr, io_vec_count)?;
     for writer in writer_array.writers_mut() {
         if !writer.has_avail() {
             continue;

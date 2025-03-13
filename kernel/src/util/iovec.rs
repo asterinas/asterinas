@@ -55,12 +55,12 @@ impl IoVec {
 
 /// The util function for create [`VmReader`]/[`VmWriter`]s.
 fn copy_iovs_and_convert<'a, T: 'a>(
-    ctx: &'a Context,
+    user_space: &'a CurrentUserSpace<'a>,
     start_addr: Vaddr,
     count: usize,
     convert_iovec: impl Fn(&IoVec, &'a VmSpace) -> Result<T>,
 ) -> Result<Box<[T]>> {
-    let vm_space = ctx.process.root_vmar().vm_space();
+    let vm_space = user_space.root_vmar().vm_space();
 
     let mut v = Vec::with_capacity(count);
     for idx in 0..count {
@@ -96,11 +96,11 @@ pub struct VmWriterArray<'a>(Box<[VmWriter<'a>]>);
 impl<'a> VmReaderArray<'a> {
     /// Creates a new `IoVecReader` from user-provided io vec buffer.
     pub fn from_user_io_vecs(
-        ctx: &'a Context<'a>,
+        user_space: &'a CurrentUserSpace<'a>,
         start_addr: Vaddr,
         count: usize,
     ) -> Result<Self> {
-        let readers = copy_iovs_and_convert(ctx, start_addr, count, IoVec::reader)?;
+        let readers = copy_iovs_and_convert(user_space, start_addr, count, IoVec::reader)?;
         Ok(Self(readers))
     }
 
@@ -113,11 +113,11 @@ impl<'a> VmReaderArray<'a> {
 impl<'a> VmWriterArray<'a> {
     /// Creates a new `IoVecWriter` from user-provided io vec buffer.
     pub fn from_user_io_vecs(
-        ctx: &'a Context<'a>,
+        user_space: &'a CurrentUserSpace<'a>,
         start_addr: Vaddr,
         count: usize,
     ) -> Result<Self> {
-        let writers = copy_iovs_and_convert(ctx, start_addr, count, IoVec::writer)?;
+        let writers = copy_iovs_and_convert(user_space, start_addr, count, IoVec::writer)?;
         Ok(Self(writers))
     }
 

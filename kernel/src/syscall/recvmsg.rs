@@ -27,7 +27,8 @@ pub fn sys_recvmsg(
     let socket = file.as_socket_or_err()?;
 
     let (total_bytes, message_header) = {
-        let mut io_vec_writer = c_user_msghdr.copy_writer_array_from_user(ctx)?;
+        let user_space = ctx.user_space();
+        let mut io_vec_writer = c_user_msghdr.copy_writer_array_from_user(&user_space)?;
         socket
             .recvmsg(&mut io_vec_writer, flags)
             .map_err(|err| match err.error() {

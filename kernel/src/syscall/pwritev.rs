@@ -77,7 +77,8 @@ fn do_sys_pwritev(
     let mut total_len: usize = 0;
     let mut cur_offset = offset as usize;
 
-    let mut reader_array = VmReaderArray::from_user_io_vecs(ctx, io_vec_ptr, io_vec_count)?;
+    let user_space = ctx.user_space();
+    let mut reader_array = VmReaderArray::from_user_io_vecs(&user_space, io_vec_ptr, io_vec_count)?;
     for reader in reader_array.readers_mut() {
         if !reader.has_remain() {
             continue;
@@ -127,7 +128,8 @@ fn do_sys_writev(
 
     let mut total_len = 0;
 
-    let mut reader_array = VmReaderArray::from_user_io_vecs(ctx, io_vec_ptr, io_vec_count)?;
+    let user_space = ctx.user_space();
+    let mut reader_array = VmReaderArray::from_user_io_vecs(&user_space, io_vec_ptr, io_vec_count)?;
     for reader in reader_array.readers_mut() {
         if !reader.has_remain() {
             continue;
