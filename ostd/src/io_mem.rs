@@ -5,9 +5,9 @@
 use core::ops::{Deref, Range};
 
 use align_ext::AlignExt;
-use cfg_if::cfg_if;
 
 use crate::{
+    if_tdx_enabled,
     mm::{
         kspace::kvirt_area::{KVirtArea, Untracked},
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
@@ -47,17 +47,11 @@ impl IoMem {
         let last_page_end = range.end.align_up(PAGE_SIZE);
         let mut new_kvirt_area = KVirtArea::<Untracked>::new(last_page_end - first_page_start);
 
-        cfg_if! {
-            if #[cfg(all(feature = "cvm_guest", target_arch = "x86_64"))] {
-                let priv_flags = if tdx_guest::tdx_is_enabled() {
-                    PrivilegedPageFlags::SHARED
-                } else {
-                    PrivilegedPageFlags::empty()
-                };
-            } else {
-                let priv_flags = PrivilegedPageFlags::empty();
-            }
-        }
+        let priv_flags = if_tdx_enabled!({
+            PrivilegedPageFlags::SHARED
+        } else {
+            PrivilegedPageFlags::empty()
+        });
 
         let prop = PageProperty {
             flags,

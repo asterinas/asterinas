@@ -14,13 +14,77 @@ IA32_APIC_BASE = 0x1B
 IA32_X2APIC_APICID = 0x802
 MMIO_XAPIC_APICID = 0xFEE00020
 
-ap_real_mode_boot:
+start:
     cli // disable interrupts
     cld
 
     xor ax, ax  // clear ax
     mov ds, ax  // clear ds
 
+    // In the Intel Trust Domain, the APs awakened by the operating system are in long mode.
+    // We can determine this using the value of the CS register.
+    // FIXME: This method will not affect the booting of linux-efi-handover64,
+    // multiboot and multiboot2 in non-TDX environments.
+    // However, it cannot guarantee the impact on other booting methods added in the future.
+    mov ax, cs
+    cmp ax, 0x38
+    jne ap_real_mode_boot
+
+.code64
+ap_long_mode_tdx:
+    // The Local APIC ID information is stored in r8d by Intel TDX Virtual Firmware.
+    mov edi, r8d
+
+    lgdt [boot_gdtr]
+
+    // Enable PAE and PGE.
+    mov rax, cr4
+    or  rax, 0xa0
+    mov cr4, rax
+
+    // Set the page table. The application processors use
+    // the same page table as the bootstrap processor's
+    // boot phase page table.
+    mov rax, 0
+    mov rax, __boot_page_table_pointer
+    mov cr3, rax
+
+    push 0x8
+    mov rax, offset ap_long_mode_in_low_address
+    push rax
+    retfq
+
+ap_long_mode_in_low_address:
+    mov ax, 0
+    mov ds, ax
+    mov ss, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+
+    // Update RIP to use the virtual address.
+    mov rax, offset ap_long_mode
+    jmp rax
+
+ap_long_mode:
+    // The local APIC ID is in the RDI.
+    mov rax, rdi
+    shl rax, 3
+
+    // Setup the stack.
+    mov rbx, [__ap_boot_stack_array_pointer]
+    mov rsp, [rbx + rax]
+    xor rbp, rbp
+
+    // Go to Rust code.
+    mov rax, offset ap_early_entry
+    call rax
+
+.extern halt # bsp_boot.S
+    jmp halt
+
+.code16
+ap_real_mode_boot:
     lgdt [ap_gdtr] // load gdt
 
     mov eax, cr0
@@ -86,9 +150,9 @@ x2apic_mode:
 // This is a pointer to the page table used by the APs.
 // The BSP will fill this pointer before kicking the APs.
 .global __boot_page_table_pointer
-.align 4
+.align 8
 __boot_page_table_pointer:
-    .skip 4
+    .skip 8
 
 ap_protect:
     // Save the local APIC ID in an unused register.
@@ -125,19 +189,6 @@ ap_protect:
 
     ljmp 0x8, offset ap_long_mode_in_low_address
 
-.code64
-ap_long_mode_in_low_address:
-    mov ax, 0
-    mov ds, ax
-    mov ss, ax
-    mov es, ax
-    mov fs, ax
-    mov gs, ax
-
-    // Update RIP to use the virtual address.
-    mov rax, offset ap_long_mode
-    jmp rax
-
 .data
 // This is a pointer to be filled by the BSP when boot stacks
 // of all APs are allocated and initialized.
@@ -145,22 +196,3 @@ ap_long_mode_in_low_address:
 .align 8
 __ap_boot_stack_array_pointer:
     .skip 8
-
-.text
-.code64
-ap_long_mode:
-    // The local APIC ID is in the RDI.
-    mov rax, rdi
-    shl rax, 3
-
-    // Setup the stack.
-    mov rbx, [__ap_boot_stack_array_pointer]
-    mov rsp, [rbx + rax]
-    xor rbp, rbp
-
-    // Go to Rust code.
-    mov rax, offset ap_early_entry
-    call rax
-
-.extern halt # bsp_boot.S
-    jmp halt

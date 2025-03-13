@@ -11,6 +11,7 @@ use super::{meta::AnyFrameMeta, segment::Segment, Frame};
 use crate::{
     boot::memory_region::MemoryRegionType,
     error::Error,
+    if_tdx_enabled,
     mm::{paddr_to_vaddr, Paddr, PAGE_SIZE},
     prelude::*,
     sync::SpinLock,
@@ -197,6 +198,15 @@ pub(crate) fn init() {
             if end <= start {
                 continue;
             }
+
+            // FIXME: 0x800000 is temporarily used for AP boot in Intel TDX environment.
+            // We may be able to optimize the memory initialization process.
+            if_tdx_enabled!({
+                if (start..end).contains(&(0x800000 / PAGE_SIZE)) {
+                    continue;
+                }
+            });
+
             // Add global free pages to the frame allocator.
             allocator.add_frame(start, end);
             total += (end - start) * PAGE_SIZE;
@@ -209,4 +219,39 @@ pub(crate) fn init() {
     }
     let counting_allocator = CountingFrameAllocator::new(allocator, total);
     FRAME_ALLOCATOR.call_once(|| SpinLock::new(counting_allocator));
+}
+
+#[cfg(feature = "cvm_guest")]
+pub(crate) fn reclaim_tdx_ap_boot_memory() {
+    let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
+    for region in regions.iter() {
+        if region.typ() == MemoryRegionType::Usable {
+            // Make the memory region page-aligned, and skip if it is too small.
+            let start = region.base().align_up(PAGE_SIZE) / PAGE_SIZE;
+            let region_end = region.base().checked_add(region.len()).unwrap();
+            let end = region_end.align_down(PAGE_SIZE) / PAGE_SIZE;
+            if end <= start {
+                continue;
+            }
+            // 0x800000 is temporarily used for AP boot in Intel TDX environment.
+            // We should include this frame into page allocator after AP initialization.
+            if (start..end).contains(&(0x800000 / PAGE_SIZE)) {
+                info!(
+                    "Found usable region, start:{:x}, end:{:x}",
+                    region.base(),
+                    region.base() + region.len()
+                );
+                FRAME_ALLOCATOR
+                    .get()
+                    .unwrap()
+                    .disable_irq()
+                    .lock()
+                    .allocator
+                    .add_frame(start, end);
+
+                FRAME_ALLOCATOR.get().unwrap().disable_irq().lock().total +=
+                    (end - start) * PAGE_SIZE;
+            }
+        }
+    }
 }
