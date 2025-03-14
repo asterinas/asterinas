@@ -33,11 +33,8 @@ pub fn sys_pwrite64(
         return_errno_with_message!(Errno::EINVAL, "offset + user_buf_len overflow");
     }
 
-    let mut reader = ctx
-        .process
-        .root_vmar()
-        .vm_space()
-        .reader(user_buf_ptr, user_buf_len)?;
+    let current_userspace = ctx.user_space();
+    let mut reader = current_userspace.reader(user_buf_ptr, user_buf_len)?;
     let write_len = file.write_at(offset as _, &mut reader)?;
     Ok(SyscallReturn::Return(write_len as _))
 }

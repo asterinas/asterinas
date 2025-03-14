@@ -19,6 +19,7 @@ use core::{
 
 use kernel_stack::KernelStack;
 use processor::current_task;
+use spin::Once;
 use utils::ForceSync;
 
 pub use self::{
@@ -26,7 +27,14 @@ pub use self::{
     scheduler::info::{AtomicCpuId, TaskScheduleInfo},
 };
 pub(crate) use crate::arch::task::{context_switch, TaskContext};
-use crate::{prelude::*, trap::in_interrupt_context, user::UserSpace};
+use crate::{cpu::UserContext, prelude::*, trap::in_interrupt_context};
+
+static POST_SCHEDULE_HANDLER: Once<fn()> = Once::new();
+
+/// Injects a handler to be executed after scheduling.
+pub fn inject_post_schedule_handler(handler: fn()) {
+    POST_SCHEDULE_HANDLER.call_once(|| handler);
+}
 
 /// A task that executes a function to the end.
 ///
@@ -41,7 +49,7 @@ pub struct Task {
     data: Box<dyn Any + Send + Sync>,
     local_data: ForceSync<Box<dyn Any + Send>>,
 
-    user_space: Option<Arc<UserSpace>>,
+    user_ctx: Option<Arc<UserContext>>,
     ctx: SyncUnsafeCell<TaskContext>,
     /// kernel stack, note that the top is SyscallFrame/TrapFrame
     #[expect(dead_code)]
@@ -108,10 +116,10 @@ impl Task {
         &self.schedule_info
     }
 
-    /// Returns the user space of this task, if it has.
-    pub fn user_space(&self) -> Option<&Arc<UserSpace>> {
-        if self.user_space.is_some() {
-            Some(self.user_space.as_ref().unwrap())
+    /// Returns the user context of this task, if it has.
+    pub fn user_ctx(&self) -> Option<&Arc<UserContext>> {
+        if self.user_ctx.is_some() {
+            Some(self.user_ctx.as_ref().unwrap())
         } else {
             None
         }
@@ -119,20 +127,20 @@ impl Task {
 
     /// Saves the FPU state for user task.
     pub fn save_fpu_state(&self) {
-        let Some(user_space) = self.user_space.as_ref() else {
+        let Some(user_ctx) = self.user_ctx.as_ref() else {
             return;
         };
 
-        user_space.fpu_state().save();
+        user_ctx.fpu_state().save();
     }
 
     /// Restores the FPU state for user task.
     pub fn restore_fpu_state(&self) {
-        let Some(user_space) = self.user_space.as_ref() else {
+        let Some(user_ctx) = self.user_ctx.as_ref() else {
             return;
         };
 
-        user_space.fpu_state().restore();
+        user_ctx.fpu_state().restore();
     }
 }
 
@@ -141,7 +149,7 @@ pub struct TaskOptions {
     func: Option<Box<dyn FnOnce() + Send>>,
     data: Option<Box<dyn Any + Send + Sync>>,
     local_data: Option<Box<dyn Any + Send>>,
-    user_space: Option<Arc<UserSpace>>,
+    user_ctx: Option<Arc<UserContext>>,
 }
 
 impl TaskOptions {
@@ -154,7 +162,7 @@ impl TaskOptions {
             func: Some(Box::new(func)),
             data: None,
             local_data: None,
-            user_space: None,
+            user_ctx: None,
         }
     }
 
@@ -185,9 +193,9 @@ impl TaskOptions {
         self
     }
 
-    /// Sets the user space associated with the task.
-    pub fn user_space(mut self, user_space: Option<Arc<UserSpace>>) -> Self {
-        self.user_space = user_space;
+    /// Sets the user context associated with the task.
+    pub fn user_ctx(mut self, user_ctx: Option<Arc<UserContext>>) -> Self {
+        self.user_ctx = user_ctx;
         self
     }
 
@@ -224,8 +232,8 @@ impl TaskOptions {
         let kstack = KernelStack::new_with_guard_page()?;
 
         let mut ctx = SyncUnsafeCell::new(TaskContext::default());
-        if let Some(user_space) = self.user_space.as_ref() {
-            ctx.get_mut().set_tls_pointer(user_space.tls_pointer());
+        if let Some(user_ctx) = self.user_ctx.as_ref() {
+            ctx.get_mut().set_tls_pointer(user_ctx.tls_pointer());
         };
         ctx.get_mut()
             .set_instruction_pointer(kernel_task_entry as usize);
@@ -243,7 +251,7 @@ impl TaskOptions {
             func: ForceSync::new(Cell::new(self.func)),
             data: self.data.unwrap_or_else(|| Box::new(())),
             local_data: ForceSync::new(self.local_data.unwrap_or_else(|| Box::new(()))),
-            user_space: self.user_space,
+            user_ctx: self.user_ctx,
             ctx,
             kstack,
             schedule_info: TaskScheduleInfo {

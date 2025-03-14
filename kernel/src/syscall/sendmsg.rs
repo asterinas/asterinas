@@ -26,9 +26,10 @@ pub fn sys_sendmsg(
     let file = get_file_fast!(&mut file_table, sockfd);
     let socket = file.as_socket_or_err()?;
 
+    let user_space = ctx.user_space();
     let (mut io_vec_reader, message_header) = {
         let addr = c_user_msghdr.read_socket_addr_from_user()?;
-        let io_vec_reader = c_user_msghdr.copy_reader_array_from_user(ctx)?;
+        let io_vec_reader = c_user_msghdr.copy_reader_array_from_user(&user_space)?;
 
         let control_message = {
             if c_user_msghdr.msg_control != 0 {

@@ -79,6 +79,8 @@ fn exit_internal(term_status: TermStatus, is_exiting_group: bool) {
         thread_table::remove_thread(posix_thread.tid());
     }
 
+    *thread_local.root_vmar().borrow_mut() = None;
+
     if is_last_thread {
         exit_process(thread_local, &posix_process);
     }
