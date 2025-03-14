@@ -138,7 +138,7 @@ jobs:
         run: make run AUTO_TEST=test ENABLE_KVM=1 BOOT_PROTOCOL=multiboot2 RELEASE=1 SMP=4 NETDEV=tap
 
   integration-test-tdx:
-    if: github.event_name == 'schedule'
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: self-hosted
     timeout-minutes: 30
     container:
@@ -149,68 +149,190 @@ jobs:
       # which has poor network connection to the official Rust crate repositories.
       RUSTUP_DIST_SERVER: https://mirrors.ustc.edu.cn/rust-static
       RUSTUP_UPDATE_ROOT: https://mirrors.ustc.edu.cn/rust-static/rustup
+    strategy:
+      matrix:
+        # The ids of each test
+        test_id:
+          - 'tdx_boot_test'
+          - 'tdx_general_test'
+          - 'tdx_syscall_test'
+          - 'tdx_syscall_test_at_exfat'
+          - 'tdx_smp_boot_test'
+          - 'tdx_smp_general_test'
+          - 'tdx_smp_syscall_test'
+      fail-fast: false
+
     steps:
-      - run: echo "Running in asterinas/asterinas:0.12.0-tdx"
-      - uses: actions/checkout@v4
-      - name: Set up the environment
-        run: |
-          chmod +x test/benchmark/bench_linux_and_aster.sh
-          # Set up git due to the network issue on the self-hosted runner
-          git config --global --add safe.directory /__w/asterinas/asterinas
-          git config --global http.sslVerify false
-          git config --global http.version HTTP/1.1
-      - name: TDX Boot Test
-        uses: nick-invision/retry@v2
-        id: tdx_boot_test
-        with:
-          timeout_minutes: 20
-          max_attempts: 3
-          command: make run AUTO_TEST=boot RELEASE=1 INTEL_TDX=1
+    - run: echo "Running in asterinas/asterinas:0.12.0-tdx"
 
-      - name: TDX Syscall Test
-        uses: nick-invision/retry@v2
-        id: tdx_syscall_test
-        with:
-          timeout_minutes: 20
-          max_attempts: 3
-          command: make run AUTO_TEST=syscall RELEASE=1 INTEL_TDX=1
+    - uses: actions/checkout@v4
 
-      - name: TDX Syscall Test at Exfat
-        uses: nick-invision/retry@v2
-        id: tdx_syscall_test_at_exfat
-        with:
-          timeout_minutes: 20
-          max_attempts: 3
-          command: make run AUTO_TEST=syscall SYSCALL_TEST_DIR=/exfat EXTRA_BLOCKLISTS_DIRS=blocklists.exfat RELEASE=1 INTEL_TDX=1
+    - name: Set up the environment
+      run: |
+        chmod +x test/benchmark/bench_linux_and_aster.sh
+        # Set up git due to the network issue on the self-hosted runner
+        git config --global --add safe.directory /__w/asterinas/asterinas
+        git config --global http.sslVerify false
+        git config --global http.version HTTP/1.1
 
-      - name: TDX General Test
-        uses: nick-invision/retry@v2
-        id: tdx_general_test
-        with:
-          timeout_minutes: 20
-          max_attempts: 3
-          command: make run AUTO_TEST=test RELEASE=1 INTEL_TDX=1
+    - name: TDX Boot Test
+      uses: nick-invision/retry@v2
+      id: tdx_boot_test
+      if: ${{ matrix.test_id == 'tdx_boot_test' }}
+      with:
+        timeout_minutes: 20
+        max_attempts: 3
+        command: make run AUTO_TEST=boot RELEASE=1 INTEL_TDX=1
 
-      - name: TDX SMP Boot Test
-        uses: nick-invision/retry@v2
-        id: tdx_smp_boot_test
-        with:
-          timeout_minutes: 20
-          max_attempts: 3
-          command: make run AUTO_TEST=boot INTEL_TDX=1 RELEASE=1 SMP=4 NETDEV=tap
+    - name: TDX General Test
+      uses: nick-invision/retry@v2
+      id: tdx_general_test
+      if: ${{ matrix.test_id == 'tdx_general_test' }}
+      with:
+        timeout_minutes: 20
+        max_attempts: 3
+        command: make run AUTO_TEST=test RELEASE=1 INTEL_TDX=1
 
-      - name: TDX SMP General Test
-        uses: nick-invision/retry@v2
-        id: tdx_smp_general_test
-        with:
-          timeout_minutes: 20
-          max_attempts: 3
-          command: make run AUTO_TEST=test INTEL_TDX=1 RELEASE=1 SMP=4 NETDEV=tap
+    - name: TDX Syscall Test
+      uses: nick-invision/retry@v2
+      id: tdx_syscall_test
+      if: ${{ matrix.test_id == 'tdx_syscall_test' }}
+      with:
+        timeout_minutes: 20
+        max_attempts: 3
+        command: make run AUTO_TEST=syscall RELEASE=1 INTEL_TDX=1
 
-      - name: TDX SMP Syscall Test
-        uses: nick-invision/retry@v2
-        id: tdx_smp_syscall_test
-        with:
-          timeout_minutes: 20
-          max_attempts: 3
-          command: make run AUTO_TEST=syscall INTEL_TDX=1 RELEASE=1 SMP=4 NETDEV=tap
+    - name: TDX Syscall Test at Exfat
+      uses: nick-invision/retry@v2
+      id: tdx_syscall_test_at_exfat
+      if: ${{ matrix.test_id == 'tdx_syscall_test_at_exfat' }}
+      with:
+        timeout_minutes: 20
+        max_attempts: 3
+        command: make run AUTO_TEST=syscall SYSCALL_TEST_DIR=/exfat EXTRA_BLOCKLISTS_DIRS=blocklists.exfat RELEASE=1 INTEL_TDX=1
+
+    - name: TDX SMP Boot Test
+      uses: nick-invision/retry@v2
+      id: tdx_smp_boot_test
+      if: ${{ matrix.test_id == 'tdx_smp_boot_test' }}
+      with:
+        timeout_minutes: 20
+        max_attempts: 3
+        command: make run AUTO_TEST=boot INTEL_TDX=1 RELEASE=1 SMP=4 NETDEV=tap
+
+    - name: TDX SMP General Test
+      uses: nick-invision/retry@v2
+      id: tdx_smp_general_test
+      if: ${{ matrix.test_id == 'tdx_smp_general_test' }}
+      with:
+        timeout_minutes: 20
+        max_attempts: 3
+        command: make run AUTO_TEST=test INTEL_TDX=1 RELEASE=1 SMP=4 NETDEV=tap
+        integration-test-tdx:
+          if: github.event_name == 'push' || github.event_name == 'pull_request'
+          runs-on: self-hosted
+          timeout-minutes: 30
+          container:
+            image: asterinas/asterinas:0.12.0-tdx
+            options: --device=/dev/kvm --privileged
+          env:
+            # Need to set up proxy since the self-hosted CI server is located in China,
+            # which has poor network connection to the official Rust crate repositories.
+            RUSTUP_DIST_SERVER: https://mirrors.ustc.edu.cn/rust-static
+            RUSTUP_UPDATE_ROOT: https://mirrors.ustc.edu.cn/rust-static/rustup
+          strategy:
+            matrix:
+              # The ids of each test
+              test_id:
+                - 'tdx_boot_test'
+                - 'tdx_general_test'
+                - 'tdx_syscall_test'
+                - 'tdx_syscall_test_at_exfat'
+                - 'tdx_smp_boot_test'
+                - 'tdx_smp_general_test'
+                - 'tdx_smp_syscall_test'
+            fail-fast: false
+      
+          steps:
+          - run: echo "Running in asterinas/asterinas:0.11.3-tdx"
+      
+          - uses: actions/checkout@v4
+      
+          - name: Set up the environment
+            run: |
+              chmod +x test/benchmark/bench_linux_and_aster.sh
+              # Set up git due to the network issue on the self-hosted runner
+              git config --global --add safe.directory /__w/asterinas/asterinas
+              git config --global http.sslVerify false
+              git config --global http.version HTTP/1.1
+      
+          - name: TDX Boot Test
+            uses: nick-invision/retry@v2
+            id: tdx_boot_test
+            if: ${{ matrix.test_id == 'tdx_boot_test' }}
+            with:
+              timeout_minutes: 20
+              max_attempts: 3
+              command: make run AUTO_TEST=boot RELEASE=1 INTEL_TDX=1
+      
+          - name: TDX General Test
+            uses: nick-invision/retry@v2
+            id: tdx_general_test
+            if: ${{ matrix.test_id == 'tdx_general_test' }}
+            with:
+              timeout_minutes: 20
+              max_attempts: 3
+              command: make run AUTO_TEST=test RELEASE=1 INTEL_TDX=1
+      
+          - name: TDX Syscall Test
+            uses: nick-invision/retry@v2
+            id: tdx_syscall_test
+            if: ${{ matrix.test_id == 'tdx_syscall_test' }}
+            with:
+              timeout_minutes: 20
+              max_attempts: 3
+              command: make run AUTO_TEST=syscall RELEASE=1 INTEL_TDX=1
+      
+          - name: TDX Syscall Test at Exfat
+            uses: nick-invision/retry@v2
+            id: tdx_syscall_test_at_exfat
+            if: ${{ matrix.test_id == 'tdx_syscall_test_at_exfat' }}
+            with:
+              timeout_minutes: 20
+              max_attempts: 3
+              command: make run AUTO_TEST=syscall SYSCALL_TEST_DIR=/exfat EXTRA_BLOCKLISTS_DIRS=blocklists.exfat RELEASE=1 INTEL_TDX=1
+      
+          - name: TDX SMP Boot Test
+            uses: nick-invision/retry@v2
+            id: tdx_smp_boot_test
+            if: ${{ matrix.test_id == 'tdx_smp_boot_test' }}
+            with:
+              timeout_minutes: 20
+              max_attempts: 3
+              command: make run AUTO_TEST=boot INTEL_TDX=1 RELEASE=1 SMP=4 NETDEV=tap
+      
+          - name: TDX SMP General Test
+            uses: nick-invision/retry@v2
+            id: tdx_smp_general_test
+            if: ${{ matrix.test_id == 'tdx_smp_general_test' }}
+            with:
+              timeout_minutes: 20
+              max_attempts: 3
+              command: make run AUTO_TEST=test INTEL_TDX=1 RELEASE=1 SMP=4 NETDEV=tap
+      
+          - name: TDX SMP Syscall Test
+            uses: nick-invision/retry@v2
+            id: tdx_smp_syscall_test
+            if: ${{ matrix.test_id == 'tdx_smp_syscall_test' }}
+            with:
+              timeout_minutes: 20
+              max_attempts: 3
+              command: make run AUTO_TEST=syscall INTEL_TDX=1 RELEASE=1 SMP=4 NETDEV=tap
+    - name: TDX SMP Syscall Test
+      uses: nick-invision/retry@v2
+      id: tdx_smp_syscall_test
+      if: ${{ matrix.test_id == 'tdx_smp_syscall_test' }}
+      with:
+        timeout_minutes: 20
+        max_attempts: 3
+        command: make run AUTO_TEST=syscall INTEL_TDX=1 RELEASE=1 SMP=4 NETDEV=tap
