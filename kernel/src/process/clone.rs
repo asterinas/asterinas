@@ -2,12 +2,7 @@
 
 use core::{num::NonZeroU64, sync::atomic::Ordering};
 
-use ostd::{
-    cpu::UserContext,
-    sync::RwArc,
-    task::Task,
-    user::{UserContextApi, UserSpace},
-};
+use ostd::{cpu::UserContext, sync::RwArc, task::Task, user::UserContextApi};
 
 use super::{
     posix_thread::{AsPosixThread, PosixThreadBuilder, ThreadName},
@@ -230,18 +225,13 @@ fn clone_child_task(
     // clone fs
     let child_fs = clone_fs(posix_thread.fs(), clone_flags);
 
-    let child_root_vmar = process.root_vmar();
-    let child_user_space = {
-        let child_vm_space = child_root_vmar.vm_space().clone();
-        let child_cpu_context = clone_cpu_context(
-            parent_context,
-            clone_args.stack,
-            clone_args.stack_size,
-            clone_args.tls,
-            clone_flags,
-        );
-        Arc::new(UserSpace::new(child_vm_space, child_cpu_context))
-    };
+    let child_user_ctx = Arc::new(clone_user_ctx(
+        parent_context,
+        clone_args.stack,
+        clone_args.stack_size,
+        clone_args.tls,
+        clone_flags,
+    ));
 
     // Inherit sigmask from current thread
     let sig_mask = posix_thread.sig_mask().load(Ordering::Relaxed).into();
@@ -253,7 +243,7 @@ fn clone_child_task(
             Credentials::new_from(&credentials)
         };
 
-        let mut thread_builder = PosixThreadBuilder::new(child_tid, child_user_space, credentials)
+        let mut thread_builder = PosixThreadBuilder::new(child_tid, child_user_ctx, credentials)
             .process(posix_thread.weak_process())
             .sig_mask(sig_mask)
             .file_table(child_file_table)
@@ -297,20 +287,13 @@ fn clone_child_process(
     };
 
     // clone user space
-    let child_user_space = {
-        let child_cpu_context = clone_cpu_context(
-            parent_context,
-            clone_args.stack,
-            clone_args.stack_size,
-            clone_args.tls,
-            clone_flags,
-        );
-        let child_vm_space = {
-            let child_root_vmar = child_process_vm.root_vmar();
-            child_root_vmar.vm_space().clone()
-        };
-        Arc::new(UserSpace::new(child_vm_space, child_cpu_context))
-    };
+    let child_user_ctx = Arc::new(clone_user_ctx(
+        parent_context,
+        clone_args.stack,
+        clone_args.stack_size,
+        clone_args.tls,
+        clone_flags,
+    ));
 
     // clone file table
     let child_file_table = clone_files(&thread_local.file_table().borrow(), clone_flags);
@@ -342,7 +325,7 @@ fn clone_child_process(
                 Credentials::new_from(&credentials)
             };
 
-            PosixThreadBuilder::new(child_tid, child_user_space, credentials)
+            PosixThreadBuilder::new(child_tid, child_user_ctx, credentials)
                 .thread_name(Some(child_thread_name))
                 .sig_mask(child_sig_mask)
                 .file_table(child_file_table)
@@ -432,7 +415,7 @@ fn clone_vm(parent_process_vm: &ProcessVm, clone_flags: CloneFlags) -> Result<Pr
     }
 }
 
-fn clone_cpu_context(
+fn clone_user_ctx(
     parent_context: &UserContext,
     new_sp: u64,
     stack_size: Option<NonZeroU64>,

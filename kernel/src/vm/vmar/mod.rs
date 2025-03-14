@@ -306,7 +306,6 @@ impl Vmar_ {
     fn new_root() -> Arc<Self> {
         let vmar_inner = VmarInner::new();
         let mut vm_space = VmSpace::new();
-        vm_space.register_page_fault_handler(handle_page_fault_wrapper);
         Vmar_::new(vmar_inner, Arc::new(vm_space), 0, ROOT_VMAR_CAP_ADDR)
     }
 
@@ -431,7 +430,6 @@ impl Vmar_ {
         let new_vmar_ = {
             let vmar_inner = VmarInner::new();
             let mut new_space = VmSpace::new();
-            new_space.register_page_fault_handler(handle_page_fault_wrapper);
             Vmar_::new(vmar_inner, Arc::new(new_space), self.base, self.size)
         };
 

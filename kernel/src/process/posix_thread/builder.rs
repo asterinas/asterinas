@@ -2,7 +2,11 @@
 
 #![expect(dead_code)]
 
-use ostd::{cpu::CpuSet, sync::RwArc, task::Task, user::UserSpace};
+use ostd::{
+    cpu::{CpuSet, UserContext},
+    sync::RwArc,
+    task::Task,
+};
 
 use super::{thread_table, PosixThread, ThreadLocal};
 use crate::{
@@ -22,7 +26,7 @@ use crate::{
 pub struct PosixThreadBuilder {
     // The essential part
     tid: Tid,
-    user_space: Arc<UserSpace>,
+    user_ctx: Arc<UserContext>,
     process: Weak<Process>,
     credentials: Credentials,
 
@@ -38,10 +42,10 @@ pub struct PosixThreadBuilder {
 }
 
 impl PosixThreadBuilder {
-    pub fn new(tid: Tid, user_space: Arc<UserSpace>, credentials: Credentials) -> Self {
+    pub fn new(tid: Tid, user_ctx: Arc<UserContext>, credentials: Credentials) -> Self {
         Self {
             tid,
-            user_space,
+            user_ctx,
             process: Weak::new(),
             credentials,
             thread_name: None,
@@ -98,7 +102,7 @@ impl PosixThreadBuilder {
     pub fn build(self) -> Arc<Task> {
         let Self {
             tid,
-            user_space,
+            user_ctx,
             process,
             credentials,
             thread_name,
@@ -148,7 +152,7 @@ impl PosixThreadBuilder {
             let thread_local = ThreadLocal::new(set_child_tid, clear_child_tid, file_table);
 
             thread_table::add_thread(tid, thread.clone());
-            task::create_new_user_task(user_space, thread, thread_local)
+            task::create_new_user_task(user_ctx, thread, thread_local)
         })
     }
 }
