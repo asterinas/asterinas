@@ -2,6 +2,10 @@
 name = "osdk-frame-allocator"
 version = "0.12.0"
 edition = "2021"
+description = "The default buddy system frame allocator shipped with OSDK."
+license = "MPL-2.0"
+repository ="https://github.com/asterinas/asterinas"
+readme = "README.md"
 
 [dependencies]
 log = "0.4"
