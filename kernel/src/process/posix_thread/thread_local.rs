@@ -2,10 +2,11 @@
 
 use core::cell::{Cell, RefCell};
 
+use aster_rights::Full;
 use ostd::{mm::Vaddr, sync::RwArc, task::CurrentTask};
 
 use super::RobustListHead;
-use crate::{fs::file_table::FileTable, process::signal::SigStack};
+use crate::{fs::file_table::FileTable, process::signal::SigStack, vm::vmar::Vmar};
 
 /// Local data for a POSIX thread.
 pub struct ThreadLocal {
@@ -13,6 +14,9 @@ pub struct ThreadLocal {
     // https://man7.org/linux/man-pages/man2/set_tid_address.2.html
     set_child_tid: Cell<Vaddr>,
     clear_child_tid: Cell<Vaddr>,
+
+    // Virtual memory address regions.
+    root_vmar: RefCell<Option<Vmar<Full>>>,
 
     // Robust futexes.
     // https://man7.org/linux/man-pages/man2/get_robust_list.2.html
@@ -34,11 +38,13 @@ impl ThreadLocal {
     pub(super) fn new(
         set_child_tid: Vaddr,
         clear_child_tid: Vaddr,
+        root_vmar: Option<Vmar<Full>>,
         file_table: RwArc<FileTable>,
     ) -> Self {
         Self {
             set_child_tid: Cell::new(set_child_tid),
             clear_child_tid: Cell::new(clear_child_tid),
+            root_vmar: RefCell::new(root_vmar),
             robust_list: RefCell::new(None),
             file_table: RefCell::new(file_table),
             sig_context: Cell::new(None),
@@ -52,6 +58,10 @@ impl ThreadLocal {
 
     pub fn clear_child_tid(&self) -> &Cell<Vaddr> {
         &self.clear_child_tid
+    }
+
+    pub fn root_vmar(&self) -> &RefCell<Option<Vmar<Full>>> {
+        &self.root_vmar
     }
 
     pub fn robust_list(&self) -> &RefCell<Option<RobustListHead>> {
