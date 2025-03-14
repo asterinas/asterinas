@@ -59,6 +59,7 @@ TESTS ?= \
 	vdso_clock_gettime_test \
 	write_test \
 	fallocate_test \
+	xattr_test
 	# The end of the list
 
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
