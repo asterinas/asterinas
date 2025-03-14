@@ -13,13 +13,19 @@ pub mod sig_queues;
 mod sig_stack;
 pub mod signals;
 
-use core::{mem, sync::atomic::Ordering};
+use core::{
+    mem::{self, offset_of},
+    sync::atomic::Ordering,
+};
 
 use align_ext::AlignExt;
 use c_types::{siginfo_t, ucontext_t};
 use constants::SIGKILL;
 pub use events::{SigEvents, SigEventsFilter};
-use ostd::{cpu::UserContext, user::UserContextApi};
+use ostd::{
+    cpu::{FpuState, UserContext},
+    user::UserContextApi,
+};
 pub use pause::{with_signal_blocked, Pause};
 pub use poll::{PollAdaptor, PollHandle, Pollable, Pollee, Poller};
 use sig_action::{SigAction, SigActionFlags, SigDefaultAction};
@@ -199,23 +205,22 @@ pub fn handle_user_signal(
     let siginfo_addr = stack_pointer;
 
     // 2. write ucontext_t.
-    stack_pointer = alloc_aligned_in_user_stack(stack_pointer, mem::size_of::<ucontext_t>(), 16)?;
+    stack_pointer = alloc_aligned_in_user_stack(stack_pointer, mem::size_of::<ucontext_t>(), 64)?;
     let mut ucontext = ucontext_t {
+        uc_flags: 0x7, // UC_FP_XSTATE | UC_SIGCONTEXT_SS | UC_STRICT_RESTORE_SS
         uc_sigmask: mask.into(),
         ..Default::default()
     };
-    ucontext
-        .uc_mcontext
-        .inner
-        .gp_regs
-        .copy_from_raw(user_ctx.general_regs());
+    ucontext.uc_mcontext.copy_from_context(user_ctx);
+    ucontext.uc_mcontext.fpu_state = (stack_pointer as usize) + offset_of!(ucontext_t, xsave_area);
     let sig_context = ctx.thread_local.sig_context().get();
     if let Some(sig_context_addr) = sig_context {
         ucontext.uc_link = sig_context_addr;
     } else {
         ucontext.uc_link = 0;
     }
-    // TODO: store fp regs in ucontext
+    FpuState::save_to(&mut ucontext.xsave_area);
+    FpuState::reset();
     user_space.write_val(stack_pointer as _, &ucontext)?;
     let ucontext_addr = stack_pointer;
     // Store the ucontext addr in sig context of current thread.
