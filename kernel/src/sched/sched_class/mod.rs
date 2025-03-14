@@ -23,7 +23,10 @@ use super::{
     nice::Nice,
     stats::{set_stats_from_scheduler, SchedulerStats},
 };
-use crate::thread::{AsThread, Thread};
+use crate::{
+    thread::{AsThread, Thread},
+    AsThreadLocal,
+};
 
 mod policy;
 mod time;
@@ -41,7 +44,21 @@ pub use self::{
 
 type SchedEntity = (Arc<Task>, Arc<Thread>);
 
+fn post_schedule_handler() {
+    let task = Task::current().unwrap();
+    let Some(thread_local) = task.as_thread_local() else {
+        return;
+    };
+
+    let root_vmar = thread_local.root_vmar().borrow();
+    if let Some(vmar) = root_vmar.as_ref() {
+        vmar.vm_space().activate()
+    }
+}
+
 pub fn init() {
+    ostd::task::inject_post_schedule_handler(post_schedule_handler);
+
     let scheduler = Box::leak(Box::new(ClassScheduler::new()));
 
     // Inject the scheduler into the ostd for actual scheduling work.

@@ -17,6 +17,9 @@
 //! as zero-cost capabilities.
 
 use osdk_frame_allocator::FrameAllocator;
+use ostd::{cpu::CpuExceptionInfo, task::Task};
+
+use crate::{prelude::*, thread::exception::handle_page_fault_from_vmar};
 
 pub mod page_fault_handler;
 pub mod perms;
@@ -39,4 +42,14 @@ pub fn mem_total() -> usize {
         .sum::<usize>();
 
     total
+}
+
+fn page_fault_handler(info: &CpuExceptionInfo) -> core::result::Result<(), ()> {
+    let task = Task::current().unwrap();
+    let root_vmar = task.as_thread_local().unwrap().root_vmar().borrow();
+    handle_page_fault_from_vmar(root_vmar.as_ref().unwrap(), &info.try_into().unwrap())
+}
+
+pub(super) fn init() {
+    ostd::arch::trap::inject_user_page_fault_handler(page_fault_handler);
 }
