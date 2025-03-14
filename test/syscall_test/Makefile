@@ -43,6 +43,7 @@ TESTS ?= \
 	semaphore_test \
 	sendfile_test \
 	sigaltstack_test \
+	signalfd_test \
 	stat_test \
 	stat_times_test \
 	statfs_test \

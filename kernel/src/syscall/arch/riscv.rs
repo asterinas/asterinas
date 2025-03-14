@@ -115,6 +115,7 @@ use crate::syscall::{
     setuid::sys_setuid,
     shutdown::sys_shutdown,
     sigaltstack::sys_sigaltstack,
+    signalfd::sys_signalfd4,
     socket::sys_socket,
     socketpair::sys_socketpair,
     stat::{sys_fstat, sys_fstatat},
@@ -182,6 +183,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_PWRITEV = 70             => sys_pwritev(args[..4]);
     SYS_SENDFILE64 = 71          => sys_sendfile(args[..4]);
     SYS_PSELECT6 = 72            => sys_pselect6(args[..6]);
+    SYS_SIGNALFD4 = 74           => sys_signalfd4(args[..4]);
     SYS_READLINKAT = 78          => sys_readlinkat(args[..4]);
     SYS_NEWFSTATAT = 79          => sys_fstatat(args[..4]);
     SYS_NEWFSTAT = 80            => sys_fstat(args[..2]);
