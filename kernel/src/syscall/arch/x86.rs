@@ -144,6 +144,11 @@ use crate::syscall::{
     wait4::sys_wait4,
     waitid::sys_waitid,
     write::sys_write,
+    xattr::{
+        sys_fgetxattr, sys_flistxattr, sys_fremovexattr, sys_fsetxattr, sys_getxattr,
+        sys_lgetxattr, sys_listxattr, sys_llistxattr, sys_lremovexattr, sys_lsetxattr,
+        sys_removexattr, sys_setxattr,
+    },
 };
 
 impl_syscall_nums_and_dispatch_fn! {
@@ -283,6 +288,18 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_MOUNT = 165            => sys_mount(args[..5]);
     SYS_UMOUNT2 = 166           => sys_umount(args[..2]);
     SYS_GETTID = 186           => sys_gettid(args[..0]);
+    SYS_SETXATTR = 188         => sys_setxattr(args[..5]);
+    SYS_LSETXATTR = 189        => sys_lsetxattr(args[..5]);
+    SYS_FSETXATTR = 190        => sys_fsetxattr(args[..5]);
+    SYS_GETXATTR = 191         => sys_getxattr(args[..4]);
+    SYS_LGETXATTR = 192        => sys_lgetxattr(args[..4]);
+    SYS_FGETXATTR = 193        => sys_fgetxattr(args[..4]);
+    SYS_LISTXATTR = 194        => sys_listxattr(args[..3]);
+    SYS_LLISTXATTR = 195       => sys_llistxattr(args[..3]);
+    SYS_FLISTXATTR = 196       => sys_flistxattr(args[..3]);
+    SYS_REMOVEXATTR = 197      => sys_removexattr(args[..2]);
+    SYS_LREMOVEXATTR = 198     => sys_lremovexattr(args[..2]);
+    SYS_FREMOVEXATTR = 199     => sys_fremovexattr(args[..2]);
     SYS_TIME = 201             => sys_time(args[..1]);
     SYS_FUTEX = 202            => sys_futex(args[..6]);
     SYS_SCHED_SETAFFINITY = 203 => sys_sched_setaffinity(args[..3]);

@@ -16,11 +16,15 @@ use super::{
     indirect_block_cache::{IndirectBlock, IndirectBlockCache},
     prelude::*,
     utils::now,
+    xattr::Xattr,
 };
 use crate::{
     fs::{
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
-        utils::{Extension, FallocMode, InodeMode, Metadata},
+        utils::{
+            Extension, FallocMode, Inode as _, InodeMode, Metadata, Permission, XattrFlags,
+            XattrNamespace,
+        },
     },
     process::{posix_thread::AsPosixThread, Gid, Uid},
 };
@@ -39,6 +43,7 @@ pub struct Inode {
     inner: RwMutex<InodeInner>,
     fs: Weak<Ext2>,
     extension: Extension,
+    xattr: Xattr,
 }
 
 impl Inode {
@@ -48,6 +53,7 @@ impl Inode {
         desc: Dirty<InodeDesc>,
         fs: Weak<Ext2>,
     ) -> Arc<Self> {
+        let xattr = Xattr::load(desc.acl.unwrap(), fs.clone()).unwrap();
         Arc::new_cyclic(|weak_self| Self {
             ino,
             type_: desc.type_,
@@ -55,6 +61,7 @@ impl Inode {
             inner: RwMutex::new(InodeInner::new(desc, weak_self.clone(), fs.clone())),
             fs,
             extension: Extension::new(),
+            xattr,
         })
     }
 
@@ -807,6 +814,50 @@ impl Inode {
                 );
             }
         }
+    }
+
+    pub fn set_xattr(
+        &self,
+        namespace: XattrNamespace,
+        name: &str,
+        value_reader: &mut VmReader,
+        flags: XattrFlags,
+    ) -> Result<()> {
+        if self.type_ != InodeType::Dir && self.type_ != InodeType::File {
+            return_errno_with_message!(Errno::EPERM, "xattr is not supported on the file type");
+        }
+        self.xattr.set(namespace, name, value_reader, flags)
+    }
+
+    pub fn get_xattr(
+        &self,
+        namespace: XattrNamespace,
+        name: &str,
+        value_writer: &mut VmWriter,
+    ) -> Result<usize> {
+        if self.type_ != InodeType::Dir && self.type_ != InodeType::File {
+            return_errno!(Errno::ENODATA);
+        }
+        self.check_permission(Permission::MAY_READ)?;
+        self.xattr.get(namespace, name, value_writer)
+    }
+
+    pub fn list_xattr(&self, list_writer: &mut VmWriter) -> Result<usize> {
+        if self.type_ != InodeType::Dir && self.type_ != InodeType::File {
+            return Ok(0);
+        }
+        if self.check_permission(Permission::MAY_ACCESS).is_err() {
+            return Ok(0);
+        }
+        self.xattr.list(list_writer)
+    }
+
+    pub fn remove_xattr(&self, namespace: XattrNamespace, name: &str) -> Result<()> {
+        if self.type_ != InodeType::Dir && self.type_ != InodeType::File {
+            return_errno_with_message!(Errno::EPERM, "xattr is not supported on the file type");
+        }
+        self.check_permission(Permission::MAY_WRITE)?;
+        self.xattr.remove(namespace, name)
     }
 }
 

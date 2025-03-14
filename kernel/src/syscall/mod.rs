@@ -151,6 +151,7 @@ mod utimens;
 mod wait4;
 mod waitid;
 mod write;
+mod xattr;
 
 /// This macro is used to define syscall handler.
 /// The first param is the number of parameters,

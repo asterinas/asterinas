@@ -225,6 +225,9 @@ impl ReadCString for VmReader<'_, Fallible> {
         // Handle the last few bytes that are not enough for a word
         read_one_byte_at_a_time_while!(buffer.len() < max_len);
 
+        if self.remain() == 0 {
+            return_errno!(Errno::ERANGE);
+        }
         // Maximum length exceeded before finding the null terminator
         return_errno_with_message!(Errno::EFAULT, "Fails to read CString from user");
     }
