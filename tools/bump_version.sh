@@ -151,6 +151,7 @@ cd osdk && cargo update -p cargo-osdk --precise $new_version # For osdk/Cargo.lo
 # Update Docker image versions in README files
 update_image_versions ${ASTER_SRC_DIR}/README.md
 update_image_versions ${ASTER_SRC_DIR}/README_CN.md
+update_image_versions ${ASTER_SRC_DIR}/README_JP.md
 update_image_versions ${SCRIPT_DIR}/docker/README.md
 update_image_versions ${DOCS_DIR}/src/kernel/intel_tdx.md
 
