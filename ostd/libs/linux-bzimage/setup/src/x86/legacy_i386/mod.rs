@@ -2,33 +2,25 @@
 
 use core::arch::{asm, global_asm};
 
-use linux_boot_params::BootParams;
-
-global_asm!(include_str!("header.S"));
-
 global_asm!(include_str!("setup.S"));
 
 use crate::console::{print_hex, print_str};
 
 pub const ASTER_ENTRY_POINT: u32 = 0x8001000;
 
-#[export_name = "_bzimage_entry_32"]
-extern "cdecl" fn bzimage_entry(boot_params_ptr: u32) -> ! {
+#[export_name = "main_legacy32"]
+extern "cdecl" fn main_legacy32(boot_params_ptr: u32) -> ! {
     // SAFETY: this init function is only called once.
     unsafe { crate::console::init() };
 
-    // println!("[setup] bzImage loaded at {:#x}", x86::relocation::get_image_loaded_offset());
+    // println!("[setup] bzImage loaded at {:#x}", x86::relocation::image_load_offset());
     unsafe {
         print_str("[setup] bzImage loaded offset: ");
-        print_hex(crate::x86::get_image_loaded_offset() as u64);
+        print_hex(crate::x86::image_load_offset() as u64);
         print_str("\n");
     }
 
-    // SAFETY: the boot_params_ptr is a valid pointer to be borrowed.
-    let boot_params = unsafe { &*(boot_params_ptr as *const BootParams) };
-    // SAFETY: the payload_offset and payload_length is valid.
-    let payload = crate::get_payload(boot_params);
-    crate::loader::load_elf(payload);
+    crate::loader::load_elf(crate::x86::payload());
 
     // SAFETY: the entrypoint and the ptr is valid.
     unsafe { call_aster_entrypoint(ASTER_ENTRY_POINT, boot_params_ptr.try_into().unwrap()) };
