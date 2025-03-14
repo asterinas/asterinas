@@ -1021,11 +1021,11 @@ dependencies = [
 
 [[package]]
 name = "linux-boot-params"
-version = "0.11.3"
+version = "0.12.0"
 
 [[package]]
 name = "linux-bzimage-builder"
-version = "0.11.3"
+version = "0.12.0"
 dependencies = [
  "bitflags 1.3.2",
  "bytemuck",
@@ -1036,7 +1036,7 @@ dependencies = [
 
 [[package]]
 name = "linux-bzimage-setup"
-version = "0.11.3"
+version = "0.12.0"
 dependencies = [
  "bitflags 2.6.0",
  "cfg-if",
@@ -1257,7 +1257,7 @@ checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
 name = "osdk-frame-allocator"
-version = "0.1.0"
+version = "0.12.0"
 dependencies = [
  "log",
  "ostd",
@@ -1265,7 +1265,7 @@ dependencies = [
 
 [[package]]
 name = "osdk-test-kernel"
-version = "0.11.3"
+version = "0.12.0"
 dependencies = [
  "ostd",
  "owo-colors 4.1.0",
@@ -1273,7 +1273,7 @@ dependencies = [
 
 [[package]]
 name = "ostd"
-version = "0.11.3"
+version = "0.12.0"
 dependencies = [
  "acpi",
  "align_ext",
@@ -1311,7 +1311,7 @@ dependencies = [
 
 [[package]]
 name = "ostd-macros"
-version = "0.11.3"
+version = "0.12.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1339,7 +1339,7 @@ dependencies = [
 
 [[package]]
 name = "ostd-test"
-version = "0.11.3"
+version = "0.12.0"
 
 [[package]]
 name = "owo-colors"
@@ -1684,9 +1684,9 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "tdx-guest"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7d2470765b1b82fca86257ba5a24e6f56fc642418d2ab0ace10b5e2c11e032a"
+checksum = "3792a8dc443107e37c3804c655a4807605c8b275e986b0f08add336f01e49685"
 dependencies = [
  "bitflags 1.3.2",
  "iced-x86",
