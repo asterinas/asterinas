@@ -61,7 +61,7 @@ pub use owner_ptr::OwnerPtr;
 pub struct Rcu<P: OwnerPtr>(RcuInner<P>);
 
 /// A guard that allows access to the pointed data protected by a [`Rcu`].
-pub struct RcuReadGuard<'a, P: OwnerPtr>(RcuReadGuardInner<'a, P>);
+pub struct RcuReadGuard<'a, 'b, P: OwnerPtr>(RcuReadGuardInner<'a, 'b, P>);
 
 /// A Read-Copy Update (RCU) cell for sharing a _nullable_ pointer.  
 ///
@@ -99,7 +99,7 @@ pub struct RcuReadGuard<'a, P: OwnerPtr>(RcuReadGuardInner<'a, P>);
 pub struct RcuOption<P: OwnerPtr>(RcuInner<P>);
 
 /// A guard that allows access to the pointed data protected by a [`RcuOption`].
-pub struct RcuOptionReadGuard<'a, P: OwnerPtr>(RcuReadGuardInner<'a, P>);
+pub struct RcuOptionReadGuard<'a, 'b, P: OwnerPtr>(RcuReadGuardInner<'a, 'b, P>);
 
 /// The inner implementation of both [`Rcu`] and [`RcuOption`].
 struct RcuInner<P: OwnerPtr> {
@@ -156,12 +156,20 @@ impl<P: OwnerPtr> RcuInner<P> {
         }
     }
 
-    fn read(&self) -> RcuReadGuardInner<'_, P> {
+    fn read(&self) -> RcuReadGuardInner<'_, '_, P> {
         let guard = disable_preempt();
         RcuReadGuardInner {
             obj_ptr: self.ptr.load(Acquire),
             rcu: self,
-            _inner_guard: guard,
+            _inner_guard: RcuReadGuardInnerGuard::Owned(guard),
+        }
+    }
+
+    fn read_with<'b>(&self, guard: &'b DisabledPreemptGuard) -> RcuReadGuardInner<'_, 'b, P> {
+        RcuReadGuardInner {
+            obj_ptr: self.ptr.load(Acquire),
+            rcu: self,
+            _inner_guard: RcuReadGuardInnerGuard::Ref(guard),
         }
     }
 }
@@ -181,13 +189,19 @@ impl<P: OwnerPtr> Drop for RcuInner<P> {
 }
 
 /// The inner implementation of both [`RcuReadGuard`] and [`RcuOptionReadGuard`].
-struct RcuReadGuardInner<'a, P: OwnerPtr> {
+struct RcuReadGuardInner<'a, 'b, P: OwnerPtr> {
     obj_ptr: *mut <P as OwnerPtr>::Target,
     rcu: &'a RcuInner<P>,
-    _inner_guard: DisabledPreemptGuard,
+    _inner_guard: RcuReadGuardInnerGuard<'b>,
 }
 
-impl<P: OwnerPtr> RcuReadGuardInner<'_, P> {
+#[expect(dead_code)]
+enum RcuReadGuardInnerGuard<'b> {
+    Ref(&'b DisabledPreemptGuard),
+    Owned(DisabledPreemptGuard),
+}
+
+impl<P: OwnerPtr> RcuReadGuardInner<'_, '_, P> {
     fn compare_exchange(self, new_ptr: Option<P>) -> Result<(), Option<P>> {
         let new_ptr = if let Some(new_ptr) = new_ptr {
             <P as OwnerPtr>::into_raw(new_ptr).as_ptr()
@@ -243,8 +257,17 @@ impl<P: OwnerPtr> Rcu<P> {
     ///
     /// The guard allows read access to the data protected by RCU, as well
     /// as the ability to do compare-and-exchange.
-    pub fn read(&self) -> RcuReadGuard<'_, P> {
+    pub fn read(&self) -> RcuReadGuard<'_, '_, P> {
         RcuReadGuard(self.0.read())
+    }
+
+    /// Retrieves a read guard given that preemption is already disabled.
+    ///
+    /// Like [`Self::read`], this function returns a read guard for the RCU
+    /// primitive. However, if preemption is already disabled, this function
+    /// can reduce the overhead of disabling preemption again.
+    pub fn read_with<'b>(&self, guard: &'b DisabledPreemptGuard) -> RcuReadGuard<'_, 'b, P> {
+        RcuReadGuard(self.0.read_with(guard))
     }
 }
 
@@ -285,13 +308,22 @@ impl<P: OwnerPtr> RcuOption<P> {
     ///
     /// The contained pointer can be NULL and you can only get a reference
     /// (if checked non-NULL) via [`RcuOptionReadGuard::get`].
-    pub fn read(&self) -> RcuOptionReadGuard<'_, P> {
+    pub fn read(&self) -> RcuOptionReadGuard<'_, '_, P> {
         RcuOptionReadGuard(self.0.read())
+    }
+
+    /// Retrieves a read guard given that preemption is already disabled.
+    ///
+    /// Like [`Self::read`], this function returns a read guard for the RCU
+    /// primitive. However, if preemption is already disabled, this function
+    /// can reduce the overhead of disabling preemption again.
+    pub fn read_with<'b>(&self, guard: &'b DisabledPreemptGuard) -> RcuOptionReadGuard<'_, 'b, P> {
+        RcuOptionReadGuard(self.0.read_with(guard))
     }
 }
 
 // RCU guards that have a non-null pointer can be directly dereferenced.
-impl<P: OwnerPtr> Deref for RcuReadGuard<'_, P> {
+impl<P: OwnerPtr> Deref for RcuReadGuard<'_, '_, P> {
     type Target = <P as OwnerPtr>::Target;
 
     fn deref(&self) -> &Self::Target {
@@ -304,7 +336,7 @@ impl<P: OwnerPtr> Deref for RcuReadGuard<'_, P> {
     }
 }
 
-impl<P: OwnerPtr> RcuReadGuard<'_, P> {
+impl<P: OwnerPtr> RcuReadGuard<'_, '_, P> {
     /// Tries to replace the already read pointer with a new pointer.
     ///
     /// If another thread has updated the pointer after the read, this
@@ -326,7 +358,7 @@ impl<P: OwnerPtr> RcuReadGuard<'_, P> {
 }
 
 // RCU guards that may have a null pointer can be dereferenced after checking.
-impl<P: OwnerPtr> RcuOptionReadGuard<'_, P> {
+impl<P: OwnerPtr> RcuOptionReadGuard<'_, '_, P> {
     /// Gets the reference of the protected data.
     ///
     /// If the RCU primitive protects nothing, this function returns `None`.
