@@ -294,6 +294,7 @@ check: initramfs $(CARGO_OSDK)
 	done
 	@$(MAKE) --no-print-directory -C test check
 	@typos
+	@echo "All checks passed successfully."
 
 .PHONY: clean
 clean:
