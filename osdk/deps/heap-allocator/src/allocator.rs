@@ -85,7 +85,7 @@ impl CommonSizeClass {
 
 /// Get the type of the slot from the layout.
 ///
-/// It should be used to define [`ostd::global_heap_allocator_slot_type_map`].
+/// It should be used to define [`ostd::global_heap_allocator_slot_map`].
 pub const fn type_from_layout(layout: Layout) -> Option<SlotInfo> {
     if let Some(class) = CommonSizeClass::from_layout(layout) {
         return Some(SlotInfo::SlabSlot(class as usize));

@@ -14,7 +14,7 @@ mod slot;
 mod slot_list;
 
 pub use self::{
-    slab::{SharedSlab, Slab, SlabMeta},
+    slab::{Slab, SlabMeta},
     slot::{HeapSlot, SlotInfo},
     slot_list::SlabSlotList,
 };
@@ -27,7 +27,7 @@ pub use self::{
 ///
 /// To provide the global heap allocator, use [`crate::global_heap_allocator`]
 /// to mark a static variable that implements this trait. Use
-/// [`crate::global_heap_allocator_slot_type_map`] to specify the sizes of
+/// [`crate::global_heap_allocator_slot_map`] to specify the sizes of
 /// slots for different layouts. This latter restriction may be lifted in the
 /// future.
 pub trait GlobalHeapAllocator: Sync {
@@ -39,7 +39,7 @@ pub trait GlobalHeapAllocator: Sync {
     /// must be at least the size of the layout and the alignment must be at
     /// least the alignment of the layout. Furthermore, the size of the
     /// returned [`HeapSlot`] must match the size returned by the function
-    /// marked with [`crate::global_heap_allocator_slot_type_map`].
+    /// marked with [`crate::global_heap_allocator_slot_map`].
     fn alloc(&self, layout: Layout) -> Result<HeapSlot, AllocError>;
 
     /// Deallocates a [`HeapSlot`].
@@ -56,9 +56,9 @@ extern "Rust" {
     /// [`crate::global_heap_allocator`] attribute.
     static __GLOBAL_HEAP_ALLOCATOR_REF: &'static dyn GlobalHeapAllocator;
 
-    /// Gets the size and type of the heap slot to serve an allocation.
-    /// See [`crate::global_heap_allocator_slot_type_map`].
-    fn __GLOBAL_HEAP_SLOT_SIZE_FROM_LAYOUT(layout: Layout) -> Option<SlotInfo>;
+    /// Gets the size and type of heap slots to serve allocations of the layout.
+    /// See [`crate::global_heap_allocator_slot_map`].
+    fn __GLOBAL_HEAP_SLOT_INFO_FROM_LAYOUT(layout: Layout) -> Option<SlotInfo>;
 }
 
 /// Gets the reference to the user-defined global heap allocator.
@@ -67,15 +67,15 @@ fn get_global_heap_allocator() -> &'static dyn GlobalHeapAllocator {
     unsafe { __GLOBAL_HEAP_ALLOCATOR_REF }
 }
 
-/// Gets the size and type of the heap slot to serve an allocation.
+/// Gets the size and type of heap slots to serve allocations of the layout.
 ///
-/// This function is defined by the OSTD user and should be idempotent,
-/// as we require it to be implemented as a `const fn`.
+/// This function is defined by the OSTD user and should be idempotent, as we
+/// require it to be implemented as a `const fn`.
 ///
-/// See [`crate::global_heap_allocator_slot_type_map`].
+/// See [`crate::global_heap_allocator_slot_map`].
 fn slot_size_from_layout(layout: Layout) -> Option<SlotInfo> {
     // SAFETY: This up-call is redirected safely to Rust code by OSDK.
-    unsafe { __GLOBAL_HEAP_SLOT_SIZE_FROM_LAYOUT(layout) }
+    unsafe { __GLOBAL_HEAP_SLOT_INFO_FROM_LAYOUT(layout) }
 }
 
 macro_rules! abort_with_message {

@@ -48,7 +48,7 @@ mod util;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 pub use ostd_macros::{
-    global_frame_allocator, global_heap_allocator, global_heap_allocator_slot_type_map, main,
+    global_frame_allocator, global_heap_allocator, global_heap_allocator_slot_map, main,
     panic_handler,
 };
 pub use ostd_pod::Pod;

@@ -31,7 +31,7 @@ static FRAME_ALLOCATOR: FrameAllocator = FrameAllocator;
 #[ostd::global_heap_allocator]
 static HEAP_ALLOCATOR: HeapAllocator = HeapAllocator;
 
-#[ostd::global_heap_allocator_slot_type_map]
+#[ostd::global_heap_allocator_slot_map]
 const fn slot_type_from_layout(layout: core::alloc::Layout) -> Option<ostd::mm::heap::SlotInfo> {
     type_from_layout(layout)
 }
