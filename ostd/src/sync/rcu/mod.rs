@@ -61,6 +61,7 @@ pub use owner_ptr::OwnerPtr;
 pub struct Rcu<P: OwnerPtr>(RcuInner<P>);
 
 /// A guard that allows access to the pointed data protected by a [`Rcu`].
+#[must_use]
 pub struct RcuReadGuard<'a, 'b, P: OwnerPtr>(RcuReadGuardInner<'a, 'b, P>);
 
 /// A Read-Copy Update (RCU) cell for sharing a _nullable_ pointer.  
@@ -99,6 +100,7 @@ pub struct RcuReadGuard<'a, 'b, P: OwnerPtr>(RcuReadGuardInner<'a, 'b, P>);
 pub struct RcuOption<P: OwnerPtr>(RcuInner<P>);
 
 /// A guard that allows access to the pointed data protected by a [`RcuOption`].
+#[must_use]
 pub struct RcuOptionReadGuard<'a, 'b, P: OwnerPtr>(RcuReadGuardInner<'a, 'b, P>);
 
 /// The inner implementation of both [`Rcu`] and [`RcuOption`].
