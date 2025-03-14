@@ -148,19 +148,25 @@ pub fn global_heap_allocator(_attr: TokenStream, item: TokenStream) -> TokenStre
     .into()
 }
 
-/// A macro attribute to provide the heap slot type given the layout.
+/// A macro attribute to map allocation layouts to slot sizes and types.
 ///
-/// The users must decide the size and the type of the heap slot to serve an
-/// allocation with the layout. The function should return `None` if the layout
-/// is not supported.
+/// In OSTD, both slab slots and large slots are used to serve heap allocations.
+/// Slab slots must come from slabs of fixed sizes, while large slots can be
+/// allocated by frame allocation, with sizes being multiples of pages.
+/// OSTD must know the user's decision on the size and type of a slot to serve
+/// an allocation with a given layout.
 ///
-/// The annotated function should be idempotent, i.e., the result should be the
+/// This macro should be used to annotate a function that maps a layout to the
+/// slot size and the type. The function should return `None` if the layout is
+/// not supported.
+///
+/// The annotated function should be idempotent, meaning the result should be the
 /// same for the same layout. OSDK enforces this by only allowing the function
 /// to be `const`.
 #[proc_macro_attribute]
-pub fn global_heap_allocator_slot_type_map(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn global_heap_allocator_slot_map(_attr: TokenStream, item: TokenStream) -> TokenStream {
     // Rewrite the input `const fn __any_name__(layout: Layout) -> Option<SlotInfo> { ... }` to
-    // `const extern "Rust" fn __GLOBAL_HEAP_SLOT_SIZE_FROM_LAYOUT(layout: Layout) -> Option<SlotInfo> { ... }`.
+    // `const extern "Rust" fn __GLOBAL_HEAP_SLOT_INFO_FROM_LAYOUT(layout: Layout) -> Option<SlotInfo> { ... }`.
     // Reject if the input is not a `const fn`.
     let item = parse_macro_input!(item as syn::ItemFn);
     assert!(
@@ -169,7 +175,7 @@ pub fn global_heap_allocator_slot_type_map(_attr: TokenStream, item: TokenStream
     );
 
     quote!(
-        #[export_name = "__GLOBAL_HEAP_SLOT_SIZE_FROM_LAYOUT"]
+        #[export_name = "__GLOBAL_HEAP_SLOT_INFO_FROM_LAYOUT"]
         #item
     )
     .into()

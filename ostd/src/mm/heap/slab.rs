@@ -7,28 +7,21 @@ use core::{alloc::AllocError, ptr::NonNull};
 use super::{slot::HeapSlot, slot_list::SlabSlotList};
 use crate::mm::{
     frame::{linked_list::Link, meta::AnyFrameMeta},
-    paddr_to_vaddr, Frame, FrameAllocOptions, UniqueFrame, PAGE_SIZE,
+    paddr_to_vaddr, FrameAllocOptions, UniqueFrame, PAGE_SIZE,
 };
 
 /// A slab.
 ///
-/// The slot size is the maximum size and alignment of the objects that can be
-/// allocated from the slab. The slab is divided into slots of this size.
+/// The slot size is the maximum size of objects that can be allocated from the
+/// slab. The slab is densely divided into slots of this size.
 ///
-/// The size of the slot cannot be smaller than the size of [`usize`] and must
-/// be a power of two. The size of the slab should be larger than the slot
-/// size and [`PAGE_SIZE`].
+/// The `SLOT_SIZE` is the size of the slots in bytes. The size of the slots
+/// cannot be smaller than the size of [`usize`]. It must be smaller than or
+/// equal to [`PAGE_SIZE`].
 ///
-/// The `SLOT_SIZE` is the size of the slot in bytes. It must be smaller than or
-/// equal to [`PAGE_SIZE`]. This restriction may be lifted in the future.
+/// A slab should have the size of one basic page. This restriction may be
+/// lifted in the future.
 pub type Slab<const SLOT_SIZE: usize> = UniqueFrame<Link<SlabMeta<SLOT_SIZE>>>;
-
-/// A shared pointer to a slab.
-///
-/// It is solely useful to point to a slab from a stray slot. When an object of
-/// this type exists no mutable references can be created to the slab. So don't
-/// hold it for long.
-pub type SharedSlab<const SLOT_SIZE: usize> = Frame<Link<SlabMeta<SLOT_SIZE>>>;
 
 /// Frame metadata of a slab.
 ///
