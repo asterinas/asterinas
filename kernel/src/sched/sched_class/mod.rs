@@ -8,12 +8,13 @@ use core::{fmt, sync::atomic::Ordering};
 use ostd::{
     arch::read_tsc as sched_clock,
     cpu::{all_cpus, CpuId, CpuSet, PinCurrentCpu},
+    smp::inter_processor_call,
     sync::SpinLock,
     task::{
         disable_preempt,
         scheduler::{
-            info::CommonSchedInfo, inject_scheduler, EnqueueFlags, LocalRunQueue, Scheduler,
-            UpdateFlags,
+            info::CommonSchedInfo, inject_scheduler, set_this_cpu_need_preempt, EnqueueFlags,
+            LocalRunQueue, Scheduler, UpdateFlags,
         },
         AtomicCpuId, Task,
     },
@@ -48,6 +49,20 @@ pub fn init() {
 
     // Inject the scheduler into the ostd for actual scheduling work.
     inject_scheduler(scheduler);
+
+    static SCHEDULER: spin::Once<&'static ClassScheduler> = spin::Once::new();
+    SCHEDULER.call_once(|| scheduler);
+
+    // Register the timer callbacks for scheduling.
+    inter_processor_call(&CpuSet::new_full(), || {
+        ostd::timer::register_callback(|| {
+            SCHEDULER.get().unwrap().local_mut_rq_with(&mut |local_rq| {
+                if local_rq.update_current(UpdateFlags::Tick) {
+                    ostd::task::scheduler::set_this_cpu_need_preempt();
+                }
+            })
+        });
+    });
 
     // Set the scheduler into the system for statistics.
     // We set this after injecting the scheduler into ostd,
@@ -194,10 +209,13 @@ impl SchedAttr {
 }
 
 impl Scheduler for ClassScheduler {
-    fn enqueue(&self, task: Arc<Task>, flags: EnqueueFlags) -> Option<CpuId> {
+    fn enqueue(&self, task: Arc<Task>, flags: EnqueueFlags) {
         let preempt_guard = disable_preempt();
 
-        let thread = task.as_thread()?.clone();
+        let Some(thread) = task.as_thread() else {
+            log::warn!("Attempted to enqueue a non-thread task.");
+            return;
+        };
 
         let (still_in_rq, cpu) = {
             let selected_cpu_id = self.select_cpu(&thread, flags);
@@ -210,25 +228,42 @@ impl Scheduler for ClassScheduler {
             }
         };
 
+        let arc_thread = thread.clone();
+        let is_thread_realtime = thread.sched_attr().policy_kind() == SchedPolicyKind::RealTime;
+
         let mut rq = self.rqs[cpu.as_usize()].disable_irq().lock();
 
         // Note: call set_if_is_none again to prevent a race condition.
         if still_in_rq && task.cpu().set_if_is_none(cpu).is_err() {
-            return None;
+            return;
         }
 
         thread.sched_attr().set_last_cpu(cpu);
-        rq.enqueue_entity((task, thread), Some(flags));
+        rq.enqueue_entity((task, arc_thread), Some(flags));
 
         drop(rq);
 
         let cur_cpu = preempt_guard.current_cpu();
-        if cpu != cur_cpu && IS_IDLE.get_on_cpu(cur_cpu).load(Ordering::Relaxed) {
-            // IPI it to wake it immediately.
-            ostd::smp::inter_processor_call(&CpuSet::from(cur_cpu), || {});
-        }
 
-        Some(cpu)
+        // Do preemption if there is a good reason.
+        let need_preempt = match flags {
+            EnqueueFlags::Spawn => true,
+            EnqueueFlags::Wake => {
+                let is_target_cpu_idle =
+                    cpu != cur_cpu && IS_IDLE.get_on_cpu(cpu).load(Ordering::Relaxed);
+                is_thread_realtime || is_target_cpu_idle
+            }
+        };
+
+        if need_preempt {
+            if cpu != cur_cpu {
+                inter_processor_call(&CpuSet::from(cur_cpu), || {
+                    set_this_cpu_need_preempt();
+                });
+            } else {
+                set_this_cpu_need_preempt();
+            }
+        }
     }
 
     fn local_mut_rq_with(&self, f: &mut dyn FnMut(&mut dyn LocalRunQueue)) {
