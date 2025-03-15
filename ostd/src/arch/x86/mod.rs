@@ -90,9 +90,9 @@ pub(crate) unsafe fn late_init_on_bsp() {
     }
     serial::callback_init();
 
-    crate::boot::smp::boot_all_aps();
+    timer::init_bsp();
 
-    timer::init();
+    crate::boot::smp::boot_all_aps();
 
     cfg_if! {
         if #[cfg(feature = "cvm_guest")] {
@@ -121,12 +121,11 @@ pub(crate) unsafe fn late_init_on_bsp() {
 /// This function must be called only once on each application processor.
 /// And it should be called after the BSP's call to [`init_on_bsp`].
 pub(crate) unsafe fn init_on_ap() {
-    // Trigger the initialization of the local APIC.
-    crate::arch::x86::kernel::apic::with_borrow(|_| {});
+    timer::init_ap();
 }
 
 pub(crate) fn interrupts_ack(irq_number: usize) {
-    if !cpu::CpuException::is_cpu_exception(irq_number as u16) {
+    if !cpu::context::CpuException::is_cpu_exception(irq_number as u16) {
         kernel::apic::with_borrow(|apic| {
             apic.eoi();
         });
@@ -185,7 +184,7 @@ pub(crate) fn enable_cpu_features() {
         cpuid.get_feature_info().unwrap()
     });
 
-    cpu::enable_essential_features();
+    cpu::context::enable_essential_features();
 
     let mut cr4 = x86_64::registers::control::Cr4::read();
     cr4 |= Cr4Flags::FSGSBASE

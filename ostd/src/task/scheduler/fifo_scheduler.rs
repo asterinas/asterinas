@@ -40,7 +40,7 @@ impl<T: CommonSchedInfo> FifoScheduler<T> {
 }
 
 impl<T: CommonSchedInfo + Send + Sync> Scheduler<T> for FifoScheduler<T> {
-    fn enqueue(&self, runnable: Arc<T>, flags: EnqueueFlags) -> Option<CpuId> {
+    fn enqueue(&self, runnable: Arc<T>, flags: EnqueueFlags) {
         let (still_in_rq, target_cpu) = {
             let selected_cpu_id = self.select_cpu();
 
@@ -54,12 +54,11 @@ impl<T: CommonSchedInfo + Send + Sync> Scheduler<T> for FifoScheduler<T> {
 
         let mut rq = self.rq[target_cpu.as_usize()].disable_irq().lock();
         if still_in_rq && let Err(_) = runnable.cpu().set_if_is_none(target_cpu) {
-            return None;
+            return;
         }
         rq.queue.push_back(runnable);
 
         // All tasks are important. Do not preempt the current task without good reason.
-        None
     }
 
     fn local_rq_with(&self, f: &mut dyn FnMut(&dyn LocalRunQueue<T>)) {

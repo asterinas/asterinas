@@ -27,7 +27,7 @@ use log::debug;
 use super::ex_table::ExTable;
 use crate::{
     arch::irq::{disable_local, enable_local},
-    cpu::{CpuException, CpuExceptionInfo, PageFaultErrorCode},
+    cpu::context::{CpuException, CpuExceptionInfo, PageFaultErrorCode},
     cpu_local_cell,
     mm::{
         kspace::{KERNEL_PAGE_TABLE, LINEAR_MAPPING_BASE_VADDR, LINEAR_MAPPING_VADDR_RANGE},

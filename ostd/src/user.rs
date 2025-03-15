@@ -5,7 +5,7 @@
 //! User space.
 
 use crate::{
-    cpu::{FpuState, UserContext},
+    cpu::context::{FpuState, UserContext},
     mm::VmSpace,
     prelude::*,
     trap::TrapFrame,

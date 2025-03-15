@@ -11,26 +11,13 @@ pub mod info;
 use spin::Once;
 
 use super::{preempt::cpu_local, processor, Task};
-use crate::{
-    cpu::{CpuId, PinCurrentCpu},
-    prelude::*,
-    task::disable_preempt,
-    timer,
-};
+use crate::prelude::*;
 
 /// Injects a scheduler implementation into framework.
 ///
 /// This function can only be called once and must be called during the initialization of kernel.
 pub fn inject_scheduler(scheduler: &'static dyn Scheduler<Task>) {
     SCHEDULER.call_once(|| scheduler);
-
-    timer::register_callback(|| {
-        SCHEDULER.get().unwrap().local_mut_rq_with(&mut |local_rq| {
-            if local_rq.update_current(UpdateFlags::Tick) {
-                cpu_local::set_need_preempt();
-            }
-        })
-    });
 }
 
 static SCHEDULER: Once<&'static dyn Scheduler<Task>> = Once::new();
@@ -39,11 +26,9 @@ static SCHEDULER: Once<&'static dyn Scheduler<Task>> = Once::new();
 pub trait Scheduler<T = Task>: Sync + Send {
     /// Enqueues a runnable task.
     ///
-    /// Scheduler developers can perform load-balancing or some accounting work here.
-    ///
-    /// If the `current` of a CPU needs to be preempted, this method returns the id of
-    /// that CPU.
-    fn enqueue(&self, runnable: Arc<T>, flags: EnqueueFlags) -> Option<CpuId>;
+    /// Scheduler developers can perform load-balancing or some accounting work
+    /// here.
+    fn enqueue(&self, runnable: Arc<T>, flags: EnqueueFlags);
 
     /// Gets an immutable access to the local runqueue of the current CPU core.
     fn local_rq_with(&self, f: &mut dyn FnMut(&dyn LocalRunQueue<T>));
@@ -82,6 +67,17 @@ pub trait LocalRunQueue<T = Task> {
     /// This method returns the current runnable task. If there is no current runnable
     /// task, this method returns `None`.
     fn dequeue_current(&mut self) -> Option<Arc<T>>;
+}
+
+/// Marks the current CPU as needing preemption.
+///
+/// If this CPU needs preemption, OSTD will preempt the current task of this
+/// CPU when it is safe to do so. After preemption, this CPU will not be marked
+/// as needing preemption.
+///
+/// If this function is never called, preemption will never happen on this CPU.
+pub fn set_this_cpu_need_preempt() {
+    cpu_local::set_need_preempt();
 }
 
 /// Possible triggers of an `enqueue` action.
@@ -158,13 +154,10 @@ where
 
 /// Unblocks a target task.
 pub(crate) fn unpark_target(runnable: Arc<Task>) {
-    let preempt_cpu = SCHEDULER
+    SCHEDULER
         .get()
         .unwrap()
         .enqueue(runnable, EnqueueFlags::Wake);
-    if let Some(preempt_cpu_id) = preempt_cpu {
-        set_need_preempt(preempt_cpu_id);
-    }
 }
 
 /// Enqueues a newly built task.
@@ -178,25 +171,12 @@ pub(super) fn run_new_task(runnable: Arc<Task>) {
         fifo_scheduler::init();
     }
 
-    let preempt_cpu = SCHEDULER
+    SCHEDULER
         .get()
         .unwrap()
         .enqueue(runnable, EnqueueFlags::Spawn);
-    if let Some(preempt_cpu_id) = preempt_cpu {
-        set_need_preempt(preempt_cpu_id);
-    }
 
     might_preempt();
-}
-
-fn set_need_preempt(cpu_id: CpuId) {
-    let preempt_guard = disable_preempt();
-
-    if preempt_guard.current_cpu() == cpu_id {
-        cpu_local::set_need_preempt();
-    } else {
-        // TODO: Send IPIs to set remote CPU's `need_preempt`
-    }
 }
 
 /// Dequeues the current task from its runqueue.

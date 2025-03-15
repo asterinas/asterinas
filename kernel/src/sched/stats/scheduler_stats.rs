@@ -10,13 +10,13 @@ static SCHEDULER_STATS: Once<&'static dyn SchedulerStats> = Once::new();
 
 /// Set the global scheduler statistics singleton.
 ///
-/// This function should be called once to set the scheduler statistics system.
-/// It is used to get running stats from the scheduler and to periodically
-/// calculate the system load average.
+/// This function should be called once on the BSP to set the scheduler
+/// statistics system. It is used to get running stats from the scheduler and
+/// to periodically calculate the system load average.
 pub fn set_stats_from_scheduler(scheduler: &'static dyn SchedulerStats) {
     SCHEDULER_STATS.call_once(|| scheduler);
 
-    // Register a callback to update the load average periodically
+    // Register a callback on BSP to update the load average periodically.
     timer::register_callback(|| {
         loadavg::update_loadavg(|| nr_queued_and_running().0);
     });
