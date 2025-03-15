@@ -302,19 +302,22 @@ impl EarlyFrameAllocator {
     /// Allocates a contiguous range of frames.
     pub fn alloc(&mut self, layout: Layout) -> Option<Paddr> {
         let size = layout.size().align_up(PAGE_SIZE);
-        let allocated = self.under_4g_end.align_up(layout.align());
-        if allocated + size <= self.under_4g_range.end {
-            // Allocated below 4G.
-            self.under_4g_end = allocated + size;
-            Some(allocated)
-        } else {
-            // Try above 4G.
-            let allocated = self.max_end.align_up(layout.align());
-            if allocated + size <= self.max_range.end {
-                self.max_end = allocated + size;
+        let align = layout.align().max(PAGE_SIZE);
+
+        for (tail, end) in [
+            (&mut self.under_4g_end, self.under_4g_range.end),
+            (&mut self.max_end, self.max_range.end),
+        ] {
+            let allocated = tail.align_up(align);
+            if let Some(allocated_end) = allocated.checked_add(size)
+                && allocated_end <= end
+            {
+                *tail = allocated_end;
+                return Some(allocated);
             }
-            Some(allocated)
         }
+
+        None
     }
 
     pub(super) fn allocated_regions(&self) -> (Range<Paddr>, Range<Paddr>) {
