@@ -24,10 +24,8 @@ pub fn sys_recvfrom(
     let file = get_file_fast!(&mut file_table, sockfd);
     let socket = file.as_socket_or_err()?;
 
-    let mut writers = {
-        let vm_space = ctx.process.root_vmar().vm_space();
-        vm_space.writer(buf, len)?
-    };
+    let user_space = ctx.user_space();
+    let mut writers = user_space.writer(buf, len)?;
 
     let (recv_size, message_header) =
         socket

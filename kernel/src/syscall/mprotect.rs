@@ -11,7 +11,8 @@ pub fn sys_mprotect(addr: Vaddr, len: usize, perms: u64, ctx: &Context) -> Resul
         "addr = 0x{:x}, len = 0x{:x}, perms = {:?}",
         addr, len, vm_perms
     );
-    let root_vmar = ctx.process.root_vmar();
+    let user_space = ctx.user_space();
+    let root_vmar = user_space.root_vmar();
 
     // According to linux behavior,
     // <https://elixir.bootlin.com/linux/v6.0.9/source/mm/mprotect.c#L681>,

@@ -91,7 +91,8 @@ fn do_sys_mmap(
         vm_perms
     };
 
-    let root_vmar = ctx.process.root_vmar();
+    let user_space = ctx.user_space();
+    let root_vmar = user_space.root_vmar();
     let vm_map_options = {
         let mut options = root_vmar.new_map(len, vm_perms)?;
         let flags = option.flags;
