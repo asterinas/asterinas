@@ -23,6 +23,7 @@ mod syscall;
 use align_ext::AlignExt;
 use cfg_if::cfg_if;
 use log::debug;
+use spin::Once;
 
 use super::ex_table::ExTable;
 use crate::{
@@ -34,7 +35,6 @@ use crate::{
         page_prop::{CachePolicy, PageProperty},
         PageFlags, PrivilegedPageFlags as PrivFlags, MAX_USERSPACE_VADDR, PAGE_SIZE,
     },
-    task::Task,
     trap::call_irq_callback_functions,
 };
 
@@ -277,20 +277,31 @@ extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
     }
 }
 
+#[expect(clippy::type_complexity)]
+static USER_PAGE_FAULT_HANDLER: Once<fn(&CpuExceptionInfo) -> core::result::Result<(), ()>> =
+    Once::new();
+
+/// Injects a custom handler for page faults that occur in the kernel and
+/// are caused by user-space address.
+pub fn inject_user_page_fault_handler(
+    handler: fn(info: &CpuExceptionInfo) -> core::result::Result<(), ()>,
+) {
+    USER_PAGE_FAULT_HANDLER.call_once(|| handler);
+}
+
 /// Handles page fault from user space.
 fn handle_user_page_fault(f: &mut TrapFrame, page_fault_addr: u64) {
-    let current_task = Task::current().unwrap();
-    let user_space = current_task
-        .user_space()
-        .expect("the user space is missing when a page fault from the user happens.");
-
     let info = CpuExceptionInfo {
         page_fault_addr: page_fault_addr as usize,
         id: f.trap_num,
         error_code: f.error_code,
     };
 
-    let res = user_space.vm_space().handle_page_fault(&info);
+    let handler = USER_PAGE_FAULT_HANDLER
+        .get()
+        .expect("a page fault handler is missing");
+
+    let res = handler(&info);
     // Copying bytes by bytes can recover directly
     // if handling the page fault successfully.
     if res.is_ok() {
