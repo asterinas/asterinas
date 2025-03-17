@@ -92,6 +92,7 @@ pub fn main() {
 }
 
 pub fn init() {
+    thread::init();
     util::random::init();
     driver::init();
     time::init();

@@ -24,6 +24,23 @@ pub mod work_queue;
 
 pub type Tid = u32;
 
+fn post_schedule_handler() {
+    let task = Task::current().unwrap();
+    let Some(thread_local) = task.as_thread_local() else {
+        return;
+    };
+
+    let root_vmar = thread_local.root_vmar().borrow();
+    if let Some(vmar) = root_vmar.as_ref() {
+        vmar.vm_space().activate()
+    }
+}
+
+pub(super) fn init() {
+    ostd::task::inject_post_schedule_handler(post_schedule_handler);
+    ostd::arch::trap::inject_user_page_fault_handler(exception::page_fault_handler);
+}
+
 /// A thread is a wrapper on top of task.
 #[derive(Debug)]
 pub struct Thread {
