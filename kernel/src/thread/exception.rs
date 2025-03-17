@@ -3,9 +3,10 @@
 #![expect(unused_variables)]
 
 use aster_rights::Full;
-use ostd::{cpu::*, mm::VmSpace, task::Task};
+use ostd::cpu::*;
 
 use crate::{
+    current_userspace,
     prelude::*,
     process::signal::signals::fault::FaultSignal,
     vm::{page_fault_handler::PageFaultHandler, perms::VmPerms, vmar::Vmar},
@@ -41,26 +42,8 @@ pub fn handle_exception(ctx: &Context, context: &UserContext) {
     generate_fault_signal(trap_info, ctx);
 }
 
-/// Handles the page fault occurs in the input `VmSpace`.
-pub(crate) fn handle_page_fault_from_vm_space(
-    vm_space: &VmSpace,
-    page_fault_info: &PageFaultInfo,
-) -> core::result::Result<(), ()> {
-    let task = Task::current().unwrap();
-    let current_root_vmar = task.as_thread_local().unwrap().root_vmar().borrow();
-    let root_vmar = current_root_vmar.as_ref().unwrap();
-
-    // If page is not present or due to write access, we should ask the vmar try to commit this page
-    debug_assert_eq!(
-        Arc::as_ptr(root_vmar.vm_space()),
-        vm_space as *const VmSpace
-    );
-
-    handle_page_fault_from_vmar(root_vmar, page_fault_info)
-}
-
 /// Handles the page fault occurs in the input `Vmar`.
-pub(crate) fn handle_page_fault_from_vmar(
+fn handle_page_fault_from_vmar(
     root_vmar: &Vmar<Full>,
     page_fault_info: &PageFaultInfo,
 ) -> core::result::Result<(), ()> {
@@ -91,4 +74,8 @@ fn log_trap_info(trap_info: &CpuExceptionInfo) {
         let exception = trap_info.cpu_exception();
         trace!("[Trap][{exception:?}][err = {}]", trap_info.error_code)
     }
+}
+
+pub(super) fn page_fault_handler(info: &CpuExceptionInfo) -> core::result::Result<(), ()> {
+    handle_page_fault_from_vmar(current_userspace!().root_vmar(), &info.try_into().unwrap())
 }
