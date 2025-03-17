@@ -2,11 +2,12 @@
 
 //! The context that can be accessed from the current task, thread or process.
 
-use core::mem;
+use core::{cell::Ref, mem};
 
+use aster_rights::Full;
 use ostd::{
-    mm::{Fallible, Infallible, VmReader, VmSpace, VmWriter},
-    task::Task,
+    mm::{Fallible, Infallible, VmReader, VmWriter},
+    task::{CurrentTask, Task},
 };
 
 use crate::{
@@ -16,6 +17,7 @@ use crate::{
         Process,
     },
     thread::Thread,
+    vm::vmar::Vmar,
 };
 
 /// The context that can be accessed from the current POSIX thread.
@@ -31,14 +33,14 @@ pub struct Context<'a> {
 impl Context<'_> {
     /// Gets the userspace of the current task.
     pub fn user_space(&self) -> CurrentUserSpace {
-        CurrentUserSpace::new(self.task)
+        CurrentUserSpace(self.thread_local.root_vmar().borrow())
     }
 }
 
 /// The user's memory space of the current task.
 ///
 /// It provides methods to read from or write to the user space efficiently.
-pub struct CurrentUserSpace<'a>(&'a VmSpace);
+pub struct CurrentUserSpace<'a>(Ref<'a, Option<Vmar<Full>>>);
 
 /// Gets the [`CurrentUserSpace`] from the current task.
 ///
@@ -52,40 +54,39 @@ macro_rules! current_userspace {
 }
 
 impl<'a> CurrentUserSpace<'a> {
-    /// Creates a new `CurrentUserSpace` from the specified task.
-    ///
-    /// This method is _not_ recommended for use, as it does not verify whether the provided
-    /// `task` is the current task in release builds.
+    /// Creates a new `CurrentUserSpace` from the current task.
     ///
     /// If you have access to a [`Context`], it is preferable to call [`Context::user_space`].
     ///
     /// Otherwise, you can use the `current_userspace` macro
     /// to obtain an instance of `CurrentUserSpace` if it will only be used once.
+    pub fn new(current_task: &'a CurrentTask) -> Self {
+        let thread_local = current_task.as_thread_local().unwrap();
+        let vmar_ref = thread_local.root_vmar().borrow();
+        Self(vmar_ref)
+    }
+
+    /// Returns the root `Vmar` of the current userspace.
     ///
     /// # Panics
     ///
-    /// This method will panic in debug builds if the specified `task` is not the current task.
-    pub fn new(task: &'a Task) -> Self {
-        let user_space = task.user_space().unwrap();
-        debug_assert!(Arc::ptr_eq(
-            task.user_space().unwrap(),
-            Task::current().unwrap().user_space().unwrap()
-        ));
-        Self(user_space.vm_space())
+    /// This method will panic if the current process has cleared its `Vmar`.
+    pub fn root_vmar(&self) -> &Vmar<Full> {
+        self.0.as_ref().unwrap()
     }
 
     /// Creates a reader to read data from the user space of the current task.
     ///
     /// Returns `Err` if the `vaddr` and `len` do not represent a user space memory range.
     pub fn reader(&self, vaddr: Vaddr, len: usize) -> Result<VmReader<'_, Fallible>> {
-        Ok(self.0.reader(vaddr, len)?)
+        Ok(self.root_vmar().vm_space().reader(vaddr, len)?)
     }
 
     /// Creates a writer to write data into the user space.
     ///
     /// Returns `Err` if the `vaddr` and `len` do not represent a user space memory range.
     pub fn writer(&self, vaddr: Vaddr, len: usize) -> Result<VmWriter<'_, Fallible>> {
-        Ok(self.0.writer(vaddr, len)?)
+        Ok(self.root_vmar().vm_space().writer(vaddr, len)?)
     }
 
     /// Reads bytes into the destination `VmWriter` from the user space of the

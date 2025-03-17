@@ -12,7 +12,7 @@ pub fn sys_sched_setscheduler(
     addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let space = CurrentUserSpace::new(&ctx.task);
+    let space = ctx.user_space();
     let prio = space
         .read_val(addr)
         .map_err(|_| Error::new(Errno::EINVAL))?;

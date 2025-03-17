@@ -120,6 +120,10 @@ impl PosixThreadBuilder {
         let fs = fs.unwrap_or_else(|| Arc::new(ThreadFsInfo::default()));
 
         Arc::new_cyclic(|weak_task| {
+            let root_vmar = process
+                .upgrade()
+                .map(|process| process.lock_root_vmar().get().dup().unwrap());
+
             let posix_thread = {
                 let prof_clock = ProfClock::new();
                 let virtual_timer_manager = TimerManager::new(prof_clock.user_clock().clone());
@@ -149,7 +153,8 @@ impl PosixThreadBuilder {
                 sched_policy,
             ));
 
-            let thread_local = ThreadLocal::new(set_child_tid, clear_child_tid, file_table);
+            let thread_local =
+                ThreadLocal::new(set_child_tid, clear_child_tid, root_vmar, file_table);
 
             thread_table::add_thread(tid, thread.clone());
             task::create_new_user_task(user_ctx, thread, thread_local)
