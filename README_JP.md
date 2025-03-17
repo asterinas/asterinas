@@ -45,7 +45,7 @@ git clone https://github.com/asterinas/asterinas
 2. 開発環境としてDockerコンテナを実行します。
 
 ```bash
-docker run -it --privileged --network=host --device=/dev/kvm -v $(pwd)/asterinas:/root/asterinas asterinas/asterinas:0.13.0
+docker run -it --privileged --network=host --device=/dev/kvm -v $(pwd)/asterinas:/root/asterinas asterinas/asterinas:0.14.0
 ```
 
 3. コンテナ内でプロジェクトフォルダに移動し、Asterinasをビルドして実行します。
