@@ -25,11 +25,8 @@ pub fn sys_write(
     // the file descriptor. If no errors detected, return 0 successfully.
     let write_len = {
         if user_buf_len != 0 {
-            let mut reader = ctx
-                .process
-                .root_vmar()
-                .vm_space()
-                .reader(user_buf_ptr, user_buf_len)?;
+            let user_space = ctx.user_space();
+            let mut reader = user_space.reader(user_buf_ptr, user_buf_len)?;
             file.write(&mut reader)
         } else {
             file.write_bytes(&[])

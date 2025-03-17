@@ -112,11 +112,17 @@ impl CUserMsgHdr {
         Ok(())
     }
 
-    pub fn copy_reader_array_from_user<'a>(&self, ctx: &'a Context) -> Result<VmReaderArray<'a>> {
-        VmReaderArray::from_user_io_vecs(ctx, self.msg_iov, self.msg_iovlen as usize)
+    pub fn copy_reader_array_from_user<'a>(
+        &self,
+        user_space: &'a CurrentUserSpace<'a>,
+    ) -> Result<VmReaderArray<'a>> {
+        VmReaderArray::from_user_io_vecs(user_space, self.msg_iov, self.msg_iovlen as usize)
     }
 
-    pub fn copy_writer_array_from_user<'a>(&self, ctx: &'a Context) -> Result<VmWriterArray<'a>> {
-        VmWriterArray::from_user_io_vecs(ctx, self.msg_iov, self.msg_iovlen as usize)
+    pub fn copy_writer_array_from_user<'a>(
+        &self,
+        user_space: &'a CurrentUserSpace<'a>,
+    ) -> Result<VmWriterArray<'a>> {
+        VmWriterArray::from_user_io_vecs(user_space, self.msg_iov, self.msg_iovlen as usize)
     }
 }
