@@ -64,7 +64,7 @@ use crate::{
         Vaddr, VmReader, PAGE_SIZE,
     },
     panic::abort,
-    util::range_difference,
+    util::ops::range_difference,
 };
 
 /// The maximum number of bytes of the metadata of a frame.
