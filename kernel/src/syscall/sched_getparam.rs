@@ -10,7 +10,7 @@ pub fn sys_sched_getparam(tid: Tid, addr: Vaddr, ctx: &Context) -> Result<Syscal
         _ => 0,
     };
 
-    let space = CurrentUserSpace::new(ctx.task);
+    let space = ctx.user_space();
     space
         .write_val(addr, &rt_prio)
         .map_err(|_| Error::new(Errno::EINVAL))?;

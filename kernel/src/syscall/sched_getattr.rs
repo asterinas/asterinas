@@ -130,7 +130,7 @@ pub(super) fn read_linux_sched_attr_from_user(
 ) -> Result<LinuxSchedAttr> {
     let type_size = mem::size_of::<LinuxSchedAttr>();
 
-    let space = CurrentUserSpace::new(ctx.task);
+    let space = ctx.user_space();
 
     let mut attr = LinuxSchedAttr::default();
 
@@ -160,7 +160,7 @@ pub(super) fn write_linux_sched_attr_to_user(
     user_size: u32,
     ctx: &Context,
 ) -> Result<()> {
-    let space = CurrentUserSpace::new(ctx.task);
+    let space = ctx.user_space();
 
     attr.size = (mem::size_of::<LinuxSchedAttr>() as u32).min(user_size);
 
