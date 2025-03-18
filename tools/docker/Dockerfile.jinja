@@ -19,6 +19,7 @@ RUN apt update && apt-get install -y --no-install-recommends \
     git-core \ 
     gnupg \ 
     libevent-dev \ 
+    libslirp-dev \ 
     libssl-dev \ 
     jq \
     python3-pip \ 
@@ -306,7 +307,6 @@ RUN apt update && apt-get install -y --no-install-recommends \
     libglib2.0-dev  `# build dependency` \ 
     libpixman-1-dev `# build dependency` \ 
     libusb-dev      `# optional build dependency` \ 
-    libslirp-dev \ 
     meson \ 
     ninja-build
 RUN apt clean && rm -rf /var/lib/apt/lists/*
