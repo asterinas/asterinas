@@ -15,7 +15,7 @@ use smoltcp::{
 };
 
 use super::{
-    poll::{FnHelper, PollContext},
+    poll::{FnHelper, PollContext, SocketTableAction},
     poll_iface::PollableIface,
     port::BindPortConfig,
     time::get_network_timestamp,
@@ -183,26 +183,23 @@ impl<E: Ext> IfaceCommon<E> {
         interface.context_mut().now = get_network_timestamp();
 
         let mut sockets = self.sockets.lock();
-        let mut dead_tcp_conns = Vec::new();
+        let mut socket_actions = Vec::new();
 
-        let mut new_tcp_conns = Vec::new();
-
-        let mut context = PollContext::new(
-            interface.as_mut(),
-            &sockets,
-            &mut new_tcp_conns,
-            &mut dead_tcp_conns,
-        );
+        let mut context = PollContext::new(interface.as_mut(), &sockets, &mut socket_actions);
         context.poll_ingress(device, &mut process_phy, &mut dispatch_phy);
         context.poll_egress(device, &mut dispatch_phy);
 
         // Insert new connections and remove dead connections.
-        for new_tcp_conn in new_tcp_conns.into_iter() {
-            let res = sockets.insert_connection(new_tcp_conn);
-            debug_assert!(res.is_ok());
-        }
-        for dead_conn_key in dead_tcp_conns.into_iter() {
-            sockets.remove_dead_tcp_connection(&dead_conn_key);
+        for action in socket_actions.into_iter() {
+            match action {
+                SocketTableAction::AddTcpConn(new_tcp_conn) => {
+                    let res = sockets.insert_connection(new_tcp_conn);
+                    debug_assert!(res.is_ok());
+                }
+                SocketTableAction::DelTcpConn(dead_conn_key) => {
+                    sockets.remove_dead_tcp_connection(&dead_conn_key);
+                }
+            }
         }
 
         // Notify all socket events.
