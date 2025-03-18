@@ -4,7 +4,6 @@ use alloc::{boxed::Box, collections::btree_map::BTreeMap, sync::Arc, vec::Vec};
 
 use ostd::sync::{LocalIrqDisabled, SpinLock};
 use smoltcp::{
-    iface::Context,
     socket::PollAt,
     time::Duration,
     wire::{IpEndpoint, IpRepr, TcpRepr},
@@ -17,7 +16,7 @@ use super::{
 use crate::{
     errors::tcp::ListenError,
     ext::Ext,
-    iface::{BindPortConfig, BoundPort},
+    iface::{BindPortConfig, BoundPort, PollableIfaceMut},
     socket::{
         option::{RawTcpOption, RawTcpSetOption},
         unbound::{new_tcp_socket, RawTcpSocket},
@@ -194,13 +193,16 @@ impl<E: Ext> TcpListenerBg<E> {
     /// Tries to process an incoming packet and returns whether the packet is processed.
     pub(crate) fn process(
         self: &Arc<Self>,
-        cx: &mut Context,
+        iface: &mut PollableIfaceMut<E>,
         ip_repr: &IpRepr,
         tcp_repr: &TcpRepr,
     ) -> (TcpProcessResult, Option<Arc<TcpConnectionBg<E>>>) {
         let mut backlog = self.inner.backlog.lock();
 
-        if !backlog.socket.accepts(cx, ip_repr, tcp_repr) {
+        if !backlog
+            .socket
+            .accepts(iface.context_mut(), ip_repr, tcp_repr)
+        {
             return (TcpProcessResult::NotProcessed, None);
         }
 
@@ -211,7 +213,10 @@ impl<E: Ext> TcpListenerBg<E> {
             return (TcpProcessResult::Processed, None);
         }
 
-        let result = match backlog.socket.process(cx, ip_repr, tcp_repr) {
+        let result = match backlog
+            .socket
+            .process(iface.context_mut(), ip_repr, tcp_repr)
+        {
             None => TcpProcessResult::Processed,
             Some((ip_repr, tcp_repr)) => TcpProcessResult::ProcessedWithReply(ip_repr, tcp_repr),
         };
@@ -227,23 +232,25 @@ impl<E: Ext> TcpListenerBg<E> {
             socket
         };
 
-        let inner = TcpConnectionInner::new(
-            core::mem::replace(&mut backlog.socket, new_socket),
-            Some(self.clone()),
-        );
-        let conn = TcpConnection::new(
+        let conn = TcpConnection::new_cyclic(
             self.bound
                 .iface()
                 .bind(BindPortConfig::CanReuse(self.bound.port()))
                 .unwrap(),
-            inner,
+            |weak| {
+                TcpConnectionInner::new(
+                    core::mem::replace(&mut backlog.socket, new_socket),
+                    Some(self.clone()),
+                    weak,
+                )
+            },
         );
         let conn_bg = conn.inner().clone();
 
         let old_conn = backlog.connecting.insert(*conn_bg.connection_key(), conn);
         debug_assert!(old_conn.is_none());
 
-        conn_bg.update_next_poll_at_ms(PollAt::Now);
+        iface.update_next_poll_at_ms(&conn_bg, PollAt::Now);
 
         (result, Some(conn_bg))
     }
