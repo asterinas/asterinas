@@ -168,6 +168,22 @@ impl<P: OwnerPtr> RcuInner<P> {
             _inner_guard: guard,
         }
     }
+
+    fn read_with<'a>(
+        &'a self,
+        _guard: &'a DisabledPreemptGuard,
+    ) -> Option<&'a <P as OwnerPtr>::Target> {
+        let obj_ptr = self.ptr.load(Acquire);
+        if obj_ptr.is_null() {
+            return None;
+        }
+        // SAFETY:
+        // 1. This pointer is not NULL.
+        // 2. Since the preemption is disabled, the pointer is valid because
+        //    other writers won't release the allocation until this task passes
+        //    the quiescent state.
+        Some(unsafe { &*obj_ptr })
+    }
 }
 
 impl<P: OwnerPtr> Drop for RcuInner<P> {
@@ -250,6 +266,18 @@ impl<P: OwnerPtr> Rcu<P> {
     pub fn read(&self) -> RcuReadGuard<'_, P> {
         RcuReadGuard(self.0.read())
     }
+
+    /// Reads the RCU-protected value given that preemption is already disabled.
+    ///
+    /// If preemption is already disabled, this function can reduce the
+    /// overhead of disabling preemption again.
+    ///
+    /// Unlike [`Self::read`], this function does not return a read guard, so
+    /// you cannot use [`RcuReadGuard::compare_exchange`] to synchronize the
+    /// writers. You may do it via a [`super::SpinLock`].
+    pub fn read_with<'a>(&'a self, guard: &'a DisabledPreemptGuard) -> &'a <P as OwnerPtr>::Target {
+        self.0.read_with(guard).unwrap()
+    }
 }
 
 impl<P: OwnerPtr> RcuOption<P> {
@@ -291,6 +319,21 @@ impl<P: OwnerPtr> RcuOption<P> {
     /// (if checked non-NULL) via [`RcuOptionReadGuard::get`].
     pub fn read(&self) -> RcuOptionReadGuard<'_, P> {
         RcuOptionReadGuard(self.0.read())
+    }
+
+    /// Reads the RCU-protected value given that preemption is already disabled.
+    ///
+    /// If preemption is already disabled, this function can reduce the
+    /// overhead of disabling preemption again.
+    ///
+    /// Unlike [`Self::read`], this function does not return a read guard, so
+    /// you cannot use [`RcuOptionReadGuard::compare_exchange`] to synchronize the
+    /// writers. You may do it via a [`super::SpinLock`].
+    pub fn read_with<'a>(
+        &'a self,
+        guard: &'a DisabledPreemptGuard,
+    ) -> Option<&'a <P as OwnerPtr>::Target> {
+        self.0.read_with(guard)
     }
 }
 
