@@ -165,7 +165,7 @@ impl<E: Ext> RawTcpSocketExt<E> {
                 if let Some(value) = backlog.connecting.remove(this.connection_key()) {
                     backlog.connected.push(value);
                 }
-                listener.add_events(SocketEvents::CAN_RECV);
+                listener.notify_events(SocketEvents::CAN_RECV);
             }
         }
 
@@ -621,7 +621,7 @@ impl<E: Ext> TcpConnectionBg<E> {
             socket.check_state(self, old_state, old_recv_queue, is_rst);
         events |= state_events;
 
-        self.add_events(events);
+        self.notify_events(events);
 
         let poll_at = socket.poll_at(iface.context_mut());
         iface.update_next_poll_at_ms(self, poll_at);
@@ -669,7 +669,7 @@ impl<E: Ext> TcpConnectionBg<E> {
             socket.check_state(self, old_state, old_recv_queue, is_rst);
         events |= state_events;
 
-        self.add_events(events);
+        self.notify_events(events);
 
         let poll_at = socket.poll_at(iface.context_mut());
         iface.update_next_poll_at_ms(self, poll_at);

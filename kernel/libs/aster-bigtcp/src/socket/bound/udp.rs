@@ -62,7 +62,7 @@ impl<E: Ext> UdpSocketBg<E> {
             udp_payload,
         );
 
-        self.add_events(SocketEvents::CAN_RECV);
+        self.notify_events(SocketEvents::CAN_RECV);
 
         true
     }
@@ -82,7 +82,7 @@ impl<E: Ext> UdpSocketBg<E> {
             .unwrap();
 
         // For UDP, dequeuing a packet means that we can queue more packets.
-        self.add_events(SocketEvents::CAN_SEND);
+        self.notify_events(SocketEvents::CAN_SEND);
 
         self.inner
             .need_dispatch
