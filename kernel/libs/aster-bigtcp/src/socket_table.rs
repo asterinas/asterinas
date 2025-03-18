@@ -292,6 +292,11 @@ impl<E: Ext> SocketTable<E> {
             .position(|tcp_connection| tcp_connection.connection_key() == key)
             .unwrap();
         let connection = bucket.connections.swap_remove(index);
+        debug_assert!(
+            !connection.poll_key().is_active(),
+            "there should be no need to poll a dead TCP connection",
+        );
+
         connection.on_dead_events();
     }
 

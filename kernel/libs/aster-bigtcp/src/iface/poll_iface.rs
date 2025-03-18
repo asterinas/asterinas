@@ -172,6 +172,14 @@ impl PollKey {
             id,
         }
     }
+
+    /// Returns whether the next poll is active.
+    ///
+    /// The next poll is active if there are packets to send or a timer is set, in which case the
+    /// socket will live in the pending queue.
+    pub(crate) fn is_active(&self) -> bool {
+        self.next_poll_at_ms.load(Ordering::Relaxed) != Self::INACTIVE_VAL
+    }
 }
 
 /// Sockets to poll in the future, sorted by poll time.

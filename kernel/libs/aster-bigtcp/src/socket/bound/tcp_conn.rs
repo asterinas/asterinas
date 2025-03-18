@@ -190,11 +190,6 @@ impl<E: Ext> RawTcpSocketExt<E> {
     /// call this method after handling non-closing user events, because the socket can never be
     /// dead if it is not closed.
     fn check_dead(&self, this: &Arc<TcpConnectionBg<E>>) -> TcpConnBecameDead {
-        // FIXME: This is a temporary workaround to mark TimeWait socket as dead.
-        if self.state() == State::TimeWait {
-            return TcpConnBecameDead::TRUE;
-        }
-
         // According to the current smoltcp implementation, a socket in the CLOSED state with the
         // remote endpoint set means that an outgoing RST packet is pending. We cannot simply mark
         // such a socket as dead.
@@ -574,23 +569,39 @@ impl<E: Ext> TcpConnectionBg<E> {
             return (TcpProcessResult::NotProcessed, TcpConnBecameDead::FALSE);
         }
 
-        // If the socket is in the TimeWait state and a new packet arrives that is a SYN packet
-        // without ack number, the TimeWait socket will be marked as dead,
+        // If the socket is in the TIME-WAIT state and a new packet arrives that is a SYN packet
+        // without an ACK number, the TIME-WAIT socket will be marked as dead,
         // and the packet will be passed on to any other listening sockets for processing.
         //
-        // FIXME: Directly marking the TimeWait socket dead is not the correct approach.
-        // In Linux, a TimeWait socket remains alive to handle "old duplicate segments".
-        // If a TimeWait socket receives a new SYN packet, Linux will select a suitable
-        // listening socket from the socket table to respond to that SYN request.
-        // (https://elixir.bootlin.com/linux/v6.0.9/source/net/ipv4/tcp_ipv4.c#L2137)
-        // Moreover, the Initial Sequence Number (ISN) will be set to prevent the TimeWait socket
-        // from erroneously handling packets from the new connection.
-        // (https://elixir.bootlin.com/linux/v6.0.9/source/net/ipv4/tcp_minisocks.c#L194)
-        // Implementing such behavior is challenging with the current smoltcp APIs.
+        // FIXME: According to the Linux implementation:
+        //  * Before marking the socket as dead, we should check some additional fields in the
+        //    packet (e.g., the timestamp options) to make sure that the packet is not an old
+        //    duplicate packet [1], and ensure that there is actually a listening socket that can
+        //    accept the SYN packet [2].
+        //  * After marking the socket as dead, we should choose a reasonable initial sequence
+        //    number for the newly accepted connection to avoid mixing old duplicate packets with
+        //    packets in the new connection [3].
+        // All of these detail mechanisms are not currently implemented.
+        //
+        // [1]: https://elixir.bootlin.com/linux/v6.0.9/source/net/ipv4/tcp_minisocks.c#L211-L214
+        // [2]: https://elixir.bootlin.com/linux/v6.0.9/source/net/ipv4/tcp_ipv4.c#L2138-L2145
+        // [3]: https://elixir.bootlin.com/linux/v6.0.9/source/net/ipv4/tcp_minisocks.c#L218
         if socket.state() == State::TimeWait
             && tcp_repr.control == TcpControl::Syn
             && tcp_repr.ack_number.is_none()
         {
+            // This is a very silly approach to force the socket to go dead. The first `abort` call
+            // changes the socket state to `CLOSED`, the second `dispatch` call sets the tuple
+            // (local/remote endpoint) to none. So this socket will not accept or send any packets
+            // in the future.
+            socket.abort();
+            socket
+                .dispatch(iface.context_mut(), |_, _| {
+                    Ok::<(), core::convert::Infallible>(())
+                })
+                .unwrap();
+
+            iface.update_next_poll_at_ms(self, PollAt::Ingress);
             return (TcpProcessResult::NotProcessed, TcpConnBecameDead::TRUE);
         }
 
