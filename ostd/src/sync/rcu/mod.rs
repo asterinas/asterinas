@@ -61,6 +61,8 @@ pub use owner_ptr::OwnerPtr;
 pub struct Rcu<P: OwnerPtr>(RcuInner<P>);
 
 /// A guard that allows access to the pointed data protected by a [`Rcu`].
+#[clippy::has_significant_drop]
+#[must_use]
 pub struct RcuReadGuard<'a, P: OwnerPtr>(RcuReadGuardInner<'a, P>);
 
 /// A Read-Copy Update (RCU) cell for sharing a _nullable_ pointer.  
@@ -99,6 +101,8 @@ pub struct RcuReadGuard<'a, P: OwnerPtr>(RcuReadGuardInner<'a, P>);
 pub struct RcuOption<P: OwnerPtr>(RcuInner<P>);
 
 /// A guard that allows access to the pointed data protected by a [`RcuOption`].
+#[clippy::has_significant_drop]
+#[must_use]
 pub struct RcuOptionReadGuard<'a, P: OwnerPtr>(RcuReadGuardInner<'a, P>);
 
 /// The inner implementation of both [`Rcu`] and [`RcuOption`].
