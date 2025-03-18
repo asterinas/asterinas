@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{boxed::Box, sync::Arc};
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use ostd::sync::{LocalIrqDisabled, SpinLock};
 use smoltcp::{
     iface::Context,
-    socket::{udp::UdpMetadata, PollAt},
+    socket::udp::UdpMetadata,
     wire::{IpRepr, UdpRepr},
 };
 
@@ -20,13 +21,16 @@ use crate::{
 pub type UdpSocket<E> = Socket<UdpSocketInner, E>;
 
 /// States needed by [`UdpSocketBg`].
-type UdpSocketInner = SpinLock<Box<RawUdpSocket>, LocalIrqDisabled>;
+pub struct UdpSocketInner {
+    socket: SpinLock<Box<RawUdpSocket>, LocalIrqDisabled>,
+    need_dispatch: AtomicBool,
+}
 
 impl<E: Ext> Inner<E> for UdpSocketInner {
     type Observer = E::UdpEventObserver;
 
     fn on_drop(this: &Arc<SocketBg<Self, E>>) {
-        this.inner.lock().close();
+        this.inner.socket.lock().close();
 
         // A UDP socket can be removed immediately.
         this.bound.iface().common().remove_udp_socket(this);
@@ -44,7 +48,7 @@ impl<E: Ext> UdpSocketBg<E> {
         udp_repr: &UdpRepr,
         udp_payload: &[u8],
     ) -> bool {
-        let mut socket = self.inner.lock();
+        let mut socket = self.inner.socket.lock();
 
         if !socket.accepts(cx, ip_repr, udp_repr) {
             return false;
@@ -59,7 +63,6 @@ impl<E: Ext> UdpSocketBg<E> {
         );
 
         self.add_events(SocketEvents::CAN_RECV);
-        self.update_next_poll_at_ms(socket.poll_at(cx));
 
         true
     }
@@ -69,7 +72,7 @@ impl<E: Ext> UdpSocketBg<E> {
     where
         D: FnOnce(&mut Context, &IpRepr, &UdpRepr, &[u8]),
     {
-        let mut socket = self.inner.lock();
+        let mut socket = self.inner.socket.lock();
 
         socket
             .dispatch(cx, |cx, _meta, (ip_repr, udp_repr, udp_payload)| {
@@ -80,7 +83,17 @@ impl<E: Ext> UdpSocketBg<E> {
 
         // For UDP, dequeuing a packet means that we can queue more packets.
         self.add_events(SocketEvents::CAN_SEND);
-        self.update_next_poll_at_ms(socket.poll_at(cx));
+
+        self.inner
+            .need_dispatch
+            .store(socket.send_queue() > 0, Ordering::Relaxed);
+    }
+
+    /// Returns whether the socket _may_ generate an outgoing packet.
+    ///
+    /// The check is intended to be lock-free and fast, but may have false positives.
+    pub(crate) fn need_dispatch(&self) -> bool {
+        self.inner.need_dispatch.load(Ordering::Relaxed)
     }
 }
 
@@ -106,7 +119,10 @@ impl<E: Ext> UdpSocket<E> {
             socket
         };
 
-        let inner = UdpSocketInner::new(socket);
+        let inner = UdpSocketInner {
+            socket: SpinLock::new(socket),
+            need_dispatch: AtomicBool::new(false),
+        };
 
         let socket = Self::new(bound, inner);
         socket.init_observer(observer);
@@ -130,7 +146,7 @@ impl<E: Ext> UdpSocket<E> {
     where
         F: FnOnce(&mut [u8]) -> R,
     {
-        let mut socket = self.0.inner.lock();
+        let mut socket = self.0.inner.socket.lock();
 
         if size > socket.packet_send_capacity() {
             return Err(SendError::TooLarge);
@@ -141,7 +157,11 @@ impl<E: Ext> UdpSocket<E> {
             Err(err) => return Err(err.into()),
         };
         let result = f(buffer);
-        self.0.update_next_poll_at_ms(PollAt::Now);
+
+        self.0
+            .inner
+            .need_dispatch
+            .store(socket.send_queue() > 0, Ordering::Relaxed);
 
         Ok(result)
     }
@@ -153,7 +173,7 @@ impl<E: Ext> UdpSocket<E> {
     where
         F: FnOnce(&[u8], UdpMetadata) -> R,
     {
-        let mut socket = self.0.inner.lock();
+        let mut socket = self.0.inner.socket.lock();
 
         let (data, meta) = socket.recv()?;
         let result = f(data, meta);
@@ -169,7 +189,7 @@ impl<E: Ext> UdpSocket<E> {
     where
         F: FnOnce(&RawUdpSocket) -> R,
     {
-        let socket = self.0.inner.lock();
+        let socket = self.0.inner.socket.lock();
         f(&socket)
     }
 }

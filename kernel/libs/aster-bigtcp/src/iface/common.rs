@@ -16,6 +16,7 @@ use smoltcp::{
 
 use super::{
     poll::{FnHelper, PollContext},
+    poll_iface::PollableIface,
     port::BindPortConfig,
     time::get_network_timestamp,
     Iface,
@@ -29,7 +30,7 @@ use crate::{
 
 pub struct IfaceCommon<E: Ext> {
     name: String,
-    interface: SpinLock<smoltcp::iface::Interface, LocalIrqDisabled>,
+    interface: SpinLock<PollableIface<E>, LocalIrqDisabled>,
     used_ports: SpinLock<BTreeMap<u16, usize>, LocalIrqDisabled>,
     sockets: SpinLock<SocketTable<E>, LocalIrqDisabled>,
     sched_poll: E::ScheduleNextPoll,
@@ -41,13 +42,11 @@ impl<E: Ext> IfaceCommon<E> {
         interface: smoltcp::iface::Interface,
         sched_poll: E::ScheduleNextPoll,
     ) -> Self {
-        let sockets = SocketTable::new();
-
         Self {
             name,
-            interface: SpinLock::new(interface),
+            interface: SpinLock::new(PollableIface::new(interface)),
             used_ports: SpinLock::new(BTreeMap::new()),
-            sockets: SpinLock::new(sockets),
+            sockets: SpinLock::new(SocketTable::new()),
             sched_poll,
         }
     }
@@ -65,10 +64,10 @@ impl<E: Ext> IfaceCommon<E> {
     }
 }
 
-// Lock order: interface -> sockets
+// Lock order: `interface` -> `sockets`
 impl<E: Ext> IfaceCommon<E> {
     /// Acquires the lock to the interface.
-    pub(crate) fn interface(&self) -> SpinLockGuard<smoltcp::iface::Interface, LocalIrqDisabled> {
+    pub(crate) fn interface(&self) -> SpinLockGuard<'_, PollableIface<E>, LocalIrqDisabled> {
         self.interface.lock()
     }
 
@@ -181,51 +180,42 @@ impl<E: Ext> IfaceCommon<E> {
         Q: FnMut(&Packet, &mut Context, D::TxToken<'_>),
     {
         let mut interface = self.interface();
-        interface.context().now = get_network_timestamp();
+        interface.context_mut().now = get_network_timestamp();
 
         let mut sockets = self.sockets.lock();
         let mut dead_tcp_conns = Vec::new();
 
-        loop {
-            let mut new_tcp_conns = Vec::new();
+        let mut new_tcp_conns = Vec::new();
 
-            let mut context = PollContext::new(
-                interface.context(),
-                &sockets,
-                &mut new_tcp_conns,
-                &mut dead_tcp_conns,
-            );
-            context.poll_ingress(device, &mut process_phy, &mut dispatch_phy);
-            context.poll_egress(device, &mut dispatch_phy);
+        let mut context = PollContext::new(
+            interface.as_mut(),
+            &sockets,
+            &mut new_tcp_conns,
+            &mut dead_tcp_conns,
+        );
+        context.poll_ingress(device, &mut process_phy, &mut dispatch_phy);
+        context.poll_egress(device, &mut dispatch_phy);
 
-            // New packets sent by new connections are not handled. So if there are new
-            // connections, try again.
-            if new_tcp_conns.is_empty() {
-                break;
-            } else {
-                new_tcp_conns.into_iter().for_each(|tcp_conn| {
-                    let res = sockets.insert_connection(tcp_conn);
-                    debug_assert!(res.is_ok());
-                });
-            }
+        // Insert new connections and remove dead connections.
+        for new_tcp_conn in new_tcp_conns.into_iter() {
+            let res = sockets.insert_connection(new_tcp_conn);
+            debug_assert!(res.is_ok());
         }
-
         for dead_conn_key in dead_tcp_conns.into_iter() {
             sockets.remove_dead_tcp_connection(&dead_conn_key);
         }
 
+        // Notify all socket events.
         for socket in sockets.tcp_listener_iter() {
             if socket.has_events() {
                 socket.on_events();
             }
         }
-
         for socket in sockets.tcp_conn_iter() {
             if socket.has_events() {
                 socket.on_events();
             }
         }
-
         for socket in sockets.udp_socket_iter() {
             if socket.has_events() {
                 socket.on_events();
@@ -234,10 +224,7 @@ impl<E: Ext> IfaceCommon<E> {
 
         // Note that only TCP connections can have timers set, so as far as the time to poll is
         // concerned, we only need to consider TCP connections.
-        sockets
-            .tcp_conn_iter()
-            .map(|socket| socket.next_poll_at_ms())
-            .min()
+        interface.next_poll_at_ms()
     }
 }
 

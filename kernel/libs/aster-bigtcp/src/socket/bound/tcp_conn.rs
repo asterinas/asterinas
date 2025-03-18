@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{boxed::Box, sync::Arc};
+use alloc::{
+    boxed::Box,
+    sync::{Arc, Weak},
+};
 use core::ops::{Deref, DerefMut};
 
 use ostd::sync::{LocalIrqDisabled, SpinLock, SpinLockGuard};
 use smoltcp::{
-    iface::Context,
     socket::{tcp::State, PollAt},
     time::Duration,
     wire::{IpEndpoint, IpRepr, TcpControl, TcpRepr},
@@ -19,7 +21,7 @@ use crate::{
     define_boolean_value,
     errors::tcp::{ConnectError, RecvError, SendError},
     ext::Ext,
-    iface::BoundPort,
+    iface::{BoundPort, PollKey, PollableIfaceMut},
     socket::{
         event::SocketEvents,
         option::{RawTcpOption, RawTcpSetOption},
@@ -33,6 +35,7 @@ pub type TcpConnection<E> = Socket<TcpConnectionInner<E>, E>;
 /// States needed by [`TcpConnectionBg`].
 pub struct TcpConnectionInner<E: Ext> {
     socket: SpinLock<RawTcpSocketExt<E>, LocalIrqDisabled>,
+    poll_key: PollKey,
     connection_key: ConnectionKey,
 }
 
@@ -216,13 +219,19 @@ impl<E: Ext> RawTcpSocketExt<E> {
 }
 
 impl<E: Ext> TcpConnectionInner<E> {
-    pub(super) fn new(socket: Box<RawTcpSocket>, listener: Option<Arc<TcpListenerBg<E>>>) -> Self {
+    pub(super) fn new(
+        socket: Box<RawTcpSocket>,
+        listener: Option<Arc<TcpListenerBg<E>>>,
+        weak_self: &Weak<TcpConnectionBg<E>>,
+    ) -> Self {
         let connection_key = {
             // Since the socket is connected, the following unwrap can never fail
             let local_endpoint = socket.local_endpoint().unwrap();
             let remote_endpoint = socket.remote_endpoint().unwrap();
             ConnectionKey::from((local_endpoint, remote_endpoint))
         };
+
+        let poll_key = PollKey::new(Weak::as_ptr(weak_self).addr());
 
         let socket_ext = RawTcpSocketExt {
             socket,
@@ -234,6 +243,7 @@ impl<E: Ext> TcpConnectionInner<E> {
 
         TcpConnectionInner {
             socket: SpinLock::new(socket_ext),
+            poll_key,
             connection_key,
         }
     }
@@ -293,7 +303,7 @@ impl<E: Ext> TcpConnection<E> {
         };
 
         let iface = bound.iface().clone();
-        // We have to lock interface before locking interface
+        // We have to lock `interface` before locking `sockets`
         // to avoid dead lock due to inconsistent lock orders.
         let mut interface = iface.common().interface();
         let mut sockets = iface.common().sockets();
@@ -309,18 +319,19 @@ impl<E: Ext> TcpConnection<E> {
 
             option.apply(&mut socket);
 
-            if let Err(err) = socket.connect(interface.context(), remote_endpoint, bound.port()) {
+            if let Err(err) = socket.connect(interface.context_mut(), remote_endpoint, bound.port())
+            {
                 return Err((bound, err.into()));
             }
 
             socket
         };
 
-        let inner = TcpConnectionInner::new(socket, None);
-
-        let connection = Self::new(bound, inner);
-        connection.0.update_next_poll_at_ms(PollAt::Now);
+        let connection =
+            Self::new_cyclic(bound, |weak| TcpConnectionInner::new(socket, None, weak));
+        interface.update_next_poll_at_ms(&connection.0, PollAt::Now);
         connection.init_observer(observer);
+
         let res = sockets.insert_connection(connection.inner().clone());
         debug_assert!(res.is_ok());
 
@@ -378,9 +389,8 @@ impl<E: Ext> TcpConnection<E> {
         }
         let result = socket.send(f)?;
 
-        let need_poll = self
-            .0
-            .update_next_poll_at_ms(socket.poll_at(iface.context()));
+        let poll_at = socket.poll_at(iface.context_mut());
+        let need_poll = iface.update_next_poll_at_ms(&self.0, poll_at);
 
         Ok((result, need_poll))
     }
@@ -408,9 +418,8 @@ impl<E: Ext> TcpConnection<E> {
             res => res,
         }?;
 
-        let need_poll = self
-            .0
-            .update_next_poll_at_ms(socket.poll_at(iface.context()));
+        let poll_at = socket.poll_at(iface.context_mut());
+        let need_poll = iface.update_next_poll_at_ms(&self.0, poll_at);
 
         Ok((result, need_poll))
     }
@@ -433,6 +442,7 @@ impl<E: Ext> TcpConnection<E> {
     ///
     /// Polling the iface is _always_ required after this method succeeds.
     pub fn shut_send(&self) -> bool {
+        let mut iface = self.iface().common().interface();
         let mut socket = self.0.inner.lock();
 
         if matches!(socket.state(), State::Closed | State::TimeWait) {
@@ -440,7 +450,9 @@ impl<E: Ext> TcpConnection<E> {
         }
 
         socket.close();
-        self.0.update_next_poll_at_ms(PollAt::Now);
+
+        let poll_at = socket.poll_at(iface.context_mut());
+        iface.update_next_poll_at_ms(&self.0, poll_at);
 
         true
     }
@@ -469,6 +481,7 @@ impl<E: Ext> TcpConnection<E> {
     /// Note that either this method or [`Self::reset`] must be called before dropping the TCP
     /// connection to avoid resource leakage.
     pub fn close(&self) {
+        let mut iface = self.iface().common().interface();
         let mut socket = self.0.inner.lock();
 
         socket.is_recv_shut = true;
@@ -479,7 +492,9 @@ impl<E: Ext> TcpConnection<E> {
         } else {
             socket.close();
         }
-        self.0.update_next_poll_at_ms(PollAt::Now);
+
+        let poll_at = socket.poll_at(iface.context_mut());
+        iface.update_next_poll_at_ms(&self.0, poll_at);
     }
 
     /// Resets the connection.
@@ -489,10 +504,13 @@ impl<E: Ext> TcpConnection<E> {
     /// Note that either this method or [`Self::close`] must be called before dropping the TCP
     /// connection to avoid resource leakage.
     pub fn reset(&self) {
+        let mut iface = self.iface().common().interface();
         let mut socket = self.0.inner.lock();
 
         socket.abort();
-        self.0.update_next_poll_at_ms(PollAt::Now);
+
+        let poll_at = socket.poll_at(iface.context_mut());
+        iface.update_next_poll_at_ms(&self.0, poll_at);
     }
 
     /// Calls `f` with an immutable reference to the associated [`RawTcpSocket`].
@@ -510,15 +528,13 @@ impl<E: Ext> TcpConnection<E> {
 
 impl<E: Ext> RawTcpSetOption for TcpConnection<E> {
     fn set_keep_alive(&self, interval: Option<Duration>) -> NeedIfacePoll {
+        let mut iface = self.iface().common().interface();
         let mut socket = self.0.inner.lock();
+
         socket.set_keep_alive(interval);
 
-        if interval.is_some() {
-            self.0.update_next_poll_at_ms(PollAt::Now);
-            NeedIfacePoll::TRUE
-        } else {
-            NeedIfacePoll::FALSE
-        }
+        let poll_at = socket.poll_at(iface.context_mut());
+        iface.update_next_poll_at_ms(&self.0, poll_at)
     }
 
     fn set_nagle_enabled(&self, enabled: bool) {
@@ -528,6 +544,10 @@ impl<E: Ext> RawTcpSetOption for TcpConnection<E> {
 }
 
 impl<E: Ext> TcpConnectionBg<E> {
+    pub(crate) const fn poll_key(&self) -> &PollKey {
+        &self.inner.poll_key
+    }
+
     pub(crate) const fn connection_key(&self) -> &ConnectionKey {
         &self.inner.connection_key
     }
@@ -544,13 +564,13 @@ impl<E: Ext> TcpConnectionBg<E> {
     /// Tries to process an incoming packet and returns whether the packet is processed.
     pub(crate) fn process(
         self: &Arc<Self>,
-        cx: &mut Context,
+        iface: &mut PollableIfaceMut<E>,
         ip_repr: &IpRepr,
         tcp_repr: &TcpRepr,
     ) -> (TcpProcessResult, TcpConnBecameDead) {
         let mut socket = self.inner.lock();
 
-        if !socket.accepts(cx, ip_repr, tcp_repr) {
+        if !socket.accepts(iface.context_mut(), ip_repr, tcp_repr) {
             return (TcpProcessResult::NotProcessed, TcpConnBecameDead::FALSE);
         }
 
@@ -581,7 +601,7 @@ impl<E: Ext> TcpConnectionBg<E> {
         // to be queued.
         let mut events = SocketEvents::CAN_RECV | SocketEvents::CAN_SEND;
 
-        let result = match socket.process(cx, ip_repr, tcp_repr) {
+        let result = match socket.process(iface.context_mut(), ip_repr, tcp_repr) {
             None => TcpProcessResult::Processed,
             Some((ip_repr, tcp_repr)) => TcpProcessResult::ProcessedWithReply(ip_repr, tcp_repr),
         };
@@ -591,7 +611,9 @@ impl<E: Ext> TcpConnectionBg<E> {
         events |= state_events;
 
         self.add_events(events);
-        self.update_next_poll_at_ms(socket.poll_at(cx));
+
+        let poll_at = socket.poll_at(iface.context_mut());
+        iface.update_next_poll_at_ms(self, poll_at);
 
         (result, became_dead)
     }
@@ -599,11 +621,11 @@ impl<E: Ext> TcpConnectionBg<E> {
     /// Tries to generate an outgoing packet and dispatches the generated packet.
     pub(crate) fn dispatch<D>(
         self: &Arc<Self>,
-        cx: &mut Context,
+        iface: &mut PollableIfaceMut<E>,
         dispatch: D,
     ) -> (Option<(IpRepr, TcpRepr<'static>)>, TcpConnBecameDead)
     where
-        D: FnOnce(&mut Context, &IpRepr, &TcpRepr) -> Option<(IpRepr, TcpRepr<'static>)>,
+        D: FnOnce(PollableIfaceMut<E>, &IpRepr, &TcpRepr) -> Option<(IpRepr, TcpRepr<'static>)>,
     {
         let mut socket = self.inner.lock();
 
@@ -613,9 +635,10 @@ impl<E: Ext> TcpConnectionBg<E> {
         let mut events = SocketEvents::empty();
 
         let mut reply = None;
+        let (cx, pending) = iface.inner_mut();
         socket
             .dispatch(cx, |cx, (ip_repr, tcp_repr)| {
-                reply = dispatch(cx, &ip_repr, &tcp_repr);
+                reply = dispatch(PollableIfaceMut::new(cx, pending), &ip_repr, &tcp_repr);
                 Ok::<(), ()>(())
             })
             .unwrap();
@@ -623,12 +646,12 @@ impl<E: Ext> TcpConnectionBg<E> {
         // `dispatch` can return a packet in response to the generated packet. If the socket
         // accepts the packet, we can process it directly.
         while let Some((ref ip_repr, ref tcp_repr)) = reply {
-            if !socket.accepts(cx, ip_repr, tcp_repr) {
+            if !socket.accepts(iface.context_mut(), ip_repr, tcp_repr) {
                 break;
             }
             is_rst |= tcp_repr.control == TcpControl::Rst;
             events |= SocketEvents::CAN_RECV | SocketEvents::CAN_SEND;
-            reply = socket.process(cx, ip_repr, tcp_repr);
+            reply = socket.process(iface.context_mut(), ip_repr, tcp_repr);
         }
 
         let (state_events, became_dead) =
@@ -636,7 +659,9 @@ impl<E: Ext> TcpConnectionBg<E> {
         events |= state_events;
 
         self.add_events(events);
-        self.update_next_poll_at_ms(socket.poll_at(cx));
+
+        let poll_at = socket.poll_at(iface.context_mut());
+        iface.update_next_poll_at_ms(self, poll_at);
 
         (reply, became_dead)
     }
