@@ -286,14 +286,13 @@ impl<E: Ext> SocketTable<E> {
             &mut self.connection_buckets[bucket_index as usize]
         };
 
-        if let Some(index) = bucket
+        let index = bucket
             .connections
             .iter()
             .position(|tcp_connection| tcp_connection.connection_key() == key)
-        {
-            let connection = bucket.connections.swap_remove(index);
-            connection.on_dead_events();
-        }
+            .unwrap();
+        let connection = bucket.connections.swap_remove(index);
+        connection.on_dead_events();
     }
 
     pub(crate) fn remove_udp_socket(
