@@ -295,7 +295,7 @@ impl<E: Ext> SocketTable<E> {
             "there should be no need to poll a dead TCP connection",
         );
 
-        connection.on_dead_events();
+        connection.notify_dead_events();
     }
 
     pub(crate) fn remove_udp_socket(
@@ -307,18 +307,6 @@ impl<E: Ext> SocketTable<E> {
             .iter()
             .position(|udp_socket| Arc::ptr_eq(udp_socket, socket))?;
         Some(self.udp_sockets.swap_remove(index))
-    }
-
-    pub(crate) fn tcp_listener_iter(&self) -> impl Iterator<Item = &Arc<TcpListenerBg<E>>> {
-        self.listener_buckets
-            .iter()
-            .flat_map(|bucket| bucket.listeners.iter())
-    }
-
-    pub(crate) fn tcp_conn_iter(&self) -> impl Iterator<Item = &Arc<TcpConnectionBg<E>>> {
-        self.connection_buckets
-            .iter()
-            .flat_map(|bucket| bucket.connections.iter())
     }
 
     pub(crate) fn udp_socket_iter(&self) -> impl Iterator<Item = &Arc<UdpSocketBg<E>>> {

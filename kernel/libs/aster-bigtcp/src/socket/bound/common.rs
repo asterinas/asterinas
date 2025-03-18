@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::sync::{Arc, Weak};
-use core::sync::atomic::{AtomicU8, Ordering};
 
 use smoltcp::wire::IpEndpoint;
 use spin::once::Once;
@@ -45,7 +44,6 @@ pub struct SocketBg<T: Inner<E>, E: Ext> {
     pub(super) bound: BoundPort<E>,
     pub(super) inner: T,
     observer: Once<T::Observer>,
-    events: AtomicU8,
 }
 
 impl<T: Inner<E>, E: Ext> Drop for Socket<T, E> {
@@ -62,7 +60,6 @@ impl<T: Inner<E>, E: Ext> Socket<T, E> {
             bound,
             inner,
             observer: Once::new(),
-            events: AtomicU8::new(0),
         })))
     }
 
@@ -74,7 +71,6 @@ impl<T: Inner<E>, E: Ext> Socket<T, E> {
             bound,
             inner: inner_fn(weak),
             observer: Once::new(),
-            events: AtomicU8::new(0),
         })))
     }
 
@@ -110,44 +106,24 @@ define_boolean_value!(
 );
 
 impl<T: Inner<E>, E: Ext> SocketBg<T, E> {
-    pub(crate) fn has_events(&self) -> bool {
-        self.events.load(Ordering::Relaxed) != 0
-    }
-
-    pub(crate) fn on_events(&self) {
-        // This method can only be called to process network events, so we assume we are holding the
-        // poll lock and no race conditions can occur.
-        let events = self.events.load(Ordering::Relaxed);
-        self.events.store(0, Ordering::Relaxed);
-
-        if let Some(observer) = self.observer.get() {
-            observer.on_events(SocketEvents::from_bits_truncate(events));
-        }
-    }
-
-    pub(crate) fn on_dead_events(self: Arc<Self>)
+    pub(crate) fn notify_dead_events(self: Arc<Self>)
     where
         T::Observer: Clone,
     {
-        // There is no need to clear the events because the socket is dead.
-        let events = self.events.load(Ordering::Relaxed);
-
         let observer = self.observer.get().cloned();
         drop(self);
 
         // Notify dead events after the `Arc` is dropped to ensure the observer sees this event
         // with the expected reference count. See `TcpConnection::connect_state` for an example.
         if let Some(ref observer) = observer {
-            observer.on_events(SocketEvents::from_bits_truncate(events));
+            observer.on_events(SocketEvents::CLOSED_SEND | SocketEvents::CLOSED_RECV);
         }
     }
 
-    pub(super) fn add_events(&self, new_events: SocketEvents) {
-        // This method can only be called to add network events, so we assume we are holding the
-        // poll lock and no race conditions can occur.
-        let events = self.events.load(Ordering::Relaxed);
-        self.events
-            .store(events | new_events.bits(), Ordering::Relaxed);
+    pub(super) fn notify_events(&self, new_events: SocketEvents) {
+        if let Some(observer) = self.observer.get() {
+            observer.on_events(new_events);
+        }
     }
 }
 

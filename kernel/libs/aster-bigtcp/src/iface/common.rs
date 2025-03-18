@@ -202,23 +202,6 @@ impl<E: Ext> IfaceCommon<E> {
             }
         }
 
-        // Notify all socket events.
-        for socket in sockets.tcp_listener_iter() {
-            if socket.has_events() {
-                socket.on_events();
-            }
-        }
-        for socket in sockets.tcp_conn_iter() {
-            if socket.has_events() {
-                socket.on_events();
-            }
-        }
-        for socket in sockets.udp_socket_iter() {
-            if socket.has_events() {
-                socket.on_events();
-            }
-        }
-
         // Note that only TCP connections can have timers set, so as far as the time to poll is
         // concerned, we only need to consider TCP connections.
         interface.next_poll_at_ms()
