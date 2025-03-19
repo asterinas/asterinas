@@ -13,7 +13,6 @@ pub mod frame;
 pub mod heap;
 mod io;
 pub(crate) mod kspace;
-mod offset;
 pub(crate) mod page_prop;
 pub(crate) mod page_table;
 pub mod tlb;

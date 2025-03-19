@@ -410,21 +410,27 @@ impl<T, M: Debug, R> Debug for SafePtr<T, M, R> {
 #[macro_export]
 macro_rules! field_ptr {
     ($ptr:expr, $type:ty, $($field:tt)+) => {{
-        use ostd::offset_of;
         use aster_util::safe_ptr::SafePtr;
 
         #[inline]
         fn new_field_ptr<T, M, R: Clone, U>(
             container_ptr: &SafePtr<T, M, R>,
-            field_offset: *const U
+            field_offset: usize,
+            _type_infer: *const U,
         ) -> SafePtr<U, &M, R>
         {
             let mut ptr = container_ptr.borrow_vm();
-            ptr.byte_add(field_offset as usize);
+            ptr.byte_add(field_offset);
             ptr.cast()
         }
 
-        let field_offset = offset_of!($type, $($field)*);
-        new_field_ptr($ptr, field_offset)
+        let field_offset = core::mem::offset_of!($type, $($field)*);
+        let type_infer = ostd::ptr_null_of!({
+            let ptr: *const $type = core::ptr::null();
+            // This is not sound, but the code won't be executed.
+            &raw const (*ptr).$($field)*
+        });
+
+        new_field_ptr($ptr, field_offset, type_infer)
     }}
 }
