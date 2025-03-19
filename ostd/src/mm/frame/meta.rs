@@ -53,7 +53,7 @@ use log::info;
 
 use crate::{
     arch::mm::PagingConsts,
-    const_assert,
+    const_assert, if_tdx_enabled,
     mm::{
         frame::allocator::{self, EarlyAllocatedFrameMeta},
         kspace::LINEAR_MAPPING_BASE_VADDR,
@@ -447,10 +447,15 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
         regions.iter().map(|r| r.base() + r.len()).max().unwrap()
     };
 
-    info!(
-        "Initializing frame metadata for physical memory up to {:x}",
-        max_paddr
-    );
+    if_tdx_enabled!({
+        use tdx_guest::serial_println;
+
+        serial_println!("Initializing frame metadata for physical memory up to {:x}",
+            max_paddr)
+    } else {
+        info!("Initializing frame metadata for physical memory up to {:x}",
+            max_paddr);
+    });
 
     add_temp_linear_mapping(max_paddr);
 

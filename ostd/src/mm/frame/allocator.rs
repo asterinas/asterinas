@@ -10,7 +10,7 @@ use super::{meta::AnyFrameMeta, segment::Segment, Frame};
 use crate::{
     boot::memory_region::MemoryRegionType,
     error::Error,
-    impl_frame_meta_for,
+    if_tdx_enabled, impl_frame_meta_for,
     mm::{paddr_to_vaddr, Paddr, PAGE_SIZE},
     prelude::*,
     util::range_difference,
@@ -212,7 +212,13 @@ pub(crate) unsafe fn init() {
             // Truncate the early allocated frames if there is an overlap.
             for r1 in range_difference(&(region.base()..region.end()), &range_1) {
                 for r2 in range_difference(&r1, &range_2) {
-                    log::info!("Adding free frames to the allocator: {:x?}", r2);
+                    if_tdx_enabled!({
+                        use tdx_guest::serial_println;
+
+                        serial_println!("Adding free frames to the allocator: {:x?}", r2);
+                    } else {
+                        log::info!("Adding free frames to the allocator: {:x?}", r2);
+                    });
                     get_global_frame_allocator().add_free_memory(r2.start, r2.len());
                 }
             }
