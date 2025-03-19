@@ -59,6 +59,7 @@ use super::{
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     boot::memory_region::MemoryRegionType,
+    if_tdx_enabled,
 };
 
 /// The shortest supported address width is 39 bits. And the literal
@@ -132,7 +133,13 @@ pub static KERNEL_PAGE_TABLE: Once<PageTable<KernelMode, PageTableEntry, PagingC
 /// This function should be called before:
 ///  - any initializer that modifies the kernel page table.
 pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
-    info!("Initializing the kernel page table");
+    if_tdx_enabled!({
+        use tdx_guest::serial_println;
+
+        serial_println!("Initializing the kernel page table");
+    } else {
+        info!("Initializing the kernel page table");
+    });
 
     let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
     let phys_mem_cap = regions.iter().map(|r| r.base() + r.len()).max().unwrap();

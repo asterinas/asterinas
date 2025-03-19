@@ -27,10 +27,7 @@ cfg_if! {
     if #[cfg(feature = "cvm_guest")] {
         pub(crate) mod tdx_guest;
 
-        use {
-            crate::early_println,
-            ::tdx_guest::{init_tdx, tdcall::InitError},
-        };
+        use ::tdx_guest::{init_tdx, tdcall::InitError};
     }
 }
 
@@ -44,9 +41,11 @@ use log::{info, warn};
 
 #[cfg(feature = "cvm_guest")]
 pub(crate) fn init_cvm_guest() {
+    use ::tdx_guest::serial_println;
+
     match init_tdx() {
         Ok(td_info) => {
-            early_println!(
+            serial_println!(
                 "[kernel] Intel TDX initialized\n[kernel] td gpaw: {}, td attributes: {:?}",
                 td_info.gpaw,
                 td_info.attributes

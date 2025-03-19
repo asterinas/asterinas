@@ -77,7 +77,10 @@ unsafe fn init() {
         mm::frame::allocator::init_early_allocator();
     }
 
-    arch::serial::init();
+    if_tdx_enabled!({
+    } else {
+        arch::serial::init();
+    });
 
     logger::init();
 
@@ -105,6 +108,10 @@ unsafe fn init() {
     mm::dma::init();
 
     unsafe { arch::late_init_on_bsp() };
+
+    if_tdx_enabled!({
+        arch::serial::init();
+    });
 
     smp::init();
 
