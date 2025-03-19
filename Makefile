@@ -18,6 +18,8 @@ LOG_LEVEL ?= error
 SCHEME ?= ""
 SMP ?= 1
 OSTD_TASK_STACK_SIZE_IN_PAGES ?= 64
+FEATURES ?=
+NO_DEFAULT_FEATURES ?= 0
 # End of global build options.
 
 # GDB debugging and profiling options.
@@ -33,7 +35,6 @@ GDB_PROFILE_INTERVAL ?= 0.1
 AUTO_TEST ?= none
 EXTRA_BLOCKLISTS_DIRS ?= ""
 SYSCALL_TEST_DIR ?= /tmp
-FEATURES ?=
 # End of auto test features.
 
 # Network settings
@@ -92,6 +93,9 @@ endif
 
 ifdef FEATURES
 CARGO_OSDK_ARGS += --features="$(FEATURES)"
+endif
+ifeq ($(NO_DEFAULT_FEATURES), 1)
+CARGO_OSDK_ARGS += --no-default-features
 endif
 
 # To test the linux-efi-handover64 boot protocol, we need to use Debian's
