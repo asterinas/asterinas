@@ -15,7 +15,6 @@ use ostd::{
     },
     io::IoMem,
     mm::DmaCoherent,
-    offset_of,
     trap::IrqCallbackFunction,
 };
 

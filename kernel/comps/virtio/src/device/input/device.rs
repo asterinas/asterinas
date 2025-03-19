@@ -18,7 +18,6 @@ use log::{debug, info};
 use ostd::{
     io::IoMem,
     mm::{DmaDirection, DmaStream, FrameAllocOptions, HasDaddr, VmIo, PAGE_SIZE},
-    offset_of,
     sync::{LocalIrqDisabled, RwLock, SpinLock},
     trap::TrapFrame,
 };
