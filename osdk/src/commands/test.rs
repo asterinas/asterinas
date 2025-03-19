@@ -98,7 +98,7 @@ pub static KTEST_CRATE_WHITELIST: Option<&[&str]> = Some(&{:#?});
         &cargo_target_directory,
         config,
         ActionChoice::Test,
-        &["--cfg ktest"],
+        &["--cfg ktest", "-C panic=unwind"],
     );
     std::env::remove_var("RUSTFLAGS");
     drop(dir_guard);

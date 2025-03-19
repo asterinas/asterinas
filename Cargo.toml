@@ -50,8 +50,12 @@ allow_attributes = "warn"
 # Cargo only looks at the profile settings 
 # in the Cargo.toml manifest at the root of the workspace
 
+[profile.dev]
+panic = "unwind"
+
 [profile.release]
 lto = "thin"
+panic = "unwind"
 
 # Release profile configuration with Link Time Optimization (LTO) enabled.
 #

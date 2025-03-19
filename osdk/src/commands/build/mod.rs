@@ -207,9 +207,8 @@ fn build_kernel_elf(
         &rustc_linker_script_arg,
         "-C relocation-model=static",
         "-C relro-level=off",
-        // We do not really allow unwinding except for kernel testing. However, we need to specify
-        // this to show backtraces when panicking.
-        "-C panic=unwind",
+        // Even if we disabled unwinding on panic, we need to specify this to show backtraces.
+        "-C force-unwind-tables=yes",
         // This is to let rustc know that "cfg(ktest)" is our well-known configuration.
         // See the [Rust Blog](https://blog.rust-lang.org/2024/05/06/check-cfg.html) for details.
         "--check-cfg cfg(ktest)",
