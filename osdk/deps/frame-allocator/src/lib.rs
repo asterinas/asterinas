@@ -61,12 +61,14 @@ impl GlobalFrameAllocator for FrameAllocator {
     }
 
     fn dealloc(&self, addr: Paddr, size: usize) {
-        self.add_free_memory(addr, size);
+        let guard = trap::disable_local();
+        per_cpu_counter::add_free_size(&guard, size);
+        cache::dealloc(&guard, addr, size);
     }
 
     fn add_free_memory(&self, addr: Paddr, size: usize) {
         let guard = trap::disable_local();
         per_cpu_counter::add_free_size(&guard, size);
-        cache::add_free_memory(&guard, addr, size);
+        pools::add_free_memory(&guard, addr, size);
     }
 }
