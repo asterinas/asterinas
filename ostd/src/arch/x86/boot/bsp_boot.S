@@ -309,7 +309,18 @@ long_mode:
     sub rcx, rdi
     rep stosb
 
-    // Call the corresponding Rust entrypoint according to the boot entrypoint
+    // Clear RBP to stop the backtrace.
+    xor rbp, rbp
+
+    // Initialize the GS base to the CPU-local start address.
+.extern __cpu_local_start
+    lea rax, [rip + __cpu_local_start]
+    mov rdx, rax
+    shr rdx, 32          // EDX:EAX = __cpu_local_start
+    mov ecx, 0xC0000101  // ECX = GS.base
+    wrmsr
+
+    // Call the corresponding Rust entrypoint according to the boot entrypoint.
     pop rax
     cmp rax, ENTRYTYPE_MULTIBOOT
     je entry_type_multiboot
@@ -329,8 +340,6 @@ long_mode:
 entry_type_linux:
     pop rdi // boot_params ptr
 
-    xor rbp, rbp
-
     lea  rax, [rip + __linux_boot]  // jump into Rust code
     call rax
     jmp halt
@@ -339,8 +348,6 @@ entry_type_multiboot:
     pop rsi // the address of multiboot info
     pop rdi // multiboot magic
 
-    xor rbp, rbp
-
     lea  rax, [rip + __multiboot_entry]  // jump into Rust code
     call rax
     jmp halt
@@ -348,8 +355,6 @@ entry_type_multiboot:
 entry_type_multiboot2:
     pop rsi // the address of multiboot info
     pop rdi // multiboot magic
-
-    xor rbp, rbp
 
     lea  rax, [rip + __multiboot2_entry]  // jump into Rust code
     call rax

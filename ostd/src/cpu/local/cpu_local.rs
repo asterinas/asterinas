@@ -84,7 +84,7 @@ impl<T: 'static> CpuLocal<T> {
         Self(val)
     }
 
-    /// Get access to the underlying value on the current CPU with a
+    /// Gets access to the underlying value on the current CPU with a
     /// provided IRQ guard.
     ///
     /// By this method, you can borrow a reference to the underlying value
@@ -100,16 +100,11 @@ impl<T: 'static> CpuLocal<T> {
         }
     }
 
-    /// Get access to the underlying value through a raw pointer.
+    /// Gets access to the underlying value through a raw pointer.
     ///
-    /// This function calculates the virtual address of the CPU-local object
-    /// based on the CPU-local base address and the offset in the BSP.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that the reference to `self` is static.
-    pub(crate) unsafe fn as_ptr(&'static self) -> *const T {
-        super::has_init::assert_true();
+    /// This method is safe, but using the returned pointer will be unsafe.
+    pub(crate) fn as_ptr(&'static self) -> *const T {
+        super::is_used::debug_set_true();
 
         let offset = self.get_offset();
 
@@ -122,7 +117,7 @@ impl<T: 'static> CpuLocal<T> {
         local_va as *mut T
     }
 
-    /// Get the offset of the CPU-local object in the CPU-local area.
+    /// Gets the offset of the CPU-local object in the CPU-local area.
     fn get_offset(&'static self) -> usize {
         let bsp_va = self as *const _ as usize;
         let bsp_base = __cpu_local_start as usize;
@@ -134,29 +129,36 @@ impl<T: 'static> CpuLocal<T> {
 }
 
 impl<T: 'static + Sync> CpuLocal<T> {
-    /// Get access to the copy of value on a specific CPU.
+    /// Gets access to the CPU-local value on a specific CPU.
     ///
-    /// # Panics
-    ///
-    /// Panics if the CPU ID is out of range.
+    /// This allows the caller to access CPU-local data from a remote CPU,
+    /// so the data type must be `Sync`.
     pub fn get_on_cpu(&'static self, cpu_id: CpuId) -> &'static T {
-        super::has_init::assert_true();
+        super::is_used::debug_set_true();
+
+        let cpu_id = cpu_id.as_usize();
+
         // If on the BSP, just use the statically linked storage.
-        if cpu_id.as_usize() == 0 {
+        if cpu_id == 0 {
             return &self.0;
         }
 
-        // SAFETY: Here we use `Once::get_unchecked` to make getting the CPU-
-        // local base faster. The storages must be initialized here (since this
-        // is not the BSP) so it is safe to do so.
-        let base = unsafe { super::CPU_LOCAL_STORAGES.get_unchecked().get(cpu_id) };
-        let base = crate::mm::paddr_to_vaddr(base);
+        // SAFETY: At this time we have a non-BSP `CpuId`, which means that
+        // `init_cpu_nums` must have been called, so `copy_bsp_for_ap` must
+        // also have been called (see the implementation of `cpu::init_on_bsp`),
+        // so `CPU_LOCAL_STORAGES` must already be initialized.
+        let storages = unsafe { super::CPU_LOCAL_STORAGES.get_unchecked() };
+        // SAFETY: `cpu_id` is guaranteed to be in range because the type
+        // invariant of `CpuId`.
+        let storage = unsafe { *storages.get_unchecked(cpu_id - 1) };
+        let base = crate::mm::paddr_to_vaddr(storage);
 
         let offset = self.get_offset();
-
         let ptr = (base + offset) as *const T;
 
-        // SAFETY: The pointer is valid since the initialization is completed.
+        // SAFETY: `ptr` represents CPU-local data on a remote CPU. It
+        // contains valid data, the type is `Sync`, and no one will mutably
+        // borrow it, so creating an immutable borrow here is valid.
         unsafe { &*ptr }
     }
 }
