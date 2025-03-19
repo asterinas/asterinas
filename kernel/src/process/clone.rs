@@ -4,7 +4,7 @@ use core::{num::NonZeroU64, sync::atomic::Ordering};
 
 use ostd::{
     cpu::UserContext,
-    sync::RwArc,
+    sync::{RwArc, Waiter},
     task::Task,
     user::{UserContextApi, UserSpace},
 };
@@ -142,6 +142,16 @@ impl CloneArgs {
             ..Default::default()
         }
     }
+
+    pub fn for_vfork() -> Self {
+        Self {
+            // FIXME: Should be CloneFlags::CLONE_VFORK | CloneFlags::Clone_VM, but that would
+            // require memory management to support.
+            flags: CloneFlags::CLONE_VFORK,
+            exit_signal: Some(SIGCHLD),
+            ..Default::default()
+        }
+    }
 }
 
 impl From<u64> for CloneFlags {
@@ -158,6 +168,7 @@ impl CloneFlags {
             | CloneFlags::CLONE_FS
             | CloneFlags::CLONE_FILES
             | CloneFlags::CLONE_SIGHAND
+            | CloneFlags::CLONE_VFORK
             | CloneFlags::CLONE_THREAD
             | CloneFlags::CLONE_SYSVSEM
             | CloneFlags::CLONE_SETTLS
@@ -192,6 +203,13 @@ pub fn clone_child(
     } else {
         let child_process = clone_child_process(ctx, parent_context, clone_args)?;
         child_process.run();
+
+        let (waiter, waker) = Waiter::new_pair();
+        {
+            let mut val = child_process.vfork_done().lock();
+            *val = Some(waker);
+        }
+        waiter.wait();
 
         let child_pid = child_process.pid();
         Ok(child_pid)
