@@ -217,7 +217,7 @@ fn add_manifest_dependency(
     let dependencies = manifest.get_mut("dependencies").unwrap();
 
     let target_dep = toml::Table::from_str(&format!(
-        "{} = {{ path = \"{}\", default-features = false }}",
+        "{} = {{ path = \"{}\" }}",
         crate_name,
         crate_path.as_ref().display()
     ))
