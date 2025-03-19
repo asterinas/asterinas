@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{boxed::Box, sync::Arc};
-use core::mem::size_of;
+use core::mem::{offset_of, size_of};
 
 use aster_rights::{ReadOp, WriteOp};
 use aster_util::{field_ptr, safe_ptr::SafePtr};
@@ -16,7 +16,6 @@ use ostd::{
     },
     io::IoMem,
     mm::{DmaCoherent, PAGE_SIZE},
-    offset_of,
     sync::RwLock,
     trap::IrqCallbackFunction,
 };
@@ -66,9 +65,9 @@ impl VirtioMmioTransport {
             let interrupt_ack_offset = offset_of!(VirtioMmioLayout, interrupt_ack);
             let interrupt_status_offset = offset_of!(VirtioMmioLayout, interrupt_status);
             let mut interrupt_ack = layout.clone();
-            interrupt_ack.byte_add(interrupt_ack_offset as usize);
+            interrupt_ack.byte_add(interrupt_ack_offset);
             let mut interrupt_status = layout.clone();
-            interrupt_status.byte_add(interrupt_status_offset as usize);
+            interrupt_status.byte_add(interrupt_status_offset);
             (
                 interrupt_ack.cast::<u32>().restrict::<WriteOp>(),
                 interrupt_status.cast::<u32>().restrict::<ReadOp>(),
@@ -174,7 +173,7 @@ impl VirtioTransport for VirtioMmioTransport {
     }
 
     fn notify_config(&self, _idx: usize) -> ConfigManager<u32> {
-        let offset = offset_of!(VirtioMmioLayout, queue_notify) as usize;
+        let offset = offset_of!(VirtioMmioLayout, queue_notify);
         let safe_ptr = Some(SafePtr::new(self.common_device.io_mem().clone(), offset));
 
         ConfigManager::new(safe_ptr, None)
