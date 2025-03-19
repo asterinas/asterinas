@@ -1,6 +1,6 @@
 [env]
-# Provide a default value. Otherwise `Cargo check` won't work.
-PAYLOAD_FILE = "/PAYLOAD_FILE_is_not_defined"
+# Provide a default value. Otherwise Cargo check/publish won't work.
+PAYLOAD_FILE = "/dev/null"
 
 [target.x86_64-unknown-none]
 rustflags = [
