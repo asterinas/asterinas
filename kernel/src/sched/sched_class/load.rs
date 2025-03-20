@@ -20,6 +20,7 @@ const SHL_FACTOR: u32 = u32::BITS;
 // decent precision.
 const Y_POW_SHL: [u64; POW_FACTOR] = {
     let y_p32shl32 = 1u64 << (SHL_FACTOR - 1);
+    // y^16 << SHL = sqrt((y^32 << SHL) << SHL). The rest are the same.
     let y_p16shl32 = (y_p32shl32 << SHL_FACTOR).isqrt();
     let y_p8shl32 = (y_p16shl32 << SHL_FACTOR).isqrt();
     let y_p4shl32 = (y_p8shl32 << SHL_FACTOR).isqrt();
@@ -35,6 +36,8 @@ const Y_POW_SHL: [u64; POW_FACTOR] = {
         let mut j = 0;
         while bits != 0 {
             if bits & 1 != 0 {
+                // Accumulates the contribution of every bit in the power factor i.
+                // y^(a + b) << SHL = ((y^a << SHL) * (y^b << SHL)) >> SHL.
                 table[i] = (table[i] * values[j]) >> SHL_FACTOR;
             }
             bits >>= 1;
@@ -56,6 +59,7 @@ fn mul_y_pow(x: u64, n: u64) -> u64 {
         return 0;
     }
 
+    // x * y^n = ((x >> (n / POW)) * Y_POW_SHL[n % POW]) >> SHL.
     ((u128::from(x >> period) * u128::from(Y_POW_SHL[index as usize])) >> SHL_FACTOR) as u64
 }
 
@@ -130,7 +134,13 @@ impl Load {
         }
     }
 
-    /// Updates the load sums.
+    /// Updates the load measurement.
+    ///
+    /// # Arguments
+    ///
+    /// The `load`, `queued` and `running` arguments are markers at the end of
+    /// the latest measurement period instead of the reflection of the current
+    /// state.
     ///
     /// # Returns
     ///
@@ -206,12 +216,13 @@ impl Load {
 
 // Task-level load tracking
 
+/// The load measurement for a FAIR task.
 #[derive(Debug)]
-pub struct FairEntityLoad(Load);
+pub struct FairTaskLoad(Load);
 
-impl FairEntityLoad {
+impl FairTaskLoad {
     pub const fn new() -> Self {
-        FairEntityLoad(Load::new())
+        FairTaskLoad(Load::new())
     }
 
     #[expect(unused)]
@@ -219,25 +230,21 @@ impl FairEntityLoad {
         self.0.data()
     }
 
-    pub fn update(
-        &self,
-        now_ns: u64,
-        has_been_runnable: bool,
-        has_been_running: bool,
-        weight: u64,
-    ) -> bool {
-        self.0.update(
-            now_ns,
-            has_been_runnable as u64,
-            weight,
-            has_been_runnable as usize,
-            has_been_running,
-        )
+    /// Updates the load measurement for a FAIR task.
+    ///
+    /// # Arguments
+    ///
+    /// The `runnable` and `running` arguments are markers at the end of the latest
+    /// measurement period instead of the reflection of the current state.
+    pub fn update(&self, now_ns: u64, runnable: bool, running: bool, weight: u64) -> bool {
+        self.0
+            .update(now_ns, runnable as u64, weight, runnable as usize, running)
     }
 }
 
 // Class-level load tracking
 
+/// The load measurement for a FAIR run queue.
 #[derive(Debug)]
 pub struct FairRqLoad(Load);
 
@@ -251,23 +258,35 @@ impl FairRqLoad {
         self.0.data()
     }
 
+    /// Updates the load measurement for a FAIR run queue.
+    ///
+    /// This function must be called before any subsequent changes to the current state.
     pub fn update(&mut self, now_ns: u64, cur: Option<&Thread>, rq: &FairClassRq) -> bool {
-        let is_running =
+        let running =
             cur.is_some_and(|cur| cur.sched_attr().policy_kind() == SchedPolicyKind::Fair);
 
         self.0.update(
             now_ns,
             rq.total_weight(),
             1,
-            rq.len() + is_running as usize,
-            is_running,
+            rq.len() + running as usize,
+            running,
         )
     }
 
+    /// Attaches a task's load measurement to this run queue's load measurement.
+    ///
+    /// The attachment & detachment are needed even if the `total_weight` and the number
+    /// of the tasks are already recorded in the run queue's measurement. This is because
+    /// the load averages take the historical (though decayed) data into account, and
+    /// simply recording those data cannot reflect the change. By syncing the measurement
+    /// of tasks with that of the run queue, the load averages will be recalculated to
+    /// reflect the change.
+    ///
     /// # Invariant
     ///
     /// The update time of this load measurement must be later than that of the entity.
-    pub fn attach(&mut self, FairEntityLoad(ent): &FairEntityLoad, entity_weight: u64) {
+    pub fn attach(&mut self, FairTaskLoad(ent): &FairTaskLoad, entity_weight: u64) {
         let this = &mut self.0;
 
         debug_assert!(this.last_updated.load(Relaxed) >= ent.last_updated.load(Relaxed));
@@ -311,10 +330,12 @@ impl FairRqLoad {
             .fetch_add(ent.running_avg.load(Relaxed), Relaxed);
     }
 
+    /// Detaches a task's load measurement from this run queue's load measurement.
+    ///
     /// # Invariant
     ///
     /// The update time of this load measurement must be synced with that of the entity.
-    pub fn detach(&mut self, FairEntityLoad(ent): &FairEntityLoad, entity_weight: u64) {
+    pub fn detach(&mut self, FairTaskLoad(ent): &FairTaskLoad, entity_weight: u64) {
         let this = &mut self.0;
 
         debug_assert!(this.last_updated.load(Relaxed) >= ent.last_updated.load(Relaxed));
@@ -338,6 +359,7 @@ impl FairRqLoad {
     }
 }
 
+/// The load measurement of a non-FAIR run queue.
 #[derive(Debug)]
 pub struct RqLoad {
     inner: Load,
@@ -346,6 +368,10 @@ pub struct RqLoad {
 
 impl RqLoad {
     pub const fn new(kind: SchedPolicyKind) -> Self {
+        debug_assert!(
+            !matches!(kind, SchedPolicyKind::Fair),
+            "RqLoad is not for FAIR run queues",
+        );
         RqLoad {
             inner: Load::new(),
             kind,
@@ -357,15 +383,13 @@ impl RqLoad {
         self.inner.data()
     }
 
+    /// Updates the load measurement for a non-FAIR run queue.
+    ///
+    /// This function must be called before any subsequent changes to the current state.
     pub fn update(&mut self, now_ns: u64, cur: Option<&Thread>) -> bool {
-        let is_running = cur.is_some_and(|cur| cur.sched_attr().policy_kind() == self.kind);
+        let running = cur.is_some_and(|cur| cur.sched_attr().policy_kind() == self.kind);
 
-        self.inner.update(
-            now_ns,
-            is_running as u64,
-            1,
-            is_running as usize,
-            is_running,
-        )
+        self.inner
+            .update(now_ns, running as u64, 1, running as usize, running)
     }
 }
