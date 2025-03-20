@@ -64,21 +64,9 @@ pub(crate) fn bringup_all_aps(num_cpus: u32) {
     copy_ap_boot_code();
     fill_boot_stack_array_ptr();
     fill_boot_pt_ptr();
-    if_tdx_enabled!({
-        use crate::arch::x86::kernel::acpi::AcpiMemoryHandler;
-        use acpi::platform::wakeup_aps;
 
-        let acpi_tables = get_acpi_tables().unwrap();
-        for ap_num in 1..num_cpus {
-            wakeup_aps(
-                &acpi_tables,
-                AcpiMemoryHandler {},
-                ap_num,
-                AP_BOOT_START_PA as u64,
-                1000,
-            )
-            .unwrap();
-        }
+    if_tdx_enabled!({
+        wake_up_aps_via_mailbox(num_cpus);
     } else {
         send_boot_ipis();
     });
@@ -146,6 +134,33 @@ extern "C" {
     fn __ap_boot_end();
 }
 
+#[cfg(feature = "cvm_guest")]
+fn wake_up_aps_via_mailbox(num_cpus: u32) {
+    use acpi::platform::wakeup_aps;
+
+    use crate::arch::x86::kernel::acpi::AcpiMemoryHandler;
+
+    // The symbols are defined in `ap_boot.S`.
+    extern "C" {
+        fn ap_boot_from_real_mode();
+        fn ap_boot_from_long_mode();
+    }
+
+    let offset = ap_boot_from_long_mode as usize - ap_boot_from_real_mode as usize;
+
+    let acpi_tables = get_acpi_tables().unwrap();
+    for ap_num in 1..num_cpus {
+        wakeup_aps(
+            &acpi_tables,
+            AcpiMemoryHandler {},
+            ap_num,
+            (AP_BOOT_START_PA + offset) as u64,
+            1000,
+        )
+        .unwrap();
+    }
+}
+
 /// Sends IPIs to notify all application processors to boot.
 ///
 /// Follow the INIT-SIPI-SIPI IPI sequence.
@@ -155,19 +170,15 @@ extern "C" {
 /// APs that have been started, this signal will not bring any cost.
 fn send_boot_ipis() {
     send_init_to_all_aps();
-
     spin_wait_cycles(100_000_000);
 
     send_init_deassert();
-
     spin_wait_cycles(20_000_000);
 
     send_startup_to_all_aps();
-
     spin_wait_cycles(20_000_000);
 
     send_startup_to_all_aps();
-
     spin_wait_cycles(20_000_000);
 }
 
