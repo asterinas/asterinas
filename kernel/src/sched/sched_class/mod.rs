@@ -25,6 +25,7 @@ use super::{
 };
 use crate::thread::{AsThread, Thread};
 
+mod load;
 mod policy;
 mod time;
 
@@ -67,7 +68,9 @@ pub struct ClassScheduler {
 struct PerCpuClassRqSet {
     stop: stop::StopClassRq,
     real_time: real_time::RealTimeClassRq,
+    rt_load: load::RqLoad,
     fair: fair::FairClassRq,
+    fair_load: load::FairRqLoad,
     idle: idle::IdleClassRq,
     current: Option<(SchedEntity, CurrentRuntime)>,
 }
@@ -133,6 +136,7 @@ pub struct SchedAttr {
     last_cpu: AtomicCpuId,
     real_time: real_time::RealTimeAttr,
     fair: fair::FairAttr,
+    fair_load: load::FairEntityLoad,
 }
 
 impl SchedAttr {
@@ -152,6 +156,7 @@ impl SchedAttr {
                 SchedPolicy::Fair(nice) => nice,
                 _ => Nice::default(),
             }),
+            fair_load: load::FairEntityLoad::new(),
         }
     }
 
@@ -245,7 +250,9 @@ impl ClassScheduler {
             SpinLock::new(PerCpuClassRqSet {
                 stop: stop::StopClassRq::new(),
                 real_time: real_time::RealTimeClassRq::new(cpu),
+                rt_load: load::RqLoad::new(SchedPolicyKind::RealTime),
                 fair: fair::FairClassRq::new(cpu),
+                fair_load: load::FairRqLoad::new(),
                 idle: idle::IdleClassRq::new(),
                 current: None,
             })
@@ -296,7 +303,54 @@ impl ClassScheduler {
     }
 }
 
+#[derive(Debug)]
+enum UpdateLoadAvgFlags {
+    Attach,
+    Detach,
+}
+
 impl PerCpuClassRqSet {
+    fn update_thread_load_avg(
+        &mut self,
+        now_ns: u64,
+        thread: Option<&Thread>,
+        flags: Option<UpdateLoadAvgFlags>,
+    ) {
+        let (thread, has_been_running) = match (thread, &self.current) {
+            (Some(thread), _) => (thread, false),
+            (None, Some(((_, thread), _))) => (&**thread, true),
+            _ => return,
+        };
+
+        let has_been_runnable = !matches!(flags, Some(UpdateLoadAvgFlags::Attach));
+        debug_assert!(
+            has_been_runnable || !has_been_running,
+            "a running task that is not runnable",
+        );
+
+        let attr = thread.sched_attr();
+        if let SchedPolicyKind::Fair = attr.policy_kind() {
+            let entity_weight = attr.fair.weight();
+            let fair_load = &attr.fair_load;
+
+            fair_load.update(now_ns, has_been_runnable, has_been_running, entity_weight);
+
+            match flags {
+                Some(UpdateLoadAvgFlags::Attach) => self.fair_load.attach(fair_load, entity_weight),
+                Some(UpdateLoadAvgFlags::Detach) => self.fair_load.detach(fair_load, entity_weight),
+                None => {}
+            }
+        }
+    }
+
+    fn update_rq_load_avg(&mut self, now_ns: u64, update_non_fair: bool) {
+        let cur_thread = self.current.as_ref().map(|((_, cur), _)| &**cur);
+        self.fair_load.update(now_ns, cur_thread, &self.fair);
+        if update_non_fair {
+            self.rt_load.update(now_ns, cur_thread);
+        }
+    }
+
     fn pick_next_entity(&mut self) -> Option<SchedEntity> {
         (self.stop.pick_next())
             .or_else(|| self.real_time.pick_next())
@@ -309,6 +363,14 @@ impl PerCpuClassRqSet {
     }
 
     fn enqueue_entity(&mut self, (task, thread): SchedEntity, flags: Option<EnqueueFlags>) {
+        let now_ns = time::clocks_to_ns(sched_clock());
+        self.update_rq_load_avg(now_ns, flags.is_some());
+        self.update_thread_load_avg(
+            now_ns,
+            Some(&thread),
+            flags.map(|_| UpdateLoadAvgFlags::Attach),
+        );
+
         match thread.sched_attr().policy_kind() {
             SchedPolicyKind::Stop => self.stop.enqueue(task, flags),
             SchedPolicyKind::RealTime => self.real_time.enqueue(task, flags),
@@ -330,7 +392,13 @@ impl LocalRunQueue for PerCpuClassRqSet {
     }
 
     fn pick_next_current(&mut self) -> Option<&Arc<Task>> {
+        let now_ns = time::clocks_to_ns(sched_clock());
+        self.update_rq_load_avg(now_ns, true);
+        self.update_thread_load_avg(now_ns, None, None);
+
         self.pick_next_entity().and_then(|next| {
+            self.update_thread_load_avg(now_ns, Some(&next.1), None);
+
             // We guarantee that a task can appear at once in a `PerCpuClassRqSet`. So, the `next` cannot be the same
             // as the current task here.
             if let Some((old, _)) = self.current.replace((next, CurrentRuntime::new())) {
@@ -341,9 +409,13 @@ impl LocalRunQueue for PerCpuClassRqSet {
     }
 
     fn update_current(&mut self, flags: UpdateFlags) -> bool {
+        let now_ns = time::clocks_to_ns(sched_clock());
+        self.update_rq_load_avg(now_ns, false);
+        self.update_thread_load_avg(now_ns, None, None);
+
         if let Some(((_, cur), rt)) = &mut self.current {
             rt.update();
-            let attr = &cur.sched_attr();
+            let attr = cur.sched_attr();
 
             let (current_expired, lookahead) = match attr.policy_kind() {
                 SchedPolicyKind::Stop => (self.stop.update_current(rt, attr, flags), 0),
@@ -362,6 +434,10 @@ impl LocalRunQueue for PerCpuClassRqSet {
     }
 
     fn dequeue_current(&mut self) -> Option<Arc<Task>> {
+        let now_ns = time::clocks_to_ns(sched_clock());
+        self.update_rq_load_avg(now_ns, true);
+        self.update_thread_load_avg(now_ns, None, Some(UpdateLoadAvgFlags::Detach));
+
         self.current.take().map(|((cur_task, _), _)| {
             cur_task.schedule_info().cpu.set_to_none();
             cur_task
