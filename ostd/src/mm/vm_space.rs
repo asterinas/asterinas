@@ -32,7 +32,7 @@ use crate::{
 
 /// Virtual memory space.
 ///
-/// A virtual memory space (`VmSpace`) can be created and assigned to a user
+/// A virtual memory space ([`VmSpace`]) can be created and assigned to a user
 /// space so that the virtual memory of the user space can be manipulated
 /// safely. For example,  given an arbitrary user-space pointer, one can read
 /// and write the memory location referred to by the user-space pointer without
@@ -42,7 +42,7 @@ use crate::{
 /// provide memory pages for a `VmSpace`, one can allocate and map physical
 /// memory ([`UFrame`]s) to the `VmSpace` using the cursor.
 ///
-/// A `VmSpace` can also attach a page fault handler, which will be invoked to
+/// A [`VmSpace`] can also attach a page fault handler, which will be invoked to
 /// handle page faults generated from user space.
 #[expect(clippy::type_complexity)]
 #[derive(Debug)]

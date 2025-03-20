@@ -11,8 +11,8 @@ use ostd::{
     mm::{FrameAllocOptions, UFrame, USegment},
 };
 
-use super::{Pager, Pages, Vmo, VmoFlags};
-use crate::{prelude::*, vm::vmo::Vmo_};
+use super::{Pages, Vmo, VmoFlags};
+use crate::{fs::utils::PageCacheManager, prelude::*, vm::vmo::Vmo_};
 
 /// Options for allocating a root VMO.
 ///
@@ -52,7 +52,7 @@ pub struct VmoOptions<R = Rights> {
     size: usize,
     flags: VmoFlags,
     rights: Option<R>,
-    pager: Option<Arc<dyn Pager>>,
+    pager: Option<Arc<PageCacheManager>>,
 }
 
 impl<R> VmoOptions<R> {
@@ -80,7 +80,7 @@ impl<R> VmoOptions<R> {
     }
 
     /// Sets the pager of the VMO.
-    pub fn pager(mut self, pager: Arc<dyn Pager>) -> Self {
+    pub fn pager(mut self, pager: Arc<PageCacheManager>) -> Self {
         self.pager = Some(pager);
         self
     }
@@ -120,7 +120,7 @@ impl<R: TRights> VmoOptions<TRightSet<R>> {
     }
 }
 
-fn alloc_vmo_(size: usize, flags: VmoFlags, pager: Option<Arc<dyn Pager>>) -> Result<Vmo_> {
+fn alloc_vmo_(size: usize, flags: VmoFlags, pager: Option<Arc<PageCacheManager>>) -> Result<Vmo_> {
     let size = size.align_up(PAGE_SIZE);
     let pages = {
         let pages = committed_pages_if_continuous(flags, size)?;
