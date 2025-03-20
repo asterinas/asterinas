@@ -133,22 +133,10 @@ fn parse_memory_regions(boot_params: &BootParams) -> MemoryRegionArray {
     // Add regions from E820.
     let num_entries = boot_params.e820_entries as usize;
     for e820_entry in &boot_params.e820_table[0..num_entries] {
-        if_tdx_enabled!({
-            if (e820_entry.addr..(e820_entry.addr + e820_entry.size)).contains(&0x800000) {
-                regions
-                    .push(MemoryRegion::new(
-                        e820_entry.addr as usize,
-                        e820_entry.size as usize,
-                        MemoryRegionType::Reclaimable,
-                    ))
-                    .unwrap();
-                continue;
-            }
-        });
         regions
             .push(MemoryRegion::new(
-                e820_entry.addr as usize,
-                e820_entry.size as usize,
+                e820_entry.addr.try_into().unwrap(),
+                e820_entry.size.try_into().unwrap(),
                 e820_entry.typ.into(),
             ))
             .unwrap();
@@ -178,6 +166,27 @@ fn parse_memory_regions(boot_params: &BootParams) -> MemoryRegionArray {
             .push(MemoryRegion::module(kcmdline.as_bytes()))
             .unwrap();
     }
+
+    // FIXME: Early versions of TDVF did not correctly report the location of AP's page tables as
+    // EfiACPIMemoryNVS. We need to manually reserve this memory region to prevent them from being
+    // corrupted. TDVF has now been upstreamed to OVMF, and this issue has been fixed in OVMF
+    // stable-202411 or later. See the commit for details:
+    // <https://github.com/tianocore/edk2/commit/383f729ac096b8deb279933fce86e83a5f7f5ec7>.
+    if_tdx_enabled!({
+        // The definition of these constants can be found in:
+        // <https://github.com/tianocore/edk2/blob/a7ab45ace25c4b987994158687d04de07ed20a96/OvmfPkg/IntelTdx/IntelTdxX64.fdf#L64-L71>
+        // <https://github.com/tianocore/edk2/blob/a7ab45ace25c4b987994158687d04de07ed20a96/OvmfPkg/Include/Fdf/OvmfPkgDefines.fdf.inc#L106>
+        regions
+            .push(MemoryRegion::new(
+                // PcdOvmfSecPageTablesBase = $(MEMFD_BASE_ADDRESS) + 0x000000 = 0x800000
+                0x800000,
+                // PcdOvmfSecPageTablesSize = 0x006000
+                0x006000,
+                // EfiACPIMemoryNVS
+                MemoryRegionType::NonVolatileSleep,
+            ))
+            .unwrap();
+    });
 
     regions.into_non_overlapping()
 }
