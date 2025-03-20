@@ -10,7 +10,7 @@ use super::{
     lesser_order_of, BuddyOrder, BuddySet, GLOBAL_POOL, GLOBAL_POOL_SIZE, MAX_LOCAL_BUDDY_ORDER,
 };
 
-use crate::chunk::size_of_order;
+use crate::chunk::split_to_order;
 
 /// Controls the expected size of cache for each CPU-local free pool.
 ///
@@ -99,10 +99,9 @@ fn balance_to<const MAX_ORDER1: BuddyOrder, const MAX_ORDER2: BuddyOrder>(
     if let Some(addr) = allocated_from_a {
         if order >= MAX_ORDER2 {
             let inserted_order = MAX_ORDER2 - 1;
-            for i in 0..(1 << (order - inserted_order)) as usize {
-                let split_addr = addr + size_of_order(inserted_order) * i;
-                b.insert_chunk(split_addr, inserted_order);
-            }
+            split_to_order(addr, order, inserted_order).for_each(|addr| {
+                b.insert_chunk(addr, inserted_order);
+            });
         } else {
             b.insert_chunk(addr, order);
         }

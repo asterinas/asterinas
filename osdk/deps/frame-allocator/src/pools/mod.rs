@@ -17,7 +17,7 @@ use ostd::{
     trap::DisabledLocalIrqGuard,
 };
 
-use crate::chunk::{greater_order_of, lesser_order_of, max_order_from, size_of_order, BuddyOrder};
+use crate::chunk::{greater_order_of, lesser_order_of, size_of_order, split_to_chunks, BuddyOrder};
 
 use super::set::BuddySet;
 
@@ -114,23 +114,16 @@ pub(super) fn add_free_memory(guard: &DisabledLocalIrqGuard, addr: Paddr, size: 
 fn add_free_memory_to(
     local_pool: &mut BuddySet<MAX_LOCAL_BUDDY_ORDER>,
     guard: &DisabledLocalIrqGuard,
-    mut addr: Paddr,
-    mut size: usize,
+    addr: Paddr,
+    size: usize,
 ) {
-    // Split the range into chunks and return them to the local free lists
-    // respectively.
-    while size > 0 {
-        let next_chunk_order = max_order_from(addr).min(lesser_order_of(size));
-
-        if next_chunk_order >= MAX_LOCAL_BUDDY_ORDER {
-            dealloc_to_global_pool(addr, next_chunk_order);
+    split_to_chunks(addr, size).for_each(|(addr, order)| {
+        if order >= MAX_LOCAL_BUDDY_ORDER {
+            dealloc_to_global_pool(addr, order);
         } else {
-            local_pool.insert_chunk(addr, next_chunk_order);
+            local_pool.insert_chunk(addr, order);
         }
-
-        size -= size_of_order(next_chunk_order);
-        addr += size_of_order(next_chunk_order);
-    }
+    });
 
     balancing::balance(local_pool);
     LOCAL_POOL_SIZE
