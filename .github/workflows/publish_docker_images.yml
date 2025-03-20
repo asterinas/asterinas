@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - VERSION
+      - DOCKER_IMAGE_VERSION
     branches:
       - main
 
@@ -26,7 +26,7 @@ jobs:
       - name: Fetch versions in the repo
         id: fetch-versions
         run: |
-          ASTER_VERSION=$(cat VERSION)
+          ASTER_VERSION=$(cat DOCKER_IMAGE_VERSION)
           RUST_VERSION=$(grep -m1 -o 'nightly-[0-9]\+-[0-9]\+-[0-9]\+' rust-toolchain.toml)
           echo "aster_version=$ASTER_VERSION" >> "$GITHUB_OUTPUT"
           echo "rust_version=$RUST_VERSION" >> "$GITHUB_OUTPUT"
