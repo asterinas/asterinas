@@ -9,7 +9,8 @@ use super::{fair::FairClassRq, SchedClassRq, SchedPolicyKind};
 use crate::thread::Thread;
 
 // Using a 2-based factor to quicken the calculation process.
-const PERIOD_NS: u64 = 1 << 30;
+/// The period is 1048576 ns (approximately 1 ms).
+const PERIOD_NS: u64 = 1 << 20;
 
 const POW_FACTOR: usize = 32;
 const SHL_FACTOR: u32 = u32::BITS;
