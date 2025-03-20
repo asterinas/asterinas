@@ -65,11 +65,7 @@ do_publish_for() {
         RUSTFLAGS=$RF cargo publish --dry-run --allow-dirty $ADDITIONAL_ARGS
         RUSTFLAGS=$RF cargo doc $ADDITIONAL_ARGS
     else
-        # Continue if the publish fails, as we may be re-triggering the
-        # workflow and the package may have already been published.
-        if ! RUSTFLAGS=$RF cargo publish --token $TOKEN $ADDITIONAL_ARGS; then
-            echo "Warning: Failed to publish $1"
-        fi
+        RUSTFLAGS=$RF cargo publish --token $TOKEN $ADDITIONAL_ARGS
     fi
 
     popd
