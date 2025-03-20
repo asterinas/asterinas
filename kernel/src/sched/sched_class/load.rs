@@ -55,7 +55,7 @@ fn mul_y_pow(x: u64, n: u64) -> u64 {
     let period = n / POW_FACTOR as u64;
     let index = n % POW_FACTOR as u64;
 
-    if period > u64::from(u64::BITS) {
+    if period >= u64::from(u64::BITS) {
         return 0;
     }
 
