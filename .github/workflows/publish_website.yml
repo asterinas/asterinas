@@ -27,7 +27,7 @@ jobs:
       - name: Build the website
         run: |
           # Get latest tag
-          export ENV_latest_tag=$(curl -s 'https://api.github.com/repos/asterinas/asterinas/tags' | jq -r '.[0].name' | sed 's/v//')
+          export ENV_LATEST_TAG=$(curl -s 'https://api.github.com/repos/asterinas/asterinas/tags' | jq -r '.[0].name' | sed 's/v//')
 
           # Open folder book
           cd asterinas/docs

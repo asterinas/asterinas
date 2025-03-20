@@ -24,4 +24,4 @@ runnable = false         # displays a run button for rust code
 use_env = true
 
 [preprocessor.variables.variables]
-in-ENV_latest_tag = "export ENV_latest_tag=$(curl -s 'https://api.github.com/repos/asterinas/asterinas/tags' | jq -r '.[0].name' | sed 's/v//')"
+# ENV_LATEST_TAG: curl -s 'https://api.github.com/repos/asterinas/asterinas/tags' | jq -r '.[0].name' | sed 's/v//'
