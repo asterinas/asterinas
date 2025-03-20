@@ -33,6 +33,8 @@ impl Write for Stdout {
 /// Initializes the serial port.
 pub(crate) fn init() {}
 
+pub(crate) fn callback_init() {}
+
 /// Sends a byte on the serial port.
 pub fn send(data: u8) {
     sbi_rt::console_write_byte(data);
