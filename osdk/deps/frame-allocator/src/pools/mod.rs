@@ -82,8 +82,7 @@ pub(super) fn alloc(guard: &DisabledLocalIrqGuard, layout: Layout) -> Option<Pad
             do_dealloc(
                 &mut local_pool,
                 &mut global_pool,
-                chunk_addr + layout.size(),
-                allocated_size - layout.size(),
+                [(chunk_addr + layout.size(), allocated_size - layout.size())].into_iter(),
             );
         }
     }
@@ -95,12 +94,15 @@ pub(super) fn alloc(guard: &DisabledLocalIrqGuard, layout: Layout) -> Option<Pad
     chunk_addr
 }
 
-pub(super) fn dealloc(guard: &DisabledLocalIrqGuard, addr: Paddr, size: usize) {
+pub(super) fn dealloc(
+    guard: &DisabledLocalIrqGuard,
+    segments: impl Iterator<Item = (Paddr, usize)>,
+) {
     let local_pool_cell = LOCAL_POOL.get_with(guard);
     let mut local_pool = local_pool_cell.borrow_mut();
     let mut global_pool = OnDemandGlobalLock::new();
 
-    do_dealloc(&mut local_pool, &mut global_pool, addr, size);
+    do_dealloc(&mut local_pool, &mut global_pool, segments);
 
     balancing::balance(local_pool.deref_mut(), &mut global_pool);
 
@@ -120,15 +122,16 @@ pub(super) fn add_free_memory(_guard: &DisabledLocalIrqGuard, addr: Paddr, size:
 fn do_dealloc(
     local_pool: &mut BuddySet<MAX_LOCAL_BUDDY_ORDER>,
     global_pool: &mut OnDemandGlobalLock,
-    addr: Paddr,
-    size: usize,
+    segments: impl Iterator<Item = (Paddr, usize)>,
 ) {
-    split_to_chunks(addr, size).for_each(|(addr, order)| {
-        if order >= MAX_LOCAL_BUDDY_ORDER {
-            global_pool.get().insert_chunk(addr, order);
-        } else {
-            local_pool.insert_chunk(addr, order);
-        }
+    segments.for_each(|(addr, size)| {
+        split_to_chunks(addr, size).for_each(|(addr, order)| {
+            if order >= MAX_LOCAL_BUDDY_ORDER {
+                global_pool.get().insert_chunk(addr, order);
+            } else {
+                local_pool.insert_chunk(addr, order);
+            }
+        });
     });
 }
 
