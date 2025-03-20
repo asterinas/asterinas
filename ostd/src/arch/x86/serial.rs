@@ -2,9 +2,6 @@
 
 //! The console I/O.
 
-#![expect(dead_code)]
-#![expect(unused_variables)]
-
 use alloc::{fmt, sync::Arc, vec::Vec};
 use core::fmt::Write;
 
@@ -84,20 +81,7 @@ pub(crate) fn callback_init() {
     CONSOLE_IRQ_CALLBACK.call_once(|| SpinLock::new(irq));
 }
 
-pub(crate) fn register_console_callback<F>(callback: F)
-where
-    F: Fn(&TrapFrame) + Sync + Send + 'static,
-{
-    CONSOLE_IRQ_CALLBACK
-        .get()
-        .unwrap()
-        .disable_irq()
-        .lock()
-        .on_active(callback);
-}
-
-fn handle_serial_input(trap_frame: &TrapFrame) {
-    // debug!("keyboard interrupt was met");
+fn handle_serial_input(_trap_frame: &TrapFrame) {
     let lock = if let Some(lock) = SERIAL_INPUT_CALLBACKS.try_lock() {
         lock
     } else {
@@ -133,7 +117,7 @@ pub fn send(data: u8) {
 }
 
 /// Receives a byte on the serial port. non-blocking
-pub fn receive_char() -> Option<u8> {
+fn receive_char() -> Option<u8> {
     if line_sts().contains(LineSts::INPUT_FULL) {
         Some(CONSOLE_COM1_PORT.recv())
     } else {
