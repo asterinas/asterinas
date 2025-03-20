@@ -10,10 +10,9 @@ use core::{
 };
 
 use ostd::{
-    cpu::PinCurrentCpu,
     cpu_local,
     mm::Paddr,
-    sync::{LocalIrqDisabled, SpinLock},
+    sync::{LocalIrqDisabled, SpinLock, SpinLockGuard},
     trap::DisabledLocalIrqGuard,
 };
 
@@ -24,12 +23,12 @@ use super::set::BuddySet;
 /// The global free buddies.
 static GLOBAL_POOL: SpinLock<BuddySet<MAX_BUDDY_ORDER>, LocalIrqDisabled> =
     SpinLock::new(BuddySet::new_empty());
+/// A snapshot of the total size of the global free buddies, not precise.
 static GLOBAL_POOL_SIZE: AtomicUsize = AtomicUsize::new(0);
 
 // CPU-local free buddies.
 cpu_local! {
     static LOCAL_POOL: RefCell<BuddySet<MAX_LOCAL_BUDDY_ORDER>> = RefCell::new(BuddySet::new_empty());
-    static LOCAL_POOL_SIZE: AtomicUsize = AtomicUsize::new(0);
 }
 
 /// Maximum supported order of the buddy system.
@@ -55,6 +54,7 @@ const MAX_LOCAL_BUDDY_ORDER: BuddyOrder = 18;
 pub(super) fn alloc(guard: &DisabledLocalIrqGuard, layout: Layout) -> Option<Paddr> {
     let local_pool_cell = LOCAL_POOL.get_with(guard);
     let mut local_pool = local_pool_cell.borrow_mut();
+    let mut global_pool = OnDemandGlobalLock::new();
 
     let size_order = greater_order_of(layout.size());
     let align_order = greater_order_of(layout.align());
@@ -68,7 +68,7 @@ pub(super) fn alloc(guard: &DisabledLocalIrqGuard, layout: Layout) -> Option<Pad
 
     // Fall back to the global free lists if the local free lists are empty.
     if chunk_addr.is_none() {
-        chunk_addr = alloc_from_global_pool(order);
+        chunk_addr = global_pool.get().alloc_chunk(order);
     }
     // TODO: On memory pressure the global pool may be not enough. We may need
     // to merge all buddy chunks from the local pools to the global pool and
@@ -79,20 +79,18 @@ pub(super) fn alloc(guard: &DisabledLocalIrqGuard, layout: Layout) -> Option<Pad
     let allocated_size = size_of_order(order);
     if allocated_size > layout.size() {
         if let Some(chunk_addr) = chunk_addr {
-            add_free_memory_to(
+            do_dealloc(
                 &mut local_pool,
-                guard,
+                &mut global_pool,
                 chunk_addr + layout.size(),
                 allocated_size - layout.size(),
             );
         }
     }
 
-    balancing::balance(local_pool.deref_mut());
+    balancing::balance(local_pool.deref_mut(), &mut global_pool);
 
-    LOCAL_POOL_SIZE
-        .get_on_cpu(guard.current_cpu())
-        .store(local_pool.total_size(), Ordering::Relaxed);
+    global_pool.update_global_size_if_locked();
 
     chunk_addr
 }
@@ -100,46 +98,76 @@ pub(super) fn alloc(guard: &DisabledLocalIrqGuard, layout: Layout) -> Option<Pad
 pub(super) fn dealloc(guard: &DisabledLocalIrqGuard, addr: Paddr, size: usize) {
     let local_pool_cell = LOCAL_POOL.get_with(guard);
     let mut local_pool = local_pool_cell.borrow_mut();
+    let mut global_pool = OnDemandGlobalLock::new();
 
-    add_free_memory_to(&mut local_pool, guard, addr, size);
+    do_dealloc(&mut local_pool, &mut global_pool, addr, size);
+
+    balancing::balance(local_pool.deref_mut(), &mut global_pool);
+
+    global_pool.update_global_size_if_locked();
 }
 
-pub(super) fn add_free_memory(guard: &DisabledLocalIrqGuard, addr: Paddr, size: usize) {
-    let local_pool_cell = LOCAL_POOL.get_with(guard);
-    let mut local_pool = local_pool_cell.borrow_mut();
+pub(super) fn add_free_memory(_guard: &DisabledLocalIrqGuard, addr: Paddr, size: usize) {
+    let mut global_pool = OnDemandGlobalLock::new();
 
-    add_free_memory_to(&mut local_pool, guard, addr, size);
+    split_to_chunks(addr, size).for_each(|(addr, order)| {
+        global_pool.get().insert_chunk(addr, order);
+    });
+
+    global_pool.update_global_size_if_locked();
 }
 
-fn add_free_memory_to(
+fn do_dealloc(
     local_pool: &mut BuddySet<MAX_LOCAL_BUDDY_ORDER>,
-    guard: &DisabledLocalIrqGuard,
+    global_pool: &mut OnDemandGlobalLock,
     addr: Paddr,
     size: usize,
 ) {
     split_to_chunks(addr, size).for_each(|(addr, order)| {
         if order >= MAX_LOCAL_BUDDY_ORDER {
-            dealloc_to_global_pool(addr, order);
+            global_pool.get().insert_chunk(addr, order);
         } else {
             local_pool.insert_chunk(addr, order);
         }
     });
-
-    balancing::balance(local_pool);
-    LOCAL_POOL_SIZE
-        .get_on_cpu(guard.current_cpu())
-        .store(local_pool.total_size(), Ordering::Relaxed);
 }
 
-fn alloc_from_global_pool(order: BuddyOrder) -> Option<Paddr> {
-    let mut lock_guard = GLOBAL_POOL.lock();
-    let res = lock_guard.alloc_chunk(order);
-    GLOBAL_POOL_SIZE.store(lock_guard.total_size(), Ordering::Relaxed);
-    res
+type GlobalLockGuard = SpinLockGuard<'static, BuddySet<MAX_BUDDY_ORDER>, LocalIrqDisabled>;
+
+/// An on-demand guard that locks the global pool when needed.
+///
+/// It helps to avoid unnecessarily locking the global pool, and also avoids
+/// repeatedly locking the global pool when it is needed multiple times.
+struct OnDemandGlobalLock {
+    guard: Option<GlobalLockGuard>,
 }
 
-fn dealloc_to_global_pool(addr: Paddr, order: BuddyOrder) {
-    let mut lock_guard = GLOBAL_POOL.lock();
-    lock_guard.insert_chunk(addr, order);
-    GLOBAL_POOL_SIZE.store(lock_guard.total_size(), Ordering::Relaxed);
+impl OnDemandGlobalLock {
+    fn new() -> Self {
+        Self { guard: None }
+    }
+
+    fn get(&mut self) -> &mut GlobalLockGuard {
+        self.guard.get_or_insert_with(|| GLOBAL_POOL.lock())
+    }
+
+    /// Updates [`GLOBAL_POOL_SIZE`] if the global pool is locked.
+    fn update_global_size_if_locked(&self) {
+        if let Some(guard) = self.guard.as_ref() {
+            GLOBAL_POOL_SIZE.store(guard.total_size(), Ordering::Relaxed);
+        }
+    }
+
+    /// Returns the size of the global pool.
+    ///
+    /// If the global pool is locked, returns the actual size of the global pool.
+    /// Otherwise, returns the last snapshot of the global pool size by loading
+    /// [`GLOBAL_POOL_SIZE`].
+    fn get_global_size(&self) -> usize {
+        if let Some(guard) = self.guard.as_ref() {
+            guard.total_size()
+        } else {
+            GLOBAL_POOL_SIZE.load(Ordering::Relaxed)
+        }
+    }
 }
