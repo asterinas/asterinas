@@ -325,7 +325,7 @@ impl PerCpuClassRqSet {
             _ => return,
         };
 
-        // For each variant of `Option<UpdateLoadFlags>`:
+        // For each variant of `flags`:
         // - `None` means we are updating the load of a running thread.
         // - `Some(UpdateLoadFlags::Attach)` means we are updating the load of a thread
         //   that is being attached to the current CPU, which means that it is not yet
@@ -377,7 +377,7 @@ impl PerCpuClassRqSet {
         let now_ns = time::clocks_to_ns(sched_clock());
         self.update_rq_load(now_ns, flags.is_some());
         // For each variant of `flags`:
-        // - `None` means we are requeueing a runnable task, so it is already attached to
+        // - `None` means we are requeuing a runnable task, so it is already attached to
         //   the current CPU.
         // - `Some(..)` means the task is newly-created or unblocked, so we need to attach it
         //   to the current CPU.
