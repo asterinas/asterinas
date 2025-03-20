@@ -23,10 +23,19 @@ jobs:
         with:
           repository: 'asterinas/asterinas'
           path: 'asterinas'
-      
+
       - name: Build the website
         run: |
+          # Get latest tag
+          export ENV_latest_tag=$(curl -s 'https://api.github.com/repos/asterinas/asterinas/tags' | jq -r '.[0].name' | sed 's/v//')
+
+          # Add preprocessor variables
+          cargo install mdbook-variables
+
+          # Open folder book
           cd asterinas/docs
+
+          # Build book
           mdbook build
 
       - name: Deploy website

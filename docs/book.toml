@@ -19,3 +19,9 @@ copy-js = true           # includes the JavaScript for the code editor
 line-numbers = false     # displays line numbers for editable code
 runnable = false         # displays a run button for rust code
 
+# https://gitlab.com/tglman/mdbook-variables
+[preprocessor.variables]
+use_env = true
+
+[preprocessor.variables.variables]
+in-ENV_latest_tag = "export ENV_latest_tag=$(curl -s 'https://api.github.com/repos/asterinas/asterinas/tags' | jq -r '.[0].name' | sed 's/v//')"
