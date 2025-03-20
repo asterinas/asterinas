@@ -22,6 +22,12 @@
 //! [`GlobalFrameAllocator`]: ostd::mm::GlobalFrameAllocator
 //! [`global_frame_allocator`]: ostd::global_frame_allocator
 
+// The heap allocator usually depends on frame allocation. If we depend on heap
+// allocation then there will be a cyclic dependency. We only use the heap in
+// unit tests.
+#[cfg(ktest)]
+extern crate alloc;
+
 use core::alloc::Layout;
 
 use ostd::{
