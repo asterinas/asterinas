@@ -4,9 +4,15 @@
 
 use core::fmt::Arguments;
 
+use crate::if_tdx_enabled;
+
 /// Prints formatted arguments to the console.
 pub fn early_print(args: Arguments) {
-    crate::arch::serial::print(args);
+    if_tdx_enabled!({
+        tdx_guest::print(args);
+    } else {
+        crate::arch::serial::print(args);
+    });
 }
 
 /// Prints to the console.

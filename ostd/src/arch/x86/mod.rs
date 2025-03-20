@@ -41,11 +41,9 @@ use log::{info, warn};
 
 #[cfg(feature = "cvm_guest")]
 pub(crate) fn init_cvm_guest() {
-    use ::tdx_guest::serial_println;
-
     match init_tdx() {
         Ok(td_info) => {
-            serial_println!(
+            crate::early_println!(
                 "[kernel] Intel TDX initialized\n[kernel] td gpaw: {}, td attributes: {:?}",
                 td_info.gpaw,
                 td_info.attributes
@@ -89,7 +87,6 @@ pub(crate) unsafe fn late_init_on_bsp() {
             kernel::pic::enable();
         }
     }
-    serial::callback_init();
 
     kernel::tsc::init_tsc_freq();
     timer::init_bsp();

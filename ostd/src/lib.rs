@@ -113,6 +113,7 @@ unsafe fn init() {
     if_tdx_enabled!({
         arch::serial::init();
     });
+    arch::serial::callback_init();
 
     smp::init();
 
