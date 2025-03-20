@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use aster_rights::WriteOp;
+use aster_rights::{Full, WriteOp};
 use ostd::{
     cpu::{FpuState, RawGeneralRegs, UserContext},
     user::UserContextApi,
@@ -18,6 +18,7 @@ use crate::{
         check_executable_file, load_program_to_vm, posix_thread::ThreadName, Credentials, Process,
         MAX_ARGV_NUMBER, MAX_ARG_LEN, MAX_ENVP_NUMBER, MAX_ENV_LEN,
     },
+    vm::vmar::Vmar,
 };
 
 pub fn sys_execve(
@@ -118,11 +119,39 @@ fn do_execve(
     drop(closed_files);
 
     debug!("load program to root vmar");
+
+    // FIXME: Currently, the efficiency of replacing the VMAR is lower than that
+    // of directly clearing the VMAR. Therefore, we only replace the VMAR in the
+    // case of vfork here.
+    let new_vmar = if process.status().is_share_parent_vm() {
+        let new_vmar = Vmar::<Full>::new_root();
+        *ctx.thread_local.root_vmar().borrow_mut() = Some(new_vmar.dup().unwrap());
+        Some(new_vmar)
+    } else {
+        None
+    };
+
     let (new_executable_path, elf_load_info) = {
         let fs_resolver = &*posix_thread.fs().resolver().read();
         let process_vm = process.vm();
-        load_program_to_vm(process_vm, elf_file.clone(), argv, envp, fs_resolver, 1)?
+
+        load_program_to_vm(
+            process_vm,
+            elf_file.clone(),
+            argv,
+            envp,
+            fs_resolver,
+            new_vmar,
+            1,
+        )?
     };
+
+    // Unstops the parent process.
+    if process.status().is_share_parent_vm() {
+        process.status().set_vm_shared_status(false);
+        let parent = process.parent().lock().process().upgrade().unwrap();
+        parent.children_wait_queue().wake_all();
+    }
 
     // After the program has been successfully loaded, the virtual memory of the current process
     // is initialized. Hence, it is necessary to clear the previously recorded robust list.
