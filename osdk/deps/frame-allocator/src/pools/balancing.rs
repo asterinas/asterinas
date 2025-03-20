@@ -2,13 +2,9 @@
 
 //! Controlling the balancing between CPU-local free pools and the global free pool.
 
-use core::sync::atomic::Ordering;
-
 use ostd::cpu::num_cpus;
 
-use super::{
-    lesser_order_of, BuddyOrder, BuddySet, GLOBAL_POOL, GLOBAL_POOL_SIZE, MAX_LOCAL_BUDDY_ORDER,
-};
+use super::{lesser_order_of, BuddyOrder, BuddySet, OnDemandGlobalLock, MAX_LOCAL_BUDDY_ORDER};
 
 use crate::chunk::split_to_order;
 
@@ -50,8 +46,8 @@ fn cache_maximal_size(global_size: usize) -> usize {
 }
 
 /// Balances a local cache and the global free pool.
-pub fn balance(local: &mut BuddySet<MAX_LOCAL_BUDDY_ORDER>) {
-    let global_size = GLOBAL_POOL_SIZE.load(Ordering::Relaxed);
+pub fn balance(local: &mut BuddySet<MAX_LOCAL_BUDDY_ORDER>, global: &mut OnDemandGlobalLock) {
+    let global_size = global.get_global_size();
 
     let minimal_local_size = cache_minimal_size(global_size);
     let expected_local_size = cache_expected_size(global_size);
@@ -67,11 +63,8 @@ pub fn balance(local: &mut BuddySet<MAX_LOCAL_BUDDY_ORDER>) {
 
         let expected_removal = local_size - expected_local_size;
         let lesser_order = lesser_order_of(expected_removal);
-        let mut global_pool_lock = GLOBAL_POOL.lock();
 
-        balance_to(local, &mut *global_pool_lock, lesser_order);
-
-        GLOBAL_POOL_SIZE.store(global_pool_lock.total_size(), Ordering::Relaxed);
+        balance_to(local, &mut *global.get(), lesser_order);
     } else if local_size < minimal_local_size {
         // Move global frames to the local pool.
         if global_size == 0 {
@@ -80,11 +73,8 @@ pub fn balance(local: &mut BuddySet<MAX_LOCAL_BUDDY_ORDER>) {
 
         let expected_allocation = expected_local_size - local_size;
         let lesser_order = lesser_order_of(expected_allocation);
-        let mut global_pool_lock = GLOBAL_POOL.lock();
 
-        balance_to(&mut *global_pool_lock, local, lesser_order);
-
-        GLOBAL_POOL_SIZE.store(global_pool_lock.total_size(), Ordering::Relaxed);
+        balance_to(&mut *global.get(), local, lesser_order);
     }
 }
 
