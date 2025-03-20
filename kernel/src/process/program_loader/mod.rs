@@ -3,6 +3,8 @@
 pub mod elf;
 mod shebang;
 
+use aster_rights::Full;
+
 use self::{
     elf::{load_elf_to_vm, ElfLoadInfo},
     shebang::parse_shebang_line,
@@ -15,6 +17,7 @@ use crate::{
         utils::{InodeType, Permission},
     },
     prelude::*,
+    vm::vmar::Vmar,
 };
 
 /// Load an executable to root vmar, including loading programme image, preparing heap and stack,
@@ -30,6 +33,7 @@ pub fn load_program_to_vm(
     argv: Vec<CString>,
     envp: Vec<CString>,
     fs_resolver: &FsResolver,
+    new_vmar: Option<Vmar<Full>>,
     recursion_limit: usize,
 ) -> Result<(String, ElfLoadInfo)> {
     let abs_path = elf_file.abs_path();
@@ -57,11 +61,12 @@ pub fn load_program_to_vm(
             new_argv,
             envp,
             fs_resolver,
+            new_vmar,
             recursion_limit - 1,
         );
     }
 
-    process_vm.clear_and_map();
+    process_vm.clear_and_map(new_vmar);
 
     let elf_load_info =
         load_elf_to_vm(process_vm, &*file_header, elf_file, fs_resolver, argv, envp)?;
