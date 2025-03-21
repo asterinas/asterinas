@@ -650,6 +650,24 @@ impl<Fallibility> VmReader<'_, Fallibility> {
         unsafe { self.cursor = self.cursor.add(nbytes) };
         self
     }
+
+    /// Aligns the reader's start address to a given address by skipping some bytes,
+    /// returns the bytes skipped.
+    ///
+    /// # Panics
+    ///
+    /// If the bytes to skip is greater that `self.remain()` or the reader cannot be aligned,
+    /// then this method will panic.
+    pub fn align_to(&mut self, align: usize) -> usize {
+        let align_offset = self.cursor.align_offset(align);
+
+        if align_offset != 0 {
+            assert!(align_offset <= self.remain());
+            unsafe { self.cursor = self.cursor.add(align_offset) }
+        }
+
+        align_offset
+    }
 }
 
 impl<'a> From<&'a [u8]> for VmReader<'a, Infallible> {
@@ -913,6 +931,24 @@ impl<Fallibility> VmWriter<'_, Fallibility> {
         // SAFETY: the new cursor is less than or equal to the end.
         unsafe { self.cursor = self.cursor.add(nbytes) };
         self
+    }
+
+    /// Aligns the writer's start address to a given address by skipping some bytes,
+    /// returns the bytes skipped.
+    ///
+    /// # Panics
+    ///
+    /// If the bytes to skip is greater that `self.avail()` or the writer cannot be aligned,
+    /// then this method will panic.
+    pub fn align_to(&mut self, align: usize) -> usize {
+        let align_offset = self.cursor.align_offset(align);
+
+        if align_offset != 0 {
+            assert!(align_offset <= self.avail());
+            unsafe { self.cursor = self.cursor.add(align_offset) }
+        }
+
+        align_offset
     }
 }
 

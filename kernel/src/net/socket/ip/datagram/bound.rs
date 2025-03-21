@@ -75,7 +75,7 @@ impl BoundDatagram {
     ) -> Result<usize> {
         let result = self
             .bound_socket
-            .send(reader.sum_lens(), *remote, |socket_buffer| {
+            .send(reader.remain(), *remote, |socket_buffer| {
                 // FIXME: If copy failed, we should not send any packet.
                 // But current smoltcp API seems not to support this behavior.
                 reader

@@ -191,7 +191,7 @@ impl VsockSpace {
     pub fn send(&self, reader: &mut dyn MultiRead, info: &mut ConnectionInfo) -> Result<()> {
         // FIXME: Creating this buffer should be avoided
         // if the underlying driver can accept reader.
-        let mut buffer = vec![0u8; reader.sum_lens()];
+        let mut buffer = vec![0u8; reader.remain()];
         reader.read(&mut VmWriter::from(buffer.as_mut_slice()))?;
 
         let mut driver = self.driver.disable_irq().lock();
