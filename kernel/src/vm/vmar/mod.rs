@@ -457,6 +457,7 @@ impl Vmar_ {
             }
             cur_cursor.flusher().issue_tlb_flush(TlbFlushOp::All);
             cur_cursor.flusher().dispatch_tlb_flush();
+            cur_cursor.flusher().sync_tlb_flush();
         }
 
         Ok(new_vmar_)

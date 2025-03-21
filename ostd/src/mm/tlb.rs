@@ -3,17 +3,20 @@
 //! TLB flush operations.
 
 use alloc::vec::Vec;
-use core::ops::Range;
+use core::{
+    ops::Range,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use super::{
     frame::{meta::AnyFrameMeta, Frame},
     Vaddr, PAGE_SIZE,
 };
 use crate::{
+    arch::irq,
     cpu::{CpuSet, PinCurrentCpu},
     cpu_local,
     sync::{LocalIrqDisabled, SpinLock},
-    task::disable_preempt,
 };
 
 /// A TLB flusher that is aware of which CPUs are needed to be flushed.
@@ -25,6 +28,7 @@ pub struct TlbFlusher<G: PinCurrentCpu> {
     // list brings non-trivial overhead.
     need_remote_flush: bool,
     need_self_flush: bool,
+    have_unsynced_flush: bool,
     _pin_current: G,
 }
 
@@ -50,27 +54,74 @@ impl<G: PinCurrentCpu> TlbFlusher<G> {
             target_cpus,
             need_remote_flush,
             need_self_flush,
+            have_unsynced_flush: false,
             _pin_current: pin_current_guard,
         }
     }
 
     /// Issues a pending TLB flush request.
     ///
-    /// On SMP systems, the notification is sent to all the relevant CPUs only
-    /// when [`Self::dispatch_tlb_flush`] is called.
+    /// This function does not guarantee to flush the TLB entries on either
+    /// this CPU or remote CPUs. The flush requests are only performed when
+    /// [`Self::dispatch_tlb_flush`] is called.
     pub fn issue_tlb_flush(&self, op: TlbFlushOp) {
         self.issue_tlb_flush_(op, None);
     }
 
     /// Dispatches all the pending TLB flush requests.
     ///
-    /// The pending requests are issued by [`Self::issue_tlb_flush`].
-    pub fn dispatch_tlb_flush(&self) {
+    /// All previous pending requests issued by [`Self::issue_tlb_flush`]
+    /// starts to be processed after this function. But it may not be
+    /// synchronous. Upon the return of this function, the TLB entries may not
+    /// be coherent.
+    pub fn dispatch_tlb_flush(&mut self) {
         if !self.need_remote_flush {
             return;
         }
 
+        for cpu in self.target_cpus.iter() {
+            ACK_REMOTE_FLUSH
+                .get_on_cpu(cpu)
+                .store(false, Ordering::Relaxed);
+        }
+
         crate::smp::inter_processor_call(&self.target_cpus, do_remote_flush);
+
+        self.have_unsynced_flush = true;
+    }
+
+    /// Wait for all the previous TLB flush requests to be completed.
+    ///
+    /// After this function, all TLB entries corresponding to previous
+    /// dispatched TLB flush requests are guaranteed to be coherent.
+    ///
+    /// The TLB flush requests are issued with [`Self::issue_tlb_flush`] and
+    /// dispatched with [`Self::dispatch_tlb_flush`]. This method will not
+    /// dispatch any issued requests so it will not guarantee TLB coherence
+    /// of requests that are not dispatched.
+    ///
+    /// # Panics
+    ///
+    /// This method panics if the IRQs are disabled. Since the remote flush are
+    /// processed in IRQs, two CPUs may deadlock if they are waiting for each
+    /// other's TLB coherence.
+    pub fn sync_tlb_flush(&mut self) {
+        if !self.have_unsynced_flush {
+            return;
+        }
+
+        assert!(
+            irq::is_local_enabled(),
+            "Waiting for remote flush with IRQs disabled"
+        );
+
+        for cpu in self.target_cpus.iter() {
+            while !ACK_REMOTE_FLUSH.get_on_cpu(cpu).load(Ordering::Acquire) {
+                core::hint::spin_loop();
+            }
+        }
+
+        self.have_unsynced_flush = false;
     }
 
     /// Issues a TLB flush request that must happen before dropping the page.
@@ -154,21 +205,37 @@ impl TlbFlushOp {
     }
 }
 
+/// Registers the timer callbacks for the TLB flush operations.
+///
+/// We check if there's pending TLB flush requests on each CPU in the timer
+/// callback. This is to ensure that the TLB flush requests are processed
+/// ultimately in case the IPIs are not received.
+///
+/// This function should be done once for each CPU during the initialization.
+pub(crate) fn register_timer_callbacks_this_cpu() {
+    crate::timer::register_callback(do_remote_flush);
+}
+
 // The queues of pending requests on each CPU.
 //
 // Lock ordering: lock FLUSH_OPS before PAGE_KEEPER.
 cpu_local! {
     static FLUSH_OPS: SpinLock<OpsStack, LocalIrqDisabled> = SpinLock::new(OpsStack::new());
     static PAGE_KEEPER: SpinLock<Vec<Frame<dyn AnyFrameMeta>>, LocalIrqDisabled> = SpinLock::new(Vec::new());
+    /// Whether this CPU finishes the last remote flush request.
+    static ACK_REMOTE_FLUSH: AtomicBool = AtomicBool::new(true);
 }
 
 fn do_remote_flush() {
-    let preempt_guard = disable_preempt();
-    let current_cpu = preempt_guard.current_cpu();
+    let current_cpu = crate::cpu::current_cpu_racy(); // Safe because we are in IRQs.
 
     let mut op_queue = FLUSH_OPS.get_on_cpu(current_cpu).lock();
     op_queue.flush_all();
     PAGE_KEEPER.get_on_cpu(current_cpu).lock().clear();
+
+    ACK_REMOTE_FLUSH
+        .get_on_cpu(current_cpu)
+        .store(true, Ordering::Release);
 }
 
 /// If a TLB flushing request exceeds this threshold, we flush all.

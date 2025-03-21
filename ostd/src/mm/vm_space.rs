@@ -318,8 +318,8 @@ impl CursorMut<'_, '_> {
     }
 
     /// Get the dedicated TLB flusher for this cursor.
-    pub fn flusher(&self) -> &TlbFlusher<DisabledPreemptGuard> {
-        &self.flusher
+    pub fn flusher(&mut self) -> &mut TlbFlusher<DisabledPreemptGuard> {
+        &mut self.flusher
     }
 
     /// Map a frame into the current slot.
