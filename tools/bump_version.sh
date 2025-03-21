@@ -96,6 +96,7 @@ update_docker_image_version() {
                 semantic_version_parts[2]=$(add_one "${semantic_version_parts[2]}")
             fi
             docker_version_parts[0]="${semantic_version_parts[*]}"
+            docker_version_parts[1]=$(date +%Y%m%d)
             ;;
         "date")
             docker_version_parts[1]=$(date +%Y%m%d)
