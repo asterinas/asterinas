@@ -1,0 +1,136 @@
+name: CI/CD Backend
+
+on:
+  workflow_call:
+    inputs:
+      auto_test:
+        required: false
+        type: string
+        default: ''
+      release:
+        required: false
+        type: boolean
+      enable_kvm:
+        required: false
+        type: boolean
+      intel_tdx:
+        required: false
+        type: boolean
+      smp:
+        required: false
+        type: number
+        default: 1
+      netdev:
+        required: false
+        type: string
+        default: 'user'
+      scheme:
+        required: false
+        type: string
+        default: 'none'
+      extra_blocklists:
+        required: false
+        type: string
+        default: ''
+      syscall_test_dir:
+        required: false
+        type: string
+        default: '/tmp'
+      boot_protocol:
+        required: false
+        type: string
+        default: 'linux-efi-handover64'
+      runs_on:
+        required: true
+        type: string
+      timeout_minutes:
+        required: false
+        type: number
+        default: 15
+      container_image:
+        required: false
+        type: string
+        default: '[asterinas/asterinas:0.14.0]'
+
+jobs:
+  general-check:
+    if: ${{ inputs.auto_test == 'general' }}
+    runs-on: ${{ inputs.runs_on }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    strategy:
+      fail-fast: false  # Important: Allow other steps to continue even if one fails.
+      matrix:
+        container: ${{ fromJSON(inputs.container_image) }}
+        step: [lint, compile, usermode_test, ktest] # Define the steps we want to run
+    container:
+      image: ${{ matrix.container }}
+      options: --device=/dev/kvm --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint
+        if: matrix.step == 'lint'
+        run: make check
+
+      - name: Compilation
+        if: matrix.step == 'compile'
+        run: make build FEATURES=all
+
+      - name: Usermode Unit test
+        if: matrix.step == 'usermode_test'
+        run: make test
+
+      - name: Ktest Unit Test
+        if: matrix.step == 'ktest'
+        run: make ktest NETDEV=tap
+
+  integration-test:
+    if: ${{ !(inputs.auto_test == 'general' || inputs.auto_test == 'osdk') }}
+    runs-on: ${{ inputs.runs_on }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    env:
+      RUSTUP_DIST_SERVER: ${{ inputs.intel_tdx && 'https://mirrors.ustc.edu.cn/rust-static' || '' }}
+      RUSTUP_UPDATE_ROOT: ${{ inputs.intel_tdx && 'https://mirrors.ustc.edu.cn/rust-static/rustup' || '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        container: ${{ fromJSON(inputs.container_image) }}
+    container:
+      image: ${{ matrix.container }}
+      options: --device=/dev/kvm --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Integration Test
+        run: |
+          make run \
+            AUTO_TEST=${{ inputs.auto_test }} \
+            RELEASE=${{ inputs.release && 1 || 0 }} \
+            ENABLE_KVM=${{ inputs.enable_kvm && 1 || 0 }} \
+            INTEL_TDX=${{ inputs.intel_tdx && 1 || 0 }} \
+            SMP=${{ inputs.smp }} \
+            NETDEV=${{ inputs.netdev }} \
+            SCHEME=${{ inputs.scheme }} \
+            EXTRA_BLOCKLISTS_DIRS=${{ inputs.extra_blocklists }} \
+            SYSCALL_TEST_DIR=${{ inputs.syscall_test_dir }} \
+            BOOT_PROTOCOL=${{ inputs.boot_protocol }}
+
+  osdk-test:
+    if: ${{ inputs.auto_test == 'osdk' }}
+    runs-on: ${{ inputs.runs_on }}
+    env:
+      RUSTUP_DIST_SERVER: ${{ inputs.intel_tdx && 'https://mirrors.ustc.edu.cn/rust-static' || '' }}
+      RUSTUP_UPDATE_ROOT: ${{ inputs.intel_tdx && 'https://mirrors.ustc.edu.cn/rust-static/rustup' || '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        container: ${{ fromJSON(inputs.container_image) }}
+    container:
+      image: ${{ matrix.container }}
+      options: --device=/dev/kvm --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - name: OSDK Lint
+        if: ${{ !contains(matrix.container, 'osdk') }}
+        run: make check_osdk
+
+      - name: OSDK Unit test
+        run: RUSTUP_HOME=/root/.rustup INTEL_TDX=${{ inputs.intel_tdx && 1 || 0 }} make test_osdk

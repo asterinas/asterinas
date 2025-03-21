@@ -1,0 +1,57 @@
+name: x86_64_TDX 
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  tdx-test:
+    uses: ./.github/workflows/test_backend.yml
+    strategy:
+      matrix:
+        include:
+          - test_id: 'boot_user'
+            netdev: 'user'
+          - test_id: 'boot_smp4_user'
+            netdev: 'user'
+            smp: 4
+          - test_id: 'syscall_user'
+            netdev: 'user'
+          - test_id: 'syscall_at_exfat_user'
+            netdev: 'user'
+            extra_blocklists: 'blocklists.exfat'
+            syscall_test_dir: '/exfat'
+          - test_id: 'syscall_test_smp4_user'
+            netdev: 'user'
+            smp: 4
+          - test_id: 'general_test_user'
+            netdev: 'user'          
+          - test_id: 'general_test_smp4_tap'
+            netdev: 'tap'
+            smp: 4
+      fail-fast: false
+    with:
+      auto_test: ${{ startsWith(matrix.test_id, 'boot') && 'boot' ||
+          startsWith(matrix.test_id, 'syscall') && 'syscall' || 'test' }}
+      release: true
+      enable_kvm: true
+      intel_tdx: true
+      smp: ${{ matrix.smp || 1 }}
+      netdev: ${{ matrix.netdev || 'user' }}
+      extra_blocklists: ${{ matrix.extra_blocklists || '' }}
+      syscall_test_dir: ${{ matrix.syscall_test_dir || '/tmp' }}
+      boot_protocol: 'linux-efi-handover64'
+      runs_on: self-hosted
+      timeout_minutes: 30
+      container_image: '["asterinas/asterinas:0.14.0-tdx"]'
+
+  tdx-osdk-test:
+    uses: ./.github/workflows/test_backend.yml
+    with:
+      auto_test: 'osdk'
+      container_image: '["asterinas/asterinas:0.14.0-tdx", "asterinas/osdk:0.14.0-tdx"]'
+      runs_on: self-hosted
+      intel_tdx: true
