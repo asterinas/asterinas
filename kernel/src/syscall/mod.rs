@@ -131,6 +131,7 @@ mod setsockopt;
 mod setuid;
 mod shutdown;
 mod sigaltstack;
+mod signalfd;
 mod socket;
 mod socketpair;
 mod stat;
