@@ -5,8 +5,6 @@
 use alloc::collections::BTreeMap;
 use core::{any::TypeId, marker::PhantomData, ops::Range};
 
-use align_ext::AlignExt;
-
 use super::{KERNEL_PAGE_TABLE, TRACKED_MAPPED_PAGES_RANGE, VMALLOC_VADDR_RANGE};
 use crate::{
     cpu::CpuSet,
@@ -188,11 +186,15 @@ impl<M: AllocatorSelector + 'static> KVirtArea<M> {
         self.range.start..self.range.end
     }
 
+    #[cfg(ktest)]
     pub fn len(&self) -> usize {
         self.range.len()
     }
 
+    #[cfg(ktest)]
     fn query_page(&self, addr: Vaddr) -> PageTableItem {
+        use align_ext::AlignExt;
+
         assert!(self.start() <= addr && self.end() >= addr);
         let start = addr.align_down(PAGE_SIZE);
         let vaddr = start..start + PAGE_SIZE;
@@ -232,6 +234,7 @@ impl KVirtArea<Tracked> {
     ///
     /// This function returns None if the address is not mapped (`NotMapped`),
     /// while panics if the address is mapped to a `MappedUntracked` or `PageTableNode` page.
+    #[cfg(ktest)]
     pub fn get_page(&self, addr: Vaddr) -> Option<Frame<dyn AnyFrameMeta>> {
         let query_result = self.query_page(addr);
         match query_result {
@@ -288,6 +291,7 @@ impl KVirtArea<Untracked> {
     ///
     /// This function returns None if the address is not mapped (`NotMapped`),
     /// while panics if the address is mapped to a `Mapped` or `PageTableNode` page.
+    #[cfg(ktest)]
     pub fn get_untracked_page(&self, addr: Vaddr) -> Option<(Paddr, usize)> {
         let query_result = self.query_page(addr);
         match query_result {

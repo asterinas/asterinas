@@ -83,11 +83,6 @@ impl ProcessVmarGuard<'_> {
         self.inner.as_ref().unwrap()
     }
 
-    /// Sets a new VMAR for the binding process.
-    pub(super) fn set_new_vmar(&mut self, new_vmar: Vmar<Full>) {
-        *self.inner = Some(new_vmar);
-    }
-
     /// Clears the VMAR of the binding process.
     pub(super) fn clear(&mut self) {
         *self.inner = None;
