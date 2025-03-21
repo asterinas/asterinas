@@ -26,7 +26,7 @@ use crate::{
         utils::{
             CStr256, CachePage, DirentVisitor, Extension, FallocMode, FileSystem, FsFlags, Inode,
             InodeMode, InodeType, IoctlCmd, Metadata, MknodType, PageCache, PageCacheBackend,
-            SuperBlock,
+            Permission, SuperBlock, XattrFlags, XattrNamespace,
         },
     },
     prelude::*,
@@ -61,6 +61,7 @@ impl RamFS {
                 this: weak_root.clone(),
                 fs: weak_fs.clone(),
                 extension: Extension::new(),
+                xattr: RamXattr::new(),
             }),
             inode_allocator: AtomicU64::new(ROOT_INO + 1),
         })
@@ -106,6 +107,156 @@ struct RamInode {
     fs: Weak<RamFS>,
     /// Extensions
     extension: Extension,
+    /// Extended attributes
+    xattr: RamXattr,
+}
+
+/// An in-memory xattr object of a `RamInode`.
+/// An xattr is used to manage special 'name-value' pairs of an inode.
+pub struct RamXattr(RwLock<RamXattrInner>);
+
+/// The value type of an in-memory xattr.
+type RamXattrValue = Vec<u8>;
+
+struct RamXattrInner {
+    ns_map: HashMap<XattrNamespace, HashMap<String, RamXattrValue>>,
+    total_name_count: usize,
+    total_name_len: usize,
+    user_name_count: usize,
+    user_name_len: usize,
+}
+
+impl RamXattr {
+    pub fn new() -> Self {
+        Self(RwLock::new(RamXattrInner {
+            ns_map: HashMap::new(),
+            total_name_count: 0,
+            total_name_len: 0,
+            user_name_count: 0,
+            user_name_len: 0,
+        }))
+    }
+
+    pub fn set(
+        &self,
+        namespace: XattrNamespace,
+        name: &str,
+        value_reader: &mut VmReader,
+        flags: XattrFlags,
+    ) -> Result<()> {
+        let mut xattr = self.0.write();
+
+        let ns_xattr = xattr
+            .ns_map
+            .entry(namespace)
+            .or_insert_with(|| HashMap::new());
+        let name_exists = ns_xattr.contains_key(name);
+
+        if flags.contains(XattrFlags::XATTR_CREATE) && name_exists {
+            return_errno_with_message!(Errno::EEXIST, "the target xattr already exists");
+        }
+        if flags.contains(XattrFlags::XATTR_REPLACE) && !name_exists {
+            return_errno_with_message!(Errno::ENODATA, "the target xattr does not exist");
+        }
+
+        let mut value = vec![0u8; value_reader.remain()];
+        value_reader.read_fallible(&mut VmWriter::from(value.as_mut_slice()))?;
+        let _ = ns_xattr.insert(name.to_string(), value);
+
+        if !name_exists {
+            xattr.total_name_count += 1;
+            xattr.total_name_len += name.len();
+            if namespace.is_user() {
+                xattr.user_name_count += 1;
+                xattr.user_name_len += name.len();
+            }
+        }
+        Ok(())
+    }
+
+    pub fn get(
+        &self,
+        namespace: XattrNamespace,
+        name: &str,
+        value_writer: &mut VmWriter,
+    ) -> Result<usize> {
+        let xattr = self.0.read();
+        if xattr.total_name_count == 0 {
+            return_errno_with_message!(Errno::ENODATA, "the target xattr does not exist");
+        }
+
+        let ns_xattr = xattr.ns_map.get(&namespace).ok_or(Errno::ENODATA)?;
+        let value = ns_xattr.get(name).ok_or(Errno::ENODATA)?;
+        let value_len = value.len();
+
+        let value_avail_len = value_writer.avail();
+        if value_avail_len == 0 {
+            return Ok(value_len);
+        }
+        if value_len > value_avail_len {
+            return_errno_with_message!(Errno::ERANGE, "the xattr value buffer is too small");
+        }
+
+        value_writer.write_fallible(&mut VmReader::from(value.as_slice()))?;
+        Ok(value_len)
+    }
+
+    pub fn list(&self, namespace: XattrNamespace, list_writer: &mut VmWriter) -> Result<usize> {
+        let xattr = self.0.read();
+
+        // Include the null byte following each name
+        let list_actual_len = if namespace.is_user() {
+            xattr.user_name_len + xattr.user_name_count
+        } else {
+            xattr.total_name_len + xattr.total_name_count
+        };
+        let list_avail_len = list_writer.avail();
+        if list_avail_len == 0 {
+            return Ok(list_actual_len);
+        }
+        if list_actual_len > list_avail_len {
+            return_errno_with_message!(Errno::ERANGE, "the xattr list buffer is too small");
+        }
+
+        for (ns, ns_xattr) in &xattr.ns_map {
+            if namespace.is_user() && !ns.is_user() {
+                continue;
+            }
+            for (name, _) in ns_xattr {
+                list_writer.write_fallible(&mut VmReader::from(name.as_bytes()))?;
+                list_writer.write_val(&0u8)?;
+            }
+        }
+        Ok(list_actual_len)
+    }
+
+    pub fn remove(&self, namespace: XattrNamespace, name: &str) -> Result<()> {
+        let mut xattr = self.0.write();
+        if xattr.total_name_count == 0 {
+            return_errno_with_message!(Errno::ENODATA, "the target xattr does not exist");
+        }
+
+        let ns_xattr = xattr.ns_map.get_mut(&namespace).ok_or(Errno::ENODATA)?;
+        let _ = ns_xattr.remove(name).ok_or(Errno::ENODATA)?;
+
+        xattr.total_name_count -= 1;
+        xattr.total_name_len -= name.len();
+        if namespace.is_user() {
+            xattr.user_name_count -= 1;
+            xattr.user_name_len -= name.len();
+        }
+        Ok(())
+    }
+
+    fn check_file_type(file_type: InodeType) -> Result<()> {
+        match file_type {
+            InodeType::File | InodeType::Dir => Ok(()),
+            _ => Err(Error::with_message(
+                Errno::EPERM,
+                "xattr is not supported on the file type",
+            )),
+        }
+    }
 }
 
 /// Inode inner specifics.
@@ -399,6 +550,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
+            xattr: RamXattr::new(),
         })
     }
 
@@ -411,6 +563,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
+            xattr: RamXattr::new(),
         })
     }
 
@@ -423,6 +576,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
+            xattr: RamXattr::new(),
         })
     }
 
@@ -441,6 +595,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
+            xattr: RamXattr::new(),
         })
     }
 
@@ -453,6 +608,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
+            xattr: RamXattr::new(),
         })
     }
 
@@ -465,6 +621,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
+            xattr: RamXattr::new(),
         })
     }
 
@@ -1189,6 +1346,46 @@ impl Inode for RamInode {
 
     fn extension(&self) -> Option<&Extension> {
         Some(&self.extension)
+    }
+
+    fn set_xattr(
+        &self,
+        namespace: XattrNamespace,
+        name: &str,
+        value_reader: &mut VmReader,
+        flags: XattrFlags,
+    ) -> Result<()> {
+        RamXattr::check_file_type(self.typ)?;
+        self.check_permission(Permission::MAY_WRITE)?;
+        self.xattr.set(namespace, name, value_reader, flags)
+    }
+
+    fn get_xattr(
+        &self,
+        namespace: XattrNamespace,
+        name: &str,
+        value_writer: &mut VmWriter,
+    ) -> Result<usize> {
+        RamXattr::check_file_type(self.typ)
+            .map_err(|_| Error::with_message(Errno::ENODATA, "no available xattrs"))?;
+        self.check_permission(Permission::MAY_READ)?;
+        self.xattr.get(namespace, name, value_writer)
+    }
+
+    fn list_xattr(&self, namespace: XattrNamespace, list_writer: &mut VmWriter) -> Result<usize> {
+        if RamXattr::check_file_type(self.typ).is_err() {
+            return Ok(0);
+        }
+        if self.check_permission(Permission::MAY_ACCESS).is_err() {
+            return Ok(0);
+        }
+        self.xattr.list(namespace, list_writer)
+    }
+
+    fn remove_xattr(&self, namespace: XattrNamespace, name: &str) -> Result<()> {
+        RamXattr::check_file_type(self.typ)?;
+        self.check_permission(Permission::MAY_WRITE)?;
+        self.xattr.remove(namespace, name)
     }
 }
 

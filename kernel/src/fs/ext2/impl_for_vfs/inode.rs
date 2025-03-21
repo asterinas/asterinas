@@ -11,7 +11,7 @@ use crate::{
         ext2::{FilePerm, Inode as Ext2Inode},
         utils::{
             DirentVisitor, Extension, FallocMode, FileSystem, Inode, InodeMode, InodeType,
-            IoctlCmd, Metadata, MknodType,
+            IoctlCmd, Metadata, MknodType, XattrFlags, XattrNamespace,
         },
     },
     prelude::*,
@@ -193,6 +193,33 @@ impl Inode for Ext2Inode {
 
     fn extension(&self) -> Option<&Extension> {
         Some(self.extension())
+    }
+
+    fn set_xattr(
+        &self,
+        namespace: XattrNamespace,
+        name: &str,
+        value_reader: &mut VmReader,
+        flags: XattrFlags,
+    ) -> Result<()> {
+        self.set_xattr(namespace, name, value_reader, flags)
+    }
+
+    fn get_xattr(
+        &self,
+        namespace: XattrNamespace,
+        name: &str,
+        value_writer: &mut VmWriter,
+    ) -> Result<usize> {
+        self.get_xattr(namespace, name, value_writer)
+    }
+
+    fn list_xattr(&self, namespace: XattrNamespace, list_writer: &mut VmWriter) -> Result<usize> {
+        self.list_xattr(namespace, list_writer)
+    }
+
+    fn remove_xattr(&self, namespace: XattrNamespace, name: &str) -> Result<()> {
+        self.remove_xattr(namespace, name)
     }
 }
 
