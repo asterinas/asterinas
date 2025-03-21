@@ -5,18 +5,38 @@ use crate::{
     trap::{disable_local, DisabledLocalIrqGuard},
 };
 
-/// A guardian that denotes the guard behavior for holding a lock.
-pub trait Guardian {
-    /// The guard type for holding a spin lock or a write lock.
-    type Guard: GuardTransfer;
-    /// The guard type for holding a read lock.
-    type ReadGuard: GuardTransfer;
+/// A guardian that denotes the guard behavior for holding a spin-based lock.
+/// It at least ensures that preemption is disabled while the lock is held.
+pub trait SpinGuardian {
+    /// The guard type for holding a spin lock or a spin-based write lock.
+    type Guard: SpinPolicyGuard + GuardTransfer;
+    /// The guard type for holding a spin-based read lock.
+    type ReadGuard: SpinPolicyGuard + GuardTransfer;
 
     /// Creates a new guard.
     fn guard() -> Self::Guard;
     /// Creates a new read guard.
     fn read_guard() -> Self::ReadGuard;
 }
+
+/// A guard that introduces additional policies for holding a spin-based lock.
+///
+/// # Safety
+///
+/// The policy guaranteed here should at least includes disabling preemption.
+pub unsafe trait SpinPolicyGuard {}
+
+/// A guard that can be borrowed as a [`SpinPolicyGuard`].
+pub trait BorrowAsSpinPolicyGuard {
+    type G: SpinPolicyGuard;
+
+    fn borrow(&self) -> &Self::G;
+}
+
+// SAFETY: since `G` can be borrowed as a reference to a `SpinPolicyGuard`,
+// `G` must contain a `SpinPolicyGuard` and ensure that preemption is disabled
+// while the lock is held.
+unsafe impl<G> SpinPolicyGuard for G where G: BorrowAsSpinPolicyGuard {}
 
 /// The Guard can be transferred atomically.
 pub trait GuardTransfer {
@@ -32,7 +52,7 @@ pub trait GuardTransfer {
 /// A guardian that disables preemption while holding a lock.
 pub struct PreemptDisabled;
 
-impl Guardian for PreemptDisabled {
+impl SpinGuardian for PreemptDisabled {
     type Guard = DisabledPreemptGuard;
     type ReadGuard = DisabledPreemptGuard;
 
@@ -53,7 +73,7 @@ impl Guardian for PreemptDisabled {
 /// context, then it is ok not to use this guardian in the process context.
 pub struct LocalIrqDisabled;
 
-impl Guardian for LocalIrqDisabled {
+impl SpinGuardian for LocalIrqDisabled {
     type Guard = DisabledLocalIrqGuard;
     type ReadGuard = DisabledLocalIrqGuard;
 
@@ -79,7 +99,7 @@ impl Guardian for LocalIrqDisabled {
 /// [`SpinLock`]: super::SpinLock
 pub struct WriteIrqDisabled;
 
-impl Guardian for WriteIrqDisabled {
+impl SpinGuardian for WriteIrqDisabled {
     type Guard = DisabledLocalIrqGuard;
     type ReadGuard = DisabledPreemptGuard;
 

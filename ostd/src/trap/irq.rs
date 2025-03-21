@@ -5,7 +5,7 @@ use core::fmt::Debug;
 use crate::{
     arch::irq::{self, IrqCallbackHandle, IRQ_ALLOCATOR},
     prelude::*,
-    sync::GuardTransfer,
+    sync::{GuardTransfer, SpinPolicyGuard},
     trap::TrapFrame,
     Error,
 };
@@ -137,6 +137,9 @@ pub fn disable_local() -> DisabledLocalIrqGuard {
 pub struct DisabledLocalIrqGuard {
     was_enabled: bool,
 }
+
+// SAFETY: the guard guarantees that preemption is disabled while it is held.
+unsafe impl SpinPolicyGuard for DisabledLocalIrqGuard {}
 
 impl !Send for DisabledLocalIrqGuard {}
 

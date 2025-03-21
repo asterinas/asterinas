@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::sync::GuardTransfer;
+use crate::sync::{GuardTransfer, SpinPolicyGuard};
 
 /// A guard for disable preempt.
 #[clippy::has_significant_drop]
@@ -10,6 +10,9 @@ pub struct DisabledPreemptGuard {
     // This private field prevents user from constructing values of this type directly.
     _private: (),
 }
+
+// SAFETY: the guard guarantees that preemption is disabled while it is held.
+unsafe impl SpinPolicyGuard for DisabledPreemptGuard {}
 
 impl !Send for DisabledPreemptGuard {}
 
