@@ -59,6 +59,10 @@ impl<E: Ext> IfaceCommon<E> {
         self.interface.lock().ipv4_addr()
     }
 
+    pub(super) fn prefix_len(&self) -> Option<u8> {
+        self.interface.lock().prefix_len()
+    }
+
     pub(super) fn sched_poll(&self) -> &E::ScheduleNextPoll {
         &self.sched_poll
     }
