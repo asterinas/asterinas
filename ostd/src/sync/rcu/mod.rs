@@ -22,6 +22,8 @@ mod owner_ptr;
 
 pub use owner_ptr::OwnerPtr;
 
+use super::SpinPolicyGuard;
+
 /// A Read-Copy Update (RCU) cell for sharing a pointer between threads.
 ///
 /// The pointer should be a owning pointer with type `P`, which implements
@@ -169,9 +171,9 @@ impl<P: OwnerPtr> RcuInner<P> {
         }
     }
 
-    fn read_with<'a>(
+    fn read_with<'a, G: SpinPolicyGuard>(
         &'a self,
-        _guard: &'a DisabledPreemptGuard,
+        _guard: &'a G,
     ) -> Option<&'a <P as OwnerPtr>::Target> {
         let obj_ptr = self.ptr.load(Acquire);
         if obj_ptr.is_null() {
@@ -275,8 +277,11 @@ impl<P: OwnerPtr> Rcu<P> {
     /// Unlike [`Self::read`], this function does not return a read guard, so
     /// you cannot use [`RcuReadGuard::compare_exchange`] to synchronize the
     /// writers. You may do it via a [`super::SpinLock`].
-    pub fn read_with<'a>(&'a self, guard: &'a DisabledPreemptGuard) -> &'a <P as OwnerPtr>::Target {
-        self.0.read_with(guard).unwrap()
+    pub fn read_with<'a, G: SpinPolicyGuard>(
+        &'a self,
+        guard: &'a G,
+    ) -> &'a <P as OwnerPtr>::Target {
+        self.0.read_with::<G>(guard).unwrap()
     }
 }
 
@@ -329,11 +334,11 @@ impl<P: OwnerPtr> RcuOption<P> {
     /// Unlike [`Self::read`], this function does not return a read guard, so
     /// you cannot use [`RcuOptionReadGuard::compare_exchange`] to synchronize the
     /// writers. You may do it via a [`super::SpinLock`].
-    pub fn read_with<'a>(
+    pub fn read_with<'a, G: SpinPolicyGuard>(
         &'a self,
-        guard: &'a DisabledPreemptGuard,
+        guard: &'a G,
     ) -> Option<&'a <P as OwnerPtr>::Target> {
-        self.0.read_with(guard)
+        self.0.read_with::<G>(guard)
     }
 }
 
