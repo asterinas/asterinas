@@ -45,7 +45,7 @@ We recommend a three-commit procedure to bump versions:
 2. **Commit 2 "Switch to a new Docker image"** makes the codebase use the new Docker image.
 3. **Commit 3 "Bump the project version"** triggers the release of new crates.
 
-Depending on your excat purpose,
+Depending on your exact purpose,
 you may complete the version bump process with at most three commits within two PRs.
 * **To make non-breaking changes to the Docker images**,
 submit Commit 1 in a PR, then Commit 2 in another.
