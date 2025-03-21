@@ -188,6 +188,7 @@ impl VmMapping {
                     prop.flags |= new_flags;
                     cursor.map(new_frame.into(), prop);
                 }
+                cursor.flusher().sync_tlb_flush();
             }
             VmItem::NotMapped { .. } => {
                 // Map a new frame to the page fault address.
@@ -385,6 +386,8 @@ impl VmMapping {
         let range = self.range();
         let mut cursor = vm_space.cursor_mut(&range)?;
         cursor.unmap(range.len());
+        cursor.flusher().dispatch_tlb_flush();
+        cursor.flusher().sync_tlb_flush();
 
         Ok(())
     }
@@ -404,6 +407,7 @@ impl VmMapping {
             }
         }
         cursor.flusher().dispatch_tlb_flush();
+        cursor.flusher().sync_tlb_flush();
 
         Self { perms, ..self }
     }
