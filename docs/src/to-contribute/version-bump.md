@@ -40,18 +40,22 @@ except during the version bump process.
 
 ## How to Bump Versions
 
-When preparing a new Docker image and/or a new crate release,
-you must update the corresponding version numbers.
+We recommend a three-commit procedure to bump versions:
+1. **Commit 1 "Bump the Docker image version"** triggers the generation of a new Docker image.
+2. **Commit 2 "Switch to a new Docker image"** makes the codebase use the new Docker image.
+3. **Commit 3 "Bump the project version"** triggers the release of new crates.
 
-This version bump process consists of three steps.
-If you only need to bump the Docker image version, follow step 1 and 2.
-To publish updated crates along with the new Docker images,
-complete all three steps.
+Depending on your excat purpose,
+you may complete the version bump process with at most three commits within two PRs.
+* **To make non-breaking changes to the Docker images**,
+submit Commit 1 in a PR, then Commit 2 in another.
+* **To make breaking changes to the Docker images and the crates' APIs**,
+submit Commit 1 in a PR, then Commit 2 and 3 in another.
 
-A convenient utility script, `tools/bump_version.sh`,
-will assist you throughout the process.
+Across the three commits,
+you will be assisted with a convenient utility script, `tools/bump_version.sh`,
 
-### Step 1: Submit a "Bump the Docker image version" PR
+### Commit 1: "Bump the Docker image version"
 
 After updating the Docker image content
 (specified by the `tools/docker/Dockerfile.jinja` file),
@@ -63,33 +67,32 @@ bump_version.sh --docker_version_file [major | minor | patch | date]
 
 The second argument specifies which part of the Docker image version to increment.
 Use `date` for non-breaking Docker image changes.
-If the changes affect the published crates,
+If the changes affect the crates intended to publish,
 select `major`, `minor`, or `patch` in line with semantic versioning.
 
 This command updates the `DOCKER_IMAGE_VERSION` file.
 Submit these changes as a pull request.
 Once merged, the CI will automatically trigger the creation of new Docker images.
 
-### Step 2: Submit a "Switch to a new Docker image" PR
+### Commit 2: "Switch to a new Docker image"
 
 Creating new Docker images can be time-consuming.
 Once the images have been pushed to DockerHub,
-submit a follow-up pull request to
+write a follow-up commit to
 update all Docker image version references across the codebase.
 
 ```
 bump_version.sh --docker_version_refs
 ```
 
-If the new Docker image requires accompanying code changes,
-include them in the same pull request to
-switch to the new development environment _atomically_.
+If your purpose is to publish non-breaking changes to the Docker images,
+then submit this commit in a PR and then your job is finished.
+Otherwise, go on with Commit 3.
 
-### Step 3: Submit a "Bump the project version" PR
+### Commit 3: "Bump the project version"
 
-If your changes are limited to non-breaking Docker image updates,
-you are finished.
-Otherwise, synchronize the version number in `VERSION` with
+In this commit,
+synchronize the version number in `VERSION` with
 that in `DOCKER_IMAGE_VERSION` by running:
 
 ```
@@ -98,6 +101,7 @@ bump_version.sh --version_file
 
 This command also updates all version numbers
 in the `Cargo.toml` files of all crates scheduled for release.
-Submit these changes as a third pull request.
-After merging into the `main` branch,
+Pack these changes into a third commit and
+submit the last two commits in a single PR.
+After the PR is merged into the `main` branch,
 the CI will automatically publish the new crate versions.
