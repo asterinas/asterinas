@@ -5,8 +5,14 @@
 set -e
 
 # This script is used to update Asterinas version numbers in all relevant files in the repository.
-# Usage: ./tools/bump_version.sh bump_type
-# bump_type can be one of: patch, minor, or major.
+# Usage: ./tools/bump_version.sh command [options]
+# Commands:
+#   --docker_version_file [major|minor|patch|date]   Bump the Docker image version in the DOCKER_IMAGE_VERSION file under the project root
+#   --docker_version_refs                            Update all references to the Docker image version throughout the codebase
+#   --version_file                                   Bump the project version to match the Docker image version
+#   --help, -h                                       Show this help message
+# Options:
+#   major, minor, patch, date                        The version part to increment when bumping the Docker image version
 
 # TODO: we may remove the VERSION file in the future, 
 # and retrieve the current version from git tag.
@@ -61,42 +67,6 @@ add_one() {
         local bumped=$((num + 1))
         echo "$bumped"
     fi
-}
-
-# Bump the version based on $bump_type
-bump_version() {
-    local IFS="."
-    local version_parts=($current_version)
-
-    case "$bump_type" in
-        "patch")
-            version_parts[2]=$(add_one "${version_parts[2]}")
-            ;;
-        "minor")
-            version_parts[1]=$(add_one "${version_parts[1]}")
-            version_parts[2]=0
-            ;;
-        "major")
-            version_parts[0]=$(add_one "${version_parts[0]}")
-            version_parts[1]=0
-            version_parts[2]=0
-            ;;
-    esac
-
-    echo "${version_parts[*]}"
-}
-
-# Validate the bump type
-validate_bump_type() {
-    case "$bump_type" in
-        "patch" | "minor" | "major")
-            ;;
-        *)
-        echo "Error: Invalid bump_type. Allowed values are: patch, minor, or major."
-        print_help
-        exit 1
-        ;;
-    esac
 }
 
 # Update Docker image version in DOCKER_IMAGE_VERSION file
