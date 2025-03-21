@@ -46,6 +46,7 @@
     * [Rust Guidelines](to-contribute/style-guidelines/rust-guidelines.md) 
     * [Git Guidelines]() 
 * [Boterinas](to-contribute/boterinas.md)
+* [Version Bump](to-contribute/version-bump.md)
 * [Community]()
 * [Code of Conduct]()
 
