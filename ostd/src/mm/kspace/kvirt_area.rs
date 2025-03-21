@@ -188,6 +188,7 @@ impl<M: AllocatorSelector + 'static> KVirtArea<M> {
         self.range.start..self.range.end
     }
 
+    #[cfg_attr(not(ktest), expect(unused))]
     pub fn len(&self) -> usize {
         self.range.len()
     }
@@ -232,6 +233,7 @@ impl KVirtArea<Tracked> {
     ///
     /// This function returns None if the address is not mapped (`NotMapped`),
     /// while panics if the address is mapped to a `MappedUntracked` or `PageTableNode` page.
+    #[cfg_attr(not(ktest), expect(unused))]
     pub fn get_page(&self, addr: Vaddr) -> Option<Frame<dyn AnyFrameMeta>> {
         let query_result = self.query_page(addr);
         match query_result {
@@ -288,6 +290,7 @@ impl KVirtArea<Untracked> {
     ///
     /// This function returns None if the address is not mapped (`NotMapped`),
     /// while panics if the address is mapped to a `Mapped` or `PageTableNode` page.
+    #[cfg_attr(not(ktest), expect(unused))]
     pub fn get_untracked_page(&self, addr: Vaddr) -> Option<(Paddr, usize)> {
         let query_result = self.query_page(addr);
         match query_result {
