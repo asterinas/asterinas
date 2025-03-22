@@ -15,7 +15,7 @@ OVMF ?= on
 RELEASE ?= 0
 RELEASE_LTO ?= 0
 LOG_LEVEL ?= error
-SCHEME ?= ""
+SCHEME ?= none
 SMP ?= 1
 OSTD_TASK_STACK_SIZE_IN_PAGES ?= 64
 FEATURES ?=
@@ -85,7 +85,7 @@ BOOT_PROTOCOL = linux-efi-handover64
 CARGO_OSDK_ARGS += --scheme tdx
 endif
 
-ifneq ($(SCHEME), "")
+ifneq ($(SCHEME), none)
 CARGO_OSDK_ARGS += --scheme $(SCHEME)
 else
 CARGO_OSDK_ARGS += --boot-method="$(BOOT_METHOD)"

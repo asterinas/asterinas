@@ -1,0 +1,78 @@
+name: x86_64 
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  general-check:
+    uses: ./.github/workflows/test_backend.yml
+    with:
+      auto_test: 'general'
+      container_image: '["asterinas/asterinas:0.14.0"]'
+      runs_on: 'ubuntu-latest'
+
+  x86-test:
+    uses: ./.github/workflows/test_backend.yml
+    strategy:
+      matrix:
+        include:
+          # Boot
+          - test_id: 'boot_test_mb'
+            boot_protocol: 'multiboot'
+          - test_id: 'boot_test_legacy32'
+            boot_protocol: 'linux-legacy32'
+          - test_id: 'boot_test_mb2_smp4'
+            boot_protocol: 'multiboot2'
+            smp: 4
+
+          # Syscall
+          - test_id: 'syscall_test_debug'
+            release: false
+          - test_id: 'syscall_test_at_ext2_microvm'
+            scheme: 'microvm'
+            syscall_test_dir: '/ext2'
+          - test_id: 'syscall_test_at_ext2_iommu_debug'
+            scheme: 'iommu'
+            syscall_test_dir: '/ext2'
+            release: false
+          - test_id: 'syscall_test_at_exfat_mb2_nokvm'
+            boot_protocol: 'multiboot2'
+            enable_kvm: false
+            extra_blocklists: 'blocklists.exfat'
+            syscall_test_dir: '/exfat'
+          - test_id: 'syscall_test_mb2_smp4'
+            boot_protocol: 'multiboot2'
+            smp: 4
+
+          # General
+          - test_id: 'test_test_efi'
+          - test_id: 'test_test_mb2_smp4'
+            boot_protocol: 'multiboot2'
+            smp: 4
+      fail-fast: false
+    with:
+      auto_test: ${{ (startsWith(matrix.test_id, 'boot') && 'boot') || 
+          (startsWith(matrix.test_id, 'syscall') && 'syscall') || 'test' }}
+      release: ${{ matrix.release || true }}
+      enable_kvm: ${{ matrix.enable_kvm || true }}
+      intel_tdx: false
+      smp: ${{ matrix.smp || 1 }}
+      netdev: ${{ matrix.netdev || 'tap' }}
+      scheme: ${{ matrix.scheme || 'none' }}
+      extra_blocklists: ${{ matrix.extra_blocklists || '' }}
+      syscall_test_dir: ${{ matrix.syscall_test_dir || '/tmp' }}
+      boot_protocol: ${{ matrix.boot_protocol || 'linux-efi-handover64' }}
+      container_image: '["asterinas/asterinas:0.14.0"]'
+      runs_on: 'ubuntu-latest'
+
+  x86-osdk-test:
+    uses: ./.github/workflows/test_backend.yml
+    with:
+      auto_test: 'osdk'
+      container_image: '["asterinas/asterinas:0.14.0", "asterinas/osdk:0.14.0"]'
+      runs_on: 'ubuntu-latest'
+      intel_tdx: false
