@@ -39,6 +39,13 @@ impl<E: Ext> PollableIface<E> {
         self.interface.ipv4_addr()
     }
 
+    pub(super) fn prefix_len(&self) -> Option<u8> {
+        self.interface
+            .ip_addrs()
+            .first()
+            .map(|ip_addr| ip_addr.prefix_len())
+    }
+
     /// Returns the next poll time.
     pub(super) fn next_poll_at_ms(&self) -> Option<u64> {
         self.pending_conns.next_poll_at_ms()

@@ -291,7 +291,7 @@ impl<R: TRights> Fifo<u8, R> {
     #[require(R > Write)]
     pub fn write(&self, reader: &mut dyn MultiRead) -> Result<usize> {
         let mut rb = self.common.producer.rb();
-        if rb.free_len() < reader.sum_lens() && reader.sum_lens() <= PIPE_BUF {
+        if rb.free_len() < reader.remain() && reader.remain() <= PIPE_BUF {
             // No sufficient space for an atomic write
             return Ok(0);
         }

@@ -6,6 +6,7 @@ pub mod socket;
 pub fn init() {
     iface::init();
     socket::vsock::init();
+    socket::netlink::init();
 }
 
 /// Lazy init should be called after spawning init thread.

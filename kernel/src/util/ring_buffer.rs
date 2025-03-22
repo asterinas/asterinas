@@ -312,7 +312,7 @@ impl<R: Deref<Target = RingBuffer<u8>>> Producer<u8, R> {
         if free_len == 0 {
             return Ok(0);
         }
-        let write_len = reader.sum_lens().min(free_len);
+        let write_len = reader.remain().min(free_len);
 
         let tail = rb.tail();
         let write_len = if tail + write_len > rb.capacity {

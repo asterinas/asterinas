@@ -17,6 +17,7 @@ use crate::{
         Process,
     },
     thread::Thread,
+    util::MultiRead,
     vm::vmar::Vmar,
 };
 
@@ -172,64 +173,86 @@ impl<'a> CurrentUserSpace<'a> {
 /// included in the final C String).
 pub trait ReadCString {
     fn read_cstring(&mut self) -> Result<CString>;
+    fn read_cstring_with_max_len(&mut self, max_len: usize) -> Result<CString>;
 }
 
-impl ReadCString for VmReader<'_, Fallible> {
-    /// Reads a C string from the user space.
-    ///
-    /// This implementation is inspired by
-    /// the `do_strncpy_from_user` function in Linux kernel.
-    /// The original Linux implementation can be found at:
-    /// <https://elixir.bootlin.com/linux/v6.0.9/source/lib/strncpy_from_user.c#L28>
-    fn read_cstring(&mut self) -> Result<CString> {
-        let max_len = self.remain();
-        let mut buffer: Vec<u8> = Vec::with_capacity(max_len);
-
-        macro_rules! read_one_byte_at_a_time_while {
-            ($cond:expr) => {
-                while $cond {
-                    let byte = self.read_val::<u8>()?;
-                    buffer.push(byte);
-                    if byte == 0 {
-                        return Ok(CString::from_vec_with_nul(buffer)
-                            .expect("We provided 0 but no 0 is found"));
-                    }
-                }
-            };
-        }
-
-        // Handle the first few bytes to make `cur_addr` aligned with `size_of::<usize>`
-        read_one_byte_at_a_time_while!(
-            !is_addr_aligned(self.cursor() as usize) && buffer.len() < max_len
-        );
-
-        // Handle the rest of the bytes in bulk
-        while (buffer.len() + mem::size_of::<usize>()) <= max_len {
-            let Ok(word) = self.read_val::<usize>() else {
-                break;
-            };
-
-            if has_zero(word) {
-                for byte in word.to_ne_bytes() {
-                    buffer.push(byte);
-                    if byte == 0 {
-                        return Ok(CString::from_vec_with_nul(buffer)
-                            .expect("We provided 0 but no 0 is found"));
-                    }
-                }
-                unreachable!("The branch should never be reached unless `has_zero` has bugs.")
+macro_rules! impl_read_cstring {
+    ($reader: ty) => {
+        impl ReadCString for $reader {
+            /// Reads a C string from the user space.
+            fn read_cstring(&mut self) -> Result<CString> {
+                self.read_cstring_with_max_len(self.remain())
             }
 
-            buffer.extend_from_slice(&word.to_ne_bytes());
+            /// Reads a C string from the user space.
+            ///
+            /// This implementation is inspired by
+            /// the `do_strncpy_from_user` function in Linux kernel.
+            /// The original Linux implementation can be found at:
+            /// <https://elixir.bootlin.com/linux/v6.0.9/source/lib/strncpy_from_user.c#L28>
+            fn read_cstring_with_max_len(&mut self, max_len: usize) -> Result<CString> {
+                let max_len = self.remain().min(max_len);
+                let mut buffer: Vec<u8> = Vec::with_capacity(max_len);
+
+                macro_rules! read_one_byte_at_a_time_while {
+                    ($cond:expr) => {
+                        while $cond {
+                            let byte = self.read_val::<u8>()?;
+                            buffer.push(byte);
+                            if byte == 0 {
+                                return Ok(CString::from_vec_with_nul(buffer)
+                                    .expect("We provided 0 but no 0 is found"));
+                            }
+                        }
+                    };
+                }
+
+                // Handle the first few bytes to make `cur_addr` aligned with `size_of::<usize>`
+                read_one_byte_at_a_time_while!(
+                    !is_addr_aligned(self.cursor() as usize) && buffer.len() < max_len
+                );
+
+                // Handle the rest of the bytes in bulk
+                while (buffer.len() + mem::size_of::<usize>()) <= max_len {
+                    let Ok(word) = (self as &mut dyn MultiRead).read_val::<usize>() else {
+                        break;
+                    };
+
+                    if has_zero(word) {
+                        for byte in word.to_ne_bytes() {
+                            buffer.push(byte);
+                            if byte == 0 {
+                                return Ok(CString::from_vec_with_nul(buffer)
+                                    .expect("We provided 0 but no 0 is found"));
+                            }
+                        }
+                        unreachable!(
+                            "The branch should never be reached unless `has_zero` has bugs."
+                        )
+                    }
+
+                    buffer.extend_from_slice(&word.to_ne_bytes());
+                }
+
+                // Handle the last few bytes that are not enough for a word
+                read_one_byte_at_a_time_while!(buffer.len() < max_len);
+
+                // Maximum length exceeded before finding the null terminator
+                return_errno_with_message!(Errno::EFAULT, "Fails to read CString from user");
+            }
         }
-
-        // Handle the last few bytes that are not enough for a word
-        read_one_byte_at_a_time_while!(buffer.len() < max_len);
-
-        // Maximum length exceeded before finding the null terminator
-        return_errno_with_message!(Errno::EFAULT, "Fails to read CString from user");
-    }
+    };
 }
+
+// While `VmReader` implements the `MultiRead` trait, the ideal design would only require
+// implementing `ReadCString` for the `dyn MultiRead` trait object, thereby avoiding redundant
+// implementation on `VmReader` itself. However, this approach introduces a type distinction
+// where the compiler treats `dyn MultiRead` trait objects and concrete `VmReader` instances
+// as separate types. This necessitates explicit type coercion when invoking `read_cstring`
+// on direct `VmReader` instances, requiring the verbose `&mut reader as &mut dyn MultiRead`
+// - an undesirable code pattern.
+impl_read_cstring!(VmReader<'_>);
+impl_read_cstring!(dyn MultiRead + '_);
 
 /// Determines whether the value contains a zero byte.
 ///

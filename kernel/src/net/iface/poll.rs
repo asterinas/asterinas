@@ -15,7 +15,7 @@ use crate::{
 
 pub fn lazy_init() {
     for iface in IFACES.get().unwrap() {
-        spawn_background_poll_thread(iface.clone());
+        spawn_background_poll_thread(iface.iface().clone());
     }
 }
 
@@ -23,7 +23,7 @@ pub(super) fn poll_ifaces() {
     let ifaces = IFACES.get().unwrap();
 
     for iface in ifaces.iter() {
-        iface.poll();
+        iface.iface().poll();
     }
 }
 
