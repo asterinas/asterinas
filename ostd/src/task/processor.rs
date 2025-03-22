@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::sync::Arc;
-use core::ptr::NonNull;
+use core::{ptr::NonNull, sync::atomic::Ordering};
 
 use super::{context_switch, Task, TaskContext, POST_SCHEDULE_HANDLER};
 use crate::cpu_local_cell;
@@ -43,7 +43,21 @@ pub(super) fn switch_to_task(next_task: Arc<Task>) {
         crate::sync::finish_grace_period();
     }
 
-    let irq_guard = crate::trap::disable_local();
+    // Keep interrupts disabled during context switching. This will be enabled
+    // after switching to the target task (in `on_task_entry`).
+    crate::arch::irq::disable_local();
+
+    // Set the running CPU of the next task.
+    let cur_cpuid = crate::cpu::current_cpu_racy(); // Safe since IRQs are disabled.
+    while next_task
+        .running_on_cpu
+        .compare_exchange(None, Some(cur_cpuid), Ordering::AcqRel, Ordering::Relaxed)
+        .is_err()
+    {
+        // Might be a scheduler bug.
+        log::warn!("Switching to a task that is already running on another CPU");
+        core::hint::spin_loop();
+    }
 
     let current_task_ptr = CURRENT_TASK_PTR.load();
     let current_task_ctx_ptr = if !current_task_ptr.is_null() {
@@ -80,10 +94,6 @@ pub(super) fn switch_to_task(next_task: Arc<Task>) {
         drop(unsafe { Arc::from_raw(old_prev) });
     }
 
-    // Keep interrupts disabled during context switching. This will be enabled after switching to
-    // the target task (in the code below or in `kernel_task_entry`).
-    core::mem::forget(irq_guard);
-
     // SAFETY:
     // 1. `ctx` is only used in `reschedule()`. We have exclusive access to both the current task
     //    context and the next task context.
@@ -99,11 +109,31 @@ pub(super) fn switch_to_task(next_task: Arc<Task>) {
     // next task. Not dropping is just fine because the only consequence is that we delay the drop
     // to the next task switching.
 
-    // See also `kernel_task_entry`.
-    crate::arch::irq::enable_local();
+    on_task_entry();
 
     // The `next_task` was moved into `CURRENT_TASK_PTR` above, now restore its FPU state.
     if let Some(current) = Task::current() {
         current.restore_fpu_state();
     }
+}
+
+/// The function to be called when a task is entered/resumed.
+pub(super) fn on_task_entry() {
+    let prev_task_ptr = PREVIOUS_TASK_PTR.load();
+    if !prev_task_ptr.is_null() {
+        // SAFETY: The pointer is set by `switch_to_task` and is guaranteed to be
+        // built with `Arc::into_raw`. If this is not NULL the pointer must be valid.
+        let prev_task = unsafe { &*prev_task_ptr };
+        #[cfg(debug_assertions)]
+        {
+            let prev = prev_task.running_on_cpu.swap(None, Ordering::Release);
+            debug_assert_eq!(prev, Some(crate::cpu::current_cpu_racy()));
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            prev_task.running_on_cpu.store(None, Ordering::Release);
+        }
+    }
+
+    crate::arch::irq::enable_local();
 }

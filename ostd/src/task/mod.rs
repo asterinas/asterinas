@@ -15,6 +15,7 @@ use core::{
     cell::{Cell, SyncUnsafeCell},
     ops::Deref,
     ptr::NonNull,
+    sync::atomic::Ordering,
 };
 
 use kernel_stack::KernelStack;
@@ -27,7 +28,11 @@ pub use self::{
     scheduler::info::{AtomicCpuId, TaskScheduleInfo},
 };
 pub(crate) use crate::arch::task::{context_switch, TaskContext};
-use crate::{cpu::context::UserContext, prelude::*, trap::in_interrupt_context};
+use crate::{
+    cpu::{context::UserContext, AtomicOptionCpuId},
+    prelude::*,
+    trap::in_interrupt_context,
+};
 
 static POST_SCHEDULE_HANDLER: Once<fn()> = Once::new();
 
@@ -56,6 +61,8 @@ pub struct Task {
     kstack: KernelStack,
 
     schedule_info: TaskScheduleInfo,
+
+    running_on_cpu: AtomicOptionCpuId,
 }
 
 impl Task {
@@ -104,6 +111,15 @@ impl Task {
     #[track_caller]
     pub fn run(self: &Arc<Self>) {
         scheduler::run_new_task(self.clone());
+    }
+
+    /// Loads the CPU that the task is running on.
+    ///
+    /// If the current task is not running on any CPU, it returns `None`.
+    ///
+    /// This is an atomic operation. The loaded value may be outdated.
+    pub fn running_on_cpu(&self, ordering: Ordering) -> Option<CpuId> {
+        self.running_on_cpu.load(ordering)
     }
 
     /// Returns the task data.
@@ -204,8 +220,7 @@ impl TaskOptions {
         /// all task will entering this function
         /// this function is mean to executing the task_fn in Task
         extern "C" fn kernel_task_entry() -> ! {
-            // See `switch_to_task` for why we need this.
-            crate::arch::irq::enable_local();
+            processor::on_task_entry();
 
             let current_task = Task::current()
                 .expect("no current task, it should have current task in kernel task entry");
@@ -257,6 +272,7 @@ impl TaskOptions {
             schedule_info: TaskScheduleInfo {
                 cpu: AtomicCpuId::default(),
             },
+            running_on_cpu: AtomicOptionCpuId::new(None),
         };
 
         Ok(new_task)
