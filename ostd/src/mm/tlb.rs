@@ -90,7 +90,7 @@ impl<G: PinCurrentCpu> TlbFlusher<G> {
         self.have_unsynced_flush = true;
     }
 
-    /// Wait for all the previous TLB flush requests to be completed.
+    /// Waits for all the previous TLB flush requests to be completed.
     ///
     /// After this function, all TLB entries corresponding to previous
     /// dispatched TLB flush requests are guaranteed to be coherent.
@@ -159,10 +159,7 @@ impl<G: PinCurrentCpu> TlbFlusher<G> {
         // Slow path for multi-CPU cases.
         for cpu in self.target_cpus.iter() {
             let mut op_queue = FLUSH_OPS.get_on_cpu(cpu).lock();
-            if let Some(drop_after_flush) = drop_after_flush.clone() {
-                PAGE_KEEPER.get_on_cpu(cpu).lock().push(drop_after_flush);
-            }
-            op_queue.push(op.clone());
+            op_queue.push(op.clone(), drop_after_flush.clone());
         }
     }
 }
@@ -206,11 +203,8 @@ impl TlbFlushOp {
 }
 
 // The queues of pending requests on each CPU.
-//
-// Lock ordering: lock FLUSH_OPS before PAGE_KEEPER.
 cpu_local! {
     static FLUSH_OPS: SpinLock<OpsStack, LocalIrqDisabled> = SpinLock::new(OpsStack::new());
-    static PAGE_KEEPER: SpinLock<Vec<Frame<dyn AnyFrameMeta>>, LocalIrqDisabled> = SpinLock::new(Vec::new());
     /// Whether this CPU finishes the last remote flush request.
     static ACK_REMOTE_FLUSH: AtomicBool = AtomicBool::new(true);
 }
@@ -220,7 +214,6 @@ fn do_remote_flush() {
 
     let mut op_queue = FLUSH_OPS.get_on_cpu(current_cpu).lock();
     op_queue.flush_all();
-    PAGE_KEEPER.get_on_cpu(current_cpu).lock().clear();
 
     ACK_REMOTE_FLUSH
         .get_on_cpu(current_cpu)
@@ -238,19 +231,24 @@ struct OpsStack {
     ops: [Option<TlbFlushOp>; FLUSH_ALL_OPS_THRESHOLD],
     need_flush_all: bool,
     size: usize,
+    page_keeper: Vec<Frame<dyn AnyFrameMeta>>,
 }
 
 impl OpsStack {
     const fn new() -> Self {
-        const ARRAY_REPEAT_VALUE: Option<TlbFlushOp> = None;
         Self {
-            ops: [ARRAY_REPEAT_VALUE; FLUSH_ALL_OPS_THRESHOLD],
+            ops: [const { None }; FLUSH_ALL_OPS_THRESHOLD],
             need_flush_all: false,
             size: 0,
+            page_keeper: Vec::new(),
         }
     }
 
-    fn push(&mut self, op: TlbFlushOp) {
+    fn push(&mut self, op: TlbFlushOp, drop_after_flush: Option<Frame<dyn AnyFrameMeta>>) {
+        if let Some(frame) = drop_after_flush {
+            self.page_keeper.push(frame);
+        }
+
         if self.need_flush_all {
             return;
         }
@@ -267,7 +265,6 @@ impl OpsStack {
     fn flush_all(&mut self) {
         if self.need_flush_all {
             crate::arch::mm::tlb_flush_all_excluding_global();
-            self.need_flush_all = false;
         } else {
             for i in 0..self.size {
                 if let Some(op) = &self.ops[i] {
@@ -276,6 +273,9 @@ impl OpsStack {
             }
         }
 
+        self.need_flush_all = false;
         self.size = 0;
+
+        self.page_keeper.clear();
     }
 }
