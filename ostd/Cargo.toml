@@ -1,6 +1,6 @@
 [package]
 name = "ostd"
-version = "0.14.0"
+version = "0.14.1"
 edition = "2021"
 description = "Rust OS framework that facilitates the development of and innovation in OS kernels"
 license = "MPL-2.0"
@@ -25,13 +25,13 @@ id-alloc = { path = "libs/id-alloc", version = "0.1.0" }
 inherit-methods-macro = { git = "https://github.com/asterinas/inherit-methods-macro", rev = "98f7e3e", version = "0.1.0" }
 int-to-c-enum = { path = "../kernel/libs/int-to-c-enum", version = "0.1.0" }
 intrusive-collections = { version = "0.9.6", features = ["nightly"] }
-linux-boot-params = { version = "0.14.0", path = "libs/linux-bzimage/boot-params" }
+linux-boot-params = { version = "0.14.1", path = "libs/linux-bzimage/boot-params" }
 log = "0.4"
 num = { version = "0.4", default-features = false }
 num-derive = { version = "0.4", default-features = false }
 num-traits = { version = "0.2", default-features = false }
-ostd-macros = { version = "0.14.0", path = "libs/ostd-macros" }
-ostd-test = { version = "0.14.0", path = "libs/ostd-test" }
+ostd-macros = { version = "0.14.1", path = "libs/ostd-macros" }
+ostd-test = { version = "0.14.1", path = "libs/ostd-test" }
 ostd-pod = { git = "https://github.com/asterinas/ostd-pod", rev = "c4644be", version = "0.1.1" }
 spin = "0.9.4"
 smallvec = "1.13.2"
