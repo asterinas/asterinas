@@ -22,9 +22,16 @@
 //! [`GlobalFrameAllocator`]: ostd::mm::GlobalFrameAllocator
 //! [`global_frame_allocator`]: ostd::global_frame_allocator
 
+// The heap allocator usually depends on frame allocation. If we depend on heap
+// allocation then there will be a cyclic dependency. We only use the heap in
+// unit tests.
+#[cfg(ktest)]
+extern crate alloc;
+
 use core::alloc::Layout;
 
 use ostd::{
+    cpu::PinCurrentCpu,
     mm::{frame::GlobalFrameAllocator, Paddr},
     trap,
 };
@@ -38,9 +45,14 @@ mod set;
 #[cfg(ktest)]
 mod test;
 
+per_cpu_counter! {
+    /// The total size of free memory.
+    pub static TOTAL_FREE_SIZE: usize;
+}
+
 /// Loads the total size (in bytes) of free memory in the allocator.
 pub fn load_total_free_size() -> usize {
-    per_cpu_counter::read_total_free_size()
+    TOTAL_FREE_SIZE.get()
 }
 
 /// The global frame allocator provided by OSDK.
@@ -55,18 +67,20 @@ impl GlobalFrameAllocator for FrameAllocator {
         let guard = trap::disable_local();
         let res = cache::alloc(&guard, layout);
         if res.is_some() {
-            per_cpu_counter::sub_free_size(&guard, layout.size());
+            TOTAL_FREE_SIZE.sub(guard.current_cpu(), layout.size());
         }
         res
     }
 
     fn dealloc(&self, addr: Paddr, size: usize) {
-        self.add_free_memory(addr, size);
+        let guard = trap::disable_local();
+        TOTAL_FREE_SIZE.add(guard.current_cpu(), size);
+        cache::dealloc(&guard, addr, size);
     }
 
     fn add_free_memory(&self, addr: Paddr, size: usize) {
         let guard = trap::disable_local();
-        per_cpu_counter::add_free_size(&guard, size);
-        cache::add_free_memory(&guard, addr, size);
+        TOTAL_FREE_SIZE.add(guard.current_cpu(), size);
+        pools::add_free_memory(&guard, addr, size);
     }
 }

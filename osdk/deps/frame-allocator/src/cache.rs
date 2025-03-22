@@ -69,15 +69,19 @@ impl<const NR_CONT_FRAMES: usize, const COUNT: usize> CacheArray<NR_CONT_FRAMES,
     ///
     /// It may deallocate directly to this cache. If the cache is full, it will
     /// deallocate to the global pool.
-    fn add_free_memory(&mut self, guard: &DisabledLocalIrqGuard, addr: Paddr) {
+    fn dealloc(&mut self, guard: &DisabledLocalIrqGuard, addr: Paddr) {
         if self.push_front(addr).is_none() {
-            super::pools::add_free_memory(guard, addr, Self::segment_size());
-            let nr_to_dealloc = COUNT * 2 / 3;
+            let nr_to_dealloc = COUNT * 2 / 3 + 1;
 
-            for _ in 0..nr_to_dealloc {
-                let frame = self.pop_front().unwrap();
-                super::pools::add_free_memory(guard, frame, Self::segment_size());
-            }
+            let segments = (0..nr_to_dealloc).map(|i| {
+                if i == 0 {
+                    (addr, Self::segment_size())
+                } else {
+                    (self.pop_front().unwrap(), Self::segment_size())
+                }
+            });
+
+            super::pools::dealloc(guard, segments);
         };
     }
 
@@ -131,10 +135,10 @@ pub(super) fn alloc(guard: &DisabledLocalIrqGuard, layout: Layout) -> Option<Pad
     }
 }
 
-pub(super) fn add_free_memory(guard: &DisabledLocalIrqGuard, addr: Paddr, size: usize) {
+pub(super) fn dealloc(guard: &DisabledLocalIrqGuard, addr: Paddr, size: usize) {
     let nr_frames = size / PAGE_SIZE;
     if nr_frames > 4 {
-        super::pools::add_free_memory(guard, addr, size);
+        super::pools::dealloc(guard, [(addr, size)].into_iter());
         return;
     }
 
@@ -142,10 +146,10 @@ pub(super) fn add_free_memory(guard: &DisabledLocalIrqGuard, addr: Paddr, size: 
     let mut cache = cache_cell.borrow_mut();
 
     match nr_frames {
-        1 => cache.cache1.add_free_memory(guard, addr),
-        2 => cache.cache2.add_free_memory(guard, addr),
-        3 => cache.cache3.add_free_memory(guard, addr),
-        4 => cache.cache4.add_free_memory(guard, addr),
-        _ => super::pools::add_free_memory(guard, addr, size),
+        1 => cache.cache1.dealloc(guard, addr),
+        2 => cache.cache2.dealloc(guard, addr),
+        3 => cache.cache3.dealloc(guard, addr),
+        4 => cache.cache4.dealloc(guard, addr),
+        _ => super::pools::dealloc(guard, [(addr, size)].into_iter()),
     }
 }
