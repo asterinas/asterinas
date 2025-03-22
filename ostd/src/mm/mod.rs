@@ -19,6 +19,9 @@ pub(crate) mod page_table;
 pub mod tlb;
 pub mod vm_space;
 
+#[cfg(ktest)]
+mod test;
+
 use core::{fmt::Debug, ops::Range};
 
 pub use self::{
