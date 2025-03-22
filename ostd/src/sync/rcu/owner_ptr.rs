@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::ptr::NonNull;
+use core::{marker::PhantomData, mem::ManuallyDrop, ops::Deref, ptr::NonNull};
 
 use crate::prelude::*;
 
-/// A trait that abstracts pointers that have the ownership of the objects they
-/// refer to.
+/// A trait that abstracts pointers that is non-null.
 ///
 /// The most typical examples smart pointer types like `Box<T>` and `Arc<T>`,
 /// which can be converted to and from the raw pointer type of `*const T`.
@@ -17,13 +16,11 @@ use crate::prelude::*;
 /// raw pointers.
 ///
 /// [`Rcu`]: super::Rcu
-pub unsafe trait OwnerPtr: Send + 'static {
-    /// The target type that this pointer refers to.
-    // TODO: allow ?Sized
-    type Target;
-
-    /// Creates a new pointer with the given value.
-    fn new(value: Self::Target) -> Self;
+pub unsafe trait NonNullPtr: Send + 'static {
+    /// A type that behaves just like a shared references to the `NonNullPtr`.
+    type Ref<'a>: Deref<Target = Self>
+    where
+        Self: 'a;
 
     /// Converts to a raw pointer.
     ///
@@ -32,7 +29,7 @@ pub unsafe trait OwnerPtr: Send + 'static {
     ///
     /// The resulting raw pointer must be valid to be immutably accessed
     /// or borrowed until `from_raw` is called.
-    fn into_raw(self) -> NonNull<Self::Target>;
+    fn into_raw(self) -> NonNull<()>;
 
     /// Converts back from a raw pointer.
     ///
@@ -46,49 +43,126 @@ pub unsafe trait OwnerPtr: Send + 'static {
     /// resulting value has not (yet) been dropped, the pointer cannot be
     /// used because it may break Rust aliasing rules (e.g., `Box<T>`
     /// requires the pointer to be unique and thus _never_ aliased).
-    unsafe fn from_raw(ptr: NonNull<Self::Target>) -> Self;
+    unsafe fn from_raw(ptr: NonNull<()>) -> Self;
+
+    /// Obtains a shared reference to the original value.
+    ///
+    /// # Safety
+    ///
+    /// The original value must outlive the lifetime parameter `'a`, and during `'a`
+    /// no mutable references to the value will exist.
+    unsafe fn raw_as_ref<'a>(raw: NonNull<()>) -> Self::Ref<'a>;
+
+    /// Converts a shared reference to a pointer.
+    ///
+    /// # Panic
+    ///
+    /// If the input reference is not created by [`raw_as_ref`] and is a reference to
+    /// null pointer, this method will panic.
+    fn ref_as_raw(ptr_ref: Self::Ref<'_>) -> NonNull<()>;
 }
 
-unsafe impl<T: Send + 'static> OwnerPtr for Box<T> {
-    type Target = T;
+/// A type that represents `&'a Box<T>`.
+#[derive(PartialEq, Debug)]
+pub struct BoxRef<'a, T: Send + 'static> {
+    inner: *mut T,
+    _marker: PhantomData<&'a T>,
+}
 
-    fn new(value: Self::Target) -> Self {
-        Box::new(value)
+impl<T: Send + 'static> Deref for BoxRef<'_, T> {
+    type Target = Box<T>;
+
+    fn deref(&self) -> &Self::Target {
+        // SAFETY: A `Box<T>` is guaranteed to be represented by a single pointer [1] and a shared
+        // reference to the `Box<T>` during the lifetime `'a` can be created according to the
+        // safety requirements of `ItemEntry::raw_as_ref`.
+        //
+        // [1]: https://doc.rust-lang.org/std/boxed/#memory-layout
+        unsafe { core::mem::transmute(&self.inner) }
     }
+}
 
-    fn into_raw(self) -> NonNull<Self::Target> {
-        let ptr = Box::into_raw(self);
+unsafe impl<T: Send + 'static> NonNullPtr for Box<T> {
+    type Ref<'a>
+        = BoxRef<'a, T>
+    where
+        Self: 'a;
+
+    fn into_raw(self) -> NonNull<()> {
+        let ptr = Box::into_raw(self).cast();
 
         // SAFETY: The pointer representing a `Box` can never be NULL.
         unsafe { NonNull::new_unchecked(ptr) }
     }
 
-    unsafe fn from_raw(ptr: NonNull<Self::Target>) -> Self {
-        let ptr = ptr.as_ptr();
+    unsafe fn from_raw(ptr: NonNull<()>) -> Self {
+        let ptr = ptr.as_ptr().cast();
 
         // SAFETY: The safety is upheld by the caller.
         unsafe { Box::from_raw(ptr) }
     }
-}
 
-unsafe impl<T: Send + Sync + 'static> OwnerPtr for Arc<T> {
-    type Target = T;
-
-    fn new(value: Self::Target) -> Self {
-        Arc::new(value)
+    unsafe fn raw_as_ref<'a>(raw: NonNull<()>) -> Self::Ref<'a> {
+        BoxRef {
+            inner: raw.as_ptr().cast(),
+            _marker: PhantomData,
+        }
     }
 
-    fn into_raw(self) -> NonNull<Self::Target> {
-        let ptr = Arc::into_raw(self).cast_mut();
+    fn ref_as_raw(ptr_ref: Self::Ref<'_>) -> NonNull<()> {
+        NonNull::new(ptr_ref.inner.cast()).unwrap()
+    }
+}
+
+/// A type that represents `&'a Arc<T>`.
+#[derive(PartialEq, Debug)]
+pub struct ArcRef<'a, T: Send + Sync + 'static> {
+    inner: ManuallyDrop<Arc<T>>,
+    _marker: PhantomData<&'a Arc<T>>,
+}
+
+impl<T: Send + Sync + 'static> Deref for ArcRef<'_, T> {
+    type Target = Arc<T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+unsafe impl<T: Send + Sync + 'static> NonNullPtr for Arc<T> {
+    type Ref<'a>
+        = ArcRef<'a, T>
+    where
+        Self: 'a;
+
+    fn into_raw(self) -> NonNull<()> {
+        let ptr = Arc::into_raw(self).cast_mut().cast();
 
         // SAFETY: The pointer representing an `Arc` can never be NULL.
         unsafe { NonNull::new_unchecked(ptr) }
     }
 
-    unsafe fn from_raw(ptr: NonNull<Self::Target>) -> Self {
-        let ptr = ptr.as_ptr().cast_const();
+    unsafe fn from_raw(ptr: NonNull<()>) -> Self {
+        let ptr = ptr.as_ptr().cast_const().cast();
 
         // SAFETY: The safety is upheld by the caller.
         unsafe { Arc::from_raw(ptr) }
+    }
+
+    unsafe fn raw_as_ref<'a>(raw: NonNull<()>) -> Self::Ref<'a> {
+        // SAFETY: By the safety requirements of `ItemEntry::raw_as_ref`, the original value
+        // outlives the lifetime parameter `'a` and during `'a` no mutable references to it can
+        // exist. Thus, a shared reference to the original value can be created.
+        unsafe {
+            ArcRef {
+                inner: ManuallyDrop::new(Arc::from_raw(raw.as_ptr().cast())),
+                _marker: PhantomData,
+            }
+        }
+    }
+
+    fn ref_as_raw(ptr_ref: Self::Ref<'_>) -> NonNull<()> {
+        let raw_ptr = Arc::into_raw(ptr_ref.inner.into()).cast_mut().cast();
+        NonNull::new(raw_ptr).unwrap()
     }
 }

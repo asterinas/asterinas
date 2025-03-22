@@ -57,10 +57,7 @@ impl AnyConsoleDevice for ConsoleDevice {
             let callbacks = self.callbacks.read();
             let mut callbacks_cloned = callbacks.clone();
             callbacks_cloned.push(callback);
-            if callbacks
-                .compare_exchange(Box::new(callbacks_cloned))
-                .is_ok()
-            {
+            if callbacks.compare_exchange(callbacks_cloned).is_ok() {
                 break;
             }
             // Contention on pushing, retry.
