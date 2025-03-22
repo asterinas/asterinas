@@ -434,9 +434,10 @@ RUN curl https://sh.rustup.rs -sSf | \
     && rustup component add rust-src rustc-dev llvm-tools-preview
 
 # Install cargo tools
-RUN cargo install \ 
-    cargo-binutils \ 
+RUN cargo install \
+    cargo-binutils \
     mdbook \
+    mdbook-variables \
     typos-cli
 
 FROM rust
