@@ -205,17 +205,6 @@ impl TlbFlushOp {
     }
 }
 
-/// Registers the timer callbacks for the TLB flush operations.
-///
-/// We check if there's pending TLB flush requests on each CPU in the timer
-/// callback. This is to ensure that the TLB flush requests are processed
-/// ultimately in case the IPIs are not received.
-///
-/// This function should be done once for each CPU during the initialization.
-pub(crate) fn register_timer_callbacks_this_cpu() {
-    crate::timer::register_callback(do_remote_flush);
-}
-
 // The queues of pending requests on each CPU.
 //
 // Lock ordering: lock FLUSH_OPS before PAGE_KEEPER.

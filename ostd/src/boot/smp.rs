@@ -136,8 +136,6 @@ fn ap_early_entry(local_apic_id: u32) -> ! {
 
     crate::arch::irq::enable_local();
 
-    crate::mm::tlb::register_timer_callbacks_this_cpu();
-
     // SAFETY: this function is only called once on this AP.
     unsafe {
         crate::mm::kspace::activate_kernel_page_table();

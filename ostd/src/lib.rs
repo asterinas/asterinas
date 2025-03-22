@@ -106,7 +106,6 @@ unsafe fn init() {
     boot::init_after_heap();
 
     mm::dma::init();
-    mm::tlb::register_timer_callbacks_this_cpu();
 
     unsafe { arch::late_init_on_bsp() };
 
