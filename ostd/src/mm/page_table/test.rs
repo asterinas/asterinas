@@ -5,6 +5,7 @@ use crate::{
     mm::{
         kspace::LINEAR_MAPPING_BASE_VADDR,
         page_prop::{CachePolicy, PageFlags},
+        tlb::TlbFlusher,
         FrameAllocOptions, MAX_USERSPACE_VADDR, PAGE_SIZE,
     },
     prelude::*,
@@ -129,6 +130,7 @@ mod test_utils {
 
 mod create_page_table {
     use super::{test_utils::*, *};
+    use crate::cpu::{AtomicCpuSet, CpuSet};
 
     #[ktest]
     fn init_user_page_table() {
@@ -192,10 +194,11 @@ mod create_page_table {
         // Confirms that the mapping exists.
         assert!(user_pt.query(PAGE_SIZE + 10).is_some());
 
+        let set = AtomicCpuSet::new(CpuSet::new_empty());
+        let mut tlb_flusher = TlbFlusher::new(&set, disable_preempt());
+
         // Clears the page table.
-        unsafe {
-            user_pt.clear();
-        }
+        user_pt.clear(&mut tlb_flusher);
 
         // Confirms that the mapping is cleared.
         assert!(user_pt.query(PAGE_SIZE + 10).is_none());
