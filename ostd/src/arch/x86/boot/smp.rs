@@ -35,6 +35,7 @@ use crate::{
             Level, TriggerMode,
         },
     },
+    boot::memory_region::{MemoryRegion, MemoryRegionType},
     if_tdx_enabled,
     mm::{paddr_to_vaddr, PAGE_SIZE},
 };
@@ -86,11 +87,19 @@ pub(crate) fn bringup_all_aps(num_cpus: u32) {
 
 /// This is where the linker load the symbols in the `.ap_boot` section.
 /// The BSP would copy the AP boot code to this address.
-pub(super) const AP_BOOT_START_PA: usize = 0x8000;
+const AP_BOOT_START_PA: usize = 0x8000;
 
 /// The size of the AP boot code (the `.ap_boot` section).
-pub(super) fn ap_boot_code_size() -> usize {
+fn ap_boot_code_size() -> usize {
     __ap_boot_end as usize - __ap_boot_start as usize
+}
+
+pub(super) fn reclaimable_memory_region() -> MemoryRegion {
+    MemoryRegion::new(
+        AP_BOOT_START_PA,
+        ap_boot_code_size(),
+        MemoryRegionType::Reclaimable,
+    )
 }
 
 fn copy_ap_boot_code() {
