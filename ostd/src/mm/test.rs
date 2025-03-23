@@ -9,7 +9,7 @@ use crate::{
     mm::{
         io::{VmIo, VmReader, VmWriter},
         tlb::TlbFlushOp,
-        vm_space::{get_activated_vm_space, VmItem, VmSpaceClearError},
+        vm_space::{get_activated_vm_space, VmItem},
         CachePolicy, FallibleVmRead, FallibleVmWrite, FrameAllocOptions, PageFlags, PageProperty,
         UFrame, VmSpace,
     },
@@ -689,7 +689,7 @@ mod vmspace {
         }
 
         // Clears the VmSpace.
-        assert!(vmspace.clear().is_ok());
+        vmspace.clear();
 
         // Verifies that the mapping is cleared.
         let mut cursor = vmspace.cursor(&range).expect("Failed to create cursor");
@@ -700,20 +700,6 @@ mod vmspace {
                 len: range.start + 0x1000
             })
         );
-    }
-
-    /// Verifies that `VmSpace::clear` returns an error when cursors are active.
-    #[ktest]
-    fn vmspace_clear_with_alive_cursors() {
-        let vmspace = VmSpace::new();
-        let range = 0x3000..0x4000;
-        let _cursor_mut = vmspace
-            .cursor_mut(&range)
-            .expect("Failed to create mutable cursor");
-
-        // Attempts to clear the VmSpace while a cursor is active.
-        let result = vmspace.clear();
-        assert!(matches!(result, Err(VmSpaceClearError::CursorsAlive)));
     }
 
     /// Activates and deactivates the `VmSpace` in single-CPU scenarios.
