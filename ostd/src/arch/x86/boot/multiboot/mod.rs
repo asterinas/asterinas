@@ -7,38 +7,35 @@ use crate::{
         memory_region::{MemoryRegion, MemoryRegionArray, MemoryRegionType},
         BootloaderAcpiArg, BootloaderFramebufferArg,
     },
-    mm::{
-        kspace::{paddr_to_vaddr, LINEAR_MAPPING_BASE_VADDR},
-        Paddr, Vaddr,
-    },
+    mm::{kspace::paddr_to_vaddr, Paddr},
 };
 
 global_asm!(include_str!("header.S"));
 
-pub(super) const MULTIBOOT_ENTRY_MAGIC: u32 = 0x2BADB002;
+const MULTIBOOT_ENTRY_MAGIC: u32 = 0x2BADB002;
 
-fn parse_bootloader_name(mb1_info: &MultibootLegacyInfo) -> &str {
-    let mut name = "Unknown Multiboot loader";
-    if mb1_info.boot_loader_name != 0 {
-        let ptr = paddr_to_vaddr(mb1_info.boot_loader_name as usize) as *const i8;
-        // SAFETY: the bootloader name is C-style zero-terminated string.
-        let cstr = unsafe { core::ffi::CStr::from_ptr(ptr) };
-        if let Ok(s) = cstr.to_str() {
-            name = s;
-        }
-    }
-    name
+fn parse_bootloader_name(mb1_info: &MultibootLegacyInfo) -> Option<&str> {
+    // SAFETY: The bootloader name is a C-style NUL-terminated string because of the contract with
+    // the Multiboot loader.
+    unsafe { parse_as_cstr(mb1_info.boot_loader_name) }
 }
 
-fn parse_kernel_commandline(mb1_info: &MultibootLegacyInfo) -> &str {
-    let mut cmdline = "";
-    if mb1_info.cmdline != 0 {
-        let ptr = paddr_to_vaddr(mb1_info.cmdline as usize) as *const i8;
-        // SAFETY: the command line is C-style zero-terminated string.
-        let cstr = unsafe { core::ffi::CStr::from_ptr(ptr) };
-        cmdline = cstr.to_str().unwrap();
+fn parse_kernel_commandline(mb1_info: &MultibootLegacyInfo) -> Option<&str> {
+    // SAFETY: The bootloader name is a C-style NUL-terminated string because of the contract with
+    // the Multiboot loader.
+    unsafe { parse_as_cstr(mb1_info.cmdline) }
+}
+
+unsafe fn parse_as_cstr<'a>(ptr: u32) -> Option<&'a str> {
+    if ptr == 0 {
+        return None;
     }
-    cmdline
+
+    let name_ptr = paddr_to_vaddr(ptr as usize) as *const core::ffi::c_char;
+    // SAFETY: The safety is upheld by the caller.
+    let name_cstr = unsafe { core::ffi::CStr::from_ptr(name_ptr) };
+
+    name_cstr.to_str().ok()
 }
 
 fn parse_initramfs(mb1_info: &MultibootLegacyInfo) -> Option<&[u8]> {
@@ -46,23 +43,17 @@ fn parse_initramfs(mb1_info: &MultibootLegacyInfo) -> Option<&[u8]> {
     if mb1_info.mods_count == 0 {
         return None;
     }
-    let modules_addr = mb1_info.mods_addr as usize;
-    // We only use one module
-    let (start, end) = unsafe {
-        (
-            (*(paddr_to_vaddr(modules_addr) as *const u32)) as usize,
-            (*(paddr_to_vaddr(modules_addr + 4) as *const u32)) as usize,
-        )
-    };
-    // We must return a slice composed by VA since kernel should read every in VA.
-    let base_va = if start < LINEAR_MAPPING_BASE_VADDR {
-        paddr_to_vaddr(start)
-    } else {
-        start
-    };
-    let length = end - start;
 
-    Some(unsafe { core::slice::from_raw_parts(base_va as *const u8, length) })
+    let mods_addr = paddr_to_vaddr(mb1_info.mods_addr as usize) as *const u32;
+    // SAFETY: We have checked `mods_count` above. By the contract with the Multiboot loader, the
+    // module addresses are available.
+    let (start, end) = unsafe { (*mods_addr, *mods_addr.add(1)) };
+
+    let ptr = paddr_to_vaddr(start as usize) as *const u8;
+    let len = (end - start) as usize;
+
+    // SAFETY: The initramfs is safe to read because of the contract with the loader.
+    Some(unsafe { core::slice::from_raw_parts(ptr, len) })
 }
 
 fn parse_acpi_arg(_mb1_info: &MultibootLegacyInfo) -> BootloaderAcpiArg {
@@ -75,6 +66,7 @@ fn parse_framebuffer_info(mb1_info: &MultibootLegacyInfo) -> Option<BootloaderFr
     if mb1_info.framebuffer_table.addr == 0 {
         return None;
     }
+
     Some(BootloaderFramebufferArg {
         address: mb1_info.framebuffer_table.addr as usize,
         width: mb1_info.framebuffer_table.width as usize,
@@ -88,9 +80,8 @@ fn parse_memory_regions(mb1_info: &MultibootLegacyInfo) -> MemoryRegionArray {
 
     // Add the regions in the multiboot protocol.
     for entry in mb1_info.get_memory_map() {
-        let start = entry.base_addr();
         let region = MemoryRegion::new(
-            start.try_into().unwrap(),
+            entry.base_addr().try_into().unwrap(),
             entry.length().try_into().unwrap(),
             entry.memory_type(),
         );
@@ -98,68 +89,34 @@ fn parse_memory_regions(mb1_info: &MultibootLegacyInfo) -> MemoryRegionArray {
     }
 
     // Add the framebuffer region.
-    let fb = BootloaderFramebufferArg {
-        address: mb1_info.framebuffer_table.addr as usize,
-        width: mb1_info.framebuffer_table.width as usize,
-        height: mb1_info.framebuffer_table.height as usize,
-        bpp: mb1_info.framebuffer_table.bpp as usize,
-    };
-    regions
-        .push(MemoryRegion::new(
-            fb.address,
-            (fb.width * fb.height * fb.bpp).div_ceil(8), // round up when divide with 8 (bits/Byte)
-            MemoryRegionType::Framebuffer,
-        ))
-        .unwrap();
+    if let Some(fb) = parse_framebuffer_info(mb1_info) {
+        regions.push(MemoryRegion::framebuffer(&fb)).unwrap();
+    }
 
     // Add the kernel region.
     regions.push(MemoryRegion::kernel()).unwrap();
 
-    // Add the initramfs area.
-    if mb1_info.mods_count != 0 {
-        let modules_addr = mb1_info.mods_addr as usize;
-        // We only use one module
-        let (start, end) = unsafe {
-            (
-                (*(paddr_to_vaddr(modules_addr) as *const u32)) as usize,
-                (*(paddr_to_vaddr(modules_addr + 4) as *const u32)) as usize,
-            )
-        };
-        regions
-            .push(MemoryRegion::new(
-                start,
-                end - start,
-                MemoryRegionType::Module,
-            ))
-            .unwrap();
+    // Add the initramfs region.
+    if let Some(initramfs) = parse_initramfs(mb1_info) {
+        regions.push(MemoryRegion::module(initramfs)).unwrap();
     }
 
     // Add the AP boot code region that will be copied into by the BSP.
     regions
-        .push(MemoryRegion::new(
-            super::smp::AP_BOOT_START_PA,
-            super::smp::ap_boot_code_size(),
-            MemoryRegionType::Reclaimable,
-        ))
+        .push(super::smp::reclaimable_memory_region())
         .unwrap();
 
     // Add the kernel cmdline and boot loader name region since Grub does not specify it.
-    let kcmdline = parse_kernel_commandline(mb1_info);
-    regions
-        .push(MemoryRegion::new(
-            kcmdline.as_ptr() as Paddr - LINEAR_MAPPING_BASE_VADDR,
-            kcmdline.len(),
-            MemoryRegionType::Reclaimable,
-        ))
-        .unwrap();
-    let bootloader_name = parse_bootloader_name(mb1_info);
-    regions
-        .push(MemoryRegion::new(
-            bootloader_name.as_ptr() as Paddr - LINEAR_MAPPING_BASE_VADDR,
-            bootloader_name.len(),
-            MemoryRegionType::Reclaimable,
-        ))
-        .unwrap();
+    if let Some(kcmdline) = parse_kernel_commandline(mb1_info) {
+        regions
+            .push(MemoryRegion::module(kcmdline.as_bytes()))
+            .unwrap();
+    }
+    if let Some(bootloader_name) = parse_bootloader_name(mb1_info) {
+        regions
+            .push(MemoryRegion::module(bootloader_name.as_bytes()))
+            .unwrap();
+    }
 
     regions.into_non_overlapping()
 }
@@ -289,11 +246,13 @@ struct MultibootLegacyInfo {
 
 impl MultibootLegacyInfo {
     fn get_memory_map(&self) -> MemoryEntryIter {
-        let ptr = self.memory_map_addr as Paddr;
-        let end = ptr + self.memory_map_len as usize;
+        let cur_ptr = paddr_to_vaddr(self.memory_map_addr as Paddr) as *const u8;
+        // SAFETY: The range is in bounds by the contract with the Multiboot loader.
+        let region_end = unsafe { cur_ptr.add(self.memory_map_len as usize) };
+
         MemoryEntryIter {
-            cur_ptr: paddr_to_vaddr(ptr),
-            region_end: paddr_to_vaddr(end),
+            cur_ptr,
+            region_end,
         }
     }
 }
@@ -341,30 +300,31 @@ struct FramebufferTable {
 /// 4, it is not guaranteed. So we need to use pointer arithmetic to
 /// access the fields.
 struct MemoryEntry {
-    ptr: Vaddr,
+    ptr: *const u8,
 }
 
 impl MemoryEntry {
     fn size(&self) -> u32 {
-        // SAFETY: the entry can only be constructed from a valid address.
-        unsafe { (self.ptr as *const u32).read_unaligned() }
+        // SAFETY: The entry can only be constructed from a valid address. The offset is in bounds.
+        unsafe { self.ptr.cast::<u32>().read_unaligned() }
     }
 
     fn base_addr(&self) -> u64 {
-        // SAFETY: the entry can only be constructed from a valid address.
-        unsafe { ((self.ptr + 4) as *const u64).read_unaligned() }
+        // SAFETY: The entry can only be constructed from a valid address. The offset is in bounds.
+        unsafe { self.ptr.byte_add(4).cast::<u64>().read_unaligned() }
     }
 
     fn length(&self) -> u64 {
-        // SAFETY: the entry can only be constructed from a valid address.
-        unsafe { ((self.ptr + 12) as *const u64).read_unaligned() }
+        // SAFETY: The entry can only be constructed from a valid address. The offset is in bounds.
+        unsafe { self.ptr.byte_add(12).cast::<u64>().read_unaligned() }
     }
 
     fn memory_type(&self) -> MemoryRegionType {
         // The multiboot (v1) manual doesn't specify the length of the type field.
         // Experimental result shows that "u8" works. So be it.
-        // SAFETY: the entry can only be constructed from a valid address.
-        let typ_val = unsafe { ((self.ptr + 20) as *const u8).read_unaligned() };
+        // SAFETY: The entry can only be constructed from a valid address. The offset is in bounds.
+        let typ_val = unsafe { self.ptr.add(20).cast::<u8>().read_unaligned() };
+
         // The meaning of the values are however documented clearly by the manual.
         match typ_val {
             1 => MemoryRegionType::Usable,
@@ -380,8 +340,8 @@ impl MemoryEntry {
 /// A memory entry iterator in the memory map header info region.
 #[derive(Debug, Copy, Clone)]
 struct MemoryEntryIter {
-    cur_ptr: Vaddr,
-    region_end: Vaddr,
+    cur_ptr: *const u8,
+    region_end: *const u8,
 }
 
 impl Iterator for MemoryEntryIter {
@@ -391,8 +351,13 @@ impl Iterator for MemoryEntryIter {
         if self.cur_ptr >= self.region_end {
             return None;
         }
+
         let entry = MemoryEntry { ptr: self.cur_ptr };
-        self.cur_ptr += entry.size() as usize + 4;
+
+        let entry_size = entry.size() as usize + 4;
+        // SAFETY: The offset is in bounds according to the Multiboot specification.
+        unsafe { self.cur_ptr = self.cur_ptr.add(entry_size) };
+
         Some(entry)
     }
 }
@@ -407,8 +372,8 @@ unsafe extern "sysv64" fn __multiboot_entry(boot_magic: u32, boot_params: u64) -
     use crate::boot::{call_ostd_main, EarlyBootInfo, EARLY_INFO};
 
     EARLY_INFO.call_once(|| EarlyBootInfo {
-        bootloader_name: parse_bootloader_name(mb1_info),
-        kernel_cmdline: parse_kernel_commandline(mb1_info),
+        bootloader_name: parse_bootloader_name(mb1_info).unwrap_or("Unknown Multiboot Loader"),
+        kernel_cmdline: parse_kernel_commandline(mb1_info).unwrap_or(""),
         initramfs: parse_initramfs(mb1_info),
         acpi_arg: parse_acpi_arg(mb1_info),
         framebuffer_arg: parse_framebuffer_info(mb1_info),

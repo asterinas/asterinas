@@ -6,7 +6,7 @@ use core::ops::Deref;
 
 use align_ext::AlignExt;
 
-use crate::mm::{kspace::kernel_loaded_offset, Paddr, PAGE_SIZE};
+use crate::mm::{kspace::kernel_loaded_offset, Paddr, Vaddr, PAGE_SIZE};
 
 /// The type of initial memory regions that are needed for the kernel.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -70,6 +70,31 @@ impl MemoryRegion {
             base: __kernel_start as usize - kernel_loaded_offset(),
             len: __kernel_end as usize - __kernel_start as usize,
             typ: MemoryRegionType::Kernel,
+        }
+    }
+
+    /// Constructs a framebuffer memory region.
+    pub fn framebuffer(fb: &crate::boot::BootloaderFramebufferArg) -> Self {
+        Self {
+            base: fb.address,
+            len: (fb.width * fb.height * fb.bpp).div_ceil(8), // round up when divide with 8 (bits/Byte)
+            typ: MemoryRegionType::Framebuffer,
+        }
+    }
+
+    /// Constructs a module memory region from a byte slice that lives in the linear mapping.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the byte slice does not live in the linear mapping.
+    pub fn module(bytes: &[u8]) -> Self {
+        let vaddr = bytes.as_ptr() as Vaddr;
+        assert!(crate::mm::kspace::LINEAR_MAPPING_VADDR_RANGE.contains(&vaddr));
+
+        Self {
+            base: vaddr - crate::mm::kspace::LINEAR_MAPPING_BASE_VADDR,
+            len: bytes.len(),
+            typ: MemoryRegionType::Reclaimable,
         }
     }
 
