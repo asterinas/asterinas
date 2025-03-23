@@ -369,7 +369,7 @@ impl Vmar_ {
 
     /// Clears all content of the root VMAR.
     fn clear_root_vmar(&self) -> Result<()> {
-        self.vm_space.clear().unwrap();
+        self.vm_space.clear();
         let mut inner = self.inner.write();
         inner.vm_mappings.clear();
         Ok(())

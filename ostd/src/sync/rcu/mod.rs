@@ -434,8 +434,7 @@ unsafe fn delay_drop<P: OwnerPtr>(pointer: NonNull<<P as OwnerPtr>::Target>) {
 
     let pointer: ForceSend<P> = ForceSend(pointer);
 
-    let rcu_monitor = RCU_MONITOR.get().unwrap();
-    rcu_monitor.after_grace_period(move || {
+    after_grace_period(move || {
         // This is necessary to make the Rust compiler to move the entire
         // `ForceSend` structure into the closure.
         let pointer = pointer;
@@ -459,12 +458,18 @@ unsafe fn delay_drop<P: OwnerPtr>(pointer: NonNull<<P as OwnerPtr>::Target>) {
 ///
 /// The caller must ensure that this CPU is not executing in a RCU read-side
 /// critical section.
-pub unsafe fn finish_grace_period() {
+pub(crate) unsafe fn finish_grace_period() {
     let rcu_monitor = RCU_MONITOR.get().unwrap();
     // SAFETY: The caller ensures safety.
     unsafe {
         rcu_monitor.finish_grace_period();
     }
+}
+
+/// Registers a callback to be invoked after the current grace period.
+pub(crate) fn after_grace_period<F: FnOnce() + Send + 'static>(callback: F) {
+    let rcu_monitor = RCU_MONITOR.get().unwrap();
+    rcu_monitor.after_grace_period(callback);
 }
 
 static RCU_MONITOR: Once<RcuMonitor> = Once::new();
