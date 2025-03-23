@@ -20,8 +20,8 @@ use crate::{
 pub struct DeviceMode {}
 
 impl PageTableMode for DeviceMode {
-    /// The device address space is 32-bit.
-    const VADDR_RANGE: Range<Vaddr> = 0..0x1_0000_0000;
+    /// The device address width we currently support is 39-bit.
+    const VADDR_RANGE: Range<Vaddr> = 0..0x80_0000_0000;
 }
 
 #[derive(Clone, Debug, Default)]
