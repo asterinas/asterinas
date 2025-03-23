@@ -220,6 +220,13 @@ impl SchedClassRq for RealTimeClassRq {
                 ts => ts <= rt.period_delta,
             },
             UpdateFlags::Yield => true,
+            UpdateFlags::CheckPreempt => {
+                unreachable!("Real-time task preemption involves only priority.")
+            }
         }
+    }
+
+    fn check_preempt_current(attr: &SchedAttr, current_attr: &SchedAttr) -> bool {
+        attr.real_time.prio.load(Relaxed) < current_attr.real_time.prio.load(Relaxed)
     }
 }

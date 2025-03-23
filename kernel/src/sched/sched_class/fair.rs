@@ -19,7 +19,10 @@ use super::{
     CurrentRuntime, SchedAttr, SchedClassRq,
 };
 use crate::{
-    sched::nice::{Nice, NiceValue},
+    sched::{
+        nice::{Nice, NiceValue},
+        sched_class::time::preempt_penalty_clocks,
+    },
     thread::AsThread,
 };
 
@@ -260,7 +263,7 @@ impl SchedClassRq for FairClassRq {
     ) -> bool {
         match flags {
             UpdateFlags::Yield => true,
-            UpdateFlags::Tick | UpdateFlags::Wait => {
+            UpdateFlags::Tick | UpdateFlags::Wait | UpdateFlags::CheckPreempt => {
                 let (vruntime, weight) = attr.fair.update_vruntime(rt.delta);
                 self.min_vruntime = match self.entities.peek() {
                     Some(Reverse(leftmost)) => vruntime.min(leftmost.key()),
@@ -270,6 +273,16 @@ impl SchedClassRq for FairClassRq {
                 rt.period_delta > self.time_slice(weight)
                     || vruntime > self.min_vruntime + self.vtime_slice()
             }
+        }
+    }
+
+    fn check_preempt_current(attr: &SchedAttr, current_attr: &SchedAttr) -> bool {
+        let vruntime = attr.fair.vruntime.load(Relaxed);
+        let current_vruntime = current_attr.fair.vruntime.load(Relaxed);
+        current_vruntime > vruntime && {
+            let weight = current_attr.fair.weight.load(Relaxed);
+            let penalty = preempt_penalty_clocks() * WEIGHT_0 / weight;
+            vruntime + penalty < current_vruntime
         }
     }
 }

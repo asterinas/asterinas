@@ -34,11 +34,18 @@ pub const BASE_SLICE_NS: u64 = 750_000;
 /// The minimum scheduling period, measured in nanoseconds.
 pub const MIN_PERIOD_NS: u64 = 6_000_000;
 
-fn consts() -> (u64, u64) {
-    static CONSTS: Once<(u64, u64)> = Once::new();
+/// The penalty for new task in preemption check, measured in nanoseconds.
+pub const PREEMPT_PENALTY: u64 = 1_000_000;
+
+fn consts() -> (u64, u64, u64) {
+    static CONSTS: Once<(u64, u64, u64)> = Once::new();
     *CONSTS.call_once(|| {
         let (a, b) = tsc_factors();
-        (BASE_SLICE_NS * b / a, MIN_PERIOD_NS * b / a)
+        (
+            BASE_SLICE_NS * b / a,
+            MIN_PERIOD_NS * b / a,
+            PREEMPT_PENALTY * b / a,
+        )
     })
 }
 
@@ -50,4 +57,9 @@ pub fn base_slice_clocks() -> u64 {
 /// Returns the minimum scheduling period, measured in TSC clock units.
 pub fn min_period_clocks() -> u64 {
     consts().1
+}
+
+/// Returns the penalty for new task in preemption check, measured in TSC clock units.
+pub fn preempt_penalty_clocks() -> u64 {
+    consts().2
 }
