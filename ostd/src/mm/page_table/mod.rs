@@ -14,6 +14,8 @@ use super::{
 };
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
+    cpu::PinCurrentCpu,
+    task::disable_preempt,
     util::SameSizeAs,
     Pod,
 };
@@ -99,22 +101,20 @@ impl PageTable<UserMode> {
     }
 
     /// Clear the page table.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that:
-    ///  1. No other cursors are accessing the page table.
-    ///  2. No other CPUs activates the page table.
-    pub(in crate::mm) unsafe fn clear(&self) {
-        let _guard = crate::task::disable_preempt();
+    pub(super) fn clear<G: PinCurrentCpu>(&self, flusher: &mut super::tlb::TlbFlusher<'_, G>) {
+        let _guard = disable_preempt();
         let mut root_node = self.root.clone().lock();
         const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
         for i in 0..NR_PTES_PER_NODE / 2 {
             let root_entry = root_node.entry(i);
             if !root_entry.is_none() {
                 let old = root_entry.replace(Child::None);
-                // Since no others are accessing the old child, dropping it is fine.
-                drop(old);
+                if let Child::PageTable(pt) = old {
+                    flusher
+                        .issue_tlb_flush_with(crate::mm::tlb::TlbFlushOp::All, pt.clone().into());
+                    // There may be other cursors accessing the old child, delay it with RCU.
+                    crate::sync::after_grace_period(move || drop(pt));
+                }
             }
         }
         let _ = root_node.unlock();
