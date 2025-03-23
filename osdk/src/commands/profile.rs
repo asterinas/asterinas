@@ -107,21 +107,21 @@ fn do_collect_stack_traces(args: &ProfileArgs) {
     let style = ProgressStyle::default_bar().progress_chars("#>-");
     for _ in (0..*samples).progress_with_style(style) {
         loop {
+            gdb_stdout_buf.clear();
             let _ = gdb_stdout_reader.read_line(&mut gdb_stdout_buf);
             gdb_output.push_str(&gdb_stdout_buf);
             if gdb_stdout_buf.contains(profile_round_delimiter!()) {
                 break;
             }
-            gdb_stdout_buf.clear();
         }
-        let _ = Command::new("kill")
-            .args(["-INT", &format!("{}", gdb_process.id())])
-            .spawn();
         for line in gdb_output.lines() {
             profile_buffer.append_raw_line(line);
         }
         gdb_output.clear();
         thread::sleep(time::Duration::from_secs_f64(*interval));
+        let _ = Command::new("kill")
+            .args(["-INT", &format!("{}", gdb_process.id())])
+            .output();
     }
 
     let out_args = &args.out_args;
