@@ -52,7 +52,6 @@ pub struct Task {
     user_ctx: Option<Arc<UserContext>>,
     ctx: SyncUnsafeCell<TaskContext>,
     /// kernel stack, note that the top is SyscallFrame/TrapFrame
-    #[expect(dead_code)]
     kstack: KernelStack,
 
     schedule_info: TaskScheduleInfo,
