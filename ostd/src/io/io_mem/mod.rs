@@ -86,7 +86,6 @@ impl IoMem {
     pub(crate) unsafe fn new(range: Range<Paddr>, flags: PageFlags, cache: CachePolicy) -> Self {
         let first_page_start = range.start.align_down(PAGE_SIZE);
         let last_page_end = range.end.align_up(PAGE_SIZE);
-        let mut new_kvirt_area = KVirtArea::<Untracked>::new(last_page_end - first_page_start);
 
         let priv_flags = if_tdx_enabled!({
             PrivilegedPageFlags::SHARED
@@ -102,13 +101,14 @@ impl IoMem {
 
         // SAFETY: The caller of `IoMem::new()` and the constructor of `new_kvirt_area` has ensured the
         // safety of this mapping.
-        unsafe {
-            new_kvirt_area.map_untracked_pages(
-                new_kvirt_area.range(),
+        let new_kvirt_area = unsafe {
+            KVirtArea::<Untracked>::map_untracked_pages(
+                last_page_end - first_page_start,
+                0,
                 first_page_start..last_page_end,
                 prop,
-            );
-        }
+            )
+        };
 
         Self {
             kvirt_area: Arc::new(new_kvirt_area),
