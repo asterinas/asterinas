@@ -415,18 +415,16 @@ impl InitStackReader<'_> {
             return_errno_with_message!(Errno::EACCES, "Page not accessible");
         };
 
-        let mut arg_ptr_reader = frame.reader().skip(read_offset - page_base_addr);
+        let mut arg_ptr_reader = frame.reader();
+        arg_ptr_reader.skip(read_offset - page_base_addr);
         for _ in 0..argc {
             let arg = {
                 let arg_ptr = arg_ptr_reader.read_val::<Vaddr>()?;
                 let arg_offset = arg_ptr
                     .checked_sub(page_base_addr)
                     .ok_or_else(|| Error::with_message(Errno::EINVAL, "arg_ptr is corrupted"))?;
-                let mut arg_reader = frame
-                    .reader()
-                    .skip(arg_offset)
-                    .to_fallible()
-                    .limit(MAX_ARG_LEN);
+                let mut arg_reader = frame.reader().to_fallible();
+                arg_reader.skip(arg_offset).limit(MAX_ARG_LEN);
                 arg_reader.read_cstring()?
             };
             argv.push(arg);
@@ -457,7 +455,8 @@ impl InitStackReader<'_> {
             return_errno_with_message!(Errno::EACCES, "Page not accessible");
         };
 
-        let mut envp_ptr_reader = frame.reader().skip(read_offset - page_base_addr);
+        let mut envp_ptr_reader = frame.reader();
+        envp_ptr_reader.skip(read_offset - page_base_addr);
         for _ in 0..MAX_ENVP_NUMBER {
             let env = {
                 let envp_ptr = envp_ptr_reader.read_val::<Vaddr>()?;
@@ -469,11 +468,8 @@ impl InitStackReader<'_> {
                 let envp_offset = envp_ptr
                     .checked_sub(page_base_addr)
                     .ok_or_else(|| Error::with_message(Errno::EINVAL, "envp is corrupted"))?;
-                let mut envp_reader = frame
-                    .reader()
-                    .skip(envp_offset)
-                    .to_fallible()
-                    .limit(MAX_ENV_LEN);
+                let mut envp_reader = frame.reader().to_fallible();
+                envp_reader.skip(envp_offset).limit(MAX_ENV_LEN);
                 envp_reader.read_cstring()?
             };
             envp.push(env);

@@ -71,18 +71,20 @@ impl SegmentSlice {
 
     /// Gets a reader for the slice.
     pub fn reader(&self) -> VmReader<'_, Infallible> {
-        self.inner
-            .reader()
+        let mut reader = self.inner.reader();
+        reader
             .skip(self.start_paddr() - self.inner.start_paddr())
-            .limit(self.nbytes())
+            .limit(self.nbytes());
+        reader
     }
 
     /// Gets a writer for the slice.
     pub fn writer(&self) -> VmWriter<'_, Infallible> {
-        self.inner
-            .writer()
+        let mut writer = self.inner.writer();
+        writer
             .skip(self.start_paddr() - self.inner.start_paddr())
-            .limit(self.nbytes())
+            .limit(self.nbytes());
+        writer
     }
 
     fn start_frame_index(&self) -> usize {

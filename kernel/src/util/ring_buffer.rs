@@ -262,7 +262,8 @@ impl<T: Pod, R: Deref<Target = RingBuffer<T>>> Producer<T, R> {
         debug_assert!(tail < rb.capacity);
 
         let segment_offset = tail * Self::T_SIZE;
-        let mut writer = rb.segment.writer().skip(segment_offset);
+        let mut writer = rb.segment.writer();
+        writer.skip(segment_offset);
         writer.write_val(&item).unwrap();
 
         rb.advance_tail(tail, 1);
@@ -317,14 +318,17 @@ impl<R: Deref<Target = RingBuffer<u8>>> Producer<u8, R> {
         let tail = rb.tail();
         let write_len = if tail + write_len > rb.capacity {
             // Write into two separate parts
-            let mut writer = rb.segment.writer().skip(tail).limit(rb.capacity - tail);
+            let mut writer = rb.segment.writer();
+            writer.skip(tail).limit(rb.capacity - tail);
             let mut len = reader.read(&mut writer)?;
 
-            let mut writer = rb.segment.writer().limit(write_len - (rb.capacity - tail));
+            let mut writer = rb.segment.writer();
+            writer.limit(write_len - (rb.capacity - tail));
             len += reader.read(&mut writer)?;
             len
         } else {
-            let mut writer = rb.segment.writer().skip(tail).limit(write_len);
+            let mut writer = rb.segment.writer();
+            writer.skip(tail).limit(write_len);
             reader.read(&mut writer)?
         };
 
@@ -359,7 +363,8 @@ impl<T: Pod, R: Deref<Target = RingBuffer<T>>> Consumer<T, R> {
         debug_assert!(head < rb.capacity);
 
         let segment_offset = head * Self::T_SIZE;
-        let mut reader = rb.segment.reader().skip(segment_offset);
+        let mut reader = rb.segment.reader();
+        reader.skip(segment_offset);
         let item = reader.read_val::<T>().unwrap();
 
         rb.advance_head(head, 1);
@@ -413,14 +418,17 @@ impl<R: Deref<Target = RingBuffer<u8>>> Consumer<u8, R> {
         let head = rb.head();
         let read_len = if head + read_len > rb.capacity {
             // Read from two separate parts
-            let mut reader = rb.segment.reader().skip(head).limit(rb.capacity - head);
+            let mut reader = rb.segment.reader();
+            reader.skip(head).limit(rb.capacity - head);
             let mut len = writer.write(&mut reader)?;
 
-            let mut reader = rb.segment.reader().limit(read_len - (rb.capacity - head));
+            let mut reader = rb.segment.reader();
+            reader.limit(read_len - (rb.capacity - head));
             len += writer.write(&mut reader)?;
             len
         } else {
-            let mut reader = rb.segment.reader().skip(head).limit(read_len);
+            let mut reader = rb.segment.reader();
+            reader.skip(head).limit(read_len);
             writer.write(&mut reader)?
         };
 

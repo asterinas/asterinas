@@ -167,7 +167,7 @@ mod test {
                     BioType::Read => segment
                         .inner_segment()
                         .writer()
-                        .write(&mut self.blocks.reader().skip(current_offset)),
+                        .write(self.blocks.reader().skip(current_offset)),
                     BioType::Write => self
                         .blocks
                         .writer()
