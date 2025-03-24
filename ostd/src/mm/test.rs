@@ -674,34 +674,6 @@ mod vmspace {
         );
     }
 
-    /// Clears the `VmSpace`.
-    #[ktest]
-    fn vmspace_clear() {
-        let vmspace = VmSpace::new();
-        let range = 0x2000..0x3000;
-        {
-            let mut cursor_mut = vmspace
-                .cursor_mut(&range)
-                .expect("Failed to create mutable cursor");
-            let frame = create_dummy_frame();
-            let prop = PageProperty::new(PageFlags::R, CachePolicy::Writeback);
-            cursor_mut.map(frame, prop);
-        }
-
-        // Clears the VmSpace.
-        vmspace.clear();
-
-        // Verifies that the mapping is cleared.
-        let mut cursor = vmspace.cursor(&range).expect("Failed to create cursor");
-        assert_eq!(
-            cursor.next(),
-            Some(VmItem::NotMapped {
-                va: range.start,
-                len: range.start + 0x1000
-            })
-        );
-    }
-
     /// Activates and deactivates the `VmSpace` in single-CPU scenarios.
     #[ktest]
     fn vmspace_activate() {
