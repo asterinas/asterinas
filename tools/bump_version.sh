@@ -37,9 +37,9 @@ update_dep_version() {
 update_image_versions() {
     echo "Updating file $1"
     # Update the version of the development container
-    sed -i "s/asterinas\/asterinas:[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+/asterinas\/asterinas:${new_version}/g" $1
+    sed -i "s/asterinas\/asterinas:[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+\(-[[:digit:]]\+\)\?/asterinas\/asterinas:${new_version}/g" $1
     # Update the test environment described in the OSDK manual
-    sed -i "s/asterinas\/osdk:[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+/asterinas\/osdk:${new_version}/g" $1
+    sed -i "s/asterinas\/osdk:[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+\(-[[:digit:]]\+\)\?/asterinas\/osdk:${new_version}/g" $1
 }
 
 # Print the help message
@@ -126,9 +126,17 @@ update_all_docker_version_refs() {
     update_image_versions ${DOCS_DIR}/src/kernel/intel_tdx.md
 
     # Update Docker image versions in workflows
-    WORKFLOWS=$(find "${ASTER_SRC_DIR}/.github/workflows/" -type f -name "*.yml")
-    for workflow in $WORKFLOWS; do
-        update_image_versions $workflow
+    ALL_WORKFLOWS=$(find "${ASTER_SRC_DIR}/.github/workflows/" -type f -name "*.yml")
+    EXCLUDED_WORKFLOWS=(
+        "${ASTER_SRC_DIR}/.github/workflows/push_git_tag.yml"
+        "${ASTER_SRC_DIR}/.github/workflows/check_licenses.yml"
+        "${ASTER_SRC_DIR}/.github/workflows/publish_docker_images.yml"
+    )
+
+    for workflow in $ALL_WORKFLOWS; do
+        if ! [[ " ${EXCLUDED_WORKFLOWS[*]} " =~ " ${workflow} " ]]; then
+            update_image_versions "$workflow"
+        fi
     done
 
     # Update Docker image versions in the documentation
