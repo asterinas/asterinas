@@ -77,14 +77,6 @@ impl VmSpace {
         }
     }
 
-    /// Clears the user space mappings in the page table.
-    pub fn clear(&self) {
-        let mut flusher = TlbFlusher::new(Some(&self.cpus), disable_preempt());
-        self.pt.clear(&mut flusher);
-        flusher.dispatch_tlb_flush();
-        flusher.sync_tlb_flush();
-    }
-
     /// Gets an immutable cursor in the virtual address range.
     ///
     /// The cursor behaves like a lock guard, exclusively owning a sub-tree of
@@ -321,6 +313,10 @@ impl<'b> CursorMut<'_, 'b> {
                 PageTableItem::MappedUntracked { .. } => {
                     panic!("found untracked memory mapped into `VmSpace`");
                 }
+                PageTableItem::StrayPageTable { pt, va, len } => {
+                    self.flusher
+                        .issue_tlb_flush_with(TlbFlushOp::Range(va..va + len), pt);
+                }
             }
         }
 
@@ -433,12 +429,13 @@ impl TryFrom<PageTableItem> for VmItem {
                 va,
                 frame: page
                     .try_into()
-                    .map_err(|_| "found typed memory mapped into `VmSpace`")?,
+                    .map_err(|_| "Found typed memory mapped into `VmSpace`")?,
                 prop,
             }),
             PageTableItem::MappedUntracked { .. } => {
-                Err("found untracked memory mapped into `VmSpace`")
+                Err("Found untracked memory mapped into `VmSpace`")
             }
+            PageTableItem::StrayPageTable { .. } => Err("Stray page table cannot be query results"),
         }
     }
 }
