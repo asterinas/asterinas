@@ -17,6 +17,7 @@ INITRAMFS_IMAGE := $(BUILD_DIR)/initramfs.cpio.gz
 endif
 EXT2_IMAGE := $(BUILD_DIR)/ext2.img
 EXFAT_IMAGE := $(BUILD_DIR)/exfat.img
+SSD_IMAGE := $(BUILD_DIR)/nvme0.img
 INITRAMFS_EMPTY_DIRS := \
 	$(INITRAMFS)/root \
 	$(INITRAMFS)/tmp \
@@ -180,8 +181,11 @@ $(EXFAT_IMAGE):
 	@fallocate -l 64M $(EXFAT_IMAGE)
 	@mkfs.exfat $(EXFAT_IMAGE)
 
+$(SSD_IMAGE):
+	@qemu-img create -f qcow2 $(SSD_IMAGE) 10G
+
 .PHONY: build
-build: $(INITRAMFS_IMAGE) $(EXT2_IMAGE) $(EXFAT_IMAGE)
+build: $(INITRAMFS_IMAGE) $(EXT2_IMAGE) $(EXFAT_IMAGE) $(SSD_IMAGE)
 
 .PHONY: format
 format:
