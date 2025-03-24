@@ -191,6 +191,12 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait> PageTableGuard<'a, E, C> 
         unsafe { *self.meta().nr_children.get() }
     }
 
+    /// If the page table node is detached from its parent.
+    pub(super) fn stray_mut(&mut self) -> &mut bool {
+        // SAFETY: The lock is held so we have an exclusive access.
+        unsafe { &mut *self.meta().stray.get() }
+    }
+
     /// Reads a non-owning PTE at the given index.
     ///
     /// A non-owning PTE means that it does not account for a reference count
@@ -258,6 +264,12 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for PageTableGuard<'_, E
 pub(in crate::mm) struct PageTablePageMeta<E: PageTableEntryTrait, C: PagingConstsTrait> {
     /// The number of valid PTEs. It is mutable if the lock is held.
     pub nr_children: SyncUnsafeCell<u16>,
+    /// If the page table is detached from its parent.
+    ///
+    /// A page table can be detached from its parent while still being accessed,
+    /// since we use a RCU scheme to recycle page tables. If this flag is set,
+    /// it means that the parent is recycling the page table.
+    pub stray: SyncUnsafeCell<bool>,
     /// The level of the page table page. A page table page cannot be
     /// referenced by page tables of different levels.
     pub level: PagingLevel,
@@ -288,6 +300,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTablePageMeta<E, C> {
     pub fn new(level: PagingLevel, is_tracked: MapTrackingStatus) -> Self {
         Self {
             nr_children: SyncUnsafeCell::new(0),
+            stray: SyncUnsafeCell::new(false),
             level,
             lock: AtomicU8::new(0),
             is_tracked,
@@ -296,8 +309,8 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTablePageMeta<E, C> {
     }
 }
 
-// SAFETY: The layout of the `PageTablePageMeta` is ensured to be the same for
-// all possible generic parameters. And the layout fits the requirements.
+// SAFETY: We can read the page table node because the page table pages are
+// accessed as untyped memory.
 unsafe impl<E: PageTableEntryTrait, C: PagingConstsTrait> AnyFrameMeta for PageTablePageMeta<E, C> {
     fn on_drop(&mut self, reader: &mut VmReader<Infallible>) {
         let nr_children = self.nr_children.get_mut();

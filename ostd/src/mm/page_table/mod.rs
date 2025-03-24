@@ -14,8 +14,6 @@ use super::{
 };
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
-    cpu::PinCurrentCpu,
-    task::disable_preempt,
     util::marker::SameSizeAs,
     Pod,
 };
@@ -23,7 +21,8 @@ use crate::{
 mod node;
 use node::*;
 pub mod cursor;
-pub use cursor::{Cursor, CursorMut, PageTableItem};
+pub(crate) use cursor::PageTableItem;
+pub use cursor::{Cursor, CursorMut};
 #[cfg(ktest)]
 mod test;
 
@@ -99,25 +98,6 @@ impl PageTable<UserMode> {
             self.root.activate();
         }
     }
-
-    /// Clear the page table.
-    pub(super) fn clear<G: PinCurrentCpu>(&self, flusher: &mut super::tlb::TlbFlusher<'_, G>) {
-        let _guard = disable_preempt();
-        let mut root_node = self.root.lock();
-        const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
-        for i in 0..NR_PTES_PER_NODE / 2 {
-            let mut root_entry = root_node.entry(i);
-            if !root_entry.is_none() {
-                let old = root_entry.replace(Child::None);
-                if let Child::PageTable(pt) = old {
-                    flusher
-                        .issue_tlb_flush_with(crate::mm::tlb::TlbFlushOp::All, pt.clone().into());
-                    // There may be other cursors accessing the old child, delay it with RCU.
-                    let _ = crate::sync::RcuDrop::new(pt);
-                }
-            }
-        }
-    }
 }
 
 impl PageTable<KernelMode> {
@@ -172,7 +152,9 @@ impl PageTable<KernelMode> {
             };
             let pt_cloned = pt.clone();
 
-            let _ = new_node.entry(i).replace(Child::PageTable(pt_cloned));
+            let _ = new_node
+                .entry(i)
+                .replace(Child::PageTable(crate::sync::RcuDrop::new(pt_cloned)));
         }
         drop(new_node);
 

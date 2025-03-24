@@ -3,7 +3,10 @@
 //! This module provides accessors to the page table entries in a node.
 
 use super::{Child, MapTrackingStatus, PageTableEntryTrait, PageTableGuard, PageTableNode};
-use crate::mm::{nr_subpage_per_huge, page_prop::PageProperty, page_size, PagingConstsTrait};
+use crate::{
+    mm::{nr_subpage_per_huge, page_prop::PageProperty, page_size, PagingConstsTrait},
+    sync::RcuDrop,
+};
 
 /// A view of an entry in a page table node.
 ///
@@ -127,8 +130,10 @@ impl<'guard, 'pt, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'guard, 'p
         //  1. The index is within the bounds.
         //  2. The new PTE is compatible with the page table node.
         unsafe {
-            self.node
-                .write_pte(self.idx, Child::PageTable(new_page).into_pte())
+            self.node.write_pte(
+                self.idx,
+                Child::PageTable(RcuDrop::new(new_page)).into_pte(),
+            )
         };
 
         *self.node.nr_children_mut() += 1;
@@ -178,8 +183,10 @@ impl<'guard, 'pt, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'guard, 'p
         //  1. The index is within the bounds.
         //  2. The new PTE is compatible with the page table node.
         unsafe {
-            self.node
-                .write_pte(self.idx, Child::PageTable(new_page).into_pte())
+            self.node.write_pte(
+                self.idx,
+                Child::PageTable(RcuDrop::new(new_page)).into_pte(),
+            )
         };
 
         // SAFETY: The resulting guard lifetime (`'a`) is no shorter than the
