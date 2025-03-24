@@ -22,17 +22,32 @@ pub(super) unsafe fn init(boot_params: &'static linux_boot_params::BootParams) {
 
     assert!(state.is_none());
 
+    let mut used = core::array::from_fn(|_| 0..0);
+
     extern "C" {
         fn __executable_start();
         fn __executable_end();
     }
 
-    let mut used = core::array::from_fn(|_| 0..0);
     used[0] = (__executable_start as usize)..(__executable_end as usize);
-    used[1] = {
-        let params_addr = core::ptr::from_ref(boot_params).addr();
-        params_addr..(params_addr + core::mem::size_of::<linux_boot_params::BootParams>())
-    };
+
+    fn range_from_start_and_len(start: usize, len: usize) -> Range<usize> {
+        start..start.checked_add(len).unwrap()
+    }
+
+    used[1] = range_from_start_and_len(
+        core::ptr::from_ref(boot_params).addr(),
+        core::mem::size_of::<linux_boot_params::BootParams>(),
+    );
+    // No need to worry about `ext_*` addresses/sizes since we're 32-bit.
+    used[2] = range_from_start_and_len(
+        boot_params.hdr.cmd_line_ptr as usize,
+        boot_params.hdr.cmdline_size as usize,
+    );
+    used[3] = range_from_start_and_len(
+        boot_params.hdr.ramdisk_image as usize,
+        boot_params.hdr.ramdisk_size as usize,
+    );
 
     *state = Some(State {
         e820: &boot_params.e820_table[..(boot_params.e820_entries as usize)],
