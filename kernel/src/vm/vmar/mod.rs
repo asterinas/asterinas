@@ -369,7 +369,12 @@ impl Vmar_ {
 
     /// Clears all content of the root VMAR.
     fn clear_root_vmar(&self) -> Result<()> {
-        self.vm_space.clear();
+        {
+            let full_range = 0..MAX_USERSPACE_VADDR;
+            let mut cursor = self.vm_space.cursor_mut(&full_range).unwrap();
+            cursor.unmap(full_range.len());
+            cursor.flusher().sync_tlb_flush();
+        }
         let mut inner = self.inner.write();
         inner.vm_mappings.clear();
         Ok(())
