@@ -5,10 +5,13 @@
 use core::{mem::ManuallyDrop, panic};
 
 use super::{MapTrackingStatus, PageTableEntryTrait, PageTableNode, PageTableNodeRef};
-use crate::mm::{
-    frame::{inc_frame_ref_count, meta::AnyFrameMeta, Frame},
-    page_prop::PageProperty,
-    Paddr, PagingConstsTrait, PagingLevel,
+use crate::{
+    mm::{
+        frame::{inc_frame_ref_count, meta::AnyFrameMeta, Frame},
+        page_prop::PageProperty,
+        Paddr, PagingConstsTrait, PagingLevel,
+    },
+    sync::RcuDrop,
 };
 
 /// A child of a page table node.
@@ -16,7 +19,7 @@ use crate::mm::{
 #[derive(Debug)]
 pub(in crate::mm) enum Child<'a, E: PageTableEntryTrait, C: PagingConstsTrait> {
     /// A owning handle to a raw page table node.
-    PageTable(PageTableNode<E, C>),
+    PageTable(RcuDrop<PageTableNode<E, C>>),
     /// A reference of a child page table node.
     PageTableRef(PageTableNodeRef<'a, E, C>),
     /// A mapped frame.
@@ -109,7 +112,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> Child<'_, E, C> {
             // at the given level.
             let pt = unsafe { PageTableNode::from_raw(paddr) };
             debug_assert_eq!(pt.level(), level - 1);
-            return Child::PageTable(pt);
+            return Child::PageTable(RcuDrop::new(pt));
         }
 
         match is_tracked {

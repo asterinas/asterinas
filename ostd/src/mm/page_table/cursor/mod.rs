@@ -10,6 +10,12 @@
 //! [`CursorMut::new`] will lock a range in the virtual space and all the
 //! operations on the range with the cursor will be atomic as a transaction.
 //!
+//! The guarantee of the lock protocol is that, if two cursors' ranges overlap,
+//! all of one's operation must be finished before any of the other's
+//! operation. The order depends on the scheduling of the threads. If a cursor
+//! is ordered after another cursor, it will see all the changes made by the
+//! previous cursor.
+//!
 //! The implementation of the lock protocol resembles two-phase locking (2PL).
 //! [`CursorMut::new`] accepts an address range, which indicates the page table
 //! entries that may be visited by this cursor. Then, [`CursorMut::new`] finds
@@ -23,7 +29,11 @@
 
 mod locking;
 
-use core::{any::TypeId, marker::PhantomData, ops::Range};
+use core::{
+    any::TypeId,
+    marker::PhantomData,
+    ops::{Deref, Range},
+};
 
 use align_ext::AlignExt;
 
@@ -64,6 +74,8 @@ pub struct Cursor<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsT
     va: Vaddr,
     /// The virtual address range that is locked.
     barrier_va: Range<Vaddr>,
+    /// This also make all the operation in the `Cursor::new` performed in a
+    /// RCU read-side critical section.
     #[expect(dead_code)]
     preempt_guard: DisabledPreemptGuard,
     _phantom: PhantomData<&'a PageTable<M, E, C>>,
@@ -88,6 +100,14 @@ pub enum PageTableItem {
         pa: Paddr,
         len: usize,
         prop: PageProperty,
+    },
+    /// This item can only show up as a return value of `take_next`. The caller
+    /// is responsible to free the page table node after TLB coherence.
+    /// FIXME: Separate into another type rather than `PageTableItem`?
+    StrayPageTable {
+        pt: Frame<dyn AnyFrameMeta>,
+        va: Vaddr,
+        len: usize,
     },
 }
 
@@ -509,10 +529,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
             }
 
             // Go down if not applicable.
-            if cur_entry.is_node()
-                || cur_va % page_size::<C>(cur_level) != 0
-                || cur_va + page_size::<C>(cur_level) > end
-            {
+            if cur_va % page_size::<C>(cur_level) != 0 || cur_va + page_size::<C>(cur_level) > end {
                 let child = cur_entry.to_ref();
                 match child {
                     Child::PageTableRef(pt) => {
@@ -567,7 +584,28 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
                         prop,
                     }
                 }
-                Child::PageTable(_) | Child::None | Child::PageTableRef(_) => unreachable!(),
+                Child::PageTable(pt) => {
+                    assert!(
+                        !(TypeId::of::<M>() == TypeId::of::<KernelMode>()
+                            && self.0.level == C::NR_LEVELS),
+                        "Unmapping shared kernel page table nodes"
+                    );
+
+                    // SAFETY: We must have locked this node.
+                    let locked_pt =
+                        unsafe { PageTableGuard::<E, C>::from_raw_paddr(pt.start_paddr()) };
+                    // SAFETY:
+                    //  - We checked that we are not unmapping shared kernel page table nodes.
+                    //  - We must have locked the entire sub-tree since the range is locked.
+                    unsafe { locking::dfs_mark_stray_and_unlock(locked_pt) };
+
+                    PageTableItem::StrayPageTable {
+                        pt: pt.deref().clone().into(),
+                        va: self.0.va,
+                        len: page_size::<C>(self.0.level),
+                    }
+                }
+                Child::None | Child::PageTableRef(_) => unreachable!(),
             };
 
             self.0.move_forward();
