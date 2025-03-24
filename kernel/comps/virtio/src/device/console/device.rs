@@ -151,7 +151,8 @@ impl ConsoleDevice {
 
         let callbacks = self.callbacks.read();
         for callback in callbacks.iter() {
-            let reader = self.receive_buffer.reader().unwrap().limit(len as usize);
+            let mut reader = self.receive_buffer.reader().unwrap();
+            reader.limit(len as usize);
             callback(reader);
         }
         drop(callbacks);

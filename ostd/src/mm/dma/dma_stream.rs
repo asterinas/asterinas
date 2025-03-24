@@ -305,23 +305,15 @@ impl<Dma: AsRef<DmaStream>> DmaStreamSlice<Dma> {
 
     /// Returns a reader to read data from it.
     pub fn reader(&self) -> Result<VmReader<Infallible>, Error> {
-        let stream_reader = self
-            .stream
-            .as_ref()
-            .reader()?
-            .skip(self.offset)
-            .limit(self.len);
+        let mut stream_reader = self.stream.as_ref().reader()?;
+        stream_reader.skip(self.offset).limit(self.len);
         Ok(stream_reader)
     }
 
     /// Returns a writer to write data into it.
     pub fn writer(&self) -> Result<VmWriter<Infallible>, Error> {
-        let stream_writer = self
-            .stream
-            .as_ref()
-            .writer()?
-            .skip(self.offset)
-            .limit(self.len);
+        let mut stream_writer = self.stream.as_ref().writer()?;
+        stream_writer.skip(self.offset).limit(self.len);
         Ok(stream_writer)
     }
 }

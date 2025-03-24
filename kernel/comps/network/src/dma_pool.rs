@@ -236,12 +236,16 @@ impl DmaSegment {
 
     pub fn reader(&self) -> Result<VmReader<'_, Infallible>, ostd::Error> {
         let offset = self.start_addr - self.dma_stream.daddr();
-        Ok(self.dma_stream.reader()?.skip(offset).limit(self.size))
+        let mut reader = self.dma_stream.reader()?;
+        reader.skip(offset).limit(self.size);
+        Ok(reader)
     }
 
     pub fn writer(&self) -> Result<VmWriter<'_, Infallible>, ostd::Error> {
         let offset = self.start_addr - self.dma_stream.daddr();
-        Ok(self.dma_stream.writer()?.skip(offset).limit(self.size))
+        let mut writer = self.dma_stream.writer()?;
+        writer.skip(offset).limit(self.size);
+        Ok(writer)
     }
 
     pub fn sync(&self, byte_range: Range<usize>) -> Result<(), ostd::Error> {

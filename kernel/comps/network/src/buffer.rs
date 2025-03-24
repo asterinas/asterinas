@@ -56,7 +56,9 @@ impl TxBuffer {
     }
 
     pub fn writer(&self) -> VmWriter<'_, Infallible> {
-        self.dma_stream.writer().unwrap().limit(self.nbytes)
+        let mut writer = self.dma_stream.writer().unwrap();
+        writer.limit(self.nbytes);
+        writer
     }
 
     fn sync(&self) {
@@ -110,21 +112,18 @@ impl RxBuffer {
         self.segment
             .sync(self.header_len..self.header_len + self.packet_len)
             .unwrap();
-        self.segment
-            .reader()
-            .unwrap()
-            .skip(self.header_len)
-            .limit(self.packet_len)
+        let mut reader = self.segment.reader().unwrap();
+        reader.skip(self.header_len).limit(self.packet_len);
+        reader
     }
 
     pub fn buf(&self) -> VmReader<'_, Infallible> {
         self.segment
             .sync(0..self.header_len + self.packet_len)
             .unwrap();
-        self.segment
-            .reader()
-            .unwrap()
-            .limit(self.header_len + self.packet_len)
+        let mut reader = self.segment.reader().unwrap();
+        reader.limit(self.header_len + self.packet_len);
+        reader
     }
 
     pub const fn buf_len(&self) -> usize {
