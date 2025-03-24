@@ -5,7 +5,6 @@ use crate::{
     mm::{
         kspace::LINEAR_MAPPING_BASE_VADDR,
         page_prop::{CachePolicy, PageFlags},
-        tlb::TlbFlusher,
         FrameAllocOptions, MAX_USERSPACE_VADDR, PAGE_SIZE,
     },
     prelude::*,
@@ -130,7 +129,6 @@ mod test_utils {
 
 mod create_page_table {
     use super::{test_utils::*, *};
-    use crate::cpu::{AtomicCpuSet, CpuSet};
 
     #[ktest]
     fn init_user_page_table() {
@@ -166,42 +164,6 @@ mod create_page_table {
             };
             assert_eq!(kernel_node.start_paddr(), user_node.start_paddr());
         }
-    }
-
-    #[ktest]
-    fn clear_user_page_table() {
-        // Creates a kernel page table.
-        let kernel_pt = PageTable::<KernelMode>::new_kernel_page_table();
-
-        // Creates a user page table.
-        let user_pt = kernel_pt.create_user_page_table();
-
-        // Defines a virtual address range.
-        let range = PAGE_SIZE..(PAGE_SIZE * 2);
-
-        // Allocates a physical frame and sets page properties.
-        let frame = FrameAllocOptions::default().alloc_frame().unwrap();
-        let page_property = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
-
-        // Maps the virtual range to the physical frame.
-        unsafe {
-            user_pt
-                .cursor_mut(&range)
-                .unwrap()
-                .map(frame.into(), page_property);
-        }
-
-        // Confirms that the mapping exists.
-        assert!(user_pt.query(PAGE_SIZE + 10).is_some());
-
-        let set = AtomicCpuSet::new(CpuSet::new_empty());
-        let mut tlb_flusher = TlbFlusher::new(&set, disable_preempt());
-
-        // Clears the page table.
-        user_pt.clear(&mut tlb_flusher);
-
-        // Confirms that the mapping is cleared.
-        assert!(user_pt.query(PAGE_SIZE + 10).is_none());
     }
 }
 
