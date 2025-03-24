@@ -196,6 +196,10 @@ sync_project_version() {
 
     update_project_dependencies
 
+    # Update tag version in release_tag workflow
+    RELEASE_TAG_WORKFLOW=${ASTER_SRC_DIR}/.github/workflows/push_git_tag.yml
+    update_tag_version $RELEASE_TAG_WORKFLOW
+
     echo -n "${new_version}" > ${VERSION_PATH}
     echo "Bumped Asterinas OSTD & OSDK version to $new_version"
 }
