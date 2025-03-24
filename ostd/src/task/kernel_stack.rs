@@ -55,9 +55,6 @@ impl KernelStack {
     // non-negligible TLB and mapping overhead on task creation. This could
     // be improved by caching/reusing kernel stacks with a pool.
     pub fn new_with_guard_page() -> Result<Self> {
-        let mut new_kvirt_area = KVirtArea::<Tracked>::new(KERNEL_STACK_SIZE + 4 * PAGE_SIZE);
-        let mapped_start = new_kvirt_area.range().start + 2 * PAGE_SIZE;
-        let mapped_end = mapped_start + KERNEL_STACK_SIZE;
         let pages = FrameAllocOptions::new()
             .zeroed(false)
             .alloc_segment_with(KERNEL_STACK_SIZE / PAGE_SIZE, |_| KernelStackMeta)?;
@@ -66,8 +63,14 @@ impl KernelStack {
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::empty(),
         };
-        new_kvirt_area.map_pages(mapped_start..mapped_end, pages, prop);
-
+        let new_kvirt_area = KVirtArea::<Tracked>::map_pages(
+            KERNEL_STACK_SIZE + 4 * PAGE_SIZE,
+            2 * PAGE_SIZE,
+            pages.into_iter(),
+            prop,
+        );
+        let mapped_start = new_kvirt_area.range().start + 2 * PAGE_SIZE;
+        let mapped_end = mapped_start + KERNEL_STACK_SIZE;
         Ok(Self {
             kvirt_area: new_kvirt_area,
             tlb_coherent: AtomicCpuSet::new(CpuSet::new_empty()),

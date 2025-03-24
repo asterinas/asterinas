@@ -8,46 +8,25 @@ use crate::{
             TRACKED_MAPPED_PAGES_RANGE, VMALLOC_VADDR_RANGE,
         },
         page_prop::PageProperty,
-        FrameAllocOptions, Paddr, PAGE_SIZE,
+        Frame, FrameAllocOptions, Paddr, PAGE_SIZE,
     },
     prelude::*,
 };
 
 #[ktest]
-fn kvirt_area_tracked_alloc() {
+fn kvirt_area_tracked_map_pages() {
     let size = 2 * PAGE_SIZE;
-    let kvirt_area = KVirtArea::<Tracked>::new(size);
+    let frames = FrameAllocOptions::default()
+        .alloc_segment_with(2, |_| ())
+        .unwrap();
+    let start_paddr = frames.start_paddr();
+
+    let kvirt_area =
+        KVirtArea::<Tracked>::map_pages(size, 0, frames.into_iter(), PageProperty::new_absent());
 
     assert_eq!(kvirt_area.len(), size);
     assert!(kvirt_area.start() >= TRACKED_MAPPED_PAGES_RANGE.start);
     assert!(kvirt_area.end() <= TRACKED_MAPPED_PAGES_RANGE.end);
-}
-
-#[ktest]
-fn kvirt_area_untracked_alloc() {
-    let size = 2 * PAGE_SIZE;
-    let kvirt_area = KVirtArea::<Untracked>::new(size);
-
-    assert_eq!(kvirt_area.len(), size);
-    assert!(kvirt_area.start() >= VMALLOC_VADDR_RANGE.start);
-    assert!(kvirt_area.end() <= VMALLOC_VADDR_RANGE.end);
-}
-
-#[ktest]
-fn kvirt_area_tracked_map_pages() {
-    let size = 2 * PAGE_SIZE;
-    let mut kvirt_area = KVirtArea::<Tracked>::new(size);
-
-    let frames = FrameAllocOptions::default()
-        .alloc_segment_with(2, |_| ())
-        .unwrap();
-
-    let start_paddr = frames.start_paddr();
-    kvirt_area.map_pages(
-        kvirt_area.range(),
-        frames.into_iter(),
-        PageProperty::new_absent(),
-    );
 
     for i in 0..2 {
         let addr = kvirt_area.start() + i * PAGE_SIZE;
@@ -59,14 +38,15 @@ fn kvirt_area_tracked_map_pages() {
 #[ktest]
 fn kvirt_area_untracked_map_pages() {
     let size = 2 * PAGE_SIZE;
-    let mut kvirt_area = KVirtArea::<Untracked>::new(size);
-
-    let va_range = kvirt_area.range();
     let pa_range = 0..2 * PAGE_SIZE as Paddr;
 
-    unsafe {
-        kvirt_area.map_untracked_pages(va_range, pa_range, PageProperty::new_absent());
-    }
+    let kvirt_area = unsafe {
+        KVirtArea::<Untracked>::map_untracked_pages(size, 0, pa_range, PageProperty::new_absent())
+    };
+
+    assert_eq!(kvirt_area.len(), size);
+    assert!(kvirt_area.start() >= VMALLOC_VADDR_RANGE.start);
+    assert!(kvirt_area.end() <= VMALLOC_VADDR_RANGE.end);
 
     for i in 0..2 {
         let addr = kvirt_area.start() + i * PAGE_SIZE;
@@ -79,39 +59,40 @@ fn kvirt_area_untracked_map_pages() {
 #[ktest]
 fn kvirt_area_tracked_drop() {
     let size = 2 * PAGE_SIZE;
-    let mut kvirt_area = KVirtArea::<Tracked>::new(size);
+    let frames = FrameAllocOptions::default()
+        .alloc_segment_with(2, |_| ())
+        .unwrap();
 
-    let frames = FrameAllocOptions::default().alloc_segment(2).unwrap();
-
-    kvirt_area.map_pages(
-        kvirt_area.range(),
-        frames.into_iter(),
-        PageProperty::new_absent(),
-    );
+    let kvirt_area =
+        KVirtArea::<Tracked>::map_pages(size, 0, frames.into_iter(), PageProperty::new_absent());
 
     drop(kvirt_area);
 
     // After dropping, the virtual address range should be freed and no longer mapped.
-    let kvirt_area = KVirtArea::<Tracked>::new(size);
+    let kvirt_area = KVirtArea::<Tracked>::map_pages(
+        size,
+        0,
+        core::iter::empty::<Frame<()>>(),
+        PageProperty::new_absent(),
+    );
     assert!(kvirt_area.get_page(kvirt_area.start()).is_none());
 }
 
 #[ktest]
 fn kvirt_area_untracked_drop() {
     let size = 2 * PAGE_SIZE;
-    let mut kvirt_area = KVirtArea::<Untracked>::new(size);
-
-    let va_range = kvirt_area.range();
     let pa_range = 0..2 * PAGE_SIZE as Paddr;
 
-    unsafe {
-        kvirt_area.map_untracked_pages(va_range, pa_range, PageProperty::new_absent());
-    }
+    let kvirt_area = unsafe {
+        KVirtArea::<Untracked>::map_untracked_pages(size, 0, pa_range, PageProperty::new_absent())
+    };
 
     drop(kvirt_area);
 
     // After dropping, the virtual address range should be freed and no longer mapped.
-    let kvirt_area = KVirtArea::<Untracked>::new(size);
+    let kvirt_area = unsafe {
+        KVirtArea::<Untracked>::map_untracked_pages(size, 0, 0..0, PageProperty::new_absent())
+    };
     assert!(kvirt_area.get_untracked_page(kvirt_area.start()).is_none());
 }
 
