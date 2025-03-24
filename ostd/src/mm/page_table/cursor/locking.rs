@@ -25,9 +25,20 @@ pub(super) fn lock_range<'a, M: PageTableMode, E: PageTableEntryTrait, C: Paging
     va: &Range<Vaddr>,
     new_pt_is_tracked: MapTrackingStatus,
 ) -> Cursor<'a, M, E, C> {
+    // Start RCU read-side critical section.
     let preempt_guard = disable_preempt();
 
-    let mut subtree_root = traverse_and_lock_subtree_root(pt, va, new_pt_is_tracked);
+    // The re-try loop of finding the sub-tree root.
+    //
+    // If we locked a stray node, we need to re-try. Otherwise, although
+    // there are no safety concerns, the operations of a cursor on an stray
+    // sub-tree will not see the current state and will not change the current
+    // state, breaking serializability.
+    let mut subtree_root = loop {
+        if let Some(subtree_root) = try_traverse_and_lock_subtree_root(pt, va, new_pt_is_tracked) {
+            break subtree_root;
+        }
+    };
 
     // Once we have locked the sub-tree that is not stray, we won't read any
     // stray nodes in the following traversal since we must lock before reading.
@@ -70,7 +81,11 @@ pub(super) fn unlock_range<M: PageTableMode, E: PageTableEntryTrait, C: PagingCo
 /// If that node (or any of its ancestors) does not exist, we need to lock
 /// the parent and create it. After the creation the lock of the parent will
 /// be released and the new node will be locked.
-fn traverse_and_lock_subtree_root<
+///
+/// If this function founds that a locked node is stray (because of racing with
+/// page table recycling), it will return `None`. The caller should retry in
+/// this case to lock the proper node.
+fn try_traverse_and_lock_subtree_root<
     'a,
     M: PageTableMode,
     E: PageTableEntryTrait,
@@ -79,7 +94,7 @@ fn traverse_and_lock_subtree_root<
     pt: &'a PageTable<M, E, C>,
     va: &Range<Vaddr>,
     new_pt_is_tracked: MapTrackingStatus,
-) -> PageTableGuard<'a, E, C> {
+) -> Option<PageTableGuard<'a, E, C>> {
     // # Safety
     // Must be called with `cur_pt_addr` and `'a`, `E`, `E` of the residing function.
     unsafe fn lock_cur_pt<'a, E: PageTableEntryTrait, C: PagingConstsTrait>(
@@ -130,10 +145,13 @@ fn traverse_and_lock_subtree_root<
         let mut guard = cur_node_guard
             .take()
             .unwrap_or_else(|| unsafe { lock_cur_pt::<'a, E, C>(cur_pt_addr) });
+        if *guard.stray_mut() {
+            return None;
+        }
+
         let mut cur_entry = guard.entry(start_idx);
         if cur_entry.is_none() {
             let allocated_guard = cur_entry.alloc_if_none(new_pt_is_tracked).unwrap();
-
             cur_pt_addr = allocated_guard.start_paddr();
             cur_node_guard = Some(allocated_guard);
         } else if cur_entry.is_node() {
@@ -148,7 +166,13 @@ fn traverse_and_lock_subtree_root<
     }
 
     // SAFETY: It is called with the required parameters.
-    cur_node_guard.unwrap_or_else(|| unsafe { lock_cur_pt::<'a, E, C>(cur_pt_addr) })
+    let mut guard =
+        cur_node_guard.unwrap_or_else(|| unsafe { lock_cur_pt::<'a, E, C>(cur_pt_addr) });
+    if *guard.stray_mut() {
+        return None;
+    }
+
+    Some(guard)
 }
 
 /// Acquires the locks for the given range in the sub-tree rooted at the node.
@@ -163,6 +187,7 @@ fn dfs_acquire_lock<E: PageTableEntryTrait, C: PagingConstsTrait>(
     cur_node_va: Vaddr,
     va_range: Range<Vaddr>,
 ) {
+    debug_assert!(!*cur_node.stray_mut());
     let cur_level = cur_node.level();
 
     if cur_level > 1 {
@@ -216,6 +241,43 @@ unsafe fn dfs_release_lock<E: PageTableEntryTrait, C: PagingConstsTrait>(
                     let va_end = va_range.end.min(child_node_va_end);
                     // SAFETY: The caller ensures that this sub-tree is locked.
                     unsafe { dfs_release_lock(child_node, child_node_va, va_start..va_end) };
+                }
+                Child::None
+                | Child::Frame(_, _)
+                | Child::Untracked(_, _, _)
+                | Child::PageTable(_) => {}
+            }
+        }
+    }
+}
+
+/// Marks all the nodes in the sub-tree rooted at the node as stray.
+///
+/// This function must be called upon the node after the node is removed
+/// from the parent page table.
+///
+/// This function also unlocks the nodes in the sub-tree.
+///
+/// # Safety
+///
+/// The caller must ensure that all the nodes in the sub-tree are locked.
+///
+/// This function must not be called upon a shared node. E.g., the second-
+/// top level nodes that the kernel space and user space share.
+pub(super) unsafe fn dfs_mark_stray_and_unlock<E: PageTableEntryTrait, C: PagingConstsTrait>(
+    mut sub_tree: PageTableGuard<E, C>,
+) {
+    *sub_tree.stray_mut() = true;
+
+    if sub_tree.level() > 1 {
+        for i in (0..nr_subpage_per_huge::<C>()).rev() {
+            let child = sub_tree.entry(i);
+            match child.to_ref() {
+                Child::PageTableRef(pt) => {
+                    // SAFETY: The caller ensures that the node is locked.
+                    let locked_pt =
+                        unsafe { PageTableGuard::<E, C>::from_raw_paddr(pt.start_paddr()) };
+                    dfs_mark_stray_and_unlock(locked_pt);
                 }
                 Child::None
                 | Child::Frame(_, _)
