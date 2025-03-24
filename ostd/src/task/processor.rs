@@ -67,6 +67,8 @@ pub(super) fn switch_to_task(next_task: Arc<Task>) {
     // may be unmapped, leading to instant failure.
     let old_prev = PREVIOUS_TASK_PTR.load();
     PREVIOUS_TASK_PTR.store(current_task_ptr);
+
+    next_task.kstack.flush_tlb(&irq_guard);
     CURRENT_TASK_PTR.store(Arc::into_raw(next_task));
 
     if let Some(handler) = POST_SCHEDULE_HANDLER.get() {
