@@ -18,20 +18,12 @@ pub mod task;
 pub mod timer;
 pub mod trap;
 
-use cfg_if::cfg_if;
 use io::construct_io_mem_allocator_builder;
 use spin::Once;
 use x86::cpuid::{CpuId, FeatureInfo};
 
-use crate::if_tdx_enabled;
-
-cfg_if! {
-    if #[cfg(feature = "cvm_guest")] {
-        pub(crate) mod tdx_guest;
-
-        use ::tdx_guest::{init_tdx, tdcall::InitError};
-    }
-}
+#[cfg(feature = "cvm_guest")]
+pub(crate) mod tdx_guest;
 
 use core::{
     arch::x86_64::{_rdrand64_step, _rdtsc},
@@ -43,7 +35,7 @@ use log::{info, warn};
 
 #[cfg(feature = "cvm_guest")]
 pub(crate) fn init_cvm_guest() {
-    match init_tdx() {
+    match ::tdx_guest::init_tdx() {
         Ok(td_info) => {
             crate::early_println!(
                 "[kernel] Intel TDX initialized\n[kernel] td gpaw: {}, td attributes: {:?}",
@@ -51,7 +43,7 @@ pub(crate) fn init_cvm_guest() {
                 td_info.attributes
             );
         }
-        Err(InitError::TdxGetVpInfoError(td_call_error)) => {
+        Err(::tdx_guest::tdcall::InitError::TdxGetVpInfoError(td_call_error)) => {
             panic!(
                 "[kernel] Intel TDX not initialized, Failed to get TD info: {:?}",
                 td_call_error
@@ -273,3 +265,5 @@ macro_rules! if_tdx_enabled {
         }
     }};
 }
+
+pub use if_tdx_enabled;

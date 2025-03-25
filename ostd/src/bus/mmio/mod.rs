@@ -10,20 +10,12 @@ pub mod common_device;
 use alloc::vec::Vec;
 use core::ops::Range;
 
-use cfg_if::cfg_if;
 use log::debug;
 
 use self::bus::MmioBus;
 use crate::{
-    bus::mmio::common_device::MmioCommonDevice, if_tdx_enabled, mm::paddr_to_vaddr, sync::SpinLock,
-    trap::IrqLine,
+    bus::mmio::common_device::MmioCommonDevice, mm::paddr_to_vaddr, sync::SpinLock, trap::IrqLine,
 };
-
-cfg_if! {
-    if #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))] {
-        use crate::arch::tdx_guest;
-    }
-}
 
 const VIRTIO_MMIO_MAGIC: u32 = 0x74726976;
 
@@ -32,20 +24,21 @@ pub static MMIO_BUS: SpinLock<MmioBus> = SpinLock::new(MmioBus::new());
 static IRQS: SpinLock<Vec<IrqLine>> = SpinLock::new(Vec::new());
 
 pub(crate) fn init() {
-    if_tdx_enabled!({
-        #[cfg(target_arch = "x86_64")]
-        // SAFETY:
-        // This is safe because we are ensuring that the address range 0xFEB0_0000 to 0xFEB0_4000 is valid before this operation.
-        // The address range is page-aligned and falls within the MMIO range, which is a requirement for the `unprotect_gpa_range` function.
-        // We are also ensuring that we are only unprotecting four pages.
-        // Therefore, we are not causing any undefined behavior or violating any of the requirements of the `unprotect_gpa_range` function.
-        unsafe {
-            tdx_guest::unprotect_gpa_range(0xFEB0_0000, 4).unwrap();
-        }
-    });
-    // FIXME: The address 0xFEB0_0000 is obtained from an instance of microvm, and it may not work in other architecture.
     #[cfg(target_arch = "x86_64")]
-    iter_range(0xFEB0_0000..0xFEB0_4000);
+    {
+        crate::arch::if_tdx_enabled!({
+            // SAFETY:
+            // This is safe because we are ensuring that the address range 0xFEB0_0000 to 0xFEB0_4000 is valid before this operation.
+            // The address range is page-aligned and falls within the MMIO range, which is a requirement for the `unprotect_gpa_range` function.
+            // We are also ensuring that we are only unprotecting four pages.
+            // Therefore, we are not causing any undefined behavior or violating any of the requirements of the `unprotect_gpa_range` function.
+            unsafe {
+                crate::arch::tdx_guest::unprotect_gpa_range(0xFEB0_0000, 4).unwrap();
+            }
+        });
+        // FIXME: The address 0xFEB0_0000 is obtained from an instance of microvm, and it may not work in other architecture.
+        iter_range(0xFEB0_0000..0xFEB0_4000);
+    }
 }
 
 #[cfg(target_arch = "x86_64")]

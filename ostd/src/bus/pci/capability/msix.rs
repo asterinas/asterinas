@@ -7,8 +7,6 @@
 
 use alloc::{sync::Arc, vec::Vec};
 
-use cfg_if::cfg_if;
-
 use crate::{
     arch::iommu::has_interrupt_remapping,
     bus::pci::{
@@ -16,16 +14,9 @@ use crate::{
         common_device::PciCommonDevice,
         device_info::PciDeviceLocation,
     },
-    if_tdx_enabled,
     mm::VmIoOnce,
     trap::IrqLine,
 };
-
-cfg_if! {
-    if #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))] {
-        use crate::arch::tdx_guest;
-    }
-}
 
 /// MSI-X capability. It will set the BAR space it uses to be hidden.
 #[derive(Debug)]
@@ -108,8 +99,8 @@ impl CapabilityMsixData {
 
         // Set message address 0xFEE0_0000
         for i in 0..table_size {
-            if_tdx_enabled!({
-                #[cfg(target_arch = "x86_64")]
+            #[cfg(target_arch = "x86_64")]
+            crate::arch::if_tdx_enabled!({
                 // SAFETY:
                 // This is safe because we are ensuring that the physical address of the MSI-X table is valid before this operation.
                 // We are also ensuring that we are only unprotecting a single page.
@@ -119,7 +110,8 @@ impl CapabilityMsixData {
                 // In addition, due to granularity, the minimum value that can be set here is only one page.
                 // Therefore, we are not causing any undefined behavior or violating any of the requirements of the `unprotect_gpa_range` function.
                 unsafe {
-                    tdx_guest::unprotect_gpa_range(table_bar.io_mem().paddr(), 1).unwrap();
+                    crate::arch::tdx_guest::unprotect_gpa_range(table_bar.io_mem().paddr(), 1)
+                        .unwrap();
                 }
             });
             // Set message address and disable this msix entry
