@@ -19,19 +19,11 @@ pub mod timer;
 pub mod trap;
 
 use allocator::construct_io_mem_allocator_builder;
-use cfg_if::cfg_if;
 use spin::Once;
 use x86::cpuid::{CpuId, FeatureInfo};
 
-use crate::if_tdx_enabled;
-
-cfg_if! {
-    if #[cfg(feature = "cvm_guest")] {
-        pub(crate) mod tdx_guest;
-
-        use ::tdx_guest::{init_tdx, tdcall::InitError};
-    }
-}
+#[cfg(feature = "cvm_guest")]
+pub(crate) mod tdx_guest;
 
 use core::{
     arch::x86_64::{_rdrand64_step, _rdtsc},
@@ -43,7 +35,7 @@ use log::{info, warn};
 
 #[cfg(feature = "cvm_guest")]
 pub(crate) fn init_cvm_guest() {
-    match init_tdx() {
+    match ::tdx_guest::init_tdx() {
         Ok(td_info) => {
             crate::early_println!(
                 "[kernel] Intel TDX initialized\n[kernel] td gpaw: {}, td attributes: {:?}",
@@ -51,7 +43,7 @@ pub(crate) fn init_cvm_guest() {
                 td_info.attributes
             );
         }
-        Err(InitError::TdxGetVpInfoError(td_call_error)) => {
+        Err(::tdx_guest::tdcall::InitError::TdxGetVpInfoError(td_call_error)) => {
             panic!(
                 "[kernel] Intel TDX not initialized, Failed to get TD info: {:?}",
                 td_call_error
@@ -223,7 +215,6 @@ pub(crate) fn enable_cpu_features() {
 ///
 /// If both conditions are met, the `if_block` is executed. If an `else_block` is provided, it will be executed
 /// when either the `cvm_guest` feature is not enabled or the TDX feature is not detected at runtime.
-#[macro_export]
 macro_rules! if_tdx_enabled {
     // Match when there is an else block
     ($if_block:block else $else_block:block) => {{
@@ -250,3 +241,5 @@ macro_rules! if_tdx_enabled {
         }
     }};
 }
+
+pub(crate) use if_tdx_enabled;
