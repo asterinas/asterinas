@@ -129,7 +129,7 @@ impl Task {
         let Some(user_ctx) = self.user_ctx.as_ref() else {
             return;
         };
-
+        #[cfg(target_arch = "x86_64")]
         user_ctx.fpu_state().save();
     }
 
@@ -138,7 +138,7 @@ impl Task {
         let Some(user_ctx) = self.user_ctx.as_ref() else {
             return;
         };
-
+        #[cfg(target_arch = "x86_64")]
         user_ctx.fpu_state().restore();
     }
 }

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use alloc::string::String;
+
 use ostd::{
-    cpu::{CpuExceptionInfo, RawGeneralRegs, UserContext},
+    cpu::context::{CpuExceptionInfo, RawGeneralRegs, UserContext},
     Pod,
 };
 
@@ -10,6 +12,10 @@ use crate::{cpu::LinuxAbi, thread::exception::PageFaultInfo, vm::perms::VmPerms}
 impl LinuxAbi for UserContext {
     fn syscall_num(&self) -> usize {
         self.a7()
+    }
+
+    fn set_syscall_num(&mut self, num: usize) {
+        self.set_a7(num);
     }
 
     fn syscall_ret(&self) -> usize {
@@ -144,5 +150,20 @@ impl TryFrom<&CpuExceptionInfo> for PageFaultInfo {
             address: value.page_fault_addr,
             required_perms,
         })
+    }
+}
+
+/// CPU Information structure.
+// TODO: Implement CPU information retrieval on RISC-V platforms.
+pub struct CpuInfo;
+
+impl CpuInfo {
+    pub fn new(_processor_id: u32) -> Self {
+        Self
+    }
+
+    /// Collect and format CPU information into a `String`.
+    pub fn collect_cpu_info(&self) -> String {
+        String::new()
     }
 }
