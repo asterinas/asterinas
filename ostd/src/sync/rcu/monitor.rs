@@ -10,6 +10,7 @@ use crate::{
     cpu::{AtomicCpuSet, CpuId, CpuSet, PinCurrentCpu},
     prelude::*,
     sync::SpinLock,
+    task::atomic_mode::AsAtomicModeGuard,
 };
 
 /// A RCU monitor ensures the completion of _grace periods_ by keeping track
@@ -42,7 +43,7 @@ impl RcuMonitor {
         // GP.
         let callbacks = {
             let mut state = self.state.disable_irq().lock();
-            let cpu = state.guard().current_cpu();
+            let cpu = state.as_atomic_mode_guard().current_cpu();
             if state.current_gp.is_complete() {
                 return;
             }
