@@ -122,6 +122,12 @@ impl VmMapping {
 /****************************** Page faults **********************************/
 
 impl VmMapping {
+    // FIXME: We may break the atomic mode while handling page faults that
+    // needs I/O in the pager. The problem is two fold:
+    //  - We may still hold the PT lock when doing I/O. So we need to drop the
+    //    PT locks if I/O is needed.
+    //  - The page fault can happen because of a fallible user space read/write
+    //    from the kernel. That read/write can happen inside an atomic mode.
     pub fn handle_page_fault(
         &self,
         vm_space: &VmSpace,
@@ -181,14 +187,19 @@ impl VmMapping {
 
                 if self.is_shared || only_reference {
                     cursor.protect_next(PAGE_SIZE, |p| p.flags |= new_flags);
-                    cursor.flusher().issue_tlb_flush(TlbFlushOp::Address(va));
-                    cursor.flusher().dispatch_tlb_flush();
+                    TlbFlushOp::Address(va).perform_on_current();
+                    // No need for remote TLB shootdowns as letting them fault
+                    // would be cheaper and more accurate. The check on the
+                    // entry of this block will work.
                 } else {
                     let new_frame = duplicate_frame(&frame)?;
                     prop.flags |= new_flags;
                     cursor.map(new_frame.into(), prop);
+                    // TODO: We need no shootdowns here either, but a cursor
+                    // re-map would perform a shootdown. Just keepping the
+                    // page in the buffer (`issue_tlb_with`) is suffice for
+                    // memory safety. We can remove that shootdown in the OSTD.
                 }
-                cursor.flusher().sync_tlb_flush();
             }
             VmItem::NotMapped { .. } => {
                 // Map a new frame to the page fault address.
