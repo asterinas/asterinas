@@ -2,6 +2,8 @@
 
 mod dma_coherent;
 mod dma_stream;
+#[cfg(ktest)]
+mod test;
 
 use alloc::collections::BTreeSet;
 
@@ -27,7 +29,7 @@ pub enum DmaType {
     Iommu,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum DmaError {
     InvalidArgs,
     AlreadyMapped,
