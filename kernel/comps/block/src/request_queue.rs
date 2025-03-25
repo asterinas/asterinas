@@ -163,6 +163,13 @@ impl BioRequest {
         self.bios.iter()
     }
 
+    /// Returns the number of sectors of this request.
+    pub fn num_sectors(&self) -> usize {
+        (self.sid_range.end.to_raw() - self.sid_range.start.to_raw())
+            .try_into()
+            .unwrap()
+    }
+
     /// Returns the number of segments.
     pub fn num_segments(&self) -> usize {
         self.num_segments
