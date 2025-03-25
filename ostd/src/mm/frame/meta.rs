@@ -169,6 +169,13 @@ macro_rules! impl_frame_meta_for {
     ($t:ty) => {
         // SAFETY: `on_drop` won't read the page.
         unsafe impl $crate::mm::frame::meta::AnyFrameMeta for $t {}
+
+        $crate::const_assert!(
+            core::mem::size_of::<$t>() <= $crate::mm::frame::meta::FRAME_METADATA_MAX_SIZE
+        );
+        $crate::const_assert!(
+            $crate::mm::frame::meta::FRAME_METADATA_MAX_ALIGN % core::mem::align_of::<$t>() == 0
+        );
     };
 }
 
