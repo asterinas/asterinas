@@ -3,7 +3,6 @@
 //! PCI device common definitions or functions.
 
 #![expect(dead_code)]
-#![expect(unused_variables)]
 
 use alloc::vec::Vec;
 
@@ -96,19 +95,14 @@ impl PciCommonDevice {
 /// Base Address Registers manager.
 #[derive(Debug)]
 pub struct BarManager {
-    /// BARs, the bool indicate whether this bar should exposed to unprivileged part.
-    bars: [Option<(Bar, bool)>; 6],
+    /// There are at most 6 BARs in PCI device.
+    bars: [Option<Bar>; 6],
 }
 
 impl BarManager {
-    /// Gain access to the BAR space and return None if that BAR is set to be invisible or absent.
-    pub fn bar(&self, idx: u8) -> Option<Bar> {
-        let (bar, visible) = self.bars[idx as usize].clone()?;
-        if visible {
-            Some(bar)
-        } else {
-            None
-        }
+    /// Gain access to the BAR space and return None if that BAR is absent.
+    pub fn bar(&self, idx: u8) -> &Option<Bar> {
+        &self.bars[idx as usize]
     }
 
     /// Parse the BAR space by PCI device location.
@@ -133,32 +127,11 @@ impl BarManager {
                     }
                     Bar::Io(_) => {}
                 }
-                bars[idx as usize] = Some((bar, true));
+                bars[idx as usize] = Some(bar);
                 idx += idx_step;
             }
             idx += 1;
         }
         Self { bars }
-    }
-
-    pub(super) fn set_invisible(&mut self, idx: u8) {
-        if self.bars[idx as usize].is_some() {
-            let Some((bar, _)) = self.bars[idx as usize].clone() else {
-                return;
-            };
-            self.bars[idx as usize] = Some((bar, false));
-        }
-        let Some((_, visible)) = self.bars[idx as usize] else {
-            return;
-        };
-    }
-
-    /// Gain access to the BAR space and return None if that BAR is absent.
-    pub(super) fn bar_space_without_invisible(&self, idx: u8) -> Option<Bar> {
-        if let Some((bar, _)) = self.bars[idx as usize].clone() {
-            Some(bar)
-        } else {
-            None
-        }
     }
 }

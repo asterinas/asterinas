@@ -73,10 +73,9 @@ impl CapabilityMsixData {
         let pba_bar;
 
         let bar_manager = dev.bar_manager_mut();
-        bar_manager.set_invisible((pba_info & 0b111) as u8);
-        bar_manager.set_invisible((table_info & 0b111) as u8);
         match bar_manager
-            .bar_space_without_invisible((pba_info & 0b111) as u8)
+            .bar((pba_info & 0b111) as u8)
+            .clone()
             .expect("MSIX cfg:pba BAR is none")
         {
             Bar::Memory(memory) => {
@@ -87,7 +86,8 @@ impl CapabilityMsixData {
             }
         };
         match bar_manager
-            .bar_space_without_invisible((table_info & 0b111) as u8)
+            .bar((table_info & 0b111) as u8)
+            .clone()
             .expect("MSIX cfg:table BAR is none")
         {
             Bar::Memory(memory) => {

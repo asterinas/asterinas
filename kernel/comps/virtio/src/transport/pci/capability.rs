@@ -86,7 +86,7 @@ impl VirtioPciCapabilityData {
             offset,
             length,
             option,
-            memory_bar,
+            memory_bar: memory_bar.cloned(),
         }
     }
 }

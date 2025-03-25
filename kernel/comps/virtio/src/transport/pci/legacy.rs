@@ -95,7 +95,7 @@ impl VirtioPciLegacyTransport {
         };
         info!("[Virtio]: Found device:{:?}", device_type);
 
-        let config_bar = common_device.bar_manager().bar(0).unwrap();
+        let config_bar = common_device.bar_manager().bar(0).clone().unwrap();
 
         let mut num_queues = 0u16;
         while num_queues < u16::MAX {
