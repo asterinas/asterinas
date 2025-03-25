@@ -40,6 +40,8 @@ pub(super) fn init() {
             IoMem::new(
                 (region.starting_address as usize)
                     ..(region.starting_address as usize) + region.size.unwrap(),
+                crate::mm::page_prop::PageFlags::RW,
+                crate::mm::page_prop::CachePolicy::Uncacheable,
             )
         };
         GOLDFISH_IO_MEM.call_once(|| io_mem);
