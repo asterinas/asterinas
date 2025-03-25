@@ -105,6 +105,7 @@ impl<G: PinCurrentCpu> TlbFlusher<G> {
     /// This method panics if the IRQs are disabled. Since the remote flush are
     /// processed in IRQs, two CPUs may deadlock if they are waiting for each
     /// other's TLB coherence.
+    #[track_caller]
     pub fn sync_tlb_flush(&mut self) {
         if !self.have_unsynced_flush {
             return;
