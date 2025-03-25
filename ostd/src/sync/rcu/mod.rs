@@ -15,7 +15,7 @@ use core::{
 use spin::once::Once;
 
 use self::monitor::RcuMonitor;
-use crate::task::{disable_preempt, DisabledPreemptGuard};
+use crate::task::{atomic_mode::AsAtomicModeGuard, disable_preempt, DisabledPreemptGuard};
 
 mod monitor;
 mod owner_ptr;
@@ -171,17 +171,20 @@ impl<P: OwnerPtr> RcuInner<P> {
 
     fn read_with<'a>(
         &'a self,
-        _guard: &'a DisabledPreemptGuard,
+        guard: &'a dyn AsAtomicModeGuard,
     ) -> Option<&'a <P as OwnerPtr>::Target> {
+        // Ensure that a real atomic-mode guard is obtained.
+        let _atomic_mode_guard = guard.as_atomic_mode_guard();
+
         let obj_ptr = self.ptr.load(Acquire);
         if obj_ptr.is_null() {
             return None;
         }
         // SAFETY:
         // 1. This pointer is not NULL.
-        // 2. Since the preemption is disabled, the pointer is valid because
-        //    other writers won't release the allocation until this task passes
-        //    the quiescent state.
+        // 2. The `_atomic_mode_guard` guarantees atomic mode for the duration of
+        //    lifetime `'a`, the pointer is valid because other writers won't release
+        //    the allocation until this task passes the quiescent state.
         Some(unsafe { &*obj_ptr })
     }
 }
@@ -267,15 +270,19 @@ impl<P: OwnerPtr> Rcu<P> {
         RcuReadGuard(self.0.read())
     }
 
-    /// Reads the RCU-protected value given that preemption is already disabled.
+    /// Reads the RCU-protected value in an atomic mode.
     ///
-    /// If preemption is already disabled, this function can reduce the
-    /// overhead of disabling preemption again.
+    /// The RCU mechanism protects reads ([`Self::read`]) by entering an
+    /// atomic mode. If we are already in an atomic mode, this function can
+    /// reduce the overhead of disabling preemption again.
     ///
     /// Unlike [`Self::read`], this function does not return a read guard, so
     /// you cannot use [`RcuReadGuard::compare_exchange`] to synchronize the
     /// writers. You may do it via a [`super::SpinLock`].
-    pub fn read_with<'a>(&'a self, guard: &'a DisabledPreemptGuard) -> &'a <P as OwnerPtr>::Target {
+    pub fn read_with<'a>(
+        &'a self,
+        guard: &'a dyn AsAtomicModeGuard,
+    ) -> &'a <P as OwnerPtr>::Target {
         self.0.read_with(guard).unwrap()
     }
 }
@@ -321,17 +328,18 @@ impl<P: OwnerPtr> RcuOption<P> {
         RcuOptionReadGuard(self.0.read())
     }
 
-    /// Reads the RCU-protected value given that preemption is already disabled.
+    /// Reads the RCU-protected value in an atomic mode.
     ///
-    /// If preemption is already disabled, this function can reduce the
-    /// overhead of disabling preemption again.
+    /// The RCU mechanism protects reads ([`Self::read`]) by entering an
+    /// atomic mode. If we are already in an atomic mode, this function can
+    /// reduce the overhead of disabling preemption again.
     ///
     /// Unlike [`Self::read`], this function does not return a read guard, so
     /// you cannot use [`RcuOptionReadGuard::compare_exchange`] to synchronize the
     /// writers. You may do it via a [`super::SpinLock`].
     pub fn read_with<'a>(
         &'a self,
-        guard: &'a DisabledPreemptGuard,
+        guard: &'a dyn AsAtomicModeGuard,
     ) -> Option<&'a <P as OwnerPtr>::Target> {
         self.0.read_with(guard)
     }
