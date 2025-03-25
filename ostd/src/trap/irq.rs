@@ -6,6 +6,7 @@ use crate::{
     arch::irq::{self, IrqCallbackHandle, IRQ_ALLOCATOR},
     prelude::*,
     sync::GuardTransfer,
+    task::atomic_mode::InAtomicMode,
     trap::TrapFrame,
     Error,
 };
@@ -139,6 +140,10 @@ pub struct DisabledLocalIrqGuard {
 }
 
 impl !Send for DisabledLocalIrqGuard {}
+
+// SAFETY: The guard disables local IRQs, which meets the first
+// sufficient condition for atomic mode.
+unsafe impl InAtomicMode for DisabledLocalIrqGuard {}
 
 impl DisabledLocalIrqGuard {
     fn new() -> Self {

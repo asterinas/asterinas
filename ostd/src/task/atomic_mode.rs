@@ -45,3 +45,31 @@ pub fn might_sleep() {
         );
     }
 }
+
+/// A marker trait for guard types that enforce the atomic mode.
+///
+/// Key kernel primitives such as `SpinLock` and `Rcu` rely on
+/// [the atomic mode](crate::task::atomic_mode) for correctness or soundness.
+/// The existence of such a guard guarantees that
+/// the current task is executing in the atomic mode.
+///
+/// # Safety
+///
+/// The implementer must ensure that the atomic mode is maintained while
+/// the guard type is alive.
+///
+/// [`DisabledLocalIrqGuard`]: crate::task::DisabledPreemptGuard
+/// [`DisabledPreemptGuard`]: crate::trap::DisabledLocalIrqGuard
+pub unsafe trait InAtomicMode {}
+
+/// Abstracts any type from which one can obtain a reference to an atomic-mode guard.
+pub trait AsAtomicModeGuard {
+    /// Returns a guard for the atomic mode.
+    fn as_atomic_mode_guard(&self) -> &dyn InAtomicMode;
+}
+
+impl<G: InAtomicMode> AsAtomicModeGuard for G {
+    fn as_atomic_mode_guard(&self) -> &dyn InAtomicMode {
+        self
+    }
+}
