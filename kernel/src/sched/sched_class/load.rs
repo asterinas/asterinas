@@ -1,9 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use core::{
+    cell::Cell,
     ops::Add,
-    sync::atomic::{AtomicU64, Ordering::Relaxed},
+    sync::{
+        atomic::{AtomicU64, Ordering::Relaxed},
+        Exclusive,
+    },
 };
+
+use radium::Radium;
 
 use super::{fair::FairClassRq, SchedClassRq, SchedPolicyKind};
 use crate::thread::Thread;
@@ -99,30 +105,30 @@ impl Add for LoadData {
 }
 
 #[derive(Debug)]
-struct Load {
-    last_updated: AtomicU64,
-    d3: AtomicU64,
+struct Load<T: Radium<Item = u64>> {
+    last_updated: T,
+    d3: T,
 
-    weighted_sum: AtomicU64,
-    queued_sum: AtomicU64,
-    running_sum: AtomicU64,
+    weighted_sum: T,
+    queued_sum: T,
+    running_sum: T,
 
-    weighted_avg: AtomicU64,
-    queued_avg: AtomicU64,
-    running_avg: AtomicU64,
+    weighted_avg: T,
+    queued_avg: T,
+    running_avg: T,
 }
 
-impl Load {
-    pub const fn new() -> Self {
+impl<T: Radium<Item = u64>> Load<T> {
+    pub fn new() -> Self {
         Self {
-            last_updated: AtomicU64::new(0),
-            d3: AtomicU64::new(0),
-            weighted_sum: AtomicU64::new(0),
-            queued_sum: AtomicU64::new(0),
-            running_sum: AtomicU64::new(0),
-            weighted_avg: AtomicU64::new(0),
-            queued_avg: AtomicU64::new(0),
-            running_avg: AtomicU64::new(0),
+            last_updated: T::new(0),
+            d3: T::new(0),
+            weighted_sum: T::new(0),
+            queued_sum: T::new(0),
+            running_sum: T::new(0),
+            weighted_avg: T::new(0),
+            queued_avg: T::new(0),
+            running_avg: T::new(0),
         }
     }
 
@@ -218,10 +224,10 @@ impl Load {
 
 /// The load measurement for a FAIR task.
 #[derive(Debug)]
-pub struct FairTaskLoad(Load);
+pub struct FairTaskLoad(Load<AtomicU64>);
 
 impl FairTaskLoad {
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         FairTaskLoad(Load::new())
     }
 
@@ -244,18 +250,23 @@ impl FairTaskLoad {
 
 // Class-level load tracking
 
+// The use of `Exclusive` here is to implement `Sync` for `FairRqLoad`. `Cell<T>`
+// is not `Sync` by definition because of its mutability under shared references.
+// `Exclusive<T>` wraps `Cell<T>` and provides only mutable reference to its inner
+// value, which prevents shared references and becomes `Sync`.
+
 /// The load measurement for a FAIR run queue.
 #[derive(Debug)]
-pub struct FairRqLoad(Load);
+pub struct FairRqLoad(Exclusive<Load<Cell<u64>>>);
 
 impl FairRqLoad {
-    pub const fn new() -> Self {
-        FairRqLoad(Load::new())
+    pub fn new() -> Self {
+        FairRqLoad(Exclusive::new(Load::new()))
     }
 
     #[expect(unused)]
-    pub fn data(&self) -> LoadData {
-        self.0.data()
+    pub fn data(&mut self) -> LoadData {
+        self.0.get_mut().data()
     }
 
     /// Updates the load measurement for a FAIR run queue.
@@ -265,7 +276,7 @@ impl FairRqLoad {
         let running =
             cur.is_some_and(|cur| cur.sched_attr().policy_kind() == SchedPolicyKind::Fair);
 
-        self.0.update(
+        self.0.get_mut().update(
             now_ns,
             rq.total_weight(),
             1,
@@ -287,7 +298,7 @@ impl FairRqLoad {
     ///
     /// The update time of this load measurement must be later than that of the entity.
     pub fn attach(&mut self, FairTaskLoad(ent): &FairTaskLoad, entity_weight: u64) {
-        let this = &mut self.0;
+        let this = &mut self.0.get_mut();
 
         debug_assert!(this.last_updated.load(Relaxed) >= ent.last_updated.load(Relaxed));
 
@@ -336,7 +347,7 @@ impl FairRqLoad {
     ///
     /// The update time of this load measurement must be synced with that of the entity.
     pub fn detach(&mut self, FairTaskLoad(ent): &FairTaskLoad, entity_weight: u64) {
-        let this = &mut self.0;
+        let this = &mut self.0.get_mut();
 
         debug_assert!(this.last_updated.load(Relaxed) >= ent.last_updated.load(Relaxed));
 
@@ -362,25 +373,25 @@ impl FairRqLoad {
 /// The load measurement of a non-FAIR run queue.
 #[derive(Debug)]
 pub struct RqLoad {
-    inner: Load,
+    inner: Exclusive<Load<Cell<u64>>>,
     kind: SchedPolicyKind,
 }
 
 impl RqLoad {
-    pub const fn new(kind: SchedPolicyKind) -> Self {
+    pub fn new(kind: SchedPolicyKind) -> Self {
         debug_assert!(
             !matches!(kind, SchedPolicyKind::Fair),
             "RqLoad is not for FAIR run queues",
         );
         RqLoad {
-            inner: Load::new(),
+            inner: Exclusive::new(Load::new()),
             kind,
         }
     }
 
     #[expect(unused)]
-    pub fn data(&self) -> LoadData {
-        self.inner.data()
+    pub fn data(&mut self) -> LoadData {
+        self.inner.get_mut().data()
     }
 
     /// Updates the load measurement for a non-FAIR run queue.
@@ -389,7 +400,6 @@ impl RqLoad {
     pub fn update(&mut self, now_ns: u64, cur: Option<&Thread>) -> bool {
         let running = cur.is_some_and(|cur| cur.sched_attr().policy_kind() == self.kind);
 
-        self.inner
-            .update(now_ns, running as u64, 1, running as usize, running)
+        (self.inner.get_mut()).update(now_ns, running as u64, 1, running as usize, running)
     }
 }
