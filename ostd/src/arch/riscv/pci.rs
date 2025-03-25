@@ -2,10 +2,13 @@
 
 //! PCI bus access
 
+use log::warn;
 use spin::Once;
 
 use super::boot::DEVICE_TREE;
-use crate::{bus::pci::PciDeviceLocation, io::IoMem, mm::VmIoOnce, prelude::*, Error};
+use crate::{
+    bus::pci::PciDeviceLocation, io::IoMem, mm::VmIoOnce, prelude::*, trap::IrqLine, Error,
+};
 
 static PCI_BASE_ADDR: Once<IoMem> = Once::new();
 
@@ -36,7 +39,7 @@ pub(crate) fn init() -> Result<()> {
 
     let mut reg = pci.reg().ok_or(Error::IoError)?;
 
-    let Ok(region) = reg.next() else {
+    let Some(region) = reg.next() else {
         warn!("PCI node should have exactly one `reg` property, but found zero `reg`s");
         return Err(Error::IoError);
     };
@@ -57,6 +60,12 @@ pub(crate) fn init() -> Result<()> {
     });
 
     Ok(())
+}
+
+pub(crate) const MSIX_DEFAULT_MSG_ADDR: u32 = 0x2400_0000;
+
+pub(crate) fn construct_remappable_msix_address(irq: &IrqLine) -> u32 {
+    unimplemented!()
 }
 
 /// Encodes the bus, device, and function into an address offset in the PCI MMIO region.

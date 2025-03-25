@@ -30,7 +30,7 @@ pub fn early_print(args: Arguments) {
         STDOUT.lock().write_fmt(args).unwrap();
     });
     #[cfg(not(target_arch = "x86_64"))]
-    crate::arch::serial::print(args);
+    STDOUT.lock().write_fmt(args).unwrap();
 }
 
 /// Prints to the console.
