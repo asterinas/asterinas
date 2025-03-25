@@ -11,7 +11,6 @@ use align_ext::AlignExt;
 pub(super) use self::allocator::init;
 pub(crate) use self::allocator::IoMemAllocatorBuilder;
 use crate::{
-    if_tdx_enabled,
     mm::{
         kspace::kvirt_area::{KVirtArea, Untracked},
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
@@ -87,11 +86,18 @@ impl IoMem {
         let first_page_start = range.start.align_down(PAGE_SIZE);
         let last_page_end = range.end.align_up(PAGE_SIZE);
 
-        let priv_flags = if_tdx_enabled!({
-            PrivilegedPageFlags::SHARED
-        } else {
+        let priv_flags = {
+            #[cfg(target_arch = "x86_64")]
+            {
+                crate::arch::if_tdx_enabled!({
+                    PrivilegedPageFlags::SHARED
+                } else {
+                    PrivilegedPageFlags::empty()
+                })
+            }
+            #[cfg(not(target_arch = "x86_64"))]
             PrivilegedPageFlags::empty()
-        });
+        };
 
         let prop = PageProperty {
             flags,

@@ -27,9 +27,12 @@ use spin::Once;
 
 use super::ex_table::ExTable;
 use crate::{
-    arch::irq::{disable_local, enable_local},
+    arch::{
+        if_tdx_enabled,
+        irq::{disable_local, enable_local},
+    },
     cpu::context::{CpuException, CpuExceptionInfo, PageFaultErrorCode},
-    cpu_local_cell, if_tdx_enabled,
+    cpu_local_cell,
     mm::{
         kspace::{KERNEL_PAGE_TABLE, LINEAR_MAPPING_BASE_VADDR, LINEAR_MAPPING_VADDR_RANGE},
         page_prop::{CachePolicy, PageProperty},
