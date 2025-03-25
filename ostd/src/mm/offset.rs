@@ -24,6 +24,7 @@ macro_rules! offset_of {
         let container_addr = &tmp as *const _;
         let field_addr =  &tmp.$($field)* as *const _;
 
+        #[expect(clippy::forget_non_drop)]
         ::core::mem::forget(tmp);
 
         let field_offset = (field_addr as usize - container_addr as usize) as *const _;
