@@ -16,10 +16,7 @@ cfg_if::cfg_if! {
 pub use set::{AtomicCpuSet, CpuSet};
 use spin::Once;
 
-use crate::{
-    arch::boot::smp::get_num_processors, cpu_local_cell, task::DisabledPreemptGuard,
-    trap::DisabledLocalIrqGuard,
-};
+use crate::{arch::boot::smp::get_num_processors, cpu_local_cell, task::atomic_mode::InAtomicMode};
 
 /// The ID of a CPU in the system.
 ///
@@ -125,13 +122,10 @@ pub fn current_cpu_racy() -> CpuId {
     CpuId(id)
 }
 
-// SAFETY: When IRQs are disabled, the task cannot be passively preempted and
-// migrates to another CPU. If the task actively calls `yield`, it will not be
-// successful either.
-unsafe impl PinCurrentCpu for DisabledLocalIrqGuard {}
-// SAFETY: When preemption is disabled, the task cannot be preempted and migrates
-// to another CPU.
-unsafe impl PinCurrentCpu for DisabledPreemptGuard {}
+// SAFETY: A guard that enforces the atomic mode requires disabling any
+// context switching. So naturally, the current task is pinned on the CPU.
+unsafe impl<T: InAtomicMode> PinCurrentCpu for T {}
+unsafe impl PinCurrentCpu for dyn InAtomicMode + '_ {}
 
 cpu_local_cell! {
     /// The number of the current CPU.
