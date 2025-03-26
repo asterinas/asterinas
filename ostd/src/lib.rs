@@ -101,7 +101,7 @@ unsafe fn init() {
 
     mm::kspace::init_kernel_page_table(meta_pages);
 
-    crate::sync::init();
+    sync::init();
 
     boot::init_after_heap();
 

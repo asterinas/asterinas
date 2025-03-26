@@ -74,7 +74,7 @@ static CPU_FEATURES: Once<FeatureInfo> = Once::new();
 pub(crate) unsafe fn late_init_on_bsp() {
     // SAFETY: this function is only called once on BSP.
     unsafe {
-        crate::arch::trap::init(true);
+        trap::init(true);
     }
     irq::init();
 
