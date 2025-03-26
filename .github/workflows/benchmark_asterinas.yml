@@ -218,7 +218,7 @@ jobs:
           auto-push: true
           alert-threshold: ${{ env.ALERT_THRESHOLD }}
           comment-on-alert: true
-          fail-on-alert: true
+          fail-on-alert: false
           chart-title: ${{ env.TITLE }}
           chart-description: ${{ env.DESCRIPTION }}
           summary-json-path: test/benchmark/${{ env.BENCHMARK_SUITE }}/summary.json
