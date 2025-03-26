@@ -58,6 +58,10 @@ const Y_SHL: u64 = Y_POW_SHL[1];
 
 /// Calculates `x * y^n`.
 fn mul_y_pow(x: u64, n: u64) -> u64 {
+    if n == 0 {
+        return x;
+    }
+
     let period = n / POW_FACTOR as u64;
     let index = n % POW_FACTOR as u64;
 
@@ -163,18 +167,17 @@ impl<T: Radium<Item = u64>> Load<T> {
         const CAPACITY_SHIFT: u32 = 10;
 
         let last_updated = self.last_updated.load(Relaxed);
-        self.last_updated.store(now_ns, Relaxed);
-
-        if now_ns < last_updated {
+        if now_ns <= last_updated {
             return false;
         }
+        self.last_updated.store(now_ns, Relaxed);
 
         let dt = now_ns - last_updated;
-        let d3 = now_ns % PERIOD_NS;
+        let d3 = (now_ns - 1) % PERIOD_NS + 1; // now_ns > last_updated >= 0
         let d1 = (dt + PERIOD_NS - d3) % PERIOD_NS;
         let p = (dt + PERIOD_NS - d3) / PERIOD_NS;
 
-        let mut delta = d3;
+        let mut delta = dt;
         self.d3.store(d3, Relaxed);
 
         // Decay the load sums.
@@ -401,5 +404,76 @@ impl RqLoad {
         let running = cur.is_some_and(|cur| cur.sched_attr().policy_kind() == self.kind);
 
         (self.inner.get_mut()).update(now_ns, running as u64, 1, running as usize, running)
+    }
+}
+
+// #[cfg(ktest)]
+mod tests {
+    use ostd::prelude::ktest;
+    use rand::{RngCore, SeedableRng};
+
+    use super::*;
+
+    fn test_periods_impl(n: u64, instant_load: u64, rng: &mut impl RngCore) {
+        let n_periods = {
+            let load = Load::<Cell<u64>>::new();
+            load.update(PERIOD_NS * n, instant_load, 1, 0, false);
+            load.weighted_sum.get()
+        };
+
+        let one_period = {
+            let load = Load::<Cell<u64>>::new();
+            for i in 1..=n {
+                load.update(PERIOD_NS * i, instant_load, 1, 0, false);
+            }
+            load.weighted_sum.get()
+        };
+
+        let small_inc = {
+            let load = Load::<Cell<u64>>::new();
+            for i in (0..=PERIOD_NS * n).step_by(100 as usize) {
+                load.update(i, instant_load, 1, 0, false);
+                load.update(i.saturating_sub(10), instant_load, 1, 0, false);
+            }
+            load.update(PERIOD_NS * n, instant_load, 1, 0, false);
+            load.weighted_sum.get()
+        };
+
+        let rand_times = {
+            let load = Load::<Cell<u64>>::new();
+
+            if n > 0 {
+                let times = rng.next_u64() % (2 * n);
+                let half_n_periods = PERIOD_NS * n / 2;
+                for i in 1..=times {
+                    let now_ns = rng.next_u64() % half_n_periods + i * half_n_periods / times;
+                    load.update(now_ns, instant_load, 1, 0, false);
+                }
+            }
+            load.update(PERIOD_NS * n, instant_load, 1, 0, false);
+
+            load.weighted_sum.get()
+        };
+
+        let expected = instant_load * (0..n).map(|i| mul_y_pow(PERIOD_NS, i)).sum::<u64>();
+
+        let epsilon = 10;
+        let range = expected.saturating_sub(epsilon)..=expected.saturating_add(epsilon);
+
+        for x in [n_periods, one_period, small_inc, rand_times] {
+            assert!(range.contains(&x), "n = {}, x = {}", n, x);
+        }
+    }
+
+    #[ktest]
+    fn test_periods() {
+        const INSTANT_LOAD: u64 = 1;
+
+        let seed = ostd::arch::read_random().unwrap();
+        let mut rng = rand::rngs::SmallRng::seed_from_u64(seed);
+
+        for n in 0..=10 {
+            test_periods_impl(n, INSTANT_LOAD, &mut rng);
+        }
     }
 }
