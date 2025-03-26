@@ -103,6 +103,8 @@ jobs:
           - memcached/t8_conc32_window20k
           - memcached/t16_conc64_window10k
       fail-fast: false
+      # FIXME: Remove the following line after fixing the parallel execution of network benchmarks.
+      max-parallel: 1
     timeout-minutes: 60
     container: 
       image: asterinas/asterinas:0.14.1-20250322
