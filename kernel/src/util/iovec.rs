@@ -128,7 +128,7 @@ impl<'a> VmWriterArray<'a> {
 }
 
 /// Trait defining the read behavior for a collection of [`VmReader`]s.
-pub trait MultiRead {
+pub trait MultiRead<'a> {
     /// Reads the exact number of bytes required to exhaust `self` or fill `writer`,
     /// accumulating total bytes read.
     ///
@@ -148,10 +148,13 @@ pub trait MultiRead {
     fn is_empty(&self) -> bool {
         self.sum_lens() == 0
     }
+
+    /// Returns the current reader to read.
+    fn current_reader_mut(&mut self) -> Option<&mut VmReader<'a>>;
 }
 
 /// Trait defining the write behavior for a collection of [`VmWriter`]s.
-pub trait MultiWrite {
+pub trait MultiWrite<'a> {
     /// Writes the exact number of bytes required to exhaust `writer` or fill `self`,
     /// accumulating total bytes read.
     ///
@@ -171,9 +174,12 @@ pub trait MultiWrite {
     fn is_empty(&self) -> bool {
         self.sum_lens() == 0
     }
+
+    /// Returns the current writer to write.
+    fn current_writer_mut(&mut self) -> Option<&mut VmWriter<'a>>;
 }
 
-impl MultiRead for VmReaderArray<'_> {
+impl<'a> MultiRead<'a> for VmReaderArray<'a> {
     fn read(&mut self, writer: &mut VmWriter<'_, Infallible>) -> Result<usize> {
         let mut total_len = 0;
 
@@ -190,9 +196,19 @@ impl MultiRead for VmReaderArray<'_> {
     fn sum_lens(&self) -> usize {
         self.0.iter().map(|vm_reader| vm_reader.remain()).sum()
     }
+
+    fn current_reader_mut(&mut self) -> Option<&mut VmReader<'a>> {
+        for reader in &mut self.0 {
+            if reader.has_remain() {
+                return Some(reader);
+            }
+        }
+
+        None
+    }
 }
 
-impl MultiRead for VmReader<'_> {
+impl<'a> MultiRead<'a> for VmReader<'a> {
     fn read(&mut self, writer: &mut VmWriter<'_, Infallible>) -> Result<usize> {
         Ok(self.read_fallible(writer)?)
     }
@@ -200,9 +216,13 @@ impl MultiRead for VmReader<'_> {
     fn sum_lens(&self) -> usize {
         self.remain()
     }
+
+    fn current_reader_mut(&mut self) -> Option<&mut VmReader<'a>> {
+        Some(self)
+    }
 }
 
-impl MultiWrite for VmWriterArray<'_> {
+impl<'a> MultiWrite<'a> for VmWriterArray<'a> {
     fn write(&mut self, reader: &mut VmReader<'_, Infallible>) -> Result<usize> {
         let mut total_len = 0;
 
@@ -219,14 +239,28 @@ impl MultiWrite for VmWriterArray<'_> {
     fn sum_lens(&self) -> usize {
         self.0.iter().map(|vm_writer| vm_writer.avail()).sum()
     }
+
+    fn current_writer_mut(&mut self) -> Option<&mut VmWriter<'a>> {
+        for writer in &mut self.0 {
+            if writer.has_avail() {
+                return Some(writer);
+            }
+        }
+
+        None
+    }
 }
 
-impl MultiWrite for VmWriter<'_> {
+impl<'a> MultiWrite<'a> for VmWriter<'a> {
     fn write(&mut self, reader: &mut VmReader<'_, Infallible>) -> Result<usize> {
         Ok(self.write_fallible(reader)?)
     }
 
     fn sum_lens(&self) -> usize {
         self.avail()
+    }
+
+    fn current_writer_mut(&mut self) -> Option<&mut VmWriter<'a>> {
+        Some(self)
     }
 }
