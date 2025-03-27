@@ -107,6 +107,10 @@ impl FairAttr {
         }
     }
 
+    pub fn weight(&self) -> u64 {
+        self.weight.load(Relaxed)
+    }
+
     pub fn update(&self, nice: Nice) {
         self.weight.store(nice_to_weight(nice), Relaxed);
     }
@@ -216,6 +220,10 @@ impl FairClassRq {
     /// The time slice for each thread in the run queue, measured in sched clocks.
     fn time_slice(&self, cur_weight: u64) -> u64 {
         self.period() * cur_weight / (self.total_weight + cur_weight)
+    }
+
+    pub fn total_weight(&self) -> u64 {
+        self.total_weight
     }
 }
 
