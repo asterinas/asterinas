@@ -46,6 +46,7 @@ TESTS ?= \
 	sigaction_test \
 	sigaltstack_test \
 	signalfd_test \
+	socket_netlink_route_test \
 	stat_test \
 	stat_times_test \
 	statfs_test \
