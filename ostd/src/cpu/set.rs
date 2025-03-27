@@ -116,7 +116,8 @@ impl CpuSet {
             (0..BITS_PER_PART).filter_map(move |bit_idx| {
                 if (part & (1 << bit_idx)) != 0 {
                     let id = part_idx * BITS_PER_PART + bit_idx;
-                    Some(CpuId(id as u32))
+                    // SAFETY: The ID is less than the number of CPUs.
+                    Some(unsafe { CpuId::from_usize_unchecked(id) })
                 } else {
                     None
                 }
@@ -220,7 +221,10 @@ impl AtomicCpuSet {
 #[cfg(ktest)]
 mod test {
     use super::*;
-    use crate::{cpu::all_cpus, prelude::*};
+    use crate::{
+        cpu::id::{all_cpus, CpuId},
+        prelude::*,
+    };
 
     #[ktest]
     fn test_full_cpu_set_iter_is_all() {
@@ -259,7 +263,8 @@ mod test {
     #[ktest]
     fn test_atomic_cpu_set_multiple_sizes() {
         for test_num_cpus in [1usize, 3, 12, 64, 96, 99, 128, 256, 288, 1024] {
-            let test_all_iter = || (0..test_num_cpus).map(|id| CpuId(id as u32));
+            let test_all_iter =
+                || (0..test_num_cpus).map(|id| unsafe { CpuId::from_usize_unchecked(id) });
 
             let set = CpuSet::with_capacity_val(test_num_cpus, 0);
             let atomic_set = AtomicCpuSet::new(set);
