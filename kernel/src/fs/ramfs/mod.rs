@@ -5,6 +5,7 @@
 pub use fs::RamFS;
 
 mod fs;
+mod xattr;
 
 const RAMFS_MAGIC: u64 = 0x0102_1994;
 const BLOCK_SIZE: usize = 4096;

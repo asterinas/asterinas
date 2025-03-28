@@ -15,7 +15,7 @@ use ostd::{
     sync::{PreemptDisabled, RwLockWriteGuard},
 };
 
-use super::*;
+use super::{xattr::RamXattr, *};
 use crate::{
     events::IoEvents,
     fs::{
@@ -26,7 +26,7 @@ use crate::{
         utils::{
             CStr256, CachePage, DirentVisitor, Extension, FallocMode, FileSystem, FsFlags, Inode,
             InodeMode, InodeType, IoctlCmd, Metadata, MknodType, PageCache, PageCacheBackend,
-            SuperBlock,
+            Permission, SuperBlock, XattrName, XattrNamespace, XattrSetFlags,
         },
     },
     prelude::*,
@@ -61,6 +61,7 @@ impl RamFS {
                 this: weak_root.clone(),
                 fs: weak_fs.clone(),
                 extension: Extension::new(),
+                xattr: RamXattr::new(),
             }),
             inode_allocator: AtomicU64::new(ROOT_INO + 1),
         })
@@ -106,6 +107,8 @@ struct RamInode {
     fs: Weak<RamFS>,
     /// Extensions
     extension: Extension,
+    /// Extended attributes
+    xattr: RamXattr,
 }
 
 /// Inode inner specifics.
@@ -399,6 +402,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
+            xattr: RamXattr::new(),
         })
     }
 
@@ -411,6 +415,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
+            xattr: RamXattr::new(),
         })
     }
 
@@ -423,6 +428,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
+            xattr: RamXattr::new(),
         })
     }
 
@@ -441,6 +447,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
+            xattr: RamXattr::new(),
         })
     }
 
@@ -453,6 +460,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
+            xattr: RamXattr::new(),
         })
     }
 
@@ -465,6 +473,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
+            xattr: RamXattr::new(),
         })
     }
 
@@ -1189,6 +1198,40 @@ impl Inode for RamInode {
 
     fn extension(&self) -> Option<&Extension> {
         Some(&self.extension)
+    }
+
+    fn set_xattr(
+        &self,
+        name: XattrName,
+        value_reader: &mut VmReader,
+        flags: XattrSetFlags,
+    ) -> Result<()> {
+        RamXattr::check_file_type_for_xattr(self.typ)?;
+        self.check_permission(Permission::MAY_WRITE)?;
+        self.xattr.set(name, value_reader, flags)
+    }
+
+    fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize> {
+        RamXattr::check_file_type_for_xattr(self.typ)
+            .map_err(|_| Error::with_message(Errno::ENODATA, "no available xattrs"))?;
+        self.check_permission(Permission::MAY_READ)?;
+        self.xattr.get(name, value_writer)
+    }
+
+    fn list_xattr(&self, namespace: XattrNamespace, list_writer: &mut VmWriter) -> Result<usize> {
+        if RamXattr::check_file_type_for_xattr(self.typ).is_err() {
+            return Ok(0);
+        }
+        if self.check_permission(Permission::MAY_ACCESS).is_err() {
+            return Ok(0);
+        }
+        self.xattr.list(namespace, list_writer)
+    }
+
+    fn remove_xattr(&self, name: XattrName) -> Result<()> {
+        RamXattr::check_file_type_for_xattr(self.typ)?;
+        self.check_permission(Permission::MAY_WRITE)?;
+        self.xattr.remove(name)
     }
 }
 
