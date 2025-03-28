@@ -4,7 +4,8 @@
 
 use super::{Child, MapTrackingStatus, PageTableEntryTrait, PageTableLock, PageTableNode};
 use crate::mm::{
-    nr_subpage_per_huge, page_prop::PageProperty, page_size, vm_space::Token, PagingConstsTrait,
+    nr_subpage_per_huge, page_prop::PageProperty, page_size, page_table::zeroed_pt_pool,
+    vm_space::Token, PagingConstsTrait,
 };
 
 /// A view of an entry in a page table node.
@@ -153,7 +154,9 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'a, E, C> {
         let pa = self.pte.paddr();
         let prop = self.pte.prop();
 
-        let mut new_page = PageTableLock::<E, C>::alloc(level - 1, MapTrackingStatus::Untracked);
+        let preempt_guard = crate::task::disable_preempt();
+        let mut new_page =
+            zeroed_pt_pool::alloc::<E, C>(&preempt_guard, level - 1, MapTrackingStatus::Untracked);
         for i in 0..nr_subpage_per_huge::<C>() {
             let small_pa = pa + i * page_size::<C>(level - 1);
             let _ = new_page
@@ -184,7 +187,9 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'a, E, C> {
         // SAFETY: The physical address was written as a valid token.
         let token = unsafe { Token::from_raw_inner(self.pte.paddr()) };
 
-        let mut new_page = PageTableLock::<E, C>::alloc(level - 1, self.node.is_tracked());
+        let preempt_guard = crate::task::disable_preempt();
+        let mut new_page =
+            zeroed_pt_pool::alloc::<E, C>(&preempt_guard, level - 1, self.node.is_tracked());
         for i in 0..nr_subpage_per_huge::<C>() {
             let _ = new_page.entry(i).replace(Child::Token(token));
         }

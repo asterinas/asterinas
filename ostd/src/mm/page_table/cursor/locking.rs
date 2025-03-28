@@ -11,7 +11,7 @@ use crate::{
     mm::{
         nr_subpage_per_huge, paddr_to_vaddr,
         page_table::{
-            load_pte, page_size, pte_index, Child, MapTrackingStatus, PageTable,
+            load_pte, page_size, pte_index, zeroed_pt_pool, Child, MapTrackingStatus, PageTable,
             PageTableEntryTrait, PageTableLock, PageTableMode, PageTableNode, PagingConstsTrait,
             PagingLevel,
         },
@@ -27,6 +27,8 @@ pub(super) fn lock_range<'a, M: PageTableMode, E: PageTableEntryTrait, C: Paging
 ) -> Cursor<'a, M, E, C> {
     // Start RCU read-side critical section.
     let preempt_guard = disable_preempt();
+
+    zeroed_pt_pool::prefill(&preempt_guard);
 
     let mut path: [Option<PageTableLock<E, C>>; MAX_NR_LEVELS] = core::array::from_fn(|_| None);
     let mut level = C::NR_LEVELS;
@@ -102,7 +104,8 @@ pub(super) fn lock_range<'a, M: PageTableMode, E: PageTableEntryTrait, C: Paging
                 }
                 let cur_entry = guard.entry(start_idx);
                 if cur_entry.is_none() {
-                    let pt = PageTableLock::<E, C>::alloc(level - 1, new_pt_is_tracked);
+                    let pt =
+                        zeroed_pt_pool::alloc::<E, C>(&preempt_guard, level - 1, new_pt_is_tracked);
                     cur_pt_addr = pt.paddr();
                     let _ = cur_entry.replace(Child::PageTable(cur_pt_from_addr(&cur_pt_addr)));
                     level -= 1;

@@ -41,7 +41,7 @@ use super::{
 use crate::{
     mm::{
         frame::{meta::AnyFrameMeta, Frame},
-        page_table::PageTableNode,
+        page_table::{zeroed_pt_pool, PageTableNode},
         vm_space::Token,
         Paddr, PageProperty, Vaddr,
     },
@@ -368,8 +368,12 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
                     unreachable!();
                 }
                 Child::None => {
-                    let pt =
-                        PageTableLock::<E, C>::alloc(cur_level - 1, MapTrackingStatus::Tracked);
+                    let preempt_guard = crate::task::disable_preempt();
+                    let pt = zeroed_pt_pool::alloc::<E, C>(
+                        &preempt_guard,
+                        cur_level - 1,
+                        MapTrackingStatus::Tracked,
+                    );
                     let paddr = pt.into_raw_paddr();
                     // SAFETY: It was forgotten at the above line.
                     let _ = cur_entry
@@ -466,7 +470,9 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
                         unreachable!();
                     }
                     Child::None => {
-                        let pt = PageTableLock::<E, C>::alloc(
+                        let preempt_guard = crate::task::disable_preempt();
+                        let pt = zeroed_pt_pool::alloc::<E, C>(
+                            &preempt_guard,
                             cur_level - 1,
                             MapTrackingStatus::Untracked,
                         );
@@ -544,8 +550,12 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
                         unreachable!();
                     }
                     Child::None => {
-                        let pt =
-                            PageTableLock::<E, C>::alloc(cur_level - 1, should_track_if_created);
+                        let preempt_guard = crate::task::disable_preempt();
+                        let pt = zeroed_pt_pool::alloc::<E, C>(
+                            &preempt_guard,
+                            cur_level - 1,
+                            should_track_if_created,
+                        );
                         let paddr = pt.into_raw_paddr();
                         // SAFETY: It was forgotten at the above line.
                         let _ = cur_entry

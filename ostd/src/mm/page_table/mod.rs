@@ -22,6 +22,7 @@ use crate::{
 mod node;
 use node::*;
 pub mod cursor;
+mod zeroed_pt_pool;
 pub(crate) use cursor::PageTableItem;
 pub use cursor::{Cursor, CursorMut};
 #[cfg(ktest)]
@@ -107,10 +108,14 @@ impl PageTable<KernelMode> {
     /// This should be the only way to create the user page table, that is to
     /// duplicate the kernel page table with all the kernel mappings shared.
     pub fn create_user_page_table(&self) -> PageTable<UserMode> {
-        let _preempt_guard = disable_preempt();
+        let preempt_guard = disable_preempt();
+        zeroed_pt_pool::prefill(&preempt_guard);
         let mut root_node = self.root.clone().lock();
-        let mut new_node =
-            PageTableLock::alloc(PagingConsts::NR_LEVELS, MapTrackingStatus::NotApplicable);
+        let mut new_node = zeroed_pt_pool::alloc(
+            &preempt_guard,
+            PagingConsts::NR_LEVELS,
+            MapTrackingStatus::NotApplicable,
+        );
 
         // Make a shallow copy of the root node in the kernel space range.
         // The user space range is not copied.
@@ -145,7 +150,7 @@ impl PageTable<KernelMode> {
         let end = root_index.end;
         debug_assert!(end <= NR_PTES_PER_NODE);
 
-        let _guard = disable_preempt();
+        let guard = disable_preempt();
         let mut root_node = self.root.clone().lock();
         for i in start..end {
             let root_entry = root_node.entry(i);
@@ -158,7 +163,7 @@ impl PageTable<KernelMode> {
                 } else {
                     MapTrackingStatus::Untracked
                 };
-                let node = PageTableLock::alloc(nxt_level, is_tracked);
+                let node = zeroed_pt_pool::alloc(&guard, nxt_level, is_tracked);
                 let _ = root_entry.replace(Child::PageTable(node.unlock()));
             }
         }
@@ -192,9 +197,14 @@ impl PageTable<KernelMode> {
 impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTable<M, E, C> {
     /// Create a new empty page table. Useful for the kernel page table and IOMMU page tables only.
     pub fn empty() -> Self {
+        let preempt_guard = disable_preempt();
         PageTable {
-            root: PageTableLock::<E, C>::alloc(C::NR_LEVELS, MapTrackingStatus::NotApplicable)
-                .unlock(),
+            root: zeroed_pt_pool::alloc(
+                &preempt_guard,
+                C::NR_LEVELS,
+                MapTrackingStatus::NotApplicable,
+            )
+            .unlock(),
             _phantom: PhantomData,
         }
     }
