@@ -19,6 +19,10 @@ pub use range_lock::{
     FileRange, RangeLockItem, RangeLockItemBuilder, RangeLockList, RangeLockType, OFFSET_MAX,
 };
 pub use status_flags::StatusFlags;
+pub use xattr::{
+    XattrName, XattrNamespace, XattrSetFlags, XATTR_LIST_MAX_LEN, XATTR_NAME_MAX_LEN,
+    XATTR_VALUE_MAX_LEN,
+};
 
 mod access_mode;
 mod channel;
@@ -35,6 +39,7 @@ mod page_cache;
 mod random_test;
 mod range_lock;
 mod status_flags;
+mod xattr;
 
 use core::{
     borrow::Borrow,

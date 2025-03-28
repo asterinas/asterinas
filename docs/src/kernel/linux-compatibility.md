@@ -15,7 +15,7 @@ support the loading of Linux kernel modules.
 ## System Calls
 
 At the time of writing,
-Asterinas implements 190 out of the 336 system calls
+Asterinas implements 204 out of the 336 system calls
 provided by Linux on x86-64 architecture.
 
 | Numbers | Names            | Is Implemented  |
@@ -208,18 +208,18 @@ provided by Linux on x86-64 architecture.
 | 185     | security         | ❌              |
 | 186     | gettid           | ✅              |
 | 187     | readahead        | ❌              |
-| 188     | setxattr         | ❌              |
-| 189     | lsetxattr        | ❌              |
-| 190     | fsetxattr        | ❌              |
-| 191     | getxattr         | ❌              |
-| 192     | lgetxattr        | ❌              |
-| 193     | fgetxattr        | ❌              |
-| 194     | listxattr        | ❌              |
-| 195     | llistxattr       | ❌              |
-| 196     | flistxattr       | ❌              |
-| 197     | removexattr      | ❌              |
-| 198     | lremovexattr     | ❌              |
-| 199     | fremovexattr     | ❌              |
+| 188     | setxattr         | ✅              |
+| 189     | lsetxattr        | ✅              |
+| 190     | fsetxattr        | ✅              |
+| 191     | getxattr         | ✅              |
+| 192     | lgetxattr        | ✅              |
+| 193     | fgetxattr        | ✅              |
+| 194     | listxattr        | ✅              |
+| 195     | llistxattr       | ✅              |
+| 196     | flistxattr       | ✅              |
+| 197     | removexattr      | ✅              |
+| 198     | lremovexattr     | ✅              |
+| 199     | fremovexattr     | ✅              |
 | 200     | tkill            | ❌              |
 | 201     | time             | ✅              |
 | 202     | futex            | ✅              |

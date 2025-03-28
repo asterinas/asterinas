@@ -8,7 +8,10 @@ use aster_rights::Full;
 use core2::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, Write};
 use ostd::task::Task;
 
-use super::{AccessMode, DirentVisitor, FallocMode, FileSystem, IoctlCmd};
+use super::{
+    AccessMode, DirentVisitor, FallocMode, FileSystem, IoctlCmd, XattrName, XattrNamespace,
+    XattrSetFlags,
+};
 use crate::{
     events::IoEvents,
     fs::device::{Device, DeviceType},
@@ -495,6 +498,27 @@ pub trait Inode: Any + Sync + Send {
     /// Get the extension of this inode
     fn extension(&self) -> Option<&Extension> {
         None
+    }
+
+    fn set_xattr(
+        &self,
+        name: XattrName,
+        value_reader: &mut VmReader,
+        flags: XattrSetFlags,
+    ) -> Result<()> {
+        Err(Error::new(Errno::EOPNOTSUPP))
+    }
+
+    fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize> {
+        Err(Error::new(Errno::EOPNOTSUPP))
+    }
+
+    fn list_xattr(&self, namespace: XattrNamespace, list_writer: &mut VmWriter) -> Result<usize> {
+        Err(Error::new(Errno::EOPNOTSUPP))
+    }
+
+    fn remove_xattr(&self, name: XattrName) -> Result<()> {
+        Err(Error::new(Errno::EOPNOTSUPP))
     }
 
     /// Used to check for read/write/execute permissions on a file.
