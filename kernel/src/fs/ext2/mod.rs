@@ -50,3 +50,4 @@ mod inode;
 mod prelude;
 mod super_block;
 mod utils;
+mod xattr;

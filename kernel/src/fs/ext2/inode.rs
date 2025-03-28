@@ -16,11 +16,15 @@ use super::{
     indirect_block_cache::{IndirectBlock, IndirectBlockCache},
     prelude::*,
     utils::now,
+    xattr::Xattr,
 };
 use crate::{
     fs::{
         path::{is_dot, is_dot_or_dotdot, is_dotdot},
-        utils::{Extension, FallocMode, InodeMode, Metadata},
+        utils::{
+            Extension, FallocMode, Inode as _, InodeMode, Metadata, Permission, XattrName,
+            XattrNamespace, XattrSetFlags,
+        },
     },
     process::{posix_thread::AsPosixThread, Gid, Uid},
 };
@@ -39,6 +43,7 @@ pub struct Inode {
     inner: RwMutex<InodeInner>,
     fs: Weak<Ext2>,
     extension: Extension,
+    xattr: Option<Xattr>,
 }
 
 impl Inode {
@@ -52,6 +57,9 @@ impl Inode {
             ino,
             type_: desc.type_,
             block_group_idx,
+            xattr: desc
+                .acl
+                .map(|acl| Xattr::new(acl, weak_self.clone(), fs.clone())),
             inner: RwMutex::new(InodeInner::new(desc, weak_self.clone(), fs.clone())),
             fs,
             extension: Extension::new(),
@@ -745,6 +753,9 @@ impl Inode {
         let mut inner = self.inner.write();
         inner.sync_data()?;
         inner.sync_metadata()?;
+        if let Some(xattr) = self.xattr.as_ref() {
+            xattr.flush()?;
+        }
         Ok(())
     }
 
@@ -808,6 +819,48 @@ impl Inode {
             }
         }
     }
+
+    pub fn set_xattr(
+        &self,
+        name: XattrName,
+        value_reader: &mut VmReader,
+        flags: XattrSetFlags,
+    ) -> Result<()> {
+        let xattr = self.xattr.as_ref().ok_or(Error::with_message(
+            Errno::EPERM,
+            "xattr is not supported on the file type",
+        ))?;
+        self.check_permission(Permission::MAY_WRITE)?;
+        xattr.set(name, value_reader, flags)
+    }
+
+    pub fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize> {
+        if self.xattr.is_none() {
+            return_errno_with_message!(Errno::ENODATA, "no available xattrs");
+        }
+        self.check_permission(Permission::MAY_READ)?;
+        self.xattr.as_ref().unwrap().get(name, value_writer)
+    }
+
+    pub fn list_xattr(
+        &self,
+        namespace: XattrNamespace,
+        list_writer: &mut VmWriter,
+    ) -> Result<usize> {
+        if self.xattr.is_none() || self.check_permission(Permission::MAY_ACCESS).is_err() {
+            return Ok(0);
+        }
+        self.xattr.as_ref().unwrap().list(namespace, list_writer)
+    }
+
+    pub fn remove_xattr(&self, name: XattrName) -> Result<()> {
+        let xattr = self.xattr.as_ref().ok_or(Error::with_message(
+            Errno::EPERM,
+            "xattr is not supported on the file type",
+        ))?;
+        self.check_permission(Permission::MAY_WRITE)?;
+        self.xattr.as_ref().unwrap().remove(name)
+    }
 }
 
 #[inherit_methods(from = "self.inner.read()")]
@@ -827,6 +880,7 @@ impl Inode {
 
 #[inherit_methods(from = "self.inner.write()")]
 impl Inode {
+    pub fn set_acl(&self, bid: Bid);
     pub fn set_atime(&self, time: Duration);
     pub fn set_mtime(&self, time: Duration);
     pub fn set_ctime(&self, time: Duration);
@@ -1123,6 +1177,7 @@ impl InodeInner {
     pub fn dec_hard_links(&mut self);
     pub fn blocks_count(&self) -> Ext2Bid;
     pub fn acl(&self) -> Option<Bid>;
+    pub fn set_acl(&mut self, bid: Bid);
     pub fn atime(&self) -> Duration;
     pub fn set_atime(&mut self, time: Duration);
     pub fn mtime(&self) -> Duration;
@@ -1224,6 +1279,10 @@ impl InodeImpl {
         self.desc.acl
     }
 
+    pub fn set_acl(&mut self, bid: Bid) {
+        self.desc.acl = Some(bid);
+    }
+
     pub fn atime(&self) -> Duration {
         self.desc.atime
     }
@@ -1292,6 +1351,9 @@ impl InodeImpl {
                 inode
                     .fs()
                     .free_inode(inode.ino(), self.desc.type_ == InodeType::Dir)?;
+                if let Some(xattr) = &inode.xattr {
+                    xattr.free()?;
+                }
                 self.is_freed = true;
             }
         }
