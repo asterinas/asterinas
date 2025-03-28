@@ -161,9 +161,18 @@ impl ProcessVm {
     }
 
     /// Clears existing mappings and then maps stack and heap vmo.
-    pub(super) fn clear_and_map(&self) {
-        let root_vmar = self.lock_root_vmar();
-        root_vmar.get().clear().unwrap();
-        self.heap.alloc_and_map_vm(&root_vmar.get()).unwrap();
+    ///
+    /// If the `new_vmar` is `Some(_)`, the method will replace the VMAR of the
+    /// current process with the new VMAR.
+    pub(super) fn clear_and_map(&self, new_vmar: Option<Vmar<Full>>) {
+        let mut root_vmar = self.lock_root_vmar();
+        if let Some(vmar) = new_vmar {
+            vmar.vm_space().activate();
+            root_vmar.set_new_vmar(vmar);
+        } else {
+            root_vmar.get().clear().unwrap();
+        }
+
+        self.heap.alloc_and_map_vm(root_vmar.get()).unwrap();
     }
 }

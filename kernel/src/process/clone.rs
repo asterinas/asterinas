@@ -137,6 +137,14 @@ impl CloneArgs {
             ..Default::default()
         }
     }
+
+    pub fn for_vfork() -> Self {
+        Self {
+            flags: CloneFlags::CLONE_VFORK | CloneFlags::CLONE_VM,
+            exit_signal: Some(SIGCHLD),
+            ..Default::default()
+        }
+    }
 }
 
 impl From<u64> for CloneFlags {
@@ -158,7 +166,8 @@ impl CloneFlags {
             | CloneFlags::CLONE_SETTLS
             | CloneFlags::CLONE_PARENT_SETTID
             | CloneFlags::CLONE_CHILD_SETTID
-            | CloneFlags::CLONE_CHILD_CLEARTID;
+            | CloneFlags::CLONE_CHILD_CLEARTID
+            | CloneFlags::CLONE_VFORK;
         let unsupported_flags = *self - supported_flags;
         if !unsupported_flags.is_empty() {
             warn!("contains unsupported clone flags: {:?}", unsupported_flags);
@@ -186,7 +195,17 @@ pub fn clone_child(
         Ok(child_tid)
     } else {
         let child_process = clone_child_process(ctx, parent_context, clone_args)?;
+        if clone_args.flags.contains(CloneFlags::CLONE_VFORK) {
+            child_process.status().set_vm_shared_status(true);
+        }
+
         child_process.run();
+
+        if child_process.status().is_share_parent_vm() {
+            let cond = || (!child_process.status().is_share_parent_vm()).then_some(());
+            let current = ctx.process;
+            current.children_wait_queue().wait_until(cond);
+        }
 
         let child_pid = child_process.pid();
         Ok(child_pid)
@@ -426,8 +445,10 @@ fn clone_user_ctx(
     // The return value of child thread is zero
     child_context.set_syscall_ret(0);
 
-    if clone_flags.contains(CloneFlags::CLONE_VM) {
-        // if parent and child shares the same address space, a new stack must be specified.
+    if clone_flags.contains(CloneFlags::CLONE_VM) && !clone_flags.contains(CloneFlags::CLONE_VFORK)
+    {
+        // If parent and child shares the same address space and not in vfork situation,
+        // a new stack must be specified.
         debug_assert!(new_sp != 0);
     }
     if new_sp != 0 {

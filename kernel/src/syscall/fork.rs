@@ -13,3 +13,9 @@ pub fn sys_fork(ctx: &Context, parent_context: &UserContext) -> Result<SyscallRe
     let child_pid = clone_child(ctx, parent_context, clone_args).unwrap();
     Ok(SyscallReturn::Return(child_pid as _))
 }
+
+pub fn sys_vfork(ctx: &Context, parent_context: &UserContext) -> Result<SyscallReturn> {
+    let clone_args = CloneArgs::for_vfork();
+    let child_pid = clone_child(ctx, parent_context, clone_args).unwrap();
+    Ok(SyscallReturn::Return(child_pid as _))
+}
