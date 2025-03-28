@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::*;
-use crate::process::Pid;
+use crate::process::{Pid, ProcessState};
 
 /// Builder for `RangeLockItem`.
 ///
@@ -59,7 +59,9 @@ impl RangeLockItemBuilder {
     }
 
     pub fn build(self) -> Result<RangeLockItem> {
-        let owner = self.owner.unwrap_or_else(|| current!().pid());
+        let owner = self.owner.unwrap_or_else(|| {
+            ProcessState::with_current_task(|process_state| process_state.pid()).unwrap()
+        });
         let type_ = if let Some(type_) = self.type_ {
             type_
         } else {
