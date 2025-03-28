@@ -589,6 +589,22 @@ impl VmReader<'_, Fallible> {
         Ok(val)
     }
 
+    /// Peeks a Pod-type value of `T` without moving the cursor.
+    ///
+    /// This method operates similarly to [`read_val`],
+    /// attempting to read a value of type `T` from the current position.
+    /// However, unlike [`read_val`], this operation **leaves the cursor unchanged**
+    /// whether the read succeeds or fails.
+    ///
+    /// [`read_val`]: Self::read_val
+    pub fn peek_val<T: Pod>(&mut self) -> Result<T> {
+        let cursor = self.cursor;
+        let res = self.read_val();
+        self.cursor = cursor;
+
+        res
+    }
+
     /// Collects all the remaining bytes into a `Vec<u8>`.
     ///
     /// If the memory read failed, this method will return `Err`
