@@ -40,7 +40,7 @@ use super::{
 use crate::{
     mm::{
         frame::{meta::AnyFrameMeta, Frame},
-        page_table::is_valid_range,
+        page_table::{is_valid_range, zeroed_pt_pool},
         vm_space::Status,
         PageProperty, Vaddr,
     },
@@ -131,6 +131,8 @@ impl<'rcu, C: PageTableConfig> Cursor<'rcu, C> {
         }
 
         const { assert!(C::NR_LEVELS as usize <= MAX_NR_LEVELS) };
+
+        zeroed_pt_pool::prefill();
 
         Ok(locking::lock_range(pt, guard, va))
     }

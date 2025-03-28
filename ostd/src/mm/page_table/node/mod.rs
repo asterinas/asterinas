@@ -39,7 +39,7 @@ use crate::{
     mm::{
         frame::{meta::AnyFrameMeta, Frame, FrameRef},
         paddr_to_vaddr,
-        page_table::{load_pte, store_pte},
+        page_table::{load_pte, store_pte, zeroed_pt_pool},
         vm_space::Status,
         FrameAllocOptions, Infallible, PageProperty, PagingConstsTrait, PagingLevel, VmReader,
     },
@@ -65,15 +65,10 @@ impl<C: PageTableConfig> PageTableNode<C> {
 
     /// Allocates a new empty page table node.
     pub(super) fn alloc(level: PagingLevel) -> Self {
-        let meta = PageTablePageMeta::new(level);
-        let frame = FrameAllocOptions::new()
-            .zeroed(true)
-            .alloc_frame_with(meta)
-            .expect("Failed to allocate a page table node");
         // The allocated frame is zeroed. Make sure zero is absent PTE.
         debug_assert_eq!(C::E::new_absent().as_usize(), 0);
 
-        frame
+        zeroed_pt_pool::alloc(level)
     }
 
     /// Allocates a new page table node filled with the given status.
