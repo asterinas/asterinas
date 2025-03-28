@@ -59,12 +59,16 @@ mod device_info;
 pub use device_info::{PciDeviceId, PciDeviceLocation};
 
 use self::{bus::PciBus, common_device::PciCommonDevice};
-use crate::sync::Mutex;
+use crate::{arch::pci::has_pci_bus, sync::Mutex};
 
 /// PCI bus instance
 pub static PCI_BUS: Mutex<PciBus> = Mutex::new(PciBus::new());
 
 pub(crate) fn init() {
+    if !has_pci_bus() {
+        return;
+    }
+
     let mut lock = PCI_BUS.lock();
     for location in PciDeviceLocation::all() {
         let Some(device) = PciCommonDevice::new(location) else {
