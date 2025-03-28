@@ -223,7 +223,8 @@ fn build_kernel_elf(
         // This is a workaround for <https://github.com/asterinas/asterinas/issues/839>.
         // It makes running on Intel CPUs after Ivy Bridge (2012) faster, but much slower
         // on older CPUs.
-        rustflags.push("-C target-feature=+ermsb");
+        // If we are on late AMD machines, use `+fsrm` here. Otherwise we should `+ermsb`.
+        rustflags.push("-C target-feature=+fsrm");
     }
 
     let mut command = cargo();
