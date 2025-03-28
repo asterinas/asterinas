@@ -16,8 +16,6 @@ pub enum BusProbeError {
 
 /// Initializes the bus
 pub(crate) fn init() {
-    #[cfg(target_arch = "x86_64")]
     pci::init();
-
     mmio::init();
 }

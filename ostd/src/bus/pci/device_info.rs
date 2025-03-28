@@ -5,7 +5,6 @@
 use core::iter;
 
 use super::cfg_space::PciDeviceCommonCfgOffset;
-use crate::arch::pci::{PCI_ADDRESS_PORT, PCI_DATA_PORT};
 
 /// PCI device ID
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -70,15 +69,6 @@ impl PciDeviceLocation {
     const MAX_DEVICE: u8 = 31;
     const MIN_FUNCTION: u8 = 0;
     const MAX_FUNCTION: u8 = 7;
-    /// By encoding bus, device, and function into u32, user can access a PCI device in x86 by passing in this value.
-    #[inline(always)]
-    pub fn encode_as_x86_address_value(self) -> u32 {
-        // 1 << 31: Configuration enable
-        (1 << 31)
-            | ((self.bus as u32) << 16)
-            | (((self.device as u32) & 0b11111) << 11)
-            | (((self.function as u32) & 0b111) << 8)
-    }
 
     /// Returns an iterator that enumerates all possible PCI device locations.
     pub fn all() -> impl Iterator<Item = PciDeviceLocation> {
@@ -130,9 +120,7 @@ impl PciDeviceLocation {
             (offset & 0b11) == 0,
             "misaligned PCI configuration dword u32 read"
         );
-        PCI_ADDRESS_PORT
-            .write(self.encode_as_x86_address_value() | (offset & Self::BIT32_ALIGN_MASK) as u32);
-        PCI_DATA_PORT.read().to_le()
+        crate::arch::pci::read32(self, offset as u32).unwrap()
     }
 
     pub(super) fn write8(&self, offset: u16, val: u8) {
@@ -160,9 +148,6 @@ impl PciDeviceLocation {
             (offset & 0b11) == 0,
             "misaligned PCI configuration dword u32 write"
         );
-
-        PCI_ADDRESS_PORT
-            .write(self.encode_as_x86_address_value() | (offset & Self::BIT32_ALIGN_MASK) as u32);
-        PCI_DATA_PORT.write(val.to_le())
+        crate::arch::pci::write32(self, offset as u32, val).unwrap()
     }
 }
