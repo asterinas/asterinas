@@ -7,6 +7,7 @@ use ostd::sync::{RoArc, Waker};
 
 use super::{
     kill::SignalSenderIds,
+    process::ProcessState,
     signal::{
         sig_action::SigAction,
         sig_mask::{AtomicSigMask, SigMask, SigSet},
@@ -45,6 +46,7 @@ pub use thread_local::{AsThreadLocal, ThreadLocal};
 pub struct PosixThread {
     // Immutable part
     process: Weak<Process>,
+    process_state: Option<Arc<ProcessState>>,
     tid: Tid,
 
     // Mutable part
@@ -81,6 +83,10 @@ pub struct PosixThread {
 impl PosixThread {
     pub fn process(&self) -> Arc<Process> {
         self.process.upgrade().unwrap()
+    }
+
+    pub fn process_state(&self) -> Option<&Arc<ProcessState>> {
+        self.process_state.as_ref()
     }
 
     pub fn weak_process(&self) -> Weak<Process> {

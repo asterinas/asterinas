@@ -78,7 +78,7 @@ pub fn tgkill(tid: Tid, tgid: Pid, signal: Option<UserSignal>, ctx: &Context) ->
     let posix_thread = thread.as_posix_thread().unwrap();
 
     // Check tgid
-    let pid = posix_thread.process().pid();
+    let pid = posix_thread.process_state().unwrap().pid();
     if pid != tgid {
         return_errno_with_message!(
             Errno::EINVAL,

@@ -128,9 +128,13 @@ impl PosixThreadBuilder {
                 let prof_clock = ProfClock::new();
                 let virtual_timer_manager = TimerManager::new(prof_clock.user_clock().clone());
                 let prof_timer_manager = TimerManager::new(prof_clock.clone());
+                let process_state = process
+                    .upgrade()
+                    .map(|process| process.process_state().clone());
 
                 PosixThread {
                     process,
+                    process_state,
                     tid,
                     name: Mutex::new(thread_name),
                     credentials,

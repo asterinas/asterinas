@@ -13,7 +13,7 @@ use super::sem_set::{SemSetInner, SEMVMX};
 use crate::{
     ipc::{key_t, semaphore::system_v::sem_set::sem_sets, IpcFlags},
     prelude::*,
-    process::Pid,
+    process::{Pid, ProcessState},
     time::{clocks::JIFFIES_TIMER_MANAGER, timer::Timeout},
 };
 
@@ -123,7 +123,10 @@ impl Semaphore {
     pub(super) fn new(val: i32) -> Self {
         Self {
             val,
-            latest_modified_pid: current!().pid(),
+            latest_modified_pid: ProcessState::with_current_task(|process_state| {
+                process_state.pid()
+            })
+            .unwrap(),
         }
     }
 }

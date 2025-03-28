@@ -60,13 +60,13 @@ pub(super) fn init() {
 /// Process stands for a set of threads that shares the same userspace.
 pub struct Process {
     // Immutable Part
-    pid: Pid,
-
     process_vm: ProcessVm,
     /// Wait for child status changed
     children_wait_queue: WaitQueue,
 
     // Mutable Part
+    /// Process state
+    process_state: Arc<ProcessState>,
     /// The executable path.
     executable_path: RwLock<String>,
     /// The threads
@@ -79,8 +79,6 @@ pub struct Process {
     children: Mutex<BTreeMap<Pid, Arc<Process>>>,
     /// Process group
     pub(super) process_group: Mutex<Weak<ProcessGroup>>,
-    /// resource limits
-    resource_limits: ResourceLimits,
     /// Scheduling priority nice value
     /// According to POSIX.1, the nice value is a per-process attribute,
     /// the threads in a process should share a nice value.
@@ -96,7 +94,7 @@ pub struct Process {
 
     /// Whether the process has a subreaper that will reap it when the
     /// process becomes orphaned.
-    ///  
+    ///
     /// If `has_child_subreaper` is true in a `Process`, this attribute should
     /// also be true for all of its descendants.
     pub(super) has_child_subreaper: AtomicBool,
@@ -115,6 +113,48 @@ pub struct Process {
 
     /// A manager that manages timer resources and utilities of the process.
     timer_manager: PosixTimerManager,
+}
+
+/// The state of a process.
+///
+/// It contains the internal conditions of the process.
+///
+/// Both the `Process` and each associated `Task` hold an `Arc<ProcessState>` for the process,
+/// so tasks do not need to `upgrade()` a weak pointer when accessing fields in `ProcessState`.
+pub struct ProcessState {
+    /// Pid of the process
+    pid: Pid,
+    /// Resource limits
+    resource_limits: ResourceLimits,
+}
+
+impl ProcessState {
+    /// Executes the given function with the `ProcessState` of the current task, if available.
+    ///
+    /// It returns `None` if:
+    ///  - the function is called in the bootstrap context;
+    ///  - or if the current task is not associated with a process.
+    ///
+    /// # Examples
+    /// ```rust
+    /// let pid = ProcessState::with_current_task(|process_state| process_state.pid()).unwrap();
+    /// ```
+    pub fn with_current_task<F, R>(f: F) -> Option<R>
+    where
+        F: Fn(&Arc<ProcessState>) -> R,
+    {
+        let task = Task::current()?;
+        let process_state = task.as_posix_thread()?.process_state()?;
+        Some(f(process_state))
+    }
+
+    pub fn pid(&self) -> Pid {
+        self.pid
+    }
+
+    pub fn resource_limits(&self) -> &ResourceLimits {
+        &self.resource_limits
+    }
 }
 
 /// Representing a parent process by holding a weak reference to it and its PID.
@@ -200,12 +240,17 @@ impl Process {
 
         let prof_clock = ProfClock::new();
 
-        Arc::new_cyclic(|process_ref: &Weak<Process>| Self {
+        let process_state = ProcessState {
             pid,
+            resource_limits,
+        };
+
+        Arc::new_cyclic(|process_ref: &Weak<Process>| Self {
             tasks: Mutex::new(TaskSet::new()),
             executable_path: RwLock::new(executable_path),
             process_vm,
             children_wait_queue,
+            process_state: Arc::new(process_state),
             status: ProcessStatus::default(),
             parent: ParentProcess::new(parent),
             children: Mutex::new(BTreeMap::new()),
@@ -215,7 +260,6 @@ impl Process {
             sig_dispositions,
             parent_death_signal: AtomicSigNum::new_empty(),
             exit_signal: AtomicSigNum::new_empty(),
-            resource_limits,
             nice: AtomicNice::new(nice),
             timer_manager: PosixTimerManager::new(&prof_clock, process_ref),
             prof_clock,
@@ -293,7 +337,12 @@ impl Process {
     // *********** Basic structures ***********
 
     pub fn pid(&self) -> Pid {
-        self.pid
+        self.process_state.pid()
+    }
+
+    /// Gets the process state
+    pub fn process_state(&self) -> &Arc<ProcessState> {
+        &self.process_state
     }
 
     /// Gets the profiling clock of the process.
@@ -319,7 +368,7 @@ impl Process {
     }
 
     pub fn resource_limits(&self) -> &ResourceLimits {
-        &self.resource_limits
+        self.process_state.resource_limits()
     }
 
     pub fn nice(&self) -> &AtomicNice {
@@ -426,11 +475,11 @@ impl Process {
         let mut group_table_mut = process_table::group_table_mut();
         let mut self_group_mut = self.process_group.lock();
 
-        if session_table_mut.contains_key(&self.pid) {
+        if session_table_mut.contains_key(&self.pid()) {
             return_errno_with_message!(Errno::EPERM, "cannot create new session");
         }
 
-        if group_table_mut.contains_key(&self.pid) {
+        if group_table_mut.contains_key(&self.pid()) {
             return_errno_with_message!(Errno::EPERM, "cannot create process group");
         }
 
@@ -438,7 +487,7 @@ impl Process {
         if let Some(old_group) = self_group_mut.upgrade() {
             let mut group_inner = old_group.inner.lock();
             let mut session_inner = session.inner.lock();
-            group_inner.remove_process(&self.pid);
+            group_inner.remove_process(&self.pid());
             *self_group_mut = Weak::new();
 
             if group_inner.is_empty() {
@@ -527,7 +576,7 @@ impl Process {
         if let Some(old_group) = self_group_mut.upgrade() {
             let mut group_inner = old_group.inner.lock();
             let mut session_inner = session.inner.lock();
-            group_inner.remove_process(&self.pid);
+            group_inner.remove_process(&self.pid());
             *self_group_mut = Weak::new();
 
             if group_inner.is_empty() {
@@ -576,7 +625,7 @@ impl Process {
                     (old_group_inner, group_inner)
                 }
             };
-            old_group_inner.remove_process(&self.pid);
+            old_group_inner.remove_process(&self.pid());
             *self_group_mut = Weak::new();
 
             if old_group_inner.is_empty() {
@@ -589,7 +638,7 @@ impl Process {
         };
 
         // Adds the process to the specified group
-        group_inner.processes.insert(self.pid, self.clone());
+        group_inner.processes.insert(self.pid(), self.clone());
         *self_group_mut = Arc::downgrade(group);
 
         Ok(())
