@@ -244,6 +244,8 @@ chart:                        # Chart configuration
 
 runtime_config:              # Runtime configuration
   aster_scheme: "null"       # Corresponds to Makefile parameters, IOMMU is enabled by default (SCHEME=iommu)
+  smp: 1                     # Number of CPUs to allocate to the VM
+  mem: 8G                  # Memory size in GB to allocate to the VM
 ```
 
 By adhering to this format, we ensure clarity and consistency in benchmarking workflows and reporting systems.

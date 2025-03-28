@@ -72,32 +72,50 @@ extract_result_file() {
     fi
 }
 
-# Run the specified benchmark with optional scheme
+# Run the specified benchmark with runtime configurations
 run_benchmark() {
     local benchmark="$1"
     local run_mode="$2"
-    local aster_scheme="$3"
-    local smp="$4"
+    local runtime_configs_str="$3" # String with key=value pairs, one per line
 
     echo "Preparing libraries..."
     prepare_libs
 
-    # Set up Asterinas scheme if specified (Default: iommu)
-    local aster_scheme_cmd="SCHEME=iommu"
-    if [ -n "$aster_scheme" ]; then
-        if [ "$aster_scheme" != "null" ]; then
-            aster_scheme_cmd="SCHEME=${aster_scheme}"
-        else
-            aster_scheme_cmd=""
-        fi
-    fi
+    # Default values
+    local smp_val=1
+    local mem_val="8G"
+    local aster_scheme_cmd_part="SCHEME=iommu" # Default scheme
+
+    # Process runtime_configs_str to override defaults and gather extra args
+    while IFS='=' read -r key value; do
+         if [[ -z "$key" ]]; then continue; fi # Skip empty lines/keys
+         case "$key" in
+             "smp")
+                 smp_val="$value"
+                 ;;
+             "mem")
+                 mem_val="$value"
+                 ;;
+             "aster_scheme")
+                 if [[ "$value" == "null" ]]; then
+                     aster_scheme_cmd_part="" # Remove default SCHEME=iommu
+                 else
+                     aster_scheme_cmd_part="SCHEME=${value}" # Override default
+                 fi
+                 ;;
+             *)
+                 echo "Warning: Unknown runtime configuration key '$key'" >&2
+                 exit 1
+                 ;;
+         esac
+     done <<< "$runtime_configs_str"
 
     # Prepare commands for Asterinas and Linux
-    local asterinas_cmd="make run BENCHMARK=${benchmark} ${aster_scheme_cmd} SMP=${smp} ENABLE_KVM=1 RELEASE_LTO=1 NETDEV=tap VHOST=on 2>&1"
+    local asterinas_cmd="make run BENCHMARK=${benchmark} ${aster_scheme_cmd_part} SMP=${smp_val} MEM=${mem_val} ENABLE_KVM=1 RELEASE_LTO=1 NETDEV=tap VHOST=on 2>&1"
     local linux_cmd="/usr/local/qemu/bin/qemu-system-x86_64 \
         --no-reboot \
-        -smp ${smp} \
-        -m 8G \
+        -smp ${smp_val} \
+        -m ${mem_val} \
         -machine q35,kernel-irqchip=split \
         -cpu Icelake-Server,-pcid,+x2apic \
         --enable-kvm \
@@ -110,6 +128,10 @@ run_benchmark() {
         -device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off,csum=off,guest_csum=off,ctrl_guest_offloads=off,guest_tso4=off,guest_tso6=off,guest_ecn=off,guest_ufo=off,host_tso4=off,host_tso6=off,host_ecn=off,host_ufo=off,mrg_rxbuf=off,ctrl_vq=off,ctrl_rx=off,ctrl_vlan=off,ctrl_rx_extra=off,guest_announce=off,ctrl_mac_addr=off,host_ufo=off,guest_uso4=off,guest_uso6=off,host_uso=off \
         -nographic \
         2>&1"
+
+    # Trim leading/trailing whitespace from commands before eval
+    asterinas_cmd=$(echo "$asterinas_cmd" | sed 's/^ *//;s/ *$//;s/  */ /g')
+    linux_cmd=$(echo "$linux_cmd" | sed 's/^ *//;s/ *$//;s/  */ /g')
 
     # Run the benchmark depending on the mode
     case "${run_mode}" in
@@ -170,26 +192,29 @@ main() {
     [[ -f "${BENCHMARK_ROOT}/${benchmark}/host.sh" ]] && run_mode="host_guest"
 
     local bench_result="${BENCHMARK_ROOT}/${benchmark}/bench_result.yaml"
-    local aster_scheme
+    local runtime_configs_str=""
+
+    # Try reading from single result file first
     if [[ -f "$bench_result" ]]; then
-        aster_scheme=$(yq -r '.runtime_config.aster_scheme // ""' "$bench_result")
+        # Read runtime_config object, convert to key=value lines, ensuring value is string
+        runtime_configs_str=$(yq -r '(.runtime_config // {}) | to_entries | .[] | .key + "=" + (.value | tostring)' "$bench_result")
     else
-        for job in "${BENCHMARK_ROOT}/${benchmark}"/bench_results/*; do
-            [[ -f "$job" ]] && aster_scheme=$(yq -r '.runtime_config.aster_scheme // ""' "$job") && break
+        # If not found, try reading from the first file in bench_results/ that has a non-empty runtime_config
+        for job_yaml in "${BENCHMARK_ROOT}/${benchmark}"/bench_results/*; do
+            if [[ -f "$job_yaml" ]]; then
+                echo "Reading runtime configurations from $job_yaml..."
+                # Read runtime_config object, convert to key=value lines, ensuring value is string
+                runtime_configs_str=$(yq -r '(.runtime_config // {}) | to_entries | .[] | .key + "=" + (.value | tostring)' "$job_yaml")
+                # Check if runtime_config was actually found and non-empty
+                if [[ -n "$runtime_configs_str" ]]; then
+                    break # Found it, stop looking
+                fi
+            fi
         done
     fi
 
-    local smp
-    if [[ -f "$bench_result" ]]; then
-        smp=$(yq -r '.runtime_config.smp // 1' "$bench_result")
-    else
-        for job in "${BENCHMARK_ROOT}/${benchmark}"/bench_results/*; do
-            [[ -f "$job" ]] && smp=$(yq -r '.runtime_config.smp // 1' "$job") && break
-        done
-    fi
-
-    # Run the benchmark
-    run_benchmark "$benchmark" "$run_mode" "$aster_scheme" "$smp"
+    # Run the benchmark, passing the config string
+    run_benchmark "$benchmark" "$run_mode" "$runtime_configs_str"
 
     # Parse results if benchmark configuration exists
     if [[ -f "$bench_result" ]]; then
