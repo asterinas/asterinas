@@ -17,7 +17,8 @@ use crate::{
     fs::{
         path::mount::MountNode,
         utils::{
-            FileSystem, Inode, InodeMode, InodeType, Metadata, MknodType, Permission, NAME_MAX,
+            FileSystem, Inode, InodeMode, InodeType, Metadata, MknodType, Permission, XattrName,
+            XattrNamespace, XattrSetFlags, NAME_MAX,
         },
     },
     prelude::*,
@@ -356,6 +357,19 @@ impl Dentry_ {
     pub fn ctime(&self) -> Duration;
     pub fn set_ctime(&self, time: Duration);
     pub fn is_dentry_cacheable(&self) -> bool;
+    pub fn set_xattr(
+        &self,
+        name: XattrName,
+        value_reader: &mut VmReader,
+        flags: XattrSetFlags,
+    ) -> Result<()>;
+    pub fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize>;
+    pub fn list_xattr(
+        &self,
+        namespace: XattrNamespace,
+        list_writer: &mut VmWriter,
+    ) -> Result<usize>;
+    pub fn remove_xattr(&self, name: XattrName) -> Result<()>;
 }
 
 impl Debug for Dentry_ {
@@ -769,4 +783,17 @@ impl Dentry {
     pub fn inode(&self) -> &Arc<dyn Inode>;
     pub fn is_root_of_mount(&self) -> bool;
     pub fn is_mountpoint(&self) -> bool;
+    pub fn set_xattr(
+        &self,
+        name: XattrName,
+        value_reader: &mut VmReader,
+        flags: XattrSetFlags,
+    ) -> Result<()>;
+    pub fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize>;
+    pub fn list_xattr(
+        &self,
+        namespace: XattrNamespace,
+        list_writer: &mut VmWriter,
+    ) -> Result<usize>;
+    pub fn remove_xattr(&self, name: XattrName) -> Result<()>;
 }
