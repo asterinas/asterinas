@@ -1,4 +1,4 @@
-name: Benchmark Asterinas
+name: Benchmark x86-64
 on:
   # In case of manual trigger, use workflow_dispatch
   workflow_dispatch:
