@@ -1261,6 +1261,7 @@ version = "0.14.1"
 dependencies = [
  "log",
  "ostd",
+ "paste",
 ]
 
 [[package]]

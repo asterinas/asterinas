@@ -10,6 +10,7 @@ readme = "README.md"
 [dependencies]
 log = "0.4"
 ostd = { version = "0.14.1", path = "../../../ostd" }
+paste = "1.0.15"
 
 [lints]
 workspace = true
