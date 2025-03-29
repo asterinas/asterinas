@@ -1,0 +1,99 @@
+name: 'Test'
+description: 'Run tests for Asterinas'
+branding:
+  icon: 'check-circle'
+  color: 'green'
+inputs:
+  # Test Configuration
+  auto_test:
+    description: 'Test type (general, osdk, boot, syscall, test)'
+    required: true
+  release:
+    description: 'Whether to run in release mode'
+    required: false
+  
+  # Virtualization Settings  
+  enable_kvm:
+    description: 'Enable KVM acceleration'
+    required: false
+  intel_tdx:
+    description: 'Enable Intel TDX support'
+    required: false
+  smp:
+    description: 'Number of CPUs'
+    required: false
+  netdev:
+    description: 'Network device type (user/tap)'
+    required: false
+  scheme:
+    description: 'Test scheme (default/microvm/iommu)'
+    required: false
+  
+  # Test Parameters
+  extra_blocklists:
+    description: 'Extra blocklists directories'
+    required: false
+  syscall_test_dir:
+    description: 'Syscall test directory'
+    required: false
+  boot_protocol:
+    description: 'Boot protocol (linux-efi-handover64/multiboot/multiboot2/linux-legacy32)'
+    required: false
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup environment
+      shell: bash
+      run: |
+        # Set common environment variables using GitHub's environment files
+        if [[ "${{ inputs.intel_tdx }}" == "true" ]]; then
+          echo "RUSTUP_DIST_SERVER=https://mirrors.ustc.edu.cn/rust-static" >> $GITHUB_ENV
+          echo "RUSTUP_UPDATE_ROOT=https://mirrors.ustc.edu.cn/rust-static/rustup" >> $GITHUB_ENV
+        fi
+        
+    - name: Run basic tests
+      if: ${{ inputs.auto_test == 'general' }}
+      shell: bash
+      run: |
+        if [[ "${{ matrix.id }}" == "lint" ]]; then
+          make check
+        elif [[ "${{ matrix.id }}" == "compile" ]]; then
+          make build FEATURES=all
+        elif [[ "${{ matrix.id }}" == "usermode_test" ]]; then
+          make test
+        elif [[ "${{ matrix.id }}" == "ktest" ]]; then
+          make ktest NETDEV=tap
+        fi
+
+    - name: Run integration test
+      if: ${{ !(inputs.auto_test == 'general' || inputs.auto_test == 'osdk') }}
+      shell: bash
+      run: |
+        CMD="make run AUTO_TEST=${{ inputs.auto_test }}"
+        [[ "${{ inputs.intel_tdx }}" == "true" ]] && CMD+=" INTEL_TDX=1"
+        [[ "${{ inputs.release }}" == "true" ]] && CMD+=" RELEASE=1"
+        [[ "${{ inputs.enable_kvm }}" == "false" ]] && CMD+=" ENABLE_KVM=0"
+        [[ -n "${{ inputs.smp }}" ]] && CMD+=" SMP=${{ inputs.smp }}"
+        [[ -n "${{ inputs.netdev }}" ]] && CMD+=" NETDEV=${{ inputs.netdev }}"
+        [[ -n "${{ inputs.scheme }}" ]] && CMD+=" SCHEME=${{ inputs.scheme }}"
+        [[ -n "${{ inputs.extra_blocklists }}" ]] && CMD+=" EXTRA_BLOCKLISTS_DIRS=${{ inputs.extra_blocklists }}"
+        [[ -n "${{ inputs.syscall_test_dir }}" ]] && CMD+=" SYSCALL_TEST_DIR=${{ inputs.syscall_test_dir }}"
+        [[ -n "${{ inputs.boot_protocol }}" ]] && CMD+=" BOOT_PROTOCOL=${{ inputs.boot_protocol }}"
+        
+        echo "Executing: $CMD"
+        eval $CMD
+
+    - name: Run OSDK tests
+      if: ${{ inputs.auto_test == 'osdk' }}
+      shell: bash
+      run: |
+        [[ "${{ !contains(matrix.container, 'osdk') }}" == "true" ]] && make check_osdk
+        if [[ "${{ inputs.intel_tdx }}" == "true" ]]; then
+          RUSTUP_HOME=/root/.rustup make test_osdk INTEL_TDX=1
+        else
+          RUSTUP_HOME=/root/.rustup make test_osdk
+        fi
