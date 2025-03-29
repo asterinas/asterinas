@@ -27,6 +27,8 @@
 //! This sequence does not need to be strictly followed, and there may be
 //! different considerations in different systems.
 
+use acpi::madt::MadtEntry;
+
 use crate::{
     arch::x86::kernel::{
         acpi::get_acpi_tables,
@@ -46,16 +48,41 @@ use crate::{
 pub(crate) fn get_num_processors() -> Option<u32> {
     let acpi_tables = get_acpi_tables()?;
     let mut local_apic_counts = 0;
-    acpi_tables
-        .find_table::<acpi::madt::Madt>()
-        .unwrap()
-        .get()
-        .entries()
-        .for_each(|entry| {
-            if let acpi::madt::MadtEntry::LocalApic(_) = entry {
-                local_apic_counts += 1;
+    let madt_table = acpi_tables.find_table::<acpi::madt::Madt>().ok()?;
+    // Search for x2APIC entries first.
+    madt_table.get().entries().for_each(|entry| {
+        if let MadtEntry::LocalX2Apic(entry) = entry {
+            let cpu_id = entry.processor_uid;
+            let x2apic_id = entry.x2apic_id;
+            log::trace!(
+                "Found local x2APIC MADT entry: CPU id = {}, x2APIC id = {}",
+                cpu_id,
+                x2apic_id,
+            );
+            local_apic_counts += 1;
+        }
+    });
+    // Then, search for APIC entries that didn't show up as x2APIC entries.
+    madt_table.get().entries().for_each(|entry| {
+        if let MadtEntry::LocalApic(entry) = entry {
+            let cpu_id = entry.processor_id;
+            let apic_id = entry.apic_id as u32;
+            if madt_table
+                .get()
+                .entries()
+                .any(|e| matches!(e, MadtEntry::LocalX2Apic(e) if e.x2apic_id == apic_id))
+            {
+                // This is likely a firmware bug, but we can ignore it.
+                return;
             }
-        });
+            log::trace!(
+                "Found local APIC MADT entry: CPU id = {}, APIC id = {}",
+                cpu_id,
+                apic_id,
+            );
+            local_apic_counts += 1;
+        }
+    });
 
     Some(local_apic_counts)
 }
