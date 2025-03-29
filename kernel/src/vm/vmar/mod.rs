@@ -20,7 +20,7 @@ use self::{
 use super::page_fault_handler::PageFaultHandler;
 use crate::{
     prelude::*,
-    process::{Process, ResourceType},
+    process::{ProcessState, ResourceType},
     thread::exception::PageFaultInfo,
     vm::{
         perms::VmPerms,
@@ -133,16 +133,16 @@ impl VmarInner {
     /// Returns `Ok` if the calling process may expand its mapped
     /// memory by the passed size.
     fn check_expand_size(&mut self, expand_size: usize) -> Result<()> {
-        let Some(process) = Process::current() else {
+        let Some(rlimt_as) = ProcessState::with_current_task(|process_state| {
+            process_state
+                .resource_limits()
+                .get_rlimit(ResourceType::RLIMIT_AS)
+                .get_cur()
+        }) else {
             // When building a `Process`, the kernel task needs to build
             // some `VmMapping`s, in which case this branch is reachable.
             return Ok(());
         };
-
-        let rlimt_as = process
-            .resource_limits()
-            .get_rlimit(ResourceType::RLIMIT_AS)
-            .get_cur();
 
         let new_total_vm = self
             .total_vm
