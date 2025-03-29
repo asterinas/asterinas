@@ -2,7 +2,10 @@
 
 use alloc::{borrow::ToOwned, sync::Arc};
 
-use aster_bigtcp::device::WithDevice;
+use aster_bigtcp::{
+    device::WithDevice,
+    iface::{InterfaceFlags, InterfaceType},
+};
 use ostd::sync::LocalIrqDisabled;
 use spin::Once;
 
@@ -13,8 +16,10 @@ pub static IFACES: Once<Vec<Arc<Iface>>> = Once::new();
 
 pub fn init() {
     IFACES.call_once(|| {
-        let iface_virtio = new_virtio();
+        // We init loopback ahead of virtio,
+        // to ensure the interface index of loopback is ahead of virtio.
         let iface_loopback = new_loopback();
+        let iface_virtio = new_virtio();
         vec![iface_virtio, iface_loopback]
     });
 
@@ -61,14 +66,22 @@ fn new_virtio() -> Arc<Iface> {
         }
     }
 
+    // FIXME: These are just hardcoded flags.
+    // We should set appropriate values in the future.
+    let flags = InterfaceFlags::UP
+        | InterfaceFlags::BROADCAST
+        | InterfaceFlags::RUNNING
+        | InterfaceFlags::MULTICAST
+        | InterfaceFlags::LOWER_UP;
     EtherIface::new(
         Wrapper(virtio_net),
         EthernetAddress(ether_addr),
         Ipv4Cidr::new(VIRTIO_ADDRESS, VIRTIO_ADDRESS_PREFIX_LEN),
         VIRTIO_GATEWAY,
-        "virtio".to_owned(),
+        "eth0".to_owned(),
         PollScheduler::new(),
-    )
+        flags,
+    ) as Arc<Iface>
 }
 
 fn new_loopback() -> Arc<Iface> {
@@ -95,10 +108,18 @@ fn new_loopback() -> Arc<Iface> {
         }
     }
 
+    // FIXME: These are just hardcoded flags.
+    // We should set appropriate values in the future.
+    let flags = InterfaceFlags::UP
+        | InterfaceFlags::LOOPBACK
+        | InterfaceFlags::RUNNING
+        | InterfaceFlags::LOWER_UP;
     IpIface::new(
         Wrapper(Mutex::new(Loopback::new(Medium::Ip))),
         Ipv4Cidr::new(LOOPBACK_ADDRESS, LOOPBACK_ADDRESS_PREFIX_LEN),
         "lo".to_owned(),
         PollScheduler::new(),
-    ) as _
+        InterfaceType::LOOPBACK,
+        flags,
+    ) as Arc<Iface>
 }
