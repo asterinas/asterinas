@@ -205,12 +205,13 @@ impl ReadCString for VmReader<'_, Fallible> {
 
         // Handle the rest of the bytes in bulk
         while (buffer.len() + mem::size_of::<usize>()) <= max_len {
-            let Ok(word) = self.read_val::<usize>() else {
+            let Ok(word) = self.peek_val::<usize>() else {
                 break;
             };
 
             if has_zero(word) {
                 for byte in word.to_ne_bytes() {
+                    self.skip(1);
                     buffer.push(byte);
                     if byte == 0 {
                         return Ok(CString::from_vec_with_nul(buffer)
@@ -219,6 +220,8 @@ impl ReadCString for VmReader<'_, Fallible> {
                 }
                 unreachable!("The branch should never be reached unless `has_zero` has bugs.")
             }
+
+            self.skip(mem::size_of::<usize>());
 
             buffer.extend_from_slice(&word.to_ne_bytes());
         }
