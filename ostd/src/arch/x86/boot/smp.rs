@@ -27,6 +27,8 @@
 //! This sequence does not need to be strictly followed, and there may be
 //! different considerations in different systems.
 
+use acpi::madt::MadtEntry;
+
 use crate::{
     arch::x86::kernel::{
         acpi::get_acpi_tables,
@@ -45,19 +47,54 @@ use crate::{
 /// This function needs to be called after the OS initializes the ACPI table.
 pub(crate) fn get_num_processors() -> Option<u32> {
     let acpi_tables = get_acpi_tables()?;
-    let mut local_apic_counts = 0;
-    acpi_tables
-        .find_table::<acpi::madt::Madt>()
-        .unwrap()
+    let madt_table = acpi_tables.find_table::<acpi::madt::Madt>().ok()?;
+
+    // In the UEFI spec [1], for compatibility, the firmware will provide
+    // "Processor X2APIC structure" for local APIC ID values >= 255 and
+    // "Processor APIC structure" for local APIC ID values < 255, even if it is
+    // in the x2APIC mode.
+    // [1]: https://uefi.org/htmlspecs/ACPI_Spec_6_4_html/05_ACPI_Software_Programming_Model/ACPI_Software_Programming_Model.html#processor-local-x2apic-structure
+    let local_apic_counts = madt_table
         .get()
         .entries()
-        .for_each(|entry| {
-            if let acpi::madt::MadtEntry::LocalApic(_) = entry {
-                local_apic_counts += 1;
+        .filter(|e| match e {
+            MadtEntry::LocalX2Apic(entry) => {
+                let processor_uid = entry.processor_uid;
+                let x2apic_id = entry.x2apic_id;
+                log::trace!(
+                    "Found a local x2APIC entry in MADT: processor UID = {}, x2APIC ID = {}",
+                    processor_uid,
+                    x2apic_id,
+                );
+                true
             }
-        });
+            MadtEntry::LocalApic(entry) => {
+                let processor_id = entry.processor_id;
+                let apic_id = entry.apic_id as u32;
+                log::trace!(
+                    "Found a local APIC entry in MADT: processor ID = {}, APIC ID = {}",
+                    processor_id,
+                    apic_id,
+                );
+                // Check if APIC entries also show up as x2APIC entries.
+                if madt_table
+                    .get()
+                    .entries()
+                    .any(|e| matches!(e, MadtEntry::LocalX2Apic(e) if e.x2apic_id == apic_id))
+                {
+                    log::warn!(
+                        "Firmware bug: in MADT, APIC ID {} is also listed as a x2APIC ID",
+                        apic_id
+                    );
+                    return false;
+                }
+                true
+            }
+            _ => false,
+        })
+        .count();
 
-    Some(local_apic_counts)
+    Some(local_apic_counts as u32)
 }
 
 /// Brings up all application processors.

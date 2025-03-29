@@ -8,8 +8,8 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use spin::Once;
 
 use crate::{
-    arch::boot::smp::{bringup_all_aps, get_num_processors},
-    cpu,
+    arch::boot::smp::bringup_all_aps,
+    cpu::{self, num_cpus},
     mm::{
         frame::{meta::KernelMeta, Segment},
         paddr_to_vaddr, FrameAllocOptions, PAGE_SIZE,
@@ -49,12 +49,11 @@ static AP_LATE_ENTRY: Once<fn()> = Once::new();
 /// However, the function need to be called before any `cpu_local!` variables are
 /// accessed, including the APIC instance.
 pub fn boot_all_aps() {
-    // TODO: support boot protocols without ACPI tables, e.g., Multiboot
-    let Some(num_cpus) = get_num_processors() else {
-        log::warn!("No processor information found. The kernel operates with a single processor.");
+    let num_cpus = num_cpus() as u32;
+    if num_cpus == 1 {
         return;
-    };
-    log::info!("Found {} processors.", num_cpus);
+    }
+    log::info!("Booting {} processors.", num_cpus - 1);
 
     // We currently assumes that bootstrap processor (BSP) have always the
     // processor ID 0. And the processor ID starts from 0 to `num_cpus - 1`.
