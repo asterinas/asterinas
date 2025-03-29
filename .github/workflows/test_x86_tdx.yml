@@ -1,0 +1,72 @@
+name: Test Intel TDX 
+
+on:
+  workflow_dispatch:
+  # Schedule to run on every day at 22:00 UTC (06:00 Beijing Time)
+  schedule:
+    - cron: '0 22 * * *'
+
+jobs:
+  integration-test:
+    runs-on: self-hosted
+    container:
+      image: asterinas/asterinas:0.14.1-20250326-tdx
+      options: --device=/dev/kvm --privileged
+    strategy:
+      matrix:
+        include:
+          # Boot Test (linux-efi-handover64)
+          - test_id: 'boot-handover64'
+          # SMP Boot Test
+          - test_id: 'boot-handover64-smp4'
+            netdev: 'tap'
+            smp: 4
+
+          # Syscall Test
+          - test_id: 'syscall'
+          # Syscall Test at Exfat
+          - test_id: 'syscall-exfat'
+            extra_blocklists: 'blocklists.exfat'
+            syscall_test_dir: '/exfat'
+          # SMP Syscall Test
+          - test_id: 'syscall-smp4'
+            netdev: 'tap'
+            smp: 4
+
+          # General Test
+          - test_id: 'general'
+          # SMP General Test
+          - test_id: 'general-tap-smp4'
+            netdev: 'tap'
+            smp: 4
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run TDX integration tests
+        uses: ./.github/actions/test
+        with:
+          auto_test: ${{ startsWith(matrix.test_id, 'boot') && 'boot' ||
+              startsWith(matrix.test_id, 'syscall') && 'syscall' || 'test' }}
+          intel_tdx: true
+          release: true
+          smp: ${{ matrix.smp }}
+          netdev: ${{ matrix.netdev }}
+          extra_blocklists: ${{ matrix.extra_blocklists }}
+          syscall_test_dir: ${{ matrix.syscall_test_dir }}
+
+  osdk-test:
+    runs-on: self-hosted
+    strategy:
+      matrix:
+        image: ['asterinas/asterinas:0.14.1-20250326-tdx', 'asterinas/osdk:0.14.1-20250326-tdx']
+      fail-fast: false
+    container:
+      image: ${{ matrix.image }}
+      options: --device=/dev/kvm --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run TDX OSDK tests
+        uses: ./.github/actions/test
+        with:
+          auto_test: 'osdk'
+          intel_tdx: true
