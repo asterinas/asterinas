@@ -173,6 +173,16 @@ impl Node {
         unsafe { &*next }.ticket.store(true, Ordering::Release);
     }
 
+    /// FOR PFQ only.
+    pub unsafe fn wake_up(self: Pin<&Self>) {
+        self.ticket.store(true, Ordering::Release);
+    }
+
+    /// FOR PFQ only.
+    pub unsafe fn is_blocked(self: Pin<&Self>) -> bool {
+        !self.ticket.load(Ordering::Relaxed)
+    }
+
     /// Unlocks the lock if the candidate node is the queue's tail.
     fn try_unlock_as_tail(node_ptr: *mut Self, lock: &LockBody) -> bool {
         lock.tail

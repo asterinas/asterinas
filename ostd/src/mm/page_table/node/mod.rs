@@ -28,6 +28,7 @@
 mod child;
 mod entry;
 mod mcs;
+mod rwlock;
 
 use alloc::boxed::Box;
 use core::{cell::SyncUnsafeCell, marker::PhantomData, ops::Deref, pin::Pin};
