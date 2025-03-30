@@ -2,8 +2,12 @@
 
 //! I/O port and its allocator that allocates port I/O (PIO) to device drivers.
 
+mod allocator;
+
 use core::{marker::PhantomData, mem::size_of};
 
+pub(super) use self::allocator::init;
+pub(crate) use self::allocator::IoPortAllocatorBuilder;
 use crate::{
     arch::device::io_port::{IoPortReadAccess, IoPortWriteAccess, PortRead, PortWrite},
     mm::PodOnce,
@@ -30,6 +34,15 @@ pub struct IoPort<A> {
 }
 
 impl<A> IoPort<A> {
+    /// Acquires an `IoPort` instance for the given range.
+    pub fn acquire(port: u16, size: u16) -> Result<IoPort<A>> {
+        allocator::IO_PORT_DISPATCHER
+            .get()
+            .unwrap()
+            .acquire(port..(port + size))
+            .ok_or(Error::AccessDenied)
+    }
+
     /// Base address of the I/O port.
     pub fn base(&self) -> u16 {
         self.base
@@ -118,5 +131,17 @@ impl<A: IoPortWriteAccess> IoPort<A> {
     #[inline]
     pub fn write_no_offset<T: PortWrite>(&self, value: T) -> Result<()> {
         self.write(0, value)
+    }
+}
+
+impl<A> Drop for IoPort<A> {
+    fn drop(&mut self) {
+        // SAFETY: The caller have ownership of the PIO region.
+        unsafe {
+            allocator::IO_PORT_DISPATCHER
+                .get()
+                .unwrap()
+                .recycle(self.base..(self.base + self.size));
+        }
     }
 }

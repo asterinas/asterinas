@@ -4,7 +4,10 @@ use alloc::vec::Vec;
 
 use align_ext::AlignExt;
 
-use crate::{boot::memory_region::MemoryRegionType, io::IoMemAllocatorBuilder};
+use crate::{
+    boot::memory_region::MemoryRegionType,
+    io::{IoMemAllocatorBuilder, IoPortAllocatorBuilder},
+};
 
 /// Initializes the allocatable MMIO area based on the x86-64 memory distribution map.
 ///
@@ -53,4 +56,13 @@ pub(super) fn construct_io_mem_allocator_builder() -> IoMemAllocatorBuilder {
 
     // SAFETY: The range is guaranteed not to access physical memory.
     unsafe { IoMemAllocatorBuilder::new(ranges) }
+}
+
+/// Initializes the allocatable PIO area based on the x86-64 port distribution map.
+pub(super) fn construct_io_port_allocator_builder() -> IoPortAllocatorBuilder {
+    /// Port I/O definition reference: https://bochs.sourceforge.io/techspec/PORTS.LST
+    const MAX_IO_PORT: u16 = u16::MAX;
+
+    // SAFETY: `MAX_IO_PORT` is guaranteed not to exceed the maximum value specified by x86-64.
+    unsafe { IoPortAllocatorBuilder::new(MAX_IO_PORT) }
 }
