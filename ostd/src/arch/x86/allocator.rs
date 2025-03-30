@@ -58,11 +58,27 @@ pub(super) fn construct_io_mem_allocator_builder() -> IoMemAllocatorBuilder {
     unsafe { IoMemAllocatorBuilder::new(ranges) }
 }
 
-/// Initializes the allocatable PIO area based on the x86-64 port distribution map.
+/// Initializes the allocatable PIO area outside OSTD based on the x86-64 port distribution map.
 pub(super) fn construct_io_port_allocator_builder() -> IoPortAllocatorBuilder {
     /// Port I/O definition reference: https://bochs.sourceforge.io/techspec/PORTS.LST
     const MAX_IO_PORT: u16 = u16::MAX;
 
     // SAFETY: `MAX_IO_PORT` is guaranteed not to exceed the maximum value specified by x86-64.
-    unsafe { IoPortAllocatorBuilder::new(MAX_IO_PORT) }
+    let mut builder = unsafe { IoPortAllocatorBuilder::new(MAX_IO_PORT) };
+
+    // Device access using Port I/O in OSTD:
+    // 1. CMOS      (0x70 ~ 0x72)
+    // 2. Serial    (0x3F8 ~ 0x400)
+    // 3. PIC       (0x20 ~ 0x22, 0xA0 ~ 0xA2)
+    // 4. PIT       (0x40 ~ 0x44)
+    //
+    // These regions are used in static variables, and will never be dropped.
+
+    builder.remove(0x70..0x72);
+    builder.remove(0x3F8..0x400);
+    builder.remove(0x20..0x22);
+    builder.remove(0xA0..0xA2);
+    builder.remove(0x40..0x44);
+
+    builder
 }
