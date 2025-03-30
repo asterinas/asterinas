@@ -10,16 +10,19 @@
 mod io_mem;
 mod io_port;
 
-pub(crate) use self::io_mem::IoMemAllocatorBuilder;
 pub use self::{io_mem::IoMem, io_port::IoPort};
+pub(crate) use self::{io_mem::IoMemAllocatorBuilder, io_port::IoPortAllocatorBuilder};
 
 /// Initializes the static allocator based on builder.
 ///
 /// # Safety
 ///
-/// User must ensure all the memory I/O regions that belong to the system device have been removed by calling the
-/// `remove` function.
-pub(crate) unsafe fn init(builder: IoMemAllocatorBuilder) {
-    self::io_mem::init(builder);
-    // TODO: IoPort initialization
+/// User must ensure all the memory and port I/O regions that belong to the system device
+/// have been removed by calling the corresponding `remove` function.
+pub(crate) unsafe fn init(
+    io_mem_builder: IoMemAllocatorBuilder,
+    io_port_builder: IoPortAllocatorBuilder,
+) {
+    self::io_mem::init(io_mem_builder);
+    self::io_port::init(io_port_builder);
 }

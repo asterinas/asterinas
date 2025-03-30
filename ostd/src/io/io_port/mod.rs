@@ -2,9 +2,14 @@
 
 //! I/O port and its allocator that allocates port I/O (PIO) to device drivers.
 
-use core::marker::PhantomData;
-
 use crate::arch::device::io_port::{IoPortReadAccess, IoPortWriteAccess, PortRead, PortWrite};
+mod allocator;
+
+use core::{marker::PhantomData, mem::size_of};
+
+pub(super) use self::allocator::init;
+pub(crate) use self::allocator::IoPortAllocatorBuilder;
+use crate::{prelude::*, Error};
 
 /// An I/O port, representing a specific address in the I/O address of x86.
 ///
@@ -25,6 +30,15 @@ pub struct IoPort<T, A> {
 }
 
 impl<T, A> IoPort<T, A> {
+    /// Acquires an `IoPort` instance for the given range.
+    pub fn acquire(port: u16) -> Result<IoPort<T, A>> {
+        allocator::IO_PORT_ALLOCATOR
+            .get()
+            .unwrap()
+            .acquire(port)
+            .ok_or(Error::AccessDenied)
+    }
+
     /// Create an I/O port.
     ///
     /// # Safety
@@ -53,5 +67,17 @@ impl<T: PortWrite, A: IoPortWriteAccess> IoPort<T, A> {
     #[inline]
     pub fn write(&self, value: T) {
         unsafe { PortWrite::write_to_port(self.port, value) }
+    }
+}
+
+impl<T, A> Drop for IoPort<T, A> {
+    fn drop(&mut self) {
+        // SAFETY: The caller have ownership of the PIO region.
+        unsafe {
+            allocator::IO_PORT_ALLOCATOR
+                .get()
+                .unwrap()
+                .recycle(self.port..(self.port + size_of::<T>() as u16));
+        }
     }
 }
