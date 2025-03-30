@@ -5,20 +5,20 @@
 use super::device::io_port::{IoPort, ReadWriteAccess, WriteOnlyAccess};
 use crate::{bus::pci::PciDeviceLocation, prelude::*};
 
-static PCI_ADDRESS_PORT: IoPort<u32, WriteOnlyAccess> = unsafe { IoPort::new(0x0CF8) };
-static PCI_DATA_PORT: IoPort<u32, ReadWriteAccess> = unsafe { IoPort::new(0x0CFC) };
+static PCI_ADDRESS_PORT: IoPort<WriteOnlyAccess> = unsafe { IoPort::new::<u32>(0x0CF8) };
+static PCI_DATA_PORT: IoPort<ReadWriteAccess> = unsafe { IoPort::new::<u32>(0x0CFC) };
 
 const BIT32_ALIGN_MASK: u32 = 0xFFFC;
 
 pub(crate) fn write32(location: &PciDeviceLocation, offset: u32, value: u32) -> Result<()> {
-    PCI_ADDRESS_PORT.write(encode_as_port(location) | (offset & BIT32_ALIGN_MASK));
-    PCI_DATA_PORT.write(value.to_le());
+    PCI_ADDRESS_PORT.write_no_offset(encode_as_port(location) | (offset & BIT32_ALIGN_MASK))?;
+    PCI_DATA_PORT.write_no_offset(value.to_le())?;
     Ok(())
 }
 
 pub(crate) fn read32(location: &PciDeviceLocation, offset: u32) -> Result<u32> {
-    PCI_ADDRESS_PORT.write(encode_as_port(location) | (offset & BIT32_ALIGN_MASK));
-    Ok(PCI_DATA_PORT.read().to_le())
+    PCI_ADDRESS_PORT.write_no_offset(encode_as_port(location) | (offset & BIT32_ALIGN_MASK))?;
+    Ok(PCI_DATA_PORT.read_no_offset::<u32>()?.to_le())
 }
 
 pub(crate) fn has_pci_bus() -> bool {

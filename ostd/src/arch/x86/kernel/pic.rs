@@ -11,10 +11,10 @@ use crate::{
     trap::IrqLine,
 };
 
-static MASTER_CMD: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x20) };
-static MASTER_DATA: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x21) };
-static SLAVE_CMD: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0xA0) };
-static SLAVE_DATA: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0xA1) };
+static MASTER_CMD: IoPort<WriteOnlyAccess> = unsafe { IoPort::new::<u8>(0x20) };
+static MASTER_DATA: IoPort<WriteOnlyAccess> = unsafe { IoPort::new::<u8>(0x21) };
+static SLAVE_CMD: IoPort<WriteOnlyAccess> = unsafe { IoPort::new::<u8>(0xA0) };
+static SLAVE_DATA: IoPort<WriteOnlyAccess> = unsafe { IoPort::new::<u8>(0xA1) };
 
 const IRQ_OFFSET: u8 = 0x20;
 
@@ -85,29 +85,29 @@ pub fn disable_temp() {
 #[inline(always)]
 pub fn set_mask(master_mask: u8, slave_mask: u8) {
     // Start initialization
-    MASTER_CMD.write(0x11);
-    SLAVE_CMD.write(0x11);
+    MASTER_CMD.write_no_offset::<u8>(0x11).unwrap();
+    SLAVE_CMD.write_no_offset::<u8>(0x11).unwrap();
 
     // Set offsets
     // map master PIC vector 0x00~0x07 to 0x20~0x27 IRQ number
-    MASTER_DATA.write(IRQ_OFFSET);
+    MASTER_DATA.write_no_offset::<u8>(IRQ_OFFSET).unwrap();
     // map slave PIC vector 0x00~0x07 to 0x28~0x2f IRQ number
-    SLAVE_DATA.write(IRQ_OFFSET + 0x08);
+    SLAVE_DATA.write_no_offset::<u8>(IRQ_OFFSET + 0x08).unwrap();
 
     // Set up cascade, there is slave at IRQ2
-    MASTER_DATA.write(4);
-    SLAVE_DATA.write(2);
+    MASTER_DATA.write_no_offset::<u8>(4).unwrap();
+    SLAVE_DATA.write_no_offset::<u8>(2).unwrap();
 
     // Set up interrupt mode (1 is 8086/88 mode, 2 is auto EOI)
-    MASTER_DATA.write(1);
-    SLAVE_DATA.write(1);
+    MASTER_DATA.write_no_offset::<u8>(1).unwrap();
+    SLAVE_DATA.write_no_offset::<u8>(1).unwrap();
 
     // mask interrupts
-    MASTER_DATA.write(master_mask);
-    SLAVE_DATA.write(slave_mask);
+    MASTER_DATA.write_no_offset::<u8>(master_mask).unwrap();
+    SLAVE_DATA.write_no_offset::<u8>(slave_mask).unwrap();
 }
 
 #[inline(always)]
 pub(crate) fn ack() {
-    MASTER_CMD.write(0x20);
+    MASTER_CMD.write_no_offset::<u8>(0x20).unwrap();
 }

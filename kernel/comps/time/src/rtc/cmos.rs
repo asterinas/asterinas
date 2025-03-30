@@ -4,19 +4,19 @@ use core::sync::atomic::{AtomicU8, Ordering::Relaxed};
 
 use ostd::arch::x86::device::cmos::{century_register, CMOS_ADDRESS, CMOS_DATA};
 
-use crate::SystemTime;
 use super::Driver;
+use crate::SystemTime;
 
 static CENTURY_REGISTER: AtomicU8 = AtomicU8::new(0);
 
 fn get_cmos(reg: u8) -> u8 {
-    CMOS_ADDRESS.write(reg);
-    CMOS_DATA.read()
+    CMOS_ADDRESS.write_no_offset(reg).unwrap();
+    CMOS_DATA.read_no_offset().unwrap()
 }
 
 fn is_updating() -> bool {
-    CMOS_ADDRESS.write(0x0A);
-    CMOS_DATA.read() & 0x80 != 0
+    CMOS_ADDRESS.write_no_offset(0x0Au8).unwrap();
+    CMOS_DATA.read_no_offset::<u8>().unwrap() & 0x80 != 0
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,7 +95,9 @@ impl CmosData {
 
     pub fn read_rtc(century_register: u8) -> Self {
         let mut now = Self::from_rtc_raw(century_register);
-        while let new = Self::from_rtc_raw(century_register) && now != new {
+        while let new = Self::from_rtc_raw(century_register)
+            && now != new
+        {
             now = new;
         }
 
