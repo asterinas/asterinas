@@ -630,10 +630,7 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
 
             // Unmap the current page and return it.
             let old = cur_entry.replace(Child::None);
-
-            self.0.move_forward();
-
-            return match old {
+            let item = match old {
                 Child::Frame(page, prop) => PageTableItem::Mapped {
                     va: self.0.va,
                     page,
@@ -650,6 +647,10 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
                 }
                 Child::PageTable(_) | Child::None => unreachable!(),
             };
+
+            self.0.move_forward();
+
+            return item;
         }
 
         // If the loop exits, we did not find any mapped pages in the range.
