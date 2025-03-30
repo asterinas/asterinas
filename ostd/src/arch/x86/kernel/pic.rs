@@ -6,10 +6,7 @@ use core::sync::atomic::{AtomicBool, AtomicU8, Ordering::Relaxed};
 
 use log::info;
 
-use crate::{
-    arch::x86::device::io_port::{IoPort, WriteOnlyAccess},
-    trap::IrqLine,
-};
+use crate::{arch::x86::device::io_port::WriteOnlyAccess, io::IoPort, trap::IrqLine};
 
 static MASTER_CMD: IoPort<WriteOnlyAccess> = unsafe { IoPort::new::<u8>(0x20) };
 static MASTER_DATA: IoPort<WriteOnlyAccess> = unsafe { IoPort::new::<u8>(0x21) };

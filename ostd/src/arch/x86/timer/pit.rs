@@ -10,11 +10,8 @@
 //!
 
 use crate::{
-    arch::{
-        kernel::IO_APIC,
-        timer::TIMER_FREQ,
-        x86::device::io_port::{IoPort, WriteOnlyAccess},
-    },
+    arch::{kernel::IO_APIC, timer::TIMER_FREQ, x86::device::io_port::WriteOnlyAccess},
+    io::IoPort,
     trap::IrqLine,
 };
 

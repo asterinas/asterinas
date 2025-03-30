@@ -4,8 +4,10 @@
 
 #![expect(dead_code)]
 
-use crate::arch::x86::device::io_port::{IoPort, ReadWriteAccess, WriteOnlyAccess};
-
+use crate::{
+    arch::x86::device::io_port::{ReadWriteAccess, WriteOnlyAccess},
+    io::IoPort,
+};
 /// A serial port.
 ///
 /// Serial ports are a legacy communications port common on IBM-PC compatible computers.

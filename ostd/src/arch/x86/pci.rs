@@ -2,8 +2,8 @@
 
 //! PCI bus access
 
-use super::device::io_port::{IoPort, ReadWriteAccess, WriteOnlyAccess};
-use crate::{bus::pci::PciDeviceLocation, prelude::*};
+use super::device::io_port::{ReadWriteAccess, WriteOnlyAccess};
+use crate::{bus::pci::PciDeviceLocation, io::IoPort, prelude::*};
 
 static PCI_ADDRESS_PORT: IoPort<WriteOnlyAccess> = unsafe { IoPort::new::<u32>(0x0CF8) };
 static PCI_DATA_PORT: IoPort<ReadWriteAccess> = unsafe { IoPort::new::<u32>(0x0CFC) };
