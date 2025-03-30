@@ -18,7 +18,7 @@ pub mod task;
 pub mod timer;
 pub mod trap;
 
-use allocator::construct_io_mem_allocator_builder;
+use allocator::{construct_io_mem_allocator_builder, construct_io_port_allocator_builder};
 use cfg_if::cfg_if;
 use spin::Once;
 use x86::cpuid::{CpuId, FeatureInfo};
@@ -81,6 +81,7 @@ pub(crate) unsafe fn late_init_on_bsp() {
     kernel::acpi::init();
 
     let io_mem_builder = construct_io_mem_allocator_builder();
+    let io_port_builder = construct_io_port_allocator_builder();
 
     match kernel::apic::init(&io_mem_builder) {
         Ok(_) => {
@@ -109,9 +110,9 @@ pub(crate) unsafe fn late_init_on_bsp() {
     // Some driver like serial may use PIC
     kernel::pic::init();
 
-    // SAFETY: All the system device memory I/Os have been removed from the builder.
+    // SAFETY: All the system device memory and port I/Os have been removed from the builder.
     unsafe {
-        crate::io::init(io_mem_builder);
+        crate::io::init(io_mem_builder, io_port_builder);
     }
 }
 
