@@ -407,7 +407,7 @@ impl RqLoad {
     }
 }
 
-// #[cfg(ktest)]
+#[cfg(ktest)]
 mod tests {
     use ostd::prelude::ktest;
     use rand::{RngCore, SeedableRng};
