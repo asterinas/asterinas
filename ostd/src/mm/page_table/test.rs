@@ -7,7 +7,7 @@ use crate::{
     mm::{
         kspace::LINEAR_MAPPING_BASE_VADDR,
         page_prop::{CachePolicy, PageFlags},
-        FrameAllocOptions, MAX_USERSPACE_VADDR,
+        Frame, FrameAllocOptions, MAX_USERSPACE_VADDR,
     },
     prelude::*,
 };
@@ -25,6 +25,54 @@ fn test_range_check() {
     assert!(pt.cursor_mut(&bad_va2).is_err());
 }
 
+#[track_caller]
+fn assert_item_is_tracked_frame(
+    item: PageTableItem,
+    va: Vaddr,
+    frame: Frame<()>,
+    prop: PageProperty,
+) {
+    let PageTableItem::Mapped {
+        va: item_va,
+        page: item_frame,
+        prop: item_prop,
+    } = item
+    else {
+        panic!("Expected `PageTableItem::Mapped`, got {:#x?}", item);
+    };
+    assert_eq!(item_va, va);
+    assert_eq!(item_frame.start_paddr(), frame.start_paddr());
+    assert_eq!(item_prop.flags, prop.flags);
+    assert_eq!(item_prop.cache, prop.cache);
+}
+
+#[track_caller]
+fn assert_item_is_untracked_map(
+    item: PageTableItem,
+    va: Vaddr,
+    pa: Paddr,
+    len: usize,
+    prop: PageProperty,
+) {
+    let PageTableItem::MappedUntracked {
+        va: item_va,
+        pa: item_pa,
+        prop: item_prop,
+        len: item_len,
+    } = item
+    else {
+        panic!(
+            "Expected `PageTableItem::MappedUntracked`, got {:#x?}",
+            item
+        );
+    };
+    assert_eq!(item_va, va);
+    assert_eq!(item_pa, pa);
+    assert_eq!(item_prop.flags, prop.flags);
+    assert_eq!(item_prop.cache, prop.cache);
+    assert_eq!(item_len, len);
+}
+
 #[ktest]
 fn test_tracked_map_unmap() {
     let pt = PageTable::<UserMode>::empty();
@@ -32,13 +80,15 @@ fn test_tracked_map_unmap() {
     let from = PAGE_SIZE..PAGE_SIZE * 2;
     let page = FrameAllocOptions::new().alloc_frame().unwrap();
     let start_paddr = page.start_paddr();
-    let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
-    unsafe { pt.cursor_mut(&from).unwrap().map(page.into(), prop) };
+    let map_prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
+    unsafe {
+        pt.cursor_mut(&from)
+            .unwrap()
+            .map(page.clone().into(), map_prop)
+    };
     assert_eq!(pt.query(from.start + 10).unwrap().0, start_paddr + 10);
-    assert!(matches!(
-        unsafe { pt.cursor_mut(&from).unwrap().take_next(from.len()) },
-        PageTableItem::Mapped { .. }
-    ));
+    let unmapped = unsafe { pt.cursor_mut(&from).unwrap().take_next(from.len()) };
+    assert_item_is_tracked_frame(unmapped, from.start, page, map_prop);
     assert!(pt.query(from.start + 10).is_none());
 }
 
@@ -61,21 +111,26 @@ fn test_untracked_map_unmap() {
     }
 
     let unmap = UNTRACKED_OFFSET + PAGE_SIZE * 13456..UNTRACKED_OFFSET + PAGE_SIZE * 15678;
-    assert!(matches!(
-        unsafe { pt.cursor_mut(&unmap).unwrap().take_next(unmap.len()) },
-        PageTableItem::MappedUntracked { .. }
-    ));
+
+    let mut cursor = pt.cursor_mut(&unmap).unwrap();
+    assert_eq!(cursor.virt_addr(), unmap.start);
+    let unmapped = unsafe { cursor.take_next(unmap.len()) };
+    assert_item_is_untracked_map(
+        unmapped,
+        unmap.start,
+        to.start + PAGE_SIZE * (13456 - from_ppn.start),
+        PAGE_SIZE,
+        prop,
+    );
+
     for i in 0..100 {
         let offset = i * (PAGE_SIZE + 10);
-        if unmap.start <= from.start + offset && from.start + offset < unmap.end {
+        if unmap.start <= from.start + offset && from.start + offset < unmap.start + PAGE_SIZE {
             assert!(pt.query(from.start + offset).is_none());
         } else {
             assert_eq!(pt.query(from.start + offset).unwrap().0, to.start + offset);
         }
     }
-
-    // Since untracked mappings cannot be dropped, we just leak it here.
-    let _ = ManuallyDrop::new(pt);
 }
 
 #[ktest]
@@ -88,15 +143,21 @@ fn test_user_copy_on_write() {
     let from = PAGE_SIZE..PAGE_SIZE * 2;
     let page = FrameAllocOptions::new().alloc_frame().unwrap();
     let start_paddr = page.start_paddr();
-    let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
-    unsafe { pt.cursor_mut(&from).unwrap().map(page.clone().into(), prop) };
+    let map_prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
+    unsafe {
+        pt.cursor_mut(&from)
+            .unwrap()
+            .map(page.clone().into(), map_prop)
+    };
     assert_eq!(pt.query(from.start + 10).unwrap().0, start_paddr + 10);
-    assert!(matches!(
-        unsafe { pt.cursor_mut(&from).unwrap().take_next(from.len()) },
-        PageTableItem::Mapped { .. }
-    ));
+    let unmapped = unsafe { pt.cursor_mut(&from).unwrap().take_next(from.len()) };
+    assert_item_is_tracked_frame(unmapped, from.start, page.clone(), map_prop);
     assert!(pt.query(from.start + 10).is_none());
-    unsafe { pt.cursor_mut(&from).unwrap().map(page.clone().into(), prop) };
+    unsafe {
+        pt.cursor_mut(&from)
+            .unwrap()
+            .map(page.clone().into(), map_prop)
+    };
     assert_eq!(pt.query(from.start + 10).unwrap().0, start_paddr + 10);
 
     let child_pt = {
@@ -109,10 +170,13 @@ fn test_user_copy_on_write() {
     };
     assert_eq!(pt.query(from.start + 10).unwrap().0, start_paddr + 10);
     assert_eq!(child_pt.query(from.start + 10).unwrap().0, start_paddr + 10);
-    assert!(matches!(
-        unsafe { pt.cursor_mut(&from).unwrap().take_next(from.len()) },
-        PageTableItem::Mapped { .. }
-    ));
+    let unmapped = unsafe { pt.cursor_mut(&from).unwrap().take_next(from.len()) };
+    assert_item_is_tracked_frame(
+        unmapped,
+        from.start,
+        page.clone(),
+        PageProperty::new(PageFlags::R, CachePolicy::Writeback),
+    );
     assert!(pt.query(from.start + 10).is_none());
     assert_eq!(child_pt.query(from.start + 10).unwrap().0, start_paddr + 10);
 
@@ -128,16 +192,20 @@ fn test_user_copy_on_write() {
     assert_eq!(child_pt.query(from.start + 10).unwrap().0, start_paddr + 10);
     drop(pt);
     assert_eq!(child_pt.query(from.start + 10).unwrap().0, start_paddr + 10);
-    assert!(matches!(
-        unsafe { child_pt.cursor_mut(&from).unwrap().take_next(from.len()) },
-        PageTableItem::Mapped { .. }
-    ));
+
+    let unmapped = unsafe { child_pt.cursor_mut(&from).unwrap().take_next(from.len()) };
+    assert_item_is_tracked_frame(
+        unmapped,
+        from.start,
+        page.clone(),
+        PageProperty::new(PageFlags::R, CachePolicy::Writeback),
+    );
     assert!(child_pt.query(from.start + 10).is_none());
     unsafe {
         sibling_pt
             .cursor_mut(&from)
             .unwrap()
-            .map(page.clone().into(), prop)
+            .map(page.clone().into(), map_prop)
     };
     assert_eq!(
         sibling_pt.query(from.start + 10).unwrap().0,
