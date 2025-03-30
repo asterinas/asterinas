@@ -32,13 +32,18 @@ fn test_tracked_map_unmap() {
     let from = PAGE_SIZE..PAGE_SIZE * 2;
     let page = FrameAllocOptions::new().alloc_frame().unwrap();
     let start_paddr = page.start_paddr();
-    let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
-    unsafe { pt.cursor_mut(&from).unwrap().map(page.into(), prop) };
+    let map_prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
+    unsafe { pt.cursor_mut(&from).unwrap().map(page.into(), map_prop) };
     assert_eq!(pt.query(from.start + 10).unwrap().0, start_paddr + 10);
-    assert!(matches!(
-        unsafe { pt.cursor_mut(&from).unwrap().take_next(from.len()) },
-        PageTableItem::Mapped { .. }
-    ));
+    {
+        let unmapped = unsafe { pt.cursor_mut(&from).unwrap().take_next(from.len()) };
+        let PageTableItem::Mapped { va, page, prop } = unmapped else {
+            panic!("Expected Mapped, got {:#x?}", unmapped);
+        };
+        assert_eq!(va, from.start);
+        assert_eq!(page.start_paddr(), start_paddr);
+        assert_eq!(prop, map_prop);
+    }
     assert!(pt.query(from.start + 10).is_none());
 }
 
@@ -61,21 +66,27 @@ fn test_untracked_map_unmap() {
     }
 
     let unmap = UNTRACKED_OFFSET + PAGE_SIZE * 13456..UNTRACKED_OFFSET + PAGE_SIZE * 15678;
-    assert!(matches!(
-        unsafe { pt.cursor_mut(&unmap).unwrap().take_next(unmap.len()) },
-        PageTableItem::MappedUntracked { .. }
-    ));
+
+    let mut cursor = pt.cursor_mut(&unmap).unwrap();
+    assert_eq!(cursor.virt_addr(), unmap.start);
+    let unmapped = unsafe { cursor.take_next(unmap.len()) };
+    let PageTableItem::MappedUntracked { va, pa, len, prop } = unmapped else {
+        panic!("Expected MappedUntracked, got {:#x?}", unmapped);
+    };
+    assert_eq!(va, unmap.start);
+    assert_eq!(pa, to.start + PAGE_SIZE * (13456 - from_ppn.start));
+    assert!(len <= unmap.len());
+    assert_eq!(prop.flags, PageFlags::RW);
+    assert_eq!(prop.cache, CachePolicy::Writeback);
+
     for i in 0..100 {
         let offset = i * (PAGE_SIZE + 10);
-        if unmap.start <= from.start + offset && from.start + offset < unmap.end {
+        if unmap.start <= from.start + offset && from.start + offset < unmap.start + len {
             assert!(pt.query(from.start + offset).is_none());
         } else {
             assert_eq!(pt.query(from.start + offset).unwrap().0, to.start + offset);
         }
     }
-
-    // Since untracked mappings cannot be dropped, we just leak it here.
-    let _ = ManuallyDrop::new(pt);
 }
 
 #[ktest]
@@ -88,15 +99,28 @@ fn test_user_copy_on_write() {
     let from = PAGE_SIZE..PAGE_SIZE * 2;
     let page = FrameAllocOptions::new().alloc_frame().unwrap();
     let start_paddr = page.start_paddr();
-    let prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
-    unsafe { pt.cursor_mut(&from).unwrap().map(page.clone().into(), prop) };
+    let map_prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
+    unsafe {
+        pt.cursor_mut(&from)
+            .unwrap()
+            .map(page.clone().into(), map_prop)
+    };
     assert_eq!(pt.query(from.start + 10).unwrap().0, start_paddr + 10);
-    assert!(matches!(
-        unsafe { pt.cursor_mut(&from).unwrap().take_next(from.len()) },
-        PageTableItem::Mapped { .. }
-    ));
+    {
+        let unmapped = unsafe { pt.cursor_mut(&from).unwrap().take_next(from.len()) };
+        let PageTableItem::Mapped { va, page, prop } = unmapped else {
+            panic!("Expected Mapped, got {:#x?}", unmapped);
+        };
+        assert_eq!(va, from.start);
+        assert_eq!(page.start_paddr(), start_paddr);
+        assert_eq!(prop, map_prop);
+    }
     assert!(pt.query(from.start + 10).is_none());
-    unsafe { pt.cursor_mut(&from).unwrap().map(page.clone().into(), prop) };
+    unsafe {
+        pt.cursor_mut(&from)
+            .unwrap()
+            .map(page.clone().into(), map_prop)
+    };
     assert_eq!(pt.query(from.start + 10).unwrap().0, start_paddr + 10);
 
     let child_pt = {
@@ -109,10 +133,16 @@ fn test_user_copy_on_write() {
     };
     assert_eq!(pt.query(from.start + 10).unwrap().0, start_paddr + 10);
     assert_eq!(child_pt.query(from.start + 10).unwrap().0, start_paddr + 10);
-    assert!(matches!(
-        unsafe { pt.cursor_mut(&from).unwrap().take_next(from.len()) },
-        PageTableItem::Mapped { .. }
-    ));
+    {
+        let unmapped = unsafe { pt.cursor_mut(&from).unwrap().take_next(from.len()) };
+        let PageTableItem::Mapped { va, page, prop } = unmapped else {
+            panic!("Expected Mapped, got {:#x?}", unmapped);
+        };
+        assert_eq!(va, from.start);
+        assert_eq!(page.start_paddr(), start_paddr);
+        assert_eq!(prop.flags, map_prop.flags - PageFlags::W);
+        assert_eq!(prop.cache, map_prop.cache);
+    }
     assert!(pt.query(from.start + 10).is_none());
     assert_eq!(child_pt.query(from.start + 10).unwrap().0, start_paddr + 10);
 
@@ -128,16 +158,22 @@ fn test_user_copy_on_write() {
     assert_eq!(child_pt.query(from.start + 10).unwrap().0, start_paddr + 10);
     drop(pt);
     assert_eq!(child_pt.query(from.start + 10).unwrap().0, start_paddr + 10);
-    assert!(matches!(
-        unsafe { child_pt.cursor_mut(&from).unwrap().take_next(from.len()) },
-        PageTableItem::Mapped { .. }
-    ));
+    {
+        let unmapped = unsafe { child_pt.cursor_mut(&from).unwrap().take_next(from.len()) };
+        let PageTableItem::Mapped { va, page, prop } = unmapped else {
+            panic!("Expected Mapped, got {:#x?}", unmapped);
+        };
+        assert_eq!(va, from.start);
+        assert_eq!(page.start_paddr(), start_paddr);
+        assert_eq!(prop.flags, map_prop.flags - PageFlags::W);
+        assert_eq!(prop.cache, map_prop.cache);
+    }
     assert!(child_pt.query(from.start + 10).is_none());
     unsafe {
         sibling_pt
             .cursor_mut(&from)
             .unwrap()
-            .map(page.clone().into(), prop)
+            .map(page.clone().into(), map_prop)
     };
     assert_eq!(
         sibling_pt.query(from.start + 10).unwrap().0,
