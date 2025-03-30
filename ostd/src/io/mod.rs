@@ -8,9 +8,10 @@
 //!  - `IoPort` for port I/O (PIO).
 
 mod io_mem;
+mod io_port;
 
-pub use self::io_mem::IoMem;
 pub(crate) use self::io_mem::IoMemAllocatorBuilder;
+pub use self::{io_mem::IoMem, io_port::IoPort};
 
 /// Initializes the static allocator based on builder.
 ///
