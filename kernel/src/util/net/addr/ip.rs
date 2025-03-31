@@ -38,6 +38,7 @@ impl From<(Ipv4Address, PortNum)> for CSocketAddrInet {
 
 impl From<CSocketAddrInet> for (Ipv4Address, PortNum) {
     fn from(value: CSocketAddrInet) -> Self {
+        debug_assert_eq!(value.sin_family, CSocketAddrFamily::AF_INET as u16);
         (value.sin_addr.into(), value.sin_port.into())
     }
 }
