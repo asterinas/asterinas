@@ -4,7 +4,7 @@ use alloc::sync::Arc;
 
 use smoltcp::wire::Ipv4Address;
 
-use super::{port::BindPortConfig, BoundPort};
+use super::{port::BindPortConfig, BoundPort, InterfaceFlags, InterfaceType};
 use crate::{errors::BindError, ext::Ext};
 
 /// A network interface.
@@ -16,6 +16,9 @@ use crate::{errors::BindError, ext::Ext};
 pub trait Iface<E>: internal::IfaceInternal<E> + Send + Sync {
     /// Transmits or receives packets queued in the iface, and updates socket status accordingly.
     fn poll(&self);
+
+    /// Returns the maximum transmission unit.
+    fn mtu(&self) -> usize;
 }
 
 impl<E: Ext> dyn Iface<E> {
@@ -38,6 +41,11 @@ impl<E: Ext> dyn Iface<E> {
         common.bind(self.clone(), config)
     }
 
+    /// Returns the interface index.
+    pub fn index(&self) -> u32 {
+        self.common().index()
+    }
+
     /// Gets the name of the iface.
     ///
     /// In Linux, the name is usually the driver name followed by a unit number.
@@ -45,11 +53,29 @@ impl<E: Ext> dyn Iface<E> {
         self.common().name()
     }
 
+    /// Returns the interface type.
+    pub fn type_(&self) -> InterfaceType {
+        self.common().type_()
+    }
+
+    /// Returns the interface flags.
+    pub fn flags(&self) -> InterfaceFlags {
+        self.common().flags()
+    }
+
     /// Gets the IPv4 address of the iface, if any.
     ///
     /// FIXME: One iface may have multiple IPv4 addresses.
     pub fn ipv4_addr(&self) -> Option<Ipv4Address> {
         self.common().ipv4_addr()
+    }
+
+    /// Retrieves the prefix length of the interface's IPv4 address.
+    ///
+    /// Both [`Self::ipv4_addr`] and this method will either return `Some(_)`
+    /// or both will return `None`.
+    pub fn prefix_len(&self) -> Option<u8> {
+        self.common().prefix_len()
     }
 
     /// Returns a reference to the associated [`ScheduleNextPoll`].
