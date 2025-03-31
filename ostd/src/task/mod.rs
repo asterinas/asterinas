@@ -15,6 +15,7 @@ use core::{
     cell::{Cell, SyncUnsafeCell},
     ops::Deref,
     ptr::NonNull,
+    sync::atomic::AtomicBool,
 };
 
 use kernel_stack::KernelStack;
@@ -53,6 +54,12 @@ pub struct Task {
     ctx: SyncUnsafeCell<TaskContext>,
     /// kernel stack, note that the top is SyscallFrame/TrapFrame
     kstack: KernelStack,
+
+    /// If we have switched this task to a CPU.
+    ///
+    /// This is to enforce not context switching to an already running task.
+    /// See [`processor::switch_to_task`] for more details.
+    switched_to_cpu: AtomicBool,
 
     schedule_info: TaskScheduleInfo,
 }
@@ -203,8 +210,8 @@ impl TaskOptions {
         /// all task will entering this function
         /// this function is mean to executing the task_fn in Task
         extern "C" fn kernel_task_entry() -> ! {
-            // See `switch_to_task` for why we need this.
-            crate::arch::irq::enable_local();
+            // SAFETY: This is called only once when we are switched to a CPU.
+            unsafe { processor::after_switching_to() };
 
             let current_task = Task::current()
                 .expect("no current task, it should have current task in kernel task entry");
@@ -256,6 +263,7 @@ impl TaskOptions {
             schedule_info: TaskScheduleInfo {
                 cpu: AtomicCpuId::default(),
             },
+            switched_to_cpu: AtomicBool::new(false),
         };
 
         Ok(new_task)
