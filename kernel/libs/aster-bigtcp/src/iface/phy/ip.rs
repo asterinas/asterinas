@@ -4,7 +4,7 @@ use alloc::{string::String, sync::Arc};
 
 use smoltcp::{
     iface::Config,
-    phy::TxToken,
+    phy::{Device, TxToken},
     wire::{self, Ipv4Cidr, Ipv4Packet},
 };
 
@@ -12,8 +12,10 @@ use crate::{
     device::WithDevice,
     ext::Ext,
     iface::{
-        common::IfaceCommon, iface::internal::IfaceInternal, time::get_network_timestamp, Iface,
-        ScheduleNextPoll,
+        common::{IfaceCommon, InterfaceFlags, InterfaceType},
+        iface::internal::IfaceInternal,
+        time::get_network_timestamp,
+        Iface, ScheduleNextPoll,
     },
 };
 
@@ -28,6 +30,8 @@ impl<D: WithDevice, E: Ext> IpIface<D, E> {
         ip_cidr: Ipv4Cidr,
         name: String,
         sched_poll: E::ScheduleNextPoll,
+        type_: InterfaceType,
+        flags: InterfaceFlags,
     ) -> Arc<Self> {
         let interface = driver.with(|device| {
             let config = Config::new(smoltcp::wire::HardwareAddress::Ip);
@@ -41,7 +45,7 @@ impl<D: WithDevice, E: Ext> IpIface<D, E> {
             interface
         });
 
-        let common = IfaceCommon::new(name, interface, sched_poll);
+        let common = IfaceCommon::new(name, type_, flags, interface, sched_poll);
 
         Arc::new(Self { driver, common })
     }
@@ -73,5 +77,10 @@ impl<D: WithDevice + 'static, E: Ext> Iface<E> for IpIface<D, E> {
             );
             self.common.sched_poll().schedule_next_poll(next_poll);
         });
+    }
+
+    fn mtu(&self) -> usize {
+        self.driver
+            .with(|device| device.capabilities().max_transmission_unit)
     }
 }
