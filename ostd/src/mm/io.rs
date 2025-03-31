@@ -275,12 +275,13 @@ impl_vm_io_once_pointer!(&mut T, "(**self)");
 impl_vm_io_once_pointer!(Box<T>, "(**self)");
 impl_vm_io_once_pointer!(Arc<T>, "(**self)");
 
-/// A marker structure used for [`VmReader`] and [`VmWriter`],
+/// A marker type used for [`VmReader`] and [`VmWriter`],
 /// representing whether reads or writes on the underlying memory region are fallible.
-pub struct Fallible;
-/// A marker structure used for [`VmReader`] and [`VmWriter`],
+pub enum Fallible {}
+
+/// A marker type used for [`VmReader`] and [`VmWriter`],
 /// representing whether reads or writes on the underlying memory region are infallible.
-pub struct Infallible;
+pub enum Infallible {}
 
 /// Copies `len` bytes from `src` to `dst`.
 ///
@@ -391,6 +392,20 @@ pub struct VmReader<'a, Fallibility = Fallible> {
     cursor: *const u8,
     end: *const u8,
     phantom: PhantomData<(&'a [u8], Fallibility)>,
+}
+
+// `Clone` can be implemented for `VmReader`
+// because it either points to untyped memory or represents immutable references.
+// Note that we cannot implement `Clone` for `VmWriter`
+// because it can represent mutable references, which must remain exclusive.
+impl<Fallibility> Clone for VmReader<'_, Fallibility> {
+    fn clone(&self) -> Self {
+        Self {
+            cursor: self.cursor,
+            end: self.end,
+            phantom: PhantomData,
+        }
+    }
 }
 
 macro_rules! impl_read_fallible {
