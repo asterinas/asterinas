@@ -1,4 +1,4 @@
-name: Test x86-64
+name: "Test x86-64  "
 
 on:
   workflow_dispatch:
