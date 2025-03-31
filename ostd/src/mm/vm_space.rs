@@ -462,6 +462,17 @@ cpu_local_cell! {
     static ACTIVATED_VM_SPACE: *const VmSpace = core::ptr::null();
 }
 
+#[cfg(ktest)]
+pub(crate) fn get_activated_vm_space() -> Option<*const VmSpace> {
+    let ptr = ACTIVATED_VM_SPACE.load();
+    if ptr.is_null() {
+        None
+    } else {
+        // SAFETY: The pointer is only set to a valid `Arc` pointer.
+        Some(ptr)
+    }
+}
+
 /// The result of a query over the VM space.
 #[derive(Debug)]
 pub enum VmItem {
@@ -481,6 +492,30 @@ pub enum VmItem {
         /// The property of the slot.
         prop: PageProperty,
     },
+}
+
+impl PartialEq for VmItem {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            // The `len` varies, so we only compare `va`.
+            (VmItem::NotMapped { va: va1, len: _ }, VmItem::NotMapped { va: va2, len: _ }) => {
+                va1 == va2
+            }
+            (
+                VmItem::Mapped {
+                    va: va1,
+                    frame: frame1,
+                    prop: prop1,
+                },
+                VmItem::Mapped {
+                    va: va2,
+                    frame: frame2,
+                    prop: prop2,
+                },
+            ) => va1 == va2 && frame1.start_paddr() == frame2.start_paddr() && prop1 == prop2,
+            _ => false,
+        }
+    }
 }
 
 impl TryFrom<PageTableItem> for VmItem {
