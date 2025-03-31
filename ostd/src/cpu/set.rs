@@ -19,7 +19,7 @@ pub struct CpuSet {
 type InnerPart = u64;
 
 const BITS_PER_PART: usize = core::mem::size_of::<InnerPart>() * 8;
-const NR_PARTS_NO_ALLOC: usize = 2;
+const NR_PARTS_NO_ALLOC: usize = 6;
 
 const fn part_idx(cpu_id: CpuId) -> usize {
     cpu_id.as_usize() / BITS_PER_PART
