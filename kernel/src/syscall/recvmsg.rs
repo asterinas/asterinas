@@ -22,6 +22,12 @@ pub fn sys_recvmsg(
         sockfd, c_user_msghdr, flags
     );
 
+    const MAX_IOVEC_ENTRIES: usize = 1024;
+    let msg_iovlen = c_user_msghdr.msg_iovlen as usize;
+    if msg_iovlen > MAX_IOVEC_ENTRIES {
+        return_errno_with_message!(Errno::EMSGSIZE, "message too long");
+    }
+
     let mut file_table = ctx.thread_local.file_table().borrow_mut();
     let file = get_file_fast!(&mut file_table, sockfd);
     let socket = file.as_socket_or_err()?;
