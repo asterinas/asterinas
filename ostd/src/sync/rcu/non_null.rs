@@ -3,6 +3,7 @@
 //! This module provides a trait and some auxiliary types to help abstract and
 //! work with non-null pointers.
 
+use alloc::sync::Weak;
 use core::{marker::PhantomData, mem::ManuallyDrop, ops::Deref, ptr::NonNull};
 
 use crate::prelude::*;
@@ -200,7 +201,63 @@ unsafe impl<T: Send + Sync + 'static> NonNullPtr for Arc<T> {
     }
 
     fn ref_as_raw(ptr_ref: Self::Ref<'_>) -> NonNull<()> {
-        let raw_ptr = Arc::into_raw(ptr_ref.inner.into()).cast_mut().cast();
+        let raw_ptr = Arc::into_raw(ManuallyDrop::into_inner(ptr_ref.inner))
+            .cast_mut()
+            .cast();
+        NonNull::new(raw_ptr).unwrap()
+    }
+}
+
+/// A type that represents `&'a Weak<T>`.
+#[derive(Debug)]
+pub struct WeakRef<'a, T: Send + Sync + 'static> {
+    inner: ManuallyDrop<Weak<T>>,
+    _marker: PhantomData<&'a Weak<T>>,
+}
+
+impl<T: Send + Sync + 'static> Deref for WeakRef<'_, T> {
+    type Target = Weak<T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+unsafe impl<T: Send + Sync + 'static> NonNullPtr for Weak<T> {
+    type Ref<'a>
+        = WeakRef<'a, T>
+    where
+        Self: 'a;
+
+    fn into_raw(self) -> NonNull<()> {
+        let ptr = Weak::into_raw(self).cast_mut().cast();
+        // SAFETY: The pointer representing an `Weak` can never be NULL.
+        unsafe { NonNull::new_unchecked(ptr) }
+    }
+
+    unsafe fn from_raw(ptr: NonNull<()>) -> Self {
+        let ptr = ptr.as_ptr().cast_const().cast();
+
+        // SAFETY: The safety is upheld by the caller.
+        unsafe { Weak::from_raw(ptr) }
+    }
+
+    unsafe fn raw_as_ref<'a>(raw: NonNull<()>) -> Self::Ref<'a> {
+        // SAFETY: By the safety requirements of `NonNullPtr::raw_as_ref`, the original pointer
+        // outlives the lifetime parameter `'a` and during `'a` no mutable references to it can
+        // exist. Thus, a shared reference to the original pointer can be created.
+        unsafe {
+            WeakRef {
+                inner: ManuallyDrop::new(Weak::from_raw(raw.as_ptr().cast())),
+                _marker: PhantomData,
+            }
+        }
+    }
+
+    fn ref_as_raw(ptr_ref: Self::Ref<'_>) -> NonNull<()> {
+        let raw_ptr = Weak::<T>::into_raw(ManuallyDrop::into_inner(ptr_ref.inner))
+            .cast_mut()
+            .cast();
         NonNull::new(raw_ptr).unwrap()
     }
 }
