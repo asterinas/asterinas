@@ -42,6 +42,7 @@ where
 {
     let mut boot_pt = BOOT_PAGE_TABLE.lock();
 
+    #[cfg(not(ktest))]
     if IS_DISMISSED.load() {
         return Err(());
     }

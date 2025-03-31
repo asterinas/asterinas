@@ -146,4 +146,14 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'a, E, C> {
         let pte = unsafe { node.read_pte(idx) };
         Self { pte, idx, node }
     }
+
+    /// Get the physical address of the entry.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the entry is present.
+    #[cfg(ktest)]
+    pub fn paddr(&self) -> usize {
+        self.pte.paddr()
+    }
 }
