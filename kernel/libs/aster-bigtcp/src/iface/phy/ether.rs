@@ -6,7 +6,7 @@ use aster_softirq::BottomHalfDisabled;
 use ostd::sync::SpinLock;
 use smoltcp::{
     iface::{packet::Packet, Config, Context},
-    phy::{DeviceCapabilities, TxToken},
+    phy::{Device, DeviceCapabilities, TxToken},
     wire::{
         self, ArpOperation, ArpPacket, ArpRepr, EthernetAddress, EthernetFrame, EthernetProtocol,
         EthernetRepr, IpAddress, Ipv4Address, Ipv4AddressExt, Ipv4Cidr, Ipv4Packet,
@@ -17,8 +17,10 @@ use crate::{
     device::{NotifyDevice, WithDevice},
     ext::Ext,
     iface::{
-        common::IfaceCommon, iface::internal::IfaceInternal, time::get_network_timestamp, Iface,
-        ScheduleNextPoll,
+        common::{IfaceCommon, InterfaceType},
+        iface::internal::IfaceInternal,
+        time::get_network_timestamp,
+        Iface, InterfaceFlags, ScheduleNextPoll,
     },
 };
 
@@ -37,6 +39,7 @@ impl<D: WithDevice, E: Ext> EtherIface<D, E> {
         gateway: Ipv4Address,
         name: String,
         sched_poll: E::ScheduleNextPoll,
+        flags: InterfaceFlags,
     ) -> Arc<Self> {
         let interface = driver.with(|device| {
             let config = Config::new(wire::HardwareAddress::Ethernet(ether_addr));
@@ -54,7 +57,7 @@ impl<D: WithDevice, E: Ext> EtherIface<D, E> {
             interface
         });
 
-        let common = IfaceCommon::new(name, interface, sched_poll);
+        let common = IfaceCommon::new(name, InterfaceType::ETHER, flags, interface, sched_poll);
 
         Arc::new(Self {
             driver,
@@ -85,6 +88,11 @@ where
             device.notify_poll_end();
             self.common.sched_poll().schedule_next_poll(next_poll);
         });
+    }
+
+    fn mtu(&self) -> usize {
+        self.driver
+            .with(|device| device.capabilities().max_transmission_unit)
     }
 }
 
