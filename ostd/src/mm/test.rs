@@ -1,0 +1,491 @@
+// SPDX-License-Identifier: MPL-2.0
+
+use alloc::vec;
+use core::mem::size_of;
+
+use ostd_pod::Pod;
+
+use crate::{
+    mm::{
+        io::{VmIo, VmReader, VmWriter},
+        FallibleVmRead, FallibleVmWrite, FrameAllocOptions,
+    },
+    prelude::*,
+    Error,
+};
+
+mod io {
+    use super::*;
+
+    /// A dummy Pod struct for testing complex types.
+    #[repr(C)]
+    #[derive(Clone, Copy, PartialEq, Debug, Pod)]
+    pub struct TestPodStruct {
+        pub a: u32,
+        pub b: u64,
+    }
+
+    /// Tests reading and writing u32 values in Infallible mode.
+    #[ktest]
+    fn read_write_u32_infallible() {
+        let mut buffer = [0u8; 8];
+        let writer = VmWriter::from(&mut buffer[..]);
+
+        let mut writer_infallible =
+            unsafe { VmWriter::from_kernel_space(writer.cursor(), buffer.len()) };
+
+        // Write two u32 values
+        let val1: u32 = 0xDEADBEEF;
+        let val2: u32 = 0xFEEDC0DE;
+
+        writer_infallible.write_val(&val1).unwrap();
+        writer_infallible.write_val(&val2).unwrap();
+
+        assert_eq!(&buffer[..4], &val1.to_le_bytes()[..]);
+        assert_eq!(&buffer[4..], &val2.to_le_bytes()[..]);
+
+        // Read back the values
+        let reader = VmReader::from(&buffer[..]);
+        let mut reader_infallible =
+            unsafe { VmReader::from_kernel_space(reader.cursor(), buffer.len()) };
+
+        let read_val1: u32 = reader_infallible.read_val().unwrap();
+        let read_val2: u32 = reader_infallible.read_val().unwrap();
+
+        assert_eq!(val1, read_val1);
+        assert_eq!(val2, read_val2);
+    }
+
+    /// Tests reading and writing slices in Infallible mode.
+    #[ktest]
+    fn read_write_slice_infallible() {
+        let data = [1u8, 2, 3, 4, 5];
+        let mut buffer = vec![0u8; data.len()];
+        let writer = VmWriter::from(&mut buffer[..]);
+
+        let mut writer_infallible =
+            unsafe { VmWriter::from_kernel_space(writer.cursor(), buffer.len()) };
+
+        writer_infallible.write(&mut VmReader::from(&data[..]));
+
+        assert_eq!(buffer, data);
+
+        // Read back the bytes
+        let reader = VmReader::from(&buffer[..]);
+        let mut reader_infallible =
+            unsafe { VmReader::from_kernel_space(reader.cursor(), buffer.len()) };
+
+        let mut read_buffer = [0u8; 5];
+        reader_infallible.read(&mut VmWriter::from(&mut read_buffer[..]));
+
+        assert_eq!(read_buffer, data);
+    }
+
+    /// Tests writing and reading a struct in Infallible mode.
+    #[ktest]
+    fn read_write_struct_infallible() {
+        let mut buffer = [0u8; size_of::<TestPodStruct>()];
+        let writer = VmWriter::from(&mut buffer[..]);
+
+        let mut writer_infallible =
+            unsafe { VmWriter::from_kernel_space(writer.cursor(), buffer.len()) };
+
+        let test_struct = TestPodStruct {
+            a: 0x12345678,
+            b: 0xABCDEF0123456789,
+        };
+        writer_infallible.write_val(&test_struct).unwrap();
+
+        // Read back the struct
+        let reader = VmReader::from(&buffer[..]);
+        let mut reader_infallible =
+            unsafe { VmReader::from_kernel_space(reader.cursor(), buffer.len()) };
+
+        let read_struct: TestPodStruct = reader_infallible.read_val().unwrap();
+
+        assert_eq!(test_struct, read_struct);
+    }
+
+    /// Ensures reading beyond the buffer panics in Infallible mode.
+    #[ktest]
+    #[should_panic]
+    fn read_beyond_buffer_infallible() {
+        let buffer = [1u8, 2, 3];
+        let reader = VmReader::from(&buffer[..]);
+        let mut reader_infallible =
+            unsafe { VmReader::from_kernel_space(reader.cursor(), buffer.len()) };
+
+        // Attempt to read a u32 which requires 4 bytes, but buffer has only 3
+        let _val: u32 = reader_infallible.read_val().unwrap();
+    }
+
+    /// Ensures writing beyond the buffer panics in Infallible mode.
+    #[ktest]
+    #[should_panic]
+    fn write_beyond_buffer_infallible() {
+        let mut buffer = [0u8; 3];
+        let writer = VmWriter::from(&mut buffer[..]);
+        let mut writer_infallible =
+            unsafe { VmWriter::from_kernel_space(writer.cursor(), buffer.len()) };
+
+        // Attempt to write a u32 which requires 4 bytes, but buffer has only 3
+        let val: u32 = 0xDEADBEEF;
+        writer_infallible.write_val(&val).unwrap();
+    }
+
+    /// Tests the `fill` method in Infallible mode.
+    #[ktest]
+    fn fill_infallible() {
+        let mut buffer = vec![0u8; 8];
+        let writer = VmWriter::from(&mut buffer[..]);
+        let mut writer_infallible =
+            unsafe { VmWriter::from_kernel_space(writer.cursor(), buffer.len()) };
+
+        // Fill with 0xFF
+        let filled = writer_infallible.fill(0xFFu8);
+        assert_eq!(filled, 8);
+        assert_eq!(buffer, vec![0xFF; 8]);
+
+        // Ensure the cursor is at the end
+        assert_eq!(writer_infallible.avail(), 0);
+    }
+
+    /// Tests the `skip` method for reading in Infallible mode.
+    #[ktest]
+    fn skip_read_infallible() {
+        let data = [10u8, 20, 30, 40, 50];
+        let reader = VmReader::from(&data[..]);
+        let mut reader_infallible =
+            unsafe { VmReader::from_kernel_space(reader.cursor(), reader.remain()) };
+
+        // Skip first two bytes
+        let reader_infallible = reader_infallible.skip(2);
+
+        // Read the remaining bytes
+        let mut read_buffer = [0u8; 3];
+        reader_infallible.read(&mut VmWriter::from(&mut read_buffer[..]));
+
+        assert_eq!(read_buffer, [30, 40, 50]);
+    }
+
+    /// Tests the `skip` method for writing in Infallible mode.
+    #[ktest]
+    fn skip_write_infallible() {
+        let mut buffer = [0u8; 5];
+        let writer = VmWriter::from(&mut buffer[..]);
+        let mut writer_infallible =
+            unsafe { VmWriter::from_kernel_space(writer.cursor(), writer.avail()) };
+
+        // Skip first two bytes
+        let writer_infallible = writer_infallible.skip(2);
+
+        // Write [100, 101, 102]
+        let data = [100u8, 101, 102];
+        writer_infallible.write(&mut VmReader::from(&data[..]));
+
+        assert_eq!(buffer, [0, 0, 100, 101, 102]);
+    }
+
+    /// Tests the `limit` method for VmReader in Infallible mode.
+    #[ktest]
+    fn limit_read_infallible() {
+        let data = [1u8, 2, 3, 4, 5];
+        let mut reader = VmReader::from(&data[..]);
+        let limited_reader = reader.limit(3);
+
+        assert_eq!(limited_reader.remain(), 3);
+
+        let mut read_buffer = [0u8; 3];
+        limited_reader.read(&mut VmWriter::from(&mut read_buffer[..]));
+        assert_eq!(read_buffer, [1, 2, 3]);
+
+        // Ensures no more data can be read
+        let mut extra_buffer = [0u8; 1];
+        let extra_read = limited_reader.read(&mut VmWriter::from(&mut extra_buffer[..]));
+        assert_eq!(extra_read, 0);
+    }
+
+    /// Tests the `limit` method for VmWriter in Infallible mode.
+    #[ktest]
+    fn limit_write_infallible() {
+        let mut buffer = [0u8; 5];
+        let mut writer = VmWriter::from(&mut buffer[..]);
+        let limited_writer = writer.limit(3);
+
+        assert_eq!(limited_writer.avail(), 3);
+
+        // Writes [10, 20, 30, 40] but only first three should be written
+        let data = [10u8, 20, 30, 40];
+        for val in data.iter() {
+            let _ = limited_writer.write_val(val);
+        }
+        assert_eq!(buffer, [10, 20, 30, 0, 0]);
+    }
+
+    /// Tests the `read_slice` and `write_slice` methods in Infallible mode.
+    #[ktest]
+    fn read_write_slice_vmio_infallible() {
+        let data = [100u8, 101, 102, 103, 104];
+        let mut buffer = [0u8; 5];
+        let writer = VmWriter::from(&mut buffer[..]);
+
+        let mut writer_infallible =
+            unsafe { VmWriter::from_kernel_space(writer.cursor(), buffer.len()) };
+        writer_infallible.write(&mut VmReader::from(&data[..]));
+
+        assert_eq!(buffer, data);
+
+        let reader = VmReader::from(&buffer[..]);
+        let mut reader_infallible =
+            unsafe { VmReader::from_kernel_space(reader.cursor(), buffer.len()) };
+
+        let mut read_data = [0u8; 5];
+        reader_infallible.read(&mut VmWriter::from(&mut read_data[..]));
+
+        assert_eq!(read_data, data);
+    }
+
+    /// Tests the `read_once` and `write_once` methods in Infallible mode.
+    #[ktest]
+    fn read_write_once_infallible() {
+        let mut buffer = [0u8; 8];
+        let writer = VmWriter::from(&mut buffer[..]);
+        let mut writer_infallible =
+            unsafe { VmWriter::from_kernel_space(writer.cursor(), buffer.len()) };
+
+        let val: u64 = 0x1122334455667788;
+        writer_infallible.write_once(&val).unwrap();
+
+        // Reads back the value
+        let reader = VmReader::from(&buffer[..]);
+        let mut reader_infallible =
+            unsafe { VmReader::from_kernel_space(reader.cursor(), buffer.len()) };
+
+        let read_val: u64 = reader_infallible.read_once().unwrap();
+        assert_eq!(val, read_val);
+    }
+
+    /// Tests the `write_val` method in Infallible mode.
+    #[ktest]
+    fn write_val_infallible() {
+        let mut buffer = [0u8; 12];
+        let writer = VmWriter::from(&mut buffer[..]);
+        let mut writer_infallible =
+            unsafe { VmWriter::from_kernel_space(writer.cursor(), buffer.len()) };
+
+        let values = [1u32, 2, 3];
+        for val in values.iter() {
+            writer_infallible.write_val(val).unwrap();
+        }
+        assert_eq!(buffer, [1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0]);
+    }
+
+    /// Tests the `FallbackVmRead` and `FallbackVmWrite` traits (using Fallible mode).
+    /// Note: Since simulating page faults is non-trivial in a test environment,
+    /// we'll focus on successful read and write operations.
+    #[ktest]
+    fn fallible_read_write() {
+        let mut buffer = [0u8; 8];
+        let writer = VmWriter::from(&mut buffer[..]);
+        let mut writer_fallible = writer.to_fallible();
+
+        let val: u64 = 0xAABBCCDDEEFF0011;
+        assert!(writer_fallible.has_avail());
+        writer_fallible.write_val(&val).unwrap();
+
+        // Reads back the value
+        let reader = VmReader::from(&buffer[..]);
+        let mut reader_fallible = reader.to_fallible();
+
+        assert!(reader_fallible.has_remain());
+        let read_val: u64 = reader_fallible.read_val().unwrap();
+        assert_eq!(val, read_val);
+    }
+
+    /// Mimics partial reads in Fallible mode.
+    #[ktest]
+    fn partial_read_fallible() {
+        let data = [10u8, 20, 30, 40, 50];
+        let reader = VmReader::from(&data[..]);
+        let mut reader_fallible = reader.to_fallible();
+
+        // Limits the reader to 3 bytes
+        let limited_reader = reader_fallible.limit(3);
+
+        let mut writer_buffer = [0u8; 5];
+        let writer = VmWriter::from(&mut writer_buffer[..]);
+        let mut writer_fallible = writer.to_fallible();
+
+        // Attempts to read 5 bytes into a writer limited to 3 bytes
+        let result = limited_reader.read_fallible(&mut writer_fallible);
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 3);
+        assert_eq!(&writer_buffer[..3], &[10, 20, 30]);
+    }
+
+    /// Mimics partial writes in Fallible mode.
+    #[ktest]
+    fn partial_write_fallible() {
+        let mut buffer = [0u8; 5];
+        let writer = VmWriter::from(&mut buffer[..]);
+        let mut writer_fallible = writer.to_fallible();
+
+        // Limits the writer to 3 bytes
+        let limited_writer = writer_fallible.limit(3);
+
+        let data = [10u8, 20, 30, 40, 50];
+        let mut reader = VmReader::from(&data[..]);
+
+        // Attempts to write 5 bytes into a writer limited to 3 bytes
+        let result = limited_writer.write_fallible(&mut reader);
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 3);
+        assert_eq!(&buffer[..3], &[10, 20, 30]);
+    }
+
+    /// Tests `write_val` and `read_val` methods in Fallible mode.
+    #[ktest]
+    fn read_write_val_fallible() {
+        let mut buffer = [0u8; 8];
+        let writer = VmWriter::from(&mut buffer[..]);
+        let mut writer_fallible = writer.to_fallible();
+
+        let val: u64 = 0xAABBCCDDEEFF0011;
+        writer_fallible.write_val(&val).unwrap();
+
+        // Reads back the value
+        let reader = VmReader::from(&buffer[..]);
+        let mut reader_fallible = reader.to_fallible();
+
+        let read_val: u64 = reader_fallible.read_val().unwrap();
+        assert_eq!(val, read_val);
+    }
+
+    /// Tests the `collect` method in Fallible mode.
+    #[ktest]
+    fn collect_fallible() {
+        let data = [5u8, 6, 7, 8, 9];
+        let reader = VmReader::from(&data[..]);
+        let mut reader_fallible = reader.to_fallible();
+
+        let collected = reader_fallible.collect().unwrap();
+        assert_eq!(collected, data);
+    }
+
+    /// Tests partial collection in Fallible mode.
+    #[ktest]
+    fn collect_partial_fallible() {
+        let data = [1u8, 2, 3, 4, 5];
+        let reader = VmReader::from(&data[..]);
+        let mut reader_fallible = reader.to_fallible();
+
+        // Limits the reader to 3 bytes
+        let limited_reader = reader_fallible.limit(3);
+
+        let result = limited_reader.collect();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), vec![1, 2, 3]);
+    }
+
+    /// Tests the `fill_zeros` method in Fallible mode.
+    #[ktest]
+    fn fill_zeros_fallible() {
+        let mut buffer = vec![1u8; 8];
+        let writer = VmWriter::from(&mut buffer[..]);
+        let mut writer_fallible = writer.to_fallible();
+
+        writer_fallible.fill_zeros(8).unwrap();
+        assert_eq!(buffer, [0u8; 8]);
+    }
+
+    /// Tests handling invalid arguments in Fallible mode.
+    #[ktest]
+    fn invalid_args_read_write_fallible() {
+        let mut buffer = [0u8; 3];
+        let writer = VmWriter::from(&mut buffer[..]);
+        let mut writer_fallible = writer.to_fallible();
+
+        // Attempts to write a u32 which requires 4 bytes, but buffer has only 3
+        let val: u32 = 0xDEADBEEF;
+        let result = writer_fallible.write_val(&val);
+        assert_eq!(result, Err(Error::InvalidArgs));
+
+        let reader = VmReader::from(&buffer[..]);
+        let mut reader_fallible = reader.to_fallible();
+
+        // Attempts to read a u32 which requires 4 bytes, but buffer has only 3
+        let result = reader_fallible.read_val::<u32>();
+        assert_eq!(result, Err(Error::InvalidArgs));
+    }
+
+    /// Tests handling invalid read/write in Infallible mode.
+    #[ktest]
+    fn invalid_read_write_infallible() {
+        let mut buffer = [0u8; 3];
+        let writer = VmWriter::from(&mut buffer[..]);
+        let mut writer_infallible =
+            unsafe { VmWriter::from_kernel_space(writer.cursor(), buffer.len()) };
+
+        // Attempts to write a u32 which requires 4 bytes, but buffer has only 3
+        let val: u32 = 0xDEADBEEF;
+        let result = writer_infallible.write_val(&val);
+        assert_eq!(result, Err(Error::InvalidArgs));
+
+        let reader = VmReader::from(&buffer[..]);
+        let mut reader_infallible =
+            unsafe { VmReader::from_kernel_space(reader.cursor(), buffer.len()) };
+
+        // Attempts to read a u32 which requires 4 bytes, but buffer has only 3
+        let result = reader_infallible.read_val::<u32>();
+        assert_eq!(result, Err(Error::InvalidArgs));
+    }
+
+    /// Tests the `write_vals` method in VmIO.
+    #[ktest]
+    fn write_vals_segment() {
+        let mut buffer = [0u8; 12];
+        let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
+        let values = [1u32, 2, 3];
+        let nr_written = segment.write_vals(0, values.iter(), 4).unwrap();
+        assert_eq!(nr_written, 3);
+        segment.read_bytes(0, &mut buffer[..]).unwrap();
+        assert_eq!(buffer, [1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0]);
+        // Writes with error offset
+        let result = segment.write_vals(8192, values.iter(), 4);
+        assert_eq!(result, Err(Error::InvalidArgs));
+    }
+
+    /// Tests the `write_slice` method in VmIO.
+    #[ktest]
+    fn write_slice_segment() {
+        let mut buffer = [0u8; 12];
+        let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
+        let data = [1u8, 2, 3, 4, 5];
+        segment.write_slice(0, &data[..]).unwrap();
+        segment.read_bytes(0, &mut buffer[..]).unwrap();
+        assert_eq!(buffer[..5], data);
+    }
+
+    /// Tests the `read_val` method in VmIO.
+    #[ktest]
+    fn read_val_segment() {
+        let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
+        let values = [1u32, 2, 3];
+        segment.write_vals(0, values.iter(), 4).unwrap();
+        let val: u32 = segment.read_val(0).unwrap();
+        assert_eq!(val, 1);
+    }
+
+    /// Tests the `read_slice` method in VmIO.
+    #[ktest]
+    fn read_slice_segment() {
+        let segment = FrameAllocOptions::new().alloc_segment(1).unwrap();
+        let values = [1u32, 2, 3];
+        segment.write_vals(0, values.iter(), 4).unwrap();
+        let mut read_buffer = [0u8; 12];
+        segment.read_slice(0, &mut read_buffer[..]).unwrap();
+        assert_eq!(read_buffer, [1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0]);
+    }
+}
