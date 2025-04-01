@@ -16,7 +16,7 @@ cfg_if::cfg_if! {
 pub use set::{AtomicCpuSet, CpuSet};
 use spin::Once;
 
-use crate::{arch::boot::smp::get_num_processors, cpu_local_cell, task::atomic_mode::InAtomicMode};
+use crate::{arch::boot::smp::count_processors, cpu_local_cell, task::atomic_mode::InAtomicMode};
 
 /// The ID of a CPU in the system.
 ///
@@ -59,7 +59,7 @@ static NUM_CPUS: Once<u32> = Once::new();
 /// The caller must ensure that this function is called only once on the BSP
 /// at the correct time when the number of CPUs is available from the platform.
 pub(crate) unsafe fn init_num_cpus() {
-    let num_processors = get_num_processors().unwrap_or(1);
+    let num_processors = count_processors().unwrap_or(1);
     NUM_CPUS.call_once(|| num_processors);
 }
 

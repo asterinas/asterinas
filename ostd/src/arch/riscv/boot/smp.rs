@@ -2,7 +2,7 @@
 
 //! Multiprocessor Boot Support
 
-pub(crate) fn get_num_processors() -> Option<u32> {
+pub(crate) fn count_processors() -> Option<u32> {
     Some(1)
 }
 
