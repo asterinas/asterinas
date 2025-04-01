@@ -13,9 +13,14 @@ pub static IFACES: Once<Vec<Arc<Iface>>> = Once::new();
 
 pub fn init() {
     IFACES.call_once(|| {
-        let iface_virtio = new_virtio();
-        let iface_loopback = new_loopback();
-        vec![iface_virtio, iface_loopback]
+        let mut ifaces = Vec::with_capacity(2);
+
+        if let Some(iface_virtio) = new_virtio() {
+            ifaces.push(iface_virtio);
+        }
+        ifaces.push(new_loopback());
+
+        ifaces
     });
 
     for (name, _) in aster_network::all_devices() {
@@ -31,7 +36,7 @@ pub fn init() {
     poll_ifaces();
 }
 
-fn new_virtio() -> Arc<Iface> {
+fn new_virtio() -> Option<Arc<Iface>> {
     use aster_bigtcp::{
         iface::EtherIface,
         wire::{EthernetAddress, Ipv4Address, Ipv4Cidr},
@@ -43,7 +48,7 @@ fn new_virtio() -> Arc<Iface> {
     const VIRTIO_ADDRESS_PREFIX_LEN: u8 = 24; // mask: 255.255.255.0
     const VIRTIO_GATEWAY: Ipv4Address = Ipv4Address::new(10, 0, 2, 2);
 
-    let virtio_net = aster_network::get_device(DEVICE_NAME).unwrap();
+    let virtio_net = aster_network::get_device(DEVICE_NAME)?;
 
     let ether_addr = virtio_net.lock().mac_addr().0;
 
@@ -61,14 +66,14 @@ fn new_virtio() -> Arc<Iface> {
         }
     }
 
-    EtherIface::new(
+    Some(EtherIface::new(
         Wrapper(virtio_net),
         EthernetAddress(ether_addr),
         Ipv4Cidr::new(VIRTIO_ADDRESS, VIRTIO_ADDRESS_PREFIX_LEN),
         VIRTIO_GATEWAY,
         "virtio".to_owned(),
         PollScheduler::new(),
-    )
+    ))
 }
 
 fn new_loopback() -> Arc<Iface> {
