@@ -8,7 +8,7 @@ use core::{
     ptr::NonNull,
     sync::atomic::{
         AtomicPtr,
-        Ordering::{AcqRel, Acquire},
+        Ordering::{AcqRel, Acquire, Release},
     },
 };
 
@@ -154,6 +154,12 @@ impl<P: NonNullPtr> RcuInner<P> {
         }
     }
 
+    fn swap_with(&self, target: &RcuInner<P>) {
+        let current_ptr = self.ptr.swap(core::ptr::null_mut(), Acquire);
+        let target_ptr = target.ptr.swap(current_ptr, AcqRel);
+        self.ptr.swap(target_ptr, Release);
+    }
+
     fn read(&self) -> RcuReadGuardInner<'_, P> {
         let guard = disable_preempt();
         // SAFETY: `self` owns `P`, and ensures that `P` will not be dropped while
@@ -289,6 +295,11 @@ impl<P: NonNullPtr> Rcu<P> {
     pub fn read_with<'a>(&'a self, guard: &'a dyn AsAtomicModeGuard) -> P::Ref<'a> {
         self.0.read_with(guard).unwrap()
     }
+
+    /// Swaps the protected value with the other `Rcu`.
+    pub fn swap_with(&self, target: &Rcu<P>) {
+        self.0.swap_with(&target.0)
+    }
 }
 
 impl<P: NonNullPtr> RcuOption<P> {
@@ -343,6 +354,11 @@ impl<P: NonNullPtr> RcuOption<P> {
     /// writers. You may do it via a [`super::SpinLock`].
     pub fn read_with<'a>(&'a self, guard: &'a dyn AsAtomicModeGuard) -> Option<P::Ref<'a>> {
         self.0.read_with(guard)
+    }
+
+    /// Swaps the protected value with the other `RcuOption`.
+    pub fn swap_with(&self, target: &RcuOption<P>) {
+        self.0.swap_with(&target.0)
     }
 }
 
