@@ -8,7 +8,7 @@ use spin::Once;
 use super::IommuError;
 use crate::{
     arch::iommu::registers::IOMMU_REGS,
-    bus::pci::PciDeviceLocation,
+    bus::pci::cfg_space::access::PciDeviceLocation,
     mm::{Daddr, PageTable},
     prelude::Paddr,
     sync::{LocalIrqDisabled, SpinLock},

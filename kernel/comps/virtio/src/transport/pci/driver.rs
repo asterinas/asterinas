@@ -42,13 +42,13 @@ impl PciDriver for VirtioPciDriver {
         device: PciCommonDevice,
     ) -> Result<Arc<dyn PciDevice>, (BusProbeError, PciCommonDevice)> {
         const VIRTIO_DEVICE_VENDOR_ID: u16 = 0x1af4;
-        if device.device_id().vendor_id != VIRTIO_DEVICE_VENDOR_ID {
+        if device.device_info().vendor_id != VIRTIO_DEVICE_VENDOR_ID {
             return Err((BusProbeError::DeviceNotMatch, device));
         }
 
-        let device_id = *device.device_id();
-        let transport: Box<dyn VirtioTransport> = match device_id.device_id {
-            0x1000..0x1040 if (device.device_id().revision_id == 0) => {
+        let device_info = *device.device_info();
+        let transport: Box<dyn VirtioTransport> = match device_info.device_id {
+            0x1000..0x1040 if (device.device_info().revision_id == 0) => {
                 // Transitional PCI Device ID in the range 0x1000 to 0x103f.
                 let legacy = VirtioPciLegacyTransport::new(device)?;
                 Box::new(legacy)
@@ -61,6 +61,6 @@ impl PciDriver for VirtioPciDriver {
         };
         self.devices.lock().push(transport);
 
-        Ok(Arc::new(VirtioPciDevice::new(device_id)))
+        Ok(Arc::new(VirtioPciDevice::new(device_info)))
     }
 }

@@ -8,11 +8,10 @@
 use alloc::{sync::Arc, vec::Vec};
 
 use crate::{
-    arch::iommu::has_interrupt_remapping,
     bus::pci::{
         cfg_space::{Bar, Command, MemoryBar},
         common_device::PciCommonDevice,
-        device_info::PciDeviceLocation,
+        PciDeviceLocation,
     },
     mm::VmIoOnce,
     trap::IrqLine,
@@ -23,7 +22,7 @@ use crate::{
 #[repr(C)]
 pub struct CapabilityMsixData {
     loc: PciDeviceLocation,
-    ptr: u16,
+    ptr: usize,
     table_size: u16,
     /// MSIX table entry content:
     /// | Vector Control: u32 | Msg Data: u32 | Msg Upper Addr: u32 | Msg Addr: u32 |
@@ -39,7 +38,7 @@ impl Clone for CapabilityMsixData {
     fn clone(&self) -> Self {
         let new_vec = self.irqs.clone().to_vec();
         Self {
-            loc: self.loc,
+            loc: self.loc.clone(),
             ptr: self.ptr,
             table_size: self.table_size,
             table_bar: self.table_bar.clone(),
@@ -51,19 +50,16 @@ impl Clone for CapabilityMsixData {
     }
 }
 
-#[cfg(target_arch = "x86_64")]
-const MSIX_DEFAULT_MSG_ADDR: u32 = 0xFEE0_0000;
-
 impl CapabilityMsixData {
-    pub(super) fn new(dev: &mut PciCommonDevice, cap_ptr: u16) -> Self {
+    pub(super) fn new(dev: &PciCommonDevice, cap_ptr: usize) -> Self {
         // Get Table and PBA offset, provide functions to modify them
-        let table_info = dev.location().read32(cap_ptr + 4);
-        let pba_info = dev.location().read32(cap_ptr + 8);
+        let table_info = dev.location().read32(cap_ptr + 4).unwrap();
+        let pba_info = dev.location().read32(cap_ptr + 8).unwrap();
 
         let table_bar;
         let pba_bar;
 
-        let bar_manager = dev.bar_manager_mut();
+        let bar_manager = dev.bar_manager();
         match bar_manager
             .bar((pba_info & 0b111) as u8)
             .clone()
@@ -92,9 +88,8 @@ impl CapabilityMsixData {
         let pba_offset = (pba_info & !(0b111u32)) as usize;
         let table_offset = (table_info & !(0b111u32)) as usize;
 
-        let table_size = (dev.location().read16(cap_ptr + 2) & 0b11_1111_1111) + 1;
-        // TODO: Different architecture seems to have different, so we should set different address here.
-        let message_address = MSIX_DEFAULT_MSG_ADDR;
+        let table_size = (dev.location().read16(cap_ptr + 2).unwrap() & 0b11_1111_1111) + 1;
+        let message_address = crate::arch::pci::MSIX_DEFAULT_MSG_ADDR;
         let message_upper_address = 0u32;
 
         // Set message address 0xFEE0_0000
@@ -130,8 +125,10 @@ impl CapabilityMsixData {
         }
 
         // enable MSI-X, bit15: MSI-X Enable
-        dev.location()
-            .write16(cap_ptr + 2, dev.location().read16(cap_ptr + 2) | 0x8000);
+        let _ = dev.location().write16(
+            cap_ptr + 2,
+            dev.location().read16(cap_ptr + 2).unwrap() | 0x8000,
+        );
         // disable INTx, enable Bus master.
         dev.set_command(dev.command() | Command::INTERRUPT_DISABLE | Command::BUS_MASTER);
 
@@ -141,9 +138,9 @@ impl CapabilityMsixData {
         }
 
         Self {
-            loc: *dev.location(),
+            loc: dev.location().clone(),
             ptr: cap_ptr,
-            table_size: (dev.location().read16(cap_ptr + 2) & 0b11_1111_1111) + 1,
+            table_size: (dev.location().read16(cap_ptr + 2).unwrap() & 0b11_1111_1111) + 1,
             table_bar,
             pending_table_bar: pba_bar,
             irqs,
@@ -155,7 +152,7 @@ impl CapabilityMsixData {
     /// MSI-X Table size
     pub fn table_size(&self) -> u16 {
         // bit 10:0 table size
-        (self.loc.read16(self.ptr + 2) & 0b11_1111_1111) + 1
+        (self.loc.read16(self.ptr + 2).unwrap() & 0b11_1111_1111) + 1
     }
 
     /// Enables an interrupt line, it will replace the old handle with the new handle.
@@ -165,7 +162,8 @@ impl CapabilityMsixData {
         }
 
         // If interrupt remapping is enabled, then we need to change the value of the message address.
-        if has_interrupt_remapping() {
+        #[cfg(target_arch = "x86_64")]
+        if crate::arch::iommu::has_interrupt_remapping() {
             let mut handle = irq.inner_irq().bind_remapping_entry().unwrap().lock();
 
             // Enable irt entry
@@ -173,7 +171,7 @@ impl CapabilityMsixData {
             irt_entry_mut.enable_default(irq.num() as u32);
 
             // Use remappable format. The bits[4:3] should be always set to 1 according to the manual.
-            let mut address = MSIX_DEFAULT_MSG_ADDR | 0b1_1000;
+            let mut address = crate::arch::pci::MSIX_DEFAULT_MSG_ADDR | 0b1_1000;
 
             // Interrupt index[14:0] is on address[19:5] and interrupt index[15] is on address[2].
             address |= (handle.index() as u32 & 0x7FFF) << 5;
@@ -196,6 +194,14 @@ impl CapabilityMsixData {
                 )
                 .unwrap();
         }
+        #[cfg(not(target_arch = "x86_64"))]
+        self.table_bar
+            .io_mem()
+            .write_once(
+                (16 * index + 8) as usize + self.table_offset,
+                &(irq.num() as u32),
+            )
+            .unwrap();
 
         let _old_irq = core::mem::replace(&mut self.irqs[index as usize], Some(irq));
         // Enable this msix vector
@@ -212,7 +218,7 @@ impl CapabilityMsixData {
 
     /// Returns true if MSI-X Enable bit is set.
     pub fn is_enabled(&self) -> bool {
-        let msg_ctrl = self.loc.read16(self.ptr + 2);
+        let msg_ctrl = self.loc.read16(self.ptr + 2).unwrap();
         msg_ctrl & 0x8000 != 0
     }
 }

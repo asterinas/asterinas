@@ -32,7 +32,6 @@ pub(crate) unsafe fn late_init_on_bsp() {
     crate::boot::smp::boot_all_aps();
 
     timer::init();
-    let _ = pci::init();
 }
 
 pub(crate) unsafe fn init_on_ap() {
@@ -51,6 +50,14 @@ pub fn tsc_freq() -> u64 {
 /// Reads the current value of the processor’s time-stamp counter (TSC).
 pub fn read_tsc() -> u64 {
     riscv::register::time::read64()
+}
+
+/// Reads a hardware generated 64-bit random value.
+///
+/// Returns None if no random value was generated.
+pub fn read_random() -> Option<u64> {
+    // FIXME: Implement a hardware random number generator on RISC-V platforms.
+    None
 }
 
 pub(crate) fn enable_cpu_features() {

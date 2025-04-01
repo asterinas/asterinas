@@ -7,9 +7,9 @@
 use alloc::sync::Arc;
 use core::mem::size_of;
 
+use access::{define_cfg_space_and_impl_read_write_for_location, PciDeviceLocation};
 use bitflags::bitflags;
 
-use super::PciDeviceLocation;
 use crate::{
     arch::device::io_port::{PortRead, PortWrite},
     io::IoMem,
@@ -20,59 +20,78 @@ use crate::{
     Error, Result,
 };
 
-/// Offset in PCI device's common configuration space(Not the PCI bridge).
-#[repr(u16)]
-pub enum PciDeviceCommonCfgOffset {
-    /// Vendor ID
-    VendorId = 0x00,
-    /// Device ID
-    DeviceId = 0x02,
-    /// PCI Command
-    Command = 0x04,
-    /// PCI Status
-    Status = 0x06,
-    /// Revision ID
-    RevisionId = 0x08,
-    /// Class code
-    ClassCode = 0x09,
-    /// Cache Line Size
-    CacheLineSize = 0x0C,
-    /// Latency Timer
-    LatencyTimer = 0x0D,
-    /// Header Type: Identifies the layout of the header.
-    HeaderType = 0x0E,
-    /// BIST: Represents the status and allows control of a devices BIST(built-in self test).
-    Bist = 0x0F,
-    /// Base Address Register #0
-    Bar0 = 0x10,
-    /// Base Address Register #1
-    Bar1 = 0x14,
-    /// Base Address Register #2
-    Bar2 = 0x18,
-    /// Base Address Register #3
-    Bar3 = 0x1C,
-    /// Base Address Register #4
-    Bar4 = 0x20,
-    /// Base Address Register #5
-    Bar5 = 0x24,
-    /// Cardbus CIS Pointer
-    CardbusCisPtr = 0x28,
-    /// Subsystem Vendor ID
-    SubsystemVendorId = 0x2C,
-    /// Subsystem ID
-    SubsystemId = 0x2E,
-    /// Expansion ROM base address
-    XromBar = 0x30,
-    /// Capabilities pointer
-    CapabilitiesPointer = 0x34,
-    /// Interrupt Line
-    InterruptLine = 0x3C,
-    /// INterrupt PIN
-    InterruptPin = 0x3D,
-    /// Min Grant
-    MinGrant = 0x3E,
-    /// Max latency
-    MaxLatency = 0x3F,
+pub(crate) mod access;
+
+define_cfg_space_and_impl_read_write_for_location!(
+    /// PCI device (not for bridge) configuration space register.
+    #[repr(C, packed)]
+    pub(crate) struct PciDeviceCfgSpace {
+        /// Vendor ID
+        pub vendor_id: u16,
+        /// Device ID
+        pub device_id: u16,
+        /// PCI command register
+        pub command: u16,
+        /// PCI status register
+        pub status: u16,
+        /// Revision ID
+        pub revision_id: u8,
+        /// Programming interface byte
+        pub prog_if: u8,
+        /// Subclass code
+        pub subclass: u8,
+        /// Class code
+        pub class_code: u8,
+        /// Cache line size
+        pub cache_line_size: u8,
+        /// Master latency timer register
+        pub latency_timer: u8,
+        /// Header type
+        pub header_type: u8,
+        /// BIST
+        pub bist: u8,
+        /// Base address register #0
+        pub bar0: u32,
+        /// Base address register #1
+        pub bar1: u32,
+        /// Base address register #2
+        pub bar2: u32,
+        /// Base address register #3
+        pub bar3: u32,
+        /// Base address register #4
+        pub bar4: u32,
+        /// Base address register #5
+        pub bar5: u32,
+        /// Cardbus CIS pointer
+        pub cardbus_cis_ptr: u32,
+        /// Subsystem vendor ID
+        pub subsystem_vendor_id: u16,
+        /// Subsystem ID
+        pub subsystem_id: u16,
+        /// Expansion ROM base address
+        pub xrom_bar: u32,
+        /// Capabilities pointer
+        pub capabilities_ptr: u8,
+        /// Reserved
+        pub reserved1: u8,
+        /// Reserved
+        pub reserved2: u16,
+        /// Reserved
+        pub reserved3: u32,
+        /// Interrupt line
+        pub interrupt_line: u8,
+        /// Interrupt pin
+        pub interrupt_pin: u8,
+        /// Min grant register
+        pub min_grant: u8,
+        /// Max latency register
+        pub max_latency: u8,
+        // Followed by (4096 - 64) bytes of space for capabilities
+    }
+);
+
+impl PciDeviceCfgSpace {
+    pub(super) const SIZE: usize = 4096;
 }
 
 bitflags! {
@@ -161,21 +180,21 @@ pub enum Bar {
 }
 
 impl Bar {
-    pub(super) fn new(location: PciDeviceLocation, index: u8) -> Result<Self> {
+    pub(super) fn new(location: &PciDeviceLocation, index: u8) -> Result<Self> {
         if index >= 6 {
             return Err(Error::InvalidArgs);
         }
         // Get the original value first, then write all 1 to the register to get the length
-        let raw = location.read32(index as u16 * 4 + PciDeviceCommonCfgOffset::Bar0 as u16);
+        let raw = location.read_bar(index)?;
         if raw == 0 {
             // no BAR
             return Err(Error::InvalidArgs);
         }
         Ok(if raw & 1 == 0 {
-            Self::Memory(Arc::new(MemoryBar::new(&location, index)?))
+            Self::Memory(Arc::new(MemoryBar::new(location, index, raw)?))
         } else {
             // IO BAR
-            Self::Io(Arc::new(IoBar::new(&location, index)?))
+            Self::Io(Arc::new(IoBar::new(location, index, raw)?))
         })
     }
 
@@ -192,6 +211,34 @@ impl Bar {
         match self {
             Bar::Memory(mem_bar) => mem_bar.io_mem().write_once(offset, &value),
             Bar::Io(io_bar) => io_bar.write(offset as u32, value),
+        }
+    }
+}
+
+impl PciDeviceLocation {
+    /// Reads the BAR value.
+    pub fn read_bar(&self, index: u8) -> Result<u32> {
+        match index {
+            0 => self.read_bar0(),
+            1 => self.read_bar1(),
+            2 => self.read_bar2(),
+            3 => self.read_bar3(),
+            4 => self.read_bar4(),
+            5 => self.read_bar5(),
+            _ => Err(Error::InvalidArgs),
+        }
+    }
+
+    /// Writes the BAR value.
+    pub fn write_bar(&self, index: u8, value: u32) -> Result<()> {
+        match index {
+            0 => self.write_bar0(value),
+            1 => self.write_bar1(value),
+            2 => self.write_bar2(value),
+            3 => self.write_bar3(value),
+            4 => self.write_bar4(value),
+            5 => self.write_bar5(value),
+            _ => Err(Error::InvalidArgs),
         }
     }
 }
@@ -234,22 +281,20 @@ impl MemoryBar {
     }
 
     /// Creates a memory BAR structure.
-    fn new(location: &PciDeviceLocation, index: u8) -> Result<Self> {
-        // Get the original value first, then write all 1 to the register to get the length
-        let offset = index as u16 * 4 + PciDeviceCommonCfgOffset::Bar0 as u16;
-        let raw = location.read32(offset);
-        location.write32(offset, !0);
-        let len_encoded = location.read32(offset);
-        location.write32(offset, raw);
+    fn new(location: &PciDeviceLocation, index: u8, raw: u32) -> Result<Self> {
+        // Write all 1 to the register to get the length
+        location.write_bar(index, !0)?;
+        let len_encoded = location.read_bar(index)?;
+        location.write_bar(index, raw)?;
         let mut address_length = AddrLen::Bits32;
-        // base address, it may be bit64 or bit32
+        // Base address, it may be bit64 or bit32
         let base: u64 = match (raw & 0b110) >> 1 {
             // bits32
             0 => (raw & !0xF) as u64,
             // bits64
             2 => {
                 address_length = AddrLen::Bits64;
-                ((raw & !0xF) as u64) | ((location.read32(offset + 4) as u64) << 32)
+                ((raw & !0xF) as u64) | ((location.read_bar(index + 1)? as u64) << 32)
             }
             _ => {
                 return Err(Error::InvalidArgs);
@@ -333,12 +378,10 @@ impl IoBar {
         Ok(())
     }
 
-    fn new(location: &PciDeviceLocation, index: u8) -> Result<Self> {
-        let offset = index as u16 * 4 + PciDeviceCommonCfgOffset::Bar0 as u16;
-        let raw = location.read32(offset);
-        location.write32(offset, !0);
-        let len_encoded = location.read32(offset);
-        location.write32(offset, raw);
+    fn new(location: &PciDeviceLocation, index: u8, raw: u32) -> Result<Self> {
+        location.write_bar(index, !0)?;
+        let len_encoded = location.read_bar(index)?;
+        location.write_bar(index, raw)?;
         let len = !(len_encoded & !0x3) + 1;
         Ok(Self {
             base: raw & !0x3,

@@ -9,7 +9,7 @@ use ostd::{
     bus::{
         pci::{
             bus::PciDevice, capability::CapabilityData, cfg_space::Bar,
-            common_device::PciCommonDevice, PciDeviceId,
+            common_device::PciCommonDevice, device_info::PciDeviceInfo,
         },
         BusProbeError,
     },
@@ -37,18 +37,18 @@ pub struct VirtioPciNotify {
 
 #[derive(Debug)]
 pub struct VirtioPciDevice {
-    device_id: PciDeviceId,
+    device_info: PciDeviceInfo,
 }
 
 impl VirtioPciDevice {
-    pub(super) fn new(device_id: PciDeviceId) -> Self {
-        Self { device_id }
+    pub(super) fn new(device_info: PciDeviceInfo) -> Self {
+        Self { device_info }
     }
 }
 
 impl PciDevice for VirtioPciDevice {
-    fn device_id(&self) -> PciDeviceId {
-        self.device_id
+    fn device_info(&self) -> PciDeviceInfo {
+        self.device_info
     }
 }
 
@@ -272,7 +272,7 @@ impl VirtioPciModernTransport {
     pub(super) fn new(
         common_device: PciCommonDevice,
     ) -> Result<Self, (BusProbeError, PciCommonDevice)> {
-        let device_id = common_device.device_id().device_id;
+        let device_id = common_device.device_info().device_id;
         if device_id <= 0x1040 {
             warn!("Unrecognized virtio-pci device id:{:x?}", device_id);
             return Err((BusProbeError::DeviceNotMatch, common_device));
@@ -295,7 +295,8 @@ impl VirtioPciModernTransport {
         for cap in common_device.capabilities().iter() {
             match cap.capability_data() {
                 CapabilityData::Vndr(vendor) => {
-                    let data = VirtioPciCapabilityData::new(common_device.bar_manager(), *vendor);
+                    let data =
+                        VirtioPciCapabilityData::new(common_device.bar_manager(), vendor.clone());
                     match data.typ() {
                         VirtioPciCpabilityType::CommonCfg => {
                             common_cfg = Some(VirtioPciCommonCfg::new(&data));

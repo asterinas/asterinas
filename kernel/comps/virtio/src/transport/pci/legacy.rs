@@ -77,7 +77,7 @@ impl VirtioPciLegacyTransport {
     pub(super) fn new(
         common_device: PciCommonDevice,
     ) -> Result<Self, (BusProbeError, PciCommonDevice)> {
-        let device_type = match common_device.device_id().device_id {
+        let device_type = match common_device.device_info().device_id {
             0x1000 => VirtioDeviceType::Network,
             0x1001 => VirtioDeviceType::Block,
             0x1002 => VirtioDeviceType::TraditionalMemoryBalloon,
@@ -88,7 +88,7 @@ impl VirtioPciLegacyTransport {
             _ => {
                 warn!(
                     "Unrecognized virtio-pci device id:{:x?}",
-                    common_device.device_id().device_id
+                    common_device.device_info().device_id
                 );
                 return Err((BusProbeError::ConfigurationSpaceError, common_device));
             }
