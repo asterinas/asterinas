@@ -59,6 +59,7 @@ TESTS ?= \
 	unlink_test \
 	utimes_test \
 	vdso_clock_gettime_test \
+	vfork_test \
 	write_test \
 	xattr_test \
 	# The end of the list
