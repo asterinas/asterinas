@@ -286,6 +286,20 @@ impl SubmittedBio {
             complete_fn(self);
         }
     }
+
+    /// Create a new `SubmittedBio` from `Bio`.
+    pub fn new_from_bio(bio: &Bio) -> Self {
+        let bio_inner = bio.0.clone();
+        let result = bio_inner.status.compare_exchange(
+            BioStatus::Init as u32,
+            BioStatus::Submit as u32,
+            Ordering::Release,
+            Ordering::Relaxed,
+        );
+        assert!(result.is_ok());
+
+        Self(bio_inner)
+    }
 }
 
 /// The common inner part of `Bio`.
