@@ -49,20 +49,22 @@ pub(super) fn switch_to_task(next_task: Arc<Task>) {
     let current_task_ctx_ptr = if !current_task_ptr.is_null() {
         // SAFETY: The pointer is set by `switch_to_task` and is guaranteed to be
         // built with `Arc::into_raw`. It will only be dropped as a previous task,
-        // So reference will be valid across this function.
+        // so its reference will be valid until `after_switching_to`.
         let current_task = unsafe { &*current_task_ptr };
 
         current_task.save_fpu_state();
 
-        // Throughout this method, the task's context is alive and can be exclusively used.
+        // Until `after_switching_to`, the task's context is alive and can be exclusively used.
         current_task.ctx.get()
     } else {
-        // Throughout this method, interrupts are disabled and the context can be exclusively used.
+        // Until `after_switching_to`, IRQs are disabled and the context can be exclusively used.
         BOOTSTRAP_CONTEXT.as_mut_ptr()
     };
 
     before_switching_to(&next_task, &irq_guard);
 
+    // `before_switching_to` guarantees that from now on, and while the next task is running on the
+    // CPU, its context can be used exclusively.
     let next_task_ctx_ptr = next_task.ctx().get().cast_const();
 
     CURRENT_TASK_PTR.store(Arc::into_raw(next_task));
@@ -73,16 +75,16 @@ pub(super) fn switch_to_task(next_task: Arc<Task>) {
     let _ = core::mem::ManuallyDrop::new(irq_guard);
 
     // SAFETY:
-    // 1. `ctx` is only used in `reschedule()`. We have exclusive access to both the current task
-    //    context and the next task context.
-    // 2. The next task context is a valid task context.
+    // 1. We have exclusive access to both the current context and the next context (see above).
+    // 2. The next context is valid (because it is either correctly initialized or written by a
+    //    previous `context_switch`).
     unsafe {
         // This function may not return, for example, when the current task exits. So make sure
         // that all variables on the stack can be forgotten without causing resource leakage.
         context_switch(current_task_ctx_ptr, next_task_ctx_ptr);
     }
 
-    // SAFETY: We would only call once after switching back to this task.
+    // SAFETY: The task is just switched back, `after_switching_to` hasn't been called yet.
     unsafe { after_switching_to() };
 
     if let Some(current) = Task::current() {
