@@ -355,8 +355,12 @@ impl<'a> CursorMut<'a> {
                         continue;
                     };
                     num_unmapped += 1;
+                    #[cfg(not(feature = "lazy_tlb_flush_on_unmap"))]
                     self.flusher
                         .issue_tlb_flush_with(TlbFlushOp::Address(va), frame.into());
+                    #[cfg(feature = "lazy_tlb_flush_on_unmap")]
+                    self.flusher
+                        .latr_with(TlbFlushOp::Address(va), frame.into());
                 }
                 PageTableFrag::StrayPageTable {
                     pt,
@@ -365,12 +369,16 @@ impl<'a> CursorMut<'a> {
                     num_frames,
                 } => {
                     num_unmapped += num_frames;
+                    #[cfg(not(feature = "lazy_tlb_flush_on_unmap"))]
                     self.flusher
                         .issue_tlb_flush_with(TlbFlushOp::Range(va..va + len), pt);
+                    #[cfg(feature = "lazy_tlb_flush_on_unmap")]
+                    self.flusher.latr_with(TlbFlushOp::Range(va..va + len), pt);
                 }
             }
         }
 
+        #[cfg(not(feature = "lazy_tlb_flush_on_unmap"))]
         self.flusher.dispatch_tlb_flush();
 
         num_unmapped

@@ -72,10 +72,11 @@ loongArch64 = "0.2.5"
 fdt = { version = "0.1.5", features = ["pretty-printing"] }
 
 [features]
-default = ["cvm_guest"]
+default = ["cvm_guest", "lazy_tlb_flush_on_unmap"]
 # The guest OS support for Confidential VMs (CVMs), e.g., Intel TDX
 cvm_guest = ["dep:tdx-guest", "dep:iced-x86"]
 coverage = ["minicov"]
+lazy_tlb_flush_on_unmap = []
 
 [lints]
 workspace = true
