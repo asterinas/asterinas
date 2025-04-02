@@ -34,6 +34,17 @@ pub const BASE_SLICE_NS: u64 = 750_000;
 /// The minimum scheduling period, measured in nanoseconds.
 pub const MIN_PERIOD_NS: u64 = 6_000_000;
 
+#[expect(unused)]
+pub fn ns_to_clocks(ns: u64) -> u64 {
+    let (a, b) = consts();
+    ns * b / a
+}
+
+pub fn clocks_to_ns(clocks: u64) -> u64 {
+    let (a, b) = consts();
+    clocks * a / b
+}
+
 fn consts() -> (u64, u64) {
     static CONSTS: Once<(u64, u64)> = Once::new();
     *CONSTS.call_once(|| {
