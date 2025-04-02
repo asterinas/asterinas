@@ -10,7 +10,7 @@ use ostd_pod::Pod;
 
 use super::second_stage::{DeviceMode, PageTableEntry, PagingConsts};
 use crate::{
-    bus::pci::PciDeviceLocation,
+    bus::pci::cfg_space::access::PciDeviceLocation,
     mm::{
         dma::Daddr,
         page_prop::{CachePolicy, PageProperty, PrivilegedPageFlags as PrivFlags},
@@ -77,7 +77,7 @@ impl RootTable {
             return Err(ContextTableError::InvalidDeviceId);
         }
 
-        self.get_or_create_context_table(device)
+        self.get_or_create_context_table(&device)
             .map(device, daddr, paddr)?;
 
         Ok(())
@@ -92,7 +92,7 @@ impl RootTable {
             return Err(ContextTableError::InvalidDeviceId);
         }
 
-        self.get_or_create_context_table(device)
+        self.get_or_create_context_table(&device)
             .unmap(device, daddr)?;
 
         Ok(())
@@ -107,7 +107,7 @@ impl RootTable {
         device_id: PciDeviceLocation,
         page_table: PageTable<DeviceMode, PageTableEntry, PagingConsts>,
     ) {
-        let context_table = self.get_or_create_context_table(device_id);
+        let context_table = self.get_or_create_context_table(&device_id);
 
         let bus_entry = context_table
             .entries_frame
@@ -135,7 +135,7 @@ impl RootTable {
             .unwrap();
     }
 
-    fn get_or_create_context_table(&mut self, device_id: PciDeviceLocation) -> &mut ContextTable {
+    fn get_or_create_context_table(&mut self, device_id: &PciDeviceLocation) -> &mut ContextTable {
         let bus_entry = self
             .root_frame
             .read_val::<RootEntry>(device_id.bus as usize * size_of::<RootEntry>())

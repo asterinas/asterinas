@@ -76,11 +76,13 @@ unsafe fn init() {
     unsafe {
         mm::frame::allocator::init_early_allocator();
     }
-
-    if_tdx_enabled!({
+    #[cfg(target_arch = "x86_64")]
+    arch::if_tdx_enabled!({
     } else {
         arch::serial::init();
     });
+    #[cfg(not(target_arch = "x86_64"))]
+    arch::serial::init();
 
     logger::init();
 
@@ -101,7 +103,7 @@ unsafe fn init() {
 
     mm::kspace::init_kernel_page_table(meta_pages);
 
-    crate::sync::init();
+    sync::init();
 
     boot::init_after_heap();
 
@@ -109,7 +111,8 @@ unsafe fn init() {
 
     unsafe { arch::late_init_on_bsp() };
 
-    if_tdx_enabled!({
+    #[cfg(target_arch = "x86_64")]
+    arch::if_tdx_enabled!({
         arch::serial::init();
     });
     arch::serial::callback_init();

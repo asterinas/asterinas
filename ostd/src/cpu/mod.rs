@@ -5,17 +5,13 @@
 pub mod local;
 pub mod set;
 
-cfg_if::cfg_if! {
-    if #[cfg(target_arch = "x86_64")] {
-        pub use crate::arch::x86::cpu::*;
-    } else if #[cfg(target_arch = "riscv64")] {
-        pub use crate::arch::riscv::cpu::*;
-    }
-}
-
 pub use set::{AtomicCpuSet, CpuSet};
 use spin::Once;
 
+#[cfg(target_arch = "riscv64")]
+pub use crate::arch::riscv::cpu::*;
+#[cfg(target_arch = "x86_64")]
+pub use crate::arch::x86::cpu::*;
 use crate::{arch::boot::smp::get_num_processors, cpu_local_cell, task::atomic_mode::InAtomicMode};
 
 /// The ID of a CPU in the system.

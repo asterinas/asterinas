@@ -54,9 +54,9 @@ pub mod bus;
 pub mod capability;
 pub mod cfg_space;
 pub mod common_device;
-mod device_info;
+pub mod device_info;
 
-pub use device_info::{PciDeviceId, PciDeviceLocation};
+use cfg_space::access::PciDeviceLocation;
 
 use self::{bus::PciBus, common_device::PciCommonDevice};
 use crate::{arch::pci::has_pci_bus, sync::Mutex};
