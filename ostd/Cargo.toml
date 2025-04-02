@@ -57,9 +57,10 @@ sbi-rt = "0.0.3"
 fdt = { version = "0.1.5", features = ["pretty-printing"] }
 
 [features]
-default = ["cvm_guest"]
+default = ["cvm_guest", "lazy_tlb_flush_on_unmap"]
 # The guest OS support for Confidential VMs (CVMs), e.g., Intel TDX
 cvm_guest = ["dep:tdx-guest", "dep:iced-x86"]
+lazy_tlb_flush_on_unmap = []
 
 [lints]
 workspace = true

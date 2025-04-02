@@ -159,6 +159,9 @@ fn ap_early_entry(cpu_id: u32) -> ! {
         crate::arch::init_on_ap();
     }
 
+    #[cfg(feature = "lazy_tlb_flush_on_unmap")]
+    crate::mm::tlb::latr::init_this_cpu();
+
     crate::arch::irq::enable_local();
 
     // SAFETY: this function is only called once on this AP.

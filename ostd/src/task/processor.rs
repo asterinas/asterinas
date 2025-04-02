@@ -140,4 +140,10 @@ pub(super) unsafe fn after_switching_to() {
     // We drop it after enabling the IRQ in case dropping user-provided
     // resources would violate the atomic mode.
     drop(prev);
+
+    #[cfg(feature = "lazy_tlb_flush_on_unmap")]
+    {
+        crate::mm::tlb::latr::do_flush();
+        crate::mm::tlb::latr::do_recycle();
+    }
 }

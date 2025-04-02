@@ -316,8 +316,11 @@ impl<'b> CursorMut<'_, 'b> {
             let result = unsafe { self.pt_cursor.take_next(end_va - self.virt_addr()) };
             match result {
                 PageTableItem::Mapped { va, page, .. } => {
+                    #[cfg(not(feature = "lazy_tlb_flush_on_unmap"))]
                     self.flusher
                         .issue_tlb_flush_with(TlbFlushOp::Address(va), page);
+                    #[cfg(feature = "lazy_tlb_flush_on_unmap")]
+                    self.flusher.latr_with(TlbFlushOp::Address(va), page);
                 }
                 PageTableItem::NotMapped { .. } => {
                     break;
@@ -326,8 +329,11 @@ impl<'b> CursorMut<'_, 'b> {
                     panic!("found untracked memory mapped into `VmSpace`");
                 }
                 PageTableItem::StrayPageTable { pt, va, len } => {
+                    #[cfg(not(feature = "lazy_tlb_flush_on_unmap"))]
                     self.flusher
                         .issue_tlb_flush_with(TlbFlushOp::Range(va..va + len), pt);
+                    #[cfg(feature = "lazy_tlb_flush_on_unmap")]
+                    self.flusher.latr_with(TlbFlushOp::Range(va..va + len), pt);
                 }
                 PageTableItem::Marked { .. } => {
                     continue;
@@ -335,6 +341,7 @@ impl<'b> CursorMut<'_, 'b> {
             }
         }
 
+        #[cfg(not(feature = "lazy_tlb_flush_on_unmap"))]
         self.flusher.dispatch_tlb_flush();
     }
 

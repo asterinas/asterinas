@@ -105,6 +105,9 @@ unsafe fn init() {
 
     mm::dma::init();
 
+    #[cfg(feature = "lazy_tlb_flush_on_unmap")]
+    mm::tlb::latr::init_bsp();
+
     unsafe { arch::late_init_on_bsp() };
 
     if_tdx_enabled!({
