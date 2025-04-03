@@ -14,7 +14,7 @@ mod init_stack;
 
 use aster_rights::Full;
 pub use heap::Heap;
-use ostd::sync::MutexGuard;
+use ostd::{sync::MutexGuard, task::disable_preempt};
 
 pub use self::{
     heap::USER_HEAP_SIZE_LIMIT,
@@ -83,9 +83,12 @@ impl ProcessVmarGuard<'_> {
         self.inner.as_ref().unwrap()
     }
 
-    /// Clears the VMAR of the binding process.
-    pub(super) fn clear(&mut self) {
-        *self.inner = None;
+    /// Sets a new VMAR for the binding process.
+    ///
+    /// If the `new_vmar` is `None`, this method will remove the
+    /// current VMAR.
+    pub(super) fn set_vmar(&mut self, new_vmar: Option<Vmar<Full>>) {
+        *self.inner = new_vmar;
     }
 }
 
@@ -160,10 +163,25 @@ impl ProcessVm {
         &self.heap
     }
 
-    /// Clears existing mappings and then maps stack and heap vmo.
-    pub(super) fn clear_and_map(&self) {
+    /// Clears existing mappings and then maps the heap VMO to the current VMAR.
+    pub fn clear_and_map(&self) {
         let root_vmar = self.lock_root_vmar();
         root_vmar.get().clear().unwrap();
         self.heap.alloc_and_map_vm(&root_vmar.get()).unwrap();
     }
+}
+
+/// Renews the [`ProcessVm`] of the current process and then maps the heap VMO to the new VMAR.
+pub fn renew_vm_and_map(ctx: &Context) {
+    let process_vm = ctx.process.vm();
+    let mut root_vmar = process_vm.lock_root_vmar();
+
+    let new_vmar = Vmar::<Full>::new_root();
+    let guard = disable_preempt();
+    *ctx.thread_local.root_vmar().borrow_mut() = Some(new_vmar.dup().unwrap());
+    new_vmar.vm_space().activate();
+    root_vmar.set_vmar(Some(new_vmar));
+    drop(guard);
+
+    process_vm.heap.alloc_and_map_vm(root_vmar.get()).unwrap();
 }

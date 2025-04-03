@@ -14,6 +14,7 @@ use crate::{prelude::*, process::signal::signals::kernel::KernelSignal};
 /// [`do_exit_group`]: crate::process::posix_thread::do_exit_group
 pub(super) fn exit_process(thread_local: &ThreadLocal, current_process: &Process) {
     current_process.status().set_zombie();
+    current_process.status().set_vfork_child(false);
 
     // FIXME: This is obviously wrong in a number of ways, since different threads can have
     // different file tables, and different processes can share the same file table.
@@ -25,7 +26,7 @@ pub(super) fn exit_process(thread_local: &ThreadLocal, current_process: &Process
 
     send_child_death_signal(current_process);
 
-    current_process.lock_root_vmar().clear();
+    current_process.lock_root_vmar().set_vmar(None);
 }
 
 /// Sends parent-death signals to the children.
