@@ -11,7 +11,7 @@ use crate::{
             constants::{SIGCONT, SIGHUP},
             signals::kernel::KernelSignal,
         },
-        ProcessGroup, Session,
+        ProcessGroup, ProcessState, Session,
     },
 };
 
@@ -161,7 +161,9 @@ impl JobControl {
             return true;
         };
 
-        foreground.contains_process(current!().pid())
+        foreground.contains_process(
+            ProcessState::with_current_task(|process_state| process_state.pid()).unwrap(),
+        )
     }
 }
 
