@@ -167,6 +167,7 @@ OSDK_CRATES := \
 	kernel/comps/mlsdisk \
 	kernel/comps/time \
 	kernel/comps/virtio \
+	kernel/comps/nvme \
 	kernel/libs/aster-util \
 	kernel/libs/aster-bigtcp
 
