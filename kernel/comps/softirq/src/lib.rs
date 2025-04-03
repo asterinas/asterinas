@@ -7,15 +7,23 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
-use core::sync::atomic::{AtomicU8, Ordering};
+use core::{
+    marker::PhantomData,
+    sync::atomic::{AtomicU8, Ordering},
+};
 
 use component::{init_component, ComponentInitError};
-use ostd::{cpu_local_cell, trap::register_bottom_half_handler};
+use ostd::{
+    cpu_local_cell,
+    trap::{disable_local, in_interrupt_context, register_bottom_half_handler},
+};
 use spin::Once;
 
+mod lock;
 pub mod softirq_id;
 mod taskless;
 
+pub use lock::{BottomHalfDisabled, DisableLocalBottomHalfGuard};
 pub use taskless::Taskless;
 
 /// A representation of a software interrupt (softirq) line.
@@ -119,25 +127,87 @@ static ENABLED_MASK: AtomicU8 = AtomicU8::new(0);
 
 cpu_local_cell! {
     static PENDING_MASK: u8 = 0;
+    static DISABLE_SOFTIRQ_COUNT: u8 = 0;
+}
+
+fn increase_disable_softirq_count() {
+    DISABLE_SOFTIRQ_COUNT.add_assign(1);
+}
+
+fn decrease_disable_softirq_count() {
+    DISABLE_SOFTIRQ_COUNT.sub_assign(1);
+}
+
+fn disable_softirq_count() -> u8 {
+    DISABLE_SOFTIRQ_COUNT.load()
+}
+
+#[clippy::has_significant_drop]
+#[must_use]
+struct DisableLocalSoftirqGuard(PhantomData<()>);
+
+impl Drop for DisableLocalSoftirqGuard {
+    fn drop(&mut self) {
+        // Once the guard is dropped, we will process pending items within
+        // the current thread's context if softirq is going to be enabled.
+        // This behavior is similar to how Linux handles pending softirqs.
+        if disable_softirq_count() == 1 && !in_interrupt_context() {
+            // Preemption and softirq are not really enabled at the moment,
+            // so we can guarantee that we'll process any pending softirqs for the current CPU.
+            process_all_pending();
+        }
+
+        decrease_disable_softirq_count();
+    }
+}
+
+/// Disables softirq on current processor.
+fn disable_softirq_local() -> DisableLocalSoftirqGuard {
+    increase_disable_softirq_count();
+    DisableLocalSoftirqGuard(PhantomData)
+}
+
+/// Checks whether the softirq is enabled on current processor
+fn is_softirq_enabled() -> bool {
+    DISABLE_SOFTIRQ_COUNT.load() == 0
+}
+
+fn get_and_clear_pending() -> u8 {
+    // The PENDING_MASK should be accessed with local interrupts disabled to avoid race conditions,
+    // as the mask is also accessed in the interrupt handler for raising softirqs.
+    let guard = disable_local();
+    let pending_mask = PENDING_MASK.load();
+    PENDING_MASK.store(0);
+    drop(guard);
+    pending_mask
 }
 
 /// Processes pending softirqs.
+fn process_pending() {
+    if !is_softirq_enabled() {
+        return;
+    }
+
+    process_all_pending();
+}
+
+/// Processes all pending softirqs regardless of whether softirqs are disabled.
 ///
 /// The processing instructions will iterate for `SOFTIRQ_RUN_TIMES` times. If any softirq
 /// is raised during the iteration, it will be processed.
-fn process_pending() {
+fn process_all_pending() {
     const SOFTIRQ_RUN_TIMES: u8 = 5;
 
     for _i in 0..SOFTIRQ_RUN_TIMES {
         let mut action_mask = {
-            let pending_mask = PENDING_MASK.load();
-            PENDING_MASK.store(0);
+            let pending_mask = get_and_clear_pending();
             pending_mask & ENABLED_MASK.load(Ordering::Acquire)
         };
 
         if action_mask == 0 {
             break;
         }
+
         while action_mask > 0 {
             let action_id = u8::trailing_zeros(action_mask) as u8;
             SoftIrqLine::get(action_id).callback.get().unwrap()();
