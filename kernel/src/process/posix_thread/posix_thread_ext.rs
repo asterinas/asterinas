@@ -9,7 +9,7 @@ use crate::{
         thread_info::ThreadFsInfo,
     },
     prelude::*,
-    process::{process_vm::ProcessVm, program_loader::load_program_to_vm, Credentials, Process},
+    process::{process_vm::ProcessVm, program_loader::ProgramToLoad, Credentials, Process},
     thread::{AsThread, Thread, Tid},
 };
 
@@ -48,7 +48,10 @@ pub fn create_posix_task_from_executable(
         let fs_resolver = fs.resolver().read();
         let fs_path = FsPath::new(AT_FDCWD, executable_path)?;
         let elf_file = fs.resolver().read().lookup(&fs_path)?;
-        load_program_to_vm(process_vm, elf_file, argv, envp, &fs_resolver, 1)?
+        let program_to_load =
+            ProgramToLoad::build_from_file(elf_file, &fs_resolver, argv, envp, 1)?;
+        process_vm.clear_and_map();
+        program_to_load.load_to_vm(process_vm, &fs_resolver)?
     };
 
     let mut user_ctx = UserContext::default();
