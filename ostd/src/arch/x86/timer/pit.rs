@@ -10,11 +10,8 @@
 //!
 
 use crate::{
-    arch::{
-        kernel::IO_APIC,
-        timer::TIMER_FREQ,
-        x86::device::io_port::{IoPort, WriteOnlyAccess},
-    },
+    arch::{kernel::IO_APIC, timer::TIMER_FREQ, x86::device::io_port::WriteOnlyAccess},
+    io::IoPort,
     trap::IrqLine,
 };
 
@@ -136,7 +133,7 @@ enum Channel {
 
 /// The output from PIT channel 0 is connected to the PIC chip and generate "IRQ 0".
 /// If connected to PIC, the IRQ0 will generate by the **rising edge** of the output voltage.
-static CHANNEL0_PORT: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x40) };
+static CHANNEL0_PORT: IoPort<WriteOnlyAccess> = unsafe { IoPort::new::<u8>(0x40) };
 
 /// The output from PIT channel 1 was once used for refreshing the DRAM or RAM so that
 /// the capacitors don't forget their state.
@@ -144,13 +141,13 @@ static CHANNEL0_PORT: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x40) }
 /// On later machines, the DRAM refresh is done with dedicated hardware and this channel
 /// is no longer used.
 #[expect(unused)]
-static CHANNEL1_PORT: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x41) };
+static CHANNEL1_PORT: IoPort<WriteOnlyAccess> = unsafe { IoPort::new::<u8>(0x41) };
 
 /// The output from PIT channel 2 is connected to the PC speaker, so the frequency of the
 /// output determines the frequency of the sound produced by the speaker. For more information,
 /// check https://wiki.osdev.org/PC_Speaker.
 #[expect(unused)]
-static CHANNEL2_PORT: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x42) };
+static CHANNEL2_PORT: IoPort<WriteOnlyAccess> = unsafe { IoPort::new::<u8>(0x42) };
 
 /// PIT command port.
 /// ```text
@@ -160,22 +157,28 @@ static CHANNEL2_PORT: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x42) }
 /// 1 to 3       Operating mode
 /// 0            BCD/Binary mode: 0 = 16-bit binary, 1 = four-digit BCD
 /// ```
-static MODE_COMMAND_PORT: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x43) };
+static MODE_COMMAND_PORT: IoPort<WriteOnlyAccess> = unsafe { IoPort::new::<u8>(0x43) };
 const TIMER_RATE: u32 = 1193182;
 
 pub(crate) fn init(operating_mode: OperatingMode) {
     // Set PIT mode
     // Bit 0 is BCD/binary mode, which is always set to binary mode(value: 0)
-    MODE_COMMAND_PORT.write(
-        ((operating_mode as u8) << 1)
-            | ((AccessMode::LowAndHighByte as u8) << 4)
-            | ((Channel::Channel0 as u8) << 6),
-    );
+    MODE_COMMAND_PORT
+        .write_no_offset::<u8>(
+            ((operating_mode as u8) << 1)
+                | ((AccessMode::LowAndHighByte as u8) << 4)
+                | ((Channel::Channel0 as u8) << 6),
+        )
+        .unwrap();
 
     // Set timer frequency
     const CYCLE: u32 = TIMER_RATE / TIMER_FREQ as u32;
-    CHANNEL0_PORT.write((CYCLE & 0xFF) as _);
-    CHANNEL0_PORT.write((CYCLE >> 8) as _);
+    CHANNEL0_PORT
+        .write_no_offset::<u8>((CYCLE & 0xFF) as _)
+        .unwrap();
+    CHANNEL0_PORT
+        .write_no_offset::<u8>((CYCLE >> 8) as _)
+        .unwrap();
 }
 
 /// Enable the IOAPIC line that connected to PIC
