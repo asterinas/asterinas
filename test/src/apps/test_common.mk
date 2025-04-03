@@ -12,11 +12,13 @@ C_OBJS := $(addprefix $(OBJ_OUTPUT_DIR)/,$(C_SRCS:%.c=%))
 C_DEPS := $(addprefix $(DEP_OUTPUT_DIR)/,$(C_SRCS:%.c=%.d))
 ASM_SRCS := $(wildcard *.S)
 ASM_OBJS := $(addprefix $(OBJ_OUTPUT_DIR)/,$(ASM_SRCS:%.S=%))
+JAVA_SRCS := $(wildcard *.java)
+JAVA_OBJS := $(addprefix $(OBJ_OUTPUT_DIR)/,$(JAVA_SRCS:%.java=%.class))
 CC ?= gcc
 C_FLAGS ?= -Wall -Werror
 
 .PHONY: all
-all: $(C_OBJS) $(ASM_OBJS)
+all: $(C_OBJS) $(ASM_OBJS) $(JAVA_OBJS)
 
 $(OBJ_OUTPUT_DIR) $(DEP_OUTPUT_DIR):
 	@mkdir -p $@
@@ -31,3 +33,7 @@ $(OBJ_OUTPUT_DIR)/%: %.c | $(OBJ_OUTPUT_DIR) $(DEP_OUTPUT_DIR)
 $(OBJ_OUTPUT_DIR)/%: %.S | $(OBJ_OUTPUT_DIR)
 	@$(CC) $(C_FLAGS) $(EXTRA_C_FLAGS) $< -o $@
 	@echo "CC <= $@"
+
+$(OBJ_OUTPUT_DIR)/%.class: %.java | $(OBJ_OUTPUT_DIR)
+	@javac -g $< -d $(OBJ_OUTPUT_DIR)
+	@echo "JAVAC <= $@"

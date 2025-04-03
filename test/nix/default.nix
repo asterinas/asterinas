@@ -45,6 +45,7 @@ in rec {
     db = pkgs.db.out;
     libgomp = pkgs.gcc.cc.lib; # libgomp is part of gcc
     gperftools = pkgs.gperftools;
+    jdk21_headless = pkgs.jdk21_headless;
   };
   initramfs-image = pkgs.callPackage ./initramfs-image.nix {
     inherit initramfs;

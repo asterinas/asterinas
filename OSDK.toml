@@ -18,7 +18,7 @@ kcmd_args = [
     "LOGNAME=root",
     "HOME=/",
     "USER=root",
-    "PATH=/bin:/benchmark",
+    "PATH=/bin:/usr/bin:/benchmark",
     "init=/usr/bin/busybox",
 ]
 init_args = ["sh", "-l"]

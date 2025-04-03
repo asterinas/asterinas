@@ -1,4 +1,5 @@
-{ lib, stdenv, fetchFromGitHub, hostPlatform, glibc, libnl, }: rec {
+{ lib, stdenv, fetchFromGitHub, hostPlatform, glibc, libnl, jdk21_headless,
+}: rec {
   mongoose_src = fetchFromGitHub {
     owner = "cesanta";
     repo = "mongoose";
@@ -20,7 +21,7 @@
     CC = "${stdenv.cc.targetPrefix}cc";
     C_FLAGS = "-I${libnl.dev}/include/libnl3";
     # FIXME: Excluding `glibc` allows the build to succeed, but causes some tests to fail.
-    buildInputs = [ glibc glibc.static libnl ];
+    buildInputs = [ glibc glibc.static libnl jdk21_headless ];
     buildCommand = ''
       BUILD_DIR=$(mktemp -d)
       mkdir -p $BUILD_DIR

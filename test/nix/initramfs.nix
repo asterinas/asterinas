@@ -1,5 +1,5 @@
 { lib, stdenv, fetchFromGitHub, hostPlatform, writeClosure, busybox, apps
-, linux_vdso, benchmark, syscall, db, libgomp, gperftools }:
+, linux_vdso, benchmark, syscall, db, libgomp, gperftools, jdk21_headless }:
 let
   etc = lib.fileset.toSource {
     root = ./../src/etc;
@@ -24,6 +24,16 @@ in stdenv.mkDerivation {
     ln -sfn usr/lib $out/lib
     ln -sfn usr/lib64 $out/lib64
     cp -r ${busybox}/bin/* $out/bin/
+
+    # Install JDK 21 headless
+    mkdir -p $out/usr/lib/jvm
+    cp -r ${jdk21_headless} $out/usr/lib/jvm/java-21-openjdk-amd64
+    ln -sf /usr/lib/jvm/java-21-openjdk-amd64/bin/java $out/usr/bin/java
+    mkdir -p $out/etc/java-21-openjdk
+    # Copy JDK configuration files if they exist
+    if [ -d "${jdk21_headless}/conf" ]; then
+      cp -r ${jdk21_headless}/conf/* $out/etc/java-21-openjdk/
+    fi
 
     mkdir -p $out/usr/lib/x86_64-linux-gnu
     ${lib.optionalString hostPlatform.isx86_64 ''
