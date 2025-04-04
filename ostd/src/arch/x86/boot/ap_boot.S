@@ -8,14 +8,22 @@
 .section ".ap_boot", "awx"
 .align 4096
 
-IA32_APIC_BASE = 0x1B
-IA32_X2APIC_APICID = 0x802
-MMIO_XAPIC_APICID = 0xFEE00020
+IA32_APIC_BASE_MSR = 0x1B
+IA32_X2APIC_APICID_MSR = 0x802
+IA32_EFER_MSR = 0xC0000080
+
+XAPIC_APICID_MMIO_ADDR = 0xFEE00020
 
 .macro setup_64bit_gdt_and_page_table eax
     // Use the 64-bit GDT.
 .extern boot_gdtr
     lgdt [boot_gdtr]
+
+    // Set the NX bit support in the EFER MSR.
+    mov ecx, IA32_EFER_MSR 
+    rdmsr
+    or eax, 1 << 11 // support no-execute PTE flag
+    wrmsr
 
     // Enable PAE and PGE.
     mov \eax, cr4
@@ -25,7 +33,8 @@ MMIO_XAPIC_APICID = 0xFEE00020
     // Set the page table. The application processors use
     // the same page table as the bootstrap processor's
     // boot phase page table.
-    mov eax, __boot_page_table_pointer // 32-bit load
+    xor \eax, \eax  // clear the upper 32 bits if \eax is 64-bit
+    mov eax, __boot_page_table_pointer  // 32-bit load
     mov cr3, \eax
 .endm
 
@@ -106,11 +115,11 @@ ap_protect_entry:
 
     // Tell if it is xAPIC or x2APIC.
     // IA32_APIC_BASE register:
-    // bit 8:       BSP—Processor is BSP
-    // bit 10:      EXTD—Enable x2APIC mode
-    // bit 11:      EN—xAPIC global enable/disable
-    // bit 12-35:   APIC Base—Base physical address
-    mov ecx, IA32_APIC_BASE
+    //  - bit 8:       BSP—Processor is BSP
+    //  - bit 10:      EXTD—Enable x2APIC mode
+    //  - bit 11:      EN—xAPIC global enable/disable
+    //  - bit 12-35:   APIC Base—Base physical address
+    mov ecx, IA32_APIC_BASE_MSR
     rdmsr
     and eax, 0x400  // check EXTD bit
     cmp eax, 0x400
@@ -119,14 +128,14 @@ ap_protect_entry:
 xapic_mode:
     // In xAPIC mode, the local APIC ID is stored in 
     // the MMIO region.
-    mov eax, [MMIO_XAPIC_APICID]
+    mov eax, [XAPIC_APICID_MMIO_ADDR]
     shr eax, 24
     jmp ap_protect
 
 x2apic_mode:
     // In x2APIC mode, the local APIC ID is stored in 
     // IA32_X2APIC_APICID MSR.
-    mov ecx, IA32_X2APIC_APICID
+    mov ecx, IA32_X2APIC_APICID_MSR
     rdmsr
     jmp ap_protect
 
@@ -148,10 +157,10 @@ ap_protect:
     setup_64bit_gdt_and_page_table eax
 
     // Enable long mode.
-    mov ecx, 0xc0000080 
-    rdmsr   // load EFER MSR
+    mov ecx, IA32_EFER_MSR 
+    rdmsr
     or eax, 1 << 8
-    wrmsr   // set long bit
+    wrmsr
 
     // Enable paging.
     mov eax, cr0
