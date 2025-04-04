@@ -2,12 +2,13 @@
 #!/bin/bash
 
 # args: bench.sh [linux|asterinas] [bench_output_file] [cmd_to_run_in_vm]
+# envs: NR_CPUS CORTEN_RUN_ARGS
 
 set -e
 
 export QMP_PORT=3336
 
-NR_CPUS=384
+NR_CPUS=${NR_CPUS:-$(nproc --all)}
 
 SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 PIN_CPU_SCRIPT="$SCRIPT_DIR/pin_cpu.py"
@@ -23,7 +24,7 @@ if [ "$BENCH_TARGET" == "linux" ]; then
     START_VM_CMD="$SCRIPT_DIR/start_linux.sh $NR_CPUS"
     EXIT_COMMAND="; poweroff -f"
 else
-    START_VM_CMD="make run SMP=$NR_CPUS MEM=240G RELEASE_LTO=1"
+    START_VM_CMD="make run SMP=$NR_CPUS MEM=240G RELEASE_LTO=1 $CORTEN_RUN_ARGS"
     EXIT_COMMAND="; exit"
 fi
 

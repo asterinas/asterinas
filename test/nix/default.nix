@@ -41,6 +41,10 @@ in rec {
     apps = if enableBasicTest then apps else null;
     benchmark = if enableBenchmark then benchmark else null;
     syscall = if enableSyscallTest then syscall else null;
+    # Add the required libraries for Metis/Dedup/Psearchy for CortenMM Eval
+    db = pkgs.db.out;
+    libgomp = pkgs.gcc.cc.lib; # libgomp is part of gcc
+    gperftools = pkgs.gperftools;
   };
   initramfs-image = pkgs.callPackage ./initramfs-image.nix {
     inherit initramfs;

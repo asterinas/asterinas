@@ -23,13 +23,15 @@ INITRAMFS_COMPRESSED := true
 endif
 EXT2_IMAGE := $(BUILD_DIR)/ext2.img
 EXFAT_IMAGE := $(BUILD_DIR)/exfat.img
+BENCH_DATA_IMAGE := $(BUILD_DIR)/bench_data.img
 
 # Include benchmark, if BENCHMARK is set.
-ifeq ($(BENCHMARK), none)
-ENABLE_BENCHMARK = false
-else
+# ifeq ($(BENCHMARK), none)
+# ENABLE_BENCHMARK = true
+# else
+# ENABLE_BENCHMARK = true
+# endif
 ENABLE_BENCHMARK = true
-endif
 
 # Include syscall_test, if BUILD_SYSCALL_TEST is set.
 ifeq ($(BUILD_SYSCALL_TEST), 1)
@@ -52,10 +54,10 @@ build: $(EXT2_IMAGE) $(EXFAT_IMAGE)
 	@echo "For loongarch, we generate a fake initramfs to successfully test or build."
 	@touch $(INITRAMFS_IMAGE)
 else
-build: $(INITRAMFS_IMAGE) $(EXT2_IMAGE) $(EXFAT_IMAGE)
+build: $(INITRAMFS_IMAGE) $(EXT2_IMAGE) $(EXFAT_IMAGE) $(BENCH_DATA_IMAGE)
 endif
 
-.PHONY: $(INITRAMFS_IMAGE)
+# .PHONY: $(INITRAMFS_IMAGE) # speed up. need clean if config changed
 $(INITRAMFS_IMAGE): $(INITRAMFS)
 	@nix-build \
 		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
@@ -70,8 +72,8 @@ $(INITRAMFS_IMAGE): $(INITRAMFS)
 		--out-link $@ \
 		nix -A initramfs-image
 
-.PHONY: $(INITRAMFS)
-$(INITRAMFS):
+# .PHONY: $(INITRAMFS) # speed up. need clean if config changed
+$(INITRAMFS): $(CUR_DIR)/src $(CUR_DIR)/nix
 	@nix-build \
 		--tarball-ttl $(NIXPKGS_CACHE_TTL) \
 		--argstr target $(ARCH) \
@@ -166,6 +168,28 @@ $(EXFAT_IMAGE):
 	@mkdir -p $(BUILD_DIR)
 	@fallocate -l 64M $(EXFAT_IMAGE)
 	@mkfs.exfat $(EXFAT_IMAGE)
+
+$(BENCH_DATA_IMAGE): /root/mm-scalability-benchmark
+	@dd if=/dev/zero of=$(BENCH_DATA_IMAGE) bs=2G count=4 iflag=fullblock
+	@mkfs.ext2 $(BENCH_DATA_IMAGE)
+	@if [ -d /root/mm-scalability-benchmark/ ]; then \
+		mkdir -p /mnt/data_mount; \
+		mount -t ext2 $(BENCH_DATA_IMAGE) /mnt/data_mount; \
+		cp -r /root/mm-scalability-benchmark/data/* /mnt/data_mount/; \
+		cp -r /root/linux-2.6.35 /mnt/data_mount/; \
+		for i in $(PARSEC_KERNELS); do \
+			if [ "$$i" != "streamcluster" ]; then \
+				mkdir -p /mnt/data_mount/$$i; \
+				tar -xf /root/mm-scalability-benchmark/parsec-3.0/pkgs/kernels/$$i/inputs/input_native.tar -C /mnt/data_mount/$$i; \
+			fi; \
+		done; \
+		for i in $(PARSEC_APPS); do \
+			mkdir -p /mnt/data_mount/$$i; \
+			tar -xf /root/mm-scalability-benchmark/parsec-3.0/pkgs/apps/$$i/inputs/input_native.tar -C /mnt/data_mount/$$i; \
+		done; \
+		umount /mnt/data_mount; \
+		rm -rf /mnt/data_mount/; \
+	fi
 
 .PHONY: format
 format:

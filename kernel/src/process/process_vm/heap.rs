@@ -13,7 +13,7 @@ use crate::{
 /// The base address of user heap
 pub const USER_HEAP_BASE: Vaddr = 0x0000_0000_1000_0000;
 /// The max allowed size of user heap
-pub const USER_HEAP_SIZE_LIMIT: usize = 16 * 1024 * PAGE_SIZE; // 16 * 4MB
+pub const USER_HEAP_SIZE_LIMIT: usize = 16 * 1026 * 1024 * PAGE_SIZE; // 64 GB
 
 #[derive(Debug)]
 pub struct Heap {

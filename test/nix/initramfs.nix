@@ -1,5 +1,5 @@
 { lib, stdenv, fetchFromGitHub, hostPlatform, writeClosure, busybox, apps
-, linux_vdso, benchmark, syscall, }:
+, linux_vdso, benchmark, syscall, db, libgomp, gperftools }:
 let
   etc = lib.fileset.toSource {
     root = ./../src/etc;
@@ -37,6 +37,13 @@ in stdenv.mkDerivation {
 
     ${lib.optionalString (apps != null) ''
       cp -r ${apps.package}/* $out/test/
+      # Copy runtime libraries for Metis/Dedup/Psearchy for CortenMM Eval
+      # Berkeley DB
+      cp -L ${db}/lib/libdb-5.3.so $out/lib/x86_64-linux-gnu/libdb-5.3.so
+      # OpenMP
+      cp -L ${libgomp}/lib/libgomp.so.1.0.0 $out/lib/x86_64-linux-gnu/libgomp.so.1
+      # TCMalloc
+      cp -L ${gperftools}/lib/libtcmalloc_minimal.so.4 $out/lib/x86_64-linux-gnu/libtcmalloc_minimal.so.4
     ''}
 
     ${lib.optionalString (benchmark != null) ''
