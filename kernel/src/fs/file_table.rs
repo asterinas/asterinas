@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(unused_variables)]
-
 use core::sync::atomic::{AtomicU8, Ordering};
 
 use aster_util::slot_vec::SlotVec;
@@ -10,7 +8,6 @@ use ostd::sync::RwArc;
 use super::{
     file_handle::FileLike,
     fs_resolver::{FsPath, FsResolver, AT_FDCWD},
-    inode_handle::InodeHandle,
     utils::{AccessMode, InodeMode},
 };
 use crate::{
@@ -130,12 +127,7 @@ impl FileTable {
         self.notify_fd_events(&events);
         removed_entry.notify_fd_events(&events);
 
-        let closed_file = removed_entry.file;
-        if let Some(closed_inode_file) = closed_file.downcast_ref::<InodeHandle>() {
-            // FIXME: Operation below should not hold any mutex if `self` is protected by a spinlock externally
-            closed_inode_file.release_range_locks();
-        }
-        Some(closed_file)
+        Some(removed_entry.file)
     }
 
     pub fn close_all(&mut self) -> Vec<Arc<dyn FileLike>> {
@@ -168,11 +160,7 @@ impl FileTable {
             let events = FdEvents::Close(fd);
             self.notify_fd_events(&events);
             removed_entry.notify_fd_events(&events);
-            closed_files.push(removed_entry.file.clone());
-            if let Some(inode_file) = removed_entry.file.downcast_ref::<InodeHandle>() {
-                // FIXME: Operation below should not hold any mutex if `self` is protected by a spinlock externally
-                inode_file.release_range_locks();
-            }
+            closed_files.push(removed_entry.file);
         }
 
         closed_files
@@ -412,7 +400,7 @@ impl OwnerObserver {
 }
 
 impl Observer<IoEvents> for OwnerObserver {
-    fn on_events(&self, events: &IoEvents) {
+    fn on_events(&self, _events: &IoEvents) {
         if self.file.status_flags().contains(StatusFlags::O_ASYNC)
             && let Some(process) = self.owner.upgrade()
         {
