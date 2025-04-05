@@ -210,7 +210,8 @@ impl TaskOptions {
         /// all task will entering this function
         /// this function is mean to executing the task_fn in Task
         extern "C" fn kernel_task_entry() -> ! {
-            // SAFETY: This is called only once when we are switched to a CPU.
+            // SAFETY: The new task is switched on a CPU for the first time, `after_switching_to`
+            // hasn't been called yet.
             unsafe { processor::after_switching_to() };
 
             let current_task = Task::current()
