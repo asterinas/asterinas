@@ -16,7 +16,7 @@ pub fn sys_ioctl(fd: FileDesc, cmd: u32, arg: Vaddr, ctx: &Context) -> Result<Sy
         fd, ioctl_cmd, arg
     );
 
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
     let res = match ioctl_cmd {
         IoctlCmd::FIONBIO => {

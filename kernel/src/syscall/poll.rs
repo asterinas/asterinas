@@ -59,7 +59,8 @@ pub fn sys_poll(fds: Vaddr, nfds: u64, timeout: i32, ctx: &Context) -> Result<Sy
 }
 
 pub fn do_poll(poll_fds: &[PollFd], timeout: Option<&Duration>, ctx: &Context) -> Result<usize> {
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
+    let file_table = file_table.unwrap();
 
     let poll_files = if let Some(file_table_inner) = file_table.get() {
         PollFiles::new_borrowed(poll_fds, file_table_inner)
