@@ -38,8 +38,7 @@ pub fn sys_sendfile(
 
     let (out_file, in_file) = ctx
         .thread_local
-        .file_table()
-        .borrow_mut()
+        .borrow_file_table_mut()
         .read_with(|inner| {
             let out_file = inner.get_file(out_fd)?.clone();
             // FIXME: the in_file must support mmap-like operations (i.e., it cannot be a socket).

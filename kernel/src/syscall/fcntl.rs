@@ -35,13 +35,16 @@ pub fn sys_fcntl(fd: FileDesc, cmd: i32, arg: u64, ctx: &Context) -> Result<Sysc
 }
 
 fn handle_dupfd(fd: FileDesc, arg: u64, flags: FdFlags, ctx: &Context) -> Result<SyscallReturn> {
-    let file_table = ctx.thread_local.file_table().borrow();
-    let new_fd = file_table.write().dup(fd, arg as FileDesc, flags)?;
+    let file_table = ctx.thread_local.borrow_file_table();
+    let new_fd = file_table
+        .unwrap()
+        .write()
+        .dup(fd, arg as FileDesc, flags)?;
     Ok(SyscallReturn::Return(new_fd as _))
 }
 
 fn handle_getfd(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     file_table.read_with(|inner| {
         let fd_flags = inner.get_entry(fd)?.flags();
         Ok(SyscallReturn::Return(fd_flags.bits() as _))
@@ -54,7 +57,7 @@ fn handle_setfd(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> 
     } else {
         FdFlags::from_bits(arg as u8).ok_or(Error::with_message(Errno::EINVAL, "invalid flags"))?
     };
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     file_table.read_with(|inner| {
         inner.get_entry(fd)?.set_flags(flags);
         Ok(SyscallReturn::Return(0))
@@ -62,7 +65,7 @@ fn handle_setfd(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> 
 }
 
 fn handle_getfl(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
     let status_flags = file.status_flags();
     let access_mode = file.access_mode();
@@ -72,7 +75,7 @@ fn handle_getfl(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
 }
 
 fn handle_setfl(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
     let valid_flags_mask = StatusFlags::O_APPEND
         | StatusFlags::O_ASYNC
@@ -87,7 +90,7 @@ fn handle_setfl(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> 
 }
 
 fn handle_getlk(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn> {
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
     let lock_mut_ptr = arg as Vaddr;
     let mut lock_mut_c = ctx.user_space().read_val::<c_flock>(lock_mut_ptr)?;
@@ -112,7 +115,7 @@ fn handle_setlk(
     is_nonblocking: bool,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
     let lock_mut_ptr = arg as Vaddr;
     let lock_mut_c = ctx.user_space().read_val::<c_flock>(lock_mut_ptr)?;
@@ -127,7 +130,7 @@ fn handle_setlk(
 }
 
 fn handle_getown(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     file_table.read_with(|inner| {
         let pid = inner.get_entry(fd)?.owner().unwrap_or(0);
         Ok(SyscallReturn::Return(pid as _))
@@ -152,8 +155,8 @@ fn handle_setown(fd: FileDesc, arg: u64, ctx: &Context) -> Result<SyscallReturn>
         ))?)
     };
 
-    let file_table = ctx.thread_local.file_table().borrow();
-    let mut file_table_locked = file_table.write();
+    let file_table = ctx.thread_local.borrow_file_table();
+    let mut file_table_locked = file_table.unwrap().write();
     let file_entry = file_table_locked.get_entry_mut(fd)?;
     file_entry.set_owner(owner_process.as_ref())?;
     Ok(SyscallReturn::Return(0))

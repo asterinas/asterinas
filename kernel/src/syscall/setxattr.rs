@@ -74,7 +74,7 @@ pub fn sys_fsetxattr(
     flags: i32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
 
     let user_space = ctx.user_space();

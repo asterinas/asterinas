@@ -41,8 +41,8 @@ pub fn sys_epoll_create1(flags: u32, ctx: &Context) -> Result<SyscallReturn> {
     };
 
     let epoll_file: Arc<EpollFile> = EpollFile::new();
-    let file_table = ctx.thread_local.file_table().borrow();
-    let fd = file_table.write().insert(epoll_file, fd_flags);
+    let file_table = ctx.thread_local.borrow_file_table();
+    let fd = file_table.unwrap().write().insert(epoll_file, fd_flags);
     Ok(SyscallReturn::Return(fd as _))
 }
 
@@ -79,9 +79,9 @@ pub fn sys_epoll_ctl(
         _ => return_errno_with_message!(Errno::EINVAL, "invalid op"),
     };
 
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, epfd).into_owned();
-    // Drop `file_table` as `EpollFile::control` also performs `file_table().borrow_mut()`.
+    // Drop `file_table` as `EpollFile::control` also performs `borrow_file_table_mut()`.
     drop(file_table);
 
     let epoll_file = file
@@ -110,7 +110,7 @@ fn do_epoll_wait(
         None
     };
 
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, epfd);
     let epoll_file = file
         .downcast_ref::<EpollFile>()

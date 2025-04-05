@@ -20,7 +20,7 @@ pub fn sys_recvfrom(
     let flags = SendRecvFlags::from_bits_truncate(flags);
     debug!("sockfd = {sockfd}, buf = 0x{buf:x}, len = {len}, flags = {flags:?}, src_addr = 0x{src_addr:x}, addrlen_ptr = 0x{addrlen_ptr:x}");
 
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, sockfd);
     let socket = file.as_socket_or_err()?;
 

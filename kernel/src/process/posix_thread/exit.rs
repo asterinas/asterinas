@@ -79,10 +79,15 @@ fn exit_internal(term_status: TermStatus, is_exiting_group: bool) {
         thread_table::remove_thread(posix_thread.tid());
     }
 
+    // Drop fields in `PosixThread`.
+    *posix_thread.file_table().lock() = None;
+
+    // Drop fields in `ThreadLocal`.
     *thread_local.root_vmar().borrow_mut() = None;
+    thread_local.borrow_file_table_mut().remove();
 
     if is_last_thread {
-        exit_process(thread_local, &posix_process);
+        exit_process(&posix_process);
     }
 }
 
