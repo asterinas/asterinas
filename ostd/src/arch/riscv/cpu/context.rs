@@ -6,9 +6,9 @@ use core::fmt::Debug;
 
 use riscv::register::scause::{Exception, Trap};
 
-pub use crate::arch::riscv::trap::GeneralRegs as RawGeneralRegs;
+pub use crate::arch::trap::GeneralRegs as RawGeneralRegs;
 use crate::{
-    arch::riscv::trap::{TrapFrame, UserContext as RawUserContext},
+    arch::trap::{TrapFrame, UserContext as RawUserContext},
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
 

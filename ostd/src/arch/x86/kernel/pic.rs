@@ -7,7 +7,7 @@ use core::sync::atomic::{AtomicBool, AtomicU8, Ordering::Relaxed};
 use log::info;
 
 use crate::{
-    arch::x86::device::io_port::WriteOnlyAccess,
+    arch::device::io_port::WriteOnlyAccess,
     io::{sensitive_io_port, IoPort},
     trap::IrqLine,
 };
