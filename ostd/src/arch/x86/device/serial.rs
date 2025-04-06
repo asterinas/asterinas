@@ -5,7 +5,7 @@
 #![expect(dead_code)]
 
 use crate::{
-    arch::x86::device::io_port::{ReadWriteAccess, WriteOnlyAccess},
+    arch::device::io_port::{ReadWriteAccess, WriteOnlyAccess},
     io::IoPort,
 };
 /// A serial port.

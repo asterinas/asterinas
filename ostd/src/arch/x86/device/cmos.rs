@@ -13,7 +13,7 @@ use acpi::fadt::Fadt;
 use x86_64::instructions::port::{ReadOnlyAccess, WriteOnlyAccess};
 
 use crate::{
-    arch::x86::kernel::acpi::get_acpi_tables,
+    arch::kernel::acpi::get_acpi_tables,
     io::{sensitive_io_port, IoPort},
 };
 

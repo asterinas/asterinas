@@ -6,9 +6,9 @@
 use linux_boot_params::{BootParams, E820Type, LINUX_BOOT_HEADER_MAGIC};
 
 #[cfg(feature = "cvm_guest")]
-use crate::arch::x86::init_cvm_guest;
+use crate::arch::init_cvm_guest;
 use crate::{
-    arch::x86::if_tdx_enabled,
+    arch::if_tdx_enabled,
     boot::{
         memory_region::{MemoryRegion, MemoryRegionArray, MemoryRegionType},
         BootloaderAcpiArg, BootloaderFramebufferArg,

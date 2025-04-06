@@ -7,10 +7,7 @@ pub mod set;
 
 pub use set::{AtomicCpuSet, CpuSet};
 
-#[cfg(target_arch = "riscv64")]
-pub use crate::arch::riscv::cpu::*;
-#[cfg(target_arch = "x86_64")]
-pub use crate::arch::x86::cpu::*;
+pub use crate::arch::cpu::*;
 use crate::{cpu_local_cell, task::atomic_mode::InAtomicMode};
 
 /// The ID of a CPU in the system.

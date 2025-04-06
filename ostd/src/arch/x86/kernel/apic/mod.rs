@@ -348,7 +348,7 @@ pub enum DivideConfig {
 }
 
 pub fn init(io_mem_builder: &IoMemAllocatorBuilder) -> Result<(), ApicInitError> {
-    crate::arch::x86::kernel::pic::disable_temp();
+    crate::arch::kernel::pic::disable_temp();
     if x2apic::X2Apic::has_x2apic() {
         log::info!("x2APIC found!");
         APIC_TYPE.call_once(|| ApicType::X2Apic);
