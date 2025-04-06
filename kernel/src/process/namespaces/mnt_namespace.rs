@@ -1,29 +1,25 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::{
-    fs::{path::MountNode, rootfs::root_mount, thread_info::ThreadFsInfo},
+    fs::{path::MntNamespace_, thread_info::ThreadFsInfo},
     prelude::*,
 };
 
 pub struct MntNamespace {
-    root: Arc<MountNode>,
+    inner: MntNamespace_,
 }
 
 impl Default for MntNamespace {
     fn default() -> Self {
         Self {
-            root: root_mount().clone(),
+            inner: MntNamespace_::default(),
         }
     }
 }
 
 impl MntNamespace {
-    fn new(mount_node: Arc<MountNode>) -> Arc<Self> {
-        Arc::new(Self { root: mount_node })
-    }
-
-    pub fn root(&self) -> &Arc<MountNode> {
-        &self.root
+    pub fn inner(&self) -> &MntNamespace_ {
+        &self.inner
     }
 
     /// Copy the mount namespace.
@@ -33,8 +29,12 @@ impl MntNamespace {
     /// In syscall clone, `process` is the new process that is created by clone.
     /// In syscall unshare and setns, `process` is the current process
     pub fn copy_mnt_ns(&self, fs: &Arc<ThreadFsInfo>) -> Arc<Self> {
-        let old_mount_node = self.root();
-        let new_mount_node = old_mount_node.clone_mount_node_tree_and_move(fs);
-        Self::new(new_mount_node)
+        Arc::new(Self {
+            inner: self.inner.copy_mnt_ns(fs),
+        })
+
+        // let old_mount_node = self.root();
+        // let new_mount_node = old_mount_node.clone_mount_node_tree_and_move(fs);
+        // Self::new(new_mount_node)
     }
 }

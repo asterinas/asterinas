@@ -698,7 +698,7 @@ impl Dentry {
     /// Unmounts and returns the mounted child mount.
     ///
     /// Note that the root mount cannot be unmounted.
-    pub fn unmount(&self) -> Result<Arc<MountNode>> {
+    pub(super) fn unmount(&self) -> Result<Arc<MountNode>> {
         if !self.inner.is_root_of_mount() {
             return_errno_with_message!(Errno::EINVAL, "not mounted");
         }
@@ -752,7 +752,7 @@ impl Dentry {
     /// If `recursive` is true, it will bind mount the whole mount tree
     /// to the destination `Dentry`. Otherwise, it will only bind mount
     /// the root mount node.
-    pub fn bind_mount_to(&self, dst_dentry: &Self, recursive: bool) -> Result<()> {
+    pub(super) fn bind_mount_to(&self, dst_dentry: &Self, recursive: bool) -> Result<()> {
         let src_mount = self
             .mount_node
             .clone_mount_node_tree(&self.inner, recursive);

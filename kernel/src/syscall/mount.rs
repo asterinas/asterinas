@@ -10,6 +10,7 @@ use crate::{
         utils::{FileSystem, InodeType},
     },
     prelude::*,
+    process::posix_thread::AsPosixThread,
     syscall::constants::MAX_FILENAME_LEN,
 };
 
@@ -100,7 +101,11 @@ fn do_bind_mount(
         return_errno_with_message!(Errno::ENOTDIR, "src_name must be directory");
     };
 
-    src_dentry.bind_mount_to(&dst_dentry, recursive)?;
+    let current_thread = current_thread!();
+    let posix_thread = current_thread.as_posix_thread().unwrap();
+    let namespaces = posix_thread.namespaces().lock();
+    let mnt_ns = namespaces.mnt_ns().inner();
+    mnt_ns.bind_mount_to(&src_dentry, &dst_dentry, recursive)?;
     Ok(())
 }
 
@@ -126,7 +131,11 @@ fn do_move_mount_old(src_name: CString, dst_dentry: Dentry, ctx: &Context) -> Re
         return_errno_with_message!(Errno::EINVAL, "src_name can not be moved");
     }
 
-    src_dentry.mount_node().graft_mount_node_tree(&dst_dentry)?;
+    let current_thread = current_thread!();
+    let posix_thread = current_thread.as_posix_thread().unwrap();
+    let namespaces = posix_thread.namespaces().lock();
+    let mnt_ns = namespaces.mnt_ns().inner();
+    mnt_ns.graft_mount_node_tree(src_dentry.mount_node().clone(), &dst_dentry)?;
 
     Ok(())
 }
