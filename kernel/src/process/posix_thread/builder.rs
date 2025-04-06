@@ -122,7 +122,7 @@ impl PosixThreadBuilder {
         Arc::new_cyclic(|weak_task| {
             let root_vmar = process
                 .upgrade()
-                .map(|process| process.lock_root_vmar().get().dup().unwrap());
+                .map(|process| process.lock_root_vmar().unwrap().dup().unwrap());
 
             let posix_thread = {
                 let prof_clock = ProfClock::new();
