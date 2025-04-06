@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::sync::Arc;
-use core::time::Duration;
+use core::{
+    sync::atomic::{AtomicU32, AtomicU64, Ordering},
+    time::Duration,
+};
 
 use aster_time::read_monotonic_time;
-use ostd::{cpu::PinCurrentCpu, cpu_local, sync::SpinLock, task::disable_preempt, timer::Jiffies};
+use ostd::{cpu::PinCurrentCpu, cpu_local, task::disable_preempt, timer::Jiffies};
 use paste::paste;
 use spin::Once;
 
@@ -72,12 +75,21 @@ pub struct RealTimeCoarseClock {
     _private: (),
 }
 
-impl RealTimeCoarseClock {
-    /// A reference to the current value of this clock.
-    fn current_ref() -> &'static Once<SpinLock<Duration>> {
-        static CURRENT: Once<SpinLock<Duration>> = Once::new();
+static REAL_TIME_COARSE_SECS: AtomicU64 = AtomicU64::new(0);
+static REAL_TIME_COARSE_NANOS: AtomicU32 = AtomicU32::new(0);
 
-        &CURRENT
+impl RealTimeCoarseClock {
+    /// Reads the coarse clock value.
+    fn read() -> Duration {
+        let secs = REAL_TIME_COARSE_SECS.load(Ordering::Relaxed);
+        let nanos = REAL_TIME_COARSE_NANOS.load(Ordering::Relaxed);
+        Duration::new(secs, nanos)
+    }
+
+    /// Updates the coarse clock with the current time.
+    fn update(now: Duration) {
+        REAL_TIME_COARSE_SECS.store(now.as_secs(), Ordering::Relaxed);
+        REAL_TIME_COARSE_NANOS.store(now.subsec_nanos(), Ordering::Relaxed);
     }
 
     /// Get the singleton of this clock.
@@ -165,7 +177,7 @@ impl Clock for MonotonicClock {
 
 impl Clock for RealTimeCoarseClock {
     fn read_time(&self) -> Duration {
-        *Self::current_ref().get().unwrap().disable_irq().lock()
+        Self::read()
     }
 }
 
@@ -284,13 +296,12 @@ fn init_jiffies_clock_manager() {
 
 fn update_coarse_clock() {
     let real_time = RealTimeClock::get().read_time();
-    let current = RealTimeCoarseClock::current_ref().get().unwrap();
-    *current.disable_irq().lock() = real_time;
+    RealTimeCoarseClock::update(real_time);
 }
 
 fn init_coarse_clock() {
     let real_time = RealTimeClock::get().read_time();
-    RealTimeCoarseClock::current_ref().call_once(|| SpinLock::new(real_time));
+    RealTimeCoarseClock::update(real_time);
     time::softirq::register_callback(update_coarse_clock);
 }
 
@@ -315,7 +326,7 @@ pub fn init_for_ktest() {
         });
     }
     CLOCK_REALTIME_COARSE_INSTANCE.call_once(|| Arc::new(RealTimeCoarseClock { _private: () }));
-    RealTimeCoarseClock::current_ref().call_once(|| SpinLock::new(Duration::from_secs(0)));
+    RealTimeCoarseClock::update(Duration::from_secs(0));
     JIFFIES_TIMER_MANAGER.call_once(|| {
         let clock = JiffiesClock { _private: () };
         TimerManager::new(Arc::new(clock))
