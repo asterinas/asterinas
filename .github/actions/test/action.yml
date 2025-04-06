@@ -30,6 +30,9 @@ inputs:
     required: false
   
   # Test Parameters
+  arch:
+    description: 'Architecture (x86_64/riscv64)'
+    required: false
   extra_blocklists:
     description: 'Extra blocklists directories'
     required: false
@@ -59,16 +62,16 @@ runs:
       if: ${{ inputs.auto_test == 'general' }}
       shell: bash
       run: |
-        if [[ "${{ matrix.id }}" == "lint" ]]; then
-          make check
-        elif [[ "${{ matrix.id }}" == "compile" ]]; then
-          make build FEATURES=all
-        elif [[ "${{ matrix.id }}" == "usermode_test" ]]; then
-          make test
-        elif [[ "${{ matrix.id }}" == "ktest" ]]; then
-          make ktest NETDEV=tap
-        fi
-
+        CMD=""
+        [[ "${{ matrix.id }}" == "lint" ]] && CMD+="make check"
+        [[ "${{ matrix.id }}" == "compile" ]] && CMD+="make build FEATURES=all"
+        [[ "${{ matrix.id }}" == "usermode_test" ]] && CMD+="make test"
+        [[ "${{ matrix.id }}" == "ktest" ]] && CMD+="make ktest NETDEV=tap"
+        [[ -n "${{ inputs.arch }}" ]] && CMD+=" ARCH=${{ inputs.arch }}"
+        
+        echo "Executing: $CMD"
+        eval $CMD
+ 
     - name: Run integration test
       if: ${{ !(inputs.auto_test == 'general' || inputs.auto_test == 'osdk') }}
       shell: bash
@@ -80,6 +83,7 @@ runs:
         [[ -n "${{ inputs.smp }}" ]] && CMD+=" SMP=${{ inputs.smp }}"
         [[ -n "${{ inputs.netdev }}" ]] && CMD+=" NETDEV=${{ inputs.netdev }}"
         [[ -n "${{ inputs.scheme }}" ]] && CMD+=" SCHEME=${{ inputs.scheme }}"
+        [[ -n "${{ inputs.arch }}" ]] && CMD+=" ARCH=${{ inputs.arch }}"
         [[ -n "${{ inputs.extra_blocklists }}" ]] && CMD+=" EXTRA_BLOCKLISTS_DIRS=${{ inputs.extra_blocklists }}"
         [[ -n "${{ inputs.syscall_test_dir }}" ]] && CMD+=" SYSCALL_TEST_DIR=${{ inputs.syscall_test_dir }}"
         [[ -n "${{ inputs.boot_protocol }}" ]] && CMD+=" BOOT_PROTOCOL=${{ inputs.boot_protocol }}"

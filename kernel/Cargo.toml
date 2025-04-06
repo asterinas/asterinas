@@ -34,7 +34,6 @@ cpio-decoder = { path = "libs/cpio-decoder" }
 intrusive-collections = "0.9.5"
 paste = "1.0"
 time = { version = "0.3", default-features = false, features = ["alloc"] }
-tdx-guest = { version = "0.2.1", optional = true }
 
 # parse elf file
 xmas-elf = "0.8.0"
@@ -61,6 +60,9 @@ cfg-if = "1.0"
 # Fixed point numbers
 # TODO: fork this crate to rewrite all the (unnecessary) unsafe usage
 fixed = "1.28.0"
+
+[target.x86_64-unknown-none.dependencies]
+tdx-guest = { version = "0.2.1", optional = true }
 
 [target.riscv64gc-unknown-none-elf.dependencies]
 riscv = { version = "0.11.1", features = ["s-mode"] }
