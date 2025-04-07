@@ -163,6 +163,20 @@ pub fn read_random() -> Option<u64> {
     None
 }
 
+fn has_avx() -> bool {
+    use core::arch::x86_64::{__cpuid, __cpuid_count};
+
+    let cpuid_result = unsafe { __cpuid(0) };
+    if cpuid_result.eax < 1 {
+        // CPUID function 1 is not supported
+        return false;
+    }
+
+    let cpuid_result = unsafe { __cpuid_count(1, 0) };
+    // Check for AVX (bit 28 of ecx)
+    cpuid_result.ecx & (1 << 28) != 0
+}
+
 fn has_avx512() -> bool {
     use core::arch::x86_64::{__cpuid, __cpuid_count};
 
@@ -198,7 +212,12 @@ pub(crate) fn enable_cpu_features() {
     }
 
     let mut xcr0 = x86_64::registers::xcontrol::XCr0::read();
-    xcr0 |= XCr0Flags::AVX | XCr0Flags::SSE;
+
+    xcr0 |= XCr0Flags::SSE;
+
+    if has_avx() {
+        xcr0 |= XCr0Flags::AVX;
+    }
 
     if has_avx512() {
         xcr0 |= XCr0Flags::OPMASK | XCr0Flags::ZMM_HI256 | XCr0Flags::HI16_ZMM;
