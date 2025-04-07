@@ -50,13 +50,13 @@ pub fn create_posix_task_from_executable(
         let elf_file = fs.resolver().read().lookup(&fs_path)?;
         let program_to_load =
             ProgramToLoad::build_from_file(elf_file, &fs_resolver, argv, envp, 1)?;
-        process_vm.clear_and_map();
+        process_vm.clear();
         program_to_load.load_to_vm(process_vm, &fs_resolver)?
     };
 
     let mut user_ctx = UserContext::default();
-    user_ctx.set_instruction_pointer(elf_load_info.entry_point() as _);
-    user_ctx.set_stack_pointer(elf_load_info.user_stack_top() as _);
+    user_ctx.set_instruction_pointer(elf_load_info.entry_point as _);
+    user_ctx.set_stack_pointer(elf_load_info.user_stack_top as _);
     let thread_name = Some(ThreadName::new_from_executable_path(executable_path)?);
     let thread_builder = PosixThreadBuilder::new(tid, Arc::new(user_ctx), credentials)
         .thread_name(thread_name)

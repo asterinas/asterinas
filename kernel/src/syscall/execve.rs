@@ -15,7 +15,7 @@ use crate::{
     },
     prelude::*,
     process::{
-        check_executable_file, posix_thread::ThreadName, renew_vm_and_map, Credentials, Process,
+        check_executable_file, posix_thread::ThreadName, renew_vm, Credentials, Process,
         ProgramToLoad, MAX_ARGV_NUMBER, MAX_ARG_LEN, MAX_ENVP_NUMBER, MAX_ENV_LEN,
     },
 };
@@ -124,7 +124,7 @@ fn do_execve(
 
     let process_vm = process.vm();
     if process.status().is_vfork_child() {
-        renew_vm_and_map(ctx);
+        renew_vm(ctx);
 
         // Resumes the parent process.
         process.status().set_vfork_child(false);
@@ -134,7 +134,7 @@ fn do_execve(
         // FIXME: Currently, the efficiency of replacing the VMAR is lower than that
         // of directly clearing the VMAR. Therefore, if not in vfork case we will only
         // clear the VMAR.
-        process_vm.clear_and_map();
+        process_vm.clear();
     }
 
     let (new_executable_path, elf_load_info) =
@@ -164,11 +164,11 @@ fn do_execve(
     // to the user-registered signal handlers.
     user_context.fpu_state().restore();
     // set new entry point
-    user_context.set_instruction_pointer(elf_load_info.entry_point() as _);
-    debug!("entry_point: 0x{:x}", elf_load_info.entry_point());
+    user_context.set_instruction_pointer(elf_load_info.entry_point as _);
+    debug!("entry_point: 0x{:x}", elf_load_info.entry_point);
     // set new user stack top
-    user_context.set_stack_pointer(elf_load_info.user_stack_top() as _);
-    debug!("user stack top: 0x{:x}", elf_load_info.user_stack_top());
+    user_context.set_stack_pointer(elf_load_info.user_stack_top as _);
+    debug!("user stack top: 0x{:x}", elf_load_info.user_stack_top);
     Ok(())
 }
 
