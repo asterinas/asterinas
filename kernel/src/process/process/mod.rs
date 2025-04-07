@@ -6,7 +6,7 @@ use self::timer_manager::PosixTimerManager;
 use super::{
     posix_thread::AsPosixThread,
     process_table,
-    process_vm::{Heap, InitStackReader, ProcessVm, ProcessVmarGuard},
+    process_vm::{InitStackReader, ProcessVm, ProcessVmarGuard, ProgramBreak},
     rlimit::ResourceLimits,
     signal::{
         sig_disposition::SigDispositions,
@@ -589,7 +589,7 @@ impl Process {
         self.process_vm.lock_root_vmar()
     }
 
-    pub fn heap(&self) -> &Heap {
+    pub fn heap(&self) -> &ProgramBreak {
         self.process_vm.heap()
     }
 

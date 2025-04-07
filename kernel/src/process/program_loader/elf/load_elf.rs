@@ -51,7 +51,9 @@ pub fn load_elf_to_vm(
     let ldso = lookup_and_parse_ldso(&parsed_elf, file_header, fs_resolver)?;
 
     match init_and_map_vmos(process_vm, ldso, &parsed_elf, &elf_file) {
-        Ok((_range, entry_point, mut aux_vec)) => {
+        Ok((range, entry_point, mut aux_vec)) => {
+            process_vm.init_heap_and_map_clearance(range.relocated_range().end)?;
+
             // Map and set vdso entry.
             // Since vdso does not require being mapped to any specific address,
             // vdso is mapped after the elf file, heap and stack are mapped.
@@ -261,6 +263,17 @@ impl RelocatedRange {
             original_range,
             relocated_start,
         })
+    }
+
+    /// Gets the original range.
+    #[expect(dead_code)]
+    pub fn original_range(&self) -> Range<Vaddr> {
+        self.original_range.clone()
+    }
+
+    /// Gets the relocated range.
+    pub fn relocated_range(&self) -> Range<Vaddr> {
+        self.relocated_start..self.relocated_start + self.original_range.len()
     }
 
     /// Gets the relocated address of an address in the original range.

@@ -13,7 +13,7 @@ mod heap;
 mod init_stack;
 
 use aster_rights::Full;
-pub use heap::Heap;
+pub use heap::ProgramBreak;
 use ostd::{sync::MutexGuard, task::disable_preempt};
 
 pub use self::{
@@ -27,11 +27,9 @@ use crate::{prelude::*, vm::vmar::Vmar};
 
 /*
  * The user's virtual memory space layout looks like below.
- * TODO: The layout of the userheap does not match the current implementation,
- * And currently the initial program break is a fixed value.
  *
  *  (high address)
- *  +---------------------+ <------+ The top of Vmar, which is the highest address usable
+ *  +---------------------+ <------+ The top of Vmar non-allocatable address
  *  |                     |          Randomly padded pages
  *  +---------------------+ <------+ The base of the initial user stack
  *  | User stack          |
@@ -47,10 +45,8 @@ use crate::{prelude::*, vm::vmar::Vmar};
  *  +---------||----------+ <------+ The current program break
  *  | User heap           |
  *  |                     |
- *  +---------------------+ <------+ The original program break
- *  |                     |          Randomly padded pages
- *  +---------------------+ <------+ The end of the program's last segment
- *  |                     |
+ *  +---------------------+ <------+ The end of the program's last data segment,
+ *  |                     |          also the initial program break
  *  | Loaded segments     |
  *  | .text, .data, .bss  |
  *  | , etc.              |
@@ -65,7 +61,7 @@ use crate::{prelude::*, vm::vmar::Vmar};
 pub struct ProcessVm {
     root_vmar: Mutex<Option<Vmar<Full>>>,
     init_stack: InitStack,
-    heap: Heap,
+    heap: ProgramBreak,
 }
 
 /// A guard to the [`Vmar`] used by a process.
@@ -107,8 +103,8 @@ impl Clone for ProcessVm {
         let root_vmar = self.lock_root_vmar();
         Self {
             root_vmar: Mutex::new(Some(root_vmar.unwrap().dup().unwrap())),
-            init_stack: self.init_stack.clone(),
-            heap: self.heap.clone(),
+            init_stack: self.init_stack.fork(),
+            heap: self.heap.fork(),
         }
     }
 }
@@ -118,8 +114,7 @@ impl ProcessVm {
     pub fn alloc() -> Self {
         let root_vmar = Vmar::<Full>::new_root();
         let init_stack = InitStack::new();
-        let heap = Heap::new();
-        heap.alloc_and_map_vm(&root_vmar).unwrap();
+        let heap = ProgramBreak::new_uninit();
         Self {
             root_vmar: Mutex::new(Some(root_vmar)),
             heap,
@@ -135,8 +130,8 @@ impl ProcessVm {
         let root_vmar = Mutex::new(Some(Vmar::<Full>::fork_from(process_vmar.unwrap())?));
         Ok(Self {
             root_vmar,
-            heap: other.heap.clone(),
-            init_stack: other.init_stack.clone(),
+            heap: other.heap.fork(),
+            init_stack: other.init_stack.fork(),
         })
     }
 
@@ -164,25 +159,34 @@ impl ProcessVm {
         envp: Vec<CString>,
         aux_vec: AuxVec,
     ) -> Result<()> {
-        let root_vmar: ProcessVmarGuard<'_> = self.lock_root_vmar();
+        let root_vmar = self.lock_root_vmar();
         self.init_stack
             .map_and_write(root_vmar.unwrap(), argv, envp, aux_vec)
     }
 
-    pub(super) fn heap(&self) -> &Heap {
+    pub(super) fn init_heap_and_map_clearance(&self, program_break: Vaddr) -> Result<()> {
+        let root_vmar = self.lock_root_vmar();
+        self.heap
+            .init_and_map_clearance(root_vmar.unwrap(), program_break)
+    }
+
+    pub(super) fn heap(&self) -> &ProgramBreak {
         &self.heap
     }
 
-    /// Clears existing mappings and then maps the heap VMO to the current VMAR.
-    pub fn clear_and_map(&self) {
+    /// Clears existing mappings, including the heap and init stack.
+    pub fn clear(&self) {
         let root_vmar = self.lock_root_vmar();
         root_vmar.unwrap().clear().unwrap();
-        self.heap.alloc_and_map_vm(root_vmar.unwrap()).unwrap();
+        self.heap.clear();
+        self.init_stack.clear();
     }
 }
 
-/// Renews the [`ProcessVm`] of the current process and then maps the heap VMO to the new VMAR.
-pub fn renew_vm_and_map(ctx: &Context) {
+/// Set the [`ProcessVm`] of the current process as a new empty `Vmar`.
+///
+/// The stack and the heap are also cleared.
+pub fn renew_vm(ctx: &Context) {
     let process_vm = ctx.process.vm();
     let mut root_vmar = process_vm.lock_root_vmar();
 
@@ -191,10 +195,9 @@ pub fn renew_vm_and_map(ctx: &Context) {
     *ctx.thread_local.root_vmar().borrow_mut() = Some(new_vmar.dup().unwrap());
     new_vmar.vm_space().activate();
     root_vmar.set_vmar(Some(new_vmar));
-    drop(guard);
 
-    process_vm
-        .heap
-        .alloc_and_map_vm(root_vmar.unwrap())
-        .unwrap();
+    process_vm.heap.clear();
+    process_vm.init_stack.clear();
+
+    drop(guard);
 }

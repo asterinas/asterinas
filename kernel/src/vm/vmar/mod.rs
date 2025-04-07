@@ -415,8 +415,10 @@ impl VmarInner {
     }
 }
 
-pub const ROOT_VMAR_LOWEST_ADDR: Vaddr = 0x001_0000; // 64 KiB is the Linux configurable default
-const ROOT_VMAR_CAP_ADDR: Vaddr = MAX_USERSPACE_VADDR;
+/// 64 KiB is the Linux configurable default
+pub const ROOT_VMAR_LOWEST_ADDR: Vaddr = 0x001_0000;
+
+pub const ROOT_VMAR_CAP_ADDR: Vaddr = MAX_USERSPACE_VADDR;
 
 /// Returns whether the input `vaddr` is a legal user space virtual address.
 pub fn is_userspace_vaddr(vaddr: Vaddr) -> bool {

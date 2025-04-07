@@ -113,7 +113,7 @@ fn create_init_task(
         let elf_file = fs.resolver().read().lookup(&fs_path)?;
         let program_to_load =
             ProgramToLoad::build_from_file(elf_file, &fs_resolver, argv, envp, 1)?;
-        process_vm.clear_and_map();
+        process_vm.clear();
         program_to_load.load_to_vm(process_vm, &fs_resolver)?
     };
 
