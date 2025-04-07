@@ -3,36 +3,37 @@
 //! Virtual Memory Address Regions (VMARs).
 
 mod dyn_cap;
-mod interval_set;
 mod static_cap;
 pub mod vm_mapping;
 
-use core::{array, num::NonZeroUsize, ops::Range};
+use core::{
+    num::NonZeroUsize,
+    ops::Range,
+    sync::atomic::{AtomicU32, AtomicUsize, Ordering},
+};
 
 use align_ext::AlignExt;
 use aster_rights::Rights;
 use ostd::{
-    cpu::CpuId,
+    cpu::{CpuId, PinCurrentCpu},
     mm::{
-        tlb::TlbFlushOp, vm_space::CursorMut, PageFlags, PageProperty, VmSpace, MAX_USERSPACE_VADDR,
+        tlb::TlbFlushOp,
+        vm_space::{largest_pages, CursorMut, Status, VmItem, VmSpace},
+        CachePolicy, FrameAllocOptions, PageFlags, PageProperty, MAX_USERSPACE_VADDR,
     },
-    sync::RwMutexReadGuard,
     task::disable_preempt,
 };
 
-use self::{
-    interval_set::{Interval, IntervalSet},
-    vm_mapping::{MappedVmo, VmMapping},
-};
+use self::vm_mapping::{MappedVmo, VmMarker, VmoBackedVMA};
 use crate::{
-    fs::utils::Inode,
+    fs::utils::{CachePageMeta, Inode},
     prelude::*,
-    process::{Process, ResourceType},
     thread::exception::PageFaultInfo,
     util::per_cpu_counter::PerCpuCounter,
     vm::{
         perms::VmPerms,
-        vmo::{Vmo, VmoRightsOp},
+        util::duplicate_frame,
+        vmo::{CommitFlags, Vmo, VmoCommitError, VmoRightsOp},
     },
 };
 
@@ -100,13 +101,12 @@ impl<R> Vmar<R> {
     ///   method will return an `Err`.
     pub fn resize_mapping(
         &self,
-        map_addr: Vaddr,
-        old_size: usize,
-        new_size: usize,
-        check_single_mapping: bool,
+        _map_addr: Vaddr,
+        _old_size: usize,
+        _new_size: usize,
+        _check_single_mapping: bool,
     ) -> Result<()> {
-        self.0
-            .resize_mapping(map_addr, old_size, new_size, check_single_mapping)
+        todo!();
     }
 
     /// Remaps the original mapping to a new address and/or size.
@@ -122,302 +122,143 @@ impl<R> Vmar<R> {
     ///   allocated, and the original mapping will be moved there.
     pub fn remap(
         &self,
-        old_addr: Vaddr,
-        old_size: usize,
-        new_addr: Option<Vaddr>,
-        new_size: usize,
+        _old_addr: Vaddr,
+        _old_size: usize,
+        _new_addr: Option<Vaddr>,
+        _new_size: usize,
     ) -> Result<Vaddr> {
-        self.0.remap(old_addr, old_size, new_addr, new_size)
+        todo!();
+    }
+
+    fn alloc_vmo_backed_id(&self) -> u32 {
+        self.0.vmo_backed_id_alloc.fetch_add(1, Ordering::Relaxed)
     }
 }
 
 pub(super) struct Vmar_ {
-    /// VMAR inner
-    inner: RwMutex<VmarInner>,
     /// The offset relative to the root VMAR
     base: Vaddr,
     /// The total size of the VMAR in bytes
     size: usize,
     /// The attached `VmSpace`
     vm_space: Arc<VmSpace>,
+    /// Virtual memory allocator for this VMAR.
+    allocator: PerCpuAllocator,
+    /// The ID allocator for VMO mappings.
+    vmo_backed_id_alloc: AtomicU32,
+    /// The map from the VMO-backed ID to the VMA structure.
+    vma_map: RwLock<BTreeMap<u32, VmoBackedVMA>>,
     /// The RSS counters.
     rss_counters: [PerCpuCounter; NUM_RSS_COUNTERS],
 }
 
-struct VmarInner {
-    /// The mapped pages and associated metadata.
-    ///
-    /// When inserting a `VmMapping` into this set, use `insert_try_merge` to
-    /// auto-merge adjacent and compatible mappings, or `insert_without_try_merge`
-    /// if the mapping is known not mergeable with any neighboring mappings.
-    vm_mappings: IntervalSet<Vaddr, VmMapping>,
-    /// The total mapped memory in bytes.
-    total_vm: usize,
+// Make it cache-line aligned so there is no false sharing.
+#[repr(align(64))]
+struct PerCpuLast {
+    range: Range<Vaddr>,
+    /// From this address to the cap the new mappings can be allocated.
+    alloc_last: AtomicUsize,
 }
 
-impl VmarInner {
-    const fn new() -> Self {
-        Self {
-            vm_mappings: IntervalSet::new(),
-            total_vm: 0,
-        }
-    }
-
-    /// Returns `Ok` if the calling process may expand its mapped
-    /// memory by the passed size.
-    fn check_extra_size_fits_rlimit(&self, expand_size: usize) -> Result<()> {
-        let Some(process) = Process::current() else {
-            // When building a `Process`, the kernel task needs to build
-            // some `VmMapping`s, in which case this branch is reachable.
-            return Ok(());
-        };
-
-        let rlimt_as = process
-            .resource_limits()
-            .get_rlimit(ResourceType::RLIMIT_AS)
-            .get_cur();
-
-        let new_total_vm = self
-            .total_vm
-            .checked_add(expand_size)
-            .ok_or(Errno::ENOMEM)?;
-        if new_total_vm > rlimt_as as usize {
-            return_errno_with_message!(Errno::ENOMEM, "address space limit overflow");
-        }
-        Ok(())
-    }
-
-    /// Checks whether `addr..addr + size` is covered by a single `VmMapping`,
-    /// and returns the address of the single `VmMapping` if successful.
-    fn check_lies_in_single_mapping(&self, addr: Vaddr, size: usize) -> Result<Vaddr> {
-        if let Some(vm_mapping) = self
-            .vm_mappings
-            .find_one(&addr)
-            .filter(|vm_mapping| vm_mapping.map_end() - addr >= size)
-        {
-            Ok(vm_mapping.map_to_addr())
-        } else {
-            return_errno_with_message!(Errno::EFAULT, "the range must lie in a single mapping");
-        }
-    }
-
-    /// Inserts a `VmMapping` into the `Vmar`, without attempting to merge with
-    /// neighboring mappings.
-    ///
-    /// The caller must ensure that the given `VmMapping` is not mergeable with
-    /// any neighboring mappings.
-    ///
-    /// Make sure the insertion doesn't exceed address space limit.
-    fn insert_without_try_merge(&mut self, vm_mapping: VmMapping) {
-        self.total_vm += vm_mapping.map_size();
-        self.vm_mappings.insert(vm_mapping);
-    }
-
-    /// Inserts a `VmMapping` into the `Vmar`, and attempts to merge it with
-    /// neighboring mappings.
-    ///
-    /// This method will try to merge the `VmMapping` with neighboring mappings
-    /// that are adjacent and compatible, in order to reduce fragmentation.
-    ///
-    /// Make sure the insertion doesn't exceed address space limit.
-    fn insert_try_merge(&mut self, vm_mapping: VmMapping) {
-        self.total_vm += vm_mapping.map_size();
-        let mut vm_mapping = vm_mapping;
-        let addr = vm_mapping.map_to_addr();
-
-        if let Some(prev) = self.vm_mappings.find_prev(&addr) {
-            let (new_mapping, to_remove) = vm_mapping.try_merge_with(prev);
-            vm_mapping = new_mapping;
-            if let Some(addr) = to_remove {
-                self.vm_mappings.remove(&addr);
-            }
-        }
-
-        if let Some(next) = self.vm_mappings.find_next(&addr) {
-            let (new_mapping, to_remove) = vm_mapping.try_merge_with(next);
-            vm_mapping = new_mapping;
-            if let Some(addr) = to_remove {
-                self.vm_mappings.remove(&addr);
-            }
-        }
-
-        self.vm_mappings.insert(vm_mapping);
-    }
-
-    /// Removes a `VmMapping` based on the provided key from the `Vmar`.
-    fn remove(&mut self, key: &Vaddr) -> Option<VmMapping> {
-        let vm_mapping = self.vm_mappings.remove(key)?;
-        self.total_vm -= vm_mapping.map_size();
-        Some(vm_mapping)
-    }
-
-    /// Finds a set of [`VmMapping`]s that intersect with the provided range.
-    fn query(&self, range: &Range<Vaddr>) -> impl Iterator<Item = &VmMapping> {
-        self.vm_mappings.find(range)
-    }
-
-    /// Calculates the total amount of overlap between `VmMapping`s
-    /// and the provided range.
-    fn count_overlap_size(&self, range: Range<Vaddr>) -> usize {
-        let mut sum_overlap_size = 0;
-        for vm_mapping in self.vm_mappings.find(&range) {
-            let vm_mapping_range = vm_mapping.range();
-            let intersected_range = get_intersected_range(&range, &vm_mapping_range);
-            sum_overlap_size += intersected_range.end - intersected_range.start;
-        }
-        sum_overlap_size
-    }
-
-    /// Allocates a free region for mapping with a specific offset and size.
-    ///
-    /// If the provided range is already occupied, return an error.
-    fn alloc_free_region_exact(&mut self, offset: Vaddr, size: usize) -> Result<Range<Vaddr>> {
-        if self
-            .vm_mappings
-            .find(&(offset..offset + size))
-            .next()
-            .is_some()
-        {
-            return_errno_with_message!(Errno::EACCES, "Requested region is already occupied");
-        }
-
-        Ok(offset..(offset + size))
-    }
-
-    /// Allocates a free region for mapping with a specific offset and size.
-    ///
-    /// If the provided range is already occupied, this function truncates all
-    /// the mappings that intersect with the range.
-    fn alloc_free_region_exact_truncate(
-        &mut self,
-        vm_space: &VmSpace,
-        offset: Vaddr,
-        size: usize,
-        rss_delta: &mut RssDelta,
-    ) -> Result<Range<Vaddr>> {
-        let range = offset..offset + size;
-        let mut mappings_to_remove = Vec::new();
-        for vm_mapping in self.vm_mappings.find(&range) {
-            mappings_to_remove.push(vm_mapping.map_to_addr());
-        }
-
-        for vm_mapping_addr in mappings_to_remove {
-            let vm_mapping = self.remove(&vm_mapping_addr).unwrap();
-            let vm_mapping_range = vm_mapping.range();
-            let intersected_range = get_intersected_range(&range, &vm_mapping_range);
-
-            let (left, taken, right) = vm_mapping.split_range(&intersected_range);
-            if let Some(left) = left {
-                self.insert_without_try_merge(left);
-            }
-            if let Some(right) = right {
-                self.insert_without_try_merge(right);
-            }
-
-            rss_delta.add(taken.rss_type(), -(taken.unmap(vm_space) as isize));
-        }
-
-        Ok(offset..(offset + size))
-    }
-
-    /// Allocates a free region for mapping.
-    ///
-    /// If no such region is found, return an error.
-    fn alloc_free_region(&mut self, size: usize, align: usize) -> Result<Range<Vaddr>> {
-        // Fast path that there's still room to the end.
-        let highest_occupied = self
-            .vm_mappings
-            .iter()
-            .next_back()
-            .map_or(ROOT_VMAR_LOWEST_ADDR, |vm_mapping| vm_mapping.range().end);
-        // FIXME: The up-align may overflow.
-        let last_occupied_aligned = highest_occupied.align_up(align);
-        if let Some(last) = last_occupied_aligned.checked_add(size) {
-            if last <= ROOT_VMAR_CAP_ADDR {
-                return Ok(last_occupied_aligned..last);
-            }
-        }
-
-        // Slow path that we need to search for a free region.
-        // Here, we use a simple brute-force FIRST-FIT algorithm.
-        // Allocate as low as possible to reduce fragmentation.
-        let mut last_end: Vaddr = ROOT_VMAR_LOWEST_ADDR;
-        for vm_mapping in self.vm_mappings.iter() {
-            let range = vm_mapping.range();
-
-            debug_assert!(range.start >= last_end);
-            debug_assert!(range.end <= highest_occupied);
-
-            let last_aligned = last_end.align_up(align);
-            let needed_end = last_aligned
-                .checked_add(size)
-                .ok_or(Error::new(Errno::ENOMEM))?;
-
-            if needed_end <= range.start {
-                return Ok(last_aligned..needed_end);
-            }
-
-            last_end = range.end;
-        }
-
-        return_errno_with_message!(Errno::ENOMEM, "Cannot find free region for mapping");
-    }
-
-    /// Splits and unmaps the found mapping if the new size is smaller.
-    /// Enlarges the last mapping if the new size is larger.
-    fn resize_mapping(
-        &mut self,
-        vm_space: &VmSpace,
-        map_addr: Vaddr,
-        old_size: usize,
-        new_size: usize,
-        rss_delta: &mut RssDelta,
-    ) -> Result<()> {
-        debug_assert_eq!(map_addr % PAGE_SIZE, 0);
-        debug_assert_eq!(old_size % PAGE_SIZE, 0);
-        debug_assert_eq!(new_size % PAGE_SIZE, 0);
-
-        if new_size == 0 {
-            return_errno_with_message!(Errno::EINVAL, "cannot resize a mapping to 0 size");
-        }
-
-        if new_size == old_size {
-            return Ok(());
-        }
-
-        let old_map_end = map_addr.checked_add(old_size).ok_or(Errno::EINVAL)?;
-        let new_map_end = map_addr.checked_add(new_size).ok_or(Errno::EINVAL)?;
-        if !is_userspace_vaddr(new_map_end - 1) {
-            return_errno_with_message!(Errno::EINVAL, "resize to an invalid new size");
-        }
-
-        if new_size < old_size {
-            self.alloc_free_region_exact_truncate(
-                vm_space,
-                new_map_end,
-                old_map_end - new_map_end,
-                rss_delta,
-            )?;
-            return Ok(());
-        }
-
-        self.alloc_free_region_exact(old_map_end, new_map_end - old_map_end)?;
-
-        let last_mapping = self.vm_mappings.find_one(&(old_map_end - 1)).unwrap();
-        let last_mapping_addr = last_mapping.map_to_addr();
-        debug_assert_eq!(last_mapping.map_end(), old_map_end);
-
-        self.check_extra_size_fits_rlimit(new_map_end - old_map_end)?;
-        let last_mapping = self.remove(&last_mapping_addr).unwrap();
-        let last_mapping = last_mapping.enlarge(new_map_end - old_map_end);
-        self.insert_try_merge(last_mapping);
-        Ok(())
+impl PerCpuLast {
+    fn alloc(&self, size: usize, align: usize) -> Result<usize> {
+        self.alloc_last
+            .fetch_update(Ordering::Release, Ordering::Acquire, |last| {
+                let allocated = last.align_up(align);
+                let new_end = allocated + size;
+                if new_end >= self.range.end {
+                    None
+                } else {
+                    Some(new_end)
+                }
+            })
+            .map(|last| last.align_up(align))
+            .map_err(|_| Error::new(Errno::ENOMEM))
     }
 }
 
-/// 64 KiB is the Linux configurable default
-pub const ROOT_VMAR_LOWEST_ADDR: Vaddr = 0x001_0000;
+struct PerCpuAllocator(Vec<PerCpuLast>);
 
+impl PerCpuAllocator {
+    fn new() -> Self {
+        let nr_cpus = ostd::cpu::num_cpus();
+        let mut cur_base = ROOT_VMAR_LOWEST_ADDR;
+        let per_cpu_size: usize =
+            ((INIT_STACK_CLEARANCE - ROOT_VMAR_LOWEST_ADDR) / nr_cpus).align_down(PAGE_SIZE);
+        let mut alloc_bases = Vec::with_capacity(nr_cpus);
+        for _ in 0..nr_cpus {
+            alloc_bases.push(PerCpuLast {
+                range: cur_base..cur_base + per_cpu_size,
+                alloc_last: AtomicUsize::new(cur_base),
+            });
+            cur_base += per_cpu_size;
+        }
+        PerCpuAllocator(alloc_bases)
+    }
+
+    fn clear(&self) {
+        for i in self.0.iter() {
+            i.alloc_last.store(i.range.start, Ordering::Release);
+        }
+    }
+
+    fn allocate(&self, size: usize, align: usize) -> Result<usize> {
+        let preempt_guard = disable_preempt();
+        let cur_cpu = preempt_guard.current_cpu();
+        let fastpath_res = self.0[cur_cpu.as_usize()].alloc(size, align);
+
+        if fastpath_res.is_ok() {
+            return fastpath_res;
+        }
+
+        // fastpath failed, try to find a new range
+        for percpulast in self.0.iter() {
+            let allocated = percpulast.alloc(size, align);
+            if allocated.is_ok() {
+                return allocated;
+            }
+        }
+
+        // all failed
+        Err(Error::new(Errno::ENOMEM))
+    }
+
+    fn maintain_alloc_start(&self, start: usize, end: usize) {
+        // find the cpu that the size belongs to
+        for percpulast in self.0.iter() {
+            let range = &percpulast.range;
+            if range.contains(&end) {
+                percpulast
+                    .alloc_last
+                    .fetch_update(Ordering::Release, Ordering::Acquire, |last| {
+                        if last < end {
+                            Some(end)
+                        } else {
+                            Some(last)
+                        }
+                    })
+                    .unwrap();
+            } else if range.contains(&start) {
+                // contains the start but not the end
+                percpulast.alloc_last.store(range.end, Ordering::Release);
+            }
+        }
+    }
+
+    fn fork(&self) -> Self {
+        let mut alloc_bases = Vec::with_capacity(self.0.len());
+        for i in self.0.iter() {
+            alloc_bases.push(PerCpuLast {
+                range: i.range.clone(),
+                alloc_last: AtomicUsize::new(i.alloc_last.load(Ordering::Acquire)),
+            });
+        }
+        PerCpuAllocator(alloc_bases)
+    }
+}
+
+pub const ROOT_VMAR_LOWEST_ADDR: Vaddr = 0x001_0000; // 64 KiB is the Linux configurable default
+pub const INIT_STACK_CLEARANCE: Vaddr = MAX_USERSPACE_VADDR - 0x4000_0000; // 1 GiB
 pub const ROOT_VMAR_CAP_ADDR: Vaddr = MAX_USERSPACE_VADDR;
 
 /// Returns whether the input `vaddr` is a legal user space virtual address.
@@ -425,89 +266,76 @@ pub fn is_userspace_vaddr(vaddr: Vaddr) -> bool {
     (ROOT_VMAR_LOWEST_ADDR..ROOT_VMAR_CAP_ADDR).contains(&vaddr)
 }
 
-impl Interval<usize> for Arc<Vmar_> {
-    fn range(&self) -> Range<usize> {
-        self.base..(self.base + self.size)
-    }
-}
-
 impl Vmar_ {
-    fn new(
-        inner: VmarInner,
-        vm_space: Arc<VmSpace>,
-        base: usize,
-        size: usize,
-        rss_counters: [PerCpuCounter; NUM_RSS_COUNTERS],
-    ) -> Arc<Self> {
-        Arc::new(Vmar_ {
-            inner: RwMutex::new(inner),
-            base,
-            size,
-            vm_space,
-            rss_counters,
-        })
+    fn alloc_growup_region(&self, size: usize, align: usize) -> Result<usize> {
+        self.allocator.allocate(size, align)
+    }
+
+    fn maintain_alloc_start(&self, start: usize, end: usize) {
+        self.allocator.maintain_alloc_start(start, end);
     }
 
     fn new_root() -> Arc<Self> {
-        let vmar_inner = VmarInner::new();
         let vm_space = VmSpace::new();
-        Vmar_::new(
-            vmar_inner,
-            Arc::new(vm_space),
-            0,
-            ROOT_VMAR_CAP_ADDR,
-            array::from_fn(|_| PerCpuCounter::new()),
-        )
-    }
+        let vm_space = Arc::new(vm_space);
+        let rss_counters = core::array::from_fn(|_| PerCpuCounter::new());
 
-    fn query(&self, range: Range<usize>) -> VmarQueryGuard<'_> {
-        VmarQueryGuard {
-            vmar: self.inner.read(),
-            range,
-        }
+        Arc::new(Vmar_ {
+            base: ROOT_VMAR_LOWEST_ADDR,
+            size: ROOT_VMAR_CAP_ADDR - ROOT_VMAR_LOWEST_ADDR,
+            vm_space,
+
+            allocator: PerCpuAllocator::new(),
+
+            vmo_backed_id_alloc: AtomicU32::new(1),
+            vma_map: RwLock::new(BTreeMap::new()),
+
+            rss_counters,
+        })
     }
 
     fn protect(&self, perms: VmPerms, range: Range<usize>) -> Result<()> {
         assert!(range.start % PAGE_SIZE == 0);
         assert!(range.end % PAGE_SIZE == 0);
-        self.do_protect_inner(perms, range)?;
-        Ok(())
-    }
 
-    // Do real protect. The protected range is ensured to be mapped.
-    fn do_protect_inner(&self, perms: VmPerms, range: Range<usize>) -> Result<()> {
-        let mut inner = self.inner.write();
-        let vm_space = self.vm_space();
+        let preempt_guard = disable_preempt();
+        let mut cursor = self.vm_space.cursor_mut(&preempt_guard, &range).unwrap();
 
-        let mut protect_mappings = Vec::new();
-
-        for vm_mapping in inner.vm_mappings.find(&range) {
-            protect_mappings.push((vm_mapping.map_to_addr(), vm_mapping.perms()));
+        let mut prot_op = |p: &mut PageProperty| {
+            let mut cow = p.flags.contains(PageFlags::AVAIL1);
+            let shared = p.flags.contains(PageFlags::AVAIL2);
+            // If protect COW read-only mapping to read, remove COW flag.
+            if cow && !perms.contains(VmPerms::WRITE) {
+                cow = false;
+            }
+            // If protect private read-only mapping to write, perform COW.
+            if !shared && perms.contains(VmPerms::WRITE) {
+                cow = true;
+            }
+            p.flags = perms.into();
+            if cow {
+                p.flags |= PageFlags::AVAIL1;
+            }
+            if shared {
+                p.flags |= PageFlags::AVAIL2;
+            }
+        };
+        let mut token_op = |t: &mut Status| {
+            let mut marker = VmMarker::decode(*t);
+            marker.perms = perms;
+            *t = marker.encode();
+        };
+        while cursor.virt_addr() < range.end {
+            if let Some(va) =
+                cursor.protect_next(range.end - cursor.virt_addr(), &mut prot_op, &mut token_op)
+            {
+                cursor.flusher().issue_tlb_flush(TlbFlushOp::Range(va));
+            } else {
+                break;
+            }
         }
-
-        for (vm_mapping_addr, vm_mapping_perms) in protect_mappings {
-            if perms == vm_mapping_perms {
-                continue;
-            }
-            let vm_mapping = inner.remove(&vm_mapping_addr).unwrap();
-            let vm_mapping_range = vm_mapping.range();
-            let intersected_range = get_intersected_range(&range, &vm_mapping_range);
-
-            // Protects part of the taken `VmMapping`.
-            let (left, taken, right) = vm_mapping.split_range(&intersected_range);
-
-            // Puts the rest back.
-            if let Some(left) = left {
-                inner.insert_without_try_merge(left);
-            }
-            if let Some(right) = right {
-                inner.insert_without_try_merge(right);
-            }
-
-            // Protects part of the `VmMapping`.
-            let taken = taken.protect(vm_space.as_ref(), perms);
-            inner.insert_try_merge(taken);
-        }
+        cursor.flusher().dispatch_tlb_flush();
+        cursor.flusher().sync_tlb_flush();
 
         Ok(())
     }
@@ -515,182 +343,266 @@ impl Vmar_ {
     /// Handles user space page fault, if the page fault is successfully handled, return Ok(()).
     pub fn handle_page_fault(&self, page_fault_info: &PageFaultInfo) -> Result<()> {
         let address = page_fault_info.address;
+
+        log::trace!(
+            "page fault at address 0x{:x}, perms: {:?}",
+            address,
+            page_fault_info.required_perms
+        );
+
         if !(self.base..self.base + self.size).contains(&address) {
-            return_errno_with_message!(Errno::EACCES, "page fault addr is not in current vmar");
+            return_errno_with_message!(Errno::EACCES, "page fault address is not in current VMAR");
         }
 
-        let inner = self.inner.read();
+        let page_aligned_addr = address.align_down(PAGE_SIZE);
+        let is_write_fault = page_fault_info.required_perms.contains(VmPerms::WRITE);
+        let is_exec_fault = page_fault_info.required_perms.contains(VmPerms::EXEC);
 
-        if let Some(vm_mapping) = inner.vm_mappings.find_one(&address) {
-            debug_assert!(vm_mapping.range().contains(&address));
+        let mut rss_delta = RssDelta::new(self);
 
-            let mut rss_delta = RssDelta::new(self);
-            return vm_mapping.handle_page_fault(&self.vm_space, page_fault_info, &mut rss_delta);
+        'retry: loop {
+            let preempt_guard = disable_preempt();
+            let mut cursor = self.vm_space.cursor_mut(
+                &preempt_guard,
+                &(page_aligned_addr..page_aligned_addr + PAGE_SIZE),
+            )?;
+
+            match cursor.query().unwrap() {
+                (_, Some(VmItem::Status(status, _))) => {
+                    let marker = VmMarker::decode(status);
+
+                    if !marker.perms.contains(page_fault_info.required_perms) {
+                        trace!(
+                            "self.perms {:?}, page_fault_info.required_perms {:?}",
+                            marker.perms,
+                            page_fault_info.required_perms,
+                        );
+                        return_errno_with_message!(Errno::EACCES, "perm check fails");
+                    }
+
+                    if let Some(vmo_backed_id) = marker.vmo_backed_id {
+                        // On-demand VMO-backed mapping.
+                        //
+                        // It includes file-backed mapping and shared anonymous mapping.
+
+                        let id_map = self.vma_map.read();
+                        let vmo_backed_vma = id_map.get(&vmo_backed_id).unwrap();
+                        let vmo = &vmo_backed_vma.vmo;
+
+                        let (frame, need_cow) = {
+                            let page_offset =
+                                address.align_down(PAGE_SIZE) - vmo_backed_vma.map_to_addr;
+                            let vmo_commit_result = vmo.get_committed_frame(page_offset);
+                            match vmo_commit_result {
+                                Ok(frame) => {
+                                    if !marker.is_shared && is_write_fault {
+                                        // Write access to private VMO-backed mapping. Performs COW directly.
+                                        (duplicate_frame(&frame)?.into(), false)
+                                    } else {
+                                        // Operations to shared mapping or read access to private VMO-backed mapping.
+                                        // If read access to private VMO-backed mapping triggers a page fault,
+                                        // the map should be readonly. If user next tries to write to the frame,
+                                        // another page fault will be triggered which will performs a COW (Copy-On-Write).
+                                        (frame, !marker.is_shared)
+                                    }
+                                }
+                                Err(VmoCommitError::NeedIo(index)) => {
+                                    drop(cursor);
+                                    drop(preempt_guard);
+                                    vmo.commit_on(index, CommitFlags::empty())?;
+                                    continue 'retry;
+                                }
+                                Err(_) => {
+                                    if !marker.is_shared {
+                                        // The page index is outside the VMO. This is only allowed in private mapping.
+                                        (FrameAllocOptions::new().alloc_frame()?.into(), false)
+                                    } else {
+                                        return_errno_with_message!(
+                                            Errno::EFAULT,
+                                            "could not find a corresponding physical page"
+                                        );
+                                    }
+                                }
+                            }
+                        };
+
+                        let mut page_flags = marker.perms.into();
+
+                        if need_cow {
+                            page_flags -= PageFlags::W;
+                            page_flags |= PageFlags::AVAIL1;
+                        }
+
+                        if marker.is_shared {
+                            page_flags |= PageFlags::AVAIL2;
+                        }
+
+                        // Pre-fill A/D bits to avoid A/D TLB miss.
+                        page_flags |= PageFlags::ACCESSED;
+                        if is_write_fault {
+                            page_flags |= PageFlags::DIRTY;
+                        }
+                        let map_prop = PageProperty::new_user(page_flags, CachePolicy::Writeback);
+
+                        rss_delta.add(RssType::RSS_FILEPAGES, 1);
+
+                        cursor.map(VmItem::Frame(frame, map_prop));
+                    } else {
+                        // On-demand non-vmo-backed mapping.
+                        //
+                        // It is a private anonymous mapping.
+
+                        let vm_perms = marker.perms;
+
+                        let mut page_flags = vm_perms.into();
+
+                        if marker.is_shared {
+                            page_flags |= PageFlags::AVAIL2;
+                            unimplemented!("shared non-vmo-backed mapping");
+                        }
+
+                        // Pre-fill A/D bits to avoid A/D TLB miss.
+                        page_flags |= PageFlags::ACCESSED;
+                        if is_write_fault {
+                            page_flags |= PageFlags::DIRTY;
+                        }
+
+                        let map_prop = PageProperty::new_user(page_flags, CachePolicy::Writeback);
+
+                        rss_delta.add(RssType::RSS_ANONPAGES, 1);
+
+                        cursor.map(VmItem::Frame(
+                            FrameAllocOptions::new().alloc_frame()?.into(),
+                            map_prop,
+                        ));
+                    }
+                }
+                (va, Some(VmItem::Frame(frame, mut prop))) => {
+                    if VmPerms::from(prop.flags).contains(page_fault_info.required_perms) {
+                        // The page fault is already handled maybe by other threads.
+                        // Just flush the TLB and return.
+                        TlbFlushOp::Range(va).perform_on_current();
+                        return Ok(());
+                    }
+
+                    if is_exec_fault {
+                        return_errno_with_message!(
+                            Errno::EACCES,
+                            "page fault at non-executable mapping"
+                        );
+                    }
+
+                    let is_cow = prop.flags.contains(PageFlags::AVAIL1);
+                    let is_shared = prop.flags.contains(PageFlags::AVAIL2);
+
+                    if !is_cow && is_write_fault {
+                        return_errno_with_message!(
+                            Errno::EACCES,
+                            "page fault at read-only mapping"
+                        );
+                    }
+
+                    // Perform COW if it is a write access to a shared mapping.
+
+                    // If the forked child or parent immediately unmaps the page after
+                    // the fork without accessing it, we are the only reference to the
+                    // frame. We can directly map the frame as writable without
+                    // copying. In this case, the reference count of the frame is 2 (
+                    // one for the mapping and one for the frame handle itself).
+                    let only_reference = frame.reference_count() == 2;
+
+                    let additional_flags = PageFlags::W | PageFlags::ACCESSED | PageFlags::DIRTY;
+
+                    if is_shared || only_reference {
+                        cursor.protect_next(
+                            PAGE_SIZE,
+                            &mut |p: &mut PageProperty| {
+                                p.flags |= additional_flags;
+                                p.flags -= PageFlags::AVAIL1; // Remove COW flag
+                            },
+                            &mut |_: &mut Status| {},
+                        );
+                        cursor.flusher().issue_tlb_flush(TlbFlushOp::Range(va));
+                    } else {
+                        let new_frame = duplicate_frame(&frame)?;
+                        prop.flags |= additional_flags;
+                        prop.flags -= PageFlags::AVAIL1; // Remove COW flag
+                        cursor.map(VmItem::Frame(new_frame.into(), prop));
+                        cursor.flusher().issue_tlb_flush(TlbFlushOp::Range(va));
+                    }
+                    cursor.flusher().dispatch_tlb_flush();
+                    cursor.flusher().sync_tlb_flush();
+                }
+                (_, None) => {
+                    return_errno_with_message!(
+                        Errno::EACCES,
+                        "page fault at an address not mapped"
+                    );
+                }
+            }
+            break 'retry;
         }
 
-        return_errno_with_message!(Errno::EACCES, "page fault addr is not in current vmar");
+        Ok(())
     }
 
     /// Clears all content of the root VMAR.
     fn clear_root_vmar(&self) -> Result<()> {
-        let mut inner = self.inner.write();
-        inner.vm_mappings.clear();
+        {
+            let full_range = 0..MAX_USERSPACE_VADDR;
+            let preempt_guard = disable_preempt();
+            let mut cursor = self
+                .vm_space
+                .cursor_mut(&preempt_guard, &full_range)
+                .unwrap();
+            cursor.unmap(full_range.len());
+            cursor.flusher().sync_tlb_flush();
+        }
 
-        // Keep `inner` locked to avoid race conditions.
-        let preempt_guard = disable_preempt();
-        let full_range = 0..MAX_USERSPACE_VADDR;
-        let mut cursor = self
-            .vm_space
-            .cursor_mut(&preempt_guard, &full_range)
-            .unwrap();
-        cursor.unmap(full_range.len());
-        cursor.flusher().sync_tlb_flush();
+        self.allocator.clear();
+        self.vmo_backed_id_alloc.store(1, Ordering::Release);
+        self.vma_map.write().clear();
 
         Ok(())
     }
 
     pub fn remove_mapping(&self, range: Range<usize>) -> Result<()> {
-        let mut inner = self.inner.write();
-        let mut rss_delta = RssDelta::new(self);
-        inner.alloc_free_region_exact_truncate(
-            &self.vm_space,
-            range.start,
-            range.len(),
-            &mut rss_delta,
-        )?;
-        Ok(())
-    }
-
-    /// Splits and unmaps the found mapping if the new size is smaller.
-    /// Enlarges the last mapping if the new size is larger.
-    fn resize_mapping(
-        &self,
-        map_addr: Vaddr,
-        old_size: usize,
-        new_size: usize,
-        check_single_mapping: bool,
-    ) -> Result<()> {
-        let mut inner = self.inner.write();
-        let mut rss_delta = RssDelta::new(self);
-
-        if check_single_mapping {
-            inner.check_lies_in_single_mapping(map_addr, old_size)?;
-        } else if inner.vm_mappings.find_one(&map_addr).is_none() {
-            return_errno_with_message!(Errno::EFAULT, "there is no mapping at the old address")
-        }
-        // FIXME: We should check whether all existing ranges in
-        // `map_addr..map_addr + old_size` have a mapping. If not,
-        // we should return an `Err`.
-
-        inner.resize_mapping(&self.vm_space, map_addr, old_size, new_size, &mut rss_delta)
-    }
-
-    fn remap(
-        &self,
-        old_addr: Vaddr,
-        old_size: usize,
-        new_addr: Option<Vaddr>,
-        new_size: usize,
-    ) -> Result<Vaddr> {
-        debug_assert_eq!(old_addr % PAGE_SIZE, 0);
-        debug_assert_eq!(old_size % PAGE_SIZE, 0);
-        debug_assert_eq!(new_size % PAGE_SIZE, 0);
-
-        let mut inner = self.inner.write();
-        let mut rss_delta = RssDelta::new(self);
-
-        if inner.vm_mappings.find_one(&old_addr).is_none() {
-            return_errno_with_message!(
-                Errno::EFAULT,
-                "remap: there is no mapping at the old address"
-            )
-        }
-
-        // Shrink the old mapping first.
-        old_addr.checked_add(old_size).ok_or(Errno::EINVAL)?;
-        let (old_size, old_range) = if new_size < old_size {
-            inner.alloc_free_region_exact_truncate(
-                &self.vm_space,
-                old_addr + new_size,
-                old_size - new_size,
-                &mut rss_delta,
-            )?;
-            (new_size, old_addr..old_addr + new_size)
-        } else {
-            (old_size, old_addr..old_addr + old_size)
-        };
-
-        // Allocate a new free region that does not overlap with the old range.
-        let new_range = if let Some(new_addr) = new_addr {
-            let new_range = new_addr..new_addr.checked_add(new_size).ok_or(Errno::EINVAL)?;
-            if new_addr % PAGE_SIZE != 0
-                || !is_userspace_vaddr(new_addr)
-                || !is_userspace_vaddr(new_range.end - 1)
-            {
-                return_errno_with_message!(Errno::EINVAL, "remap: invalid fixed new address");
-            }
-            if is_intersected(&old_range, &new_range) {
-                return_errno_with_message!(
-                    Errno::EINVAL,
-                    "remap: the new range overlaps with the old one"
-                );
-            }
-            inner.alloc_free_region_exact_truncate(
-                &self.vm_space,
-                new_addr,
-                new_size,
-                &mut rss_delta,
-            )?
-        } else {
-            inner.alloc_free_region(new_size, PAGE_SIZE)?
-        };
-
-        // Create a new `VmMapping`.
-        let old_mapping = {
-            let old_mapping_addr = inner.check_lies_in_single_mapping(old_addr, old_size)?;
-            let vm_mapping = inner.remove(&old_mapping_addr).unwrap();
-            let (left, old_mapping, right) = vm_mapping.split_range(&old_range);
-            if let Some(left) = left {
-                inner.insert_without_try_merge(left);
-            }
-            if let Some(right) = right {
-                inner.insert_without_try_merge(right);
-            }
-            old_mapping
-        };
-        // Note that we have ensured that `new_size >= old_size` at the beginning.
-        let new_mapping = old_mapping.clone_for_remap_at(new_range.start).unwrap();
-        inner.insert_try_merge(new_mapping.enlarge(new_size - old_size));
-
         let preempt_guard = disable_preempt();
-        let total_range = old_range.start.min(new_range.start)..old_range.end.max(new_range.end);
-        let vmspace = self.vm_space();
-        let mut cursor = vmspace.cursor_mut(&preempt_guard, &total_range).unwrap();
+        let mut cursor = self.vm_space.cursor_mut(&preempt_guard, &range).unwrap();
 
-        // Move the mapping.
-        let mut current_offset = 0;
-        while current_offset < old_size {
-            cursor.jump(old_range.start + current_offset).unwrap();
-            let Some(mapped_va) = cursor.find_next(old_size - current_offset) else {
-                break;
-            };
-            let (va, Some((frame, prop))) = cursor.query().unwrap() else {
-                panic!("Found mapped page but query failed");
-            };
-            debug_assert_eq!(mapped_va, va.start);
-            cursor.unmap(PAGE_SIZE);
+        // let mut remain_size = range.len();
+        // while let Some(mapped_va) = cursor.find_next(remain_size) {
+        //     let (va, Some(item)) = cursor.query().unwrap() else {
+        //         panic!("Found mapped page but query failed");
+        //     };
+        //     debug_assert_eq!(mapped_va, va.start);
 
-            let offset = mapped_va - old_range.start;
-            cursor.jump(new_range.start + offset).unwrap();
-            cursor.map(frame, prop);
+        //     if let VmItem::Frame(frame, _) = item {
+        //         // Update RSS counters.
+        //         if (frame.dyn_meta() as &dyn Any)
+        //             .downcast_ref::<CachePageMeta>()
+        //             .is_some()
+        //         {
+        //             self.add_rss_counter(RssType::RSS_FILEPAGES, -1);
+        //         } else {
+        //             self.add_rss_counter(RssType::RSS_ANONPAGES, -1);
+        //         }
+        //     }
+        //     if va.end < range.end {
+        //         cursor.jump(va.end).unwrap();
+        //         remain_size = range.end - va.end;
+        //     } else {
+        //         break;
+        //     }
+        // }
 
-            current_offset = offset + PAGE_SIZE;
-        }
+        // cursor.jump(range.start).unwrap();
 
-        cursor.flusher().dispatch_tlb_flush();
+        cursor.unmap(range.len());
+
         cursor.flusher().sync_tlb_flush();
 
-        Ok(new_range.start)
+        Ok(())
     }
 
     /// Returns the attached `VmSpace`.
@@ -699,54 +611,60 @@ impl Vmar_ {
     }
 
     pub(super) fn new_fork_root(self: &Arc<Self>) -> Result<Arc<Self>> {
-        let new_vmar_ = {
-            let vmar_inner = VmarInner::new();
-            let new_space = VmSpace::new();
-            Vmar_::new(
-                vmar_inner,
-                Arc::new(new_space),
-                self.base,
-                self.size,
-                array::from_fn(|_| PerCpuCounter::new()),
-            )
-        };
+        // Clone mappings.
+        let new_vmspace = VmSpace::new();
+        let mut rss_counters = [0_isize; NUM_RSS_COUNTERS];
 
-        {
-            let inner = self.inner.read();
-            let mut new_inner = new_vmar_.inner.write();
-
-            // Clone mappings.
+        let (new_vma_map, new_vmo_backed_id_alloc) = {
             let preempt_guard = disable_preempt();
-            let new_vmspace = new_vmar_.vm_space();
             let range = self.base..(self.base + self.size);
             let mut new_cursor = new_vmspace.cursor_mut(&preempt_guard, &range).unwrap();
             let cur_vmspace = self.vm_space();
             let mut cur_cursor = cur_vmspace.cursor_mut(&preempt_guard, &range).unwrap();
-            let mut rss_delta = RssDelta::new(&new_vmar_);
 
-            for vm_mapping in inner.vm_mappings.iter() {
-                let base = vm_mapping.map_to_addr();
-
-                // Clone the `VmMapping` to the new VMAR.
-                let new_mapping = vm_mapping.new_fork()?;
-                new_inner.insert_without_try_merge(new_mapping);
-
-                // Protect the mapping and copy to the new page table for COW.
-                cur_cursor.jump(base).unwrap();
-                new_cursor.jump(base).unwrap();
-
-                let num_copied =
-                    cow_copy_pt(&mut cur_cursor, &mut new_cursor, vm_mapping.map_size());
-
-                rss_delta.add(vm_mapping.rss_type(), num_copied as isize);
-            }
+            let old_vma_map = self.vma_map.read();
+            let mut new_vma_map = BTreeMap::new();
+            let mut status_op = |status: &mut Status| {
+                let marker = VmMarker::decode(*status);
+                if let Some(vmo_backed_id) = marker.vmo_backed_id {
+                    new_vma_map
+                        .entry(vmo_backed_id)
+                        .or_insert_with(|| old_vma_map.get(&vmo_backed_id).unwrap().clone());
+                }
+            };
+            cow_copy_pt(
+                &mut cur_cursor,
+                &mut new_cursor,
+                range.len(),
+                &mut status_op,
+                &mut rss_counters,
+            );
 
             cur_cursor.flusher().issue_tlb_flush(TlbFlushOp::All);
             cur_cursor.flusher().dispatch_tlb_flush();
             cur_cursor.flusher().sync_tlb_flush();
-        }
 
-        Ok(new_vmar_)
+            // Clone other things under the lock.
+            let new_vmo_backed_id_alloc = self.vmo_backed_id_alloc.load(Ordering::Acquire);
+
+            (new_vma_map, new_vmo_backed_id_alloc)
+        };
+
+        let cpu = CpuId::current_racy(); // Safe because only used by per-cpu counters.
+
+        Ok(Arc::new(Self {
+            base: self.base,
+            size: self.size,
+            rss_counters: core::array::from_fn(|i| {
+                let counter = PerCpuCounter::new();
+                counter.add(cpu, rss_counters[i]);
+                counter
+            }),
+            vm_space: Arc::new(new_vmspace),
+            allocator: self.allocator.fork(),
+            vmo_backed_id_alloc: AtomicU32::new(new_vmo_backed_id_alloc),
+            vma_map: RwLock::new(new_vma_map),
+        }))
     }
 
     pub fn get_rss_counter(&self, rss_type: RssType) -> usize {
@@ -767,35 +685,59 @@ impl Vmar_ {
 /// `size`. The destination range starts from `dst`'s current position.
 ///
 /// The number of physical frames copied is returned.
-fn cow_copy_pt(src: &mut CursorMut<'_>, dst: &mut CursorMut<'_>, size: usize) -> usize {
+fn cow_copy_pt(
+    src: &mut CursorMut<'_>,
+    dst: &mut CursorMut<'_>,
+    size: usize,
+    status_op: &mut impl FnMut(&mut Status),
+    rss_delta: &mut [isize; NUM_RSS_COUNTERS],
+) {
     let start_va = src.virt_addr();
     let end_va = start_va + size;
     let mut remain_size = size;
 
-    let mut num_copied = 0;
-
-    let op = |page: &mut PageProperty| {
+    // Protect the mapping and copy to the new page table for COW.
+    let mut prot_op = |page: &mut PageProperty| {
+        if page.flags.contains(PageFlags::W) {
+            page.flags |= PageFlags::AVAIL1; // Copy-on-write
+        }
         page.flags -= PageFlags::W;
     };
 
     while let Some(mapped_va) = src.find_next(remain_size) {
-        let (va, Some((frame, mut prop))) = src.query().unwrap() else {
+        let (va, Some(mut item)) = src.query().unwrap() else {
             panic!("Found mapped page but query failed");
         };
         debug_assert_eq!(mapped_va, va.start);
 
-        src.protect_next(end_va - mapped_va, op).unwrap();
+        src.protect_next(end_va - mapped_va, &mut prot_op, status_op)
+            .unwrap();
 
         dst.jump(mapped_va).unwrap();
-        op(&mut prop);
-        dst.map(frame, prop);
+
+        match item {
+            VmItem::Frame(ref frame, ref mut prop) => {
+                let rss_type = if (frame.dyn_meta() as &dyn Any)
+                    .downcast_ref::<CachePageMeta>()
+                    .is_some()
+                {
+                    RssType::RSS_FILEPAGES
+                } else {
+                    RssType::RSS_ANONPAGES
+                };
+                rss_delta[rss_type as usize] += 1;
+
+                prot_op(prop);
+            }
+            VmItem::Status(ref mut status, _) => {
+                status_op(status);
+            }
+        }
+
+        dst.map(item);
 
         remain_size = end_va - src.virt_addr();
-
-        num_copied += 1;
     }
-
-    num_copied
 }
 
 impl<R> Vmar<R> {
@@ -818,7 +760,18 @@ impl<R> Vmar<R> {
 
     /// Returns the total size of the mappings in bytes.
     pub fn get_mappings_total_size(&self) -> usize {
-        self.0.inner.read().total_vm
+        0 // Not supported yet.
+    }
+}
+
+/// A guard for querying VMARs.
+pub struct VmarQueryGuard<'a>(core::marker::PhantomData<&'a ()>);
+
+impl Iterator for VmarQueryGuard<'_> {
+    type Item = VmItem;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        todo!();
     }
 }
 
@@ -1011,22 +964,6 @@ where
             handle_page_faults_around,
         } = self;
 
-        let mut inner = parent.0.inner.write();
-
-        inner.check_extra_size_fits_rlimit(map_size).or_else(|e| {
-            if can_overwrite {
-                let offset = offset.ok_or(Error::with_message(
-                    Errno::EINVAL,
-                    "offset cannot be None since can overwrite is set",
-                ))?;
-                // MAP_FIXED may remove pages overlapped with requested mapping.
-                let expand_size = map_size - inner.count_overlap_size(offset..offset + map_size);
-                inner.check_extra_size_fits_rlimit(expand_size)
-            } else {
-                Err(e)
-            }
-        })?;
-
         // Allocates a free region.
         trace!("allocate free region, map_size = 0x{:x}, offset = {:x?}, align = 0x{:x}, can_overwrite = {}", map_size, offset, align, can_overwrite);
         let map_to_addr = if can_overwrite {
@@ -1035,36 +972,73 @@ where
                 Errno::EINVAL,
                 "offset cannot be None since can overwrite is set",
             ))?;
-            let mut rss_delta = RssDelta::new(&parent.0);
-            inner.alloc_free_region_exact_truncate(
-                parent.vm_space(),
-                offset,
-                map_size,
-                &mut rss_delta,
-            )?;
+            parent.0.maintain_alloc_start(offset, offset + map_size);
             offset
         } else if let Some(offset) = offset {
-            inner.alloc_free_region_exact(offset, map_size)?;
+            parent.0.maintain_alloc_start(offset, offset + map_size);
             offset
         } else {
-            let free_region = inner.alloc_free_region(map_size, align)?;
-            free_region.start
+            parent.0.alloc_growup_region(map_size, align)?
         };
 
-        // Build the mapping.
         let vmo = vmo.map(|vmo| MappedVmo::new(vmo.to_dyn(), vmo_offset));
-        let vm_mapping = VmMapping::new(
-            NonZeroUsize::new(map_size).unwrap(),
-            map_to_addr,
-            vmo,
-            inode,
-            is_shared,
-            handle_page_faults_around,
+
+        trace!(
+            "build mapping, range = {:#x?}, perms = {:?}, vmo = {:#?}",
+            map_to_addr..map_to_addr + map_size,
             perms,
+            vmo
         );
 
-        // Add the mapping to the VMAR.
-        inner.insert_try_merge(vm_mapping);
+        // Build the mapping.
+        let preempt_guard = disable_preempt();
+        let mut cursor = parent
+            .vm_space()
+            .cursor_mut(&preempt_guard, &(map_to_addr..map_to_addr + map_size))
+            .unwrap();
+
+        if !can_overwrite {
+            while cursor.virt_addr() < map_to_addr + map_size {
+                let (va, item) = cursor.query().unwrap();
+                if item.is_none() {
+                    if va.end < map_to_addr {
+                        cursor.jump(va.end).unwrap();
+                    } else {
+                        break;
+                    }
+                } else {
+                    return_errno_with_message!(Errno::EINVAL, "overlapping mapping");
+                }
+            }
+        }
+
+        let marker = VmMarker {
+            perms,
+            is_shared,
+            vmo_backed_id: if let Some(vmo) = vmo {
+                let id = parent.alloc_vmo_backed_id();
+                let vma = VmoBackedVMA {
+                    id,
+                    map_size: NonZeroUsize::new(map_size).unwrap(),
+                    map_to_addr,
+                    vmo,
+                    inode,
+                    is_shared,
+                    handle_page_faults_around,
+                };
+                let mut vma_map = parent.0.vma_map.write();
+                vma_map.insert(id, vma);
+                Some(id)
+            } else {
+                None
+            },
+        };
+
+        cursor.jump(map_to_addr).unwrap();
+        let status = marker.encode();
+        for item in largest_pages(map_to_addr, map_size, status) {
+            cursor.map(item);
+        }
 
         Ok(map_to_addr)
     }
@@ -1073,6 +1047,10 @@ where
     fn check_options(&self) -> Result<()> {
         // Check align.
         debug_assert!(self.align % PAGE_SIZE == 0);
+        // Size cannot be zero.
+        if self.size == 0 {
+            return_errno_with_message!(Errno::EINVAL, "mapping size is zero");
+        }
         debug_assert!(self.align.is_power_of_two());
         if self.align % PAGE_SIZE != 0 || !self.align.is_power_of_two() {
             return_errno_with_message!(Errno::EINVAL, "invalid align");
@@ -1103,20 +1081,6 @@ where
 
         let perm_rights = Rights::from(self.perms);
         vmo.check_rights(perm_rights)
-    }
-}
-
-/// A guard that allows querying a [`Vmar`] for its mappings.
-pub struct VmarQueryGuard<'a> {
-    vmar: RwMutexReadGuard<'a, VmarInner>,
-    range: Range<usize>,
-}
-
-impl VmarQueryGuard<'_> {
-    /// Returns an iterator over the [`VmMapping`]s that intersect with the
-    /// provided range when calling [`Vmar::query`].
-    pub fn iter(&self) -> impl Iterator<Item = &VmMapping> {
-        self.vmar.query(&self.range)
     }
 }
 
@@ -1181,7 +1145,7 @@ impl Drop for RssDelta<'_> {
 #[cfg(ktest)]
 mod test {
     use ostd::{
-        mm::{CachePolicy, FrameAllocOptions},
+        mm::{vm_space::VmItem, CachePolicy, FrameAllocOptions},
         prelude::*,
     };
 
@@ -1189,6 +1153,10 @@ mod test {
 
     #[ktest]
     fn test_cow_copy_pt() {
+        fn status_op(_: &mut Status) {
+            // No-op for status
+        }
+
         let vm_space = VmSpace::new();
         let map_range = PAGE_SIZE..(PAGE_SIZE * 2);
         let cow_range = 0..PAGE_SIZE * 512 * 512;
@@ -1203,12 +1171,12 @@ mod test {
         vm_space
             .cursor_mut(&preempt_guard, &map_range)
             .unwrap()
-            .map(frame.into(), page_property); // Original frame moved here
+            .map(VmItem::Frame(frame.into(), page_property)); // Original frame moved here
 
         // Confirms the initial mapping.
         assert!(matches!(
             vm_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
-            (va, Some((frame, prop))) if va.start == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::RW
+            (va, Some(VmItem::Frame(frame, prop))) if va.start == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::RW
         ));
 
         // Creates a child page table with copy-on-write protection.
@@ -1216,14 +1184,22 @@ mod test {
         {
             let mut child_cursor = child_space.cursor_mut(&preempt_guard, &cow_range).unwrap();
             let mut parent_cursor = vm_space.cursor_mut(&preempt_guard, &cow_range).unwrap();
-            let num_copied = cow_copy_pt(&mut parent_cursor, &mut child_cursor, cow_range.len());
-            assert_eq!(num_copied, 1); // Only one page should be copied
+            let mut rss_delta = [0; NUM_RSS_COUNTERS];
+            cow_copy_pt(
+                &mut parent_cursor,
+                &mut child_cursor,
+                cow_range.len(),
+                &mut status_op,
+                &mut rss_delta,
+            );
+            assert_eq!(rss_delta[RssType::RSS_ANONPAGES as usize], 1); // Only one page should be copied
+            assert_eq!(rss_delta[RssType::RSS_FILEPAGES as usize], 0); // No file pages copied
         };
 
         // Confirms that parent and child VAs map to the same physical address.
         {
             let child_map_frame_addr = {
-                let (_, Some((frame, _))) = child_space
+                let (_, Some(VmItem::Frame(frame, _))) = child_space
                     .cursor(&preempt_guard, &map_range)
                     .unwrap()
                     .query()
@@ -1234,7 +1210,7 @@ mod test {
                 frame.start_paddr()
             };
             let parent_map_frame_addr = {
-                let (_, Some((frame, _))) = vm_space
+                let (_, Some(VmItem::Frame(frame, _))) = vm_space
                     .cursor(&preempt_guard, &map_range)
                     .unwrap()
                     .query()
@@ -1257,7 +1233,7 @@ mod test {
         // Confirms that the child VA remains mapped.
         assert!(matches!(
             child_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
-            (va, Some((frame, prop)))  if va.start == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::R
+            (va, Some(VmItem::Frame(frame, prop)))  if va.start == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::R
         ));
 
         // Creates a sibling page table (from the now-modified parent).
@@ -1267,8 +1243,16 @@ mod test {
                 .cursor_mut(&preempt_guard, &cow_range)
                 .unwrap();
             let mut parent_cursor = vm_space.cursor_mut(&preempt_guard, &cow_range).unwrap();
-            let num_copied = cow_copy_pt(&mut parent_cursor, &mut sibling_cursor, cow_range.len());
-            assert_eq!(num_copied, 0); // No pages should be copied
+            let mut rss_delta = [0; NUM_RSS_COUNTERS];
+            cow_copy_pt(
+                &mut parent_cursor,
+                &mut sibling_cursor,
+                cow_range.len(),
+                &mut status_op,
+                &mut rss_delta,
+            );
+            // No pages should be copied
+            rss_delta.iter().for_each(|&x| assert_eq!(x, 0));
         }
 
         // Verifies that the sibling is unmapped as it was created after the parent unmapped the range.
@@ -1287,7 +1271,7 @@ mod test {
         // Confirms that the child VA remains mapped after the parent is dropped.
         assert!(matches!(
             child_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
-            (va, Some((frame, prop)))  if va.start == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::R
+            (va, Some(VmItem::Frame(frame, prop)))  if va.start == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::R
         ));
 
         // Unmaps the range from the child.
@@ -1300,12 +1284,12 @@ mod test {
         sibling_space
             .cursor_mut(&preempt_guard, &map_range)
             .unwrap()
-            .map(frame_clone_for_assert.into(), page_property);
+            .map(VmItem::Frame(frame_clone_for_assert.into(), page_property));
 
         // Confirms that the sibling mapping points back to the original frame's physical address.
         assert!(matches!(
             sibling_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
-            (va, Some((frame, prop)))  if va.start == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::RW
+            (va, Some(VmItem::Frame(frame, prop)))  if va.start == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::RW
         ));
 
         // Confirms that the child remains unmapped.

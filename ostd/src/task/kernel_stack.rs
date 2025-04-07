@@ -59,6 +59,7 @@ impl KernelStack {
             .zeroed(false)
             .alloc_segment_with(KERNEL_STACK_SIZE / PAGE_SIZE, |_| KernelStackMeta)?;
         let prop = PageProperty {
+            has_map: true,
             flags: PageFlags::RW,
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::empty(),

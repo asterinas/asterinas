@@ -188,6 +188,7 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
         let max_paddr = crate::mm::frame::max_paddr();
         let from = LINEAR_MAPPING_BASE_VADDR..LINEAR_MAPPING_BASE_VADDR + max_paddr;
         let prop = PageProperty {
+            has_map: true,
             flags: PageFlags::RW,
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::GLOBAL,
@@ -205,6 +206,7 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
         let start_va = mapping::frame_to_meta::<PagingConsts>(0);
         let from = start_va..start_va + meta_pages.size();
         let prop = PageProperty {
+            has_map: true,
             flags: PageFlags::RW,
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::GLOBAL,
@@ -236,6 +238,7 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
         let offset = kernel_loaded_offset();
         let from = region.base() + offset..region.end() + offset;
         let prop = PageProperty {
+            has_map: true,
             flags: PageFlags::RWX,
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::GLOBAL,

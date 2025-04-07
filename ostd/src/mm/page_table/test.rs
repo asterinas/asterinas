@@ -5,6 +5,7 @@ use crate::{
     mm::{
         kspace::{KernelPtConfig, LINEAR_MAPPING_BASE_VADDR},
         page_prop::{CachePolicy, PageFlags},
+        vm_space::VmItem,
         FrameAllocOptions, MAX_USERSPACE_VADDR, PAGE_SIZE,
     },
     prelude::*,
@@ -28,7 +29,7 @@ mod test_utils {
             page_table
                 .cursor_mut(&preempt_guard, &virt_range)
                 .unwrap()
-                .map((frame.into(), page_property))
+                .map(VmItem::Frame(frame.into(), page_property))
         }
         .expect("First map found an unexpected item");
 
@@ -58,9 +59,9 @@ mod test_utils {
     ) {
         let preempt_guard = disable_preempt();
         let mut cursor = page_table.cursor_mut(&preempt_guard, range).unwrap();
-        while let Some(va_range) =
-            unsafe { cursor.protect_next(range.end - cursor.virt_addr(), &mut protect_op) }
-        {
+        while let Some(va_range) = unsafe {
+            cursor.protect_next(range.end - cursor.virt_addr(), &mut protect_op, &mut |_| {})
+        } {
             assert!(va_range.start >= range.start);
             assert!(va_range.end <= range.end);
         }
@@ -252,7 +253,7 @@ mod page_properties {
             page_table
                 .cursor_mut(&preempt_guard, &virtual_range)
                 .unwrap()
-                .map((frame.into(), prop))
+                .map(VmItem::Frame(frame.into(), prop))
         };
         let queried = page_table.page_walk(virtual_range.start + 100).unwrap().1;
         assert_eq!(queried, prop);
@@ -291,6 +292,7 @@ mod page_properties {
                 let cache_policies = [CachePolicy::Writeback, CachePolicy::Uncacheable];
                 for cache in cache_policies {
                     check_map_with_property(PageProperty {
+                        has_map: true,
                         flags,
                         cache,
                         priv_flags,
@@ -385,7 +387,7 @@ mod navigation {
                     &(FIRST_MAP_ADDR..FIRST_MAP_ADDR + PAGE_SIZE),
                 )
                 .unwrap()
-                .map((frame1.clone().into(), page_property))
+                .map(VmItem::Frame(frame1.clone().into(), page_property))
                 .unwrap();
         }
 
@@ -396,7 +398,7 @@ mod navigation {
                     &(SECOND_MAP_ADDR..SECOND_MAP_ADDR + PAGE_SIZE),
                 )
                 .unwrap()
-                .map((frame2.clone().into(), page_property))
+                .map(VmItem::Frame(frame2.clone().into(), page_property))
                 .unwrap();
         }
 
@@ -578,7 +580,7 @@ mod mapping {
         unsafe {
             pt.cursor_mut(&preempt_guard, &virt_range)
                 .unwrap()
-                .map((frame.into(), page_property))
+                .map(VmItem::Frame(frame.into(), page_property))
                 .unwrap()
         }
 
@@ -586,7 +588,7 @@ mod mapping {
         let Err(frag) = (unsafe {
             pt.cursor_mut(&preempt_guard, &virt_range)
                 .unwrap()
-                .map((frame2.into(), page_property))
+                .map(VmItem::Frame(frame2.into(), page_property))
         }) else {
             panic!("Expected to get error on remapping, got `Ok`");
         };
@@ -823,8 +825,13 @@ mod protection_and_query {
 
         // Attempts to protect an empty range.
         let mut cursor = page_table.cursor_mut(&preempt_guard, &range).unwrap();
-        let result =
-            unsafe { cursor.protect_next(range.len(), &mut |prop| prop.flags = PageFlags::R) };
+        let result = unsafe {
+            cursor.protect_next(
+                range.len(),
+                &mut |prop| prop.flags = PageFlags::R,
+                &mut |_| {},
+            )
+        };
 
         // Expects None as nothing was protected.
         assert!(result.is_none());
@@ -850,8 +857,13 @@ mod protection_and_query {
 
         // Attempts to protect the larger range. `protect_next` should traverse.
         let mut cursor = page_table.cursor_mut(&preempt_guard, &range).unwrap();
-        let result =
-            unsafe { cursor.protect_next(range.len(), &mut |prop| prop.flags = PageFlags::R) };
+        let result = unsafe {
+            cursor.protect_next(
+                range.len(),
+                &mut |prop| prop.flags = PageFlags::R,
+                &mut |_| {},
+            )
+        };
 
         // Expects Some(_) because the mapped page within the range was processed.
         assert_eq!(result.clone().unwrap(), sub_range);

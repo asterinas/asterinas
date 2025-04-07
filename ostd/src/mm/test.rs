@@ -9,7 +9,7 @@ use crate::{
     mm::{
         io::{VmIo, VmReader, VmWriter},
         tlb::TlbFlushOp,
-        vm_space::get_activated_vm_space,
+        vm_space::{get_activated_vm_space, VmItem},
         CachePolicy, FallibleVmRead, FallibleVmWrite, FrameAllocOptions, PageFlags, PageProperty,
         UFrame, VmSpace,
     },
@@ -532,7 +532,7 @@ mod vmspace {
             // Initially, the page should not be mapped.
             assert_eq!(cursor_mut.query().unwrap(), (range.clone(), None));
             // Maps a frame.
-            cursor_mut.map(frame.clone(), prop);
+            cursor_mut.map(VmItem::Frame(frame.clone(), prop));
         }
 
         // Queries the mapping.
@@ -543,7 +543,7 @@ mod vmspace {
             assert_eq!(cursor.virt_addr(), range.start);
             assert_eq!(
                 cursor.query().unwrap(),
-                (range.clone(), Some((frame.clone(), prop)))
+                (range.clone(), Some(VmItem::Frame(frame.clone(), prop)))
             );
         }
 
@@ -575,7 +575,7 @@ mod vmspace {
             let mut cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
                 .expect("Failed to create mutable cursor");
-            cursor_mut.map(frame.clone(), prop);
+            cursor_mut.map(VmItem::Frame(frame.clone(), prop));
         }
 
         {
@@ -584,7 +584,7 @@ mod vmspace {
                 .expect("Failed to create cursor");
             assert_eq!(
                 cursor.query().unwrap(),
-                (range.clone(), Some((frame.clone(), prop)))
+                (range.clone(), Some(VmItem::Frame(frame.clone(), prop)))
             );
         }
 
@@ -592,7 +592,7 @@ mod vmspace {
             let mut cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
                 .expect("Failed to create mutable cursor");
-            cursor_mut.map(frame.clone(), prop);
+            cursor_mut.map(VmItem::Frame(frame.clone(), prop));
         }
 
         {
@@ -601,7 +601,7 @@ mod vmspace {
                 .expect("Failed to create cursor");
             assert_eq!(
                 cursor.query().unwrap(),
-                (range.clone(), Some((frame.clone(), prop)))
+                (range.clone(), Some(VmItem::Frame(frame.clone(), prop)))
             );
         }
 
@@ -631,7 +631,7 @@ mod vmspace {
             let mut cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
                 .expect("Failed to create mutable cursor");
-            cursor_mut.map(frame.clone(), prop);
+            cursor_mut.map(VmItem::Frame(frame.clone(), prop));
         }
 
         {
@@ -682,7 +682,7 @@ mod vmspace {
             let mut cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
                 .expect("Failed to create mutable cursor");
-            cursor_mut.map(frame.clone(), prop);
+            cursor_mut.map(VmItem::Frame(frame.clone(), prop));
         }
 
         {
@@ -692,7 +692,7 @@ mod vmspace {
                 .expect("Failed to create cursor");
             assert_eq!(
                 cursor.next().unwrap(),
-                (range.clone(), Some((frame.clone(), prop)))
+                (range.clone(), Some(VmItem::Frame(frame.clone(), prop)))
             );
         }
 
@@ -714,7 +714,7 @@ mod vmspace {
                 cursor.next().unwrap(),
                 (
                     range.clone(),
-                    Some((
+                    Some(VmItem::Frame(
                         frame.clone(),
                         PageProperty::new_user(PageFlags::R, CachePolicy::Writeback)
                     ))
@@ -735,7 +735,7 @@ mod vmspace {
                 .expect("Failed to create mutable cursor");
             let frame = create_dummy_frame();
             let prop = PageProperty::new_user(PageFlags::R, CachePolicy::Writeback);
-            cursor_mut.map(frame, prop);
+            cursor_mut.map(VmItem::Frame(frame, prop));
         }
 
         // Mocks the current page table paddr to match the VmSpace's root paddr.
@@ -798,7 +798,7 @@ mod vmspace {
                 .cursor_mut(&preempt_guard, &range)
                 .expect("Failed to create mutable cursor");
             let prop = PageProperty::new_user(PageFlags::R, CachePolicy::Writeback);
-            cursor_mut.map(frame.clone(), prop);
+            cursor_mut.map(VmItem::Frame(frame.clone(), prop));
         }
 
         let mut cursor = vmspace
@@ -810,7 +810,7 @@ mod vmspace {
             item.unwrap(),
             (
                 range.clone(),
-                Some((
+                Some(VmItem::Frame(
                     frame.clone(),
                     PageProperty::new_user(PageFlags::R, CachePolicy::Writeback)
                 ))
@@ -833,11 +833,15 @@ mod vmspace {
                 .cursor_mut(&preempt_guard, &range)
                 .expect("Failed to create mutable cursor");
             let prop = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
-            cursor_mut.map(frame.clone(), prop);
+            cursor_mut.map(VmItem::Frame(frame.clone(), prop));
             cursor_mut.jump(range.start).expect("Failed to jump cursor");
-            let protected_range = cursor_mut.protect_next(0x1000, |prop| {
-                prop.flags = PageFlags::R;
-            });
+            let protected_range = cursor_mut.protect_next(
+                0x1000,
+                &mut |prop| {
+                    prop.flags = PageFlags::R;
+                },
+                &mut |_| {},
+            );
 
             assert_eq!(protected_range, Some(0x7000..0x8000));
         }
@@ -849,7 +853,7 @@ mod vmspace {
             cursor.next().unwrap(),
             (
                 range.clone(),
-                Some((
+                Some(VmItem::Frame(
                     frame.clone(),
                     PageProperty::new_user(PageFlags::R, CachePolicy::Writeback)
                 ))
@@ -880,6 +884,6 @@ mod vmspace {
         let mut cursor_mut = vmspace
             .cursor_mut(&preempt_guard, &range)
             .expect("Failed to create mutable cursor");
-        cursor_mut.protect_next(0x2000, |_| {}); // Not page-aligned.
+        cursor_mut.protect_next(0x2000, &mut |_| {}, &mut |_| {}); // Not page-aligned.
     }
 }

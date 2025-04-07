@@ -40,7 +40,8 @@ use crate::{
         frame::{meta::AnyFrameMeta, Frame, FrameRef},
         paddr_to_vaddr,
         page_table::{load_pte, store_pte},
-        FrameAllocOptions, Infallible, PagingConstsTrait, PagingLevel, VmReader,
+        vm_space::Status,
+        FrameAllocOptions, Infallible, PageProperty, PagingConstsTrait, PagingLevel, VmReader,
     },
     sync::spin,
     task::atomic_mode::InAtomicMode,
@@ -71,6 +72,27 @@ impl<C: PageTableConfig> PageTableNode<C> {
             .expect("Failed to allocate a page table node");
         // The allocated frame is zeroed. Make sure zero is absent PTE.
         debug_assert_eq!(C::E::new_absent().as_usize(), 0);
+
+        frame
+    }
+
+    /// Allocates a new page table node filled with the given status.
+    pub(super) fn alloc_marked(level: PagingLevel, status: Status) -> Self {
+        let mut meta = PageTablePageMeta::new(level);
+        *meta.nr_children.get_mut() = nr_subpage_per_huge::<C>() as u16;
+        let frame = FrameAllocOptions::new()
+            .zeroed(false)
+            .alloc_frame_with(meta)
+            .expect("Failed to allocate a page table node");
+        let ptr = paddr_to_vaddr(frame.start_paddr()) as *mut C::E;
+
+        let paddr = status.into_raw_inner();
+        let status = C::E::new_page(paddr, level, PageProperty::new_absent());
+
+        for i in 0..nr_subpage_per_huge::<C>() {
+            // SAFETY: The page table node is not typed. And the index is within the bound.
+            unsafe { ptr.add(i).write(status) };
+        }
 
         frame
     }

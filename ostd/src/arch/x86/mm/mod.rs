@@ -172,7 +172,11 @@ impl PageTableEntryTrait for PageTableEntry {
     }
 
     fn new_page(paddr: Paddr, _level: PagingLevel, prop: PageProperty) -> Self {
-        let flags = PageTableFlags::HUGE.bits();
+        let flags = if prop.has_map {
+            PageTableFlags::HUGE.bits()
+        } else {
+            PageTableFlags::empty().bits()
+        };
         let mut pte = Self(paddr & Self::PHYS_ADDR_MASK | flags);
         pte.set_prop(prop);
         pte
@@ -214,6 +218,7 @@ impl PageTableEntryTrait for PageTableEntry {
             CachePolicy::Writeback
         };
         PageProperty {
+            has_map: self.is_present(),
             flags: PageFlags::from_bits(flags as u8).unwrap(),
             cache,
             priv_flags: PrivFlags::from_bits(priv_flags as u8).unwrap(),
@@ -273,6 +278,10 @@ impl PageTableEntryTrait for PageTableEntry {
             _ => panic!("unsupported cache policy"),
         }
         self.0 = self.0 & !Self::PROP_MASK | flags;
+    }
+
+    fn set_paddr(&mut self, paddr: Paddr) {
+        self.0 = self.0 & !Self::PHYS_ADDR_MASK | (paddr & Self::PHYS_ADDR_MASK);
     }
 
     fn is_last(&self, _level: PagingLevel) -> bool {

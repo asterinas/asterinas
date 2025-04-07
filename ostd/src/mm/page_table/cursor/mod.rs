@@ -41,6 +41,7 @@ use crate::{
     mm::{
         frame::{meta::AnyFrameMeta, Frame},
         page_table::is_valid_range,
+        vm_space::Status,
         PageProperty, Vaddr,
     },
     task::atomic_mode::InAtomicMode,
@@ -448,7 +449,9 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
     pub unsafe fn map(&mut self, item: C::Item) -> Result<(), PageTableFrag<C>> {
         assert!(self.0.va < self.0.barrier_va.end);
         let (pa, level, prop) = C::item_into_raw(item);
-        assert!(level <= C::HIGHEST_TRANSLATION_LEVEL);
+        if prop.has_map {
+            assert!(level <= C::HIGHEST_TRANSLATION_LEVEL);
+        }
         let size = page_size::<C>(level);
         assert_eq!(self.0.va % size, 0);
         let end = self.0.va + size;
@@ -560,10 +563,11 @@ impl<'rcu, C: PageTableConfig> CursorMut<'rcu, C> {
         &mut self,
         len: usize,
         op: &mut impl FnMut(&mut PageProperty),
+        status_op: &mut impl FnMut(&mut Status),
     ) -> Option<Range<Vaddr>> {
         self.0.find_next_impl(len, false, true)?;
 
-        self.0.cur_entry().protect(op);
+        self.0.cur_entry().protect(op, status_op);
 
         let protected_va = self.0.cur_va_range();
 

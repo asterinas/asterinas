@@ -95,7 +95,12 @@ impl PodOnce for PageTableEntry {}
 
 impl PageTableEntryTrait for PageTableEntry {
     fn new_page(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self {
-        let mut pte = Self(paddr as u64 & Self::PHYS_MASK | PageTableFlags::LAST_PAGE.bits());
+        let flags = if prop.has_map {
+            PageTableFlags::LAST_PAGE.bits()
+        } else {
+            PageTableFlags::empty().bits()
+        };
+        let mut pte = Self(paddr as u64 & Self::PHYS_MASK | flags);
         pte.set_prop(prop);
         pte
     }
@@ -138,6 +143,7 @@ impl PageTableEntryTrait for PageTableEntry {
         };
 
         PageProperty {
+            has_map: true,
             flags,
             cache,
             priv_flags: PrivFlags::empty(),
@@ -156,6 +162,10 @@ impl PageTableEntryTrait for PageTableEntry {
             flags |= PageTableFlags::SNOOP;
         }
         self.0 = self.0 & !Self::PROP_MASK | flags.bits();
+    }
+
+    fn set_paddr(&mut self, paddr: Paddr) {
+        self.0 = self.0 & !Self::PHYS_MASK | (paddr as u64 & Self::PHYS_MASK);
     }
 
     fn is_last(&self, level: PagingLevel) -> bool {

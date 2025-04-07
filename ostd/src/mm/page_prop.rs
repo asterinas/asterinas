@@ -9,6 +9,11 @@ use bitflags::bitflags;
 /// The property of a mapped virtual memory page.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PageProperty {
+    /// Whether the page has a mapping.
+    ///
+    /// If it is `false`. The page doesn't have a mapping, but may contain
+    /// metadata.
+    pub has_map: bool,
     /// The flags associated with the page,
     pub flags: PageFlags,
     /// The cache policy for the page.
@@ -20,6 +25,7 @@ impl PageProperty {
     /// Creates a new `PageProperty` with the given flags and cache policy for the user.
     pub fn new_user(flags: PageFlags, cache: CachePolicy) -> Self {
         Self {
+            has_map: true,
             flags,
             cache,
             priv_flags: PrivilegedPageFlags::USER,
@@ -29,6 +35,7 @@ impl PageProperty {
     /// Creates a page property that implies an invalid page without mappings.
     pub fn new_absent() -> Self {
         Self {
+            has_map: false,
             flags: PageFlags::empty(),
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::empty(),

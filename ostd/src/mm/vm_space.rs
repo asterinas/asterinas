@@ -10,6 +10,7 @@
 
 use core::{ops::Range, sync::atomic::Ordering};
 
+use super::PAGE_SIZE;
 use crate::{
     arch::mm::{current_page_table_paddr, PageTableEntry, PagingConsts},
     cpu::{AtomicCpuSet, CpuSet, PinCurrentCpu},
@@ -17,10 +18,11 @@ use crate::{
     mm::{
         io::Fallible,
         kspace::KERNEL_PAGE_TABLE,
+        page_size,
         page_table::{self, PageTable, PageTableConfig, PageTableFrag},
         tlb::{TlbFlushOp, TlbFlusher},
-        AnyUFrameMeta, Frame, PageProperty, PagingLevel, UFrame, VmReader, VmWriter,
-        MAX_USERSPACE_VADDR,
+        AnyUFrameMeta, Frame, PageProperty, PagingConstsTrait, PagingLevel, UFrame, VmReader,
+        VmWriter, MAX_USERSPACE_VADDR,
     },
     prelude::*,
     task::{atomic_mode::AsAtomicModeGuard, disable_preempt, DisabledPreemptGuard},
@@ -201,7 +203,7 @@ impl Default for VmSpace {
 pub struct Cursor<'a>(page_table::Cursor<'a, UserPtConfig>);
 
 impl Iterator for Cursor<'_> {
-    type Item = (Range<Vaddr>, Option<MappedItem>);
+    type Item = (Range<Vaddr>, Option<VmItem>);
 
     fn next(&mut self) -> Option<Self::Item> {
         self.0.next()
@@ -213,7 +215,7 @@ impl Cursor<'_> {
     ///
     /// If the cursor is pointing to a valid virtual address that is locked,
     /// it will return the virtual address range and the mapped item.
-    pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<MappedItem>)> {
+    pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<VmItem>)> {
         Ok(self.0.query()?)
     }
 
@@ -263,7 +265,7 @@ impl<'a> CursorMut<'a> {
     ///
     /// If the cursor is pointing to a valid virtual address that is locked,
     /// it will return the virtual address range and the mapped item.
-    pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<MappedItem>)> {
+    pub fn query(&mut self) -> Result<(Range<Vaddr>, Option<VmItem>)> {
         Ok(self.pt_cursor.query()?)
     }
 
@@ -295,9 +297,8 @@ impl<'a> CursorMut<'a> {
     /// Map a frame into the current slot.
     ///
     /// This method will bring the cursor to the next slot after the modification.
-    pub fn map(&mut self, frame: UFrame, prop: PageProperty) {
+    pub fn map(&mut self, item: VmItem) {
         let start_va = self.virt_addr();
-        let item = (frame, prop);
 
         // SAFETY: It is safe to map untyped memory into the userspace.
         let Err(frag) = (unsafe { self.pt_cursor.map(item) }) else {
@@ -307,7 +308,9 @@ impl<'a> CursorMut<'a> {
         match frag {
             PageTableFrag::Mapped { va, item } => {
                 debug_assert_eq!(va, start_va);
-                let (old_frame, _) = item;
+                let VmItem::Frame(old_frame, _) = item else {
+                    return;
+                };
                 self.flusher
                     .issue_tlb_flush_with(TlbFlushOp::Address(start_va), old_frame.into());
                 self.flusher.dispatch_tlb_flush();
@@ -318,8 +321,8 @@ impl<'a> CursorMut<'a> {
         }
     }
 
-    /// Clears the mapping starting from the current slot,
-    /// and returns the number of unmapped pages.
+    /// Clears the mapping starting from the current slot, and returns the
+    /// number of unmapped pages.
     ///
     /// This method will bring the cursor forward by `len` bytes in the virtual
     /// address space after the modification.
@@ -348,7 +351,9 @@ impl<'a> CursorMut<'a> {
 
             match frag {
                 PageTableFrag::Mapped { va, item, .. } => {
-                    let (frame, _) = item;
+                    let VmItem::Frame(frame, _) = item else {
+                        continue;
+                    };
                     num_unmapped += 1;
                     self.flusher
                         .issue_tlb_flush_with(TlbFlushOp::Address(va), frame.into());
@@ -394,10 +399,11 @@ impl<'a> CursorMut<'a> {
     pub fn protect_next(
         &mut self,
         len: usize,
-        mut op: impl FnMut(&mut PageProperty),
+        prot_op: &mut impl FnMut(&mut PageProperty),
+        status_op: &mut impl FnMut(&mut Status),
     ) -> Option<Range<Vaddr>> {
         // SAFETY: It is safe to protect memory in the userspace.
-        unsafe { self.pt_cursor.protect_next(len, &mut op) }
+        unsafe { self.pt_cursor.protect_next(len, prot_op, status_op) }
     }
 }
 
@@ -416,8 +422,87 @@ pub(super) fn get_activated_vm_space() -> *const VmSpace {
     ACTIVATED_VM_SPACE.load()
 }
 
+/// A status that can be used to mark a slot in the VM space.
+///
+/// The status can be converted to and from a [`usize`] value. Available status
+/// are non-zero and capped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Status(usize);
+
+impl Status {
+    /// The mask that marks the available bits in a status.
+    const MASK: usize = ((1 << 39) - 1) / PAGE_SIZE;
+
+    pub(crate) fn into_raw_inner(self) -> usize {
+        debug_assert!(self.0 & !Self::MASK == 0);
+        debug_assert!(self.0 != 0);
+        self.0
+    }
+
+    /// Creates a new status from a raw value.
+    ///
+    /// # Safety
+    ///
+    /// The raw value must be a valid status created by [`Self::into_raw_inner`].
+    pub(crate) unsafe fn from_raw_inner(raw: usize) -> Self {
+        debug_assert!(raw & !Self::MASK == 0);
+        debug_assert!(raw != 0);
+        Self(raw)
+    }
+}
+
+impl TryFrom<usize> for Status {
+    type Error = ();
+
+    fn try_from(value: usize) -> core::result::Result<Self, Self::Error> {
+        if (value & !Self::MASK == 0) && value != 0 {
+            Ok(Self(value * PAGE_SIZE))
+        } else {
+            Err(())
+        }
+    }
+}
+
+impl From<Status> for usize {
+    fn from(status: Status) -> usize {
+        status.0 / PAGE_SIZE
+    }
+}
+
 /// The item that can be mapped into the [`VmSpace`].
-pub type MappedItem = (UFrame, PageProperty);
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum VmItem {
+    /// Actually mapped a physical frame into the VM space.
+    Frame(UFrame, PageProperty),
+    /// Marked with a [`Status`], without actually mapping a physical frame.
+    Status(Status, PagingLevel),
+}
+
+/// Return largest pages.
+pub fn largest_pages(
+    mut va: Vaddr,
+    mut len: usize,
+    status: Status,
+) -> impl Iterator<Item = VmItem> {
+    assert_eq!(va % PAGE_SIZE, 0);
+    assert_eq!(len % PAGE_SIZE, 0);
+
+    core::iter::from_fn(move || {
+        if len == 0 {
+            return None;
+        }
+
+        let mut level = UserPtConfig::NR_LEVELS;
+        while page_size::<UserPtConfig>(level) > len || va % page_size::<UserPtConfig>(level) != 0 {
+            level -= 1;
+        }
+
+        va += page_size::<UserPtConfig>(level);
+        len -= page_size::<UserPtConfig>(level);
+
+        Some(VmItem::Status(status, level))
+    })
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct UserPtConfig {}
@@ -429,19 +514,32 @@ unsafe impl PageTableConfig for UserPtConfig {
     type E = PageTableEntry;
     type C = PagingConsts;
 
-    type Item = MappedItem;
+    type Item = VmItem;
 
     fn item_into_raw(item: Self::Item) -> (Paddr, PagingLevel, PageProperty) {
-        let (frame, prop) = item;
-        let level = frame.map_level();
-        let paddr = frame.into_raw();
-        (paddr, level, prop)
+        match item {
+            VmItem::Frame(frame, prop) => {
+                let level = frame.map_level();
+                let paddr = frame.into_raw();
+                (paddr, level, prop)
+            }
+            VmItem::Status(status, level) => {
+                let raw_inner = status.into_raw_inner();
+                (raw_inner as Paddr, level, PageProperty::new_absent())
+            }
+        }
     }
 
     unsafe fn item_from_raw(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self::Item {
-        debug_assert_eq!(level, 1);
-        // SAFETY: The caller ensures safety.
-        let frame = unsafe { Frame::<dyn AnyUFrameMeta>::from_raw(paddr) };
-        (frame, prop)
+        if prop.has_map {
+            debug_assert_eq!(level, 1);
+            // SAFETY: The caller ensures safety.
+            let frame = unsafe { Frame::<dyn AnyUFrameMeta>::from_raw(paddr) };
+            VmItem::Frame(frame, prop)
+        } else {
+            // SAFETY: The caller ensures safety.
+            let status = unsafe { Status::from_raw_inner(paddr) };
+            VmItem::Status(status, level)
+        }
     }
 }

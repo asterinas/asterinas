@@ -21,7 +21,7 @@ use core::{
 use align_ext::AlignExt;
 use aster_rights::Full;
 use ostd::{
-    mm::{UntypedMem, VmIo},
+    mm::{vm_space::VmItem, UntypedMem, VmIo},
     task::disable_preempt,
 };
 
@@ -400,7 +400,7 @@ impl InitStackReader<'_> {
             &preempt_guard,
             &(page_base_addr..page_base_addr + PAGE_SIZE),
         )?;
-        let (_, Some((frame, _))) = cursor.query()? else {
+        let (_, Some(VmItem::Frame(frame, _))) = cursor.query()? else {
             return_errno_with_message!(Errno::EACCES, "Page not accessible");
         };
 
@@ -428,7 +428,7 @@ impl InitStackReader<'_> {
             &preempt_guard,
             &(page_base_addr..page_base_addr + PAGE_SIZE),
         )?;
-        let (_, Some((frame, _))) = cursor.query()? else {
+        let (_, Some(VmItem::Frame(frame, _))) = cursor.query()? else {
             return_errno_with_message!(Errno::EACCES, "Page not accessible");
         };
 
@@ -472,7 +472,7 @@ impl InitStackReader<'_> {
             &preempt_guard,
             &(page_base_addr..page_base_addr + PAGE_SIZE),
         )?;
-        let (_, Some((frame, _))) = cursor.query()? else {
+        let (_, Some(VmItem::Frame(frame, _))) = cursor.query()? else {
             return_errno_with_message!(Errno::EACCES, "Page not accessible");
         };
 

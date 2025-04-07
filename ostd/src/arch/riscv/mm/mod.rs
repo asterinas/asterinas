@@ -166,6 +166,7 @@ impl PageTableEntryTrait for PageTableEntry {
         };
 
         PageProperty {
+            valid: self.is_present(),
             flags: PageFlags::from_bits(flags as u8).unwrap(),
             cache,
             priv_flags: PrivFlags::from_bits(priv_flags as u8).unwrap(),
@@ -173,22 +174,27 @@ impl PageTableEntryTrait for PageTableEntry {
     }
 
     fn set_prop(&mut self, prop: PageProperty) {
-        let mut flags = PageTableFlags::VALID.bits()
-            | parse_flags!(prop.flags.bits(), PageFlags::R, PageTableFlags::READABLE)
-            | parse_flags!(prop.flags.bits(), PageFlags::W, PageTableFlags::WRITABLE)
-            | parse_flags!(prop.flags.bits(), PageFlags::X, PageTableFlags::EXECUTABLE)
-            | parse_flags!(
-                prop.priv_flags.bits(),
-                PrivFlags::USER,
-                PageTableFlags::USER
-            )
-            | parse_flags!(
-                prop.priv_flags.bits(),
-                PrivFlags::GLOBAL,
-                PageTableFlags::GLOBAL
-            )
-            | parse_flags!(prop.flags.bits(), PageFlags::AVAIL1, PageTableFlags::RSV1)
-            | parse_flags!(prop.flags.bits(), PageFlags::AVAIL2, PageTableFlags::RSV2);
+        let mut flags = if prop.valid {
+            PageTableFlags::VALID.bits()
+        } else {
+            PageTableFlags::empty().bits()
+        };
+        |parse_flags!(prop.flags.bits(), PageFlags::R, PageTableFlags::READABLE)| {
+            parse_flags!(prop.flags.bits(), PageFlags::W, PageTableFlags::WRITABLE)
+                | parse_flags!(prop.flags.bits(), PageFlags::X, PageTableFlags::EXECUTABLE)
+                | parse_flags!(
+                    prop.priv_flags.bits(),
+                    PrivFlags::USER,
+                    PageTableFlags::USER
+                )
+                | parse_flags!(
+                    prop.priv_flags.bits(),
+                    PrivFlags::GLOBAL,
+                    PageTableFlags::GLOBAL
+                )
+                | parse_flags!(prop.flags.bits(), PageFlags::AVAIL1, PageTableFlags::RSV1)
+                | parse_flags!(prop.flags.bits(), PageFlags::AVAIL2, PageTableFlags::RSV2)
+        };
 
         match prop.cache {
             CachePolicy::Writeback => (),

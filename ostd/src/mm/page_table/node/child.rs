@@ -49,13 +49,12 @@ impl<C: PageTableConfig> Child<C> {
     ///
     /// The level must match the original level of the child.
     pub(super) unsafe fn from_pte(pte: C::E, level: PagingLevel) -> Self {
-        if !pte.is_present() {
+        let paddr = pte.paddr();
+        if !pte.is_present() && paddr == 0 {
             return Child::None;
         }
 
-        let paddr = pte.paddr();
-
-        if !pte.is_last(level) {
+        if pte.is_present() && !pte.is_last(level) {
             // SAFETY: The caller ensures that this node was created by
             // `into_pte`, so that restoring the forgotten reference is safe.
             let node = unsafe { PageTableNode::from_raw(paddr) };
@@ -91,13 +90,12 @@ impl<C: PageTableConfig> ChildRef<'_, C> {
     /// The provided level must be the same with the level of the page table
     /// node that contains this PTE.
     pub(super) unsafe fn from_pte(pte: &C::E, level: PagingLevel) -> Self {
-        if !pte.is_present() {
+        let paddr = pte.paddr();
+        if !pte.is_present() && paddr == 0 {
             return ChildRef::None;
         }
 
-        let paddr = pte.paddr();
-
-        if !pte.is_last(level) {
+        if pte.is_present() && !pte.is_last(level) {
             // SAFETY: The caller ensures that the lifetime of the child is
             // contained by the residing node, and the physical address is
             // valid since the entry is present.

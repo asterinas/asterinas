@@ -8,7 +8,7 @@ use core::ops::Range;
 use align_ext::AlignExt;
 use aster_rights::Full;
 use ostd::{
-    mm::{CachePolicy, PageFlags, PageProperty, VmIo},
+    mm::{vm_space::VmItem, CachePolicy, PageFlags, PageProperty, VmIo},
     task::disable_preempt,
 };
 use xmas_elf::program::{self, ProgramHeader64};
@@ -426,18 +426,18 @@ fn map_segment_vmo(
         let page_flags = PageFlags::from(perms) | PageFlags::ACCESSED;
 
         if let Some(head_frame) = head_frame {
-            cursor.map(
+            cursor.map(VmItem::Frame(
                 head_frame.into(),
                 PageProperty::new_user(page_flags, CachePolicy::Writeback),
-            );
+            ));
         }
 
         if let Some((tail_frame, tail_page_addr)) = tail_frame_and_addr {
             cursor.jump(tail_page_addr)?;
-            cursor.map(
+            cursor.map(VmItem::Frame(
                 tail_frame.into(),
                 PageProperty::new_user(page_flags, CachePolicy::Writeback),
-            );
+            ));
         }
     }
 

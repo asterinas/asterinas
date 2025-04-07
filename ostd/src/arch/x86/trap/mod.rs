@@ -286,6 +286,7 @@ fn handle_kernel_page_fault(info: RawPageFaultInfo) {
         PrivFlags::GLOBAL
     });
     let prop = PageProperty {
+        has_map: true,
         flags: PageFlags::RW,
         cache: CachePolicy::Uncacheable,
         priv_flags,

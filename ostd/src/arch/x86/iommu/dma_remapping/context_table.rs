@@ -309,6 +309,7 @@ impl ContextTable {
 
         let from = daddr..daddr + PAGE_SIZE;
         let prop = PageProperty {
+            has_map: true,
             flags: PageFlags::RW,
             cache: CachePolicy::Uncacheable,
             priv_flags: PrivFlags::empty(),

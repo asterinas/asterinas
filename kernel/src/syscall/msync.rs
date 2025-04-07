@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![expect(unused)]
+
 use align_ext::AlignExt;
 
 use super::SyscallReturn;
-use crate::{prelude::*, thread::kernel_thread::ThreadOptions};
+use crate::prelude::*;
 
 bitflags! {
     /// Flags for `msync`.
@@ -52,48 +54,7 @@ pub fn sys_msync(start: Vaddr, size: usize, flag: i32, ctx: &Context) -> Result<
         start..end
     };
 
-    let user_space = ctx.user_space();
-    let root_vmar = user_space.root_vmar().dup()?;
-    let guard = root_vmar.query(range.clone());
-    let mut mappings_iter = guard.iter();
-
-    // Check if the range is fully mapped.
-    let Some(first) = mappings_iter.next() else {
-        return_errno_with_message!(Errno::ENOMEM, "`msync` called on a not mapped range");
-    };
-    if first.map_to_addr() > range.start {
-        return_partially_mapped!();
-    }
-    let mut last_end = first.map_end();
-    for mapping in mappings_iter {
-        let start = mapping.map_to_addr();
-        if start != last_end {
-            return_partially_mapped!();
-        }
-        last_end = mapping.map_end();
-    }
-    if last_end < range.end {
-        return_partially_mapped!();
-    }
-
-    // Do nothing if not file-backed, as <https://pubs.opengroup.org/onlinepubs/9699919799/> says.
-    let inodes = guard
-        .iter()
-        .filter_map(|m| m.inode().cloned())
-        .collect::<Vec<_>>();
-
-    let task_fn = move || {
-        for inode in inodes {
-            // TODO: Sync a necessary range instead of syncing the whole inode.
-            let _ = inode.sync_all();
-        }
-    };
-
-    if flags.contains(MsyncFlags::MS_ASYNC) {
-        ThreadOptions::new(task_fn).spawn();
-    } else {
-        task_fn();
-    }
+    // TODO
 
     Ok(SyscallReturn::Return(0))
 }

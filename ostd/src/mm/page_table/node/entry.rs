@@ -9,6 +9,7 @@ use crate::{
         page_prop::PageProperty,
         page_size,
         page_table::{PageTableConfig, PageTableNodeRef},
+        vm_space::Status,
     },
     sync::RcuDrop,
     task::atomic_mode::InAtomicMode,
@@ -39,7 +40,7 @@ pub(in crate::mm) struct Entry<'a, 'rcu, C: PageTableConfig> {
 impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     /// Returns if the entry does not map to anything.
     pub(in crate::mm) fn is_none(&self) -> bool {
-        !self.pte.is_present()
+        !self.pte.is_present() && self.pte.paddr() == 0
     }
 
     /// Returns if the entry maps to a page table node.
@@ -58,20 +59,36 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     /// Operates on the mapping properties of the entry.
     ///
     /// It only modifies the properties if the entry is present.
-    pub(in crate::mm) fn protect(&mut self, op: &mut impl FnMut(&mut PageProperty)) {
-        if !self.pte.is_present() {
-            return;
+    pub(in crate::mm) fn protect(
+        &mut self,
+        prot_op: &mut impl FnMut(&mut PageProperty),
+        status_op: &mut impl FnMut(&mut Status),
+    ) {
+        if self.pte.is_present() {
+            // Protect a proper mapping.
+            let prop = self.pte.prop();
+            let mut new_prop = prop;
+            prot_op(&mut new_prop);
+
+            if prop == new_prop {
+                return;
+            }
+
+            self.pte.set_prop(new_prop);
+        } else {
+            let paddr = self.pte.paddr();
+            if paddr == 0 {
+                // Not mapped.
+                return;
+            } else {
+                // Protect a status.
+
+                // SAFETY: The physical address was written as a valid status.
+                let mut status = unsafe { Status::from_raw_inner(paddr) };
+                status_op(&mut status);
+                self.pte.set_paddr(status.into_raw_inner());
+            }
         }
-
-        let prop = self.pte.prop();
-        let mut new_prop = prop;
-        op(&mut new_prop);
-
-        if prop == new_prop {
-            return;
-        }
-
-        self.pte.set_prop(new_prop);
 
         // SAFETY:
         //  1. The index is within the bounds.
@@ -172,14 +189,22 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     ) -> Option<PageTableGuard<'rcu, C>> {
         let level = self.node.level();
 
-        if !(self.pte.is_last(level) && level > 1) {
+        let is_huge_page = self.pte.is_present() && self.pte.is_last(level) && level > 1;
+        let is_huge_status = !self.pte.is_present() && level > 1 && self.pte.paddr() != 0;
+
+        if !is_huge_page && !is_huge_status {
             return None;
         }
 
         let pa = self.pte.paddr();
         let prop = self.pte.prop();
 
-        let new_page = RcuDrop::new(PageTableNode::<C>::alloc(level - 1));
+        let new_page = if is_huge_status {
+            let status = unsafe { Status::from_raw_inner(pa) };
+            RcuDrop::new(PageTableNode::<C>::alloc_marked(level - 1, status))
+        } else {
+            RcuDrop::new(PageTableNode::<C>::alloc(level - 1))
+        };
 
         let paddr = new_page.start_paddr();
         // SAFETY: The page table won't be dropped before the RCU grace period
@@ -189,11 +214,13 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         // Lock before writing the PTE, so no one else can operate on it.
         let mut pt_lock_guard = pt_ref.lock(guard);
 
-        for i in 0..nr_subpage_per_huge::<C>() {
-            let small_pa = pa + i * page_size::<C>(level - 1);
-            let mut entry = pt_lock_guard.entry(i);
-            let old = entry.replace(Child::Frame(small_pa, level - 1, prop));
-            debug_assert!(old.is_none());
+        if is_huge_page {
+            for i in 0..nr_subpage_per_huge::<C>() {
+                let small_pa = pa + i * page_size::<C>(level - 1);
+                let mut entry = pt_lock_guard.entry(i);
+                let old = entry.replace(Child::Frame(small_pa, level - 1, prop));
+                debug_assert!(old.is_none());
+            }
         }
 
         self.pte = Child::PageTable(new_page).into_pte();

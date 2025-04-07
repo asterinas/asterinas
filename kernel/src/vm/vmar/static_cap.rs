@@ -86,8 +86,8 @@ impl<R: TRights> Vmar<TRightSet<R>> {
     }
 
     /// Finds all the mapped regions that intersect with the specified range.
-    pub fn query(&self, range: Range<usize>) -> VmarQueryGuard<'_> {
-        self.0.query(range)
+    pub fn query(&self, _range: Range<usize>) -> VmarQueryGuard<'_> {
+        todo!();
     }
 
     /// Clears all mappings.

@@ -483,6 +483,7 @@ pub(crate) unsafe fn init() -> Segment<MetaPageMeta> {
             let frame_paddr = meta_pages + i * PAGE_SIZE;
             let vaddr = mapping::frame_to_meta::<PagingConsts>(0) + i * PAGE_SIZE;
             let prop = PageProperty {
+                has_map: true,
                 flags: PageFlags::RW,
                 cache: CachePolicy::Writeback,
                 priv_flags: PrivilegedPageFlags::GLOBAL,
@@ -623,6 +624,7 @@ fn add_temp_linear_mapping(max_paddr: Paddr) {
     let end_paddr = max_paddr.align_up(PAGE_SIZE);
     let prange = PADDR4G..end_paddr;
     let prop = PageProperty {
+        has_map: true,
         flags: PageFlags::RW,
         cache: CachePolicy::Writeback,
         priv_flags: PrivilegedPageFlags::GLOBAL,

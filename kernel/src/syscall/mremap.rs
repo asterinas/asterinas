@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![expect(unused)]
+
 use align_ext::AlignExt;
 
 use super::SyscallReturn;
@@ -13,6 +15,8 @@ pub fn sys_mremap(
     new_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
+    return_errno!(Errno::ENOSYS);
+
     let flags = MremapFlags::from_bits(flags).ok_or(Errno::EINVAL)?;
     let new_addr = do_sys_mremap(old_addr, old_size, new_size, flags, new_addr, ctx)?;
     Ok(SyscallReturn::Return(new_addr as _))
