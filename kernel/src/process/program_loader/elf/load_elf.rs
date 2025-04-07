@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(dead_code)]
-
 //! This module is used to parse elf file content to get elf_load_info.
 //! When create a process from elf file, we will use the elf_load_info to construct the VmSpace
+
+use core::ops::Range;
 
 use align_ext::AlignExt;
 use aster_rights::Full;
@@ -51,7 +51,7 @@ pub fn load_elf_to_vm(
     let ldso = lookup_and_parse_ldso(&parsed_elf, file_header, fs_resolver)?;
 
     match init_and_map_vmos(process_vm, ldso, &parsed_elf, &elf_file) {
-        Ok((entry_point, mut aux_vec)) => {
+        Ok((_range, entry_point, mut aux_vec)) => {
             // Map and set vdso entry.
             // Since vdso does not require being mapped to any specific address,
             // vdso is mapped after the elf file, heap and stack are mapped.
@@ -67,6 +67,7 @@ pub fn load_elf_to_vm(
             Ok(ElfLoadInfo {
                 entry_point,
                 user_stack_top,
+                _private: (),
             })
         }
         Err(err) => {
@@ -110,19 +111,28 @@ fn lookup_and_parse_ldso(
 }
 
 fn load_ldso(root_vmar: &Vmar<Full>, ldso_file: &Dentry, ldso_elf: &Elf) -> Result<LdsoLoadInfo> {
-    let map_addr = map_segment_vmos(ldso_elf, root_vmar, ldso_file)?;
-    Ok(LdsoLoadInfo::new(
-        ldso_elf.entry_point() + map_addr,
-        map_addr,
-    ))
+    let range = map_segment_vmos(ldso_elf, root_vmar, ldso_file)?;
+    Ok(LdsoLoadInfo {
+        entry_point: range
+            .relocated_addr_of(ldso_elf.entry_point())
+            .ok_or(Error::with_message(
+                Errno::ENOEXEC,
+                "The entry point is not in the mapped range",
+            ))?,
+        range,
+        _private: (),
+    })
 }
 
+/// Initializes the VM space and maps the VMO to the corresponding virtual memory address.
+///
+/// Returns the mapped range, the entry point and the auxiliary vector.
 fn init_and_map_vmos(
     process_vm: &ProcessVm,
     ldso: Option<(Dentry, Elf)>,
     parsed_elf: &Elf,
     elf_file: &Dentry,
-) -> Result<(Vaddr, AuxVec)> {
+) -> Result<(RelocatedRange, Vaddr, AuxVec)> {
     let process_vmar = process_vm.lock_root_vmar();
     let root_vmar = process_vmar.unwrap();
 
@@ -133,118 +143,167 @@ fn init_and_map_vmos(
         None
     };
 
-    let elf_map_addr = map_segment_vmos(parsed_elf, root_vmar, elf_file)?;
+    let elf_map_range = map_segment_vmos(parsed_elf, root_vmar, elf_file)?;
 
     let aux_vec = {
         let ldso_base = ldso_load_info
             .as_ref()
-            .map(|load_info| load_info.base_addr());
-        init_aux_vec(parsed_elf, elf_map_addr, ldso_base)?
+            .map(|load_info| load_info.range.relocated_start);
+        init_aux_vec(parsed_elf, elf_map_range.relocated_start, ldso_base)?
     };
 
     let entry_point = if let Some(ldso_load_info) = ldso_load_info {
         // Normal shared object
-        ldso_load_info.entry_point()
-    } else if parsed_elf.is_shared_object() {
-        // ldso itself
-        parsed_elf.entry_point() + elf_map_addr
+        ldso_load_info.entry_point
     } else {
-        // statically linked executable
-        parsed_elf.entry_point()
+        elf_map_range
+            .relocated_addr_of(parsed_elf.entry_point())
+            .ok_or(Error::with_message(
+                Errno::ENOEXEC,
+                "The entry point is not in the mapped range",
+            ))?
     };
 
-    Ok((entry_point, aux_vec))
+    Ok((elf_map_range, entry_point, aux_vec))
 }
 
 pub struct LdsoLoadInfo {
-    entry_point: Vaddr,
-    base_addr: Vaddr,
-}
-
-impl LdsoLoadInfo {
-    pub fn new(entry_point: Vaddr, base_addr: Vaddr) -> Self {
-        Self {
-            entry_point,
-            base_addr,
-        }
-    }
-
-    pub fn entry_point(&self) -> Vaddr {
-        self.entry_point
-    }
-
-    pub fn base_addr(&self) -> Vaddr {
-        self.base_addr
-    }
+    /// Relocated entry point.
+    pub entry_point: Vaddr,
+    /// The range covering all the mapped segments.
+    ///
+    /// May not be page-aligned.
+    pub range: RelocatedRange,
+    _private: (),
 }
 
 pub struct ElfLoadInfo {
-    entry_point: Vaddr,
-    user_stack_top: Vaddr,
+    /// Relocated entry point.
+    pub entry_point: Vaddr,
+    /// Address of the user stack top.
+    pub user_stack_top: Vaddr,
+    _private: (),
 }
 
-impl ElfLoadInfo {
-    pub fn new(entry_point: Vaddr, user_stack_top: Vaddr) -> Self {
-        Self {
-            entry_point,
-            user_stack_top,
-        }
-    }
+/// Initializes a [`Vmo`] for each segment and then map to the root [`Vmar`].
+///
+/// This function will return the mapped range that covers all segments. The
+/// range will be tight, i.e., will not include any padding bytes. So the
+/// boundaries may not be page-aligned.
+///
+/// [`Vmo`]: crate::vm::vmo::Vmo
+pub fn map_segment_vmos(
+    elf: &Elf,
+    root_vmar: &Vmar<Full>,
+    elf_file: &Dentry,
+) -> Result<RelocatedRange> {
+    let elf_va_range = get_range_for_all_segments(elf)?;
 
-    pub fn entry_point(&self) -> Vaddr {
-        self.entry_point
-    }
+    let map_range = if elf.is_shared_object() {
+        // Relocatable object.
 
-    pub fn user_stack_top(&self) -> Vaddr {
-        self.user_stack_top
-    }
-}
+        // Allocate a continuous range of virtual memory for all segments in advance.
+        //
+        // All segments in the ELF program must be mapped to a continuous VM range to
+        // ensure the relative offset of each segment not changed.
+        let elf_va_range_aligned =
+            elf_va_range.start.align_down(PAGE_SIZE)..elf_va_range.end.align_up(PAGE_SIZE);
+        let map_size = elf_va_range_aligned.len();
 
-/// Inits VMO for each segment and then map segment to root vmar
-pub fn map_segment_vmos(elf: &Elf, root_vmar: &Vmar<Full>, elf_file: &Dentry) -> Result<Vaddr> {
-    // all segments of the shared object must be mapped to a continuous vm range
-    // to ensure the relative offset of each segment not changed.
-    let base_addr = if elf.is_shared_object() {
-        base_map_addr(elf, root_vmar)?
+        let vmar_map_options = root_vmar
+            .new_map(map_size, VmPerms::empty())?
+            .handle_page_faults_around();
+        let aligned_range = vmar_map_options.build().map(|addr| addr..addr + map_size)?;
+
+        let start_in_page_offset = elf_va_range.start - elf_va_range_aligned.start;
+        let end_in_page_offset = elf_va_range_aligned.end - elf_va_range.end;
+
+        aligned_range.start + start_in_page_offset..aligned_range.end - end_in_page_offset
     } else {
-        0
+        // Not relocatable object. Map as-is.
+        elf_va_range.clone()
     };
+
+    let relocated_range =
+        RelocatedRange::new(elf_va_range, map_range.start).expect("Mapped range overflows");
+
     for program_header in &elf.program_headers {
-        let type_ = program_header
-            .get_type()
-            .map_err(|_| Error::with_message(Errno::ENOEXEC, "parse program header type fails"))?;
+        let type_ = program_header.get_type().map_err(|_| {
+            Error::with_message(Errno::ENOEXEC, "Failed to parse the program header")
+        })?;
         if type_ == program::Type::Load {
             check_segment_align(program_header)?;
-            map_segment_vmo(program_header, elf_file, root_vmar, base_addr)?;
+
+            let map_at = relocated_range
+                .relocated_addr_of(program_header.virtual_addr as Vaddr)
+                .expect("Address not covered by `get_range_for_all_segments`");
+
+            map_segment_vmo(program_header, elf_file, root_vmar, map_at)?;
         }
     }
-    Ok(base_addr)
+
+    Ok(relocated_range)
 }
 
-fn base_map_addr(elf: &Elf, root_vmar: &Vmar<Full>) -> Result<Vaddr> {
-    let elf_size = elf
-        .program_headers
-        .iter()
-        .filter_map(|program_header| {
-            if let Ok(type_) = program_header.get_type()
-                && type_ == program::Type::Load
-            {
-                let ph_max_addr = program_header.virtual_addr + program_header.mem_size;
-                Some(ph_max_addr as usize)
-            } else {
-                None
-            }
+/// A virtual range and its relocated address.
+pub struct RelocatedRange {
+    original_range: Range<Vaddr>,
+    relocated_start: Vaddr,
+}
+
+impl RelocatedRange {
+    /// Creates a new `RelocatedRange`.
+    ///
+    /// If the relocated address overflows, it will return `None`.
+    pub fn new(original_range: Range<Vaddr>, relocated_start: Vaddr) -> Option<Self> {
+        relocated_start.checked_add(original_range.len())?;
+        Some(Self {
+            original_range,
+            relocated_start,
         })
+    }
+
+    /// Gets the relocated address of an address in the original range.
+    ///
+    /// If the provided address is not in the original range, it will return `None`.
+    pub fn relocated_addr_of(&self, addr: Vaddr) -> Option<Vaddr> {
+        if self.original_range.contains(&addr) {
+            Some(addr - self.original_range.start + self.relocated_start)
+        } else {
+            None
+        }
+    }
+}
+
+/// Returns the range that covers all segments in the ELF file.
+///
+/// The range must be tight, i.e., will not include any padding bytes. So the
+/// boundaries may not be page-aligned.
+fn get_range_for_all_segments(elf: &Elf) -> Result<Range<Vaddr>> {
+    let loadable_ranges_iter = elf.program_headers.iter().filter_map(|ph| {
+        if let Ok(program::Type::Load) = ph.get_type() {
+            Some((ph.virtual_addr as Vaddr)..((ph.virtual_addr + ph.mem_size) as Vaddr))
+        } else {
+            None
+        }
+    });
+
+    let min_addr =
+        loadable_ranges_iter
+            .clone()
+            .map(|r| r.start)
+            .min()
+            .ok_or(Error::with_message(
+                Errno::ENOEXEC,
+                "Executable file does not has loadable sections",
+            ))?;
+
+    let max_addr = loadable_ranges_iter
+        .map(|r| r.end)
         .max()
-        .ok_or(Error::with_message(
-            Errno::ENOEXEC,
-            "executable file does not has loadable sections",
-        ))?;
-    let map_size = elf_size.align_up(PAGE_SIZE);
-    let vmar_map_options = root_vmar
-        .new_map(map_size, VmPerms::empty())?
-        .handle_page_faults_around();
-    vmar_map_options.build()
+        .expect("The range set contains minimum but no maximum");
+
+    Ok(min_addr..max_addr)
 }
 
 /// Creates and map the corresponding segment VMO to `root_vmar`.
@@ -253,7 +312,7 @@ fn map_segment_vmo(
     program_header: &ProgramHeader64,
     elf_file: &Dentry,
     root_vmar: &Vmar<Full>,
-    base_addr: Vaddr,
+    map_at: Vaddr,
 ) -> Result<()> {
     trace!(
         "mem range = 0x{:x} - 0x{:x}, mem_size = 0x{:x}",
@@ -297,7 +356,7 @@ fn map_segment_vmo(
     };
 
     let perms = parse_segment_perm(program_header.flags);
-    let offset = base_addr + (program_header.virtual_addr as Vaddr).align_down(PAGE_SIZE);
+    let offset = map_at.align_down(PAGE_SIZE);
     if segment_size != 0 {
         let mut vm_map_options = root_vmar
             .new_map(segment_size, perms)?
