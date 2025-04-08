@@ -63,7 +63,7 @@ pub(super) const SLOT_MASK: usize = SLOT_SIZE - 1;
 /// ```
 /// use alloc::sync::Arc;
 ///
-/// use crare::rcu_xarray::*;
+/// use crare::xarray::*;
 /// use crate::task::disable_preempt;
 ///
 /// let xarray_arc: XArray<Arc<i32>> = XArray::new();
@@ -164,7 +164,7 @@ impl<P: NonNullPtr + Sync, M: Into<XMark>> XArray<P, M> {
 ///
 /// The locked `XArray` is able to create `CursorMut` and do mutable operations.
 /// There can only be one locked `XArray` at the same time.
-pub struct LockedXArray<'a, P, M, G = PreemptDisabled>
+pub struct LockedXArray<'a, P, M = NoneMark, G = PreemptDisabled>
 where
     P: NonNullPtr + Sync,
     M: Into<XMark>,
