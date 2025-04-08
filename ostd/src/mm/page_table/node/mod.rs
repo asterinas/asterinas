@@ -27,8 +27,10 @@
 
 mod child;
 mod entry;
+mod mcs;
 
-use core::{cell::SyncUnsafeCell, marker::PhantomData, ops::Deref};
+use alloc::boxed::Box;
+use core::{cell::SyncUnsafeCell, marker::PhantomData, ops::Deref, pin::Pin};
 
 pub(in crate::mm) use self::{
     child::{Child, ChildRef},
@@ -43,7 +45,6 @@ use crate::{
         vm_space::Status,
         FrameAllocOptions, Infallible, PageProperty, PagingConstsTrait, PagingLevel, VmReader,
     },
-    sync::spin,
     task::atomic_mode::InAtomicMode,
 };
 
@@ -154,7 +155,17 @@ impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
     where
         'a: 'rcu,
     {
-        self.meta().lock.lock(guard);
+        let _ = guard;
+
+        let node = Box::pin(mcs::Node::new());
+
+        // SAFETY: The node is new.
+        unsafe { node.as_ref().lock(&self.meta().lock) };
+
+        // SAFETY: Lock is held. So it is exclusive.
+        unsafe {
+            self.meta().node.get().write(Some(node));
+        }
 
         PageTableGuard::<'rcu, C> { inner: self }
     }
@@ -265,10 +276,14 @@ impl<'rcu, C: PageTableConfig> Deref for PageTableGuard<'rcu, C> {
 
 impl<C: PageTableConfig> Drop for PageTableGuard<'_, C> {
     fn drop(&mut self) {
-        // SAFETY: The lock is held.
-        unsafe {
-            self.inner.meta().lock.unlock();
-        }
+        // SAFETY: Lock is held. So it is exclusive.
+        let node = unsafe { self.meta().node.get().replace(None) }.unwrap();
+
+        // Release the lock.
+        // SAFETY:
+        //  - The lock stays at the metadata slot so it's pinned.
+        //  - The acquire method ensures that the node matches the lock.
+        unsafe { node.as_ref().unlock(&self.meta().lock) };
     }
 }
 
@@ -288,7 +303,8 @@ pub(in crate::mm) struct PageTablePageMeta<C: PageTableConfig> {
     /// referenced by page tables of different levels.
     pub level: PagingLevel,
     /// The lock for the page table page.
-    lock: spin::queued::LockBody,
+    lock: mcs::LockBody,
+    node: SyncUnsafeCell<Option<Pin<Box<mcs::Node>>>>,
     _phantom: core::marker::PhantomData<C>,
 }
 
@@ -298,7 +314,8 @@ impl<C: PageTableConfig> PageTablePageMeta<C> {
             nr_children: SyncUnsafeCell::new(0),
             stray: SyncUnsafeCell::new(false),
             level,
-            lock: spin::queued::LockBody::new(),
+            lock: mcs::LockBody::new(),
+            node: SyncUnsafeCell::new(None),
             _phantom: PhantomData,
         }
     }
