@@ -134,10 +134,6 @@ impl<R> Vmar<R> {
 pub(super) struct Vmar_ {
     /// VMAR inner
     inner: RwMutex<VmarInner>,
-    /// The offset relative to the root VMAR
-    base: Vaddr,
-    /// The total size of the VMAR in bytes
-    size: usize,
     /// The attached `VmSpace`
     vm_space: Arc<VmSpace>,
     /// The RSS counters.
@@ -423,39 +419,16 @@ pub fn is_userspace_vaddr(vaddr: Vaddr) -> bool {
     (ROOT_VMAR_LOWEST_ADDR..ROOT_VMAR_CAP_ADDR).contains(&vaddr)
 }
 
-impl Interval<usize> for Arc<Vmar_> {
-    fn range(&self) -> Range<usize> {
-        self.base..(self.base + self.size)
-    }
-}
-
 impl Vmar_ {
-    fn new(
-        inner: VmarInner,
-        vm_space: Arc<VmSpace>,
-        base: usize,
-        size: usize,
-        rss_counters: [PerCpuCounter; NUM_RSS_COUNTERS],
-    ) -> Arc<Self> {
+    fn new_root() -> Arc<Self> {
+        let inner = VmarInner::new();
+        let vm_space = VmSpace::new();
+        let rss_counters = array::from_fn(|_| PerCpuCounter::new());
         Arc::new(Vmar_ {
             inner: RwMutex::new(inner),
-            base,
-            size,
-            vm_space,
+            vm_space: Arc::new(vm_space),
             rss_counters,
         })
-    }
-
-    fn new_root() -> Arc<Self> {
-        let vmar_inner = VmarInner::new();
-        let vm_space = VmSpace::new();
-        Vmar_::new(
-            vmar_inner,
-            Arc::new(vm_space),
-            0,
-            ROOT_VMAR_CAP_ADDR,
-            array::from_fn(|_| PerCpuCounter::new()),
-        )
     }
 
     fn query(&self, range: Range<usize>) -> VmarQueryGuard<'_> {
@@ -512,13 +485,9 @@ impl Vmar_ {
 
     /// Handles user space page fault, if the page fault is successfully handled, return Ok(()).
     pub fn handle_page_fault(&self, page_fault_info: &PageFaultInfo) -> Result<()> {
-        let address = page_fault_info.address;
-        if !(self.base..self.base + self.size).contains(&address) {
-            return_errno_with_message!(Errno::EACCES, "page fault addr is not in current vmar");
-        }
-
         let inner = self.inner.read();
 
+        let address = page_fault_info.address;
         if let Some(vm_mapping) = inner.vm_mappings.find_one(&address) {
             debug_assert!(vm_mapping.range().contains(&address));
 
@@ -526,7 +495,10 @@ impl Vmar_ {
             return vm_mapping.handle_page_fault(&self.vm_space, page_fault_info, &mut rss_delta);
         }
 
-        return_errno_with_message!(Errno::EACCES, "page fault addr is not in current vmar");
+        return_errno_with_message!(
+            Errno::EACCES,
+            "no VM mappings contain the page fault address"
+        );
     }
 
     /// Clears all content of the root VMAR.
@@ -697,17 +669,7 @@ impl Vmar_ {
     }
 
     pub(super) fn new_fork_root(self: &Arc<Self>) -> Result<Arc<Self>> {
-        let new_vmar_ = {
-            let vmar_inner = VmarInner::new();
-            let new_space = VmSpace::new();
-            Vmar_::new(
-                vmar_inner,
-                Arc::new(new_space),
-                self.base,
-                self.size,
-                array::from_fn(|_| PerCpuCounter::new()),
-            )
-        };
+        let new_vmar_ = Vmar_::new_root();
 
         {
             let inner = self.inner.read();
@@ -715,8 +677,8 @@ impl Vmar_ {
 
             // Clone mappings.
             let preempt_guard = disable_preempt();
+            let range = ROOT_VMAR_LOWEST_ADDR..ROOT_VMAR_CAP_ADDR;
             let new_vmspace = new_vmar_.vm_space();
-            let range = self.base..(self.base + self.size);
             let mut new_cursor = new_vmspace.cursor_mut(&preempt_guard, &range).unwrap();
             let cur_vmspace = self.vm_space();
             let mut cur_cursor = cur_vmspace.cursor_mut(&preempt_guard, &range).unwrap();
@@ -797,18 +759,6 @@ fn cow_copy_pt(src: &mut CursorMut<'_>, dst: &mut CursorMut<'_>, size: usize) ->
 }
 
 impl<R> Vmar<R> {
-    /// The base address, i.e., the offset relative to the root VMAR.
-    ///
-    /// The base address of a root VMAR is zero.
-    pub fn base(&self) -> Vaddr {
-        self.0.base
-    }
-
-    /// The size of the VMAR in bytes.
-    pub fn size(&self) -> usize {
-        self.0.size
-    }
-
     /// Returns the current RSS count for the given RSS type.
     pub fn get_rss_counter(&self, rss_type: RssType) -> usize {
         self.0.get_rss_counter(rss_type)
