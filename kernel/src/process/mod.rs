@@ -26,9 +26,7 @@ pub use process::{
     ExitCode, JobControl, Pgid, Pid, Process, ProcessBuilder, ProcessGroup, Session, Sid, Terminal,
 };
 pub use process_filter::ProcessFilter;
-pub use process_vm::{
-    renew_vm_and_map, MAX_ARGV_NUMBER, MAX_ARG_LEN, MAX_ENVP_NUMBER, MAX_ENV_LEN,
-};
+pub use process_vm::{renew_vm, MAX_ARGV_NUMBER, MAX_ARG_LEN, MAX_ENVP_NUMBER, MAX_ENV_LEN};
 pub use program_loader::{check_executable_file, ProgramToLoad};
 pub use rlimit::ResourceType;
 pub use term_status::TermStatus;

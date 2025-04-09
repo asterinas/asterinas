@@ -11,7 +11,11 @@ pub fn sys_brk(heap_end: u64, ctx: &Context) -> Result<SyscallReturn> {
     };
     debug!("new heap end = {:x?}", heap_end);
     let user_heap = ctx.process.heap();
-    let new_heap_end = user_heap.brk(new_heap_end, ctx)?;
+    let root_vmar = ctx.thread_local.root_vmar().borrow();
+    let Some(root_vmar) = &*root_vmar else {
+        return_errno_with_message!(Errno::EINVAL, "root vmar is not initialized")
+    };
+    let new_heap_end = user_heap.brk(root_vmar, new_heap_end)?;
 
     Ok(SyscallReturn::Return(new_heap_end as _))
 }
