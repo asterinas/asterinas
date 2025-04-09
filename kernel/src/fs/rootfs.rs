@@ -7,6 +7,7 @@ use libflate::gzip::Decoder as GZipDecoder;
 use spin::Once;
 
 use super::{
+    cgroupfs::CgroupFs,
     fs_resolver::{FsPath, FsResolver},
     path::MountNode,
     procfs::{self, ProcFS},
@@ -113,6 +114,9 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
     // Mount DevFS
     let dev_dentry = fs.lookup(&FsPath::try_from("/dev")?)?;
     dev_dentry.mount(RamFS::new())?;
+    // Mount CgroupFS
+    let cgroup_dentry = fs.lookup(&FsPath::try_from("/sys/fs/cgroup/unified")?)?;
+    cgroup_dentry.mount(CgroupFs::new())?;
 
     println!("[kernel] rootfs is ready");
 

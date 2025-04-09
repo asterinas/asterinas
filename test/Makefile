@@ -22,6 +22,7 @@ INITRAMFS_EMPTY_DIRS := \
 	$(INITRAMFS)/tmp \
 	$(INITRAMFS)/opt \
 	$(INITRAMFS)/proc \
+	$(INITRAMFS)/sys/fs/cgroup/unified \
 	$(INITRAMFS)/dev \
 	$(INITRAMFS)/ext2 \
 	$(INITRAMFS)/exfat
