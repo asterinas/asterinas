@@ -121,11 +121,15 @@ fn init_periodic_mode_config() {
         apic.set_timer_init_count(0xFFFF_FFFF);
     });
 
-    x86_64::instructions::interrupts::enable();
+    // Wait until `CONFIG` is ready
     while !CONFIG.is_completed() {
-        x86_64::instructions::hlt();
+        crate::arch::irq::enable_local_and_halt();
+
+        // Disable local IRQs so they won't come after checking `CONFIG`
+        // but before halting the CPU.
+        crate::arch::irq::disable_local();
     }
-    x86_64::instructions::interrupts::disable();
+
     drop(irq);
 
     fn pit_callback(_trap_frame: &TrapFrame) {
