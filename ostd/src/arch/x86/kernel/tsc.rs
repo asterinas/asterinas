@@ -80,11 +80,17 @@ pub fn determine_tsc_freq_via_pit() -> u64 {
     static FREQUENCY: AtomicU64 = AtomicU64::new(0);
 
     // Wait until `FREQUENCY` is ready
-    x86_64::instructions::interrupts::enable();
-    while !IS_FINISH.load(Ordering::Acquire) {
-        x86_64::instructions::hlt();
+    loop {
+        crate::arch::irq::enable_local_and_halt();
+
+        // Disable local IRQs so they won't come after checking `IS_FINISH`
+        // but before halting the CPU.
+        crate::arch::irq::disable_local();
+
+        if IS_FINISH.load(Ordering::Acquire) {
+            break;
+        }
     }
-    x86_64::instructions::interrupts::disable();
 
     // Disable PIT
     drop(irq);

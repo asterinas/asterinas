@@ -72,7 +72,7 @@ pub(super) fn switch_to_task(next_task: Arc<Task>) {
     PREVIOUS_TASK_PTR.store(current_task_ptr);
 
     // We must disable IRQs when switching, see `after_switching_to`.
-    let _ = core::mem::ManuallyDrop::new(irq_guard);
+    core::mem::forget(irq_guard);
 
     // SAFETY:
     // 1. We have exclusive access to both the current context and the next context (see above).
