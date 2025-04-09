@@ -1,5 +1,63 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! Load tracking support for scheduling classes.
+//!
+//! This module provides the necessary data structures and functions to
+//! track the load of threads and update their weights accordingly. The
+//! detailed information can be checked at [the corresponding GitHub
+//! issue](https://github.com/asterinas/asterinas/issues/1912).
+//!
+//! # Formula
+//!
+//! The load of a thread is calculated using the following formula:
+//!
+//!     L(t) = weight * S(t) / R(t)
+//!
+//! where:
+//!
+//!     S(t) = U(t−T..t) + U(t−2T..t−T) * y + U(t−3T..t−2T) ⋅ y^2 + ...
+//!     R(t) = T + T * y + T * y^2 + ...
+//!     U(t1..t2) = load * Occupancy(t1..t2)
+//!
+//! The load of a thread is measured periodically to reflect its current
+//! activity.
+//!
+//! # Calculation
+//!
+//! Due to the unsynchronized nature between the load calculation (in
+//! periods) and the scheduling process (which could happen at arbitrary
+//! times), the calculation should be done in a way that is safe to
+//! perform at arbitrary times as well. This means that we need to
+//! separate the calculation period and decaying the accumulated data
+//! accordingly:
+//!
+//!            |<-d1->|<----p - 1 periods---->|<-d3->|
+//!     ... |--x------|--------| ... |--------|------x
+//!     ... |    T    |   T    | ... |   T    |    T
+//!         ^-- t                             ^-- t + dt (now)
+//!
+//! The simplified formula is:
+//!
+//!     S(t + dt) = S(t) * y^p + load * F(p, d1, d3)
+//!     R(t + dt) = T * (y + y^2 + ...) + d3
+//!
+//! where:
+//!
+//!     F(p, d1, d3) = d1 * y^p + T * (y^(p − 1) + y^(p − 2) + ... + y) + d3
+//!
+//! The sum of the series can be further simplified using the formula:
+//!
+//!     y + y^2 + ... + y^n = (1 − y^(n + 1)) / (1 − y)
+//!
+//! So R(t) and F(p, d1, d3) can be further simplified to:
+//!
+//!     R(t + dt) = T / (1 − y) + d3
+//!     F(p, d1, d3) = d1 * y^p + T / (1 - y) * (1 - y^p) + d3
+//!
+//! where `T / (1 - y)` can be precalculated. Also, the calculation of powers
+//! of y can be calculated using precalculated array maps since `y = 0.5^(1 /
+//! POW_FACTOR)`.
+
 use core::{
     cell::Cell,
     ops::Add,
