@@ -7,7 +7,7 @@
 
 use align_ext::AlignExt;
 use aster_rights::Full;
-use ostd::mm::VmIo;
+use ostd::mm::{CachePolicy, PageFlags, PageProperty, VmIo};
 use xmas_elf::program::{self, ProgramHeader64};
 
 use super::elf_file::Elf;
@@ -23,7 +23,12 @@ use crate::{
         TermStatus,
     },
     vdso::{vdso_vmo, VDSO_VMO_SIZE},
-    vm::{perms::VmPerms, util::duplicate_frame, vmar::Vmar, vmo::VmoRightsOp},
+    vm::{
+        perms::VmPerms,
+        util::duplicate_frame,
+        vmar::Vmar,
+        vmo::{CommitFlags, VmoRightsOp},
+    },
 };
 
 /// Loads elf to the process vm.
@@ -272,7 +277,7 @@ fn map_segment_vmo(
                 "executable has no page cache",
             ))?
             .to_dyn()
-            .dup_independent()?
+            .dup()?
     };
 
     let total_map_size = {
@@ -288,60 +293,74 @@ fn map_segment_vmo(
         (start, end - start)
     };
 
-    // Write zero as paddings. There are head padding and tail padding.
-    // Head padding: if the segment's virtual address is not page-aligned,
-    // then the bytes in first page from start to virtual address should be padded zeros.
-    // Tail padding: If the segment's mem_size is larger than file size,
-    // then the bytes that are not backed up by file content should be zeros.(usually .data/.bss sections).
-
-    // Head padding.
-    let page_offset = file_offset % PAGE_SIZE;
-    if page_offset != 0 {
-        let new_frame = {
-            let head_frame = segment_vmo.commit_page(segment_offset)?;
-            let new_frame = duplicate_frame(&head_frame)?;
-
-            let buffer = vec![0u8; page_offset];
-            new_frame.write_bytes(0, &buffer).unwrap();
-            new_frame
-        };
-        let head_idx = segment_offset / PAGE_SIZE;
-        segment_vmo.replace(new_frame.into(), head_idx)?;
-    }
-
-    // Tail padding.
-    let tail_padding_offset = program_header.file_size as usize + page_offset;
-    if segment_size > tail_padding_offset {
-        let new_frame = {
-            let tail_frame = segment_vmo.commit_page(segment_offset + tail_padding_offset)?;
-            let new_frame = duplicate_frame(&tail_frame)?;
-
-            let buffer = vec![0u8; (segment_size - tail_padding_offset) % PAGE_SIZE];
-            new_frame
-                .write_bytes(tail_padding_offset % PAGE_SIZE, &buffer)
-                .unwrap();
-            new_frame
-        };
-
-        let tail_idx = (segment_offset + tail_padding_offset) / PAGE_SIZE;
-        segment_vmo.replace(new_frame.into(), tail_idx).unwrap();
-    }
-
     let perms = parse_segment_perm(program_header.flags);
     let offset = base_addr + (program_header.virtual_addr as Vaddr).align_down(PAGE_SIZE);
     if segment_size != 0 {
         let mut vm_map_options = root_vmar
             .new_map(segment_size, perms)?
-            .vmo(segment_vmo)
+            .vmo(segment_vmo.dup()?)
             .vmo_offset(segment_offset)
             .vmo_limit(segment_offset + segment_size)
             .can_overwrite(true);
         vm_map_options = vm_map_options.offset(offset).handle_page_faults_around();
-        vm_map_options.build()?;
+        let map_addr = vm_map_options.build()?;
+
+        // Write zero as paddings. There are head padding and tail padding.
+        // Head padding: if the segment's virtual address is not page-aligned,
+        // then the bytes in first page from start to virtual address should be padded zeros.
+        // Tail padding: If the segment's mem_size is larger than file size,
+        // then the bytes that are not backed up by file content should be zeros.(usually .data/.bss sections).
+
+        let mut cursor = root_vmar
+            .vm_space()
+            .cursor_mut(&(map_addr..map_addr + segment_size))?;
+        let page_flags = PageFlags::from(perms) | PageFlags::ACCESSED;
+
+        // Head padding.
+        let page_offset = file_offset % PAGE_SIZE;
+        if page_offset != 0 {
+            let new_frame = {
+                let head_frame =
+                    segment_vmo.commit_on(segment_offset / PAGE_SIZE, CommitFlags::empty())?;
+                let new_frame = duplicate_frame(&head_frame)?;
+
+                let buffer = vec![0u8; page_offset];
+                new_frame.write_bytes(0, &buffer).unwrap();
+                new_frame
+            };
+            cursor.map(
+                new_frame.into(),
+                PageProperty::new(page_flags, CachePolicy::Writeback),
+            );
+        }
+
+        // Tail padding.
+        let tail_padding_offset = program_header.file_size as usize + page_offset;
+        if segment_size > tail_padding_offset {
+            let new_frame = {
+                let tail_frame = {
+                    let offset_index = (segment_offset + tail_padding_offset) / PAGE_SIZE;
+                    segment_vmo.commit_on(offset_index, CommitFlags::empty())?
+                };
+                let new_frame = duplicate_frame(&tail_frame)?;
+
+                let buffer = vec![0u8; (segment_size - tail_padding_offset) % PAGE_SIZE];
+                new_frame
+                    .write_bytes(tail_padding_offset % PAGE_SIZE, &buffer)
+                    .unwrap();
+                new_frame
+            };
+
+            let tail_page_addr = map_addr + tail_padding_offset.align_down(PAGE_SIZE);
+            cursor.jump(tail_page_addr)?;
+            cursor.map(
+                new_frame.into(),
+                PageProperty::new(page_flags, CachePolicy::Writeback),
+            );
+        }
     }
 
     let anonymous_map_size: usize = total_map_size.saturating_sub(segment_size);
-
     if anonymous_map_size > 0 {
         let mut anonymous_map_options = root_vmar
             .new_map(anonymous_map_size, perms)?

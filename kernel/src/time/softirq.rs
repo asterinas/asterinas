@@ -24,7 +24,7 @@ pub(super) fn register_callback(func: fn()) {
         match callbacks.get() {
             // Initialized, copy the vector, push the function and update.
             Some(callbacks_vec) => {
-                let mut callbacks_cloned = callbacks_vec.clone();
+                let mut callbacks_cloned = Vec::clone(callbacks_vec);
                 callbacks_cloned.push(func);
                 if callbacks
                     .compare_exchange(Some(Box::new(callbacks_cloned)))

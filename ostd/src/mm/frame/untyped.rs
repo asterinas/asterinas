@@ -13,6 +13,7 @@ use crate::{
         io::{FallibleVmRead, FallibleVmWrite, VmIo, VmReader, VmWriter},
         paddr_to_vaddr, Infallible,
     },
+    sync::non_null::NonNullPtr,
     Error, Result,
 };
 
@@ -134,7 +135,7 @@ impl_untyped_for!(Segment);
 
 // Here are implementations for `xarray`.
 
-use core::{marker::PhantomData, mem::ManuallyDrop, ops::Deref};
+use core::{marker::PhantomData, mem::ManuallyDrop, ops::Deref, ptr::NonNull};
 
 /// `FrameRef` is a struct that can work as `&'a Frame<m>`.
 ///
@@ -181,5 +182,39 @@ unsafe impl<M: AnyUFrameMeta + ?Sized> xarray::ItemEntry for Frame<M> {
             }),
             _marker: PhantomData,
         }
+    }
+}
+
+unsafe impl<M: AnyUFrameMeta + ?Sized> NonNullPtr for Frame<M> {
+    type Ref<'a>
+        = FrameRef<'a, M>
+    where
+        Self: 'a;
+
+    fn into_raw(self) -> NonNull<()> {
+        let ptr = NonNull::new(self.ptr.cast_mut()).unwrap();
+        let _ = ManuallyDrop::new(self);
+        ptr.cast()
+    }
+
+    unsafe fn from_raw(raw: NonNull<()>) -> Self {
+        Self {
+            ptr: raw.as_ptr().cast_const().cast(),
+            _marker: PhantomData,
+        }
+    }
+
+    unsafe fn raw_as_ref<'a>(raw: NonNull<()>) -> Self::Ref<'a> {
+        Self::Ref {
+            inner: ManuallyDrop::new(Frame {
+                ptr: raw.as_ptr().cast_const().cast(),
+                _marker: PhantomData,
+            }),
+            _marker: PhantomData,
+        }
+    }
+
+    fn ref_as_raw(ptr_ref: Self::Ref<'_>) -> core::ptr::NonNull<()> {
+        NonNull::new(ptr_ref.inner.ptr.cast_mut()).unwrap().cast()
     }
 }
