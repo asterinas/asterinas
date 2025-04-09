@@ -94,7 +94,7 @@ pub struct VmReaderArray<'a>(Box<[VmReader<'a>]>);
 pub struct VmWriterArray<'a>(Box<[VmWriter<'a>]>);
 
 impl<'a> VmReaderArray<'a> {
-    /// Creates a new `IoVecReader` from user-provided io vec buffer.
+    /// Creates a new `VmReaderArray` from user-provided io vec buffer.
     pub fn from_user_io_vecs(
         user_space: &'a CurrentUserSpace<'a>,
         start_addr: Vaddr,
@@ -105,13 +105,19 @@ impl<'a> VmReaderArray<'a> {
     }
 
     /// Returns mutable reference to [`VmReader`]s.
-    pub fn readers_mut(&'a mut self) -> &'a mut [VmReader<'a>] {
+    pub fn readers_mut(&mut self) -> &mut [VmReader<'a>] {
         &mut self.0
+    }
+
+    /// Creates a new `VmReaderArray`.
+    #[cfg(ktest)]
+    pub const fn new(readers: Box<[VmReader<'a>]>) -> Self {
+        Self(readers)
     }
 }
 
 impl<'a> VmWriterArray<'a> {
-    /// Creates a new `IoVecWriter` from user-provided io vec buffer.
+    /// Creates a new `VmWriterArray` from user-provided io vec buffer.
     pub fn from_user_io_vecs(
         user_space: &'a CurrentUserSpace<'a>,
         start_addr: Vaddr,
@@ -122,13 +128,13 @@ impl<'a> VmWriterArray<'a> {
     }
 
     /// Returns mutable reference to [`VmWriter`]s.
-    pub fn writers_mut(&'a mut self) -> &'a mut [VmWriter<'a>] {
+    pub fn writers_mut(&mut self) -> &mut [VmWriter<'a>] {
         &mut self.0
     }
 }
 
 /// Trait defining the read behavior for a collection of [`VmReader`]s.
-pub trait MultiRead {
+pub trait MultiRead: ReadCString {
     /// Reads the exact number of bytes required to exhaust `self` or fill `writer`,
     /// accumulating total bytes read.
     ///
