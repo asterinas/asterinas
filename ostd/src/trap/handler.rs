@@ -46,7 +46,7 @@ fn process_bottom_half() {
 
     // Interrupts should remain disabled when `process_bottom_half` returns,
     // so we simply forget the guard.
-    core::mem::forget(irq_guard);
+    let _ = core::mem::ManuallyDrop::new(irq_guard);
     drop(preempt_guard);
 }
 
