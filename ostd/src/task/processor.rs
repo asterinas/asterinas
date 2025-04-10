@@ -3,8 +3,10 @@
 use alloc::sync::Arc;
 use core::{ptr::NonNull, sync::atomic::Ordering};
 
-use super::{context_switch, Task, TaskContext, POST_SCHEDULE_HANDLER, PRE_SCHEDULE_HANDLER};
-use crate::{cpu_local_cell, trap::irq::DisabledLocalIrqGuard};
+use super::{
+    context_switch, disable_preempt, Task, TaskContext, POST_SCHEDULE_HANDLER, PRE_SCHEDULE_HANDLER,
+};
+use crate::{cpu::PinCurrentCpu, cpu_local_cell, trap::irq::DisabledLocalIrqGuard};
 
 cpu_local_cell! {
     /// The `Arc<Task>` (casted by [`Arc::into_raw`]) that is the current task.
@@ -129,21 +131,36 @@ pub(super) unsafe fn after_switching_to() {
         None
     };
 
-    if let Some(handler) = POST_SCHEDULE_HANDLER.get() {
-        handler();
-    }
+    let activated_anew = if let Some(handler) = POST_SCHEDULE_HANDLER.get() {
+        handler()
+    } else {
+        true
+    };
+
+    let preempt_guard = disable_preempt();
 
     // See `switch_to_task`, where we forgot an IRQ guard.
     crate::arch::irq::enable_local();
+
+    #[cfg(feature = "lazy_tlb_flush_on_unmap")]
+    if let Some(cur_task) = Task::current() {
+        if !activated_anew {
+            let cur_cpu = preempt_guard.current_cpu();
+            let prev_cpu = cur_task.prev_cpu.load(Ordering::Relaxed);
+            cur_task
+                .prev_cpu
+                .store(cur_cpu.as_usize() as u32, Ordering::Relaxed);
+            if prev_cpu != u32::MAX && prev_cpu != cur_cpu.as_usize() as u32 {
+                // We are migrated here.
+                crate::mm::tlb::latr::do_flush();
+            }
+        }
+    }
+
+    drop(preempt_guard);
 
     // It was forgotten using `Arc::into_raw` at `switch_to_task`.
     // We drop it after enabling the IRQ in case dropping user-provided
     // resources would violate the atomic mode.
     drop(prev);
-
-    #[cfg(feature = "lazy_tlb_flush_on_unmap")]
-    {
-        crate::mm::tlb::latr::do_flush();
-        crate::mm::tlb::latr::do_recycle();
-    }
 }

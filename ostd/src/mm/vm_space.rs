@@ -117,14 +117,16 @@ impl VmSpace {
     }
 
     /// Activates the page table on the current CPU.
-    pub fn activate(self: &Arc<Self>) {
+    ///
+    /// Return if it's a new activation.
+    pub fn activate(self: &Arc<Self>) -> bool {
         let preempt_guard = disable_preempt();
         let cpu = preempt_guard.current_cpu();
 
         let last_ptr = ACTIVATED_VM_SPACE.load();
 
         if last_ptr == Arc::as_ptr(self) {
-            return;
+            return false;
         }
 
         // Record ourselves in the CPU set and the activated VM space pointer.
@@ -142,6 +144,8 @@ impl VmSpace {
         }
 
         self.pt.activate();
+
+        true
     }
 
     /// Creates a reader to read data from the user space of the current task.

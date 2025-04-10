@@ -33,18 +33,22 @@ fn pre_schedule_handler() {
     thread_local.fpu().before_schedule();
 }
 
-fn post_schedule_handler() {
+fn post_schedule_handler() -> bool {
     let task = Task::current().unwrap();
     let Some(thread_local) = task.as_thread_local() else {
-        return;
+        return true;
     };
 
     let root_vmar = thread_local.root_vmar().borrow();
-    if let Some(vmar) = root_vmar.as_ref() {
+    let res = if let Some(vmar) = root_vmar.as_ref() {
         vmar.vm_space().activate()
-    }
+    } else {
+        true
+    };
 
     thread_local.fpu().after_schedule();
+
+    res
 }
 
 pub(super) fn init() {

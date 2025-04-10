@@ -85,6 +85,7 @@ pub(crate) fn do_flush() {
     }
 }
 
+#[expect(dead_code)]
 pub(crate) fn do_recycle() {
     let mut to_be_dropped = [const { Option::<Frame<dyn AnyFrameMeta>>::None }; LATR_ARRAY_SIZE];
     let mut have_frame_for_others = false;
