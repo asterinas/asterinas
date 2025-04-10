@@ -517,6 +517,13 @@ where
     // race conditions, we should do this before making the decision.
     cpu_local::clear_need_preempt();
 
+    let preempt_count = super::preempt::cpu_local::get_guard_count();
+    let is_local_irq_enabled = crate::arch::irq::is_local_enabled();
+    if preempt_count > 0 || !is_local_irq_enabled {
+        core::hint::spin_loop();
+        return;
+    }
+
     let next_task = loop {
         let mut action = ReschedAction::DoNothing;
         SCHEDULER.get().unwrap().mut_local_rq_with(&mut |rq| {
