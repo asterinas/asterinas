@@ -117,7 +117,7 @@ jobs:
         uses: ./.github/actions/benchmark
         with:
           task: benchmark
-          platform: x86-64
+          platform: tdx
           benchmark: ${{ matrix.benchmarks }}
 
   Results:
@@ -131,6 +131,6 @@ jobs:
         uses: ./.github/actions/benchmark
         with:
           task: result
-          platform: x86-64
+          platform: tdx
           benchmark-secret: ${{ secrets.BENCHMARK_SECRET }}
          
