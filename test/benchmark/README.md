@@ -2,7 +2,9 @@
 
 The Asterinas Benchmark Collection evaluates the performance of Asterinas in comparison to Linux across a range of benchmarking tools (e.g., LMbench, Sysbench, iPerf) and real-world applications (e.g., Nginx, Redis, SQLite, Memcached). These benchmarks are conducted under various configurations, such as within a single virtual machine (VM) or between a VM and its host.
 
-The benchmarks are run automatically on a nightly basis through continuous integration (CI) pipelines. Results, presented in clear and visually appealing figures and tables, are available [here](https://asterinas.github.io/benchmark/).
+The benchmarks are run automatically on a nightly basis through continuous integration (CI) pipelines. Results, presented in clear and visually appealing figures and tables, are available for all tier-1 supported platforms.
+1. [x86-64](https://asterinas.github.io/benchmark/x86-64/)
+2. [Intel TDX](https://asterinas.github.io/benchmark/tdx/)
 
 ## File Organization
 
@@ -19,7 +21,7 @@ The benchmark collection is organized into benchmark suites, each dedicated to a
 - [nginx](https://github.com/asterinas/asterinas/tree/main/test/benchmark/nginx)
 - [memcached](https://github.com/asterinas/asterinas/tree/main/test/benchmark/memcached)
 
-Each suite has a corresponding web page (e.g., [LMbench results](https://asterinas.github.io/benchmark/lmbench/)) that publishes the latest performance data. At the top of each page, a summary table showcases the most recent results, configured using the `summary.json` file in the suite's directory.
+Each suite has a corresponding web page (e.g., [LMbench results](https://asterinas.github.io/benchmark/x86-64/lmbench/)) that publishes the latest performance data. At the top of each page, a summary table showcases the most recent results, configured using the `summary.json` file in the suite's directory.
 
 ### Benchmark Jobs
 
