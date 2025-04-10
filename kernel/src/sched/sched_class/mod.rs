@@ -3,11 +3,15 @@
 #![warn(unused)]
 
 use alloc::{boxed::Box, sync::Arc};
-use core::{fmt, sync::atomic::Ordering};
+use core::{
+    fmt,
+    sync::atomic::{AtomicU32, Ordering},
+};
 
 use ostd::{
     arch::read_tsc as sched_clock,
     cpu::{all_cpus, CpuId, PinCurrentCpu},
+    cpu_local,
     sync::SpinLock,
     task::{
         scheduler::{
@@ -57,8 +61,14 @@ pub fn init() {
 /// traits. It consists of all the sets of run queues for CPU cores. Other global
 /// information may also be stored here.
 pub struct ClassScheduler {
-    rqs: Box<[SpinLock<PerCpuClassRqSet>]>,
     last_chosen_cpu: AtomicCpuId,
+}
+
+cpu_local! {
+    static RQ: SpinLock<Option<PerCpuClassRqSet>> = SpinLock::new(const { None });
+
+    static RQ_QUEUED: AtomicU32 = AtomicU32::new(0);
+    static RQ_RUNNING: AtomicU32 = AtomicU32::new(0);
 }
 
 /// Represents the run queue for each CPU core. It stores a list of run queues for
@@ -216,7 +226,9 @@ impl Scheduler for ClassScheduler {
             }
         };
 
-        let mut rq = self.rqs[cpu.as_usize()].disable_irq().lock();
+        let rq = RQ.get_on_cpu(cpu);
+        let mut rq = rq.disable_irq().lock();
+        let rq = rq.as_mut().unwrap();
 
         // Note: call set_if_is_none again to prevent a race condition.
         if still_in_rq && task.cpu().set_if_is_none(cpu).is_err() {
@@ -239,29 +251,33 @@ impl Scheduler for ClassScheduler {
 
     fn mut_local_rq_with(&self, f: &mut dyn FnMut(&mut dyn LocalRunQueue)) {
         let guard = disable_local();
-        let mut lock = self.rqs[guard.current_cpu().as_usize()].lock();
-        f(&mut *lock)
+        let rq = RQ.get_on_cpu(guard.current_cpu());
+        let mut lock = rq.lock();
+        f(lock.as_mut().unwrap())
     }
 
     fn local_rq_with(&self, f: &mut dyn FnMut(&dyn LocalRunQueue)) {
         let guard = disable_local();
-        f(&*self.rqs[guard.current_cpu().as_usize()].lock())
+        let rq = RQ.get_on_cpu(guard.current_cpu());
+        let lock = rq.lock();
+        f(lock.as_ref().unwrap())
     }
 }
 
 impl ClassScheduler {
     pub fn new() -> Self {
-        let class_rq = |cpu| {
-            SpinLock::new(PerCpuClassRqSet {
+        for cpu in all_cpus() {
+            let rq = RQ.get_on_cpu(cpu);
+            let mut rq = rq.lock();
+            *rq = Some(PerCpuClassRqSet {
                 stop: stop::StopClassRq::new(),
                 real_time: real_time::RealTimeClassRq::new(cpu),
                 fair: fair::FairClassRq::new(cpu),
                 idle: idle::IdleClassRq::new(),
                 current: None,
-            })
-        };
+            });
+        }
         ClassScheduler {
-            rqs: all_cpus().map(class_rq).collect(),
             last_chosen_cpu: AtomicCpuId::default(),
         }
     }
@@ -294,8 +310,7 @@ impl ClassScheduler {
                     .filter(|&cpu| cpu.as_usize() as isize <= last_chosen),
             );
         for candidate in affinity_iter {
-            let rq = self.rqs[candidate.as_usize()].lock();
-            let (load, _) = rq.nr_queued_and_running();
+            let load = RQ_QUEUED.get_on_cpu(candidate).load(Ordering::Relaxed);
             if load < minimum_load {
                 minimum_load = load;
                 selected = candidate;
@@ -325,6 +340,13 @@ impl PerCpuClassRqSet {
             SchedPolicyKind::Fair => self.fair.enqueue(task, flags),
             SchedPolicyKind::Idle => self.idle.enqueue(task, flags),
         }
+        let (queued, running) = self.nr_queued_and_running();
+        RQ_QUEUED
+            .get_on_cpu(CpuId::current_racy())
+            .store(queued, Ordering::Relaxed);
+        RQ_RUNNING
+            .get_on_cpu(CpuId::current_racy())
+            .store(running, Ordering::Relaxed);
     }
 
     fn nr_queued_and_running(&self) -> (u32, u32) {
@@ -372,19 +394,32 @@ impl LocalRunQueue for PerCpuClassRqSet {
     }
 
     fn dequeue_current(&mut self) -> Option<Arc<Task>> {
-        self.current.take().map(|((cur_task, _), _)| {
+        let task = self.current.take().map(|((cur_task, _), _)| {
             cur_task.schedule_info().cpu.set_to_none();
             cur_task
-        })
+        });
+
+        let (queued, running) = self.nr_queued_and_running();
+        RQ_QUEUED
+            .get_on_cpu(CpuId::current_racy())
+            .store(queued, Ordering::Relaxed);
+        RQ_RUNNING
+            .get_on_cpu(CpuId::current_racy())
+            .store(running, Ordering::Relaxed);
+
+        task
     }
 }
 
 impl SchedulerStats for ClassScheduler {
     fn nr_queued_and_running(&self) -> (u32, u32) {
-        self.rqs.iter().fold((0, 0), |(queued, running), rq| {
-            let (q, r) = rq.lock().nr_queued_and_running();
-            (queued + q, running + r)
-        })
+        let mut queued = 0;
+        let mut running = 0;
+        for cpu in all_cpus() {
+            queued += RQ_QUEUED.get_on_cpu(cpu).load(Ordering::Relaxed);
+            running += RQ_RUNNING.get_on_cpu(cpu).load(Ordering::Relaxed);
+        }
+        (queued, running)
     }
 }
 
