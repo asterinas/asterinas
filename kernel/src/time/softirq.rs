@@ -26,10 +26,7 @@ pub(super) fn register_callback(func: fn()) {
             Some(callbacks_vec) => {
                 let mut callbacks_cloned = callbacks_vec.clone();
                 callbacks_cloned.push(func);
-                if callbacks
-                    .compare_exchange(Some(Box::new(callbacks_cloned)))
-                    .is_ok()
-                {
+                if callbacks.compare_exchange(Some(callbacks_cloned)).is_ok() {
                     break;
                 }
             }
