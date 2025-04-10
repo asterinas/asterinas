@@ -235,6 +235,7 @@ impl Vmar_ {
             marker.perms = perms;
             *t = marker.encode();
         };
+
         while cursor.virt_addr() < range.end {
             if let Some(va) =
                 cursor.protect_next(range.end - cursor.virt_addr(), &mut prot_op, &mut token_op)
@@ -244,8 +245,12 @@ impl Vmar_ {
                 break;
             }
         }
-        cursor.flusher().dispatch_tlb_flush();
-        cursor.flusher().sync_tlb_flush();
+
+        #[cfg(not(feature = "mprotect_async_tlb"))]
+        {
+            cursor.flusher().dispatch_tlb_flush();
+            cursor.flusher().sync_tlb_flush();
+        }
 
         Ok(())
     }

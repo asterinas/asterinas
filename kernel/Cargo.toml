@@ -80,6 +80,7 @@ all = ["cvm_guest", "dist_vmar_alloc"]
 cvm_guest = ["dep:tdx-guest", "ostd/cvm_guest", "aster-virtio/cvm_guest"]
 coverage = ["ostd/coverage"]
 dist_vmar_alloc = []
+mprotect_async_tlb = []
 
 [lints]
 workspace = true
