@@ -5,7 +5,7 @@
 
 use core::mem::{self, size_of};
 
-use aster_util::{read_union_fields, union_read_ptr::UnionReadPtr};
+use aster_util::read_union_field;
 
 use super::sig_num::SigNum;
 use crate::{
@@ -55,8 +55,7 @@ impl siginfo_t {
     }
 
     pub fn si_addr(&self) -> Vaddr {
-        // let siginfo = *self;
-        read_union_fields!(self.siginfo_fields.sigfault.addr)
+        read_union_field!(self, Self, siginfo_fields.sigfault.addr)
     }
 }
 
@@ -120,11 +119,11 @@ pub union sigval_t {
 
 impl sigval_t {
     pub fn read_int(&self) -> i32 {
-        read_union_fields!(self.sigval_int)
+        read_union_field!(self, Self, sigval_int)
     }
 
     pub fn read_ptr(&self) -> Vaddr {
-        read_union_fields!(self.sigval_ptr)
+        read_union_field!(self, Self, sigval_ptr)
     }
 }
 
@@ -233,15 +232,15 @@ pub union _sigev_un {
 
 impl _sigev_un {
     pub fn read_tid(&self) -> i32 {
-        read_union_fields!(self._tid)
+        read_union_field!(self, Self, _tid)
     }
 
     pub fn read_function(&self) -> Vaddr {
-        read_union_fields!(self._sigev_thread.function)
+        read_union_field!(self, Self, _sigev_thread.function)
     }
 
     pub fn read_attribute(&self) -> Vaddr {
-        read_union_fields!(self._sigev_thread.attribute)
+        read_union_field!(self, Self, _sigev_thread.attribute)
     }
 }
 

@@ -14,7 +14,7 @@ use super::{
 };
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
-    util::SameSizeAs,
+    util::marker::SameSizeAs,
     Pod,
 };
 

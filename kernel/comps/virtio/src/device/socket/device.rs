@@ -6,7 +6,7 @@ use core::{fmt::Debug, hint::spin_loop, mem::size_of};
 use aster_network::{RxBuffer, TxBuffer};
 use aster_util::{field_ptr, slot_vec::SlotVec};
 use log::debug;
-use ostd::{mm::VmWriter, offset_of, sync::SpinLock, trap::TrapFrame, Pod};
+use ostd::{mm::VmWriter, sync::SpinLock, trap::TrapFrame, Pod};
 
 use super::{
     config::{VirtioVsockConfig, VsockFeatures},
