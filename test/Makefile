@@ -25,7 +25,7 @@ INITRAMFS_EMPTY_DIRS := \
 	$(INITRAMFS)/dev \
 	$(INITRAMFS)/ext2 \
 	$(INITRAMFS)/exfat
-INITRAMFS_ALL_DIRS := \
+INITRAMFS_BASE_DIRS := \
 	$(INITRAMFS)/etc \
 	$(INITRAMFS)/lib/x86_64-linux-gnu \
 	$(INITRAMFS)/lib64 \
@@ -33,9 +33,16 @@ INITRAMFS_ALL_DIRS := \
 	$(INITRAMFS)/sbin \
 	$(INITRAMFS)/usr/bin \
 	$(INITRAMFS)/usr/local \
-	$(INITRAMFS)/test \
 	$(INITRAMFS)/benchmark \
 	$(INITRAMFS_EMPTY_DIRS)
+
+# Conditionally include test directory if BENCHMARK is not 'none'
+ifneq ($(BENCHMARK), none)
+INITRAMFS_ALL_DIRS := $(INITRAMFS_BASE_DIRS)
+else
+INITRAMFS_ALL_DIRS := $(INITRAMFS_BASE_DIRS) $(INITRAMFS)/test
+endif
+
 SYSCALL_TEST_DIR := $(INITRAMFS)/opt/syscall_test
 
 .PHONY: all
