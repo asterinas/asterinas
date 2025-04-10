@@ -1,10 +1,10 @@
-name: "Benchmark x86-64  "
+name: "Benchmark Intel TDX "
 on:
   # In case of manual trigger, use workflow_dispatch
   workflow_dispatch:
   schedule:
     # Schedule to run on every day at 20:00 UTC (04:00 Beijing Time)
-    - cron: '0 20 * * *'
+    - cron: '0 18 * * *'
 
 jobs:
   Benchmarks:
@@ -55,8 +55,9 @@ jobs:
           - lmbench/ext2_create_delete_files_0k_ops
           - lmbench/ext2_create_delete_files_10k_ops
           - lmbench/ext2_copy_files_bw
-          - fio/ext2_seq_write_bw
-          - fio/ext2_seq_read_bw
+          # FIXME: IOMMU are not supported in TDX now.
+          # - fio/ext2_seq_write_bw
+          # - fio/ext2_seq_read_bw
           - fio/ext2_seq_write_bw_no_iommu
           - fio/ext2_seq_read_bw_no_iommu
           # Loopback-related network benchmarks
@@ -107,7 +108,7 @@ jobs:
       max-parallel: 1
     timeout-minutes: 60
     container: 
-      image: asterinas/asterinas:0.14.1-20250326
+      image: asterinas/asterinas:0.14.1-20250326-tdx
       options: --device=/dev/kvm --privileged
 
     steps:
