@@ -1,0 +1,147 @@
+name: 'Benchmark'
+description: 'Run benchmarks for Asterinas'
+inputs:
+  task:
+    description: 'Task to run (benchmark, result)'
+    required: true
+  platform:
+    description: 'Platform to benchmark (x86-64, tdx)'
+    required: true
+  benchmark:
+    description: 'The benchmark to run'
+    required: false
+  benchmark-secret:
+    description: 'Secret token for benchmark action data submission'
+    required: false
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up the environment
+      shell: bash
+      run: |
+        # If the task is 'benchmark', set up the environment for benchmarking
+        # If the task is 'result', set up the environment for result processing
+
+        if [[ "${{ inputs.task }}" == "benchmark" ]]; then
+          echo "Setting up environment for benchmarking..."
+          git config --global --add safe.directory /__w/asterinas/asterinas
+          git config --global http.sslVerify false
+          git config --global http.version HTTP/1.1
+        elif [[ "${{ inputs.task }}" == "result" ]]; then
+          echo "Setting up environment for result processing..."
+          sudo apt-get update && sudo apt-get install -y yq jq
+        else
+          echo "Unknown task: ${{ inputs.task }}"
+          exit 1
+        fi
+        
+    - name: Run benchmarks
+      if: ${{ inputs.task == 'benchmark' }}
+      shell: bash
+      run: |
+        make install_osdk
+        bash test/benchmark/bench_linux_and_aster.sh "${{ matrix.benchmarks }}" "${{ inputs.platform }}"
+        BENCHMARK_ARTIFACT=results_$(echo "${{ matrix.benchmarks }}" | tr '/' '-')
+        echo "BENCHMARK_ARTIFACT=$BENCHMARK_ARTIFACT" >> $GITHUB_ENV
+
+    - name: Store benchmark results
+      if: ${{ inputs.task == 'benchmark' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.BENCHMARK_ARTIFACT }}
+        if-no-files-found: error # Fail the benchmark job if no file is found.
+        path: |
+          result_*.json
+    
+    - name: Download Benchmark Results
+      if: ${{ inputs.task == 'result' }}
+      uses: actions/download-artifact@v4
+      with:
+        pattern: results_*
+        path: ./results
+        merge-multiple: true
+
+    - name: Generate all benchmark config files
+      if: ${{ inputs.task == 'result' }}
+      shell: bash
+      run: |
+        mkdir -p configs
+        BENCHMARK_LIST=$(ls results/result_*.json | sed 's/.*result_//' | sed 's/\.json//' | jq -R -s -c 'split("\n")[:-1]')
+        echo "Processing benchmarks: $BENCHMARK_LIST"
+
+        # Loop through the benchmark identifiers provided by the Matrix job
+        for benchmark_id in $(echo "$BENCHMARK_LIST" | jq -r '.[]'); do
+          echo "--- Processing $benchmark_id ---"
+          BENCHMARK_DIR=$(echo "$benchmark_id" | sed 's/-/\//g')
+          BENCHMARK_SUITE=$(echo "$BENCHMARK_DIR" | awk -F'/' '{print $1}')
+          BENCHMARK_NAME=$(echo "$BENCHMARK_DIR" | sed -E 's|^[^/]+/||; s|/bench_results||g; s|/|_|g')
+          BENCH_RESULT_YAML="test/benchmark/${BENCHMARK_DIR}/bench_result.yaml"
+          [ -f "$BENCH_RESULT_YAML" ] || BENCH_RESULT_YAML="test/benchmark/${BENCHMARK_DIR}.yaml"
+
+          if [ ! -f "$BENCH_RESULT_YAML" ]; then
+            echo "Warning: YAML file not found for $benchmark_id at $BENCH_RESULT_YAML. Skipping config generation."
+            continue
+          fi
+
+          # Extract data using yq
+          ALERT_THRESHOLD=$(yq -r '.alert.threshold // "130%"' "$BENCH_RESULT_YAML")
+          ALERT_TOOL=$(yq -r 'if (.alert.bigger_is_better == true) then "customBiggerIsBetter" else "customSmallerIsBetter" end' "$BENCH_RESULT_YAML")
+          TITLE=$(yq -r '.chart.title // "Undefined"' "$BENCH_RESULT_YAML")
+          DESCRIPTION=$(yq -r '.chart.description // "No description provided"' "$BENCH_RESULT_YAML")
+
+          # Generate summary JSON if needed (only once per suite)
+          SUMMARY_JSON="test/benchmark/$BENCHMARK_SUITE/summary.json"
+          if [ ! -f "$SUMMARY_JSON" ]; then
+              SUMMARY_YAML="test/benchmark/$BENCHMARK_SUITE/summary.yaml"
+              if [ -f "$SUMMARY_YAML" ]; then
+                yq . "$SUMMARY_YAML" > "$SUMMARY_JSON"
+                echo "Generated $SUMMARY_JSON"
+              else
+                echo "Warning: summary.yaml not found for suite $BENCHMARK_SUITE"
+              fi
+          fi
+
+          # Define file paths
+          CONFIG_FILE="configs/config_${benchmark_id}.json"
+          RESULT_FILE="results/result_${benchmark_id}.json"
+        
+          # Create JSON structure using jq
+          jq -n \
+            --arg title "$TITLE" \
+            --arg description "$DESCRIPTION" \
+            --arg suite "${{ inputs.platform }}/$BENCHMARK_SUITE" \
+            --arg name "$BENCHMARK_NAME" \
+            --arg threshold "$ALERT_THRESHOLD" \
+            --arg tool "$ALERT_TOOL" \
+            --arg result_path "$RESULT_FILE" \
+            --arg summary_path "$SUMMARY_JSON" \
+            '{
+              metadata: {
+                title: $title,
+                description: $description,
+                suite: $suite,
+                name: $name,
+                threshold: $threshold,
+                tool: $tool,
+                summary: $summary_path
+              },
+              result: $result_path
+            }' > "$CONFIG_FILE"
+
+          echo "Generated config file $CONFIG_FILE"
+        done
+
+    - name: Store benchmark results
+      if: ${{ inputs.task == 'result' }}
+      uses: asterinas/github-action-benchmark@v5
+      with:
+        # Use glob pattern to find all generated config files
+        output-file-path: "configs/config_*.json"
+        github-token: ${{ inputs.benchmark-secret }}
+        gh-repository: 'github.com/asterinas/benchmark'
+        auto-push: true
+        comment-on-alert: true
+        fail-on-alert: false
+        max-items-in-chart: 60
+        ref: ${{ github.sha }}
