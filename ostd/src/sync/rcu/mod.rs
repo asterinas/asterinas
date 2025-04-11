@@ -121,7 +121,7 @@ unsafe impl<P: NonNullPtr> Send for RcuInner<P> where P: Send {}
 //     of `P` created on another thread.
 unsafe impl<P: NonNullPtr> Sync for RcuInner<P> where P: Send + Sync {}
 
-impl<P: NonNullPtr> RcuInner<P> {
+impl<P: NonNullPtr + Send> RcuInner<P> {
     const fn new_none() -> Self {
         Self {
             ptr: AtomicPtr::new(core::ptr::null_mut()),
@@ -200,7 +200,7 @@ struct RcuReadGuardInner<'a, P: NonNullPtr> {
     _inner_guard: DisabledPreemptGuard,
 }
 
-impl<P: NonNullPtr> RcuReadGuardInner<'_, P> {
+impl<P: NonNullPtr + Send> RcuReadGuardInner<'_, P> {
     fn get(&self) -> Option<P::Ref<'_>> {
         // SAFETY: The guard ensures that `P` will not be dropped. Thus, `P`
         // outlives the lifetime of `&self`. Additionally, during this period,
@@ -240,7 +240,7 @@ impl<P: NonNullPtr> RcuReadGuardInner<'_, P> {
     }
 }
 
-impl<P: NonNullPtr> Rcu<P> {
+impl<P: NonNullPtr + Send> Rcu<P> {
     /// Creates a new RCU primitive with the given pointer.
     pub fn new(pointer: P) -> Self {
         Self(RcuInner::new(pointer))
@@ -281,7 +281,7 @@ impl<P: NonNullPtr> Rcu<P> {
     }
 }
 
-impl<P: NonNullPtr> RcuOption<P> {
+impl<P: NonNullPtr + Send> RcuOption<P> {
     /// Creates a new RCU primitive with the given pointer.
     pub fn new(pointer: Option<P>) -> Self {
         if let Some(pointer) = pointer {
@@ -336,7 +336,7 @@ impl<P: NonNullPtr> RcuOption<P> {
     }
 }
 
-impl<P: NonNullPtr> RcuReadGuard<'_, P> {
+impl<P: NonNullPtr + Send> RcuReadGuard<'_, P> {
     /// Gets the reference of the protected data.
     pub fn get(&self) -> P::Ref<'_> {
         self.0.get().unwrap()
@@ -362,7 +362,7 @@ impl<P: NonNullPtr> RcuReadGuard<'_, P> {
     }
 }
 
-impl<P: NonNullPtr> RcuOptionReadGuard<'_, P> {
+impl<P: NonNullPtr + Send> RcuOptionReadGuard<'_, P> {
     /// Gets the reference of the protected data.
     ///
     /// If the RCU primitive protects nothing, this function returns `None`.
@@ -398,12 +398,12 @@ impl<P: NonNullPtr> RcuOptionReadGuard<'_, P> {
 ///
 /// The pointer must be previously returned by `into_raw` and the pointer
 /// must be only be dropped once.
-unsafe fn delay_drop<P: NonNullPtr>(pointer: NonNull<<P as NonNullPtr>::Target>) {
-    struct ForceSend<P: NonNullPtr>(NonNull<<P as NonNullPtr>::Target>);
+unsafe fn delay_drop<P: NonNullPtr + Send>(pointer: NonNull<<P as NonNullPtr>::Target>) {
+    struct ForceSend<P: NonNullPtr + Send>(NonNull<<P as NonNullPtr>::Target>);
     // SAFETY: Sending a raw pointer to another task is safe as long as
     // the pointer access in another task is safe (guaranteed by the trait
     // bound `P: Send`).
-    unsafe impl<P: NonNullPtr> Send for ForceSend<P> {}
+    unsafe impl<P: NonNullPtr + Send> Send for ForceSend<P> {}
 
     let pointer: ForceSend<P> = ForceSend(pointer);
 
