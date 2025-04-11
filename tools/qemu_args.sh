@@ -44,6 +44,36 @@ else
     NETDEV_ARGS="-nic none"
 fi
 
+if [ "$1" = "tdx" ]; then
+    QEMU_ARGS="\
+        -name process=tdxvm,debug-threads=on \
+        -m ${MEM:-8G} \
+        -smp ${SMP:-1} \
+        -vga none \
+        -nographic \
+        -monitor pty \
+        -no-hpet \
+        -nodefaults \
+        -bios /usr/share/qemu/OVMF.fd \
+        -object tdx-guest,sept-ve-disable=on,id=tdx,quote-generation-service=vsock:2:4050 \
+        -cpu host,-kvm-steal-time,pmu=off \
+        -machine q35,kernel_irqchip=split,confidential-guest-support=tdx,memory-backend=ram1 \
+        -object memory-backend-memfd-private,id=ram1,size=${MEM:-8G} \
+        -device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off$VIRTIO_NET_FEATURES \
+        -device virtio-keyboard-pci,disable-legacy=on,disable-modern=off \
+        $NETDEV_ARGS \
+        $QEMU_OPT_ARG_DUMP_PACKETS \
+        -chardev stdio,id=mux,mux=on,logfile=qemu.log \
+        -device virtio-serial,romfile= \
+        -device virtconsole,chardev=mux \
+        -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+        -monitor chardev:mux \
+        -serial chardev:mux \
+    "
+    echo $QEMU_ARGS
+    exit 0
+fi
+
 COMMON_QEMU_ARGS="\
     -cpu Icelake-Server,+x2apic \
     -smp ${SMP:-1} \
