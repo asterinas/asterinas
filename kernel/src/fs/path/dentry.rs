@@ -597,7 +597,7 @@ impl Dentry {
     ///
     /// If it is the root of a mount, it will go up to the mountpoint
     /// to get the name of the mountpoint recursively.
-    fn effective_name(&self) -> String {
+    pub fn effective_name(&self) -> String {
         if !self.inner.is_root_of_mount() {
             return self.inner.name();
         }
