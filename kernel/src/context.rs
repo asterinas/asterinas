@@ -166,24 +166,31 @@ impl<'a> CurrentUserSpace<'a> {
 }
 
 /// A trait providing the ability to read a C string from the user space.
-///
-/// The user space should be of the current process. The implemented method
-/// should read the bytes iteratively in the reader ([`VmReader`]) until
-/// encountering the end of the reader or reading a `\0` (which is also
-/// included in the final C String).
 pub trait ReadCString {
+    /// Reads a C string from `self`.
+    ///
+    /// This method should read the bytes iteratively in `self` until
+    /// encountering the end of the reader or reading a `\0` (which is also
+    /// included in the final C String).
     fn read_cstring(&mut self) -> Result<CString>;
+
+    /// Reads a C string from `self` with a maximum length of `max_len`.
+    ///
+    /// This method functions similarly to [`ReadCString::read_cstring`],
+    /// but imposes an additional limit on the length of the C string.
+    fn read_cstring_with_max_len(&mut self, max_len: usize) -> Result<CString>;
 }
 
 impl ReadCString for VmReader<'_, Fallible> {
-    /// Reads a C string from the user space.
-    ///
-    /// This implementation is inspired by
-    /// the `do_strncpy_from_user` function in Linux kernel.
-    /// The original Linux implementation can be found at:
-    /// <https://elixir.bootlin.com/linux/v6.0.9/source/lib/strncpy_from_user.c#L28>
     fn read_cstring(&mut self) -> Result<CString> {
-        let max_len = self.remain();
+        self.read_cstring_with_max_len(self.remain())
+    }
+
+    fn read_cstring_with_max_len(&mut self, max_len: usize) -> Result<CString> {
+        // This implementation is inspired by
+        // the `do_strncpy_from_user` function in Linux kernel.
+        // The original Linux implementation can be found at:
+        // <https://elixir.bootlin.com/linux/v6.0.9/source/lib/strncpy_from_user.c#L28>
         let mut buffer: Vec<u8> = Vec::with_capacity(max_len);
 
         if read_until_nul_byte(self, &mut buffer, max_len)? {
@@ -199,7 +206,10 @@ impl ReadCString for VmReader<'_, Fallible> {
 
 impl ReadCString for VmReaderArray<'_> {
     fn read_cstring(&mut self) -> Result<CString> {
-        let max_len = self.sum_lens();
+        self.read_cstring_with_max_len(self.sum_lens())
+    }
+
+    fn read_cstring_with_max_len(&mut self, max_len: usize) -> Result<CString> {
         let mut buffer: Vec<u8> = Vec::with_capacity(max_len);
 
         for reader in self.readers_mut() {
