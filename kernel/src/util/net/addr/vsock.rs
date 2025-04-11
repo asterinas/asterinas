@@ -33,6 +33,7 @@ impl From<VsockSocketAddr> for CSocketAddrVm {
 
 impl From<CSocketAddrVm> for VsockSocketAddr {
     fn from(value: CSocketAddrVm) -> Self {
+        debug_assert_eq!(value.svm_family, CSocketAddrFamily::AF_VSOCK as u16);
         Self {
             cid: value.svm_cid,
             port: value.svm_port,
