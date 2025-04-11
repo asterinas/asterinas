@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+pub mod either;
 pub mod range_alloc;
 
 use core::ops::Range;
