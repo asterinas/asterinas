@@ -9,6 +9,8 @@
 
 extern crate alloc;
 
+mod systree;
+
 use alloc::boxed::Box;
 use core::hint::spin_loop;
 
@@ -34,6 +36,7 @@ mod transport;
 
 #[init_component]
 fn virtio_component_init() -> Result<(), ComponentInitError> {
+    systree::register_virtio_node();
     // Find all devices and register them to the corresponding crate
     transport::init();
     // For vsock table static init
