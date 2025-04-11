@@ -23,7 +23,7 @@ pub fn sys_lseek(fd: FileDesc, offset: isize, whence: u32, ctx: &Context) -> Res
         2 => SeekFrom::End(offset),
         _ => return_errno!(Errno::EINVAL),
     };
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
 
     let offset = file.seek(seek_from)?;

@@ -239,7 +239,7 @@ fn clone_child_task(
     clone_sysvsem(clone_flags)?;
 
     // clone file table
-    let child_file_table = clone_files(&thread_local.file_table().borrow(), clone_flags);
+    let child_file_table = clone_files(thread_local.borrow_file_table().unwrap(), clone_flags);
 
     // clone fs
     let child_fs = clone_fs(posix_thread.fs(), clone_flags);
@@ -315,7 +315,7 @@ fn clone_child_process(
     ));
 
     // clone file table
-    let child_file_table = clone_files(&thread_local.file_table().borrow(), clone_flags);
+    let child_file_table = clone_files(thread_local.borrow_file_table().unwrap(), clone_flags);
 
     // clone fs
     let child_fs = clone_fs(posix_thread.fs(), clone_flags);

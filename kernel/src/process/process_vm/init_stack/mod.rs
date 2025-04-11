@@ -385,7 +385,7 @@ impl InitStackReader<'_> {
         let stack_base = self.init_stack_bottom();
         let page_base_addr = stack_base.align_down(PAGE_SIZE);
 
-        let vm_space = self.vmar.get().vm_space();
+        let vm_space = self.vmar.unwrap().vm_space();
         let mut cursor = vm_space.cursor(&(page_base_addr..page_base_addr + PAGE_SIZE))?;
         let VmItem::Mapped { frame, .. } = cursor.query()? else {
             return_errno_with_message!(Errno::EACCES, "Page not accessible");
@@ -409,7 +409,7 @@ impl InitStackReader<'_> {
         let mut argv = Vec::with_capacity(argc);
         let page_base_addr = read_offset.align_down(PAGE_SIZE);
 
-        let vm_space = self.vmar.get().vm_space();
+        let vm_space = self.vmar.unwrap().vm_space();
         let mut cursor = vm_space.cursor(&(page_base_addr..page_base_addr + PAGE_SIZE))?;
         let VmItem::Mapped { frame, .. } = cursor.query()? else {
             return_errno_with_message!(Errno::EACCES, "Page not accessible");
@@ -449,7 +449,7 @@ impl InitStackReader<'_> {
         let mut envp = Vec::new();
         let page_base_addr = read_offset.align_down(PAGE_SIZE);
 
-        let vm_space = self.vmar.get().vm_space();
+        let vm_space = self.vmar.unwrap().vm_space();
         let mut cursor = vm_space.cursor(&(page_base_addr..page_base_addr + PAGE_SIZE))?;
         let VmItem::Mapped { frame, .. } = cursor.query()? else {
             return_errno_with_message!(Errno::EACCES, "Page not accessible");

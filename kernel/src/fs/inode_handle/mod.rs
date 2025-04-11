@@ -387,6 +387,7 @@ impl<R> InodeHandle<R> {
 
 impl<R> Drop for InodeHandle<R> {
     fn drop(&mut self) {
+        self.release_range_locks();
         self.unlock_flock();
     }
 }

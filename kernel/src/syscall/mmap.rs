@@ -125,7 +125,7 @@ fn do_sys_mmap(
             }
         } else {
             let vmo = {
-                let mut file_table = ctx.thread_local.file_table().borrow_mut();
+                let mut file_table = ctx.thread_local.borrow_file_table_mut();
                 let file = get_file_fast!(&mut file_table, fd);
                 let inode_handle = file.as_inode_or_err()?;
 

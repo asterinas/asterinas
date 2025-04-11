@@ -217,8 +217,8 @@ impl FileIo for PtyMaster {
                 };
 
                 let fd = {
-                    let file_table = thread_local.file_table().borrow();
-                    let mut file_table_locked = file_table.write();
+                    let file_table = thread_local.borrow_file_table();
+                    let mut file_table_locked = file_table.unwrap().write();
                     // TODO: deal with the O_CLOEXEC flag
                     file_table_locked.insert(slave, FdFlags::empty())
                 };

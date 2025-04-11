@@ -119,11 +119,15 @@ impl PosixThreadBuilder {
 
         let fs = fs.unwrap_or_else(|| Arc::new(ThreadFsInfo::default()));
 
-        Arc::new_cyclic(|weak_task| {
-            let root_vmar = process
-                .upgrade()
-                .map(|process| process.lock_root_vmar().get().dup().unwrap());
+        let root_vmar = process
+            .upgrade()
+            .unwrap()
+            .lock_root_vmar()
+            .unwrap()
+            .dup()
+            .unwrap();
 
+        Arc::new_cyclic(|weak_task| {
             let posix_thread = {
                 let prof_clock = ProfClock::new();
                 let virtual_timer_manager = TimerManager::new(prof_clock.user_clock().clone());
@@ -134,7 +138,7 @@ impl PosixThreadBuilder {
                     tid,
                     name: Mutex::new(thread_name),
                     credentials,
-                    file_table: file_table.clone_ro(),
+                    file_table: Mutex::new(Some(file_table.clone_ro())),
                     fs,
                     sig_mask,
                     sig_queues,

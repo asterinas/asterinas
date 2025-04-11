@@ -17,7 +17,7 @@ pub fn sys_read(
         fd, user_buf_addr, buf_len
     );
 
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
 
     // According to <https://man7.org/linux/man-pages/man2/read.2.html>, if

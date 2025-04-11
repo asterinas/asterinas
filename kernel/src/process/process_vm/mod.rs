@@ -78,8 +78,12 @@ pub struct ProcessVmarGuard<'a> {
 }
 
 impl ProcessVmarGuard<'_> {
-    /// Gets a reference to the process VMAR.
-    pub fn get(&self) -> &Vmar<Full> {
+    /// Unwraps and returns a reference to the process VMAR.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the process has exited and its VMAR has been dropped.
+    pub fn unwrap(&self) -> &Vmar<Full> {
         self.inner.as_ref().unwrap()
     }
 
@@ -96,7 +100,7 @@ impl Clone for ProcessVm {
     fn clone(&self) -> Self {
         let root_vmar = self.lock_root_vmar();
         Self {
-            root_vmar: Mutex::new(Some(root_vmar.get().dup().unwrap())),
+            root_vmar: Mutex::new(Some(root_vmar.unwrap().dup().unwrap())),
             init_stack: self.init_stack.clone(),
             heap: self.heap.clone(),
         }
@@ -122,7 +126,7 @@ impl ProcessVm {
     /// The returned `ProcessVm` will have a forked `Vmar`.
     pub fn fork_from(other: &ProcessVm) -> Result<Self> {
         let process_vmar = other.lock_root_vmar();
-        let root_vmar = Mutex::new(Some(Vmar::<Full>::fork_from(process_vmar.get())?));
+        let root_vmar = Mutex::new(Some(Vmar::<Full>::fork_from(process_vmar.unwrap())?));
         Ok(Self {
             root_vmar,
             heap: other.heap.clone(),
@@ -156,7 +160,7 @@ impl ProcessVm {
     ) -> Result<()> {
         let root_vmar: ProcessVmarGuard<'_> = self.lock_root_vmar();
         self.init_stack
-            .map_and_write(root_vmar.get(), argv, envp, aux_vec)
+            .map_and_write(root_vmar.unwrap(), argv, envp, aux_vec)
     }
 
     pub(super) fn heap(&self) -> &Heap {
@@ -166,8 +170,8 @@ impl ProcessVm {
     /// Clears existing mappings and then maps the heap VMO to the current VMAR.
     pub fn clear_and_map(&self) {
         let root_vmar = self.lock_root_vmar();
-        root_vmar.get().clear().unwrap();
-        self.heap.alloc_and_map_vm(&root_vmar.get()).unwrap();
+        root_vmar.unwrap().clear().unwrap();
+        self.heap.alloc_and_map_vm(&root_vmar.unwrap()).unwrap();
     }
 }
 
@@ -183,5 +187,8 @@ pub fn renew_vm_and_map(ctx: &Context) {
     root_vmar.set_vmar(Some(new_vmar));
     drop(guard);
 
-    process_vm.heap.alloc_and_map_vm(root_vmar.get()).unwrap();
+    process_vm
+        .heap
+        .alloc_and_map_vm(root_vmar.unwrap())
+        .unwrap();
 }

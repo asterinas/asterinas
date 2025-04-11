@@ -29,7 +29,7 @@ pub fn sys_fstatfs(fd: FileDesc, statfs_buf_ptr: Vaddr, ctx: &Context) -> Result
     debug!("fd = {}, statfs_buf_addr = 0x{:x}", fd, statfs_buf_ptr);
 
     let fs = {
-        let mut file_table = ctx.thread_local.file_table().borrow_mut();
+        let mut file_table = ctx.thread_local.borrow_file_table_mut();
         let file = get_file_fast!(&mut file_table, fd);
         file.as_inode_or_err()?.dentry().fs()
     };

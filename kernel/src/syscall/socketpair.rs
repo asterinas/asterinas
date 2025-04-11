@@ -37,8 +37,8 @@ pub fn sys_socketpair(
     };
 
     let socket_fds = {
-        let file_table = ctx.thread_local.file_table().borrow();
-        let mut file_table_locked = file_table.write();
+        let file_table = ctx.thread_local.borrow_file_table();
+        let mut file_table_locked = file_table.unwrap().write();
         let fd_flags = if sock_flags.contains(SockFlags::SOCK_CLOEXEC) {
             FdFlags::CLOEXEC
         } else {

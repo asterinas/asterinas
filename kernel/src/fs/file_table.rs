@@ -1,16 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(unused_variables)]
-
 use core::sync::atomic::{AtomicU8, Ordering};
 
 use aster_util::slot_vec::SlotVec;
-use ostd::sync::RwArc;
 
 use super::{
     file_handle::FileLike,
     fs_resolver::{FsPath, FsResolver, AT_FDCWD},
-    inode_handle::InodeHandle,
     utils::{AccessMode, InodeMode},
 };
 use crate::{
@@ -18,6 +14,7 @@ use crate::{
     fs::utils::StatusFlags,
     prelude::*,
     process::{
+        posix_thread::FileTableRefMut,
         signal::{constants::SIGIO, signals::kernel::KernelSignal, PollAdaptor},
         Pid, Process,
     },
@@ -130,32 +127,23 @@ impl FileTable {
         self.notify_fd_events(&events);
         removed_entry.notify_fd_events(&events);
 
-        let closed_file = removed_entry.file;
-        if let Some(closed_inode_file) = closed_file.downcast_ref::<InodeHandle>() {
-            // FIXME: Operation below should not hold any mutex if `self` is protected by a spinlock externally
-            closed_inode_file.release_range_locks();
-        }
-        Some(closed_file)
-    }
-
-    pub fn close_all(&mut self) -> Vec<Arc<dyn FileLike>> {
-        self.close_files(|_, _| true)
+        Some(removed_entry.file)
     }
 
     pub fn close_files_on_exec(&mut self) -> Vec<Arc<dyn FileLike>> {
-        self.close_files(|_, entry| entry.flags().contains(FdFlags::CLOEXEC))
+        self.close_files(|entry| entry.flags().contains(FdFlags::CLOEXEC))
     }
 
     fn close_files<F>(&mut self, should_close: F) -> Vec<Arc<dyn FileLike>>
     where
-        F: Fn(FileDesc, &FileTableEntry) -> bool,
+        F: Fn(&FileTableEntry) -> bool,
     {
         let mut closed_files = Vec::new();
         let closed_fds: Vec<FileDesc> = self
             .table
             .idxes_and_items()
             .filter_map(|(idx, entry)| {
-                if should_close(idx as FileDesc, entry) {
+                if should_close(entry) {
                     Some(idx as FileDesc)
                 } else {
                     None
@@ -168,11 +156,7 @@ impl FileTable {
             let events = FdEvents::Close(fd);
             self.notify_fd_events(&events);
             removed_entry.notify_fd_events(&events);
-            closed_files.push(removed_entry.file.clone());
-            if let Some(inode_file) = removed_entry.file.downcast_ref::<InodeHandle>() {
-                // FIXME: Operation below should not hold any mutex if `self` is protected by a spinlock externally
-                inode_file.release_range_locks();
-            }
+            closed_files.push(removed_entry.file);
         }
 
         closed_files
@@ -233,6 +217,9 @@ impl Clone for FileTable {
 
 impl Drop for FileTable {
     fn drop(&mut self) {
+        // Closes all files first.
+        self.close_files(|_| true);
+
         let events = FdEvents::DropFileTable;
         self.subject.notify_observers(&events);
     }
@@ -247,12 +234,14 @@ pub trait WithFileTable {
     fn read_with<R>(&mut self, f: impl FnOnce(&FileTable) -> R) -> R;
 }
 
-impl WithFileTable for RwArc<FileTable> {
+impl WithFileTable for FileTableRefMut<'_> {
     fn read_with<R>(&mut self, f: impl FnOnce(&FileTable) -> R) -> R {
-        if let Some(inner) = self.get() {
+        let file_table = self.unwrap();
+
+        if let Some(inner) = file_table.get() {
             f(inner)
         } else {
-            f(&self.read())
+            f(&file_table.read())
         }
     }
 }
@@ -281,10 +270,13 @@ macro_rules! get_file_fast {
         use alloc::borrow::Cow;
 
         use ostd::sync::RwArc;
+        use $crate::{
+            fs::file_table::{FileDesc, FileTable},
+            process::posix_thread::FileTableRefMut,
+        };
 
-        use crate::fs::file_table::{FileDesc, FileTable};
-
-        let file_table: &mut RwArc<FileTable> = $file_table;
+        let file_table: &mut FileTableRefMut<'_> = $file_table;
+        let file_table: &mut RwArc<FileTable> = file_table.unwrap();
         let file_desc: FileDesc = $file_desc;
 
         if let Some(inner) = file_table.get() {
@@ -412,7 +404,7 @@ impl OwnerObserver {
 }
 
 impl Observer<IoEvents> for OwnerObserver {
-    fn on_events(&self, events: &IoEvents) {
+    fn on_events(&self, _events: &IoEvents) {
         if self.file.status_flags().contains(StatusFlags::O_ASYNC)
             && let Some(process) = self.owner.upgrade()
         {
