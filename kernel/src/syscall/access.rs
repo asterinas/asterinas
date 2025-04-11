@@ -30,8 +30,23 @@ pub fn sys_access(path_ptr: Vaddr, mode: u16, ctx: &Context) -> Result<SyscallRe
     do_faccessat(AT_FDCWD, path_ptr, mode, 0, ctx)
 }
 
+pub fn sys_faccessat2(
+    dirfd: FileDesc,
+    path_ptr: Vaddr,
+    mode: u16,
+    flags: u32,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
+    debug!(
+        "faccessat2: dirfd = {}, path_ptr = {:#x}, mode = {:o}, flags = {}",
+        dirfd, path_ptr, mode, flags
+    );
+
+    do_faccessat(dirfd, path_ptr, mode, flags, ctx)
+}
+
 bitflags! {
-    struct FaccessatFlags: i32 {
+    struct FaccessatFlags: u32 {
         const AT_EACCESS = 0x200;
         const AT_SYMLINK_NOFOLLOW = 0x100;
         const AT_EMPTY_PATH = 0x1000;
@@ -52,7 +67,7 @@ pub fn do_faccessat(
     dirfd: FileDesc,
     path_ptr: Vaddr,
     mode: u16,
-    flags: i32,
+    flags: u32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let mode = AccessMode::from_bits(mode)
@@ -65,6 +80,10 @@ pub fn do_faccessat(
         "dirfd = {}, path = {:?}, mode = {:o}, flags = {:?}",
         dirfd, path, mode, flags
     );
+
+    if path.is_empty() && !flags.contains(FaccessatFlags::AT_EMPTY_PATH) {
+        return_errno_with_message!(Errno::ENOENT, "path is empty");
+    }
 
     let dentry = {
         let path = path.to_string_lossy();
