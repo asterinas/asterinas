@@ -3,6 +3,8 @@
 //! This module provides a trait and some auxiliary types to help abstract and
 //! work with non-null pointers.
 
+mod either;
+
 use alloc::sync::Weak;
 use core::{marker::PhantomData, mem::ManuallyDrop, ops::Deref, ptr::NonNull};
 
@@ -27,14 +29,21 @@ pub unsafe trait NonNullPtr: Send + 'static {
     type Target;
 
     /// A type that behaves just like a shared reference to the `NonNullPtr`.
-    type Ref<'a>: Deref<Target = Self>
+    type Ref<'a>
     where
         Self: 'a;
+
+    /// The power of two of the pointer alignment.
+    const ALIGN_BITS: u32;
 
     /// Converts to a raw pointer.
     ///
     /// Each call to `into_raw` must be paired with a call to `from_raw`
     /// in order to avoid memory leakage.
+    ///
+    /// The lower [`Self::ALIGN_BITS`] of the raw pointer is guaranteed to
+    /// be zero. In other words, the pointer is guaranteed to be aligned to
+    /// `1 << Self::ALIGN_BITS`.
     fn into_raw(self) -> NonNull<Self::Target>;
 
     /// Converts back from a raw pointer.
@@ -101,6 +110,8 @@ unsafe impl<T: Send + 'static> NonNullPtr for Box<T> {
     where
         Self: 'a;
 
+    const ALIGN_BITS: u32 = core::mem::align_of::<T>().trailing_zeros();
+
     fn into_raw(self) -> NonNull<Self::Target> {
         let ptr = Box::into_raw(self);
 
@@ -161,6 +172,8 @@ unsafe impl<T: Send + Sync + 'static> NonNullPtr for Arc<T> {
     where
         Self: 'a;
 
+    const ALIGN_BITS: u32 = core::mem::align_of::<T>().trailing_zeros();
+
     fn into_raw(self) -> NonNull<Self::Target> {
         let ptr = Arc::into_raw(self).cast_mut();
 
@@ -212,6 +225,10 @@ unsafe impl<T: Send + Sync + 'static> NonNullPtr for Weak<T> {
         = WeakRef<'a, T>
     where
         Self: 'a;
+
+    // The alignment of `Weak<T>` is 1 instead of `align_of::<T>()`.
+    // This is because `Weak::new()` uses a dangling pointer that is _not_ aligned.
+    const ALIGN_BITS: u32 = 0;
 
     fn into_raw(self) -> NonNull<Self::Target> {
         let ptr = Weak::into_raw(self).cast_mut();
