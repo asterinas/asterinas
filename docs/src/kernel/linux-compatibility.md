@@ -341,6 +341,7 @@ provided by Linux on x86-64 architecture.
 | 327	  | preadv2          | ✅              |
 | 328	  | pwritev2         | ✅              |
 | 435	  | clone3           | ✅              |
+| 439     | faccessat2       | ✅              |
 
 ## File Systems
 
