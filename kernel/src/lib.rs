@@ -28,6 +28,7 @@
 #![feature(step_trait)]
 #![feature(trait_alias)]
 #![feature(trait_upcasting)]
+#![feature(associated_type_defaults)]
 #![register_tool(component_access_control)]
 
 use kcmdline::KCmdlineArg;
