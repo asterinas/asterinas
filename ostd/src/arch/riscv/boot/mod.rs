@@ -42,10 +42,12 @@ fn parse_initramfs() -> Option<&'static [u8]> {
 }
 
 fn parse_acpi_arg() -> BootloaderAcpiArg {
+    // TDDO: Add ACPI support for RISC-V, maybe.
     BootloaderAcpiArg::NotProvided
 }
 
 fn parse_framebuffer_info() -> Option<BootloaderFramebufferArg> {
+    // TODO: Parse framebuffer info from device tree.
     None
 }
 
@@ -54,11 +56,13 @@ fn parse_memory_regions() -> MemoryRegionArray {
 
     for region in DEVICE_TREE.get().unwrap().memory().regions() {
         if region.size.unwrap_or(0) > 0 {
-            regions.push(MemoryRegion::new(
-                region.starting_address as usize,
-                region.size.unwrap(),
-                MemoryRegionType::Usable,
-            ));
+            regions
+                .push(MemoryRegion::new(
+                    region.starting_address as usize,
+                    region.size.unwrap(),
+                    MemoryRegionType::Usable,
+                ))
+                .unwrap();
         }
     }
 
@@ -66,26 +70,30 @@ fn parse_memory_regions() -> MemoryRegionArray {
         for child in node.children() {
             if let Some(reg_iter) = child.reg() {
                 for region in reg_iter {
-                    regions.push(MemoryRegion::new(
-                        region.starting_address as usize,
-                        region.size.unwrap(),
-                        MemoryRegionType::Reserved,
-                    ));
+                    regions
+                        .push(MemoryRegion::new(
+                            region.starting_address as usize,
+                            region.size.unwrap(),
+                            MemoryRegionType::Reserved,
+                        ))
+                        .unwrap();
                 }
             }
         }
     }
 
     // Add the kernel region.
-    regions.push(MemoryRegion::kernel());
+    regions.push(MemoryRegion::kernel()).unwrap();
 
     // Add the initramfs region.
     if let Some((start, end)) = parse_initramfs_range() {
-        regions.push(MemoryRegion::new(
-            start,
-            end - start,
-            MemoryRegionType::Module,
-        ));
+        regions
+            .push(MemoryRegion::new(
+                start,
+                end - start,
+                MemoryRegionType::Module,
+            ))
+            .unwrap();
     }
 
     regions.into_non_overlapping()

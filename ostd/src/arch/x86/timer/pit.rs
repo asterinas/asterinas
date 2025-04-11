@@ -11,9 +11,9 @@
 
 use crate::{
     arch::{
+        device::io_port::{IoPort, WriteOnlyAccess},
         kernel::IO_APIC,
         timer::TIMER_FREQ,
-        x86::device::io_port::{IoPort, WriteOnlyAccess},
     },
     trap::IrqLine,
 };

@@ -2,34 +2,34 @@
 
 //! PCI bus access
 
-use super::device::io_port::{IoPort, ReadWriteAccess, WriteOnlyAccess};
-use crate::{bus::pci::PciDeviceLocation, prelude::*};
+use crate::{arch::kernel::acpi::get_acpi_tables, prelude::*};
 
-static PCI_ADDRESS_PORT: IoPort<u32, WriteOnlyAccess> = unsafe { IoPort::new(0x0CF8) };
-static PCI_DATA_PORT: IoPort<u32, ReadWriteAccess> = unsafe { IoPort::new(0x0CFC) };
-
-const BIT32_ALIGN_MASK: u32 = 0xFFFC;
-
-pub(crate) fn write32(location: &PciDeviceLocation, offset: u32, value: u32) -> Result<()> {
-    PCI_ADDRESS_PORT.write(encode_as_port(location) | (offset & BIT32_ALIGN_MASK));
-    PCI_DATA_PORT.write(value.to_le());
-    Ok(())
-}
-
-pub(crate) fn read32(location: &PciDeviceLocation, offset: u32) -> Result<u32> {
-    PCI_ADDRESS_PORT.write(encode_as_port(location) | (offset & BIT32_ALIGN_MASK));
-    Ok(PCI_DATA_PORT.read().to_le())
+/// Collects all PCI segment group base addresses from the ACPI MCFG table.
+///
+/// Older variations of PCI were limited to a maximum of 256 PCI bus segments.
+/// PCI Express extends this by introducing "PCI Segment Groups", where a system
+/// could (in theory) have up to 65536 PCI Segment Groups with 256 PCI bus
+/// segments per group. Each PCI segment group can have its own memory-mapped
+/// configuration space.
+pub(crate) fn collect_segment_group_base_addrs() -> Vec<usize> {
+    get_acpi_tables()
+        .map(|tables| {
+            tables
+                .find_table::<acpi::mcfg::Mcfg>()
+                .map(|mcfg| {
+                    mcfg.get()
+                        .entries()
+                        .iter()
+                        .map(|entry| entry.base_address as usize)
+                        .collect()
+                })
+                .unwrap_or_default()
+        })
+        .unwrap_or_default()
 }
 
 pub(crate) fn has_pci_bus() -> bool {
     true
 }
 
-/// Encodes the bus, device, and function into a port address for use with the PCI I/O port.
-fn encode_as_port(location: &PciDeviceLocation) -> u32 {
-    // 1 << 31: Configuration enable
-    (1 << 31)
-        | ((location.bus as u32) << 16)
-        | (((location.device as u32) & 0b11111) << 11)
-        | (((location.function as u32) & 0b111) << 8)
-}
+pub(crate) const MSIX_DEFAULT_MSG_ADDR: u32 = 0xFEE0_0000;

@@ -8,7 +8,6 @@ use cfg_if::cfg_if;
 use super::{check_and_insert_dma_mapping, remove_dma_mapping, DmaError, HasDaddr};
 use crate::{
     arch::iommu,
-    if_tdx_enabled,
     mm::{
         dma::{dma_type, Daddr, DmaType},
         io::VmIoOnce,
@@ -75,8 +74,8 @@ impl DmaCoherent {
         }
         let start_daddr = match dma_type() {
             DmaType::Direct => {
-                if_tdx_enabled!({
-                    #[cfg(target_arch = "x86_64")]
+                #[cfg(target_arch = "x86_64")]
+                crate::arch::if_tdx_enabled!({
                     // SAFETY:
                     // This is safe because we are ensuring that the physical address range specified by `start_paddr` and `frame_count` is valid before these operations.
                     // The `check_and_insert_dma_mapping` function checks if the physical address range is already mapped.
@@ -135,8 +134,8 @@ impl Drop for DmaCoherentInner {
         start_paddr.checked_add(frame_count * PAGE_SIZE).unwrap();
         match dma_type() {
             DmaType::Direct => {
-                if_tdx_enabled!({
-                    #[cfg(target_arch = "x86_64")]
+                #[cfg(target_arch = "x86_64")]
+                crate::arch::if_tdx_enabled!({
                     // SAFETY:
                     // This is safe because we are ensuring that the physical address range specified by `start_paddr` and `frame_count` is valid before these operations.
                     // The `start_paddr()` ensures the `start_paddr` is page-aligned.

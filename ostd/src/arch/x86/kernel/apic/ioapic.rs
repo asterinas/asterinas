@@ -15,8 +15,7 @@ use volatile::{
 };
 
 use crate::{
-    arch::{iommu::has_interrupt_remapping, x86::kernel::acpi::get_platform_info},
-    if_tdx_enabled,
+    arch::{if_tdx_enabled, iommu::has_interrupt_remapping, kernel::acpi::get_platform_info},
     io::IoMemAllocatorBuilder,
     mm::paddr_to_vaddr,
     sync::SpinLock,

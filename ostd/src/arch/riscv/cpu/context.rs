@@ -6,9 +6,9 @@ use core::fmt::Debug;
 
 use riscv::register::scause::{Exception, Trap};
 
-pub use crate::arch::riscv::trap::GeneralRegs as RawGeneralRegs;
+pub use crate::arch::trap::GeneralRegs as RawGeneralRegs;
 use crate::{
-    arch::riscv::trap::{TrapFrame, UserContext as RawUserContext},
+    arch::trap::{TrapFrame, UserContext as RawUserContext},
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
 
@@ -18,7 +18,7 @@ use crate::{
 pub struct UserContext {
     user_context: RawUserContext,
     trap: Trap,
-    fpu_state: (), // TODO
+    fpu_state: FpuState,
     cpu_exception_info: CpuExceptionInfo,
 }
 
@@ -38,7 +38,7 @@ impl Default for UserContext {
         UserContext {
             user_context: RawUserContext::default(),
             trap: Trap::Exception(Exception::Unknown),
-            fpu_state: (),
+            fpu_state: FpuState,
             cpu_exception_info: CpuExceptionInfo::default(),
         }
     }
@@ -78,12 +78,12 @@ impl UserContext {
     }
 
     /// Returns a reference to the FPU state.
-    pub fn fpu_state(&self) -> &() {
+    pub fn fpu_state(&self) -> &FpuState {
         &self.fpu_state
     }
 
     /// Returns a mutable reference to the FPU state.
-    pub fn fpu_state_mut(&mut self) -> &mut () {
+    pub fn fpu_state_mut(&mut self) -> &mut FpuState {
         &mut self.fpu_state
     }
 
@@ -228,3 +228,28 @@ cpu_context_impl_getter_setter!(
 
 /// CPU exception.
 pub type CpuException = Exception;
+
+/// The FPU state of user task.
+///
+/// This could be used for saving both legacy and modern state format.
+// FIXME: Implement FPU state on RISC-V platforms.
+#[derive(Clone, Copy, Debug)]
+pub struct FpuState;
+
+impl FpuState {
+    /// Saves CPU's current FPU state into this instance.
+    pub fn save(&self) {
+        todo!()
+    }
+
+    /// Restores CPU's FPU state from this instance.
+    pub fn restore(&self) {
+        todo!()
+    }
+}
+
+impl Default for FpuState {
+    fn default() -> Self {
+        FpuState
+    }
+}

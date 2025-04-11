@@ -2,7 +2,7 @@
 
 use core::sync::atomic::{AtomicU8, Ordering::Relaxed};
 
-use ostd::arch::x86::device::cmos::{century_register, CMOS_ADDRESS, CMOS_DATA};
+use ostd::arch::device::cmos::{century_register, CMOS_ADDRESS, CMOS_DATA};
 
 use crate::SystemTime;
 use super::Driver;

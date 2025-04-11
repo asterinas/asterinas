@@ -64,7 +64,7 @@ pub(crate) fn init() {
 
 pub(crate) fn callback_init() {
     let irq = if !IO_APIC.is_completed() {
-        let mut irq = crate::arch::x86::kernel::pic::allocate_irq(4).unwrap();
+        let mut irq = crate::arch::kernel::pic::allocate_irq(4).unwrap();
         irq.on_active(|trapframe: &TrapFrame| {
             handle_serial_input(trapframe);
             kernel::pic::ack();

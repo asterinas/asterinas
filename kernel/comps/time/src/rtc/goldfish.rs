@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::{arch::riscv::timer::GOLDFISH_IO_MEM, mm::VmIoOnce};
+use ostd::{arch::timer::GOLDFISH_IO_MEM, mm::VmIoOnce};
 use chrono::{DateTime, Datelike, Timelike};
 
 use crate::{SystemTime, rtc::Driver};

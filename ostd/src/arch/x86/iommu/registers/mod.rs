@@ -37,7 +37,7 @@ use crate::{
                 QUEUE,
             },
         },
-        x86::kernel::acpi::dmar::{Dmar, Remapping},
+        kernel::acpi::dmar::{Dmar, Remapping},
     },
     io::IoMemAllocatorBuilder,
     mm::{paddr_to_vaddr, PAGE_SIZE},

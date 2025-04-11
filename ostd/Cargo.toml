@@ -38,6 +38,7 @@ smallvec = "1.13.2"
 unwinding = { version = "0.2.5", default-features = false, features = ["fde-gnu-eh-frame-hdr", "hide-trace", "panic", "personality", "unwinder"] }
 volatile = "0.6.1"
 xarray = { git = "https://github.com/asterinas/xarray", version = "0.1.0" }
+paste = "1.0.15"
 
 [target.x86_64-unknown-none.dependencies]
 x86_64 = "0.14.13"

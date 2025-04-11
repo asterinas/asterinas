@@ -7,11 +7,7 @@
 use alloc::vec::Vec;
 
 use self::{msix::CapabilityMsixData, vendor::CapabilityVndrData};
-use super::{
-    cfg_space::{PciDeviceCommonCfgOffset, Status},
-    common_device::PciCommonDevice,
-    PciDeviceLocation,
-};
+use super::{cfg_space::Status, common_device::PciCommonDevice, PciDeviceLocation};
 
 pub mod msix;
 pub mod vendor;
@@ -21,16 +17,16 @@ pub mod vendor;
 pub struct Capability {
     id: u8,
     /// Pointer to the capability.
-    pos: u16,
+    pos: usize,
     /// Next Capability pointer, 0xFC if self is the last one.
-    next_ptr: u16,
+    next_ptr: usize,
     /// The length of this Capability
-    len: u16,
+    len: usize,
     cap_data: CapabilityData,
 }
 
 /// PCI Capability data.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum CapabilityData {
     /// Id:0x01, Power Management
     Pm,
@@ -78,7 +74,7 @@ pub enum CapabilityData {
 
 impl Capability {
     /// 0xFC, the top of the capability position.
-    const CAPABILITY_TOP: u16 = 0xFC;
+    const CAPABILITY_TOP: usize = 0xFC;
 
     /// Gets the capability data
     pub fn capability_data(&self) -> &CapabilityData {
@@ -86,22 +82,21 @@ impl Capability {
     }
 
     /// Gets the capabilities of one device
-    pub(super) fn device_capabilities(dev: &mut PciCommonDevice) -> Vec<Self> {
+    pub(super) fn device_capabilities(dev: &PciCommonDevice) -> Vec<Self> {
         if !dev.status().contains(Status::CAPABILITIES_LIST) {
             return Vec::new();
         }
         let mut capabilities = Vec::new();
-        let mut cap_ptr =
-            dev.location()
-                .read8(PciDeviceCommonCfgOffset::CapabilitiesPointer as u16) as u16
-                & PciDeviceLocation::BIT32_ALIGN_MASK;
+        let mut cap_ptr = dev.location().read_capabilities_ptr().unwrap() as usize
+            & PciDeviceLocation::BIT32_ALIGN_MASK;
         let mut cap_ptr_vec = Vec::new();
         // read all cap_ptr so that it is easy for us to get the length.
         while cap_ptr > 0 {
             cap_ptr_vec.push(cap_ptr);
-            cap_ptr =
-                dev.location().read8(cap_ptr + 1) as u16 & PciDeviceLocation::BIT32_ALIGN_MASK;
+            cap_ptr = dev.location().read8(cap_ptr + 1).unwrap() as usize
+                & PciDeviceLocation::BIT32_ALIGN_MASK;
         }
+        // TODO: detect possible capability above the offset of 0x100 (PCIe only).
         cap_ptr_vec.sort();
         // Push here so that we can calculate the length of the last capability.
         cap_ptr_vec.push(Self::CAPABILITY_TOP);
@@ -109,7 +104,7 @@ impl Capability {
         for i in 0..length - 1 {
             let cap_ptr = cap_ptr_vec[i];
             let next_ptr = cap_ptr_vec[i + 1];
-            let cap_type = dev.location().read8(cap_ptr);
+            let cap_type = dev.location().read8(cap_ptr).unwrap();
             let data = match cap_type {
                 0x01 => CapabilityData::Pm,
                 0x02 => CapabilityData::Agp,

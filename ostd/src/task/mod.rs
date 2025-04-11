@@ -136,7 +136,6 @@ impl Task {
         let Some(user_ctx) = self.user_ctx.as_ref() else {
             return;
         };
-
         user_ctx.fpu_state().save();
     }
 
@@ -145,7 +144,6 @@ impl Task {
         let Some(user_ctx) = self.user_ctx.as_ref() else {
             return;
         };
-
         user_ctx.fpu_state().restore();
     }
 }

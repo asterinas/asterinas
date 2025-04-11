@@ -13,7 +13,7 @@ use acpi::fadt::Fadt;
 use x86_64::instructions::port::{ReadOnlyAccess, WriteOnlyAccess};
 
 use super::io_port::IoPort;
-use crate::arch::x86::kernel::acpi::get_acpi_tables;
+use crate::arch::kernel::acpi::get_acpi_tables;
 
 /// CMOS address I/O port
 pub static CMOS_ADDRESS: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x70) };

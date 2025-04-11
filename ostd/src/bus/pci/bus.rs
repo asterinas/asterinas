@@ -9,13 +9,13 @@ use core::fmt::Debug;
 
 use log::{debug, error};
 
-use super::{device_info::PciDeviceId, PciCommonDevice};
+use super::{device_info::PciDeviceInfo, PciCommonDevice};
 use crate::bus::BusProbeError;
 
 /// PciDevice trait.
 pub trait PciDevice: Sync + Send + Debug {
     /// Gets device id.
-    fn device_id(&self) -> PciDeviceId;
+    fn device_info(&self) -> PciDeviceInfo;
 }
 
 /// PCI device driver, PCI bus will pass the device through the `probe` function when a new device is registered.
@@ -52,10 +52,10 @@ impl PciBus {
         let length = self.common_devices.len();
         for i in (0..length).rev() {
             let common_device = self.common_devices.pop_front().unwrap();
-            let device_id = *common_device.device_id();
+            let device_id = *common_device.device_info();
             let device = match driver.probe(common_device) {
                 Ok(device) => {
-                    debug_assert!(device_id == device.device_id());
+                    debug_assert!(device_id == device.device_info());
                     self.devices.push(device);
                     continue;
                 }
@@ -63,7 +63,7 @@ impl PciBus {
                     if err != BusProbeError::DeviceNotMatch {
                         error!("PCI device construction failed, reason: {:?}", err);
                     }
-                    debug_assert!(device_id == *common_device.device_id());
+                    debug_assert!(device_id == *common_device.device_info());
                     common_device
                 }
             };
@@ -74,11 +74,11 @@ impl PciBus {
 
     pub(super) fn register_common_device(&mut self, mut common_device: PciCommonDevice) {
         debug!("Find pci common devices:{:x?}", common_device);
-        let device_id = *common_device.device_id();
+        let device_id = *common_device.device_info();
         for driver in self.drivers.iter() {
             common_device = match driver.probe(common_device) {
                 Ok(device) => {
-                    debug_assert!(device_id == device.device_id());
+                    debug_assert!(device_id == device.device_info());
                     self.devices.push(device);
                     return;
                 }
@@ -86,7 +86,7 @@ impl PciBus {
                     if err != BusProbeError::DeviceNotMatch {
                         error!("PCI device construction failed, reason: {:?}", err);
                     }
-                    debug_assert!(device_id == *common_device.device_id());
+                    debug_assert!(device_id == *common_device.device_info());
                     common_device
                 }
             };

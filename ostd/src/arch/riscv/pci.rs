@@ -2,66 +2,36 @@
 
 //! PCI bus access
 
-use spin::Once;
-
 use super::boot::DEVICE_TREE;
-use crate::{bus::pci::PciDeviceLocation, io::IoMem, mm::VmIoOnce, prelude::*, Error};
+use crate::prelude::*;
 
-static PCI_BASE_ADDR: Once<IoMem> = Once::new();
-
-pub(crate) fn write32(location: &PciDeviceLocation, offset: u32, value: u32) -> Result<()> {
-    PCI_BASE_ADDR.get().ok_or(Error::IoError)?.write_once(
-        (encode_as_address_offset(location) | (offset & 0xfc)) as usize,
-        &value,
-    )
-}
-
-pub(crate) fn read32(location: &PciDeviceLocation, offset: u32) -> Result<u32> {
-    PCI_BASE_ADDR
+/// Collects all PCI segment group base addresses from the device tree.
+///
+/// Older variations of PCI were limited to a maximum of 256 PCI bus segments.
+/// PCI Express extends this by introducing "PCI Segment Groups", where a system
+/// could (in theory) have up to 65536 PCI Segment Groups with 256 PCI bus
+/// segments per group. Each PCI segment group can have its own memory-mapped
+/// configuration space.
+pub(crate) fn collect_segment_group_base_addrs() -> Vec<usize> {
+    DEVICE_TREE
         .get()
-        .ok_or(Error::IoError)?
-        .read_once((encode_as_address_offset(location) | (offset & 0xfc)) as usize)
+        .map(|dt| {
+            dt.all_nodes()
+                .filter(|node| {
+                    node.compatible()
+                        .is_some_and(|c| c.all().any(|s| s == "pci-host-ecam-generic"))
+                })
+                .filter_map(|node| node.reg())
+                .filter_map(|mut reg| reg.next())
+                .map(|r| r.starting_address as usize)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 pub(crate) fn has_pci_bus() -> bool {
-    PCI_BASE_ADDR.is_completed()
+    true
 }
 
-pub(crate) fn init() -> Result<()> {
-    let pci = DEVICE_TREE
-        .get()
-        .unwrap()
-        .find_node("/soc/pci")
-        .ok_or(Error::IoError)?;
-
-    let mut reg = pci.reg().ok_or(Error::IoError)?;
-
-    let Ok(region) = reg.next() else {
-        warn!("PCI node should have exactly one `reg` property, but found zero `reg`s");
-        return Err(Error::IoError);
-    };
-    if reg.next().is_some() {
-        warn!(
-            "PCI node should have exactly one `reg` property, but found {} `reg`s",
-            reg.count() + 2
-        );
-        return Err(Error::IoError);
-    }
-
-    PCI_BASE_ADDR.call_once(|| {
-        IoMem::acquire(
-            (region.starting_address as usize)
-                ..(region.starting_address as usize + region.size.unwrap()),
-        )
-        .unwrap()
-    });
-
-    Ok(())
-}
-
-/// Encodes the bus, device, and function into an address offset in the PCI MMIO region.
-fn encode_as_address_offset(location: &PciDeviceLocation) -> u32 {
-    ((location.bus as u32) << 16)
-        | ((location.device as u32) << 11)
-        | ((location.function as u32) << 8)
-}
+// FIXME: This is a QEMU specific address.
+pub(crate) const MSIX_DEFAULT_MSG_ADDR: u32 = 0x2400_0000;

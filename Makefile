@@ -85,6 +85,14 @@ BOOT_PROTOCOL = linux-efi-handover64
 CARGO_OSDK_ARGS += --scheme tdx
 endif
 
+ifeq ($(BOOT_PROTOCOL), linux-legacy32)
+BOOT_METHOD = qemu-direct
+OVMF = off
+else ifeq ($(BOOT_PROTOCOL), multiboot)
+BOOT_METHOD = qemu-direct
+OVMF = off
+endif
+
 ifneq ($(SCHEME), "")
 CARGO_OSDK_ARGS += --scheme $(SCHEME)
 else
@@ -281,6 +289,7 @@ format:
 	@$(MAKE) --no-print-directory -C test format
 
 .PHONY: check
+# FIXME: Make `make check` arch-aware.
 check: initramfs $(CARGO_OSDK)
 	@./tools/format_all.sh --check   	# Check Rust format issues
 	@# Check if STD_CRATES and NOSTD_CRATES combined is the same as all workspace members

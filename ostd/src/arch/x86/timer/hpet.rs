@@ -11,7 +11,7 @@ use volatile::{
 };
 
 use crate::{
-    arch::x86::kernel::{acpi::get_acpi_tables, apic::ioapic},
+    arch::kernel::{acpi::get_acpi_tables, apic::ioapic},
     mm::paddr_to_vaddr,
     trap::IrqLine,
 };
