@@ -6,6 +6,7 @@ use crate::{
         exfat::{ExfatFS, ExfatMountOptions},
         ext2::Ext2,
         fs_resolver::{FsPath, AT_FDCWD},
+        overlayfs::OverlayFS,
         path::Dentry,
         utils::{FileSystem, InodeType},
     },
@@ -63,7 +64,7 @@ pub fn sys_mount(
     } else if mount_flags.contains(MountFlags::MS_MOVE) {
         do_move_mount_old(devname, dst_dentry, ctx)?;
     } else {
-        do_new_mount(devname, fstype_addr, dst_dentry, ctx)?;
+        do_new_mount(devname, fstype_addr, dst_dentry, data, ctx)?;
     }
 
     Ok(SyscallReturn::Return(0))
@@ -136,6 +137,7 @@ fn do_new_mount(
     devname: CString,
     fs_type: Vaddr,
     target_dentry: Dentry,
+    data: Vaddr,
     ctx: &Context,
 ) -> Result<()> {
     if target_dentry.type_() != InodeType::Dir {
@@ -146,30 +148,91 @@ fn do_new_mount(
     if fs_type.is_empty() {
         return_errno_with_message!(Errno::EINVAL, "fs_type is empty");
     }
-    let fs = get_fs(fs_type, devname)?;
+    let fs = get_fs(fs_type, devname, data, ctx)?;
     target_dentry.mount(fs)?;
     Ok(())
 }
 
 /// Get the filesystem by fs_type and devname.
-fn get_fs(fs_type: CString, devname: CString) -> Result<Arc<dyn FileSystem>> {
-    let devname = devname.to_str().unwrap();
-    let device = match aster_block::get_device(devname) {
-        Some(device) => device,
-        None => return_errno_with_message!(Errno::ENOENT, "Device does not exist"),
-    };
+fn get_fs(
+    fs_type: CString,
+    devname: CString,
+    data: Vaddr,
+    ctx: &Context,
+) -> Result<Arc<dyn FileSystem>> {
+    let user_space = ctx.user_space();
+    let data = user_space.read_cstring(data, MAX_FILENAME_LEN)?;
+    let data = data.to_string_lossy();
+
     let fs_type = fs_type.to_str().unwrap();
     match fs_type {
         "ext2" => {
+            let device = aster_block::get_device(devname.to_str().unwrap()).ok_or(
+                Error::with_message(Errno::ENOENT, "device for ext2 does not exist"),
+            )?;
             let ext2_fs = Ext2::open(device)?;
             Ok(ext2_fs)
         }
         "exfat" => {
+            let device = aster_block::get_device(devname.to_str().unwrap()).ok_or(
+                Error::with_message(Errno::ENOENT, "device for exfat does not exist"),
+            )?;
             let exfat_fs = ExfatFS::open(device, ExfatMountOptions::default())?;
             Ok(exfat_fs)
         }
+        "overlay" => {
+            let overlay_fs = create_overlayfs(data.as_ref(), ctx)?;
+            Ok(overlay_fs)
+        }
         _ => return_errno_with_message!(Errno::EINVAL, "Invalid fs type"),
     }
+}
+
+// TODO: Support read-only mount (no upper) and customized features
+fn create_overlayfs(data: &str, ctx: &Context) -> Result<Arc<OverlayFS>> {
+    let mut lower = Vec::new();
+    let mut upper = "";
+    let mut work = "";
+
+    for entry in data.split(',') {
+        let mut parts = entry.split('=');
+        match (parts.next(), parts.next()) {
+            // Handle lowerdir, split by ':'
+            (Some("upperdir"), Some(path)) => {
+                if path.is_empty() {
+                    return_errno_with_message!(Errno::ENOENT, "upperdir is empty");
+                }
+                upper = path;
+            }
+            (Some("lowerdir"), Some(paths)) => {
+                for path in paths.split(':') {
+                    if path.is_empty() {
+                        return_errno_with_message!(Errno::ENOENT, "lowerdir is empty");
+                    }
+                    lower.push(path);
+                }
+            }
+            (Some("workdir"), Some(path)) => {
+                if path.is_empty() {
+                    return_errno_with_message!(Errno::ENOENT, "workdir is empty");
+                }
+                work = path;
+            }
+            _ => (),
+        }
+    }
+
+    let fs = ctx.posix_thread.fs().resolver().read();
+
+    let upper = fs.lookup(&FsPath::new(AT_FDCWD, upper)?)?;
+    let lower = lower
+        .iter()
+        .map(|lower| fs.lookup(&FsPath::new(AT_FDCWD, lower).unwrap()).unwrap())
+        .collect();
+    let work = fs.lookup(&FsPath::new(AT_FDCWD, work)?)?;
+
+    let overlayfs = OverlayFS::new(upper, lower, work)?;
+    Ok(overlayfs)
 }
 
 bitflags! {
