@@ -13,7 +13,7 @@ mod wait;
 
 pub(crate) use self::{guard::GuardTransfer, rcu::finish_grace_period};
 pub use self::{
-    guard::{LocalIrqDisabled, PreemptDisabled, WriteIrqDisabled},
+    guard::{LocalIrqDisabled, PreemptDisabled, SpinGuardian, WriteIrqDisabled},
     mutex::{ArcMutexGuard, Mutex, MutexGuard},
     rcu::{non_null, Rcu, RcuOption, RcuOptionReadGuard, RcuReadGuard},
     rwarc::{RoArc, RwArc},
