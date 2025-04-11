@@ -2,7 +2,7 @@
 
 use crate::syscall::{
     accept::{sys_accept, sys_accept4},
-    access::{sys_access, sys_faccessat},
+    access::{sys_access, sys_faccessat, sys_faccessat2},
     alarm::sys_alarm,
     arch_prctl::sys_arch_prctl,
     bind::sys_bind,
@@ -362,4 +362,5 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_PWRITEV2 = 328         => sys_pwritev2(args[..5]);
     SYS_STATX = 332            => sys_statx(args[..5]);
     SYS_CLONE3 = 435           => sys_clone3(args[..2], &user_ctx);
+    SYS_FACCESSAT2 = 439       => sys_faccessat2(args[..4]);
 }
