@@ -145,6 +145,7 @@ use crate::syscall::{
     umount::sys_umount,
     uname::sys_uname,
     unlink::{sys_unlink, sys_unlinkat},
+    unshare::sys_unshare,
     utimens::{sys_futimesat, sys_utime, sys_utimensat, sys_utimes},
     wait4::sys_wait4,
     waitid::sys_waitid,
@@ -335,6 +336,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_FCHMODAT = 268         => sys_fchmodat(args[..3]);
     SYS_FACCESSAT = 269        => sys_faccessat(args[..3]);
     SYS_PSELECT6 = 270         => sys_pselect6(args[..6]);
+    SYS_UNSHARE = 272          => sys_unshare(args[..1]);
     SYS_SET_ROBUST_LIST = 273  => sys_set_robust_list(args[..2]);
     SYS_UTIMENSAT = 280        => sys_utimensat(args[..4]);
     SYS_EPOLL_PWAIT = 281      => sys_epoll_pwait(args[..6]);

@@ -4,6 +4,7 @@ use super::SyscallReturn;
 use crate::{
     fs::fs_resolver::{FsPath, AT_FDCWD},
     prelude::*,
+    process::posix_thread::AsPosixThread,
     syscall::constants::MAX_FILENAME_LEN,
 };
 
@@ -30,7 +31,11 @@ pub fn sys_umount(path_addr: Vaddr, flags: u64, ctx: &Context) -> Result<Syscall
         ctx.posix_thread.fs().resolver().read().lookup(&fs_path)?
     };
 
-    target_dentry.unmount()?;
+    let current_thread = current_thread!();
+    let posix_thread = current_thread.as_posix_thread().unwrap();
+    let namespaces = posix_thread.namespaces().lock();
+    let mnt_ns = namespaces.mnt_ns().inner();
+    mnt_ns.umount(&target_dentry)?;
 
     Ok(SyscallReturn::Return(0))
 }
