@@ -9,7 +9,7 @@ use crate::{
         page_table::PageTableEntryTrait,
         Paddr, PagingConstsTrait, PagingLevel, Vaddr, PAGE_SIZE,
     },
-    util::SameSizeAs,
+    util::marker::SameSizeAs,
     Pod,
 };
 
