@@ -342,6 +342,7 @@ provided by Linux on x86-64 architecture.
 | 328	  | pwritev2         | ✅              |
 | 332     | statx            | ✅              |
 | 435	  | clone3           | ✅              |
+| 439     | faccessat2       | ✅              |
 
 ## File Systems
 
