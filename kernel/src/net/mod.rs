@@ -5,6 +5,7 @@ pub mod socket;
 
 pub fn init() {
     iface::init();
+    socket::netlink::init();
     socket::vsock::init();
 }
 

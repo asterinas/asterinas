@@ -7,5 +7,6 @@ pub use family::{
 
 mod family;
 mod ip;
+mod netlink;
 mod unix;
 mod vsock;
