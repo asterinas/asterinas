@@ -74,10 +74,16 @@ pub fn create_new_user_task(
         };
 
         while !current_thread.is_exited() {
+            #[cfg(feature = "breakdown_counters")]
+            crate::fs::procfs::breakdown_counters::user_start();
+
             // Execute the user code
             ctx.thread_local.fpu().activate();
             let return_reason = user_mode.execute(has_kernel_event_fn);
             ctx.thread_local.fpu().deactivate();
+
+            #[cfg(feature = "breakdown_counters")]
+            crate::fs::procfs::breakdown_counters::user_end();
 
             // Handle user events
             let user_ctx = user_mode.context_mut();

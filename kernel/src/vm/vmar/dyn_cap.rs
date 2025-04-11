@@ -118,8 +118,16 @@ impl Vmar<Rights> {
 
 impl PageFaultHandler for Vmar<Rights> {
     fn handle_page_fault(&self, page_fault_info: &PageFaultInfo) -> Result<()> {
+        #[cfg(feature = "breakdown_counters")]
+        crate::fs::procfs::breakdown_counters::page_fault_start();
+
         self.check_rights(page_fault_info.required_perms.into())?;
-        self.0.handle_page_fault(page_fault_info)
+        let res = self.0.handle_page_fault(page_fault_info);
+
+        #[cfg(feature = "breakdown_counters")]
+        crate::fs::procfs::breakdown_counters::page_fault_end();
+
+        res
     }
 }
 

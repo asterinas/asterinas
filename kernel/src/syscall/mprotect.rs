@@ -43,6 +43,13 @@ pub fn sys_mprotect(addr: Vaddr, len: usize, perms: u64, ctx: &Context) -> Resul
         vm_perms
     };
 
-    root_vmar.protect(vm_perms, range)?;
-    Ok(SyscallReturn::Return(0))
+    #[cfg(feature = "breakdown_counters")]
+    crate::fs::procfs::breakdown_counters::mprotect_start();
+
+    let res = root_vmar.protect(vm_perms, range);
+
+    #[cfg(feature = "breakdown_counters")]
+    crate::fs::procfs::breakdown_counters::mprotect_end();
+
+    res.map(|_| SyscallReturn::Return(0))
 }

@@ -23,6 +23,10 @@ pub fn sys_mmap(
 ) -> Result<SyscallReturn> {
     let perms = VmPerms::from_bits_truncate(perms as u32);
     let option = MMapOptions::try_from(flags as u32)?;
+
+    #[cfg(feature = "breakdown_counters")]
+    crate::fs::procfs::breakdown_counters::mmap_start();
+
     let res = do_sys_mmap(
         addr as usize,
         len as usize,
@@ -31,8 +35,12 @@ pub fn sys_mmap(
         fd as _,
         offset as usize,
         ctx,
-    )?;
-    Ok(SyscallReturn::Return(res as _))
+    );
+
+    #[cfg(feature = "breakdown_counters")]
+    crate::fs::procfs::breakdown_counters::mmap_end();
+
+    Ok(SyscallReturn::Return(res? as _))
 }
 
 fn do_sys_mmap(

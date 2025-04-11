@@ -34,7 +34,9 @@ fn pre_schedule_handler() {
 }
 
 fn post_schedule_handler() -> bool {
-    let task = Task::current().unwrap();
+    let Some(task) = Task::current() else {
+        return true;
+    };
     let Some(thread_local) = task.as_thread_local() else {
         return true;
     };
@@ -48,12 +50,23 @@ fn post_schedule_handler() -> bool {
 
     thread_local.fpu().after_schedule();
 
+    #[cfg(feature = "breakdown_counters")]
+    crate::fs::procfs::breakdown_counters::sched_end();
+
     res
 }
 
 pub(super) fn init() {
     ostd::task::inject_pre_schedule_handler(pre_schedule_handler);
     ostd::task::inject_post_schedule_handler(post_schedule_handler);
+    #[cfg(feature = "breakdown_counters")]
+    ostd::task::scheduler::inject_pre_schedule_handler(
+        crate::fs::procfs::breakdown_counters::sched_start,
+    );
+    #[cfg(feature = "breakdown_counters")]
+    ostd::task::scheduler::inject_schedule_do_nothing_handler(
+        crate::fs::procfs::breakdown_counters::sched_end,
+    );
     ostd::arch::trap::inject_user_page_fault_handler(exception::page_fault_handler);
 }
 
@@ -133,6 +146,8 @@ impl Thread {
     /// This method will return once the current thread is scheduled again.
     #[track_caller]
     pub fn yield_now() {
+        #[cfg(feature = "breakdown_counters")]
+        crate::fs::procfs::breakdown_counters::sched_start();
         Task::yield_now()
     }
 

@@ -386,6 +386,20 @@ pub(crate) fn might_preempt() {
     yield_now();
 }
 
+static PRE_SCHEDULE_HANDLER: Once<fn()> = Once::new();
+
+/// Injects a handler to be executed before scheduling.
+pub fn inject_pre_schedule_handler(handler: fn()) {
+    PRE_SCHEDULE_HANDLER.call_once(|| handler);
+}
+
+static SCHEDULE_DO_NOTHING_HANDLER: Once<fn()> = Once::new();
+
+/// Injects a handler to be executed when the scheduler decides to do nothing.
+pub fn inject_schedule_do_nothing_handler(handler: fn()) {
+    SCHEDULE_DO_NOTHING_HANDLER.call_once(|| handler);
+}
+
 /// Blocks the current task unless `has_woken()` returns `true`.
 ///
 /// Note that this method may return due to spurious wake events. It's the caller's responsibility
@@ -524,6 +538,10 @@ where
         return;
     }
 
+    if let Some(pre_sched_handler) = PRE_SCHEDULE_HANDLER.get() {
+        pre_sched_handler();
+    }
+
     let next_task = loop {
         let mut action = ReschedAction::DoNothing;
         SCHEDULER.get().unwrap().mut_local_rq_with(&mut |rq| {
@@ -532,6 +550,9 @@ where
 
         match action {
             ReschedAction::DoNothing => {
+                if let Some(schedule_do_nothing_handler) = SCHEDULE_DO_NOTHING_HANDLER.get() {
+                    schedule_do_nothing_handler();
+                }
                 return;
             }
             ReschedAction::Retry => {
