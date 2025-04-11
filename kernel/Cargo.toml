@@ -16,6 +16,7 @@ aster-logger = { path = "comps/logger" }
 aster-mlsdisk = { path = "comps/mlsdisk" }
 aster-time = { path = "comps/time" }
 aster-virtio = { path = "comps/virtio" }
+aster-nvme = { path = "comps/nvme" }
 aster-rights = { path = "libs/aster-rights" }
 component = { path = "libs/comp-sys/component" }
 controlled = { path = "libs/comp-sys/controlled" }

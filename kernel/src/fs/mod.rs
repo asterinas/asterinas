@@ -19,6 +19,7 @@ pub mod thread_info;
 pub mod utils;
 
 use aster_block::BlockDevice;
+extern crate aster_nvme;
 use aster_virtio::device::block::device::BlockDevice as VirtIoBlockDevice;
 
 use crate::{
