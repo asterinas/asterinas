@@ -12,14 +12,13 @@
 use acpi::fadt::Fadt;
 use x86_64::instructions::port::{ReadOnlyAccess, WriteOnlyAccess};
 
-use super::io_port::IoPort;
-use crate::arch::x86::kernel::acpi::get_acpi_tables;
+use crate::{arch::x86::kernel::acpi::get_acpi_tables, io::IoPort};
 
 /// CMOS address I/O port
-pub static CMOS_ADDRESS: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x70) };
+pub static CMOS_ADDRESS: IoPort<WriteOnlyAccess> = unsafe { IoPort::new::<u8>(0x70) };
 
 /// CMOS data I/O port
-pub static CMOS_DATA: IoPort<u8, ReadOnlyAccess> = unsafe { IoPort::new(0x71) };
+pub static CMOS_DATA: IoPort<ReadOnlyAccess> = unsafe { IoPort::new::<u8>(0x71) };
 
 /// Gets the century register location. This function is used in RTC(Real Time Clock) module initialization.
 pub fn century_register() -> Option<u8> {
