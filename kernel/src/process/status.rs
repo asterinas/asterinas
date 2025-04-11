@@ -8,7 +8,7 @@ use super::ExitCode;
 
 /// The status of a process.
 ///
-/// This maintains:
+/// It contains the external conditions of the process. This maintains:
 /// 1. Whether the process is a zombie (i.e., all its threads have exited);
 /// 2. Whether the process is the vfork child, which shares the user-space virtual memory
 ///    with its parent process;

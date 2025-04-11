@@ -6,6 +6,7 @@ use crate::{
         utils::Inode,
     },
     prelude::*,
+    process::ProcessState,
 };
 
 /// Represents the inode at `/proc/self`.
@@ -19,6 +20,10 @@ impl SelfSymOps {
 
 impl SymOps for SelfSymOps {
     fn read_link(&self) -> Result<String> {
-        Ok(current!().pid().to_string())
+        Ok(
+            ProcessState::with_current_task(|process_state| process_state.pid())
+                .unwrap()
+                .to_string(),
+        )
     }
 }
