@@ -37,6 +37,7 @@ mod template;
 mod thread_self;
 
 pub(super) fn init() {
+    cpuinfo::init();
     let procfs_type = Arc::new(ProcFsType);
     super::registry::register(procfs_type).unwrap();
 }

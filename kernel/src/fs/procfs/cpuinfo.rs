@@ -6,6 +6,7 @@
 //! Reference: <https://man7.org/linux/man-pages/man5/proc_cpuinfo.5.html>
 
 use ostd::cpu::num_cpus;
+use spin::Once;
 
 use crate::{
     arch::cpu::CpuInfo,
@@ -40,10 +41,16 @@ impl CpuInfoFileOps {
     }
 }
 
+static CPUINFO: Once<String> = Once::new();
+
+pub(super) fn init() {
+    CPUINFO.call_once(CpuInfoFileOps::collect_cpu_info);
+}
+
 impl FileOps for CpuInfoFileOps {
     /// Retrieve the data for `/proc/cpuinfo`.
     fn data(&self) -> Result<Vec<u8>> {
-        let output = Self::collect_cpu_info();
+        let output = CPUINFO.get().unwrap().clone();
         Ok(output.into_bytes())
     }
 }
