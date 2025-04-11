@@ -23,7 +23,7 @@ use crate::prelude::*;
 /// raw pointers.
 ///
 /// [`Rcu`]: super::Rcu
-pub unsafe trait NonNullPtr: Send + 'static {
+pub unsafe trait NonNullPtr: 'static {
     /// The target type that this pointer refers to.
     // TODO: Support `Target: ?Sized`.
     type Target;
@@ -102,7 +102,7 @@ impl<'a, T> BoxRef<'a, T> {
     }
 }
 
-unsafe impl<T: Send + 'static> NonNullPtr for Box<T> {
+unsafe impl<T: 'static> NonNullPtr for Box<T> {
     type Target = T;
 
     type Ref<'a>
@@ -164,7 +164,7 @@ impl<'a, T> ArcRef<'a, T> {
     }
 }
 
-unsafe impl<T: Send + Sync + 'static> NonNullPtr for Arc<T> {
+unsafe impl<T: 'static> NonNullPtr for Arc<T> {
     type Target = T;
 
     type Ref<'a>
@@ -218,7 +218,7 @@ impl<T> Deref for WeakRef<'_, T> {
     }
 }
 
-unsafe impl<T: Send + Sync + 'static> NonNullPtr for Weak<T> {
+unsafe impl<T: 'static> NonNullPtr for Weak<T> {
     type Target = T;
 
     type Ref<'a>
