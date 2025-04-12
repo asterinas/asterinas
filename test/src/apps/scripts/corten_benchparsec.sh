@@ -1,14 +1,16 @@
 #!/bin/sh
 
-# usage: corten_benchparsec.sh app thread_count
+# usage: corten_benchparsec.sh app thread_count [aster_breakdown]
 
 APP=$1
 THREAD_COUNT=$2
 
 if [ -z "${APP}" ] || [ -z "${THREAD_COUNT}" ]; then
-    echo "Usage: $0 <app> <thread_count>"
+    echo "Usage: $0 <app> <thread_count> [aster_breakdown]"
     exit 1
 fi
+
+DO_ASTER_BREAKDOWN=$3
 
 run_dir=/benchmark/bin
 data_dir=/root
@@ -22,6 +24,10 @@ echo "Copying input files to ramfs done"
 echo "***TEST_START***"
 
 echo "Running application: ${APP} with ${THREAD_COUNT} threads"
+
+if [ "$DO_ASTER_BREAKDOWN" == "aster_breakdown" ]; then
+    cat /proc/breakdown-counters
+fi
 
 case "${APP}" in
     canneal)
@@ -81,5 +87,9 @@ case "${APP}" in
         # Add other applications here following the same pattern
         ;;
 esac
+
+if [ "$DO_ASTER_BREAKDOWN" == "aster_breakdown" ]; then
+    cat /proc/breakdown-counters
+fi
 
 echo "***TEST_END***"

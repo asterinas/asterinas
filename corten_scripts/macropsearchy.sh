@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# usage: macropsearchy.sh [linux|asterinas] [tc|pt]
+# usage: macropsearchy.sh [linux|asterinas] [tc|pt] [aster_breakdown]
 
 SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 BENCH_SCRIPT="$SCRIPT_DIR/bench.sh"
@@ -11,8 +11,13 @@ SYS_NAME=$1
 MALLOC=$2
 
 if [ "$SYS_NAME" != "linux" ] && [ "$SYS_NAME" != "aster" ] || [ "$MALLOC" != "tc" ] && [ "$MALLOC" != "pt" ]; then
-    echo "Usage: $0 [linux|aster] [tc|pt]"
+    echo "Usage: $0 <linux|aster> <tc|pt> [aster_breakdown]"
     exit 1
+fi
+
+DO_ASTER_BREAKDOWN=$3
+if [ "$SYS_NAME" == "linux" ]; then
+    DO_ASTER_BREAKDOWN=""
 fi
 
 if [ "$SYS_NAME" == "linux" ]; then
@@ -31,5 +36,5 @@ for THREAD_COUNT in "${THREAD_COUNTS[@]}"; do
         continue
     fi
     export NR_CPUS=$THREAD_COUNT
-    $BENCH_SCRIPT $SYS_NAME $BENCH_OUTPUT_FILE "$EXTRA_MNT_CMDS; /test/corten_benchpsearchy.sh $MALLOC $THREAD_COUNT"
+    $BENCH_SCRIPT $SYS_NAME $BENCH_OUTPUT_FILE "$EXTRA_MNT_CMDS; /test/corten_benchpsearchy.sh $MALLOC $THREAD_COUNT $DO_ASTER_BREAKDOWN"
 done

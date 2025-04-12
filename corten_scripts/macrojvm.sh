@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# usage: macrojvm.sh [linux|asterinas]
+# usage: macrojvm.sh [linux|asterinas] [aster_breakdown]
 
 SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 BENCH_SCRIPT="$SCRIPT_DIR/bench.sh"
@@ -10,8 +10,13 @@ mkdir -p "$CORTEN_OUTPUT_DIR"
 SYS_NAME=$1
 
 if [ "$SYS_NAME" != "linux" ] && [ "$SYS_NAME" != "aster" ]; then
-    echo "Usage: $0 [linux|aster]"
+    echo "Usage: $0 <linux|aster> [aster_breakdown]"
     exit 1
+fi
+
+DO_ASTER_BREAKDOWN=$2
+if [ "$SYS_NAME" == "linux" ]; then
+    DO_ASTER_BREAKDOWN=""
 fi
 
 BENCH_OUTPUT_FILE="$CORTEN_OUTPUT_DIR/macrojvm_${SYS_NAME}_$(date +%Y%m%d_%H%M%S).log"
@@ -24,5 +29,5 @@ for THREAD_COUNT in "${THREAD_COUNTS[@]}"; do
         export NR_CPUS=$THREAD_COUNT
     fi
     export CORTEN_RUN_ARGS="FEATURES=mprotect_async_tlb"
-    $BENCH_SCRIPT $SYS_NAME $BENCH_OUTPUT_FILE "/test/corten_benchjvm.sh $THREAD_COUNT"
+    $BENCH_SCRIPT $SYS_NAME $BENCH_OUTPUT_FILE "/test/corten_benchjvm.sh $THREAD_COUNT $DO_ASTER_BREAKDOWN"
 done

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# usage: macroparsec.sh [linux|asterinas]
+# usage: macroparsec.sh [linux|asterinas] [aster_breakdown]
 
 SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
 BENCH_SCRIPT="$SCRIPT_DIR/bench.sh"
@@ -12,6 +12,11 @@ SYS_NAME=$1
 if [ "$SYS_NAME" != "linux" ] && [ "$SYS_NAME" != "aster" ]; then
     echo "Usage: $0 [linux|aster]"
     exit 1
+fi
+
+DO_ASTER_BREAKDOWN=$2
+if [ "$SYS_NAME" == "linux" ]; then
+    DO_ASTER_BREAKDOWN=""
 fi
 
 if [ "$SYS_NAME" == "linux" ]; then
@@ -28,6 +33,6 @@ THREAD_COUNTS=(1 8)
 for THREAD_COUNT in "${THREAD_COUNTS[@]}"; do
     export NR_CPUS=$THREAD_COUNT
     for BENCH in "${PARSEC_BENCHES[@]}"; do
-        $BENCH_SCRIPT $SYS_NAME $BENCH_OUTPUT_FILE "$EXTRA_MNT_CMDS; /usr/bin/bash /test/corten_benchparsec.sh $BENCH $THREAD_COUNT"
+        $BENCH_SCRIPT $SYS_NAME $BENCH_OUTPUT_FILE "$EXTRA_MNT_CMDS; /usr/bin/bash /test/corten_benchparsec.sh $BENCH $THREAD_COUNT $DO_ASTER_BREAKDOWN"
     done
 done

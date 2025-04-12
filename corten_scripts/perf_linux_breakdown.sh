@@ -54,9 +54,18 @@ for THREAD_COUNT in "${THREAD_COUNTS[@]}"; do
             INPUT="/root/mm-scalability-benchmark/data/800MB.txt"
             perf record -F 99 -a -g -- $INITRAMFS_DIR/benchmark/bin/dedup/dedup -c -p -v -t $THREAD_COUNT -i $INPUT -o /tmp/output.dat.ddp
             ;;
+        dedup-tc)
+            INPUT="/root/mm-scalability-benchmark/data/800MB.txt"
+            perf record -F 99 -a -g -- $INITRAMFS_DIR/benchmark/bin/dedup/dedup-tc -c -p -v -t $THREAD_COUNT -i $INPUT -o /tmp/output.dat.ddp
+            ;;
         psearchy)
             psearchy_prepare_tdb
             perf record -F 99 -a -g -- $INITRAMFS_DIR/benchmark/bin/psearchy/pedsort -t $TEST_DB/db -c $THREAD_COUNT -m 512 < $INITRAMFS_DIR/benchmark/bin/psearchy/linux_files_index
+            psearchy_rm_tdb
+            ;;
+        psearchy-tc)
+            psearchy_prepare_tdb
+            perf record -F 99 -a -g -- $INITRAMFS_DIR/benchmark/bin/psearchy/pedsort-tc -t $TEST_DB/db -c $THREAD_COUNT -m 512 < $INITRAMFS_DIR/benchmark/bin/psearchy/linux_files_index
             psearchy_rm_tdb
             ;;
         *)
