@@ -133,6 +133,7 @@ use crate::syscall::{
     socketpair::sys_socketpair,
     stat::{sys_fstat, sys_fstatat, sys_lstat, sys_stat},
     statfs::{sys_fstatfs, sys_statfs},
+    statx::sys_statx,
     symlink::{sys_symlink, sys_symlinkat},
     sync::sys_sync,
     sysinfo::sys_sysinfo,
@@ -357,5 +358,6 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_EXECVEAT = 322         => sys_execveat(args[..5], &mut user_ctx);
     SYS_PREADV2 = 327          => sys_preadv2(args[..5]);
     SYS_PWRITEV2 = 328         => sys_pwritev2(args[..5]);
+    SYS_STATX = 332            => sys_statx(args[..5]);
     SYS_CLONE3 = 435           => sys_clone3(args[..2], &user_ctx);
 }
