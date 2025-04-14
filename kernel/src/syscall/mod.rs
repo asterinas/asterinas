@@ -140,6 +140,7 @@ mod socket;
 mod socketpair;
 mod stat;
 mod statfs;
+mod statx;
 mod symlink;
 mod sync;
 mod sysinfo;
