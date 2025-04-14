@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(dead_code)]
-
-use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListAtomicLink};
 use ostd::{
     cpu::num_cpus,
     sync::{Waiter, Waker},
@@ -12,7 +9,6 @@ use spin::Once;
 use crate::{prelude::*, process::Pid, time::wait::ManagedTimeout};
 
 type FutexBitSet = u32;
-type FutexBucketRef = Arc<Mutex<FutexBucket>>;
 
 const FUTEX_OP_MASK: u32 = 0x0000_000F;
 const FUTEX_FLAGS_MASK: u32 = 0xFFFF_FFF0;
@@ -183,7 +179,7 @@ fn get_bucket_count() -> usize {
     ((1 << 8) * num_cpus()).next_power_of_two()
 }
 
-fn get_futex_bucket(key: FutexKey) -> (usize, FutexBucketRef) {
+fn get_futex_bucket(key: FutexKey) -> (usize, &'static SpinLock<FutexBucket>) {
     FUTEX_BUCKETS.get().unwrap().get_bucket(key)
 }
 
@@ -193,7 +189,7 @@ pub fn init() {
 }
 
 struct FutexBucketVec {
-    vec: Vec<FutexBucketRef>,
+    vec: Vec<SpinLock<FutexBucket>>,
 }
 
 impl FutexBucketVec {
@@ -202,20 +198,20 @@ impl FutexBucketVec {
             vec: Vec::with_capacity(size),
         };
         for _ in 0..size {
-            let bucket = Arc::new(Mutex::new(FutexBucket::new()));
+            let bucket = SpinLock::new(FutexBucket::new());
             buckets.vec.push(bucket);
         }
         buckets
     }
 
-    pub fn get_bucket(&self, key: FutexKey) -> (usize, FutexBucketRef) {
-        let index = (self.vec.len() - 1) & {
+    pub fn get_bucket(&self, key: FutexKey) -> (usize, &SpinLock<FutexBucket>) {
+        let index = (self.size() - 1) & {
             // The addr is the multiples of 4, so we ignore the last 2 bits
             let addr = key.addr() >> 2;
             // simple hash
             addr / self.size()
         };
-        (index, self.vec[index].clone())
+        (index, &self.vec[index])
     }
 
     fn size(&self) -> usize {
@@ -224,76 +220,47 @@ impl FutexBucketVec {
 }
 
 struct FutexBucket {
-    items: LinkedList<FutexItemAdapter>,
+    items: Vec<FutexItem>,
 }
-
-intrusive_adapter!(FutexItemAdapter = Box<FutexItem>: FutexItem { link: LinkedListAtomicLink });
 
 impl FutexBucket {
     pub fn new() -> FutexBucket {
         FutexBucket {
-            items: LinkedList::new(FutexItemAdapter::new()),
+            items: Vec::with_capacity(1),
         }
     }
 
-    pub fn add_item(&mut self, item: Box<FutexItem>) {
-        self.items.push_back(item);
-    }
-
-    pub fn remove_item(&mut self, item: &FutexItem) {
-        let mut item_cursor = self.items.front_mut();
-        while !item_cursor.is_null() {
-            // The item_cursor has been checked not null.
-            let futex_item = item_cursor.get().unwrap();
-
-            if !futex_item.match_up(item) {
-                item_cursor.move_next();
-                continue;
-            } else {
-                let _ = item_cursor.remove();
-                break;
-            }
-        }
+    pub fn add_item(&mut self, item: FutexItem) {
+        self.items.push(item);
     }
 
     pub fn remove_and_wake_items(&mut self, key: FutexKey, max_count: usize) -> usize {
         let mut count = 0;
-        let mut item_cursor = self.items.front_mut();
-        while !item_cursor.is_null() && count < max_count {
-            // The item_cursor has been checked not null.
-            let item = item_cursor.get().unwrap();
 
-            if !item.key.match_up(&key) {
-                item_cursor.move_next();
-                continue;
+        self.items.retain(|item| {
+            if item.key.match_up(&key) && count < max_count {
+                if item.wake() {
+                    count += 1;
+                }
+                false
+            } else {
+                true
             }
-
-            let item = item_cursor.remove().unwrap();
-            if !item.wake() {
-                continue;
-            }
-            count += 1;
-        }
+        });
 
         count
     }
 
     pub fn update_item_keys(&mut self, key: FutexKey, new_key: FutexKey, max_count: usize) {
         let mut count = 0;
-        let mut item_cursor = self.items.front_mut();
-        while !item_cursor.is_null() && count < max_count {
-            // The item_cursor has been checked not null.
-            let item = item_cursor.get().unwrap();
-
-            if !item.key.match_up(&key) {
-                item_cursor.move_next();
-                continue;
+        for item in self.items.iter_mut() {
+            if item.key.match_up(&key) {
+                item.key = new_key;
+                count += 1;
             }
-
-            let mut item = item_cursor.remove().unwrap();
-            item.key = new_key;
-            item_cursor.insert_before(item);
-            count += 1;
+            if count >= max_count {
+                break;
+            }
         }
     }
 
@@ -305,38 +272,31 @@ impl FutexBucket {
         max_nrequeues: usize,
     ) {
         let mut count = 0;
-        let mut item_cursor = self.items.front_mut();
-        while !item_cursor.is_null() && count < max_nrequeues {
-            // The item_cursor has been checked not null.
-            let item = item_cursor.get().unwrap();
-
-            if !item.key.match_up(&key) {
-                item_cursor.move_next();
-                continue;
-            }
-
-            let mut item = item_cursor.remove().unwrap();
-            item.key = new_key;
-            another.add_item(item);
-            count += 1;
-        }
+        self.items
+            .extract_if(.., |item| {
+                if item.key.match_up(&key) && count < max_nrequeues {
+                    count += 1;
+                    true
+                } else {
+                    false
+                }
+            })
+            .for_each(|mut extracted| {
+                extracted.key = new_key;
+                another.add_item(extracted);
+            });
     }
 }
 
 struct FutexItem {
     key: FutexKey,
     waker: Arc<Waker>,
-    link: LinkedListAtomicLink,
 }
 
 impl FutexItem {
-    pub fn create(key: FutexKey) -> (Box<Self>, Waiter) {
+    pub fn create(key: FutexKey) -> (Self, Waiter) {
         let (waiter, waker) = Waiter::new_pair();
-        let futex_item = Box::new(FutexItem {
-            key,
-            waker,
-            link: LinkedListAtomicLink::new(),
-        });
+        let futex_item = FutexItem { key, waker };
 
         (futex_item, waiter)
     }
@@ -344,10 +304,6 @@ impl FutexItem {
     #[must_use]
     pub fn wake(&self) -> bool {
         self.waker.wake_up()
-    }
-
-    pub fn match_up(&self, another: &Self) -> bool {
-        self.key.match_up(&another.key)
     }
 }
 
@@ -374,10 +330,6 @@ impl FutexKey {
 
     pub fn addr(&self) -> Vaddr {
         self.addr
-    }
-
-    pub fn bitset(&self) -> FutexBitSet {
-        self.bitset
     }
 
     pub fn match_up(&self, another: &Self) -> bool {

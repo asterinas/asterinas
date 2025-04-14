@@ -11,6 +11,7 @@
 #![feature(btree_extract_if)]
 #![feature(debug_closure_helpers)]
 #![feature(extend_one)]
+#![feature(extract_if)]
 #![feature(fn_traits)]
 #![feature(format_args_nl)]
 #![feature(int_roundings)]
