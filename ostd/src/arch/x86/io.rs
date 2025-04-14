@@ -58,11 +58,34 @@ pub(super) fn construct_io_mem_allocator_builder() -> IoMemAllocatorBuilder {
     unsafe { IoMemAllocatorBuilder::new(ranges) }
 }
 
-/// Initializes the allocatable PIO area based on the x86-64 port distribution map.
+/// Initializes the allocatable PIO area outside OSTD based on the x86-64 port distribution map.
 pub(super) fn construct_io_port_allocator_builder() -> IoPortAllocatorBuilder {
     /// Port I/O definition reference: https://bochs.sourceforge.io/techspec/PORTS.LST
     const MAX_IO_PORT: u16 = u16::MAX;
 
     // SAFETY: `MAX_IO_PORT` is guaranteed not to exceed the maximum value specified by x86-64.
-    unsafe { IoPortAllocatorBuilder::new(MAX_IO_PORT) }
+    let mut builder = unsafe { IoPortAllocatorBuilder::new(MAX_IO_PORT) };
+
+    extern "C" {
+        fn __sensitive_io_ports_start();
+        fn __sensitive_io_ports_end();
+    }
+    let start = __sensitive_io_ports_start as usize;
+    let end = __sensitive_io_ports_end as usize;
+
+    // Iterate through the sensitive I/O port ranges and remove them from the allocator.
+    assert!((end - start) % (size_of::<u16>() * 2) == 0);
+    let io_port_ranges = (end - start) / (size_of::<u16>() * 2);
+    for i in 0..io_port_ranges {
+        let range_base_addr = __sensitive_io_ports_start as usize + i * 2 * size_of::<u16>();
+        let (range_start, range_end) = unsafe {
+            (
+                *(range_base_addr as *const u16),
+                *((range_base_addr + size_of::<u16>()) as *const u16),
+            )
+        };
+        builder.remove(range_start..range_end);
+    }
+
+    builder
 }
