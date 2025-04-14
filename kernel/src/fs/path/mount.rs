@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![expect(dead_code)]
 use hashbrown::HashMap;
 
 use crate::{
     fs::{
         path::dentry::{Dentry, DentryKey, Dentry_},
+        thread_info::ThreadFsInfo,
         utils::{FileSystem, InodeType},
     },
     prelude::*,
@@ -69,7 +71,7 @@ impl MountNode {
     /// mountpoint. It is the fs's responsibility to ensure the data consistency.
     ///
     /// Return the mounted child mount.
-    pub fn mount(&self, fs: Arc<dyn FileSystem>, mountpoint: &Dentry) -> Result<Arc<Self>> {
+    pub(super) fn mount(&self, fs: Arc<dyn FileSystem>, mountpoint: &Dentry) -> Result<Arc<Self>> {
         if !Arc::ptr_eq(mountpoint.mount_node(), &self.this()) {
             return_errno_with_message!(Errno::EINVAL, "mountpoint not belongs to this");
         }
@@ -86,7 +88,7 @@ impl MountNode {
     /// Unmounts a child mount node from the mountpoint and returns it.
     ///
     /// The mountpoint should belong to this mount node, or an error is returned.
-    pub fn unmount(&self, mountpoint: &Dentry) -> Result<Arc<Self>> {
+    pub(super) fn unmount(&self, mountpoint: &Dentry) -> Result<Arc<Self>> {
         if !Arc::ptr_eq(mountpoint.mount_node(), &self.this()) {
             return_errno_with_message!(Errno::EINVAL, "mountpoint not belongs to this");
         }
@@ -184,7 +186,7 @@ impl MountNode {
     }
 
     /// Grafts the mount node tree to the mountpoint.
-    pub fn graft_mount_node_tree(&self, mountpoint: &Dentry) -> Result<()> {
+    pub(super) fn graft_mount_node_tree(&self, mountpoint: &Dentry) -> Result<()> {
         if mountpoint.type_() != InodeType::Dir {
             return_errno!(Errno::ENOTDIR);
         }
@@ -193,8 +195,47 @@ impl MountNode {
         Ok(())
     }
 
-    /// Gets a child mount node from the mountpoint if any.
-    pub fn get(&self, mountpoint: &Dentry) -> Option<Arc<Self>> {
+    /// Move the process root and cwd to this mount node.
+    ///
+    /// `self`` is the root of the mount node tree that needs to be moved.
+    /// Before using this method, we often need to copy a new mount node tree.
+    fn move_process_root_and_cwd(&self, fs: &Arc<ThreadFsInfo>) {
+        let mut stack = vec![self.this().clone()];
+        let root = fs.resolver().read().root().clone();
+        let cwd = fs.resolver().read().cwd().clone();
+
+        while let Some(current_mount_node) = stack.pop() {
+            if Arc::ptr_eq(
+                current_mount_node.root_dentry(),
+                root.mount_node().root_dentry(),
+            ) {
+                root.move_root(&current_mount_node, fs);
+            }
+
+            if Arc::ptr_eq(
+                current_mount_node.root_dentry(),
+                cwd.mount_node().root_dentry(),
+            ) {
+                cwd.move_cwd(&current_mount_node, fs);
+            }
+
+            let children = current_mount_node.children.read();
+            for child in children.values() {
+                stack.push(child.clone());
+            }
+        }
+    }
+
+    /// Clone the mount node tree and move the process
+    /// root and cwd to the new mount node tree.
+    pub(super) fn clone_mount_node_tree_and_move(&self, fs: &Arc<ThreadFsInfo>) -> Arc<Self> {
+        let new_mount_node = self.clone_mount_node_tree(self.root_dentry(), true);
+        new_mount_node.move_process_root_and_cwd(fs);
+        new_mount_node
+    }
+
+    /// Try to get a child mount node from the mountpoint.
+    pub(super) fn get(&self, mountpoint: &Dentry) -> Option<Arc<Self>> {
         if !Arc::ptr_eq(mountpoint.mount_node(), &self.this()) {
             return None;
         }
@@ -202,12 +243,12 @@ impl MountNode {
     }
 
     /// Gets the root `Dentry_` of this mount node.
-    pub fn root_dentry(&self) -> &Arc<Dentry_> {
+    pub(super) fn root_dentry(&self) -> &Arc<Dentry_> {
         &self.root_dentry
     }
 
     /// Gets the mountpoint `Dentry_` of this mount node if any.
-    pub fn mountpoint_dentry(&self) -> Option<Arc<Dentry_>> {
+    pub(super) fn mountpoint_dentry(&self) -> Option<Arc<Dentry_>> {
         self.mountpoint_dentry.read().clone()
     }
 
@@ -215,13 +256,14 @@ impl MountNode {
     ///
     /// In some cases we may need to reset the mountpoint of
     /// the created `MountNode`, such as move mount.
-    pub fn set_mountpoint_dentry(&self, inner: &Arc<Dentry_>) {
+    pub(super) fn set_mountpoint_dentry(&self, inner: &Arc<Dentry_>) {
         let mut mountpoint_dentry = self.mountpoint_dentry.write();
         *mountpoint_dentry = Some(inner.clone());
+        inner.set_mountpoint_dentry();
     }
 
     /// Flushes all pending filesystem metadata and cached file data to the device.
-    pub fn sync(&self) -> Result<()> {
+    pub(super) fn sync(&self) -> Result<()> {
         let children: Vec<Arc<MountNode>> = {
             let children = self.children.read();
             children.values().cloned().collect()
@@ -243,7 +285,7 @@ impl MountNode {
     ///
     /// In some cases we may need to reset the parent of
     /// the created MountNode, such as move mount.
-    pub fn set_parent(&self, mount_node: &Arc<MountNode>) {
+    pub(super) fn set_parent(&self, mount_node: &Arc<MountNode>) {
         let mut parent = self.parent.write();
         *parent = Some(Arc::downgrade(mount_node));
     }
@@ -253,7 +295,7 @@ impl MountNode {
     }
 
     /// Gets the associated fs.
-    pub fn fs(&self) -> &Arc<dyn FileSystem> {
+    pub(super) fn fs(&self) -> &Arc<dyn FileSystem> {
         &self.fs
     }
 }

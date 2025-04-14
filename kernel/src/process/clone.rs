@@ -9,7 +9,7 @@ use super::{
     process_table,
     process_vm::ProcessVm,
     signal::{constants::SIGCHLD, sig_disposition::SigDispositions, sig_num::SigNum},
-    Credentials, Process, ProcessBuilder,
+    Credentials, Namespaces, Process, ProcessBuilder,
 };
 use crate::{
     cpu::LinuxAbi,
@@ -167,7 +167,8 @@ impl CloneFlags {
             | CloneFlags::CLONE_PARENT_SETTID
             | CloneFlags::CLONE_CHILD_SETTID
             | CloneFlags::CLONE_CHILD_CLEARTID
-            | CloneFlags::CLONE_VFORK;
+            | CloneFlags::CLONE_VFORK
+            | CloneFlags::CLONE_NEWNS;
         let unsupported_flags = *self - supported_flags;
         if !unsupported_flags.is_empty() {
             warn!("contains unsupported clone flags: {:?}", unsupported_flags);
@@ -244,6 +245,8 @@ fn clone_child_task(
     // clone fs
     let child_fs = clone_fs(posix_thread.fs(), clone_flags);
 
+    let child_namespace = clone_namespaces(&child_fs, posix_thread.namespaces(), clone_flags);
+
     let child_user_ctx = Arc::new(clone_user_ctx(
         parent_context,
         clone_args.stack,
@@ -266,7 +269,8 @@ fn clone_child_task(
             .process(posix_thread.weak_process())
             .sig_mask(sig_mask)
             .file_table(child_file_table)
-            .fs(child_fs);
+            .fs(child_fs)
+            .namespaces(child_namespace);
 
         // Deal with SETTID/CLEARTID flags
         clone_parent_settid(child_tid, clone_args.parent_tid, clone_flags)?;
@@ -320,6 +324,9 @@ fn clone_child_process(
     // clone fs
     let child_fs = clone_fs(posix_thread.fs(), clone_flags);
 
+    // clone namespaces
+    let child_namespaces = clone_namespaces(&child_fs, posix_thread.namespaces(), clone_flags);
+
     // clone sig dispositions
     let child_sig_dispositions = clone_sighand(process.sig_dispositions(), clone_flags);
 
@@ -349,6 +356,7 @@ fn clone_child_process(
                 .sig_mask(child_sig_mask)
                 .file_table(child_file_table)
                 .fs(child_fs)
+                .namespaces(child_namespaces)
         };
 
         // Deal with SETTID/CLEARTID flags
@@ -491,6 +499,21 @@ fn clone_files(parent_file_table: &RwArc<FileTable>, clone_flags: CloneFlags) ->
     }
 }
 
+fn clone_namespaces(
+    fs_resolver: &Arc<ThreadFsInfo>,
+    parent_namespaces: &Mutex<Namespaces>,
+    clone_flags: CloneFlags,
+) -> Mutex<Namespaces> {
+    let parent_namespaces = parent_namespaces.lock();
+    let new_mnt_ns = if clone_flags.contains(CloneFlags::CLONE_NEWNS) {
+        parent_namespaces.mnt_ns().copy_mnt_ns(fs_resolver)
+    } else {
+        parent_namespaces.mnt_ns().clone()
+    };
+
+    Mutex::new(Namespaces::new(new_mnt_ns))
+}
+
 fn clone_sighand(
     parent_sig_dispositions: &Arc<Mutex<SigDispositions>>,
     clone_flags: CloneFlags,
@@ -524,4 +547,12 @@ fn set_parent_and_group(parent: &Process, child: &Arc<Process>) {
     *child_group_mut = Arc::downgrade(&process_group);
 
     process_table_mut.insert(child.pid(), child.clone());
+}
+
+pub fn unshare(unshare_flags: CloneFlags, fs: &Arc<ThreadFsInfo>) -> Result<()> {
+    let current_task = current_thread!();
+    let posix_thread = current_task.as_posix_thread().unwrap();
+    let child_namespaces = clone_namespaces(fs, posix_thread.namespaces(), unshare_flags);
+    posix_thread.switch_namespaces(child_namespaces);
+    Ok(())
 }

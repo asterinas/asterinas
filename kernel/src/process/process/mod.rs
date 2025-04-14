@@ -189,7 +189,6 @@ impl Process {
         parent: Weak<Process>,
         executable_path: String,
         process_vm: ProcessVm,
-
         resource_limits: ResourceLimits,
         nice: Nice,
         sig_dispositions: Arc<Mutex<SigDispositions>>,

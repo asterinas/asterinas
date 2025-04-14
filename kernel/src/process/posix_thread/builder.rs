@@ -15,7 +15,7 @@ use crate::{
     process::{
         posix_thread::name::ThreadName,
         signal::{sig_mask::AtomicSigMask, sig_queues::SigQueues},
-        Credentials, Process,
+        Credentials, Namespaces, Process,
     },
     sched::{Nice, SchedPolicy},
     thread::{task, Thread, Tid},
@@ -36,6 +36,7 @@ pub struct PosixThreadBuilder {
     clear_child_tid: Vaddr,
     file_table: Option<RwArc<FileTable>>,
     fs: Option<Arc<ThreadFsInfo>>,
+    namespaces: Option<Mutex<Namespaces>>,
     sig_mask: AtomicSigMask,
     sig_queues: SigQueues,
     sched_policy: SchedPolicy,
@@ -53,6 +54,7 @@ impl PosixThreadBuilder {
             clear_child_tid: 0,
             file_table: None,
             fs: None,
+            namespaces: None,
             sig_mask: AtomicSigMask::new_empty(),
             sig_queues: SigQueues::new(),
             sched_policy: SchedPolicy::Fair(Nice::default()),
@@ -89,6 +91,11 @@ impl PosixThreadBuilder {
         self
     }
 
+    pub fn namespaces(mut self, namespaces: Mutex<Namespaces>) -> Self {
+        self.namespaces = Some(namespaces);
+        self
+    }
+
     pub fn sig_mask(mut self, sig_mask: AtomicSigMask) -> Self {
         self.sig_mask = sig_mask;
         self
@@ -110,6 +117,7 @@ impl PosixThreadBuilder {
             clear_child_tid,
             file_table,
             fs,
+            namespaces,
             sig_mask,
             sig_queues,
             sched_policy,
@@ -118,6 +126,8 @@ impl PosixThreadBuilder {
         let file_table = file_table.unwrap_or_else(|| RwArc::new(FileTable::new_with_stdio()));
 
         let fs = fs.unwrap_or_else(|| Arc::new(ThreadFsInfo::default()));
+
+        let namespaces = namespaces.unwrap_or_else(|| Mutex::new(Namespaces::default()));
 
         Arc::new_cyclic(|weak_task| {
             let root_vmar = process
@@ -136,6 +146,7 @@ impl PosixThreadBuilder {
                     credentials,
                     file_table: file_table.clone_ro(),
                     fs,
+                    namespaces,
                     sig_mask,
                     sig_queues,
                     signalled_waker: SpinLock::new(None),

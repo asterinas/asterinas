@@ -15,7 +15,7 @@ use super::{
         signals::Signal,
         SigEvents, SigEventsFilter,
     },
-    Credentials, Process,
+    Credentials, Namespaces, Process,
 };
 use crate::{
     events::Observer,
@@ -58,6 +58,9 @@ pub struct PosixThread {
     file_table: RoArc<FileTable>,
     /// File system
     fs: Arc<ThreadFsInfo>,
+
+    // Namespace
+    namespaces: Mutex<Namespaces>,
 
     // Signal
     /// Blocked signals
@@ -102,6 +105,15 @@ impl PosixThread {
 
     pub fn fs(&self) -> &Arc<ThreadFsInfo> {
         &self.fs
+    }
+
+    pub fn namespaces(&self) -> &Mutex<Namespaces> {
+        &self.namespaces
+    }
+
+    pub fn switch_namespaces(&self, new_namespaces: Mutex<Namespaces>) {
+        let old_namespaces = &mut self.namespaces.lock();
+        old_namespaces.reset_namespaces(new_namespaces);
     }
 
     /// Get the reference to the signal mask of the thread.

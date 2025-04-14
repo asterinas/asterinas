@@ -31,6 +31,7 @@ TEST_APPS := \
 	itimer \
 	mmap \
 	mongoose \
+	namespaces \
 	network \
 	pipe \
 	prctl \
