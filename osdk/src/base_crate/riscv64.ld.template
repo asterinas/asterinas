@@ -42,6 +42,14 @@ SECTIONS
         KEEP(*(SORT(.init_array .init_array.*)))
         __einit_array = .;
     }
+    
+    # A list of the sensitive IoPort ranges in OSTD which will be used during
+    # the initialization of IoPortAllocator.
+    .sensitive_io_ports     : AT(ADDR(.sensitive_io_ports) - KERNEL_VMA_OFFSET) {
+        __sensitive_io_ports_start = .;
+        KEEP(*(.sensitive_io_ports))
+        __sensitive_io_ports_end = .;
+    }
 
     . = DATA_SEGMENT_RELRO_END(0, .);
 

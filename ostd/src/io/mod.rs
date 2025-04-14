@@ -11,7 +11,10 @@ mod io_mem;
 mod io_port;
 
 pub use self::{io_mem::IoMem, io_port::IoPort};
-pub(crate) use self::{io_mem::IoMemAllocatorBuilder, io_port::IoPortAllocatorBuilder};
+pub(crate) use self::{
+    io_mem::IoMemAllocatorBuilder,
+    io_port::{reserve_io_port_range, sensitive_io_port, IoPortAllocatorBuilder, RawIoPortRange},
+};
 
 /// Initializes the static allocator based on builder.
 ///
