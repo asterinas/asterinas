@@ -6,12 +6,20 @@ use core::sync::atomic::{AtomicBool, AtomicU8, Ordering::Relaxed};
 
 use log::info;
 
-use crate::{arch::x86::device::io_port::WriteOnlyAccess, io::IoPort, trap::IrqLine};
+use crate::{
+    arch::x86::device::io_port::WriteOnlyAccess,
+    io::{sensitive_io_port, IoPort},
+    trap::IrqLine,
+};
 
-static MASTER_CMD: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x20) };
-static MASTER_DATA: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x21) };
-static SLAVE_CMD: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0xA0) };
-static SLAVE_DATA: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0xA1) };
+sensitive_io_port! {
+    unsafe{
+        static MASTER_CMD: IoPort<u8, WriteOnlyAccess> = IoPort::new(0x20);
+        static MASTER_DATA: IoPort<u8, WriteOnlyAccess> = IoPort::new(0x21);
+        static SLAVE_CMD: IoPort<u8, WriteOnlyAccess> = IoPort::new(0xA0);
+        static SLAVE_DATA: IoPort<u8, WriteOnlyAccess> = IoPort::new(0xA1);
+    }
+}
 
 const IRQ_OFFSET: u8 = 0x20;
 

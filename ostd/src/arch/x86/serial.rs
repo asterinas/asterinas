@@ -13,6 +13,7 @@ use super::{
     kernel::{self, IO_APIC},
 };
 use crate::{
+    io::reserve_io_port_range,
     sync::SpinLock,
     trap::{IrqLine, TrapFrame},
 };
@@ -53,6 +54,7 @@ bitflags::bitflags! {
 }
 
 static CONSOLE_COM1_PORT: SerialPort = unsafe { SerialPort::new(0x3F8) };
+reserve_io_port_range!(0x3F8..0x400);
 
 static CONSOLE_IRQ_CALLBACK: Once<SpinLock<IrqLine>> = Once::new();
 static SERIAL_INPUT_CALLBACKS: SpinLock<Vec<Arc<InputCallback>>> = SpinLock::new(Vec::new());
