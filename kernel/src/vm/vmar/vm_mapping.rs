@@ -52,7 +52,6 @@ pub(super) struct VmoBackedVMA {
     pub(super) is_shared: bool,
     /// Whether the mapping needs to handle surrounding pages when handling
     /// page fault.
-    #[expect(dead_code)]
     pub(super) handle_page_faults_around: bool,
 }
 
@@ -152,8 +151,7 @@ impl MappedVmo {
     ///
     /// The **valid** size of a `MappedVmo` is the size of its accessible range
     /// that actually falls within the bounds of the underlying VMO.
-    #[expect(dead_code)]
-    fn valid_size(&self) -> usize {
+    pub(super) fn valid_size(&self) -> usize {
         let vmo_size = self.vmo.size();
         (self.offset..vmo_size).len()
     }
@@ -182,7 +180,6 @@ impl MappedVmo {
     ///
     /// For each index position, you have the option to commit the page as well as
     /// perform other operations.
-    #[expect(dead_code)]
     pub(super) fn operate_on_range<F>(
         &self,
         range: &Range<usize>,
