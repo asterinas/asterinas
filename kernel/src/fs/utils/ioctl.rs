@@ -45,4 +45,18 @@ pub enum IoctlCmd {
     KDFONTOP = 0x4B72,
     /// Get tdx report using TDCALL
     TDXGETREPORT = 0xc4405401,
+    /// Equivalent to FBIOGET_VSCREENINFO
+    GETVSCREENINFO = 0x4600,
+    /// Equivalent to FBIOPUT_VSCREENINFO
+    PUTVSCREENINFO = 0x4601,
+    /// Equivalent to FBIOGET_FSCREENINFO
+    GETFSCREENINFO = 0x4602,
+    /// Equivalent to FBIOGETCMAP
+    GETCMAP = 0x4604,
+    /// Equivalent to FBIOPUTCMAP
+    PUTCMAP = 0x4605,
+    /// Equivalent to FBIOPAN_DISPLAY
+    PANDISPLAY = 0x4606,
+    /// Equivalent to FBIOBLANK
+    FBIOBLANK = 0x4611,
 }

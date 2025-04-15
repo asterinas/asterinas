@@ -4,7 +4,14 @@ use aster_rights::TRights;
 use inherit_methods_macro::inherit_methods;
 
 use super::*;
-use crate::{fs::file_handle::FileMmapResult, prelude::*, process::signal::Pollable};
+use crate::{
+    fs::{
+        file_handle::{FileLike, FileMmapResult},
+        utils::InodeType,
+    },
+    prelude::*,
+    process::signal::Pollable,
+};
 
 impl InodeHandle<Rights> {
     pub fn new(dentry: Dentry, access_mode: AccessMode, status_flags: StatusFlags) -> Result<Self> {
