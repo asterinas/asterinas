@@ -19,7 +19,7 @@ use crate::{
     prelude::*,
     process::{posix_thread::AsPosixThread, signal::PollHandle, Gid, Uid},
     time::clocks::RealTimeCoarseClock,
-    vm::vmo::Vmo,
+    vm::{perms::VmPerms, vmo::Vmo},
 };
 
 #[repr(u16)]
@@ -455,6 +455,17 @@ pub trait Inode: Any + Sync + Send {
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
         Err(Error::new(Errno::EISDIR))
+    }
+
+    fn mmap(
+        &self,
+        addr: Vaddr,
+        len: usize,
+        offset: usize,
+        perms: VmPerms,
+        ctx: &Context,
+    ) -> Result<Vaddr> {
+        return_errno_with_message!(Errno::ENODEV, "mmap is not supported for this inode");
     }
 
     fn sync_all(&self) -> Result<()> {

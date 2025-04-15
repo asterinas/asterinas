@@ -15,12 +15,12 @@ use inherit_methods_macro::inherit_methods;
 use crate::{
     events::IoEvents,
     fs::{
-        file_handle::{FileLike, MemoryToMap},
+        file_handle::MemoryToMap,
         path::Dentry,
         utils::{
             AccessMode, DirentVisitor, FallocMode, FileRange, FlockItem, FlockList, Inode,
-            InodeMode, InodeType, IoctlCmd, Metadata, RangeLockItem, RangeLockItemBuilder,
-            RangeLockList, RangeLockType, SeekFrom, StatusFlags, OFFSET_MAX,
+            InodeMode, IoctlCmd, Metadata, RangeLockItem, RangeLockItemBuilder, RangeLockList,
+            RangeLockType, SeekFrom, StatusFlags, OFFSET_MAX,
         },
     },
     prelude::*,

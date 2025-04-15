@@ -5,7 +5,10 @@ use inherit_methods_macro::inherit_methods;
 
 use super::*;
 use crate::{
-    fs::{file_handle::MemoryToMap, utils::Inode},
+    fs::{
+        file_handle::{FileLike, MemoryToMap},
+        utils::{Inode, InodeType},
+    },
     prelude::*,
     process::signal::Pollable,
 };
