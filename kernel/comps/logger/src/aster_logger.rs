@@ -15,12 +15,6 @@ impl log::Log for AsterLogger {
 
     fn log(&self, record: &Record) {
         let timestamp = Jiffies::elapsed().as_duration().as_secs_f64();
-
-        // Use a global lock to prevent interleaving of log messages.
-        use ostd::sync::SpinLock;
-        static RECORD_LOCK: SpinLock<()> = SpinLock::new(());
-        let _lock = RECORD_LOCK.disable_irq().lock();
-
         print_logs(record, timestamp);
     }
 

@@ -2,28 +2,8 @@
 
 //! The console I/O.
 
-use alloc::fmt;
-use core::fmt::Write;
-
 use super::device::serial::SerialPort;
 use crate::io::reserve_io_port_range;
-
-/// Prints the formatted arguments to the standard output using the serial port.
-#[inline]
-pub fn print(args: fmt::Arguments) {
-    Stdout.write_fmt(args).unwrap();
-}
-
-struct Stdout;
-
-impl Write for Stdout {
-    fn write_str(&mut self, s: &str) -> fmt::Result {
-        for &c in s.as_bytes() {
-            send(c);
-        }
-        Ok(())
-    }
-}
 
 bitflags::bitflags! {
   struct LineSts: u8 {
