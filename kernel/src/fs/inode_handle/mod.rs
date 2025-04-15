@@ -16,12 +16,11 @@ use ostd::io::IoMem;
 use crate::{
     events::IoEvents,
     fs::{
-        file_handle::FileLike,
         path::Dentry,
         utils::{
             AccessMode, DirentVisitor, FallocMode, FileRange, FlockItem, FlockList, InodeMode,
-            InodeType, IoctlCmd, Metadata, RangeLockItem, RangeLockItemBuilder, RangeLockList,
-            RangeLockType, SeekFrom, StatusFlags, OFFSET_MAX,
+            IoctlCmd, Metadata, RangeLockItem, RangeLockItemBuilder, RangeLockList, RangeLockType,
+            SeekFrom, StatusFlags, OFFSET_MAX,
         },
     },
     prelude::*,
