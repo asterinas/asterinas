@@ -13,19 +13,24 @@ mod io_port;
 pub use self::{io_mem::IoMem, io_port::IoPort};
 pub(crate) use self::{
     io_mem::IoMemAllocatorBuilder,
-    io_port::{reserve_io_port_range, sensitive_io_port, IoPortAllocatorBuilder, RawIoPortRange},
+    io_port::{reserve_io_port_range, sensitive_io_port, RawIoPortRange},
 };
 
 /// Initializes the static allocator based on builder.
 ///
 /// # Safety
 ///
-/// User must ensure all the memory and port I/O regions that belong to the system device
-/// have been removed by calling the corresponding `remove` function.
-pub(crate) unsafe fn init(
-    io_mem_builder: IoMemAllocatorBuilder,
-    io_port_builder: IoPortAllocatorBuilder,
-) {
+/// User must ensure that:
+///
+/// 1. All the memory that belong to the system device have been removed
+///    by calling the `remove` function.
+///
+/// 2. All the port I/O regions belonging to the system device are defined
+///    using the macros `sensitive_io_port` and `reserve_io_port_range`.
+///
+/// 3. `MAX_IO_PORT` defined in `crate::arch::io` is guaranteed not to
+///    exceed the maximum value specified by architecture.
+pub(crate) unsafe fn init(io_mem_builder: IoMemAllocatorBuilder) {
     self::io_mem::init(io_mem_builder);
-    self::io_port::init(io_port_builder);
+    self::io_port::init();
 }

@@ -6,7 +6,7 @@ pub mod boot;
 pub(crate) mod cpu;
 pub mod device;
 pub(crate) mod ex_table;
-mod io;
+pub(crate) mod io;
 pub mod iommu;
 pub(crate) mod irq;
 pub(crate) mod kernel;
@@ -19,7 +19,7 @@ pub mod timer;
 pub mod trap;
 
 use cfg_if::cfg_if;
-use io::{construct_io_mem_allocator_builder, construct_io_port_allocator_builder};
+use io::construct_io_mem_allocator_builder;
 use spin::Once;
 use x86::cpuid::{CpuId, FeatureInfo};
 
@@ -81,7 +81,6 @@ pub(crate) unsafe fn late_init_on_bsp() {
     kernel::acpi::init();
 
     let io_mem_builder = construct_io_mem_allocator_builder();
-    let io_port_builder = construct_io_port_allocator_builder();
 
     match kernel::apic::init(&io_mem_builder) {
         Ok(_) => {
@@ -110,9 +109,12 @@ pub(crate) unsafe fn late_init_on_bsp() {
     // Some driver like serial may use PIC
     kernel::pic::init();
 
-    // SAFETY: All the system device memory and port I/Os have been removed from the builder.
+    // SAFETY:
+    // 1. All the system device memory have been removed from the builder.
+    // 2. All the port I/O regions belonging to the system device are defined using the macros.
+    // 3. `MAX_IO_PORT` defined in `crate::arch::io` is the maximum value specified by x86-64.
     unsafe {
-        crate::io::init(io_mem_builder, io_port_builder);
+        crate::io::init(io_mem_builder);
     }
 }
 
