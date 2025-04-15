@@ -30,7 +30,6 @@ use crate::{
     task::{atomic_mode::AsAtomicModeGuard, disable_preempt, DisabledPreemptGuard},
     Error,
 };
-
 /// A virtual address space for user-mode tasks, enabling safe manipulation of user-space memory.
 ///
 /// The `VmSpace` type provides memory isolation guarantees between user-space and

@@ -18,6 +18,7 @@ use crate::{Pixel, PixelFormat, RenderedPixel};
 #[derive(Debug)]
 pub struct FrameBuffer {
     io_mem: IoMem,
+    base: usize,
     width: usize,
     height: usize,
     line_size: usize,
@@ -25,6 +26,10 @@ pub struct FrameBuffer {
 }
 
 pub static FRAMEBUFFER: Once<Arc<FrameBuffer>> = Once::new();
+
+pub fn get_framebuffer_info() -> Option<Arc<FrameBuffer>> {
+    FRAMEBUFFER.get().cloned()
+}
 
 pub(crate) fn init() {
     let Some(framebuffer_arg) = boot_info().framebuffer_arg else {
@@ -67,6 +72,7 @@ pub(crate) fn init() {
 
         FrameBuffer {
             io_mem,
+            base: framebuffer_arg.address,
             width: framebuffer_arg.width,
             height: framebuffer_arg.height,
             line_size,
@@ -92,6 +98,28 @@ impl FrameBuffer {
     /// Returns the height of the framebuffer in pixels.
     pub fn height(&self) -> usize {
         self.height
+    }
+
+    /// Get the IO memory of the framebuffer.
+    pub fn io_mem(&self) -> &IoMem {
+        // FIXME: Check the correctness of ownership
+        &self.io_mem
+    }
+
+    /// Returns the physical address of the framebuffer.
+    pub fn io_mem_base(&self) -> usize {
+        self.base
+    }
+
+    /// Returns the resolution in pixels.
+    pub fn resolution(&self) -> (usize, usize) {
+        (self.width, self.height)
+    }
+
+    /// Returns the number of bytes per pixel (color depth).
+    pub fn bytes_per_pixel(&self) -> usize {
+        // self.bytes_per_pixel
+        0
     }
 
     /// Returns the pixel format of the framebuffer.

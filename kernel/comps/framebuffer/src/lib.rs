@@ -13,7 +13,7 @@ mod pixel;
 
 use component::{init_component, ComponentInitError};
 pub use console::{FramebufferConsole, CONSOLE_NAME, FRAMEBUFFER_CONSOLE};
-pub use framebuffer::{FrameBuffer, FRAMEBUFFER};
+pub use framebuffer::{get_framebuffer_info, FrameBuffer, FRAMEBUFFER};
 pub use pixel::{Pixel, PixelFormat, RenderedPixel};
 
 #[init_component]
