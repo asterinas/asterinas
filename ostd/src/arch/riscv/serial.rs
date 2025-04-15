@@ -11,14 +11,6 @@ pub fn print(args: fmt::Arguments) {
     Stdout.write_fmt(args).unwrap();
 }
 
-/// The callback function for console input.
-pub type InputCallback = dyn Fn(u8) + Send + Sync + 'static;
-
-/// Registers a callback function to be called when there is console input.
-pub fn register_console_input_callback(_f: &'static InputCallback) {
-    todo!()
-}
-
 struct Stdout;
 
 impl Write for Stdout {
@@ -32,8 +24,6 @@ impl Write for Stdout {
 
 /// Initializes the serial port.
 pub(crate) fn init() {}
-
-pub(crate) fn callback_init() {}
 
 /// Sends a byte on the serial port.
 pub fn send(data: u8) {
