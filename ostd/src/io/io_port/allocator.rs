@@ -4,11 +4,14 @@
 use core::ops::Range;
 
 use id_alloc::IdAlloc;
-use log::{debug, info};
+use log::debug;
 use spin::Once;
 
 use super::IoPort;
-use crate::sync::{LocalIrqDisabled, SpinLock};
+use crate::{
+    io::RawIoPortRange,
+    sync::{LocalIrqDisabled, SpinLock},
+};
 
 /// I/O port allocator that allocates port I/O access to device drivers.
 pub struct IoPortAllocator {
@@ -50,53 +53,47 @@ impl IoPortAllocator {
     }
 }
 
-/// Builder for `IoPortAllocator`.
-///
-/// The builder must contains the port I/O regions according to architecture specification. Also, OSTD
-/// must exclude the port I/O regions of the system device before building the `IoPortAllocator`.
-pub(crate) struct IoPortAllocatorBuilder {
-    allocator: IdAlloc,
-}
-
-impl IoPortAllocatorBuilder {
-    /// Initializes port I/O region for devices.
-    ///
-    /// # Safety
-    ///
-    /// User must ensure `max_port` doesn't exceed the maximum value specified by architecture.
-    pub(crate) unsafe fn new(max_port: u16) -> Self {
-        info!(
-            "Creating new I/O port allocator builder, max_port: {:#x?}",
-            max_port
-        );
-
-        Self {
-            allocator: IdAlloc::with_capacity(max_port as usize),
-        }
-    }
-
-    /// Removes access to a specific port I/O range.  
-    ///
-    /// All drivers in OSTD must use this method to prevent peripheral drivers from accessing illegal port IO range.
-    pub(crate) fn remove(&mut self, range: Range<u16>) {
-        info!("Removing PIO range: {:#x?}", range);
-
-        for i in range {
-            self.allocator.alloc_specific(i as usize);
-        }
-    }
-}
-
 pub(super) static IO_PORT_ALLOCATOR: Once<IoPortAllocator> = Once::new();
 
-/// Initializes the static `IO_PORT_ALLOCATOR` based on builder.
+/// Initializes the static `IO_PORT_ALLOCATOR` and removes the system device I/O port regions.
 ///
 /// # Safety
 ///
-/// User must ensure all the port I/O regions that belong to the system device have been removed by calling the
-/// `remove` function.
-pub(crate) unsafe fn init(io_port_builder: IoPortAllocatorBuilder) {
+/// User must ensure that:
+///
+/// 1. All the port I/O regions belonging to the system device are defined using the macros
+///    `sensitive_io_port` and `reserve_io_port_range`.
+///
+/// 2. `MAX_IO_PORT` defined in `crate::arch::io` is guaranteed not to exceed the maximum
+///    value specified by architecture.
+pub(crate) unsafe fn init() {
+    // SAFETY: `MAX_IO_PORT` is guaranteed not to exceed the maximum value specified by architecture.
+    let mut allocator = IdAlloc::with_capacity(crate::arch::io::MAX_IO_PORT as usize);
+
+    extern "C" {
+        fn __sensitive_io_ports_start();
+        fn __sensitive_io_ports_end();
+    }
+    let start = __sensitive_io_ports_start as usize;
+    let end = __sensitive_io_ports_end as usize;
+    assert!((end - start) % size_of::<RawIoPortRange>() == 0);
+
+    // Iterate through the sensitive I/O port ranges and remove them from the allocator.
+    let io_port_range_count = (end - start) / size_of::<RawIoPortRange>();
+    for i in 0..io_port_range_count {
+        let range_base_addr = __sensitive_io_ports_start as usize + i * size_of::<RawIoPortRange>();
+        // SAFETY: The range is guaranteed to be valid as it is defined in the `.sensitive_io_ports` section.
+        let port_range = unsafe { *(range_base_addr as *const RawIoPortRange) };
+
+        assert!(port_range.begin < port_range.end);
+        debug!("Removing sensitive I/O port range: {:#x?}", port_range);
+
+        for i in port_range.begin..port_range.end {
+            allocator.alloc_specific(i as usize);
+        }
+    }
+
     IO_PORT_ALLOCATOR.call_once(|| IoPortAllocator {
-        allocator: SpinLock::new(io_port_builder.allocator),
+        allocator: SpinLock::new(allocator),
     });
 }
