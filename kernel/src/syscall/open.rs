@@ -5,6 +5,7 @@ use crate::{
     fs::{
         file_table::{FdFlags, FileDesc},
         fs_resolver::{FsPath, AT_FDCWD},
+        notify::fsnotify_open,
         utils::{AccessMode, CreationFlags},
     },
     prelude::*,
@@ -50,9 +51,9 @@ pub fn sys_openat(
             } else {
                 FdFlags::empty()
             };
-        file_table_locked.insert(file_handle, fd_flags)
+        file_table_locked.insert(file_handle.clone(), fd_flags)
     };
-
+    fsnotify_open(file_handle.dentry())?;
     Ok(SyscallReturn::Return(fd as _))
 }
 

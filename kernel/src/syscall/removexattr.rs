@@ -8,7 +8,10 @@ use super::{
     SyscallReturn,
 };
 use crate::{
-    fs::file_table::{get_file_fast, FileDesc},
+    fs::{
+        file_table::{get_file_fast, FileDesc},
+        notify::fsnotify_attr_change,
+    },
     prelude::*,
     syscall::constants::MAX_FILENAME_LEN,
 };
@@ -53,5 +56,7 @@ fn removexattr(
     check_xattr_namespace(xattr_name.namespace(), ctx)?;
 
     let dentry = lookup_dentry_for_xattr(&file_ctx, ctx)?;
-    dentry.remove_xattr(xattr_name)
+    dentry.remove_xattr(xattr_name)?;
+    fsnotify_attr_change(&dentry)?;
+    Ok(())
 }

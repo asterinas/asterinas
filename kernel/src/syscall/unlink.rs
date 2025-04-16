@@ -24,7 +24,6 @@ pub fn sys_unlinkat(
 
     let path = ctx.user_space().read_cstring(path_addr, MAX_FILENAME_LEN)?;
     debug!("dirfd = {}, path = {:?}", dirfd, path);
-
     let (dir_dentry, name) = {
         let path = path.to_string_lossy();
         if path.is_empty() {

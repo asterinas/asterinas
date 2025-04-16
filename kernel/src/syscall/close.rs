@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use bitflags::bitflags;
 use ostd::sync::RwArc;
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::{FdFlags, FileDesc},
+    fs::{
+        file_table::{FdFlags, FileDesc},
+        notify::fsnotify_close,
+    },
     prelude::*,
 };
 
@@ -25,6 +27,12 @@ pub fn sys_close(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
         let _ = file_table_locked.get_file(fd)?;
         file_table_locked.close_file(fd).unwrap()
     };
+
+    // Some file is not supported dentry, such as epoll file,
+    // TODO: Add anonymous inode support.
+    if let Some(dentry) = file.dentry() {
+        fsnotify_close(dentry)?;
+    }
 
     // Cleanup work needs to be done in the `Drop` impl.
     //

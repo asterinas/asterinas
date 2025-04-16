@@ -10,6 +10,7 @@ pub mod file_table;
 pub mod fs_resolver;
 pub mod inode_handle;
 pub mod named_pipe;
+pub mod notify;
 pub mod overlayfs;
 pub mod path;
 pub mod pipe;
