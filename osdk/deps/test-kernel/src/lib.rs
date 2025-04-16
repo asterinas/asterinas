@@ -54,7 +54,7 @@ fn main() {
 
 #[ostd::ktest::panic_handler]
 fn panic_handler(info: &core::panic::PanicInfo) -> ! {
-    let _irq_guard = ostd::trap::disable_local();
+    let _irq_guard = ostd::trap::irq::disable_local();
 
     use alloc::{boxed::Box, string::ToString};
 

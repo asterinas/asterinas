@@ -13,7 +13,7 @@ use ostd::{
     cpu_local,
     mm::Paddr,
     sync::{LocalIrqDisabled, SpinLock, SpinLockGuard},
-    trap::DisabledLocalIrqGuard,
+    trap::irq::DisabledLocalIrqGuard,
 };
 
 use crate::chunk::{greater_order_of, lesser_order_of, size_of_order, split_to_chunks, BuddyOrder};

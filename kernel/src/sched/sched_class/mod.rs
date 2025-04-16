@@ -16,7 +16,7 @@ use ostd::{
         },
         AtomicCpuId, Task,
     },
-    trap::disable_local,
+    trap::irq::disable_local,
 };
 
 use super::{

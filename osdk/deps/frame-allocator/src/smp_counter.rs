@@ -98,7 +98,7 @@ mod test {
             pub static FREE_SIZE_COUNTER: usize;
         }
 
-        let guard = trap::disable_local();
+        let guard = trap::irq::disable_local();
         let cur_cpu = guard.current_cpu();
         FREE_SIZE_COUNTER.add(cur_cpu, 10);
         assert_eq!(FREE_SIZE_COUNTER.get(), 10);

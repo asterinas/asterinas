@@ -28,7 +28,7 @@ pub(super) fn init() {
 fn x86_probe() {
     use common_device::{mmio_check_magic, mmio_read_device_id, MmioCommonDevice};
     use log::debug;
-    use ostd::{arch::kernel::IRQ_CHIP, io::IoMem, trap::IrqLine};
+    use ostd::{arch::kernel::IRQ_CHIP, io::IoMem, trap::irq::IrqLine};
 
     // TODO: The correct method for detecting VirtIO-MMIO devices on x86_64 systems is to parse the
     // kernel command line if ACPI tables are absent [1], or the ACPI SSDT if ACPI tables are

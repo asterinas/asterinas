@@ -79,7 +79,7 @@ impl super::Apic for XApic {
     }
 
     unsafe fn send_ipi(&self, icr: super::Icr) {
-        let _guard = crate::trap::disable_local();
+        let _guard = crate::trap::irq::disable_local();
         self.write(xapic::XAPIC_ESR, 0);
         // The upper 32 bits of ICR must be written into XAPIC_ICR1 first,
         // because writing into XAPIC_ICR0 will trigger the action of
