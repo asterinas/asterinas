@@ -6,7 +6,7 @@
 use super::*;
 use crate::{
     events::IoEvents,
-    fs::inode_handle::FileIo,
+    fs::{inode_handle::FileIo, notify::FsnotifyCommon},
     process::signal::{PollHandle, Pollable},
 };
 
@@ -22,6 +22,7 @@ const PTMX_MINOR_NUM: u32 = 2;
 pub struct Ptmx {
     inner: Inner,
     metadata: RwLock<Metadata>,
+    fsnotify: FsnotifyCommon,
 }
 
 #[derive(Clone)]
@@ -38,6 +39,7 @@ impl Ptmx {
                 &inner,
             )),
             inner,
+            fsnotify: FsnotifyCommon::new(),
         })
     }
 
@@ -166,6 +168,10 @@ impl Inode for Ptmx {
 
     fn is_dentry_cacheable(&self) -> bool {
         false
+    }
+
+    fn fsnotify(&self) -> &FsnotifyCommon {
+        &self.fsnotify
     }
 }
 

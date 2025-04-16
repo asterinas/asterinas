@@ -4,7 +4,10 @@ use bitflags::bitflags;
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::{FdFlags, FileDesc},
+    fs::{
+        file_table::{FdFlags, FileDesc},
+        notify::fsnotify_close,
+    },
     prelude::*,
     process::ContextUnshareAdminApi,
 };
@@ -25,6 +28,12 @@ pub fn sys_close(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
         let _ = file_table_locked.get_file(fd)?;
         file_table_locked.close_file(fd).unwrap()
     };
+
+    // Some file is not supported dentry, such as epoll file,
+    // TODO: Add anonymous inode support.
+    if let Some(path) = file.path() {
+        fsnotify_close(path)?;
+    }
 
     // Cleanup work needs to be done in the `Drop` impl.
     //

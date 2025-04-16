@@ -16,6 +16,7 @@ use crate::{
     events::IoEvents,
     fs::{
         device::Device,
+        notify::FsnotifyCommon,
         utils::{
             DirentVisitor, FallocMode, FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
             MknodType,
@@ -268,6 +269,8 @@ pub(in crate::fs) trait SysTreeInodeTy: Send + Sync + 'static {
             SysTreeNodeKind::Branch(_) | SysTreeNodeKind::Leaf(_)
         )
     }
+
+    fn fsnotify(&self) -> &FsnotifyCommon;
 }
 
 /// An enum that represent one of the variants of `SysTree` nodes.
@@ -582,6 +585,10 @@ impl<KInode: SysTreeInodeTy + Send + Sync + 'static> Inode for KInode {
 
     default fn is_dentry_cacheable(&self) -> bool {
         true
+    }
+
+    default fn fsnotify(&self) -> &FsnotifyCommon {
+        self.fsnotify()
     }
 }
 
