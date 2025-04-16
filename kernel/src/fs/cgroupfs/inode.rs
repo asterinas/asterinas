@@ -29,6 +29,8 @@ pub(super) struct CgroupInode {
     parent: Weak<CgroupInode>,
     /// Weak self-reference for cyclic data structures.
     this: Weak<CgroupInode>,
+    /// Fsnotify common.
+    fsnotify_common: FsnotifyCommon,
 }
 
 impl SysTreeInodeTy for CgroupInode {
@@ -47,6 +49,7 @@ impl SysTreeInodeTy for CgroupInode {
             mode: RwLock::new(mode),
             parent,
             this: this.clone(),
+            fsnotify_common: FsnotifyCommon::new(),
         })
     }
 
@@ -75,6 +78,10 @@ impl SysTreeInodeTy for CgroupInode {
         self.this
             .upgrade()
             .expect("invalid weak reference to `self`")
+    }
+
+    fn fsnotify(&self) -> &FsnotifyCommon {
+        &self.fsnotify_common
     }
 }
 

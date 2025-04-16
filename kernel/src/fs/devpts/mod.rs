@@ -145,6 +145,7 @@ struct RootInode {
     slaves: RwLock<SlotVec<(String, Arc<dyn Inode>)>>,
     metadata: RwLock<Metadata>,
     fs: Weak<DevPts>,
+    fsnotify: FsnotifyCommon,
 }
 
 impl RootInode {
@@ -154,6 +155,7 @@ impl RootInode {
             slaves: RwLock::new(SlotVec::new()),
             metadata: RwLock::new(Metadata::new_dir(ROOT_INO, mkmod!(a+rx, u+w), BLOCK_SIZE)),
             fs,
+            fsnotify: FsnotifyCommon::new(),
         })
     }
 }
@@ -323,5 +325,14 @@ impl Inode for RootInode {
 
     fn is_dentry_cacheable(&self) -> bool {
         false
+    }
+
+    fn fsnotify(&self) -> &FsnotifyCommon {
+        &self.fsnotify
+    }
+
+    // devpts is not supported link and unlink, so the hard link count is dummy
+    fn hard_links(&self) -> u16 {
+        0
     }
 }

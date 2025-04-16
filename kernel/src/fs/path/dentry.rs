@@ -13,9 +13,15 @@ use ostd::sync::RwMutexWriteGuard;
 
 use super::is_dot_or_dotdot;
 use crate::{
-    fs::utils::{
-        FileSystem, Inode, InodeMode, InodeType, Metadata, MknodType, XattrName, XattrNamespace,
-        XattrSetFlags,
+    fs::{
+        notify::{
+            fsnotify_delete, fsnotify_inode_removed, fsnotify_link, fsnotify_link_count,
+            FsnotifyCommon, FsnotifyGroup, FsnotifyMark,
+        },
+        utils::{
+            FileSystem, Inode, InodeMode, InodeType, Metadata, MknodType, XattrName,
+            XattrNamespace, XattrSetFlags,
+        },
     },
     prelude::*,
     process::{Gid, Uid},
@@ -240,6 +246,11 @@ impl Dentry {
         if dentry.is_dentry_cacheable() {
             children.upgrade().insert(name, dentry.clone());
         }
+        fsnotify_link(
+            dentry.parent().unwrap().inode(),
+            dentry.inode(),
+            dentry.name(),
+        )?;
         Ok(())
     }
 
@@ -253,7 +264,14 @@ impl Dentry {
         children.check_mountpoint(name)?;
 
         self.inode.unlink(name)?;
-
+        let child = children.find(name)?.unwrap();
+        let child_inode = child.inode();
+        fsnotify_link_count(child_inode)?;
+        if child_inode.hard_links() == 0 {
+            fsnotify_inode_removed(child_inode)?;
+            child_inode.remove_fsnotify_marks();
+        }
+        fsnotify_delete(self.inode(), child_inode, String::from(name))?;
         let mut children = children.upgrade();
         children.delete(name);
         Ok(())
@@ -269,7 +287,13 @@ impl Dentry {
         children.check_mountpoint(name)?;
 
         self.inode.rmdir(name)?;
-
+        let child = children.find(name)?.unwrap();
+        let child_inode = child.inode();
+        if child_inode.hard_links() == 0 {
+            fsnotify_inode_removed(child_inode)?;
+            child_inode.remove_fsnotify_marks();
+        }
+        fsnotify_delete(self.inode(), child_inode, String::from(name))?;
         let mut children = children.upgrade();
         children.delete(name);
         Ok(())
@@ -389,6 +413,14 @@ impl Dentry {
         list_writer: &mut VmWriter,
     ) -> Result<usize>;
     pub(super) fn remove_xattr(&self, name: XattrName) -> Result<()>;
+    pub(super) fn fsnotify(&self) -> &FsnotifyCommon;
+    pub(super) fn add_fsnotify_mark(&self, mark: Arc<dyn FsnotifyMark>, add_flags: u32);
+    pub(super) fn remove_fsnotify_mark(&self, mark: &Arc<dyn FsnotifyMark>);
+    pub(super) fn find_fsnotify_mark(
+        &self,
+        fsnotify_group: &Arc<dyn FsnotifyGroup>,
+    ) -> Option<Arc<dyn FsnotifyMark>>;
+    pub(super) fn send_fsnotify(&self, mask: u32, name: String);
 }
 
 impl Debug for Dentry {

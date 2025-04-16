@@ -7,6 +7,9 @@ use inherit_methods_macro::inherit_methods;
 use super::{Common, ProcFs};
 use crate::{
     fs::utils::{FileSystem, Inode, InodeMode, InodeType, IoctlCmd, Metadata, SymbolicLink},
+    fs::{
+        notify::FsnotifyCommon,
+    },
     prelude::*,
     process::{Gid, Uid},
 };
@@ -41,6 +44,7 @@ impl<S: SymOps> ProcSym<S> {
 impl<S: SymOps + 'static> Inode for ProcSym<S> {
     fn size(&self) -> usize;
     fn metadata(&self) -> Metadata;
+    fn fsnotify(&self) -> &FsnotifyCommon;
     fn ino(&self) -> u64;
     fn mode(&self) -> Result<InodeMode>;
     fn set_mode(&self, mode: InodeMode) -> Result<()>;

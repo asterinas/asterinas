@@ -127,7 +127,17 @@ impl Pollable for InodeHandle {
 #[inherit_methods(from = "self.0")]
 impl FileLike for InodeHandle {
     fn status_flags(&self) -> StatusFlags;
-
+    fn access_mode(&self) -> AccessMode;
+    fn metadata(&self) -> Metadata;
+    fn mode(&self) -> Result<InodeMode>;
+    fn set_mode(&self, mode: InodeMode) -> Result<()>;
+    fn owner(&self) -> Result<Uid>;
+    fn set_owner(&self, uid: Uid) -> Result<()>;
+    fn group(&self) -> Result<Gid>;
+    fn set_group(&self, gid: Gid) -> Result<()>;
+    fn seek(&self, seek_from: SeekFrom) -> Result<usize>;
+    fn mappable(&self) -> Result<Mappable>;
+    fn path(&self) -> Option<&Path>;
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         if !self.1.contains(Rights::READ) {
             return_errno_with_message!(Errno::EBADF, "the file is not opened readable");

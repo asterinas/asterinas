@@ -22,6 +22,7 @@ pub struct PtySlaveInode {
     device: Arc<PtySlave>,
     metadata: RwLock<Metadata>,
     fs: Weak<DevPts>,
+    fsnotify: FsnotifyCommon,
 }
 
 impl PtySlaveInode {
@@ -35,6 +36,7 @@ impl PtySlaveInode {
             )),
             device,
             fs,
+            fsnotify: FsnotifyCommon::new(),
         })
     }
 }
@@ -153,5 +155,9 @@ impl Inode for PtySlaveInode {
         status_flags: StatusFlags,
     ) -> Option<Result<Arc<dyn FileIo>>> {
         self.device.open()
+    }
+
+    fn fsnotify(&self) -> &FsnotifyCommon {
+        &self.fsnotify
     }
 }

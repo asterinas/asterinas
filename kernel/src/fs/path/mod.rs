@@ -11,6 +11,7 @@ pub use mount_namespace::MountNamespace;
 use crate::{
     fs::{
         inode_handle::InodeHandle,
+        notify::{FsnotifyGroup, FsnotifyMark},
         path::dentry::{Dentry, DentryKey},
         utils::{
             CreationFlags, FileSystem, FsFlags, Inode, InodeMode, InodeType, Metadata, MknodType,
@@ -128,9 +129,7 @@ impl Path {
     ///
     /// If it is the root of a mount, it will go up to the mountpoint
     /// to get the name of the mountpoint recursively.
-    //
-    // FIXME: This method needs to be aware of the current process's root path.
-    fn effective_name(&self) -> String {
+    pub fn effective_name(&self) -> String {
         if !self.is_mount_root() {
             return self.dentry.name();
         }
@@ -150,7 +149,7 @@ impl Path {
     ///
     /// If it is the root of a mount, it will go up to the mountpoint
     /// to get the parent of the mountpoint recursively.
-    fn effective_parent(&self) -> Option<Self> {
+    pub fn effective_parent(&self) -> Option<Self> {
         if !self.is_mount_root() {
             return Some(Self::new(self.mount.clone(), self.dentry.parent().unwrap()));
         }
@@ -188,6 +187,14 @@ impl Path {
         let corresponding_path = Self::new(corresponding_mount, self.dentry.clone());
 
         Some(corresponding_path)
+    }
+
+    /// Find the fsnotify mark of the current `Path`.
+    pub fn find_fsnotify_mark(
+        &self,
+        fsnotify_group: &Arc<dyn FsnotifyGroup>,
+    ) -> Option<Arc<dyn FsnotifyMark>> {
+        self.inode().find_fsnotify_mark(fsnotify_group)
     }
 
     fn this(&self) -> Self {

@@ -8,6 +8,7 @@ use crate::{
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
+        notify::fsnotify_create,
         utils::{InodeMode, InodeType, MknodType},
     },
     prelude::*,
@@ -59,7 +60,7 @@ pub fn sys_mknodat(
         }
         _ => return_errno_with_message!(Errno::EPERM, "unimplemented file types"),
     }
-
+    fsnotify_create(&dir_path, name)?;
     Ok(SyscallReturn::Return(0))
 }
 

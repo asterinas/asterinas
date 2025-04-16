@@ -6,6 +6,8 @@ use ostd::task::Task;
 
 use super::{
     file_table::{get_file_fast, FileDesc},
+    inode_handle::InodeHandle,
+    notify::fsnotify_create,
     path::Path,
     utils::{InodeType, PATH_MAX, SYMLINKS_MAX},
 };

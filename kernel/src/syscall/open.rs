@@ -7,6 +7,7 @@ use crate::{
         file_table::{FdFlags, FileDesc},
         fs_resolver::{FsPath, FsResolver, LookupResult, PathOrInode, AT_FDCWD},
         inode_handle::InodeHandle,
+        notify::fsnotify_open,
         ramfs::memfd::{MemfdFile, MemfdInode},
         utils::{AccessMode, CreationFlags, InodeMode, InodeType, OpenArgs, StatusFlags},
     },
@@ -56,9 +57,9 @@ pub fn sys_openat(
             } else {
                 FdFlags::empty()
             };
-        file_table_locked.insert(file_handle, fd_flags)
+        file_table_locked.insert(file_handle.clone(), fd_flags)
     };
-
+    fsnotify_open(file_handle.path())?;
     Ok(SyscallReturn::Return(fd as _))
 }
 

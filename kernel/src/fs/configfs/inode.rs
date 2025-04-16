@@ -14,6 +14,7 @@ use crate::{
     },
     prelude::*,
 };
+use crate::fs::notify::FsnotifyCommon;
 
 /// An inode abstraction used in the `ConfigFs`.
 pub struct ConfigInode {
@@ -25,6 +26,8 @@ pub struct ConfigInode {
     mode: RwLock<InodeMode>,
     /// Weak reference to the parent inode.
     parent: Weak<ConfigInode>,
+    /// Fsnotify common data.
+    fsnotify: FsnotifyCommon,
     /// Weak self-reference for cyclic data structures.
     this: Weak<ConfigInode>,
 }
@@ -44,6 +47,7 @@ impl SysTreeInodeTy for ConfigInode {
             metadata,
             mode: RwLock::new(mode),
             parent,
+            fsnotify: FsnotifyCommon::new(),
             this: this.clone(),
         })
     }
@@ -67,6 +71,10 @@ impl SysTreeInodeTy for ConfigInode {
 
     fn parent(&self) -> &Weak<Self> {
         &self.parent
+    }
+
+    fn fsnotify(&self) -> &FsnotifyCommon {
+        &self.fsnotify
     }
 
     fn this(&self) -> Arc<Self> {

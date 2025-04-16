@@ -7,6 +7,7 @@ use core::time::Duration;
 use crate::{
     fs::{
         ext2::{FilePerm, Inode as Ext2Inode},
+        notify::FsnotifyCommon,
         utils::{
             DirentVisitor, Extension, FallocMode, FileSystem, Inode, InodeMode, InodeType,
             IoctlCmd, Metadata, MknodType, SymbolicLink, XattrName, XattrNamespace, XattrSetFlags,
@@ -91,6 +92,10 @@ impl Inode for Ext2Inode {
 
     fn page_cache(&self) -> Option<Arc<Vmo>> {
         Some(self.page_cache())
+    }
+
+    fn hard_links(&self) -> u16 {
+        self.hard_links()
     }
 
     fn read_at(&self, offset: usize, writer: &mut VmWriter) -> Result<usize> {
@@ -212,6 +217,10 @@ impl Inode for Ext2Inode {
 
     fn remove_xattr(&self, name: XattrName) -> Result<()> {
         self.remove_xattr(name)
+    }
+
+    fn fsnotify(&self) -> &FsnotifyCommon {
+        self.fsnotify()
     }
 }
 
