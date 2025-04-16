@@ -4,7 +4,7 @@ use alloc::sync::Arc;
 use core::{ptr::NonNull, sync::atomic::Ordering};
 
 use super::{context_switch, Task, TaskContext, POST_SCHEDULE_HANDLER};
-use crate::{cpu_local_cell, trap::DisabledLocalIrqGuard};
+use crate::{cpu_local_cell, trap::irq::DisabledLocalIrqGuard};
 
 cpu_local_cell! {
     /// The `Arc<Task>` (casted by [`Arc::into_raw`]) that is the current task.
@@ -43,7 +43,7 @@ pub(super) fn switch_to_task(next_task: Arc<Task>) {
         crate::sync::finish_grace_period();
     }
 
-    let irq_guard = crate::trap::disable_local();
+    let irq_guard = crate::trap::irq::disable_local();
 
     let current_task_ptr = CURRENT_TASK_PTR.load();
     let current_task_ctx_ptr = if !current_task_ptr.is_null() {

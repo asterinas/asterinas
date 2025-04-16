@@ -11,7 +11,7 @@ use volatile::{access::ReadWrite, VolatileRef};
 use super::registers::Capability;
 use crate::{
     sync::{LocalIrqDisabled, SpinLock},
-    trap::{IrqLine, TrapFrame},
+    trap::{irq::IrqLine, TrapFrame},
 };
 
 #[derive(Debug)]

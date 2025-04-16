@@ -7,8 +7,8 @@ use log::info;
 #[cfg(target_arch = "x86_64")]
 use ostd::arch::kernel::MappedIrqLine;
 #[cfg(target_arch = "riscv64")] // TODO: Add `MappedIrqLine` support for RISC-V.
-use ostd::trap::IrqLine as MappedIrqLine;
-use ostd::{io::IoMem, mm::VmIoOnce, trap::IrqLine, Error, Result};
+use ostd::trap::irq::IrqLine as MappedIrqLine;
+use ostd::{io::IoMem, mm::VmIoOnce, trap::irq::IrqLine, Error, Result};
 
 /// A MMIO common device.
 #[derive(Debug)]

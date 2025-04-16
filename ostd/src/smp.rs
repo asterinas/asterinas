@@ -14,7 +14,7 @@ use crate::{
     cpu::{CpuSet, PinCurrentCpu},
     cpu_local,
     sync::SpinLock,
-    trap::{self, IrqLine, TrapFrame},
+    trap::{self, irq::IrqLine, TrapFrame},
 };
 
 /// Executes a function on other processors.
@@ -32,7 +32,7 @@ use crate::{
 /// The function `f` will be executed asynchronously on the target processors.
 /// However if called on the current processor, it will be synchronous.
 pub fn inter_processor_call(targets: &CpuSet, f: fn()) {
-    let irq_guard = trap::disable_local();
+    let irq_guard = trap::irq::disable_local();
     let this_cpu_id = irq_guard.current_cpu();
 
     let ipi_data = IPI_GLOBAL_DATA.get().unwrap();
