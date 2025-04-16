@@ -12,7 +12,7 @@
 use crate::{
     arch::{device::io_port::WriteOnlyAccess, kernel::IO_APIC, timer::TIMER_FREQ},
     io::{sensitive_io_port, IoPort},
-    trap::IrqLine,
+    trap::irq::IrqLine,
 };
 
 /// PIT Operating Mode.

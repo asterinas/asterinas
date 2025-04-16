@@ -9,7 +9,7 @@ use log::info;
 use crate::{
     arch::device::io_port::WriteOnlyAccess,
     io::{sensitive_io_port, IoPort},
-    trap::IrqLine,
+    trap::irq::IrqLine,
 };
 
 sensitive_io_port! {

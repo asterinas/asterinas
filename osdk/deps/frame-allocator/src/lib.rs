@@ -64,7 +64,7 @@ pub struct FrameAllocator;
 
 impl GlobalFrameAllocator for FrameAllocator {
     fn alloc(&self, layout: Layout) -> Option<Paddr> {
-        let guard = trap::disable_local();
+        let guard = trap::irq::disable_local();
         let res = cache::alloc(&guard, layout);
         if res.is_some() {
             TOTAL_FREE_SIZE.sub(guard.current_cpu(), layout.size());
@@ -73,13 +73,13 @@ impl GlobalFrameAllocator for FrameAllocator {
     }
 
     fn dealloc(&self, addr: Paddr, size: usize) {
-        let guard = trap::disable_local();
+        let guard = trap::irq::disable_local();
         TOTAL_FREE_SIZE.add(guard.current_cpu(), size);
         cache::dealloc(&guard, addr, size);
     }
 
     fn add_free_memory(&self, addr: Paddr, size: usize) {
-        let guard = trap::disable_local();
+        let guard = trap::irq::disable_local();
         TOTAL_FREE_SIZE.add(guard.current_cpu(), size);
         pools::add_free_memory(&guard, addr, size);
     }

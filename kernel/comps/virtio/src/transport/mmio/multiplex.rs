@@ -8,7 +8,10 @@ use aster_util::safe_ptr::SafePtr;
 use ostd::{
     io::IoMem,
     sync::RwLock,
-    trap::{IrqCallbackFunction, IrqLine, TrapFrame},
+    trap::{
+        irq::{IrqCallbackFunction, IrqLine},
+        TrapFrame,
+    },
 };
 
 /// Multiplexing Irqs. The two interrupt types (configuration space change and queue interrupt)

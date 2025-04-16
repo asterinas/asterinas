@@ -67,7 +67,7 @@ pub(super) unsafe fn init() {
 }
 
 pub(super) fn handle_timer_interrupt() {
-    let irq_guard = trap::disable_local();
+    let irq_guard = trap::irq::disable_local();
     if irq_guard.current_cpu() == CpuId::bsp() {
         crate::timer::jiffies::ELAPSED.fetch_add(1, Ordering::Relaxed);
     }

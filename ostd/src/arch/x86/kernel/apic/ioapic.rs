@@ -19,7 +19,7 @@ use crate::{
     io::IoMemAllocatorBuilder,
     mm::paddr_to_vaddr,
     sync::SpinLock,
-    trap::IrqLine,
+    trap::irq::IrqLine,
     Error, Result,
 };
 

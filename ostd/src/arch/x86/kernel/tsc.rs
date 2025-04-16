@@ -12,7 +12,7 @@ use crate::{
         pit::{self, OperatingMode},
         TIMER_FREQ,
     },
-    trap::{IrqLine, TrapFrame},
+    trap::{irq::IrqLine, TrapFrame},
 };
 
 /// The frequency of TSC(Hz)

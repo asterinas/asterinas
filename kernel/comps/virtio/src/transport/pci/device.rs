@@ -15,7 +15,7 @@ use ostd::{
     },
     io::IoMem,
     mm::DmaCoherent,
-    trap::IrqCallbackFunction,
+    trap::irq::IrqCallbackFunction,
 };
 
 use super::{common_cfg::VirtioPciCommonCfg, msix::VirtioMsixManager};
