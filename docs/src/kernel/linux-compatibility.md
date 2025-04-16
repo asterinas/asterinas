@@ -273,9 +273,9 @@ provided by Linux on x86-64 architecture.
 | 250     | keyctl           | ❌              |
 | 251     | ioprio_set       | ❌              |
 | 252     | ioprio_get       | ❌              |
-| 253     | inotify_init     | ❌              |
-| 254     | inotify_add_watch | ❌             |
-| 255     | inotify_rm_watch | ❌              |
+| 253     | inotify_init     | ✅              |
+| 254     | inotify_add_watch | ✅             |
+| 255     | inotify_rm_watch | ✅               |
 | 256     | migrate_pages    | ❌              |
 | 257     | openat           | ✅              |
 | 258     | mkdirat          | ✅              |
@@ -314,7 +314,7 @@ provided by Linux on x86-64 architecture.
 | 291     | epoll_create1    | ✅              |
 | 292     | dup3             | ✅              |
 | 293     | pipe2            | ✅              |
-| 294     | inotify_init1    | ❌              |
+| 294     | inotify_init1    | ✅              |
 | 295     | preadv           | ✅              |
 | 296     | pwritev          | ✅              |
 | 297     | rt_tgsigqueueinfo | ❌             |
