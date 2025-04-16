@@ -4,7 +4,7 @@ use super::JobControl;
 use crate::{
     fs::inode_handle::FileIo,
     prelude::*,
-    process::{process_table, Pgid, ProcessGroup},
+    process::{Pgid, ProcessGroup},
 };
 
 /// A terminal is used to interact with system. A terminal can support the shell
@@ -31,7 +31,7 @@ pub trait Terminal: FileIo {
             return_errno_with_message!(Errno::ENOTTY, "self is not controlling terminal");
         }
 
-        let foreground = process_table::get_process_group(pgid);
+        let foreground = current!().pid_namespace().get_process_group(*pgid);
 
         self.job_control().set_foreground(foreground.as_ref())
     }

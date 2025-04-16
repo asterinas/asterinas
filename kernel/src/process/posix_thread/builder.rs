@@ -6,24 +6,27 @@ use ostd::{
     task::Task,
 };
 
-use super::{thread_table, PosixThread, ThreadLocal};
+use super::{PosixThread, ThreadLocal};
 use crate::{
     fs::{file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
     process::{
+        pid_namespace::{NestedId, NestedIdAttachmentWriteGuard},
         posix_thread::name::ThreadName,
         signal::{sig_mask::AtomicSigMask, sig_queues::SigQueues},
         Credentials, Process,
     },
     sched::{Nice, SchedPolicy},
-    thread::{task, Thread, Tid},
+    thread::{task, AsThread, Thread, Tid},
     time::{clocks::ProfClock, TimerManager},
 };
 
 /// The builder to build a posix thread
-pub struct PosixThreadBuilder {
+pub struct PosixThreadBuilder<'a, 'b> {
     // The essential part
     tid: Tid,
+    nested_id: NestedId,
+    nested_id_attachment: &'a mut NestedIdAttachmentWriteGuard<'b>,
     user_ctx: Arc<UserContext>,
     process: Weak<Process>,
     credentials: Credentials,
@@ -39,10 +42,18 @@ pub struct PosixThreadBuilder {
     sched_policy: SchedPolicy,
 }
 
-impl PosixThreadBuilder {
-    pub fn new(tid: Tid, user_ctx: Arc<UserContext>, credentials: Credentials) -> Self {
+impl<'a, 'b> PosixThreadBuilder<'a, 'b> {
+    pub fn new(
+        tid: Tid,
+        nested_id: NestedId,
+        nested_id_attachment: &'a mut NestedIdAttachmentWriteGuard<'b>,
+        user_ctx: Arc<UserContext>,
+        credentials: Credentials,
+    ) -> Self {
         Self {
             tid,
+            nested_id,
+            nested_id_attachment,
             user_ctx,
             process: Weak::new(),
             credentials,
@@ -95,6 +106,8 @@ impl PosixThreadBuilder {
     pub fn build(self) -> Arc<Task> {
         let Self {
             tid,
+            nested_id,
+            nested_id_attachment,
             user_ctx,
             process,
             credentials,
@@ -120,7 +133,7 @@ impl PosixThreadBuilder {
             .dup()
             .unwrap();
 
-        Arc::new_cyclic(|weak_task| {
+        let task = Arc::new_cyclic(|weak_task| {
             let posix_thread = {
                 let prof_clock = ProfClock::new();
                 let virtual_timer_manager = TimerManager::new(prof_clock.user_clock().clone());
@@ -139,6 +152,7 @@ impl PosixThreadBuilder {
                     prof_clock,
                     virtual_timer_manager,
                     prof_timer_manager,
+                    nested_id,
                 }
             };
 
@@ -153,8 +167,12 @@ impl PosixThreadBuilder {
             let thread_local =
                 ThreadLocal::new(set_child_tid, clear_child_tid, root_vmar, file_table);
 
-            thread_table::add_thread(tid, thread.clone());
             task::create_new_user_task(user_ctx, thread, thread_local)
-        })
+        });
+
+        let thread = task.as_thread().unwrap();
+        nested_id_attachment.attach_thread(thread.clone());
+
+        task
     }
 }

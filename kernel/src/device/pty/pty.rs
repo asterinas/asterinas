@@ -241,7 +241,9 @@ impl FileIo for PtyMaster {
                         "the foreground process group does not exist"
                     );
                 };
-                let fg_pgid = foreground.pgid();
+                let fg_pgid = foreground
+                    .pgid_in_ns(current!().pid_namespace())
+                    .unwrap_or(0);
                 current_userspace!().write_val(arg, &fg_pgid)?;
                 Ok(0)
             }
@@ -389,7 +391,9 @@ impl FileIo for PtySlave {
                     );
                 };
 
-                let fg_pgid = foreground.pgid();
+                let fg_pgid = foreground
+                    .pgid_in_ns(current!().pid_namespace())
+                    .unwrap_or(0);
                 current_userspace!().write_val(arg, &fg_pgid)?;
                 Ok(0)
             }

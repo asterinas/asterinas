@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{Pgid, Process, ProcessGroup, Sid, Terminal};
-use crate::prelude::*;
+use keyable_arc::KeyableArc;
+
+use super::{Process, ProcessGroup, Sid, Terminal};
+use crate::{
+    prelude::*,
+    process::{pid_namespace::NestedId, PidNamespace},
+};
 
 /// A session.
 ///
@@ -15,12 +20,12 @@ use crate::prelude::*;
 /// **Controlling terminal**: A terminal can be used to manage all processes in the session. The
 /// controlling terminal is established when the session leader first opens a terminal.
 pub struct Session {
-    sid: Sid,
+    nested_id: NestedId,
     inner: Mutex<Inner>,
 }
 
 struct Inner {
-    process_groups: BTreeMap<Pgid, Arc<ProcessGroup>>,
+    process_groups: BTreeSet<KeyableArc<ProcessGroup>>,
     terminal: Option<Arc<dyn Terminal>>,
 }
 
@@ -33,17 +38,16 @@ impl Session {
     /// The caller needs to ensure that the process does not belong to other process group or other
     /// session.
     pub(in crate::process) fn new_pair(process: Arc<Process>) -> (Arc<Self>, Arc<ProcessGroup>) {
+        let nested_id = process.nested_id.clone();
         let mut process_group = None;
 
         let session = Arc::new_cyclic(|weak_session| {
             let group = ProcessGroup::new(process, weak_session.clone());
             process_group = Some(group.clone());
 
-            let pgid = group.pgid();
-
             let inner = {
-                let mut process_groups = BTreeMap::new();
-                process_groups.insert(pgid, group);
+                let mut process_groups = BTreeSet::new();
+                process_groups.insert(group.into());
                 Inner {
                     process_groups,
                     terminal: None,
@@ -51,7 +55,7 @@ impl Session {
             };
 
             Self {
-                sid: pgid,
+                nested_id,
                 inner: Mutex::new(inner),
             }
         });
@@ -59,9 +63,14 @@ impl Session {
         (session, process_group.unwrap())
     }
 
-    /// Returns the session identifier.
-    pub fn sid(&self) -> Sid {
-        self.sid
+    /// Returns the session identifier in the given PID namespace.
+    pub fn sid_in_ns(&self, pid_ns: &Arc<PidNamespace>) -> Option<Sid> {
+        pid_ns.get_current_id(&self.nested_id)
+    }
+
+    /// Returns the session identifier in all PID namespaces.
+    pub fn nested_id(&self) -> &NestedId {
+        &self.nested_id
     }
 
     /// Acquires a lock on the session.
@@ -135,19 +144,17 @@ impl SessionGuard<'_> {
     /// The caller needs to ensure that the process group didn't previously belong to the session,
     /// but now does.
     pub(in crate::process) fn insert_process_group(&mut self, process_group: Arc<ProcessGroup>) {
-        let old_process_group = self
-            .inner
-            .process_groups
-            .insert(process_group.pgid(), process_group);
-        debug_assert!(old_process_group.is_none());
+        let old_process_group = self.inner.process_groups.insert(process_group.into());
+        debug_assert!(!old_process_group);
     }
 
     /// Removes a process group from the session.
     ///
     /// The caller needs to ensure that the process group previously belonged to the session, but
     /// now doesn't.
-    pub(in crate::process) fn remove_process_group(&mut self, pgid: &Pgid) {
-        self.inner.process_groups.remove(pgid);
+    pub(in crate::process) fn remove_process_group(&mut self, group: &Arc<ProcessGroup>) {
+        let key = KeyableArc::from(group.clone());
+        self.inner.process_groups.remove(&key);
     }
 
     /// Returns whether the session is empty.

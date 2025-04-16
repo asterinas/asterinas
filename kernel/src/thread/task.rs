@@ -31,7 +31,7 @@ pub fn create_new_user_task(
         let current_thread = current_task.as_thread().unwrap();
         let current_posix_thread = current_thread.as_posix_thread().unwrap();
         let current_thread_local = current_task.as_thread_local().unwrap();
-        let current_process = current_posix_thread.process();
+        let current_process = current!();
 
         let user_ctx = current_task
             .user_ctx()
@@ -64,7 +64,7 @@ pub fn create_new_user_task(
         let has_kernel_event_fn = || current_posix_thread.has_pending();
 
         let ctx = Context {
-            process: current_process.as_ref(),
+            process: &current_process,
             thread_local: current_thread_local,
             posix_thread: current_posix_thread,
             thread: current_thread.as_ref(),

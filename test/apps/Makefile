@@ -32,6 +32,7 @@ TEST_APPS := \
 	mmap \
 	mongoose \
 	network \
+	pid_namespace \
 	pipe \
 	prctl \
 	process \

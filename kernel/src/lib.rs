@@ -89,6 +89,7 @@ pub fn main() {
 
 pub fn init() {
     thread::init();
+    process::init();
     util::random::init();
     driver::init();
     time::init();
@@ -99,7 +100,6 @@ pub fn init() {
     device::init().unwrap();
     syscall::init();
     vdso::init();
-    process::init();
 }
 
 fn ap_init() {

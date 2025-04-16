@@ -7,7 +7,7 @@ use crate::prelude::*;
 
 pub trait DirEntryVecExt {
     /// If the entry is not found by `name`, use `f` to get the inode, then put the entry into vec.
-    fn put_entry_if_not_found(&mut self, name: &str, f: impl Fn() -> Arc<dyn Inode>);
+    fn put_entry_if_not_found(&mut self, name: &str, f: impl FnOnce() -> Arc<dyn Inode>);
 
     /// Remove and returns the entry by name.
     /// Returns `None` if the entry has been removed.
@@ -15,7 +15,7 @@ pub trait DirEntryVecExt {
 }
 
 impl DirEntryVecExt for SlotVec<(String, Arc<dyn Inode>)> {
-    fn put_entry_if_not_found(&mut self, name: &str, f: impl Fn() -> Arc<dyn Inode>) {
+    fn put_entry_if_not_found(&mut self, name: &str, f: impl FnOnce() -> Arc<dyn Inode>) {
         if !self.iter().any(|(child_name, _)| child_name == name) {
             let inode = f();
             self.put((String::from(name), inode));

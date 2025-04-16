@@ -13,12 +13,13 @@ use crate::{
     },
     prelude::*,
     process::{
-        posix_thread::{allocate_posix_tid, PosixThreadBuilder, ThreadName},
-        process_table,
+        get_root_pid_namespace,
+        pid_namespace::{NestedId, NestedIdAttachmentWriteGuard},
+        posix_thread::{PosixThreadBuilder, ThreadName},
         process_vm::ProcessVm,
         rlimit::ResourceLimits,
         signal::sig_disposition::SigDispositions,
-        Credentials, ProgramToLoad,
+        Credentials, PidNamespace, ProgramToLoad,
     },
     sched::Nice,
     thread::Tid,
@@ -33,9 +34,21 @@ pub fn spawn_init_process(
     // Ensure the path for init process executable is absolute.
     debug_assert!(executable_path.starts_with('/'));
 
-    let process = create_init_process(executable_path, argv, envp)?;
+    let pid_ns = get_root_pid_namespace();
+    let nested_id = pid_ns.allocate_nested_id();
+    let attachment = pid_ns.get_attachment(&nested_id).unwrap();
+    let mut attachment_guard = attachment.write();
 
-    set_session_and_group(&process);
+    let process = create_init_process(
+        executable_path,
+        argv,
+        envp,
+        &nested_id,
+        &pid_ns,
+        &mut attachment_guard,
+    )?;
+
+    set_session_and_group(&process, &mut attachment_guard);
 
     open_ntty_as_controlling_terminal(&process)?;
 
@@ -44,12 +57,15 @@ pub fn spawn_init_process(
     Ok(process)
 }
 
-fn create_init_process(
+fn create_init_process<'a, 'b>(
     executable_path: &str,
     argv: Vec<CString>,
     envp: Vec<CString>,
+    nested_id: &NestedId,
+    pid_ns: &Arc<PidNamespace>,
+    attachment_guard: &'a mut NestedIdAttachmentWriteGuard<'b>,
 ) -> Result<Arc<Process>> {
-    let pid = allocate_posix_tid();
+    let pid = pid_ns.get_current_id(&nested_id).unwrap();
     let parent = Weak::new();
     let process_vm = ProcessVm::alloc();
     let resource_limits = ResourceLimits::default();
@@ -64,46 +80,46 @@ fn create_init_process(
         resource_limits,
         nice,
         sig_dispositions,
+        pid_ns.clone(),
+        nested_id.clone(),
     );
 
     let init_task = create_init_task(
-        pid,
         init_proc.vm(),
         executable_path,
         Arc::downgrade(&init_proc),
         argv,
         envp,
+        pid,
+        nested_id,
+        attachment_guard,
     )?;
     init_proc.tasks().lock().insert(init_task).unwrap();
 
     Ok(init_proc)
 }
 
-fn set_session_and_group(process: &Arc<Process>) {
-    // Locking order: session table -> group table -> process table -> process group
-    let mut session_table_mut = process_table::session_table_mut();
-    let mut group_table_mut = process_table::group_table_mut();
-    let mut process_table_mut = process_table::process_table_mut();
-
+fn set_session_and_group(
+    process: &Arc<Process>,
+    attachment_guard: &mut NestedIdAttachmentWriteGuard,
+) {
     // Create a new process group and session for the process
-    process.set_new_session(
-        &mut process.process_group.lock(),
-        &mut session_table_mut,
-        &mut group_table_mut,
-    );
+    process.set_new_session(&mut process.process_group.lock(), attachment_guard);
 
     // Add the new process to the global table
-    process_table_mut.insert(process.pid(), process.clone());
+    attachment_guard.attach_process(process.clone());
 }
 
 /// Creates the init task from the given executable file.
-fn create_init_task(
-    tid: Tid,
+fn create_init_task<'a, 'b>(
     process_vm: &ProcessVm,
     executable_path: &str,
     process: Weak<Process>,
     argv: Vec<CString>,
     envp: Vec<CString>,
+    tid: Tid,
+    nested_id: &NestedId,
+    attachment_guard: &'a mut NestedIdAttachmentWriteGuard<'b>,
 ) -> Result<Arc<Task>> {
     let credentials = Credentials::new_root();
     let fs = ThreadFsInfo::default();
@@ -117,14 +133,23 @@ fn create_init_task(
         program_to_load.load_to_vm(process_vm, &fs_resolver)?
     };
 
-    let mut user_ctx = UserContext::default();
-    user_ctx.set_instruction_pointer(elf_load_info.entry_point() as _);
-    user_ctx.set_stack_pointer(elf_load_info.user_stack_top() as _);
+    let user_ctx = {
+        let mut ctx = UserContext::default();
+        ctx.set_instruction_pointer(elf_load_info.entry_point() as _);
+        ctx.set_stack_pointer(elf_load_info.user_stack_top() as _);
+        ctx
+    };
     let thread_name = Some(ThreadName::new_from_executable_path(executable_path)?);
-    let thread_builder = PosixThreadBuilder::new(tid, Arc::new(user_ctx), credentials)
-        .thread_name(thread_name)
-        .process(process)
-        .fs(Arc::new(fs));
+    let thread_builder = PosixThreadBuilder::new(
+        tid,
+        nested_id.clone(),
+        attachment_guard,
+        Arc::new(user_ctx),
+        credentials,
+    )
+    .thread_name(thread_name)
+    .process(process)
+    .fs(Arc::new(fs));
     Ok(thread_builder.build())
 }
 

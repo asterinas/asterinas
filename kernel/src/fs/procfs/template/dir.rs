@@ -53,6 +53,10 @@ impl<D: DirOps> ProcDir<D> {
         })
     }
 
+    pub(in crate::fs::procfs) fn dir(&self) -> &D {
+        &self.inner
+    }
+
     pub fn this(&self) -> Arc<ProcDir<D>> {
         self.this.upgrade().unwrap()
     }

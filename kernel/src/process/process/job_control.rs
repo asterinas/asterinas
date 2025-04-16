@@ -162,7 +162,7 @@ impl JobControl {
         };
 
         let foreground_inner = foreground.lock();
-        foreground_inner.contains_process(&current!().pid())
+        foreground_inner.contains_process(&current!())
     }
 }
 

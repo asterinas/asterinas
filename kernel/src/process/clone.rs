@@ -5,19 +5,18 @@ use core::{num::NonZeroU64, sync::atomic::Ordering};
 use ostd::{cpu::context::UserContext, sync::RwArc, task::Task, user::UserContextApi};
 
 use super::{
+    pid_namespace::{NestedId, NestedIdAttachmentWriteGuard},
     posix_thread::{AsPosixThread, PosixThreadBuilder, ThreadName},
-    process_table,
     process_vm::ProcessVm,
     rlimit::ResourceLimits,
     signal::{constants::SIGCHLD, sig_disposition::SigDispositions, sig_num::SigNum},
-    Credentials, Pid, Process,
+    Credentials, Pid, PidNamespace, Process,
 };
 use crate::{
     cpu::LinuxAbi,
     current_userspace,
     fs::{file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
-    process::posix_thread::allocate_posix_tid,
     sched::Nice,
     thread::{AsThread, Tid},
 };
@@ -169,7 +168,8 @@ impl CloneFlags {
             | CloneFlags::CLONE_PARENT_SETTID
             | CloneFlags::CLONE_CHILD_SETTID
             | CloneFlags::CLONE_CHILD_CLEARTID
-            | CloneFlags::CLONE_VFORK;
+            | CloneFlags::CLONE_VFORK
+            | CloneFlags::CLONE_NEWPID;
         let unsupported_flags = *self - supported_flags;
         if !unsupported_flags.is_empty() {
             warn!("contains unsupported clone flags: {:?}", unsupported_flags);
@@ -209,7 +209,9 @@ pub fn clone_child(
             current.children_wait_queue().wait_until(cond);
         }
 
-        let child_pid = child_process.pid();
+        let child_pid = child_process
+            .pid_in_ns(ctx.process.pid_namespace())
+            .unwrap();
         Ok(child_pid)
     }
 }
@@ -227,6 +229,13 @@ fn clone_child_task(
         return_errno_with_message!(
             Errno::EINVAL,
             "`CLONE_THREAD` without `CLONE_VM` and `CLONE_SIGHAND` is not valid"
+        );
+    }
+
+    if clone_flags.contains(CloneFlags::CLONE_NEWPID) {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "`CLONE_NEWPID` cannot be used with `CLONE_THREAD`"
         );
     }
 
@@ -257,18 +266,31 @@ fn clone_child_task(
     // Inherit sigmask from current thread
     let sig_mask = posix_thread.sig_mask().load(Ordering::Relaxed).into();
 
-    let child_tid = allocate_posix_tid();
     let child_task = {
+        // Allocate a new nested TID for the child thread.
+        // FIXME: This clone may be avoided.
+        let pid_namespace = process.pid_namespace();
+        let child_nested_id = pid_namespace.allocate_nested_id();
+        let child_nested_id_attachment = pid_namespace.get_attachment(&child_nested_id).unwrap();
+        let mut attachment_guard = child_nested_id_attachment.write();
+        let child_tid = pid_namespace.get_current_id(&child_nested_id).unwrap();
+
         let credentials = {
             let credentials = ctx.posix_thread.credentials();
             Credentials::new_from(&credentials)
         };
 
-        let mut thread_builder = PosixThreadBuilder::new(child_tid, child_user_ctx, credentials)
-            .process(posix_thread.weak_process())
-            .sig_mask(sig_mask)
-            .file_table(child_file_table)
-            .fs(child_fs);
+        let mut thread_builder = PosixThreadBuilder::new(
+            child_tid,
+            child_nested_id,
+            &mut attachment_guard,
+            child_user_ctx,
+            credentials,
+        )
+        .process(posix_thread.weak_process())
+        .sig_mask(sig_mask)
+        .file_table(child_file_table)
+        .fs(child_fs);
 
         // Deal with SETTID/CLEARTID flags
         clone_parent_settid(child_tid, clone_args.parent_tid, clone_flags)?;
@@ -337,7 +359,13 @@ fn clone_child_process(
     // Inherit the parent's nice value
     let child_nice = process.nice().load(Ordering::Relaxed);
 
-    let child_tid = allocate_posix_tid();
+    // clone the pid namespace
+    let child_pid_ns = clone_pid_namespace(process, clone_flags)?;
+
+    let child_nested_id = child_pid_ns.allocate_nested_id();
+    let child_pid = child_pid_ns.get_current_id(&child_nested_id).unwrap();
+    let child_nested_id_attachment = child_pid_ns.get_attachment(&child_nested_id).unwrap();
+    let mut child_attachment_guard = child_nested_id_attachment.write();
 
     let child = {
         let child_elf_path = process.executable_path();
@@ -349,22 +377,33 @@ fn clone_child_process(
                 Credentials::new_from(&credentials)
             };
 
-            PosixThreadBuilder::new(child_tid, child_user_ctx, credentials)
-                .thread_name(Some(child_thread_name))
-                .sig_mask(child_sig_mask)
-                .file_table(child_file_table)
-                .fs(child_fs)
+            PosixThreadBuilder::new(
+                child_pid,
+                child_nested_id.clone(),
+                &mut child_attachment_guard,
+                child_user_ctx,
+                credentials,
+            )
+            .thread_name(Some(child_thread_name))
+            .sig_mask(child_sig_mask)
+            .file_table(child_file_table)
+            .fs(child_fs)
         };
 
         // Deal with SETTID/CLEARTID flags
-        clone_parent_settid(child_tid, clone_args.parent_tid, clone_flags)?;
+        let child_tid_in_parent_ns = process
+            .pid_namespace()
+            .get_current_id(&child_nested_id)
+            .unwrap();
+        clone_parent_settid(child_tid_in_parent_ns, clone_args.parent_tid, clone_flags)?;
+
         child_thread_builder =
             clone_child_cleartid(child_thread_builder, clone_args.child_tid, clone_flags);
         child_thread_builder =
             clone_child_settid(child_thread_builder, clone_args.child_tid, clone_flags);
 
         create_child_process(
-            child_tid,
+            child_pid,
             posix_thread.weak_process(),
             &child_elf_path,
             child_process_vm,
@@ -372,6 +411,8 @@ fn clone_child_process(
             child_nice,
             child_sig_dispositions,
             child_thread_builder,
+            child_pid_ns,
+            child_nested_id,
         )
     };
 
@@ -380,7 +421,7 @@ fn clone_child_process(
     };
 
     // Sets parent process and group for child process.
-    set_parent_and_group(process, &child);
+    set_parent_and_group(process, &child, &mut child_attachment_guard);
 
     // Updates `has_child_subreaper` for the child process after inserting
     // it to its parent's children to make sure the `has_child_subreaper`
@@ -392,11 +433,11 @@ fn clone_child_process(
     Ok(child)
 }
 
-fn clone_child_cleartid(
-    child_builder: PosixThreadBuilder,
+fn clone_child_cleartid<'a, 'b>(
+    child_builder: PosixThreadBuilder<'a, 'b>,
     child_tidptr: Vaddr,
     clone_flags: CloneFlags,
-) -> PosixThreadBuilder {
+) -> PosixThreadBuilder<'a, 'b> {
     if clone_flags.contains(CloneFlags::CLONE_CHILD_CLEARTID) {
         child_builder.clear_child_tid(child_tidptr)
     } else {
@@ -404,11 +445,11 @@ fn clone_child_cleartid(
     }
 }
 
-fn clone_child_settid(
-    child_builder: PosixThreadBuilder,
+fn clone_child_settid<'a, 'b>(
+    child_builder: PosixThreadBuilder<'a, 'b>,
     child_tidptr: Vaddr,
     clone_flags: CloneFlags,
-) -> PosixThreadBuilder {
+) -> PosixThreadBuilder<'a, 'b> {
     if clone_flags.contains(CloneFlags::CLONE_CHILD_SETTID) {
         child_builder.set_child_tid(child_tidptr)
     } else {
@@ -524,6 +565,8 @@ fn create_child_process(
     nice: Nice,
     sig_dispositions: Arc<Mutex<SigDispositions>>,
     thread_builder: PosixThreadBuilder,
+    pid_ns: Arc<PidNamespace>,
+    nested_id: NestedId,
 ) -> Arc<Process> {
     let child_proc = Process::new(
         pid,
@@ -533,6 +576,8 @@ fn create_child_process(
         resource_limits,
         nice,
         sig_dispositions,
+        pid_ns,
+        nested_id,
     );
 
     let child_task = thread_builder.process(Arc::downgrade(&child_proc)).build();
@@ -541,11 +586,42 @@ fn create_child_process(
     child_proc
 }
 
-fn set_parent_and_group(parent: &Process, child: &Arc<Process>) {
-    // Lock order: process table -> children -> group of process
-    // -> group inner -> session inner
-    let mut process_table_mut = process_table::process_table_mut();
+fn clone_pid_namespace(parent: &Process, clone_flags: CloneFlags) -> Result<Arc<PidNamespace>> {
+    let parent_pid_ns = parent.pid_namespace();
+    let pid_ns_for_children = parent.pid_ns_for_children().get();
 
+    if clone_flags.contains(CloneFlags::CLONE_NEWPID) {
+        if pid_ns_for_children.is_some() {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "cannot use CLONE_NEWPID when `pid_ns_for_children` is set"
+            );
+        }
+
+        return PidNamespace::new_child(parent_pid_ns);
+    }
+
+    let child_pid_ns = if let Some(pid_ns_for_children) = pid_ns_for_children {
+        pid_ns_for_children
+    } else {
+        parent_pid_ns
+    };
+
+    if child_pid_ns.is_init_proc_terminated() {
+        return_errno_with_message!(
+            Errno::ENOMEM,
+            "cannot create a process in a pid namespace where the init process is terminated"
+        );
+    }
+
+    Ok(child_pid_ns.clone())
+}
+
+fn set_parent_and_group(
+    parent: &Process,
+    child: &Arc<Process>,
+    child_attachment_guard: &mut NestedIdAttachmentWriteGuard,
+) {
     let mut children_mut = parent.children().lock();
     let process_group_mut = parent.process_group.lock();
 
@@ -557,8 +633,11 @@ fn set_parent_and_group(parent: &Process, child: &Arc<Process>) {
     *child.process_group.lock() = Arc::downgrade(&process_group);
 
     // Put the child process in the parent's `children` field
-    children_mut.insert(child.pid(), child.clone());
+    children_mut.insert(
+        child.pid_in_ns(parent.pid_namespace()).unwrap(),
+        child.clone(),
+    );
 
     // Put the child process in the global table
-    process_table_mut.insert(child.pid(), child.clone());
+    child_attachment_guard.attach_process(child.clone());
 }
