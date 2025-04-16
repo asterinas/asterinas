@@ -10,7 +10,6 @@ use self::{msix::CapabilityMsixData, vendor::CapabilityVndrData};
 use super::{
     cfg_space::{PciDeviceCommonCfgOffset, Status},
     common_device::PciCommonDevice,
-    PciDeviceLocation,
 };
 
 pub mod msix;

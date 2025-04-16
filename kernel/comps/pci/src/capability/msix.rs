@@ -9,15 +9,13 @@ use alloc::{sync::Arc, vec::Vec};
 
 use cfg_if::cfg_if;
 use ostd::{
-    arch::iommu::has_interrupt_remapping,
-    bus::pci::{
-        cfg_space::{Bar, Command, MemoryBar},
-        common_device::PciCommonDevice,
-        device_info::PciDeviceLocation,
-    },
-    if_tdx_enabled,
-    mm::VmIoOnce,
-    trap::IrqLine,
+    arch::iommu::has_interrupt_remapping, bus::pci::PciDeviceLocation, if_tdx_enabled,
+    mm::VmIoOnce, trap::IrqLine,
+};
+
+use crate::{
+    cfg_space::{Bar, Command, MemoryBar},
+    common_device::PciCommonDevice,
 };
 
 cfg_if! {

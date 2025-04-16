@@ -2,7 +2,7 @@
 
 //! PCI device Information
 
-use core::iter;
+use ostd::bus::pci::PciDeviceLocation;
 
 use super::cfg_space::PciDeviceCommonCfgOffset;
 

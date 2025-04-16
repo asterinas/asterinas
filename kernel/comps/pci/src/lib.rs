@@ -52,6 +52,8 @@
 #![no_std]
 #![deny(unsafe_code)]
 
+extern crate alloc;
+
 pub mod bus;
 pub mod capability;
 pub mod cfg_space;
@@ -59,10 +61,13 @@ pub mod common_device;
 mod device_info;
 
 use component::{init_component, ComponentInitError};
-pub use device_info::{PciDeviceId, PciDeviceLocation};
+pub use device_info::PciDeviceId;
+use ostd::{
+    bus::pci::{has_pci_bus, PciDeviceLocation},
+    sync::Mutex,
+};
 
 use self::{bus::PciBus, common_device::PciCommonDevice};
-use crate::{arch::pci::has_pci_bus, sync::Mutex};
 
 #[init_component]
 fn pci_init() -> Result<(), ComponentInitError> {

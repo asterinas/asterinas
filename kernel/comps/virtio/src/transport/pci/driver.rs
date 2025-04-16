@@ -2,16 +2,11 @@
 
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 
-use ostd::{
-    bus::{
-        pci::{
-            bus::{PciDevice, PciDriver},
-            common_device::PciCommonDevice,
-        },
-        BusProbeError,
-    },
-    sync::SpinLock,
+use aster_pci::{
+    bus::{PciDevice, PciDriver},
+    common_device::PciCommonDevice,
 };
+use ostd::{bus::BusProbeError, sync::SpinLock};
 
 use super::device::VirtioPciModernTransport;
 use crate::transport::{

@@ -10,15 +10,11 @@ use core::mem::size_of;
 use bitflags::bitflags;
 use ostd::{
     arch::device::io_port::{PortRead, PortWrite},
+    bus::pci::PciDeviceLocation,
     io::IoMem,
-    mm::{
-        page_prop::{CachePolicy, PageFlags},
-        PodOnce, VmIoOnce,
-    },
+    mm::{PodOnce, VmIoOnce},
     Error, Result,
 };
-
-use super::PciDeviceLocation;
 
 /// Offset in PCI device's common configuration space(Not the PCI bridge).
 #[repr(u16)]
