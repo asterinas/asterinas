@@ -27,6 +27,7 @@ TESTS ?= \
 	mount_test \
 	open_create_test \
 	open_test \
+	ppoll_test \
 	prctl_setuid_test \
 	pread64_test \
 	preadv2_test \

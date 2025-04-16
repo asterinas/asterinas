@@ -73,6 +73,7 @@ use crate::syscall::{
     pause::sys_pause,
     pipe::{sys_pipe, sys_pipe2},
     poll::sys_poll,
+    ppoll::sys_ppoll,
     prctl::sys_prctl,
     pread64::sys_pread64,
     preadv::{sys_preadv, sys_preadv2, sys_readv},
@@ -336,6 +337,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_FCHMODAT = 268         => sys_fchmodat(args[..3]);
     SYS_FACCESSAT = 269        => sys_faccessat(args[..3]);
     SYS_PSELECT6 = 270         => sys_pselect6(args[..6]);
+    SYS_PPOLL = 271            => sys_ppoll(args[..5]);
     SYS_SET_ROBUST_LIST = 273  => sys_set_robust_list(args[..2]);
     SYS_UTIMENSAT = 280        => sys_utimensat(args[..4]);
     SYS_EPOLL_PWAIT = 281      => sys_epoll_pwait(args[..6]);

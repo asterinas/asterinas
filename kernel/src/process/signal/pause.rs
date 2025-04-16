@@ -206,16 +206,22 @@ impl Pause for WaitQueue {
     }
 }
 
-/// Executes a closure while temporarily blocking some signals for the current POSIX thread.
-pub fn with_signal_blocked<R>(ctx: &Context, mask: SigMask, operate: impl FnOnce() -> R) -> R {
-    let posix_thread = ctx.posix_thread;
-    let sig_mask = posix_thread.sig_mask();
+/// Executes a closure after temporarily adjusting the signal mask of the current POSIX thread.
+pub fn with_sigmask_changed<R>(
+    ctx: &Context,
+    mask_op: impl FnOnce(SigMask) -> SigMask,
+    operate: impl FnOnce() -> R,
+) -> R {
+    let sig_mask = ctx.posix_thread.sig_mask();
 
+    // Save the original signal mask and apply the mask updates.
     let old_mask = sig_mask.load(Ordering::Relaxed);
-    sig_mask.store(old_mask + mask, Ordering::Relaxed);
+    sig_mask.store(mask_op(old_mask), Ordering::Relaxed);
 
+    // Perform the operation.
     let res = operate();
 
+    // Restore the original signal mask.
     sig_mask.store(old_mask, Ordering::Relaxed);
 
     res
