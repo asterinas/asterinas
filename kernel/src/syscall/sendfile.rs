@@ -2,7 +2,10 @@
 
 use super::SyscallReturn;
 use crate::{
-    fs::file_table::{FileDesc, WithFileTable},
+    fs::{
+        file_table::{FileDesc, WithFileTable},
+        notify::{fsnotify_access, fsnotify_modify},
+    },
     prelude::*,
 };
 
@@ -115,6 +118,15 @@ pub fn sys_sendfile(
 
     if let Some(offset) = offset {
         ctx.user_space().write_val(offset_ptr, &(offset as isize))?;
+    }
+
+    // Some file is not supported dentry, such as epoll file,
+    // TODO: Add anonymous inode support.
+    if let Some(in_path) = in_file.path() {
+        fsnotify_access(in_path)?;
+    }
+    if let Some(out_path) = out_file.path() {
+        fsnotify_modify(out_path)?;
     }
 
     Ok(SyscallReturn::Return(total_len as _))

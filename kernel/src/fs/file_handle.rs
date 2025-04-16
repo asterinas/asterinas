@@ -6,7 +6,7 @@
 
 use ostd::io::IoMem;
 
-use super::inode_handle::InodeHandle;
+use super::{inode_handle::InodeHandle, path::Path};
 use crate::{
     fs::utils::{
         AccessMode, FallocMode, Inode, InodeMode, IoctlCmd, Metadata, SeekFrom, StatusFlags,
@@ -114,6 +114,10 @@ pub trait FileLike: Pollable + Send + Sync + Any {
     }
 
     fn as_socket(&self) -> Option<&dyn Socket> {
+        None
+    }
+
+    fn path(&self) -> Option<&Path> {
         None
     }
 }

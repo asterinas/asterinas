@@ -77,6 +77,7 @@ mod gettid;
 mod gettimeofday;
 mod getuid;
 mod getxattr;
+mod inotify;
 mod ioctl;
 mod kill;
 mod link;
