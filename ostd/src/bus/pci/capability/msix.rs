@@ -15,7 +15,7 @@ use crate::{
         device_info::PciDeviceLocation,
     },
     mm::VmIoOnce,
-    trap::IrqLine,
+    trap::irq::IrqLine,
 };
 
 /// MSI-X capability. It will set the BAR space it uses to be hidden.

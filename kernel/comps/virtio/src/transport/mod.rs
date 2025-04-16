@@ -9,7 +9,7 @@ use ostd::{
     bus::pci::cfg_space::Bar,
     io::IoMem,
     mm::{DmaCoherent, PodOnce},
-    trap::IrqCallbackFunction,
+    trap::irq::IrqCallbackFunction,
     Pod,
 };
 

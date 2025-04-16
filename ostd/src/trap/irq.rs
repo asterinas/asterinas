@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+//! IRQ line and IRQ guards.
+
 use core::{fmt::Debug, ops::Deref};
 
 use id_alloc::IdAlloc;
@@ -141,6 +143,7 @@ fn get_or_init_allocator() -> &'static SpinLock<IdAlloc> {
 /// A handle for an allocated IRQ line.
 ///
 /// When the handle is dropped, the IRQ line will be released automatically.
+#[must_use]
 #[derive(Debug)]
 struct InnerHandle {
     index: u8,
@@ -204,10 +207,10 @@ pub(super) fn process_top_half(trap_frame: &TrapFrame, irq_num: usize) {
 /// # Example
 ///
 /// ```rust
-/// use ostd::irq;
+/// use ostd::trap;
 ///
 /// {
-///     let _ = irq::disable_local();
+///     let _ = trap::irq::disable_local();
 ///     todo!("do something when irqs are disabled");
 /// }
 /// ```

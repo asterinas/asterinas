@@ -12,7 +12,7 @@ use ostd::{
     },
     io::IoMem,
     mm::{DmaCoherent, HasDaddr, PAGE_SIZE},
-    trap::IrqCallbackFunction,
+    trap::irq::IrqCallbackFunction,
 };
 
 use crate::{
