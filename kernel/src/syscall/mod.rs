@@ -80,6 +80,7 @@ mod open;
 mod pause;
 mod pipe;
 mod poll;
+mod ppoll;
 mod prctl;
 mod pread64;
 mod preadv;
