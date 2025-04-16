@@ -8,8 +8,7 @@
 use alloc::{sync::Arc, vec::Vec};
 
 use cfg_if::cfg_if;
-
-use crate::{
+use ostd::{
     arch::iommu::has_interrupt_remapping,
     bus::pci::{
         cfg_space::{Bar, Command, MemoryBar},
@@ -23,7 +22,7 @@ use crate::{
 
 cfg_if! {
     if #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))] {
-        use crate::arch::tdx_guest;
+        use ostd::arch::tdx_guest;
     }
 }
 

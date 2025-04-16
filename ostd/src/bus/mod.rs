@@ -16,6 +16,5 @@ pub enum BusProbeError {
 
 /// Initializes the bus
 pub(crate) fn init() {
-    pci::init();
     mmio::init();
 }

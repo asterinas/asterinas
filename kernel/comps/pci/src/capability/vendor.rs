@@ -2,7 +2,7 @@
 
 //! Vendor-specific capability support.
 
-use crate::{
+use ostd::{
     bus::pci::{common_device::PciCommonDevice, device_info::PciDeviceLocation},
     Error, Result,
 };
