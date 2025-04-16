@@ -4,6 +4,7 @@ mod nice;
 mod sched_class;
 mod stats;
 
+pub(crate) use self::sched_class::steal_a_task;
 pub use self::{
     nice::{AtomicNice, Nice},
     sched_class::{init, RealTimePolicy, RealTimePriority, SchedAttr, SchedPolicy},

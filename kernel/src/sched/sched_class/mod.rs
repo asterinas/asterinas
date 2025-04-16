@@ -333,6 +333,16 @@ impl PerCpuClassRqSet {
             })
     }
 
+    fn pick_non_idle(&mut self) -> Option<SchedEntity> {
+        (self.stop.pick_next())
+            .or_else(|| self.real_time.pick_next())
+            .or_else(|| self.fair.pick_next())
+            .and_then(|task| {
+                let thread = task.as_thread()?.clone();
+                Some((task, thread))
+            })
+    }
+
     fn enqueue_entity(&mut self, (task, thread): SchedEntity, flags: Option<EnqueueFlags>) {
         match thread.sched_attr().policy_kind() {
             SchedPolicyKind::Stop => self.stop.enqueue(task, flags),
@@ -427,4 +437,64 @@ impl Default for ClassScheduler {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Steals a runnable task from another CPU core and schedules it on the current CPU core.
+///
+/// Must be called from an idle thread.
+pub(crate) fn steal_a_task() {
+    let cur_cpu = CpuId::current_racy(); // Ok because idle tasks are not migratable.
+    let mut most_loaded_cpu = None;
+    let mut max_load = 0;
+
+    for cpu in all_cpus() {
+        if cpu == cur_cpu {
+            continue;
+        }
+        let load = RQ_QUEUED.get_on_cpu(cpu).load(Ordering::Relaxed);
+        if load > max_load {
+            max_load = load;
+            most_loaded_cpu = Some(cpu);
+        }
+    }
+
+    let irq_guard = disable_local();
+
+    'out: {
+        if max_load <= 1 {
+            break 'out;
+        }
+        let Some(target_cpu) = most_loaded_cpu else {
+            break 'out;
+        };
+
+        // Lock RQs in the order of CPU IDs to prevent deadlocks.
+        let our_rq = RQ.get_on_cpu(cur_cpu);
+        let our_lock = if cur_cpu.as_usize() < target_cpu.as_usize() {
+            Some(our_rq.lock())
+        } else {
+            None
+        };
+
+        let target_rq = RQ.get_on_cpu(target_cpu);
+        let Some(mut target_rq) = target_rq.try_lock() else {
+            break 'out;
+        };
+
+        let task = target_rq.as_mut().unwrap().pick_non_idle();
+        if let Some((task, thread)) = task {
+            let mut rq = our_lock.unwrap_or_else(|| our_rq.lock());
+
+            task.cpu().set_anyway(cur_cpu);
+
+            let rq = rq.as_mut().unwrap();
+            rq.enqueue_entity((task, thread), None);
+        }
+
+        break 'out;
+    }
+
+    drop(irq_guard);
+
+    Thread::yield_now();
 }
