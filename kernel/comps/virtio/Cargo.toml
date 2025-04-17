@@ -23,6 +23,8 @@ component = { path = "../../libs/comp-sys/component" }
 log = "0.4"
 int-to-c-enum = { path = "../../libs/int-to-c-enum" }
 systree = { path = "../systree" }
+bitvec = { version = "1.0.1", default-features = false, features = ["alloc"] }
+align_ext = { path = "../../../ostd/libs/align_ext" }
 
 [lints]
 workspace = true

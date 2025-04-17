@@ -20,8 +20,7 @@ struct UserFrame {
 
 impl UserFrame {
     /// Retrieves the user frames within the virtual address range.
-    pub fn from_range(
-        &self,
+    pub fn retrieve_user_frames(
         mut range: Range<Vaddr>,
         required_perms: VmPerms,
     ) -> Result<Vec<UserFrame>> {
