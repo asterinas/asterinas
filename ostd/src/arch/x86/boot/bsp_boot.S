@@ -251,10 +251,10 @@ boot_gdtr:
 
 .align 16
 gdt:
-    .quad 0x0000000000000000 // 0:  null descriptor
-    .quad 0x00af9a000000ffff // 8:  64-bit code segment (kernel)
-    .quad 0x00cf92000000ffff // 16: 64-bit data segment (kernel)
-    .quad 0x00cf9a000000ffff // 24: 32-bit code segment (kernel)
+    .quad 0          // 0:  null descriptor
+    .quad {KCODE64}  // 8:  code segment (kernel, 64-bit)
+    .quad {KDATA}    // 16: data segment (kernel)
+    .quad {KCODE32}  // 24: code segment (kernel, 32-bit)
 gdt_end:
 
 // The page tables and the stack

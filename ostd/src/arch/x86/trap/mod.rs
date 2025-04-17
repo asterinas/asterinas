@@ -16,7 +16,7 @@
 
 //! Handles trap.
 
-mod gdt;
+pub(super) mod gdt;
 mod idt;
 mod syscall;
 
@@ -104,26 +104,24 @@ pub struct TrapFrame {
 
 /// Initialize interrupt handling on x86_64.
 ///
-/// # Safety
-///
 /// This function will:
-///
-/// - Disable interrupt.
-/// - Switch to a new [GDT], extend 7 more entries from the current one.
-/// - Switch to a new [TSS], `GSBASE` pointer to its base address.
-/// - Switch to a new [IDT], override the current one.
-/// - Enable [`syscall`] instruction.
-///     - set `EFER::SYSTEM_CALL_EXTENSIONS`
+/// - Switch to a new, CPU-local [GDT].
+/// - Switch to a new, CPU-local [TSS].
+/// - Switch to a new, CPU-local [IDT].
+/// - Enable the [`syscall`] instruction.
 ///
 /// [GDT]: https://wiki.osdev.org/GDT
 /// [IDT]: https://wiki.osdev.org/IDT
 /// [TSS]: https://wiki.osdev.org/Task_State_Segment
 /// [`syscall`]: https://www.felixcloutier.com/x86/syscall
 ///
-#[cfg(any(target_os = "none", target_os = "uefi"))]
-pub unsafe fn init(on_bsp: bool) {
-    x86_64::instructions::interrupts::disable();
-    gdt::init(on_bsp);
+/// # Safety
+///
+/// This method must be called only in the boot context of each available processor.
+pub unsafe fn init() {
+    // SAFETY: We're in the boot context, so no preemption can occur.
+    unsafe { gdt::init() };
+
     idt::init();
     syscall::init();
 }

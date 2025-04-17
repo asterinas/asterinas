@@ -1,30 +1,14 @@
-// SPDX-License-Identifier: MPL-2.0 OR MIT
-//
-// The original source code is from [trapframe-rs](https://github.com/rcore-os/trapframe-rs),
-// which is released under the following license:
-//
-// SPDX-License-Identifier: MIT
-//
-// Copyright (c) 2020 - 2024 Runji Wang
-//
-// We make the following new changes:
-// * Link TaskStateSegment to .cpu_local area.
-// * Init TaskStateSegment on bsp/ap respectively.
-//
-// These changes are released under the following license:
-//
 // SPDX-License-Identifier: MPL-2.0
 
-//! Configure Global Descriptor Table (GDT).
+//! Configure the Global Descriptor Table (GDT).
 
-use alloc::{boxed::Box, vec::Vec};
-use core::cell::SyncUnsafeCell;
+use alloc::boxed::Box;
 
 use x86_64::{
     instructions::tables::{lgdt, load_tss},
     registers::{
         model_specific::Star,
-        segmentation::{Segment, Segment64, CS, GS},
+        segmentation::{Segment, CS},
     },
     structures::{
         gdt::{Descriptor, SegmentSelector},
@@ -34,80 +18,112 @@ use x86_64::{
     PrivilegeLevel, VirtAddr,
 };
 
-/// Init TSS & GDT.
-pub unsafe fn init(on_bsp: bool) {
-    // Allocate stack for trap from user, set the stack top to TSS,
-    // so that when trap from ring3 to ring0, CPU can switch stack correctly.
-    let tss = if on_bsp {
-        init_local_tss_on_bsp()
-    } else {
-        init_local_tss_on_ap()
-    };
+use crate::cpu::local::CpuLocal;
 
-    let (tss0, tss1) = match Descriptor::tss_segment(tss) {
+/// Initializes and loads the GDT and TSS.
+///
+/// The caller should only call this method once in the boot context for each available processor.
+/// This is not a safety requirement, however, because calling this method again will do nothing
+/// more than load the GDT and TSS with the same contents.
+///
+/// # Safety
+///
+/// The caller must ensure that no preemption can occur during the method, otherwise we may
+/// accidentally load a wrong GDT and TSS that actually belongs to another CPU.
+pub(super) unsafe fn init() {
+    let tss_ptr = LOCAL_TSS.as_ptr();
+
+    // FIXME: The segment limit in the descriptor created by `tss_segment_unchecked` does not
+    // include the I/O port bitmap.
+
+    // SAFETY: As a CPU-local variable, the TSS lives for `'static`.
+    let tss_desc = unsafe { Descriptor::tss_segment_unchecked(tss_ptr) };
+    let (tss0, tss1) = match tss_desc {
         Descriptor::SystemSegment(tss0, tss1) => (tss0, tss1),
         _ => unreachable!(),
     };
-    // FIXME: the segment limit assumed by x86_64 does not include the I/O port bitmap.
 
-    // Allocate new GDT with 8 entries.
-    //
-    // NOTICE: for fast syscall:
-    //   STAR[47:32] = K_CS   = K_SS - 8
-    //   STAR[63:48] = U_CS32 = U_SS32 - 8 = U_CS - 16
-    let mut gdt = Vec::<u64>::new();
-    gdt.extend([0, KCODE64, KDATA64, UCODE32, UDATA32, UCODE64, tss0, tss1].iter());
-    let gdt = Vec::leak(gdt);
+    // The kernel CS is considered a global invariant set by the boot GDT. This method is not
+    // intended for switching to a new kernel CS.
+    assert_eq!(CS::get_reg(), KERNEL_CS);
 
-    // Load new GDT and TSS.
-    lgdt(&DescriptorTablePointer {
-        limit: gdt.len() as u16 * 8 - 1,
-        base: VirtAddr::new(gdt.as_ptr() as _),
-    });
-    load_tss(SegmentSelector::new(6, PrivilegeLevel::Ring0));
-    CS::set_reg(SegmentSelector::new(1, PrivilegeLevel::Ring0));
+    // Allocate a new GDT with 8 entries.
+    let gdt = Box::new([
+        0, KCODE64, KDATA, /* UCODE32 (not used) */ 0, UDATA, UCODE64, tss0, tss1,
+    ]);
+    let gdt = &*Box::leak(gdt);
+    assert_eq!(gdt[KERNEL_CS.index() as usize], KCODE64);
+    assert_eq!(gdt[KERNEL_SS.index() as usize], KDATA);
+    assert_eq!(gdt[USER_CS.index() as usize], UCODE64);
+    assert_eq!(gdt[USER_SS.index() as usize], UDATA);
 
-    let sysret = SegmentSelector::new(3, PrivilegeLevel::Ring3).0;
-    let syscall = SegmentSelector::new(1, PrivilegeLevel::Ring0).0;
-    Star::write_raw(sysret, syscall);
+    // Load the new GDT.
+    let gdtr = DescriptorTablePointer {
+        limit: (core::mem::size_of_val(gdt) - 1) as u16,
+        base: VirtAddr::new(gdt.as_ptr().addr() as u64),
+    };
+    // SAFETY: The GDT is valid to load because:
+    //  - It lives for `'static`.
+    //  - It contains correct entries at correct indexes: the kernel code/data segments, the user
+    //    code/data segments, and the TSS segment.
+    //  - Specifically, the TSS segment points to the CPU-local TSS of the current CPU.
+    unsafe { lgdt(&gdtr) };
 
-    USER_SS = sysret + 8;
-    USER_CS = sysret + 16;
+    // Load the TSS.
+    let tss_sel = SegmentSelector::new(6, PrivilegeLevel::Ring0);
+    assert_eq!(gdt[tss_sel.index() as usize], tss0);
+    assert_eq!(gdt[(tss_sel.index() + 1) as usize], tss1);
+    // SAFETY: The selector points to the TSS descriptors in the GDT.
+    unsafe { load_tss(tss_sel) };
+
+    // Set up the selectors for the `syscall` and `sysret` instructions.
+    let sysret = SegmentSelector::new(3, PrivilegeLevel::Ring3);
+    assert_eq!(gdt[(sysret.index() + 1) as usize], UDATA);
+    assert_eq!(gdt[(sysret.index() + 2) as usize], UCODE64);
+    let syscall = SegmentSelector::new(1, PrivilegeLevel::Ring0);
+    assert_eq!(gdt[syscall.index() as usize], KCODE64);
+    assert_eq!(gdt[(syscall.index() + 1) as usize], KDATA);
+    // SAFETY: The selector points to correct kernel/user code/data descriptors in the GDT.
+    unsafe { Star::write_raw(sysret.0, syscall.0) };
 }
 
-// The linker script ensure that cpu_local_tss section is right
-// at the beginning of cpu_local area, so that gsbase (offset zero)
-// points to LOCAL_TSS.
+// The linker script makes sure that the `.cpu_local_tss` section is at the beginning of the area
+// that stores CPU-local variables. This is important because `trap.S` and `syscall.S` will assume
+// this and treat the beginning of the CPU-local area as a TSS for loading and saving the kernel
+// stack!
+//
+// No other special initialization is required because the kernel stack information is stored in
+// the TSS when we start the userspace program. See `syscall.S` for details.
 #[link_section = ".cpu_local_tss"]
-static LOCAL_TSS: SyncUnsafeCell<TaskStateSegment> = SyncUnsafeCell::new(TaskStateSegment::new());
+static LOCAL_TSS: CpuLocal<TaskStateSegment> = {
+    let tss = TaskStateSegment::new();
+    // SAFETY: The `.cpu_local_tss` section is part of the CPU-local area.
+    unsafe { CpuLocal::__new(tss) }
+};
 
-unsafe fn init_local_tss_on_bsp() -> &'static TaskStateSegment {
-    let tss_ptr = LOCAL_TSS.get();
+// Kernel code and data descriptors.
+//
+// These are the exact, unique values that satisfy the requirements of the `syscall` instruction.
+// The Intel manual says: "It is the responsibility of OS software to ensure that the descriptors
+// (in GDT or LDT) referenced by those selector values correspond to the fixed values loaded into
+// the descriptor caches; the SYSCALL instruction does not ensure this correspondence."
+pub(in crate::arch) const KCODE64: u64 = 0x00AF_9B00_0000_FFFF;
+pub(in crate::arch) const KDATA: u64 = 0x00CF_9300_0000_FFFF;
 
-    let trap_stack_top = Box::leak(Box::new([0u8; 0x1000])).as_ptr() as u64 + 0x1000;
-    (*tss_ptr).privilege_stack_table[0] = VirtAddr::new(trap_stack_top);
-    &*tss_ptr
-}
+// A 32-bit code descriptor that is used in the boot stage only. See `boot/bsp_boot.S`.
+pub(in crate::arch) const KCODE32: u64 = 0x00CF_9B00_0000_FFFF;
 
-unsafe fn init_local_tss_on_ap() -> &'static TaskStateSegment {
-    let gs_base = GS::read_base().as_u64();
-    let tss_ptr = gs_base as *mut TaskStateSegment;
+// User code and data descriptors.
+//
+// These are the exact, unique values that satisfy the requirements of the `sysret` instruction.
+// The Intel manual says: "It is the responsibility of OS software to ensure that the descriptors
+// (in GDT or LDT) referenced by those selector values correspond to the fixed values loaded into
+// the descriptor caches; the SYSRET instruction does not ensure this correspondence."
+const UCODE64: u64 = 0x00AF_FB00_0000_FFFF;
+const UDATA: u64 = 0x00CF_F300_0000_FFFF;
 
-    let trap_stack_top = Box::leak(Box::new([0u8; 0x1000])).as_ptr() as u64 + 0x1000;
-    (*tss_ptr).privilege_stack_table[0] = VirtAddr::new(trap_stack_top);
-    &*tss_ptr
-}
+const KERNEL_CS: SegmentSelector = SegmentSelector::new(1, PrivilegeLevel::Ring0);
+const KERNEL_SS: SegmentSelector = SegmentSelector::new(2, PrivilegeLevel::Ring0);
 
-#[no_mangle]
-static mut USER_SS: u16 = 0;
-#[no_mangle]
-static mut USER_CS: u16 = 0;
-
-const KCODE64: u64 = 0x00209800_00000000; // EXECUTABLE | USER_SEGMENT | PRESENT | LONG_MODE
-const UCODE64: u64 = 0x0020F800_00000000; // EXECUTABLE | USER_SEGMENT | USER_MODE | PRESENT | LONG_MODE
-const KDATA64: u64 = 0x00009200_00000000; // DATA_WRITABLE | USER_SEGMENT | PRESENT
-
-#[expect(dead_code)]
-const UDATA64: u64 = 0x0000F200_00000000; // DATA_WRITABLE | USER_SEGMENT | USER_MODE | PRESENT
-const UCODE32: u64 = 0x00cffa00_0000ffff; // EXECUTABLE | USER_SEGMENT | USER_MODE | PRESENT
-const UDATA32: u64 = 0x00cff200_0000ffff; // EXECUTABLE | USER_SEGMENT | USER_MODE | PRESENT
+pub(super) const USER_CS: SegmentSelector = SegmentSelector::new(5, PrivilegeLevel::Ring3);
+pub(super) const USER_SS: SegmentSelector = SegmentSelector::new(4, PrivilegeLevel::Ring3);
