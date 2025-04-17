@@ -104,14 +104,23 @@ impl IrqLine {
         if has_interrupt_remapping() {
             let handle = alloc_irt_entry();
             if let Some(handle) = handle {
+                // Enable irt entry
+                handle
+                    .lock()
+                    .irt_entry_mut()
+                    .unwrap()
+                    .enable_default(irq_num as u32);
                 irq.bind_remapping_entry.call_once(|| handle);
             }
         }
         irq
     }
 
-    pub fn bind_remapping_entry(&self) -> Option<&Arc<SpinLock<IrtEntryHandle, LocalIrqDisabled>>> {
-        self.bind_remapping_entry.get()
+    /// Gets the remapping index of the IRQ line.
+    ///
+    /// Return None if architecture does not support interrupt remapping.
+    pub fn remapping_index(&self) -> Option<u16> {
+        Some(self.bind_remapping_entry.get()?.lock().index())
     }
 
     /// Gets the IRQ number.
