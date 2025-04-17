@@ -47,14 +47,6 @@ impl InodeHandle<Rights> {
         Ok(InodeHandle(self.0.clone(), R1::new()))
     }
 
-    pub fn read_to_end(&self, buf: &mut Vec<u8>) -> Result<usize> {
-        if !self.1.contains(Rights::READ) {
-            return_errno_with_message!(Errno::EBADF, "file is not readable");
-        }
-
-        self.0.read_to_end(buf)
-    }
-
     pub fn readdir(&self, visitor: &mut dyn DirentVisitor) -> Result<usize> {
         if !self.1.contains(Rights::READ) {
             return_errno_with_message!(Errno::EBADF, "file is not readable");
