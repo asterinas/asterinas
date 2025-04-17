@@ -90,6 +90,17 @@ impl IoMem {
             #[cfg(target_arch = "x86_64")]
             {
                 crate::arch::if_tdx_enabled!({
+                    if first_page_start != range.start || last_page_end != range.end {
+                        panic!("Alignment check failed when TDX is enabled. Requested IoMem range: {:#x?}..{:#x?}", range.start, range.end);
+                    }
+
+                    let pages = (last_page_end - first_page_start) / PAGE_SIZE;
+                    // SAFETY:
+                    // This is safe because we are ensuring that the physical address must be in the I/O memory region, and only unprotecting this region.
+                    unsafe {
+                        crate::arch::tdx_guest::unprotect_gpa_range(first_page_start, pages).unwrap();
+                    }
+
                     PrivilegedPageFlags::SHARED
                 } else {
                     PrivilegedPageFlags::empty()
