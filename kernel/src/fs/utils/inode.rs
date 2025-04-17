@@ -569,34 +569,6 @@ impl dyn Inode {
         (self as &dyn Any).downcast_ref::<T>()
     }
 
-    pub fn read_to_end(&self, buf: &mut Vec<u8>) -> Result<usize> {
-        if !self.type_().support_read() {
-            return_errno!(Errno::EISDIR);
-        }
-
-        let file_size = self.size();
-        if buf.len() < file_size {
-            buf.resize(file_size, 0);
-        }
-
-        let mut writer = VmWriter::from(&mut buf[..file_size]).to_fallible();
-        self.read_at(0, &mut writer)
-    }
-
-    pub fn read_direct_to_end(&self, buf: &mut Vec<u8>) -> Result<usize> {
-        if !self.type_().support_read() {
-            return_errno!(Errno::EISDIR);
-        }
-
-        let file_size = self.size();
-        if buf.len() < file_size {
-            buf.resize(file_size, 0);
-        }
-
-        let mut writer = VmWriter::from(&mut buf[..file_size]).to_fallible();
-        self.read_direct_at(0, &mut writer)
-    }
-
     pub fn writer(&self, from_offset: usize) -> InodeWriter {
         InodeWriter {
             inner: self,
