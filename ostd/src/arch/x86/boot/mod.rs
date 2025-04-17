@@ -26,5 +26,10 @@ pub mod smp;
 
 use core::arch::global_asm;
 
-global_asm!(include_str!("bsp_boot.S"));
+global_asm!(
+    include_str!("bsp_boot.S"),
+    KCODE64 = const super::trap::gdt::KCODE64,
+    KDATA = const super::trap::gdt::KDATA,
+    KCODE32 = const super::trap::gdt::KCODE32,
+);
 global_asm!(include_str!("ap_boot.S"));
