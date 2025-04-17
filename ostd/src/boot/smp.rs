@@ -146,8 +146,8 @@ fn ap_early_entry(cpu_id: u32) -> ! {
 
     crate::arch::enable_cpu_features();
 
-    // SAFETY: This function is only called once on this AP.
-    unsafe { crate::arch::trap::init(false) };
+    // SAFETY: This function is called in the boot context of the AP.
+    unsafe { crate::arch::trap::init() };
 
     // SAFETY: This function is only called once on this AP, after the BSP has
     // done the architecture-specific initialization.

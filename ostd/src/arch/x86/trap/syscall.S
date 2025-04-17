@@ -67,10 +67,10 @@ syscall_return:
     je sysret
 iret:
     # construct trap frame
-    push [USER_SS]          # push ss
+    push {USER_SS}          # push ss
     push [rsp - 8*8]        # push rsp
     push [rsp + 3*8]        # push rflags
-    push [USER_CS]          # push cs
+    push {USER_CS}          # push cs
     push [rsp + 4*8]        # push rip
 
     iretq

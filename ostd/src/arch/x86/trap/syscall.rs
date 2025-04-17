@@ -30,9 +30,13 @@ use x86_64::{
 
 use super::UserContext;
 
-global_asm!(include_str!("syscall.S"));
+global_asm!(
+    include_str!("syscall.S"),
+    USER_CS = const super::gdt::USER_CS.0,
+    USER_SS = const super::gdt::USER_SS.0,
+);
 
-pub fn init() {
+pub(super) fn init() {
     let cpuid = CpuId::new();
     unsafe {
         // Enable `syscall` instruction.
