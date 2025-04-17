@@ -104,6 +104,12 @@ impl IrqLine {
         if has_interrupt_remapping() {
             let handle = alloc_irt_entry();
             if let Some(handle) = handle {
+                // Enable irt entry
+                handle
+                    .lock()
+                    .irt_entry_mut()
+                    .unwrap()
+                    .enable_default(irq_num as u32);
                 irq.bind_remapping_entry.call_once(|| handle);
             }
         }
