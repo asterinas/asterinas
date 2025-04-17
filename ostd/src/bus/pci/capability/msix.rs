@@ -99,21 +99,6 @@ impl CapabilityMsixData {
 
         // Set message address 0xFEE0_0000
         for i in 0..table_size {
-            #[cfg(target_arch = "x86_64")]
-            crate::arch::if_tdx_enabled!({
-                // SAFETY:
-                // This is safe because we are ensuring that the physical address of the MSI-X table is valid before this operation.
-                // We are also ensuring that we are only unprotecting a single page.
-                // The MSI-X table will not exceed one page size, because the size of an MSI-X entry is 16 bytes, and 256 entries are required to fill a page,
-                // which is just equal to the number of all the interrupt numbers on the x86 platform.
-                // It is better to add a judgment here in case the device deliberately uses so many interrupt numbers.
-                // In addition, due to granularity, the minimum value that can be set here is only one page.
-                // Therefore, we are not causing any undefined behavior or violating any of the requirements of the `unprotect_gpa_range` function.
-                unsafe {
-                    crate::arch::tdx_guest::unprotect_gpa_range(table_bar.io_mem().paddr(), 1)
-                        .unwrap();
-                }
-            });
             // Set message address and disable this msix entry
             table_bar
                 .io_mem()
