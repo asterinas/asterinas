@@ -8,13 +8,19 @@
 //!  - `IoPort` for port I/O (PIO).
 
 mod io_mem;
-mod io_port;
 
-pub use self::{io_mem::IoMem, io_port::IoPort};
-pub(crate) use self::{
-    io_mem::IoMemAllocatorBuilder,
-    io_port::{reserve_io_port_range, sensitive_io_port, RawIoPortRange},
-};
+use cfg_if::cfg_if;
+
+pub use self::io_mem::IoMem;
+pub(crate) use self::io_mem::IoMemAllocatorBuilder;
+
+cfg_if!(
+    if #[cfg(target_arch = "x86_64")] {
+        mod io_port;
+        pub use io_port::IoPort;
+        pub(crate) use self::io_port::{reserve_io_port_range, sensitive_io_port, RawIoPortRange};
+    }
+);
 
 /// Initializes the static allocator based on builder.
 ///
@@ -32,5 +38,6 @@ pub(crate) use self::{
 ///    exceed the maximum value specified by architecture.
 pub(crate) unsafe fn init(io_mem_builder: IoMemAllocatorBuilder) {
     self::io_mem::init(io_mem_builder);
+    #[cfg(target_arch = "x86_64")]
     self::io_port::init();
 }
