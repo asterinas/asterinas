@@ -35,6 +35,7 @@ members = [
     "kernel/libs/typeflags",
     "kernel/libs/typeflags-util",
     "kernel/libs/atomic-integer-wrapper",
+    "kernel/libs/xarray",
 ]
 exclude = [
     "kernel/libs/comp-sys/cargo-component",

@@ -226,6 +226,7 @@ dependencies = [
  "time",
  "typeflags",
  "typeflags-util",
+ "xarray 0.1.0",
  "xmas-elf 0.8.0",
 ]
 
@@ -1319,7 +1320,7 @@ dependencies = [
  "volatile 0.6.1",
  "x86",
  "x86_64",
- "xarray",
+ "xarray 0.1.0 (git+https://github.com/asterinas/xarray)",
 ]
 
 [[package]]
@@ -1960,6 +1961,13 @@ dependencies = [
  "bitflags 2.6.0",
  "rustversion",
  "volatile 0.4.6",
+]
+
+[[package]]
+name = "xarray"
+version = "0.1.0"
+dependencies = [
+ "ostd",
 ]
 
 [[package]]
