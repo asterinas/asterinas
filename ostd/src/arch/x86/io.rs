@@ -14,18 +14,25 @@ use crate::{boot::memory_region::MemoryRegionType, io::IoMemAllocatorBuilder};
 pub(super) fn construct_io_mem_allocator_builder() -> IoMemAllocatorBuilder {
     // TODO: Add MMIO regions below 1MB (e.g., VGA framebuffer).
     let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
-    let mut ranges = Vec::with_capacity(2);
+    let mut ranges = Vec::with_capacity(3); // Increased capacity to include framebuffer regions.
 
+    for region in regions.iter() {
+        if region.typ() == MemoryRegionType::Framebuffer {
+            ranges.push(region.base()..(region.base() + region.len()));
+            break;
+        }
+    }
+
+    // Find the TOLM (Top of Low Memory) and initialize Low MMIO region (TOLM ~ LOW_MMIO_TOP).
+    // Align start address to LOW_MMIO_ALIGN
+    const LOW_MMIO_TOP: usize = 0x1_0000_0000;
+    const LOW_MMIO_ALIGN: usize = 0x1000_0000;
     let reserved_filter = regions.iter().filter(|r| {
         r.typ() != MemoryRegionType::Unknown
             && r.typ() != MemoryRegionType::Reserved
             && r.typ() != MemoryRegionType::Framebuffer
     });
 
-    // Find the TOLM (Top of Low Memory) and initialize Low MMIO region (TOLM ~ LOW_MMIO_TOP).
-    // Align start address to LOW_MMIO_ALIGN
-    const LOW_MMIO_TOP: usize = 0x1_0000_0000;
-    const LOW_MMIO_ALIGN: usize = 0x1000_0000;
     let (lower_half_base, lower_half_len) = reserved_filter
         .clone()
         .filter(|r| r.base() < u32::MAX as usize)
