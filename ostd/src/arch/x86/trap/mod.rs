@@ -123,7 +123,9 @@ pub unsafe fn init() {
     unsafe { gdt::init() };
 
     idt::init();
-    syscall::init();
+
+    // SAFETY: `gdt::init` has been called before.
+    unsafe { syscall::init() };
 }
 
 /// User space context.
