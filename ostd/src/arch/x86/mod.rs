@@ -64,10 +64,8 @@ static CPU_FEATURES: Once<FeatureInfo> = Once::new();
 ///
 /// This function must be called only once on the bootstrapping processor.
 pub(crate) unsafe fn late_init_on_bsp() {
-    // SAFETY: this function is only called once on BSP.
-    unsafe {
-        trap::init(true);
-    }
+    // SAFETY: This function is only called once on BSP.
+    unsafe { trap::init(true) };
     irq::init();
 
     kernel::acpi::init();
@@ -87,7 +85,7 @@ pub(crate) unsafe fn late_init_on_bsp() {
     kernel::tsc::init_tsc_freq();
     timer::init_bsp();
 
-    // SAFETY: we're on the BSP and we're ready to boot all APs.
+    // SAFETY: We're on the BSP and we're ready to boot all APs.
     unsafe { crate::boot::smp::boot_all_aps() };
 
     if_tdx_enabled!({
@@ -105,9 +103,7 @@ pub(crate) unsafe fn late_init_on_bsp() {
     // 1. All the system device memory have been removed from the builder.
     // 2. All the port I/O regions belonging to the system device are defined using the macros.
     // 3. `MAX_IO_PORT` defined in `crate::arch::io` is the maximum value specified by x86-64.
-    unsafe {
-        crate::io::init(io_mem_builder);
-    }
+    unsafe { crate::io::init(io_mem_builder) };
 }
 
 /// Architecture-specific initialization on the application processor.
