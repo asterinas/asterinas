@@ -131,21 +131,95 @@ impl From<E820Type> for MemoryRegionType {
 fn parse_memory_regions(boot_params: &BootParams) -> MemoryRegionArray {
     let mut regions = MemoryRegionArray::new();
 
+    // Parse framebuffer information
+    let framebuffer_info = parse_framebuffer_info(boot_params);
+
     // Add regions from E820.
     let num_entries = boot_params.e820_entries as usize;
     for e820_entry in &boot_params.e820_table[0..num_entries] {
+        let e820_base = e820_entry.addr.try_into().unwrap();
+        let e820_size = e820_entry.size.try_into().unwrap();
+        let e820_end = e820_base + e820_size;
+
+        if let Some(fb) = framebuffer_info {
+            let fb_base = fb.address & !(0xFFF); // Align fb_base down
+            let fb_size = ((fb.width * fb.height * (fb.bpp / 8)) + 0xFFF) & !(0xFFF); // Align fb_size up
+            let fb_end = fb_base + fb_size;
+
+            // Check if the E820 region matches or overlaps with the framebuffer region
+            if e820_base == fb_base && e820_end == fb_end {
+                // Exact match with framebuffer region
+                regions
+                    .push(MemoryRegion::new(
+                        fb_base,
+                        fb_size,
+                        MemoryRegionType::Framebuffer,
+                    ))
+                    .unwrap();
+                continue;
+            } else if e820_base < fb_end && e820_end > fb_base {
+                // Overlap with framebuffer region
+                if e820_base < fb_base {
+                    // Push the part before the framebuffer region
+                    regions
+                        .push(MemoryRegion::new(
+                            e820_base,
+                            fb_base - e820_base,
+                            e820_entry.typ.into(),
+                        ))
+                        .unwrap();
+                }
+
+                // Push the framebuffer region
+                regions
+                    .push(MemoryRegion::new(
+                        fb_base,
+                        fb_size,
+                        MemoryRegionType::Framebuffer,
+                    ))
+                    .unwrap();
+
+                if e820_end > fb_end {
+                    // Push the part after the framebuffer region
+                    regions
+                        .push(MemoryRegion::new(
+                            fb_end,
+                            e820_end - fb_end,
+                            e820_entry.typ.into(),
+                        ))
+                        .unwrap();
+                }
+                continue;
+            }
+        }
+
+        // No overlap with framebuffer region, push the region as-is
         regions
             .push(MemoryRegion::new(
-                e820_entry.addr.try_into().unwrap(),
-                e820_entry.size.try_into().unwrap(),
+                e820_base,
+                e820_size,
                 e820_entry.typ.into(),
             ))
             .unwrap();
     }
 
-    // Add the framebuffer region.
-    if let Some(fb) = parse_framebuffer_info(boot_params) {
-        regions.push(MemoryRegion::framebuffer(&fb)).unwrap();
+    // Add the framebuffer region if it wasn't already added
+    if let Some(fb) = framebuffer_info {
+        let fb_base = fb.address;
+        let fb_size = fb.width * fb.height * (fb.bpp / 8);
+        if !regions.contains(&MemoryRegion::new(
+            fb_base,
+            fb_size,
+            MemoryRegionType::Framebuffer,
+        )) {
+            regions
+                .push(MemoryRegion::new(
+                    fb_base,
+                    fb_size,
+                    MemoryRegionType::Framebuffer,
+                ))
+                .unwrap();
+        }
     }
 
     // Add the kernel region.
