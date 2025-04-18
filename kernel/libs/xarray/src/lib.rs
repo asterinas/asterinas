@@ -72,6 +72,9 @@ mod mark;
 mod node;
 mod range;
 
+#[cfg(ktest)]
+mod test;
+
 const BITS_PER_LAYER: usize = 6;
 const SLOT_SIZE: usize = 1 << BITS_PER_LAYER;
 const SLOT_MASK: usize = SLOT_SIZE - 1;
