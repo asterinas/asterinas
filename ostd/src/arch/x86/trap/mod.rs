@@ -107,7 +107,7 @@ pub struct TrapFrame {
 /// This function will:
 /// - Switch to a new, CPU-local [GDT].
 /// - Switch to a new, CPU-local [TSS].
-/// - Switch to a new, CPU-local [IDT].
+/// - Switch to a new, global [IDT].
 /// - Enable the [`syscall`] instruction.
 ///
 /// [GDT]: https://wiki.osdev.org/GDT
