@@ -31,6 +31,7 @@ atomic-integer-wrapper = { path = "libs/atomic-integer-wrapper" }
 id-alloc = { path = "../ostd/libs/id-alloc" }
 int-to-c-enum = { path = "libs/int-to-c-enum" }
 cpio-decoder = { path = "libs/cpio-decoder" }
+xarray = { path = "libs/xarray" }
 intrusive-collections = "0.9.5"
 paste = "1.0"
 time = { version = "0.3", default-features = false, features = ["alloc"] }
