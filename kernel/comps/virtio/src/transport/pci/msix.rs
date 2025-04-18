@@ -2,7 +2,8 @@
 
 use alloc::vec::Vec;
 
-use ostd::{bus::pci::capability::msix::CapabilityMsixData, trap::IrqLine};
+use aster_pci::capability::msix::CapabilityMsixData;
+use ostd::trap::IrqLine;
 
 pub struct VirtioMsixManager {
     config_msix_vector: u16,

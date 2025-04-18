@@ -3,16 +3,14 @@
 use alloc::{boxed::Box, sync::Arc};
 use core::mem::{offset_of, size_of};
 
+use aster_pci::cfg_space::Bar;
 use aster_rights::{ReadOp, WriteOp};
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use log::warn;
 use ostd::{
-    bus::{
-        mmio::{
-            bus::MmioDevice,
-            common_device::{MmioCommonDevice, VirtioMmioVersion},
-        },
-        pci::cfg_space::Bar,
+    bus::mmio::{
+        bus::MmioDevice,
+        common_device::{MmioCommonDevice, VirtioMmioVersion},
     },
     io::IoMem,
     mm::{DmaCoherent, PAGE_SIZE},
