@@ -296,4 +296,5 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_UTIMENSAT = 412          => sys_utimensat(args[..4]);
     SYS_SEMTIMEDOP = 420         => sys_semtimedop(args[..4]);
     SYS_CLONE3 = 435             => sys_clone3(args[..2], &user_ctx);
+    SYS_FACCESSAT2 = 439         => sys_faccessat2(arg[..4]);
 }
