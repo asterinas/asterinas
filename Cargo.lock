@@ -218,6 +218,7 @@ dependencies = [
  "osdk-heap-allocator",
  "ostd",
  "paste",
+ "radium",
  "rand",
  "riscv",
  "spin",

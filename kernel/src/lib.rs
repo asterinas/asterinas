@@ -10,6 +10,7 @@
 #![feature(btree_cursors)]
 #![feature(btree_extract_if)]
 #![feature(debug_closure_helpers)]
+#![feature(exclusive_wrapper)]
 #![feature(extend_one)]
 #![feature(extract_if)]
 #![feature(fn_traits)]
