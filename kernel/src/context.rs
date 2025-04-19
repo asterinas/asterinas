@@ -49,9 +49,10 @@ pub struct CurrentUserSpace<'a>(Ref<'a, Option<Vmar<Full>>>);
 /// If you get the access to the [`Context`].
 #[macro_export]
 macro_rules! current_userspace {
-    () => {
+    () => {{
+        use crate::context::CurrentUserSpace;
         CurrentUserSpace::new(&ostd::task::Task::current().unwrap())
-    };
+    }};
 }
 
 impl<'a> CurrentUserSpace<'a> {

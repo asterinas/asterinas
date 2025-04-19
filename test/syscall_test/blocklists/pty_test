@@ -24,5 +24,9 @@ PtyTest.SwitchTwiceMultiline
 JobControlTest.SetTTYBadArg
 JobControlTest.SetTTYDifferentSession
 JobControlTest.ReleaseTTYSignals
+# FIXME: `ReleaseTTYNonLeader` does pass in Linux, but is disabled because we
+# cannot mimic the exact Linux behavior due to some design differences.
+# See <https://github.com/asterinas/asterinas/pull/2066#issuecomment-2865177068>.
+JobControlTest.ReleaseTTYNonLeader
 JobControlTest.SetForegroundProcessGroup
 JobControlTest.SetForegroundProcessGroupEmptyProcessGroup

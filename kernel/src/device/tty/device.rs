@@ -16,13 +16,10 @@ pub struct TtyDevice;
 
 impl Device for TtyDevice {
     fn open(&self) -> Result<Option<Arc<dyn FileIo>>> {
-        let current = current!();
-        let session = current.session().unwrap();
-
-        let Some(terminal) = session.terminal() else {
+        let Some(terminal) = current!().terminal() else {
             return_errno_with_message!(
                 Errno::ENOTTY,
-                "the session does not have controlling terminal"
+                "the process does not have a controlling terminal"
             );
         };
 

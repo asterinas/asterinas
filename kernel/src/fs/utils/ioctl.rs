@@ -27,6 +27,8 @@ pub enum IoctlCmd {
     FIONBIO = 0x5421,
     /// the calling process gives up this controlling terminal
     TIOCNOTTY = 0x5422,
+    /// Return the session ID of FD
+    TIOCGSID = 0x5429,
     /// Clear the close on exec flag on a file descriptor
     FIONCLEX = 0x5450,
     /// Set the close on exec flag on a file descriptor
