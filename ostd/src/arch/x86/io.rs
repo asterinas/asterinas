@@ -17,7 +17,9 @@ pub(super) fn construct_io_mem_allocator_builder() -> IoMemAllocatorBuilder {
     let mut ranges = Vec::with_capacity(2);
 
     let reserved_filter = regions.iter().filter(|r| {
-        r.typ() != (MemoryRegionType::Unknown) && r.typ() != (MemoryRegionType::Reserved)
+        r.typ() != MemoryRegionType::Unknown
+            && r.typ() != MemoryRegionType::Reserved
+            && r.typ() != MemoryRegionType::Framebuffer
     });
 
     // Find the TOLM (Top of Low Memory) and initialize Low MMIO region (TOLM ~ LOW_MMIO_TOP).
