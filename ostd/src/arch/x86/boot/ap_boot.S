@@ -171,7 +171,7 @@ ap_protect:
 
 .code64
 ap_long_mode_in_low_address:
-    mov ax, 0
+    mov ax, 16
     mov ds, ax
     mov ss, ax
     mov es, ax

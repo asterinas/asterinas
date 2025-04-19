@@ -30,33 +30,52 @@ use x86_64::{
 
 use super::UserContext;
 
-global_asm!(include_str!("syscall.S"));
+global_asm!(
+    include_str!("syscall.S"),
+    USER_CS = const super::gdt::USER_CS.0,
+    USER_SS = const super::gdt::USER_SS.0,
+);
 
-pub fn init() {
+/// # Safety
+///
+/// The caller needs to ensure that `gdt::init` has been called before, so the segment selectors
+/// used in the `syscall` and `sysret` instructions have been properly initialized.
+pub(super) unsafe fn init() {
     let cpuid = CpuId::new();
+
+    assert!(cpuid
+        .get_extended_processor_and_feature_identifiers()
+        .unwrap()
+        .has_syscall_sysret());
+    assert!(cpuid.get_extended_feature_info().unwrap().has_fsgsbase());
+
+    // Flags to clear on syscall.
+    //
+    // Linux 5.0 uses TF|DF|IF|IOPL|AC|NT. Reference:
+    // <https://github.com/torvalds/linux/blob/v5.0/arch/x86/kernel/cpu/common.c#L1559-L1562>
+    const RFLAGS_MASK: u64 = 0x47700;
+
+    // SAFETY: The segment selectors are correctly initialized (as upheld by the caller), and the
+    // entry point and flags to clear are also correctly set, so enabling the `syscall` and
+    // `sysret` instructions is safe.
     unsafe {
-        // Enable `syscall` instruction.
-        assert!(cpuid
-            .get_extended_processor_and_feature_identifiers()
-            .unwrap()
-            .has_syscall_sysret());
+        LStar::write(VirtAddr::new(syscall_entry as usize as u64));
+        SFMask::write(RFlags::from_bits(RFLAGS_MASK).unwrap());
+
+        // Enable the `syscall` and `sysret` instructions.
         Efer::update(|efer| {
             efer.insert(EferFlags::SYSTEM_CALL_EXTENSIONS);
         });
+    }
 
-        // Enable `FSGSBASE` instructions.
-        assert!(cpuid.get_extended_feature_info().unwrap().has_fsgsbase());
+    // SAFETY: Enabling the `rdfsbase`, `wrfsbase`, `rdgsbase`, and `wrgsbase` instructions is safe
+    // as long as the kernel properly deals with the arbitrary base values set by the userspace
+    // program. (FIXME: Do we really need to unconditionally enable them?)
+    unsafe {
         Cr4::update(|cr4| {
             cr4.insert(Cr4Flags::FSGSBASE);
-        });
-
-        // Flags to clear on syscall.
-        // Copy from Linux 5.0, TF|DF|IF|IOPL|AC|NT
-        const RFLAGS_MASK: u64 = 0x47700;
-
-        LStar::write(VirtAddr::new(syscall_entry as usize as u64));
-        SFMask::write(RFlags::from_bits(RFLAGS_MASK).unwrap());
-    }
+        })
+    };
 }
 
 extern "sysv64" {

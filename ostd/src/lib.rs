@@ -78,9 +78,8 @@ unsafe fn init() {
 
     // SAFETY: This function is called only once, before `allocator::init`
     // and after memory regions are initialized.
-    unsafe {
-        mm::frame::allocator::init_early_allocator();
-    }
+    unsafe { mm::frame::allocator::init_early_allocator() };
+
     #[cfg(target_arch = "x86_64")]
     arch::if_tdx_enabled!({
     } else {

@@ -142,29 +142,21 @@ pub fn register_ap_entry(entry: fn()) {
 #[no_mangle]
 fn ap_early_entry(cpu_id: u32) -> ! {
     // SAFETY: `cpu_id` is the correct value of the CPU ID.
-    unsafe {
-        cpu::init_on_ap(cpu_id);
-    }
+    unsafe { cpu::init_on_ap(cpu_id) };
 
     crate::arch::enable_cpu_features();
 
-    // SAFETY: this function is only called once on this AP.
-    unsafe {
-        crate::arch::trap::init(false);
-    }
+    // SAFETY: This function is called in the boot context of the AP.
+    unsafe { crate::arch::trap::init() };
 
-    // SAFETY: this function is only called once on this AP, after the BSP has
+    // SAFETY: This function is only called once on this AP, after the BSP has
     // done the architecture-specific initialization.
-    unsafe {
-        crate::arch::init_on_ap();
-    }
+    unsafe { crate::arch::init_on_ap() };
 
     crate::arch::irq::enable_local();
 
-    // SAFETY: this function is only called once on this AP.
-    unsafe {
-        crate::mm::kspace::activate_kernel_page_table();
-    }
+    // SAFETY: This function is only called once on this AP.
+    unsafe { crate::mm::kspace::activate_kernel_page_table() };
 
     // Mark the AP as started.
     let ap_boot_info = AP_BOOT_INFO.get().unwrap();
