@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(unused_variables)]
-
 use crate::{
     events::IoEvents,
     fs::{
@@ -41,17 +39,17 @@ impl Device for TtyDevice {
 }
 
 impl Pollable for TtyDevice {
-    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
+    fn poll(&self, _mask: IoEvents, _poller: Option<&mut PollHandle>) -> IoEvents {
         IoEvents::empty()
     }
 }
 
 impl FileIo for TtyDevice {
-    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+    fn read(&self, _writer: &mut VmWriter) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "cannot read tty device");
     }
 
-    fn write(&self, reader: &mut VmReader) -> Result<usize> {
+    fn write(&self, _reader: &mut VmReader) -> Result<usize> {
         return_errno_with_message!(Errno::EINVAL, "cannot write tty device");
     }
 }

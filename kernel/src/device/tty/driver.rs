@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(dead_code)]
-
 use ostd::mm::{Infallible, VmReader};
 use spin::Once;
 
@@ -84,11 +82,6 @@ fn console_input_callback(mut reader: VmReader<Infallible>) {
         let ch = reader.read_val().unwrap();
         tty_driver.push_char(ch);
     }
-}
-
-fn serial_input_callback(item: u8) {
-    let tty_driver = get_tty_driver();
-    tty_driver.push_char(item);
 }
 
 fn get_tty_driver() -> &'static TtyDriver {
