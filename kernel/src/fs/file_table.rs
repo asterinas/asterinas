@@ -15,7 +15,7 @@ use crate::{
     prelude::*,
     process::{
         posix_thread::FileTableRefMut,
-        signal::{constants::SIGIO, signals::kernel::KernelSignal, PollAdaptor},
+        signal::{constants::SIGIO, PollAdaptor},
         Pid, Process,
     },
 };
@@ -405,10 +405,8 @@ impl OwnerObserver {
 
 impl Observer<IoEvents> for OwnerObserver {
     fn on_events(&self, _events: &IoEvents) {
-        if self.file.status_flags().contains(StatusFlags::O_ASYNC)
-            && let Some(process) = self.owner.upgrade()
-        {
-            process.enqueue_signal(KernelSignal::new(SIGIO));
+        if self.file.status_flags().contains(StatusFlags::O_ASYNC) {
+            crate::process::enqueue_signal_async(self.owner.clone(), SIGIO);
         }
     }
 }
