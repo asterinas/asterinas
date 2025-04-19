@@ -600,14 +600,15 @@ impl Process {
         &self.sig_dispositions
     }
 
-    /// Enqueues a process-directed signal. This method should only be used for enqueue kernel
-    /// signal and fault signal.
+    /// Enqueues a process-directed signal.
+    ///
+    /// This method should only be used for enqueue kernel signals and fault signals.
     ///
     /// The signal may be delivered to any one of the threads that does not currently have the
-    /// signal blocked.  If more than one of the threads has the signal unblocked, then this method
+    /// signal blocked. If more than one of the threads have the signal unblocked, then this method
     /// chooses an arbitrary thread to which to deliver the signal.
-    ///
-    /// TODO: restrict these method with access control tool.
+    //
+    // TODO: Restrict this method with the access control tool.
     pub fn enqueue_signal(&self, signal: impl Signal + Clone + 'static) {
         if self.status.is_zombie() {
             return;
@@ -705,4 +706,23 @@ impl Process {
             }
         }
     }
+}
+
+/// Enqueues a process-directed kernel signal asynchronously.
+///
+/// This is the asynchronous version of [`Process::enqueue_signal`]. By asynchronous, this method
+/// submits a work item and returns, so this method doesn't sleep and can be used in atomic mode.
+pub fn enqueue_signal_async(process: Weak<Process>, signal: SigNum) {
+    use super::signal::signals::kernel::KernelSignal;
+    use crate::thread::work_queue;
+
+    let signal = KernelSignal::new(signal);
+    work_queue::submit_work_func(
+        move || {
+            if let Some(process) = process.upgrade() {
+                process.enqueue_signal(signal);
+            }
+        },
+        work_queue::WorkPriority::High,
+    );
 }
