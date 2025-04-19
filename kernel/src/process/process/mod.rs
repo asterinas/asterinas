@@ -295,47 +295,55 @@ impl Process {
 
     /// Returns the process group ID of the process.
     //
-    // FIXME: If we call this method without holding the process table lock, it may return zero if
-    // the process is reaped at the same time.
+    // FIXME: If we call this method on a non-current process without holding the process table
+    // lock, it may return zero if the process is reaped at the same time.
     pub fn pgid(&self) -> Pgid {
-        self.process_group().map_or(0, |group| group.pgid())
+        self.process_group
+            .lock()
+            .upgrade()
+            .map_or(0, |group| group.pgid())
     }
 
     /// Returns the session ID of the process.
     //
-    // FIXME: If we call this method without holding the process table lock, it may return zero if
-    // the process is reaped at the same time.
+    // FIXME: If we call this method on a non-current process without holding the process table
+    // lock, it may return zero if the process is reaped at the same time.
     pub fn sid(&self) -> Sid {
-        self.session().map_or(0, |session| session.sid())
-    }
-
-    /// Returns the process group to which the process belongs.
-    ///
-    /// **Deprecated:** This is a very poorly designed API. Almost every use of this API is wrong
-    /// because some race condition is not handled correctly. Such usages are being refactored and
-    /// this API will be removed soon. So DO NOT ATTEMPT TO USE THIS API IN NEW CODE unless you
-    /// know exactly what you're doing.
-    pub fn process_group(&self) -> Option<Arc<ProcessGroup>> {
-        self.process_group.lock().upgrade()
-    }
-
-    /// Returns the session to which the process belongs.
-    ///
-    /// **Deprecated:** This is a very poorly designed API. Almost every use of this API is wrong
-    /// because some race condition is not handled correctly. Such usages are being refactored and
-    /// this API will be removed soon. So DO NOT ATTEMPT TO USE THIS API IN NEW CODE unless you
-    /// know exactly what you're doing.
-    pub fn session(&self) -> Option<Arc<Session>> {
         self.process_group
             .lock()
             .upgrade()
             .and_then(|group| group.session())
+            .map_or(0, |session| session.sid())
     }
 
-    /// Returns whether the process is session leader.
-    pub fn is_session_leader(&self) -> bool {
-        self.session()
-            .is_some_and(|session| session.sid() == self.pid)
+    /// Returns the process group and the session if the process is a session leader.
+    ///
+    /// Note that once a process becomes a session leader, it remains a session leader forever.
+    /// Specifically, it can no longer be moved to a new process group or a new session. So this
+    /// method is race-free.
+    //
+    // FIXME: If we call this method on a non-current process without holding the process table
+    // lock, the session may be dead if the process is reaped at the same time.
+    fn leading_session(&self) -> Option<(Arc<ProcessGroup>, Arc<Session>)> {
+        let process_group_mut = self.process_group.lock();
+
+        let process_group = process_group_mut.upgrade().unwrap();
+        let session = process_group.session().unwrap();
+
+        if session.is_leader(self) {
+            Some((process_group, session))
+        } else {
+            None
+        }
+    }
+
+    /// Returns the controlling terminal of the process, if any.
+    pub fn terminal(&self) -> Option<Arc<dyn Terminal>> {
+        self.process_group
+            .lock()
+            .upgrade()
+            .and_then(|group| group.session())
+            .and_then(|session| session.lock().terminal().cloned())
     }
 
     /// Moves the process to the new session.

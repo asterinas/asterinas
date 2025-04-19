@@ -103,43 +103,18 @@ impl FileIo for Tty {
                 let termios = self.ldisc.termios();
                 trace!("get termios = {:?}", termios);
                 current_userspace!().write_val(arg, &termios)?;
-                Ok(0)
-            }
-            IoctlCmd::TIOCGPGRP => {
-                let Some(foreground) = self.foreground() else {
-                    return_errno_with_message!(Errno::ESRCH, "No fg process group")
-                };
-                let fg_pgid = foreground.pgid();
-                debug!("fg_pgid = {}", fg_pgid);
-                current_userspace!().write_val(arg, &fg_pgid)?;
-                Ok(0)
-            }
-            IoctlCmd::TIOCSPGRP => {
-                // Set the process group id of fg progress group
-                let pgid = {
-                    let pgid: i32 = current_userspace!().read_val(arg)?;
-                    if pgid < 0 {
-                        return_errno_with_message!(Errno::EINVAL, "negative pgid");
-                    }
-                    pgid as u32
-                };
-
-                self.set_foreground(&pgid)?;
-                Ok(0)
             }
             IoctlCmd::TCSETS => {
                 // Set terminal attributes
                 let termios = current_userspace!().read_val(arg)?;
                 debug!("set termios = {:?}", termios);
                 self.ldisc.set_termios(termios);
-                Ok(0)
             }
             IoctlCmd::TCSETSW => {
                 let termios = current_userspace!().read_val(arg)?;
                 debug!("set termios = {:?}", termios);
                 self.ldisc.set_termios(termios);
                 // TODO: drain output buffer
-                Ok(0)
             }
             IoctlCmd::TCSETSF => {
                 let termios = current_userspace!().read_val(arg)?;
@@ -147,32 +122,24 @@ impl FileIo for Tty {
                 self.ldisc.set_termios(termios);
                 self.ldisc.drain_input();
                 // TODO: drain output buffer
-                Ok(0)
             }
             IoctlCmd::TIOCGWINSZ => {
                 let winsize = self.ldisc.window_size();
                 current_userspace!().write_val(arg, &winsize)?;
-                Ok(0)
             }
             IoctlCmd::TIOCSWINSZ => {
                 let winsize = current_userspace!().read_val(arg)?;
                 self.ldisc.set_window_size(winsize);
-                Ok(0)
             }
-            IoctlCmd::TIOCSCTTY => {
-                self.set_current_session()?;
-                Ok(0)
-            }
-            _ => todo!(),
+            _ => (self.weak_self.upgrade().unwrap() as Arc<dyn Terminal>)
+                .job_ioctl(cmd, arg, false)?,
         }
+
+        Ok(0)
     }
 }
 
 impl Terminal for Tty {
-    fn arc_self(&self) -> Arc<dyn Terminal> {
-        self.weak_self.upgrade().unwrap() as _
-    }
-
     fn job_control(&self) -> &JobControl {
         &self.job_control
     }

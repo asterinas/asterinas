@@ -64,59 +64,16 @@ impl Session {
         self.sid
     }
 
+    /// Returns whether the process is the session leader.
+    pub(super) fn is_leader(&self, process: &Process) -> bool {
+        self.sid == process.pid()
+    }
+
     /// Acquires a lock on the session.
     pub fn lock(&self) -> SessionGuard {
         SessionGuard {
             inner: self.inner.lock(),
         }
-    }
-
-    /// Sets terminal as the controlling terminal of the session. The `get_terminal` method
-    /// should set the session for the terminal and returns the session.
-    ///
-    /// If the session already has controlling terminal, this method will return `Err(EPERM)`.
-    pub fn set_terminal<F>(&self, get_terminal: F) -> Result<()>
-    where
-        F: Fn() -> Result<Arc<dyn Terminal>>,
-    {
-        let mut inner = self.inner.lock();
-
-        if inner.terminal.is_some() {
-            return_errno_with_message!(
-                Errno::EPERM,
-                "current session already has controlling terminal"
-            );
-        }
-
-        let terminal = get_terminal()?;
-        inner.terminal = Some(terminal);
-        Ok(())
-    }
-
-    /// Releases the controlling terminal of the session.
-    ///
-    /// If the session does not have controlling terminal, this method will return `ENOTTY`.
-    pub fn release_terminal<F>(&self, release_session: F) -> Result<()>
-    where
-        F: Fn(&Arc<dyn Terminal>) -> Result<()>,
-    {
-        let mut inner = self.inner.lock();
-        if inner.terminal.is_none() {
-            return_errno_with_message!(
-                Errno::ENOTTY,
-                "current session does not has controlling terminal"
-            );
-        }
-
-        let terminal = inner.terminal.as_ref().unwrap();
-        release_session(terminal)?;
-        inner.terminal = None;
-        Ok(())
-    }
-
-    /// Returns the controlling terminal of `self`.
-    pub fn terminal(&self) -> Option<Arc<dyn Terminal>> {
-        self.inner.lock().terminal.clone()
     }
 }
 
@@ -130,6 +87,19 @@ pub struct SessionGuard<'a> {
 }
 
 impl SessionGuard<'_> {
+    /// Sets the controlling terminal of the session.
+    ///
+    /// The caller needs to ensure that the job control of the old and new controlling terminals
+    /// are properly updated and synchronized.
+    pub(super) fn set_terminal(&mut self, terminal: Option<Arc<dyn Terminal>>) {
+        self.inner.terminal = terminal;
+    }
+
+    /// Returns the controlling terminal of the session.
+    pub fn terminal(&self) -> Option<&Arc<dyn Terminal>> {
+        self.inner.terminal.as_ref()
+    }
+
     /// Inserts a process group into the session.
     ///
     /// The caller needs to ensure that the process group didn't previously belong to the session,

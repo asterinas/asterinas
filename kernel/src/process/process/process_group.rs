@@ -88,11 +88,6 @@ impl ProcessGroupGuard<'_> {
         }
     }
 
-    /// Returns whether the process group contains the process.
-    pub(super) fn contains_process(&self, pid: &Pid) -> bool {
-        self.inner.processes.contains_key(pid)
-    }
-
     /// Inserts a process into the process group.
     ///
     /// The caller needs to ensure that the process didn't previously belong to the process group,

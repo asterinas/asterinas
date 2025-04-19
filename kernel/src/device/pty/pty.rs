@@ -183,10 +183,9 @@ impl FileIo for PtyMaster {
             | IoctlCmd::TCSETS
             | IoctlCmd::TIOCGPTN
             | IoctlCmd::TIOCGWINSZ
-            | IoctlCmd::TIOCSWINSZ => self.slave.ioctl(cmd, arg),
+            | IoctlCmd::TIOCSWINSZ => return self.slave.ioctl(cmd, arg),
             IoctlCmd::TIOCSPTLCK => {
                 // TODO: lock/unlock pty
-                Ok(0)
             }
             IoctlCmd::TIOCGPTPEER => {
                 let current_task = Task::current().unwrap();
@@ -217,46 +216,16 @@ impl FileIo for PtyMaster {
                     // TODO: deal with the O_CLOEXEC flag
                     file_table_locked.insert(slave, FdFlags::empty())
                 };
-                Ok(fd)
-            }
-            IoctlCmd::TIOCGPGRP => {
-                let Some(foreground) = self.slave.foreground() else {
-                    return_errno_with_message!(
-                        Errno::ESRCH,
-                        "the foreground process group does not exist"
-                    );
-                };
-                let fg_pgid = foreground.pgid();
-                current_userspace!().write_val(arg, &fg_pgid)?;
-                Ok(0)
-            }
-            IoctlCmd::TIOCSPGRP => {
-                let pgid = {
-                    let pgid: i32 = current_userspace!().read_val(arg)?;
-                    if pgid < 0 {
-                        return_errno_with_message!(Errno::EINVAL, "negative pgid");
-                    }
-                    pgid as u32
-                };
-
-                self.slave.set_foreground(&pgid)?;
-                Ok(0)
-            }
-            IoctlCmd::TIOCSCTTY => {
-                self.slave.set_current_session()?;
-                Ok(0)
-            }
-            IoctlCmd::TIOCNOTTY => {
-                self.slave.release_current_session()?;
-                Ok(0)
+                return Ok(fd);
             }
             IoctlCmd::FIONREAD => {
                 let len = self.input.lock().len() as i32;
                 current_userspace!().write_val(arg, &len)?;
-                Ok(0)
             }
-            _ => Ok(0),
+            _ => (self.slave.clone() as Arc<dyn Terminal>).job_ioctl(cmd, arg, true)?,
         }
+
+        Ok(0)
     }
 }
 
@@ -298,10 +267,6 @@ impl Device for PtySlave {
 }
 
 impl Terminal for PtySlave {
-    fn arc_self(&self) -> Arc<dyn Terminal> {
-        self.weak_self.upgrade().unwrap() as _
-    }
-
     fn job_control(&self) -> &JobControl {
         &self.job_control
     }
@@ -343,70 +308,31 @@ impl FileIo for PtySlave {
             IoctlCmd::TCGETS => {
                 let termios = self.ldisc.termios();
                 current_userspace!().write_val(arg, &termios)?;
-                Ok(0)
             }
             IoctlCmd::TCSETS => {
                 let termios = current_userspace!().read_val(arg)?;
                 self.ldisc.set_termios(termios);
-                Ok(0)
             }
             IoctlCmd::TIOCGPTN => {
                 let idx = self.index();
                 current_userspace!().write_val(arg, &idx)?;
-                Ok(0)
             }
             IoctlCmd::TIOCGWINSZ => {
                 let winsize = self.ldisc.window_size();
                 current_userspace!().write_val(arg, &winsize)?;
-                Ok(0)
             }
             IoctlCmd::TIOCSWINSZ => {
                 let winsize = current_userspace!().read_val(arg)?;
                 self.ldisc.set_window_size(winsize);
-                Ok(0)
-            }
-            IoctlCmd::TIOCGPGRP => {
-                if !self.is_controlling_terminal() {
-                    return_errno_with_message!(Errno::ENOTTY, "slave is not controlling terminal");
-                }
-
-                let Some(foreground) = self.foreground() else {
-                    return_errno_with_message!(
-                        Errno::ESRCH,
-                        "the foreground process group does not exist"
-                    );
-                };
-
-                let fg_pgid = foreground.pgid();
-                current_userspace!().write_val(arg, &fg_pgid)?;
-                Ok(0)
-            }
-            IoctlCmd::TIOCSPGRP => {
-                let pgid = {
-                    let pgid: i32 = current_userspace!().read_val(arg)?;
-                    if pgid < 0 {
-                        return_errno_with_message!(Errno::EINVAL, "negative pgid");
-                    }
-                    pgid as u32
-                };
-
-                self.set_foreground(&pgid)?;
-                Ok(0)
-            }
-            IoctlCmd::TIOCSCTTY => {
-                self.set_current_session()?;
-                Ok(0)
-            }
-            IoctlCmd::TIOCNOTTY => {
-                self.release_current_session()?;
-                Ok(0)
             }
             IoctlCmd::FIONREAD => {
                 let buffer_len = self.ldisc.buffer_len() as i32;
                 current_userspace!().write_val(arg, &buffer_len)?;
-                Ok(0)
             }
-            _ => Ok(0),
+            _ => (self.weak_self.upgrade().unwrap() as Arc<dyn Terminal>)
+                .job_ioctl(cmd, arg, false)?,
         }
+
+        Ok(0)
     }
 }

@@ -6,7 +6,6 @@ use ostd::{cpu::context::UserContext, task::Task, user::UserContextApi};
 
 use super::{Process, Terminal};
 use crate::{
-    device::tty::get_n_tty,
     fs::{
         fs_resolver::{FsPath, AT_FDCWD},
         thread_info::ThreadFsInfo,
@@ -37,7 +36,8 @@ pub fn spawn_init_process(
 
     set_session_and_group(&process);
 
-    open_ntty_as_controlling_terminal(&process)?;
+    // FIXME: This should be done by the userspace init process.
+    (crate::device::tty::get_n_tty().clone() as Arc<dyn Terminal>).set_control(&process)?;
 
     process.run();
 
@@ -126,21 +126,4 @@ fn create_init_task(
         .process(process)
         .fs(Arc::new(fs));
     Ok(thread_builder.build())
-}
-
-/// Opens `N_TTY` as the controlling terminal for the process.
-fn open_ntty_as_controlling_terminal(process: &Process) -> Result<()> {
-    let tty = get_n_tty();
-
-    let session = &process.session().unwrap();
-    let process_group = process.process_group().unwrap();
-
-    session.set_terminal(|| {
-        tty.job_control().set_session(session);
-        Ok(tty.clone())
-    })?;
-
-    tty.job_control().set_foreground(Some(&process_group))?;
-
-    Ok(())
 }
