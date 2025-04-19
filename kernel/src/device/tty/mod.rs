@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(dead_code)]
-
 use ostd::early_print;
 use spin::Once;
 
@@ -39,6 +37,7 @@ pub(super) fn init() {
 
 pub struct Tty {
     /// tty_name
+    #[expect(unused)]
     name: CString,
     /// line discipline
     ldisc: Arc<LineDiscipline>,

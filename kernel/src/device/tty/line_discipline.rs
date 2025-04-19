@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(unused_variables)]
-
 use alloc::format;
 
 use ostd::{
@@ -235,7 +233,7 @@ impl LineDiscipline {
                 let ctrl_char = format!("^{}", get_printable_char(ch));
                 echo_callback(&ctrl_char);
             }
-            item => {}
+            _ => {}
         }
     }
 
@@ -254,8 +252,6 @@ impl LineDiscipline {
             (vmin, vtime)
         };
         let read_len = {
-            let len = self.read_buffer.lock().len();
-            let max_read_len = len.min(dst.len());
             if vmin == 0 && vtime == 0 {
                 // poll read
                 self.poll_read(dst)
@@ -400,11 +396,6 @@ fn is_ctrl_char(ch: u8) -> bool {
 fn get_printable_char(ctrl_char: u8) -> char {
     debug_assert!(is_ctrl_char(ctrl_char));
     char::from_u32((ctrl_char + b'A' - 1) as u32).unwrap()
-}
-
-enum PolleeType {
-    Add,
-    Del,
 }
 
 struct LineDisciplineWorkPara {
