@@ -1,11 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#include <netlink/netlink.h>
-#include <netlink/route/link.h>
-#include <netlink/route/addr.h>
 #include <net/if.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include <netlink/route/addr.h>
 #include <unistd.h>
 
 #include "test.h"
@@ -223,5 +219,7 @@ FN_TEST(get_addr_error)
 			break;
 		}
 	}
+
+	TEST_SUCC(close(sock_fd));
 }
 END_TEST()
