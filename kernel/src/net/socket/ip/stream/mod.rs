@@ -58,8 +58,10 @@ pub(in crate::net) use self::observer::StreamObserver;
 pub use self::util::CongestionControl;
 
 pub struct StreamSocket {
-    options: RwLock<OptionSet>,
+    // Lock order: `state` first, `options` second
     state: RwLock<Takeable<State>, PreemptDisabled>,
+    options: RwLock<OptionSet>,
+
     is_nonblocking: AtomicBool,
     pollee: Pollee,
 }
@@ -102,8 +104,8 @@ impl StreamSocket {
     pub fn new(is_nonblocking: bool) -> Arc<Self> {
         let init_stream = InitStream::new();
         Arc::new(Self {
-            options: RwLock::new(OptionSet::new()),
             state: RwLock::new(Takeable::new(State::Init(init_stream))),
+            options: RwLock::new(OptionSet::new()),
             is_nonblocking: AtomicBool::new(is_nonblocking),
             pollee: Pollee::new(),
         })
@@ -190,10 +192,10 @@ impl StreamSocket {
     fn start_connect(&self, remote_endpoint: &IpEndpoint) -> Option<Result<()>> {
         let is_nonblocking = self.is_nonblocking();
 
+        let mut state = self.write_updated_state();
+
         let options = self.options.read();
         let raw_option = options.raw();
-
-        let mut state = self.write_updated_state();
 
         let (result_or_block, iface_to_poll) = state.borrow_result(|mut owned_state| {
             let mut init_stream = match owned_state {
@@ -426,12 +428,12 @@ impl Socket for StreamSocket {
     fn bind(&self, socket_addr: SocketAddr) -> Result<()> {
         let endpoint = socket_addr.try_into()?;
 
-        let can_reuse = self.options.read().socket.reuse_addr();
         let mut state = self.write_updated_state();
-
         let State::Init(init_stream) = state.as_mut() else {
             return_errno_with_message!(Errno::EINVAL, "the socket is already bound to an address");
         };
+
+        let can_reuse = self.options.read().socket.reuse_addr();
         init_stream.bind(&endpoint, can_reuse)
     }
 
@@ -446,10 +448,10 @@ impl Socket for StreamSocket {
     }
 
     fn listen(&self, backlog: usize) -> Result<()> {
+        let mut state = self.write_updated_state();
+
         let options = self.options.read();
         let raw_option = options.raw();
-
-        let mut state = self.write_updated_state();
 
         state.borrow_result(|owned_state| {
             let init_stream = match owned_state {
@@ -665,8 +667,8 @@ impl Socket for StreamSocket {
     }
 
     fn set_option(&self, option: &dyn SocketOption) -> Result<()> {
-        let mut options = self.options.write();
         let mut state = self.write_updated_state();
+        let mut options = self.options.write();
 
         // Deal with socket-level options
         let need_iface_poll = match options.socket.set_option(option, state.as_mut()) {
