@@ -548,10 +548,13 @@ impl<'a> VmReader<'a, Infallible> {
 
     /// Converts to a fallible reader.
     pub fn to_fallible(self) -> VmReader<'a, Fallible> {
-        // SAFETY: It is safe to transmute to a fallible reader since
-        // 1. the fallibility is a zero-sized marker type,
-        // 2. an infallible reader covers the capabilities of a fallible reader.
-        unsafe { core::mem::transmute(self) }
+        // It is safe to construct a fallible reader since an infallible reader covers the
+        // capabilities of a fallible reader.
+        VmReader {
+            cursor: self.cursor,
+            end: self.end,
+            phantom: PhantomData,
+        }
     }
 }
 
@@ -799,10 +802,13 @@ impl<'a> VmWriter<'a, Infallible> {
 
     /// Converts to a fallible writer.
     pub fn to_fallible(self) -> VmWriter<'a, Fallible> {
-        // SAFETY: It is safe to transmute to a fallible writer since
-        // 1. the fallibility is a zero-sized marker type,
-        // 2. an infallible reader covers the capabilities of a fallible reader.
-        unsafe { core::mem::transmute(self) }
+        // It is safe to construct a fallible reader since an infallible reader covers the
+        // capabilities of a fallible reader.
+        VmWriter {
+            cursor: self.cursor,
+            end: self.end,
+            phantom: PhantomData,
+        }
     }
 }
 
