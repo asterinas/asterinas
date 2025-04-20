@@ -3,39 +3,65 @@
 use aster_bigtcp::{socket::UdpSocket, wire::IpEndpoint};
 
 use super::{bound::BoundDatagram, DatagramObserver};
-use crate::{events::IoEvents, net::socket::ip::common::bind_port, prelude::*};
+use crate::{
+    events::IoEvents,
+    net::socket::{
+        ip::common::{bind_port, get_ephemeral_endpoint},
+        util::datagram_common,
+    },
+    prelude::*,
+    process::signal::Pollee,
+};
 
-pub struct UnboundDatagram {
+pub(super) struct UnboundDatagram {
     _private: (),
 }
 
 impl UnboundDatagram {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self { _private: () }
     }
+}
 
-    pub fn bind(
-        self,
-        endpoint: &IpEndpoint,
-        can_reuse: bool,
-        observer: DatagramObserver,
-    ) -> core::result::Result<BoundDatagram, (Error, Self)> {
-        let bound_port = match bind_port(endpoint, can_reuse) {
-            Ok(bound_port) => bound_port,
-            Err(err) => return Err((err, self)),
-        };
+pub(super) struct BindOptions {
+    pub(super) can_reuse: bool,
+}
 
-        let bound_socket = match UdpSocket::new_bind(bound_port, observer) {
-            Ok(bound_socket) => bound_socket,
-            Err((_, err)) => {
-                unreachable!("`new_bind fails with {:?}, which should not happen", err)
-            }
-        };
+impl datagram_common::Unbound for UnboundDatagram {
+    type Endpoint = IpEndpoint;
+    type BindOptions = BindOptions;
+
+    type Bound = BoundDatagram;
+
+    fn bind(
+        &mut self,
+        endpoint: &Self::Endpoint,
+        pollee: &Pollee,
+        options: BindOptions,
+    ) -> Result<Self::Bound> {
+        let bound_port = bind_port(endpoint, options.can_reuse)?;
+
+        let bound_socket =
+            match UdpSocket::new_bind(bound_port, DatagramObserver::new(pollee.clone())) {
+                Ok(bound_socket) => bound_socket,
+                Err((_, err)) => {
+                    unreachable!("`new_bind` fails with {:?}, which should not happen", err)
+                }
+            };
 
         Ok(BoundDatagram::new(bound_socket))
     }
 
-    pub(super) fn check_io_events(&self) -> IoEvents {
+    fn bind_ephemeral(
+        &mut self,
+        remote_endpoint: &Self::Endpoint,
+        pollee: &Pollee,
+    ) -> Result<Self::Bound> {
+        let endpoint = get_ephemeral_endpoint(remote_endpoint);
+        self.bind(&endpoint, pollee, BindOptions { can_reuse: false })
+    }
+
+    fn check_io_events(&self) -> IoEvents {
         IoEvents::OUT
     }
 }
