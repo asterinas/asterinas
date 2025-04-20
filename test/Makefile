@@ -33,9 +33,14 @@ INITRAMFS_ALL_DIRS := \
 	$(INITRAMFS)/sbin \
 	$(INITRAMFS)/usr/bin \
 	$(INITRAMFS)/usr/local \
-	$(INITRAMFS)/test \
 	$(INITRAMFS)/benchmark \
 	$(INITRAMFS_EMPTY_DIRS)
+
+# Include test as target if BENCHMARK is not set.
+ifeq ($(BENCHMARK), none)
+INITRAMFS_ALL_DIRS += $(INITRAMFS)/test
+endif
+
 SYSCALL_TEST_DIR := $(INITRAMFS)/opt/syscall_test
 
 .PHONY: all
