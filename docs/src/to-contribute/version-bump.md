@@ -57,12 +57,11 @@ you will be assisted with a convenient utility script, `tools/bump_version.sh`,
 
 ### Commit 1: "Bump the Docker image version"
 
-After updating the Docker image content
-(specified by the `tools/docker/Dockerfile.jinja` file),
+After updating the Docker image content,
 increment the Docker image version using the following command:
 
 ```
-bump_version.sh --docker_version_file [major | minor | patch | date]
+./bump_version.sh --docker_version_file [major | minor | patch | date]
 ```
 
 The second argument specifies which part of the Docker image version to increment.
@@ -82,7 +81,7 @@ write a follow-up commit to
 update all Docker image version references across the codebase.
 
 ```
-bump_version.sh --docker_version_refs
+./bump_version.sh --docker_version_refs
 ```
 
 If your purpose is to publish non-breaking changes to the Docker images,
@@ -96,7 +95,7 @@ synchronize the version number in `VERSION` with
 that in `DOCKER_IMAGE_VERSION` by running:
 
 ```
-bump_version.sh --version_file
+./bump_version.sh --version_file
 ```
 
 This command also updates all version numbers

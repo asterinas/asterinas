@@ -54,18 +54,16 @@ grub.protocol = "linux"
 qemu.args = """\
     -accel kvm \
     -name process=tdxvm,debug-threads=on \
-    -m 6G \
+    -m 8G \
     -vga none \
     -monitor pty \
-    -no-hpet \
     -nodefaults \
     -drive file=target/osdk/asterinas/asterinas.qcow2,if=virtio,format=qcow2 \
     -monitor telnet:127.0.0.1:9001,server,nowait \
-    -bios /usr/share/qemu/OVMF.fd \
-    -object tdx-guest,sept-ve-disable=on,id=tdx,quote-generation-service=vsock:2:4050 \
-    -object memory-backend-memfd-private,id=ram1,size=2G \
-    -cpu host,-kvm-steal-time,pmu=off,tsc-freq=1000000000 \
-    -machine q35,kernel_irqchip=split,confidential-guest-support=tdx,memory-backend=ram1 \
+    -bios /root/ovmf/release/OVMF.fd \
+    -object tdx-guest,sept-ve-disable=on,id=tdx0 \
+    -cpu host,-kvm-steal-time,pmu=off \
+    -machine q35,kernel-irqchip=split,confidential-guest-support=tdx0 \
     -smp 1 \
     -nographic \
 """
