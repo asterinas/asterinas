@@ -58,6 +58,7 @@ inherit-methods-macro = { git = "https://github.com/asterinas/inherit-methods-ma
 getset = "0.1.2"
 takeable = "0.2.2"
 cfg-if = "1.0"
+systree = { path = "comps/systree" }
 # Fixed point numbers
 # TODO: fork this crate to rewrite all the (unnecessary) unsafe usage
 fixed = "1.28.0"
