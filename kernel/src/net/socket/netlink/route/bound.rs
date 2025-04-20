@@ -10,6 +10,7 @@ use crate::{
             message::ProtocolSegment, route::kernel::get_netlink_route_kernel, table::BoundHandle,
             NetlinkSocketAddr,
         },
+        util::datagram_common,
         SendRecvFlags,
     },
     prelude::*,
@@ -18,6 +19,7 @@ use crate::{
 
 pub(super) struct BoundNetlinkRoute {
     handle: BoundHandle,
+    remote_addr: NetlinkSocketAddr,
     receive_queue: Mutex<VecDeque<RtnlMessage>>,
 }
 
@@ -25,18 +27,31 @@ impl BoundNetlinkRoute {
     pub(super) const fn new(handle: BoundHandle) -> Self {
         Self {
             handle,
+            remote_addr: NetlinkSocketAddr::new_unspecified(),
             receive_queue: Mutex::new(VecDeque::new()),
         }
     }
+}
 
-    pub(super) const fn addr(&self) -> NetlinkSocketAddr {
+impl datagram_common::Bound for BoundNetlinkRoute {
+    type Endpoint = NetlinkSocketAddr;
+
+    fn local_endpoint(&self) -> Self::Endpoint {
         self.handle.addr()
     }
 
-    pub(super) fn try_send(
+    fn remote_endpoint(&self) -> Option<&Self::Endpoint> {
+        Some(&self.remote_addr)
+    }
+
+    fn set_remote_endpoint(&mut self, endpoint: &Self::Endpoint) {
+        self.remote_addr = *endpoint;
+    }
+
+    fn try_send(
         &self,
         reader: &mut dyn MultiRead,
-        remote: Option<&NetlinkSocketAddr>,
+        remote: &Self::Endpoint,
         flags: SendRecvFlags,
     ) -> Result<usize> {
         // TODO: Deal with flags
@@ -44,16 +59,12 @@ impl BoundNetlinkRoute {
             warn!("unsupported flags: {:?}", flags);
         }
 
-        if let Some(remote) = remote {
-            // TODO: Further check whether other socket address can be supported.
-            if *remote != NetlinkSocketAddr::new_unspecified() {
-                return_errno_with_message!(
-                    Errno::ECONNREFUSED,
-                    "sending netlink route messages to user space is not supported"
-                );
-            }
-        } else {
-            // TODO: We should use the connected remote address, if any.
+        // TODO: Further check whether other socket address can be supported.
+        if *remote != NetlinkSocketAddr::new_unspecified() {
+            return_errno_with_message!(
+                Errno::ECONNREFUSED,
+                "sending netlink route messages to user space is not supported"
+            );
         }
 
         let mut nlmsg = {
@@ -75,7 +86,7 @@ impl BoundNetlinkRoute {
             }
         };
 
-        let local_port = self.addr().port();
+        let local_port = self.handle.port();
         for segment in nlmsg.segments_mut() {
             // The header's PID should be the sender's port ID.
             // However, the sender can also leave it unspecified.
@@ -93,7 +104,7 @@ impl BoundNetlinkRoute {
         Ok(nlmsg.total_len())
     }
 
-    pub(super) fn try_receive(
+    fn try_recv(
         &self,
         writer: &mut dyn MultiWrite,
         flags: SendRecvFlags,
@@ -126,7 +137,7 @@ impl BoundNetlinkRoute {
         Ok((len, remote))
     }
 
-    pub(super) fn check_io_events(&self) -> IoEvents {
+    fn check_io_events(&self) -> IoEvents {
         let mut events = IoEvents::OUT;
 
         let receive_queue = self.receive_queue.lock();

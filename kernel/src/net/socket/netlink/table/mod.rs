@@ -137,6 +137,10 @@ impl BoundHandle {
         }
     }
 
+    pub(super) const fn port(&self) -> PortNum {
+        self.port
+    }
+
     pub(super) const fn addr(&self) -> NetlinkSocketAddr {
         NetlinkSocketAddr::new(self.port, self.groups)
     }
