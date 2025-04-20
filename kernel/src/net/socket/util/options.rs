@@ -91,7 +91,7 @@ impl SocketOptionSet {
     pub fn set_option(
         &mut self,
         option: &dyn SocketOption,
-        socket: &mut dyn SetSocketLevelOption,
+        socket: &dyn SetSocketLevelOption,
     ) -> Result<NeedIfacePoll> {
         match_sock_option_ref!(option, {
             socket_recv_buf: RecvBuf => {

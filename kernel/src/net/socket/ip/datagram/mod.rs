@@ -47,8 +47,10 @@ impl OptionSet {
 }
 
 pub struct DatagramSocket {
-    options: RwLock<OptionSet>,
+    // Lock order: `inner` first, `options` second
     inner: RwLock<Takeable<Inner>, PreemptDisabled>,
+    options: RwLock<OptionSet>,
+
     is_nonblocking: AtomicBool,
     pollee: Pollee,
 }
@@ -101,9 +103,9 @@ impl DatagramSocket {
         let unbound_datagram = UnboundDatagram::new();
         Arc::new(Self {
             inner: RwLock::new(Takeable::new(Inner::Unbound(unbound_datagram))),
+            options: RwLock::new(OptionSet::new()),
             is_nonblocking: AtomicBool::new(is_nonblocking),
             pollee: Pollee::new(),
-            options: RwLock::new(OptionSet::new()),
         })
     }
 
@@ -257,8 +259,8 @@ impl Socket for DatagramSocket {
     fn bind(&self, socket_addr: SocketAddr) -> Result<()> {
         let endpoint = socket_addr.try_into()?;
 
-        let can_reuse = self.options.read().socket.reuse_addr();
         let mut inner = self.inner.write();
+        let can_reuse = self.options.read().socket.reuse_addr();
         inner.borrow_result(|owned_inner| {
             let bound_datagram = match owned_inner.bind(
                 &endpoint,
@@ -373,10 +375,10 @@ impl Socket for DatagramSocket {
     }
 
     fn set_option(&self, option: &dyn SocketOption) -> Result<()> {
+        let inner = self.inner.read();
         let mut options = self.options.write();
-        let mut inner = self.inner.write();
 
-        match options.socket.set_option(option, inner.as_mut()) {
+        match options.socket.set_option(option, inner.as_ref()) {
             Err(e) => Err(e),
             Ok(need_iface_poll) => {
                 let iface_to_poll = need_iface_poll
