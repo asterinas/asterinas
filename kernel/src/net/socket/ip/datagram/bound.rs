@@ -9,46 +9,50 @@ use crate::{
     events::IoEvents,
     net::{
         iface::{Iface, UdpSocket},
-        socket::util::send_recv_flags::SendRecvFlags,
+        socket::util::{datagram_common, send_recv_flags::SendRecvFlags},
     },
     prelude::*,
     util::{MultiRead, MultiWrite},
 };
 
-pub struct BoundDatagram {
+pub(super) struct BoundDatagram {
     bound_socket: UdpSocket,
     remote_endpoint: Option<IpEndpoint>,
 }
 
 impl BoundDatagram {
-    pub fn new(bound_socket: UdpSocket) -> Self {
+    pub(super) fn new(bound_socket: UdpSocket) -> Self {
         Self {
             bound_socket,
             remote_endpoint: None,
         }
     }
 
-    pub fn local_endpoint(&self) -> IpEndpoint {
+    pub(super) fn iface(&self) -> &Arc<Iface> {
+        self.bound_socket.iface()
+    }
+}
+
+impl datagram_common::Bound for BoundDatagram {
+    type Endpoint = IpEndpoint;
+
+    fn local_endpoint(&self) -> Self::Endpoint {
         self.bound_socket.local_endpoint().unwrap()
     }
 
-    pub fn remote_endpoint(&self) -> Option<&IpEndpoint> {
+    fn remote_endpoint(&self) -> Option<&Self::Endpoint> {
         self.remote_endpoint.as_ref()
     }
 
-    pub fn set_remote_endpoint(&mut self, endpoint: &IpEndpoint) {
+    fn set_remote_endpoint(&mut self, endpoint: &Self::Endpoint) {
         self.remote_endpoint = Some(*endpoint)
     }
 
-    pub fn iface(&self) -> &Arc<Iface> {
-        self.bound_socket.iface()
-    }
-
-    pub fn try_recv(
+    fn try_recv(
         &self,
         writer: &mut dyn MultiWrite,
         _flags: SendRecvFlags,
-    ) -> Result<(usize, IpEndpoint)> {
+    ) -> Result<(usize, Self::Endpoint)> {
         let result = self.bound_socket.recv(|packet, udp_metadata| {
             let copied_res = writer.write(&mut VmReader::from(packet));
             let endpoint = udp_metadata.endpoint;
@@ -67,10 +71,10 @@ impl BoundDatagram {
         }
     }
 
-    pub fn try_send(
+    fn try_send(
         &self,
         reader: &mut dyn MultiRead,
-        remote: &IpEndpoint,
+        remote: &Self::Endpoint,
         _flags: SendRecvFlags,
     ) -> Result<usize> {
         let result = self
@@ -99,7 +103,7 @@ impl BoundDatagram {
         }
     }
 
-    pub(super) fn check_io_events(&self) -> IoEvents {
+    fn check_io_events(&self) -> IoEvents {
         self.bound_socket.raw_with(|socket| {
             let mut events = IoEvents::empty();
 
