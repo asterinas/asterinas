@@ -34,4 +34,7 @@ sleep 0.2
 ./udp_err
 ./unix_err
 
+./netlink_route
+./rtnl_err
+
 echo "All network test passed"
