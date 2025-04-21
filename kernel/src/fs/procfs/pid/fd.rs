@@ -8,6 +8,7 @@ use crate::{
         procfs::{
             pid::FdEvents, DirOps, Observer, ProcDir, ProcDirBuilder, ProcSymBuilder, SymOps,
         },
+        pseudo::{EpollFile, EventFile, SignalFile},
         utils::{DirEntryVecExt, Inode},
     },
     prelude::*,
@@ -108,12 +109,20 @@ impl FileSymOps {
 
 impl SymOps for FileSymOps {
     fn read_link(&self) -> Result<String> {
-        let path = if let Some(inode_handle) = self.0.downcast_ref::<InodeHandle>() {
-            inode_handle.dentry().abs_path()
-        } else {
-            // TODO: get the real path for other FileLike object
-            String::from("/dev/tty")
-        };
-        Ok(path)
+        macro_rules! try_get_path {
+            ($type:ty) => {
+                if let Some(file) = self.0.downcast_ref::<$type>() {
+                    return Ok(file.dentry().abs_path());
+                }
+            };
+        }
+
+        try_get_path!(InodeHandle);
+        try_get_path!(EpollFile);
+        try_get_path!(EventFile);
+        try_get_path!(SignalFile);
+
+        // TODO: get the real path for other FileLike object
+        Ok(String::from("/dev/tty"))
     }
 }

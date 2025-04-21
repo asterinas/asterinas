@@ -6,8 +6,8 @@ use super::SyscallReturn;
 use crate::{
     events::IoEvents,
     fs::{
-        epoll::{EpollCtl, EpollEvent, EpollFile, EpollFlags},
         file_table::{get_file_fast, FdFlags, FileDesc},
+        pseudo::{EpollCtl, EpollEvent, EpollFile, EpollFlags},
         utils::CreationFlags,
     },
     prelude::*,
