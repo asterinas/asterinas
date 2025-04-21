@@ -32,6 +32,7 @@ TEST_APPS := \
 	mmap \
 	mongoose \
 	network \
+	nvme \
 	pipe \
 	prctl \
 	pthread \
