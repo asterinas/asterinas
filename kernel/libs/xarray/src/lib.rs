@@ -192,7 +192,7 @@ impl<P: NonNullPtr + Sync + Send, M> Drop for XArray<P, M> {
 ///
 /// The locked `XArray` is able to create `CursorMut` and do mutable operations.
 /// There can only be one locked `XArray` at the same time.
-pub struct LockedXArray<'a, P, M, G = PreemptDisabled>
+pub struct LockedXArray<'a, P, M = NoneMark, G = PreemptDisabled>
 where
     P: NonNullPtr + Send + Sync,
     G: SpinGuardian,
