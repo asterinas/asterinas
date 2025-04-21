@@ -511,17 +511,23 @@ fn clone_sysvsem(clone_flags: CloneFlags) -> Result<()> {
 }
 
 fn set_parent_and_group(parent: &Process, child: &Arc<Process>) {
-    let process_group = parent.process_group().unwrap();
-
+    // Lock order: process table -> children -> group of process
+    // -> group inner -> session inner
     let mut process_table_mut = process_table::process_table_mut();
-    let mut group_inner = process_group.inner.lock();
-    let mut child_group_mut = child.process_group.lock();
-    let mut children_mut = parent.children().lock();
 
+    let mut children_mut = parent.children().lock();
+    let process_group_mut = parent.process_group.lock();
+
+    let process_group = process_group_mut.upgrade().unwrap();
+    let mut process_group_inner = process_group.lock();
+
+    // Put the child process in the parent's process group
+    process_group_inner.insert_process(child.clone());
+    *child.process_group.lock() = Arc::downgrade(&process_group);
+
+    // Put the child process in the parent's `children` field
     children_mut.insert(child.pid(), child.clone());
 
-    group_inner.processes.insert(child.pid(), child.clone());
-    *child_group_mut = Arc::downgrade(&process_group);
-
+    // Put the child process in the global table
     process_table_mut.insert(child.pid(), child.clone());
 }
