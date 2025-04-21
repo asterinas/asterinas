@@ -344,11 +344,6 @@ impl Process {
 
     // *********** Process group & Session ***********
 
-    /// Returns the process group to which the process belongs.
-    pub fn process_group(&self) -> Option<Arc<ProcessGroup>> {
-        self.process_group.lock().upgrade()
-    }
-
     /// Returns the process group ID of the process.
     //
     // FIXME: If we call this method without holding the process table lock, it may return zero if
@@ -365,9 +360,27 @@ impl Process {
         self.session().map_or(0, |session| session.sid())
     }
 
+    /// Returns the process group to which the process belongs.
+    ///
+    /// **Deprecated:** This is a very poorly designed API. Almost every use of this API is wrong
+    /// because some race condition is not handled correctly. Such usages are being refactored and
+    /// this API will be removed soon. So DO NOT ATTEMPT TO USE THIS API IN NEW CODE unless you
+    /// know exactly what you're doing.
+    pub fn process_group(&self) -> Option<Arc<ProcessGroup>> {
+        self.process_group.lock().upgrade()
+    }
+
     /// Returns the session to which the process belongs.
+    ///
+    /// **Deprecated:** This is a very poorly designed API. Almost every use of this API is wrong
+    /// because some race condition is not handled correctly. Such usages are being refactored and
+    /// this API will be removed soon. So DO NOT ATTEMPT TO USE THIS API IN NEW CODE unless you
+    /// know exactly what you're doing.
     pub fn session(&self) -> Option<Arc<Session>> {
-        self.process_group()?.session()
+        self.process_group
+            .lock()
+            .upgrade()
+            .and_then(|group| group.session())
     }
 
     /// Returns whether the process is session leader.

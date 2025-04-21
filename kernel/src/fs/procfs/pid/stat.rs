@@ -85,17 +85,13 @@ impl FileOps for StatFileOps {
 
         let pid = process.pid();
         let comm = process.executable_path();
-        let ppid = process.parent().pid();
         let state = if process.status().is_zombie() {
             'Z'
         } else {
             'R'
         };
-        let pgrp = if let Some(pgrp) = process.process_group() {
-            pgrp.pgid()
-        } else {
-            0
-        };
+        let ppid = process.parent().pid();
+        let pgrp = process.pgid();
 
         let mut stat_output = String::new();
         writeln!(

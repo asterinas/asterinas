@@ -149,7 +149,7 @@ impl PosixThread {
         if let Some(signum) = signum
             && *signum == SIGCONT
         {
-            let receiver_sid = self.process().session().unwrap().sid();
+            let receiver_sid = self.process().sid();
             if receiver_sid == sender.sid().unwrap() {
                 return Ok(());
             }
