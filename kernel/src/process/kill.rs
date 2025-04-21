@@ -166,7 +166,7 @@ fn current_thread_sender_ids(signum: Option<&SigNum>, ctx: &Context) -> SignalSe
     let euid = credentials.euid();
     let sid = signum.and_then(|signum| {
         if *signum == SIGCONT {
-            Some(ctx.process.session().unwrap().sid())
+            Some(ctx.process.sid())
         } else {
             None
         }
