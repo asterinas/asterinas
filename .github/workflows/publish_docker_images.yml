@@ -31,12 +31,6 @@ jobs:
           echo "aster_version=$ASTER_VERSION" >> "$GITHUB_OUTPUT"
           echo "rust_version=$RUST_VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Generate Dockerfile
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-jinja2
-          python3 ./tools/docker/gen_dockerfile.py
-
       - name: Build and push development image
         uses: docker/build-push-action@v4
         with:
@@ -48,20 +42,17 @@ jobs:
           build-args: |
             "ASTER_RUST_VERSION=${{ steps.fetch-versions.outputs.rust_version }}"
 
-      - name: Generate Dockerfile for Intel TDX
-        run: |
-          python3 ./tools/docker/gen_dockerfile.py --intel-tdx
-
       - name: Build and push development image for Intel TDX
         uses: docker/build-push-action@v4
         with:
           context: .
-          file: ./tools/docker/Dockerfile
+          file: ./tools/docker/tdx/Dockerfile
           platforms: linux/amd64
           push: true
           tags: asterinas/asterinas:${{ steps.fetch-versions.outputs.aster_version }}-tdx
           build-args: |
             "ASTER_RUST_VERSION=${{ steps.fetch-versions.outputs.rust_version }}"
+            "BASE_VERSION=${{ steps.fetch-versions.outputs.aster_version }}"
 
       - name: Generate OSDK Dockerfile
         run: |
