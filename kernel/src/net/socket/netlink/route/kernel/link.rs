@@ -9,7 +9,7 @@ use aster_bigtcp::iface::InterfaceType;
 use super::util::finish_response;
 use crate::{
     net::{
-        iface::{Iface, IFACES},
+        iface::{iter_all_ifaces, Iface},
         socket::netlink::{
             message::{CMsgSegHdr, CSegmentType, GetRequestFlags, SegHdrCommonFlags},
             route::message::{LinkAttr, LinkSegment, LinkSegmentBody, RtnlSegment},
@@ -22,9 +22,7 @@ use crate::{
 pub(super) fn do_get_link(request_segment: &LinkSegment) -> Result<Vec<RtnlSegment>> {
     let filter_by = FilterBy::from_request(request_segment)?;
 
-    let ifaces = IFACES.get().unwrap();
-    let mut response_segments: Vec<RtnlSegment> = ifaces
-        .iter()
+    let mut response_segments: Vec<RtnlSegment> = iter_all_ifaces()
         // Filter to include only requested links.
         .filter(|iface| match &filter_by {
             FilterBy::Index(index) => *index == iface.index(),

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{borrow::ToOwned, sync::Arc};
+use core::slice::Iter;
 
 use aster_bigtcp::{
     device::WithDevice,
@@ -12,7 +13,19 @@ use spin::Once;
 use super::{poll::poll_ifaces, Iface};
 use crate::{net::iface::sched::PollScheduler, prelude::*};
 
-pub static IFACES: Once<Vec<Arc<Iface>>> = Once::new();
+static IFACES: Once<Vec<Arc<Iface>>> = Once::new();
+
+pub fn loopback_iface() -> &'static Arc<Iface> {
+    &IFACES.get().unwrap()[0]
+}
+
+pub fn virtio_iface() -> Option<&'static Arc<Iface>> {
+    IFACES.get().unwrap().get(1)
+}
+
+pub fn iter_all_ifaces() -> Iter<'static, Arc<Iface>> {
+    IFACES.get().unwrap().iter()
+}
 
 pub fn init() {
     IFACES.call_once(|| {
@@ -29,14 +42,13 @@ pub fn init() {
         ifaces
     });
 
-    for (name, _) in aster_network::all_devices() {
-        let callback = || {
+    if let Some(iface_virtio) = virtio_iface() {
+        for (name, _) in aster_network::all_devices() {
             // TODO: further check that the irq num is the same as iface's irq num
-            let iface_virtio = &IFACES.get().unwrap()[0];
-            iface_virtio.poll();
-        };
-        aster_network::register_recv_callback(&name, callback);
-        aster_network::register_send_callback(&name, callback);
+            let callback = || iface_virtio.poll();
+            aster_network::register_recv_callback(&name, callback);
+            aster_network::register_send_callback(&name, callback);
+        }
     }
 
     poll_ifaces();

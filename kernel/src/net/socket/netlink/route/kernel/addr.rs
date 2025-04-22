@@ -7,7 +7,7 @@ use core::num::NonZeroU32;
 use super::util::finish_response;
 use crate::{
     net::{
-        iface::{Iface, IFACES},
+        iface::{iter_all_ifaces, Iface},
         socket::netlink::{
             message::{CMsgSegHdr, CSegmentType, GetRequestFlags, SegHdrCommonFlags},
             route::message::{
@@ -28,9 +28,7 @@ pub(super) fn do_get_addr(request_segment: &AddrSegment) -> Result<Vec<RtnlSegme
         return_errno_with_message!(Errno::EOPNOTSUPP, "GETADDR only supports dump requests");
     }
 
-    let ifaces = IFACES.get().unwrap();
-    let mut response_segments: Vec<RtnlSegment> = ifaces
-        .iter()
+    let mut response_segments: Vec<RtnlSegment> = iter_all_ifaces()
         // GETADDR only supports dump mode, so we're going to report all addresses.
         .filter_map(|iface| iface_to_new_addr(request_segment.header(), iface))
         .map(RtnlSegment::NewAddr)
