@@ -48,7 +48,7 @@ fn calibrate() {
 }
 
 /// Read an `Instant` of tsc clocksource.
-pub(super) fn read_instant() -> Instant {
+pub fn read_instant() -> Instant {
     let clock = CLOCK.get().unwrap();
     clock.read_instant()
 }

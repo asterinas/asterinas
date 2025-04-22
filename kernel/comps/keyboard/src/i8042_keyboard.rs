@@ -11,7 +11,11 @@ use ostd::{
     trap::{IrqLine, TrapFrame},
 };
 use spin::Once;
+use alloc::sync::Arc;
+use aster_input::{InputDevice, InputDeviceMeta, InputEvent, input_event};
+use aster_time::tsc::read_instant;
 
+use crate::alloc::string::ToString;
 use super::{InputKey, KEYBOARD_CALLBACKS};
 
 /// Data register (R/W)
@@ -35,10 +39,38 @@ pub fn init() {
 
         SpinLock::new(irq_line)
     });
+
+    aster_input::register_device("i8042_keyboard".to_string(), Arc::new(I8042Keyboard));
+}
+struct I8042Keyboard;
+
+impl InputDevice for I8042Keyboard {
+    fn metadata(&self) -> InputDeviceMeta {
+        InputDeviceMeta {
+            name: "i8042_keyboard".to_string(),
+            vendor_id: 0x1234,    // Replace with the actual vendor ID
+            product_id: 0x5678,  // Replace with the actual product ID
+            version: 1,          // Replace with the actual version
+        }
+    }
 }
 
 fn handle_keyboard_input(_trap_frame: &TrapFrame) {
     let key = parse_inputkey();
+
+    // Get the current time in microseconds
+    let now = read_instant();
+    let time_in_microseconds = now.secs() * 1_000_000 + (now.nanos() / 1_000) as u64;
+
+    // Dispatch the input event
+    input_event(InputEvent {
+        time: time_in_microseconds, // Assign the current timestamp
+        type_: 1,                   // EV_KEY (example type for key events)
+        code: key as u16,           // Convert InputKey to a u16 representation
+        value: 1,                   // Example value (1 for key press, 0 for release)
+    });
+
+    // Fixme: the callbacks are going to be replaced.
     for callback in KEYBOARD_CALLBACKS.lock().iter() {
         callback(key);
     }

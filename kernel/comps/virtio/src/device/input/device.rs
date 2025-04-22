@@ -9,10 +9,12 @@ use alloc::{
 use core::{fmt::Debug, mem};
 
 use aster_input::{
-    key::{Key, KeyStatus},
+    event_type_codes::KeyStatus,
     InputEvent,
 };
 use aster_util::{field_ptr, safe_ptr::SafePtr};
+use aster_input::{InputDevice as AsterInputDevice, InputDeviceMeta};
+
 use bitflags::bitflags;
 use log::{debug, info};
 use ostd::{
@@ -229,7 +231,16 @@ impl InputDevice {
                 _ => return false,
             };
 
-            let event = InputEvent::KeyBoard(Key::try_from(event.code).unwrap(), status);
+            let event = InputEvent {
+                time: 0, // Replace with actual timestamp if available
+                type_: 0x01, // EV_KEY
+                code: event.code,
+                value: match status {
+                    KeyStatus::Pressed => 1,
+                    KeyStatus::Released => 0,
+                },
+            };
+    
             info!("Input Event:{:?}", event);
 
             for callback in callbacks.iter() {
@@ -246,6 +257,17 @@ impl InputDevice {
     pub(crate) fn negotiate_features(features: u64) -> u64 {
         assert_eq!(features, 0);
         0
+    }
+}
+
+impl AsterInputDevice for InputDevice {
+    fn metadata(&self) -> InputDeviceMeta {
+        InputDeviceMeta {
+            name: self.query_config_id_name(),
+            vendor_id: 0x1234, // Example vendor ID, replace with actual value if available
+            product_id: 0x5678, // Example product ID, replace with actual value if available
+            version: 1, // Example version, replace with actual value if available
+        }
     }
 }
 
@@ -292,12 +314,6 @@ type EventBuf<'a> = SafePtr<VirtioInputEvent, &'a DmaStream>;
 impl<T, M: HasDaddr> DmaBuf for SafePtr<T, M> {
     fn len(&self) -> usize {
         core::mem::size_of::<T>()
-    }
-}
-
-impl aster_input::InputDevice for InputDevice {
-    fn register_callbacks(&self, function: &'static (dyn Fn(InputEvent) + Send + Sync)) {
-        self.callbacks.write().push(Arc::new(function))
     }
 }
 

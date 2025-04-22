@@ -6,6 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+aster-input = { path = "../input" }
+aster-time = { path = "../time" }
 component = { path = "../../libs/comp-sys/component" }
 ostd = { path = "../../../ostd" }
 log = "0.4"

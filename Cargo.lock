@@ -139,6 +139,8 @@ dependencies = [
 name = "aster-keyboard"
 version = "0.1.0"
 dependencies = [
+ "aster-input",
+ "aster-time",
  "component",
  "log",
  "ostd",

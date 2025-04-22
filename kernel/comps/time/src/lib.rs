@@ -19,7 +19,7 @@ use spin::Once;
 
 mod clocksource;
 mod rtc;
-mod tsc;
+pub mod tsc;
 
 pub const NANOS_PER_SECOND: u32 = 1_000_000_000;
 pub static VDSO_DATA_HIGH_RES_UPDATE_FN: Once<Arc<dyn Fn(Instant, u64) + Sync + Send>> =

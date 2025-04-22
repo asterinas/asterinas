@@ -8,6 +8,7 @@ mod shm;
 pub mod tty;
 mod urandom;
 mod zero;
+mod event;
 
 #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
 mod tdxguest;
@@ -18,11 +19,13 @@ pub use fb::Fb;
 pub use pty::{new_pty_pair, PtyMaster, PtySlave};
 pub use random::Random;
 pub use urandom::Urandom;
+pub use event::EventDevice;
 
 use crate::{
     fs::device::{add_node, Device, DeviceId, DeviceType},
     prelude::*,
 };
+use alloc::format;
 
 /// Init the device node in fs, must be called after mounting rootfs.
 pub fn init_in_first_process(ctx: &Context) -> Result<()> {
@@ -59,11 +62,19 @@ pub fn init_in_first_process(ctx: &Context) -> Result<()> {
     add_node(urandom, "urandom", &fs_resolver)?;
 
     let fb = Arc::new(fb::Fb);
-    add_node(fb, "fb0")?;
+    add_node(fb, "fb0", &fs_resolver)?;
 
     pty::init_in_first_process(&fs_resolver)?;
 
     shm::init_in_first_process(&fs_resolver)?;
+
+    // Dynamically create EventDevices for each InputDevice
+    for (index, (device_name, input_device)) in aster_input::all_devices().iter().enumerate() {
+        let event_device = Arc::new(event::EventDevice::new(index, input_device.clone()));
+        let path = format!("input/event{}", index);
+        add_node(event_device, &path, &fs_resolver)?;
+        println!("Added EventDevice for InputDevice '{}' at '{}'", device_name, path);
+    }
 
     Ok(())
 }
