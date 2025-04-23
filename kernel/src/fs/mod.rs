@@ -2,7 +2,6 @@
 
 pub mod device;
 pub mod devpts;
-pub mod epoll;
 pub mod exfat;
 pub mod ext2;
 pub mod file_handle;
@@ -13,6 +12,7 @@ pub mod named_pipe;
 pub mod path;
 pub mod pipe;
 pub mod procfs;
+pub mod pseudo;
 pub mod ramfs;
 pub mod rootfs;
 pub mod thread_info;

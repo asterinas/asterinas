@@ -10,6 +10,7 @@ use super::{
     fs_resolver::{FsPath, FsResolver},
     path::MountNode,
     procfs::{self, ProcFS},
+    pseudo::AnonInodeFs,
     ramfs::RamFS,
     utils::{FileSystem, InodeMode, InodeType},
 };
@@ -114,6 +115,7 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
     let dev_dentry = fs.lookup(&FsPath::try_from("/dev")?)?;
     dev_dentry.mount(RamFS::new())?;
 
+    AnonInodeFs::new();
     println!("[kernel] rootfs is ready");
 
     Ok(())

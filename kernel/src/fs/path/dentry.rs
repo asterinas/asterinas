@@ -37,7 +37,7 @@ pub struct Dentry {
 pub struct Dentry_ {
     inode: Arc<dyn Inode>,
     type_: InodeType,
-    name_and_parent: RwLock<Option<(String, Arc<Dentry_>)>>,
+    name_and_parent: RwLock<Option<(String, Option<Arc<Dentry_>>)>>,
     children: RwMutex<DentryChildren>,
     flags: AtomicU32,
     this: Weak<Dentry_>,
@@ -49,7 +49,12 @@ impl Dentry_ {
     /// It is been created during the construction of the `MountNode`.
     /// The `MountNode` holds an arc reference to this root `Dentry_`.
     pub(super) fn new_root(inode: Arc<dyn Inode>) -> Arc<Self> {
-        Self::new(inode, DentryOptions::Root)
+        Self::new(inode, DentryOptions::Root(None))
+    }
+
+    pub(super) fn alloc_pseudo_dentry(name: &str, inode: Arc<dyn Inode>) -> Result<Arc<Self>> {
+        let new_dentry = Dentry_::new(inode, DentryOptions::Root(Some(String::from(name))));
+        Ok(new_dentry)
     }
 
     fn new(inode: Arc<dyn Inode>, options: DentryOptions) -> Arc<Self> {
@@ -58,7 +63,10 @@ impl Dentry_ {
             inode,
             name_and_parent: match options {
                 DentryOptions::Leaf(name_and_parent) => RwLock::new(Some(name_and_parent)),
-                _ => RwLock::new(None),
+                DentryOptions::Root(name) => match name {
+                    Some(name) => RwLock::new(Some((name, None))),
+                    None => RwLock::new(None),
+                },
             },
             children: RwMutex::new(DentryChildren::new()),
             flags: AtomicU32::new(DentryFlags::empty().bits()),
@@ -88,12 +96,12 @@ impl Dentry_ {
         self.name_and_parent
             .read()
             .as_ref()
-            .map(|name_and_parent| name_and_parent.1.clone())
+            .map(|name_and_parent| name_and_parent.1.clone().unwrap().clone())
     }
 
     fn set_name_and_parent(&self, name: &str, parent: Arc<Self>) {
         let mut name_and_parent = self.name_and_parent.write();
-        *name_and_parent = Some((String::from(name), parent));
+        *name_and_parent = Some((String::from(name), Some(parent)));
     }
 
     fn this(&self) -> Arc<Self> {
@@ -147,6 +155,13 @@ impl Dentry_ {
         self.name_and_parent.read().as_ref().is_none()
     }
 
+    pub fn is_pseudo_dentry(&self) -> bool {
+        self.name_and_parent
+            .read()
+            .as_ref()
+            .is_some_and(|(_, parent)| parent.is_none())
+    }
+
     /// Creates a `Dentry_` by creating a new inode of the `type_` with the `mode`.
     pub fn create(&self, name: &str, type_: InodeType, mode: InodeMode) -> Result<Arc<Self>> {
         if self.type_() != InodeType::Dir {
@@ -160,7 +175,10 @@ impl Dentry_ {
 
         let new_inode = self.inode.create(name, type_, mode)?;
         let name = String::from(name);
-        let new_child = Dentry_::new(new_inode, DentryOptions::Leaf((name.clone(), self.this())));
+        let new_child = Dentry_::new(
+            new_inode,
+            DentryOptions::Leaf((name.clone(), Some(self.this()))),
+        );
 
         if new_child.is_dentry_cacheable() {
             children.upgrade().insert(name, new_child.clone());
@@ -189,7 +207,10 @@ impl Dentry_ {
             }
         };
         let name = String::from(name);
-        let target = Self::new(inode, DentryOptions::Leaf((name.clone(), self.this())));
+        let target = Self::new(
+            inode,
+            DentryOptions::Leaf((name.clone(), Some(self.this()))),
+        );
 
         if target.is_dentry_cacheable() {
             children.upgrade().insert(name, target.clone());
@@ -211,7 +232,10 @@ impl Dentry_ {
 
         let inode = self.inode.mknod(name, mode, type_)?;
         let name = String::from(name);
-        let new_child = Dentry_::new(inode, DentryOptions::Leaf((name.clone(), self.this())));
+        let new_child = Dentry_::new(
+            inode,
+            DentryOptions::Leaf((name.clone(), Some(self.this()))),
+        );
 
         if new_child.is_dentry_cacheable() {
             children.upgrade().insert(name, new_child.clone());
@@ -236,7 +260,7 @@ impl Dentry_ {
         let name = String::from(name);
         let dentry = Dentry_::new(
             old_inode.clone(),
-            DentryOptions::Leaf((name.clone(), self.this())),
+            DentryOptions::Leaf((name.clone(), Some(self.this()))),
         );
 
         if dentry.is_dentry_cacheable() {
@@ -396,12 +420,15 @@ impl DentryKey {
     pub fn new(dentry: &Dentry_) -> Self {
         let (name, parent) = match dentry.name_and_parent.read().as_ref() {
             Some(name_and_parent) => name_and_parent.clone(),
-            None => (String::from("/"), dentry.this()),
+            None => (String::from("/"), Some(dentry.this())),
         };
-        Self {
-            name,
-            parent_ptr: Arc::as_ptr(&parent) as usize,
-        }
+
+        let parent_ptr = match parent {
+            Some(parent) => Arc::as_ptr(&parent) as usize,
+            None => 0, // Use 0 as a sentinel value for dentries without a parent
+        };
+
+        Self { name, parent_ptr }
     }
 }
 
@@ -412,8 +439,8 @@ bitflags! {
 }
 
 enum DentryOptions {
-    Root,
-    Leaf((String, Arc<Dentry_>)),
+    Root(Option<String>),
+    Leaf((String, Option<Arc<Dentry_>>)),
 }
 
 /// Manages child dentries, including both valid and negative entries.
@@ -536,6 +563,17 @@ impl Dentry {
         Ok(Self::new(self.mount_node.clone(), new_child_dentry))
     }
 
+    /// Creates a new `Dentry` for lookup-less filesystems.
+    ///
+    /// For a filesystem that just pins its dentries in memory and never
+    /// performs lookups at all, return an unhashed IS_ROOT dentry.
+    /// This is used for pipes, sockets et.al. - the stuff that should
+    /// never be anyone's children or parents.
+    pub fn new_pseudo_dentry(&self, name: &str, inode: Arc<dyn Inode>) -> Result<Self> {
+        let new_dentry = Dentry_::alloc_pseudo_dentry(name, inode)?;
+        Ok(Self::new(self.mount_node.clone(), new_dentry))
+    }
+
     fn new(mount_node: Arc<MountNode>, inner: Arc<Dentry_>) -> Self {
         Self { mount_node, inner }
     }
@@ -575,6 +613,9 @@ impl Dentry {
     ///
     /// It will resolve the mountpoint automatically.
     pub fn abs_path(&self) -> String {
+        if self.inner.is_pseudo_dentry() {
+            return self.effective_name();
+        }
         let mut path = self.effective_name();
         let mut dir_dentry = self.this();
 

@@ -15,7 +15,9 @@ use crate::{
     fs::{
         file_handle::FileLike,
         file_table::{get_file_fast, FileDesc},
-        utils::{InodeMode, IoctlCmd, Metadata},
+        path::Dentry,
+        pseudo::alloc_anon_dentry,
+        utils::{IoctlCmd, Metadata},
     },
     prelude::*,
     process::{
@@ -44,14 +46,17 @@ pub struct EpollFile {
     // Keep this in a separate `Arc` to avoid dropping `EpollFile` in the observer callback, which
     // may cause deadlocks.
     ready: Arc<ReadySet>,
+    dentry: Dentry,
 }
 
 impl EpollFile {
     /// Creates a new epoll file.
     pub fn new() -> Arc<Self> {
+        let dentry = alloc_anon_dentry("[eventpoll]").unwrap();
         Arc::new(Self {
             interest: Mutex::new(BTreeSet::new()),
             ready: Arc::new(ReadySet::new()),
+            dentry,
         })
     }
 
@@ -244,6 +249,10 @@ impl EpollFile {
             warn!("{:?} contains unsupported flags", flags);
         }
     }
+
+    pub fn dentry(&self) -> &Dentry {
+        &self.dentry
+    }
 }
 
 impl Pollable for EpollFile {
@@ -267,13 +276,7 @@ impl FileLike for EpollFile {
     }
 
     fn metadata(&self) -> Metadata {
-        // This is a dummy implementation.
-        // TODO: Add "anonymous inode fs" and link `EpollFile` to it.
-        Metadata::new_file(
-            0,
-            InodeMode::from_bits_truncate(0o600),
-            aster_block::BLOCK_SIZE,
-        )
+        self.dentry.metadata()
     }
 }
 
