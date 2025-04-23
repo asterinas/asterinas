@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ::core::time::Duration;
+use core::time::Duration;
 
 use super::SyscallReturn;
 use crate::{
@@ -174,12 +174,18 @@ bitflags! {
     /// Flags can also be used to control what sort of synchronization the
     /// kernel will do when querying a file on a remote filesystem.
     struct StatxFlags: u32 {
-        const AT_EMPTY_PATH         = 1 << 12; // Allow empty relative pathname to operate on dirfd directly.
-        const AT_NO_AUTOMOUNT       = 1 << 11; // Suppress terminal automount traversal.
-        const AT_SYMLINK_NOFOLLOW   = 1 << 8;  // Do not follow symbolic links.
-        const AT_STATX_SYNC_AS_STAT = 0;       // Do whatever stat() does.
-        const AT_STATX_FORCE_SYNC   = 1 << 13; // Force the attributes to be sync'd with the server.
-        const AT_STATX_DONT_SYNC    = 1 << 14; // Don't sync attributes with the server.
+        /// Allow empty relative pathname to operate on dirfd directly.
+        const AT_EMPTY_PATH         = 1 << 12;
+        /// Suppress terminal automount traversal.
+        const AT_NO_AUTOMOUNT       = 1 << 11;
+        /// Do not follow symbolic links.
+        const AT_SYMLINK_NOFOLLOW   = 1 << 8;
+        /// Do whatever stat() does.
+        const AT_STATX_SYNC_AS_STAT = 0;
+        /// Force the attributes to be sync'd with the server.
+        const AT_STATX_FORCE_SYNC   = 1 << 13;
+        /// Don't sync attributes with the server.
+        const AT_STATX_DONT_SYNC    = 1 << 14;
     }
 }
 
@@ -189,24 +195,41 @@ bitflags! {
     /// These bits should be set in the mask argument of statx() to request
     /// particular items when calling statx().
     pub struct StatxMask: u32 {
-        const STATX_TYPE            = 0x00000001;  // Want stx_mode & S_IFMT
-        const STATX_MODE            = 0x00000002;  // Want stx_mode & ~S_IFMT
-        const STATX_NLINK           = 0x00000004;  // Want stx_nlink
-        const STATX_UID             = 0x00000008;  // Want stx_uid
-        const STATX_GID             = 0x00000010;  // Want stx_gid
-        const STATX_ATIME           = 0x00000020;  // Want stx_atime
-        const STATX_MTIME           = 0x00000040;  // Want stx_mtime
-        const STATX_CTIME           = 0x00000080;  // Want stx_ctime
-        const STATX_INO             = 0x00000100;  // Want stx_ino
-        const STATX_SIZE            = 0x00000200;  // Want stx_size
-        const STATX_BLOCKS          = 0x00000400;  // Want stx_blocks
-        const STATX_BASIC_STATS     = 0x000007ff;  // All of the above (stx_mode, stx_nlink, etc.)
-        const STATX_BTIME           = 0x00000800;  // Want stx_btime
-        const STATX_ALL             = 0x00000fff;  // Deprecated: The same as STATX_BASIC_STATS | STATX_BTIME
-        const STATX_MNT_ID          = 0x00001000;  // Want stx_mnt_id
-        const STATX_DIOALIGN        = 0x00002000;  // Want stx_dio_mem_align and stx_dio_offset_align
-        const STATX_MNT_ID_UNIQUE   = 0x00004000;  // Want unique stx_mnt_id
-        const STATX_RESERVED		= 0x80000000;  // Reserved for future struct statx expansion
-        const STATX_CHANGE_COOKIE   = 0x40000000;  // Want/got stx_change_attr
+        /// Want stx_mode & S_IFMT
+        const STATX_TYPE            = 0x00000001;
+        /// Want stx_mode & ~S_IFMT
+        const STATX_MODE            = 0x00000002;
+        /// Want stx_nlink
+        const STATX_NLINK           = 0x00000004;
+        /// Want stx_uid
+        const STATX_UID             = 0x00000008;
+        /// Want stx_gid
+        const STATX_GID             = 0x00000010;
+        /// Want stx_atime
+        const STATX_ATIME           = 0x00000020;
+        /// Want stx_mtime
+        const STATX_MTIME           = 0x00000040;
+        /// Want stx_ctime
+        const STATX_CTIME           = 0x00000080;
+        /// Want stx_ino
+        const STATX_INO             = 0x00000100;
+        /// Want stx_size
+        const STATX_SIZE            = 0x00000200;
+        /// Want stx_blocks
+        const STATX_BLOCKS          = 0x00000400;
+        /// All of the above (stx_mode, stx_nlink, etc.)
+        const STATX_BASIC_STATS     = 0x000007ff;
+        /// Want stx_btime
+        const STATX_BTIME           = 0x00000800;
+        /// Deprecated: The same as STATX_BASIC_STATS | STATX_BTIME
+        const STATX_ALL             = 0x00000fff;
+        /// Want stx_mnt_id
+        const STATX_MNT_ID          = 0x00001000;
+        /// Want stx_dio_mem_align and stx_dio_offset_align
+        const STATX_DIOALIGN        = 0x00002000;
+        /// Reserved for future struct statx expansion
+        const STATX_RESERVED		= 0x80000000;
+        /// Want/got stx_change_attr
+        const STATX_CHANGE_COOKIE   = 0x40000000;
     }
 }

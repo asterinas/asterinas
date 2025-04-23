@@ -2,7 +2,7 @@
 
 use crate::syscall::{
     accept::{sys_accept, sys_accept4},
-    access::sys_faccessat,
+    access::{sys_faccessat, sys_faccessat2},
     bind::sys_bind,
     brk::sys_brk,
     capget::sys_capget,
@@ -297,5 +297,5 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_UTIMENSAT = 412          => sys_utimensat(args[..4]);
     SYS_SEMTIMEDOP = 420         => sys_semtimedop(args[..4]);
     SYS_CLONE3 = 435             => sys_clone3(args[..2], &user_ctx);
-    SYS_FACCESSAT2 = 439         => sys_faccessat2(arg[..4]);
+    SYS_FACCESSAT2 = 439         => sys_faccessat2(args[..4]);
 }
