@@ -330,6 +330,19 @@ impl From<int_to_c_enum::TryFromIntError> for Error {
     }
 }
 
+impl From<systree::Error> for Error {
+    fn from(err: systree::Error) -> Self {
+        use systree::Error::*;
+        match err {
+            NodeNotFound(_) => Error::new(Errno::ENOENT),
+            InvalidNodeOperation(_) => Error::new(Errno::EINVAL),
+            AttributeError => Error::new(Errno::EIO),
+            PermissionDenied => Error::new(Errno::EACCES),
+            InternalError(msg) => Error::with_message(Errno::EIO, msg),
+        }
+    }
+}
+
 #[macro_export]
 macro_rules! return_errno {
     ($errno: expr) => {

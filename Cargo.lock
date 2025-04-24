@@ -221,6 +221,7 @@ dependencies = [
  "rand",
  "riscv",
  "spin",
+ "systree",
  "takeable",
  "tdx-guest",
  "time",
@@ -301,6 +302,7 @@ dependencies = [
  "log",
  "ostd",
  "spin",
+ "systree",
  "typeflags-util",
 ]
 
@@ -1682,6 +1684,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "systree"
+version = "0.1.0"
+dependencies = [
+ "bitflags 2.6.0",
+ "component",
+ "ostd",
+ "spin",
 ]
 
 [[package]]

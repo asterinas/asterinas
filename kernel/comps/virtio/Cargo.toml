@@ -22,6 +22,7 @@ ostd = { path = "../../../ostd" }
 component = { path = "../../libs/comp-sys/component" }
 log = "0.4"
 int-to-c-enum = { path = "../../libs/int-to-c-enum" }
+systree = { path = "../systree" }
 
 [lints]
 workspace = true

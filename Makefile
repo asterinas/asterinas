@@ -171,6 +171,7 @@ OSDK_CRATES := \
 	kernel/comps/input \
 	kernel/comps/network \
 	kernel/comps/softirq \
+	kernel/comps/systree \
 	kernel/comps/logger \
 	kernel/comps/mlsdisk \
 	kernel/comps/time \

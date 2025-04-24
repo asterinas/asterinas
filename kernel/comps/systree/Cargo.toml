@@ -1,0 +1,10 @@
+[package]
+name = "systree"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bitflags = "2.5"
+ostd = { path = "../../../ostd" }
+component = { path = "../../libs/comp-sys/component" }
+spin = "0.9"
