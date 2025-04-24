@@ -204,11 +204,7 @@ impl Iterator for Cursor<'_> {
     type Item = VmItem;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let result = self.query();
-        if result.is_ok() {
-            self.0.move_forward();
-        }
-        result.ok()
+        self.0.next().map(|item| item.try_into().unwrap())
     }
 }
 
@@ -218,6 +214,18 @@ impl Cursor<'_> {
     /// This function won't bring the cursor to the next slot.
     pub fn query(&mut self) -> Result<VmItem> {
         Ok(self.0.query().map(|item| item.try_into().unwrap())?)
+    }
+
+    /// Moves the cursor forward to the next mapped virtual address.
+    ///
+    /// If there is mapped virtual address following the current address within
+    /// next `len` bytes, it will return that mapped address. In this case,
+    /// the cursor will stop at the mapped address.
+    ///
+    /// Otherwise, it will return `None`. And the cursor may stop at any
+    /// address after `len` bytes.
+    pub fn find_next(&mut self, len: usize) -> Option<Vaddr> {
+        self.0.find_next(len)
     }
 
     /// Jump to the virtual address.
@@ -254,6 +262,13 @@ impl<'a> CursorMut<'a> {
             .pt_cursor
             .query()
             .map(|item| item.try_into().unwrap())?)
+    }
+
+    /// Moves the cursor forward to the next mapped virtual address.
+    ///
+    /// This is the same as [`Cursor::find_next`].
+    pub fn find_next(&mut self, len: usize) -> Option<Vaddr> {
+        self.pt_cursor.find_next(len)
     }
 
     /// Jump to the virtual address.
@@ -372,39 +387,6 @@ impl<'a> CursorMut<'a> {
     ) -> Option<Range<Vaddr>> {
         // SAFETY: It is safe to protect memory in the userspace.
         unsafe { self.pt_cursor.protect_next(len, &mut op) }
-    }
-
-    /// Copies the mapping from the given cursor to the current cursor,
-    /// and returns the num of pages mapped by the current cursor.
-    ///
-    /// All the mappings in the current cursor's range must be empty. The
-    /// function allows the source cursor to operate on the mapping before
-    /// the copy happens. So it is equivalent to protect then duplicate.
-    /// Only the mapping is copied, the mapped pages are not copied.
-    ///
-    /// After the operation, both cursors will advance by the specified length.
-    ///
-    /// Note that it will **NOT** flush the TLB after the operation. Please
-    /// make the decision yourself on when and how to flush the TLB using
-    /// the source's [`CursorMut::flusher`].
-    ///
-    /// # Panics
-    ///
-    /// This function will panic if:
-    ///  - either one of the range to be copied is out of the range where any
-    ///    of the cursor is required to operate;
-    ///  - either one of the specified virtual address ranges only covers a
-    ///    part of a page.
-    ///  - the current cursor's range contains mapped pages.
-    pub fn copy_from(
-        &mut self,
-        src: &mut Self,
-        len: usize,
-        op: &mut impl FnMut(&mut PageProperty),
-    ) -> usize {
-        // SAFETY: Operations on user memory spaces are safe if it doesn't
-        // involve dropping any pages.
-        unsafe { self.pt_cursor.copy_from(&mut src.pt_cursor, len, op) }
     }
 }
 
