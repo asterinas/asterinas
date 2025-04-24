@@ -7,12 +7,16 @@ mod interval_set;
 mod static_cap;
 pub mod vm_mapping;
 
-use core::{num::NonZeroUsize, ops::Range};
+use core::{num::NonZeroUsize, ops::Range, panic};
 
 use align_ext::AlignExt;
 use aster_rights::Rights;
 use ostd::{
-    mm::{tlb::TlbFlushOp, PageFlags, PageProperty, VmSpace, MAX_USERSPACE_VADDR},
+    mm::{
+        tlb::TlbFlushOp,
+        vm_space::{CursorMut, VmItem},
+        PageFlags, PageProperty, VmSpace, MAX_USERSPACE_VADDR,
+    },
     task::disable_preempt,
 };
 
@@ -450,10 +454,7 @@ impl Vmar_ {
                 // Protect the mapping and copy to the new page table for COW.
                 cur_cursor.jump(base).unwrap();
                 new_cursor.jump(base).unwrap();
-                let mut op = |page: &mut PageProperty| {
-                    page.flags -= PageFlags::W;
-                };
-                new_cursor.copy_from(&mut cur_cursor, vm_mapping.map_size(), &mut op);
+                cow_copy_pt(&mut cur_cursor, &mut new_cursor, vm_mapping.map_size());
             }
             cur_cursor.flusher().issue_tlb_flush(TlbFlushOp::All);
             cur_cursor.flusher().dispatch_tlb_flush();
@@ -461,6 +462,39 @@ impl Vmar_ {
         }
 
         Ok(new_vmar_)
+    }
+}
+
+/// Set the source page table as read only to trigger COW, and copy the content
+/// to the destination page table.
+fn cow_copy_pt(src: &mut CursorMut<'_>, dst: &mut CursorMut<'_>, size: usize) {
+    let start_va = src.virt_addr();
+    let end_va = start_va + size;
+    let mut remain_size = size;
+
+    while let Some(mapped_va) = src.find_next(remain_size) {
+        let op = |page: &mut PageProperty| {
+            page.flags -= PageFlags::W;
+        };
+
+        let VmItem::Mapped {
+            va,
+            frame,
+            mut prop,
+        } = src.query().unwrap()
+        else {
+            panic!("Found mapped page but query failed");
+        };
+
+        debug_assert_eq!(mapped_va, va);
+
+        dst.jump(va).unwrap();
+        op(&mut prop);
+        dst.map(frame, prop);
+
+        src.protect_next(end_va - mapped_va, op).unwrap();
+
+        remain_size = end_va - src.virt_addr();
     }
 }
 
@@ -734,4 +768,144 @@ pub fn is_intersected(range1: &Range<usize>, range2: &Range<usize>) -> bool {
 pub fn get_intersected_range(range1: &Range<usize>, range2: &Range<usize>) -> Range<usize> {
     debug_assert!(is_intersected(range1, range2));
     range1.start.max(range2.start)..range1.end.min(range2.end)
+}
+
+#[cfg(ktest)]
+mod test {
+    use ostd::{
+        mm::{CachePolicy, FrameAllocOptions},
+        prelude::*,
+    };
+
+    use super::*;
+
+    #[ktest]
+    fn test_cow_copy_pt() {
+        let vm_space = VmSpace::new();
+        let map_range = PAGE_SIZE..(PAGE_SIZE * 2);
+        let cow_range = 0..PAGE_SIZE * 512 * 512;
+        let page_property = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
+        let preempt_guard = disable_preempt();
+
+        // Allocates and maps a frame.
+        let frame = FrameAllocOptions::default().alloc_frame().unwrap();
+        let start_paddr = frame.start_paddr();
+        let frame_clone_for_assert = frame.clone();
+
+        vm_space
+            .cursor_mut(&preempt_guard, &map_range)
+            .unwrap()
+            .map(frame.into(), page_property); // Original frame moved here
+
+        // Confirms the initial mapping.
+        assert!(matches!(
+            vm_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
+            VmItem::Mapped { va, frame, prop } if va == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::RW
+        ));
+
+        // Creates a child page table with copy-on-write protection.
+        let child_space = VmSpace::new();
+        {
+            let mut child_cursor = child_space.cursor_mut(&preempt_guard, &cow_range).unwrap();
+            let mut parent_cursor = vm_space.cursor_mut(&preempt_guard, &cow_range).unwrap();
+            cow_copy_pt(&mut parent_cursor, &mut child_cursor, cow_range.len());
+        };
+
+        // Confirms that parent and child VAs map to the same physical address.
+        {
+            let child_map_frame_addr = {
+                let VmItem::Mapped { frame, .. } = child_space
+                    .cursor(&preempt_guard, &map_range)
+                    .unwrap()
+                    .query()
+                    .unwrap()
+                else {
+                    panic!("Child mapping query failed");
+                };
+                frame.start_paddr()
+            };
+            let parent_map_frame_addr = {
+                let VmItem::Mapped { frame, .. } = vm_space
+                    .cursor(&preempt_guard, &map_range)
+                    .unwrap()
+                    .query()
+                    .unwrap()
+                else {
+                    panic!("Parent mapping query failed");
+                };
+                frame.start_paddr()
+            };
+            assert_eq!(child_map_frame_addr, parent_map_frame_addr);
+            assert_eq!(child_map_frame_addr, start_paddr);
+        }
+
+        // Unmaps the range from the parent.
+        vm_space
+            .cursor_mut(&preempt_guard, &map_range)
+            .unwrap()
+            .unmap(map_range.len());
+
+        // Confirms that the child VA remains mapped.
+        assert!(matches!(
+            child_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
+            VmItem::Mapped { va, frame, prop } if va == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::R
+        ));
+
+        // Creates a sibling page table (from the now-modified parent).
+        let sibling_space = VmSpace::new();
+        {
+            let mut sibling_cursor = sibling_space
+                .cursor_mut(&preempt_guard, &cow_range)
+                .unwrap();
+            let mut parent_cursor = vm_space.cursor_mut(&preempt_guard, &cow_range).unwrap();
+            cow_copy_pt(&mut parent_cursor, &mut sibling_cursor, cow_range.len());
+        }
+
+        // Verifies that the sibling is unmapped as it was created after the parent unmapped the range.
+        assert!(matches!(
+            sibling_space
+                .cursor(&preempt_guard, &map_range)
+                .unwrap()
+                .query()
+                .unwrap(),
+            VmItem::NotMapped { .. }
+        ));
+
+        // Drops the parent page table.
+        drop(vm_space);
+
+        // Confirms that the child VA remains mapped after the parent is dropped.
+        assert!(matches!(
+            child_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
+            VmItem::Mapped { va, frame, prop } if va == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::R
+        ));
+
+        // Unmaps the range from the child.
+        child_space
+            .cursor_mut(&preempt_guard, &map_range)
+            .unwrap()
+            .unmap(map_range.len());
+
+        // Maps the range in the sibling using the third clone.
+        sibling_space
+            .cursor_mut(&preempt_guard, &map_range)
+            .unwrap()
+            .map(frame_clone_for_assert.into(), page_property);
+
+        // Confirms that the sibling mapping points back to the original frame's physical address.
+        assert!(matches!(
+            sibling_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
+            VmItem::Mapped { va, frame, prop } if va == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::RW
+        ));
+
+        // Confirms that the child remains unmapped.
+        assert!(matches!(
+            child_space
+                .cursor(&preempt_guard, &map_range)
+                .unwrap()
+                .query()
+                .unwrap(),
+            VmItem::NotMapped { .. }
+        ));
+    }
 }
