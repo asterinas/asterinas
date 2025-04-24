@@ -486,6 +486,98 @@ mod overlapping_mappings {
     }
 }
 
+mod navigation {
+    use super::{test_utils::*, *};
+    use crate::mm::Frame;
+
+    const FIRST_MAP_ADDR: Vaddr = PAGE_SIZE * 7;
+    const SECOND_MAP_ADDR: Vaddr = PAGE_SIZE * 512 * 512;
+
+    fn setup_page_table_with_two_frames() -> (PageTable<UserMode>, Frame<()>, Frame<()>) {
+        let page_table = setup_page_table::<UserMode>();
+        let page_property = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+        let preempt_guard = disable_preempt();
+
+        // Allocates and maps two frames.
+        let first_frame = FrameAllocOptions::default().alloc_frame().unwrap();
+        let second_frame = FrameAllocOptions::default().alloc_frame().unwrap();
+        unsafe {
+            page_table
+                .cursor_mut(
+                    &preempt_guard,
+                    &(FIRST_MAP_ADDR..FIRST_MAP_ADDR + PAGE_SIZE),
+                )
+                .unwrap()
+                .map(first_frame.clone().into(), page_property);
+            page_table
+                .cursor_mut(
+                    &preempt_guard,
+                    &(SECOND_MAP_ADDR..SECOND_MAP_ADDR + PAGE_SIZE),
+                )
+                .unwrap()
+                .map(second_frame.clone().into(), page_property);
+        }
+
+        (page_table, first_frame, second_frame)
+    }
+
+    #[ktest]
+    fn jump() {
+        let (page_table, first_frame, second_frame) = setup_page_table_with_two_frames();
+        let preempt_guard = disable_preempt();
+
+        let mut cursor = page_table
+            .cursor_mut(&preempt_guard, &(0..SECOND_MAP_ADDR + PAGE_SIZE))
+            .unwrap();
+
+        assert_eq!(cursor.virt_addr(), 0);
+        assert!(matches!(
+            cursor.query().unwrap(),
+            PageTableItem::NotMapped { .. }
+        ));
+
+        cursor.jump(FIRST_MAP_ADDR).unwrap();
+        assert_eq!(cursor.virt_addr(), FIRST_MAP_ADDR);
+        assert!(matches!(
+            cursor.query().unwrap(),
+            PageTableItem::Mapped { va, page, prop } if va == FIRST_MAP_ADDR && page.start_paddr() == first_frame.start_paddr() && prop.flags == PageFlags::RW
+        ));
+
+        cursor.jump(SECOND_MAP_ADDR).unwrap();
+        assert_eq!(cursor.virt_addr(), SECOND_MAP_ADDR);
+        assert!(matches!(
+            cursor.query().unwrap(),
+            PageTableItem::Mapped { va, page, prop } if va == SECOND_MAP_ADDR && page.start_paddr() == second_frame.start_paddr() && prop.flags == PageFlags::RW
+        ));
+    }
+
+    #[ktest]
+    fn find_next() {
+        let (page_table, _, _) = setup_page_table_with_two_frames();
+        let preempt_guard = disable_preempt();
+
+        let mut cursor = page_table
+            .cursor_mut(&preempt_guard, &(0..SECOND_MAP_ADDR + PAGE_SIZE))
+            .unwrap();
+
+        assert_eq!(cursor.virt_addr(), 0);
+
+        let Some(va) = cursor.find_next(FIRST_MAP_ADDR + PAGE_SIZE) else {
+            panic!("Expected to find the next mapping");
+        };
+        assert_eq!(va, FIRST_MAP_ADDR);
+        assert_eq!(cursor.virt_addr(), FIRST_MAP_ADDR);
+
+        cursor.jump(FIRST_MAP_ADDR + PAGE_SIZE).unwrap();
+
+        let Some(va) = cursor.find_next(SECOND_MAP_ADDR - FIRST_MAP_ADDR) else {
+            panic!("Expected to find the next mapping");
+        };
+        assert_eq!(va, SECOND_MAP_ADDR);
+        assert_eq!(cursor.virt_addr(), SECOND_MAP_ADDR);
+    }
+}
+
 mod tracked_mapping {
     use super::{test_utils::*, *};
 
@@ -564,150 +656,6 @@ mod tracked_mapping {
         let new_query = page_table.query(range.start + 100).unwrap().1;
         assert_eq!(new_query.flags, PageFlags::R);
         assert_eq!(new_query.cache, new_prop.cache);
-    }
-
-    #[ktest]
-    fn user_copy_on_write() {
-        let preempt_guard = disable_preempt();
-
-        // Modifies page properties by removing the write flag.
-        fn remove_write_flag(prop: &mut PageProperty) {
-            prop.flags -= PageFlags::W;
-        }
-
-        let page_table = setup_page_table::<UserMode>();
-        let range = PAGE_SIZE..(PAGE_SIZE * 2);
-        let page_property = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
-
-        // Allocates and maps a frame.
-        let frame = FrameAllocOptions::default().alloc_frame().unwrap();
-        let start_paddr = frame.start_paddr();
-        let frame_clone_for_assert1 = frame.clone();
-        let frame_clone_for_assert2 = frame.clone();
-        let frame_clone_for_assert3 = frame.clone();
-
-        unsafe {
-            page_table
-                .cursor_mut(&preempt_guard, &range)
-                .unwrap()
-                .map(frame.into(), page_property); // Original frame moved here
-        }
-
-        // Confirms the initial mapping.
-        assert_eq!(
-            page_table.query(range.start + 10).unwrap().0,
-            start_paddr + 10
-        );
-
-        // Creates a child page table with copy-on-write protection.
-        let child_pt = setup_page_table::<UserMode>();
-        {
-            let parent_range = 0..MAX_USERSPACE_VADDR;
-            let mut child_cursor = child_pt.cursor_mut(&preempt_guard, &parent_range).unwrap();
-            let mut parent_cursor = page_table
-                .cursor_mut(&preempt_guard, &parent_range)
-                .unwrap();
-            unsafe {
-                child_cursor.copy_from(
-                    &mut parent_cursor,
-                    parent_range.len(),
-                    &mut remove_write_flag,
-                );
-            }
-        };
-
-        // Confirms that parent and child VAs map to the same physical address.
-        assert_eq!(
-            page_table.query(range.start + 10).unwrap().0,
-            start_paddr + 10
-        );
-        assert_eq!(
-            child_pt.query(range.start + 10).unwrap().0,
-            start_paddr + 10
-        );
-
-        // Unmaps the range from the parent and verifies.
-        let unmapped_parent = unsafe {
-            page_table
-                .cursor_mut(&preempt_guard, &range)
-                .unwrap()
-                .take_next(range.len())
-        };
-        assert_item_is_tracked_frame(
-            unmapped_parent,
-            range.start,
-            frame_clone_for_assert1, // Use the first clone
-            PageProperty::new_user(PageFlags::R, CachePolicy::Writeback), // Parent prop changed by copy_from
-        );
-        assert!(page_table.query(range.start + 10).is_none());
-
-        // Confirms that the child VA remains mapped.
-        assert_eq!(
-            child_pt.query(range.start + 10).unwrap().0,
-            start_paddr + 10
-        );
-
-        // Creates a sibling page table (from the now-modified parent).
-        let sibling_pt = setup_page_table::<UserMode>();
-        {
-            let parent_range = 0..MAX_USERSPACE_VADDR;
-            let mut sibling_cursor = sibling_pt
-                .cursor_mut(&preempt_guard, &parent_range)
-                .unwrap();
-            let mut parent_cursor = page_table
-                .cursor_mut(&preempt_guard, &parent_range)
-                .unwrap();
-            unsafe {
-                sibling_cursor.copy_from(
-                    &mut parent_cursor,
-                    parent_range.len(),
-                    &mut remove_write_flag,
-                );
-            }
-        };
-
-        // Verifies that the sibling is unmapped as it was created after the parent unmapped the range.
-        assert!(sibling_pt.query(range.start + 10).is_none());
-
-        // Drops the parent page table.
-        drop(page_table);
-
-        // Confirms that the child VA remains mapped after the parent is dropped.
-        assert_eq!(
-            child_pt.query(range.start + 10).unwrap().0,
-            start_paddr + 10
-        );
-
-        // Unmaps the range from the child and verifies.
-        let unmapped_child = unsafe {
-            child_pt
-                .cursor_mut(&preempt_guard, &range)
-                .unwrap()
-                .take_next(range.len())
-        };
-        assert_item_is_tracked_frame(
-            unmapped_child,
-            range.start,
-            frame_clone_for_assert2, // Use the second clone
-            PageProperty::new_user(PageFlags::R, CachePolicy::Writeback), // Child prop was R
-        );
-        assert!(child_pt.query(range.start + 10).is_none());
-
-        // Maps the range in the sibling using the third clone.
-        let sibling_prop_final = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
-        unsafe {
-            sibling_pt
-                .cursor_mut(&preempt_guard, &range)
-                .unwrap()
-                .map(frame_clone_for_assert3.into(), sibling_prop_final);
-        }
-        // Confirms that the sibling mapping points back to the original frame's physical address.
-        assert_eq!(
-            sibling_pt.query(range.start + 10).unwrap().0,
-            start_paddr + 10
-        );
-        // Confirms that the child remains unmapped.
-        assert!(child_pt.query(range.start + 10).is_none());
     }
 }
 
