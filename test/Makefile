@@ -23,6 +23,7 @@ INITRAMFS_EMPTY_DIRS := \
 	$(INITRAMFS)/opt \
 	$(INITRAMFS)/proc \
 	$(INITRAMFS)/dev \
+	$(INITRAMFS)/sys \
 	$(INITRAMFS)/ext2 \
 	$(INITRAMFS)/exfat
 INITRAMFS_ALL_DIRS := \
