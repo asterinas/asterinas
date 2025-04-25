@@ -54,6 +54,7 @@ TESTS ?= \
 	sync_test \
 	sysinfo_test \
 	tcp_socket_test \
+	timerfd_test \
 	timers_test \
 	truncate_test \
 	uidgid_test \
