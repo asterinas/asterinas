@@ -141,6 +141,9 @@ use crate::syscall::{
     time::sys_time,
     timer_create::{sys_timer_create, sys_timer_delete},
     timer_settime::{sys_timer_gettime, sys_timer_settime},
+    timerfd_create::sys_timerfd_create,
+    timerfd_gettime::sys_timerfd_gettime,
+    timerfd_settime::sys_timerfd_settime,
     truncate::{sys_ftruncate, sys_truncate},
     umask::sys_umask,
     umount::sys_umount,
@@ -340,8 +343,11 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_UTIMENSAT = 280        => sys_utimensat(args[..4]);
     SYS_EPOLL_PWAIT = 281      => sys_epoll_pwait(args[..6]);
     SYS_SIGNALFD = 282         => sys_signalfd(args[..3]);
+    SYS_TIMERFD_CREATE = 283   => sys_timerfd_create(args[..2]);
     SYS_EVENTFD = 284          => sys_eventfd(args[..1]);
     SYS_FALLOCATE = 285        => sys_fallocate(args[..4]);
+    SYS_TIMERFD_SETTIME = 286 => sys_timerfd_settime(args[..4]);
+    SYS_TIMERFD_GETTIME = 287 => sys_timerfd_gettime(args[..2]);
     SYS_ACCEPT4 = 288          => sys_accept4(args[..4]);
     SYS_SIGNALFD4 = 289        => sys_signalfd4(args[..4]);
     SYS_EVENTFD2 = 290         => sys_eventfd2(args[..2]);
