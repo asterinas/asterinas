@@ -126,6 +126,9 @@ use crate::syscall::{
     tgkill::sys_tgkill,
     timer_create::{sys_timer_create, sys_timer_delete},
     timer_settime::{sys_timer_gettime, sys_timer_settime},
+    timerfd_create::sys_timerfd_create,
+    timerfd_gettime::sys_timerfd_gettime,
+    timerfd_settime::sys_timerfd_settime,
     truncate::{sys_ftruncate, sys_truncate},
     umask::sys_umask,
     umount::sys_umount,
@@ -191,6 +194,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_SYNC = 81                => sys_sync(args[..0]);
     SYS_FSYNC = 82               => sys_fsync(args[..1]);
     SYS_FDATASYNC = 83           => sys_fdatasync(args[..1]);
+    SYS_TIMERFD_CREATE = 85        => sys_timerfd_create(args[..2]);
     SYS_CAPGET = 90              => sys_capget(args[..2]);
     SYS_CAPSET = 91              => sys_capset(args[..2]);
     SYS_EXIT = 93                => sys_exit(args[..1]);
@@ -293,6 +297,8 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_CLOCK_NANOSLEEP = 407    => sys_clock_nanosleep(args[..4]);
     SYS_TIMER_GETTIME = 408      => sys_timer_gettime(args[..2]);
     SYS_TIMER_SETTIME = 409      => sys_timer_settime(args[..4]);
+    SYS_TIMERFD_GETTIME = 410    => sys_timerfd_gettime(args[..2]);
+    SYS_TIMERFD_SETTIME = 411    => sys_timerfd_settime(args[..4]);
     SYS_UTIMENSAT = 412          => sys_utimensat(args[..4]);
     SYS_SEMTIMEDOP = 420         => sys_semtimedop(args[..4]);
     SYS_CLONE3 = 435             => sys_clone3(args[..2], &user_ctx);

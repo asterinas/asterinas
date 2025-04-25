@@ -303,11 +303,11 @@ provided by Linux on x86-64 architecture.
 | 280     | utimensat        | ✅              |
 | 281     | epoll_pwait      | ✅              |
 | 282     | signalfd         | ✅              |
-| 283     | timerfd_create   | ❌              |
+| 283     | timerfd_create   | ✅              |
 | 284     | eventfd          | ✅              |
 | 285     | fallocate        | ✅              |
-| 286     | timerfd_settime  | ❌              |
-| 287     | timerfd_gettime  | ❌              |
+| 286     | timerfd_settime  | ✅              |
+| 287     | timerfd_gettime  | ✅              |
 | 288     | accept4          | ✅              |
 | 289     | signalfd4        | ✅              |
 | 290     | eventfd2         | ✅              |

@@ -14,6 +14,7 @@ pub mod clocks;
 mod core;
 mod softirq;
 mod system_time;
+pub mod timerfd;
 pub mod wait;
 
 pub type clockid_t = i32;
