@@ -56,6 +56,7 @@ pub fn unmap(daddr: Daddr) -> Result<(), IommuError> {
                 IommuError::ModificationError(err)
             }
         })
+        .map(|_| ())
 }
 
 pub fn init() {

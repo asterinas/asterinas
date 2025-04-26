@@ -362,23 +362,18 @@ fn handle_kernel_page_fault(f: &TrapFrame, page_fault_vaddr: u64) {
     } else {
         PrivFlags::GLOBAL
     });
+    let prop = PageProperty {
+        flags: PageFlags::RW,
+        cache: CachePolicy::Uncacheable,
+        priv_flags,
+    };
+
+    let mut cursor = page_table.cursor_mut(&(vaddr..vaddr + PAGE_SIZE)).unwrap();
 
     // SAFETY:
     // 1. We have checked that the page fault address falls within the address range of the direct
     //    mapping of physical memory.
     // 2. We map the address to the correct physical page with the correct flags, where the
     //    correctness follows the semantics of the direct mapping of physical memory.
-    unsafe {
-        page_table
-            .map(
-                &(vaddr..vaddr + PAGE_SIZE),
-                &(paddr..paddr + PAGE_SIZE),
-                PageProperty {
-                    flags: PageFlags::RW,
-                    cache: CachePolicy::Uncacheable,
-                    priv_flags,
-                },
-            )
-            .unwrap();
-    }
+    let _ = unsafe { cursor.map(&(paddr..paddr + PAGE_SIZE), prop) };
 }
