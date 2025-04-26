@@ -4,7 +4,7 @@
 
 use core::mem::ManuallyDrop;
 
-use super::{Child, MapTrackingStatus, PageTableEntryTrait, PageTableGuard, PageTableNode};
+use super::{Child, ChildRef, PageTableEntryTrait, PageTableGuard, PageTableNode};
 use crate::{
     mm::{
         nr_subpage_per_huge,
@@ -50,10 +50,11 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     }
 
     /// Gets a reference to the child.
-    pub(in crate::mm) fn to_ref(&self) -> Child<'rcu, C> {
-        // SAFETY: The entry structure represents an existent entry with the
-        // right node information.
-        unsafe { Child::ref_from_pte(&self.pte, self.node.level(), self.node.is_tracked()) }
+    pub(in crate::mm) fn to_ref(&self) -> ChildRef<'rcu, C> {
+        // SAFETY:
+        //  - The PTE outlives the reference (since we have `&self`).
+        //  - The level matches the current node.
+        unsafe { ChildRef::from_pte(&self.pte, self.node.level()) }
     }
 
     /// Operates on the mapping properties of the entry.
@@ -77,7 +78,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         // SAFETY:
         //  1. The index is within the bounds.
         //  2. We replace the PTE with a new one, which differs only in
-        //     `PageProperty`, so it is still compatible with the current
+        //     `PageProperty`, so the level still matches the current
         //     page table node.
         unsafe { self.node.write_pte(self.idx, self.pte) };
     }
@@ -88,16 +89,23 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     ///
     /// # Panics
     ///
-    /// The method panics if the given child is not compatible with the node.
-    /// The compatibility is specified by the [`Child::is_compatible`].
-    pub(in crate::mm) fn replace(&mut self, new_child: Child<'rcu, C>) -> Child<'rcu, C> {
-        assert!(new_child.is_compatible(self.node.level(), self.node.is_tracked()));
+    /// The method panics if the level of the new child does not match the
+    /// current node.
+    pub(in crate::mm) fn replace(&mut self, new_child: Child<C>) -> Child<C> {
+        match &new_child {
+            Child::PageTable(node) => {
+                assert_eq!(node.level(), self.node.level() - 1);
+            }
+            Child::Frame(_, level, _) => {
+                assert_eq!(*level, self.node.level());
+            }
+            Child::None => {}
+        }
 
-        // SAFETY: The entry structure represents an existent entry with the
-        // right node information. The old PTE is overwritten by the new child
-        // so that it is not used anymore.
-        let old_child =
-            unsafe { Child::from_pte(self.pte, self.node.level(), self.node.is_tracked()) };
+        // SAFETY:
+        //  - The PTE is not referenced by other `ChildRef`s (since we have `&mut self`).
+        //  - The level matches the current node.
+        let old_child = unsafe { Child::from_pte(self.pte, self.node.level()) };
 
         if old_child.is_none() && !new_child.is_none() {
             *self.node.nr_children_mut() += 1;
@@ -109,7 +117,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
 
         // SAFETY:
         //  1. The index is within the bounds.
-        //  2. The new PTE is compatible with the page table node, as asserted above.
+        //  2. The new PTE is a valid child whose level matches the current page table node.
         unsafe { self.node.write_pte(self.idx, new_pte) };
 
         self.pte = new_pte;
@@ -124,21 +132,20 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
     pub(in crate::mm::page_table) fn alloc_if_none(
         &mut self,
         guard: &'rcu dyn InAtomicMode,
-        new_pt_is_tracked: MapTrackingStatus,
     ) -> Option<PageTableGuard<'rcu, C>> {
         if !(self.is_none() && self.node.level() > 1) {
             return None;
         }
 
         let level = self.node.level();
-        let new_page = PageTableNode::<C>::alloc(level - 1, new_pt_is_tracked);
+        let new_page = PageTableNode::<C>::alloc(level - 1);
 
         let paddr = new_page.start_paddr();
         let _ = ManuallyDrop::new(new_page.borrow().lock(guard));
 
         // SAFETY:
         //  1. The index is within the bounds.
-        //  2. The new PTE is compatible with the page table node.
+        //  2. The new PTE is a valid child whose level matches the current page table node.
         unsafe {
             self.node.write_pte(
                 self.idx,
@@ -155,37 +162,34 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
         Some(unsafe { pt_ref.make_guard_unchecked(guard) })
     }
 
-    /// Splits the entry to smaller pages if it maps to a untracked huge page.
+    /// Splits the entry to smaller pages if it maps to a huge page.
     ///
-    /// If the entry does map to a untracked huge page, it is split into smaller
-    /// pages mapped by a child page table node. The new child page table node
+    /// If the entry does map to a huge page, it is split into smaller pages
+    /// mapped by a child page table node. The new child page table node
     /// is returned.
     ///
     /// If the entry does not map to a untracked huge page, the method returns
     /// `None`.
-    pub(in crate::mm::page_table) fn split_if_untracked_huge(
+    pub(in crate::mm::page_table) fn split_if_mapped_huge(
         &mut self,
         guard: &'rcu dyn InAtomicMode,
     ) -> Option<PageTableGuard<'rcu, C>> {
         let level = self.node.level();
 
-        if !(self.pte.is_last(level)
-            && level > 1
-            && self.node.is_tracked() == MapTrackingStatus::Untracked)
-        {
+        if !(self.pte.is_last(level) && level > 1) {
             return None;
         }
 
         let pa = self.pte.paddr();
         let prop = self.pte.prop();
 
-        let new_page = PageTableNode::<C>::alloc(level - 1, MapTrackingStatus::Untracked);
+        let new_page = PageTableNode::<C>::alloc(level - 1);
         let mut pt_lock_guard = new_page.borrow().lock(guard);
 
         for i in 0..nr_subpage_per_huge::<C>() {
             let small_pa = pa + i * page_size::<C>(level - 1);
             let mut entry = pt_lock_guard.entry(i);
-            let old = entry.replace(Child::Untracked(small_pa, level - 1, prop));
+            let old = entry.replace(Child::Frame(small_pa, level - 1, prop));
             debug_assert!(old.is_none());
         }
 
@@ -194,7 +198,7 @@ impl<'a, 'rcu, C: PageTableConfig> Entry<'a, 'rcu, C> {
 
         // SAFETY:
         //  1. The index is within the bounds.
-        //  2. The new PTE is compatible with the page table node.
+        //  2. The new PTE is a valid child whose level matches the current page table node.
         unsafe {
             self.node.write_pte(
                 self.idx,

@@ -14,9 +14,7 @@ use aster_rights::Rights;
 use ostd::{
     cpu::CpuId,
     mm::{
-        tlb::TlbFlushOp,
-        vm_space::{CursorMut, VmItem},
-        PageFlags, PageProperty, VmSpace, MAX_USERSPACE_VADDR,
+        tlb::TlbFlushOp, vm_space::CursorMut, PageFlags, PageProperty, VmSpace, MAX_USERSPACE_VADDR,
     },
     task::disable_preempt,
 };
@@ -544,15 +542,10 @@ fn cow_copy_pt(src: &mut CursorMut<'_>, dst: &mut CursorMut<'_>, size: usize) ->
     };
 
     while let Some(mapped_va) = src.find_next(remain_size) {
-        let VmItem::Mapped {
-            va,
-            frame,
-            mut prop,
-        } = src.query().unwrap()
-        else {
+        let (va, Some((frame, mut prop))) = src.query().unwrap() else {
             panic!("Found mapped page but query failed");
         };
-        debug_assert_eq!(mapped_va, va);
+        debug_assert_eq!(mapped_va, va.start);
 
         src.protect_next(end_va - mapped_va, op).unwrap();
 
@@ -911,7 +904,7 @@ mod test {
         // Confirms the initial mapping.
         assert!(matches!(
             vm_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
-            VmItem::Mapped { va, frame, prop } if va == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::RW
+            (va, Some((frame, prop))) if va.start == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::RW
         ));
 
         // Creates a child page table with copy-on-write protection.
@@ -926,7 +919,7 @@ mod test {
         // Confirms that parent and child VAs map to the same physical address.
         {
             let child_map_frame_addr = {
-                let VmItem::Mapped { frame, .. } = child_space
+                let (_, Some((frame, _))) = child_space
                     .cursor(&preempt_guard, &map_range)
                     .unwrap()
                     .query()
@@ -937,7 +930,7 @@ mod test {
                 frame.start_paddr()
             };
             let parent_map_frame_addr = {
-                let VmItem::Mapped { frame, .. } = vm_space
+                let (_, Some((frame, _))) = vm_space
                     .cursor(&preempt_guard, &map_range)
                     .unwrap()
                     .query()
@@ -960,7 +953,7 @@ mod test {
         // Confirms that the child VA remains mapped.
         assert!(matches!(
             child_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
-            VmItem::Mapped { va, frame, prop } if va == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::R
+            (va, Some((frame, prop)))  if va.start == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::R
         ));
 
         // Creates a sibling page table (from the now-modified parent).
@@ -981,7 +974,7 @@ mod test {
                 .unwrap()
                 .query()
                 .unwrap(),
-            VmItem::NotMapped { .. }
+            (_, None)
         ));
 
         // Drops the parent page table.
@@ -990,7 +983,7 @@ mod test {
         // Confirms that the child VA remains mapped after the parent is dropped.
         assert!(matches!(
             child_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
-            VmItem::Mapped { va, frame, prop } if va == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::R
+            (va, Some((frame, prop)))  if va.start == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::R
         ));
 
         // Unmaps the range from the child.
@@ -1008,7 +1001,7 @@ mod test {
         // Confirms that the sibling mapping points back to the original frame's physical address.
         assert!(matches!(
             sibling_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
-            VmItem::Mapped { va, frame, prop } if va == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::RW
+            (va, Some((frame, prop)))  if va.start == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::RW
         ));
 
         // Confirms that the child remains unmapped.
@@ -1018,7 +1011,7 @@ mod test {
                 .unwrap()
                 .query()
                 .unwrap(),
-            VmItem::NotMapped { .. }
+            (_, None)
         ));
     }
 }
