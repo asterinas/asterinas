@@ -91,6 +91,13 @@ impl<M: AnyFrameMeta + ?Sized> core::fmt::Debug for Frame<M> {
     }
 }
 
+impl<M: AnyFrameMeta + ?Sized> PartialEq for Frame<M> {
+    fn eq(&self, other: &Self) -> bool {
+        self.start_paddr() == other.start_paddr()
+    }
+}
+impl<M: AnyFrameMeta + ?Sized> Eq for Frame<M> {}
+
 impl<M: AnyFrameMeta> Frame<M> {
     /// Gets a [`Frame`] with a specific usage from a raw, unused page.
     ///
@@ -205,6 +212,8 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
     /// Also, the caller ensures that the usage of the frame is correct. There's
     /// no checking of the usage in this function.
     pub(in crate::mm) unsafe fn from_raw(paddr: Paddr) -> Self {
+        debug_assert!(paddr < max_paddr());
+
         let vaddr = mapping::frame_to_meta::<PagingConsts>(paddr);
         let ptr = vaddr as *const MetaSlot;
 
