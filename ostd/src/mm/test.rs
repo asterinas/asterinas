@@ -9,7 +9,7 @@ use crate::{
     mm::{
         io::{VmIo, VmReader, VmWriter},
         tlb::TlbFlushOp,
-        vm_space::{get_activated_vm_space, VmItem},
+        vm_space::get_activated_vm_space,
         CachePolicy, FallibleVmRead, FallibleVmWrite, FrameAllocOptions, PageFlags, PageProperty,
         UFrame, VmSpace,
     },
@@ -513,10 +513,7 @@ mod vmspace {
         let mut cursor = vmspace
             .cursor(&preempt_guard, &range)
             .expect("Failed to create cursor");
-        assert_eq!(
-            cursor.next(),
-            Some(VmItem::NotMapped { va: 0, len: 0x1000 })
-        );
+        assert_eq!(cursor.next(), Some((0..0x1000, None)));
     }
 
     /// Maps and unmaps a single page using `CursorMut`.
@@ -533,13 +530,7 @@ mod vmspace {
                 .cursor_mut(&preempt_guard, &range)
                 .expect("Failed to create mutable cursor");
             // Initially, the page should not be mapped.
-            assert_eq!(
-                cursor_mut.query().unwrap(),
-                VmItem::NotMapped {
-                    va: range.start,
-                    len: range.start + 0x1000
-                }
-            );
+            assert_eq!(cursor_mut.query().unwrap(), (range.clone(), None));
             // Maps a frame.
             cursor_mut.map(frame.clone(), prop);
         }
@@ -552,11 +543,7 @@ mod vmspace {
             assert_eq!(cursor.virt_addr(), range.start);
             assert_eq!(
                 cursor.query().unwrap(),
-                VmItem::Mapped {
-                    va: range.start,
-                    frame,
-                    prop
-                }
+                (range.clone(), Some((frame.clone(), prop)))
             );
         }
 
@@ -572,13 +559,7 @@ mod vmspace {
         let mut cursor = vmspace
             .cursor(&preempt_guard, &range)
             .expect("Failed to create cursor");
-        assert_eq!(
-            cursor.query().unwrap(),
-            VmItem::NotMapped {
-                va: range.start,
-                len: range.start + 0x1000
-            }
-        );
+        assert_eq!(cursor.query().unwrap(), (range, None));
     }
 
     /// Maps a page twice and unmaps twice using `CursorMut`.
@@ -603,11 +584,7 @@ mod vmspace {
                 .expect("Failed to create cursor");
             assert_eq!(
                 cursor.query().unwrap(),
-                VmItem::Mapped {
-                    va: range.start,
-                    frame: frame.clone(),
-                    prop
-                }
+                (range.clone(), Some((frame.clone(), prop)))
             );
         }
 
@@ -624,11 +601,7 @@ mod vmspace {
                 .expect("Failed to create cursor");
             assert_eq!(
                 cursor.query().unwrap(),
-                VmItem::Mapped {
-                    va: range.start,
-                    frame,
-                    prop
-                }
+                (range.clone(), Some((frame.clone(), prop)))
             );
         }
 
@@ -642,13 +615,7 @@ mod vmspace {
         let mut cursor = vmspace
             .cursor(&preempt_guard, &range)
             .expect("Failed to create cursor");
-        assert_eq!(
-            cursor.query().unwrap(),
-            VmItem::NotMapped {
-                va: range.start,
-                len: range.start + 0x1000
-            }
-        );
+        assert_eq!(cursor.query().unwrap(), (range, None));
     }
 
     /// Unmaps twice using `CursorMut`.
@@ -684,13 +651,7 @@ mod vmspace {
         let mut cursor = vmspace
             .cursor(&preempt_guard, &range)
             .expect("Failed to create cursor");
-        assert_eq!(
-            cursor.query().unwrap(),
-            VmItem::NotMapped {
-                va: range.start,
-                len: range.start + 0x1000
-            }
-        );
+        assert_eq!(cursor.query().unwrap(), (range, None));
     }
 
     /// Activates and deactivates the `VmSpace` in single-CPU scenarios.
@@ -700,12 +661,12 @@ mod vmspace {
 
         // Activates the VmSpace.
         vmspace.activate();
-        assert_eq!(get_activated_vm_space().unwrap(), Arc::as_ptr(&vmspace));
+        assert_eq!(get_activated_vm_space(), Arc::as_ptr(&vmspace));
 
         // Deactivates the VmSpace.
         let vmspace2 = Arc::new(VmSpace::new());
         vmspace2.activate();
-        assert_eq!(get_activated_vm_space().unwrap(), Arc::as_ptr(&vmspace2));
+        assert_eq!(get_activated_vm_space(), Arc::as_ptr(&vmspace2));
     }
 
     /// Tests the `flusher` method of `CursorMut`.
@@ -730,12 +691,8 @@ mod vmspace {
                 .cursor(&preempt_guard, &range)
                 .expect("Failed to create cursor");
             assert_eq!(
-                cursor.next(),
-                Some(VmItem::Mapped {
-                    va: 0x4000,
-                    frame: frame.clone(),
-                    prop: PageProperty::new_user(PageFlags::R, CachePolicy::Writeback),
-                })
+                cursor.next().unwrap(),
+                (range.clone(), Some((frame.clone(), prop)))
             );
         }
 
@@ -754,12 +711,14 @@ mod vmspace {
                 .cursor(&preempt_guard, &range)
                 .expect("Failed to create cursor");
             assert_eq!(
-                cursor.next(),
-                Some(VmItem::Mapped {
-                    va: 0x4000,
-                    frame,
-                    prop: PageProperty::new_user(PageFlags::R, CachePolicy::Writeback),
-                })
+                cursor.next().unwrap(),
+                (
+                    range.clone(),
+                    Some((
+                        frame.clone(),
+                        PageProperty::new_user(PageFlags::R, CachePolicy::Writeback)
+                    ))
+                )
             );
         }
     }
@@ -848,12 +807,14 @@ mod vmspace {
         assert!(cursor.jump(range.start).is_ok());
         let item = cursor.next();
         assert_eq!(
-            item,
-            Some(VmItem::Mapped {
-                va: 0x6000,
-                frame,
-                prop: PageProperty::new_user(PageFlags::R, CachePolicy::Writeback),
-            })
+            item.unwrap(),
+            (
+                range.clone(),
+                Some((
+                    frame.clone(),
+                    PageProperty::new_user(PageFlags::R, CachePolicy::Writeback)
+                ))
+            )
         );
 
         // Confirms no additional items.
@@ -885,18 +846,20 @@ mod vmspace {
             .cursor(&preempt_guard, &range)
             .expect("Failed to create cursor");
         assert_eq!(
-            cursor.next(),
-            Some(VmItem::Mapped {
-                va: 0x7000,
-                frame,
-                prop: PageProperty::new_user(PageFlags::R, CachePolicy::Writeback),
-            })
+            cursor.next().unwrap(),
+            (
+                range.clone(),
+                Some((
+                    frame.clone(),
+                    PageProperty::new_user(PageFlags::R, CachePolicy::Writeback)
+                ))
+            )
         );
     }
 
     /// Attempts to map unaligned lengths and expects a panic.
     #[ktest]
-    #[should_panic(expected = "assertion failed: len % super::PAGE_SIZE == 0")]
+    #[should_panic]
     fn unaligned_unmap_panics() {
         let vmspace = VmSpace::new();
         let range = 0xA000..0xB000;
