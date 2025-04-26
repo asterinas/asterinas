@@ -190,7 +190,8 @@ impl Drop for DmaStreamInner {
             DmaType::Iommu => {
                 for i in 0..frame_count {
                     let paddr = start_paddr + (i * PAGE_SIZE);
-                    iommu::unmap(paddr).unwrap();
+                    iommu::unmap(paddr as Daddr).unwrap();
+                    // FIXME: After dropping it could be reused. IOTLB needs to be flushed.
                 }
             }
         }

@@ -20,9 +20,10 @@ use crate::{
 
 mod node;
 use node::*;
-pub mod cursor;
-pub(crate) use cursor::PageTableItem;
-pub use cursor::{Cursor, CursorMut};
+mod cursor;
+
+pub(crate) use cursor::{Cursor, CursorMut, PageTableFrag, PageTableItem};
+
 #[cfg(ktest)]
 mod test;
 
@@ -50,8 +51,42 @@ pub(crate) trait PageTableConfig: Clone + Debug + Send + Sync + 'static {
     /// The range of virtual addresses that the page table can manage.
     const VADDR_RANGE: Range<Vaddr>;
 
+    /// The type of the page table entry.
     type E: PageTableEntryTrait;
+
+    /// The paging constants.
     type C: PagingConstsTrait;
+
+    /// The item that can be mapped into the virtual memory space using the
+    /// page table.
+    ///
+    /// Usually, this item is a [`crate::mm::Frame`], which we call a "tracked"
+    /// frame. The page table can also do "untracked" mappings that only maps
+    /// to certain physical addresses without tracking the ownership of the
+    /// mapped physical frame. The user of the page table APIs can choose by
+    /// defining this type and the corresponding methods [`item_into_raw`] and
+    /// [`item_from_raw`].
+    ///
+    /// [`item_from_raw`]: PageTableConfig::item_from_raw
+    /// [`item_into_raw`]: PageTableConfig::item_into_raw
+    type Item: Clone;
+
+    /// Consume the item and return the physical address and the paging level.
+    ///
+    /// The ownership of the item will be consumed, i.e., the item will be
+    /// forgotten after this function is called.
+    // FIXME: Use `Item` in `Cursor::map` instead of `Paddr`.
+    #[cfg_attr(not(ktest), expect(dead_code))]
+    fn item_into_raw(item: Self::Item) -> (Paddr, PagingLevel);
+
+    /// Restore the item from the physical address and the paging level.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that the item the physical address points to is
+    /// forgotten using [`PageTableConfig::item_into_raw`]. And for each
+    /// forgotten item, this function must be called exactly once.
+    unsafe fn item_from_raw(paddr: Paddr, level: PagingLevel) -> Self::Item;
 }
 
 // Implement it so that we can comfortably use low level functions
@@ -114,16 +149,7 @@ impl PageTable<KernelPtConfig> {
 
             for i in kernel_space_range {
                 let mut root_entry = root_node.entry(i);
-                let is_tracked = if super::kspace::should_map_as_tracked(
-                    i * page_size::<PagingConsts>(PagingConsts::NR_LEVELS - 1),
-                ) {
-                    MapTrackingStatus::Tracked
-                } else {
-                    MapTrackingStatus::Untracked
-                };
-                let _ = root_entry
-                    .alloc_if_none(&preempt_guard, is_tracked)
-                    .unwrap();
+                let _ = root_entry.alloc_if_none(&preempt_guard).unwrap();
             }
         }
 
@@ -135,8 +161,7 @@ impl PageTable<KernelPtConfig> {
     /// This should be the only way to create the user page table, that is to
     /// duplicate the kernel page table with all the kernel mappings shared.
     pub fn create_user_page_table(&self) -> PageTable<UserPtConfig> {
-        let new_root =
-            PageTableNode::alloc(PagingConsts::NR_LEVELS, MapTrackingStatus::NotApplicable);
+        let new_root = PageTableNode::alloc(PagingConsts::NR_LEVELS);
 
         let preempt_guard = disable_preempt();
         let mut root_node = self.root.borrow().lock(&preempt_guard);
@@ -149,7 +174,7 @@ impl PageTable<KernelPtConfig> {
         for i in NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE {
             let root_entry = root_node.entry(i);
             let child = root_entry.to_ref();
-            let Child::PageTableRef(pt) = child else {
+            let ChildRef::PageTable(pt) = child else {
                 panic!("The kernel page table doesn't contain shared nodes");
             };
             let pt_addr = pt.start_paddr();
@@ -196,7 +221,7 @@ impl<C: PageTableConfig> PageTable<C> {
     /// Useful for the IOMMU page tables only.
     pub fn empty() -> Self {
         PageTable {
-            root: PageTableNode::<C>::alloc(C::NR_LEVELS, MapTrackingStatus::NotApplicable),
+            root: PageTableNode::<C>::alloc(C::NR_LEVELS),
         }
     }
 
@@ -210,17 +235,6 @@ impl<C: PageTableConfig> PageTable<C> {
     /// hardware since the page table node may be dropped, resulting in UAF.
     pub unsafe fn root_paddr(&self) -> Paddr {
         self.root.start_paddr()
-    }
-
-    pub unsafe fn map(
-        &self,
-        vaddr: &Range<Vaddr>,
-        paddr: &Range<Paddr>,
-        prop: PageProperty,
-    ) -> Result<(), PageTableError> {
-        let preempt_guard = disable_preempt();
-        self.cursor_mut(&preempt_guard, vaddr)?.map_pa(paddr, prop);
-        Ok(())
     }
 
     /// Query about the mapping of a single byte at the given virtual address.

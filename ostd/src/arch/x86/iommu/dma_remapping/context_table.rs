@@ -14,7 +14,7 @@ use crate::{
     mm::{
         dma::Daddr,
         page_prop::{CachePolicy, PageProperty, PrivilegedPageFlags as PrivFlags},
-        page_table::{PageTableError, PageTableItem},
+        page_table::{PageTableError, PageTableFrag},
         Frame, FrameAllocOptions, Paddr, PageFlags, PageTable, VmIo, PAGE_SIZE,
     },
     task::disable_preempt,
@@ -88,15 +88,13 @@ impl RootTable {
         &mut self,
         device: PciDeviceLocation,
         daddr: Daddr,
-    ) -> Result<(), ContextTableError> {
+    ) -> Result<PageTableFrag<IommuPtConfig>, ContextTableError> {
         if device.device >= 32 || device.function >= 8 {
             return Err(ContextTableError::InvalidDeviceId);
         }
 
         self.get_or_create_context_table(device)
-            .unmap(device, daddr)?;
-
-        Ok(())
+            .unmap(device, daddr)
     }
 
     /// Specifies the device page table instead of creating a page table if not exists.
@@ -304,21 +302,25 @@ impl ContextTable {
             paddr,
             device
         );
-        self.get_or_create_page_table(device)
-            .map(
-                &(daddr..daddr + PAGE_SIZE),
-                &(paddr..paddr + PAGE_SIZE),
-                PageProperty {
-                    flags: PageFlags::RW,
-                    cache: CachePolicy::Uncacheable,
-                    priv_flags: PrivFlags::empty(),
-                },
-            )
+        let pt = self.get_or_create_page_table(device);
+        let prop = PageProperty {
+            flags: PageFlags::RW,
+            cache: CachePolicy::Uncacheable,
+            priv_flags: PrivFlags::empty(),
+        };
+        let preempt_guard = disable_preempt();
+        let mut cursor = pt
+            .cursor_mut(&preempt_guard, &(daddr..daddr + PAGE_SIZE))
             .unwrap();
+        let _ = unsafe { cursor.map(&(paddr..paddr + PAGE_SIZE), prop) };
         Ok(())
     }
 
-    fn unmap(&mut self, device: PciDeviceLocation, daddr: Daddr) -> Result<(), ContextTableError> {
+    fn unmap(
+        &mut self,
+        device: PciDeviceLocation,
+        daddr: Daddr,
+    ) -> Result<PageTableFrag<IommuPtConfig>, ContextTableError> {
         if device.device >= 32 || device.function >= 8 {
             return Err(ContextTableError::InvalidDeviceId);
         }
@@ -328,10 +330,7 @@ impl ContextTable {
         let mut cursor = pt
             .cursor_mut(&preempt_guard, &(daddr..daddr + PAGE_SIZE))
             .unwrap();
-        unsafe {
-            let result = cursor.take_next(PAGE_SIZE);
-            debug_assert!(matches!(result, PageTableItem::MappedUntracked { .. }));
-        }
-        Ok(())
+        let result = unsafe { cursor.take_next(PAGE_SIZE) };
+        Ok(result)
     }
 }

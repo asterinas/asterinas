@@ -2,54 +2,30 @@
 
 //! Kernel virtual memory allocation
 
-use core::{marker::PhantomData, ops::Range};
+use core::ops::Range;
 
-use super::{KERNEL_PAGE_TABLE, TRACKED_MAPPED_PAGES_RANGE, VMALLOC_VADDR_RANGE};
+use super::{KERNEL_PAGE_TABLE, VMALLOC_VADDR_RANGE};
+#[cfg(ktest)]
+use crate::mm::page_table::PageTableItem;
 use crate::{
     mm::{
-        frame::{meta::AnyFrameMeta, Frame},
+        frame::{is_tracked_paddr, meta::AnyFrameMeta, Frame},
         page_prop::PageProperty,
-        page_table::PageTableItem,
+        page_table::PageTableFrag,
         Paddr, Vaddr, PAGE_SIZE,
     },
     task::disable_preempt,
     util::range_alloc::RangeAllocator,
 };
 
-static KVIRT_AREA_TRACKED_ALLOCATOR: RangeAllocator =
-    RangeAllocator::new(TRACKED_MAPPED_PAGES_RANGE);
-static KVIRT_AREA_UNTRACKED_ALLOCATOR: RangeAllocator = RangeAllocator::new(VMALLOC_VADDR_RANGE);
-
-#[derive(Debug)]
-pub struct Tracked;
-#[derive(Debug)]
-pub struct Untracked;
-
-pub trait AllocatorSelector {
-    fn select_allocator() -> &'static RangeAllocator;
-}
-
-impl AllocatorSelector for Tracked {
-    fn select_allocator() -> &'static RangeAllocator {
-        &KVIRT_AREA_TRACKED_ALLOCATOR
-    }
-}
-
-impl AllocatorSelector for Untracked {
-    fn select_allocator() -> &'static RangeAllocator {
-        &KVIRT_AREA_UNTRACKED_ALLOCATOR
-    }
-}
+static KVIRT_AREA_ALLOCATOR: RangeAllocator = RangeAllocator::new(VMALLOC_VADDR_RANGE);
 
 /// Kernel Virtual Area.
 ///
-/// A tracked kernel virtual area ([`KVirtArea<Tracked>`]) manages a range of
-/// memory in [`TRACKED_MAPPED_PAGES_RANGE`]. It can map a portion or the
-/// entirety of its virtual memory pages to frames tracked with metadata.
-///
-/// An untracked kernel virtual area ([`KVirtArea<Untracked>`]) manages a range
-/// of memory in [`VMALLOC_VADDR_RANGE`]. It can map a portion or the entirety
-/// of virtual memory to physical addresses not tracked with metadata.
+/// A tracked kernel virtual area (`KVirtArea<true>`) manages a range of
+/// memory in [`VMALLOC_VADDR_RANGE`]. It can map a portion or the entirety of
+/// its virtual memory pages to physical memory, whether tracked with metadata
+/// or not.
 ///
 /// It is the caller's responsibility to ensure TLB coherence before using the
 /// mapped virtual address on a certain CPU.
@@ -59,12 +35,11 @@ impl AllocatorSelector for Untracked {
 // `KVirtArea`. However, `IoMem` need some non trivial refactoring to support
 // being implemented on a `!Send` and `!Sync` guard.
 #[derive(Debug)]
-pub struct KVirtArea<M: AllocatorSelector + 'static> {
+pub struct KVirtArea {
     range: Range<Vaddr>,
-    phantom: PhantomData<M>,
 }
 
-impl<M: AllocatorSelector + 'static> KVirtArea<M> {
+impl KVirtArea {
     pub fn start(&self) -> Vaddr {
         self.range.start
     }
@@ -83,7 +58,7 @@ impl<M: AllocatorSelector + 'static> KVirtArea<M> {
     }
 
     #[cfg(ktest)]
-    fn query_page(&self, addr: Vaddr) -> PageTableItem {
+    fn query_frame(&self, addr: Vaddr) -> PageTableItem<super::KernelPtConfig> {
         use align_ext::AlignExt;
 
         assert!(self.start() <= addr && self.end() >= addr);
@@ -94,10 +69,8 @@ impl<M: AllocatorSelector + 'static> KVirtArea<M> {
         let mut cursor = page_table.cursor(&preempt_guard, &vaddr).unwrap();
         cursor.query().unwrap()
     }
-}
 
-impl KVirtArea<Tracked> {
-    /// Create a kernel virtual area and map pages into it.
+    /// Create a kernel virtual area and map tracked pages into it.
     ///
     /// The created virtual area will have a size of `area_size`, and the pages
     /// will be mapped starting from `map_offset` in the area.
@@ -108,65 +81,71 @@ impl KVirtArea<Tracked> {
     ///  - the area size is not a multiple of [`PAGE_SIZE`];
     ///  - the map offset is not aligned to [`PAGE_SIZE`];
     ///  - the map offset plus the size of the pages exceeds the area size.
-    pub fn map_pages<T: AnyFrameMeta>(
+    pub fn map_frames<T: AnyFrameMeta>(
         area_size: usize,
         map_offset: usize,
-        pages: impl Iterator<Item = Frame<T>>,
+        frames: impl Iterator<Item = Frame<T>>,
         prop: PageProperty,
     ) -> Self {
         assert!(area_size % PAGE_SIZE == 0);
         assert!(map_offset % PAGE_SIZE == 0);
-        let range = Tracked::select_allocator().alloc(area_size).unwrap();
+        let range = KVIRT_AREA_ALLOCATOR.alloc(area_size).unwrap();
         let cursor_range = range.start + map_offset..range.end;
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
         let preempt_guard = disable_preempt();
         let mut cursor = page_table
             .cursor_mut(&preempt_guard, &cursor_range)
             .unwrap();
-        for page in pages.into_iter() {
-            // SAFETY: The constructor of the `KVirtArea<Tracked>` structure
-            // has already ensured that this mapping does not affect kernel's
-            // memory safety.
-            if let Some(_old) = unsafe { cursor.map(page.into(), prop) } {
+        for frame in frames.into_iter() {
+            let paddr = frame.into_raw();
+            // SAFETY: The constructor of the `KVirtArea` has already ensured
+            // that this mapping does not affect kernel's memory safety.
+            let PageTableFrag::NotMapped { .. } =
+                (unsafe { cursor.map(&(paddr..paddr + PAGE_SIZE), prop) })
+            else {
                 panic!("Pages mapped in a newly allocated `KVirtArea`");
-            }
+            };
         }
-        Self {
-            range,
-            phantom: PhantomData,
-        }
+        Self { range }
     }
 
     /// Gets the mapped tracked page.
     ///
-    /// This function returns None if the address is not mapped (`NotMapped`),
-    /// while panics if the address is mapped to a `MappedUntracked` or `PageTableNode` page.
+    /// This function returns None if the address is not mapped.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    ///  - found untracked frames;
+    ///  - the address is out of the range of the `KVirtArea`;
     #[cfg(ktest)]
-    pub fn get_page(&self, addr: Vaddr) -> Option<Frame<dyn AnyFrameMeta>> {
-        let query_result = self.query_page(addr);
+    pub fn get_frame(&self, addr: Vaddr) -> Option<Frame<dyn AnyFrameMeta>> {
+        use super::MappedItem;
+
+        let query_result = self.query_frame(addr);
         match query_result {
             PageTableItem::Mapped {
                 va: _,
-                page,
+                item,
                 prop: _,
-            } => Some(page),
-            PageTableItem::NotMapped { .. } => None,
-            _ => {
-                panic!(
-                    "Found '{:?}' mapped into tracked `KVirtArea`, expected `Mapped`",
-                    query_result
-                );
+            } => {
+                let MappedItem::Tracked(frame) = item else {
+                    panic!("Found untracked frame, expected tracked");
+                };
+                Some(frame)
             }
+            PageTableItem::NotMapped { .. } => None,
         }
     }
-}
 
-impl KVirtArea<Untracked> {
     /// Creates a kernel virtual area and maps untracked frames into it.
     ///
     /// The created virtual area will have a size of `area_size`, and the
     /// physical addresses will be mapped starting from `map_offset` in
     /// the area.
+    ///
+    /// You can provide a `0..0` physical range to create a virtual area without
+    /// mapping any physical memory.
     ///
     /// # Panics
     ///
@@ -175,8 +154,9 @@ impl KVirtArea<Untracked> {
     ///  - the map offset is not aligned to [`PAGE_SIZE`];
     ///  - the provided physical range is not aligned to [`PAGE_SIZE`];
     ///  - the map offset plus the length of the physical range exceeds the
-    ///    area size.
-    pub unsafe fn map_untracked_pages(
+    ///    area size;
+    ///  - the provided physical range contains tracked physical addresses.
+    pub unsafe fn map_untracked_frames(
         area_size: usize,
         map_offset: usize,
         pa_range: Range<Paddr>,
@@ -187,50 +167,57 @@ impl KVirtArea<Untracked> {
         assert!(area_size % PAGE_SIZE == 0);
         assert!(map_offset % PAGE_SIZE == 0);
         assert!(map_offset + pa_range.len() <= area_size);
-        let range = Untracked::select_allocator().alloc(area_size).unwrap();
+
+        let range = KVIRT_AREA_ALLOCATOR.alloc(area_size).unwrap();
+
         if !pa_range.is_empty() {
+            assert!(!is_tracked_paddr(pa_range.start));
+            assert!(!is_tracked_paddr(pa_range.end - 1));
+
             let va_range = range.start + map_offset..range.start + map_offset + pa_range.len();
 
             let page_table = KERNEL_PAGE_TABLE.get().unwrap();
             let preempt_guard = disable_preempt();
             let mut cursor = page_table.cursor_mut(&preempt_guard, &va_range).unwrap();
-            // SAFETY: The caller of `map_untracked_pages` has ensured the safety of this mapping.
-            unsafe {
-                cursor.map_pa(&pa_range, prop);
-            }
+            // SAFETY: The caller of `map_untracked_frames` has ensured the safety of this mapping.
+            let _ = unsafe { cursor.map(&pa_range, prop) };
         }
-        Self {
-            range,
-            phantom: PhantomData,
-        }
+
+        Self { range }
     }
 
     /// Gets the mapped untracked page.
     ///
-    /// This function returns None if the address is not mapped (`NotMapped`),
-    /// while panics if the address is mapped to a `Mapped` or `PageTableNode` page.
+    /// This function returns None if the address is not mapped.
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    ///  - found tracked frames;
+    ///  - the address is out of the range of the `KVirtArea`;
     #[cfg(ktest)]
-    pub fn get_untracked_page(&self, addr: Vaddr) -> Option<(Paddr, usize)> {
-        let query_result = self.query_page(addr);
+    pub fn get_untracked_frame(&self, addr: Vaddr) -> Option<(Paddr, usize)> {
+        use super::{KernelPtConfig, MappedItem};
+        use crate::mm::page_size;
+
+        let query_result = self.query_frame(addr);
         match query_result {
-            PageTableItem::MappedUntracked {
+            PageTableItem::Mapped {
                 va: _,
-                pa,
-                len,
+                item,
                 prop: _,
-            } => Some((pa, len)),
-            PageTableItem::NotMapped { .. } => None,
-            _ => {
-                panic!(
-                    "Found '{:?}' mapped into untracked `KVirtArea`, expected `MappedUntracked`",
-                    query_result
-                );
+            } => {
+                let MappedItem::Untracked(pa, level) = item else {
+                    panic!("Found tracked frame, expected untracked");
+                };
+                Some((pa, page_size::<KernelPtConfig>(level)))
             }
+            PageTableItem::NotMapped { .. } => None,
         }
     }
 }
 
-impl<M: AllocatorSelector + 'static> Drop for KVirtArea<M> {
+impl Drop for KVirtArea {
     fn drop(&mut self) {
         // 1. unmap all mapped pages.
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
@@ -239,16 +226,12 @@ impl<M: AllocatorSelector + 'static> Drop for KVirtArea<M> {
         let mut cursor = page_table.cursor_mut(&preempt_guard, &range).unwrap();
         loop {
             let result = unsafe { cursor.take_next(self.end() - cursor.virt_addr()) };
-            if matches!(&result, PageTableItem::NotMapped { .. }) {
+            if matches!(&result, PageTableFrag::NotMapped { .. }) {
                 break;
             }
-            // Dropping previously mapped pages is fine since accessing with
-            // the virtual addresses in another CPU while we are dropping is
-            // not allowed.
             drop(result);
         }
         // 2. free the virtual block
-        let allocator = M::select_allocator();
-        allocator.free(range);
+        KVIRT_AREA_ALLOCATOR.free(range);
     }
 }

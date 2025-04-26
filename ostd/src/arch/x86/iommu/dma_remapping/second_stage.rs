@@ -25,6 +25,17 @@ impl PageTableConfig for IommuPtConfig {
 
     type E = PageTableEntry;
     type C = PagingConsts;
+
+    /// All mappings are untracked.
+    type Item = (Paddr, PagingLevel);
+
+    fn item_into_raw(item: Self::Item) -> (Paddr, PagingLevel) {
+        item
+    }
+
+    unsafe fn item_from_raw(paddr: Paddr, level: PagingLevel) -> Self::Item {
+        (paddr, level)
+    }
 }
 
 #[derive(Clone, Debug, Default)]

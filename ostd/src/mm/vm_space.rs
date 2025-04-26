@@ -11,7 +11,6 @@
 
 use core::{ops::Range, sync::atomic::Ordering};
 
-use super::page_table::PageTableConfig;
 use crate::{
     arch::mm::{current_page_table_paddr, PageTableEntry, PagingConsts},
     cpu::{AtomicCpuSet, CpuSet, PinCurrentCpu},
@@ -19,9 +18,10 @@ use crate::{
     mm::{
         io::Fallible,
         kspace::KERNEL_PAGE_TABLE,
-        page_table::{self, PageTable, PageTableItem},
+        page_table::{self, PageTable, PageTableConfig, PageTableFrag, PageTableItem},
         tlb::{TlbFlushOp, TlbFlusher},
-        PageProperty, UFrame, VmReader, VmWriter, MAX_USERSPACE_VADDR,
+        AnyUFrameMeta, Frame, PageProperty, PagingLevel, UFrame, VmReader, VmWriter,
+        MAX_USERSPACE_VADDR, PAGE_SIZE,
     },
     prelude::*,
     task::{atomic_mode::AsAtomicModeGuard, disable_preempt, DisabledPreemptGuard},
@@ -67,16 +67,6 @@ use crate::{
 pub struct VmSpace {
     pt: PageTable<UserPtConfig>,
     cpus: AtomicCpuSet,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct UserPtConfig {}
-
-impl PageTableConfig for UserPtConfig {
-    const VADDR_RANGE: Range<Vaddr> = 0..super::MAX_USERSPACE_VADDR;
-
-    type E = PageTableEntry;
-    type C = PagingConsts;
 }
 
 impl VmSpace {
@@ -305,13 +295,25 @@ impl<'a> CursorMut<'a> {
     /// This method will bring the cursor to the next slot after the modification.
     pub fn map(&mut self, frame: UFrame, prop: PageProperty) {
         let start_va = self.virt_addr();
+        // Forget it and store it into the page table.
+        let pa = frame.into_raw();
         // SAFETY: It is safe to map untyped memory into the userspace.
-        let old = unsafe { self.pt_cursor.map(frame.into(), prop) };
+        let old = unsafe { self.pt_cursor.map(&(pa..pa + PAGE_SIZE), prop) };
 
-        if let Some(old) = old {
-            self.flusher
-                .issue_tlb_flush_with(TlbFlushOp::Address(start_va), old);
-            self.flusher.dispatch_tlb_flush();
+        match old {
+            PageTableFrag::Mapped { va, item, .. } => {
+                debug_assert_eq!(va, start_va);
+                let MappedItem::Tracked(old_frame) = item else {
+                    todo!("Untracked `VmSpace` item unsupported yet");
+                };
+                self.flusher
+                    .issue_tlb_flush_with(TlbFlushOp::Address(start_va), old_frame.into());
+                self.flusher.dispatch_tlb_flush();
+            }
+            PageTableFrag::StrayPageTable { .. } => {
+                panic!("UFrame is base page sized but re-mapping out a child PT");
+            }
+            PageTableFrag::NotMapped { .. } => {}
         }
     }
 
@@ -339,17 +341,17 @@ impl<'a> CursorMut<'a> {
             // SAFETY: It is safe to un-map memory in the userspace.
             let result = unsafe { self.pt_cursor.take_next(end_va - self.virt_addr()) };
             match result {
-                PageTableItem::Mapped { va, page, .. } => {
+                PageTableFrag::Mapped { va, item, .. } => {
+                    let MappedItem::Tracked(frame) = item else {
+                        todo!("Untracked `VmSpace` item unsupported yet");
+                    };
                     self.flusher
-                        .issue_tlb_flush_with(TlbFlushOp::Address(va), page);
+                        .issue_tlb_flush_with(TlbFlushOp::Address(va), frame.into());
                 }
-                PageTableItem::NotMapped { .. } => {
+                PageTableFrag::NotMapped { .. } => {
                     break;
                 }
-                PageTableItem::MappedUntracked { .. } => {
-                    panic!("found untracked memory mapped into `VmSpace`");
-                }
-                PageTableItem::StrayPageTable { pt, va, len } => {
+                PageTableFrag::StrayPageTable { pt, va, len } => {
                     self.flusher
                         .issue_tlb_flush_with(TlbFlushOp::Range(va..va + len), pt);
                 }
@@ -458,23 +460,56 @@ impl PartialEq for VmItem {
     }
 }
 
-impl TryFrom<PageTableItem> for VmItem {
+impl TryFrom<PageTableItem<UserPtConfig>> for VmItem {
     type Error = &'static str;
 
-    fn try_from(item: PageTableItem) -> core::result::Result<Self, Self::Error> {
+    fn try_from(item: PageTableItem<UserPtConfig>) -> core::result::Result<Self, Self::Error> {
         match item {
             PageTableItem::NotMapped { va, len } => Ok(VmItem::NotMapped { va, len }),
-            PageTableItem::Mapped { va, page, prop } => Ok(VmItem::Mapped {
-                va,
-                frame: page
-                    .try_into()
-                    .map_err(|_| "Found typed memory mapped into `VmSpace`")?,
-                prop,
-            }),
-            PageTableItem::MappedUntracked { .. } => {
-                Err("Found untracked memory mapped into `VmSpace`")
+            PageTableItem::Mapped { va, item, prop } => {
+                let MappedItem::Tracked(frame) = item else {
+                    todo!("Untracked `VmSpace` item unsupported yet");
+                };
+                Ok(VmItem::Mapped { va, frame, prop })
             }
-            PageTableItem::StrayPageTable { .. } => Err("Stray page table cannot be query results"),
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct UserPtConfig {}
+
+impl PageTableConfig for UserPtConfig {
+    const VADDR_RANGE: Range<Vaddr> = 0..super::MAX_USERSPACE_VADDR;
+
+    type E = PageTableEntry;
+    type C = PagingConsts;
+
+    type Item = MappedItem;
+
+    fn item_into_raw(item: Self::Item) -> (Paddr, PagingLevel) {
+        match item {
+            MappedItem::Tracked(frame) => {
+                let level = frame.map_level();
+                let paddr = frame.into_raw();
+                (paddr, level)
+            }
+            MappedItem::Untracked(_, _) => {
+                todo!("Untracked `VmSpace` item unsupported yet");
+            }
+        }
+    }
+
+    unsafe fn item_from_raw(paddr: Paddr, _level: PagingLevel) -> Self::Item {
+        // SAFETY: The caller ensures safety.
+        let frame = unsafe { Frame::<dyn AnyUFrameMeta>::from_raw(paddr) };
+        MappedItem::Tracked(frame)
+    }
+}
+
+#[expect(dead_code)]
+#[derive(Clone, Debug)]
+pub(crate) enum MappedItem {
+    Tracked(Frame<dyn AnyUFrameMeta>),
+    Untracked(Paddr, PagingLevel),
 }

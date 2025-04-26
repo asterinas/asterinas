@@ -2,106 +2,53 @@
 
 //! This module specifies the type of the children of a page table node.
 
-use core::{mem::ManuallyDrop, panic};
+use core::mem::ManuallyDrop;
 
-use super::{MapTrackingStatus, PageTableEntryTrait, PageTableNode};
+use super::{PageTableEntryTrait, PageTableNode, PageTableNodeRef};
 use crate::{
-    mm::{
-        frame::{inc_frame_ref_count, meta::AnyFrameMeta, Frame},
-        page_prop::PageProperty,
-        page_table::{PageTableConfig, PageTableNodeRef},
-        Paddr, PagingLevel,
-    },
+    mm::{page_prop::PageProperty, page_table::PageTableConfig, Paddr, PagingLevel},
     sync::RcuDrop,
 };
 
-/// A child of a page table node.
-// TODO: Distinguish between the reference and the owning child.
+/// A page table entry that owns the child of a page table node if present.
 #[derive(Debug)]
-pub(in crate::mm) enum Child<'a, C: PageTableConfig> {
-    /// A owning handle to a raw page table node.
+pub(in crate::mm) enum Child<C: PageTableConfig> {
+    /// A child page table node.
     PageTable(RcuDrop<PageTableNode<C>>),
-    /// A reference of a child page table node.
-    PageTableRef(PageTableNodeRef<'a, C>),
-    /// A mapped frame.
-    Frame(Frame<dyn AnyFrameMeta>, PageProperty),
-    /// Mapped frames that are not tracked by handles.
-    Untracked(Paddr, PagingLevel, PageProperty),
+    /// Physical address of a mapped physical frame.
+    ///
+    /// It is associated with the virtual page property and the level of the
+    /// mapping node, which decides the size of the frame.
+    Frame(Paddr, PagingLevel, PageProperty),
     None,
 }
 
-impl<C: PageTableConfig> Child<'_, C> {
-    /// Returns whether the child does not map to anything.
+impl<C: PageTableConfig> Child<C> {
+    /// Returns whether the child is not present.
     pub(in crate::mm) fn is_none(&self) -> bool {
         matches!(self, Child::None)
     }
 
-    /// Returns whether the child is compatible with the given node.
-    ///
-    /// In other words, it checks whether the child can be a child of a node
-    /// with the given level and tracking status.
-    pub(super) fn is_compatible(
-        &self,
-        node_level: PagingLevel,
-        is_tracked: MapTrackingStatus,
-    ) -> bool {
-        match self {
-            Child::PageTable(pt) => node_level == pt.level() + 1,
-            Child::PageTableRef(_) => false,
-            Child::Frame(p, _) => {
-                node_level == p.map_level() && is_tracked == MapTrackingStatus::Tracked
-            }
-            Child::Untracked(_, level, _) => {
-                node_level == *level && is_tracked == MapTrackingStatus::Untracked
-            }
-            Child::None => true,
-        }
-    }
-
-    /// Converts a child into a owning PTE.
-    ///
-    /// By conversion it loses information about whether the page is tracked
-    /// or not. Also it loses the level information. However, the returned PTE
-    /// takes the ownership (reference count) of the child.
-    ///
-    /// Usually this is for recording the PTE into a page table node. When the
-    /// child is needed again by reading the PTE of a page table node, extra
-    /// information should be provided using the [`Child::from_pte`] method.
     pub(super) fn into_pte(self) -> C::E {
         match self {
-            Child::PageTable(pt) => {
-                let pt = ManuallyDrop::new(pt);
-                C::E::new_pt(pt.start_paddr())
+            Child::PageTable(node) => {
+                let paddr = node.start_paddr();
+                let _ = ManuallyDrop::new(node);
+                C::E::new_pt(paddr)
             }
-            Child::PageTableRef(_) => {
-                panic!("`PageTableRef` should not be converted to PTE");
-            }
-            Child::Frame(page, prop) => {
-                let level = page.map_level();
-                C::E::new_page(page.into_raw(), level, prop)
-            }
-            Child::Untracked(pa, level, prop) => C::E::new_page(pa, level, prop),
+            Child::Frame(paddr, level, prop) => C::E::new_page(paddr, level, prop),
             Child::None => C::E::new_absent(),
         }
     }
 
-    /// Converts a PTE back to a child.
-    ///
     /// # Safety
     ///
-    /// The provided PTE must be originated from [`Child::into_pte`]. And the
-    /// provided information (level and tracking status) must be the same with
-    /// the lost information during the conversion. Strictly speaking, the
-    /// provided arguments must be compatible with the original child (
-    /// specified by [`Child::is_compatible`]).
+    /// The provided PTE must be the output of [`Self::into_pte`], and the PTE:
+    ///  - must not be used to created a [`Child`] twice;
+    ///  - must not be referenced by a living [`ChildRef`].
     ///
-    /// This method should be only used no more than once for a PTE that has
-    /// been converted from a child using the [`Child::into_pte`] method.
-    pub(super) unsafe fn from_pte(
-        pte: C::E,
-        level: PagingLevel,
-        is_tracked: MapTrackingStatus,
-    ) -> Self {
+    /// The level must match the original level of the child.
+    pub(super) unsafe fn from_pte(pte: C::E, level: PagingLevel) -> Self {
         if !pte.is_present() {
             return Child::None;
         }
@@ -109,66 +56,56 @@ impl<C: PageTableConfig> Child<'_, C> {
         let paddr = pte.paddr();
 
         if !pte.is_last(level) {
-            // SAFETY: The physical address points to a valid page table node
-            // at the given level.
-            let pt = unsafe { PageTableNode::from_raw(paddr) };
-            debug_assert_eq!(pt.level(), level - 1);
-            return Child::PageTable(RcuDrop::new(pt));
+            // SAFETY: The caller ensures that this node was created by
+            // `into_pte`, so that restoring the forgotten reference is safe.
+            let node = unsafe { PageTableNode::from_raw(paddr) };
+            debug_assert_eq!(node.level(), level - 1);
+            return Child::PageTable(RcuDrop::new(node));
         }
 
-        match is_tracked {
-            MapTrackingStatus::Tracked => {
-                // SAFETY: The physical address points to a valid page.
-                let page = unsafe { Frame::<dyn AnyFrameMeta>::from_raw(paddr) };
-                Child::Frame(page, pte.prop())
-            }
-            MapTrackingStatus::Untracked => Child::Untracked(paddr, level, pte.prop()),
-            MapTrackingStatus::NotApplicable => panic!("Invalid tracking status"),
-        }
+        Child::Frame(paddr, level, pte.prop())
     }
+}
 
-    /// Gains an extra reference to the child.
+/// A reference to the child of a page table node.
+#[derive(Debug)]
+pub(in crate::mm) enum ChildRef<'a, C: PageTableConfig> {
+    /// A child page table node.
+    PageTable(PageTableNodeRef<'a, C>),
+    /// Physical address of a mapped physical frame.
     ///
-    /// If the child is a frame, it increases the reference count of the frame.
-    ///
-    /// If the child is a page table node, it returns a [`PageTableNodeRef`],
-    /// thus not affecting the reference count of the page table node.
+    /// It is associated with the virtual page property and the level of the
+    /// mapping node, which decides the size of the frame.
+    Frame(Paddr, PagingLevel, PageProperty),
+    None,
+}
+
+impl<C: PageTableConfig> ChildRef<'_, C> {
+    /// Converts a PTE to a child.
     ///
     /// # Safety
     ///
-    /// The provided PTE must be originated from [`Child::into_pte`], which is
-    /// the same requirement as the [`Child::from_pte`] method.
+    /// The PTE must be the output of a [`Child::into_pte`], where the child
+    /// outlives the reference created by this function.
     ///
-    /// This method must not be used with a PTE that has been restored to a
-    /// child using the [`Child::from_pte`] method.
-    pub(super) unsafe fn ref_from_pte(
-        pte: &C::E,
-        level: PagingLevel,
-        is_tracked: MapTrackingStatus,
-    ) -> Self {
+    /// The provided level must be the same with the level of the page table
+    /// node that contains this PTE.
+    pub(super) unsafe fn from_pte<E: PageTableEntryTrait>(pte: &E, level: PagingLevel) -> Self {
         if !pte.is_present() {
-            return Child::None;
+            return ChildRef::None;
         }
 
         let paddr = pte.paddr();
 
         if !pte.is_last(level) {
-            // SAFETY: If the caller ensures that the PTE is from a `Child`,
-            // restoring the reference is safe.
-            return Child::PageTableRef(unsafe { PageTableNodeRef::borrow_paddr(paddr) });
+            // SAFETY: The caller ensures that the lifetime of the child is
+            // contained by the residing node, and the physical address is
+            // valid since the entry is present.
+            let node = unsafe { PageTableNodeRef::borrow_paddr(paddr) };
+            debug_assert_eq!(node.level(), level - 1);
+            return ChildRef::PageTable(node);
         }
 
-        match is_tracked {
-            MapTrackingStatus::Tracked => {
-                // SAFETY: The physical address is valid and the PTE already owns
-                // the reference to the page.
-                unsafe { inc_frame_ref_count(paddr) };
-                // SAFETY: The physical address points to a valid page.
-                let page = unsafe { Frame::<dyn AnyFrameMeta>::from_raw(paddr) };
-                Child::Frame(page, pte.prop())
-            }
-            MapTrackingStatus::Untracked => Child::Untracked(paddr, level, pte.prop()),
-            MapTrackingStatus::NotApplicable => panic!("Invalid tracking status"),
-        }
+        ChildRef::Frame(paddr, level, pte.prop())
     }
 }

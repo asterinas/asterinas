@@ -11,16 +11,14 @@
 //!
 //! ```text
 //! +-+ <- the highest used address (0xffff_ffff_ffff_0000)
-//! | |         For the kernel code, 1 GiB. Mapped frames are tracked.
+//! | |         For the kernel code, 1 GiB.
 //! +-+ <- 0xffff_ffff_8000_0000
 //! | |
 //! | |         Unused hole.
 //! +-+ <- 0xffff_e100_0000_0000
-//! | |         For frame metadata, 1 TiB. Mapped frames are untracked.
+//! | |         For frame metadata, 1 TiB.
 //! +-+ <- 0xffff_e000_0000_0000
-//! | |         For [`KVirtArea<Tracked>`], 16 TiB. Mapped pages are tracked with handles.
-//! +-+ <- 0xffff_d000_0000_0000
-//! | |         For [`KVirtArea<Untracked>`], 16 TiB. Mapped pages are untracked.
+//! | |         For [`KVirtArea`], 32 TiB.
 //! +-+ <- the middle of the higher half (0xffff_c000_0000_0000)
 //! | |
 //! | |
@@ -47,16 +45,18 @@ mod test;
 
 use super::{
     frame::{
-        meta::{mapping, KernelMeta, MetaPageMeta},
-        Frame, Segment,
+        is_tracked_paddr,
+        meta::{mapping, AnyFrameMeta, MetaPageMeta},
+        Segment,
     },
     page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
     page_table::{PageTable, PageTableConfig},
-    Paddr, PagingConstsTrait, Vaddr, PAGE_SIZE,
+    Frame, Paddr, PagingConstsTrait, PagingLevel, Vaddr,
 };
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     boot::memory_region::MemoryRegionType,
+    mm::page_table::PageTableFrag,
     task::disable_preempt,
 };
 
@@ -90,12 +90,8 @@ const FRAME_METADATA_BASE_VADDR: Vaddr = 0xffff_e000_0000_0000 << ADDR_WIDTH_SHI
 pub(in crate::mm) const FRAME_METADATA_RANGE: Range<Vaddr> =
     FRAME_METADATA_BASE_VADDR..FRAME_METADATA_CAP_VADDR;
 
-const TRACKED_MAPPED_PAGES_BASE_VADDR: Vaddr = 0xffff_d000_0000_0000 << ADDR_WIDTH_SHIFT;
-pub const TRACKED_MAPPED_PAGES_RANGE: Range<Vaddr> =
-    TRACKED_MAPPED_PAGES_BASE_VADDR..FRAME_METADATA_BASE_VADDR;
-
 const VMALLOC_BASE_VADDR: Vaddr = 0xffff_c000_0000_0000 << ADDR_WIDTH_SHIFT;
-pub const VMALLOC_VADDR_RANGE: Range<Vaddr> = VMALLOC_BASE_VADDR..TRACKED_MAPPED_PAGES_BASE_VADDR;
+pub const VMALLOC_VADDR_RANGE: Range<Vaddr> = VMALLOC_BASE_VADDR..FRAME_METADATA_BASE_VADDR;
 
 /// The base address of the linear mapping of all physical
 /// memory in the kernel address space.
@@ -108,12 +104,11 @@ pub fn paddr_to_vaddr(pa: Paddr) -> usize {
     pa + LINEAR_MAPPING_BASE_VADDR
 }
 
-/// Returns whether the given address should be mapped as tracked.
+/// The kernel page table instance.
 ///
-/// About what is tracked mapping, see [`crate::mm::frame::meta::MapTrackingStatus`].
-pub(crate) fn should_map_as_tracked(addr: Vaddr) -> bool {
-    !(LINEAR_MAPPING_VADDR_RANGE.contains(&addr) || VMALLOC_VADDR_RANGE.contains(&addr))
-}
+/// It manages the kernel mapping of all address spaces by sharing the kernel part. And it
+/// is unlikely to be activated.
+pub static KERNEL_PAGE_TABLE: Once<PageTable<KernelPtConfig>> = Once::new();
 
 #[derive(Clone, Debug)]
 pub(crate) struct KernelPtConfig {}
@@ -123,13 +118,41 @@ impl PageTableConfig for KernelPtConfig {
 
     type E = PageTableEntry;
     type C = PagingConsts;
+
+    type Item = MappedItem;
+
+    fn item_into_raw(item: Self::Item) -> (Paddr, PagingLevel) {
+        match item {
+            MappedItem::Tracked(frame) => {
+                let level = frame.map_level();
+                let paddr = frame.into_raw();
+                (paddr, level)
+            }
+            MappedItem::Untracked(_, _) => {
+                todo!("Untracked `VmSpace` item unsupported yet");
+            }
+        }
+    }
+
+    unsafe fn item_from_raw(paddr: Paddr, level: PagingLevel) -> Self::Item {
+        if is_tracked_paddr(paddr) {
+            debug_assert_eq!(level, 1);
+            // SAFETY: The caller ensures safety.
+            let frame = unsafe { Frame::<dyn AnyFrameMeta>::from_raw(paddr) };
+            MappedItem::Tracked(frame)
+        } else {
+            MappedItem::Untracked(paddr, level)
+        }
+    }
 }
 
-/// The kernel page table instance.
-///
-/// It manages the kernel mapping of all address spaces by sharing the kernel part. And it
-/// is unlikely to be activated.
-pub static KERNEL_PAGE_TABLE: Once<PageTable<KernelPtConfig>> = Once::new();
+#[derive(Clone, Debug)]
+pub(crate) enum MappedItem {
+    #[cfg_attr(not(ktest), expect(dead_code))]
+    Tracked(Frame<dyn AnyFrameMeta>),
+    #[cfg_attr(not(ktest), expect(dead_code))]
+    Untracked(Paddr, PagingLevel),
+}
 
 /// Initializes the kernel page table.
 ///
@@ -156,10 +179,11 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
+        let mut cursor = kpt.cursor_mut(&preempt_guard, &from).unwrap();
         // SAFETY: we are doing the linear mapping for the kernel.
-        unsafe {
-            kpt.map(&from, &to, prop).unwrap();
-        }
+        let PageTableFrag::NotMapped { .. } = (unsafe { cursor.map(&to, prop) }) else {
+            panic!("Kernel linear address space is mapped twice");
+        };
     }
 
     // Map the metadata pages.
@@ -172,29 +196,11 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
         let mut cursor = kpt.cursor_mut(&preempt_guard, &from).unwrap();
-        for meta_page in meta_pages {
-            // SAFETY: we are doing the metadata mappings for the kernel.
-            unsafe {
-                let _old = cursor.map(meta_page.into(), prop);
-            }
-        }
-    }
-
-    // Map for the I/O area.
-    // TODO: we need to have an allocator to allocate kernel space for
-    // the I/O areas, rather than doing it using the linear mappings.
-    {
-        let to = 0x8_0000_0000..0x9_0000_0000;
-        let from = LINEAR_MAPPING_BASE_VADDR + to.start..LINEAR_MAPPING_BASE_VADDR + to.end;
-        let prop = PageProperty {
-            flags: PageFlags::RW,
-            cache: CachePolicy::Uncacheable,
-            priv_flags: PrivilegedPageFlags::GLOBAL,
+        let pa_range = meta_pages.into_raw();
+        // SAFETY: we are doing the metadata mappings for the kernel.
+        let PageTableFrag::NotMapped { .. } = (unsafe { cursor.map(&pa_range, prop) }) else {
+            panic!("Frame metadata address space is mapped twice");
         };
-        // SAFETY: we are doing I/O mappings for the kernel.
-        unsafe {
-            kpt.map(&from, &to, prop).unwrap();
-        }
     }
 
     // Map for the kernel code itself.
@@ -214,14 +220,11 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
         let mut cursor = kpt.cursor_mut(&preempt_guard, &from).unwrap();
-        for frame_paddr in to.step_by(PAGE_SIZE) {
-            // SAFETY: They were initialized at `super::frame::meta::init`.
-            let page = unsafe { Frame::<KernelMeta>::from_raw(frame_paddr) };
-            // SAFETY: we are doing mappings for the kernel.
-            unsafe {
-                let _old = cursor.map(page.into(), prop);
-            }
-        }
+        // SAFETY: we are doing mappings for the kernel. The frame metadata
+        // should be initialized at `super::frame::meta::init`.
+        let PageTableFrag::NotMapped { .. } = (unsafe { cursor.map(&to, prop) }) else {
+            panic!("Kernel code/data mapped twice");
+        };
     }
 
     KERNEL_PAGE_TABLE.call_once(|| kpt);
