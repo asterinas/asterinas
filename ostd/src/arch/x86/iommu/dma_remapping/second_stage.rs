@@ -19,12 +19,24 @@ use crate::{
 #[derive(Clone, Debug)]
 pub(crate) struct IommuPtConfig {}
 
-impl PageTableConfig for IommuPtConfig {
+// SAFETY: `item_into_raw` and `item_from_raw` are implemented correctly,
+unsafe impl PageTableConfig for IommuPtConfig {
     const TOP_LEVEL_INDEX_RANGE: Range<usize> = 0..512;
     const VA_HIGH_BITS_FILL_ONE: bool = false;
 
     type E = PageTableEntry;
     type C = PagingConsts;
+
+    /// All mappings are untracked.
+    type Item = (Range<Paddr>, PageProperty);
+
+    fn item_into_raw(item: Self::Item) -> (Range<Paddr>, PageProperty) {
+        item
+    }
+
+    unsafe fn item_from_raw(paddr: Range<Paddr>, prop: PageProperty) -> Self::Item {
+        (paddr, prop)
+    }
 }
 
 #[derive(Clone, Debug, Default)]

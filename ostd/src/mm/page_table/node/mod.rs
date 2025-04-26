@@ -35,12 +35,15 @@ use core::{
     sync::atomic::{AtomicU8, Ordering},
 };
 
-pub(in crate::mm) use self::{child::Child, entry::Entry};
+pub(in crate::mm) use self::{
+    child::{Child, ChildRef},
+    entry::Entry,
+};
 use super::{nr_subpage_per_huge, PageTableConfig, PageTableEntryTrait};
 use crate::{
     mm::{
         frame::{meta::AnyFrameMeta, Frame, FrameRef},
-        paddr_to_vaddr,
+        paddr_to_vaddr, page_size,
         page_table::{load_pte, store_pte},
         FrameAllocOptions, Infallible, PagingConstsTrait, PagingLevel, VmReader,
     },
@@ -63,13 +66,9 @@ impl<C: PageTableConfig> PageTableNode<C> {
         self.meta().level
     }
 
-    pub(super) fn is_tracked(&self) -> MapTrackingStatus {
-        self.meta().is_tracked
-    }
-
     /// Allocates a new empty page table node.
-    pub(super) fn alloc(level: PagingLevel, is_tracked: MapTrackingStatus) -> Self {
-        let meta = PageTablePageMeta::new(level, is_tracked);
+    pub(super) fn alloc(level: PagingLevel) -> Self {
+        let meta = PageTablePageMeta::new(level);
         let frame = FrameAllocOptions::new()
             .zeroed(true)
             .alloc_frame_with(meta)
@@ -231,8 +230,8 @@ impl<'rcu, C: PageTableConfig> PageTableGuard<'rcu, C> {
     ///
     /// The caller must ensure that:
     ///  1. The index must be within the bound;
-    ///  2. The PTE must represent a child compatible with this page table node
-    ///     (see [`Child::is_compatible`]).
+    ///  2. The PTE must represent a valid [`Child`] whose level is compatible
+    ///     with the page table node.
     pub(super) unsafe fn write_pte(&mut self, idx: usize, pte: C::E) {
         debug_assert!(idx < nr_subpage_per_huge::<C>());
         let ptr = paddr_to_vaddr(self.start_paddr()) as *mut C::E;
@@ -280,35 +279,16 @@ pub(in crate::mm) struct PageTablePageMeta<C: PageTableConfig> {
     pub level: PagingLevel,
     /// The lock for the page table page.
     pub lock: AtomicU8,
-    /// Whether the pages mapped by the node is tracked.
-    pub is_tracked: MapTrackingStatus,
     _phantom: core::marker::PhantomData<C>,
 }
 
-/// Describe if the physical address recorded in this page table refers to a
-/// page tracked by metadata.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u8)]
-pub(in crate::mm) enum MapTrackingStatus {
-    /// The page table node cannot contain references to any pages. It can only
-    /// contain references to child page table nodes.
-    NotApplicable,
-    /// The mapped pages are not tracked by metadata. If any child page table
-    /// nodes exist, they should also be tracked.
-    Untracked,
-    /// The mapped pages are tracked by metadata. If any child page table nodes
-    /// exist, they should also be tracked.
-    Tracked,
-}
-
 impl<C: PageTableConfig> PageTablePageMeta<C> {
-    pub fn new(level: PagingLevel, is_tracked: MapTrackingStatus) -> Self {
+    pub fn new(level: PagingLevel) -> Self {
         Self {
             nr_children: SyncUnsafeCell::new(0),
             stray: SyncUnsafeCell::new(false),
             level,
             lock: AtomicU8::new(0),
-            is_tracked,
             _phantom: PhantomData,
         }
     }
@@ -325,7 +305,6 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
         }
 
         let level = self.level;
-        let is_tracked = self.is_tracked;
 
         // Drop the children.
         let range = if level == C::NR_LEVELS {
@@ -346,10 +325,12 @@ unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
                     // SAFETY: The PTE points to a page table node. The ownership
                     // of the child is transferred to the child then dropped.
                     drop(unsafe { Frame::<Self>::from_raw(paddr) });
-                } else if is_tracked == MapTrackingStatus::Tracked {
-                    // SAFETY: The PTE points to a tracked page. The ownership
-                    // of the child is transferred to the child then dropped.
-                    drop(unsafe { Frame::<dyn AnyFrameMeta>::from_raw(paddr) });
+                } else {
+                    // SAFETY: The PTE points to a mapped item. The ownership
+                    // of the item is transferred here then dropped.
+                    drop(unsafe {
+                        C::item_from_raw(paddr..paddr + page_size::<C>(level), pte.prop())
+                    });
                 }
             }
         }
