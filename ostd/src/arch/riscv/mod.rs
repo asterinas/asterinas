@@ -34,7 +34,11 @@ pub(crate) unsafe fn late_init_on_bsp() {
     // in the boot context of the BSP, with no timer-related operations having
     // been performed.
     unsafe { timer::init() };
-    let _ = pci::init();
+
+    // SAFETY: This function is called once and at most once at a proper timing
+    // in the boot context of the BSP, with no PCI-related operations having
+    // been performed.
+    unsafe { pci::init(&io_mem_builder) };
 
     // SAFETY:
     // 1. All the system device memory have been removed from the builder.
