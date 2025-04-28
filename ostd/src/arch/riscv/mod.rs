@@ -15,8 +15,6 @@ pub mod task;
 pub mod timer;
 pub mod trap;
 
-use core::sync::atomic::Ordering;
-
 #[cfg(feature = "cvm_guest")]
 pub(crate) fn init_cvm_guest() {
     // Unimplemented, no-op
@@ -29,7 +27,10 @@ pub(crate) unsafe fn late_init_on_bsp() {
     // SAFETY: We're on the BSP and we're ready to boot all APs.
     unsafe { crate::boot::smp::boot_all_aps() };
 
-    timer::init();
+    // SAFETY: This function is called once and at most once at a proper timing
+    // in the boot context of the BSP, with no timer-related operations having
+    // been performed.
+    unsafe { timer::init() };
     let _ = pci::init();
 }
 
@@ -43,7 +44,7 @@ pub(crate) fn interrupts_ack(irq_number: usize) {
 
 /// Return the frequency of TSC. The unit is Hz.
 pub fn tsc_freq() -> u64 {
-    timer::TIMEBASE_FREQ.load(Ordering::Relaxed)
+    timer::get_timebase_freq()
 }
 
 /// Reads the current value of the processor’s time-stamp counter (TSC).
