@@ -7,12 +7,16 @@
 //! the declaration of untyped frames and segments, and the implementation of
 //! extra functionalities (such as [`VmIo`]) for them.
 
-use super::{meta::AnyFrameMeta, Frame, Segment};
+use super::{
+    meta::{AnyFrameMeta, MetaSlot},
+    Frame, Segment,
+};
 use crate::{
     mm::{
         io::{FallibleVmRead, FallibleVmWrite, VmIo, VmReader, VmWriter},
         paddr_to_vaddr, Infallible,
     },
+    sync::non_null::NonNullPtr,
     Error, Result,
 };
 
@@ -132,13 +136,13 @@ macro_rules! impl_untyped_for {
 impl_untyped_for!(Frame);
 impl_untyped_for!(Segment);
 
-// Here are implementations for `xarray`.
+// Here are implementations for `crate::sync::rcu`.
 
-use core::{marker::PhantomData, mem::ManuallyDrop, ops::Deref};
+use core::{marker::PhantomData, mem::ManuallyDrop, ops::Deref, ptr::NonNull};
 
 /// `FrameRef` is a struct that can work as `&'a Frame<m>`.
 ///
-/// This is solely useful for [`crate::collections::xarray`].
+/// This is useful for [`crate::sync::rcu`].
 pub struct FrameRef<'a, M: AnyUFrameMeta + ?Sized> {
     inner: ManuallyDrop<Frame<M>>,
     _marker: PhantomData<&'a Frame<M>>,
@@ -152,34 +156,42 @@ impl<M: AnyUFrameMeta + ?Sized> Deref for FrameRef<'_, M> {
     }
 }
 
-// SAFETY: `Frame` is essentially an `*const MetaSlot` that could be used as a `*const` pointer.
-// The pointer is also aligned to 4.
-unsafe impl<M: AnyUFrameMeta + ?Sized> xarray::ItemEntry for Frame<M> {
+// SAFETY: `Frame` is essentially an `*const MetaSlot` that could be used as a non-null
+// `*const` pointer.
+unsafe impl<M: AnyUFrameMeta + ?Sized> NonNullPtr for Frame<M> {
+    type Target = PhantomData<Self>;
+
     type Ref<'a>
         = FrameRef<'a, M>
     where
         Self: 'a;
 
-    fn into_raw(self) -> *const () {
-        let ptr = self.ptr;
+    const ALIGN_BITS: u32 = core::mem::align_of::<MetaSlot>().trailing_zeros();
+
+    fn into_raw(self) -> NonNull<Self::Target> {
+        let ptr = NonNull::new(self.ptr.cast_mut()).unwrap();
         let _ = ManuallyDrop::new(self);
-        ptr as *const ()
+        ptr.cast()
     }
 
-    unsafe fn from_raw(raw: *const ()) -> Self {
+    unsafe fn from_raw(raw: NonNull<Self::Target>) -> Self {
         Self {
-            ptr: raw as *const _,
+            ptr: raw.as_ptr().cast_const().cast(),
             _marker: PhantomData,
         }
     }
 
-    unsafe fn raw_as_ref<'a>(raw: *const ()) -> Self::Ref<'a> {
+    unsafe fn raw_as_ref<'a>(raw: NonNull<Self::Target>) -> Self::Ref<'a> {
         Self::Ref {
             inner: ManuallyDrop::new(Frame {
-                ptr: raw as *const _,
+                ptr: raw.as_ptr().cast_const().cast(),
                 _marker: PhantomData,
             }),
             _marker: PhantomData,
         }
+    }
+
+    fn ref_as_raw(ptr_ref: Self::Ref<'_>) -> core::ptr::NonNull<Self::Target> {
+        NonNull::new(ptr_ref.inner.ptr.cast_mut()).unwrap().cast()
     }
 }
