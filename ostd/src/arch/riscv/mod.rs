@@ -34,12 +34,13 @@ pub(crate) unsafe fn late_init_on_bsp() {
     // in the boot context of the BSP, with no timer-related operations having
     // been performed.
     unsafe { timer::init() };
-    let _ = pci::init();
 
     // SAFETY:
     // 1. All the system device memory have been removed from the builder.
     // 2. RISC-V platforms do not have port I/O.
     unsafe { crate::io::init(io_mem_builder) };
+
+    pci::init();
 }
 
 pub(crate) unsafe fn init_on_ap() {
