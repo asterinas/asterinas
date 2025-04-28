@@ -486,8 +486,8 @@ mod untyped {
     }
 
     #[ktest]
-    fn xarray_item_entry() {
-        use xarray::ItemEntry;
+    fn frame_impls_non_null_ptr() {
+        use crate::sync::non_null::NonNullPtr;
 
         let init_val = 42;
         let frame = FrameAllocOptions::new()
@@ -497,13 +497,13 @@ mod untyped {
         let uframe: UFrame = frame.into();
 
         // Converts and retrieves the frame from raw pointer
-        let raw_ptr = ItemEntry::into_raw(uframe);
-        let frame_from_raw: Frame<MockUFrameMeta> = unsafe { ItemEntry::from_raw(raw_ptr) };
+        let raw_ptr = NonNullPtr::into_raw(uframe);
+        let frame_from_raw: Frame<MockUFrameMeta> = unsafe { NonNullPtr::from_raw(raw_ptr.cast()) };
         assert_eq!(frame_from_raw.start_paddr(), ptr);
         assert_eq!(frame_from_raw.meta().value, init_val);
 
         // References the frame from raw pointer
-        let frame_ref: FrameRef<MockUFrameMeta> = unsafe { Frame::raw_as_ref(raw_ptr) };
+        let frame_ref: FrameRef<MockUFrameMeta> = unsafe { Frame::raw_as_ref(raw_ptr.cast()) };
         assert_eq!(frame_ref.start_paddr(), ptr);
     }
 }

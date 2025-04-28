@@ -33,7 +33,6 @@ pub mod arch;
 pub mod arch;
 pub mod boot;
 pub mod bus;
-pub mod collections;
 pub mod console;
 pub mod cpu;
 mod error;
