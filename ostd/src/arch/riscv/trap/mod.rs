@@ -4,6 +4,7 @@
 
 mod trap;
 
+use riscv::register::scause::Interrupt;
 use spin::Once;
 pub use trap::{GeneralRegs, TrapFrame, UserContext};
 
@@ -32,9 +33,20 @@ extern "C" fn trap_handler(f: &mut TrapFrame) {
     use riscv::register::scause::Trap;
 
     match riscv::register::scause::read().cause() {
-        Trap::Interrupt(_) => {
+        Trap::Interrupt(interrupt) => {
             IS_KERNEL_INTERRUPTED.store(true);
-            todo!();
+            match interrupt {
+                Interrupt::SupervisorTimer => {
+                    crate::arch::timer::handle_timer_interrupt();
+                }
+                Interrupt::SupervisorExternal => todo!(),
+                Interrupt::SupervisorSoft => todo!(),
+                _ => {
+                    panic!(
+                        "cannot handle unknown supervisor interrupt: {interrupt:?}. trapframe: {f:#x?}.",
+                    );
+                }
+            }
             IS_KERNEL_INTERRUPTED.store(false);
         }
         Trap::Exception(e) => {
