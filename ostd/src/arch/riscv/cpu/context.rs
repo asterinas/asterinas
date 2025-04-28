@@ -4,11 +4,14 @@
 
 use core::fmt::Debug;
 
-use riscv::register::scause::{Exception, Trap};
+use riscv::register::scause::{Exception, Interrupt, Trap};
 
 pub use crate::arch::trap::GeneralRegs as RawGeneralRegs;
 use crate::{
-    arch::trap::{TrapFrame, UserContext as RawUserContext},
+    arch::{
+        timer::handle_timer_interrupt,
+        trap::{TrapFrame, UserContext as RawUserContext},
+    },
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
 
@@ -111,6 +114,9 @@ impl UserContextApiInternal for UserContext {
         let ret = loop {
             self.user_context.run();
             match riscv::register::scause::read().cause() {
+                Trap::Interrupt(Interrupt::SupervisorTimer) => {
+                    handle_timer_interrupt();
+                }
                 Trap::Interrupt(_) => todo!(),
                 Trap::Exception(Exception::UserEnvCall) => {
                     self.user_context.sepc += 4;
