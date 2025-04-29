@@ -27,7 +27,9 @@ pub(crate) mod tdx_guest;
 
 use core::sync::atomic::Ordering;
 
-use log::warn;
+use kernel::apic::ioapic;
+pub use kernel::IO_APIC;
+use log::{info, warn};
 
 #[cfg(feature = "cvm_guest")]
 pub(crate) fn init_cvm_guest() {
