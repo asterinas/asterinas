@@ -51,7 +51,7 @@ use super::{
         Frame, Segment,
     },
     page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
-    page_table::{KernelMode, PageTable},
+    page_table::{PageTable, PageTableConfig},
     Paddr, PagingConstsTrait, Vaddr, PAGE_SIZE,
 };
 use crate::{
@@ -115,12 +115,21 @@ pub(crate) fn should_map_as_tracked(addr: Vaddr) -> bool {
     !(LINEAR_MAPPING_VADDR_RANGE.contains(&addr) || VMALLOC_VADDR_RANGE.contains(&addr))
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct KernelPtConfig {}
+
+impl PageTableConfig for KernelPtConfig {
+    const VADDR_RANGE: Range<Vaddr> = super::KERNEL_VADDR_RANGE;
+
+    type E = PageTableEntry;
+    type C = PagingConsts;
+}
+
 /// The kernel page table instance.
 ///
 /// It manages the kernel mapping of all address spaces by sharing the kernel part. And it
 /// is unlikely to be activated.
-pub static KERNEL_PAGE_TABLE: Once<PageTable<KernelMode, PageTableEntry, PagingConsts>> =
-    Once::new();
+pub static KERNEL_PAGE_TABLE: Once<PageTable<KernelPtConfig>> = Once::new();
 
 /// Initializes the kernel page table.
 ///
@@ -134,7 +143,7 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
     info!("Initializing the kernel page table");
 
     // Start to initialize the kernel page table.
-    let kpt = PageTable::<KernelMode>::new_kernel_page_table();
+    let kpt = PageTable::<KernelPtConfig>::new_kernel_page_table();
     let preempt_guard = disable_preempt();
 
     // Do linear mappings for the kernel.

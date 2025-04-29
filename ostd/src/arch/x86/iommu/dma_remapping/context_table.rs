@@ -8,7 +8,7 @@ use core::mem::size_of;
 use log::trace;
 use ostd_pod::Pod;
 
-use super::second_stage::{DeviceMode, PageTableEntry, PagingConsts};
+use super::second_stage::IommuPtConfig;
 use crate::{
     bus::pci::PciDeviceLocation,
     mm::{
@@ -106,7 +106,7 @@ impl RootTable {
     pub(super) fn specify_device_page_table(
         &mut self,
         device_id: PciDeviceLocation,
-        page_table: PageTable<DeviceMode, PageTableEntry, PagingConsts>,
+        page_table: PageTable<IommuPtConfig>,
     ) {
         let context_table = self.get_or_create_context_table(device_id);
 
@@ -240,7 +240,7 @@ pub enum AddressWidth {
 pub struct ContextTable {
     /// Total 32 devices, each device has 8 functions.
     entries_frame: Frame<()>,
-    page_tables: BTreeMap<Paddr, PageTable<DeviceMode, PageTableEntry, PagingConsts>>,
+    page_tables: BTreeMap<Paddr, PageTable<IommuPtConfig>>,
 }
 
 impl ContextTable {
@@ -258,7 +258,7 @@ impl ContextTable {
     fn get_or_create_page_table(
         &mut self,
         device: PciDeviceLocation,
-    ) -> &mut PageTable<DeviceMode, PageTableEntry, PagingConsts> {
+    ) -> &mut PageTable<IommuPtConfig> {
         let bus_entry = self
             .entries_frame
             .read_val::<ContextEntry>(
@@ -267,7 +267,7 @@ impl ContextTable {
             .unwrap();
 
         if !bus_entry.is_present() {
-            let table = PageTable::<DeviceMode, PageTableEntry, PagingConsts>::empty();
+            let table = PageTable::<IommuPtConfig>::empty();
             let address = unsafe { table.root_paddr() };
             self.page_tables.insert(address, table);
             let entry = ContextEntry(address as u128 | 3 | 0x1_0000_0000_0000_0000);
