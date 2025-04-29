@@ -22,6 +22,7 @@ impl PagingConstsTrait for PagingConsts {
     const BASE_PAGE_SIZE: usize = 4096;
     const NR_LEVELS: PagingLevel = 4;
     const ADDRESS_WIDTH: usize = 48;
+    const VA_SIGN_EXT: bool = true;
     const HIGHEST_TRANSLATION_LEVEL: PagingLevel = 4;
     const PTE_SIZE: usize = core::mem::size_of::<PageTableEntry>();
 }
