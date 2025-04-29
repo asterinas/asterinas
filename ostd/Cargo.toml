@@ -35,7 +35,7 @@ ostd-test = { version = "0.14.1", path = "libs/ostd-test" }
 ostd-pod = { git = "https://github.com/asterinas/ostd-pod", rev = "c4644be", version = "0.1.1" }
 spin = "0.9.4"
 smallvec = "1.13.2"
-unwinding = { version = "0.2.5", default-features = false, features = ["fde-gnu-eh-frame-hdr", "hide-trace", "panic", "personality", "unwinder"] }
+unwinding = { version = "=0.2.5", default-features = false, features = ["fde-gnu-eh-frame-hdr", "hide-trace", "panic", "personality", "unwinder"] }
 volatile = "0.6.1"
 xarray = { git = "https://github.com/asterinas/xarray", version = "0.1.0" }
 
