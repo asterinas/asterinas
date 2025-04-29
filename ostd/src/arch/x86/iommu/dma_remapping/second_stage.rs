@@ -7,8 +7,8 @@ use core::ops::Range;
 use crate::{
     mm::{
         page_prop::{CachePolicy, PageFlags, PrivilegedPageFlags as PrivFlags},
-        page_table::{PageTableEntryTrait, PageTableMode},
-        Paddr, PageProperty, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
+        page_table::{PageTableConfig, PageTableEntryTrait},
+        Paddr, PageProperty, PagingConstsTrait, PagingLevel, PodOnce,
     },
     util::marker::SameSizeAs,
     Pod,
@@ -17,15 +17,18 @@ use crate::{
 /// The page table used by iommu maps the device address
 /// space to the physical address space.
 #[derive(Clone, Debug)]
-pub struct DeviceMode {}
+pub(crate) struct IommuPtConfig {}
 
-impl PageTableMode for DeviceMode {
-    /// The device address width we currently support is 39-bit.
-    const VADDR_RANGE: Range<Vaddr> = 0..0x80_0000_0000;
+impl PageTableConfig for IommuPtConfig {
+    const TOP_LEVEL_INDEX_RANGE: Range<usize> = 0..512;
+    const VA_HIGH_BITS_FILL_ONE: bool = false;
+
+    type E = PageTableEntry;
+    type C = PagingConsts;
 }
 
 #[derive(Clone, Debug, Default)]
-pub(super) struct PagingConsts {}
+pub(crate) struct PagingConsts {}
 
 impl PagingConstsTrait for PagingConsts {
     const BASE_PAGE_SIZE: usize = 4096;
