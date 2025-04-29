@@ -4,17 +4,23 @@
 
 mod dyn_cap;
 mod interval_set;
+mod per_cpu_counter;
 mod static_cap;
 pub mod vm_mapping;
 
-use core::{num::NonZeroUsize, ops::Range};
+use core::{array, num::NonZeroUsize, ops::Range};
 
 use align_ext::AlignExt;
 use aster_rights::Rights;
-use ostd::mm::{tlb::TlbFlushOp, PageFlags, PageProperty, VmSpace, MAX_USERSPACE_VADDR};
+use ostd::{
+    cpu::PinCurrentCpu,
+    mm::{tlb::TlbFlushOp, PageFlags, PageProperty, VmSpace, MAX_USERSPACE_VADDR},
+    trap,
+};
 
 use self::{
     interval_set::{Interval, IntervalSet},
+    per_cpu_counter::PerCpuCounter,
     vm_mapping::{MappedVmo, VmMapping},
 };
 use super::page_fault_handler::PageFaultHandler;
@@ -104,6 +110,36 @@ impl<R> Vmar<R> {
     }
 }
 
+#[repr(usize)]
+#[allow(non_camel_case_types)]
+#[derive(Debug, Clone, Copy, TryFromInt)]
+pub enum RssType {
+    RSS_FILEPAGES = 0,
+    RSS_ANONPAGES = 1,
+}
+
+const NUM_RSS_COUNTERS: usize = 2;
+
+struct RssDelta([isize; NUM_RSS_COUNTERS]);
+
+impl RssDelta {
+    fn new() -> Self {
+        Self([0; NUM_RSS_COUNTERS])
+    }
+
+    pub fn add(&mut self, rss_type: RssType, increment: usize) {
+        self.0[rss_type as usize] += increment as isize;
+    }
+
+    pub fn sub(&mut self, rss_type: RssType, decrement: usize) {
+        self.0[rss_type as usize] -= decrement as isize;
+    }
+
+    pub fn get(&self, rss_type: RssType) -> isize {
+        self.0[rss_type as usize]
+    }
+}
+
 pub(super) struct Vmar_ {
     /// VMAR inner
     inner: RwMutex<VmarInner>,
@@ -113,6 +149,8 @@ pub(super) struct Vmar_ {
     size: usize,
     /// The attached `VmSpace`
     vm_space: Arc<VmSpace>,
+    /// The RSS counters.
+    rss_counters: [PerCpuCounter; NUM_RSS_COUNTERS],
 }
 
 struct VmarInner {
@@ -206,6 +244,7 @@ impl VmarInner {
         vm_space: &VmSpace,
         offset: Vaddr,
         size: usize,
+        rss_delta: &mut RssDelta,
     ) -> Result<Range<Vaddr>> {
         let range = offset..offset + size;
         let mut mappings_to_remove = Vec::new();
@@ -226,7 +265,7 @@ impl VmarInner {
                 self.insert(right);
             }
 
-            taken.unmap(vm_space)?;
+            rss_delta.sub(taken.rss_type(), taken.unmap(vm_space)?);
         }
 
         Ok(offset..(offset + size))
@@ -291,19 +330,32 @@ impl Interval<usize> for Arc<Vmar_> {
 }
 
 impl Vmar_ {
-    fn new(inner: VmarInner, vm_space: Arc<VmSpace>, base: usize, size: usize) -> Arc<Self> {
+    fn new(
+        inner: VmarInner,
+        vm_space: Arc<VmSpace>,
+        base: usize,
+        size: usize,
+        rss_counters: [PerCpuCounter; NUM_RSS_COUNTERS],
+    ) -> Arc<Self> {
         Arc::new(Vmar_ {
             inner: RwMutex::new(inner),
             base,
             size,
             vm_space,
+            rss_counters,
         })
     }
 
     fn new_root() -> Arc<Self> {
         let vmar_inner = VmarInner::new();
         let vm_space = VmSpace::new();
-        Vmar_::new(vmar_inner, Arc::new(vm_space), 0, ROOT_VMAR_CAP_ADDR)
+        Vmar_::new(
+            vmar_inner,
+            Arc::new(vm_space),
+            0,
+            ROOT_VMAR_CAP_ADDR,
+            array::from_fn(|_| PerCpuCounter::new()),
+        )
     }
 
     fn protect(&self, perms: VmPerms, range: Range<usize>) -> Result<()> {
@@ -361,7 +413,9 @@ impl Vmar_ {
 
         if let Some(vm_mapping) = inner.vm_mappings.find_one(&address) {
             debug_assert!(vm_mapping.range().contains(&address));
-            return vm_mapping.handle_page_fault(&self.vm_space, page_fault_info);
+            let num_mapped = vm_mapping.handle_page_fault(&self.vm_space, page_fault_info)?;
+            self.add_rss_counter(vm_mapping.rss_type(), num_mapped);
+            return Ok(());
         }
 
         return_errno_with_message!(Errno::EACCES, "page fault addr is not in current vmar");
@@ -377,7 +431,14 @@ impl Vmar_ {
 
     pub fn remove_mapping(&self, range: Range<usize>) -> Result<()> {
         let mut inner = self.inner.write();
-        inner.alloc_free_region_exact_truncate(&self.vm_space, range.start, range.len())?;
+        let mut rss_delta = RssDelta::new();
+        inner.alloc_free_region_exact_truncate(
+            &self.vm_space,
+            range.start,
+            range.len(),
+            &mut rss_delta,
+        )?;
+        self.add_rss_delta(rss_delta);
         Ok(())
     }
 
@@ -427,7 +488,13 @@ impl Vmar_ {
         let new_vmar_ = {
             let vmar_inner = VmarInner::new();
             let new_space = VmSpace::new();
-            Vmar_::new(vmar_inner, Arc::new(new_space), self.base, self.size)
+            Vmar_::new(
+                vmar_inner,
+                Arc::new(new_space),
+                self.base,
+                self.size,
+                array::from_fn(|_| PerCpuCounter::new()),
+            )
         };
 
         {
@@ -440,6 +507,7 @@ impl Vmar_ {
             let mut new_cursor = new_vmspace.cursor_mut(&range).unwrap();
             let cur_vmspace = self.vm_space();
             let mut cur_cursor = cur_vmspace.cursor_mut(&range).unwrap();
+            let mut rss_delta = RssDelta::new();
             for vm_mapping in inner.vm_mappings.iter() {
                 let base = vm_mapping.map_to_addr();
 
@@ -453,14 +521,48 @@ impl Vmar_ {
                 let mut op = |page: &mut PageProperty| {
                     page.flags -= PageFlags::W;
                 };
-                new_cursor.copy_from(&mut cur_cursor, vm_mapping.map_size(), &mut op);
+                let num_mapped =
+                    new_cursor.copy_from(&mut cur_cursor, vm_mapping.map_size(), &mut op);
+                rss_delta.add(vm_mapping.rss_type(), num_mapped);
             }
+            new_vmar_.add_rss_delta(rss_delta);
+
             cur_cursor.flusher().issue_tlb_flush(TlbFlushOp::All);
             cur_cursor.flusher().dispatch_tlb_flush();
             cur_cursor.flusher().sync_tlb_flush();
         }
 
         Ok(new_vmar_)
+    }
+
+    pub fn get_rss(&self) -> usize {
+        self.get_rss_counter(RssType::RSS_FILEPAGES) + self.get_rss_counter(RssType::RSS_ANONPAGES)
+    }
+
+    pub fn get_rss_counter(&self, rss_type: RssType) -> usize {
+        self.rss_counters[rss_type as usize].get()
+    }
+
+    pub fn add_rss_counter(&self, rss_type: RssType, val: usize) {
+        let irq_guard = trap::disable_local();
+        self.rss_counters[rss_type as usize].add(irq_guard.current_cpu(), val);
+    }
+
+    pub fn sub_rss_counter(&self, rss_type: RssType, val: usize) {
+        let irq_guard = trap::disable_local();
+        self.rss_counters[rss_type as usize].sub(irq_guard.current_cpu(), val);
+    }
+
+    fn add_rss_delta(&self, rss_delta: RssDelta) {
+        for i in 0..NUM_RSS_COUNTERS {
+            let rss_type = RssType::try_from(i).unwrap();
+            let delta = rss_delta.get(rss_type);
+            if delta >= 0 {
+                self.add_rss_counter(rss_type, delta as usize);
+            } else {
+                self.sub_rss_counter(rss_type, (-delta) as usize);
+            }
+        }
     }
 }
 
@@ -475,6 +577,14 @@ impl<R> Vmar<R> {
     /// The size of the VMAR in bytes.
     pub fn size(&self) -> usize {
         self.0.size
+    }
+
+    pub fn get_rss(&self) -> usize {
+        self.0.get_rss()
+    }
+
+    pub fn get_rss_counter(&self, rss_type: RssType) -> usize {
+        self.0.get_rss_counter(rss_type)
     }
 }
 
@@ -654,7 +764,14 @@ impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
                 Errno::EINVAL,
                 "offset cannot be None since can overwrite is set",
             ))?;
-            inner.alloc_free_region_exact_truncate(parent.vm_space(), offset, map_size)?;
+            let mut rss_delta = RssDelta::new();
+            inner.alloc_free_region_exact_truncate(
+                parent.vm_space(),
+                offset,
+                map_size,
+                &mut rss_delta,
+            )?;
+            parent.0.add_rss_delta(rss_delta);
             offset
         } else if let Some(offset) = offset {
             inner.alloc_free_region_exact(offset, map_size)?;
@@ -729,4 +846,11 @@ pub fn is_intersected(range1: &Range<usize>, range2: &Range<usize>) -> bool {
 pub fn get_intersected_range(range1: &Range<usize>, range2: &Range<usize>) -> Range<usize> {
     debug_assert!(is_intersected(range1, range2));
     range1.start.max(range2.start)..range1.end.min(range2.end)
+}
+
+/// Counts the number of pages spanned by the given range.
+pub fn count_pages_on_range(range: &Range<usize>) -> usize {
+    let start = range.start.align_down(PAGE_SIZE);
+    let end = range.end.align_up(PAGE_SIZE);
+    (end / PAGE_SIZE) - (start / PAGE_SIZE)
 }

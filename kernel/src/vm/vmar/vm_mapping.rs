@@ -12,7 +12,7 @@ use ostd::mm::{
     UFrame, VmSpace,
 };
 
-use super::interval_set::Interval;
+use super::{count_pages_on_range, interval_set::Interval, RssType};
 use crate::{
     prelude::*,
     thread::exception::PageFaultInfo,
@@ -117,6 +117,14 @@ impl VmMapping {
     pub fn perms(&self) -> VmPerms {
         self.perms
     }
+
+    pub fn rss_type(&self) -> RssType {
+        if self.vmo.is_none() {
+            RssType::RSS_ANONPAGES
+        } else {
+            RssType::RSS_FILEPAGES
+        }
+    }
 }
 
 /****************************** Page faults **********************************/
@@ -126,7 +134,7 @@ impl VmMapping {
         &self,
         vm_space: &VmSpace,
         page_fault_info: &PageFaultInfo,
-    ) -> Result<()> {
+    ) -> Result<usize> {
         if !self.perms.contains(page_fault_info.required_perms) {
             trace!(
                 "self.perms {:?}, page_fault_info.required_perms {:?}, self.range {:?}",
@@ -143,12 +151,13 @@ impl VmMapping {
         let is_write = page_fault_info.required_perms.contains(VmPerms::WRITE);
 
         if !is_write && self.vmo.is_some() && self.handle_page_faults_around {
-            self.handle_page_faults_around(vm_space, address)?;
-            return Ok(());
+            let num_mapped = self.handle_page_faults_around(vm_space, address)?;
+            return Ok(num_mapped);
         }
 
         let mut cursor =
             vm_space.cursor_mut(&(page_aligned_addr..page_aligned_addr + PAGE_SIZE))?;
+        let mut num_mapped: usize = 0;
 
         match cursor.query().unwrap() {
             VmItem::Mapped {
@@ -160,14 +169,14 @@ impl VmMapping {
                     // The page fault is already handled maybe by other threads.
                     // Just flush the TLB and return.
                     TlbFlushOp::Address(va).perform_on_current();
-                    return Ok(());
+                    return Ok(0);
                 }
                 assert!(is_write);
                 // Perform COW if it is a write access to a shared mapping.
 
                 // Skip if the page fault is already handled.
                 if prop.flags.contains(PageFlags::W) {
-                    return Ok(());
+                    return Ok(0);
                 }
 
                 // If the forked child or parent immediately unmaps the page after
@@ -187,6 +196,7 @@ impl VmMapping {
                     let new_frame = duplicate_frame(&frame)?;
                     prop.flags |= new_flags;
                     cursor.map(new_frame.into(), prop);
+                    num_mapped += 1;
                 }
                 cursor.flusher().sync_tlb_flush();
             }
@@ -212,9 +222,10 @@ impl VmMapping {
                 let map_prop = PageProperty::new(page_flags, CachePolicy::Writeback);
 
                 cursor.map(frame, map_prop);
+                num_mapped += 1;
             }
         }
-        Ok(())
+        Ok(num_mapped)
     }
 
     fn prepare_page(&self, page_fault_addr: Vaddr, write: bool) -> Result<(UFrame, bool)> {
@@ -249,7 +260,11 @@ impl VmMapping {
         }
     }
 
-    fn handle_page_faults_around(&self, vm_space: &VmSpace, page_fault_addr: Vaddr) -> Result<()> {
+    fn handle_page_faults_around(
+        &self,
+        vm_space: &VmSpace,
+        page_fault_addr: Vaddr,
+    ) -> Result<usize> {
         const SURROUNDING_PAGE_NUM: usize = 16;
         const SURROUNDING_PAGE_ADDR_MASK: usize = !(SURROUNDING_PAGE_NUM * PAGE_SIZE - 1);
 
@@ -285,9 +300,9 @@ impl VmMapping {
 
         let start_offset = start_addr - self.map_to_addr;
         let end_offset = end_addr - self.map_to_addr;
-        vmo.operate_on_range(&(start_offset..end_offset), operate)?;
-
-        Ok(())
+        let range = start_offset..end_offset;
+        vmo.operate_on_range(&range, operate)?;
+        Ok(count_pages_on_range(&range))
     }
 }
 
@@ -382,14 +397,14 @@ impl VmMapping {
 
 impl VmMapping {
     /// Unmaps the mapping from the VM space.
-    pub(super) fn unmap(self, vm_space: &VmSpace) -> Result<()> {
+    pub(super) fn unmap(self, vm_space: &VmSpace) -> Result<usize> {
         let range = self.range();
         let mut cursor = vm_space.cursor_mut(&range)?;
-        cursor.unmap(range.len());
+        let num_unmapped = cursor.unmap(range.len());
         cursor.flusher().dispatch_tlb_flush();
         cursor.flusher().sync_tlb_flush();
 
-        Ok(())
+        Ok(num_unmapped)
     }
 
     /// Change the perms of the mapping.
