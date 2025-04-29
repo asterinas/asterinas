@@ -116,6 +116,7 @@ dependencies = [
 name = "aster-framebuffer"
 version = "0.1.0"
 dependencies = [
+ "aster-console",
  "component",
  "font8x8",
  "log",
@@ -184,6 +185,7 @@ dependencies = [
  "aster-bigtcp",
  "aster-block",
  "aster-console",
+ "aster-framebuffer",
  "aster-input",
  "aster-logger",
  "aster-mlsdisk",

@@ -8,11 +8,10 @@ edition = "2021"
 [dependencies]
 ostd = { path = "../../../ostd" }
 component = { path = "../../libs/comp-sys/component" }
+aster-console = { path = "../console" }
 log = "0.4"
 spin = "0.9.4"
-font8x8 = { version = "0.2.5", default-features = false, features = [
-    "unicode",
-] }
+font8x8 = { version = "0.2.5", default-features = false, features = [ "unicode" ] }
 
 [lints]
 workspace = true
