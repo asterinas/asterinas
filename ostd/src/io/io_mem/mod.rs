@@ -86,29 +86,33 @@ impl IoMem {
         let first_page_start = range.start.align_down(PAGE_SIZE);
         let last_page_end = range.end.align_up(PAGE_SIZE);
 
-        let priv_flags = {
-            #[cfg(target_arch = "x86_64")]
-            {
-                crate::arch::if_tdx_enabled!({
-                    if first_page_start != range.start || last_page_end != range.end {
-                        panic!("Alignment check failed when TDX is enabled. Requested IoMem range: {:#x?}..{:#x?}", range.start, range.end);
-                    }
+        #[cfg(target_arch = "x86_64")]
+        let priv_flags = crate::arch::if_tdx_enabled!({
+            assert!(
+                first_page_start == range.start && last_page_end == range.end,
+                "I/O memory is not page aligned, which cannot be unprotected in TDX: {:#x?}..{:#x?}",
+                range.start,
+                range.end,
+            );
 
-                    let pages = (last_page_end - first_page_start) / PAGE_SIZE;
-                    // SAFETY:
-                    // This is safe because we are ensuring that the physical address must be in the I/O memory region, and only unprotecting this region.
-                    unsafe {
-                        crate::arch::tdx_guest::unprotect_gpa_range(first_page_start, pages).unwrap();
-                    }
+            let pages = (last_page_end - first_page_start) / PAGE_SIZE;
+            // SAFETY:
+            //  - The range `first_page_start..last_page_end` is always page aligned.
+            //  - FIXME: We currently do not limit the I/O memory allocator with the maximum GPA,
+            //    so the address range may not fall in the GPA limit.
+            //  - FIXME: The I/O memory can be at a high address, so it may not be contained in the
+            //    linear mapping.
+            //  - The caller guarantees that operations on the I/O memory do not have any side
+            //    effects that may cause soundness problems, so the pages can safely be viewed as
+            //    untyped memory.
+            unsafe { crate::arch::tdx_guest::unprotect_gpa_range(first_page_start, pages).unwrap() };
 
-                    PrivilegedPageFlags::SHARED
-                } else {
-                    PrivilegedPageFlags::empty()
-                })
-            }
-            #[cfg(not(target_arch = "x86_64"))]
+            PrivilegedPageFlags::SHARED
+        } else {
             PrivilegedPageFlags::empty()
-        };
+        });
+        #[cfg(not(target_arch = "x86_64"))]
+        let priv_flags = PrivilegedPageFlags::empty();
 
         let prop = PageProperty {
             flags,
