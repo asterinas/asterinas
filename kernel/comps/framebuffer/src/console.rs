@@ -35,6 +35,7 @@ pub(crate) fn init() {
 
     FRAMEBUFFER_CONSOLE.call_once(|| Arc::new(FramebufferConsole::new(fb.clone())));
     aster_keyboard::register_callback(&handle_keyboard_input);
+    aster_mouse::register_callback(&handle_mouse_input);
 }
 
 impl AnyConsoleDevice for FramebufferConsole {
@@ -248,4 +249,8 @@ fn handle_keyboard_input(key: InputKey) {
         let reader = VmReader::from(buffer);
         callback(reader);
     }
+}
+
+fn handle_mouse_input() {
+    log::error!("This is handle_mouse_input in kernel/comps/framebuffer/src/console.rs!");
 }

@@ -13,6 +13,7 @@ network = { name = "aster-network" }
 mlsdisk = { name = "aster-mlsdisk" }
 systree = { name = "aster-systree" }
 keyboard = { name = "aster-keyboard" }
+mouse = { name = "aster-mouse" }
 
 [whitelist]
 [whitelist.nix.main]

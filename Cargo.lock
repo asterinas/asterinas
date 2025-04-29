@@ -119,6 +119,7 @@ version = "0.1.0"
 dependencies = [
  "aster-console",
  "aster-keyboard",
+ "aster-mouse",
  "component",
  "log",
  "ostd",
@@ -176,6 +177,18 @@ dependencies = [
  "ostd-pod",
  "postcard",
  "serde",
+]
+
+[[package]]
+name = "aster-mouse"
+version = "0.1.0"
+dependencies = [
+ "aster-input",
+ "aster-time",
+ "component",
+ "log",
+ "ostd",
+ "spin",
 ]
 
 [[package]]

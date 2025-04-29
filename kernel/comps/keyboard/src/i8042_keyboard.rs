@@ -336,7 +336,7 @@ impl Status {
     }
 
     fn output_buffer_is_full(&self) -> bool {
-        self.0 & Self::STAT_OUTPUT_BUFFER_FULL == 0
+        self.0 & Self::STAT_OUTPUT_BUFFER_FULL == 1
     }
 }
 
