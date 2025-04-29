@@ -66,10 +66,12 @@ impl DmaStream {
                 #[cfg(target_arch = "x86_64")]
                 crate::arch::if_tdx_enabled!({
                     // SAFETY:
-                    // This is safe because we are ensuring that the physical address range specified by `start_paddr` and `frame_count` is valid before these operations.
-                    // The `check_and_insert_dma_mapping` function checks if the physical address range is already mapped.
-                    // We are also ensuring that we are only modifying the page table entries corresponding to the physical address range specified by `start_paddr` and `frame_count`.
-                    // Therefore, we are not causing any undefined behavior or violating any of the requirements of the 'unprotect_gpa_range' function.
+                    //  - The address of a `USegment` is always page aligned.
+                    //  - A `USegment` always points to normal physical memory, so the address
+                    //    range falls in the GPA limit.
+                    //  - A `USegment` always points to normal physical memory, so all the pages
+                    //    are contained in the linear mapping.
+                    //  - The pages belong to a `USegment`, so they're all untyped memory.
                     unsafe {
                         crate::arch::tdx_guest::unprotect_gpa_range(start_paddr, frame_count)
                             .unwrap();
@@ -177,10 +179,12 @@ impl Drop for DmaStreamInner {
                 #[cfg(target_arch = "x86_64")]
                 crate::arch::if_tdx_enabled!({
                     // SAFETY:
-                    // This is safe because we are ensuring that the physical address range specified by `start_paddr` and `frame_count` is valid before these operations.
-                    // The `start_paddr()` ensures the `start_paddr` is page-aligned.
-                    // We are also ensuring that we are only modifying the page table entries corresponding to the physical address range specified by `start_paddr` and `frame_count`.
-                    // Therefore, we are not causing any undefined behavior or violating any of the requirements of the `protect_gpa_range` function.
+                    //  - The address of a `USegment` is always page aligned.
+                    //  - A `USegment` always points to normal physical memory, so the address
+                    //    range falls in the GPA limit.
+                    //  - A `USegment` always points to normal physical memory, so all the pages
+                    //    are contained in the linear mapping.
+                    //  - The pages belong to a `USegment`, so they're all untyped memory.
                     unsafe {
                         crate::arch::tdx_guest::protect_gpa_range(start_paddr, frame_count)
                             .unwrap();
