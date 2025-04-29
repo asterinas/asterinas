@@ -3,7 +3,9 @@
 //! This module provides accessors to the page table entries in a node.
 
 use super::{Child, MapTrackingStatus, PageTableEntryTrait, PageTableGuard, PageTableNode};
-use crate::mm::{nr_subpage_per_huge, page_prop::PageProperty, page_size, PagingConstsTrait};
+use crate::mm::{
+    nr_subpage_per_huge, page_prop::PageProperty, page_size, page_table::PageTableConfig,
+};
 
 /// A view of an entry in a page table node.
 ///
@@ -12,8 +14,7 @@ use crate::mm::{nr_subpage_per_huge, page_prop::PageProperty, page_size, PagingC
 /// This is a static reference to an entry in a node that does not account for
 /// a dynamic reference count to the child. It can be used to create a owned
 /// handle, which is a [`Child`].
-// Note that
-pub(in crate::mm) struct Entry<'guard, 'pt, E: PageTableEntryTrait, C: PagingConstsTrait> {
+pub(in crate::mm) struct Entry<'guard, 'pt, C: PageTableConfig> {
     /// The page table entry.
     ///
     /// We store the page table entry here to optimize the number of reads from
@@ -21,14 +22,14 @@ pub(in crate::mm) struct Entry<'guard, 'pt, E: PageTableEntryTrait, C: PagingCon
     /// other CPUs may modify the memory location for accessed/dirty bits. Such
     /// accesses will violate the aliasing rules of Rust and cause undefined
     /// behaviors.
-    pte: E,
+    pte: C::E,
     /// The index of the entry in the node.
     idx: usize,
     /// The node that contains the entry.
-    node: &'guard mut PageTableGuard<'pt, E, C>,
+    node: &'guard mut PageTableGuard<'pt, C>,
 }
 
-impl<'guard, 'pt, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'guard, 'pt, E, C> {
+impl<'guard, 'pt, C: PageTableConfig> Entry<'guard, 'pt, C> {
     /// Returns if the entry does not map to anything.
     pub(in crate::mm) fn is_none(&self) -> bool {
         !self.pte.is_present()
@@ -40,7 +41,7 @@ impl<'guard, 'pt, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'guard, 'p
     }
 
     /// Gets a reference to the child.
-    pub(in crate::mm) fn to_ref(&self) -> Child<'_, E, C> {
+    pub(in crate::mm) fn to_ref(&self) -> Child<'_, C> {
         // SAFETY: The entry structure represents an existent entry with the
         // right node information.
         unsafe { Child::ref_from_pte(&self.pte, self.node.level(), self.node.is_tracked()) }
@@ -80,7 +81,7 @@ impl<'guard, 'pt, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'guard, 'p
     ///
     /// The method panics if the given child is not compatible with the node.
     /// The compatibility is specified by the [`Child::is_compatible`].
-    pub(in crate::mm) fn replace(&mut self, new_child: Child<E, C>) -> Child<E, C> {
+    pub(in crate::mm) fn replace(&mut self, new_child: Child<'pt, C>) -> Child<'pt, C> {
         assert!(new_child.is_compatible(self.node.level(), self.node.is_tracked()));
 
         // SAFETY: The entry structure represents an existent entry with the
@@ -114,13 +115,13 @@ impl<'guard, 'pt, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'guard, 'p
     pub(in crate::mm::page_table) fn alloc_if_none(
         &mut self,
         new_pt_is_tracked: MapTrackingStatus,
-    ) -> Option<PageTableGuard<'pt, E, C>> {
+    ) -> Option<PageTableGuard<'pt, C>> {
         if !self.is_none() {
             return None;
         }
 
         let level = self.node.level();
-        let new_page = PageTableNode::<E, C>::alloc(level - 1, new_pt_is_tracked);
+        let new_page = PageTableNode::<C>::alloc(level - 1, new_pt_is_tracked);
 
         let guard_addr = new_page.lock().into_raw_paddr();
 
@@ -150,7 +151,7 @@ impl<'guard, 'pt, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'guard, 'p
     /// `None`.
     pub(in crate::mm::page_table) fn split_if_untracked_huge(
         &mut self,
-    ) -> Option<PageTableGuard<'pt, E, C>> {
+    ) -> Option<PageTableGuard<'pt, C>> {
         let level = self.node.level();
 
         if !(self.pte.is_last(level)
@@ -163,7 +164,7 @@ impl<'guard, 'pt, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'guard, 'p
         let pa = self.pte.paddr();
         let prop = self.pte.prop();
 
-        let new_page = PageTableNode::<E, C>::alloc(level - 1, MapTrackingStatus::Untracked);
+        let new_page = PageTableNode::<C>::alloc(level - 1, MapTrackingStatus::Untracked);
         let mut guard = new_page.lock();
 
         for i in 0..nr_subpage_per_huge::<C>() {
@@ -194,7 +195,7 @@ impl<'guard, 'pt, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'guard, 'p
     /// # Safety
     ///
     /// The caller must ensure that the index is within the bounds of the node.
-    pub(super) unsafe fn new_at(guard: &'guard mut PageTableGuard<'pt, E, C>, idx: usize) -> Self {
+    pub(super) unsafe fn new_at(guard: &'guard mut PageTableGuard<'pt, C>, idx: usize) -> Self {
         // SAFETY: The index is within the bound.
         let pte = unsafe { guard.read_pte(idx) };
         Self {

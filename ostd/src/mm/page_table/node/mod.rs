@@ -29,18 +29,22 @@ mod child;
 mod entry;
 
 use core::{
+    any::TypeId,
     cell::SyncUnsafeCell,
     marker::PhantomData,
     ops::Deref,
     sync::atomic::{AtomicU8, Ordering},
 };
 
+use ostd_pod::Pod;
+
 pub(in crate::mm) use self::{child::Child, entry::Entry};
-use super::{nr_subpage_per_huge, PageTableEntryTrait};
+use super::{nr_subpage_per_huge, PageTableConfig, PageTableEntryTrait};
 use crate::mm::{
     frame::{meta::AnyFrameMeta, Frame, FrameRef},
     paddr_to_vaddr,
     page_table::{load_pte, store_pte},
+    vm_space::UserPtConfig,
     FrameAllocOptions, Infallible, Paddr, PagingConstsTrait, PagingLevel, VmReader,
 };
 
@@ -53,12 +57,12 @@ use crate::mm::{
 ///
 /// [`PageTableNode`] is read-only. To modify the page table node, lock and use
 /// [`PageTableGuard`].
-pub(super) type PageTableNode<E, C> = Frame<PageTablePageMeta<E, C>>;
+pub(super) type PageTableNode<C> = Frame<PageTablePageMeta<C>>;
 
 /// A reference to a page table node.
-pub(super) type PageTableNodeRef<'a, E, C> = FrameRef<'a, PageTablePageMeta<E, C>>;
+pub(super) type PageTableNodeRef<'a, C> = FrameRef<'a, PageTablePageMeta<C>>;
 
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableNode<E, C> {
+impl<C: PageTableConfig> PageTableNode<C> {
     pub(super) fn level(&self) -> PagingLevel {
         self.meta().level
     }
@@ -77,13 +81,13 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableNode<E, C> {
             .alloc_frame_with(meta)
             .expect("Failed to allocate a page table node");
         // The allocated frame is zeroed. Make sure zero is absent PTE.
-        debug_assert!(E::new_absent().as_bytes().iter().all(|&b| b == 0));
+        debug_assert!(C::E::new_absent().as_bytes().iter().all(|&b| b == 0));
 
         frame
     }
 
     /// Locks the page table node.
-    pub(super) fn lock(&self) -> PageTableGuard<'_, E, C> {
+    pub(super) fn lock(&self) -> PageTableGuard<'_, C> {
         while self
             .meta()
             .lock
@@ -93,7 +97,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableNode<E, C> {
             core::hint::spin_loop();
         }
 
-        PageTableGuard::<'_, E, C> {
+        PageTableGuard::<'_, C> {
             inner: self.borrow(),
         }
     }
@@ -147,18 +151,18 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableNode<E, C> {
 
 /// A guard that holds the lock of a page table node.
 #[derive(Debug)]
-pub(super) struct PageTableGuard<'a, E: PageTableEntryTrait, C: PagingConstsTrait> {
-    inner: PageTableNodeRef<'a, E, C>,
+pub(super) struct PageTableGuard<'a, C: PageTableConfig> {
+    inner: PageTableNodeRef<'a, C>,
 }
 
-impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait> PageTableGuard<'a, E, C> {
+impl<'a, C: PageTableConfig> PageTableGuard<'a, C> {
     /// Borrows an entry in the node at a given index.
     ///
     /// # Panics
     ///
     /// Panics if the index is not within the bound of
     /// [`nr_subpage_per_huge<C>`].
-    pub(super) fn entry<'s>(&'s mut self, idx: usize) -> Entry<'s, 'a, E, C> {
+    pub(super) fn entry<'s>(&'s mut self, idx: usize) -> Entry<'s, 'a, C> {
         assert!(idx < nr_subpage_per_huge::<C>());
         // SAFETY: The index is within the bound.
         unsafe { Entry::new_at(self, idx) }
@@ -206,9 +210,9 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait> PageTableGuard<'a, E, C> 
     /// # Safety
     ///
     /// The caller must ensure that the index is within the bound.
-    unsafe fn read_pte(&self, idx: usize) -> E {
+    pub(super) unsafe fn read_pte(&self, idx: usize) -> C::E {
         debug_assert!(idx < nr_subpage_per_huge::<C>());
-        let ptr = paddr_to_vaddr(self.start_paddr()) as *mut E;
+        let ptr = paddr_to_vaddr(self.start_paddr()) as *mut C::E;
         // SAFETY:
         // - The page table node is alive. The index is inside the bound, so the page table entry is valid.
         // - All page table entries are aligned and accessed with atomic operations only.
@@ -228,9 +232,9 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait> PageTableGuard<'a, E, C> 
     ///  1. The index must be within the bound;
     ///  2. The PTE must represent a child compatible with this page table node
     ///     (see [`Child::is_compatible`]).
-    unsafe fn write_pte(&mut self, idx: usize, pte: E) {
+    pub(super) unsafe fn write_pte(&mut self, idx: usize, pte: C::E) {
         debug_assert!(idx < nr_subpage_per_huge::<C>());
-        let ptr = paddr_to_vaddr(self.start_paddr()) as *mut E;
+        let ptr = paddr_to_vaddr(self.start_paddr()) as *mut C::E;
         // SAFETY:
         // - The page table node is alive. The index is inside the bound, so the page table entry is valid.
         // - All page table entries are aligned and accessed with atomic operations only.
@@ -244,15 +248,15 @@ impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait> PageTableGuard<'a, E, C> 
     }
 }
 
-impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait> Deref for PageTableGuard<'a, E, C> {
-    type Target = PageTableNodeRef<'a, E, C>;
+impl<'a, C: PageTableConfig> Deref for PageTableGuard<'a, C> {
+    type Target = PageTableNodeRef<'a, C>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
     }
 }
 
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for PageTableGuard<'_, E, C> {
+impl<C: PageTableConfig> Drop for PageTableGuard<'_, C> {
     fn drop(&mut self) {
         self.inner.meta().lock.store(0, Ordering::Release);
     }
@@ -261,7 +265,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for PageTableGuard<'_, E
 /// The metadata of any kinds of page table pages.
 /// Make sure the the generic parameters don't effect the memory layout.
 #[derive(Debug)]
-pub(in crate::mm) struct PageTablePageMeta<E: PageTableEntryTrait, C: PagingConstsTrait> {
+pub(in crate::mm) struct PageTablePageMeta<C: PageTableConfig> {
     /// The number of valid PTEs. It is mutable if the lock is held.
     pub nr_children: SyncUnsafeCell<u16>,
     /// If the page table is detached from its parent.
@@ -277,7 +281,7 @@ pub(in crate::mm) struct PageTablePageMeta<E: PageTableEntryTrait, C: PagingCons
     pub lock: AtomicU8,
     /// Whether the pages mapped by the node is tracked.
     pub is_tracked: MapTrackingStatus,
-    _phantom: core::marker::PhantomData<(E, C)>,
+    _phantom: core::marker::PhantomData<C>,
 }
 
 /// Describe if the physical address recorded in this page table refers to a
@@ -296,7 +300,7 @@ pub(in crate::mm) enum MapTrackingStatus {
     Tracked,
 }
 
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTablePageMeta<E, C> {
+impl<C: PageTableConfig> PageTablePageMeta<C> {
     pub fn new(level: PagingLevel, is_tracked: MapTrackingStatus) -> Self {
         Self {
             nr_children: SyncUnsafeCell::new(0),
@@ -316,7 +320,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTablePageMeta<E, C> {
 // If the page table is not locked, we are the last owner of the PT and no
 // other cursors can read it under the RCU read side critical section. Since
 // We must be after the grace period to reach here.
-unsafe impl<E: PageTableEntryTrait, C: PagingConstsTrait> AnyFrameMeta for PageTablePageMeta<E, C> {
+unsafe impl<C: PageTableConfig> AnyFrameMeta for PageTablePageMeta<C> {
     fn on_drop(&mut self, reader: &mut VmReader<Infallible>) {
         let nr_children = self.nr_children.get_mut();
 
@@ -328,13 +332,20 @@ unsafe impl<E: PageTableEntryTrait, C: PagingConstsTrait> AnyFrameMeta for PageT
         let is_tracked = self.is_tracked;
 
         // Drop the children.
-        while let Ok(pte) = reader.read_once::<E>() {
-            // Here if we use directly `Child::from_pte` we would experience a
-            // 50% increase in the overhead of the `drop` function. It seems that
-            // Rust is very conservative about inlining and optimizing dead code
-            // for `unsafe` code. So we manually inline the function here.
+        let range = if TypeId::of::<C>() == TypeId::of::<UserPtConfig>() && level == C::NR_LEVELS {
+            // Only the user part. The kernel part is not reference-counted.
+            0..nr_subpage_per_huge::<C>() / 2
+        } else {
+            0..nr_subpage_per_huge::<C>()
+        };
+        for _ in range {
+            // Non-atomic read is OK because we have mutable access.
+            let pte = reader.read_once::<C::E>().unwrap();
             if pte.is_present() {
                 let paddr = pte.paddr();
+                // As a fast path, we can ensure that the type of the child frame
+                // is `Self` if the PTE points to a child page table. Then we don't
+                // need to check the vtable for the drop method.
                 if !pte.is_last(level) {
                     // SAFETY: The PTE points to a page table node. The ownership
                     // of the child is transferred to the child then dropped.

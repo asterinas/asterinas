@@ -3,7 +3,7 @@
 use super::*;
 use crate::{
     mm::{
-        kspace::LINEAR_MAPPING_BASE_VADDR,
+        kspace::{KernelPtConfig, LINEAR_MAPPING_BASE_VADDR},
         page_prop::{CachePolicy, PageFlags},
         FrameAllocOptions, MAX_USERSPACE_VADDR, PAGE_SIZE,
     },
@@ -16,14 +16,14 @@ mod test_utils {
 
     /// Sets up an empty `PageTable` in the specified mode.
     #[track_caller]
-    pub fn setup_page_table<M: PageTableMode>() -> PageTable<M> {
-        PageTable::<M>::empty()
+    pub fn setup_page_table<C: PageTableConfig>() -> PageTable<C> {
+        PageTable::<C>::empty()
     }
 
     /// Maps a range of virtual addresses to physical addresses with specified properties.
     #[track_caller]
-    pub fn map_range<M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait>(
-        page_table: &PageTable<M, E, C>,
+    pub fn map_range<C: PageTableConfig>(
+        page_table: &PageTable<C>,
         virtual_range: Range<usize>,
         physical_range: Range<usize>,
         page_property: PageProperty,
@@ -37,7 +37,7 @@ mod test_utils {
 
     /// Unmaps a range of virtual addresses.
     #[track_caller]
-    pub fn unmap_range<M: PageTableMode>(page_table: &PageTable<M>, range: Range<usize>) {
+    pub fn unmap_range<C: PageTableConfig>(page_table: &PageTable<C>, range: Range<usize>) {
         unsafe {
             page_table
                 .cursor_mut(&range)
@@ -107,9 +107,19 @@ mod test_utils {
         const PTE_SIZE: usize = core::mem::size_of::<PageTableEntry>();
     }
 
+    #[derive(Clone, Debug)]
+    pub struct TestPtConfig;
+
+    impl PageTableConfig for TestPtConfig {
+        const VADDR_RANGE: Range<Vaddr> = 0..Vaddr::MAX;
+
+        type E = PageTableEntry;
+        type C = VeryHugePagingConsts;
+    }
+
     /// Applies a protection operation to a range of virtual addresses within a PageTable.
-    pub fn protect_range<M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait>(
-        page_table: &PageTable<M, E, C>,
+    pub fn protect_range<C: PageTableConfig>(
+        page_table: &PageTable<C>,
         range: &Range<Vaddr>,
         mut protect_op: impl FnMut(&mut PageProperty),
     ) {
@@ -132,13 +142,13 @@ mod create_page_table {
 
     #[ktest]
     fn init_user_page_table() {
-        let user_pt = setup_page_table::<UserMode>();
+        let user_pt = setup_page_table::<UserPtConfig>();
         assert!(user_pt.cursor(&(0..MAX_USERSPACE_VADDR)).is_ok());
     }
 
     #[ktest]
     fn init_kernel_page_table() {
-        let kernel_pt = setup_page_table::<KernelMode>();
+        let kernel_pt = setup_page_table::<KernelPtConfig>();
         assert!(kernel_pt
             .cursor(&(LINEAR_MAPPING_BASE_VADDR..LINEAR_MAPPING_BASE_VADDR + PAGE_SIZE))
             .is_ok());
@@ -146,7 +156,7 @@ mod create_page_table {
 
     #[ktest]
     fn create_user_page_table() {
-        let kernel_pt = PageTable::<KernelMode>::new_kernel_page_table();
+        let kernel_pt = PageTable::<KernelPtConfig>::new_kernel_page_table();
         let user_pt = kernel_pt.create_user_page_table();
 
         let mut kernel_root = kernel_pt.root.lock();
@@ -172,7 +182,7 @@ mod range_checks {
 
     #[ktest]
     fn range_check() {
-        let page_table = setup_page_table::<UserMode>();
+        let page_table = setup_page_table::<UserPtConfig>();
         let valid_va = 0..PAGE_SIZE;
         let invalid_va = 0..(PAGE_SIZE + 1);
         let kernel_va = LINEAR_MAPPING_BASE_VADDR..(LINEAR_MAPPING_BASE_VADDR + PAGE_SIZE);
@@ -187,7 +197,7 @@ mod range_checks {
 
     #[ktest]
     fn boundary_conditions() {
-        let page_table = setup_page_table::<UserMode>();
+        let page_table = setup_page_table::<UserPtConfig>();
 
         // Tests an empty range.
         let empty_range = 0..0;
@@ -204,7 +214,7 @@ mod range_checks {
 
     #[ktest]
     fn maximum_page_table_mapping() {
-        let page_table = setup_page_table::<UserMode>();
+        let page_table = setup_page_table::<UserPtConfig>();
         let max_address = 0x100000;
         let range = 0..max_address;
         let page_property = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
@@ -229,7 +239,7 @@ mod range_checks {
 
     #[ktest]
     fn start_boundary_mapping() {
-        let page_table = setup_page_table::<UserMode>();
+        let page_table = setup_page_table::<UserPtConfig>();
         let range = 0..PAGE_SIZE;
         let page_property = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
         let frame = FrameAllocOptions::default().alloc_frame().unwrap();
@@ -249,7 +259,7 @@ mod range_checks {
 
     #[ktest]
     fn end_boundary_mapping() {
-        let page_table = setup_page_table::<UserMode>();
+        let page_table = setup_page_table::<UserPtConfig>();
         let range = (MAX_USERSPACE_VADDR - PAGE_SIZE)..MAX_USERSPACE_VADDR;
         let page_property = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
         let frame = FrameAllocOptions::default().alloc_frame().unwrap();
@@ -270,7 +280,7 @@ mod range_checks {
     #[ktest]
     #[should_panic]
     fn overflow_boundary_mapping() {
-        let page_table = setup_page_table::<UserMode>();
+        let page_table = setup_page_table::<UserPtConfig>();
         let range =
             (MAX_USERSPACE_VADDR - (PAGE_SIZE / 2))..(MAX_USERSPACE_VADDR + (PAGE_SIZE / 2));
         let page_property = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
@@ -291,7 +301,7 @@ mod page_properties {
     /// Helper function to map a single page with given properties and verify the properties.
     #[track_caller]
     fn check_map_with_property(prop: PageProperty) {
-        let page_table = setup_page_table::<UserMode>();
+        let page_table = setup_page_table::<UserPtConfig>();
         let range = PAGE_SIZE..(PAGE_SIZE * 2);
         let frame = FrameAllocOptions::default().alloc_frame().unwrap();
         unsafe {
@@ -308,7 +318,7 @@ mod page_properties {
 
     #[ktest]
     fn uncacheable_policy_mapping() {
-        let page_table = setup_page_table::<UserMode>();
+        let page_table = setup_page_table::<UserPtConfig>();
         let virtual_range = PAGE_SIZE..(PAGE_SIZE * 2);
         let frame = FrameAllocOptions::default().alloc_frame().unwrap();
 
@@ -366,7 +376,7 @@ mod different_page_sizes {
 
     #[ktest]
     fn different_page_sizes() {
-        let page_table = setup_page_table::<UserMode>();
+        let page_table = setup_page_table::<UserPtConfig>();
 
         // 2MiB pages
         let virtual_range_2m = (PAGE_SIZE * 512)..(PAGE_SIZE * 512 * 2);
@@ -398,7 +408,7 @@ mod overlapping_mappings {
 
     #[ktest]
     fn overlapping_mappings() {
-        let page_table = setup_page_table::<UserMode>();
+        let page_table = setup_page_table::<UserPtConfig>();
         let range1 = PAGE_SIZE..(PAGE_SIZE * 2);
         let range2 = PAGE_SIZE..(PAGE_SIZE * 3);
         let page_property = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
@@ -429,7 +439,7 @@ mod overlapping_mappings {
     #[ktest]
     #[should_panic]
     fn unaligned_map() {
-        let page_table = setup_page_table::<UserMode>();
+        let page_table = setup_page_table::<UserPtConfig>();
         let range = (PAGE_SIZE + 512)..(PAGE_SIZE * 2 + 512);
         let page_property = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
         let frame = FrameAllocOptions::default().alloc_frame().unwrap();
@@ -451,8 +461,8 @@ mod navigation {
     const FIRST_MAP_ADDR: Vaddr = PAGE_SIZE * 7;
     const SECOND_MAP_ADDR: Vaddr = PAGE_SIZE * 512 * 512;
 
-    fn setup_page_table_with_two_frames() -> (PageTable<UserMode>, Frame<()>, Frame<()>) {
-        let page_table = setup_page_table::<UserMode>();
+    fn setup_page_table_with_two_frames() -> (PageTable<UserPtConfig>, Frame<()>, Frame<()>) {
+        let page_table = setup_page_table::<UserPtConfig>();
         let page_property = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
 
         // Allocates and maps two frames.
@@ -532,7 +542,7 @@ mod tracked_mapping {
 
     #[ktest]
     fn tracked_map_unmap() {
-        let page_table = setup_page_table::<UserMode>();
+        let page_table = setup_page_table::<UserPtConfig>();
         let range = PAGE_SIZE..(PAGE_SIZE * 2);
         let page_property = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
 
@@ -575,7 +585,7 @@ mod tracked_mapping {
 
     #[ktest]
     fn remapping_same_range() {
-        let page_table = setup_page_table::<UserMode>();
+        let page_table = setup_page_table::<UserPtConfig>();
         let range = PAGE_SIZE..(PAGE_SIZE * 2);
         let initial_prop = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
         let new_prop = PageProperty::new(PageFlags::R, CachePolicy::Writeback);
@@ -613,7 +623,7 @@ mod untracked_mapping {
 
     #[ktest]
     fn untracked_map_unmap() {
-        let kernel_pt = setup_page_table::<KernelMode>();
+        let kernel_pt = setup_page_table::<KernelPtConfig>();
         const UNTRACKED_OFFSET: usize = LINEAR_MAPPING_BASE_VADDR;
 
         let from_ppn = 13245..(512 * 512 + 23456);
@@ -682,7 +692,7 @@ mod untracked_mapping {
 
     #[ktest]
     fn untracked_large_protect_query() {
-        let kernel_pt = PageTable::<KernelMode, PageTableEntry, VeryHugePagingConsts>::empty();
+        let kernel_pt = PageTable::<TestPtConfig>::empty();
         const UNTRACKED_OFFSET: usize = crate::mm::kspace::LINEAR_MAPPING_BASE_VADDR;
         let gmult = 512 * 512;
         let from_ppn = gmult - 512..gmult + gmult + 514;
@@ -775,7 +785,7 @@ mod full_unmap_verification {
 
     #[ktest]
     fn full_unmap() {
-        let page_table = setup_page_table::<UserMode>();
+        let page_table = setup_page_table::<UserPtConfig>();
         let range = 0..(PAGE_SIZE * 100);
         let page_property = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
 
@@ -816,7 +826,7 @@ mod protection_and_query {
 
     #[ktest]
     fn base_protect_query() {
-        let page_table = setup_page_table::<UserMode>();
+        let page_table = setup_page_table::<UserPtConfig>();
         let from_ppn = 1..1000;
         let virtual_range = PAGE_SIZE * from_ppn.start..PAGE_SIZE * from_ppn.end;
 
@@ -864,7 +874,7 @@ mod protection_and_query {
 
     #[ktest]
     fn test_protect_next_empty_entry() {
-        let page_table = PageTable::<UserMode>::empty();
+        let page_table = PageTable::<UserPtConfig>::empty();
         let range = 0x1000..0x2000;
 
         // Attempts to protect an empty range.
@@ -878,7 +888,7 @@ mod protection_and_query {
 
     #[ktest]
     fn test_protect_next_child_table_with_children() {
-        let page_table = setup_page_table::<UserMode>();
+        let page_table = setup_page_table::<UserPtConfig>();
         let range = 0x1000..0x3000; // Range potentially spanning intermediate tables
 
         // Maps a page within the range to create necessary intermediate tables.
@@ -929,7 +939,7 @@ mod boot_pt {
         // Confirms the mapping using page_walk.
         let root_paddr = boot_pt.root_address();
         assert_eq!(
-            unsafe { page_walk::<PageTableEntry, PagingConsts>(root_paddr, from_virt + 1) },
+            unsafe { page_walk::<KernelPtConfig>(root_paddr, from_virt + 1) },
             Some((to_phys * PAGE_SIZE + 1, page_property))
         );
     }
@@ -986,7 +996,7 @@ mod boot_pt {
         let prop1 = PageProperty::new(PageFlags::RW, CachePolicy::Writeback);
         unsafe { boot_pt.map_base_page(from1, to_phys1, prop1) };
         assert_eq!(
-            unsafe { page_walk::<PageTableEntry, PagingConsts>(root_paddr, from1 + 1) },
+            unsafe { page_walk::<KernelPtConfig>(root_paddr, from1 + 1) },
             Some((to_phys1 * PAGE_SIZE + 1, prop1))
         );
 
@@ -994,7 +1004,7 @@ mod boot_pt {
         unsafe { boot_pt.protect_base_page(from1, |prop| prop.flags = PageFlags::RX) };
         let expected_prop1_protected = PageProperty::new(PageFlags::RX, CachePolicy::Writeback);
         assert_eq!(
-            unsafe { page_walk::<PageTableEntry, PagingConsts>(root_paddr, from1 + 1) },
+            unsafe { page_walk::<KernelPtConfig>(root_paddr, from1 + 1) },
             Some((to_phys1 * PAGE_SIZE + 1, expected_prop1_protected))
         );
 
@@ -1004,7 +1014,7 @@ mod boot_pt {
         let prop2 = PageProperty::new(PageFlags::RX, CachePolicy::Uncacheable);
         unsafe { boot_pt.map_base_page(from2, to_phys2, prop2) };
         assert_eq!(
-            unsafe { page_walk::<PageTableEntry, PagingConsts>(root_paddr, from2 + 2) },
+            unsafe { page_walk::<KernelPtConfig>(root_paddr, from2 + 2) },
             Some((to_phys2 * PAGE_SIZE + 2, prop2))
         );
 
@@ -1012,7 +1022,7 @@ mod boot_pt {
         unsafe { boot_pt.protect_base_page(from2, |prop| prop.flags = PageFlags::RW) };
         let expected_prop2_protected = PageProperty::new(PageFlags::RW, CachePolicy::Uncacheable);
         assert_eq!(
-            unsafe { page_walk::<PageTableEntry, PagingConsts>(root_paddr, from2 + 2) },
+            unsafe { page_walk::<KernelPtConfig>(root_paddr, from2 + 2) },
             Some((to_phys2 * PAGE_SIZE + 2, expected_prop2_protected))
         );
     }

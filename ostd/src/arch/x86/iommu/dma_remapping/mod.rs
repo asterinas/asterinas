@@ -2,7 +2,7 @@
 
 pub use context_table::RootTable;
 use log::info;
-use second_stage::{DeviceMode, PageTableEntry, PagingConsts};
+use second_stage::IommuPtConfig;
 use spin::Once;
 
 use super::IommuError;
@@ -62,7 +62,7 @@ pub fn init() {
     // Create Root Table instance
     let mut root_table = RootTable::new();
     // For all PCI Device, use the same page table.
-    let page_table = PageTable::<DeviceMode, PageTableEntry, PagingConsts>::empty();
+    let page_table = PageTable::<IommuPtConfig>::empty();
     for table in PciDeviceLocation::all() {
         root_table.specify_device_page_table(table, unsafe { page_table.shallow_copy() })
     }

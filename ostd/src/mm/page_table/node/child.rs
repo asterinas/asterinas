@@ -4,21 +4,22 @@
 
 use core::{mem::ManuallyDrop, panic};
 
-use super::{MapTrackingStatus, PageTableEntryTrait, PageTableNode, PageTableNodeRef};
+use super::{MapTrackingStatus, PageTableEntryTrait, PageTableNode};
 use crate::mm::{
     frame::{inc_frame_ref_count, meta::AnyFrameMeta, Frame},
     page_prop::PageProperty,
-    Paddr, PagingConstsTrait, PagingLevel,
+    page_table::{PageTableConfig, PageTableNodeRef},
+    Paddr, PagingLevel,
 };
 
 /// A child of a page table node.
 // TODO: Distinguish between the reference and the owning child.
 #[derive(Debug)]
-pub(in crate::mm) enum Child<'a, E: PageTableEntryTrait, C: PagingConstsTrait> {
+pub(in crate::mm) enum Child<'a, C: PageTableConfig> {
     /// A owning handle to a raw page table node.
-    PageTable(PageTableNode<E, C>),
+    PageTable(PageTableNode<C>),
     /// A reference of a child page table node.
-    PageTableRef(PageTableNodeRef<'a, E, C>),
+    PageTableRef(PageTableNodeRef<'a, C>),
     /// A mapped frame.
     Frame(Frame<dyn AnyFrameMeta>, PageProperty),
     /// Mapped frames that are not tracked by handles.
@@ -26,7 +27,7 @@ pub(in crate::mm) enum Child<'a, E: PageTableEntryTrait, C: PagingConstsTrait> {
     None,
 }
 
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> Child<'_, E, C> {
+impl<C: PageTableConfig> Child<'_, C> {
     /// Returns whether the child does not map to anything.
     pub(in crate::mm) fn is_none(&self) -> bool {
         matches!(self, Child::None)
@@ -63,21 +64,21 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> Child<'_, E, C> {
     /// Usually this is for recording the PTE into a page table node. When the
     /// child is needed again by reading the PTE of a page table node, extra
     /// information should be provided using the [`Child::from_pte`] method.
-    pub(super) fn into_pte(self) -> E {
+    pub(super) fn into_pte(self) -> C::E {
         match self {
             Child::PageTable(pt) => {
                 let pt = ManuallyDrop::new(pt);
-                E::new_pt(pt.start_paddr())
+                C::E::new_pt(pt.start_paddr())
             }
             Child::PageTableRef(_) => {
                 panic!("`PageTableRef` should not be converted to PTE");
             }
             Child::Frame(page, prop) => {
                 let level = page.map_level();
-                E::new_page(page.into_raw(), level, prop)
+                C::E::new_page(page.into_raw(), level, prop)
             }
-            Child::Untracked(pa, level, prop) => E::new_page(pa, level, prop),
-            Child::None => E::new_absent(),
+            Child::Untracked(pa, level, prop) => C::E::new_page(pa, level, prop),
+            Child::None => C::E::new_absent(),
         }
     }
 
@@ -94,7 +95,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> Child<'_, E, C> {
     /// This method should be only used no more than once for a PTE that has
     /// been converted from a child using the [`Child::into_pte`] method.
     pub(super) unsafe fn from_pte(
-        pte: E,
+        pte: C::E,
         level: PagingLevel,
         is_tracked: MapTrackingStatus,
     ) -> Self {
@@ -142,7 +143,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> Child<'_, E, C> {
     /// This method must not be used with a PTE that has been restored to a
     /// child using the [`Child::from_pte`] method.
     pub(super) unsafe fn ref_from_pte(
-        pte: &E,
+        pte: &C::E,
         level: PagingLevel,
         is_tracked: MapTrackingStatus,
     ) -> Self {
