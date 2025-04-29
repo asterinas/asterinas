@@ -25,16 +25,21 @@ pub enum PageConvertError {
     TdVmcall,
 }
 
-/// Sets the given physical address range to Intel TDX shared pages.
-/// Clears the data within the given address range.
-/// Make sure the provided physical address is page size aligned.
+/// Converts physical pages to Intel TDX shared pages.
+///
+/// This function sets the [`PrivFlags::SHARED`] bit in the linear mapping of physical pages. Then,
+/// it invokes the [`map_gpa`] TDVMCALL to convert those pages into Intel TDX shared pages. Due to
+/// the conversion, any existing data on the pages will be erased.
 ///
 /// # Safety
 ///
-/// To safely use this function, the caller must ensure that:
-/// - The given guest physical address range is currently mapped in the page table.
-/// - The `page_num` argument represents a valid number of pages.
-/// - This function will erase any valid data in the range and should not assume that the data will still be there after the operation.
+/// The caller must ensure that:
+///  - The provided physical address is page aligned.
+///  - The provided physical address range is in bounds, i.e., it should fall within the maximum
+///    Guest Physical Address (GPA) limit.
+///  - The provided physical address range is part of the linear mapping.
+///  - All of the physical pages are untyped memory. Therefore, converting and erasing the data
+///    will not cause memory safety issues.
 pub unsafe fn unprotect_gpa_range(gpa: Paddr, page_num: usize) -> Result<(), PageConvertError> {
     const PAGE_MASK: usize = PAGE_SIZE - 1;
     if gpa & PAGE_MASK != 0 {
@@ -68,15 +73,22 @@ pub unsafe fn unprotect_gpa_range(gpa: Paddr, page_num: usize) -> Result<(), Pag
     .map_err(|_| PageConvertError::TdVmcall)
 }
 
-/// Sets the given physical address range to Intel TDX private pages.
-/// Make sure the provided physical address is page size aligned.
+/// Converts physical pages to Intel TDX private pages.
+///
+/// This function clears the [`PrivFlags::SHARED`] bit in the linear mapping of physical pages.
+/// Then, it invokes the [`map_gpa`] TDVMCALL and the [`accept_page`] TDCALL to convert those pages
+/// into Intel TDX private pages. Due to the conversion, any existing data on the pages will be
+/// erased.
 ///
 /// # Safety
 ///
-/// To safely use this function, the caller must ensure that:
-/// - The given guest physical address range is currently mapped in the page table.
-/// - The `page_num` argument represents a valid number of pages.
-///
+/// The caller must ensure that:
+///  - The provided physical address is page aligned.
+///  - The provided physical address range is in bounds, i.e., it should fall within the maximum
+///    Guest Physical Address (GPA) limit.
+///  - The provided physical address range is part of the linear mapping.
+///  - All of the physical pages are untyped memory. Therefore, converting and erasing the data
+///    will not cause memory safety issues.
 pub unsafe fn protect_gpa_range(gpa: Paddr, page_num: usize) -> Result<(), PageConvertError> {
     const PAGE_MASK: usize = PAGE_SIZE - 1;
     if gpa & !PAGE_MASK == 0 {

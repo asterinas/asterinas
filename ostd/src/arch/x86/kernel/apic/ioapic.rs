@@ -133,9 +133,29 @@ struct IoApicAccess {
 impl IoApicAccess {
     /// # Safety
     ///
-    /// User must ensure the base address is valid.
+    /// The caller must ensure that the base address is a valid I/O APIC base address.
     unsafe fn new(base_address: usize, io_mem_builder: &IoMemAllocatorBuilder) -> Self {
         io_mem_builder.remove(base_address..(base_address + 0x20));
+        if_tdx_enabled!({
+            assert_eq!(
+                base_address % crate::mm::PAGE_SIZE,
+                0,
+                "[IOAPIC]: I/O memory is not page aligned, which cannot be unprotected in TDX: {:#x}",
+                base_address,
+            );
+            // SAFETY:
+            //  - The address range is page aligned, as we've checked above.
+            //  - The caller guarantees that the address range represents the MMIO region for I/O
+            //    APICs, so the address range must fall in the GPA limit.
+            //  - FIXME: The I/O memory can be at a high address, so it may not be contained in the
+            //    linear mapping.
+            //  - Operations on the I/O memory can have side effects that may cause soundness
+            //    problems, so the pages are not trivially untyped memory. However, since
+            //    `io_mem_builder.remove()` ensures exclusive ownership, it's still fine to
+            //    unprotect only once, before the I/O memory is used.
+            unsafe { tdx_guest::unprotect_gpa_range(base_address, 1).unwrap() };
+        });
+
         let base = NonNull::new(paddr_to_vaddr(base_address) as *mut u8).unwrap();
         let register = VolatileRef::new_restricted(WriteOnly, base.cast::<u32>());
         let data = VolatileRef::new(base.add(0x10).cast::<u32>());
@@ -177,15 +197,6 @@ pub fn init(io_mem_builder: &IoMemAllocatorBuilder) {
             // FIXME: Is it possible to have an address that is not the default 0xFEC0_0000?
             // Need to find a way to determine if it is a valid address or not.
             const IO_APIC_DEFAULT_ADDRESS: usize = 0xFEC0_0000;
-            if_tdx_enabled!({
-                // SAFETY:
-                // This is safe because we are ensuring that the `IO_APIC_DEFAULT_ADDRESS` is a valid MMIO address before this operation.
-                // The `IO_APIC_DEFAULT_ADDRESS` is a well-known address used for IO APICs in x86 systems.
-                // We are also ensuring that we are only unprotecting a single page.
-                unsafe {
-                    tdx_guest::unprotect_gpa_range(IO_APIC_DEFAULT_ADDRESS, 1).unwrap();
-                }
-            });
             let mut io_apic = unsafe { IoApicAccess::new(IO_APIC_DEFAULT_ADDRESS, io_mem_builder) };
             io_apic.set_id(0);
             let id = io_apic.id();
@@ -209,14 +220,6 @@ pub fn init(io_mem_builder: &IoMemAllocatorBuilder) {
             let mut vec = Vec::new();
             for id in 0..apic.io_apics.len() {
                 let io_apic = apic.io_apics.get(id).unwrap();
-                if_tdx_enabled!({
-                    // SAFETY:
-                    // This is safe because we are ensuring that the `io_apic.address` is a valid MMIO address before this operation.
-                    // We are also ensuring that we are only unprotecting a single page.
-                    unsafe {
-                        tdx_guest::unprotect_gpa_range(io_apic.address as usize, 1).unwrap();
-                    }
-                });
                 let interrupt_base = io_apic.global_system_interrupt_base;
                 let mut io_apic =
                     unsafe { IoApicAccess::new(io_apic.address as usize, io_mem_builder) };
