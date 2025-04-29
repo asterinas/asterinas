@@ -11,6 +11,7 @@
 
 use core::{ops::Range, sync::atomic::Ordering};
 
+use super::page_table::PageTableConfig;
 use crate::{
     arch::mm::{current_page_table_paddr, PageTableEntry, PagingConsts},
     cpu::{AtomicCpuSet, CpuSet, PinCurrentCpu},
@@ -18,7 +19,7 @@ use crate::{
     mm::{
         io::Fallible,
         kspace::KERNEL_PAGE_TABLE,
-        page_table::{self, PageTable, PageTableItem, UserMode},
+        page_table::{self, PageTable, PageTableItem},
         tlb::{TlbFlushOp, TlbFlusher},
         PageProperty, UFrame, VmReader, VmWriter, MAX_USERSPACE_VADDR,
     },
@@ -64,7 +65,7 @@ use crate::{
 /// [`UserMode::execute`]: crate::user::UserMode::execute
 #[derive(Debug)]
 pub struct VmSpace {
-    pt: PageTable<UserMode>,
+    pt: PageTable<UserPtConfig>,
     cpus: AtomicCpuSet,
 }
 
@@ -198,7 +199,7 @@ impl Default for VmSpace {
 /// It exclusively owns a sub-tree of the page table, preventing others from
 /// reading or modifying the same sub-tree. Two read-only cursors can not be
 /// created from the same virtual address range either.
-pub struct Cursor<'a>(page_table::Cursor<'a, UserMode, PageTableEntry, PagingConsts>);
+pub struct Cursor<'a>(page_table::Cursor<'a, UserPtConfig>);
 
 impl Iterator for Cursor<'_> {
     type Item = VmItem;
@@ -245,7 +246,7 @@ impl Cursor<'_> {
 /// It exclusively owns a sub-tree of the page table, preventing others from
 /// reading or modifying the same sub-tree.
 pub struct CursorMut<'a> {
-    pt_cursor: page_table::CursorMut<'a, UserMode, PageTableEntry, PagingConsts>,
+    pt_cursor: page_table::CursorMut<'a, UserPtConfig>,
     // We have a read lock so the CPU set in the flusher is always a superset
     // of actual activated CPUs.
     flusher: TlbFlusher<'a, DisabledPreemptGuard>,
@@ -475,4 +476,14 @@ impl TryFrom<PageTableItem> for VmItem {
             PageTableItem::StrayPageTable { .. } => Err("Stray page table cannot be query results"),
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct UserPtConfig {}
+
+impl PageTableConfig for UserPtConfig {
+    const TOP_LEVEL_INDEX_RANGE: Range<usize> = 0..256;
+
+    type E = PageTableEntry;
+    type C = PagingConsts;
 }
