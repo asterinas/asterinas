@@ -12,6 +12,7 @@
 #  - VSOCK: "off" or "on";
 #  - SMP: number of CPUs;
 #  - MEM: amount of memory, e.g. "8G".
+#  - VNC_PORT: VNC port, default is "42".
 
 OVMF=${OVMF:-"on"}
 VHOST=${VHOST:-"off"}
@@ -78,7 +79,7 @@ COMMON_QEMU_ARGS="\
     -m ${MEM:-8G} \
     --no-reboot \
     -nographic \
-    -display none \
+    -display vnc=0.0.0.0:${VNC_PORT:-42} \
     -serial chardev:mux \
     -monitor chardev:mux \
     -chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log \
