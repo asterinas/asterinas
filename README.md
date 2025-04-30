@@ -10,6 +10,8 @@
 
 English | [中文版](README_CN.md) | [日本語](README_JP.md)
 
+**NEWS: [USENIX ATC'25](https://www.usenix.org/conference/atc25) accepted two research papers on Asterinas: (1) _Asterinas: A Linux ABI-Compatible, Rust-Based Framekernel OS with a Small and Sound TCB_ and (2) _Converos: Practical Model Checking for Verifying Rust OS Kernel Concurrency_. Congratulations to the Asterinas community🎉🎉🎉**
+
 ## Introducing Asterinas
 
 Asterinas is a _secure_, _fast_, and _general-purpose_ OS kernel
