@@ -330,9 +330,9 @@ impl From<int_to_c_enum::TryFromIntError> for Error {
     }
 }
 
-impl From<systree::Error> for Error {
-    fn from(err: systree::Error) -> Self {
-        use systree::Error::*;
+impl From<aster_systree::Error> for Error {
+    fn from(err: aster_systree::Error) -> Self {
+        use aster_systree::Error::*;
         match err {
             NodeNotFound(_) => Error::new(Errno::ENOENT),
             InvalidNodeOperation(_) => Error::new(Errno::EINVAL),
