@@ -4,14 +4,14 @@
 
 //! Options for allocating root and child VMOs.
 
+use core::sync::atomic::AtomicUsize;
+
 use align_ext::AlignExt;
 use aster_rights::{Rights, TRightSet, TRights};
-use ostd::{
-    collections::xarray::XArray,
-    mm::{FrameAllocOptions, UFrame, USegment},
-};
+use ostd::mm::{FrameAllocOptions, UFrame, USegment};
+use xarray::XArray;
 
-use super::{Pager, Pages, Vmo, VmoFlags};
+use super::{Pager, Vmo, VmoFlags};
 use crate::{prelude::*, vm::vmo::Vmo_};
 
 /// Options for allocating a root VMO.
@@ -122,18 +122,12 @@ impl<R: TRights> VmoOptions<TRightSet<R>> {
 
 fn alloc_vmo_(size: usize, flags: VmoFlags, pager: Option<Arc<dyn Pager>>) -> Result<Vmo_> {
     let size = size.align_up(PAGE_SIZE);
-    let pages = {
-        let pages = committed_pages_if_continuous(flags, size)?;
-        if flags.contains(VmoFlags::RESIZABLE) {
-            Pages::Resizable(Mutex::new((pages, size)))
-        } else {
-            Pages::Nonresizable(Mutex::new(pages), size)
-        }
-    };
+    let pages = committed_pages_if_continuous(flags, size)?;
     Ok(Vmo_ {
         pager,
         flags,
         pages,
+        size: AtomicUsize::new(size),
     })
 }
 
@@ -142,13 +136,15 @@ fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<XArray<
         // if the vmo is continuous, we need to allocate frames for the vmo
         let frames_num = size / PAGE_SIZE;
         let segment: USegment = FrameAllocOptions::new().alloc_segment(frames_num)?.into();
-        let mut committed_pages = XArray::new();
-        let mut cursor = committed_pages.cursor_mut(0);
+        let committed_pages = XArray::new();
+        let mut locked_pages = committed_pages.lock();
+        let mut cursor = locked_pages.cursor_mut(0);
         for frame in segment {
             cursor.store(frame);
             cursor.next();
         }
         drop(cursor);
+        drop(locked_pages);
         Ok(committed_pages)
     } else {
         // otherwise, we wait for the page is read or write
