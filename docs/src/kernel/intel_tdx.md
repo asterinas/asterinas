@@ -66,7 +66,7 @@ git clone https://github.com/asterinas/asterinas
 2. Run a Docker container as the development environment.
 
 ```bash
-docker run -it --privileged --network=host --device=/dev/kvm -v $(pwd)/asterinas:/root/asterinas asterinas/asterinas:0.14.1-20250326-tdx
+docker run -it --privileged --network=host --device=/dev/kvm -v $(pwd)/asterinas:/root/asterinas asterinas/asterinas:0.14.1-20250507-tdx
 ```
 
 3. Inside the container,
