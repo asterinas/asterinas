@@ -1,34 +1,28 @@
 # SPDX-License-Identifier: MPL-2.0
 
-#= Install packages for Docker building ====================================
-
-FROM ubuntu:22.04 AS build-base
+ARG BASE_VERSION
+FROM asterinas/osdk:${BASE_VERSION} AS build-base
 
 SHELL ["/bin/bash", "-c"]
 
 ARG DEBIAN_FRONTEND=noninteractive
 
+#= Install packages for Docker building ====================================
+
 # Please keep the list sorted by name
 RUN apt update && apt-get install -y --no-install-recommends \
     apache2-utils \
-    build-essential \
-    ca-certificates \
     clang \
     cmake \
     curl \
-    git-core \
     gnupg \
     libevent-dev \
     libslirp-dev \
     libssl-dev \
     jq \
-    python3-pip \
-    python-is-python3 \
     tcl-dev \
     unzip \
-    wget \
     zip
-RUN pip3 install yq tomli
 
 #= Download dependency =====================================================
 
@@ -297,107 +291,6 @@ WORKDIR /root/syscall_test
 RUN export BUILD_DIR=build && \
     make ${BUILD_DIR}/syscall_test_bins
 
-#= Build QEMU =================================================================
-
-FROM build-base AS build-qemu
-
-RUN apt update && apt-get install -y --no-install-recommends \
-    libgcrypt-dev   `# optional build dependency` \
-    libglib2.0-dev  `# build dependency` \
-    libpixman-1-dev `# build dependency` \
-    libusb-dev      `# optional build dependency` \
-    meson \
-    ninja-build
-RUN apt clean && rm -rf /var/lib/apt/lists/*
-
-FROM build-qemu AS qemu
-
-# Fetch and install QEMU from the official source
-#
-# The QEMU version in the Ubuntu 22.04 repository is 6.*, which has a bug to cause OVMF debug to fail.
-# The libslirp dependency is for QEMU's network backend.
-WORKDIR /root
-RUN wget -O qemu.tar.xz https://download.qemu.org/qemu-9.1.0.tar.xz \
-    && mkdir /root/qemu \
-    && tar xf qemu.tar.xz --strip-components=1 -C /root/qemu \
-    && rm qemu.tar.xz
-WORKDIR /root/qemu
-RUN ./configure --target-list=x86_64-softmmu --prefix=/usr/local/qemu --enable-slirp \
-    && make -j \
-    && make install
-WORKDIR /root
-RUN rm -rf /root/qemu
-
-#= Build OVMF =================================================================
-
-FROM build-base AS build-ovmf
-
-RUN apt update && apt-get install -y --no-install-recommends \
-    bison \
-    flex \
-    iasl \
-    nasm \
-    uuid-dev
-RUN apt clean && rm -rf /var/lib/apt/lists/*
-
-FROM build-ovmf AS ovmf
-
-# Fetch and build OVMF from the EDK2 official source
-WORKDIR /root
-RUN git clone --depth 1 --branch stable/202408 --recurse-submodules --shallow-submodules https://github.com/tianocore/edk2.git
-WORKDIR /root/edk2
-RUN /bin/bash -c "source ./edksetup.sh \
-    && make -C BaseTools \
-    && build -a X64 -t GCC5 -b DEBUG -p OvmfPkg/OvmfPkgX64.dsc -D DEBUG_ON_SERIAL_PORT \
-    && build -a X64 -t GCC5 -b RELEASE -p OvmfPkg/OvmfPkgX64.dsc"
-
-#= Build GRUB =================================================================
-
-FROM build-base AS build-grub
-
-RUN apt update && apt-get install -y --no-install-recommends \
-    autoconf \
-    automake \
-    autopoint \
-    bison \
-    flex \
-    gawk \
-    gettext \
-    libfreetype6-dev \
-    pkg-config
-RUN apt clean && rm -rf /var/lib/apt/lists/*
-
-FROM build-grub AS grub
-
-# Fetch and install GRUB from the GNU official source
-#
-# We have installed grub-efi-amd64-bin just for the unicode.pf2 file, which is not included
-# in the GRUB release. The Ubuntu release notoriously modifies the GRUB source code and enforce
-# EFI handover boot, which is deprecated. So we have to build GRUB from source.
-WORKDIR /root
-# See also: https://github.com/asterinas/asterinas/pull/1710
-RUN git clone --single-branch -b asterinas/2.12 https://github.com/asterinas/grub.git \
-    && git -C grub checkout 0633bc8
-# Fetch and install the Unicode font data for grub.
-RUN wget -O unifont.pcf.gz https://unifoundry.com/pub/unifont/unifont-15.1.04/font-builds/unifont-15.1.04.pcf.gz \
-    && mkdir -pv /usr/share/fonts/unifont \
-    && gunzip -c unifont.pcf.gz > /usr/share/fonts/unifont/unifont.pcf \
-    && rm unifont.pcf.gz
-WORKDIR /root/grub
-RUN echo depends bli part_gpt > grub-core/extra_deps.lst \
-    && ./bootstrap \
-    && ./configure \
-        --target=x86_64 \
-        --disable-efiemu \
-        --with-platform=efi \
-        --enable-grub-mkfont \
-        --prefix=/usr/local/grub \
-        --disable-werror \
-    && make -j \
-    && make install
-WORKDIR /root
-RUN rm -rf /root/grub
-
 #= Build busybox ==============================================================
 
 FROM build-base AS build-busybox
@@ -419,25 +312,7 @@ RUN make defconfig \
 
 #= The final stages to produce the Asterinas development image ====================
 
-FROM build-base AS rust
-
-# Install Rust with both nightly and stable
-ENV PATH="/root/.cargo/bin:${PATH}"
-ARG ASTER_RUST_VERSION
-RUN curl https://sh.rustup.rs -sSf | \
-        sh -s -- --default-toolchain ${ASTER_RUST_VERSION} -y \
-    && rustup toolchain install stable \
-    && rm -rf /root/.cargo/registry && rm -rf /root/.cargo/git \
-    && cargo -V \
-    && rustup component add rust-src rustc-dev llvm-tools-preview
-
-# Install cargo tools
-RUN cargo install \
-    cargo-binutils \
-    mdbook \
-    typos-cli
-
-FROM rust
+FROM build-base
 
 # Install all Asterinas dependent packages
 RUN apt update && apt-get install -y --no-install-recommends \
@@ -447,16 +322,12 @@ RUN apt update && apt-get install -y --no-install-recommends \
     cpuid \
     exfatprogs \
     file \
-    gdb \
-    grub-efi-amd64 \
     grub-efi-amd64-bin \
     grub-efi-amd64-dbg \
     iptables \
     iproute2 \
     libnl-3-dev         `# dependency for netlink socket` \
     libnl-route-3-dev   `# dependency for netlink route socket` \
-    libpixman-1-dev     `# running dependency for QEMU` \
-    mtools              `# used by grub-mkrescue` \
     net-tools \
     openssh-server \
     pkg-config \
@@ -465,7 +336,6 @@ RUN apt update && apt-get install -y --no-install-recommends \
     sudo \
     unzip \
     vim \
-    xorriso \
     zip
 # Clean apt cache
 RUN apt clean && rm -rf /var/lib/apt/lists/*
@@ -473,21 +343,6 @@ RUN apt clean && rm -rf /var/lib/apt/lists/*
 # Prepare the system call test suite
 COPY --from=syscall_test /root/syscall_test/build/syscall_test_bins /root/syscall_test_bins
 ENV ASTER_PREBUILT_SYSCALL_TEST=/root/syscall_test_bins
-
-# Install QEMU built from the previous stages
-COPY --from=qemu /usr/local/qemu /usr/local/qemu
-ENV PATH="/usr/local/qemu/bin:${PATH}"
-ENV LD_LIBRARY_PATH="/usr/local/qemu/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
-
-# Install OVMF built from the previous stages
-COPY --from=ovmf /root/edk2/Build/OvmfX64/DEBUG_GCC5/FV/ /root/ovmf/debug
-COPY --from=ovmf /root/edk2/Build/OvmfX64/RELEASE_GCC5/FV/ /root/ovmf/release
-
-# Install GRUB built from the previous stages
-COPY --from=grub /usr/local/grub /usr/local/grub
-ENV PATH="/usr/local/grub/bin:${PATH}"
-# Make a symbolic link for `unicode.pf2` from Ubuntu 22.04 package
-RUN ln -sf /usr/share/grub/unicode.pf2 /usr/local/grub/share/grub/unicode.pf2
 
 # Install Busybox built from the previous stages
 COPY --from=busybox /root/busybox/busybox /bin/busybox

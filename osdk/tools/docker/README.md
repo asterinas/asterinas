@@ -1,24 +1,23 @@
-# Asterinas Development Docker Images
+# OSDK Development Docker Images
 
-Asterinas development Docker images are provided to facilitate developing and testing Asterinas project. These images can be found in the [asterinas/asterinas](https://hub.docker.com/r/asterinas/asterinas/) repository on DockerHub.
+The OSDK development Docker images provide the development environment for using and developing OSDK.
 
 ## Building Docker Images
 
-Asterinas development Docker image is based on an OSDK development Docker image. To build an Asterinas development Docker image and test it on your local machine, navigate to the root directory of the Asterinas source code tree and execute the following command:
+To build an OSDK development Docker image and test it on your local machine, navigate to the root directory of the Asterinas source code tree and execute the following command:
 
 ```bash
 cd <asterinas dir>
 # Build Docker image
 docker buildx build \
-    -f tools/docker/Dockerfile \
+    -f osdk/tools/docker/Dockerfile \
     --build-arg ASTER_RUST_VERSION=$(grep "channel" rust-toolchain.toml | awk -F '"' '{print $2}') \
-    --build-arg BASE_VERSION=$(cat DOCKER_IMAGE_VERSION) \
-    -t asterinas/asterinas:$(cat DOCKER_IMAGE_VERSION) \
+    -t asterinas/osdk:$(cat DOCKER_IMAGE_VERSION) \
     .
 ```
 
 Intel TDX has some special requirements on the development environment such as QEMU.
-So we offer a TDX-specific version of the Asterinas development Docker image.
+So we offer a TDX-specific version of the OSDK development Docker image.
 You need to build the general-purpose Docker image before building the TDX-specific one
 as the former is used by the latter one as the base image.
 
@@ -26,10 +25,10 @@ as the former is used by the latter one as the base image.
 cd <asterinas dir>
 # Build Intel TDX Docker image
 docker buildx build \
-    -f tools/docker/tdx/Dockerfile \
+    -f osdk/tools/docker/tdx/Dockerfile \
     --build-arg ASTER_RUST_VERSION=$(grep "channel" rust-toolchain.toml | awk -F '"' '{print $2}') \
     --build-arg BASE_VERSION=$(cat DOCKER_IMAGE_VERSION) \
-    -t asterinas/asterinas:$(cat DOCKER_IMAGE_VERSION)-tdx \
+    -t asterinas/osdk:$(cat DOCKER_IMAGE_VERSION)-tdx \
     .
 ```
 
