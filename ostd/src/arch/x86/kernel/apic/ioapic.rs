@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(dead_code)]
-
 use alloc::{vec, vec::Vec};
 use core::ptr::NonNull;
 
@@ -177,6 +175,7 @@ impl IoApicAccess {
     }
 }
 
+/// An I/O APIC instance.
 pub static IO_APIC: Once<Vec<SpinLock<IoApic>>> = Once::new();
 
 pub fn init(io_mem_builder: &IoMemAllocatorBuilder) {
