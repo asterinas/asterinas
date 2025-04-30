@@ -233,7 +233,7 @@ impl Vdso {
             // Write VDSO library to VDSO VMO.
             vdso_vmo.write_bytes(0x4000, &*vdso_text).unwrap();
 
-            let data_frame = vdso_vmo.commit_page(0).unwrap();
+            let data_frame = vdso_vmo.try_commit_page(0).unwrap();
             (vdso_vmo, data_frame)
         };
         Self {
