@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 ARG BASE_VERSION
-FROM asterinas/asterinas:${BASE_VERSION} AS build-base
+FROM asterinas/osdk:${BASE_VERSION} AS build-base
 
 # Fetch and install QEMU from the intel-staging/qemu-tdx source
 FROM build-base AS build-qemu-tdx
