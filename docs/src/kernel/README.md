@@ -48,7 +48,7 @@ docker run -it --privileged \
                --network=host \
                --device=/dev/kvm \
                -v $(pwd)/asterinas:/root/asterinas \
-               asterinas/asterinas:0.14.1-20250326
+               asterinas/asterinas:0.14.1-20250507
 ```
 
 3. Inside the container, go to the project folder to build and run Asterinas.
