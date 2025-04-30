@@ -1,3 +1,0 @@
-PpollTest.NullFds
-PpollTest.SignalMaskBlocksSignal
-PpollTest.SignalMaskAllowsSignal

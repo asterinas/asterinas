@@ -278,25 +278,36 @@ RUN rm -rf wrk
 
 #= Build syscall test =========================================================
 
-FROM build-base AS build-bazel
-
-# Install bazel, which is required by the system call test suite from Gvisor project
-RUN mkdir -p /root/bazel
-COPY tools/install_bazel.sh /root/bazel/
-WORKDIR /root/bazel
-RUN ./install_bazel.sh
-RUN apt clean && rm -rf /var/lib/apt/lists/*
-WORKDIR /root
-RUN rm -rf bazel
-
-FROM build-bazel AS syscall_test
+FROM build-base AS ltp
 
 # Build the syscall test binaries
-COPY test/syscall_test /root/syscall_test
-WORKDIR /root/syscall_test
-RUN export BUILD_DIR=build && \
-    make ${BUILD_DIR}/syscall_test_bins
-
+WORKDIR /root
+RUN apt update && apt-get install -y --no-install-recommends \
+    autoconf \
+    automake \
+    pkg-config
+RUN git clone --single-branch -b 20250130 https://github.com/linux-test-project/ltp.git
+WORKDIR /root/ltp
+RUN \
+    # FIXME: Unlinking a file would cause the mapped memory to become inaccessible
+    # due to the `PageCache` being dropped, which is a bug of Asterinas.
+    sed -i "130d" lib/tst_test.c \
+    # FIXME: `write_kmsg` function requires `/dev/kmsg`, which is not available now.
+    && sed -i "1372,1384d" pan/ltp-pan.c \
+    && make autotools \
+    && ./configure --prefix=/opt/ltp \
+    && make -C testcases/kernel/syscalls \
+    && make -C testcases/lib \
+    && make -C runtest \
+    && make -C pan \
+    && make -C testcases/kernel/syscalls install \
+    && make -C testcases/lib install \
+    && make -C runtest install \
+    && make -C pan install \
+    && install -m 00755 ./runltp /opt/ltp/runltp \
+    && install -m 00444 ./VERSION /opt/ltp/Version \
+    && install -m 00755 ./ver_linux /opt/ltp/ver_linux \
+    && install -m 00755 ./IDcheck.sh /opt/ltp/IDcheck.sh
 #= Build QEMU =================================================================
 
 FROM build-base AS build-qemu
@@ -471,8 +482,7 @@ RUN apt update && apt-get install -y --no-install-recommends \
 RUN apt clean && rm -rf /var/lib/apt/lists/*
 
 # Prepare the system call test suite
-COPY --from=syscall_test /root/syscall_test/build/syscall_test_bins /root/syscall_test_bins
-ENV ASTER_PREBUILT_SYSCALL_TEST=/root/syscall_test_bins
+COPY --from=ltp /opt/ltp /opt/ltp
 
 # Install QEMU built from the previous stages
 COPY --from=qemu /usr/local/qemu /usr/local/qemu

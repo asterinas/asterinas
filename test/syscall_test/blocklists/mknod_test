@@ -1,6 +1,0 @@
-MknodTest.MknodAtFIFO
-MknodTest.MknodOnExistingPathFails
-MknodTest.Socket
-MknodTest.Fifo
-MknodTest.FifoOtrunc
-MknodTest.FifoTruncNoOp

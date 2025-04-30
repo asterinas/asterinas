@@ -1,6 +1,0 @@
-Signalfd.Ppoll
-Signalfd/SignalfdTest.Blocking/kSignoMax
-Signalfd/SignalfdTest.ThreadGroup/kSigno
-Signalfd/SignalfdTest.ThreadGroup/kSignoMax
-Signalfd/SignalfdTest.Poll/kSigno
-Signalfd/SignalfdTest.Poll/kSignoMax
