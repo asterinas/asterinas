@@ -8,7 +8,10 @@ use core::{
 };
 
 use intrusive_collections::{intrusive_adapter, LinkedList, LinkedListAtomicLink};
-use ostd::{cpu::local::CpuLocal, cpu_local, trap};
+use ostd::{
+    cpu::local::{CpuLocal, StaticStorage},
+    cpu_local, trap,
+};
 
 use super::{
     softirq_id::{TASKLESS_SOFTIRQ_ID, TASKLESS_URGENT_SOFTIRQ_ID},
@@ -123,7 +126,10 @@ impl Taskless {
 
 fn do_schedule(
     taskless: &Arc<Taskless>,
-    taskless_list: &'static CpuLocal<RefCell<LinkedList<TasklessAdapter>>>,
+    taskless_list: &'static CpuLocal<
+        RefCell<LinkedList<TasklessAdapter>>,
+        StaticStorage<RefCell<LinkedList<TasklessAdapter>>>,
+    >,
 ) {
     if taskless.is_disabled.load(Ordering::Acquire) {
         return;
@@ -158,7 +164,10 @@ pub(super) fn init() {
 /// If the `Taskless` is ready to be executed, it will be set to not scheduled
 /// and can be scheduled again.
 fn taskless_softirq_handler(
-    taskless_list: &'static CpuLocal<RefCell<LinkedList<TasklessAdapter>>>,
+    taskless_list: &'static CpuLocal<
+        RefCell<LinkedList<TasklessAdapter>>,
+        StaticStorage<RefCell<LinkedList<TasklessAdapter>>>,
+    >,
     softirq_id: u8,
 ) {
     let mut processing_list = {
