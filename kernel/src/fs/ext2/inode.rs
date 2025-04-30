@@ -1850,6 +1850,7 @@ impl InodeBlockManager {
             let start_bid = dev_range.start as Ext2Bid;
             let range_nblocks = dev_range.len();
 
+            // TODO: Use the API `UserFrame::retrieve_user_frames()`
             let bio_segment = BioSegment::alloc(range_nblocks, BioDirection::FromDevice);
             bio_segment.reader().unwrap().read_fallible(writer)?;
 
@@ -1899,10 +1900,13 @@ impl InodeBlockManager {
             let start_bid = dev_range.start as Ext2Bid;
             let range_nblocks = dev_range.len();
 
-            let bio_segment = BioSegment::alloc(range_nblocks, BioDirection::ToDevice);
-            bio_segment.writer().unwrap().write_fallible(reader)?;
+            // TODO: Use the API `UserFrame::retrieve_user_frames()`
+            let user_frames: Vec<UserFrame> = todo!();
+            let bio_vec = BioVec::from(user_frames);
+            // let bio_segment = BioSegment::alloc(range_nblocks, BioDirection::ToDevice);
+            // bio_segment.writer().unwrap().write_fallible(reader)?;
 
-            let waiter = self.fs().write_blocks_async(start_bid, bio_segment)?;
+            let waiter = self.fs().write_vectored_blocks_async(start_bid, bio_vec)?;
             bio_waiter.concat(waiter);
         }
 

@@ -8,9 +8,11 @@ use super::{
     BlockDevice, BLOCK_SIZE,
 };
 use crate::{
-    bio::{is_sector_aligned, BioDirection},
+    bio::{is_sector_aligned, BioVec},
     prelude::*,
 };
+
+// TODO: Use the new API on ext2 and exfat
 
 /// Implements several commonly used APIs for the block device to conveniently
 /// read and write block(s).
@@ -25,7 +27,22 @@ impl dyn BlockDevice {
         let bio = Bio::new(
             BioType::Read,
             Sid::from(bid),
-            vec![bio_segment],
+            BioVec::new_single(bio_segment),
+            Some(general_complete_fn),
+        );
+        let status = bio.submit_and_wait(self)?;
+        Ok(status)
+    }
+
+    pub fn read_vectored_blocks(
+        &self,
+        bid: Bid,
+        bio_vec: BioVec,
+    ) -> Result<BioStatus, BioEnqueueError> {
+        let bio = Bio::new(
+            BioType::Read,
+            Sid::from(bid),
+            bio_vec,
             Some(general_complete_fn),
         );
         let status = bio.submit_and_wait(self)?;
@@ -36,12 +53,26 @@ impl dyn BlockDevice {
     pub fn read_blocks_async(
         &self,
         bid: Bid,
-        bio_segment: BioSegment,
+        bio_vec: BioVec,
     ) -> Result<BioWaiter, BioEnqueueError> {
         let bio = Bio::new(
             BioType::Read,
             Sid::from(bid),
-            vec![bio_segment],
+            bio_vec,
+            Some(general_complete_fn),
+        );
+        bio.submit(self)
+    }
+
+    pub fn read_vectored_blocks_async(
+        &self,
+        bid: Bid,
+        bio_vec: BioVec,
+    ) -> Result<BioWaiter, BioEnqueueError> {
+        let bio = Bio::new(
+            BioType::Read,
+            Sid::from(bid),
+            bio_vec,
             Some(general_complete_fn),
         );
         bio.submit(self)
@@ -56,7 +87,22 @@ impl dyn BlockDevice {
         let bio = Bio::new(
             BioType::Write,
             Sid::from(bid),
-            vec![bio_segment],
+            BioVec::new_single(bio_segment),
+            Some(general_complete_fn),
+        );
+        let status = bio.submit_and_wait(self)?;
+        Ok(status)
+    }
+
+    pub fn write_vectored_blocks(
+        &self,
+        bid: Bid,
+        bio_vec: BioVec,
+    ) -> Result<BioStatus, BioEnqueueError> {
+        let bio = Bio::new(
+            BioType::Write,
+            Sid::from(bid),
+            bio_vec,
             Some(general_complete_fn),
         );
         let status = bio.submit_and_wait(self)?;
@@ -72,7 +118,21 @@ impl dyn BlockDevice {
         let bio = Bio::new(
             BioType::Write,
             Sid::from(bid),
-            vec![bio_segment],
+            BioVec::new_single(bio_segment),
+            Some(general_complete_fn),
+        );
+        bio.submit(self)
+    }
+
+    pub fn write_vectored_blocks_async(
+        &self,
+        bid: Bid,
+        bio_vec: BioVec,
+    ) -> Result<BioWaiter, BioEnqueueError> {
+        let bio = Bio::new(
+            BioType::Write,
+            Sid::from(bid),
+            bio_vec,
             Some(general_complete_fn),
         );
         bio.submit(self)
@@ -83,7 +143,7 @@ impl dyn BlockDevice {
         let bio = Bio::new(
             BioType::Flush,
             Sid::from(Bid::from_offset(0)),
-            vec![],
+            BioVec::empty(),
             Some(general_complete_fn),
         );
         let status = bio.submit_and_wait(self)?;
@@ -108,18 +168,12 @@ impl VmIo for dyn BlockDevice {
                 let last = Bid::from_offset(offset + read_len - 1).to_raw();
                 (last - first + 1) as usize
             };
-            let bio_segment = BioSegment::alloc_inner(
-                num_blocks,
-                offset % BLOCK_SIZE,
-                read_len,
-                BioDirection::FromDevice,
-            );
-
+            let bio_segment = BioSegment::alloc_with_offset(offset % BLOCK_SIZE, read_len)?;
             (
                 Bio::new(
                     BioType::Read,
                     Sid::from_offset(offset),
-                    vec![bio_segment.clone()],
+                    BioVec::new_single(bio_segment.clone()),
                     Some(general_complete_fn),
                 ),
                 bio_segment,
@@ -128,6 +182,7 @@ impl VmIo for dyn BlockDevice {
 
         let status = bio.submit_and_wait(self)?;
         match status {
+            // TODO: Put this logic in Bio::comp
             BioStatus::Complete => bio_segment.read(0, writer),
             _ => Err(ostd::Error::IoError),
         }
@@ -149,18 +204,13 @@ impl VmIo for dyn BlockDevice {
                 let last = Bid::from_offset(offset + write_len - 1).to_raw();
                 (last - first + 1) as usize
             };
-            let bio_segment = BioSegment::alloc_inner(
-                num_blocks,
-                offset % BLOCK_SIZE,
-                write_len,
-                BioDirection::ToDevice,
-            );
+            let bio_segment = BioSegment::alloc_with_offset(offset % BLOCK_SIZE, write_len)?;
             bio_segment.write(0, reader)?;
 
             Bio::new(
                 BioType::Write,
                 Sid::from_offset(offset),
-                vec![bio_segment],
+                BioVec::new_single(bio_segment),
                 Some(general_complete_fn),
             )
         };
@@ -190,17 +240,12 @@ impl dyn BlockDevice {
                 let last = Bid::from_offset(offset + write_len - 1).to_raw();
                 (last - first + 1) as usize
             };
-            let bio_segment = BioSegment::alloc_inner(
-                num_blocks,
-                offset % BLOCK_SIZE,
-                write_len,
-                BioDirection::ToDevice,
-            );
+            let bio_segment = BioSegment::alloc_with_offset(offset % BLOCK_SIZE, write_len)?;
             bio_segment.write(0, &mut VmReader::from(buf).to_fallible())?;
             Bio::new(
                 BioType::Write,
                 Sid::from_offset(offset),
-                vec![bio_segment],
+                BioVec::new_single(bio_segment),
                 Some(general_complete_fn),
             )
         };

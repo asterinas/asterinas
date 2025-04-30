@@ -10,11 +10,13 @@ use alloc::{
 };
 use core::{fmt::Debug, hint::spin_loop, mem::size_of};
 
+use align_ext::AlignExt;
 use aster_block::{
-    bio::{bio_segment_pool_init, BioEnqueueError, BioStatus, BioType, SubmittedBio},
+    bio::{BioEnqueueError, BioStatus, BioType, SubmittedBio},
     request_queue::{BioRequest, BioRequestSingleQueue},
-    BlockDeviceMeta,
+    BlockDeviceMeta, BLOCK_SIZE,
 };
+use bitvec::array::BitArray;
 use id_alloc::IdAlloc;
 use log::{debug, info};
 use ostd::{
@@ -23,6 +25,7 @@ use ostd::{
     trap::TrapFrame,
     Pod,
 };
+use spin::Once;
 
 use super::{BlockFeatures, VirtioBlockConfig, VirtioBlockFeature};
 use crate::{
@@ -112,6 +115,7 @@ struct DeviceInner {
     block_responses: DmaStream,
     id_allocator: SpinLock<IdAlloc>,
     submitted_requests: SpinLock<BTreeMap<u16, SubmittedRequest>>,
+    dma_pool: Option<BlkDmaPool>, // The origin `BlkDmaPool`
 }
 
 impl DeviceInner {
@@ -160,6 +164,7 @@ impl DeviceInner {
             block_responses,
             id_allocator: SpinLock::new(IdAlloc::with_capacity(Self::QUEUE_SIZE as usize)),
             submitted_requests: SpinLock::new(BTreeMap::new()),
+            dma_pool: None, // TODO: Enable the dma pool
         });
 
         let cloned_device = device.clone();
@@ -523,4 +528,167 @@ impl Default for BlockResp {
             status: RespStatus::_NotReady as _,
         }
     }
+}
+
+/// A pool of managing segments for block I/O requests.
+///
+/// Inside the pool, it's a large chunk of `DmaStream` which
+/// contains the mapped segment. The allocation/free is done by slicing
+/// the `DmaStream`.
+// TODO: Use a more advanced allocation algorithm to replace the naive one to improve efficiency.
+#[derive(Debug)]
+struct BlkDmaPool {
+    pool: DmaStream,
+    total_blocks: usize,
+    manager: SpinLock<PoolSlotManager>,
+}
+
+/// Manages the free slots in the pool.
+#[derive(Debug)]
+struct PoolSlotManager {
+    /// A bit array to manage the occupied slots in the pool (Bit
+    /// value 1 represents "occupied"; 0 represents "free").
+    /// The total size is currently determined by `POOL_DEFAULT_NBLOCKS`.
+    occupied: BitArray<[u8; POOL_DEFAULT_NBLOCKS.div_ceil(8)]>,
+    /// The first index of all free slots in the pool.
+    min_free: usize,
+}
+
+impl BlkDmaPool {
+    /// Creates a new pool given the bio direction. The total number of
+    /// managed blocks is currently set to `POOL_DEFAULT_NBLOCKS`.
+    ///
+    /// The new pool will be allocated and mapped for later allocation.
+    pub fn new(total_blocks: usize, direction: DmaDirection) -> Self {
+        let pool = {
+            let segment = FrameAllocOptions::new()
+                .zeroed(false)
+                .alloc_segment(total_blocks)
+                .unwrap();
+            DmaStream::map(segment.into(), direction, false).unwrap()
+        };
+        let manager = SpinLock::new(PoolSlotManager {
+            occupied: BitArray::ZERO,
+            min_free: 0,
+        });
+
+        Self {
+            pool,
+            total_blocks,
+            manager,
+        }
+    }
+
+    /// Allocates a bio segment with the given count `nblocks`
+    /// from the pool.
+    ///
+    /// Support two extended parameters:
+    /// 1. `offset_within_first_block`: the offset (in bytes) within the first block.
+    /// 2. `len`: the exact length (in bytes) of the wanted segment. (May
+    ///    less than `nblocks * BLOCK_SIZE`)
+    ///
+    /// If there is no enough space in the pool, this method
+    /// will return `None`.
+    ///
+    /// # Panics
+    ///
+    /// If the `offset_within_first_block` exceeds the block size, or the `len`
+    /// exceeds the total length, this method will panic.
+    pub fn alloc(
+        &self,
+        nblocks: usize,
+        offset_within_first_block: usize,
+        len: usize,
+    ) -> Option<DmaStreamSlice<DmaStream>> {
+        assert!(
+            offset_within_first_block < BLOCK_SIZE
+                && offset_within_first_block + len <= nblocks * BLOCK_SIZE
+        );
+        let mut manager = self.manager.lock();
+        if nblocks > self.total_blocks - manager.min_free {
+            return None;
+        }
+
+        // Find the free range
+        let (start, end) = {
+            let mut start = manager.min_free;
+            let mut end = start;
+            while end < self.total_blocks && end - start < nblocks {
+                if manager.occupied[end] {
+                    start = end + 1;
+                    end = start;
+                } else {
+                    end += 1;
+                }
+            }
+            if end - start < nblocks {
+                return None;
+            }
+            (start, end)
+        };
+
+        manager.occupied[start..end].fill(true);
+        manager.min_free = manager.occupied[end..]
+            .iter()
+            .position(|i| !i)
+            .map(|pos| end + pos)
+            .unwrap_or(self.total_blocks);
+
+        let dma_slice = DmaStreamSlice::new(
+            self.pool.clone(),
+            start * BLOCK_SIZE + offset_within_first_block,
+            len,
+        );
+        Some(dma_slice)
+    }
+
+    /// Returns an allocated bio segment to the pool,
+    /// free the space. This method is not public and should only
+    /// be called automatically by `BioSegmentInner::drop()`.
+    ///
+    /// # Panics
+    ///
+    /// If the target bio segment is not allocated from the pool
+    /// or not the same direction, this method will panic.
+    fn free(&self, dma_slice: &DmaStreamSlice<DmaStream>) {
+        let (start, end) = {
+            let start = dma_slice.offset().align_down(BLOCK_SIZE) / BLOCK_SIZE;
+            let end = (dma_slice.offset() + dma_slice.nbytes()).align_up(BLOCK_SIZE) / BLOCK_SIZE;
+
+            if end <= start || end > self.total_blocks {
+                return;
+            }
+            (start, end)
+        };
+
+        let mut manager = self.manager.lock();
+        debug_assert!(manager.occupied[start..end].iter().all(|i| *i));
+        manager.occupied[start..end].fill(false);
+        if start < manager.min_free {
+            manager.min_free = start;
+        }
+    }
+}
+
+/// A pool of segments for read bio requests only.
+static BLK_DMA_RPOOL: Once<Arc<BlkDmaPool>> = Once::new();
+/// A pool of segments for write bio requests only.
+static BLK_DMA_WPOOL: Once<Arc<BlkDmaPool>> = Once::new();
+/// The default number of blocks in each pool. (4MB each for now)
+const POOL_DEFAULT_NBLOCKS: usize = 1024;
+
+/// Initializes the bio segment pool.
+pub fn blk_dma_pool_init() {
+    BLK_DMA_RPOOL.call_once(|| {
+        Arc::new(BlkDmaPool::new(
+            POOL_DEFAULT_NBLOCKS,
+            DmaDirection::FromDevice,
+        ))
+    });
+    BLK_DMA_RPOOL.call_once(|| {
+        Arc::new(BlkDmaPool::new(
+            POOL_DEFAULT_NBLOCKS,
+            DmaDirection::ToDevice,
+        ))
+    });
 }
