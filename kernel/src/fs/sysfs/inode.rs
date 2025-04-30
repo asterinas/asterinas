@@ -8,11 +8,11 @@ use alloc::{
 };
 use core::time::Duration;
 
-use ostd::sync::RwLock;
-use systree::{
+use aster_systree::{
     SysAttr, SysAttrFlags, SysBranchNode, SysNode, SysNodeId, SysNodeType, SysObj, SysStr,
     SysSymlink, SysTree,
 };
+use ostd::sync::RwLock;
 
 use crate::{
     events::IoEvents,

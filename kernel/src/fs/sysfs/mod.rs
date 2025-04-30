@@ -20,7 +20,7 @@ pub fn singleton() -> &'static Arc<SysFs> {
 
 /// Initializes the SysFs singleton.
 /// Ensures that the singleton is created by calling it.
-/// Should be called during kernel filesystem initialization, *after* systree::init().
+/// Should be called during kernel filesystem initialization, *after* aster_systree::init().
 pub fn init() {
     // Ensure systree is initialized first. This should be handled by the kernel's init order.
     SYSFS_SINGLETON.call_once(|| SysFs::new());

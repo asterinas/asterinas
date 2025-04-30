@@ -2,7 +2,7 @@
 
 use alloc::sync::Arc;
 
-use systree::singleton as systree_singleton;
+use aster_systree::singleton as systree_singleton;
 
 use crate::fs::{
     sysfs::inode::SysFsInode,

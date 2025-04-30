@@ -11,15 +11,15 @@ use alloc::{
 };
 use core::{any::Any, fmt::Debug};
 
+use aster_systree::{
+    init_for_ktest, singleton as systree_singleton, Error as SysTreeError, Result as SysTreeResult,
+    SysAttrFlags, SysAttrSet, SysAttrSetBuilder, SysBranchNode, SysBranchNodeFields, SysNode,
+    SysNodeId, SysNodeType, SysNormalNodeFields, SysObj, SysStr, SysSymlink, SysTree,
+};
 use ostd::{
     mm::{FallibleVmRead, FallibleVmWrite, VmReader, VmWriter},
     prelude::ktest,
     sync::RwLock,
-};
-use systree::{
-    init_for_ktest, singleton as systree_singleton, Error as SysTreeError, Result as SysTreeResult,
-    SysAttrFlags, SysAttrSet, SysAttrSetBuilder, SysBranchNode, SysBranchNodeFields, SysNode,
-    SysNodeId, SysNodeType, SysNormalNodeFields, SysObj, SysStr, SysSymlink, SysTree,
 };
 
 use crate::{
