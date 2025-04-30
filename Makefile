@@ -45,6 +45,8 @@ VHOST ?= off
 
 # ========================= End of Makefile options. ==========================
 
+SHELL := /bin/bash
+
 CARGO_OSDK := ~/.cargo/bin/cargo-osdk
 
 CARGO_OSDK_ARGS := --target-arch=$(ARCH) --kcmd-args="ostd.log_level=$(LOG_LEVEL)"
@@ -293,8 +295,11 @@ format:
 .PHONY: check
 # FIXME: Make `make check` arch-aware.
 check: initramfs $(CARGO_OSDK)
-	@./tools/format_all.sh --check   	# Check Rust format issues
-	@# Check if STD_CRATES and NOSTD_CRATES combined is the same as all workspace members
+	@# Check formatting issues of the Rust code
+	@./tools/format_all.sh --check
+	@
+	@# Check if the combination of STD_CRATES and NON_OSDK_CRATES is the
+	@# same as all workspace members
 	@sed -n '/^\[workspace\]/,/^\[.*\]/{/members = \[/,/\]/p}' Cargo.toml | \
 		grep -v "members = \[" | tr -d '", \]' | \
 		sort > /tmp/all_crates
@@ -303,6 +308,16 @@ check: initramfs $(CARGO_OSDK)
 		(echo "Error: The combination of STD_CRATES and NOSTD_CRATES" \
 			"is not the same as all workspace members" && exit 1)
 	@rm /tmp/all_crates /tmp/combined_crates
+	@
+	@# Check if all workspace members enable workspace lints
+	@for dir in $(NON_OSDK_CRATES) $(OSDK_CRATES); do \
+		if [[ "$$(tail -2 $$dir/Cargo.toml)" != "[lints]"$$'\n'"workspace = true" ]]; then \
+			echo "Error: Workspace lints in $$dir are not enabled"; \
+			exit 1; \
+		fi \
+	done
+	@
+	@# Check compilation of the Rust code
 	@for dir in $(NON_OSDK_CRATES); do \
 		echo "Checking $$dir"; \
 		(cd $$dir && cargo clippy -- -D warnings) || exit 1; \
@@ -311,7 +326,11 @@ check: initramfs $(CARGO_OSDK)
 		echo "Checking $$dir"; \
 		(cd $$dir && cargo osdk clippy -- -- -D warnings) || exit 1; \
 	done
+	@
+	@# Check formatting issues of the C code (regression tests)
 	@$(MAKE) --no-print-directory -C test check
+	@
+	@# Check typos
 	@typos
 
 .PHONY: clean
