@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(dead_code)]
-
 use super::{Pgid, Pid};
 use crate::prelude::*;
 
@@ -13,44 +11,50 @@ pub enum ProcessFilter {
 }
 
 impl ProcessFilter {
-    // used for waitid
-    pub fn from_which_and_id(which: u64, id: u64) -> Result<Self> {
-        // Does not support PID_FD now(which = 3)
-        // https://elixir.bootlin.com/linux/latest/source/include/uapi/linux/wait.h#L20
+    // For `waitpid`.
+    pub fn from_which_and_id(which: u64, id: u32) -> Result<Self> {
+        // Reference:
+        // <https://elixir.bootlin.com/linux/v6.14.4/source/include/uapi/linux/wait.h#L16-L20>
+        const P_ALL: u64 = 0;
+        const P_PID: u64 = 1;
+        const P_PGID: u64 = 2;
+        const P_PIDFD: u64 = 3;
+
         match which {
-            0 => Ok(ProcessFilter::Any),
-            1 => Ok(ProcessFilter::WithPid(id as Pid)),
-            2 => Ok(ProcessFilter::WithPgid(id as Pgid)),
-            3 => todo!(),
-            _ => return_errno_with_message!(Errno::EINVAL, "invalid which"),
+            P_ALL => Ok(ProcessFilter::Any),
+            P_PID => Ok(ProcessFilter::WithPid(id)),
+            P_PGID => Ok(ProcessFilter::WithPgid(id)),
+            P_PIDFD => {
+                warn!("the process filter `P_PIDFD` is not supported");
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "the process filter `P_PIDFD` is not supported"
+                );
+            }
+            _ => return_errno_with_message!(Errno::EINVAL, "the process filter is invalid"),
         }
     }
 
-    // used for wait4 and kill
+    // For `wait4` and `kill`.
     pub fn from_id(wait_pid: i32) -> Self {
-        // https://man7.org/linux/man-pages/man2/waitpid.2.html
-        // https://man7.org/linux/man-pages/man2/kill.2.html
+        // Reference:
+        // <https://man7.org/linux/man-pages/man2/waitpid.2.html>
+        // <https://man7.org/linux/man-pages/man2/kill.2.html>
         if wait_pid < -1 {
-            // process group ID is equal to the absolute value of pid.
-            ProcessFilter::WithPgid((-wait_pid) as Pgid)
+            // "wait for any child process whose process group ID is equal to the absolute value of
+            // `pid`"
+            ProcessFilter::WithPgid((-wait_pid).cast_unsigned())
         } else if wait_pid == -1 {
-            // wait for any child process
+            // "wait for any child process"
             ProcessFilter::Any
         } else if wait_pid == 0 {
-            // wait for any child process with same process group ID
+            // "wait for any child process whose process group ID is equal to that of the calling
+            // process at the time of the call to `waitpid()`"
             let pgid = current!().pgid();
             ProcessFilter::WithPgid(pgid)
         } else {
-            // pid > 0. wait for the child whose process ID is equal to the value of pid.
-            ProcessFilter::WithPid(wait_pid as Pid)
-        }
-    }
-
-    pub fn contains_pid(&self, pid: Pid) -> bool {
-        match self {
-            ProcessFilter::Any => true,
-            ProcessFilter::WithPid(filter_pid) => *filter_pid == pid,
-            ProcessFilter::WithPgid(_) => todo!(),
+            // "wait for the child whose process ID is equal to the value of `pid`"
+            ProcessFilter::WithPid(wait_pid.cast_unsigned())
         }
     }
 }
