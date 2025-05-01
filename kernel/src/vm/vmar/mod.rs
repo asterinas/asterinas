@@ -17,7 +17,6 @@ use self::{
     interval_set::{Interval, IntervalSet},
     vm_mapping::{MappedVmo, VmMapping},
 };
-use super::page_fault_handler::PageFaultHandler;
 use crate::{
     prelude::*,
     process::{Process, ResourceType},
@@ -50,33 +49,20 @@ pub struct Vmar<R = Rights>(Arc<Vmar_>, R);
 pub trait VmarRightsOp {
     /// Returns the access rights.
     fn rights(&self) -> Rights;
+
     /// Checks whether current rights meet the input `rights`.
-    fn check_rights(&self, rights: Rights) -> Result<()>;
+    fn check_rights(&self, rights: Rights) -> Result<()> {
+        if self.rights().contains(rights) {
+            Ok(())
+        } else {
+            return_errno_with_message!(Errno::EACCES, "VMAR rights are insufficient");
+        }
+    }
 }
 
 impl<R> PartialEq for Vmar<R> {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.0, &other.0)
-    }
-}
-
-impl<R> VmarRightsOp for Vmar<R> {
-    default fn rights(&self) -> Rights {
-        unimplemented!()
-    }
-
-    default fn check_rights(&self, rights: Rights) -> Result<()> {
-        if self.rights().contains(rights) {
-            Ok(())
-        } else {
-            return_errno_with_message!(Errno::EACCES, "Rights check failed");
-        }
-    }
-}
-
-impl<R> PageFaultHandler for Vmar<R> {
-    default fn handle_page_fault(&self, _page_fault_info: &PageFaultInfo) -> Result<()> {
-        unimplemented!()
     }
 }
 
@@ -608,7 +594,12 @@ impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
         self.handle_page_faults_around = true;
         self
     }
+}
 
+impl<'a, R1, R2> VmarMapOptions<'a, R1, R2>
+where
+    Vmo<R2>: VmoRightsOp,
+{
     /// Creates the mapping and adds it to the parent VMAR.
     ///
     /// All options will be checked at this point.

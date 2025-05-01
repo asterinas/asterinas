@@ -78,12 +78,12 @@ pub trait VmoRightsOp {
     /// Returns the access rights.
     fn rights(&self) -> Rights;
 
-    /// Check whether rights is included in self
+    /// Checks whether current rights meet the input `rights`.
     fn check_rights(&self, rights: Rights) -> Result<()> {
         if self.rights().contains(rights) {
             Ok(())
         } else {
-            return_errno_with_message!(Errno::EINVAL, "vmo rights check failed");
+            return_errno_with_message!(Errno::EACCES, "VMO rights are insufficient");
         }
     }
 
@@ -91,21 +91,6 @@ pub trait VmoRightsOp {
     fn to_dyn(self) -> Vmo<Rights>
     where
         Self: Sized;
-}
-
-// We implement this trait for VMO, so we can use functions on type like Vmo<R> without trait bounds.
-// FIXME: This requires the incomplete feature specialization, which should be fixed further.
-impl<R> VmoRightsOp for Vmo<R> {
-    default fn rights(&self) -> Rights {
-        unimplemented!()
-    }
-
-    default fn to_dyn(self) -> Vmo<Rights>
-    where
-        Self: Sized,
-    {
-        unimplemented!()
-    }
 }
 
 bitflags! {

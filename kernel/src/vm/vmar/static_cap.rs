@@ -2,7 +2,7 @@
 
 use core::ops::Range;
 
-use aster_rights::{Dup, Rights, TRightSet, TRights, Write};
+use aster_rights::{Dup, Read, Rights, TRightSet, TRights, Write};
 use aster_rights_proc::require;
 
 use super::{VmPerms, Vmar, VmarMapOptions, VmarRightsOp, Vmar_};
@@ -120,8 +120,8 @@ impl<R: TRights> Vmar<TRightSet<R>> {
     /// # Access rights
     ///
     /// The method requires the Read right.
-    pub fn fork_from<R1>(vmar: &Vmar<R1>) -> Result<Self> {
-        vmar.check_rights(Rights::READ)?;
+    #[require(R > Read)]
+    pub fn fork_from(vmar: &Self) -> Result<Self> {
         let vmar_ = vmar.0.new_fork_root()?;
         Ok(Vmar(vmar_, TRightSet(R::new())))
     }
