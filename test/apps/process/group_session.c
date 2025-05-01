@@ -32,6 +32,10 @@ END_SETUP()
 
 FN_TEST(setpgid_invalid)
 {
+	// Negative PIDs or PGIDs
+	TEST_ERRNO(setpgid(-1, current), EINVAL);
+	TEST_ERRNO(setpgid(current, -1), EINVAL);
+
 	// Non-present process groups
 	TEST_ERRNO(setpgid(child1, child2), EPERM);
 	TEST_ERRNO(setpgid(child2, child1), EPERM);
@@ -176,6 +180,9 @@ END_TEST()
 
 FN_TEST(getpgid_invalid)
 {
+	// Negative PIDs
+	TEST_ERRNO(getpgid(-1), ESRCH);
+
 	// Non-present processes
 	TEST_ERRNO(getpgid(0x3c3c3c3c), ESRCH);
 }
@@ -183,6 +190,9 @@ END_TEST()
 
 FN_TEST(getsid_invalid)
 {
+	// Negative PIDs
+	TEST_ERRNO(getsid(-1), ESRCH);
+
 	// Non-present processes
 	TEST_ERRNO(getsid(0x3c3c3c3c), ESRCH);
 }

@@ -14,6 +14,7 @@
 #![feature(fn_traits)]
 #![feature(format_args_nl)]
 #![feature(int_roundings)]
+#![feature(integer_sign_cast)]
 #![feature(let_chains)]
 #![feature(linked_list_cursors)]
 #![feature(linked_list_remove)]
