@@ -6,7 +6,6 @@
 #![no_std]
 #![no_main]
 #![deny(unsafe_code)]
-#![expect(incomplete_features)]
 #![feature(btree_cursors)]
 #![feature(btree_extract_if)]
 #![feature(debug_closure_helpers)]
@@ -22,10 +21,6 @@
 #![feature(negative_impls)]
 #![feature(panic_can_unwind)]
 #![feature(register_tool)]
-// FIXME: This feature is used to support vm capbility now as a work around.
-// Since this is an incomplete feature, use this feature is unsafe.
-// We should find a proper method to replace this feature with min_specialization, which is a sound feature.
-#![feature(specialization)]
 #![feature(step_trait)]
 #![feature(trait_alias)]
 #![feature(trait_upcasting)]
