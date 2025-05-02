@@ -43,6 +43,6 @@ pub fn init() -> Result<()> {
 pub fn new_pty_pair(index: u32, ptmx: Arc<dyn Inode>) -> Result<(Arc<PtyMaster>, Arc<PtySlave>)> {
     debug!("pty index = {}", index);
     let master = PtyMaster::new(ptmx, index);
-    let slave = PtySlave::new(&master);
+    let slave = master.slave().clone();
     Ok((master, slave))
 }
