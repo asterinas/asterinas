@@ -48,7 +48,7 @@ FN_TEST(setpgid_invalid)
 }
 END_TEST()
 
-FN_TEST(setpgid)
+FN_TEST(setpgid_getpgid)
 {
 	//                   PGID       members
 	//                     |           |
@@ -63,17 +63,37 @@ FN_TEST(setpgid)
 	TEST_ERRNO(setpgid(child1, child2), EPERM);
 	TEST_ERRNO(setpgid(child2, child1), EPERM);
 
+	TEST_RES(getpgid(current), _ret == current);
+	TEST_RES(getpgid(child1), _ret == current);
+	TEST_RES(getpgid(child2), _ret == current);
+
 	// Process groups: [current] = { current, child2 }, [child1] = { child1 }
 	TEST_SUCC(setpgid(child1, 0));
+
+	TEST_RES(getpgid(current), _ret == current);
+	TEST_RES(getpgid(child1), _ret == child1);
+	TEST_RES(getpgid(child2), _ret == current);
 
 	// Process groups: [current] = { current }, [child1] = { child1, child2 }
 	TEST_SUCC(setpgid(child2, child1));
 
+	TEST_RES(getpgid(current), _ret == current);
+	TEST_RES(getpgid(child1), _ret == child1);
+	TEST_RES(getpgid(child2), _ret == child1);
+
 	// Process groups: [current] = { current, child1 }, [child1] = { child2 }
 	TEST_SUCC(setpgid(child1, current));
 
+	TEST_RES(getpgid(current), _ret == current);
+	TEST_RES(getpgid(child1), _ret == current);
+	TEST_RES(getpgid(child2), _ret == child1);
+
 	// Process groups: [current] = { current }, [child1] = { child1, child2 }
 	TEST_SUCC(setpgid(child1, child1));
+
+	TEST_RES(getpgid(current), _ret == current);
+	TEST_RES(getpgid(child1), _ret == child1);
+	TEST_RES(getpgid(child2), _ret == child1);
 }
 END_TEST()
 
@@ -87,6 +107,10 @@ FN_TEST(setsid_group_leader)
 	TEST_SUCC(setpgid(child1, current));
 	TEST_SUCC(setpgid(current, child1));
 
+	TEST_RES(getpgid(current), _ret == child1);
+	TEST_RES(getpgid(child1), _ret == current);
+	TEST_RES(getpgid(child2), _ret == child1);
+
 	TEST_ERRNO(setsid(), EPERM);
 }
 END_TEST()
@@ -95,6 +119,10 @@ FN_TEST(setsid)
 {
 	// Process groups: [child1] = { current, child1, child2 }
 	TEST_SUCC(setpgid(child1, child1));
+
+	TEST_RES(getpgid(current), _ret == child1);
+	TEST_RES(getpgid(child1), _ret == child1);
+	TEST_RES(getpgid(child2), _ret == child1);
 
 	// Process groups (old session): [child1] = { child1, child2 }
 	// Process groups (new session): [current] = { current }
@@ -124,6 +152,39 @@ FN_TEST(setpgid_two_sessions)
 	TEST_ERRNO(setpgid(child2, current), EPERM);
 
 	TEST_ERRNO(setpgid(child2, child1), EPERM);
+}
+END_TEST()
+
+FN_TEST(getpgid_two_sessions)
+{
+	TEST_RES(getpgid(current), _ret == current);
+	TEST_RES(getpgid(child1), _ret == child1);
+	TEST_RES(getpgid(child2), _ret == child1);
+}
+END_TEST()
+
+FN_TEST(getsid_two_sessions)
+{
+	int old_sid;
+
+	TEST_RES(getsid(current), _ret == current);
+
+	old_sid = TEST_SUCC(getsid(child1));
+	TEST_RES(getsid(child2), _ret == old_sid);
+}
+END_TEST()
+
+FN_TEST(getpgid_invalid)
+{
+	// Non-present processes
+	TEST_ERRNO(getpgid(0x3c3c3c3c), ESRCH);
+}
+END_TEST()
+
+FN_TEST(getsid_invalid)
+{
+	// Non-present processes
+	TEST_ERRNO(getsid(0x3c3c3c3c), ESRCH);
 }
 END_TEST()
 
