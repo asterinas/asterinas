@@ -350,8 +350,19 @@ impl Process {
     }
 
     /// Returns the process group ID of the process.
+    //
+    // FIXME: If we call this method without holding the process table lock, it may return zero if
+    // the process is reaped at the same time.
     pub fn pgid(&self) -> Pgid {
         self.process_group().map_or(0, |group| group.pgid())
+    }
+
+    /// Returns the session ID of the process.
+    //
+    // FIXME: If we call this method without holding the process table lock, it may return zero if
+    // the process is reaped at the same time.
+    pub fn sid(&self) -> Sid {
+        self.session().map_or(0, |session| session.sid())
     }
 
     /// Returns the session to which the process belongs.
