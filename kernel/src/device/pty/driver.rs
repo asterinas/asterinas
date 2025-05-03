@@ -3,14 +3,14 @@
 use ostd::sync::SpinLock;
 
 use crate::{
-    device::tty::{Tty, TtyDriver},
+    device::tty::{PushCharError, Tty, TtyDriver},
     events::IoEvents,
     prelude::{return_errno_with_message, Errno, Result},
     process::signal::Pollee,
     util::ring_buffer::RingBuffer,
 };
 
-const BUFFER_CAPACITY: usize = 4096;
+const BUFFER_CAPACITY: usize = 8192;
 
 /// A pseudoterminal driver.
 ///
@@ -59,20 +59,28 @@ impl PtyDriver {
 }
 
 impl TtyDriver for PtyDriver {
-    fn push_output(&self, chs: &[u8]) {
+    fn push_output(&self, chs: &[u8]) -> core::result::Result<usize, PushCharError> {
         let mut output = self.output.lock();
 
+        let mut len = 0;
         for ch in chs {
             // TODO: This is termios-specific behavior and should be part of the TTY implementation
             // instead of the TTY driver implementation. See the ONLCR flag for more details.
-            if *ch == b'\n' {
-                output.push_overwrite(b'\r');
-                output.push_overwrite(b'\n');
-                continue;
+            if *ch == b'\n' && output.capacity() - output.len() >= 2 {
+                output.push(b'\r').unwrap();
+                output.push(b'\n').unwrap();
+            } else if *ch != b'\n' && !output.is_full() {
+                output.push(*ch).unwrap();
+            } else if len == 0 {
+                return Err(PushCharError);
+            } else {
+                break;
             }
-            output.push_overwrite(*ch);
+            len += 1;
         }
+
         self.pollee.notify(IoEvents::IN);
+        Ok(len)
     }
 
     fn drain_output(&self) {
@@ -86,7 +94,7 @@ impl TtyDriver for PtyDriver {
 
         move |chs| {
             for ch in chs {
-                output.push_overwrite(*ch);
+                let _ = output.push(*ch);
             }
 
             if !has_notified {
@@ -94,5 +102,14 @@ impl TtyDriver for PtyDriver {
                 has_notified = true;
             }
         }
+    }
+
+    fn can_push(&self) -> bool {
+        let output = self.output.lock();
+        output.capacity() - output.len() >= 2
+    }
+
+    fn notify_input(&self) {
+        self.pollee.notify(IoEvents::OUT);
     }
 }

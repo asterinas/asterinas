@@ -51,11 +51,17 @@ impl PtyMaster {
     }
 
     fn check_io_events(&self) -> IoEvents {
+        let mut events = IoEvents::empty();
+
         if self.slave().driver().buffer_len() > 0 {
-            IoEvents::IN | IoEvents::OUT
-        } else {
-            IoEvents::OUT
+            events |= IoEvents::IN;
         }
+
+        if self.slave().can_push() {
+            events |= IoEvents::OUT;
+        }
+
+        events
     }
 }
 
@@ -76,6 +82,7 @@ impl FileIo for PtyMaster {
             self.slave.driver().try_read(&mut buf)
         })?;
         self.slave.driver().pollee().invalidate();
+        self.slave.notify_output();
 
         // TODO: Confirm what we should do if `write_fallible` fails in the middle.
         writer.write_fallible(&mut buf[..read_len].into())?;
@@ -86,8 +93,12 @@ impl FileIo for PtyMaster {
         let mut buf = vec![0u8; reader.remain().min(IO_CAPACITY)];
         let write_len = reader.read_fallible(&mut buf.as_mut_slice().into())?;
 
-        self.slave.push_input(&buf[..write_len]);
-        Ok(write_len)
+        // TODO: Add support for non-blocking mode and timeout
+        let len = self.wait_events(IoEvents::OUT, None, || {
+            Ok(self.slave.push_input(&buf[..write_len])?)
+        })?;
+        self.slave.driver().pollee().invalidate();
+        Ok(len)
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {

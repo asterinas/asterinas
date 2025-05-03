@@ -26,7 +26,7 @@ mod n_tty;
 mod termio;
 
 pub use device::TtyDevice;
-pub use driver::TtyDriver;
+pub use driver::{PushCharError, TtyDriver};
 pub(super) use n_tty::init;
 pub use n_tty::{iter_n_tty, system_console};
 
@@ -81,22 +81,34 @@ impl<D> Tty<D> {
         &self.driver
     }
 
-    fn check_io_events(&self) -> IoEvents {
-        if self.ldisc.lock().buffer_len() != 0 {
-            IoEvents::IN | IoEvents::OUT
-        } else {
-            IoEvents::OUT
-        }
+    /// Returns whether new characters can be pushed into the input buffer.
+    ///
+    /// This method should return `false` if the input buffer is full.
+    pub fn can_push(&self) -> bool {
+        !self.ldisc.lock().is_full()
+    }
+
+    /// Notifies that the output buffer now has room for new characters.
+    ///
+    /// This method should be called when the state of [`TtyDriver::can_push`] changes from `false`
+    /// to `true`.
+    pub fn notify_output(&self) {
+        self.pollee.notify(IoEvents::OUT);
     }
 }
 
 impl<D: TtyDriver> Tty<D> {
-    pub fn push_input(&self, chs: &[u8]) {
+    /// Pushes characters into the output buffer.
+    ///
+    /// This method returns the number of bytes pushed or fails with an error if no bytes can be
+    /// pushed because the buffer is full.
+    pub fn push_input(&self, chs: &[u8]) -> core::result::Result<usize, PushCharError> {
         let mut ldisc = self.ldisc.lock();
         let mut echo = self.driver.echo_callback();
 
+        let mut len = 0;
         for ch in chs {
-            ldisc.push_char(
+            let res = ldisc.push_char(
                 *ch,
                 |signum| {
                     if let Some(foreground) = self.job_control.foreground() {
@@ -105,12 +117,35 @@ impl<D: TtyDriver> Tty<D> {
                 },
                 &mut echo,
             );
+            if res.is_err() && len == 0 {
+                return Err(PushCharError);
+            } else if res.is_err() {
+                break;
+            } else {
+                len += 1;
+            }
         }
+
         self.pollee.notify(IoEvents::IN);
+        Ok(len)
+    }
+
+    fn check_io_events(&self) -> IoEvents {
+        let mut events = IoEvents::empty();
+
+        if self.ldisc.lock().buffer_len() > 0 {
+            events |= IoEvents::IN;
+        }
+
+        if self.driver.can_push() {
+            events |= IoEvents::OUT;
+        }
+
+        events
     }
 }
 
-impl<D> Pollable for Tty<D> {
+impl<D: TtyDriver> Pollable for Tty<D> {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         self.pollee
             .poll_with(mask, poller, || self.check_io_events())
@@ -126,6 +161,7 @@ impl<D: TtyDriver> FileIo for Tty<D> {
         let read_len =
             self.wait_events(IoEvents::IN, None, || self.ldisc.lock().try_read(&mut buf))?;
         self.pollee.invalidate();
+        self.driver.notify_input();
 
         // TODO: Confirm what we should do if `write_fallible` fails in the middle.
         writer.write_fallible(&mut buf[..read_len].into())?;
@@ -136,8 +172,12 @@ impl<D: TtyDriver> FileIo for Tty<D> {
         let mut buf = vec![0u8; reader.remain().min(IO_CAPACITY)];
         let write_len = reader.read_fallible(&mut buf.as_mut_slice().into())?;
 
-        self.driver.push_output(&buf[..write_len]);
-        Ok(write_len)
+        // TODO: Add support for non-blocking mode and timeout
+        let len = self.wait_events(IoEvents::OUT, None, || {
+            Ok(self.driver.push_output(&buf[..write_len])?)
+        })?;
+        self.pollee.invalidate();
+        Ok(len)
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
