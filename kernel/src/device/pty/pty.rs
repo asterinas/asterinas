@@ -27,6 +27,7 @@ use crate::{
 };
 
 const BUFFER_CAPACITY: usize = 4096;
+const IO_CAPACITY: usize = 4096;
 
 /// Pseudo terminal master.
 /// Internally, it has two buffers.
@@ -37,7 +38,6 @@ pub struct PtyMaster {
     index: u32,
     slave: Arc<PtySlave>,
     input: SpinLock<RingBuffer<u8>>,
-    /// The state of input buffer
     pollee: Pollee,
 }
 
@@ -45,8 +45,9 @@ impl PtyMaster {
     pub fn new(ptmx: Arc<dyn Inode>, index: u32) -> Arc<Self> {
         Arc::new_cyclic(move |master| {
             let slave = Arc::new_cyclic(move |weak_self| PtySlave {
-                ldisc: LineDiscipline::new(),
+                ldisc: SpinLock::new(LineDiscipline::new()),
                 job_control: JobControl::new(),
+                pollee: Pollee::new(),
                 master: master.clone(),
                 weak_self: weak_self.clone(),
             });
@@ -73,51 +74,57 @@ impl PtyMaster {
         &self.slave
     }
 
-    pub(super) fn slave_push_char(&self, ch: u8) {
-        let mut input = self.input.disable_irq().lock();
-        input.push_overwrite(ch);
+    fn slave_push(&self, chs: &[u8]) {
+        let mut input = self.input.lock();
+
+        for ch in chs {
+            // TODO: This is termios-specific behavior and should be part of the TTY implementation
+            // instead of the TTY driver implementation. See the ONLCR flag for more details.
+            if *ch == b'\n' {
+                input.push_overwrite(b'\r');
+                input.push_overwrite(b'\n');
+                continue;
+            }
+            input.push_overwrite(*ch);
+        }
         self.pollee.notify(IoEvents::IN);
     }
 
-    pub(super) fn slave_poll(
-        &self,
-        mask: IoEvents,
-        mut poller: Option<&mut PollHandle>,
-    ) -> IoEvents {
-        let mut poll_status = IoEvents::empty();
+    fn slave_echo(&self) -> impl FnMut(&str) + '_ {
+        let mut input = self.input.lock();
+        let mut has_notified = false;
 
-        let poll_in_mask = mask & IoEvents::IN;
-        if !poll_in_mask.is_empty() {
-            let poll_in_status = self.slave.ldisc.poll(poll_in_mask, poller.as_deref_mut());
-            poll_status |= poll_in_status;
+        move |content| {
+            for byte in content.as_bytes() {
+                input.push_overwrite(*byte);
+            }
+
+            if !has_notified {
+                self.pollee.notify(IoEvents::IN);
+                has_notified = true;
+            }
         }
-
-        let poll_out_mask = mask & IoEvents::OUT;
-        if !poll_out_mask.is_empty() {
-            let poll_out_status = self
-                .pollee
-                .poll_with(poll_out_mask, poller, || self.check_io_events());
-            poll_status |= poll_out_status;
-        }
-
-        poll_status
     }
 
-    fn try_read(&self, writer: &mut VmWriter) -> Result<usize> {
-        let mut input = self.input.disable_irq().lock();
+    fn try_read(&self, buf: &mut [u8]) -> Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
 
+        let mut input = self.input.lock();
         if input.is_empty() {
             return_errno_with_message!(Errno::EAGAIN, "the buffer is empty");
         }
 
-        let read_len = input.read_fallible(writer)?;
+        let read_len = input.len().min(buf.len());
+        input.pop_slice(&mut buf[..read_len]).unwrap();
         self.pollee.invalidate();
 
         Ok(read_len)
     }
 
     fn check_io_events(&self) -> IoEvents {
-        let input = self.input.disable_irq().lock();
+        let input = self.input.lock();
 
         if !input.is_empty() {
             IoEvents::IN | IoEvents::OUT
@@ -128,60 +135,27 @@ impl PtyMaster {
 }
 
 impl Pollable for PtyMaster {
-    fn poll(&self, mask: IoEvents, mut poller: Option<&mut PollHandle>) -> IoEvents {
-        let mut poll_status = IoEvents::empty();
-
-        let poll_in_mask = mask & IoEvents::IN;
-        if !poll_in_mask.is_empty() {
-            let poll_in_status = self
-                .pollee
-                .poll_with(poll_in_mask, poller.as_deref_mut(), || {
-                    self.check_io_events()
-                });
-            poll_status |= poll_in_status;
-        }
-
-        let poll_out_mask = mask & IoEvents::OUT;
-        if !poll_out_mask.is_empty() {
-            let poll_out_status = self.slave.ldisc.poll(poll_out_mask, poller);
-            poll_status |= poll_out_status;
-        }
-
-        poll_status
+    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
+        self.pollee
+            .poll_with(mask, poller, || self.check_io_events())
     }
 }
 
 impl FileIo for PtyMaster {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        if !writer.has_avail() {
-            return Ok(0);
-        }
+        // TODO: Add support for non-blocking mode and timeout
+        let mut buf = vec![0u8; writer.avail().min(IO_CAPACITY)];
+        let read_len = self.wait_events(IoEvents::IN, None, || self.try_read(&mut buf))?;
 
-        // TODO: deal with nonblocking and timeout
-        self.wait_events(IoEvents::IN, None, || self.try_read(writer))
+        writer.write_fallible(&mut buf[..read_len].into())?;
+        Ok(read_len)
     }
 
     fn write(&self, reader: &mut VmReader) -> Result<usize> {
-        let buf = reader.collect()?;
-        let write_len = buf.len();
-        let mut input = self.input.lock();
-        for character in buf {
-            self.slave.ldisc.push_char(
-                character,
-                |signum| {
-                    if let Some(foreground) = self.slave.job_control.foreground() {
-                        broadcast_signal_async(Arc::downgrade(&foreground), signum);
-                    }
-                },
-                |content| {
-                    for byte in content.as_bytes() {
-                        input.push_overwrite(*byte);
-                    }
-                },
-            );
-        }
+        let mut buf = vec![0u8; reader.remain().min(IO_CAPACITY)];
+        let write_len = reader.read_fallible(&mut buf.as_mut_slice().into())?;
 
-        self.pollee.notify(IoEvents::IN);
+        self.slave.master_push(&buf[..write_len]);
         Ok(write_len)
     }
 
@@ -248,8 +222,9 @@ impl Drop for PtyMaster {
 }
 
 pub struct PtySlave {
-    ldisc: LineDiscipline,
+    ldisc: SpinLock<LineDiscipline>,
     job_control: JobControl,
+    pollee: Pollee,
     master: Weak<PtyMaster>,
     weak_self: Weak<Self>,
 }
@@ -261,6 +236,34 @@ impl PtySlave {
 
     fn master(&self) -> Arc<PtyMaster> {
         self.master.upgrade().unwrap()
+    }
+
+    fn master_push(&self, chs: &[u8]) {
+        let mut ldisc = self.ldisc.lock();
+
+        let master = self.master();
+        let mut echo = master.slave_echo();
+
+        for ch in chs {
+            ldisc.push_char(
+                *ch,
+                |signum| {
+                    if let Some(foreground) = self.job_control.foreground() {
+                        broadcast_signal_async(Arc::downgrade(&foreground), signum);
+                    }
+                },
+                &mut echo,
+            );
+        }
+        self.pollee.notify(IoEvents::IN);
+    }
+
+    fn check_io_events(&self) -> IoEvents {
+        if self.ldisc.lock().buffer_len() != 0 {
+            IoEvents::IN | IoEvents::OUT
+        } else {
+            IoEvents::OUT
+        }
     }
 }
 
@@ -282,59 +285,57 @@ impl Terminal for PtySlave {
 
 impl Pollable for PtySlave {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        self.master().slave_poll(mask, poller)
+        self.pollee
+            .poll_with(mask, poller, || self.check_io_events())
     }
 }
 
 impl FileIo for PtySlave {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        let mut buf = vec![0u8; writer.avail()];
         self.job_control.wait_until_in_foreground()?;
-        let read_len = self.ldisc.read(&mut buf)?;
-        writer.write_fallible(&mut buf.as_slice().into())?;
+
+        // TODO: Add support for non-blocking mode and timeout
+        let mut buf = vec![0u8; writer.avail().min(IO_CAPACITY)];
+        let read_len =
+            self.wait_events(IoEvents::IN, None, || self.ldisc.lock().try_read(&mut buf))?;
+        self.pollee.invalidate();
+
+        writer.write_fallible(&mut buf[..read_len].into())?;
         Ok(read_len)
     }
 
     fn write(&self, reader: &mut VmReader) -> Result<usize> {
-        let buf = reader.collect()?;
-        let write_len = buf.len();
-        let master = self.master();
-        for ch in buf {
-            // do we need to add '\r' here?
-            if ch == b'\n' {
-                master.slave_push_char(b'\r');
-                master.slave_push_char(b'\n');
-            } else {
-                master.slave_push_char(ch);
-            }
-        }
+        let mut buf = vec![0u8; reader.remain().min(IO_CAPACITY)];
+        let write_len = reader.read_fallible(&mut buf.as_mut_slice().into())?;
+
+        self.master().slave_push(&buf[..write_len]);
         Ok(write_len)
     }
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
         match cmd {
             IoctlCmd::TCGETS => {
-                let termios = self.ldisc.termios();
+                let termios = *self.ldisc.lock().termios();
                 current_userspace!().write_val(arg, &termios)?;
             }
             IoctlCmd::TCSETS => {
                 let termios = current_userspace!().read_val(arg)?;
-                self.ldisc.set_termios(termios);
+                self.ldisc.lock().set_termios(termios);
             }
             IoctlCmd::TIOCGPTN => {
                 let idx = self.index();
                 current_userspace!().write_val(arg, &idx)?;
             }
             IoctlCmd::TIOCGWINSZ => {
-                let winsize = self.ldisc.window_size();
+                let winsize = self.ldisc.lock().window_size();
                 current_userspace!().write_val(arg, &winsize)?;
             }
             IoctlCmd::TIOCSWINSZ => {
                 let winsize = current_userspace!().read_val(arg)?;
-                self.ldisc.set_window_size(winsize);
+                self.ldisc.lock().set_window_size(winsize);
             }
             IoctlCmd::FIONREAD => {
-                let buffer_len = self.ldisc.buffer_len() as i32;
+                let buffer_len = self.ldisc.lock().buffer_len() as i32;
                 current_userspace!().write_val(arg, &buffer_len)?;
             }
             _ => (self.weak_self.upgrade().unwrap() as Arc<dyn Terminal>)
