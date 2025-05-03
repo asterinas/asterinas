@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::format;
-
 use super::termio::{KernelTermios, WinSize, CC_C_CHAR};
 use crate::{
     prelude::*,
@@ -61,10 +59,6 @@ impl CurrentLine {
     pub fn is_full(&self) -> bool {
         self.buffer.is_full()
     }
-
-    pub fn is_empty(&self) -> bool {
-        self.buffer.is_empty()
-    }
 }
 
 impl LineDiscipline {
@@ -79,7 +73,7 @@ impl LineDiscipline {
     }
 
     /// Pushes a character to the line discipline.
-    pub fn push_char<F1: FnMut(SigNum), F2: FnMut(&str)>(
+    pub fn push_char<F1: FnMut(SigNum), F2: FnMut(&[u8])>(
         &mut self,
         ch: u8,
         mut signal_callback: F1,
@@ -135,19 +129,17 @@ impl LineDiscipline {
     }
 
     // TODO: respect output flags
-    fn output_char<F: FnMut(&str)>(&self, ch: u8, mut echo_callback: F) {
+    fn output_char<F: FnMut(&[u8])>(&self, ch: u8, mut echo_callback: F) {
         match ch {
-            b'\n' => echo_callback("\n"),
-            b'\r' => echo_callback("\r\n"),
+            b'\n' => echo_callback(b"\n"),
+            b'\r' => echo_callback(b"\r\n"),
             ch if ch == *self.termios.get_special_char(CC_C_CHAR::VERASE) => {
                 // Write a space to overwrite the current character
-                let backspace: &str = core::str::from_utf8(b"\x08 \x08").unwrap();
-                echo_callback(backspace);
+                echo_callback(b"\x08 \x08");
             }
-            ch if is_printable_char(ch) => print!("{}", char::from(ch)),
+            ch if is_printable_char(ch) => echo_callback(&[ch]),
             ch if is_ctrl_char(ch) && self.termios.contains_echo_ctl() => {
-                let ctrl_char = format!("^{}", ctrl_char_to_printable(ch));
-                echo_callback(&ctrl_char);
+                echo_callback(&[b'^', ctrl_char_to_printable(ch)]);
             }
             _ => {}
         }
@@ -267,7 +259,7 @@ fn char_to_signal(ch: u8, termios: &KernelTermios) -> Option<SigNum> {
     }
 }
 
-fn ctrl_char_to_printable(ch: u8) -> char {
+fn ctrl_char_to_printable(ch: u8) -> u8 {
     debug_assert!(is_ctrl_char(ch));
-    char::from_u32((ch + b'A' - 1) as u32).unwrap()
+    ch + b'A' - 1
 }

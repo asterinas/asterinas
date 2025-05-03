@@ -32,7 +32,7 @@ use ostd::{io::IoMem, Pod};
 
 use crate::transport::VirtioTransport;
 
-pub static DEVICE_NAME: &str = "Virtio-Input";
+pub const DEVICE_NAME: &str = "Virtio-Input";
 
 /// Select value used for [`device::InputDevice::query_config_select()`].
 #[repr(u8)]
