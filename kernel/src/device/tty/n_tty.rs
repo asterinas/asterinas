@@ -6,15 +6,16 @@ use aster_console::AnyConsoleDevice;
 use ostd::mm::{Infallible, VmReader, VmWriter};
 use spin::Once;
 
-use super::{Tty, TtyDriver};
+use super::{PushCharError, Tty, TtyDriver};
 
 pub struct ConsoleDriver {
     console: Arc<dyn AnyConsoleDevice>,
 }
 
 impl TtyDriver for ConsoleDriver {
-    fn push_output(&self, chs: &[u8]) {
+    fn push_output(&self, chs: &[u8]) -> core::result::Result<usize, PushCharError> {
         self.console.send(chs);
+        Ok(chs.len())
     }
 
     fn drain_output(&self) {}
@@ -22,6 +23,12 @@ impl TtyDriver for ConsoleDriver {
     fn echo_callback(&self) -> impl FnMut(&[u8]) + '_ {
         |chs| self.console.send(chs)
     }
+
+    fn can_push(&self) -> bool {
+        true
+    }
+
+    fn notify_input(&self) {}
 }
 
 static N_TTY: Once<Box<[Arc<Tty<ConsoleDriver>>]>> = Once::new();
@@ -59,7 +66,7 @@ fn create_n_tty(index: u32, device: Arc<dyn AnyConsoleDevice>) -> Arc<Tty<Consol
         move |mut reader: VmReader<Infallible>| {
             let mut chs = vec![0u8; reader.remain()];
             reader.read(&mut VmWriter::from(chs.as_mut_slice()));
-            tty.push_input(chs.as_slice());
+            let _ = tty.push_input(chs.as_slice());
         },
     )));
 

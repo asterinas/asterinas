@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::termio::{KernelTermios, WinSize, CC_C_CHAR};
+use ostd::const_assert;
+
+use super::{
+    termio::{KernelTermios, WinSize, CC_C_CHAR},
+    PushCharError,
+};
 use crate::{
     prelude::*,
     process::signal::{
@@ -10,54 +15,71 @@ use crate::{
     util::ring_buffer::RingBuffer,
 };
 
-// This implementation refers the implementation of linux
-// https://elixir.bootlin.com/linux/latest/source/include/linux/tty_ldisc.h
+// This implementation references the implementation of Linux:
+// <https://elixir.bootlin.com/linux/latest/source/include/linux/tty_ldisc.h>
 
-const BUFFER_CAPACITY: usize = 4096;
+const LINE_CAPACITY: usize = 4095;
+const BUFFER_CAPACITY: usize = 8192;
+
+// `LINE_CAPACITY` must be less than `BUFFER_CAPACITY`. Otherwise, `write()` can be blocked
+// indefinitely if both the current line and the buffer are full, so even the line terminator won't
+// be accepted.
+const_assert!(LINE_CAPACITY < BUFFER_CAPACITY);
 
 pub struct LineDiscipline {
     /// Current line
     current_line: CurrentLine,
-    /// The read buffer
+    /// Read buffer
     read_buffer: RingBuffer<u8>,
     /// Termios
     termios: KernelTermios,
-    /// Windows size
+    /// Window size
     winsize: WinSize,
 }
 
-pub struct CurrentLine {
-    buffer: RingBuffer<u8>,
+struct CurrentLine {
+    buffer: Box<[u8]>,
+    len: usize,
 }
 
 impl Default for CurrentLine {
     fn default() -> Self {
         Self {
-            buffer: RingBuffer::new(BUFFER_CAPACITY),
+            buffer: vec![0; LINE_CAPACITY].into_boxed_slice(),
+            len: 0,
         }
     }
 }
 
 impl CurrentLine {
-    /// Reads all bytes inside current line and clear current line
-    pub fn drain(&mut self) -> Vec<u8> {
-        let mut ret = vec![0u8; self.buffer.len()];
-        self.buffer.pop_slice(ret.as_mut_slice()).unwrap();
-        ret
+    /// Pushes a character to the current line.
+    fn push_char(&mut self, ch: u8) {
+        // If the line is full, the character will be ignored, but other actions such as echoing
+        // and signaling will work as normal. This will never block the caller, even if the input
+        // comes from the pseduoterminal master.
+        if self.len == self.buffer.len() {
+            return;
+        }
+
+        self.buffer[self.len] = ch;
+        self.len += 1;
     }
 
-    pub fn push_char(&mut self, char: u8) {
-        // What should we do if line is full?
-        debug_assert!(!self.is_full());
-        self.buffer.push_overwrite(char);
+    /// Clears the current line and returns the bytes in it.
+    fn drain(&mut self) -> &[u8] {
+        let chs = &self.buffer[..self.len];
+        self.len = 0;
+        chs
     }
 
-    pub fn backspace(&mut self) {
-        let _ = self.buffer.pop();
+    /// Removes the last character, if it is present.
+    fn backspace(&mut self) {
+        self.len = self.len.saturating_sub(1);
     }
 
-    pub fn is_full(&self) -> bool {
-        self.buffer.is_full()
+    /// Returns the number of characters in the current line.
+    fn len(&self) -> usize {
+        self.len
     }
 }
 
@@ -78,7 +100,7 @@ impl LineDiscipline {
         ch: u8,
         mut signal_callback: F1,
         echo_callback: F2,
-    ) {
+    ) -> core::result::Result<(), PushCharError> {
         let ch = if self.termios.contains_icrnl() && ch == b'\r' {
             b'\n'
         } else {
@@ -96,10 +118,18 @@ impl LineDiscipline {
             self.output_char(ch, echo_callback);
         }
 
+        if self.is_full() {
+            // If the buffer is full, we should not push the character into the buffer. The caller
+            // can silently ignore the error (if the input comes from the keyboard) or block the
+            // user space (if the input comes from the pseduoterminal master).
+            return Err(PushCharError);
+        }
+
         // Raw mode
         if !self.termios.is_canonical_mode() {
-            self.read_buffer.push_overwrite(ch);
-            return;
+            // Note that `unwrap()` below won't fail because we checked `is_full()` above.
+            self.read_buffer.push(ch).unwrap();
+            return Ok(());
         }
 
         // Canonical mode
@@ -116,16 +146,19 @@ impl LineDiscipline {
 
         if is_line_terminator(ch, &self.termios) {
             // A new line is met. Move all bytes in `current_line` to `read_buffer`.
-            self.current_line.push_char(ch);
+            // Note that `unwrap()` below won't fail because we checked `is_full()` above.
             for line_ch in self.current_line.drain() {
-                self.read_buffer.push_overwrite(line_ch);
+                self.read_buffer.push(*line_ch).unwrap();
             }
+            self.read_buffer.push(ch).unwrap();
         }
 
         if is_printable_char(ch) {
             // Printable character
             self.current_line.push_char(ch);
         }
+
+        Ok(())
     }
 
     // TODO: respect output flags
@@ -190,14 +223,6 @@ impl LineDiscipline {
         Ok(dst.len())
     }
 
-    pub fn termios(&self) -> &KernelTermios {
-        &self.termios
-    }
-
-    pub fn set_termios(&mut self, termios: KernelTermios) {
-        self.termios = termios;
-    }
-
     pub fn drain_input(&mut self) {
         self.current_line.drain();
         self.read_buffer.clear();
@@ -205,6 +230,18 @@ impl LineDiscipline {
 
     pub fn buffer_len(&self) -> usize {
         self.read_buffer.len()
+    }
+
+    pub fn is_full(&self) -> bool {
+        self.read_buffer.len() + self.current_line.len() >= self.read_buffer.capacity()
+    }
+
+    pub fn termios(&self) -> &KernelTermios {
+        &self.termios
+    }
+
+    pub fn set_termios(&mut self, termios: KernelTermios) {
+        self.termios = termios;
     }
 
     pub fn window_size(&self) -> WinSize {
