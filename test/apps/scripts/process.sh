@@ -35,6 +35,7 @@ process/group_session
 process/job_control
 pthread/pthread_test
 pty/open_pty
+pty/pty_blocking
 sched/sched_attr
 shm/posix_shm
 signal_c/parent_death_signal
