@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::{early_print, sync::LocalIrqDisabled};
-use spin::Once;
+use ostd::sync::LocalIrqDisabled;
 
-use self::{driver::TtyDriver, line_discipline::LineDiscipline};
+use self::line_discipline::LineDiscipline;
 use crate::{
     current_userspace,
     events::IoEvents,
@@ -21,65 +20,65 @@ use crate::{
 };
 
 mod device;
-pub mod driver;
-pub mod line_discipline;
-pub mod termio;
+mod driver;
+mod line_discipline;
+mod n_tty;
+mod termio;
 
 pub use device::TtyDevice;
-
-static N_TTY: Once<Arc<Tty>> = Once::new();
-
-pub(super) fn init() {
-    let name = CString::new("console").unwrap();
-    let tty = Tty::new(name);
-    N_TTY.call_once(|| tty);
-    driver::init();
-}
+pub use driver::TtyDriver;
+pub(super) use n_tty::init;
+pub use n_tty::{iter_n_tty, system_console};
 
 const IO_CAPACITY: usize = 4096;
 
-pub struct Tty {
-    /// tty_name
-    #[expect(unused)]
-    name: CString,
-    /// line discipline
+/// A teletyper (TTY).
+///
+/// This abstracts the general functionality of a TTY in a way that
+///  - Any input device driver can use [`Tty::push_input`] to push input characters, and users can
+///    [`Tty::read`] from the TTY;
+///  - Users can also [`Tty::write`] output characters to the TTY and the output device driver will
+///    receive the characters from [`TtyDriver::push_output`] where the generic parameter `D` is
+///    the [`TtyDriver`].
+///
+/// ```text
+/// +------------+     +-------------+
+/// |input device|     |output device|
+/// |   driver   |     |   driver    |
+/// +-----+------+     +------^------+
+///       |                   |
+///       |     +-------+     |
+///       +----->  TTY  +-----+
+///             +-------+
+/// Tty::push_input   D::push_output
+/// ```
+pub struct Tty<D> {
+    index: u32,
+    driver: D,
     ldisc: SpinLock<LineDiscipline, LocalIrqDisabled>,
     job_control: JobControl,
     pollee: Pollee,
-    /// driver
-    driver: SpinLock<Weak<TtyDriver>>,
     weak_self: Weak<Self>,
 }
 
-impl Tty {
-    pub fn new(name: CString) -> Arc<Self> {
+impl<D> Tty<D> {
+    pub fn new(index: u32, driver: D) -> Arc<Self> {
         Arc::new_cyclic(move |weak_ref| Tty {
-            name,
+            index,
+            driver,
             ldisc: SpinLock::new(LineDiscipline::new()),
             job_control: JobControl::new(),
             pollee: Pollee::new(),
-            driver: SpinLock::new(Weak::new()),
             weak_self: weak_ref.clone(),
         })
     }
 
-    pub fn set_driver(&self, driver: Weak<TtyDriver>) {
-        *self.driver.disable_irq().lock() = driver;
+    pub fn index(&self) -> u32 {
+        self.index
     }
 
-    pub fn push_char(&self, ch: u8) {
-        // FIXME: Use `early_print` to avoid calling virtio-console.
-        // This is only a workaround
-        self.ldisc.lock().push_char(
-            ch,
-            |signum| {
-                if let Some(foreground) = self.job_control.foreground() {
-                    broadcast_signal_async(Arc::downgrade(&foreground), signum);
-                }
-            },
-            |content| early_print!("{}", content),
-        );
-        self.pollee.notify(IoEvents::IN);
+    pub fn driver(&self) -> &D {
+        &self.driver
     }
 
     fn check_io_events(&self) -> IoEvents {
@@ -91,14 +90,34 @@ impl Tty {
     }
 }
 
-impl Pollable for Tty {
+impl<D: TtyDriver> Tty<D> {
+    pub fn push_input(&self, chs: &[u8]) {
+        let mut ldisc = self.ldisc.lock();
+        let mut echo = self.driver.echo_callback();
+
+        for ch in chs {
+            ldisc.push_char(
+                *ch,
+                |signum| {
+                    if let Some(foreground) = self.job_control.foreground() {
+                        broadcast_signal_async(Arc::downgrade(&foreground), signum);
+                    }
+                },
+                &mut echo,
+            );
+        }
+        self.pollee.notify(IoEvents::IN);
+    }
+}
+
+impl<D> Pollable for Tty<D> {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         self.pollee
             .poll_with(mask, poller, || self.check_io_events())
     }
 }
 
-impl FileIo for Tty {
+impl<D: TtyDriver> FileIo for Tty<D> {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
         self.job_control.wait_until_in_foreground()?;
 
@@ -117,11 +136,7 @@ impl FileIo for Tty {
         let mut buf = vec![0u8; reader.remain().min(IO_CAPACITY)];
         let write_len = reader.read_fallible(&mut buf.as_mut_slice().into())?;
 
-        if let Ok(content) = alloc::str::from_utf8(&buf[..write_len]) {
-            print!("{content}");
-        } else {
-            println!("Not utf-8 content: {:?}", buf);
-        }
+        self.driver.push_output(&buf[..write_len]);
         Ok(write_len)
     }
 
@@ -140,8 +155,9 @@ impl FileIo for Tty {
             IoctlCmd::TCSETSW => {
                 let termios = current_userspace!().read_val(arg)?;
 
-                self.ldisc.lock().set_termios(termios);
-                // TODO: Drain the output buffer
+                let mut ldisc = self.ldisc.lock();
+                ldisc.set_termios(termios);
+                self.driver.drain_output();
             }
             IoctlCmd::TCSETSF => {
                 let termios = current_userspace!().read_val(arg)?;
@@ -149,7 +165,7 @@ impl FileIo for Tty {
                 let mut ldisc = self.ldisc.lock();
                 ldisc.set_termios(termios);
                 ldisc.drain_input();
-                // TODO: Drain the output buffer
+                self.driver.drain_output();
 
                 self.pollee.invalidate();
             }
@@ -163,6 +179,16 @@ impl FileIo for Tty {
 
                 self.ldisc.lock().set_window_size(winsize);
             }
+            IoctlCmd::TIOCGPTN => {
+                let idx = self.index;
+
+                current_userspace!().write_val(arg, &idx)?;
+            }
+            IoctlCmd::FIONREAD => {
+                let buffer_len = self.ldisc.lock().buffer_len() as u32;
+
+                current_userspace!().write_val(arg, &buffer_len)?;
+            }
             _ => (self.weak_self.upgrade().unwrap() as Arc<dyn Terminal>)
                 .job_ioctl(cmd, arg, false)?,
         }
@@ -171,23 +197,18 @@ impl FileIo for Tty {
     }
 }
 
-impl Terminal for Tty {
+impl<D: TtyDriver> Terminal for Tty<D> {
     fn job_control(&self) -> &JobControl {
         &self.job_control
     }
 }
 
-impl Device for Tty {
+impl<D: TtyDriver> Device for Tty<D> {
     fn type_(&self) -> DeviceType {
         DeviceType::CharDevice
     }
 
     fn id(&self) -> DeviceId {
-        // The same value as /dev/console in linux.
-        DeviceId::new(88, 0)
+        DeviceId::new(88, self.index)
     }
-}
-
-pub fn get_n_tty() -> &'static Arc<Tty> {
-    N_TTY.get().unwrap()
 }

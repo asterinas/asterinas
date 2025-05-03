@@ -10,10 +10,11 @@ use crate::{
     prelude::*,
 };
 
-#[expect(clippy::module_inception)]
-mod pty;
+mod driver;
+mod master;
 
-pub use pty::{PtyMaster, PtySlave};
+pub use driver::PtySlave;
+pub use master::PtyMaster;
 use spin::Once;
 
 static DEV_PTS: Once<Dentry> = Once::new();
