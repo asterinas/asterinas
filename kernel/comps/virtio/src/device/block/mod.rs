@@ -12,7 +12,7 @@ use ostd::Pod;
 
 use crate::transport::{ConfigManager, VirtioTransport};
 
-pub static DEVICE_NAME: &str = "Virtio-Block";
+pub const DEVICE_NAME: &str = "Virtio-Block";
 
 bitflags! {
     /// features for virtio block device

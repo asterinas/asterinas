@@ -731,15 +731,14 @@ pub fn enqueue_signal_async(process: Weak<Process>, signum: SigNum) {
 /// This is the asynchronous version of [`ProcessGroup::broadcast_signal`]. By asynchronous, this
 /// method submits a work item and returns, so this method doesn't sleep and can be used in atomic
 /// mode.
-pub fn broadcast_signal_async(process_group: Weak<ProcessGroup>, signal: SigNum) {
+pub fn broadcast_signal_async(process_group: Weak<ProcessGroup>, signum: SigNum) {
     use super::signal::signals::kernel::KernelSignal;
     use crate::thread::work_queue;
 
-    let signal = KernelSignal::new(signal);
     work_queue::submit_work_func(
         move || {
             if let Some(process_group) = process_group.upgrade() {
-                process_group.broadcast_signal(signal);
+                process_group.broadcast_signal(KernelSignal::new(signum));
             }
         },
         work_queue::WorkPriority::High,

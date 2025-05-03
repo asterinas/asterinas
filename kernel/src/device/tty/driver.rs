@@ -1,89 +1,23 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::mm::{Infallible, VmReader};
-use spin::Once;
+/// A TTY driver.
+///
+/// A driver exposes some device-specific behavior to [`Tty`]. For example, a device provides
+/// methods to write to the output buffer (see [`Self::push_output`]), where the output buffer can
+/// be the monitor if the underlying device is framebuffer, or just a ring buffer if the underlying
+/// device is pseduoterminal).
+///
+/// [`Tty`]: super::Tty
+pub trait TtyDriver: Send + Sync + 'static {
+    /// Pushes characters into the output buffer.
+    fn push_output(&self, chs: &[u8]);
 
-use crate::{
-    device::tty::{get_n_tty, Tty},
-    prelude::*,
-};
+    /// Drains the output buffer.
+    fn drain_output(&self);
 
-pub static TTY_DRIVER: Once<Arc<TtyDriver>> = Once::new();
-
-pub(super) fn init() {
-    for (_, device) in aster_console::all_devices() {
-        device.register_callback(&console_input_callback)
-    }
-    let tty_driver = Arc::new(TtyDriver::new());
-    // FIXME: install n_tty into tty_driver?
-    let n_tty = get_n_tty();
-    tty_driver.install(n_tty.clone());
-    TTY_DRIVER.call_once(|| tty_driver);
-}
-
-pub struct TtyDriver {
-    ttys: SpinLock<Vec<Arc<Tty>>>,
-}
-
-impl TtyDriver {
-    pub const fn new() -> Self {
-        Self {
-            ttys: SpinLock::new(Vec::new()),
-        }
-    }
-
-    /// Return the tty device in driver's internal table.
-    pub fn lookup(&self, index: usize) -> Result<Arc<Tty>> {
-        let ttys = self.ttys.disable_irq().lock();
-        // Return the tty device corresponding to idx
-        if index >= ttys.len() {
-            return_errno_with_message!(Errno::ENODEV, "lookup failed. No tty device");
-        }
-        let tty = ttys[index].clone();
-        drop(ttys);
-        Ok(tty)
-    }
-
-    /// Install a new tty into the driver's internal tables.
-    pub fn install(self: &Arc<Self>, tty: Arc<Tty>) {
-        tty.set_driver(Arc::downgrade(self));
-        self.ttys.disable_irq().lock().push(tty);
-    }
-
-    /// remove a new tty into the driver's internal tables.
-    pub fn remove(&self, index: usize) -> Result<()> {
-        let mut ttys = self.ttys.disable_irq().lock();
-        if index >= ttys.len() {
-            return_errno_with_message!(Errno::ENODEV, "lookup failed. No tty device");
-        }
-        let removed_tty = ttys.remove(index);
-        removed_tty.set_driver(Weak::new());
-        drop(ttys);
-        Ok(())
-    }
-
-    pub fn push_char(&self, ch: u8) {
-        // FIXME: should the char send to all ttys?
-        for tty in &*self.ttys.disable_irq().lock() {
-            tty.push_char(ch);
-        }
-    }
-}
-
-impl Default for TtyDriver {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-fn console_input_callback(mut reader: VmReader<Infallible>) {
-    let tty_driver = get_tty_driver();
-    while reader.remain() > 0 {
-        let ch = reader.read_val().unwrap();
-        tty_driver.push_char(ch);
-    }
-}
-
-fn get_tty_driver() -> &'static TtyDriver {
-    TTY_DRIVER.get().unwrap()
+    /// Returns a callback function that echoes input characters to the output buffer.
+    ///
+    /// Note that the implementation may choose to hold a lock during the life of the callback.
+    /// During this time, calls to other methods such as [`Self::push_output`] may cause deadlocks.
+    fn echo_callback(&self) -> impl FnMut(&[u8]) + '_;
 }
