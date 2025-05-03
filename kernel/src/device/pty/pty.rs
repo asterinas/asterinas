@@ -6,7 +6,7 @@ use ostd::task::Task;
 
 use crate::{
     current_userspace,
-    device::tty::{line_discipline::LineDiscipline, new_job_control_and_ldisc},
+    device::tty::line_discipline::LineDiscipline,
     events::IoEvents,
     fs::{
         device::{Device, DeviceId, DeviceType},
@@ -18,6 +18,7 @@ use crate::{
     },
     prelude::*,
     process::{
+        broadcast_signal_async,
         posix_thread::{AsPosixThread, AsThreadLocal},
         signal::{PollHandle, Pollable, Pollee},
         JobControl, Terminal,
@@ -43,10 +44,9 @@ pub struct PtyMaster {
 impl PtyMaster {
     pub fn new(ptmx: Arc<dyn Inode>, index: u32) -> Arc<Self> {
         Arc::new_cyclic(move |master| {
-            let (job_control, ldisc) = new_job_control_and_ldisc();
             let slave = Arc::new_cyclic(move |weak_self| PtySlave {
-                ldisc,
-                job_control,
+                ldisc: LineDiscipline::new(),
+                job_control: JobControl::new(),
                 master: master.clone(),
                 weak_self: weak_self.clone(),
             });
@@ -166,11 +166,19 @@ impl FileIo for PtyMaster {
         let write_len = buf.len();
         let mut input = self.input.lock();
         for character in buf {
-            self.slave.ldisc.push_char(character, |content| {
-                for byte in content.as_bytes() {
-                    input.push_overwrite(*byte);
-                }
-            });
+            self.slave.ldisc.push_char(
+                character,
+                |signum| {
+                    if let Some(foreground) = self.slave.job_control.foreground() {
+                        broadcast_signal_async(Arc::downgrade(&foreground), signum);
+                    }
+                },
+                |content| {
+                    for byte in content.as_bytes() {
+                        input.push_overwrite(*byte);
+                    }
+                },
+            );
         }
 
         self.pollee.notify(IoEvents::IN);
@@ -240,8 +248,8 @@ impl Drop for PtyMaster {
 }
 
 pub struct PtySlave {
-    ldisc: Arc<LineDiscipline>,
-    job_control: Arc<JobControl>,
+    ldisc: LineDiscipline,
+    job_control: JobControl,
     master: Weak<PtyMaster>,
     weak_self: Weak<Self>,
 }

@@ -14,7 +14,8 @@ use crate::{
     },
     prelude::*,
     process::{
-        signal::{signals::kernel::KernelSignal, PollHandle, Pollable},
+        broadcast_signal_async,
+        signal::{PollHandle, Pollable},
         JobControl, Terminal,
     },
 };
@@ -40,8 +41,8 @@ pub struct Tty {
     #[expect(unused)]
     name: CString,
     /// line discipline
-    ldisc: Arc<LineDiscipline>,
-    job_control: Arc<JobControl>,
+    ldisc: LineDiscipline,
+    job_control: JobControl,
     /// driver
     driver: SpinLock<Weak<TtyDriver>>,
     weak_self: Weak<Self>,
@@ -49,11 +50,10 @@ pub struct Tty {
 
 impl Tty {
     pub fn new(name: CString) -> Arc<Self> {
-        let (job_control, ldisc) = new_job_control_and_ldisc();
         Arc::new_cyclic(move |weak_ref| Tty {
             name,
-            ldisc,
-            job_control,
+            ldisc: LineDiscipline::new(),
+            job_control: JobControl::new(),
             driver: SpinLock::new(Weak::new()),
             weak_self: weak_ref.clone(),
         })
@@ -66,8 +66,15 @@ impl Tty {
     pub fn push_char(&self, ch: u8) {
         // FIXME: Use `early_print` to avoid calling virtio-console.
         // This is only a workaround
-        self.ldisc
-            .push_char(ch, |content| early_print!("{}", content))
+        self.ldisc.push_char(
+            ch,
+            |signum| {
+                if let Some(foreground) = self.job_control.foreground() {
+                    broadcast_signal_async(Arc::downgrade(&foreground), signum);
+                }
+            },
+            |content| early_print!("{}", content),
+        )
     }
 }
 
@@ -154,25 +161,6 @@ impl Device for Tty {
         // The same value as /dev/console in linux.
         DeviceId::new(88, 0)
     }
-}
-
-pub fn new_job_control_and_ldisc() -> (Arc<JobControl>, Arc<LineDiscipline>) {
-    let job_control = Arc::new(JobControl::new());
-
-    let send_signal = {
-        let cloned_job_control = job_control.clone();
-        move |signal: KernelSignal| {
-            let Some(foreground) = cloned_job_control.foreground() else {
-                return;
-            };
-
-            foreground.broadcast_signal(signal);
-        }
-    };
-
-    let ldisc = LineDiscipline::new(Arc::new(send_signal));
-
-    (job_control, ldisc)
 }
 
 pub fn get_n_tty() -> &'static Arc<Tty> {

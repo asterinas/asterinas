@@ -2,10 +2,7 @@
 
 use alloc::format;
 
-use ostd::{
-    sync::LocalIrqDisabled,
-    trap::{disable_local, in_interrupt_context},
-};
+use ostd::{sync::LocalIrqDisabled, trap::disable_local};
 
 use super::termio::{KernelTermios, WinSize, CC_C_CHAR};
 use crate::{
@@ -13,10 +10,9 @@ use crate::{
     prelude::*,
     process::signal::{
         constants::{SIGINT, SIGQUIT},
-        signals::kernel::KernelSignal,
+        sig_num::SigNum,
         PollHandle, Pollable, Pollee,
     },
-    thread::work_queue::{submit_work_item, work_item::WorkItem, WorkPriority},
     util::ring_buffer::RingBuffer,
 };
 
@@ -24,8 +20,6 @@ use crate::{
 // https://elixir.bootlin.com/linux/latest/source/include/linux/tty_ldisc.h
 
 const BUFFER_CAPACITY: usize = 4096;
-
-pub type LdiscSignalSender = Arc<dyn Fn(KernelSignal) + Send + Sync + 'static>;
 
 // Lock ordering to prevent deadlock (circular dependencies):
 // 1. `termios`
@@ -43,12 +37,6 @@ pub struct LineDiscipline {
     winsize: SpinLock<WinSize, LocalIrqDisabled>,
     /// Pollee
     pollee: Pollee,
-    /// Used to send signal for foreground processes, when some char comes.
-    send_signal: LdiscSignalSender,
-    /// Work item
-    work_item: Arc<WorkItem>,
-    /// Parameters used by a work item.
-    work_item_para: Arc<SpinLock<LineDisciplineWorkPara, LocalIrqDisabled>>,
 }
 
 pub struct CurrentLine {
@@ -99,29 +87,23 @@ impl Pollable for LineDiscipline {
 
 impl LineDiscipline {
     /// Creates a new line discipline
-    pub fn new(send_signal: LdiscSignalSender) -> Arc<Self> {
-        Arc::new_cyclic(move |line_ref: &Weak<LineDiscipline>| {
-            let line_discipline = line_ref.clone();
-            let work_item = WorkItem::new(Box::new(move || {
-                if let Some(line_discipline) = line_discipline.upgrade() {
-                    line_discipline.send_signal_after();
-                }
-            }));
-            Self {
-                current_line: SpinLock::new(CurrentLine::default()),
-                read_buffer: SpinLock::new(RingBuffer::new(BUFFER_CAPACITY)),
-                termios: SpinLock::new(KernelTermios::default()),
-                winsize: SpinLock::new(WinSize::default()),
-                pollee: Pollee::new(),
-                send_signal,
-                work_item,
-                work_item_para: Arc::new(SpinLock::new(LineDisciplineWorkPara::new())),
-            }
-        })
+    pub fn new() -> Self {
+        Self {
+            current_line: SpinLock::new(CurrentLine::default()),
+            read_buffer: SpinLock::new(RingBuffer::new(BUFFER_CAPACITY)),
+            termios: SpinLock::new(KernelTermios::default()),
+            winsize: SpinLock::new(WinSize::default()),
+            pollee: Pollee::new(),
+        }
     }
 
     /// Pushes a char to the line discipline
-    pub fn push_char<F2: FnMut(&str)>(&self, ch: u8, echo_callback: F2) {
+    pub fn push_char<F1: FnMut(SigNum), F2: FnMut(&str)>(
+        &self,
+        ch: u8,
+        mut signal_callback: F1,
+        echo_callback: F2,
+    ) {
         let termios = self.termios.lock();
 
         let ch = if termios.contains_icrnl() && ch == b'\r' {
@@ -130,8 +112,8 @@ impl LineDiscipline {
             ch
         };
 
-        if self.may_send_signal(&termios, ch) {
-            submit_work_item(self.work_item.clone(), WorkPriority::High);
+        if let Some(signum) = char_to_signal(ch, &termios) {
+            signal_callback(signum);
             // CBREAK mode may require the character to be outputted, so just go ahead.
         }
 
@@ -180,27 +162,6 @@ impl LineDiscipline {
         }
     }
 
-    fn may_send_signal(&self, termios: &KernelTermios, ch: u8) -> bool {
-        if !termios.is_canonical_mode() || !termios.contains_isig() {
-            return false;
-        }
-
-        let signal = match ch {
-            ch if ch == *termios.get_special_char(CC_C_CHAR::VINTR) => KernelSignal::new(SIGINT),
-            ch if ch == *termios.get_special_char(CC_C_CHAR::VQUIT) => KernelSignal::new(SIGQUIT),
-            _ => return false,
-        };
-
-        if in_interrupt_context() {
-            // `kernel_signal()` may cause sleep, so only construct parameters here.
-            self.work_item_para.lock().kernel_signal = Some(signal);
-        } else {
-            (self.send_signal)(signal);
-        }
-
-        true
-    }
-
     fn check_io_events(&self) -> IoEvents {
         let buffer = self.read_buffer.lock();
 
@@ -209,13 +170,6 @@ impl LineDiscipline {
         } else {
             IoEvents::empty()
         }
-    }
-
-    /// Sends a signal later. The signal will be handled by a work queue.
-    fn send_signal_after(&self) {
-        if let Some(signal) = self.work_item_para.lock().kernel_signal.take() {
-            (self.send_signal)(signal);
-        };
     }
 
     // TODO: respect output flags
@@ -230,7 +184,7 @@ impl LineDiscipline {
             }
             ch if is_printable_char(ch) => print!("{}", char::from(ch)),
             ch if is_ctrl_char(ch) && termios.contains_echo_ctl() => {
-                let ctrl_char = format!("^{}", get_printable_char(ch));
+                let ctrl_char = format!("^{}", ctrl_char_to_printable(ch));
                 echo_callback(&ctrl_char);
             }
             _ => {}
@@ -393,19 +347,19 @@ fn is_ctrl_char(ch: u8) -> bool {
     (0..0x20).contains(&ch)
 }
 
-fn get_printable_char(ctrl_char: u8) -> char {
-    debug_assert!(is_ctrl_char(ctrl_char));
-    char::from_u32((ctrl_char + b'A' - 1) as u32).unwrap()
-}
-
-struct LineDisciplineWorkPara {
-    kernel_signal: Option<KernelSignal>,
-}
-
-impl LineDisciplineWorkPara {
-    fn new() -> Self {
-        Self {
-            kernel_signal: None,
-        }
+fn char_to_signal(ch: u8, termios: &KernelTermios) -> Option<SigNum> {
+    if !termios.is_canonical_mode() || !termios.contains_isig() {
+        return None;
     }
+
+    match ch {
+        ch if ch == *termios.get_special_char(CC_C_CHAR::VINTR) => Some(SIGINT),
+        ch if ch == *termios.get_special_char(CC_C_CHAR::VQUIT) => Some(SIGQUIT),
+        _ => None,
+    }
+}
+
+fn ctrl_char_to_printable(ch: u8) -> char {
+    debug_assert!(is_ctrl_char(ch));
+    char::from_u32((ch + b'A' - 1) as u32).unwrap()
 }
