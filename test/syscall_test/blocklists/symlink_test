@@ -1,7 +1,0 @@
-SymlinkTest.CannotCreateSymlinkInReadOnlyDir
-SymlinkTest.PwriteToSymlink
-SymlinkTest.SymlinkAtDegradedPermissions_NoRandomSave
-SymlinkTest.ReadlinkAtDegradedPermissions_NoRandomSave
-SymlinkTest.FollowUpdatesATime
-AbsAndRelTarget/ParamSymlinkTest.CreatLinkCreatesTarget/0
-AbsAndRelTarget/ParamSymlinkTest.CreatLinkCreatesTarget/1

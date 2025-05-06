@@ -1,9 +1,0 @@
-LinkTest.CanCreateLinkFile
-LinkTest.PermissionDenied
-LinkTest.CannotLinkDirectory
-LinkTest.WithOldDirFD
-LinkTest.WithNewDirFD
-LinkTest.AbsPathsWithNonDirFDs
-LinkTest.LinkDoesNotFollowSymlinks
-LinkTest.LinkatDoesNotFollowSymlinkByDefault
-LinkTest.LinkatWithSymlinkFollow
