@@ -68,12 +68,6 @@ impl PerCpuClassRqSet {
 
                 busiest.update_thread_load(now_ns, Some(&thread), Some(UpdateLoadFlags::Detach));
 
-                ostd::early_println!(
-                    "Moving {:p} from {:?} to {:?}",
-                    thread,
-                    busiest.cpu,
-                    self.cpu
-                );
                 let task = items.remove(cursor).0 .0;
                 let thread = task.as_thread().unwrap().clone();
                 self.enqueue_entity((task, thread), None);
