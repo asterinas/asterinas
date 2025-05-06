@@ -17,6 +17,12 @@ pub(super) fn init() {
     });
 }
 
+pub(super) fn ap_init() {
+    timer::register_callback(|| {
+        SoftIrqLine::get(TIMER_SOFTIRQ_ID).raise();
+    });
+}
+
 /// Registers a function that will be executed during timer softirq.
 pub fn register_callback(func: fn()) {
     loop {

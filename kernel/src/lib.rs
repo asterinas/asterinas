@@ -108,6 +108,8 @@ pub fn init() {
 }
 
 fn ap_init() {
+    time::ap_init();
+
     fn ap_idle_thread() {
         let preempt_guard = ostd::task::disable_preempt();
         let cpu_id = preempt_guard.current_cpu();

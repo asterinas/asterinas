@@ -95,7 +95,9 @@ impl PerCpuClassRqSet {
             let now_ns = super::sched_clock();
 
             let Some((mut busiest, max)) = domain.rqs(sched, self.cpu).fold(None, |busiest, rq| {
-                let mut rq = rq.lock();
+                let Some(mut rq) = rq.try_lock() else {
+                    return busiest;
+                };
                 rq.update_rq_load(now_ns, true);
 
                 // TODO: Add considerations for non-FAIR loads.

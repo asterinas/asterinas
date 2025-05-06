@@ -274,6 +274,9 @@ fn init_jiffies_clock_manager() {
     JIFFIES_TIMER_MANAGER.call_once(|| jiffies_timer_manager);
 
     let callback = || {
+        if ostd::cpu::current_cpu_racy() != ostd::cpu::CpuId::bsp() {
+            return;
+        }
         JIFFIES_TIMER_MANAGER
             .get()
             .unwrap()
@@ -283,6 +286,9 @@ fn init_jiffies_clock_manager() {
 }
 
 fn update_coarse_clock() {
+    if ostd::cpu::current_cpu_racy() != ostd::cpu::CpuId::bsp() {
+        return;
+    }
     let real_time = RealTimeClock::get().read_time();
     let current = RealTimeCoarseClock::current_ref().get().unwrap();
     *current.disable_irq().lock() = real_time;

@@ -32,6 +32,10 @@ pub(super) fn init() {
     softirq::init();
 }
 
+pub(super) fn ap_init() {
+    softirq::ap_init();
+}
+
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone, Pod)]
 pub struct timespec_t {
