@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
+        with:
+          driver: docker
 
       - name: Login to Docker Hub
         uses: docker/login-action@v2
@@ -31,18 +33,42 @@ jobs:
           echo "aster_version=$ASTER_VERSION" >> "$GITHUB_OUTPUT"
           echo "rust_version=$RUST_VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push development image
+      - name: Build and push the OSDK development image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./osdk/tools/docker/Dockerfile
+          platforms: linux/amd64
+          push: true
+          load: true
+          tags: asterinas/osdk:${{ steps.fetch-versions.outputs.aster_version }}
+          build-args: |
+            ASTER_RUST_VERSION=${{ steps.fetch-versions.outputs.rust_version }}
+
+      - name: Build and push the OSDK development image for Intel TDX
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./osdk/tools/docker/tdx/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: asterinas/osdk:${{ steps.fetch-versions.outputs.aster_version }}-tdx
+          build-args: |
+            BASE_VERSION=${{ steps.fetch-versions.outputs.aster_version }}
+
+      - name: Build and push the Asterinas development image
         uses: docker/build-push-action@v4
         with:
           context: .
           file: ./tools/docker/Dockerfile
           platforms: linux/amd64
           push: true
+          load: true
           tags: asterinas/asterinas:${{ steps.fetch-versions.outputs.aster_version }}
           build-args: |
-            "ASTER_RUST_VERSION=${{ steps.fetch-versions.outputs.rust_version }}"
+            BASE_VERSION=${{ steps.fetch-versions.outputs.aster_version }}
 
-      - name: Build and push development image for Intel TDX
+      - name: Build and push the Asterinas development image for Intel TDX
         uses: docker/build-push-action@v4
         with:
           context: .
@@ -51,35 +77,4 @@ jobs:
           push: true
           tags: asterinas/asterinas:${{ steps.fetch-versions.outputs.aster_version }}-tdx
           build-args: |
-            "ASTER_RUST_VERSION=${{ steps.fetch-versions.outputs.rust_version }}"
-            "BASE_VERSION=${{ steps.fetch-versions.outputs.aster_version }}"
-
-      - name: Generate OSDK Dockerfile
-        run: |
-          python3 ./osdk/tools/docker/gen_dockerfile.py
-
-      - name: Build and push OSDK test image
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: ./osdk/tools/docker/Dockerfile
-          platforms: linux/amd64
-          push: true
-          tags: asterinas/osdk:${{ steps.fetch-versions.outputs.aster_version }}
-          build-args: |
-            "ASTER_RUST_VERSION=${{ steps.fetch-versions.outputs.rust_version }}"
-
-      - name: Generate OSDK Dockerfile for Intel TDX
-        run: |
-          python3 ./osdk/tools/docker/gen_dockerfile.py --intel-tdx
-
-      - name: Build and push OSDK test image for Intel TDX
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: ./osdk/tools/docker/Dockerfile
-          platforms: linux/amd64
-          push: true
-          tags: asterinas/osdk:${{ steps.fetch-versions.outputs.aster_version }}-tdx
-          build-args: |
-            "ASTER_RUST_VERSION=${{ steps.fetch-versions.outputs.rust_version }}"
+            BASE_VERSION=${{ steps.fetch-versions.outputs.aster_version }}
