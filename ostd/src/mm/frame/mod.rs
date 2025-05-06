@@ -57,6 +57,13 @@ use crate::mm::{Paddr, PagingConsts, Vaddr};
 
 static MAX_PADDR: AtomicUsize = AtomicUsize::new(0);
 
+/// Returns the maximum physical address that is tracked by frame metadata.
+pub(in crate::mm) fn max_paddr() -> Paddr {
+    let max_paddr = MAX_PADDR.load(Ordering::Relaxed) as Paddr;
+    debug_assert_ne!(max_paddr, 0);
+    max_paddr
+}
+
 /// A smart pointer to a frame.
 ///
 /// A frame is a contiguous range of bytes in physical memory. The [`Frame`]
@@ -299,7 +306,7 @@ impl TryFrom<Frame<dyn AnyFrameMeta>> for UFrame {
 ///  2. The caller must have already held a reference to the frame.
 pub(in crate::mm) unsafe fn inc_frame_ref_count(paddr: Paddr) {
     debug_assert!(paddr % PAGE_SIZE == 0);
-    debug_assert!(paddr < MAX_PADDR.load(Ordering::Relaxed) as Paddr);
+    debug_assert!(paddr < max_paddr());
 
     let vaddr: Vaddr = mapping::frame_to_meta::<PagingConsts>(paddr);
     // SAFETY: `vaddr` points to a valid `MetaSlot` that will never be mutably borrowed, so taking

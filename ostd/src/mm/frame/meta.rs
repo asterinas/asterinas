@@ -206,7 +206,7 @@ pub(super) fn get_slot(paddr: Paddr) -> Result<&'static MetaSlot, GetFrameError>
     if paddr % PAGE_SIZE != 0 {
         return Err(GetFrameError::NotAligned);
     }
-    if paddr >= super::MAX_PADDR.load(Ordering::Relaxed) as Paddr {
+    if paddr >= super::max_paddr() {
         return Err(GetFrameError::OutOfBound);
     }
 
