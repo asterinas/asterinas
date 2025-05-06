@@ -435,7 +435,6 @@ mod segment {
 // Untyped frame/segment tests
 mod untyped {
     use super::*;
-    use crate::mm::frame::untyped::FrameRef;
 
     #[ktest]
     fn untyped_frame_reader_writer() {
@@ -484,11 +483,33 @@ mod untyped {
         reader.read(&mut buffer.as_mut_slice().into());
         assert_eq!(buffer, data);
     }
+}
+
+mod frame_ref {
+    use super::*;
+    use crate::sync::non_null::NonNullPtr;
+
+    #[ktest]
+    fn frame_ref_preserves_refcnt() {
+        let init_val = 42;
+        let frame = FrameAllocOptions::new()
+            .alloc_frame_with(MockUFrameMeta { value: init_val })
+            .expect("Failed to allocate frame");
+
+        assert_eq!(frame.reference_count(), 1);
+
+        {
+            let frame_ref = frame.borrow();
+            assert_eq!(frame_ref.meta().value, init_val);
+            assert_eq!(frame_ref.reference_count(), 1);
+            assert_eq!(frame.reference_count(), 1);
+        }
+
+        assert_eq!(frame.reference_count(), 1);
+    }
 
     #[ktest]
     fn frame_impls_non_null_ptr() {
-        use crate::sync::non_null::NonNullPtr;
-
         let init_val = 42;
         let frame = FrameAllocOptions::new()
             .alloc_frame_with(MockUFrameMeta { value: init_val })
