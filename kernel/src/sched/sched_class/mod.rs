@@ -18,7 +18,9 @@ use ostd::{
     },
     trap::disable_local,
 };
+use spin::Lazy;
 
+use self::load_balancing::SchedDomains;
 use super::{
     nice::Nice,
     stats::{set_stats_from_scheduler, SchedulerStats},
@@ -26,6 +28,7 @@ use super::{
 use crate::thread::{AsThread, Thread};
 
 mod load;
+mod load_balancing;
 mod policy;
 mod time;
 
@@ -42,16 +45,20 @@ pub use self::{
 
 type SchedEntity = (Arc<Task>, Arc<Thread>);
 
+static CLASS_SCHEDULER: Lazy<ClassScheduler> = Lazy::new(ClassScheduler::new);
+
 pub fn init() {
-    let scheduler = Box::leak(Box::new(ClassScheduler::new()));
+    let scheduler = &*CLASS_SCHEDULER;
 
     // Inject the scheduler into the ostd for actual scheduling work.
-    inject_scheduler(scheduler);
+    inject_scheduler(&*CLASS_SCHEDULER);
 
     // Set the scheduler into the system for statistics.
     // We set this after injecting the scheduler into ostd,
     // so that the loadavg statistics are updated after the scheduler is used.
     set_stats_from_scheduler(scheduler);
+
+    crate::time::softirq::register_callback(load_balance);
 }
 
 /// Represents the middle layer between scheduling classes and generic scheduler
@@ -59,6 +66,7 @@ pub fn init() {
 /// information may also be stored here.
 pub struct ClassScheduler {
     rqs: Box<[SpinLock<PerCpuClassRqSet>]>,
+    domains: SchedDomains,
     last_chosen_cpu: AtomicCpuId,
 }
 
@@ -73,6 +81,8 @@ struct PerCpuClassRqSet {
     fair_load: load::FairRqLoad,
     idle: idle::IdleClassRq,
     current: Option<(SchedEntity, CurrentRuntime)>,
+    cpu: CpuId,
+    leaf_domain: usize,
 }
 
 /// Stores the runtime information of the current task.
@@ -249,16 +259,21 @@ impl ClassScheduler {
         let class_rq = |cpu| {
             SpinLock::new(PerCpuClassRqSet {
                 stop: stop::StopClassRq::new(),
-                real_time: real_time::RealTimeClassRq::new(cpu),
+                real_time: real_time::RealTimeClassRq::new(),
                 rt_load: load::RqLoad::new(SchedPolicyKind::RealTime),
-                fair: fair::FairClassRq::new(cpu),
+                fair: fair::FairClassRq::new(),
                 fair_load: load::FairRqLoad::new(),
                 idle: idle::IdleClassRq::new(),
                 current: None,
+                cpu,
+                // TODO: Replace 0 (the root domain ID) with the actual leaf domain ID
+                // of the logical CPU.
+                leaf_domain: 0,
             })
         };
         ClassScheduler {
             rqs: all_cpus().map(class_rq).collect(),
+            domains: SchedDomains::all(),
             last_chosen_cpu: AtomicCpuId::default(),
         }
     }
@@ -474,4 +489,10 @@ impl Default for ClassScheduler {
     fn default() -> Self {
         Self::new()
     }
+}
+
+pub fn load_balance() {
+    let guard = disable_local();
+    let mut rq = CLASS_SCHEDULER.rqs[guard.current_cpu().as_usize()].lock();
+    rq.load_balance();
 }

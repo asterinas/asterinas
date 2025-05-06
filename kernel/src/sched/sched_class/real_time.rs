@@ -8,12 +8,9 @@ use core::{
 };
 
 use bitvec::{bitarr, BitArr};
-use ostd::{
-    cpu::CpuId,
-    task::{
-        scheduler::{EnqueueFlags, UpdateFlags},
-        Task,
-    },
+use ostd::task::{
+    scheduler::{EnqueueFlags, UpdateFlags},
+    Task,
 };
 
 use super::{time::base_slice_clocks, CurrentRuntime, SchedAttr, SchedClassRq};
@@ -143,17 +140,14 @@ impl PrioArray {
 /// is empty, the 2 arrays are swapped by `index`.
 #[derive(Debug)]
 pub(super) struct RealTimeClassRq {
-    #[expect(unused)]
-    cpu: CpuId,
     index: bool,
     array: [PrioArray; 2],
     nr_running: usize,
 }
 
 impl RealTimeClassRq {
-    pub fn new(cpu: CpuId) -> RealTimeClassRq {
+    pub fn new() -> RealTimeClassRq {
         RealTimeClassRq {
-            cpu,
             index: false,
             array: array::from_fn(|_| PrioArray {
                 map: bitarr![0; 100],

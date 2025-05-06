@@ -292,7 +292,6 @@ impl FairTaskLoad {
         FairTaskLoad(Load::new())
     }
 
-    #[expect(unused)]
     pub fn data(&self) -> LoadData {
         self.0.data()
     }
@@ -325,7 +324,6 @@ impl FairRqLoad {
         FairRqLoad(Exclusive::new(Load::new()))
     }
 
-    #[expect(unused)]
     pub fn data(&mut self) -> LoadData {
         self.0.get_mut().data()
     }

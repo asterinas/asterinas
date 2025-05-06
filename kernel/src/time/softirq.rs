@@ -18,7 +18,7 @@ pub(super) fn init() {
 }
 
 /// Registers a function that will be executed during timer softirq.
-pub(super) fn register_callback(func: fn()) {
+pub fn register_callback(func: fn()) {
     loop {
         let callbacks = TIMER_SOFTIRQ_CALLBACKS.read();
         match callbacks.get() {

@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{collections::BinaryHeap, sync::Arc};
+use alloc::{collections::BinaryHeap, sync::Arc, vec::Vec};
 use core::{
     cmp::{self, Reverse},
     sync::atomic::{AtomicU64, Ordering::Relaxed},
 };
 
 use ostd::{
-    cpu::{num_cpus, CpuId},
+    cpu::num_cpus,
     task::{
         scheduler::{EnqueueFlags, UpdateFlags},
         Task,
@@ -127,7 +127,7 @@ impl FairAttr {
 ///
 /// This structure is used to provide the capability for keying in the
 /// run queue implemented by `BTreeSet` in the `FairClassRq`.
-struct FairQueueItem(Arc<Task>, u64);
+pub struct FairQueueItem(pub Arc<Task>, u64);
 
 impl core::fmt::Debug for FairQueueItem {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -169,8 +169,6 @@ impl Ord for FairQueueItem {
 /// ensure the efficiency for finding next-to-run threads.
 #[derive(Debug)]
 pub(super) struct FairClassRq {
-    #[expect(unused)]
-    cpu: CpuId,
     /// The ready-to-run threads.
     entities: BinaryHeap<Reverse<FairQueueItem>>,
     /// The minimum of vruntime in the run queue. Serves as the initial
@@ -180,9 +178,8 @@ pub(super) struct FairClassRq {
 }
 
 impl FairClassRq {
-    pub fn new(cpu: CpuId) -> Self {
+    pub fn new() -> Self {
         Self {
-            cpu,
             entities: BinaryHeap::new(),
             min_vruntime: 0,
             total_weight: 0,
@@ -224,6 +221,20 @@ impl FairClassRq {
 
     pub fn total_weight(&self) -> u64 {
         self.total_weight
+    }
+
+    pub fn migrate_start(&mut self) -> Vec<Reverse<FairQueueItem>> {
+        core::mem::take(&mut self.entities).into_vec()
+    }
+
+    pub fn migrate_end(&mut self, items: Vec<Reverse<FairQueueItem>>) {
+        self.total_weight = (items.iter())
+            .map(|item| {
+                let thread = item.0 .0.as_thread().unwrap();
+                thread.sched_attr().fair.weight.load(Relaxed)
+            })
+            .sum();
+        self.entities = BinaryHeap::from(items);
     }
 }
 

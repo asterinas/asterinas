@@ -12,7 +12,7 @@ use crate::prelude::*;
 
 pub mod clocks;
 mod core;
-mod softirq;
+pub mod softirq;
 mod system_time;
 pub mod timerfd;
 pub mod wait;
