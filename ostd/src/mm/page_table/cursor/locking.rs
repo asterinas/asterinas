@@ -231,13 +231,14 @@ unsafe fn dfs_release_lock<'rcu, E: PageTableEntryTrait, C: PagingConstsTrait>(
         let child = cur_node.entry(i);
         match child.to_ref() {
             Child::PageTableRef(pt) => {
-                // SAFETY: The caller ensures that the node is locked.
+                // SAFETY: The caller ensures that the node is locked and the new guard is unique.
                 let child_node = unsafe { pt.make_guard_unchecked(guard) };
                 let child_node_va = cur_node_va + i * page_size::<C>(cur_level);
                 let child_node_va_end = child_node_va + page_size::<C>(cur_level);
                 let va_start = va_range.start.max(child_node_va);
                 let va_end = va_range.end.min(child_node_va_end);
-                // SAFETY: The caller ensures that this sub-tree is locked.
+                // SAFETY: The caller ensures that all the nodes in the sub-tree are locked and all
+                // guards are forgotten.
                 unsafe { dfs_release_lock(guard, child_node, child_node_va, va_start..va_end) };
             }
             Child::None | Child::Frame(_, _) | Child::Untracked(_, _, _) | Child::PageTable(_) => {}
@@ -273,9 +274,11 @@ pub(super) unsafe fn dfs_mark_stray_and_unlock<E: PageTableEntryTrait, C: Paging
         let child = sub_tree.entry(i);
         match child.to_ref() {
             Child::PageTableRef(pt) => {
-                // SAFETY: The caller ensures that the node is locked.
+                // SAFETY: The caller ensures that the node is locked and the new guard is unique.
                 let locked_pt = unsafe { pt.make_guard_unchecked(rcu_guard) };
-                dfs_mark_stray_and_unlock(rcu_guard, locked_pt);
+                // SAFETY: The caller ensures that all the nodes in the sub-tree are locked and all
+                // guards are forgotten.
+                unsafe { dfs_mark_stray_and_unlock(rcu_guard, locked_pt) };
             }
             Child::None | Child::Frame(_, _) | Child::Untracked(_, _, _) | Child::PageTable(_) => {}
         }
