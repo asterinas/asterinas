@@ -44,7 +44,7 @@ pub(crate) fn interrupts_ack(irq_number: usize) {
 
 /// Return the frequency of TSC. The unit is Hz.
 pub fn tsc_freq() -> u64 {
-    timer::TIMEBASE_FREQ.load(Ordering::Relaxed)
+    *timer::TIMEBASE_FREQ.get().unwrap()
 }
 
 /// Reads the current value of the processor’s time-stamp counter (TSC).

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::{arch::timer::GOLDFISH_IO_MEM, mm::VmIoOnce};
+use ostd::{arch::device::goldfish::{self, GOLDFISH_IO_MEM}, mm::VmIoOnce};
 use chrono::{DateTime, Datelike, Timelike};
 
 use crate::{SystemTime, rtc::Driver};
@@ -9,6 +9,7 @@ pub struct RtcGoldfish;
 
 impl Driver for RtcGoldfish {
     fn try_new() -> Option<RtcGoldfish> {
+        goldfish::init();
         GOLDFISH_IO_MEM.get()?;
         Some(RtcGoldfish)
     }
