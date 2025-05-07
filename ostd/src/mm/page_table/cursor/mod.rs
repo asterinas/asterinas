@@ -781,7 +781,8 @@ impl<'rcu, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait>
                     // Do copy.
                     op(&mut prop);
                     self.jump(src_va).unwrap();
-                    let original = self.map(page, prop);
+                    // SAFETY: The safety is upheld by the caller.
+                    let original = unsafe { self.map(page, prop) };
                     assert!(original.is_none());
 
                     // Only move the source cursor forward since `Self::map` will do it.
