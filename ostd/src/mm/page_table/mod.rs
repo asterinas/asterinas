@@ -192,7 +192,10 @@ impl PageTable<KernelMode> {
         mut op: impl FnMut(&mut PageProperty),
     ) -> Result<(), PageTableError> {
         let mut cursor = CursorMut::new(self, vaddr)?;
-        while let Some(range) = cursor.protect_next(vaddr.end - cursor.virt_addr(), &mut op) {
+        // SAFETY: The safety is upheld by the caller.
+        while let Some(range) =
+            unsafe { cursor.protect_next(vaddr.end - cursor.virt_addr(), &mut op) }
+        {
             crate::arch::mm::tlb_flush_addr(range.start);
         }
         Ok(())
@@ -210,7 +213,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTab
     }
 
     pub(in crate::mm) unsafe fn first_activate_unchecked(&self) {
-        self.root.first_activate();
+        // SAFETY: The safety is upheld by the caller.
+        unsafe { self.root.first_activate() };
     }
 
     /// The physical address of the root page table.
@@ -228,7 +232,9 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTab
         paddr: &Range<Paddr>,
         prop: PageProperty,
     ) -> Result<(), PageTableError> {
-        self.cursor_mut(vaddr)?.map_pa(paddr, prop);
+        let mut cursor = self.cursor_mut(vaddr)?;
+        // SAFETY: The safety is upheld by the caller.
+        unsafe { cursor.map_pa(paddr, prop) };
         Ok(())
     }
 
