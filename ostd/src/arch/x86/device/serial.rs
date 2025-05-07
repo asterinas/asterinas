@@ -36,21 +36,18 @@ impl SerialPort {
     ///
     /// User must ensure the `port` is valid serial port.
     pub const unsafe fn new(port: u16) -> Self {
-        let data = IoPort::new(port);
-        let int_en = IoPort::new(port + 1);
-        let fifo_ctrl = IoPort::new(port + 2);
-        let line_ctrl = IoPort::new(port + 3);
-        let modem_ctrl = IoPort::new(port + 4);
-        let line_status = IoPort::new(port + 5);
-        let modem_status = IoPort::new(port + 6);
-        Self {
-            data,
-            int_en,
-            fifo_ctrl,
-            line_ctrl,
-            modem_ctrl,
-            line_status,
-            modem_status,
+        // SAFETY: The caller guarantees that these ports are serial ports, so the `IoPort`s can be
+        // created safely.
+        unsafe {
+            Self {
+                data: IoPort::new(port),
+                int_en: IoPort::new(port + 1),
+                fifo_ctrl: IoPort::new(port + 2),
+                line_ctrl: IoPort::new(port + 3),
+                modem_ctrl: IoPort::new(port + 4),
+                line_status: IoPort::new(port + 5),
+                modem_status: IoPort::new(port + 6),
+            }
         }
     }
 
