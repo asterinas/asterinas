@@ -302,7 +302,9 @@ unsafe fn memcpy(dst: *mut u8, src: *const u8, len: usize) {
     //
     // For more details and future possibilities, see
     // <https://github.com/asterinas/asterinas/pull/1001#discussion_r1667317406>.
-    core::intrinsics::volatile_copy_memory(dst, src, len);
+
+    // SAFETY: The safety is guaranteed by the safety preconditions and the explanation above.
+    unsafe { core::intrinsics::volatile_copy_memory(dst, src, len) };
 }
 
 /// Copies `len` bytes from `src` to `dst`.
@@ -322,7 +324,8 @@ unsafe fn memcpy(dst: *mut u8, src: *const u8, len: usize) {
 ///
 /// [valid]: crate::mm::io#safety
 unsafe fn memcpy_fallible(dst: *mut u8, src: *const u8, len: usize) -> usize {
-    let failed_bytes = __memcpy_fallible(dst, src, len);
+    // SAFETY: The safety is upheld by the caller.
+    let failed_bytes = unsafe { __memcpy_fallible(dst, src, len) };
     len - failed_bytes
 }
 
@@ -337,7 +340,8 @@ unsafe fn memcpy_fallible(dst: *mut u8, src: *const u8, len: usize) -> usize {
 ///
 /// [valid]: crate::mm::io#safety
 unsafe fn memset_fallible(dst: *mut u8, value: u8, len: usize) -> usize {
-    let failed_bytes = __memset_fallible(dst, value, len);
+    // SAFETY: The safety is upheld by the caller.
+    let failed_bytes = unsafe { __memset_fallible(dst, value, len) };
     len - failed_bytes
 }
 
