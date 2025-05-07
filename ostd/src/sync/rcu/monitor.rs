@@ -129,7 +129,7 @@ impl GracePeriod {
     unsafe fn finish_grace_period(&mut self, this_cpu: CpuId) {
         self.cpu_mask.add(this_cpu, Ordering::Relaxed);
 
-        if self.cpu_mask.load().is_full() {
+        if self.cpu_mask.load(Ordering::Relaxed).is_full() {
             self.is_complete = true;
         }
     }
@@ -140,7 +140,7 @@ impl GracePeriod {
 
     pub fn restart(&mut self, callbacks: Callbacks) {
         self.is_complete = false;
-        self.cpu_mask.store(&CpuSet::new_empty());
+        self.cpu_mask.store(&CpuSet::new_empty(), Ordering::Relaxed);
         self.callbacks = callbacks;
     }
 }

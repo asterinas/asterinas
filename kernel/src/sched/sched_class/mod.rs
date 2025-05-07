@@ -3,7 +3,7 @@
 #![warn(unused)]
 
 use alloc::{boxed::Box, sync::Arc};
-use core::fmt;
+use core::{fmt, sync::atomic::Ordering};
 
 use ostd::{
     arch::read_tsc as sched_clock,
@@ -263,7 +263,7 @@ impl ClassScheduler {
         }
         debug_assert!(flags == EnqueueFlags::Spawn);
         let guard = disable_local();
-        let affinity = thread.atomic_cpu_affinity().load();
+        let affinity = thread.atomic_cpu_affinity().load(Ordering::Relaxed);
         let mut selected = guard.current_cpu();
         let mut minimum_load = u32::MAX;
         let last_chosen = match self.last_chosen_cpu.get() {
