@@ -95,7 +95,7 @@ impl VmSpace {
             .try_write()
             .ok_or(VmSpaceClearError::CursorsAlive)?;
 
-        let cpus = self.cpus.load();
+        let cpus = self.cpus.load(Ordering::Relaxed);
         let cpu = preempt_guard.current_cpu();
         let cpus_set_is_empty = cpus.is_empty();
         let cpus_set_is_single_self = cpus.count() == 1 && cpus.contains(cpu);
@@ -142,7 +142,7 @@ impl VmSpace {
             CursorMut {
                 pt_cursor,
                 activation_lock,
-                flusher: TlbFlusher::new(self.cpus.load(), disable_preempt()),
+                flusher: TlbFlusher::new(self.cpus.load(Ordering::Relaxed), disable_preempt()),
             }
         })?)
     }
