@@ -30,6 +30,7 @@ mmap/mmap_and_fork
 mmap/mmap_shared_filebacked
 mmap/mmap_readahead
 process/group_session
+process/job_control
 pthread/pthread_test
 pty/open_pty
 sched/sched_attr
