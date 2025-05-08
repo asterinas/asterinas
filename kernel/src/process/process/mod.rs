@@ -4,7 +4,7 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use self::timer_manager::PosixTimerManager;
 use super::{
-    posix_thread::{allocate_posix_tid, AsPosixThread},
+    posix_thread::AsPosixThread,
     process_table,
     process_vm::{Heap, InitStackReader, ProcessVm, ProcessVmarGuard},
     rlimit::ResourceLimits,
@@ -15,17 +15,15 @@ use super::{
     },
     status::ProcessStatus,
     task_set::TaskSet,
-    Credentials,
 };
 use crate::{
-    device::tty::open_ntty_as_controlling_terminal,
     prelude::*,
     sched::{AtomicNice, Nice},
     thread::{AsThread, Thread},
     time::clocks::ProfClock,
 };
 
-mod builder;
+mod init_proc;
 mod job_control;
 mod process_group;
 mod session;
@@ -33,7 +31,7 @@ mod terminal;
 mod timer_manager;
 
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
-pub use builder::ProcessBuilder;
+pub use init_proc::spawn_init_process;
 pub use job_control::JobControl;
 use ostd::{sync::WaitQueue, task::Task};
 pub use process_group::ProcessGroup;
@@ -184,7 +182,7 @@ impl Process {
         Some(Task::current()?.as_posix_thread()?.process())
     }
 
-    fn new(
+    pub(super) fn new(
         pid: Pid,
         parent: Weak<Process>,
         executable_path: String,
@@ -222,57 +220,8 @@ impl Process {
         })
     }
 
-    /// init a user process and run the process
-    pub fn spawn_user_process(
-        executable_path: &str,
-        argv: Vec<CString>,
-        envp: Vec<CString>,
-    ) -> Result<Arc<Self>> {
-        // spawn user process should give an absolute path
-        debug_assert!(executable_path.starts_with('/'));
-        let process = Process::create_user_process(executable_path, argv, envp)?;
-
-        open_ntty_as_controlling_terminal(&process)?;
-
-        process.run();
-        Ok(process)
-    }
-
-    fn create_user_process(
-        executable_path: &str,
-        argv: Vec<CString>,
-        envp: Vec<CString>,
-    ) -> Result<Arc<Self>> {
-        let process = {
-            let pid = allocate_posix_tid();
-            let parent = Weak::new();
-            let credentials = Credentials::new_root();
-
-            let mut builder = ProcessBuilder::new(pid, executable_path, parent);
-            builder.argv(argv).envp(envp).credentials(credentials);
-            builder.build()?
-        };
-
-        // Lock order: session table -> group table -> process table -> group of process
-        let mut session_table_mut = process_table::session_table_mut();
-        let mut group_table_mut = process_table::group_table_mut();
-        let mut process_table_mut = process_table::process_table_mut();
-
-        // Create a new process group and a new session for the new process
-        process.set_new_session(
-            &mut process.process_group.lock(),
-            &mut session_table_mut,
-            &mut group_table_mut,
-        );
-
-        // Insert the new process to the global table
-        process_table_mut.insert(process.pid(), process.clone());
-
-        Ok(process)
-    }
-
-    /// start to run current process
-    pub fn run(&self) {
+    /// Runs the process.
+    pub(super) fn run(&self) {
         let tasks = self.tasks.lock();
         // when run the process, the process should has only one thread
         debug_assert!(tasks.as_slice().len() == 1);

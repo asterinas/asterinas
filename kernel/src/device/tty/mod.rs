@@ -15,7 +15,7 @@ use crate::{
     prelude::*,
     process::{
         signal::{signals::kernel::KernelSignal, PollHandle, Pollable},
-        JobControl, Process, Terminal,
+        JobControl, Terminal,
     },
 };
 
@@ -210,22 +210,4 @@ pub fn new_job_control_and_ldisc() -> (Arc<JobControl>, Arc<LineDiscipline>) {
 
 pub fn get_n_tty() -> &'static Arc<Tty> {
     N_TTY.get().unwrap()
-}
-
-/// Open `N_TTY` as the controlling terminal for the process. This method should
-/// only be called when creating the init process.
-pub fn open_ntty_as_controlling_terminal(process: &Process) -> Result<()> {
-    let tty = get_n_tty();
-
-    let session = &process.session().unwrap();
-    let process_group = process.process_group().unwrap();
-
-    session.set_terminal(|| {
-        tty.job_control.set_session(session);
-        Ok(tty.clone())
-    })?;
-
-    tty.job_control.set_foreground(Some(&process_group))?;
-
-    Ok(())
 }

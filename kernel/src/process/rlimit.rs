@@ -26,6 +26,7 @@ const INIT_RLIMIT_MEMLOCK: u64 = 8 * 1024 * 1024;
 // https://github.com/torvalds/linux/blob/fac04efc5c793dccbd07e2d59af9f90b7fc0dca4/include/uapi/linux/mqueue.h#L26
 const INIT_RLIMIT_MSGQUEUE: u64 = 819200;
 
+#[derive(Clone)]
 pub struct ResourceLimits {
     rlimits: [RLimit64; RLIMIT_COUNT],
 }
@@ -165,6 +166,17 @@ impl Default for RLimit64 {
         Self {
             cur: AtomicU64::new(RLIM_INFINITY),
             max: AtomicU64::new(RLIM_INFINITY),
+            lock: SpinLock::new(()),
+        }
+    }
+}
+
+impl Clone for RLimit64 {
+    fn clone(&self) -> Self {
+        let (cur, max) = self.get_cur_and_max();
+        Self {
+            cur: AtomicU64::new(cur),
+            max: AtomicU64::new(max),
             lock: SpinLock::new(()),
         }
     }
