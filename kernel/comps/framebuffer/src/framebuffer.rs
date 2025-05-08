@@ -2,15 +2,16 @@
 
 use alloc::sync::Arc;
 
-use ostd::{boot::boot_info, io::IoMem, mm::VmIo, Result};
+use ostd::{boot::boot_info, io::IoMem, mm::VmIo, Pod, Result};
 use spin::Once;
 
 use crate::{Pixel, PixelFormat, RenderedPixel};
 
-/// The interception of offset for color fileds.
+/// The interception of offset for color fields.
 ///
 /// Reference: https://github.com/torvalds/linux/blob/ace4ebf9b70a7daea12102c09ba5ef6bb73223aa/include/uapi/linux/fb.h
-#[derive(Debug, Default)]
+#[repr(C)]
+#[derive(Debug, Default, Clone, Copy, Pod)]
 pub struct FrameBufferBitfield {
     /// The beginning of bitfield.
     offset: u32,
@@ -173,13 +174,32 @@ impl FrameBuffer {
 
     /// Returns the number of bytes per pixel (color depth).
     pub fn bytes_per_pixel(&self) -> usize {
-        // self.bytes_per_pixel
-        0
+        self.pixel_format.nbytes()
     }
 
     /// Returns the pixel format of the framebuffer.
     pub fn pixel_format(&self) -> PixelFormat {
         self.pixel_format
+    }
+
+    /// Returns the red color field of the framebuffer.
+    pub fn red(&self) -> FrameBufferBitfield {
+        self.red
+    }
+
+    /// Returns the green color field of the framebuffer.
+    pub fn green(&self) -> FrameBufferBitfield {
+        self.green
+    }
+
+    /// Returns the blue color field of the framebuffer.
+    pub fn blue(&self) -> FrameBufferBitfield {
+        self.blue
+    }
+
+    /// Returns the reserved color field of the framebuffer.
+    pub fn reserved(&self) -> FrameBufferBitfield {
+        self.reserved
     }
 
     /// Renders the pixel according to the pixel format of the framebuffer.
