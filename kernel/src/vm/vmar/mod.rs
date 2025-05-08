@@ -7,22 +7,26 @@ mod interval_set;
 mod static_cap;
 pub mod vm_mapping;
 
-use core::{array, num::NonZeroUsize, ops::Range};
+use core::{array, cmp::min, num::NonZeroUsize, ops::Range};
 
 use align_ext::AlignExt;
 use aster_rights::Rights;
 use ostd::{
     cpu::CpuId,
+    io::IoMem,
     mm::{
-        tlb::TlbFlushOp, vm_space::CursorMut, PageFlags, PageProperty, VmSpace, MAX_USERSPACE_VADDR,
+        tlb::TlbFlushOp,
+        vm_space::{CursorMut, VmQueriedItem},
+        CachePolicy, PageFlags, PageProperty, VmSpace, MAX_USERSPACE_VADDR,
     },
     sync::RwMutexReadGuard,
     task::disable_preempt,
 };
+use vm_mapping::MappedVmObject;
 
 use self::{
     interval_set::{Interval, IntervalSet},
-    vm_mapping::{MappedVmo, VmMapping},
+    vm_mapping::VmMapping,
 };
 use crate::{
     fs::utils::Inode,
@@ -672,7 +676,8 @@ impl Vmar_ {
             let Some(mapped_va) = cursor.find_next(old_size - current_offset) else {
                 break;
             };
-            let (va, Some((frame, prop))) = cursor.query().unwrap() else {
+            let (va, Some(VmQueriedItem::MappedRam { frame, prop })) = cursor.query().unwrap()
+            else {
                 panic!("Found mapped page but query failed");
             };
             debug_assert_eq!(mapped_va, va.start);
@@ -777,7 +782,7 @@ fn cow_copy_pt(src: &mut CursorMut<'_>, dst: &mut CursorMut<'_>, size: usize) ->
     };
 
     while let Some(mapped_va) = src.find_next(remain_size) {
-        let (va, Some((frame, mut prop))) = src.query().unwrap() else {
+        let (va, Some(VmQueriedItem::MappedRam { frame, mut prop })) = src.query().unwrap() else {
             panic!("Found mapped page but query failed");
         };
         debug_assert_eq!(mapped_va, va.start);
@@ -827,6 +832,7 @@ pub struct VmarMapOptions<'a, R1, R2> {
     parent: &'a Vmar<R1>,
     vmo: Option<Vmo<R2>>,
     inode: Option<Arc<dyn Inode>>,
+    iomem: Option<IoMem>,
     perms: VmPerms,
     vmo_offset: usize,
     size: usize,
@@ -851,6 +857,7 @@ impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
             parent,
             vmo: None,
             inode: None,
+            iomem: None,
             perms,
             vmo_offset: 0,
             size,
@@ -887,6 +894,13 @@ impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
             panic!("Cannot set `vmo` when `inode` is already set");
         }
         self.vmo = Some(vmo);
+
+        self
+    }
+
+    /// Binds an I/O memory region to the mapping.
+    pub fn iomem(mut self, iomem: IoMem) -> Self {
+        self.iomem = Some(iomem);
 
         self
     }
@@ -999,6 +1013,7 @@ where
             parent,
             vmo,
             inode,
+            iomem,
             perms,
             vmo_offset,
             size: map_size,
@@ -1050,7 +1065,16 @@ where
         };
 
         // Build the mapping.
-        let vmo = vmo.map(|vmo| MappedVmo::new(vmo.to_dyn(), vmo_offset));
+        let mut io_mem_ostd = None;
+        let vmo = if let Some(vmo) = vmo {
+            Some(MappedVmObject::new_vmo(vmo.to_dyn(), vmo_offset))
+        } else if let Some(iomem) = iomem {
+            io_mem_ostd = Some(iomem.clone());
+            let mapped_size = min(iomem.length(), vmo_offset + map_size);
+            Some(MappedVmObject::new_iomem(iomem, vmo_offset..mapped_size))
+        } else {
+            None
+        };
         let vm_mapping = VmMapping::new(
             NonZeroUsize::new(map_size).unwrap(),
             map_to_addr,
@@ -1063,6 +1087,19 @@ where
 
         // Add the mapping to the VMAR.
         inner.insert_try_merge(vm_mapping);
+
+        // FIXME: Add a function to populate the memory in vm_mapping.
+        if let Some(io_mem) = io_mem_ostd {
+            // FIXME: Check the parent
+            let vm_space = parent.vm_space();
+
+            let preempt_guard = disable_preempt();
+            let mut cursor =
+                vm_space.cursor_mut(&preempt_guard, &(map_to_addr..map_to_addr + map_size))?;
+            let io_page_prop =
+                PageProperty::new_user(PageFlags::from(perms), CachePolicy::Uncacheable);
+            cursor.map_iomem(io_mem, io_page_prop, map_size, vmo_offset);
+        }
 
         Ok(map_to_addr)
     }
@@ -1206,7 +1243,7 @@ mod test {
         // Confirms the initial mapping.
         assert!(matches!(
             vm_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
-            (va, Some((frame, prop))) if va.start == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::RW
+            (va, Some(VmQueriedItem::MappedRam { frame, prop }))  if va.start == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::RW
         ));
 
         // Creates a child page table with copy-on-write protection.
@@ -1221,7 +1258,7 @@ mod test {
         // Confirms that parent and child VAs map to the same physical address.
         {
             let child_map_frame_addr = {
-                let (_, Some((frame, _))) = child_space
+                let (_, Some(VmQueriedItem::MappedRam { frame, .. })) = child_space
                     .cursor(&preempt_guard, &map_range)
                     .unwrap()
                     .query()
@@ -1232,7 +1269,7 @@ mod test {
                 frame.start_paddr()
             };
             let parent_map_frame_addr = {
-                let (_, Some((frame, _))) = vm_space
+                let (_, Some(VmQueriedItem::MappedRam { frame, .. })) = vm_space
                     .cursor(&preempt_guard, &map_range)
                     .unwrap()
                     .query()
@@ -1255,7 +1292,7 @@ mod test {
         // Confirms that the child VA remains mapped.
         assert!(matches!(
             child_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
-            (va, Some((frame, prop)))  if va.start == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::R
+            (va, Some(VmQueriedItem::MappedRam { frame, prop }))  if va.start == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::R
         ));
 
         // Creates a sibling page table (from the now-modified parent).
@@ -1285,7 +1322,7 @@ mod test {
         // Confirms that the child VA remains mapped after the parent is dropped.
         assert!(matches!(
             child_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
-            (va, Some((frame, prop)))  if va.start == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::R
+            (va, Some(VmQueriedItem::MappedRam { frame, prop }))  if va.start == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::R
         ));
 
         // Unmaps the range from the child.
@@ -1303,7 +1340,7 @@ mod test {
         // Confirms that the sibling mapping points back to the original frame's physical address.
         assert!(matches!(
             sibling_space.cursor(&preempt_guard, &map_range).unwrap().query().unwrap(),
-            (va, Some((frame, prop)))  if va.start == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::RW
+            (va, Some(VmQueriedItem::MappedRam { frame, prop }))  if va.start == map_range.start && frame.start_paddr() == start_paddr && prop.flags == PageFlags::RW
         ));
 
         // Confirms that the child remains unmapped.
