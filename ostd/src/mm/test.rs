@@ -9,7 +9,7 @@ use crate::{
     mm::{
         io::{VmIo, VmReader, VmWriter},
         tlb::TlbFlushOp,
-        vm_space::get_activated_vm_space,
+        vm_space::{get_activated_vm_space, VmItem},
         CachePolicy, FallibleVmRead, FallibleVmWrite, FrameAllocOptions, PageFlags, PageProperty,
         UFrame, VmSpace,
     },
@@ -543,7 +543,13 @@ mod vmspace {
             assert_eq!(cursor.virt_addr(), range.start);
             assert_eq!(
                 cursor.query().unwrap(),
-                (range.clone(), Some((frame.clone(), prop)))
+                (
+                    range.clone(),
+                    Some(VmItem::MappedRam {
+                        frame: frame.clone(),
+                        prop
+                    })
+                )
             );
         }
 
@@ -584,7 +590,13 @@ mod vmspace {
                 .expect("Failed to create cursor");
             assert_eq!(
                 cursor.query().unwrap(),
-                (range.clone(), Some((frame.clone(), prop)))
+                (
+                    range.clone(),
+                    Some(VmItem::MappedRam {
+                        frame: frame.clone(),
+                        prop
+                    })
+                )
             );
         }
 
@@ -601,7 +613,13 @@ mod vmspace {
                 .expect("Failed to create cursor");
             assert_eq!(
                 cursor.query().unwrap(),
-                (range.clone(), Some((frame.clone(), prop)))
+                (
+                    range.clone(),
+                    Some(VmItem::MappedRam {
+                        frame: frame.clone(),
+                        prop
+                    })
+                )
             );
         }
 
@@ -692,7 +710,13 @@ mod vmspace {
                 .expect("Failed to create cursor");
             assert_eq!(
                 cursor.next().unwrap(),
-                (range.clone(), Some((frame.clone(), prop)))
+                (
+                    range.clone(),
+                    Some(VmItem::MappedRam {
+                        frame: frame.clone(),
+                        prop
+                    })
+                )
             );
         }
 
@@ -714,10 +738,10 @@ mod vmspace {
                 cursor.next().unwrap(),
                 (
                     range.clone(),
-                    Some((
-                        frame.clone(),
-                        PageProperty::new_user(PageFlags::R, CachePolicy::Writeback)
-                    ))
+                    Some(VmItem::MappedRam {
+                        frame: frame.clone(),
+                        prop: PageProperty::new_user(PageFlags::R, CachePolicy::Writeback)
+                    })
                 )
             );
         }
@@ -805,15 +829,14 @@ mod vmspace {
             .cursor(&preempt_guard, &range)
             .expect("Failed to create cursor");
         assert!(cursor.jump(range.start).is_ok());
-        let item = cursor.next();
         assert_eq!(
-            item.unwrap(),
+            cursor.next().unwrap(),
             (
                 range.clone(),
-                Some((
-                    frame.clone(),
-                    PageProperty::new_user(PageFlags::R, CachePolicy::Writeback)
-                ))
+                Some(VmItem::MappedRam {
+                    frame,
+                    prop: PageProperty::new_user(PageFlags::R, CachePolicy::Writeback)
+                })
             )
         );
 
@@ -849,10 +872,10 @@ mod vmspace {
             cursor.next().unwrap(),
             (
                 range.clone(),
-                Some((
-                    frame.clone(),
-                    PageProperty::new_user(PageFlags::R, CachePolicy::Writeback)
-                ))
+                Some(VmItem::MappedRam {
+                    frame: frame.clone(),
+                    prop: PageProperty::new_user(PageFlags::R, CachePolicy::Writeback)
+                })
             )
         );
     }

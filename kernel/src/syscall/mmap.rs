@@ -2,8 +2,14 @@
 
 //! This mod defines mmap flags and the handler to syscall mmap
 
+use core::panic;
+
 use align_ext::AlignExt;
 use aster_rights::Rights;
+use ostd::{
+    mm::{CachePolicy, PageFlags, PageProperty},
+    task::disable_preempt,
+};
 
 use super::SyscallReturn;
 use crate::{
@@ -89,6 +95,7 @@ fn do_sys_mmap(
 
     let user_space = ctx.user_space();
     let root_vmar = user_space.root_vmar();
+    let mut io_mem_ostd = None;
     let vm_map_options = {
         let mut options = root_vmar.new_map(len, vm_perms)?;
         let flags = option.flags;
@@ -136,20 +143,40 @@ fn do_sys_mmap(
             }
 
             let inode = inode_handle.dentry().inode();
-            if inode.page_cache().is_none() {
-                return_errno_with_message!(Errno::EBADF, "File does not have page cache");
-            }
-
-            options = options
-                .inode(inode.clone())
-                .vmo_offset(offset)
-                .handle_page_faults_around();
+            match inode.page_cache() {
+                Some(_) => {
+                    options = options.inode(inode.clone());
+                }
+                None => {
+                    // Here we assume that this file is used for mapping I/O
+                    // memory into userspace.
+                    if let Some(io_mem) = file.get_io_mem() {
+                        assert!(len <= io_mem.length().align_up(PAGE_SIZE));
+                        io_mem_ostd = Some(io_mem.clone());
+                        options = options.iomem(io_mem);
+                    } else {
+                        panic!("mmap: file neither is a page cache nor a iomem");
+                    }
+                }
+            };
+            options = options.vmo_offset(offset).handle_page_faults_around();
         }
 
         options
     };
 
     let map_addr = vm_map_options.build()?;
+
+    if let Some(io_mem) = io_mem_ostd {
+        let vm_space = root_vmar.vm_space();
+
+        let preempt_guard = disable_preempt();
+        let mut cursor = vm_space.cursor_mut(&preempt_guard, &(map_addr..map_addr + len))?;
+        let io_page_prop =
+            PageProperty::new_user(PageFlags::from(vm_perms), CachePolicy::Uncacheable);
+        cursor.map_iomem(io_mem, io_page_prop, len, offset);
+    }
+
     Ok(map_addr)
 }
 
