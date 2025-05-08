@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(dead_code)]
-
 use ostd::{
     cpu::{context::UserContext, CpuSet},
     sync::RwArc,
@@ -91,11 +89,6 @@ impl PosixThreadBuilder {
 
     pub fn sig_mask(mut self, sig_mask: AtomicSigMask) -> Self {
         self.sig_mask = sig_mask;
-        self
-    }
-
-    pub fn sched_policy(mut self, sched_policy: SchedPolicy) -> Self {
-        self.sched_policy = sched_policy;
         self
     }
 

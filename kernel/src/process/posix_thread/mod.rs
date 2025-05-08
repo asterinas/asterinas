@@ -38,7 +38,7 @@ pub mod thread_table;
 pub use builder::PosixThreadBuilder;
 pub use exit::{do_exit, do_exit_group};
 pub use name::{ThreadName, MAX_THREAD_NAME_LEN};
-pub use posix_thread_ext::{create_posix_task_from_executable, AsPosixThread};
+pub use posix_thread_ext::AsPosixThread;
 pub use robust_list::RobustListHead;
 pub use thread_local::{AsThreadLocal, FileTableRefMut, ThreadLocal};
 

@@ -34,7 +34,7 @@ use ostd::{
     boot::boot_info,
     cpu::{CpuId, CpuSet, PinCurrentCpu},
 };
-use process::Process;
+use process::{spawn_init_process, Process};
 use sched::SchedPolicy;
 
 use crate::{prelude::*, thread::kernel_thread::ThreadOptions};
@@ -150,7 +150,7 @@ fn init_thread() {
 
     let karg: KCmdlineArg = boot_info().kernel_cmdline.as_str().into();
 
-    let initproc = Process::spawn_user_process(
+    let initproc = spawn_init_process(
         karg.get_initproc_path().unwrap(),
         karg.get_initproc_argv().to_vec(),
         karg.get_initproc_envp().to_vec(),
