@@ -552,7 +552,7 @@ mod vmspace {
             assert_eq!(cursor.virt_addr(), range.start);
             assert_eq!(
                 cursor.query().unwrap(),
-                VmItem::Mapped {
+                VmItem::MappedIO {
                     va: range.start,
                     frame,
                     prop
@@ -603,7 +603,7 @@ mod vmspace {
                 .expect("Failed to create cursor");
             assert_eq!(
                 cursor.query().unwrap(),
-                VmItem::Mapped {
+                VmItem::MappedIO {
                     va: range.start,
                     frame: frame.clone(),
                     prop
@@ -624,7 +624,7 @@ mod vmspace {
                 .expect("Failed to create cursor");
             assert_eq!(
                 cursor.query().unwrap(),
-                VmItem::Mapped {
+                VmItem::MappedIO {
                     va: range.start,
                     frame,
                     prop
@@ -731,7 +731,7 @@ mod vmspace {
                 .expect("Failed to create cursor");
             assert_eq!(
                 cursor.next(),
-                Some(VmItem::Mapped {
+                Some(VmItem::MappedIO {
                     va: 0x4000,
                     frame: frame.clone(),
                     prop: PageProperty::new(PageFlags::R, CachePolicy::Writeback),
@@ -755,7 +755,7 @@ mod vmspace {
                 .expect("Failed to create cursor");
             assert_eq!(
                 cursor.next(),
-                Some(VmItem::Mapped {
+                Some(VmItem::MappedIO {
                     va: 0x4000,
                     frame,
                     prop: PageProperty::new(PageFlags::R, CachePolicy::Writeback),
@@ -849,7 +849,7 @@ mod vmspace {
         let item = cursor.next();
         assert_eq!(
             item,
-            Some(VmItem::Mapped {
+            Some(VmItem::MappedIO {
                 va: 0x6000,
                 frame,
                 prop: PageProperty::new(PageFlags::R, CachePolicy::Writeback),
@@ -886,7 +886,7 @@ mod vmspace {
             .expect("Failed to create cursor");
         assert_eq!(
             cursor.next(),
-            Some(VmItem::Mapped {
+            Some(VmItem::MappedIO {
                 va: 0x7000,
                 frame,
                 prop: PageProperty::new(PageFlags::R, CachePolicy::Writeback),

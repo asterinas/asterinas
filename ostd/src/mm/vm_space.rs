@@ -9,21 +9,25 @@
 //! powerful concurrent accesses to the page table, and suffers from the same
 //! validity concerns as described in [`super::page_table::cursor`].
 
-use core::{ops::Range, sync::atomic::Ordering};
+use core::{cmp::min, mem::ManuallyDrop, ops::Range, sync::atomic::Ordering};
 
+use align_ext::AlignExt;
+
+use super::{frame::is_tracked_paddr, page_table::PageTableConfig, AnyUFrameMeta, PagingLevel};
 use crate::{
     arch::mm::{current_page_table_paddr, PageTableEntry, PagingConsts},
     cpu::{AtomicCpuSet, CpuSet, PinCurrentCpu},
     cpu_local_cell,
+    io::IoMem,
     mm::{
         io::Fallible,
         kspace::KERNEL_PAGE_TABLE,
-        page_table::{self, PageTable, PageTableConfig, PageTableFrag, PageTableItem},
+        page_table::{self, PageTable, PageTableFrag, PageTableItem},
         tlb::{TlbFlushOp, TlbFlusher},
-        AnyUFrameMeta, Frame, PageProperty, PagingLevel, UFrame, VmReader, VmWriter,
-        MAX_USERSPACE_VADDR, PAGE_SIZE,
+        Frame, PageProperty, UFrame, VmReader, VmWriter, MAX_USERSPACE_VADDR, PAGE_SIZE,
     },
     prelude::*,
+    sync::SpinLock,
     task::{atomic_mode::AsAtomicModeGuard, disable_preempt, DisabledPreemptGuard},
     Error,
 };
@@ -67,6 +71,7 @@ use crate::{
 pub struct VmSpace {
     pt: PageTable<UserPtConfig>,
     cpus: AtomicCpuSet,
+    iomems: SpinLock<Vec<IoMem>>,
 }
 
 impl VmSpace {
@@ -75,6 +80,7 @@ impl VmSpace {
         Self {
             pt: KERNEL_PAGE_TABLE.get().unwrap().create_user_page_table(),
             cpus: AtomicCpuSet::new(CpuSet::new_empty()),
+            iomems: SpinLock::new(Vec::new()),
         }
     }
 
@@ -112,6 +118,7 @@ impl VmSpace {
         Ok(self.pt.cursor_mut(guard, va).map(|pt_cursor| CursorMut {
             pt_cursor,
             flusher: TlbFlusher::new(&self.cpus, disable_preempt()),
+            vmspace: self,
         })?)
     }
 
@@ -250,6 +257,8 @@ pub struct CursorMut<'pt, 'rcu, 'vmspace, G: AsAtomicModeGuard> {
     // We have a read lock so the CPU set in the flusher is always a superset
     // of actual activated CPUs.
     flusher: TlbFlusher<'vmspace, DisabledPreemptGuard>,
+    // References to the `VmSpace`
+    vmspace: &'vmspace VmSpace,
 }
 
 impl<'vmspace, G: AsAtomicModeGuard> CursorMut<'_, '_, 'vmspace, G> {
@@ -303,17 +312,86 @@ impl<'vmspace, G: AsAtomicModeGuard> CursorMut<'_, '_, 'vmspace, G> {
         match old {
             PageTableFrag::Mapped { va, item, .. } => {
                 debug_assert_eq!(va, start_va);
-                let MappedItem::Tracked(old_frame) = item else {
-                    todo!("Untracked `VmSpace` item unsupported yet");
-                };
-                self.flusher
-                    .issue_tlb_flush_with(TlbFlushOp::Address(start_va), old_frame.into());
+                match item {
+                    MappedItem::Tracked(old_frame) => {
+                        self.flusher
+                            .issue_tlb_flush_with(TlbFlushOp::Address(start_va), old_frame.into());
+                    }
+                    MappedItem::Untracked(_, _) => {
+                        // Just do nothing.
+                    }
+                }
                 self.flusher.dispatch_tlb_flush();
             }
             PageTableFrag::StrayPageTable { .. } => {
                 panic!("UFrame is base page sized but re-mapping out a child PT");
             }
             PageTableFrag::NotMapped { .. } => {}
+        }
+    }
+
+    /// Map a range of IO Mem into the current slot.
+    ///
+    /// This method will bring the cursor to the next slot after the modification.
+    ///
+    /// Safety: The caller must ensure that the len and the offset is aligned to the page size.
+    pub fn map_iomem(&mut self, io_mem: IoMem, prop: PageProperty, len: usize, offset: usize) {
+        let mut current_paddr = io_mem.paddr() + offset;
+        let paddr_end = min(
+            io_mem.paddr() + io_mem.length().align_up(PAGE_SIZE),
+            current_paddr + len,
+        );
+        while current_paddr < paddr_end {
+            let old = if is_tracked_paddr(io_mem.paddr()) {
+                // Traverse the range and map it with the map function above
+                let dyn_frame = Frame::from_in_use(current_paddr).unwrap();
+
+                // SAFETY: It is safe to map I/O memory into the userspace.
+                let _old = unsafe {
+                    self.pt_cursor
+                        .map(&(current_paddr..current_paddr + PAGE_SIZE), prop)
+                };
+
+                let _ = ManuallyDrop::new(dyn_frame);
+
+                _old
+            } else {
+                unsafe {
+                    self.pt_cursor
+                        .map(&(current_paddr..current_paddr + PAGE_SIZE), prop)
+                }
+            };
+            match old {
+                PageTableFrag::Mapped { va, item, .. } => {
+                    debug_assert_eq!(va, self.virt_addr());
+                    match item {
+                        MappedItem::Tracked(old_frame) => {
+                            self.flusher
+                                .issue_tlb_flush_with(TlbFlushOp::Address(va), old_frame.into());
+                        }
+                        MappedItem::Untracked(_, _) => {
+                            // Just do nothing.
+                        }
+                    }
+                    self.flusher.dispatch_tlb_flush();
+                }
+                PageTableFrag::StrayPageTable { .. } => {
+                    // FIXME: Check the behavior while mapping IO memory
+                    panic!("Stray page table while mapping IO memory");
+                }
+                PageTableFrag::NotMapped { .. } => {}
+            }
+            current_paddr += PAGE_SIZE;
+        }
+
+        // If the iomems does not hold current iomem, push it to maintain
+        // correct reference count
+        let mut iomems = self.vmspace.iomems.lock();
+        if !iomems
+            .iter()
+            .any(|iomem| iomem.paddr() == io_mem.paddr() && iomem.length() == io_mem.length())
+        {
+            iomems.push(io_mem);
         }
     }
 
@@ -342,11 +420,15 @@ impl<'vmspace, G: AsAtomicModeGuard> CursorMut<'_, '_, 'vmspace, G> {
             let result = unsafe { self.pt_cursor.take_next(end_va - self.virt_addr()) };
             match result {
                 PageTableFrag::Mapped { va, item, .. } => {
-                    let MappedItem::Tracked(frame) = item else {
-                        todo!("Untracked `VmSpace` item unsupported yet");
-                    };
-                    self.flusher
-                        .issue_tlb_flush_with(TlbFlushOp::Address(va), frame.into());
+                    match item {
+                        MappedItem::Tracked(frame) => {
+                            self.flusher
+                                .issue_tlb_flush_with(TlbFlushOp::Address(va), frame.into());
+                        }
+                        MappedItem::Untracked(_, _) => {
+                            // Just do nothing.
+                        }
+                    }
                 }
                 PageTableFrag::NotMapped { .. } => {
                     break;
@@ -425,12 +507,21 @@ pub enum VmItem {
         /// The length of the slot.
         len: usize,
     },
-    /// The current slot is mapped.
-    Mapped {
+    /// The current slot is mapped, the frame within is tracked.
+    MappedIO {
         /// The virtual address of the slot.
         va: Vaddr,
         /// The mapped frame.
         frame: UFrame,
+        /// The property of the slot.
+        prop: PageProperty,
+    },
+    /// The current slot is mapped, the frame within is untracked.
+    MappedUntracked {
+        /// The physical address of the corresponding I/O memory.
+        paddr: Paddr,
+        /// The paging level of the slot.
+        level: PagingLevel,
         /// The property of the slot.
         prop: PageProperty,
     },
@@ -444,12 +535,12 @@ impl PartialEq for VmItem {
                 va1 == va2
             }
             (
-                VmItem::Mapped {
+                VmItem::MappedIO {
                     va: va1,
                     frame: frame1,
                     prop: prop1,
                 },
-                VmItem::Mapped {
+                VmItem::MappedIO {
                     va: va2,
                     frame: frame2,
                     prop: prop2,
@@ -466,12 +557,12 @@ impl TryFrom<PageTableItem<UserPtConfig>> for VmItem {
     fn try_from(item: PageTableItem<UserPtConfig>) -> core::result::Result<Self, Self::Error> {
         match item {
             PageTableItem::NotMapped { va, len } => Ok(VmItem::NotMapped { va, len }),
-            PageTableItem::Mapped { va, item, prop } => {
-                let MappedItem::Tracked(frame) = item else {
-                    todo!("Untracked `VmSpace` item unsupported yet");
-                };
-                Ok(VmItem::Mapped { va, frame, prop })
-            }
+            PageTableItem::Mapped { va, item, prop } => match item {
+                MappedItem::Tracked(frame) => Ok(VmItem::MappedIO { va, frame, prop }),
+                MappedItem::Untracked(paddr, level) => {
+                    Ok(VmItem::MappedUntracked { prop, paddr, level })
+                }
+            },
         }
     }
 }
@@ -494,20 +585,21 @@ impl PageTableConfig for UserPtConfig {
                 let paddr = frame.into_raw();
                 (paddr, level)
             }
-            MappedItem::Untracked(_, _) => {
-                todo!("Untracked `VmSpace` item unsupported yet");
-            }
+            MappedItem::Untracked(paddr, level) => (paddr, level),
         }
     }
 
-    unsafe fn item_from_raw(paddr: Paddr, _level: PagingLevel) -> Self::Item {
+    unsafe fn item_from_raw(paddr: Paddr, level: PagingLevel) -> Self::Item {
         // SAFETY: The caller ensures safety.
-        let frame = unsafe { Frame::<dyn AnyUFrameMeta>::from_raw(paddr) };
-        MappedItem::Tracked(frame)
+        if is_tracked_paddr(paddr) {
+            let frame = unsafe { Frame::<dyn AnyUFrameMeta>::from_raw(paddr) };
+            MappedItem::Tracked(frame)
+        } else {
+            MappedItem::Untracked(paddr, level)
+        }
     }
 }
 
-#[expect(dead_code)]
 #[derive(Clone, Debug)]
 pub(crate) enum MappedItem {
     Tracked(Frame<dyn AnyUFrameMeta>),

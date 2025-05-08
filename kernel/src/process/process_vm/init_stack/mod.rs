@@ -394,7 +394,7 @@ impl InitStackReader<'_> {
             &preempt_guard,
             &(page_base_addr..page_base_addr + PAGE_SIZE),
         )?;
-        let VmItem::Mapped { frame, .. } = cursor.query()? else {
+        let VmItem::MappedIO { frame, .. } = cursor.query()? else {
             return_errno_with_message!(Errno::EACCES, "Page not accessible");
         };
 
@@ -422,7 +422,7 @@ impl InitStackReader<'_> {
             &preempt_guard,
             &(page_base_addr..page_base_addr + PAGE_SIZE),
         )?;
-        let VmItem::Mapped { frame, .. } = cursor.query()? else {
+        let VmItem::MappedIO { frame, .. } = cursor.query()? else {
             return_errno_with_message!(Errno::EACCES, "Page not accessible");
         };
 
@@ -466,7 +466,7 @@ impl InitStackReader<'_> {
             &preempt_guard,
             &(page_base_addr..page_base_addr + PAGE_SIZE),
         )?;
-        let VmItem::Mapped { frame, .. } = cursor.query()? else {
+        let VmItem::MappedIO { frame, .. } = cursor.query()? else {
             return_errno_with_message!(Errno::EACCES, "Page not accessible");
         };
 
