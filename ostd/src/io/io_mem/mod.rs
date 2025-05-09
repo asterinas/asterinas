@@ -12,10 +12,11 @@ pub(super) use self::allocator::init;
 pub(crate) use self::allocator::IoMemAllocatorBuilder;
 use crate::{
     mm::{
-        kspace::kvirt_area::{KVirtArea, Untracked},
+        frame::{is_tracked_paddr, meta::ReservedMemoryMeta},
+        kspace::kvirt_area::KVirtArea,
         page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
-        FallibleVmRead, FallibleVmWrite, HasPaddr, Infallible, Paddr, PodOnce, VmIo, VmIoOnce,
-        VmReader, VmWriter, PAGE_SIZE,
+        FallibleVmRead, FallibleVmWrite, Frame, HasPaddr, Infallible, Paddr, PodOnce, VmIo,
+        VmIoOnce, VmReader, VmWriter, PAGE_SIZE,
     },
     prelude::*,
     Error,
@@ -24,7 +25,7 @@ use crate::{
 /// I/O memory.
 #[derive(Debug, Clone)]
 pub struct IoMem {
-    kvirt_area: Arc<KVirtArea<Untracked>>,
+    kvirt_area: Arc<KVirtArea>,
     // The actually used range for MMIO is `kvirt_area.start + offset..kvirt_area.start + offset + limit`
     offset: usize,
     limit: usize,
@@ -86,6 +87,9 @@ impl IoMem {
         let first_page_start = range.start.align_down(PAGE_SIZE);
         let last_page_end = range.end.align_up(PAGE_SIZE);
 
+        let frames_range = first_page_start..last_page_end;
+        let area_size = frames_range.len();
+
         let priv_flags = {
             #[cfg(target_arch = "x86_64")]
             {
@@ -116,15 +120,19 @@ impl IoMem {
             priv_flags,
         };
 
-        // SAFETY: The caller of `IoMem::new()` and the constructor of `new_kvirt_area` has ensured the
-        // safety of this mapping.
-        let new_kvirt_area = unsafe {
-            KVirtArea::<Untracked>::map_untracked_pages(
-                last_page_end - first_page_start,
-                0,
-                first_page_start..last_page_end,
-                prop,
-            )
+        let new_kvirt_area = {
+            if is_tracked_paddr(frames_range.start) {
+                let frames = frames_range.step_by(PAGE_SIZE).map(|pa| {
+                    let dyn_frame = Frame::from_in_use(pa).unwrap();
+                    Frame::<ReservedMemoryMeta>::try_from(dyn_frame)
+                        .expect("I/O memory is not reserved by firmware")
+                });
+                KVirtArea::map_frames(area_size, 0, frames, prop)
+            } else {
+                // SAFETY: The caller of `IoMem::new()` and the constructor of `new_kvirt_area` has ensured the
+                // safety of this mapping.
+                unsafe { KVirtArea::map_untracked_frames(area_size, 0, frames_range, prop) }
+            }
         };
 
         Self {

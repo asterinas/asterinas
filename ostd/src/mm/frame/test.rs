@@ -30,7 +30,7 @@ mod frame {
         assert_eq!(frame.meta().value, 42);
         assert_eq!(frame.reference_count(), 1);
         assert_eq!(frame.size(), PAGE_SIZE);
-        assert_eq!(frame.level(), 1);
+        assert_eq!(frame.map_level(), 1);
     }
 
     #[ktest]
@@ -435,7 +435,6 @@ mod segment {
 // Untyped frame/segment tests
 mod untyped {
     use super::*;
-    use crate::mm::frame::untyped::FrameRef;
 
     #[ktest]
     fn untyped_frame_reader_writer() {
@@ -484,11 +483,14 @@ mod untyped {
         reader.read(&mut buffer.as_mut_slice().into());
         assert_eq!(buffer, data);
     }
+}
+
+mod frame_ref {
+    use super::*;
+    use crate::sync::non_null::NonNullPtr;
 
     #[ktest]
     fn frame_impls_non_null_ptr() {
-        use crate::sync::non_null::NonNullPtr;
-
         let init_val = 42;
         let frame = FrameAllocOptions::new()
             .alloc_frame_with(MockUFrameMeta { value: init_val })

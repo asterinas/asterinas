@@ -38,6 +38,9 @@ pub mod segment;
 pub mod unique;
 pub mod untyped;
 
+mod frame_ref;
+pub use frame_ref::FrameRef;
+
 #[cfg(ktest)]
 mod test;
 
@@ -57,8 +60,19 @@ use crate::mm::{Paddr, PagingConsts, Vaddr};
 
 static MAX_PADDR: AtomicUsize = AtomicUsize::new(0);
 
+/// Returns if the given physical address is tracked with metadata.
+///
+/// If a frame is tracked, it means that the frame can be managed by [`Frame`].
+///
+/// This function must be called after initialization of the frame metadata.
+pub fn is_tracked_paddr(paddr: Paddr) -> bool {
+    let max_paddr = MAX_PADDR.load(Ordering::Relaxed);
+    debug_assert_ne!(max_paddr, 0);
+    paddr < max_paddr as Paddr
+}
+
 /// Returns the maximum physical address that is tracked by frame metadata.
-pub(in crate::mm) fn max_paddr() -> Paddr {
+pub(crate) fn max_paddr() -> Paddr {
     let max_paddr = MAX_PADDR.load(Ordering::Relaxed) as Paddr;
     debug_assert_ne!(max_paddr, 0);
     max_paddr
@@ -130,14 +144,14 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
         self.slot().frame_paddr()
     }
 
-    /// Gets the paging level of this page.
+    /// Gets the map level of this page.
     ///
     /// This is the level of the page table entry that maps the frame,
     /// which determines the size of the frame.
     ///
     /// Currently, the level is always 1, which means the frame is a regular
     /// page frame.
-    pub const fn level(&self) -> PagingLevel {
+    pub const fn map_level(&self) -> PagingLevel {
         1
     }
 
@@ -169,6 +183,12 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
         let refcnt = self.slot().ref_count.load(Ordering::Relaxed);
         debug_assert!(refcnt < meta::REF_COUNT_MAX);
         refcnt
+    }
+
+    /// Borrows a reference from the given frame.
+    pub fn borrow(&self) -> FrameRef<'_, M> {
+        // SAFETY: Both the lifetime and the type matches `self`.
+        unsafe { FrameRef::borrow_from_raw(self.start_paddr()) }
     }
 
     /// Forgets the handle to the frame.
