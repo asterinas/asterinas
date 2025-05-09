@@ -2,23 +2,17 @@
 
 mod table;
 
-use alloc::sync::Arc;
-use core::{fmt::Debug, mem::size_of};
+use core::fmt::Debug;
 
 use log::{info, warn};
 use spin::Once;
 pub(super) use table::IntRemappingTable;
-use table::IrtEntry;
 
-use crate::{
-    arch::iommu::registers::{ExtendedCapabilityFlags, IOMMU_REGS},
-    prelude::Vaddr,
-    sync::{LocalIrqDisabled, SpinLock},
-};
+use crate::arch::iommu::registers::{ExtendedCapabilityFlags, IOMMU_REGS};
 
 pub struct IrtEntryHandle {
     index: u16,
-    entry_ref: Option<&'static mut IrtEntry>,
+    table: &'static IntRemappingTable,
 }
 
 impl IrtEntryHandle {
@@ -26,32 +20,9 @@ impl IrtEntryHandle {
         self.index
     }
 
-    #[expect(unused)]
-    pub fn irt_entry(&self) -> Option<&IrtEntry> {
-        self.entry_ref.as_deref()
-    }
-
-    pub fn irt_entry_mut(&mut self) -> Option<&mut IrtEntry> {
-        self.entry_ref.as_deref_mut()
-    }
-
-    /// Set entry reference to None.
-    pub(self) fn set_none(&mut self) {
-        self.entry_ref = None;
-    }
-
-    /// Creates a handle based on index and the interrupt remapping table base virtual address.
-    ///
-    /// # Safety
-    ///
-    /// User must ensure the target address is **always** valid and point to `IrtEntry`.
-    pub(self) unsafe fn new(table_vaddr: Vaddr, index: u16) -> Self {
-        Self {
-            index,
-            entry_ref: Some(
-                &mut *((table_vaddr + index as usize * size_of::<IrtEntry>()) as *mut IrtEntry),
-            ),
-        }
+    pub fn enable(&self, vector: u32) {
+        self.table
+            .set_entry(self.index, table::IrtEntry::new_enabled(vector));
     }
 }
 
@@ -59,8 +30,7 @@ impl Debug for IrtEntryHandle {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("IrtEntryHandle")
             .field("index", &self.index)
-            .field("entry_ref", &self.entry_ref)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -68,7 +38,7 @@ pub fn has_interrupt_remapping() -> bool {
     REMAPPING_TABLE.get().is_some()
 }
 
-pub fn alloc_irt_entry() -> Option<Arc<SpinLock<IrtEntryHandle, LocalIrqDisabled>>> {
+pub fn alloc_irt_entry() -> Option<IrtEntryHandle> {
     let page_table = REMAPPING_TABLE.get()?;
     page_table.alloc()
 }
