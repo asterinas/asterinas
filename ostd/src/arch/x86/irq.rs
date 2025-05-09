@@ -13,7 +13,7 @@ use x86_64::registers::rflags::{self, RFlags};
 use super::iommu::{alloc_irt_entry, has_interrupt_remapping, IrtEntryHandle};
 use crate::{
     cpu::PinCurrentCpu,
-    sync::{LocalIrqDisabled, Mutex, PreemptDisabled, RwLock, RwLockReadGuard, SpinLock},
+    sync::{Mutex, PreemptDisabled, RwLock, RwLockReadGuard, SpinLock},
     trap::TrapFrame,
 };
 
@@ -88,7 +88,7 @@ impl Debug for CallbackElement {
 pub(crate) struct IrqLine {
     pub(crate) irq_num: u8,
     pub(crate) callback_list: RwLock<Vec<CallbackElement>>,
-    bind_remapping_entry: Once<Arc<SpinLock<IrtEntryHandle, LocalIrqDisabled>>>,
+    bind_remapping_entry: Once<IrtEntryHandle>,
 }
 
 impl IrqLine {
@@ -105,11 +105,7 @@ impl IrqLine {
             let handle = alloc_irt_entry();
             if let Some(handle) = handle {
                 // Enable the IRT entry
-                handle
-                    .lock()
-                    .irt_entry_mut()
-                    .unwrap()
-                    .enable_default(irq_num as u32);
+                handle.enable(irq_num as u32);
                 irq.bind_remapping_entry.call_once(|| handle);
             }
         }
@@ -121,7 +117,7 @@ impl IrqLine {
     /// This method will return `None` if interrupt remapping is disabled or
     /// not supported by the architecture.
     pub fn remapping_index(&self) -> Option<u16> {
-        Some(self.bind_remapping_entry.get()?.lock().index())
+        Some(self.bind_remapping_entry.get()?.index())
     }
 
     /// Gets the IRQ number.
