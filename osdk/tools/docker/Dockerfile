@@ -12,7 +12,7 @@ RUN apt update && apt-get install -y --no-install-recommends \
     python-is-python3 \
     wget
 
-RUN pip3 install iq tomli
+RUN pip3 install yq tomli
 
 #= Build QEMU =================================================================
 
