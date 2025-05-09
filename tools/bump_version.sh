@@ -169,7 +169,7 @@ update_project_dependencies() {
 
     # Automatically bump Cargo.lock files
     cargo update -p aster-nix --precise $new_version # For Cargo.lock
-    cd osdk && cargo update -p cargo-osdk --precise $new_version # For osdk/Cargo.lock
+    cd ../osdk && cargo update -p cargo-osdk --precise $new_version # For osdk/Cargo.lock
 }
 
 # Synchronize project version to Docker version (update VERSION)
