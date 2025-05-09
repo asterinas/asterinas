@@ -28,11 +28,10 @@ pub(crate) fn has_pci_bus() -> bool {
 pub(crate) const MSIX_DEFAULT_MSG_ADDR: u32 = 0xFEE0_0000;
 
 pub(crate) fn construct_remappable_msix_address(irq: &IrqLine) -> u32 {
-    let mut handle = irq.inner_irq().bind_remapping_entry().unwrap().lock();
+    let handle = irq.inner_irq().bind_remapping_entry().unwrap();
 
     // Enable irt entry
-    let irt_entry_mut = handle.irt_entry_mut().unwrap();
-    irt_entry_mut.enable_default(irq.num() as u32);
+    handle.enable(irq.num() as u32);
 
     // Use remappable format. The bits[4:3] should be always set to 1 according to the manual.
     let mut address = MSIX_DEFAULT_MSG_ADDR | 0b1_1000;

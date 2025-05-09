@@ -55,11 +55,10 @@ impl IoApic {
             return Err(Error::AccessDenied);
         }
         if has_interrupt_remapping() {
-            let mut handle = irq.inner_irq().bind_remapping_entry().unwrap().lock();
+            let handle = irq.inner_irq().bind_remapping_entry().unwrap();
 
             // Enable irt entry
-            let irt_entry_mut = handle.irt_entry_mut().unwrap();
-            irt_entry_mut.enable_default(irq.num() as u32);
+            handle.enable(irq.num() as u32);
 
             // Construct remappable format RTE with RTE[48] set.
             let mut value: u64 = irq.num() as u64 | 0x1_0000_0000_0000;
@@ -77,7 +76,6 @@ impl IoApic {
                 value.get_bits(32..64) as u32,
             );
 
-            drop(handle);
             self.irqs.push(irq);
             return Ok(());
         }
