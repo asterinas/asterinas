@@ -23,6 +23,7 @@ TEST_APPS := \
 	file_io \
 	fork \
 	fork_c \
+	fb \
 	getcpu \
 	getpid \
 	hello_c \
