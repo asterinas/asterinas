@@ -6,7 +6,14 @@ set -e
 set -o pipefail
 
 # Ensure all dependencies are installed
-command -v yq >/dev/null 2>&1 || command -v yq >/dev/null 2>&1 || { echo >&2 "tools are not installed. Aborting."; exit 1; }
+if ! command -v yq >/dev/null 2>&1; then
+    echo >&2 "Error: missing required tool: yq"
+    exit 1
+fi
+if ! command -v jq >/dev/null 2>&1; then
+    echo >&2 "Error: missing required tool: jq"
+    exit 1
+fi
 
 # Set up paths
 BENCHMARK_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
