@@ -14,7 +14,7 @@ use crate::{
     prelude::*,
     process::{
         posix_thread::{PosixThread, ThreadLocal},
-        Process,
+        CurrentProcess,
     },
     thread::Thread,
     util::{MultiRead, VmReaderArray},
@@ -24,7 +24,7 @@ use crate::{
 /// The context that can be accessed from the current POSIX thread.
 #[derive(Clone)]
 pub struct Context<'a> {
-    pub process: &'a Process,
+    pub process: &'a CurrentProcess,
     pub thread_local: &'a ThreadLocal,
     pub posix_thread: &'a PosixThread,
     pub thread: &'a Thread,

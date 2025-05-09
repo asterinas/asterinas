@@ -109,7 +109,9 @@ impl FileIo for Tty {
                 let Some(foreground) = self.foreground() else {
                     return_errno_with_message!(Errno::ESRCH, "No fg process group")
                 };
-                let fg_pgid = foreground.pgid();
+                let fg_pgid = foreground
+                    .pgid_in_ns(current!().pid_namespace())
+                    .unwrap_or(0);
                 debug!("fg_pgid = {}", fg_pgid);
                 current_userspace!().write_val(arg, &fg_pgid)?;
                 Ok(0)

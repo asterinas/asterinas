@@ -2,6 +2,7 @@
 
 //! Read-copy update (RCU).
 
+use alloc::sync::Arc;
 use core::{
     marker::PhantomData,
     ptr::NonNull,
@@ -391,6 +392,13 @@ impl<P: NonNullPtr + Send> RcuOptionReadGuard<'_, P> {
     /// [the ABA problem](https://en.wikipedia.org/wiki/ABA_problem).
     pub fn compare_exchange(self, new_ptr: Option<P>) -> Result<(), Option<P>> {
         self.0.compare_exchange(new_ptr)
+    }
+}
+
+impl<T: 'static + Send + Sync> RcuOption<Arc<T>> {
+    /// Clones an `Arc` pointer out from `self`.
+    pub fn arc_clone(&self) -> Option<Arc<T>> {
+        self.read().get().map(|ptr| ptr.clone())
     }
 }
 

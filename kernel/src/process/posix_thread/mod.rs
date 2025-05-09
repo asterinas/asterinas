@@ -7,6 +7,7 @@ use ostd::sync::{RoArc, Waker};
 
 use super::{
     kill::SignalSenderIds,
+    pid_namespace::NestedId,
     signal::{
         sig_action::SigAction,
         sig_mask::{AtomicSigMask, SigMask, SigSet},
@@ -22,7 +23,7 @@ use crate::{
     fs::{file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
     process::signal::constants::SIGCONT,
-    thread::{Thread, Tid},
+    thread::Tid,
     time::{clocks::ProfClock, Timer, TimerManager},
 };
 
@@ -33,7 +34,6 @@ mod name;
 mod posix_thread_ext;
 mod robust_list;
 mod thread_local;
-pub mod thread_table;
 
 pub use builder::PosixThreadBuilder;
 pub use exit::{do_exit, do_exit_group};
@@ -76,6 +76,9 @@ pub struct PosixThread {
 
     /// A manager that manages timers based on the profiling clock of the current thread.
     prof_timer_manager: Arc<TimerManager>,
+
+    // Namespace IDs
+    nested_id: NestedId,
 }
 
 impl PosixThread {
@@ -149,8 +152,8 @@ impl PosixThread {
         if let Some(signum) = signum
             && *signum == SIGCONT
         {
-            let receiver_sid = self.process().sid();
-            if receiver_sid == sender.sid().unwrap() {
+            let receiver_session = self.process().session().unwrap();
+            if Arc::ptr_eq(&receiver_session, sender.session().unwrap()) {
                 return Ok(());
             }
 
@@ -271,14 +274,13 @@ impl PosixThread {
         ));
         self.credentials.dup().restrict()
     }
+
+    pub fn nested_id(&self) -> &NestedId {
+        &self.nested_id
+    }
 }
 
 static POSIX_TID_ALLOCATOR: AtomicU32 = AtomicU32::new(1);
-
-/// Allocates a new tid for the new posix thread
-pub fn allocate_posix_tid() -> Tid {
-    POSIX_TID_ALLOCATOR.fetch_add(1, Ordering::SeqCst)
-}
 
 /// Returns the last allocated tid
 pub fn last_tid() -> Tid {
