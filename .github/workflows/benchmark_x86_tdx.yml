@@ -108,7 +108,7 @@ jobs:
       max-parallel: 1
     timeout-minutes: 60
     container: 
-      image: asterinas/asterinas:0.14.1-20250507-tdx
+      image: asterinas/asterinas:0.15.0-20250509-tdx
       options: --device=/dev/kvm --privileged
 
     steps:
