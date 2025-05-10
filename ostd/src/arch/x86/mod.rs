@@ -199,9 +199,24 @@ pub(crate) fn enable_cpu_features() {
         | Cr4Flags::OSFXSR
         | Cr4Flags::OSXMMEXCPT_ENABLE
         | Cr4Flags::PAGE_GLOBAL;
+
+    // Check if PCID is supported by the CPU, PCID supported by ECX bit 17
+    let ecx = unsafe { core::arch::x86_64::__cpuid(1).ecx };
+    let pcid_supported = (ecx & (1 << 17)) != 0;
+
+    if pcid_supported {
+        cr4 |= Cr4Flags::PCID;
+    }
+
     unsafe {
         x86_64::registers::control::Cr4::write(cr4);
     }
+
+    // Store PCID support status in global variable
+    crate::arch::x86::mm::PCID_ENABLED.store(
+        cr4.contains(Cr4Flags::PCID),
+        core::sync::atomic::Ordering::Relaxed,
+    );
 
     let mut xcr0 = x86_64::registers::xcontrol::XCr0::read();
 

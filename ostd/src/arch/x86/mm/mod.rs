@@ -7,7 +7,9 @@ use core::ops::Range;
 
 use cfg_if::cfg_if;
 pub(crate) use util::{__memcpy_fallible, __memset_fallible};
-use x86_64::{instructions::tlb, structures::paging::PhysFrame, VirtAddr};
+use x86_64::{
+    instructions::tlb, registers::control::Cr3Flags, structures::paging::PhysFrame, VirtAddr,
+};
 
 use crate::{
     mm::{
@@ -19,7 +21,10 @@ use crate::{
     Pod,
 };
 
+mod asid;
 mod util;
+
+pub use asid::{invpcid_all_excluding_global, ASID_CAP, PCID_ENABLED};
 
 pub(crate) const NR_ENTRIES_PER_PAGE: usize = 512;
 
@@ -136,6 +141,44 @@ pub unsafe fn activate_page_table(root_paddr: Paddr, root_pt_cache: CachePolicy)
             }
             _ => panic!("unsupported cache policy for the root page table"),
         },
+    );
+}
+
+/// Activate a page table with the specified ASID.
+///
+/// This function writes to CR3 and sets ASID (Address Space ID) bits.
+///
+/// # Safety
+///
+/// Changing the level 4 page table is unsafe, because it's possible to violate memory safety by
+/// changing the page mapping.
+pub unsafe fn activate_page_table_with_asid(
+    root_paddr: Paddr,
+    asid: u16,
+    root_pt_cache: CachePolicy,
+) {
+    if !asid::PCID_ENABLED.load(core::sync::atomic::Ordering::Relaxed) {
+        // If PCID is not supported, just use regular page table activation
+        activate_page_table(root_paddr, root_pt_cache);
+        return;
+    }
+
+    // PCID is 12 bits (0-4095)
+    let asid_bits = (asid & 0xFFF) as u64;
+
+    // Write CR3 with the PCID bits
+    x86_64::registers::control::Cr3::write(
+        PhysFrame::from_start_address(x86_64::PhysAddr::new(root_paddr as u64)).unwrap(),
+        match root_pt_cache {
+            CachePolicy::Writeback => x86_64::registers::control::Cr3Flags::empty(),
+            CachePolicy::Writethrough => {
+                x86_64::registers::control::Cr3Flags::PAGE_LEVEL_WRITETHROUGH
+            }
+            CachePolicy::Uncacheable => {
+                x86_64::registers::control::Cr3Flags::PAGE_LEVEL_CACHE_DISABLE
+            }
+            _ => panic!("unsupported cache policy for the root page table"),
+        } | Cr3Flags::from_bits_truncate(asid_bits),
     );
 }
 
