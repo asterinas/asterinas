@@ -26,7 +26,11 @@ FN_SETUP(run_in_new_session)
 	}
 
 	sid = CHECK(setsid());
+}
+END_SETUP()
 
+FN_SETUP(run_child)
+{
 	if ((child = CHECK(fork())) == 0) {
 		child = getpid();
 
@@ -144,19 +148,30 @@ FN_TEST(leader_set_unset_tty)
 }
 END_TEST()
 
-BARRIER()
+// TODO: Next we do `kill_child` and `run_child_with_tty` because the
+// Linux kernel keeps track of the controlling terminal of each process
+// in `current->signal->tty`. So without killing and restarting the
+// child, the controlling terminal won't be visible to it. This problem
+// does not exist in Asterinas, but we may want to fix this behavioral
+// difference later.
 
-FN_TEST(nonleader_unset_tty)
+FN_SETUP(kill_child)
 {
-	if (is_leader())
-		return;
+	int status;
 
-	// Only session leaders can use `TIOCNOTTY`, but we're not the leader
-	TEST_ERRNO(ioctl(master, TIOCNOTTY), ENOTTY);
-	TEST_ERRNO(ioctl(slave, TIOCNOTTY), ENOTTY);
-	TEST_ERRNO(ioctl(STDIN_FILENO, TIOCNOTTY), ENOTTY);
+	if (!is_leader())
+		exit(__total_failures ? EXIT_FAILURE : EXIT_SUCCESS);
+
+	CHECK_WITH(wait(&status),
+		   WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
-END_TEST()
+END_SETUP()
+
+FN_SETUP(run_child_with_tty)
+{
+	setup_run_child();
+}
+END_SETUP()
 
 FN_TEST(query_foreground)
 {
@@ -165,24 +180,23 @@ FN_TEST(query_foreground)
 	// All processes can use `TIOCGPGRP` on the master PTY
 	TEST_RES(ioctl(master, TIOCGPGRP, &arg), arg == sid);
 
-	// Only session leaders can use `TIOCGPGRP` on the slave PTY
-	if (is_leader())
-		TEST_RES(ioctl(slave, TIOCGPGRP, &arg), arg == sid);
-	else
-		TEST_ERRNO(ioctl(slave, TIOCGPGRP, &arg), ENOTTY);
+	// The slave PTY is our controlling terminal, so `TIOCGPGRP` works
+	TEST_RES(ioctl(slave, TIOCGPGRP, &arg), arg == sid);
 }
 END_TEST()
 
 BARRIER()
 
-FN_TEST(leader_set_foreground)
+FN_TEST(set_foreground)
 {
 	pid_t arg;
 
+	// Make sure the tests won't be run concurrently
 	if (!is_leader())
-		return;
+		TEST_SUCC(usleep(100 * 1000));
 
-	// Only session leaders can use `TIOCSPGRP`, and we're the leader
+	// All processes can use `TIOCSPGRP` on the master PTY
+	// The slave PTY is our controlling terminal, so `TIOSGPGRP` works
 
 	arg = child;
 	TEST_SUCC(ioctl(master, TIOCSPGRP, &arg));
@@ -203,33 +217,15 @@ FN_TEST(leader_set_foreground)
 	TEST_SUCC(ioctl(slave, TIOCSPGRP, &arg));
 	arg = 0xdeadbeef;
 	TEST_RES(ioctl(master, TIOCGPGRP, &arg), arg == sid);
-}
-END_TEST()
 
-BARRIER()
-
-FN_TEST(nonleader_set_foreground)
-{
-	pid_t arg = child;
-
+	// Make sure the tests won't be run concurrently
 	if (is_leader())
-		return;
-
-	// Only session leaders can use `TIOCSPGRP`, but we're not the leader
-
-	TEST_ERRNO(ioctl(master, TIOCSPGRP, &arg), ENOTTY);
-	TEST_ERRNO(ioctl(slave, TIOCSPGRP, &arg), ENOTTY);
+		TEST_SUCC(usleep(100 * 1000));
 }
 END_TEST()
 
 FN_SETUP(cleanup)
 {
-	int status;
-
-	if (!is_leader())
-		return;
-
-	CHECK_WITH(wait(&status),
-		   WIFEXITED(status) && WEXITSTATUS(status) == 0);
+	setup_kill_child();
 }
 END_SETUP()

@@ -316,27 +316,6 @@ impl Process {
             .map_or(0, |session| session.sid())
     }
 
-    /// Returns the process group and the session if the process is a session leader.
-    ///
-    /// Note that once a process becomes a session leader, it remains a session leader forever.
-    /// Specifically, it can no longer be moved to a new process group or a new session. So this
-    /// method is race-free.
-    //
-    // FIXME: If we call this method on a non-current process without holding the process table
-    // lock, the session may be dead if the process is reaped at the same time.
-    fn leading_session(&self) -> Option<(Arc<ProcessGroup>, Arc<Session>)> {
-        let process_group_mut = self.process_group.lock();
-
-        let process_group = process_group_mut.upgrade().unwrap();
-        let session = process_group.session().unwrap();
-
-        if session.is_leader(self) {
-            Some((process_group, session))
-        } else {
-            None
-        }
-    }
-
     /// Returns the controlling terminal of the process, if any.
     pub fn terminal(&self) -> Option<Arc<dyn Terminal>> {
         self.process_group
