@@ -92,7 +92,13 @@ impl dyn Terminal {
 
     /// Sets the terminal to be the controlling terminal of the process.
     pub(super) fn set_control(self: Arc<Self>, process: &Process) -> Result<()> {
-        let Some((process_group, session)) = process.leading_session() else {
+        // Lock order: group of process -> session inner -> job control
+        let process_group_mut = process.process_group.lock();
+
+        let process_group = process_group_mut.upgrade().unwrap();
+        let session = process_group.session().unwrap();
+
+        if !session.is_leader(process) {
             return_errno_with_message!(
                 Errno::EPERM,
                 "the process who sets the controlling terminal is not a session leader"
@@ -119,13 +125,25 @@ impl dyn Terminal {
 
     /// Unsets the terminal from the controlling terminal of the process.
     fn unset_control(self: Arc<Self>, process: &Process) -> Result<()> {
-        self.is_control_and(process, |_, session_inner| {
+        // Lock order: group of process -> session inner -> job control
+        self.is_control_and(process, |session, session_inner| {
+            if !session.is_leader(process) {
+                // TODO: The Linux kernel keeps track of the controlling terminal of each process
+                // in `current->signal->tty`. So even if we're not the session leader, this may
+                // still succeed in releasing the controlling terminal of the current process. Note
+                // that the controlling terminal of the session will never be released in this
+                // case. We cannot mimic the exact Linux behavior, so we just return `Ok(())` here.
+                return Ok(());
+            }
+
             session_inner.set_terminal(None);
             if let Some(foreground) = self.job_control().unset_session() {
                 use crate::process::signal::{
                     constants::{SIGCONT, SIGHUP},
                     signals::kernel::KernelSignal,
                 };
+                // FIXME: Correct the lock order here. We cannot lock the group inner after locking
+                // the session inner.
                 foreground.broadcast_signal(KernelSignal::new(SIGHUP));
                 foreground.broadcast_signal(KernelSignal::new(SIGCONT));
             }
@@ -136,7 +154,7 @@ impl dyn Terminal {
 
     /// Sets the foreground process group of the terminal.
     fn set_foreground(self: Arc<Self>, pgid: Pgid, process: &Process) -> Result<()> {
-        // Take this lock before calling `is_control_and` to avoid dead locks.
+        // Lock order: group table -> group of process -> session inner -> job control
         let group_table_mut = process_table::group_table_mut();
 
         self.is_control_and(process, |session, _| {
@@ -162,19 +180,16 @@ impl dyn Terminal {
 
     /// Runs `op` when the process controls the terminal.
     ///
-    /// Note that this requires that _both_ of the following two conditions are met:
-    /// * the process is a session leader, and
-    /// * the terminal is the controlling terminal of the session.
+    /// Note that this requires that the terminal is the controlling terminal of the session, but
+    /// does _not_ require that the process is a session leader.
     fn is_control_and<F, R>(self: &Arc<Self>, process: &Process, op: F) -> Result<R>
     where
         F: FnOnce(&Arc<Session>, &mut SessionGuard) -> Result<R>,
     {
-        let Some((_, session)) = process.leading_session() else {
-            return_errno_with_message!(
-                Errno::ENOTTY,
-                "the process who operates the terminal is not a session leader"
-            );
-        };
+        let process_group_mut = process.process_group.lock();
+
+        let process_group = process_group_mut.upgrade().unwrap();
+        let session = process_group.session().unwrap();
 
         let mut session_inner = session.lock();
 
