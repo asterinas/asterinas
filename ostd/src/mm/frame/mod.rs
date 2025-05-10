@@ -38,6 +38,9 @@ pub mod segment;
 pub mod unique;
 pub mod untyped;
 
+mod frame_ref;
+pub use frame_ref::FrameRef;
+
 #[cfg(ktest)]
 mod test;
 
@@ -130,14 +133,14 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
         self.slot().frame_paddr()
     }
 
-    /// Gets the paging level of this page.
+    /// Gets the map level of this page.
     ///
     /// This is the level of the page table entry that maps the frame,
     /// which determines the size of the frame.
     ///
     /// Currently, the level is always 1, which means the frame is a regular
     /// page frame.
-    pub const fn level(&self) -> PagingLevel {
+    pub const fn map_level(&self) -> PagingLevel {
         1
     }
 
@@ -169,6 +172,12 @@ impl<M: AnyFrameMeta + ?Sized> Frame<M> {
         let refcnt = self.slot().ref_count.load(Ordering::Relaxed);
         debug_assert!(refcnt < meta::REF_COUNT_MAX);
         refcnt
+    }
+
+    /// Borrows a reference from the given frame.
+    pub fn borrow(&self) -> FrameRef<'_, M> {
+        // SAFETY: Both the lifetime and the type matches `self`.
+        unsafe { FrameRef::borrow_paddr(self.start_paddr()) }
     }
 
     /// Forgets the handle to the frame.
