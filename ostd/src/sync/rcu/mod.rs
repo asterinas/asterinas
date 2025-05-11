@@ -4,6 +4,8 @@
 
 use core::{
     marker::PhantomData,
+    mem::ManuallyDrop,
+    ops::Deref,
     ptr::NonNull,
     sync::atomic::{
         AtomicPtr,
@@ -148,7 +150,11 @@ impl<P: NonNullPtr + Send> RcuInner<P> {
         let old_raw_ptr = self.ptr.swap(new_ptr, AcqRel);
 
         if let Some(p) = NonNull::new(old_raw_ptr) {
-            // SAFETY: It was previously returned by `into_raw`.
+            // SAFETY:
+            // 1. The pointer was previously returned by `into_raw`.
+            // 2. The pointer is removed from the RCU slot so that no one will
+            //    use it after the end of the current grace period. The removal
+            //    is done atomically, so it will only be dropped once.
             unsafe { delay_drop::<P>(p) };
         }
     }
@@ -232,7 +238,11 @@ impl<P: NonNullPtr + Send> RcuReadGuardInner<'_, P> {
         }
 
         if let Some(p) = NonNull::new(self.obj_ptr) {
-            // SAFETY: It was previously returned by `into_raw`.
+            // SAFETY:
+            // 1. The pointer was previously returned by `into_raw`.
+            // 2. The pointer is removed from the RCU slot so that no one will
+            //    use it after the end of the current grace period. The removal
+            //    is done atomically, so it will only be dropped once.
             unsafe { delay_drop::<P>(p) };
         }
 
@@ -394,10 +404,19 @@ impl<P: NonNullPtr + Send> RcuOptionReadGuard<'_, P> {
     }
 }
 
+/// Delays the dropping of a [`NonNullPtr`] after the RCU grace period.
+///
+/// This is internally needed for implementing [`Rcu`] and [`RcuOption`]
+/// because we cannot alias a [`Box`]. Restoring `P` and use [`RcuDrop`] for it
+/// can lead to multiple [`Box`]es simultaneously pointing to the same
+/// content.
+///
 /// # Safety
 ///
-/// The pointer must be previously returned by `into_raw` and the pointer
-/// must be only be dropped once.
+/// The pointer must be previously returned by `into_raw`, will not be used
+/// after the end of the current grace period, and will only be dropped once.
+///
+/// [`Box`]: alloc::boxed::Box
 unsafe fn delay_drop<P: NonNullPtr + Send>(pointer: NonNull<<P as NonNullPtr>::Target>) {
     struct ForceSend<P: NonNullPtr + Send>(NonNull<<P as NonNullPtr>::Target>);
     // SAFETY: Sending a raw pointer to another task is safe as long as
@@ -420,6 +439,47 @@ unsafe fn delay_drop<P: NonNullPtr + Send>(pointer: NonNull<<P as NonNullPtr>::T
         let p = unsafe { <P as NonNullPtr>::from_raw(pointer.0) };
         drop(p);
     });
+}
+
+/// A wrapper to delay calling destructor of `T` after the RCU grace period.
+///
+/// Upon dropping this structure, a callback will be registered to the global
+/// RCU monitor and the destructor of `T` will be delayed until the callback.
+///
+/// [`RcuDrop<T>`] is guaranteed to have the same layout as `T`. You can also
+/// access the inner value safely via [`RcuDrop<T>`].
+#[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct RcuDrop<T: Send + 'static> {
+    value: ManuallyDrop<T>,
+}
+
+impl<T: Send + 'static> RcuDrop<T> {
+    /// Creates a new [`RcuDrop`] instance that delays the dropping of `value`.
+    pub fn new(value: T) -> Self {
+        Self {
+            value: ManuallyDrop::new(value),
+        }
+    }
+}
+
+impl<T: Send + 'static> Deref for RcuDrop<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl<T: Send + 'static> Drop for RcuDrop<T> {
+    fn drop(&mut self) {
+        // SAFETY: The `ManuallyDrop` will not be used after this point.
+        let taken = unsafe { ManuallyDrop::take(&mut self.value) };
+        let rcu_monitor = RCU_MONITOR.get().unwrap();
+        rcu_monitor.after_grace_period(|| {
+            drop(taken);
+        });
+    }
 }
 
 /// Finishes the current grace period.
