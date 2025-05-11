@@ -6,7 +6,7 @@
 OSDK_TARGET_ARCH ?= x86_64
 BENCHMARK ?= none
 BOOT_METHOD ?= grub-rescue-iso
-BOOT_PROTOCOL ?= multiboot2
+BOOT_PROTOCOL ?= linux-efi-handover64
 BUILD_SYSCALL_TEST ?= 0
 ENABLE_KVM ?= 1
 INTEL_TDX ?= 0
