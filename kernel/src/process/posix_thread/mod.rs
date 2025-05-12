@@ -8,7 +8,7 @@ use ostd::sync::{RoArc, Waker};
 use super::{
     kill::SignalSenderIds,
     signal::{
-        sig_action::SigAction,
+        sig_disposition::SigDispositions,
         sig_mask::{AtomicSigMask, SigMask, SigSet},
         sig_num::SigNum,
         sig_queues::SigQueues,
@@ -199,14 +199,41 @@ impl PosixThread {
         *self.signalled_waker.lock() = None;
     }
 
-    /// Enqueues a thread-directed signal. This method should only be used for enqueue kernel
-    /// signal and fault signal.
+    /// Enqueues a thread-directed signal.
+    ///
+    /// This method does not perform permission checks on user signals. Therefore, unless the
+    /// caller can ensure that there are no permission issues, this method should be used for
+    /// enqueue kernel signals or fault signals.
     pub fn enqueue_signal(&self, signal: Box<dyn Signal>) {
-        let signal_number = signal.num();
+        let process = self.process();
+        let sig_dispositions = process.sig_dispositions().lock();
+
+        let signum = signal.num();
+        if sig_dispositions.get(signum).will_ignore(signum) {
+            return;
+        }
+
+        self.enqueue_signal_locked(signal, sig_dispositions);
+    }
+
+    /// Enqueues a thread-directed signal with locked dispositions.
+    ///
+    /// By locking dispositions, the caller should have already checked the signal is not to be
+    /// ignored.
+    //
+    // FIXME: According to Linux behavior, we should enqueue ignored signals blocked by all
+    // threads, as a thread may change the signal handler and unblock them in the future. However,
+    // achieving this behavior properly without maintaining a process-wide signal queue is
+    // difficult. For instance, if we randomly select a thread-wide signal queue, the thread that
+    // modifies the signal handler and unblocks the signal may not be the same one. Consequently,
+    // the current implementation uses a simpler mechanism that never enqueues any ignored signals.
+    pub(in crate::process) fn enqueue_signal_locked(
+        &self,
+        signal: Box<dyn Signal>,
+        _sig_dispositions: MutexGuard<SigDispositions>,
+    ) {
         self.sig_queues.enqueue(signal);
-        if self.process().sig_dispositions().lock().get(signal_number) != SigAction::Ign
-            && let Some(waker) = &*self.signalled_waker.lock()
-        {
+        if let Some(waker) = &*self.signalled_waker.lock() {
             waker.wake_up();
         }
     }
