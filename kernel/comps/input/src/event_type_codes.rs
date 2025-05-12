@@ -163,6 +163,15 @@ pub enum SoundEvent {
     SndTone = 0x02,
 }
 
+/// Mouse key events
+#[repr(u16)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MouseKeyEvent {
+    MouseLeft = 0x110,
+    MouseRight = 0x111,
+    MouseMiddle = 0x112,
+}
+
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, TryFromInt)]
 #[repr(u16)]
 pub enum Key {

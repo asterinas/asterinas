@@ -59,7 +59,7 @@ pub trait InputHandler: Send + Sync {
     fn supported_event_types(&self) -> Vec<u16>;
 
     /// Processes the given event.
-    fn handle_event(&self, event: InputEvent) -> Result<(), core::convert::Infallible>;
+    fn handle_event(&self, event: InputEvent, str: &str) -> Result<(), core::convert::Infallible>;
 }
 
 struct Component {
@@ -128,11 +128,11 @@ impl Component {
         }
     }
 
-    pub fn input_event(&self, event: InputEvent) {
+    pub fn input_event(&self, event: InputEvent, str: &str) {
         let connections = self.connections.lock();
         for connection in connections.iter() {
             if connection.handler.supported_event_types().contains(&event.type_) {
-                connection.handler.handle_event(event).unwrap();
+                connection.handler.handle_event(event, str).unwrap();
             }
         }
     }
@@ -175,6 +175,6 @@ pub fn unregister_handler(handler: Arc<dyn InputHandler>) {
     COMPONENT.get().unwrap().unregister_handler(handler);
 }
 
-pub fn input_event(event: InputEvent) {
-    COMPONENT.get().unwrap().input_event(event);
+pub fn input_event(event: InputEvent, str: &str) {
+    COMPONENT.get().unwrap().input_event(event, str);
 }

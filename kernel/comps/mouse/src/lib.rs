@@ -13,7 +13,6 @@ use component::{init_component, ComponentInitError};
 use ostd::sync::SpinLock;
 
 mod i8042_mouse;
-mod event_type_codes;
 
 static MOUSE_CALLBACKS: SpinLock<Vec<Box<MouseCallback>>> = SpinLock::new(Vec::new());
 

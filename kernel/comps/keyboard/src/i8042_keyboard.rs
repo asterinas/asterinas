@@ -5,7 +5,7 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use ostd::{
-    arch::{device::io_port::ReadOnlyAccess, IO_APIC},
+    arch::{device::io_port::ReadWriteAccess, IO_APIC},
     io::IoPort,
     sync::SpinLock,
     trap::{IrqLine, TrapFrame},
@@ -19,15 +19,17 @@ use crate::alloc::string::ToString;
 use super::{InputKey, KEYBOARD_CALLBACKS};
 
 /// Data register (R/W)
-static DATA_PORT: Once<IoPort<u8, ReadOnlyAccess>> = Once::new();
+static DATA_PORT: Once<IoPort<u8, ReadWriteAccess>> = Once::new();
 
 /// Status register (R)
-static STATUS_PORT: Once<IoPort<u8, ReadOnlyAccess>> = Once::new();
+static STATUS_PORT: Once<IoPort<u8, ReadWriteAccess>> = Once::new();
 
 /// IrqLine for i8042 keyboard.
 static IRQ_LINE: Once<SpinLock<IrqLine>> = Once::new();
 
 pub fn init() {
+    log::error!("This is init in kernel/comps/keyboard/src/i8042_keyboard.rs");
+
     DATA_PORT.call_once(|| IoPort::acquire(0x60).unwrap());
     STATUS_PORT.call_once(|| IoPort::acquire(0x64).unwrap());
     IRQ_LINE.call_once(|| {
@@ -56,6 +58,7 @@ impl InputDevice for I8042Keyboard {
 }
 
 fn handle_keyboard_input(_trap_frame: &TrapFrame) {
+    log::error!("-----This is handle_keyboard_input in kernel/comps/keyboard/src/i8042_keyboard.rs");
     let key = parse_inputkey();
 
     // Get the current time in microseconds
@@ -68,7 +71,7 @@ fn handle_keyboard_input(_trap_frame: &TrapFrame) {
         type_: 1,                   // EV_KEY (example type for key events)
         code: key as u16,           // Convert InputKey to a u16 representation
         value: 1,                   // Example value (1 for key press, 0 for release)
-    });
+    }, "i8042_keyboard");
 
     // Fixme: the callbacks are going to be replaced.
     for callback in KEYBOARD_CALLBACKS.lock().iter() {

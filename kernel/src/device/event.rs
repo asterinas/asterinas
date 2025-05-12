@@ -54,12 +54,12 @@ impl EventDevice {
         // Initialize the static handler if it hasn't been initialized yet
         let handler = EVENT_DEVICE_HANDLER.call_once(|| {
             Arc::new(EventDeviceHandler {
-                event_device: Mutex::new(Weak::new()), // Initialize the Mutex
+                event_devices: Mutex::new(Vec::new()), // Initialize the Mutex
             })
         });
 
         // Update the handler's weak reference to point to the new EventDevice
-        *handler.event_device.lock() = Arc::downgrade(&event_device);
+        handler.event_devices.lock().push(Arc::downgrade(&event_device));
 
         // Register the handler
         register_handler(handler.clone());
@@ -139,7 +139,7 @@ impl FileIo for EventDevice {
 
 #[derive(Debug)]
 pub struct EventDeviceHandler {
-    event_device: Mutex<Weak<EventDevice>>, // Wrap in a Mutex for mutable access
+    event_devices: Mutex<Vec<Weak<EventDevice>>>, // Wrap in a Mutex for mutable access
 }
 
 impl InputHandler for EventDeviceHandler {
@@ -149,35 +149,32 @@ impl InputHandler for EventDeviceHandler {
     }
 
     /// Handles the input event by pushing it to the event queue.
-    fn handle_event(&self, event: InputEvent) -> core::result::Result<(), core::convert::Infallible> {
-        if let Some(event_device) = self.event_device.lock().upgrade() {
+    fn handle_event(&self, event: InputEvent, str: &str) -> core::result::Result<(), core::convert::Infallible> {
+        let mut devices = self.event_devices.lock();
+        for weak_dev in devices.iter() {
+            if let Some(event_device) = weak_dev.upgrade() {
+                let metadata = event_device.input_device.metadata();
+                let name = metadata.name.as_str();
+                if name != str {
+                    continue;
+                }
+                // Convert InputEvent to InputEventLinux
+                let linux_event = InputEventLinux {
+                    sec: event.time / 1_000_000,
+                    usec: event.time % 1_000_000,
+                    type_: event.type_,
+                    code: event.code,
+                    value: event.value,
+                };
 
-            // Convert InputEvent to InputEventLinux
-            let linux_event = InputEventLinux {
-                sec: event.time / 1_000_000,
-                usec: event.time % 1_000_000,
-                type_: event.type_,
-                code: event.code,
-                value: event.value,
-            };
-
-            event_device.push_event(linux_event);
+                event_device.push_event(linux_event);
+            }
         }
 
         Ok(())
     }
 }
 
-impl Drop for EventDevice {
-    fn drop(&mut self) {
-        // Unregister the handler only if this is the last instance of EventDevice
-        if Arc::strong_count(&self.event_queue) == 1 {
-            unregister_handler(Arc::new(EventDeviceHandler {
-                event_device: Mutex::new(Arc::downgrade(&Arc::new(self.clone()))), // Wrap in Mutex
-            }));
-        }
-    }
-}
 
 // Implement the Pollable trait for Arc<EventDevice>
 impl Pollable for Arc<EventDevice> {

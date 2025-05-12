@@ -16,7 +16,30 @@ void handle_signal(int signal) {
 }
 
 int main() {
-    const char *device = "/dev/input/event0";
+    char device[32] = "/dev/input/event";
+    int input;
+
+    while (1) {
+        printf("Please input a number to specify input/device: (0 -- 2)\n");
+        if (scanf("%d", &input) != 1) {
+            int c;
+            while ((c = getchar()) != '\n' && c != EOF);
+            printf("Invalid input! Please input a number\n");
+            continue;
+        }
+
+        if (input == 0 || input == 1 || input == 2) {
+            char number[2];
+            sprintf(number, "%d", input);
+            strcat(device, number);
+            printf("The device file is: %s\n", device);
+            break;
+        } else {
+            printf("Invalid number! Please input 0 -- 2\n");
+        }
+    }
+
+
     int fd = open(device, O_RDONLY);
     if (fd == -1) {
         perror("Failed to open device");
