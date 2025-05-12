@@ -18,7 +18,7 @@ core2 = { version = "0.4.0", default-features = false, features = ["nightly"] }
 libflate = { version = "2.1.0", default-features = false }
 linux-boot-params = { version = "0.14.1", path = "../boot-params" }
 uart_16550 = "0.3.0"
-xmas-elf = "0.9.1"
+xmas-elf = "0.10.0"
 
 [target.x86_64-unknown-none.dependencies]
 log = "0.4.20"
