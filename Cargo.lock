@@ -230,7 +230,7 @@ dependencies = [
  "typeflags",
  "typeflags-util",
  "xarray",
- "xmas-elf 0.8.0",
+ "xmas-elf",
 ]
 
 [[package]]
@@ -1052,7 +1052,7 @@ dependencies = [
  "bytemuck",
  "libflate",
  "serde",
- "xmas-elf 0.9.1",
+ "xmas-elf",
 ]
 
 [[package]]
@@ -1068,7 +1068,7 @@ dependencies = [
  "uart_16550",
  "uefi",
  "uefi-raw",
- "xmas-elf 0.9.1",
+ "xmas-elf",
 ]
 
 [[package]]
@@ -1985,18 +1985,9 @@ dependencies = [
 
 [[package]]
 name = "xmas-elf"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d29b4d8e7beaceb4e77447ba941a7600d23d0319ab52da0461abea214832d5a"
-dependencies = [
- "zero",
-]
-
-[[package]]
-name = "xmas-elf"
-version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42c49817e78342f7f30a181573d82ff55b88a35f86ccaf07fc64b3008f56d1c6"
+checksum = "18245fcbb8b3de8dd198ce7944fdd4096986fd6cd306b0fcfa27df817bd545d6"
 dependencies = [
  "zero",
 ]
