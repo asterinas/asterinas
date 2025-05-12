@@ -7,6 +7,45 @@ use spin::Once;
 
 use crate::{Pixel, PixelFormat, RenderedPixel};
 
+/// The interception of offset for color fileds.
+///
+/// Reference: https://github.com/torvalds/linux/blob/ace4ebf9b70a7daea12102c09ba5ef6bb73223aa/include/uapi/linux/fb.h
+#[derive(Debug, Default)]
+pub struct FrameBufferBitfield {
+    /// The beginning of bitfield.
+    offset: u32,
+    /// The length of bitfield.
+    length: u32,
+    /// Most significant bit is right(!= 0).
+    msb_right: u32,
+}
+
+impl FrameBufferBitfield {
+    /// Creates a new `FrameBufferBitfield` instance.
+    pub fn new(offset: u32, length: u32, msb_right: u32) -> Self {
+        Self {
+            offset,
+            length,
+            msb_right,
+        }
+    }
+
+    /// Returns the offset of the bitfield.
+    pub fn offset(&self) -> u32 {
+        self.offset
+    }
+
+    /// Returns the length of the bitfield.
+    pub fn length(&self) -> u32 {
+        self.length
+    }
+
+    /// Returns whether the most significant bit is right.
+    pub fn msb_right(&self) -> bool {
+        self.msb_right != 0
+    }
+}
+
 /// The framebuffer used for text or graphical output.
 ///
 /// # Notes
@@ -22,6 +61,10 @@ pub struct FrameBuffer {
     width: usize,
     height: usize,
     pixel_format: PixelFormat,
+    red: FrameBufferBitfield,
+    green: FrameBufferBitfield,
+    blue: FrameBufferBitfield,
+    reserved: FrameBufferBitfield,
 }
 
 pub static FRAMEBUFFER: Once<Arc<FrameBuffer>> = Once::new();
@@ -69,6 +112,26 @@ pub(crate) fn init() {
             width: framebuffer_arg.width,
             height: framebuffer_arg.height,
             pixel_format,
+            red: FrameBufferBitfield::new(
+                framebuffer_arg.red_pos as u32,
+                framebuffer_arg.red_size as u32,
+                0,
+            ),
+            green: FrameBufferBitfield::new(
+                framebuffer_arg.green_pos as u32,
+                framebuffer_arg.green_size as u32,
+                0,
+            ),
+            blue: FrameBufferBitfield::new(
+                framebuffer_arg.blue_pos as u32,
+                framebuffer_arg.blue_size as u32,
+                0,
+            ),
+            reserved: FrameBufferBitfield::new(
+                framebuffer_arg.reserved_pos as u32,
+                framebuffer_arg.reserved_size as u32,
+                0,
+            ),
         }
     };
 
