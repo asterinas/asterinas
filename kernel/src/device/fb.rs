@@ -24,6 +24,18 @@ pub struct FbVarScreenInfo {
     pub xres_virtual: u32,
     pub yres_virtual: u32,
     pub bits_per_pixel: u32,
+    pub red: FbBitfield,
+    pub green: FbBitfield,
+    pub blue: FbBitfield,
+    pub transp: FbBitfield,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub struct FbBitfield {
+    pub offset: u32,
+    pub length: u32,
+    pub msb_right: u32,
 }
 
 #[repr(C)]
@@ -86,12 +98,111 @@ impl FileIo for Fb {
                 if let Some(framebuffer_guard) = get_framebuffer_info() {
                     let framebuffer = &*framebuffer_guard; // Dereference the guard to access the FrameBuffer
 
+                    let pixel_format = framebuffer.pixel_format();
+                    let (red_bitfield, green_bitfield, blue_bitfield, transp_bitfield) =
+                        match pixel_format {
+                            aster_framebuffer::PixelFormat::Grayscale8 => {
+                                // For grayscale, all color channels map to the same 8-bit value
+                                let bitfield = FbBitfield {
+                                    offset: 0,
+                                    length: 8,
+                                    msb_right: 0,
+                                };
+                                (
+                                    bitfield,
+                                    bitfield,
+                                    bitfield,
+                                    FbBitfield {
+                                        offset: 0,
+                                        length: 0,
+                                        msb_right: 0,
+                                    },
+                                )
+                            }
+                            aster_framebuffer::PixelFormat::Rgb565 => {
+                                (
+                                    FbBitfield {
+                                        offset: 11,
+                                        length: 5,
+                                        msb_right: 0,
+                                    }, // Red: 5 bits at offset 11
+                                    FbBitfield {
+                                        offset: 5,
+                                        length: 6,
+                                        msb_right: 0,
+                                    }, // Green: 6 bits at offset 5
+                                    FbBitfield {
+                                        offset: 0,
+                                        length: 5,
+                                        msb_right: 0,
+                                    }, // Blue: 5 bits at offset 0
+                                    FbBitfield {
+                                        offset: 0,
+                                        length: 0,
+                                        msb_right: 0,
+                                    }, // No transparency
+                                )
+                            }
+                            aster_framebuffer::PixelFormat::Rgb888 => {
+                                (
+                                    FbBitfield {
+                                        offset: 16,
+                                        length: 8,
+                                        msb_right: 0,
+                                    }, // Red: 8 bits at offset 16
+                                    FbBitfield {
+                                        offset: 8,
+                                        length: 8,
+                                        msb_right: 0,
+                                    }, // Green: 8 bits at offset 8
+                                    FbBitfield {
+                                        offset: 0,
+                                        length: 8,
+                                        msb_right: 0,
+                                    }, // Blue: 8 bits at offset 0
+                                    FbBitfield {
+                                        offset: 0,
+                                        length: 0,
+                                        msb_right: 0,
+                                    }, // No transparency
+                                )
+                            }
+                            aster_framebuffer::PixelFormat::BgrReserved => {
+                                (
+                                    FbBitfield {
+                                        offset: 16,
+                                        length: 8,
+                                        msb_right: 0,
+                                    }, // Red: 8 bits at offset 16
+                                    FbBitfield {
+                                        offset: 8,
+                                        length: 8,
+                                        msb_right: 0,
+                                    }, // Green: 8 bits at offset 8
+                                    FbBitfield {
+                                        offset: 0,
+                                        length: 8,
+                                        msb_right: 0,
+                                    }, // Blue: 8 bits at offset 0
+                                    FbBitfield {
+                                        offset: 24,
+                                        length: 8,
+                                        msb_right: 0,
+                                    }, // Reserved: 8 bits at offset 24
+                                )
+                            }
+                        };
+
                     let screen_info = FbVarScreenInfo {
                         xres: framebuffer.width() as u32,
                         yres: framebuffer.height() as u32,
                         xres_virtual: framebuffer.width() as u32,
                         yres_virtual: framebuffer.height() as u32,
-                        bits_per_pixel: (framebuffer.bytes_per_pixel() * 8) as u32,
+                        bits_per_pixel: (pixel_format.nbytes() * 8) as u32,
+                        red: red_bitfield,
+                        green: green_bitfield,
+                        blue: blue_bitfield,
+                        transp: transp_bitfield,
                     };
 
                     current_userspace!().write_val(arg, &screen_info)?;
