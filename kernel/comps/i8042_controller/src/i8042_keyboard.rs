@@ -18,30 +18,13 @@ use aster_time::tsc::read_instant;
 use crate::alloc::string::ToString;
 use super::{InputKey, KEYBOARD_CALLBACKS};
 
-/// Data register (R/W)
-static DATA_PORT: Once<IoPort<u8, ReadWriteAccess>> = Once::new();
+use crate::DATA_PORT;
+use crate::STATUS_PORT;
+use crate::KEYBOARD_IRQ_LINE;
 
-/// Status register (R)
-static STATUS_PORT: Once<IoPort<u8, ReadWriteAccess>> = Once::new();
-
-/// IrqLine for i8042 keyboard.
-static IRQ_LINE: Once<SpinLock<IrqLine>> = Once::new();
 
 pub fn init() {
     log::error!("This is init in kernel/comps/keyboard/src/i8042_keyboard.rs");
-
-    DATA_PORT.call_once(|| IoPort::acquire(0x60).unwrap());
-    STATUS_PORT.call_once(|| IoPort::acquire(0x64).unwrap());
-    IRQ_LINE.call_once(|| {
-        let mut irq_line = IrqLine::alloc().unwrap();
-        irq_line.on_active(handle_keyboard_input);
-
-        let mut io_apic = IO_APIC.get().unwrap()[0].lock();
-        io_apic.enable(1, irq_line.clone()).unwrap();
-
-        SpinLock::new(irq_line)
-    });
-
     aster_input::register_device("i8042_keyboard".to_string(), Arc::new(I8042Keyboard));
 }
 struct I8042Keyboard;
@@ -57,8 +40,8 @@ impl InputDevice for I8042Keyboard {
     }
 }
 
-fn handle_keyboard_input(_trap_frame: &TrapFrame) {
-    log::error!("-----This is handle_keyboard_input in kernel/comps/keyboard/src/i8042_keyboard.rs");
+pub fn handle_keyboard_input(_trap_frame: &TrapFrame) {
+    log::error!("-----This is handle_keyboard_input in kernel/comps/i8042_controller/src/i8042_keyboard.rs");
     let key = parse_inputkey();
 
     // Get the current time in microseconds

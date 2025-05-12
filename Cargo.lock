@@ -118,8 +118,19 @@ name = "aster-framebuffer"
 version = "0.1.0"
 dependencies = [
  "aster-console",
- "aster-keyboard",
- "aster-mouse",
+ "aster-i8042-controller",
+ "component",
+ "log",
+ "ostd",
+ "spin",
+]
+
+[[package]]
+name = "aster-i8042-controller"
+version = "0.1.0"
+dependencies = [
+ "aster-input",
+ "aster-time",
  "component",
  "log",
  "ostd",
@@ -132,18 +143,6 @@ version = "0.1.0"
 dependencies = [
  "component",
  "int-to-c-enum",
- "ostd",
- "spin",
-]
-
-[[package]]
-name = "aster-keyboard"
-version = "0.1.0"
-dependencies = [
- "aster-input",
- "aster-time",
- "component",
- "log",
  "ostd",
  "spin",
 ]
@@ -177,18 +176,6 @@ dependencies = [
  "ostd-pod",
  "postcard",
  "serde",
-]
-
-[[package]]
-name = "aster-mouse"
-version = "0.1.0"
-dependencies = [
- "aster-input",
- "aster-time",
- "component",
- "log",
- "ostd",
- "spin",
 ]
 
 [[package]]

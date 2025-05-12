@@ -1,5 +1,5 @@
 [package]
-name = "aster-mouse"
+name = "aster-i8042-controller"
 version = "0.1.0"
 edition = "2021"
 

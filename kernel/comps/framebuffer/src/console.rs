@@ -4,7 +4,7 @@ use alloc::{sync::Arc, vec::Vec};
 use core::ops::Deref;
 
 use aster_console::{AnyConsoleDevice, BitmapFont, ConsoleCallback, ConsoleSetFontError};
-use aster_keyboard::InputKey;
+use aster_i8042_controller::InputKey;
 use font8x8::UnicodeFonts;
 use ostd::{
     mm::VmReader,
@@ -34,8 +34,8 @@ pub(crate) fn init() {
     };
 
     FRAMEBUFFER_CONSOLE.call_once(|| Arc::new(FramebufferConsole::new(fb.clone())));
-    aster_keyboard::register_callback(&handle_keyboard_input);
-    aster_mouse::register_callback(&handle_mouse_input);
+    aster_i8042_controller::keyboard_register_callback(&handle_keyboard_input);
+    aster_i8042_controller::mouse_register_callback(&handle_mouse_input);
 }
 
 impl AnyConsoleDevice for FramebufferConsole {

@@ -17,7 +17,7 @@ members = [
     "kernel/comps/console",
     "kernel/comps/framebuffer",
     "kernel/comps/input",
-    "kernel/comps/keyboard",
+    "kernel/comps/i8042_controller",
     "kernel/comps/network",
     "kernel/comps/softirq",
     "kernel/comps/systree",

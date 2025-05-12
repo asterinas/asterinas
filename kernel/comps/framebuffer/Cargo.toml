@@ -9,8 +9,8 @@ edition = "2021"
 ostd = { path = "../../../ostd" }
 component = { path = "../../libs/comp-sys/component" }
 aster-console = { path = "../console" }
-aster-keyboard ={ path = "../../comps/keyboard" }
-aster-mouse ={ path = "../mouse" }
+aster-i8042-controller ={ path = "../../comps/i8042_controller" }
+
 
 log = "0.4"
 spin = "0.9.4"

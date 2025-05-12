@@ -12,8 +12,7 @@ framebuffer = { name = "aster-framebuffer" }
 network = { name = "aster-network" }
 mlsdisk = { name = "aster-mlsdisk" }
 systree = { name = "aster-systree" }
-keyboard = { name = "aster-keyboard" }
-mouse = { name = "aster-mouse" }
+mouse = { name = "aster-i8042-controller" }
 
 [whitelist]
 [whitelist.nix.main]

@@ -18,117 +18,20 @@ use core::hint::spin_loop;
 
 use crate::alloc::string::ToString;
 use super::MOUSE_CALLBACKS;
-// use crate::event_type_codes::*;
 use aster_input::event_type_codes::{EventType, RelAxis, MouseKeyEvent};
+use crate::MOUSE_WRITE;
 
-/// Data register (R/W)
-static DATA_PORT: Once<IoPort<u8, ReadWriteAccess>> = Once::new();
 
-/// Status register (R)
-static STATUS_PORT: Once<IoPort<u8, ReadWriteAccess>> = Once::new();
-
-/// IrqLine for i8042 mouse.
-static IRQ_LINE: Once<SpinLock<IrqLine>> = Once::new();
-
-// Controller commands
-const DISABLE_MOUSE: u8 = 0xA7;
-const ENABLE_MOUSE: u8 = 0xA8;
-const DISABLE_KEYBOARD: u8 = 0xAD;
-const ENABLE_KEYBOARD: u8 = 0xAE;
-const MOUSE_WRITE: u8 = 0xD4;
-const READ_CONFIG: u8 = 0x20;
-const WRITE_CONFIG: u8 = 0x60;
-
-// Mouse commands
-const MOUSE_ENABLE: u8 = 0xF4;
-const MOUSE_RESET: u8 = 0xFF;
-const MOUSE_DEFAULT: u8 = 0xF6;
-
-// Configure bits
-const ENABLE_KEYBOARD_BIT: u8 = 0x1;
-const ENABLE_MOUSE_BIT: u8 = 0x2;
-const ENABLE_MOUSE_CLOCK_BIT: u8 = 0x20;
+use crate::DATA_PORT;
+use crate::STATUS_PORT;
+use crate::MOUSE_IRQ_LINE;
 
 pub fn init() {
     log::error!("This is init in kernel/comps/mouse/src/i8042_mouse.rs");
 
-    DATA_PORT.call_once(|| IoPort::acquire(0x60).unwrap());
-    STATUS_PORT.call_once(|| IoPort::acquire(0x64).unwrap());
-
-    init_i8042_controller();
-
-    IRQ_LINE.call_once(|| {
-        let mut irq_line = IrqLine::alloc().unwrap();
-        irq_line.on_active(handle_mouse_input);
-
-        let mut io_apic = IO_APIC.get().unwrap()[0].lock();
-        io_apic.enable(12, irq_line.clone()).unwrap();
-
-        SpinLock::new(irq_line)
-    });
-
-    init_mouse_device();
-
     aster_input::register_device("i8042_mouse".to_string(), Arc::new(I8042Mouse));
 }
 
-
-/// Initialize i8042 controller
-fn init_i8042_controller() {
-    // Disable keyborad and mouse
-    STATUS_PORT.get().unwrap().write(DISABLE_MOUSE);
-    STATUS_PORT.get().unwrap().write(DISABLE_KEYBOARD);
-
-    // Clear the input buffer
-    while DATA_PORT.get().unwrap().read() & 0x1 != 0 {
-        let _ = DATA_PORT.get().unwrap().read();
-    }
-
-    // Set up the configuration
-    STATUS_PORT.get().unwrap().write(READ_CONFIG); 
-    let mut config = DATA_PORT.get().unwrap().read();
-    config |= ENABLE_KEYBOARD_BIT; 
-    config |= ENABLE_MOUSE_BIT; 
-    config &= !ENABLE_MOUSE_CLOCK_BIT;
-
-    STATUS_PORT.get().unwrap().write(WRITE_CONFIG);
-    DATA_PORT.get().unwrap().write(config);
-
-    // Enable keyboard and mouse
-    STATUS_PORT.get().unwrap().write(ENABLE_KEYBOARD);
-    STATUS_PORT.get().unwrap().write(ENABLE_MOUSE);
-}
-
-/// Initialize i8042 mouse
-fn init_mouse_device() {
-    // Send reset command
-    STATUS_PORT.get().unwrap().write(MOUSE_WRITE);
-    DATA_PORT.get().unwrap().write(MOUSE_RESET);
-    wait_ack();
-
-    // Set up default configuration
-    STATUS_PORT.get().unwrap().write(MOUSE_WRITE);
-    DATA_PORT.get().unwrap().write(MOUSE_DEFAULT);
-    wait_ack();
-
-    // Enable data reporting
-    STATUS_PORT.get().unwrap().write(MOUSE_WRITE);
-    DATA_PORT.get().unwrap().write(MOUSE_ENABLE);
-    wait_ack();
-}
-
-/// Wait for controller's acknowledgement
-fn wait_ack() {
-    loop {
-        if STATUS_PORT.get().unwrap().read() & 0x1 != 0 {
-            let data = DATA_PORT.get().unwrap().read();
-            if data == 0xFA {
-                return 
-            }
-        }
-        spin_loop();
-    }
-}
 
 struct I8042Mouse;
 
@@ -150,7 +53,8 @@ pub struct MouseState {
 
 static MOUSE_STATE: Mutex<MouseState> = Mutex::new(MouseState { buffer: [0; 3], index: 0 });
 
-fn handle_mouse_input(_trap_frame: &TrapFrame) {
+pub fn handle_mouse_input(_trap_frame: &TrapFrame) {
+    // log::error!("-----This is handle_mouse_input in kernel/comps/i8042_controller/src/i8042_mouse.rs");
     let byte = MousePacket::read_one_byte();
 
     let mut state = MOUSE_STATE.lock();

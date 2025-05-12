@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Handle keyboard input.
+//! Handle keyboard and mouse input.
 #![no_std]
 #![deny(unsafe_code)]
 
@@ -8,24 +8,164 @@ extern crate alloc;
 
 use alloc::{boxed::Box, vec::Vec};
 use core::ops::Deref;
+use spin::Once;
+use ostd::{
+    arch::{device::io_port::ReadWriteAccess, IO_APIC},
+    io::IoPort,
+    sync::SpinLock,
+    trap::{IrqLine, TrapFrame},
+};
+use core::hint::spin_loop;
 
 use component::{init_component, ComponentInitError};
-use ostd::sync::SpinLock;
 
+mod i8042_mouse;
 mod i8042_keyboard;
 
-static KEYBOARD_CALLBACKS: SpinLock<Vec<Box<KeyboardCallback>>> = SpinLock::new(Vec::new());
+use crate::i8042_keyboard::handle_keyboard_input;
+use crate::i8042_mouse::handle_mouse_input;
+
+
+static MOUSE_CALLBACKS: SpinLock<Vec<Box<MouseCallback>>> = SpinLock::new(Vec::new());
+
+/// Data register (R/W)
+static DATA_PORT: Once<IoPort<u8, ReadWriteAccess>> = Once::new();
+
+/// Status register (R)
+static STATUS_PORT: Once<IoPort<u8, ReadWriteAccess>> = Once::new();
+
+/// IrqLine for i8042 keyboard.
+static KEYBOARD_IRQ_LINE: Once<SpinLock<IrqLine>> = Once::new();
+
+/// IrqLine for i8042 mouse.
+static MOUSE_IRQ_LINE: Once<SpinLock<IrqLine>> = Once::new();
+
+// Controller commands
+const DISABLE_MOUSE: u8 = 0xA7;
+const ENABLE_MOUSE: u8 = 0xA8;
+const DISABLE_KEYBOARD: u8 = 0xAD;
+const ENABLE_KEYBOARD: u8 = 0xAE;
+const MOUSE_WRITE: u8 = 0xD4;
+const READ_CONFIG: u8 = 0x20;
+const WRITE_CONFIG: u8 = 0x60;
+
+// Mouse commands
+const MOUSE_ENABLE: u8 = 0xF4;
+const MOUSE_RESET: u8 = 0xFF;
+const MOUSE_DEFAULT: u8 = 0xF6;
+
+// Configure bits
+const ENABLE_KEYBOARD_BIT: u8 = 0x1;
+const ENABLE_MOUSE_BIT: u8 = 0x2;
+const ENABLE_MOUSE_CLOCK_BIT: u8 = 0x20;
 
 #[init_component]
 fn init() -> Result<(), ComponentInitError> {
+    log::error!("This is init in kernel/comps/i8042_controller/lib.rs");
+
+    DATA_PORT.call_once(|| IoPort::acquire(0x60).unwrap());
+    STATUS_PORT.call_once(|| IoPort::acquire(0x64).unwrap());
+
+    init_i8042_controller();
+    init_mouse_device();
+
+
+    let mut k_irq_line = IrqLine::alloc().unwrap();
+    let mut m_irq_line = IrqLine::alloc().unwrap();
+    k_irq_line.on_active(handle_keyboard_input);
+    m_irq_line.on_active(handle_mouse_input);
+
+    let mut io_apic = IO_APIC.get().unwrap()[0].lock();
+    io_apic.enable(1, k_irq_line.clone()).unwrap();
+    io_apic.enable(12, m_irq_line.clone()).unwrap();
+
+    KEYBOARD_IRQ_LINE.call_once(|| {SpinLock::new(k_irq_line)});
+    MOUSE_IRQ_LINE.call_once(|| {SpinLock::new(m_irq_line)});
+    
+    // init_mouse_device();
+
     i8042_keyboard::init();
+    i8042_mouse::init();
     Ok(())
 }
+
+
+/// Initialize i8042 controller
+fn init_i8042_controller() {
+    // Disable keyborad and mouse
+    STATUS_PORT.get().unwrap().write(DISABLE_MOUSE);
+    STATUS_PORT.get().unwrap().write(DISABLE_KEYBOARD);
+
+    // Clear the input buffer
+    while DATA_PORT.get().unwrap().read() & 0x1 != 0 {
+        let _ = DATA_PORT.get().unwrap().read();
+    }
+
+    // Set up the configuration
+    STATUS_PORT.get().unwrap().write(READ_CONFIG); 
+    let mut config = DATA_PORT.get().unwrap().read();
+    config |= ENABLE_KEYBOARD_BIT; 
+    config |= ENABLE_MOUSE_BIT; 
+    config &= !ENABLE_MOUSE_CLOCK_BIT;
+
+    STATUS_PORT.get().unwrap().write(WRITE_CONFIG);
+    DATA_PORT.get().unwrap().write(config);
+
+    // Enable keyboard and mouse
+    STATUS_PORT.get().unwrap().write(ENABLE_KEYBOARD);
+    STATUS_PORT.get().unwrap().write(ENABLE_MOUSE);
+}
+
+/// Initialize i8042 mouse
+fn init_mouse_device() {
+    // Send reset command
+    STATUS_PORT.get().unwrap().write(MOUSE_WRITE);
+    DATA_PORT.get().unwrap().write(MOUSE_RESET);
+    wait_ack();
+
+    // Set up default configuration
+    STATUS_PORT.get().unwrap().write(MOUSE_WRITE);
+    DATA_PORT.get().unwrap().write(MOUSE_DEFAULT);
+    wait_ack();
+
+    // Enable data reporting
+    STATUS_PORT.get().unwrap().write(MOUSE_WRITE);
+    DATA_PORT.get().unwrap().write(MOUSE_ENABLE);
+    wait_ack();
+}
+
+/// Wait for controller's acknowledgement
+fn wait_ack() {
+    loop {
+        if STATUS_PORT.get().unwrap().read() & 0x1 != 0 {
+            let data = DATA_PORT.get().unwrap().read();
+            if data == 0xFA {
+                return 
+            }
+        }
+        spin_loop();
+    }
+}
+
+/// The callback function for mouse.
+pub type MouseCallback = dyn Fn() + Send + Sync;
+
+pub fn mouse_register_callback(callback: &'static MouseCallback) {
+    log::error!("This is register_callback in kernel/comps/mouse/src/lib.rs");
+    MOUSE_CALLBACKS
+        .disable_irq()
+        .lock()
+        .push(Box::new(callback));
+}
+
+
+
+static KEYBOARD_CALLBACKS: SpinLock<Vec<Box<KeyboardCallback>>> = SpinLock::new(Vec::new());
 
 /// The callback function for keyboard.
 pub type KeyboardCallback = dyn Fn(InputKey) + Send + Sync;
 
-pub fn register_callback(callback: &'static KeyboardCallback) {
+pub fn keyboard_register_callback(callback: &'static KeyboardCallback) {
     KEYBOARD_CALLBACKS
         .disable_irq()
         .lock()
