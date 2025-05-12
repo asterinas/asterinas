@@ -118,8 +118,7 @@ impl FrameBuffer {
 
     /// Returns the number of bytes per pixel (color depth).
     pub fn bytes_per_pixel(&self) -> usize {
-        // self.bytes_per_pixel
-        0
+        self.pixel_format.nbytes()
     }
 
     /// Returns the pixel format of the framebuffer.
