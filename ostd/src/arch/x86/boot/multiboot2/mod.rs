@@ -69,6 +69,15 @@ fn parse_framebuffer_info(mb2_info: &BootInformation) -> Option<BootloaderFrameb
         width: fb_tag.width() as usize,
         height: fb_tag.height() as usize,
         bpp: fb_tag.bpp() as usize,
+        // FIXME: Add the correct color information from the framebuffer tag.
+        red_size: 0,
+        red_pos: 0,
+        green_size: 0,
+        green_pos: 0,
+        blue_size: 0,
+        blue_pos: 0,
+        reserved_size: 0,
+        reserved_pos: 0,
     })
 }
 

@@ -244,6 +244,19 @@ fn find_rsdp_addr() -> Option<*const ()> {
     None
 }
 
+fn extract_color_mask_info(mask: u32) -> (u8, u8) {
+    if mask == 0 {
+        // SAFETY: Handle the zero case while initializing the graphic devices.
+        return (0, 0);
+    }
+
+    let pos = mask.trailing_zeros() as u8;
+
+    let size = (mask >> pos).count_ones() as u8;
+
+    (size, pos)
+}
+
 fn fill_screen_info(screen_info: &mut linux_boot_params::ScreenInfo) {
     use uefi::proto::console::gop::{GraphicsOutput, PixelFormat};
 
@@ -277,6 +290,23 @@ fn fill_screen_info(screen_info: &mut linux_boot_params::ScreenInfo) {
     screen_info.lfb_width = width.try_into().unwrap();
     screen_info.lfb_height = height.try_into().unwrap();
     screen_info.lfb_depth = 32; // We've checked the pixel format above.
+
+    if let Some(bitmask) = protocol.current_mode_info().pixel_bitmask() {
+        (screen_info.red_size, screen_info.red_pos) = extract_color_mask_info(bitmask.red);
+        (screen_info.green_size, screen_info.green_pos) = extract_color_mask_info(bitmask.green);
+        (screen_info.blue_size, screen_info.blue_pos) = extract_color_mask_info(bitmask.blue);
+        (screen_info.rsvd_size, screen_info.rsvd_pos) = extract_color_mask_info(bitmask.reserved);
+    } else {
+        // The pixel format is not parsed, use the default values.
+        screen_info.red_size = 8;
+        screen_info.red_pos = 16;
+        screen_info.green_size = 8;
+        screen_info.green_pos = 8;
+        screen_info.blue_size = 8;
+        screen_info.blue_pos = 0;
+        screen_info.rsvd_size = 8;
+        screen_info.rsvd_pos = 24;
+    }
 
     uefi::println!(
         "[EFI stub] Found the framebuffer at {:#x} with {}x{} pixels",
