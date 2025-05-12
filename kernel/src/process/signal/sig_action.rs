@@ -77,6 +77,22 @@ impl SigAction {
             },
         }
     }
+
+    /// Returns whether signals will be ignored.
+    ///
+    /// Signals will be ignored because either
+    ///  * the signal action is explicitly set to ignore the signals, or
+    ///  * the signal action is default and the default action is to ignore the signals.
+    pub fn will_ignore(&self, signum: SigNum) -> bool {
+        match self {
+            SigAction::Dfl => {
+                let default_action = SigDefaultAction::from_signum(signum);
+                matches!(default_action, SigDefaultAction::Ign)
+            }
+            SigAction::Ign => true,
+            SigAction::User { .. } => false,
+        }
+    }
 }
 
 bitflags! {

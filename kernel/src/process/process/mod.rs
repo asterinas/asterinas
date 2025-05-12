@@ -614,22 +614,29 @@ impl Process {
             return;
         }
 
-        // TODO: check that the signal is not user signal
+        let sig_dispositions = self.sig_dispositions.lock();
 
-        // Enqueue signal to the first thread that does not block the signal
+        // Drop the signal if it's ignored. See explanation at `enqueue_signal_locked`.
+        let signum = signal.num();
+        if sig_dispositions.get(signum).will_ignore(signum) {
+            return;
+        }
+
         let threads = self.tasks.lock();
+
+        // Enqueue the signal to the first thread that does not block the signal.
         for thread in threads.as_slice() {
             let posix_thread = thread.as_posix_thread().unwrap();
             if !posix_thread.has_signal_blocked(signal.num()) {
-                posix_thread.enqueue_signal(Box::new(signal));
+                posix_thread.enqueue_signal_locked(Box::new(signal), sig_dispositions);
                 return;
             }
         }
 
-        // If all threads block the signal, enqueue signal to the main thread
+        // If all threads block the signal, enqueue the signal to the main thread.
         let thread = threads.main();
         let posix_thread = thread.as_posix_thread().unwrap();
-        posix_thread.enqueue_signal(Box::new(signal));
+        posix_thread.enqueue_signal_locked(Box::new(signal), sig_dispositions);
     }
 
     /// Clears the parent death signal.

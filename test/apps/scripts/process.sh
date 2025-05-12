@@ -40,6 +40,7 @@ sched/sched_attr
 shm/posix_shm
 signal_c/parent_death_signal
 signal_c/signal_test
+signal_c/signal_test2
 "
 
 for testcase in ${tests}
