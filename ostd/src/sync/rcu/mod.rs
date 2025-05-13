@@ -17,7 +17,10 @@ use non_null::NonNullPtr;
 use spin::once::Once;
 
 use self::monitor::RcuMonitor;
-use crate::task::{atomic_mode::AsAtomicModeGuard, disable_preempt, DisabledPreemptGuard};
+use crate::task::{
+    atomic_mode::{AsAtomicModeGuard, InAtomicMode},
+    disable_preempt, DisabledPreemptGuard,
+};
 
 mod monitor;
 pub mod non_null;
@@ -168,19 +171,16 @@ impl<P: NonNullPtr + Send> RcuInner<P> {
         }
     }
 
-    fn read_with<'a>(&'a self, guard: &'a dyn AsAtomicModeGuard) -> Option<P::Ref<'a>> {
-        // Ensure that a real atomic-mode guard is obtained.
-        let _atomic_mode_guard = guard.as_atomic_mode_guard();
-
+    fn read_with<'a>(&'a self, _guard: &'a dyn InAtomicMode) -> Option<P::Ref<'a>> {
         let obj_ptr = self.ptr.load(Acquire);
         if obj_ptr.is_null() {
             return None;
         }
         // SAFETY:
         // 1. This pointer is not NULL.
-        // 2. The `_atomic_mode_guard` guarantees atomic mode for the duration of
-        //    lifetime `'a`, the pointer is valid because other writers won't release
-        //    the allocation until this task passes the quiescent state.
+        // 2. The `_guard` guarantees atomic mode for the duration of lifetime
+        //    `'a`, the pointer is valid because other writers won't release the
+        //    allocation until this task passes the quiescent state.
         NonNull::new(obj_ptr).map(|ptr| unsafe { P::raw_as_ref(ptr) })
     }
 }
@@ -286,8 +286,8 @@ impl<P: NonNullPtr + Send> Rcu<P> {
     /// Unlike [`Self::read`], this function does not return a read guard, so
     /// you cannot use [`RcuReadGuard::compare_exchange`] to synchronize the
     /// writers. You may do it via a [`super::SpinLock`].
-    pub fn read_with<'a>(&'a self, guard: &'a dyn AsAtomicModeGuard) -> P::Ref<'a> {
-        self.0.read_with(guard).unwrap()
+    pub fn read_with<'a, G: AsAtomicModeGuard + ?Sized>(&'a self, guard: &'a G) -> P::Ref<'a> {
+        self.0.read_with(guard.as_atomic_mode_guard()).unwrap()
     }
 }
 
@@ -341,8 +341,11 @@ impl<P: NonNullPtr + Send> RcuOption<P> {
     /// Unlike [`Self::read`], this function does not return a read guard, so
     /// you cannot use [`RcuOptionReadGuard::compare_exchange`] to synchronize the
     /// writers. You may do it via a [`super::SpinLock`].
-    pub fn read_with<'a>(&'a self, guard: &'a dyn AsAtomicModeGuard) -> Option<P::Ref<'a>> {
-        self.0.read_with(guard)
+    pub fn read_with<'a, G: AsAtomicModeGuard + ?Sized>(
+        &'a self,
+        guard: &'a G,
+    ) -> Option<P::Ref<'a>> {
+        self.0.read_with(guard.as_atomic_mode_guard())
     }
 }
 
