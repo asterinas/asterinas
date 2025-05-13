@@ -86,6 +86,7 @@ for TARGET in $TARGETS; do
     do_publish_for ostd/libs/ostd-test --target $TARGET
     do_publish_for ostd --target $TARGET
     do_publish_for osdk/deps/frame-allocator --target $TARGET
+    do_publish_for osdk/deps/heap-allocator --target $TARGET
     do_publish_for osdk/deps/test-kernel --target $TARGET
 
     # For actual publishing, we should only publish once. Using any target that
