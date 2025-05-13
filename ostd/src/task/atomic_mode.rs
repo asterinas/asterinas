@@ -60,12 +60,18 @@ pub fn might_sleep() {
 ///
 /// [`DisabledLocalIrqGuard`]: crate::task::DisabledPreemptGuard
 /// [`DisabledPreemptGuard`]: crate::trap::DisabledLocalIrqGuard
-pub unsafe trait InAtomicMode {}
+pub unsafe trait InAtomicMode: 'static {}
 
 /// Abstracts any type from which one can obtain a reference to an atomic-mode guard.
 pub trait AsAtomicModeGuard {
     /// Returns a guard for the atomic mode.
     fn as_atomic_mode_guard(&self) -> &dyn InAtomicMode;
+}
+
+impl AsAtomicModeGuard for dyn InAtomicMode {
+    fn as_atomic_mode_guard(&self) -> &dyn InAtomicMode {
+        self
+    }
 }
 
 impl<G: InAtomicMode> AsAtomicModeGuard for G {
