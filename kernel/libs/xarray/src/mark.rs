@@ -2,8 +2,6 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use ostd::sync::SpinGuardian;
-
 use crate::XLockGuard;
 
 /// A mark used to indicate which slots in an [`XNode`] contain items that have been marked.
@@ -28,7 +26,7 @@ impl Mark {
         Self::new(0)
     }
 
-    pub fn update<G: SpinGuardian>(&self, offset: u8, set: bool, _guard: &XLockGuard<G>) -> bool {
+    pub fn update(&self, _guard: XLockGuard, offset: u8, set: bool) -> bool {
         let old_val = self.inner.load(Ordering::Acquire);
         let new_val = if set {
             old_val | (1 << offset as u64)

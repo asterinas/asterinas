@@ -7,8 +7,8 @@ use core::{
 };
 
 use ostd::{
-    sync::{non_null::NonNullPtr, RcuOption, SpinGuardian},
-    task::atomic_mode::AsAtomicModeGuard,
+    sync::{non_null::NonNullPtr, RcuOption},
+    task::atomic_mode::InAtomicMode,
     util::Either,
 };
 
@@ -156,7 +156,7 @@ impl<P: NonNullPtr + Send + Sync> XNode<P> {
         self.height
     }
 
-    pub fn parent<'a>(&'a self, guard: &'a dyn AsAtomicModeGuard) -> Option<NodeEntryRef<'a, P>> {
+    pub fn parent<'a>(&'a self, guard: &'a dyn InAtomicMode) -> Option<NodeEntryRef<'a, P>> {
         let parent = self.parent.read_with(guard)?;
         Some(parent)
     }
@@ -167,7 +167,7 @@ impl<P: NonNullPtr + Send + Sync> XNode<P> {
 
     pub fn entry_with<'a>(
         &'a self,
-        guard: &'a dyn AsAtomicModeGuard,
+        guard: &'a dyn InAtomicMode,
         offset: u8,
     ) -> Option<XEntryRef<'a, P>> {
         self.slots[offset as usize].read_with(guard)
@@ -188,17 +188,17 @@ impl<P: NonNullPtr + Send + Sync> XNode<P> {
 
 impl<P: NonNullPtr + Send + Sync> XNode<P> {
     /// Sets the parent pointer of this node to the given `parent`.
-    fn set_parent<G: SpinGuardian>(&self, _guard: &XLockGuard<G>, parent: NodeEntry<P>) {
+    fn set_parent(&self, _guard: XLockGuard, parent: NodeEntry<P>) {
         self.parent.update(Some(parent));
     }
 
     /// Clears the parent pointers of this node and all its descendant nodes.
     ///
     /// This method should be invoked when the node is being removed from the tree.
-    pub fn clear_parent<G: SpinGuardian>(&self, guard: &XLockGuard<G>) {
+    pub fn clear_parent(&self, guard: XLockGuard) {
         self.parent.update(None);
         for child in self.slots.iter() {
-            if let Some(node) = child.read_with(guard).and_then(|entry| entry.left()) {
+            if let Some(node) = child.read_with(guard.0).and_then(|entry| entry.left()) {
                 node.clear_parent(guard);
             }
         }
@@ -211,13 +211,8 @@ impl<P: NonNullPtr + Send + Sync> XNode<P> {
     /// updated according to whether the new node contains marked items.
     ///
     /// This method will also propagate the updated marks to the ancestors.
-    pub fn set_entry<G: SpinGuardian>(
-        self: &Arc<Self>,
-        guard: &XLockGuard<G>,
-        offset: u8,
-        entry: Option<XEntry<P>>,
-    ) {
-        let old_entry = self.slots[offset as usize].read_with(guard);
+    pub fn set_entry(self: &Arc<Self>, guard: XLockGuard, offset: u8, entry: Option<XEntry<P>>) {
+        let old_entry = self.slots[offset as usize].read_with(guard.0);
         if let Some(node) = old_entry.and_then(|entry| entry.left()) {
             node.clear_parent(guard);
         }
@@ -245,8 +240,8 @@ impl<P: NonNullPtr + Send + Sync> XNode<P> {
     ///
     /// This method will also update the marks on the ancestors of this node
     /// if necessary to ensure that the marks on the ancestors are up to date.
-    pub fn set_mark<G: SpinGuardian>(&self, guard: &XLockGuard<G>, offset: u8, mark: usize) {
-        let changed = self.marks[mark].update(offset, true, guard);
+    pub fn set_mark(&self, guard: XLockGuard, offset: u8, mark: usize) {
+        let changed = self.marks[mark].update(guard, offset, true);
         if changed {
             self.propagate_mark(guard, mark);
         }
@@ -256,8 +251,8 @@ impl<P: NonNullPtr + Send + Sync> XNode<P> {
     ///
     /// This method will also update the marks on the ancestors of this node
     /// if necessary to ensure that the marks on the ancestors are up to date.
-    pub fn unset_mark<G: SpinGuardian>(&self, guard: &XLockGuard<G>, offset: u8, mark: usize) {
-        let changed = self.marks[mark].update(offset, false, guard);
+    pub fn unset_mark(&self, guard: XLockGuard, offset: u8, mark: usize) {
+        let changed = self.marks[mark].update(guard, offset, false);
         if changed {
             self.propagate_mark(guard, mark);
         }
@@ -271,14 +266,14 @@ impl<P: NonNullPtr + Send + Sync> XNode<P> {
     ///
     /// This method will also update the marks on the ancestors of this node
     /// if necessary to ensure that the marks on the ancestors are up to date.
-    fn update_mark<G: SpinGuardian>(&self, guard: &XLockGuard<G>, offset: u8) {
-        let entry = self.slots[offset as usize].read_with(guard);
+    fn update_mark(&self, guard: XLockGuard, offset: u8) {
+        let entry = self.slots[offset as usize].read_with(guard.0);
         let Some(node) = entry.and_then(|entry| entry.left()) else {
             return;
         };
 
         for i in 0..NUM_MARKS {
-            let changed = self.marks[i].update(offset, !node.is_mark_clear(i), guard);
+            let changed = self.marks[i].update(guard, offset, !node.is_mark_clear(i));
             if changed {
                 self.propagate_mark(guard, i);
             }
@@ -289,13 +284,13 @@ impl<P: NonNullPtr + Send + Sync> XNode<P> {
     ///
     /// This method must be called after the marks are updated to ensure that the marks on the
     /// ancestors are up to date.
-    fn propagate_mark<G: SpinGuardian>(&self, guard: &XLockGuard<G>, mark: usize) {
-        let Some(parent) = self.parent(guard) else {
+    fn propagate_mark(&self, guard: XLockGuard, mark: usize) {
+        let Some(parent) = self.parent(guard.0) else {
             return;
         };
 
         let changed =
-            parent.marks[mark].update(self.offset_in_parent, !self.is_mark_clear(mark), guard);
+            parent.marks[mark].update(guard, self.offset_in_parent, !self.is_mark_clear(mark));
         if changed {
             parent.propagate_mark(guard, mark);
         }
