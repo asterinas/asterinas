@@ -62,7 +62,7 @@ use ostd::{
         non_null::NonNullPtr, LocalIrqDisabled, PreemptDisabled, RcuOption, SpinGuardian, SpinLock,
         SpinLockGuard,
     },
-    task::atomic_mode::AsAtomicModeGuard,
+    task::atomic_mode::{AsAtomicModeGuard, InAtomicMode},
 };
 pub use range::Range;
 
@@ -112,8 +112,9 @@ where
     _marker: PhantomData<M>,
 }
 
-/// A type that represents the spinlock guard used in [`XArray`].
-pub type XLockGuard<'a, G> = SpinLockGuard<'a, (), G>;
+/// A type that marks the [`XArray`] is locked.
+#[derive(Clone, Copy)]
+struct XLockGuard<'a>(&'a dyn InAtomicMode);
 
 impl<P: NonNullPtr + Send + Sync, M> Default for XArray<P, M> {
     fn default() -> Self {
@@ -154,7 +155,7 @@ impl<P: NonNullPtr + Send + Sync, M> XArray<P, M> {
         &'a self,
         guard: &'a G,
         index: u64,
-    ) -> Cursor<'a, P, M, G> {
+    ) -> Cursor<'a, P, M> {
         Cursor::new(self, guard, index)
     }
 
@@ -163,7 +164,7 @@ impl<P: NonNullPtr + Send + Sync, M> XArray<P, M> {
         &'a self,
         guard: &'a G,
         range: core::ops::Range<u64>,
-    ) -> Range<'a, P, M, G> {
+    ) -> Range<'a, P, M> {
         let cursor = self.cursor(guard, range.start);
         Range::new(cursor, range.end)
     }
@@ -206,15 +207,16 @@ impl<P: NonNullPtr + Send + Sync, M, G: SpinGuardian> LockedXArray<'_, P, M, G> 
     /// Clears the corresponding [`XArray`].
     pub fn clear(&mut self) {
         if let Some(head) = self.xa.head.read_with(&self.guard) {
-            head.clear_parent(&self.guard);
+            // Having a `LockedXArray` means that the `XArray` is locked.
+            head.clear_parent(XLockGuard(self.guard.as_atomic_mode_guard()));
         }
 
         self.xa.head.update(None);
     }
 
     /// Creates a [`CursorMut`] to perform read- and write-related operations.
-    pub fn cursor_mut(&mut self, index: u64) -> cursor::CursorMut<'_, P, M, G> {
-        cursor::CursorMut::new(self.xa, &self.guard, index)
+    pub fn cursor_mut(&mut self, index: u64) -> CursorMut<'_, P, M> {
+        CursorMut::new(self.xa, &self.guard, index)
     }
 
     /// Stores the provided item at the target index.
@@ -232,12 +234,12 @@ impl<P: NonNullPtr + Send + Sync, M, G: SpinGuardian> LockedXArray<'_, P, M, G> 
     }
 
     /// Creates a [`Cursor`] to perform read-related operations.
-    pub fn cursor(&self, index: u64) -> Cursor<'_, P, M, XLockGuard<G>> {
+    pub fn cursor(&self, index: u64) -> Cursor<'_, P, M> {
         Cursor::new(self.xa, &self.guard, index)
     }
 
     /// Creates a [`Range`] to immutably iterated over the specified `range`.
-    pub fn range(&self, range: core::ops::Range<u64>) -> Range<'_, P, M, XLockGuard<G>> {
+    pub fn range(&self, range: core::ops::Range<u64>) -> Range<'_, P, M> {
         let cursor = self.cursor(range.start);
         Range::new(cursor, range.end)
     }

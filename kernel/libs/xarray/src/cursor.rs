@@ -4,8 +4,8 @@ use alloc::sync::Arc;
 use core::ops::{Deref, DerefMut};
 
 use ostd::{
-    sync::{non_null::NonNullPtr, SpinGuardian},
-    task::{atomic_mode::AsAtomicModeGuard, DisabledPreemptGuard},
+    sync::{non_null::NonNullPtr, SpinGuardian, SpinLockGuard},
+    task::atomic_mode::{AsAtomicModeGuard, InAtomicMode},
     util::Either,
 };
 
@@ -98,7 +98,7 @@ impl<'a, P: NonNullPtr + Send + Sync> CursorState<'a, P> {
 /// point by performing a [`Cursor::reset`] operation.
 ///
 /// The typical way to obtain a `Cursor` instance is to call [`XArray::cursor`].
-pub struct Cursor<'a, P, M = NoneMark, G = DisabledPreemptGuard>
+pub struct Cursor<'a, P, M = NoneMark>
 where
     P: NonNullPtr + Send + Sync,
 {
@@ -107,19 +107,22 @@ where
     /// The target index of the cursor.
     index: u64,
     /// The atomic-mode guard that protects cursor operations.
-    guard: &'a G,
+    guard: &'a dyn InAtomicMode,
     /// The state of the cursor.
     state: CursorState<'a, P>,
 }
 
-impl<'a, P: NonNullPtr + Send + Sync, M, G: AsAtomicModeGuard> Cursor<'a, P, M, G> {
+impl<'a, P: NonNullPtr + Send + Sync, M> Cursor<'a, P, M> {
     /// Creates a `Cursor` to perform read-related operations in the `XArray`.
-    pub(super) fn new(xa: &'a XArray<P, M>, guard: &'a G, index: u64) -> Self {
-        let _ = guard.as_atomic_mode_guard();
+    pub(super) fn new<G: AsAtomicModeGuard>(
+        xa: &'a XArray<P, M>,
+        guard: &'a G,
+        index: u64,
+    ) -> Self {
         Self {
             xa,
             index,
-            guard,
+            guard: guard.as_atomic_mode_guard(),
             state: CursorState::Inactive,
         }
     }
@@ -229,7 +232,7 @@ impl<'a, P: NonNullPtr + Send + Sync, M, G: AsAtomicModeGuard> Cursor<'a, P, M, 
     }
 }
 
-impl<P: NonNullPtr + Send + Sync, M: Into<XMark>, G: AsAtomicModeGuard> Cursor<'_, P, M, G> {
+impl<P: NonNullPtr + Send + Sync, M: Into<XMark>> Cursor<'_, P, M> {
     /// Checks whether the target item is marked with the input `mark`.
     ///
     /// If the target item does not exist, this method will also return false.
@@ -253,14 +256,24 @@ impl<P: NonNullPtr + Send + Sync, M: Into<XMark>, G: AsAtomicModeGuard> Cursor<'
 /// The typical way to obtain a `CursorMut` instance is to call [`LockedXArray::cursor_mut`].
 ///
 /// [`LockedXArray::cursor_mut`]: super::LockedXArray::cursor_mut
-pub struct CursorMut<'a, P, M, G>(Cursor<'a, P, M, XLockGuard<'a, G>>)
+pub struct CursorMut<'a, P, M>(Cursor<'a, P, M>)
 where
-    P: NonNullPtr + Send + Sync,
-    G: SpinGuardian;
+    P: NonNullPtr + Send + Sync;
 
-impl<'a, P: NonNullPtr + Send + Sync, M, G: SpinGuardian> CursorMut<'a, P, M, G> {
-    pub(super) fn new(xa: &'a XArray<P, M>, guard: &'a XLockGuard<'a, G>, index: u64) -> Self {
+impl<'a, P: NonNullPtr + Send + Sync, M> CursorMut<'a, P, M> {
+    /// Creates a `CursorMut` to perform read- and write-related operations in the `XArray`.
+    pub(super) fn new<G: SpinGuardian>(
+        xa: &'a XArray<P, M>,
+        guard: &'a SpinLockGuard<'a, (), G>,
+        index: u64,
+    ) -> Self {
         Self(Cursor::new(xa, guard, index))
+    }
+
+    /// Returns an `XLockGuard` that marks the `XArray` is locked.
+    fn lock_guard(&self) -> XLockGuard {
+        // Having a `CursorMut` means that the `XArray` is locked.
+        XLockGuard(self.guard)
     }
 
     /// Increases the height of the `XArray` so that the `index`-th element can be stored.
@@ -280,7 +293,7 @@ impl<'a, P: NonNullPtr + Send + Sync, M, G: SpinGuardian> CursorMut<'a, P, M, G>
             }
 
             let new_head = Arc::new(XNode::new_root(height.go_root()));
-            new_head.set_entry(self.guard, 0, Some(Either::Left(head.clone())));
+            new_head.set_entry(self.lock_guard(), 0, Some(Either::Left(head.clone())));
 
             self.xa.head.update(Some(new_head));
         }
@@ -317,7 +330,7 @@ impl<'a, P: NonNullPtr + Send + Sync, M, G: SpinGuardian> CursorMut<'a, P, M, G>
             {
                 let new_node = XNode::new(current_node.height().go_leaf(), operation_offset);
                 let new_entry = Either::Left(Arc::new(new_node));
-                current_node.set_entry(self.guard, operation_offset, Some(new_entry));
+                current_node.set_entry(self.lock_guard(), operation_offset, Some(new_entry));
             }
 
             let next_node = current_node
@@ -337,7 +350,11 @@ impl<'a, P: NonNullPtr + Send + Sync, M, G: SpinGuardian> CursorMut<'a, P, M, G>
     pub fn store(&mut self, item: P) {
         self.expand_and_traverse_to_target();
         let (node, operation_offset) = self.state.as_node().unwrap();
-        node.set_entry(self.guard, operation_offset, Some(Either::Right(item)));
+        node.set_entry(
+            self.lock_guard(),
+            operation_offset,
+            Some(Either::Right(item)),
+        );
     }
 
     /// Removes the item at the target index.
@@ -352,7 +369,7 @@ impl<'a, P: NonNullPtr + Send + Sync, M, G: SpinGuardian> CursorMut<'a, P, M, G>
                 .deref_target()
                 .entry_with(self.guard, off)
                 .and_then(|entry| entry.right());
-            node.set_entry(self.guard, off, None);
+            node.set_entry(self.lock_guard(), off, None);
             res
         })
     }
@@ -362,7 +379,7 @@ impl<'a, P: NonNullPtr + Send + Sync, M, G: SpinGuardian> CursorMut<'a, P, M, G>
 #[derive(Debug)]
 pub struct SetMarkError;
 
-impl<P: NonNullPtr + Send + Sync, M: Into<XMark>, G: SpinGuardian> CursorMut<'_, P, M, G> {
+impl<P: NonNullPtr + Send + Sync, M: Into<XMark>> CursorMut<'_, P, M> {
     /// Sets the input `mark` for the item at the target index.
     ///  
     /// # Errors
@@ -378,7 +395,7 @@ impl<P: NonNullPtr + Send + Sync, M: Into<XMark>, G: SpinGuardian> CursorMut<'_,
             })
             .map(|(node, off)| {
                 let mark_index = mark.into().index();
-                node.set_mark(self.guard, off, mark_index);
+                node.set_mark(self.lock_guard(), off, mark_index);
             })
             .ok_or(SetMarkError)
     }
@@ -398,21 +415,21 @@ impl<P: NonNullPtr + Send + Sync, M: Into<XMark>, G: SpinGuardian> CursorMut<'_,
             })
             .map(|(node, off)| {
                 let mark_index = mark.into().index();
-                node.unset_mark(self.guard, off, mark_index);
+                node.unset_mark(self.lock_guard(), off, mark_index);
             })
             .ok_or(SetMarkError)
     }
 }
 
-impl<'a, P: NonNullPtr + Send + Sync, M, G: SpinGuardian> Deref for CursorMut<'a, P, M, G> {
-    type Target = Cursor<'a, P, M, XLockGuard<'a, G>>;
+impl<'a, P: NonNullPtr + Send + Sync, M> Deref for CursorMut<'a, P, M> {
+    type Target = Cursor<'a, P, M>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl<P: NonNullPtr + Send + Sync, M, G: SpinGuardian> DerefMut for CursorMut<'_, P, M, G> {
+impl<P: NonNullPtr + Send + Sync, M> DerefMut for CursorMut<'_, P, M> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
