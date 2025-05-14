@@ -51,6 +51,10 @@
 /kernel/comps/time/             @cchanging
 /kernel/comps/virtio/           @sdww0
 
+# Library code owners
+/kernel/libs/aster-bigtcp/      @StevenJiang1110 @lrh2000
+/kernel/libs/xarray/            @cchanging @lrh2000
+
 #=============================================================================
 # The Asterinas OSDK
 #=============================================================================
