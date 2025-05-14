@@ -423,12 +423,10 @@ macro_rules! impl_read_fallible {
                 // SAFETY: The source and destination are subsets of memory ranges specified by
                 // the reader and writer, so they are either valid for reading and writing or in
                 // user space.
-                let copied_len = unsafe {
-                    let copied_len = memcpy_fallible(writer.cursor, self.cursor, copy_len);
-                    self.cursor = self.cursor.add(copied_len);
-                    writer.cursor = writer.cursor.add(copied_len);
-                    copied_len
-                };
+                let copied_len = unsafe { memcpy_fallible(writer.cursor, self.cursor, copy_len) };
+                self.cursor = self.cursor.wrapping_add(copied_len);
+                writer.cursor = writer.cursor.wrapping_add(copied_len);
+
                 if copied_len < copy_len {
                     Err((Error::PageFault, copied_len))
                 } else {
@@ -472,12 +470,12 @@ impl<'a> VmReader<'a, Infallible> {
         // Rust is allowed to give the reference to a zero-sized object a very small address,
         // falling out of the kernel virtual address space range.
         // So when `len` is zero, we should not and need not to check `ptr`.
-        debug_assert!(len == 0 || KERNEL_BASE_VADDR <= ptr as usize);
-        debug_assert!(len == 0 || ptr.add(len) as usize <= KERNEL_END_VADDR);
+        debug_assert!(len == 0 || KERNEL_BASE_VADDR <= ptr.addr());
+        debug_assert!(len == 0 || ptr.addr().checked_add(len).unwrap() <= KERNEL_END_VADDR);
 
         Self {
             cursor: ptr,
-            end: ptr.add(len),
+            end: ptr.wrapping_add(len),
             phantom: PhantomData,
         }
     }
@@ -495,11 +493,9 @@ impl<'a> VmReader<'a, Infallible> {
 
         // SAFETY: The source and destination are subsets of memory ranges specified by the reader
         // and writer, so they are valid for reading and writing.
-        unsafe {
-            memcpy(writer.cursor, self.cursor, copy_len);
-            self.cursor = self.cursor.add(copy_len);
-            writer.cursor = writer.cursor.add(copy_len);
-        }
+        unsafe { memcpy(writer.cursor, self.cursor, copy_len) };
+        self.cursor = self.cursor.wrapping_add(copy_len);
+        writer.cursor = writer.cursor.wrapping_add(copy_len);
 
         copy_len
     }
@@ -545,7 +541,7 @@ impl<'a> VmReader<'a, Infallible> {
         // and that the cursor is properly aligned with respect to the type `T`. All other safety
         // requirements are the same as for `Self::read`.
         let val = unsafe { cursor.read_volatile() };
-        self.cursor = unsafe { self.cursor.add(core::mem::size_of::<T>()) };
+        self.cursor = self.cursor.wrapping_add(core::mem::size_of::<T>());
 
         Ok(val)
     }
@@ -567,11 +563,11 @@ impl VmReader<'_, Fallible> {
     ///
     /// The virtual address range `ptr..ptr + len` must be in user space.
     pub unsafe fn from_user_space(ptr: *const u8, len: usize) -> Self {
-        debug_assert!((ptr as usize).checked_add(len).unwrap_or(usize::MAX) <= MAX_USERSPACE_VADDR);
+        debug_assert!(ptr.addr().checked_add(len).unwrap() <= MAX_USERSPACE_VADDR);
 
         Self {
             cursor: ptr,
-            end: ptr.add(len),
+            end: ptr.wrapping_add(len),
             phantom: PhantomData,
         }
     }
@@ -626,29 +622,28 @@ impl VmReader<'_, Fallible> {
 
 impl<Fallibility> VmReader<'_, Fallibility> {
     /// Returns the number of bytes for the remaining data.
-    pub const fn remain(&self) -> usize {
-        // SAFETY: the end is equal to or greater than the cursor.
-        unsafe { self.end.sub_ptr(self.cursor) }
+    pub fn remain(&self) -> usize {
+        self.end.addr() - self.cursor.addr()
     }
 
     /// Returns the cursor pointer, which refers to the address of the next byte to read.
-    pub const fn cursor(&self) -> *const u8 {
+    pub fn cursor(&self) -> *const u8 {
         self.cursor
     }
 
     /// Returns if it has remaining data to read.
-    pub const fn has_remain(&self) -> bool {
+    pub fn has_remain(&self) -> bool {
         self.remain() > 0
     }
 
     /// Limits the length of remaining data.
     ///
     /// This method ensures the post condition of `self.remain() <= max_remain`.
-    pub const fn limit(&mut self, max_remain: usize) -> &mut Self {
+    pub fn limit(&mut self, max_remain: usize) -> &mut Self {
         if max_remain < self.remain() {
-            // SAFETY: the new end is less than the old end.
-            unsafe { self.end = self.cursor.add(max_remain) };
+            self.end = self.cursor.wrapping_add(max_remain);
         }
+
         self
     }
 
@@ -660,9 +655,8 @@ impl<Fallibility> VmReader<'_, Fallibility> {
     /// If `nbytes` is greater than `self.remain()`, then the method panics.
     pub fn skip(&mut self, nbytes: usize) -> &mut Self {
         assert!(nbytes <= self.remain());
+        self.cursor = self.cursor.wrapping_add(nbytes);
 
-        // SAFETY: the new cursor is less than or equal to the end.
-        unsafe { self.cursor = self.cursor.add(nbytes) };
         self
     }
 }
@@ -713,12 +707,12 @@ impl<'a> VmWriter<'a, Infallible> {
     pub unsafe fn from_kernel_space(ptr: *mut u8, len: usize) -> Self {
         // If casting a zero sized slice to a pointer, the pointer may be null
         // and does not reside in our kernel space range.
-        debug_assert!(len == 0 || KERNEL_BASE_VADDR <= ptr as usize);
-        debug_assert!(len == 0 || ptr.add(len) as usize <= KERNEL_END_VADDR);
+        debug_assert!(len == 0 || KERNEL_BASE_VADDR <= ptr.addr());
+        debug_assert!(len == 0 || ptr.addr().checked_add(len).unwrap() <= KERNEL_END_VADDR);
 
         Self {
             cursor: ptr,
-            end: ptr.add(len),
+            end: ptr.wrapping_add(len),
             phantom: PhantomData,
         }
     }
@@ -766,9 +760,9 @@ impl<'a> VmWriter<'a, Infallible> {
 
         // SAFETY: We have checked that the number of bytes remaining is at least the size of `T`
         // and that the cursor is properly aligned with respect to the type `T`. All other safety
-        // requirements are the same as for `Self::writer`.
-        unsafe { cursor.cast::<T>().write_volatile(*new_val) };
-        self.cursor = unsafe { self.cursor.add(core::mem::size_of::<T>()) };
+        // requirements are the same as for `Self::write`.
+        unsafe { cursor.write_volatile(*new_val) };
+        self.cursor = self.cursor.wrapping_add(core::mem::size_of::<T>());
 
         Ok(())
     }
@@ -782,20 +776,20 @@ impl<'a> VmWriter<'a, Infallible> {
     /// The size of the available space must be a multiple of the size of `value`.
     /// Otherwise, the method would panic.
     pub fn fill<T: Pod>(&mut self, value: T) -> usize {
+        let cursor = self.cursor.cast::<T>();
+        assert!(cursor.is_aligned());
+
         let avail = self.avail();
-
-        assert!((self.cursor as *mut T).is_aligned());
         assert!(avail % core::mem::size_of::<T>() == 0);
-
         let written_num = avail / core::mem::size_of::<T>();
 
         for i in 0..written_num {
+            let cursor_i = cursor.wrapping_add(i);
             // SAFETY: `written_num` is calculated by the avail size and the size of the type `T`,
-            // hence the `add` operation and `write` operation are valid and will only manipulate
-            // the memory managed by this writer.
-            unsafe {
-                (self.cursor as *mut T).add(i).write_volatile(value);
-            }
+            // so the `write` operation will only manipulate the memory managed by this writer.
+            // We've checked that the cursor is properly aligned with respect to the type `T`. All
+            // other safety requirements are the same as for `Self::write`.
+            unsafe { cursor_i.write_volatile(value) };
         }
 
         // The available space has been filled so this cursor can be moved to the end.
@@ -823,11 +817,11 @@ impl VmWriter<'_, Fallible> {
     ///
     /// `ptr` must be in user space for `len` bytes.
     pub unsafe fn from_user_space(ptr: *mut u8, len: usize) -> Self {
-        debug_assert!((ptr as usize).checked_add(len).unwrap_or(usize::MAX) <= MAX_USERSPACE_VADDR);
+        debug_assert!(ptr.addr().checked_add(len).unwrap() <= MAX_USERSPACE_VADDR);
 
         Self {
             cursor: ptr,
-            end: ptr.add(len),
+            end: ptr.wrapping_add(len),
             phantom: PhantomData,
         }
     }
@@ -875,11 +869,9 @@ impl VmWriter<'_, Fallible> {
 
         // SAFETY: The destination is a subset of the memory range specified by
         // the current writer, so it is either valid for writing or in user space.
-        let set_len = unsafe {
-            let set_len = memset_fallible(self.cursor, 0u8, len_to_set);
-            self.cursor = self.cursor.add(set_len);
-            set_len
-        };
+        let set_len = unsafe { memset_fallible(self.cursor, 0u8, len_to_set) };
+        self.cursor = self.cursor.wrapping_add(set_len);
+
         if set_len < len_to_set {
             Err((Error::PageFault, set_len))
         } else {
@@ -890,29 +882,28 @@ impl VmWriter<'_, Fallible> {
 
 impl<Fallibility> VmWriter<'_, Fallibility> {
     /// Returns the number of bytes for the available space.
-    pub const fn avail(&self) -> usize {
-        // SAFETY: the end is equal to or greater than the cursor.
-        unsafe { self.end.sub_ptr(self.cursor) }
+    pub fn avail(&self) -> usize {
+        self.end.addr() - self.cursor.addr()
     }
 
     /// Returns the cursor pointer, which refers to the address of the next byte to write.
-    pub const fn cursor(&self) -> *mut u8 {
+    pub fn cursor(&self) -> *mut u8 {
         self.cursor
     }
 
     /// Returns if it has available space to write.
-    pub const fn has_avail(&self) -> bool {
+    pub fn has_avail(&self) -> bool {
         self.avail() > 0
     }
 
     /// Limits the length of available space.
     ///
     /// This method ensures the post condition of `self.avail() <= max_avail`.
-    pub const fn limit(&mut self, max_avail: usize) -> &mut Self {
+    pub fn limit(&mut self, max_avail: usize) -> &mut Self {
         if max_avail < self.avail() {
-            // SAFETY: the new end is less than the old end.
-            unsafe { self.end = self.cursor.add(max_avail) };
+            self.end = self.cursor.wrapping_add(max_avail);
         }
+
         self
     }
 
@@ -924,9 +915,8 @@ impl<Fallibility> VmWriter<'_, Fallibility> {
     /// If `nbytes` is greater than `self.avail()`, then the method panics.
     pub fn skip(&mut self, nbytes: usize) -> &mut Self {
         assert!(nbytes <= self.avail());
+        self.cursor = self.cursor.wrapping_add(nbytes);
 
-        // SAFETY: the new cursor is less than or equal to the end.
-        unsafe { self.cursor = self.cursor.add(nbytes) };
         self
     }
 }
