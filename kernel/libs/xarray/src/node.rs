@@ -57,12 +57,12 @@ impl PartialOrd<u8> for Height {
 
 impl Height {
     /// Creates a `Height` directly from a height value.
-    pub fn new(height: u8) -> Self {
+    pub(super) fn new(height: u8) -> Self {
         Self { height }
     }
 
     /// Creates a minimal `Height` that allows the `index`-th item to be stored.
-    pub fn from_index(index: u64) -> Self {
+    pub(super) fn from_index(index: u64) -> Self {
         let mut height = Height::new(1);
         while index > height.max_index() {
             *height += 1;
@@ -71,12 +71,12 @@ impl Height {
     }
 
     /// Goes up, which increases the height value by one.
-    pub fn go_root(&self) -> Self {
+    pub(super) fn go_root(&self) -> Self {
         Self::new(self.height + 1)
     }
 
     /// Goes down, which decreases the height value by one.
-    pub fn go_leaf(&self) -> Self {
+    pub(super) fn go_leaf(&self) -> Self {
         Self::new(self.height - 1)
     }
 
@@ -86,13 +86,13 @@ impl Height {
 
     /// Calculates the corresponding offset for the target index at
     /// the current height.
-    pub fn height_offset(&self, index: u64) -> u8 {
+    pub(super) fn height_offset(&self, index: u64) -> u8 {
         ((index >> self.height_shift()) & SLOT_MASK as u64) as u8
     }
 
     /// Calculates the maximum index that can be represented in an `XArray`
     /// with the current height.
-    pub fn max_index(&self) -> u64 {
+    pub(super) fn max_index(&self) -> u64 {
         ((SLOT_SIZE as u64) << self.height_shift()) - 1
     }
 }
@@ -133,11 +133,11 @@ where
 }
 
 impl<P: NonNullPtr + Send + Sync> XNode<P> {
-    pub fn new_root(height: Height) -> Self {
+    pub(super) fn new_root(height: Height) -> Self {
         Self::new(height, 0)
     }
 
-    pub fn new(height: Height, offset: u8) -> Self {
+    pub(super) fn new(height: Height, offset: u8) -> Self {
         Self {
             parent: RcuOption::new_none(),
             height,
@@ -148,24 +148,24 @@ impl<P: NonNullPtr + Send + Sync> XNode<P> {
     }
 
     /// Gets the slot offset at the current `XNode` for the target index `target_index`.
-    pub fn entry_offset(&self, target_index: u64) -> u8 {
+    pub(super) fn entry_offset(&self, target_index: u64) -> u8 {
         self.height.height_offset(target_index)
     }
 
-    pub fn height(&self) -> Height {
+    pub(super) fn height(&self) -> Height {
         self.height
     }
 
-    pub fn parent<'a>(&'a self, guard: &'a dyn InAtomicMode) -> Option<NodeEntryRef<'a, P>> {
+    pub(super) fn parent<'a>(&'a self, guard: &'a dyn InAtomicMode) -> Option<NodeEntryRef<'a, P>> {
         let parent = self.parent.read_with(guard)?;
         Some(parent)
     }
 
-    pub fn offset_in_parent(&self) -> u8 {
+    pub(super) fn offset_in_parent(&self) -> u8 {
         self.offset_in_parent
     }
 
-    pub fn entry_with<'a>(
+    pub(super) fn entry_with<'a>(
         &'a self,
         guard: &'a dyn InAtomicMode,
         offset: u8,
@@ -173,15 +173,15 @@ impl<P: NonNullPtr + Send + Sync> XNode<P> {
         self.slots[offset as usize].read_with(guard)
     }
 
-    pub fn is_marked(&self, offset: u8, mark: usize) -> bool {
+    pub(super) fn is_marked(&self, offset: u8, mark: usize) -> bool {
         self.marks[mark].is_marked(offset)
     }
 
-    pub fn is_mark_clear(&self, mark: usize) -> bool {
+    pub(super) fn is_mark_clear(&self, mark: usize) -> bool {
         self.marks[mark].is_clear()
     }
 
-    pub fn is_leaf(&self) -> bool {
+    pub(super) fn is_leaf(&self) -> bool {
         self.height == 1
     }
 }
@@ -195,7 +195,7 @@ impl<P: NonNullPtr + Send + Sync> XNode<P> {
     /// Clears the parent pointers of this node and all its descendant nodes.
     ///
     /// This method should be invoked when the node is being removed from the tree.
-    pub fn clear_parent(&self, guard: XLockGuard) {
+    pub(super) fn clear_parent(&self, guard: XLockGuard) {
         self.parent.update(None);
         for child in self.slots.iter() {
             if let Some(node) = child.read_with(guard.0).and_then(|entry| entry.left()) {
@@ -211,7 +211,12 @@ impl<P: NonNullPtr + Send + Sync> XNode<P> {
     /// updated according to whether the new node contains marked items.
     ///
     /// This method will also propagate the updated marks to the ancestors.
-    pub fn set_entry(self: &Arc<Self>, guard: XLockGuard, offset: u8, entry: Option<XEntry<P>>) {
+    pub(super) fn set_entry(
+        self: &Arc<Self>,
+        guard: XLockGuard,
+        offset: u8,
+        entry: Option<XEntry<P>>,
+    ) {
         let old_entry = self.slots[offset as usize].read_with(guard.0);
         if let Some(node) = old_entry.and_then(|entry| entry.left()) {
             node.clear_parent(guard);
@@ -240,7 +245,7 @@ impl<P: NonNullPtr + Send + Sync> XNode<P> {
     ///
     /// This method will also update the marks on the ancestors of this node
     /// if necessary to ensure that the marks on the ancestors are up to date.
-    pub fn set_mark(&self, guard: XLockGuard, offset: u8, mark: usize) {
+    pub(super) fn set_mark(&self, guard: XLockGuard, offset: u8, mark: usize) {
         let changed = self.marks[mark].update(guard, offset, true);
         if changed {
             self.propagate_mark(guard, mark);
@@ -251,7 +256,7 @@ impl<P: NonNullPtr + Send + Sync> XNode<P> {
     ///
     /// This method will also update the marks on the ancestors of this node
     /// if necessary to ensure that the marks on the ancestors are up to date.
-    pub fn unset_mark(&self, guard: XLockGuard, offset: u8, mark: usize) {
+    pub(super) fn unset_mark(&self, guard: XLockGuard, offset: u8, mark: usize) {
         let changed = self.marks[mark].update(guard, offset, false);
         if changed {
             self.propagate_mark(guard, mark);
