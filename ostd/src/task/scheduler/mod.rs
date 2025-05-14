@@ -102,6 +102,8 @@ pub enum UpdateFlags {
     Wait,
     /// Task yielding.
     Yield,
+    /// Preemption checking.
+    CheckPreempt,
 }
 
 /// Preempts the current task.
