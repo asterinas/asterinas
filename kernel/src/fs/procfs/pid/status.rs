@@ -8,7 +8,7 @@ use crate::{
         utils::Inode,
     },
     prelude::*,
-    process::posix_thread::AsPosixThread,
+    process::{posix_thread::AsPosixThread, PidNamespace},
     vm::vmar::RssType,
     Process,
 };
@@ -59,29 +59,59 @@ use crate::{
 /// - Mems_allowed_list: List of memory nodes allowed for this process.
 /// - voluntary_ctxt_switches: Number of voluntary context switches.
 /// - nonvoluntary_ctxt_switches: Number of nonvoluntary context switches.
-pub struct StatusFileOps(Arc<Process>);
+pub struct StatusFileOps {
+    process: Arc<Process>,
+    pid_ns: Arc<PidNamespace>,
+}
 
 impl StatusFileOps {
-    pub fn new_inode(process_ref: Arc<Process>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        ProcFileBuilder::new(Self(process_ref))
-            .parent(parent)
-            .build()
-            .unwrap()
+    pub fn new_inode(
+        process_ref: Arc<Process>,
+        pid_ns: Arc<PidNamespace>,
+        parent: Weak<dyn Inode>,
+    ) -> Arc<dyn Inode> {
+        ProcFileBuilder::new(Self {
+            process: process_ref,
+            pid_ns,
+        })
+        .parent(parent)
+        .build()
+        .unwrap()
     }
 }
 
 impl FileOps for StatusFileOps {
     fn data(&self) -> Result<Vec<u8>> {
-        let process = &self.0;
+        let process = &self.process;
         let main_thread = process.main_thread();
         let file_table = main_thread.as_posix_thread().unwrap().file_table();
 
         let mut status_output = String::new();
         writeln!(status_output, "Name:\t{}", process.executable_path()).unwrap();
-        writeln!(status_output, "Tgid:\t{}", process.pid()).unwrap();
-        writeln!(status_output, "Pid:\t{}", process.pid()).unwrap();
-        writeln!(status_output, "PPid:\t{}", process.parent().pid()).unwrap();
-        writeln!(status_output, "TracerPid:\t{}", process.parent().pid()).unwrap(); // Assuming TracerPid is the same as PPid
+        writeln!(
+            status_output,
+            "Tgid:\t{}",
+            process.pid_in_ns(&self.pid_ns).unwrap()
+        )
+        .unwrap();
+        writeln!(
+            status_output,
+            "Pid:\t{}",
+            process.pid_in_ns(&self.pid_ns).unwrap()
+        )
+        .unwrap();
+        writeln!(
+            status_output,
+            "PPid:\t{}",
+            process.parent_pid_in_ns(&self.pid_ns).unwrap_or(0)
+        )
+        .unwrap();
+        writeln!(
+            status_output,
+            "TracerPid:\t{}",
+            process.parent_pid_in_ns(&self.pid_ns).unwrap_or(0)
+        )
+        .unwrap(); // Assuming TracerPid is the same as PPid
         writeln!(
             status_output,
             "FDSize:\t{}",
