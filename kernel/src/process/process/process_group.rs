@@ -1,22 +1,28 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::collections::btree_map::Values;
+use alloc::collections::btree_set::Iter;
 
-use super::{Pgid, Pid, Process, Session};
-use crate::{prelude::*, process::signal::signals::Signal};
+use keyable_arc::KeyableArc;
+use ostd::sync::PreemptDisabled;
+
+use super::{Pgid, Process, Session};
+use crate::{
+    prelude::*,
+    process::{pid_namespace::AncestorNsPids, signal::signals::Signal, PidNamespace},
+};
 
 /// A process group.
 ///
 /// A process group represents a set of processes,
 /// which has a unique identifier PGID (i.e., [`Pgid`]).
 pub struct ProcessGroup {
-    pgid: Pgid,
+    ns_pgids: AncestorNsPids,
     session: Weak<Session>,
-    inner: Mutex<Inner>,
+    inner: SpinLock<Inner>,
 }
 
 struct Inner {
-    processes: BTreeMap<Pid, Arc<Process>>,
+    processes: BTreeSet<KeyableArc<Process>>,
 }
 
 impl ProcessGroup {
@@ -27,24 +33,31 @@ impl ProcessGroup {
     ///
     /// The caller needs to ensure that the process does not belong to other process group.
     pub(super) fn new(process: Arc<Process>, session: Weak<Session>) -> Arc<Self> {
-        let pid = process.pid();
+        let ns_pgids = process.ns_pids.clone();
 
         let inner = {
-            let mut processes = BTreeMap::new();
-            processes.insert(pid, process);
+            let mut processes = BTreeSet::new();
+            processes.insert(process.into());
             Inner { processes }
         };
 
         Arc::new(ProcessGroup {
-            pgid: pid,
+            ns_pgids,
             session,
-            inner: Mutex::new(inner),
+            inner: SpinLock::new(inner),
         })
     }
 
-    /// Returns the process group identifier.
-    pub fn pgid(&self) -> Pgid {
-        self.pgid
+    /// Returns the process group identifier in the given PID namespace.
+    ///
+    /// If the process group is not visible in the namespace, this method will return `None`.
+    pub fn pgid_in_ns(&self, pid_ns: &Arc<PidNamespace>) -> Option<Pgid> {
+        pid_ns.get_current_id(&self.ns_pgids)
+    }
+
+    /// Returns the process group's identifier in all PID namespaces.
+    pub fn ns_pgids(&self) -> &AncestorNsPids {
+        &self.ns_pgids
     }
 
     /// Returns the session to which the process group belongs.
@@ -65,7 +78,7 @@ impl ProcessGroup {
     //
     // TODO: Do some checks to forbid user signals.
     pub fn broadcast_signal(&self, signal: impl Signal + Clone + 'static) {
-        for process in self.inner.lock().processes.values() {
+        for process in self.inner.lock().processes.iter() {
             process.enqueue_signal(signal.clone());
         }
     }
@@ -77,14 +90,14 @@ impl ProcessGroup {
 #[clippy::has_significant_drop]
 #[must_use]
 pub struct ProcessGroupGuard<'a> {
-    inner: MutexGuard<'a, Inner>,
+    inner: SpinLockGuard<'a, Inner, PreemptDisabled>,
 }
 
 impl ProcessGroupGuard<'_> {
     /// Returns an iterator over the processes in the process group.
     pub fn iter(&self) -> ProcessGroupIter {
         ProcessGroupIter {
-            inner: self.inner.processes.values(),
+            inner: self.inner.processes.iter(),
         }
     }
 
@@ -93,17 +106,18 @@ impl ProcessGroupGuard<'_> {
     /// The caller needs to ensure that the process didn't previously belong to the process group,
     /// but now does.
     pub(in crate::process) fn insert_process(&mut self, process: Arc<Process>) {
-        let old_process = self.inner.processes.insert(process.pid(), process);
-        debug_assert!(old_process.is_none());
+        let newly_added = self.inner.processes.insert(process.into());
+        debug_assert!(newly_added);
     }
 
     /// Removes a process from the process group.
     ///
     /// The caller needs to ensure that the process previously belonged to the process group, but
     /// now doesn't.
-    pub(in crate::process) fn remove_process(&mut self, pid: &Pid) {
-        let process = self.inner.processes.remove(pid);
-        debug_assert!(process.is_some());
+    pub(in crate::process) fn remove_process(&mut self, process: &Arc<Process>) {
+        let key = KeyableArc::from(process.clone());
+        let is_removed = self.inner.processes.remove(&key);
+        debug_assert!(is_removed);
     }
 
     /// Returns whether the process group is empty.
@@ -114,13 +128,13 @@ impl ProcessGroupGuard<'_> {
 
 /// An iterator over the processes of the process group.
 pub struct ProcessGroupIter<'a> {
-    inner: Values<'a, Pid, Arc<Process>>,
+    inner: Iter<'a, KeyableArc<Process>>,
 }
 
 impl<'a> Iterator for ProcessGroupIter<'a> {
-    type Item = &'a Arc<Process>;
+    type Item = Arc<Process>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next()
+        self.inner.next().map(|key| key.clone().into())
     }
 }

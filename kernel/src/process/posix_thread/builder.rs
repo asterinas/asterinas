@@ -6,11 +6,12 @@ use ostd::{
     task::Task,
 };
 
-use super::{thread_table, PosixThread, ThreadLocal};
+use super::{PosixThread, ThreadLocal};
 use crate::{
     fs::{file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
     process::{
+        pid_namespace::AncestorNsPids,
         posix_thread::name::ThreadName,
         signal::{sig_mask::AtomicSigMask, sig_queues::SigQueues},
         Credentials, Process,
@@ -27,6 +28,7 @@ pub struct PosixThreadBuilder {
     user_ctx: Arc<UserContext>,
     process: Weak<Process>,
     credentials: Credentials,
+    ns_tids: AncestorNsPids,
 
     // Optional part
     thread_name: Option<ThreadName>,
@@ -40,12 +42,18 @@ pub struct PosixThreadBuilder {
 }
 
 impl PosixThreadBuilder {
-    pub fn new(tid: Tid, user_ctx: Arc<UserContext>, credentials: Credentials) -> Self {
+    pub fn new(
+        tid: Tid,
+        user_ctx: Arc<UserContext>,
+        credentials: Credentials,
+        ns_tids: AncestorNsPids,
+    ) -> Self {
         Self {
             tid,
             user_ctx,
             process: Weak::new(),
             credentials,
+            ns_tids,
             thread_name: None,
             set_child_tid: 0,
             clear_child_tid: 0,
@@ -98,6 +106,7 @@ impl PosixThreadBuilder {
             user_ctx,
             process,
             credentials,
+            ns_tids,
             thread_name,
             set_child_tid,
             clear_child_tid,
@@ -139,6 +148,7 @@ impl PosixThreadBuilder {
                     prof_clock,
                     virtual_timer_manager,
                     prof_timer_manager,
+                    ns_tids,
                 }
             };
 
@@ -153,7 +163,6 @@ impl PosixThreadBuilder {
             let thread_local =
                 ThreadLocal::new(set_child_tid, clear_child_tid, root_vmar, file_table);
 
-            thread_table::add_thread(tid, thread.clone());
             task::create_new_user_task(user_ctx, thread, thread_local)
         })
     }

@@ -83,7 +83,7 @@ static OOPS_COUNT: AtomicUsize = AtomicUsize::new(0);
 fn panic_handler(info: &core::panic::PanicInfo) -> ! {
     let message = info.message();
 
-    if let Some(thread) = Thread::current() {
+    if let Some(current_thread) = Thread::current() {
         let panic_on_oops = PANIC_ON_OOPS.load(Ordering::Relaxed);
         if !panic_on_oops && info.can_unwind() {
             // TODO: eliminate the need for heap allocation.
@@ -93,12 +93,15 @@ fn panic_handler(info: &core::panic::PanicInfo) -> ! {
                 message.to_string()
             };
             // Raise the panic and expect it to be caught.
-            panic::begin_panic(Box::new(OopsInfo { message, thread }));
+            panic::begin_panic(Box::new(OopsInfo {
+                message,
+                thread: current_thread.into(),
+            }));
         }
     }
 
     let preempt_guard = disable_preempt();
-    let thread = Thread::current();
+    let thread: Option<Arc<Thread>> = Thread::current().map(|current_thread| current_thread.into());
     let cpu = preempt_guard.current_cpu();
 
     // Halt the system if the panic is not caught.

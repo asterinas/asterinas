@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::{ops::Deref, sync::atomic::Ordering};
 
 use aster_rights::{ReadOp, WriteOp};
 use ostd::sync::{RoArc, Waker};
 
 use super::{
     kill::SignalSenderIds,
+    pid_namespace::AncestorNsPids,
     signal::{
         sig_action::SigAction,
         sig_mask::{AtomicSigMask, SigMask, SigSet},
@@ -15,14 +16,14 @@ use super::{
         signals::Signal,
         SigEvents, SigEventsFilter,
     },
-    Credentials, Process,
+    Credentials, PidNamespace, Process,
 };
 use crate::{
     events::Observer,
     fs::{file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
     process::signal::constants::SIGCONT,
-    thread::{Thread, Tid},
+    thread::Tid,
     time::{clocks::ProfClock, Timer, TimerManager},
 };
 
@@ -33,7 +34,6 @@ mod name;
 mod posix_thread_ext;
 mod robust_list;
 mod thread_local;
-pub mod thread_table;
 
 pub use builder::PosixThreadBuilder;
 pub use exit::{do_exit, do_exit_group};
@@ -76,6 +76,9 @@ pub struct PosixThread {
 
     /// A manager that manages timers based on the profiling clock of the current thread.
     prof_timer_manager: Arc<TimerManager>,
+
+    /// The thread's IDs across all PID namespaces.
+    ns_tids: AncestorNsPids,
 }
 
 impl PosixThread {
@@ -87,9 +90,11 @@ impl PosixThread {
         Weak::clone(&self.process)
     }
 
-    /// Returns the thread id
-    pub fn tid(&self) -> Tid {
-        self.tid
+    /// Returns the thread's ID in the PID namespace.
+    ///
+    /// If the thread is not visible in the namespace, this method will return `None`.
+    pub fn tid_in_ns(&self, pid_ns: &Arc<PidNamespace>) -> Option<Tid> {
+        pid_ns.get_current_id(&self.ns_tids)
     }
 
     pub fn thread_name(&self) -> &Mutex<Option<ThreadName>> {
@@ -126,7 +131,7 @@ impl PosixThread {
 
     /// Returns whether the signal is blocked by the thread.
     pub(in crate::process) fn has_signal_blocked(&self, signum: SigNum) -> bool {
-        // FIMXE: Some signals cannot be blocked, even set in sig_mask.
+        // FIXME: Some signals cannot be blocked, even set in sig_mask.
         self.sig_mask.contains(signum, Ordering::Relaxed)
     }
 
@@ -149,8 +154,8 @@ impl PosixThread {
         if let Some(signum) = signum
             && *signum == SIGCONT
         {
-            let receiver_sid = self.process().sid();
-            if receiver_sid == sender.sid().unwrap() {
+            let receiver_sids = self.process().ns_sids();
+            if receiver_sids.as_ref() == sender.sids() {
                 return Ok(());
             }
 
@@ -271,16 +276,29 @@ impl PosixThread {
         ));
         self.credentials.dup().restrict()
     }
+
+    /// Returns the thread's IDs across all PID namespaces..
+    pub fn ns_tids(&self) -> &AncestorNsPids {
+        &self.ns_tids
+    }
 }
 
-static POSIX_TID_ALLOCATOR: AtomicU32 = AtomicU32::new(1);
+pub struct CurrentPosixThread<'a>(&'a PosixThread);
 
-/// Allocates a new tid for the new posix thread
-pub fn allocate_posix_tid() -> Tid {
-    POSIX_TID_ALLOCATOR.fetch_add(1, Ordering::SeqCst)
+impl<'a> CurrentPosixThread<'a> {
+    /// Returns the ID of the thread.
+    pub fn tid(&self) -> Tid {
+        self.0.tid
+    }
 }
 
-/// Returns the last allocated tid
-pub fn last_tid() -> Tid {
-    POSIX_TID_ALLOCATOR.load(Ordering::SeqCst) - 1
+impl Deref for CurrentPosixThread<'_> {
+    type Target = PosixThread;
+
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
 }
+
+impl !Send for CurrentPosixThread<'_> {}
+impl !Sync for CurrentPosixThread<'_> {}

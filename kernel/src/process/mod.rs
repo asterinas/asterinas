@@ -4,11 +4,11 @@ mod clone;
 pub mod credentials;
 mod exit;
 mod kill;
+mod pid_namespace;
 pub mod posix_thread;
 #[expect(clippy::module_inception)]
 mod process;
 mod process_filter;
-pub mod process_table;
 mod process_vm;
 mod program_loader;
 pub mod rlimit;
@@ -22,9 +22,10 @@ mod wait;
 pub use clone::{clone_child, CloneArgs, CloneFlags};
 pub use credentials::{Credentials, Gid, Uid};
 pub use kill::{kill, kill_all, kill_group, tgkill};
+pub use pid_namespace::{get_init_pid_namespace, PidEvent, PidNamespace, TASK_LIST_LOCK};
 pub use process::{
-    spawn_init_process, ExitCode, JobControl, Pgid, Pid, Process, ProcessGroup, Session, Sid,
-    Terminal,
+    spawn_init_process, AsCurrentProcess, CurrentProcess, ExitCode, JobControl, Pgid, Pid, Process,
+    ProcessGroup, Session, Sid, Terminal,
 };
 pub use process_filter::ProcessFilter;
 pub use process_vm::{
@@ -38,4 +39,5 @@ pub use wait::{wait_child_exit, WaitOptions};
 pub(super) fn init() {
     process::init();
     posix_thread::futex::init();
+    pid_namespace::init();
 }
