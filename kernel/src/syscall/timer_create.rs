@@ -7,8 +7,7 @@ use super::{
 use crate::{
     prelude::*,
     process::{
-        posix_thread::{thread_table, AsPosixThread},
-        process_table,
+        posix_thread::AsPosixThread,
         signal::{
             c_types::{sigevent_t, SigNotify},
             constants::SIGALRM,
@@ -73,12 +72,14 @@ pub fn sys_timer_create(
                 }
                 // Send a signal to the specified thread when the timer is expired.
                 SigNotify::SIGEV_THREAD_ID => {
-                    let tid = sig_event.sigev_un.read_tid() as u32;
-                    let thread = thread_table::get_thread(tid).ok_or_else(|| {
-                        Error::with_message(Errno::EINVAL, "target thread does not exist")
-                    })?;
+                    let thread = {
+                        let tid = sig_event.sigev_un.read_tid() as u32;
+                        ctx.process.pid_namespace().get_thread(tid).ok_or_else(|| {
+                            Error::with_message(Errno::EINVAL, "target thread does not exist")
+                        })?
+                    };
                     let posix_thread = thread.as_posix_thread().unwrap();
-                    if posix_thread.process().pid() != current_process.pid() {
+                    if !Arc::ptr_eq(&posix_thread.process(), &current_process) {
                         return_errno_with_message!(
                             Errno::EINVAL,
                             "target thread should belong to current process"
@@ -143,7 +144,10 @@ where
         let dynamic_clockid_info = DynamicClockIdInfo::try_from(clockid)?;
         match dynamic_clockid_info {
             DynamicClockIdInfo::Pid(pid, clock_type) => {
-                let process = process_table::get_process(pid)
+                let process = ctx
+                    .process
+                    .pid_namespace()
+                    .get_process(pid)
                     .ok_or_else(|| crate::Error::with_message(Errno::EINVAL, "invalid clock id"))?;
                 let process_timer_manager = process.timer_manager();
                 match clock_type {
@@ -154,7 +158,10 @@ where
                 }
             }
             DynamicClockIdInfo::Tid(tid, clock_type) => {
-                let thread = thread_table::get_thread(tid)
+                let thread = ctx
+                    .process
+                    .pid_namespace()
+                    .get_thread(tid)
                     .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid clock id"))?;
                 let posix_thread = thread.as_posix_thread().unwrap();
                 match clock_type {

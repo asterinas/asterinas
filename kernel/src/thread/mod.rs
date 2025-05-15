@@ -2,11 +2,12 @@
 
 //! Posix thread implementation
 
-use core::sync::atomic::Ordering;
+use core::{ops::Deref, sync::atomic::Ordering};
 
+pub use current::{CurrentThread, CurrentThreadRef};
 use ostd::{
     cpu::{AtomicCpuSet, CpuSet},
-    task::Task,
+    task::{CurrentTask, Task},
 };
 
 use self::status::{AtomicThreadStatus, ThreadStatus};
@@ -15,6 +16,7 @@ use crate::{
     sched::{SchedAttr, SchedPolicy},
 };
 
+mod current;
 pub mod exception;
 pub mod kernel_thread;
 pub mod oops;
@@ -79,8 +81,8 @@ impl Thread {
     ///
     /// This function returns `None` if the current task is not associated with
     /// a thread, or if called within the bootstrap context.
-    pub fn current() -> Option<Arc<Self>> {
-        Task::current()?.as_thread().cloned()
+    pub fn current() -> Option<CurrentThread> {
+        Some(CurrentThread(Task::current()?.as_thread().cloned()?))
     }
 
     /// Returns the task associated with this thread.
@@ -183,10 +185,27 @@ impl Thread {
 pub trait AsThread {
     /// Returns the associated [`Thread`].
     fn as_thread(&self) -> Option<&Arc<Thread>>;
+
+    /// Returns the associated [`CurrentThreadRef`] if `self` is the current task.
+    fn as_current_thread(&self) -> Option<CurrentThreadRef>;
 }
 
 impl AsThread for Task {
     fn as_thread(&self) -> Option<&Arc<Thread>> {
         self.data().downcast_ref::<Arc<Thread>>()
+    }
+
+    fn as_current_thread(&self) -> Option<CurrentThreadRef> {
+        None
+    }
+}
+
+impl AsThread for CurrentTask {
+    fn as_thread(&self) -> Option<&Arc<Thread>> {
+        self.deref().as_thread()
+    }
+
+    fn as_current_thread(&self) -> Option<CurrentThreadRef> {
+        self.as_thread().map(CurrentThreadRef)
     }
 }

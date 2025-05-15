@@ -22,8 +22,6 @@ pub fn sys_setpgid(pid: Pid, pgid: Pgid, ctx: &Context) -> Result<SyscallReturn>
     // process ID."
     let pgid = if pgid == 0 { pid } else { pgid };
 
-    debug!("pid = {}, pgid = {}", pid, pgid);
-
     current.move_process_to_group(pid, pgid)?;
 
     Ok(SyscallReturn::Return(0))

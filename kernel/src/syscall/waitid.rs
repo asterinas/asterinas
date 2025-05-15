@@ -25,6 +25,8 @@ pub fn sys_waitid(
             _ => err,
         })?;
 
-    let pid = waited_process.map_or(0, |process| process.pid());
+    let pid = waited_process.map_or(0, |process| {
+        process.pid_in_ns(ctx.process.pid_namespace()).unwrap_or(0)
+    });
     Ok(SyscallReturn::Return(pid as _))
 }
