@@ -158,6 +158,7 @@ mod umask;
 mod umount;
 mod uname;
 mod unlink;
+mod unshare;
 mod utimens;
 mod wait4;
 mod waitid;
@@ -367,10 +368,14 @@ macro_rules! log_syscall_entry {
     ($syscall_name: tt) => {
         if log::log_enabled!(log::Level::Info) {
             let syscall_name_str = stringify!($syscall_name);
-            let pid = $crate::current!().pid();
+            let current = $crate::current!();
+            let pid = current.pid();
             let tid = {
                 use $crate::process::posix_thread::AsPosixThread;
-                $crate::current_thread!().as_posix_thread().unwrap().tid()
+                $crate::current_thread!()
+                    .as_current_posix_thread()
+                    .unwrap()
+                    .tid()
             };
             log::info!(
                 "[pid={}][tid={}][id={}][{}]",

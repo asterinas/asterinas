@@ -8,7 +8,6 @@ use super::{
 };
 use crate::{
     prelude::*,
-    process::posix_thread::thread_table,
     sched::{Nice, RealTimePolicy, SchedAttr, SchedPolicy},
     thread::Tid,
 };
@@ -185,9 +184,14 @@ pub(super) fn access_sched_attr_with<T>(
     match tid {
         0 => f(&ctx.thread.sched_attr()),
         _ if tid > (i32::MAX as u32) => Err(Error::with_message(Errno::EINVAL, "invalid tid")),
-        _ => f(&thread_table::get_thread(tid)
-            .ok_or_else(|| Error::with_message(Errno::ESRCH, "thread does not exist"))?
-            .sched_attr()),
+        _ => {
+            let thread = ctx
+                .process
+                .pid_namespace()
+                .get_thread(tid)
+                .ok_or_else(|| Error::with_message(Errno::ESRCH, "thread does not exist"))?;
+            f(&thread.sched_attr())
+        }
     }
 }
 

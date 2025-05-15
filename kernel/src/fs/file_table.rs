@@ -16,7 +16,7 @@ use crate::{
     process::{
         posix_thread::FileTableRefMut,
         signal::{constants::SIGIO, signals::kernel::KernelSignal, PollAdaptor},
-        Pid, Process,
+        Process,
     },
 };
 
@@ -320,8 +320,8 @@ impl FileTableEntry {
         &self.file
     }
 
-    pub fn owner(&self) -> Option<Pid> {
-        self.owner.as_ref().map(|(pid, _)| *pid)
+    pub fn owner(&self) -> Option<Arc<Process>> {
+        self.owner.as_ref()?.observer().owner.upgrade()
     }
 
     /// Set a process (group) as owner of the file descriptor.
@@ -342,7 +342,7 @@ impl FileTableEntry {
         self.file
             .poll(IoEvents::IN | IoEvents::OUT, Some(poller.as_handle_mut()));
 
-        self.owner = Some((process.pid(), poller));
+        self.owner = Some(poller);
 
         Ok(())
     }
@@ -390,7 +390,7 @@ bitflags! {
     }
 }
 
-type Owner = (Pid, PollAdaptor<OwnerObserver>);
+type Owner = PollAdaptor<OwnerObserver>;
 
 struct OwnerObserver {
     file: Arc<dyn FileLike>,
