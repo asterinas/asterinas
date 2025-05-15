@@ -15,6 +15,15 @@ GREEN='\033[0;32m'
 RED='\033[0;31m'
 NC='\033[0m'
 
+if [ -f /opt/ltp/run_ltp_test.sh ]; then
+    /opt/ltp/run_ltp_test.sh
+    if [ $? -ne 0 ]; then
+        exit 1
+    fi
+else
+    echo "LTP test does not exist, skipping..."
+fi
+
 get_blocklist_subtests(){
     if [ -f $BLOCKLIST_DIR/$1 ]; then
         BLOCK=$(grep -v '^#' $BLOCKLIST_DIR/$1 | tr '\n' ':')

@@ -291,6 +291,40 @@ WORKDIR /root/syscall_test
 RUN export BUILD_DIR=build && \
     make ${BUILD_DIR}/syscall_test_bins
 
+#= Build syscall test of Linux Test Project====================================
+
+FROM build-base AS build-ltp
+
+WORKDIR /root
+RUN apt update && apt-get install -y --no-install-recommends \
+    autoconf \
+    automake \
+    pkg-config
+RUN git clone --single-branch -b 20250130 https://github.com/linux-test-project/ltp.git
+WORKDIR /root/ltp
+RUN \
+    # FIXME: Unlinking a file would cause the mapped memory to become inaccessible
+    # due to the `PageCache` being dropped, which is a bug of Asterinas.
+    sed -i "130d" lib/tst_test.c \
+    # FIXME: `write_kmsg` function requires `/dev/kmsg`, which is not available now.
+    && sed -i "1372,1384d" pan/ltp-pan.c \
+    # FIXME: Error returned by `read` could lead to: `*** buffer overflow detected ***`.
+    && sed -i "1071c if (read(errpipe[0], &errlen, sizeof(errlen)) > 0) {" pan/ltp-pan.c \
+    && make autotools \
+    && ./configure --prefix=/opt/ltp \
+    && make -C testcases/kernel/syscalls \
+    && make -C testcases/lib \
+    && make -C runtest \
+    && make -C pan \
+    && make -C testcases/kernel/syscalls install \
+    && make -C testcases/lib install \
+    && make -C runtest install \
+    && make -C pan install \
+    && install -m 00755 ./runltp /opt/ltp/runltp \
+    && install -m 00444 ./VERSION /opt/ltp/Version \
+    && install -m 00755 ./ver_linux /opt/ltp/ver_linux \
+    && install -m 00755 ./IDcheck.sh /opt/ltp/IDcheck.sh
+
 #= Build busybox ==============================================================
 
 FROM build-base AS build-busybox
@@ -341,6 +375,7 @@ RUN apt update && apt-get install -y --no-install-recommends \
 RUN apt clean && rm -rf /var/lib/apt/lists/*
 
 # Prepare the system call test suite
+COPY --from=build-ltp /opt/ltp /opt/ltp
 COPY --from=syscall_test /root/syscall_test/build/syscall_test_bins /root/syscall_test_bins
 ENV ASTER_PREBUILT_SYSCALL_TEST=/root/syscall_test_bins
 
