@@ -13,14 +13,24 @@ use crate::{
 };
 
 /// Represents the inode at `/proc/[pid]/task`.
-pub struct TaskDirOps(Arc<Process>);
+pub struct TaskDirOps {
+    process: Arc<Process>,
+    pid_ns: Arc<PidNamespace>,
+}
 
 impl TaskDirOps {
-    pub fn new_inode(process_ref: Arc<Process>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        ProcDirBuilder::new(Self(process_ref))
-            .parent(parent)
-            .build()
-            .unwrap()
+    pub fn new_inode(
+        process_ref: Arc<Process>,
+        pid_ns: Arc<PidNamespace>,
+        parent: Weak<dyn Inode>,
+    ) -> Arc<dyn Inode> {
+        ProcDirBuilder::new(Self {
+            process: process_ref,
+            pid_ns,
+        })
+        .parent(parent)
+        .build()
+        .unwrap()
     }
 }
 
@@ -67,11 +77,17 @@ impl DirOps for TaskDirOps {
             return_errno_with_message!(Errno::ENOENT, "Can not parse name to u32 type");
         };
 
-        for task in self.0.tasks().lock().as_slice() {
-            if task.as_posix_thread().unwrap().tid() != tid {
+        for task in self.process.tasks().lock().as_slice() {
+            if task
+                .as_posix_thread()
+                .unwrap()
+                .tid_in_ns(&self.pid_ns)
+                .unwrap()
+                != tid
+            {
                 continue;
             }
-            return Ok(ThreadDirOps::new_inode(self.0.clone(), this_ptr));
+            return Ok(ThreadDirOps::new_inode(self.process.clone(), this_ptr));
         }
         return_errno_with_message!(Errno::ENOENT, "No such thread")
     }
@@ -82,10 +98,16 @@ impl DirOps for TaskDirOps {
             this.downcast_ref::<ProcDir<TaskDirOps>>().unwrap().this()
         };
         let mut cached_children = this.cached_children().write();
-        for task in self.0.tasks().lock().as_slice() {
+        for task in self.process.tasks().lock().as_slice() {
             cached_children.put_entry_if_not_found(
-                &format!("{}", task.as_posix_thread().unwrap().tid()),
-                || ThreadDirOps::new_inode(self.0.clone(), this_ptr.clone()),
+                &format!(
+                    "{}",
+                    task.as_posix_thread()
+                        .unwrap()
+                        .tid_in_ns(&self.pid_ns)
+                        .unwrap()
+                ),
+                || ThreadDirOps::new_inode(self.process.clone(), this_ptr.clone()),
             );
         }
     }

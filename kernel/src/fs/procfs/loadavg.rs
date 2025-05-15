@@ -13,16 +13,19 @@ use crate::{
         utils::Inode,
     },
     prelude::*,
-    process::posix_thread,
+    process::PidNamespace,
     sched::{self, loadavg::get_loadavg},
 };
 
 /// Represents the inode at `/proc/loadavg`.
-pub struct LoadAvgFileOps;
+pub struct LoadAvgFileOps(Arc<PidNamespace>);
 
 impl LoadAvgFileOps {
-    pub fn new_inode(parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        ProcFileBuilder::new(Self).parent(parent).build().unwrap()
+    pub fn new_inode(pid_ns: Arc<PidNamespace>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+        ProcFileBuilder::new(Self(pid_ns))
+            .parent(parent)
+            .build()
+            .unwrap()
     }
 }
 
@@ -38,7 +41,8 @@ impl FileOps for LoadAvgFileOps {
             avg[2],
             nr_running,
             nr_queued,
-            posix_thread::last_tid(),
+            // FIXME: Is it right to use the last allocated ID in the PID namespace?
+            self.0.last_allocated_id(),
         );
 
         Ok(output.into_bytes())

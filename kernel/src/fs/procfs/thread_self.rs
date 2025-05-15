@@ -23,7 +23,7 @@ impl ThreadSelfSymOps {
 impl SymOps for ThreadSelfSymOps {
     fn read_link(&self) -> Result<String> {
         let pid = current!().pid();
-        let tid = current_thread!().as_posix_thread().unwrap().tid();
+        let tid = current_thread!().as_current_posix_thread().unwrap().tid();
         Ok(format!("{}/task/{}", pid, tid))
     }
 }
