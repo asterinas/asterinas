@@ -81,11 +81,12 @@ TARGET_DIR := $(INITRAMFS)/opt/syscall_test
 RUN_BASH := $(CUR_DIR)/run_syscall_test.sh
 BLOCK_LIST := $(CUR_DIR)/blocklists
 EXFAT_BLOCK_LIST := $(CUR_DIR)/blocklists.exfat
+LTP_DIR := $(INITRAMFS)/opt/ltp
 
 .PHONY: all
 all: $(TESTS)
 
-$(TESTS): $(BIN_DIR) $(TARGET_DIR)
+$(TESTS): $(BIN_DIR) $(TARGET_DIR) $(LTP_DIR)
 	@cp -f $</$@ $(TARGET_DIR)/tests
 
 ifndef ASTER_PREBUILT_SYSCALL_TEST
@@ -113,6 +114,13 @@ $(TARGET_DIR): $(RUN_BASH) $(BLOCK_LIST) $(EXFAT_BLOCK_LIST)
 	@cp -rf $(EXFAT_BLOCK_LIST) $@
 	@# Copy bash script
 	@cp -f $(RUN_BASH) $@
+
+$(LTP_DIR):
+	@if [ -d /opt/ltp ]; then \
+		$(MAKE) --no-print-directory -C ltp; \
+	else \
+		echo "LTP test does not exist, skipping..."; \
+	fi
 
 .PHONY: clean
 clean:
