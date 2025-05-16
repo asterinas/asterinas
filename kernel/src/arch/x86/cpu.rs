@@ -476,6 +476,10 @@ impl CpuInfo {
         if feature_info.has_pbe() {
             flags.push("pbe");
         }
+        if feature_info.has_pcid() {
+            flags.push("pcid");
+        }
+
         flags.join(" ")
     }
 
