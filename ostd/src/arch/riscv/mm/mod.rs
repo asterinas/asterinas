@@ -231,7 +231,9 @@ pub(crate) fn __memcpy_fallible(dst: *mut u8, src: *const u8, size: usize) -> us
     unsafe {
         riscv::register::sstatus::set_sum();
     }
-    unsafe { core::ptr::copy(src, dst, size) };
+    unsafe { 
+        core::ptr::copy(src, dst, size) 
+    };
     0
 }
 
