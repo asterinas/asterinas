@@ -13,7 +13,7 @@ use x86_64::registers::rflags::{self, RFlags};
 use super::iommu::{alloc_irt_entry, has_interrupt_remapping, IrtEntryHandle};
 use crate::{
     cpu::CpuId,
-    sync::{LocalIrqDisabled, Mutex, PreemptDisabled, RwLock, RwLockReadGuard, SpinLock},
+    sync::{Mutex, PreemptDisabled, RwLock, RwLockReadGuard, SpinLock},
     trap::TrapFrame,
 };
 
@@ -88,7 +88,7 @@ impl Debug for CallbackElement {
 pub(crate) struct IrqLine {
     pub(crate) irq_num: u8,
     pub(crate) callback_list: RwLock<Vec<CallbackElement>>,
-    bind_remapping_entry: Once<Arc<SpinLock<IrtEntryHandle, LocalIrqDisabled>>>,
+    bind_remapping_entry: Once<IrtEntryHandle>,
 }
 
 impl IrqLine {
@@ -110,7 +110,7 @@ impl IrqLine {
         irq
     }
 
-    pub fn bind_remapping_entry(&self) -> Option<&Arc<SpinLock<IrtEntryHandle, LocalIrqDisabled>>> {
+    pub fn bind_remapping_entry(&self) -> Option<&IrtEntryHandle> {
         self.bind_remapping_entry.get()
     }
 
