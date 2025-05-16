@@ -8,6 +8,7 @@ use crate::{
         utils::Inode,
     },
     prelude::*,
+    process::PidNamespace,
     Process,
 };
 
@@ -68,30 +69,40 @@ use crate::{
 /// - env_start        : Start address of environment variables.
 /// - env_end          : End address of environment variables.
 /// - exit_code        : Process exit code as returned by waitpid(2).
-pub struct StatFileOps(Arc<Process>);
+pub struct StatFileOps {
+    process: Arc<Process>,
+    pid_ns: Arc<PidNamespace>,
+}
 
 impl StatFileOps {
-    pub fn new_inode(process_ref: Arc<Process>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
-        ProcFileBuilder::new(Self(process_ref))
-            .parent(parent)
-            .build()
-            .unwrap()
+    pub fn new_inode(
+        process_ref: Arc<Process>,
+        pid_ns: Arc<PidNamespace>,
+        parent: Weak<dyn Inode>,
+    ) -> Arc<dyn Inode> {
+        ProcFileBuilder::new(Self {
+            process: process_ref,
+            pid_ns,
+        })
+        .parent(parent)
+        .build()
+        .unwrap()
     }
 }
 
 impl FileOps for StatFileOps {
     fn data(&self) -> Result<Vec<u8>> {
-        let process = &self.0;
+        let process = &self.process;
 
-        let pid = process.pid();
+        let pid = process.pid_in_ns(&self.pid_ns).unwrap();
         let comm = process.executable_path();
         let state = if process.status().is_zombie() {
             'Z'
         } else {
             'R'
         };
-        let ppid = process.parent().pid();
-        let pgrp = process.pgid();
+        let ppid = process.parent_pid_in_ns(&self.pid_ns).unwrap_or(0);
+        let pgrp = process.pgid_in_ns(&self.pid_ns).unwrap_or(0);
 
         let mut stat_output = String::new();
         writeln!(

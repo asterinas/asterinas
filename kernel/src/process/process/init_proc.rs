@@ -12,8 +12,8 @@ use crate::{
     },
     prelude::*,
     process::{
-        posix_thread::{allocate_posix_tid, PosixThreadBuilder, ThreadName},
-        process_table,
+        pid_namespace::{get_init_pid_namespace, UniqueIdArray, TASK_LIST_LOCK},
+        posix_thread::{PosixThreadBuilder, ThreadName},
         process_vm::ProcessVm,
         rlimit::ResourceLimits,
         signal::sig_disposition::SigDispositions,
@@ -49,7 +49,9 @@ fn create_init_process(
     argv: Vec<CString>,
     envp: Vec<CString>,
 ) -> Result<Arc<Process>> {
-    let pid = allocate_posix_tid();
+    let pid_ns = get_init_pid_namespace();
+    let unique_ids = pid_ns.allocate_unique_ids();
+    let pid = pid_ns.get_current_id(&unique_ids).unwrap();
     let parent = Weak::new();
     let process_vm = ProcessVm::alloc();
     let resource_limits = ResourceLimits::default();
@@ -64,6 +66,8 @@ fn create_init_process(
         resource_limits,
         nice,
         sig_dispositions,
+        unique_ids.clone(),
+        pid_ns,
     );
 
     let init_task = create_init_task(
@@ -73,6 +77,7 @@ fn create_init_process(
         Arc::downgrade(&init_proc),
         argv,
         envp,
+        unique_ids,
     )?;
     init_proc.tasks().lock().insert(init_task).unwrap();
 
@@ -80,20 +85,22 @@ fn create_init_process(
 }
 
 fn set_session_and_group(process: &Arc<Process>) {
-    // Locking order: session table -> group table -> process table -> process group
-    let mut session_table_mut = process_table::session_table_mut();
-    let mut group_table_mut = process_table::group_table_mut();
-    let mut process_table_mut = process_table::process_table_mut();
+    // Lock order: group of process -> task list
+    let mut process_group_mut = process.process_group.lock();
+
+    let unique_ids_map = process
+        .pid_namespace()
+        .get_map_by_ids(&process.unique_ids)
+        .unwrap();
+    let mut task_list_guard = TASK_LIST_LOCK.lock();
+    let mut map_guard = unique_ids_map.with_task_list_guard(&mut task_list_guard);
 
     // Create a new process group and session for the process
-    process.set_new_session(
-        &mut process.process_group.lock(),
-        &mut session_table_mut,
-        &mut group_table_mut,
-    );
+    process.set_new_session(&mut process_group_mut, &mut map_guard);
 
-    // Add the new process to the global table
-    process_table_mut.insert(process.pid(), process.clone());
+    // Attach the new process and its main thread to the PID namespaces.
+    map_guard.attach_thread(process.main_thread());
+    map_guard.attach_process(process.clone());
 }
 
 /// Creates the init task from the given executable file.
@@ -104,6 +111,7 @@ fn create_init_task(
     process: Weak<Process>,
     argv: Vec<CString>,
     envp: Vec<CString>,
+    unique_ids: UniqueIdArray,
 ) -> Result<Arc<Task>> {
     let credentials = Credentials::new_root();
     let fs = ThreadFsInfo::default();
@@ -117,11 +125,14 @@ fn create_init_task(
         program_to_load.load_to_vm(process_vm, &fs_resolver)?
     };
 
-    let mut user_ctx = UserContext::default();
-    user_ctx.set_instruction_pointer(elf_load_info.entry_point() as _);
-    user_ctx.set_stack_pointer(elf_load_info.user_stack_top() as _);
+    let user_ctx = {
+        let mut ctx = UserContext::default();
+        ctx.set_instruction_pointer(elf_load_info.entry_point() as _);
+        ctx.set_stack_pointer(elf_load_info.user_stack_top() as _);
+        ctx
+    };
     let thread_name = Some(ThreadName::new_from_executable_path(executable_path)?);
-    let thread_builder = PosixThreadBuilder::new(tid, Arc::new(user_ctx), credentials)
+    let thread_builder = PosixThreadBuilder::new(tid, Arc::new(user_ctx), credentials, unique_ids)
         .thread_name(thread_name)
         .process(process)
         .fs(Arc::new(fs));

@@ -31,7 +31,10 @@ pub fn sys_wait4(
         return Ok(SyscallReturn::Return(0 as _));
     };
 
-    let (return_pid, exit_code) = (process.pid(), process.status().exit_code());
+    let (return_pid, exit_code) = (
+        process.pid_in_ns(ctx.process.pid_namespace()).unwrap(),
+        process.status().exit_code(),
+    );
     if exit_status_ptr != 0 {
         ctx.user_space()
             .write_val(exit_status_ptr as _, &exit_code)?;

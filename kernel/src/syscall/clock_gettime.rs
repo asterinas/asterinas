@@ -7,10 +7,7 @@ use int_to_c_enum::TryFromInt;
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::{
-        posix_thread::{thread_table, AsPosixThread},
-        process_table,
-    },
+    process::posix_thread::AsPosixThread,
     time::{
         clockid_t,
         clocks::{
@@ -128,7 +125,10 @@ pub fn read_clock(clockid: clockid_t, ctx: &Context) -> Result<Duration> {
         let dynamic_clockid_info = DynamicClockIdInfo::try_from(clockid)?;
         match dynamic_clockid_info {
             DynamicClockIdInfo::Pid(pid, clock_type) => {
-                let process = process_table::get_process(pid)
+                let process = ctx
+                    .process
+                    .pid_namespace()
+                    .get_process(pid)
                     .ok_or_else(|| crate::Error::with_message(Errno::EINVAL, "invalid clock ID"))?;
                 match clock_type {
                     DynamicClockType::Profiling => Ok(process.prof_clock().read_time()),
@@ -138,7 +138,10 @@ pub fn read_clock(clockid: clockid_t, ctx: &Context) -> Result<Duration> {
                 }
             }
             DynamicClockIdInfo::Tid(tid, clock_type) => {
-                let thread = thread_table::get_thread(tid)
+                let thread = ctx
+                    .process
+                    .pid_namespace()
+                    .get_thread(tid)
                     .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid clock ID"))?;
                 let posix_thread = thread.as_posix_thread().unwrap();
                 match clock_type {

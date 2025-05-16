@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{Pgid, Process, ProcessGroup, Sid, Terminal};
-use crate::prelude::*;
+use keyable_arc::KeyableArc;
+use ostd::sync::PreemptDisabled;
+
+use super::{Process, ProcessGroup, Sid, Terminal};
+use crate::{
+    prelude::*,
+    process::{pid_namespace::UniqueIdArray, PidNamespace},
+};
 
 /// A session.
 ///
@@ -15,12 +21,12 @@ use crate::prelude::*;
 /// **Controlling terminal**: A terminal can be used to manage all processes in the session. The
 /// controlling terminal is established when the session leader first opens a terminal.
 pub struct Session {
-    sid: Sid,
-    inner: Mutex<Inner>,
+    unique_ids: UniqueIdArray,
+    inner: SpinLock<Inner>,
 }
 
 struct Inner {
-    process_groups: BTreeMap<Pgid, Arc<ProcessGroup>>,
+    process_groups: BTreeSet<KeyableArc<ProcessGroup>>,
     terminal: Option<Arc<dyn Terminal>>,
 }
 
@@ -33,17 +39,16 @@ impl Session {
     /// The caller needs to ensure that the process does not belong to other process group or other
     /// session.
     pub(in crate::process) fn new_pair(process: Arc<Process>) -> (Arc<Self>, Arc<ProcessGroup>) {
+        let unique_ids = process.unique_ids.clone();
         let mut process_group = None;
 
         let session = Arc::new_cyclic(|weak_session| {
             let group = ProcessGroup::new(process, weak_session.clone());
             process_group = Some(group.clone());
 
-            let pgid = group.pgid();
-
             let inner = {
-                let mut process_groups = BTreeMap::new();
-                process_groups.insert(pgid, group);
+                let mut process_groups = BTreeSet::new();
+                process_groups.insert(group.into());
                 Inner {
                     process_groups,
                     terminal: None,
@@ -51,22 +56,30 @@ impl Session {
             };
 
             Self {
-                sid: pgid,
-                inner: Mutex::new(inner),
+                unique_ids,
+                inner: SpinLock::new(inner),
             }
         });
 
         (session, process_group.unwrap())
     }
 
-    /// Returns the session identifier.
-    pub fn sid(&self) -> Sid {
-        self.sid
+    /// Returns the session identifier in the given PID namespace.
+    ///
+    /// If the session is not visible in the namespace, this method will return `None`.
+    pub fn sid_in_ns(&self, pid_ns: &Arc<PidNamespace>) -> Option<Sid> {
+        pid_ns.get_current_id(&self.unique_ids)
+    }
+
+    /// Returns the session identifier in all PID namespaces.
+    pub fn unique_ids(&self) -> &UniqueIdArray {
+        &self.unique_ids
     }
 
     /// Returns whether the process is the session leader.
     pub(super) fn is_leader(&self, process: &Process) -> bool {
-        self.sid == process.pid()
+        self.sid_in_ns(&process.pid_namespace)
+            .is_some_and(|sid| sid == process.pid)
     }
 
     /// Acquires a lock on the session.
@@ -83,7 +96,7 @@ impl Session {
 #[clippy::has_significant_drop]
 #[must_use]
 pub struct SessionGuard<'a> {
-    inner: MutexGuard<'a, Inner>,
+    inner: SpinLockGuard<'a, Inner, PreemptDisabled>,
 }
 
 impl SessionGuard<'_> {
@@ -105,19 +118,18 @@ impl SessionGuard<'_> {
     /// The caller needs to ensure that the process group didn't previously belong to the session,
     /// but now does.
     pub(in crate::process) fn insert_process_group(&mut self, process_group: Arc<ProcessGroup>) {
-        let old_process_group = self
-            .inner
-            .process_groups
-            .insert(process_group.pgid(), process_group);
-        debug_assert!(old_process_group.is_none());
+        let newly_added = self.inner.process_groups.insert(process_group.into());
+        debug_assert!(newly_added);
     }
 
     /// Removes a process group from the session.
     ///
     /// The caller needs to ensure that the process group previously belonged to the session, but
     /// now doesn't.
-    pub(in crate::process) fn remove_process_group(&mut self, pgid: &Pgid) {
-        self.inner.process_groups.remove(pgid);
+    pub(in crate::process) fn remove_process_group(&mut self, group: &Arc<ProcessGroup>) {
+        let key = KeyableArc::from(group.clone());
+        let is_removed = self.inner.process_groups.remove(&key);
+        debug_assert!(is_removed);
     }
 
     /// Returns whether the session is empty.

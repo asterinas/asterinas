@@ -3,14 +3,15 @@
 use ostd::task::{CurrentTask, Task};
 
 use super::{
-    futex::futex_wake, robust_list::wake_robust_futex, thread_table, AsPosixThread, AsThreadLocal,
-    ThreadLocal,
+    futex::futex_wake, robust_list::wake_robust_futex, AsPosixThread, AsThreadLocal, ThreadLocal,
 };
 use crate::{
     current_userspace,
     prelude::*,
     process::{
         exit::exit_process,
+        pid_namespace::{dealloc_unique_ids, TASK_LIST_LOCK},
+        process::AsCurrentProcess,
         signal::{constants::SIGKILL, signals::kernel::KernelSignal},
         task_set::TaskSet,
         TermStatus,
@@ -39,10 +40,10 @@ pub fn do_exit_group(term_status: TermStatus) {
 /// Exits the current POSIX thread or process.
 fn exit_internal(term_status: TermStatus, is_exiting_group: bool) {
     let current_task = Task::current().unwrap();
-    let current_thread = current_task.as_thread().unwrap();
-    let posix_thread = current_thread.as_posix_thread().unwrap();
+    let current_thread = current_task.as_current_thread().unwrap();
+    let posix_thread = current_thread.as_current_posix_thread().unwrap();
     let thread_local = current_task.as_thread_local().unwrap();
-    let posix_process = posix_thread.process();
+    let posix_process = posix_thread.as_current_process();
 
     let is_last_thread = {
         let mut tasks = posix_process.tasks().lock();
@@ -73,10 +74,18 @@ fn exit_internal(term_status: TermStatus, is_exiting_group: bool) {
 
     wake_robust_list(thread_local, posix_thread.tid());
 
-    // According to Linux behavior, the main thread shouldn't be removed from the table until the
+    // According to Linux behavior, the main thread shouldn't be detached until the
     // process is reaped by its parent.
     if posix_thread.tid() != posix_process.pid() {
-        thread_table::remove_thread(posix_thread.tid());
+        // Detach the thread from PID namespaces.
+        posix_process
+            .pid_namespace()
+            .get_map_by_ids(&posix_thread.unique_ids)
+            .unwrap()
+            .with_task_list_guard(&mut TASK_LIST_LOCK.lock())
+            .detach_thread();
+
+        dealloc_unique_ids(&posix_thread.unique_ids);
     }
 
     // Drop fields in `PosixThread`.

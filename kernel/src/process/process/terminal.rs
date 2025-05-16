@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::Arc;
-
-use super::{session::SessionGuard, JobControl, Pgid, Process, Session, Sid};
+use super::{
+    session::SessionGuard, CurrentProcess, JobControl, Pgid, Process, ProcessGroup, Session, Sid,
+};
 use crate::{
     current_userspace,
     fs::{inode_handle::FileIo, utils::IoctlCmd},
-    prelude::{current, return_errno_with_message, warn, Errno, Error, Result},
-    process::process_table,
+    prelude::{current, return_errno_with_message, warn, Errno, Error, Result, *},
+    process::pid_namespace::TASK_LIST_LOCK,
 };
 
 /// A terminal.
@@ -32,16 +32,19 @@ impl dyn Terminal {
                 self.set_foreground(pgid, &current!())
             }
             IoctlCmd::TIOCGPGRP => {
+                let current = current!();
+
                 let operate = || {
-                    self.job_control()
-                        .foreground()
-                        .map_or(0, |foreground| foreground.pgid())
+                    self.job_control().foreground().map_or(0, |foreground| {
+                        foreground.pgid_in_ns(&current.pid_namespace).unwrap_or(0)
+                    })
                 };
 
                 let pgid = if via_master {
                     operate()
                 } else {
-                    self.is_control_and(&current!(), |_, _| Ok(operate()))?
+                    let mut process_group_mut = current.process_group.lock();
+                    self.is_control_and(&mut process_group_mut, |_, _| Ok(operate()))?
                 };
 
                 current_userspace!().write_val::<Pgid>(arg, &pgid)
@@ -75,9 +78,14 @@ impl dyn Terminal {
                                 "the terminal is not a controlling termainal of any session",
                             )
                         })?
-                        .sid()
+                        .sid_in_ns(current!().pid_namespace())
+                        .unwrap_or(0)
                 } else {
-                    self.is_control_and(&current!(), |session, _| Ok(session.sid()))?
+                    let current = current!();
+                    let mut process_group_mut = current.process_group.lock();
+                    self.is_control_and(&mut process_group_mut, |session, _| {
+                        Ok(session.sid_in_ns(&current.pid_namespace).unwrap_or(0))
+                    })?
                 };
 
                 current_userspace!().write_val::<Sid>(arg, &sid)
@@ -126,7 +134,8 @@ impl dyn Terminal {
     /// Unsets the terminal from the controlling terminal of the process.
     fn unset_control(self: Arc<Self>, process: &Process) -> Result<()> {
         // Lock order: group of process -> session inner -> job control
-        self.is_control_and(process, |session, session_inner| {
+        let mut process_group_mut = process.process_group.lock();
+        self.is_control_and(&mut process_group_mut, |session, session_inner| {
             if !session.is_leader(process) {
                 // TODO: The Linux kernel keeps track of the controlling terminal of each process
                 // in `current->signal->tty`. So even if we're not the session leader, this may
@@ -153,12 +162,21 @@ impl dyn Terminal {
     }
 
     /// Sets the foreground process group of the terminal.
-    fn set_foreground(self: Arc<Self>, pgid: Pgid, process: &Process) -> Result<()> {
-        // Lock order: group table -> group of process -> session inner -> job control
-        let group_table_mut = process_table::group_table_mut();
+    fn set_foreground(self: Arc<Self>, pgid: Pgid, current: &CurrentProcess) -> Result<()> {
+        // Lock order: group of process -> task list -> session inner -> job control
+        let mut process_group_mut = current.process_group.lock();
 
-        self.is_control_and(process, |session, _| {
-            let Some(process_group) = group_table_mut.get(&pgid) else {
+        let unique_ids_map = current.pid_namespace().get_map_by_id(pgid);
+        let mut task_list_guard = TASK_LIST_LOCK.lock();
+        let map_guard = unique_ids_map
+            .as_ref()
+            .map(|unique_ids_map| unique_ids_map.with_task_list_guard(&mut task_list_guard));
+
+        self.is_control_and(&mut process_group_mut, |session, _| {
+            let Some(process_group) = map_guard
+                .as_ref()
+                .and_then(|map_guard| map_guard.attached_process_group())
+            else {
                 return_errno_with_message!(
                     Errno::ESRCH,
                     "the process group to be foreground does not exist"
@@ -172,7 +190,7 @@ impl dyn Terminal {
                 );
             }
 
-            self.job_control().set_foreground(process_group);
+            self.job_control().set_foreground(&process_group);
 
             Ok(())
         })
@@ -182,12 +200,14 @@ impl dyn Terminal {
     ///
     /// Note that this requires that the terminal is the controlling terminal of the session, but
     /// does _not_ require that the process is a session leader.
-    fn is_control_and<F, R>(self: &Arc<Self>, process: &Process, op: F) -> Result<R>
+    fn is_control_and<F, R>(
+        self: &Arc<Self>,
+        process_group_mut: &mut Weak<ProcessGroup>,
+        op: F,
+    ) -> Result<R>
     where
         F: FnOnce(&Arc<Session>, &mut SessionGuard) -> Result<R>,
     {
-        let process_group_mut = process.process_group.lock();
-
         let process_group = process_group_mut.upgrade().unwrap();
         let session = process_group.session().unwrap();
 
