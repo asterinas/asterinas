@@ -47,7 +47,7 @@ pub fn with_borrow<R>(f: impl FnOnce(&(dyn Apic + 'static)) -> R) -> R {
 
     // SAFETY: Preemption is disabled, so we can safely access the CPU-local variable.
     let apic_ptr = unsafe {
-        let ptr = APIC_INSTANCE.as_ptr();
+        let ptr = APIC_INSTANCE.storage.as_ptr();
         (*ptr).get()
     };
 

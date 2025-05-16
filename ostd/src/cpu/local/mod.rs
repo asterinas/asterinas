@@ -2,8 +2,10 @@
 
 //! CPU local storage.
 //!
-//! This module provides a mechanism to define CPU-local objects, by the macro
-//! [`crate::cpu_local!`].
+//! This module provides a mechanism to define CPU-local objects. Users can
+//! define a static CPU-local object by the macro [`crate::cpu_local!`], or
+//! allocate a dynamically-allocated CPU-local object with the function
+//! [`osdk_heap_allocator::alloc_cpu_local`].
 //!
 //! Such a mechanism exploits the fact that constant values of non-[`Copy`]
 //! types can be bitwise copied. For example, a [`Option<T>`] object, though
@@ -15,34 +17,50 @@
 //!
 //! # Implementation
 //!
-//! These APIs are implemented by placing the CPU-local objects in a special
-//! section `.cpu_local`. The bootstrap processor (BSP) uses the objects linked
-//! in this section, and these objects are copied to dynamically allocated
-//! local storage of each application processors (AP) during the initialization
-//! process.
+//! These APIs are implemented by the methods as follows:
+//! 1. For static CPU-local objects, we place them in a special section `.cpu_local`.
+//!    The bootstrap processor (BSP) uses the objects linked in this section,
+//!    and these objects are copied to dynamically allocated local storage of
+//!    each application processors (AP) during the initialization process.
+//! 2. For dynamically-allocated CPU-local objects, we prepare a fixed-size
+//!    chunk for each CPU. All the chunks are laid out contiguously in memory
+//!    in the order of the CPU IDs. Each CPU's local objects are placed at fixed
+//!    offsets within its corresponding chunk.
 
 // This module also, provide CPU-local cell objects that have inner mutability.
 //
-// The difference between CPU-local objects (defined by [`crate::cpu_local!`])
+// The difference between static CPU-local objects (defined by [`crate::cpu_local!`])
 // and CPU-local cell objects (defined by [`crate::cpu_local_cell!`]) is that
 // the CPU-local objects can be shared across CPUs. While through a CPU-local
 // cell object you can only access the value on the current CPU, therefore
 // enabling inner mutability without locks.
 
 mod cell;
-mod cpu_local;
+mod dyn_cpu_local;
+mod static_cpu_local;
 
 pub(crate) mod single_instr;
 
-use core::alloc::Layout;
+use core::{alloc::Layout, marker::PhantomData, ops::Deref};
 
 use align_ext::AlignExt;
 pub use cell::CpuLocalCell;
-pub use cpu_local::{CpuLocal, CpuLocalDerefGuard};
+pub use dyn_cpu_local::CpuLocalAllocator;
+use dyn_cpu_local::DynamicStorage;
 use spin::Once;
+use static_cpu_local::StaticStorage;
 
 use super::CpuId;
-use crate::mm::{frame::allocator, paddr_to_vaddr, Paddr, PAGE_SIZE};
+use crate::{
+    mm::{frame::allocator, paddr_to_vaddr, Paddr, PAGE_SIZE},
+    trap::DisabledLocalIrqGuard,
+};
+
+/// Dynamically-allocated Cpu-Local objects.
+pub type DynamicCpuLocal<T> = CpuLocal<T, DynamicStorage<T>>;
+
+/// Static Cpu-Local objects.
+pub type StaticCpuLocal<T> = CpuLocal<T, static_cpu_local::StaticStorage<T>>;
 
 // These symbols are provided by the linker script.
 extern "C" {
@@ -50,10 +68,112 @@ extern "C" {
     fn __cpu_local_end();
 }
 
-/// The CPU-local areas for APs.
+/// A trait to abstract any type that can be used
+/// as a slot for a CPU-local variable of type `T`.
+///
+/// Each slot provides the memory space for
+/// storing `num_cpus` instances of type `T`.
+///
+/// # Safety
+///
+/// The implementor must ensure that the returned pointer refers
+/// to the variable on the correct CPU.
+pub unsafe trait AnyStorage<T> {
+    /// Gets the pointer for the object on the current CPU.
+    fn get_ptr_on_current(&self, guard: &DisabledLocalIrqGuard) -> *const T;
+
+    /// Gets the pointer for the object on a target CPU.
+    fn get_ptr_on_target(&self, cpu: CpuId) -> *const T;
+}
+
+/// A CPU-local variable for type `T`, backed by a storage of type `S`.
+///
+/// CPU-local objects are instantiated once per CPU core. They can be shared to
+/// other cores. In the context of a preemptible kernel task, when holding the
+/// reference to the inner object, the object is always the one in the original
+/// core (when the reference is created), no matter which core the code is
+/// currently running on.
+pub struct CpuLocal<T, S: AnyStorage<T>> {
+    pub(crate) storage: S,
+    phantom: PhantomData<T>,
+}
+
+impl<T: 'static, S: AnyStorage<T>> CpuLocal<T, S> {
+    /// Gets access to the underlying value on the current CPU with a
+    /// provided IRQ guard.
+    ///
+    /// By this method, you can borrow a reference to the underlying value
+    /// even if `T` is not `Sync`. Because that it is per-CPU and IRQs are
+    /// disabled, no other running tasks can access it.
+    pub fn get_with<'a>(
+        &'a self,
+        guard: &'a DisabledLocalIrqGuard,
+    ) -> CpuLocalDerefGuard<'a, T, S> {
+        CpuLocalDerefGuard {
+            cpu_local: self,
+            guard,
+        }
+    }
+}
+
+impl<T: 'static + Sync, S: AnyStorage<T>> CpuLocal<T, S> {
+    /// Gets access to the CPU-local value on a specific CPU.
+    ///
+    /// This allows the caller to access CPU-local data from a remote CPU,
+    /// so the data type must be `Sync`.
+    pub fn get_on_cpu(&self, target_cpu_id: CpuId) -> &T {
+        let ptr = self.storage.get_ptr_on_target(target_cpu_id);
+        // SAFETY: `ptr` represents CPU-local data on a remote CPU. It
+        // contains valid data, the type is `Sync`, and no one will mutably
+        // borrow it, so creating an immutable borrow here is valid.
+        unsafe { &*ptr }
+    }
+}
+
+/// A guard for accessing the CPU-local object.
+///
+/// It ensures that the CPU-local object is accessed with IRQs disabled.
+/// It is created by [`CpuLocal::get_with`].
+#[must_use]
+pub struct CpuLocalDerefGuard<'a, T: 'static, S: AnyStorage<T>> {
+    cpu_local: &'a CpuLocal<T, S>,
+    guard: &'a DisabledLocalIrqGuard,
+}
+
+impl<'a, T: 'static, S: AnyStorage<T>> Deref for CpuLocalDerefGuard<'a, T, S> {
+    type Target = T;
+
+    fn deref(&self) -> &'a Self::Target {
+        is_used::debug_set_true();
+
+        let ptr = self.cpu_local.storage.get_ptr_on_current(self.guard);
+        // SAFETY: it should be properly initialized before accesses.
+        // And we do not create a mutable reference over it. The IRQs
+        // are disabled so it can only be referenced from this task.
+        unsafe { &*ptr }
+    }
+}
+
+// SAFETY: At any given time, only one task can access the inner value `T` of a
+// CPU-local variable if `T` is not `Sync`. We guarantee it by disabling the
+// reference to the inner value, or turning off preemptions when creating
+// the reference.
+unsafe impl<T: 'static, S: AnyStorage<T>> Sync for CpuLocal<T, S> {}
+unsafe impl<T: 'static> Send for CpuLocal<T, DynamicStorage<T>> {}
+
+// Prevent valid instances of `CpuLocal` from being copied to any memory areas
+// outside the `.cpu_local` section or the `DynCpuLocalChunk`s.
+impl<T: 'static, S: AnyStorage<T>> !Copy for CpuLocal<T, S> {}
+impl<T: 'static, S: AnyStorage<T>> !Clone for CpuLocal<T, S> {}
+
+// In general, it does not make any sense to send instances of static `CpuLocal`
+// to other tasks as they should live on other CPUs to make sending useful.
+impl<T: 'static> !Send for CpuLocal<T, StaticStorage<T>> {}
+
+/// The static CPU-local areas for APs.
 static CPU_LOCAL_STORAGES: Once<&'static [Paddr]> = Once::new();
 
-/// Copies the CPU-local data on the bootstrap processor (BSP)
+/// Copies the static CPU-local data on the bootstrap processor (BSP)
 /// for application processors (APs).
 ///
 /// # Safety
@@ -123,7 +243,7 @@ pub(crate) unsafe fn copy_bsp_for_ap(num_cpus: usize) {
     CPU_LOCAL_STORAGES.call_once(|| res);
 }
 
-/// Gets the pointer to the CPU-local storage for the given AP.
+/// Gets the pointer to the static CPU-local storage for the given AP.
 ///
 /// # Panics
 ///
@@ -148,7 +268,7 @@ pub(crate) fn get_ap(cpu_id: CpuId) -> Paddr {
 }
 
 mod is_used {
-    //! This module tracks whether any CPU-local variables are used.
+    //! This module tracks whether any static CPU-local variables are used.
     //!
     //! [`copy_bsp_for_ap`] copies the CPU local data from the BSP
     //! to the APs, so it requires as a safety condition that the

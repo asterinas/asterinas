@@ -738,7 +738,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
         None
     }
 
-    /// Copies the mapping from the given cursor to the current cursor.
+    /// Copies the mapping from the given cursor to the current cursor,
+    /// and returns the num of pages mapped by the current cursor.
     ///
     /// All the mappings in the current cursor's range must be empty. The
     /// function allows the source cursor to operate on the mapping before
@@ -770,13 +771,13 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
         src: &mut Self,
         len: usize,
         op: &mut impl FnMut(&mut PageProperty),
-    ) {
+    ) -> usize {
         assert!(len % page_size::<C>(1) == 0);
         let this_end = self.0.va + len;
         assert!(this_end <= self.0.barrier_va.end);
         let src_end = src.0.va + len;
         assert!(src_end <= src.0.barrier_va.end);
-
+        let mut num_mapped: usize = 0;
         while self.0.va < this_end && src.0.va < src_end {
             let src_va = src.0.va;
             let mut src_entry = src.0.cur_entry();
@@ -816,8 +817,11 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> CursorM
                     // This assertion is to ensure that they move by the same length.
                     debug_assert_eq!(mapped_page_size, page_size::<C>(src.0.level));
                     src.0.move_forward();
+
+                    num_mapped += 1;
                 }
             }
         }
+        num_mapped
     }
 }

@@ -337,7 +337,8 @@ impl CursorMut<'_, '_> {
         }
     }
 
-    /// Clear the mapping starting from the current slot.
+    /// Clears the mapping starting from the current slot,
+    /// and returns the number of unmapped pages.
     ///
     /// This method will bring the cursor forward by `len` bytes in the virtual
     /// address space after the modification.
@@ -353,16 +354,17 @@ impl CursorMut<'_, '_> {
     /// # Panics
     ///
     /// This method will panic if `len` is not page-aligned.
-    pub fn unmap(&mut self, len: usize) {
+    pub fn unmap(&mut self, len: usize) -> usize {
         assert!(len % super::PAGE_SIZE == 0);
         let end_va = self.virt_addr() + len;
         let tlb_prefer_flush_all = len > FLUSH_ALL_RANGE_THRESHOLD;
-
+        let mut num_unmapped: usize = 0;
         loop {
             // SAFETY: It is safe to un-map memory in the userspace.
             let result = unsafe { self.pt_cursor.take_next(end_va - self.virt_addr()) };
             match result {
                 PageTableItem::Mapped { va, page, .. } => {
+                    num_unmapped += 1;
                     if !self.flusher.need_remote_flush() && tlb_prefer_flush_all {
                         // Only on single-CPU cases we can drop the page immediately before flushing.
                         drop(page);
@@ -385,6 +387,7 @@ impl CursorMut<'_, '_> {
         }
 
         self.flusher.dispatch_tlb_flush();
+        num_unmapped
     }
 
     /// Applies the operation to the next slot of mapping within the range.
@@ -445,7 +448,7 @@ impl CursorMut<'_, '_> {
         src: &mut Self,
         len: usize,
         op: &mut impl FnMut(&mut PageProperty),
-    ) {
+    ) -> usize {
         // SAFETY: Operations on user memory spaces are safe if it doesn't
         // involve dropping any pages.
         unsafe { self.pt_cursor.copy_from(&mut src.pt_cursor, len, op) }
