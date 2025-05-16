@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::{
-    sync::non_null::NonNullPtr,
-    task::{atomic_mode::AsAtomicModeGuard, DisabledPreemptGuard},
-};
+use ostd::sync::non_null::NonNullPtr;
 
 use crate::{cursor::Cursor, mark::NoneMark};
 
@@ -13,23 +10,21 @@ use crate::{cursor::Cursor, mark::NoneMark};
 ///
 /// [`XArray`]: super::XArray
 /// [`XArray::range`]: super::XArray::range
-pub struct Range<'a, P, M = NoneMark, G = DisabledPreemptGuard>
+pub struct Range<'a, P, M = NoneMark>
 where
     P: NonNullPtr + Send + Sync,
 {
-    cursor: Cursor<'a, P, M, G>,
+    cursor: Cursor<'a, P, M>,
     end: u64,
 }
 
-impl<'a, P: NonNullPtr + Send + Sync, M, G: AsAtomicModeGuard> Range<'a, P, M, G> {
-    pub(super) fn new(cursor: Cursor<'a, P, M, G>, end: u64) -> Self {
+impl<'a, P: NonNullPtr + Send + Sync, M> Range<'a, P, M> {
+    pub(super) fn new(cursor: Cursor<'a, P, M>, end: u64) -> Self {
         Range { cursor, end }
     }
 }
 
-impl<'a, P: NonNullPtr + Send + Sync, M, G: AsAtomicModeGuard> core::iter::Iterator
-    for Range<'a, P, M, G>
-{
+impl<'a, P: NonNullPtr + Send + Sync, M> core::iter::Iterator for Range<'a, P, M> {
     type Item = (u64, P::Ref<'a>);
 
     fn next(&mut self) -> Option<Self::Item> {

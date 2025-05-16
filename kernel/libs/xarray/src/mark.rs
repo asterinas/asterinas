@@ -2,8 +2,6 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use ostd::sync::SpinGuardian;
-
 use crate::XLockGuard;
 
 /// A mark used to indicate which slots in an [`XNode`] contain items that have been marked.
@@ -18,17 +16,17 @@ pub(super) struct Mark {
 }
 
 impl Mark {
-    pub const fn new(inner: u64) -> Self {
+    pub(super) const fn new(inner: u64) -> Self {
         Self {
             inner: AtomicU64::new(inner),
         }
     }
 
-    pub const fn new_empty() -> Self {
+    pub(super) const fn new_empty() -> Self {
         Self::new(0)
     }
 
-    pub fn update<G: SpinGuardian>(&self, offset: u8, set: bool, _guard: &XLockGuard<G>) -> bool {
+    pub(super) fn update(&self, _guard: XLockGuard, offset: u8, set: bool) -> bool {
         let old_val = self.inner.load(Ordering::Acquire);
         let new_val = if set {
             old_val | (1 << offset as u64)
@@ -41,11 +39,11 @@ impl Mark {
         old_val != new_val
     }
 
-    pub fn is_marked(&self, offset: u8) -> bool {
+    pub(super) fn is_marked(&self, offset: u8) -> bool {
         self.inner.load(Ordering::Acquire) & (1 << offset as u64) != 0
     }
 
-    pub fn is_clear(&self) -> bool {
+    pub(super) fn is_clear(&self) -> bool {
         self.inner.load(Ordering::Acquire) == 0
     }
 }
@@ -67,7 +65,7 @@ pub enum XMark {
     Mark2,
 }
 
-pub const NUM_MARKS: usize = 3;
+pub(super) const NUM_MARKS: usize = 3;
 
 impl XMark {
     /// Maps the `XMark` to an index in the range 0 to 2.
