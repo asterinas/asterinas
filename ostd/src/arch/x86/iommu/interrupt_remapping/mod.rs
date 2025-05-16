@@ -45,6 +45,7 @@ impl IrtEntryHandle {
     /// # Safety
     ///
     /// User must ensure the target address is **always** valid and point to `IrtEntry`.
+    #[expect(unsafe_op_in_unsafe_fn)]
     pub(self) unsafe fn new(table_vaddr: Vaddr, index: u16) -> Self {
         Self {
             index,

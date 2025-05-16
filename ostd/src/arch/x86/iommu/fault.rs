@@ -233,7 +233,10 @@ pub(super) static FAULT_EVENT_REGS: Once<SpinLock<FaultEventRegisters, LocalIrqD
 ///
 /// User must ensure the base_register_vaddr is read from DRHD
 pub(super) unsafe fn init(base_register_vaddr: NonNull<u8>) {
-    FAULT_EVENT_REGS.call_once(|| SpinLock::new(FaultEventRegisters::new(base_register_vaddr)));
+    FAULT_EVENT_REGS
+        // SAFETY: The caller guarantees that the memory contain IOMMU registers, so
+        // the `FaultEventRegisters` can be created safely.
+        .call_once(|| SpinLock::new(unsafe { FaultEventRegisters::new(base_register_vaddr) }));
 }
 
 fn iommu_fault_handler(_frame: &TrapFrame) {

@@ -132,7 +132,8 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> RawPageTableNode<E, C> {
             return;
         }
 
-        activate_page_table(self.raw, CachePolicy::Writeback);
+        // SAFETY: The safety is upheld by the caller.
+        unsafe { activate_page_table(self.raw, CachePolicy::Writeback) };
 
         // Increment the reference count of the current page table.
         self.inc_ref_count();
@@ -154,7 +155,8 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> RawPageTableNode<E, C> {
 
         self.inc_ref_count();
 
-        activate_page_table(self.raw, CachePolicy::Writeback);
+        // SAFETY: The safety is upheld by the caller.
+        unsafe { activate_page_table(self.raw, CachePolicy::Writeback) };
     }
 
     fn inc_ref_count(&self) {

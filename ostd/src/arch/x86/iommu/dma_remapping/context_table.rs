@@ -77,8 +77,9 @@ impl RootTable {
             return Err(ContextTableError::InvalidDeviceId);
         }
 
-        self.get_or_create_context_table(device)
-            .map(device, daddr, paddr)?;
+        let context_table = self.get_or_create_context_table(device);
+        // SAFETY: The safety is upheld by the caller.
+        unsafe { context_table.map(device, daddr, paddr)? };
 
         Ok(())
     }
@@ -92,8 +93,8 @@ impl RootTable {
             return Err(ContextTableError::InvalidDeviceId);
         }
 
-        self.get_or_create_context_table(device)
-            .unmap(device, daddr)?;
+        let context_table = self.get_or_create_context_table(device);
+        context_table.unmap(device, daddr)?;
 
         Ok(())
     }
@@ -122,7 +123,7 @@ impl RootTable {
         }
 
         // Activate page table.
-        let address = unsafe { page_table.root_paddr() };
+        let address = page_table.root_paddr();
         context_table.page_tables.insert(address, page_table);
         let entry = ContextEntry(address as u128 | 1 | 0x1_0000_0000_0000_0000);
         context_table
@@ -267,7 +268,7 @@ impl ContextTable {
 
         if !bus_entry.is_present() {
             let table = PageTable::<DeviceMode, PageTableEntry, PagingConsts>::empty();
-            let address = unsafe { table.root_paddr() };
+            let address = table.root_paddr();
             self.page_tables.insert(address, table);
             let entry = ContextEntry(address as u128 | 3 | 0x1_0000_0000_0000_0000);
             self.entries_frame
@@ -297,23 +298,26 @@ impl ContextTable {
         if device.device >= 32 || device.function >= 8 {
             return Err(ContextTableError::InvalidDeviceId);
         }
+
         trace!(
             "Mapping Daddr: {:x?} to Paddr: {:x?} for device: {:x?}",
             daddr,
             paddr,
             device
         );
-        self.get_or_create_page_table(device)
-            .map(
-                &(daddr..daddr + PAGE_SIZE),
-                &(paddr..paddr + PAGE_SIZE),
-                PageProperty {
-                    flags: PageFlags::RW,
-                    cache: CachePolicy::Uncacheable,
-                    priv_flags: PrivFlags::empty(),
-                },
-            )
-            .unwrap();
+
+        let from = daddr..daddr + PAGE_SIZE;
+        let to = paddr..paddr + PAGE_SIZE;
+        let prop = PageProperty {
+            flags: PageFlags::RW,
+            cache: CachePolicy::Uncacheable,
+            priv_flags: PrivFlags::empty(),
+        };
+
+        let pt = self.get_or_create_page_table(device);
+        // SAFETY: The safety is upheld by the caller.
+        unsafe { pt.map(&from, &to, prop).unwrap() };
+
         Ok(())
     }
 
@@ -321,13 +325,16 @@ impl ContextTable {
         if device.device >= 32 || device.function >= 8 {
             return Err(ContextTableError::InvalidDeviceId);
         }
+
         trace!("Unmapping Daddr: {:x?} for device: {:x?}", daddr, device);
+
         let pt = self.get_or_create_page_table(device);
         let mut cursor = pt.cursor_mut(&(daddr..daddr + PAGE_SIZE)).unwrap();
-        unsafe {
-            let result = cursor.take_next(PAGE_SIZE);
-            debug_assert!(matches!(result, PageTableItem::MappedUntracked { .. }));
-        }
+
+        // SAFETY: This unmaps a page from the context table, which is always safe.
+        let item = unsafe { cursor.take_next(PAGE_SIZE) };
+        debug_assert!(matches!(item, PageTableItem::MappedUntracked { .. }));
+
         Ok(())
     }
 }
