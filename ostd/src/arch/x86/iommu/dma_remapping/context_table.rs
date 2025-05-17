@@ -17,6 +17,7 @@ use crate::{
         page_table::{PageTableError, PageTableItem},
         Frame, FrameAllocOptions, Paddr, PageFlags, PageTable, VmIo, PAGE_SIZE,
     },
+    task::disable_preempt,
 };
 
 /// Bit 0 is `Present` bit, indicating whether this entry is present.
@@ -323,7 +324,10 @@ impl ContextTable {
         }
         trace!("Unmapping Daddr: {:x?} for device: {:x?}", daddr, device);
         let pt = self.get_or_create_page_table(device);
-        let mut cursor = pt.cursor_mut(&(daddr..daddr + PAGE_SIZE)).unwrap();
+        let preempt_guard = disable_preempt();
+        let mut cursor = pt
+            .cursor_mut(&preempt_guard, &(daddr..daddr + PAGE_SIZE))
+            .unwrap();
         unsafe {
             let result = cursor.take_next(PAGE_SIZE);
             debug_assert!(matches!(result, PageTableItem::MappedUntracked { .. }));

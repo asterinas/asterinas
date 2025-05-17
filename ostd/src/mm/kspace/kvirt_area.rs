@@ -12,6 +12,7 @@ use crate::{
         page_table::PageTableItem,
         Paddr, Vaddr, PAGE_SIZE,
     },
+    task::disable_preempt,
     util::range_alloc::RangeAllocator,
 };
 
@@ -89,7 +90,8 @@ impl<M: AllocatorSelector + 'static> KVirtArea<M> {
         let start = addr.align_down(PAGE_SIZE);
         let vaddr = start..start + PAGE_SIZE;
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
-        let mut cursor = page_table.cursor(&vaddr).unwrap();
+        let preempt_guard = disable_preempt();
+        let mut cursor = page_table.cursor(&preempt_guard, &vaddr).unwrap();
         cursor.query().unwrap()
     }
 }
@@ -117,7 +119,10 @@ impl KVirtArea<Tracked> {
         let range = Tracked::select_allocator().alloc(area_size).unwrap();
         let cursor_range = range.start + map_offset..range.end;
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
-        let mut cursor = page_table.cursor_mut(&cursor_range).unwrap();
+        let preempt_guard = disable_preempt();
+        let mut cursor = page_table
+            .cursor_mut(&preempt_guard, &cursor_range)
+            .unwrap();
         for page in pages.into_iter() {
             // SAFETY: The constructor of the `KVirtArea<Tracked>` structure
             // has already ensured that this mapping does not affect kernel's
@@ -187,7 +192,8 @@ impl KVirtArea<Untracked> {
             let va_range = range.start + map_offset..range.start + map_offset + pa_range.len();
 
             let page_table = KERNEL_PAGE_TABLE.get().unwrap();
-            let mut cursor = page_table.cursor_mut(&va_range).unwrap();
+            let preempt_guard = disable_preempt();
+            let mut cursor = page_table.cursor_mut(&preempt_guard, &va_range).unwrap();
             // SAFETY: The caller of `map_untracked_pages` has ensured the safety of this mapping.
             unsafe {
                 cursor.map_pa(&pa_range, prop);
@@ -229,7 +235,8 @@ impl<M: AllocatorSelector + 'static> Drop for KVirtArea<M> {
         // 1. unmap all mapped pages.
         let page_table = KERNEL_PAGE_TABLE.get().unwrap();
         let range = self.start()..self.end();
-        let mut cursor = page_table.cursor_mut(&range).unwrap();
+        let preempt_guard = disable_preempt();
+        let mut cursor = page_table.cursor_mut(&preempt_guard, &range).unwrap();
         loop {
             let result = unsafe { cursor.take_next(self.end() - cursor.virt_addr()) };
             if matches!(&result, PageTableItem::NotMapped { .. }) {

@@ -50,7 +50,6 @@ use super::{
         meta::{mapping, KernelMeta, MetaPageMeta},
         Frame, Segment,
     },
-    nr_subpage_per_huge,
     page_prop::{CachePolicy, PageFlags, PageProperty, PrivilegedPageFlags},
     page_table::{KernelMode, PageTable},
     Paddr, PagingConstsTrait, Vaddr, PAGE_SIZE,
@@ -58,6 +57,7 @@ use super::{
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     boot::memory_region::MemoryRegionType,
+    task::disable_preempt,
 };
 
 /// The shortest supported address width is 39 bits. And the literal
@@ -134,13 +134,8 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
     info!("Initializing the kernel page table");
 
     // Start to initialize the kernel page table.
-    let kpt = PageTable::<KernelMode>::empty();
-
-    // Make shared the page tables mapped by the root table in the kernel space.
-    {
-        let pte_index_max = nr_subpage_per_huge::<PagingConsts>();
-        kpt.make_shared_tables(pte_index_max / 2..pte_index_max);
-    }
+    let kpt = PageTable::<KernelMode>::new_kernel_page_table();
+    let preempt_guard = disable_preempt();
 
     // Do linear mappings for the kernel.
     {
@@ -167,7 +162,7 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
-        let mut cursor = kpt.cursor_mut(&from).unwrap();
+        let mut cursor = kpt.cursor_mut(&preempt_guard, &from).unwrap();
         for meta_page in meta_pages {
             // SAFETY: we are doing the metadata mappings for the kernel.
             unsafe {
@@ -209,7 +204,7 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
-        let mut cursor = kpt.cursor_mut(&from).unwrap();
+        let mut cursor = kpt.cursor_mut(&preempt_guard, &from).unwrap();
         for frame_paddr in to.step_by(PAGE_SIZE) {
             // SAFETY: They were initialized at `super::frame::meta::init`.
             let page = unsafe { Frame::<KernelMeta>::from_raw(frame_paddr) };
