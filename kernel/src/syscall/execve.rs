@@ -11,6 +11,7 @@ use crate::{
     fs::{
         file_table::{get_file_fast, FileDesc},
         fs_resolver::{FsPath, AT_FDCWD},
+        notify::fsnotify_access,
         path::Dentry,
     },
     prelude::*,
@@ -169,6 +170,7 @@ fn do_execve(
     // set new user stack top
     user_context.set_stack_pointer(elf_load_info.user_stack_top() as _);
     debug!("user stack top: 0x{:x}", elf_load_info.user_stack_top());
+    fsnotify_access(&elf_file)?;
     Ok(())
 }
 

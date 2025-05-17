@@ -5,6 +5,7 @@ use crate::{
     fs::{
         file_table::{get_file_fast, FileDesc},
         fs_resolver::{FsPath, AT_FDCWD},
+        notify::fsnotify_attr_change,
         utils::{InodeMode, PATH_MAX},
     },
     prelude::*,
@@ -43,5 +44,6 @@ pub fn sys_fchmodat(
         ctx.posix_thread.fs().resolver().read().lookup(&fs_path)?
     };
     dentry.set_mode(InodeMode::from_bits_truncate(mode))?;
+    fsnotify_attr_change(&dentry)?;
     Ok(SyscallReturn::Return(0))
 }
