@@ -38,6 +38,7 @@ use crate::{
         page_prop::{CachePolicy, PageProperty},
         PageFlags, PrivilegedPageFlags as PrivFlags, MAX_USERSPACE_VADDR, PAGE_SIZE,
     },
+    task::disable_preempt,
     trap::call_irq_callback_functions,
 };
 
@@ -322,6 +323,8 @@ fn handle_user_page_fault(f: &mut TrapFrame, page_fault_addr: u64) {
 /// FIXME: this is a hack because we don't allocate kernel space for IO memory. We are currently
 /// using the linear mapping for IO memory. This is not a good practice.
 fn handle_kernel_page_fault(f: &TrapFrame, page_fault_vaddr: u64) {
+    let preempt_guard = disable_preempt();
+
     let error_code = PageFaultErrorCode::from_bits_truncate(f.error_code);
     debug!(
         "kernel page fault: address {:?}, error code {:?}",
@@ -362,23 +365,20 @@ fn handle_kernel_page_fault(f: &TrapFrame, page_fault_vaddr: u64) {
     } else {
         PrivFlags::GLOBAL
     });
+    let prop = PageProperty {
+        flags: PageFlags::RW,
+        cache: CachePolicy::Uncacheable,
+        priv_flags,
+    };
+
+    let mut cursor = page_table
+        .cursor_mut(&preempt_guard, &(vaddr..vaddr + PAGE_SIZE))
+        .unwrap();
 
     // SAFETY:
     // 1. We have checked that the page fault address falls within the address range of the direct
     //    mapping of physical memory.
     // 2. We map the address to the correct physical page with the correct flags, where the
     //    correctness follows the semantics of the direct mapping of physical memory.
-    unsafe {
-        page_table
-            .map(
-                &(vaddr..vaddr + PAGE_SIZE),
-                &(paddr..paddr + PAGE_SIZE),
-                PageProperty {
-                    flags: PageFlags::RW,
-                    cache: CachePolicy::Uncacheable,
-                    priv_flags,
-                },
-            )
-            .unwrap();
-    }
+    let _ = unsafe { cursor.map(&(paddr..paddr + PAGE_SIZE), prop) };
 }

@@ -7,9 +7,12 @@ use core::{
 };
 
 use align_ext::AlignExt;
-use ostd::mm::{
-    tlb::TlbFlushOp, vm_space::VmItem, CachePolicy, FrameAllocOptions, PageFlags, PageProperty,
-    UFrame, VmSpace,
+use ostd::{
+    mm::{
+        tlb::TlbFlushOp, vm_space::VmItem, CachePolicy, FrameAllocOptions, PageFlags, PageProperty,
+        UFrame, VmSpace,
+    },
+    task::disable_preempt,
 };
 
 use super::interval_set::Interval;
@@ -152,8 +155,11 @@ impl VmMapping {
             // Errors caused by the "around" pages should be ignored, so here we
             // only return the error if the faulting page is still not mapped.
             if res.is_err() {
-                let mut cursor =
-                    vm_space.cursor(&(page_aligned_addr..page_aligned_addr + PAGE_SIZE))?;
+                let preempt_guard = disable_preempt();
+                let mut cursor = vm_space.cursor(
+                    &preempt_guard,
+                    &(page_aligned_addr..page_aligned_addr + PAGE_SIZE),
+                )?;
                 if let VmItem::Mapped { .. } = cursor.query().unwrap() {
                     return Ok(());
                 }
@@ -163,8 +169,11 @@ impl VmMapping {
         }
 
         'retry: loop {
-            let mut cursor =
-                vm_space.cursor_mut(&(page_aligned_addr..page_aligned_addr + PAGE_SIZE))?;
+            let preempt_guard = disable_preempt();
+            let mut cursor = vm_space.cursor_mut(
+                &preempt_guard,
+                &(page_aligned_addr..page_aligned_addr + PAGE_SIZE),
+            )?;
 
             match cursor.query().unwrap() {
                 VmItem::Mapped {
@@ -213,6 +222,7 @@ impl VmMapping {
                         Err(VmoCommitError::Err(e)) => return Err(e),
                         Err(VmoCommitError::NeedIo(index)) => {
                             drop(cursor);
+                            drop(preempt_guard);
                             self.vmo
                                 .as_ref()
                                 .unwrap()
@@ -291,7 +301,8 @@ impl VmMapping {
 
         let vm_perms = self.perms - VmPerms::WRITE;
         'retry: loop {
-            let mut cursor = vm_space.cursor_mut(&(start_addr..end_addr))?;
+            let preempt_guard = disable_preempt();
+            let mut cursor = vm_space.cursor_mut(&preempt_guard, &(start_addr..end_addr))?;
             let operate =
                 move |commit_fn: &mut dyn FnMut()
                     -> core::result::Result<UFrame, VmoCommitError>| {
@@ -317,6 +328,7 @@ impl VmMapping {
             match vmo.try_operate_on_range(&(start_offset..end_offset), operate) {
                 Ok(_) => return Ok(()),
                 Err(VmoCommitError::NeedIo(index)) => {
+                    drop(preempt_guard);
                     vmo.commit_on(index, CommitFlags::empty())?;
                     start_addr = index * PAGE_SIZE + self.map_to_addr;
                     continue 'retry;
@@ -419,8 +431,10 @@ impl VmMapping {
 impl VmMapping {
     /// Unmaps the mapping from the VM space.
     pub(super) fn unmap(self, vm_space: &VmSpace) -> Result<()> {
+        let preempt_guard = disable_preempt();
+
         let range = self.range();
-        let mut cursor = vm_space.cursor_mut(&range)?;
+        let mut cursor = vm_space.cursor_mut(&preempt_guard, &range)?;
         cursor.unmap(range.len());
         cursor.flusher().dispatch_tlb_flush();
         cursor.flusher().sync_tlb_flush();
@@ -430,9 +444,10 @@ impl VmMapping {
 
     /// Change the perms of the mapping.
     pub(super) fn protect(self, vm_space: &VmSpace, perms: VmPerms) -> Self {
+        let preempt_guard = disable_preempt();
         let range = self.range();
 
-        let mut cursor = vm_space.cursor_mut(&range).unwrap();
+        let mut cursor = vm_space.cursor_mut(&preempt_guard, &range).unwrap();
 
         let op = |p: &mut PageProperty| p.flags = perms.into();
         while cursor.virt_addr() < range.end {
