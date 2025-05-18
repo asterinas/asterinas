@@ -18,6 +18,11 @@ pub struct XApic {
     mmio_start: *mut u32,
 }
 
+// The APIC instance can be shared among threads running on the same CPU, but not among those
+// running on different CPUs. Therefore, it is not `Send`/`Sync`.
+impl !Send for XApic {}
+impl !Sync for XApic {}
+
 impl XApic {
     pub fn new() -> Option<Self> {
         if !Self::has_xapic() {

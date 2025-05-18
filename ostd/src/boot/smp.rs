@@ -155,7 +155,11 @@ fn ap_early_entry(cpu_id: u32) -> ! {
 }
 
 fn report_online_and_hw_cpu_id(cpu_id: u32) {
-    let old_val = HW_CPU_ID_MAP.lock().insert(cpu_id, HwCpuId::read_current());
+    // There are no races because this method will only be called in the boot
+    // context, where preemption won't occur.
+    let hw_cpu_id = HwCpuId::read_current(&crate::task::disable_preempt());
+
+    let old_val = HW_CPU_ID_MAP.lock().insert(cpu_id, hw_cpu_id);
     assert!(old_val.is_none());
 }
 

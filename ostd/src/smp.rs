@@ -52,7 +52,13 @@ pub fn inter_processor_call(targets: &CpuSet, f: fn()) {
         }
         // SAFETY: The value of `irq_num` corresponds to a valid IRQ line and
         // triggering it will not cause any safety issues.
-        unsafe { send_ipi(ipi_data.hw_cpu_ids[cpu_id.as_usize()], irq_num) };
+        unsafe {
+            send_ipi(
+                ipi_data.hw_cpu_ids[cpu_id.as_usize()],
+                irq_num,
+                &irq_guard as _,
+            )
+        };
     }
     if call_on_self {
         // Execute the function synchronously.
