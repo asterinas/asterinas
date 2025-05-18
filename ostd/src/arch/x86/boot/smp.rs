@@ -35,8 +35,8 @@ use crate::{
         kernel::{
             acpi::get_acpi_tables,
             apic::{
-                self, ApicId, DeliveryMode, DeliveryStatus, DestinationMode, DestinationShorthand,
-                Icr, Level, TriggerMode,
+                self, Apic, ApicId, DeliveryMode, DeliveryStatus, DestinationMode,
+                DestinationShorthand, Icr, Level, TriggerMode,
             },
         },
     },
@@ -45,6 +45,7 @@ use crate::{
         smp::PerApRawInfo,
     },
     mm::{Paddr, PAGE_SIZE},
+    task::disable_preempt,
 };
 
 /// Counts the number of processors.
@@ -255,19 +256,22 @@ unsafe fn wake_up_aps_via_mailbox(num_cpus: u32) {
 ///    processors to boot successfully (e.g., each AP's page table
 ///    and stack).
 unsafe fn send_boot_ipis() {
+    let preempt_guard = disable_preempt();
+    let apic = apic::get_or_init(&preempt_guard as _);
+
     // SAFETY: We're sending IPIs to boot all application processors.
     // The safety is upheld by the caller.
     unsafe {
-        send_init_to_all_aps();
+        send_init_to_all_aps(apic);
         spin_wait_cycles(100_000_000);
 
-        send_init_deassert();
+        send_init_deassert(apic);
         spin_wait_cycles(20_000_000);
 
-        send_startup_to_all_aps();
+        send_startup_to_all_aps(apic);
         spin_wait_cycles(20_000_000);
 
-        send_startup_to_all_aps();
+        send_startup_to_all_aps(apic);
         spin_wait_cycles(20_000_000);
     }
 }
@@ -275,7 +279,7 @@ unsafe fn send_boot_ipis() {
 /// # Safety
 ///
 /// The caller should ensure it's valid to send STARTUP IPIs to all CPUs excluding self.
-unsafe fn send_startup_to_all_aps() {
+unsafe fn send_startup_to_all_aps(apic: &dyn Apic) {
     let icr = Icr::new(
         ApicId::from(0),
         DestinationShorthand::AllExcludingSelf,
@@ -287,13 +291,13 @@ unsafe fn send_startup_to_all_aps() {
         (AP_BOOT_START_PA / PAGE_SIZE) as u8,
     );
     // SAFETY: The safety is upheld by the caller.
-    apic::with_borrow(|apic| unsafe { apic.send_ipi(icr) });
+    unsafe { apic.send_ipi(icr) }
 }
 
 /// # Safety
 ///
 /// The caller should ensure it's valid to send INIT IPIs to all CPUs excluding self.
-unsafe fn send_init_to_all_aps() {
+unsafe fn send_init_to_all_aps(apic: &dyn Apic) {
     let icr = Icr::new(
         ApicId::from(0),
         DestinationShorthand::AllExcludingSelf,
@@ -305,13 +309,13 @@ unsafe fn send_init_to_all_aps() {
         0,
     );
     // SAFETY: The safety is upheld by the caller.
-    apic::with_borrow(|apic| unsafe { apic.send_ipi(icr) });
+    unsafe { apic.send_ipi(icr) };
 }
 
 /// # Safety
 ///
 /// The caller should ensure it's valid to deassert INIT IPIs for all CPUs excluding self.
-unsafe fn send_init_deassert() {
+unsafe fn send_init_deassert(apic: &dyn Apic) {
     let icr = Icr::new(
         ApicId::from(0),
         DestinationShorthand::AllIncludingSelf,
@@ -323,7 +327,7 @@ unsafe fn send_init_deassert() {
         0,
     );
     // SAFETY: The safety is upheld by the caller.
-    apic::with_borrow(|apic| unsafe { apic.send_ipi(icr) });
+    unsafe { apic.send_ipi(icr) };
 }
 
 /// Spin wait approximately `c` cycles.

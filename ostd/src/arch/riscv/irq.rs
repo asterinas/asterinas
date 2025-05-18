@@ -8,7 +8,7 @@ use id_alloc::IdAlloc;
 use spin::Once;
 
 use crate::{
-    cpu::CpuId,
+    cpu::PinCurrentCpu,
     sync::{Mutex, PreemptDisabled, SpinLock, SpinLockGuard},
     trap::TrapFrame,
 };
@@ -147,7 +147,7 @@ impl Drop for IrqCallbackHandle {
 pub(crate) struct HwCpuId(u32);
 
 impl HwCpuId {
-    pub(crate) fn read_current() -> Self {
+    pub(crate) fn read_current(guard: &dyn PinCurrentCpu) -> Self {
         // TODO: Support SMP in RISC-V.
         Self(0)
     }
@@ -160,6 +160,6 @@ impl HwCpuId {
 /// The caller must ensure that the interrupt number is valid and that
 /// the corresponding handler is configured correctly on the remote CPU.
 /// Furthermore, invoking the interrupt handler must also be safe.
-pub(crate) unsafe fn send_ipi(hw_cpu_id: HwCpuId, irq_num: u8) {
+pub(crate) unsafe fn send_ipi(hw_cpu_id: HwCpuId, irq_num: u8, guard: &dyn PinCurrentCpu) {
     unimplemented!()
 }

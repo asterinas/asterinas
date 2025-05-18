@@ -8,14 +8,22 @@ use x86::msr::{
 
 use super::ApicTimer;
 
-pub struct X2Apic {}
+#[derive(Debug)]
+pub struct X2Apic {
+    _private: (),
+}
+
+// The APIC instance can be shared among threads running on the same CPU, but not among those
+// running on different CPUs. Therefore, it is not `Send`/`Sync`.
+impl !Send for X2Apic {}
+impl !Sync for X2Apic {}
 
 impl X2Apic {
     pub(crate) fn new() -> Option<Self> {
         if !Self::has_x2apic() {
             return None;
         }
-        Some(Self {})
+        Some(Self { _private: () })
     }
 
     pub(super) fn has_x2apic() -> bool {

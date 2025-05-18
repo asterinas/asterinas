@@ -12,6 +12,7 @@ use x86_64::registers::rflags::{self, RFlags};
 
 use super::iommu::{alloc_irt_entry, has_interrupt_remapping, IrtEntryHandle};
 use crate::{
+    cpu::PinCurrentCpu,
     sync::{LocalIrqDisabled, Mutex, PreemptDisabled, RwLock, RwLockReadGuard, SpinLock},
     trap::TrapFrame,
 };
@@ -179,11 +180,11 @@ impl Drop for IrqCallbackHandle {
 pub(crate) struct HwCpuId(u32);
 
 impl HwCpuId {
-    pub(crate) fn read_current() -> Self {
+    pub(crate) fn read_current(guard: &dyn PinCurrentCpu) -> Self {
         use crate::arch::kernel::apic;
 
-        let id = apic::with_borrow(|apic| apic.id());
-        Self(id)
+        let apic = apic::get_or_init(guard);
+        Self(apic.id())
     }
 }
 
@@ -194,7 +195,7 @@ impl HwCpuId {
 /// The caller must ensure that the interrupt number is valid and that
 /// the corresponding handler is configured correctly on the remote CPU.
 /// Furthermore, invoking the interrupt handler must also be safe.
-pub(crate) unsafe fn send_ipi(hw_cpu_id: HwCpuId, irq_num: u8) {
+pub(crate) unsafe fn send_ipi(hw_cpu_id: HwCpuId, irq_num: u8, guard: &dyn PinCurrentCpu) {
     use crate::arch::kernel::apic::{self, Icr};
 
     let icr = Icr::new(
@@ -207,7 +208,7 @@ pub(crate) unsafe fn send_ipi(hw_cpu_id: HwCpuId, irq_num: u8) {
         apic::DeliveryMode::Fixed,
         irq_num,
     );
-    apic::with_borrow(|apic| {
-        apic.send_ipi(icr);
-    });
+
+    let apic = apic::get_or_init(guard);
+    apic.send_ipi(icr);
 }
