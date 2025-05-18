@@ -113,7 +113,7 @@ pub(crate) fn count_processors() -> Option<u32> {
 /// 1. we're in the boot context of the BSP,
 /// 2. all APs have not yet been booted, and
 /// 3. the arguments are valid to boot APs.
-pub(crate) unsafe fn bringup_all_aps(info_ptr: *mut PerApRawInfo, pt_ptr: Paddr, num_cpus: u32) {
+pub(crate) unsafe fn bringup_all_aps(info_ptr: *const PerApRawInfo, pt_ptr: Paddr, num_cpus: u32) {
     // SAFETY: The code and data to boot AP is valid to write because
     // there are no readers and we are the only writer at this point.
     unsafe {
@@ -172,9 +172,9 @@ unsafe fn copy_ap_boot_code() {
 /// # Safety
 ///
 /// The caller must ensure the pointer to be filled is valid to write.
-unsafe fn fill_boot_info_ptr(info_ptr: *mut PerApRawInfo) {
+unsafe fn fill_boot_info_ptr(info_ptr: *const PerApRawInfo) {
     extern "C" {
-        static mut __ap_boot_info_array_pointer: *mut PerApRawInfo;
+        static mut __ap_boot_info_array_pointer: *const PerApRawInfo;
     }
 
     // SAFETY: The safety is upheld by the caller.

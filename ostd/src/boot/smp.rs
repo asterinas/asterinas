@@ -23,7 +23,7 @@ const AP_BOOT_STACK_SIZE: usize = PAGE_SIZE * 64;
 
 struct ApBootInfo {
     /// Raw boot information for each AP.
-    per_ap_raw_info: Segment<KernelMeta>,
+    per_ap_raw_info: Box<[PerApRawInfo]>,
     /// Boot information for each AP.
     per_ap_info: Box<[PerApInfo]>,
 }
@@ -50,6 +50,12 @@ pub(crate) struct PerApRawInfo {
     cpu_local: *mut u8,
 }
 
+// SAFETY: This information (i.e., the pointer addresses) can be shared safely
+// among multiple threads. However, it is the responsibility of the user to
+// ensure that the contained pointers are used safely.
+unsafe impl Send for PerApRawInfo {}
+unsafe impl Sync for PerApRawInfo {}
+
 static AP_LATE_ENTRY: Once<fn()> = Once::new();
 
 /// Boots all application processors.
@@ -74,20 +80,8 @@ pub(crate) unsafe fn boot_all_aps() {
     // 1. the bootstrap processor (BSP) has the processor ID 0;
     // 2. the processor ID starts from `0` to `num_cpus - 1`.
 
-    let mut per_ap_info = Vec::new();
-
-    let per_ap_raw_info = FrameAllocOptions::new()
-        .zeroed(false)
-        .alloc_segment_with(
-            num_cpus
-                .saturating_sub(1)
-                .checked_mul(core::mem::size_of::<PerApRawInfo>())
-                .unwrap()
-                .div_ceil(PAGE_SIZE),
-            |_| KernelMeta,
-        )
-        .unwrap();
-    let raw_info_ptr = paddr_to_vaddr(per_ap_raw_info.start_paddr()) as *mut PerApRawInfo;
+    let mut per_ap_raw_info = Vec::with_capacity(num_cpus);
+    let mut per_ap_info = Vec::with_capacity(num_cpus);
 
     for ap in 1..num_cpus {
         let boot_stack_pages = FrameAllocOptions::new()
@@ -95,16 +89,10 @@ pub(crate) unsafe fn boot_all_aps() {
             .alloc_segment_with(AP_BOOT_STACK_SIZE / PAGE_SIZE, |_| KernelMeta)
             .unwrap();
 
-        let raw_info = PerApRawInfo {
+        per_ap_raw_info.push(PerApRawInfo {
             stack_top: paddr_to_vaddr(boot_stack_pages.end_paddr()) as *mut u8,
             cpu_local: paddr_to_vaddr(crate::cpu::local::get_ap(ap.try_into().unwrap())) as *mut u8,
-        };
-
-        // SAFETY: The index is in range because we allocated enough memory.
-        let ptr = unsafe { raw_info_ptr.add(ap - 1) };
-        // SAFETY: The memory is valid for writing because it was just allocated.
-        unsafe { ptr.write(raw_info) };
-
+        });
         per_ap_info.push(PerApInfo {
             is_started: AtomicBool::new(false),
             boot_stack_pages,
@@ -113,14 +101,13 @@ pub(crate) unsafe fn boot_all_aps() {
 
     assert!(!AP_BOOT_INFO.is_completed());
     AP_BOOT_INFO.call_once(move || ApBootInfo {
-        per_ap_raw_info,
+        per_ap_raw_info: per_ap_raw_info.into_boxed_slice(),
         per_ap_info: per_ap_info.into_boxed_slice(),
     });
 
     log::info!("Booting all application processors...");
 
-    let info_ptr = paddr_to_vaddr(AP_BOOT_INFO.get().unwrap().per_ap_raw_info.start_paddr())
-        as *mut PerApRawInfo;
+    let info_ptr = AP_BOOT_INFO.get().unwrap().per_ap_raw_info.as_ptr();
     let pt_ptr = crate::mm::page_table::boot_pt::with_borrow(|pt| pt.root_address()).unwrap();
     // SAFETY: It's the right time to boot APs (guaranteed by the caller) and
     // the arguments are valid to boot APs (generated above).
