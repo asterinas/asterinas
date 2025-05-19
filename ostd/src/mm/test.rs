@@ -522,7 +522,7 @@ mod vmspace {
         let vmspace = VmSpace::default();
         let range = 0x1000..0x2000;
         let frame = create_dummy_frame();
-        let prop = PageProperty::new_user(PageFlags::R, CachePolicy::Writeback);
+        let prop = PageProperty::new_user(PageFlags::R, 0, CachePolicy::Writeback);
         let preempt_guard = disable_preempt();
 
         {
@@ -568,7 +568,7 @@ mod vmspace {
         let vmspace = VmSpace::default();
         let range = 0x1000..0x2000;
         let frame = create_dummy_frame();
-        let prop = PageProperty::new_user(PageFlags::R, CachePolicy::Writeback);
+        let prop = PageProperty::new_user(PageFlags::R, 0, CachePolicy::Writeback);
         let preempt_guard = disable_preempt();
 
         {
@@ -624,7 +624,7 @@ mod vmspace {
         let vmspace = VmSpace::default();
         let range = 0x1000..0x2000;
         let frame = create_dummy_frame();
-        let prop = PageProperty::new_user(PageFlags::R, CachePolicy::Writeback);
+        let prop = PageProperty::new_user(PageFlags::R, 0, CachePolicy::Writeback);
         let preempt_guard = disable_preempt();
 
         {
@@ -675,7 +675,7 @@ mod vmspace {
         let vmspace = VmSpace::new();
         let range = 0x4000..0x5000;
         let frame = create_dummy_frame();
-        let prop = PageProperty::new_user(PageFlags::R, CachePolicy::Writeback);
+        let prop = PageProperty::new_user(PageFlags::R, 0, CachePolicy::Writeback);
         let preempt_guard = disable_preempt();
 
         {
@@ -716,7 +716,7 @@ mod vmspace {
                     range.clone(),
                     Some((
                         frame.clone(),
-                        PageProperty::new_user(PageFlags::R, CachePolicy::Writeback)
+                        PageProperty::new_user(PageFlags::R, 0, CachePolicy::Writeback)
                     ))
                 )
             );
@@ -734,7 +734,7 @@ mod vmspace {
                 .cursor_mut(&preempt_guard, &range)
                 .expect("Failed to create mutable cursor");
             let frame = create_dummy_frame();
-            let prop = PageProperty::new_user(PageFlags::R, CachePolicy::Writeback);
+            let prop = PageProperty::new_user(PageFlags::R, 0, CachePolicy::Writeback);
             cursor_mut.map(frame, prop);
         }
 
@@ -797,7 +797,7 @@ mod vmspace {
             let mut cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
                 .expect("Failed to create mutable cursor");
-            let prop = PageProperty::new_user(PageFlags::R, CachePolicy::Writeback);
+            let prop = PageProperty::new_user(PageFlags::R, 0, CachePolicy::Writeback);
             cursor_mut.map(frame.clone(), prop);
         }
 
@@ -812,7 +812,7 @@ mod vmspace {
                 range.clone(),
                 Some((
                     frame.clone(),
-                    PageProperty::new_user(PageFlags::R, CachePolicy::Writeback)
+                    PageProperty::new_user(PageFlags::R, 0, CachePolicy::Writeback)
                 ))
             )
         );
@@ -832,7 +832,7 @@ mod vmspace {
             let mut cursor_mut = vmspace
                 .cursor_mut(&preempt_guard, &range)
                 .expect("Failed to create mutable cursor");
-            let prop = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+            let prop = PageProperty::new_user(PageFlags::RW, 0, CachePolicy::Writeback);
             cursor_mut.map(frame.clone(), prop);
             cursor_mut.jump(range.start).expect("Failed to jump cursor");
             let protected_range = cursor_mut.protect_next(0x1000, |prop| {
@@ -851,7 +851,7 @@ mod vmspace {
                 range.clone(),
                 Some((
                     frame.clone(),
-                    PageProperty::new_user(PageFlags::R, CachePolicy::Writeback)
+                    PageProperty::new_user(PageFlags::R, 0, CachePolicy::Writeback)
                 ))
             )
         );

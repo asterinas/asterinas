@@ -84,6 +84,11 @@ pub(crate) trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
     /// Regardless of sign extension, [`Vaddr`] is always not signed upon calculation.
     /// That means, `0xffff_ffff_ffff_0000 < 0xffff_ffff_ffff_0001` is `true`.
     const VA_SIGN_EXT: bool;
+
+    /// The range of per-page protection keys, if supported.
+    ///
+    /// This specifies the range of available protection keys ([`PageProperty::pkey`]).
+    const PROTECTION_KEY_RANGE: Option<Range<u8>>;
 }
 
 /// The page size

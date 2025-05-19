@@ -958,7 +958,7 @@ mod test {
         let vm_space = VmSpace::new();
         let map_range = PAGE_SIZE..(PAGE_SIZE * 2);
         let cow_range = 0..PAGE_SIZE * 512 * 512;
-        let page_property = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+        let page_property = PageProperty::new_user(PageFlags::RW, 0, CachePolicy::Writeback);
         let preempt_guard = disable_preempt();
 
         // Allocates and maps a frame.

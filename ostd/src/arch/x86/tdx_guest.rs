@@ -48,11 +48,7 @@ pub unsafe fn unprotect_gpa_range(gpa: Paddr, page_num: usize) -> Result<(), Pag
 
     // Protect the page in the boot page table if in the boot phase.
     let protect_op = |prop: &mut PageProperty| {
-        *prop = PageProperty {
-            flags: prop.flags,
-            cache: prop.cache,
-            priv_flags: prop.priv_flags | PrivFlags::SHARED,
-        }
+        prop.priv_flags |= PrivFlags::SHARED;
     };
     let _ = boot_pt::with_borrow(|boot_pt| {
         for i in 0..page_num {
@@ -102,11 +98,7 @@ pub unsafe fn protect_gpa_range(gpa: Paddr, page_num: usize) -> Result<(), PageC
 
     // Protect the page in the boot page table if in the boot phase.
     let protect_op = |prop: &mut PageProperty| {
-        *prop = PageProperty {
-            flags: prop.flags,
-            cache: prop.cache,
-            priv_flags: prop.priv_flags - PrivFlags::SHARED,
-        }
+        prop.priv_flags -= PrivFlags::SHARED;
     };
     let _ = boot_pt::with_borrow(|boot_pt| {
         for i in 0..page_num {

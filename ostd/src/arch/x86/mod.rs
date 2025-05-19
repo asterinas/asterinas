@@ -164,6 +164,10 @@ pub(crate) fn enable_cpu_features() {
             | Cr4Flags::OSXMMEXCPT_ENABLE
             | Cr4Flags::PAGE_GLOBAL;
 
+        if ext_features.has_pku() {
+            cr4 |= Cr4Flags::PROTECTION_KEY_USER; // Enable MPK.
+        }
+
         unsafe {
             x86_64::registers::control::Cr4::write(cr4);
         }
@@ -184,6 +188,10 @@ pub(crate) fn enable_cpu_features() {
 
         if ext_features.has_avx512f() {
             xcr0 |= XCr0Flags::OPMASK | XCr0Flags::ZMM_HI256 | XCr0Flags::HI16_ZMM;
+        }
+
+        if ext_features.has_pku() {
+            xcr0 |= XCr0Flags::MPK; // Lets XSAVE/XRSTOR saves/restores the PKRU register.
         }
 
         unsafe {

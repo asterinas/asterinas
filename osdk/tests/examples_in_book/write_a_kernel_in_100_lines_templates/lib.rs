@@ -55,7 +55,7 @@ fn create_vm_space(program: &[u8]) -> VmSpace {
     let mut cursor = vm_space
         .cursor_mut(&preempt_guard, &(MAP_ADDR..MAP_ADDR + nbytes))
         .unwrap();
-    let map_prop = PageProperty::new_user(PageFlags::RWX, CachePolicy::Writeback);
+    let map_prop = PageProperty::new_user(PageFlags::RWX, 0, CachePolicy::Writeback);
     for frame in user_pages {
         cursor.map(frame.into(), map_prop);
     }
