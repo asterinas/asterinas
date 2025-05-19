@@ -12,7 +12,6 @@ use x86_64::registers::rflags::{self, RFlags};
 
 use super::iommu::{alloc_irt_entry, has_interrupt_remapping, IrtEntryHandle};
 use crate::{
-    cpu::CpuId,
     sync::{LocalIrqDisabled, Mutex, PreemptDisabled, RwLock, RwLockReadGuard, SpinLock},
     trap::TrapFrame,
 };
@@ -171,17 +170,35 @@ impl Drop for IrqCallbackHandle {
     }
 }
 
+// ####### Inter-Processor Interrupts (IPIs) #######
+
+/// Hardware-specific, architecture-dependent CPU ID.
+///
+/// This is the Local APIC ID in the x86_64 architecture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct HwCpuId(u32);
+
+impl HwCpuId {
+    pub(crate) fn read_current() -> Self {
+        use crate::arch::kernel::apic;
+
+        let id = apic::with_borrow(|apic| apic.id());
+        Self(id)
+    }
+}
+
 /// Sends a general inter-processor interrupt (IPI) to the specified CPU.
 ///
 /// # Safety
 ///
-/// The caller must ensure that the CPU ID and the interrupt number corresponds
-/// to a safe function to call.
-pub(crate) unsafe fn send_ipi(cpu_id: CpuId, irq_num: u8) {
+/// The caller must ensure that the interrupt number is valid and that
+/// the corresponding handler is configured correctly on the remote CPU.
+/// Furthermore, invoking the interrupt handler must also be safe.
+pub(crate) unsafe fn send_ipi(hw_cpu_id: HwCpuId, irq_num: u8) {
     use crate::arch::kernel::apic::{self, Icr};
 
     let icr = Icr::new(
-        apic::ApicId::from(cpu_id.as_usize() as u32),
+        apic::ApicId::from(hw_cpu_id.0),
         apic::DestinationShorthand::NoShorthand,
         apic::TriggerMode::Edge,
         apic::Level::Assert,
