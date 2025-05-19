@@ -5,7 +5,7 @@ use core::ops::Range;
 use aster_rights::{Dup, Read, Rights, TRightSet, TRights, Write};
 use aster_rights_proc::require;
 
-use super::{VmPerms, Vmar, VmarMapOptions, VmarRightsOp, Vmar_};
+use super::{PKey, PKeyAccessRights, VmPerms, Vmar, VmarMapOptions, VmarRightsOp, Vmar_};
 use crate::{
     prelude::*, thread::exception::PageFaultInfo, vm::page_fault_handler::PageFaultHandler,
 };
@@ -80,9 +80,9 @@ impl<R: TRights> Vmar<TRightSet<R>> {
     ///
     /// The VMAR must have the rights corresponding to the specified memory
     /// permissions.
-    pub fn protect(&self, perms: VmPerms, range: Range<usize>) -> Result<()> {
+    pub fn protect(&self, perms: VmPerms, pkey: PKey, range: Range<usize>) -> Result<()> {
         self.check_rights(perms.into())?;
-        self.0.protect(perms, range)
+        self.0.protect(perms, pkey, range)
     }
 
     /// Clears all mappings.
@@ -102,6 +102,18 @@ impl<R: TRights> Vmar<TRightSet<R>> {
     #[require(R > Write)]
     pub fn remove_mapping(&self, range: Range<usize>) -> Result<()> {
         self.0.remove_mapping(range)
+    }
+
+    /// Allocates a protection key for user pages.
+    #[require(R > Write)]
+    pub fn alloc_pkey(&self, rights: PKeyAccessRights) -> Result<PKey> {
+        self.0.alloc_pkey(rights)
+    }
+
+    /// Frees a protection key.
+    #[require(R > Write)]
+    pub fn free_pkey(&self, pkey: PKey) -> Result<()> {
+        self.0.free_pkey(pkey)
     }
 
     /// Duplicates the capability.
