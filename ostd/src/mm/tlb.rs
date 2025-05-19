@@ -210,7 +210,8 @@ cpu_local! {
 }
 
 fn do_remote_flush() {
-    let current_cpu = crate::cpu::current_cpu_racy(); // Safe because we are in IRQs.
+    // No races because we are in IRQs or have disabled preemption.
+    let current_cpu = crate::cpu::CpuId::current_racy();
 
     let mut op_queue = FLUSH_OPS.get_on_cpu(current_cpu).lock();
     op_queue.flush_all();
