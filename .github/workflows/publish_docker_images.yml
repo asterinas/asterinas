@@ -25,6 +25,31 @@ jobs:
 
       - uses: actions/checkout@v4
 
+      - name: Check if Docker image exists
+        id: check-images
+        run: |
+          IMAGE_TAG=$(cat DOCKER_IMAGE_VERSION)
+          if docker manifest inspect asterinas/osdk:${IMAGE_TAG} > /dev/null 2>&1; then
+              echo "osdk_image_exists=true" >> $GITHUB_ENV
+          else
+              echo "osdk_image_exists=false" >> $GITHUB_ENV
+          fi
+          if docker manifest inspect asterinas/osdk:${IMAGE_TAG}-tdx > /dev/null 2>&1; then
+              echo "osdk_tdx_image_exists=true" >> $GITHUB_ENV
+          else
+              echo "osdk_tdx_image_exists=false" >> $GITHUB_ENV
+          fi
+          if docker manifest inspect asterinas/asterinas:${IMAGE_TAG} > /dev/null 2>&1; then
+              echo "asterinas_image_exists=true" >> $GITHUB_ENV
+          else
+              echo "asterinas_image_exists=false" >> $GITHUB_ENV
+          fi
+          if docker manifest inspect asterinas/asterinas:${IMAGE_TAG}-tdx > /dev/null 2>&1; then
+              echo "asterinas_tdx_image_exists=true" >> $GITHUB_ENV
+          else
+              echo "asterinas_tdx_image_exists=false" >> $GITHUB_ENV
+          fi
+
       - name: Fetch versions in the repo
         id: fetch-versions
         run: |
@@ -34,6 +59,7 @@ jobs:
           echo "rust_version=$RUST_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Build and push the OSDK development image
+        if: env.osdk_image_exists == 'false'
         uses: docker/build-push-action@v4
         with:
           context: .
@@ -46,6 +72,7 @@ jobs:
             ASTER_RUST_VERSION=${{ steps.fetch-versions.outputs.rust_version }}
 
       - name: Build and push the OSDK development image for Intel TDX
+        if: env.osdk_tdx_image_exists == 'false'
         uses: docker/build-push-action@v4
         with:
           context: .
@@ -57,6 +84,7 @@ jobs:
             BASE_VERSION=${{ steps.fetch-versions.outputs.aster_version }}
 
       - name: Build and push the Asterinas development image
+        if: env.asterinas_image_exists == 'false'
         uses: docker/build-push-action@v4
         with:
           context: .
@@ -69,6 +97,7 @@ jobs:
             BASE_VERSION=${{ steps.fetch-versions.outputs.aster_version }}
 
       - name: Build and push the Asterinas development image for Intel TDX
+        if: env.asterinas_tdx_image_exists == 'false'
         uses: docker/build-push-action@v4
         with:
           context: .
