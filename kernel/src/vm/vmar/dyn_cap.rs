@@ -4,7 +4,7 @@ use core::ops::Range;
 
 use aster_rights::Rights;
 
-use super::{VmPerms, Vmar, VmarMapOptions, VmarRightsOp, Vmar_};
+use super::{PKey, PKeyAccessRights, VmPerms, Vmar, VmarMapOptions, VmarRightsOp, Vmar_};
 use crate::{
     prelude::*, thread::exception::PageFaultInfo, vm::page_fault_handler::PageFaultHandler,
 };
@@ -70,9 +70,9 @@ impl Vmar<Rights> {
     ///
     /// The VMAR must have the rights corresponding to the specified memory
     /// permissions.
-    pub fn protect(&self, perms: VmPerms, range: Range<usize>) -> Result<()> {
+    pub fn protect(&self, perms: VmPerms, pkey: PKey, range: Range<usize>) -> Result<()> {
         self.check_rights(perms.into())?;
-        self.0.protect(perms, range)
+        self.0.protect(perms, pkey, range)
     }
 
     /// Clears all mappings.
@@ -91,6 +91,16 @@ impl Vmar<Rights> {
     /// portions of the mappings are unmapped.
     pub fn remove_mapping(&self, range: Range<usize>) -> Result<()> {
         self.0.remove_mapping(range)
+    }
+
+    /// Allocates a protection key for user pages.
+    pub fn alloc_pkey(&self, rights: PKeyAccessRights) -> Result<PKey> {
+        self.0.alloc_pkey(rights)
+    }
+
+    /// Frees a protection key.
+    pub fn free_pkey(&self, pkey: PKey) -> Result<()> {
+        self.0.free_pkey(pkey)
     }
 
     /// Duplicates the capability.

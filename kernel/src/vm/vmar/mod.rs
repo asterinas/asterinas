@@ -4,6 +4,7 @@
 
 mod dyn_cap;
 mod interval_set;
+mod pkeys;
 mod static_cap;
 pub mod vm_mapping;
 
@@ -20,8 +21,10 @@ use ostd::{
     task::disable_preempt,
 };
 
+pub use self::pkeys::{PKey, PKeyAccessRights};
 use self::{
     interval_set::{Interval, IntervalSet},
+    pkeys::{PKeyAllocError, PKeyAllocator, PKeyFreeError},
     vm_mapping::{MappedVmo, VmMapping},
 };
 use crate::{
@@ -117,6 +120,8 @@ struct VmarInner {
     vm_mappings: IntervalSet<Vaddr, VmMapping>,
     /// The total mapped memory in bytes.
     total_vm: usize,
+    /// The memory protection keys allocator.
+    pkeys: PKeyAllocator,
 }
 
 impl VmarInner {
@@ -124,6 +129,7 @@ impl VmarInner {
         Self {
             vm_mappings: IntervalSet::new(),
             total_vm: 0,
+            pkeys: PKeyAllocator::new(),
         }
     }
 
@@ -329,16 +335,52 @@ impl Vmar_ {
         }
     }
 
-    fn protect(&self, perms: VmPerms, range: Range<usize>) -> Result<()> {
+    fn protect(&self, perms: VmPerms, pkey: PKey, range: Range<usize>) -> Result<()> {
         assert!(range.start % PAGE_SIZE == 0);
         assert!(range.end % PAGE_SIZE == 0);
-        self.do_protect_inner(perms, range)?;
+        self.do_protect_inner(perms, pkey, range)?;
         Ok(())
     }
 
-    // Do real protect. The protected range is ensured to be mapped.
-    fn do_protect_inner(&self, perms: VmPerms, range: Range<usize>) -> Result<()> {
+    fn alloc_pkey(&self, rights: PKeyAccessRights) -> Result<PKey> {
         let mut inner = self.inner.write();
+        // According to the Linux man page, both unsupported case and the
+        // unavailable case return `ENOSPC`.
+        // See <https://man7.org/linux/man-pages/man2/pkey_alloc.2.html>.
+        inner.pkeys.alloc(rights).map_err(|e| match e {
+            PKeyAllocError::MaxPKeyReached => {
+                Error::with_message(Errno::ENOSPC, "Maximum number of protection keys reached")
+            }
+            PKeyAllocError::NotSupported => {
+                Error::with_message(Errno::ENOSPC, "Protection keys not supported")
+            }
+        })
+    }
+
+    fn free_pkey(&self, pkey: PKey) -> Result<()> {
+        let mut inner = self.inner.write();
+        // We should not check if the pkey is currently in use by any `VmMapping`.
+        // This is to align with the Linux's behavior.
+        // See <https://man7.org/linux/man-pages/man7/pkeys.7.html>.
+        inner.pkeys.free(pkey).map_err(|e| match e {
+            PKeyFreeError::NotAllocated => {
+                Error::with_message(Errno::EINVAL, "Protection keys not allocated")
+            }
+            PKeyFreeError::Invalid => Error::with_message(Errno::EINVAL, "Invalid protection key"),
+            PKeyFreeError::NotSupported => {
+                Error::with_message(Errno::ENOSPC, "Protection keys not supported")
+            }
+        })
+    }
+
+    // Do real protect. The protected range is ensured to be mapped.
+    fn do_protect_inner(&self, perms: VmPerms, pkey: PKey, range: Range<usize>) -> Result<()> {
+        let mut inner = self.inner.write();
+
+        if pkey != 0 && !inner.pkeys.is_allocated(pkey) {
+            return_errno_with_message!(Errno::EINVAL, "Protection key is not allocated");
+        }
+
         let vm_space = self.vm_space();
 
         let mut protect_mappings = Vec::new();
@@ -358,7 +400,7 @@ impl Vmar_ {
             // Protects part of the taken `VmMapping`.
             let (left, taken, right) = vm_mapping.split_range(&intersected_range)?;
 
-            let taken = taken.protect(vm_space.as_ref(), perms);
+            let taken = taken.protect(vm_space.as_ref(), perms, pkey);
             inner.insert(taken);
 
             // And put the rest back.
@@ -396,9 +438,11 @@ impl Vmar_ {
     /// Clears all content of the root VMAR.
     fn clear_root_vmar(&self) -> Result<()> {
         let mut inner = self.inner.write();
+
         inner.vm_mappings.clear();
 
-        // Keep `inner` locked to avoid race conditions.
+        inner.pkeys = PKeyAllocator::new();
+
         let preempt_guard = disable_preempt();
         let full_range = 0..MAX_USERSPACE_VADDR;
         let mut cursor = self
@@ -513,6 +557,9 @@ impl Vmar_ {
             cur_cursor.flusher().issue_tlb_flush(TlbFlushOp::All);
             cur_cursor.flusher().dispatch_tlb_flush();
             cur_cursor.flusher().sync_tlb_flush();
+
+            // Memory protection keys are inherited on fork.
+            new_inner.pkeys.clone_from(&inner.pkeys);
         }
 
         Ok(new_vmar_)
@@ -612,6 +659,8 @@ pub struct VmarMapOptions<'a, R1, R2> {
     is_shared: bool,
     // Whether the mapping needs to handle surrounding pages when handling page fault.
     handle_page_faults_around: bool,
+    // The protection key for the mapping.
+    pkey: PKey,
 }
 
 impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
@@ -635,6 +684,7 @@ impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
             can_overwrite: false,
             is_shared: false,
             handle_page_faults_around: false,
+            pkey: PKey::default(),
         }
     }
 
@@ -734,6 +784,12 @@ impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
         self.handle_page_faults_around = true;
         self
     }
+
+    /// Sets the protection key for the mapping.
+    pub fn pkey(mut self, pkey: PKey) -> Self {
+        self.pkey = pkey;
+        self
+    }
 }
 
 impl<R1> VmarMapOptions<'_, R1, Rights> {
@@ -790,6 +846,7 @@ where
             can_overwrite,
             is_shared,
             handle_page_faults_around,
+            pkey,
         } = self;
 
         let mut inner = parent.0.inner.write();
@@ -843,6 +900,7 @@ where
             is_shared,
             handle_page_faults_around,
             perms,
+            pkey,
         );
 
         // Add the mapping to the VMAR.
