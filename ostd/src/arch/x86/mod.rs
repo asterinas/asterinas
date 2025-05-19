@@ -20,7 +20,7 @@ pub mod trap;
 
 use io::construct_io_mem_allocator_builder;
 use spin::Once;
-use x86::cpuid::{CpuId, FeatureInfo};
+use x86::cpuid::{CpuId, ExtendedFeatures, FeatureInfo};
 
 #[cfg(feature = "cvm_guest")]
 pub(crate) mod tdx_guest;
@@ -51,6 +51,7 @@ pub(crate) fn init_cvm_guest() {
 }
 
 static CPU_FEATURES: Once<FeatureInfo> = Once::new();
+static EXTENDED_CPU_FEATURES: Once<ExtendedFeatures> = Once::new();
 
 /// Architecture-specific initialization on the bootstrapping processor.
 ///
@@ -142,70 +143,55 @@ pub fn read_random() -> Option<u64> {
     None
 }
 
-fn has_avx() -> bool {
-    use core::arch::x86_64::{__cpuid, __cpuid_count};
-
-    let cpuid_result = unsafe { __cpuid(0) };
-    if cpuid_result.eax < 1 {
-        // CPUID function 1 is not supported
-        return false;
-    }
-
-    let cpuid_result = unsafe { __cpuid_count(1, 0) };
-    // Check for AVX (bit 28 of ecx)
-    cpuid_result.ecx & (1 << 28) != 0
-}
-
-fn has_avx512() -> bool {
-    use core::arch::x86_64::{__cpuid, __cpuid_count};
-
-    let cpuid_result = unsafe { __cpuid(0) };
-    if cpuid_result.eax < 7 {
-        // CPUID function 7 is not supported
-        return false;
-    }
-
-    let cpuid_result = unsafe { __cpuid_count(7, 0) };
-    // Check for AVX-512 Foundation (bit 16 of ebx)
-    cpuid_result.ebx & (1 << 16) != 0
-}
-
 pub(crate) fn enable_cpu_features() {
     use x86_64::registers::{control::Cr4Flags, model_specific::EferFlags, xcontrol::XCr0Flags};
 
-    CPU_FEATURES.call_once(|| {
-        let cpuid = CpuId::new();
-        cpuid.get_feature_info().unwrap()
-    });
+    let cpuid = CpuId::new();
+    let features = cpuid.get_feature_info().unwrap();
+    let ext_features = cpuid.get_extended_feature_info().unwrap();
 
+    CPU_FEATURES.call_once(|| features);
+    EXTENDED_CPU_FEATURES.call_once(|| ext_features);
+
+    let ext_features = EXTENDED_CPU_FEATURES.get().unwrap();
+
+    // CR4
+    {
+        let mut cr4 = x86_64::registers::control::Cr4::read();
+        cr4 |= Cr4Flags::FSGSBASE
+            | Cr4Flags::OSXSAVE
+            | Cr4Flags::OSFXSR
+            | Cr4Flags::OSXMMEXCPT_ENABLE
+            | Cr4Flags::PAGE_GLOBAL;
+
+        unsafe {
+            x86_64::registers::control::Cr4::write(cr4);
+        }
+    }
+
+    // CR0
     cpu::context::enable_essential_features();
 
-    let mut cr4 = x86_64::registers::control::Cr4::read();
-    cr4 |= Cr4Flags::FSGSBASE
-        | Cr4Flags::OSXSAVE
-        | Cr4Flags::OSFXSR
-        | Cr4Flags::OSXMMEXCPT_ENABLE
-        | Cr4Flags::PAGE_GLOBAL;
-    unsafe {
-        x86_64::registers::control::Cr4::write(cr4);
+    // XCR0
+    {
+        let mut xcr0 = x86_64::registers::xcontrol::XCr0::read();
+
+        xcr0 |= XCr0Flags::SSE;
+
+        if ext_features.has_avx2() {
+            xcr0 |= XCr0Flags::AVX;
+        }
+
+        if ext_features.has_avx512f() {
+            xcr0 |= XCr0Flags::OPMASK | XCr0Flags::ZMM_HI256 | XCr0Flags::HI16_ZMM;
+        }
+
+        unsafe {
+            x86_64::registers::xcontrol::XCr0::write(xcr0);
+        }
     }
 
-    let mut xcr0 = x86_64::registers::xcontrol::XCr0::read();
-
-    xcr0 |= XCr0Flags::SSE;
-
-    if has_avx() {
-        xcr0 |= XCr0Flags::AVX;
-    }
-
-    if has_avx512() {
-        xcr0 |= XCr0Flags::OPMASK | XCr0Flags::ZMM_HI256 | XCr0Flags::HI16_ZMM;
-    }
-
-    unsafe {
-        x86_64::registers::xcontrol::XCr0::write(xcr0);
-    }
-
+    // EFER
     unsafe {
         // enable non-executable page protection
         x86_64::registers::model_specific::Efer::update(|efer| {
