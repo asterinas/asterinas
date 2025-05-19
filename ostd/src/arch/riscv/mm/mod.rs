@@ -170,6 +170,7 @@ impl PageTableEntryTrait for PageTableEntry {
 
         PageProperty {
             flags: PageFlags::from_bits(flags as u8).unwrap(),
+            pkey: 0,
             cache,
             priv_flags: PrivFlags::from_bits(priv_flags as u8).unwrap(),
         }

@@ -112,6 +112,7 @@ impl IoMem {
 
         let prop = PageProperty {
             flags,
+            pkey: 0,
             cache,
             priv_flags,
         };

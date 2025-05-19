@@ -330,7 +330,7 @@ fn map_segment_vmo(
             };
             cursor.map(
                 new_frame.into(),
-                PageProperty::new(page_flags, CachePolicy::Writeback),
+                PageProperty::new(page_flags, 0, CachePolicy::Writeback),
             );
         }
 
@@ -355,7 +355,7 @@ fn map_segment_vmo(
             cursor.jump(tail_page_addr)?;
             cursor.map(
                 new_frame.into(),
-                PageProperty::new(page_flags, CachePolicy::Writeback),
+                PageProperty::new(page_flags, 0, CachePolicy::Writeback),
             );
         }
     }

@@ -52,7 +52,7 @@ fn create_vm_space(program: &[u8]) -> VmSpace {
     let vm_space = VmSpace::new();
     const MAP_ADDR: Vaddr = 0x0040_0000; // The map addr for statically-linked executable
     let mut cursor = vm_space.cursor_mut(&(MAP_ADDR..MAP_ADDR + nbytes)).unwrap();
-    let map_prop = PageProperty::new(PageFlags::RWX, CachePolicy::Writeback);
+    let map_prop = PageProperty::new(PageFlags::RWX, 0, CachePolicy::Writeback);
     for frame in user_pages {
         cursor.map(frame.into(), map_prop);
     }
