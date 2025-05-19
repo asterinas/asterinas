@@ -78,16 +78,15 @@ cpu_local! {
 }
 
 fn do_inter_processor_call(_trapframe: &TrapFrame) {
-    // TODO: in interrupt context, disabling interrupts is not necessary.
-    let preempt_guard = trap::disable_local();
-    let cur_cpu = preempt_guard.current_cpu();
+    // No races because we are in IRQs.
+    let this_cpu_id = crate::cpu::CpuId::current_racy();
 
-    let mut queue = CALL_QUEUES.get_on_cpu(cur_cpu).lock();
+    let mut queue = CALL_QUEUES.get_on_cpu(this_cpu_id).lock();
     while let Some(f) = queue.pop_front() {
         log::trace!(
             "Performing inter-processor call to {:#?} on CPU {:#?}",
             f,
-            cur_cpu
+            this_cpu_id,
         );
         f();
     }

@@ -195,8 +195,8 @@ cpu_local! {
 }
 
 fn do_remote_flush() {
-    // No races because we are in IRQs/have disabled preempts.
-    let current_cpu = crate::cpu::current_cpu_racy();
+    // No races because we are in IRQs or have disabled preemption.
+    let current_cpu = crate::cpu::CpuId::current_racy();
 
     let mut new_op_queue = OpsStack::new();
     {
