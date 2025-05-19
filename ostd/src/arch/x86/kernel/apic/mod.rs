@@ -39,7 +39,7 @@ static APIC_TYPE: Once<ApicType> = Once::new();
 /// let ticks = apic.timer_current_count();
 /// apic.set_timer_init_count(0);
 /// ```
-pub fn get_or_init(guard: &dyn PinCurrentCpu) -> &(dyn Apic + 'static) {
+pub fn get_or_init(_guard: &dyn PinCurrentCpu) -> &(dyn Apic + 'static) {
     struct ForceSyncSend<T>(T);
 
     // SAFETY: `ForceSyncSend` is `Sync + Send`, but accessing its contained value is unsafe.
@@ -59,7 +59,9 @@ pub fn get_or_init(guard: &dyn PinCurrentCpu) -> &(dyn Apic + 'static) {
         static APIC_INSTANCE: Once<ForceSyncSend<Box<dyn Apic + 'static>>> = Once::new();
     }
 
-    let apic_instance = APIC_INSTANCE.get_on_cpu(guard.current_cpu());
+    // No races due to `_guard`, but use `current_racy` to avoid calling via the vtable.
+    // TODO: Find a better way to make `dyn PinCurrentCpu` easy to use?
+    let apic_instance = APIC_INSTANCE.get_on_cpu(crate::cpu::CpuId::current_racy());
 
     // The APIC instance has already been initialized.
     if let Some(apic) = apic_instance.get() {
