@@ -45,6 +45,3 @@ boot.method = "grub-qcow2"
 grub.mkrescue_path = "/tmp/osdk_test_file"
 grub.protocol = "linux"
 qemu.path = "/tmp/osdk_test_file"
-qemu.args = """\
-    -name process=tdxvm,debug-threads=on \
-"""

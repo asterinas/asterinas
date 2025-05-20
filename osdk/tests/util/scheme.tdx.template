@@ -3,7 +3,6 @@ boot.method = "grub-qcow2"
 grub.boot_protocol = "linux"
 qemu.args = """
     -accel kvm \
-    -name process=tdxvm,debug-threads=on \
     -m 8G \
     -smp 1 \
     -vga none \
