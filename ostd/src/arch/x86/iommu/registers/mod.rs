@@ -11,7 +11,7 @@ mod status;
 use core::ptr::NonNull;
 
 use bit_field::BitField;
-pub use capability::Capability;
+pub use capability::{Capability, CapabilitySagaw};
 use command::GlobalCommand;
 use extended_cap::ExtendedCapability;
 pub use extended_cap::ExtendedCapabilityFlags;
