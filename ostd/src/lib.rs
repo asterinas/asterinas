@@ -126,9 +126,19 @@ unsafe fn init() {
 
     bus::init();
 
+    // Reclaim ACPI tables memory after initialization
+    if let Err(e) = mm::frame::reclaimer::reclaim_acpi_tables_memory() {
+        log::error!("Failed to reclaim ACPI tables memory: {:?}", e);
+    }
+
     arch::irq::enable_local();
 
     invoke_ffi_init_funcs();
+
+    // Reclaim any remaining boot memory regions
+    if let Err(e) = mm::frame::reclaimer::reclaim_boot_memory_regions() {
+        log::error!("Failed to reclaim remaining boot memory regions: {:?}", e);
+    }
 
     IN_BOOTSTRAP_CONTEXT.store(false, Ordering::Relaxed);
 }
