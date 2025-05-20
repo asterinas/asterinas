@@ -2,7 +2,7 @@
 
 //! Implementation of the locking protocol.
 
-use core::{marker::PhantomData, ops::Range, sync::atomic::Ordering};
+use core::{marker::PhantomData, mem::ManuallyDrop, ops::Range, sync::atomic::Ordering};
 
 use align_ext::AlignExt;
 
@@ -15,19 +15,17 @@ use crate::{
             PageTableEntryTrait, PageTableGuard, PageTableMode, PageTableNodeRef,
             PagingConstsTrait, PagingLevel,
         },
-        Paddr, Vaddr,
+        Vaddr,
     },
-    task::disable_preempt,
+    task::atomic_mode::InAtomicMode,
 };
 
-pub(super) fn lock_range<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait>(
-    pt: &'a PageTable<M, E, C>,
+pub(super) fn lock_range<'rcu, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait>(
+    pt: &'rcu PageTable<M, E, C>,
+    guard: &'rcu dyn InAtomicMode,
     va: &Range<Vaddr>,
     new_pt_is_tracked: MapTrackingStatus,
-) -> Cursor<'a, M, E, C> {
-    // Start RCU read-side critical section.
-    let preempt_guard = disable_preempt();
-
+) -> Cursor<'rcu, M, E, C> {
     // The re-try loop of finding the sub-tree root.
     //
     // If we locked a stray node, we need to re-try. Otherwise, although
@@ -35,7 +33,9 @@ pub(super) fn lock_range<'a, M: PageTableMode, E: PageTableEntryTrait, C: Paging
     // sub-tree will not see the current state and will not change the current
     // state, breaking serializability.
     let mut subtree_root = loop {
-        if let Some(subtree_root) = try_traverse_and_lock_subtree_root(pt, va, new_pt_is_tracked) {
+        if let Some(subtree_root) =
+            try_traverse_and_lock_subtree_root(pt, guard, va, new_pt_is_tracked)
+        {
             break subtree_root;
         }
     };
@@ -44,18 +44,18 @@ pub(super) fn lock_range<'a, M: PageTableMode, E: PageTableEntryTrait, C: Paging
     // stray nodes in the following traversal since we must lock before reading.
     let guard_level = subtree_root.level();
     let cur_node_va = va.start.align_down(page_size::<C>(guard_level + 1));
-    dfs_acquire_lock(&mut subtree_root, cur_node_va, va.clone());
+    dfs_acquire_lock(guard, &mut subtree_root, cur_node_va, va.clone());
 
     let mut path = core::array::from_fn(|_| None);
     path[guard_level as usize - 1] = Some(subtree_root);
 
-    Cursor::<'a, M, E, C> {
+    Cursor::<'rcu, M, E, C> {
         path,
+        rcu_guard: guard,
         level: guard_level,
         guard_level,
         va: va.start,
         barrier_va: va.clone(),
-        preempt_guard,
         _phantom: PhantomData,
     }
 }
@@ -65,7 +65,7 @@ pub(super) fn unlock_range<M: PageTableMode, E: PageTableEntryTrait, C: PagingCo
 ) {
     for i in (0..cursor.guard_level as usize - 1).rev() {
         if let Some(guard) = cursor.path[i].take() {
-            let _ = guard.into_raw_paddr();
+            let _ = ManuallyDrop::new(guard);
         }
     }
     let guard_node = cursor.path[cursor.guard_level as usize - 1].take().unwrap();
@@ -73,7 +73,14 @@ pub(super) fn unlock_range<M: PageTableMode, E: PageTableEntryTrait, C: PagingCo
         * page_size::<C>(cursor.guard_level + 1);
 
     // SAFETY: A cursor maintains that its corresponding sub-tree is locked.
-    unsafe { dfs_release_lock(guard_node, cur_node_va, cursor.barrier_va.clone()) };
+    unsafe {
+        dfs_release_lock(
+            cursor.rcu_guard,
+            guard_node,
+            cur_node_va,
+            cursor.barrier_va.clone(),
+        )
+    };
 }
 
 /// Finds and locks an intermediate page table node that covers the range.
@@ -86,31 +93,16 @@ pub(super) fn unlock_range<M: PageTableMode, E: PageTableEntryTrait, C: PagingCo
 /// page table recycling), it will return `None`. The caller should retry in
 /// this case to lock the proper node.
 fn try_traverse_and_lock_subtree_root<
-    'a,
+    'rcu,
     M: PageTableMode,
     E: PageTableEntryTrait,
     C: PagingConstsTrait,
 >(
-    pt: &'a PageTable<M, E, C>,
+    pt: &PageTable<M, E, C>,
+    guard: &'rcu dyn InAtomicMode,
     va: &Range<Vaddr>,
     new_pt_is_tracked: MapTrackingStatus,
-) -> Option<PageTableGuard<'a, E, C>> {
-    // # Safety
-    // Must be called with `cur_pt_addr` and `'a`, `E`, `E` of the residing function.
-    unsafe fn lock_cur_pt<'a, E: PageTableEntryTrait, C: PagingConstsTrait>(
-        cur_pt_addr: Paddr,
-    ) -> PageTableGuard<'a, E, C> {
-        // SAFETY: The reference is valid for `'a` because the page table
-        // is alive within `'a` and `'a` is under the RCU read guard.
-        let ptn_ref = unsafe { PageTableNodeRef::<'a, E, C>::borrow_paddr(cur_pt_addr) };
-        // Forfeit a guard protecting a node that lives for `'a` rather
-        // than the lifetime of `ptn_ref`.
-        let pt_addr = ptn_ref.lock().into_raw_paddr();
-        // SAFETY: The lock guard was forgotten at the above line. We manually
-        // ensure that the protected node lives for `'a`.
-        unsafe { PageTableGuard::<'a, E, C>::from_raw_paddr(pt_addr) }
-    }
-
+) -> Option<PageTableGuard<'rcu, E, C>> {
     let mut cur_node_guard: Option<PageTableGuard<E, C>> = None;
     let mut cur_pt_addr = pt.root.start_paddr();
     for cur_level in (1..=C::NR_LEVELS).rev() {
@@ -141,17 +133,19 @@ fn try_traverse_and_lock_subtree_root<
         }
 
         // In case the child is absent, we should lock and allocate a new page table node.
-        // SAFETY: It is called with the required parameters.
-        let mut guard = cur_node_guard
-            .take()
-            .unwrap_or_else(|| unsafe { lock_cur_pt::<'a, E, C>(cur_pt_addr) });
-        if *guard.stray_mut() {
+        let mut pt_guard = cur_node_guard.take().unwrap_or_else(|| {
+            // SAFETY: The node must be alive for at least `'rcu` since the
+            // address is read from the page table node.
+            let node_ref = unsafe { PageTableNodeRef::<'rcu, E, C>::borrow_paddr(cur_pt_addr) };
+            node_ref.lock(guard)
+        });
+        if *pt_guard.stray_mut() {
             return None;
         }
 
-        let mut cur_entry = guard.entry(start_idx);
+        let mut cur_entry = pt_guard.entry(start_idx);
         if cur_entry.is_none() {
-            let allocated_guard = cur_entry.alloc_if_none(new_pt_is_tracked).unwrap();
+            let allocated_guard = cur_entry.alloc_if_none(guard, new_pt_is_tracked).unwrap();
             cur_pt_addr = allocated_guard.start_paddr();
             cur_node_guard = Some(allocated_guard);
         } else if cur_entry.is_node() {
@@ -165,14 +159,17 @@ fn try_traverse_and_lock_subtree_root<
         }
     }
 
-    // SAFETY: It is called with the required parameters.
-    let mut guard =
-        cur_node_guard.unwrap_or_else(|| unsafe { lock_cur_pt::<'a, E, C>(cur_pt_addr) });
-    if *guard.stray_mut() {
+    let mut pt_guard = cur_node_guard.unwrap_or_else(|| {
+        // SAFETY: The node must be alive for at least `'rcu` since the
+        // address is read from the page table node.
+        let node_ref = unsafe { PageTableNodeRef::<'rcu, E, C>::borrow_paddr(cur_pt_addr) };
+        node_ref.lock(guard)
+    });
+    if *pt_guard.stray_mut() {
         return None;
     }
 
-    Some(guard)
+    Some(pt_guard)
 }
 
 /// Acquires the locks for the given range in the sub-tree rooted at the node.
@@ -180,14 +177,15 @@ fn try_traverse_and_lock_subtree_root<
 /// `cur_node_va` must be the virtual address of the `cur_node`. The `va_range`
 /// must be within the range of the `cur_node`. The range must not be empty.
 ///
-/// The function will forget all the [`PageTableGuard`] objects in the sub-tree
-/// with [`PageTableGuard::into_raw_paddr`].
+/// The function will forget all the [`PageTableGuard`] objects in the sub-tree.
 fn dfs_acquire_lock<E: PageTableEntryTrait, C: PagingConstsTrait>(
+    guard: &dyn InAtomicMode,
     cur_node: &mut PageTableGuard<'_, E, C>,
     cur_node_va: Vaddr,
     va_range: Range<Vaddr>,
 ) {
     debug_assert!(!*cur_node.stray_mut());
+
     let cur_level = cur_node.level();
     if cur_level <= 1 {
         return;
@@ -198,13 +196,13 @@ fn dfs_acquire_lock<E: PageTableEntryTrait, C: PagingConstsTrait>(
         let child = cur_node.entry(i);
         match child.to_ref() {
             Child::PageTableRef(pt) => {
-                let mut pt_guard = pt.lock();
+                let mut pt_guard = pt.lock(guard);
                 let child_node_va = cur_node_va + i * page_size::<C>(cur_level);
                 let child_node_va_end = child_node_va + page_size::<C>(cur_level);
                 let va_start = va_range.start.max(child_node_va);
                 let va_end = va_range.end.min(child_node_va_end);
-                dfs_acquire_lock(&mut pt_guard, child_node_va, va_start..va_end);
-                let _ = pt_guard.into_raw_paddr();
+                dfs_acquire_lock(guard, &mut pt_guard, child_node_va, va_start..va_end);
+                let _ = ManuallyDrop::new(pt_guard);
             }
             Child::None | Child::Frame(_, _) | Child::Untracked(_, _, _) | Child::PageTable(_) => {}
         }
@@ -215,9 +213,11 @@ fn dfs_acquire_lock<E: PageTableEntryTrait, C: PagingConstsTrait>(
 ///
 /// # Safety
 ///
-/// The caller must ensure that the nodes in the specified sub-tree are locked.
-unsafe fn dfs_release_lock<E: PageTableEntryTrait, C: PagingConstsTrait>(
-    mut cur_node: PageTableGuard<E, C>,
+/// The caller must ensure that the nodes in the specified sub-tree are locked
+/// and all guards are forgotten.
+unsafe fn dfs_release_lock<'rcu, E: PageTableEntryTrait, C: PagingConstsTrait>(
+    guard: &'rcu dyn InAtomicMode,
+    mut cur_node: PageTableGuard<'rcu, E, C>,
     cur_node_va: Vaddr,
     va_range: Range<Vaddr>,
 ) {
@@ -231,16 +231,14 @@ unsafe fn dfs_release_lock<E: PageTableEntryTrait, C: PagingConstsTrait>(
         let child = cur_node.entry(i);
         match child.to_ref() {
             Child::PageTableRef(pt) => {
-                // SAFETY: The node was locked before and we have a
-                // reference to the parent node that is still alive.
-                let child_node =
-                    unsafe { PageTableGuard::<E, C>::from_raw_paddr(pt.start_paddr()) };
+                // SAFETY: The caller ensures that the node is locked.
+                let child_node = unsafe { pt.make_guard_unchecked(guard) };
                 let child_node_va = cur_node_va + i * page_size::<C>(cur_level);
                 let child_node_va_end = child_node_va + page_size::<C>(cur_level);
                 let va_start = va_range.start.max(child_node_va);
                 let va_end = va_range.end.min(child_node_va_end);
                 // SAFETY: The caller ensures that this sub-tree is locked.
-                unsafe { dfs_release_lock(child_node, child_node_va, va_start..va_end) };
+                unsafe { dfs_release_lock(guard, child_node, child_node_va, va_start..va_end) };
             }
             Child::None | Child::Frame(_, _) | Child::Untracked(_, _, _) | Child::PageTable(_) => {}
         }
@@ -256,16 +254,18 @@ unsafe fn dfs_release_lock<E: PageTableEntryTrait, C: PagingConstsTrait>(
 ///
 /// # Safety
 ///
-/// The caller must ensure that all the nodes in the sub-tree are locked.
+/// The caller must ensure that all the nodes in the sub-tree are locked
+/// and all guards are forgotten.
 ///
-/// This function must not be called upon a shared node. E.g., the second-
+/// This function must not be called upon a shared node, e.g., the second-
 /// top level nodes that the kernel space and user space share.
 pub(super) unsafe fn dfs_mark_stray_and_unlock<E: PageTableEntryTrait, C: PagingConstsTrait>(
+    rcu_guard: &dyn InAtomicMode,
     mut sub_tree: PageTableGuard<E, C>,
 ) {
     *sub_tree.stray_mut() = true;
 
-    if sub_tree.level() <= 1 {
+    if sub_tree.level() > 1 {
         return;
     }
 
@@ -274,8 +274,8 @@ pub(super) unsafe fn dfs_mark_stray_and_unlock<E: PageTableEntryTrait, C: Paging
         match child.to_ref() {
             Child::PageTableRef(pt) => {
                 // SAFETY: The caller ensures that the node is locked.
-                let locked_pt = unsafe { PageTableGuard::<E, C>::from_raw_paddr(pt.start_paddr()) };
-                dfs_mark_stray_and_unlock(locked_pt);
+                let locked_pt = unsafe { pt.make_guard_unchecked(rcu_guard) };
+                dfs_mark_stray_and_unlock(rcu_guard, locked_pt);
             }
             Child::None | Child::Frame(_, _) | Child::Untracked(_, _, _) | Child::PageTable(_) => {}
         }

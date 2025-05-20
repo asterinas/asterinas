@@ -2,10 +2,15 @@
 
 //! This module provides accessors to the page table entries in a node.
 
-use super::{Child, MapTrackingStatus, PageTableEntryTrait, PageTableGuard, PageTableNode};
+use core::mem::ManuallyDrop;
+
+use super::{
+    Child, MapTrackingStatus, PageTableEntryTrait, PageTableGuard, PageTableNode, PageTableNodeRef,
+};
 use crate::{
     mm::{nr_subpage_per_huge, page_prop::PageProperty, page_size, PagingConstsTrait},
     sync::RcuDrop,
+    task::atomic_mode::InAtomicMode,
 };
 
 /// A view of an entry in a page table node.
@@ -15,7 +20,7 @@ use crate::{
 /// This is a static reference to an entry in a node that does not account for
 /// a dynamic reference count to the child. It can be used to create a owned
 /// handle, which is a [`Child`].
-pub(in crate::mm) struct Entry<'guard, 'pt, E: PageTableEntryTrait, C: PagingConstsTrait> {
+pub(in crate::mm) struct Entry<'a, 'rcu, E: PageTableEntryTrait, C: PagingConstsTrait> {
     /// The page table entry.
     ///
     /// We store the page table entry here to optimize the number of reads from
@@ -27,10 +32,10 @@ pub(in crate::mm) struct Entry<'guard, 'pt, E: PageTableEntryTrait, C: PagingCon
     /// The index of the entry in the node.
     idx: usize,
     /// The node that contains the entry.
-    node: &'guard mut PageTableGuard<'pt, E, C>,
+    node: &'a mut PageTableGuard<'rcu, E, C>,
 }
 
-impl<'guard, 'pt, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'guard, 'pt, E, C> {
+impl<'a, 'rcu, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'a, 'rcu, E, C> {
     /// Returns if the entry does not map to anything.
     pub(in crate::mm) fn is_none(&self) -> bool {
         !self.pte.is_present()
@@ -42,7 +47,7 @@ impl<'guard, 'pt, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'guard, 'p
     }
 
     /// Gets a reference to the child.
-    pub(in crate::mm) fn to_ref(&self) -> Child<'_, E, C> {
+    pub(in crate::mm) fn to_ref(&self) -> Child<'rcu, E, C> {
         // SAFETY: The entry structure represents an existent entry with the
         // right node information.
         unsafe { Child::ref_from_pte(&self.pte, self.node.level(), self.node.is_tracked()) }
@@ -115,8 +120,9 @@ impl<'guard, 'pt, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'guard, 'p
     /// Otherwise, the lock guard of the new child page table node is returned.
     pub(in crate::mm::page_table) fn alloc_if_none(
         &mut self,
+        guard: &'rcu dyn InAtomicMode,
         new_pt_is_tracked: MapTrackingStatus,
-    ) -> Option<PageTableGuard<'pt, E, C>> {
+    ) -> Option<PageTableGuard<'rcu, E, C>> {
         if !(self.is_none() && self.node.level() > 1) {
             return None;
         }
@@ -124,7 +130,8 @@ impl<'guard, 'pt, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'guard, 'p
         let level = self.node.level();
         let new_page = PageTableNode::<E, C>::alloc(level - 1, new_pt_is_tracked);
 
-        let guard_addr = new_page.lock().into_raw_paddr();
+        let paddr = new_page.start_paddr();
+        let _ = ManuallyDrop::new(new_page.borrow().lock(guard));
 
         // SAFETY:
         //  1. The index is within the bounds.
@@ -138,10 +145,11 @@ impl<'guard, 'pt, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'guard, 'p
 
         *self.node.nr_children_mut() += 1;
 
-        // SAFETY: The resulting guard lifetime (`'a`) is no shorter than the
-        // lifetime of the current entry (`'a`), because we store the allocated
-        // page table in the current node.
-        Some(unsafe { PageTableGuard::from_raw_paddr(guard_addr) })
+        // SAFETY: The page table won't be dropped before the RCU grace period
+        // ends, so it outlives `'rcu`.
+        let pt_ref = unsafe { PageTableNodeRef::borrow_paddr(paddr) };
+        // SAFETY: The node is locked and there are no other guards.
+        Some(unsafe { pt_ref.make_guard_unchecked(guard) })
     }
 
     /// Splits the entry to smaller pages if it maps to a untracked huge page.
@@ -154,7 +162,8 @@ impl<'guard, 'pt, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'guard, 'p
     /// `None`.
     pub(in crate::mm::page_table) fn split_if_untracked_huge(
         &mut self,
-    ) -> Option<PageTableGuard<'pt, E, C>> {
+        guard: &'rcu dyn InAtomicMode,
+    ) -> Option<PageTableGuard<'rcu, E, C>> {
         let level = self.node.level();
 
         if !(self.pte.is_last(level)
@@ -168,16 +177,17 @@ impl<'guard, 'pt, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'guard, 'p
         let prop = self.pte.prop();
 
         let new_page = PageTableNode::<E, C>::alloc(level - 1, MapTrackingStatus::Untracked);
-        let mut guard = new_page.lock();
+        let mut pt_lock_guard = new_page.borrow().lock(guard);
 
         for i in 0..nr_subpage_per_huge::<C>() {
             let small_pa = pa + i * page_size::<C>(level - 1);
-            let mut entry = guard.entry(i);
+            let mut entry = pt_lock_guard.entry(i);
             let old = entry.replace(Child::Untracked(small_pa, level - 1, prop));
             debug_assert!(old.is_none());
         }
 
-        let guard_addr = guard.into_raw_paddr();
+        let paddr = new_page.start_paddr();
+        let _ = ManuallyDrop::new(pt_lock_guard);
 
         // SAFETY:
         //  1. The index is within the bounds.
@@ -189,10 +199,11 @@ impl<'guard, 'pt, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'guard, 'p
             )
         };
 
-        // SAFETY: The resulting guard lifetime (`'a`) is no shorter than the
-        // lifetime of the current entry (`'a`), because we store the allocated
-        // page table in the current node.
-        Some(unsafe { PageTableGuard::from_raw_paddr(guard_addr) })
+        // SAFETY: The page table won't be dropped before the RCU grace period
+        // ends, so it outlives `'rcu`.
+        let pt_ref = unsafe { PageTableNodeRef::borrow_paddr(paddr) };
+        // SAFETY: The node is locked and there are no other guards.
+        Some(unsafe { pt_ref.make_guard_unchecked(guard) })
     }
 
     /// Create a new entry at the node with guard.
@@ -200,7 +211,7 @@ impl<'guard, 'pt, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'guard, 'p
     /// # Safety
     ///
     /// The caller must ensure that the index is within the bounds of the node.
-    pub(super) unsafe fn new_at(guard: &'guard mut PageTableGuard<'pt, E, C>, idx: usize) -> Self {
+    pub(super) unsafe fn new_at(guard: &'a mut PageTableGuard<'rcu, E, C>, idx: usize) -> Self {
         // SAFETY: The index is within the bound.
         let pte = unsafe { guard.read_pte(idx) };
         Self {
