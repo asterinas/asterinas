@@ -27,7 +27,7 @@ jobs:
           # Syscall Test at Exfat
           - test_id: 'syscall-exfat'
             extra_blocklists: 'blocklists.exfat'
-            syscall_test_dir: '/exfat'
+            syscall_test_workdir: '/exfat'
           # SMP Syscall Test
           - test_id: 'syscall-smp4'
             netdev: 'tap'
@@ -52,7 +52,7 @@ jobs:
           smp: ${{ matrix.smp }}
           netdev: ${{ matrix.netdev }}
           extra_blocklists: ${{ matrix.extra_blocklists }}
-          syscall_test_dir: ${{ matrix.syscall_test_dir }}
+          syscall_test_workdir: ${{ matrix.syscall_test_workdir }}
 
   osdk-test:
     runs-on: self-hosted
