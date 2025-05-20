@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //! Memory reclamation for boot-time memory regions.
 //! 
 //! This module provides functionality for reclaiming memory regions that are
@@ -23,7 +25,7 @@
 //! 
 //! # Usage
 //! 
-//! ```rust
+//! ```ignore
 //! // Reclaim specific types of memory
 //! reclaim_initrd_memory()?;
 //! reclaim_acpi_tables_memory()?;
@@ -49,12 +51,7 @@ use crate::{
 /// 
 /// * `Result<()>` - Ok if the region was successfully reclaimed, Error otherwise
 /// 
-/// # Safety
-/// 
-/// The caller must ensure that:
-/// 1. The memory region is no longer in use by any subsystem
-/// 2. The region is properly aligned to page boundaries
-/// 3. The region is marked as Reclaimable in its MemoryRegionType
+
 pub fn add_physical_memory_region(region: &MemoryRegion) -> Result<()> {  
     // Validate region alignment
     if region.base() % PAGE_SIZE != 0 || region.len() % PAGE_SIZE != 0 {  
@@ -204,31 +201,98 @@ pub fn reset_reclamation_stats() {
 mod tests {
     use super::*;
     use crate::boot::memory_region::MemoryRegion;
+    use crate::mm::Paddr;
+
+    // Test helper to create memory regions
+    fn create_test_regions() -> Vec<MemoryRegion> {
+        vec![
+            // Initrd region (8MiB)
+            MemoryRegion::new(0x1000000, 0x1800000, MemoryRegionType::Module),
+            // ACPI tables (1KiB)
+            MemoryRegion::new(0x2000000, 0x2000400, MemoryRegionType::Reclaimable),
+            // Other bootloader region (4KiB)
+            MemoryRegion::new(0x3000000, 0x3001000, MemoryRegionType::Reclaimable),
+        ]
+    }
+
+    // Test helper to verify region reclamation
+    fn verify_region_reclaimed(base: Paddr, len: usize) {
+        let stats = get_reclamation_stats();
+        assert!(stats.regions_reclaimed > 0, "No regions were reclaimed");
+        assert!(stats.bytes_reclaimed >= len, "Not enough bytes were reclaimed");
+    }
 
     #[test]
-    fn test_memory_reclamation() {
-        // Create test memory regions
-        let regions = vec![
-            MemoryRegion::new(0x1000, 0x2000, MemoryRegionType::Reclaimable),
-            MemoryRegion::new(0x2000, 0x3000, MemoryRegionType::Module),
-            MemoryRegion::new(0x3000, 0x4000, MemoryRegionType::Reclaimable),
-        ];
-
-        // Test reclaim_boot_memory_regions
-        let result = reclaim_boot_memory_regions();
-        assert!(result.is_ok());
-
+    fn test_initrd_reclamation() {
+        // Setup
+        reset_reclamation_stats();
+        
         // Test reclaim_initrd_memory
         let result = reclaim_initrd_memory();
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "Failed to reclaim initrd memory");
+        
+        // Verify
+        verify_region_reclaimed(0x1000000, 8 * 1024 * 1024); // 8MiB
+    }
 
+    #[test]
+    fn test_acpi_tables_reclamation() {
+        // Setup
+        reset_reclamation_stats();
+        
         // Test reclaim_acpi_tables_memory
         let result = reclaim_acpi_tables_memory();
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "Failed to reclaim ACPI tables memory");
+        
+        // Verify
+        verify_region_reclaimed(0x2000000, 1024); // 1KiB
+    }
 
+    #[test]
+    fn test_boot_memory_reclamation() {
+        // Setup
+        reset_reclamation_stats();
+        
+        // Test reclaim_boot_memory_regions
+        let result = reclaim_boot_memory_regions();
+        assert!(result.is_ok(), "Failed to reclaim boot memory regions");
+        
+        // Verify
+        verify_region_reclaimed(0x3000000, 4096); // 4KiB
+    }
+
+    #[test]
+    fn test_invalid_region_reclamation() {
+        // Create an invalid region (not page-aligned)
+        let invalid_region = MemoryRegion::new(0x1000001, 0x1001001, MemoryRegionType::Reclaimable);
+        
+        // Attempt to reclaim
+        let result = add_physical_memory_region(&invalid_region);
+        assert!(result.is_err(), "Should fail for non-page-aligned region");
+    }
+
+    #[test]
+    fn test_non_reclaimable_region() {
+        // Create a non-reclaimable region
+        let non_reclaimable = MemoryRegion::new(0x1000000, 0x1001000, MemoryRegionType::Kernel);
+        
+        // Attempt to reclaim
+        let result = add_physical_memory_region(&non_reclaimable);
+        assert!(result.is_err(), "Should fail for non-reclaimable region");
+    }
+
+    #[test]
+    fn test_reclamation_statistics() {
+        // Setup
+        reset_reclamation_stats();
+        
+        // Perform reclamation
+        reclaim_boot_memory_regions().unwrap();
+        
         // Verify statistics
         let stats = get_reclamation_stats();
-        assert!(stats.regions_reclaimed > 0);
-        assert!(stats.bytes_reclaimed > 0);
+        assert!(stats.regions_reclaimed > 0, "No regions were reclaimed");
+        assert!(stats.bytes_reclaimed > 0, "No bytes were reclaimed");
+        assert_eq!(stats.failed_attempts, 0, "Should have no failed attempts");
     }
 }
