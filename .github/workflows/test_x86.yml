@@ -49,18 +49,18 @@ jobs:
           # Syscall Test at Ext2 (MicroVM)
           - test_id: 'syscall-ext2-microvm'
             scheme: 'microvm'
-            syscall_test_dir: '/ext2'
+            syscall_test_workdir: '/ext2'
           # Syscall Test at Ext2 (IOMMU) (Debug Build)
           - test_id: 'syscall-ext2-iommu-debug'
             scheme: 'iommu'
-            syscall_test_dir: '/ext2'
+            syscall_test_workdir: '/ext2'
             release: false
           # Syscall Test at Exfat (Multiboot2) (without KVM enabled)
           - test_id: 'syscall-exfat-multiboot2-nokvm'
             boot_protocol: 'multiboot2'
             enable_kvm: false
             extra_blocklists: 'blocklists.exfat'
-            syscall_test_dir: '/exfat'
+            syscall_test_workdir: '/exfat'
           # SMP Syscall Test (Multiboot2)
           - test_id: 'syscall-multiboot2-smp4'
             boot_protocol: 'multiboot2'
@@ -87,7 +87,7 @@ jobs:
           netdev: ${{ matrix.netdev || 'tap' }}
           scheme: ${{ matrix.scheme }}
           extra_blocklists: ${{ matrix.extra_blocklists }}
-          syscall_test_dir: ${{ matrix.syscall_test_dir }}
+          syscall_test_workdir: ${{ matrix.syscall_test_workdir }}
           boot_protocol: ${{ matrix.boot_protocol || 'linux-efi-handover64' }}
 
   osdk-test:
