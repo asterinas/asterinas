@@ -14,6 +14,7 @@ use super::{
 };
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
+    task::{atomic_mode::AsAtomicModeGuard, disable_preempt},
     util::marker::SameSizeAs,
     Pod,
 };
@@ -107,12 +108,12 @@ impl PageTable<KernelMode> {
 
         // Make shared the page tables mapped by the root table in the kernel space.
         {
+            let preempt_guard = disable_preempt();
+            let mut root_node = kpt.root.borrow().lock(&preempt_guard);
+
             const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
             let kernel_space_range = NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE;
 
-            let _guard = crate::task::disable_preempt();
-
-            let mut root_node = kpt.root.lock();
             for i in kernel_space_range {
                 let mut root_entry = root_node.entry(i);
                 let is_tracked = if super::kspace::should_map_as_tracked(
@@ -122,7 +123,9 @@ impl PageTable<KernelMode> {
                 } else {
                     MapTrackingStatus::Untracked
                 };
-                let _ = root_entry.alloc_if_none(is_tracked).unwrap();
+                let _ = root_entry
+                    .alloc_if_none(&preempt_guard, is_tracked)
+                    .unwrap();
             }
         }
 
@@ -134,15 +137,17 @@ impl PageTable<KernelMode> {
     /// This should be the only way to create the user page table, that is to
     /// duplicate the kernel page table with all the kernel mappings shared.
     pub fn create_user_page_table(&self) -> PageTable<UserMode> {
-        let _preempt_guard = crate::task::disable_preempt();
-        let mut root_node = self.root.lock();
         let new_root =
             PageTableNode::alloc(PagingConsts::NR_LEVELS, MapTrackingStatus::NotApplicable);
-        let mut new_node = new_root.lock();
+
+        let preempt_guard = disable_preempt();
+        let mut root_node = self.root.borrow().lock(&preempt_guard);
+        let mut new_node = new_root.borrow().lock(&preempt_guard);
 
         // Make a shallow copy of the root node in the kernel space range.
         // The user space range is not copied.
         const NR_PTES_PER_NODE: usize = nr_subpage_per_huge::<PagingConsts>();
+
         for i in NR_PTES_PER_NODE / 2..NR_PTES_PER_NODE {
             let root_entry = root_node.entry(i);
             let child = root_entry.to_ref();
@@ -176,7 +181,8 @@ impl PageTable<KernelMode> {
         vaddr: &Range<Vaddr>,
         mut op: impl FnMut(&mut PageProperty),
     ) -> Result<(), PageTableError> {
-        let mut cursor = CursorMut::new(self, vaddr)?;
+        let preempt_guard = disable_preempt();
+        let mut cursor = CursorMut::new(self, &preempt_guard, vaddr)?;
         while let Some(range) = cursor.protect_next(vaddr.end - cursor.virt_addr(), &mut op) {
             crate::arch::mm::tlb_flush_addr(range.start);
         }
@@ -184,7 +190,7 @@ impl PageTable<KernelMode> {
     }
 }
 
-impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTable<M, E, C> {
+impl<M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTable<M, E, C> {
     /// Create a new empty page table.
     ///
     /// Useful for the IOMMU page tables only.
@@ -213,7 +219,8 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTab
         paddr: &Range<Paddr>,
         prop: PageProperty,
     ) -> Result<(), PageTableError> {
-        self.cursor_mut(vaddr)?.map_pa(paddr, prop);
+        let preempt_guard = disable_preempt();
+        self.cursor_mut(&preempt_guard, vaddr)?.map_pa(paddr, prop);
         Ok(())
     }
 
@@ -232,11 +239,12 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTab
     ///
     /// If another cursor is already accessing the range, the new cursor may wait until the
     /// previous cursor is dropped.
-    pub fn cursor_mut(
-        &'a self,
+    pub fn cursor_mut<'rcu, G: AsAtomicModeGuard>(
+        &'rcu self,
+        guard: &'rcu G,
         va: &Range<Vaddr>,
-    ) -> Result<CursorMut<'a, M, E, C>, PageTableError> {
-        CursorMut::new(self, va)
+    ) -> Result<CursorMut<'rcu, M, E, C>, PageTableError> {
+        CursorMut::new(self, guard.as_atomic_mode_guard(), va)
     }
 
     /// Create a new cursor exclusively accessing the virtual address range for querying.
@@ -244,8 +252,12 @@ impl<'a, M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTab
     /// If another cursor is already accessing the range, the new cursor may wait until the
     /// previous cursor is dropped. The modification to the mapping by the cursor may also
     /// block or be overridden by the mapping of another cursor.
-    pub fn cursor(&'a self, va: &Range<Vaddr>) -> Result<Cursor<'a, M, E, C>, PageTableError> {
-        Cursor::new(self, va)
+    pub fn cursor<'rcu, G: AsAtomicModeGuard>(
+        &'rcu self,
+        guard: &'rcu G,
+        va: &Range<Vaddr>,
+    ) -> Result<Cursor<'rcu, M, E, C>, PageTableError> {
+        Cursor::new(self, guard.as_atomic_mode_guard(), va)
     }
 
     /// Create a new reference to the same page table.
