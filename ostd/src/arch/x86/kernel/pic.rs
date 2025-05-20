@@ -112,7 +112,6 @@ pub fn set_mask(master_mask: u8, slave_mask: u8) {
     SLAVE_DATA.write(slave_mask);
 }
 
-#[inline(always)]
 pub(crate) fn ack() {
     MASTER_CMD.write(0x20);
 }
