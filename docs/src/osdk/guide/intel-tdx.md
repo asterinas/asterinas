@@ -53,7 +53,7 @@ grub.mkrescue_path = "~/tdx-tools/grub"
 grub.protocol = "linux"
 qemu.args = """\
     -accel kvm \
-    -name process=tdxvm,debug-threads=on \
+    -name process=td,debug-threads=on \
     -m 8G \
     -vga none \
     -monitor pty \
