@@ -128,7 +128,6 @@ impl IndirectBlockCache {
         Ok(())
     }
 
-    #[inline]
     fn fs(&self) -> Arc<Ext2> {
         self.fs.upgrade().unwrap()
     }

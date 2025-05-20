@@ -421,7 +421,6 @@ pub struct Descriptor {
 
 type DescriptorPtr<'a> = SafePtr<Descriptor, &'a DmaCoherent, TRightSet<TRights![Dup, Write]>>;
 
-#[inline]
 fn set_dma_buf<T: DmaBuf>(desc_ptr: &DescriptorPtr, buf: &T) {
     // TODO: skip the empty dma buffer or just return error?
     debug_assert_ne!(buf.len(), 0);
