@@ -38,7 +38,7 @@ impl Capability {
 
     /// Number of domain support.
     ///
-    /// ```norun
+    /// ```text
     /// 0 => 4-bit domain-ids with support for up to 16 domains.
     /// 1 => 6-bit domain-ids with support for up to 64 domains.
     /// 2 => 8-bit domain-ids with support for up to 256 domains.
@@ -54,15 +54,8 @@ impl Capability {
     }
 
     /// Supported Adjusted Guest Address Widths.
-    /// ```norun
-    /// 0/4 => Reserved
-    /// 1   => 39-bit AGAW (3-level page-table)
-    /// 2   => 48-bit AGAW (4-level page-table)
-    /// 3   => 57-bit AGAW (5-level page-table)
-    /// ```
-    pub const fn supported_adjusted_guest_address_widths(&self) -> u64 {
-        const SAGAW_MASK: u64 = 0x1F << 8;
-        (self.0 & SAGAW_MASK) >> 8
+    pub const fn supported_adjusted_guest_address_widths(&self) -> CapabilitySagaw {
+        CapabilitySagaw::from_bits_truncate(self.0 >> 8)
     }
 
     /// Fault-recording Register offset, specifies the offset of the first fault recording
@@ -74,15 +67,10 @@ impl Capability {
         const FRO_MASK: u64 = 0x3FF << 24;
         (self.0 & FRO_MASK) >> 24
     }
+
     /// Second Stage Large Page Support.
-    /// ```norun
-    /// 2/3 => Reserved
-    /// 0   => 21-bit offset to page frame(2MB)
-    /// 1   => 30-bit offset to page frame(1GB)
-    /// ```
-    pub const fn second_stage_large_page_support(&self) -> u64 {
-        const SSLPS_MASK: u64 = 0xF << 34;
-        (self.0 & SSLPS_MASK) >> 34
+    pub const fn second_stage_large_page_support(&self) -> CapabilitySslps {
+        CapabilitySslps::from_bits_truncate(self.0 >> 34)
     }
 
     /// Maximum Guest Address Width. The maximum guest physical address width supported
@@ -127,7 +115,7 @@ impl Debug for Capability {
 
 bitflags! {
     /// Capability flags in IOMMU.
-    pub struct CapabilityFlags: u64{
+    pub struct CapabilityFlags: u64 {
         /// Required Write-Buffer Flushing.
         const RWBF =        1 << 4;
         /// Protected Low-Memory Region
@@ -158,5 +146,29 @@ bitflags! {
         const ESIRTPS =     1 << 62;
         /// Enhanced Set Root Table Pointer Support.
         const ESRTPS =      1 << 63;
+    }
+}
+
+bitflags! {
+    /// Supported Adjusted Guest Address Widths (SAGAW) in IOMMU.
+    pub struct CapabilitySagaw: u64 {
+        /// 39-bit AGAW (3-level page-table).
+        const AGAW_39BIT_3LP = 1 << 1;
+        /// 48-bit AGAW (4-level page-table).
+        const AGAW_48BIT_4LP = 1 << 2;
+        /// 57-bit AGAW (5-level page-table).
+        const AGAW_57BIT_5LP = 1 << 3;
+        // 0th and 4th bits are reserved.
+    }
+}
+
+bitflags! {
+    /// Second Stage Large Page Support (SSLPS) in IOMMU.
+    pub struct CapabilitySslps: u64 {
+        /// 21-bit offset to page frame (2MB).
+        const PAGE_21BIT_2MB = 1 << 0;
+        /// 30-bit offset to page frame (1GB).
+        const PAGE_30BIT_1GB = 1 << 1;
+        // 2nd and 3rd bits are reserved.
     }
 }

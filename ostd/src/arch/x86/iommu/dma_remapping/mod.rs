@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
 pub use context_table::RootTable;
-use log::info;
+use log::{info, warn};
 use second_stage::{DeviceMode, PageTableEntry, PagingConsts};
 use spin::Once;
 
 use super::IommuError;
 use crate::{
-    arch::iommu::registers::IOMMU_REGS,
+    arch::iommu::registers::{CapabilitySagaw, IOMMU_REGS},
     bus::pci::PciDeviceLocation,
     mm::{Daddr, PageTable},
     prelude::Paddr,
@@ -59,16 +59,28 @@ pub fn unmap(daddr: Daddr) -> Result<(), IommuError> {
 }
 
 pub fn init() {
-    // Create Root Table instance
+    if !IOMMU_REGS
+        .get()
+        .unwrap()
+        .lock()
+        .read_capability()
+        .supported_adjusted_guest_address_widths()
+        .contains(CapabilitySagaw::AGAW_39BIT_3LP)
+    {
+        warn!("[IOMMU] 3-level page tables not supported, disabling DMA remapping");
+        return;
+    }
+
+    // Create a Root Table instance.
     let mut root_table = RootTable::new();
-    // For all PCI Device, use the same page table.
+    // For all PCI devices, use the same page table.
     let page_table = PageTable::<DeviceMode, PageTableEntry, PagingConsts>::empty();
     for table in PciDeviceLocation::all() {
         root_table.specify_device_page_table(table, unsafe { page_table.shallow_copy() })
     }
     PAGE_TABLE.call_once(|| SpinLock::new(root_table));
 
-    // Enable DMA remapping
+    // Enable DMA remapping.
     let mut iommu_regs = IOMMU_REGS.get().unwrap().lock();
     iommu_regs.enable_dma_remapping(PAGE_TABLE.get().unwrap());
     info!("[IOMMU] DMA remapping enabled");
