@@ -47,7 +47,6 @@ fi
 
 if [ "$1" = "tdx" ]; then
     QEMU_ARGS="\
-        -name process=tdxvm,debug-threads=on \
         -m ${MEM:-8G} \
         -smp ${SMP:-1} \
         -vga none \
