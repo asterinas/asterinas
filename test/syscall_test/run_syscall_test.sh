@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MPL-2.0
 
 SCRIPT_DIR=$(dirname "$0")
-TEST_TMP_DIR=${SYSCALL_TEST_DIR:-/tmp}
+TEST_TMP_DIR=${SYSCALL_TEST_WORKDIR:-/tmp}
 TEST_BIN_DIR=$SCRIPT_DIR/tests
 BLOCKLIST_DIR=$SCRIPT_DIR/blocklists
 FAIL_CASES=$SCRIPT_DIR/fail_cases
