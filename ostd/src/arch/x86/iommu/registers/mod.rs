@@ -258,6 +258,15 @@ impl IommuRegisters {
 
         let base_address = dmar
             .remapping_iter()
+            // TODO: Add support for multiple DMA remapping hardware unit definitions (DRHDs). Note
+            // that we use `rev()` here to select the last one, since DRHDs that control specific
+            // devices tend to be reported first.
+            //
+            // For example, Intel(R) Virtualization Technology for Directed I/O (Revision 5.0), 8.4
+            // DMA Remapping Hardware Unit Definition Structure says "If a DRHD structure with
+            // INCLUDE_PCI_ALL flag Set is reported for a Segment, it must be enumerated by BIOS
+            // after all other DRHD structures for the same Segment".
+            .rev()
             .find_map(|remapping| match remapping {
                 Remapping::Drhd(drhd) => Some(drhd.register_base_addr()),
                 _ => None,

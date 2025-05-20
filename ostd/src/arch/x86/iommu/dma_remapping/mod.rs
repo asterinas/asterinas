@@ -74,6 +74,11 @@ pub fn init() {
     // Create a Root Table instance.
     let mut root_table = RootTable::new();
     // For all PCI devices, use the same page table.
+    //
+    // TODO: The BIOS reserves some memory regions as DMA targets and lists them in the Reserved
+    // Memory Region Reporting (RMRR) structures. These regions must be mapped for the hardware or
+    // firmware to function properly. For more details, see Intel(R) Virtualization Technology for
+    // Directed I/O (Revision 5.0), 3.16 Handling Requests to Reserved System Memory.
     let page_table = PageTable::<DeviceMode, PageTableEntry, PagingConsts>::empty();
     for table in PciDeviceLocation::all() {
         root_table.specify_device_page_table(table, unsafe { page_table.shallow_copy() })
