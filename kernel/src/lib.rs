@@ -143,7 +143,7 @@ fn init_thread() {
     if let Err(e) = mm::frame::reclaimer::reclaim_boot_memory_regions() {
         log::error!("Failed to reclaim boot memory regions: {:?}", e);
     }
-    
+
     let thread = ThreadOptions::new(|| {
         println!("[kernel] Hello world from kernel!");
     })

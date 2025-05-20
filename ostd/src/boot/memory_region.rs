@@ -32,9 +32,9 @@ pub enum MemoryRegionType {
     /// - Boot-time command line parsing buffers
     /// - Initial ramdisk data after it's been processed
     /// - Temporary boot-time data structures
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// Memory marked as Reclaimable must not be accessed after reclamation.
     /// The subsystem that owns the memory must ensure it's no longer in use
     /// before marking it as Reclaimable.

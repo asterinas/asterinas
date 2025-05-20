@@ -34,10 +34,10 @@
 pub mod allocator;
 pub mod linked_list;
 pub mod meta;
+pub mod reclaimer;
 pub mod segment;
 pub mod unique;
 pub mod untyped;
-pub mod reclaimer;
 
 mod frame_ref;
 pub use frame_ref::FrameRef;

@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: MPL-2.0
 
 # Test script for memory reclamation functionality using Docker
 
