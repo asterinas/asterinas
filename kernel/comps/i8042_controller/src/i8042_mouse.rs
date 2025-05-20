@@ -12,6 +12,7 @@ use ostd::{
 };
 use spin::Once;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use aster_input::{InputDevice, InputDeviceMeta, InputEvent, input_event};
 use aster_time::tsc::read_instant;
 use core::hint::spin_loop;
@@ -20,6 +21,7 @@ use crate::alloc::string::ToString;
 use super::MOUSE_CALLBACKS;
 use aster_input::event_type_codes::{EventType, RelAxis, MouseKeyEvent};
 use crate::MOUSE_WRITE;
+
 
 
 use crate::DATA_PORT;
@@ -61,6 +63,7 @@ pub fn handle_mouse_input(_trap_frame: &TrapFrame) {
 
     if state.index == 0 && (byte & 0x08 == 0) {
         log::error!("Invalid first byte! Abort.");
+        state.index = 0;
         return;
     }
     let index = state.index;
@@ -74,12 +77,25 @@ pub fn handle_mouse_input(_trap_frame: &TrapFrame) {
     }
 }
 
+use ostd::prelude::println;
 fn handle_mouse_packet(packet: MousePacket) {
-    let event = parse_input_event(packet);  
-    
-    input_event(event, "i8042_mouse");
+    // Parse multiple events from the packet
+    let mut events = parse_input_events(packet);
 
-    // Fixme: the callbacks are going to be replaced.
+    // Add a SYNC event to signal the end of the event group
+    events.push(InputEvent {
+        time: 0,
+        type_: EventType::EvSyn as u16,
+        code: 0, // SYN_REPORT
+        value: 0,
+    });
+    // Process each event
+    for event in events {
+        println!("Event: {:?}", event);
+        input_event(event, "i8042_mouse");
+    }
+
+    // FIXME: the callbacks are going to be replaced.
     for callback in MOUSE_CALLBACKS.lock().iter() {
         callback();
     }
@@ -134,7 +150,7 @@ fn parse_input_packet(packet: [u8; 3]) -> MousePacket {
     // let byte1 = MousePacket::read_one_byte();
     // let byte2 = MousePacket::read_one_byte();
 
-    log::error!("This is parse_input_packet in kernel/comps/mouse/src/i8042_mouse.rs");
+    log::error!("This is parse_input_packet in kernel/comps/mouse/src/i8042_mouse.rs packet: {:?}", packet);
 
     let byte0 = packet[0];
     let byte1 = packet[1];
@@ -151,56 +167,59 @@ fn parse_input_packet(packet: [u8; 3]) -> MousePacket {
     }
 }
 
-fn parse_input_event(packet: MousePacket) -> InputEvent {
-    log::error!("The packet is: L={}, R={}, M={}, X={}, Y={}", packet.left_button, packet.right_button, packet.middle_button, packet.x_movement, packet.y_movement);
+fn parse_input_events(packet: MousePacket) -> Vec<InputEvent> {
+    let mut events = Vec::new();
 
     // Get the current time in microseconds
     let now = read_instant();
     let time_in_microseconds = now.secs() * 1_000_000 + (now.nanos() / 1_000) as u64;
 
+    // Add X movement event if applicable
     if packet.x_movement != 0 {
-        InputEvent {
+        events.push(InputEvent {
             time: time_in_microseconds,
             type_: EventType::EvRel as u16,
             code: RelAxis::RelX as u16,
             value: packet.x_movement as i32,
-        }
-    } else if packet.y_movement != 0 {
-        InputEvent {
+        });
+    }
+
+    // Add Y movement event if applicable
+    if packet.y_movement != 0 {
+        events.push(InputEvent {
             time: time_in_microseconds,
             type_: EventType::EvRel as u16,
             code: RelAxis::RelY as u16,
             value: packet.y_movement as i32,
-        }
-    } else if packet.left_button {
-        InputEvent {
+        });
+    }
+
+    // Add button press/release events
+    if packet.left_button {
+        events.push(InputEvent {
             time: time_in_microseconds,
             type_: EventType::EvKey as u16,
             code: MouseKeyEvent::MouseLeft as u16,
             value: 1,
-        }
-    } else if packet.right_button {
-        InputEvent {
+        });
+    }
+    if packet.right_button {
+        events.push(InputEvent {
             time: time_in_microseconds,
             type_: EventType::EvKey as u16,
             code: MouseKeyEvent::MouseRight as u16,
             value: 1,
-        }
-    } else if packet.middle_button {
-        InputEvent {
+        });
+    }
+    if packet.middle_button {
+        events.push(InputEvent {
             time: time_in_microseconds,
             type_: EventType::EvKey as u16,
             code: MouseKeyEvent::MouseMiddle as u16,
             value: 1,
-        }
-    } else {
-        // Null input
-        // log::error!("Wrong input for mouse!");
-        InputEvent {
-            time: time_in_microseconds,
-            type_: EventType::EvRel as u16,
-            code: RelAxis::RelX as u16,
-            value: 0,
-        }
+        });
     }
+
+    // Return the list of events
+    events
 }
