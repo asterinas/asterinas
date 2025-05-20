@@ -12,6 +12,7 @@ framebuffer = { name = "aster-framebuffer" }
 network = { name = "aster-network" }
 mlsdisk = { name = "aster-mlsdisk" }
 systree = { name = "aster-systree" }
+keyboard = { name = "aster-keyboard" }
 
 [whitelist]
 [whitelist.nix.main]
