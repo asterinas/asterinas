@@ -2,10 +2,7 @@
 
 #![expect(unused_variables)]
 
-use core::{
-    arch::x86_64::_rdtsc,
-    sync::atomic::{AtomicBool, AtomicU64, Ordering},
-};
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use log::info;
 use x86::cpuid::cpuid;
@@ -95,20 +92,20 @@ pub fn determine_tsc_freq_via_pit() -> u64 {
         // Set a certain times of callbacks to calculate the frequency
         const CALLBACK_TIMES: u64 = TIMER_FREQ / 10;
 
+        let tsc_current_count = crate::arch::read_tsc();
+
         if IN_TIME.load(Ordering::Relaxed) < CALLBACK_TIMES || IS_FINISH.load(Ordering::Acquire) {
             if IN_TIME.load(Ordering::Relaxed) == 0 {
-                unsafe {
-                    TSC_FIRST_COUNT.store(_rdtsc(), Ordering::Relaxed);
-                }
+                TSC_FIRST_COUNT.store(tsc_current_count, Ordering::Relaxed);
             }
             IN_TIME.fetch_add(1, Ordering::Relaxed);
             return;
         }
 
         pit::disable_ioapic_line();
-        let tsc_count = unsafe { _rdtsc() };
-        let freq =
-            (tsc_count - TSC_FIRST_COUNT.load(Ordering::Relaxed)) * (TIMER_FREQ / CALLBACK_TIMES);
+
+        let tsc_first_count = TSC_FIRST_COUNT.load(Ordering::Relaxed);
+        let freq = (tsc_current_count - tsc_first_count) * (TIMER_FREQ / CALLBACK_TIMES);
         FREQUENCY.store(freq, Ordering::Release);
         IS_FINISH.store(true, Ordering::Release);
     }

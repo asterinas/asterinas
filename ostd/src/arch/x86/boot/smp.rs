@@ -343,13 +343,8 @@ fn spin_wait_cycles(c: u64) {
         }
     }
 
-    use core::arch::x86_64::_rdtsc;
-
-    // SAFETY: Reading CPU cycles is always safe.
-    let start = unsafe { _rdtsc() };
-
-    // SAFETY: Reading CPU cycles is always safe.
-    while duration(start, unsafe { _rdtsc() }) < c {
+    let start = crate::arch::read_tsc();
+    while duration(start, crate::arch::read_tsc()) < c {
         core::hint::spin_loop();
     }
 }
