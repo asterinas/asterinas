@@ -80,8 +80,12 @@ impl IrqLine {
         self.callbacks.is_empty()
     }
 
-    pub(crate) fn inner_irq(&self) -> &'static irq::IrqLine {
-        &self.inner_irq
+    /// Gets the remapping index of the IRQ line.
+    ///
+    /// This method will return `None` if interrupt remapping is disabled or
+    /// not supported by the architecture.
+    pub fn remapping_index(&self) -> Option<u16> {
+        self.inner_irq.remapping_index()
     }
 }
 

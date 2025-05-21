@@ -3,7 +3,7 @@
 //! PCI bus access
 
 use super::device::io_port::{ReadWriteAccess, WriteOnlyAccess};
-use crate::{bus::pci::PciDeviceLocation, io::IoPort, prelude::*, trap::IrqLine};
+use crate::{bus::pci::PciDeviceLocation, io::IoPort, prelude::*};
 
 static PCI_ADDRESS_PORT: IoPort<u32, WriteOnlyAccess> = unsafe { IoPort::new(0x0CF8) };
 static PCI_DATA_PORT: IoPort<u32, ReadWriteAccess> = unsafe { IoPort::new(0x0CFC) };
@@ -27,19 +27,13 @@ pub(crate) fn has_pci_bus() -> bool {
 
 pub(crate) const MSIX_DEFAULT_MSG_ADDR: u32 = 0xFEE0_0000;
 
-pub(crate) fn construct_remappable_msix_address(irq: &IrqLine) -> u32 {
-    let mut handle = irq.inner_irq().bind_remapping_entry().unwrap().lock();
-
-    // Enable irt entry
-    let irt_entry_mut = handle.irt_entry_mut().unwrap();
-    irt_entry_mut.enable_default(irq.num() as u32);
-
+pub(crate) fn construct_remappable_msix_address(remapping_index: u32) -> u32 {
     // Use remappable format. The bits[4:3] should be always set to 1 according to the manual.
     let mut address = MSIX_DEFAULT_MSG_ADDR | 0b1_1000;
 
     // Interrupt index[14:0] is on address[19:5] and interrupt index[15] is on address[2].
-    address |= (handle.index() as u32 & 0x7FFF) << 5;
-    address |= (handle.index() as u32 & 0x8000) >> 13;
+    address |= (remapping_index & 0x7FFF) << 5;
+    address |= (remapping_index & 0x8000) >> 13;
 
     address
 }

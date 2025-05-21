@@ -8,10 +8,7 @@
 use alloc::{sync::Arc, vec::Vec};
 
 use crate::{
-    arch::{
-        iommu::has_interrupt_remapping,
-        pci::{construct_remappable_msix_address, MSIX_DEFAULT_MSG_ADDR},
-    },
+    arch::pci::{construct_remappable_msix_address, MSIX_DEFAULT_MSG_ADDR},
     bus::pci::{
         cfg_space::{Bar, Command, MemoryBar},
         common_device::PciCommonDevice,
@@ -150,8 +147,8 @@ impl CapabilityMsixData {
         }
 
         // If interrupt remapping is enabled, then we need to change the value of the message address.
-        if has_interrupt_remapping() {
-            let address = construct_remappable_msix_address(&irq);
+        if let Some(remapping_index) = irq.remapping_index() {
+            let address = construct_remappable_msix_address(remapping_index as u32);
 
             self.table_bar
                 .io_mem()

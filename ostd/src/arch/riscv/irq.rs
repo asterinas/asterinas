@@ -83,6 +83,14 @@ impl IrqLine {
         Arc::new(IRQ_LIST.get().unwrap().get(irq_num as usize).unwrap())
     }
 
+    /// Gets the remapping index of the IRQ line.
+    ///
+    /// This method will return `None` if interrupt remapping is disabled or
+    /// not supported by the architecture.
+    pub fn remapping_index(&self) -> Option<u16> {
+        None
+    }
+
     /// Get the IRQ number.
     pub fn num(&self) -> u8 {
         self.irq_num
