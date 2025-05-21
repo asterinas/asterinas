@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::{
-    arch::x86_64::_rdtsc,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use core::sync::atomic::{AtomicU64, Ordering};
 
 use log::info;
 
@@ -46,7 +43,7 @@ pub(super) fn timer_callback() {
 
     match CONFIG.get().expect("ACPI timer config is not initialized") {
         Config::DeadlineMode { tsc_interval } => {
-            let tsc_value = unsafe { _rdtsc() };
+            let tsc_value = crate::arch::read_tsc();
             let next_tsc_value = tsc_interval + tsc_value;
             unsafe { wrmsr(IA32_TSC_DEADLINE, next_tsc_value) };
         }

@@ -25,10 +25,7 @@ use x86::cpuid::{CpuId, FeatureInfo};
 #[cfg(feature = "cvm_guest")]
 pub(crate) mod tdx_guest;
 
-use core::{
-    arch::x86_64::{_rdrand64_step, _rdtsc},
-    sync::atomic::Ordering,
-};
+use core::sync::atomic::Ordering;
 
 use kernel::apic::ioapic;
 use log::{info, warn};
@@ -132,6 +129,8 @@ pub fn tsc_freq() -> u64 {
 
 /// Reads the current value of the processor’s time-stamp counter (TSC).
 pub fn read_tsc() -> u64 {
+    use core::arch::x86_64::_rdtsc;
+
     // SAFETY: It is safe to read a time-related counter.
     unsafe { _rdtsc() }
 }
@@ -140,6 +139,8 @@ pub fn read_tsc() -> u64 {
 ///
 /// Returns None if no random value was generated.
 pub fn read_random() -> Option<u64> {
+    use core::arch::x86_64::_rdrand64_step;
+
     // Recommendation from "Intel® Digital Random Number Generator (DRNG) Software
     // Implementation Guide" - Section 5.2.1 and "Intel® 64 and IA-32 Architectures
     // Software Developer’s Manual" - Volume 1 - Section 7.3.17.1.
