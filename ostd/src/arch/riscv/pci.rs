@@ -6,9 +6,7 @@ use log::warn;
 use spin::Once;
 
 use super::boot::DEVICE_TREE;
-use crate::{
-    bus::pci::PciDeviceLocation, io::IoMem, mm::VmIoOnce, prelude::*, trap::IrqLine, Error,
-};
+use crate::{bus::pci::PciDeviceLocation, io::IoMem, mm::VmIoOnce, prelude::*, Error};
 
 static PCI_BASE_ADDR: Once<IoMem> = Once::new();
 
@@ -64,7 +62,7 @@ pub(crate) fn init() -> Result<()> {
 
 pub(crate) const MSIX_DEFAULT_MSG_ADDR: u32 = 0x2400_0000;
 
-pub(crate) fn construct_remappable_msix_address(irq: &IrqLine) -> u32 {
+pub(crate) fn construct_remappable_msix_address(remapping_index: u32) -> u32 {
     unimplemented!()
 }
 
