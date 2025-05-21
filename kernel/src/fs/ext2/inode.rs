@@ -651,7 +651,7 @@ impl Inode {
 
     pub fn read_link(&self) -> Result<String> {
         if self.type_ != InodeType::SymLink {
-            return_errno!(Errno::EISDIR);
+            return_errno_with_message!(Errno::EINVAL, "self is not symlink");
         }
 
         let inner = self.inner.read();
