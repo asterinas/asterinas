@@ -11,6 +11,7 @@ echo "Start process test......"
 # These test programs are sorted by name.
 tests="
 clone3/clone_exit_signal
+clone3/clone_files
 clone3/clone_no_exit_signal
 clone3/clone_process
 cpu_affinity/cpu_affinity
@@ -28,8 +29,11 @@ itimer/timer_create
 mmap/mmap_and_fork
 mmap/mmap_shared_filebacked
 mmap/mmap_readahead
+process/group_session
+process/job_control
 pthread/pthread_test
 pty/open_pty
+sched/sched_attr
 shm/posix_shm
 signal_c/parent_death_signal
 signal_c/signal_test

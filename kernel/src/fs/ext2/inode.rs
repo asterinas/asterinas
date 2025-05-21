@@ -1,23 +1,31 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-#![allow(unused_variables)]
+#![expect(dead_code)]
+#![expect(unused_variables)]
 
 use alloc::{borrow::ToOwned, rc::Rc};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use inherit_methods_macro::inherit_methods;
+use ostd::{const_assert, mm::UntypedMem};
 
 use super::{
     block_ptr::{BidPath, BlockPtrs, Ext2Bid, BID_SIZE, MAX_BLOCK_PTRS},
-    dir::{DirEntry, DirEntryItem, DirEntryReader, DirEntryWriter},
+    dir::{DirEntryHeader, DirEntryItem, DirEntryReader, DirEntryWriter},
     fs::Ext2,
     indirect_block_cache::{IndirectBlock, IndirectBlockCache},
     prelude::*,
     utils::now,
+    xattr::Xattr,
 };
 use crate::{
-    fs::utils::{Extension, FallocMode, InodeMode, Metadata},
+    fs::{
+        path::{is_dot, is_dot_or_dotdot, is_dotdot},
+        utils::{
+            Extension, FallocMode, Inode as _, InodeMode, Metadata, Permission, XattrName,
+            XattrNamespace, XattrSetFlags,
+        },
+    },
     process::{posix_thread::AsPosixThread, Gid, Uid},
 };
 
@@ -35,6 +43,7 @@ pub struct Inode {
     inner: RwMutex<InodeInner>,
     fs: Weak<Ext2>,
     extension: Extension,
+    xattr: Option<Xattr>,
 }
 
 impl Inode {
@@ -48,6 +57,9 @@ impl Inode {
             ino,
             type_: desc.type_,
             block_group_idx,
+            xattr: desc
+                .acl
+                .map(|acl| Xattr::new(acl, weak_self.clone(), fs.clone())),
             inner: RwMutex::new(InodeInner::new(desc, weak_self.clone(), fs.clone())),
             fs,
             extension: Extension::new(),
@@ -131,9 +143,6 @@ impl Inode {
         if inner.hard_links() == 0 {
             return_errno_with_message!(Errno::ENOENT, "dir removed");
         }
-        if inner.contains_entry(name) {
-            return_errno!(Errno::EEXIST);
-        }
 
         let inode = self
             .fs()
@@ -143,13 +152,13 @@ impl Inode {
             self.fs().free_inode(inode.ino, is_dir).unwrap();
             return Err(e);
         }
-        let new_entry = DirEntry::new(inode.ino, name, inode_type);
 
         let mut inner = inner.upgrade();
-        if let Err(e) = inner.append_entry(new_entry, inode_type, name) {
+        if let Err(e) = inner.append_new_entry(inode.ino, inode_type, name, true) {
             self.fs().free_inode(inode.ino, is_dir).unwrap();
             return Err(e);
         }
+
         let now = now();
         inner.set_mtime(now);
         inner.set_ctime(now);
@@ -208,13 +217,8 @@ impl Inode {
             return_errno!(Errno::EPERM);
         }
 
-        if inner.contains_entry(name) {
-            return_errno!(Errno::EEXIST);
-        }
-
-        let new_entry = DirEntry::new(inode.ino, name, inode_type);
         let mut inner = inner.upgrade();
-        inner.append_entry(new_entry, inode_type, name)?;
+        inner.append_new_entry(inode.ino, inode_type, name, true)?;
         let now = now();
         inner.set_mtime(now);
         inner.set_ctime(now);
@@ -228,7 +232,7 @@ impl Inode {
     }
 
     pub fn unlink(&self, name: &str) -> Result<()> {
-        if name == "." || name == ".." {
+        if is_dot_or_dotdot(name) {
             return_errno!(Errno::EISDIR);
         }
 
@@ -265,10 +269,10 @@ impl Inode {
     }
 
     pub fn rmdir(&self, name: &str) -> Result<()> {
-        if name == "." {
+        if is_dot(name) {
             return_errno_with_message!(Errno::EINVAL, "rmdir on .");
         }
-        if name == ".." {
+        if is_dotdot(name) {
             return_errno_with_message!(Errno::ENOTEMPTY, "rmdir on ..");
         }
 
@@ -421,10 +425,10 @@ impl Inode {
     }
 
     pub fn rename(&self, old_name: &str, target: &Inode, new_name: &str) -> Result<()> {
-        if old_name == "." || old_name == ".." || new_name == "." || new_name == ".." {
+        if is_dot_or_dotdot(old_name) || is_dot_or_dotdot(new_name) {
             return_errno!(Errno::EISDIR);
         }
-        if new_name.len() > MAX_FNAME_LEN || new_name.len() > MAX_FNAME_LEN {
+        if old_name.len() > MAX_FNAME_LEN || new_name.len() > MAX_FNAME_LEN {
             return_errno!(Errno::ENAMETOOLONG);
         }
 
@@ -487,8 +491,7 @@ impl Inode {
             }
 
             self_inner.remove_entry_at(old_name, src_offset)?;
-            let new_entry = DirEntry::new(src_inode.ino, new_name, src_inode_typ);
-            target_inner.append_entry(new_entry, src_inode_typ, new_name)?;
+            target_inner.append_new_entry(src_inode.ino, src_inode_typ, new_name, false)?;
             let now = now();
             self_inner.set_mtime(now);
             self_inner.set_ctime(now);
@@ -575,8 +578,7 @@ impl Inode {
 
         self_inner.remove_entry_at(old_name, src_offset)?;
         target_inner.remove_entry_at(new_name, dst_offset)?;
-        let new_entry = DirEntry::new(src_inode.ino, new_name, src_inode_typ);
-        target_inner.append_entry(new_entry, src_inode_typ, new_name)?;
+        target_inner.append_new_entry(src_inode.ino, src_inode_typ, new_name, false)?;
         dst_inner.dec_hard_links();
         let now = now();
         self_inner.set_mtime(now);
@@ -751,6 +753,9 @@ impl Inode {
         let mut inner = self.inner.write();
         inner.sync_data()?;
         inner.sync_metadata()?;
+        if let Some(xattr) = self.xattr.as_ref() {
+            xattr.flush()?;
+        }
         Ok(())
     }
 
@@ -814,6 +819,48 @@ impl Inode {
             }
         }
     }
+
+    pub fn set_xattr(
+        &self,
+        name: XattrName,
+        value_reader: &mut VmReader,
+        flags: XattrSetFlags,
+    ) -> Result<()> {
+        let xattr = self.xattr.as_ref().ok_or(Error::with_message(
+            Errno::EPERM,
+            "xattr is not supported on the file type",
+        ))?;
+        self.check_permission(Permission::MAY_WRITE)?;
+        xattr.set(name, value_reader, flags)
+    }
+
+    pub fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize> {
+        if self.xattr.is_none() {
+            return_errno_with_message!(Errno::ENODATA, "no available xattrs");
+        }
+        self.check_permission(Permission::MAY_READ)?;
+        self.xattr.as_ref().unwrap().get(name, value_writer)
+    }
+
+    pub fn list_xattr(
+        &self,
+        namespace: XattrNamespace,
+        list_writer: &mut VmWriter,
+    ) -> Result<usize> {
+        if self.xattr.is_none() || self.check_permission(Permission::MAY_ACCESS).is_err() {
+            return Ok(0);
+        }
+        self.xattr.as_ref().unwrap().list(namespace, list_writer)
+    }
+
+    pub fn remove_xattr(&self, name: XattrName) -> Result<()> {
+        let xattr = self.xattr.as_ref().ok_or(Error::with_message(
+            Errno::EPERM,
+            "xattr is not supported on the file type",
+        ))?;
+        self.check_permission(Permission::MAY_WRITE)?;
+        self.xattr.as_ref().unwrap().remove(name)
+    }
 }
 
 #[inherit_methods(from = "self.inner.read()")]
@@ -833,6 +880,7 @@ impl Inode {
 
 #[inherit_methods(from = "self.inner.write()")]
 impl Inode {
+    pub fn set_acl(&self, bid: Bid);
     pub fn set_atime(&self, time: Duration);
     pub fn set_mtime(&self, time: Duration);
     pub fn set_ctime(&self, time: Duration);
@@ -1029,8 +1077,8 @@ impl InodeInner {
 
     fn init_dir(&mut self, self_ino: u32, parent_ino: u32) -> Result<()> {
         debug_assert_eq!(self.inode_type(), InodeType::Dir);
-        self.append_entry(DirEntry::self_entry(self_ino), InodeType::Dir, ".")?;
-        self.append_entry(DirEntry::parent_entry(parent_ino), InodeType::Dir, "..")?;
+        DirEntryWriter::new(&self.page_cache, 0).init_dir(self_ino, parent_ino)?;
+        self.inc_hard_links(); // for ".."
         Ok(())
     }
 
@@ -1046,15 +1094,20 @@ impl InodeInner {
         DirEntryReader::new(&self.page_cache, 0).entry_count()
     }
 
-    pub fn append_entry(
+    pub fn append_new_entry(
         &mut self,
-        entry: DirEntry,
+        ino: u32,
         inode_type: InodeType,
         name: &str,
+        check_existence: bool,
     ) -> Result<()> {
-        debug_assert!(inode_type == entry.type_() && entry.name() == name);
+        let entry_header = DirEntryHeader::new(ino, inode_type, name.len());
+        DirEntryWriter::new(&self.page_cache, 0).append_new_entry(
+            entry_header,
+            name,
+            check_existence,
+        )?;
 
-        DirEntryWriter::new(&self.page_cache, 0).append_entry(entry)?;
         let file_size = self.file_size();
         let page_cache_size = self.page_cache.pages().size();
         if page_cache_size > file_size {
@@ -1070,14 +1123,13 @@ impl InodeInner {
     }
 
     pub fn remove_entry_at(&mut self, name: &str, offset: usize) -> Result<()> {
-        let entry = DirEntryWriter::new(&self.page_cache, offset).remove_entry(name)?;
-        let is_dir = entry.type_() == InodeType::Dir;
+        let removed_entry = DirEntryWriter::new(&self.page_cache, offset).remove_entry(name)?;
         let file_size = self.file_size();
         let page_cache_size = self.page_cache.pages().size();
         if page_cache_size < file_size {
             self.inode_impl.resize(page_cache_size)?;
         }
-        if is_dir {
+        if removed_entry.type_() == InodeType::Dir {
             self.dec_hard_links(); // for ".."
         }
         Ok(())
@@ -1125,6 +1177,7 @@ impl InodeInner {
     pub fn dec_hard_links(&mut self);
     pub fn blocks_count(&self) -> Ext2Bid;
     pub fn acl(&self) -> Option<Bid>;
+    pub fn set_acl(&mut self, bid: Bid);
     pub fn atime(&self) -> Duration;
     pub fn set_atime(&mut self, time: Duration);
     pub fn mtime(&self) -> Duration;
@@ -1226,6 +1279,10 @@ impl InodeImpl {
         self.desc.acl
     }
 
+    pub fn set_acl(&mut self, bid: Bid) {
+        self.desc.acl = Some(bid);
+    }
+
     pub fn atime(&self) -> Duration {
         self.desc.atime
     }
@@ -1294,6 +1351,9 @@ impl InodeImpl {
                 inode
                     .fs()
                     .free_inode(inode.ino(), self.desc.type_ == InodeType::Dir)?;
+                if let Some(xattr) = &inode.xattr {
+                    xattr.free()?;
+                }
                 self.is_freed = true;
             }
         }
@@ -1812,6 +1872,8 @@ impl InodeBlockManager {
 
         for dev_range in DeviceRangeReader::new(self, bid..bid + 1 as Ext2Bid)? {
             let start_bid = dev_range.start as Ext2Bid;
+            // TODO: Should we allocate the bio segment from the pool on reads?
+            // This may require an additional copy to the requested frame in the completion callback.
             let bio_segment = BioSegment::new_from_segment(
                 Segment::from(frame.clone()).into(),
                 BioDirection::FromDevice,
@@ -1859,10 +1921,12 @@ impl InodeBlockManager {
 
         for dev_range in DeviceRangeReader::new(self, bid..bid + 1 as Ext2Bid)? {
             let start_bid = dev_range.start as Ext2Bid;
-            let bio_segment = BioSegment::new_from_segment(
-                Segment::from(frame.clone()).into(),
-                BioDirection::ToDevice,
-            );
+            let bio_segment = BioSegment::alloc(1, BioDirection::ToDevice);
+            // This requires an additional copy to the pooled bio segment.
+            bio_segment
+                .writer()
+                .unwrap()
+                .write_fallible(&mut frame.reader().to_fallible())?;
             let waiter = self.fs().write_blocks_async(start_bid, bio_segment)?;
             bio_waiter.concat(waiter);
         }

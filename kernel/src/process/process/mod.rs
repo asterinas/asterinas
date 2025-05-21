@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use self::timer_manager::PosixTimerManager;
 use super::{
-    posix_thread::{allocate_posix_tid, AsPosixThread},
+    posix_thread::AsPosixThread,
     process_table,
-    process_vm::{Heap, InitStackReader, ProcessVm},
+    process_vm::{Heap, InitStackReader, ProcessVm, ProcessVmarGuard},
     rlimit::ResourceLimits,
     signal::{
         sig_disposition::SigDispositions,
@@ -15,27 +15,23 @@ use super::{
     },
     status::ProcessStatus,
     task_set::TaskSet,
-    Credentials,
 };
 use crate::{
-    device::tty::open_ntty_as_controlling_terminal,
     prelude::*,
-    sched::priority::{AtomicNice, Nice},
+    sched::{AtomicNice, Nice},
     thread::{AsThread, Thread},
     time::clocks::ProfClock,
-    vm::vmar::Vmar,
 };
 
-mod builder;
+mod init_proc;
 mod job_control;
 mod process_group;
 mod session;
 mod terminal;
 mod timer_manager;
 
-use aster_rights::Full;
 use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
-pub use builder::ProcessBuilder;
+pub use init_proc::spawn_init_process;
 pub use job_control::JobControl;
 use ostd::{sync::WaitQueue, task::Task};
 pub use process_group::ProcessGroup;
@@ -82,11 +78,26 @@ pub struct Process {
     /// Process group
     pub(super) process_group: Mutex<Weak<ProcessGroup>>,
     /// resource limits
-    resource_limits: Mutex<ResourceLimits>,
+    resource_limits: ResourceLimits,
     /// Scheduling priority nice value
     /// According to POSIX.1, the nice value is a per-process attribute,
     /// the threads in a process should share a nice value.
     nice: AtomicNice,
+
+    // Child reaper attribute
+    /// Whether the process is a child subreaper.
+    ///
+    /// A subreaper can be considered as a sort of "sub-init".
+    /// Instead of letting the init process to reap all orphan zombie processes,
+    /// a subreaper can reap orphan zombie processes among its descendants.
+    is_child_subreaper: AtomicBool,
+
+    /// Whether the process has a subreaper that will reap it when the
+    /// process becomes orphaned.
+    ///  
+    /// If `has_child_subreaper` is true in a `Process`, this attribute should
+    /// also be true for all of its descendants.
+    pub(super) has_child_subreaper: AtomicBool,
 
     // Signal
     /// Sig dispositions
@@ -171,8 +182,7 @@ impl Process {
         Some(Task::current()?.as_posix_thread()?.process())
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn new(
+    pub(super) fn new(
         pid: Pid,
         parent: Weak<Process>,
         executable_path: String,
@@ -198,73 +208,20 @@ impl Process {
             parent: ParentProcess::new(parent),
             children: Mutex::new(BTreeMap::new()),
             process_group: Mutex::new(Weak::new()),
+            is_child_subreaper: AtomicBool::new(false),
+            has_child_subreaper: AtomicBool::new(false),
             sig_dispositions,
             parent_death_signal: AtomicSigNum::new_empty(),
             exit_signal: AtomicSigNum::new_empty(),
-            resource_limits: Mutex::new(resource_limits),
+            resource_limits,
             nice: AtomicNice::new(nice),
             timer_manager: PosixTimerManager::new(&prof_clock, process_ref),
             prof_clock,
         })
     }
 
-    /// init a user process and run the process
-    pub fn spawn_user_process(
-        executable_path: &str,
-        argv: Vec<CString>,
-        envp: Vec<CString>,
-    ) -> Result<Arc<Self>> {
-        // spawn user process should give an absolute path
-        debug_assert!(executable_path.starts_with('/'));
-        let process = Process::create_user_process(executable_path, argv, envp)?;
-
-        open_ntty_as_controlling_terminal(&process)?;
-
-        process.run();
-        Ok(process)
-    }
-
-    fn create_user_process(
-        executable_path: &str,
-        argv: Vec<CString>,
-        envp: Vec<CString>,
-    ) -> Result<Arc<Self>> {
-        let process_builder = {
-            let pid = allocate_posix_tid();
-            let parent = Weak::new();
-
-            let credentials = Credentials::new_root();
-
-            let mut builder = ProcessBuilder::new(pid, executable_path, parent);
-            builder.argv(argv).envp(envp).credentials(credentials);
-            builder
-        };
-
-        let process = process_builder.build()?;
-
-        // Lock order: session table -> group table -> process table -> group of process
-        // -> group inner -> session inner
-        let mut session_table_mut = process_table::session_table_mut();
-        let mut group_table_mut = process_table::group_table_mut();
-        let mut process_table_mut = process_table::process_table_mut();
-
-        // Creates new group
-        let group = ProcessGroup::new(process.clone());
-        *process.process_group.lock() = Arc::downgrade(&group);
-        group_table_mut.insert(group.pgid(), group.clone());
-
-        // Creates new session
-        let session = Session::new(group.clone());
-        group.inner.lock().session = Arc::downgrade(&session);
-        session.inner.lock().leader = Some(process.clone());
-        session_table_mut.insert(session.sid(), session);
-
-        process_table_mut.insert(process.pid(), process.clone());
-        Ok(process)
-    }
-
-    /// start to run current process
-    pub fn run(&self) {
+    /// Runs the process.
+    pub(super) fn run(&self) {
         let tasks = self.tasks.lock();
         // when run the process, the process should has only one thread
         debug_assert!(tasks.as_slice().len() == 1);
@@ -304,7 +261,7 @@ impl Process {
         *self.executable_path.write() = executable_path;
     }
 
-    pub fn resource_limits(&self) -> &Mutex<ResourceLimits> {
+    pub fn resource_limits(&self) -> &ResourceLimits {
         &self.resource_limits
     }
 
@@ -317,6 +274,7 @@ impl Process {
     }
 
     // *********** Parent and child ***********
+
     pub fn parent(&self) -> &ParentProcess {
         &self.parent
     }
@@ -329,254 +287,291 @@ impl Process {
         &self.children
     }
 
-    pub fn has_child(&self, pid: &Pid) -> bool {
-        self.children.lock().contains_key(pid)
-    }
-
     pub fn children_wait_queue(&self) -> &WaitQueue {
         &self.children_wait_queue
     }
 
-    // *********** Process group & Session***********
+    // *********** Process group & Session ***********
 
     /// Returns the process group ID of the process.
+    //
+    // FIXME: If we call this method on a non-current process without holding the process table
+    // lock, it may return zero if the process is reaped at the same time.
     pub fn pgid(&self) -> Pgid {
-        if let Some(process_group) = self.process_group.lock().upgrade() {
-            process_group.pgid()
-        } else {
-            0
-        }
+        self.process_group
+            .lock()
+            .upgrade()
+            .map_or(0, |group| group.pgid())
     }
 
-    /// Returns the process group which the process belongs to.
-    pub fn process_group(&self) -> Option<Arc<ProcessGroup>> {
-        self.process_group.lock().upgrade()
+    /// Returns the session ID of the process.
+    //
+    // FIXME: If we call this method on a non-current process without holding the process table
+    // lock, it may return zero if the process is reaped at the same time.
+    pub fn sid(&self) -> Sid {
+        self.process_group
+            .lock()
+            .upgrade()
+            .and_then(|group| group.session())
+            .map_or(0, |session| session.sid())
     }
 
-    /// Returns whether `self` is the leader of process group.
-    fn is_group_leader(self: &Arc<Self>) -> bool {
-        let Some(process_group) = self.process_group() else {
-            return false;
-        };
-
-        let Some(leader) = process_group.leader() else {
-            return false;
-        };
-
-        Arc::ptr_eq(self, &leader)
-    }
-
-    /// Returns the session which the process belongs to.
-    pub fn session(&self) -> Option<Arc<Session>> {
-        let process_group = self.process_group()?;
-        process_group.session()
-    }
-
-    /// Returns whether the process is session leader.
-    pub fn is_session_leader(self: &Arc<Self>) -> bool {
-        let session = self.session().unwrap();
-
-        let Some(leading_process) = session.leader() else {
-            return false;
-        };
-
-        Arc::ptr_eq(self, &leading_process)
+    /// Returns the controlling terminal of the process, if any.
+    pub fn terminal(&self) -> Option<Arc<dyn Terminal>> {
+        self.process_group
+            .lock()
+            .upgrade()
+            .and_then(|group| group.session())
+            .and_then(|session| session.lock().terminal().cloned())
     }
 
     /// Moves the process to the new session.
     ///
-    /// If the process is already session leader, this method does nothing.
+    /// This method will create a new process group in a new session, move the process to the new
+    /// session, and return the session ID (which is equal to the process ID and the process group
+    /// ID).
     ///
-    /// Otherwise, this method creates a new process group in a new session
-    /// and moves the process to the session, returning the new session.
+    /// # Errors
     ///
-    /// This method may return the following errors:
-    ///  * `EPERM`, if the process is a process group leader, or some existing session
-    ///    or process group has the same ID as the process.
-    pub fn to_new_session(self: &Arc<Self>) -> Result<Arc<Session>> {
-        if self.is_session_leader() {
-            return Ok(self.session().unwrap());
-        }
+    /// This method will return `EPERM` if an existing process group has the same identifier as the
+    /// process ID. This means that the process is or was a process group leader and that the
+    /// process group is still alive.
+    pub fn to_new_session(self: &Arc<Self>) -> Result<Sid> {
+        // Lock order: session table -> group table -> group of process
+        // -> group inner -> session inner
+        let mut session_table_mut = process_table::session_table_mut();
+        let mut group_table_mut = process_table::group_table_mut();
 
-        if self.is_group_leader() {
+        if session_table_mut.contains_key(&self.pid) {
+            // FIXME: According to the Linux implementation, this check should be removed, so we'll
+            // return `EPERM` due to hitting the following check. However, we need to work around a
+            // gVisor bug. The upstream gVisor has fixed the issue in:
+            // <https://github.com/google/gvisor/commit/582f7bf6c0ccccaeb1215a232709df38d5d409f7>.
+            return Ok(self.pid);
+        }
+        if group_table_mut.contains_key(&self.pid) {
             return_errno_with_message!(
                 Errno::EPERM,
-                "process group leader cannot be moved to new session."
+                "a process group leader cannot be moved to a new session"
             );
         }
 
-        let session = self.session().unwrap();
+        let mut process_group_mut = self.process_group.lock();
 
-        // Lock order: session table -> group table -> group of process -> group inner -> session inner
-        let mut session_table_mut = process_table::session_table_mut();
-        let mut group_table_mut = process_table::group_table_mut();
-        let mut self_group_mut = self.process_group.lock();
+        self.clear_old_group_and_session(
+            &mut process_group_mut,
+            &mut session_table_mut,
+            &mut group_table_mut,
+        );
 
-        if session_table_mut.contains_key(&self.pid) {
-            return_errno_with_message!(Errno::EPERM, "cannot create new session");
-        }
-
-        if group_table_mut.contains_key(&self.pid) {
-            return_errno_with_message!(Errno::EPERM, "cannot create process group");
-        }
-
-        // Removes the process from old group
-        if let Some(old_group) = self_group_mut.upgrade() {
-            let mut group_inner = old_group.inner.lock();
-            let mut session_inner = session.inner.lock();
-            group_inner.remove_process(&self.pid);
-            *self_group_mut = Weak::new();
-
-            if group_inner.is_empty() {
-                group_table_mut.remove(&old_group.pgid());
-                debug_assert!(session_inner.process_groups.contains_key(&old_group.pgid()));
-                session_inner.process_groups.remove(&old_group.pgid());
-
-                if session_inner.is_empty() {
-                    session_table_mut.remove(&session.sid());
-                }
-            }
-        }
-
-        // Creates a new process group
-        let new_group = ProcessGroup::new(self.clone());
-        *self_group_mut = Arc::downgrade(&new_group);
-        group_table_mut.insert(new_group.pgid(), new_group.clone());
-
-        // Creates a new session
-        let new_session = Session::new(new_group.clone());
-        let mut new_group_inner = new_group.inner.lock();
-        new_group_inner.session = Arc::downgrade(&new_session);
-        new_session.inner.lock().leader = Some(self.clone());
-        session_table_mut.insert(new_session.sid(), new_session.clone());
-
-        // Removes the process from session.
-        let mut session_inner = session.inner.lock();
-        session_inner.remove_process(self);
-
-        Ok(new_session)
+        Ok(self.set_new_session(
+            &mut process_group_mut,
+            &mut session_table_mut,
+            &mut group_table_mut,
+        ))
     }
 
-    /// Moves the process to other process group.
-    ///
-    ///  * If the group already exists, the process and the group should belong to the same session.
-    ///  * If the group does not exist, this method creates a new group for the process and move the
-    ///    process to the group. The group is added to the session of the process.
-    ///
-    /// This method may return `EPERM` in following cases:
-    ///  * The process is session leader;
-    ///  * The group already exists, but the group does not belong to the same session as the process;
-    ///  * The group does not exist, but `pgid` is not equal to `pid` of the process.
-    pub fn to_other_group(self: &Arc<Self>, pgid: Pgid) -> Result<()> {
-        // if the process already belongs to the process group
-        if self.pgid() == pgid {
-            return Ok(());
-        }
+    pub(super) fn clear_old_group_and_session(
+        &self,
+        process_group_mut: &mut MutexGuard<Weak<ProcessGroup>>,
+        session_table_mut: &mut MutexGuard<BTreeMap<Sid, Arc<Session>>>,
+        group_table_mut: &mut MutexGuard<BTreeMap<Pgid, Arc<ProcessGroup>>>,
+    ) {
+        let process_group = process_group_mut.upgrade().unwrap();
+        let mut process_group_inner = process_group.lock();
+        let session = process_group.session().unwrap();
+        let mut session_inner = session.lock();
 
-        if self.is_session_leader() {
-            return_errno_with_message!(Errno::EPERM, "the process cannot be a session leader");
-        }
+        // Remove the process from the process group.
+        process_group_inner.remove_process(&self.pid);
+        if process_group_inner.is_empty() {
+            group_table_mut.remove(&process_group.pgid());
 
-        if let Some(process_group) = process_table::get_process_group(&pgid) {
-            let session = self.session().unwrap();
-            if !session.contains_process_group(&process_group) {
-                return_errno_with_message!(
-                    Errno::EPERM,
-                    "the group and process does not belong to same session"
-                );
+            // Remove the process group from the session.
+            session_inner.remove_process_group(&process_group.pgid());
+            if session_inner.is_empty() {
+                session_table_mut.remove(&session.sid());
             }
-            self.to_specified_group(&process_group)?;
+        }
+
+        **process_group_mut = Weak::new();
+    }
+
+    fn set_new_session(
+        self: &Arc<Self>,
+        process_group_mut: &mut MutexGuard<Weak<ProcessGroup>>,
+        session_table_mut: &mut MutexGuard<BTreeMap<Sid, Arc<Session>>>,
+        group_table_mut: &mut MutexGuard<BTreeMap<Pgid, Arc<ProcessGroup>>>,
+    ) -> Sid {
+        let (session, process_group) = Session::new_pair(self.clone());
+        let sid = session.sid();
+
+        **process_group_mut = Arc::downgrade(&process_group);
+
+        // Insert the new session and the new process group to the global table.
+        session_table_mut.insert(session.sid(), session);
+        group_table_mut.insert(process_group.pgid(), process_group);
+
+        sid
+    }
+
+    /// Moves the process itself or its child process to another process group.
+    ///
+    /// The process to be moved is specified with the process ID `pid`; `self` is used only for
+    /// permission checking purposes (see the Errors section below), which is typically
+    /// `current!()` when implementing system calls.
+    ///
+    /// If `pgid` is equal to the process ID, a new process group with the given PGID will be
+    /// created (if it does not already exist). Then, the process will be moved to the process
+    /// group with the given PGID, if the process group exists and belongs to the same session as
+    /// the given process.
+    ///
+    /// # Errors
+    ///
+    /// This method will return `ESRCH` in following cases:
+    ///  * The process specified by `pid` does not exist;
+    ///  * The process specified by `pid` is neither `self` or a child process of `self`.
+    ///
+    /// This method will return `EPERM` in following cases:
+    ///  * The process is not in the same session as `self`;
+    ///  * The process is a session leader, but the given PGID is not the process's PID/PGID;
+    ///  * The process group already exists, but the group does not belong to the same session;
+    ///  * The process group does not exist, but `pgid` is not equal to the process ID.
+    pub fn move_process_to_group(&self, pid: Pid, pgid: Pgid) -> Result<()> {
+        // Lock order: group table -> process table -> group of process
+        // -> group inner -> session inner
+        let group_table_mut = process_table::group_table_mut();
+        let process_table_mut = process_table::process_table_mut();
+
+        let process = process_table_mut.get(pid).ok_or(Error::with_message(
+            Errno::ESRCH,
+            "the process to set the PGID does not exist",
+        ))?;
+
+        let current_session = if self.pid == process.pid() {
+            // There is no need to check if the session is the same in this case.
+            None
+        } else if self.pid == process.parent().pid() {
+            // FIXME: If the child process has called `execve`, we should fail with `EACCESS`.
+
+            // Immediately release the `self.process_group` lock to avoid deadlocks. Race
+            // conditions don't matter because this is used for comparison purposes only.
+            Some(
+                self.process_group
+                    .lock()
+                    .upgrade()
+                    .unwrap()
+                    .session()
+                    .unwrap(),
+            )
         } else {
-            if pgid != self.pid() {
-                return_errno_with_message!(
-                    Errno::EPERM,
-                    "the new process group should have the same ID as the process."
-                );
-            }
+            return_errno_with_message!(
+                Errno::ESRCH,
+                "the process to set the PGID is neither the current process nor its child process"
+            );
+        };
 
-            self.to_new_group()?;
+        if let Some(new_process_group) = group_table_mut.get(&pgid).cloned() {
+            process.to_existing_group(current_session, group_table_mut, new_process_group)
+        } else if pgid == process.pid() {
+            process.to_new_group(current_session, group_table_mut)
+        } else {
+            return_errno_with_message!(Errno::EPERM, "the new process group does not exist");
         }
+    }
+
+    /// Moves the process to an existing group.
+    fn to_existing_group(
+        self: &Arc<Self>,
+        current_session: Option<Arc<Session>>,
+        mut group_table_mut: MutexGuard<BTreeMap<Pgid, Arc<ProcessGroup>>>,
+        new_process_group: Arc<ProcessGroup>,
+    ) -> Result<()> {
+        let mut process_group_mut = self.process_group.lock();
+        let process_group = process_group_mut.upgrade().unwrap();
+
+        let session = process_group.session().unwrap();
+        if session.sid() == self.pid {
+            return_errno_with_message!(
+                Errno::EPERM,
+                "a session leader cannot be moved to a new process group"
+            );
+        }
+        if !Arc::ptr_eq(&session, &new_process_group.session().unwrap()) {
+            return_errno_with_message!(
+                Errno::EPERM,
+                "the new process group does not belong to the same session"
+            );
+        }
+        if current_session.is_some_and(|current| !Arc::ptr_eq(&current, &session)) {
+            return_errno_with_message!(Errno::EPERM, "the process belongs to a different session");
+        }
+
+        // Lock order: group with a smaller PGID -> group with a larger PGID
+        let (mut process_group_inner, mut new_group_inner) =
+            match process_group.pgid().cmp(&new_process_group.pgid()) {
+                core::cmp::Ordering::Less => {
+                    let process_group_inner = process_group.lock();
+                    let new_group_inner = new_process_group.lock();
+                    (process_group_inner, new_group_inner)
+                }
+                core::cmp::Ordering::Greater => {
+                    let new_group_inner = new_process_group.lock();
+                    let process_group_inner = process_group.lock();
+                    (process_group_inner, new_group_inner)
+                }
+                core::cmp::Ordering::Equal => return Ok(()),
+            };
+        let mut session_inner = session.lock();
+
+        // Remove the process from the old process group
+        process_group_inner.remove_process(&self.pid);
+        if process_group_inner.is_empty() {
+            group_table_mut.remove(&process_group.pgid());
+            session_inner.remove_process_group(&process_group.pgid());
+        }
+
+        // Insert the process to the new process group
+        new_group_inner.insert_process(self.clone());
+        *process_group_mut = Arc::downgrade(&new_process_group);
 
         Ok(())
     }
 
     /// Creates a new process group and moves the process to the group.
-    ///
-    /// The new group will be added to the same session as the process.
-    fn to_new_group(self: &Arc<Self>) -> Result<()> {
-        let session = self.session().unwrap();
-        // Lock order: group table -> group of process -> group inner -> session inner
-        let mut group_table_mut = process_table::group_table_mut();
-        let mut self_group_mut = self.process_group.lock();
+    fn to_new_group(
+        self: &Arc<Self>,
+        current_session: Option<Arc<Session>>,
+        mut group_table_mut: MutexGuard<BTreeMap<Pgid, Arc<ProcessGroup>>>,
+    ) -> Result<()> {
+        let mut process_group_mut = self.process_group.lock();
 
-        // Removes the process from old group
-        if let Some(old_group) = self_group_mut.upgrade() {
-            let mut group_inner = old_group.inner.lock();
-            let mut session_inner = session.inner.lock();
-            group_inner.remove_process(&self.pid);
-            *self_group_mut = Weak::new();
+        let process_group = process_group_mut.upgrade().unwrap();
+        let session = process_group.session().unwrap();
 
-            if group_inner.is_empty() {
-                group_table_mut.remove(&old_group.pgid());
-                debug_assert!(session_inner.process_groups.contains_key(&old_group.pgid()));
-                // The old session won't be empty, since we will add a new group to the session.
-                session_inner.process_groups.remove(&old_group.pgid());
-            }
+        if current_session.is_some_and(|current| !Arc::ptr_eq(&current, &session)) {
+            return_errno_with_message!(Errno::EPERM, "the process belongs to a different session");
+        }
+        if process_group.pgid() == self.pid {
+            // We'll hit this if the process is a session leader. There is no need to check below.
+            return Ok(());
         }
 
-        // Creates a new process group. Adds the new group to group table and session.
-        let new_group = ProcessGroup::new(self.clone());
+        let mut process_group_inner = process_group.lock();
+        let mut session_inner = session.lock();
 
-        let mut new_group_inner = new_group.inner.lock();
-        let mut session_inner = session.inner.lock();
+        // Remove the process from the old process group
+        process_group_inner.remove_process(&self.pid);
+        if process_group_inner.is_empty() {
+            group_table_mut.remove(&process_group.pgid());
+            session_inner.remove_process_group(&process_group.pgid());
+        }
 
-        *self_group_mut = Arc::downgrade(&new_group);
-
-        group_table_mut.insert(new_group.pgid(), new_group.clone());
-
-        new_group_inner.session = Arc::downgrade(&session);
-        session_inner
-            .process_groups
-            .insert(new_group.pgid(), new_group.clone());
-
-        Ok(())
-    }
-
-    /// Moves the process to a specified group.
-    ///
-    /// The caller needs to ensure that the process and the group belongs to the same session.
-    fn to_specified_group(self: &Arc<Process>, group: &Arc<ProcessGroup>) -> Result<()> {
-        // Lock order: group table -> group of process -> group inner (small pgid -> big pgid)
-        let mut group_table_mut = process_table::group_table_mut();
-        let mut self_group_mut = self.process_group.lock();
-
-        // Removes the process from old group
-        let mut group_inner = if let Some(old_group) = self_group_mut.upgrade() {
-            // Lock order: group with smaller pgid first
-            let (mut old_group_inner, group_inner) = match old_group.pgid().cmp(&group.pgid()) {
-                core::cmp::Ordering::Equal => return Ok(()),
-                core::cmp::Ordering::Less => (old_group.inner.lock(), group.inner.lock()),
-                core::cmp::Ordering::Greater => {
-                    let group_inner = group.inner.lock();
-                    let old_group_inner = old_group.inner.lock();
-                    (old_group_inner, group_inner)
-                }
-            };
-            old_group_inner.remove_process(&self.pid);
-            *self_group_mut = Weak::new();
-
-            if old_group_inner.is_empty() {
-                group_table_mut.remove(&old_group.pgid());
-            }
-
-            group_inner
-        } else {
-            group.inner.lock()
-        };
-
-        // Adds the process to the specified group
-        group_inner.processes.insert(self.pid, self.clone());
-        *self_group_mut = Arc::downgrade(group);
+        // Create a new process group and insert the process to it
+        let new_process_group = ProcessGroup::new(self.clone(), Arc::downgrade(&session));
+        *process_group_mut = Arc::downgrade(&new_process_group);
+        group_table_mut.insert(new_process_group.pgid(), new_process_group.clone());
+        session_inner.insert_process_group(new_process_group);
 
         Ok(())
     }
@@ -587,8 +582,8 @@ impl Process {
         &self.process_vm
     }
 
-    pub fn root_vmar(&self) -> &Vmar<Full> {
-        self.process_vm.root_vmar()
+    pub fn lock_root_vmar(&self) -> ProcessVmarGuard {
+        self.process_vm.lock_root_vmar()
     }
 
     pub fn heap(&self) -> &Heap {
@@ -668,105 +663,46 @@ impl Process {
     pub fn status(&self) -> &ProcessStatus {
         &self.status
     }
-}
 
-#[cfg(ktest)]
-mod test {
+    // ******************* Subreaper ********************
 
-    use ostd::prelude::*;
-
-    use super::*;
-
-    fn new_process(parent: Option<Arc<Process>>) -> Arc<Process> {
-        crate::util::random::init();
-        crate::fs::rootfs::init_root_mount();
-        let pid = allocate_posix_tid();
-        let parent = if let Some(parent) = parent {
-            Arc::downgrade(&parent)
-        } else {
-            Weak::new()
-        };
-        Process::new(
-            pid,
-            parent,
-            String::new(),
-            ProcessVm::alloc(),
-            ResourceLimits::default(),
-            Nice::default(),
-            Arc::new(Mutex::new(SigDispositions::default())),
-        )
-    }
-
-    fn new_process_in_session(parent: Option<Arc<Process>>) -> Arc<Process> {
-        // Lock order: session table -> group table -> group of process -> group inner
-        // -> session inner
-        let mut session_table_mut = process_table::session_table_mut();
-        let mut group_table_mut = process_table::group_table_mut();
-
-        let process = new_process(parent);
-        // Creates new group
-        let group = ProcessGroup::new(process.clone());
-        *process.process_group.lock() = Arc::downgrade(&group);
-
-        // Creates new session
-        let sess = Session::new(group.clone());
-        group.inner.lock().session = Arc::downgrade(&sess);
-        sess.inner.lock().leader = Some(process.clone());
-
-        group_table_mut.insert(group.pgid(), group);
-        session_table_mut.insert(sess.sid(), sess);
-
-        process
-    }
-
-    fn remove_session_and_group(process: Arc<Process>) {
-        // Lock order: session table -> group table
-        let mut session_table_mut = process_table::session_table_mut();
-        let mut group_table_mut = process_table::group_table_mut();
-        if let Some(sess) = process.session() {
-            session_table_mut.remove(&sess.sid());
-        }
-
-        if let Some(group) = process.process_group() {
-            group_table_mut.remove(&group.pgid());
+    /// Sets the child subreaper attribute of the current process.
+    pub fn set_child_subreaper(&self) {
+        self.is_child_subreaper.store(true, Ordering::Release);
+        let has_child_subreaper = self.has_child_subreaper.fetch_or(true, Ordering::AcqRel);
+        if !has_child_subreaper {
+            self.propagate_has_child_subreaper();
         }
     }
 
-    #[ktest]
-    fn init_process() {
-        crate::time::clocks::init_for_ktest();
-        let process = new_process(None);
-        assert!(process.process_group().is_none());
-        assert!(process.session().is_none());
+    /// Unsets the child subreaper attribute of the current process.
+    pub fn unset_child_subreaper(&self) {
+        self.is_child_subreaper.store(false, Ordering::Release);
     }
 
-    #[ktest]
-    fn init_process_in_session() {
-        crate::time::clocks::init_for_ktest();
-        let process = new_process_in_session(None);
-        assert!(process.is_group_leader());
-        assert!(process.is_session_leader());
-        remove_session_and_group(process);
+    /// Returns whether this process is a child subreaper.
+    pub fn is_child_subreaper(&self) -> bool {
+        self.is_child_subreaper.load(Ordering::Acquire)
     }
 
-    #[ktest]
-    fn to_new_session() {
-        crate::time::clocks::init_for_ktest();
-        let process = new_process_in_session(None);
-        let sess = process.session().unwrap();
-        sess.inner.lock().leader = None;
+    /// Sets all descendants of the current process as having child subreaper.
+    fn propagate_has_child_subreaper(&self) {
+        let mut process_queue = VecDeque::new();
+        let children = self.children().lock();
+        for child_process in children.values() {
+            if !child_process.has_child_subreaper.load(Ordering::Acquire) {
+                process_queue.push_back(child_process.clone());
+            }
+        }
 
-        assert!(!process.is_session_leader());
-        assert!(process
-            .to_new_session()
-            .is_err_and(|e| e.error() == Errno::EPERM));
-
-        let group = process.process_group().unwrap();
-        group.inner.lock().leader = None;
-        assert!(!process.is_group_leader());
-
-        assert!(process
-            .to_new_session()
-            .is_err_and(|e| e.error() == Errno::EPERM));
+        while let Some(process) = process_queue.pop_front() {
+            process.has_child_subreaper.store(true, Ordering::Release);
+            let children = process.children().lock();
+            for child_process in children.values() {
+                if !child_process.has_child_subreaper.load(Ordering::Acquire) {
+                    process_queue.push_back(child_process.clone());
+                }
+            }
+        }
     }
 }

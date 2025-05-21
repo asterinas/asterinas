@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
+#![expect(dead_code)]
 
 use super::{
     dir::{DirOps, ProcDir},
@@ -166,7 +166,7 @@ impl OptionalBuilder {
         self
     }
 
-    #[allow(clippy::type_complexity)]
+    #[expect(clippy::type_complexity)]
     pub fn build(
         self,
     ) -> Result<(

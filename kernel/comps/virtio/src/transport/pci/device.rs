@@ -13,9 +13,8 @@ use ostd::{
         },
         BusProbeError,
     },
-    io_mem::IoMem,
+    io::IoMem,
     mm::DmaCoherent,
-    offset_of,
     trap::IrqCallbackFunction,
 };
 
@@ -163,7 +162,7 @@ impl VirtioTransport for VirtioPciModernTransport {
         let device_feature_high = field_ptr!(&self.common_cfg, VirtioPciCommonCfg, device_features)
             .read_once()
             .unwrap() as u64;
-        device_feature_high << 32 | device_feature_low as u64
+        (device_feature_high << 32) | device_feature_low as u64
     }
 
     fn write_driver_features(&mut self, features: u64) -> Result<(), VirtioTransportError> {
@@ -268,7 +267,7 @@ impl VirtioTransport for VirtioPciModernTransport {
 }
 
 impl VirtioPciModernTransport {
-    #[allow(clippy::result_large_err)]
+    #[expect(clippy::result_large_err)]
     pub(super) fn new(
         common_device: PciCommonDevice,
     ) -> Result<Self, (BusProbeError, PciCommonDevice)> {

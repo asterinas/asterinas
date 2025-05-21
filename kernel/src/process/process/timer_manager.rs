@@ -42,7 +42,11 @@ fn update_cpu_time() {
     let Some(posix_thread) = current_thread.as_posix_thread() else {
         return;
     };
-    let process = posix_thread.process();
+    let Some(process) = posix_thread.weak_process().upgrade() else {
+        // FIXME: A POSIX thread should have a process but we can have a
+        // `None` here.
+        return;
+    };
     let timer_manager = process.timer_manager();
     let jiffies_interval = Duration::from_millis(1000 / TIMER_FREQ);
     // Based on whether the timer interrupt occurs in kernel mode or user mode,

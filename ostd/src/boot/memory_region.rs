@@ -1,31 +1,35 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! Information of memory regions in the boot phase.
-//!
 
 use core::ops::Deref;
 
-use crate::mm::kspace::kernel_loaded_offset;
+use align_ext::AlignExt;
+
+use crate::mm::{kspace::kernel_loaded_offset, Paddr, Vaddr, PAGE_SIZE};
 
 /// The type of initial memory regions that are needed for the kernel.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum MemoryRegionType {
     /// Maybe points to an unplugged DIMM module. It's bad anyway.
     BadMemory = 0,
+    /// Some holes not specified by the bootloader/firmware. It may be used for
+    /// I/O memory but we don't know for sure.
+    Unknown = 1,
     /// In ACPI spec, this area needs to be preserved when sleeping.
-    NonVolatileSleep = 1,
+    NonVolatileSleep = 2,
     /// Reserved by BIOS or bootloader, do not use.
-    Reserved = 2,
+    Reserved = 3,
     /// The place where kernel sections are loaded.
-    Kernel = 3,
+    Kernel = 4,
     /// The place where kernel modules (e.g. initrd) are loaded, could be reused.
-    Module = 4,
+    Module = 5,
     /// The memory region provided as the framebuffer.
-    Framebuffer = 5,
+    Framebuffer = 6,
     /// Once used in the boot phase. Kernel can reclaim it after initialization.
-    Reclaimable = 6,
+    Reclaimable = 7,
     /// Directly usable by the frame allocator.
-    Usable = 7,
+    Usable = 8,
 }
 
 /// The information of initial memory regions that are needed by the kernel.
@@ -39,7 +43,7 @@ pub struct MemoryRegion {
 
 impl MemoryRegion {
     /// Constructs a valid memory region.
-    pub const fn new(base: usize, len: usize, typ: MemoryRegionType) -> Self {
+    pub const fn new(base: Paddr, len: usize, typ: MemoryRegionType) -> Self {
         MemoryRegion { base, len, typ }
     }
 
@@ -69,14 +73,44 @@ impl MemoryRegion {
         }
     }
 
+    /// Constructs a framebuffer memory region.
+    pub fn framebuffer(fb: &crate::boot::BootloaderFramebufferArg) -> Self {
+        Self {
+            base: fb.address,
+            len: (fb.width * fb.height * fb.bpp).div_ceil(8), // round up when divide with 8 (bits/Byte)
+            typ: MemoryRegionType::Framebuffer,
+        }
+    }
+
+    /// Constructs a module memory region from a byte slice that lives in the linear mapping.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the byte slice does not live in the linear mapping.
+    pub fn module(bytes: &[u8]) -> Self {
+        let vaddr = bytes.as_ptr() as Vaddr;
+        assert!(crate::mm::kspace::LINEAR_MAPPING_VADDR_RANGE.contains(&vaddr));
+
+        Self {
+            base: vaddr - crate::mm::kspace::LINEAR_MAPPING_BASE_VADDR,
+            len: bytes.len(),
+            typ: MemoryRegionType::Reclaimable,
+        }
+    }
+
     /// The physical address of the base of the region.
-    pub fn base(&self) -> usize {
+    pub fn base(&self) -> Paddr {
         self.base
     }
 
     /// The length in bytes of the region.
     pub fn len(&self) -> usize {
         self.len
+    }
+
+    /// The physical address of the end of the region.
+    pub fn end(&self) -> Paddr {
+        self.base + self.len
     }
 
     /// Checks whether the region is empty
@@ -89,46 +123,21 @@ impl MemoryRegion {
         self.typ
     }
 
-    /// Removes range `t` from self, resulting in 0, 1 or 2 truncated ranges.
-    /// We need to have this method since memory regions can overlap.
-    pub fn truncate(&self, t: &MemoryRegion) -> MemoryRegionArray<2> {
-        if self.base < t.base {
-            if self.base + self.len > t.base {
-                if self.base + self.len > t.base + t.len {
-                    MemoryRegionArray::from(&[
-                        MemoryRegion {
-                            base: self.base,
-                            len: t.base - self.base,
-                            typ: self.typ,
-                        },
-                        MemoryRegion {
-                            base: t.base + t.len,
-                            len: self.base + self.len - (t.base + t.len),
-                            typ: self.typ,
-                        },
-                    ])
-                } else {
-                    MemoryRegionArray::from(&[MemoryRegion {
-                        base: self.base,
-                        len: t.base - self.base,
-                        typ: self.typ,
-                    }])
-                }
-            } else {
-                MemoryRegionArray::from(&[*self])
-            }
-        } else if self.base < t.base + t.len {
-            if self.base + self.len > t.base + t.len {
-                MemoryRegionArray::from(&[MemoryRegion {
-                    base: t.base + t.len,
-                    len: self.base + self.len - (t.base + t.len),
-                    typ: self.typ,
-                }])
-            } else {
-                MemoryRegionArray::new()
-            }
-        } else {
-            MemoryRegionArray::from(&[*self])
+    fn as_aligned(&self) -> Self {
+        let (base, end) = match self.typ() {
+            MemoryRegionType::Usable => (
+                self.base().align_up(PAGE_SIZE),
+                self.end().align_down(PAGE_SIZE),
+            ),
+            _ => (
+                self.base().align_down(PAGE_SIZE),
+                self.end().align_up(PAGE_SIZE),
+            ),
+        };
+        MemoryRegion {
+            base,
+            len: end - base,
+            typ: self.typ,
         }
     }
 }
@@ -172,20 +181,6 @@ impl<const LEN: usize> MemoryRegionArray<LEN> {
         }
     }
 
-    /// Constructs from an array of regions.
-    pub fn from(array: &[MemoryRegion]) -> Self {
-        Self {
-            regions: core::array::from_fn(|i| {
-                if i < array.len() {
-                    array[i]
-                } else {
-                    MemoryRegion::bad()
-                }
-            }),
-            count: array.len(),
-        }
-    }
-
     /// Appends a region to the set.
     ///
     /// If the set is full, an error is returned.
@@ -199,60 +194,153 @@ impl<const LEN: usize> MemoryRegionArray<LEN> {
         }
     }
 
-    /// Clears the set.
-    pub fn clear(&mut self) {
-        self.count = 0;
+    /// Sorts the regions and returns a full set of non-overlapping regions.
+    ///
+    /// If an address is in multiple regions, the region with the lowest
+    /// usability will be its type.
+    ///
+    /// All the addresses between 0 and the end of the last region will be in
+    /// the resulting set. If an address is not in any region, it will be marked
+    /// as [`MemoryRegionType::Unknown`].
+    ///
+    /// If any of the region boundaries are not page-aligned, they will be aligned
+    /// according to the type of the region.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the number of output regions is greater than `LEN`.
+    pub fn into_non_overlapping(mut self) -> Self {
+        let max_addr = self
+            .iter()
+            .map(|r| r.end())
+            .max()
+            .unwrap_or(0)
+            .align_down(PAGE_SIZE);
+        self.regions.iter_mut().for_each(|r| *r = r.as_aligned());
+
+        let mut result = MemoryRegionArray::<LEN>::new();
+
+        let mut cur_right = 0;
+
+        while cur_right < max_addr {
+            // Find the most restrictive type.
+            let typ = self
+                .iter()
+                .filter(|region| (region.base()..region.end()).contains(&cur_right))
+                .map(|region| region.typ())
+                .min()
+                .unwrap_or(MemoryRegionType::Unknown);
+
+            // Find the right boundary.
+            let right = self
+                .iter()
+                .filter_map(|region| {
+                    if region.base() > cur_right {
+                        Some(region.base())
+                    } else if region.end() > cur_right {
+                        Some(region.end())
+                    } else {
+                        None
+                    }
+                })
+                .min()
+                .unwrap();
+
+            result
+                .push(MemoryRegion::new(cur_right, right - cur_right, typ))
+                .unwrap();
+
+            cur_right = right;
+        }
+
+        // Merge the adjacent regions with the same type.
+        let mut merged_count = 1;
+        for i in 1..result.count {
+            if result[i].typ() == result.regions[merged_count - 1].typ() {
+                result.regions[merged_count - 1] = MemoryRegion::new(
+                    result.regions[merged_count - 1].base(),
+                    result.regions[merged_count - 1].len() + result[i].len(),
+                    result.regions[merged_count - 1].typ(),
+                );
+            } else {
+                result.regions[merged_count] = result[i];
+                merged_count += 1;
+            }
+        }
+        result.count = merged_count;
+
+        result
     }
+}
 
-    /// Truncates regions, resulting in a set of regions that does not overlap.
-    ///
-    /// The truncation will be done according to the type of the regions, that
-    /// usable and reclaimable regions will be truncated by the unusable regions.
-    ///
-    /// If the output regions are more than `LEN`, the extra regions will be ignored.
-    pub fn into_non_overlapping(self) -> Self {
-        // We should later use regions in `regions_unusable` to truncate all
-        // regions in `regions_usable`.
-        // The difference is that regions in `regions_usable` could be used by
-        // the frame allocator.
-        let mut regions_usable = MemoryRegionArray::<LEN>::new();
-        let mut regions_unusable = MemoryRegionArray::<LEN>::new();
+#[cfg(ktest)]
+mod test {
+    use super::*;
+    use crate::prelude::ktest;
 
-        for r in self.iter() {
-            match r.typ {
-                MemoryRegionType::Usable | MemoryRegionType::Reclaimable => {
-                    // If usable memory regions exceeded it's fine to ignore the rest.
-                    let _ = regions_usable.push(*r);
-                }
-                _ => {
-                    regions_unusable
-                        .push(*r)
-                        .expect("Too many unusable memory regions");
-                }
-            }
-        }
+    #[ktest]
+    fn test_sort_full_non_overlapping() {
+        let mut regions = MemoryRegionArray::<64>::new();
+        // Regions that can be combined.
+        regions
+            .push(MemoryRegion::new(
+                0,
+                PAGE_SIZE + 1,
+                MemoryRegionType::Usable,
+            ))
+            .unwrap();
+        regions
+            .push(MemoryRegion::new(
+                PAGE_SIZE - 1,
+                PAGE_SIZE + 2,
+                MemoryRegionType::Usable,
+            ))
+            .unwrap();
+        regions
+            .push(MemoryRegion::new(
+                PAGE_SIZE * 2,
+                PAGE_SIZE * 5,
+                MemoryRegionType::Usable,
+            ))
+            .unwrap();
+        // A punctured region.
+        regions
+            .push(MemoryRegion::new(
+                PAGE_SIZE * 3 + 1,
+                PAGE_SIZE - 2,
+                MemoryRegionType::BadMemory,
+            ))
+            .unwrap();
+        // A far region that left a hole in the middle.
+        regions
+            .push(MemoryRegion::new(
+                PAGE_SIZE * 9,
+                PAGE_SIZE * 2,
+                MemoryRegionType::Usable,
+            ))
+            .unwrap();
 
-        // `regions_*` are 2 rolling vectors since we are going to truncate
-        // the regions in a iterative manner.
-        let mut regions = MemoryRegionArray::<LEN>::new();
-        let regions_src = &mut regions_usable;
-        let regions_dst = &mut regions;
-        // Truncate the usable regions.
-        for r_unusable in regions_unusable.iter() {
-            regions_dst.clear();
-            for r_usable in regions_src.iter() {
-                for truncated in r_usable.truncate(r_unusable).iter() {
-                    let _ = regions_dst.push(*truncated);
-                }
-            }
-            core::mem::swap(regions_src, regions_dst);
-        }
+        let regions = regions.into_non_overlapping();
 
-        // Combine all the regions processed.
-        let mut all_regions = regions_unusable;
-        for r in regions_usable.iter() {
-            let _ = all_regions.push(*r);
-        }
-        all_regions
+        assert_eq!(regions.count, 5);
+        assert_eq!(regions[0].base(), 0);
+        assert_eq!(regions[0].len(), PAGE_SIZE * 3);
+        assert_eq!(regions[0].typ(), MemoryRegionType::Usable);
+
+        assert_eq!(regions[1].base(), PAGE_SIZE * 3);
+        assert_eq!(regions[1].len(), PAGE_SIZE);
+        assert_eq!(regions[1].typ(), MemoryRegionType::BadMemory);
+
+        assert_eq!(regions[2].base(), PAGE_SIZE * 4);
+        assert_eq!(regions[2].len(), PAGE_SIZE * 3);
+        assert_eq!(regions[2].typ(), MemoryRegionType::Usable);
+
+        assert_eq!(regions[3].base(), PAGE_SIZE * 7);
+        assert_eq!(regions[3].len(), PAGE_SIZE * 2);
+        assert_eq!(regions[3].typ(), MemoryRegionType::Unknown);
+
+        assert_eq!(regions[4].base(), PAGE_SIZE * 9);
+        assert_eq!(regions[4].len(), PAGE_SIZE * 2);
+        assert_eq!(regions[4].typ(), MemoryRegionType::Usable);
     }
 }

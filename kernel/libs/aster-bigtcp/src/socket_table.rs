@@ -7,8 +7,8 @@ use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::net::Ipv4Addr;
 
 use jhash::{jhash_1vals, jhash_3vals};
+use ostd::const_assert;
 use smoltcp::wire::{IpAddress, IpEndpoint, IpListenEndpoint};
-use static_assertions::const_assert;
 
 use crate::{
     ext::Ext,
@@ -147,11 +147,9 @@ pub(crate) struct SocketTable<E: Ext> {
 // On Linux, the number of buckets is determined at runtime based on the available memory.
 // For simplicity, we use fixed values here.
 // The bucket count should be a power of 2 to ensure efficient modulo calculations.
-// FIXME: We have reduced the bucket count to 2 because iterating over all buckets has become a bottleneck.
-// Once we can avoid such iterations, we should set more meaningful bucket counts.
-const LISTENER_BUCKET_COUNT: u32 = 2;
+const LISTENER_BUCKET_COUNT: u32 = 64;
 const LISTENER_BUCKET_MASK: u32 = LISTENER_BUCKET_COUNT - 1;
-const CONNECTION_BUCKET_COUNT: u32 = 2;
+const CONNECTION_BUCKET_COUNT: u32 = 8192;
 const CONNECTION_BUCKET_MASK: u32 = CONNECTION_BUCKET_COUNT - 1;
 
 const_assert!(LISTENER_BUCKET_COUNT.is_power_of_two());
@@ -265,12 +263,7 @@ impl<E: Ext> SocketTable<E> {
             .find(|connection| connection.connection_key() == key)
     }
 
-    pub(crate) fn remove_listener(
-        &mut self,
-        listener: &TcpListenerBg<E>,
-    ) -> Option<Arc<TcpListenerBg<E>>> {
-        let key = listener.listener_key();
-
+    pub(crate) fn remove_listener(&mut self, key: &ListenerKey) -> Option<Arc<TcpListenerBg<E>>> {
         let bucket = {
             let hash = key.hash();
             let bucket_index = hash & LISTENER_BUCKET_MASK;
@@ -280,8 +273,29 @@ impl<E: Ext> SocketTable<E> {
         let index = bucket
             .listeners
             .iter()
-            .position(|tcp_listener| tcp_listener.listener_key() == listener.listener_key())?;
+            .position(|tcp_listener| tcp_listener.listener_key() == key)?;
         Some(bucket.listeners.swap_remove(index))
+    }
+
+    pub(crate) fn remove_dead_tcp_connection(&mut self, key: &ConnectionKey) {
+        let bucket = {
+            let hash = key.hash();
+            let bucket_index = hash & CONNECTION_BUCKET_MASK;
+            &mut self.connection_buckets[bucket_index as usize]
+        };
+
+        let index = bucket
+            .connections
+            .iter()
+            .position(|tcp_connection| tcp_connection.connection_key() == key)
+            .unwrap();
+        let connection = bucket.connections.swap_remove(index);
+        debug_assert!(
+            !connection.poll_key().is_active(),
+            "there should be no need to poll a dead TCP connection",
+        );
+
+        connection.notify_dead_events();
     }
 
     pub(crate) fn remove_udp_socket(
@@ -293,29 +307,6 @@ impl<E: Ext> SocketTable<E> {
             .iter()
             .position(|udp_socket| Arc::ptr_eq(udp_socket, socket))?;
         Some(self.udp_sockets.swap_remove(index))
-    }
-
-    pub(crate) fn remove_dead_tcp_connections(&mut self) {
-        for connection_bucket in self.connection_buckets.iter_mut() {
-            for tcp_conn in connection_bucket
-                .connections
-                .extract_if(|connection| connection.is_dead())
-            {
-                tcp_conn.on_dead_events();
-            }
-        }
-    }
-
-    pub(crate) fn tcp_listener_iter(&self) -> impl Iterator<Item = &Arc<TcpListenerBg<E>>> {
-        self.listener_buckets
-            .iter()
-            .flat_map(|bucket| bucket.listeners.iter())
-    }
-
-    pub(crate) fn tcp_conn_iter(&self) -> impl Iterator<Item = &Arc<TcpConnectionBg<E>>> {
-        self.connection_buckets
-            .iter()
-            .flat_map(|bucket| bucket.connections.iter())
     }
 
     pub(crate) fn udp_socket_iter(&self) -> impl Iterator<Item = &Arc<UdpSocketBg<E>>> {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(unused_variables)]
+#![expect(unused_variables)]
 
 use core::{any::TypeId, time::Duration};
 
@@ -8,7 +8,10 @@ use aster_rights::Full;
 use core2::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, Write};
 use ostd::task::Task;
 
-use super::{AccessMode, DirentVisitor, FallocMode, FileSystem, IoctlCmd};
+use super::{
+    AccessMode, DirentVisitor, FallocMode, FileSystem, IoctlCmd, XattrName, XattrNamespace,
+    XattrSetFlags,
+};
 use crate::{
     events::IoEvents,
     fs::device::{Device, DeviceType},
@@ -497,6 +500,27 @@ pub trait Inode: Any + Sync + Send {
         None
     }
 
+    fn set_xattr(
+        &self,
+        name: XattrName,
+        value_reader: &mut VmReader,
+        flags: XattrSetFlags,
+    ) -> Result<()> {
+        Err(Error::new(Errno::EOPNOTSUPP))
+    }
+
+    fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize> {
+        Err(Error::new(Errno::EOPNOTSUPP))
+    }
+
+    fn list_xattr(&self, namespace: XattrNamespace, list_writer: &mut VmWriter) -> Result<usize> {
+        Err(Error::new(Errno::EOPNOTSUPP))
+    }
+
+    fn remove_xattr(&self, name: XattrName) -> Result<()> {
+        Err(Error::new(Errno::EOPNOTSUPP))
+    }
+
     /// Used to check for read/write/execute permissions on a file.
     ///
     /// Similar to Linux, using "fsuid" here allows setting filesystem permissions
@@ -543,34 +567,6 @@ pub trait Inode: Any + Sync + Send {
 impl dyn Inode {
     pub fn downcast_ref<T: Inode>(&self) -> Option<&T> {
         (self as &dyn Any).downcast_ref::<T>()
-    }
-
-    pub fn read_to_end(&self, buf: &mut Vec<u8>) -> Result<usize> {
-        if !self.type_().support_read() {
-            return_errno!(Errno::EISDIR);
-        }
-
-        let file_size = self.size();
-        if buf.len() < file_size {
-            buf.resize(file_size, 0);
-        }
-
-        let mut writer = VmWriter::from(&mut buf[..file_size]).to_fallible();
-        self.read_at(0, &mut writer)
-    }
-
-    pub fn read_direct_to_end(&self, buf: &mut Vec<u8>) -> Result<usize> {
-        if !self.type_().support_read() {
-            return_errno!(Errno::EISDIR);
-        }
-
-        let file_size = self.size();
-        if buf.len() < file_size {
-            buf.resize(file_size, 0);
-        }
-
-        let mut writer = VmWriter::from(&mut buf[..file_size]).to_fallible();
-        self.read_direct_at(0, &mut writer)
     }
 
     pub fn writer(&self, from_offset: usize) -> InodeWriter {

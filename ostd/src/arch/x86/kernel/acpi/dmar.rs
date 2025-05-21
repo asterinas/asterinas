@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
+#![expect(dead_code)]
 
 use alloc::vec::Vec;
-use core::{fmt::Debug, mem::size_of, slice::Iter};
+use core::{fmt::Debug, slice::Iter};
 
 use acpi::{
     sdt::{SdtHeader, Signature},
@@ -11,17 +11,22 @@ use acpi::{
 };
 
 use super::remapping::{Andd, Atsr, Drhd, Rhsa, Rmrr, Satc, Sidp};
-use crate::mm::paddr_to_vaddr;
 
-/// DMA Remapping structure. When IOMMU is enabled, the structure should be present in the ACPI table,
-/// and the user can use the DRHD table in this structure to obtain the register base addresses used to configure functions such as IOMMU.
+/// DMA Remapping structure.
+///
+/// When IOMMU is enabled, the structure should be present in the ACPI table, and the user can use
+/// the DRHD table in this structure to obtain the register base addresses used to configure
+/// functions such IOMMU.
 #[derive(Debug)]
 pub struct Dmar {
     header: DmarHeader,
-    /// Actual size is indicated by `length` in header
-    remapping_structures: Vec<Remapping>, // Followed by `n` entries with format `Remapping Structures`
+    // The actual size is indicated by `length` in `header`.
+    // Entries with the format of Remapping Structures are followed.
+    remapping_structures: Vec<Remapping>,
 }
 
+/// Remapping Structures.
+///
 /// A DMAR structure contains serval remapping structures. Among these structures,
 /// one DRHD must exist, the others must not exist at all.
 #[derive(Debug)]
@@ -37,7 +42,7 @@ pub enum Remapping {
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u16)]
-#[allow(clippy::upper_case_acronyms)]
+#[expect(clippy::upper_case_acronyms)]
 pub enum RemappingType {
     DRHD = 0,
     RMRR = 1,
@@ -57,6 +62,8 @@ struct DmarHeader {
     reserved: [u8; 10],
 }
 
+// SAFETY: The `DmarHeader` is the header for the DMAR structure. All its fields are described in
+// the Intel manual.
 unsafe impl AcpiTable for DmarHeader {
     const SIGNATURE: Signature = Signature::DMAR;
     fn header(&self) -> &acpi::sdt::SdtHeader {
@@ -67,53 +74,52 @@ unsafe impl AcpiTable for DmarHeader {
 impl Dmar {
     /// Creates a instance from ACPI table.
     pub fn new() -> Option<Self> {
-        if !super::ACPI_TABLES.is_completed() {
-            return None;
-        }
-        let acpi_table_lock = super::ACPI_TABLES.get().unwrap().lock();
-        // SAFETY: The DmarHeader is the header for the DMAR structure, it fits all the field described in Intel manual.
-        let dmar_mapping = acpi_table_lock.find_table::<DmarHeader>().ok()?;
+        let acpi_table = super::get_acpi_tables()?;
 
-        let physical_address = dmar_mapping.physical_start();
-        let len = dmar_mapping.mapped_length();
-        // SAFETY: The target address is the start of the remapping structures,
-        // and the length is valid since the value is read from the length field in SDTHeader minus the size of DMAR header.
-        let dmar_slice = unsafe {
-            core::slice::from_raw_parts_mut(
-                paddr_to_vaddr(physical_address + size_of::<DmarHeader>()) as *mut u8,
-                len - size_of::<DmarHeader>(),
+        let dmar_mapping = acpi_table.find_table::<DmarHeader>().ok()?;
+
+        let header = *dmar_mapping;
+        // SAFETY: `find_table` returns a region of memory that belongs to the ACPI table. This
+        // memory region is valid to read, properly initialized, lives for `'static`, and will
+        // never be mutated.
+        let slice = unsafe {
+            core::slice::from_raw_parts(
+                dmar_mapping
+                    .virtual_start()
+                    .as_ptr()
+                    .cast::<u8>()
+                    .cast_const(),
+                dmar_mapping.mapped_length(),
             )
         };
 
+        let mut index = core::mem::size_of::<DmarHeader>();
         let mut remapping_structures = Vec::new();
-        let mut index = 0;
-        let mut remain_length = len - size_of::<DmarHeader>();
-        // SAFETY: Indexes and offsets are strictly followed by the manual.
-        unsafe {
-            while remain_length > 0 {
-                // Common header: type: u16, length: u16
-                let length = *dmar_slice[index + 2..index + 4].as_ptr() as usize;
-                let typ = *dmar_slice[index..index + 2].as_ptr() as usize;
-                let bytes = &&dmar_slice[index..index + length];
-                let remapping = match typ {
-                    0 => Remapping::Drhd(Drhd::from_bytes(bytes)),
-                    1 => Remapping::Rmrr(Rmrr::from_bytes(bytes)),
-                    2 => Remapping::Atsr(Atsr::from_bytes(bytes)),
-                    3 => Remapping::Rhsa(Rhsa::from_bytes(bytes)),
-                    4 => Remapping::Andd(Andd::from_bytes(bytes)),
-                    5 => Remapping::Satc(Satc::from_bytes(bytes)),
-                    6 => Remapping::Sidp(Sidp::from_bytes(bytes)),
-                    _ => {
-                        panic!("Unidentified remapping structure type");
-                    }
-                };
-                // let temp = DeviceScope::from_bytes(
-                //     &bytes[index as usize..index as usize + length],
-                // );
-                remapping_structures.push(remapping);
-                index += length;
-                remain_length -= length;
-            }
+        while index != (header.header.length as usize) {
+            // CommonHeader { type: u16, length: u16 }
+            let typ = u16::from_ne_bytes(slice[index..index + 2].try_into().unwrap());
+            let length =
+                u16::from_ne_bytes(slice[index + 2..index + 4].try_into().unwrap()) as usize;
+
+            let bytes = &slice[index..index + length];
+            let remapping = match typ {
+                0 => Remapping::Drhd(Drhd::from_bytes(bytes)),
+                1 => Remapping::Rmrr(Rmrr::from_bytes(bytes)),
+                2 => Remapping::Atsr(Atsr::from_bytes(bytes)),
+                3 => Remapping::Rhsa(Rhsa::from_bytes(bytes)),
+                4 => Remapping::Andd(Andd::from_bytes(bytes)),
+                5 => Remapping::Satc(Satc::from_bytes(bytes)),
+                6 => Remapping::Sidp(Sidp::from_bytes(bytes)),
+                _ => {
+                    panic!(
+                        "the type of the remapping structure is invalid or not supported: {}",
+                        typ
+                    );
+                }
+            };
+            remapping_structures.push(remapping);
+
+            index += length;
         }
 
         Some(Dmar {

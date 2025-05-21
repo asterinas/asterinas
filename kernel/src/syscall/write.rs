@@ -17,7 +17,7 @@ pub fn sys_write(
         fd, user_buf_ptr, user_buf_len
     );
 
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
 
     // According to <https://man7.org/linux/man-pages/man2/write.2.html>, if
@@ -25,11 +25,8 @@ pub fn sys_write(
     // the file descriptor. If no errors detected, return 0 successfully.
     let write_len = {
         if user_buf_len != 0 {
-            let mut reader = ctx
-                .process
-                .root_vmar()
-                .vm_space()
-                .reader(user_buf_ptr, user_buf_len)?;
+            let user_space = ctx.user_space();
+            let mut reader = user_space.reader(user_buf_ptr, user_buf_len)?;
             file.write(&mut reader)
         } else {
             file.write_bytes(&[])

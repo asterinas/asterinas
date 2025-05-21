@@ -2,7 +2,7 @@
 
 use smoltcp::time::Duration;
 
-use super::{NeedIfacePoll, RawTcpSocket};
+use super::{unbound::RawTcpSocket, NeedIfacePoll};
 
 /// A trait defines setting socket options on a raw socket.
 pub trait RawTcpSetOption {

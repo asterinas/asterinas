@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(unused_variables)]
+#![expect(unused_variables)]
 
 use core::{
     arch::x86_64::_rdtsc,
@@ -19,7 +19,7 @@ use crate::{
 };
 
 /// The frequency of TSC(Hz)
-pub(crate) static TSC_FREQ: AtomicU64 = AtomicU64::new(0);
+pub(in crate::arch) static TSC_FREQ: AtomicU64 = AtomicU64::new(0);
 
 pub fn init_tsc_freq() {
     let tsc_freq =

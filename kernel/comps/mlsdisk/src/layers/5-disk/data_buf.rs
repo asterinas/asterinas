@@ -3,7 +3,7 @@
 //! Data buffering.
 use core::ops::RangeInclusive;
 
-use super::sworndisk::RecordKey;
+use super::mlsdisk::RecordKey;
 use crate::{
     layers::bio::{BufMut, BufRef},
     os::{BTreeMap, Condvar, CvarMutex, Mutex},

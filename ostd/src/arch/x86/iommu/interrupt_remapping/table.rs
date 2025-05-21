@@ -13,7 +13,7 @@ use crate::{
     sync::{LocalIrqDisabled, SpinLock},
 };
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 #[derive(Debug)]
 enum ExtendedInterruptMode {
     XApic,
@@ -146,12 +146,12 @@ enum DeliveryMode {
 pub struct IrtEntry(u128);
 
 impl IrtEntry {
-    #[allow(unused)]
+    #[expect(unused)]
     pub const fn new(value: u128) -> Self {
         Self(value)
     }
 
-    #[allow(unused)]
+    #[expect(unused)]
     pub fn clear(&mut self) {
         self.0 = 0
     }
@@ -159,7 +159,7 @@ impl IrtEntry {
     /// Enables this entry with no validation,
     /// DST = 0, IM = 0, DLM = 0, TM = 0, RH = 0, DM = 0, FPD = 1, P = 1
     pub fn enable_default(&mut self, vector: u32) {
-        self.0 = 0b11 | (vector as u128) << 16;
+        self.0 = 0b11 | ((vector as u128) << 16);
     }
 
     pub fn source_validation_type(&self) -> SourceValidationType {

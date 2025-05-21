@@ -12,10 +12,7 @@ use crate::mm::{nr_subpage_per_huge, page_prop::PageProperty, page_size, PagingC
 /// This is a static reference to an entry in a node that does not account for
 /// a dynamic reference count to the child. It can be used to create a owned
 /// handle, which is a [`Child`].
-pub(in crate::mm) struct Entry<'a, E: PageTableEntryTrait, C: PagingConstsTrait>
-where
-    [(); C::NR_LEVELS as usize]:,
-{
+pub(in crate::mm) struct Entry<'a, E: PageTableEntryTrait, C: PagingConstsTrait> {
     /// The page table entry.
     ///
     /// We store the page table entry here to optimize the number of reads from
@@ -30,10 +27,7 @@ where
     node: &'a mut PageTableNode<E, C>,
 }
 
-impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'a, E, C>
-where
-    [(); C::NR_LEVELS as usize]:,
-{
+impl<'a, E: PageTableEntryTrait, C: PagingConstsTrait> Entry<'a, E, C> {
     /// Returns if the entry does not map to anything.
     pub(in crate::mm) fn is_none(&self) -> bool {
         !self.pte.is_present()

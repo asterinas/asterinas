@@ -22,12 +22,13 @@ pub fn sys_recvmsg(
         sockfd, c_user_msghdr, flags
     );
 
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, sockfd);
     let socket = file.as_socket_or_err()?;
 
     let (total_bytes, message_header) = {
-        let mut io_vec_writer = c_user_msghdr.copy_writer_array_from_user(ctx)?;
+        let user_space = ctx.user_space();
+        let mut io_vec_writer = c_user_msghdr.copy_writer_array_from_user(&user_space)?;
         socket
             .recvmsg(&mut io_vec_writer, flags)
             .map_err(|err| match err.error() {

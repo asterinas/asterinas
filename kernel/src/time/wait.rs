@@ -78,6 +78,16 @@ impl<'a> TimeoutExt<'a> {
             TimeoutExt::Never => Ok(None),
         }
     }
+
+    /// Freezes the expired time.
+    ///
+    /// This works in the same way as [`ManagedTimeout::freeze`].
+    pub fn freeze(&mut self) {
+        match self {
+            Self::Never => (),
+            Self::At(timeout) => timeout.freeze(),
+        }
+    }
 }
 
 impl From<&Duration> for TimeoutExt<'_> {
@@ -132,6 +142,18 @@ impl<'a> ManagedTimeout<'a> {
     /// Returns weather the timeout is expired.
     pub fn is_expired(&self) -> bool {
         self.manager.is_expired_timeout(&self.timeout)
+    }
+
+    /// Freezes the expired time.
+    ///
+    /// If the timeout is specified as an instant after a period of time from the current time
+    /// (i.e., [`Timeout::After`]), this method will freeze the timeout by converting it to a fixed
+    /// instant (i.e., [`Timeout::When`]).
+    pub fn freeze(&mut self) {
+        self.timeout = match self.timeout {
+            Timeout::When(instant) => Timeout::When(instant),
+            Timeout::After(duration) => Timeout::When(self.manager.clock().read_time() + duration),
+        }
     }
 
     /// Creates a timer for the timeout.

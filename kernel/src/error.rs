@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
+#![expect(dead_code)]
 
 /// Error number.
 #[repr(i32)]
@@ -246,6 +246,12 @@ impl From<aster_block::bio::BioStatus> for Error {
     }
 }
 
+impl From<core::num::TryFromIntError> for Error {
+    fn from(_: core::num::TryFromIntError) -> Self {
+        Error::with_message(Errno::EINVAL, "Invalid integer")
+    }
+}
+
 impl From<core::str::Utf8Error> for Error {
     fn from(_: core::str::Utf8Error) -> Self {
         Error::with_message(Errno::EINVAL, "Invalid utf-8 string")
@@ -321,6 +327,19 @@ impl From<alloc::ffi::NulError> for Error {
 impl From<int_to_c_enum::TryFromIntError> for Error {
     fn from(_: int_to_c_enum::TryFromIntError) -> Self {
         Error::with_message(Errno::EINVAL, "Invalid enum value")
+    }
+}
+
+impl From<aster_systree::Error> for Error {
+    fn from(err: aster_systree::Error) -> Self {
+        use aster_systree::Error::*;
+        match err {
+            NodeNotFound(_) => Error::new(Errno::ENOENT),
+            InvalidNodeOperation(_) => Error::new(Errno::EINVAL),
+            AttributeError => Error::new(Errno::EIO),
+            PermissionDenied => Error::new(Errno::EACCES),
+            InternalError(msg) => Error::with_message(Errno::EIO, msg),
+        }
     }
 }
 

@@ -2,7 +2,7 @@
 
 use core::sync::atomic::Ordering;
 
-use ostd::{cpu::UserContext, user::UserContextApi};
+use ostd::{cpu::context::UserContext, user::UserContextApi};
 
 use super::SyscallReturn;
 use crate::{prelude::*, process::signal::c_types::ucontext_t};

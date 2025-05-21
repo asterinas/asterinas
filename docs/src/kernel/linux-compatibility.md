@@ -15,7 +15,7 @@ support the loading of Linux kernel modules.
 ## System Calls
 
 At the time of writing,
-Asterinas implements 177 out of the 336 system calls
+Asterinas implements 204 out of the 336 system calls
 provided by Linux on x86-64 architecture.
 
 | Numbers | Names            | Is Implemented  |
@@ -162,12 +162,12 @@ provided by Linux on x86-64 architecture.
 | 139     | sysfs            | ❌              |
 | 140     | getpriority      | ✅              |
 | 141     | setpriority      | ✅              |
-| 142     | sched_setparam   | ❌              |
-| 143     | sched_getparam   | ❌              |
-| 144     | sched_setscheduler | ❌            |
-| 145     | sched_getscheduler | ❌            |
-| 146     | sched_get_priority_max | ❌        |
-| 147     | sched_get_priority_min | ❌        |
+| 142     | sched_setparam   | ✅              |
+| 143     | sched_getparam   | ✅              |
+| 144     | sched_setscheduler | ✅            |
+| 145     | sched_getscheduler | ✅            |
+| 146     | sched_get_priority_max | ✅        |
+| 147     | sched_get_priority_min | ✅        |
 | 148     | sched_rr_get_interval | ❌         |
 | 149     | mlock            | ❌              |
 | 150     | munlock          | ❌              |
@@ -208,18 +208,18 @@ provided by Linux on x86-64 architecture.
 | 185     | security         | ❌              |
 | 186     | gettid           | ✅              |
 | 187     | readahead        | ❌              |
-| 188     | setxattr         | ❌              |
-| 189     | lsetxattr        | ❌              |
-| 190     | fsetxattr        | ❌              |
-| 191     | getxattr         | ❌              |
-| 192     | lgetxattr        | ❌              |
-| 193     | fgetxattr        | ❌              |
-| 194     | listxattr        | ❌              |
-| 195     | llistxattr       | ❌              |
-| 196     | flistxattr       | ❌              |
-| 197     | removexattr      | ❌              |
-| 198     | lremovexattr     | ❌              |
-| 199     | fremovexattr     | ❌              |
+| 188     | setxattr         | ✅              |
+| 189     | lsetxattr        | ✅              |
+| 190     | fsetxattr        | ✅              |
+| 191     | getxattr         | ✅              |
+| 192     | lgetxattr        | ✅              |
+| 193     | fgetxattr        | ✅              |
+| 194     | listxattr        | ✅              |
+| 195     | llistxattr       | ✅              |
+| 196     | flistxattr       | ✅              |
+| 197     | removexattr      | ✅              |
+| 198     | lremovexattr     | ✅              |
+| 199     | fremovexattr     | ✅              |
 | 200     | tkill            | ❌              |
 | 201     | time             | ✅              |
 | 202     | futex            | ✅              |
@@ -291,7 +291,7 @@ provided by Linux on x86-64 architecture.
 | 268     | fchmodat         | ✅              |
 | 269     | faccessat        | ✅              |
 | 270     | pselect6         | ✅              |
-| 271     | ppoll            | ❌              |
+| 271     | ppoll            | ✅              |
 | 272     | unshare          | ❌              |
 | 273     | set_robust_list  | ✅              |
 | 274     | get_robust_list  | ❌              |
@@ -302,14 +302,14 @@ provided by Linux on x86-64 architecture.
 | 279     | move_pages       | ❌              |
 | 280     | utimensat        | ✅              |
 | 281     | epoll_pwait      | ✅              |
-| 282     | signalfd         | ❌              |
-| 283     | timerfd_create   | ❌              |
+| 282     | signalfd         | ✅              |
+| 283     | timerfd_create   | ✅              |
 | 284     | eventfd          | ✅              |
 | 285     | fallocate        | ✅              |
-| 286     | timerfd_settime  | ❌              |
-| 287     | timerfd_gettime  | ❌              |
+| 286     | timerfd_settime  | ✅              |
+| 287     | timerfd_gettime  | ✅              |
 | 288     | accept4          | ✅              |
-| 289     | signalfd4        | ❌              |
+| 289     | signalfd4        | ✅              |
 | 290     | eventfd2         | ✅              |
 | 291     | epoll_create1    | ✅              |
 | 292     | dup3             | ✅              |
@@ -329,16 +329,20 @@ provided by Linux on x86-64 architecture.
 | 306	  | syncfs           | ❌              |
 | 307	  | sendmmsg         | ❌              |
 | 308	  | setns            | ❌              |
-| 309	  | getcpu	         | ❌              |
+| 309	  | getcpu	         | ✅              |
 | 310	  | process_vm_readv | ❌              |
 | 311	  | process_vm_writev | ❌              |
 | 312	  | kcmp             | ❌              |
 | 313	  | finit_module     | ❌              |
+| 314	  | sched_setattr    | ✅              |
+| 315	  | sched_getattr    | ✅              |
 | 318	  | getrandom        | ✅              |
 | 322	  | execveat         | ✅              |
 | 327	  | preadv2          | ✅              |
 | 328	  | pwritev2         | ✅              |
+| 332     | statx            | ✅              |
 | 435	  | clone3           | ✅              |
+| 439     | faccessat2       | ✅              |
 
 ## File Systems
 

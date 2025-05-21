@@ -48,6 +48,11 @@ impl AtomicCpuId {
             .map_err(|prev| (prev as usize).try_into().unwrap())
     }
 
+    /// Sets the inner value of an `AtomicCpuId` anyway.
+    pub fn set_anyway(&self, cpu_id: CpuId) {
+        self.0.store(cpu_id.as_usize() as u32, Ordering::Relaxed);
+    }
+
     /// Sets the inner value of an `AtomicCpuId` to `AtomicCpuId::NONE`, i.e. makes
     /// an `AtomicCpuId` empty.
     pub fn set_to_none(&self) {

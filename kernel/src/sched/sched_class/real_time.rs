@@ -1,17 +1,25 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::collections::vec_deque::VecDeque;
+use alloc::{collections::VecDeque, sync::Arc};
 use core::{
     array,
     num::NonZero,
-    sync::atomic::{AtomicU8, Ordering::*},
+    sync::atomic::{AtomicU64, AtomicU8, Ordering::Relaxed},
 };
 
 use bitvec::{bitarr, BitArr};
+use ostd::{
+    cpu::CpuId,
+    task::{
+        scheduler::{EnqueueFlags, UpdateFlags},
+        Task,
+    },
+};
 
-use super::{time::base_slice_clocks, *};
+use super::{time::base_slice_clocks, CurrentRuntime, SchedAttr, SchedClassRq};
+use crate::{sched::nice::RangedU8, thread::AsThread};
 
-pub type RtPrio = RangedU8<1, 99>;
+pub type RealTimePriority = RangedU8<1, 99>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RealTimePolicy {
@@ -135,7 +143,7 @@ impl PrioArray {
 /// is empty, the 2 arrays are swapped by `index`.
 #[derive(Debug)]
 pub(super) struct RealTimeClassRq {
-    #[allow(unused)]
+    #[expect(unused)]
     cpu: CpuId,
     index: bool,
     array: [PrioArray; 2],
@@ -176,11 +184,11 @@ impl SchedClassRq for RealTimeClassRq {
         self.nr_running += 1;
     }
 
-    fn len(&mut self) -> usize {
+    fn len(&self) -> usize {
         self.nr_running
     }
 
-    fn is_empty(&mut self) -> bool {
+    fn is_empty(&self) -> bool {
         self.nr_running == 0
     }
 

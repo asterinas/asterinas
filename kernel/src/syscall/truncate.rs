@@ -16,7 +16,7 @@ pub fn sys_ftruncate(fd: FileDesc, len: isize, ctx: &Context) -> Result<SyscallR
 
     check_length(len, ctx)?;
 
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
     file.resize(len as usize)?;
     Ok(SyscallReturn::Return(0))
@@ -47,7 +47,7 @@ fn check_length(len: isize, ctx: &Context) -> Result<()> {
     }
 
     let max_file_size = {
-        let resource_limits = ctx.process.resource_limits().lock();
+        let resource_limits = ctx.process.resource_limits();
         resource_limits
             .get_rlimit(ResourceType::RLIMIT_FSIZE)
             .get_cur() as usize

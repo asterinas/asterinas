@@ -12,7 +12,7 @@ use spin::Once;
 
 use super::{preempt::cpu_local, processor, Task};
 use crate::{
-    cpu::{CpuId, PinCurrentCpu},
+    cpu::{CpuId, CpuSet, PinCurrentCpu},
     prelude::*,
     task::disable_preempt,
     timer,
@@ -195,7 +195,9 @@ fn set_need_preempt(cpu_id: CpuId) {
     if preempt_guard.current_cpu() == cpu_id {
         cpu_local::set_need_preempt();
     } else {
-        // TODO: Send IPIs to set remote CPU's `need_preempt`
+        crate::smp::inter_processor_call(&CpuSet::from(cpu_id), || {
+            cpu_local::set_need_preempt();
+        });
     }
 }
 
@@ -257,10 +259,12 @@ where
         };
     };
 
-    // FIXME: At this point, we need to prevent the current task from being scheduled on another
-    // CPU core. However, we currently have no way to ensure this. This is a soundness hole and
-    // should be fixed. See <https://github.com/asterinas/asterinas/issues/1471> for details.
-
+    // `switch_to_task` will spin if it finds that the next task is still running on some CPU core,
+    // which guarantees soundness regardless of the scheduler implementation.
+    //
+    // FIXME: The scheduler decision and context switching are not atomic, which can lead to some
+    // strange behavior even if the scheduler is implemented correctly. See "Problem 2" at
+    // <https://github.com/asterinas/asterinas/issues/1633> for details.
     cpu_local::clear_need_preempt();
     processor::switch_to_task(next_task);
 }

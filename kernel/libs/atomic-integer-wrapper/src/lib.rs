@@ -152,7 +152,6 @@ pub fn define_atomic_version_of_integer_like_type(input: TokenStream) -> TokenSt
         }
     };
     let fn_swap = quote! {
-        #[allow(dead_code)]
         pub fn swap(
             &self,
             val: impl Into<#integer_like_type>,
@@ -162,7 +161,6 @@ pub fn define_atomic_version_of_integer_like_type(input: TokenStream) -> TokenSt
         }
     };
     let fn_compare_exchange = quote! {
-        #[allow(dead_code)]
         pub fn compare_exchange(
             &self,
             current: impl Into<#integer_like_type>,
@@ -182,7 +180,6 @@ pub fn define_atomic_version_of_integer_like_type(input: TokenStream) -> TokenSt
         }
     };
     let fn_fetch_update = quote! {
-        #[allow(dead_code)]
         pub fn fetch_update<F>(
             &self,
             set_order: core::sync::atomic::Ordering,

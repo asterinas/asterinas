@@ -27,7 +27,7 @@ use crate::prelude::*;
 /// Here is a simple example.
 ///
 /// ```
-/// use sworndisk_v2::lazy_delete::*;
+/// use crate::util::LazyDelete;
 ///
 /// let lazy_delete_u32 = LazyDelete::new(123_u32, |obj| {
 ///     println!("the real deletion happens in this closure");
@@ -40,7 +40,7 @@ use crate::prelude::*;
 /// // The deletion operation will be carried out when it is dropped
 /// drop(lazy_delete_u32);
 /// ```
-#[allow(clippy::type_complexity)]
+#[expect(clippy::type_complexity)]
 pub struct LazyDelete<T> {
     obj: T,
     is_deleted: AtomicBool,

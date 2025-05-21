@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::sync::Arc;
-use core::ptr::NonNull;
+use core::{ptr::NonNull, sync::atomic::Ordering};
 
-use super::{context_switch, Task, TaskContext};
-use crate::cpu_local_cell;
+use super::{context_switch, Task, TaskContext, POST_SCHEDULE_HANDLER};
+use crate::{cpu_local_cell, trap::DisabledLocalIrqGuard};
 
 cpu_local_cell! {
     /// The `Arc<Task>` (casted by [`Arc::into_raw`]) that is the current task.
@@ -37,65 +37,109 @@ pub(super) fn current_task() -> Option<NonNull<Task>> {
 pub(super) fn switch_to_task(next_task: Arc<Task>) {
     super::atomic_mode::might_sleep();
 
+    // SAFETY: RCU read-side critical sections disables preemption. By the time
+    // we reach this point, we have already checked that preemption is enabled.
+    unsafe {
+        crate::sync::finish_grace_period();
+    }
+
     let irq_guard = crate::trap::disable_local();
 
     let current_task_ptr = CURRENT_TASK_PTR.load();
     let current_task_ctx_ptr = if !current_task_ptr.is_null() {
-        // SAFETY: The current task is always alive.
+        // SAFETY: The pointer is set by `switch_to_task` and is guaranteed to be
+        // built with `Arc::into_raw`. It will only be dropped as a previous task,
+        // so its reference will be valid until `after_switching_to`.
         let current_task = unsafe { &*current_task_ptr };
+
         current_task.save_fpu_state();
 
-        // Throughout this method, the task's context is alive and can be exclusively used.
+        // Until `after_switching_to`, the task's context is alive and can be exclusively used.
         current_task.ctx.get()
     } else {
-        // Throughout this method, interrupts are disabled and the context can be exclusively used.
+        // Until `after_switching_to`, IRQs are disabled and the context can be exclusively used.
         BOOTSTRAP_CONTEXT.as_mut_ptr()
     };
 
+    before_switching_to(&next_task, &irq_guard);
+
+    // `before_switching_to` guarantees that from now on, and while the next task is running on the
+    // CPU, its context can be used exclusively.
     let next_task_ctx_ptr = next_task.ctx().get().cast_const();
-    if let Some(next_user_space) = next_task.user_space() {
-        next_user_space.vm_space().activate();
-    }
 
-    // Change the current task to the next task.
-    //
-    // We cannot directly drop `current` at this point. Since we are running as
-    // `current`, we must avoid dropping `current`. Otherwise, the kernel stack
-    // may be unmapped, leading to instant failure.
-    let old_prev = PREVIOUS_TASK_PTR.load();
-    PREVIOUS_TASK_PTR.store(current_task_ptr);
     CURRENT_TASK_PTR.store(Arc::into_raw(next_task));
-    // Drop the old-previously running task.
-    if !old_prev.is_null() {
-        // SAFETY: The pointer is set by `switch_to_task` and is guaranteed to be
-        // built with `Arc::into_raw`.
-        drop(unsafe { Arc::from_raw(old_prev) });
-    }
+    debug_assert!(PREVIOUS_TASK_PTR.load().is_null());
+    PREVIOUS_TASK_PTR.store(current_task_ptr);
 
-    // Keep interrupts disabled during context switching. This will be enabled after switching to
-    // the target task (in the code below or in `kernel_task_entry`).
-    core::mem::forget(irq_guard);
+    // We must disable IRQs when switching, see `after_switching_to`.
+    let _ = core::mem::ManuallyDrop::new(irq_guard);
 
     // SAFETY:
-    // 1. `ctx` is only used in `reschedule()`. We have exclusive access to both the current task
-    //    context and the next task context.
-    // 2. The next task context is a valid task context.
+    // 1. We have exclusive access to both the current context and the next context (see above).
+    // 2. The next context is valid (because it is either correctly initialized or written by a
+    //    previous `context_switch`).
     unsafe {
         // This function may not return, for example, when the current task exits. So make sure
         // that all variables on the stack can be forgotten without causing resource leakage.
         context_switch(current_task_ctx_ptr, next_task_ctx_ptr);
     }
 
-    // Now it's fine to drop `prev_task`. However, we choose not to do this because it is not
-    // always possible. For example, `context_switch` can switch directly to the entry point of the
-    // next task. Not dropping is just fine because the only consequence is that we delay the drop
-    // to the next task switching.
+    // SAFETY: The task is just switched back, `after_switching_to` hasn't been called yet.
+    unsafe { after_switching_to() };
 
-    // See also `kernel_task_entry`.
-    crate::arch::irq::enable_local();
-
-    // The `next_task` was moved into `CURRENT_TASK_PTR` above, now restore its FPU state.
     if let Some(current) = Task::current() {
         current.restore_fpu_state();
     }
+}
+
+fn before_switching_to(next_task: &Task, irq_guard: &DisabledLocalIrqGuard) {
+    // Ensure that the mapping to the kernel stack is valid.
+    next_task.kstack.flush_tlb(irq_guard);
+
+    // Ensure that we are not switching to a task that is already running.
+    while next_task
+        .switched_to_cpu
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+        .is_err()
+    {
+        log::warn!("Switching to a task already running in the foreground");
+        core::hint::spin_loop();
+    }
+}
+
+/// Does cleanups after switching to a task.
+///
+/// # Safety
+///
+/// This function must be called only once after switching to a task.
+pub(super) unsafe fn after_switching_to() {
+    // Release the previous task.
+    let prev = PREVIOUS_TASK_PTR.load();
+    let prev = if !prev.is_null() {
+        PREVIOUS_TASK_PTR.store(core::ptr::null());
+
+        // SAFETY: The pointer is set by `switch_to_task` and is guaranteed to
+        // be built with `Arc::into_raw`. We couldn't do it twice since we set
+        // it to NULL after the read.
+        let prev_task = unsafe { Arc::from_raw(prev) };
+
+        // Allows it to be switched on a CPU again, if anyone wants to.
+        prev_task.switched_to_cpu.store(false, Ordering::Release);
+
+        Some(prev_task)
+    } else {
+        None
+    };
+
+    if let Some(handler) = POST_SCHEDULE_HANDLER.get() {
+        handler();
+    }
+
+    // See `switch_to_task`, where we forgot an IRQ guard.
+    crate::arch::irq::enable_local();
+
+    // It was forgotten using `Arc::into_raw` at `switch_to_task`.
+    // We drop it after enabling the IRQ in case dropping user-provided
+    // resources would violate the atomic mode.
+    drop(prev);
 }

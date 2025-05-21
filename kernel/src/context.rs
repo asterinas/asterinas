@@ -2,11 +2,12 @@
 
 //! The context that can be accessed from the current task, thread or process.
 
-use core::mem;
+use core::{cell::Ref, mem};
 
+use aster_rights::Full;
 use ostd::{
-    mm::{Fallible, Infallible, VmReader, VmSpace, VmWriter},
-    task::Task,
+    mm::{Fallible, Infallible, VmReader, VmWriter},
+    task::{CurrentTask, Task},
 };
 
 use crate::{
@@ -16,6 +17,8 @@ use crate::{
         Process,
     },
     thread::Thread,
+    util::{MultiRead, VmReaderArray},
+    vm::vmar::Vmar,
 };
 
 /// The context that can be accessed from the current POSIX thread.
@@ -31,14 +34,14 @@ pub struct Context<'a> {
 impl Context<'_> {
     /// Gets the userspace of the current task.
     pub fn user_space(&self) -> CurrentUserSpace {
-        CurrentUserSpace::new(self.task)
+        CurrentUserSpace(self.thread_local.root_vmar().borrow())
     }
 }
 
 /// The user's memory space of the current task.
 ///
 /// It provides methods to read from or write to the user space efficiently.
-pub struct CurrentUserSpace<'a>(&'a VmSpace);
+pub struct CurrentUserSpace<'a>(Ref<'a, Option<Vmar<Full>>>);
 
 /// Gets the [`CurrentUserSpace`] from the current task.
 ///
@@ -46,46 +49,46 @@ pub struct CurrentUserSpace<'a>(&'a VmSpace);
 /// If you get the access to the [`Context`].
 #[macro_export]
 macro_rules! current_userspace {
-    () => {
+    () => {{
+        use crate::context::CurrentUserSpace;
         CurrentUserSpace::new(&ostd::task::Task::current().unwrap())
-    };
+    }};
 }
 
 impl<'a> CurrentUserSpace<'a> {
-    /// Creates a new `CurrentUserSpace` from the specified task.
-    ///
-    /// This method is _not_ recommended for use, as it does not verify whether the provided
-    /// `task` is the current task in release builds.
+    /// Creates a new `CurrentUserSpace` from the current task.
     ///
     /// If you have access to a [`Context`], it is preferable to call [`Context::user_space`].
     ///
     /// Otherwise, you can use the `current_userspace` macro
     /// to obtain an instance of `CurrentUserSpace` if it will only be used once.
+    pub fn new(current_task: &'a CurrentTask) -> Self {
+        let thread_local = current_task.as_thread_local().unwrap();
+        let vmar_ref = thread_local.root_vmar().borrow();
+        Self(vmar_ref)
+    }
+
+    /// Returns the root `Vmar` of the current userspace.
     ///
     /// # Panics
     ///
-    /// This method will panic in debug builds if the specified `task` is not the current task.
-    pub fn new(task: &'a Task) -> Self {
-        let user_space = task.user_space().unwrap();
-        debug_assert!(Arc::ptr_eq(
-            task.user_space().unwrap(),
-            Task::current().unwrap().user_space().unwrap()
-        ));
-        Self(user_space.vm_space())
+    /// This method will panic if the current process has cleared its `Vmar`.
+    pub fn root_vmar(&self) -> &Vmar<Full> {
+        self.0.as_ref().unwrap()
     }
 
     /// Creates a reader to read data from the user space of the current task.
     ///
     /// Returns `Err` if the `vaddr` and `len` do not represent a user space memory range.
     pub fn reader(&self, vaddr: Vaddr, len: usize) -> Result<VmReader<'_, Fallible>> {
-        Ok(self.0.reader(vaddr, len)?)
+        Ok(self.root_vmar().vm_space().reader(vaddr, len)?)
     }
 
     /// Creates a writer to write data into the user space.
     ///
     /// Returns `Err` if the `vaddr` and `len` do not represent a user space memory range.
     pub fn writer(&self, vaddr: Vaddr, len: usize) -> Result<VmWriter<'_, Fallible>> {
-        Ok(self.0.writer(vaddr, len)?)
+        Ok(self.root_vmar().vm_space().writer(vaddr, len)?)
     }
 
     /// Reads bytes into the destination `VmWriter` from the user space of the
@@ -164,69 +167,125 @@ impl<'a> CurrentUserSpace<'a> {
 }
 
 /// A trait providing the ability to read a C string from the user space.
-///
-/// The user space should be of the current process. The implemented method
-/// should read the bytes iteratively in the reader ([`VmReader`]) until
-/// encountering the end of the reader or reading a `\0` (which is also
-/// included in the final C String).
 pub trait ReadCString {
+    /// Reads a C string from `self`.
+    ///
+    /// This method should read the bytes iteratively in `self` until
+    /// encountering the end of the reader or reading a `\0` (which is also
+    /// included in the final C String).
     fn read_cstring(&mut self) -> Result<CString>;
+
+    /// Reads a C string from `self` with a maximum length of `max_len`.
+    ///
+    /// This method functions similarly to [`ReadCString::read_cstring`],
+    /// but imposes an additional limit on the length of the C string.
+    fn read_cstring_with_max_len(&mut self, max_len: usize) -> Result<CString>;
 }
 
 impl ReadCString for VmReader<'_, Fallible> {
-    /// Reads a C string from the user space.
-    ///
-    /// This implementation is inspired by
-    /// the `do_strncpy_from_user` function in Linux kernel.
-    /// The original Linux implementation can be found at:
-    /// <https://elixir.bootlin.com/linux/v6.0.9/source/lib/strncpy_from_user.c#L28>
     fn read_cstring(&mut self) -> Result<CString> {
-        let max_len = self.remain();
+        self.read_cstring_with_max_len(self.remain())
+    }
+
+    fn read_cstring_with_max_len(&mut self, max_len: usize) -> Result<CString> {
+        // This implementation is inspired by
+        // the `do_strncpy_from_user` function in Linux kernel.
+        // The original Linux implementation can be found at:
+        // <https://elixir.bootlin.com/linux/v6.0.9/source/lib/strncpy_from_user.c#L28>
         let mut buffer: Vec<u8> = Vec::with_capacity(max_len);
 
-        macro_rules! read_one_byte_at_a_time_while {
-            ($cond:expr) => {
-                while $cond {
-                    let byte = self.read_val::<u8>()?;
-                    buffer.push(byte);
-                    if byte == 0 {
-                        return Ok(CString::from_vec_with_nul(buffer)
-                            .expect("We provided 0 but no 0 is found"));
-                    }
-                }
-            };
+        if read_until_nul_byte(self, &mut buffer, max_len)? {
+            return Ok(CString::from_vec_with_nul(buffer).unwrap());
         }
 
-        // Handle the first few bytes to make `cur_addr` aligned with `size_of::<usize>`
-        read_one_byte_at_a_time_while!(
-            !is_addr_aligned(self.cursor() as usize) && buffer.len() < max_len
+        return_errno_with_message!(
+            Errno::EFAULT,
+            "no nul terminator is present before reaching the buffer limit"
         );
+    }
+}
 
-        // Handle the rest of the bytes in bulk
-        while (buffer.len() + mem::size_of::<usize>()) <= max_len {
-            let Ok(word) = self.read_val::<usize>() else {
-                break;
-            };
+impl ReadCString for VmReaderArray<'_> {
+    fn read_cstring(&mut self) -> Result<CString> {
+        self.read_cstring_with_max_len(self.sum_lens())
+    }
 
-            if has_zero(word) {
-                for byte in word.to_ne_bytes() {
-                    buffer.push(byte);
-                    if byte == 0 {
-                        return Ok(CString::from_vec_with_nul(buffer)
-                            .expect("We provided 0 but no 0 is found"));
-                    }
-                }
-                unreachable!("The branch should never be reached unless `has_zero` has bugs.")
+    fn read_cstring_with_max_len(&mut self, max_len: usize) -> Result<CString> {
+        let mut buffer: Vec<u8> = Vec::with_capacity(max_len);
+
+        for reader in self.readers_mut() {
+            if read_until_nul_byte(reader, &mut buffer, max_len)? {
+                return Ok(CString::from_vec_with_nul(buffer).unwrap());
             }
-
-            buffer.extend_from_slice(&word.to_ne_bytes());
         }
 
-        // Handle the last few bytes that are not enough for a word
-        read_one_byte_at_a_time_while!(buffer.len() < max_len);
+        return_errno_with_message!(
+            Errno::EFAULT,
+            "no nul terminator is present before reaching the buffer limit"
+        );
+    }
+}
 
-        // Maximum length exceeded before finding the null terminator
-        return_errno_with_message!(Errno::EFAULT, "Fails to read CString from user");
+/// Reads bytes from `reader` into `buffer` until a nul byte is found.
+///
+/// This method returns the following values:
+/// 1. `Ok(true)`: If a nul byte is found in the reader;
+/// 2. `Ok(false)`: If no nul byte is found and the `reader` is exhausted;
+/// 3. `Err(_)`: If an error occurs while reading from the `reader`.
+fn read_until_nul_byte(
+    reader: &mut VmReader,
+    buffer: &mut Vec<u8>,
+    max_len: usize,
+) -> Result<bool> {
+    macro_rules! read_one_byte_at_a_time_while {
+        ($cond:expr) => {
+            while $cond {
+                let byte = reader.read_val::<u8>()?;
+                buffer.push(byte);
+                if byte == 0 {
+                    return Ok(true);
+                }
+            }
+        };
+    }
+
+    // Handle the first few bytes to make `cur_addr` aligned with `size_of::<usize>`
+    read_one_byte_at_a_time_while!(
+        !is_addr_aligned(reader.cursor() as usize) && buffer.len() < max_len && reader.has_remain()
+    );
+
+    // Handle the rest of the bytes in bulk
+    let mut cloned_reader = reader.clone();
+    while (buffer.len() + mem::size_of::<usize>()) <= max_len {
+        let Ok(word) = cloned_reader.read_val::<usize>() else {
+            break;
+        };
+
+        if has_zero(word) {
+            for byte in word.to_ne_bytes() {
+                reader.skip(1);
+                buffer.push(byte);
+                if byte == 0 {
+                    return Ok(true);
+                }
+            }
+            unreachable!("The branch should never be reached unless `has_zero` has bugs.")
+        }
+
+        reader.skip(size_of::<usize>());
+        buffer.extend_from_slice(&word.to_ne_bytes());
+    }
+
+    // Handle the last few bytes that are not enough for a word
+    read_one_byte_at_a_time_while!(buffer.len() < max_len && reader.has_remain());
+
+    if buffer.len() >= max_len {
+        return_errno_with_message!(
+            Errno::EFAULT,
+            "no nul terminator is present before exceeding the maximum length"
+        );
+    } else {
+        Ok(false)
     }
 }
 
@@ -265,4 +324,75 @@ fn check_vaddr(va: Vaddr) -> Result<()> {
 /// Checks if the given address is aligned.
 const fn is_addr_aligned(addr: usize) -> bool {
     (addr & (mem::size_of::<usize>() - 1)) == 0
+}
+
+#[cfg(ktest)]
+mod test {
+    use ostd::prelude::*;
+
+    use super::*;
+
+    fn init_buffer(cstrs: &[CString]) -> Vec<u8> {
+        let mut buffer = vec![255u8; 100];
+
+        let mut writer = VmWriter::from(buffer.as_mut_slice());
+
+        for cstr in cstrs {
+            writer.write(&mut VmReader::from(cstr.as_bytes_with_nul()));
+        }
+
+        buffer
+    }
+
+    #[ktest]
+    fn read_multiple_cstring() {
+        let strs = {
+            let str1 = CString::new("hello").unwrap();
+            let str2 = CString::new("world!").unwrap();
+            vec![str1, str2]
+        };
+
+        let buffer = init_buffer(&strs);
+
+        let mut reader = VmReader::from(buffer.as_slice()).to_fallible();
+        let read_str1 = reader.read_cstring().unwrap();
+        assert_eq!(read_str1, strs[0]);
+        let read_str2 = reader.read_cstring().unwrap();
+        assert_eq!(read_str2, strs[1]);
+
+        assert!(reader
+            .read_cstring()
+            .is_err_and(|err| err.error() == Errno::EFAULT));
+    }
+
+    #[ktest]
+    fn read_cstring_from_multiread() {
+        let strs = {
+            let str1 = CString::new("hello").unwrap();
+            let str2 = CString::new("world!").unwrap();
+            let str3 = CString::new("asterinas").unwrap();
+            vec![str1, str2, str3]
+        };
+
+        let buffer = init_buffer(&strs);
+
+        let mut readers = {
+            let reader1 = VmReader::from(&buffer[0..20]).to_fallible();
+            let reader2 = VmReader::from(&buffer[20..40]).to_fallible();
+            let reader3 = VmReader::from(&buffer[40..60]).to_fallible();
+            VmReaderArray::new(vec![reader1, reader2, reader3].into_boxed_slice())
+        };
+
+        let multiread = &mut readers as &mut dyn MultiRead;
+        let read_str1 = multiread.read_cstring().unwrap();
+        assert_eq!(read_str1, strs[0]);
+        let read_str2 = multiread.read_cstring().unwrap();
+        assert_eq!(read_str2, strs[1]);
+        let read_str3 = multiread.read_cstring().unwrap();
+        assert_eq!(read_str3, strs[2]);
+
+        assert!(multiread
+            .read_cstring()
+            .is_err_and(|err| err.error() == Errno::EFAULT));
+    }
 }

@@ -2,7 +2,7 @@
 
 use crate::syscall::{
     accept::{sys_accept, sys_accept4},
-    access::{sys_access, sys_faccessat},
+    access::{sys_access, sys_faccessat, sys_faccessat2},
     alarm::sys_alarm,
     arch_prctl::sys_arch_prctl,
     bind::sys_bind,
@@ -26,9 +26,11 @@ use crate::syscall::{
     fallocate::sys_fallocate,
     fcntl::sys_fcntl,
     flock::sys_flock,
-    fork::sys_fork,
+    fork::{sys_fork, sys_vfork},
     fsync::{sys_fdatasync, sys_fsync},
     futex::sys_futex,
+    get_priority::sys_get_priority,
+    getcpu::sys_getcpu,
     getcwd::sys_getcwd,
     getdents64::{sys_getdents, sys_getdents64},
     getegid::sys_getegid,
@@ -50,11 +52,13 @@ use crate::syscall::{
     gettid::sys_gettid,
     gettimeofday::sys_gettimeofday,
     getuid::sys_getuid,
+    getxattr::{sys_fgetxattr, sys_getxattr, sys_lgetxattr},
     impl_syscall_nums_and_dispatch_fn,
     ioctl::sys_ioctl,
     kill::sys_kill,
     link::{sys_link, sys_linkat},
     listen::sys_listen,
+    listxattr::{sys_flistxattr, sys_listxattr, sys_llistxattr},
     lseek::sys_lseek,
     madvise::sys_madvise,
     mkdir::{sys_mkdir, sys_mkdirat},
@@ -69,6 +73,7 @@ use crate::syscall::{
     pause::sys_pause,
     pipe::{sys_pipe, sys_pipe2},
     poll::sys_poll,
+    ppoll::sys_ppoll,
     prctl::sys_prctl,
     pread64::sys_pread64,
     preadv::{sys_preadv, sys_preadv2, sys_readv},
@@ -80,6 +85,7 @@ use crate::syscall::{
     readlink::{sys_readlink, sys_readlinkat},
     recvfrom::sys_recvfrom,
     recvmsg::sys_recvmsg,
+    removexattr::{sys_fremovexattr, sys_lremovexattr, sys_removexattr},
     rename::{sys_rename, sys_renameat},
     rmdir::sys_rmdir,
     rt_sigaction::sys_rt_sigaction,
@@ -88,6 +94,14 @@ use crate::syscall::{
     rt_sigreturn::sys_rt_sigreturn,
     rt_sigsuspend::sys_rt_sigsuspend,
     sched_affinity::{sys_sched_getaffinity, sys_sched_setaffinity},
+    sched_get_priority_max::sys_sched_get_priority_max,
+    sched_get_priority_min::sys_sched_get_priority_min,
+    sched_getattr::sys_sched_getattr,
+    sched_getparam::sys_sched_getparam,
+    sched_getscheduler::sys_sched_getscheduler,
+    sched_setattr::sys_sched_setattr,
+    sched_setparam::sys_sched_setparam,
+    sched_setscheduler::sys_sched_setscheduler,
     sched_yield::sys_sched_yield,
     select::sys_select,
     semctl::sys_semctl,
@@ -96,7 +110,7 @@ use crate::syscall::{
     sendfile::sys_sendfile,
     sendmsg::sys_sendmsg,
     sendto::sys_sendto,
-    set_get_priority::{sys_get_priority, sys_set_priority},
+    set_priority::sys_set_priority,
     set_robust_list::sys_set_robust_list,
     set_tid_address::sys_set_tid_address,
     setfsgid::sys_setfsgid,
@@ -112,12 +126,15 @@ use crate::syscall::{
     setsid::sys_setsid,
     setsockopt::sys_setsockopt,
     setuid::sys_setuid,
+    setxattr::{sys_fsetxattr, sys_lsetxattr, sys_setxattr},
     shutdown::sys_shutdown,
     sigaltstack::sys_sigaltstack,
+    signalfd::{sys_signalfd, sys_signalfd4},
     socket::sys_socket,
     socketpair::sys_socketpair,
     stat::{sys_fstat, sys_fstatat, sys_lstat, sys_stat},
     statfs::{sys_fstatfs, sys_statfs},
+    statx::sys_statx,
     symlink::{sys_symlink, sys_symlinkat},
     sync::sys_sync,
     sysinfo::sys_sysinfo,
@@ -125,6 +142,9 @@ use crate::syscall::{
     time::sys_time,
     timer_create::{sys_timer_create, sys_timer_delete},
     timer_settime::{sys_timer_gettime, sys_timer_settime},
+    timerfd_create::sys_timerfd_create,
+    timerfd_gettime::sys_timerfd_gettime,
+    timerfd_settime::sys_timerfd_settime,
     truncate::{sys_ftruncate, sys_truncate},
     umask::sys_umask,
     umount::sys_umount,
@@ -190,6 +210,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_GETSOCKOPT = 55        => sys_getsockopt(args[..5]);
     SYS_CLONE = 56             => sys_clone(args[..5], &user_ctx);
     SYS_FORK = 57              => sys_fork(args[..0], &user_ctx);
+    SYS_VFORK = 58             => sys_vfork(args[..0], &user_ctx);
     SYS_EXECVE = 59            => sys_execve(args[..3], &mut user_ctx);
     SYS_EXIT = 60              => sys_exit(args[..1]);
     SYS_WAIT4 = 61             => sys_wait4(args[..4]);
@@ -259,6 +280,12 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_FSTATFS = 138          => sys_fstatfs(args[..2]);
     SYS_GET_PRIORITY = 140     => sys_get_priority(args[..2]);
     SYS_SET_PRIORITY = 141     => sys_set_priority(args[..3]);
+    SYS_SCHED_SETPARAM = 142   => sys_sched_setparam(args[..2]);
+    SYS_SCHED_GETPARAM = 143   => sys_sched_getparam(args[..2]);
+    SYS_SCHED_SETSCHEDULER = 144 => sys_sched_setscheduler(args[..3]);
+    SYS_SCHED_GETSCHEDULER = 145 => sys_sched_getscheduler(args[..1]);
+    SYS_SCHED_GET_PRIORITY_MAX = 146 => sys_sched_get_priority_max(args[..1]);
+    SYS_SCHED_GET_PRIORITY_MIN = 147 => sys_sched_get_priority_min(args[..1]);
     SYS_PRCTL = 157            => sys_prctl(args[..5]);
     SYS_ARCH_PRCTL = 158       => sys_arch_prctl(args[..2], &mut user_ctx);
     SYS_SETRLIMIT = 160        => sys_setrlimit(args[..2]);
@@ -267,6 +294,18 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_MOUNT = 165            => sys_mount(args[..5]);
     SYS_UMOUNT2 = 166           => sys_umount(args[..2]);
     SYS_GETTID = 186           => sys_gettid(args[..0]);
+    SYS_SETXATTR = 188         => sys_setxattr(args[..5]);
+    SYS_LSETXATTR = 189        => sys_lsetxattr(args[..5]);
+    SYS_FSETXATTR = 190        => sys_fsetxattr(args[..5]);
+    SYS_GETXATTR = 191         => sys_getxattr(args[..4]);
+    SYS_LGETXATTR = 192        => sys_lgetxattr(args[..4]);
+    SYS_FGETXATTR = 193        => sys_fgetxattr(args[..4]);
+    SYS_LISTXATTR = 194        => sys_listxattr(args[..3]);
+    SYS_LLISTXATTR = 195       => sys_llistxattr(args[..3]);
+    SYS_FLISTXATTR = 196       => sys_flistxattr(args[..3]);
+    SYS_REMOVEXATTR = 197      => sys_removexattr(args[..2]);
+    SYS_LREMOVEXATTR = 198     => sys_lremovexattr(args[..2]);
+    SYS_FREMOVEXATTR = 199     => sys_fremovexattr(args[..2]);
     SYS_TIME = 201             => sys_time(args[..1]);
     SYS_FUTEX = 202            => sys_futex(args[..6]);
     SYS_SCHED_SETAFFINITY = 203 => sys_sched_setaffinity(args[..3]);
@@ -301,12 +340,18 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_FCHMODAT = 268         => sys_fchmodat(args[..3]);
     SYS_FACCESSAT = 269        => sys_faccessat(args[..3]);
     SYS_PSELECT6 = 270         => sys_pselect6(args[..6]);
+    SYS_PPOLL = 271            => sys_ppoll(args[..5]);
     SYS_SET_ROBUST_LIST = 273  => sys_set_robust_list(args[..2]);
     SYS_UTIMENSAT = 280        => sys_utimensat(args[..4]);
     SYS_EPOLL_PWAIT = 281      => sys_epoll_pwait(args[..6]);
+    SYS_SIGNALFD = 282         => sys_signalfd(args[..3]);
+    SYS_TIMERFD_CREATE = 283   => sys_timerfd_create(args[..2]);
     SYS_EVENTFD = 284          => sys_eventfd(args[..1]);
     SYS_FALLOCATE = 285        => sys_fallocate(args[..4]);
+    SYS_TIMERFD_SETTIME = 286 => sys_timerfd_settime(args[..4]);
+    SYS_TIMERFD_GETTIME = 287 => sys_timerfd_gettime(args[..2]);
     SYS_ACCEPT4 = 288          => sys_accept4(args[..4]);
+    SYS_SIGNALFD4 = 289        => sys_signalfd4(args[..4]);
     SYS_EVENTFD2 = 290         => sys_eventfd2(args[..2]);
     SYS_EPOLL_CREATE1 = 291    => sys_epoll_create1(args[..1]);
     SYS_DUP3 = 292             => sys_dup3(args[..3]);
@@ -314,9 +359,14 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_PREADV = 295           => sys_preadv(args[..4]);
     SYS_PWRITEV = 296          => sys_pwritev(args[..4]);
     SYS_PRLIMIT64 = 302        => sys_prlimit64(args[..4]);
+    SYS_GETCPU = 309           => sys_getcpu(args[..3]);
+    SYS_SCHED_SETATTR = 314    => sys_sched_setattr(args[..3]);
+    SYS_SCHED_GETATTR = 315    => sys_sched_getattr(args[..4]);
     SYS_GETRANDOM = 318        => sys_getrandom(args[..3]);
     SYS_EXECVEAT = 322         => sys_execveat(args[..5], &mut user_ctx);
     SYS_PREADV2 = 327          => sys_preadv2(args[..5]);
     SYS_PWRITEV2 = 328         => sys_pwritev2(args[..5]);
+    SYS_STATX = 332            => sys_statx(args[..5]);
     SYS_CLONE3 = 435           => sys_clone3(args[..2], &user_ctx);
+    SYS_FACCESSAT2 = 439       => sys_faccessat2(args[..4]);
 }

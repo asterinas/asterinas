@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::sync::atomic::Ordering;
+
 use crate::{
+    arch::mm::tlb_flush_addr_range,
+    cpu::{AtomicCpuSet, CpuSet, PinCurrentCpu},
     impl_frame_meta_for,
     mm::{
         kspace::kvirt_area::{KVirtArea, Tracked},
@@ -8,6 +12,7 @@ use crate::{
         FrameAllocOptions, PAGE_SIZE,
     },
     prelude::*,
+    trap::DisabledLocalIrqGuard,
 };
 
 /// The kernel stack size of a task, specified in pages.
@@ -27,9 +32,10 @@ pub const DEFAULT_STACK_SIZE_IN_PAGES: u32 = 128;
 pub static KERNEL_STACK_SIZE: usize = STACK_SIZE_IN_PAGES as usize * PAGE_SIZE;
 
 #[derive(Debug)]
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub struct KernelStack {
     kvirt_area: KVirtArea<Tracked>,
+    tlb_coherent: AtomicCpuSet,
     end_vaddr: Vaddr,
     has_guard_page: bool,
 }
@@ -41,11 +47,14 @@ impl_frame_meta_for!(KernelStackMeta);
 
 impl KernelStack {
     /// Generates a kernel stack with guard pages.
-    /// 4 additional pages are allocated and regarded as guard pages, which should not be accessed.
+    ///
+    /// 4 additional pages are allocated and regarded as guard pages, which
+    /// should not be accessed.
+    //
+    // TODO: We map kernel stacks in the kernel virtual areas, which incurs
+    // non-negligible TLB and mapping overhead on task creation. This could
+    // be improved by caching/reusing kernel stacks with a pool.
     pub fn new_with_guard_page() -> Result<Self> {
-        let mut new_kvirt_area = KVirtArea::<Tracked>::new(KERNEL_STACK_SIZE + 4 * PAGE_SIZE);
-        let mapped_start = new_kvirt_area.range().start + 2 * PAGE_SIZE;
-        let mapped_end = mapped_start + KERNEL_STACK_SIZE;
         let pages = FrameAllocOptions::new()
             .zeroed(false)
             .alloc_segment_with(KERNEL_STACK_SIZE / PAGE_SIZE, |_| KernelStackMeta)?;
@@ -54,13 +63,29 @@ impl KernelStack {
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::empty(),
         };
-        new_kvirt_area.map_pages(mapped_start..mapped_end, pages, prop);
-
+        let new_kvirt_area = KVirtArea::<Tracked>::map_pages(
+            KERNEL_STACK_SIZE + 4 * PAGE_SIZE,
+            2 * PAGE_SIZE,
+            pages.into_iter(),
+            prop,
+        );
+        let mapped_start = new_kvirt_area.range().start + 2 * PAGE_SIZE;
+        let mapped_end = mapped_start + KERNEL_STACK_SIZE;
         Ok(Self {
             kvirt_area: new_kvirt_area,
+            tlb_coherent: AtomicCpuSet::new(CpuSet::new_empty()),
             end_vaddr: mapped_end,
             has_guard_page: true,
         })
+    }
+
+    /// Flushes the TLB for the current CPU if necessary.
+    pub(super) fn flush_tlb(&self, irq_guard: &DisabledLocalIrqGuard) {
+        let cur_cpu = irq_guard.current_cpu();
+        if !self.tlb_coherent.contains(cur_cpu, Ordering::Relaxed) {
+            tlb_flush_addr_range(&self.kvirt_area.range());
+            self.tlb_coherent.add(cur_cpu, Ordering::Relaxed);
+        }
     }
 
     pub fn end_vaddr(&self) -> Vaddr {

@@ -1,3 +1,7 @@
+[env]
+# Provide a default value. Otherwise Cargo check/publish won't work.
+PAYLOAD_FILE = "/dev/null"
+
 [target.x86_64-unknown-none]
 rustflags = [
     "-Ccode-model=kernel",

@@ -20,7 +20,7 @@ pub fn sys_fchown(fd: FileDesc, uid: i32, gid: i32, ctx: &Context) -> Result<Sys
         return Ok(SyscallReturn::Return(0));
     }
 
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
     if let Some(uid) = uid {
         file.set_owner(uid)?;

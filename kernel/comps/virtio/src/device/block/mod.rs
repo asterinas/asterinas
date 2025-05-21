@@ -146,7 +146,7 @@ impl ConfigManager<VirtioBlockConfig> {
         let cap_high = self
             .read_once::<u32>(offset_of!(VirtioBlockConfig, capacity) + 4)
             .unwrap() as u64;
-        blk_config.capacity = cap_high << 32 | cap_low;
+        blk_config.capacity = (cap_high << 32) | cap_low;
         blk_config.size_max = self
             .read_once::<u32>(offset_of!(VirtioBlockConfig, size_max))
             .unwrap();
@@ -193,7 +193,7 @@ impl ConfigManager<VirtioBlockConfig> {
             .read_once::<u32>(offset_of!(VirtioBlockConfig, capacity) + 4)
             .unwrap() as usize;
 
-        cap_high << 32 | cap_low
+        (cap_high << 32) | cap_low
     }
 }
 

@@ -2,7 +2,7 @@
 
 //! PCI bus
 
-#![allow(unused_variables)]
+#![expect(unused_variables)]
 
 use alloc::{collections::VecDeque, sync::Arc, vec::Vec};
 use core::fmt::Debug;
@@ -28,7 +28,7 @@ pub trait PciDriver: Sync + Send + Debug {
     ///
     /// Once a device is matched and claimed by a driver,
     /// it won't be fed to another driver for probing.
-    #[allow(clippy::result_large_err)]
+    #[expect(clippy::result_large_err)]
     fn probe(
         &self,
         device: PciCommonDevice,

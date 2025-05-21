@@ -3,14 +3,15 @@
 use alloc::collections::VecDeque;
 use core::sync::atomic::{
     AtomicBool,
-    Ordering::{Acquire, Relaxed, Release},
+    Ordering::{self, Relaxed},
 };
 
-#[cfg(target_arch = "x86_64")]
-use crate::arch::x86::cpu;
-use crate::prelude::*;
-use crate::sync::AtomicBits;
-use crate::sync::SpinLock;
+use crate::{
+    cpu::{AtomicCpuSet, CpuId, CpuSet, PinCurrentCpu},
+    prelude::*,
+    sync::SpinLock,
+    task::atomic_mode::AsAtomicModeGuard,
+};
 
 /// A RCU monitor ensures the completion of _grace periods_ by keeping track
 /// of each CPU's passing _quiescent states_.
@@ -20,14 +21,18 @@ pub struct RcuMonitor {
 }
 
 impl RcuMonitor {
-    pub fn new(num_cpus: usize) -> Self {
+    /// Creates a new RCU monitor.
+    ///
+    /// This function is used to initialize a singleton instance of `RcuMonitor`.
+    /// The singleton instance is globally accessible via the `RCU_MONITOR`.
+    pub fn new() -> Self {
         Self {
             is_monitoring: AtomicBool::new(false),
-            state: SpinLock::new(State::new(num_cpus)),
+            state: SpinLock::new(State::new()),
         }
     }
 
-    pub unsafe fn pass_quiescent_state(&self) {
+    pub(super) unsafe fn finish_grace_period(&self) {
         // Fast path
         if !self.is_monitoring.load(Relaxed) {
             return;
@@ -38,11 +43,12 @@ impl RcuMonitor {
         // GP.
         let callbacks = {
             let mut state = self.state.disable_irq().lock();
+            let cpu = state.as_atomic_mode_guard().current_cpu();
             if state.current_gp.is_complete() {
                 return;
             }
 
-            state.current_gp.pass_quiescent_state();
+            state.current_gp.finish_grace_period(cpu);
             if !state.current_gp.is_complete() {
                 return;
             }
@@ -50,7 +56,7 @@ impl RcuMonitor {
             // Now that the current GP is complete, take its callbacks
             let current_callbacks = state.current_gp.take_callbacks();
 
-            // Check if we need to70G watch for a next GP
+            // Check if we need to watch for a next GP
             if !state.next_callbacks.is_empty() {
                 let callbacks = core::mem::take(&mut state.next_callbacks);
                 state.current_gp.restart(callbacks);
@@ -69,7 +75,7 @@ impl RcuMonitor {
 
     pub fn after_grace_period<F>(&self, f: F)
     where
-        F: FnOnce() -> () + Send + 'static,
+        F: FnOnce() + Send + 'static,
     {
         let mut state = self.state.disable_irq().lock();
 
@@ -91,28 +97,28 @@ struct State {
 }
 
 impl State {
-    pub fn new(num_cpus: usize) -> Self {
+    pub fn new() -> Self {
         Self {
-            current_gp: GracePeriod::new(num_cpus),
+            current_gp: GracePeriod::new(),
             next_callbacks: VecDeque::new(),
         }
     }
 }
 
-type Callbacks = VecDeque<Box<dyn FnOnce() -> () + Send + 'static>>;
+type Callbacks = VecDeque<Box<dyn FnOnce() + Send + 'static>>;
 
 struct GracePeriod {
     callbacks: Callbacks,
-    cpu_mask: AtomicBits,
+    cpu_mask: AtomicCpuSet,
     is_complete: bool,
 }
 
 impl GracePeriod {
-    pub fn new(num_cpus: usize) -> Self {
+    pub fn new() -> Self {
         Self {
-            callbacks: Default::default(),
-            cpu_mask: AtomicBits::new_zeroes(num_cpus),
-            is_complete: false,
+            callbacks: Callbacks::new(),
+            cpu_mask: AtomicCpuSet::new(CpuSet::new_empty()),
+            is_complete: true,
         }
     }
 
@@ -120,11 +126,10 @@ impl GracePeriod {
         self.is_complete
     }
 
-    pub unsafe fn pass_quiescent_state(&mut self) {
-        let this_cpu = cpu::this_cpu();
-        self.cpu_mask.set(this_cpu as usize, true);
+    unsafe fn finish_grace_period(&mut self, this_cpu: CpuId) {
+        self.cpu_mask.add(this_cpu, Ordering::Relaxed);
 
-        if self.cpu_mask.is_full() {
+        if self.cpu_mask.load(Ordering::Relaxed).is_full() {
             self.is_complete = true;
         }
     }
@@ -135,7 +140,7 @@ impl GracePeriod {
 
     pub fn restart(&mut self, callbacks: Callbacks) {
         self.is_complete = false;
-        self.cpu_mask.clear();
+        self.cpu_mask.store(&CpuSet::new_empty(), Ordering::Relaxed);
         self.callbacks = callbacks;
     }
 }

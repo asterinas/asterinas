@@ -15,6 +15,7 @@ use smoltcp::{
     },
 };
 
+use super::poll_iface::PollableIfaceMut;
 use crate::{
     ext::Ext,
     socket::{TcpConnectionBg, TcpProcessResult},
@@ -22,21 +23,30 @@ use crate::{
 };
 
 pub(super) struct PollContext<'a, E: Ext> {
-    iface_cx: &'a mut Context,
+    iface: PollableIfaceMut<'a, E>,
     sockets: &'a SocketTable<E>,
-    new_tcp_conns: &'a mut Vec<Arc<TcpConnectionBg<E>>>,
+    actions: &'a mut Vec<SocketTableAction<E>>,
+}
+
+/// Socket table actions such as adding or removing TCP connections.
+///
+/// Note that they must be performed in order. This is because the same connection key can occur
+/// multiple times, but with different types of operations (e.g., add or remove).
+pub(super) enum SocketTableAction<E: Ext> {
+    AddTcpConn(Arc<TcpConnectionBg<E>>),
+    DelTcpConn(ConnectionKey),
 }
 
 impl<'a, E: Ext> PollContext<'a, E> {
     pub(super) fn new(
-        iface_cx: &'a mut Context,
+        iface: PollableIfaceMut<'a, E>,
         sockets: &'a SocketTable<E>,
-        new_tcp_conns: &'a mut Vec<Arc<TcpConnectionBg<E>>>,
+        actions: &'a mut Vec<SocketTableAction<E>>,
     ) -> Self {
         Self {
-            iface_cx,
+            iface,
             sockets,
-            new_tcp_conns,
+            actions,
         }
     }
 }
@@ -62,9 +72,10 @@ impl<E: Ext> PollContext<'_, E> {
         >,
         Q: FnMut(&Packet, &mut Context, D::TxToken<'_>),
     {
-        while let Some((rx_token, tx_token)) = device.receive(self.iface_cx.now()) {
+        while let Some((rx_token, tx_token)) = device.receive(self.iface.context().now()) {
             rx_token.consume(|data| {
-                let Some((pkt, tx_token)) = process_phy(data, self.iface_cx, tx_token) else {
+                let Some((pkt, tx_token)) = process_phy(data, self.iface.context_mut(), tx_token)
+                else {
                     return;
                 };
 
@@ -72,7 +83,7 @@ impl<E: Ext> PollContext<'_, E> {
                     return;
                 };
 
-                dispatch_phy(&reply, self.iface_cx, tx_token);
+                dispatch_phy(&reply, self.iface.context_mut(), tx_token);
             });
         }
     }
@@ -82,7 +93,7 @@ impl<E: Ext> PollContext<'_, E> {
         pkt: Ipv4Packet<&'pkt [u8]>,
     ) -> Option<Packet<'pkt>> {
         // Parse the IP header. Ignore the packet if the header is ill-formed.
-        let repr = Ipv4Repr::parse(&pkt, &self.iface_cx.checksum_caps()).ok()?;
+        let repr = Ipv4Repr::parse(&pkt, &self.iface.context().checksum_caps()).ok()?;
 
         if !repr.dst_addr.is_broadcast() && !self.is_unicast_local(IpAddress::Ipv4(repr.dst_addr)) {
             return self.generate_icmp_unreachable(
@@ -92,17 +103,14 @@ impl<E: Ext> PollContext<'_, E> {
             );
         }
 
+        let checksum_caps = self.iface.context().checksum_caps();
         match repr.next_header {
-            IpProtocol::Tcp => self.parse_and_process_tcp(
-                &IpRepr::Ipv4(repr),
-                pkt.payload(),
-                &self.iface_cx.checksum_caps(),
-            ),
-            IpProtocol::Udp => self.parse_and_process_udp(
-                &IpRepr::Ipv4(repr),
-                pkt.payload(),
-                &self.iface_cx.checksum_caps(),
-            ),
+            IpProtocol::Tcp => {
+                self.parse_and_process_tcp(&IpRepr::Ipv4(repr), pkt.payload(), &checksum_caps)
+            }
+            IpProtocol::Udp => {
+                self.parse_and_process_udp(&IpRepr::Ipv4(repr), pkt.payload(), &checksum_caps)
+            }
             _ => None,
         }
     }
@@ -157,14 +165,68 @@ impl<E: Ext> PollContext<'_, E> {
         ip_repr: &IpRepr,
         tcp_repr: &TcpRepr,
     ) -> Option<(IpRepr, TcpRepr<'static>)> {
-        // Process packets that request to create new connections first.
+        // Process packets belonging to existing connections first.
+        // Note that we must do this first because SYN packets may match existing TIME-WAIT
+        // sockets. See comments in `TcpConnectionBg::process` for details.
+        let connection_key = ConnectionKey::new(
+            ip_repr.dst_addr(),
+            tcp_repr.dst_port,
+            ip_repr.src_addr(),
+            tcp_repr.src_port,
+        );
+        let mut connection_in_table = self.sockets.lookup_connection(&connection_key);
+
+        loop {
+            // First try the connection in the socket table, as this is the most common. If it
+            // fails, it might mean that the connection is dead, the next step is to try the new
+            // connections instead.
+            let (should_break, connection) = if let Some(conn) = connection_in_table.take() {
+                (false, Some(conn))
+            } else {
+                // Find in reverse order because old connections must have been dead.
+                (
+                    true,
+                    self.actions
+                        .iter()
+                        .rev()
+                        .flat_map(|action| match action {
+                            SocketTableAction::AddTcpConn(conn) => Some(conn),
+                            SocketTableAction::DelTcpConn(_) => None,
+                        })
+                        .find(|conn| conn.connection_key() == &connection_key),
+                )
+            };
+
+            if let Some(connection) = connection {
+                let (process_result, became_dead) =
+                    connection.process(&mut self.iface, ip_repr, tcp_repr);
+                if *became_dead {
+                    self.actions
+                        .push(SocketTableAction::DelTcpConn(*connection.connection_key()));
+                }
+                match process_result {
+                    TcpProcessResult::NotProcessed => {}
+                    TcpProcessResult::Processed => return None,
+                    TcpProcessResult::ProcessedWithReply(ip_repr, tcp_repr) => {
+                        return Some((ip_repr, tcp_repr))
+                    }
+                }
+            }
+
+            if should_break {
+                break;
+            }
+        }
+
+        // Process packets that request to create new connections second.
         if tcp_repr.control == TcpControl::Syn && tcp_repr.ack_number.is_none() {
             let listener_key = ListenerKey::new(ip_repr.dst_addr(), tcp_repr.dst_port);
             if let Some(listener) = self.sockets.lookup_listener(&listener_key) {
-                let (processed, new_tcp_conn) = listener.process(self.iface_cx, ip_repr, tcp_repr);
+                let (processed, new_tcp_conn) =
+                    listener.process(&mut self.iface, ip_repr, tcp_repr);
 
                 if let Some(tcp_conn) = new_tcp_conn {
-                    self.new_tcp_conns.push(tcp_conn);
+                    self.actions.push(SocketTableAction::AddTcpConn(tcp_conn));
                 }
 
                 match processed {
@@ -173,31 +235,6 @@ impl<E: Ext> PollContext<'_, E> {
                     TcpProcessResult::ProcessedWithReply(ip_repr, tcp_repr) => {
                         return Some((ip_repr, tcp_repr))
                     }
-                }
-            }
-        }
-
-        // Process packets belonging to existing connections second.
-        let connection_key = ConnectionKey::new(
-            ip_repr.dst_addr(),
-            tcp_repr.dst_port,
-            ip_repr.src_addr(),
-            tcp_repr.src_port,
-        );
-        let connection = if let Some(connection) = self.sockets.lookup_connection(&connection_key) {
-            Some(connection)
-        } else {
-            self.new_tcp_conns
-                .iter()
-                .find(|tcp_conn| tcp_conn.connection_key() == &connection_key)
-        };
-
-        if let Some(connection) = connection {
-            match connection.process(self.iface_cx, ip_repr, tcp_repr) {
-                TcpProcessResult::NotProcessed => {}
-                TcpProcessResult::Processed => return None,
-                TcpProcessResult::ProcessedWithReply(ip_repr, tcp_repr) => {
-                    return Some((ip_repr, tcp_repr))
                 }
             }
         }
@@ -246,7 +283,7 @@ impl<E: Ext> PollContext<'_, E> {
                 continue;
             }
 
-            processed |= socket.process(self.iface_cx, ip_repr, udp_repr, udp_payload);
+            processed |= socket.process(self.iface.context_mut(), ip_repr, udp_repr, udp_payload);
             if processed && ip_repr.dst_addr().is_unicast() {
                 break;
             }
@@ -287,7 +324,8 @@ impl<E: Ext> PollContext<'_, E> {
         Some(Packet::new_ipv4(
             Ipv4Repr {
                 src_addr: self
-                    .iface_cx
+                    .iface
+                    .context()
                     .ipv4_addr()
                     .unwrap_or(Ipv4Address::UNSPECIFIED),
                 dst_addr: ipv4_repr.src_addr,
@@ -306,7 +344,8 @@ impl<E: Ext> PollContext<'_, E> {
     fn is_unicast_local(&self, dst_addr: IpAddress) -> bool {
         match dst_addr {
             IpAddress::Ipv4(dst_addr) => self
-                .iface_cx
+                .iface
+                .context()
                 .ipv4_addr()
                 .is_some_and(|addr| addr == dst_addr),
         }
@@ -319,7 +358,7 @@ impl<E: Ext> PollContext<'_, E> {
         D: Device + ?Sized,
         Q: FnMut(&Packet, &mut Context, D::TxToken<'_>),
     {
-        while let Some(tx_token) = device.transmit(self.iface_cx.now()) {
+        while let Some(tx_token) = device.transmit(self.iface.context().now()) {
             if !self.dispatch_ipv4(tx_token, dispatch_phy) {
                 break;
             }
@@ -350,12 +389,10 @@ impl<E: Ext> PollContext<'_, E> {
         let mut tx_token = Some(tx_token);
         let mut did_something = false;
 
-        // We cannot dispatch packets from `new_tcp_conns` because we cannot borrow an immutable
-        // reference at this point. Instead, we will retry after the entire poll is complete.
-        for socket in self.sockets.tcp_conn_iter() {
-            if !socket.need_dispatch(self.iface_cx.now()) {
-                continue;
-            }
+        loop {
+            let Some(socket) = self.iface.pop_pending_tcp() else {
+                break;
+            };
 
             // We set `did_something` even if no packets are actually generated. This is because a
             // timer can expire, but no packets are actually generated.
@@ -363,14 +400,14 @@ impl<E: Ext> PollContext<'_, E> {
 
             let mut deferred = None;
 
-            let reply =
-                TcpConnectionBg::dispatch(socket, self.iface_cx, |cx, ip_repr, tcp_repr| {
-                    let mut this = PollContext::new(cx, self.sockets, self.new_tcp_conns);
+            let (reply, became_dead) =
+                TcpConnectionBg::dispatch(&socket, &mut self.iface, |iface, ip_repr, tcp_repr| {
+                    let mut this = PollContext::new(iface, self.sockets, self.actions);
 
                     if !this.is_unicast_local(ip_repr.dst_addr()) {
                         dispatch_phy(
                             &Packet::new(ip_repr.clone(), IpPayload::Tcp(*tcp_repr)),
-                            this.iface_cx,
+                            this.iface.context_mut(),
                             tx_token.take().unwrap(),
                         );
                         return None;
@@ -396,6 +433,11 @@ impl<E: Ext> PollContext<'_, E> {
                     None
                 });
 
+            if *became_dead {
+                self.actions
+                    .push(SocketTableAction::DelTcpConn(*socket.connection_key()));
+            }
+
             match (deferred, reply) {
                 (None, None) => (),
                 (Some((ip_repr, ip_payload)), None) => {
@@ -404,13 +446,13 @@ impl<E: Ext> PollContext<'_, E> {
                         &ip_payload,
                         &ChecksumCapabilities::ignored(),
                     ) {
-                        dispatch_phy(&reply, self.iface_cx, tx_token.take().unwrap());
+                        dispatch_phy(&reply, self.iface.context_mut(), tx_token.take().unwrap());
                     }
                 }
                 (None, Some((ip_repr, tcp_repr))) if !self.is_unicast_local(ip_repr.dst_addr()) => {
                     dispatch_phy(
                         &Packet::new(ip_repr, IpPayload::Tcp(tcp_repr)),
-                        self.iface_cx,
+                        self.iface.context_mut(),
                         tx_token.take().unwrap(),
                     );
                 }
@@ -420,7 +462,7 @@ impl<E: Ext> PollContext<'_, E> {
                     {
                         dispatch_phy(
                             &Packet::new(new_ip_repr, IpPayload::Tcp(new_tcp_repr)),
-                            self.iface_cx,
+                            self.iface.context_mut(),
                             tx_token.take().unwrap(),
                         );
                     }
@@ -444,8 +486,10 @@ impl<E: Ext> PollContext<'_, E> {
         let mut tx_token = Some(tx_token);
         let mut did_something = false;
 
+        let mut actions = Vec::new();
+
         for socket in self.sockets.udp_socket_iter() {
-            if !socket.need_dispatch(self.iface_cx.now()) {
+            if !socket.need_dispatch() {
                 continue;
             }
 
@@ -455,13 +499,15 @@ impl<E: Ext> PollContext<'_, E> {
 
             let mut deferred = None;
 
-            socket.dispatch(self.iface_cx, |cx, ip_repr, udp_repr, udp_payload| {
-                let mut this = PollContext::new(cx, self.sockets, self.new_tcp_conns);
+            let (cx, pending) = self.iface.inner_mut();
+            socket.dispatch(cx, |cx, ip_repr, udp_repr, udp_payload| {
+                let iface = PollableIfaceMut::new(cx, pending);
+                let mut this = PollContext::new(iface, self.sockets, &mut actions);
 
                 if ip_repr.dst_addr().is_broadcast() || !this.is_unicast_local(ip_repr.dst_addr()) {
                     dispatch_phy(
                         &Packet::new(ip_repr.clone(), IpPayload::Udp(*udp_repr, udp_payload)),
-                        this.iface_cx,
+                        this.iface.context_mut(),
                         tx_token.take().unwrap(),
                     );
                     if !ip_repr.dst_addr().is_broadcast() {
@@ -498,7 +544,7 @@ impl<E: Ext> PollContext<'_, E> {
                     &ip_payload,
                     &ChecksumCapabilities::ignored(),
                 ) {
-                    dispatch_phy(&reply, self.iface_cx, tx_token.take().unwrap());
+                    dispatch_phy(&reply, self.iface.context_mut(), tx_token.take().unwrap());
                 }
             }
 
@@ -506,6 +552,11 @@ impl<E: Ext> PollContext<'_, E> {
                 break;
             }
         }
+
+        // `actions` should be empty,
+        // because we are dealing with UDP sockets,
+        // and the `actions` contains only TCP actions.
+        debug_assert!(actions.is_empty());
 
         (did_something, tx_token)
     }

@@ -66,7 +66,7 @@ fn do_sys_pwritev(
         return_errno_with_message!(Errno::EINVAL, "offset cannot be negative");
     }
 
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
 
     // TODO: Check (f.file->f_mode & FMODE_PREAD); We don't have f_mode in our FileLike trait
@@ -77,7 +77,8 @@ fn do_sys_pwritev(
     let mut total_len: usize = 0;
     let mut cur_offset = offset as usize;
 
-    let mut reader_array = VmReaderArray::from_user_io_vecs(ctx, io_vec_ptr, io_vec_count)?;
+    let user_space = ctx.user_space();
+    let mut reader_array = VmReaderArray::from_user_io_vecs(&user_space, io_vec_ptr, io_vec_count)?;
     for reader in reader_array.readers_mut() {
         if !reader.has_remain() {
             continue;
@@ -122,12 +123,13 @@ fn do_sys_writev(
         fd, io_vec_ptr, io_vec_count
     );
 
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
 
     let mut total_len = 0;
 
-    let mut reader_array = VmReaderArray::from_user_io_vecs(ctx, io_vec_ptr, io_vec_count)?;
+    let user_space = ctx.user_space();
+    let mut reader_array = VmReaderArray::from_user_io_vecs(&user_space, io_vec_ptr, io_vec_count)?;
     for reader in reader_array.readers_mut() {
         if !reader.has_remain() {
             continue;

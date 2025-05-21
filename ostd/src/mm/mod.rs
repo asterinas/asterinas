@@ -10,15 +10,16 @@ pub type Paddr = usize;
 
 pub(crate) mod dma;
 pub mod frame;
-pub(crate) mod heap_allocator;
+pub mod heap;
 mod io;
 pub(crate) mod kspace;
-mod offset;
 pub(crate) mod page_prop;
 pub(crate) mod page_table;
-pub mod stat;
 pub mod tlb;
 pub mod vm_space;
+
+#[cfg(ktest)]
+mod test;
 
 use core::{fmt::Debug, ops::Range};
 
@@ -27,6 +28,7 @@ pub use self::{
     frame::{
         allocator::FrameAllocOptions,
         segment::{Segment, USegment},
+        unique::UniqueFrame,
         untyped::{AnyUFrameMeta, UFrame, UntypedMem},
         Frame,
     },
@@ -38,8 +40,7 @@ pub use self::{
     vm_space::VmSpace,
 };
 pub(crate) use self::{
-    frame::meta::init as init_page_meta, kspace::paddr_to_vaddr, page_prop::PrivilegedPageFlags,
-    page_table::PageTable,
+    kspace::paddr_to_vaddr, page_prop::PrivilegedPageFlags, page_table::PageTable,
 };
 use crate::arch::mm::PagingConsts;
 
@@ -86,7 +87,7 @@ pub(crate) const fn nr_subpage_per_huge<C: PagingConstsTrait>() -> usize {
 }
 
 /// The number of base pages in a huge page at a given level.
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub(crate) const fn nr_base_per_page<C: PagingConstsTrait>(level: PagingLevel) -> usize {
     page_size::<C>(level) / C::BASE_PAGE_SIZE
 }

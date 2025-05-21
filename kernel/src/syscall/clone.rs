@@ -2,7 +2,7 @@
 
 use core::num::NonZeroU64;
 
-use ostd::cpu::UserContext;
+use ostd::cpu::context::UserContext;
 
 use super::SyscallReturn;
 use crate::{

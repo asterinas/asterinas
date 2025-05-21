@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{collections::binary_heap::BinaryHeap, sync::Arc};
+use alloc::{collections::BinaryHeap, sync::Arc};
 use core::{
     cmp::{self, Reverse},
-    sync::atomic::{AtomicU64, Ordering::*},
+    sync::atomic::{AtomicU64, Ordering::Relaxed},
 };
 
 use ostd::{
@@ -19,7 +19,7 @@ use super::{
     CurrentRuntime, SchedAttr, SchedClassRq,
 };
 use crate::{
-    sched::priority::{Nice, NiceRange},
+    sched::nice::{Nice, NiceValue},
     thread::AsThread,
 };
 
@@ -38,8 +38,8 @@ pub const fn nice_to_weight(nice: Nice) -> u64 {
         let mut ret = [0; 40];
 
         let mut index = 0;
-        let mut nice = NiceRange::MIN;
-        while nice <= NiceRange::MAX {
+        let mut nice = NiceValue::MIN.get();
+        while nice <= NiceValue::MAX.get() {
             ret[index] = match nice {
                 0 => WEIGHT_0,
                 nice @ 1.. => {
@@ -60,7 +60,7 @@ pub const fn nice_to_weight(nice: Nice) -> u64 {
         ret
     };
 
-    NICE_TO_WEIGHT[(nice.range().get() + 20) as usize]
+    NICE_TO_WEIGHT[(nice.value().get() + 20) as usize]
 }
 
 /// The scheduling entity for the FAIR scheduling class.
@@ -165,7 +165,7 @@ impl Ord for FairQueueItem {
 /// ensure the efficiency for finding next-to-run threads.
 #[derive(Debug)]
 pub(super) struct FairClassRq {
-    #[allow(unused)]
+    #[expect(unused)]
     cpu: CpuId,
     /// The ready-to-run threads.
     entities: BinaryHeap<Reverse<FairQueueItem>>,
@@ -235,11 +235,11 @@ impl SchedClassRq for FairClassRq {
         self.entities.push(Reverse(FairQueueItem(entity, vruntime)));
     }
 
-    fn len(&mut self) -> usize {
+    fn len(&self) -> usize {
         self.entities.len()
     }
 
-    fn is_empty(&mut self) -> bool {
+    fn is_empty(&self) -> bool {
         self.entities.is_empty()
     }
 

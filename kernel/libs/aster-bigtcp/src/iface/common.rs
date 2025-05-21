@@ -6,8 +6,12 @@ use alloc::{
     sync::Arc,
     vec::Vec,
 };
+use core::sync::atomic::{AtomicU32, Ordering};
 
-use ostd::sync::{LocalIrqDisabled, SpinLock, SpinLockGuard};
+use aster_softirq::BottomHalfDisabled;
+use bitflags::bitflags;
+use int_to_c_enum::TryFromInt;
+use ostd::sync::{SpinLock, SpinLockGuard};
 use smoltcp::{
     iface::{packet::Packet, Context},
     phy::Device,
@@ -15,7 +19,8 @@ use smoltcp::{
 };
 
 use super::{
-    poll::{FnHelper, PollContext},
+    poll::{FnHelper, PollContext, SocketTableAction},
+    poll_iface::PollableIface,
     port::BindPortConfig,
     time::get_network_timestamp,
     Iface,
@@ -28,36 +33,61 @@ use crate::{
 };
 
 pub struct IfaceCommon<E: Ext> {
+    index: u32,
     name: String,
-    interface: SpinLock<smoltcp::iface::Interface, LocalIrqDisabled>,
-    used_ports: SpinLock<BTreeMap<u16, usize>, LocalIrqDisabled>,
-    sockets: SpinLock<SocketTable<E>, LocalIrqDisabled>,
+    type_: InterfaceType,
+    flags: InterfaceFlags,
+
+    interface: SpinLock<PollableIface<E>, BottomHalfDisabled>,
+    used_ports: SpinLock<BTreeMap<u16, usize>, BottomHalfDisabled>,
+    sockets: SpinLock<SocketTable<E>, BottomHalfDisabled>,
     sched_poll: E::ScheduleNextPoll,
 }
 
 impl<E: Ext> IfaceCommon<E> {
     pub(super) fn new(
         name: String,
+        type_: InterfaceType,
+        flags: InterfaceFlags,
         interface: smoltcp::iface::Interface,
         sched_poll: E::ScheduleNextPoll,
     ) -> Self {
-        let sockets = SocketTable::new();
+        let index = INTERFACE_INDEX_ALLOCATOR.fetch_add(1, Ordering::Relaxed);
 
         Self {
+            index,
             name,
-            interface: SpinLock::new(interface),
+            type_,
+            flags,
+            interface: SpinLock::new(PollableIface::new(interface)),
             used_ports: SpinLock::new(BTreeMap::new()),
-            sockets: SpinLock::new(sockets),
+            sockets: SpinLock::new(SocketTable::new()),
             sched_poll,
         }
+    }
+
+    pub(super) fn index(&self) -> u32 {
+        self.index
     }
 
     pub(super) fn name(&self) -> &str {
         &self.name
     }
 
+    pub(super) fn type_(&self) -> InterfaceType {
+        self.type_
+    }
+
+    pub(super) fn flags(&self) -> InterfaceFlags {
+        self.flags
+    }
+
     pub(super) fn ipv4_addr(&self) -> Option<Ipv4Address> {
         self.interface.lock().ipv4_addr()
+    }
+
+    pub(super) fn prefix_len(&self) -> Option<u8> {
+        self.interface.lock().prefix_len()
     }
 
     pub(super) fn sched_poll(&self) -> &E::ScheduleNextPoll {
@@ -65,15 +95,20 @@ impl<E: Ext> IfaceCommon<E> {
     }
 }
 
-// Lock order: interface -> sockets
+/// An allocator that allocates a unique index for each interface.
+//
+// FIXME: This allocator is specific to each network namespace.
+pub static INTERFACE_INDEX_ALLOCATOR: AtomicU32 = AtomicU32::new(1);
+
+// Lock order: `interface` -> `sockets`
 impl<E: Ext> IfaceCommon<E> {
     /// Acquires the lock to the interface.
-    pub(crate) fn interface(&self) -> SpinLockGuard<smoltcp::iface::Interface, LocalIrqDisabled> {
+    pub(crate) fn interface(&self) -> SpinLockGuard<'_, PollableIface<E>, BottomHalfDisabled> {
         self.interface.lock()
     }
 
     /// Acquires the lock to the socket table.
-    pub(crate) fn sockets(&self) -> SpinLockGuard<'_, SocketTable<E>, LocalIrqDisabled> {
+    pub(crate) fn sockets(&self) -> SpinLockGuard<'_, SocketTable<E>, BottomHalfDisabled> {
         self.sockets.lock()
     }
 }
@@ -152,7 +187,7 @@ impl<E: Ext> IfaceCommon<E> {
 
     pub(crate) fn remove_tcp_listener(&self, socket: &Arc<TcpListenerBg<E>>) {
         let mut sockets = self.sockets.lock();
-        let removed = sockets.remove_listener(socket);
+        let removed = sockets.remove_listener(socket.listener_key());
         debug_assert!(removed.is_some());
     }
 
@@ -181,55 +216,31 @@ impl<E: Ext> IfaceCommon<E> {
         Q: FnMut(&Packet, &mut Context, D::TxToken<'_>),
     {
         let mut interface = self.interface();
-        interface.context().now = get_network_timestamp();
+        interface.context_mut().now = get_network_timestamp();
 
         let mut sockets = self.sockets.lock();
+        let mut socket_actions = Vec::new();
 
-        loop {
-            let mut new_tcp_conns = Vec::new();
+        let mut context = PollContext::new(interface.as_mut(), &sockets, &mut socket_actions);
+        context.poll_ingress(device, &mut process_phy, &mut dispatch_phy);
+        context.poll_egress(device, &mut dispatch_phy);
 
-            let mut context = PollContext::new(interface.context(), &sockets, &mut new_tcp_conns);
-            context.poll_ingress(device, &mut process_phy, &mut dispatch_phy);
-            context.poll_egress(device, &mut dispatch_phy);
-
-            // New packets sent by new connections are not handled. So if there are new
-            // connections, try again.
-            if new_tcp_conns.is_empty() {
-                break;
-            } else {
-                new_tcp_conns.into_iter().for_each(|tcp_conn| {
-                    let res = sockets.insert_connection(tcp_conn);
+        // Insert new connections and remove dead connections.
+        for action in socket_actions.into_iter() {
+            match action {
+                SocketTableAction::AddTcpConn(new_tcp_conn) => {
+                    let res = sockets.insert_connection(new_tcp_conn);
                     debug_assert!(res.is_ok());
-                });
-            }
-        }
-
-        sockets.remove_dead_tcp_connections();
-
-        for socket in sockets.tcp_listener_iter() {
-            if socket.has_events() {
-                socket.on_events();
-            }
-        }
-
-        for socket in sockets.tcp_conn_iter() {
-            if socket.has_events() {
-                socket.on_events();
-            }
-        }
-
-        for socket in sockets.udp_socket_iter() {
-            if socket.has_events() {
-                socket.on_events();
+                }
+                SocketTableAction::DelTcpConn(dead_conn_key) => {
+                    sockets.remove_dead_tcp_connection(&dead_conn_key);
+                }
             }
         }
 
         // Note that only TCP connections can have timers set, so as far as the time to poll is
         // concerned, we only need to consider TCP connections.
-        sockets
-            .tcp_conn_iter()
-            .map(|socket| socket.next_poll_at_ms())
-            .min()
+        interface.next_poll_at_ms()
     }
 }
 
@@ -267,5 +278,81 @@ impl<E: Ext> BoundPort<E> {
 impl<E: Ext> Drop for BoundPort<E> {
     fn drop(&mut self) {
         self.iface.common().release_port(self.port);
+    }
+}
+
+/// Interface type.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.0.18/source/include/uapi/linux/if_arp.h#L30>
+#[repr(u16)]
+#[derive(Debug, Clone, Copy, TryFromInt, PartialEq, Eq)]
+pub enum InterfaceType {
+    // Arp protocol hardware identifiers
+    /// from KA9Q: NET/ROM pseudo
+    NETROM = 0,
+    /// Ethernet 10Mbps
+    ETHER = 1,
+    /// Experimental Ethernet
+    EETHER = 2,
+
+    // Dummy types for non ARP hardware
+    /// IPIP tunnel
+    TUNNEL = 768,
+    /// IP6IP6 tunnel
+    TUNNEL6 = 769,
+    /// Frame Relay Access Device
+    FRAD = 770,
+    /// SKIP vif
+    SKIP = 771,
+    /// Loopback device
+    LOOPBACK = 772,
+    /// Localtalk device
+    LOCALTALK = 773,
+    // TODO: This enum is not exhaustive
+}
+
+bitflags! {
+    /// Interface flags.
+    ///
+    /// Reference: <https://elixir.bootlin.com/linux/v6.0.18/source/include/uapi/linux/if.h#L82>
+    pub struct InterfaceFlags: u32 {
+        /// Interface is up
+        const UP				= 1<<0;
+        /// Broadcast address valid
+        const BROADCAST			= 1<<1;
+        /// Turn on debugging
+        const DEBUG			    = 1<<2;
+        /// Loopback net
+        const LOOPBACK			= 1<<3;
+        /// Interface is has p-p link
+        const POINTOPOINT		= 1<<4;
+        /// Avoid use of trailers
+        const NOTRAILERS		= 1<<5;
+        /// Interface RFC2863 OPER_UP
+        const RUNNING			= 1<<6;
+        /// No ARP protocol
+        const NOARP			    = 1<<7;
+        /// Receive all packets
+        const PROMISC			= 1<<8;
+        /// Receive all multicast packets
+        const ALLMULTI			= 1<<9;
+        /// Master of a load balancer
+        const MASTER			= 1<<10;
+        /// Slave of a load balancer
+        const SLAVE			    = 1<<11;
+        /// Supports multicast
+        const MULTICAST			= 1<<12;
+        /// Can set media type
+        const PORTSEL			= 1<<13;
+        /// Auto media select active
+        const AUTOMEDIA			= 1<<14;
+        /// Dialup device with changing addresses
+        const DYNAMIC			= 1<<15;
+        /// Driver signals L1 up
+        const LOWER_UP			= 1<<16;
+        /// Driver signals dormant
+        const DORMANT			= 1<<17;
+        /// Echo sent packets
+        const ECHO			    = 1<<18;
     }
 }

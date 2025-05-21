@@ -56,14 +56,7 @@ impl log::Log for Logger {
         };
 
         // Default implementation.
-
         let level = record.level();
-
-        // Use a global lock to prevent interleaving of log messages.
-        use crate::sync::SpinLock;
-        static RECORD_LOCK: SpinLock<()> = SpinLock::new(());
-        let _lock = RECORD_LOCK.disable_irq().lock();
-
         crate::console::early_print(format_args!("{}: {}\n", level, record.args()));
     }
 
@@ -90,7 +83,7 @@ fn get_log_level() -> Option<LevelFilter> {
     let value = kcmdline
         .split(' ')
         .find(|arg| arg.starts_with("ostd.log_level="))
-        .map(|arg| arg.split('=').last().unwrap_or_default())?;
+        .map(|arg| arg.split('=').next_back().unwrap_or_default())?;
 
     LevelFilter::from_str(value).ok()
 }

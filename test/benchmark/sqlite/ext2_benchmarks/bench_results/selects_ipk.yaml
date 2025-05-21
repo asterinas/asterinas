@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: false
+  threshold: 125%
+chart:
+  description: 'sqlite-speed-test: 70000 SELECTS on an IPK'
+  legend: The speed of selects-ipk on {system} (Ext2)
+  title: '[Ext2] The selects-ipk result of sqlite speedtest'
+  unit: second
+result_extraction:
+  result_index: 8
+  search_pattern: '[0-9]+ SELECTS on an IPK....'

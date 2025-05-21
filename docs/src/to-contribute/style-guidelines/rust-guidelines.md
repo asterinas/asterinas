@@ -26,10 +26,10 @@ can easily be misinterpreted as the trait itself being dead code.
 Instead, the following pattern is preferred:
 ```rust
 trait SomeTrait {
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     fn foo();
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     fn bar();
 
     fn baz();
@@ -38,26 +38,26 @@ trait SomeTrait {
 
 There is one exception:
 If it is clear enough that every member will trigger the lint,
-it is reasonable to allow the lint at the type level.
+it is reasonable to expect the lint at the type level.
 For example, in the following code,
-we add `#[allow(non_camel_case_types)]` for the type `SomeEnum`,
+we add `#[expect(non_camel_case_types)]` for the type `SomeEnum`,
 instead of for each variant of the type:
 ```rust
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 enum SomeEnum {
     FOO_ABC,
     BAR_DEF,
 }
 ```
 
-### When to `#[allow(dead_code)]`
+### When to `#[expect(dead_code)]`
 
 In general, dead code should be avoided because
 _(i)_ it introduces unnecessary maintenance overhead, and
 _(ii)_ its correctness can only be guaranteed by
 manual and error-pruned review of the code.
 
-In the case where allowing dead code is necessary,
+In the case where expecting dead code is necessary,
 it should fulfill the following requirements:
  1. We have a _concrete case_ that will be implemented in the future and
     will turn the dead code into used code.

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::sync::GuardTransfer;
+use crate::{sync::GuardTransfer, task::atomic_mode::InAtomicMode};
 
 /// A guard for disable preempt.
 #[clippy::has_significant_drop]
@@ -12,6 +12,10 @@ pub struct DisabledPreemptGuard {
 }
 
 impl !Send for DisabledPreemptGuard {}
+
+// SAFETY: The guard disables preemptions, which meets the second
+// sufficient condition for atomic mode.
+unsafe impl InAtomicMode for DisabledPreemptGuard {}
 
 impl DisabledPreemptGuard {
     fn new() -> Self {

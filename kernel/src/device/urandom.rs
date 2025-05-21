@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(unused_variables)]
+#![expect(unused_variables)]
 
 use crate::{
     events::IoEvents,

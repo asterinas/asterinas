@@ -13,6 +13,10 @@ impl SigEvents {
     pub fn new(sig_num: SigNum) -> Self {
         Self(sig_num)
     }
+
+    pub fn sig_num(&self) -> SigNum {
+        self.0
+    }
 }
 
 impl Events for SigEvents {}

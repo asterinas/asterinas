@@ -5,9 +5,9 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use smallvec::SmallVec;
-use static_assertions::const_assert_eq;
 
 use super::{num_cpus, CpuId};
+use crate::const_assert;
 
 /// A subset of all CPUs in the system.
 #[derive(Clone, Debug, Default)]
@@ -85,6 +85,18 @@ impl CpuSet {
         self.bits.iter().all(|part| *part == 0)
     }
 
+    /// Returns true if the set is full.
+    pub fn is_full(&self) -> bool {
+        let num_cpus = num_cpus();
+        self.bits.iter().enumerate().all(|(idx, part)| {
+            if idx == self.bits.len() - 1 && num_cpus % BITS_PER_PART != 0 {
+                *part == (1 << (num_cpus % BITS_PER_PART)) - 1
+            } else {
+                *part == !0
+            }
+        })
+    }
+
     /// Adds all CPUs to the set.
     pub fn add_all(&mut self) {
         self.bits.fill(!0);
@@ -147,7 +159,7 @@ pub struct AtomicCpuSet {
 }
 
 type AtomicInnerPart = AtomicU64;
-const_assert_eq!(core::mem::size_of::<AtomicInnerPart>() * 8, BITS_PER_PART);
+const_assert!(core::mem::size_of::<AtomicInnerPart>() * 8 == BITS_PER_PART);
 
 impl AtomicCpuSet {
     /// Creates a new `AtomicCpuSet` with an initial value.
@@ -156,26 +168,37 @@ impl AtomicCpuSet {
         Self { bits }
     }
 
-    /// Loads the value of the set.
+    /// Loads the value of the set with the given ordering.
     ///
-    /// This operation can only be done in the [`Ordering::Relaxed`] memory
-    /// order. It cannot be used to synchronize anything between CPUs.
-    pub fn load(&self) -> CpuSet {
+    /// This operation is not atomic. When racing with a [`Self::store`]
+    /// operation, this load may return a set that contains a portion of the
+    /// new value and a portion of the old value. Load on each specific
+    /// word is atomic, and follows the specified ordering.
+    ///
+    /// Note that load with [`Ordering::Release`] is a valid operation, which
+    /// is different from the normal atomic operations. When coupled with
+    /// [`Ordering::Release`], it actually performs `fetch_or(0, Release)`.
+    pub fn load(&self, ordering: Ordering) -> CpuSet {
         let bits = self
             .bits
             .iter()
-            .map(|part| part.load(Ordering::Relaxed))
+            .map(|part| match ordering {
+                Ordering::Release => part.fetch_or(0, ordering),
+                _ => part.load(ordering),
+            })
             .collect();
         CpuSet { bits }
     }
 
-    /// Stores a new value to the set.
+    /// Stores a new value to the set with the given ordering.
     ///
-    /// This operation can only be done in the [`Ordering::Relaxed`] memory
-    /// order. It cannot be used to synchronize anything between CPUs.
-    pub fn store(&self, value: &CpuSet) {
+    /// This operation is not atomic. When racing with a [`Self::load`]
+    /// operation, that load may return a set that contains a portion of the
+    /// new value and a portion of the old value. Load on each specific
+    /// word is atomic, and follows the specified ordering.
+    pub fn store(&self, value: &CpuSet, ordering: Ordering) {
         for (part, new_part) in self.bits.iter().zip(value.bits.iter()) {
-            part.store(*new_part, Ordering::Relaxed);
+            part.store(*new_part, ordering);
         }
     }
 
@@ -259,7 +282,7 @@ mod test {
                 }
             }
 
-            let loaded = atomic_set.load();
+            let loaded = atomic_set.load(Ordering::Relaxed);
             for cpu_id in loaded.iter() {
                 if cpu_id.as_usize() % 3 == 0 {
                     assert!(loaded.contains(cpu_id));
@@ -268,7 +291,10 @@ mod test {
                 }
             }
 
-            atomic_set.store(&CpuSet::with_capacity_val(test_num_cpus, 0));
+            atomic_set.store(
+                &CpuSet::with_capacity_val(test_num_cpus, 0),
+                Ordering::Relaxed,
+            );
 
             for cpu_id in test_all_iter() {
                 assert!(!atomic_set.contains(cpu_id, Ordering::Relaxed));

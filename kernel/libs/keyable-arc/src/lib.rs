@@ -248,7 +248,7 @@ impl<T> KeyableWeak<T> {
     /// Constructs a new `KeyableWeak<T>`, without allocating any memory.
     /// Calling `upgrade` on the return value always gives `None`.
     #[inline]
-    #[allow(clippy::new_without_default)]
+    #[expect(clippy::new_without_default)]
     pub fn new() -> Self {
         Self(Weak::new())
     }

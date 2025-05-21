@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
+#![expect(dead_code)]
 
 use ostd::{
     cpu::{CpuId, CpuSet},
@@ -10,7 +10,7 @@ use ostd::{
 use super::worker_pool::WorkerPool;
 use crate::{
     prelude::*,
-    sched::priority::Priority,
+    sched::{Nice, SchedPolicy},
     thread::{kernel_thread::ThreadOptions, AsThread},
 };
 
@@ -50,13 +50,15 @@ impl Worker {
             });
             let mut cpu_affinity = CpuSet::new_empty();
             cpu_affinity.add(bound_cpu);
-            let mut priority = Priority::default();
-            if worker_pool.upgrade().unwrap().is_high_priority() {
-                priority = Priority::default_real_time();
-            }
+            let sched_policy =
+                SchedPolicy::Fair(if worker_pool.upgrade().unwrap().is_high_priority() {
+                    Nice::MIN
+                } else {
+                    Nice::default()
+                });
             let bound_task = ThreadOptions::new(task_fn)
                 .cpu_affinity(cpu_affinity)
-                .priority(priority)
+                .sched_policy(sched_policy)
                 .build();
             Self {
                 worker_pool,

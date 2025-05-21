@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-
 use core::fmt::Debug;
 
 use crate::{
     arch::irq::{self, IrqCallbackHandle, IRQ_ALLOCATOR},
     prelude::*,
     sync::GuardTransfer,
+    task::atomic_mode::InAtomicMode,
     trap::TrapFrame,
     Error,
 };
@@ -26,7 +25,7 @@ pub type IrqCallbackFunction = dyn Fn(&TrapFrame) + Sync + Send + 'static;
 #[must_use]
 pub struct IrqLine {
     irq_num: u8,
-    #[allow(clippy::redundant_allocation)]
+    #[expect(clippy::redundant_allocation)]
     inner_irq: Arc<&'static irq::IrqLine>,
     callbacks: Vec<IrqCallbackHandle>,
 }
@@ -141,6 +140,10 @@ pub struct DisabledLocalIrqGuard {
 }
 
 impl !Send for DisabledLocalIrqGuard {}
+
+// SAFETY: The guard disables local IRQs, which meets the first
+// sufficient condition for atomic mode.
+unsafe impl InAtomicMode for DisabledLocalIrqGuard {}
 
 impl DisabledLocalIrqGuard {
     fn new() -> Self {

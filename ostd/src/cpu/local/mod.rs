@@ -34,17 +34,15 @@ mod cpu_local;
 
 pub(crate) mod single_instr;
 
-use alloc::vec::Vec;
+use core::alloc::Layout;
 
 use align_ext::AlignExt;
 pub use cell::CpuLocalCell;
 pub use cpu_local::{CpuLocal, CpuLocalDerefGuard};
 use spin::Once;
 
-use crate::{
-    arch,
-    mm::{frame::Segment, kspace::KernelMeta, paddr_to_vaddr, FrameAllocOptions, PAGE_SIZE},
-};
+use super::CpuId;
+use crate::mm::{frame::allocator, paddr_to_vaddr, Paddr, PAGE_SIZE};
 
 // These symbols are provided by the linker script.
 extern "C" {
@@ -52,121 +50,131 @@ extern "C" {
     fn __cpu_local_end();
 }
 
-/// Sets the base address of the CPU-local storage for the bootstrap processor.
-///
-/// It should be called early to let [`crate::task::disable_preempt`] work,
-/// which needs to update a CPU-local preemption info. Otherwise it may
-/// panic when calling [`crate::task::disable_preempt`]. It is needed since
-/// heap allocations need to disable preemption, which would happen in the
-/// very early stage of the kernel.
+/// The CPU-local areas for APs.
+static CPU_LOCAL_STORAGES: Once<&'static [Paddr]> = Once::new();
+
+/// Copies the CPU-local data on the bootstrap processor (BSP)
+/// for application processors (APs).
 ///
 /// # Safety
 ///
-/// It should be called only once and only on the BSP.
-pub(crate) unsafe fn early_init_bsp_local_base() {
-    let start_base_va = __cpu_local_start as usize as u64;
-
-    // SAFETY: The base to be set is the start of the `.cpu_local` section,
-    // where accessing the CPU-local objects have defined behaviors.
-    unsafe {
-        arch::cpu::local::set_base(start_base_va);
+/// This function must be called in the boot context of the BSP, at a time
+/// when the APs have not yet booted.
+///
+/// The CPU-local data on the BSP must not be used before calling this
+/// function to copy it for the APs. Otherwise, the copied data will
+/// contain non-constant (also non-`Copy`) data, resulting in undefined
+/// behavior when it's loaded on the APs.
+///
+/// The caller must ensure that the `num_cpus` matches the number of all
+/// CPUs that will access the CPU-local storage.
+pub(crate) unsafe fn copy_bsp_for_ap(num_cpus: usize) {
+    let num_aps = num_cpus - 1; // BSP does not need allocated storage.
+    if num_aps == 0 {
+        return;
     }
-}
 
-/// The BSP initializes the CPU-local areas for APs.
-static CPU_LOCAL_STORAGES: Once<Vec<Segment<KernelMeta>>> = Once::new();
+    // Allocate a region to store the pointers to the CPU-local storage segments.
+    let res = {
+        let size = core::mem::size_of::<Paddr>()
+            .checked_mul(num_aps)
+            .unwrap()
+            .align_up(PAGE_SIZE);
+        let addr =
+            allocator::early_alloc(Layout::from_size_align(size, PAGE_SIZE).unwrap()).unwrap();
+        let ptr = paddr_to_vaddr(addr) as *mut Paddr;
 
-/// Initializes the CPU local data for the bootstrap processor (BSP).
-///
-/// # Safety
-///
-/// This function can only called on the BSP, for once.
-///
-/// It must be guaranteed that the BSP will not access local data before
-/// this function being called, otherwise copying non-constant values
-/// will result in pretty bad undefined behavior.
-pub unsafe fn init_on_bsp() {
+        // SAFETY: The memory is properly allocated. We exclusively own it. So it's valid to write.
+        unsafe {
+            core::ptr::write_bytes(ptr as *mut u8, 0, size);
+        }
+        // SAFETY: The memory is properly allocated and initialized. We exclusively own it. We
+        // never deallocate it so it lives for '`static'. So we can create a mutable slice on it.
+        unsafe { core::slice::from_raw_parts_mut(ptr, num_aps) }
+    };
+
     let bsp_base_va = __cpu_local_start as usize;
     let bsp_end_va = __cpu_local_end as usize;
 
-    let num_cpus = super::num_cpus();
+    // Allocate the CPU-local storage segments for APs.
+    for res_addr_mut in res.iter_mut() {
+        let nbytes = (bsp_end_va - bsp_base_va).align_up(PAGE_SIZE);
+        let ap_pages =
+            allocator::early_alloc(Layout::from_size_align(nbytes, PAGE_SIZE).unwrap()).unwrap();
+        let ap_pages_ptr = paddr_to_vaddr(ap_pages) as *mut u8;
 
-    let mut cpu_local_storages = Vec::with_capacity(num_cpus - 1);
-    for _ in 1..num_cpus {
-        let ap_pages = {
-            let nbytes = (bsp_end_va - bsp_base_va).align_up(PAGE_SIZE);
-            FrameAllocOptions::new()
-                .zeroed(false)
-                .alloc_segment_with(nbytes / PAGE_SIZE, |_| KernelMeta)
-                .unwrap()
-        };
-        let ap_pages_ptr = paddr_to_vaddr(ap_pages.start_paddr()) as *mut u8;
-
-        // SAFETY: The BSP has not initialized the CPU-local area, so the objects in
-        // in the `.cpu_local` section can be bitwise bulk copied to the AP's local
-        // storage. The destination memory is allocated so it is valid to write to.
+        // SAFETY:
+        // 1. The source is valid to read because it has not been used before,
+        //    so it contains only constants.
+        // 2. The destination is valid to write because it is just allocated.
+        // 3. The memory is aligned because the alignment of `u8` is 1.
+        // 4. The two memory regions do not overlap because allocated memory
+        //    regions never overlap with the kernel data.
         unsafe {
-            core::ptr::copy_nonoverlapping(
-                bsp_base_va as *const u8,
-                ap_pages_ptr,
-                bsp_end_va - bsp_base_va,
-            );
+            core::ptr::copy_nonoverlapping(bsp_base_va as *const u8, ap_pages_ptr, nbytes);
         }
 
-        cpu_local_storages.push(ap_pages);
+        *res_addr_mut = ap_pages;
     }
 
-    CPU_LOCAL_STORAGES.call_once(|| cpu_local_storages);
+    is_used::debug_assert_false();
 
-    arch::cpu::local::set_base(bsp_base_va as u64);
-
-    has_init::set_true();
+    assert!(!CPU_LOCAL_STORAGES.is_completed());
+    CPU_LOCAL_STORAGES.call_once(|| res);
 }
 
-/// Initializes the CPU local data for the application processor (AP).
+/// Gets the pointer to the CPU-local storage for the given AP.
 ///
-/// # Safety
+/// # Panics
 ///
-/// This function can only called on the AP.
-pub unsafe fn init_on_ap(cpu_id: u32) {
-    let ap_pages = CPU_LOCAL_STORAGES
+/// This method will panic if the `cpu_id` does not represent an AP or the AP's CPU-local storage
+/// has not been allocated.
+pub(crate) fn get_ap(cpu_id: CpuId) -> Paddr {
+    let offset = cpu_id
+        .as_usize()
+        .checked_sub(1)
+        .expect("The BSP does not have allocated CPU-local storage");
+
+    let paddr = CPU_LOCAL_STORAGES
         .get()
-        .unwrap()
-        .get(cpu_id as usize - 1)
-        .unwrap();
-
-    let ap_pages_ptr = paddr_to_vaddr(ap_pages.start_paddr()) as *mut u32;
-
-    // SAFETY: the memory will be dedicated to the AP. And we are on the AP.
-    unsafe {
-        arch::cpu::local::set_base(ap_pages_ptr as u64);
-    }
-
-    crate::task::reset_preempt_info();
+        .expect("No CPU-local storage has been allocated")[offset];
+    assert_ne!(
+        paddr,
+        0,
+        "The CPU-local storage for CPU {} is not allocated",
+        cpu_id.as_usize(),
+    );
+    paddr
 }
 
-mod has_init {
-    //! This module is used to detect the programming error of using the CPU-local
-    //! mechanism before it is initialized. Such bugs have been found before and we
-    //! do not want to repeat this error again. This module is only incurs runtime
-    //! overhead if debug assertions are enabled.
+mod is_used {
+    //! This module tracks whether any CPU-local variables are used.
+    //!
+    //! [`copy_bsp_for_ap`] copies the CPU local data from the BSP
+    //! to the APs, so it requires as a safety condition that the
+    //! CPU-local data has not been accessed before the copy. This
+    //! module provides utilities to check if the safety condition
+    //! is met, but only if debug assertions are enabled.
+    //!
+    //! [`copy_bsp_for_ap`]: super::copy_bsp_for_ap
+
     cfg_if::cfg_if! {
         if #[cfg(debug_assertions)] {
             use core::sync::atomic::{AtomicBool, Ordering};
 
-            static IS_INITIALIZED: AtomicBool = AtomicBool::new(false);
+            static IS_USED: AtomicBool = AtomicBool::new(false);
 
-            pub fn assert_true() {
-                debug_assert!(IS_INITIALIZED.load(Ordering::Relaxed));
+            pub fn debug_set_true() {
+                IS_USED.store(true, Ordering::Relaxed);
             }
 
-            pub fn set_true() {
-                IS_INITIALIZED.store(true, Ordering::Relaxed);
+            pub fn debug_assert_false() {
+                debug_assert!(!IS_USED.load(Ordering::Relaxed));
             }
         } else {
-            pub fn assert_true() {}
+            pub fn debug_set_true() {}
 
-            pub fn set_true() {}
+            pub fn debug_assert_false() {}
         }
     }
 }

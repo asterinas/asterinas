@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(non_camel_case_types)]
+#![expect(non_camel_case_types)]
 
 pub use core::{timer, Clock};
 
@@ -14,6 +14,7 @@ pub mod clocks;
 mod core;
 mod softirq;
 mod system_time;
+pub mod timerfd;
 pub mod wait;
 
 pub type clockid_t = i32;

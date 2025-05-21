@@ -43,5 +43,5 @@ prepare_libs() {
 prepare_fs() {
     # Disable unsupported ext2 features of Asterinas on Linux to ensure fairness
     mke2fs -F -O ^ext_attr -O ^resize_inode -O ^dir_index ${BENCHMARK_ROOT}/../build/ext2.img
-    make initramfs
+    make initramfs BENCHMARK=${benchmark}
 }

@@ -1,0 +1,14 @@
+alert:
+  bigger_is_better: false
+  threshold: 130%
+chart:
+  description: schbench -F 256 -n 5 -r 90
+  legend: P99 wakeup latency of schbench on {system}
+  title: '[Scheduler] P99 wakeup latency while max-loading all CPUs (SMP=8)'
+  unit: "\xB5s"
+result_extraction:
+  nth_occurrence: 1
+  result_index: 3
+  search_pattern: \*
+runtime_config:
+  smp: 8

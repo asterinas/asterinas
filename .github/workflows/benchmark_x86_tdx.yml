@@ -1,0 +1,136 @@
+name: "Benchmark Intel TDX "
+on:
+  # In case of manual trigger, use workflow_dispatch
+  workflow_dispatch:
+  schedule:
+    # Schedule to run on every day at 20:00 UTC (04:00 Beijing Time)
+    - cron: '0 18 * * *'
+
+jobs:
+  Benchmarks:
+    runs-on: self-hosted
+    strategy:
+      matrix:
+        benchmarks: 
+          - sysbench/cpu_lat
+          - sysbench/thread_lat
+          # Memory-related benchmarks
+          - lmbench/mem_read_bw
+          - lmbench/mem_write_bw
+          - lmbench/mem_copy_bw
+          - lmbench/mem_pagefault_lat
+          - lmbench/mem_mmap_bw
+          - lmbench/mem_mmap_lat
+          # Process-related benchmarks
+          - lmbench/process_getppid_lat
+          - lmbench/process_ctx_lat
+          - lmbench/process_fork_lat
+          - lmbench/process_exec_lat
+          - lmbench/process_shell_lat
+          # Signal-related benchmarks
+          - lmbench/signal_catch_lat
+          - lmbench/signal_install_lat
+          - lmbench/signal_prot_lat
+          # IPC-related benchmarks
+          - lmbench/pipe_lat
+          - lmbench/pipe_bw
+          - lmbench/fifo_lat
+          - lmbench/semaphore_lat
+          - lmbench/unix_lat
+          - lmbench/unix_bw
+          - lmbench/unix_connect_lat
+          # Syscall-related benchmarks
+          - lmbench/vfs_fstat_lat
+          - lmbench/vfs_open_lat
+          - lmbench/vfs_stat_lat
+          - lmbench/vfs_write_lat
+          - lmbench/vfs_read_lat
+          - lmbench/vfs_select_lat
+          - lmbench/vfs_fcntl_lat
+          - lmbench/vfs_read_pagecache_bw
+          # File-related benchmarks
+          - lmbench/ramfs_create_delete_files_0k_ops
+          - lmbench/ramfs_create_delete_files_10k_ops
+          - lmbench/ramfs_copy_files_bw
+          - lmbench/ext2_create_delete_files_0k_ops
+          - lmbench/ext2_create_delete_files_10k_ops
+          - lmbench/ext2_copy_files_bw
+          # FIXME: IOMMU are not supported in TDX now.
+          # - fio/ext2_seq_write_bw
+          # - fio/ext2_seq_read_bw
+          - fio/ext2_seq_write_bw_no_iommu
+          - fio/ext2_seq_read_bw_no_iommu
+          # Loopback-related network benchmarks
+          - lmbench/tcp_loopback_bw_128
+          - lmbench/tcp_loopback_bw_4k
+          - lmbench/tcp_loopback_bw_64k
+          - lmbench/tcp_loopback_lat
+          - lmbench/tcp_loopback_connect_lat
+          - lmbench/tcp_loopback_select_lat
+          - lmbench/tcp_loopback_http_bw
+          - lmbench/udp_loopback_lat
+          # VirtIO-net-related network benchmarks
+          - lmbench/tcp_virtio_bw_128
+          - lmbench/tcp_virtio_bw_64k
+          - lmbench/tcp_virtio_connect_lat
+          - lmbench/tcp_virtio_lat
+          - lmbench/udp_virtio_lat 
+          - iperf3/tcp_virtio_bw
+          # Scheduler-related benchmarks
+          - hackbench/group8_smp1
+          # FIXME: hackbench panics on multi-core settings now.
+          # - hackbench/group8_smp8
+          # - hackbench/group8_smp16
+          - schbench/smp1
+          - schbench/smp8
+          # Nginx benchmarks
+          - nginx/http_req10k_conc1_bw
+          - nginx/http_req10k_conc20_bw
+          - nginx/http_file4KB_bw
+          - nginx/http_file8KB_bw
+          - nginx/http_file16KB_bw
+          - nginx/http_file32KB_bw
+          - nginx/http_file64KB_bw
+          # Redis benchmarks
+          - redis/ping_inline_100k_conc20_rps
+          - redis/ping_mbulk_100k_conc20_rps
+          - redis/get_100k_conc20_rps
+          - redis/set_100k_conc20_rps
+          # SQLite benchmarks
+          - sqlite/ext2_benchmarks
+          - sqlite/ramfs_benchmarks
+          # Memcached benchmarks
+          - memcached/t8_conc32_window10k
+          - memcached/t8_conc32_window20k
+          - memcached/t16_conc64_window10k
+      fail-fast: false
+      # FIXME: Remove the following line after fixing the parallel execution of network benchmarks.
+      max-parallel: 1
+    timeout-minutes: 60
+    container: 
+      image: asterinas/asterinas:0.15.0-20250509-tdx
+      options: --device=/dev/kvm --privileged
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run benchmarks
+        uses: ./.github/actions/benchmark
+        with:
+          task: benchmark
+          platform: tdx
+          benchmark: ${{ matrix.benchmarks }}
+
+  Results:
+    runs-on: ubuntu-latest
+    needs: Benchmarks
+    if: always()
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Store benchmark results
+        uses: ./.github/actions/benchmark
+        with:
+          task: result
+          platform: tdx
+          benchmark-secret: ${{ secrets.BENCHMARK_SECRET }}
+         

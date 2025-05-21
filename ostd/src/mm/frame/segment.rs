@@ -2,9 +2,13 @@
 
 //! A contiguous range of frames.
 
-use core::{mem::ManuallyDrop, ops::Range};
+use core::{fmt::Debug, mem::ManuallyDrop, ops::Range};
 
-use super::{inc_frame_ref_count, meta::AnyFrameMeta, Frame};
+use super::{
+    inc_frame_ref_count,
+    meta::{AnyFrameMeta, GetFrameError},
+    Frame,
+};
 use crate::mm::{AnyUFrameMeta, Paddr, PAGE_SIZE};
 
 /// A contiguous range of homogeneous physical memory frames.
@@ -19,11 +23,16 @@ use crate::mm::{AnyUFrameMeta, Paddr, PAGE_SIZE};
 ///
 /// All the metadata of the frames are homogeneous, i.e., they are of the same
 /// type.
-#[derive(Debug)]
 #[repr(transparent)]
 pub struct Segment<M: AnyFrameMeta + ?Sized> {
     range: Range<Paddr>,
     _marker: core::marker::PhantomData<M>,
+}
+
+impl<M: AnyFrameMeta + ?Sized> Debug for Segment<M> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "Segment({:#x}..{:#x})", self.range.start, self.range.end)
+    }
 }
 
 /// A contiguous range of homogeneous untyped physical memory frames that have any metadata.
@@ -67,18 +76,48 @@ impl<M: AnyFrameMeta> Segment<M> {
     /// The closure receives the physical address of the frame and returns the
     /// metadata, which is similar to [`core::array::from_fn`].
     ///
+    /// It returns an error if:
+    ///  - the physical address is invalid or not aligned;
+    ///  - any of the frames cannot be created with a specific reason.
+    ///
     /// # Panics
     ///
-    /// The function panics if:
-    ///  - the physical address is invalid or not aligned;
-    ///  - any of the frames are already in use.
-    pub fn from_unused<F>(range: Range<Paddr>, mut metadata_fn: F) -> Self
+    /// It panics if the range is empty.
+    pub fn from_unused<F>(range: Range<Paddr>, mut metadata_fn: F) -> Result<Self, GetFrameError>
     where
         F: FnMut(Paddr) -> M,
     {
-        for paddr in range.clone().step_by(PAGE_SIZE) {
-            let _ = ManuallyDrop::new(Frame::<M>::from_unused(paddr, metadata_fn(paddr)));
+        if range.start % PAGE_SIZE != 0 || range.end % PAGE_SIZE != 0 {
+            return Err(GetFrameError::NotAligned);
         }
+        if range.end > super::max_paddr() {
+            return Err(GetFrameError::OutOfBound);
+        }
+        assert!(range.start < range.end);
+        // Construct a segment early to recycle previously forgotten frames if
+        // the subsequent operations fails in the middle.
+        let mut segment = Self {
+            range: range.start..range.start,
+            _marker: core::marker::PhantomData,
+        };
+        for paddr in range.step_by(PAGE_SIZE) {
+            let frame = Frame::<M>::from_unused(paddr, metadata_fn(paddr))?;
+            let _ = ManuallyDrop::new(frame);
+            segment.range.end = paddr + PAGE_SIZE;
+        }
+        Ok(segment)
+    }
+
+    /// Restores the [`Segment`] from the raw physical address range.
+    ///
+    /// # Safety
+    ///
+    /// The range must be a forgotten [`Segment`] that matches the type `M`.
+    /// It could be manually forgotten by [`core::mem::forget`],
+    /// [`ManuallyDrop`], or [`Self::into_raw`].
+    pub(crate) unsafe fn from_raw(range: Range<Paddr>) -> Self {
+        debug_assert_eq!(range.start % PAGE_SIZE, 0);
+        debug_assert_eq!(range.end % PAGE_SIZE, 0);
         Self {
             range,
             _marker: core::marker::PhantomData,
@@ -156,6 +195,13 @@ impl<M: AnyFrameMeta + ?Sized> Segment<M> {
             range: start..end,
             _marker: core::marker::PhantomData,
         }
+    }
+
+    /// Forgets the [`Segment`] and gets a raw range of physical addresses.
+    pub(crate) fn into_raw(self) -> Range<Paddr> {
+        let range = self.range.clone();
+        let _ = ManuallyDrop::new(self);
+        range
     }
 }
 

@@ -2,7 +2,8 @@
 
 use alloc::{boxed::Box, vec};
 
-use super::{RawTcpSocket, RawUdpSocket};
+pub(super) type RawTcpSocket = smoltcp::socket::tcp::Socket<'static>;
+pub type RawUdpSocket = smoltcp::socket::udp::Socket<'static>;
 
 pub(super) fn new_tcp_socket() -> Box<RawTcpSocket> {
     let raw_tcp_socket = {

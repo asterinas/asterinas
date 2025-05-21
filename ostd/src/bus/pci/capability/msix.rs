@@ -2,15 +2,16 @@
 
 //! MSI-X capability support.
 
-#![allow(dead_code)]
-#![allow(unused_variables)]
+#![expect(dead_code)]
+#![expect(unused_variables)]
 
 use alloc::{sync::Arc, vec::Vec};
 
-use cfg_if::cfg_if;
-
 use crate::{
-    arch::iommu::has_interrupt_remapping,
+    arch::{
+        iommu::has_interrupt_remapping,
+        pci::{construct_remappable_msix_address, MSIX_DEFAULT_MSG_ADDR},
+    },
     bus::pci::{
         cfg_space::{Bar, Command, MemoryBar},
         common_device::PciCommonDevice,
@@ -19,13 +20,6 @@ use crate::{
     mm::VmIoOnce,
     trap::IrqLine,
 };
-
-cfg_if! {
-    if #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))] {
-        use ::tdx_guest::tdx_is_enabled;
-        use crate::arch::tdx_guest;
-    }
-}
 
 /// MSI-X capability. It will set the BAR space it uses to be hidden.
 #[derive(Debug)]
@@ -60,9 +54,6 @@ impl Clone for CapabilityMsixData {
     }
 }
 
-#[cfg(target_arch = "x86_64")]
-const MSIX_DEFAULT_MSG_ADDR: u32 = 0xFEE0_0000;
-
 impl CapabilityMsixData {
     pub(super) fn new(dev: &mut PciCommonDevice, cap_ptr: u16) -> Self {
         // Get Table and PBA offset, provide functions to modify them
@@ -73,10 +64,9 @@ impl CapabilityMsixData {
         let pba_bar;
 
         let bar_manager = dev.bar_manager_mut();
-        bar_manager.set_invisible((pba_info & 0b111) as u8);
-        bar_manager.set_invisible((table_info & 0b111) as u8);
         match bar_manager
-            .bar_space_without_invisible((pba_info & 0b111) as u8)
+            .bar((pba_info & 0b111) as u8)
+            .clone()
             .expect("MSIX cfg:pba BAR is none")
         {
             Bar::Memory(memory) => {
@@ -87,7 +77,8 @@ impl CapabilityMsixData {
             }
         };
         match bar_manager
-            .bar_space_without_invisible((table_info & 0b111) as u8)
+            .bar((table_info & 0b111) as u8)
+            .clone()
             .expect("MSIX cfg:table BAR is none")
         {
             Bar::Memory(memory) => {
@@ -108,20 +99,6 @@ impl CapabilityMsixData {
 
         // Set message address 0xFEE0_0000
         for i in 0..table_size {
-            #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
-            // SAFETY:
-            // This is safe because we are ensuring that the physical address of the MSI-X table is valid before this operation.
-            // We are also ensuring that we are only unprotecting a single page.
-            // The MSI-X table will not exceed one page size, because the size of an MSI-X entry is 16 bytes, and 256 entries are required to fill a page,
-            // which is just equal to the number of all the interrupt numbers on the x86 platform.
-            // It is better to add a judgment here in case the device deliberately uses so many interrupt numbers.
-            // In addition, due to granularity, the minimum value that can be set here is only one page.
-            // Therefore, we are not causing any undefined behavior or violating any of the requirements of the `unprotect_gpa_range` function.
-            if tdx_is_enabled() {
-                unsafe {
-                    tdx_guest::unprotect_gpa_range(table_bar.io_mem().paddr(), 1).unwrap();
-                }
-            }
             // Set message address and disable this msix entry
             table_bar
                 .io_mem()
@@ -174,18 +151,7 @@ impl CapabilityMsixData {
 
         // If interrupt remapping is enabled, then we need to change the value of the message address.
         if has_interrupt_remapping() {
-            let mut handle = irq.inner_irq().bind_remapping_entry().unwrap().lock();
-
-            // Enable irt entry
-            let irt_entry_mut = handle.irt_entry_mut().unwrap();
-            irt_entry_mut.enable_default(irq.num() as u32);
-
-            // Use remappable format. The bits[4:3] should be always set to 1 according to the manual.
-            let mut address = MSIX_DEFAULT_MSG_ADDR | 0b1_1000;
-
-            // Interrupt index[14:0] is on address[19:5] and interrupt index[15] is on address[2].
-            address |= (handle.index() as u32 & 0x7FFF) << 5;
-            address |= (handle.index() as u32 & 0x8000) >> 13;
+            let address = construct_remappable_msix_address(&irq);
 
             self.table_bar
                 .io_mem()

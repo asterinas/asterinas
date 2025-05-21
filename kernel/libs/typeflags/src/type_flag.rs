@@ -145,13 +145,3 @@ impl TypeFlagItem {
         self.value.clone()
     }
 }
-
-impl TypeFlagDef {
-    /// Debug use. Print all item's name.
-    pub fn debug(&self) {
-        println!("{}", self.ident);
-        for type_flag_item in &self.items {
-            println!("{}", type_flag_item.ident);
-        }
-    }
-}

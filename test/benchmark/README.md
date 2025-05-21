@@ -2,7 +2,9 @@
 
 The Asterinas Benchmark Collection evaluates the performance of Asterinas in comparison to Linux across a range of benchmarking tools (e.g., LMbench, Sysbench, iPerf) and real-world applications (e.g., Nginx, Redis, SQLite, Memcached). These benchmarks are conducted under various configurations, such as within a single virtual machine (VM) or between a VM and its host.
 
-The benchmarks are run automatically on a nightly basis through continuous integration (CI) pipelines. Results, presented in clear and visually appealing figures and tables, are available [here](https://asterinas.github.io/benchmark/).
+The benchmarks are run automatically on a nightly basis through continuous integration (CI) pipelines. Results, presented in clear and visually appealing figures and tables, are available for all tier-1 supported platforms.
+1. [x86-64](https://asterinas.github.io/benchmark/x86-64/)
+2. [Intel TDX](https://asterinas.github.io/benchmark/tdx/)
 
 ## File Organization
 
@@ -19,7 +21,7 @@ The benchmark collection is organized into benchmark suites, each dedicated to a
 - [nginx](https://github.com/asterinas/asterinas/tree/main/test/benchmark/nginx)
 - [memcached](https://github.com/asterinas/asterinas/tree/main/test/benchmark/memcached)
 
-Each suite has a corresponding web page (e.g., [LMbench results](https://asterinas.github.io/benchmark/lmbench/)) that publishes the latest performance data. At the top of each page, a summary table showcases the most recent results, configured using the `summary.json` file in the suite's directory.
+Each suite has a corresponding web page (e.g., [LMbench results](https://asterinas.github.io/benchmark/x86-64/lmbench/)) that publishes the latest performance data. At the top of each page, a summary table showcases the most recent results, configured using the `summary.json` file in the suite's directory.
 
 ### Benchmark Jobs
 
@@ -67,11 +69,11 @@ For jobs that produce a single result, the directory is structured as follows:
 ```plaintext
 <bench_suite>/
 └── <single_result_job>/
-    ├── bench_result.json
+    ├── bench_result.yaml
     └── run.sh
 ```
 
-The `bench_result.json` file contains metadata about the result, including the title, measurement unit, and whether higher or lower values indicate better performance.
+The `bench_result.yaml` file contains metadata about the result, including the title, measurement unit, and whether higher or lower values indicate better performance.
 
 #### Multi-Result Jobs
 
@@ -81,12 +83,12 @@ For jobs producing multiple results, the directory includes a `bench_results/` f
 <bench_suite>/
 └── <multi_result_job>/
     ├── bench_results/
-    │   ├── <job_a>.json
-    │   └── <job_b>.json
+    │   ├── <job_a>.yaml
+    │   └── <job_b>.yaml
     └── run.sh
 ```
 
-Each JSON file in the `bench_results/` directory describes a specific result's metadata.
+Each YAML file in the `bench_results/` directory describes a specific result's metadata.
 
 ## Adding New Benchmark Jobs
 
@@ -102,7 +104,7 @@ Each benchmark job should be added under the corresponding suite in the `test/be
 <bench_suite>/
 └── <job>/
     ├── host.sh # Only for host-guest jobs
-    ├── bench_result.json  # or bench_results/ directory for multiple results jobs
+    ├── bench_result.yaml  # or bench_results/ directory for multiple results jobs
     └── run.sh
 ```
 
@@ -134,53 +136,46 @@ iperf3 -c $GUEST_SERVER_IP_ADDRESS -f m
 
 #### Configuration Files
 
-The configuration files provide metadata about the benchmark jobs and results, such as the regression alerts, chart details, and result extraction patterns. Typically, these files are in JSON format. For single-result jobs, a `bench_result.json` file is used, while multi-result jobs have individual JSON files under `bench_results/` for each result. Some fields in these files are necessary while some are optional, depending on the benchmark's requirements. For more information, see the [`bench_result.json` format](#the-bench_resultjson-format) section.
+The configuration files provide metadata about the benchmark jobs and results, such as the regression alerts, chart details, and result extraction patterns. Typically, these files are in YAML format. For single-result jobs, a `bench_result.yaml` file is used, while multi-result jobs have individual YAML files under `bench_results/` for each result. Some fields in these files are necessary while some are optional, depending on the benchmark's requirements. For more information, see the [`bench_result.yaml` format](#the-bench_resultyaml-format) section.
 
 Below are the contents of these files for the sample benchmark:
 
-```jsonc
-// fio/ext2_no_iommu_seq_write_bw/bench_result.json
-{
-    "alert": {
-        "threshold": "125%",
-        "bigger_is_better": true
-    },
-    "result_extraction": {
-        "search_pattern": "bw=",
-        "result_index": 2
-    },
-    "chart": {
-        "title": "[Ext2] The bandwidth of sequential writes (IOMMU disabled on Asterinas)",
-        "description": "fio -filename=/ext2/fio-test -size=1G -bs=1M -direct=1",
-        "unit": "MB/s",
-        "legend": "Average file write bandwidth on {system}"
-    },
-    "runtime_config": {
-        "aster_scheme": "null"
-    }
-}  
+```yaml
+# fio/ext2_no_iommu_seq_write_bw/bench_result.yaml
+alert:
+  threshold: "125%"
+  bigger_is_better: true
+
+result_extraction:
+  search_pattern: "bw="
+  result_index: 2
+
+chart:
+  title: "[Ext2] The bandwidth of sequential writes (IOMMU disabled on Asterinas)"
+  description: "fio -filename=/ext2/fio-test -size=1G -bs=1M -direct=1"
+  unit: "MB/s"
+  legend: "Average file write bandwidth on {system}"
+
+runtime_config:
+  aster_scheme: "null"
 ```
 
-```jsonc
-// sqlite/ext2_benchmarks/bench_results/ext2_deletes_between.json
-{
-    "result_extraction": {
-        "search_pattern": "[0-9]+ DELETEs, numeric BETWEEN, indexed....",
-        "result_index": 8
-    },
-    "chart": {
-    ...
-}
+```yaml
+# sqlite/ext2_benchmarks/bench_results/ext2_deletes_between.yaml
+result_extraction:
+  search_pattern: "[0-9]+ DELETEs, numeric BETWEEN, indexed...."
+  result_index: 8
 
-// sqlite/ext2_benchmarks/bench_results/ext2_updates_between.json
-{
-    "result_extraction": {
-        "search_pattern": "[0-9]+ UPDATES, numeric BETWEEN, indexed....",
-        "result_index": 8
-    },
-    "chart": {
-    ...
-}
+chart:
+  title: "SQLite Ext2 Deletes Between"
+
+# sqlite/ext2_benchmarks/bench_results/ext2_updates_between.yaml
+result_extraction:
+  search_pattern: "[0-9]+ UPDATES, numeric BETWEEN, indexed...."
+  result_index: 8
+
+chart:
+...
 ```
 
 ### Step 3: Update Suite's `summary.json`
@@ -229,36 +224,30 @@ Secondly, we can validate modifications by running the CI pipeline on our own re
 
 Finally, if the new benchmark job runs successfully, we can commit the changes and create a pull request to merge the new benchmark into the main branch.
 
-## The `bench_result.json` Format
+## The `bench_result.yaml` Format
 
-The `bench_result.json` file configures how benchmark results are processed and displayed. Below is an example of the file to give you a big-picture understanding:
+The `bench_result.yaml` file configures how benchmark results are processed and displayed. Below is an example of the file to give you a big-picture understanding:
 
-```jsonc
-{
-    // Configurations for performance alerts.
-    "alert": {
-        "threshold": "130%", // Acceptable performance deviation (e.g., 130% = 30% higher).
-        "bigger_is_better": true // true: Higher values are better; false: Lower values are better.
-    },
-    // Settings for extracting benchmark results from raw outputs.
-    "result_extraction": {
-        "search_pattern": "sender", // Regex or string to locate results.
-        "nth_occurrence": 1, // Optional. Which matched occurrence to use (default to 1).
-        "result_index": 7 // Match index to use.
-    },
-    // Configurations for how the results are displayed in charts.
-    "chart": {
-        "title": "[Network] iperf3 sender performance using TCP", // Title of the chart.
-        "description": "iperf3 -s -B 10.0.2.15", // Context or command associated with the benchmark.
-        "unit": "Mbits/sec", // Measurement unit for the results.
-        "legend": "Average TCP Bandwidth over virtio-net between Host Linux and Guest {system}" // Chart legend with dynamic placeholder {system} supported.
-    },
-    // Optional runtime configurations for the benchmark.
-    "runtime_config": {
-        "aster_scheme": "null", // Corresponds to Makefile parameters, IOMMU is enabled by default (SCHEME=iommu).
-        "smp": 1 // Number of SMP CPUs (default to 1).
-    }
-}
+```yaml
+alert:                        # Alert configuration for performance regression
+  threshold: "130%"           # Acceptable performance deviation (e.g., 130% = 30% higher)
+  bigger_is_better: true      # true: Higher values are better; false: Lower values are better
+
+result_extraction:            # Result extraction configuration
+  search_pattern: "sender"    # Regex or string to locate results
+  nth_occurrence: 1           # Optional. Which matched occurrence to use (default to 1).
+  result_index: 7             # Match index to use
+
+chart:                        # Chart configuration
+  title: "[Network] iperf3 sender performance using TCP"           # Title of the chart
+  description: "iperf3 -s -B 10.0.2.15"                            # Context or command associated with the benchmark
+  unit: "Mbits/sec"                                                # Measurement unit for the results
+  legend: "Average TCP Bandwidth over virtio-net between Host Linux and Guest {system}" # Chart legend with dynamic placeholder {system} supported
+
+runtime_config:              # Runtime configuration
+  aster_scheme: "null"       # Corresponds to Makefile parameters, IOMMU is enabled by default (SCHEME=iommu)
+  smp: 1                     # Number of CPUs to allocate to the VM
+  mem: 8G                  # Memory size in GB to allocate to the VM
 ```
 
 By adhering to this format, we ensure clarity and consistency in benchmarking workflows and reporting systems.

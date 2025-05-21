@@ -8,7 +8,7 @@ use crate::{
     process::signal::{
         constants::{SIGKILL, SIGSTOP},
         sig_mask::SigMask,
-        with_signal_blocked,
+        with_sigmask_changed,
     },
 };
 
@@ -37,7 +37,11 @@ pub fn sys_rt_sigsuspend(
 
     // Wait until receiving any signal
     let waiter = Waiter::new_pair().0;
-    with_signal_blocked(ctx, sigmask, || waiter.pause_until(|| None::<()>))?;
+    with_sigmask_changed(
+        ctx,
+        |old_mask| old_mask + sigmask,
+        || waiter.pause_until(|| None::<()>),
+    )?;
 
     // This syscall should always return `Err(EINTR)`. This path should never be reached.
     unreachable!("rt_sigsuspend always return EINTR");

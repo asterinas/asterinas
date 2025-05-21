@@ -7,7 +7,7 @@ use alloc::{
 };
 
 use ostd::{
-    cpu::{cpuid, CpuException, CpuExceptionInfo, RawGeneralRegs, UserContext},
+    cpu::context::{cpuid, CpuException, CpuExceptionInfo, RawGeneralRegs, UserContext},
     Pod,
 };
 

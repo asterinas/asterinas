@@ -18,11 +18,18 @@ pub enum Arch {
     RiscV64,
     #[serde(rename = "x86_64")]
     X86_64,
+    #[serde(rename = "loongarch64")]
+    LoongArch64,
 }
 
 impl ValueEnum for Arch {
     fn value_variants<'a>() -> &'a [Self] {
-        &[Arch::Aarch64, Arch::RiscV64, Arch::X86_64]
+        &[
+            Arch::Aarch64,
+            Arch::RiscV64,
+            Arch::X86_64,
+            Arch::LoongArch64,
+        ]
     }
 
     fn to_possible_value(&self) -> Option<PossibleValue> {
@@ -30,6 +37,7 @@ impl ValueEnum for Arch {
             Arch::Aarch64 => Some(PossibleValue::new(self.to_str())),
             Arch::RiscV64 => Some(PossibleValue::new(self.to_str())),
             Arch::X86_64 => Some(PossibleValue::new(self.to_str())),
+            Arch::LoongArch64 => Some(PossibleValue::new(self.to_str())),
         }
     }
 }
@@ -41,6 +49,7 @@ impl Arch {
             Arch::Aarch64 => "aarch64-unknown-none",
             Arch::RiscV64 => "riscv64gc-unknown-none-elf",
             Arch::X86_64 => "x86_64-unknown-none",
+            Arch::LoongArch64 => "loongarch64-unknown-none",
         }
     }
 
@@ -49,6 +58,7 @@ impl Arch {
             Arch::Aarch64 => "qemu-system-aarch64",
             Arch::RiscV64 => "qemu-system-riscv64",
             Arch::X86_64 => "qemu-system-x86_64",
+            Arch::LoongArch64 => "qemu-system-loongarch64",
         }
     }
 
@@ -57,6 +67,7 @@ impl Arch {
             Arch::Aarch64 => "aarch64",
             Arch::RiscV64 => "riscv64",
             Arch::X86_64 => "x86_64",
+            Arch::LoongArch64 => "loongarch64",
         }
     }
 }
@@ -89,6 +100,7 @@ pub fn get_default_arch() -> Arch {
             "aarch64" => Arch::Aarch64,
             "riscv64gc" => Arch::RiscV64,
             "x86_64" => Arch::X86_64,
+            "loongarch64" => Arch::LoongArch64,
             _ => panic!("The host has an unsupported native architecture"),
         },
         None => panic!("`rustc -vV` gave a host with unknown format"),

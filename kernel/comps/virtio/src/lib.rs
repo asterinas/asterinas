@@ -3,7 +3,6 @@
 //! The virtio of Asterinas.
 #![no_std]
 #![deny(unsafe_code)]
-#![allow(dead_code)]
 #![feature(trait_alias)]
 #![feature(fn_traits)]
 #![feature(linked_list_cursors)]

@@ -118,7 +118,6 @@ impl VirtioVsockHdr {
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, TryFromInt)]
 #[repr(u16)]
-#[allow(non_camel_case_types)]
 pub enum VirtioVsockOp {
     #[default]
     Invalid = 0,

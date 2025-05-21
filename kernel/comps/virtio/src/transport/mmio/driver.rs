@@ -21,10 +21,6 @@ pub struct VirtioMmioDriver {
 }
 
 impl VirtioMmioDriver {
-    pub fn num_devices(&self) -> usize {
-        self.devices.lock().len()
-    }
-
     pub fn pop_device_transport(&self) -> Option<VirtioMmioTransport> {
         self.devices.lock().pop()
     }

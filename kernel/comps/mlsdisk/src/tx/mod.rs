@@ -21,7 +21,7 @@ use crate::{
 };
 
 /// A transaction provider.
-#[allow(clippy::type_complexity)]
+#[expect(clippy::type_complexity)]
 pub struct TxProvider {
     id: u64,
     initializer_map: RwLock<HashMap<TypeId, Box<dyn Any + Send + Sync>>>,
@@ -90,7 +90,7 @@ impl TxProvider {
         let init_fn = initializer_map
             .get(&TypeId::of::<T>())
             .unwrap()
-            .downcast_ref::<Box<dyn Fn() -> T>>()
+            .downcast_ref::<Box<dyn Fn() -> T + Send + Sync>>()
             .unwrap();
         init_fn()
     }

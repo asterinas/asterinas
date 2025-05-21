@@ -6,8 +6,8 @@ use atomic_integer_wrapper::define_atomic_version_of_integer_like_type;
 use int_to_c_enum::TryFromInt;
 use ostd::sync::SpinLock;
 
-pub use super::real_time::RealTimePolicy;
-use crate::sched::priority::{Nice, Priority, RangedU8};
+pub use super::real_time::{RealTimePolicy, RealTimePriority};
+use crate::sched::nice::Nice;
 
 /// The User-chosen scheduling policy.
 ///
@@ -16,7 +16,7 @@ use crate::sched::priority::{Nice, Priority, RangedU8};
 pub enum SchedPolicy {
     Stop,
     RealTime {
-        rt_prio: super::real_time::RtPrio,
+        rt_prio: RealTimePriority,
         rt_policy: RealTimePolicy,
     },
     Fair(Nice),
@@ -30,20 +30,6 @@ pub(super) enum SchedPolicyKind {
     RealTime = 1,
     Fair = 2,
     Idle = 3,
-}
-
-impl From<Priority> for SchedPolicy {
-    fn from(priority: Priority) -> Self {
-        match priority.range().get() {
-            0 => SchedPolicy::Stop,
-            rt @ 1..=99 => SchedPolicy::RealTime {
-                rt_prio: RangedU8::new(rt),
-                rt_policy: Default::default(),
-            },
-            100..=139 => SchedPolicy::Fair(priority.into()),
-            _ => SchedPolicy::Idle,
-        }
-    }
 }
 
 impl SchedPolicy {
@@ -114,5 +100,9 @@ impl SchedPolicyState {
         update(policy);
         self.kind.store(policy.kind(), Relaxed);
         *this = policy;
+    }
+
+    pub fn update<T>(&self, update: impl FnOnce(&mut SchedPolicy) -> T) -> T {
+        update(&mut *self.policy.disable_irq().lock())
     }
 }

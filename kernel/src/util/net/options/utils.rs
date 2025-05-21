@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::time::Duration;
+use core::{num::NonZeroU8, time::Duration};
 
 use crate::{
     current_userspace,
-    net::socket::{ip::stream::CongestionControl, LingerOption},
+    net::socket::{
+        ip::{options::IpTtl, stream::CongestionControl},
+        LingerOption,
+    },
     prelude::*,
 };
 
@@ -32,15 +35,8 @@ pub trait WriteToUser {
     fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize>;
 }
 
-/// This macro is used to implement `ReadFromUser` and `WriteToUser` for types that
-/// implement the `Pod` trait.
-/// FIXME: The macro is somewhat ugly. Ideally, we would prefer to use
-/// ```rust
-/// impl <T: Pod> ReadFromUser for T  
-/// ```
-/// instead of this macro. However, using the `impl` statement will result in a compilation
-/// error, as it is possible for an upstream crate to implement `Pod` for other types like `bool`,
-macro_rules! impl_read_write_for_pod_type {
+/// This macro is used to implement `ReadFromUser` and `WriteToUser` for u32 and i32.
+macro_rules! impl_read_write_for_32bit_type {
     ($pod_ty: ty) => {
         impl ReadFromUser for $pod_ty {
             fn read_from_user(addr: Vaddr, max_len: u32) -> Result<Self> {
@@ -66,31 +62,59 @@ macro_rules! impl_read_write_for_pod_type {
     };
 }
 
-impl_read_write_for_pod_type!(u32);
+impl_read_write_for_32bit_type!(i32);
+impl_read_write_for_32bit_type!(u32);
 
 impl ReadFromUser for bool {
     fn read_from_user(addr: Vaddr, max_len: u32) -> Result<Self> {
-        if (max_len as usize) < core::mem::size_of::<i32>() {
-            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
-        }
-
-        let val = current_userspace!().read_val::<i32>(addr)?;
-
+        let val = i32::read_from_user(addr, max_len)?;
         Ok(val != 0)
     }
 }
 
 impl WriteToUser for bool {
     fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
-        let write_len = core::mem::size_of::<i32>();
+        let val = if *self { 1i32 } else { 0i32 };
+        val.write_to_user(addr, max_len)
+    }
+}
 
-        if (max_len as usize) < write_len {
-            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
+impl ReadFromUser for u8 {
+    fn read_from_user(addr: Vaddr, max_len: u32) -> Result<Self> {
+        let val = i32::read_from_user(addr, max_len)?;
+
+        if val < 0 || val > u8::MAX as i32 {
+            return_errno_with_message!(Errno::EINVAL, "invalid u8 value");
         }
 
-        let val = if *self { 1i32 } else { 0i32 };
-        current_userspace!().write_val(addr, &val)?;
-        Ok(write_len)
+        Ok(val as u8)
+    }
+}
+
+impl WriteToUser for u8 {
+    fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
+        (*self as i32).write_to_user(addr, max_len)
+    }
+}
+
+impl ReadFromUser for IpTtl {
+    fn read_from_user(addr: Vaddr, max_len: u32) -> Result<Self> {
+        let val = i32::read_from_user(addr, max_len)?;
+
+        let ttl_value = match val {
+            -1 => None,
+            1..255 => Some(NonZeroU8::new(val as u8).unwrap()),
+            _ => return_errno_with_message!(Errno::EINVAL, "invalid ttl value"),
+        };
+
+        Ok(IpTtl::new(ttl_value))
+    }
+}
+
+impl WriteToUser for IpTtl {
+    fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
+        let val = self.get() as i32;
+        val.write_to_user(addr, max_len)
     }
 }
 
@@ -138,25 +162,40 @@ impl WriteToUser for LingerOption {
     }
 }
 
+const TCP_CONGESTION_NAME_MAX: u32 = 16;
+
 impl ReadFromUser for CongestionControl {
     fn read_from_user(addr: Vaddr, max_len: u32) -> Result<Self> {
-        let mut bytes = vec![0; max_len as usize];
-        current_userspace!().read_bytes(addr, &mut VmWriter::from(bytes.as_mut_slice()))?;
-        let name = String::from_utf8(bytes).unwrap();
-        CongestionControl::new(&name)
+        let mut bytes = [0; TCP_CONGESTION_NAME_MAX as usize];
+
+        let dst = {
+            let read_len = (TCP_CONGESTION_NAME_MAX - 1).min(max_len) as usize;
+            &mut bytes[..read_len]
+        };
+
+        // Clippy warns that `dst.as_mut` is redundant. However, using `dst` directly
+        // instead of `dst.as_mut` would take the ownership of `dst`. Consequently,
+        // the subsequent code that constructs `name` from `dst` would fail to compile.
+        #[expect(clippy::useless_asref)]
+        current_userspace!().read_bytes(addr, &mut VmWriter::from(dst.as_mut()))?;
+
+        let name = core::str::from_utf8(dst)
+            .map_err(|_| Error::with_message(Errno::ENOENT, "non-UTF8 congestion name"))?;
+        CongestionControl::new(name)
     }
 }
 
 impl WriteToUser for CongestionControl {
     fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
-        let name = self.name().as_bytes();
+        let mut bytes = [0u8; TCP_CONGESTION_NAME_MAX as usize];
 
-        let write_len = name.len();
-        if write_len > max_len as usize {
-            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
-        }
+        let name_bytes = self.name().as_bytes();
+        let name_len = name_bytes.len();
+        bytes[..name_len].copy_from_slice(name_bytes);
 
-        current_userspace!().write_bytes(addr, &mut VmReader::from(name))?;
+        let write_len = TCP_CONGESTION_NAME_MAX.min(max_len) as usize;
+
+        current_userspace!().write_bytes(addr, &mut VmReader::from(&bytes[..write_len]))?;
 
         Ok(write_len)
     }

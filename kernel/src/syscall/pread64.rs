@@ -22,7 +22,7 @@ pub fn sys_pread64(
         return_errno_with_message!(Errno::EINVAL, "offset cannot be negative");
     }
 
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
 
     // TODO: Check (f.file->f_mode & FMODE_PREAD); We don't have f_mode in our FileLike trait
@@ -34,11 +34,8 @@ pub fn sys_pread64(
     }
 
     let read_len = {
-        let mut writer = ctx
-            .process
-            .root_vmar()
-            .vm_space()
-            .writer(user_buf_ptr, user_buf_len)?;
+        let user_space = ctx.user_space();
+        let mut writer = user_space.writer(user_buf_ptr, user_buf_len)?;
         file.read_at(offset as usize, &mut writer)?
     };
 

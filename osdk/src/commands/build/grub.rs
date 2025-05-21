@@ -16,7 +16,7 @@ use crate::{
         scheme::{ActionChoice, BootProtocol},
         Config,
     },
-    util::{get_current_crate_info, hard_link_or_copy},
+    util::{get_current_crates, hard_link_or_copy},
 };
 
 pub fn create_bootdev_image(
@@ -26,7 +26,7 @@ pub fn create_bootdev_image(
     config: &Config,
     action: ActionChoice,
 ) -> AsterVmImage {
-    let target_name = get_current_crate_info().name;
+    let target_name = get_current_crates().remove(0).name;
     let iso_root = &target_dir.as_ref().join("iso_root");
     let action = match &action {
         ActionChoice::Run => &config.run,
@@ -108,7 +108,7 @@ fn generate_grub_cfg(
     initramfs_path: Option<String>,
     protocol: &BootProtocol,
 ) -> String {
-    let target_name = get_current_crate_info().name;
+    let target_name = get_current_crates().remove(0).name;
     let grub_cfg = include_str!("grub.cfg.template").to_string();
 
     // Delete the first two lines that notes the file a template file.

@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use cfg_if::cfg_if;
-
 mod null;
 mod pty;
 mod random;
@@ -10,15 +8,8 @@ pub mod tty;
 mod urandom;
 mod zero;
 
-cfg_if! {
-    if #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))] {
-        mod tdxguest;
-
-        use tdx_guest::tdx_is_enabled;
-
-        pub use tdxguest::TdxGuest;
-    }
-}
+#[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))]
+mod tdxguest;
 
 pub use pty::{new_pty_pair, PtyMaster, PtySlave};
 pub use random::Random;
@@ -41,15 +32,10 @@ pub fn init() -> Result<()> {
     add_node(console, "console")?;
     let tty = Arc::new(tty::TtyDevice);
     add_node(tty, "tty")?;
-    cfg_if! {
-        if #[cfg(all(target_arch = "x86_64", feature = "cvm_guest"))] {
-            let tdx_guest = Arc::new(tdxguest::TdxGuest);
-
-            if tdx_is_enabled() {
-                add_node(tdx_guest, "tdx_guest")?;
-            }
-        }
-    }
+    #[cfg(target_arch = "x86_64")]
+    ostd::if_tdx_enabled!({
+        add_node(Arc::new(tdxguest::TdxGuest), "tdx_guest")?;
+    });
     let random = Arc::new(random::Random);
     add_node(random, "random")?;
     let urandom = Arc::new(urandom::Urandom);

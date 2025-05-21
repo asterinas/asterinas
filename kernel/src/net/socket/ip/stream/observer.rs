@@ -25,12 +25,18 @@ impl SocketEventObserver for StreamObserver {
             io_events |= IoEvents::OUT;
         }
 
-        if events.contains(SocketEvents::PEER_CLOSED) {
+        if events.contains(SocketEvents::CLOSED_RECV) {
+            // `CLOSED_RECV` definitely causes IN and RDHUP.
             io_events |= IoEvents::IN | IoEvents::RDHUP;
+            // `CLOSED_RECV` may cause HUP/ERR (combined with a previous `CLOSED_SEND`).
+            io_events |= IoEvents::HUP | IoEvents::ERR;
         }
 
-        if events.contains(SocketEvents::CLOSED) {
-            io_events |= IoEvents::IN | IoEvents::OUT | IoEvents::RDHUP | IoEvents::HUP;
+        if events.contains(SocketEvents::CLOSED_SEND) {
+            // `CLOSED_SEND` definitely causes OUT.
+            io_events |= IoEvents::OUT;
+            // `CLOSED_SEND` may cause HUP/ERR (combined with a previous `CLOSED_RECV`).
+            io_events |= IoEvents::HUP | IoEvents::ERR;
         }
 
         self.0.notify(io_events);

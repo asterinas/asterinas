@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::{
-    task::{disable_preempt, DisabledPreemptGuard},
+    task::{atomic_mode::AsAtomicModeGuard, disable_preempt, DisabledPreemptGuard},
     trap::{disable_local, DisabledLocalIrqGuard},
 };
 
-/// A guardian that denotes the guard behavior for holding a lock.
-pub trait Guardian {
-    /// The guard type for holding a spin lock or a write lock.
-    type Guard: GuardTransfer;
-    /// The guard type for holding a read lock.
-    type ReadGuard: GuardTransfer;
+/// A guardian that denotes the guard behavior for holding a spin-based lock.
+///
+/// It at least ensures that the atomic mode is maintained while the lock is held.
+pub trait SpinGuardian {
+    /// The guard type for holding a spin lock or a spin-based write lock.
+    type Guard: AsAtomicModeGuard + GuardTransfer;
+    /// The guard type for holding a spin-based read lock.
+    type ReadGuard: AsAtomicModeGuard + GuardTransfer;
 
     /// Creates a new guard.
     fn guard() -> Self::Guard;
@@ -30,9 +32,9 @@ pub trait GuardTransfer {
 }
 
 /// A guardian that disables preemption while holding a lock.
-pub struct PreemptDisabled;
+pub enum PreemptDisabled {}
 
-impl Guardian for PreemptDisabled {
+impl SpinGuardian for PreemptDisabled {
     type Guard = DisabledPreemptGuard;
     type ReadGuard = DisabledPreemptGuard;
 
@@ -51,9 +53,9 @@ impl Guardian for PreemptDisabled {
 /// IRQ handlers are allowed to get executed while holding the
 /// lock. For example, if a lock is never used in the interrupt
 /// context, then it is ok not to use this guardian in the process context.
-pub struct LocalIrqDisabled;
+pub enum LocalIrqDisabled {}
 
-impl Guardian for LocalIrqDisabled {
+impl SpinGuardian for LocalIrqDisabled {
     type Guard = DisabledLocalIrqGuard;
     type ReadGuard = DisabledLocalIrqGuard;
 
@@ -77,9 +79,9 @@ impl Guardian for LocalIrqDisabled {
 ///
 /// [`RwLock`]: super::RwLock
 /// [`SpinLock`]: super::SpinLock
-pub struct WriteIrqDisabled;
+pub enum WriteIrqDisabled {}
 
-impl Guardian for WriteIrqDisabled {
+impl SpinGuardian for WriteIrqDisabled {
     type Guard = DisabledLocalIrqGuard;
     type ReadGuard = DisabledPreemptGuard;
 

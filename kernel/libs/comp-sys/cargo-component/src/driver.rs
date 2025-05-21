@@ -80,7 +80,7 @@ impl rustc_driver::Callbacks for DefaultCallbacks {}
 struct ComponentCallbacks;
 impl rustc_driver::Callbacks for ComponentCallbacks {
     // JUSTIFICATION: necessary to set `mir_opt_level`
-    #[allow(rustc::bad_opt_access)]
+    #[expect(rustc::bad_opt_access)]
     fn config(&mut self, config: &mut interface::Config) {
         let conf_path = analysis::lookup_conf_file();
         let conf_path_string = if let Ok(Some(path)) = &conf_path {
@@ -179,7 +179,7 @@ fn report_ice(info: &panic::PanicInfo<'_>) {
     interface::try_print_query_stack(&handler, num_frames);
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines)]
 pub fn main() {
     rustc_driver::init_rustc_env_logger();
     LazyLock::force(&ICE_HOOK);

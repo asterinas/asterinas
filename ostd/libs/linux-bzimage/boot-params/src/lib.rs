@@ -210,7 +210,7 @@ pub struct EfiInfo {
 ///
 /// Originally defined in the linux source tree:
 /// `linux/arch/x86/include/asm/e820/types.h`
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[repr(u32)]
 pub enum E820Type {
     Ram = 1,

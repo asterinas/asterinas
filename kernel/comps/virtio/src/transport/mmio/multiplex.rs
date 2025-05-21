@@ -6,7 +6,7 @@ use core::fmt::Debug;
 use aster_rights::{ReadOp, TRightSet, WriteOp};
 use aster_util::safe_ptr::SafePtr;
 use ostd::{
-    io_mem::IoMem,
+    io::IoMem,
     sync::RwLock,
     trap::{IrqCallbackFunction, IrqLine, TrapFrame},
 };

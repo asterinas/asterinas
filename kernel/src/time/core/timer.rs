@@ -160,6 +160,11 @@ impl TimerManager {
         })
     }
 
+    /// Returns the clock associated with this timer manager.
+    pub fn clock(&self) -> &Arc<dyn Clock> {
+        &self.clock
+    }
+
     /// Returns whether a given `timeout` is expired.
     pub fn is_expired_timeout(&self, timeout: &Timeout) -> bool {
         match timeout {

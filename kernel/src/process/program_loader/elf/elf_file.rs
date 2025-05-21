@@ -165,23 +165,23 @@ impl ElfHeader {
 pub struct HeaderPt2_64 {
     pub type_: Type_,
     pub machine: Machine_,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub version: u32,
     pub entry_point: u64,
     pub ph_offset: u64,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub sh_offset: u64,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub flags: u32,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub header_size: u16,
     pub ph_entry_size: u16,
     pub ph_count: u16,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub sh_entry_size: u16,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub sh_count: u16,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub sh_str_index: u16,
 }
 

@@ -23,6 +23,7 @@ TEST_APPS := \
 	file_io \
 	fork \
 	fork_c \
+	getcpu \
 	getpid \
 	hello_c \
 	hello_pie \
@@ -32,8 +33,11 @@ TEST_APPS := \
 	mongoose \
 	network \
 	pipe \
+	prctl \
+	process \
 	pthread \
 	pty \
+	sched \
 	shm \
 	signal_c \
 	vsock \

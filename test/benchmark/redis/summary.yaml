@@ -1,0 +1,5 @@
+benchmarks:
+  - ping_inline_100k_conc20_rps
+  - ping_mbulk_100k_conc20_rps
+  - get_100k_conc20_rps
+  - set_100k_conc20_rps

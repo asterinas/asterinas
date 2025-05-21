@@ -44,7 +44,6 @@ use alloc::vec;
 use core::marker::PhantomData;
 
 use align_ext::AlignExt;
-use const_assert::{Assert, IsTrue};
 use inherit_methods_macro::inherit_methods;
 
 use crate::{
@@ -276,12 +275,13 @@ impl_vm_io_once_pointer!(&mut T, "(**self)");
 impl_vm_io_once_pointer!(Box<T>, "(**self)");
 impl_vm_io_once_pointer!(Arc<T>, "(**self)");
 
-/// A marker structure used for [`VmReader`] and [`VmWriter`],
+/// A marker type used for [`VmReader`] and [`VmWriter`],
 /// representing whether reads or writes on the underlying memory region are fallible.
-pub struct Fallible;
-/// A marker structure used for [`VmReader`] and [`VmWriter`],
+pub enum Fallible {}
+
+/// A marker type used for [`VmReader`] and [`VmWriter`],
 /// representing whether reads or writes on the underlying memory region are infallible.
-pub struct Infallible;
+pub enum Infallible {}
 
 /// Copies `len` bytes from `src` to `dst`.
 ///
@@ -392,6 +392,20 @@ pub struct VmReader<'a, Fallibility = Fallible> {
     cursor: *const u8,
     end: *const u8,
     phantom: PhantomData<(&'a [u8], Fallibility)>,
+}
+
+// `Clone` can be implemented for `VmReader`
+// because it either points to untyped memory or represents immutable references.
+// Note that we cannot implement `Clone` for `VmWriter`
+// because it can represent mutable references, which must remain exclusive.
+impl<Fallibility> Clone for VmReader<'_, Fallibility> {
+    fn clone(&self) -> Self {
+        Self {
+            cursor: self.cursor,
+            end: self.end,
+            phantom: PhantomData,
+        }
+    }
 }
 
 macro_rules! impl_read_fallible {
@@ -525,6 +539,8 @@ impl<'a> VmReader<'a, Infallible> {
         let cursor = self.cursor.cast::<T>();
         assert!(cursor.is_aligned());
 
+        const { assert!(pod_once_impls::is_non_tearing::<T>()) };
+
         // SAFETY: We have checked that the number of bytes remaining is at least the size of `T`
         // and that the cursor is properly aligned with respect to the type `T`. All other safety
         // requirements are the same as for `Self::read`.
@@ -628,7 +644,7 @@ impl<Fallibility> VmReader<'_, Fallibility> {
     /// Limits the length of remaining data.
     ///
     /// This method ensures the post condition of `self.remain() <= max_remain`.
-    pub const fn limit(mut self, max_remain: usize) -> Self {
+    pub const fn limit(&mut self, max_remain: usize) -> &mut Self {
         if max_remain < self.remain() {
             // SAFETY: the new end is less than the old end.
             unsafe { self.end = self.cursor.add(max_remain) };
@@ -642,7 +658,7 @@ impl<Fallibility> VmReader<'_, Fallibility> {
     /// # Panics
     ///
     /// If `nbytes` is greater than `self.remain()`, then the method panics.
-    pub fn skip(mut self, nbytes: usize) -> Self {
+    pub fn skip(&mut self, nbytes: usize) -> &mut Self {
         assert!(nbytes <= self.remain());
 
         // SAFETY: the new cursor is less than or equal to the end.
@@ -745,6 +761,8 @@ impl<'a> VmWriter<'a, Infallible> {
 
         let cursor = self.cursor.cast::<T>();
         assert!(cursor.is_aligned());
+
+        const { assert!(pod_once_impls::is_non_tearing::<T>()) };
 
         // SAFETY: We have checked that the number of bytes remaining is at least the size of `T`
         // and that the cursor is properly aligned with respect to the type `T`. All other safety
@@ -890,7 +908,7 @@ impl<Fallibility> VmWriter<'_, Fallibility> {
     /// Limits the length of available space.
     ///
     /// This method ensures the post condition of `self.avail() <= max_avail`.
-    pub const fn limit(mut self, max_avail: usize) -> Self {
+    pub const fn limit(&mut self, max_avail: usize) -> &mut Self {
         if max_avail < self.avail() {
             // SAFETY: the new end is less than the old end.
             unsafe { self.end = self.cursor.add(max_avail) };
@@ -904,7 +922,7 @@ impl<Fallibility> VmWriter<'_, Fallibility> {
     /// # Panics
     ///
     /// If `nbytes` is greater than `self.avail()`, then the method panics.
-    pub fn skip(mut self, nbytes: usize) -> Self {
+    pub fn skip(&mut self, nbytes: usize) -> &mut Self {
         assert!(nbytes <= self.avail());
 
         // SAFETY: the new cursor is less than or equal to the end.
@@ -926,27 +944,35 @@ impl<'a> From<&'a mut [u8]> for VmWriter<'a, Infallible> {
 
 /// A marker trait for POD types that can be read or written with one instruction.
 ///
-/// We currently rely on this trait to ensure that the memory operation created by
-/// `ptr::read_volatile` and `ptr::write_volatile` doesn't tear. However, the Rust documentation
-/// makes no such guarantee, and even the wording in the LLVM LangRef is ambiguous.
-///
-/// At this point, we can only _hope_ that this doesn't break in future versions of the Rust or
-/// LLVM compilers. However, this is unlikely to happen in practice, since the Linux kernel also
-/// uses "volatile" semantics to implement `READ_ONCE`/`WRITE_ONCE`.
+/// This trait is mostly a hint, since it's safe and can be implemented for _any_ POD type. If it
+/// is implemented for a type that cannot be read or written with a single instruction, calling
+/// `read_once`/`write_once` will lead to a failed compile-time assertion.
 pub trait PodOnce: Pod {}
 
-impl<T: Pod> PodOnce for T where Assert<{ is_pod_once::<T>() }>: IsTrue {}
+#[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
+mod pod_once_impls {
+    use super::PodOnce;
 
-#[cfg(target_arch = "x86_64")]
-const fn is_pod_once<T: Pod>() -> bool {
-    let size = size_of::<T>();
+    impl PodOnce for u8 {}
+    impl PodOnce for u16 {}
+    impl PodOnce for u32 {}
+    impl PodOnce for u64 {}
+    impl PodOnce for usize {}
+    impl PodOnce for i8 {}
+    impl PodOnce for i16 {}
+    impl PodOnce for i32 {}
+    impl PodOnce for i64 {}
+    impl PodOnce for isize {}
 
-    size == 1 || size == 2 || size == 4 || size == 8
-}
+    /// Checks whether the memory operation created by `ptr::read_volatile` and
+    /// `ptr::write_volatile` doesn't tear.
+    ///
+    /// Note that the Rust documentation makes no such guarantee, and even the wording in the LLVM
+    /// LangRef is ambiguous. But this is unlikely to break in practice because the Linux kernel
+    /// also uses "volatile" semantics to implement `READ_ONCE`/`WRITE_ONCE`.
+    pub(super) const fn is_non_tearing<T>() -> bool {
+        let size = core::mem::size_of::<T>();
 
-#[cfg(target_arch = "riscv64")]
-const fn is_pod_once<T: Pod>() -> bool {
-    let size = size_of::<T>();
-
-    size == 1 || size == 2 || size == 4 || size == 8
+        size == 1 || size == 2 || size == 4 || size == 8
+    }
 }

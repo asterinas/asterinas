@@ -4,7 +4,7 @@ use aster_rights::Rights;
 
 use crate::prelude::*;
 
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 #[derive(Clone, Copy, Debug)]
 #[repr(u8)]
 pub enum AccessMode {

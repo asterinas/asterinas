@@ -20,14 +20,20 @@ pub struct FdDirOps(Arc<Process>);
 
 impl FdDirOps {
     pub fn new_inode(process_ref: Arc<Process>, parent: Weak<dyn Inode>) -> Arc<dyn Inode> {
+        let main_thread = process_ref.main_thread();
+        let file_table = main_thread.as_posix_thread().unwrap().file_table();
+
         let fd_inode = ProcDirBuilder::new(Self(process_ref.clone()))
             .parent(parent)
             .build()
             .unwrap();
-        let main_thread = process_ref.main_thread();
-        let file_table = main_thread.as_posix_thread().unwrap().file_table().read();
-        let weak_ptr = Arc::downgrade(&fd_inode);
-        file_table.register_observer(weak_ptr);
+        file_table
+            .lock()
+            .as_ref()
+            .unwrap()
+            .read()
+            .register_observer(Arc::downgrade(&fd_inode) as _);
+
         fd_inode
     }
 }
@@ -47,29 +53,40 @@ impl Observer<FdEvents> for ProcDir<FdDirOps> {
 
 impl DirOps for FdDirOps {
     fn lookup_child(&self, this_ptr: Weak<dyn Inode>, name: &str) -> Result<Arc<dyn Inode>> {
+        let main_thread = self.0.main_thread();
+        let file_table = main_thread.as_posix_thread().unwrap().file_table().lock();
+        let file_table = file_table
+            .as_ref()
+            .ok_or_else(|| Error::new(Errno::ENOENT))?;
+
         let file = {
             let fd = name
                 .parse::<FileDesc>()
                 .map_err(|_| Error::new(Errno::ENOENT))?;
-            let main_thread = self.0.main_thread();
-            let file_table = main_thread.as_posix_thread().unwrap().file_table().read();
             file_table
+                .read()
                 .get_file(fd)
                 .map_err(|_| Error::new(Errno::ENOENT))?
                 .clone()
         };
+
         Ok(FileSymOps::new_inode(file, this_ptr.clone()))
     }
 
     fn populate_children(&self, this_ptr: Weak<dyn Inode>) {
+        let main_thread = self.0.main_thread();
+        let file_table = main_thread.as_posix_thread().unwrap().file_table().lock();
+        let Some(file_table) = file_table.as_ref() else {
+            return;
+        };
+
         let this = {
             let this = this_ptr.upgrade().unwrap();
             this.downcast_ref::<ProcDir<FdDirOps>>().unwrap().this()
         };
         let mut cached_children = this.cached_children().write();
-        let main_thread = self.0.main_thread();
-        let file_table = main_thread.as_posix_thread().unwrap().file_table().read();
-        for (fd, file) in file_table.fds_and_files() {
+
+        for (fd, file) in file_table.read().fds_and_files() {
             cached_children.put_entry_if_not_found(&fd.to_string(), || {
                 FileSymOps::new_inode(file.clone(), this_ptr.clone())
             });

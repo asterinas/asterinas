@@ -17,10 +17,10 @@ use core::{mem, sync::atomic::Ordering};
 
 use align_ext::AlignExt;
 use c_types::{siginfo_t, ucontext_t};
-use constants::SIGKILL;
+use constants::SIGSEGV;
 pub use events::{SigEvents, SigEventsFilter};
-use ostd::{cpu::UserContext, user::UserContextApi};
-pub use pause::{with_signal_blocked, Pause};
+use ostd::{cpu::context::UserContext, user::UserContextApi};
+pub use pause::{with_sigmask_changed, Pause};
 pub use poll::{PollAdaptor, PollHandle, Pollable, Pollee, Poller};
 use sig_action::{SigAction, SigActionFlags, SigDefaultAction};
 use sig_mask::SigMask;
@@ -48,8 +48,19 @@ pub fn handle_pending_signal(
     ctx: &Context,
     syscall_number: Option<usize>,
 ) {
-    // We first deal with signal in current thread, then signal in current process.
+    let syscall_restart = if let Some(syscall_number) = syscall_number
+        && user_ctx.syscall_ret() == -(Errno::ERESTARTSYS as i32) as usize
+    {
+        // We should never return `ERESTARTSYS` to the userspace.
+        user_ctx.set_syscall_ret(-(Errno::EINTR as i32) as usize);
+        Some(syscall_number)
+    } else {
+        None
+    };
+
     let posix_thread = ctx.posix_thread;
+    let current = ctx.process;
+
     let signal = {
         let sig_mask = posix_thread.sig_mask().load(Ordering::Relaxed);
         if let Some(signal) = posix_thread.dequeue_signal(&sig_mask) {
@@ -58,13 +69,14 @@ pub fn handle_pending_signal(
             return;
         }
     };
-
     let sig_num = signal.num();
     trace!("sig_num = {:?}, sig_name = {}", sig_num, sig_num.sig_name());
-    let current = posix_thread.process();
+
     let mut sig_dispositions = current.sig_dispositions().lock();
+
     let sig_action = sig_dispositions.get(sig_num);
     trace!("sig action: {:x?}", sig_action);
+
     match sig_action {
         SigAction::Ign => {
             trace!("Ignore signal {:?}", sig_num);
@@ -75,15 +87,17 @@ pub fn handle_pending_signal(
             restorer_addr,
             mask,
         } => {
-            if let Some(syscall_number) = syscall_number
-                && user_ctx.syscall_ret() == -(Errno::ERESTARTSYS as i32) as usize
+            if let Some(syscall_number) = syscall_restart
+                && flags.contains(SigActionFlags::SA_RESTART)
             {
-                if flags.contains(SigActionFlags::SA_RESTART) {
-                    user_ctx.set_syscall_num(syscall_number);
-                    user_ctx.set_instruction_pointer(user_ctx.instruction_pointer() - 2);
-                } else {
-                    user_ctx.set_syscall_ret(-(Errno::EINTR as i32) as usize);
-                }
+                #[cfg(target_arch = "x86_64")]
+                const SYSCALL_INSTR_LEN: usize = 2; // syscall
+                #[cfg(target_arch = "riscv64")]
+                const SYSCALL_INSTR_LEN: usize = 4; // ecall
+
+                user_ctx.set_syscall_num(syscall_number);
+                user_ctx
+                    .set_instruction_pointer(user_ctx.instruction_pointer() - SYSCALL_INSTR_LEN);
             }
 
             if flags.contains(SigActionFlags::SA_RESETHAND) {
@@ -105,7 +119,9 @@ pub fn handle_pending_signal(
                 signal.to_info(),
             ) {
                 debug!("Failed to handle user signal: {:?}", e);
-                do_exit_group(TermStatus::Killed(SIGKILL));
+                // If signal handling fails, the process should be terminated with SIGSEGV.
+                // Ref: <https://elixir.bootlin.com/linux/v6.13/source/kernel/signal.c#L3082>
+                do_exit_group(TermStatus::Killed(SIGSEGV));
             }
         }
         SigAction::Dfl => {
@@ -135,7 +151,7 @@ pub fn handle_pending_signal(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments)]
 pub fn handle_user_signal(
     ctx: &Context,
     sig_num: SigNum,
@@ -150,17 +166,17 @@ pub fn handle_user_signal(
     debug!("handler_addr = 0x{:x}", handler_addr);
     debug!("flags = {:?}", flags);
     debug!("restorer_addr = 0x{:x}", restorer_addr);
-    // FIXME: How to respect flags?
+
     if flags.contains_unsupported_flag() {
         warn!("Unsupported Signal flags: {:?}", flags);
     }
 
     if !flags.contains(SigActionFlags::SA_NODEFER) {
-        // add current signal to mask
+        // Add current signal to mask
         mask += sig_num;
     }
 
-    // block signals in sigmask when running signal handler
+    // Block signals in sigmask when running signal handler
     let old_mask = ctx.posix_thread.sig_mask().load(Ordering::Relaxed);
     ctx.posix_thread
         .sig_mask()
@@ -170,7 +186,7 @@ pub fn handle_user_signal(
     let mut stack_pointer = if let Some(sp) = use_alternate_signal_stack(ctx.thread_local) {
         sp as u64
     } else {
-        // just use user stack
+        // Just use user stack
         user_ctx.stack_pointer() as u64
     };
 
@@ -179,12 +195,12 @@ pub fn handle_user_signal(
 
     let user_space = ctx.user_space();
 
-    // 1. write siginfo_t
+    // 1. Write siginfo_t
     stack_pointer -= mem::size_of::<siginfo_t>() as u64;
     user_space.write_val(stack_pointer as _, &sig_info)?;
     let siginfo_addr = stack_pointer;
 
-    // 2. write ucontext_t.
+    // 2. Write ucontext_t.
     stack_pointer = alloc_aligned_in_user_stack(stack_pointer, mem::size_of::<ucontext_t>(), 16)?;
     let mut ucontext = ucontext_t {
         uc_sigmask: mask.into(),
@@ -209,30 +225,20 @@ pub fn handle_user_signal(
         .sig_context()
         .set(Some(ucontext_addr as Vaddr));
 
-    // 3. Set the address of the trampoline code.
+    // 3. Write the address of the restorer code.
     if flags.contains(SigActionFlags::SA_RESTORER) {
-        // If contains SA_RESTORER flag, trampoline code is provided by libc in restorer_addr.
-        // We just store restorer_addr on user stack to allow user code just to trampoline code.
+        // If the SA_RESTORER flag is present, the restorer code address is provided by the user.
         stack_pointer = write_u64_to_user_stack(stack_pointer, restorer_addr as u64)?;
-        trace!("After set restorer addr: user_rsp = 0x{:x}", stack_pointer);
-    } else {
-        // Otherwise we create a trampoline.
-        // FIXME: This may cause problems if we read old_context from rsp.
-        const TRAMPOLINE: &[u8] = &[
-            0xb8, 0x0f, 0x00, 0x00, 0x00, // mov eax, 15(syscall number of rt_sigreturn)
-            0x0f, 0x05, // syscall (call rt_sigreturn)
-            0x90, // nop (for alignment)
-        ];
-        stack_pointer -= TRAMPOLINE.len() as u64;
-        let trampoline_rip = stack_pointer;
-        user_space.write_bytes(stack_pointer as Vaddr, &mut VmReader::from(TRAMPOLINE))?;
-        stack_pointer = write_u64_to_user_stack(stack_pointer, trampoline_rip)?;
+        trace!(
+            "After writing restorer addr: user_rsp = 0x{:x}",
+            stack_pointer
+        );
     }
 
     // 4. Set correct register values
     user_ctx.set_instruction_pointer(handler_addr as _);
     user_ctx.set_stack_pointer(stack_pointer as usize);
-    // parameters of signal handler
+    // Parameters of signal handler
     if flags.contains(SigActionFlags::SA_SIGINFO) {
         user_ctx.set_arguments(sig_num, siginfo_addr as usize, ucontext_addr as usize);
     } else {

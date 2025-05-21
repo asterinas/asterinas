@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::cell::{Cell, RefCell};
+use core::cell::{Cell, Ref, RefCell, RefMut};
 
+use aster_rights::Full;
 use ostd::{mm::Vaddr, sync::RwArc, task::CurrentTask};
 
 use super::RobustListHead;
-use crate::{fs::file_table::FileTable, process::signal::SigStack};
+use crate::{fs::file_table::FileTable, process::signal::SigStack, vm::vmar::Vmar};
 
 /// Local data for a POSIX thread.
 pub struct ThreadLocal {
@@ -14,12 +15,15 @@ pub struct ThreadLocal {
     set_child_tid: Cell<Vaddr>,
     clear_child_tid: Cell<Vaddr>,
 
+    // Virtual memory address regions.
+    root_vmar: RefCell<Option<Vmar<Full>>>,
+
     // Robust futexes.
     // https://man7.org/linux/man-pages/man2/get_robust_list.2.html
     robust_list: RefCell<Option<RobustListHead>>,
 
     // Files.
-    file_table: RefCell<RwArc<FileTable>>,
+    file_table: RefCell<Option<RwArc<FileTable>>>,
 
     // Signal.
     /// `ucontext` address for the signal handler.
@@ -34,13 +38,15 @@ impl ThreadLocal {
     pub(super) fn new(
         set_child_tid: Vaddr,
         clear_child_tid: Vaddr,
+        root_vmar: Vmar<Full>,
         file_table: RwArc<FileTable>,
     ) -> Self {
         Self {
             set_child_tid: Cell::new(set_child_tid),
             clear_child_tid: Cell::new(clear_child_tid),
+            root_vmar: RefCell::new(Some(root_vmar)),
             robust_list: RefCell::new(None),
-            file_table: RefCell::new(file_table),
+            file_table: RefCell::new(Some(file_table)),
             sig_context: Cell::new(None),
             sig_stack: RefCell::new(None),
         }
@@ -54,12 +60,20 @@ impl ThreadLocal {
         &self.clear_child_tid
     }
 
+    pub fn root_vmar(&self) -> &RefCell<Option<Vmar<Full>>> {
+        &self.root_vmar
+    }
+
     pub fn robust_list(&self) -> &RefCell<Option<RobustListHead>> {
         &self.robust_list
     }
 
-    pub fn file_table(&self) -> &RefCell<RwArc<FileTable>> {
-        &self.file_table
+    pub fn borrow_file_table(&self) -> FileTableRef {
+        FileTableRef(self.file_table.borrow())
+    }
+
+    pub fn borrow_file_table_mut(&self) -> FileTableRefMut {
+        FileTableRefMut(self.file_table.borrow_mut())
     }
 
     pub fn sig_context(&self) -> &Cell<Option<Vaddr>> {
@@ -68,6 +82,39 @@ impl ThreadLocal {
 
     pub fn sig_stack(&self) -> &RefCell<Option<SigStack>> {
         &self.sig_stack
+    }
+}
+
+/// An immutable, shared reference to the file table in [`ThreadLocal`].
+pub struct FileTableRef<'a>(Ref<'a, Option<RwArc<FileTable>>>);
+
+impl FileTableRef<'_> {
+    /// Unwraps and returns a reference to the file table.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the thread has exited and the file table has been dropped.
+    pub fn unwrap(&self) -> &RwArc<FileTable> {
+        self.0.as_ref().unwrap()
+    }
+}
+
+/// A mutable, exclusive reference to the file table in [`ThreadLocal`].
+pub struct FileTableRefMut<'a>(RefMut<'a, Option<RwArc<FileTable>>>);
+
+impl FileTableRefMut<'_> {
+    /// Unwraps and returns a reference to the file table.
+    ///
+    /// # Panics
+    ///
+    /// This method will panic if the thread has exited and the file table has been dropped.
+    pub fn unwrap(&mut self) -> &mut RwArc<FileTable> {
+        self.0.as_mut().unwrap()
+    }
+
+    /// Removes the file table and drops it.
+    pub(super) fn remove(&mut self) {
+        *self.0 = None;
     }
 }
 

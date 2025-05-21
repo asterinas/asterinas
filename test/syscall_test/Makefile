@@ -12,6 +12,7 @@ TESTS ?= \
 	dup_test \
 	epoll_test \
 	eventfd_test \
+	fallocate_test \
 	fcntl_test \
 	flock_test \
 	fsync_test \
@@ -26,6 +27,7 @@ TESTS ?= \
 	mount_test \
 	open_create_test \
 	open_test \
+	ppoll_test \
 	prctl_setuid_test \
 	pread64_test \
 	preadv2_test \
@@ -38,23 +40,31 @@ TESTS ?= \
 	readv_test \
 	rename_test \
 	rlimits_test \
+	sched_test \
+	sched_yield_test \
 	semaphore_test \
 	sendfile_test \
+	sigaction_test \
 	sigaltstack_test \
+	signalfd_test \
+	socket_netlink_route_test \
 	stat_test \
 	stat_times_test \
 	statfs_test \
 	symlink_test \
 	sync_test \
 	sysinfo_test \
+	tcp_socket_test \
+	timerfd_test \
 	timers_test \
 	truncate_test \
 	uidgid_test \
 	unlink_test \
 	utimes_test \
 	vdso_clock_gettime_test \
+	vfork_test \
 	write_test \
-	fallocate_test \
+	xattr_test \
 	# The end of the list
 
 MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))

@@ -1,17 +1,29 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use std::path::PathBuf;
+use std::{path::PathBuf, process::Command};
 
 fn main() {
     let source_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
+
     let target_arch = std::env::var("TARGET").unwrap();
-    let linker_script = if target_arch == "x86_64-unknown-none" {
-        source_dir.join("src/x86/amd64_efi/linker.ld")
-    } else if target_arch == "x86_64-i386_pm-none" {
-        source_dir.join("src/x86/legacy_i386/linker.ld")
-    } else {
-        panic!("Unsupported target_arch: {}", target_arch);
+    let lds = source_dir.join("src/x86/linker.ld");
+    let def = match target_arch.as_str() {
+        "x86_64-unknown-none" => "-DCFG_TARGET_ARCH_X86_64=1",
+        "x86_64-i386_pm-none" => "-DCFG_TARGET_ARCH_X86_64=0",
+        other => panic!("unsupported target: {}", other),
     };
-    println!("cargo:rerun-if-changed={}", linker_script.display());
-    println!("cargo:rustc-link-arg=-T{}", linker_script.display());
+
+    let out_lds = out_dir.join("linker.ld");
+    let status = Command::new("cpp")
+        .arg("-o")
+        .arg(&out_lds)
+        .arg(def)
+        .arg(&lds)
+        .status()
+        .expect("failed to run the preprocessor");
+    assert!(status.success(), "the preprocessor exits with failure");
+
+    println!("cargo:rerun-if-changed={}", lds.display());
+    println!("cargo:rustc-link-arg=-T{}", out_lds.display());
 }

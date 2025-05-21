@@ -2,7 +2,7 @@
 
 use aster_util::safe_ptr::SafePtr;
 use bitflags::bitflags;
-use ostd::{io_mem::IoMem, Pod};
+use ostd::{io::IoMem, mm::PodOnce, Pod};
 
 use crate::transport::VirtioTransport;
 
@@ -31,6 +31,8 @@ pub struct VirtioVsockConfig {
     pub guest_cid_low: u32,
     pub guest_cid_high: u32,
 }
+
+impl PodOnce for VirtioVsockConfig {}
 
 impl VirtioVsockConfig {
     pub(crate) fn new(transport: &dyn VirtioTransport) -> SafePtr<Self, IoMem> {

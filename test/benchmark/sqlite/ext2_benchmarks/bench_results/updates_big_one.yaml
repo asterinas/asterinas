@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: false
+  threshold: 125%
+chart:
+  description: 'sqlite-speed-test: One big UPDATE of the whole 50000-row table'
+  legend: The speed of updates-big-one on {system} (Ext2)
+  title: '[Ext2] The updates-big-one result of sqlite speedtest'
+  unit: second
+result_extraction:
+  result_index: 11
+  search_pattern: One big UPDATE of the whole [0-9]+-row table....

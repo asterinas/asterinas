@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use aster_rights::{ReadOp, WriteOp};
@@ -40,9 +38,9 @@ pub mod thread_table;
 pub use builder::PosixThreadBuilder;
 pub use exit::{do_exit, do_exit_group};
 pub use name::{ThreadName, MAX_THREAD_NAME_LEN};
-pub use posix_thread_ext::{create_posix_task_from_executable, AsPosixThread};
+pub use posix_thread_ext::AsPosixThread;
 pub use robust_list::RobustListHead;
-pub use thread_local::{AsThreadLocal, ThreadLocal};
+pub use thread_local::{AsThreadLocal, FileTableRefMut, ThreadLocal};
 
 pub struct PosixThread {
     // Immutable part
@@ -57,7 +55,7 @@ pub struct PosixThread {
 
     // Files
     /// File table
-    file_table: RoArc<FileTable>,
+    file_table: Mutex<Option<RoArc<FileTable>>>,
     /// File system
     fs: Arc<ThreadFsInfo>,
 
@@ -98,7 +96,7 @@ impl PosixThread {
         &self.name
     }
 
-    pub fn file_table(&self) -> &RoArc<FileTable> {
+    pub fn file_table(&self) -> &Mutex<Option<RoArc<FileTable>>> {
         &self.file_table
     }
 
@@ -151,7 +149,7 @@ impl PosixThread {
         if let Some(signum) = signum
             && *signum == SIGCONT
         {
-            let receiver_sid = self.process().session().unwrap().sid();
+            let receiver_sid = self.process().sid();
             if receiver_sid == sender.sid().unwrap() {
                 return Ok(());
             }

@@ -15,7 +15,7 @@ pub use stream::VsockStreamSocket;
 // init static driver
 pub static VSOCK_GLOBAL: Once<Arc<VsockSpace>> = Once::new();
 
-pub fn init() {
+pub(in crate::net) fn init() {
     if let Some(driver) = get_device(DEVICE_NAME) {
         VSOCK_GLOBAL.call_once(|| Arc::new(VsockSpace::new(driver)));
         register_recv_callback(DEVICE_NAME, || {

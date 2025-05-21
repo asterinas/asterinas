@@ -2,10 +2,12 @@
 
 //! A port-mapped UART. Copied from uart_16550.
 
-#![allow(dead_code)]
+#![expect(dead_code)]
 
-use crate::arch::x86::device::io_port::{IoPort, ReadWriteAccess, WriteOnlyAccess};
-
+use crate::{
+    arch::device::io_port::{ReadWriteAccess, WriteOnlyAccess},
+    io::IoPort,
+};
 /// A serial port.
 ///
 /// Serial ports are a legacy communications port common on IBM-PC compatible computers.

@@ -54,8 +54,8 @@ pub fn kill_group(pgid: Pgid, signal: Option<UserSignal>, ctx: &Context) -> Resu
     let process_group = process_table::get_process_group(&pgid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "target group does not exist"))?;
 
-    let inner = process_group.inner.lock();
-    for process in inner.processes.values() {
+    let inner = process_group.lock();
+    for process in inner.iter() {
         kill_process(process, signal, ctx)?;
     }
 
@@ -166,7 +166,7 @@ fn current_thread_sender_ids(signum: Option<&SigNum>, ctx: &Context) -> SignalSe
     let euid = credentials.euid();
     let sid = signum.and_then(|signum| {
         if *signum == SIGCONT {
-            Some(ctx.process.session().unwrap().sid())
+            Some(ctx.process.sid())
         } else {
             None
         }

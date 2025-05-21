@@ -15,7 +15,9 @@ bitflags::bitflags! {
     pub struct SocketEvents: u8 {
         const CAN_RECV = 1;
         const CAN_SEND = 2;
-        const PEER_CLOSED = 4;
-        const CLOSED = 8;
+        /// Receiving new data isn't possible anymore.
+        const CLOSED_RECV = 4;
+        /// Sending data isn't possible anymore.
+        const CLOSED_SEND = 8;
     }
 }

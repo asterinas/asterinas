@@ -9,7 +9,6 @@
 #![feature(core_intrinsics)]
 #![feature(coroutines)]
 #![feature(fn_traits)]
-#![feature(generic_const_exprs)]
 #![feature(iter_from_coroutine)]
 #![feature(let_chains)]
 #![feature(linkage)]
@@ -19,24 +18,25 @@
 #![feature(ptr_sub_ptr)]
 #![feature(sync_unsafe_cell)]
 #![feature(trait_upcasting)]
-// The `generic_const_exprs` feature is incomplete however required for the page table
-// const generic implementation. We are using this feature in a conservative manner.
-#![allow(incomplete_features)]
-#![allow(internal_features)]
+#![feature(iter_advance_by)]
+#![expect(internal_features)]
 #![no_std]
 #![warn(missing_docs)]
 
 extern crate alloc;
-extern crate static_assertions;
 
+#[cfg(target_arch = "x86_64")]
+#[path = "arch/x86/mod.rs"]
+pub mod arch;
+#[cfg(target_arch = "riscv64")]
+#[path = "arch/riscv/mod.rs"]
 pub mod arch;
 pub mod boot;
 pub mod bus;
-pub mod collections;
 pub mod console;
 pub mod cpu;
 mod error;
-pub mod io_mem;
+pub mod io;
 pub mod logger;
 pub mod mm;
 pub mod panic;
@@ -47,10 +47,14 @@ pub mod task;
 pub mod timer;
 pub mod trap;
 pub mod user;
+pub mod util;
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
-pub use ostd_macros::{main, panic_handler};
+pub use ostd_macros::{
+    global_frame_allocator, global_heap_allocator, global_heap_allocator_slot_map, main,
+    panic_handler,
+};
 pub use ostd_pod::Pod;
 
 pub use self::{error::Error, prelude::Result};
@@ -70,26 +74,48 @@ pub use self::{error::Error, prelude::Result};
 #[doc(hidden)]
 unsafe fn init() {
     arch::enable_cpu_features();
-    arch::serial::init();
 
-    #[cfg(feature = "cvm_guest")]
-    arch::init_cvm_guest();
+    // SAFETY: This function is called only once, before `allocator::init`
+    // and after memory regions are initialized.
+    unsafe { mm::frame::allocator::init_early_allocator() };
+
+    #[cfg(target_arch = "x86_64")]
+    arch::if_tdx_enabled!({
+    } else {
+        arch::serial::init();
+    });
+    #[cfg(not(target_arch = "x86_64"))]
+    arch::serial::init();
 
     logger::init();
 
-    // SAFETY: This function is called only once and only on the BSP.
-    unsafe { cpu::local::early_init_bsp_local_base() };
+    // SAFETY:
+    // 1. They are only called once in the boot context of the BSP.
+    // 2. The number of CPUs are available because ACPI has been initialized.
+    // 3. No CPU-local objects have been accessed yet.
+    unsafe { cpu::init_on_bsp() };
 
-    // SAFETY: This function is called only once and only on the BSP.
-    unsafe { mm::heap_allocator::init() };
+    // SAFETY: We are on the BSP and APs are not yet started.
+    let meta_pages = unsafe { mm::frame::meta::init() };
+    // The frame allocator should be initialized immediately after the metadata
+    // is initialized. Otherwise the boot page table can't allocate frames.
+    // SAFETY: This function is called only once.
+    unsafe { mm::frame::allocator::init() };
+
+    mm::kspace::init_kernel_page_table(meta_pages);
+
+    sync::init();
 
     boot::init_after_heap();
 
-    mm::frame::allocator::init();
-    mm::kspace::init_kernel_page_table(mm::init_page_meta());
     mm::dma::init();
 
-    arch::init_on_bsp();
+    unsafe { arch::late_init_on_bsp() };
+
+    #[cfg(target_arch = "x86_64")]
+    arch::if_tdx_enabled!({
+        arch::serial::init();
+    });
 
     smp::init();
 
@@ -133,7 +159,7 @@ mod test {
     use crate::prelude::*;
 
     #[ktest]
-    #[allow(clippy::eq_op)]
+    #[expect(clippy::eq_op)]
     fn trivial_assertion() {
         assert_eq!(0, 0);
     }

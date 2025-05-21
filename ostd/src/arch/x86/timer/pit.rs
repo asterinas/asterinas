@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
+#![expect(dead_code)]
 
 //! The Programmable Interval Timer (PIT) chip (Intel 8253/8254) basically consists of an oscillator,
 //! a prescaler and 3 independent frequency dividers. Each frequency divider has an output, which is
@@ -10,11 +10,8 @@
 //!
 
 use crate::{
-    arch::{
-        kernel::IO_APIC,
-        timer::TIMER_FREQ,
-        x86::device::io_port::{IoPort, WriteOnlyAccess},
-    },
+    arch::{device::io_port::WriteOnlyAccess, kernel::IO_APIC, timer::TIMER_FREQ},
+    io::{sensitive_io_port, IoPort},
     trap::IrqLine,
 };
 
@@ -134,33 +131,36 @@ enum Channel {
     ReadBackCommand = 0b11,
 }
 
-/// The output from PIT channel 0 is connected to the PIC chip and generate "IRQ 0".
-/// If connected to PIC, the IRQ0 will generate by the **rising edge** of the output voltage.
-static CHANNEL0_PORT: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x40) };
+sensitive_io_port! {
+    unsafe {
+        /// The output from PIT channel 0 is connected to the PIC chip and generate "IRQ 0".
+        /// If connected to PIC, the IRQ0 will generate by the **rising edge** of the output voltage.
+        static CHANNEL0_PORT: IoPort<u8, WriteOnlyAccess> = IoPort::new(0x40);
 
-/// The output from PIT channel 1 was once used for refreshing the DRAM or RAM so that
-/// the capacitors don't forget their state.
-///
-/// On later machines, the DRAM refresh is done with dedicated hardware and this channel
-/// is no longer used.
-#[allow(unused)]
-static CHANNEL1_PORT: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x41) };
+        /// The output from PIT channel 1 was once used for refreshing the DRAM or RAM so that
+        /// the capacitors don't forget their state.
+        ///
+        /// On later machines, the DRAM refresh is done with dedicated hardware and this channel
+        /// is no longer used.
+        static CHANNEL1_PORT: IoPort<u8, WriteOnlyAccess> = IoPort::new(0x41);
 
-/// The output from PIT channel 2 is connected to the PC speaker, so the frequency of the
-/// output determines the frequency of the sound produced by the speaker. For more information,
-/// check https://wiki.osdev.org/PC_Speaker.
-#[allow(unused)]
-static CHANNEL2_PORT: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x42) };
+        /// The output from PIT channel 2 is connected to the PC speaker, so the frequency of the
+        /// output determines the frequency of the sound produced by the speaker. For more information,
+        /// check https://wiki.osdev.org/PC_Speaker.
+        static CHANNEL2_PORT: IoPort<u8, WriteOnlyAccess> = IoPort::new(0x42);
 
-/// PIT command port.
-/// ```text
-/// Bits         Usage
-/// 6 and 7      channel
-/// 4 and 5      Access mode
-/// 1 to 3       Operating mode
-/// 0            BCD/Binary mode: 0 = 16-bit binary, 1 = four-digit BCD
-/// ```
-static MODE_COMMAND_PORT: IoPort<u8, WriteOnlyAccess> = unsafe { IoPort::new(0x43) };
+        /// PIT command port.
+        /// ```text
+        /// Bits         Usage
+        /// 6 and 7      channel
+        /// 4 and 5      Access mode
+        /// 1 to 3       Operating mode
+        /// 0            BCD/Binary mode: 0 = 16-bit binary, 1 = four-digit BCD
+        /// ```
+        static MODE_COMMAND_PORT: IoPort<u8, WriteOnlyAccess> = IoPort::new(0x43);
+    }
+}
+
 const TIMER_RATE: u32 = 1193182;
 
 pub(crate) fn init(operating_mode: OperatingMode) {
@@ -168,8 +168,8 @@ pub(crate) fn init(operating_mode: OperatingMode) {
     // Bit 0 is BCD/binary mode, which is always set to binary mode(value: 0)
     MODE_COMMAND_PORT.write(
         ((operating_mode as u8) << 1)
-            | (AccessMode::LowAndHighByte as u8) << 4
-            | (Channel::Channel0 as u8) << 6,
+            | ((AccessMode::LowAndHighByte as u8) << 4)
+            | ((Channel::Channel0 as u8) << 6),
     );
 
     // Set timer frequency

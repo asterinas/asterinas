@@ -3,7 +3,8 @@
 //! Read the Cpu ctx content then dispatch syscall to corresponding handler
 //! The each sub module contains functions that handle real syscall logic.
 pub use clock_gettime::ClockId;
-use ostd::cpu::UserContext;
+use ostd::cpu::context::UserContext;
+pub use timer_create::create_timer;
 
 use crate::{context::Context, cpu::LinuxAbi, prelude::*};
 
@@ -37,6 +38,8 @@ mod flock;
 mod fork;
 mod fsync;
 mod futex;
+mod get_priority;
+mod getcpu;
 mod getcwd;
 mod getdents64;
 mod getegid;
@@ -58,10 +61,12 @@ mod getsockopt;
 mod gettid;
 mod gettimeofday;
 mod getuid;
+mod getxattr;
 mod ioctl;
 mod kill;
 mod link;
 mod listen;
+mod listxattr;
 mod lseek;
 mod madvise;
 mod mkdir;
@@ -76,6 +81,7 @@ mod open;
 mod pause;
 mod pipe;
 mod poll;
+mod ppoll;
 mod prctl;
 mod pread64;
 mod preadv;
@@ -87,6 +93,7 @@ mod read;
 mod readlink;
 mod recvfrom;
 mod recvmsg;
+mod removexattr;
 mod rename;
 mod rmdir;
 mod rt_sigaction;
@@ -95,6 +102,14 @@ mod rt_sigprocmask;
 mod rt_sigreturn;
 mod rt_sigsuspend;
 mod sched_affinity;
+mod sched_get_priority_max;
+mod sched_get_priority_min;
+mod sched_getattr;
+mod sched_getparam;
+mod sched_getscheduler;
+mod sched_setattr;
+mod sched_setparam;
+mod sched_setscheduler;
 mod sched_yield;
 mod select;
 mod semctl;
@@ -103,7 +118,7 @@ mod semop;
 mod sendfile;
 mod sendmsg;
 mod sendto;
-mod set_get_priority;
+mod set_priority;
 mod set_robust_list;
 mod set_tid_address;
 mod setfsgid;
@@ -119,12 +134,15 @@ mod setreuid;
 mod setsid;
 mod setsockopt;
 mod setuid;
+mod setxattr;
 mod shutdown;
 mod sigaltstack;
+mod signalfd;
 mod socket;
 mod socketpair;
 mod stat;
 mod statfs;
+mod statx;
 mod symlink;
 mod sync;
 mod sysinfo;
@@ -132,6 +150,9 @@ mod tgkill;
 mod time;
 mod timer_create;
 mod timer_settime;
+mod timerfd_create;
+mod timerfd_gettime;
+mod timerfd_settime;
 mod truncate;
 mod umask;
 mod umount;
@@ -270,7 +291,7 @@ macro_rules! impl_syscall_nums_and_dispatch_fn {
             syscall_number: u64,
             args: [u64; 6],
             ctx: &crate::context::Context,
-            user_ctx: &mut ostd::cpu::UserContext,
+            user_ctx: &mut ostd::cpu::context::UserContext,
         ) -> $crate::prelude::Result<$crate::syscall::SyscallReturn> {
             match syscall_number {
                 $(

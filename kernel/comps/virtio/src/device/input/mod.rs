@@ -28,7 +28,7 @@
 
 pub mod device;
 use aster_util::safe_ptr::SafePtr;
-use ostd::{io_mem::IoMem, Pod};
+use ostd::{io::IoMem, Pod};
 
 use crate::transport::VirtioTransport;
 
@@ -84,6 +84,7 @@ impl VirtioInputConfig {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Pod)]
+#[expect(dead_code)]
 struct AbsInfo {
     min: u32,
     max: u32,
@@ -94,6 +95,7 @@ struct AbsInfo {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Pod)]
+#[expect(dead_code)]
 struct DevIds {
     bustype: u16,
     vendor: u16,

@@ -12,6 +12,7 @@
 #  - VSOCK: "off" or "on";
 #  - SMP: number of CPUs;
 #  - MEM: amount of memory, e.g. "8G".
+#  - VNC_PORT: VNC port, default is "42".
 
 OVMF=${OVMF:-"on"}
 VHOST=${VHOST:-"off"}
@@ -44,13 +45,41 @@ else
     NETDEV_ARGS="-nic none"
 fi
 
+if [ "$1" = "tdx" ]; then
+    QEMU_ARGS="\
+        -name process=tdxvm,debug-threads=on \
+        -m ${MEM:-8G} \
+        -smp ${SMP:-1} \
+        -vga none \
+        -nographic \
+        -monitor pty \
+        -nodefaults \
+        -bios /root/ovmf/release/OVMF.fd \
+        -object tdx-guest,sept-ve-disable=on,id=tdx0 \
+        -cpu host,-kvm-steal-time,pmu=off \
+        -machine q35,kernel-irqchip=split,confidential-guest-support=tdx0 \
+        -device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off$VIRTIO_NET_FEATURES \
+        -device virtio-keyboard-pci,disable-legacy=on,disable-modern=off \
+        $NETDEV_ARGS \
+        $QEMU_OPT_ARG_DUMP_PACKETS \
+        -chardev stdio,id=mux,mux=on,logfile=qemu.log \
+        -device virtio-serial,romfile= \
+        -device virtconsole,chardev=mux \
+        -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
+        -monitor chardev:mux \
+        -serial chardev:mux \
+    "
+    echo $QEMU_ARGS
+    exit 0
+fi
+
 COMMON_QEMU_ARGS="\
     -cpu Icelake-Server,+x2apic \
     -smp ${SMP:-1} \
     -m ${MEM:-8G} \
     --no-reboot \
     -nographic \
-    -display none \
+    -display vnc=0.0.0.0:${VNC_PORT:-42} \
     -serial chardev:mux \
     -monitor chardev:mux \
     -chardev stdio,id=mux,mux=on,signal=off,logfile=qemu.log \
@@ -129,7 +158,7 @@ if [ "$OVMF" = "on" ]; then
     if [ "$1" = "test" ]; then
         echo "We use QEMU direct boot for testing, which does not support OVMF, ignoring OVMF" 1>&2
     else
-        OVMF_PATH="/usr/share/OVMF"
+        OVMF_PATH="/root/ovmf/release"
         QEMU_ARGS="${QEMU_ARGS} \
             -drive if=pflash,format=raw,unit=0,readonly=on,file=$OVMF_PATH/OVMF_CODE.fd \
             -drive if=pflash,format=raw,unit=1,file=$OVMF_PATH/OVMF_VARS.fd \

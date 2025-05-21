@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: true
+  threshold: 125%
+chart:
+  description: bw_pipe
+  legend: Average pipe bandwidth on {system}
+  title: '[Pipes] The bandwidth'
+  unit: MB/s
+result_extraction:
+  result_index: 3
+  search_pattern: 'Pipe bandwidth: +[0-9.]+'

@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: false
+  threshold: 125%
+chart:
+  description: 'sqlite-speed-test: total'
+  legend: Total speed on {system} (Ext2)
+  title: '[Ext2] The total result of sqlite speedtest'
+  unit: second
+result_extraction:
+  result_index: 2
+  search_pattern: TOTAL....

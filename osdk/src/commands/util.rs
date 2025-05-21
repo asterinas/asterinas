@@ -2,7 +2,7 @@
 
 use std::process::Command;
 
-use crate::util::get_current_crate_info;
+use crate::util::get_kernel_crate;
 
 pub const COMMON_CARGO_ARGS: &[&str] = &[
     "-Zbuild-std=core,alloc,compiler_builtins",
@@ -23,7 +23,7 @@ pub fn profile_name_adapter(profile: &str) -> &str {
 }
 
 pub fn bin_file_name() -> String {
-    get_current_crate_info().name + "-osdk-bin"
+    get_kernel_crate().name + "-osdk-bin"
 }
 
 pub(crate) fn is_tdx_enabled() -> bool {

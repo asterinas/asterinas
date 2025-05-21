@@ -55,25 +55,24 @@ impl ExfatDentry {
 
 const EXFAT_UNUSED: u8 = 0x00;
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 const EXFAT_INVAL: u8 = 0x80;
 const EXFAT_BITMAP: u8 = 0x81;
-#[allow(dead_code)]
 const EXFAT_UPCASE: u8 = 0x82;
-#[allow(dead_code)]
+#[expect(dead_code)]
 const EXFAT_VOLUME: u8 = 0x83;
 const EXFAT_FILE: u8 = 0x85;
 
-#[allow(dead_code)]
+#[expect(dead_code)]
 const EXFAT_GUID: u8 = 0xA0;
-#[allow(dead_code)]
+#[expect(dead_code)]
 const EXFAT_PADDING: u8 = 0xA1;
-#[allow(dead_code)]
+#[expect(dead_code)]
 const EXFAT_ACLTAB: u8 = 0xA2;
 
 const EXFAT_STREAM: u8 = 0xC0;
 const EXFAT_NAME: u8 = 0xC1;
-#[allow(dead_code)]
+#[expect(dead_code)]
 const EXFAT_ACL: u8 = 0xC2;
 
 const EXFAT_VENDOR_EXT: u8 = 0xE0;
@@ -205,7 +204,7 @@ impl ExfatDentrySet {
     /// Stream dentry index.
     const ES_IDX_STREAM: usize = 1;
     /// Name dentry index.
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     const ES_IDX_FIRST_FILENAME: usize = 2;
 
     pub(super) fn new(dentries: Vec<ExfatDentry>, should_checksum_match: bool) -> Result<Self> {

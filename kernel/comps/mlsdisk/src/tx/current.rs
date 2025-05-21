@@ -46,33 +46,52 @@ impl<'a> CurrentTx<'a> {
     /// If the returned value is `Ok`, then the TX is committed successfully.
     /// Otherwise, the TX is aborted.
     pub fn commit(&self) -> Result<()> {
-        let mut tx_table = self.provider.tx_table.lock();
-        let Some(mut tx) = tx_table.remove(&CurrentThread::id()) else {
-            panic!("there should be one Tx exited on the current thread");
-        };
-        debug_assert!(tx.status() == TxStatus::Ongoing);
+        let mut tx_status = self
+            .provider
+            .tx_table
+            .lock()
+            .get(&CurrentThread::id())
+            .expect("there should be one Tx exited on the current thread")
+            .status();
+        debug_assert!(tx_status == TxStatus::Ongoing);
 
         let res = self.provider.call_precommit_handlers();
         if res.is_ok() {
             self.provider.call_commit_handlers();
-            tx.set_status(TxStatus::Committed);
+            tx_status = TxStatus::Committed;
         } else {
             self.provider.call_abort_handlers();
-            tx.set_status(TxStatus::Aborted);
+            tx_status = TxStatus::Aborted;
         }
 
+        let mut tx = self
+            .provider
+            .tx_table
+            .lock()
+            .remove(&CurrentThread::id())
+            .unwrap();
+        tx.set_status(tx_status);
         res
     }
 
     /// Aborts the current TX.
     pub fn abort(&self) {
-        let mut tx_table = self.provider.tx_table.lock();
-        let Some(mut tx) = tx_table.remove(&CurrentThread::id()) else {
-            panic!("there should be one Tx exited on the current thread");
-        };
-        debug_assert!(tx.status() == TxStatus::Ongoing);
+        let tx_status = self
+            .provider
+            .tx_table
+            .lock()
+            .get(&CurrentThread::id())
+            .expect("there should be one Tx exited on the current thread")
+            .status();
+        debug_assert!(tx_status == TxStatus::Ongoing);
 
         self.provider.call_abort_handlers();
+        let mut tx = self
+            .provider
+            .tx_table
+            .lock()
+            .remove(&CurrentThread::id())
+            .unwrap();
         tx.set_status(TxStatus::Aborted);
     }
 
@@ -117,7 +136,6 @@ impl<'a> CurrentTx<'a> {
     ///
     /// In addition, the `get_current_mut_with` method must _not_ be called
     /// recursively.
-    #[allow(dropping_references)]
     fn get_current_mut_with<F, R>(&self, f: F) -> R
     where
         F: FnOnce(&mut Tx) -> R,

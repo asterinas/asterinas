@@ -169,13 +169,13 @@ impl FsResolver {
             FsPathInner::Cwd => self.cwd.clone(),
             FsPathInner::FdRelative(fd, path) => {
                 let task = Task::current().unwrap();
-                let mut file_table = task.as_thread_local().unwrap().file_table().borrow_mut();
+                let mut file_table = task.as_thread_local().unwrap().borrow_file_table_mut();
                 let file = get_file_fast!(&mut file_table, fd);
                 self.lookup_from_parent(file.as_inode_or_err()?.dentry(), path, lookup_ctx)?
             }
             FsPathInner::Fd(fd) => {
                 let task = Task::current().unwrap();
-                let mut file_table = task.as_thread_local().unwrap().file_table().borrow_mut();
+                let mut file_table = task.as_thread_local().unwrap().borrow_file_table_mut();
                 let file = get_file_fast!(&mut file_table, fd);
                 file.as_inode_or_err()?.dentry().clone()
             }
@@ -195,7 +195,7 @@ impl FsResolver {
     /// If `follow_tail_link` is true and the trailing component is a symlink,
     /// it will be followed.
     /// Symlinks in earlier components of the path will always be followed.
-    #[allow(clippy::redundant_closure)]
+    #[expect(clippy::redundant_closure)]
     fn lookup_from_parent(
         &self,
         parent: &Dentry,

@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::*;
+use alloc::sync::Arc;
+
+use ostd::task::{
+    scheduler::{EnqueueFlags, UpdateFlags},
+    Task,
+};
+
+use super::{CurrentRuntime, SchedAttr, SchedClassRq};
 
 /// The per-cpu run queue for the IDLE scheduling class.
 ///
@@ -28,24 +35,23 @@ impl core::fmt::Debug for IdleClassRq {
 
 impl SchedClassRq for IdleClassRq {
     fn enqueue(&mut self, entity: Arc<Task>, _: Option<EnqueueFlags>) {
-        let ptr = Arc::as_ptr(&entity);
-        if let Some(t) = self.entity.replace(entity)
-            && ptr != Arc::as_ptr(&t)
-        {
-            panic!("Multiple `idle` entities spawned")
-        }
+        let old = self.entity.replace(entity);
+        debug_assert!(
+            old.is_none(),
+            "the length of the idle queue should be no larger than 1"
+        );
     }
 
-    fn len(&mut self) -> usize {
+    fn len(&self) -> usize {
         usize::from(!self.is_empty())
     }
 
-    fn is_empty(&mut self) -> bool {
+    fn is_empty(&self) -> bool {
         self.entity.is_none()
     }
 
     fn pick_next(&mut self) -> Option<Arc<Task>> {
-        self.entity.clone()
+        self.entity.take()
     }
 
     fn update_current(&mut self, _: &CurrentRuntime, _: &SchedAttr, _flags: UpdateFlags) -> bool {

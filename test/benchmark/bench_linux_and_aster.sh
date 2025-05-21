@@ -6,7 +6,14 @@ set -e
 set -o pipefail
 
 # Ensure all dependencies are installed
-command -v jq >/dev/null 2>&1 || { echo >&2 "jq is not installed. Aborting."; exit 1; }
+if ! command -v yq >/dev/null 2>&1; then
+    echo >&2 "Error: missing required tool: yq"
+    exit 1
+fi
+if ! command -v jq >/dev/null 2>&1; then
+    echo >&2 "Error: missing required tool: jq"
+    exit 1
+fi
 
 # Set up paths
 BENCHMARK_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
@@ -32,10 +39,11 @@ parse_raw_results() {
     fi
 
     # Write the results into the template
-    jq --arg linux_result "${linux_result}" --arg aster_result "${aster_result}" \
+    yq --arg linux_result "${linux_result}" --arg aster_result "${aster_result}" \
         '(.[] | select(.extra == "linux_result") | .value) |= $linux_result |
          (.[] | select(.extra == "aster_result") | .value) |= $aster_result' \
         "${RESULT_TEMPLATE}" > "${result_file}"
+    echo "Results written to ${result_file}"
 }
 
 # Generate a new result template based on unit and legend
@@ -48,7 +56,7 @@ generate_template() {
     local asterinas_legend=${legend//"{system}"/"Asterinas"}
 
     # Generate the result template JSON
-    jq -n --arg linux "$linux_legend" --arg aster "$asterinas_legend" --arg unit "$unit" '[
+    yq -n --arg linux "$linux_legend" --arg aster "$asterinas_legend" --arg unit "$unit" '[
         { "name": $linux, "unit": $unit, "value": 0, "extra": "linux_result" },
         { "name": $aster, "unit": $unit, "value": 0, "extra": "aster_result" }
     ]' > "${RESULT_TEMPLATE}"
@@ -66,64 +74,119 @@ extract_result_file() {
         local second_part=$(dirname "$bench_result" | awk -F"/benchmark/$first_dir/" '{print $2}' | cut -d'/' -f1)
         echo "result_${first_dir}-${second_part}.json"
     else
-        echo "result_${relative_path//\//-}"
+        local result_file="result_${relative_path//\//-}"
+        echo "${result_file/.yaml/.json}"
     fi
 }
 
-# Run the specified benchmark with optional scheme
+# Run the specified benchmark with runtime configurations
 run_benchmark() {
     local benchmark="$1"
     local run_mode="$2"
-    local aster_scheme="$3"
-    local smp="$4"
+    local runtime_configs_str="$3" # String with key=value pairs, one per line
 
     echo "Preparing libraries..."
     prepare_libs
 
-    # Set up Asterinas scheme if specified (Default: iommu)
-    local aster_scheme_cmd="SCHEME=iommu"
-    if [ -n "$aster_scheme" ]; then
-        if [ "$aster_scheme" != "null" ]; then
-            aster_scheme_cmd="SCHEME=${aster_scheme}"
-        else
-            aster_scheme_cmd=""
-        fi
+    # Default values
+    local smp_val=1
+    local mem_val="8G"
+    local aster_scheme_cmd_part="SCHEME=iommu" # Default scheme
+
+    # Process runtime_configs_str to override defaults and gather extra args
+    while IFS='=' read -r key value; do
+         if [[ -z "$key" ]]; then continue; fi # Skip empty lines/keys
+         case "$key" in
+             "smp")
+                 smp_val="$value"
+                 ;;
+             "mem")
+                 mem_val="$value"
+                 ;;
+             "aster_scheme")
+                 if [[ "$value" == "null" ]]; then
+                     aster_scheme_cmd_part="" # Remove default SCHEME=iommu
+                 else
+                     aster_scheme_cmd_part="SCHEME=${value}" # Override default
+                 fi
+                 ;;
+             *)
+                 echo "Warning: Unknown runtime configuration key '$key'" >&2
+                 exit 1
+                 ;;
+         esac
+     done <<< "$runtime_configs_str"
+
+    # Prepare commands for Asterinas and Linux using arrays
+    local asterinas_cmd_arr=(make run "BENCHMARK=${benchmark}")
+    # Add scheme part only if it's not empty and the platform is not TDX (OSDK doesn't support multiple SCHEME)
+    [[ -n "$aster_scheme_cmd_part" && "$platform" != "tdx" ]] && asterinas_cmd_arr+=("$aster_scheme_cmd_part")
+    asterinas_cmd_arr+=(
+        "SMP=${smp_val}"
+        "MEM=${mem_val}"
+        ENABLE_KVM=1
+        RELEASE_LTO=1
+        NETDEV=tap
+        VHOST=on
+    )
+    if [[ "$platform" == "tdx" ]]; then
+        asterinas_cmd_arr+=(INTEL_TDX=1)
     fi
 
-    # Prepare commands for Asterinas and Linux
-    local asterinas_cmd="make run BENCHMARK=${benchmark} ${aster_scheme_cmd} SMP=${smp} ENABLE_KVM=1 RELEASE_LTO=1 NETDEV=tap VHOST=on 2>&1"
-    local linux_cmd="/usr/local/qemu/bin/qemu-system-x86_64 \
-        --no-reboot \
-        -smp ${smp} \
-        -m 8G \
-        -machine q35,kernel-irqchip=split \
-        -cpu Icelake-Server,-pcid,+x2apic \
-        --enable-kvm \
-        -kernel ${LINUX_KERNEL} \
-        -initrd ${BENCHMARK_ROOT}/../build/initramfs.cpio.gz \
-        -drive if=none,format=raw,id=x0,file=${BENCHMARK_ROOT}/../build/ext2.img \
-        -device virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,serial=vext2,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off \
-        -append 'console=ttyS0 rdinit=/benchmark/common/bench_runner.sh ${benchmark} linux mitigations=off hugepages=0 transparent_hugepage=never quiet' \
-        -netdev tap,id=net01,script=${BENCHMARK_ROOT}/../../tools/net/qemu-ifup.sh,downscript=${BENCHMARK_ROOT}/../../tools/net/qemu-ifdown.sh,vhost=on \
-        -device virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off,csum=off,guest_csum=off,ctrl_guest_offloads=off,guest_tso4=off,guest_tso6=off,guest_ecn=off,guest_ufo=off,host_tso4=off,host_tso6=off,host_ecn=off,host_ufo=off,mrg_rxbuf=off,ctrl_vq=off,ctrl_rx=off,ctrl_vlan=off,ctrl_rx_extra=off,guest_announce=off,ctrl_mac_addr=off,host_ufo=off,guest_uso4=off,guest_uso6=off,host_uso=off \
-        -nographic \
-        2>&1"
+    # TODO: 
+    #   1. Current linux kernel is not TDX compatible. Replace with TDX compatible version later.
+    #   2. `guest_uso4=off,guest_uso6=off,host_uso=off` is not supported by the QEMU of TDX development image.
+    local linux_cmd_arr=(
+        qemu-system-x86_64
+        --no-reboot
+        -smp "${smp_val}"
+        -m "${mem_val}"
+        -machine q35,kernel-irqchip=split
+        -cpu Icelake-Server,-pcid,+x2apic
+        --enable-kvm
+        -kernel "${LINUX_KERNEL}"
+        -initrd "${BENCHMARK_ROOT}/../build/initramfs.cpio.gz"
+        -drive "if=none,format=raw,id=x0,file=${BENCHMARK_ROOT}/../build/ext2.img"
+        -device "virtio-blk-pci,bus=pcie.0,addr=0x6,drive=x0,serial=vext2,disable-legacy=on,disable-modern=off,queue-size=64,num-queues=1,request-merging=off,backend_defaults=off,discard=off,write-zeroes=off,event_idx=off,indirect_desc=off,queue_reset=off"
+        -append "console=ttyS0 rdinit=/benchmark/common/bench_runner.sh ${benchmark} linux mitigations=off hugepages=0 transparent_hugepage=never quiet"
+        -netdev "tap,id=net01,script=${BENCHMARK_ROOT}/../../tools/net/qemu-ifup.sh,downscript=${BENCHMARK_ROOT}/../../tools/net/qemu-ifdown.sh,vhost=on"
+        -nographic
+    )
+    if [[ "$platform" != "tdx" ]]; then
+        linux_cmd_arr+=(
+            -device "virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off,csum=off,guest_csum=off,ctrl_guest_offloads=off,guest_tso4=off,guest_tso6=off,guest_ecn=off,guest_ufo=off,host_tso4=off,host_tso6=off,host_ecn=off,host_ufo=off,mrg_rxbuf=off,ctrl_vq=off,ctrl_rx=off,ctrl_vlan=off,ctrl_rx_extra=off,guest_announce=off,ctrl_mac_addr=off,host_ufo=off,guest_uso4=off,guest_uso6=off,host_uso=off"
+        )
+    else
+        linux_cmd_arr+=(
+            -device "virtio-net-pci,netdev=net01,disable-legacy=on,disable-modern=off,csum=off,guest_csum=off,ctrl_guest_offloads=off,guest_tso4=off,guest_tso6=off,guest_ecn=off,guest_ufo=off,host_tso4=off,host_tso6=off,host_ecn=off,host_ufo=off,mrg_rxbuf=off,ctrl_vq=off,ctrl_rx=off,ctrl_vlan=off,ctrl_rx_extra=off,guest_announce=off,ctrl_mac_addr=off,host_ufo=off"
+        )
+    fi
 
     # Run the benchmark depending on the mode
     case "${run_mode}" in
         "guest_only")
             echo "Running benchmark ${benchmark} on Asterinas..."
-            eval "$asterinas_cmd" | tee ${ASTER_OUTPUT}
+            # Execute directly from array, redirect stderr to stdout, then tee
+            "${asterinas_cmd_arr[@]}" 2>&1 | tee "${ASTER_OUTPUT}"
             prepare_fs
             echo "Running benchmark ${benchmark} on Linux..."
-            eval "$linux_cmd" | tee ${LINUX_OUTPUT}
+            # Execute directly from array, redirect stderr to stdout, then tee
+            "${linux_cmd_arr[@]}" 2>&1 | tee "${LINUX_OUTPUT}"
             ;;
         "host_guest")
+            # Note: host_guest_bench_runner.sh expects commands as single strings.
+            # We need to reconstruct the string representation for compatibility.
+            # Use printf %q to quote arguments safely.
+            local asterinas_cmd_str
+            printf -v asterinas_cmd_str '%q ' "${asterinas_cmd_arr[@]}"
+            local linux_cmd_str
+            printf -v linux_cmd_str '%q ' "${linux_cmd_arr[@]}"
+
             echo "Running benchmark ${benchmark} on host and guest..."
             bash "${BENCHMARK_ROOT}/common/host_guest_bench_runner.sh" \
                 "${BENCHMARK_ROOT}/${benchmark}" \
-                "${asterinas_cmd}" \
-                "${linux_cmd}" \
+                "${asterinas_cmd_str}" \
+                "${linux_cmd_str}" \
                 "${ASTER_OUTPUT}" \
                 "${LINUX_OUTPUT}"
             ;;
@@ -138,11 +201,11 @@ run_benchmark() {
 parse_results() {
     local bench_result="$1"
 
-    local search_pattern=$(jq -r '.result_extraction.search_pattern // empty' "$bench_result")
-    local nth_occurrence=$(jq -r '.result_extraction.nth_occurrence // 1' "$bench_result")
-    local result_index=$(jq -r '.result_extraction.result_index // empty' "$bench_result")
-    local unit=$(jq -r '.chart.unit // empty' "$bench_result")
-    local legend=$(jq -r '.chart.legend // {system}' "$bench_result")
+    local search_pattern=$(yq -r '.result_extraction.search_pattern // empty' "$bench_result")
+    local nth_occurrence=$(yq -r '.result_extraction.nth_occurrence // 1' "$bench_result")
+    local result_index=$(yq -r '.result_extraction.result_index // empty' "$bench_result")
+    local unit=$(yq -r '.chart.unit // empty' "$bench_result")
+    local legend=$(yq -r '.chart.legend // {system}' "$bench_result")
 
     generate_template "$unit" "$legend"
     parse_raw_results "$search_pattern" "$nth_occurrence" "$result_index" "$(extract_result_file "$bench_result")"
@@ -157,6 +220,8 @@ cleanup() {
 # Main function to coordinate the benchmark run
 main() {
     local benchmark="$1"
+    local platform="$2"
+
     if [[ -z "${BENCHMARK_ROOT}/${benchmark}" ]]; then
         echo "Error: No benchmark specified" >&2
         exit 1
@@ -167,27 +232,30 @@ main() {
     local run_mode="guest_only"
     [[ -f "${BENCHMARK_ROOT}/${benchmark}/host.sh" ]] && run_mode="host_guest"
 
-    local bench_result="${BENCHMARK_ROOT}/${benchmark}/bench_result.json"
-    local aster_scheme
+    local bench_result="${BENCHMARK_ROOT}/${benchmark}/bench_result.yaml"
+    local runtime_configs_str=""
+
+    # Try reading from single result file first
     if [[ -f "$bench_result" ]]; then
-        aster_scheme=$(jq -r '.runtime_config.aster_scheme // ""' "$bench_result")
+        # Read runtime_config object, convert to key=value lines, ensuring value is string
+        runtime_configs_str=$(yq -r '(.runtime_config // {}) | to_entries | .[] | .key + "=" + (.value | tostring)' "$bench_result")
     else
-        for job in "${BENCHMARK_ROOT}/${benchmark}"/bench_results/*; do
-            [[ -f "$job" ]] && aster_scheme=$(jq -r '.runtime_config.aster_scheme // ""' "$job") && break
+        # If not found, try reading from the first file in bench_results/ that has a non-empty runtime_config
+        for job_yaml in "${BENCHMARK_ROOT}/${benchmark}"/bench_results/*; do
+            if [[ -f "$job_yaml" ]]; then
+                echo "Reading runtime configurations from $job_yaml..."
+                # Read runtime_config object, convert to key=value lines, ensuring value is string
+                runtime_configs_str=$(yq -r '(.runtime_config // {}) | to_entries | .[] | .key + "=" + (.value | tostring)' "$job_yaml")
+                # Check if runtime_config was actually found and non-empty
+                if [[ -n "$runtime_configs_str" ]]; then
+                    break # Found it, stop looking
+                fi
+            fi
         done
     fi
 
-    local smp
-    if [[ -f "$bench_result" ]]; then
-        smp=$(jq -r '.runtime_config.smp // 1' "$bench_result")
-    else
-        for job in "${BENCHMARK_ROOT}/${benchmark}"/bench_results/*; do
-            [[ -f "$job" ]] && smp=$(jq -r '.runtime_config.smp // 1' "$job") && break
-        done
-    fi
-
-    # Run the benchmark
-    run_benchmark "$benchmark" "$run_mode" "$aster_scheme" "$smp"
+    # Run the benchmark, passing the config string
+    run_benchmark "$benchmark" "$run_mode" "$runtime_configs_str"
 
     # Parse results if benchmark configuration exists
     if [[ -f "$bench_result" ]]; then

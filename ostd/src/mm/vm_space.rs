@@ -15,7 +15,7 @@ use crate::{
     arch::mm::{
         current_page_table_paddr, tlb_flush_all_excluding_global, PageTableEntry, PagingConsts,
     },
-    cpu::{AtomicCpuSet, CpuExceptionInfo, CpuSet, PinCurrentCpu},
+    cpu::{AtomicCpuSet, CpuSet, PinCurrentCpu},
     cpu_local_cell,
     mm::{
         io::Fallible,
@@ -30,13 +30,31 @@ use crate::{
     Error,
 };
 
-/// Virtual memory space.
+/// A virtual address space for user-mode tasks, enabling safe manipulation of user-space memory.
 ///
-/// A virtual memory space (`VmSpace`) can be created and assigned to a user
-/// space so that the virtual memory of the user space can be manipulated
-/// safely. For example,  given an arbitrary user-space pointer, one can read
-/// and write the memory location referred to by the user-space pointer without
-/// the risk of breaking the memory safety of the kernel space.
+/// The `VmSpace` type provides memory isolation guarantees between user-space and
+/// kernel-space. For example, given an arbitrary user-space pointer, one can read and
+/// write the memory location referred to by the user-space pointer without the risk of
+/// breaking the memory safety of the kernel space.
+///
+/// # Task Association Semantics
+///
+/// As far as OSTD is concerned, a `VmSpace` is not necessarily associated with a task. Once a
+/// `VmSpace` is activated (see [`VmSpace::activate`]), it remains activated until another
+/// `VmSpace` is activated **possibly by another task running on the same CPU**.
+///
+/// This means that it's up to the kernel to ensure that a task's `VmSpace` is always activated
+/// while the task is running. This can be done by using the injected post schedule handler
+/// (see [`inject_post_schedule_handler`]) to always activate the correct `VmSpace` after each
+/// context switch.
+///
+/// If the kernel otherwise decides not to ensure that the running task's `VmSpace` is always
+/// activated, the kernel must deal with race conditions when calling methods that require the
+/// `VmSpace` to be activated, e.g., [`UserMode::execute`], [`VmSpace::reader`],
+/// [`VmSpace::writer`]. Otherwise, the behavior is unspecified, though it's guaranteed _not_ to
+/// compromise the kernel's memory safety.
+///
+/// # Memory Backing
 ///
 /// A newly-created `VmSpace` is not backed by any physical memory pages. To
 /// provide memory pages for a `VmSpace`, one can allocate and map physical
@@ -44,11 +62,12 @@ use crate::{
 ///
 /// A `VmSpace` can also attach a page fault handler, which will be invoked to
 /// handle page faults generated from user space.
-#[allow(clippy::type_complexity)]
+///
+/// [`inject_post_schedule_handler`]: crate::task::inject_post_schedule_handler
+/// [`UserMode::execute`]: crate::user::UserMode::execute
 #[derive(Debug)]
 pub struct VmSpace {
     pt: PageTable<UserMode>,
-    page_fault_handler: Option<fn(&VmSpace, &CpuExceptionInfo) -> core::result::Result<(), ()>>,
     /// A CPU can only activate a `VmSpace` when no mutable cursors are alive.
     /// Cursors hold read locks and activation require a write lock.
     activation_lock: RwLock<()>,
@@ -60,7 +79,6 @@ impl VmSpace {
     pub fn new() -> Self {
         Self {
             pt: KERNEL_PAGE_TABLE.get().unwrap().create_user_page_table(),
-            page_fault_handler: None,
             activation_lock: RwLock::new(()),
             cpus: AtomicCpuSet::new(CpuSet::new_empty()),
         }
@@ -77,7 +95,7 @@ impl VmSpace {
             .try_write()
             .ok_or(VmSpaceClearError::CursorsAlive)?;
 
-        let cpus = self.cpus.load();
+        let cpus = self.cpus.load(Ordering::Relaxed);
         let cpu = preempt_guard.current_cpu();
         let cpus_set_is_empty = cpus.is_empty();
         let cpus_set_is_single_self = cpus.count() == 1 && cpus.contains(cpu);
@@ -124,13 +142,13 @@ impl VmSpace {
             CursorMut {
                 pt_cursor,
                 activation_lock,
-                flusher: TlbFlusher::new(self.cpus.load(), disable_preempt()),
+                flusher: TlbFlusher::new(self.cpus.load(Ordering::Relaxed), disable_preempt()),
             }
         })?)
     }
 
     /// Activates the page table on the current CPU.
-    pub(crate) fn activate(self: &Arc<Self>) {
+    pub fn activate(self: &Arc<Self>) {
         let preempt_guard = disable_preempt();
         let cpu = preempt_guard.current_cpu();
 
@@ -159,28 +177,13 @@ impl VmSpace {
         self.pt.activate();
     }
 
-    pub(crate) fn handle_page_fault(
-        &self,
-        info: &CpuExceptionInfo,
-    ) -> core::result::Result<(), ()> {
-        if let Some(func) = self.page_fault_handler {
-            return func(self, info);
-        }
-        Err(())
-    }
-
-    /// Registers the page fault handler in this `VmSpace`.
-    pub fn register_page_fault_handler(
-        &mut self,
-        func: fn(&VmSpace, &CpuExceptionInfo) -> core::result::Result<(), ()>,
-    ) {
-        self.page_fault_handler = Some(func);
-    }
-
     /// Creates a reader to read data from the user space of the current task.
     ///
     /// Returns `Err` if this `VmSpace` is not belonged to the user space of the current task
     /// or the `vaddr` and `len` do not represent a user space memory range.
+    ///
+    /// Users must ensure that no other page table is activated in the current task during the
+    /// lifetime of the created `VmReader`. This guarantees that the `VmReader` can operate correctly.
     pub fn reader(&self, vaddr: Vaddr, len: usize) -> Result<VmReader<'_, Fallible>> {
         if current_page_table_paddr() != unsafe { self.pt.root_paddr() } {
             return Err(Error::AccessDenied);
@@ -190,10 +193,6 @@ impl VmSpace {
             return Err(Error::AccessDenied);
         }
 
-        // `VmReader` is neither `Sync` nor `Send`, so it will not live longer than the current
-        // task. This ensures that the correct page table is activated during the usage period of
-        // the `VmReader`.
-        //
         // SAFETY: The memory range is in user space, as checked above.
         Ok(unsafe { VmReader::<Fallible>::from_user_space(vaddr as *const u8, len) })
     }
@@ -202,6 +201,9 @@ impl VmSpace {
     ///
     /// Returns `Err` if this `VmSpace` is not belonged to the user space of the current task
     /// or the `vaddr` and `len` do not represent a user space memory range.
+    ///
+    /// Users must ensure that no other page table is activated in the current task during the
+    /// lifetime of the created `VmWriter`. This guarantees that the `VmWriter` can operate correctly.
     pub fn writer(&self, vaddr: Vaddr, len: usize) -> Result<VmWriter<'_, Fallible>> {
         if current_page_table_paddr() != unsafe { self.pt.root_paddr() } {
             return Err(Error::AccessDenied);
@@ -282,7 +284,7 @@ impl Cursor<'_> {
 /// reading or modifying the same sub-tree.
 pub struct CursorMut<'a, 'b> {
     pt_cursor: page_table::CursorMut<'a, UserMode, PageTableEntry, PagingConsts>,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     activation_lock: RwLockReadGuard<'b, (), PreemptDisabled>,
     // We have a read lock so the CPU set in the flusher is always a superset
     // of actual activated CPUs.
@@ -316,8 +318,8 @@ impl CursorMut<'_, '_> {
     }
 
     /// Get the dedicated TLB flusher for this cursor.
-    pub fn flusher(&self) -> &TlbFlusher<DisabledPreemptGuard> {
-        &self.flusher
+    pub fn flusher(&mut self) -> &mut TlbFlusher<DisabledPreemptGuard> {
+        &mut self.flusher
     }
 
     /// Map a frame into the current slot.
@@ -460,6 +462,17 @@ cpu_local_cell! {
     static ACTIVATED_VM_SPACE: *const VmSpace = core::ptr::null();
 }
 
+#[cfg(ktest)]
+pub(crate) fn get_activated_vm_space() -> Option<*const VmSpace> {
+    let ptr = ACTIVATED_VM_SPACE.load();
+    if ptr.is_null() {
+        None
+    } else {
+        // SAFETY: The pointer is only set to a valid `Arc` pointer.
+        Some(ptr)
+    }
+}
+
 /// The result of a query over the VM space.
 #[derive(Debug)]
 pub enum VmItem {
@@ -479,6 +492,30 @@ pub enum VmItem {
         /// The property of the slot.
         prop: PageProperty,
     },
+}
+
+impl PartialEq for VmItem {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            // The `len` varies, so we only compare `va`.
+            (VmItem::NotMapped { va: va1, len: _ }, VmItem::NotMapped { va: va2, len: _ }) => {
+                va1 == va2
+            }
+            (
+                VmItem::Mapped {
+                    va: va1,
+                    frame: frame1,
+                    prop: prop1,
+                },
+                VmItem::Mapped {
+                    va: va2,
+                    frame: frame2,
+                    prop: prop2,
+                },
+            ) => va1 == va2 && frame1.start_paddr() == frame2.start_paddr() && prop1 == prop2,
+            _ => false,
+        }
+    }
 }
 
 impl TryFrom<PageTableItem> for VmItem {

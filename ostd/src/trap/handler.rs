@@ -2,9 +2,10 @@
 
 use spin::Once;
 
+use super::{disable_local, DisabledLocalIrqGuard};
 use crate::{arch::irq::IRQ_LIST, cpu_local_cell, task::disable_preempt, trap::TrapFrame};
 
-static BOTTOM_HALF_HANDLER: Once<fn()> = Once::new();
+static BOTTOM_HALF_HANDLER: Once<fn(DisabledLocalIrqGuard) -> DisabledLocalIrqGuard> = Once::new();
 
 /// Registers a function to the interrupt bottom half execution.
 ///
@@ -13,10 +14,15 @@ static BOTTOM_HALF_HANDLER: Once<fn()> = Once::new();
 /// Relatively, bottom half defers less critical tasks to reduce the time spent in
 /// hardware interrupt context, thus allowing the interrupts to be handled more quickly.
 ///
-/// The bottom half handler will be called after the top half with interrupts enabled.
+/// The bottom half handler is called following the execution of the top half.
+/// Because the handler accepts a [`DisabledLocalIrqGuard`] as a parameter,
+/// interrupts are still disabled upon entering the handler.
+/// However, the handler can enable interrupts by internally dropping the guard.
+/// When the handler returns, interrupts should remain disabled,
+/// as the handler is expected to return an IRQ guard.
 ///
 /// This function can only be registered once. Subsequent calls will do nothing.
-pub fn register_bottom_half_handler(func: fn()) {
+pub fn register_bottom_half_handler(func: fn(DisabledLocalIrqGuard) -> DisabledLocalIrqGuard) {
     BOTTOM_HALF_HANDLER.call_once(|| func);
 }
 
@@ -40,9 +46,15 @@ fn process_bottom_half() {
     let preempt_guard = disable_preempt();
     crate::arch::irq::enable_local();
 
-    handler();
+    // We need to ensure that local interrupts are disabled
+    // when the handler returns to prevent race conditions.
+    // See <https://github.com/asterinas/asterinas/pull/1623#discussion_r1964709636> for more details.
+    let irq_guard = disable_local();
+    let irq_guard = handler(irq_guard);
 
-    crate::arch::irq::disable_local();
+    // Interrupts should remain disabled when `process_bottom_half` returns,
+    // so we simply forget the guard.
+    core::mem::forget(irq_guard);
     drop(preempt_guard);
 }
 

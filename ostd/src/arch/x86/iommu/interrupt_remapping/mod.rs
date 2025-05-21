@@ -26,7 +26,7 @@ impl IrtEntryHandle {
         self.index
     }
 
-    #[allow(unused)]
+    #[expect(unused)]
     pub fn irt_entry(&self) -> Option<&IrtEntry> {
         self.entry_ref.as_deref()
     }

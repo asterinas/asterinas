@@ -6,27 +6,31 @@ use aster_bigtcp::{
     socket::{NeedIfacePoll, RawTcpOption, RawTcpSetOption},
     wire::IpEndpoint,
 };
-use connected::ConnectedStream;
+use connected::{close_and_linger, ConnectedStream};
 use connecting::{ConnResult, ConnectingStream};
 use init::InitStream;
 use listen::ListenStream;
-use options::{Congestion, KeepIdle, MaxSegment, NoDelay, WindowClamp, KEEPALIVE_INTERVAL};
+use options::{
+    Congestion, DeferAccept, Inq, KeepIdle, MaxSegment, NoDelay, SynCnt, UserTimeout, WindowClamp,
+    KEEPALIVE_INTERVAL,
+};
 use ostd::sync::{PreemptDisabled, RwLockReadGuard, RwLockWriteGuard};
 use takeable::Takeable;
-use util::TcpOptionSet;
+use util::{Retrans, TcpOptionSet};
 
-use super::UNSPECIFIED_LOCAL_ENDPOINT;
+use super::{
+    options::{IpOptionSet, SetIpLevelOption},
+    UNSPECIFIED_LOCAL_ENDPOINT,
+};
 use crate::{
     events::IoEvents,
-    fs::{
-        file_handle::FileLike,
-        utils::{InodeMode, Metadata, StatusFlags},
-    },
+    fs::file_handle::FileLike,
     match_sock_option_mut, match_sock_option_ref,
     net::{
         iface::Iface,
         socket::{
             options::{Error as SocketError, SocketOption},
+            private::SocketPrivate,
             util::{
                 options::{SetSocketLevelOption, SocketOptionSet},
                 send_recv_flags::SendRecvFlags,
@@ -54,8 +58,10 @@ pub(in crate::net) use self::observer::StreamObserver;
 pub use self::util::CongestionControl;
 
 pub struct StreamSocket {
-    options: RwLock<OptionSet>,
+    // Lock order: `state` first, `options` second
     state: RwLock<Takeable<State>, PreemptDisabled>,
+    options: RwLock<OptionSet>,
+
     is_nonblocking: AtomicBool,
     pollee: Pollee,
 }
@@ -74,14 +80,16 @@ enum State {
 #[derive(Debug, Clone)]
 struct OptionSet {
     socket: SocketOptionSet,
+    ip: IpOptionSet,
     tcp: TcpOptionSet,
 }
 
 impl OptionSet {
     fn new() -> Self {
         let socket = SocketOptionSet::new_tcp();
+        let ip = IpOptionSet::new_tcp();
         let tcp = TcpOptionSet::new();
-        OptionSet { socket, tcp }
+        OptionSet { socket, ip, tcp }
     }
 
     fn raw(&self) -> RawTcpOption {
@@ -96,8 +104,8 @@ impl StreamSocket {
     pub fn new(is_nonblocking: bool) -> Arc<Self> {
         let init_stream = InitStream::new();
         Arc::new(Self {
-            options: RwLock::new(OptionSet::new()),
             state: RwLock::new(Takeable::new(State::Init(init_stream))),
+            options: RwLock::new(OptionSet::new()),
             is_nonblocking: AtomicBool::new(is_nonblocking),
             pollee: Pollee::new(),
         })
@@ -131,17 +139,9 @@ impl StreamSocket {
         })
     }
 
-    fn is_nonblocking(&self) -> bool {
-        self.is_nonblocking.load(Ordering::Relaxed)
-    }
-
-    fn set_nonblocking(&self, nonblocking: bool) {
-        self.is_nonblocking.store(nonblocking, Ordering::Relaxed);
-    }
-
     /// Ensures that the socket state is up to date and obtains a read lock on it.
     ///
-    /// For a description of what "up-to-date" means, see [`Self::update_connecting`].
+    /// For a description of what "up-to-date" means, see [`Self::write_updated_state`].
     fn read_updated_state(&self) -> RwLockReadGuard<Takeable<State>, PreemptDisabled> {
         loop {
             let state = self.state.read();
@@ -151,39 +151,25 @@ impl StreamSocket {
             };
             drop(state);
 
-            self.update_connecting();
+            self.write_updated_state();
         }
     }
 
     /// Ensures that the socket state is up to date and obtains a write lock on it.
     ///
-    /// For a description of what "up-to-date" means, see [`Self::update_connecting`].
-    fn write_updated_state(&self) -> RwLockWriteGuard<Takeable<State>, PreemptDisabled> {
-        self.update_connecting().1
-    }
-
-    /// Updates the socket state if the socket is an obsolete connecting socket.
-    ///
     /// A connecting socket can become obsolete because some network events can set the socket to
     /// connected state (if the connection succeeds) or initial state (if the connection is
-    /// refused) in [`Self::update_io_events`], but the state transition is delayed until the user
+    /// refused) in [`Self::check_io_events`], but the state transition is delayed until the user
     /// operates on the socket to avoid too many locks in the interrupt handler.
     ///
     /// This method performs the delayed state transition to ensure that the state is up to date
-    /// and returns the guards of the write-locked options and state.
-    fn update_connecting(
-        &self,
-    ) -> (
-        RwLockWriteGuard<OptionSet, PreemptDisabled>,
-        RwLockWriteGuard<Takeable<State>, PreemptDisabled>,
-    ) {
-        // Hold the lock in advance to avoid race conditions.
-        let mut options = self.options.write();
+    /// and returns the guard of the write-locked state.
+    fn write_updated_state(&self) -> RwLockWriteGuard<Takeable<State>, PreemptDisabled> {
         let mut state = self.state.write();
 
         match state.as_ref() {
             State::Connecting(connection_stream) if connection_stream.has_result() => (),
-            _ => return (options, state),
+            _ => return state,
         }
 
         state.borrow(|owned_state| {
@@ -193,33 +179,26 @@ impl StreamSocket {
 
             match connecting_stream.into_result() {
                 ConnResult::Connecting(connecting_stream) => State::Connecting(connecting_stream),
-                ConnResult::Connected(connected_stream) => {
-                    options.socket.set_sock_errors(None);
-                    State::Connected(connected_stream)
-                }
-                ConnResult::Refused(init_stream) => {
-                    options.socket.set_sock_errors(Some(Error::with_message(
-                        Errno::ECONNREFUSED,
-                        "the connection is refused",
-                    )));
-                    State::Init(init_stream)
-                }
+                ConnResult::Connected(connected_stream) => State::Connected(connected_stream),
+                ConnResult::Refused(init_stream) => State::Init(init_stream),
             }
         });
 
-        (options, state)
+        state
     }
 
     // Returns `None` to block the task and wait for the connection to be established, and returns
     // `Some(_)` if blocking is not necessary or not allowed.
     fn start_connect(&self, remote_endpoint: &IpEndpoint) -> Option<Result<()>> {
         let is_nonblocking = self.is_nonblocking();
-        let (options, mut state) = self.update_connecting();
 
+        let mut state = self.write_updated_state();
+
+        let options = self.options.read();
         let raw_option = options.raw();
 
         let (result_or_block, iface_to_poll) = state.borrow_result(|mut owned_state| {
-            let init_stream = match owned_state {
+            let mut init_stream = match owned_state {
                 State::Init(init_stream) => init_stream,
                 State::Connecting(_) if is_nonblocking => {
                     return (
@@ -235,7 +214,7 @@ impl StreamSocket {
                 }
                 State::Connecting(_) => return (owned_state, (None, None)),
                 State::Connected(ref mut connected_stream) => {
-                    let err = connected_stream.check_new();
+                    let err = connected_stream.finish_last_connect();
                     return (owned_state, (Some(err), None));
                 }
                 State::Listen(_) => {
@@ -252,12 +231,24 @@ impl StreamSocket {
                 }
             };
 
-            let connecting_stream = match init_stream.connect(
+            if let Err(err) = init_stream.finish_last_connect() {
+                return (State::Init(init_stream), (Some(Err(err)), None));
+            }
+
+            let (target_state, iface_to_poll) = match init_stream.connect(
                 remote_endpoint,
                 &raw_option,
                 StreamObserver::new(self.pollee.clone()),
             ) {
-                Ok(connecting_stream) => connecting_stream,
+                Ok(connecting_stream) => {
+                    let iface_to_poll = connecting_stream.iface().clone();
+                    (State::Connecting(connecting_stream), Some(iface_to_poll))
+                }
+                Err((err, init_stream)) if err.error() == Errno::ECONNREFUSED => {
+                    // `ECONNREFUSED` should be reported asynchronously, i.e., we need to return
+                    // `EINPROGRESS` first for non-blocking sockets.
+                    (State::Init(init_stream), None)
+                }
                 Err((err, init_stream)) => {
                     return (State::Init(init_stream), (Some(Err(err)), None));
                 }
@@ -271,12 +262,8 @@ impl StreamSocket {
             } else {
                 None
             };
-            let iface_to_poll = connecting_stream.iface().clone();
 
-            (
-                State::Connecting(connecting_stream),
-                (result_or_block, Some(iface_to_poll)),
-            )
+            (target_state, (result_or_block, iface_to_poll))
         });
 
         drop(state);
@@ -289,17 +276,16 @@ impl StreamSocket {
     }
 
     fn check_connect(&self) -> Result<()> {
-        let (mut options, mut state) = self.update_connecting();
+        let mut state = self.write_updated_state();
 
         match state.as_mut() {
+            State::Init(init_stream) => init_stream.finish_last_connect(),
             State::Connecting(_) => {
                 return_errno_with_message!(Errno::EAGAIN, "the connection is pending")
             }
-            State::Connected(connected_stream) => connected_stream.check_new(),
-            State::Init(_) | State::Listen(_) => {
-                let sock_errors = options.socket.sock_errors();
-                options.socket.set_sock_errors(None);
-                sock_errors.map(Err).unwrap_or(Ok(()))
+            State::Connected(connected_stream) => connected_stream.finish_last_connect(),
+            State::Listen(_) => {
+                return_errno_with_message!(Errno::EISCONN, "the socket is listening")
             }
         }
     }
@@ -334,7 +320,12 @@ impl StreamSocket {
 
         let connected_stream = match state.as_ref() {
             State::Connected(connected_stream) => connected_stream,
-            State::Init(_) | State::Listen(_) => {
+            State::Init(init_stream) => {
+                let result = init_stream.try_recv();
+                self.pollee.invalidate();
+                return result;
+            }
+            State::Listen(_) => {
                 return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected")
             }
             State::Connecting(_) => {
@@ -342,7 +333,10 @@ impl StreamSocket {
             }
         };
 
-        let (recv_bytes, need_poll) = connected_stream.try_recv(writer, flags)?;
+        let result = connected_stream.try_recv(writer, flags);
+        self.pollee.invalidate();
+
+        let (recv_bytes, need_poll) = result?;
         let iface_to_poll = need_poll.then(|| connected_stream.iface().clone());
         let remote_endpoint = connected_stream.remote_endpoint();
 
@@ -355,25 +349,17 @@ impl StreamSocket {
         Ok((recv_bytes, remote_endpoint.into()))
     }
 
-    fn recv(
-        &self,
-        writer: &mut dyn MultiWrite,
-        flags: SendRecvFlags,
-    ) -> Result<(usize, SocketAddr)> {
-        if self.is_nonblocking() {
-            self.try_recv(writer, flags)
-        } else {
-            self.wait_events(IoEvents::IN, None, || self.try_recv(writer, flags))
-        }
-    }
-
     fn try_send(&self, reader: &mut dyn MultiRead, flags: SendRecvFlags) -> Result<usize> {
         let state = self.read_updated_state();
 
         let connected_stream = match state.as_ref() {
             State::Connected(connected_stream) => connected_stream,
-            State::Init(_) | State::Listen(_) => {
-                // TODO: Trigger `SIGPIPE` if `MSG_NOSIGNAL` is not specified
+            State::Init(init_stream) => {
+                let result = init_stream.try_send();
+                self.pollee.invalidate();
+                return result;
+            }
+            State::Listen(_) => {
                 return_errno_with_message!(Errno::EPIPE, "the socket is not connected");
             }
             State::Connecting(_) => {
@@ -383,24 +369,18 @@ impl StreamSocket {
             }
         };
 
-        let (sent_bytes, need_poll) = connected_stream.try_send(reader, flags)?;
+        let result = connected_stream.try_send(reader, flags);
+        self.pollee.invalidate();
+
+        let (sent_bytes, need_poll) = result?;
         let iface_to_poll = need_poll.then(|| connected_stream.iface().clone());
 
         drop(state);
-        self.pollee.invalidate();
         if let Some(iface) = iface_to_poll {
             iface.poll();
         }
 
         Ok(sent_bytes)
-    }
-
-    fn send(&self, reader: &mut dyn MultiRead, flags: SendRecvFlags) -> Result<usize> {
-        if self.is_nonblocking() {
-            self.try_send(reader, flags)
-        } else {
-            self.wait_events(IoEvents::OUT, None, || self.try_send(reader, flags))
-        }
     }
 
     fn check_io_events(&self) -> IoEvents {
@@ -413,6 +393,18 @@ impl StreamSocket {
             State::Connected(connected_stream) => connected_stream.check_io_events(),
         }
     }
+
+    fn test_and_clear_error(&self) -> Option<Error> {
+        let state = self.read_updated_state();
+
+        let error = match state.as_ref() {
+            State::Init(init_stream) => init_stream.test_and_clear_error(),
+            State::Connected(connected_stream) => connected_stream.test_and_clear_error(),
+            State::Connecting(_) | State::Listen(_) => None,
+        };
+        self.pollee.invalidate();
+        error
+    }
 }
 
 impl Pollable for StreamSocket {
@@ -422,49 +414,13 @@ impl Pollable for StreamSocket {
     }
 }
 
-impl FileLike for StreamSocket {
-    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        // TODO: Set correct flags
-        let flags = SendRecvFlags::empty();
-        self.recv(writer, flags).map(|(len, _)| len)
+impl SocketPrivate for StreamSocket {
+    fn is_nonblocking(&self) -> bool {
+        self.is_nonblocking.load(Ordering::Relaxed)
     }
 
-    fn write(&self, reader: &mut VmReader) -> Result<usize> {
-        // TODO: Set correct flags
-        let flags = SendRecvFlags::empty();
-        self.send(reader, flags)
-    }
-
-    fn status_flags(&self) -> StatusFlags {
-        // TODO: when we fully support O_ASYNC, return the flag
-        if self.is_nonblocking() {
-            StatusFlags::O_NONBLOCK
-        } else {
-            StatusFlags::empty()
-        }
-    }
-
-    fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {
-        if new_flags.contains(StatusFlags::O_NONBLOCK) {
-            self.set_nonblocking(true);
-        } else {
-            self.set_nonblocking(false);
-        }
-        Ok(())
-    }
-
-    fn as_socket(&self) -> Option<&dyn Socket> {
-        Some(self)
-    }
-
-    fn metadata(&self) -> Metadata {
-        // This is a dummy implementation.
-        // TODO: Add "SockFS" and link `StreamSocket` to it.
-        Metadata::new_socket(
-            0,
-            InodeMode::from_bits_truncate(0o140777),
-            aster_block::BLOCK_SIZE,
-        )
+    fn set_nonblocking(&self, nonblocking: bool) {
+        self.is_nonblocking.store(nonblocking, Ordering::Relaxed);
     }
 }
 
@@ -472,29 +428,13 @@ impl Socket for StreamSocket {
     fn bind(&self, socket_addr: SocketAddr) -> Result<()> {
         let endpoint = socket_addr.try_into()?;
 
-        let can_reuse = self.options.read().socket.reuse_addr();
         let mut state = self.write_updated_state();
+        let State::Init(init_stream) = state.as_mut() else {
+            return_errno_with_message!(Errno::EINVAL, "the socket is already bound to an address");
+        };
 
-        state.borrow_result(|owned_state| {
-            let State::Init(init_stream) = owned_state else {
-                return (
-                    owned_state,
-                    Err(Error::with_message(
-                        Errno::EINVAL,
-                        "the socket is already bound to an address",
-                    )),
-                );
-            };
-
-            let bound_port = match init_stream.bind(&endpoint, can_reuse) {
-                Ok(bound_port) => bound_port,
-                Err((err, init_stream)) => {
-                    return (State::Init(init_stream), Err(err));
-                }
-            };
-
-            (State::Init(InitStream::new_bound(bound_port)), Ok(()))
-        })
+        let can_reuse = self.options.read().socket.reuse_addr();
+        init_stream.bind(&endpoint, can_reuse)
     }
 
     fn connect(&self, socket_addr: SocketAddr) -> Result<()> {
@@ -508,8 +448,9 @@ impl Socket for StreamSocket {
     }
 
     fn listen(&self, backlog: usize) -> Result<()> {
-        let (options, mut state) = self.update_connecting();
+        let mut state = self.write_updated_state();
 
+        let options = self.options.read();
         let raw_option = options.raw();
 
         state.borrow_result(|owned_state| {
@@ -546,11 +487,7 @@ impl Socket for StreamSocket {
     }
 
     fn accept(&self) -> Result<(Arc<dyn FileLike>, SocketAddr)> {
-        if self.is_nonblocking() {
-            self.try_accept()
-        } else {
-            self.wait_events(IoEvents::IN, None, || self.try_accept())
-        }
+        self.block_on(IoEvents::IN, || self.try_accept())
     }
 
     fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
@@ -622,7 +559,9 @@ impl Socket for StreamSocket {
             warn!("sending control message is not supported");
         }
 
-        self.send(reader, flags)
+        self.block_on(IoEvents::OUT, || self.try_send(reader, flags))
+
+        // TODO: Trigger `SIGPIPE` if the error code is `EPIPE` and `MSG_NOSIGNAL` is not specified
     }
 
     fn recvmsg(
@@ -635,7 +574,7 @@ impl Socket for StreamSocket {
             warn!("unsupported flags: {:?}", flags);
         }
 
-        let (received_bytes, _) = self.recv(writer, flags)?;
+        let (received_bytes, _) = self.block_on(IoEvents::IN, || self.try_recv(writer, flags))?;
 
         // TODO: Receive control message
 
@@ -649,8 +588,7 @@ impl Socket for StreamSocket {
     fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
         match_sock_option_mut!(option, {
             socket_errors: SocketError => {
-                let mut options = self.update_connecting().0;
-                options.socket.get_and_clear_sock_errors(socket_errors);
+                socket_errors.set(self.test_and_clear_error());
                 return Ok(());
             },
             _ => ()
@@ -658,11 +596,19 @@ impl Socket for StreamSocket {
 
         let options = self.options.read();
 
+        // Deal with socket-level options
         match options.socket.get_option(option) {
             Err(err) if err.error() == Errno::ENOPROTOOPT => (),
             res => return res,
         }
 
+        // Deal with IP-level options
+        match options.ip.get_option(option) {
+            Err(err) if err.error() == Errno::ENOPROTOOPT => (),
+            res => return res,
+        }
+
+        // Deal with TCP-level options
         // FIXME: Here we only return the previously set values, without actually
         // asking the underlying sockets for the real, effective values.
         match_sock_option_mut!(option, {
@@ -671,12 +617,32 @@ impl Socket for StreamSocket {
                 tcp_no_delay.set(no_delay);
             },
             tcp_maxseg: MaxSegment => {
+                const DEFAULT_MAX_SEGMEMT: u32 = 536;
+                // For an unconnected socket,
+                // older Linux versions (e.g., v6.0) return
+                // the default MSS value defined above.
+                // However, newer Linux versions (e.g., v6.11)
+                // return the user-set MSS value if it is set.
+                // Here, we adopt the behavior of the latest Linux versions.
                 let maxseg = options.tcp.maxseg();
-                tcp_maxseg.set(maxseg);
+                if maxseg == 0 {
+                    tcp_maxseg.set(DEFAULT_MAX_SEGMEMT);
+                } else {
+                    tcp_maxseg.set(maxseg);
+                }
             },
             tcp_keep_idle: KeepIdle => {
                 let keep_idle = options.tcp.keep_idle();
                 tcp_keep_idle.set(keep_idle);
+            },
+            tcp_syn_cnt: SynCnt => {
+                let syn_cnt = options.tcp.syn_cnt();
+                tcp_syn_cnt.set(syn_cnt);
+            },
+            tcp_defer_accept: DeferAccept => {
+                let defer_accept = options.tcp.defer_accept();
+                let seconds = defer_accept.to_secs();
+                tcp_defer_accept.set(seconds);
             },
             tcp_window_clamp: WindowClamp => {
                 let window_clamp = options.tcp.window_clamp();
@@ -686,6 +652,14 @@ impl Socket for StreamSocket {
                 let congestion = options.tcp.congestion();
                 tcp_congestion.set(congestion);
             },
+            tcp_user_timeout: UserTimeout => {
+                let user_timeout = options.tcp.user_timeout();
+                tcp_user_timeout.set(user_timeout);
+            },
+            tcp_inq: Inq => {
+                let inq = options.tcp.receive_inq();
+                tcp_inq.set(inq);
+            },
             _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to get is unknown")
         });
 
@@ -693,11 +667,21 @@ impl Socket for StreamSocket {
     }
 
     fn set_option(&self, option: &dyn SocketOption) -> Result<()> {
-        let (mut options, mut state) = self.update_connecting();
+        let mut state = self.write_updated_state();
+        let mut options = self.options.write();
 
+        // Deal with socket-level options
         let need_iface_poll = match options.socket.set_option(option, state.as_mut()) {
             Err(err) if err.error() == Errno::ENOPROTOOPT => {
-                do_tcp_setsockopt(option, &mut options, state.as_mut())?
+                // Deal with IP-level options
+                match options.ip.set_option(option, state.as_mut()) {
+                    Err(err) if err.error() == Errno::ENOPROTOOPT => {
+                        // Deal with TCP-level options
+                        do_tcp_setsockopt(option, &mut options, state.as_mut())?
+                    }
+                    Err(err) => return Err(err),
+                    Ok(need_iface_poll) => need_iface_poll,
+                }
             }
             Err(err) => return Err(err),
             Ok(need_iface_poll) => need_iface_poll,
@@ -749,6 +733,23 @@ fn do_tcp_setsockopt(
 
             // TODO: Track when the socket becomes idle to actually support keep idle.
         },
+        tcp_syn_cnt: SynCnt => {
+            const MAX_TCP_SYN_CNT: u8 = 127;
+
+            let syncnt = tcp_syn_cnt.get().unwrap();
+            if *syncnt < 1 || *syncnt > MAX_TCP_SYN_CNT {
+                return_errno_with_message!(Errno::EINVAL, "the SYN count is out of bounds");
+            }
+            options.tcp.set_syn_cnt(*syncnt);
+        },
+        tcp_defer_accept: DeferAccept => {
+            let mut seconds = *(tcp_defer_accept.get().unwrap());
+            if (seconds as i32) < 0 {
+                seconds = 0;
+            }
+            let retrans = Retrans::from_secs(seconds);
+            options.tcp.set_defer_accept(retrans);
+        },
         tcp_window_clamp: WindowClamp => {
             let window_clamp = tcp_window_clamp.get().unwrap();
             let half_recv_buf = options.socket.recv_buf() / 2;
@@ -761,6 +762,17 @@ fn do_tcp_setsockopt(
         tcp_congestion: Congestion => {
             let congestion = tcp_congestion.get().unwrap();
             options.tcp.set_congestion(*congestion);
+        },
+        tcp_user_timeout: UserTimeout => {
+            let user_timeout = tcp_user_timeout.get().unwrap();
+            if (*user_timeout as i32) < 0 {
+                return_errno_with_message!(Errno::EINVAL, "the user timeout cannot be negative");
+            }
+            options.tcp.set_user_timeout(*user_timeout);
+        },
+        tcp_inq: Inq => {
+            let inq = tcp_inq.get().unwrap();
+            options.tcp.set_receive_inq(*inq);
         },
         _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to be set is unknown")
     });
@@ -809,18 +821,32 @@ impl SetSocketLevelOption for State {
     }
 }
 
+impl SetIpLevelOption for State {
+    fn set_hdrincl(&self, _hdrincl: bool) -> Result<()> {
+        return_errno_with_message!(
+            Errno::ENOPROTOOPT,
+            "IP_HDRINCL cannot be set on TCP sockets"
+        );
+    }
+}
+
 impl Drop for StreamSocket {
     fn drop(&mut self) {
         let state = self.state.get_mut().take();
 
-        let iface_to_poll = state.iface().cloned();
+        let conn = match state {
+            State::Init(_) => return,
+            State::Connecting(connecting_stream) => connecting_stream.into_connection(),
+            State::Connected(connected_stream) => connected_stream.into_connection(),
+            State::Listen(listen_stream) => {
+                let listener = listen_stream.into_listener();
+                listener.close();
+                listener.iface().poll();
+                return;
+            }
+        };
 
-        // Dropping the state will drop the sockets. This will trigger the socket close process (if
-        // needed) and require immediate iface polling afterwards.
-        drop(state);
-
-        if let Some(iface) = iface_to_poll {
-            iface.poll();
-        }
+        let linger = self.options.get_mut().socket.linger();
+        close_and_linger(conn, linger, &self.pollee);
     }
 }

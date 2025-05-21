@@ -51,7 +51,8 @@ pub fn sys_madvise(
 }
 
 fn madv_free(start: Vaddr, end: Vaddr, ctx: &Context) -> Result<()> {
-    let root_vmar = ctx.process.root_vmar();
+    let user_space = ctx.user_space();
+    let root_vmar = user_space.root_vmar();
     let advised_range = start..end;
     let _ = root_vmar.remove_mapping(advised_range);
 
@@ -60,7 +61,7 @@ fn madv_free(start: Vaddr, end: Vaddr, ctx: &Context) -> Result<()> {
 
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, TryFromInt)]
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 /// This definition is the same from linux
 pub enum MadviseBehavior {
     MADV_NORMAL = 0,     /* no further special treatment */

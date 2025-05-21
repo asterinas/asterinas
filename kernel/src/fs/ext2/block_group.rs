@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use id_alloc::IdAlloc;
+use ostd::{const_assert, mm::UntypedMem};
 
 use super::{
     block_ptr::Ext2Bid,
@@ -320,6 +321,8 @@ impl Debug for BlockGroup {
 impl PageCacheBackend for BlockGroupImpl {
     fn read_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
         let bid = self.inode_table_bid + idx as Ext2Bid;
+        // TODO: Should we allocate the bio segment from the pool on reads?
+        // This may require an additional copy to the requested frame in the completion callback.
         let bio_segment = BioSegment::new_from_segment(
             Segment::from(frame.clone()).into(),
             BioDirection::FromDevice,
@@ -332,10 +335,12 @@ impl PageCacheBackend for BlockGroupImpl {
 
     fn write_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
         let bid = self.inode_table_bid + idx as Ext2Bid;
-        let bio_segment = BioSegment::new_from_segment(
-            Segment::from(frame.clone()).into(),
-            BioDirection::ToDevice,
-        );
+        let bio_segment = BioSegment::alloc(1, BioDirection::ToDevice);
+        // This requires an additional copy to the pooled bio segment.
+        bio_segment
+            .writer()
+            .unwrap()
+            .write_fallible(&mut frame.reader().to_fallible())?;
         self.fs
             .upgrade()
             .unwrap()

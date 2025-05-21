@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-
-use ostd::{cpu::CpuSet, sync::RwArc, task::Task, user::UserSpace};
+use ostd::{
+    cpu::{context::UserContext, CpuSet},
+    sync::RwArc,
+    task::Task,
+};
 
 use super::{thread_table, PosixThread, ThreadLocal};
 use crate::{
@@ -13,7 +15,7 @@ use crate::{
         signal::{sig_mask::AtomicSigMask, sig_queues::SigQueues},
         Credentials, Process,
     },
-    sched::priority::Priority,
+    sched::{Nice, SchedPolicy},
     thread::{task, Thread, Tid},
     time::{clocks::ProfClock, TimerManager},
 };
@@ -22,7 +24,7 @@ use crate::{
 pub struct PosixThreadBuilder {
     // The essential part
     tid: Tid,
-    user_space: Arc<UserSpace>,
+    user_ctx: Arc<UserContext>,
     process: Weak<Process>,
     credentials: Credentials,
 
@@ -34,14 +36,14 @@ pub struct PosixThreadBuilder {
     fs: Option<Arc<ThreadFsInfo>>,
     sig_mask: AtomicSigMask,
     sig_queues: SigQueues,
-    priority: Priority,
+    sched_policy: SchedPolicy,
 }
 
 impl PosixThreadBuilder {
-    pub fn new(tid: Tid, user_space: Arc<UserSpace>, credentials: Credentials) -> Self {
+    pub fn new(tid: Tid, user_ctx: Arc<UserContext>, credentials: Credentials) -> Self {
         Self {
             tid,
-            user_space,
+            user_ctx,
             process: Weak::new(),
             credentials,
             thread_name: None,
@@ -51,7 +53,7 @@ impl PosixThreadBuilder {
             fs: None,
             sig_mask: AtomicSigMask::new_empty(),
             sig_queues: SigQueues::new(),
-            priority: Priority::default(),
+            sched_policy: SchedPolicy::Fair(Nice::default()),
         }
     }
 
@@ -90,15 +92,10 @@ impl PosixThreadBuilder {
         self
     }
 
-    pub fn priority(mut self, priority: Priority) -> Self {
-        self.priority = priority;
-        self
-    }
-
     pub fn build(self) -> Arc<Task> {
         let Self {
             tid,
-            user_space,
+            user_ctx,
             process,
             credentials,
             thread_name,
@@ -108,12 +105,20 @@ impl PosixThreadBuilder {
             fs,
             sig_mask,
             sig_queues,
-            priority,
+            sched_policy,
         } = self;
 
         let file_table = file_table.unwrap_or_else(|| RwArc::new(FileTable::new_with_stdio()));
 
         let fs = fs.unwrap_or_else(|| Arc::new(ThreadFsInfo::default()));
+
+        let root_vmar = process
+            .upgrade()
+            .unwrap()
+            .lock_root_vmar()
+            .unwrap()
+            .dup()
+            .unwrap();
 
         Arc::new_cyclic(|weak_task| {
             let posix_thread = {
@@ -126,7 +131,7 @@ impl PosixThreadBuilder {
                     tid,
                     name: Mutex::new(thread_name),
                     credentials,
-                    file_table: file_table.clone_ro(),
+                    file_table: Mutex::new(Some(file_table.clone_ro())),
                     fs,
                     sig_mask,
                     sig_queues,
@@ -141,14 +146,15 @@ impl PosixThreadBuilder {
             let thread = Arc::new(Thread::new(
                 weak_task.clone(),
                 posix_thread,
-                priority,
                 cpu_affinity,
+                sched_policy,
             ));
 
-            let thread_local = ThreadLocal::new(set_child_tid, clear_child_tid, file_table);
+            let thread_local =
+                ThreadLocal::new(set_child_tid, clear_child_tid, root_vmar, file_table);
 
             thread_table::add_thread(tid, thread.clone());
-            task::create_new_user_task(user_space, thread, thread_local)
+            task::create_new_user_task(user_ctx, thread, thread_local)
         })
     }
 }

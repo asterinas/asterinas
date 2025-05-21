@@ -78,7 +78,7 @@ impl IrqLine {
     ///
     /// This function is marked unsafe as manipulating interrupt lines is
     /// considered a dangerous operation.
-    #[allow(clippy::redundant_allocation)]
+    #[expect(clippy::redundant_allocation)]
     pub unsafe fn acquire(irq_num: u8) -> Arc<&'static Self> {
         Arc::new(IRQ_LIST.get().unwrap().get(irq_num as usize).unwrap())
     }
@@ -140,12 +140,26 @@ impl Drop for IrqCallbackHandle {
     }
 }
 
+// ####### Inter-Processor Interrupts (IPIs) #######
+
+/// Hardware-specific, architecture-dependent CPU ID.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct HwCpuId(u32);
+
+impl HwCpuId {
+    pub(crate) fn read_current() -> Self {
+        // TODO: Support SMP in RISC-V.
+        Self(0)
+    }
+}
+
 /// Sends a general inter-processor interrupt (IPI) to the specified CPU.
 ///
 /// # Safety
 ///
-/// The caller must ensure that the CPU ID and the interrupt number corresponds
-/// to a safe function to call.
-pub(crate) unsafe fn send_ipi(cpu_id: CpuId, irq_num: u8) {
+/// The caller must ensure that the interrupt number is valid and that
+/// the corresponding handler is configured correctly on the remote CPU.
+/// Furthermore, invoking the interrupt handler must also be safe.
+pub(crate) unsafe fn send_ipi(hw_cpu_id: HwCpuId, irq_num: u8) {
     unimplemented!()
 }

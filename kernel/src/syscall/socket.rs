@@ -5,6 +5,7 @@ use crate::{
     fs::{file_handle::FileLike, file_table::FdFlags},
     net::socket::{
         ip::{datagram::DatagramSocket, stream::StreamSocket},
+        netlink::{is_valid_protocol, NetlinkRouteSocket, StandardNetlinkProtocol},
         unix::UnixStreamSocket,
         vsock::VsockStreamSocket,
     },
@@ -16,35 +17,68 @@ pub fn sys_socket(domain: i32, type_: i32, protocol: i32, ctx: &Context) -> Resu
     let domain = CSocketAddrFamily::try_from(domain)?;
     let sock_type = SockType::try_from(type_ & SOCK_TYPE_MASK)?;
     let sock_flags = SockFlags::from_bits_truncate(type_ & !SOCK_TYPE_MASK);
-    let protocol = Protocol::try_from(protocol)?;
     debug!(
-        "domain = {:?}, sock_type = {:?}, sock_flags = {:?}, protocol = {:?}",
-        domain, sock_type, sock_flags, protocol
+        "domain = {:?}, sock_type = {:?}, sock_flags = {:?}",
+        domain, sock_type, sock_flags
     );
-    let nonblocking = sock_flags.contains(SockFlags::SOCK_NONBLOCK);
-    let file_like = match (domain, sock_type, protocol) {
+    let is_nonblocking = sock_flags.contains(SockFlags::SOCK_NONBLOCK);
+    let file_like = match (domain, sock_type) {
         // FIXME: SOCK_SEQPACKET is added to run fcntl_test, not supported yet.
-        (CSocketAddrFamily::AF_UNIX, SockType::SOCK_STREAM | SockType::SOCK_SEQPACKET, _) => {
-            UnixStreamSocket::new(nonblocking) as Arc<dyn FileLike>
+        (CSocketAddrFamily::AF_UNIX, SockType::SOCK_STREAM | SockType::SOCK_SEQPACKET) => {
+            UnixStreamSocket::new(is_nonblocking) as Arc<dyn FileLike>
         }
-        (
-            CSocketAddrFamily::AF_INET,
-            SockType::SOCK_STREAM,
-            Protocol::IPPROTO_IP | Protocol::IPPROTO_TCP,
-        ) => StreamSocket::new(nonblocking) as Arc<dyn FileLike>,
-        (
-            CSocketAddrFamily::AF_INET,
-            SockType::SOCK_DGRAM,
-            Protocol::IPPROTO_IP | Protocol::IPPROTO_UDP,
-        ) => DatagramSocket::new(nonblocking) as Arc<dyn FileLike>,
-        (CSocketAddrFamily::AF_VSOCK, SockType::SOCK_STREAM, _) => {
-            Arc::new(VsockStreamSocket::new(nonblocking)) as Arc<dyn FileLike>
+        (CSocketAddrFamily::AF_INET, SockType::SOCK_STREAM) => {
+            let protocol = Protocol::try_from(protocol)?;
+            debug!("protocol = {:?}", protocol);
+            match protocol {
+                Protocol::IPPROTO_IP | Protocol::IPPROTO_TCP => {
+                    StreamSocket::new(is_nonblocking) as Arc<dyn FileLike>
+                }
+                _ => return_errno_with_message!(Errno::EAFNOSUPPORT, "unsupported protocol"),
+            }
+        }
+        (CSocketAddrFamily::AF_INET, SockType::SOCK_DGRAM) => {
+            let protocol = Protocol::try_from(protocol)?;
+            debug!("protocol = {:?}", protocol);
+            match protocol {
+                Protocol::IPPROTO_IP | Protocol::IPPROTO_UDP => {
+                    DatagramSocket::new(is_nonblocking) as Arc<dyn FileLike>
+                }
+                _ => return_errno_with_message!(Errno::EAFNOSUPPORT, "unsupported protocol"),
+            }
+        }
+        (CSocketAddrFamily::AF_NETLINK, SockType::SOCK_RAW | SockType::SOCK_DGRAM) => {
+            let netlink_family = StandardNetlinkProtocol::try_from(protocol as u32);
+            debug!("netlink family = {:?}", netlink_family);
+            match netlink_family {
+                Ok(StandardNetlinkProtocol::ROUTE) => {
+                    Arc::new(NetlinkRouteSocket::new(is_nonblocking))
+                }
+                Ok(_) => {
+                    return_errno_with_message!(
+                        Errno::EAFNOSUPPORT,
+                        "some standard netlink families are not supported yet"
+                    );
+                }
+                Err(_) => {
+                    if is_valid_protocol(protocol as u32) {
+                        return_errno_with_message!(
+                            Errno::EAFNOSUPPORT,
+                            "user-provided netlink family is not supported"
+                        )
+                    }
+                    return_errno_with_message!(Errno::EAFNOSUPPORT, "invalid netlink family");
+                }
+            }
+        }
+        (CSocketAddrFamily::AF_VSOCK, SockType::SOCK_STREAM) => {
+            Arc::new(VsockStreamSocket::new(is_nonblocking)) as Arc<dyn FileLike>
         }
         _ => return_errno_with_message!(Errno::EAFNOSUPPORT, "unsupported domain"),
     };
     let fd = {
-        let file_table = ctx.thread_local.file_table().borrow();
-        let mut file_table_locked = file_table.write();
+        let file_table = ctx.thread_local.borrow_file_table();
+        let mut file_table_locked = file_table.unwrap().write();
         let fd_flags = if sock_flags.contains(SockFlags::SOCK_CLOEXEC) {
             FdFlags::CLOEXEC
         } else {

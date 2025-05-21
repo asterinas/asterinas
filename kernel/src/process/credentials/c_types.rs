@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: MPL-2.0
-#![allow(non_camel_case_types)]
 
 use crate::{prelude::*, process::Pid};
 

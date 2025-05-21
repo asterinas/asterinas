@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use ostd::{
+    cpu::context::UserContext,
     task::{Task, TaskOptions},
-    user::{ReturnReason, UserContextApi, UserMode, UserSpace},
+    user::{ReturnReason, UserContextApi, UserMode},
 };
 
 use super::{oops, Thread};
@@ -21,7 +22,7 @@ use crate::{
 
 /// create new task with userspace and parent process
 pub fn create_new_user_task(
-    user_space: Arc<UserSpace>,
+    user_ctx: Arc<UserContext>,
     thread_ref: Arc<Thread>,
     thread_local: ThreadLocal,
 ) -> Task {
@@ -32,10 +33,10 @@ pub fn create_new_user_task(
         let current_thread_local = current_task.as_thread_local().unwrap();
         let current_process = current_posix_thread.process();
 
-        let user_space = current_task
-            .user_space()
-            .expect("user task should have user space");
-        let mut user_mode = UserMode::new(user_space);
+        let user_ctx = current_task
+            .user_ctx()
+            .expect("user task should have user context");
+        let mut user_mode = UserMode::new(UserContext::clone(user_ctx));
         debug!(
             "[Task entry] rip = 0x{:x}",
             user_mode.context().instruction_pointer()
@@ -67,7 +68,7 @@ pub fn create_new_user_task(
             thread_local: current_thread_local,
             posix_thread: current_posix_thread,
             thread: current_thread.as_ref(),
-            task: current_task.as_ref(),
+            task: &current_task,
         };
 
         loop {
@@ -109,7 +110,7 @@ pub fn create_new_user_task(
     })
     .data(thread_ref)
     .local_data(thread_local)
-    .user_space(Some(user_space))
+    .user_ctx(Some(user_ctx))
     .build()
     .expect("spawn task failed")
 }

@@ -1,17 +1,22 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
+#![expect(dead_code)]
 
 use alloc::{vec, vec::Vec};
+use core::ptr::NonNull;
 
-use acpi::PlatformInfo;
 use bit_field::BitField;
 use cfg_if::cfg_if;
 use log::info;
 use spin::Once;
+use volatile::{
+    access::{ReadWrite, WriteOnly},
+    VolatileRef,
+};
 
 use crate::{
-    arch::{iommu::has_interrupt_remapping, x86::kernel::acpi::ACPI_TABLES},
+    arch::{if_tdx_enabled, iommu::has_interrupt_remapping, kernel::acpi::get_platform_info},
+    io::IoMemAllocatorBuilder,
     mm::paddr_to_vaddr,
     sync::SpinLock,
     trap::IrqLine,
@@ -20,7 +25,6 @@ use crate::{
 
 cfg_if! {
     if #[cfg(feature = "cvm_guest")] {
-        use ::tdx_guest::tdx_is_enabled;
         use crate::arch::tdx_guest;
     }
 }
@@ -117,7 +121,7 @@ impl IoApic {
     }
 
     pub fn vaddr(&self) -> usize {
-        self.access.register.addr()
+        self.access.register.as_ptr().as_raw_ptr().addr().get()
     }
 
     fn new(io_apic_access: IoApicAccess, interrupt_base: u32) -> Self {
@@ -130,36 +134,30 @@ impl IoApic {
 }
 
 struct IoApicAccess {
-    register: *mut u32,
-    data: *mut u32,
+    register: VolatileRef<'static, u32, WriteOnly>,
+    data: VolatileRef<'static, u32, ReadWrite>,
 }
 
 impl IoApicAccess {
     /// # Safety
     ///
     /// User must ensure the base address is valid.
-    unsafe fn new(base_address: usize) -> Self {
-        let vaddr = paddr_to_vaddr(base_address);
-        Self {
-            register: vaddr as *mut u32,
-            data: (vaddr + 0x10) as *mut u32,
-        }
+    unsafe fn new(base_address: usize, io_mem_builder: &IoMemAllocatorBuilder) -> Self {
+        io_mem_builder.remove(base_address..(base_address + 0x20));
+        let base = NonNull::new(paddr_to_vaddr(base_address) as *mut u8).unwrap();
+        let register = VolatileRef::new_restricted(WriteOnly, base.cast::<u32>());
+        let data = VolatileRef::new(base.add(0x10).cast::<u32>());
+        Self { register, data }
     }
 
     pub fn read(&mut self, register: u8) -> u32 {
-        // SAFETY: Since the base address is valid, the read/write should be safe.
-        unsafe {
-            self.register.write_volatile(register as u32);
-            self.data.read_volatile()
-        }
+        self.register.as_mut_ptr().write(register as u32);
+        self.data.as_ptr().read()
     }
 
     pub fn write(&mut self, register: u8, data: u32) {
-        // SAFETY: Since the base address is valid, the read/write should be safe.
-        unsafe {
-            self.register.write_volatile(register as u32);
-            self.data.write_volatile(data);
-        }
+        self.register.as_mut_ptr().write(register as u32);
+        self.data.as_mut_ptr().write(data);
     }
 
     pub fn id(&mut self) -> u8 {
@@ -179,30 +177,24 @@ impl IoApicAccess {
     }
 }
 
-/// # Safety: The pointer inside the IoApic will not change
-unsafe impl Send for IoApic {}
-/// # Safety: The pointer inside the IoApic will not change
-unsafe impl Sync for IoApic {}
-
 pub static IO_APIC: Once<Vec<SpinLock<IoApic>>> = Once::new();
 
-pub fn init() {
-    if !ACPI_TABLES.is_completed() {
+pub fn init(io_mem_builder: &IoMemAllocatorBuilder) {
+    let Some(platform_info) = get_platform_info() else {
         IO_APIC.call_once(|| {
             // FIXME: Is it possible to have an address that is not the default 0xFEC0_0000?
             // Need to find a way to determine if it is a valid address or not.
             const IO_APIC_DEFAULT_ADDRESS: usize = 0xFEC0_0000;
-            #[cfg(feature = "cvm_guest")]
-            // SAFETY:
-            // This is safe because we are ensuring that the `IO_APIC_DEFAULT_ADDRESS` is a valid MMIO address before this operation.
-            // The `IO_APIC_DEFAULT_ADDRESS` is a well-known address used for IO APICs in x86 systems.
-            // We are also ensuring that we are only unprotecting a single page.
-            if tdx_is_enabled() {
+            if_tdx_enabled!({
+                // SAFETY:
+                // This is safe because we are ensuring that the `IO_APIC_DEFAULT_ADDRESS` is a valid MMIO address before this operation.
+                // The `IO_APIC_DEFAULT_ADDRESS` is a well-known address used for IO APICs in x86 systems.
+                // We are also ensuring that we are only unprotecting a single page.
                 unsafe {
                     tdx_guest::unprotect_gpa_range(IO_APIC_DEFAULT_ADDRESS, 1).unwrap();
                 }
-            }
-            let mut io_apic = unsafe { IoApicAccess::new(IO_APIC_DEFAULT_ADDRESS) };
+            });
+            let mut io_apic = unsafe { IoApicAccess::new(IO_APIC_DEFAULT_ADDRESS, io_mem_builder) };
             io_apic.set_id(0);
             let id = io_apic.id();
             let version = io_apic.version();
@@ -218,26 +210,24 @@ pub fn init() {
             vec![SpinLock::new(IoApic::new(io_apic, 0))]
         });
         return;
-    }
-    let table = ACPI_TABLES.get().unwrap().lock();
-    let platform_info = PlatformInfo::new(&*table).unwrap();
-    match platform_info.interrupt_model {
+    };
+    match &platform_info.interrupt_model {
         acpi::InterruptModel::Unknown => panic!("not found APIC in ACPI Table"),
         acpi::InterruptModel::Apic(apic) => {
             let mut vec = Vec::new();
             for id in 0..apic.io_apics.len() {
                 let io_apic = apic.io_apics.get(id).unwrap();
-                #[cfg(feature = "cvm_guest")]
-                // SAFETY:
-                // This is safe because we are ensuring that the `io_apic.address` is a valid MMIO address before this operation.
-                // We are also ensuring that we are only unprotecting a single page.
-                if tdx_is_enabled() {
+                if_tdx_enabled!({
+                    // SAFETY:
+                    // This is safe because we are ensuring that the `io_apic.address` is a valid MMIO address before this operation.
+                    // We are also ensuring that we are only unprotecting a single page.
                     unsafe {
                         tdx_guest::unprotect_gpa_range(io_apic.address as usize, 1).unwrap();
                     }
-                }
+                });
                 let interrupt_base = io_apic.global_system_interrupt_base;
-                let mut io_apic = unsafe { IoApicAccess::new(io_apic.address as usize) };
+                let mut io_apic =
+                    unsafe { IoApicAccess::new(io_apic.address as usize, io_mem_builder) };
                 io_apic.set_id(id as u8);
                 let id = io_apic.id();
                 let version = io_apic.version();

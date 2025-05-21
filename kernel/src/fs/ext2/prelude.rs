@@ -16,7 +16,6 @@ pub(super) use ostd::{
     mm::{Frame, FrameAllocOptions, Segment, USegment, VmIo},
     sync::{RwMutex, RwMutexReadGuard, RwMutexWriteGuard},
 };
-pub(super) use static_assertions::const_assert;
 
 pub(super) use super::utils::{Dirty, IsPowerOf};
 pub(super) use crate::{

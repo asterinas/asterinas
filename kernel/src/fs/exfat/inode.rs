@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-#![allow(unused_variables)]
+#![expect(dead_code)]
+#![expect(unused_variables)]
 
 use alloc::string::String;
 use core::{cmp::Ordering, time::Duration};
@@ -29,6 +29,7 @@ use crate::{
     events::IoEvents,
     fs::{
         exfat::{dentry::ExfatDentryIterator, fat::ExfatChain, fs::ExfatFS},
+        path::{is_dot, is_dot_or_dotdot, is_dotdot},
         utils::{
             CachePage, DirentVisitor, Extension, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
             MknodType, PageCache, PageCacheBackend,
@@ -490,7 +491,7 @@ impl ExfatInodeInner {
         };
 
         // FIXME: This isn't expected by the compiler.
-        #[allow(non_local_definitions)]
+        #[expect(non_local_definitions)]
         impl DirentVisitor for Vec<(String, usize)> {
             fn visit(
                 &mut self,
@@ -1010,7 +1011,7 @@ impl ExfatInode {
         let sub_dir = inner.num_sub_inodes;
         let mut child_offsets: Vec<usize> = vec![];
         // FIXME: This isn't expected by the compiler.
-        #[allow(non_local_definitions)]
+        #[expect(non_local_definitions)]
         impl DirentVisitor for Vec<usize> {
             fn visit(
                 &mut self,
@@ -1066,8 +1067,8 @@ impl ExfatInode {
     }
 }
 
-struct EmptyVistor;
-impl DirentVisitor for EmptyVistor {
+struct EmptyVisitor;
+impl DirentVisitor for EmptyVisitor {
     fn visit(&mut self, name: &str, ino: u64, type_: InodeType, offset: usize) -> Result<()> {
         Ok(())
     }
@@ -1457,7 +1458,7 @@ impl Inode for ExfatInode {
             return Ok(0);
         }
 
-        let mut empty_visitor = EmptyVistor;
+        let mut empty_visitor = EmptyVisitor;
 
         let dir_read = {
             let fs = inner.fs();
@@ -1517,7 +1518,7 @@ impl Inode for ExfatInode {
         if name.len() > MAX_NAME_LENGTH {
             return_errno!(Errno::ENAMETOOLONG)
         }
-        if name == "." || name == ".." {
+        if is_dot_or_dotdot(name) {
             return_errno!(Errno::EISDIR)
         }
 
@@ -1545,10 +1546,10 @@ impl Inode for ExfatInode {
         if !self.inner.read().inode_type.is_directory() {
             return_errno!(Errno::ENOTDIR)
         }
-        if name == "." {
+        if is_dot(name) {
             return_errno_with_message!(Errno::EINVAL, "rmdir on .")
         }
-        if name == ".." {
+        if is_dotdot(name) {
             return_errno_with_message!(Errno::ENOTEMPTY, "rmdir on ..")
         }
         if name.len() > MAX_NAME_LENGTH {
@@ -1601,7 +1602,7 @@ impl Inode for ExfatInode {
     }
 
     fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
-        if old_name == "." || old_name == ".." || new_name == "." || new_name == ".." {
+        if is_dot_or_dotdot(old_name) || is_dot_or_dotdot(new_name) {
             return_errno!(Errno::EISDIR);
         }
         if old_name.len() > MAX_NAME_LENGTH || new_name.len() > MAX_NAME_LENGTH {

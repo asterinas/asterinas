@@ -25,10 +25,6 @@ pub struct VirtioPciDriver {
 }
 
 impl VirtioPciDriver {
-    pub fn num_devices(&self) -> usize {
-        self.devices.lock().len()
-    }
-
     pub fn pop_device_transport(&self) -> Option<Box<dyn VirtioTransport>> {
         self.devices.lock().pop()
     }

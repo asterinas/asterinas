@@ -36,7 +36,7 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
             unreachable!("`yield_now` in the boot context should not return");
         }
 
-        #[allow(unused)]
+        #[expect(unused)]
         #main_fn
     )
     .into()
@@ -65,6 +65,122 @@ pub fn test_main(_attr: TokenStream, item: TokenStream) -> TokenStream {
     .into()
 }
 
+/// A macro attribute for the global frame allocator.
+///
+/// The attributed static variable will be used to provide frame allocation
+/// for the kernel.
+///
+/// # Example
+///
+/// ```ignore
+/// use core::alloc::Layout;
+/// use ostd::{mm::{frame::GlobalFrameAllocator, Paddr}, global_frame_allocator};
+///
+/// // Of course it won't work because all allocations will fail.
+/// // It's just an example.
+/// #[global_frame_allocator]
+/// static ALLOCATOR: MyFrameAllocator = MyFrameAllocator;
+///
+/// struct MyFrameAllocator;
+///
+/// impl GlobalFrameAllocator for MyFrameAllocator {
+///     fn alloc(&self, _layout: Layout) -> Option<Paddr> { None }
+///     fn dealloc(&self, _paddr: Paddr, _size: usize) {}
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn global_frame_allocator(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    // Make a `static __GLOBAL_FRAME_ALLOCATOR_REF: &'static dyn GlobalFrameAllocator`
+    // That points to the annotated static variable.
+    let item = parse_macro_input!(item as syn::ItemStatic);
+    let static_name = &item.ident;
+
+    quote!(
+        #[no_mangle]
+        static __GLOBAL_FRAME_ALLOCATOR_REF: &'static dyn ostd::mm::frame::GlobalFrameAllocator = &#static_name;
+        #item
+    )
+    .into()
+}
+
+/// A macro attribute to register the global heap allocator.
+///
+/// The attributed static variable will be used to provide heap allocation
+/// for the kernel.
+///
+/// This attribute is not to be confused with Rust's built-in
+/// [`global_allocator`] attribute, which applies to a static variable
+/// implementing the unsafe `GlobalAlloc` trait. In contrast, the
+/// [`global_heap_allocator`] attribute does not require the heap allocator to
+/// implement an unsafe trait. [`global_heap_allocator`] eventually relies on
+/// [`global_allocator`] to customize Rust's heap allocator.
+///
+/// # Example
+///
+/// ```ignore
+/// use core::alloc::{AllocError, Layout};
+/// use ostd::{mm::heap::{GlobalHeapAllocator, HeapSlot}, global_heap_allocator};
+///
+/// // Of course it won't work and all allocations will fail.
+/// // It's just an example.
+/// #[global_heap_allocator]
+/// static ALLOCATOR: MyHeapAllocator = MyHeapAllocator;
+///
+/// struct MyHeapAllocator;
+///
+/// impl GlobalHeapAllocator for MyHeapAllocator {
+///     fn alloc(&self, _layout: Layout) -> Result<HeapSlot, AllocError> { None }
+///     fn dealloc(&self, _slot: HeapSlot) -> Result<(), AllocError> {}
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn global_heap_allocator(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    // Make a `static __GLOBAL_HEAP_ALLOCATOR_REF: &'static dyn GlobalHeapAllocator`
+    // That points to the annotated static variable.
+    let item = parse_macro_input!(item as syn::ItemStatic);
+    let static_name = &item.ident;
+
+    quote!(
+        #[no_mangle]
+        static __GLOBAL_HEAP_ALLOCATOR_REF: &'static dyn ostd::mm::heap::GlobalHeapAllocator = &#static_name;
+        #item
+    )
+    .into()
+}
+
+/// A macro attribute to map allocation layouts to slot sizes and types.
+///
+/// In OSTD, both slab slots and large slots are used to serve heap allocations.
+/// Slab slots must come from slabs of fixed sizes, while large slots can be
+/// allocated by frame allocation, with sizes being multiples of pages.
+/// OSTD must know the user's decision on the size and type of a slot to serve
+/// an allocation with a given layout.
+///
+/// This macro should be used to annotate a function that maps a layout to the
+/// slot size and the type. The function should return `None` if the layout is
+/// not supported.
+///
+/// The annotated function should be idempotent, meaning the result should be the
+/// same for the same layout. OSDK enforces this by only allowing the function
+/// to be `const`.
+#[proc_macro_attribute]
+pub fn global_heap_allocator_slot_map(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    // Rewrite the input `const fn __any_name__(layout: Layout) -> Option<SlotInfo> { ... }` to
+    // `const extern "Rust" fn __GLOBAL_HEAP_SLOT_INFO_FROM_LAYOUT(layout: Layout) -> Option<SlotInfo> { ... }`.
+    // Reject if the input is not a `const fn`.
+    let item = parse_macro_input!(item as syn::ItemFn);
+    assert!(
+        item.sig.constness.is_some(),
+        "the annotated function must be `const`"
+    );
+
+    quote!(
+        #[export_name = "__GLOBAL_HEAP_SLOT_INFO_FROM_LAYOUT"]
+        #item
+    )
+    .into()
+}
+
 /// A macro attribute for the panic handler.
 ///
 /// The attributed function will be used to override OSTD's default
@@ -82,7 +198,7 @@ pub fn panic_handler(_attr: TokenStream, item: TokenStream) -> TokenStream {
             #handler_fn_name(info);
         }
 
-        #[allow(unused)]
+        #[expect(unused)]
         #handler_fn
     )
     .into()

@@ -1,18 +1,22 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-#![allow(unused_variables)]
+#![expect(dead_code)]
+#![expect(unused_variables)]
 
 //! Virtual Memory Objects (VMOs).
 
-use core::ops::Range;
+use core::{
+    ops::Range,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 use align_ext::AlignExt;
 use aster_rights::Rights;
 use ostd::{
-    collections::xarray::{CursorMut, XArray},
     mm::{FrameAllocOptions, UFrame, UntypedMem, VmReader, VmWriter},
+    task::disable_preempt,
 };
+use xarray::{Cursor, LockedXArray, XArray};
 
 use crate::prelude::*;
 
@@ -78,12 +82,12 @@ pub trait VmoRightsOp {
     /// Returns the access rights.
     fn rights(&self) -> Rights;
 
-    /// Check whether rights is included in self
+    /// Checks whether current rights meet the input `rights`.
     fn check_rights(&self, rights: Rights) -> Result<()> {
         if self.rights().contains(rights) {
             Ok(())
         } else {
-            return_errno_with_message!(Errno::EINVAL, "vmo rights check failed");
+            return_errno_with_message!(Errno::EACCES, "VMO rights are insufficient");
         }
     }
 
@@ -91,21 +95,6 @@ pub trait VmoRightsOp {
     fn to_dyn(self) -> Vmo<Rights>
     where
         Self: Sized;
-}
-
-// We implement this trait for VMO, so we can use functions on type like Vmo<R> without trait bounds.
-// FIXME: This requires the incomplete feature specialization, which should be fixed further.
-impl<R> VmoRightsOp for Vmo<R> {
-    default fn rights(&self) -> Rights {
-        unimplemented!()
-    }
-
-    default fn to_dyn(self) -> Vmo<Rights>
-    where
-        Self: Sized,
-    {
-        unimplemented!()
-    }
 }
 
 bitflags! {
@@ -125,55 +114,47 @@ bitflags! {
     }
 }
 
-/// `Pages` is the struct that manages the `UFrame`s stored in `Vmo_`.
-pub(super) enum Pages {
-    /// `Pages` that cannot be resized. This kind of `Pages` will have a constant size.
-    Nonresizable(Mutex<XArray<UFrame>>, usize),
-    /// `Pages` that can be resized and have a variable size.
-    Resizable(Mutex<(XArray<UFrame>, usize)>),
+/// The error type used for commit operations of [`Vmo`].
+#[derive(Debug)]
+pub enum VmoCommitError {
+    /// Represents a general error raised during the commit operation.
+    Err(Error),
+    /// Represents that the commit operation need to do I/O operation on the
+    /// wrapped index.
+    NeedIo(usize),
 }
 
-impl Clone for Pages {
-    fn clone(&self) -> Self {
-        match self {
-            Self::Nonresizable(_, _) => {
-                self.with(|pages, size| Self::Nonresizable(Mutex::new(pages.clone()), size))
-            }
-            Self::Resizable(_) => {
-                self.with(|pages, size| Self::Resizable(Mutex::new((pages.clone(), size))))
-            }
-        }
+impl From<Error> for VmoCommitError {
+    fn from(e: Error) -> Self {
+        VmoCommitError::Err(e)
     }
 }
 
-impl Pages {
-    fn with<R, F>(&self, func: F) -> R
-    where
-        F: FnOnce(&mut XArray<UFrame>, usize) -> R,
-    {
-        match self {
-            Self::Nonresizable(pages, size) => func(&mut pages.lock(), *size),
-            Self::Resizable(pages) => {
-                let mut lock = pages.lock();
-                let size = lock.1;
-                func(&mut lock.0, size)
-            }
-        }
+impl From<ostd::Error> for VmoCommitError {
+    fn from(e: ostd::Error) -> Self {
+        Error::from(e).into()
     }
 }
 
 /// `Vmo_` is the structure that actually manages the content of VMO.
+///
 /// Broadly speaking, there are two types of VMO:
-/// 1. File-backed VMO: the VMO backed by a file and resides in the `PageCache`,
-///    which includes a pager to provide it with actual pages.
-/// 2. Anonymous VMO: the VMO without a file backup, which does not have a pager.
-#[derive(Clone)]
+/// 1. File-backed VMO: the VMO backed by a file and resides in the page cache,
+///    which includes a [`Pager`] to provide it with actual pages.
+/// 2. Anonymous VMO: the VMO without a file backup, which does not have a `Pager`.
 pub(super) struct Vmo_ {
     pager: Option<Arc<dyn Pager>>,
     /// Flags
     flags: VmoFlags,
     /// The virtual pages where the VMO resides.
-    pages: Pages,
+    pages: XArray<UFrame>,
+    /// The size of the VMO.
+    ///
+    /// Note: This size may not necessarily match the size of the `pages`, but it is
+    /// required here that modifications to the size can only be made after locking
+    /// the [`XArray`] in the `pages` field. Therefore, the size read after locking the
+    /// `pages` will be the latest size.
+    size: AtomicUsize,
 }
 
 impl Debug for Vmo_ {
@@ -202,111 +183,155 @@ impl CommitFlags {
 
 impl Vmo_ {
     /// Prepares a new `UFrame` for the target index in pages, returns this new frame.
-    fn prepare_page(&self, page_idx: usize) -> Result<UFrame> {
+    ///
+    /// This operation may involve I/O operations if the VMO is backed by a pager.
+    fn prepare_page(&self, page_idx: usize, commit_flags: CommitFlags) -> Result<UFrame> {
         match &self.pager {
             None => Ok(FrameAllocOptions::new().alloc_frame()?.into()),
-            Some(pager) => pager.commit_page(page_idx),
-        }
-    }
-
-    /// Prepares a new `UFrame` for the target index in the VMO, returns this new frame.
-    fn prepare_overwrite(&self, page_idx: usize) -> Result<UFrame> {
-        if let Some(pager) = &self.pager {
-            pager.commit_overwrite(page_idx)
-        } else {
-            Ok(FrameAllocOptions::new().alloc_frame()?.into())
-        }
-    }
-
-    fn commit_with_cursor(
-        &self,
-        cursor: &mut CursorMut<'_, UFrame>,
-        commit_flags: CommitFlags,
-    ) -> Result<UFrame> {
-        let new_page = {
-            if let Some(committed_page) = cursor.load() {
-                // Fast path: return the page directly.
-                return Ok(committed_page.clone());
-            } else if commit_flags.will_overwrite() {
-                // In this case, the page will be completely overwritten.
-                self.prepare_overwrite(cursor.index() as usize)?
-            } else {
-                self.prepare_page(cursor.index() as usize)?
+            Some(pager) => {
+                if commit_flags.will_overwrite() {
+                    pager.commit_overwrite(page_idx)
+                } else {
+                    pager.commit_page(page_idx)
+                }
             }
-        };
+        }
+    }
+
+    /// Commits a page at a specific page index.
+    ///
+    /// This method may involve I/O operations if the VMO needs to fetch a page from
+    /// the underlying page cache.
+    pub fn commit_on(&self, page_idx: usize, commit_flags: CommitFlags) -> Result<UFrame> {
+        let new_page = self.prepare_page(page_idx, commit_flags)?;
+
+        let mut locked_pages = self.pages.lock();
+        if page_idx * PAGE_SIZE > self.size() {
+            return_errno_with_message!(Errno::EINVAL, "the offset is outside the VMO");
+        }
+
+        let mut cursor = locked_pages.cursor_mut(page_idx as u64);
+        if let Some(page) = cursor.load() {
+            return Ok(page.clone());
+        }
 
         cursor.store(new_page.clone());
         Ok(new_page)
     }
 
-    /// Commits the page corresponding to the target offset in the VMO and return that page.
-    /// If the current offset has already been committed, the page will be returned directly.
-    pub fn commit_page(&self, offset: usize) -> Result<UFrame> {
-        let page_idx = offset / PAGE_SIZE;
-        self.pages.with(|pages, size| {
-            if offset >= size {
-                return_errno_with_message!(Errno::EINVAL, "the offset is outside the VMO");
-            }
-            let mut cursor = pages.cursor_mut(page_idx as u64);
-            self.commit_with_cursor(&mut cursor, CommitFlags::empty())
-        })
+    fn try_commit_with_cursor(
+        &self,
+        cursor: &mut Cursor<'_, UFrame>,
+    ) -> core::result::Result<UFrame, VmoCommitError> {
+        if let Some(committed_page) = cursor.load() {
+            return Ok(committed_page.clone());
+        }
+
+        if let Some(pager) = &self.pager {
+            // FIXME: Here `Vmo` treat all instructions in `pager` as I/O instructions
+            // since it needs to take the inner `Mutex` lock and users also cannot hold a
+            // `SpinLock` to do such instructions. This workaround may introduce some performance
+            // issues. In the future we should solve the redundancy of `Vmo` and the pagecache
+            // make sure return such error when really needing I/Os.
+            return Err(VmoCommitError::NeedIo(cursor.index() as usize));
+        }
+
+        let frame = self.commit_on(cursor.index() as usize, CommitFlags::empty())?;
+        Ok(frame)
     }
 
-    /// Decommits the page corresponding to the target offset in the VMO.
-    fn decommit_page(&mut self, offset: usize) -> Result<()> {
+    /// Commits the page corresponding to the target offset in the VMO.
+    ///
+    /// If the commit operation needs to perform I/O, it will return a [`VmoCommitError::NeedIo`].
+    pub fn try_commit_page(&self, offset: usize) -> core::result::Result<UFrame, VmoCommitError> {
         let page_idx = offset / PAGE_SIZE;
-        self.pages.with(|pages, size| {
-            if offset >= size {
-                return_errno_with_message!(Errno::EINVAL, "the offset is outside the VMO");
-            }
-            let mut cursor = pages.cursor_mut(page_idx as u64);
-            if cursor.remove().is_some()
-                && let Some(pager) = &self.pager
-            {
-                pager.decommit_page(page_idx)?;
-            }
-            Ok(())
-        })
+        if offset >= self.size() {
+            return Err(VmoCommitError::Err(Error::with_message(
+                Errno::EINVAL,
+                "the offset is outside the VMO",
+            )));
+        }
+
+        let guard = disable_preempt();
+        let mut cursor = self.pages.cursor(&guard, page_idx as u64);
+        self.try_commit_with_cursor(&mut cursor)
     }
 
     /// Traverses the indices within a specified range of a VMO sequentially.
+    ///
     /// For each index position, you have the option to commit the page as well as
     /// perform other operations.
-    pub fn operate_on_range<F>(
+    ///
+    /// Once a commit operation needs to perform I/O, it will return a [`VmoCommitError::NeedIo`].
+    pub fn try_operate_on_range<F>(
         &self,
         range: &Range<usize>,
+        mut operate: F,
+    ) -> core::result::Result<(), VmoCommitError>
+    where
+        F: FnMut(
+            &mut dyn FnMut() -> core::result::Result<UFrame, VmoCommitError>,
+        ) -> core::result::Result<(), VmoCommitError>,
+    {
+        if range.end > self.size() {
+            return Err(VmoCommitError::Err(Error::with_message(
+                Errno::EINVAL,
+                "operated range exceeds the vmo size",
+            )));
+        }
+
+        let page_idx_range = get_page_idx_range(range);
+        let guard = disable_preempt();
+        let mut cursor = self.pages.cursor(&guard, page_idx_range.start as u64);
+        for page_idx in page_idx_range {
+            let mut commit_fn = || self.try_commit_with_cursor(&mut cursor);
+            operate(&mut commit_fn)?;
+            cursor.next();
+        }
+        Ok(())
+    }
+
+    /// Traverses the indices within a specified range of a VMO sequentially.
+    ///
+    /// For each index position, you have the option to commit the page as well as
+    /// perform other operations.
+    ///
+    /// This method may involve I/O operations if the VMO needs to fetch a page from
+    /// the underlying page cache.
+    fn operate_on_range<F>(
+        &self,
+        mut range: Range<usize>,
         mut operate: F,
         commit_flags: CommitFlags,
     ) -> Result<()>
     where
-        F: FnMut(&mut dyn FnMut() -> Result<UFrame>) -> Result<()>,
+        F: FnMut(
+            &mut dyn FnMut() -> core::result::Result<UFrame, VmoCommitError>,
+        ) -> core::result::Result<(), VmoCommitError>,
     {
-        self.pages.with(|pages, size| {
-            if range.end > size {
-                return_errno_with_message!(Errno::EINVAL, "operated range exceeds the vmo size");
+        'retry: loop {
+            let res = self.try_operate_on_range(&range, &mut operate);
+            match res {
+                Ok(_) => return Ok(()),
+                Err(VmoCommitError::Err(e)) => return Err(e),
+                Err(VmoCommitError::NeedIo(index)) => {
+                    self.commit_on(index, commit_flags)?;
+                    range.start = index * PAGE_SIZE;
+                    continue 'retry;
+                }
             }
-
-            let page_idx_range = get_page_idx_range(range);
-            let mut cursor = pages.cursor_mut(page_idx_range.start as u64);
-            for page_idx in page_idx_range {
-                let mut commit_fn = || self.commit_with_cursor(&mut cursor, commit_flags);
-                operate(&mut commit_fn)?;
-                cursor.next();
-            }
-            Ok(())
-        })
+        }
     }
 
     /// Decommits a range of pages in the VMO.
     pub fn decommit(&self, range: Range<usize>) -> Result<()> {
-        self.pages.with(|pages, size| {
-            if range.end > size {
-                return_errno_with_message!(Errno::EINVAL, "operated range exceeds the vmo size");
-            }
+        let locked_pages = self.pages.lock();
+        if range.end > self.size() {
+            return_errno_with_message!(Errno::EINVAL, "operated range exceeds the vmo size");
+        }
 
-            self.decommit_pages(pages, range)?;
-            Ok(())
-        })
+        self.decommit_pages(locked_pages, range)?;
+        Ok(())
     }
 
     /// Reads the specified amount of buffer content starting from the target offset in the VMO.
@@ -315,14 +340,19 @@ impl Vmo_ {
         let read_range = offset..(offset + read_len);
         let mut read_offset = offset % PAGE_SIZE;
 
-        let read = move |commit_fn: &mut dyn FnMut() -> Result<UFrame>| {
-            let frame = commit_fn()?;
-            frame.reader().skip(read_offset).read_fallible(writer)?;
-            read_offset = 0;
-            Ok(())
-        };
+        let read =
+            move |commit_fn: &mut dyn FnMut() -> core::result::Result<UFrame, VmoCommitError>| {
+                let frame = commit_fn()?;
+                frame
+                    .reader()
+                    .skip(read_offset)
+                    .read_fallible(writer)
+                    .map_err(|e| VmoCommitError::from(e.0))?;
+                read_offset = 0;
+                Ok(())
+            };
 
-        self.operate_on_range(&read_range, read, CommitFlags::empty())
+        self.operate_on_range(read_range, read, CommitFlags::empty())
     }
 
     /// Writes the specified amount of buffer content starting from the target offset in the VMO.
@@ -330,31 +360,35 @@ impl Vmo_ {
         let write_len = reader.remain();
         let write_range = offset..(offset + write_len);
         let mut write_offset = offset % PAGE_SIZE;
-
-        let mut write = move |commit_fn: &mut dyn FnMut() -> Result<UFrame>| {
-            let frame = commit_fn()?;
-            frame.writer().skip(write_offset).write_fallible(reader)?;
-            write_offset = 0;
-            Ok(())
-        };
+        let mut write =
+            move |commit_fn: &mut dyn FnMut() -> core::result::Result<UFrame, VmoCommitError>| {
+                let frame = commit_fn()?;
+                frame
+                    .writer()
+                    .skip(write_offset)
+                    .write_fallible(reader)
+                    .map_err(|e| VmoCommitError::from(e.0))?;
+                write_offset = 0;
+                Ok(())
+            };
 
         if write_range.len() < PAGE_SIZE {
-            self.operate_on_range(&write_range, write, CommitFlags::empty())?;
+            self.operate_on_range(write_range.clone(), write, CommitFlags::empty())?;
         } else {
             let temp = write_range.start + PAGE_SIZE - 1;
             let up_align_start = temp - temp % PAGE_SIZE;
             let down_align_end = write_range.end - write_range.end % PAGE_SIZE;
             if write_range.start != up_align_start {
                 let head_range = write_range.start..up_align_start;
-                self.operate_on_range(&head_range, &mut write, CommitFlags::empty())?;
+                self.operate_on_range(head_range, &mut write, CommitFlags::empty())?;
             }
             if up_align_start != down_align_end {
                 let mid_range = up_align_start..down_align_end;
-                self.operate_on_range(&mid_range, &mut write, CommitFlags::WILL_OVERWRITE)?;
+                self.operate_on_range(mid_range, &mut write, CommitFlags::WILL_OVERWRITE)?;
             }
             if down_align_end != write_range.end {
                 let tail_range = down_align_end..write_range.end;
-                self.operate_on_range(&tail_range, &mut write, CommitFlags::empty())?;
+                self.operate_on_range(tail_range, &mut write, CommitFlags::empty())?;
             }
         }
 
@@ -377,7 +411,7 @@ impl Vmo_ {
 
     /// Returns the size of current VMO.
     pub fn size(&self) -> usize {
-        self.pages.with(|_, size| size)
+        self.size.load(Ordering::Acquire)
     }
 
     /// Resizes current VMO to target size.
@@ -385,40 +419,54 @@ impl Vmo_ {
         assert!(self.flags.contains(VmoFlags::RESIZABLE));
         let new_size = new_size.align_up(PAGE_SIZE);
 
-        let Pages::Resizable(ref pages) = self.pages else {
-            return_errno_with_message!(Errno::EINVAL, "current VMO is not resizable");
-        };
+        let locked_pages = self.pages.lock();
 
-        let mut lock = pages.lock();
-        let old_size = lock.1;
+        let old_size = self.size();
         if new_size == old_size {
             return Ok(());
         }
+
+        self.size.store(new_size, Ordering::Release);
+
         if new_size < old_size {
-            self.decommit_pages(&mut lock.0, new_size..old_size)?;
+            self.decommit_pages(locked_pages, new_size..old_size)?;
         }
-        lock.1 = new_size;
+
         Ok(())
     }
 
-    fn decommit_pages(&self, pages: &mut XArray<UFrame>, range: Range<usize>) -> Result<()> {
+    fn decommit_pages(
+        &self,
+        mut locked_pages: LockedXArray<UFrame>,
+        range: Range<usize>,
+    ) -> Result<()> {
         let page_idx_range = get_page_idx_range(&range);
-        let mut cursor = pages.cursor_mut(page_idx_range.start as u64);
+        let mut cursor = locked_pages.cursor_mut(page_idx_range.start as u64);
+
+        let Some(pager) = &self.pager else {
+            for _ in page_idx_range {
+                cursor.remove();
+                cursor.next();
+            }
+            return Ok(());
+        };
+
+        let mut removed_page_idx = Vec::new();
         for page_idx in page_idx_range {
-            if cursor.remove().is_some()
-                && let Some(pager) = &self.pager
-            {
-                pager.decommit_page(page_idx)?;
+            if cursor.remove().is_some() {
+                removed_page_idx.push(page_idx);
             }
             cursor.next();
         }
-        Ok(())
-    }
 
-    /// Determines whether a page is committed.
-    pub fn is_page_committed(&self, page_idx: usize) -> bool {
-        self.pages
-            .with(|pages, _| pages.load(page_idx as u64).is_some())
+        drop(cursor);
+        drop(locked_pages);
+
+        for page_idx in removed_page_idx {
+            pager.decommit_page(page_idx)?;
+        }
+
+        Ok(())
     }
 
     /// Returns the flags of current VMO.
@@ -427,13 +475,13 @@ impl Vmo_ {
     }
 
     fn replace(&self, page: UFrame, page_idx: usize) -> Result<()> {
-        self.pages.with(|pages, size| {
-            if page_idx >= size / PAGE_SIZE {
-                return_errno_with_message!(Errno::EINVAL, "the page index is outside of the vmo");
-            }
-            pages.store(page_idx as u64, page);
-            Ok(())
-        })
+        let mut locked_pages = self.pages.lock();
+        if page_idx >= self.size() / PAGE_SIZE {
+            return_errno_with_message!(Errno::EINVAL, "the page index is outside of the vmo");
+        }
+
+        locked_pages.store(page_idx as u64, page);
+        Ok(())
     }
 }
 

@@ -17,7 +17,7 @@ pub fn sys_read(
         fd, user_buf_addr, buf_len
     );
 
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
 
     // According to <https://man7.org/linux/man-pages/man2/read.2.html>, if
@@ -25,11 +25,8 @@ pub fn sys_read(
     // the file descriptor. If no errors detected, return 0 successfully.
     let read_len = {
         if buf_len != 0 {
-            let mut writer = ctx
-                .process
-                .root_vmar()
-                .vm_space()
-                .writer(user_buf_addr, buf_len)?;
+            let user_space = ctx.user_space();
+            let mut writer = user_space.writer(user_buf_addr, buf_len)?;
             file.read(&mut writer)
         } else {
             file.read_bytes(&mut [])

@@ -16,6 +16,9 @@ Fo   = "Fo"
 Inh  = "Inh"
 DELET = "DELET"
 wrk = "wrk"
+rto = "rto"
+typ = "typ"
+sigfault = "sigfault"
 
 # Files with svg suffix are ignored to check. 
 [type.svg]

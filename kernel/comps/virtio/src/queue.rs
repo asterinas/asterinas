@@ -4,7 +4,7 @@
 
 use alloc::vec::Vec;
 use core::{
-    mem::size_of,
+    mem::{offset_of, size_of},
     sync::atomic::{fence, Ordering},
 };
 
@@ -13,8 +13,8 @@ use aster_util::{field_ptr, safe_ptr::SafePtr};
 use bitflags::bitflags;
 use log::debug;
 use ostd::{
-    mm::{DmaCoherent, FrameAllocOptions},
-    offset_of, Pod,
+    mm::{DmaCoherent, FrameAllocOptions, PodOnce},
+    Pod,
 };
 
 use crate::{
@@ -309,7 +309,7 @@ impl VirtQueue {
         let last_used_slot = self.last_used_idx & (self.queue_size - 1);
         let element_ptr = {
             let mut ptr = self.used.borrow_vm();
-            ptr.byte_add(offset_of!(UsedRing, ring) as usize + last_used_slot as usize * 8);
+            ptr.byte_add(offset_of!(UsedRing, ring) + last_used_slot as usize * 8);
             ptr.cast::<UsedElem>()
         };
         let index = field_ptr!(&element_ptr, UsedElem, id).read_once().unwrap();
@@ -333,7 +333,7 @@ impl VirtQueue {
         let last_used_slot = self.last_used_idx & (self.queue_size - 1);
         let element_ptr = {
             let mut ptr = self.used.borrow_vm();
-            ptr.byte_add(offset_of!(UsedRing, ring) as usize + last_used_slot as usize * 8);
+            ptr.byte_add(offset_of!(UsedRing, ring) + last_used_slot as usize * 8);
             ptr.cast::<UsedElem>()
         };
         let index = field_ptr!(&element_ptr, UsedElem, id).read_once().unwrap();
@@ -445,6 +445,8 @@ bitflags! {
     }
 }
 
+impl PodOnce for DescFlags {}
+
 /// The driver uses the available ring to offer buffers to the device:
 /// each ring entry refers to the head of a descriptor chain.
 /// It is only written by the driver and read by the device.
@@ -487,3 +489,5 @@ bitflags! {
         const VIRTQ_AVAIL_F_NO_INTERRUPT = 1;
     }
 }
+
+impl PodOnce for AvailFlags {}

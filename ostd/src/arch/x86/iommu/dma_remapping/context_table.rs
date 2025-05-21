@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
+#![expect(dead_code)]
 
 use alloc::collections::BTreeMap;
 use core::mem::size_of;
 
-use log::warn;
+use log::trace;
 use ostd_pod::Pod;
 
 use super::second_stage::{DeviceMode, PageTableEntry, PagingConsts};
@@ -116,9 +116,12 @@ impl RootTable {
                     * size_of::<ContextEntry>(),
             )
             .unwrap();
+
         if bus_entry.is_present() {
-            warn!("IOMMU: Overwriting the existing device page table");
+            panic!("existing device page tables should not be overridden");
         }
+
+        // Activate page table.
         let address = unsafe { page_table.root_paddr() };
         context_table.page_tables.insert(address, page_table);
         let entry = ContextEntry(address as u128 | 1 | 0x1_0000_0000_0000_0000);
@@ -130,7 +133,6 @@ impl RootTable {
                 &entry,
             )
             .unwrap();
-        context_table.page_tables.get_mut(&address).unwrap();
     }
 
     fn get_or_create_context_table(&mut self, device_id: PciDeviceLocation) -> &mut ContextTable {
@@ -295,6 +297,12 @@ impl ContextTable {
         if device.device >= 32 || device.function >= 8 {
             return Err(ContextTableError::InvalidDeviceId);
         }
+        trace!(
+            "Mapping Daddr: {:x?} to Paddr: {:x?} for device: {:x?}",
+            daddr,
+            paddr,
+            device
+        );
         self.get_or_create_page_table(device)
             .map(
                 &(daddr..daddr + PAGE_SIZE),
@@ -313,6 +321,7 @@ impl ContextTable {
         if device.device >= 32 || device.function >= 8 {
             return Err(ContextTableError::InvalidDeviceId);
         }
+        trace!("Unmapping Daddr: {:x?} for device: {:x?}", daddr, device);
         let pt = self.get_or_create_page_table(device);
         let mut cursor = pt.cursor_mut(&(daddr..daddr + PAGE_SIZE)).unwrap();
         unsafe {

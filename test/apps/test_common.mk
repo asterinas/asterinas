@@ -22,7 +22,7 @@ $(OBJ_OUTPUT_DIR) $(DEP_OUTPUT_DIR):
 	@mkdir -p $@
 
 $(OBJ_OUTPUT_DIR)/%: %.c | $(OBJ_OUTPUT_DIR) $(DEP_OUTPUT_DIR)
-	@$(CC) $(C_FLAGS) $(EXTRA_C_FLAGS) $< -o $@ \
+	@$(CC) $(C_FLAGS) $< -o $@ $(EXTRA_C_FLAGS) \
 		-MMD -MF $(DEP_OUTPUT_DIR)/$*.d
 	@echo "CC <= $@"
 

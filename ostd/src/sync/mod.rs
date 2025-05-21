@@ -4,20 +4,18 @@
 
 mod guard;
 mod mutex;
-// TODO: refactor this rcu implementation
-// Comment out this module since it raises lint error
-// mod rcu;
+mod rcu;
 mod rwarc;
 mod rwlock;
 mod rwmutex;
 mod spin;
 mod wait;
 
-// pub use self::rcu::{pass_quiescent_state, OwnerPtr, Rcu, RcuReadGuard, RcuReclaimer};
-pub(crate) use self::guard::GuardTransfer;
+pub(crate) use self::rcu::finish_grace_period;
 pub use self::{
-    guard::{LocalIrqDisabled, PreemptDisabled, WriteIrqDisabled},
+    guard::{GuardTransfer, LocalIrqDisabled, PreemptDisabled, SpinGuardian, WriteIrqDisabled},
     mutex::{ArcMutexGuard, Mutex, MutexGuard},
+    rcu::{non_null, Rcu, RcuDrop, RcuOption, RcuOptionReadGuard, RcuReadGuard},
     rwarc::{RoArc, RwArc},
     rwlock::{
         ArcRwLockReadGuard, ArcRwLockUpgradeableGuard, ArcRwLockWriteGuard, RwLock,
@@ -30,3 +28,7 @@ pub use self::{
     spin::{ArcSpinLockGuard, SpinLock, SpinLockGuard},
     wait::{WaitQueue, Waiter, Waker},
 };
+
+pub(crate) fn init() {
+    rcu::init();
+}

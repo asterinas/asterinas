@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: false
+  threshold: 125%
+chart:
+  description: lat_fcntl
+  legend: Average file locking latency on {system}
+  title: '[VFS] The cost of record locking/unlocking via fcntl'
+  unit: "\xB5s"   # Unicode for microsecond
+result_extraction:
+  result_index: 4
+  search_pattern: 'Fcntl lock latency: +[0-9.]+'

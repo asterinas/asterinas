@@ -4,52 +4,38 @@ Asterinas development Docker images are provided to facilitate developing and te
 
 ## Building Docker Images
 
-To build a Docker image for Asterinas and test it on your local machine, navigate to the root directory of the Asterinas source code tree and execute the following command:
+Asterinas development Docker image is based on an OSDK development Docker image. To build an Asterinas development Docker image and test it on your local machine, navigate to the root directory of the Asterinas source code tree and execute the following command:
 
 ```bash
-cd <asterinas dir>/tools/docker
-# Generate Dockerfile
-python3 gen_dockerfile.py
 cd <asterinas dir>
 # Build Docker image
 docker buildx build \
     -f tools/docker/Dockerfile \
-    --build-arg ASTER_RUST_VERSION=${RUST_VERSION} \
-    -t asterinas/asterinas:${ASTER_VERSION} \
+    --build-arg ASTER_RUST_VERSION=$(grep "channel" rust-toolchain.toml | awk -F '"' '{print $2}') \
+    --build-arg BASE_VERSION=$(cat DOCKER_IMAGE_VERSION) \
+    -t asterinas/asterinas:$(cat DOCKER_IMAGE_VERSION) \
     .
 ```
 
-The meanings of the two environment variables in the command are as follows:
-
-- `${ASTER_VERSION}`: Represents the version number of Asterinas. You can find this in the `VERSION` file.
-- `${RUST_VERSION}`: Denotes the required Rust toolchain version, as specified in the `rust-toolchain` file.
-
-For Intel TDX Docker Image, you can execute the following command:
+Intel TDX has some special requirements on the development environment such as QEMU.
+So we offer a TDX-specific version of the Asterinas development Docker image.
+You need to build the general-purpose Docker image before building the TDX-specific one
+as the former is used by the latter one as the base image.
 
 ```bash
-cd <asterinas dir>/tools/docker
-# Generate Dockerfile for Intel TDX
-python3 gen_dockerfile.py --intel-tdx
 cd <asterinas dir>
-# Build Docker image
+# Build Intel TDX Docker image
 docker buildx build \
-    -f tools/docker/Dockerfile \
-    --build-arg ASTER_RUST_VERSION=${RUST_VERSION} \
-    -t asterinas/asterinas:${ASTER_VERSION}-tdx \
+    -f tools/docker/tdx/Dockerfile \
+    --build-arg ASTER_RUST_VERSION=$(grep "channel" rust-toolchain.toml | awk -F '"' '{print $2}') \
+    --build-arg BASE_VERSION=$(cat DOCKER_IMAGE_VERSION) \
+    -t asterinas/asterinas:$(cat DOCKER_IMAGE_VERSION)-tdx \
     .
 ```
 
-## Tagging Docker Images
+## Tagging and Uploading Docker Images
 
-It's essential for each Asterinas Docker image to have a distinct tag. By convention, the tag is assigned with the version number of the Asterinas project itself. This methodology ensures clear correspondence between a commit of the source code and its respective Docker image.
-
-If a commit needs to create a new Docker image, it should
-
-1. Update the Dockerfile as well as other materials relevant to the Docker image, and
-2. Run [`tools/bump_version.sh`](../bump_version.sh) tool to update the Asterinas project's version number.
- 
-For bug fixes or small changes, increment the last number of a [SemVer](https://semver.org/) by one. For major features or releases, increment the second number. All changes made in the two steps should be included in the commit.
-
-## Uploading Docker Images
-
-New versions of Asterinas's Docker images are automatically uploaded to DockerHub through Github Actions. Simply submit your PR that updates Asterinas's Docker image for review. After getting the project maintainers' approval, the [Docker image building workflow](../../.github/workflows/docker_build.yml) will be started, building the new Docker image and pushing it to DockerHub.
+The Docker images are tagged according to the version specified
+in the `DOCKER_IMAGE_VERSION` file at the project root.
+Check out the [version bump](https://asterinas.github.io/book/to-contribute/version-bump.html) documentation
+on how new versions of the Docker images are released.

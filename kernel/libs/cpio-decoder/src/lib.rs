@@ -17,7 +17,6 @@
 
 #![cfg_attr(not(test), no_std)]
 #![deny(unsafe_code)]
-#![allow(dead_code)]
 
 extern crate alloc;
 
@@ -323,7 +322,7 @@ struct Header {
     rdev_maj: [u8; 8],
     rdev_min: [u8; 8],
     name_size: [u8; 8],
-    chksum: [u8; 8],
+    _chksum: [u8; 8],
 }
 
 impl Header {
@@ -348,7 +347,7 @@ impl Header {
             rdev_maj: <[u8; 8]>::try_from(&buf[78..86]).unwrap(),
             rdev_min: <[u8; 8]>::try_from(&buf[86..94]).unwrap(),
             name_size: <[u8; 8]>::try_from(&buf[94..102]).unwrap(),
-            chksum: <[u8; 8]>::try_from(&buf[102..110]).unwrap(),
+            _chksum: <[u8; 8]>::try_from(&buf[102..110]).unwrap(),
         };
         if header.magic != MAGIC {
             return Err(Error::MagicError);

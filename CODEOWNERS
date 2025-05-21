@@ -1,0 +1,92 @@
+# This file defines the code owners of the Asterinas main repo
+#
+# Feel free to volunteer as a code owner
+# when you have contributed enough to and acquired enough knowledge
+# of a specific sub-project/sub-system/component/module.
+
+#=============================================================================
+# The root code owners (maintainers)
+#=============================================================================
+* @tatetian
+
+# The top-level sub-projects of Asterinas are listed below:
+#
+# 1. The Asterinas book
+# 2. The Asterinas kernel
+# 3. The Asterinas OSDK
+# 4. The Asterinas OSTD
+#
+# Guidelines:
+# - The following sections are organized by sub-projects.
+# - In a sub-project, the rules are listed in alphabetical order
+#   based on their file paths.
+# - In each rule under a sub-project,
+#   the code owners are listed in alphabetical order.
+
+#=============================================================================
+# The Asterinas book
+#=============================================================================
+
+/book/                          @tatetian
+
+#=============================================================================
+# The Asterinas kernel
+#=============================================================================
+
+# Sub-project code owners
+/kernel/                        @StevenJiang1110 @lrh2000
+
+# Sub-system code owners
+/kernel/src/fs/                 @lucassong-mh
+/kernel/src/net/                @StevenJiang1110 @lrh2000
+/kernel/src/time/               @cchanging
+/kernel/src/vm/                 @cchanging @junyang-zh
+
+# Component code owners
+/kernel/comps/block/            @lucassong-mh
+/kernel/comps/logger/           @cchanging
+/kernel/comps/mlsdisk/          @cqs21 @lucassong-mh
+/kernel/comps/network/          @StevenJiang1110 @lrh2000
+/kernel/comps/softirq/          @cchanging
+/kernel/comps/time/             @cchanging
+/kernel/comps/virtio/           @sdww0
+
+# Library code owners
+/kernel/libs/aster-bigtcp/      @StevenJiang1110 @lrh2000
+/kernel/libs/xarray/            @cchanging @lrh2000
+
+#=============================================================================
+# The Asterinas OSDK
+#=============================================================================
+
+# Sub-project code owners
+/osdk/                          @StevenJiang1110 @junyang-zh
+
+#=============================================================================
+# The Asterinas OSTD
+#=============================================================================
+
+# Sub-project code owners
+/ostd/                          @lrh2000 @junyang-zh @sdww0
+
+# Module code owners
+/ostd/src/bus/                  @sdww0
+/ostd/src/logger.rs             @cchanging
+/ostd/src/timer/                @cchanging
+
+#=============================================================================
+# Other
+#=============================================================================
+
+/.github/                       @grief8
+/osdk/tools/docker/             @grief8
+/test/                          @grief8
+/tools/                         @grief8
+/triagebot.toml                 @grief8
+
+/Makefile                       @junyang-zh
+/OSDK.toml                      @junyang-zh
+
+# The following critical files are singled out
+/CODEOWNERS                     @tatetian
+/VERSION                        @tatetian

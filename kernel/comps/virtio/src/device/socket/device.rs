@@ -1,19 +1,18 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{boxed::Box, string::ToString, sync::Arc, vec, vec::Vec};
+use alloc::{boxed::Box, string::ToString, sync::Arc, vec};
 use core::{fmt::Debug, hint::spin_loop, mem::size_of};
 
 use aster_network::{RxBuffer, TxBuffer};
 use aster_util::{field_ptr, slot_vec::SlotVec};
 use log::debug;
-use ostd::{mm::VmWriter, offset_of, sync::SpinLock, trap::TrapFrame, Pod};
+use ostd::{mm::VmWriter, sync::SpinLock, trap::TrapFrame, Pod};
 
 use super::{
     config::{VirtioVsockConfig, VsockFeatures},
     connect::{ConnectionInfo, VsockEvent},
     error::SocketError,
     header::{VirtioVsockHdr, VirtioVsockOp, VIRTIO_VSOCK_HDR_LEN},
-    VsockDeviceIrqHandler,
 };
 use crate::{
     device::{
@@ -44,7 +43,6 @@ pub struct SocketDevice {
 
     rx_buffers: SlotVec<RxBuffer>,
     transport: Box<dyn VirtioTransport>,
-    callbacks: Vec<Box<dyn VsockDeviceIrqHandler>>,
 }
 
 impl SocketDevice {
@@ -55,10 +53,10 @@ impl SocketDevice {
         let guest_cid = field_ptr!(&virtio_vsock_config, VirtioVsockConfig, guest_cid_low)
             .read_once()
             .unwrap() as u64
-            | (field_ptr!(&virtio_vsock_config, VirtioVsockConfig, guest_cid_high)
+            | ((field_ptr!(&virtio_vsock_config, VirtioVsockConfig, guest_cid_high)
                 .read_once()
                 .unwrap() as u64)
-                << 32;
+                << 32);
 
         let mut recv_queue = VirtQueue::new(QUEUE_RECV, QUEUE_SIZE, transport.as_mut())
             .expect("creating recv queue fails");
@@ -90,7 +88,6 @@ impl SocketDevice {
             event_queue,
             rx_buffers,
             transport,
-            callbacks: Vec::new(),
         };
 
         // Interrupt handler if vsock device config space changes

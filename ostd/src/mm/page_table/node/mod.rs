@@ -41,8 +41,9 @@ use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     mm::{
         frame::{inc_frame_ref_count, meta::AnyFrameMeta, Frame},
-        paddr_to_vaddr, FrameAllocOptions, Infallible, Paddr, PagingConstsTrait, PagingLevel,
-        VmReader,
+        paddr_to_vaddr,
+        page_table::{load_pte, store_pte},
+        FrameAllocOptions, Infallible, Paddr, PagingConstsTrait, PagingLevel, VmReader,
     },
 };
 
@@ -55,19 +56,13 @@ use crate::{
 /// Only the CPU or a PTE can access a page table node using a raw handle. To access the page
 /// table node from the kernel code, use the handle [`PageTableNode`].
 #[derive(Debug)]
-pub(super) struct RawPageTableNode<E: PageTableEntryTrait, C: PagingConstsTrait>
-where
-    [(); C::NR_LEVELS as usize]:,
-{
+pub(super) struct RawPageTableNode<E: PageTableEntryTrait, C: PagingConstsTrait> {
     raw: Paddr,
     level: PagingLevel,
     _phantom: PhantomData<(E, C)>,
 }
 
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> RawPageTableNode<E, C>
-where
-    [(); C::NR_LEVELS as usize]:,
-{
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> RawPageTableNode<E, C> {
     pub(super) fn paddr(&self) -> Paddr {
         self.raw
     }
@@ -188,8 +183,6 @@ where
 
 impl<E: PageTableEntryTrait, C: PagingConstsTrait> From<RawPageTableNode<E, C>>
     for Frame<PageTablePageMeta<E, C>>
-where
-    [(); C::NR_LEVELS as usize]:,
 {
     fn from(raw: RawPageTableNode<E, C>) -> Self {
         let raw = ManuallyDrop::new(raw);
@@ -200,10 +193,7 @@ where
     }
 }
 
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for RawPageTableNode<E, C>
-where
-    [(); C::NR_LEVELS as usize]:,
-{
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for RawPageTableNode<E, C> {
     fn drop(&mut self) {
         // SAFETY: The physical address in the raw handle is valid. The restored
         // handle is dropped to decrement the reference count.
@@ -222,16 +212,11 @@ where
 pub(super) struct PageTableNode<
     E: PageTableEntryTrait = PageTableEntry,
     C: PagingConstsTrait = PagingConsts,
-> where
-    [(); C::NR_LEVELS as usize]:,
-{
+> {
     page: Frame<PageTablePageMeta<E, C>>,
 }
 
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableNode<E, C>
-where
-    [(); C::NR_LEVELS as usize]:,
-{
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableNode<E, C> {
     /// Borrows an entry in the node at a given index.
     ///
     /// # Panics
@@ -309,9 +294,11 @@ where
     /// The caller must ensure that the index is within the bound.
     unsafe fn read_pte(&self, idx: usize) -> E {
         debug_assert!(idx < nr_subpage_per_huge::<C>());
-        let ptr = paddr_to_vaddr(self.page.start_paddr()) as *const E;
-        // SAFETY: The index is within the bound and the PTE is plain-old-data.
-        unsafe { ptr.add(idx).read() }
+        let ptr = paddr_to_vaddr(self.page.start_paddr()) as *mut E;
+        // SAFETY:
+        // - The page table node is alive. The index is inside the bound, so the page table entry is valid.
+        // - All page table entries are aligned and accessed with atomic operations only.
+        unsafe { load_pte(ptr.add(idx), Ordering::Relaxed) }
     }
 
     /// Writes a page table entry at a given index.
@@ -330,8 +317,10 @@ where
     unsafe fn write_pte(&mut self, idx: usize, pte: E) {
         debug_assert!(idx < nr_subpage_per_huge::<C>());
         let ptr = paddr_to_vaddr(self.page.start_paddr()) as *mut E;
-        // SAFETY: The index is within the bound and the PTE is plain-old-data.
-        unsafe { ptr.add(idx).write(pte) }
+        // SAFETY:
+        // - The page table node is alive. The index is inside the bound, so the page table entry is valid.
+        // - All page table entries are aligned and accessed with atomic operations only.
+        unsafe { store_pte(ptr.add(idx), pte, Ordering::Release) }
     }
 
     /// Gets the mutable reference to the number of valid PTEs in the node.
@@ -341,10 +330,7 @@ where
     }
 }
 
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for PageTableNode<E, C>
-where
-    [(); C::NR_LEVELS as usize]:,
-{
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> Drop for PageTableNode<E, C> {
     fn drop(&mut self) {
         // Release the lock.
         self.page.meta().lock.store(0, Ordering::Release);
@@ -357,9 +343,7 @@ where
 pub(in crate::mm) struct PageTablePageMeta<
     E: PageTableEntryTrait = PageTableEntry,
     C: PagingConstsTrait = PagingConsts,
-> where
-    [(); C::NR_LEVELS as usize]:,
-{
+> {
     /// The number of valid PTEs. It is mutable if the lock is held.
     pub nr_children: SyncUnsafeCell<u16>,
     /// The level of the page table page. A page table page cannot be
@@ -388,10 +372,7 @@ pub(in crate::mm) enum MapTrackingStatus {
     Tracked,
 }
 
-impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTablePageMeta<E, C>
-where
-    [(); C::NR_LEVELS as usize]:,
-{
+impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTablePageMeta<E, C> {
     pub fn new_locked(level: PagingLevel, is_tracked: MapTrackingStatus) -> Self {
         Self {
             nr_children: SyncUnsafeCell::new(0),
@@ -405,10 +386,7 @@ where
 
 // SAFETY: The layout of the `PageTablePageMeta` is ensured to be the same for
 // all possible generic parameters. And the layout fits the requirements.
-unsafe impl<E: PageTableEntryTrait, C: PagingConstsTrait> AnyFrameMeta for PageTablePageMeta<E, C>
-where
-    [(); C::NR_LEVELS as usize]:,
-{
+unsafe impl<E: PageTableEntryTrait, C: PagingConstsTrait> AnyFrameMeta for PageTablePageMeta<E, C> {
     fn on_drop(&mut self, reader: &mut VmReader<Infallible>) {
         let nr_children = self.nr_children.get_mut();
 

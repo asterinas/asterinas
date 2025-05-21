@@ -41,15 +41,14 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-# Performs the publish check or publish the crate in directory $1, with
-# optional target $2. If the target is not specified, cargo will decide
-# the target automatically.
+# Performs the publish check or publish the crate in directory $1.
+# All the arguments after $1 are passed to `cargo publish`.
 do_publish_for() {
     pushd $ASTER_SRC_DIR/$1
-    TARGET_ARGS=""
-    if [ -n "$2" ]; then
-        TARGET_ARGS="--target $2"
-    fi
+
+    ADDITIONAL_ARGS="${@:2}"
+    RF="$RUSTFLAGS --check-cfg cfg(ktest)"
+
     if [ -n "$DRY_RUN" ]; then
         # Temporarily change the crate version to the next patched version.
         #
@@ -63,27 +62,32 @@ do_publish_for() {
         sed -i "0,/${pattern}/s/${pattern}/version = \"${next_patched_version}\"/1" Cargo.toml
         
         # Perform checks
-        cargo publish --dry-run --allow-dirty $TARGET_ARGS
-        cargo doc $TARGET_ARGS
+        RUSTFLAGS=$RF cargo publish --dry-run --allow-dirty $ADDITIONAL_ARGS
+        RUSTFLAGS=$RF cargo doc $ADDITIONAL_ARGS
     else
-        cargo publish --token $TOKEN $TARGET_ARGS
+        RUSTFLAGS=$RF cargo publish --token $TOKEN $ADDITIONAL_ARGS
     fi
+
     popd
 }
 
 do_publish_for ostd/libs/linux-bzimage/boot-params
 do_publish_for ostd/libs/linux-bzimage/builder
+do_publish_for ostd/libs/linux-bzimage/setup \
+    --target ../builder/src/x86_64-i386_pm-none.json \
+    -Zbuild-std=core,alloc,compiler_builtins
 do_publish_for osdk
 
 # All supported targets of OSTD, this array should keep consistent with
 # `package.metadata.docs.rs.targets` in `ostd/Cargo.toml`.
 TARGETS="x86_64-unknown-none"
 for TARGET in $TARGETS; do
-    do_publish_for ostd/libs/ostd-macros $TARGET
-    do_publish_for ostd/libs/ostd-test $TARGET
-    do_publish_for ostd/libs/linux-bzimage/setup $TARGET
-    do_publish_for ostd $TARGET
-    do_publish_for osdk/test-kernel $TARGET
+    do_publish_for ostd/libs/ostd-macros --target $TARGET
+    do_publish_for ostd/libs/ostd-test --target $TARGET
+    do_publish_for ostd --target $TARGET
+    do_publish_for osdk/deps/frame-allocator --target $TARGET
+    do_publish_for osdk/deps/heap-allocator --target $TARGET
+    do_publish_for osdk/deps/test-kernel --target $TARGET
 
     # For actual publishing, we should only publish once. Using any target that
     # OSTD supports is OK. Here we use the first target in the list.

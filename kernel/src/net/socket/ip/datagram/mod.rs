@@ -3,21 +3,18 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use aster_bigtcp::wire::IpEndpoint;
-use ostd::sync::PreemptDisabled;
-use takeable::Takeable;
+use unbound::BindOptions;
 
 use self::{bound::BoundDatagram, unbound::UnboundDatagram};
-use super::{common::get_ephemeral_endpoint, UNSPECIFIED_LOCAL_ENDPOINT};
+use super::UNSPECIFIED_LOCAL_ENDPOINT;
 use crate::{
     events::IoEvents,
-    fs::{
-        file_handle::FileLike,
-        utils::{InodeMode, Metadata, StatusFlags},
-    },
     match_sock_option_mut,
     net::socket::{
         options::{Error as SocketError, SocketOption},
+        private::SocketPrivate,
         util::{
+            datagram_common::{select_remote_and_bind, Bound, Inner},
             options::{SetSocketLevelOption, SocketOptionSet},
             send_recv_flags::SendRecvFlags,
             socket_addr::SocketAddr,
@@ -50,102 +47,22 @@ impl OptionSet {
 }
 
 pub struct DatagramSocket {
+    // Lock order: `inner` first, `options` second
+    inner: RwMutex<Inner<UnboundDatagram, BoundDatagram>>,
     options: RwLock<OptionSet>,
-    inner: RwLock<Takeable<Inner>, PreemptDisabled>,
+
     is_nonblocking: AtomicBool,
     pollee: Pollee,
-}
-
-enum Inner {
-    Unbound(UnboundDatagram),
-    Bound(BoundDatagram),
-}
-
-impl Inner {
-    fn bind(
-        self,
-        endpoint: &IpEndpoint,
-        can_reuse: bool,
-        observer: DatagramObserver,
-    ) -> core::result::Result<BoundDatagram, (Error, Self)> {
-        let unbound_datagram = match self {
-            Inner::Unbound(unbound_datagram) => unbound_datagram,
-            Inner::Bound(bound_datagram) => {
-                return Err((
-                    Error::with_message(Errno::EINVAL, "the socket is already bound to an address"),
-                    Inner::Bound(bound_datagram),
-                ));
-            }
-        };
-
-        let bound_datagram = match unbound_datagram.bind(endpoint, can_reuse, observer) {
-            Ok(bound_datagram) => bound_datagram,
-            Err((err, unbound_datagram)) => return Err((err, Inner::Unbound(unbound_datagram))),
-        };
-        Ok(bound_datagram)
-    }
-
-    fn bind_to_ephemeral_endpoint(
-        self,
-        remote_endpoint: &IpEndpoint,
-        observer: DatagramObserver,
-    ) -> core::result::Result<BoundDatagram, (Error, Self)> {
-        if let Inner::Bound(bound_datagram) = self {
-            return Ok(bound_datagram);
-        }
-
-        let endpoint = get_ephemeral_endpoint(remote_endpoint);
-        self.bind(&endpoint, false, observer)
-    }
 }
 
 impl DatagramSocket {
     pub fn new(is_nonblocking: bool) -> Arc<Self> {
         let unbound_datagram = UnboundDatagram::new();
         Arc::new(Self {
-            inner: RwLock::new(Takeable::new(Inner::Unbound(unbound_datagram))),
+            inner: RwMutex::new(Inner::Unbound(unbound_datagram)),
+            options: RwLock::new(OptionSet::new()),
             is_nonblocking: AtomicBool::new(is_nonblocking),
             pollee: Pollee::new(),
-            options: RwLock::new(OptionSet::new()),
-        })
-    }
-
-    pub fn is_nonblocking(&self) -> bool {
-        self.is_nonblocking.load(Ordering::Relaxed)
-    }
-
-    pub fn set_nonblocking(&self, is_nonblocking: bool) {
-        self.is_nonblocking.store(is_nonblocking, Ordering::Relaxed);
-    }
-
-    fn remote_endpoint(&self) -> Option<IpEndpoint> {
-        let inner = self.inner.read();
-
-        match inner.as_ref() {
-            Inner::Bound(bound_datagram) => bound_datagram.remote_endpoint(),
-            Inner::Unbound(_) => None,
-        }
-    }
-
-    fn try_bind_ephemeral(&self, remote_endpoint: &IpEndpoint) -> Result<()> {
-        // Fast path
-        if let Inner::Bound(_) = self.inner.read().as_ref() {
-            return Ok(());
-        }
-
-        // Slow path
-        let mut inner = self.inner.write();
-        inner.borrow_result(|owned_inner| {
-            let bound_datagram = match owned_inner.bind_to_ephemeral_endpoint(
-                remote_endpoint,
-                DatagramObserver::new(self.pollee.clone()),
-            ) {
-                Ok(bound_datagram) => bound_datagram,
-                Err((err, err_inner)) => {
-                    return (err_inner, Err(err));
-                }
-            };
-            (Inner::Bound(bound_datagram), Ok(()))
         })
     }
 
@@ -154,13 +71,9 @@ impl DatagramSocket {
         writer: &mut dyn MultiWrite,
         flags: SendRecvFlags,
     ) -> Result<(usize, SocketAddr)> {
-        let inner = self.inner.read();
-
-        let Inner::Bound(bound_datagram) = inner.as_ref() else {
-            return_errno_with_message!(Errno::EAGAIN, "the socket is not bound");
-        };
-
-        let recv_bytes = bound_datagram
+        let recv_bytes = self
+            .inner
+            .read()
             .try_recv(writer, flags)
             .map(|(recv_bytes, remote_endpoint)| (recv_bytes, remote_endpoint.into()))?;
         self.pollee.invalidate();
@@ -168,160 +81,90 @@ impl DatagramSocket {
         Ok(recv_bytes)
     }
 
-    fn recv(
-        &self,
-        writer: &mut dyn MultiWrite,
-        flags: SendRecvFlags,
-    ) -> Result<(usize, SocketAddr)> {
-        if self.is_nonblocking() {
-            self.try_recv(writer, flags)
-        } else {
-            self.wait_events(IoEvents::IN, None, || self.try_recv(writer, flags))
-        }
-    }
-
     fn try_send(
         &self,
         reader: &mut dyn MultiRead,
-        remote: &IpEndpoint,
+        remote: Option<&IpEndpoint>,
         flags: SendRecvFlags,
     ) -> Result<usize> {
-        let inner = self.inner.read();
+        let (sent_bytes, iface_to_poll) = select_remote_and_bind(
+            &self.inner,
+            remote,
+            || {
+                let remote_endpoint = remote.ok_or_else(|| {
+                    Error::with_message(
+                        Errno::EDESTADDRREQ,
+                        "the destination address is not specified",
+                    )
+                })?;
+                self.inner
+                    .write()
+                    .bind_ephemeral(remote_endpoint, &self.pollee)
+            },
+            |bound_datagram, remote_endpoint| {
+                let sent_bytes = bound_datagram.try_send(reader, remote_endpoint, flags)?;
+                let iface_to_poll = bound_datagram.iface().clone();
+                Ok((sent_bytes, iface_to_poll))
+            },
+        )?;
 
-        let Inner::Bound(bound_datagram) = inner.as_ref() else {
-            return_errno_with_message!(Errno::EAGAIN, "the socket is not bound")
-        };
-
-        let sent_bytes = bound_datagram.try_send(reader, remote, flags)?;
-        let iface_to_poll = bound_datagram.iface().clone();
-
-        drop(inner);
         self.pollee.invalidate();
         iface_to_poll.poll();
 
         Ok(sent_bytes)
-    }
-
-    fn check_io_events(&self) -> IoEvents {
-        let inner = self.inner.read();
-
-        match inner.as_ref() {
-            Inner::Unbound(unbound_datagram) => unbound_datagram.check_io_events(),
-            Inner::Bound(bound_socket) => bound_socket.check_io_events(),
-        }
     }
 }
 
 impl Pollable for DatagramSocket {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         self.pollee
-            .poll_with(mask, poller, || self.check_io_events())
+            .poll_with(mask, poller, || self.inner.read().check_io_events())
     }
 }
 
-impl FileLike for DatagramSocket {
-    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        // TODO: set correct flags
-        let flags = SendRecvFlags::empty();
-        let read_len = self.recv(writer, flags).map(|(len, _)| len)?;
-        Ok(read_len)
+impl SocketPrivate for DatagramSocket {
+    fn is_nonblocking(&self) -> bool {
+        self.is_nonblocking.load(Ordering::Relaxed)
     }
 
-    fn write(&self, reader: &mut VmReader) -> Result<usize> {
-        let remote = self.remote_endpoint().ok_or_else(|| {
-            Error::with_message(
-                Errno::EDESTADDRREQ,
-                "the destination address is not specified",
-            )
-        })?;
-
-        // TODO: Set correct flags
-        let flags = SendRecvFlags::empty();
-
-        // TODO: Block if send buffer is full
-        self.try_send(reader, &remote, flags)
-    }
-
-    fn as_socket(&self) -> Option<&dyn Socket> {
-        Some(self)
-    }
-
-    fn status_flags(&self) -> StatusFlags {
-        // TODO: when we fully support O_ASYNC, return the flag
-        if self.is_nonblocking() {
-            StatusFlags::O_NONBLOCK
-        } else {
-            StatusFlags::empty()
-        }
-    }
-
-    fn set_status_flags(&self, new_flags: StatusFlags) -> Result<()> {
-        if new_flags.contains(StatusFlags::O_NONBLOCK) {
-            self.set_nonblocking(true);
-        } else {
-            self.set_nonblocking(false);
-        }
-        Ok(())
-    }
-
-    fn metadata(&self) -> Metadata {
-        // This is a dummy implementation.
-        // TODO: Add "SockFS" and link `DatagramSocket` to it.
-        Metadata::new_socket(
-            0,
-            InodeMode::from_bits_truncate(0o140777),
-            aster_block::BLOCK_SIZE,
-        )
+    fn set_nonblocking(&self, is_nonblocking: bool) {
+        self.is_nonblocking.store(is_nonblocking, Ordering::Relaxed);
     }
 }
 
 impl Socket for DatagramSocket {
     fn bind(&self, socket_addr: SocketAddr) -> Result<()> {
         let endpoint = socket_addr.try_into()?;
-
         let can_reuse = self.options.read().socket.reuse_addr();
-        let mut inner = self.inner.write();
-        inner.borrow_result(|owned_inner| {
-            let bound_datagram = match owned_inner.bind(
-                &endpoint,
-                can_reuse,
-                DatagramObserver::new(self.pollee.clone()),
-            ) {
-                Ok(bound_datagram) => bound_datagram,
-                Err((err, err_inner)) => {
-                    return (err_inner, Err(err));
-                }
-            };
-            (Inner::Bound(bound_datagram), Ok(()))
-        })
+
+        self.inner
+            .write()
+            .bind(&endpoint, &self.pollee, BindOptions { can_reuse })
     }
 
     fn connect(&self, socket_addr: SocketAddr) -> Result<()> {
         let endpoint = socket_addr.try_into()?;
 
-        self.try_bind_ephemeral(&endpoint)?;
-
-        let mut inner = self.inner.write();
-        let Inner::Bound(bound_datagram) = inner.as_mut() else {
-            return_errno_with_message!(Errno::EINVAL, "the socket is not bound")
-        };
-        bound_datagram.set_remote_endpoint(&endpoint);
-
-        Ok(())
+        self.inner.write().connect(&endpoint, &self.pollee)
     }
 
     fn addr(&self) -> Result<SocketAddr> {
-        let inner = self.inner.read();
-        match inner.as_ref() {
-            Inner::Unbound(_) => Ok(UNSPECIFIED_LOCAL_ENDPOINT.into()),
-            Inner::Bound(bound_datagram) => Ok(bound_datagram.local_endpoint().into()),
-        }
+        let endpoint = self
+            .inner
+            .read()
+            .addr()
+            .unwrap_or(UNSPECIFIED_LOCAL_ENDPOINT);
+
+        Ok(endpoint.into())
     }
 
     fn peer_addr(&self) -> Result<SocketAddr> {
-        self.remote_endpoint()
-            .map(|endpoint| endpoint.into())
-            .ok_or_else(|| Error::with_message(Errno::ENOTCONN, "the socket is not connected"))
+        let endpoint =
+            *self.inner.read().peer_addr().ok_or_else(|| {
+                Error::with_message(Errno::ENOTCONN, "the socket is not connected")
+            })?;
+
+        Ok(endpoint.into())
     }
 
     fn sendmsg(
@@ -340,18 +183,9 @@ impl Socket for DatagramSocket {
             control_message,
         } = message_header;
 
-        let remote_endpoint = match addr {
-            Some(remote_addr) => {
-                let endpoint = remote_addr.try_into()?;
-                self.try_bind_ephemeral(&endpoint)?;
-                endpoint
-            }
-            None => self.remote_endpoint().ok_or_else(|| {
-                Error::with_message(
-                    Errno::EDESTADDRREQ,
-                    "the destination address is not specified",
-                )
-            })?,
+        let endpoint = match addr {
+            Some(addr) => Some(addr.try_into()?),
+            None => None,
         };
 
         if control_message.is_some() {
@@ -360,7 +194,7 @@ impl Socket for DatagramSocket {
         }
 
         // TODO: Block if the send buffer is full
-        self.try_send(reader, &remote_endpoint, flags)
+        self.try_send(reader, endpoint.as_ref(), flags)
     }
 
     fn recvmsg(
@@ -373,7 +207,8 @@ impl Socket for DatagramSocket {
             warn!("unsupported flags: {:?}", flags);
         }
 
-        let (received_bytes, peer_addr) = self.recv(writer, flags)?;
+        let (received_bytes, peer_addr) =
+            self.block_on(IoEvents::IN, || self.try_recv(writer, flags))?;
 
         // TODO: Receive control message
 
@@ -385,7 +220,8 @@ impl Socket for DatagramSocket {
     fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
         match_sock_option_mut!(option, {
             socket_errors: SocketError => {
-                self.options.write().socket.get_and_clear_sock_errors(socket_errors);
+                // TODO: Support socket errors for UDP sockets
+                socket_errors.set(None);
                 return Ok(());
             },
             _ => ()
@@ -395,14 +231,14 @@ impl Socket for DatagramSocket {
     }
 
     fn set_option(&self, option: &dyn SocketOption) -> Result<()> {
+        let inner = self.inner.read();
         let mut options = self.options.write();
-        let mut inner = self.inner.write();
 
-        match options.socket.set_option(option, inner.as_mut()) {
+        match options.socket.set_option(option, &*inner) {
             Err(e) => Err(e),
             Ok(need_iface_poll) => {
                 let iface_to_poll = need_iface_poll
-                    .then(|| match inner.as_ref() {
+                    .then(|| match &*inner {
                         Inner::Unbound(_) => None,
                         Inner::Bound(bound_datagram) => Some(bound_datagram.iface().clone()),
                     })
@@ -421,4 +257,4 @@ impl Socket for DatagramSocket {
     }
 }
 
-impl SetSocketLevelOption for Inner {}
+impl SetSocketLevelOption for Inner<UnboundDatagram, BoundDatagram> {}

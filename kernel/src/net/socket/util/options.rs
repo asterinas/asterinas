@@ -9,8 +9,7 @@ use aster_bigtcp::socket::{
 use crate::{
     match_sock_option_mut, match_sock_option_ref,
     net::socket::options::{
-        Error as SocketError, KeepAlive, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf,
-        SocketOption,
+        KeepAlive, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf, SocketOption,
     },
     prelude::*,
 };
@@ -19,7 +18,6 @@ use crate::{
 #[get_copy = "pub"]
 #[set = "pub"]
 pub struct SocketOptionSet {
-    sock_errors: Option<Error>,
     reuse_addr: bool,
     reuse_port: bool,
     send_buf: u32,
@@ -32,7 +30,6 @@ impl SocketOptionSet {
     /// Return the default socket level options for tcp socket.
     pub fn new_tcp() -> Self {
         Self {
-            sock_errors: None,
             reuse_addr: false,
             reuse_port: false,
             send_buf: TCP_SEND_BUF_LEN as u32,
@@ -45,7 +42,6 @@ impl SocketOptionSet {
     /// Return the default socket level options for udp socket.
     pub fn new_udp() -> Self {
         Self {
-            sock_errors: None,
             reuse_addr: false,
             reuse_port: false,
             send_buf: UDP_SEND_PAYLOAD_LEN as u32,
@@ -53,15 +49,6 @@ impl SocketOptionSet {
             linger: LingerOption::default(),
             keep_alive: false,
         }
-    }
-
-    /// Gets and clears the socket error.
-    ///
-    /// When processing the `getsockopt` system call, the socket error is automatically cleared
-    /// after reading. This method should be called to provide this behavior.
-    pub fn get_and_clear_sock_errors(&mut self, option: &mut SocketError) {
-        option.set(self.sock_errors());
-        self.set_sock_errors(None);
     }
 
     /// Gets socket-level options.
@@ -104,7 +91,7 @@ impl SocketOptionSet {
     pub fn set_option(
         &mut self,
         option: &dyn SocketOption,
-        socket: &mut dyn SetSocketLevelOption,
+        socket: &dyn SetSocketLevelOption,
     ) -> Result<NeedIfacePoll> {
         match_sock_option_ref!(option, {
             socket_recv_buf: RecvBuf => {

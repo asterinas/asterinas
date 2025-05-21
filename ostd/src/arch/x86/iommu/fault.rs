@@ -1,38 +1,35 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 use alloc::vec::Vec;
-use core::fmt::Debug;
+use core::{fmt::Debug, ptr::NonNull};
 
 use bitflags::bitflags;
-use log::info;
+use log::{error, info};
 use spin::Once;
-use volatile::{access::ReadWrite, Volatile};
+use volatile::{access::ReadWrite, VolatileRef};
 
 use super::registers::Capability;
 use crate::{
-    mm::Vaddr,
+    sync::{LocalIrqDisabled, SpinLock},
     trap::{IrqLine, TrapFrame},
 };
 
 #[derive(Debug)]
 pub struct FaultEventRegisters {
-    status: Volatile<&'static mut u32, ReadWrite>,
+    status: VolatileRef<'static, u32, ReadWrite>,
     /// bit31: Interrupt Mask; bit30: Interrupt Pending.
-    control: Volatile<&'static mut u32, ReadWrite>,
-    data: Volatile<&'static mut u32, ReadWrite>,
-    address: Volatile<&'static mut u32, ReadWrite>,
-    upper_address: Volatile<&'static mut u32, ReadWrite>,
-    recordings: Vec<Volatile<&'static mut u128, ReadWrite>>,
+    _control: VolatileRef<'static, u32, ReadWrite>,
+    _data: VolatileRef<'static, u32, ReadWrite>,
+    _address: VolatileRef<'static, u32, ReadWrite>,
+    _upper_address: VolatileRef<'static, u32, ReadWrite>,
+    recordings: Vec<VolatileRef<'static, u128, ReadWrite>>,
 
-    fault_irq: IrqLine,
+    _fault_irq: IrqLine,
 }
 
 impl FaultEventRegisters {
     pub fn status(&self) -> FaultStatus {
-        FaultStatus::from_bits_truncate(self.status.read())
+        FaultStatus::from_bits_truncate(self.status.as_ptr().read())
     }
 
     /// Creates an instance from base address.
@@ -40,39 +37,57 @@ impl FaultEventRegisters {
     /// # Safety
     ///
     /// User must ensure the base_register_vaddr is read from DRHD
-    unsafe fn new(base_register_vaddr: Vaddr) -> Self {
-        let capability_reg =
-            Volatile::new_read_only(&*((base_register_vaddr + 0x08) as *const u64));
-        let capability = Capability::new(capability_reg.read());
+    unsafe fn new(base_register_vaddr: NonNull<u8>) -> Self {
+        let (capability, status, mut control, mut data, mut address, upper_address) = unsafe {
+            let base = base_register_vaddr;
+            (
+                // capability
+                VolatileRef::new_read_only(base.add(0x08).cast::<u64>()),
+                // status
+                VolatileRef::new(base.add(0x34).cast::<u32>()),
+                // control
+                VolatileRef::new(base.add(0x38).cast::<u32>()),
+                // data
+                VolatileRef::new(base.add(0x3c).cast::<u32>()),
+                // address
+                VolatileRef::new(base.add(0x40).cast::<u32>()),
+                // upper_address
+                VolatileRef::new(base.add(0x44).cast::<u32>()),
+            )
+        };
 
-        let length = capability.fault_recording_number() + 1;
-        let mut recordings = Vec::with_capacity(length as usize);
-        let offset = capability.fault_recording_register_offset();
+        let capability_val = Capability::new(capability.as_ptr().read());
+        let length = capability_val.fault_recording_number() as usize + 1;
+        let offset = (capability_val.fault_recording_register_offset() as usize) * 16;
+
+        // FIXME: We now trust the hardware. We should instead find a way to check that `length`
+        // and `offset` are reasonable values before proceeding.
+
+        let mut recordings = Vec::with_capacity(length);
         for i in 0..length {
-            recordings.push(Volatile::new(
-                &mut *((base_register_vaddr + 16 * (offset + i) as usize) as *mut u128),
-            ))
+            // SAFETY: The safety is upheld by the caller and the correctness of the capability
+            // value.
+            recordings.push(unsafe {
+                VolatileRef::new(base_register_vaddr.add(offset).add(i * 16).cast::<u128>())
+            })
         }
-        let status = Volatile::new(&mut *((base_register_vaddr + 0x34) as *mut u32));
-        let mut control = Volatile::new(&mut *((base_register_vaddr + 0x38) as *mut u32));
-        let mut data = Volatile::new(&mut *((base_register_vaddr + 0x3c) as *mut u32));
-        let mut address = Volatile::new(&mut *((base_register_vaddr + 0x40) as *mut u32));
-        let upper_address = Volatile::new(&mut *((base_register_vaddr + 0x44) as *mut u32));
+
         let mut fault_irq = IrqLine::alloc().unwrap();
+        fault_irq.on_active(iommu_fault_handler);
 
         // Set page fault interrupt vector and address
-        data.write(fault_irq.num() as u32);
-        address.write(0xFEE0_0000);
-        control.write(0);
-        fault_irq.on_active(iommu_page_fault_handler);
+        data.as_mut_ptr().write(fault_irq.num() as u32);
+        address.as_mut_ptr().write(0xFEE0_0000);
+        control.as_mut_ptr().write(0);
+
         FaultEventRegisters {
             status,
-            control,
-            data,
-            address,
-            upper_address,
+            _control: control,
+            _data: data,
+            _address: address,
+            _upper_address: upper_address,
             recordings,
-            fault_irq,
+            _fault_irq: fault_irq,
         }
     }
 }
@@ -82,6 +97,10 @@ pub struct FaultRecording(u128);
 impl FaultRecording {
     pub fn is_fault(&self) -> bool {
         self.0 & (1 << 127) != 0
+    }
+
+    pub fn clear_fault(&mut self) {
+        self.0 &= !(1 << 127);
     }
 
     pub fn request_type(&self) -> FaultRequestType {
@@ -125,6 +144,7 @@ impl FaultRecording {
         ((self.0 & 0xFFFF_FFFF_FFFF_F000) >> 12) as u64
     }
 
+    #[expect(dead_code)]
     pub fn pasid_value(&self) -> u32 {
         // bit 123:104
         ((self.0 & 0x00FF_FFF0_0000_0000_0000_0000_0000_0000) >> 104) as u32
@@ -135,16 +155,19 @@ impl FaultRecording {
         ((self.0 & 0xF_0000_0000_0000_0000_0000_0000) >> 96) as u8
     }
 
+    #[expect(dead_code)]
     pub fn pasid_present(&self) -> bool {
         // bit 95
         (self.0 & 0x8000_0000_0000_0000_0000_0000) != 0
     }
 
+    #[expect(dead_code)]
     pub fn execute_permission_request(&self) -> bool {
         // bit 94
         (self.0 & 0x4000_0000_0000_0000_0000_0000) != 0
     }
 
+    #[expect(dead_code)]
     pub fn privilege_mode_request(&self) -> bool {
         // bit 93
         (self.0 & 0x2000_0000_0000_0000_0000_0000) != 0
@@ -176,7 +199,7 @@ pub enum FaultRequestType {
 
 #[derive(Debug)]
 #[repr(u8)]
-#[allow(clippy::enum_variant_names)]
+#[expect(clippy::enum_variant_names)]
 pub enum FaultAddressType {
     UntranslatedRequest = 0,
     TranslationRequest = 1,
@@ -201,20 +224,65 @@ bitflags! {
     }
 }
 
-pub(super) static FAULT_EVENT_REGS: Once<FaultEventRegisters> = Once::new();
+pub(super) static FAULT_EVENT_REGS: Once<SpinLock<FaultEventRegisters, LocalIrqDisabled>> =
+    Once::new();
 
 /// Initializes the fault reporting function.
 ///
 /// # Safety
 ///
 /// User must ensure the base_register_vaddr is read from DRHD
-pub(super) unsafe fn init(base_register_vaddr: Vaddr) {
-    FAULT_EVENT_REGS.call_once(|| FaultEventRegisters::new(base_register_vaddr));
+pub(super) unsafe fn init(base_register_vaddr: NonNull<u8>) {
+    FAULT_EVENT_REGS.call_once(|| SpinLock::new(FaultEventRegisters::new(base_register_vaddr)));
 }
 
-fn iommu_page_fault_handler(frame: &TrapFrame) {
-    let fault_event = FAULT_EVENT_REGS.get().unwrap();
-    let index = (fault_event.status().bits & FaultStatus::FRI.bits) >> 8;
-    let recording = FaultRecording(fault_event.recordings[index as usize].read());
-    info!("Catch iommu page fault, recording:{:x?}", recording)
+fn iommu_fault_handler(_frame: &TrapFrame) {
+    let mut fault_event_regs = FAULT_EVENT_REGS.get().unwrap().lock();
+
+    primary_fault_handler(&mut fault_event_regs);
+
+    let fault_status = fault_event_regs.status();
+    if fault_status.intersects(FaultStatus::IQE | FaultStatus::ICE | FaultStatus::ITE) {
+        panic!(
+            "Catch IOMMU invalidation error. Fault status: {:x?}",
+            fault_status
+        );
+    }
+}
+
+fn primary_fault_handler(fault_event_regs: &mut FaultEventRegisters) {
+    let mut fault_status = fault_event_regs.status();
+    if !fault_status.contains(FaultStatus::PPF) {
+        return;
+    }
+
+    let start_index = ((fault_event_regs.status().bits & FaultStatus::FRI.bits) >> 8) as usize;
+    let mut fault_iter = fault_event_regs.recordings.iter_mut();
+    fault_iter.advance_by(start_index).unwrap();
+    for raw_recording in fault_iter {
+        let raw_recording = raw_recording.as_mut_ptr();
+        let mut recording = FaultRecording(raw_recording.read());
+        if !recording.is_fault() {
+            break;
+        }
+
+        // Report
+        error!(
+            "Catch iommu page fault, doing nothing. recording:{:x?}",
+            recording
+        );
+
+        // Clear Fault field
+        recording.clear_fault();
+        raw_recording.write(recording.0);
+    }
+
+    if fault_status.contains(FaultStatus::PFO) {
+        info!("Primary fault overflow detected.");
+        fault_status.remove(FaultStatus::PFO);
+        fault_event_regs
+            .status
+            .as_mut_ptr()
+            .write(fault_status.bits);
+    }
 }

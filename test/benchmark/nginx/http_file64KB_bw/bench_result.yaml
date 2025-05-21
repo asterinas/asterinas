@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: true
+  threshold: 125%
+chart:
+  description: ab -n 10000 -c 1 http://10.0.2.15:8080/65536bytes.html
+  legend: Average HTTP Bandwidth over virtio-net between Host Linux and Guest {system}
+  title: Nginx HTTP request performance (virtio-net, 16KB file size)
+  unit: Requests per second
+result_extraction:
+  result_index: 4
+  search_pattern: 'Requests per second: +[0-9.]+'

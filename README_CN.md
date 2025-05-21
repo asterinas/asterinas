@@ -1,9 +1,10 @@
 <p align="center">
     <img src="docs/src/images/logo_cn.svg" alt="asterinas-logo" width="620"><br>
     一个安全、快速、通用的操作系统内核，使用Rust编写，并与Linux兼容<br/>
-    <a href="https://github.com/asterinas/asterinas/actions/workflows/test_osdk.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/test_osdk.yml/badge.svg?event=push" alt="Test OSDK" style="max-width: 100%;"></a>
-    <a href="https://github.com/asterinas/asterinas/actions/workflows/test_asterinas.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/test_asterinas.yml/badge.svg?event=push" alt="Test Asterinas" style="max-width: 100%;"></a>
-    <a href="https://asterinas.github.io/benchmark/"><img src="https://github.com/asterinas/asterinas/actions/workflows/benchmark_asterinas.yml/badge.svg" alt="Benchmark Asterinas" style="max-width: 100%;"></a>
+    <a href="https://github.com/asterinas/asterinas/actions/workflows/test_x86.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/test_x86.yml/badge.svg?event=push" alt="Test x86-64" style="max-width: 100%;"></a>
+    <a href="https://github.com/asterinas/asterinas/actions/workflows/test_riscv.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/test_riscv.yml/badge.svg?event=push" alt="Test riscv64" style="max-width: 100%;"></a>
+    <a href="https://github.com/asterinas/asterinas/actions/workflows/test_x86_tdx.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/test_x86_tdx.yml/badge.svg" alt="Test Intel TDX" style="max-width: 100%;"></a>
+    <a href="https://asterinas.github.io/benchmark/x86-64/"><img src="https://github.com/asterinas/asterinas/actions/workflows/benchmark_x86.yml/badge.svg" alt="Benchmark x86-64" style="max-width: 100%;"></a>
     <br/>
 </p>
 
@@ -31,9 +32,9 @@
 
 虽然通往生产级操作系统内核的路上注定充满艰险，
 但我们坚信正朝着正确的方向迈进。
-当前，星绽仅支持x86-64虚拟机；
-[我们2024年的目标](https://asterinas.github.io/book/kernel/roadmap.html)是
-使星绽在x86-64虚拟机环境中达到生产可用。
+在2024年期间，我们大幅提升了Asterinas的成熟度，
+详细内容请参阅我们的[年终报告](https://asterinas.github.io/2025/01/20/asterinas-in-2024.html)。
+2025年，我们的主要目标是让Asterinas在x86-64虚拟机上达到生产级水平，并吸引真正的用户！
 
 ## 快速上手
 
@@ -49,7 +50,7 @@ git clone https://github.com/asterinas/asterinas
 2. 运行一个作为开发环境的Docker容器。
 
 ```bash
-docker run -it --privileged --network=host --device=/dev/kvm -v $(pwd)/asterinas:/root/asterinas asterinas/asterinas:0.11.1
+docker run -it --privileged --network=host --device=/dev/kvm -v $(pwd)/asterinas:/root/asterinas asterinas/asterinas:0.15.0-20250509
 ```
 
 3. 在容器内，进入项目文件夹构建并运行星绽。

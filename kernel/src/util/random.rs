@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(unused_variables)]
+#![expect(unused_variables)]
 
 use rand::{rngs::StdRng, Error as RandError, RngCore};
 use spin::Once;

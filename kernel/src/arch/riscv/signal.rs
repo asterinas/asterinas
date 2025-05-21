@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use ostd::cpu::{CpuExceptionInfo, UserContext};
+use ostd::cpu::context::{CpuExceptionInfo, UserContext};
 
 use crate::process::signal::{sig_num::SigNum, signals::fault::FaultSignal, SignalContext};
 

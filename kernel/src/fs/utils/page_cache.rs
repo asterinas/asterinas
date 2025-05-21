@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
+#![expect(dead_code)]
 
 use core::{
     iter,
@@ -14,7 +14,7 @@ use aster_rights::Full;
 use lru::LruCache;
 use ostd::{
     impl_untyped_frame_meta_for,
-    mm::{Frame, FrameAllocOptions, UFrame, UntypedMem, VmIo},
+    mm::{Frame, FrameAllocOptions, UFrame, VmIo},
 };
 
 use crate::{
@@ -311,7 +311,7 @@ impl ReadaheadState {
             return_errno!(Errno::EINVAL)
         };
         for async_idx in window.readahead_range() {
-            let mut async_page = CachePage::alloc()?;
+            let mut async_page = CachePage::alloc_uninit()?;
             let pg_waiter = backend.read_page_async(async_idx, &async_page)?;
             if pg_waiter.nreqs() > 0 {
                 self.waiter.concat(pg_waiter);
@@ -416,12 +416,12 @@ impl PageCacheManager {
             // Cond 3.
             // Conducts the sync read operation.
             let page = if idx < backend.npages() {
-                let mut page = CachePage::alloc()?;
+                let mut page = CachePage::alloc_uninit()?;
                 backend.read_page(idx, &page)?;
                 page.store_state(PageState::UpToDate);
                 page
             } else {
-                CachePage::alloc_zero()?
+                CachePage::alloc_zero(PageState::Uninit)?
             };
             let frame = page.clone();
             pages.put(idx, page);
@@ -481,7 +481,7 @@ impl Pager for PageCacheManager {
             return Ok(page.clone().into());
         }
 
-        let page = CachePage::alloc_zero()?;
+        let page = CachePage::alloc_uninit()?;
         Ok(self.pages.lock().get_or_insert(idx, || page).clone().into())
     }
 }
@@ -499,13 +499,13 @@ pub struct CachePageMeta {
 impl_untyped_frame_meta_for!(CachePageMeta);
 
 pub trait CachePageExt {
+    /// Gets the metadata associated with the cache page.
     fn metadata(&self) -> &CachePageMeta;
 
-    fn alloc() -> Result<CachePage> {
+    /// Allocates a new cache page which content and state are uninitialized.
+    fn alloc_uninit() -> Result<CachePage> {
         let meta = CachePageMeta {
-            state: AtomicPageState {
-                state: AtomicU8::new(PageState::Uninit as u8),
-            },
+            state: AtomicPageState::new(PageState::Uninit),
         };
         let page = FrameAllocOptions::new()
             .zeroed(false)
@@ -513,16 +513,23 @@ pub trait CachePageExt {
         Ok(page)
     }
 
-    fn alloc_zero() -> Result<CachePage> {
-        let page = Self::alloc()?;
-        page.writer().fill(0);
+    /// Allocates a new zeroed cache page with the wanted state.
+    fn alloc_zero(state: PageState) -> Result<CachePage> {
+        let meta = CachePageMeta {
+            state: AtomicPageState::new(state),
+        };
+        let page = FrameAllocOptions::new()
+            .zeroed(true)
+            .alloc_frame_with(meta)?;
         Ok(page)
     }
 
+    /// Loads the current state of the cache page.
     fn load_state(&self) -> PageState {
         self.metadata().state.load(Ordering::Relaxed)
     }
 
+    /// Stores a new state for the cache page.
     fn store_state(&mut self, new_state: PageState) {
         self.metadata().state.store(new_state, Ordering::Relaxed);
     }
@@ -555,6 +562,12 @@ pub struct AtomicPageState {
 }
 
 impl AtomicPageState {
+    pub fn new(state: PageState) -> Self {
+        Self {
+            state: AtomicU8::new(state as _),
+        }
+    }
+
     pub fn load(&self, order: Ordering) -> PageState {
         let val = self.state.load(order);
         match val {

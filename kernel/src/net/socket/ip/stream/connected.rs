@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::sync::atomic::{AtomicBool, Ordering};
-
 use aster_bigtcp::{
     errors::tcp::{RecvError, SendError},
-    socket::{NeedIfacePoll, RawTcpSetOption, RawTcpSocket, TcpStateCheck},
+    socket::{NeedIfacePoll, RawTcpSetOption},
     wire::IpEndpoint,
 };
 
@@ -12,11 +10,14 @@ use super::StreamObserver;
 use crate::{
     events::IoEvents,
     net::{
-        iface::{Iface, TcpConnection},
-        socket::util::{send_recv_flags::SendRecvFlags, shutdown_cmd::SockShutdownCmd},
+        iface::{Iface, RawTcpSocketExt, TcpConnection},
+        socket::{
+            util::{send_recv_flags::SendRecvFlags, shutdown_cmd::SockShutdownCmd},
+            LingerOption,
+        },
     },
     prelude::*,
-    process::signal::Pollee,
+    process::signal::{Pollee, Poller},
     util::{MultiRead, MultiWrite},
 };
 
@@ -34,15 +35,6 @@ pub struct ConnectedStream {
     /// connection is established asynchronously will succeed and any subsequent `connect()` will
     /// fail.
     is_new_connection: bool,
-    /// Indicates if the receiving side of this socket is closed.
-    ///
-    /// The receiving side may be closed if this side disables reading
-    /// or if the peer side closes its sending half.
-    is_receiving_closed: AtomicBool,
-    /// Indicates if the sending side of this socket is closed.
-    ///
-    /// The sending side can only be closed if this side disables writing.
-    is_sending_closed: AtomicBool,
 }
 
 impl ConnectedStream {
@@ -55,8 +47,6 @@ impl ConnectedStream {
             tcp_conn,
             remote_endpoint,
             is_new_connection,
-            is_receiving_closed: AtomicBool::new(false),
-            is_sending_closed: AtomicBool::new(false),
         }
     }
 
@@ -64,13 +54,16 @@ impl ConnectedStream {
         let mut events = IoEvents::empty();
 
         if cmd.shut_read() {
-            self.is_receiving_closed.store(true, Ordering::Relaxed);
+            if !self.tcp_conn.shut_recv() {
+                return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected");
+            }
             events |= IoEvents::IN | IoEvents::RDHUP;
         }
 
         if cmd.shut_write() {
-            self.is_sending_closed.store(true, Ordering::Relaxed);
-            self.tcp_conn.close();
+            if !self.tcp_conn.shut_send() {
+                return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected");
+            }
             events |= IoEvents::OUT | IoEvents::HUP;
         }
 
@@ -92,9 +85,6 @@ impl ConnectedStream {
         });
 
         match result {
-            Ok((Ok(0), need_poll)) if self.is_receiving_closed.load(Ordering::Relaxed) => {
-                Ok((0, need_poll))
-            }
             Ok((Ok(0), need_poll)) => {
                 debug_assert!(!*need_poll);
                 return_errno_with_message!(Errno::EAGAIN, "the receive buffer is empty")
@@ -104,8 +94,12 @@ impl ConnectedStream {
                 debug_assert!(!*need_poll);
                 Err(e)
             }
-            Err(RecvError::Finished) => Ok((0, NeedIfacePoll::FALSE)),
-            Err(RecvError::InvalidState) => {
+            Err(RecvError::Finished) | Err(RecvError::InvalidState) => {
+                // `InvalidState` occurs when the connection is reset but `ECONNRESET` was reported
+                // earlier. Linux returns EOF in this case, so we follow it.
+                Ok((0, NeedIfacePoll::FALSE))
+            }
+            Err(RecvError::ConnReset) => {
                 return_errno_with_message!(Errno::ECONNRESET, "the connection is reset")
             }
         }
@@ -134,9 +128,9 @@ impl ConnectedStream {
                 Err(e)
             }
             Err(SendError::InvalidState) => {
-                // FIXME: `EPIPE` is another possibility, which means that the socket is shut down
-                // for writing. In that case, we should also trigger a `SIGPIPE` if `MSG_NOSIGNAL`
-                // is not specified.
+                return_errno_with_message!(Errno::EPIPE, "the connection is closed");
+            }
+            Err(SendError::ConnReset) => {
                 return_errno_with_message!(Errno::ECONNRESET, "the connection is reset");
             }
         }
@@ -154,7 +148,7 @@ impl ConnectedStream {
         self.tcp_conn.iface()
     }
 
-    pub fn check_new(&mut self) -> Result<()> {
+    pub fn finish_last_connect(&mut self) -> Result<()> {
         if !self.is_new_connection {
             return_errno_with_message!(Errno::EISCONN, "the socket is already connected");
         }
@@ -169,17 +163,8 @@ impl ConnectedStream {
 
     pub(super) fn check_io_events(&self) -> IoEvents {
         self.tcp_conn.raw_with(|socket| {
-            if socket.is_peer_closed() {
-                // Only the sending side of peer socket is closed
-                self.is_receiving_closed.store(true, Ordering::Relaxed);
-            } else if socket.is_closed() {
-                // The sending side of both peer socket and this socket are closed
-                self.is_receiving_closed.store(true, Ordering::Relaxed);
-                self.is_sending_closed.store(true, Ordering::Relaxed);
-            }
-
-            let is_receiving_closed = self.is_receiving_closed.load(Ordering::Relaxed);
-            let is_sending_closed = self.is_sending_closed.load(Ordering::Relaxed);
+            let is_receiving_closed = socket.is_recv_shut() || !socket.may_recv_new();
+            let is_sending_closed = !socket.may_send();
 
             let mut events = IoEvents::empty();
 
@@ -202,8 +187,24 @@ impl ConnectedStream {
                 events |= IoEvents::HUP;
             }
 
+            // If the connection is reset, add an ERR event.
+            if socket.is_rst_closed() {
+                events |= IoEvents::ERR;
+            }
+
             events
         })
+    }
+
+    pub(super) fn test_and_clear_error(&self) -> Option<Error> {
+        if self.tcp_conn.clear_rst_closed() {
+            Some(Error::with_message(
+                Errno::ECONNRESET,
+                "the connection is reset",
+            ))
+        } else {
+            None
+        }
     }
 
     pub(super) fn set_raw_option<R>(
@@ -213,7 +214,45 @@ impl ConnectedStream {
         set_option(&self.tcp_conn)
     }
 
-    pub(super) fn raw_with<R>(&self, f: impl FnOnce(&RawTcpSocket) -> R) -> R {
+    pub(super) fn raw_with<R>(&self, f: impl FnOnce(&RawTcpSocketExt) -> R) -> R {
         self.tcp_conn.raw_with(f)
+    }
+
+    pub(super) fn into_connection(self) -> TcpConnection {
+        self.tcp_conn
+    }
+}
+
+pub(super) fn close_and_linger(tcp_conn: TcpConnection, linger: LingerOption, pollee: &Pollee) {
+    let timeout = match (linger.is_on(), linger.timeout()) {
+        // No linger. Drain the send buffer in the background.
+        (false, _) => {
+            tcp_conn.close();
+            tcp_conn.iface().poll();
+            return;
+        }
+        // Linger with a zero timeout. Reset the connection immediately.
+        (true, duration) if duration.is_zero() => {
+            tcp_conn.reset();
+            tcp_conn.iface().poll();
+            return;
+        }
+        // Linger with a non-zero timeout. See below.
+        (true, duration) => {
+            tcp_conn.close();
+            tcp_conn.iface().poll();
+            duration
+        }
+    };
+
+    let mut poller = Poller::new(Some(&timeout));
+    pollee.register_poller(poller.as_handle_mut(), IoEvents::HUP);
+
+    // Now wait for the ACK packet to acknowledge the FIN packet we sent. If the timeout expires or
+    // we are interrupted by signals, the remaining task is done in the background.
+    while tcp_conn.raw_with(|socket| socket.is_closing()) {
+        if poller.wait().is_err() {
+            break;
+        }
     }
 }

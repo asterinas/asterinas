@@ -1,13 +1,16 @@
 <p align="center">
     <img src="docs/src/images/logo_en.svg" alt="asterinas-logo" width="620"><br>
     A secure, fast, and general-purpose OS kernel written in Rust and compatible with Linux<br/>
-    <a href="https://github.com/asterinas/asterinas/actions/workflows/test_osdk.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/test_osdk.yml/badge.svg?event=push" alt="Test OSDK" style="max-width: 100%;"></a>
-    <a href="https://github.com/asterinas/asterinas/actions/workflows/test_asterinas.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/test_asterinas.yml/badge.svg?event=push" alt="Test Asterinas" style="max-width: 100%;"></a>
-    <a href="https://asterinas.github.io/benchmark/"><img src="https://github.com/asterinas/asterinas/actions/workflows/benchmark_asterinas.yml/badge.svg" alt="Benchmark Asterinas" style="max-width: 100%;"></a>
+    <a href="https://github.com/asterinas/asterinas/actions/workflows/test_x86.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/test_x86.yml/badge.svg?event=push" alt="Test x86-64" style="max-width: 100%;"></a>
+    <a href="https://github.com/asterinas/asterinas/actions/workflows/test_riscv.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/test_riscv.yml/badge.svg?event=push" alt="Test riscv64" style="max-width: 100%;"></a>
+    <a href="https://github.com/asterinas/asterinas/actions/workflows/test_x86_tdx.yml"><img src="https://github.com/asterinas/asterinas/actions/workflows/test_x86_tdx.yml/badge.svg" alt="Test Intel TDX" style="max-width: 100%;"></a>
+    <a href="https://asterinas.github.io/benchmark/x86-64/"><img src="https://github.com/asterinas/asterinas/actions/workflows/benchmark_x86.yml/badge.svg" alt="Benchmark x86-64" style="max-width: 100%;"></a>
     <br/>
 </p>
 
 English | [中文版](README_CN.md) | [日本語](README_JP.md)
+
+**NEWS: [USENIX ATC'25](https://www.usenix.org/conference/atc25) accepted two research papers on Asterinas: (1) _Asterinas: A Linux ABI-Compatible, Rust-Based Framekernel OS with a Small and Sound TCB_ and (2) _Converos: Practical Model Checking for Verifying Rust OS Kernel Concurrency_. Congratulations to the Asterinas community🎉🎉🎉**
 
 ## Introducing Asterinas
 
@@ -32,11 +35,13 @@ and (3) choose between releasing their kernel modules as open source
 or keeping them proprietary,
 thanks to the flexibility offered by [MPL](#License).
 
-While the journey towards a production-grade OS kernel can be challenging,
-we are steadfastly progressing towards our goal.
-Currently, Asterinas only supports x86-64 VMs.
-However, [our aim for 2024](https://asterinas.github.io/book/kernel/roadmap.html) is
-to make Asterinas production-ready on x86-64 VMs.
+While the journey towards a production-grade OS kernel is challenging,
+we are steadfastly progressing towards this goal.
+Over the course of 2024,
+we significantly enhanced Asterinas's maturity,
+as detailed in [our end-year report](https://asterinas.github.io/2025/01/20/asterinas-in-2024.html).
+In 2025, our primary goal is to make Asterinas production-ready on x86-64 virtual machines
+and attract real users!
 
 ## Getting Started
 
@@ -52,7 +57,7 @@ git clone https://github.com/asterinas/asterinas
 2. Run a Docker container as the development environment.
 
 ```bash
-docker run -it --privileged --network=host --device=/dev/kvm -v $(pwd)/asterinas:/root/asterinas asterinas/asterinas:0.11.1
+docker run -it --privileged --network=host --device=/dev/kvm -v $(pwd)/asterinas:/root/asterinas asterinas/asterinas:0.15.0-20250509
 ```
 
 3. Inside the container, go to the project folder to build and run Asterinas.

@@ -219,7 +219,7 @@ impl FdSet {
     }
 
     /// Equivalent to FD_CLR.
-    #[allow(unused)]
+    #[expect(unused)]
     pub fn unset(&mut self, fd: FileDesc) -> Result<()> {
         let fd = fd as usize;
         if fd >= FD_SETSIZE {

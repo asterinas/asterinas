@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: false
+  threshold: 125%
+chart:
+  description: lat_fifo
+  legend: Average fifo latency on {system}
+  title: '[FIFO] The cost of write+read (1B)'
+  unit: "\xB5s"   # Unicode for microsecond
+result_extraction:
+  result_index: 3
+  search_pattern: 'Fifo latency: +[0-9.]+'

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
+#![expect(dead_code)]
 
 use core::{
     sync::atomic::{AtomicBool, Ordering},
@@ -16,7 +16,7 @@ use ostd::{
 use super::{simple_scheduler::SimpleScheduler, worker::Worker, WorkItem, WorkPriority, WorkQueue};
 use crate::{
     prelude::*,
-    sched::priority::Priority,
+    sched::{Nice, SchedPolicy},
     thread::{kernel_thread::ThreadOptions, AsThread},
 };
 
@@ -237,17 +237,13 @@ impl Monitor {
                 current_monitor.run_monitor_loop();
             });
             let cpu_affinity = CpuSet::new_full();
-            // FIXME: remove the use of real-time priority.
-            // Logically all monitors should be of default normal priority.
-            // This workaround is to make the monitor of high-priority worker pool
-            // starvation-free under the current scheduling policy.
-            let priority = match priority {
-                WorkPriority::High => Priority::default_real_time(),
-                WorkPriority::Normal => Priority::default(),
-            };
+            let sched_policy = SchedPolicy::Fair(match priority {
+                WorkPriority::High => Nice::MIN,
+                WorkPriority::Normal => Nice::default(),
+            });
             let bound_task = ThreadOptions::new(task_fn)
                 .cpu_affinity(cpu_affinity)
-                .priority(priority)
+                .sched_policy(sched_policy)
                 .build();
             Self {
                 worker_pool,

@@ -71,7 +71,7 @@ impl Capability {
     /// If the register base address is X, and the value reported in this field
     /// is Y, the address for the first fault recording register is calculated as X+(16*Y).
     pub const fn fault_recording_register_offset(&self) -> u64 {
-        const FRO_MASK: u64 = 0x3FFF << 24;
+        const FRO_MASK: u64 = 0x3FF << 24;
         (self.0 & FRO_MASK) >> 24
     }
     /// Second Stage Large Page Support.

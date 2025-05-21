@@ -46,7 +46,7 @@ impl X2Apic {
             }
 
             // Set SVR, Enable APIC and set Spurious Vector to 15 (Reserved irq number)
-            let svr: u64 = 1 << 8 | 15;
+            let svr: u64 = (1 << 8) | 15;
             wrmsr(IA32_X2APIC_SIVR, svr);
         }
     }
@@ -73,7 +73,7 @@ impl super::Apic for X2Apic {
         wrmsr(IA32_X2APIC_ICR, icr.0);
         loop {
             let icr = rdmsr(IA32_X2APIC_ICR);
-            if (icr >> 12 & 0x1) == 0 {
+            if ((icr >> 12) & 0x1) == 0 {
                 break;
             }
             if rdmsr(IA32_X2APIC_ESR) > 0 {

@@ -89,16 +89,14 @@ pub trait Pause: WaitTimeout {
     ///
     /// # Errors
     ///
-    /// This method will return an error with [`ETIME`] if the timeout is reached.
-    ///
-    /// Unlike other methods in the trait, this method will _not_ return an error with [`EINTR`] if
-    /// a signal is received (FIXME: See <https://github.com/asterinas/asterinas/pull/1577> for why
-    /// we cannot fix this directly).
+    /// This method will return an error with
+    ///  - [`EINTR`] if a signal is received;
+    ///  - [`ETIME`] if the timeout is reached.
     ///
     /// [`ETIME`]: crate::error::Errno::ETIME
     /// [`EINTR`]: crate::error::Errno::EINTR
     #[track_caller]
-    fn pause_timeout<'a>(&self, timeout: impl Into<TimeoutExt<'a>>) -> Result<()>;
+    fn pause_timeout<'a>(&self, timeout: &TimeoutExt<'a>) -> Result<()>;
 }
 
 impl Pause for Waiter {
@@ -113,10 +111,9 @@ impl Pause for Waiter {
         // No fast paths for `Waiter`. If the caller wants a fast path, it should do so _before_
         // the waiter is created.
 
-        let current_thread = self.task().as_thread();
-
-        let Some(posix_thread) = current_thread
-            .as_ref()
+        let Some(posix_thread) = self
+            .task()
+            .as_thread()
             .and_then(|thread| thread.as_posix_thread())
         else {
             return self.wait_until_or_timeout_cancelled(cond, || Ok(()), timeout);
@@ -139,20 +136,20 @@ impl Pause for Waiter {
         res
     }
 
-    fn pause_timeout<'a>(&self, timeout: impl Into<TimeoutExt<'a>>) -> Result<()> {
-        let timer = timeout.into().check_expired()?.map(|timeout| {
+    fn pause_timeout<'a>(&self, timeout: &TimeoutExt<'a>) -> Result<()> {
+        let timer = timeout.check_expired()?.map(|timeout| {
             let waker = self.waker();
             timeout.create_timer(move || {
                 waker.wake_up();
             })
         });
 
-        let current_thread = self.task().as_thread();
+        let posix_thread_opt = self
+            .task()
+            .as_thread()
+            .and_then(|thread| thread.as_posix_thread());
 
-        if let Some(posix_thread) = current_thread
-            .as_ref()
-            .and_then(|thread| thread.as_posix_thread())
-        {
+        if let Some(posix_thread) = posix_thread_opt {
             posix_thread.set_signalled_waker(self.waker());
             self.wait();
             posix_thread.clear_signalled_waker();
@@ -166,6 +163,16 @@ impl Pause for Waiter {
             }
             // If the timeout is not expired, cancel the timer manually.
             timer.cancel();
+        }
+
+        if posix_thread_opt
+            .as_ref()
+            .is_some_and(|posix_thread| posix_thread.has_pending())
+        {
+            return_errno_with_message!(
+                Errno::EINTR,
+                "the current thread is interrupted by a signal"
+            );
         }
 
         Ok(())
@@ -194,21 +201,27 @@ impl Pause for WaitQueue {
         waiter.pause_until_or_timeout_impl(cond, timeout)
     }
 
-    fn pause_timeout<'a>(&self, _timeout: impl Into<TimeoutExt<'a>>) -> Result<()> {
+    fn pause_timeout<'a>(&self, _timeout: &TimeoutExt<'a>) -> Result<()> {
         panic!("`pause_timeout` can only be used on `Waiter`");
     }
 }
 
-/// Executes a closure while temporarily blocking some signals for the current POSIX thread.
-pub fn with_signal_blocked<R>(ctx: &Context, mask: SigMask, operate: impl FnOnce() -> R) -> R {
-    let posix_thread = ctx.posix_thread;
-    let sig_mask = posix_thread.sig_mask();
+/// Executes a closure after temporarily adjusting the signal mask of the current POSIX thread.
+pub fn with_sigmask_changed<R>(
+    ctx: &Context,
+    mask_op: impl FnOnce(SigMask) -> SigMask,
+    operate: impl FnOnce() -> R,
+) -> R {
+    let sig_mask = ctx.posix_thread.sig_mask();
 
+    // Save the original signal mask and apply the mask updates.
     let old_mask = sig_mask.load(Ordering::Relaxed);
-    sig_mask.store(old_mask + mask, Ordering::Relaxed);
+    sig_mask.store(mask_op(old_mask), Ordering::Relaxed);
 
+    // Perform the operation.
     let res = operate();
 
+    // Restore the original signal mask.
     sig_mask.store(old_mask, Ordering::Relaxed);
 
     res

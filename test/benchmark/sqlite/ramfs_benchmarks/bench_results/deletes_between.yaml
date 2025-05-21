@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: false
+  threshold: 125%
+chart:
+  description: 'sqlite-speed-test: 10000 DELETEs, numeric BETWEEN, indexed'
+  legend: The speed of deletes-between on {system} (Ramfs)
+  title: '[Ramfs] The deletes-between result of sqlite speedtest'
+  unit: second
+result_extraction:
+  result_index: 8
+  search_pattern: '[0-9]+ DELETEs, numeric BETWEEN, indexed....'

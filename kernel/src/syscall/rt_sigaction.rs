@@ -3,7 +3,16 @@
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::signal::{c_types::sigaction_t, sig_action::SigAction, sig_num::SigNum},
+    process::{
+        posix_thread::AsPosixThread,
+        signal::{
+            c_types::sigaction_t,
+            constants::{SIGKILL, SIGSTOP},
+            sig_action::{SigAction, SigDefaultAction},
+            sig_mask::SigSet,
+            sig_num::SigNum,
+        },
+    },
 };
 
 pub fn sys_rt_sigaction(
@@ -29,10 +38,18 @@ pub fn sys_rt_sigaction(
     let mut sig_dispositions = ctx.process.sig_dispositions().lock();
 
     let old_action = if sig_action_addr != 0 {
+        if sig_num == SIGKILL || sig_num == SIGSTOP {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "cannot set a new signal action for SIGKILL and SIGSTOP"
+            );
+        }
+
         let sig_action_c = ctx.user_space().read_val::<sigaction_t>(sig_action_addr)?;
-        let sig_action = SigAction::try_from(sig_action_c).unwrap();
+        let sig_action = SigAction::from(sig_action_c);
         trace!("sig action = {:?}", sig_action);
-        sig_dispositions.set(sig_num, sig_action)
+        discard_signals_if_ignored(ctx, sig_num, &sig_action);
+        sig_dispositions.set(sig_num, sig_action)?
     } else {
         sig_dispositions.get(sig_num)
     };
@@ -44,4 +61,40 @@ pub fn sys_rt_sigaction(
     }
 
     Ok(SyscallReturn::Return(0))
+}
+
+/// Discard signals if the new action is to ignore the signal.
+///
+/// Ref: <https://elixir.bootlin.com/linux/v6.13/source/kernel/signal.c#L4323>
+//
+// POSIX 3.3.1.3:
+// Setting a signal action to SIG_IGN for a signal that is
+// pending shall cause the pending signal to be discarded,
+// whether or not it is blocked.
+//
+// Setting a signal action to SIG_DFL for a signal that is
+// pending and whose default action is to ignore the signal
+// (for example, SIGCHLD), shall cause the pending signal to
+// be discarded, whether or not it is blocked
+fn discard_signals_if_ignored(ctx: &Context, signum: SigNum, sig_action: &SigAction) {
+    match sig_action {
+        SigAction::Dfl => {
+            let default_action = SigDefaultAction::from_signum(signum);
+            if default_action != SigDefaultAction::Ign {
+                return;
+            }
+        }
+        SigAction::Ign => {}
+        SigAction::User { .. } => return,
+    }
+
+    let mask = SigSet::new_full() - signum;
+
+    for task in ctx.process.tasks().lock().as_slice() {
+        let Some(posix_thread) = task.as_posix_thread() else {
+            continue;
+        };
+
+        posix_thread.dequeue_signal(&mask);
+    }
 }

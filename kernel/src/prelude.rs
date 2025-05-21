@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(unused)]
+#![expect(unused)]
 
 pub(crate) use alloc::{
     boxed::Box,
@@ -53,7 +53,7 @@ pub(crate) use crate::{
     context::{Context, CurrentUserSpace, ReadCString},
     current, current_thread,
     error::{Errno, Error},
-    process::signal::Pause,
+    process::{posix_thread::AsThreadLocal, signal::Pause},
     time::{wait::WaitTimeout, Clock},
 };
 pub(crate) type Result<T> = core::result::Result<T, Error>;

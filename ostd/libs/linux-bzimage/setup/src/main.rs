@@ -21,24 +21,13 @@
 
 #![no_std]
 #![no_main]
-
-use linux_boot_params::BootParams;
+#![feature(maybe_uninit_fill)]
+#![feature(maybe_uninit_slice)]
+#![feature(maybe_uninit_write_slice)]
 
 mod console;
 mod loader;
+mod sync;
 
-// Unfortunately, the entrypoint is not defined here in the main.rs file.
-// See the exported functions in the x86 module for details.
+// The entry points are defined in `x86/*/setup.S`.
 mod x86;
-
-fn get_payload(boot_params: &BootParams) -> &'static [u8] {
-    let hdr = &boot_params.hdr;
-    // The payload_offset field is not recorded in the relocation table, so we need to
-    // calculate the loaded offset manually.
-    let loaded_offset = x86::get_image_loaded_offset();
-    let payload_offset = (loaded_offset + hdr.payload_offset as isize) as usize;
-    let payload_length = hdr.payload_length as usize;
-    // SAFETY: the payload_offset and payload_length is valid if we assume that the
-    // boot_params struct is correct.
-    unsafe { core::slice::from_raw_parts_mut(payload_offset as *mut u8, payload_length) }
-}

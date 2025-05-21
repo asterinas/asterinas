@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: true
+  threshold: 125%
+chart:
+  description: lat_fs -s 10K /ext2
+  legend: Number of created/deleted files on {system}
+  title: '[Ext2] The throughput of creating/deleting small files (10KB)'
+  unit: number
+result_extraction:
+  result_index: 2
+  search_pattern: ^10k\t[0-9]+

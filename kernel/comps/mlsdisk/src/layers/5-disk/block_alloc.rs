@@ -11,7 +11,7 @@ use core::{
 use ostd_pod::Pod;
 use serde::{Deserialize, Serialize};
 
-use super::sworndisk::Hba;
+use super::mlsdisk::Hba;
 use crate::{
     layers::{
         bio::{BlockSet, Buf, BufRef, BID_SIZE},
@@ -27,7 +27,7 @@ const BUCKET_BLOCK_VALIDITY_TABLE: &str = "BVT";
 /// The bucket name of block alloc/dealloc log.
 const BUCKET_BLOCK_ALLOC_LOG: &str = "BAL";
 
-/// Block validity table. Global allocator for `SwornDisk`,
+/// Block validity table. Global allocator for `MlsDisk`,
 /// which manages validities of user data blocks.
 pub(super) struct AllocTable {
     bitmap: Mutex<BitMap>,
@@ -38,7 +38,7 @@ pub(super) struct AllocTable {
     num_free: CvarMutex<usize>,
 }
 
-/// Per-TX block allocator in `SwornDisk`, recording validities
+/// Per-TX block allocator in `MlsDisk`, recording validities
 /// of user data blocks within each TX. All metadata will be stored in
 /// `TxLog`s of bucket `BAL` during TX for durability and recovery purpose.
 pub(super) struct BlockAlloc<D> {

@@ -15,17 +15,18 @@ use ostd::{
     sync::{PreemptDisabled, RwLockWriteGuard},
 };
 
-use super::*;
+use super::{xattr::RamXattr, *};
 use crate::{
     events::IoEvents,
     fs::{
         device::Device,
         file_handle::FileLike,
         named_pipe::NamedPipe,
+        path::{is_dot, is_dot_or_dotdot, is_dotdot},
         utils::{
             CStr256, CachePage, DirentVisitor, Extension, FallocMode, FileSystem, FsFlags, Inode,
             InodeMode, InodeType, IoctlCmd, Metadata, MknodType, PageCache, PageCacheBackend,
-            SuperBlock,
+            Permission, SuperBlock, XattrName, XattrNamespace, XattrSetFlags,
         },
     },
     prelude::*,
@@ -60,6 +61,7 @@ impl RamFS {
                 this: weak_root.clone(),
                 fs: weak_fs.clone(),
                 extension: Extension::new(),
+                xattr: RamXattr::new(),
             }),
             inode_allocator: AtomicU64::new(ROOT_INO + 1),
         })
@@ -105,10 +107,11 @@ struct RamInode {
     fs: Weak<RamFS>,
     /// Extensions
     extension: Extension,
+    /// Extended attributes
+    xattr: RamXattr,
 }
 
 /// Inode inner specifics.
-#[allow(clippy::large_enum_variant)]
 enum Inner {
     Dir(RwLock<DirEntry>),
     File(PageCache),
@@ -288,7 +291,7 @@ impl DirEntry {
     }
 
     fn contains_entry(&self, name: &str) -> bool {
-        if name == "." || name == ".." {
+        if is_dot_or_dotdot(name) {
             true
         } else {
             self.idx_map.contains_key(name.as_bytes())
@@ -296,9 +299,9 @@ impl DirEntry {
     }
 
     fn get_entry(&self, name: &str) -> Option<(usize, Arc<RamInode>)> {
-        if name == "." {
+        if is_dot(name) {
             Some((0, self.this.upgrade().unwrap()))
-        } else if name == ".." {
+        } else if is_dotdot(name) {
             Some((1, self.parent.upgrade().unwrap()))
         } else {
             let idx = *self.idx_map.get(name.as_bytes())?;
@@ -399,6 +402,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
+            xattr: RamXattr::new(),
         })
     }
 
@@ -411,6 +415,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
+            xattr: RamXattr::new(),
         })
     }
 
@@ -423,6 +428,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
+            xattr: RamXattr::new(),
         })
     }
 
@@ -441,6 +447,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
+            xattr: RamXattr::new(),
         })
     }
 
@@ -453,6 +460,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
+            xattr: RamXattr::new(),
         })
     }
 
@@ -465,6 +473,7 @@ impl RamInode {
             this: weak_self.clone(),
             fs: Arc::downgrade(fs),
             extension: Extension::new(),
+            xattr: RamXattr::new(),
         })
     }
 
@@ -823,7 +832,7 @@ impl Inode for RamInode {
     }
 
     fn unlink(&self, name: &str) -> Result<()> {
-        if name == "." || name == ".." {
+        if is_dot_or_dotdot(name) {
             return_errno_with_message!(Errno::EISDIR, "unlink . or ..");
         }
 
@@ -855,10 +864,10 @@ impl Inode for RamInode {
     }
 
     fn rmdir(&self, name: &str) -> Result<()> {
-        if name == "." {
+        if is_dot(name) {
             return_errno_with_message!(Errno::EINVAL, "rmdir on .");
         }
-        if name == ".." {
+        if is_dotdot(name) {
             return_errno_with_message!(Errno::ENOTEMPTY, "rmdir on ..");
         }
 
@@ -903,10 +912,10 @@ impl Inode for RamInode {
     }
 
     fn rename(&self, old_name: &str, target: &Arc<dyn Inode>, new_name: &str) -> Result<()> {
-        if old_name == "." || old_name == ".." {
+        if is_dot_or_dotdot(old_name) {
             return_errno_with_message!(Errno::EISDIR, "old_name is . or ..");
         }
-        if new_name == "." || new_name == ".." {
+        if is_dot_or_dotdot(new_name) {
             return_errno_with_message!(Errno::EISDIR, "new_name is . or ..");
         }
 
@@ -1189,6 +1198,40 @@ impl Inode for RamInode {
 
     fn extension(&self) -> Option<&Extension> {
         Some(&self.extension)
+    }
+
+    fn set_xattr(
+        &self,
+        name: XattrName,
+        value_reader: &mut VmReader,
+        flags: XattrSetFlags,
+    ) -> Result<()> {
+        RamXattr::check_file_type_for_xattr(self.typ)?;
+        self.check_permission(Permission::MAY_WRITE)?;
+        self.xattr.set(name, value_reader, flags)
+    }
+
+    fn get_xattr(&self, name: XattrName, value_writer: &mut VmWriter) -> Result<usize> {
+        RamXattr::check_file_type_for_xattr(self.typ)
+            .map_err(|_| Error::with_message(Errno::ENODATA, "no available xattrs"))?;
+        self.check_permission(Permission::MAY_READ)?;
+        self.xattr.get(name, value_writer)
+    }
+
+    fn list_xattr(&self, namespace: XattrNamespace, list_writer: &mut VmWriter) -> Result<usize> {
+        if RamXattr::check_file_type_for_xattr(self.typ).is_err() {
+            return Ok(0);
+        }
+        if self.check_permission(Permission::MAY_ACCESS).is_err() {
+            return Ok(0);
+        }
+        self.xattr.list(namespace, list_writer)
+    }
+
+    fn remove_xattr(&self, name: XattrName) -> Result<()> {
+        RamXattr::check_file_type_for_xattr(self.typ)?;
+        self.check_permission(Permission::MAY_WRITE)?;
+        self.xattr.remove(name)
     }
 }
 

@@ -1,0 +1,21 @@
+benchmarks:
+  - ext2_deletes_between
+  - ext2_deletes_individual
+  - ext2_refill_replace
+  - ext2_selects_ipk
+  - ext2_selects_text_pk
+  - ext2_updates_between
+  - ext2_updates_individual
+  - ext2_updates_big_one
+  - ext2_vacuum
+  - ext2_total
+  - ramfs_deletes_between
+  - ramfs_deletes_individual
+  - ramfs_refill_replace
+  - ramfs_selects_ipk
+  - ramfs_selects_text_pk
+  - ramfs_updates_between
+  - ramfs_updates_individual
+  - ramfs_updates_big_one
+  - ramfs_vacuum
+  - ramfs_total

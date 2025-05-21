@@ -1,20 +1,23 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-#![allow(unused_variables)]
+#![expect(dead_code)]
 
 //! Remapping structures of DMAR table.
-//! This file defines these structures and provides a "Debug" implementation to see the value inside these structures.
+//!
+//! This file defines these structures and provides a `Debug` implementation to see the value
+//! inside these structures.
+//!
 //! Most of the introduction are copied from Intel vt-directed-io-specification.
 
-use alloc::{string::String, vec::Vec};
-use core::{fmt::Debug, mem::size_of};
+use alloc::{borrow::ToOwned, string::String, vec::Vec};
+use core::fmt::Debug;
+
+use ostd_pod::Pod;
 
 /// DMA-remapping hardware unit definition (DRHD).
 ///
 /// A DRHD structure uniquely represents a remapping hardware unit present in the platform.
-/// There must be at least one instance of this structure for each
-/// PCI segment in the platform.
+/// There must be at least one instance of this structure for each PCI segment in the platform.
 #[derive(Debug, Clone)]
 pub struct Drhd {
     header: DrhdHeader,
@@ -28,7 +31,7 @@ impl Drhd {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Pod)]
 pub struct DrhdHeader {
     typ: u16,
     length: u16,
@@ -50,7 +53,7 @@ pub struct Rmrr {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Pod)]
 pub struct RmrrHeader {
     typ: u16,
     length: u16,
@@ -71,7 +74,7 @@ pub struct Atsr {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Pod)]
 pub struct AtsrHeader {
     typ: u16,
     length: u16,
@@ -82,11 +85,12 @@ pub struct AtsrHeader {
 
 /// Remapping Hardware Status Affinity (RHSA).
 ///
-/// It is applicable for platforms supporting non-uniform memory (NUMA), where Remapping hardware units spans across nodes.
-/// This optional structure provides the association between each Remapping hardware unit (identified by its
-/// espective Base Address) and the proximity domain to which that hardware unit belongs.
+/// It is applicable for platforms supporting non-uniform memory (NUMA),
+/// where Remapping hardware units spans across nodes.
+/// This optional structure provides the association between each Remapping hardware unit (identified
+/// by its espective Base Address) and the proximity domain to which that hardware unit belongs.
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Pod)]
 pub struct Rhsa {
     typ: u16,
     length: u16,
@@ -106,7 +110,7 @@ pub struct Andd {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Pod)]
 pub struct AnddHeader {
     typ: u16,
     length: u16,
@@ -125,7 +129,7 @@ pub struct Satc {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Pod)]
 pub struct SatcHeader {
     typ: u16,
     length: u16,
@@ -139,7 +143,6 @@ pub struct SatcHeader {
 /// The (SIDP) reporting structure identifies devices that have special
 /// properties and that may put restrictions on how system software must configure remapping
 /// structures that govern such devices in a platform where remapping hardware is enabled.
-///
 #[derive(Debug, Clone)]
 pub struct Sidp {
     header: SidpHeader,
@@ -147,7 +150,7 @@ pub struct Sidp {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Pod)]
 pub struct SidpHeader {
     typ: u16,
     length: u16,
@@ -164,7 +167,7 @@ pub struct DeviceScope {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Pod)]
 pub struct DeviceScopeHeader {
     typ: u8,
     length: u8,
@@ -175,35 +178,32 @@ pub struct DeviceScopeHeader {
 }
 
 macro_rules! impl_from_bytes {
-    ($(($struct:tt,$header_struct:tt,$dst_name:ident)),*) => {
+    ($(($struct:tt, $header_struct:tt),)*) => {
         $(impl $struct {
-            /// Creates instance from bytes
+            #[doc = concat!("Parses a [`", stringify!($struct), "`] from bytes.")]
             ///
-            /// # Safety
+            /// # Panics
             ///
-            /// User must ensure the bytes is valid.
-            ///
-            pub unsafe fn from_bytes(bytes: &[u8]) -> Self {
-                let length = u16_from_slice(&bytes[2..4]) as usize;
-                debug_assert_eq!(length, bytes.len());
+            #[doc = concat!(
+                "This method may panic if the bytes do not represent a valid [`",
+                stringify!($struct),
+                "`].",
+            )]
+            pub fn from_bytes(bytes: &[u8]) -> Self {
+                let header = $header_struct::from_bytes(bytes);
+                debug_assert_eq!(header.length as usize, bytes.len());
 
                 let mut index = core::mem::size_of::<$header_struct>();
-                let mut remain_length = length - core::mem::size_of::<$header_struct>();
-                let mut $dst_name = Vec::new();
-                while remain_length > 0 {
-                    let length = *bytes[index + 1..index + 2].as_ptr() as usize;
-                    let temp = DeviceScope::from_bytes(
-                        &bytes[index..index + length],
-                    );
-                    $dst_name.push(temp);
-                    index += length;
-                    remain_length -= length;
+                let mut device_scopes = Vec::new();
+                while index != (header.length as usize) {
+                    let val = DeviceScope::from_bytes_prefix(&bytes[index..]);
+                    index += val.header.length as usize;
+                    device_scopes.push(val);
                 }
 
-                let header = *(bytes.as_ptr() as *const $header_struct);
                 Self{
                     header,
-                    $dst_name
+                    device_scopes,
                 }
             }
         })*
@@ -211,33 +211,31 @@ macro_rules! impl_from_bytes {
 }
 
 impl_from_bytes!(
-    (Drhd, DrhdHeader, device_scopes),
-    (Rmrr, RmrrHeader, device_scopes),
-    (Atsr, AtsrHeader, device_scopes),
-    (Satc, SatcHeader, device_scopes),
-    (Sidp, SidpHeader, device_scopes)
+    (Drhd, DrhdHeader),
+    (Rmrr, RmrrHeader),
+    (Atsr, AtsrHeader),
+    (Satc, SatcHeader),
+    (Sidp, SidpHeader),
 );
 
 impl DeviceScope {
-    /// Creates instance from bytes
+    /// Parses a [`DeviceScope`] from a prefix of the bytes.
     ///
-    /// # Safety
+    /// # Panics
     ///
-    /// User must ensure the bytes is valid.
-    ///
-    unsafe fn from_bytes(bytes: &[u8]) -> Self {
-        let length = bytes[1] as u32;
-        debug_assert_eq!(length, bytes.len() as u32);
-        let header = *(bytes.as_ptr() as *const DeviceScopeHeader);
+    /// This method may panic if the byte prefix does not represent a valid [`DeviceScope`].
+    fn from_bytes_prefix(bytes: &[u8]) -> Self {
+        let header = DeviceScopeHeader::from_bytes(bytes);
+        debug_assert!((header.length as usize) <= bytes.len());
 
-        let mut index = size_of::<DeviceScopeHeader>();
-        let mut remain_length = length - index as u32;
+        let mut index = core::mem::size_of::<DeviceScopeHeader>();
+        debug_assert!((header.length as usize) >= index);
+
         let mut path = Vec::new();
-        while remain_length > 0 {
-            let temp: (u8, u8) = *(bytes[index..index + 2].as_ptr() as *const (u8, u8));
-            path.push(temp);
+        while index != (header.length as usize) {
+            let val = (bytes[index], bytes[index + 1]);
+            path.push(val);
             index += 2;
-            remain_length -= 2;
         }
 
         Self { header, path }
@@ -245,42 +243,37 @@ impl DeviceScope {
 }
 
 impl Rhsa {
-    /// Creates instance from bytes
+    /// Parses an [`Rhsa`] from the bytes.
     ///
-    /// # Safety
+    /// # Panics
     ///
-    /// User must ensure the bytes is valid.
-    ///
-    pub unsafe fn from_bytes(bytes: &[u8]) -> Self {
-        let length = u16_from_slice(&bytes[2..4]) as u32;
-        debug_assert_eq!(length, bytes.len() as u32);
-        *(bytes.as_ptr() as *const Self)
+    /// This method may panic if the bytes do not represent a valid [`Rhsa`].
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        let val = <Self as Pod>::from_bytes(bytes);
+        debug_assert_eq!(val.length as usize, bytes.len());
+
+        val
     }
 }
 
 impl Andd {
-    /// Creates instance from bytes
+    /// Parses an [`Andd`] from the bytes.
     ///
-    /// # Safety
+    /// # Panics
     ///
-    /// User must ensure the bytes is valid.
-    ///
-    pub unsafe fn from_bytes(bytes: &[u8]) -> Self {
-        let length = u16_from_slice(&bytes[2..4]) as usize;
-        debug_assert_eq!(length, bytes.len());
+    /// This method may panic if the bytes do not represent a valid [`Andd`].
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        let header = AnddHeader::from_bytes(bytes);
+        debug_assert_eq!(header.length as usize, bytes.len());
 
-        let index = core::mem::size_of::<AnddHeader>();
-        let remain_length = length - core::mem::size_of::<AnddHeader>();
-        let string = String::from_utf8(bytes[index..index + length].to_vec()).unwrap();
+        let header_len = core::mem::size_of::<AnddHeader>();
+        let acpi_object_name = core::str::from_utf8(&bytes[header_len..])
+            .unwrap()
+            .to_owned();
 
-        let header = *(bytes.as_ptr() as *const AnddHeader);
         Self {
             header,
-            acpi_object_name: string,
+            acpi_object_name,
         }
     }
-}
-
-fn u16_from_slice(input: &[u8]) -> u16 {
-    u16::from_ne_bytes(input[0..size_of::<u16>()].try_into().unwrap())
 }

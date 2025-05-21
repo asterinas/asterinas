@@ -211,8 +211,8 @@ mod test {
 
     fn test_blocking<W, R>(write: W, read: R, ordering: Ordering)
     where
-        W: Fn(Arc<PipeWriter>) + Sync + Send + 'static,
-        R: Fn(Arc<PipeReader>) + Sync + Send + 'static,
+        W: FnOnce(Arc<PipeWriter>) + Send + 'static,
+        R: FnOnce(Arc<PipeReader>) + Send + 'static,
     {
         let channel = Channel::with_capacity(2);
         let (writer, readr) = channel.split();
@@ -220,18 +220,10 @@ mod test {
         let writer = PipeWriter::new(writer, StatusFlags::empty()).unwrap();
         let reader = PipeReader::new(readr, StatusFlags::empty()).unwrap();
 
-        // FIXME: `ThreadOptions::new` currently accepts `Fn`, forcing us to use `SpinLock` to gain
-        // internal mutability. We should avoid this `SpinLock` by making `ThreadOptions::new`
-        // accept `FnOnce`.
-        let writer_with_lock: SpinLock<_> = SpinLock::new(Some(writer));
-        let reader_with_lock: SpinLock<_> = SpinLock::new(Some(reader));
-
         let signal_writer = Arc::new(AtomicBool::new(false));
         let signal_reader = signal_writer.clone();
 
         let writer = ThreadOptions::new(move || {
-            let writer = writer_with_lock.lock().take().unwrap();
-
             if ordering == Ordering::ReadThenWrite {
                 while !signal_writer.load(atomic::Ordering::Relaxed) {
                     Thread::yield_now();
@@ -245,8 +237,6 @@ mod test {
         .spawn();
 
         let reader = ThreadOptions::new(move || {
-            let reader = reader_with_lock.lock().take().unwrap();
-
             if ordering == Ordering::WriteThenRead {
                 while !signal_reader.load(atomic::Ordering::Relaxed) {
                     Thread::yield_now();

@@ -24,7 +24,7 @@ pub fn sys_fallocate(
 
     check_offset_and_len(offset, len, ctx)?;
 
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
 
     let falloc_mode = FallocMode::try_from(
@@ -48,7 +48,7 @@ fn check_offset_and_len(offset: i64, len: i64, ctx: &Context) -> Result<()> {
     }
 
     let max_file_size = {
-        let resource_limits = ctx.process.resource_limits().lock();
+        let resource_limits = ctx.process.resource_limits();
         resource_limits
             .get_rlimit(ResourceType::RLIMIT_FSIZE)
             .get_cur() as usize

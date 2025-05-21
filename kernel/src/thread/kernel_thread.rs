@@ -6,41 +6,45 @@ use ostd::{
 };
 
 use super::{oops, AsThread, Thread};
-use crate::{prelude::*, sched::priority::Priority};
+use crate::{
+    prelude::*,
+    sched::{Nice, SchedPolicy},
+};
 
 /// The inner data of a kernel thread.
 struct KernelThread;
 
 /// Options to create or spawn a new kernel thread.
 pub struct ThreadOptions {
-    func: Option<Box<dyn Fn() + Send + Sync>>,
-    priority: Priority,
+    func: Option<Box<dyn FnOnce() + Send>>,
     cpu_affinity: CpuSet,
+    sched_policy: SchedPolicy,
 }
 
 impl ThreadOptions {
     /// Creates the thread options with the thread function.
     pub fn new<F>(func: F) -> Self
     where
-        F: Fn() + Send + Sync + 'static,
+        F: FnOnce() + Send + 'static,
     {
         let cpu_affinity = CpuSet::new_full();
+        let sched_policy = SchedPolicy::Fair(Nice::default());
         Self {
             func: Some(Box::new(func)),
-            priority: Priority::default(),
             cpu_affinity,
+            sched_policy,
         }
-    }
-
-    /// Sets the priority of the new thread.
-    pub fn priority(mut self, priority: Priority) -> Self {
-        self.priority = priority;
-        self
     }
 
     /// Sets the CPU affinity of the new thread.
     pub fn cpu_affinity(mut self, cpu_affinity: CpuSet) -> Self {
         self.cpu_affinity = cpu_affinity;
+        self
+    }
+
+    /// Sets the scheduling policy.
+    pub fn sched_policy(mut self, sched_policy: SchedPolicy) -> Self {
+        self.sched_policy = sched_policy;
         self
     }
 }
@@ -58,13 +62,13 @@ impl ThreadOptions {
         Arc::new_cyclic(|weak_task| {
             let thread = {
                 let kernel_thread = KernelThread;
-                let priority = self.priority;
                 let cpu_affinity = self.cpu_affinity;
+                let sched_policy = self.sched_policy;
                 Arc::new(Thread::new(
                     weak_task.clone(),
                     kernel_thread,
-                    priority,
                     cpu_affinity,
+                    sched_policy,
                 ))
             };
 

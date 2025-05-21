@@ -2,19 +2,15 @@
 
 use core::{num::NonZeroU64, sync::atomic::Ordering};
 
-use ostd::{
-    cpu::UserContext,
-    sync::RwArc,
-    task::Task,
-    user::{UserContextApi, UserSpace},
-};
+use ostd::{cpu::context::UserContext, sync::RwArc, task::Task, user::UserContextApi};
 
 use super::{
     posix_thread::{AsPosixThread, PosixThreadBuilder, ThreadName},
     process_table,
     process_vm::ProcessVm,
+    rlimit::ResourceLimits,
     signal::{constants::SIGCHLD, sig_disposition::SigDispositions, sig_num::SigNum},
-    Credentials, Process, ProcessBuilder,
+    Credentials, Pid, Process,
 };
 use crate::{
     cpu::LinuxAbi,
@@ -22,6 +18,7 @@ use crate::{
     fs::{file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
     process::posix_thread::allocate_posix_tid,
+    sched::Nice,
     thread::{AsThread, Tid},
 };
 
@@ -142,6 +139,14 @@ impl CloneArgs {
             ..Default::default()
         }
     }
+
+    pub fn for_vfork() -> Self {
+        Self {
+            flags: CloneFlags::CLONE_VFORK | CloneFlags::CLONE_VM,
+            exit_signal: Some(SIGCHLD),
+            ..Default::default()
+        }
+    }
 }
 
 impl From<u64> for CloneFlags {
@@ -163,7 +168,8 @@ impl CloneFlags {
             | CloneFlags::CLONE_SETTLS
             | CloneFlags::CLONE_PARENT_SETTID
             | CloneFlags::CLONE_CHILD_SETTID
-            | CloneFlags::CLONE_CHILD_CLEARTID;
+            | CloneFlags::CLONE_CHILD_CLEARTID
+            | CloneFlags::CLONE_VFORK;
         let unsupported_flags = *self - supported_flags;
         if !unsupported_flags.is_empty() {
             warn!("contains unsupported clone flags: {:?}", unsupported_flags);
@@ -191,7 +197,17 @@ pub fn clone_child(
         Ok(child_tid)
     } else {
         let child_process = clone_child_process(ctx, parent_context, clone_args)?;
+        if clone_args.flags.contains(CloneFlags::CLONE_VFORK) {
+            child_process.status().set_vfork_child(true);
+        }
+
         child_process.run();
+
+        if child_process.status().is_vfork_child() {
+            let cond = || (!child_process.status().is_vfork_child()).then_some(());
+            let current = ctx.process;
+            current.children_wait_queue().wait_until(cond);
+        }
 
         let child_pid = child_process.pid();
         Ok(child_pid)
@@ -225,23 +241,18 @@ fn clone_child_task(
     clone_sysvsem(clone_flags)?;
 
     // clone file table
-    let child_file_table = clone_files(&thread_local.file_table().borrow(), clone_flags);
+    let child_file_table = clone_files(thread_local.borrow_file_table().unwrap(), clone_flags);
 
     // clone fs
     let child_fs = clone_fs(posix_thread.fs(), clone_flags);
 
-    let child_root_vmar = process.root_vmar();
-    let child_user_space = {
-        let child_vm_space = child_root_vmar.vm_space().clone();
-        let child_cpu_context = clone_cpu_context(
-            parent_context,
-            clone_args.stack,
-            clone_args.stack_size,
-            clone_args.tls,
-            clone_flags,
-        );
-        Arc::new(UserSpace::new(child_vm_space, child_cpu_context))
-    };
+    let child_user_ctx = Arc::new(clone_user_ctx(
+        parent_context,
+        clone_args.stack,
+        clone_args.stack_size,
+        clone_args.tls,
+        clone_flags,
+    ));
 
     // Inherit sigmask from current thread
     let sig_mask = posix_thread.sig_mask().load(Ordering::Relaxed).into();
@@ -253,7 +264,7 @@ fn clone_child_task(
             Credentials::new_from(&credentials)
         };
 
-        let mut thread_builder = PosixThreadBuilder::new(child_tid, child_user_space, credentials)
+        let mut thread_builder = PosixThreadBuilder::new(child_tid, child_user_ctx, credentials)
             .process(posix_thread.weak_process())
             .sig_mask(sig_mask)
             .file_table(child_file_table)
@@ -290,44 +301,40 @@ fn clone_child_process(
 
     let clone_flags = clone_args.flags;
 
-    // clone vm
+    // Clone the virtual memory space
     let child_process_vm = {
         let parent_process_vm = process.vm();
         clone_vm(parent_process_vm, clone_flags)?
     };
 
-    // clone user space
-    let child_user_space = {
-        let child_cpu_context = clone_cpu_context(
-            parent_context,
-            clone_args.stack,
-            clone_args.stack_size,
-            clone_args.tls,
-            clone_flags,
-        );
-        let child_vm_space = {
-            let child_root_vmar = child_process_vm.root_vmar();
-            child_root_vmar.vm_space().clone()
-        };
-        Arc::new(UserSpace::new(child_vm_space, child_cpu_context))
-    };
+    // Clone the user context
+    let child_user_ctx = Arc::new(clone_user_ctx(
+        parent_context,
+        clone_args.stack,
+        clone_args.stack_size,
+        clone_args.tls,
+        clone_flags,
+    ));
 
-    // clone file table
-    let child_file_table = clone_files(&thread_local.file_table().borrow(), clone_flags);
+    // Clone the file table
+    let child_file_table = clone_files(thread_local.borrow_file_table().unwrap(), clone_flags);
 
-    // clone fs
+    // Clone the filesystem information
     let child_fs = clone_fs(posix_thread.fs(), clone_flags);
 
-    // clone sig dispositions
+    // Clone signal dispositions
     let child_sig_dispositions = clone_sighand(process.sig_dispositions(), clone_flags);
 
-    // clone system V semaphore
+    // Clone System V semaphore
     clone_sysvsem(clone_flags)?;
 
-    // inherit parent's sig mask
+    // Inherit the parent's signal mask
     let child_sig_mask = posix_thread.sig_mask().load(Ordering::Relaxed).into();
 
-    // inherit parent's nice value
+    // Inherit the parent's resource limits
+    let child_resource_limits = process.resource_limits().clone();
+
+    // Inherit the parent's nice value
     let child_nice = process.nice().load(Ordering::Relaxed);
 
     let child_tid = allocate_posix_tid();
@@ -342,7 +349,7 @@ fn clone_child_process(
                 Credentials::new_from(&credentials)
             };
 
-            PosixThreadBuilder::new(child_tid, child_user_space, credentials)
+            PosixThreadBuilder::new(child_tid, child_user_ctx, credentials)
                 .thread_name(Some(child_thread_name))
                 .sig_mask(child_sig_mask)
                 .file_table(child_file_table)
@@ -356,16 +363,16 @@ fn clone_child_process(
         child_thread_builder =
             clone_child_settid(child_thread_builder, clone_args.child_tid, clone_flags);
 
-        let mut process_builder =
-            ProcessBuilder::new(child_tid, &child_elf_path, posix_thread.weak_process());
-
-        process_builder
-            .main_thread_builder(child_thread_builder)
-            .process_vm(child_process_vm)
-            .sig_dispositions(child_sig_dispositions)
-            .nice(child_nice);
-
-        process_builder.build()?
+        create_child_process(
+            child_tid,
+            posix_thread.weak_process(),
+            &child_elf_path,
+            child_process_vm,
+            child_resource_limits,
+            child_nice,
+            child_sig_dispositions,
+            child_thread_builder,
+        )
     };
 
     if let Some(sig) = clone_args.exit_signal {
@@ -374,6 +381,13 @@ fn clone_child_process(
 
     // Sets parent process and group for child process.
     set_parent_and_group(process, &child);
+
+    // Updates `has_child_subreaper` for the child process after inserting
+    // it to its parent's children to make sure the `has_child_subreaper`
+    // state of the child process will be consistent with its parent.
+    if process.has_child_subreaper.load(Ordering::Relaxed) {
+        child.has_child_subreaper.store(true, Ordering::Relaxed);
+    }
 
     Ok(child)
 }
@@ -425,7 +439,7 @@ fn clone_vm(parent_process_vm: &ProcessVm, clone_flags: CloneFlags) -> Result<Pr
     }
 }
 
-fn clone_cpu_context(
+fn clone_user_ctx(
     parent_context: &UserContext,
     new_sp: u64,
     stack_size: Option<NonZeroU64>,
@@ -436,8 +450,10 @@ fn clone_cpu_context(
     // The return value of child thread is zero
     child_context.set_syscall_ret(0);
 
-    if clone_flags.contains(CloneFlags::CLONE_VM) {
-        // if parent and child shares the same address space, a new stack must be specified.
+    if clone_flags.contains(CloneFlags::CLONE_VM) && !clone_flags.contains(CloneFlags::CLONE_VFORK)
+    {
+        // If parent and child shares the same address space and not in vfork situation,
+        // a new stack must be specified.
         debug_assert!(new_sp != 0);
     }
     if new_sp != 0 {
@@ -499,18 +515,50 @@ fn clone_sysvsem(clone_flags: CloneFlags) -> Result<()> {
     Ok(())
 }
 
+fn create_child_process(
+    pid: Pid,
+    parent: Weak<Process>,
+    executable_path: &str,
+    process_vm: ProcessVm,
+    resource_limits: ResourceLimits,
+    nice: Nice,
+    sig_dispositions: Arc<Mutex<SigDispositions>>,
+    thread_builder: PosixThreadBuilder,
+) -> Arc<Process> {
+    let child_proc = Process::new(
+        pid,
+        parent,
+        executable_path.to_string(),
+        process_vm,
+        resource_limits,
+        nice,
+        sig_dispositions,
+    );
+
+    let child_task = thread_builder.process(Arc::downgrade(&child_proc)).build();
+    child_proc.tasks().lock().insert(child_task).unwrap();
+
+    child_proc
+}
+
 fn set_parent_and_group(parent: &Process, child: &Arc<Process>) {
-    let process_group = parent.process_group().unwrap();
-
+    // Lock order: process table -> children -> group of process
+    // -> group inner -> session inner
     let mut process_table_mut = process_table::process_table_mut();
-    let mut group_inner = process_group.inner.lock();
-    let mut child_group_mut = child.process_group.lock();
-    let mut children_mut = parent.children().lock();
 
+    let mut children_mut = parent.children().lock();
+    let process_group_mut = parent.process_group.lock();
+
+    let process_group = process_group_mut.upgrade().unwrap();
+    let mut process_group_inner = process_group.lock();
+
+    // Put the child process in the parent's process group
+    process_group_inner.insert_process(child.clone());
+    *child.process_group.lock() = Arc::downgrade(&process_group);
+
+    // Put the child process in the parent's `children` field
     children_mut.insert(child.pid(), child.clone());
 
-    group_inner.processes.insert(child.pid(), child.clone());
-    *child_group_mut = Arc::downgrade(&process_group);
-
+    // Put the child process in the global table
     process_table_mut.insert(child.pid(), child.clone());
 }

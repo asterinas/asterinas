@@ -6,19 +6,21 @@ use core::time::Duration;
 use log::trace;
 use ostd::timer::Jiffies;
 
-use super::{Iface, IFACES};
-use crate::{sched::priority::Priority, thread::kernel_thread::ThreadOptions, WaitTimeout};
+use super::{iter_all_ifaces, Iface};
+use crate::{
+    sched::{Nice, SchedPolicy},
+    thread::kernel_thread::ThreadOptions,
+    WaitTimeout,
+};
 
 pub fn lazy_init() {
-    for iface in IFACES.get().unwrap() {
+    for iface in iter_all_ifaces() {
         spawn_background_poll_thread(iface.clone());
     }
 }
 
 pub(super) fn poll_ifaces() {
-    let ifaces = IFACES.get().unwrap();
-
-    for iface in ifaces.iter() {
+    for iface in iter_all_ifaces() {
         iface.poll();
     }
 }
@@ -62,8 +64,7 @@ fn spawn_background_poll_thread(iface: Arc<Iface>) {
         }
     };
 
-    // FIXME: remove the use of real-time priority.
     ThreadOptions::new(task_fn)
-        .priority(Priority::default_real_time())
+        .sched_policy(SchedPolicy::Fair(Nice::MIN))
         .spawn();
 }

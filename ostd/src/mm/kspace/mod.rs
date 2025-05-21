@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(dead_code)]
-
 //! Kernel memory space management.
 //!
 //! The kernel memory space is currently managed as follows, if the
@@ -42,13 +40,14 @@ pub(crate) mod kvirt_area;
 
 use core::ops::Range;
 
-use align_ext::AlignExt;
 use log::info;
 use spin::Once;
+#[cfg(ktest)]
+mod test;
 
 use super::{
     frame::{
-        meta::{impl_frame_meta_for, mapping, MetaPageMeta},
+        meta::{mapping, KernelMeta, MetaPageMeta},
         Frame, Segment,
     },
     nr_subpage_per_huge,
@@ -134,9 +133,6 @@ pub static KERNEL_PAGE_TABLE: Once<PageTable<KernelMode, PageTableEntry, PagingC
 pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
     info!("Initializing the kernel page table");
 
-    let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
-    let phys_mem_cap = regions.iter().map(|r| r.base() + r.len()).max().unwrap();
-
     // Start to initialize the kernel page table.
     let kpt = PageTable::<KernelMode>::empty();
 
@@ -148,8 +144,9 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
 
     // Do linear mappings for the kernel.
     {
-        let from = LINEAR_MAPPING_BASE_VADDR..LINEAR_MAPPING_BASE_VADDR + phys_mem_cap;
-        let to = 0..phys_mem_cap;
+        let max_paddr = crate::mm::frame::max_paddr();
+        let from = LINEAR_MAPPING_BASE_VADDR..LINEAR_MAPPING_BASE_VADDR + max_paddr;
+        let to = 0..max_paddr;
         let prop = PageProperty {
             flags: PageFlags::RW,
             cache: CachePolicy::Writeback,
@@ -199,13 +196,13 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
     // Map for the kernel code itself.
     // TODO: set separated permissions for each segments in the kernel.
     {
+        let regions = &crate::boot::EARLY_INFO.get().unwrap().memory_regions;
         let region = regions
             .iter()
             .find(|r| r.typ() == MemoryRegionType::Kernel)
             .unwrap();
         let offset = kernel_loaded_offset();
-        let to =
-            region.base().align_down(PAGE_SIZE)..(region.base() + region.len()).align_up(PAGE_SIZE);
+        let to = region.base()..region.end();
         let from = to.start + offset..to.end + offset;
         let prop = PageProperty {
             flags: PageFlags::RWX,
@@ -214,7 +211,8 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
         };
         let mut cursor = kpt.cursor_mut(&from).unwrap();
         for frame_paddr in to.step_by(PAGE_SIZE) {
-            let page = Frame::<KernelMeta>::from_unused(frame_paddr, KernelMeta);
+            // SAFETY: They were initialized at `super::frame::meta::init`.
+            let page = unsafe { Frame::<KernelMeta>::from_raw(frame_paddr) };
             // SAFETY: we are doing mappings for the kernel.
             unsafe {
                 let _old = cursor.map(page.into(), prop);
@@ -246,9 +244,3 @@ pub unsafe fn activate_kernel_page_table() {
         crate::mm::page_table::boot_pt::dismiss();
     }
 }
-
-/// The metadata of pages that contains the kernel itself.
-#[derive(Debug, Default)]
-pub struct KernelMeta;
-
-impl_frame_meta_for!(KernelMeta);

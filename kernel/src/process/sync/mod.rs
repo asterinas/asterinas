@@ -2,5 +2,5 @@
 
 mod condvar;
 
-#[allow(unused_imports)]
+#[expect(unused_imports)]
 pub use self::condvar::{Condvar, LockErr};

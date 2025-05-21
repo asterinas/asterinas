@@ -9,11 +9,11 @@ edition = "2021"
 ostd = { path = "../../../ostd" }
 aster-util = { path = "../../libs/aster-util" }
 component = { path = "../../libs/comp-sys/component" }
-aster-logger = { path = "../logger" }
 log = "0.4"
 spin = "0.9.4"
 
 [target.riscv64gc-unknown-none-elf.dependencies]
 chrono = { version = "0.4.38", default-features = false }
 
-[features]
+[lints]
+workspace = true

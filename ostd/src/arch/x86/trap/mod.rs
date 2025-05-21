@@ -16,30 +16,34 @@
 
 //! Handles trap.
 
-mod gdt;
+pub(super) mod gdt;
 mod idt;
 mod syscall;
 
 use align_ext::AlignExt;
 use cfg_if::cfg_if;
 use log::debug;
+use spin::Once;
 
 use super::ex_table::ExTable;
 use crate::{
-    cpu::{CpuException, CpuExceptionInfo, PageFaultErrorCode},
+    arch::{
+        if_tdx_enabled,
+        irq::{disable_local, enable_local},
+    },
+    cpu::context::{CpuException, CpuExceptionInfo, PageFaultErrorCode},
     cpu_local_cell,
     mm::{
         kspace::{KERNEL_PAGE_TABLE, LINEAR_MAPPING_BASE_VADDR, LINEAR_MAPPING_VADDR_RANGE},
         page_prop::{CachePolicy, PageProperty},
         PageFlags, PrivilegedPageFlags as PrivFlags, MAX_USERSPACE_VADDR, PAGE_SIZE,
     },
-    task::Task,
     trap::call_irq_callback_functions,
 };
 
 cfg_if! {
     if #[cfg(feature = "cvm_guest")] {
-        use tdx_guest::{tdcall, tdx_is_enabled, handle_virtual_exception};
+        use tdx_guest::{tdcall, handle_virtual_exception};
         use crate::arch::tdx_guest::TrapFrameWrapper;
     }
 }
@@ -68,7 +72,7 @@ cpu_local_cell! {
 /// ```
 #[derive(Debug, Default, Clone, Copy)]
 #[repr(C)]
-#[allow(missing_docs)]
+#[expect(missing_docs)]
 pub struct TrapFrame {
     // Pushed by 'trap.S'
     pub rax: usize,
@@ -100,34 +104,34 @@ pub struct TrapFrame {
 
 /// Initialize interrupt handling on x86_64.
 ///
-/// # Safety
-///
 /// This function will:
-///
-/// - Disable interrupt.
-/// - Switch to a new [GDT], extend 7 more entries from the current one.
-/// - Switch to a new [TSS], `GSBASE` pointer to its base address.
-/// - Switch to a new [IDT], override the current one.
-/// - Enable [`syscall`] instruction.
-///     - set `EFER::SYSTEM_CALL_EXTENSIONS`
+/// - Switch to a new, CPU-local [GDT].
+/// - Switch to a new, CPU-local [TSS].
+/// - Switch to a new, global [IDT].
+/// - Enable the [`syscall`] instruction.
 ///
 /// [GDT]: https://wiki.osdev.org/GDT
 /// [IDT]: https://wiki.osdev.org/IDT
 /// [TSS]: https://wiki.osdev.org/Task_State_Segment
 /// [`syscall`]: https://www.felixcloutier.com/x86/syscall
 ///
-#[cfg(any(target_os = "none", target_os = "uefi"))]
-pub unsafe fn init(on_bsp: bool) {
-    x86_64::instructions::interrupts::disable();
-    gdt::init(on_bsp);
+/// # Safety
+///
+/// This method must be called only in the boot context of each available processor.
+pub unsafe fn init() {
+    // SAFETY: We're in the boot context, so no preemption can occur.
+    unsafe { gdt::init() };
+
     idt::init();
-    syscall::init();
+
+    // SAFETY: `gdt::init` has been called before.
+    unsafe { syscall::init() };
 }
 
 /// User space context.
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
 #[repr(C)]
-#[allow(missing_docs)]
+#[expect(missing_docs)]
 pub struct UserContext {
     pub general: GeneralRegs,
     pub trap_num: usize,
@@ -137,7 +141,7 @@ pub struct UserContext {
 /// General registers.
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
 #[repr(C)]
-#[allow(missing_docs)]
+#[expect(missing_docs)]
 pub struct GeneralRegs {
     pub rax: usize,
     pub rbx: usize,
@@ -220,16 +224,38 @@ pub fn is_kernel_interrupted() -> bool {
 /// Handle traps (only from kernel).
 #[no_mangle]
 extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
+    fn enable_local_if(cond: bool) {
+        if cond {
+            enable_local();
+        }
+    }
+
+    fn disable_local_if(cond: bool) {
+        if cond {
+            disable_local();
+        }
+    }
+
+    // The IRQ state before trapping. We need to ensure that the IRQ state
+    // during exception handling is consistent with the state before the trap.
+    let was_irq_enabled =
+        f.rflags as u64 & x86_64::registers::rflags::RFlags::INTERRUPT_FLAG.bits() > 0;
+
     match CpuException::to_cpu_exception(f.trap_num as u16) {
         #[cfg(feature = "cvm_guest")]
         Some(CpuException::VIRTUALIZATION_EXCEPTION) => {
             let ve_info = tdcall::get_veinfo().expect("#VE handler: fail to get VE info\n");
+            // We need to enable interrupts only after `tdcall::get_veinfo` is called
+            // to avoid nested `#VE`s.
+            enable_local_if(was_irq_enabled);
             let mut trapframe_wrapper = TrapFrameWrapper(&mut *f);
             handle_virtual_exception(&mut trapframe_wrapper, &ve_info);
             *f = *trapframe_wrapper.0;
+            disable_local_if(was_irq_enabled);
         }
         Some(CpuException::PAGE_FAULT) => {
             let page_fault_addr = x86_64::registers::control::Cr2::read_raw();
+            enable_local_if(was_irq_enabled);
             // The actual user space implementation should be responsible
             // for providing mechanism to treat the 0 virtual address.
             if (0..MAX_USERSPACE_VADDR).contains(&(page_fault_addr as usize)) {
@@ -237,8 +263,10 @@ extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
             } else {
                 handle_kernel_page_fault(f, page_fault_addr);
             }
+            disable_local_if(was_irq_enabled);
         }
         Some(exception) => {
+            enable_local_if(was_irq_enabled);
             panic!(
                 "cannot handle kernel CPU exception: {:?}, trapframe: {:?}",
                 exception, f
@@ -252,20 +280,31 @@ extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
     }
 }
 
+#[expect(clippy::type_complexity)]
+static USER_PAGE_FAULT_HANDLER: Once<fn(&CpuExceptionInfo) -> core::result::Result<(), ()>> =
+    Once::new();
+
+/// Injects a custom handler for page faults that occur in the kernel and
+/// are caused by user-space address.
+pub fn inject_user_page_fault_handler(
+    handler: fn(info: &CpuExceptionInfo) -> core::result::Result<(), ()>,
+) {
+    USER_PAGE_FAULT_HANDLER.call_once(|| handler);
+}
+
 /// Handles page fault from user space.
 fn handle_user_page_fault(f: &mut TrapFrame, page_fault_addr: u64) {
-    let current_task = Task::current().unwrap();
-    let user_space = current_task
-        .user_space()
-        .expect("the user space is missing when a page fault from the user happens.");
-
     let info = CpuExceptionInfo {
         page_fault_addr: page_fault_addr as usize,
         id: f.trap_num,
         error_code: f.error_code,
     };
 
-    let res = user_space.vm_space().handle_page_fault(&info);
+    let handler = USER_PAGE_FAULT_HANDLER
+        .get()
+        .expect("a page fault handler is missing");
+
+    let res = handler(&info);
     // Copying bytes by bytes can recover directly
     // if handling the page fault successfully.
     if res.is_ok() {
@@ -318,17 +357,11 @@ fn handle_kernel_page_fault(f: &TrapFrame, page_fault_vaddr: u64) {
     let vaddr = (page_fault_vaddr as usize).align_down(PAGE_SIZE);
     let paddr = vaddr - LINEAR_MAPPING_BASE_VADDR;
 
-    cfg_if! {
-        if #[cfg(feature = "cvm_guest")] {
-            let priv_flags = if tdx_is_enabled() {
-                PrivFlags::SHARED | PrivFlags::GLOBAL
-            } else {
-                PrivFlags::GLOBAL
-            };
-        } else {
-            let priv_flags = PrivFlags::GLOBAL;
-        }
-    }
+    let priv_flags = if_tdx_enabled!({
+        PrivFlags::SHARED | PrivFlags::GLOBAL
+    } else {
+        PrivFlags::GLOBAL
+    });
 
     // SAFETY:
     // 1. We have checked that the page fault address falls within the address range of the direct

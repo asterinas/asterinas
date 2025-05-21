@@ -6,6 +6,7 @@ pub mod boot;
 pub(crate) mod cpu;
 pub mod device;
 pub(crate) mod ex_table;
+pub(crate) mod io;
 pub mod iommu;
 pub(crate) mod irq;
 pub(crate) mod kernel;
@@ -17,20 +18,12 @@ pub mod task;
 pub mod timer;
 pub mod trap;
 
-use cfg_if::cfg_if;
+use io::construct_io_mem_allocator_builder;
 use spin::Once;
 use x86::cpuid::{CpuId, FeatureInfo};
 
-cfg_if! {
-    if #[cfg(feature = "cvm_guest")] {
-        pub(crate) mod tdx_guest;
-
-        use {
-            crate::early_println,
-            ::tdx_guest::{init_tdx, tdcall::InitError, tdx_is_enabled},
-        };
-    }
-}
+#[cfg(feature = "cvm_guest")]
+pub(crate) mod tdx_guest;
 
 use core::{
     arch::x86_64::{_rdrand64_step, _rdtsc},
@@ -42,15 +35,15 @@ use log::{info, warn};
 
 #[cfg(feature = "cvm_guest")]
 pub(crate) fn init_cvm_guest() {
-    match init_tdx() {
+    match ::tdx_guest::init_tdx() {
         Ok(td_info) => {
-            early_println!(
+            crate::early_println!(
                 "[kernel] Intel TDX initialized\n[kernel] td gpaw: {}, td attributes: {:?}",
                 td_info.gpaw,
                 td_info.attributes
             );
         }
-        Err(InitError::TdxGetVpInfoError(td_call_error)) => {
+        Err(::tdx_guest::tdcall::InitError::TdxGetVpInfoError(td_call_error)) => {
             panic!(
                 "[kernel] Intel TDX not initialized, Failed to get TD info: {:?}",
                 td_call_error
@@ -63,57 +56,55 @@ pub(crate) fn init_cvm_guest() {
 
 static CPU_FEATURES: Once<FeatureInfo> = Once::new();
 
-pub(crate) fn init_on_bsp() {
-    // SAFETY: this function is only called once on BSP.
-    unsafe {
-        crate::arch::trap::init(true);
-    }
+/// Architecture-specific initialization on the bootstrapping processor.
+///
+/// It should be called when the heap and frame allocators are available.
+///
+/// # Safety
+///
+/// This function must be called only once in the boot context of the
+/// bootstrapping processor.
+pub(crate) unsafe fn late_init_on_bsp() {
+    // SAFETY: This function is only called once on BSP.
+    unsafe { trap::init() };
     irq::init();
+
     kernel::acpi::init();
 
-    // SAFETY: they are only called once on BSP and ACPI has been initialized.
-    unsafe {
-        crate::cpu::init_num_cpus();
-        crate::cpu::set_this_cpu_id(0);
-    }
+    let io_mem_builder = construct_io_mem_allocator_builder();
 
-    match kernel::apic::init() {
+    match kernel::apic::init(&io_mem_builder) {
         Ok(_) => {
-            ioapic::init();
+            ioapic::init(&io_mem_builder);
         }
         Err(err) => {
             info!("APIC init error:{:?}", err);
             kernel::pic::enable();
         }
     }
-    serial::callback_init();
 
-    // SAFETY: no CPU local objects have been accessed by this far. And
-    // we are on the BSP.
-    unsafe { crate::cpu::local::init_on_bsp() };
+    kernel::tsc::init_tsc_freq();
+    timer::init_bsp();
 
-    crate::boot::smp::boot_all_aps();
+    // SAFETY: We're on the BSP and we're ready to boot all APs.
+    unsafe { crate::boot::smp::boot_all_aps() };
 
-    timer::init();
-
-    cfg_if! {
-        if #[cfg(feature = "cvm_guest")] {
-            if !tdx_is_enabled() {
-                match iommu::init() {
-                    Ok(_) => {}
-                    Err(err) => warn!("IOMMU initialization error:{:?}", err),
-                }
-            }
-        } else {
-            match iommu::init() {
-                Ok(_) => {}
-                Err(err) => warn!("IOMMU initialization error:{:?}", err),
-            }
+    if_tdx_enabled!({
+    } else {
+        match iommu::init(&io_mem_builder) {
+            Ok(_) => {}
+            Err(err) => warn!("IOMMU initialization error:{:?}", err),
         }
-    }
+    });
 
     // Some driver like serial may use PIC
     kernel::pic::init();
+
+    // SAFETY:
+    // 1. All the system device memory have been removed from the builder.
+    // 2. All the port I/O regions belonging to the system device are defined using the macros.
+    // 3. `MAX_IO_PORT` defined in `crate::arch::io` is the maximum value specified by x86-64.
+    unsafe { crate::io::init(io_mem_builder) };
 }
 
 /// Architecture-specific initialization on the application processor.
@@ -123,12 +114,11 @@ pub(crate) fn init_on_bsp() {
 /// This function must be called only once on each application processor.
 /// And it should be called after the BSP's call to [`init_on_bsp`].
 pub(crate) unsafe fn init_on_ap() {
-    // Trigger the initialization of the local APIC.
-    crate::arch::x86::kernel::apic::with_borrow(|_| {});
+    timer::init_ap();
 }
 
 pub(crate) fn interrupts_ack(irq_number: usize) {
-    if !cpu::CpuException::is_cpu_exception(irq_number as u16) {
+    if !cpu::context::CpuException::is_cpu_exception(irq_number as u16) {
         kernel::apic::with_borrow(|apic| {
             apic.eoi();
         });
@@ -165,6 +155,20 @@ pub fn read_random() -> Option<u64> {
     None
 }
 
+fn has_avx() -> bool {
+    use core::arch::x86_64::{__cpuid, __cpuid_count};
+
+    let cpuid_result = unsafe { __cpuid(0) };
+    if cpuid_result.eax < 1 {
+        // CPUID function 1 is not supported
+        return false;
+    }
+
+    let cpuid_result = unsafe { __cpuid_count(1, 0) };
+    // Check for AVX (bit 28 of ecx)
+    cpuid_result.ecx & (1 << 28) != 0
+}
+
 fn has_avx512() -> bool {
     use core::arch::x86_64::{__cpuid, __cpuid_count};
 
@@ -187,7 +191,7 @@ pub(crate) fn enable_cpu_features() {
         cpuid.get_feature_info().unwrap()
     });
 
-    cpu::enable_essential_features();
+    cpu::context::enable_essential_features();
 
     let mut cr4 = x86_64::registers::control::Cr4::read();
     cr4 |= Cr4Flags::FSGSBASE
@@ -200,7 +204,12 @@ pub(crate) fn enable_cpu_features() {
     }
 
     let mut xcr0 = x86_64::registers::xcontrol::XCr0::read();
-    xcr0 |= XCr0Flags::AVX | XCr0Flags::SSE;
+
+    xcr0 |= XCr0Flags::SSE;
+
+    if has_avx() {
+        xcr0 |= XCr0Flags::AVX;
+    }
 
     if has_avx512() {
         xcr0 |= XCr0Flags::OPMASK | XCr0Flags::ZMM_HI256 | XCr0Flags::HI16_ZMM;
@@ -217,3 +226,41 @@ pub(crate) fn enable_cpu_features() {
         });
     }
 }
+
+/// Inserts a TDX-specific code block.
+///
+/// This macro conditionally executes a TDX-specific code block based on the following conditions:
+/// (1) The `cvm_guest` feature is enabled at compile time.
+/// (2) The TDX feature is detected at runtime via `::tdx_guest::tdx_is_enabled()`.
+///
+/// If both conditions are met, the `if_block` is executed. If an `else_block` is provided, it will be executed
+/// when either the `cvm_guest` feature is not enabled or the TDX feature is not detected at runtime.
+#[macro_export]
+macro_rules! if_tdx_enabled {
+    // Match when there is an else block
+    ($if_block:block else $else_block:block) => {{
+        #[cfg(feature = "cvm_guest")]
+        {
+            if ::tdx_guest::tdx_is_enabled() {
+                $if_block
+            } else {
+                $else_block
+            }
+        }
+        #[cfg(not(feature = "cvm_guest"))]
+        {
+            $else_block
+        }
+    }};
+    // Match when there is no else block
+    ($if_block:block) => {{
+        #[cfg(feature = "cvm_guest")]
+        {
+            if ::tdx_guest::tdx_is_enabled() {
+                $if_block
+            }
+        }
+    }};
+}
+
+pub use if_tdx_enabled;

@@ -1,3 +1,7 @@
+# An empty workspace table keeps the base crate away from nesting in other
+# workspaces.
+[workspace]
+
 [package]
 name = "#NAME#"
 version = "#VERSION#"

@@ -10,7 +10,7 @@ use ostd::{
         pci::{capability::CapabilityData, cfg_space::Bar, common_device::PciCommonDevice},
         BusProbeError,
     },
-    io_mem::IoMem,
+    io::IoMem,
     mm::{DmaCoherent, HasDaddr, PAGE_SIZE},
     trap::IrqCallbackFunction,
 };
@@ -53,6 +53,7 @@ const QUEUE_SIZE_OFFSET: usize = 0x0c;
 const QUEUE_SELECT_OFFSET: usize = 0x0e;
 const QUEUE_NOTIFY_OFFSET: usize = 0x10;
 const DEVICE_STATUS_OFFSET: usize = 0x12;
+#[expect(dead_code)]
 const ISR_STATUS_OFFSET: usize = 0x13;
 // If MSI-X is enabled for the device, there are two additional fields.
 const CONFIG_MSIX_VECTOR_OFFSET: usize = 0x14;
@@ -72,7 +73,7 @@ pub struct VirtioPciLegacyTransport {
 impl VirtioPciLegacyTransport {
     pub const QUEUE_ALIGN_SIZE: usize = 4096;
 
-    #[allow(clippy::result_large_err)]
+    #[expect(clippy::result_large_err)]
     pub(super) fn new(
         common_device: PciCommonDevice,
     ) -> Result<Self, (BusProbeError, PciCommonDevice)> {
@@ -94,7 +95,7 @@ impl VirtioPciLegacyTransport {
         };
         info!("[Virtio]: Found device:{:?}", device_type);
 
-        let config_bar = common_device.bar_manager().bar(0).unwrap();
+        let config_bar = common_device.bar_manager().bar(0).clone().unwrap();
 
         let mut num_queues = 0u16;
         while num_queues < u16::MAX {

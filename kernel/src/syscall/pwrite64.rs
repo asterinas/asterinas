@@ -22,7 +22,7 @@ pub fn sys_pwrite64(
         return_errno_with_message!(Errno::EINVAL, "offset cannot be negative");
     }
 
-    let mut file_table = ctx.thread_local.file_table().borrow_mut();
+    let mut file_table = ctx.thread_local.borrow_file_table_mut();
     let file = get_file_fast!(&mut file_table, fd);
 
     // TODO: Check (f.file->f_mode & FMODE_PWRITE); We don't have f_mode in our FileLike trait
@@ -33,11 +33,8 @@ pub fn sys_pwrite64(
         return_errno_with_message!(Errno::EINVAL, "offset + user_buf_len overflow");
     }
 
-    let mut reader = ctx
-        .process
-        .root_vmar()
-        .vm_space()
-        .reader(user_buf_ptr, user_buf_len)?;
+    let user_space = ctx.user_space();
+    let mut reader = user_space.reader(user_buf_ptr, user_buf_len)?;
     let write_len = file.write_at(offset as _, &mut reader)?;
     Ok(SyscallReturn::Return(write_len as _))
 }

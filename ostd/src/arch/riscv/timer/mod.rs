@@ -6,7 +6,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 use spin::Once;
 
-use crate::{arch::boot::DEVICE_TREE, io_mem::IoMem};
+use crate::{arch::boot::DEVICE_TREE, io::IoMem};
 
 /// The timer frequency (Hz). Here we choose 1000Hz since 1000Hz is easier for unit conversion and
 /// convenient for timer. What's more, the frequency cannot be set too high or too low, 1000Hz is
@@ -40,6 +40,8 @@ pub(super) fn init() {
             IoMem::new(
                 (region.starting_address as usize)
                     ..(region.starting_address as usize) + region.size.unwrap(),
+                crate::mm::page_prop::PageFlags::RW,
+                crate::mm::page_prop::CachePolicy::Uncacheable,
             )
         };
         GOLDFISH_IO_MEM.call_once(|| io_mem);

@@ -225,14 +225,18 @@ macro_rules! define_timer_managers {
         fn _init_system_wide_timer_managers() {
             $(
                 let clock = paste! {[<$clock_id _INSTANCE>].get().unwrap().clone()};
-                let clock_manager = TimerManager::new(clock);
+                let timer_manager = TimerManager::new(clock);
                 for cpu in ostd::cpu::all_cpus() {
                     paste! {
-                        [<$clock_id _MANAGER>].get_on_cpu(cpu).call_once(|| clock_manager.clone());
+                        [<$clock_id _MANAGER>].get_on_cpu(cpu).call_once(|| timer_manager.clone());
                     }
                 }
-                let callback = move || {
-                    clock_manager.process_expired_timers();
+                let callback = || {
+                    let preempt_guard = ostd::task::disable_preempt();
+                    let cpu = preempt_guard.current_cpu();
+                    paste! {
+                        [<$clock_id _MANAGER>].get_on_cpu(cpu).get().unwrap().process_expired_timers();
+                    }
                 };
                 time::softirq::register_callback(callback);
             )*
@@ -267,10 +271,13 @@ pub static JIFFIES_TIMER_MANAGER: Once<Arc<TimerManager>> = Once::new();
 fn init_jiffies_clock_manager() {
     let jiffies_clock = JiffiesClock { _private: () };
     let jiffies_timer_manager = TimerManager::new(Arc::new(jiffies_clock));
-    JIFFIES_TIMER_MANAGER.call_once(|| jiffies_timer_manager.clone());
+    JIFFIES_TIMER_MANAGER.call_once(|| jiffies_timer_manager);
 
-    let callback = move || {
-        jiffies_timer_manager.process_expired_timers();
+    let callback = || {
+        JIFFIES_TIMER_MANAGER
+            .get()
+            .unwrap()
+            .process_expired_timers();
     };
     time::softirq::register_callback(callback);
 }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(unused_variables)]
+#![expect(dead_code)]
 
 use super::{inode::MAX_FNAME_LEN, prelude::*};
 
@@ -17,19 +17,16 @@ pub struct DirEntry {
 }
 
 impl DirEntry {
+    const ALIGN: usize = 4;
+    const HEADER_LEN: usize = core::mem::size_of::<DirEntryHeader>();
+    const PARENT_OFFSET: usize = Self::HEADER_LEN + Self::ALIGN;
+
     /// Constructs a new `DirEntry` object with the specified inode (`ino`),
     /// name (`name`), and file type (`inode_type`).
     pub(super) fn new(ino: u32, name: &str, inode_type: InodeType) -> Self {
-        debug_assert!(name.len() <= MAX_FNAME_LEN);
-
-        let record_len = (Self::header_len() + name.len()).align_up(4) as u16;
+        let header = DirEntryHeader::new(ino, inode_type, name.len());
         Self {
-            header: DirEntryHeader {
-                ino,
-                record_len,
-                name_len: name.len() as u8,
-                inode_type: DirEntryFileType::from(inode_type) as _,
-            },
+            header,
             name: CStr256::from(name),
         }
     }
@@ -47,11 +44,6 @@ impl DirEntry {
     /// Returns a reference to the header.
     fn header(&self) -> &DirEntryHeader {
         &self.header
-    }
-
-    /// Returns the length of the header.
-    const fn header_len() -> usize {
-        core::mem::size_of::<DirEntryHeader>()
     }
 
     /// Returns the inode number.
@@ -82,7 +74,7 @@ impl DirEntry {
 
     /// Returns the actual length of the current entry.
     pub(super) fn actual_len(&self) -> usize {
-        (Self::header_len() + self.header.name_len as usize).align_up(4)
+        (Self::HEADER_LEN + self.header.name_len as usize).align_up(Self::ALIGN)
     }
 }
 
@@ -98,6 +90,20 @@ pub(super) struct DirEntryHeader {
     name_len: u8,
     /// Type indicator
     inode_type: u8,
+}
+
+impl DirEntryHeader {
+    pub(super) fn new(ino: u32, inode_type: InodeType, name_len: usize) -> Self {
+        debug_assert!(name_len <= MAX_FNAME_LEN);
+
+        let record_len = (DirEntry::HEADER_LEN + name_len).align_up(DirEntry::ALIGN) as u16;
+        Self {
+            ino,
+            record_len,
+            name_len: name_len as u8,
+            inode_type: DirEntryFileType::from(inode_type) as _,
+        }
+    }
 }
 
 /// The type indicator in the `DirEntry`.
@@ -204,12 +210,15 @@ impl<'a> DirEntryReader<'a> {
     /// Returns the target entry with the given name.
     pub fn find_entry_item(&mut self, name: &str) -> Option<DirEntryItem> {
         let mut iter = self.iter();
+        let name_len = name.len();
+        let name_bytes = name.as_bytes();
         iter.find(|entry_item| {
-            if entry_item.name_len() != name.len() {
+            if entry_item.name_len() != name_len {
                 return false;
             }
+
             match self.read_name(entry_item) {
-                Ok(name_buf) => name_buf == name.as_bytes(),
+                Ok(name_buf) => name_buf == name_bytes,
                 Err(_) => false,
             }
         })
@@ -229,7 +238,7 @@ impl<'a> DirEntryReader<'a> {
         let name_len = entry_item.name_len();
         let name_buf = &mut self.name_buf.as_mut().unwrap()[..name_len];
 
-        let offset = entry_item.offset + DirEntry::header_len();
+        let offset = entry_item.offset + DirEntry::HEADER_LEN;
         self.page_cache.pages().read_bytes(offset, name_buf)?;
         Ok(name_buf)
     }
@@ -277,7 +286,7 @@ impl Iterator for DirEntryIter<'_> {
 /// A directory entry item describes the basic information of a `DirEntry`,
 /// including the entry header and the entry's offset. The entry name is not
 /// present and will be retrieved from the page cache when needed.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub(super) struct DirEntryItem {
     header: DirEntryHeader,
     offset: usize,
@@ -327,20 +336,12 @@ impl DirEntryItem {
 
     /// Returns the actual length of the current entry.
     pub fn actual_len(&self) -> usize {
-        (DirEntry::header_len() + self.name_len()).align_up(4)
+        (DirEntry::HEADER_LEN + self.name_len()).align_up(DirEntry::ALIGN)
     }
 
     /// Returns the length of the gap between the current entry and the next entry.
     pub fn gap_len(&self) -> usize {
         self.record_len() - self.actual_len()
-    }
-
-    /// Converts to a `DirEntry` given the name.
-    pub fn to_entry_with_name(&self, name: &str) -> DirEntry {
-        DirEntry {
-            header: self.header,
-            name: CStr256::from(name),
-        }
     }
 }
 
@@ -361,77 +362,128 @@ impl<'a> DirEntryWriter<'a> {
         }
     }
 
-    /// Writes a `DirEntry` at the current offset.
-    pub fn write_entry(&mut self, entry: &DirEntry) -> Result<()> {
+    /// Writes a `DirEntry` at the current offset. The name is written after the header.
+    pub fn write_entry(&mut self, header: &DirEntryHeader, name: &str) -> Result<()> {
+        self.page_cache.pages().write_val(self.offset, header)?;
         self.page_cache
             .pages()
-            .write_val(self.offset, entry.header())?;
-        self.page_cache.pages().write_bytes(
-            self.offset + DirEntry::header_len(),
-            entry.name().as_bytes(),
-        )?;
+            .write_bytes(self.offset + DirEntry::HEADER_LEN, name.as_bytes())?;
 
-        self.offset += entry.record_len();
+        self.offset += header.record_len as usize;
         Ok(())
     }
 
     /// Writes the header of a `DirEntry` at the current offset.
-    pub(super) fn write_header_only(&mut self, header: &DirEntryHeader) -> Result<()> {
+    pub fn write_header_only(&mut self, header: &DirEntryHeader) -> Result<()> {
         self.page_cache.pages().write_val(self.offset, header)?;
         self.offset += header.record_len as usize;
         Ok(())
     }
 
+    /// Initializes two special `DirEntry`s ("." and "..") with the given inode numbers.
+    pub fn init_dir(&mut self, self_ino: u32, parent_ino: u32) -> Result<()> {
+        debug_assert!(self.page_cache.pages().size() == 0 && self.offset == 0);
+
+        self.page_cache.pages().resize(BLOCK_SIZE)?;
+
+        let self_header = DirEntryHeader::new(self_ino, InodeType::Dir, 1);
+        self.write_entry(&self_header, ".")?;
+        debug_assert_eq!(self.offset, DirEntry::PARENT_OFFSET);
+
+        let mut parent_header = DirEntryHeader::new(parent_ino, InodeType::Dir, 2);
+        parent_header.record_len = (BLOCK_SIZE - self.offset) as _;
+        self.write_entry(&parent_header, "..")
+    }
+
     /// Appends a new `DirEntry` starting from the current offset.
     ///
-    /// If there is a gap between existing entries, inserts the new entry into the gap；
+    /// If there is a gap between existing entries, inserts the new entry into the gap;
     /// If there is no available space, expands the size and appends the new entry at the end.
-    pub fn append_entry(&mut self, mut new_entry: DirEntry) -> Result<()> {
-        let Some(mut entry_item) = DirEntryReader::new(self.page_cache, self.offset)
-            .iter()
-            .find(|entry| entry.gap_len() >= new_entry.record_len())
-        else {
-            // Resize and append it at the new block.
-            let old_size = self.page_cache.pages().size();
-            let new_size = old_size + BLOCK_SIZE;
-            self.page_cache.resize(new_size)?;
-            new_entry.set_record_len(BLOCK_SIZE);
-            self.offset = old_size;
-            self.write_entry(&new_entry)?;
-            return Ok(());
-        };
+    /// `check_existence` is determined to check if the new entry already exists.
+    pub fn append_new_entry(
+        &mut self,
+        header: DirEntryHeader,
+        name: &str,
+        check_existence: bool,
+    ) -> Result<()> {
+        let name_len = name.len();
+        debug_assert_eq!(header.name_len as usize, name_len);
+        let name_bytes = name.as_bytes();
+        let mut entry_item_with_enough_gap = None;
+        for entry_item in DirEntryReader::new(self.page_cache, self.offset).iter() {
+            if entry_item_with_enough_gap.is_none()
+                && entry_item.gap_len() >= header.record_len as usize
+            {
+                entry_item_with_enough_gap = Some(entry_item);
+                if !check_existence {
+                    break;
+                }
+            }
 
-        // Write in the gap between existing entries.
-        new_entry.set_record_len(entry_item.gap_len());
-        entry_item.set_record_len(entry_item.actual_len());
-        self.offset = entry_item.offset;
-        self.write_header_only(&entry_item.header)?;
-        self.write_entry(&new_entry)?;
+            if check_existence
+                && entry_item.name_len() == name_len
+                && self.read_name(&entry_item)? == name_bytes
+            {
+                return_errno!(Errno::EEXIST);
+            }
+        }
+
+        if let Some(entry_item) = entry_item_with_enough_gap {
+            self.append_entry_in_the_gap(entry_item, header, name)?;
+        } else {
+            self.append_entry_in_the_end(header, name)?;
+        }
         Ok(())
     }
 
+    fn append_entry_in_the_gap(
+        &mut self,
+        mut entry_with_enough_gap: DirEntryItem,
+        mut header: DirEntryHeader,
+        name: &str,
+    ) -> Result<()> {
+        // Write in the gap between existing entries.
+        header.record_len = entry_with_enough_gap.gap_len() as u16;
+        entry_with_enough_gap.set_record_len(entry_with_enough_gap.actual_len());
+
+        self.offset = entry_with_enough_gap.offset;
+        self.write_header_only(&entry_with_enough_gap.header)?;
+        self.write_entry(&header, name)
+    }
+
+    fn append_entry_in_the_end(&mut self, mut header: DirEntryHeader, name: &str) -> Result<()> {
+        // Resize and append it at the new block.
+        let old_size = self.page_cache.pages().size();
+        let new_size = old_size + BLOCK_SIZE;
+        self.page_cache.resize(new_size)?;
+        header.record_len = BLOCK_SIZE as _;
+
+        self.offset = old_size;
+        self.write_entry(&header, name)
+    }
+
     /// Removes and returns an existing `DirEntry` indicated by `name`.
-    pub fn remove_entry(&mut self, name: &str) -> Result<DirEntry> {
-        let self_entry_record_len = DirEntry::self_entry(0).record_len();
-        let reader = DirEntryReader::new(self.page_cache, 0).iter();
-        let next_reader = DirEntryReader::new(self.page_cache, self_entry_record_len).iter();
-        let Some((mut pre_entry_item, entry_item)) =
-            reader.zip(next_reader).find(|(_, entry_item)| {
-                entry_item.name_len() == name.len()
-                    && self.read_name(entry_item).unwrap() == name.as_bytes()
-            })
-        else {
+    pub fn remove_entry(&mut self, name: &str) -> Result<DirEntryItem> {
+        let mut pre_entry_item = None;
+        let name_len = name.len();
+        let name_bytes = name.as_bytes();
+        let mut iter = DirEntryReader::new(self.page_cache, DirEntry::PARENT_OFFSET).iter();
+        let Some(target_entry_item) = iter.find(|entry| {
+            if entry.offset < self.offset {
+                pre_entry_item = Some(*entry);
+            }
+
+            entry.offset == self.offset
+                && entry.name_len() == name_len
+                && self.read_name(entry).unwrap() == name_bytes
+        }) else {
             return_errno!(Errno::ENOENT);
         };
+        let is_last_entry = iter.next().is_none();
 
+        let mut pre_entry_item = pre_entry_item.unwrap();
         let pre_offset = pre_entry_item.offset;
-        let offset = entry_item.offset;
-        if Bid::from_offset(pre_offset) != Bid::from_offset(offset)
-            && DirEntryReader::new(self.page_cache, entry_item.offset)
-                .iter()
-                .next()
-                .is_none()
-        {
+        if is_last_entry {
             // Shrink the size.
             let new_size = pre_offset.align_up(BLOCK_SIZE);
             self.page_cache.resize(new_size)?;
@@ -440,12 +492,13 @@ impl<'a> DirEntryWriter<'a> {
             self.write_header_only(&pre_entry_item.header)?;
         } else {
             // Update the previous entry.
-            pre_entry_item.set_record_len(pre_entry_item.record_len() + entry_item.record_len());
+            pre_entry_item
+                .set_record_len(pre_entry_item.record_len() + target_entry_item.record_len());
             self.offset = pre_offset;
             self.write_header_only(&pre_entry_item.header)?;
         }
 
-        Ok(entry_item.to_entry_with_name(name))
+        Ok(target_entry_item)
     }
 
     /// Renames the `DirEntry` from `old_name` to the `new_name` from the current offset.
@@ -456,18 +509,21 @@ impl<'a> DirEntryWriter<'a> {
         let entry_item = DirEntryReader::new(self.page_cache, self.offset)
             .find_entry_item(old_name)
             .ok_or(Error::new(Errno::ENOENT))?;
+        let old_record_len = entry_item.record_len();
 
-        let mut new_entry = DirEntry::new(entry_item.ino(), new_name, entry_item.type_());
-        if new_entry.record_len() <= entry_item.record_len() {
+        let mut new_entry_header =
+            DirEntryHeader::new(entry_item.ino(), entry_item.type_(), new_name.len());
+        if new_entry_header.record_len as usize <= old_record_len {
             // Just rename the entry.
-            new_entry.set_record_len(entry_item.record_len());
+            new_entry_header.record_len = old_record_len as _;
             self.offset = entry_item.offset;
-            self.write_entry(&new_entry)?;
+            self.write_entry(&new_entry_header, new_name)?;
         } else {
             // Move to another position.
+            self.offset = entry_item.offset;
             self.remove_entry(old_name)?;
-            self.offset = 0;
-            self.append_entry(new_entry)?;
+            self.offset = DirEntry::PARENT_OFFSET;
+            self.append_new_entry(new_entry_header, new_name, false)?;
         }
 
         Ok(())
@@ -482,7 +538,7 @@ impl<'a> DirEntryWriter<'a> {
         let name_len = item.name_len();
         let name_buf = &mut self.name_buf.as_mut().unwrap()[..name_len];
 
-        let offset = item.offset + DirEntry::header_len();
+        let offset = item.offset + DirEntry::HEADER_LEN;
         self.page_cache.pages().read_bytes(offset, name_buf)?;
 
         Ok(name_buf)

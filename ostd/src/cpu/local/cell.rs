@@ -110,7 +110,7 @@ impl<T: 'static> CpuLocalCell<T> {
     ///   must be taken to ensure that the borrowing rules are correctly
     ///   enforced, since the interrupts may come asynchronously.
     pub fn as_mut_ptr(&'static self) -> *mut T {
-        super::has_init::assert_true();
+        super::is_used::debug_set_true();
 
         let offset = {
             let bsp_va = self as *const _ as usize;
@@ -216,7 +216,6 @@ impl<T: 'static + SingleInstructionBitXorAssign<T>> CpuLocalCell<T> {
     ///
     /// Note that this memory operation will not be elided or reordered by the
     /// compiler since it is a black-box.
-    #[allow(unused)]
     pub fn bitxor_assign(&'static self, rhs: T) {
         let offset = self as *const _ as usize - __cpu_local_start as usize;
         // SAFETY: The CPU-local object is defined in the `.cpu_local` section,

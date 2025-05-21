@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: false
+  threshold: 125%
+chart:
+  description: lat_pagefault
+  legend: Average page fault latency on {system}
+  title: '[Memory] The cost of page fault handling'
+  unit: "\xB5s"   # Unicode for microsecond
+result_extraction:
+  result_index: 4
+  search_pattern: 'Pagefaults on [^:]+: +[0-9.]+'

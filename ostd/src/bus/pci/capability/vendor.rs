@@ -26,7 +26,7 @@ impl CapabilityVndrData {
     }
 
     /// The length of this capability
-    #[allow(clippy::len_without_is_empty)]
+    #[expect(clippy::len_without_is_empty)]
     pub fn len(&self) -> u16 {
         self.length
     }

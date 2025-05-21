@@ -6,14 +6,12 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-align_ext = { path = "../../../ostd/libs/align_ext" }
-aster-util = { path = "../../libs/aster-util" }
-aster-rights = { path = "../../libs/aster-rights" }
 aster-bigtcp = { path = "../../libs/aster-bigtcp" }
-bitflags = "1.3"
+aster-softirq = { path = "../softirq" }
 bitvec = { version = "1.0.1", default-features = false, features = ["alloc"] }
 component = { path = "../../libs/comp-sys/component" }
-int-to-c-enum = { path = "../../libs/int-to-c-enum" }
-log = "0.4"
 ostd = { path = "../../../ostd" }
 spin = "0.9.4"
+
+[lints]
+workspace = true

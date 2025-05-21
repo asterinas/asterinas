@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(unused_variables)]
+#![expect(unused_variables)]
 
 use core::time::Duration;
 
@@ -298,5 +298,9 @@ impl Inode for RootInode {
 
     fn fs(&self) -> Arc<dyn FileSystem> {
         self.fs.upgrade().unwrap()
+    }
+
+    fn is_dentry_cacheable(&self) -> bool {
+        false
     }
 }

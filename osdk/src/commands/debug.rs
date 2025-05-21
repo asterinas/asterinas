@@ -3,7 +3,7 @@
 use crate::{
     cli::DebugArgs,
     commands::util::bin_file_name,
-    util::{get_current_crate_info, get_target_directory},
+    util::{get_kernel_crate, get_target_directory},
 };
 use std::process::Command;
 
@@ -12,7 +12,7 @@ pub fn execute_debug_command(_profile: &str, args: &DebugArgs) {
 
     let file_path = get_target_directory()
         .join("osdk")
-        .join(get_current_crate_info().name)
+        .join(get_kernel_crate().name)
         .join(bin_file_name());
     println!("Debugging {}", file_path.display());
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![allow(unused_variables)]
+#![expect(unused_variables)]
 
 use core::ops::Range;
 
@@ -8,8 +8,9 @@ use crate::{
     mm::{
         page_prop::{CachePolicy, PageFlags, PrivilegedPageFlags as PrivFlags},
         page_table::{PageTableEntryTrait, PageTableMode},
-        Paddr, PageProperty, PagingConstsTrait, PagingLevel, Vaddr,
+        Paddr, PageProperty, PagingConstsTrait, PagingLevel, PodOnce, Vaddr,
     },
+    util::marker::SameSizeAs,
     Pod,
 };
 
@@ -19,8 +20,8 @@ use crate::{
 pub struct DeviceMode {}
 
 impl PageTableMode for DeviceMode {
-    /// The device address space is 32-bit.
-    const VADDR_RANGE: Range<Vaddr> = 0..0x1_0000_0000;
+    /// The device address width we currently support is 39-bit.
+    const VADDR_RANGE: Range<Vaddr> = 0..0x80_0000_0000;
 }
 
 #[derive(Clone, Debug, Default)]
@@ -73,6 +74,11 @@ impl PageTableEntry {
     const PHYS_MASK: u64 = 0xFFFF_FFFF_F000;
     const PROP_MASK: u64 = !Self::PHYS_MASK & !PageTableFlags::LAST_PAGE.bits();
 }
+
+// SAFETY: `PageTableEntry` has the same size as `usize` in our supported x86 architecture.
+unsafe impl SameSizeAs<usize> for PageTableEntry {}
+
+impl PodOnce for PageTableEntry {}
 
 impl PageTableEntryTrait for PageTableEntry {
     fn new_page(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self {

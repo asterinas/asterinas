@@ -2,7 +2,7 @@
 
 //! PCI device capabilities.
 
-#![allow(dead_code)]
+#![expect(dead_code)]
 
 use alloc::vec::Vec;
 

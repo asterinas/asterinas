@@ -35,7 +35,7 @@ pub fn sys_fchdir(fd: FileDesc, ctx: &Context) -> Result<SyscallReturn> {
     debug!("fd = {}", fd);
 
     let dentry = {
-        let mut file_table = ctx.thread_local.file_table().borrow_mut();
+        let mut file_table = ctx.thread_local.borrow_file_table_mut();
         let file = get_file_fast!(&mut file_table, fd);
         file.as_inode_or_err()?.dentry().clone()
     };

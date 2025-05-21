@@ -1,0 +1,11 @@
+alert:
+  bigger_is_better: false
+  threshold: 150%
+chart:
+  description: lat_syscall read
+  legend: Average read latency on {system}
+  title: '[VFS] The cost of read (/dev/zero)'
+  unit: "\xB5s"   # Unicode for microsecond
+result_extraction:
+  result_index: 3
+  search_pattern: 'Simple read: +[0-9.]+'

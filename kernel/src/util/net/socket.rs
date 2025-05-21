@@ -11,7 +11,7 @@ use crate::{
 /// From https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/linux/in.h.
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, TryFromInt)]
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 pub enum Protocol {
     IPPROTO_IP = 0,         /* Dummy protocol for TCP		*/
     IPPROTO_ICMP = 1,       /* Internet Control Message Protocol	*/
@@ -44,7 +44,7 @@ pub enum Protocol {
 /// Socket types.
 /// From https://elixir.bootlin.com/linux/v6.0.9/source/include/linux/net.h
 #[repr(i32)]
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, TryFromInt)]
 pub enum SockType {
     /// Stream socket
@@ -112,11 +112,17 @@ impl CUserMsgHdr {
         Ok(())
     }
 
-    pub fn copy_reader_array_from_user<'a>(&self, ctx: &'a Context) -> Result<VmReaderArray<'a>> {
-        VmReaderArray::from_user_io_vecs(ctx, self.msg_iov, self.msg_iovlen as usize)
+    pub fn copy_reader_array_from_user<'a>(
+        &self,
+        user_space: &'a CurrentUserSpace<'a>,
+    ) -> Result<VmReaderArray<'a>> {
+        VmReaderArray::from_user_io_vecs(user_space, self.msg_iov, self.msg_iovlen as usize)
     }
 
-    pub fn copy_writer_array_from_user<'a>(&self, ctx: &'a Context) -> Result<VmWriterArray<'a>> {
-        VmWriterArray::from_user_io_vecs(ctx, self.msg_iov, self.msg_iovlen as usize)
+    pub fn copy_writer_array_from_user<'a>(
+        &self,
+        user_space: &'a CurrentUserSpace<'a>,
+    ) -> Result<VmWriterArray<'a>> {
+        VmWriterArray::from_user_io_vecs(user_space, self.msg_iov, self.msg_iovlen as usize)
     }
 }

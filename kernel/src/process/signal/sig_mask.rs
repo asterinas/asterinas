@@ -84,7 +84,7 @@ impl<T: Into<SigSet>> ops::BitOrAssign<T> for SigSet {
     }
 }
 
-#[allow(clippy::suspicious_arithmetic_impl)]
+#[expect(clippy::suspicious_arithmetic_impl)]
 impl<T: Into<SigSet>> ops::Add<T> for SigSet {
     type Output = Self;
 
@@ -95,7 +95,7 @@ impl<T: Into<SigSet>> ops::Add<T> for SigSet {
     }
 }
 
-#[allow(clippy::suspicious_op_assign_impl)]
+#[expect(clippy::suspicious_op_assign_impl)]
 impl<T: Into<SigSet>> ops::AddAssign<T> for SigSet {
     fn add_assign(&mut self, rhs: T) {
         self.bits |= rhs.into().bits;
@@ -115,6 +115,14 @@ impl<T: Into<SigSet>> ops::Sub<T> for SigSet {
 impl<T: Into<SigSet>> ops::SubAssign<T> for SigSet {
     fn sub_assign(&mut self, rhs: T) {
         self.bits &= !rhs.into().bits;
+    }
+}
+
+impl ops::Not for SigSet {
+    type Output = Self;
+
+    fn not(self) -> Self {
+        SigSet { bits: !self.bits }
     }
 }
 
@@ -139,9 +147,14 @@ impl SigSet {
         self.bits.count_ones() as usize
     }
 
-    pub fn contains(&self, set: impl Into<Self>) -> bool {
-        let set = set.into();
-        self.bits & set.bits == set.bits
+    pub fn contains(&self, other: impl Into<Self>) -> bool {
+        let other = other.into();
+        self.bits & other.bits == other.bits
+    }
+
+    pub fn intersects(&self, other: impl Into<Self>) -> bool {
+        let other = other.into();
+        self.bits & other.bits != 0
     }
 }
 

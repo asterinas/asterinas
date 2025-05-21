@@ -14,6 +14,7 @@
 #![deny(unsafe_code)]
 #![feature(extract_if)]
 
+pub mod boolean_value;
 pub mod device;
 pub mod errors;
 pub mod ext;

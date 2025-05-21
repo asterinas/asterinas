@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use core::{
-    sync::atomic::{AtomicIsize, AtomicUsize, Ordering},
+    sync::atomic::{AtomicIsize, Ordering},
     time::Duration,
 };
 
@@ -13,6 +13,7 @@ use ostd::{
 use crate::{
     events::{IoEvents, Observer, Subject},
     prelude::*,
+    time::wait::TimeoutExt,
 };
 
 /// A pollee represents any I/O object (e.g., a file or socket) that can be polled.
@@ -150,7 +151,12 @@ impl Pollee {
         new_events & mask
     }
 
-    fn register_poller(&self, poller: &mut PollHandle, mask: IoEvents) {
+    /// Registers a poller to listen notification for new events.
+    ///
+    /// The functionality of this method is a subset of calling [`Self::poll_with`] and providing
+    /// the same poller. Unlike [`Self::poll_with`], this method performs poller registration
+    /// without checking (and perhaps caching) the current events.
+    pub fn register_poller(&self, poller: &mut PollHandle, mask: IoEvents) {
         self.inner
             .subject
             .register_observer(poller.observer.clone(), mask);
@@ -255,6 +261,7 @@ impl<O: Observer<IoEvents> + 'static> PollAdaptor<O> {
 
 impl<O> PollAdaptor<O> {
     /// Gets a reference to the observer.
+    #[expect(dead_code, reason = "Keep this `Arc` to avoid dropping the observer")]
     pub fn observer(&self) -> &Arc<O> {
         &self.observer
     }
@@ -267,76 +274,50 @@ impl<O> PollAdaptor<O> {
 
 /// A poller that can be used to wait for some events.
 pub struct Poller {
-    poller: PollAdaptor<EventCounter>,
+    poller: PollHandle,
     waiter: Waiter,
+    timeout: TimeoutExt<'static>,
 }
 
 impl Poller {
     /// Constructs a new poller to wait for interesting events.
-    pub fn new() -> Self {
-        let (waiter, event_counter) = EventCounter::new_pair();
+    ///
+    /// If `timeout` is specified, [`Self::wait`] will fail with [`ETIME`] after the specified
+    /// timeout is expired.
+    ///
+    /// [`ETIME`]: crate::error::Errno::ETIME
+    pub fn new(timeout: Option<&Duration>) -> Self {
+        let (waiter, waker) = Waiter::new_pair();
+
+        let mut timeout_ext = TimeoutExt::from(timeout);
+        timeout_ext.freeze();
 
         Self {
-            poller: PollAdaptor::with_observer(event_counter),
+            poller: PollHandle::new(Arc::downgrade(&waker) as Weak<_>),
             waiter,
+            timeout: timeout_ext,
         }
     }
 
     /// Returns a mutable reference of [`PollHandle`].
     pub fn as_handle_mut(&mut self) -> &mut PollHandle {
-        self.poller.as_handle_mut()
+        &mut self.poller
     }
 
-    /// Waits until some interesting events happen since the last wait or until the timeout
-    /// expires.
+    /// Waits until some interesting events happen since the last wait.
     ///
-    /// The waiting process can be interrupted by a signal.
-    pub fn wait(&self, timeout: Option<&Duration>) -> Result<()> {
-        self.poller.observer().read(&self.waiter, timeout)?;
-        Ok(())
+    /// This method will fail with [`EINTR`] if interrupted by signals or [`ETIME`] on timeout.
+    ///
+    /// [`EINTR`]: crate::error::Errno::EINTR
+    /// [`ETIME`]: crate::error::Errno::ETIME
+    pub fn wait(&self) -> Result<()> {
+        self.waiter.pause_timeout(&self.timeout)
     }
 }
 
-struct EventCounter {
-    counter: AtomicUsize,
-    waker: Arc<Waker>,
-}
-
-impl EventCounter {
-    fn new_pair() -> (Waiter, Self) {
-        let (waiter, waker) = Waiter::new_pair();
-
-        (
-            waiter,
-            Self {
-                counter: AtomicUsize::new(0),
-                waker,
-            },
-        )
-    }
-
-    fn read(&self, waiter: &Waiter, timeout: Option<&Duration>) -> Result<usize> {
-        let cond = || {
-            let val = self.counter.swap(0, Ordering::Relaxed);
-            if val > 0 {
-                Some(val)
-            } else {
-                None
-            }
-        };
-
-        waiter.pause_until_or_timeout(cond, timeout)
-    }
-
-    fn write(&self) {
-        self.counter.fetch_add(1, Ordering::Relaxed);
-        self.waker.wake_up();
-    }
-}
-
-impl Observer<IoEvents> for EventCounter {
+impl Observer<IoEvents> for Waker {
     fn on_events(&self, _events: &IoEvents) {
-        self.write();
+        self.wake_up();
     }
 }
 
@@ -391,10 +372,10 @@ pub trait Pollable {
             return_errno_with_message!(Errno::ETIME, "the timeout expired");
         }
 
-        // Wait until the event happens.
-        let mut poller = Poller::new();
+        // Create the poller and register to wait for the events.
+        let mut poller = Poller::new(timeout);
         if self.poll(mask, Some(poller.as_handle_mut())).is_empty() {
-            poller.wait(timeout)?;
+            poller.wait()?;
         }
 
         loop {
@@ -405,9 +386,7 @@ pub trait Pollable {
             };
 
             // Wait until the next event happens.
-            //
-            // FIXME: We need to update `timeout` since we have waited for some time.
-            poller.wait(timeout)?;
+            poller.wait()?;
         }
     }
 }

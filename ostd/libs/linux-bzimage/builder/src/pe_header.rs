@@ -10,10 +10,11 @@
 
 use std::{mem::size_of, vec};
 
+use align_ext::AlignExt;
 use bytemuck::{Pod, Zeroable};
 use serde::Serialize;
 
-use crate::mapping::{SetupFileOffset, SetupVA, LEGACY_SETUP_SEC_SIZE, SETUP32_LMA};
+use crate::mapping::{SetupFileOffset, SetupVA, LEGACY_SETUP_SEC_SIZE};
 
 // The MS-DOS header.
 const MZ_MAGIC: u16 = 0x5a4d; // "MZ"
@@ -165,28 +166,6 @@ bitflags::bitflags! {
     }
 }
 
-// The `flags` field choices in the PE section header.
-// We follow the Linux naming, thus ignoring the clippy name warnings.
-#[allow(clippy::enum_variant_names)]
-#[derive(Serialize, Clone, Copy)]
-#[repr(u32)]
-enum PeSectionHdrFlagsAlign {
-    _1Bytes = 0x00100000,
-    _2Bytes = 0x00200000,
-    _4Bytes = 0x00300000,
-    _8Bytes = 0x00400000,
-    _16Bytes = 0x00500000,
-    _32Bytes = 0x00600000,
-    _64Bytes = 0x00700000,
-    _128Bytes = 0x00800000,
-    _256Bytes = 0x00900000,
-    _512Bytes = 0x00A00000,
-    _1024Bytes = 0x00B00000,
-    _2048Bytes = 0x00C00000,
-    _4096Bytes = 0x00D00000,
-    _8192Bytes = 0x00E00000,
-}
-
 #[derive(Zeroable, Pod, Serialize, Clone, Copy)]
 #[repr(C, packed)]
 struct PeSectionHdr {
@@ -202,19 +181,12 @@ struct PeSectionHdr {
     flags: u32,
 }
 
-pub struct ImagePeCoffHeaderBuf {
-    pub header_at_zero: Vec<u8>,
-    pub relocs: (SetupFileOffset, Vec<u8>),
-}
+pub(super) const SECTION_ALIGNMENT: usize = 4096;
+const FILE_ALIGNMENT: usize = 512;
 
-pub(crate) fn make_pe_coff_header(setup_elf: &[u8], image_size: usize) -> ImagePeCoffHeaderBuf {
+pub(crate) fn make_pe_coff_header(setup_elf: &[u8]) -> Vec<u8> {
     let elf = xmas_elf::ElfFile::new(setup_elf).unwrap();
     let mut bin = Vec::<u8>::new();
-
-    // The EFI application loader requires a relocation section.
-    let relocs = vec![];
-    // The place where we put the stub, must be after the legacy header and before 0x1000.
-    let reloc_offset = SetupFileOffset::from(0x500);
 
     // PE header
     let mut pe_hdr = PeHdr {
@@ -224,26 +196,26 @@ pub(crate) fn make_pe_coff_header(setup_elf: &[u8], image_size: usize) -> ImageP
         timestamp: 0,
         symbol_table: 0,
         symbols: 1, // I don't know why, Linux header.S says it's 1
-        opt_hdr_size: size_of::<Pe32PlusOptHdr>() as u16,
+        opt_hdr_size: (size_of::<Pe32PlusOptHdr>() + size_of::<Pe32PlusOptDataDirs>()) as u16,
         flags: (PeFlags::EXECUTABLE_IMAGE | PeFlags::DEBUG_STRIPPED | PeFlags::LINE_NUMS_STRIPPED)
             .bits,
     };
 
-    let elf_text_hdr = elf.find_section_by_name(".text").unwrap();
+    let sec_hdrs = build_pe_sec_headers_from(&elf);
 
     // PE32+ optional header
     let pe_opt_hdr = Pe32PlusOptHdr {
         magic: PE32PLUS_OPT_HDR_MAGIC,
         ld_major: 0x02, // there's no linker to this extent, we do linking by ourselves
         ld_minor: 0x14,
-        text_size: elf_text_hdr.size() as u32,
-        data_size: 0, // data size is irrelevant
-        bss_size: 0,  // bss size is irrelevant
-        entry_point: elf.header.pt2.entry_point() as u32,
-        code_base: elf_text_hdr.address() as u32,
-        image_base: SETUP32_LMA as u64 - LEGACY_SETUP_SEC_SIZE as u64,
-        section_align: 0x20,
-        file_align: 0x20,
+        text_size: sec_hdrs.text.raw_data_size,
+        data_size: sec_hdrs.rodata.raw_data_size + sec_hdrs.data.raw_data_size,
+        bss_size: 0, // bss size is irrelevant
+        entry_point: (elf.header.pt2.entry_point() - sec_hdrs.base as u64) as u32,
+        code_base: sec_hdrs.text.virtual_address,
+        image_base: 0,
+        section_align: SECTION_ALIGNMENT as u32,
+        file_align: FILE_ALIGNMENT as u32,
         os_major: 0,
         os_minor: 0,
         image_major: 0x3, // see linux/pe.h for more info
@@ -251,11 +223,11 @@ pub(crate) fn make_pe_coff_header(setup_elf: &[u8], image_size: usize) -> ImageP
         subsys_major: 0,
         subsys_minor: 0,
         win32_version: 0,
-        image_size: image_size as u32,
+        image_size: sec_hdrs.data.virtual_address + sec_hdrs.data.virtual_size,
         header_size: LEGACY_SETUP_SEC_SIZE as u32,
         csum: 0,
         subsys: PeImageSubsystem::EfiApplication as u16,
-        dll_flags: 0,
+        dll_flags: 0x100, // NX compatible
         stack_size_req: 0,
         stack_size: 0,
         heap_size_req: 0,
@@ -270,21 +242,17 @@ pub(crate) fn make_pe_coff_header(setup_elf: &[u8], image_size: usize) -> ImageP
         resource_table: Pe32PlusOptDataDirEnt::none(),
         exception_table: Pe32PlusOptDataDirEnt::none(),
         certificate_table: Pe32PlusOptDataDirEnt::none(),
-        base_relocation_table: Pe32PlusOptDataDirEnt {
-            rva: usize::from(reloc_offset) as u32,
-            size: relocs.len() as u32,
-        },
+        base_relocation_table: Pe32PlusOptDataDirEnt::none(),
     };
 
     // PE section headers
-    let mut sec_hdrs = get_pe_sec_headers_from(&elf);
-
-    sec_hdrs.push(PeSectionHdr::new_reloc(
-        relocs.len() as u32,
-        usize::from(SetupVA::from(reloc_offset)) as u32,
-        relocs.len() as u32,
-        usize::from(reloc_offset) as u32,
-    ));
+    let AllPeSectionHdrs {
+        base: _,
+        text,
+        rodata,
+        data,
+    } = sec_hdrs;
+    let sec_hdr_vec = vec![text, rodata, data];
 
     // Write the MS-DOS header
     bin.extend_from_slice(&MZ_MAGIC.to_le_bytes());
@@ -294,47 +262,20 @@ pub(crate) fn make_pe_coff_header(setup_elf: &[u8], image_size: usize) -> ImageP
     bin.extend_from_slice(&(0x3cu32 + size_of::<u32>() as u32).to_le_bytes());
 
     // Write the PE header
-    pe_hdr.sections = sec_hdrs.len() as u16;
+    pe_hdr.sections = sec_hdr_vec.len() as u16;
     bin.extend_from_slice(bytemuck::bytes_of(&pe_hdr));
     // Write the PE32+ optional header
     bin.extend_from_slice(bytemuck::bytes_of(&pe_opt_hdr));
     bin.extend_from_slice(bytemuck::bytes_of(&pe_opt_hdr_data_dirs));
     // Write the PE section headers
-    for sec_hdr in sec_hdrs {
+    for sec_hdr in sec_hdr_vec {
         bin.extend_from_slice(bytemuck::bytes_of(&sec_hdr));
     }
 
-    ImagePeCoffHeaderBuf {
-        header_at_zero: bin,
-        relocs: (reloc_offset, relocs),
-    }
+    bin
 }
 
 impl PeSectionHdr {
-    fn new_reloc(
-        virtual_size: u32,
-        virtual_address: u32,
-        raw_data_size: u32,
-        data_addr: u32,
-    ) -> Self {
-        Self {
-            name: [b'.', b'r', b'e', b'l', b'o', b'c', 0, 0],
-            virtual_size,
-            virtual_address,
-            raw_data_size,
-            data_addr,
-            relocs: 0,
-            line_numbers: 0,
-            num_relocs: 0,
-            num_lin_numbers: 0,
-            flags: (PeSectionHdrFlags::CNT_INITIALIZED_DATA
-                | PeSectionHdrFlags::MEM_READ
-                | PeSectionHdrFlags::MEM_DISCARDABLE)
-                .bits
-                | PeSectionHdrFlagsAlign::_1Bytes as u32,
-        }
-    }
-
     fn new_text(
         virtual_size: u32,
         virtual_address: u32,
@@ -354,8 +295,7 @@ impl PeSectionHdr {
             flags: (PeSectionHdrFlags::CNT_CODE
                 | PeSectionHdrFlags::MEM_READ
                 | PeSectionHdrFlags::MEM_EXECUTE)
-                .bits
-                | PeSectionHdrFlagsAlign::_16Bytes as u32,
+                .bits(),
         }
     }
 
@@ -378,8 +318,7 @@ impl PeSectionHdr {
             flags: (PeSectionHdrFlags::CNT_INITIALIZED_DATA
                 | PeSectionHdrFlags::MEM_READ
                 | PeSectionHdrFlags::MEM_WRITE)
-                .bits
-                | PeSectionHdrFlagsAlign::_16Bytes as u32,
+                .bits(),
         }
     }
 
@@ -399,50 +338,70 @@ impl PeSectionHdr {
             line_numbers: 0,
             num_relocs: 0,
             num_lin_numbers: 0,
-            flags: (PeSectionHdrFlags::CNT_INITIALIZED_DATA | PeSectionHdrFlags::MEM_READ).bits
-                | PeSectionHdrFlagsAlign::_16Bytes as u32,
+            flags: (PeSectionHdrFlags::CNT_INITIALIZED_DATA | PeSectionHdrFlags::MEM_READ).bits(),
         }
     }
 }
 
-fn get_pe_sec_headers_from(elf: &xmas_elf::ElfFile) -> Vec<PeSectionHdr> {
-    let mut result = vec![];
+struct AllPeSectionHdrs {
+    /// The base for all virtual addresses in the PE/COFF header.
+    ///
+    /// We need this because we want to set `image_base` in `Pe32PlusOptHdr` to zero. Otherwise
+    /// some UEFI firmware will refuse to load the image. (FIXME: This is what Linux does, but I
+    /// can't find any specification that says we have to do this).
+    base: usize,
+    text: PeSectionHdr,
+    rodata: PeSectionHdr,
+    data: PeSectionHdr,
+}
 
-    for program in elf.program_iter() {
-        if program.get_type().unwrap() == xmas_elf::program::Type::Load {
-            let offset = SetupVA::from(program.virtual_addr() as usize);
-            let length = program.mem_size() as usize;
+fn build_pe_sec_headers_from(elf: &xmas_elf::ElfFile) -> AllPeSectionHdrs {
+    fn new_pe_sec_header(
+        segment: &xmas_elf::program::ProgramHeader,
+        base: usize,
+        f: impl FnOnce(u32, u32, u32, u32) -> PeSectionHdr,
+    ) -> PeSectionHdr {
+        assert_eq!(
+            segment.virtual_addr() as usize % SECTION_ALIGNMENT,
+            0,
+            "the segment virtual address must be aligned",
+        );
 
-            if program.flags().is_execute() {
-                result.push(PeSectionHdr::new_text(
-                    length as u32,
-                    usize::from(offset) as u32,
-                    length as u32,
-                    usize::from(SetupFileOffset::from(offset)) as u32,
-                ));
-            } else if program.flags().is_write() {
-                // We don't care about `.bss` sections since the binary is
-                // expanded to raw.
-                if program.file_size() == 0 {
-                    continue;
-                }
+        let va = SetupVA::from(segment.virtual_addr() as usize);
+        let len = (segment.mem_size() as usize).align_up(SECTION_ALIGNMENT);
 
-                result.push(PeSectionHdr::new_data(
-                    length as u32,
-                    usize::from(offset) as u32,
-                    length as u32,
-                    usize::from(SetupFileOffset::from(offset)) as u32,
-                ));
-            } else if program.flags().is_read() {
-                result.push(PeSectionHdr::new_rodata(
-                    length as u32,
-                    usize::from(offset) as u32,
-                    length as u32,
-                    usize::from(SetupFileOffset::from(offset)) as u32,
-                ));
-            }
-        }
+        f(
+            len as u32,
+            (usize::from(va) - base) as u32,
+            len as u32,
+            usize::from(SetupFileOffset::from(va)) as u32,
+        )
     }
 
-    result
+    let segments = elf.program_iter().collect::<Vec<_>>();
+
+    // There should be four segments: "header", "text", "rodata", and "data".
+    assert_eq!(segments.len(), 4, "there must be four segments");
+    assert!(
+        segments[1].flags().is_execute(),
+        "the text segment must be executable",
+    );
+    assert!(
+        segments[2].flags().is_read(),
+        "the text segment must be readable",
+    );
+    assert!(
+        segments[3].flags().is_write(),
+        "the data segment must be writable",
+    );
+
+    // The "header" segment won't be loaded. See the linker script for details.
+
+    let base = segments[1].virtual_addr() as usize - SECTION_ALIGNMENT;
+    AllPeSectionHdrs {
+        base,
+        text: new_pe_sec_header(&segments[1], base, PeSectionHdr::new_text),
+        rodata: new_pe_sec_header(&segments[2], base, PeSectionHdr::new_rodata),
+        data: new_pe_sec_header(&segments[3], base, PeSectionHdr::new_data),
+    }
 }

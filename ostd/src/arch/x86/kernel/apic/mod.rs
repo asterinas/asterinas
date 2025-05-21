@@ -8,8 +8,9 @@ use core::{
 
 use bit_field::BitField;
 use spin::Once;
+use xapic::get_xapic_base_address;
 
-use crate::{cpu::PinCurrentCpu, cpu_local};
+use crate::{cpu::PinCurrentCpu, cpu_local, io::IoMemAllocatorBuilder};
 
 pub mod ioapic;
 pub mod x2apic;
@@ -167,7 +168,7 @@ enum ApicType {
 pub struct Icr(u64);
 
 impl Icr {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments)]
     pub fn new(
         destination: ApicId,
         destination_shorthand: DestinationShorthand,
@@ -183,12 +184,12 @@ impl Icr {
             ApicId::X2Apic(d) => (d as u64) << 32,
         };
         Icr(dest
-            | (destination_shorthand as u64) << 18
-            | (trigger_mode as u64) << 15
-            | (level as u64) << 14
-            | (delivery_status as u64) << 12
-            | (destination_mode as u64) << 11
-            | (delivery_mode as u64) << 8
+            | ((destination_shorthand as u64) << 18)
+            | ((trigger_mode as u64) << 15)
+            | ((level as u64) << 14)
+            | ((delivery_status as u64) << 12)
+            | ((destination_mode as u64) << 11)
+            | ((delivery_mode as u64) << 8)
             | (vector as u64))
     }
 
@@ -217,9 +218,9 @@ impl ApicId {
     /// In x2APIC mode, the 32-bit logical x2APIC ID, which can be read from
     /// LDR, is derived from the 32-bit local x2APIC ID:
     /// Logical x2APIC ID = [(x2APIC ID[19:4] << 16) | (1 << x2APIC ID[3:0])]
-    #[allow(unused)]
+    #[expect(unused)]
     pub fn x2apic_logical_id(&self) -> u32 {
-        self.x2apic_logical_cluster_id() << 16 | 1 << self.x2apic_logical_field_id()
+        (self.x2apic_logical_cluster_id() << 16) | (1 << self.x2apic_logical_field_id())
     }
 
     /// Returns the logical x2apic cluster ID.
@@ -267,7 +268,7 @@ impl From<u32> for ApicId {
 #[repr(u64)]
 pub enum DestinationShorthand {
     NoShorthand = 0b00,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     MySelf = 0b01,
     AllIncludingSelf = 0b10,
     AllExcludingSelf = 0b11,
@@ -291,14 +292,14 @@ pub enum Level {
 #[repr(u64)]
 pub enum DeliveryStatus {
     Idle = 0,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     SendPending = 1,
 }
 
 #[repr(u64)]
 pub enum DestinationMode {
     Physical = 0,
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     Logical = 1,
 }
 
@@ -310,14 +311,14 @@ pub enum DeliveryMode {
     /// the lowest priority among the set of processors specified in the destination field. The
     /// ability for a processor to send a lowest priority IPI is model specific and should be
     /// avoided by BIOS and operating system software.
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     LowestPriority = 0b001,
     /// Non-Maskable Interrupt
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     Smi = 0b010,
     _Reserved = 0b011,
     /// System Management Interrupt
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     Nmi = 0b100,
     /// Delivers an INIT request to the target processor or processors, which causes them to
     /// perform an initialization.
@@ -334,7 +335,7 @@ pub enum ApicInitError {
 
 #[derive(Debug)]
 #[repr(u32)]
-#[allow(dead_code)]
+#[expect(dead_code)]
 pub enum DivideConfig {
     Divide1 = 0b1011,
     Divide2 = 0b0000,
@@ -346,14 +347,16 @@ pub enum DivideConfig {
     Divide128 = 0b1010,
 }
 
-pub fn init() -> Result<(), ApicInitError> {
-    crate::arch::x86::kernel::pic::disable_temp();
+pub fn init(io_mem_builder: &IoMemAllocatorBuilder) -> Result<(), ApicInitError> {
+    crate::arch::kernel::pic::disable_temp();
     if x2apic::X2Apic::has_x2apic() {
         log::info!("x2APIC found!");
         APIC_TYPE.call_once(|| ApicType::X2Apic);
         Ok(())
     } else if xapic::XApic::has_xapic() {
         log::info!("xAPIC found!");
+        let base_address = get_xapic_base_address();
+        io_mem_builder.remove(base_address..(base_address + size_of::<[u32; 256]>()));
         APIC_TYPE.call_once(|| ApicType::XApic);
         Ok(())
     } else {

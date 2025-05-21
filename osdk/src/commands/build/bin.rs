@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use std::{
-    fs::OpenOptions,
-    io::{Seek, SeekFrom, Write},
+    fs::{File, OpenOptions},
+    io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     process::Command,
 };
 
 use linux_bzimage_builder::{
-    legacy32_rust_target_json, make_bzimage, BzImageType, PayloadEncoding,
+    encode_kernel, legacy32_rust_target_json, make_bzimage, BzImageType, PayloadEncoding,
 };
 
 use crate::{
@@ -17,7 +17,7 @@ use crate::{
         bin::{AsterBin, AsterBinType, AsterBzImageMeta, AsterElfMeta},
         file::BundleFile,
     },
-    util::{get_current_crate_info, hard_link_or_copy},
+    util::{get_current_crates, hard_link_or_copy},
 };
 
 pub fn make_install_bzimage(
@@ -27,7 +27,7 @@ pub fn make_install_bzimage(
     linux_x86_legacy_boot: bool,
     encoding: PayloadEncoding,
 ) -> AsterBin {
-    let target_name = get_current_crate_info().name;
+    let target_name = get_current_crates().remove(0).name;
     let image_type = if linux_x86_legacy_boot {
         BzImageType::Legacy32
     } else {
@@ -42,13 +42,21 @@ pub fn make_install_bzimage(
                 let gen_target_json_path = target_dir.as_ref().join("x86_64-i386_pm-none.json");
                 std::fs::write(&gen_target_json_path, target_json).unwrap();
                 let arch = SetupInstallArch::Other(gen_target_json_path.canonicalize().unwrap());
-                install_setup_with_arch(setup_install_dir, setup_target_dir, &arch);
+                install_setup_with_arch(
+                    setup_install_dir,
+                    setup_target_dir,
+                    &arch,
+                    aster_elf,
+                    encoding,
+                );
             }
             BzImageType::Efi64 => {
                 install_setup_with_arch(
                     setup_install_dir,
                     setup_target_dir,
                     &SetupInstallArch::X86_64,
+                    aster_elf,
+                    encoding,
                 );
             }
         };
@@ -58,13 +66,7 @@ pub fn make_install_bzimage(
     let install_path = install_dir.as_ref().join(target_name);
     info!("Building bzImage");
     println!("install_path: {:?}", install_path);
-    make_bzimage(
-        &install_path,
-        image_type,
-        aster_elf.path(),
-        &setup_bin,
-        encoding,
-    );
+    make_bzimage(&install_path, image_type, &setup_bin);
 
     AsterBin::new(
         &install_path,
@@ -160,6 +162,8 @@ fn install_setup_with_arch(
     install_dir: impl AsRef<Path>,
     target_dir: impl AsRef<Path>,
     arch: &SetupInstallArch,
+    aster_elf: &AsterBin,
+    encoding: PayloadEncoding,
 ) {
     if !target_dir.as_ref().exists() {
         std::fs::create_dir_all(&target_dir).unwrap();
@@ -198,6 +202,7 @@ fn install_setup_with_arch(
     };
     rustflags.push(target_feature_args);
     cmd.env("RUSTFLAGS", rustflags.join(" "));
+    cmd.env("PAYLOAD_FILE", encode_kernel_to_file(aster_elf, encoding));
     cmd.arg("install").arg("linux-bzimage-setup");
     cmd.arg("--force");
     cmd.arg("--root").arg(install_dir.as_ref());
@@ -225,4 +230,27 @@ fn install_setup_with_arch(
             cmd, status
         );
     }
+}
+
+fn encode_kernel_to_file(aster_elf: &AsterBin, encoding: PayloadEncoding) -> PathBuf {
+    let kernel_path = aster_elf.path();
+    let encoded_path = {
+        let mut filename = kernel_path.file_name().unwrap().to_os_string();
+        filename.push(".compressed");
+        kernel_path.with_file_name(filename)
+    };
+
+    let mut kernel = Vec::new();
+    File::open(kernel_path)
+        .unwrap()
+        .read_to_end(&mut kernel)
+        .unwrap();
+
+    let encoded = encode_kernel(kernel, encoding);
+    File::create(&encoded_path)
+        .unwrap()
+        .write_all(&encoded)
+        .unwrap();
+
+    encoded_path
 }

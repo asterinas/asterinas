@@ -1,0 +1,13 @@
+alert:
+  bigger_is_better: true
+  threshold: 125%
+chart:
+  description: lat_fs -s 0k
+  legend: Number of created/deleted files on {system}
+  title: '[Ramfs] The throughput of creating/deleting small files (0KB)'
+  unit: number
+result_extraction:
+  result_index: 2
+  search_pattern: ^0k
+runtime_config:
+  mem: 32G

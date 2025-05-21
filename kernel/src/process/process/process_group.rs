@@ -5,69 +5,51 @@ use alloc::collections::btree_map::Values;
 use super::{Pgid, Pid, Process, Session};
 use crate::{prelude::*, process::signal::signals::Signal};
 
-/// `ProcessGroup` represents a set of processes. Each `ProcessGroup` has a unique
-/// identifier `pgid`.
+/// A process group.
+///
+/// A process group represents a set of processes,
+/// which has a unique identifier PGID (i.e., [`Pgid`]).
 pub struct ProcessGroup {
     pgid: Pgid,
-    pub(in crate::process) inner: Mutex<Inner>,
+    session: Weak<Session>,
+    inner: Mutex<Inner>,
 }
 
-pub(in crate::process) struct Inner {
-    pub(in crate::process) processes: BTreeMap<Pid, Arc<Process>>,
-    pub(in crate::process) leader: Option<Arc<Process>>,
-    pub(in crate::process) session: Weak<Session>,
-}
-
-impl Inner {
-    pub(in crate::process) fn remove_process(&mut self, pid: &Pid) {
-        let Some(process) = self.processes.remove(pid) else {
-            return;
-        };
-
-        if let Some(leader) = &self.leader
-            && Arc::ptr_eq(leader, &process)
-        {
-            self.leader = None;
-        }
-    }
-
-    pub(in crate::process) fn is_empty(&self) -> bool {
-        self.processes.is_empty()
-    }
+struct Inner {
+    processes: BTreeMap<Pid, Arc<Process>>,
 }
 
 impl ProcessGroup {
-    /// Creates a new process group with one process. The pgid is the same as the process
-    /// id. The process will become the leading process of the new process group.
+    /// Creates a new process group with one process.
     ///
-    /// The caller needs to ensure that the process does not belong to any group.
-    pub(in crate::process) fn new(process: Arc<Process>) -> Arc<Self> {
+    /// The PGID is the same as the process ID, which means that the process will become the leader
+    /// process of the new process group.
+    ///
+    /// The caller needs to ensure that the process does not belong to other process group.
+    pub(super) fn new(process: Arc<Process>, session: Weak<Session>) -> Arc<Self> {
         let pid = process.pid();
 
         let inner = {
             let mut processes = BTreeMap::new();
-            processes.insert(pid, process.clone());
-            Inner {
-                processes,
-                leader: Some(process.clone()),
-                session: Weak::new(),
-            }
+            processes.insert(pid, process);
+            Inner { processes }
         };
 
         Arc::new(ProcessGroup {
             pgid: pid,
+            session,
             inner: Mutex::new(inner),
         })
     }
 
-    /// Returns whether self contains a process with `pid`.
-    pub(in crate::process) fn contains_process(&self, pid: Pid) -> bool {
-        self.inner.lock().processes.contains_key(&pid)
-    }
-
-    /// Returns the process group identifier
+    /// Returns the process group identifier.
     pub fn pgid(&self) -> Pgid {
         self.pgid
+    }
+
+    /// Returns the session to which the process group belongs.
+    pub fn session(&self) -> Option<Arc<Session>> {
+        self.session.upgrade()
     }
 
     /// Acquires a lock on the process group.
@@ -77,29 +59,19 @@ impl ProcessGroup {
         }
     }
 
-    /// Broadcasts signal to all processes in the group.
+    /// Broadcasts the signal to all processes in the process group.
     ///
-    /// This method should only be used to broadcast fault signal and kernel signal.
-    ///
-    /// TODO: do more check to forbid user signal
+    /// This method should only be used to broadcast fault signals and kernel signals.
+    //
+    // TODO: Do some checks to forbid user signals.
     pub fn broadcast_signal(&self, signal: impl Signal + Clone + 'static) {
         for process in self.inner.lock().processes.values() {
             process.enqueue_signal(signal.clone());
         }
     }
-
-    /// Returns the leader process.
-    pub fn leader(&self) -> Option<Arc<Process>> {
-        self.inner.lock().leader.clone()
-    }
-
-    /// Returns the session which the group belongs to
-    pub fn session(&self) -> Option<Arc<Session>> {
-        self.inner.lock().session.upgrade()
-    }
 }
 
-/// A scoped lock for a process group.
+/// A scoped lock guard for a process group.
 ///
 /// It provides some public methods to prevent the exposure of the inner type.
 #[clippy::has_significant_drop]
@@ -109,11 +81,34 @@ pub struct ProcessGroupGuard<'a> {
 }
 
 impl ProcessGroupGuard<'_> {
-    /// Returns an iterator over the processes in the group.
+    /// Returns an iterator over the processes in the process group.
     pub fn iter(&self) -> ProcessGroupIter {
         ProcessGroupIter {
             inner: self.inner.processes.values(),
         }
+    }
+
+    /// Inserts a process into the process group.
+    ///
+    /// The caller needs to ensure that the process didn't previously belong to the process group,
+    /// but now does.
+    pub(in crate::process) fn insert_process(&mut self, process: Arc<Process>) {
+        let old_process = self.inner.processes.insert(process.pid(), process);
+        debug_assert!(old_process.is_none());
+    }
+
+    /// Removes a process from the process group.
+    ///
+    /// The caller needs to ensure that the process previously belonged to the process group, but
+    /// now doesn't.
+    pub(in crate::process) fn remove_process(&mut self, pid: &Pid) {
+        let process = self.inner.processes.remove(pid);
+        debug_assert!(process.is_some());
+    }
+
+    /// Returns whether the process group is empty.
+    pub(in crate::process) fn is_empty(&self) -> bool {
+        self.inner.processes.is_empty()
     }
 }
 

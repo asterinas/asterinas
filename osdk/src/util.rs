@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use std::{
+    collections::HashMap,
     ffi::OsStr,
     fs::{self, File},
     io::{BufRead, BufReader, Result, Write},
     path::{Path, PathBuf},
     process::Command,
+    sync::{LazyLock, Mutex},
 };
 
 use crate::{error::Errno, error_msg};
@@ -73,73 +75,112 @@ pub fn get_target_directory() -> PathBuf {
         .into()
 }
 
+/// Information about an OSDK crate.
+#[derive(Debug, Clone)]
 pub struct CrateInfo {
     pub name: String,
     pub version: String,
     pub path: String,
+    /// Whether the crate is a kernel crate.
+    ///
+    /// If a crate contains the `ostd::main` macro, it is a kernel crate (akin
+    /// to the binary crate in a normal Rust project, but it is a library from
+    /// the perspective of Cargo).
+    pub is_kernel_crate: bool,
 }
 
-/// Retrieve the default member in the workspace.
-///
-/// If there is only one kernel crate, return that crate;
-/// If there are multiple kernel crates or no kernel crates in the workspace,
-/// this function will exit with an error.
-///
-/// A crate is considered a kernel crate if it utilizes the `ostd::main` macro.
-fn get_default_member(metadata: &serde_json::Value) -> &str {
+/// Gets the default crates in the current directory.
+pub fn get_current_crates() -> Vec<CrateInfo> {
+    // To avoid the overhead of parsing the Cargo metadata and reading the
+    // source multiple times.
+    static MEMOIZED: LazyLock<Mutex<HashMap<PathBuf, Vec<CrateInfo>>>> =
+        LazyLock::new(|| Mutex::new(HashMap::new()));
+
+    let current_dir = std::env::current_dir().unwrap();
+    let mut memoized = MEMOIZED.lock().unwrap();
+    if let Some(crates) = memoized.get(&current_dir) {
+        return crates.clone();
+    }
+
+    // If the current directory's crate info is not memoized, parse the Cargo
+    // metadata.
+
+    let metadata = get_cargo_metadata(None::<&str>, None::<&[&str]>).unwrap();
+    let packages = metadata.get("packages").unwrap().as_array().unwrap();
+
     let default_members = metadata
         .get("workspace_default_members")
         .unwrap()
         .as_array()
         .unwrap();
 
-    if default_members.len() == 1 {
-        return default_members[0].as_str().unwrap();
-    }
+    let mut result = Vec::new();
 
-    let packages: Vec<_> = {
-        let packages = metadata.get("packages").unwrap().as_array().unwrap();
-
-        packages
+    for member in default_members {
+        let member_meta = packages
             .iter()
-            .filter(|package| {
-                let id = package.get("id").unwrap();
-                if !default_members.contains(id) {
+            .find(|p| {
+                let Some(p_id) = p.get("id") else {
                     return false;
-                }
-
-                let src_path = {
-                    let targets = package.get("targets").unwrap().as_array().unwrap();
-                    if targets.len() != 1 {
-                        return false;
-                    }
-                    targets[0].get("src_path").unwrap().as_str().unwrap()
                 };
-
-                let file = {
-                    let content = fs::read_to_string(src_path).unwrap();
-                    syn::parse_file(&content).unwrap()
-                };
-
-                contains_ostd_main_macro(&file)
+                p_id == member
             })
-            .collect()
-    };
+            .unwrap();
 
-    if packages.is_empty() {
-        error_msg!("OSDK requires there's at least one kernel package. Please navigate to the kernel package directory or the workspace root and run the command.");
-        std::process::exit(Errno::BuildCrate as _);
+        let is_kernel_crate = package_contains_ostd_main(member_meta);
+
+        let parsed_id = parse_package_id_string(member.as_str().unwrap());
+
+        result.push(CrateInfo {
+            name: parsed_id.name,
+            version: parsed_id.version,
+            path: parsed_id.path,
+            is_kernel_crate,
+        });
     }
 
-    if packages.len() >= 2 {
-        error_msg!("OSDK requires there's at most one kernel package in the workspace. Please navigate to the kernel package directory and run the command.");
-        std::process::exit(Errno::BuildCrate as _);
-    }
+    memoized.insert(current_dir, result.clone());
 
-    packages[0].get("id").unwrap().as_str().unwrap()
+    result
 }
 
-fn contains_ostd_main_macro(file: &syn::File) -> bool {
+/// Get the kernel crate in the current directory.
+///
+/// If the current directory is a virtual workspace and no/multiple kernel
+/// crate is found, This function will print an error message and exit the
+/// process.
+pub fn get_kernel_crate() -> CrateInfo {
+    let crates = get_current_crates();
+    let kernel_crates: Vec<_> = crates.iter().filter(|c| c.is_kernel_crate).collect();
+    if kernel_crates.len() == 1 {
+        kernel_crates[0].clone()
+    } else if kernel_crates.is_empty() {
+        error_msg!("No kernel crate found in the current workspace");
+        std::process::exit(Errno::NoKernelCrate as _);
+    } else {
+        error_msg!("Multiple kernel crates found in the current workspace");
+        std::process::exit(Errno::TooManyCrates as _);
+    }
+}
+
+fn package_contains_ostd_main(package: &serde_json::Value) -> bool {
+    let src_path = {
+        let targets = package.get("targets").unwrap().as_array().unwrap();
+        if targets.len() != 1 {
+            return false;
+        }
+        targets[0].get("src_path").unwrap().as_str().unwrap()
+    };
+
+    let file = {
+        let content = fs::read_to_string(src_path).unwrap();
+        syn::parse_file(&content).unwrap()
+    };
+
+    file_contains_ostd_main_macro(&file)
+}
+
+fn file_contains_ostd_main_macro(file: &syn::File) -> bool {
     for item in &file.items {
         let syn::Item::Fn(item_fn) = item else {
             continue;
@@ -156,14 +197,13 @@ fn contains_ostd_main_macro(file: &syn::File) -> bool {
     false
 }
 
-pub fn get_current_crate_info() -> CrateInfo {
-    let metadata = get_cargo_metadata(None::<&str>, None::<&[&str]>).unwrap();
-
-    let default_member = get_default_member(&metadata);
-    parse_package_id_string(default_member)
+struct ParsedID {
+    pub name: String,
+    pub version: String,
+    pub path: String,
 }
 
-pub fn parse_package_id_string(package_id: &str) -> CrateInfo {
+fn parse_package_id_string(package_id: &str) -> ParsedID {
     // Prior to 202403 (Rust 1.77.1), the package id string here is in the form of
     // "<crate_name> <crate_version> (path+file://<crate_path>)".
     // After that, it's
@@ -173,7 +213,7 @@ pub fn parse_package_id_string(package_id: &str) -> CrateInfo {
         // After 1.77.1
         if package_id.contains('@') {
             let package_id_segments = package_id.split(['#', '@']).collect::<Vec<&str>>();
-            CrateInfo {
+            ParsedID {
                 name: package_id_segments[1].to_string(),
                 version: package_id_segments[2].to_string(),
                 path: package_id_segments[0]
@@ -185,7 +225,7 @@ pub fn parse_package_id_string(package_id: &str) -> CrateInfo {
             let path = package_id_segments[0]
                 .trim_start_matches("path+file://")
                 .to_string();
-            CrateInfo {
+            ParsedID {
                 name: PathBuf::from(path.clone())
                     .file_name()
                     .unwrap()
@@ -199,7 +239,7 @@ pub fn parse_package_id_string(package_id: &str) -> CrateInfo {
     } else {
         // Before 1.77.1
         let default_member = package_id.split(' ').collect::<Vec<&str>>();
-        CrateInfo {
+        ParsedID {
             name: default_member[0].to_string(),
             version: default_member[1].to_string(),
             path: default_member[2]

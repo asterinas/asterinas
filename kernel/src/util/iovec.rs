@@ -55,12 +55,12 @@ impl IoVec {
 
 /// The util function for create [`VmReader`]/[`VmWriter`]s.
 fn copy_iovs_and_convert<'a, T: 'a>(
-    ctx: &'a Context,
+    user_space: &'a CurrentUserSpace<'a>,
     start_addr: Vaddr,
     count: usize,
     convert_iovec: impl Fn(&IoVec, &'a VmSpace) -> Result<T>,
 ) -> Result<Box<[T]>> {
-    let vm_space = ctx.process.root_vmar().vm_space();
+    let vm_space = user_space.root_vmar().vm_space();
 
     let mut v = Vec::with_capacity(count);
     for idx in 0..count {
@@ -94,41 +94,47 @@ pub struct VmReaderArray<'a>(Box<[VmReader<'a>]>);
 pub struct VmWriterArray<'a>(Box<[VmWriter<'a>]>);
 
 impl<'a> VmReaderArray<'a> {
-    /// Creates a new `IoVecReader` from user-provided io vec buffer.
+    /// Creates a new `VmReaderArray` from user-provided io vec buffer.
     pub fn from_user_io_vecs(
-        ctx: &'a Context<'a>,
+        user_space: &'a CurrentUserSpace<'a>,
         start_addr: Vaddr,
         count: usize,
     ) -> Result<Self> {
-        let readers = copy_iovs_and_convert(ctx, start_addr, count, IoVec::reader)?;
+        let readers = copy_iovs_and_convert(user_space, start_addr, count, IoVec::reader)?;
         Ok(Self(readers))
     }
 
     /// Returns mutable reference to [`VmReader`]s.
-    pub fn readers_mut(&'a mut self) -> &'a mut [VmReader<'a>] {
+    pub fn readers_mut(&mut self) -> &mut [VmReader<'a>] {
         &mut self.0
+    }
+
+    /// Creates a new `VmReaderArray`.
+    #[cfg(ktest)]
+    pub const fn new(readers: Box<[VmReader<'a>]>) -> Self {
+        Self(readers)
     }
 }
 
 impl<'a> VmWriterArray<'a> {
-    /// Creates a new `IoVecWriter` from user-provided io vec buffer.
+    /// Creates a new `VmWriterArray` from user-provided io vec buffer.
     pub fn from_user_io_vecs(
-        ctx: &'a Context<'a>,
+        user_space: &'a CurrentUserSpace<'a>,
         start_addr: Vaddr,
         count: usize,
     ) -> Result<Self> {
-        let writers = copy_iovs_and_convert(ctx, start_addr, count, IoVec::writer)?;
+        let writers = copy_iovs_and_convert(user_space, start_addr, count, IoVec::writer)?;
         Ok(Self(writers))
     }
 
     /// Returns mutable reference to [`VmWriter`]s.
-    pub fn writers_mut(&'a mut self) -> &'a mut [VmWriter<'a>] {
+    pub fn writers_mut(&mut self) -> &mut [VmWriter<'a>] {
         &mut self.0
     }
 }
 
 /// Trait defining the read behavior for a collection of [`VmReader`]s.
-pub trait MultiRead {
+pub trait MultiRead: ReadCString {
     /// Reads the exact number of bytes required to exhaust `self` or fill `writer`,
     /// accumulating total bytes read.
     ///
@@ -148,6 +154,13 @@ pub trait MultiRead {
     fn is_empty(&self) -> bool {
         self.sum_lens() == 0
     }
+
+    /// Skips the first `nbytes` bytes of data.
+    ///
+    /// # Panics
+    ///
+    /// If `nbytes` is greater that [`MultiRead::sum_lens`], this method will panic.
+    fn skip(&mut self, nbytes: usize);
 }
 
 /// Trait defining the write behavior for a collection of [`VmWriter`]s.
@@ -171,6 +184,13 @@ pub trait MultiWrite {
     fn is_empty(&self) -> bool {
         self.sum_lens() == 0
     }
+
+    /// Skips the first `nbytes` bytes of space.
+    ///
+    /// # Panics
+    ///
+    /// If `nbytes` is greater that [`MultiWrite::sum_lens`], this method will panic.
+    fn skip(&mut self, nbytes: usize);
 }
 
 impl MultiRead for VmReaderArray<'_> {
@@ -190,6 +210,23 @@ impl MultiRead for VmReaderArray<'_> {
     fn sum_lens(&self) -> usize {
         self.0.iter().map(|vm_reader| vm_reader.remain()).sum()
     }
+
+    fn skip(&mut self, mut nbytes: usize) {
+        for reader in &mut self.0 {
+            let bytes_to_skip = reader.remain().min(nbytes);
+            reader.skip(bytes_to_skip);
+            nbytes -= bytes_to_skip;
+
+            if nbytes == 0 {
+                return;
+            }
+        }
+
+        panic!(
+            "the readers are exhausted but there are {} bytes remaining to skip",
+            nbytes
+        );
+    }
 }
 
 impl MultiRead for VmReader<'_> {
@@ -199,6 +236,18 @@ impl MultiRead for VmReader<'_> {
 
     fn sum_lens(&self) -> usize {
         self.remain()
+    }
+
+    fn skip(&mut self, nbytes: usize) {
+        VmReader::skip(self, nbytes);
+    }
+}
+
+impl dyn MultiRead + '_ {
+    pub fn read_val<T: Pod>(&mut self) -> Result<T> {
+        let mut val = T::new_zeroed();
+        self.read(&mut VmWriter::from(val.as_bytes_mut()))?;
+        Ok(val)
     }
 }
 
@@ -219,6 +268,23 @@ impl MultiWrite for VmWriterArray<'_> {
     fn sum_lens(&self) -> usize {
         self.0.iter().map(|vm_writer| vm_writer.avail()).sum()
     }
+
+    fn skip(&mut self, mut nbytes: usize) {
+        for writer in &mut self.0 {
+            let bytes_to_skip = writer.avail().min(nbytes);
+            writer.skip(bytes_to_skip);
+            nbytes -= bytes_to_skip;
+
+            if nbytes == 0 {
+                return;
+            }
+        }
+
+        panic!(
+            "the writers are exhausted but there are {} bytes remaining to skip",
+            nbytes
+        );
+    }
 }
 
 impl MultiWrite for VmWriter<'_> {
@@ -228,5 +294,16 @@ impl MultiWrite for VmWriter<'_> {
 
     fn sum_lens(&self) -> usize {
         self.avail()
+    }
+
+    fn skip(&mut self, nbytes: usize) {
+        VmWriter::skip(self, nbytes);
+    }
+}
+
+impl dyn MultiWrite + '_ {
+    pub fn write_val<T: Pod>(&mut self, val: &T) -> Result<()> {
+        self.write(&mut VmReader::from(val.as_bytes()))?;
+        Ok(())
     }
 }

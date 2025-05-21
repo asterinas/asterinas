@@ -1,260 +1,401 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::{ffi::CStr, mem::MaybeUninit};
+
+use boot::{open_protocol_exclusive, AllocateType};
 use linux_boot_params::BootParams;
-use uefi::{
-    boot::{exit_boot_services, open_protocol_exclusive},
-    mem::memory_map::{MemoryMap, MemoryMapOwned},
-    prelude::*,
-    proto::loaded_image::LoadedImage,
-};
+use uefi::{boot::exit_boot_services, mem::memory_map::MemoryMap, prelude::*};
 use uefi_raw::table::system::SystemTable;
 
-use super::{
-    decoder::decode_payload,
-    paging::{Ia32eFlags, PageNumber, PageTableCreator},
-    relocation::apply_rela_relocations,
-};
+use super::decoder::decode_payload;
+use crate::x86::amd64_efi::alloc::alloc_pages;
 
-const PAGE_SIZE: u64 = 4096;
+pub(super) const PAGE_SIZE: u64 = 4096;
 
-// Suppress warnings since using todo!.
-#[allow(unreachable_code)]
-#[allow(unused_variables)]
-#[allow(clippy::diverging_sub_expression)]
-#[export_name = "efi_stub_entry"]
-extern "sysv64" fn efi_stub_entry(handle: Handle, system_table: *const SystemTable) -> ! {
-    // SAFETY: handle and system_table are valid pointers. It is only called once.
-    unsafe { system_init(handle, system_table) };
-
-    uefi::helpers::init().unwrap();
-
-    let boot_params = todo!("Use EFI boot services to fill boot params");
-
-    efi_phase_boot(boot_params);
-}
-
-#[export_name = "efi_handover_entry"]
-extern "sysv64" fn efi_handover_entry(
+#[export_name = "main_efi_common64"]
+extern "sysv64" fn main_efi_common64(
     handle: Handle,
     system_table: *const SystemTable,
     boot_params_ptr: *mut BootParams,
 ) -> ! {
-    // SAFETY: handle and system_table are valid pointers. It is only called once.
-    unsafe { system_init(handle, system_table) };
-
-    uefi::helpers::init().unwrap();
-
-    // SAFETY: boot_params is a valid pointer.
-    let boot_params = unsafe { &mut *boot_params_ptr };
-
-    efi_phase_boot(boot_params)
-}
-
-/// Initialize the system.
-///
-/// # Safety
-///
-/// This function should be called only once with valid parameters before all
-/// operations.
-unsafe fn system_init(handle: Handle, system_table: *const SystemTable) {
-    // SAFETY: This is the right time to initialize the console and it is only
-    // called once here before all console operations.
-    unsafe {
-        crate::console::init();
-    }
-
-    // SAFETY: This is the right time to apply relocations.
-    unsafe { apply_rela_relocations() };
-
-    // SAFETY: The handle and system_table are valid pointers. They are passed
-    // from the UEFI firmware. They are only called once.
+    // SAFETY: We get `handle` and `system_table` from the UEFI firmware, so by contract the
+    // pointers are valid and correct.
     unsafe {
         boot::set_image_handle(handle);
         uefi::table::set_system_table(system_table);
     }
+
+    uefi::helpers::init().unwrap();
+
+    let boot_params = if boot_params_ptr.is_null() {
+        allocate_boot_params()
+    } else {
+        // SAFETY: We get boot parameters from the boot loader, so by contract the pointer is valid and
+        // the underlying memory is initialized. We are an exclusive owner of the memory region, so we
+        // can create a mutable reference of the plain-old-data type.
+        unsafe { &mut *boot_params_ptr }
+    };
+
+    efi_phase_boot(boot_params);
+
+    // SAFETY: All previously opened boot service protocols have been closed. At this time, we have
+    // no references to the code and data of the boot services.
+    unsafe { efi_phase_runtime(boot_params) };
 }
 
-fn efi_phase_boot(boot_params: &mut BootParams) -> ! {
-    uefi::println!("[EFI stub] Relocations applied.");
+fn allocate_boot_params() -> &'static mut BootParams {
+    let boot_params = {
+        let bytes = alloc_pages(AllocateType::AnyPages, core::mem::size_of::<BootParams>());
+        MaybeUninit::fill(bytes, 0);
+        // SAFETY: Zero initialization gives a valid representation for `BootParams`.
+        unsafe { &mut *bytes.as_mut_ptr().cast::<BootParams>() }
+    };
+
+    boot_params.hdr.header = linux_boot_params::LINUX_BOOT_HEADER_MAGIC;
+
+    boot_params
+}
+
+fn efi_phase_boot(boot_params: &mut BootParams) {
     uefi::println!(
-        "[EFI stub] Stub loaded at {:#x?}",
-        crate::x86::get_image_loaded_offset()
+        "[EFI stub] Loaded with offset {:#x}",
+        crate::x86::image_load_offset(),
     );
+
+    // Load the command line if it is not loaded.
+    if boot_params.hdr.cmd_line_ptr == 0 && boot_params.ext_cmd_line_ptr == 0 {
+        if let Some(cmdline) = load_cmdline() {
+            boot_params.hdr.cmd_line_ptr = cmdline.as_ptr().addr().try_into().unwrap();
+            boot_params.ext_cmd_line_ptr = 0;
+            boot_params.hdr.cmdline_size = (cmdline.count_bytes() + 1).try_into().unwrap();
+        }
+    }
+
+    // Load the init ramdisk if it is not loaded.
+    if boot_params.hdr.ramdisk_image == 0 && boot_params.ext_ramdisk_image == 0 {
+        if let Some(initrd) = load_initrd() {
+            boot_params.hdr.ramdisk_image = initrd.as_ptr().addr().try_into().unwrap();
+            boot_params.ext_ramdisk_image = 0;
+            boot_params.hdr.ramdisk_size = initrd.len().try_into().unwrap();
+            boot_params.ext_ramdisk_size = 0;
+        }
+    }
 
     // Fill the boot params with the RSDP address if it is not provided.
     if boot_params.acpi_rsdp_addr == 0 {
-        boot_params.acpi_rsdp_addr = get_rsdp_addr();
+        boot_params.acpi_rsdp_addr =
+            find_rsdp_addr().expect("ACPI RSDP address is not available") as usize as u64;
     }
 
-    // Load the kernel payload to memory.
-    let payload = crate::get_payload(boot_params);
-    let kernel = decode_payload(payload);
+    // Fill the boot params with the screen info if it is not provided.
+    if boot_params.screen_info.lfb_base == 0 && boot_params.screen_info.ext_lfb_base == 0 {
+        fill_screen_info(&mut boot_params.screen_info);
+    }
 
-    uefi::println!("[EFI stub] Loading payload.");
+    // Decode the payload and load it as an ELF file.
+    uefi::println!("[EFI stub] Decoding the kernel payload");
+    let kernel = decode_payload(crate::x86::payload());
+    uefi::println!("[EFI stub] Loading the payload as an ELF file");
     crate::loader::load_elf(&kernel);
-
-    uefi::println!("[EFI stub] Exiting EFI boot services.");
-    let memory_type = {
-        let Ok(loaded_image) = open_protocol_exclusive::<LoadedImage>(boot::image_handle()) else {
-            panic!("Failed to open LoadedImage protocol");
-        };
-        loaded_image.data_type()
-    };
-    // SAFETY: All allocations in the boot services phase are not used after
-    // this point.
-    let memory_map = unsafe { exit_boot_services(memory_type) };
-
-    efi_phase_runtime(memory_map, boot_params);
 }
 
-fn efi_phase_runtime(memory_map: MemoryMapOwned, boot_params: &mut BootParams) -> ! {
-    unsafe {
-        crate::console::print_str("[EFI stub] Entered runtime services.\n");
+fn load_cmdline() -> Option<&'static CStr> {
+    uefi::println!("[EFI stub] Loading the cmdline");
+
+    let loaded_image = open_protocol_exclusive::<uefi::proto::loaded_image::LoadedImage>(
+        uefi::boot::image_handle(),
+    )
+    .unwrap();
+
+    let Some(load_options) = loaded_image.load_options_as_bytes() else {
+        uefi::println!("[EFI stub] Warning: No cmdline is available!");
+        return None;
+    };
+
+    if load_options.len() % 2 != 0 || load_options.iter().skip(1).step_by(2).any(|c| *c != 0) {
+        uefi::println!("[EFI stub] Warning: The cmdline contains non-ASCII characters!");
+        return None;
     }
 
-    #[cfg(feature = "debug_print")]
-    unsafe {
-        use crate::console::{print_hex, print_str};
-        print_str("[EFI stub debug] EFI Memory map:\n");
-        for md in memory_map.entries() {
-            // crate::println!("    [{:#x}] {:#x} ({:#x})", md.ty.0, md.phys_start, md.page_count);
-            print_str("    [");
-            print_hex(md.ty.0 as u64);
-            print_str("]");
-            print_hex(md.phys_start);
-            print_str("(size=");
-            print_hex(md.page_count);
-            print_str(")");
-            print_str("{flags=");
-            print_hex(md.att.bits());
-            print_str("}\n");
+    // The load options are a `Char16` sequence. We should convert it to a `Char8` sequence.
+    let cmdline_bytes = alloc_pages(
+        AllocateType::MaxAddress(u32::MAX as u64),
+        load_options.len() / 2 + 1,
+    );
+    for i in 0..load_options.len() / 2 {
+        cmdline_bytes[i].write(load_options[i * 2]);
+    }
+    cmdline_bytes[load_options.len() / 2].write(0);
+
+    // SAFETY: We've initialized all the bytes above.
+    let cmdline_str =
+        CStr::from_bytes_until_nul(unsafe { cmdline_bytes.assume_init_ref() }).unwrap();
+
+    uefi::println!("[EFI stub] Loaded the cmdline: {:?}", cmdline_str);
+
+    Some(cmdline_str)
+}
+
+// Linux loads the initrd either using a special protocol `LINUX_EFI_INITRD_MEDIA_GUID` or using
+// the file path specified on the command line (e.g., `initrd=/initrd.img`). We now only support
+// the former approach, as it is more "modern" and easier to implement. Note that this approach
+// requires the boot loader (e.g., GRUB, systemd-boot) to implement the protocol, while the latter
+// approach does not.
+fn load_initrd() -> Option<&'static [u8]> {
+    uefi::println!("[EFI stub] Loading the initrd");
+
+    // Note that we should switch to `uefi::proto::media::load_file::LoadFile2` once it provides a
+    // more ergonomic API. Its current API requires `alloc` and cannot load files on pages (i.e.,
+    // ensure that the initrd is aligned to the page size).
+    #[repr(transparent)]
+    // SAFETY: The protocol GUID matches the protocol itself.
+    #[uefi::proto::unsafe_protocol(uefi_raw::protocol::media::LoadFile2Protocol::GUID)]
+    struct LoadFile2(uefi_raw::protocol::media::LoadFile2Protocol);
+
+    let mut device_path_buf = [MaybeUninit::uninit(); 20 /* vendor */ + 4 /* end */];
+    let mut device_path = {
+        use uefi::proto::device_path::build;
+        build::DevicePathBuilder::with_buf(&mut device_path_buf)
+            .push(&build::media::Vendor {
+                // LINUX_EFI_INITRD_MEDIA_GUID
+                vendor_guid: uefi::guid!("5568e427-68fc-4f3d-ac74-ca555231cc68"),
+                vendor_defined_data: &[],
+            })
+            .unwrap()
+            .finalize()
+            .unwrap()
+    };
+
+    let Ok(handle) = uefi::boot::locate_device_path::<LoadFile2>(&mut device_path) else {
+        uefi::println!("[EFI stub] Warning: Failed to locate the initrd device!");
+        return None;
+    };
+
+    let Ok(mut load_file2) = uefi::boot::open_protocol_exclusive::<LoadFile2>(handle) else {
+        uefi::println!("[EFI stub] Warning: Failed to open the initrd protocol!");
+        return None;
+    };
+
+    let mut size = 0;
+    // SAFETY: The arguments are correctly specified according to the UEFI specification.
+    let status = unsafe {
+        (load_file2.0.load_file)(
+            &mut load_file2.0,
+            device_path.as_ffi_ptr().cast(),
+            false, /* boot_policy */
+            &mut size,
+            core::ptr::null_mut(),
+        )
+    };
+    if status != uefi::Status::BUFFER_TOO_SMALL {
+        uefi::println!("[EFI stub] Warning: Failed to get the initrd size!");
+        return None;
+    }
+
+    let initrd = alloc_pages(AllocateType::MaxAddress(u32::MAX as u64), size);
+    // SAFETY: The arguments are correctly specified according to the UEFI specification.
+    let status = unsafe {
+        (load_file2.0.load_file)(
+            &mut load_file2.0,
+            device_path.as_ffi_ptr().cast(),
+            false, /* boot_policy */
+            &mut size,
+            initrd.as_mut_ptr().cast(),
+        )
+    };
+    if status.is_error() {
+        uefi::println!("[EFI stub] Warning: Failed to load the initrd!");
+        return None;
+    }
+    assert_eq!(
+        size,
+        initrd.len(),
+        "the initrd size has changed between two EFI calls"
+    );
+
+    uefi::println!(
+        "[EFI stub] Loaded the initrd: addr={:#x}, size={:#x}",
+        initrd.as_ptr().addr(),
+        initrd.len()
+    );
+
+    // SAFETY: We've initialized all the bytes in `load_file`.
+    Some(unsafe { initrd.assume_init_ref() })
+}
+
+fn find_rsdp_addr() -> Option<*const ()> {
+    use uefi::table::cfg::{ACPI2_GUID, ACPI_GUID};
+
+    // Prefer ACPI2 over ACPI.
+    for acpi_guid in [ACPI2_GUID, ACPI_GUID] {
+        if let Some(rsdp_addr) = uefi::system::with_config_table(|table| {
+            table
+                .iter()
+                .find(|entry| entry.guid == acpi_guid)
+                .map(|entry| entry.address.cast::<()>())
+        }) {
+            uefi::println!("[EFI stub] Found the ACPI RSDP at {:p}", rsdp_addr);
+            return Some(rsdp_addr);
         }
     }
 
-    // Write memory map to e820 table in boot_params.
+    uefi::println!("[EFI stub] Warning: Failed to find the ACPI RSDP address!");
+
+    None
+}
+
+fn fill_screen_info(screen_info: &mut linux_boot_params::ScreenInfo) {
+    use uefi::proto::console::gop::{GraphicsOutput, PixelFormat};
+
+    let Ok(handle) = uefi::boot::get_handle_for_protocol::<GraphicsOutput>() else {
+        uefi::println!("[EFI stub] Warning: Failed to locate the graphics handle!");
+        return;
+    };
+
+    let Ok(mut protocol) = open_protocol_exclusive::<GraphicsOutput>(handle) else {
+        uefi::println!("[EFI stub] Warning: Failed to open the graphics protocol!");
+        return;
+    };
+
+    if !matches!(
+        protocol.current_mode_info().pixel_format(),
+        PixelFormat::Rgb | PixelFormat::Bgr
+    ) {
+        uefi::println!(
+            "[EFI stub] Warning: Ignored the framebuffer as the pixel format is not supported!"
+        );
+        return;
+    }
+
+    let addr = protocol.frame_buffer().as_mut_ptr().addr();
+    let (width, height) = protocol.current_mode_info().resolution();
+
+    // TODO: We are only filling in fields that will be accessed later in the kernel. We should
+    // fill in other important information such as the pixel format.
+    screen_info.lfb_base = addr as u32;
+    screen_info.ext_lfb_base = (addr >> 32) as u32;
+    screen_info.lfb_width = width.try_into().unwrap();
+    screen_info.lfb_height = height.try_into().unwrap();
+    screen_info.lfb_depth = 32; // We've checked the pixel format above.
+
+    uefi::println!(
+        "[EFI stub] Found the framebuffer at {:#x} with {}x{} pixels",
+        addr,
+        width,
+        height
+    );
+}
+
+unsafe fn efi_phase_runtime(boot_params: &mut BootParams) -> ! {
+    uefi::println!("[EFI stub] Exiting EFI boot services");
+    // SAFETY: The safety is upheld by the caller.
+    let memory_map = unsafe { exit_boot_services(uefi::table::boot::MemoryType::LOADER_DATA) };
+
+    crate::println!(
+        "[EFI stub] Processing {} memory map entries",
+        memory_map.entries().len()
+    );
+    #[cfg(feature = "debug_print")]
+    {
+        memory_map.entries().for_each(|entry| {
+            crate::println!(
+                "    [{:#x}] {:#x} (size={:#x}) {{flags={:#x}}}",
+                entry.ty.0,
+                entry.phys_start,
+                entry.page_count,
+                entry.att.bits()
+            );
+        })
+    }
+
+    // Write the memory map to the E820 table in `boot_params`.
     let e820_table = &mut boot_params.e820_table;
-    let mut e820_entries = 0usize;
-    for md in memory_map.entries() {
-        if e820_entries >= e820_table.len() || e820_entries >= 127 {
-            unsafe {
-                crate::console::print_str(
-                    "[EFI stub] Warning: number of E820 entries exceeded 128!\n",
-                );
+    let mut num_entries = 0usize;
+    for entry in memory_map.entries() {
+        let typ = if let Some(e820_type) = parse_memory_type(entry.ty) {
+            e820_type
+        } else {
+            // The memory region is unaccepted (i.e., `MemoryType::UNACCEPTED`).
+            crate::println!("[EFI stub] Accepting pending pages");
+            for page_idx in 0..entry.page_count {
+                // SAFETY: The page to accept represents a page that has not been accepted
+                // (according to the memory map returned by the UEFI firmware).
+                unsafe {
+                    tdx_guest::tdcall::accept_page(0, entry.phys_start + page_idx * PAGE_SIZE)
+                        .unwrap();
+                }
             }
+            linux_boot_params::E820Type::Ram
+        };
+
+        if num_entries != 0 {
+            let last_entry = &mut e820_table[num_entries - 1];
+            let last_typ = last_entry.typ;
+            if last_typ == typ && last_entry.addr + last_entry.size == entry.phys_start {
+                last_entry.size += entry.page_count * PAGE_SIZE;
+                continue;
+            }
+        }
+
+        if num_entries >= e820_table.len() {
+            crate::println!("[EFI stub] Warning: The number of E820 entries exceeded 128!");
             break;
         }
-        e820_table[e820_entries] = linux_boot_params::BootE820Entry {
-            addr: md.phys_start,
-            size: md.page_count * PAGE_SIZE,
-            typ: match md.ty {
-                uefi::table::boot::MemoryType::CONVENTIONAL => linux_boot_params::E820Type::Ram,
-                uefi::table::boot::MemoryType::RESERVED => linux_boot_params::E820Type::Reserved,
-                uefi::table::boot::MemoryType::ACPI_RECLAIM => linux_boot_params::E820Type::Acpi,
-                uefi::table::boot::MemoryType::ACPI_NON_VOLATILE => {
-                    linux_boot_params::E820Type::Nvs
-                }
-                #[cfg(feature = "cvm_guest")]
-                uefi::table::boot::MemoryType::UNACCEPTED => {
-                    unsafe {
-                        for page_idx in 0..md.page_count {
-                            tdx_guest::tdcall::accept_page(0, md.phys_start + page_idx * PAGE_SIZE)
-                                .unwrap();
-                        }
-                    };
-                    linux_boot_params::E820Type::Ram
-                }
-                _ => linux_boot_params::E820Type::Unusable,
-            },
+
+        e820_table[num_entries] = linux_boot_params::BootE820Entry {
+            addr: entry.phys_start,
+            size: entry.page_count * PAGE_SIZE,
+            typ,
         };
-        e820_entries += 1;
+        num_entries += 1;
     }
-    boot_params.e820_entries = e820_entries as u8;
+    boot_params.e820_entries = num_entries as u8;
 
-    unsafe {
-        crate::console::print_str("[EFI stub] Setting up the page table.\n");
-    }
-
-    // Make a new linear page table. The linear page table will be stored at
-    // 0x4000000, hoping that the firmware will not use this area.
-    let mut creator = unsafe {
-        PageTableCreator::new(
-            PageNumber::from_addr(0x4000000),
-            PageNumber::from_addr(0x8000000),
-        )
-    };
-    // Map the following regions:
-    //  - 0x0: identity map the first 4GiB;
-    //  - 0xffff8000_00000000: linear map 4GiB to low 4 GiB;
-    //  - 0xffffffff_80000000: linear map 2GiB to low 2 GiB;
-    //  - 0xffff8008_00000000: linear map 1GiB to 0x00000008_00000000.
-    let flags = Ia32eFlags::PRESENT | Ia32eFlags::WRITABLE;
-    for i in 0..4 * 1024 * 1024 * 1024 / PAGE_SIZE {
-        let from_vpn = PageNumber::from_addr(i * PAGE_SIZE);
-        let from_vpn2 = PageNumber::from_addr(i * PAGE_SIZE + 0xffff8000_00000000);
-        let to_low_pfn = PageNumber::from_addr(i * PAGE_SIZE);
-        creator.map(from_vpn, to_low_pfn, flags);
-        creator.map(from_vpn2, to_low_pfn, flags);
-    }
-    for i in 0..2 * 1024 * 1024 * 1024 / PAGE_SIZE {
-        let from_vpn = PageNumber::from_addr(i * PAGE_SIZE + 0xffffffff_80000000);
-        let to_low_pfn = PageNumber::from_addr(i * PAGE_SIZE);
-        creator.map(from_vpn, to_low_pfn, flags);
-    }
-    for i in 0..1024 * 1024 * 1024 / PAGE_SIZE {
-        let from_vpn = PageNumber::from_addr(i * PAGE_SIZE + 0xffff8008_00000000);
-        let to_pfn = PageNumber::from_addr(i * PAGE_SIZE + 0x00000008_00000000);
-        creator.map(from_vpn, to_pfn, flags);
-    }
-    // Mark this as reserved in e820 table.
-    e820_table[e820_entries] = linux_boot_params::BootE820Entry {
-        addr: 0x4000000,
-        size: creator.nr_frames_used() as u64 * PAGE_SIZE,
-        typ: linux_boot_params::E820Type::Reserved,
-    };
-    e820_entries += 1;
-    boot_params.e820_entries = e820_entries as u8;
-
-    #[cfg(feature = "debug_print")]
-    unsafe {
-        crate::console::print_str("[EFI stub] Activating the new page table.\n");
-    }
-
-    unsafe {
-        creator.activate(x86_64::registers::control::Cr3Flags::PAGE_LEVEL_CACHE_DISABLE);
-    }
-
-    #[cfg(feature = "debug_print")]
-    unsafe {
-        crate::console::print_str("[EFI stub] Page table activated.\n");
-    }
-
-    unsafe {
-        use crate::console::{print_hex, print_str};
-        print_str("[EFI stub] Entering Asterinas entrypoint at ");
-        print_hex(super::ASTER_ENTRY_POINT as u64);
-        print_str("\n");
-    }
-
-    unsafe {
-        super::call_aster_entrypoint(
-            super::ASTER_ENTRY_POINT as u64,
-            boot_params as *const _ as u64,
-        )
-    }
+    crate::println!(
+        "[EFI stub] Entering the Asterinas entry point at {:p}",
+        super::ASTER_ENTRY_POINT,
+    );
+    // SAFETY:
+    // 1. The entry point address is correct and matches the kernel ELF file.
+    // 2. The boot parameter pointer is valid and points to the correct boot parameters.
+    unsafe { super::call_aster_entrypoint(super::ASTER_ENTRY_POINT, boot_params) }
 }
 
-fn get_rsdp_addr() -> u64 {
-    use uefi::table::cfg::{ACPI2_GUID, ACPI_GUID};
-    uefi::system::with_config_table(|table| {
-        for entry in table {
-            // Prefer ACPI2 over ACPI.
-            if entry.guid == ACPI2_GUID {
-                return entry.address as usize as u64;
-            }
-            if entry.guid == ACPI_GUID {
-                return entry.address as usize as u64;
-            }
-        }
-        panic!("ACPI RSDP not found");
-    })
+fn parse_memory_type(
+    mem_type: uefi::table::boot::MemoryType,
+) -> Option<linux_boot_params::E820Type> {
+    use linux_boot_params::E820Type;
+    use uefi::table::boot::MemoryType;
+
+    match mem_type {
+        // UEFI Specification, 7.2 Memory Allocation Services:
+        //   Following the ExitBootServices() call, the image implicitly owns all unused memory in
+        //   the map. This includes memory types EfiLoaderCode, EfiLoaderData, EfiBootServicesCode,
+        //   EfiBootServicesData, and EfiConventionalMemory
+        //
+        // Note that this includes the loaded kernel! The kernel itself should take care of this.
+        //
+        // TODO: Linux takes memory attributes into account. See
+        // <https://github.com/torvalds/linux/blob/b7f94fcf55469ad3ef8a74c35b488dbfa314d1bb/arch/x86/platform/efi/efi.c#L133-L139>.
+        MemoryType::LOADER_CODE
+        | MemoryType::LOADER_DATA
+        | MemoryType::BOOT_SERVICES_CODE
+        | MemoryType::BOOT_SERVICES_DATA
+        | MemoryType::CONVENTIONAL => Some(E820Type::Ram),
+
+        // Some memory types have special meanings.
+        MemoryType::PERSISTENT_MEMORY => Some(E820Type::Pmem),
+        MemoryType::ACPI_RECLAIM => Some(E820Type::Acpi),
+        MemoryType::ACPI_NON_VOLATILE => Some(E820Type::Nvs),
+        MemoryType::UNUSABLE => Some(E820Type::Unusable),
+        MemoryType::UNACCEPTED => None,
+
+        // Other memory types are treated as reserved.
+        MemoryType::RESERVED
+        | MemoryType::RUNTIME_SERVICES_CODE
+        | MemoryType::RUNTIME_SERVICES_DATA
+        | MemoryType::MMIO
+        | MemoryType::MMIO_PORT_SPACE => Some(E820Type::Reserved),
+        _ => Some(E820Type::Reserved),
+    }
 }
