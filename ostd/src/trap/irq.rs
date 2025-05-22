@@ -139,6 +139,7 @@ pub fn disable_local() -> DisabledLocalIrqGuard {
 /// A guard for disabled local IRQs.
 #[clippy::has_significant_drop]
 #[must_use]
+#[derive(Debug)]
 pub struct DisabledLocalIrqGuard {
     was_enabled: bool,
 }
