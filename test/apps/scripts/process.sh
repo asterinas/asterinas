@@ -21,6 +21,7 @@ exit/exit_procfs
 eventfd2/eventfd2
 fork/fork
 fork_c/fork
+getcpu/getcpu
 getpid/getpid
 hello_pie/hello
 hello_world/hello_world
