@@ -149,6 +149,7 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
         let to = 0..max_paddr;
         let prop = PageProperty {
             flags: PageFlags::RW,
+            pkey: 0,
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
@@ -164,6 +165,7 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
         let from = start_va..start_va + meta_pages.size();
         let prop = PageProperty {
             flags: PageFlags::RW,
+            pkey: 0,
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
@@ -184,6 +186,7 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
         let from = LINEAR_MAPPING_BASE_VADDR + to.start..LINEAR_MAPPING_BASE_VADDR + to.end;
         let prop = PageProperty {
             flags: PageFlags::RW,
+            pkey: 0,
             cache: CachePolicy::Uncacheable,
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };
@@ -206,6 +209,7 @@ pub fn init_kernel_page_table(meta_pages: Segment<MetaPageMeta>) {
         let from = to.start + offset..to.end + offset;
         let prop = PageProperty {
             flags: PageFlags::RWX,
+            pkey: 0,
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::GLOBAL,
         };

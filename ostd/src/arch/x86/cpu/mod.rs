@@ -17,3 +17,35 @@ pub fn sleep_for_interrupt() {
     crate::task::atomic_mode::might_sleep();
     x86_64::instructions::hlt();
 }
+
+/// Writes the `PKRU` register.
+pub fn write_pkru(pkru: u32) {
+    // SAFETY: Writing to PKRU is safe since the kernel memory access is not
+    // related to the protection keys for the user-mode pages.
+    unsafe {
+        core::arch::asm! {
+            "wrpkru",
+            in("eax") pkru,
+            in("ecx") 0,
+            in("edx") 0,
+            options(nostack, preserves_flags)
+        }
+    }
+}
+
+/// Reads the `PKRU` register.
+pub fn read_pkru() -> u32 {
+    let mut pkru: u32;
+    // SAFETY: Reading from PKRU is safe since the kernel memory access is not
+    // related to the protection keys for the user-mode pages.
+    unsafe {
+        core::arch::asm! {
+            "rdpkru",
+            in("ecx") 0,
+            out("eax") pkru,
+            out("edx") _,
+            options(nostack, preserves_flags)
+        }
+    }
+    pkru
+}

@@ -15,7 +15,7 @@ support the loading of Linux kernel modules.
 ## System Calls
 
 At the time of writing,
-Asterinas implements 204 out of the 336 system calls
+Asterinas implements 213 out of the 336 system calls
 provided by Linux on x86-64 architecture.
 
 | Numbers | Names            | Is Implemented  |
@@ -340,6 +340,9 @@ provided by Linux on x86-64 architecture.
 | 322	  | execveat         | ✅              |
 | 327	  | preadv2          | ✅              |
 | 328	  | pwritev2         | ✅              |
+| 329     | pkey_mprotect    | ✅              |
+| 330     | pkey_alloc       | ✅              |
+| 331     | pkey_free        | ✅              |
 | 332     | statx            | ✅              |
 | 435	  | clone3           | ✅              |
 | 439     | faccessat2       | ✅              |

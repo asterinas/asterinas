@@ -126,6 +126,7 @@ impl PageTableEntryTrait for PageTableEntry {
 
         PageProperty {
             flags,
+            pkey: 0,
             cache,
             priv_flags: PrivFlags::empty(),
         }

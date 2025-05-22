@@ -12,7 +12,7 @@ use ostd::mm::{
     UFrame, VmSpace,
 };
 
-use super::interval_set::Interval;
+use super::{interval_set::Interval, pkeys::PKey};
 use crate::{
     prelude::*,
     thread::exception::PageFaultInfo,
@@ -66,6 +66,10 @@ pub(super) struct VmMapping {
     ///
     /// All pages within the same `VmMapping` have the same permissions.
     perms: VmPerms,
+    /// The protection key of the mapping.
+    ///
+    /// See [`super::pkeys`] for more details.
+    pkey: PKey,
 }
 
 impl Interval<Vaddr> for VmMapping {
@@ -84,6 +88,7 @@ impl VmMapping {
         is_shared: bool,
         handle_page_faults_around: bool,
         perms: VmPerms,
+        pkey: PKey,
     ) -> Self {
         Self {
             map_size,
@@ -92,6 +97,7 @@ impl VmMapping {
             is_shared,
             handle_page_faults_around,
             perms,
+            pkey,
         }
     }
 
@@ -235,7 +241,8 @@ impl VmMapping {
                     if is_write {
                         page_flags |= PageFlags::DIRTY;
                     }
-                    let map_prop = PageProperty::new(page_flags, CachePolicy::Writeback);
+                    let map_prop =
+                        PageProperty::new(page_flags, self.pkey as u8, CachePolicy::Writeback);
 
                     cursor.map(frame, map_prop);
                 }
@@ -300,7 +307,8 @@ impl VmMapping {
                         // if it is really so. Then the hardware won't bother to update
                         // the accessed bit of the page table on following accesses.
                         let page_flags = PageFlags::from(vm_perms) | PageFlags::ACCESSED;
-                        let page_prop = PageProperty::new(page_flags, CachePolicy::Writeback);
+                        let page_prop =
+                            PageProperty::new(page_flags, self.pkey as u8, CachePolicy::Writeback);
                         let frame = commit_fn()?;
                         cursor.map(frame, page_prop);
                     } else {
@@ -429,12 +437,15 @@ impl VmMapping {
     }
 
     /// Change the perms of the mapping.
-    pub(super) fn protect(self, vm_space: &VmSpace, perms: VmPerms) -> Self {
+    pub(super) fn protect(self, vm_space: &VmSpace, perms: VmPerms, pkey: PKey) -> Self {
         let range = self.range();
 
         let mut cursor = vm_space.cursor_mut(&range).unwrap();
 
-        let op = |p: &mut PageProperty| p.flags = perms.into();
+        let op = |p: &mut PageProperty| {
+            p.flags = perms.into();
+            p.pkey = pkey as u8;
+        };
         while cursor.virt_addr() < range.end {
             if let Some(va) = cursor.protect_next(range.end - cursor.virt_addr(), op) {
                 cursor.flusher().issue_tlb_flush(TlbFlushOp::Range(va));
@@ -445,7 +456,11 @@ impl VmMapping {
         cursor.flusher().dispatch_tlb_flush();
         cursor.flusher().sync_tlb_flush();
 
-        Self { perms, ..self }
+        Self {
+            perms,
+            pkey,
+            ..self
+        }
     }
 }
 

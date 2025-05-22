@@ -139,6 +139,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
             let prop = pte.prop();
             pte.set_prop(PageProperty::new(
                 prop.flags | PTE_POINTS_TO_FIRMWARE_PT,
+                0,
                 prop.cache,
             ));
         });
@@ -273,7 +274,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
 
         let mut pte = E::new_pt(frame_paddr);
         let prop = pte.prop();
-        pte.set_prop(PageProperty::new(prop.flags, prop.cache));
+        pte.set_prop(PageProperty::new(prop.flags, 0, prop.cache));
 
         pte
     }

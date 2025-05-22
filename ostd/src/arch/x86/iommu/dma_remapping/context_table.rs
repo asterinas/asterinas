@@ -309,6 +309,7 @@ impl ContextTable {
                 &(paddr..paddr + PAGE_SIZE),
                 PageProperty {
                     flags: PageFlags::RW,
+                    pkey: 0,
                     cache: CachePolicy::Uncacheable,
                     priv_flags: PrivFlags::empty(),
                 },
