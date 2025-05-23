@@ -27,16 +27,34 @@ impl CpuId {
     pub const fn as_usize(self) -> usize {
         self.0 as usize
     }
+
+    /// Returns the ID of the current CPU.
+    ///
+    /// This function is safe to call, but is vulnerable to races. The returned CPU
+    /// ID may be outdated if the task migrates to another CPU.
+    ///
+    /// To ensure that the CPU ID is up-to-date, do it under any guards that
+    /// implement the [`PinCurrentCpu`] trait.
+    pub fn current_racy() -> Self {
+        #[cfg(debug_assertions)]
+        assert!(IS_CURRENT_CPU_INITED.load());
+
+        Self(CURRENT_CPU.load())
+    }
 }
 
+/// The error type returned when converting an out-of-range integer to [`CpuId`].
+#[derive(Debug, Clone, Copy)]
+pub struct CpuIdFromIntError;
+
 impl TryFrom<usize> for CpuId {
-    type Error = &'static str;
+    type Error = CpuIdFromIntError;
 
     fn try_from(value: usize) -> Result<Self, Self::Error> {
         if value < num_cpus() {
             Ok(CpuId(value as u32))
         } else {
-            Err("The given CPU ID is out of range")
+            Err(CpuIdFromIntError)
         }
     }
 }
@@ -123,22 +141,8 @@ unsafe fn set_this_cpu_id(id: u32) {
 pub unsafe trait PinCurrentCpu {
     /// Returns the ID of the current CPU.
     fn current_cpu(&self) -> CpuId {
-        current_cpu_racy()
+        CpuId::current_racy()
     }
-}
-
-/// Returns the ID of the current CPU.
-///
-/// This function is safe to call, but is vulnerable to races. The returned CPU
-/// ID may be outdated if the task migrates to another CPU.
-///
-/// To ensure that the CPU ID is up-to-date, do it under any guards that
-/// implements the [`PinCurrentCpu`] trait.
-pub fn current_cpu_racy() -> CpuId {
-    #[cfg(debug_assertions)]
-    assert!(IS_CURRENT_CPU_INITED.load());
-
-    CpuId(CURRENT_CPU.load())
 }
 
 // SAFETY: A guard that enforces the atomic mode requires disabling any

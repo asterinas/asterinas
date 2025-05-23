@@ -33,7 +33,7 @@ use kcmdline::KCmdlineArg;
 use ostd::{
     arch::qemu::{exit_qemu, QemuExitCode},
     boot::boot_info,
-    cpu::{CpuId, CpuSet, PinCurrentCpu},
+    cpu::{CpuId, CpuSet},
 };
 use process::{spawn_init_process, Process};
 use sched::SchedPolicy;
@@ -104,22 +104,21 @@ pub fn init() {
 
 fn ap_init() {
     fn ap_idle_thread() {
-        let preempt_guard = ostd::task::disable_preempt();
-        let cpu_id = preempt_guard.current_cpu();
-        drop(preempt_guard);
-        log::info!("Kernel idle thread for CPU #{} started.", cpu_id.as_usize());
+        log::info!(
+            "Kernel idle thread for CPU #{} started.",
+            // No races because `ap_idle_thread` runs on a certain AP.
+            CpuId::current_racy().as_usize(),
+        );
 
         loop {
             crate::thread::Thread::yield_now();
             ostd::cpu::sleep_for_interrupt();
         }
     }
-    let preempt_guard = ostd::task::disable_preempt();
-    let cpu_id = preempt_guard.current_cpu();
-    drop(preempt_guard);
 
     ThreadOptions::new(ap_idle_thread)
-        .cpu_affinity(cpu_id.into())
+        // No races because `ap_init` runs on a certain AP.
+        .cpu_affinity(CpuId::current_racy().into())
         .sched_policy(SchedPolicy::Idle)
         .spawn();
 }
