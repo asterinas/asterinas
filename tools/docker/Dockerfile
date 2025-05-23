@@ -286,7 +286,7 @@ RUN rm -rf bazel
 FROM build-bazel AS syscall_test
 
 # Build the syscall test binaries
-COPY test/syscall_test /root/syscall_test
+COPY test/syscall_test/gvisor /root/syscall_test
 WORKDIR /root/syscall_test
 RUN export BUILD_DIR=build && \
     make ${BUILD_DIR}/syscall_test_bins
