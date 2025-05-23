@@ -122,37 +122,30 @@ impl SysNode for RootNode {
         &self.attrs
     }
 
-    fn read_attr(&self, _name: &str, _writer: &mut VmWriter) -> Result<usize> {
-        Err(Error::AttributeError)
-    }
-
-    fn write_attr(&self, _name: &str, _reader: &mut VmReader) -> Result<usize> {
-        Err(Error::AttributeError)
-    }
-}
-
-impl SysBranchNode for RootNode {
-    fn visit_child_with(&self, name: &str, f: &mut dyn FnMut(Option<&dyn SysNode>)) {
-        let children_guard = self.children.read();
-        children_guard
+    fn read_attr(&self, name: &str, writer: &mut VmWriter) -> Result<usize> {
+        self.node_attrs()
             .get(name)
-            .map(|child| {
-                if let Some(node_ref) = child.arc_as_node().as_deref() {
-                    f(Some(node_ref));
+            .ok_or(Error::AttributeError)
+            .and_then(|attr| {
+                if attr.flags().contains(SysAttrFlags::CAN_READ) {
+                    attr.read_attr(writer)
                 } else {
-                    f(None);
+                    Err(Error::PermissionDenied)
                 }
             })
-            .unwrap_or_else(|| f(None));
     }
 
-    fn visit_children_with(&self, _min_id: u64, f: &mut dyn FnMut(&Arc<dyn SysObj>) -> Option<()>) {
-        let children_guard = self.children.read();
-        for child_arc in children_guard.values() {
-            if f(child_arc).is_none() {
-                break;
-            }
-        }
+    fn write_attr(&self, name: &str, reader: &mut VmReader) -> Result<usize> {
+        self.node_attrs()
+            .get(name)
+            .ok_or(Error::AttributeError)
+            .and_then(|attr| {
+                if attr.flags().contains(SysAttrFlags::CAN_WRITE) {
+                    attr.write_attr(reader)
+                } else {
+                    Err(Error::PermissionDenied)
+                }
+            })
     }
 
     fn child(&self, name: &str) -> Option<Arc<dyn SysObj>> {

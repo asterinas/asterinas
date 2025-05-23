@@ -373,13 +373,20 @@ impl Inode for SysFsInode {
         self.read_direct_at(offset, buf)
     }
 
-    fn read_direct_at(&self, _offset: usize, buf: &mut VmWriter) -> Result<usize> {
-        // TODO: it is unclear whether we should simply ignore the offset
-        // or report errors if it is non-zero.
-
+    fn read_direct_at(&self, offset: usize, buf: &mut VmWriter) -> Result<usize> {
         let InnerNode::Attr(attr, leaf) = &self.inner_node else {
             return Err(Error::new(Errno::EINVAL));
         };
+
+        // Return zero if the `offset` is non-zero.
+        //
+        // The offset will be non-zero when doing some read operations that will determine
+        // whether to proceed with the next read operation based on whether the current length
+        // of the reading result is zero. In this situation, after the first read operation,
+        // there will be a second read operation with a non-zero offset.
+        if offset != 0 {
+            return Ok(0);
+        }
 
         // TODO: check read permission
         Ok(leaf.read_attr(attr.name(), buf)?)

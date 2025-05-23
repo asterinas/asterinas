@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::collections::BTreeMap;
+#![expect(clippy::type_complexity)]
+
+use alloc::{collections::BTreeMap, sync::Arc};
 use core::fmt::Debug;
 
 use bitflags::bitflags;
+use ostd::mm::{VmReader, VmWriter};
 
 use super::{Error, Result, SysStr};
 
@@ -29,7 +32,7 @@ impl Default for SysAttrFlags {
 
 /// An attribute may be fetched or updated via the methods of `SysNode`
 /// such as `SysNode::read_attr` and  `SysNode::write_attr`.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SysAttr {
     /// Local ID within the node's `SysAttrSet`. Unique within the set.
     id: u8,
@@ -37,15 +40,48 @@ pub struct SysAttr {
     name: SysStr,
     /// Flags defining the behavior and permissions of the attribute.
     flags: SysAttrFlags,
-    // Potentially add read/write handler functions or trait objects later
-    // read_handler: fn(...) -> Result<usize>,
-    // write_handler: fn(...) -> Result<usize>,
+    /// Function to handle reading the attribute.
+    read_handler: Arc<dyn Fn(&mut VmWriter) -> Result<usize> + Send + Sync>,
+    /// Function to handle writing to the attribute.
+    write_handler: Arc<dyn Fn(&mut VmReader) -> Result<usize> + Send + Sync>,
+}
+
+impl Debug for SysAttr {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("SysAttr")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("flags", &self.flags)
+            .finish()
+    }
 }
 
 impl SysAttr {
     /// Creates a new attribute.
-    pub fn new(id: u8, name: SysStr, flags: SysAttrFlags) -> Self {
-        Self { id, name, flags }
+    pub fn new(
+        id: u8,
+        name: SysStr,
+        flags: SysAttrFlags,
+        read_handler: impl Fn(&mut VmWriter) -> Result<usize> + Send + Sync + 'static,
+        write_handler: impl Fn(&mut VmReader) -> Result<usize> + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            id,
+            name,
+            flags,
+            read_handler: Arc::new(read_handler),
+            write_handler: Arc::new(write_handler),
+        }
+    }
+
+    /// Reads the value of the attribute.
+    pub fn read_attr(&self, writer: &mut VmWriter) -> Result<usize> {
+        (self.read_handler)(writer)
+    }
+
+    /// Writes the value of the attribute.
+    pub fn write_attr(&self, reader: &mut VmReader) -> Result<usize> {
+        (self.write_handler)(reader)
     }
 
     /// Returns the unique ID of the attribute within its set.
@@ -126,14 +162,20 @@ impl SysAttrSetBuilder {
     /// Adds an attribute definition to the builder.
     ///
     /// If an attribute with the same name already exists, this is a no-op.
-    pub fn add(&mut self, name: SysStr, flags: SysAttrFlags) -> &mut Self {
+    pub fn add(
+        &mut self,
+        name: SysStr,
+        flags: SysAttrFlags,
+        read_handler: impl Fn(&mut VmWriter) -> Result<usize> + Send + Sync + 'static,
+        write_handler: impl Fn(&mut VmReader) -> Result<usize> + Send + Sync + 'static,
+    ) -> &mut Self {
         if self.attrs.contains_key(&name) {
             return self;
         }
 
         let id = self.next_id;
         self.next_id += 1;
-        let new_attr = SysAttr::new(id, name.clone(), flags);
+        let new_attr = SysAttr::new(id, name.clone(), flags, read_handler, write_handler);
         self.attrs.insert(name, new_attr);
         self
     }
