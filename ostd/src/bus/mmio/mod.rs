@@ -10,7 +10,7 @@ pub mod common_device;
 use alloc::vec::Vec;
 use core::ops::Range;
 
-use log::debug;
+use log::{debug, warn};
 
 use self::bus::MmioBus;
 use crate::{
@@ -38,6 +38,19 @@ pub(crate) fn init() {
         });
         // FIXME: The address 0xFEB0_0000 is obtained from an instance of microvm, and it may not work in other architecture.
         iter_range(0xFEB0_0000..0xFEB0_4000);
+    }
+
+    #[cfg(target_arch = "riscv64")]
+    {
+        // An example virtio_block device taking 512 bytes at 0x1e000, interrupt 42.
+        // ```dts
+        // virtio_block@1e000 {
+        //     compatible = "virtio,mmio";
+        //     reg = <0x1e000 0x200>;
+        //     interrupts = <42>;
+        // }
+        // ```
+        iter_device_tree();
     }
 }
 
@@ -70,6 +83,83 @@ fn iter_range(range: Range<usize>) {
             // If one IOApic, then start: 16, end 23
             io_apic.enable(24 - device_count, handle.clone()).unwrap();
             let device = MmioCommonDevice::new(current, handle);
+            lock.register_mmio_device(device);
+        }
+    }
+}
+
+#[cfg(target_arch = "riscv64")]
+fn iter_device_tree() {
+    debug!("[Virtio]: Iter device tree");
+    use crate::arch::boot::DEVICE_TREE;
+
+    let mut lock = MMIO_BUS.lock();
+    let device_tree = DEVICE_TREE.get().unwrap();
+
+    for node in device_tree.all_nodes() {
+        let Some(compats) = node.compatible() else {
+            continue;
+        };
+        if compats.all().any(|s| s == "virtio,mmio") {
+            // Get the base address and size from the reg property
+            let Some(mut reg_iter) = node.reg() else {
+                continue;
+            };
+            let Some(region) = reg_iter.next() else {
+                continue;
+            };
+            let base_addr = region.starting_address as usize;
+            let _size = region.size.unwrap_or(0x200); // Default size if not specified
+
+            // Check if the device has the correct magic value
+            // SAFETY: It only reads the value and checks if the magic value matches 0x74726976
+            use core::ptr::read_volatile;
+            let magic = unsafe { read_volatile(paddr_to_vaddr(base_addr) as *const u32) };
+            if magic != VIRTIO_MMIO_MAGIC {
+                // required by virito-mmio specification
+                warn!(
+                    "[Virtio]: device at {:x} with wrong MAGIC number, got {:x}, expecting {:x}",
+                    base_addr, magic, VIRTIO_MMIO_MAGIC
+                );
+                continue;
+            }
+            // Read device id
+            let device_id = unsafe { *(paddr_to_vaddr(base_addr + 8) as *const u32) };
+            if device_id == 0 {
+                warn!(
+                    "[Virtio]: device at {:x} has device_id=0, skipping",
+                    base_addr
+                );
+                continue;
+            }
+
+            // Get the interrupt information
+            let Some(mut interrupts) = node.interrupts() else {
+                // required by virito-mmio specification
+                warn!(
+                    "[Virtio]: device_id={} without interrupts property",
+                    device_id
+                );
+                continue;
+            };
+            let Some(interrupt_num) = interrupts.next() else {
+                // required by virito-mmio specification
+                warn!(
+                    "[Virtio]: device_id={} with malformed interrupts property",
+                    device_id
+                );
+                continue;
+            };
+            // let handle = IrqLine::alloc().unwrap();
+            let Ok(handle) = IrqLine::alloc_specific(interrupt_num as u8) else {
+                // Cannot allocate this interrupt number
+                warn!(
+                    "[Virtio]: unable to allocate IrqLine for device={}, interrupt number={}",
+                    device_id, interrupt_num
+                );
+                continue;
+            };
+            let device = MmioCommonDevice::new(base_addr, handle);
             lock.register_mmio_device(device);
         }
     }
