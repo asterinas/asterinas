@@ -6,7 +6,7 @@ use alloc::{
     sync::{Arc, Weak},
     vec::Vec,
 };
-use core::time::Duration;
+use core::{cmp::max, time::Duration};
 
 use aster_systree::{
     SysAttr, SysAttrFlags, SysBranchNode, SysNode, SysNodeId, SysNodeType, SysObj, SysStr,
@@ -496,7 +496,7 @@ impl Inode for SysFsInode {
                 }
             }
             count += 1;
-            last_ino = dentry.ino;
+            last_ino = max(last_ino, dentry.ino);
         }
 
         if count == 0 {
