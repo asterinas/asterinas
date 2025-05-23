@@ -20,7 +20,7 @@ use super::{
 
 #[derive(Debug)]
 struct DeviceNode {
-    fields: SysBranchNodeFields<dyn SysObj>,
+    fields: SysBranchNodeFields,
     self_ref: Weak<Self>,
 }
 
@@ -28,11 +28,23 @@ impl DeviceNode {
     fn new(name: &str) -> Arc<Self> {
         let mut builder = SysAttrSetBuilder::new();
         builder
-            .add(Cow::Borrowed("model"), SysAttrFlags::CAN_READ)
-            .add(Cow::Borrowed("vendor"), SysAttrFlags::CAN_READ)
+            .add(
+                Cow::Borrowed("model"),
+                SysAttrFlags::CAN_READ,
+                |_| Ok(0),
+                |_| Ok(0),
+            )
+            .add(
+                Cow::Borrowed("vendor"),
+                SysAttrFlags::CAN_READ,
+                |_| Ok(0),
+                |_| Ok(0),
+            )
             .add(
                 Cow::Borrowed("status"),
                 SysAttrFlags::CAN_READ | SysAttrFlags::CAN_WRITE,
+                |_| Ok(0),
+                |_| Ok(0),
             );
 
         let attrs = builder.build().expect("Failed to build attribute set");
