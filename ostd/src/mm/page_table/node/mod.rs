@@ -102,49 +102,6 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> RawPageTableNode<E, C> {
         }
     }
 
-    /// Activates the page table assuming it is a root page table.
-    ///
-    /// Here we ensure not dropping an active page table by making a
-    /// processor a page table owner. When activating a page table, the
-    /// reference count of the last activated page table is decremented.
-    /// And that of the current page table is incremented.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that the page table to be activated has
-    /// proper mappings for the kernel and has the correct const parameters
-    /// matching the current CPU.
-    ///
-    /// # Panics
-    ///
-    /// Only top-level page tables can be activated using this function.
-    pub(crate) unsafe fn activate(&self) {
-        use crate::{
-            arch::mm::{activate_page_table, current_page_table_paddr},
-            mm::CachePolicy,
-        };
-
-        assert_eq!(self.level, C::NR_LEVELS);
-
-        let last_activated_paddr = current_page_table_paddr();
-
-        if last_activated_paddr == self.raw {
-            return;
-        }
-
-        activate_page_table(self.raw, CachePolicy::Writeback);
-
-        // Increment the reference count of the current page table.
-        self.inc_ref_count();
-
-        // Restore and drop the last activated page table.
-        drop(Self {
-            raw: last_activated_paddr,
-            level: C::NR_LEVELS,
-            _phantom: PhantomData,
-        });
-    }
-
     /// Activates the (root) page table assuming it is the first activation.
     ///
     /// It will not try dropping the last activate page table. It is the same

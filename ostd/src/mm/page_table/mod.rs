@@ -90,11 +90,36 @@ pub struct PageTable<
 }
 
 impl PageTable<UserMode> {
-    pub fn activate(&self) {
-        // SAFETY: The usermode page table is safe to activate since the kernel
-        // mappings are shared.
+    // pub fn activate(&self) {
+    //     // SAFETY: The usermode page table is safe to activate since the kernel
+    //     // mappings are shared.
+    //     unsafe {
+    //         self.root.activate();
+    //     }
+    // }
+
+    /// Activates the page table with the specified ASID.
+    ///
+    /// # Safety
+    ///
+    /// The user-mode page table is safe to activate since the kernel mappings are shared.
+    pub fn activate_with_asid(&self, asid: u16) {
+        // If ASID is ASID_FLUSH_REQUIRED, use 0 as actual ASID
+        let actual_asid = if asid == crate::mm::asid_allocation::ASID_FLUSH_REQUIRED {
+            0
+        } else {
+            asid
+        };
+
+        let root_pt_cache = crate::mm::CachePolicy::Writeback;
+
+        // Safety: We ensure this is a valid page table root address and ASID
         unsafe {
-            self.root.activate();
+            crate::arch::mm::activate_page_table_with_asid(
+                self.root.paddr(),
+                actual_asid,
+                root_pt_cache,
+            );
         }
     }
 
