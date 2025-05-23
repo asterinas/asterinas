@@ -5,8 +5,9 @@ mod inode;
 #[cfg(ktest)]
 mod test;
 
-use alloc::sync::Arc;
+use alloc::{borrow::Cow, sync::Arc};
 
+use aster_systree::SysAttrSet;
 use spin::Once;
 
 pub use self::{fs::SysFs, inode::SysFsInode};
@@ -22,6 +23,12 @@ pub fn singleton() -> &'static Arc<SysFs> {
 /// Ensures that the singleton is created by calling it.
 /// Should be called during kernel filesystem initialization, *after* aster_systree::init().
 pub fn init() {
+    let sys_tree = aster_systree::singleton();
+    // `/sys/fs` serves as a centralized location for managing and interacting with various
+    // filesystem-related and kernel-level cgroups configurations.
+    sys_tree
+        .root()
+        .create_normal_child(Cow::Borrowed("fs"), SysAttrSet::new_empty());
     // Ensure systree is initialized first. This should be handled by the kernel's init order.
     SYSFS_SINGLETON.call_once(|| SysFs::new());
 }
