@@ -7,9 +7,13 @@ use core::{
 };
 
 use align_ext::AlignExt;
-use ostd::mm::{
-    tlb::TlbFlushOp, vm_space::VmItem, CachePolicy, FrameAllocOptions, PageFlags, PageProperty,
-    UFrame, VmSpace,
+use ostd::{
+    io::IoMem,
+    mm::{
+        tlb::TlbFlushOp, vm_space::VmItem, CachePolicy, FrameAllocOptions, PageFlags, PageProperty,
+        UFrame, VmSpace,
+    },
+    task::disable_preempt,
 };
 
 use super::interval_set::Interval;
@@ -49,11 +53,12 @@ pub(super) struct VmMapping {
     /// The base address relative to the root VMAR where the VMO is mapped.
     map_to_addr: Vaddr,
     /// Specific physical pages that need to be mapped. If this field is
-    /// `None`, it means that the mapping is an independent anonymous mapping.
+    /// [`MappedVmObj::None`], it means that the mapping is an independent
+    /// anonymous mapping.
     ///
     /// The start of the virtual address maps to the start of the range
-    /// specified in [`MappedVmo`].
-    vmo: Option<MappedVmo>,
+    /// specified in [`MappedVmo`] or [`MappedIOMem`].
+    mapped_vmo: MappedVmObj,
     /// Whether the mapping is shared.
     ///
     /// The updates to a shared mapping are visible among processes, or carried
@@ -80,7 +85,7 @@ impl VmMapping {
     pub(super) fn new(
         map_size: NonZeroUsize,
         map_to_addr: Vaddr,
-        vmo: Option<MappedVmo>,
+        vmo: MappedVmObj,
         is_shared: bool,
         handle_page_faults_around: bool,
         perms: VmPerms,
@@ -88,7 +93,7 @@ impl VmMapping {
         Self {
             map_size,
             map_to_addr,
-            vmo,
+            mapped_vmo: vmo,
             is_shared,
             handle_page_faults_around,
             perms,
@@ -97,7 +102,7 @@ impl VmMapping {
 
     pub(super) fn new_fork(&self) -> Result<VmMapping> {
         Ok(VmMapping {
-            vmo: self.vmo.as_ref().map(|vmo| vmo.dup()).transpose()?,
+            mapped_vmo: self.mapped_vmo.as_ref().unwrap().dup()?,
             ..*self
         })
     }
@@ -146,15 +151,18 @@ impl VmMapping {
         let page_aligned_addr = address.align_down(PAGE_SIZE);
         let is_write = page_fault_info.required_perms.contains(VmPerms::WRITE);
 
-        if !is_write && self.vmo.is_some() && self.handle_page_faults_around {
+        if !is_write && self.mapped_vmo.vmo().is_some() && self.handle_page_faults_around {
             let res = self.handle_page_faults_around(vm_space, address);
 
             // Errors caused by the "around" pages should be ignored, so here we
             // only return the error if the faulting page is still not mapped.
             if res.is_err() {
-                let mut cursor =
-                    vm_space.cursor(&(page_aligned_addr..page_aligned_addr + PAGE_SIZE))?;
-                if let VmItem::Mapped { .. } = cursor.query().unwrap() {
+                let preempt_guard = disable_preempt();
+                let mut cursor = vm_space.cursor(
+                    &preempt_guard,
+                    &(page_aligned_addr..page_aligned_addr + PAGE_SIZE),
+                )?;
+                if let VmItem::MappedIO { .. } = cursor.query().unwrap() {
                     return Ok(());
                 }
             }
@@ -163,11 +171,14 @@ impl VmMapping {
         }
 
         'retry: loop {
-            let mut cursor =
-                vm_space.cursor_mut(&(page_aligned_addr..page_aligned_addr + PAGE_SIZE))?;
+            let preempt_guard = disable_preempt();
+            let mut cursor = vm_space.cursor_mut(
+                &preempt_guard,
+                &(page_aligned_addr..page_aligned_addr + PAGE_SIZE),
+            )?;
 
             match cursor.query().unwrap() {
-                VmItem::Mapped {
+                VmItem::MappedIO {
                     va,
                     frame,
                     mut prop,
@@ -206,6 +217,11 @@ impl VmMapping {
                     }
                     cursor.flusher().sync_tlb_flush();
                 }
+                VmItem::MappedUntracked { .. } => {
+                    // The page of I/O memory should not go through the
+                    // page fault handler.
+                    panic!("Untracked page fault");
+                }
                 VmItem::NotMapped { .. } => {
                     // Map a new frame to the page fault address.
                     let (frame, is_readonly) = match self.prepare_page(address, is_write) {
@@ -213,8 +229,9 @@ impl VmMapping {
                         Err(VmoCommitError::Err(e)) => return Err(e),
                         Err(VmoCommitError::NeedIo(index)) => {
                             drop(cursor);
-                            self.vmo
-                                .as_ref()
+                            drop(preempt_guard);
+                            self.mapped_vmo
+                                .vmo()
                                 .unwrap()
                                 .commit_on(index, CommitFlags::empty())?;
                             continue 'retry;
@@ -251,8 +268,13 @@ impl VmMapping {
         write: bool,
     ) -> core::result::Result<(UFrame, bool), VmoCommitError> {
         let mut is_readonly = false;
-        let Some(vmo) = &self.vmo else {
-            return Ok((FrameAllocOptions::new().alloc_frame()?.into(), is_readonly));
+        let Some(vmo) = &self.mapped_vmo.vmo() else {
+            if let Some(_) = self.mapped_vmo.iomem() {
+                panic!("I/O memory mapping should not go through the page fault handler");
+            } else {
+                // Anonymous mapping. Allocate a new frame.
+                return Ok((FrameAllocOptions::new().alloc_frame()?.into(), is_readonly));
+            }
         };
 
         let page_offset = page_fault_addr.align_down(PAGE_SIZE) - self.map_to_addr;
@@ -279,7 +301,7 @@ impl VmMapping {
         const SURROUNDING_PAGE_NUM: usize = 16;
         const SURROUNDING_PAGE_ADDR_MASK: usize = !(SURROUNDING_PAGE_NUM * PAGE_SIZE - 1);
 
-        let vmo = self.vmo.as_ref().unwrap();
+        let vmo = self.mapped_vmo.vmo().unwrap();
         let around_page_addr = page_fault_addr & SURROUNDING_PAGE_ADDR_MASK;
         let size = min(vmo.size(), self.map_size.get());
 
@@ -291,7 +313,8 @@ impl VmMapping {
 
         let vm_perms = self.perms - VmPerms::WRITE;
         'retry: loop {
-            let mut cursor = vm_space.cursor_mut(&(start_addr..end_addr))?;
+            let preempt_guard = disable_preempt();
+            let mut cursor = vm_space.cursor_mut(&preempt_guard, &(start_addr..end_addr))?;
             let operate =
                 move |commit_fn: &mut dyn FnMut()
                     -> core::result::Result<UFrame, VmoCommitError>| {
@@ -317,6 +340,7 @@ impl VmMapping {
             match vmo.try_operate_on_range(&(start_offset..end_offset), operate) {
                 Ok(_) => return Ok(()),
                 Err(VmoCommitError::NeedIo(index)) => {
+                    drop(preempt_guard);
                     vmo.commit_on(index, CommitFlags::empty())?;
                     start_addr = index * PAGE_SIZE + self.map_to_addr;
                     continue 'retry;
@@ -346,16 +370,26 @@ impl VmMapping {
         debug_assert!(self.map_to_addr < at && at < self.map_end());
         debug_assert!(at % PAGE_SIZE == 0);
 
-        let (mut l_vmo, mut r_vmo) = (None, None);
+        let (mut l_vmo, mut r_vmo) = (MappedVmObj::None, MappedVmObj::None);
 
-        if let Some(vmo) = self.vmo {
+        if let Some(vmo) = self.mapped_vmo.vmo() {
             let at_offset = vmo.range.start + at - self.map_to_addr;
 
             let l_range = vmo.range.start..at_offset;
             let r_range = at_offset..vmo.range.end;
 
-            l_vmo = Some(MappedVmo::new(vmo.vmo.dup()?, l_range));
-            r_vmo = Some(MappedVmo::new(vmo.vmo.dup()?, r_range));
+            l_vmo = MappedVmObj::Vmo(MappedVmo::new(vmo.vmo.dup()?, l_range));
+            r_vmo = MappedVmObj::Vmo(MappedVmo::new(vmo.vmo.dup()?, r_range));
+        } else {
+            if let Some(io_mem) = self.mapped_vmo.iomem() {
+                let at_offset = io_mem.range.start + at - self.map_to_addr;
+
+                let l_range = io_mem.range.start..at_offset;
+                let r_range = at_offset..io_mem.range.end;
+
+                l_vmo = MappedVmObj::IoMem(MappedIOMem::new(io_mem.io_mem().clone(), l_range));
+                r_vmo = MappedVmObj::IoMem(MappedIOMem::new(io_mem.io_mem().clone(), r_range));
+            }
         }
 
         let left_size = at - self.map_to_addr;
@@ -363,13 +397,13 @@ impl VmMapping {
         let left = Self {
             map_to_addr: self.map_to_addr,
             map_size: NonZeroUsize::new(left_size).unwrap(),
-            vmo: l_vmo,
+            mapped_vmo: l_vmo,
             ..self
         };
         let right = Self {
             map_to_addr: at,
             map_size: NonZeroUsize::new(right_size).unwrap(),
-            vmo: r_vmo,
+            mapped_vmo: r_vmo,
             ..self
         };
 
@@ -419,8 +453,10 @@ impl VmMapping {
 impl VmMapping {
     /// Unmaps the mapping from the VM space.
     pub(super) fn unmap(self, vm_space: &VmSpace) -> Result<()> {
+        let preempt_guard = disable_preempt();
+
         let range = self.range();
-        let mut cursor = vm_space.cursor_mut(&range)?;
+        let mut cursor = vm_space.cursor_mut(&preempt_guard, &range)?;
         cursor.unmap(range.len());
         cursor.flusher().dispatch_tlb_flush();
         cursor.flusher().sync_tlb_flush();
@@ -430,9 +466,10 @@ impl VmMapping {
 
     /// Change the perms of the mapping.
     pub(super) fn protect(self, vm_space: &VmSpace, perms: VmPerms) -> Self {
+        let preempt_guard = disable_preempt();
         let range = self.range();
 
-        let mut cursor = vm_space.cursor_mut(&range).unwrap();
+        let mut cursor = vm_space.cursor_mut(&preempt_guard, &range).unwrap();
 
         let op = |p: &mut PageProperty| p.flags = perms.into();
         while cursor.virt_addr() < range.end {
@@ -521,5 +558,89 @@ impl MappedVmo {
             vmo: self.vmo.dup()?,
             range: self.range.clone(),
         })
+    }
+}
+
+/// A wrapper that represents a mapped [`IoMem`] and provide required
+/// functionalities that need to be provided to mappings from the I/O memory.
+#[derive(Debug)]
+pub(super) struct MappedIOMem {
+    io_mem: IoMem,
+    range: Range<usize>,
+}
+
+impl MappedIOMem {
+    /// Creates a new `MappedIOMem` instance with specified IO memory and address range.
+    pub(super) fn new(io_mem: IoMem, range: Range<usize>) -> Self {
+        Self { io_mem, range }
+    }
+
+    /// Returns the size of the mapped IO memory region in bytes.
+    #[allow(dead_code)]
+    pub(super) fn size(&self) -> usize {
+        self.range.len()
+    }
+
+    /// Gets a reference to the underlying `IoMem` object.
+    pub(super) fn io_mem(&self) -> &IoMem {
+        &self.io_mem
+    }
+
+    /// Creates a duplicate of the mapped IO memory with the same address range.
+    pub(super) fn dup(&self) -> Result<Self> {
+        Ok(Self {
+            io_mem: self.io_mem.clone(),
+            range: self.range.clone(),
+        })
+    }
+}
+
+#[derive(Debug)]
+pub(super) enum MappedVmObj {
+    /// Represents a mapped [`Vmo`].
+    Vmo(MappedVmo),
+    /// Represents a mapped [`IoMem`].
+    IoMem(MappedIOMem),
+    /// Represents an independent anonymous mapping.
+    None,
+}
+
+impl MappedVmObj {
+    /// Get a reference to the mapped virtual memory object.
+    pub fn as_ref(&self) -> Option<&MappedVmObj> {
+        Some(&self)
+    }
+
+    /// Creates a duplicate of the virtual memory object mapping.
+    pub fn dup(&self) -> Result<MappedVmObj> {
+        Ok(match self {
+            MappedVmObj::Vmo(vmo) => MappedVmObj::Vmo(vmo.dup()?),
+            MappedVmObj::IoMem(iomem) => MappedVmObj::IoMem(iomem.dup()?),
+            MappedVmObj::None => MappedVmObj::None,
+        })
+    }
+
+    /// Gets a reference to the mapped VMO if the variant is `Vmo`.
+    pub fn vmo(&self) -> Option<&MappedVmo> {
+        if let MappedVmObj::Vmo(vmo) = self {
+            Some(vmo)
+        } else {
+            None
+        }
+    }
+
+    /// Gets a reference to the mapped IO memory if the variant is `IoMem`.
+    pub fn iomem(&self) -> Option<&MappedIOMem> {
+        if let MappedVmObj::IoMem(iomem) = self {
+            Some(iomem)
+        } else {
+            None
+        }
+    }
+
+    /// Checks if this is an anonymous mapping without backing object.
+    #[allow(dead_code)]
+    pub fn is_none(&self) -> bool {
+        matches!(self, MappedVmObj::None)
     }
 }

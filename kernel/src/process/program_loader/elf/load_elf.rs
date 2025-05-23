@@ -7,7 +7,10 @@
 
 use align_ext::AlignExt;
 use aster_rights::Full;
-use ostd::mm::{CachePolicy, PageFlags, PageProperty, VmIo};
+use ostd::{
+    mm::{CachePolicy, PageFlags, PageProperty, VmIo},
+    task::disable_preempt,
+};
 use xmas_elf::program::{self, ProgramHeader64};
 
 use super::elf_file::Elf;
@@ -311,9 +314,10 @@ fn map_segment_vmo(
         // Tail padding: If the segment's mem_size is larger than file size,
         // then the bytes that are not backed up by file content should be zeros.(usually .data/.bss sections).
 
+        let preempt_guard = disable_preempt();
         let mut cursor = root_vmar
             .vm_space()
-            .cursor_mut(&(map_addr..map_addr + segment_size))?;
+            .cursor_mut(&preempt_guard, &(map_addr..map_addr + segment_size))?;
         let page_flags = PageFlags::from(perms) | PageFlags::ACCESSED;
 
         // Head padding.
