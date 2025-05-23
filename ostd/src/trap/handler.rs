@@ -2,8 +2,8 @@
 
 use spin::Once;
 
-use super::{disable_local, DisabledLocalIrqGuard};
-use crate::{arch::irq::IRQ_LIST, cpu_local_cell, task::disable_preempt, trap::TrapFrame};
+use super::{disable_local, irq::process_top_half, DisabledLocalIrqGuard};
+use crate::{cpu_local_cell, task::disable_preempt, trap::TrapFrame};
 
 static BOTTOM_HALF_HANDLER: Once<fn(DisabledLocalIrqGuard) -> DisabledLocalIrqGuard> = Once::new();
 
@@ -24,14 +24,6 @@ static BOTTOM_HALF_HANDLER: Once<fn(DisabledLocalIrqGuard) -> DisabledLocalIrqGu
 /// This function can only be registered once. Subsequent calls will do nothing.
 pub fn register_bottom_half_handler(func: fn(DisabledLocalIrqGuard) -> DisabledLocalIrqGuard) {
     BOTTOM_HALF_HANDLER.call_once(|| func);
-}
-
-fn process_top_half(trap_frame: &TrapFrame, irq_number: usize) {
-    let irq_line = IRQ_LIST.get().unwrap().get(irq_number).unwrap();
-    let callback_functions = irq_line.callback_list();
-    for callback_function in callback_functions.iter() {
-        callback_function.call(trap_frame);
-    }
 }
 
 fn process_bottom_half() {
