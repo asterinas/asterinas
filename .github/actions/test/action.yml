@@ -36,8 +36,8 @@ inputs:
   extra_blocklists:
     description: 'Extra blocklists directories'
     required: false
-  syscall_test_dir:
-    description: 'Syscall test directory'
+  syscall_test_workdir:
+    description: 'Syscall test working directory'
     required: false
   boot_protocol:
     description: 'Boot protocol (linux-efi-handover64/multiboot/multiboot2/linux-legacy32)'
@@ -85,7 +85,7 @@ runs:
         [[ -n "${{ inputs.scheme }}" ]] && CMD+=" SCHEME=${{ inputs.scheme }}"
         [[ -n "${{ inputs.arch }}" ]] && CMD+=" ARCH=${{ inputs.arch }}"
         [[ -n "${{ inputs.extra_blocklists }}" ]] && CMD+=" EXTRA_BLOCKLISTS_DIRS=${{ inputs.extra_blocklists }}"
-        [[ -n "${{ inputs.syscall_test_dir }}" ]] && CMD+=" SYSCALL_TEST_DIR=${{ inputs.syscall_test_dir }}"
+        [[ -n "${{ inputs.syscall_test_workdir }}" ]] && CMD+=" SYSCALL_TEST_WORKDIR=${{ inputs.syscall_test_workdir }}"
         [[ -n "${{ inputs.boot_protocol }}" ]] && CMD+=" BOOT_PROTOCOL=${{ inputs.boot_protocol }}"
         
         echo "Executing: $CMD"
