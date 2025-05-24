@@ -189,18 +189,6 @@ pub trait SysObj: Any + Send + Sync + Debug + 'static {
     fn is_root(&self) -> bool {
         false
     }
-
-    /// Returns the path from the root to this node.
-    ///
-    /// The path of a node is the names of all the ancestors concatenated
-    /// with `/` as the separator.
-    ///
-    /// If the node has been attached to a `SysTree`,
-    /// then the returned path begins with `/`.
-    /// Otherwise, the returned path does _not_ begin with `/`.
-    fn path(&self) -> SysStr {
-        todo!("implement with the parent and name methods")
-    }
 }
 
 /// The unique ID of a `SysNode`.

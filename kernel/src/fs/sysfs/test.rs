@@ -50,13 +50,20 @@ impl MockLeafNode {
         let mut builder = SysAttrSetBuilder::new();
         let mut data = BTreeMap::new();
         for &attr_name in read_attrs {
-            builder.add(Cow::Owned(attr_name.to_string()), SysAttrFlags::CAN_READ);
+            builder.add(
+                Cow::Owned(attr_name.to_string()),
+                SysAttrFlags::CAN_READ,
+                |_| Ok(0),
+                |_| Ok(0),
+            );
             data.insert(attr_name.to_string(), format!("val_{}", attr_name)); // Initial value
         }
         for &attr_name in write_attrs {
             builder.add(
                 Cow::Owned(attr_name.to_string()),
                 SysAttrFlags::CAN_READ | SysAttrFlags::CAN_WRITE,
+                |_| Ok(0),
+                |_| Ok(0),
             );
             data.insert(attr_name.to_string(), format!("val_{}", attr_name)); // Initial value
         }
@@ -142,7 +149,7 @@ impl SysNode for MockLeafNode {
 // Refactor MockBranchNode to use SysBranchNodeFields
 #[derive(Debug)]
 struct MockBranchNode {
-    fields: SysBranchNodeFields<dyn SysObj>,
+    fields: SysBranchNodeFields,
     self_ref: Weak<Self>,
 }
 
@@ -151,7 +158,12 @@ impl MockBranchNode {
         let name_owned: SysStr = name.to_string().into(); // Convert to owned SysStr
 
         let mut builder = SysAttrSetBuilder::new();
-        builder.add(Cow::Borrowed("branch_attr"), SysAttrFlags::CAN_READ);
+        builder.add(
+            Cow::Borrowed("branch_attr"),
+            SysAttrFlags::CAN_READ,
+            |_| Ok(0),
+            |_| Ok(0),
+        );
         let attrs = builder
             .build()
             .expect("Failed to build branch attribute set");

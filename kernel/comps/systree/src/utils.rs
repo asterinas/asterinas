@@ -2,7 +2,7 @@
 
 //! Utility definitions and helper structs for implementing `SysTree` nodes.
 
-use alloc::{collections::BTreeMap, string::String, sync::Arc};
+use alloc::{collections::BTreeMap, string::String, sync::Arc, vec::Vec};
 use core::ops::Deref;
 
 use ostd::sync::RwLock;
@@ -12,6 +12,7 @@ use super::{
     node::{SysNodeId, SysObj},
     Error, Result, SysStr,
 };
+use crate::SysNode;
 
 #[derive(Debug)]
 pub struct SysObjFields {
@@ -64,12 +65,12 @@ impl SysNormalNodeFields {
 }
 
 #[derive(Debug)]
-pub struct SysBranchNodeFields<C: SysObj + ?Sized> {
+pub struct SysBranchNodeFields {
     base: SysNormalNodeFields,
-    pub children: RwLock<BTreeMap<SysStr, Arc<C>>>,
+    pub children: RwLock<BTreeMap<SysStr, Arc<dyn SysObj>>>,
 }
 
-impl<C: SysObj + ?Sized> SysBranchNodeFields<C> {
+impl SysBranchNodeFields {
     pub fn new(name: SysStr, attr_set: SysAttrSet) -> Self {
         Self {
             base: SysNormalNodeFields::new(name, attr_set),
@@ -94,7 +95,7 @@ impl<C: SysObj + ?Sized> SysBranchNodeFields<C> {
         children.contains_key(child_name)
     }
 
-    pub fn add_child(&self, new_child: Arc<C>) -> Result<()> {
+    pub fn add_child(&self, new_child: Arc<dyn SysObj>) -> Result<()> {
         let mut children = self.children.write();
         let name = new_child.name();
         if children.contains_key(name.deref()) {
@@ -104,9 +105,46 @@ impl<C: SysObj + ?Sized> SysBranchNodeFields<C> {
         Ok(())
     }
 
-    pub fn remove_child(&self, child_name: &str) -> Option<Arc<C>> {
+    pub fn remove_child(&self, child_name: &str) -> Option<Arc<dyn SysObj>> {
         let mut children = self.children.write();
         children.remove(child_name)
+    }
+
+    pub fn visit_child_with(&self, name: &str, f: &mut dyn FnMut(Option<&dyn SysNode>)) {
+        let children_guard = self.children.read();
+        children_guard
+            .get(name)
+            .map(|child| {
+                if let Some(node_ref) = child.arc_as_node().as_deref() {
+                    f(Some(node_ref));
+                } else {
+                    f(None);
+                }
+            })
+            .unwrap_or_else(|| f(None));
+    }
+
+    pub fn visit_children_with(
+        &self,
+        _min_id: u64,
+        f: &mut dyn FnMut(&Arc<dyn SysObj>) -> Option<()>,
+    ) {
+        let children_guard = self.children.read();
+        for child_arc in children_guard.values() {
+            if f(child_arc).is_none() {
+                break;
+            }
+        }
+    }
+
+    pub fn child(&self, name: &str) -> Option<Arc<dyn SysObj>> {
+        let children = self.children.read();
+        children.get(name).cloned()
+    }
+
+    pub fn children(&self) -> Vec<Arc<dyn SysObj>> {
+        let children = self.children.read();
+        children.values().cloned().collect()
     }
 }
 
