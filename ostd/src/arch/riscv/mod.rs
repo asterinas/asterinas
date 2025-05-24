@@ -31,7 +31,7 @@ pub(crate) unsafe fn late_init_on_bsp() {
     unsafe { crate::boot::smp::boot_all_aps() };
 
     timer::init();
-    let _ = pci::init();
+    pci::init();
 }
 
 pub(crate) unsafe fn init_on_ap() {
