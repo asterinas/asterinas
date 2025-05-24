@@ -115,6 +115,8 @@ unsafe fn init() {
     #[cfg(target_arch = "x86_64")]
     arch::if_tdx_enabled!({
         arch::serial::init();
+    } else {
+        arch::device::i8042_controller::init();
     });
 
     smp::init();
