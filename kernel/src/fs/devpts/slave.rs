@@ -19,6 +19,7 @@ pub struct PtySlaveInode {
     device: Arc<PtySlave>,
     metadata: RwLock<Metadata>,
     fs: Weak<DevPts>,
+    fsnotify: FsnotifyCommon,
 }
 
 impl PtySlaveInode {
@@ -32,6 +33,7 @@ impl PtySlaveInode {
             )),
             device,
             fs,
+            fsnotify: FsnotifyCommon::new(),
         })
     }
 }
@@ -146,5 +148,9 @@ impl Inode for PtySlaveInode {
 
     fn as_device(&self) -> Option<Arc<dyn Device>> {
         Some(self.device.clone())
+    }
+
+    fn fsnotify(&self) -> &FsnotifyCommon {
+        &self.fsnotify
     }
 }

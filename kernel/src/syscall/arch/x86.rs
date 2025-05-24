@@ -54,6 +54,7 @@ use crate::syscall::{
     getuid::sys_getuid,
     getxattr::{sys_fgetxattr, sys_getxattr, sys_lgetxattr},
     impl_syscall_nums_and_dispatch_fn,
+    inotify::{sys_inotify_add_watch, sys_inotify_init, sys_inotify_init1, sys_inotify_rm_watch},
     ioctl::sys_ioctl,
     kill::sys_kill,
     link::{sys_link, sys_linkat},
@@ -326,6 +327,9 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_TGKILL = 234           => sys_tgkill(args[..3]);
     SYS_UTIMES = 235           => sys_utimes(args[..2]);
     SYS_WAITID = 247           => sys_waitid(args[..5]);
+    SYS_INOTIFY_INIT = 253     => sys_inotify_init(args[..0]);
+    SYS_INOTIFY_ADD_WATCH = 254 => sys_inotify_add_watch(args[..3]);
+    SYS_INOTIFY_RM_WATCH = 255 => sys_inotify_rm_watch(args[..2]);
     SYS_OPENAT = 257           => sys_openat(args[..4]);
     SYS_MKDIRAT = 258          => sys_mkdirat(args[..3]);
     SYS_MKNODAT = 259          => sys_mknodat(args[..4]);
@@ -356,6 +360,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_EPOLL_CREATE1 = 291    => sys_epoll_create1(args[..1]);
     SYS_DUP3 = 292             => sys_dup3(args[..3]);
     SYS_PIPE2 = 293            => sys_pipe2(args[..2]);
+    SYS_INOTIFY_INIT1 = 294     => sys_inotify_init1(args[..1]);
     SYS_PREADV = 295           => sys_preadv(args[..4]);
     SYS_PWRITEV = 296          => sys_pwritev(args[..4]);
     SYS_PRLIMIT64 = 302        => sys_prlimit64(args[..4]);

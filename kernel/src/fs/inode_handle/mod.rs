@@ -175,6 +175,10 @@ impl InodeHandle_ {
         Ok(read_cnt)
     }
 
+    pub fn dentry(&self) -> Option<&Dentry> {
+        Some(&self.dentry)
+    }
+
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         if let Some(ref file_io) = self.file_io {
             return file_io.poll(mask, poller);

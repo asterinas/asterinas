@@ -1,0 +1,6 @@
+Inotify.SymlinkGeneratesCreateEvent
+Inotify.LinkGeneratesAttribAndCreateEvents
+Inotify.Fallocate
+Inotify.LinkOnOtherParent
+Inotify.Xattr
+InotifyTest.NotifyNoDeadlock_NoRandomSave

@@ -7,6 +7,7 @@ use crate::{
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
+        notify::fsnotify_attr_change,
         path::Dentry,
     },
     prelude::*,
@@ -142,7 +143,7 @@ fn vfs_utimes(dentry: &Dentry, times: Option<TimeSpecPair>) -> Result<SyscallRet
     dentry.set_atime(atime);
     dentry.set_mtime(mtime);
     dentry.set_ctime(ctime);
-
+    fsnotify_attr_change(dentry)?;
     Ok(SyscallReturn::Return(0))
 }
 
