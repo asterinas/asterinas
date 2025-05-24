@@ -9,12 +9,16 @@ use spin::Once;
 use super::{
     fs_resolver::{FsPath, FsResolver},
     path::MountNode,
-    procfs::{self, ProcFS},
+    procfs::{self},
     ramfs::RamFS,
     sysfs::{init as sysfs_init, singleton as sysfs_singleton},
     utils::{FileSystem, InodeMode, InodeType},
 };
-use crate::{fs::path::is_dot, prelude::*};
+use crate::{
+    fs::{path::is_dot, procfs::ProcFS},
+    prelude::*,
+    process::get_init_pid_namespace,
+};
 
 struct BoxedReader<'a>(Box<dyn Read + 'a>);
 
@@ -108,9 +112,13 @@ pub fn init(initramfs_buf: &[u8]) -> Result<()> {
             }
         }
     }
+
     // Mount ProcFS
-    let proc_dentry = fs.lookup(&FsPath::try_from("/proc")?)?;
-    proc_dentry.mount(ProcFS::new())?;
+    // FIXME: ProcFs should be mounted by the init process, rather than by the kernel.
+    // Additionally, we should use the PID namespace of the process that mounts the ProcFs,
+    // instead of the init PID namespace.
+    let proc_dentry = FsResolver::new().lookup(&FsPath::try_from("/proc")?)?;
+    proc_dentry.mount(ProcFS::new(get_init_pid_namespace()))?;
     // Mount DevFS
     let dev_dentry = fs.lookup(&FsPath::try_from("/dev")?)?;
     dev_dentry.mount(RamFS::new())?;

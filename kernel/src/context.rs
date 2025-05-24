@@ -13,10 +13,10 @@ use ostd::{
 use crate::{
     prelude::*,
     process::{
-        posix_thread::{PosixThread, ThreadLocal},
-        Process,
+        posix_thread::{CurrentPosixThread, ThreadLocal},
+        CurrentProcess,
     },
-    thread::Thread,
+    thread::CurrentThreadRef,
     util::{MultiRead, VmReaderArray},
     vm::vmar::Vmar,
 };
@@ -24,10 +24,10 @@ use crate::{
 /// The context that can be accessed from the current POSIX thread.
 #[derive(Clone)]
 pub struct Context<'a> {
-    pub process: &'a Process,
+    pub process: &'a CurrentProcess,
     pub thread_local: &'a ThreadLocal,
-    pub posix_thread: &'a PosixThread,
-    pub thread: &'a Thread,
+    pub posix_thread: &'a CurrentPosixThread<'a>,
+    pub thread: &'a CurrentThreadRef<'a>,
     pub task: &'a Task,
 }
 
