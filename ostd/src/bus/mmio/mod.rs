@@ -1,76 +1,113 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(dead_code)]
-
 //! Virtio over MMIO
+
+use bus::MmioBus;
+
+use crate::sync::SpinLock;
 
 pub mod bus;
 pub mod common_device;
 
-use alloc::vec::Vec;
-use core::ops::Range;
-
-use log::debug;
-
-use self::bus::MmioBus;
-use crate::{
-    bus::mmio::common_device::MmioCommonDevice, mm::paddr_to_vaddr, sync::SpinLock, trap::IrqLine,
-};
-
-const VIRTIO_MMIO_MAGIC: u32 = 0x74726976;
-
-/// MMIO bus instance
+/// The MMIO bus instance.
 pub static MMIO_BUS: SpinLock<MmioBus> = SpinLock::new(MmioBus::new());
-static IRQS: SpinLock<Vec<IrqLine>> = SpinLock::new(Vec::new());
 
 pub(crate) fn init() {
     #[cfg(target_arch = "x86_64")]
-    {
-        crate::arch::if_tdx_enabled!({
-            // SAFETY:
-            // This is safe because we are ensuring that the address range 0xFEB0_0000 to 0xFEB0_4000 is valid before this operation.
-            // The address range is page-aligned and falls within the MMIO range, which is a requirement for the `unprotect_gpa_range` function.
-            // We are also ensuring that we are only unprotecting four pages.
-            // Therefore, we are not causing any undefined behavior or violating any of the requirements of the `unprotect_gpa_range` function.
-            unsafe {
-                crate::arch::tdx_guest::unprotect_gpa_range(0xFEB0_0000, 4).unwrap();
-            }
-        });
-        // FIXME: The address 0xFEB0_0000 is obtained from an instance of microvm, and it may not work in other architecture.
-        iter_range(0xFEB0_0000..0xFEB0_4000);
-    }
+    x86_probe();
 }
 
 #[cfg(target_arch = "x86_64")]
-fn iter_range(range: Range<usize>) {
-    debug!("[Virtio]: Iter MMIO range:{:x?}", range);
-    let mut current = range.end;
-    let mut lock = MMIO_BUS.lock();
-    let io_apics = crate::arch::kernel::IO_APIC.get().unwrap();
-    let is_ioapic2 = io_apics.len() == 2;
-    let mut io_apic = if is_ioapic2 {
-        io_apics.get(1).unwrap().lock()
-    } else {
-        io_apics.first().unwrap().lock()
-    };
-    let mut device_count = 0;
-    while current > range.start {
-        current -= 0x100;
-        // SAFETY: It only read the value and judge if the magic value fit 0x74726976
-        let magic = unsafe { core::ptr::read_volatile(paddr_to_vaddr(current) as *const u32) };
-        if magic == VIRTIO_MMIO_MAGIC {
-            // SAFETY: It only read the device id
-            let device_id = unsafe { *(paddr_to_vaddr(current + 8) as *const u32) };
-            device_count += 1;
-            if device_id == 0 {
-                continue;
-            }
-            let handle = IrqLine::alloc().unwrap();
-            // If has two IOApic, then start: 24 (0 in IOApic2), end 47 (23 in IOApic2)
-            // If one IOApic, then start: 16, end 23
-            io_apic.enable(24 - device_count, handle.clone()).unwrap();
-            let device = MmioCommonDevice::new(current, handle);
-            lock.register_mmio_device(device);
+fn x86_probe() {
+    use common_device::{mmio_check_magic, mmio_read_device_id, MmioCommonDevice};
+    use log::debug;
+
+    use crate::{io::IoMem, trap::IrqLine};
+
+    // TODO: The correct method for detecting VirtIO-MMIO devices on x86_64 systems is to parse the
+    // kernel command line if ACPI tables are absent [1], or the ACPI SSDT if ACPI tables are
+    // present [2]. Neither of them is supported for now. This function's approach of blindly
+    // scanning the MMIO region is only a workaround.
+    // [1]: https://github.com/torvalds/linux/blob/0ff41df1cb268fc69e703a08a57ee14ae967d0ca/drivers/virtio/virtio_mmio.c#L733
+    // [2]: https://github.com/torvalds/linux/blob/0ff41df1cb268fc69e703a08a57ee14ae967d0ca/drivers/virtio/virtio_mmio.c#L840
+
+    // Constants from QEMU MicroVM. We should remove them as they're QEMU's implementation details.
+    //
+    // https://github.com/qemu/qemu/blob/3c5a5e213e5f08fbfe70728237f7799ac70f5b99/hw/i386/microvm.c#L201
+    const QEMU_MMIO_BASE: usize = 0xFEB0_0000;
+    const QEMU_MMIO_SIZE: usize = 512;
+    // https://github.com/qemu/qemu/blob/3c5a5e213e5f08fbfe70728237f7799ac70f5b99/hw/i386/microvm.c#L196
+    const QEMU_IOAPIC1_IRQ_BASE: u8 = 16;
+    const QEMU_IOAPIC1_NUM_TRANS: u8 = 8;
+    // https://github.com/qemu/qemu/blob/3c5a5e213e5f08fbfe70728237f7799ac70f5b99/hw/i386/microvm.c#L192
+    const QEMU_IOAPIC2_IRQ_BASE: u8 = 0;
+    const QEMU_IOAPIC2_NUM_TRANS: u8 = 24;
+
+    let mut mmio_bus = MMIO_BUS.lock();
+
+    let io_apics = crate::arch::kernel::IO_APIC.get();
+    let (mut ioapic, irq_base, num_trans) = match io_apics {
+        Some(io_apic_vec) if io_apic_vec.len() == 1 => (
+            io_apic_vec[0].lock(),
+            QEMU_IOAPIC1_IRQ_BASE,
+            QEMU_IOAPIC1_NUM_TRANS,
+        ),
+        Some(io_apic_vec) if io_apic_vec.len() >= 2 => (
+            io_apic_vec[1].lock(),
+            QEMU_IOAPIC2_IRQ_BASE,
+            QEMU_IOAPIC2_NUM_TRANS,
+        ),
+        Some(_) | None => {
+            debug!("[Virtio]: Skip MMIO detection because there are no I/O APICs");
+            return;
         }
+    };
+
+    for index in 0..num_trans {
+        let mmio_base = QEMU_MMIO_BASE + (index as usize) * QEMU_MMIO_SIZE;
+        let Ok(io_mem) = IoMem::acquire(mmio_base..(mmio_base + QEMU_MMIO_SIZE)) else {
+            debug!(
+                "[Virtio]: Abort MMIO detection at {:#x} because the MMIO address is not available",
+                mmio_base
+            );
+            break;
+        };
+
+        // We now check the the rquirements specified in Virtual I/O Device (VIRTIO) Version 1.3,
+        // Section 4.2.2.2 Driver Requirements: MMIO Device Register Layout.
+
+        // "The driver MUST ignore a device with MagicValue which is not 0x74726976, although it
+        // MAY report an error."
+        if !mmio_check_magic(&io_mem) {
+            debug!(
+                "[Virtio]: Abort MMIO detection at {:#x} because the magic number does not match",
+                mmio_base
+            );
+            break;
+        }
+
+        // TODO: "The driver MUST ignore a device with Version which is not 0x2, although it MAY
+        // report an error."
+
+        // "The driver MUST ignore a device with DeviceID 0x0, but MUST NOT report any error."
+        match mmio_read_device_id(&io_mem) {
+            Err(_) | Ok(0) => continue,
+            Ok(_) => (),
+        }
+
+        let irq_line = if let Ok(irq_line) = IrqLine::alloc()
+            && ioapic.enable(irq_base + index, irq_line.clone()).is_ok()
+        {
+            irq_line
+        } else {
+            debug!(
+                "[Virtio]: Ignore MMIO device at {:#x} because its IRQ line is not available",
+                mmio_base
+            );
+            continue;
+        };
+
+        let device = MmioCommonDevice::new(io_mem, irq_line);
+        mmio_bus.register_mmio_device(device);
     }
 }
