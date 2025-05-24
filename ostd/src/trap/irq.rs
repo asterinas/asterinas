@@ -125,10 +125,10 @@ impl Drop for IrqLine {
 /// # Example
 ///
 /// ```rust
-/// use ostd::irq;
+/// use ostd::trap;
 ///
 /// {
-///     let _ = irq::disable_local();
+///     let _ = trap::disable_local();
 ///     todo!("do something when irqs are disabled");
 /// }
 /// ```
