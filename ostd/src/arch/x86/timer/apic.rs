@@ -111,7 +111,7 @@ fn init_periodic_mode_config() {
 
     // Enable PIT
     super::pit::init(OperatingMode::RateGenerator);
-    super::pit::enable_ioapic_line(irq.clone());
+    let irq = super::pit::enable_interrupt(irq);
 
     // Set APIC timer count
     let preempt_guard = disable_preempt();
@@ -119,11 +119,14 @@ fn init_periodic_mode_config() {
     apic.set_timer_div_config(DivideConfig::Divide64);
     apic.set_timer_init_count(0xFFFF_FFFF);
 
+    // Wait until `CONFIG` is ready
     x86_64::instructions::interrupts::enable();
     while !CONFIG.is_completed() {
         x86_64::instructions::hlt();
     }
     x86_64::instructions::interrupts::disable();
+
+    // Disable PIT
     drop(irq);
 
     fn pit_callback(_trap_frame: &TrapFrame) {
@@ -147,8 +150,7 @@ fn init_periodic_mode_config() {
             return;
         }
 
-        // Stop PIT and APIC Timer
-        super::pit::disable_ioapic_line();
+        // Stop APIC Timer
         apic.set_timer_init_count(0);
 
         let apic_first_count = APIC_FIRST_COUNT.load(Ordering::Relaxed);
