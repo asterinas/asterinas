@@ -12,7 +12,7 @@ int main()
 
 	// Directly test the getcpu syscall because glibc's getcpu() may not
 	// use the getcpu syscall to retrieve CPU info
-	long ret = syscall(SYS_getcpu, &cpu, &node, NULL);
+	long ret = syscall(SYS_getcpu, &cpu, &node);
 	if (ret != 0) {
 		perror("syscall getcpu");
 		exit(EXIT_FAILURE);

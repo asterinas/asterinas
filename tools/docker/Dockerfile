@@ -23,6 +23,13 @@ RUN apt update && apt-get install -y --no-install-recommends \
     tcl-dev \
     unzip \
     zip
+RUN sh <(curl -L https://nixos.org/nix/install) --daemon --yes \
+    && . /etc/profile.d/nix.sh \
+    && nix-channel --add https://nixos.org/channels/nixos-24.11 nixos \
+    && nix-channel --add https://nixos.org/channels/nixos-24.11 nixpkgs \
+    && nix-channel --update \
+    && nix-env -iA nixpkgs.nixfmt \
+    && nix-collect-garbage
 
 #= Download dependency =====================================================
 
@@ -30,6 +37,58 @@ WORKDIR /opt/linux_binary_cache
 RUN wget https://raw.githubusercontent.com/asterinas/linux_vdso/2a6d2db/vdso64.so -O vdso64.so
 RUN wget https://raw.githubusercontent.com/asterinas/linux_binary_cache/14598b6/vmlinuz-5.15.0-105 \
         -O vmlinuz
+
+#= Build nix packages ======================================================
+
+WORKDIR /root
+COPY test/nix/hackbench.nix /root
+COPY test/nix/iozone.nix /root
+COPY test/nix/lmbench.nix /root
+COPY test/nix/ltp.nix /root
+COPY test/nix/membench.nix /root
+COPY test/nix/schbench.nix /root
+# Build x86_64 packages
+RUN . /etc/profile.d/nix.sh \
+    && nix-build \
+    --arg pkgs 'import <nixpkgs> { crossSystem = { config = "x86_64-unknown-linux-gnu"; }; }' \
+    --no-out-link \
+    --quiet -Q \
+    hackbench.nix \
+    iozone.nix \
+    lmbench.nix \
+    ltp.nix \
+    membench.nix \
+    schbench.nix \
+    && nix-build '<nixpkgs>' \
+    --arg crossSystem '{ config = "x86_64-unknown-linux-gnu"; }' \
+    --no-out-link \
+    --quiet -Q \
+    -A fio \
+    -A iperf3 \
+    -A libmemcached \
+    -A unixbench \
+    -A sysbench
+# Build riscv64 packages
+RUN . /etc/profile.d/nix.sh \
+    && nix-build \
+    --arg pkgs 'import <nixpkgs> { crossSystem = { config = "riscv64-unknown-linux-gnu"; }; }' \
+    --no-out-link \
+    --quiet -Q \
+    hackbench.nix \
+    iozone.nix \
+    lmbench.nix \
+    ltp.nix \
+    membench.nix \
+    schbench.nix \
+    && nix-build '<nixpkgs>' \
+    --arg crossSystem '{ config = "riscv64-unknown-linux-gnu"; }' \
+    --no-out-link \
+    --quiet -Q \
+    -A fio \
+    -A iperf3 \
+    -A libmemcached \
+    -A unixbench
+RUN rm -f /root/*.nix
 
 #= Build benchmark =========================================================
 
@@ -286,7 +345,7 @@ RUN rm -rf bazel
 FROM build-bazel AS syscall_test
 
 # Build the syscall test binaries
-COPY test/syscall_test /root/syscall_test
+COPY test/syscall_test/gvisor /root/syscall_test
 WORKDIR /root/syscall_test
 RUN export BUILD_DIR=build && \
     make ${BUILD_DIR}/syscall_test_bins

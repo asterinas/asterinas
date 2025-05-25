@@ -34,7 +34,7 @@ GDB_PROFILE_INTERVAL ?= 0.1
 # Here are the options for the auto test feature.
 AUTO_TEST ?= none
 EXTRA_BLOCKLISTS_DIRS ?= ""
-SYSCALL_TEST_DIR ?= /tmp
+SYSCALL_TEST_WORKDIR ?= /tmp
 # End of auto test features.
 
 # Network settings
@@ -53,7 +53,7 @@ CARGO_OSDK_ARGS := --target-arch=$(ARCH) --kcmd-args="ostd.log_level=$(LOG_LEVEL
 
 ifeq ($(AUTO_TEST), syscall)
 BUILD_SYSCALL_TEST := 1
-CARGO_OSDK_ARGS += --kcmd-args="SYSCALL_TEST_DIR=$(SYSCALL_TEST_DIR)"
+CARGO_OSDK_ARGS += --kcmd-args="SYSCALL_TEST_WORKDIR=$(SYSCALL_TEST_WORKDIR)"
 CARGO_OSDK_ARGS += --kcmd-args="EXTRA_BLOCKLISTS_DIRS=$(EXTRA_BLOCKLISTS_DIRS)"
 CARGO_OSDK_ARGS += --init-args="/opt/syscall_test/run_syscall_test.sh"
 else ifeq ($(AUTO_TEST), test)
@@ -229,7 +229,7 @@ run: initramfs $(CARGO_OSDK)
 	@cd kernel && cargo osdk run $(CARGO_OSDK_ARGS)
 # Check the running status of auto tests from the QEMU log
 ifeq ($(AUTO_TEST), syscall)
-	@tail --lines 100 qemu.log | grep -q "^.* of .* test cases passed." \
+	@tail --lines 100 qemu.log | grep -q "^Total Failures: 0" \
 		|| (echo "Syscall test failed" && exit 1)
 else ifeq ($(AUTO_TEST), test)
 	@tail --lines 100 qemu.log | grep -q "^All general tests passed." \
