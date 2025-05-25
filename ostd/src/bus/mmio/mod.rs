@@ -29,7 +29,7 @@ fn x86_probe() {
     use common_device::{mmio_check_magic, mmio_read_device_id, MmioCommonDevice};
     use log::debug;
 
-    use crate::{io::IoMem, trap::IrqLine};
+    use crate::{arch::kernel::IRQ_CHIP, io::IoMem, trap::IrqLine};
 
     // TODO: The correct method for detecting VirtIO-MMIO devices on x86_64 systems is to parse the
     // kernel command line if ACPI tables are absent [1], or the ACPI SSDT if ACPI tables are
@@ -44,27 +44,19 @@ fn x86_probe() {
     const QEMU_MMIO_BASE: usize = 0xFEB0_0000;
     const QEMU_MMIO_SIZE: usize = 512;
     // https://github.com/qemu/qemu/blob/3c5a5e213e5f08fbfe70728237f7799ac70f5b99/hw/i386/microvm.c#L196
-    const QEMU_IOAPIC1_IRQ_BASE: u8 = 16;
-    const QEMU_IOAPIC1_NUM_TRANS: u8 = 8;
+    const QEMU_IOAPIC1_GSI_BASE: u32 = 16;
+    const QEMU_IOAPIC1_NUM_TRANS: u32 = 8;
     // https://github.com/qemu/qemu/blob/3c5a5e213e5f08fbfe70728237f7799ac70f5b99/hw/i386/microvm.c#L192
-    const QEMU_IOAPIC2_IRQ_BASE: u8 = 0;
-    const QEMU_IOAPIC2_NUM_TRANS: u8 = 24;
+    const QEMU_IOAPIC2_GSI_BASE: u32 = 24;
+    const QEMU_IOAPIC2_NUM_TRANS: u32 = 24;
 
     let mut mmio_bus = MMIO_BUS.lock();
 
-    let io_apics = crate::arch::kernel::IO_APIC.get();
-    let (mut ioapic, irq_base, num_trans) = match io_apics {
-        Some(io_apic_vec) if io_apic_vec.len() == 1 => (
-            io_apic_vec[0].lock(),
-            QEMU_IOAPIC1_IRQ_BASE,
-            QEMU_IOAPIC1_NUM_TRANS,
-        ),
-        Some(io_apic_vec) if io_apic_vec.len() >= 2 => (
-            io_apic_vec[1].lock(),
-            QEMU_IOAPIC2_IRQ_BASE,
-            QEMU_IOAPIC2_NUM_TRANS,
-        ),
-        Some(_) | None => {
+    let irq_chip = IRQ_CHIP.get().unwrap();
+    let (gsi_base, num_trans) = match irq_chip.count_io_apics() {
+        1 => (QEMU_IOAPIC1_GSI_BASE, QEMU_IOAPIC1_NUM_TRANS),
+        2.. => (QEMU_IOAPIC2_GSI_BASE, QEMU_IOAPIC2_NUM_TRANS),
+        0 => {
             debug!("[Virtio]: Skip MMIO detection because there are no I/O APICs");
             return;
         }
@@ -102,11 +94,9 @@ fn x86_probe() {
             Ok(_) => (),
         }
 
-        let irq_line = if let Ok(irq_line) = IrqLine::alloc()
-            && ioapic.enable(irq_base + index, irq_line.clone()).is_ok()
-        {
-            irq_line
-        } else {
+        let Ok(irq_line) = IrqLine::alloc()
+            .and_then(|irq_line| irq_chip.map_gsi_pin_to(irq_line, gsi_base + index))
+        else {
             debug!(
                 "[Virtio]: Ignore MMIO device at {:#x} because its IRQ line is not available",
                 mmio_base

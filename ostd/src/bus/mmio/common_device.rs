@@ -5,17 +5,21 @@
 use int_to_c_enum::TryFromInt;
 use log::info;
 
+#[cfg(target_arch = "x86_64")]
+use crate::arch::kernel::MappedIrqLine;
+#[cfg(target_arch = "riscv64")] // TODO: Add `MappedIrqLine` support for RISC-V.
+use crate::trap::IrqLine as MappedIrqLine;
 use crate::{io::IoMem, mm::VmIoOnce, trap::IrqLine, Error, Result};
 
 /// A MMIO common device.
 #[derive(Debug)]
 pub struct MmioCommonDevice {
     io_mem: IoMem,
-    irq: IrqLine,
+    irq: MappedIrqLine,
 }
 
 impl MmioCommonDevice {
-    pub(super) fn new(io_mem: IoMem, irq: IrqLine) -> Self {
+    pub(super) fn new(io_mem: IoMem, irq: MappedIrqLine) -> Self {
         debug_assert!(mmio_check_magic(&io_mem));
 
         let this = Self { io_mem, irq };

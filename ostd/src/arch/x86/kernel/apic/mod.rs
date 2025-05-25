@@ -8,9 +8,8 @@ use xapic::get_xapic_base_address;
 
 use crate::{cpu::PinCurrentCpu, cpu_local, io::IoMemAllocatorBuilder};
 
-pub mod ioapic;
-pub mod x2apic;
-pub mod xapic;
+mod x2apic;
+mod xapic;
 
 static APIC_TYPE: Once<ApicType> = Once::new();
 
@@ -349,7 +348,6 @@ pub enum DivideConfig {
 }
 
 pub fn init(io_mem_builder: &IoMemAllocatorBuilder) -> Result<(), ApicInitError> {
-    crate::arch::kernel::pic::disable_temp();
     if x2apic::X2Apic::has_x2apic() {
         log::info!("x2APIC found!");
         APIC_TYPE.call_once(|| ApicType::X2Apic);
