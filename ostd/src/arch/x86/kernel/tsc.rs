@@ -74,16 +74,21 @@ pub fn determine_tsc_freq_via_pit() -> u64 {
 
     // Enable PIT
     pit::init(OperatingMode::RateGenerator);
-    pit::enable_ioapic_line(irq.clone());
+    let irq = pit::enable_interrupt(irq);
 
     static IS_FINISH: AtomicBool = AtomicBool::new(false);
     static FREQUENCY: AtomicU64 = AtomicU64::new(0);
+
+    // Wait until `FREQUENCY` is ready
     x86_64::instructions::interrupts::enable();
     while !IS_FINISH.load(Ordering::Acquire) {
         x86_64::instructions::hlt();
     }
     x86_64::instructions::interrupts::disable();
+
+    // Disable PIT
     drop(irq);
+
     return FREQUENCY.load(Ordering::Acquire);
 
     fn pit_callback(trap_frame: &TrapFrame) {
@@ -101,8 +106,6 @@ pub fn determine_tsc_freq_via_pit() -> u64 {
             IN_TIME.fetch_add(1, Ordering::Relaxed);
             return;
         }
-
-        pit::disable_ioapic_line();
 
         let tsc_first_count = TSC_FIRST_COUNT.load(Ordering::Relaxed);
         let freq = (tsc_current_count - tsc_first_count) * (TIMER_FREQ / CALLBACK_TIMES);

@@ -10,7 +10,11 @@
 //!
 
 use crate::{
-    arch::{device::io_port::WriteOnlyAccess, kernel::IO_APIC, timer::TIMER_FREQ},
+    arch::{
+        device::io_port::WriteOnlyAccess,
+        kernel::{MappedIrqLine, IRQ_CHIP},
+        timer::TIMER_FREQ,
+    },
     io::{sensitive_io_port, IoPort},
     trap::IrqLine,
 };
@@ -162,6 +166,7 @@ sensitive_io_port! {
 }
 
 const TIMER_RATE: u32 = 1193182;
+const TIMER_INTERRUPT: u8 = 0; // ISA interrupt.
 
 pub(crate) fn init(operating_mode: OperatingMode) {
     // Set PIT mode
@@ -178,16 +183,11 @@ pub(crate) fn init(operating_mode: OperatingMode) {
     CHANNEL0_PORT.write((CYCLE >> 8) as _);
 }
 
-/// Enable the IOAPIC line that connected to PIC
-pub(crate) fn enable_ioapic_line(irq: IrqLine) {
-    let mut io_apic = IO_APIC.get().unwrap().first().unwrap().lock();
-    debug_assert_eq!(io_apic.interrupt_base(), 0);
-    io_apic.enable(2, irq.clone()).unwrap();
-}
-
-/// Disable the IOAPIC line that connected to PIC
-pub(crate) fn disable_ioapic_line() {
-    let mut io_apic = IO_APIC.get().unwrap().first().unwrap().lock();
-    debug_assert_eq!(io_apic.interrupt_base(), 0);
-    io_apic.disable(2).unwrap();
+/// Enables the interrupt line that is connected to the PIT.
+pub(crate) fn enable_interrupt(irq_line: IrqLine) -> MappedIrqLine {
+    IRQ_CHIP
+        .get()
+        .unwrap()
+        .map_isa_pin_to(irq_line, TIMER_INTERRUPT)
+        .unwrap()
 }

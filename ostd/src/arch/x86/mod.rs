@@ -9,7 +9,7 @@ pub(crate) mod ex_table;
 pub(crate) mod io;
 pub(crate) mod iommu;
 pub(crate) mod irq;
-pub(crate) mod kernel;
+pub mod kernel;
 pub(crate) mod mm;
 pub(crate) mod pci;
 pub mod qemu;
@@ -27,8 +27,7 @@ pub(crate) mod tdx_guest;
 
 use core::sync::atomic::Ordering;
 
-use kernel::apic::ioapic;
-use log::{info, warn};
+use log::warn;
 
 #[cfg(feature = "cvm_guest")]
 pub(crate) fn init_cvm_guest() {
@@ -65,19 +64,10 @@ pub(crate) unsafe fn late_init_on_bsp() {
     // SAFETY: This function is only called once on BSP.
     unsafe { trap::init() };
 
-    kernel::acpi::init();
-
     let io_mem_builder = construct_io_mem_allocator_builder();
 
-    match kernel::apic::init(&io_mem_builder) {
-        Ok(_) => {
-            ioapic::init(&io_mem_builder);
-        }
-        Err(err) => {
-            info!("APIC init error:{:?}", err);
-            kernel::pic::enable();
-        }
-    }
+    kernel::apic::init(&io_mem_builder).expect("APIC doesn't exist");
+    kernel::irq::init(&io_mem_builder);
 
     kernel::tsc::init_tsc_freq();
     timer::init_bsp();
@@ -92,9 +82,6 @@ pub(crate) unsafe fn late_init_on_bsp() {
             Err(err) => warn!("IOMMU initialization error:{:?}", err),
         }
     });
-
-    // Some driver like serial may use PIC
-    kernel::pic::init();
 
     // SAFETY:
     // 1. All the system device memory have been removed from the builder.
