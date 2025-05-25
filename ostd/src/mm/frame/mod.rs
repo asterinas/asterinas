@@ -60,8 +60,19 @@ use crate::mm::{Paddr, PagingConsts, Vaddr};
 
 static MAX_PADDR: AtomicUsize = AtomicUsize::new(0);
 
+/// Returns if the given physical address is tracked with metadata.
+///
+/// If a frame is tracked, it means that the frame can be managed by [`Frame`].
+///
+/// This function must be called after initialization of the frame metadata.
+pub fn is_tracked_paddr(paddr: Paddr) -> bool {
+    let max_paddr = MAX_PADDR.load(Ordering::Relaxed);
+    debug_assert_ne!(max_paddr, 0);
+    paddr < max_paddr as Paddr
+}
+
 /// Returns the maximum physical address that is tracked by frame metadata.
-pub(in crate::mm) fn max_paddr() -> Paddr {
+pub(crate) fn max_paddr() -> Paddr {
     let max_paddr = MAX_PADDR.load(Ordering::Relaxed) as Paddr;
     debug_assert_ne!(max_paddr, 0);
     max_paddr

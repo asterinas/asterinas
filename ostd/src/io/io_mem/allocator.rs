@@ -137,7 +137,10 @@ mod test {
     use alloc::vec;
 
     use super::{IoMemAllocator, IoMemAllocatorBuilder};
-    use crate::{mm::PAGE_SIZE, prelude::ktest};
+    use crate::{
+        mm::{frame::max_paddr, PAGE_SIZE},
+        prelude::ktest,
+    };
 
     #[expect(clippy::reversed_empty_ranges)]
     #[expect(clippy::single_range_in_vec_init)]
@@ -154,7 +157,9 @@ mod test {
 
     #[ktest]
     fn conflict_region() {
-        let io_mem_region_a = 0x4000_0000..0x4200_0000;
+        let max_paddr = max_paddr();
+
+        let io_mem_region_a = max_paddr..max_paddr + 0x200_0000;
         let io_mem_region_b =
             (io_mem_region_a.end + PAGE_SIZE)..(io_mem_region_a.end + 10 * PAGE_SIZE);
         let range = vec![io_mem_region_a.clone(), io_mem_region_b.clone()];

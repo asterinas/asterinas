@@ -8,13 +8,13 @@ use core::mem::size_of;
 use log::trace;
 use ostd_pod::Pod;
 
-use super::second_stage::{DeviceMode, PageTableEntry, PagingConsts};
+use super::second_stage::IommuPtConfig;
 use crate::{
     bus::pci::PciDeviceLocation,
     mm::{
         dma::Daddr,
         page_prop::{CachePolicy, PageProperty, PrivilegedPageFlags as PrivFlags},
-        page_table::{PageTableError, PageTableItem},
+        page_table::{PageTableError, PageTableFrag},
         Frame, FrameAllocOptions, Paddr, PageFlags, PageTable, VmIo, PAGE_SIZE,
     },
     task::disable_preempt,
@@ -88,15 +88,13 @@ impl RootTable {
         &mut self,
         device: PciDeviceLocation,
         daddr: Daddr,
-    ) -> Result<(), ContextTableError> {
+    ) -> Result<PageTableFrag<IommuPtConfig>, ContextTableError> {
         if device.device >= 32 || device.function >= 8 {
             return Err(ContextTableError::InvalidDeviceId);
         }
 
         self.get_or_create_context_table(device)
-            .unmap(device, daddr)?;
-
-        Ok(())
+            .unmap(device, daddr)
     }
 
     /// Specifies the device page table instead of creating a page table if not exists.
@@ -106,7 +104,7 @@ impl RootTable {
     pub(super) fn specify_device_page_table(
         &mut self,
         device_id: PciDeviceLocation,
-        page_table: PageTable<DeviceMode, PageTableEntry, PagingConsts>,
+        page_table: PageTable<IommuPtConfig>,
     ) {
         let context_table = self.get_or_create_context_table(device_id);
 
@@ -240,7 +238,7 @@ pub enum AddressWidth {
 pub struct ContextTable {
     /// Total 32 devices, each device has 8 functions.
     entries_frame: Frame<()>,
-    page_tables: BTreeMap<Paddr, PageTable<DeviceMode, PageTableEntry, PagingConsts>>,
+    page_tables: BTreeMap<Paddr, PageTable<IommuPtConfig>>,
 }
 
 impl ContextTable {
@@ -258,7 +256,7 @@ impl ContextTable {
     fn get_or_create_page_table(
         &mut self,
         device: PciDeviceLocation,
-    ) -> &mut PageTable<DeviceMode, PageTableEntry, PagingConsts> {
+    ) -> &mut PageTable<IommuPtConfig> {
         let bus_entry = self
             .entries_frame
             .read_val::<ContextEntry>(
@@ -267,7 +265,7 @@ impl ContextTable {
             .unwrap();
 
         if !bus_entry.is_present() {
-            let table = PageTable::<DeviceMode, PageTableEntry, PagingConsts>::empty();
+            let table = PageTable::<IommuPtConfig>::empty();
             let address = unsafe { table.root_paddr() };
             self.page_tables.insert(address, table);
             let entry = ContextEntry(address as u128 | 3 | 0x1_0000_0000_0000_0000);
@@ -304,21 +302,25 @@ impl ContextTable {
             paddr,
             device
         );
-        self.get_or_create_page_table(device)
-            .map(
-                &(daddr..daddr + PAGE_SIZE),
-                &(paddr..paddr + PAGE_SIZE),
-                PageProperty {
-                    flags: PageFlags::RW,
-                    cache: CachePolicy::Uncacheable,
-                    priv_flags: PrivFlags::empty(),
-                },
-            )
+        let pt = self.get_or_create_page_table(device);
+        let prop = PageProperty {
+            flags: PageFlags::RW,
+            cache: CachePolicy::Uncacheable,
+            priv_flags: PrivFlags::empty(),
+        };
+        let preempt_guard = disable_preempt();
+        let mut cursor = pt
+            .cursor_mut(&preempt_guard, &(daddr..daddr + PAGE_SIZE))
             .unwrap();
+        let _ = unsafe { cursor.map(&(paddr..paddr + PAGE_SIZE), prop) };
         Ok(())
     }
 
-    fn unmap(&mut self, device: PciDeviceLocation, daddr: Daddr) -> Result<(), ContextTableError> {
+    fn unmap(
+        &mut self,
+        device: PciDeviceLocation,
+        daddr: Daddr,
+    ) -> Result<PageTableFrag<IommuPtConfig>, ContextTableError> {
         if device.device >= 32 || device.function >= 8 {
             return Err(ContextTableError::InvalidDeviceId);
         }
@@ -328,10 +330,7 @@ impl ContextTable {
         let mut cursor = pt
             .cursor_mut(&preempt_guard, &(daddr..daddr + PAGE_SIZE))
             .unwrap();
-        unsafe {
-            let result = cursor.take_next(PAGE_SIZE);
-            debug_assert!(matches!(result, PageTableItem::MappedUntracked { .. }));
-        }
-        Ok(())
+        let result = unsafe { cursor.take_next(PAGE_SIZE) };
+        Ok(result)
     }
 }
