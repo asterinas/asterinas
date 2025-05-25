@@ -73,3 +73,9 @@ impl<G: InAtomicMode> AsAtomicModeGuard for G {
         self
     }
 }
+
+impl AsAtomicModeGuard for dyn InAtomicMode + '_ {
+    fn as_atomic_mode_guard(&self) -> &dyn InAtomicMode {
+        self
+    }
+}
