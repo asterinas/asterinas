@@ -29,6 +29,7 @@ itimer/timer_create
 mmap/mmap_and_fork
 mmap/mmap_shared_filebacked
 mmap/mmap_readahead
+mmap/mmap_vmrss
 process/group_session
 process/job_control
 pthread/pthread_test
@@ -40,7 +41,7 @@ signal_c/signal_test
 "
 
 for testcase in ${tests}
-do 
+do
     echo "Running test ${testcase}......"
     ${SCRIPT_DIR}/${testcase}
 done
