@@ -37,7 +37,12 @@ cfg_if!(
 /// 3. `MAX_IO_PORT` defined in `crate::arch::io` is guaranteed not to
 ///    exceed the maximum value specified by architecture.
 pub(crate) unsafe fn init(io_mem_builder: IoMemAllocatorBuilder) {
-    self::io_mem::init(io_mem_builder);
+    // SAFETY: The safety is upheld by the caller.
+    unsafe { self::io_mem::init(io_mem_builder) };
+
+    // SAFETY: The safety is upheld by the caller.
     #[cfg(target_arch = "x86_64")]
-    self::io_port::init();
+    unsafe {
+        self::io_port::init()
+    };
 }
