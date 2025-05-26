@@ -4,6 +4,7 @@ use core::{
     cmp::{max, min},
     num::NonZeroUsize,
     ops::Range,
+    sync::atomic::Ordering,
 };
 
 use align_ext::AlignExt;
@@ -17,6 +18,7 @@ use ostd::{
 
 use super::interval_set::Interval;
 use crate::{
+    fs::utils::CachePageMeta,
     prelude::*,
     thread::exception::PageFaultInfo,
     vm::{
@@ -246,7 +248,11 @@ impl VmMapping {
                         page_flags |= PageFlags::DIRTY;
                     }
                     let map_prop = PageProperty::new(page_flags, CachePolicy::Writeback);
-
+                    if let Some(meta) =
+                        (frame.dyn_meta() as &dyn Any).downcast_ref::<CachePageMeta>()
+                    {
+                        meta.is_mmapped.store(true, Ordering::Relaxed);
+                    }
                     cursor.map(frame, map_prop);
                 }
             }
@@ -313,6 +319,11 @@ impl VmMapping {
                         let page_flags = PageFlags::from(vm_perms) | PageFlags::ACCESSED;
                         let page_prop = PageProperty::new(page_flags, CachePolicy::Writeback);
                         let frame = commit_fn()?;
+                        if let Some(meta) =
+                            (frame.dyn_meta() as &dyn Any).downcast_ref::<CachePageMeta>()
+                        {
+                            meta.is_mmapped.store(true, Ordering::Relaxed);
+                        }
                         cursor.map(frame, page_prop);
                     } else {
                         let next_addr = cursor.virt_addr() + PAGE_SIZE;

@@ -4,8 +4,9 @@
 
 use core::{
     iter,
+    num::NonZero,
     ops::Range,
-    sync::atomic::{AtomicU8, Ordering},
+    sync::atomic::{AtomicBool, AtomicU8, Ordering},
 };
 
 use align_ext::AlignExt;
@@ -15,12 +16,263 @@ use lru::LruCache;
 use ostd::{
     impl_untyped_frame_meta_for,
     mm::{Frame, FrameAllocOptions, UFrame, VmIo},
+    prelude::Paddr,
 };
 
 use crate::{
     prelude::*,
-    vm::vmo::{get_page_idx_range, Pager, Vmo, VmoFlags, VmoOptions},
+    vm::{
+        mem_total,
+        vmo::{get_page_idx_range, Pager, Vmo, VmoFlags, VmoOptions, Vmo_},
+    },
 };
+
+/// This part implements the global reclaim mechanism for the page cache.
+///
+/// Structure:
+/// - PageCacheReclaimer: The global page cache reclaimer, using active and inactive LruCache to
+///   manage the cache pages.
+/// - ReclaimPolicy: Control reclamation and demotion through thresholds, supporting flexible expansion.
+///
+/// Reclaimation design:
+/// - The reclaimer is devided into two parts: active and inactive LruCache.
+/// - Pages that are first accessed will be added to the inactive LruCache (fn add_cache_page).
+/// - Pages that are accessed again will be promoted.
+///   For pages in the inactive LruCache, fn promote_from_inactive will be called to promote them to the active LruCache.
+///   For pages in the active LruCache, no operation will be performed because the LruCache will naturally maintain the LRU order.
+///
+/// - When the number of active pages exceeds the threshold (demote_threshold, default 30% of the capacity),
+///   demotion will be triggered to move the least recently used page in the active LruCache to the inactive LruCache (fn demote).
+///
+/// - When the total number of pages in the reclaimer exceeds the threshold (reclaim_threshold, default 90% of the capacity), reclamation will be triggered.
+///   Reclamation priorizes reclaiming from the inactive LruCache. If there is no suitable page, try the active LruCache.
+///
+/// - Currently, only not-mmapped pages will be considered for reclamation.
+/// - When reclaiming, it will determine whether the page is mmapped, whether it is dirty, and will
+///   write it back to the backend if necessary.
+///
+/// Threshold and magic number description:
+/// - The threshold is multiplied by 100 to avoid floating-point operations.
+///   To indicate this, the threshold variables are named as *_threshold_times100.
+///
+/// - MEM_MB_THRESHOLD_FOR_RECLAIM: the threshold is used to force reclamation in low memory scenarios.
+/// - DEFAULT_POWER_PAGE_SIZE: The page size is 2^DEFAULT_POWER_PAGE_SIZE by default.
+///
+const MEM_MB_THRESHOLD_FOR_RECLAIM: usize = 1024 * 1024 * 1024; // 1GB
+const DEFAULT_POWER_PAGE_SIZE: usize = 12; // 4KB
+pub struct PageCacheReclaimer {
+    inner: ReclaimerInner,
+    policy: Arc<dyn ReclaimPolicy + Send + Sync>,
+}
+
+struct ReclaimerInner {
+    /// Maximum number of pages in the PageCacheReclaimer
+    capacity: usize,
+    /// PageCache: inactive LruCache + active LruCache
+    inactive: LruCache<Paddr, CachePage>,
+    active: LruCache<Paddr, CachePage>,
+}
+
+trait ReclaimPolicy: Send + Sync {
+    fn should_reclaim(&self, reclaimer: &ReclaimerInner) -> bool;
+    fn should_demote(&self, reclaimer: &ReclaimerInner) -> bool;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+}
+
+struct ThresholdReclaimPolicy {
+    /// Page number threshold(x100) of the active LruCache for triggering demotion
+    demote_threshold_times100: usize,
+    /// Page number threshold(x100) of the PageCache for triggering reclamation
+    reclaim_threshold_times100: usize,
+}
+
+impl ReclaimPolicy for ThresholdReclaimPolicy {
+    fn should_reclaim(&self, reclaimer: &ReclaimerInner) -> bool {
+        let active_len = reclaimer.active.len();
+        let inactive_len = reclaimer.inactive.len();
+        let total_size = active_len + inactive_len;
+        mem_total() < MEM_MB_THRESHOLD_FOR_RECLAIM
+            || total_size * 100 >= self.reclaim_threshold_times100
+    }
+
+    fn should_demote(&self, reclaimer: &ReclaimerInner) -> bool {
+        reclaimer.active.len() * 100 >= self.demote_threshold_times100
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+impl PageCacheReclaimer {
+    pub fn new(capacity: usize) -> Self {
+        let reclaimer_capacity =
+            NonZero::new(capacity).expect("LRU capacity must be greater than zero");
+        Self {
+            inner: ReclaimerInner {
+                capacity,
+                inactive: LruCache::new(reclaimer_capacity),
+                active: LruCache::new(reclaimer_capacity),
+            },
+            policy: Arc::new(ThresholdReclaimPolicy {
+                demote_threshold_times100: usize::MAX,
+                reclaim_threshold_times100: usize::MAX,
+            }),
+        }
+    }
+
+    /// Set demote_threshold
+    pub fn set_demote_threshold_times100(&mut self, threshold_times100: usize) {
+        if let Some(policy) = Arc::get_mut(&mut self.policy) {
+            if let Some(tp) = policy.as_any_mut().downcast_mut::<ThresholdReclaimPolicy>() {
+                tp.demote_threshold_times100 = threshold_times100;
+            }
+        }
+    }
+
+    /// Set reclaim_threshold
+    pub fn set_reclaim_threshold_times100(&mut self, threshold_times100: usize) {
+        if let Some(policy) = Arc::get_mut(&mut self.policy) {
+            if let Some(tp) = policy.as_any_mut().downcast_mut::<ThresholdReclaimPolicy>() {
+                tp.reclaim_threshold_times100 = threshold_times100;
+            }
+        }
+    }
+
+    pub fn add_cache_page(&mut self, cache_page: CachePage) -> Result<()> {
+        while self.policy.should_reclaim(&self.inner) {
+            self.do_reclaim()?;
+        }
+
+        // Add page to the inactive LruCache
+        self.inner
+            .inactive
+            .push(cache_page.start_paddr(), cache_page);
+        Ok(())
+    }
+
+    /// Move the lru page of the active LruCache to the inactive LruCache
+    pub fn demote(&mut self) -> Result<()> {
+        if self.inner.active.is_empty() {
+            return Ok(());
+        }
+
+        let (demoted_addr, demoted) = self.inner.active.pop_lru().unwrap();
+        self.inner.inactive.push(demoted_addr, demoted);
+        Ok(())
+    }
+
+    /// Move the page from the inactive LruCache to the active LruCache
+    pub fn promote_from_inactive(&mut self, cache_page: CachePage) -> Result<()> {
+        let Some(target) = self.inner.inactive.pop(&cache_page.start_paddr()) else {
+            return_errno!(Errno::ENOENT);
+        };
+
+        // Demote to ensure the active LruCache is not full
+        while self.policy.should_demote(&self.inner) {
+            self.demote()?;
+        }
+
+        self.inner.active.push(cache_page.start_paddr(), cache_page);
+        Ok(())
+    }
+
+    pub fn exists_in_inactive(&self, cache_page: &CachePage) -> bool {
+        self.inner.inactive.contains(&cache_page.start_paddr())
+    }
+
+    pub fn exists_in_active(&self, cache_page: &CachePage) -> bool {
+        self.inner.active.contains(&cache_page.start_paddr())
+    }
+
+    pub fn remove_from_reclaimer(&mut self, page: &CachePage) {
+        if self.exists_in_active(page) {
+            self.inner.active.pop(&page.start_paddr());
+        } else if self.exists_in_inactive(page) {
+            self.inner.inactive.pop(&page.start_paddr());
+        } else {
+            warn!("The page is not in PageCacheReclaimer!");
+        }
+    }
+
+    fn should_reclaim(&self) -> bool {
+        self.policy.should_reclaim(&self.inner)
+    }
+
+    /// Reclaim one page from the inactive LruCache
+    fn do_reclaim(&mut self) -> Result<()> {
+        let mut reclaimed;
+
+        // First, try to reclaim a page from the inactive LruCache
+        let keys: Vec<_> = self.inner.inactive.iter().map(|(addr, _)| *addr).collect();
+        for addr in keys {
+            if let Some(page) = self.inner.inactive.pop(&addr) {
+                let reclaimed = self.try_reclaim(&page);
+                if reclaimed {
+                    return Ok(());
+                } else {
+                    self.inner.inactive.push(addr, page);
+                }
+            }
+        }
+
+        // If there is no suitable page for reclamation in the inactive LruCache,
+        // try to reclaim one from the active LruCache.
+        while !self.inner.active.is_empty() {
+            let (candidate_addr, candidate_page) = self.inner.active.pop_lru().unwrap();
+            reclaimed = self.try_reclaim(&candidate_page);
+            if reclaimed {
+                return Ok(());
+            } else {
+                // The page is not suitable for reclaiming, move it to the inactive LruCache.
+                self.inner.inactive.push(candidate_addr, candidate_page);
+            }
+        }
+        // Error: no suitable page for reclaiming
+        return_errno!(Errno::ENOENT);
+    }
+
+    fn try_reclaim(&mut self, page: &CachePage) -> bool {
+        // Not mmapped page
+        if !page.metadata().is_mmapped.load(Ordering::Relaxed) {
+            let reverse_map = page.metadata().reverse_map.read().clone();
+            // Reverse_map should not be none
+            if let Some(map) = reverse_map {
+                // Delete the reference to the victim page in Vmo_.pager.pages
+                let pager = map.pager();
+                if let Some(page_cache_manager) =
+                    (&pager as &dyn Any).downcast_ref::<PageCacheManager>()
+                {
+                    // (If dirty) write the page to the disk and mark the page as UpToDate
+                    let _ = page_cache_manager
+                        .evict_range(page.start_paddr()..page.start_paddr() + PAGE_SIZE);
+                    // Delete the page from the Vmo_.pager.pages
+                    let _ = page_cache_manager
+                        .discard_range(page.start_paddr()..page.start_paddr() + PAGE_SIZE);
+                }
+                // Delete the victim page in the PageCacheReclaimer.inner
+                self.inner.inactive.pop(&page.start_paddr());
+                return true;
+            }
+        }
+        false
+    }
+}
+
+static PAGE_CACHE_RECLAIMER: spin::Once<Mutex<PageCacheReclaimer>> = spin::Once::new();
+
+pub fn get_page_cache_reclaimer() -> &'static Mutex<PageCacheReclaimer> {
+    if !PAGE_CACHE_RECLAIMER.is_completed() {
+        let mut reclaimer = PageCacheReclaimer::new(mem_total() >> DEFAULT_POWER_PAGE_SIZE);
+
+        // Set thresholds for the reclaimer
+        reclaimer.set_demote_threshold_times100(reclaimer.inner.capacity * 30);
+        reclaimer.set_reclaim_threshold_times100(reclaimer.inner.capacity * 90);
+
+        PAGE_CACHE_RECLAIMER.call_once(|| Mutex::new(reclaimer));
+    }
+    PAGE_CACHE_RECLAIMER.get().unwrap()
+}
 
 pub struct PageCache {
     pages: Vmo<Full>,
@@ -354,6 +606,13 @@ impl PageCacheManager {
         let page_idx_range = get_page_idx_range(&range);
         let mut pages = self.pages.lock();
         for idx in page_idx_range {
+            // First, delete the page from the PageCacheReclaimer
+            if let Some(page) = pages.peek(&idx) {
+                get_page_cache_reclaimer()
+                    .lock()
+                    .remove_from_reclaimer(page);
+            }
+            // Then delete the page from the pages of PageCacheManager
             pages.pop(&idx);
         }
     }
@@ -425,6 +684,11 @@ impl PageCacheManager {
             };
             let frame = page.clone();
             pages.put(idx, page);
+            // Add page to the PageCacheReclaimer.
+            get_page_cache_reclaimer()
+                .lock()
+                .add_cache_page(frame.clone())
+                .unwrap();
             frame
         };
         if ra_state.should_readahead(idx, backend.npages()) {
@@ -461,8 +725,15 @@ impl Pager for PageCacheManager {
     }
 
     fn decommit_page(&self, idx: usize) -> Result<()> {
+        // First, delete the page from the PageCacheManager
         let page_result = self.pages.lock().pop(&idx);
+
         if let Some(page) = page_result {
+            // Second, delete the page from the PageCacheReclaimer
+            get_page_cache_reclaimer()
+                .lock()
+                .remove_from_reclaimer(&page);
+            // Third, if dirty, write back
             if let PageState::Dirty = page.load_state() {
                 let Some(backend) = self.backend.upgrade() else {
                     return Ok(());
@@ -482,7 +753,27 @@ impl Pager for PageCacheManager {
         }
 
         let page = CachePage::alloc_uninit()?;
-        Ok(self.pages.lock().get_or_insert(idx, || page).clone().into())
+        let page_tmp = self.pages.lock().get_or_insert(idx, || page).clone();
+        // Add page to the PageCacheReclaimer.
+        get_page_cache_reclaimer()
+            .lock()
+            .add_cache_page(page_tmp.clone())
+            .unwrap();
+        Ok(page_tmp.into())
+    }
+
+    /// PageCacheReclaimer-related: promote a page from the inactive LRUCache to the active LRUCache
+    fn g_page_cache_promote(&self, idx: usize) -> Result<()> {
+        let mut pages = self.pages.lock();
+        if let Some(page) = pages.get(&idx) {
+            let mut reclaimer = get_page_cache_reclaimer().lock();
+            if reclaimer.exists_in_inactive(page) {
+                reclaimer.promote_from_inactive(page.clone())?;
+            }
+        } else {
+            warn!("The page {} is not in page cache", idx);
+        }
+        Ok(())
     }
 }
 
@@ -493,7 +784,8 @@ pub type CachePage = Frame<CachePageMeta>;
 #[derive(Debug)]
 pub struct CachePageMeta {
     pub state: AtomicPageState,
-    // TODO: Add a reverse mapping from the page to VMO for eviction.
+    pub reverse_map: RwLock<Option<Arc<Vmo_>>>,
+    pub is_mmapped: AtomicBool,
 }
 
 impl_untyped_frame_meta_for!(CachePageMeta);
@@ -506,6 +798,8 @@ pub trait CachePageExt {
     fn alloc_uninit() -> Result<CachePage> {
         let meta = CachePageMeta {
             state: AtomicPageState::new(PageState::Uninit),
+            reverse_map: RwLock::new(None),
+            is_mmapped: AtomicBool::new(false),
         };
         let page = FrameAllocOptions::new()
             .zeroed(false)
@@ -517,6 +811,8 @@ pub trait CachePageExt {
     fn alloc_zero(state: PageState) -> Result<CachePage> {
         let meta = CachePageMeta {
             state: AtomicPageState::new(state),
+            reverse_map: RwLock::new(None),
+            is_mmapped: AtomicBool::new(false),
         };
         let page = FrameAllocOptions::new()
             .zeroed(true)

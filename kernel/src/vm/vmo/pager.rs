@@ -55,4 +55,7 @@ pub trait Pager: Send + Sync {
     /// Notify the pager that the frame will be fully overwritten soon, so pager can
     /// choose not to initialize it.
     fn commit_overwrite(&self, idx: usize) -> Result<UFrame>;
+
+    /// Promote the page in the global page cache (PageCacheReclaimer.inner)
+    fn g_page_cache_promote(&self, idx: usize) -> Result<()>;
 }
