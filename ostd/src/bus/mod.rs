@@ -2,7 +2,6 @@
 
 //! Bus operations
 
-pub mod mmio;
 pub mod pci;
 
 /// An error that occurs during bus probing.
@@ -17,5 +16,4 @@ pub enum BusProbeError {
 /// Initializes the bus
 pub(crate) fn init() {
     pci::init();
-    mmio::init();
 }

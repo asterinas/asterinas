@@ -24,5 +24,9 @@ component = { path = "../../libs/comp-sys/component" }
 log = "0.4"
 int-to-c-enum = { path = "../../libs/int-to-c-enum" }
 
+[features]
+all = ["cvm_guest"]
+cvm_guest = ["ostd/cvm_guest"]
+
 [lints]
 workspace = true
