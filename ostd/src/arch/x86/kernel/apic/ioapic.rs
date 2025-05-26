@@ -2,7 +2,7 @@
 
 #![expect(dead_code)]
 
-use alloc::{vec, vec::Vec};
+use alloc::vec::Vec;
 use core::ptr::NonNull;
 
 use bit_field::BitField;
@@ -192,31 +192,8 @@ impl IoApicAccess {
 pub static IO_APIC: Once<Vec<SpinLock<IoApic>>> = Once::new();
 
 pub fn init(io_mem_builder: &IoMemAllocatorBuilder) {
-    let Some(platform_info) = get_platform_info() else {
-        IO_APIC.call_once(|| {
-            // FIXME: Is it possible to have an address that is not the default 0xFEC0_0000?
-            // Need to find a way to determine if it is a valid address or not.
-            const IO_APIC_DEFAULT_ADDRESS: usize = 0xFEC0_0000;
-            let mut io_apic = unsafe { IoApicAccess::new(IO_APIC_DEFAULT_ADDRESS, io_mem_builder) };
-            io_apic.set_id(0);
-            let id = io_apic.id();
-            let version = io_apic.version();
-            let max_redirection_entry = io_apic.max_redirection_entry();
-            info!(
-                "[IOAPIC]: Not found ACPI tables, using default address:{:x?}",
-                IO_APIC_DEFAULT_ADDRESS,
-            );
-            info!(
-                "[IOAPIC]: IOAPIC id: {}, version:{}, max_redirection_entry:{}, interrupt base:{}",
-                id, version, max_redirection_entry, 0
-            );
-            vec![SpinLock::new(IoApic::new(io_apic, 0))]
-        });
-        return;
-    };
-    match &platform_info.interrupt_model {
-        acpi::InterruptModel::Unknown => panic!("not found APIC in ACPI Table"),
-        acpi::InterruptModel::Apic(apic) => {
+    match get_platform_info().map(|platform_info| &platform_info.interrupt_model) {
+        Some(acpi::InterruptModel::Apic(apic)) => {
             let mut vec = Vec::new();
             for id in 0..apic.io_apics.len() {
                 let io_apic = apic.io_apics.get(id).unwrap();
@@ -238,7 +215,11 @@ pub fn init(io_mem_builder: &IoMemAllocatorBuilder) {
             }
             IO_APIC.call_once(|| vec);
         }
-        _ => {
+        // If there are no ACPI tables, or the ACPI tables do not provide us with information about
+        // the I/O APIC, we may need to find another way to determine the I/O APIC address
+        // correctly and reliably (e.g., by parsing the MultiProcessor Specification, which has
+        // been deprecated for a long time and may not even exist in modern hardware).
+        None | Some(acpi::InterruptModel::Unknown) | Some(_) => {
             panic!("Unknown interrupt model")
         }
     };
