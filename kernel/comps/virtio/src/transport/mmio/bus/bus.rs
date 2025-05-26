@@ -2,14 +2,12 @@
 
 //! MMIO bus.
 
-#![expect(unused_variables)]
-
 use alloc::{collections::VecDeque, fmt::Debug, sync::Arc, vec::Vec};
 
 use log::{debug, error};
+use ostd::bus::BusProbeError;
 
 use super::common_device::MmioCommonDevice;
-use crate::bus::BusProbeError;
 
 /// MMIO device trait
 pub trait MmioDevice: Sync + Send + Debug {
@@ -45,7 +43,7 @@ impl MmioBus {
     pub fn register_driver(&mut self, driver: Arc<dyn MmioDriver>) {
         debug!("Register driver:{:#x?}", driver);
         let length = self.common_devices.len();
-        for i in (0..length).rev() {
+        for _ in (0..length).rev() {
             let common_device = self.common_devices.pop_front().unwrap();
             let device_id = common_device.read_device_id().unwrap();
             let device = match driver.probe(common_device) {
