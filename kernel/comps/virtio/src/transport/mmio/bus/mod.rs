@@ -3,18 +3,18 @@
 //! Virtio over MMIO
 
 use bus::MmioBus;
+use ostd::sync::SpinLock;
 
-use crate::sync::SpinLock;
-
-pub mod bus;
-pub mod common_device;
+#[expect(clippy::module_inception)]
+pub(super) mod bus;
+pub(super) mod common_device;
 
 /// The MMIO bus instance.
-pub static MMIO_BUS: SpinLock<MmioBus> = SpinLock::new(MmioBus::new());
+pub(super) static MMIO_BUS: SpinLock<MmioBus> = SpinLock::new(MmioBus::new());
 
-pub(crate) fn init() {
+pub(super) fn init() {
     #[cfg(target_arch = "x86_64")]
-    crate::arch::if_tdx_enabled!({
+    ostd::if_tdx_enabled!({
         // TODO: support virtio-mmio devices on TDX.
         //
         // Currently, virtio-mmio devices need to acquire sub-page MMIO regions,
@@ -28,8 +28,7 @@ pub(crate) fn init() {
 fn x86_probe() {
     use common_device::{mmio_check_magic, mmio_read_device_id, MmioCommonDevice};
     use log::debug;
-
-    use crate::{arch::kernel::IRQ_CHIP, io::IoMem, trap::IrqLine};
+    use ostd::{arch::kernel::IRQ_CHIP, io::IoMem, trap::IrqLine};
 
     // TODO: The correct method for detecting VirtIO-MMIO devices on x86_64 systems is to parse the
     // kernel command line if ACPI tables are absent [1], or the ACPI SSDT if ACPI tables are
