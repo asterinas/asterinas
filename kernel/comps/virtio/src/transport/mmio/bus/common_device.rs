@@ -4,8 +4,7 @@
 
 use int_to_c_enum::TryFromInt;
 use log::info;
-
-use crate::{arch::kernel::IrqChipLine, io::IoMem, mm::VmIoOnce, trap::IrqLine, Error, Result};
+use ostd::{arch::kernel::IrqChipLine, io::IoMem, mm::VmIoOnce, trap::IrqLine, Error, Result};
 
 /// A MMIO common device.
 #[derive(Debug)]
