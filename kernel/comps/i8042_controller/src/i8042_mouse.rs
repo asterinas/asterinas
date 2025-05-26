@@ -12,16 +12,18 @@ use ostd::{
 };
 use spin::Once;
 use alloc::sync::Arc;
-use alloc::vec::Vec;
-use aster_input::{InputDevice, InputDeviceMeta, InputEvent, input_event};
+
+use aster_input::{InputDevice, InputDeviceMeta, InputEvent, input_event, InputID};
+
 use aster_time::tsc::read_instant;
 use core::hint::spin_loop;
+use alloc::vec;
+use alloc::vec::Vec;
 
 use crate::alloc::string::ToString;
 use super::MOUSE_CALLBACKS;
-use aster_input::event_type_codes::{EventType, RelAxis, MouseKeyEvent};
 use crate::MOUSE_WRITE;
-
+use aster_input::event_type_codes::*;
 
 
 use crate::DATA_PORT;
@@ -31,7 +33,7 @@ use crate::MOUSE_IRQ_LINE;
 pub fn init() {
     log::error!("This is init in kernel/comps/mouse/src/i8042_mouse.rs");
 
-    aster_input::register_device("i8042_mouse".to_string(), Arc::new(I8042Mouse));
+    aster_input::register_device("PS/2 Generic Mouse".to_string(), Arc::new(I8042Mouse));
 }
 
 
@@ -39,12 +41,43 @@ struct I8042Mouse;
 
 impl InputDevice for I8042Mouse {
     fn metadata(&self) -> InputDeviceMeta {
+        let id = InputID {
+            bustype: 0x11,
+            vendor_id: 0x2,
+            product_id: 0x1,  
+            version: 0,       
+        };
         InputDeviceMeta {
-            name: "i8042_mouse".to_string(),
-            vendor_id: 0x2345,    // Replace with the actual vendor ID
-            product_id: 0x6789,  // Replace with the actual product ID
-            version: 2,          // Replace with the actual version
+            name: "PS/2 Generic Mouse".to_string(),
+            phys: "isa0060/serio1/input0".to_string(),
+            uniq: "NULL".to_string(),
+            version: 65537,
+            id: id,
         }
+    }
+
+    fn get_prop_bit(&self) -> Vec<PropType> {
+        vec![PropType::Pointer]
+    }
+
+    fn get_ev_bit(&self) -> Vec<EventType> {
+        vec![EventType::EvSyn, EventType::EvKey, EventType::EvRel]
+    }
+
+    fn get_key_bit(&self) -> Vec<KeyEvent> {
+        vec![KeyEvent::BtnLeft, KeyEvent::BtnMiddle, KeyEvent::BtnRight]
+    }
+
+    fn get_led_bit(&self) -> Vec<LedEvent> {
+        vec![]
+    }
+
+    fn get_msc_bit(&self) -> Vec<MiscEvent> {
+        vec![]
+    }
+
+    fn get_rel_bit(&self) -> Vec<RelEvent> {
+        vec![RelEvent::RelX, RelEvent::RelY]
     }
 }
 
@@ -79,9 +112,8 @@ pub fn handle_mouse_input(_trap_frame: &TrapFrame) {
 
 use ostd::prelude::println;
 fn handle_mouse_packet(packet: MousePacket) {
-    // Parse multiple events from the packet
-    let mut events = parse_input_events(packet);
-
+    let mut events = parse_input_events(packet);  
+    
     // Add a SYNC event to signal the end of the event group
     events.push(InputEvent {
         time: 0,
@@ -92,7 +124,7 @@ fn handle_mouse_packet(packet: MousePacket) {
     // Process each event
     for event in events {
         println!("Event: {:?}", event);
-        input_event(event, "i8042_mouse");
+        input_event(event, "PS/2 Generic Mouse");
     }
 
     // FIXME: the callbacks are going to be replaced.
@@ -179,7 +211,7 @@ fn parse_input_events(packet: MousePacket) -> Vec<InputEvent> {
         events.push(InputEvent {
             time: time_in_microseconds,
             type_: EventType::EvRel as u16,
-            code: RelAxis::RelX as u16,
+            code: RelEvent::RelX as u16,
             value: packet.x_movement as i32,
         });
     }
@@ -189,7 +221,7 @@ fn parse_input_events(packet: MousePacket) -> Vec<InputEvent> {
         events.push(InputEvent {
             time: time_in_microseconds,
             type_: EventType::EvRel as u16,
-            code: RelAxis::RelY as u16,
+            code: RelEvent::RelY as u16,
             value: packet.y_movement as i32,
         });
     }

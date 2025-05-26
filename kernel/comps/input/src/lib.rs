@@ -14,8 +14,9 @@ use alloc::{collections::BTreeMap, string::String, sync::Arc, vec::Vec};
 use core::{any::Any, fmt::Debug};
 
 use component::{init_component, ComponentInitError};
-use ostd::sync::SpinLock;
+use ostd::{sync::SpinLock, Pod};
 use spin::Once;
+use crate::event_type_codes::*;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -42,16 +43,37 @@ struct Connection {
     handler: Arc<dyn InputHandler>, // Reference to the InputHandler
 }
 
-#[derive(Debug, Clone)]
-pub struct InputDeviceMeta {
-    pub name: String,       // Name of the device
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod)]
+pub struct InputID {
+    pub bustype: u16,       // Bus type
     pub vendor_id: u16,     // Vendor ID
     pub product_id: u16,    // Product ID
     pub version: u16,       // Version of the device
 }
+#[derive(Debug, Clone)]
+pub struct InputDeviceMeta {
+    pub name: String,       // Name of the device
+    pub phys: String,       // Physical location of the device
+    pub uniq: String,       // Unique string of the device
+    pub version: u32,       // Version of the device
+    pub id: InputID,        // Input_id of the device
+}
 
 pub trait InputDevice: Send + Sync + Any {
     fn metadata(&self) -> InputDeviceMeta;
+
+    fn get_prop_bit(&self) -> Vec<PropType>;
+
+    fn get_ev_bit(&self) -> Vec<EventType>;
+
+    fn get_key_bit(&self) -> Vec<KeyEvent>;
+
+    fn get_rel_bit(&self) -> Vec<RelEvent>;
+
+    fn get_msc_bit(&self) -> Vec<MiscEvent>;
+
+    fn get_led_bit(&self) -> Vec<LedEvent>;
 }
 
 pub trait InputHandler: Send + Sync {

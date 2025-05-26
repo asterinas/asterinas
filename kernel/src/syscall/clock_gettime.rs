@@ -21,6 +21,8 @@ use crate::{
     },
 };
 
+use ostd::mm::Infallible;
+
 pub fn sys_clock_gettime(
     clockid: clockid_t,
     timespec_addr: Vaddr,
@@ -151,5 +153,20 @@ pub fn read_clock(clockid: clockid_t, ctx: &Context) -> Result<Duration> {
             }
             DynamicClockIdInfo::Fd(_) => unimplemented!(),
         }
+    }
+}
+
+
+pub fn read_clock_input(clockid: clockid_t) -> Result<Duration> {
+    if clockid >= 0 {
+        let clock_id = ClockId::try_from(clockid)?;
+        match clock_id {
+            ClockId::CLOCK_REALTIME => Ok(RealTimeClock::get().read_time()),
+            ClockId::CLOCK_MONOTONIC => Ok(MonotonicClock::get().read_time()),
+            ClockId::CLOCK_BOOTTIME => Ok(BootTimeClock::get().read_time()),
+            _ => Ok(Duration::from_secs(0)),
+        }
+    } else {
+        unimplemented!()
     }
 }

@@ -29,3 +29,5 @@ virtio-net.pcap
 aster-nix-profile-*.json
 aster-nix-profile-*.folded
 aster-nix-profile-*.svg
+
+xorg_server/

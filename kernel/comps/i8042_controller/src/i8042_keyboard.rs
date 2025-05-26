@@ -11,9 +11,11 @@ use ostd::{
     trap::irq::IrqLine,
 };
 use spin::Once;
-use alloc::sync::Arc;
-use aster_input::{InputDevice, InputDeviceMeta, InputEvent, input_event};
+use alloc::{sync::Arc, vec::Vec};
+use aster_input::{InputDevice, InputDeviceMeta, InputEvent, input_event, InputID};
 use aster_time::tsc::read_instant;
+use aster_input::event_type_codes::*;
+use alloc::vec;
 
 use crate::alloc::string::ToString;
 use super::{InputKey, KEYBOARD_CALLBACKS};
@@ -25,18 +27,53 @@ use crate::KEYBOARD_IRQ_LINE;
 
 pub fn init() {
     log::error!("This is init in kernel/comps/keyboard/src/i8042_keyboard.rs");
-    aster_input::register_device("i8042_keyboard".to_string(), Arc::new(I8042Keyboard));
+    aster_input::register_device("AT Translated Set 2 keyboard".to_string(), Arc::new(I8042Keyboard));
 }
 struct I8042Keyboard;
 
 impl InputDevice for I8042Keyboard {
     fn metadata(&self) -> InputDeviceMeta {
+        let id = InputID {
+            bustype: 0x11,
+            vendor_id: 0x1,   
+            product_id: 0x1,  
+            version: 43841, 
+        };
         InputDeviceMeta {
-            name: "i8042_keyboard".to_string(),
-            vendor_id: 0x1234,    // Replace with the actual vendor ID
-            product_id: 0x5678,  // Replace with the actual product ID
-            version: 1,          // Replace with the actual version
+            name: "AT Translated Set 2 keyboard".to_string(),
+            phys: "isa0060/serio0/input0".to_string(),
+            uniq: "NULL".to_string(),
+            version: 65537,
+            id: id,
         }
+    }
+
+    fn get_prop_bit(&self) -> Vec<PropType> {
+        vec![]
+    }
+
+    // Not support EVIOCGREP
+    // This is different with strace in Linux, because we claim we do not support EV_REP
+    fn get_ev_bit(&self) -> Vec<EventType> {
+        vec![EventType::EvSyn, EventType::EvKey, EventType::EvMsc, EventType::EvLed]
+    }
+
+    fn get_key_bit(&self) -> Vec<KeyEvent> { 
+        // Because we need to provide hundreds of keys, it is no need to list all keys needed here for POC.
+        // So we just return a meaningless vec, and return the exact bitmap in handle_get_key_bit func. 
+        vec![KeyEvent::KeyEsc, KeyEvent::Key1, KeyEvent::Key2, KeyEvent::Key3]
+    }
+
+    fn get_led_bit(&self) -> Vec<LedEvent> {
+        vec![LedEvent::LedNuml, LedEvent::LedCapsl, LedEvent::LedScrolll]
+    }
+
+    fn get_msc_bit(&self) -> Vec<MiscEvent> {
+        vec![MiscEvent::MscScan]
+    }
+
+    fn get_rel_bit(&self) -> Vec<RelEvent> {
+        vec![]
     }
 }
 
@@ -51,10 +88,10 @@ pub fn handle_keyboard_input(_trap_frame: &TrapFrame) {
     // Dispatch the input event
     input_event(InputEvent {
         time: time_in_microseconds, // Assign the current timestamp
-        type_: 1,                   // EV_KEY (example type for key events)
+        type_: EventType::EvKey as u16,    // EV_KEY (example type for key events)
         code: key as u16,           // Convert InputKey to a u16 representation
         value: 1,                   // Example value (1 for key press, 0 for release)
-    }, "i8042_keyboard");
+    }, "AT Translated Set 2 keyboard");
 
     // Fixme: the callbacks are going to be replaced.
     for callback in KEYBOARD_CALLBACKS.lock().iter() {

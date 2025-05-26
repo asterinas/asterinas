@@ -13,7 +13,9 @@ use aster_input::{
     InputEvent,
 };
 use aster_util::{field_ptr, safe_ptr::SafePtr};
-use aster_input::{InputDevice as AsterInputDevice, InputDeviceMeta};
+use aster_input::{InputDevice as AsterInputDevice, InputDeviceMeta, InputID};
+use alloc::vec;
+use aster_input::event_type_codes::*;
 
 use bitflags::bitflags;
 use log::{debug, info};
@@ -262,12 +264,43 @@ impl InputDevice {
 
 impl AsterInputDevice for InputDevice {
     fn metadata(&self) -> InputDeviceMeta {
+        let id = InputID {
+            bustype: 0x11,
+            vendor_id: 0x1234,   
+            product_id: 0x5678,  
+            version: 1,       
+        };
         InputDeviceMeta {
             name: self.query_config_id_name(),
-            vendor_id: 0x1234, // Example vendor ID, replace with actual value if available
-            product_id: 0x5678, // Example product ID, replace with actual value if available
-            version: 1, // Example version, replace with actual value if available
+            phys: "dev/virtio".to_string(),
+            uniq: "NULL".to_string(),
+            version: 65537,
+            id: id,
         }
+    }
+
+    fn get_prop_bit(&self) -> Vec<PropType> {
+        vec![]
+    }
+
+    fn get_ev_bit(&self) -> Vec<EventType> {
+        vec![]
+    }
+
+    fn get_key_bit(&self) -> Vec<KeyEvent> {
+        vec![]
+    }
+
+    fn get_led_bit(&self) -> Vec<LedEvent> {
+        vec![]
+    }
+
+    fn get_msc_bit(&self) -> Vec<MiscEvent> {
+        vec![]
+    }
+
+    fn get_rel_bit(&self) -> Vec<RelEvent> {
+        vec![]
     }
 }
 
