@@ -121,9 +121,9 @@ impl EventDevice {
             queue.pop_front();
         }
         queue.push_back(event);
-        println!("Pushed event: {:?}", event);
+        // println!("Pushed event: {:?}", event);
         if event.type_ == EventType::EvSyn as u16 {
-            println!("EventDevice::push_event: SYN event detected");
+            // println!("EventDevice::push_event: SYN event detected");
             self.pollee.notify(IoEvents::IN);
         }
     }
@@ -206,7 +206,7 @@ pub struct EventDeviceHandler {
 impl InputHandler for EventDeviceHandler {
     /// Specifies the event types this handler can process.
     fn supported_event_types(&self) -> Vec<u16> {
-        vec![EventType::EvKey as u16, EventType::EvRel as u16] // Supports keyboard and mouse events
+        vec![EventType::EvSyn as u16, EventType::EvKey as u16, EventType::EvRel as u16] // Supports keyboard and mouse events
     }
 
     /// Handles the input event by pushing it to the event queue.

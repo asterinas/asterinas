@@ -153,6 +153,9 @@ impl Component {
     pub fn input_event(&self, event: InputEvent, str: &str) {
         let connections = self.connections.lock();
         for connection in connections.iter() {
+            if connection.device.metadata().name != str {
+                continue;
+            }
             if connection.handler.supported_event_types().contains(&event.type_) {
                 connection.handler.handle_event(event, str).unwrap();
             }

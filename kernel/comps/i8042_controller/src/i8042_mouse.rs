@@ -123,7 +123,7 @@ fn handle_mouse_packet(packet: MousePacket) {
     });
     // Process each event
     for event in events {
-        println!("Event: {:?}", event);
+        // println!("----------------Event: {:?}", event);
         input_event(event, "PS/2 Generic Mouse");
     }
 
