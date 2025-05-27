@@ -54,13 +54,13 @@ impl DmaStream {
         direction: DmaDirection,
         is_cache_coherent: bool,
     ) -> Result<Self, DmaError> {
-        let frame_count = segment.size() / PAGE_SIZE;
         let start_paddr = segment.start_paddr();
+        let frame_count = segment.size() / PAGE_SIZE;
+
         if !check_and_insert_dma_mapping(start_paddr, frame_count) {
             return Err(DmaError::AlreadyMapped);
         }
-        // Ensure that the addresses used later will not overflow
-        start_paddr.checked_add(frame_count * PAGE_SIZE).unwrap();
+
         let start_daddr = match dma_type() {
             DmaType::Direct => {
                 #[cfg(target_arch = "x86_64")]
@@ -170,10 +170,9 @@ impl HasDaddr for DmaStream {
 
 impl Drop for DmaStreamInner {
     fn drop(&mut self) {
-        let frame_count = self.segment.size() / PAGE_SIZE;
         let start_paddr = self.segment.start_paddr();
-        // Ensure that the addresses used later will not overflow
-        start_paddr.checked_add(frame_count * PAGE_SIZE).unwrap();
+        let frame_count = self.segment.size() / PAGE_SIZE;
+
         match dma_type() {
             DmaType::Direct => {
                 #[cfg(target_arch = "x86_64")]
@@ -198,6 +197,7 @@ impl Drop for DmaStreamInner {
                 }
             }
         }
+
         remove_dma_mapping(start_paddr, frame_count);
     }
 }
