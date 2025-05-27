@@ -202,6 +202,8 @@ impl Backlog {
         };
         let conn = incoming_conns.pop_front();
 
+        self.pollee.invalidate();
+
         drop(locked_incoming_conns);
 
         if conn.is_some() {
