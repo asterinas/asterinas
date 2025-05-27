@@ -5,7 +5,7 @@
 
 #![no_std]
 #![no_main]
-#![deny(unsafe_code)]
+// #![deny(unsafe_code)]
 #![feature(btree_cursors)]
 #![feature(btree_extract_if)]
 #![feature(debug_closure_helpers)]

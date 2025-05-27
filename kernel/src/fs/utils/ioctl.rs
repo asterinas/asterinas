@@ -5,6 +5,7 @@ use crate::prelude::*;
 #[expect(clippy::upper_case_acronyms)]
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, TryFromInt)]
+// #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IoctlCmd {
     /// Get terminal attributes
     TCGETS = 0x5401,
@@ -73,4 +74,97 @@ pub enum IoctlCmd {
     EVIOCGSW = 0x8000451B,
     EVIOCGVERSION = 0x80044501,
     EVIOCSCLOCKID = 0x400445A0,
+    // Raw(u32),
 }
+
+// impl IoctlCmd {
+//     pub fn as_u32(self) -> u32 {
+//         match self {
+//             IoctlCmd::TCGETS => 0x5401,
+//             IoctlCmd::TCSETS => 0x5402,
+//             IoctlCmd::TCSETSW => 0x5403,
+//             IoctlCmd::TCSETSF => 0x5404,
+//             IoctlCmd::TIOCSCTTY => 0x540e,
+//             IoctlCmd::TIOCGPGRP => 0x540f,
+//             IoctlCmd::TIOCSPGRP => 0x5410,
+//             IoctlCmd::FIONREAD => 0x541B,
+//             IoctlCmd::TIOCGWINSZ => 0x5413,
+//             IoctlCmd::TIOCSWINSZ => 0x5414,
+//             IoctlCmd::FIONBIO => 0x5421,
+//             IoctlCmd::TIOCNOTTY => 0x5422,
+//             IoctlCmd::TIOCGSID => 0x5429,
+//             IoctlCmd::FIONCLEX => 0x5450,
+//             IoctlCmd::FIOCLEX => 0x5451,
+//             IoctlCmd::FIOASYNC => 0x5452,
+//             IoctlCmd::TIOCGPTN => 0x80045430,
+//             IoctlCmd::TIOCSPTLCK => 0x40045431,
+//             IoctlCmd::TIOCGPTPEER => 0x40045441,
+//             IoctlCmd::TDXGETREPORT => 0xc4405401,
+//             IoctlCmd::GETVSCREENINFO => 0x4600,
+//             IoctlCmd::PUTVSCREENINFO => 0x4601,
+//             IoctlCmd::GETFSCREENINFO => 0x4602,
+//             IoctlCmd::GETCMAP => 0x4604,
+//             IoctlCmd::PUTCMAP => 0x4605,
+//             IoctlCmd::PANDISPLAY => 0x4606,
+//             IoctlCmd::FBIOBLANK => 0x4611,
+//             IoctlCmd::EVIOCGBIT => 0x80004520,
+//             IoctlCmd::EVIOCGID => 0x80084502,
+//             IoctlCmd::EVIOCGKEY => 0x80004518,
+//             IoctlCmd::EVIOCGLED => 0x80004519,
+//             IoctlCmd::EVIOCGNAME => 0x80004506,
+//             IoctlCmd::EVIOCGPHYS => 0x80004507,
+//             IoctlCmd::EVIOCGUNIQ => 0x80004508,
+//             IoctlCmd::EVIOCGPROP => 0x80004509,
+//             IoctlCmd::EVIOCGREP => 0x80084503,
+//             IoctlCmd::EVIOCGSW => 0x8000451B,
+//             IoctlCmd::EVIOCGVERSION => 0x80044501,
+//             IoctlCmd::EVIOCSCLOCKID => 0x400445A0,
+//             IoctlCmd::Raw(val) => val,
+//         }
+//     }
+
+//     pub fn from_u32(value: u32) -> Self {
+//         match value {
+//             0x5401 => IoctlCmd::TCGETS,
+//             0x5402 => IoctlCmd::TCSETS,
+//             0x5403 => IoctlCmd::TCSETSW,
+//             0x5404 => IoctlCmd::TCSETSF,
+//             0x540e => IoctlCmd::TIOCSCTTY,
+//             0x540f => IoctlCmd::TIOCGPGRP,
+//             0x5410 => IoctlCmd::TIOCSPGRP,
+//             0x541B => IoctlCmd::FIONREAD,
+//             0x5413 => IoctlCmd::TIOCGWINSZ,
+//             0x5414 => IoctlCmd::TIOCSWINSZ,
+//             0x5421 => IoctlCmd::FIONBIO,
+//             0x5422 => IoctlCmd::TIOCNOTTY,
+//             0x5429 => IoctlCmd::TIOCGSID,
+//             0x5450 => IoctlCmd::FIONCLEX,
+//             0x5451 => IoctlCmd::FIOCLEX,
+//             0x5452 => IoctlCmd::FIOASYNC,
+//             0x80045430 => IoctlCmd::TIOCGPTN,
+//             0x40045431 => IoctlCmd::TIOCSPTLCK,
+//             0x40045441 => IoctlCmd::TIOCGPTPEER,
+//             0xc4405401 => IoctlCmd::TDXGETREPORT,
+//             0x4600 => IoctlCmd::GETVSCREENINFO,
+//             0x4601 => IoctlCmd::PUTVSCREENINFO,
+//             0x4602 => IoctlCmd::GETFSCREENINFO,
+//             0x4604 => IoctlCmd::GETCMAP,
+//             0x4605 => IoctlCmd::PUTCMAP,
+//             0x4606 => IoctlCmd::PANDISPLAY,
+//             0x4611 => IoctlCmd::FBIOBLANK,
+//             0x80004520 => IoctlCmd::EVIOCGBIT,
+//             0x80084502 => IoctlCmd::EVIOCGID,
+//             0x80004518 => IoctlCmd::EVIOCGKEY,
+//             0x80004519 => IoctlCmd::EVIOCGLED,
+//             0x80004506 => IoctlCmd::EVIOCGNAME,
+//             0x80004507 => IoctlCmd::EVIOCGPHYS,
+//             0x80004508 => IoctlCmd::EVIOCGUNIQ,
+//             0x80004509 => IoctlCmd::EVIOCGPROP,
+//             0x80084503 => IoctlCmd::EVIOCGREP,
+//             0x8000451B => IoctlCmd::EVIOCGSW,
+//             0x80044501 => IoctlCmd::EVIOCGVERSION,
+//             0x400445A0 => IoctlCmd::EVIOCSCLOCKID,
+//             _ => IoctlCmd::Raw(value),
+//         }
+//     }
+// }

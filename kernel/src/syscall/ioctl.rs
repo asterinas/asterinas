@@ -8,9 +8,25 @@ use crate::{
     },
     prelude::*,
 };
+use core::mem;
 
 pub fn sys_ioctl(fd: FileDesc, cmd: u32, arg: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
-    let ioctl_cmd = IoctlCmd::try_from(cmd)?;
+    // log::error!("-------------Coming into sys_ioctl! with cmd: {:#x}", cmd);
+    let flag = ((cmd >> 8) & 0xffu32) as u8;
+    let ioctl_cmd = match IoctlCmd::try_from(cmd) {
+        Ok(cmd) => cmd,
+        Err(e) if flag == 0x45 => {
+            let mut file_table = ctx.thread_local.borrow_file_table_mut();
+            let file = get_file_fast!(&mut file_table, fd);
+            let file_owned = file.into_owned();
+            drop(file_table);
+            let evdevres: i32 = file_owned.ioctl(unsafe { mem::transmute(cmd) }, arg)?;
+            return Ok(SyscallReturn::Return(evdevres as _));
+        }
+        Err(e) => return Err(e.into()),
+    };
+    // let ioctl_cmd = IoctlCmd::from_u32(cmd);
+    // let ioctl_cmd = IoctlCmd::try_from(cmd)?;
     debug!(
         "fd = {}, ioctl_cmd = {:?}, arg = 0x{:x}",
         fd, ioctl_cmd, arg

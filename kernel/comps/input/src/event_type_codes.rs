@@ -1002,3 +1002,6 @@ pub enum KeyEvent {
 // Maximum value for key events
 const KEY_MAX: usize = 0x2ff;
 pub const KEY_COUNT: usize = KEY_MAX + 1;
+
+const FF_MAX: usize = 0x7f;
+pub const FF_COUNT: usize = FF_MAX + 1;

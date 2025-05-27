@@ -170,18 +170,6 @@ impl Status {
 }
 
 fn parse_input_packet(packet: [u8; 3]) -> MousePacket {
-    // let status = Status::read();
-    // if !status.is_valid() {
-    //     log::error!("invalid mouse input!");
-    // }
-    // if !status.output_buffer_is_full() {
-    //     log::error!("No input.");
-    // }
-
-    // let byte0 = MousePacket::read_one_byte();
-    // let byte1 = MousePacket::read_one_byte();
-    // let byte2 = MousePacket::read_one_byte();
-
     log::error!("This is parse_input_packet in kernel/comps/mouse/src/i8042_mouse.rs packet: {:?}", packet);
 
     let byte0 = packet[0];

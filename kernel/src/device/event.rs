@@ -9,7 +9,7 @@ use crate::{
     syscall::ClockId,
     util::MultiWrite,
 };
-use aster_input::{register_handler, unregister_handler, InputHandler, InputEvent, event_type_codes::EventType};
+use aster_input::{register_handler, InputHandler, InputEvent, event_type_codes::EventType};
 use alloc::collections::VecDeque;
 use spin::{Mutex, Once};
 use aster_input::InputDevice;
@@ -20,13 +20,18 @@ use aster_input::event_type_codes::*;
 const BITS_PER_WORD: usize = usize::BITS as usize;
 const EV_BITMAP_LEN: usize = (EV_COUNT + BITS_PER_WORD - 1) / BITS_PER_WORD;
 const KEY_BITMAP_LEN: usize = (KEY_COUNT + BITS_PER_WORD - 1) / BITS_PER_WORD;
-const LED_BITMAP_LEN: usize = (LED_COUNT + BITS_PER_WORD - 1) / BITS_PER_WORD;
-const MSC_BITMAP_LEN: usize = (MSC_COUNT + BITS_PER_WORD - 1) / BITS_PER_WORD;
 const REL_BITMAP_LEN: usize = (REL_COUNT + BITS_PER_WORD - 1) / BITS_PER_WORD;
+const ABS_BITMAP_LEN: usize = (ABS_COUNT + BITS_PER_WORD - 1) / BITS_PER_WORD;
+const MSC_BITMAP_LEN: usize = (MSC_COUNT + BITS_PER_WORD - 1) / BITS_PER_WORD;
+const LED_BITMAP_LEN: usize = (LED_COUNT + BITS_PER_WORD - 1) / BITS_PER_WORD;
+const SND_BITMAP_LEN: usize = (SND_COUNT + BITS_PER_WORD - 1) / BITS_PER_WORD;
+const FF_BITMAP_LEN: usize = (FF_COUNT + BITS_PER_WORD - 1) / BITS_PER_WORD;
 const SW_BITMAP_LEN: usize = (SW_COUNT + BITS_PER_WORD - 1) / BITS_PER_WORD;
 const PROP_BITMAP_LEN: usize = (PROP_COUNT + BITS_PER_WORD - 1) / BITS_PER_WORD;
 
-use crate::syscall::ClockId::CLOCK_MONOTONIC;
+const EVIOCGBIT_NR_MAX: u8 = EVIOCGBIT_NR + EV_COUNT as u8;
+
+// use crate::syscall::ClockId::CLOCK_MONOTONIC;
 use crate::syscall::clock_gettime::read_clock_input;
 
 const NR_SHIFT: usize = 0;
@@ -45,6 +50,19 @@ const EVIOCGREP_NR: u8 = (IoctlCmd::EVIOCGREP as u32 & 0xFF) as u8;
 const EVIOCGSW_NR: u8 = (IoctlCmd::EVIOCGSW as u32 & 0xFF) as u8;
 const EVIOCGVERSION_NR: u8 = (IoctlCmd::EVIOCGVERSION as u32 & 0xFF) as u8;
 const EVIOCSCLOCKID_NR: u8 = (IoctlCmd::EVIOCSCLOCKID as u32 & 0xFF) as u8;
+
+// const EVIOCGBIT_NR: u8 = 0x20;
+// const EVIOCGID_NR: u8 = 0x02;
+// const EVIOCGKEY_NR: u8 = 0x18;
+// const EVIOCGLED_NR: u8 = 0x19;
+// const EVIOCGNAME_NR: u8 = 0x06;
+// const EVIOCGPHYS_NR: u8 = 0x07;
+// const EVIOCGUNIQ_NR: u8 = 0x08;
+// const EVIOCGPROP_NR: u8 = 0x09;
+// const EVIOCGREP_NR: u8 = 0x03;
+// const EVIOCGSW_NR: u8 = 0x1b;
+// const EVIOCGVERSION_NR: u8 = 0x01;
+// const EVIOCSCLOCKID_NR: u8 = 0xa0;
 
 
 #[repr(C)]
@@ -161,7 +179,7 @@ impl Device for EventDevice {
 
 impl Pollable for EventDevice {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        println!("EventDevice::poll called with mask: {:?}", mask);
+        // println!("EventDevice::poll called with mask: {:?}", mask);
 
         // Use the Pollee mechanism to manage readiness and notifications
         self.pollee.poll_with(mask, poller, || {
@@ -196,125 +214,32 @@ impl FileIo for EventDevice {
     fn write(&self, reader: &mut VmReader) -> Result<usize> {
         Ok(reader.remain())
     }
-}
-
-#[derive(Debug)]
-pub struct EventDeviceHandler {
-    event_devices: Mutex<Vec<Weak<EventDevice>>>, // Wrap in a Mutex for mutable access
-}
-
-impl InputHandler for EventDeviceHandler {
-    /// Specifies the event types this handler can process.
-    fn supported_event_types(&self) -> Vec<u16> {
-        vec![EventType::EvSyn as u16, EventType::EvKey as u16, EventType::EvRel as u16] // Supports keyboard and mouse events
-    }
-
-    /// Handles the input event by pushing it to the event queue.
-    fn handle_event(&self, event: InputEvent, str: &str) -> core::result::Result<(), core::convert::Infallible> {
-        let mut devices = self.event_devices.lock();
-        for weak_dev in devices.iter() {
-            if let Some(event_device) = weak_dev.upgrade() {
-                let metadata = event_device.input_device.metadata();
-                let name = metadata.name.as_str();
-                if name != str {
-                    continue;
-                }
-
-                let time = read_clock_input(event_device.clock_id as i32).unwrap();
-                log::error!("The time is: sec is {}, usec is {}", time.as_secs(), time.subsec_micros());
-
-                // Convert InputEvent to InputEventLinux
-                let linux_event = InputEventLinux {
-                    sec: time.as_secs(),
-                    usec: time.subsec_micros() as u64,
-                    // sec: event.time / 1_000_000,
-                    // usec: event.time % 1_000_000,
-                    type_: event.type_,
-                    code: event.code,
-                    value: event.value,
-                };
-
-                event_device.push_event(linux_event);
-            }
-        }
-
-        Ok(())
-    }
-}
-
-
-// Implement the Pollable trait for Arc<EventDevice>
-impl Pollable for Arc<EventDevice> {
-    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        self.as_ref().poll(mask, poller)
-    }
-}
-
-// Implement the FileIo trait for Arc<EventDevice>
-impl FileIo for Arc<EventDevice> {
-    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        println!("Arc<EventDevice>::read called");
-        // Lock the event queue for thread-safe access
-        let mut queue = self.event_queue.lock();
-        
-        // Retrieve the oldest event from the queue
-        if let Some(event) = queue.pop_front() {
-            // Serialize the event into bytes
-            let event_bytes = event.to_bytes(); // Use the `to_bytes` method of `InputEventLinux`
-            
-            // Create a reader for the serialized bytes
-            let mut reader = VmReader::from(&event_bytes[..]);
-            
-            // Write the serialized event to the writer
-            writer.write(&mut reader)?;
-
-            if queue.is_empty() {
-                self.pollee.invalidate();
-            }
-
-            // Return the size of the serialized event
-            Ok(event_bytes.len())
-        } else {
-            // Return 0 if the queue is empty
-            Ok(0)
-        }
-    }
-
-    fn write(&self, reader: &mut VmReader) -> Result<usize> {
-        self.as_ref().write(reader)
-    }
 
     fn ioctl(&self, cmd: crate::fs::utils::IoctlCmd, arg: usize) -> Result<i32> {
         // bits 0..7    : NR    (command number)
         // bits 8..15   : TYPE  (subsystem, like 'E' for evdev)
         // bits 16..29  : SIZE  (data size in bytes)
         // bits 30..31  : DIR   (_IOC_READ / _IOC_WRITE / etc.)
+
+        // log::error!("-------------Coming into evdev-ioctl! cmd is {:#x}, arg is {:?}", cmd as u32, arg);
+
         let cmd_val = cmd as u32;
+        // let cmd_val = cmd.as_u32();
         let cmd_nr  = ((cmd_val >> NR_SHIFT) & 0xFF) as u8;
         let cmd_type = ((cmd_val >> TYPE_SHIFT) & 0xFF) as u8;
         let cmd_size  = ((cmd_val >> SIZE_SHIFT) & 0x3FFF) as u16;
 
         match cmd_nr {
-            // IoctlCmd::EVIOCGABS => {
-            //     // Example: rc = ioctl(fd, EVIOCGABS(i), &abs_info);
-            //     // Return value: error number
-            //     // Parameter: 
-            //     // Function: Fill `abs_info` with kernel's dev->absinfo[i]
-            //     // Our implementation: Just claim our device does not support this function, then this ioctl
-            //     // would not be called (false)
-                
-            //     println!("Impossible EVIOCGABS ioctl!");
-            //     return_errno!(Errno::EINVAL); // Invalid argument error
-            // }
-            EVIOCGBIT_NR => {
+            EVIOCGBIT_NR..=EVIOCGBIT_NR_MAX => {
                 // Example: rc = ioctl(fd, EVIOCGBIT(EV_REL, sizeof(dev->rel_bits)), dev->rel_bits);
                 // Return value: error number
                 // Parameter: 
                 // Function: Fill `dev->xxx_bits` with kernel's `dev->xxx_bits`
                 // Our implementation: Fill device's corresponding bitmap. To do this, we need to add these bitmaps
                 // for each device when initialzied in kernel, indicating its supportive events. (true)
-
-                let type_ = EventType::try_from(cmd_type).unwrap();
+                log::error!("The cmd_type is {}", cmd_type);
+                log::error!("The cmd_nr is {}", cmd_nr);
+                let type_ = EventType::try_from(cmd_nr - 0x20).unwrap();
                 let size = cmd_size;
                 handle_eviocgbit(self.input_device(), type_, size, arg)
             }
@@ -338,7 +263,7 @@ impl FileIo for Arc<EventDevice> {
                 // library's dev->key (true)
 
                 // event_handle_get_val()
-                let mut buf: [usize; KEY_BITMAP_LEN] = [0; KEY_BITMAP_LEN];
+                let buf: [usize; KEY_BITMAP_LEN] = [0; KEY_BITMAP_LEN];
                 current_userspace!().write_val(arg, &buf)?;
 
                 Ok(0)
@@ -352,7 +277,7 @@ impl FileIo for Arc<EventDevice> {
                 // library's dev->led (true)
 
                 // event_handle_get_val()
-                let mut buf: [usize; LED_BITMAP_LEN] = [0; LED_BITMAP_LEN];
+                let buf: [usize; LED_BITMAP_LEN] = [0; LED_BITMAP_LEN];
                 current_userspace!().write_val(arg, &buf)?;
                 Ok(0)
             }
@@ -434,7 +359,7 @@ impl FileIo for Arc<EventDevice> {
                 // Our implementation: Call event_handle_get_val() with EV_SW, copying kernel's dev->sw to 
                 // library's dev->sw (true)
 
-                let mut buf: [usize; SW_BITMAP_LEN] = [0; SW_BITMAP_LEN];
+                let buf: [usize; SW_BITMAP_LEN] = [0; SW_BITMAP_LEN];
                 current_userspace!().write_val(arg, &buf)?;
                 Ok(0)
             }
@@ -476,64 +401,135 @@ impl FileIo for Arc<EventDevice> {
                 Ok(0)
             }
             _ => {
-                println!("Event ioctl: Unsupported command -> {:?}", cmd);
+                println!("Event ioctl: Unsupported command -> {:#x}", cmd as u32);
+                // println!("Event ioctl: Unsupported command -> {:#x}", cmd.as_u32());
                 return_errno!(Errno::EINVAL); // Invalid argument error
             }
         }
     }
 }
 
+#[derive(Debug)]
+pub struct EventDeviceHandler {
+    event_devices: Mutex<Vec<Weak<EventDevice>>>, // Wrap in a Mutex for mutable access
+}
+
+impl InputHandler for EventDeviceHandler {
+    /// Specifies the event types this handler can process.
+    fn supported_event_types(&self) -> Vec<u16> {
+        vec![EventType::EvSyn as u16, EventType::EvKey as u16, EventType::EvRel as u16] // Supports keyboard and mouse events
+    }
+
+    /// Handles the input event by pushing it to the event queue.
+    fn handle_event(&self, event: InputEvent, str: &str) -> core::result::Result<(), core::convert::Infallible> {
+        let devices = self.event_devices.lock();
+        for weak_dev in devices.iter() {
+            if let Some(event_device) = weak_dev.upgrade() {
+                let metadata = event_device.input_device.metadata();
+                let name = metadata.name.as_str();
+                if name != str {
+                    continue;
+                }
+
+                let time = read_clock_input(event_device.clock_id as i32).unwrap();
+
+                // Convert InputEvent to InputEventLinux
+                let linux_event = InputEventLinux {
+                    sec: time.as_secs(),
+                    usec: time.subsec_micros() as u64,
+                    // sec: event.time / 1_000_000,
+                    // usec: event.time % 1_000_000,
+                    type_: event.type_,
+                    code: event.code,
+                    value: event.value,
+                };
+
+                event_device.push_event(linux_event);
+            }
+        }
+
+        Ok(())
+    }
+}
+
+
+// Implement the Pollable trait for Arc<EventDevice>
+impl Pollable for Arc<EventDevice> {
+    fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
+        self.as_ref().poll(mask, poller)
+    }
+}
+
+// Implement the FileIo trait for Arc<EventDevice>
+impl FileIo for Arc<EventDevice> {
+    fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+        println!("Arc<EventDevice>::read called");
+        // Lock the event queue for thread-safe access
+        let mut queue = self.event_queue.lock();
+        
+        // Retrieve the oldest event from the queue
+        if let Some(event) = queue.pop_front() {
+            // Serialize the event into bytes
+            let event_bytes = event.to_bytes(); // Use the `to_bytes` method of `InputEventLinux`
+            
+            // Create a reader for the serialized bytes
+            let mut reader = VmReader::from(&event_bytes[..]);
+            
+            // Write the serialized event to the writer
+            writer.write(&mut reader)?;
+
+            if queue.is_empty() {
+                self.pollee.invalidate();
+            }
+
+            // Return the size of the serialized event
+            Ok(event_bytes.len())
+        } else {
+            // Return 0 if the queue is empty
+            Ok(0)
+        }
+    }
+
+    fn write(&self, reader: &mut VmReader) -> Result<usize> {
+        self.as_ref().write(reader)
+    }
+}
+
 fn handle_eviocgbit(dev: Arc<dyn InputDevice>, type_: EventType, _size: u16, arg: usize) -> Result<i32> {
-    // let mut bits;
-    // let mut len;
+    log::error!("-------------Coming into handle_eviocgbit!");
     match type_ {
         EventType::EvSyn => {
-            // bits = dev.get_ev_bit();
-            // len = EventType::EvMax as u16;
             let _ = handle_get_ev_bit(dev, arg);
         }
         EventType::EvKey => {
-            // bits = dev.get_key_bit();
             let _ = handle_get_key_bit(dev, arg);
         }
         EventType::EvRel => {
-            // bits = dev.get_rel_bit();
-            // len = RelAxis::RelMax as u16;
             let _ = handle_get_rel_bit(dev, arg);
         }
-        // EventType::EvAbs => {
-            
-        //     len = AbsAxis::AbsMax as u16;
-        // }
+        EventType::EvAbs => {
+            let _ = handle_get_abs_bit(dev, arg);
+        }
         EventType::EvMsc => {
-            // bits = dev.get_msc_bit();
-            // len = MiscEvent::MscMax as u16;
             let _ = handle_get_msc_bit(dev, arg);
         }
         EventType::EvLed => {
-            // bits = dev.get_led_bit();
-            // len = LedEvent::LedMax as u16;
             let _ = handle_get_led_bit(dev, arg);
         }
-        // EventType::EvSnd => {
-            
-        //     len = SoundEvent::SndMax as u16;
-        // }
-        // EventType::EvFf => {
-            
-        // }
-        // EventType::EvSw => {
-            
-        //     len = EventType::RelMax as u16;
-        // }
+        EventType::EvSnd => {
+            let _ = handle_get_snd_bit(dev, arg);
+        }
+        EventType::EvFf => {
+            let _ = handle_get_ff_bit(dev, arg);
+        }
+        EventType::EvSw => {
+            let _ = handle_get_sw_bit(dev, arg);
+        }
         _ => {
             println!("handle_eviocgbit: Unsupportive bit type -> {:?}", type_);
             return_errno!(Errno::EINVAL); // Invalid argument error
         }
     }
-    // let buf: [EventType; len] = bits;
-    // current_userspace!().write_val(arg, &buf)?;
-    // current_userspace!().write_bytes(arg, bits.as_slice())?;
     Ok(0)
 }
 
@@ -621,6 +617,34 @@ fn handle_get_led_bit(dev: Arc<dyn InputDevice>, arg: usize) -> Result<i32> {
 
         bitmap[word_index] |= 1 << bit_offset;
     }
+    current_userspace!().write_val(arg, &bitmap)?;
+
+    Ok(0)
+}
+
+fn handle_get_abs_bit(dev: Arc<dyn InputDevice>, arg: usize) -> Result<i32> {
+    let bitmap: [usize; ABS_BITMAP_LEN] = [0; ABS_BITMAP_LEN];
+    current_userspace!().write_val(arg, &bitmap)?;
+
+    Ok(0)
+}
+
+fn handle_get_snd_bit(dev: Arc<dyn InputDevice>, arg: usize) -> Result<i32> {
+    let bitmap: [usize; SND_BITMAP_LEN] = [0; SND_BITMAP_LEN];
+    current_userspace!().write_val(arg, &bitmap)?;
+
+    Ok(0)
+}
+
+fn handle_get_ff_bit(dev: Arc<dyn InputDevice>, arg: usize) -> Result<i32> {
+    let bitmap: [usize; FF_BITMAP_LEN] = [0; FF_BITMAP_LEN];
+    current_userspace!().write_val(arg, &bitmap)?;
+
+    Ok(0)
+}
+
+fn handle_get_sw_bit(dev: Arc<dyn InputDevice>, arg: usize) -> Result<i32> {
+    let bitmap: [usize; SW_BITMAP_LEN] = [0; SW_BITMAP_LEN];
     current_userspace!().write_val(arg, &bitmap)?;
 
     Ok(0)

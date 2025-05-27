@@ -247,5 +247,5 @@ fn handle_keyboard_input(key: InputKey) {
 }
 
 fn handle_mouse_input() {
-    log::error!("This is handle_mouse_input in kernel/comps/framebuffer/src/console.rs!");
+    // log::error!("This is handle_mouse_input in kernel/comps/framebuffer/src/console.rs!");
 }
