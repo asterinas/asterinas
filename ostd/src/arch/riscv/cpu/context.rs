@@ -8,10 +8,11 @@ use riscv::register::scause::{Exception, Interrupt, Trap};
 
 use crate::{
     arch::{
+        irq::IRQ_CHIP,
         trap::{RawUserContext, TrapFrame},
         TIMER_IRQ_NUM,
     },
-    cpu::PrivilegeLevel,
+    cpu::{CpuId, PrivilegeLevel},
     irq::call_irq_callback_functions,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
@@ -143,7 +144,7 @@ impl UserContextApiInternal for UserContext {
     where
         F: FnMut() -> bool,
     {
-        let ret = loop {
+        let return_reason = loop {
             self.user_context.run();
             match riscv::register::scause::read().cause() {
                 Trap::Interrupt(Interrupt::SupervisorTimer) => {
@@ -152,6 +153,23 @@ impl UserContextApiInternal for UserContext {
                         TIMER_IRQ_NUM.load(Ordering::Relaxed) as usize,
                         PrivilegeLevel::User,
                     );
+                }
+                Trap::Interrupt(Interrupt::SupervisorExternal) => {
+                    let current_cpu = CpuId::current_racy().as_usize() as u32;
+                    loop {
+                        let irq_chip = IRQ_CHIP.get().unwrap().lock();
+                        match irq_chip.claim_interrupt(current_cpu) {
+                            Some(irq_num) => {
+                                drop(irq_chip);
+                                call_irq_callback_functions(
+                                    &self.as_trap_frame(),
+                                    irq_num as usize,
+                                    PrivilegeLevel::User,
+                                );
+                            }
+                            None => break,
+                        }
+                    }
                 }
                 Trap::Interrupt(_) => todo!(),
                 Trap::Exception(Exception::UserEnvCall) => {
@@ -176,7 +194,7 @@ impl UserContextApiInternal for UserContext {
         };
 
         crate::arch::irq::enable_local();
-        ret
+        return_reason
     }
 
     fn as_trap_frame(&self) -> TrapFrame {

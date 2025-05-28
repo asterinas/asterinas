@@ -38,7 +38,10 @@
 
 pub(crate) mod kvirt_area;
 
-use core::ops::Range;
+use core::{
+    ops::Range,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use log::info;
 use spin::Once;
@@ -118,6 +121,8 @@ pub fn paddr_to_vaddr(pa: Paddr) -> usize {
 /// It manages the kernel mapping of all address spaces by sharing the kernel part. And it
 /// is unlikely to be activated.
 pub static KERNEL_PAGE_TABLE: Once<PageTable<KernelPtConfig>> = Once::new();
+
+pub(crate) static IS_KERNEL_PAGE_TABLE_ACTIVATED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Debug)]
 pub(crate) struct KernelPtConfig {}
@@ -269,4 +274,5 @@ pub unsafe fn activate_kernel_page_table() {
         kpt.first_activate_unchecked();
         crate::arch::mm::tlb_flush_all_including_global();
     }
+    IS_KERNEL_PAGE_TABLE_ACTIVATED.store(true, Ordering::Relaxed);
 }
