@@ -92,7 +92,7 @@ impl IoMemAllocatorBuilder {
     /// # Panics
     ///
     /// This function will panic if the specified range is not available.
-    #[expect(unused)]
+    #[cfg_attr(not(target_arch = "riscv64"), expect(unused))]
     pub(crate) fn reserve_io_mem(&self, range: Range<usize>) -> IoMem<Sensitive> {
         self.remove(range.start..range.end);
 
