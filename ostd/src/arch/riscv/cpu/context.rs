@@ -8,10 +8,11 @@ use riscv::register::scause::{Exception, Interrupt, Trap};
 
 use crate::{
     arch::{
+        irq::{HwIrqLine, InterruptSource, IRQ_CHIP},
+        timer::TIMER_IRQ_NUM,
         trap::{RawUserContext, TrapFrame},
-        TIMER_IRQ_NUM,
     },
-    cpu::PrivilegeLevel,
+    cpu::{CpuId, PrivilegeLevel},
     irq::call_irq_callback_functions,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
 };
@@ -143,7 +144,7 @@ impl UserContextApiInternal for UserContext {
     where
         F: FnMut() -> bool,
     {
-        let ret = loop {
+        let return_reason = loop {
             crate::task::scheduler::might_preempt();
             self.user_context.run();
 
@@ -151,9 +152,25 @@ impl UserContextApiInternal for UserContext {
                 Trap::Interrupt(Interrupt::SupervisorTimer) => {
                     call_irq_callback_functions(
                         &self.as_trap_frame(),
-                        TIMER_IRQ_NUM.load(Ordering::Relaxed) as usize,
+                        &HwIrqLine::new(
+                            TIMER_IRQ_NUM.load(Ordering::Relaxed),
+                            InterruptSource::Timer,
+                        ),
                         PrivilegeLevel::User,
                     );
+                }
+                Trap::Interrupt(Interrupt::SupervisorExternal) => {
+                    // No races because we are in IRQs.
+                    let current_cpu = CpuId::current_racy().as_usize() as u32;
+                    while let Some(hw_irq_line) =
+                        IRQ_CHIP.get().unwrap().claim_interrupt(current_cpu)
+                    {
+                        call_irq_callback_functions(
+                            &self.as_trap_frame(),
+                            &hw_irq_line,
+                            PrivilegeLevel::User,
+                        );
+                    }
                 }
                 Trap::Interrupt(_) => todo!(),
                 Trap::Exception(Exception::UserEnvCall) => {
@@ -178,7 +195,7 @@ impl UserContextApiInternal for UserContext {
         };
 
         crate::arch::irq::enable_local();
-        ret
+        return_reason
     }
 
     fn as_trap_frame(&self) -> TrapFrame {

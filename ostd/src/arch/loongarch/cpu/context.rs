@@ -8,6 +8,7 @@ use loongArch64::register::estat::{Exception, Interrupt, Trap};
 
 use crate::{
     arch::{
+        irq::HwIrqLine,
         mm::tlb_flush_addr,
         trap::{RawUserContext, TrapFrame},
     },
@@ -219,9 +220,9 @@ impl UserContextApiInternal for UserContext {
                     | Interrupt::HWI6
                     | Interrupt::HWI7 => {
                         log::debug!("Handling hardware interrupt: {:?}", interrupt);
-                        while let Some(irq) = crate::arch::irq::chip::claim() {
+                        while let Some(irq_num) = crate::arch::irq::chip::claim() {
                             // Call the IRQ callback functions for the claimed interrupt
-                            call_irq_callback_functions(&self.as_trap_frame(), irq as _, PrivilegeLevel::User);
+                            call_irq_callback_functions(&self.as_trap_frame(), &HwIrqLine::new(irq_num), PrivilegeLevel::User);
                         }
                     }
                     Interrupt::PMI => todo!(),

@@ -30,7 +30,7 @@ use crate::{
     arch::{
         cpu::context::{CpuException, PageFaultErrorCode, RawPageFaultInfo},
         if_tdx_enabled,
-        irq::{disable_local, enable_local},
+        irq::{disable_local, enable_local, HwIrqLine},
     },
     cpu::PrivilegeLevel,
     irq::call_irq_callback_functions,
@@ -186,7 +186,11 @@ extern "sysv64" fn trap_handler(f: &mut TrapFrame) {
             );
         }
         None => {
-            call_irq_callback_functions(f, f.trap_num, PrivilegeLevel::Kernel);
+            call_irq_callback_functions(
+                f,
+                &HwIrqLine::new(f.trap_num as u8),
+                PrivilegeLevel::Kernel,
+            );
         }
     }
 }

@@ -10,7 +10,7 @@
 mod io_mem;
 
 pub use self::io_mem::IoMem;
-#[expect(unused_imports)]
+#[cfg_attr(not(target_arch = "riscv64"), expect(unused_imports))]
 pub(crate) use self::io_mem::{IoMemAllocatorBuilder, Sensitive};
 
 cfg_if::cfg_if!(
