@@ -147,7 +147,7 @@ cpu_local_cell! {
 }
 
 /// Processes pending softirqs.
-fn process_pending(irq_guard: DisabledLocalIrqGuard, irq_num: usize) -> DisabledLocalIrqGuard {
+fn process_pending(irq_guard: DisabledLocalIrqGuard, irq_num: u8) -> DisabledLocalIrqGuard {
     if !is_softirq_enabled() {
         return irq_guard;
     }

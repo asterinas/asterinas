@@ -95,13 +95,6 @@ pub(crate) unsafe fn init_on_ap() {
     timer::init_on_ap();
 }
 
-pub(crate) fn interrupts_ack(irq_number: usize) {
-    debug_assert!(!cpu::context::CpuException::is_cpu_exception(irq_number));
-    // TODO: We're in the interrupt context, so `disable_preempt()` is not
-    // really necessary here.
-    kernel::apic::get_or_init(&crate::task::disable_preempt() as _).eoi();
-}
-
 /// Returns the frequency of TSC. The unit is Hz.
 pub fn tsc_freq() -> u64 {
     use core::sync::atomic::Ordering;

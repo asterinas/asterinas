@@ -9,17 +9,13 @@ pub mod cpu;
 pub mod device;
 mod io;
 pub(crate) mod iommu;
-pub(crate) mod irq;
+pub mod irq;
 pub(crate) mod mm;
 pub mod qemu;
 pub(crate) mod serial;
 pub(crate) mod task;
 mod timer;
 pub mod trap;
-
-use core::sync::atomic::Ordering;
-
-use crate::arch::timer::TIMER_IRQ_NUM;
 
 #[cfg(feature = "cvm_guest")]
 pub(crate) fn init_cvm_guest() {
@@ -44,6 +40,11 @@ pub(crate) unsafe fn late_init_on_bsp() {
     // after the kernel page table is activated.
     let io_mem_builder = unsafe { io::construct_io_mem_allocator_builder() };
 
+    // SAFETY: This function is called once and at most once at a proper timing
+    // in the boot context of the BSP, with no external interrupt-related
+    // operations having been performed.
+    unsafe { irq::chip::init(&io_mem_builder) };
+
     // SAFETY: We're on the BSP and we're ready to boot all APs.
     unsafe { crate::boot::smp::boot_all_aps() };
 
@@ -59,16 +60,6 @@ pub(crate) unsafe fn late_init_on_bsp() {
 }
 
 pub(crate) unsafe fn init_on_ap() {
-    unimplemented!()
-}
-
-pub(crate) fn interrupts_ack(irq_number: usize) {
-    // TODO: We should check for software interrupts too here. Only those external
-    // interrupts would go through the IRQ chip.
-    if irq_number == TIMER_IRQ_NUM.load(Ordering::Relaxed) as usize {
-        return;
-    }
-
     unimplemented!()
 }
 
