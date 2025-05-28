@@ -4,11 +4,15 @@
 
 mod trap;
 
+use riscv::register::scause::Interrupt;
 use spin::Once;
 pub use trap::{GeneralRegs, TrapFrame, UserContext};
 
 use super::cpu::context::CpuExceptionInfo;
-use crate::cpu_local_cell;
+use crate::{
+    arch::kernel::plic::claim_interrupt, cpu::current_cpu_racy, cpu_local_cell,
+    trap::call_irq_callback_functions,
+};
 
 cpu_local_cell! {
     static IS_KERNEL_INTERRUPTED: bool = false;
@@ -32,9 +36,24 @@ extern "C" fn trap_handler(f: &mut TrapFrame) {
     use riscv::register::scause::Trap;
 
     match riscv::register::scause::read().cause() {
-        Trap::Interrupt(_) => {
+        Trap::Interrupt(interrupt) => {
             IS_KERNEL_INTERRUPTED.store(true);
-            todo!();
+            match interrupt {
+                Interrupt::SupervisorExternal => {
+                    while let irq_num = claim_interrupt(current_cpu_racy().as_usize())
+                        && irq_num != 0
+                    {
+                        call_irq_callback_functions(f, irq_num);
+                    }
+                }
+                Interrupt::SupervisorSoft => todo!(),
+                Interrupt::SupervisorTimer => todo!(),
+                _ => {
+                    panic!(
+                        "cannot handle unknown supervisor interrupt: {interrupt:?}. trapframe: {f:#x?}.",
+                    );
+                }
+            }
             IS_KERNEL_INTERRUPTED.store(false);
         }
         Trap::Exception(e) => {
