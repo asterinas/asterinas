@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![cfg_attr(target_arch = "riscv64", expect(dead_code))]
-
 use spin::Once;
 
 use super::irq::{disable_local, process_top_half, DisabledLocalIrqGuard};

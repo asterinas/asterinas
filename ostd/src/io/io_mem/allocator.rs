@@ -90,7 +90,7 @@ impl IoMemAllocatorBuilder {
     /// Reserves `range` from the allocator for sensitive MMIO.
     ///
     /// If the range is not available, then the return value will be `None`.
-    #[expect(unused)]
+    #[cfg_attr(not(target_arch = "riscv64"), expect(unused))]
     pub(crate) fn reserve_io_mem(&self, range: Range<usize>) -> Option<IoMem<Sensitive>> {
         self.remove(range.start..range.end);
 
