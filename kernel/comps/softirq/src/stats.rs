@@ -18,9 +18,9 @@ pub fn iter_irq_counts_across_all_cpus() -> impl Iterator<Item = usize> {
     irq_counters.iter().map(|counter| counter.sum_all_cpus())
 }
 
-pub(super) fn process_statistic(irq_num: usize) {
+pub(super) fn process_statistic(irq_num: u8) {
     // No races because we are in IRQs.
-    IRQ_COUNTERS.get().unwrap()[irq_num].add_on_cpu(CpuId::current_racy(), 1);
+    IRQ_COUNTERS.get().unwrap()[irq_num as usize].add_on_cpu(CpuId::current_racy(), 1);
 }
 
 /// Iterates all softirq lines for the number of executions across all CPUs.

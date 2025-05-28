@@ -18,7 +18,10 @@ use x86_64::registers::{
 };
 
 use crate::{
-    arch::trap::{RawUserContext, TrapFrame},
+    arch::{
+        irq::HwIrqLine,
+        trap::{RawUserContext, TrapFrame},
+    },
     cpu::PrivilegeLevel,
     irq::call_irq_callback_functions,
     mm::Vaddr,
@@ -303,7 +306,7 @@ impl UserContextApiInternal for UserContext {
                 None => {
                     call_irq_callback_functions(
                         &self.as_trap_frame(),
-                        self.as_trap_frame().trap_num,
+                        &HwIrqLine::new(self.as_trap_frame().trap_num as u8),
                         PrivilegeLevel::User,
                     );
                     crate::arch::irq::enable_local();
