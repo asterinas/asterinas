@@ -60,6 +60,11 @@ impl AsidAllocator {
         }
     }
 
+    fn clean(&mut self) {
+        self.bitmap = [0; (ASID_CAP as usize - ASID_MIN as usize).div_ceil(64)];
+        self.next = ASID_MIN;
+    }
+
     /// Allocates a new ASID.
     ///
     /// Returns the allocated ASID, or `ASID_FLUSH_REQUIRED` if no ASIDs are available.
@@ -127,39 +132,40 @@ impl AsidAllocator {
 ///
 /// Returns the allocated ASID, or `ASID_FLUSH_REQUIRED` if no ASIDs are available.
 pub fn allocate() -> u16 {
-    let bitmap_asid = ASID_ALLOCATOR.lock().allocate();
-    if bitmap_asid != ASID_FLUSH_REQUIRED {
-        let mut asid_map = ASID_MAP.lock();
-        let generation = current_generation();
-        asid_map.insert(bitmap_asid, generation);
-        return bitmap_asid;
+    let generation = current_generation();
+    
+    // Try bitmap allocation first
+    {
+        let mut asid_allocator = ASID_ALLOCATOR.lock();
+        let bitmap_asid = asid_allocator.allocate();
+        if bitmap_asid != ASID_FLUSH_REQUIRED {
+            let mut asid_map = ASID_MAP.lock();
+            asid_map.insert(bitmap_asid, generation);
+            return bitmap_asid;
+        }
     }
 
-    // If bitmap allocation failed, try BTreeMap
+    // Obtain the lock on the asid map
     let mut asid_map = ASID_MAP.lock();
-    let generation = current_generation();
 
-    // Try to find a free ASID
     if let Some(asid) = find_free_asid(&mut asid_map, generation) {
         return asid;
     }
 
     // If no free ASID found, increment generation and reset bitmap
     increment_generation();
-
-    // Reset bitmap allocator
-    *ASID_ALLOCATOR.lock() = AsidAllocator::new();
-
-    // Try again
     let new_generation = current_generation();
-    let bitmap_asid = ASID_ALLOCATOR.lock().allocate();
-    if bitmap_asid != ASID_FLUSH_REQUIRED {
-        let mut asid_map = ASID_MAP.lock();
-        asid_map.insert(bitmap_asid, new_generation);
-        return bitmap_asid;
+
+    {
+        let mut asid_allocator = ASID_ALLOCATOR.lock();
+        asid_allocator.clean();
+        let bitmap_asid = asid_allocator.allocate();
+        if bitmap_asid != ASID_FLUSH_REQUIRED {
+            asid_map.insert(bitmap_asid, new_generation);
+            return bitmap_asid;
+        }
     }
 
-    let mut asid_map = ASID_MAP.lock();
     if let Some(asid) = find_free_asid(&mut asid_map, new_generation) {
         return asid;
     }
