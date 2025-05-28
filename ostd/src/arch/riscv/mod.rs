@@ -10,11 +10,16 @@ pub(crate) mod iommu;
 pub(crate) mod irq;
 pub(crate) mod mm;
 pub(crate) mod pci;
+pub mod plic;
 pub mod qemu;
 pub(crate) mod serial;
 pub(crate) mod task;
 pub mod timer;
 pub mod trap;
+
+use core::sync::atomic::Ordering;
+
+use crate::cpu::CpuId;
 
 #[cfg(feature = "cvm_guest")]
 pub(crate) fn init_cvm_guest() {
@@ -35,6 +40,11 @@ pub(crate) unsafe fn init_on_bsp_after_heap() {
     unsafe { trap::init() };
 
     let io_mem_builder = io::construct_io_mem_allocator_builder();
+
+    // SAFETY: This function is called once and at most once at a proper timing
+    // in the boot context of the BSP, with no PLIC-related operations having
+    // been performed.
+    unsafe { plic::init(&io_mem_builder) };
 
     // SAFETY: We're on the BSP and we're ready to boot all APs.
     unsafe { crate::boot::smp::boot_all_aps() };
@@ -60,14 +70,19 @@ pub(crate) unsafe fn init_on_bsp_after_heap() {
 /// 1. This function must be called only once in the boot context of the
 ///    bootstrapping processor.
 /// 2. This function should be called after the kernel page table is activated.
-pub(crate) unsafe fn init_on_bsp_after_kpt() {}
+pub(crate) unsafe fn init_on_bsp_after_kpt() {
+    // SAFETY: This function is called only once in the boot context of the BSP,
+    // after the kernel page table is activated.
+    unsafe { plic::init_after_kpt() };
+}
 
 pub(crate) unsafe fn init_on_ap() {
     unimplemented!()
 }
 
 pub(crate) fn interrupts_ack(irq_number: usize) {
-    unimplemented!()
+    // Invoked always in interrupt context, so there's no race condition.
+    plic::complete_interrupt(CpuId::current_racy().as_usize(), irq_number);
 }
 
 /// Return the frequency of TSC. The unit is Hz.
