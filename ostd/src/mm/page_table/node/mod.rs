@@ -109,7 +109,8 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableNode<E, C> {
             return;
         }
 
-        activate_page_table(self.clone().into_raw(), CachePolicy::Writeback);
+        // SAFETY: The safety is upheld by the caller.
+        unsafe { activate_page_table(self.clone().into_raw(), CachePolicy::Writeback) };
 
         // Restore and drop the last activated page table.
         // SAFETY: The physical address is valid and points to a forgotten page table node.
@@ -123,7 +124,8 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> PageTableNode<E, C> {
     pub(super) unsafe fn first_activate(&self) {
         use crate::{arch::mm::activate_page_table, mm::CachePolicy};
 
-        activate_page_table(self.clone().into_raw(), CachePolicy::Writeback);
+        // SAFETY: The safety is upheld by the caller.
+        unsafe { activate_page_table(self.clone().into_raw(), CachePolicy::Writeback) };
     }
 }
 

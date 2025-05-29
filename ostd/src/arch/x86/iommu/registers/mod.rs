@@ -278,8 +278,11 @@ impl IommuRegisters {
         io_mem_builder.remove(base_address as usize..(base_address as usize + PAGE_SIZE));
         let base = NonNull::new(paddr_to_vaddr(base_address as usize) as *mut u8).unwrap();
 
-        // SAFETY: All offsets and sizes are strictly adhered to in the manual, and the base
-        // address is obtained from DRHD.
+        // SAFETY:
+        // - We trust the ACPI tables (as well as the DRHD in them), from which the base address is
+        //   obtained, so it is a valid IOMMU base address.
+        // - `io_mem_builder.remove()` guarantees that we have exclusive ownership of all the IOMMU
+        //   registers.
         let iommu_regs = unsafe {
             fault::init(base);
 

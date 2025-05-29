@@ -30,32 +30,37 @@ pub unsafe fn map(daddr: Daddr, paddr: Paddr) -> Result<(), IommuError> {
     let Some(table) = PAGE_TABLE.get() else {
         return Err(IommuError::NoIommu);
     };
+
     // The page table of all devices is the same. So we can use any device ID.
-    table
-        .lock()
-        .map(PciDeviceLocation::zero(), daddr, paddr)
-        .map_err(|err| match err {
-            context_table::ContextTableError::InvalidDeviceId => unreachable!(),
-            context_table::ContextTableError::ModificationError(err) => {
-                IommuError::ModificationError(err)
-            }
-        })
+    let mut locked_table = table.lock();
+    // SAFETY: The safety is upheld by the caller.
+    let res = unsafe { locked_table.map(PciDeviceLocation::zero(), daddr, paddr) };
+
+    match res {
+        Ok(()) => Ok(()),
+        Err(context_table::ContextTableError::InvalidDeviceId) => unreachable!(),
+        Err(context_table::ContextTableError::ModificationError(err)) => {
+            Err(IommuError::ModificationError(err))
+        }
+    }
 }
 
 pub fn unmap(daddr: Daddr) -> Result<(), IommuError> {
     let Some(table) = PAGE_TABLE.get() else {
         return Err(IommuError::NoIommu);
     };
+
     // The page table of all devices is the same. So we can use any device ID.
-    table
-        .lock()
-        .unmap(PciDeviceLocation::zero(), daddr)
-        .map_err(|err| match err {
-            context_table::ContextTableError::InvalidDeviceId => unreachable!(),
-            context_table::ContextTableError::ModificationError(err) => {
-                IommuError::ModificationError(err)
-            }
-        })
+    let mut locked_table = table.lock();
+    let res = locked_table.unmap(PciDeviceLocation::zero(), daddr);
+
+    match res {
+        Ok(()) => Ok(()),
+        Err(context_table::ContextTableError::InvalidDeviceId) => unreachable!(),
+        Err(context_table::ContextTableError::ModificationError(err)) => {
+            Err(IommuError::ModificationError(err))
+        }
+    }
 }
 
 pub fn init() {

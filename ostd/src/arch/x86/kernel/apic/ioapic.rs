@@ -133,12 +133,22 @@ struct IoApicAccess {
 impl IoApicAccess {
     /// # Safety
     ///
-    /// User must ensure the base address is valid.
+    /// The caller must ensure that the base address is a valid I/O APIC base address.
     unsafe fn new(base_address: usize, io_mem_builder: &IoMemAllocatorBuilder) -> Self {
         io_mem_builder.remove(base_address..(base_address + 0x20));
-        let base = NonNull::new(paddr_to_vaddr(base_address) as *mut u8).unwrap();
-        let register = VolatileRef::new_restricted(WriteOnly, base.cast::<u32>());
-        let data = VolatileRef::new(base.add(0x10).cast::<u32>());
+
+        let register_addr = NonNull::new(paddr_to_vaddr(base_address) as *mut u32).unwrap();
+        // SAFETY:
+        // - The caller guarantees that the memory is an I/O ACPI register.
+        // - `io_mem_builder.remove()` guarantees that we have exclusive ownership of the register.
+        let register = unsafe { VolatileRef::new_restricted(WriteOnly, register_addr) };
+
+        let data_addr = NonNull::new(paddr_to_vaddr(base_address + 0x10) as *mut u32).unwrap();
+        // SAFETY:
+        // - The caller guarantees that the memory is an I/O ACPI register.
+        // - `io_mem_builder.remove()` guarantees that we have exclusive ownership of the register.
+        let data = unsafe { VolatileRef::new(data_addr) };
+
         Self { register, data }
     }
 

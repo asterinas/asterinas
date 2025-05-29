@@ -30,11 +30,12 @@ pub struct InvalidationRegisters {
 }
 
 impl InvalidationRegisters {
-    /// Creates an instance from IOMMU base address.
+    /// Creates an instance from the IOMMU base address.
     ///
     /// # Safety
     ///
-    /// User must ensure the address is valid.
+    /// The caller must ensure that the base address is a valid IOMMU base address and that it has
+    /// exclusive ownership of the IOMMU invalidation registers.
     pub(super) unsafe fn new(base: NonNull<u8>) -> Self {
         let offset = {
             // SAFETY: The safety is upheld by the caller.

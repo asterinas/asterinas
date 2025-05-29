@@ -183,7 +183,10 @@ impl PageTable<KernelMode> {
     ) -> Result<(), PageTableError> {
         let preempt_guard = disable_preempt();
         let mut cursor = CursorMut::new(self, &preempt_guard, vaddr)?;
-        while let Some(range) = cursor.protect_next(vaddr.end - cursor.virt_addr(), &mut op) {
+        // SAFETY: The safety is upheld by the caller.
+        while let Some(range) =
+            unsafe { cursor.protect_next(vaddr.end - cursor.virt_addr(), &mut op) }
+        {
             crate::arch::mm::tlb_flush_addr(range.start);
         }
         Ok(())
@@ -202,14 +205,16 @@ impl<M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTable<M
     }
 
     pub(in crate::mm) unsafe fn first_activate_unchecked(&self) {
-        self.root.first_activate();
+        // SAFETY: The safety is upheld by the caller.
+        unsafe { self.root.first_activate() };
     }
 
     /// The physical address of the root page table.
     ///
-    /// It is dangerous to directly provide the physical address of the root page table to the
-    /// hardware since the page table node may be dropped, resulting in UAF.
-    pub unsafe fn root_paddr(&self) -> Paddr {
+    /// Obtaining the physical address of the root page table is safe, however, using it or
+    /// providing it to the hardware will be unsafe since the page table node may be dropped,
+    /// resulting in UAF.
+    pub fn root_paddr(&self) -> Paddr {
         self.root.start_paddr()
     }
 
@@ -220,7 +225,9 @@ impl<M: PageTableMode, E: PageTableEntryTrait, C: PagingConstsTrait> PageTable<M
         prop: PageProperty,
     ) -> Result<(), PageTableError> {
         let preempt_guard = disable_preempt();
-        self.cursor_mut(&preempt_guard, vaddr)?.map_pa(paddr, prop);
+        let mut cursor = self.cursor_mut(&preempt_guard, vaddr)?;
+        // SAFETY: The safety is upheld by the caller.
+        unsafe { cursor.map_pa(paddr, prop) };
         Ok(())
     }
 

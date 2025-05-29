@@ -15,7 +15,7 @@ use crate::{
 
 /// A RCU monitor ensures the completion of _grace periods_ by keeping track
 /// of each CPU's passing _quiescent states_.
-pub struct RcuMonitor {
+pub(super) struct RcuMonitor {
     is_monitoring: AtomicBool,
     state: SpinLock<State>,
 }
@@ -25,7 +25,7 @@ impl RcuMonitor {
     ///
     /// This function is used to initialize a singleton instance of `RcuMonitor`.
     /// The singleton instance is globally accessible via the `RCU_MONITOR`.
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             is_monitoring: AtomicBool::new(false),
             state: SpinLock::new(State::new()),
@@ -73,7 +73,7 @@ impl RcuMonitor {
         }
     }
 
-    pub fn after_grace_period<F>(&self, f: F)
+    pub(super) fn after_grace_period<F>(&self, f: F)
     where
         F: FnOnce() + Send + 'static,
     {
@@ -97,7 +97,7 @@ struct State {
 }
 
 impl State {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             current_gp: GracePeriod::new(),
             next_callbacks: VecDeque::new(),
@@ -114,7 +114,7 @@ struct GracePeriod {
 }
 
 impl GracePeriod {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             callbacks: Callbacks::new(),
             cpu_mask: AtomicCpuSet::new(CpuSet::new_empty()),
@@ -122,11 +122,11 @@ impl GracePeriod {
         }
     }
 
-    pub fn is_complete(&self) -> bool {
+    fn is_complete(&self) -> bool {
         self.is_complete
     }
 
-    unsafe fn finish_grace_period(&mut self, this_cpu: CpuId) {
+    fn finish_grace_period(&mut self, this_cpu: CpuId) {
         self.cpu_mask.add(this_cpu, Ordering::Relaxed);
 
         if self.cpu_mask.load(Ordering::Relaxed).is_full() {
@@ -134,11 +134,11 @@ impl GracePeriod {
         }
     }
 
-    pub fn take_callbacks(&mut self) -> Callbacks {
+    fn take_callbacks(&mut self) -> Callbacks {
         core::mem::take(&mut self.callbacks)
     }
 
-    pub fn restart(&mut self, callbacks: Callbacks) {
+    fn restart(&mut self, callbacks: Callbacks) {
         self.is_complete = false;
         self.cpu_mask.store(&CpuSet::new_empty(), Ordering::Relaxed);
         self.callbacks = callbacks;
