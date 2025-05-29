@@ -5,8 +5,10 @@
 pub mod boot;
 pub(crate) mod cpu;
 pub mod device;
+mod io;
 pub mod iommu;
 pub(crate) mod irq;
+pub(crate) mod kernel;
 pub(crate) mod mm;
 pub(crate) mod pci;
 pub mod qemu;
@@ -17,6 +19,8 @@ pub mod trap;
 
 use core::sync::atomic::Ordering;
 
+use crate::cpu::current_cpu_racy;
+
 #[cfg(feature = "cvm_guest")]
 pub(crate) fn init_cvm_guest() {
     // Unimplemented, no-op
@@ -26,11 +30,20 @@ pub(crate) unsafe fn late_init_on_bsp() {
     // SAFETY: This function is called in the boot context of the BSP.
     unsafe { trap::init() };
 
+    let io_mem_builder = io::construct_io_mem_allocator_builder();
+
+    kernel::plic::init(&io_mem_builder);
+
     // SAFETY: We're on the BSP and we're ready to boot all APs.
     unsafe { crate::boot::smp::boot_all_aps() };
 
     timer::init();
     let _ = pci::init();
+
+    // SAFETY:
+    // 1. All the system device memory have been removed from the builder.
+    // 2. RISC-V platforms does not have port I/O.
+    unsafe { crate::io::init(io_mem_builder) };
 }
 
 pub(crate) unsafe fn init_on_ap() {
@@ -38,7 +51,8 @@ pub(crate) unsafe fn init_on_ap() {
 }
 
 pub(crate) fn interrupts_ack(irq_number: usize) {
-    unimplemented!()
+    // Invoked always in interrupt context, so there's no race condition.
+    kernel::plic::complete_interrupt(current_cpu_racy().as_usize(), irq_number);
 }
 
 /// Return the frequency of TSC. The unit is Hz.
