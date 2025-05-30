@@ -60,8 +60,19 @@ use crate::mm::{Paddr, PagingConsts, Vaddr};
 
 static MAX_PADDR: AtomicUsize = AtomicUsize::new(0);
 
+/// Returns if the given physical address is tracked with metadata.
+///
+/// If a frame is tracked, it means that the frame can be managed by [`Frame`].
+///
+/// This function must be called after initialization of the frame metadata.
+pub(crate) fn is_tracked_paddr(paddr: Paddr) -> bool {
+    let max_paddr = MAX_PADDR.load(Ordering::Relaxed);
+    debug_assert_ne!(max_paddr, 0);
+    paddr < max_paddr as Paddr
+}
+
 /// Returns the maximum physical address that is tracked by frame metadata.
-pub(in crate::mm) fn max_paddr() -> Paddr {
+pub(crate) fn max_paddr() -> Paddr {
     let max_paddr = MAX_PADDR.load(Ordering::Relaxed) as Paddr;
     debug_assert_ne!(max_paddr, 0);
     max_paddr
@@ -90,6 +101,13 @@ impl<M: AnyFrameMeta + ?Sized> core::fmt::Debug for Frame<M> {
         write!(f, "Frame({:#x})", self.start_paddr())
     }
 }
+
+impl<M: AnyFrameMeta + ?Sized> PartialEq for Frame<M> {
+    fn eq(&self, other: &Self) -> bool {
+        self.start_paddr() == other.start_paddr()
+    }
+}
+impl<M: AnyFrameMeta + ?Sized> Eq for Frame<M> {}
 
 impl<M: AnyFrameMeta> Frame<M> {
     /// Gets a [`Frame`] with a specific usage from a raw, unused page.

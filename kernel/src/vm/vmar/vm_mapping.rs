@@ -9,8 +9,8 @@ use core::{
 use align_ext::AlignExt;
 use ostd::{
     mm::{
-        tlb::TlbFlushOp, vm_space::VmItem, CachePolicy, FrameAllocOptions, PageFlags, PageProperty,
-        UFrame, VmSpace,
+        tlb::TlbFlushOp, vm_space::MappedItem, CachePolicy, FrameAllocOptions, PageFlags,
+        PageProperty, UFrame, VmSpace,
     },
     task::disable_preempt,
 };
@@ -160,7 +160,7 @@ impl VmMapping {
                     &preempt_guard,
                     &(page_aligned_addr..page_aligned_addr + PAGE_SIZE),
                 )?;
-                if let VmItem::Mapped { .. } = cursor.query().unwrap() {
+                if let (_, Some(MappedItem::Tracked(_, _))) = cursor.query().unwrap() {
                     return Ok(());
                 }
             }
@@ -175,16 +175,13 @@ impl VmMapping {
                 &(page_aligned_addr..page_aligned_addr + PAGE_SIZE),
             )?;
 
-            match cursor.query().unwrap() {
-                VmItem::Mapped {
-                    va,
-                    frame,
-                    mut prop,
-                } => {
+            let (va, item) = cursor.query().unwrap();
+            match item {
+                Some(MappedItem::Tracked(frame, mut prop)) => {
                     if VmPerms::from(prop.flags).contains(page_fault_info.required_perms) {
                         // The page fault is already handled maybe by other threads.
                         // Just flush the TLB and return.
-                        TlbFlushOp::Address(va).perform_on_current();
+                        TlbFlushOp::Range(va).perform_on_current();
                         return Ok(());
                     }
                     assert!(is_write);
@@ -206,7 +203,7 @@ impl VmMapping {
 
                     if self.is_shared || only_reference {
                         cursor.protect_next(PAGE_SIZE, |p| p.flags |= new_flags);
-                        cursor.flusher().issue_tlb_flush(TlbFlushOp::Address(va));
+                        cursor.flusher().issue_tlb_flush(TlbFlushOp::Range(va));
                         cursor.flusher().dispatch_tlb_flush();
                     } else {
                         let new_frame = duplicate_frame(&frame)?;
@@ -215,7 +212,7 @@ impl VmMapping {
                     }
                     cursor.flusher().sync_tlb_flush();
                 }
-                VmItem::NotMapped { .. } => {
+                None => {
                     // Map a new frame to the page fault address.
                     let (frame, is_readonly) = match self.prepare_page(address, is_write) {
                         Ok((frame, is_readonly)) => (frame, is_readonly),
@@ -248,6 +245,9 @@ impl VmMapping {
                     let map_prop = PageProperty::new(page_flags, CachePolicy::Writeback);
 
                     cursor.map(frame, map_prop);
+                }
+                _ => {
+                    panic!("Untracked user space mapping aren't supported.");
                 }
             }
             break 'retry;
@@ -306,7 +306,7 @@ impl VmMapping {
             let operate =
                 move |commit_fn: &mut dyn FnMut()
                     -> core::result::Result<UFrame, VmoCommitError>| {
-                    if let VmItem::NotMapped { .. } = cursor.query().unwrap() {
+                    if let (_, None) = cursor.query().unwrap() {
                         // We regard all the surrounding pages as accessed, no matter
                         // if it is really so. Then the hardware won't bother to update
                         // the accessed bit of the page table on following accesses.
