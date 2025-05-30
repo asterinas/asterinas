@@ -7,7 +7,11 @@ use core::marker::PhantomData;
 
 use super::message::{RtnlMessage, RtnlSegment};
 use crate::{
-    net::socket::netlink::message::{CSegmentType, ErrorSegment, ProtocolSegment},
+    net::socket::netlink::{
+        addr::PortNum,
+        message::{CSegmentType, ErrorSegment, ProtocolSegment},
+        table::{NetlinkRouteProtocol, SupportedNetlinkProtocol},
+    },
     prelude::*,
 };
 
@@ -26,11 +30,7 @@ impl NetlinkRouteKernelSocket {
         }
     }
 
-    pub(super) fn request<F: FnMut(RtnlMessage)>(
-        &self,
-        request: &RtnlMessage,
-        mut consume_response: F,
-    ) {
+    pub(super) fn request(&self, request: &RtnlMessage, dst_port: PortNum) {
         debug!("netlink route request: {:?}", request);
 
         for segment in request.segments() {
@@ -61,7 +61,7 @@ impl NetlinkRouteKernelSocket {
 
             debug!("netlink route response: {:?}", response);
 
-            consume_response(response);
+            NetlinkRouteProtocol::unicast(dst_port, response).unwrap();
         }
     }
 }

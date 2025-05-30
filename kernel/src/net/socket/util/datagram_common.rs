@@ -36,6 +36,9 @@ pub trait Bound {
     type Endpoint;
 
     fn local_endpoint(&self) -> Self::Endpoint;
+    fn bind(&mut self, _endpoint: &Self::Endpoint) -> Result<()> {
+        return_errno_with_message!(Errno::EINVAL, "the socket is already bound to an address")
+    }
     fn remote_endpoint(&self) -> Option<&Self::Endpoint>;
     fn set_remote_endpoint(&mut self, endpoint: &Self::Endpoint);
 
@@ -72,11 +75,8 @@ where
     ) -> Result<()> {
         let unbound_datagram = match self {
             Inner::Unbound(unbound_datagram) => unbound_datagram,
-            Inner::Bound(_) => {
-                return_errno_with_message!(
-                    Errno::EINVAL,
-                    "the socket is already bound to an address"
-                )
+            Inner::Bound(bound_datagram) => {
+                return bound_datagram.bind(endpoint);
             }
         };
 

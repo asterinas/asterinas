@@ -23,7 +23,7 @@ pub struct CMsgSegHdr {
 }
 
 bitflags! {
-    /// Common flags used in [`CMsgSegmentHdr`].
+    /// Common flags used in [`CMsgSegHdr`].
     ///
     /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/netlink.h#L62>.
     pub struct SegHdrCommonFlags: u16 {

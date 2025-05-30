@@ -1,57 +1,82 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use multicast::MulticastGroup;
+pub(super) use multicast::MulticastMessage;
+use spin::Once;
 
 use super::addr::{GroupIdSet, NetlinkProtocolId, NetlinkSocketAddr, PortNum, MAX_GROUPS};
-use crate::{net::socket::netlink::addr::UNSPECIFIED_PORT, prelude::*, util::random::getrandom};
+use crate::{
+    net::socket::netlink::{
+        addr::UNSPECIFIED_PORT, kobject_uevent::UeventMessage, receiver::MessageReceiver,
+        route::RtnlMessage,
+    },
+    prelude::*,
+    util::random::getrandom,
+};
 
 mod multicast;
 
-pub(super) static NETLINK_SOCKET_TABLE: NetlinkSocketTable = NetlinkSocketTable::new();
+static NETLINK_SOCKET_TABLE: Once<NetlinkSocketTable> = Once::new();
 
 /// All bound netlink sockets.
-pub(super) struct NetlinkSocketTable {
-    protocols: [Mutex<Option<ProtocolSocketTable>>; MAX_ALLOWED_PROTOCOL_ID as usize],
+struct NetlinkSocketTable {
+    route: RwMutex<ProtocolSocketTable<RtnlMessage>>,
+    uevent: RwMutex<ProtocolSocketTable<UeventMessage>>,
 }
 
 impl NetlinkSocketTable {
-    pub(super) const fn new() -> Self {
+    fn new() -> Self {
         Self {
-            protocols: [const { Mutex::new(None) }; MAX_ALLOWED_PROTOCOL_ID as usize],
+            route: RwMutex::new(ProtocolSocketTable::new()),
+            uevent: RwMutex::new(ProtocolSocketTable::new()),
         }
     }
+}
 
-    /// Adds a new netlink protocol.
-    fn add_new_protocol(&self, protocol_id: NetlinkProtocolId) {
-        if protocol_id >= MAX_ALLOWED_PROTOCOL_ID {
-            return;
-        }
+pub trait SupportedNetlinkProtocol {
+    type Message: 'static + Send;
 
-        let mut protocol = self.protocols[protocol_id as usize].lock();
-        if protocol.is_some() {
-            return;
-        }
+    fn socket_table() -> &'static RwMutex<ProtocolSocketTable<Self::Message>>;
 
-        let new_protocol = ProtocolSocketTable::new(protocol_id);
-        *protocol = Some(new_protocol);
-    }
-
-    pub(super) fn bind(
-        &self,
-        protocol: NetlinkProtocolId,
+    fn bind(
         addr: &NetlinkSocketAddr,
-    ) -> Result<BoundHandle> {
-        if protocol >= MAX_ALLOWED_PROTOCOL_ID {
-            return_errno_with_message!(Errno::EINVAL, "the netlink protocol does not exist");
-        }
+        receiver: MessageReceiver<Self::Message>,
+    ) -> Result<BoundHandle<Self::Message>> {
+        let mut socket_table = Self::socket_table().write();
+        socket_table.bind(Self::socket_table(), addr, receiver)
+    }
 
-        let mut protocol = self.protocols[protocol as usize].lock();
+    fn unicast(dst_port: PortNum, message: Self::Message) -> Result<()> {
+        let socket_table = Self::socket_table().read();
+        socket_table.unicast(dst_port, message)
+    }
 
-        let Some(protocol_sockets) = protocol.as_mut() else {
-            return_errno_with_message!(Errno::EINVAL, "the netlink protocol does not exist")
-        };
+    fn multicast(dst_groups: GroupIdSet, message: Self::Message) -> Result<()>
+    where
+        Self::Message: MulticastMessage,
+    {
+        let socket_table = Self::socket_table().read();
+        socket_table.multicast(dst_groups, message)
+    }
+}
 
-        protocol_sockets.bind(addr)
+pub enum NetlinkRouteProtocol {}
+
+impl SupportedNetlinkProtocol for NetlinkRouteProtocol {
+    type Message = RtnlMessage;
+
+    fn socket_table() -> &'static RwMutex<ProtocolSocketTable<Self::Message>> {
+        &NETLINK_SOCKET_TABLE.get().unwrap().route
+    }
+}
+
+pub enum NetlinkUeventProtocol {}
+
+impl SupportedNetlinkProtocol for NetlinkUeventProtocol {
+    type Message = UeventMessage;
+
+    fn socket_table() -> &'static RwMutex<ProtocolSocketTable<Self::Message>> {
+        &NETLINK_SOCKET_TABLE.get().unwrap().uevent
     }
 }
 
@@ -59,21 +84,17 @@ impl NetlinkSocketTable {
 ///
 /// Each table can have bound sockets for unicast
 /// and at most 32 groups for multicast.
-struct ProtocolSocketTable {
-    id: NetlinkProtocolId,
-    // TODO: This table should maintain the port number-to-socket relationship
-    // to support both unicast and multicast effectively.
-    unicast_sockets: BTreeSet<PortNum>,
+pub struct ProtocolSocketTable<Message> {
+    unicast_sockets: BTreeMap<PortNum, MessageReceiver<Message>>,
     multicast_groups: Box<[MulticastGroup]>,
 }
 
-impl ProtocolSocketTable {
+impl<Message: 'static> ProtocolSocketTable<Message> {
     /// Creates a new table.
-    fn new(id: NetlinkProtocolId) -> Self {
+    fn new() -> Self {
         let multicast_groups = (0u32..MAX_GROUPS).map(|_| MulticastGroup::new()).collect();
         Self {
-            id,
-            unicast_sockets: BTreeSet::new(),
+            unicast_sockets: BTreeMap::new(),
             multicast_groups,
         }
     }
@@ -89,29 +110,66 @@ impl ProtocolSocketTable {
     ///
     /// Additionally, this socket can join one or more multicast groups,
     /// as specified in `addr.groups()`.
-    fn bind(&mut self, addr: &NetlinkSocketAddr) -> Result<BoundHandle> {
+    fn bind(
+        &mut self,
+        socket_table: &'static RwMutex<ProtocolSocketTable<Message>>,
+        addr: &NetlinkSocketAddr,
+        receiver: MessageReceiver<Message>,
+    ) -> Result<BoundHandle<Message>> {
         let port = if addr.port() != UNSPECIFIED_PORT {
             addr.port()
         } else {
             let mut random_port = current!().pid();
-            while random_port == UNSPECIFIED_PORT || self.unicast_sockets.contains(&random_port) {
+            while random_port == UNSPECIFIED_PORT || self.unicast_sockets.contains_key(&random_port)
+            {
                 getrandom(random_port.as_bytes_mut()).unwrap();
             }
             random_port
         };
 
-        if self.unicast_sockets.contains(&port) {
+        if self.unicast_sockets.contains_key(&port) {
             return_errno_with_message!(Errno::EADDRINUSE, "the netlink port is already in use");
         }
 
-        self.unicast_sockets.insert(port);
+        self.unicast_sockets.insert(port, receiver);
 
         for group_id in addr.groups().ids_iter() {
             let group = &mut self.multicast_groups[group_id as usize];
             group.add_member(port);
         }
 
-        Ok(BoundHandle::new(self.id, port, addr.groups()))
+        Ok(BoundHandle::new(socket_table, port, addr.groups()))
+    }
+
+    fn unicast(&self, dst_port: PortNum, message: Message) -> Result<()> {
+        let Some(receiver) = self.unicast_sockets.get(&dst_port) else {
+            // FIXME: Should we return error here?
+            return Ok(());
+        };
+
+        receiver.enqueue_message(message)
+    }
+
+    fn multicast(&self, dst_groups: GroupIdSet, message: Message) -> Result<()>
+    where
+        Message: MulticastMessage,
+    {
+        for group in dst_groups.ids_iter() {
+            let Some(group) = self.multicast_groups.get(group as usize) else {
+                continue;
+            };
+
+            for port_num in group.members() {
+                let Some(receiver) = self.unicast_sockets.get(port_num) else {
+                    continue;
+                };
+
+                // FIXME: Should we slightly ignore the error if the socket's buffer has no enough space?
+                receiver.enqueue_message(message.clone())?;
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -119,19 +177,22 @@ impl ProtocolSocketTable {
 ///
 /// When dropping a `BoundHandle`,
 /// the port will be automatically released.
-#[derive(Debug)]
-pub(super) struct BoundHandle {
-    protocol: NetlinkProtocolId,
+pub struct BoundHandle<Message: 'static> {
+    socket_table: &'static RwMutex<ProtocolSocketTable<Message>>,
     port: PortNum,
     groups: GroupIdSet,
 }
 
-impl BoundHandle {
-    fn new(protocol: NetlinkProtocolId, port: PortNum, groups: GroupIdSet) -> Self {
+impl<Message: 'static> BoundHandle<Message> {
+    fn new(
+        socket_table: &'static RwMutex<ProtocolSocketTable<Message>>,
+        port: PortNum,
+        groups: GroupIdSet,
+    ) -> Self {
         debug_assert_ne!(port, UNSPECIFIED_PORT);
 
         Self {
-            protocol,
+            socket_table,
             port,
             groups,
         }
@@ -144,15 +205,49 @@ impl BoundHandle {
     pub(super) const fn addr(&self) -> NetlinkSocketAddr {
         NetlinkSocketAddr::new(self.port, self.groups)
     }
+
+    pub(super) fn add_groups(&mut self, groups: GroupIdSet) {
+        let mut protocol_sockets = self.socket_table.write();
+
+        for group_id in groups.ids_iter() {
+            let group = &mut protocol_sockets.multicast_groups[group_id as usize];
+            group.add_member(self.port);
+        }
+
+        self.groups.add_groups(groups);
+    }
+
+    pub(super) fn drop_groups(&mut self, groups: GroupIdSet) {
+        let mut protocol_sockets = self.socket_table.write();
+
+        for group_id in groups.ids_iter() {
+            let group = &mut protocol_sockets.multicast_groups[group_id as usize];
+            group.remove_member(self.port);
+        }
+
+        self.groups.drop_groups(groups);
+    }
+
+    pub(super) fn bind_groups(&mut self, groups: GroupIdSet) {
+        let mut protocol_sockets = self.socket_table.write();
+
+        for group_id in self.groups.ids_iter() {
+            let group = &mut protocol_sockets.multicast_groups[group_id as usize];
+            group.remove_member(self.port);
+        }
+
+        for group_id in groups.ids_iter() {
+            let group = &mut protocol_sockets.multicast_groups[group_id as usize];
+            group.add_member(self.port);
+        }
+
+        self.groups = groups;
+    }
 }
 
-impl Drop for BoundHandle {
+impl<Message: 'static> Drop for BoundHandle<Message> {
     fn drop(&mut self) {
-        let mut protocol_sockets = NETLINK_SOCKET_TABLE.protocols[self.protocol as usize].lock();
-
-        let Some(protocol_sockets) = protocol_sockets.as_mut() else {
-            return;
-        };
+        let mut protocol_sockets = self.socket_table.write();
 
         protocol_sockets.unicast_sockets.remove(&self.port);
 
@@ -164,21 +259,12 @@ impl Drop for BoundHandle {
 }
 
 pub(super) fn init() {
-    for protocol in 0..MAX_ALLOWED_PROTOCOL_ID {
-        if is_standard_protocol(protocol) {
-            NETLINK_SOCKET_TABLE.add_new_protocol(protocol);
-        }
-    }
+    NETLINK_SOCKET_TABLE.call_once(|| NetlinkSocketTable::new());
 }
 
 /// Returns whether the `protocol` is valid.
 pub fn is_valid_protocol(protocol: NetlinkProtocolId) -> bool {
     protocol < MAX_ALLOWED_PROTOCOL_ID
-}
-
-/// Returns whether the `protocol` is reserved for system use.
-fn is_standard_protocol(protocol: NetlinkProtocolId) -> bool {
-    StandardNetlinkProtocol::try_from(protocol).is_ok()
 }
 
 /// Netlink protocols that are assigned for specific usage.
