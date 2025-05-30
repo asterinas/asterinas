@@ -352,8 +352,8 @@ pub enum MouseKeyEvent {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyStatus {
-    Pressed,
     Released,
+    Pressed,
 }
 
 #[repr(u16)]

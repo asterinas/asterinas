@@ -79,7 +79,7 @@ impl InputDevice for I8042Keyboard {
 
 pub fn handle_keyboard_input(_trap_frame: &TrapFrame) {
     log::error!("-----This is handle_keyboard_input in kernel/comps/i8042_controller/src/i8042_keyboard.rs");
-    let key = parse_inputkey();
+    let (key, status) = parse_inputkey();
 
     // Get the current time in microseconds
     let now = read_instant();
@@ -90,12 +90,21 @@ pub fn handle_keyboard_input(_trap_frame: &TrapFrame) {
         time: time_in_microseconds, // Assign the current timestamp
         type_: EventType::EvKey as u16,    // EV_KEY (example type for key events)
         code: key as u16,           // Convert InputKey to a u16 representation
-        value: 1,                   // Example value (1 for key press, 0 for release)
+        value: status as i32,                   // Example value (1 for key press, 0 for release)
+    }, "AT Translated Set 2 keyboard");
+
+    input_event(InputEvent {
+        time: 0,
+        type_: EventType::EvSyn as u16,
+        code: 0,
+        value: 0,
     }, "AT Translated Set 2 keyboard");
 
     // Fixme: the callbacks are going to be replaced.
-    for callback in KEYBOARD_CALLBACKS.lock().iter() {
-        callback(key);
+    if status == KeyStatus::Pressed {
+        for callback in KEYBOARD_CALLBACKS.lock().iter() {
+            callback(key);
+        }
     }
 }
 
@@ -363,7 +372,7 @@ impl Status {
     }
 }
 
-fn parse_inputkey() -> InputKey {
+fn parse_inputkey() -> (InputKey, KeyStatus) {
     static CAPS_LOCK: AtomicBool = AtomicBool::new(false); /* CapsLock state (0-off, 1-on) */
     static SHIFT_KEY: AtomicBool = AtomicBool::new(false); /* Shift next keypress */
     static CTRL_KEY: AtomicBool = AtomicBool::new(false);
@@ -371,9 +380,11 @@ fn parse_inputkey() -> InputKey {
     let code = ScanCode::read();
     let status = Status::read();
 
+    let mut key_status = KeyStatus::Pressed;
+
     if !code.is_valid() || !status.is_valid() {
         log::debug!("i8042 keyboard does not exist");
-        return InputKey::Nul;
+        return (InputKey::Nul, key_status);
     }
 
     if status.output_buffer_is_full() {
@@ -382,7 +393,7 @@ fn parse_inputkey() -> InputKey {
 
     /* Skip extension code */
     if code.is_extension() {
-        return InputKey::Nul;
+        return (InputKey::Nul, key_status);
     }
 
     if code.is_ctrl() {
@@ -391,7 +402,7 @@ fn parse_inputkey() -> InputKey {
         } else {
             CTRL_KEY.store(false, Ordering::Relaxed);
         }
-        return InputKey::Nul;
+        return (InputKey::Nul, key_status);
     }
 
     // Ignore release, trigger on make, except for shift keys, where
@@ -402,27 +413,28 @@ fn parse_inputkey() -> InputKey {
         } else {
             SHIFT_KEY.store(false, Ordering::Relaxed);
         }
-        return InputKey::Nul;
+        return (InputKey::Nul, key_status);
     }
 
     /* Ignore other release events */
     if code.is_released() {
-        return InputKey::Nul;
+        // return (InputKey::Nul, KeyStatus::Released);
+        key_status = KeyStatus::Released;
     }
 
     if code.is_pressed() && code.is_caps_lock() {
         CAPS_LOCK.fetch_xor(true, Ordering::Relaxed);
-        return InputKey::Nul;
+        return (InputKey::Nul, key_status);
     }
 
     let ctrl_key = CTRL_KEY.load(Ordering::Relaxed);
     let shift_key = SHIFT_KEY.load(Ordering::Relaxed);
     let caps_lock = CAPS_LOCK.load(Ordering::Relaxed);
     if ctrl_key {
-        code.ctrl_map()
+        (code.ctrl_map(), key_status)
     } else if shift_key || caps_lock {
-        code.shift_map()
+        (code.shift_map(), key_status)
     } else {
-        code.plain_map()
+        (code.plain_map(), key_status)
     }
 }
