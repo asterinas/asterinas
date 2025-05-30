@@ -6,6 +6,7 @@
 //! Virtual Memory Objects (VMOs).
 
 use core::{
+    any::Any,
     ops::Range,
     sync::atomic::{AtomicUsize, Ordering},
 };
@@ -18,7 +19,7 @@ use ostd::{
 };
 use xarray::{Cursor, LockedXArray, XArray};
 
-use crate::prelude::*;
+use crate::{fs::utils::CachePageMeta, prelude::*};
 
 mod dyn_cap;
 mod options;
@@ -142,7 +143,7 @@ impl From<ostd::Error> for VmoCommitError {
 /// 1. File-backed VMO: the VMO backed by a file and resides in the page cache,
 ///    which includes a [`Pager`] to provide it with actual pages.
 /// 2. Anonymous VMO: the VMO without a file backup, which does not have a `Pager`.
-pub(super) struct Vmo_ {
+pub(crate) struct Vmo_ {
     pager: Option<Arc<dyn Pager>>,
     /// Flags
     flags: VmoFlags,
@@ -185,14 +186,32 @@ impl Vmo_ {
     /// Prepares a new `UFrame` for the target index in pages, returns this new frame.
     ///
     /// This operation may involve I/O operations if the VMO is backed by a pager.
-    fn prepare_page(&self, page_idx: usize, commit_flags: CommitFlags) -> Result<UFrame> {
+    fn prepare_page(
+        self: &Arc<Self>,
+        page_idx: usize,
+        commit_flags: CommitFlags,
+    ) -> Result<UFrame> {
         match &self.pager {
             None => Ok(FrameAllocOptions::new().alloc_frame()?.into()),
             Some(pager) => {
                 if commit_flags.will_overwrite() {
-                    pager.commit_overwrite(page_idx)
+                    let page_tmp = pager.commit_overwrite(page_idx)?;
+                    match (page_tmp.dyn_meta() as &dyn Any).downcast_ref::<CachePageMeta>() {
+                        Some(meta) => {
+                            *meta.reverse_map.write() = Some(self.clone());
+                        }
+                        None => {}
+                    }
+                    Ok(page_tmp.into())
                 } else {
-                    pager.commit_page(page_idx)
+                    let page_tmp = pager.commit_page(page_idx)?;
+                    match (page_tmp.dyn_meta() as &dyn Any).downcast_ref::<CachePageMeta>() {
+                        Some(meta) => {
+                            *meta.reverse_map.write() = Some(self.clone());
+                        }
+                        None => {}
+                    }
+                    Ok(page_tmp.into())
                 }
             }
         }
@@ -202,7 +221,11 @@ impl Vmo_ {
     ///
     /// This method may involve I/O operations if the VMO needs to fetch a page from
     /// the underlying page cache.
-    pub fn commit_on(&self, page_idx: usize, commit_flags: CommitFlags) -> Result<UFrame> {
+    pub fn commit_on(
+        self: &Arc<Self>,
+        page_idx: usize,
+        commit_flags: CommitFlags,
+    ) -> Result<UFrame> {
         let new_page = self.prepare_page(page_idx, commit_flags)?;
 
         let mut locked_pages = self.pages.lock();
@@ -220,7 +243,7 @@ impl Vmo_ {
     }
 
     fn try_commit_with_cursor(
-        &self,
+        self: &Arc<Self>,
         cursor: &mut Cursor<'_, UFrame>,
     ) -> core::result::Result<UFrame, VmoCommitError> {
         if let Some(committed_page) = cursor.load() {
@@ -243,7 +266,10 @@ impl Vmo_ {
     /// Commits the page corresponding to the target offset in the VMO.
     ///
     /// If the commit operation needs to perform I/O, it will return a [`VmoCommitError::NeedIo`].
-    pub fn try_commit_page(&self, offset: usize) -> core::result::Result<UFrame, VmoCommitError> {
+    pub fn try_commit_page(
+        self: &Arc<Self>,
+        offset: usize,
+    ) -> core::result::Result<UFrame, VmoCommitError> {
         let page_idx = offset / PAGE_SIZE;
         if offset >= self.size() {
             return Err(VmoCommitError::Err(Error::with_message(
@@ -264,7 +290,7 @@ impl Vmo_ {
     ///
     /// Once a commit operation needs to perform I/O, it will return a [`VmoCommitError::NeedIo`].
     pub fn try_operate_on_range<F>(
-        &self,
+        self: &Arc<Self>,
         range: &Range<usize>,
         mut operate: F,
     ) -> core::result::Result<(), VmoCommitError>
@@ -299,7 +325,7 @@ impl Vmo_ {
     /// This method may involve I/O operations if the VMO needs to fetch a page from
     /// the underlying page cache.
     fn operate_on_range<F>(
-        &self,
+        self: &Arc<Self>,
         mut range: Range<usize>,
         mut operate: F,
         commit_flags: CommitFlags,
@@ -335,7 +361,7 @@ impl Vmo_ {
     }
 
     /// Reads the specified amount of buffer content starting from the target offset in the VMO.
-    pub fn read(&self, offset: usize, writer: &mut VmWriter) -> Result<()> {
+    pub fn read(self: &Arc<Self>, offset: usize, writer: &mut VmWriter) -> Result<()> {
         let read_len = writer.avail().min(self.size().saturating_sub(offset));
         let read_range = offset..(offset + read_len);
         let mut read_offset = offset % PAGE_SIZE;
@@ -352,11 +378,20 @@ impl Vmo_ {
                 Ok(())
             };
 
-        self.operate_on_range(read_range, read, CommitFlags::empty())
+        self.operate_on_range(read_range.clone(), read, CommitFlags::empty())?;
+
+        // Promote.
+        if let Some(pager) = &self.pager {
+            let page_idx_range = get_page_idx_range(&read_range);
+            for page_idx in page_idx_range {
+                pager.g_page_cache_promote(page_idx)?;
+            }
+        }
+        Ok(())
     }
 
     /// Writes the specified amount of buffer content starting from the target offset in the VMO.
-    pub fn write(&self, offset: usize, reader: &mut VmReader) -> Result<()> {
+    pub fn write(self: &Arc<Self>, offset: usize, reader: &mut VmReader) -> Result<()> {
         let write_len = reader.remain();
         let write_range = offset..(offset + write_len);
         let mut write_offset = offset % PAGE_SIZE;
@@ -396,13 +431,15 @@ impl Vmo_ {
             let page_idx_range = get_page_idx_range(&write_range);
             for page_idx in page_idx_range {
                 pager.update_page(page_idx)?;
+                // Promote.
+                pager.g_page_cache_promote(page_idx)?;
             }
         }
         Ok(())
     }
 
     /// Clears the target range in current VMO.
-    pub fn clear(&self, range: Range<usize>) -> Result<()> {
+    pub fn clear(self: &Arc<Self>, range: Range<usize>) -> Result<()> {
         let buffer = vec![0u8; range.end - range.start];
         let mut reader = VmReader::from(buffer.as_slice()).to_fallible();
         self.write(range.start, &mut reader)?;
@@ -472,6 +509,11 @@ impl Vmo_ {
     /// Returns the flags of current VMO.
     pub fn flags(&self) -> VmoFlags {
         self.flags
+    }
+
+    /// Returns the pager of current VMO.
+    pub fn pager(&self) -> Option<Arc<dyn Pager>> {
+        self.pager.as_ref().map(Arc::clone)
     }
 
     fn replace(&self, page: UFrame, page_idx: usize) -> Result<()> {
