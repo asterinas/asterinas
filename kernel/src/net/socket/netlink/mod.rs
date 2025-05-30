@@ -38,11 +38,17 @@
 //!
 
 mod addr;
+mod common;
+mod kobject_uevent;
 mod message;
+mod options;
+mod receiver;
 mod route;
 mod table;
 
 pub use addr::{GroupIdSet, NetlinkSocketAddr};
+pub use kobject_uevent::NetlinkUeventSocket;
+pub use options::{AddMembership, DropMembership};
 pub use route::NetlinkRouteSocket;
 pub use table::{is_valid_protocol, StandardNetlinkProtocol};
 

@@ -18,4 +18,4 @@ pub(super) use segment::{
 use crate::net::socket::netlink::message::Message;
 
 /// A netlink route message.
-pub(super) type RtnlMessage = Message<RtnlSegment>;
+pub(in crate::net::socket::netlink) type RtnlMessage = Message<RtnlSegment>;
