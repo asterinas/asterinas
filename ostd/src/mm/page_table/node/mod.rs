@@ -28,12 +28,7 @@
 mod entry;
 mod pte_state;
 
-use core::{
-    cell::SyncUnsafeCell,
-    marker::PhantomData,
-    ops::Deref,
-    sync::atomic::{AtomicU8, Ordering},
-};
+use core::{cell::SyncUnsafeCell, marker::PhantomData, ops::Deref, sync::atomic::Ordering};
 
 pub(in crate::mm) use self::{
     entry::Entry,
@@ -47,6 +42,7 @@ use crate::{
         paddr_to_vaddr,
         page_table::{PteScalar, load_pte, store_pte},
     },
+    sync::spin::queued,
     task::atomic_mode::InAtomicMode,
 };
 
@@ -133,18 +129,11 @@ impl<'a, C: PageTableConfig> PageTableNodeRef<'a, C> {
     /// An atomic mode guard is required to
     ///  1. prevent deadlocks;
     ///  2. provide a lifetime (`'rcu`) that the nodes are guaranteed to outlive.
-    pub(super) fn lock<'rcu>(self, _guard: &'rcu dyn InAtomicMode) -> PageTableGuard<'rcu, C>
+    pub(super) fn lock<'rcu>(self, guard: &'rcu dyn InAtomicMode) -> PageTableGuard<'rcu, C>
     where
         'a: 'rcu,
     {
-        while self
-            .meta()
-            .lock
-            .compare_exchange(0, 1, Ordering::Acquire, Ordering::Relaxed)
-            .is_err()
-        {
-            core::hint::spin_loop();
-        }
+        self.meta().lock.lock(guard);
 
         PageTableGuard::<'rcu, C> { inner: self }
     }
@@ -255,7 +244,8 @@ impl<'rcu, C: PageTableConfig> Deref for PageTableGuard<'rcu, C> {
 
 impl<C: PageTableConfig> Drop for PageTableGuard<'_, C> {
     fn drop(&mut self) {
-        self.inner.meta().lock.store(0, Ordering::Release);
+        // SAFETY: The guard ensures that the lock is held.
+        unsafe { self.inner.meta().lock.unlock() };
     }
 }
 
@@ -275,7 +265,7 @@ pub(crate) struct PageTablePageMeta<C: PageTableConfig> {
     /// referenced by page tables of different levels.
     level: PagingLevel,
     /// The lock for the page table page.
-    lock: AtomicU8,
+    lock: queued::LockBody,
     _phantom: PhantomData<C>,
 }
 
@@ -285,7 +275,7 @@ impl<C: PageTableConfig> PageTablePageMeta<C> {
             nr_children: SyncUnsafeCell::new(0),
             stray: SyncUnsafeCell::new(false),
             level,
-            lock: AtomicU8::new(0),
+            lock: queued::LockBody::new(),
             _phantom: PhantomData,
         }
     }
