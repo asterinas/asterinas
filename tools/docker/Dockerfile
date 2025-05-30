@@ -283,11 +283,11 @@ RUN apt clean && rm -rf /var/lib/apt/lists/*
 WORKDIR /root
 RUN rm -rf bazel
 
-FROM build-bazel AS syscall_test
+FROM build-bazel AS build-gvisor
 
-# Build the syscall test binaries
-COPY test/syscall_test /root/syscall_test
-WORKDIR /root/syscall_test
+# Build the gvisor syscall test binaries
+COPY test/syscall_test/gvisor /root/gvisor
+WORKDIR /root/gvisor
 RUN export BUILD_DIR=build && \
     make ${BUILD_DIR}/syscall_test_bins
 
@@ -368,7 +368,7 @@ RUN apt clean && rm -rf /var/lib/apt/lists/*
 
 # Prepare the system call test suite
 COPY --from=build-ltp /opt/ltp /opt/ltp
-COPY --from=syscall_test /root/syscall_test/build/syscall_test_bins /root/syscall_test_bins
+COPY --from=build-gvisor /root/gvisor/build/syscall_test_bins /root/syscall_test_bins
 ENV ASTER_PREBUILT_SYSCALL_TEST=/root/syscall_test_bins
 
 # Install Busybox built from the previous stages
