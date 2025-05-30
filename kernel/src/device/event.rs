@@ -31,7 +31,6 @@ const PROP_BITMAP_LEN: usize = (PROP_COUNT + BITS_PER_WORD - 1) / BITS_PER_WORD;
 
 const EVIOCGBIT_NR_MAX: u8 = EVIOCGBIT_NR + EV_COUNT as u8;
 
-// use crate::syscall::ClockId::CLOCK_MONOTONIC;
 use crate::syscall::clock_gettime::read_clock_input;
 
 const NR_SHIFT: usize = 0;
@@ -108,12 +107,6 @@ impl EventDevice {
             pollee: Pollee::new(),
         });
 
-        let metadata = input_device.metadata();
-        println!(
-            "InputDevice Metadata: name = {}",
-            metadata.name
-        );
-
         // Initialize the static handler if it hasn't been initialized yet
         let handler = EVENT_DEVICE_HANDLER.call_once(|| {
             Arc::new(EventDeviceHandler {
@@ -139,9 +132,7 @@ impl EventDevice {
             queue.pop_front();
         }
         queue.push_back(event);
-        // println!("Pushed event: {:?}", event);
         if event.type_ == EventType::EvSyn as u16 {
-            // println!("EventDevice::push_event: SYN event detected");
             self.pollee.notify(IoEvents::IN);
         }
     }
@@ -496,7 +487,6 @@ impl FileIo for Arc<EventDevice> {
 }
 
 fn handle_eviocgbit(dev: Arc<dyn InputDevice>, type_: EventType, _size: u16, arg: usize) -> Result<i32> {
-    log::error!("-------------Coming into handle_eviocgbit!");
     match type_ {
         EventType::EvSyn => {
             let _ = handle_get_ev_bit(dev, arg);

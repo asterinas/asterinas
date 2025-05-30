@@ -19,12 +19,10 @@ use aster_time::tsc::read_instant;
 use core::hint::spin_loop;
 use alloc::vec;
 use alloc::vec::Vec;
-
 use crate::alloc::string::ToString;
 use super::MOUSE_CALLBACKS;
 use crate::MOUSE_WRITE;
 use aster_input::event_type_codes::*;
-
 
 use crate::DATA_PORT;
 use crate::STATUS_PORT;
@@ -32,7 +30,6 @@ use crate::MOUSE_IRQ_LINE;
 
 pub fn init() {
     log::error!("This is init in kernel/comps/mouse/src/i8042_mouse.rs");
-
     aster_input::register_device("PS/2 Generic Mouse".to_string(), Arc::new(I8042Mouse));
 }
 
@@ -107,29 +104,6 @@ pub fn handle_mouse_input(_trap_frame: &TrapFrame) {
         let packet = parse_input_packet(state.buffer);
         state.index = 0;
         handle_mouse_packet(packet);
-    }
-}
-
-use ostd::prelude::println;
-fn handle_mouse_packet(packet: MousePacket) {
-    let mut events = parse_input_events(packet);  
-    
-    // Add a SYNC event to signal the end of the event group
-    events.push(InputEvent {
-        time: 0,
-        type_: EventType::EvSyn as u16,
-        code: 0, // SYN_REPORT
-        value: 0,
-    });
-    // Process each event
-    for event in events {
-        // println!("----------------Event: {:?}", event);
-        input_event(event, "PS/2 Generic Mouse");
-    }
-
-    // FIXME: the callbacks are going to be replaced.
-    for callback in MOUSE_CALLBACKS.lock().iter() {
-        callback();
     }
 }
 
@@ -242,4 +216,26 @@ fn parse_input_events(packet: MousePacket) -> Vec<InputEvent> {
 
     // Return the list of events
     events
+}
+
+fn handle_mouse_packet(packet: MousePacket) {
+    let mut events = parse_input_events(packet);  
+    
+    // Add a SYNC event to signal the end of the event group
+    events.push(InputEvent {
+        time: 0,
+        type_: EventType::EvSyn as u16,
+        code: 0,
+        value: 0,
+    });
+    // Process each event
+    for event in events {
+        // println!("----------------Event: {:?}", event);
+        input_event(event, "PS/2 Generic Mouse");
+    }
+
+    // FIXME: the callbacks are going to be replaced.
+    for callback in MOUSE_CALLBACKS.lock().iter() {
+        callback();
+    }
 }

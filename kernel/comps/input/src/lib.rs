@@ -7,7 +7,6 @@
 
 extern crate alloc;
 
-pub mod handler;
 pub mod event_type_codes;
 
 use alloc::{collections::BTreeMap, string::String, sync::Arc, vec::Vec};
