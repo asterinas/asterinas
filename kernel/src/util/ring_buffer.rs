@@ -156,16 +156,6 @@ impl<T: Pod> RingBuffer<T> {
         producer.push_slice(items)
     }
 
-    /// Pushes an item to the ring buffer. The next item
-    /// will be overwritten if the buffer is full.
-    ///
-    /// Returns the overwritten item if any.
-    pub fn push_overwrite(&mut self, item: T) -> Option<T> {
-        let ret = if self.is_full() { self.pop() } else { None };
-        self.push(item).unwrap();
-        ret
-    }
-
     /// Pops an item from the `RingBuffer`.
     ///
     /// Returns `Some` with the popped item on success.
@@ -467,18 +457,14 @@ mod test {
         rb.push_slice(&[i32::MAX, 1, -2, 100]).unwrap();
         assert!(rb.is_full());
 
-        let popped = rb.push_overwrite(i32::MIN);
+        let popped = rb.pop();
         assert_eq!(popped, Some(i32::MAX));
-        assert!(rb.is_full());
+        assert_eq!(rb.free_len(), 1);
 
         let mut popped = [0i32; 3];
         rb.pop_slice(&mut popped).unwrap();
         assert_eq!(popped, [1i32, -2, 100]);
-        assert_eq!(rb.free_len(), 3);
-
-        let popped = rb.pop().unwrap();
-        assert_eq!(popped, i32::MIN);
-        assert!(rb.is_empty());
+        assert_eq!(rb.free_len(), 4);
     }
 
     #[ktest]
