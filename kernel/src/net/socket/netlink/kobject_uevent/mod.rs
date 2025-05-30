@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//! Netlink Route Socket.
-
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use bound::BoundNetlinkRoute;
-pub(super) use message::RtnlMessage;
+use bound::BoundNetlinkUevent;
+pub use message::UeventMessage;
 
 use super::{
     addr::NetlinkProtocolId,
@@ -26,23 +24,22 @@ use crate::{
 };
 
 mod bound;
-mod kernel;
 mod message;
 
-pub struct NetlinkRouteSocket {
-    inner: RwMutex<Inner<UnboundNetlinkRoute, BoundNetlinkRoute>>,
+pub struct NetlinkUeventSocket {
+    inner: RwMutex<Inner<UnboundNetlinkUevent, BoundNetlinkUevent>>,
 
     is_nonblocking: AtomicBool,
     pollee: Pollee,
 }
 
-const PROTOCOL: NetlinkProtocolId = StandardNetlinkProtocol::ROUTE as _;
-type UnboundNetlinkRoute = UnboundNetlink<RtnlMessage, PROTOCOL>;
+const PROTOCOL: NetlinkProtocolId = StandardNetlinkProtocol::KOBJECT_UEVENT as _;
+type UnboundNetlinkUevent = UnboundNetlink<UeventMessage, PROTOCOL>;
 
-impl NetlinkRouteSocket {
+impl NetlinkUeventSocket {
     pub fn new(is_nonblocking: bool) -> Arc<Self> {
         Arc::new_cyclic(|weak_ref| {
-            let unbound = UnboundNetlinkRoute::new(AnyNetlinkSocket::Route(weak_ref.clone()));
+            let unbound = UnboundNetlinkUevent::new(AnyNetlinkSocket::Uevent(weak_ref.clone()));
             Self {
                 inner: RwMutex::new(Inner::Unbound(unbound)),
                 is_nonblocking: AtomicBool::new(is_nonblocking),
@@ -87,12 +84,12 @@ impl NetlinkRouteSocket {
         Ok(recv_bytes)
     }
 
-    pub(super) fn enqueue_message(&self, message: RtnlMessage) -> Result<()> {
+    pub(super) fn enqueue_message(&self, message: UeventMessage) -> Result<()> {
         self.inner.read().enqueue_message(message, &self.pollee)
     }
 }
 
-impl Socket for NetlinkRouteSocket {
+impl Socket for NetlinkUeventSocket {
     fn bind(&self, socket_addr: SocketAddr) -> Result<()> {
         let endpoint = socket_addr.try_into()?;
 
@@ -106,11 +103,10 @@ impl Socket for NetlinkRouteSocket {
     }
 
     fn addr(&self) -> Result<SocketAddr> {
-        let endpoint = self
-            .inner
-            .read()
-            .addr()
-            .unwrap_or(NetlinkSocketAddr::new_unspecified());
+        let endpoint = match &*self.inner.read() {
+            Inner::Unbound(unbound) => unbound.addr(),
+            Inner::Bound(bound) => bound.local_endpoint(),
+        };
 
         Ok(endpoint.into())
     }
@@ -179,7 +175,7 @@ impl Socket for NetlinkRouteSocket {
     }
 }
 
-impl SocketPrivate for NetlinkRouteSocket {
+impl SocketPrivate for NetlinkUeventSocket {
     fn is_nonblocking(&self) -> bool {
         self.is_nonblocking.load(Ordering::Relaxed)
     }
@@ -189,7 +185,7 @@ impl SocketPrivate for NetlinkRouteSocket {
     }
 }
 
-impl Pollable for NetlinkRouteSocket {
+impl Pollable for NetlinkUeventSocket {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
         self.pollee
             .poll_with(mask, poller, || self.inner.read().check_io_events())

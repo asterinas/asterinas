@@ -7,8 +7,8 @@ use crate::{
     events::IoEvents,
     net::socket::{
         netlink::{
-            message::ProtocolSegment, route::kernel::get_netlink_route_kernel, table::BoundHandle,
-            NetlinkSocketAddr,
+            common::BoundNetlink, message::ProtocolSegment,
+            route::kernel::get_netlink_route_kernel, NetlinkSocketAddr,
         },
         util::datagram_common,
         SendRecvFlags,
@@ -17,24 +17,14 @@ use crate::{
     util::{MultiRead, MultiWrite},
 };
 
-pub(super) struct BoundNetlinkRoute {
-    handle: BoundHandle,
-    remote_addr: NetlinkSocketAddr,
-    receive_queue: Mutex<VecDeque<RtnlMessage>>,
-}
-
-impl BoundNetlinkRoute {
-    pub(super) const fn new(handle: BoundHandle) -> Self {
-        Self {
-            handle,
-            remote_addr: NetlinkSocketAddr::new_unspecified(),
-            receive_queue: Mutex::new(VecDeque::new()),
-        }
-    }
-}
+pub(super) type BoundNetlinkRoute = BoundNetlink<RtnlMessage>;
 
 impl datagram_common::Bound for BoundNetlinkRoute {
     type Endpoint = NetlinkSocketAddr;
+
+    fn bind(&mut self, endpoint: &Self::Endpoint) -> Result<()> {
+        BoundNetlink::bind(self, endpoint)
+    }
 
     fn local_endpoint(&self) -> Self::Endpoint {
         self.handle.addr()
@@ -97,9 +87,7 @@ impl datagram_common::Bound for BoundNetlinkRoute {
             }
         }
 
-        get_netlink_route_kernel().request(&nlmsg, |response| {
-            self.receive_queue.lock().push_back(response);
-        });
+        get_netlink_route_kernel().request(&nlmsg, local_port);
 
         Ok(nlmsg.total_len())
     }
@@ -138,13 +126,6 @@ impl datagram_common::Bound for BoundNetlinkRoute {
     }
 
     fn check_io_events(&self) -> IoEvents {
-        let mut events = IoEvents::OUT;
-
-        let receive_queue = self.receive_queue.lock();
-        if !receive_queue.is_empty() {
-            events |= IoEvents::IN;
-        }
-
-        events
+        BoundNetlink::check_io_events(self)
     }
 }
