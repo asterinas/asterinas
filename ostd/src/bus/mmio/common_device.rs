@@ -5,19 +5,9 @@
 use int_to_c_enum::TryFromInt;
 use log::info;
 
-use super::VIRTIO_MMIO_MAGIC;
-use crate::{
-    io::IoMem,
-    mm::{
-        paddr_to_vaddr,
-        page_prop::{CachePolicy, PageFlags},
-        Paddr, VmIoOnce,
-    },
-    trap::IrqLine,
-    Error, Result,
-};
+use crate::{io::IoMem, mm::VmIoOnce, trap::IrqLine, Error, Result};
 
-/// MMIO Common device.
+/// A MMIO common device.
 #[derive(Debug)]
 pub struct MmioCommonDevice {
     io_mem: IoMem,
@@ -25,68 +15,48 @@ pub struct MmioCommonDevice {
 }
 
 impl MmioCommonDevice {
-    pub(super) fn new(paddr: Paddr, handle: IrqLine) -> Self {
-        // TODO: Implement universal access to MMIO devices since we are temporarily
-        // using specific virtio device as implementation of CommonDevice.
+    pub(super) fn new(io_mem: IoMem, irq: IrqLine) -> Self {
+        debug_assert!(mmio_check_magic(&io_mem));
 
-        // Read magic value
-        // SAFETY: It only read the value and judge if the magic value fit 0x74726976
-        unsafe {
-            debug_assert_eq!(*(paddr_to_vaddr(paddr) as *const u32), VIRTIO_MMIO_MAGIC);
-        }
-        // SAFETY: This range is virtio-mmio device space.
-        let io_mem = unsafe {
-            IoMem::new(
-                paddr..paddr + 0x200,
-                PageFlags::RW,
-                CachePolicy::Uncacheable,
-            )
-        };
-        let res = Self {
-            io_mem,
-            irq: handle,
-        };
+        let this = Self { io_mem, irq };
         info!(
-            "[Virtio]: Found Virtio mmio device, device id:{:?}, irq number:{:?}",
-            res.read_device_id().unwrap(),
-            res.irq.num()
+            "[Virtio]: Found MMIO device at {:#x}, device ID {}, IRQ number {}",
+            this.io_mem.paddr(),
+            this.read_device_id().unwrap(),
+            this.irq.num(),
         );
-        res
+
+        this
     }
 
-    /// Base address
-    pub fn address(&self) -> Paddr {
-        self.io_mem.paddr()
-    }
-
-    /// Grants access to the MMIO
+    /// Returns a reference to the I/O memory.
     pub fn io_mem(&self) -> &IoMem {
         &self.io_mem
     }
 
-    /// Device ID
+    /// Reads the device ID from the I/O memory.
     pub fn read_device_id(&self) -> Result<u32> {
-        self.io_mem.read_once::<u32>(8)
+        mmio_read_device_id(&self.io_mem)
     }
 
-    /// Version of the MMIO device.
+    /// Reads the version number from the I/O memory.
     pub fn read_version(&self) -> Result<VirtioMmioVersion> {
-        VirtioMmioVersion::try_from(self.io_mem.read_once::<u32>(4)?)
+        VirtioMmioVersion::try_from(mmio_read_version(&self.io_mem)?)
             .map_err(|_| Error::InvalidArgs)
     }
 
-    /// Interrupt line
+    /// Returns an immutable reference to the IRQ line.
     pub fn irq(&self) -> &IrqLine {
         &self.irq
     }
 
-    /// Mutable Interrupt line
+    /// Returns a mutable reference to the IRQ line.
     pub fn irq_mut(&mut self) -> &mut IrqLine {
         &mut self.irq
     }
 }
 
-/// Virtio MMIO version
+/// Virtio MMIO version.
 #[derive(Debug, Clone, Copy, TryFromInt, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum VirtioMmioVersion {
@@ -94,4 +64,21 @@ pub enum VirtioMmioVersion {
     Legacy = 1,
     /// Modern
     Modern = 2,
+}
+
+const OFFSET_TO_MAGIC: usize = 0;
+const OFFSET_TO_VERSION: usize = 4;
+const OFFSET_TO_DEVICE_ID: usize = 8;
+
+pub(super) fn mmio_check_magic(io_mem: &IoMem) -> bool {
+    const MAGIC_VALUE: u32 = 0x74726976;
+    io_mem
+        .read_once::<u32>(OFFSET_TO_MAGIC)
+        .is_ok_and(|val| val == MAGIC_VALUE)
+}
+fn mmio_read_version(io_mem: &IoMem) -> Result<u32> {
+    io_mem.read_once(OFFSET_TO_VERSION)
+}
+pub(super) fn mmio_read_device_id(io_mem: &IoMem) -> Result<u32> {
+    io_mem.read_once(OFFSET_TO_DEVICE_ID)
 }
