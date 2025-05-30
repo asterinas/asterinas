@@ -24,21 +24,14 @@ impl GroupIdSet {
         GroupIdIter::new(self)
     }
 
-    /// Adds a new group.
-    ///
-    /// If the group already exists, this method will return an error.
-    pub fn add_group(&mut self, group_id: GroupId) -> Result<()> {
-        if group_id >= 32 {
-            return_errno_with_message!(Errno::EINVAL, "the group ID is invalid");
-        }
+    /// Adds some new groups.
+    pub fn add_groups(&mut self, groups: GroupIdSet) {
+        self.0 |= groups.0;
+    }
 
-        let mask = 1u32 << group_id;
-        if self.0 & mask != 0 {
-            return_errno_with_message!(Errno::EINVAL, "the group ID already exists");
-        }
-        self.0 |= mask;
-
-        Ok(())
+    /// Drops some groups.
+    pub fn drop_groups(&mut self, groups: GroupIdSet) {
+        self.0 &= !groups.0;
     }
 
     /// Sets new groups.

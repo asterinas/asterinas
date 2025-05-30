@@ -38,14 +38,97 @@
 //!
 
 mod addr;
+mod common;
+mod kobject_uevent;
 mod message;
+mod options;
 mod route;
 mod table;
 
+use addr::NetlinkProtocolId;
 pub use addr::{GroupIdSet, NetlinkSocketAddr};
+pub use kobject_uevent::NetlinkUeventSocket;
+pub use options::{AddMembership, DropMembership};
 pub use route::NetlinkRouteSocket;
 pub use table::{is_valid_protocol, StandardNetlinkProtocol};
 
+use crate::prelude::*;
+
 pub(in crate::net) fn init() {
     table::init();
+}
+
+#[derive(Clone)]
+enum AnyNetlinkSocket {
+    Route(Weak<NetlinkRouteSocket>),
+    Uevent(Weak<NetlinkUeventSocket>),
+}
+
+impl AnyNetlinkSocket {
+    const fn protocol(&self) -> NetlinkProtocolId {
+        match self {
+            Self::Route(_) => StandardNetlinkProtocol::ROUTE as _,
+            Self::Uevent(_) => StandardNetlinkProtocol::KOBJECT_UEVENT as _,
+        }
+    }
+
+    fn enqueue_unicast_message(&self, message: AnyUnicastMessage) -> Result<()> {
+        assert_eq!(self.protocol(), message.protocol());
+        match self {
+            Self::Route(socket) => {
+                let Some(socket) = socket.upgrade() else {
+                    return Ok(());
+                };
+                let AnyUnicastMessage::Route(message) = message;
+                socket.enqueue_message(message)
+            }
+            Self::Uevent(_) => todo!(),
+        }
+    }
+
+    fn enqueue_mutlicast_message(&self, message: AnyMulticastMessage) -> Result<()> {
+        assert_eq!(self.protocol(), message.protocol());
+        match self {
+            Self::Route(_) => todo!(),
+            Self::Uevent(socket) => {
+                let Some(socket) = socket.upgrade() else {
+                    return Ok(());
+                };
+                let AnyMulticastMessage::Uevent(message) = message;
+                socket.enqueue_message(message)
+            }
+        }
+    }
+}
+
+enum AnyUnicastMessage {
+    Route(route::RtnlMessage),
+}
+
+impl AnyUnicastMessage {
+    const fn protocol(&self) -> NetlinkProtocolId {
+        match self {
+            Self::Route(_) => StandardNetlinkProtocol::ROUTE as _,
+        }
+    }
+}
+
+#[cfg_attr(not(ktest), expect(dead_code))]
+#[derive(Debug, Clone)]
+enum AnyMulticastMessage {
+    Uevent(kobject_uevent::UeventMessage),
+}
+
+impl AnyMulticastMessage {
+    const fn protocol(&self) -> NetlinkProtocolId {
+        match self {
+            Self::Uevent(_) => StandardNetlinkProtocol::KOBJECT_UEVENT as _,
+        }
+    }
+
+    fn src_addr(&self) -> &NetlinkSocketAddr {
+        match self {
+            Self::Uevent(message) => message.src_addr(),
+        }
+    }
 }

@@ -43,6 +43,15 @@ impl NetlinkSocketAddr {
     pub const fn groups(&self) -> GroupIdSet {
         self.groups
     }
+
+    /// Adds specified groups and returns a new address.
+    pub fn add_groups(&self, mut groups: GroupIdSet) -> NetlinkSocketAddr {
+        groups.add_groups(self.groups);
+        NetlinkSocketAddr {
+            port: self.port,
+            groups: groups,
+        }
+    }
 }
 
 impl TryFrom<SocketAddr> for NetlinkSocketAddr {
