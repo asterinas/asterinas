@@ -18,7 +18,7 @@ use x86_64::{
     PrivilegeLevel, VirtAddr,
 };
 
-use crate::cpu::local::CpuLocal;
+use crate::cpu::local::{CpuLocal, StaticCpuLocal};
 
 /// Initializes and loads the GDT and TSS.
 ///
@@ -31,7 +31,7 @@ use crate::cpu::local::CpuLocal;
 /// The caller must ensure that no preemption can occur during the method, otherwise we may
 /// accidentally load a wrong GDT and TSS that actually belongs to another CPU.
 pub(super) unsafe fn init() {
-    let tss_ptr = LOCAL_TSS.as_ptr();
+    let tss_ptr = LOCAL_TSS.storage.as_ptr();
 
     // FIXME: The segment limit in the descriptor created by `tss_segment_unchecked` does not
     // include the I/O port bitmap.
@@ -95,10 +95,10 @@ pub(super) unsafe fn init() {
 // No other special initialization is required because the kernel stack information is stored in
 // the TSS when we start the userspace program. See `syscall.S` for details.
 #[link_section = ".cpu_local_tss"]
-static LOCAL_TSS: CpuLocal<TaskStateSegment> = {
+static LOCAL_TSS: StaticCpuLocal<TaskStateSegment> = {
     let tss = TaskStateSegment::new();
     // SAFETY: The `.cpu_local_tss` section is part of the CPU-local area.
-    unsafe { CpuLocal::__new(tss) }
+    unsafe { CpuLocal::__new_static(tss) }
 };
 
 // Kernel code and data descriptors.
