@@ -12,9 +12,10 @@ use alloc::{
 use core::{any::Any, fmt::Debug};
 
 use aster_systree::{
-    init_for_ktest, singleton as systree_singleton, Error as SysTreeError, Result as SysTreeResult,
-    SysAttrFlags, SysAttrSet, SysAttrSetBuilder, SysBranchNode, SysBranchNodeFields, SysNode,
-    SysNodeId, SysNodeType, SysNormalNodeFields, SysObj, SysStr, SysSymlink, SysTree,
+    impl_arc_as, init_for_ktest, singleton as systree_singleton, Error as SysTreeError,
+    Result as SysTreeResult, SysAttrFlags, SysAttrSet, SysAttrSetBuilder, SysBranchNode,
+    SysBranchNodeFields, SysNode, SysNodeId, SysNodeType, SysNormalNodeFields, SysObj, SysStr,
+    SysSymlink, SysTree,
 };
 use ostd::{
     mm::{FallibleVmRead, FallibleVmWrite, VmReader, VmWriter},
@@ -73,20 +74,16 @@ impl MockLeafNode {
 }
 
 impl SysObj for MockLeafNode {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn arc_as_node(&self) -> Option<Arc<dyn SysNode>> {
-        self.self_ref
-            .upgrade()
-            .map(|arc_self| arc_self as Arc<dyn SysNode>)
-    }
+    impl_arc_as!(node);
+
     fn id(&self) -> &SysNodeId {
         self.fields.id()
     }
+
     fn type_(&self) -> SysNodeType {
         SysNodeType::Leaf
     }
+
     fn name(&self) -> SysStr {
         Cow::Owned(self.fields.name().to_string()) // Convert to Cow::Owned
     }
@@ -142,7 +139,7 @@ impl SysNode for MockLeafNode {
 // Refactor MockBranchNode to use SysBranchNodeFields
 #[derive(Debug)]
 struct MockBranchNode {
-    fields: SysBranchNodeFields<dyn SysObj>,
+    fields: SysBranchNodeFields,
     self_ref: Weak<Self>,
 }
 
@@ -170,25 +167,16 @@ impl MockBranchNode {
 }
 
 impl SysObj for MockBranchNode {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn arc_as_node(&self) -> Option<Arc<dyn SysNode>> {
-        self.self_ref
-            .upgrade()
-            .map(|arc_self| arc_self as Arc<dyn SysNode>)
-    }
-    fn arc_as_branch(&self) -> Option<Arc<dyn SysBranchNode>> {
-        self.self_ref
-            .upgrade()
-            .map(|arc_self| arc_self as Arc<dyn SysBranchNode>)
-    }
+    impl_arc_as!(node, branch);
+
     fn id(&self) -> &SysNodeId {
         self.fields.id()
     }
+
     fn type_(&self) -> SysNodeType {
         SysNodeType::Branch
     }
+
     fn name(&self) -> SysStr {
         Cow::Owned(self.fields.name().to_string()) // Convert to Cow::Owned
     }
@@ -290,20 +278,16 @@ impl MockSymlinkNode {
 }
 
 impl SysObj for MockSymlinkNode {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn arc_as_symlink(&self) -> Option<Arc<dyn SysSymlink>> {
-        self.self_ref
-            .upgrade()
-            .map(|arc_self| arc_self as Arc<dyn SysSymlink>)
-    }
+    impl_arc_as!(symlink);
+
     fn id(&self) -> &SysNodeId {
         &self.id
     }
+
     fn type_(&self) -> SysNodeType {
         SysNodeType::Symlink
     }
+
     fn name(&self) -> SysStr {
         self.name.clone()
     }

@@ -14,13 +14,13 @@ use ostd::{
 };
 
 use super::{
-    Error, Result, SysAttrFlags, SysAttrSet, SysAttrSetBuilder, SysBranchNode, SysBranchNodeFields,
-    SysNode, SysNodeId, SysNodeType, SysObj, SysStr, SysSymlink, SysTree,
+    impl_arc_as, Error, Result, SysAttrFlags, SysAttrSet, SysAttrSetBuilder, SysBranchNode,
+    SysBranchNodeFields, SysNode, SysNodeId, SysNodeType, SysObj, SysStr, SysSymlink, SysTree,
 };
 
 #[derive(Debug)]
 struct DeviceNode {
-    fields: SysBranchNodeFields<dyn SysObj>,
+    fields: SysBranchNodeFields,
     self_ref: Weak<Self>,
 }
 
@@ -47,21 +47,7 @@ impl DeviceNode {
 }
 
 impl SysObj for DeviceNode {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn arc_as_node(&self) -> Option<Arc<dyn SysNode>> {
-        self.self_ref
-            .upgrade()
-            .map(|arc_self| arc_self as Arc<dyn SysNode>)
-    }
-
-    fn arc_as_branch(&self) -> Option<Arc<dyn SysBranchNode>> {
-        self.self_ref
-            .upgrade()
-            .map(|arc_self| arc_self as Arc<dyn SysBranchNode>)
-    }
+    impl_arc_as!(node, branch);
 
     fn id(&self) -> &SysNodeId {
         self.fields.id()
@@ -190,15 +176,7 @@ impl SymlinkNode {
 }
 
 impl SysObj for SymlinkNode {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn arc_as_symlink(&self) -> Option<Arc<dyn SysSymlink>> {
-        self.self_ref
-            .upgrade()
-            .map(|arc_self| arc_self as Arc<dyn SysSymlink>)
-    }
+    impl_arc_as!(symlink);
 
     fn id(&self) -> &SysNodeId {
         &self.id
