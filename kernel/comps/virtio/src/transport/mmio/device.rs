@@ -7,20 +7,21 @@ use aster_rights::{ReadOp, WriteOp};
 use aster_util::{field_ptr, safe_ptr::SafePtr};
 use log::warn;
 use ostd::{
-    bus::{
-        mmio::{
-            bus::MmioDevice,
-            common_device::{MmioCommonDevice, VirtioMmioVersion},
-        },
-        pci::cfg_space::Bar,
-    },
+    bus::pci::cfg_space::Bar,
     io::IoMem,
     mm::{DmaCoherent, PAGE_SIZE},
     sync::RwLock,
     trap::IrqCallbackFunction,
 };
 
-use super::{layout::VirtioMmioLayout, multiplex::MultiplexIrq};
+use super::{
+    bus::{
+        bus::MmioDevice,
+        common_device::{MmioCommonDevice, VirtioMmioVersion},
+    },
+    layout::VirtioMmioLayout,
+    multiplex::MultiplexIrq,
+};
 use crate::{
     queue::{AvailRing, Descriptor, UsedRing},
     transport::{ConfigManager, DeviceStatus, VirtioTransport, VirtioTransportError},
@@ -36,7 +37,7 @@ pub struct VirtioMmioDevice {
 pub struct VirtioMmioTransport {
     layout: SafePtr<VirtioMmioLayout, IoMem>,
     device: Arc<VirtioMmioDevice>,
-    common_device: ostd::bus::mmio::common_device::MmioCommonDevice,
+    common_device: MmioCommonDevice,
     multiplex: Arc<RwLock<MultiplexIrq>>,
 }
 
