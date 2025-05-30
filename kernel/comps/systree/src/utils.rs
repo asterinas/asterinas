@@ -136,3 +136,59 @@ impl SymlinkNodeFields {
         &self.target_path
     }
 }
+
+/// A macro to automatically generate `arc_as_XXX` methods and `as_any` for [`SysObj`] trait implementation.
+///
+///
+/// # Usage
+/// ```rust
+/// // `MyStruct` will implemented `SysNode` and `SysBranchNode` trait.
+///
+/// impl SysObj for MyStruct {
+///     impl_arc_as!(node, branch); // Generates `as_any`, `arc_as_node`, and `arc_as_branch`
+/// }
+/// ```
+///
+/// **Note**: The struct must have a `self_ref: Weak<Self>` field for reference upgrades.
+#[macro_export]
+macro_rules! impl_arc_as {
+    () => {
+        fn as_any(&self) -> &dyn Any { self }
+    };
+
+    ($head:tt, $($tail:tt),*) => {
+        impl_arc_as!(@handle $head);
+        impl_arc_as!($($tail),*);
+    };
+
+    ($last:tt) => {
+        fn as_any(&self) -> &dyn Any { self }
+        impl_arc_as!(@handle $last);
+    };
+
+    (@handle node) => {
+        fn arc_as_node(&self) -> Option<Arc<dyn SysNode>> {
+            self.self_ref
+                .upgrade()
+                .map(|arc| arc as Arc<dyn SysNode>)
+        }
+    };
+
+    (@handle branch) => {
+        fn arc_as_branch(&self) -> Option<Arc<dyn SysBranchNode>> {
+            self.self_ref
+                .upgrade()
+                .map(|arc| arc as Arc<dyn SysBranchNode>)
+        }
+    };
+
+    (@handle symlink) => {
+        fn arc_as_symlink(&self) -> Option<Arc<dyn SysSymlink>> {
+            self.self_ref
+                .upgrade()
+                .map(|arc| arc as Arc<dyn SysSymlink>)
+        }
+    };
+
+    (@handle $_invalid:tt) => {};
+}
