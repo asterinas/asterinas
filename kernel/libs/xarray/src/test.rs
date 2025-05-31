@@ -308,6 +308,8 @@ impl<P: NonNullPtr + Send + Sync> Drop for node::XNode<P> {
 
 #[ktest]
 fn no_leakage() {
+    // FIXME: This doesn't work on multi-processor. We can't yet schedule tasks
+    // to other CPUs with the OSTD's default scheduler.
     fn finish_grace_period() {
         let task = || {};
         let _ = ostd::task::TaskOptions::new(task).data(()).spawn();
