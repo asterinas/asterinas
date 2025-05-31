@@ -5,6 +5,7 @@ use crate::{
     fs::{
         file_table::FileDesc,
         fs_resolver::{FsPath, AT_FDCWD},
+        notify::fsnotify_mkdir,
         utils::{InodeMode, InodeType},
     },
     prelude::*,
@@ -38,7 +39,8 @@ pub fn sys_mkdirat(
         let mask_mode = mode & !current.fs().umask().read().get();
         InodeMode::from_bits_truncate(mask_mode)
     };
-    let _ = dir_dentry.new_fs_child(name.trim_end_matches('/'), InodeType::Dir, inode_mode)?;
+    let dentry = dir_dentry.new_fs_child(name.trim_end_matches('/'), InodeType::Dir, inode_mode)?;
+    fsnotify_mkdir(&dir_dentry, dentry.effective_name())?;
     Ok(SyscallReturn::Return(0))
 }
 
