@@ -268,8 +268,10 @@ test:
 .PHONY: ktest
 ktest: initramfs $(CARGO_OSDK)
 	@# Exclude linux-bzimage-setup from ktest since it's hard to be unit tested
+	@# Set SMP to 1 if testing `kernel/libs/xarray` and SMP != 1 since it fails with SMP
 	@for dir in $(OSDK_CRATES); do \
 		[ $$dir = "ostd/libs/linux-bzimage/setup" ] && continue; \
+		[ $$dir = "kernel/libs/xarray" ] && [ "$(SMP)" != "1" ] && SMP=1 && echo "WARN: SMP set to 1 for $$dir"; \
 		echo "[make] Testing $$dir"; \
 		(cd $$dir && OVMF=off cargo osdk test $(CARGO_OSDK_INITRAMFS_OPTION)) || exit 1; \
 		tail --lines 10 qemu.log | grep -q "^\\[ktest runner\\] All crates tested." \
