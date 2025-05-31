@@ -293,3 +293,66 @@ cpu_local! {
 cpu_local_cell! {
     static TOP: usize = 0;
 }
+
+#[cfg(ktest)]
+mod test {
+    use core::sync::atomic::AtomicUsize;
+
+    use super::*;
+    use crate::{
+        prelude::*,
+        task::{disable_preempt, Task, TaskOptions},
+    };
+
+    #[ktest]
+    fn test_mutual_exclusion() {
+        static TESTED_LOCK: LockBody = LockBody::new();
+        // The counter is not atomically incremented, but under lock. If the lock
+        // is not mutually exclusive, the counter should be less then expected.
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+        const ITERATIONS_PER_TASK: usize = 1000;
+        const TASKS: usize = 4;
+
+        static FINISHED: [AtomicBool; TASKS] = [const { AtomicBool::new(false) }; TASKS];
+
+        fn task_fn() {
+            for _ in 0..ITERATIONS_PER_TASK {
+                let guard = disable_preempt();
+
+                TESTED_LOCK.lock(&guard);
+
+                let counter = COUNTER.load(Ordering::Relaxed);
+                for _ in 0..100 {
+                    assert!(!TESTED_LOCK.try_lock(&guard));
+                    core::hint::spin_loop();
+                }
+                COUNTER.store(counter + 1, Ordering::Relaxed);
+
+                // SAFETY: This is locked by us.
+                unsafe { TESTED_LOCK.unlock() };
+
+                drop(guard);
+
+                Task::yield_now();
+            }
+
+            let cur_task = Task::current().unwrap();
+            let tid = cur_task.local_data().downcast_ref::<usize>().unwrap();
+            FINISHED[*tid].store(true, Ordering::Relaxed);
+        }
+
+        let _tasks: [Arc<Task>; TASKS] =
+            core::array::from_fn(|i| TaskOptions::new(task_fn).local_data(i).spawn().unwrap());
+
+        for finished in FINISHED.iter() {
+            while !finished.load(Ordering::Relaxed) {
+                Task::yield_now();
+            }
+        }
+
+        let expected = TASKS * ITERATIONS_PER_TASK;
+        let actual = COUNTER.load(Ordering::Relaxed);
+        assert_eq!(expected, actual);
+    }
+}
