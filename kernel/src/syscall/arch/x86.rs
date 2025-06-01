@@ -35,6 +35,7 @@ use super::{
     fork::{sys_fork, sys_vfork},
     fsync::{sys_fdatasync, sys_fsync},
     futex::sys_futex,
+    get_ioprio::sys_ioprio_get,
     get_priority::sys_get_priority,
     getcpu::sys_getcpu,
     getcwd::sys_getcwd,
@@ -117,6 +118,7 @@ use super::{
     sendfile::sys_sendfile,
     sendmsg::sys_sendmsg,
     sendto::sys_sendto,
+    set_ioprio::sys_ioprio_set,
     set_priority::sys_set_priority,
     set_robust_list::sys_set_robust_list,
     set_tid_address::sys_set_tid_address,
@@ -335,6 +337,8 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_TGKILL = 234           => sys_tgkill(args[..3]);
     SYS_UTIMES = 235           => sys_utimes(args[..2]);
     SYS_WAITID = 247           => sys_waitid(args[..5]);
+    SYS_IOPRIO_SET = 251       => sys_ioprio_set(args[..3]);
+    SYS_IOPRIO_GET = 252       => sys_ioprio_get(args[..2]);
     SYS_OPENAT = 257           => sys_openat(args[..4]);
     SYS_MKDIRAT = 258          => sys_mkdirat(args[..3]);
     SYS_MKNODAT = 259          => sys_mknodat(args[..4]);

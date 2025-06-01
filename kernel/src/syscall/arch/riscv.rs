@@ -29,6 +29,7 @@ use super::{
     flock::sys_flock,
     fsync::{sys_fdatasync, sys_fsync},
     futex::sys_futex,
+    get_ioprio::sys_ioprio_get,
     get_priority::sys_get_priority,
     getcpu::sys_getcpu,
     getcwd::sys_getcwd,
@@ -101,6 +102,7 @@ use super::{
     sendfile::sys_sendfile,
     sendmsg::sys_sendmsg,
     sendto::sys_sendto,
+    set_ioprio::sys_ioprio_set,
     set_priority::sys_set_priority,
     set_robust_list::sys_set_robust_list,
     set_tid_address::sys_set_tid_address,
@@ -154,6 +156,8 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_DUP3 = 24                => sys_dup3(args[..3]);
     SYS_FCNTL = 25               => sys_fcntl(args[..3]);
     SYS_IOCTL = 29               => sys_ioctl(args[..3]);
+    SYS_IOPRIO_SET = 30          => sys_ioprio_set(args[..3]);
+    SYS_IOPRIO_GET = 31          => sys_ioprio_get(args[..2]);
     SYS_FLOCK = 32               => sys_flock(args[..2]);
     SYS_MKNODAT = 33             => sys_mknodat(args[..4]);
     SYS_MKDIRAT = 34             => sys_mkdirat(args[..3]);

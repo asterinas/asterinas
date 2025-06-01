@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::sync::atomic::AtomicU32;
+
 use ostd::{
     cpu::{
         context::{FpuContext, UserContext},
@@ -150,6 +152,7 @@ impl PosixThreadBuilder {
                     prof_clock,
                     virtual_timer_manager,
                     prof_timer_manager,
+                    io_priority: AtomicU32::new(0),
                 }
             };
 
