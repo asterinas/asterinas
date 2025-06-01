@@ -98,6 +98,14 @@ impl<T> Drop for RwArc<T> {
     }
 }
 
+impl<T: Clone> RwArc<T> {
+    /// Returns the contained value by cloning it.
+    pub fn get_cloned(&self) -> T {
+        let guard = self.read();
+        guard.clone()
+    }
+}
+
 impl<T> RoArc<T> {
     /// Acquires the read lock for immutable access.
     pub fn read(&self) -> RwLockReadGuard<T, PreemptDisabled> {
