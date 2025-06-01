@@ -15,7 +15,7 @@ use crate::syscall::{
     chroot::sys_chroot,
     clock_gettime::sys_clock_gettime,
     clone::{sys_clone, sys_clone3},
-    close::sys_close,
+    close::{sys_close, sys_close_range},
     connect::sys_connect,
     dup::{sys_dup, sys_dup2, sys_dup3},
     epoll::{
@@ -371,6 +371,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_PWRITEV2 = 328         => sys_pwritev2(args[..5]);
     SYS_STATX = 332            => sys_statx(args[..5]);
     SYS_CLONE3 = 435           => sys_clone3(args[..2], &user_ctx);
+    SYS_CLOSE_RANGE = 436      => sys_close_range(args[..3]);
     SYS_FACCESSAT2 = 439       => sys_faccessat2(args[..4]);
     SYS_EPOLL_PWAIT2 = 441     => sys_epoll_pwait2(args[..5]);
 }

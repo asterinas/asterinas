@@ -116,6 +116,11 @@ impl FileTableRefMut<'_> {
     pub(super) fn remove(&mut self) {
         *self.0 = None;
     }
+
+    /// Replaces the file table with a new one, returning the old one.
+    pub fn replace(&mut self, new_table: Option<RwArc<FileTable>>) -> Option<RwArc<FileTable>> {
+        core::mem::replace(&mut *self.0, new_table)
+    }
 }
 
 /// A trait to provide the `as_thread_local` method for tasks.
