@@ -76,6 +76,9 @@ pub struct PosixThread {
 
     /// A manager that manages timers based on the profiling clock of the current thread.
     prof_timer_manager: Arc<TimerManager>,
+
+    /// I/O Scheduling priority value
+    io_priority: AtomicU32,
 }
 
 impl PosixThread {
@@ -307,6 +310,11 @@ impl PosixThread {
             self
         ));
         self.credentials.dup().restrict()
+    }
+
+    /// Returns the I/O priority value of the thread.
+    pub fn io_priority(&self) -> &AtomicU32 {
+        &self.io_priority
     }
 }
 
