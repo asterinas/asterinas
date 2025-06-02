@@ -9,6 +9,8 @@ use crate::{
     syscall::constants::MAX_FILENAME_LEN,
 };
 
+const STATX_ATTR_MOUNT_ROOT: u64 = 0x0000_2000;
+
 pub fn sys_statx(
     dirfd: FileDesc,
     filename_ptr: Vaddr,
@@ -118,11 +120,30 @@ impl From<Metadata> for Statx {
     fn from(info: Metadata) -> Self {
         let devid = DeviceId::from(info.dev);
         let rdevid = DeviceId::from(info.rdev);
+
+        // FIXME: We assume it is always not mount_root.
+        let stx_attributes = 0;
+
+        let stx_attributes_mask = STATX_ATTR_MOUNT_ROOT;
+
+        let stx_mask = StatxMask::STATX_TYPE.bits()
+            | StatxMask::STATX_MODE.bits()
+            | StatxMask::STATX_NLINK.bits()
+            | StatxMask::STATX_UID.bits()
+            | StatxMask::STATX_GID.bits()
+            | StatxMask::STATX_ATIME.bits()
+            | StatxMask::STATX_MTIME.bits()
+            | StatxMask::STATX_CTIME.bits()
+            | StatxMask::STATX_INO.bits()
+            | StatxMask::STATX_SIZE.bits()
+            | StatxMask::STATX_BLOCKS.bits()
+            | StatxMask::STATX_BTIME.bits();
+
         Self {
             // FIXME: All zero fields below are dummy implementations that need to be improved in the future.
-            stx_mask: 0,
+            stx_mask,
             stx_blksize: info.blk_size as u32,
-            stx_attributes: 0,
+            stx_attributes,
             stx_nlink: info.nlinks as u32,
             stx_uid: info.uid.into(),
             stx_gid: info.gid.into(),
@@ -131,7 +152,7 @@ impl From<Metadata> for Statx {
             stx_ino: info.ino,
             stx_size: info.size as u64,
             stx_blocks: (info.blocks * (info.blk_size / 512)) as u64,
-            stx_attributes_mask: 0,
+            stx_attributes_mask,
             stx_atime: StatxTimestamp::from(info.atime),
             stx_btime: StatxTimestamp::from(info.atime),
             stx_ctime: StatxTimestamp::from(info.ctime),
