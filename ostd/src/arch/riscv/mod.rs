@@ -61,6 +61,7 @@ pub fn read_random() -> Option<u64> {
 }
 
 pub(crate) fn enable_cpu_features() {
+    cpu::extension::init();
     unsafe {
         // We adopt a lazy approach to enable the floating-point unit; it's not
         // enabled before the first FPU trap.
