@@ -187,7 +187,7 @@ fn dfs_acquire_lock<E: PageTableEntryTrait, C: PagingConstsTrait>(
     debug_assert!(!*cur_node.stray_mut());
 
     let cur_level = cur_node.level();
-    if cur_level <= 1 {
+    if cur_level == 1 {
         return;
     }
 
@@ -222,7 +222,7 @@ unsafe fn dfs_release_lock<'rcu, E: PageTableEntryTrait, C: PagingConstsTrait>(
     va_range: Range<Vaddr>,
 ) {
     let cur_level = cur_node.level();
-    if cur_level <= 1 {
+    if cur_level == 1 {
         return;
     }
 
@@ -265,7 +265,7 @@ pub(super) unsafe fn dfs_mark_stray_and_unlock<E: PageTableEntryTrait, C: Paging
 ) {
     *sub_tree.stray_mut() = true;
 
-    if sub_tree.level() > 1 {
+    if sub_tree.level() == 1 {
         return;
     }
 
