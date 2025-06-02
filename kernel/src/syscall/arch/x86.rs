@@ -28,6 +28,7 @@ use super::{
     execve::{sys_execve, sys_execveat},
     exit::sys_exit,
     exit_group::sys_exit_group,
+    fadvise64::sys_fadvise64,
     fallocate::sys_fallocate,
     fcntl::sys_fcntl,
     flock::sys_flock,
@@ -321,6 +322,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_GETDENTS64 = 217       => sys_getdents64(args[..3]);
     SYS_SET_TID_ADDRESS = 218  => sys_set_tid_address(args[..1]);
     SYS_SEMTIMEDOP = 220       => sys_semtimedop(args[..4]);
+    SYS_FADVISE64 = 221        => sys_fadvise64(args[..4]);
     SYS_TIMER_CREATE = 222     => sys_timer_create(args[..3]);
     SYS_TIMER_SETTIME = 223    => sys_timer_settime(args[..4]);
     SYS_TIMER_GETTIME = 224    => sys_timer_gettime(args[..2]);
