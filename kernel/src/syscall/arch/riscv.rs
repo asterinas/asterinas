@@ -16,7 +16,7 @@ use crate::syscall::{
     close::sys_close,
     connect::sys_connect,
     dup::{sys_dup, sys_dup3},
-    epoll::{sys_epoll_create1, sys_epoll_ctl, sys_epoll_pwait},
+    epoll::{sys_epoll_create1, sys_epoll_ctl, sys_epoll_pwait, sys_epoll_pwait2},
     eventfd::sys_eventfd2,
     execve::{sys_execve, sys_execveat},
     exit::sys_exit,
@@ -303,4 +303,5 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_SEMTIMEDOP = 420         => sys_semtimedop(args[..4]);
     SYS_CLONE3 = 435             => sys_clone3(args[..2], &user_ctx);
     SYS_FACCESSAT2 = 439         => sys_faccessat2(args[..4]);
+    SYS_EPOLL_PWAIT2 = 441       => sys_epoll_pwait2(args[..5]);
 }

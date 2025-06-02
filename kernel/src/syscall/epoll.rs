@@ -11,7 +11,8 @@ use crate::{
         utils::CreationFlags,
     },
     prelude::*,
-    process::signal::sig_mask::SigMask,
+    process::signal::sig_mask::{SigMask, SigSet},
+    time::timespec_t,
 };
 
 // See: https://elixir.bootlin.com/linux/v6.11.5/source/fs/eventpoll.c#L2437
@@ -92,22 +93,31 @@ pub fn sys_epoll_ctl(
     Ok(SyscallReturn::Return(0 as _))
 }
 
-fn do_epoll_wait(
+fn do_epoll_pwait2(
     epfd: FileDesc,
+    events_addr: Vaddr,
     max_events: i32,
-    timeout: i32,
+    timeout: Option<Duration>,
+    sigmask: Vaddr,
+    sigset_size: usize,
     ctx: &Context,
-) -> Result<Vec<EpollEvent>> {
+) -> Result<usize> {
     let max_events = {
         if max_events <= 0 || max_events as usize > EP_MAX_EVENTS {
             return_errno_with_message!(Errno::EINVAL, "max_events is not valid");
         }
         max_events as usize
     };
-    let timeout = if timeout >= 0 {
-        Some(Duration::from_millis(timeout as _))
+
+    let sigset = sigmask != 0;
+    if sigset && sigset_size != 8 {
+        return_errno_with_message!(Errno::EINVAL, "sigset size is not equal to 8");
+    }
+
+    let old_sig_mask_value = if sigset {
+        set_signal_mask(sigmask, ctx)?
     } else {
-        None
+        SigSet::from(0)
     };
 
     let mut file_table = ctx.thread_local.borrow_file_table_mut();
@@ -118,17 +128,34 @@ fn do_epoll_wait(
 
     let result = epoll_file.wait(max_events, timeout.as_ref());
 
+    if sigset {
+        restore_signal_mask(old_sig_mask_value, ctx);
+    }
+
     // As mentioned in the manual, the return value should be zero if no file descriptor becomes ready
     // during the requested `timeout` milliseconds. So we ignore `Err(ETIME)` and return an empty vector.
     //
     // Manual: <https://www.man7.org/linux/man-pages/man2/epoll_wait.2.html>
-    if result
-        .as_ref()
-        .is_err_and(|err| err.error() == Errno::ETIME)
-    {
-        return Ok(Vec::new());
+    let epoll_events = match result {
+        Ok(events) => events,
+        Err(e) if e.error() == Errno::ETIME => {
+            return Ok(0);
+        }
+        Err(e) => {
+            return Err(e);
+        }
+    };
+
+    // Write back
+    let mut write_addr = events_addr;
+    let user_space = ctx.user_space();
+    for epoll_event in epoll_events.iter() {
+        let c_epoll_event = c_epoll_event::from(epoll_event);
+        user_space.write_val(write_addr, &c_epoll_event)?;
+        write_addr += core::mem::size_of::<c_epoll_event>();
     }
-    result
+
+    Ok(epoll_events.len())
 }
 
 pub fn sys_epoll_wait(
@@ -143,18 +170,15 @@ pub fn sys_epoll_wait(
         epfd, events_addr, max_events, timeout
     );
 
-    let epoll_events = do_epoll_wait(epfd, max_events, timeout, ctx)?;
+    let timeout = if timeout >= 0 {
+        Some(Duration::from_millis(timeout as _))
+    } else {
+        None
+    };
 
-    // Write back
-    let mut write_addr = events_addr;
-    let user_space = ctx.user_space();
-    for epoll_event in epoll_events.iter() {
-        let c_epoll_event = c_epoll_event::from(epoll_event);
-        user_space.write_val(write_addr, &c_epoll_event)?;
-        write_addr += core::mem::size_of::<c_epoll_event>();
-    }
+    let events_len = do_epoll_pwait2(epfd, events_addr, max_events, timeout, 0, 0, ctx)?;
 
-    Ok(SyscallReturn::Return(epoll_events.len() as _))
+    Ok(SyscallReturn::Return(events_len as _))
 }
 
 fn set_signal_mask(set_ptr: Vaddr, ctx: &Context) -> Result<SigMask> {
@@ -195,34 +219,49 @@ pub fn sys_epoll_pwait(
         epfd, events_addr, max_events, timeout, sigmask, sigset_size
     );
 
-    if sigmask != 0 && sigset_size != 8 {
-        return_errno_with_message!(Errno::EINVAL, "sigset size is not equal to 8");
-    }
-
-    let old_sig_mask_value = set_signal_mask(sigmask, ctx)?;
-
-    let ready_events = match do_epoll_wait(epfd, max_events, timeout, ctx) {
-        Ok(events) => {
-            restore_signal_mask(old_sig_mask_value, ctx);
-            events
-        }
-        Err(e) => {
-            // Restore the signal mask even if an error occurs
-            restore_signal_mask(old_sig_mask_value, ctx);
-            return Err(e);
-        }
+    let timeout = if timeout >= 0 {
+        Some(Duration::from_millis(timeout as _))
+    } else {
+        None
     };
 
-    // Write back
-    let mut write_addr = events_addr;
-    let user_space = ctx.user_space();
-    for event in ready_events.iter() {
-        let c_event = c_epoll_event::from(event);
-        user_space.write_val(write_addr, &c_event)?;
-        write_addr += core::mem::size_of::<c_epoll_event>();
-    }
+    let events_len = do_epoll_pwait2(
+        epfd,
+        events_addr,
+        max_events,
+        timeout,
+        sigmask,
+        sigset_size,
+        ctx,
+    )?;
 
-    Ok(SyscallReturn::Return(ready_events.len() as _))
+    Ok(SyscallReturn::Return(events_len as _))
+}
+
+pub fn sys_epoll_pwait2(
+    epfd: FileDesc,
+    events_addr: Vaddr,
+    max_events: i32,
+    timeout_addr: Vaddr,
+    sigmask: Vaddr,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
+    debug!(
+        "epfd = {}, events_addr = 0x{:x}, max_events = {}, timeout_ts = 0x{:x}, sigmask = 0x{:x}",
+        epfd, events_addr, max_events, timeout_addr, sigmask,
+    );
+
+    let timeout: Option<Duration> = if timeout_addr == 0 {
+        None
+    } else {
+        let ts: timespec_t = ctx.user_space().read_val(timeout_addr)?;
+        let duration = Duration::try_from(ts)?;
+        Some(duration)
+    };
+
+    let events_len = do_epoll_pwait2(epfd, events_addr, max_events, timeout, sigmask, 8, ctx)?;
+
+    Ok(SyscallReturn::Return(events_len as _))
 }
 
 #[derive(Debug, Clone, Copy, Pod)]
