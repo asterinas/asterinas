@@ -289,7 +289,8 @@ impl<'a> CursorMut<'a> {
         }
     }
 
-    /// Clear the mapping starting from the current slot.
+    /// Clears the mapping starting from the current slot,
+    /// and returns the number of unmapped pages.
     ///
     /// This method will bring the cursor forward by `len` bytes in the virtual
     /// address space after the modification.
@@ -305,15 +306,16 @@ impl<'a> CursorMut<'a> {
     /// # Panics
     ///
     /// This method will panic if `len` is not page-aligned.
-    pub fn unmap(&mut self, len: usize) {
+    pub fn unmap(&mut self, len: usize) -> usize {
         assert!(len % super::PAGE_SIZE == 0);
         let end_va = self.virt_addr() + len;
-
+        let mut num_unmapped: usize = 0;
         loop {
             // SAFETY: It is safe to un-map memory in the userspace.
             let result = unsafe { self.pt_cursor.take_next(end_va - self.virt_addr()) };
             match result {
                 PageTableItem::Mapped { va, page, .. } => {
+                    num_unmapped += 1;
                     self.flusher
                         .issue_tlb_flush_with(TlbFlushOp::Address(va), page);
                 }
@@ -323,7 +325,13 @@ impl<'a> CursorMut<'a> {
                 PageTableItem::MappedUntracked { .. } => {
                     panic!("found untracked memory mapped into `VmSpace`");
                 }
-                PageTableItem::StrayPageTable { pt, va, len } => {
+                PageTableItem::StrayPageTable {
+                    pt,
+                    va,
+                    len,
+                    num_pages,
+                } => {
+                    num_unmapped += num_pages;
                     self.flusher
                         .issue_tlb_flush_with(TlbFlushOp::Range(va..va + len), pt);
                 }
@@ -331,6 +339,7 @@ impl<'a> CursorMut<'a> {
         }
 
         self.flusher.dispatch_tlb_flush();
+        num_unmapped
     }
 
     /// Applies the operation to the next slot of mapping within the range.
@@ -365,7 +374,8 @@ impl<'a> CursorMut<'a> {
         unsafe { self.pt_cursor.protect_next(len, &mut op) }
     }
 
-    /// Copies the mapping from the given cursor to the current cursor.
+    /// Copies the mapping from the given cursor to the current cursor,
+    /// and returns the num of pages mapped by the current cursor.
     ///
     /// All the mappings in the current cursor's range must be empty. The
     /// function allows the source cursor to operate on the mapping before
@@ -391,7 +401,7 @@ impl<'a> CursorMut<'a> {
         src: &mut Self,
         len: usize,
         op: &mut impl FnMut(&mut PageProperty),
-    ) {
+    ) -> usize {
         // SAFETY: Operations on user memory spaces are safe if it doesn't
         // involve dropping any pages.
         unsafe { self.pt_cursor.copy_from(&mut src.pt_cursor, len, op) }

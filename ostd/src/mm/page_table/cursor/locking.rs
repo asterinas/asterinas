@@ -246,7 +246,8 @@ unsafe fn dfs_release_lock<'rcu, E: PageTableEntryTrait, C: PagingConstsTrait>(
     }
 }
 
-/// Marks all the nodes in the sub-tree rooted at the node as stray.
+/// Marks all the nodes in the sub-tree rooted at the node as stray, and
+/// returns the num of pages mapped within the sub-tree.
 ///
 /// This function must be called upon the node after the node is removed
 /// from the parent page table.
@@ -263,12 +264,14 @@ unsafe fn dfs_release_lock<'rcu, E: PageTableEntryTrait, C: PagingConstsTrait>(
 pub(super) unsafe fn dfs_mark_stray_and_unlock<E: PageTableEntryTrait, C: PagingConstsTrait>(
     rcu_guard: &dyn InAtomicMode,
     mut sub_tree: PageTableGuard<E, C>,
-) {
+) -> usize {
     *sub_tree.stray_mut() = true;
 
     if sub_tree.level() == 1 {
-        return;
+        return sub_tree.nr_children() as usize;
     }
+
+    let mut num_pages = 0;
 
     for i in (0..nr_subpage_per_huge::<C>()).rev() {
         let child = sub_tree.entry(i);
@@ -278,11 +281,13 @@ pub(super) unsafe fn dfs_mark_stray_and_unlock<E: PageTableEntryTrait, C: Paging
                 let locked_pt = unsafe { pt.make_guard_unchecked(rcu_guard) };
                 // SAFETY: The caller ensures that all the nodes in the sub-tree are locked and all
                 // guards are forgotten.
-                unsafe { dfs_mark_stray_and_unlock(rcu_guard, locked_pt) };
+                num_pages += unsafe { dfs_mark_stray_and_unlock(rcu_guard, locked_pt) };
             }
             Child::None | Child::Frame(_, _) | Child::Untracked(_, _, _) | Child::PageTable(_) => {}
         }
     }
+
+    num_pages
 }
 
 fn dfs_get_idx_range<C: PagingConstsTrait>(
