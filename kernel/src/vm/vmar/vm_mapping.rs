@@ -245,7 +245,7 @@ impl VmMapping {
                     if is_write {
                         page_flags |= PageFlags::DIRTY;
                     }
-                    let map_prop = PageProperty::new(page_flags, CachePolicy::Writeback);
+                    let map_prop = PageProperty::new_user(page_flags, CachePolicy::Writeback);
 
                     cursor.map(frame, map_prop);
                 }
@@ -311,7 +311,7 @@ impl VmMapping {
                         // if it is really so. Then the hardware won't bother to update
                         // the accessed bit of the page table on following accesses.
                         let page_flags = PageFlags::from(vm_perms) | PageFlags::ACCESSED;
-                        let page_prop = PageProperty::new(page_flags, CachePolicy::Writeback);
+                        let page_prop = PageProperty::new_user(page_flags, CachePolicy::Writeback);
                         let frame = commit_fn()?;
                         cursor.map(frame, page_prop);
                     } else {
