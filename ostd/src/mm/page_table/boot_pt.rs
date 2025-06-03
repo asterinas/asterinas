@@ -136,11 +136,9 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
         let root_pt = crate::arch::mm::current_page_table_paddr() / C::BASE_PAGE_SIZE;
         // Make sure the 2 available bits are not set for firmware page tables.
         dfs_walk_on_leave::<E, C>(root_pt, C::NR_LEVELS, &mut |pte: &mut E| {
-            let prop = pte.prop();
-            pte.set_prop(PageProperty::new(
-                prop.flags | PTE_POINTS_TO_FIRMWARE_PT,
-                prop.cache,
-            ));
+            let mut prop = pte.prop();
+            prop.flags |= PTE_POINTS_TO_FIRMWARE_PT;
+            pte.set_prop(prop);
         });
         Self {
             root_pt,
@@ -271,11 +269,7 @@ impl<E: PageTableEntryTrait, C: PagingConstsTrait> BootPageTable<E, C> {
         let vaddr = paddr_to_vaddr(frame_paddr) as *mut u8;
         unsafe { core::ptr::write_bytes(vaddr, 0, PAGE_SIZE) };
 
-        let mut pte = E::new_pt(frame_paddr);
-        let prop = pte.prop();
-        pte.set_prop(PageProperty::new(prop.flags, prop.cache));
-
-        pte
+        E::new_pt(frame_paddr)
     }
 
     #[cfg(ktest)]
