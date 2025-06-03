@@ -21,7 +21,7 @@ use crate::slab_cache::SlabCache;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(usize)]
-enum CommonSizeClass {
+pub(crate) enum CommonSizeClass {
     Bytes8 = 8,
     Bytes16 = 16,
     Bytes32 = 32,
@@ -34,7 +34,7 @@ enum CommonSizeClass {
 }
 
 impl CommonSizeClass {
-    const fn from_layout(layout: Layout) -> Option<Self> {
+    pub(crate) const fn from_layout(layout: Layout) -> Option<Self> {
         let size_class = match layout.size() {
             0..=8 => CommonSizeClass::Bytes8,
             9..=16 => CommonSizeClass::Bytes16,
@@ -67,7 +67,7 @@ impl CommonSizeClass {
         })
     }
 
-    fn from_size(size: usize) -> Option<Self> {
+    pub(crate) const fn from_size(size: usize) -> Option<Self> {
         match size {
             8 => Some(CommonSizeClass::Bytes8),
             16 => Some(CommonSizeClass::Bytes16),

@@ -2,7 +2,7 @@
 
 //! A fast and scalable SMP counter.
 
-use ostd::cpu::{all_cpus, local::CpuLocal, CpuId};
+use ostd::cpu::{all_cpus, local::StaticCpuLocal, CpuId};
 
 use core::sync::atomic::{AtomicIsize, Ordering};
 
@@ -43,7 +43,7 @@ macro_rules! fast_smp_counter {
 /// Nevertheless, if the sum of added value exceeds [`usize::MAX`] the counter
 /// will wrap on overflow.
 pub struct FastSmpCounter {
-    per_cpu_counter: &'static CpuLocal<AtomicIsize>,
+    per_cpu_counter: &'static StaticCpuLocal<AtomicIsize>,
 }
 
 impl FastSmpCounter {
@@ -51,7 +51,7 @@ impl FastSmpCounter {
     ///
     /// This function should only be used by the [`fast_smp_counter!`] macro.
     #[doc(hidden)]
-    pub const fn new(per_cpu_counter: &'static CpuLocal<AtomicIsize>) -> Self {
+    pub const fn new(per_cpu_counter: &'static StaticCpuLocal<AtomicIsize>) -> Self {
         Self { per_cpu_counter }
     }
 
