@@ -15,7 +15,7 @@ use ostd::{
     task::disable_preempt,
 };
 
-use super::interval_set::Interval;
+use super::{interval_set::Interval, RssType};
 use crate::{
     prelude::*,
     thread::exception::PageFaultInfo,
@@ -124,16 +124,26 @@ impl VmMapping {
     pub fn perms(&self) -> VmPerms {
         self.perms
     }
+
+    // Returns the mapping's RSS type.
+    pub fn rss_type(&self) -> RssType {
+        if self.vmo.is_none() {
+            RssType::RSS_ANONPAGES
+        } else {
+            RssType::RSS_FILEPAGES
+        }
+    }
 }
 
 /****************************** Page faults **********************************/
 
 impl VmMapping {
+    /// Handles a page fault and returns the number of pages mapped.
     pub fn handle_page_fault(
         &self,
         vm_space: &VmSpace,
         page_fault_info: &PageFaultInfo,
-    ) -> Result<()> {
+    ) -> Result<usize> {
         if !self.perms.contains(page_fault_info.required_perms) {
             trace!(
                 "self.perms {:?}, page_fault_info.required_perms {:?}, self.range {:?}",
@@ -150,7 +160,7 @@ impl VmMapping {
         let is_write = page_fault_info.required_perms.contains(VmPerms::WRITE);
 
         if !is_write && self.vmo.is_some() && self.handle_page_faults_around {
-            let res = self.handle_page_faults_around(vm_space, address);
+            let (rss_increment, res) = self.handle_page_faults_around(vm_space, address);
 
             // Errors caused by the "around" pages should be ignored, so here we
             // only return the error if the faulting page is still not mapped.
@@ -161,13 +171,14 @@ impl VmMapping {
                     &(page_aligned_addr..page_aligned_addr + PAGE_SIZE),
                 )?;
                 if let VmItem::Mapped { .. } = cursor.query().unwrap() {
-                    return Ok(());
+                    return Ok(rss_increment);
                 }
             }
 
-            return res;
+            return res.map(|_| rss_increment);
         }
 
+        let mut rss_increment: usize = 0;
         'retry: loop {
             let preempt_guard = disable_preempt();
             let mut cursor = vm_space.cursor_mut(
@@ -185,14 +196,14 @@ impl VmMapping {
                         // The page fault is already handled maybe by other threads.
                         // Just flush the TLB and return.
                         TlbFlushOp::Address(va).perform_on_current();
-                        return Ok(());
+                        return Ok(0);
                     }
                     assert!(is_write);
                     // Perform COW if it is a write access to a shared mapping.
 
                     // Skip if the page fault is already handled.
                     if prop.flags.contains(PageFlags::W) {
-                        return Ok(());
+                        return Ok(0);
                     }
 
                     // If the forked child or parent immediately unmaps the page after
@@ -212,6 +223,7 @@ impl VmMapping {
                         let new_frame = duplicate_frame(&frame)?;
                         prop.flags |= new_flags;
                         cursor.map(new_frame.into(), prop);
+                        rss_increment += 1;
                     }
                     cursor.flusher().sync_tlb_flush();
                 }
@@ -248,11 +260,13 @@ impl VmMapping {
                     let map_prop = PageProperty::new_user(page_flags, CachePolicy::Writeback);
 
                     cursor.map(frame, map_prop);
+                    rss_increment += 1;
                 }
             }
             break 'retry;
         }
-        Ok(())
+
+        Ok(rss_increment)
     }
 
     fn prepare_page(
@@ -285,7 +299,15 @@ impl VmMapping {
         }
     }
 
-    fn handle_page_faults_around(&self, vm_space: &VmSpace, page_fault_addr: Vaddr) -> Result<()> {
+    /// Handles a page fault and maps additional surrounding pages.
+    ///
+    /// Returns a tuple `(mapped_pages, result)`, where `mapped_pages` is the number
+    /// of pages mapped successfully, even if the `result` is some error.
+    fn handle_page_faults_around(
+        &self,
+        vm_space: &VmSpace,
+        page_fault_addr: Vaddr,
+    ) -> (usize, Result<()>) {
         const SURROUNDING_PAGE_NUM: usize = 16;
         const SURROUNDING_PAGE_ADDR_MASK: usize = !(SURROUNDING_PAGE_NUM * PAGE_SIZE - 1);
 
@@ -300,9 +322,19 @@ impl VmMapping {
         );
 
         let vm_perms = self.perms - VmPerms::WRITE;
+        let mut rss_increment: usize = 0;
+
         'retry: loop {
             let preempt_guard = disable_preempt();
-            let mut cursor = vm_space.cursor_mut(&preempt_guard, &(start_addr..end_addr))?;
+
+            let mut cursor = match vm_space.cursor_mut(&preempt_guard, &(start_addr..end_addr)) {
+                Ok(cursor) => cursor,
+                Err(e) => {
+                    return (rss_increment, Err(e.into()));
+                }
+            };
+
+            let rss_increment_ref = &mut rss_increment;
             let operate =
                 move |commit_fn: &mut dyn FnMut()
                     -> core::result::Result<UFrame, VmoCommitError>| {
@@ -314,6 +346,7 @@ impl VmMapping {
                         let page_prop = PageProperty::new_user(page_flags, CachePolicy::Writeback);
                         let frame = commit_fn()?;
                         cursor.map(frame, page_prop);
+                        *rss_increment_ref += 1;
                     } else {
                         let next_addr = cursor.virt_addr() + PAGE_SIZE;
                         if next_addr < end_addr {
@@ -326,14 +359,16 @@ impl VmMapping {
             let start_offset = start_addr - self.map_to_addr;
             let end_offset = end_addr - self.map_to_addr;
             match vmo.try_operate_on_range(&(start_offset..end_offset), operate) {
-                Ok(_) => return Ok(()),
+                Ok(_) => return (rss_increment, Ok(())),
                 Err(VmoCommitError::NeedIo(index)) => {
                     drop(preempt_guard);
-                    vmo.commit_on(index, CommitFlags::empty())?;
+                    if let Err(e) = vmo.commit_on(index, CommitFlags::empty()) {
+                        return (rss_increment, Err(e));
+                    }
                     start_addr = index * PAGE_SIZE + self.map_to_addr;
                     continue 'retry;
                 }
-                Err(VmoCommitError::Err(e)) => return Err(e),
+                Err(VmoCommitError::Err(e)) => return (rss_increment, Err(e)),
             }
         }
     }
@@ -429,17 +464,18 @@ impl VmMapping {
 /************************** VM Space operations ******************************/
 
 impl VmMapping {
-    /// Unmaps the mapping from the VM space.
-    pub(super) fn unmap(self, vm_space: &VmSpace) -> Result<()> {
+    /// Unmaps the mapping from the VM space,
+    /// and returns the number of unmapped pages.
+    pub(super) fn unmap(self, vm_space: &VmSpace) -> Result<usize> {
         let preempt_guard = disable_preempt();
         let range = self.range();
         let mut cursor = vm_space.cursor_mut(&preempt_guard, &range)?;
 
-        cursor.unmap(range.len());
+        let num_unmapped = cursor.unmap(range.len());
         cursor.flusher().dispatch_tlb_flush();
         cursor.flusher().sync_tlb_flush();
 
-        Ok(())
+        Ok(num_unmapped)
     }
 
     /// Change the perms of the mapping.
