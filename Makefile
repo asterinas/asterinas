@@ -53,6 +53,7 @@ CARGO_OSDK_ARGS := --target-arch=$(ARCH) --kcmd-args="ostd.log_level=$(LOG_LEVEL
 
 ifeq ($(AUTO_TEST), syscall)
 BUILD_SYSCALL_TEST := 1
+CARGO_OSDK_ARGS += --kcmd-args="SYSCALL_TEST_SUITE=$(SYSCALL_TEST_SUITE)"
 CARGO_OSDK_ARGS += --kcmd-args="SYSCALL_TEST_WORKDIR=$(SYSCALL_TEST_WORKDIR)"
 CARGO_OSDK_ARGS += --kcmd-args="EXTRA_BLOCKLISTS_DIRS=$(EXTRA_BLOCKLISTS_DIRS)"
 CARGO_OSDK_ARGS += --init-args="/opt/syscall_test/run_syscall_test.sh"
@@ -229,7 +230,7 @@ run: initramfs $(CARGO_OSDK)
 	@cd kernel && cargo osdk run $(CARGO_OSDK_ARGS)
 # Check the running status of auto tests from the QEMU log
 ifeq ($(AUTO_TEST), syscall)
-	@tail --lines 100 qemu.log | grep -q "^.* of .* test cases passed." \
+	@tail --lines 100 qemu.log | grep -q "^All syscall tests passed." \
 		|| (echo "Syscall test failed" && exit 1)
 else ifeq ($(AUTO_TEST), test)
 	@tail --lines 100 qemu.log | grep -q "^All general tests passed." \

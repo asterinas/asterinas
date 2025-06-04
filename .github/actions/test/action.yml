@@ -36,6 +36,9 @@ inputs:
   extra_blocklists:
     description: 'Extra blocklists directories'
     required: false
+  syscall_test_suite:
+    description: 'Selected syscall test suite'
+    required: false
   syscall_test_workdir:
     description: 'Syscall test working directory'
     required: false
@@ -85,6 +88,7 @@ runs:
         [[ -n "${{ inputs.scheme }}" ]] && CMD+=" SCHEME=${{ inputs.scheme }}"
         [[ -n "${{ inputs.arch }}" ]] && CMD+=" ARCH=${{ inputs.arch }}"
         [[ -n "${{ inputs.extra_blocklists }}" ]] && CMD+=" EXTRA_BLOCKLISTS_DIRS=${{ inputs.extra_blocklists }}"
+        [[ -n "${{ inputs.syscall_test_suite }}" ]] && CMD+=" SYSCALL_TEST_SUITE=${{ inputs.syscall_test_suite }}"
         [[ -n "${{ inputs.syscall_test_workdir }}" ]] && CMD+=" SYSCALL_TEST_WORKDIR=${{ inputs.syscall_test_workdir }}"
         [[ -n "${{ inputs.boot_protocol }}" ]] && CMD+=" BOOT_PROTOCOL=${{ inputs.boot_protocol }}"
         
