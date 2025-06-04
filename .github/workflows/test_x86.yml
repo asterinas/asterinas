@@ -76,10 +76,10 @@ jobs:
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
-      - name: Run integration tests
+      - name: Run integration tests ${{ (startsWith(matrix.test_id, 'syscall') && 'with LTP') || '' }}
         uses: ./.github/actions/test
         with:
-          auto_test: ${{ (startsWith(matrix.test_id, 'boot') && 'boot') || 
+          auto_test: ${{ (startsWith(matrix.test_id, 'boot') && 'boot') ||
               (startsWith(matrix.test_id, 'syscall') && 'syscall') || 'test' }}
           release: ${{ matrix.release || true }}
           enable_kvm: ${{ matrix.enable_kvm || true }}
@@ -87,6 +87,22 @@ jobs:
           netdev: ${{ matrix.netdev || 'tap' }}
           scheme: ${{ matrix.scheme }}
           extra_blocklists: ${{ matrix.extra_blocklists }}
+          syscall_test_suite: 'ltp'
+          syscall_test_workdir: ${{ matrix.syscall_test_workdir }}
+          boot_protocol: ${{ matrix.boot_protocol || 'linux-efi-handover64' }}
+      - name: Run integration tests ${{ (startsWith(matrix.test_id, 'syscall') && 'with gVisor') || '' }}
+        if: ${{ startsWith(matrix.test_id, 'syscall') }}
+        uses: ./.github/actions/test
+        with:
+          auto_test: ${{ (startsWith(matrix.test_id, 'boot') && 'boot') ||
+              (startsWith(matrix.test_id, 'syscall') && 'syscall') || 'test' }}
+          release: ${{ matrix.release || true }}
+          enable_kvm: ${{ matrix.enable_kvm || true }}
+          smp: ${{ matrix.smp }}
+          netdev: ${{ matrix.netdev || 'tap' }}
+          scheme: ${{ matrix.scheme }}
+          extra_blocklists: ${{ matrix.extra_blocklists }}
+          syscall_test_suite: 'gvisor'
           syscall_test_workdir: ${{ matrix.syscall_test_workdir }}
           boot_protocol: ${{ matrix.boot_protocol || 'linux-efi-handover64' }}
 
