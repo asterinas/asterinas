@@ -8,6 +8,7 @@ use crate::{
         file_handle::FileLike,
         file_table::{get_file_fast, FileDesc},
         fs_resolver::{FsPath, AT_FDCWD},
+        notify::fsnotify_attr_change,
         path::Dentry,
         utils::{
             XattrName, XattrNamespace, XattrSetFlags, XATTR_NAME_MAX_LEN, XATTR_VALUE_MAX_LEN,
@@ -114,7 +115,9 @@ fn setxattr(
     let mut value_reader = user_space.reader(value_ptr, value_len)?;
 
     let dentry = lookup_dentry_for_xattr(&file_ctx, ctx)?;
-    dentry.set_xattr(xattr_name, &mut value_reader, flags)
+    dentry.set_xattr(xattr_name, &mut value_reader, flags)?;
+    fsnotify_attr_change(&dentry)?;
+    Ok(())
 }
 
 /// The context to describe the target file for xattr operations.

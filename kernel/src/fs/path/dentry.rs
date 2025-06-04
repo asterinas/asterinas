@@ -15,6 +15,10 @@ use ostd::sync::RwMutexWriteGuard;
 use super::{is_dot, is_dot_or_dotdot, is_dotdot};
 use crate::{
     fs::{
+        notify::{
+            fsnotify_delete, fsnotify_inode_removed, fsnotify_link, fsnotify_link_count,
+            FsnotifyCommon, FsnotifyGroup, FsnotifyMark,
+        },
         path::mount::MountNode,
         utils::{
             FileSystem, Inode, InodeMode, InodeType, Metadata, MknodType, Permission, XattrName,
@@ -242,6 +246,11 @@ impl Dentry_ {
         if dentry.is_dentry_cacheable() {
             children.upgrade().insert(name, dentry.clone());
         }
+        fsnotify_link(
+            dentry.parent().unwrap().inode(),
+            dentry.inode(),
+            dentry.name(),
+        )?;
         Ok(())
     }
 
@@ -255,7 +264,14 @@ impl Dentry_ {
         children.check_mountpoint(name)?;
 
         self.inode.unlink(name)?;
-
+        let child = children.find(name)?.unwrap();
+        let child_inode = child.inode();
+        fsnotify_link_count(&child_inode)?;
+        if child_inode.hard_links() == 0 {
+            fsnotify_inode_removed(&child_inode)?;
+            child_inode.remove_fsnotify_marks();
+        }
+        fsnotify_delete(self.inode(), &child_inode, String::from(name))?;
         let mut children = children.upgrade();
         children.delete(name);
         Ok(())
@@ -271,7 +287,13 @@ impl Dentry_ {
         children.check_mountpoint(name)?;
 
         self.inode.rmdir(name)?;
-
+        let child = children.find(name)?.unwrap();
+        let child_inode = child.inode();
+        if child_inode.hard_links() == 0 {
+            fsnotify_inode_removed(&child_inode)?;
+            child_inode.remove_fsnotify_marks();
+        }
+        fsnotify_delete(self.inode(), &child_inode, String::from(name))?;
         let mut children = children.upgrade();
         children.delete(name);
         Ok(())
@@ -356,6 +378,7 @@ impl Dentry_ {
     pub fn set_mtime(&self, time: Duration);
     pub fn ctime(&self) -> Duration;
     pub fn set_ctime(&self, time: Duration);
+    pub fn hard_links(&self) -> u16;
     pub fn is_dentry_cacheable(&self) -> bool;
     pub fn set_xattr(
         &self,
@@ -370,6 +393,14 @@ impl Dentry_ {
         list_writer: &mut VmWriter,
     ) -> Result<usize>;
     pub fn remove_xattr(&self, name: XattrName) -> Result<()>;
+    pub fn fsnotify(&self) -> &FsnotifyCommon;
+    pub fn add_fsnotify_mark(&self, mark: Arc<dyn FsnotifyMark>, add_flags: u32);
+    pub fn remove_fsnotify_mark(&self, mark: &Arc<dyn FsnotifyMark>);
+    pub fn find_fsnotify_mark(
+        &self,
+        fsnotify_group: &Arc<dyn FsnotifyGroup>,
+    ) -> Option<Arc<dyn FsnotifyMark>>;
+    pub fn send_fsnotify(&self, mask: u32, name: String);
 }
 
 impl Debug for Dentry_ {
@@ -540,6 +571,12 @@ impl Dentry {
         Self { mount_node, inner }
     }
 
+    pub fn parent(&self) -> Option<Self> {
+        self.inner
+            .parent()
+            .map(|dentry| Self::new(self.mount_node.clone(), dentry))
+    }
+
     /// Lookups the target `Dentry` given the `name`.
     pub fn lookup(&self, name: &str) -> Result<Self> {
         if self.type_() != InodeType::Dir {
@@ -597,7 +634,7 @@ impl Dentry {
     ///
     /// If it is the root of a mount, it will go up to the mountpoint
     /// to get the name of the mountpoint recursively.
-    fn effective_name(&self) -> String {
+    pub fn effective_name(&self) -> String {
         if !self.inner.is_root_of_mount() {
             return self.inner.name();
         }
@@ -796,4 +833,12 @@ impl Dentry {
         list_writer: &mut VmWriter,
     ) -> Result<usize>;
     pub fn remove_xattr(&self, name: XattrName) -> Result<()>;
+    pub fn fsnotify(&self) -> &FsnotifyCommon;
+    pub fn add_fsnotify_mark(&self, mark: Arc<dyn FsnotifyMark>, add_flags: u32);
+    pub fn remove_fsnotify_mark(&self, mark: &Arc<dyn FsnotifyMark>);
+    pub fn find_fsnotify_mark(
+        &self,
+        fsnotify_group: &Arc<dyn FsnotifyGroup>,
+    ) -> Option<Arc<dyn FsnotifyMark>>;
+    pub fn send_fsnotify(&self, mask: u32, name: String);
 }
