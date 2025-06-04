@@ -5,6 +5,7 @@
 pub mod boot;
 pub(crate) mod cpu;
 pub mod device;
+mod io;
 pub(crate) mod iommu;
 pub(crate) mod irq;
 pub(crate) mod mm;
@@ -24,6 +25,8 @@ pub(crate) unsafe fn late_init_on_bsp() {
     // SAFETY: This function is called in the boot context of the BSP.
     unsafe { trap::init() };
 
+    let io_mem_builder = io::construct_io_mem_allocator_builder();
+
     // SAFETY: We're on the BSP and we're ready to boot all APs.
     unsafe { crate::boot::smp::boot_all_aps() };
 
@@ -32,6 +35,11 @@ pub(crate) unsafe fn late_init_on_bsp() {
     // been performed.
     unsafe { timer::init() };
     let _ = pci::init();
+
+    // SAFETY:
+    // 1. All the system device memory have been removed from the builder.
+    // 2. RISC-V platforms do not have port I/O.
+    unsafe { crate::io::init(io_mem_builder) };
 }
 
 pub(crate) unsafe fn init_on_ap() {
