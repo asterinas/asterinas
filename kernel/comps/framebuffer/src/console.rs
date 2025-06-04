@@ -56,7 +56,6 @@ impl FramebufferConsole {
         let bytes = alloc::vec![0u8; framebuffer.size()];
         Self {
             state: SpinLock::new(ConsoleState {
-                enabled: true,
                 x_pos: 0,
                 y_pos: 0,
                 fg_color: Pixel::WHITE,
@@ -66,21 +65,6 @@ impl FramebufferConsole {
             }),
             callbacks: SpinLock::new(Vec::new()),
         }
-    }
-
-    /// Returns whether the console is enabled.
-    pub fn is_enabled(&self) -> bool {
-        self.state.lock().enabled
-    }
-
-    /// Enables the console.
-    pub fn enable(&self) {
-        self.state.lock().enabled = true;
-    }
-
-    /// Disables the console.
-    pub fn disable(&self) {
-        self.state.lock().enabled = false;
     }
 
     /// Returns the current cursor position.
@@ -130,8 +114,6 @@ impl core::fmt::Debug for FramebufferConsole {
 
 #[derive(Debug)]
 struct ConsoleState {
-    // FIXME: maybe we should drop the whole `ConsoleState` when it's disabled.
-    enabled: bool,
     x_pos: usize,
     y_pos: usize,
     fg_color: Pixel,
@@ -207,10 +189,6 @@ impl ConsoleState {
     /// This method will panic if the buffer contains any characters
     /// other than Basic Latin characters (`U+0000` - `U+007F`).
     fn send_buf(&mut self, buf: &[u8]) {
-        if !self.enabled {
-            return;
-        }
-
         // TODO: handle ANSI escape sequences.
         for &byte in buf.iter() {
             if byte != 0 {

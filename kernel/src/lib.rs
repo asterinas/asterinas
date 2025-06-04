@@ -28,7 +28,6 @@
 #![feature(associated_type_defaults)]
 #![register_tool(component_access_control)]
 
-use aster_framebuffer::FRAMEBUFFER_CONSOLE;
 use kcmdline::KCmdlineArg;
 use ostd::{
     arch::qemu::{exit_qemu, QemuExitCode},
@@ -144,13 +143,6 @@ fn init_thread() {
     thread.join();
 
     print_banner();
-
-    // FIXME: CI fails due to suspected performance issues with the framebuffer console.
-    // Additionally, userspace program may render GUIs using the framebuffer,
-    // so we disable the framebuffer console here.
-    if let Some(console) = FRAMEBUFFER_CONSOLE.get() {
-        console.disable();
-    };
 
     let karg: KCmdlineArg = boot_info().kernel_cmdline.as_str().into();
 
