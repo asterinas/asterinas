@@ -1,17 +1,27 @@
 // SPDX-License-Identifier: MPL-2.0
 
+#![feature(let_chains)]
+#![no_std]
+#![deny(unsafe_code)]
+#![feature(extend_one)]
+#![feature(return_type_notation)]
+
 mod bitmap;
 mod constants;
 mod dentry;
-mod fat;
-mod fs;
-mod inode;
-mod super_block;
-mod upcase_table;
-mod utils;
+pub mod fat;
+pub mod fs;
+pub mod inode;
+mod prelude;
+pub mod super_block;
+pub mod upcase_table;
+pub mod utils;
 
+pub use bitflags::bitflags;
 pub use fs::{ExfatFS, ExfatMountOptions};
 pub use inode::ExfatInode;
+
+extern crate alloc;
 
 #[cfg(ktest)]
 mod test {
@@ -22,20 +32,16 @@ mod test {
         BlockDevice, BlockDeviceMeta,
     };
     use ostd::{
-        mm::{FrameAllocOptions, Segment, VmIo, PAGE_SIZE},
+        mm::{ostd::mm::PAGE_SIZE, FrameAllocOptions, Segment, VmIo},
         prelude::*,
     };
     use rand::{rngs::SmallRng, RngCore, SeedableRng};
 
     use crate::{
-        fs::{
-            exfat::{
-                constants::{EXFAT_RESERVED_CLUSTERS, MAX_NAME_LENGTH},
-                ExfatFS, ExfatMountOptions,
-            },
-            utils::{generate_random_operation, new_fs_in_memory, Inode, InodeMode, InodeType},
-        },
+        constants::{EXFAT_RESERVED_CLUSTERS, MAX_NAME_LENGTH},
         prelude::*,
+        utils::{generate_random_operation, new_fs_in_memory, Inode, InodeMode, InodeType},
+        ExfatFS, ExfatMountOptions,
     };
 
     /// Followings are implementations of memory simulated block device
@@ -114,7 +120,7 @@ mod test {
     fn new_vm_segment_from_image() -> Segment<()> {
         let segment = FrameAllocOptions::new()
             .zeroed(false)
-            .alloc_segment(EXFAT_IMAGE.len().div_ceil(PAGE_SIZE))
+            .alloc_segment(EXFAT_IMAGE.len().div_ceil(ostd::mm::PAGE_SIZE))
             .unwrap();
 
         segment.write_bytes(0, EXFAT_IMAGE).unwrap();
@@ -456,7 +462,7 @@ mod test {
         let file_name = "HI.TXT";
         let a_inode = create_file(root.clone(), file_name);
 
-        const BUF_SIZE: usize = 7 * PAGE_SIZE + 11;
+        const BUF_SIZE: usize = 7 * ostd::mm::PAGE_SIZE + 11;
         let mut buf = vec![0u8; BUF_SIZE];
         for (i, num) in buf.iter_mut().enumerate() {
             //Use a prime number to make each sector different.
@@ -489,7 +495,7 @@ mod test {
         assert!(buf.eq(&read), "File mismatch after rename");
 
         // test write after rename
-        const NEW_BUF_SIZE: usize = 9 * PAGE_SIZE + 23;
+        const NEW_BUF_SIZE: usize = 9 * ostd::mm::PAGE_SIZE + 23;
         let new_buf = vec![7u8; NEW_BUF_SIZE];
         let new_write_after_rename = a_inode_new.write_bytes_at(0, &new_buf);
         assert!(
@@ -618,8 +624,8 @@ mod test {
         let root = fs.root_inode() as Arc<dyn Inode>;
         let file = create_file(root.clone(), "test");
 
-        // const BUF_SIZE: usize = PAGE_SIZE * 7 + 3 * SECTOR_SIZE;
-        const BUF_SIZE: usize = PAGE_SIZE * 7;
+        // const BUF_SIZE: usize = ostd::mm::PAGE_SIZE * 7 + 3 * SECTOR_SIZE;
+        const BUF_SIZE: usize = ostd::mm::PAGE_SIZE * 7;
 
         let mut buf = vec![0u8; BUF_SIZE];
         for (i, num) in buf.iter_mut().enumerate() {
@@ -651,7 +657,7 @@ mod test {
         let root = fs.root_inode() as Arc<dyn Inode>;
         let file = create_file(root.clone(), "test");
 
-        const BUF_SIZE: usize = PAGE_SIZE * 11 + 2023;
+        const BUF_SIZE: usize = ostd::mm::PAGE_SIZE * 11 + 2023;
 
         let mut buf = vec![0u8; BUF_SIZE];
         for (i, num) in buf.iter_mut().enumerate() {
@@ -684,7 +690,7 @@ mod test {
         let a = create_file(root.clone(), "a");
         let b = create_file(root.clone(), "b");
 
-        const BUF_SIZE: usize = PAGE_SIZE * 11 + 2023;
+        const BUF_SIZE: usize = ostd::mm::PAGE_SIZE * 11 + 2023;
 
         let mut buf_a = vec![0u8; BUF_SIZE];
         for (i, num) in buf_a.iter_mut().enumerate() {
@@ -1024,7 +1030,7 @@ mod test {
         let mut buf: Vec<u8> = Vec::new();
         let mut pg_num = 1;
         while pg_num <= MAX_PAGE_PER_FILE {
-            let size = pg_num * PAGE_SIZE;
+            let size = pg_num * ostd::mm::PAGE_SIZE;
             let _ = inode.resize(size);
 
             buf.resize(size, 0);
@@ -1044,7 +1050,7 @@ mod test {
         pg_num = MAX_PAGE_PER_FILE;
 
         while pg_num > 0 {
-            let size = (pg_num - 1) * PAGE_SIZE;
+            let size = (pg_num - 1) * ostd::mm::PAGE_SIZE;
             let _ = inode.resize(size);
 
             buf.resize(size, 0);

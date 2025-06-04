@@ -3,7 +3,6 @@
 use super::SyscallReturn;
 use crate::{
     fs::{
-        exfat::{ExfatFS, ExfatMountOptions},
         ext2::Ext2,
         fs_resolver::{FsPath, AT_FDCWD},
         overlayfs::OverlayFS,
@@ -173,13 +172,13 @@ fn get_fs(
             let ext2_fs = Ext2::open(device)?;
             Ok(ext2_fs)
         }
-        "exfat" => {
-            let device = aster_block::get_device(devname.to_str().unwrap()).ok_or(
-                Error::with_message(Errno::ENOENT, "device for exfat does not exist"),
-            )?;
-            let exfat_fs = ExfatFS::open(device, ExfatMountOptions::default())?;
-            Ok(exfat_fs)
-        }
+        // "exfat" => {
+        //     let device = aster_block::get_device(devname.to_str().unwrap()).ok_or(
+        //         Error::with_message(Errno::ENOENT, "device for exfat does not exist"),
+        //     )?;
+        //     let exfat_fs = ExfatFS::open(device, ExfatMountOptions::default())?;
+        //     Ok(exfat_fs)
+        // }
         "overlay" => {
             let overlay_fs = create_overlayfs(data.as_ref(), ctx)?;
             Ok(overlay_fs)

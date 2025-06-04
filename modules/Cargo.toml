@@ -1,0 +1,12 @@
+[package]
+name = "aster-modules"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aster-nix = { path = "../kernel" }
+ostd = { path = "../ostd" }
+aster-exfat = { path = "fs/exfat" }
+
+[lints]
+workspace = true

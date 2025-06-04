@@ -2,6 +2,7 @@
 
 use core::{ops::Range, time::Duration};
 
+use aster_nix::{error::Errno, return_errno_with_message};
 use time::{OffsetDateTime, PrimitiveDateTime, Time};
 
 use super::fat::ClusterID;
@@ -59,14 +60,14 @@ impl DosTimestamp {
     pub fn now() -> Result<Self> {
         #[cfg(not(ktest))]
         {
-            use crate::time::clocks::RealTimeClock;
+            use aster_nix::time::{clocks::RealTimeClock, Clock};
             DosTimestamp::from_duration(RealTimeClock::get().read_time())
         }
 
         // When ktesting, the time module has not been initialized yet, return a fake value instead.
         #[cfg(ktest)]
         {
-            use crate::time::SystemTime;
+            use aster_time::SystemTime;
             DosTimestamp::from_duration(
                 SystemTime::UNIX_EPOCH.duration_since(&SystemTime::UNIX_EPOCH)?,
             )

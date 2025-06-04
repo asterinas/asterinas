@@ -166,6 +166,7 @@ OSDK_CRATES := \
 	osdk/deps/test-kernel \
 	ostd \
 	ostd/libs/linux-bzimage/setup \
+	modules \
 	kernel \
 	kernel/comps/block \
 	kernel/comps/console \
@@ -218,7 +219,7 @@ initramfs:
 
 .PHONY: build
 build: initramfs $(CARGO_OSDK)
-	@cd kernel && cargo osdk build $(CARGO_OSDK_ARGS)
+	@cd modules && cargo osdk build $(CARGO_OSDK_ARGS)
 
 .PHONY: tools
 tools:
@@ -226,7 +227,7 @@ tools:
 
 .PHONY: run
 run: initramfs $(CARGO_OSDK)
-	@cd kernel && cargo osdk run $(CARGO_OSDK_ARGS)
+	@cd modules && cargo osdk run $(CARGO_OSDK_ARGS)
 # Check the running status of auto tests from the QEMU log
 ifeq ($(AUTO_TEST), syscall)
 	@tail --lines 100 qemu.log | grep -q "^.* of .* test cases passed." \
@@ -244,11 +245,11 @@ endif
 
 .PHONY: gdb_server
 gdb_server: initramfs $(CARGO_OSDK)
-	@cd kernel && cargo osdk run $(CARGO_OSDK_ARGS) --gdb-server wait-client,vscode,addr=:$(GDB_TCP_PORT)
+	@cd modules && cargo osdk run $(CARGO_OSDK_ARGS) --gdb-server wait-client,vscode,addr=:$(GDB_TCP_PORT)
 
 .PHONY: gdb_client
 gdb_client: initramfs $(CARGO_OSDK)
-	@cd kernel && cargo osdk debug $(CARGO_OSDK_ARGS) --remote :$(GDB_TCP_PORT)
+	@cd modules && cargo osdk debug $(CARGO_OSDK_ARGS) --remote :$(GDB_TCP_PORT)
 
 .PHONY: profile_server
 profile_server: initramfs $(CARGO_OSDK)

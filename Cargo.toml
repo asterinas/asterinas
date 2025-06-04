@@ -12,6 +12,7 @@ members = [
     "ostd/libs/linux-bzimage/boot-params",
     "ostd/libs/linux-bzimage/setup",
     "ostd/libs/ostd-test",
+    "modules",
     "kernel",
     "kernel/comps/block",
     "kernel/comps/console",

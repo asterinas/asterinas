@@ -6,6 +6,7 @@
 use core::ops::Range;
 
 use align_ext::AlignExt;
+use aster_nix::{error::Errno, return_errno, return_errno_with_message, vm::vmo::Vmo};
 use aster_rights::Full;
 use bitvec::prelude::*;
 
@@ -15,7 +16,7 @@ use super::{
     fat::{ClusterID, ExfatChain},
     fs::ExfatFS,
 };
-use crate::{fs::exfat::fat::FatChainFlags, prelude::*, vm::vmo::Vmo};
+use crate::{fat::FatChainFlags, prelude::*};
 
 // TODO: use u64
 type BitStore = u8;

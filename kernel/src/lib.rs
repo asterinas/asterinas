@@ -59,7 +59,7 @@ pub mod ipc;
 pub mod kcmdline;
 pub mod net;
 pub mod prelude;
-mod process;
+pub mod process;
 mod sched;
 pub mod syscall;
 pub mod thread;
@@ -68,7 +68,7 @@ mod util;
 pub(crate) mod vdso;
 pub mod vm;
 
-#[ostd::main]
+// #[ostd::main]
 #[controlled]
 pub fn main() {
     ostd::early_println!("[kernel] OSTD initialized. Preparing components.");

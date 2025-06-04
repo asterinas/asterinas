@@ -46,7 +46,7 @@ pub struct ExfatSuperBlock {
 const DENTRY_SIZE_BITS: u32 = 5;
 
 impl TryFrom<ExfatBootSector> for ExfatSuperBlock {
-    type Error = crate::error::Error;
+    type Error = aster_nix::error::Error;
     fn try_from(sector: ExfatBootSector) -> Result<ExfatSuperBlock> {
         const EXFAT_CLUSTERS_UNTRACKED: u32 = !0;
         let mut block = ExfatSuperBlock {

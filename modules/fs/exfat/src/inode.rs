@@ -12,8 +12,29 @@ use aster_block::{
     id::{Bid, BlockId},
     BLOCK_SIZE,
 };
+use aster_nix::{
+    error::Errno,
+    events::IoEvents,
+    fs::{
+        path::{is_dot, is_dot_or_dotdot, is_dotdot},
+        utils::{
+            CachePage, DirentVisitor, Extension, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
+            MknodType, PageCache, PageCacheBackend,
+        },
+    },
+    process::{signal::PollHandle, Gid, Uid},
+    return_errno, return_errno_with_message,
+    vm::vmo::Vmo,
+};
 use aster_rights::Full;
-use ostd::mm::{Segment, VmIo};
+use ostd::{
+    mm::{
+        io::{VmReader, VmWriter},
+        FallibleVmRead, FallibleVmWrite, Segment, VmIo, PAGE_SIZE,
+    },
+    sync::{MutexGuard, RwMutex},
+    Pod,
+};
 
 use super::{
     constants::*,
@@ -26,18 +47,7 @@ use super::{
     utils::{make_hash_index, DosTimestamp},
 };
 use crate::{
-    events::IoEvents,
-    fs::{
-        exfat::{dentry::ExfatDentryIterator, fat::ExfatChain, fs::ExfatFS},
-        path::{is_dot, is_dot_or_dotdot, is_dotdot},
-        utils::{
-            CachePage, DirentVisitor, Extension, Inode, InodeMode, InodeType, IoctlCmd, Metadata,
-            MknodType, PageCache, PageCacheBackend,
-        },
-    },
-    prelude::*,
-    process::{signal::PollHandle, Gid, Uid},
-    vm::vmo::Vmo,
+    alloc::string::ToString, dentry::ExfatDentryIterator, fat::ExfatChain, prelude::*, ExfatFS,
 };
 
 ///Inode number
@@ -138,10 +148,11 @@ struct ExfatInodeInner {
 impl PageCacheBackend for ExfatInode {
     fn read_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
         let inner = self.inner.read();
-        if inner.size < idx * PAGE_SIZE {
+        if inner.size < idx * ostd::mm::PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "Invalid read size")
         }
-        let sector_id = inner.get_sector_id(idx * PAGE_SIZE / inner.fs().sector_size())?;
+        let sector_id =
+            inner.get_sector_id(idx * ostd::mm::PAGE_SIZE / inner.fs().sector_size())?;
         let bio_segment = BioSegment::new_from_segment(
             Segment::from(frame.clone()).into(),
             BioDirection::FromDevice,
@@ -157,7 +168,8 @@ impl PageCacheBackend for ExfatInode {
         let inner = self.inner.read();
         let sector_size = inner.fs().sector_size();
 
-        let sector_id = inner.get_sector_id(idx * PAGE_SIZE / inner.fs().sector_size())?;
+        let sector_id =
+            inner.get_sector_id(idx * ostd::mm::PAGE_SIZE / inner.fs().sector_size())?;
 
         // FIXME: We may need to truncate the file if write_page fails.
         // To fix this issue, we need to change the interface of the PageCacheBackend trait.
@@ -173,7 +185,7 @@ impl PageCacheBackend for ExfatInode {
     }
 
     fn npages(&self) -> usize {
-        self.inner.read().size.align_up(PAGE_SIZE) / PAGE_SIZE
+        self.inner.read().size.align_up(ostd::mm::PAGE_SIZE) / ostd::mm::PAGE_SIZE
     }
 }
 
@@ -489,21 +501,6 @@ impl ExfatInodeInner {
         } else {
             target_name.to_string()
         };
-
-        // FIXME: This isn't expected by the compiler.
-        #[expect(non_local_definitions)]
-        impl DirentVisitor for Vec<(String, usize)> {
-            fn visit(
-                &mut self,
-                name: &str,
-                ino: u64,
-                type_: InodeType,
-                offset: usize,
-            ) -> Result<()> {
-                self.push((name.into(), offset));
-                Ok(())
-            }
-        }
 
         let mut name_and_offsets: Vec<(String, usize)> = vec![];
         self.visit_sub_inodes(
@@ -1010,20 +1007,6 @@ impl ExfatInode {
         let new_parent_hash = self.hash_index();
         let sub_dir = inner.num_sub_inodes;
         let mut child_offsets: Vec<usize> = vec![];
-        // FIXME: This isn't expected by the compiler.
-        #[expect(non_local_definitions)]
-        impl DirentVisitor for Vec<usize> {
-            fn visit(
-                &mut self,
-                name: &str,
-                ino: u64,
-                type_: InodeType,
-                offset: usize,
-            ) -> Result<()> {
-                self.push(offset);
-                Ok(())
-            }
-        }
         inner.visit_sub_inodes(0, sub_dir as usize, &mut child_offsets, fs_guard)?;
 
         let start_chain = inner.start_chain.clone();
@@ -1132,7 +1115,7 @@ impl Inode for ExfatInode {
         Ok(())
     }
 
-    fn metadata(&self) -> crate::fs::utils::Metadata {
+    fn metadata(&self) -> aster_nix::fs::utils::Metadata {
         let inner = self.inner.read();
 
         let blk_size = inner.fs().super_block().sector_size as usize;
@@ -1221,7 +1204,7 @@ impl Inode for ExfatInode {
         Ok(())
     }
 
-    fn fs(&self) -> alloc::sync::Arc<dyn crate::fs::utils::FileSystem> {
+    fn fs(&self) -> alloc::sync::Arc<dyn aster_nix::fs::utils::FileSystem> {
         self.inner.read().fs()
     }
 

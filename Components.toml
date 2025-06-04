@@ -12,6 +12,7 @@ framebuffer = { name = "aster-framebuffer" }
 network = { name = "aster-network" }
 mlsdisk = { name = "aster-mlsdisk" }
 systree = { name = "aster-systree" }
+exfat = { name = "aster-exfat" }
 
 [whitelist]
 [whitelist.nix.main]

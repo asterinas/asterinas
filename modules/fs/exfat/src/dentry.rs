@@ -2,8 +2,14 @@
 
 use core::{fmt::Display, ops::Range};
 
+use aster_nix::{
+    error::{Errno, Error},
+    fs::utils::{InodeMode, InodeType},
+    return_errno, return_errno_with_message,
+    vm::vmo::Vmo,
+};
 use aster_rights::Full;
-use ostd::mm::VmIo;
+use ostd::{mm::VmIo, sync::SpinLock, Pod};
 
 use super::{
     constants::{EXFAT_FILE_NAME_LEN, MAX_NAME_LENGTH},
@@ -13,11 +19,7 @@ use super::{
     upcase_table::ExfatUpcaseTable,
     utils::{calc_checksum_16, DosTimestamp},
 };
-use crate::{
-    fs::utils::{InodeMode, InodeType},
-    prelude::*,
-    vm::vmo::Vmo,
-};
+use crate::prelude::*;
 
 pub(super) const DENTRY_SIZE: usize = 32; // directory entry size
 
@@ -86,7 +88,7 @@ pub(super) struct RawExfatDentry {
 }
 
 impl TryFrom<RawExfatDentry> for ExfatDentry {
-    type Error = crate::error::Error;
+    type Error = aster_nix::error::Error;
     fn try_from(dentry: RawExfatDentry) -> Result<Self> {
         let dentry_bytes = dentry.as_bytes();
         match dentry.dentry_type {

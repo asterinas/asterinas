@@ -2,6 +2,8 @@
 
 use core::mem::size_of;
 
+use aster_nix::{error::Errno, return_errno};
+
 use super::{
     bitmap::ExfatBitmap,
     constants::{EXFAT_FIRST_CLUSTER, EXFAT_RESERVED_CLUSTERS},
@@ -11,6 +13,8 @@ use crate::prelude::*;
 
 pub type ClusterID = u32;
 pub(super) const FAT_ENTRY_SIZE: usize = size_of::<ClusterID>();
+use aster_nix::return_errno_with_message;
+use ostd::sync::MutexGuard;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum FatValue {
@@ -46,7 +50,7 @@ impl From<FatValue> for ClusterID {
     }
 }
 
-bitflags! {
+bitflags::bitflags! {
     #[derive(Default)]
     pub struct FatChainFlags:u8 {
         // An associated allocation of clusters is possible

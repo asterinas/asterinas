@@ -4,6 +4,7 @@
 #![expect(unused_variables)]
 
 use align_ext::AlignExt;
+use aster_nix::{error::Errno, return_errno_with_message, vm::vmo::Vmo};
 use aster_rights::Full;
 
 use super::{
@@ -13,7 +14,7 @@ use super::{
     fs::ExfatFS,
     utils::calc_checksum_32,
 };
-use crate::{fs::exfat::fat::FatChainFlags, prelude::*, vm::vmo::Vmo};
+use crate::{fat::FatChainFlags, prelude::*};
 
 const UPCASE_MANDATORY_SIZE: usize = 128;
 

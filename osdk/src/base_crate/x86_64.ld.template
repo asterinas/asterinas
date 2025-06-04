@@ -109,7 +109,9 @@ SECTIONS
     # initialization.
     .init_array             : AT(ADDR(.init_array) - KERNEL_VMA) {
         __sinit_array = .;
-        KEEP(*(SORT(.init_array .init_array.*)))
+        # KEEP(*(SORT(.init_array .init_array.*)))
+        KEEP (*(SORT_BY_INIT_PRIORITY(.init_array.*)))
+        KEEP (*(.init_array))
         __einit_array = .;
     } : rodata
 

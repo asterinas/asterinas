@@ -10,10 +10,23 @@ use aster_block::{
     id::BlockId,
     BlockDevice,
 };
+use aster_nix::{
+    error::Errno,
+    fs::{
+        register_fs_registrar,
+        utils::{CachePage, FileSystem, FsFlags, Inode, PageCache, PageCacheBackend, SuperBlock},
+        FileSystemRegistrar,
+    },
+    register_filesystem, return_errno_with_message,
+};
 use hashbrown::HashMap;
+use log::warn;
 use lru::LruCache;
-use ostd::mm::Segment;
 pub(super) use ostd::mm::VmIo;
+use ostd::{
+    mm::Segment,
+    sync::{Mutex, MutexGuard, RwLock, RwMutex, SpinLock},
+};
 
 use super::{
     bitmap::ExfatBitmap,
@@ -22,13 +35,7 @@ use super::{
     super_block::{ExfatBootSector, ExfatSuperBlock},
     upcase_table::ExfatUpcaseTable,
 };
-use crate::{
-    fs::{
-        exfat::{constants::*, inode::Ino},
-        utils::{CachePage, FileSystem, FsFlags, Inode, PageCache, PageCacheBackend, SuperBlock},
-    },
-    prelude::*,
-};
+use crate::{constants::*, inode::Ino, prelude::*};
 
 #[derive(Debug)]
 pub struct ExfatFS {
@@ -369,7 +376,7 @@ impl ExfatFS {
 
 impl PageCacheBackend for ExfatFS {
     fn read_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
-        if self.fs_size() < idx * PAGE_SIZE {
+        if self.fs_size() < idx * ostd::mm::PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "invalid read size")
         }
         let bio_segment = BioSegment::new_from_segment(
@@ -383,7 +390,7 @@ impl PageCacheBackend for ExfatFS {
     }
 
     fn write_page_async(&self, idx: usize, frame: &CachePage) -> Result<BioWaiter> {
-        if self.fs_size() < idx * PAGE_SIZE {
+        if self.fs_size() < idx * ostd::mm::PAGE_SIZE {
             return_errno_with_message!(Errno::EINVAL, "invalid write size")
         }
         let bio_segment = BioSegment::new_from_segment(
@@ -397,7 +404,7 @@ impl PageCacheBackend for ExfatFS {
     }
 
     fn npages(&self) -> usize {
-        self.fs_size() / PAGE_SIZE
+        self.fs_size() / ostd::mm::PAGE_SIZE
     }
 }
 
@@ -449,3 +456,22 @@ pub struct ExfatMountOptions {
     pub(super) time_offset: i32,
     pub(super) zero_size_dir: bool,
 }
+#[derive(Default)]
+pub struct ExfatRegistrar;
+
+impl FileSystemRegistrar for ExfatRegistrar {
+    fn name(&self) -> &'static str {
+        "exfat"
+    }
+
+    fn open(
+        &self,
+        block_device: Arc<dyn BlockDevice>,
+    ) -> Result<Arc<dyn aster_nix::fs::utils::FileSystem>> {
+        ExfatFS::open(block_device, ExfatMountOptions::default())
+            .map(|fs| fs as Arc<dyn FileSystem>)
+    }
+}
+
+// pub const EXFAT_REGISTRAR: ExfatRegistrar = ExfatRegistrar;
+register_filesystem!("exfat", ExfatRegistrar);

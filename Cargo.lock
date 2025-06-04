@@ -113,6 +113,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "aster-exfat"
+version = "0.1.0"
+dependencies = [
+ "align_ext",
+ "aster-block",
+ "aster-nix",
+ "aster-rights",
+ "bitflags 1.3.2",
+ "bitvec",
+ "component",
+ "ctor",
+ "hashbrown 0.14.5",
+ "log",
+ "lru",
+ "ostd",
+ "time",
+]
+
+[[package]]
 name = "aster-framebuffer"
 version = "0.1.0"
 dependencies = [
@@ -163,6 +182,15 @@ dependencies = [
  "ostd-pod",
  "postcard",
  "serde",
+]
+
+[[package]]
+name = "aster-modules"
+version = "0.1.0"
+dependencies = [
+ "aster-exfat",
+ "aster-nix",
+ "ostd",
 ]
 
 [[package]]

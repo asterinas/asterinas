@@ -34,3 +34,17 @@ impl DirentVisitor for Vec<String> {
         Ok(())
     }
 }
+
+impl DirentVisitor for Vec<(String, usize)> {
+    fn visit(&mut self, name: &str, ino: u64, type_: InodeType, offset: usize) -> Result<()> {
+        self.push((name.into(), offset));
+        Ok(())
+    }
+}
+
+impl DirentVisitor for Vec<usize> {
+    fn visit(&mut self, name: &str, ino: u64, type_: InodeType, offset: usize) -> Result<()> {
+        self.push(offset);
+        Ok(())
+    }
+}

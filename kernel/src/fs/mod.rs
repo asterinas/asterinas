@@ -3,7 +3,6 @@
 pub mod device;
 pub mod devpts;
 pub mod epoll;
-pub mod exfat;
 pub mod ext2;
 pub mod file_handle;
 pub mod file_table;
@@ -20,15 +19,15 @@ pub mod sysfs;
 pub mod thread_info;
 pub mod utils;
 
+use alloc::collections::BTreeMap;
+
 use aster_block::BlockDevice;
 use aster_virtio::device::block::device::BlockDevice as VirtIoBlockDevice;
+use ostd::early_print;
+use spin::Once;
 
 use crate::{
-    fs::{
-        exfat::{ExfatFS, ExfatMountOptions},
-        ext2::Ext2,
-        fs_resolver::FsPath,
-    },
+    fs::{ext2::Ext2, fs_resolver::FsPath},
     prelude::*,
 };
 
@@ -60,11 +59,77 @@ pub fn lazy_init() {
         println!("[kernel] Mount Ext2 fs at {:?} ", target_path);
         self::rootfs::mount_fs_at(ext2_fs, &target_path).unwrap();
     }
-
-    if let Ok(block_device_exfat) = start_block_device(exfat_device_name) {
-        let exfat_fs = ExfatFS::open(block_device_exfat, ExfatMountOptions::default()).unwrap();
-        let target_path = FsPath::try_from("/exfat").unwrap();
-        println!("[kernel] Mount ExFat fs at {:?} ", target_path);
-        self::rootfs::mount_fs_at(exfat_fs, &target_path).unwrap();
+    if let Some(registrars) = FILESYSTEM_REGISTRARS.get() {
+        let locked = registrars.lock();
+        early_print!("[DEBUG] Registered filesystems:\n");
+        for (name, _) in locked.iter() {
+            early_print!("  - {}\n", name);
+        }
+    } else {
+        early_print!("[DEBUG] No filesystems registered yet\n");
     }
+    if let Ok(block_device_exfat) = start_block_device(exfat_device_name) {
+        let registrar_opt = FILESYSTEM_REGISTRARS
+            .call_once(|| Mutex::new(BTreeMap::new()))
+            .lock()
+            .get("exfat")
+            .cloned();
+
+        match registrar_opt {
+            Some(registrar) => {
+                let exfat_fs = registrar.open(block_device_exfat).unwrap();
+                let target_path = FsPath::try_from("/exfat").unwrap();
+                println!("[kernel] Mount ExFat fs at {:?} ", target_path);
+                self::rootfs::mount_fs_at(exfat_fs, &target_path).unwrap();
+            }
+            None => {
+                println!("[kernel] ExFat registrar not found");
+            }
+        }
+    }
+}
+
+pub trait FileSystemRegistrar: Sync + Send {
+    fn name(&self) -> &'static str;
+    fn open(
+        &self,
+        block_device: Arc<dyn BlockDevice>,
+    ) -> Result<Arc<dyn crate::fs::utils::FileSystem>>;
+}
+static FILESYSTEM_REGISTRARS: Once<Mutex<BTreeMap<&'static str, Arc<dyn FileSystemRegistrar>>>> =
+    Once::new();
+
+pub fn register_fs_registrar(name: &'static str, registrar: Arc<dyn FileSystemRegistrar>) {
+    early_print!("register!");
+    FILESYSTEM_REGISTRARS
+        .call_once(|| Mutex::new(BTreeMap::new()))
+        .lock()
+        .insert(name, registrar);
+}
+
+#[macro_export]
+macro_rules! register_filesystem {
+    ($fs_name:expr, $reg_type:ty) => {
+        // Use const for static initialization
+        // #[used]
+        // #[link_section = ".init_array"]
+        // #[ctor::ctor]
+        // static REGISTER: extern "C" fn() = {
+        //     extern "C" fn register() {
+        //         crate::fs::register_fs_registrar($fs_name, Arc::new(<$reg_type>::default()));
+        //     }
+        //     register
+        // };
+
+        const _: () = {
+            #[allow(non_upper_case_globals)]
+            #[ctor::ctor]
+            static REGISTER: extern "C" fn() = {
+                extern "C" fn register() {
+                    crate::fs::register_fs_registrar($fs_name, Arc::new(<$reg_type>::default()));
+                }
+                register
+            };
+        };
+    };
 }
