@@ -6,6 +6,7 @@
 
 extern crate alloc;
 
+mod ansi_escape;
 mod console;
 mod framebuffer;
 mod pixel;
