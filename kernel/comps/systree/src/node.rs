@@ -118,6 +118,35 @@ pub trait SysNode: SysObj {
     /// Writes the value of an attribute.
     fn write_attr(&self, name: &str, reader: &mut VmReader) -> Result<usize>;
 
+    /// Reads the value of an attribute from the specified `offset`.
+    fn read_attr_at(&self, name: &str, offset: usize, writer: &mut VmWriter) -> Result<usize> {
+        let mut buffer = vec![0; writer.avail() + offset];
+        let len = self.read_attr(
+            name,
+            &mut VmWriter::from(buffer.as_mut_slice()).to_fallible(),
+        )?;
+        if len <= offset {
+            return Ok(0);
+        }
+
+        writer
+            .write_fallible(VmReader::from(buffer.as_slice()).skip(offset))
+            .map_err(|_| Error::AttributeError)
+    }
+
+    /// Writes the value of an attribute at the specified `offset`.
+    fn write_attr_at(&self, name: &str, offset: usize, reader: &mut VmReader) -> Result<usize> {
+        let mut buffer = vec![0; reader.remain() + offset];
+        let len = self.write_attr(name, &mut VmReader::from(buffer.as_slice()).to_fallible())?;
+        if len <= offset {
+            return Ok(0);
+        }
+
+        reader
+            .read_fallible(VmWriter::from(buffer.as_mut_slice()).skip(offset))
+            .map_err(|_| Error::AttributeError)
+    }
+
     /// Shows the string value of an attribute.
     ///
     /// Most attributes are textual, rather binary (see `SysAttrFlags::IS_BINARY`).
