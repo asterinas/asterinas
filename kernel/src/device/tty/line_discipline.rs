@@ -3,7 +3,7 @@
 use ostd::const_assert;
 
 use super::{
-    termio::{KernelTermios, WinSize, CC_C_CHAR},
+    termio::{CCtrlCharId, CTermios, CWinSize},
     PushCharError,
 };
 use crate::{
@@ -32,9 +32,9 @@ pub struct LineDiscipline {
     /// Read buffer
     read_buffer: RingBuffer<u8>,
     /// Termios
-    termios: KernelTermios,
+    termios: CTermios,
     /// Window size
-    winsize: WinSize,
+    winsize: CWinSize,
 }
 
 struct CurrentLine {
@@ -89,8 +89,8 @@ impl LineDiscipline {
         Self {
             current_line: CurrentLine::default(),
             read_buffer: RingBuffer::new(BUFFER_CAPACITY),
-            termios: KernelTermios::default(),
-            winsize: WinSize::default(),
+            termios: CTermios::default(),
+            winsize: CWinSize::default(),
         }
     }
 
@@ -134,12 +134,12 @@ impl LineDiscipline {
 
         // Canonical mode
 
-        if ch == *self.termios.get_special_char(CC_C_CHAR::VKILL) {
+        if ch == self.termios.special_char(CCtrlCharId::VKILL) {
             // Erase current line
             self.current_line.drain();
         }
 
-        if ch == *self.termios.get_special_char(CC_C_CHAR::VERASE) {
+        if ch == self.termios.special_char(CCtrlCharId::VERASE) {
             // Type backspace
             self.current_line.backspace();
         }
@@ -166,7 +166,7 @@ impl LineDiscipline {
         match ch {
             b'\n' => echo_callback(b"\n"),
             b'\r' => echo_callback(b"\r\n"),
-            ch if ch == *self.termios.get_special_char(CC_C_CHAR::VERASE) => {
+            ch if ch == self.termios.special_char(CCtrlCharId::VERASE) => {
                 // Write a space to overwrite the current character
                 echo_callback(b"\x08 \x08");
             }
@@ -185,8 +185,8 @@ impl LineDiscipline {
     /// If no bytes are available or the available bytes are fewer than `min(dst.len(), vmin)`,
     /// this method returns [`Errno::EAGAIN`].
     pub fn try_read(&mut self, dst: &mut [u8]) -> Result<usize> {
-        let vmin = *self.termios.get_special_char(CC_C_CHAR::VMIN);
-        let vtime = *self.termios.get_special_char(CC_C_CHAR::VTIME);
+        let vmin = self.termios.special_char(CCtrlCharId::VMIN);
+        let vtime = self.termios.special_char(CCtrlCharId::VTIME);
 
         if vtime != 0 {
             warn!("non-zero VTIME is not supported");
@@ -236,40 +236,40 @@ impl LineDiscipline {
         self.read_buffer.len() + self.current_line.len() >= self.read_buffer.capacity()
     }
 
-    pub fn termios(&self) -> &KernelTermios {
+    pub fn termios(&self) -> &CTermios {
         &self.termios
     }
 
-    pub fn set_termios(&mut self, termios: KernelTermios) {
+    pub fn set_termios(&mut self, termios: CTermios) {
         self.termios = termios;
     }
 
-    pub fn window_size(&self) -> WinSize {
+    pub fn window_size(&self) -> CWinSize {
         self.winsize
     }
 
-    pub fn set_window_size(&mut self, winsize: WinSize) {
+    pub fn set_window_size(&mut self, winsize: CWinSize) {
         self.winsize = winsize;
     }
 }
 
-fn is_line_terminator(ch: u8, termios: &KernelTermios) -> bool {
+fn is_line_terminator(ch: u8, termios: &CTermios) -> bool {
     if ch == b'\n'
-        || ch == *termios.get_special_char(CC_C_CHAR::VEOF)
-        || ch == *termios.get_special_char(CC_C_CHAR::VEOL)
+        || ch == termios.special_char(CCtrlCharId::VEOF)
+        || ch == termios.special_char(CCtrlCharId::VEOL)
     {
         return true;
     }
 
-    if termios.contains_iexten() && ch == *termios.get_special_char(CC_C_CHAR::VEOL2) {
+    if termios.contains_iexten() && ch == termios.special_char(CCtrlCharId::VEOL2) {
         return true;
     }
 
     false
 }
 
-fn is_eof(ch: u8, termios: &KernelTermios) -> bool {
-    ch == *termios.get_special_char(CC_C_CHAR::VEOF)
+fn is_eof(ch: u8, termios: &CTermios) -> bool {
+    ch == termios.special_char(CCtrlCharId::VEOF)
 }
 
 fn is_printable_char(ch: u8) -> bool {
@@ -284,14 +284,14 @@ fn is_ctrl_char(ch: u8) -> bool {
     (0..0x20).contains(&ch)
 }
 
-fn char_to_signal(ch: u8, termios: &KernelTermios) -> Option<SigNum> {
+fn char_to_signal(ch: u8, termios: &CTermios) -> Option<SigNum> {
     if !termios.is_canonical_mode() || !termios.contains_isig() {
         return None;
     }
 
     match ch {
-        ch if ch == *termios.get_special_char(CC_C_CHAR::VINTR) => Some(SIGINT),
-        ch if ch == *termios.get_special_char(CC_C_CHAR::VQUIT) => Some(SIGQUIT),
+        ch if ch == termios.special_char(CCtrlCharId::VINTR) => Some(SIGINT),
+        ch if ch == termios.special_char(CCtrlCharId::VQUIT) => Some(SIGQUIT),
         _ => None,
     }
 }
