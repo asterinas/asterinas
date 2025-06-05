@@ -64,7 +64,7 @@ pub struct VmMapping {
     /// And the `vmo` field must be the page cache of the inode.
     inode: Option<Arc<dyn Inode>>,
     /// The shared memory ID if the mapping is a shared memory mapping.
-    shared_mem: Option<u64>,
+    shared_mem_id: Option<u64>,
     /// Whether the mapping is shared.
     ///
     /// The updates to a shared mapping are visible among processes, or carried
@@ -102,7 +102,7 @@ impl VmMapping {
             map_to_addr,
             vmo,
             inode,
-            shared_mem: None,
+            shared_mem_id: None,
             is_shared,
             handle_page_faults_around,
             perms,
@@ -145,12 +145,12 @@ impl VmMapping {
 
     /// Sets the shared memory ID if the mapping is a shared memory mapping.
     pub fn set_shared_mem(&mut self, shmid: Option<u64>) {
-        self.shared_mem = shmid;
+        self.shared_mem_id = shmid;
     }
 
     /// Returns the shared memory ID if the mapping is a shared memory mapping.
-    pub fn shared_mem(&self) -> Option<u64> {
-        self.shared_mem
+    pub fn shared_mem_id(&self) -> Option<u64> {
+        self.shared_mem_id
     }
 
     /// Returns the inode of the file that backs the mapping.
