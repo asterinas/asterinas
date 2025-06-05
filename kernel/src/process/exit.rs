@@ -3,7 +3,7 @@
 use core::sync::atomic::Ordering;
 
 use super::{process_table, Pid, Process};
-use crate::{prelude::*, process::signal::signals::kernel::KernelSignal};
+use crate::{events::IoEvents, prelude::*, process::signal::signals::kernel::KernelSignal};
 
 /// Exits the current POSIX process.
 ///
@@ -18,6 +18,8 @@ pub(super) fn exit_process(current_process: &Process) {
 
     // Drop fields in `Process`.
     current_process.lock_root_vmar().set_vmar(None);
+
+    current_process.pidfile_pollee.notify(IoEvents::IN);
 
     send_parent_death_signal(current_process);
 

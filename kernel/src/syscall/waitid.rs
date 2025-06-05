@@ -22,7 +22,7 @@ pub fn sys_waitid(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     // FIXME: what does rusage use for?
-    let process_filter = ProcessFilter::from_which_and_id(which, upid as _)?;
+    let process_filter = ProcessFilter::from_which_and_id(which, upid as _, ctx)?;
     let wait_options = WaitOptions::from_bits(options as u32)
         .ok_or(Error::with_message(Errno::EINVAL, "invalid options"))?;
 
@@ -46,19 +46,21 @@ pub fn sys_waitid(
         return Ok(SyscallReturn::Return(0));
     };
 
-    let siginfo = {
-        let (si_code, si_status) = calculate_si_code_and_si_status(&wait_status);
-        let pid = wait_status.pid();
-        let uid = wait_status.uid();
+    if infoq_addr != 0 {
+        let siginfo = {
+            let (si_code, si_status) = calculate_si_code_and_si_status(&wait_status);
+            let pid = wait_status.pid();
+            let uid = wait_status.uid();
 
-        let mut siginfo = siginfo_t::new(SIGCHLD, si_code);
-        siginfo.set_pid_uid(pid, uid);
-        siginfo.set_status(si_status);
+            let mut siginfo = siginfo_t::new(SIGCHLD, si_code);
+            siginfo.set_pid_uid(pid, uid);
+            siginfo.set_status(si_status);
 
-        siginfo
-    };
+            siginfo
+        };
 
-    ctx.user_space().write_val(infoq_addr as usize, &siginfo)?;
+        ctx.user_space().write_val(infoq_addr as usize, &siginfo)?;
+    }
 
     Ok(SyscallReturn::Return(0))
 }

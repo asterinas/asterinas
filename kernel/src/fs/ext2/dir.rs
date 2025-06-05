@@ -123,6 +123,7 @@ enum DirEntryFileType {
 impl From<InodeType> for DirEntryFileType {
     fn from(inode_type: InodeType) -> Self {
         match inode_type {
+            InodeType::Unknown => DirEntryFileType::Unknown,
             InodeType::NamedPipe => Self::Fifo,
             InodeType::CharDevice => Self::Char,
             InodeType::Dir => Self::Dir,

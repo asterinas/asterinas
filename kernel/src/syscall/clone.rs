@@ -83,11 +83,7 @@ struct Clone3Args {
 
 impl From<Clone3Args> for CloneArgs {
     fn from(value: Clone3Args) -> Self {
-        // TODO: deal with pidfd, set_tid, set_tid_size, cgroup
-        if value.pidfd != 0 {
-            warn!("pidfd is not supported");
-        }
-
+        // TODO: Deal with set_tid, set_tid_size, cgroup
         if value.set_tid != 0 || value.set_tid_size != 0 {
             warn!("set_tid is not supported");
         }
@@ -98,7 +94,7 @@ impl From<Clone3Args> for CloneArgs {
 
         Self {
             flags: CloneFlags::from_bits_truncate(value.flags as u32),
-            _pidfd: Some(value.pidfd),
+            pidfd: Some(value.pidfd as Vaddr),
             child_tid: value.child_tid as _,
             parent_tid: Some(value.parent_tid as _),
             exit_signal: (value.exit_signal != 0).then(|| SigNum::from_u8(value.exit_signal as u8)),
