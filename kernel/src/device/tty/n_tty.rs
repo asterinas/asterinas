@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use alloc::{boxed::Box, sync::Arc, vec};
+use core::any::Any;
 
 use aster_console::AnyConsoleDevice;
 use ostd::mm::{Infallible, VmReader, VmWriter};
 use spin::Once;
 
 use super::{PushCharError, Tty, TtyDriver};
+use crate::{
+    error::{Errno, Error},
+    prelude::Result,
+};
 
 pub struct ConsoleDriver {
     console: Arc<dyn AnyConsoleDevice>,
@@ -29,6 +34,17 @@ impl TtyDriver for ConsoleDriver {
     }
 
     fn notify_input(&self) {}
+
+    fn set_font(&self, font: aster_framebuffer::BitmapFont) -> Result<()> {
+        let fbcon = (self.console.as_ref() as &dyn Any)
+            .downcast_ref::<aster_framebuffer::FramebufferConsole>()
+            .ok_or_else(|| {
+                Error::with_message(Errno::ENOTTY, "the console has no support for font setting")
+            })?;
+        fbcon.set_font(font)?;
+
+        Ok(())
+    }
 }
 
 static N_TTY: Once<Box<[Arc<Tty<ConsoleDriver>>]>> = Once::new();
