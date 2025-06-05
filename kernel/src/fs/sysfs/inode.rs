@@ -308,7 +308,10 @@ impl Inode for SysFsInode {
     }
 
     fn metadata(&self) -> Metadata {
-        self.metadata
+        let mut metadata = self.metadata;
+        metadata.mode = *self.mode.read();
+
+        metadata
     }
 
     fn ino(&self) -> u64 {
@@ -481,9 +484,11 @@ impl Inode for SysFsInode {
         let mut count = 0;
         let mut last_ino = start_ino;
 
-        let mut iter = self.new_dentry_iter(start_ino + 1);
+        let iter = self.new_dentry_iter(start_ino);
+        let mut dentries: Vec<_> = iter.collect();
+        dentries.sort_by_key(|d| d.ino);
 
-        while let Some(dentry) = iter.next() {
+        for dentry in dentries {
             // The offset reported back to the caller should be the absolute position
             let next_offset = (dentry.ino + 1) as usize;
             let res = visitor.visit(&dentry.name, dentry.ino, dentry.type_, next_offset);
@@ -500,11 +505,11 @@ impl Inode for SysFsInode {
         }
 
         if count == 0 {
-            Ok(0)
-        } else {
-            // Return absolute offset instead of an increment
-            Ok((last_ino + 1) as usize)
+            return Ok(0);
         }
+
+        let next_ino = last_ino + 1;
+        Ok((next_ino - start_ino) as usize)
     }
 
     fn read_link(&self) -> Result<String> {
