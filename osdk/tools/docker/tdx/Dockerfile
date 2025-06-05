@@ -6,14 +6,17 @@ FROM asterinas/osdk:${BASE_VERSION} AS build-base
 # Fetch and install QEMU from the intel-staging/qemu-tdx source
 FROM build-base AS build-qemu-tdx
 
-RUN apt update && apt-get install -y --no-install-recommends \
+RUN apt-get purge -y --auto-remove \
+    qemu-system-x86 \
+    qemu-system-riscv
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libgcrypt-dev   `# optional build dependency` \
     libglib2.0-dev  `# build dependency` \
     libpixman-1-dev `# build dependency` \
     libusb-dev      `# optional build dependency` \
     meson \
     ninja-build
-RUN apt clean && rm -rf /var/lib/apt/lists/*
+RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 
 FROM build-qemu-tdx AS qemu-tdx
 
@@ -34,5 +37,7 @@ FROM build-base
 
 # Install QEMU built from the previous stages
 COPY --from=qemu-tdx /usr/local/qemu /usr/local/qemu
+ENV PATH="/usr/local/qemu/bin:${PATH}"
+ENV LD_LIBRARY_PATH="/usr/local/qemu/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
 
 WORKDIR /root/asterinas
