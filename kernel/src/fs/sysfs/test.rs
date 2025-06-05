@@ -9,13 +9,15 @@ use alloc::{
     vec,
     vec::Vec,
 };
-use core::{any::Any, fmt::Debug};
+use core::fmt::Debug;
 
 use aster_systree::{
+    impl_cast_methods_for_branch, impl_cast_methods_for_node, impl_cast_methods_for_symlink,
     init_for_ktest, singleton as systree_singleton, Error as SysTreeError, Result as SysTreeResult,
     SysAttrFlags, SysAttrSet, SysAttrSetBuilder, SysBranchNode, SysBranchNodeFields, SysNode,
     SysNodeId, SysNodeType, SysNormalNodeFields, SysObj, SysStr, SysSymlink, SysTree,
 };
+use inherit_methods_macro::inherit_methods;
 use ostd::{
     mm::{FallibleVmRead, FallibleVmWrite, VmReader, VmWriter},
     prelude::ktest,
@@ -40,7 +42,7 @@ use crate::{
 struct MockLeafNode {
     fields: SysNormalNodeFields,
     data: RwLock<BTreeMap<String, String>>, // Store attribute data
-    self_ref: Weak<Self>,
+    weak_self: Weak<Self>,
 }
 
 impl MockLeafNode {
@@ -67,28 +69,20 @@ impl MockLeafNode {
         Arc::new_cyclic(|weak_self| MockLeafNode {
             fields,
             data: RwLock::new(data),
-            self_ref: weak_self.clone(),
+            weak_self: weak_self.clone(),
         })
     }
 }
 
 impl SysObj for MockLeafNode {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn arc_as_node(&self) -> Option<Arc<dyn SysNode>> {
-        self.self_ref
-            .upgrade()
-            .map(|arc_self| arc_self as Arc<dyn SysNode>)
-    }
+    impl_cast_methods_for_node!();
+
     fn id(&self) -> &SysNodeId {
         self.fields.id()
     }
-    fn type_(&self) -> SysNodeType {
-        SysNodeType::Leaf
-    }
-    fn name(&self) -> SysStr {
-        Cow::Owned(self.fields.name().to_string()) // Convert to Cow::Owned
+
+    fn name(&self) -> &SysStr {
+        self.fields.name()
     }
 }
 
@@ -143,7 +137,7 @@ impl SysNode for MockLeafNode {
 #[derive(Debug)]
 struct MockBranchNode {
     fields: SysBranchNodeFields<dyn SysObj>,
-    self_ref: Weak<Self>,
+    weak_self: Weak<Self>,
 }
 
 impl MockBranchNode {
@@ -160,7 +154,7 @@ impl MockBranchNode {
 
         Arc::new_cyclic(|weak_self| MockBranchNode {
             fields,
-            self_ref: weak_self.clone(),
+            weak_self: weak_self.clone(),
         })
     }
 
@@ -170,27 +164,14 @@ impl MockBranchNode {
 }
 
 impl SysObj for MockBranchNode {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn arc_as_node(&self) -> Option<Arc<dyn SysNode>> {
-        self.self_ref
-            .upgrade()
-            .map(|arc_self| arc_self as Arc<dyn SysNode>)
-    }
-    fn arc_as_branch(&self) -> Option<Arc<dyn SysBranchNode>> {
-        self.self_ref
-            .upgrade()
-            .map(|arc_self| arc_self as Arc<dyn SysBranchNode>)
-    }
+    impl_cast_methods_for_branch!();
+
     fn id(&self) -> &SysNodeId {
         self.fields.id()
     }
-    fn type_(&self) -> SysNodeType {
-        SysNodeType::Branch
-    }
-    fn name(&self) -> SysStr {
-        Cow::Owned(self.fields.name().to_string()) // Convert to Cow::Owned
+
+    fn name(&self) -> &SysStr {
+        self.fields.name()
     }
 }
 
@@ -232,41 +213,13 @@ impl SysNode for MockBranchNode {
     }
 }
 
+#[inherit_methods(from = "self.fields")]
 impl SysBranchNode for MockBranchNode {
-    fn visit_child_with(&self, name: &str, f: &mut dyn FnMut(Option<&dyn SysNode>)) {
-        self.fields
-            .children
-            .read()
-            .get(name)
-            .map(|child| {
-                child
-                    .arc_as_node()
-                    .map(|node| f(Some(node.as_ref())))
-                    .unwrap_or_else(|| f(None));
-            })
-            .unwrap_or_else(|| f(None));
-    }
+    fn visit_child_with(&self, name: &str, f: &mut dyn FnMut(Option<&Arc<dyn SysObj>>));
 
-    fn visit_children_with(&self, min_id: u64, f: &mut dyn FnMut(&Arc<dyn SysObj>) -> Option<()>) {
-        let children = self.fields.children.read();
-        for child in children
-            .values()
-            .filter(|child| child.id().as_u64() >= min_id)
-        {
-            if f(child).is_none() {
-                break;
-            }
-        }
-    }
+    fn visit_children_with(&self, min_id: u64, f: &mut dyn FnMut(&Arc<dyn SysObj>) -> Option<()>);
 
-    fn child(&self, name: &str) -> Option<Arc<dyn SysObj>> {
-        let children = self.fields.children.read();
-        children.get(name).cloned()
-    }
-
-    fn children(&self) -> Vec<Arc<dyn SysObj>> {
-        self.fields.children.read().values().cloned().collect()
-    }
+    fn child(&self, name: &str) -> Option<Arc<dyn SysObj>>;
 }
 
 // Mock Symlink
@@ -275,7 +228,7 @@ struct MockSymlinkNode {
     id: SysNodeId,
     name: SysStr,
     target: String,
-    self_ref: Weak<Self>,
+    weak_self: Weak<Self>,
 }
 
 impl MockSymlinkNode {
@@ -284,28 +237,20 @@ impl MockSymlinkNode {
             id: SysNodeId::new(),
             name: name.to_string().into(),
             target: target.to_string(),
-            self_ref: weak_self.clone(),
+            weak_self: weak_self.clone(),
         })
     }
 }
 
 impl SysObj for MockSymlinkNode {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    fn arc_as_symlink(&self) -> Option<Arc<dyn SysSymlink>> {
-        self.self_ref
-            .upgrade()
-            .map(|arc_self| arc_self as Arc<dyn SysSymlink>)
-    }
+    impl_cast_methods_for_symlink!();
+
     fn id(&self) -> &SysNodeId {
         &self.id
     }
-    fn type_(&self) -> SysNodeType {
-        SysNodeType::Symlink
-    }
-    fn name(&self) -> SysStr {
-        self.name.clone()
+
+    fn name(&self) -> &SysStr {
+        &self.name
     }
 }
 
