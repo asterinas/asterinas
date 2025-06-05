@@ -69,6 +69,7 @@ use super::{
     munmap::sys_munmap,
     nanosleep::{sys_clock_nanosleep, sys_nanosleep},
     open::sys_openat,
+    pidfd_open::sys_pidfd_open,
     pipe::sys_pipe2,
     prctl::sys_prctl,
     pread64::sys_pread64,
@@ -311,6 +312,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_TIMERFD_SETTIME = 411    => sys_timerfd_settime(args[..4]);
     SYS_UTIMENSAT = 412          => sys_utimensat(args[..4]);
     SYS_SEMTIMEDOP = 420         => sys_semtimedop(args[..4]);
+    SYS_PIDFD_OPEN = 434         => sys_pidfd_open(args[..2]);
     SYS_CLONE3 = 435             => sys_clone3(args[..2], &user_ctx);
     SYS_CLOSE_RANGE = 436      => sys_close_range(args[..3]);
     SYS_FACCESSAT2 = 439         => sys_faccessat2(args[..4]);

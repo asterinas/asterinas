@@ -233,7 +233,6 @@ impl DirentSerializer for Dirent64 {
 #[repr(u8)]
 #[derive(Debug, Clone, Copy)]
 enum DirentType {
-    #[expect(dead_code)]
     DT_UNKNOWN = 0,
     DT_FIFO = 1,
     DT_CHR = 2,
@@ -249,6 +248,7 @@ enum DirentType {
 impl From<InodeType> for DirentType {
     fn from(type_: InodeType) -> Self {
         match type_ {
+            InodeType::Unknown => DirentType::DT_UNKNOWN,
             InodeType::File => DirentType::DT_REG,
             InodeType::Dir => DirentType::DT_DIR,
             InodeType::SymLink => DirentType::DT_LNK,

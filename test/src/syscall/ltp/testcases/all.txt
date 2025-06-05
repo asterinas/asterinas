@@ -1014,10 +1014,10 @@ pathconf01
 # pidfd_getfd01
 # pidfd_getfd02
 
-# pidfd_open01
-# pidfd_open02
-# pidfd_open03
-# pidfd_open04
+pidfd_open01
+pidfd_open02
+pidfd_open03
+pidfd_open04
 
 # pidfd_send_signal01
 # pidfd_send_signal02
