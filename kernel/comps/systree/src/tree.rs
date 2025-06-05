@@ -64,6 +64,8 @@ impl RootNode {
         if children_guard.contains_key(name) {
             return Err(Error::PermissionDenied);
         }
+
+        new_child.set_path(self.path());
         children_guard.insert(name.clone(), new_child);
         Ok(())
     }
