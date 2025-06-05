@@ -15,7 +15,7 @@ pub fn sys_waitid(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     // FIXME: what does infoq and rusage use for?
-    let process_filter = ProcessFilter::from_which_and_id(which, upid as _)?;
+    let process_filter = ProcessFilter::from_which_and_id(which, upid as _, ctx)?;
     let wait_options = WaitOptions::from_bits(options as u32)
         .ok_or(Error::with_message(Errno::EINVAL, "invalid options"))?;
 

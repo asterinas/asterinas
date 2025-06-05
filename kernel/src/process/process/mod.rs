@@ -18,6 +18,7 @@ use super::{
 };
 use crate::{
     prelude::*,
+    process::signal::Pollee,
     sched::{AtomicNice, Nice},
     thread::{AsThread, Thread},
     time::clocks::ProfClock,
@@ -63,6 +64,7 @@ pub struct Process {
     process_vm: ProcessVm,
     /// Wait for child status changed
     children_wait_queue: WaitQueue,
+    pub(super) pidfile_pollee: Pollee,
 
     // Mutable Part
     /// The executable path.
@@ -204,6 +206,7 @@ impl Process {
             executable_path: RwLock::new(executable_path),
             process_vm,
             children_wait_queue,
+            pidfile_pollee: Pollee::new(),
             status: ProcessStatus::default(),
             parent: ParentProcess::new(parent),
             children: Mutex::new(BTreeMap::new()),
