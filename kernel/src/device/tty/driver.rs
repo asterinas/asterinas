@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::prelude::{Errno, Error};
+use crate::prelude::{Errno, Error, Result};
 
 /// An error indicating that no characters can be pushed because the buffer is full.
 #[derive(Debug, Clone, Copy)]
@@ -48,4 +48,7 @@ pub trait TtyDriver: Send + Sync + 'static {
     ///
     /// [`Tty::can_push`]: super::Tty::can_push
     fn notify_input(&self);
+
+    /// Sets the TTY font.
+    fn set_font(&self, font: aster_console::BitmapFont) -> Result<()>;
 }

@@ -6,10 +6,13 @@
 
 extern crate alloc;
 
+mod font;
+
 use alloc::{collections::BTreeMap, fmt::Debug, string::String, sync::Arc, vec::Vec};
 use core::any::Any;
 
 use component::{init_component, ComponentInitError};
+pub use font::{BitmapChar, BitmapCharRow, BitmapFont};
 use ostd::{
     mm::{Infallible, VmReader},
     sync::{LocalIrqDisabled, SpinLock, SpinLockGuard},
@@ -17,6 +20,12 @@ use ostd::{
 use spin::Once;
 
 pub type ConsoleCallback = dyn Fn(VmReader<Infallible>) + Send + Sync;
+
+/// An error returned by [`AnyConsoleDevice::set_font`].
+pub enum ConsoleSetFontError {
+    InappropriateDevice,
+    InvalidFont,
+}
 
 pub trait AnyConsoleDevice: Send + Sync + Any + Debug {
     /// Sends data to the console device.
@@ -26,6 +35,11 @@ pub trait AnyConsoleDevice: Send + Sync + Any + Debug {
     ///
     /// The callback may be called in the interrupt context. Therefore, it should _never_ sleep.
     fn register_callback(&self, callback: &'static ConsoleCallback);
+
+    /// Sets the font of the console device.
+    fn set_font(&self, _font: BitmapFont) -> Result<(), ConsoleSetFontError> {
+        Err(ConsoleSetFontError::InappropriateDevice)
+    }
 }
 
 pub fn register_device(name: String, device: Arc<dyn AnyConsoleDevice>) {

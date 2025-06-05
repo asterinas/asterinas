@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_console::BitmapFont;
 use ostd::sync::LocalIrqDisabled;
+use termio::CFontOp;
 
 use self::line_discipline::LineDiscipline;
 use crate::{
@@ -143,6 +145,54 @@ impl<D: TtyDriver> Tty<D> {
 
         events
     }
+
+    fn handle_set_font(&self, font_op: &CFontOp) -> Result<()> {
+        let CFontOp {
+            op,
+            flags: _,
+            width,
+            height,
+            charcount,
+            data,
+        } = font_op;
+
+        let vpitch = match *op {
+            CFontOp::OP_SET => CFontOp::NONTALL_VPITCH,
+            CFontOp::OP_SET_TALL => font_op.height,
+            CFontOp::OP_SET_DEFAULT => return self.driver.set_font(BitmapFont::new_basic8x8()),
+            _ => return_errno_with_message!(Errno::EINVAL, "the font operation is invalid"),
+        };
+
+        if *width == 0
+            || *height == 0
+            || *width > CFontOp::MAX_WIDTH
+            || *height > CFontOp::MAX_HEIGHT
+            || *charcount > CFontOp::MAX_CHARCOUNT
+            || *height > vpitch
+        {
+            return_errno_with_message!(Errno::EINVAL, "the font is invalid or too large");
+        }
+
+        let font_size = width.div_ceil(u8::BITS) * vpitch * charcount;
+        let mut font_data = vec![0; font_size as usize];
+        current_userspace!().read_bytes(*data as Vaddr, &mut (&mut font_data[..]).into())?;
+
+        // In Linux, the most significant bit represents the first pixel, but `BitmapFont` requires
+        // the least significant bit to represent the first pixel. So now we reverse the bits.
+        font_data
+            .iter_mut()
+            .for_each(|byte| *byte = byte.reverse_bits());
+
+        let font = BitmapFont::new_with_vpitch(
+            *width as usize,
+            *height as usize,
+            vpitch as usize,
+            font_data,
+        );
+        self.driver.set_font(font)?;
+
+        Ok(())
+    }
 }
 
 impl<D: TtyDriver> Pollable for Tty<D> {
@@ -228,6 +278,11 @@ impl<D: TtyDriver> FileIo for Tty<D> {
                 let buffer_len = self.ldisc.lock().buffer_len() as u32;
 
                 current_userspace!().write_val(arg, &buffer_len)?;
+            }
+            IoctlCmd::KDFONTOP => {
+                let font_op = current_userspace!().read_val(arg)?;
+
+                self.handle_set_font(&font_op)?;
             }
             _ => (self.weak_self.upgrade().unwrap() as Arc<dyn Terminal>)
                 .job_ioctl(cmd, arg, false)?,

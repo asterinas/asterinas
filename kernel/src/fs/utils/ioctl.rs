@@ -41,6 +41,8 @@ pub enum IoctlCmd {
     TIOCSPTLCK = 0x40045431,
     /// Safely open the slave
     TIOCGPTPEER = 0x40045441,
+    /// font operations
+    KDFONTOP = 0x4B72,
     /// Get tdx report using TDCALL
     TDXGETREPORT = 0xc4405401,
 }
