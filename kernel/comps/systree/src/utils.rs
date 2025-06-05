@@ -136,3 +136,76 @@ impl SymlinkNodeFields {
         &self.target_path
     }
 }
+
+/// A macro to automatically generate cast-related methods and `type_` method for `SysObj`
+/// trait implementation of `SysBranchNode` struct.
+///
+/// Users should make sure that the struct has a `weak_self: Weak<Self>` field.
+#[macro_export]
+macro_rules! impl_cast_methods_for_branch {
+    () => {
+        fn as_any(&self) -> &dyn core::any::Any {
+            self
+        }
+
+        fn cast_to_node(&self) -> Option<Arc<dyn SysNode>> {
+            self.weak_self.upgrade().map(|arc| arc as Arc<dyn SysNode>)
+        }
+
+        fn cast_to_branch(&self) -> Option<Arc<dyn SysBranchNode>> {
+            self.weak_self
+                .upgrade()
+                .map(|arc| arc as Arc<dyn SysBranchNode>)
+        }
+
+        fn type_(&self) -> SysNodeType {
+            SysNodeType::Branch
+        }
+    };
+}
+
+/// A macro to automatically generate cast-related methods and `type_` method for `SysObj`
+/// trait implementation of `SysNode` struct.
+///
+/// If the struct is also a branch node, use `impl_cast_methods_for_branch!()` instead.
+///
+/// Users should make sure that the struct has a `weak_self: Weak<Self>` field.
+#[macro_export]
+macro_rules! impl_cast_methods_for_node {
+    () => {
+        fn as_any(&self) -> &dyn core::any::Any {
+            self
+        }
+
+        fn cast_to_node(&self) -> Option<Arc<dyn SysNode>> {
+            self.weak_self.upgrade().map(|arc| arc as Arc<dyn SysNode>)
+        }
+
+        fn type_(&self) -> SysNodeType {
+            SysNodeType::Leaf
+        }
+    };
+}
+
+/// A macro to automatically generate cast-related methods and `type_` method for `SysObj`
+/// trait implementation of `SysSymlink` struct.
+///
+/// Users should make sure that the struct has a `weak_self: Weak<Self>` field.
+#[macro_export]
+macro_rules! impl_cast_methods_for_symlink {
+    () => {
+        fn as_any(&self) -> &dyn core::any::Any {
+            self
+        }
+
+        fn cast_to_symlink(&self) -> Option<Arc<dyn SysSymlink>> {
+            self.weak_self
+                .upgrade()
+                .map(|arc| arc as Arc<dyn SysSymlink>)
+        }
+
+        fn type_(&self) -> SysNodeType {
+            SysNodeType::Symlink
+        }
+    };
+}
