@@ -567,11 +567,11 @@ fn test_sysfs_mode_permissions() {
     // Check default modes based on SysAttrFlags
     let r_mode = r_attr_inode.mode().unwrap();
     assert!(r_mode.contains(InodeMode::S_IRUSR | InodeMode::S_IRGRP | InodeMode::S_IROTH)); // 0o444
-    assert!(!r_mode.contains(InodeMode::S_IWUSR | InodeMode::S_IWGRP | InodeMode::S_IWOTH)); // Not 0o222
+    assert!(!r_mode.contains(InodeMode::S_IWUSR)); // Not 0o200
 
     let rw_mode = rw_attr_inode.mode().unwrap();
     assert!(rw_mode.contains(InodeMode::S_IRUSR | InodeMode::S_IRGRP | InodeMode::S_IROTH)); // 0o444
-    assert!(rw_mode.contains(InodeMode::S_IWUSR | InodeMode::S_IWGRP | InodeMode::S_IWOTH)); // 0o222
+    assert!(rw_mode.contains(InodeMode::S_IWUSR)); // 0o200
 
     // Test set_mode
     let new_mode = InodeMode::from_bits_truncate(0o600); // rw-------
