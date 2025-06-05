@@ -108,6 +108,7 @@ name = "aster-console"
 version = "0.1.0"
 dependencies = [
  "component",
+ "font8x8",
  "ostd",
  "spin",
 ]
@@ -119,7 +120,6 @@ dependencies = [
  "aster-console",
  "aster-keyboard",
  "component",
- "font8x8",
  "log",
  "ostd",
  "spin",
