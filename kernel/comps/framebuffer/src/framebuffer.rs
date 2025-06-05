@@ -20,6 +20,7 @@ pub struct FrameBuffer {
     io_mem: IoMem,
     width: usize,
     height: usize,
+    line_size: usize,
     pixel_format: PixelFormat,
 }
 
@@ -53,15 +54,22 @@ pub(crate) fn init() {
     };
 
     let framebuffer = {
+        // FIXME: There can be more than `width` pixels per framebuffer line due to alignment
+        // purposes. We need to collect this information during the boot phase.
+        let line_size = framebuffer_arg
+            .width
+            .checked_mul(pixel_format.nbytes())
+            .unwrap();
+        let fb_size = framebuffer_arg.height.checked_mul(line_size).unwrap();
+
         let fb_base = framebuffer_arg.address;
-        let fb_size = framebuffer_arg.width
-            * framebuffer_arg.height
-            * (framebuffer_arg.bpp / u8::BITS as usize);
-        let io_mem = IoMem::acquire(fb_base..fb_base + fb_size).unwrap();
+        let io_mem = IoMem::acquire(fb_base..fb_base.checked_add(fb_size).unwrap()).unwrap();
+
         FrameBuffer {
             io_mem,
             width: framebuffer_arg.width,
             height: framebuffer_arg.height,
+            line_size,
             pixel_format,
         }
     };
@@ -100,7 +108,7 @@ impl FrameBuffer {
     pub fn calc_offset(&self, x: usize, y: usize) -> PixelOffset {
         PixelOffset {
             fb: self,
-            offset: ((y * self.width + x) * self.pixel_format.nbytes()) as isize,
+            offset: (x * self.pixel_format.nbytes() + y * self.line_size) as isize,
         }
     }
 
@@ -137,11 +145,12 @@ impl PixelOffset<'_> {
 
     /// Adds the specified delta to the y coordinate.
     pub fn y_add(&mut self, y_delta: isize) {
-        let delta = y_delta * (self.fb.width * self.fb.pixel_format.nbytes()) as isize;
+        let delta = y_delta * self.fb.line_size as isize;
         self.offset += delta;
     }
 
+    /// Returns the offset value as a `usize`.
     pub fn as_usize(&self) -> usize {
-        self.offset as _
+        self.offset as usize
     }
 }
