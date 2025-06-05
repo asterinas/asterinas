@@ -191,7 +191,7 @@ impl SysFsInode {
             match child_type {
                 SysNodeType::Branch => {
                     let child_branch = child_sysnode
-                        .arc_as_branch()
+                        .cast_to_branch()
                         .ok_or(Error::new(Errno::EIO))?;
                     let inode = Self::new_branch_dir(
                         self.systree,
@@ -202,7 +202,7 @@ impl SysFsInode {
                 }
                 SysNodeType::Leaf => {
                     let child_leaf_node =
-                        child_sysnode.arc_as_node().ok_or(Error::new(Errno::EIO))?;
+                        child_sysnode.cast_to_node().ok_or(Error::new(Errno::EIO))?;
                     let inode = Self::new_leaf_dir(
                         self.systree,
                         InnerNode::Leaf(child_leaf_node),
@@ -212,7 +212,7 @@ impl SysFsInode {
                 }
                 SysNodeType::Symlink => {
                     let child_symlink = child_sysnode
-                        .arc_as_symlink()
+                        .cast_to_symlink()
                         .ok_or(Error::new(Errno::EIO))?;
                     let inode = Self::new_symlink(
                         self.systree,
@@ -646,7 +646,7 @@ impl Iterator for NodeDentryIter {
                 };
                 return Some(Dentry {
                     ino: obj_ino,
-                    name: obj.name(),
+                    name: obj.name().clone(),
                     type_,
                 });
             }

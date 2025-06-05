@@ -7,7 +7,7 @@ use core::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use ostd::mm::{VmReader, VmWriter};
+use ostd::mm::{FallibleVmWrite, VmReader, VmWriter};
 
 use super::{Error, Result, SysAttrSet, SysStr};
 
@@ -16,9 +16,9 @@ pub const MAX_ATTR_SIZE: usize = 4096;
 /// The three types of nodes in a `SysTree`.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum SysNodeType {
-    /// A branching node is one that may contain child nodes.
+    /// A branching node is one that can have child nodes.
     Branch,
-    /// A leaf node is one that may not contain child nodes.
+    /// A leaf node is one that cannot have child nodes.
     Leaf,
     /// A symlink node,
     /// which ia a special kind of leaf node that points to another node,
@@ -27,6 +27,7 @@ pub enum SysNodeType {
 }
 
 /// A trait that represents a branching node in a `SysTree`.
+#[expect(clippy::type_complexity)]
 pub trait SysBranchNode: SysNode {
     /// Visits a child node with the given name using a closure.
     ///
@@ -49,7 +50,7 @@ pub trait SysBranchNode: SysNode {
     /// So the caller should do as little as possible inside the closure.
     /// In particular, the caller should _not_ invoke other methods
     /// on this object as this might cause deadlock.
-    fn visit_child_with(&self, name: &str, f: &mut dyn FnMut(Option<&dyn SysNode>));
+    fn visit_child_with(&self, name: &str, f: &mut dyn FnMut(Option<&Arc<dyn SysObj>>));
 
     /// Visits child nodes with a minimum ID using a closure.
     ///
@@ -75,7 +76,7 @@ pub trait SysBranchNode: SysNode {
     fn visit_children_with(
         &self,
         min_id: u64,
-        f: &mut dyn for<'a> FnMut(&'a Arc<(dyn SysObj + 'static)>) -> Option<()>,
+        f: &mut dyn for<'a> FnMut(&'a Arc<(dyn SysObj)>) -> Option<()>,
     );
 
     /// Returns a child with a specified name.
@@ -182,18 +183,18 @@ pub trait SysObj: Any + Send + Sync + Debug + 'static {
     /// Returns a reference to this object as `Any` for downcasting.
     fn as_any(&self) -> &dyn Any;
 
-    /// Attempts to get an Arc to this object as a `SysSymlink`.
-    fn arc_as_symlink(&self) -> Option<Arc<dyn SysSymlink>> {
+    /// Casts this object to a trait object of `SysTree` symlink.
+    fn cast_to_symlink(&self) -> Option<Arc<dyn SysSymlink>> {
         None
     }
 
-    /// Attempts to get an Arc to this object as a `SysNode`.
-    fn arc_as_node(&self) -> Option<Arc<dyn SysNode>> {
+    /// Casts this object to a trait object of a `SysTree` node.
+    fn cast_to_node(&self) -> Option<Arc<dyn SysNode>> {
         None
     }
 
-    /// Attempts to get an Arc to this object as a `SysBranchNode`.
-    fn arc_as_branch(&self) -> Option<Arc<dyn SysBranchNode>> {
+    /// Casts this object to a trait object of a `SysTree` branch node.
+    fn cast_to_branch(&self) -> Option<Arc<dyn SysBranchNode>> {
         None
     }
 
@@ -210,7 +211,7 @@ pub trait SysObj: Any + Send + Sync + Debug + 'static {
     ///
     /// The root node of a `SysTree` has an empty name.
     /// All other inodes must have an non-empty name.
-    fn name(&self) -> SysStr;
+    fn name(&self) -> &SysStr;
 
     /// Returns whether a node is the root of a `SysTree`.
     fn is_root(&self) -> bool {
