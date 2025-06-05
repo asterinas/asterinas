@@ -15,9 +15,12 @@ use super::{
 use crate::{
     cpu::LinuxAbi,
     current_userspace,
-    fs::{file_table::FileTable, thread_info::ThreadFsInfo},
+    fs::{
+        file_table::{FdFlags, FileTable},
+        thread_info::ThreadFsInfo,
+    },
     prelude::*,
-    process::posix_thread::allocate_posix_tid,
+    process::{pid_file::PidFile, posix_thread::allocate_posix_tid},
     sched::Nice,
     thread::{AsThread, Tid},
 };
@@ -79,7 +82,7 @@ bitflags! {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CloneArgs {
     pub flags: CloneFlags,
-    pub _pidfd: Option<u64>,
+    pub pidfd: Option<Vaddr>,
     pub child_tid: Vaddr,
     pub parent_tid: Option<Vaddr>,
     pub exit_signal: Option<SigNum>,
@@ -111,7 +114,7 @@ impl CloneArgs {
             flags.contains(CloneFlags::CLONE_PARENT_SETTID),
         ) {
             (false, false) => (None, None),
-            (true, false) => (Some(parent_tid as u64), None),
+            (true, false) => (Some(parent_tid), None),
             (false, true) => (None, Some(parent_tid)),
             (true, true) => {
                 return_errno_with_message!(
@@ -123,7 +126,7 @@ impl CloneArgs {
 
         Ok(Self {
             flags,
-            _pidfd: pidfd,
+            pidfd,
             child_tid,
             parent_tid,
             exit_signal: (exit_signal != 0).then(|| SigNum::from_u8(exit_signal as u8)),
@@ -163,6 +166,7 @@ impl CloneFlags {
             | CloneFlags::CLONE_FS
             | CloneFlags::CLONE_FILES
             | CloneFlags::CLONE_SIGHAND
+            | CloneFlags::CLONE_PIDFD
             | CloneFlags::CLONE_THREAD
             | CloneFlags::CLONE_SYSVSEM
             | CloneFlags::CLONE_SETTLS
@@ -227,6 +231,13 @@ fn clone_child_task(
         return_errno_with_message!(
             Errno::EINVAL,
             "`CLONE_THREAD` without `CLONE_VM` and `CLONE_SIGHAND` is not valid"
+        );
+    }
+
+    if clone_flags.contains(CloneFlags::CLONE_PIDFD) {
+        return_errno_with_message!(
+            Errno::EINVAL,
+            "`CLONE_THREAD` cannot be used together with `CLONE_PIDFD`"
         );
     }
 
@@ -375,6 +386,8 @@ fn clone_child_process(
         )
     };
 
+    clone_pidfd(ctx, &child, clone_flags, clone_args.pidfd)?;
+
     if let Some(sig) = clone_args.exit_signal {
         child.set_exit_signal(sig);
     };
@@ -513,6 +526,38 @@ fn clone_sysvsem(clone_flags: CloneFlags) -> Result<()> {
         warn!("CLONE_SYSVSEM is not supported now");
     }
     Ok(())
+}
+
+fn clone_pidfd(
+    ctx: &Context,
+    child: &Arc<Process>,
+    clone_flags: CloneFlags,
+    pidfd_addr: Option<Vaddr>,
+) -> Result<()> {
+    if !clone_flags.contains(CloneFlags::CLONE_PIDFD) {
+        return Ok(());
+    }
+
+    let pidfd_addr = pidfd_addr.unwrap();
+
+    let fd = {
+        let pid_file = PidFile::new(child.clone(), false);
+        let file_table = ctx.thread_local.borrow_file_table();
+        let mut file_table_locked = file_table.unwrap().write();
+        file_table_locked.insert(Arc::new(pid_file), FdFlags::CLOEXEC)
+    };
+
+    // Since `write_val` may sleep, we cannot hold the file table lock during its execution.
+    // FIXME: Should we remove the file from the file table if the write operation fails?
+    match ctx.user_space().write_val(pidfd_addr, &fd) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let file_table = ctx.thread_local.borrow_file_table();
+            let mut file_table_locked = file_table.unwrap().write();
+            file_table_locked.close_file(fd);
+            Err(e)
+        }
+    }
 }
 
 #[expect(clippy::too_many_arguments)]

@@ -63,6 +63,12 @@ pub fn do_wait(
 ) -> Result<Option<WaitStatus>> {
     wait_options.check()?;
 
+    let is_nonblocking = if let ProcessFilter::WithPidfd(pid_file) = &child_filter {
+        pid_file.is_nonblocking()
+    } else {
+        false
+    };
+
     let zombie_child = with_sigmask_changed(
         ctx,
         |sigmask| sigmask + SIGCHLD,
@@ -75,10 +81,13 @@ pub fn do_wait(
 
                 let unwaited_children = children_lock
                     .values()
-                    .filter(|child| match child_filter {
+                    .filter(|child| match &child_filter {
                         ProcessFilter::Any => true,
-                        ProcessFilter::WithPid(pid) => child.pid() == pid,
-                        ProcessFilter::WithPgid(pgid) => child.pgid() == pgid,
+                        ProcessFilter::WithPid(pid) => child.pid() == *pid,
+                        ProcessFilter::WithPgid(pgid) => child.pgid() == *pgid,
+                        ProcessFilter::WithPidfd(pid_file) => {
+                            Arc::ptr_eq(pid_file.process(), *child)
+                        }
                     })
                     .collect::<Box<_>>();
 
@@ -102,6 +111,13 @@ pub fn do_wait(
 
                 if wait_options.contains(WaitOptions::WNOHANG) {
                     return Some(Ok(None));
+                }
+
+                if is_nonblocking {
+                    return Some(Err(Error::with_message(
+                        Errno::EAGAIN,
+                        "the PID file is nonblocking and the child has not terminated",
+                    )));
                 }
 
                 // wait
