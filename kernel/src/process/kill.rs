@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::{
-    posix_thread::{thread_table, AsPosixThread},
-    process_table,
+    pid_namespace::UniqueIdArray,
+    posix_thread::AsPosixThread,
     signal::{
         constants::SIGCONT,
         sig_num::SigNum,
         signals::{user::UserSignal, Signal},
     },
-    Pgid, Pid, Process, Sid, Uid,
+    Pgid, Pid, Process, Uid,
 };
 use crate::{prelude::*, thread::Tid};
 
@@ -36,7 +36,10 @@ pub fn kill(pid: Pid, signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
 
     // Slow path
 
-    let process = process_table::get_process(pid)
+    let process = ctx
+        .process
+        .pid_namespace()
+        .get_process(pid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "the target process does not exist"))?;
 
     kill_process(&process, signal, ctx)
@@ -51,12 +54,15 @@ pub fn kill(pid: Pid, signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
 /// If `signal` is `None`, this method will only check permission without sending
 /// any signal.
 pub fn kill_group(pgid: Pgid, signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
-    let process_group = process_table::get_process_group(&pgid)
+    let process_group = ctx
+        .process
+        .pid_namespace()
+        .get_process_group(pgid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "target group does not exist"))?;
 
     let inner = process_group.lock();
     for process in inner.iter() {
-        kill_process(process, signal, ctx)?;
+        kill_process(&process, signal, ctx)?;
     }
 
     Ok(())
@@ -68,7 +74,10 @@ pub fn kill_group(pgid: Pgid, signal: Option<UserSignal>, ctx: &Context) -> Resu
 /// If `signal` is `None`, this method will only check permission without sending
 /// any signal.
 pub fn tgkill(tid: Tid, tgid: Pid, signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
-    let thread = thread_table::get_thread(tid)
+    let thread = ctx
+        .process
+        .pid_namespace()
+        .get_thread(tid)
         .ok_or_else(|| Error::with_message(Errno::ESRCH, "target thread does not exist"))?;
 
     if thread.is_exited() {
@@ -78,7 +87,10 @@ pub fn tgkill(tid: Tid, tgid: Pid, signal: Option<UserSignal>, ctx: &Context) ->
     let posix_thread = thread.as_posix_thread().unwrap();
 
     // Check tgid
-    let pid = posix_thread.process().pid();
+    let pid = posix_thread
+        .process()
+        .pid_in_ns(ctx.process.pid_namespace())
+        .unwrap();
     if pid != tgid {
         return_errno_with_message!(
             Errno::EINVAL,
@@ -104,13 +116,14 @@ pub fn tgkill(tid: Tid, tgid: Pid, signal: Option<UserSignal>, ctx: &Context) ->
 /// The credentials of the current process will be checked to determine
 /// if it is authorized to send the signal to the target group.
 pub fn kill_all(signal: Option<UserSignal>, ctx: &Context) -> Result<()> {
-    let current = current!();
-    for process in process_table::process_table_mut().iter() {
-        if Arc::ptr_eq(&current, process) || process.is_init_process() {
+    let current_process = current!();
+
+    for process in ctx.process.pid_namespace().get_all_processes() {
+        if Arc::ptr_eq(&current_process, &process) || process.is_init_process() {
             continue;
         }
 
-        kill_process(process, signal, ctx)?;
+        kill_process(&process, signal, ctx)?;
     }
 
     Ok(())
@@ -164,15 +177,15 @@ fn current_thread_sender_ids(signum: Option<&SigNum>, ctx: &Context) -> SignalSe
     let credentials = ctx.posix_thread.credentials();
     let ruid = credentials.ruid();
     let euid = credentials.euid();
-    let sid = signum.and_then(|signum| {
+    let sids = signum.and_then(|signum| {
         if *signum == SIGCONT {
-            Some(ctx.process.sid())
+            ctx.process.session_unique_ids()
         } else {
             None
         }
     });
 
-    SignalSenderIds::new(ruid, euid, sid)
+    SignalSenderIds::new(ruid, euid, sids)
 }
 
 /// The ids of the signal sender process.
@@ -181,12 +194,12 @@ fn current_thread_sender_ids(signum: Option<&SigNum>, ctx: &Context) -> SignalSe
 pub(super) struct SignalSenderIds {
     ruid: Uid,
     euid: Uid,
-    sid: Option<Sid>,
+    sids: Option<UniqueIdArray>,
 }
 
 impl SignalSenderIds {
-    fn new(ruid: Uid, euid: Uid, sid: Option<Sid>) -> Self {
-        Self { ruid, euid, sid }
+    fn new(ruid: Uid, euid: Uid, sids: Option<UniqueIdArray>) -> Self {
+        Self { ruid, euid, sids }
     }
 
     pub(super) fn ruid(&self) -> Uid {
@@ -197,7 +210,7 @@ impl SignalSenderIds {
         self.euid
     }
 
-    pub(super) fn sid(&self) -> Option<Sid> {
-        self.sid
+    pub(super) fn sids(&self) -> Option<&UniqueIdArray> {
+        self.sids.as_ref()
     }
 }

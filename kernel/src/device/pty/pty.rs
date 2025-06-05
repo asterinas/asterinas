@@ -189,7 +189,7 @@ impl FileIo for PtyMaster {
             }
             IoctlCmd::TIOCGPTPEER => {
                 let current_task = Task::current().unwrap();
-                let posix_thread = current_task.as_posix_thread().unwrap();
+                let posix_thread = current_task.as_current_posix_thread().unwrap();
                 let thread_local = current_task.as_thread_local().unwrap();
 
                 // TODO: deal with open options

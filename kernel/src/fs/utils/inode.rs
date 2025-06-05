@@ -527,7 +527,7 @@ pub trait Inode: Any + Sync + Send {
     /// without changing the "normal" uids for other tasks.
     fn check_permission(&self, mut perm: Permission) -> Result<()> {
         let creds = match Task::current() {
-            Some(task) => match task.as_posix_thread() {
+            Some(task) => match task.as_current_posix_thread() {
                 Some(thread) => thread.credentials(),
                 None => return Ok(()),
             },

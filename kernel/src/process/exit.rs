@@ -2,7 +2,7 @@
 
 use core::sync::atomic::Ordering;
 
-use super::{process_table, Pid, Process};
+use super::{pid_namespace::INIT_PROCESS_PID, signal::constants::SIGKILL, CurrentProcess, Process};
 use crate::{prelude::*, process::signal::signals::kernel::KernelSignal};
 
 /// Exits the current POSIX process.
@@ -12,18 +12,34 @@ use crate::{prelude::*, process::signal::signals::kernel::KernelSignal};
 ///
 /// [`do_exit`]: crate::process::posix_thread::do_exit
 /// [`do_exit_group`]: crate::process::posix_thread::do_exit_group
-pub(super) fn exit_process(current_process: &Process) {
+pub(super) fn exit_process(current_process: &CurrentProcess) {
     current_process.status().set_zombie();
     current_process.status().set_vfork_child(false);
 
     // Drop fields in `Process`.
     current_process.lock_root_vmar().set_vmar(None);
 
+    if current_process.is_init_process() {
+        current_process.pid_namespace().set_init_proc_terminated();
+        kill_other_processes_in_pid_ns(current_process);
+    }
+
     send_parent_death_signal(current_process);
 
     move_children_to_reaper_process(current_process);
 
     send_child_death_signal(current_process);
+}
+
+/// Sends `SIGKILL` to all processes in the same PID namespace as `current_process`.
+fn kill_other_processes_in_pid_ns(current_process: &Process) {
+    let pid_namespace = current_process.pid_namespace();
+
+    for process in pid_namespace.get_all_processes() {
+        if !process.is_init_process() {
+            process.enqueue_signal(KernelSignal::new(SIGKILL));
+        }
+    }
 }
 
 /// Sends parent-death signals to the children.
@@ -50,7 +66,7 @@ fn find_reaper_process(current_process: &Process) -> Option<Arc<Process>> {
     let mut parent = current_process.parent().lock().process();
 
     while let Some(process) = parent.upgrade() {
-        if is_init_process(&process) {
+        if process.is_init_process() {
             return Some(process);
         }
 
@@ -80,7 +96,7 @@ fn move_process_children(
     // Take the lock first to avoid the race when the `reaper_process` is exiting concurrently.
     let mut reaper_process_children = reaper_process.children().lock();
 
-    let is_init = is_init_process(&reaper_process);
+    let is_init = reaper_process.is_init_process();
     let is_zombie = reaper_process.status().is_zombie();
     if !is_init && is_zombie {
         return Err(());
@@ -88,7 +104,12 @@ fn move_process_children(
 
     for (_, child_process) in current_process.children().lock().extract_if(|_, _| true) {
         let mut parent = child_process.parent.lock();
-        reaper_process_children.insert(child_process.pid(), child_process.clone());
+        reaper_process_children.insert(
+            child_process
+                .pid_in_ns(reaper_process.pid_namespace())
+                .unwrap(),
+            child_process.clone(),
+        );
         parent.set_process(reaper_process);
     }
     Ok(())
@@ -96,7 +117,7 @@ fn move_process_children(
 
 /// Moves the children to a reaper process.
 fn move_children_to_reaper_process(current_process: &Process) {
-    if is_init_process(current_process) {
+    if current_process.is_init_process() {
         return;
     }
 
@@ -106,7 +127,10 @@ fn move_children_to_reaper_process(current_process: &Process) {
         }
     }
 
-    let Some(init_process) = get_init_process() else {
+    let Some(init_process) = current_process
+        .pid_namespace()
+        .get_process(INIT_PROCESS_PID)
+    else {
         return;
     };
 
@@ -123,15 +147,4 @@ fn send_child_death_signal(current_process: &Process) {
         parent.enqueue_signal(signal);
     };
     parent.children_wait_queue().wake_all();
-}
-
-const INIT_PROCESS_PID: Pid = 1;
-
-/// Gets the init process
-fn get_init_process() -> Option<Arc<Process>> {
-    process_table::get_process(INIT_PROCESS_PID)
-}
-
-fn is_init_process(process: &Process) -> bool {
-    process.pid() == INIT_PROCESS_PID
 }

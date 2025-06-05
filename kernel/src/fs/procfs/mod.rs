@@ -21,10 +21,7 @@ use crate::{
         utils::{DirEntryVecExt, FileSystem, FsFlags, Inode, SuperBlock, NAME_MAX},
     },
     prelude::*,
-    process::{
-        process_table::{self, PidEvent},
-        Pid,
-    },
+    process::{Pid, PidNamespace},
 };
 
 mod cpuinfo;
@@ -63,10 +60,10 @@ pub struct ProcFS {
 }
 
 impl ProcFS {
-    pub fn new() -> Arc<Self> {
+    pub fn new(pid_ns: Arc<PidNamespace>) -> Arc<Self> {
         Arc::new_cyclic(|weak_fs| Self {
             sb: SuperBlock::new(PROC_MAGIC, BLOCK_SIZE, NAME_MAX),
-            root: RootDirOps::new_inode(weak_fs.clone()),
+            root: RootDirOps::new_inode(weak_fs.clone(), pid_ns),
             inode_allocator: AtomicU64::new(PROC_ROOT_INO + 1),
         })
     }
@@ -95,26 +92,22 @@ impl FileSystem for ProcFS {
 }
 
 /// Represents the inode at `/proc`.
-struct RootDirOps;
-
-impl RootDirOps {
-    pub fn new_inode(fs: Weak<ProcFS>) -> Arc<dyn Inode> {
-        let root_inode = ProcDirBuilder::new(Self)
-            .fs(fs)
-            .ino(PROC_ROOT_INO)
-            .build()
-            .unwrap();
-        let weak_ptr = Arc::downgrade(&root_inode);
-        process_table::register_observer(weak_ptr);
-        root_inode
-    }
+struct RootDirOps {
+    /// The PID namespace to which the process that mounts the procfs belongs.
+    pid_ns: Arc<PidNamespace>,
 }
 
-impl Observer<PidEvent> for ProcDir<RootDirOps> {
-    fn on_events(&self, events: &PidEvent) {
-        let PidEvent::Exit(pid) = events;
-        let mut cached_children = self.cached_children().write();
-        cached_children.remove_entry_by_name(&pid.to_string());
+impl RootDirOps {
+    pub fn new_inode(fs: Weak<ProcFS>, pid_ns: Arc<PidNamespace>) -> Arc<dyn Inode> {
+        let root_inode = ProcDirBuilder::new(Self {
+            pid_ns: pid_ns.clone(),
+        })
+        .fs(fs)
+        .ino(PROC_ROOT_INO)
+        .build()
+        .unwrap();
+
+        root_inode
     }
 }
 
@@ -131,13 +124,12 @@ impl DirOps for RootDirOps {
         } else if name == "meminfo" {
             MemInfoFileOps::new_inode(this_ptr.clone())
         } else if name == "loadavg" {
-            LoadAvgFileOps::new_inode(this_ptr.clone())
+            LoadAvgFileOps::new_inode(self.pid_ns.clone(), this_ptr.clone())
         } else if name == "cpuinfo" {
             CpuInfoFileOps::new_inode(this_ptr.clone())
         } else if let Ok(pid) = name.parse::<Pid>() {
-            let process_ref =
-                process_table::get_process(pid).ok_or_else(|| Error::new(Errno::ENOENT))?;
-            PidDirOps::new_inode(process_ref, this_ptr.clone())
+            PidDirOps::new_inode(pid, self.pid_ns.clone(), this_ptr.clone())
+                .ok_or_else(|| Error::new(Errno::ENOENT))?
         } else {
             return_errno!(Errno::ENOENT);
         };
@@ -160,15 +152,19 @@ impl DirOps for RootDirOps {
         });
         cached_children
             .put_entry_if_not_found("meminfo", || MemInfoFileOps::new_inode(this_ptr.clone()));
-        cached_children
-            .put_entry_if_not_found("loadavg", || LoadAvgFileOps::new_inode(this_ptr.clone()));
+        cached_children.put_entry_if_not_found("loadavg", || {
+            LoadAvgFileOps::new_inode(self.pid_ns.clone(), this_ptr.clone())
+        });
         cached_children
             .put_entry_if_not_found("cpuinfo", || CpuInfoFileOps::new_inode(this_ptr.clone()));
-        for process in process_table::process_table_mut().iter() {
-            let pid = process.pid().to_string();
-            cached_children.put_entry_if_not_found(&pid, || {
-                PidDirOps::new_inode(process.clone(), this_ptr.clone())
-            });
+
+        for process in self.pid_ns.get_all_processes() {
+            let pid = process.pid_in_ns(&self.pid_ns).unwrap();
+            let Some(inode) = PidDirOps::new_inode(pid, self.pid_ns.clone(), this_ptr.clone())
+            else {
+                continue;
+            };
+            cached_children.put_entry_if_not_found(&pid.to_string(), || inode);
         }
     }
 }

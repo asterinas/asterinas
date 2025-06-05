@@ -261,7 +261,6 @@ impl<O: Observer<IoEvents> + 'static> PollAdaptor<O> {
 
 impl<O> PollAdaptor<O> {
     /// Gets a reference to the observer.
-    #[expect(dead_code, reason = "Keep this `Arc` to avoid dropping the observer")]
     pub fn observer(&self) -> &Arc<O> {
         &self.observer
     }

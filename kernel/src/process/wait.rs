@@ -9,10 +9,7 @@ use super::{
 };
 use crate::{
     prelude::*,
-    process::{
-        posix_thread::{thread_table, AsPosixThread},
-        process_table,
-    },
+    process::{pid_namespace::MapsOfProcess, posix_thread::AsPosixThread},
 };
 
 // The definition of WaitOptions is from Occlum
@@ -54,8 +51,12 @@ pub fn wait_child_exit(
                     .values()
                     .filter(|child| match child_filter {
                         ProcessFilter::Any => true,
-                        ProcessFilter::WithPid(pid) => child.pid() == pid,
-                        ProcessFilter::WithPgid(pgid) => child.pgid() == pgid,
+                        ProcessFilter::WithPid(pid) => {
+                            child.pid_in_ns(ctx.process.pid_namespace()).unwrap() == pid
+                        }
+                        ProcessFilter::WithPgid(pgid) => {
+                            child.pgid_in_ns(ctx.process.pid_namespace()).unwrap() == pgid
+                        }
                     })
                     .cloned()
                     .collect::<Vec<_>>();
@@ -73,7 +74,7 @@ pub fn wait_child_exit(
                     .find(|child| child.status().is_zombie());
 
                 if let Some(zombie_child) = zombie_child {
-                    let zombie_pid = zombie_child.pid();
+                    let zombie_pid = zombie_child.pid_in_ns(current.pid_namespace()).unwrap();
                     if wait_options.contains(WaitOptions::WNOWAIT) {
                         // does not reap child, directly return
                         return Some(Ok(Some(zombie_child.clone())));
@@ -101,26 +102,30 @@ fn reap_zombie_child(process: &Process, pid: Pid) -> ExitCode {
     let child_process = process.children().lock().remove(&pid).unwrap();
     assert!(child_process.status().is_zombie());
 
+    // Lock order: group_of_process -> task list
+    let mut child_group_mut = child_process.process_group.lock();
+    let mut maps_of_process =
+        MapsOfProcess::get_maps_and_lock_task_list(&child_process, &mut child_group_mut);
+
     for task in child_process.tasks().lock().as_slice() {
-        thread_table::remove_thread(task.as_posix_thread().unwrap().tid());
+        let Some(posix_thread) = task.as_posix_thread() else {
+            continue;
+        };
+
+        // Only the main thread is still in the child_process's tasks.
+        debug_assert_eq!(
+            posix_thread.tid_in_ns(child_process.pid_namespace()),
+            child_process.pid_in_ns(child_process.pid_namespace())
+        );
+
+        maps_of_process.detach_thread();
     }
 
-    // Lock order: session table -> group table -> process table -> group of process
-    // -> group inner -> session inner
-    let mut session_table_mut = process_table::session_table_mut();
-    let mut group_table_mut = process_table::group_table_mut();
-
     // Remove the process from the global table
-    let mut process_table_mut = process_table::process_table_mut();
-    process_table_mut.remove(child_process.pid());
+    maps_of_process.detach_process();
 
     // Remove the process group and the session from global table, if necessary
-    let mut child_group_mut = child_process.process_group.lock();
-    child_process.clear_old_group_and_session(
-        &mut child_group_mut,
-        &mut session_table_mut,
-        &mut group_table_mut,
-    );
+    child_process.clear_old_group_and_session(&mut child_group_mut, &mut maps_of_process);
     *child_group_mut = Weak::new();
 
     child_process.status().exit_code()
