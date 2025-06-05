@@ -226,6 +226,16 @@ impl VmarInner {
         Ok(offset..(offset + size))
     }
 
+    /// Get the shared memory ID for the given address.
+    fn get_shm_id(&mut self, addr: Vaddr) -> Result<u64> {
+        if let Some(vm_mapping) = self.vm_mappings.find_one(&addr) {
+            if let Some(shmid) = vm_mapping.shared_mem_id() {
+                return Ok(shmid);
+            }
+        }
+        return_errno_with_message!(Errno::EINVAL, "No shared memory ID found for the address");
+    }
+
     /// Allocates a free region for mapping.
     ///
     /// If no such region is found, return an error.
@@ -406,6 +416,12 @@ impl Vmar_ {
         )?;
         self.add_rss_delta(rss_delta);
         Ok(())
+    }
+
+    pub fn get_shm_id(&self, addr: usize) -> Result<u64> {
+        let mut inner = self.inner.write();
+        let shmid = inner.get_shm_id(addr)?;
+        Ok(shmid)
     }
 
     // Split and unmap the found mapping if resize smaller.
