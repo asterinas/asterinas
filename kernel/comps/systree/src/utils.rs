@@ -3,7 +3,6 @@
 //! Utility definitions and helper structs for implementing `SysTree` nodes.
 
 use alloc::{collections::BTreeMap, string::String, sync::Arc};
-use core::ops::Deref;
 
 use ostd::sync::RwLock;
 
@@ -31,8 +30,8 @@ impl SysObjFields {
         &self.id
     }
 
-    pub fn name(&self) -> &str {
-        self.name.deref()
+    pub fn name(&self) -> &SysStr {
+        &self.name
     }
 }
 
@@ -54,7 +53,7 @@ impl SysNormalNodeFields {
         self.base.id()
     }
 
-    pub fn name(&self) -> &str {
+    pub fn name(&self) -> &SysStr {
         self.base.name()
     }
 
@@ -81,7 +80,7 @@ impl<C: SysObj + ?Sized> SysBranchNodeFields<C> {
         self.base.id()
     }
 
-    pub fn name(&self) -> &str {
+    pub fn name(&self) -> &SysStr {
         self.base.name()
     }
 
@@ -97,7 +96,7 @@ impl<C: SysObj + ?Sized> SysBranchNodeFields<C> {
     pub fn add_child(&self, new_child: Arc<C>) -> Result<()> {
         let mut children = self.children.write();
         let name = new_child.name();
-        if children.contains_key(name.deref()) {
+        if children.contains_key(name) {
             return Err(Error::PermissionDenied);
         }
         children.insert(name.clone(), new_child);
@@ -107,6 +106,29 @@ impl<C: SysObj + ?Sized> SysBranchNodeFields<C> {
     pub fn remove_child(&self, child_name: &str) -> Option<Arc<C>> {
         let mut children = self.children.write();
         children.remove(child_name)
+    }
+
+    pub fn visit_child_with(&self, name: &str, f: &mut dyn FnMut(Option<&Arc<C>>)) {
+        let children_guard = self.children.read();
+        f(children_guard.get(name))
+    }
+
+    pub fn visit_children_with(&self, min_id: u64, f: &mut dyn FnMut(&Arc<C>) -> Option<()>) {
+        let children_guard = self.children.read();
+        for child_arc in children_guard.values() {
+            if child_arc.id().as_u64() < min_id {
+                continue;
+            }
+
+            if f(child_arc).is_none() {
+                break;
+            }
+        }
+    }
+
+    pub fn child(&self, name: &str) -> Option<Arc<C>> {
+        let children = self.children.read();
+        children.get(name).cloned()
     }
 }
 
@@ -128,7 +150,7 @@ impl SymlinkNodeFields {
         self.base.id()
     }
 
-    pub fn name(&self) -> &str {
+    pub fn name(&self) -> &SysStr {
         self.base.name()
     }
 

@@ -6,22 +6,24 @@ use alloc::{
     sync::{Arc, Weak},
     vec::Vec,
 };
-use core::{any::Any, fmt::Debug};
+use core::fmt::Debug;
 
+use inherit_methods_macro::inherit_methods;
 use ostd::{
     mm::{FallibleVmRead, FallibleVmWrite, VmReader, VmWriter},
     prelude::ktest,
 };
 
 use super::{
-    Error, Result, SysAttrFlags, SysAttrSet, SysAttrSetBuilder, SysBranchNode, SysBranchNodeFields,
-    SysNode, SysNodeId, SysNodeType, SysObj, SysStr, SysSymlink, SysTree,
+    impl_cast_methods_for_branch, impl_cast_methods_for_symlink, Error, Result, SysAttrFlags,
+    SysAttrSet, SysAttrSetBuilder, SysBranchNode, SysBranchNodeFields, SysNode, SysNodeId,
+    SysNodeType, SysObj, SysStr, SysSymlink, SysTree,
 };
 
 #[derive(Debug)]
 struct DeviceNode {
     fields: SysBranchNodeFields<dyn SysObj>,
-    self_ref: Weak<Self>,
+    weak_self: Weak<Self>,
 }
 
 impl DeviceNode {
@@ -41,38 +43,20 @@ impl DeviceNode {
 
         Arc::new_cyclic(|weak_self| DeviceNode {
             fields,
-            self_ref: weak_self.clone(),
+            weak_self: weak_self.clone(),
         })
     }
 }
 
 impl SysObj for DeviceNode {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn arc_as_node(&self) -> Option<Arc<dyn SysNode>> {
-        self.self_ref
-            .upgrade()
-            .map(|arc_self| arc_self as Arc<dyn SysNode>)
-    }
-
-    fn arc_as_branch(&self) -> Option<Arc<dyn SysBranchNode>> {
-        self.self_ref
-            .upgrade()
-            .map(|arc_self| arc_self as Arc<dyn SysBranchNode>)
-    }
+    impl_cast_methods_for_branch!();
 
     fn id(&self) -> &SysNodeId {
         self.fields.id()
     }
 
-    fn type_(&self) -> SysNodeType {
-        SysNodeType::Branch
-    }
-
-    fn name(&self) -> SysStr {
-        self.fields.name().to_string().into()
+    fn name(&self) -> &SysStr {
+        self.fields.name()
     }
 }
 
@@ -129,45 +113,13 @@ impl SysNode for DeviceNode {
     }
 }
 
+#[inherit_methods(from = "self.fields")]
 impl SysBranchNode for DeviceNode {
-    fn visit_child_with(&self, name: &str, f: &mut dyn FnMut(Option<&dyn SysNode>)) {
-        let children = self.fields.children.read();
-        children
-            .get(name)
-            .map(|child| {
-                child
-                    .arc_as_node()
-                    .map(|node| f(Some(node.as_ref())))
-                    .unwrap_or_else(|| f(None))
-            })
-            .unwrap_or_else(|| f(None));
-    }
+    fn visit_child_with(&self, name: &str, f: &mut dyn FnMut(Option<&Arc<dyn SysObj>>));
 
-    fn visit_children_with(&self, min_id: u64, f: &mut dyn FnMut(&Arc<dyn SysObj>) -> Option<()>) {
-        let children = self.fields.children.read();
-        for child in children
-            .values()
-            .filter(|child| child.id().as_u64() >= min_id)
-        {
-            if f(child).is_none() {
-                break;
-            }
-        }
-    }
+    fn visit_children_with(&self, min_id: u64, f: &mut dyn FnMut(&Arc<dyn SysObj>) -> Option<()>);
 
-    fn child(&self, name: &str) -> Option<Arc<dyn SysObj>> {
-        let children = self.fields.children.read();
-        children.get(name).cloned()
-    }
-
-    fn children(&self) -> Vec<Arc<dyn SysObj>> {
-        let children = self.fields.children.read();
-        children.values().cloned().collect()
-    }
-
-    fn count_children(&self) -> usize {
-        self.fields.children.read().len()
-    }
+    fn child(&self, name: &str) -> Option<Arc<dyn SysObj>>;
 }
 
 #[derive(Debug)]
@@ -175,7 +127,7 @@ struct SymlinkNode {
     id: SysNodeId,
     name: SysStr,
     target: String,
-    self_ref: Weak<Self>,
+    weak_self: Weak<Self>,
 }
 
 impl SymlinkNode {
@@ -184,32 +136,20 @@ impl SymlinkNode {
             id: SysNodeId::new(),
             name: name.to_string().into(),
             target: target.to_string(),
-            self_ref: weak_self.clone(),
+            weak_self: weak_self.clone(),
         })
     }
 }
 
 impl SysObj for SymlinkNode {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn arc_as_symlink(&self) -> Option<Arc<dyn SysSymlink>> {
-        self.self_ref
-            .upgrade()
-            .map(|arc_self| arc_self as Arc<dyn SysSymlink>)
-    }
+    impl_cast_methods_for_symlink!();
 
     fn id(&self) -> &SysNodeId {
         &self.id
     }
 
-    fn type_(&self) -> SysNodeType {
-        SysNodeType::Symlink
-    }
-
-    fn name(&self) -> SysStr {
-        self.name.clone()
+    fn name(&self) -> &SysStr {
+        &self.name
     }
 }
 
@@ -230,7 +170,7 @@ fn systree_singleton() {
     // Check if root node exists
     assert!(root.is_root());
     assert_eq!(root.name(), "");
-    assert_eq!(root.type_(), SysNodeType::Leaf);
+    assert_eq!(root.type_(), SysNodeType::Branch);
 }
 
 #[ktest]
@@ -309,7 +249,7 @@ fn symlinks() {
 
     // Verify symlink was added correctly
     let symlink_obj = device.child("device_link").unwrap();
-    let symlink_node = symlink_obj.arc_as_symlink().unwrap();
+    let symlink_node = symlink_obj.cast_to_symlink().unwrap();
     assert_eq!(symlink_node.target_path(), "/sys/devices/device");
 }
 
