@@ -51,6 +51,7 @@ pub enum BaseCrateType {
     /// The base crate is for testing the target crate.
     Test,
     /// The base crate is for other actions using Cargo.
+    #[expect(unused)]
     Other,
 }
 
