@@ -1,62 +1,27 @@
 # SPDX-License-Identifier: MPL-2.0
 
-FROM ubuntu:22.04 AS build-base
+FROM ubuntu:25.04 AS build-base
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-RUN apt update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     ca-certificates \
     git \
-    python3-pip \
     python-is-python3 \
     wget
-
-RUN pip3 install yq tomli
-
-#= Build QEMU =================================================================
-
-FROM build-base AS build-qemu
-
-RUN apt update && apt-get install -y --no-install-recommends \
-    libgcrypt-dev   `# optional build dependency` \
-    libglib2.0-dev  `# build dependency` \
-    libpixman-1-dev `# build dependency` \
-    libusb-dev      `# optional build dependency` \
-    meson \
-    ninja-build
-RUN apt clean && rm -rf /var/lib/apt/lists/*
-
-FROM build-qemu AS qemu
-
-# Fetch and install QEMU from the official source
-#
-# The QEMU version in the Ubuntu 22.04 repository is 6.*, which has a bug to cause OVMF debug to fail.
-# The libslirp dependency is for QEMU's network backend.
-WORKDIR /root
-
-RUN wget -O qemu.tar.xz https://download.qemu.org/qemu-9.1.0.tar.xz \
-    && mkdir /root/qemu \
-    && tar xf qemu.tar.xz --strip-components=1 -C /root/qemu \
-    && rm qemu.tar.xz
-WORKDIR /root/qemu
-RUN ./configure --target-list=x86_64-softmmu --prefix=/usr/local/qemu --enable-slirp \
-    && make -j \
-    && make install
-WORKDIR /root
-RUN rm -rf /root/qemu
 
 #= Build OVMF =================================================================
 
 FROM build-base AS build-ovmf
 
-RUN apt update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     bison \
     flex \
     iasl \
     nasm \
     uuid-dev
-RUN apt clean && rm -rf /var/lib/apt/lists/*
+RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 RUN git --version
 
 FROM build-ovmf AS ovmf
@@ -74,7 +39,7 @@ RUN /bin/bash -c "source ./edksetup.sh \
 
 FROM build-base AS build-grub
 
-RUN apt update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     autoconf \
     automake \
     autopoint \
@@ -84,7 +49,7 @@ RUN apt update && apt-get install -y --no-install-recommends \
     gettext \
     libfreetype6-dev \
     pkg-config
-RUN apt clean && rm -rf /var/lib/apt/lists/*
+RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 
 FROM build-grub AS grub
 
@@ -123,8 +88,7 @@ RUN rm -rf /root/grub
 FROM build-base AS rust
 
 # Install all OSDK dependent packages
-RUN apt update \
-    && apt install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
     gdb \
@@ -132,9 +96,10 @@ RUN apt update \
     grub2-common \
     libpixman-1-dev     `# running dependency for QEMU` \
     mtools              `# used by grub-mkrescue` \
-    xorriso \
-    && apt clean \
-    && rm -rf /var/lib/apt/lists/*
+    qemu-system-riscv \
+    qemu-system-x86 \
+    xorriso
+RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install Rust with both nightly and stable
 ENV PATH="/root/.cargo/bin:${PATH}"
@@ -151,11 +116,6 @@ RUN cargo install \
     cargo-binutils \
     mdbook \
     typos-cli
-
-# Install QEMU built from the previous stages
-COPY --from=qemu /usr/local/qemu /usr/local/qemu
-ENV PATH="/usr/local/qemu/bin:${PATH}"
-ENV LD_LIBRARY_PATH="/usr/local/qemu/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH}"
 
 # Install OVMF built from the previous stages
 COPY --from=ovmf /root/edk2/Build/OvmfX64/DEBUG_GCC5/FV/ /root/ovmf/debug
