@@ -191,7 +191,7 @@ impl SysFsInode {
             match child_type {
                 SysNodeType::Branch => {
                     let child_branch = child_sysnode
-                        .arc_as_branch()
+                        .cast_to_branch()
                         .ok_or(Error::new(Errno::EIO))?;
                     let inode = Self::new_branch_dir(
                         self.systree,
@@ -202,7 +202,7 @@ impl SysFsInode {
                 }
                 SysNodeType::Leaf => {
                     let child_leaf_node =
-                        child_sysnode.arc_as_node().ok_or(Error::new(Errno::EIO))?;
+                        child_sysnode.cast_to_node().ok_or(Error::new(Errno::EIO))?;
                     let inode = Self::new_leaf_dir(
                         self.systree,
                         InnerNode::Leaf(child_leaf_node),
@@ -212,7 +212,7 @@ impl SysFsInode {
                 }
                 SysNodeType::Symlink => {
                     let child_symlink = child_sysnode
-                        .arc_as_symlink()
+                        .cast_to_symlink()
                         .ok_or(Error::new(Errno::EIO))?;
                     let inode = Self::new_symlink(
                         self.systree,
@@ -308,7 +308,10 @@ impl Inode for SysFsInode {
     }
 
     fn metadata(&self) -> Metadata {
-        self.metadata
+        let mut metadata = self.metadata;
+        metadata.mode = *self.mode.read();
+
+        metadata
     }
 
     fn ino(&self) -> u64 {
@@ -373,29 +376,38 @@ impl Inode for SysFsInode {
         self.read_direct_at(offset, buf)
     }
 
-    fn read_direct_at(&self, _offset: usize, buf: &mut VmWriter) -> Result<usize> {
-        // TODO: it is unclear whether we should simply ignore the offset
-        // or report errors if it is non-zero.
-
+    fn read_direct_at(&self, offset: usize, buf: &mut VmWriter) -> Result<usize> {
         let InnerNode::Attr(attr, leaf) = &self.inner_node else {
             return Err(Error::new(Errno::EINVAL));
         };
 
-        // TODO: check read permission
-        Ok(leaf.read_attr(attr.name(), buf)?)
+        let len = if offset == 0 {
+            leaf.read_attr(attr.name(), buf)?
+        } else {
+            // The `read_attr_at` method is more general than `read_attr`,
+            // but it could be less efficient. So we only use the more general form when necessary.
+            leaf.read_attr_at(attr.name(), offset, buf)?
+        };
+
+        Ok(len)
     }
 
     fn write_at(&self, offset: usize, buf: &mut VmReader) -> Result<usize> {
         self.write_direct_at(offset, buf)
     }
 
-    fn write_direct_at(&self, _offset: usize, buf: &mut VmReader) -> Result<usize> {
+    fn write_direct_at(&self, offset: usize, buf: &mut VmReader) -> Result<usize> {
         let InnerNode::Attr(attr, leaf) = &self.inner_node else {
             return Err(Error::new(Errno::EINVAL));
         };
 
-        // TODO: check write permission
-        Ok(leaf.write_attr(attr.name(), buf)?)
+        let len = if offset == 0 {
+            leaf.write_attr(attr.name(), buf)?
+        } else {
+            leaf.write_attr_at(attr.name(), offset, buf)?
+        };
+
+        Ok(len)
     }
 
     fn create(&self, _name: &str, _type_: InodeType, _mode: InodeMode) -> Result<Arc<dyn Inode>> {
@@ -481,12 +493,14 @@ impl Inode for SysFsInode {
         let mut count = 0;
         let mut last_ino = start_ino;
 
-        let mut iter = self.new_dentry_iter(start_ino + 1);
+        let dentries = {
+            let mut dentries: Vec<_> = self.new_dentry_iter(start_ino).collect();
+            dentries.sort_by_key(|d| d.ino);
+            dentries
+        };
 
-        while let Some(dentry) = iter.next() {
-            // The offset reported back to the caller should be the absolute position
-            let next_offset = (dentry.ino + 1) as usize;
-            let res = visitor.visit(&dentry.name, dentry.ino, dentry.type_, next_offset);
+        for dentry in dentries {
+            let res = visitor.visit(&dentry.name, dentry.ino, dentry.type_, dentry.ino as usize);
 
             if res.is_err() {
                 if count == 0 {
@@ -500,11 +514,11 @@ impl Inode for SysFsInode {
         }
 
         if count == 0 {
-            Ok(0)
-        } else {
-            // Return absolute offset instead of an increment
-            Ok((last_ino + 1) as usize)
+            return Ok(0);
         }
+
+        let next_ino = last_ino + 1;
+        Ok((next_ino - start_ino) as usize)
     }
 
     fn read_link(&self) -> Result<String> {
@@ -632,7 +646,7 @@ impl Iterator for NodeDentryIter {
                 };
                 return Some(Dentry {
                     ino: obj_ino,
-                    name: obj.name(),
+                    name: obj.name().clone(),
                     type_,
                 });
             }
