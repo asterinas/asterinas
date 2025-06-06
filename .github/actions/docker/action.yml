@@ -1,0 +1,69 @@
+name: 'Setup and Check'
+description: 'Preparatory steps before building Docker image'
+inputs:
+  username:
+    description: 'The username of the Docker Hub account'
+    required: true
+  token:
+    description: 'The token of the Docker Hub account'
+    required: true
+  image_name:
+    description: 'The name of the Docker image'
+    required: true
+outputs:
+  image_version:
+    description: 'The version of the Docker image'
+    value: ${{ steps.fetch-version.outputs.image_version }}
+  rust_version:
+    description: 'The version of the Rust toolchain'
+    value: ${{ steps.fetch-version.outputs.rust_version }}
+  is_existed:
+    description: 'Whether the Docker image exists'
+    value: ${{ steps.check-image.outputs.is_existed }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+      with:
+        driver: docker
+
+    - name: Login to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ inputs.username }}
+        password: ${{ inputs.token }}
+
+    - name: Fetch versions
+      id: fetch-version
+      shell: bash
+      run: |
+        IMAGE_VERSION=$(cat DOCKER_IMAGE_VERSION)
+        RUST_VERSION=$(grep -m1 -o 'nightly-[0-9]\+-[0-9]\+-[0-9]\+' rust-toolchain.toml)
+        echo "image_version=$IMAGE_VERSION" >> "$GITHUB_OUTPUT"
+        echo "rust_version=$RUST_VERSION" >> "$GITHUB_OUTPUT"
+
+    - name: Check if Docker image exists
+      id: check-image
+      shell: bash
+      run: |
+        if [ "${{ inputs.image_name }}" == "osdk" ]; then
+            DOCKER_IMAGE=asterinas/osdk:${{ steps.fetch-version.outputs.image_version }}
+        elif [ "${{ inputs.image_name }}" == "osdk-tdx" ]; then
+            DOCKER_IMAGE=asterinas/osdk:${{ steps.fetch-version.outputs.image_version }}-tdx
+        elif [ "${{ inputs.image_name }}" == "nix" ]; then
+            DOCKER_IMAGE=asterinas/asterinas:${{ steps.fetch-version.outputs.image_version }}-nix
+        elif [ "${{ inputs.image_name }}" == "asterinas" ]; then
+            DOCKER_IMAGE=asterinas/asterinas:${{ steps.fetch-version.outputs.image_version }}
+        elif [ "${{ inputs.image_name }}" == "asterinas-tdx" ]; then
+            DOCKER_IMAGE=asterinas/asterinas:${{ steps.fetch-version.outputs.image_version }}-tdx
+        else
+            echo "Unknown image name: ${{ inputs.image_name }}"
+            exit 1
+        fi
+        if docker manifest inspect ${DOCKER_IMAGE} > /dev/null 2>&1; then
+            echo "is_existed=true" >> $GITHUB_OUTPUT
+        else
+            echo "is_existed=false" >> $GITHUB_OUTPUT
+        fi
