@@ -3,7 +3,10 @@
 //! CPU context & state control and CPU local memory.
 
 pub mod context;
+pub mod extension;
 pub mod local;
+
+pub use extension::{has_extensions, IsaExtensions};
 
 /// Halts the CPU.
 ///
