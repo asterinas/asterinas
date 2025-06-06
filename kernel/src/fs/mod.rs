@@ -61,12 +61,12 @@ pub fn lazy_init() {
     }
     if let Some(registrars) = FILESYSTEM_REGISTRARS.get() {
         let locked = registrars.lock();
-        early_print!("[DEBUG] Registered filesystems:\n");
+        println!("[kernel] Registered filesystems:");
         for (name, _) in locked.iter() {
-            early_print!("  - {}\n", name);
+            println!("  - {}", name);
         }
     } else {
-        early_print!("[DEBUG] No filesystems registered yet\n");
+        println!("[kernel] No filesystems registered yet");
     }
     if let Ok(block_device_exfat) = start_block_device(exfat_device_name) {
         let registrar_opt = FILESYSTEM_REGISTRARS
@@ -104,6 +104,12 @@ pub fn register_fs_registrar(name: &'static str, registrar: Arc<dyn FileSystemRe
         .call_once(|| Mutex::new(BTreeMap::new()))
         .lock()
         .insert(name, registrar);
+}
+
+pub fn get_fs_registrar(name: &str) -> Option<Arc<dyn FileSystemRegistrar>> {
+    FILESYSTEM_REGISTRARS
+        .get()
+        .and_then(|registrars| registrars.lock().get(name).cloned())
 }
 
 #[macro_export]
