@@ -37,9 +37,6 @@ pub struct SysAttr {
     name: SysStr,
     /// Flags defining the behavior and permissions of the attribute.
     flags: SysAttrFlags,
-    // Potentially add read/write handler functions or trait objects later
-    // read_handler: fn(...) -> Result<usize>,
-    // write_handler: fn(...) -> Result<usize>,
 }
 
 impl SysAttr {
