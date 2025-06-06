@@ -4,6 +4,7 @@
 
 mod dyn_cap;
 mod interval_set;
+mod oom;
 mod static_cap;
 pub mod vm_mapping;
 
@@ -369,9 +370,14 @@ impl Vmar_ {
         if let Some(vm_mapping) = inner.vm_mappings.find_one(&address) {
             debug_assert!(vm_mapping.range().contains(&address));
 
-            let rss_increment = vm_mapping.handle_page_fault(&self.vm_space, page_fault_info)?;
-            self.add_rss_counter(vm_mapping.rss_type(), rss_increment as isize);
-            return Ok(());
+            return match vm_mapping.handle_page_fault(&self.vm_space, page_fault_info) {
+                Ok(rss_increment) => {
+                    self.add_rss_counter(vm_mapping.rss_type(), rss_increment as isize);
+                    Ok(())
+                }
+                Err(e) if e.error() == Errno::ENOMEM => oom::out_of_memory(),
+                Err(e) => Err(e),
+            };
         }
 
         return_errno_with_message!(Errno::EACCES, "page fault addr is not in current vmar");
@@ -503,7 +509,7 @@ impl Vmar_ {
         Ok(new_vmar_)
     }
 
-    pub fn get_rss_counter(&self, rss_type: RssType) -> usize {
+    fn get_rss_counter(&self, rss_type: RssType) -> usize {
         self.rss_counters[rss_type as usize].get()
     }
 
