@@ -2,18 +2,15 @@
 
 use alloc::{sync::Arc, vec::Vec};
 
-use ostd::{
-    bus::{
-        mmio::{
-            bus::{MmioDevice, MmioDriver},
-            common_device::MmioCommonDevice,
-        },
-        BusProbeError,
-    },
-    sync::SpinLock,
-};
+use ostd::{bus::BusProbeError, sync::SpinLock};
 
-use super::device::VirtioMmioTransport;
+use super::{
+    bus::{
+        bus::{MmioDevice, MmioDriver},
+        common_device::MmioCommonDevice,
+    },
+    device::VirtioMmioTransport,
+};
 
 #[derive(Debug)]
 pub struct VirtioMmioDriver {

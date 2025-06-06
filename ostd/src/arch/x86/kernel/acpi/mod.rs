@@ -5,9 +5,8 @@ pub mod remapping;
 
 use core::ptr::NonNull;
 
-use acpi::{platform::PlatformInfo, rsdp::Rsdp, AcpiHandler, AcpiTables};
-use log::{info, warn};
-use spin::Once;
+use acpi::{rsdp::Rsdp, AcpiHandler, AcpiTables};
+use log::warn;
 
 use crate::{
     boot::{self, BootloaderAcpiArg},
@@ -65,32 +64,4 @@ pub(crate) fn get_acpi_tables() -> Option<AcpiTables<AcpiMemoryHandler>> {
     };
 
     Some(acpi_tables)
-}
-
-static PLATFORM_INFO: Once<PlatformInfo<'static, alloc::alloc::Global>> = Once::new();
-
-/// Initializes the platform information by parsing ACPI tables in to the heap.
-///
-/// Must be called after the heap is initialized.
-pub(crate) fn init() {
-    let Some(acpi_tables) = get_acpi_tables() else {
-        return;
-    };
-
-    for header in acpi_tables.headers() {
-        info!("ACPI found signature:{:?}", header.signature);
-    }
-
-    let platform_info = PlatformInfo::new(&acpi_tables).unwrap();
-    PLATFORM_INFO.call_once(|| platform_info);
-
-    info!("ACPI initialization complete");
-}
-
-/// Gets the platform information.
-///
-/// Must be called after [`init()`]. Otherwise, there may not be any platform
-/// information even if the system has ACPI tables.
-pub(crate) fn get_platform_info() -> Option<&'static PlatformInfo<'static, alloc::alloc::Global>> {
-    PLATFORM_INFO.get()
 }

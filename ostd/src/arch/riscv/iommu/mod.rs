@@ -6,7 +6,7 @@ use crate::mm::{dma::Daddr, Paddr};
 
 /// An enumeration representing possible errors related to IOMMU.
 #[derive(Debug)]
-pub enum IommuError {
+pub(crate) enum IommuError {
     /// No IOMMU is available.
     NoIommu,
 }
