@@ -5,18 +5,18 @@
 //!
 //! Typically, a segment will consist of three parts:
 //!
-//! 1. Header: The headers of all segments are of type [`CMessageSegmentHeader`],
-//! which indicate the type and total length of the segment.
+//! 1. Header: The headers of all segments are of type [`CMegSegHdr`],
+//!    which indicate the type and total length of the segment.
 //!
 //! 2. Body: The body is the main component of a segment.
-//! Each segment will have one and only one body.
-//! The body type is defined by the `type_` field of the header.
+//!    Each segment will have one and only one body.
+//!    The body type is defined by the `type_` field of the header.
 //!
 //! 3. Attributes: Attributes are optional.
-//! A segment can have zero or multiple attributes.
-//! Attributes belong to different classes,
-//! with the class defined by the `type_` field of the header.
-//! The total number of attributes is controlled by the `len` field of the header.
+//!    A segment can have zero or multiple attributes.
+//!    Attributes belong to different classes,
+//!    with the class defined by the `type_` field of the header.
+//!    The total number of attributes is controlled by the `len` field of the header.
 //!
 //! Note that all headers, bodies, and attributes require
 //! their starting address in memory to be aligned to [`super::NLMSG_ALIGN`]

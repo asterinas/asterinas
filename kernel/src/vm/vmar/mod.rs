@@ -673,7 +673,7 @@ impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
     }
 }
 
-impl<'a, R1, R2> VmarMapOptions<'a, R1, R2>
+impl<R1, R2> VmarMapOptions<'_, R1, R2>
 where
     Vmo<R2>: VmoRightsOp,
 {

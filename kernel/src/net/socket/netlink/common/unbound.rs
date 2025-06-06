@@ -59,7 +59,7 @@ impl<P: SupportedNetlinkProtocol> datagram_common::Unbound for UnboundNetlink<P>
 
         let bound_handle = {
             let endpoint = {
-                let mut endpoint = endpoint.clone();
+                let mut endpoint = *endpoint;
                 endpoint.add_groups(self.groups);
                 endpoint
             };

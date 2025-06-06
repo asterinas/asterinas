@@ -247,8 +247,7 @@ impl Xattr {
         }
 
         value_writer.write_fallible(
-            &mut self
-                .blocks_buf
+            self.blocks_buf
                 .reader()
                 .to_fallible()
                 .skip(entry.value_offset as usize)

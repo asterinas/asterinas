@@ -110,7 +110,7 @@ impl SysNode for MockLeafNode {
         let value = data.get(name).ok_or(SysTreeError::AttributeError)?; // Should exist if in attrs
         let bytes = value.as_bytes();
         writer
-            .write_fallible(&mut (&bytes[..]).into())
+            .write_fallible(&mut bytes.into())
             .map_err(|_| SysTreeError::AttributeError)
     }
 
@@ -214,7 +214,7 @@ impl SysNode for MockBranchNode {
         };
         let bytes = value.as_bytes();
         writer
-            .write_fallible(&mut (&bytes[..]).into())
+            .write_fallible(&mut bytes.into())
             .map_err(|_| SysTreeError::AttributeError)
     }
 
@@ -329,7 +329,7 @@ fn create_mock_systree_instance() -> &'static Arc<SysTree> {
     let symlink1 = MockSymlinkNode::new("link1", "../branch1/leaf1");
 
     // Build hierarchy - ignore Result since this is test setup
-    let _ = branch1.add_child(leaf1.clone() as Arc<dyn SysObj>);
+    branch1.add_child(leaf1.clone() as Arc<dyn SysObj>);
     let _ = root.add_child(branch1.clone() as Arc<dyn SysObj>);
     let _ = root.add_child(leaf2.clone() as Arc<dyn SysObj>);
     let _ = root.add_child(symlink1.clone() as Arc<dyn SysObj>);

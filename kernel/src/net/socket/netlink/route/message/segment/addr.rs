@@ -105,6 +105,7 @@ bitflags! {
 /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/rtnetlink.h#L320>.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, TryFromInt)]
+#[expect(clippy::upper_case_acronyms)]
 pub enum RtScope {
     UNIVERSE = 0,
     // User defined values

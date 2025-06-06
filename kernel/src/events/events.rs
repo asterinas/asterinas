@@ -39,6 +39,6 @@ impl<E: Events> EventsFilter<E> for () {
 
 impl<E: Events, F: EventsFilter<E>> EventsFilter<E> for Option<F> {
     fn filter(&self, events: &E) -> bool {
-        self.as_ref().map_or(true, |f| f.filter(events))
+        self.as_ref().is_none_or(|f| f.filter(events))
     }
 }

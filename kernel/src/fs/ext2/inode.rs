@@ -2133,10 +2133,10 @@ impl TryFrom<RawInode> for InodeDesc {
         Ok(Self {
             type_: inode_type,
             perm: FilePerm::from_raw_mode(inode.mode)?,
-            uid: (inode.os_dependent_2.uid_high as u32) << 16 | inode.uid as u32,
-            gid: (inode.os_dependent_2.gid_high as u32) << 16 | inode.gid as u32,
+            uid: ((inode.os_dependent_2.uid_high as u32) << 16) | inode.uid as u32,
+            gid: ((inode.os_dependent_2.gid_high as u32) << 16) | inode.gid as u32,
             size: if inode_type == InodeType::File {
-                (inode.size_high as usize) << 32 | inode.size_low as usize
+                ((inode.size_high as usize) << 32) | inode.size_low as usize
             } else {
                 inode.size_low as usize
             },

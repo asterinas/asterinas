@@ -143,7 +143,6 @@ fn committed_pages_if_continuous(flags: VmoFlags, size: usize) -> Result<XArray<
             cursor.store(frame);
             cursor.next();
         }
-        drop(cursor);
         drop(locked_pages);
         Ok(committed_pages)
     } else {

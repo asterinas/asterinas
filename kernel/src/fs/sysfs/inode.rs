@@ -198,7 +198,7 @@ impl SysFsInode {
                         InnerNode::Branch(child_branch),
                         Arc::downgrade(&self.this()),
                     );
-                    return Ok(inode);
+                    Ok(inode)
                 }
                 SysNodeType::Leaf => {
                     let child_leaf_node =
@@ -208,7 +208,7 @@ impl SysFsInode {
                         InnerNode::Leaf(child_leaf_node),
                         Arc::downgrade(&self.this()),
                     );
-                    return Ok(inode);
+                    Ok(inode)
                 }
                 SysNodeType::Symlink => {
                     let child_symlink = child_sysnode
@@ -219,7 +219,7 @@ impl SysFsInode {
                         child_symlink,
                         Arc::downgrade(&self.this()),
                     );
-                    return Ok(inode);
+                    Ok(inode)
                 }
             }
         } else {
@@ -245,7 +245,7 @@ impl SysFsInode {
                 parent_node_arc,
                 Arc::downgrade(&self.this()),
             );
-            return Ok(inode);
+            Ok(inode)
         }
     }
 
@@ -481,9 +481,9 @@ impl Inode for SysFsInode {
         let mut count = 0;
         let mut last_ino = start_ino;
 
-        let mut iter = self.new_dentry_iter(start_ino + 1);
+        let iter = self.new_dentry_iter(start_ino + 1);
 
-        while let Some(dentry) = iter.next() {
+        for dentry in iter {
             // The offset reported back to the caller should be the absolute position
             let next_offset = (dentry.ino + 1) as usize;
             let res = visitor.visit(&dentry.name, dentry.ino, dentry.type_, next_offset);
@@ -657,7 +657,7 @@ impl<'a> ThisAndParentDentryIter<'a> {
     }
 }
 
-impl<'a> Iterator for ThisAndParentDentryIter<'a> {
+impl Iterator for ThisAndParentDentryIter<'_> {
     type Item = Dentry;
 
     fn next(&mut self) -> Option<Dentry> {

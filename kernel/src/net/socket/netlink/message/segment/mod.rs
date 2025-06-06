@@ -89,6 +89,7 @@ pub trait SegmentBody: Sized + Clone + Copy {
 
 #[repr(u16)]
 #[derive(Debug, Clone, Copy, TryFromInt, PartialEq, Eq, PartialOrd, Ord)]
+#[expect(clippy::upper_case_acronyms)]
 pub enum CSegmentType {
     // Standard netlink message types
     NOOP = 1,

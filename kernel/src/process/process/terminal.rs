@@ -108,7 +108,7 @@ impl dyn Terminal {
         let mut session_inner = session.lock();
 
         if let Some(session_terminal) = session_inner.terminal() {
-            if Arc::ptr_eq(&session_terminal, &self) {
+            if Arc::ptr_eq(session_terminal, &self) {
                 return Ok(());
             }
             return_errno_with_message!(
@@ -195,7 +195,7 @@ impl dyn Terminal {
 
         if !session_inner
             .terminal()
-            .is_some_and(|session_terminal| Arc::ptr_eq(session_terminal, &self))
+            .is_some_and(|session_terminal| Arc::ptr_eq(session_terminal, self))
         {
             return_errno_with_message!(
                 Errno::ENOTTY,

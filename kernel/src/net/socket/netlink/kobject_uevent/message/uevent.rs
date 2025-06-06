@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::format;
 use core::{
+    fmt::Display,
     str::FromStr,
     sync::atomic::{AtomicU64, Ordering},
 };
@@ -142,8 +142,8 @@ impl Uevent {
     }
 }
 
-impl ToString for Uevent {
-    fn to_string(&self) -> String {
+impl Display for Uevent {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let mut env_string = {
             let len = self
                 .envs
@@ -160,7 +160,8 @@ impl ToString for Uevent {
             env_string.push('\0');
         }
 
-        format!(
+        write!(
+            f,
             "{}@{}\0ACTION={}\0DEVPATH={}\0SUBSYSTEM={}\0{}SEQNUM={}\0",
             self.action.as_str(),
             self.devpath,

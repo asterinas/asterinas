@@ -459,7 +459,6 @@ impl Vmo_ {
             cursor.next();
         }
 
-        drop(cursor);
         drop(locked_pages);
 
         for page_idx in removed_page_idx {
