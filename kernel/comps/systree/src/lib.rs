@@ -76,6 +76,8 @@ pub enum Error {
     PermissionDenied,
     /// Other internal error
     InternalError(&'static str),
+    /// Arithmetic overflow occurred
+    Overflow,
 }
 
 impl core::fmt::Display for Error {
@@ -88,6 +90,7 @@ impl core::fmt::Display for Error {
             Error::AttributeError => write!(f, "Attribute error"),
             Error::PermissionDenied => write!(f, "Permission denied for operation"),
             Error::InternalError(msg) => write!(f, "Internal error: {}", msg),
+            Error::Overflow => write!(f, "Numerical overflow occurred"),
         }
     }
 }

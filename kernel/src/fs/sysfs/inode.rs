@@ -376,29 +376,38 @@ impl Inode for SysFsInode {
         self.read_direct_at(offset, buf)
     }
 
-    fn read_direct_at(&self, _offset: usize, buf: &mut VmWriter) -> Result<usize> {
-        // TODO: it is unclear whether we should simply ignore the offset
-        // or report errors if it is non-zero.
-
+    fn read_direct_at(&self, offset: usize, buf: &mut VmWriter) -> Result<usize> {
         let InnerNode::Attr(attr, leaf) = &self.inner_node else {
             return Err(Error::new(Errno::EINVAL));
         };
 
-        // TODO: check read permission
-        Ok(leaf.read_attr(attr.name(), buf)?)
+        let len = if offset == 0 {
+            leaf.read_attr(attr.name(), buf)?
+        } else {
+            // The `read_attr_at` method is more general than `read_attr`,
+            // but it could be less efficient. So we only use the more general form when necessary.
+            leaf.read_attr_at(attr.name(), offset, buf)?
+        };
+
+        Ok(len)
     }
 
     fn write_at(&self, offset: usize, buf: &mut VmReader) -> Result<usize> {
         self.write_direct_at(offset, buf)
     }
 
-    fn write_direct_at(&self, _offset: usize, buf: &mut VmReader) -> Result<usize> {
+    fn write_direct_at(&self, offset: usize, buf: &mut VmReader) -> Result<usize> {
         let InnerNode::Attr(attr, leaf) = &self.inner_node else {
             return Err(Error::new(Errno::EINVAL));
         };
 
-        // TODO: check write permission
-        Ok(leaf.write_attr(attr.name(), buf)?)
+        let len = if offset == 0 {
+            leaf.write_attr(attr.name(), buf)?
+        } else {
+            leaf.write_attr_at(attr.name(), offset, buf)?
+        };
+
+        Ok(len)
     }
 
     fn create(&self, _name: &str, _type_: InodeType, _mode: InodeMode) -> Result<Arc<dyn Inode>> {
