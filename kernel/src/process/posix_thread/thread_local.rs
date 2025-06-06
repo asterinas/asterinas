@@ -83,6 +83,10 @@ impl ThreadLocal {
     pub fn sig_stack(&self) -> &RefCell<Option<SigStack>> {
         &self.sig_stack
     }
+
+    pub fn set_file_table(&self, new_table: Option<RwArc<FileTable>>) {
+        *self.file_table.borrow_mut() = new_table;
+    }
 }
 
 /// An immutable, shared reference to the file table in [`ThreadLocal`].

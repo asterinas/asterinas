@@ -198,6 +198,16 @@ impl FileTable {
     fn notify_fd_events(&self, events: &FdEvents) {
         self.subject.notify_observers(events);
     }
+
+    pub fn entries(&self) -> impl Iterator<Item = (FileDesc, &FileTableEntry)> {
+        self.table
+            .idxes_and_items()
+            .map(|(idx, entry)| (idx as FileDesc, entry))
+    }
+
+    pub fn put_entry_at(&mut self, fd: FileDesc, entry: FileTableEntry) {
+        self.table.put_at(fd as usize, entry);
+    }
 }
 
 impl Default for FileTable {
