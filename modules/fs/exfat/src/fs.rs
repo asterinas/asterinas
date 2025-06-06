@@ -456,6 +456,7 @@ pub struct ExfatMountOptions {
     pub(super) time_offset: i32,
     pub(super) zero_size_dir: bool,
 }
+
 #[derive(Default)]
 pub struct ExfatRegistrar;
 

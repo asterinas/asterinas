@@ -29,6 +29,7 @@
 #![register_tool(component_access_control)]
 
 pub use aster_nix;
+pub use aster_exfat;
 
 #[ostd::main]
 pub fn main() {

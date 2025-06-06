@@ -100,7 +100,6 @@ static FILESYSTEM_REGISTRARS: Once<Mutex<BTreeMap<&'static str, Arc<dyn FileSyst
     Once::new();
 
 pub fn register_fs_registrar(name: &'static str, registrar: Arc<dyn FileSystemRegistrar>) {
-    early_print!("register!");
     FILESYSTEM_REGISTRARS
         .call_once(|| Mutex::new(BTreeMap::new()))
         .lock()
@@ -110,26 +109,12 @@ pub fn register_fs_registrar(name: &'static str, registrar: Arc<dyn FileSystemRe
 #[macro_export]
 macro_rules! register_filesystem {
     ($fs_name:expr, $reg_type:ty) => {
-        // Use const for static initialization
-        // #[used]
-        // #[link_section = ".init_array"]
-        // #[ctor::ctor]
-        // static REGISTER: extern "C" fn() = {
-        //     extern "C" fn register() {
-        //         crate::fs::register_fs_registrar($fs_name, Arc::new(<$reg_type>::default()));
-        //     }
-        //     register
-        // };
-
         const _: () = {
             #[allow(non_upper_case_globals)]
             #[ctor::ctor]
-            static REGISTER: extern "C" fn() = {
-                extern "C" fn register() {
-                    crate::fs::register_fs_registrar($fs_name, Arc::new(<$reg_type>::default()));
-                }
-                register
-            };
+            fn __fs_init() {
+                crate::fs::register_fs_registrar($fs_name, Arc::new(<$reg_type>::default()));
+            }
         };
     };
 }
