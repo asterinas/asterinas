@@ -12,6 +12,7 @@ use crate::{
     },
     prelude::*,
     process::signal::sig_mask::SigMask,
+    time::timespec_t,
 };
 
 // See: https://elixir.bootlin.com/linux/v6.11.5/source/fs/eventpoll.c#L2437
@@ -223,6 +224,43 @@ pub fn sys_epoll_pwait(
     }
 
     Ok(SyscallReturn::Return(ready_events.len() as _))
+}
+
+pub fn sys_epoll_pwait2(
+    epfd: FileDesc,
+    events_addr: Vaddr,
+    max_events: i32,
+    timeout_ts: Vaddr,
+    sigmask: Vaddr,
+    ctx: &Context,
+) -> Result<SyscallReturn> {
+    debug!(
+        "epfd = {}, events_addr = 0x{:x}, max_events = {}, timeout_ts = 0x{:x}, sigmask = 0x{:x}",
+        epfd, events_addr, max_events, timeout_ts, sigmask,
+    );
+
+    let timeout_ms: i32 = if timeout_ts == 0 {
+        -1
+    } else {
+        let ts: timespec_t = ctx.user_space().read_val(timeout_ts)?;
+        if ts.sec < 0 || ts.nsec < 0 || ts.nsec >= 1_000_000_000 {
+            return Err(Error::new(Errno::EINVAL));
+        }
+        let sec_ms = ts
+            .sec
+            .checked_mul(1_000)
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "Invalid second"))?;
+        let nsec_ms = (ts.nsec + 999_999) / 1_000_000;
+        let total_ms = sec_ms
+            .checked_add(nsec_ms)
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "Invalid nanosecond"))?;
+        if total_ms > i32::MAX as i64 {
+            return Err(Error::new(Errno::EOVERFLOW));
+        }
+        total_ms as i32
+    };
+
+    sys_epoll_pwait(epfd, events_addr, max_events, timeout_ms, sigmask, 8, ctx)
 }
 
 #[derive(Debug, Clone, Copy, Pod)]

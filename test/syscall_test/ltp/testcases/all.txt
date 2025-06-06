@@ -190,10 +190,10 @@ epoll_wait04
 # epoll_wait06
 epoll_wait07
 # epoll_pwait01
-# epoll_pwait02
+epoll_pwait02
 # epoll_pwait03
-# epoll_pwait04
-# epoll_pwait05
+epoll_pwait04
+epoll_pwait05
 
 # eventfd01
 # eventfd02
