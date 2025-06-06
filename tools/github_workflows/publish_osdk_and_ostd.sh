@@ -50,17 +50,6 @@ do_publish_for() {
     RF="$RUSTFLAGS --check-cfg cfg(ktest)"
 
     if [ -n "$DRY_RUN" ]; then
-        # Temporarily change the crate version to the next patched version.
-        #
-        # `cargo publish --dry-run` requires that 
-        # the crate version is not already published on crates.io,
-        # otherwise, the check will fail.
-        # Therefore, we modify the crate version to ensure it is not published.
-        current_version=$(cat $ASTER_SRC_DIR/VERSION)
-        next_patched_version=$(echo "$current_version" | awk -F. '{printf "%d.%d.%d\n", $1, $2, $3 + 1}')
-        pattern="^version = \"[[:digit:]]\+\.[[:digit:]]\+\.[[:digit:]]\+\"$"
-        sed -i "0,/${pattern}/s/${pattern}/version = \"${next_patched_version}\"/1" Cargo.toml
-        
         # Perform checks
         RUSTFLAGS=$RF cargo publish --dry-run --allow-dirty $ADDITIONAL_ARGS
         RUSTFLAGS=$RF cargo doc $ADDITIONAL_ARGS
