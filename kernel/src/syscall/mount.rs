@@ -164,7 +164,9 @@ fn get_fs(
     let data = user_space.read_cstring(data, MAX_FILENAME_LEN)?;
     let data = data.to_string_lossy();
 
-    let fs_type = fs_type.to_str().unwrap();
+    let fs_type = fs_type
+        .to_str()
+        .map_err(|_| Error::with_message(Errno::ENODEV, "Invalid file system type"))?;
     match fs_type {
         "ext2" => {
             let device = aster_block::get_device(devname.to_str().unwrap()).ok_or(
