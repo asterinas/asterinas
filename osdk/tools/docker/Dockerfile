@@ -98,7 +98,7 @@ WORKDIR /root
 RUN git clone --single-branch -b asterinas/2.12 https://github.com/asterinas/grub.git \
     && git -C grub checkout 0633bc8
 # Fetch and install the Unicode font data for grub.
-RUN wget -O unifont.pcf.gz https://unifoundry.com/pub/unifont/unifont-15.1.04/font-builds/unifont-15.1.04.pcf.gz \
+RUN wget -O unifont.pcf.gz https://ftp.gnu.org/gnu/unifont/unifont-15.1.04/unifont-15.1.04.pcf.gz \
     && mkdir -pv /usr/share/fonts/unifont \
     && gunzip -c unifont.pcf.gz > /usr/share/fonts/unifont/unifont.pcf \
     && rm unifont.pcf.gz
