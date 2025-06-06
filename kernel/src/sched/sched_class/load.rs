@@ -359,15 +359,14 @@ impl FairRqLoad {
     pub fn attach(&mut self, FairTaskLoad(ent): &FairTaskLoad, entity_weight: u64) {
         let this = &mut self.0.get_mut();
 
-        debug_assert!(this.last_updated.load(Relaxed) >= ent.last_updated.load(Relaxed));
+        debug_assert!(this.last_updated.get() >= ent.last_updated.load(Relaxed));
 
-        let d3 = this.d3.load(Relaxed);
+        let d3 = this.d3.get();
         let divider = avg_divider(d3);
 
         // Sync the update time.
 
-        ent.last_updated
-            .store(this.last_updated.load(Relaxed), Relaxed);
+        ent.last_updated.store(this.last_updated.get(), Relaxed);
         ent.d3.store(d3, Relaxed);
 
         // Recalculate the load sums. Here comes some precision loss since the period
@@ -384,20 +383,14 @@ impl FairRqLoad {
 
         // Append the data to the class-level load measurement.
 
-        this.weighted_sum
-            .fetch_add(ent.weighted_sum.load(Relaxed) * entity_weight, Relaxed);
-        this.weighted_avg
-            .fetch_add(ent.weighted_avg.load(Relaxed), Relaxed);
+        *this.weighted_sum.get_mut() += ent.weighted_sum.load(Relaxed) * entity_weight;
+        *this.weighted_avg.get_mut() += ent.weighted_avg.load(Relaxed);
 
-        this.queued_sum
-            .fetch_add(ent.queued_sum.load(Relaxed), Relaxed);
-        this.queued_avg
-            .fetch_add(ent.queued_avg.load(Relaxed), Relaxed);
+        *this.queued_sum.get_mut() += ent.queued_sum.load(Relaxed);
+        *this.queued_avg.get_mut() += ent.queued_avg.load(Relaxed);
 
-        this.running_sum
-            .fetch_add(ent.running_sum.load(Relaxed), Relaxed);
-        this.running_avg
-            .fetch_add(ent.running_avg.load(Relaxed), Relaxed);
+        *this.running_sum.get_mut() += ent.running_sum.load(Relaxed);
+        *this.running_avg.get_mut() += ent.running_avg.load(Relaxed);
     }
 
     /// Detaches a task's load measurement from this run queue's load measurement.
@@ -408,24 +401,18 @@ impl FairRqLoad {
     pub fn detach(&mut self, FairTaskLoad(ent): &FairTaskLoad, entity_weight: u64) {
         let this = &mut self.0.get_mut();
 
-        debug_assert!(this.last_updated.load(Relaxed) >= ent.last_updated.load(Relaxed));
+        debug_assert!(this.last_updated.get() >= ent.last_updated.load(Relaxed));
 
         // Remove the data from the class-level load measurement.
 
-        this.weighted_sum
-            .fetch_sub(ent.weighted_sum.load(Relaxed) * entity_weight, Relaxed);
-        this.weighted_avg
-            .fetch_sub(ent.weighted_avg.load(Relaxed), Relaxed);
+        *this.weighted_sum.get_mut() -= ent.weighted_sum.load(Relaxed) * entity_weight;
+        *this.weighted_avg.get_mut() -= ent.weighted_avg.load(Relaxed);
 
-        this.queued_sum
-            .fetch_sub(ent.queued_sum.load(Relaxed), Relaxed);
-        this.queued_avg
-            .fetch_sub(ent.queued_avg.load(Relaxed), Relaxed);
+        *this.queued_sum.get_mut() -= ent.queued_sum.load(Relaxed);
+        *this.queued_avg.get_mut() -= ent.queued_avg.load(Relaxed);
 
-        this.running_sum
-            .fetch_sub(ent.running_sum.load(Relaxed), Relaxed);
-        this.running_avg
-            .fetch_sub(ent.running_avg.load(Relaxed), Relaxed);
+        *this.running_sum.get_mut() -= ent.running_sum.load(Relaxed);
+        *this.running_avg.get_mut() -= ent.running_avg.load(Relaxed);
     }
 }
 
