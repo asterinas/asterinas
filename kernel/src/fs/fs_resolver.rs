@@ -510,7 +510,7 @@ pub fn split_path(path: &str) -> (&str, &str) {
     let file_name = path
         .split_inclusive('/')
         .filter(|&x| x != "/")
-        .last()
+        .next_back()
         .unwrap_or(".");
 
     let mut split = path.trim_end_matches('/').rsplitn(2, '/');

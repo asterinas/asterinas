@@ -29,7 +29,7 @@ fn append_done_segment(request_header: &CMsgSegHdr, response_segments: &mut Vec<
 }
 
 /// Adds the `MULTI` flag to all segments in `segments`.
-fn add_multi_flag(response_segments: &mut Vec<RtnlSegment>) {
+fn add_multi_flag(response_segments: &mut [RtnlSegment]) {
     for segment in response_segments.iter_mut() {
         let header = segment.header_mut();
         let mut flags = SegHdrCommonFlags::from_bits_truncate(header.flags);

@@ -12,7 +12,8 @@ use crate::{
 /// Reference: <https://elixir.bootlin.com/linux/v6.13/source/include/uapi/linux/if_link.h#L297>.
 #[derive(Debug, Clone, Copy, TryFromInt)]
 #[repr(u16)]
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
+#[expect(clippy::upper_case_acronyms)]
 enum LinkAttrClass {
     UNSPEC = 0,
     ADDRESS = 1,

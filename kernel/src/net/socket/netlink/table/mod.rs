@@ -259,7 +259,7 @@ impl<Message: 'static> Drop for BoundHandle<Message> {
 }
 
 pub(super) fn init() {
-    NETLINK_SOCKET_TABLE.call_once(|| NetlinkSocketTable::new());
+    NETLINK_SOCKET_TABLE.call_once(NetlinkSocketTable::new);
 }
 
 /// Returns whether the `protocol` is valid.
@@ -270,7 +270,7 @@ pub fn is_valid_protocol(protocol: NetlinkProtocolId) -> bool {
 /// Netlink protocols that are assigned for specific usage.
 ///
 /// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/linux/netlink.h#L9>.
-#[allow(non_camel_case_types)]
+#[expect(non_camel_case_types)]
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, TryFromInt)]
 pub enum StandardNetlinkProtocol {

@@ -8,7 +8,7 @@ use super::fat::ClusterID;
 use crate::prelude::*;
 
 pub fn make_hash_index(cluster: ClusterID, offset: u32) -> usize {
-    (cluster as usize) << 32usize | (offset as usize & 0xffffffffusize)
+    ((cluster as usize) << 32usize) | (offset as usize & 0xffffffffusize)
 }
 
 pub fn calc_checksum_32(data: &[u8]) -> u32 {

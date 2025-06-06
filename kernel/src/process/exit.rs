@@ -80,7 +80,7 @@ fn move_process_children(
     // Take the lock first to avoid the race when the `reaper_process` is exiting concurrently.
     let mut reaper_process_children = reaper_process.children().lock();
 
-    let is_init = is_init_process(&reaper_process);
+    let is_init = is_init_process(reaper_process);
     let is_zombie = reaper_process.status().is_zombie();
     if !is_init && is_zombie {
         return Err(());

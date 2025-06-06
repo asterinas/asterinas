@@ -516,9 +516,7 @@ impl OverlayInode {
             return upper;
         }
 
-        self.get_top_valid_lower_inode()
-            .map(|lower| lower.clone())
-            .unwrap()
+        self.get_top_valid_lower_inode().cloned().unwrap()
     }
 
     /// Returns the top valid lower inode.
@@ -725,7 +723,7 @@ impl OverlayInode {
             return Ok(upper.clone());
         }
 
-        debug_assert!(!self.parent.is_none());
+        debug_assert!(self.parent.is_some());
         // FIXME: Should we hold every upper locks from lower to upper
         // for such a long period?
         let parent_upper = self
@@ -859,17 +857,16 @@ fn is_opaque_dir(inode: &Arc<dyn Inode>) -> Result<bool> {
 
     let name = XattrName::try_from_full_name(OPAQUE_DIR_XATTR_NAME).unwrap();
     let mut value = [0u8];
-    match inode.get_xattr(
+    if let Err(e) = inode.get_xattr(
         name,
         &mut VmWriter::from(value.as_mut_slice()).to_fallible(),
     ) {
-        Err(e) => match e.error() {
+        match e.error() {
             Errno::E2BIG | Errno::ENODATA | Errno::EOPNOTSUPP | Errno::ERANGE => {
                 return Ok(false);
             }
             _ => return Err(e),
-        },
-        Ok(_) => {}
+        }
     };
     Ok(value == WHITEOUT_AND_OPAQUE_XATTR_VALUE)
 }

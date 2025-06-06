@@ -103,6 +103,6 @@ impl SchedPolicyState {
     }
 
     pub fn update<T>(&self, update: impl FnOnce(&mut SchedPolicy) -> T) -> T {
-        update(&mut *self.policy.disable_irq().lock())
+        update(&mut self.policy.disable_irq().lock())
     }
 }

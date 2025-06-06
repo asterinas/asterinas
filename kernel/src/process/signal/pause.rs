@@ -96,7 +96,7 @@ pub trait Pause: WaitTimeout {
     /// [`ETIME`]: crate::error::Errno::ETIME
     /// [`EINTR`]: crate::error::Errno::EINTR
     #[track_caller]
-    fn pause_timeout<'a>(&self, timeout: &TimeoutExt<'a>) -> Result<()>;
+    fn pause_timeout(&self, timeout: &TimeoutExt<'_>) -> Result<()>;
 }
 
 impl Pause for Waiter {
@@ -136,7 +136,7 @@ impl Pause for Waiter {
         res
     }
 
-    fn pause_timeout<'a>(&self, timeout: &TimeoutExt<'a>) -> Result<()> {
+    fn pause_timeout(&self, timeout: &TimeoutExt<'_>) -> Result<()> {
         let timer = timeout.check_expired()?.map(|timeout| {
             let waker = self.waker();
             timeout.create_timer(move || {
@@ -201,7 +201,7 @@ impl Pause for WaitQueue {
         waiter.pause_until_or_timeout_impl(cond, timeout)
     }
 
-    fn pause_timeout<'a>(&self, _timeout: &TimeoutExt<'a>) -> Result<()> {
+    fn pause_timeout(&self, _timeout: &TimeoutExt<'_>) -> Result<()> {
         panic!("`pause_timeout` can only be used on `Waiter`");
     }
 }

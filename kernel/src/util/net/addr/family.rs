@@ -268,13 +268,13 @@ pub fn write_socket_addr_with_max_len(
 }
 
 // Utility function to write a C socket address to user space.
-fn write_c_socket_address_util<TCSockAddr: Pod, TSockAddr>(
+fn write_c_socket_address_util<TCSockAddr, TSockAddr>(
     addr: TSockAddr,
     dest: Vaddr,
     max_len: usize,
 ) -> Result<usize>
 where
-    TCSockAddr: From<TSockAddr>,
+    TCSockAddr: Pod + From<TSockAddr>,
 {
     let c_socket_addr = TCSockAddr::from(addr);
     let actual_len = size_of::<TCSockAddr>();

@@ -515,6 +515,7 @@ fn clone_sysvsem(clone_flags: CloneFlags) -> Result<()> {
     Ok(())
 }
 
+#[expect(clippy::too_many_arguments)]
 fn create_child_process(
     pid: Pid,
     parent: Weak<Process>,

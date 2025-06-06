@@ -23,5 +23,5 @@ pub fn singleton() -> &'static Arc<SysFs> {
 /// Should be called during kernel filesystem initialization, *after* aster_systree::init().
 pub fn init() {
     // Ensure systree is initialized first. This should be handled by the kernel's init order.
-    SYSFS_SINGLETON.call_once(|| SysFs::new());
+    SYSFS_SINGLETON.call_once(SysFs::new);
 }

@@ -188,7 +188,7 @@ impl TimerManager {
     pub fn process_expired_timers(&self) {
         let callbacks = {
             let mut timeout_list = self.timer_callbacks.disable_irq().lock();
-            if timeout_list.len() == 0 {
+            if timeout_list.is_empty() {
                 return;
             }
 

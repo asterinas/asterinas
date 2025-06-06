@@ -40,7 +40,7 @@ impl FromStr for SyntheticUevent {
         };
 
         let mut envs = Vec::new();
-        for env_str in split.into_iter() {
+        for env_str in split {
             let (key, value) = {
                 // Each string should be in the `KEY=VALUE` format.
                 match env_str.split_once('=') {
@@ -87,10 +87,9 @@ impl FromStr for Uuid {
             return_errno_with_message!(Errno::EINVAL, "the UUID length is invalid");
         }
 
-        for (byte, pattern) in bytes.into_iter().zip(UUID_PATTERN.as_bytes()) {
-            if *pattern == b'x' && byte.is_ascii_hexdigit() {
-                continue;
-            } else if *pattern == b'-' && *byte == b'-' {
+        for (byte, pattern) in bytes.iter().zip(UUID_PATTERN.as_bytes()) {
+            if (*pattern == b'x' && byte.is_ascii_hexdigit()) || (*pattern == b'-' && *byte == b'-')
+            {
                 continue;
             } else {
                 return_errno_with_message!(Errno::EINVAL, "the UUID content is invalid");

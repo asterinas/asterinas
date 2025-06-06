@@ -13,6 +13,7 @@ use crate::{
 #[derive(Debug, Clone, Copy, TryFromInt)]
 #[repr(u16)]
 #[expect(non_camel_case_types)]
+#[expect(clippy::upper_case_acronyms)]
 enum AddrAttrClass {
     UNSPEC = 0,
     ADDRESS = 1,

@@ -184,7 +184,7 @@ impl From<Duration> for StatxTimestamp {
     fn from(duration: Duration) -> Self {
         Self {
             tv_sec: duration.as_secs() as i64,
-            tv_nsec: duration.subsec_nanos() as u32,
+            tv_nsec: duration.subsec_nanos(),
             __reserved: 0,
         }
     }
