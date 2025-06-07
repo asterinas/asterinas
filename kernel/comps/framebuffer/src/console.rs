@@ -24,7 +24,7 @@ pub struct FramebufferConsole {
     state: SpinLock<ConsoleState, LocalIrqDisabled>,
 }
 
-pub static CONSOLE_NAME: &str = "Framebuffer-Console";
+pub const CONSOLE_NAME: &str = "Framebuffer-Console";
 
 pub static FRAMEBUFFER_CONSOLE: Once<Arc<FramebufferConsole>> = Once::new();
 

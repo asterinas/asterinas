@@ -37,7 +37,7 @@ pub fn spawn_init_process(
     set_session_and_group(&process);
 
     // FIXME: This should be done by the userspace init process.
-    (crate::device::tty::get_n_tty().clone() as Arc<dyn Terminal>).set_control(&process)?;
+    (crate::device::tty::system_console().clone() as Arc<dyn Terminal>).set_control(&process)?;
 
     process.run();
 
