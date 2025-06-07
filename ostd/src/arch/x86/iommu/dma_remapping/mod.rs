@@ -2,7 +2,7 @@
 
 pub use context_table::RootTable;
 use log::{info, warn};
-use second_stage::{DeviceMode, PageTableEntry, PagingConsts};
+use second_stage::IommuPtConfig;
 use spin::Once;
 
 use super::IommuError;
@@ -84,7 +84,7 @@ pub fn init() {
     // Memory Region Reporting (RMRR) structures. These regions must be mapped for the hardware or
     // firmware to function properly. For more details, see Intel(R) Virtualization Technology for
     // Directed I/O (Revision 5.0), 3.16 Handling Requests to Reserved System Memory.
-    let page_table = PageTable::<DeviceMode, PageTableEntry, PagingConsts>::empty();
+    let page_table = PageTable::<IommuPtConfig>::empty();
     for table in PciDeviceLocation::all() {
         root_table.specify_device_page_table(table, unsafe { page_table.shallow_copy() })
     }

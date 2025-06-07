@@ -49,7 +49,7 @@ pub type PagingLevel = u8;
 
 /// A minimal set of constants that determines the paging system.
 /// This provides an abstraction over most paging modes in common architectures.
-pub(crate) trait PagingConstsTrait: Clone + Debug + Default + Send + Sync + 'static {
+pub(crate) trait PagingConstsTrait: Clone + Debug + Send + Sync + 'static {
     /// The smallest page size.
     /// This is also the page size at level 1 page tables.
     const BASE_PAGE_SIZE: usize;
@@ -71,6 +71,19 @@ pub(crate) trait PagingConstsTrait: Clone + Debug + Default + Send + Sync + 'sta
     /// The address width may be BASE_PAGE_SIZE.ilog2() + NR_LEVELS * IN_FRAME_INDEX_BITS.
     /// If it is shorter than that, the higher bits in the highest level are ignored.
     const ADDRESS_WIDTH: usize;
+
+    /// Whether virtual addresses are sign-extended.
+    ///
+    /// The sign bit of a [`Vaddr`] is the bit at index [`PagingConstsTrait::ADDRESS_WIDTH`] - 1.
+    /// If this constant is `true`, bits in [`Vaddr`] that are higher than the sign bit must be
+    /// equal to the sign bit. If an address violates this rule, both the hardware and OSTD
+    /// should reject it.
+    ///
+    /// Otherwise, if this constant is `false`, higher bits must be zero.
+    ///
+    /// Regardless of sign extension, [`Vaddr`] is always not signed upon calculation.
+    /// That means, `0xffff_ffff_ffff_0000 < 0xffff_ffff_ffff_0001` is `true`.
+    const VA_SIGN_EXT: bool;
 }
 
 /// The page size
