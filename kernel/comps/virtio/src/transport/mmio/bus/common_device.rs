@@ -4,18 +4,21 @@
 
 use int_to_c_enum::TryFromInt;
 use log::info;
-
-use crate::{io::IoMem, mm::VmIoOnce, trap::IrqLine, Error, Result};
+#[cfg(target_arch = "x86_64")]
+use ostd::arch::kernel::IrqChipLine;
+#[cfg(target_arch = "riscv64")] // TODO: Add `IrqChipLine` support for RISC-V.
+use ostd::trap::IrqLine as IrqChipLine;
+use ostd::{io::IoMem, mm::VmIoOnce, trap::IrqLine, Error, Result};
 
 /// A MMIO common device.
 #[derive(Debug)]
 pub struct MmioCommonDevice {
     io_mem: IoMem,
-    irq: IrqLine,
+    irq: IrqChipLine,
 }
 
 impl MmioCommonDevice {
-    pub(super) fn new(io_mem: IoMem, irq: IrqLine) -> Self {
+    pub(super) fn new(io_mem: IoMem, irq: IrqChipLine) -> Self {
         debug_assert!(mmio_check_magic(&io_mem));
 
         let this = Self { io_mem, irq };
@@ -48,11 +51,6 @@ impl MmioCommonDevice {
     /// Returns an immutable reference to the IRQ line.
     pub fn irq(&self) -> &IrqLine {
         &self.irq
-    }
-
-    /// Returns a mutable reference to the IRQ line.
-    pub fn irq_mut(&mut self) -> &mut IrqLine {
-        &mut self.irq
     }
 }
 

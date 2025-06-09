@@ -25,7 +25,7 @@ fn line_sts() -> LineSts {
 }
 
 /// Sends a byte on the serial port.
-pub fn send(data: u8) {
+pub(crate) fn send(data: u8) {
     match data {
         8 | 0x7F => {
             while !line_sts().contains(LineSts::OUTPUT_EMPTY) {}
