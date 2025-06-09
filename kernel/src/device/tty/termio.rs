@@ -165,6 +165,7 @@ impl Default for C_LFLAGS {
 /* c_cc characters index*/
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, TryFromInt)]
+#[expect(clippy::upper_case_acronyms)]
 pub enum CC_C_CHAR {
     VINTR = 0,
     VQUIT = 1,
