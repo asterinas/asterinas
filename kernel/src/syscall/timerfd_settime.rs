@@ -6,7 +6,12 @@ use super::SyscallReturn;
 use crate::{
     fs::file_table::FileDesc,
     prelude::*,
-    time::{itimerspec_t, timer::Timeout, timerfd::TimerfdFile, timespec_t, TIMER_ABSTIME},
+    time::{
+        itimerspec_t,
+        timer::Timeout,
+        timerfd::{TFDSetTimeFlags, TimerfdFile},
+        timespec_t,
+    },
 };
 
 pub fn sys_timerfd_settime(
@@ -16,6 +21,8 @@ pub fn sys_timerfd_settime(
     old_itimerspec_addr: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
+    let flags = TFDSetTimeFlags::from_bits(flags as u32)
+        .ok_or_else(|| Error::with_message(Errno::EINVAL, "invalid flags for timerfd_settime"))?;
     let file_table = ctx.thread_local.borrow_file_table();
     let file_table_locked = file_table.unwrap().read();
     let timerfd_file = file_table_locked.get_file(fd as _)?;
@@ -45,16 +52,15 @@ pub fn sys_timerfd_settime(
     // when the timer is rearmed.
     timerfd_file.clear_ticks();
 
-    const TFD_TIMER_CANCEL_ON_SET: i32 = 2;
     if expire_time != Duration::ZERO {
-        let timeout = if flags == 0 {
-            Timeout::After(expire_time)
-        } else if flags == TIMER_ABSTIME {
-            Timeout::When(expire_time)
-        } else if flags == TFD_TIMER_CANCEL_ON_SET {
+        if flags.contains(TFDSetTimeFlags::TFD_TIMER_CANCEL_ON_SET) {
             unimplemented!()
+        }
+
+        let timeout = if flags.contains(TFDSetTimeFlags::TFD_TIMER_ABSTIME) {
+            Timeout::When(expire_time)
         } else {
-            unreachable!()
+            Timeout::After(expire_time)
         };
         timer.set_timeout(timeout);
     }
