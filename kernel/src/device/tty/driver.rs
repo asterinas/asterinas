@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use aster_keyboard::InputKey;
 use ostd::mm::{Infallible, VmReader};
 use spin::Once;
 
@@ -14,6 +15,7 @@ pub(super) fn init() {
     for (_, device) in aster_console::all_devices() {
         device.register_callback(&console_input_callback)
     }
+    aster_keyboard::register_callback(&keyboard_input_callback);
     let tty_driver = Arc::new(TtyDriver::new());
     // FIXME: install n_tty into tty_driver?
     let n_tty = get_n_tty();
@@ -80,6 +82,13 @@ fn console_input_callback(mut reader: VmReader<Infallible>) {
     let tty_driver = get_tty_driver();
     while reader.remain() > 0 {
         let ch = reader.read_val().unwrap();
+        tty_driver.push_char(ch);
+    }
+}
+
+fn keyboard_input_callback(key: InputKey) {
+    let tty_driver = get_tty_driver();
+    for &ch in key.as_xterm_control_sequences() {
         tty_driver.push_char(ch);
     }
 }
