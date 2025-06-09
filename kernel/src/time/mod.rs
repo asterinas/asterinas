@@ -65,8 +65,8 @@ impl TryFrom<timespec_t> for Duration {
             return_errno_with_message!(Errno::EINVAL, "timesepc_t cannot be negative");
         }
 
-        if value.nsec > NSEC_PER_SEC {
-            // The value of nanoseconds cannot exceed 10^9,
+        if value.nsec >= NSEC_PER_SEC {
+            // The value of nanoseconds must be strictly less than 10^9,
             // otherwise the value for seconds should be set.
             return_errno_with_message!(Errno::EINVAL, "nsec is not normalized");
         }
