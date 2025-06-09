@@ -18,7 +18,7 @@ RUN apt clean && rm -rf /var/lib/apt/lists/*
 FROM build-qemu-tdx AS qemu-tdx
 
 WORKDIR /root
-RUN git clone -b tdx-qemu-upstream-2024.02.29-v8.2.0 https://github.com/intel-staging/qemu-tdx.git
+RUN git clone --depth 1 -b tdx-qemu-upstream-2024.02.29-v8.2.0 https://github.com/intel-staging/qemu-tdx.git
 WORKDIR /root/qemu-tdx
 COPY osdk/tools/docker/tdx/tdx_qemu.patch /root/qemu-tdx
 RUN git apply tdx_qemu.patch \
