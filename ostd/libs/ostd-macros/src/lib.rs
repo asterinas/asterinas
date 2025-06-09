@@ -320,11 +320,9 @@ pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     let package_name = std::env::var("CARGO_PKG_NAME").unwrap();
-    let span = proc_macro::Span::call_site();
-    let source = span.source_file().path();
-    let source = source.to_str().unwrap();
-    let line = span.line();
-    let col = span.column();
+    let span = proc_macro2::Span::call_site();
+    let line = span.start().line;
+    let col = span.start().column;
 
     let register_ktest_item = if package_name.as_str() == "ostd" {
         quote! {
@@ -338,7 +336,7 @@ pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
                     module_path: module_path!(),
                     fn_name: stringify!(#fn_name),
                     package: #package_name,
-                    source: #source,
+                    source: file!(),
                     line: #line,
                     col: #col,
                 },
@@ -356,7 +354,7 @@ pub fn ktest(_attr: TokenStream, item: TokenStream) -> TokenStream {
                     module_path: module_path!(),
                     fn_name: stringify!(#fn_name),
                     package: #package_name,
-                    source: #source,
+                    source: file!(),
                     line: #line,
                     col: #col,
                 },
