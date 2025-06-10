@@ -19,12 +19,15 @@ pub fn sys_waitid(
     let wait_options = WaitOptions::from_bits(options as u32)
         .ok_or(Error::with_message(Errno::EINVAL, "invalid options"))?;
 
-    let waited_process =
-        wait_child_exit(process_filter, wait_options, ctx).map_err(|err| match err.error() {
-            Errno::EINTR => Error::new(Errno::ERESTARTSYS),
-            _ => err,
-        })?;
+    debug!(
+        "process_filter = {:?}, wait_options = {:?}",
+        process_filter, wait_options
+    );
 
-    let pid = waited_process.map_or(0, |process| process.pid());
-    Ok(SyscallReturn::Return(pid as _))
+    wait_child_exit(process_filter, wait_options, ctx).map_err(|err| match err.error() {
+        Errno::EINTR => Error::new(Errno::ERESTARTSYS),
+        _ => err,
+    })?;
+
+    Ok(SyscallReturn::Return(0))
 }
