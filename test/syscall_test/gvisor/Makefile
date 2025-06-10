@@ -25,6 +25,7 @@ TESTS ?= \
 	mknod_test \
 	mmap_test \
 	mount_test \
+	msync_test \
 	open_create_test \
 	open_test \
 	ppoll_test \
@@ -33,9 +34,9 @@ TESTS ?= \
 	preadv2_test \
 	proc_test \
 	pselect_test \
+	pty_test \
 	pwrite64_test \
 	pwritev2_test \
-	pty_test \
 	read_test \
 	readv_test \
 	rename_test \
