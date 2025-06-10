@@ -5,7 +5,7 @@
 use int_to_c_enum::TryFromInt;
 use log::info;
 
-use crate::{io::IoMem, mm::VmIoOnce, trap::IrqLine, Error, Result};
+use crate::{io::IoMem, mm::VmIoOnce, trap::irq::IrqLine, Error, Result};
 
 /// A MMIO common device.
 #[derive(Debug)]

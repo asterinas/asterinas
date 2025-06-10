@@ -12,7 +12,7 @@ use crate::{
         tsc_freq,
     },
     task::disable_preempt,
-    trap::{IrqLine, TrapFrame},
+    trap::{irq::IrqLine, TrapFrame},
 };
 
 /// Initializes APIC with TSC-deadline mode or periodic mode.
@@ -119,11 +119,19 @@ fn init_periodic_mode_config() {
     apic.set_timer_div_config(DivideConfig::Divide64);
     apic.set_timer_init_count(0xFFFF_FFFF);
 
-    x86_64::instructions::interrupts::enable();
-    while !CONFIG.is_completed() {
-        x86_64::instructions::hlt();
+    // Wait until `CONFIG` is ready
+    loop {
+        crate::arch::irq::enable_local_and_halt();
+
+        // Disable local IRQs so they won't come after checking `CONFIG`
+        // but before halting the CPU.
+        crate::arch::irq::disable_local();
+
+        if CONFIG.is_completed() {
+            break;
+        }
     }
-    x86_64::instructions::interrupts::disable();
+
     drop(irq);
 
     fn pit_callback(_trap_frame: &TrapFrame) {

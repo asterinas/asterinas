@@ -27,7 +27,6 @@ pub(in crate::task) fn should_preempt() -> bool {
     PREEMPT_INFO.load() == 0
 }
 
-#[expect(dead_code)]
 pub(in crate::task) fn need_preempt() -> bool {
     PREEMPT_INFO.load() & NEED_PREEMPT_MASK == 0
 }

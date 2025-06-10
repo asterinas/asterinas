@@ -17,7 +17,7 @@ use ostd::{
     io::IoMem,
     mm::{DmaCoherent, PAGE_SIZE},
     sync::RwLock,
-    trap::IrqCallbackFunction,
+    trap::irq::IrqCallbackFunction,
 };
 
 use super::{layout::VirtioMmioLayout, multiplex::MultiplexIrq};

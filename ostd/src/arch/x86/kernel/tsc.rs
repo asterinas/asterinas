@@ -12,7 +12,7 @@ use crate::{
         pit::{self, OperatingMode},
         TIMER_FREQ,
     },
-    trap::{IrqLine, TrapFrame},
+    trap::{irq::IrqLine, TrapFrame},
 };
 
 /// The frequency of TSC(Hz)
@@ -78,12 +78,22 @@ pub fn determine_tsc_freq_via_pit() -> u64 {
 
     static IS_FINISH: AtomicBool = AtomicBool::new(false);
     static FREQUENCY: AtomicU64 = AtomicU64::new(0);
-    x86_64::instructions::interrupts::enable();
-    while !IS_FINISH.load(Ordering::Acquire) {
-        x86_64::instructions::hlt();
+
+    // Wait until `FREQUENCY` is ready
+    loop {
+        crate::arch::irq::enable_local_and_halt();
+
+        // Disable local IRQs so they won't come after checking `IS_FINISH`
+        // but before halting the CPU.
+        crate::arch::irq::disable_local();
+
+        if IS_FINISH.load(Ordering::Acquire) {
+            break;
+        }
     }
-    x86_64::instructions::interrupts::disable();
+
     drop(irq);
+
     return FREQUENCY.load(Ordering::Acquire);
 
     fn pit_callback(trap_frame: &TrapFrame) {

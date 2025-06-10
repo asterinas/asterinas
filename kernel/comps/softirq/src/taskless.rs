@@ -135,7 +135,7 @@ fn do_schedule(
     {
         return;
     }
-    let irq_guard = trap::disable_local();
+    let irq_guard = trap::irq::disable_local();
     taskless_list
         .get_with(&irq_guard)
         .borrow_mut()
@@ -162,7 +162,7 @@ fn taskless_softirq_handler(
     softirq_id: u8,
 ) {
     let mut processing_list = {
-        let irq_guard = trap::disable_local();
+        let irq_guard = trap::irq::disable_local();
         let guard = taskless_list.get_with(&irq_guard);
         let mut list_mut = guard.borrow_mut();
         LinkedList::take(list_mut.deref_mut())
@@ -174,7 +174,7 @@ fn taskless_softirq_handler(
             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {
-            let irq_guard = trap::disable_local();
+            let irq_guard = trap::irq::disable_local();
             taskless_list
                 .get_with(&irq_guard)
                 .borrow_mut()

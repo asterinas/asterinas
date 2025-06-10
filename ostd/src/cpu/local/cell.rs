@@ -33,7 +33,7 @@ use crate::arch;
 ///     // You can avoid this by disabling interrupts (and preemption, if needed).
 ///     println!("BAR VAL: {:?}", BAR.load());
 ///
-///     let _irq_guard = ostd::trap::disable_local_irq();
+///     let _irq_guard = ostd::trap::irq::disable_local_irq();
 ///     println!("1st FOO VAL: {:?}", FOO.load());
 ///     // No surprises here, the two accesses must result in the same value.
 ///     println!("2nd FOO VAL: {:?}", FOO.load());
