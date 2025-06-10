@@ -43,12 +43,10 @@ pub fn sys_timer_settime(
         // Clear previous timer
         timer.cancel();
     } else {
-        let timeout = if flags == 0 {
+        let timeout = if (flags & TIMER_ABSTIME) == 0 {
             Timeout::After(expire_time)
-        } else if flags == TIMER_ABSTIME {
-            Timeout::When(expire_time)
         } else {
-            unreachable!()
+            Timeout::When(expire_time)
         };
         timer.set_timeout(timeout);
     }
