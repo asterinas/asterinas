@@ -924,8 +924,8 @@ mprotect05
 
 msync01
 msync02
-# msync03
-# msync04
+# msync03 # FIXME: This fails because the heap place holder is treated as mapped. Fix after https://github.com/asterinas/asterinas/pull/1999.
+# msync04 # TODO: support `/proc/self/pagemap` and `/proc/kpageflags`.
 
 # munlock01
 # munlock02

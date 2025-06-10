@@ -16,6 +16,7 @@ use ostd::{
     mm::{
         tlb::TlbFlushOp, vm_space::CursorMut, PageFlags, PageProperty, VmSpace, MAX_USERSPACE_VADDR,
     },
+    sync::RwMutexReadGuard,
     task::disable_preempt,
 };
 
@@ -24,6 +25,7 @@ use self::{
     vm_mapping::{MappedVmo, VmMapping},
 };
 use crate::{
+    fs::utils::Inode,
     prelude::*,
     process::{Process, ResourceType},
     thread::exception::PageFaultInfo,
@@ -162,6 +164,11 @@ impl VmarInner {
         let vm_mapping = self.vm_mappings.remove(key)?;
         self.total_vm -= vm_mapping.map_size();
         Some(vm_mapping)
+    }
+
+    /// Finds a set of [`VmMapping`]s that intersect with the provided range.
+    fn query(&self, range: &Range<Vaddr>) -> impl Iterator<Item = &VmMapping> {
+        self.vm_mappings.find(range)
     }
 
     /// Calculates the total amount of overlap between `VmMapping`s
@@ -313,6 +320,13 @@ impl Vmar_ {
             ROOT_VMAR_CAP_ADDR,
             array::from_fn(|_| PerCpuCounter::new()),
         )
+    }
+
+    fn query(&self, range: Range<usize>) -> VmarQueryGuard<'_> {
+        VmarQueryGuard {
+            vmar: self.inner.read(),
+            range,
+        }
     }
 
     fn protect(&self, perms: VmPerms, range: Range<usize>) -> Result<()> {
@@ -586,6 +600,7 @@ impl<R> Vmar<R> {
 pub struct VmarMapOptions<'a, R1, R2> {
     parent: &'a Vmar<R1>,
     vmo: Option<Vmo<R2>>,
+    inode: Option<Arc<dyn Inode>>,
     perms: VmPerms,
     vmo_offset: usize,
     vmo_limit: usize,
@@ -610,6 +625,7 @@ impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
         Self {
             parent,
             vmo: None,
+            inode: None,
             perms,
             vmo_offset: 0,
             vmo_limit: usize::MAX,
@@ -622,22 +638,30 @@ impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
         }
     }
 
-    /// Binds a VMO to the mapping.
+    /// Binds a [`Vmo`] to the mapping.
     ///
-    /// If the mapping is a private mapping, its size may not be equal to that of the VMO.
-    /// For example, it is ok to create a mapping whose size is larger than
-    /// that of the VMO, although one cannot read from or write to the
-    /// part of the mapping that is not backed by the VMO.
+    /// If the mapping is a private mapping, its size may not be equal to that
+    /// of the [`Vmo`]. For example, it is OK to create a mapping whose size is
+    /// larger than that of the [`Vmo`], although one cannot read from or write
+    /// to the part of the mapping that is not backed by the [`Vmo`].
     ///
-    /// So you may wonder: what is the point of supporting such _oversized_
-    /// mappings?  The reason is two-fold.
-    ///  1. VMOs are resizable. So even if a mapping is backed by a VMO whose
-    ///     size is equal to that of the mapping initially, we cannot prevent
-    ///     the VMO from shrinking.
+    /// Such _oversized_ mappings are useful for two reasons:
+    ///  1. [`Vmo`]s are resizable. So even if a mapping is backed by a VMO
+    ///     whose size is equal to that of the mapping initially, we cannot
+    ///     prevent the VMO from shrinking.
     ///  2. Mappings are not allowed to overlap by default. As a result,
-    ///     oversized mappings can serve as a placeholder to prevent future
-    ///     mappings from occupying some particular address ranges accidentally.
+    ///     oversized mappings can reserve space for future expansions.
+    ///
+    /// The [`Vmo`] of a mapping will be implicitly set if [`Self::inode`] is
+    /// set.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if an [`Inode`] is already provided.
     pub fn vmo(mut self, vmo: Vmo<R2>) -> Self {
+        if self.inode.is_some() {
+            panic!("Cannot set `vmo` when `inode` is already set");
+        }
         self.vmo = Some(vmo);
 
         self
@@ -712,6 +736,36 @@ impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
     }
 }
 
+impl<R1> VmarMapOptions<'_, R1, Rights> {
+    /// Binds an [`Inode`] to the mapping.
+    ///
+    /// This is used for file-backed mappings. The provided file inode will be
+    /// mapped. See [`Self::vmo`] for details on the map size.
+    ///
+    /// If an [`Inode`] is provided, the [`Self::vmo`] must not be provided
+    /// again. The actually mapped [`Vmo`] will be the [`Inode`]'s page cache.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if:
+    ///  - a [`Vmo`] or [`Inode`] is already provided;
+    ///  - the provided [`Inode`] does not have a page cache.
+    pub fn inode(mut self, inode: Arc<dyn Inode>) -> Self {
+        if self.vmo.is_some() {
+            panic!("Cannot set `inode` when `vmo` is already set");
+        }
+        self.vmo = Some(
+            inode
+                .page_cache()
+                .expect("Map an inode without page cache")
+                .to_dyn(),
+        );
+        self.inode = Some(inode);
+
+        self
+    }
+}
+
 impl<R1, R2> VmarMapOptions<'_, R1, R2>
 where
     Vmo<R2>: VmoRightsOp,
@@ -726,6 +780,7 @@ where
         let Self {
             parent,
             vmo,
+            inode,
             perms,
             vmo_offset,
             vmo_limit,
@@ -784,6 +839,7 @@ where
             NonZeroUsize::new(map_size).unwrap(),
             map_to_addr,
             vmo,
+            inode,
             is_shared,
             handle_page_faults_around,
             perms,
@@ -829,6 +885,20 @@ where
 
         let perm_rights = Rights::from(self.perms);
         vmo.check_rights(perm_rights)
+    }
+}
+
+/// A guard that allows querying a [`Vmar`] for its mappings.
+pub struct VmarQueryGuard<'a> {
+    vmar: RwMutexReadGuard<'a, VmarInner>,
+    range: Range<usize>,
+}
+
+impl VmarQueryGuard<'_> {
+    /// Returns an iterator over the [`VmMapping`]s that intersect with the
+    /// provided range when calling [`Vmar::query`].
+    pub fn iter(&self) -> impl Iterator<Item = &VmMapping> {
+        self.vmar.query(&self.range)
     }
 }
 
