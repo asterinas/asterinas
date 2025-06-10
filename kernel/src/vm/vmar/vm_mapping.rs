@@ -16,6 +16,7 @@ use ostd::{
 
 use super::{interval_set::Interval, RssType};
 use crate::{
+    fs::utils::Inode,
     prelude::*,
     thread::exception::PageFaultInfo,
     vm::{
@@ -42,7 +43,7 @@ use crate::{
 /// This type controls the actual mapping in the [`VmSpace`]. It is a linear
 /// type and cannot be [`Drop`]. To remove a mapping, use [`Self::unmap`].
 #[derive(Debug)]
-pub(super) struct VmMapping {
+pub struct VmMapping {
     /// The size of mapping, in bytes. The map size can even be larger than the
     /// size of VMO. Those pages outside VMO range cannot be read or write.
     ///
@@ -56,6 +57,11 @@ pub(super) struct VmMapping {
     /// The start of the virtual address maps to the start of the range
     /// specified in [`MappedVmo`].
     vmo: Option<MappedVmo>,
+    /// The inode of the file that backs the mapping.
+    ///
+    /// If the inode is `Some`, it means that the mapping is file-backed.
+    /// And the `vmo` field must be the page cache of the inode.
+    inode: Option<Arc<dyn Inode>>,
     /// Whether the mapping is shared.
     ///
     /// The updates to a shared mapping are visible among processes, or carried
@@ -83,6 +89,7 @@ impl VmMapping {
         map_size: NonZeroUsize,
         map_to_addr: Vaddr,
         vmo: Option<MappedVmo>,
+        inode: Option<Arc<dyn Inode>>,
         is_shared: bool,
         handle_page_faults_around: bool,
         perms: VmPerms,
@@ -91,6 +98,7 @@ impl VmMapping {
             map_size,
             map_to_addr,
             vmo,
+            inode,
             is_shared,
             handle_page_faults_around,
             perms,
@@ -100,6 +108,7 @@ impl VmMapping {
     pub(super) fn new_fork(&self) -> Result<VmMapping> {
         Ok(VmMapping {
             vmo: self.vmo.as_ref().map(|vmo| vmo.dup()).transpose()?,
+            inode: self.inode.clone(),
             ..*self
         })
     }
@@ -119,12 +128,17 @@ impl VmMapping {
         self.map_size.get()
     }
 
-    // Returns the permissions of pages in the mapping.
+    /// Returns the permissions of pages in the mapping.
     pub fn perms(&self) -> VmPerms {
         self.perms
     }
 
-    // Returns the mapping's RSS type.
+    /// Returns the inode of the file that backs the mapping.
+    pub fn inode(&self) -> Option<&Arc<dyn Inode>> {
+        self.inode.as_ref()
+    }
+
+    /// Returns the mapping's RSS type.
     pub fn rss_type(&self) -> RssType {
         if self.vmo.is_none() {
             RssType::RSS_ANONPAGES
@@ -407,12 +421,14 @@ impl VmMapping {
             map_to_addr: self.map_to_addr,
             map_size: NonZeroUsize::new(left_size).unwrap(),
             vmo: l_vmo,
+            inode: self.inode.clone(),
             ..self
         };
         let right = Self {
             map_to_addr: at,
             map_size: NonZeroUsize::new(right_size).unwrap(),
             vmo: r_vmo,
+            inode: self.inode,
             ..self
         };
 
