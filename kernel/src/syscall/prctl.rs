@@ -3,7 +3,10 @@
 use super::SyscallReturn;
 use crate::{
     prelude::*,
-    process::{posix_thread::MAX_THREAD_NAME_LEN, signal::sig_num::SigNum},
+    process::{
+        credentials::capabilities::CapSet, posix_thread::MAX_THREAD_NAME_LEN,
+        signal::sig_num::SigNum,
+    },
 };
 
 pub fn sys_prctl(
@@ -80,6 +83,17 @@ pub fn sys_prctl(
                 thread_name.set_name(&new_thread_name)?;
             }
         }
+        PrctlCmd::PR_CAPBSET_READ(cap_set) => {
+            if !cap_valid(cap_set as u64) {
+                return_errno!(Errno::EINVAL)
+            }
+            let cred_bset = ctx.posix_thread.credentials().bounding_capset().as_u64();
+            return Ok(SyscallReturn::Return((cred_bset & (1 << cap_set)) as _));
+        }
+        PrctlCmd::PR_GET_SECUREBITS => {
+            let securebits: u32 = ctx.posix_thread.credentials().securebits().into();
+            return Ok(SyscallReturn::Return(securebits as _));
+        }
         PrctlCmd::PR_SET_CHILD_SUBREAPER(is_set) => {
             let process = ctx.process;
             if is_set {
@@ -93,23 +107,52 @@ pub fn sys_prctl(
             ctx.user_space()
                 .write_val(write_addr, &(process.is_child_subreaper() as u32))?;
         }
+        PrctlCmd::PR_GET_NO_NEW_PRIVS => {
+            // TODO: implement no_new_privs for process.
+            // This mechanism should add atomic flags for process.
+            // By default, the value obtained is 0.
+            return Ok(SyscallReturn::Return(0));
+        }
+        PrctlCmd::PR_CAP_AMBIENT(cmd) => {
+            if cmd == PR_CAP_AMBIENT_CLEAR_ALL {
+                // TODO: implement clear all ambient capabilities.
+            }
+            if !cap_valid(arg3) || arg4 != 0 || arg5 != 0 {
+                return_errno!(Errno::EINVAL)
+            }
+            let cap_set = ctx.posix_thread.credentials().ambient_capset().as_u64();
+            if cmd == PR_CAP_AMBIENT_IS_SET {
+                return Ok(SyscallReturn::Return((cap_set & (1 << arg3)) as _));
+            } else if cmd != PR_CAP_AMBIENT_RAISE && cmd != PR_CAP_AMBIENT_LOWER {
+                return_errno!(Errno::EINVAL)
+            }
+            // TODO: add support for PR_CAP_AMBIENT_RAISE and PR_CAP_AMBIENT_LOWER.
+        }
         _ => todo!(),
     }
     Ok(SyscallReturn::Return(0))
 }
 
-const PR_SET_PDEATHSIG: i32 = 1;
-const PR_GET_PDEATHSIG: i32 = 2;
-const PR_GET_DUMPABLE: i32 = 3;
-const PR_SET_DUMPABLE: i32 = 4;
-const PR_GET_KEEPCAPS: i32 = 7;
-const PR_SET_KEEPCAPS: i32 = 8;
-const PR_SET_NAME: i32 = 15;
-const PR_GET_NAME: i32 = 16;
-const PR_SET_TIMERSLACK: i32 = 29;
-const PR_GET_TIMERSLACK: i32 = 30;
-const PR_SET_CHILD_SUBREAPER: i32 = 36;
-const PR_GET_CHILD_SUBREAPER: i32 = 37;
+fn cap_valid(cap: u64) -> bool {
+    cap <= CapSet::most_significant_bit() as u64
+}
+
+const PR_SET_PDEATHSIG: i32 = 1; // Second arg is a signal.
+const PR_GET_PDEATHSIG: i32 = 2; // Second arg is a ptr to return the signal.
+const PR_GET_DUMPABLE: i32 = 3; // Get process's dumpable state.
+const PR_SET_DUMPABLE: i32 = 4; // Set process's dumpable state.
+const PR_GET_KEEPCAPS: i32 = 7; // Get whether or not to drop capabilities on setuid() away from uid 0.
+const PR_SET_KEEPCAPS: i32 = 8; // Set whether or not to drop capabilities on setuid() away from uid 0.
+const PR_SET_NAME: i32 = 15; // Set process name.
+const PR_GET_NAME: i32 = 16; // Get process name.
+const PR_CAPBSET_READ: i32 = 23; // Get the capability bounding set.
+const PR_GET_SECUREBITS: i32 = 24; // Get securebits.
+const PR_SET_TIMERSLACK: i32 = 29; // Set the timerslack as used by poll/select/nanosleep.
+const PR_GET_TIMERSLACK: i32 = 30; // Get the timerslack as used by poll/select/nanosleep.
+const PR_SET_CHILD_SUBREAPER: i32 = 36; // Set process's child subreaper state.
+const PR_GET_CHILD_SUBREAPER: i32 = 37; // Get process's child subreaper state.
+const PR_GET_NO_NEW_PRIVS: i32 = 38; // Get process's no new privileges state.
+const PR_CAP_AMBIENT: i32 = 47; // Control the ambient capability set.
 
 #[expect(non_camel_case_types)]
 #[derive(Debug, Clone, Copy)]
@@ -120,6 +163,8 @@ pub enum PrctlCmd {
     PR_GET_NAME(Vaddr),
     PR_GET_KEEPCAPS,
     PR_SET_KEEPCAPS(u32),
+    PR_CAPBSET_READ(u32),
+    PR_GET_SECUREBITS,
     #[expect(dead_code)]
     PR_SET_TIMERSLACK(u64),
     #[expect(dead_code)]
@@ -128,7 +173,14 @@ pub enum PrctlCmd {
     PR_GET_DUMPABLE,
     PR_SET_CHILD_SUBREAPER(bool),
     PR_GET_CHILD_SUBREAPER(Vaddr),
+    PR_GET_NO_NEW_PRIVS,
+    PR_CAP_AMBIENT(u32),
 }
+
+const PR_CAP_AMBIENT_IS_SET: u32 = 1; // Check if a capability is set in the ambient set.
+const PR_CAP_AMBIENT_RAISE: u32 = 2; // Raise a capability in the ambient set.
+const PR_CAP_AMBIENT_LOWER: u32 = 3; // Lower a capability in the ambient set.
+const PR_CAP_AMBIENT_CLEAR_ALL: u32 = 4; // Clear all capabilities in the ambient set.
 
 #[repr(u64)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromInt)]
@@ -150,12 +202,16 @@ impl PrctlCmd {
             PR_SET_DUMPABLE => Ok(PrctlCmd::PR_SET_DUMPABLE(Dumpable::try_from(arg2)?)),
             PR_SET_NAME => Ok(PrctlCmd::PR_SET_NAME(arg2 as _)),
             PR_GET_NAME => Ok(PrctlCmd::PR_GET_NAME(arg2 as _)),
+            PR_CAPBSET_READ => Ok(PrctlCmd::PR_CAPBSET_READ(arg2 as _)),
+            PR_GET_SECUREBITS => Ok(PrctlCmd::PR_GET_SECUREBITS),
             PR_GET_TIMERSLACK => todo!(),
             PR_SET_TIMERSLACK => todo!(),
             PR_GET_KEEPCAPS => Ok(PrctlCmd::PR_GET_KEEPCAPS),
             PR_SET_KEEPCAPS => Ok(PrctlCmd::PR_SET_KEEPCAPS(arg2 as _)),
             PR_SET_CHILD_SUBREAPER => Ok(PrctlCmd::PR_SET_CHILD_SUBREAPER(arg2 > 0)),
             PR_GET_CHILD_SUBREAPER => Ok(PrctlCmd::PR_GET_CHILD_SUBREAPER(arg2 as _)),
+            PR_GET_NO_NEW_PRIVS => Ok(PrctlCmd::PR_GET_NO_NEW_PRIVS),
+            PR_CAP_AMBIENT => Ok(PrctlCmd::PR_CAP_AMBIENT(arg2 as _)),
             _ => {
                 debug!("prctl cmd number: {}", option);
                 return_errno_with_message!(Errno::EINVAL, "unsupported prctl command");
