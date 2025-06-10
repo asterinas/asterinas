@@ -58,4 +58,8 @@ impl SchedClassRq for IdleClassRq {
         // Idle entities has the greatest priority value. They should always be preempted.
         true
     }
+
+    fn check_preempt_current(_: &SchedAttr, _: &SchedAttr) -> bool {
+        unreachable!("There should be only one unique idle entity.")
+    }
 }

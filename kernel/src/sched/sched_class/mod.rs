@@ -121,6 +121,11 @@ trait SchedClassRq: Send + fmt::Debug {
     /// Update the information of the current task.
     fn update_current(&mut self, rt: &CurrentRuntime, attr: &SchedAttr, flags: UpdateFlags)
         -> bool;
+
+    /// Checks if the current task should be preempted by the given task.
+    ///
+    /// Note: Here the two tasks are guaranteed to be of same scheduling policy.
+    fn check_preempt_current(attr: &SchedAttr, current_attr: &SchedAttr) -> bool;
 }
 
 /// The scheduling attribute for a thread.
@@ -213,18 +218,10 @@ impl Scheduler for ClassScheduler {
             return None;
         }
 
-        // Preempt if the new task has a higher priority.
-        let should_preempt = rq
-            .current
-            .as_ref()
-            .is_none_or(|((_, rq_current_thread), _)| {
-                thread.sched_attr().policy() < rq_current_thread.sched_attr().policy()
-            });
-
         thread.sched_attr().set_last_cpu(cpu);
-        rq.enqueue_entity((task, thread), Some(flags));
+        rq.enqueue_entity((task, thread.clone()), Some(flags));
 
-        should_preempt.then_some(cpu)
+        rq.check_preempt_current(&thread).then_some(cpu)
     }
 
     fn local_mut_rq_with(&self, f: &mut dyn FnMut(&mut dyn LocalRunQueue)) {
@@ -315,6 +312,45 @@ impl PerCpuClassRqSet {
             SchedPolicyKind::Fair => self.fair.enqueue(task, flags),
             SchedPolicyKind::Idle => self.idle.enqueue(task, flags),
         }
+    }
+
+    fn check_preempt_current(&mut self, thread: &Thread) -> bool {
+        self.current
+            .as_mut()
+            .is_none_or(|((_, current), current_rt)| {
+                let policy = thread.sched_attr().policy_kind();
+                let current_policy = current.sched_attr().policy_kind();
+                policy < current_policy
+                    || (policy == current_policy
+                        && match policy {
+                            SchedPolicyKind::Stop => stop::StopClassRq::check_preempt_current(
+                                thread.sched_attr(),
+                                current.sched_attr(),
+                            ),
+                            SchedPolicyKind::RealTime => {
+                                real_time::RealTimeClassRq::check_preempt_current(
+                                    thread.sched_attr(),
+                                    current.sched_attr(),
+                                )
+                            }
+                            SchedPolicyKind::Fair => {
+                                current_rt.update();
+                                self.fair.update_current(
+                                    current_rt,
+                                    current.sched_attr(),
+                                    UpdateFlags::CheckPreempt,
+                                );
+                                fair::FairClassRq::check_preempt_current(
+                                    thread.sched_attr(),
+                                    current.sched_attr(),
+                                )
+                            }
+                            SchedPolicyKind::Idle => idle::IdleClassRq::check_preempt_current(
+                                thread.sched_attr(),
+                                current.sched_attr(),
+                            ),
+                        })
+            })
     }
 
     fn nr_queued_and_running(&self) -> (u32, u32) {

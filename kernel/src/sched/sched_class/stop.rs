@@ -59,4 +59,8 @@ impl SchedClassRq for StopClassRq {
         // Stop entities has the lowest priority value. They should never be preempted.
         false
     }
+
+    fn check_preempt_current(_: &SchedAttr, _: &SchedAttr) -> bool {
+        unreachable!("There should be only one unique stop entity.")
+    }
 }
