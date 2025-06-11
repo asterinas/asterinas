@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::ops::RangeInclusive;
+
 use aster_bigtcp::socket::{
     NeedIfacePoll, TCP_RECV_BUF_LEN, TCP_SEND_BUF_LEN, UDP_RECV_PAYLOAD_LEN, UDP_SEND_PAYLOAD_LEN,
 };
@@ -9,8 +11,8 @@ use crate::{
     match_sock_option_mut, match_sock_option_ref,
     net::socket::{
         options::{
-            KeepAlive, Linger, RecvBuf, RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce,
-            SocketOption,
+            KeepAlive, Linger, Priority, RecvBuf, RecvBufForce, ReuseAddr, ReusePort, SendBuf,
+            SendBufForce, SocketOption,
         },
         unix::UNIX_STREAM_DEFAULT_BUF_SIZE,
     },
@@ -28,42 +30,48 @@ pub struct SocketOptionSet {
     recv_buf: u32,
     linger: LingerOption,
     keep_alive: bool,
+    priority: i32,
+}
+
+impl Default for SocketOptionSet {
+    fn default() -> Self {
+        Self {
+            reuse_addr: false,
+            reuse_port: false,
+            send_buf: MIN_SENDBUF,
+            recv_buf: MIN_RECVBUF,
+            linger: LingerOption::default(),
+            keep_alive: false,
+            priority: 0,
+        }
+    }
 }
 
 impl SocketOptionSet {
     /// Return the default socket level options for tcp socket.
     pub fn new_tcp() -> Self {
         Self {
-            reuse_addr: false,
-            reuse_port: false,
             send_buf: TCP_SEND_BUF_LEN as u32,
             recv_buf: TCP_RECV_BUF_LEN as u32,
-            linger: LingerOption::default(),
-            keep_alive: false,
+            ..Default::default()
         }
     }
 
     /// Return the default socket level options for udp socket.
     pub fn new_udp() -> Self {
         Self {
-            reuse_addr: false,
-            reuse_port: false,
             send_buf: UDP_SEND_PAYLOAD_LEN as u32,
             recv_buf: UDP_RECV_PAYLOAD_LEN as u32,
-            linger: LingerOption::default(),
-            keep_alive: false,
+            ..Default::default()
         }
     }
 
     /// Returns the default socket level options for unix stream socket.
     pub(in crate::net) fn new_unix_stream() -> Self {
         Self {
-            reuse_addr: false,
-            reuse_port: false,
             send_buf: UNIX_STREAM_DEFAULT_BUF_SIZE as u32,
             recv_buf: UNIX_STREAM_DEFAULT_BUF_SIZE as u32,
-            linger: LingerOption::default(),
-            keep_alive: false,
+            ..Default::default()
         }
     }
 
@@ -93,6 +101,10 @@ impl SocketOptionSet {
             socket_linger: Linger => {
                 let linger = self.linger();
                 socket_linger.set(linger);
+            },
+            socket_priority: Priority => {
+                let priority = self.priority();
+                socket_priority.set(priority);
             },
             socket_keepalive: KeepAlive => {
                 let keep_alive = self.keep_alive();
@@ -144,6 +156,11 @@ impl SocketOptionSet {
                 let reuse_port = socket_reuse_port.get().unwrap();
                 self.set_reuse_port(*reuse_port);
             },
+            socket_priority: Priority => {
+                let priority = socket_priority.get().unwrap();
+                check_priority(*priority)?;
+                self.set_priority(*priority);
+            },
             socket_linger: Linger => {
                 let linger = socket_linger.get().unwrap();
                 self.set_linger(*linger);
@@ -190,6 +207,16 @@ fn check_current_privileged() -> Result<()> {
     }
 
     return_errno_with_message!(Errno::EPERM, "the process does not have permissions")
+}
+
+fn check_priority(priority: i32) -> Result<()> {
+    const NORMAL_PRIORITY_RANGE: RangeInclusive<i32> = 0..=6;
+
+    if NORMAL_PRIORITY_RANGE.contains(&priority) {
+        return Ok(());
+    }
+
+    check_current_privileged()
 }
 
 pub const MIN_SENDBUF: u32 = 2304;
