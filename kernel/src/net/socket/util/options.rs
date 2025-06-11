@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::ops::RangeInclusive;
+
 use aster_bigtcp::socket::{
     NeedIfacePoll, TCP_RECV_BUF_LEN, TCP_SEND_BUF_LEN, UDP_RECV_PAYLOAD_LEN, UDP_SEND_PAYLOAD_LEN,
 };
@@ -9,8 +11,8 @@ use crate::{
     match_sock_option_mut, match_sock_option_ref,
     net::socket::{
         options::{
-            AttachFilter, KeepAlive, Linger, PassCred, RecvBuf, RecvBufForce, ReuseAddr, ReusePort,
-            SendBuf, SendBufForce, SocketOption,
+            AttachFilter, KeepAlive, Linger, PassCred, Priority, RecvBuf, RecvBufForce, ReuseAddr,
+            ReusePort, SendBuf, SendBufForce, SocketOption,
         },
         unix::UNIX_STREAM_DEFAULT_BUF_SIZE,
         util::FilterProgram,
@@ -29,6 +31,7 @@ pub struct SocketOptionSet {
     recv_buf: u32,
     linger: LingerOption,
     keep_alive: bool,
+    priority: i32,
     pass_cred: bool,
     #[getset(skip)]
     #[getset(set)]
@@ -44,6 +47,7 @@ impl Default for SocketOptionSet {
             recv_buf: MIN_RECVBUF,
             linger: LingerOption::default(),
             keep_alive: false,
+            priority: 0,
             pass_cred: false,
             attach_filter: None,
         }
@@ -105,6 +109,10 @@ impl SocketOptionSet {
                 let linger = self.linger();
                 socket_linger.set(linger);
             },
+            socket_priority: Priority => {
+                let priority = self.priority();
+                socket_priority.set(priority);
+            },
             socket_keepalive: KeepAlive => {
                 let keep_alive = self.keep_alive();
                 socket_keepalive.set(keep_alive);
@@ -160,6 +168,11 @@ impl SocketOptionSet {
             socket_reuse_port: ReusePort => {
                 let reuse_port = socket_reuse_port.get().unwrap();
                 self.set_reuse_port(*reuse_port);
+            },
+            socket_priority: Priority => {
+                let priority = socket_priority.get().unwrap();
+                check_priority(*priority)?;
+                self.set_priority(*priority);
             },
             socket_linger: Linger => {
                 let linger = socket_linger.get().unwrap();
@@ -217,6 +230,16 @@ fn check_current_privileged() -> Result<()> {
     }
 
     return_errno_with_message!(Errno::EPERM, "the process does not have permissions")
+}
+
+fn check_priority(priority: i32) -> Result<()> {
+    const NORMAL_PRIORITY_RANGE: RangeInclusive<i32> = 0..=6;
+
+    if NORMAL_PRIORITY_RANGE.contains(&priority) {
+        return Ok(());
+    }
+
+    check_current_privileged()
 }
 
 pub const MIN_SENDBUF: u32 = 2304;
