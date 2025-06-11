@@ -15,7 +15,7 @@ use crate::{
     net::socket::{
         options::SocketOption,
         private::SocketPrivate,
-        unix::UnixSocketAddr,
+        unix::{cred::SocketCred, CUserCred, UnixSocketAddr},
         util::{
             options::{GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet},
             MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr,
@@ -80,7 +80,10 @@ impl UnixStreamSocket {
     }
 
     pub fn new_pair(is_nonblocking: bool) -> (Arc<Self>, Arc<Self>) {
-        let (conn_a, conn_b) = Connected::new_pair(None, None, None, None);
+        let (conn_a, conn_b) = {
+            let cred = SocketCred::new_current();
+            Connected::new_pair(None, None, None, None, cred.clone(), cred)
+        };
         let options = OptionSet::new();
         (
             Self::new_connected(conn_a, options.clone(), is_nonblocking),
@@ -351,6 +354,14 @@ impl Socket for UnixStreamSocket {
 impl GetSocketLevelOption for State {
     fn is_listening(&self) -> bool {
         matches!(self, Self::Listen(_))
+    }
+
+    fn peer_cred(&self) -> Result<CUserCred> {
+        let Self::Connected(connected) = self else {
+            return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected");
+        };
+
+        Ok(*connected.peer_cred().cred())
     }
 }
 

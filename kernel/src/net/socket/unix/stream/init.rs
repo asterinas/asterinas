@@ -9,7 +9,10 @@ use super::{
 use crate::{
     events::IoEvents,
     net::socket::{
-        unix::addr::{UnixSocketAddr, UnixSocketAddrBound},
+        unix::{
+            addr::{UnixSocketAddr, UnixSocketAddrBound},
+            cred::SocketCred,
+        },
         util::SockShutdownCmd,
     },
     prelude::*,
@@ -46,7 +49,11 @@ impl Init {
         Ok(())
     }
 
-    pub(super) fn into_connected(self, peer_addr: UnixSocketAddrBound) -> (Connected, Connected) {
+    pub(super) fn into_connected(
+        self,
+        peer_addr: UnixSocketAddrBound,
+        peer_cred: SocketCred,
+    ) -> (Connected, Connected) {
         let Init {
             addr,
             reader_pollee,
@@ -60,6 +67,8 @@ impl Init {
             Some(peer_addr),
             Some(reader_pollee),
             Some(writer_pollee),
+            SocketCred::new_current(),
+            peer_cred,
         );
 
         if is_read_shutdown.into_inner() {

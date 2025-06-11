@@ -11,10 +11,10 @@ use crate::{
     match_sock_option_mut, match_sock_option_ref,
     net::socket::{
         options::{
-            AcceptConn, AttachFilter, KeepAlive, Linger, PassCred, Priority, RecvBuf, RecvBufForce,
-            ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
+            AcceptConn, AttachFilter, KeepAlive, Linger, PassCred, PeerCred, Priority, RecvBuf,
+            RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
         },
-        unix::UNIX_STREAM_DEFAULT_BUF_SIZE,
+        unix::{CUserCred, UNIX_STREAM_DEFAULT_BUF_SIZE},
         util::FilterProgram,
     },
     prelude::*,
@@ -126,6 +126,10 @@ impl SocketOptionSet {
                 // Should we return errors if the socket is not unix socket?
                 let pass_cred = self.pass_cred();
                 socket_pass_cred.set(pass_cred);
+            },
+            socket_peer_cred: PeerCred => {
+                let peer_cred = socket.peer_cred()?;
+                socket_peer_cred.set(peer_cred);
             },
             socket_accept_conn: AcceptConn => {
                 let is_listening = socket.is_listening();
@@ -256,6 +260,10 @@ pub const MIN_RECVBUF: u32 = 2304;
 pub(in crate::net) trait GetSocketLevelOption {
     /// Returns whether the socket is in listening state.
     fn is_listening(&self) -> bool;
+    /// Returns the peer credentials.
+    fn peer_cred(&self) -> Result<CUserCred> {
+        return_errno_with_message!(Errno::ENOPROTOOPT, "SO_PEERCRED is not supported")
+    }
 }
 /// A trait used for setting socket level options on actual sockets.
 pub(in crate::net) trait SetSocketLevelOption {

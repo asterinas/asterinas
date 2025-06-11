@@ -8,7 +8,7 @@ use crate::{
     events::IoEvents,
     fs::utils::{Channel, Consumer, Producer},
     net::socket::{
-        unix::{addr::UnixSocketAddrBound, UnixSocketAddr},
+        unix::{addr::UnixSocketAddrBound, cred::SocketCred, UnixSocketAddr},
         util::SockShutdownCmd,
     },
     prelude::*,
@@ -20,6 +20,7 @@ pub(super) struct Connected {
     addr: AddrView,
     reader: Consumer<u8>,
     writer: Producer<u8>,
+    peer_cred: SocketCred,
 }
 
 impl Connected {
@@ -28,6 +29,8 @@ impl Connected {
         peer_addr: Option<UnixSocketAddrBound>,
         reader_pollee: Option<Pollee>,
         writer_pollee: Option<Pollee>,
+        cred: SocketCred,
+        peer_cred: SocketCred,
     ) -> (Connected, Connected) {
         let (writer_peer, reader_this) =
             Channel::with_capacity_and_pollees(UNIX_STREAM_DEFAULT_BUF_SIZE, None, reader_pollee)
@@ -42,11 +45,13 @@ impl Connected {
             addr: addr_this,
             reader: reader_this,
             writer: writer_this,
+            peer_cred,
         };
         let peer = Connected {
             addr: addr_peer,
             reader: reader_peer,
             writer: writer_peer,
+            peer_cred: cred,
         };
 
         (this, peer)
@@ -111,6 +116,10 @@ impl Connected {
         let writer_events = self.writer.poll(mask, poller);
 
         combine_io_events(mask, reader_events, writer_events)
+    }
+
+    pub(super) fn peer_cred(&self) -> &SocketCred {
+        &self.peer_cred
     }
 }
 
