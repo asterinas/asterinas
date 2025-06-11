@@ -18,6 +18,7 @@ impl_socket_options!(
     pub struct SendBuf(u32);
     pub struct RecvBuf(u32);
     pub struct Error(Option<crate::error::Error>);
+    pub struct Priority(i32);
     pub struct Linger(LingerOption);
     pub struct KeepAlive(bool);
     pub struct PassCred(bool);

@@ -4,8 +4,8 @@ use super::RawSocketOption;
 use crate::{
     impl_raw_sock_option_get_only, impl_raw_sock_option_set_only, impl_raw_socket_option,
     net::socket::options::{
-        AttachFilter, Error, KeepAlive, Linger, PassCred, RecvBuf, RecvBufForce, ReuseAddr,
-        ReusePort, SendBuf, SendBufForce, SocketOption,
+        AttachFilter, Error, KeepAlive, Linger, PassCred, Priority, RecvBuf, RecvBufForce,
+        ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
     },
     prelude::*,
 };
@@ -54,6 +54,7 @@ pub fn new_socket_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
         CSocketOptionName::REUSEADDR => Ok(Box::new(ReuseAddr::new())),
         CSocketOptionName::ERROR => Ok(Box::new(Error::new())),
         CSocketOptionName::REUSEPORT => Ok(Box::new(ReusePort::new())),
+        CSocketOptionName::PRIORITY => Ok(Box::new(Priority::new())),
         CSocketOptionName::LINGER => Ok(Box::new(Linger::new())),
         CSocketOptionName::KEEPALIVE => Ok(Box::new(KeepAlive::new())),
         CSocketOptionName::PASSCRED => Ok(Box::new(PassCred::new())),
@@ -69,6 +70,7 @@ impl_raw_socket_option!(RecvBuf);
 impl_raw_socket_option!(ReuseAddr);
 impl_raw_sock_option_get_only!(Error);
 impl_raw_socket_option!(ReusePort);
+impl_raw_socket_option!(Priority);
 impl_raw_socket_option!(Linger);
 impl_raw_socket_option!(KeepAlive);
 impl_raw_socket_option!(PassCred);
