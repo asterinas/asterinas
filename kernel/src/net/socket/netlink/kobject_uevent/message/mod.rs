@@ -46,11 +46,9 @@ impl UeventMessage {
 
     /// Writes the uevent to the given `writer`.
     pub(super) fn write_to(&self, writer: &mut dyn MultiWrite) -> Result<()> {
-        // FIXME: If the message can be truncated, we should avoid returning an error.
-        if self.uevent.len() > writer.sum_lens() {
-            return_errno_with_message!(Errno::EFAULT, "the writer length is too small");
-        }
-        writer.write(&mut VmReader::from(self.uevent.as_bytes()))?;
+        let _nbytes = writer.write(&mut VmReader::from(self.uevent.as_bytes()))?;
+        // `_nbytes` may be smaller than the message size. We ignore it to truncate the message.
+
         Ok(())
     }
 }

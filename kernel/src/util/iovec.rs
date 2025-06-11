@@ -155,12 +155,9 @@ pub trait MultiRead: ReadCString {
         self.sum_lens() == 0
     }
 
-    /// Skips the first `nbytes` bytes of data.
-    ///
-    /// # Panics
-    ///
-    /// If `nbytes` is greater that [`MultiRead::sum_lens`], this method will panic.
-    fn skip(&mut self, nbytes: usize);
+    /// Skips the first `nbytes` bytes of data, or skips to the end if the readers have
+    /// insufficient bytes.
+    fn skip_some(&mut self, nbytes: usize);
 }
 
 /// Trait defining the write behavior for a collection of [`VmWriter`]s.
@@ -185,12 +182,9 @@ pub trait MultiWrite {
         self.sum_lens() == 0
     }
 
-    /// Skips the first `nbytes` bytes of space.
-    ///
-    /// # Panics
-    ///
-    /// If `nbytes` is greater that [`MultiWrite::sum_lens`], this method will panic.
-    fn skip(&mut self, nbytes: usize);
+    /// Skips the first `nbytes` bytes of data, or skips to the end if the writers have
+    /// insufficient bytes.
+    fn skip_some(&mut self, nbytes: usize);
 }
 
 impl MultiRead for VmReaderArray<'_> {
@@ -211,7 +205,7 @@ impl MultiRead for VmReaderArray<'_> {
         self.0.iter().map(|vm_reader| vm_reader.remain()).sum()
     }
 
-    fn skip(&mut self, mut nbytes: usize) {
+    fn skip_some(&mut self, mut nbytes: usize) {
         for reader in &mut self.0 {
             let bytes_to_skip = reader.remain().min(nbytes);
             reader.skip(bytes_to_skip);
@@ -221,11 +215,6 @@ impl MultiRead for VmReaderArray<'_> {
                 return;
             }
         }
-
-        panic!(
-            "the readers are exhausted but there are {} bytes remaining to skip",
-            nbytes
-        );
     }
 }
 
@@ -238,16 +227,22 @@ impl MultiRead for VmReader<'_> {
         self.remain()
     }
 
-    fn skip(&mut self, nbytes: usize) {
-        VmReader::skip(self, nbytes);
+    fn skip_some(&mut self, nbytes: usize) {
+        self.skip(self.remain().min(nbytes));
     }
 }
 
 impl dyn MultiRead + '_ {
-    pub fn read_val<T: Pod>(&mut self) -> Result<T> {
+    /// Reads a `T` value, returning a `None` if the readers have insufficient bytes.
+    pub fn read_val_opt<T: Pod>(&mut self) -> Result<Option<T>> {
         let mut val = T::new_zeroed();
-        self.read(&mut VmWriter::from(val.as_bytes_mut()))?;
-        Ok(val)
+        let nbytes = self.read(&mut VmWriter::from(val.as_bytes_mut()))?;
+
+        if nbytes == size_of::<T>() {
+            Ok(Some(val))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -269,7 +264,7 @@ impl MultiWrite for VmWriterArray<'_> {
         self.0.iter().map(|vm_writer| vm_writer.avail()).sum()
     }
 
-    fn skip(&mut self, mut nbytes: usize) {
+    fn skip_some(&mut self, mut nbytes: usize) {
         for writer in &mut self.0 {
             let bytes_to_skip = writer.avail().min(nbytes);
             writer.skip(bytes_to_skip);
@@ -279,11 +274,6 @@ impl MultiWrite for VmWriterArray<'_> {
                 return;
             }
         }
-
-        panic!(
-            "the writers are exhausted but there are {} bytes remaining to skip",
-            nbytes
-        );
     }
 }
 
@@ -296,14 +286,17 @@ impl MultiWrite for VmWriter<'_> {
         self.avail()
     }
 
-    fn skip(&mut self, nbytes: usize) {
-        VmWriter::skip(self, nbytes);
+    fn skip_some(&mut self, nbytes: usize) {
+        self.skip(self.avail().min(nbytes));
     }
 }
 
 impl dyn MultiWrite + '_ {
-    pub fn write_val<T: Pod>(&mut self, val: &T) -> Result<()> {
-        self.write(&mut VmReader::from(val.as_bytes()))?;
+    /// Writes a `T` value, truncating the value if the writers have insufficient bytes.
+    pub fn write_val_trunc<T: Pod>(&mut self, val: &T) -> Result<()> {
+        let _nbytes = self.write(&mut VmReader::from(val.as_bytes()))?;
+        // `_nbytes` may be smaller than the value size. We ignore it to truncate the value.
+
         Ok(())
     }
 }

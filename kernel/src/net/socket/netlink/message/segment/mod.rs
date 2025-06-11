@@ -43,12 +43,12 @@ pub trait SegmentBody: Sized + Clone + Copy {
 
         // Read the body.
         let (c_type, padding_len) = if remaining_len >= size_of::<Self::CType>() {
-            let c_type = reader.read_val::<Self::CType>()?;
+            let c_type = reader.read_val_opt::<Self::CType>()?.unwrap();
             remaining_len -= size_of_val(&c_type);
 
             (c_type, Self::padding_len())
         } else if remaining_len >= size_of::<Self::CLegacyType>() {
-            let legacy = reader.read_val::<Self::CLegacyType>()?;
+            let legacy = reader.read_val_opt::<Self::CLegacyType>()?.unwrap();
             remaining_len -= size_of_val(&legacy);
 
             (Self::CType::from(legacy), Self::lecacy_padding_len())
@@ -58,7 +58,7 @@ pub trait SegmentBody: Sized + Clone + Copy {
 
         // Skip the padding bytes.
         let padding_len = padding_len.min(remaining_len);
-        reader.skip(padding_len);
+        reader.skip_some(padding_len);
         remaining_len -= padding_len;
 
         let body = c_type.try_into()?;
@@ -68,11 +68,12 @@ pub trait SegmentBody: Sized + Clone + Copy {
     fn write_to(&self, writer: &mut dyn MultiWrite) -> Result<()> {
         // Write the body.
         let c_body = Self::CType::from(*self);
-        writer.write_val(&c_body)?;
+        writer.write_val_trunc(&c_body)?;
 
         // Skip the padding bytes.
         let padding_len = Self::padding_len();
-        writer.skip(padding_len);
+        writer.skip_some(padding_len);
+
         Ok(())
     }
 
