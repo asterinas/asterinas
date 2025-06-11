@@ -58,25 +58,41 @@ impl Attribute for AddrAttr {
         }
     }
 
-    fn read_from(reader: &mut dyn MultiRead) -> Result<Self>
+    fn read_from(header: &CAttrHeader, reader: &mut dyn MultiRead) -> Result<Option<Self>>
     where
         Self: Sized,
     {
-        let header = reader.read_val_opt::<CAttrHeader>()?.unwrap();
+        let payload_len = header.payload_len();
 
         // TODO: Currently, `IS_NET_BYTEORDER_MASK` and `IS_NESTED_MASK` are ignored.
-        let res = match AddrAttrClass::try_from(header.type_())? {
-            AddrAttrClass::ADDRESS => Self::Address(reader.read_val_opt()?.unwrap()),
-            AddrAttrClass::LOCAL => Self::Local(reader.read_val_opt()?.unwrap()),
-            AddrAttrClass::LABEL => Self::Label(reader.read_cstring_with_max_len(IFNAME_SIZE)?),
-            class => {
-                // FIXME: Netlink should ignore all unknown attributes.
-                // See the reference in `LinkAttr::read_from`.
+        let Ok(class) = AddrAttrClass::try_from(header.type_()) else {
+            // Unknown attributes should be ignored.
+            // Reference: <https://docs.kernel.org/userspace-api/netlink/intro.html#unknown-attributes>.
+            reader.skip_some(payload_len);
+            return Ok(None);
+        };
+
+        let res = match (class, payload_len) {
+            (AddrAttrClass::ADDRESS, 4) => {
+                Self::Address(reader.read_val_opt::<[u8; 4]>()?.unwrap())
+            }
+            (AddrAttrClass::LOCAL, 4) => Self::Local(reader.read_val_opt::<[u8; 4]>()?.unwrap()),
+            (AddrAttrClass::LABEL, 1..=IFNAME_SIZE) => {
+                Self::Label(reader.read_cstring_with_max_len(payload_len)?)
+            }
+
+            (AddrAttrClass::ADDRESS | AddrAttrClass::LOCAL | AddrAttrClass::LABEL, _) => {
+                warn!("address attribute `{:?}` contains invalid payload", class);
+                return_errno_with_message!(Errno::EINVAL, "the address attribute is invalid");
+            }
+
+            (_, _) => {
                 warn!("address attribute `{:?}` is not supported", class);
-                return_errno_with_message!(Errno::EINVAL, "unsupported address attribute");
+                reader.skip_some(payload_len);
+                return Ok(None);
             }
         };
 
-        Ok(res)
+        Ok(Some(res))
     }
 }

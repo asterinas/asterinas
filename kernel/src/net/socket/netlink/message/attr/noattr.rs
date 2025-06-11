@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::Attribute;
+use super::{Attribute, CAttrHeader};
 use crate::{prelude::*, util::MultiRead};
 
 /// A special type indicates that a segment cannot have attributes.
@@ -16,11 +16,14 @@ impl Attribute for NoAttr {
         match *self {}
     }
 
-    fn read_from(_reader: &mut dyn MultiRead) -> Result<Self>
+    fn read_from(header: &CAttrHeader, reader: &mut dyn MultiRead) -> Result<Option<Self>>
     where
         Self: Sized,
     {
-        return_errno_with_message!(Errno::EINVAL, "`NoAttr` cannot be read");
+        let payload_len = header.payload_len();
+        reader.skip_some(payload_len);
+
+        Ok(None)
     }
 
     fn read_all_from(_reader: &mut dyn MultiRead, _total_len: usize) -> Result<Vec<Self>>

@@ -51,7 +51,7 @@ impl<Body: SegmentBody, Attr: Attribute> SegmentCommon<Body, Attr> {
     where
         Error: From<<Body::CType as TryInto<Body>>::Error>,
     {
-        let (body, remain_len) = Body::read_from(&header, reader).unwrap();
+        let (body, remain_len) = Body::read_from(&header, reader)?;
         let attrs = Attr::read_all_from(reader, remain_len)?;
 
         Ok(Self {

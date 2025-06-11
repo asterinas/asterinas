@@ -56,22 +56,20 @@ impl datagram_common::Bound for BoundNetlinkRoute {
             );
         }
 
-        let mut nlmsg = {
-            let sum_lens = reader.sum_lens();
+        let sum_lens = reader.sum_lens();
 
-            match RtnlMessage::read_from(reader) {
-                Ok(nlmsg) => nlmsg,
-                Err(e) if e.error() == Errno::EFAULT => {
-                    // EFAULT indicates an error occurred while copying data from user space,
-                    // and this error should be returned back to user space.
-                    return Err(e);
-                }
-                Err(e) => {
-                    // Errors other than EFAULT indicate a failure in parsing the netlink message.
-                    // These errors should be silently ignored.
-                    warn!("failed to send netlink message: {:?}", e);
-                    return Ok(sum_lens);
-                }
+        let mut nlmsg = match RtnlMessage::read_from(reader) {
+            Ok(nlmsg) => nlmsg,
+            Err(e) if e.error() == Errno::EFAULT => {
+                // EFAULT indicates an error occurred while copying data from user space,
+                // and this error should be returned back to user space.
+                return Err(e);
+            }
+            Err(e) => {
+                // Errors other than EFAULT indicate a failure in parsing the netlink message.
+                // These errors should be silently ignored.
+                warn!("failed to send netlink message: {:?}", e);
+                return Ok(sum_lens);
             }
         };
 
@@ -88,7 +86,7 @@ impl datagram_common::Bound for BoundNetlinkRoute {
 
         get_netlink_route_kernel().request(&nlmsg, local_port);
 
-        Ok(nlmsg.total_len())
+        Ok(sum_lens)
     }
 
     fn try_recv(
