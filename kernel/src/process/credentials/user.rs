@@ -13,6 +13,11 @@ pub struct Uid(u32);
 const ROOT_UID: u32 = 0;
 
 impl Uid {
+    /// The invalid UID, typically used to indicate that no valid UID is found when returning to user space.
+    ///
+    /// Reference: <https://elixir.bootlin.com/linux/v6.15/source/include/linux/uidgid.h#L50>.
+    pub const INVALID: Uid = Self::new(u32::MAX);
+
     pub const fn new_root() -> Self {
         Self(ROOT_UID)
     }

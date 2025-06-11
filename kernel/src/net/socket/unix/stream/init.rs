@@ -2,6 +2,8 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use aster_rights::ReadOp;
+
 use super::{
     connected::Connected,
     listener::Listener,
@@ -11,7 +13,10 @@ use crate::{
     events::IoEvents,
     fs::utils::EndpointState,
     net::socket::{
-        unix::addr::{UnixSocketAddr, UnixSocketAddrBound},
+        unix::{
+            addr::{UnixSocketAddr, UnixSocketAddrBound},
+            cred::SocketCred,
+        },
         util::SockShutdownCmd,
     },
     prelude::*,
@@ -48,6 +53,7 @@ impl Init {
         self,
         peer_addr: UnixSocketAddrBound,
         pollee: Pollee,
+        peer_cred: SocketCred,
     ) -> (Connected, Connected) {
         let Init {
             addr,
@@ -56,11 +62,15 @@ impl Init {
         } = self;
 
         pollee.invalidate();
+
+        let cred = SocketCred::<ReadOp>::new_current();
         let (this_conn, peer_conn) = Connected::new_pair(
             addr,
             Some(peer_addr),
             EndpointState::new(pollee, is_read_shutdown.into_inner()),
             EndpointState::new(Pollee::new(), is_write_shutdown.into_inner()),
+            cred,
+            peer_cred,
         );
 
         (this_conn, peer_conn)

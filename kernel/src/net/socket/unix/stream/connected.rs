@@ -4,7 +4,7 @@ use crate::{
     events::IoEvents,
     fs::utils::{Endpoint, EndpointState},
     net::socket::{
-        unix::{addr::UnixSocketAddrBound, UnixSocketAddr},
+        unix::{addr::UnixSocketAddrBound, cred::SocketCred, UnixSocketAddr},
         util::SockShutdownCmd,
     },
     prelude::*,
@@ -19,6 +19,7 @@ pub(super) struct Connected {
     inner: Endpoint<Inner>,
     reader: Mutex<RbConsumer<u8>>,
     writer: Mutex<RbProducer<u8>>,
+    peer_cred: SocketCred,
 }
 
 impl Connected {
@@ -27,6 +28,8 @@ impl Connected {
         peer_addr: Option<UnixSocketAddrBound>,
         state: EndpointState,
         peer_state: EndpointState,
+        cred: SocketCred,
+        peer_cred: SocketCred,
     ) -> (Connected, Connected) {
         let (this_writer, peer_reader) = RingBuffer::new(UNIX_STREAM_DEFAULT_BUF_SIZE).split();
         let (peer_writer, this_reader) = RingBuffer::new(UNIX_STREAM_DEFAULT_BUF_SIZE).split();
@@ -46,11 +49,13 @@ impl Connected {
             inner: this_inner,
             reader: Mutex::new(this_reader),
             writer: Mutex::new(this_writer),
+            peer_cred,
         };
         let peer = Connected {
             inner: peer_inner,
             reader: Mutex::new(peer_reader),
             writer: Mutex::new(peer_writer),
+            peer_cred: cred,
         };
 
         (this, peer)
@@ -143,6 +148,10 @@ impl Connected {
 
     pub(super) fn cloned_pollee(&self) -> Pollee {
         self.inner.this_end().state.cloned_pollee()
+    }
+
+    pub(super) fn peer_cred(&self) -> &SocketCred {
+        &self.peer_cred
     }
 }
 

@@ -11,6 +11,11 @@ use crate::prelude::*;
 pub struct Gid(u32);
 
 impl Gid {
+    /// The invalid GID, typically used to indicate that no valid GID is found when returning to user space.
+    ///
+    /// Reference: <https://elixir.bootlin.com/linux/v6.15/source/include/linux/uidgid.h#L51>.
+    pub const INVALID: Gid = Gid(u32::MAX);
+
     pub const fn new(gid: u32) -> Self {
         Self(gid)
     }

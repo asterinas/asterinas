@@ -2,6 +2,7 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use aster_rights::ReadDupOp;
 use takeable::Takeable;
 
 use super::{
@@ -12,10 +13,11 @@ use super::{
 use crate::{
     events::IoEvents,
     fs::{file_handle::FileLike, utils::EndpointState},
+    match_sock_option_mut,
     net::socket::{
-        options::SocketOption,
+        options::{PeerCred, PeerGroups, SocketOption},
         private::SocketPrivate,
-        unix::UnixSocketAddr,
+        unix::{cred::SocketCred, CUserCred, UnixSocketAddr},
         util::{
             options::{GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet},
             MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr,
@@ -23,7 +25,10 @@ use crate::{
         Socket,
     },
     prelude::*,
-    process::signal::{PollHandle, Pollable, Pollee},
+    process::{
+        signal::{PollHandle, Pollable, Pollee},
+        Gid,
+    },
     util::{MultiRead, MultiWrite},
 };
 
@@ -115,6 +120,24 @@ impl State {
             State::Connected(connected) => connected.is_write_shutdown(),
         }
     }
+
+    pub(self) fn peer_cred(&self) -> Option<CUserCred> {
+        match self {
+            Self::Init(_) => None,
+            Self::Listen(listener) => Some(listener.cred().to_c_user_cred()),
+            Self::Connected(connected) => Some(connected.peer_cred().to_c_user_cred()),
+        }
+    }
+
+    pub(self) fn peer_groups(&self) -> Result<Arc<[Gid]>> {
+        match self {
+            State::Init(_) => {
+                return_errno_with_message!(Errno::ENODATA, "the socket does not have peer groups")
+            }
+            State::Listen(listener) => Ok(listener.cred().groups()),
+            State::Connected(connected) => Ok(connected.peer_cred().groups()),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -136,11 +159,15 @@ impl UnixStreamSocket {
     }
 
     pub fn new_pair(is_nonblocking: bool) -> (Arc<Self>, Arc<Self>) {
+        let cred = SocketCred::<ReadDupOp>::new_current();
+
         let (conn_a, conn_b) = Connected::new_pair(
             None,
             None,
             EndpointState::default(),
             EndpointState::default(),
+            cred.dup().restrict(),
+            cred.restrict(),
         );
         let options = OptionSet::new();
         (
@@ -378,6 +405,12 @@ impl Socket for UnixStreamSocket {
         let state = self.state.read();
         let options = self.options.read();
 
+        // Deal with UNIX-socket-specific socket-level options
+        match do_unix_getsockopt(option, state.as_ref()) {
+            Err(err) if err.error() == Errno::ENOPROTOOPT => (),
+            res => return res,
+        }
+
         // Deal with socket-level options
         match options.socket.get_option(option, state.as_ref()) {
             Err(err) if err.error() == Errno::ENOPROTOOPT => (),
@@ -407,6 +440,22 @@ impl Socket for UnixStreamSocket {
             Err(e) => Err(e),
         }
     }
+}
+
+fn do_unix_getsockopt(option: &mut dyn SocketOption, state: &State) -> Result<()> {
+    match_sock_option_mut!(option, {
+        socket_peer_cred: PeerCred => {
+            let peer_cred = state.peer_cred().unwrap_or_else(CUserCred::new_unknown);
+            socket_peer_cred.set(peer_cred);
+        },
+        socket_peer_groups: PeerGroups => {
+            let groups = state.peer_groups()?;
+            socket_peer_groups.set(groups);
+        },
+        _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to get is not unix socket specific")
+    });
+
+    Ok(())
 }
 
 impl GetSocketLevelOption for State {
