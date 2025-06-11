@@ -27,7 +27,7 @@ impl SocketCred {
         &self.cred
     }
 
-    pub(super) fn groups(&self) -> &[Gid] {
+    pub(super) fn groups(&self) -> &Arc<[Gid]> {
         &self.groups
     }
 }

@@ -23,7 +23,10 @@ use crate::{
         Socket,
     },
     prelude::*,
-    process::signal::{PollHandle, Pollable},
+    process::{
+        signal::{PollHandle, Pollable},
+        Gid,
+    },
     util::{MultiRead, MultiWrite},
 };
 
@@ -358,10 +361,18 @@ impl GetSocketLevelOption for State {
 
     fn peer_cred(&self) -> Result<CUserCred> {
         let Self::Connected(connected) = self else {
-            return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected");
+            return_errno_with_message!(Errno::ENODATA, "the socket is not connected");
         };
 
         Ok(*connected.peer_cred().cred())
+    }
+
+    fn peer_groups(&self) -> Result<Arc<[Gid]>> {
+        let Self::Connected(connected) = self else {
+            return_errno_with_message!(Errno::ENODATA, "the socket is not connected");
+        };
+
+        Ok(connected.peer_cred().groups().clone())
     }
 }
 
