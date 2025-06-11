@@ -11,8 +11,8 @@ use crate::{
     match_sock_option_mut, match_sock_option_ref,
     net::socket::{
         options::{
-            AttachFilter, KeepAlive, Linger, PassCred, Priority, RecvBuf, RecvBufForce, ReuseAddr,
-            ReusePort, SendBuf, SendBufForce, SocketOption,
+            AcceptConn, AttachFilter, KeepAlive, Linger, PassCred, Priority, RecvBuf, RecvBufForce,
+            ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
         },
         unix::UNIX_STREAM_DEFAULT_BUF_SIZE,
         util::FilterProgram,
@@ -87,7 +87,11 @@ impl SocketOptionSet {
     /// Note that the socket error has to be handled separately, because it is automatically
     /// cleared after reading. This method does not handle it. Instead,
     /// [`Self::get_and_clear_socket_errors`] should be used.
-    pub fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
+    pub fn get_option(
+        &self,
+        option: &mut dyn SocketOption,
+        socket: &dyn GetSocketLevelOption,
+    ) -> Result<()> {
         match_sock_option_mut!(option, {
             socket_reuse_addr: ReuseAddr => {
                 let reuse_addr = self.reuse_addr();
@@ -122,6 +126,10 @@ impl SocketOptionSet {
                 // Should we return errors if the socket is not unix socket?
                 let pass_cred = self.pass_cred();
                 socket_pass_cred.set(pass_cred);
+            },
+            socket_accept_conn: AcceptConn => {
+                let is_listening = socket.is_listening();
+                socket_accept_conn.set(is_listening);
             },
             socket_sendbuf_force: SendBufForce => {
                 check_current_privileged()?;
@@ -245,6 +253,10 @@ fn check_priority(priority: i32) -> Result<()> {
 pub const MIN_SENDBUF: u32 = 2304;
 pub const MIN_RECVBUF: u32 = 2304;
 
+pub(in crate::net) trait GetSocketLevelOption {
+    /// Returns whether the socket is in listening state.
+    fn is_listening(&self) -> bool;
+}
 /// A trait used for setting socket level options on actual sockets.
 pub(in crate::net) trait SetSocketLevelOption {
     /// Sets whether keepalive messages are enabled.
