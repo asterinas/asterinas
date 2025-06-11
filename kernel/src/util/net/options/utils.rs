@@ -6,6 +6,7 @@ use crate::{
     current_userspace,
     net::socket::{
         ip::{options::IpTtl, stream_options::CongestionControl},
+        unix::CUserCred,
         util::{FilterProgram, LingerOption},
     },
     prelude::*,
@@ -242,5 +243,19 @@ impl ReadFromUser for FilterProgram {
 
         let csock_fprg = current_userspace!().read_val::<CSockFprog>(addr)?;
         FilterProgram::read_from_user(csock_fprg.filter_addr, csock_fprg.len as usize)
+    }
+}
+
+impl WriteToUser for CUserCred {
+    fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
+        let write_len = core::mem::size_of::<CUserCred>();
+
+        if (max_len as usize) < write_len {
+            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
+        };
+
+        current_userspace!().write_val(addr, self)?;
+
+        Ok(write_len)
     }
 }
