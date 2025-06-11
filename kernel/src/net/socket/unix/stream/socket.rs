@@ -17,7 +17,7 @@ use crate::{
         private::SocketPrivate,
         unix::UnixSocketAddr,
         util::{
-            options::{SetSocketLevelOption, SocketOptionSet},
+            options::{GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet},
             MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr,
         },
         Socket,
@@ -375,10 +375,11 @@ impl Socket for UnixStreamSocket {
     }
 
     fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
+        let state = self.state.read();
         let options = self.options.read();
 
         // Deal with socket-level options
-        match options.socket.get_option(option) {
+        match options.socket.get_option(option, state.as_ref()) {
             Err(err) if err.error() == Errno::ENOPROTOOPT => (),
             res => return res,
         }
@@ -405,6 +406,12 @@ impl Socket for UnixStreamSocket {
             }
             Err(e) => Err(e),
         }
+    }
+}
+
+impl GetSocketLevelOption for State {
+    fn is_listening(&self) -> bool {
+        matches!(self, Self::Listen(_))
     }
 }
 

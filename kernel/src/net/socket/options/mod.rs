@@ -21,6 +21,7 @@ impl_socket_options!(
     pub struct Priority(i32);
     pub struct Linger(LingerOption);
     pub struct KeepAlive(bool);
+    pub struct AcceptConn(bool);
     pub struct SendBufForce(u32);
     pub struct RecvBufForce(u32);
 );
