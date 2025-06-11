@@ -9,8 +9,8 @@ use crate::{
     match_sock_option_mut, match_sock_option_ref,
     net::socket::{
         options::{
-            KeepAlive, Linger, RecvBuf, RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce,
-            SocketOption,
+            KeepAlive, Linger, PassCred, RecvBuf, RecvBufForce, ReuseAddr, ReusePort, SendBuf,
+            SendBufForce, SocketOption,
         },
         unix::UNIX_STREAM_DEFAULT_BUF_SIZE,
     },
@@ -28,6 +28,7 @@ pub struct SocketOptionSet {
     recv_buf: u32,
     linger: LingerOption,
     keep_alive: bool,
+    pass_cred: bool,
 }
 
 impl SocketOptionSet {
@@ -40,6 +41,7 @@ impl SocketOptionSet {
             recv_buf: TCP_RECV_BUF_LEN as u32,
             linger: LingerOption::default(),
             keep_alive: false,
+            pass_cred: false,
         }
     }
 
@@ -52,6 +54,7 @@ impl SocketOptionSet {
             recv_buf: UDP_RECV_PAYLOAD_LEN as u32,
             linger: LingerOption::default(),
             keep_alive: false,
+            pass_cred: false,
         }
     }
 
@@ -64,6 +67,7 @@ impl SocketOptionSet {
             recv_buf: UNIX_STREAM_DEFAULT_BUF_SIZE as u32,
             linger: LingerOption::default(),
             keep_alive: false,
+            pass_cred: false,
         }
     }
 
@@ -97,6 +101,12 @@ impl SocketOptionSet {
             socket_keepalive: KeepAlive => {
                 let keep_alive = self.keep_alive();
                 socket_keepalive.set(keep_alive);
+            },
+            socket_pass_cred: PassCred => {
+                // FIXME: This option is unix socket only.
+                // Should we return errors if the socket is not unix socket?
+                let pass_cred = self.pass_cred();
+                socket_pass_cred.set(pass_cred);
             },
             socket_sendbuf_force: SendBufForce => {
                 check_current_privileged()?;
@@ -152,6 +162,12 @@ impl SocketOptionSet {
                 let keep_alive = socket_keepalive.get().unwrap();
                 self.set_keep_alive(*keep_alive);
                 return Ok(socket.set_keep_alive(*keep_alive));
+            },
+            socket_pass_cred: PassCred => {
+                // FIXME: This option is unix socket only.
+                // Should we return errors if the socket is not unix socket?
+                let pass_cred = socket_pass_cred.get().unwrap();
+                self.set_pass_cred(*pass_cred);
             },
             socket_sendbuf_force: SendBufForce => {
                 check_current_privileged()?;
