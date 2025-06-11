@@ -10,6 +10,7 @@ use crate::{
         util::{FilterProgram, LingerOption},
     },
     prelude::*,
+    process::Gid,
 };
 
 /// Create an object by reading its C counterpart from the user space.
@@ -255,6 +256,24 @@ impl WriteToUser for CUserCred {
         };
 
         current_userspace!().write_val(addr, self)?;
+
+        Ok(write_len)
+    }
+}
+
+impl WriteToUser for Arc<[Gid]> {
+    fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
+        let write_len = core::mem::size_of::<Gid>() * self.len();
+
+        if (max_len as usize) < write_len {
+            // FIXME: We should update `max_len` in user space to `write_len` in this case
+            return_errno_with_message!(Errno::ERANGE, "max_len is too short");
+        }
+
+        for (i, gid) in self.iter().enumerate() {
+            let dst = addr + i * core::mem::size_of::<Gid>();
+            current_userspace!().write_val(dst, gid)?;
+        }
 
         Ok(write_len)
     }
