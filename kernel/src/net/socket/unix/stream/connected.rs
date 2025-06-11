@@ -28,8 +28,8 @@ impl Connected {
         state: EndpointState,
         peer_state: EndpointState,
     ) -> (Connected, Connected) {
-        let (this_writer, peer_reader) = RingBuffer::new(DEFAULT_BUF_SIZE).split();
-        let (peer_writer, this_reader) = RingBuffer::new(DEFAULT_BUF_SIZE).split();
+        let (this_writer, peer_reader) = RingBuffer::new(UNIX_STREAM_DEFAULT_BUF_SIZE).split();
+        let (peer_writer, this_reader) = RingBuffer::new(UNIX_STREAM_DEFAULT_BUF_SIZE).split();
 
         let this_inner = Inner {
             addr: SpinLock::new(addr),
@@ -164,4 +164,4 @@ impl AsRef<EndpointState> for Inner {
     }
 }
 
-const DEFAULT_BUF_SIZE: usize = 65536;
+pub(in crate::net) const UNIX_STREAM_DEFAULT_BUF_SIZE: usize = 65536;
