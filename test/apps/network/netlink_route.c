@@ -152,6 +152,8 @@ char buffer[BUFFER_SIZE];
 struct nl_req {
 	struct nlmsghdr hdr;
 	struct ifaddrmsg ifa;
+	struct nlattr ahdr;
+	char abuf[4];
 };
 
 FN_TEST(get_addr_error)
@@ -184,41 +186,40 @@ FN_TEST(get_addr_error)
 			 ((struct nlmsgerr *)NLMSG_DATA(buffer))->error ==
 				 -EOPNOTSUPP);
 
+	int found_new_addr;
+#define TEST_KERNEL_RESPONSE                                              \
+	found_new_addr = 0;                                               \
+	while (1) {                                                       \
+		size_t recv_len =                                         \
+			TEST_SUCC(recv(sock_fd, buffer, BUFFER_SIZE, 0)); \
+                                                                          \
+		int found_done = TEST_SUCC(find_new_addr_until_done(      \
+			buffer, recv_len, &found_new_addr));              \
+                                                                          \
+		if (found_done != 0) {                                    \
+			break;                                            \
+		}                                                         \
+	}
+
 	// 2. Invalid required index
 	req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP | NLM_F_ACK;
 	req.ifa.ifa_index = 9999;
 	TEST_SUCC(sendmsg(sock_fd, &msg, 0));
-
-	int found_new_addr = 0;
-	while (1) {
-		size_t recv_len =
-			TEST_SUCC(recv(sock_fd, buffer, BUFFER_SIZE, 0));
-
-		int found_done = TEST_SUCC(find_new_addr_until_done(
-			buffer, recv_len, &found_new_addr));
-
-		if (found_done != 0) {
-			break;
-		}
-	}
+	TEST_KERNEL_RESPONSE;
 
 	// 3. Invalid required family
 	req.ifa.ifa_family = 255;
 	req.ifa.ifa_index = 0;
 	TEST_SUCC(sendmsg(sock_fd, &msg, 0));
+	TEST_KERNEL_RESPONSE;
 
-	found_new_addr = 0;
-	while (1) {
-		size_t recv_len =
-			TEST_SUCC(recv(sock_fd, buffer, BUFFER_SIZE, 0));
-
-		int found_done = TEST_SUCC(find_new_addr_until_done(
-			buffer, recv_len, &found_new_addr));
-
-		if (found_done != 0) {
-			break;
-		}
-	}
+	// 4. Unknown attribute
+	req.ahdr.nla_type = 0xdeef;
+	req.ahdr.nla_len = sizeof(req.ahdr) + sizeof(req.abuf);
+	req.hdr.nlmsg_len = sizeof(req);
+	iov = (struct iovec){ &req, sizeof(req) };
+	TEST_SUCC(sendmsg(sock_fd, &msg, 0));
+	TEST_KERNEL_RESPONSE;
 
 	TEST_SUCC(close(sock_fd));
 }

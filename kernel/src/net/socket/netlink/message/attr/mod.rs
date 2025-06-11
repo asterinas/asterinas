@@ -51,8 +51,40 @@ pub struct CAttrHeader {
 }
 
 impl CAttrHeader {
+    /// Creates from the type and the payload length.
+    fn from_payload_len(type_: u16, payload_len: usize) -> Self {
+        let total_len = payload_len + size_of::<Self>();
+        debug_assert!(total_len <= u16::MAX as usize);
+
+        Self {
+            len: total_len as u16,
+            type_,
+        }
+    }
+
+    /// Returns the type of the attribute.
     pub fn type_(&self) -> u16 {
         self.type_ & ATTRIBUTE_TYPE_MASK
+    }
+
+    /// Returns the payload length (excluding padding).
+    pub fn payload_len(&self) -> usize {
+        self.len as usize - size_of::<Self>()
+    }
+
+    /// Returns the total length of the attribute (header + payload, excluding padding).
+    pub fn total_len(&self) -> usize {
+        self.len as usize
+    }
+
+    /// Returns the total length of the attribute (header + payload, including padding).
+    pub fn total_len_with_padding(&self) -> usize {
+        (self.len as usize).align_up(NLMSG_ALIGN)
+    }
+
+    /// Returns the length of the padding bytes.
+    pub fn padding_len(&self) -> usize {
+        self.total_len_with_padding() - self.total_len()
     }
 }
 
@@ -68,49 +100,65 @@ pub trait Attribute: Debug + Send + Sync {
     /// Returns the byte representation of the payload.
     fn payload_as_bytes(&self) -> &[u8];
 
-    /// Returns the payload length (excluding padding).
-    fn payload_len(&self) -> usize {
-        self.payload_as_bytes().len()
-    }
-
-    /// Returns the total length of the attribute (header + payload, excluding padding).
-    fn total_len(&self) -> usize {
-        core::mem::size_of::<CAttrHeader>() + self.payload_len()
-    }
-
     /// Returns the total length of the attribute (header + payload, including padding).
     fn total_len_with_padding(&self) -> usize {
-        self.total_len().align_up(NLMSG_ALIGN)
-    }
+        // We don't care the attribute type when calculating the attribute length.
+        const DUMMY_TYPE: u16 = 0;
 
-    /// Returns the length of the padding bytes.
-    fn padding_len(&self) -> usize {
-        self.total_len_with_padding() - self.total_len()
+        CAttrHeader::from_payload_len(DUMMY_TYPE, self.payload_as_bytes().len())
+            .total_len_with_padding()
     }
 
     /// Reads the attribute from the `reader`.
-    fn read_from(reader: &mut dyn MultiRead) -> Result<Self>
+    ///
+    /// This method may return a `None` if the attribute is not recognized. In that case, however,
+    /// it must still skip the payload length (excluding padding), as if the attribute were parsed
+    /// properly.
+    fn read_from(header: &CAttrHeader, reader: &mut dyn MultiRead) -> Result<Option<Self>>
     where
         Self: Sized;
 
     /// Reads all attributes from the reader.
     ///
-    /// The cumulative length of the read attributes must not exceed total_len.
+    /// The cumulative length of the read attributes must not exceed `total_len`.
     fn read_all_from(reader: &mut dyn MultiRead, mut total_len: usize) -> Result<Vec<Self>>
     where
         Self: Sized,
     {
         let mut res = Vec::new();
 
-        while total_len > 0 {
-            let attr = Self::read_from(reader)?;
-            total_len -= attr.total_len();
+        // Below, we're performing strict validation. Although Linux tends to perform strict
+        // validation for new netlink message consumers, it may allow fewer or no validations for
+        // legacy consumers. See
+        // <https://github.com/torvalds/linux/commit/8cb081746c031fb164089322e2336a0bf5b3070c> for
+        // more details.
 
-            let padding_len = attr.padding_len().min(total_len);
+        while total_len > 0 {
+            // Validate the remaining length for the attribute header length.
+            if total_len < size_of::<CAttrHeader>() {
+                return_errno_with_message!(Errno::EINVAL, "the reader length is too small");
+            }
+
+            // Read and validate the attribute header.
+            let header = reader.read_val_opt::<CAttrHeader>()?.unwrap();
+            if header.total_len() < size_of::<CAttrHeader>() {
+                return_errno_with_message!(Errno::EINVAL, "the attribute length is too small");
+            }
+
+            // Validate the remaining length for the attribute payload length.
+            total_len = total_len.checked_sub(header.total_len()).ok_or_else(|| {
+                Error::with_message(Errno::EINVAL, "the reader size is too small")
+            })?;
+
+            // Read the attribute.
+            if let Some(attr) = Self::read_from(&header, reader)? {
+                res.push(attr);
+            }
+
+            // Skip the padding bytes.
+            let padding_len = total_len.min(header.padding_len());
             reader.skip_some(padding_len);
             total_len -= padding_len;
-
-            res.push(attr);
         }
 
         Ok(res)
@@ -118,15 +166,14 @@ pub trait Attribute: Debug + Send + Sync {
 
     /// Writes the attribute to the `writer`.
     fn write_to(&self, writer: &mut dyn MultiWrite) -> Result<()> {
-        let header = CAttrHeader {
-            type_: self.type_(),
-            len: self.total_len() as u16,
-        };
+        let type_ = self.type_();
+        let payload = self.payload_as_bytes();
 
+        let header = CAttrHeader::from_payload_len(type_, payload.len());
         writer.write_val_trunc(&header)?;
-        writer.write(&mut VmReader::from(self.payload_as_bytes()))?;
+        writer.write(&mut VmReader::from(payload))?;
 
-        let padding_len = self.padding_len();
+        let padding_len = header.padding_len();
         writer.skip_some(padding_len);
 
         Ok(())
