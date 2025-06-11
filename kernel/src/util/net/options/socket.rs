@@ -4,8 +4,8 @@ use super::RawSocketOption;
 use crate::{
     impl_raw_sock_option_get_only, impl_raw_socket_option,
     net::socket::options::{
-        Error, KeepAlive, Linger, PassCred, Priority, RecvBuf, RecvBufForce, ReuseAddr, ReusePort,
-        SendBuf, SendBufForce, SocketOption,
+        AcceptConn, Error, KeepAlive, Linger, PassCred, Priority, RecvBuf, RecvBufForce, ReuseAddr,
+        ReusePort, SendBuf, SendBufForce, SocketOption,
     },
     prelude::*,
 };
@@ -58,6 +58,7 @@ pub fn new_socket_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
         CSocketOptionName::LINGER => Ok(Box::new(Linger::new())),
         CSocketOptionName::KEEPALIVE => Ok(Box::new(KeepAlive::new())),
         CSocketOptionName::PASSCRED => Ok(Box::new(PassCred::new())),
+        CSocketOptionName::ACCPETCONN => Ok(Box::new(AcceptConn::new())),
         CSocketOptionName::SNDBUFFORCE => Ok(Box::new(SendBufForce::new())),
         CSocketOptionName::RCVBUFFORCE => Ok(Box::new(RecvBufForce::new())),
         _ => return_errno_with_message!(Errno::ENOPROTOOPT, "unsupported socket-level option"),
@@ -73,5 +74,6 @@ impl_raw_socket_option!(Priority);
 impl_raw_socket_option!(Linger);
 impl_raw_socket_option!(KeepAlive);
 impl_raw_socket_option!(PassCred);
+impl_raw_sock_option_get_only!(AcceptConn);
 impl_raw_socket_option!(SendBufForce);
 impl_raw_socket_option!(RecvBufForce);
