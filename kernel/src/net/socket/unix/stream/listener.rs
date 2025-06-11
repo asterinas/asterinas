@@ -13,7 +13,10 @@ use crate::{
     events::IoEvents,
     fs::file_handle::FileLike,
     net::socket::{
-        unix::addr::{UnixSocketAddrBound, UnixSocketAddrKey},
+        unix::{
+            addr::{UnixSocketAddrBound, UnixSocketAddrKey},
+            stream::socket::OptionSet,
+        },
         util::{SockShutdownCmd, SocketAddr},
     },
     prelude::*,
@@ -55,7 +58,9 @@ impl Listener {
         let connected = self.backlog.pop_incoming()?;
         let peer_addr = connected.peer_addr().into();
 
-        let socket = UnixStreamSocket::new_connected(connected, false);
+        // TODO: Update options for a newly-accepted socket
+        let options = OptionSet::new();
+        let socket = UnixStreamSocket::new_connected(connected, options, false);
         Ok((socket, peer_addr))
     }
 

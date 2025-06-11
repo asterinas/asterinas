@@ -13,9 +13,13 @@ use crate::{
     events::IoEvents,
     fs::file_handle::FileLike,
     net::socket::{
+        options::SocketOption,
         private::SocketPrivate,
         unix::UnixSocketAddr,
-        util::{MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr},
+        util::{
+            options::{SetSocketLevelOption, SocketOptionSet},
+            MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr,
+        },
         Socket,
     },
     prelude::*,
@@ -25,6 +29,7 @@ use crate::{
 
 pub struct UnixStreamSocket {
     state: RwMutex<Takeable<State>>,
+    options: RwMutex<OptionSet>,
     is_nonblocking: AtomicBool,
 }
 
@@ -32,13 +37,19 @@ impl UnixStreamSocket {
     pub(super) fn new_init(init: Init, is_nonblocking: bool) -> Arc<Self> {
         Arc::new(Self {
             state: RwMutex::new(Takeable::new(State::Init(init))),
+            options: RwMutex::new(OptionSet::new()),
             is_nonblocking: AtomicBool::new(is_nonblocking),
         })
     }
 
-    pub(super) fn new_connected(connected: Connected, is_nonblocking: bool) -> Arc<Self> {
+    pub(super) fn new_connected(
+        connected: Connected,
+        options: OptionSet,
+        is_nonblocking: bool,
+    ) -> Arc<Self> {
         Arc::new(Self {
             state: RwMutex::new(Takeable::new(State::Connected(connected))),
+            options: RwMutex::new(options),
             is_nonblocking: AtomicBool::new(is_nonblocking),
         })
     }
@@ -50,6 +61,19 @@ enum State {
     Connected(Connected),
 }
 
+#[derive(Clone, Debug)]
+pub(super) struct OptionSet {
+    socket: SocketOptionSet,
+}
+
+impl OptionSet {
+    pub(super) fn new() -> Self {
+        Self {
+            socket: SocketOptionSet::new_unix_stream(),
+        }
+    }
+}
+
 impl UnixStreamSocket {
     pub fn new(is_nonblocking: bool) -> Arc<Self> {
         Self::new_init(Init::new(), is_nonblocking)
@@ -57,9 +81,10 @@ impl UnixStreamSocket {
 
     pub fn new_pair(is_nonblocking: bool) -> (Arc<Self>, Arc<Self>) {
         let (conn_a, conn_b) = Connected::new_pair(None, None, None, None);
+        let options = OptionSet::new();
         (
-            Self::new_connected(conn_a, is_nonblocking),
-            Self::new_connected(conn_b, is_nonblocking),
+            Self::new_connected(conn_a, options.clone(), is_nonblocking),
+            Self::new_connected(conn_b, options, is_nonblocking),
         )
     }
 
@@ -287,4 +312,39 @@ impl Socket for UnixStreamSocket {
 
         Ok((received_bytes, message_header))
     }
+
+    fn get_option(&self, option: &mut dyn SocketOption) -> Result<()> {
+        let options = self.options.read();
+
+        // Deal with socket-level options
+        match options.socket.get_option(option) {
+            Err(err) if err.error() == Errno::ENOPROTOOPT => (),
+            res => return res,
+        }
+
+        // TODO: Deal with socket options from other levels
+        warn!("only socket-level options are supported");
+
+        return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to get is unknown")
+    }
+
+    fn set_option(&self, option: &dyn SocketOption) -> Result<()> {
+        let mut state = self.state.write();
+        let mut options = self.options.write();
+
+        match options.socket.set_option(option, state.as_mut()) {
+            Ok(_) => Ok(()),
+            Err(err) if err.error() == Errno::ENOPROTOOPT => {
+                // TODO: Deal with socket options from other levels
+                warn!("only socket-level options are supported");
+                return_errno_with_message!(
+                    Errno::ENOPROTOOPT,
+                    "the socket option to get is unknown"
+                )
+            }
+            Err(e) => Err(e),
+        }
+    }
 }
+
+impl SetSocketLevelOption for State {}
