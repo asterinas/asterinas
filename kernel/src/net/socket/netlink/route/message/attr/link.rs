@@ -122,14 +122,15 @@ impl Attribute for LinkAttr {
     where
         Self: Sized,
     {
-        let header = reader.read_val::<CAttrHeader>()?;
+        let header = reader.read_val_opt::<CAttrHeader>()?.unwrap();
+
         // TODO: Currently, `IS_NET_BYTEORDER_MASK` and `IS_NESTED_MASK` are ignored.
         let res = match LinkAttrClass::try_from(header.type_())? {
             LinkAttrClass::IFNAME => Self::Name(reader.read_cstring_with_max_len(IFNAME_SIZE)?),
-            LinkAttrClass::MTU => Self::Mtu(reader.read_val()?),
-            LinkAttrClass::TXQLEN => Self::TxqLen(reader.read_val()?),
-            LinkAttrClass::LINKMODE => Self::LinkMode(reader.read_val()?),
-            LinkAttrClass::EXT_MASK => Self::ExtMask(reader.read_val()?),
+            LinkAttrClass::MTU => Self::Mtu(reader.read_val_opt()?.unwrap()),
+            LinkAttrClass::TXQLEN => Self::TxqLen(reader.read_val_opt()?.unwrap()),
+            LinkAttrClass::LINKMODE => Self::LinkMode(reader.read_val_opt()?.unwrap()),
+            LinkAttrClass::EXT_MASK => Self::ExtMask(reader.read_val_opt()?.unwrap()),
             class => {
                 // FIXME: Netlink should ignore all unknown attributes.
                 // But how to decide the payload type if the class is unknown?

@@ -146,18 +146,18 @@ int find_new_addr_until_done(char *buffer, size_t len, int *found_new_addr)
 	return 0;
 }
 
+#define BUFFER_SIZE 8192
+char buffer[BUFFER_SIZE];
+
+struct nl_req {
+	struct nlmsghdr hdr;
+	struct ifaddrmsg ifa;
+};
+
 FN_TEST(get_addr_error)
 {
-#define BUFFER_SIZE 8192
-
-	struct nl_req {
-		struct nlmsghdr hdr;
-		struct ifaddrmsg ifa;
-	};
-
 	int sock_fd;
 	struct sockaddr_nl sa;
-	char buffer[BUFFER_SIZE];
 
 	sock_fd = TEST_SUCC(socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE));
 
@@ -219,6 +219,34 @@ FN_TEST(get_addr_error)
 			break;
 		}
 	}
+
+	TEST_SUCC(close(sock_fd));
+}
+END_TEST()
+
+FN_TEST(bufsize_msgsize)
+{
+	int sock_fd;
+	struct nl_req req;
+
+	sock_fd = TEST_SUCC(
+		socket(AF_NETLINK, SOCK_RAW | SOCK_NONBLOCK, NETLINK_ROUTE));
+
+	memset(&req, 0, sizeof(req));
+	req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifaddrmsg));
+	req.hdr.nlmsg_type = RTM_GETADDR;
+	req.hdr.nlmsg_flags = NLM_F_REQUEST;
+	req.hdr.nlmsg_seq = 1;
+	req.ifa.ifa_family = AF_UNSPEC;
+
+	// Send the request
+	TEST_RES(send(sock_fd, &req, sizeof(req), 0), _ret == sizeof(req));
+
+	// The buffer size is too short, but it still succeeds
+	TEST_SUCC(recv(sock_fd, buffer, 1, 0));
+
+	// The truncated message is now lost
+	TEST_ERRNO(recv(sock_fd, buffer, BUFFER_SIZE, 0), EAGAIN);
 
 	TEST_SUCC(close(sock_fd));
 }

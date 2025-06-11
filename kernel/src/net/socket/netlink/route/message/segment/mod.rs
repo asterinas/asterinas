@@ -84,7 +84,9 @@ impl ProtocolSegment for RtnlSegment {
     }
 
     fn read_from(reader: &mut dyn MultiRead) -> Result<Self> {
-        let header = reader.read_val::<CMsgSegHdr>()?;
+        let header = reader
+            .read_val_opt::<CMsgSegHdr>()?
+            .ok_or_else(|| Error::with_message(Errno::EINVAL, "the reader length is too small"))?;
 
         let segment = match CSegmentType::try_from(header.type_)? {
             CSegmentType::GETLINK => RtnlSegment::GetLink(LinkSegment::read_from(header, reader)?),

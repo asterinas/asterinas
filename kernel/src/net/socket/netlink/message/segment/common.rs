@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use align_ext::AlignExt;
-
 use super::{header::CMsgSegHdr, SegmentBody};
 use crate::{
-    net::socket::netlink::message::{attr::Attribute, NLMSG_ALIGN},
+    net::socket::netlink::message::attr::Attribute,
     prelude::*,
     util::{MultiRead, MultiWrite},
 };
@@ -54,7 +52,6 @@ impl<Body: SegmentBody, Attr: Attribute> SegmentCommon<Body, Attr> {
         Error: From<<Body::CType as TryInto<Body>>::Error>,
     {
         let (body, remain_len) = Body::read_from(&header, reader).unwrap();
-
         let attrs = Attr::read_all_from(reader, remain_len)?;
 
         Ok(Self {
@@ -65,14 +62,8 @@ impl<Body: SegmentBody, Attr: Attribute> SegmentCommon<Body, Attr> {
     }
 
     pub fn write_to(&self, writer: &mut dyn MultiWrite) -> Result<()> {
-        // FIXME: If the message can be truncated, we should avoid returning an error.
-        // Furthermore, we need to check the Linux behavior to determine whether to return an error
-        // if the writer is not large enough to accommodate the final padding bytes.
-        if writer.sum_lens() < (self.header.len as usize).align_up(NLMSG_ALIGN) {
-            return_errno_with_message!(Errno::EFAULT, "the writer length is too small");
-        }
+        writer.write_val_trunc(&self.header)?;
 
-        writer.write_val(&self.header)?;
         self.body.write_to(writer)?;
         for attr in self.attrs.iter() {
             attr.write_to(writer)?;

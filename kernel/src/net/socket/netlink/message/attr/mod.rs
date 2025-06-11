@@ -107,7 +107,7 @@ pub trait Attribute: Debug + Send + Sync {
             total_len -= attr.total_len();
 
             let padding_len = attr.padding_len().min(total_len);
-            reader.skip(padding_len);
+            reader.skip_some(padding_len);
             total_len -= padding_len;
 
             res.push(attr);
@@ -123,11 +123,11 @@ pub trait Attribute: Debug + Send + Sync {
             len: self.total_len() as u16,
         };
 
-        writer.write_val(&header)?;
+        writer.write_val_trunc(&header)?;
         writer.write(&mut VmReader::from(self.payload_as_bytes()))?;
 
         let padding_len = self.padding_len();
-        writer.skip(padding_len);
+        writer.skip_some(padding_len);
 
         Ok(())
     }

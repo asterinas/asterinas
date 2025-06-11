@@ -62,11 +62,12 @@ impl Attribute for AddrAttr {
     where
         Self: Sized,
     {
-        let header = reader.read_val::<CAttrHeader>()?;
+        let header = reader.read_val_opt::<CAttrHeader>()?.unwrap();
+
         // TODO: Currently, `IS_NET_BYTEORDER_MASK` and `IS_NESTED_MASK` are ignored.
         let res = match AddrAttrClass::try_from(header.type_())? {
-            AddrAttrClass::ADDRESS => Self::Address(reader.read_val()?),
-            AddrAttrClass::LOCAL => Self::Local(reader.read_val()?),
+            AddrAttrClass::ADDRESS => Self::Address(reader.read_val_opt()?.unwrap()),
+            AddrAttrClass::LOCAL => Self::Local(reader.read_val_opt()?.unwrap()),
             AddrAttrClass::LABEL => Self::Label(reader.read_cstring_with_max_len(IFNAME_SIZE)?),
             class => {
                 // FIXME: Netlink should ignore all unknown attributes.
