@@ -2,12 +2,13 @@
 
 use super::RawSocketOption;
 use crate::{
-    impl_raw_sock_option_get_only, impl_raw_socket_option,
+    current_userspace, impl_raw_sock_option_get_only, impl_raw_socket_option,
     net::socket::options::{
-        AcceptConn, Error, KeepAlive, Linger, PassCred, Priority, RecvBuf, RecvBufForce, ReuseAddr,
-        ReusePort, SendBuf, SendBufForce, SocketOption,
+        AcceptConn, Error, KeepAlive, Linger, PassCred, PeerCred, PeerGroups, Priority, RecvBuf,
+        RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
     },
     prelude::*,
+    process::Gid,
 };
 
 /// Socket level options.
@@ -58,9 +59,11 @@ pub fn new_socket_option(name: i32) -> Result<Box<dyn RawSocketOption>> {
         CSocketOptionName::LINGER => Ok(Box::new(Linger::new())),
         CSocketOptionName::KEEPALIVE => Ok(Box::new(KeepAlive::new())),
         CSocketOptionName::PASSCRED => Ok(Box::new(PassCred::new())),
+        CSocketOptionName::PEERCRED => Ok(Box::new(PeerCred::new())),
         CSocketOptionName::ACCPETCONN => Ok(Box::new(AcceptConn::new())),
         CSocketOptionName::SNDBUFFORCE => Ok(Box::new(SendBufForce::new())),
         CSocketOptionName::RCVBUFFORCE => Ok(Box::new(RecvBufForce::new())),
+        CSocketOptionName::PEERGROUPS => Ok(Box::new(PeerGroups::new())),
         _ => return_errno_with_message!(Errno::ENOPROTOOPT, "unsupported socket-level option"),
     }
 }
@@ -74,6 +77,40 @@ impl_raw_socket_option!(Priority);
 impl_raw_socket_option!(Linger);
 impl_raw_socket_option!(KeepAlive);
 impl_raw_socket_option!(PassCred);
+impl_raw_sock_option_get_only!(PeerCred);
 impl_raw_sock_option_get_only!(AcceptConn);
 impl_raw_socket_option!(SendBufForce);
 impl_raw_socket_option!(RecvBufForce);
+
+// SO_PEERGROUPS is a read-only option. However, calling setsockopt on SO_PEERGROUPS will return EINVAL
+// instead of ENOPROTOOPT like other options. Therefore, we manually implement `RawSocketOption` for it.
+impl RawSocketOption for PeerGroups {
+    fn read_from_user(&mut self, _addr: Vaddr, _max_len: u32) -> Result<()> {
+        return_errno_with_message!(Errno::EINVAL, "the option is getter-only");
+    }
+
+    fn write_to_user(&self, addr: Vaddr, buffer_len: &mut u32) -> Result<usize> {
+        let groups = self.get().unwrap();
+
+        let old_len = *buffer_len;
+        *buffer_len = (groups.len() * core::mem::size_of::<Gid>()) as u32;
+        if old_len < *buffer_len {
+            return_errno_with_message!(Errno::ERANGE, "the buffer is too small");
+        }
+
+        for (i, gid) in groups.iter().enumerate() {
+            let dst = addr + i * core::mem::size_of::<Gid>();
+            current_userspace!().write_val(dst, gid)?;
+        }
+
+        Ok(*buffer_len as usize)
+    }
+
+    fn as_sock_option_mut(&mut self) -> &mut dyn SocketOption {
+        self
+    }
+
+    fn as_sock_option(&self) -> &dyn SocketOption {
+        self
+    }
+}

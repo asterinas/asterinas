@@ -2,6 +2,7 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use aster_rights::ReadDupOp;
 use takeable::Takeable;
 
 use super::{
@@ -15,7 +16,7 @@ use crate::{
     net::socket::{
         options::SocketOption,
         private::SocketPrivate,
-        unix::UnixSocketAddr,
+        unix::{cred::SocketCred, CUserCred, UnixSocketAddr},
         util::{
             options::{GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet},
             MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr,
@@ -23,7 +24,10 @@ use crate::{
         Socket,
     },
     prelude::*,
-    process::signal::{PollHandle, Pollable},
+    process::{
+        signal::{PollHandle, Pollable},
+        Gid,
+    },
     util::{MultiRead, MultiWrite},
 };
 
@@ -80,7 +84,17 @@ impl UnixStreamSocket {
     }
 
     pub fn new_pair(is_nonblocking: bool) -> (Arc<Self>, Arc<Self>) {
-        let (conn_a, conn_b) = Connected::new_pair(None, None, None, None);
+        let (conn_a, conn_b) = {
+            let cred = SocketCred::<ReadDupOp>::new();
+            Connected::new_pair(
+                None,
+                None,
+                None,
+                None,
+                cred.dup().restrict(),
+                cred.restrict(),
+            )
+        };
         let options = OptionSet::new();
         (
             Self::new_connected(conn_a, options.clone(), is_nonblocking),
@@ -351,6 +365,22 @@ impl Socket for UnixStreamSocket {
 impl GetSocketLevelOption for State {
     fn is_listening(&self) -> bool {
         matches!(self, Self::Listen(_))
+    }
+
+    fn peer_cred(&self) -> Option<CUserCred> {
+        match self {
+            Self::Init(_) => None,
+            Self::Listen(listener) => Some(listener.cred().to_c_user_cred()),
+            Self::Connected(connected) => Some(connected.peer_cred().to_c_user_cred()),
+        }
+    }
+
+    fn peer_groups(&self) -> Result<Arc<[Gid]>> {
+        match self {
+            State::Init(_) => return_errno!(Errno::ENODATA),
+            State::Listen(listener) => Ok(listener.cred().groups()),
+            State::Connected(connected) => Ok(connected.peer_cred().groups()),
+        }
     }
 }
 

@@ -2,7 +2,7 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use aster_rights::{ReadOp, WriteOp};
+use aster_rights::{ReadDupOp, ReadOp, WriteOp};
 use ostd::sync::{RoArc, Waker};
 
 use super::{
@@ -288,6 +288,11 @@ impl PosixThread {
 
     /// Gets the read-only credentials of the thread.
     pub fn credentials(&self) -> Credentials<ReadOp> {
+        self.credentials.dup().restrict()
+    }
+
+    /// Gets the duplicatable read-only credentials of the thread.
+    pub fn credentials_dup(&self) -> Credentials<ReadDupOp> {
         self.credentials.dup().restrict()
     }
 

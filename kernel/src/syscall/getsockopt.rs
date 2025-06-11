@@ -16,8 +16,8 @@ pub fn sys_getsockopt(
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let level = CSocketOptionLevel::try_from(level).map_err(|_| Errno::EOPNOTSUPP)?;
-    if optval == 0 || optlen_addr == 0 {
-        return_errno_with_message!(Errno::EINVAL, "optval or optlen_addr is null pointer");
+    if optlen_addr == 0 {
+        return_errno_with_message!(Errno::EINVAL, "optlen_addr is null pointer");
     }
 
     let user_space = ctx.user_space();
@@ -34,7 +34,14 @@ pub fn sys_getsockopt(
 
     socket.get_option(raw_option.as_sock_option_mut())?;
 
-    let write_len = raw_option.write_to_user(optval, optlen)?;
+    let write_len = {
+        let mut new_opt_len = optlen;
+        let res = raw_option.write_to_user(optval, &mut new_opt_len);
+        if new_opt_len != optlen {
+            user_space.write_val(optlen_addr, &new_opt_len)?;
+        }
+        res?
+    };
     user_space.write_val(optlen_addr, &(write_len as u32))?;
 
     Ok(SyscallReturn::Return(0))

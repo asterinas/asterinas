@@ -11,13 +11,13 @@ use crate::{
     match_sock_option_mut, match_sock_option_ref,
     net::socket::{
         options::{
-            AcceptConn, KeepAlive, Linger, PassCred, Priority, RecvBuf, RecvBufForce, ReuseAddr,
-            ReusePort, SendBuf, SendBufForce, SocketOption,
+            AcceptConn, KeepAlive, Linger, PassCred, PeerCred, PeerGroups, Priority, RecvBuf,
+            RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
         },
-        unix::UNIX_STREAM_DEFAULT_BUF_SIZE,
+        unix::{CUserCred, UNIX_STREAM_DEFAULT_BUF_SIZE},
     },
     prelude::*,
-    process::{credentials::capabilities::CapSet, posix_thread::AsPosixThread},
+    process::{credentials::capabilities::CapSet, posix_thread::AsPosixThread, Gid},
 };
 
 #[derive(Debug, Clone, CopyGetters, Setters)]
@@ -122,6 +122,10 @@ impl SocketOptionSet {
                 let pass_cred = self.pass_cred();
                 socket_pass_cred.set(pass_cred);
             },
+            socket_peer_cred: PeerCred => {
+                let peer_cred = socket.peer_cred().unwrap_or_else(CUserCred::new_unknown);
+                socket_peer_cred.set(peer_cred);
+            },
             socket_accept_conn: AcceptConn => {
                 let is_listening = socket.is_listening();
                 socket_accept_conn.set(is_listening);
@@ -135,6 +139,10 @@ impl SocketOptionSet {
                 check_current_privileged()?;
                 let recv_buf = self.recv_buf();
                 socket_recvbuf_force.set(recv_buf);
+            },
+            socket_peer_groups: PeerGroups => {
+                let groups = socket.peer_groups()?;
+                socket_peer_groups.set(groups);
             },
             _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to get is unknown")
         });
@@ -247,6 +255,14 @@ pub const MIN_RECVBUF: u32 = 2304;
 pub(in crate::net) trait GetSocketLevelOption {
     /// Returns whether the socket is in listening state.
     fn is_listening(&self) -> bool;
+    /// Returns the peer credentials.
+    fn peer_cred(&self) -> Option<CUserCred> {
+        None
+    }
+    /// Returns the peer groups.
+    fn peer_groups(&self) -> Result<Arc<[Gid]>> {
+        return_errno_with_message!(Errno::ENODATA, "the socket does not have peer groups");
+    }
 }
 /// A trait used for setting socket level options on actual sockets.
 pub(in crate::net) trait SetSocketLevelOption {
