@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::util::LingerOption;
-use crate::{impl_socket_options, prelude::*};
+use crate::{impl_socket_options, net::socket::unix::CUserCred, prelude::*, process::Gid};
 
 mod macros;
 
@@ -21,7 +21,9 @@ impl_socket_options!(
     pub struct Priority(i32);
     pub struct Linger(LingerOption);
     pub struct KeepAlive(bool);
+    pub struct PeerCred(CUserCred);
     pub struct AcceptConn(bool);
     pub struct SendBufForce(u32);
     pub struct RecvBufForce(u32);
+    pub struct PeerGroups(Arc<[Gid]>);
 );

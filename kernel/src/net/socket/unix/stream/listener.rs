@@ -2,6 +2,7 @@
 
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+use aster_rights::ReadDupOp;
 use ostd::sync::WaitQueue;
 
 use super::{
@@ -16,6 +17,7 @@ use crate::{
     net::socket::{
         unix::{
             addr::{UnixSocketAddrBound, UnixSocketAddrKey},
+            cred::SocketCred,
             stream::socket::OptionSet,
         },
         util::{SockShutdownCmd, SocketAddr},
@@ -87,6 +89,10 @@ impl Listener {
     pub(super) fn check_io_events(&self) -> IoEvents {
         self.backlog.check_io_events()
     }
+
+    pub(super) fn cred(&self) -> &SocketCred<ReadDupOp> {
+        &self.backlog.listener_cred
+    }
 }
 
 impl Drop for Listener {
@@ -146,6 +152,7 @@ pub(super) struct Backlog {
     backlog: AtomicUsize,
     incoming_conns: SpinLock<Option<VecDeque<Connected>>>,
     wait_queue: WaitQueue,
+    listener_cred: SocketCred<ReadDupOp>,
 }
 
 impl Backlog {
@@ -162,6 +169,7 @@ impl Backlog {
             backlog: AtomicUsize::new(backlog),
             incoming_conns: SpinLock::new(incoming_sockets),
             wait_queue: WaitQueue::new(),
+            listener_cred: SocketCred::<ReadDupOp>::new_current(),
         }
     }
 
@@ -248,7 +256,11 @@ impl Backlog {
             ));
         }
 
-        let (client_conn, server_conn) = init.into_connected(self.addr.clone(), pollee);
+        let (client_conn, server_conn) = init.into_connected(
+            self.addr.clone(),
+            pollee,
+            self.listener_cred.dup().restrict(),
+        );
 
         incoming_conns.push_back(server_conn);
         self.pollee.notify(IoEvents::IN);

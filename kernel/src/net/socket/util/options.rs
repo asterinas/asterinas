@@ -11,10 +11,10 @@ use crate::{
     match_sock_option_mut, match_sock_option_ref,
     net::socket::{
         options::{
-            AcceptConn, KeepAlive, Linger, Priority, RecvBuf, RecvBufForce, ReuseAddr, ReusePort,
-            SendBuf, SendBufForce, SocketOption,
+            AcceptConn, KeepAlive, Linger, PeerCred, PeerGroups, Priority, RecvBuf, RecvBufForce,
+            ReuseAddr, ReusePort, SendBuf, SendBufForce, SocketOption,
         },
-        unix::UNIX_STREAM_DEFAULT_BUF_SIZE,
+        unix::{CUserCred, UNIX_STREAM_DEFAULT_BUF_SIZE},
     },
     prelude::*,
     process::{credentials::capabilities::CapSet, posix_thread::AsPosixThread},
@@ -114,6 +114,10 @@ impl SocketOptionSet {
                 let keep_alive = self.keep_alive();
                 socket_keepalive.set(keep_alive);
             },
+            socket_peer_cred: PeerCred => {
+                let peer_cred = CUserCred::new_unknown();
+                socket_peer_cred.set(peer_cred);
+            },
             socket_accept_conn: AcceptConn => {
                 let is_listening = socket.is_listening();
                 socket_accept_conn.set(is_listening);
@@ -127,6 +131,9 @@ impl SocketOptionSet {
                 check_current_privileged()?;
                 let recv_buf = self.recv_buf();
                 socket_recvbuf_force.set(recv_buf);
+            },
+            _socket_peer_groups: PeerGroups => {
+                return_errno_with_message!(Errno::ENODATA, "the socket does not have peer groups");
             },
             _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to get is unknown")
         });
