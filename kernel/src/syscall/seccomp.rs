@@ -14,31 +14,44 @@ pub fn sys_seccomp(
 
     let flags = SeccompFlags::from_bits(flags)
         .ok_or(Error::with_message(Errno::EINVAL, "invalid flags"))?;
-
     match operation {
-        SeccompOperation::SECCOMP_SET_MODE_STRICT => seccomp_set_mode_strict(ctx),
-        SeccompOperation::SECCOMP_SET_MODE_FILTER => seccomp_set_mode_filter(flags, uargs, ctx),
-        SeccompOperation::SECCOMP_GET_ACTION_AVAIL => seccomp_get_action_avail(uargs, ctx),
-        SeccompOperation::SECCOMP_GET_NOTIF_SIZES => seccomp_get_notif_sizes(uargs, ctx),
+        SeccompOperation::SECCOMP_SET_MODE_STRICT => {
+            if flags.bits() != 0 || uargs != 0 {
+                return_errno_with_message!(Errno::EINVAL, "invalid flags or uargs");
+            }
+            seccomp_set_mode_strict(ctx)?;
+        }
+        SeccompOperation::SECCOMP_SET_MODE_FILTER => seccomp_set_mode_filter(flags, uargs, ctx)?,
+        SeccompOperation::SECCOMP_GET_ACTION_AVAIL => {
+            if flags.bits() != 0 {
+                return_errno_with_message!(Errno::EINVAL, "invalid uargs");
+            }
+            seccomp_get_action_avail(uargs)?;
+        }
+        SeccompOperation::SECCOMP_GET_NOTIF_SIZES => {
+            if flags.bits() != 0 {
+                return_errno_with_message!(Errno::EINVAL, "invalid flags");
+            }
+            seccomp_get_notif_sizes(uargs, ctx)?;
+        }
         _ => return_errno_with_message!(Errno::EINVAL, "invalid operation"),
     }
+    Ok(SyscallReturn::Return(0))
 }
 
-fn seccomp_set_mode_strict(_ctx: &Context) -> Result<SyscallReturn> {
-    return_errno_with_message!(Errno::EINVAL, "not implemented");
+fn seccomp_set_mode_strict(_ctx: &Context) -> Result<()> {
+    // TODO: Implement this functionality.
+    Ok(())
 }
 
-fn seccomp_set_mode_filter(
-    _flags: SeccompFlags,
-    _uargs: Vaddr,
-    _ctx: &Context,
-) -> Result<SyscallReturn> {
-    return_errno_with_message!(Errno::EINVAL, "not implemented");
+fn seccomp_set_mode_filter(_flags: SeccompFlags, _uargs: Vaddr, _ctx: &Context) -> Result<()> {
+    // TODO: Implement this functionality.
+    Ok(())
 }
 
-fn seccomp_get_action_avail(uargs: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
-    let user_space = ctx.user_space();
-    let action = user_space.read_val::<u32>(uargs)?;
+/// Test to see if an action is supported by the kernel.
+fn seccomp_get_action_avail(uargs: Vaddr) -> Result<()> {
+    let action = uargs as u32;
 
     if action == SeccompAction::SECCOMP_RET_KILL_PROCESS.bits()
         || action == SeccompAction::SECCOMP_RET_KILL_THREAD.bits()
@@ -49,7 +62,7 @@ fn seccomp_get_action_avail(uargs: Vaddr, ctx: &Context) -> Result<SyscallReturn
         || action == SeccompAction::SECCOMP_RET_LOG.bits()
         || action == SeccompAction::SECCOMP_RET_ALLOW.bits()
     {
-        return Ok(SyscallReturn::Return(0));
+        return Ok(());
     }
 
     return_errno_with_message!(Errno::EOPNOTSUPP, "action not supported");
@@ -63,7 +76,8 @@ struct SeccompNotifSizes {
     seccomp_data: u16,
 }
 
-fn seccomp_get_notif_sizes(usizes: Vaddr, ctx: &Context) -> Result<SyscallReturn> {
+/// Get the sizes of the seccomp user-space notification structures.
+fn seccomp_get_notif_sizes(usizes: Vaddr, ctx: &Context) -> Result<()> {
     let user_space = ctx.user_space();
     // TODO: Remove the dummy implementation and correctly implement this functionality.
     let sizes = SeccompNotifSizes {
@@ -72,7 +86,7 @@ fn seccomp_get_notif_sizes(usizes: Vaddr, ctx: &Context) -> Result<SyscallReturn
         seccomp_data: 0,
     };
     user_space.write_val(usizes, &sizes)?;
-    Ok(SyscallReturn::Return(0))
+    Ok(())
 }
 
 bitflags! {
