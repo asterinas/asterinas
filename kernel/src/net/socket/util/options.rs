@@ -7,10 +7,15 @@ use aster_bigtcp::socket::{
 use super::LingerOption;
 use crate::{
     match_sock_option_mut, match_sock_option_ref,
-    net::socket::options::{
-        KeepAlive, Linger, RecvBuf, ReuseAddr, ReusePort, SendBuf, SocketOption,
+    net::socket::{
+        options::{
+            KeepAlive, Linger, RecvBuf, RecvBufForce, ReuseAddr, ReusePort, SendBuf, SendBufForce,
+            SocketOption,
+        },
+        unix::UNIX_STREAM_DEFAULT_BUF_SIZE,
     },
     prelude::*,
+    process::{credentials::capabilities::CapSet, posix_thread::AsPosixThread},
 };
 
 #[derive(Debug, Clone, CopyGetters, Setters)]
@@ -50,6 +55,18 @@ impl SocketOptionSet {
         }
     }
 
+    /// Returns the default socket level options for unix stream socket.
+    pub(in crate::net) fn new_unix_stream() -> Self {
+        Self {
+            reuse_addr: false,
+            reuse_port: false,
+            send_buf: UNIX_STREAM_DEFAULT_BUF_SIZE as u32,
+            recv_buf: UNIX_STREAM_DEFAULT_BUF_SIZE as u32,
+            linger: LingerOption::default(),
+            keep_alive: false,
+        }
+    }
+
     /// Gets socket-level options.
     ///
     /// Note that the socket error has to be handled separately, because it is automatically
@@ -81,6 +98,16 @@ impl SocketOptionSet {
                 let keep_alive = self.keep_alive();
                 socket_keepalive.set(keep_alive);
             },
+            socket_sendbuf_force: SendBufForce => {
+                check_current_privileged()?;
+                let send_buf = self.send_buf();
+                socket_sendbuf_force.set(send_buf);
+            },
+            socket_recvbuf_force: RecvBufForce => {
+                check_current_privileged()?;
+                let recv_buf = self.recv_buf();
+                socket_recvbuf_force.set(recv_buf);
+            },
             _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to get is unknown")
         });
         Ok(())
@@ -93,20 +120,20 @@ impl SocketOptionSet {
         socket: &dyn SetSocketLevelOption,
     ) -> Result<NeedIfacePoll> {
         match_sock_option_ref!(option, {
-            socket_recv_buf: RecvBuf => {
-                let recv_buf = socket_recv_buf.get().unwrap();
-                if *recv_buf <= MIN_RECVBUF {
-                    self.set_recv_buf(MIN_RECVBUF);
-                } else {
-                    self.set_recv_buf(*recv_buf);
-                }
-            },
             socket_send_buf: SendBuf => {
                 let send_buf = socket_send_buf.get().unwrap();
                 if *send_buf <= MIN_SENDBUF {
                     self.set_send_buf(MIN_SENDBUF);
                 } else {
                     self.set_send_buf(*send_buf);
+                }
+            },
+            socket_recv_buf: RecvBuf => {
+                let recv_buf = socket_recv_buf.get().unwrap();
+                if *recv_buf <= MIN_RECVBUF {
+                    self.set_recv_buf(MIN_RECVBUF);
+                } else {
+                    self.set_recv_buf(*recv_buf);
                 }
             },
             socket_reuse_addr: ReuseAddr => {
@@ -126,11 +153,43 @@ impl SocketOptionSet {
                 self.set_keep_alive(*keep_alive);
                 return Ok(socket.set_keep_alive(*keep_alive));
             },
+            socket_sendbuf_force: SendBufForce => {
+                check_current_privileged()?;
+                let send_buf = socket_sendbuf_force.get().unwrap();
+                if *send_buf <= MIN_SENDBUF {
+                    self.set_send_buf(MIN_SENDBUF);
+                } else {
+                    self.set_send_buf(*send_buf);
+                }
+            },
+            socket_recvbuf_force: RecvBufForce => {
+                check_current_privileged()?;
+                let recv_buf = socket_recvbuf_force.get().unwrap();
+                if *recv_buf <= MIN_RECVBUF {
+                    self.set_recv_buf(MIN_RECVBUF);
+                } else {
+                    self.set_recv_buf(*recv_buf);
+                }
+            },
             _ => return_errno_with_message!(Errno::ENOPROTOOPT, "the socket option to be set is unknown")
         });
 
         Ok(NeedIfacePoll::FALSE)
     }
+}
+
+fn check_current_privileged() -> Result<()> {
+    let credentials = {
+        let current = current_thread!();
+        let posix_thread = current.as_posix_thread().unwrap();
+        posix_thread.credentials()
+    };
+
+    if credentials.euid().is_root() || credentials.effective_capset().contains(CapSet::NET_ADMIN) {
+        return Ok(());
+    }
+
+    return_errno_with_message!(Errno::EPERM, "the process does not have permissions")
 }
 
 pub const MIN_SENDBUF: u32 = 2304;
