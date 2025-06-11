@@ -6,7 +6,7 @@ use crate::{
     current_userspace,
     net::socket::{
         ip::{options::IpTtl, stream_options::CongestionControl},
-        util::LingerOption,
+        util::{FilterProgram, LingerOption},
     },
     prelude::*,
 };
@@ -223,5 +223,24 @@ impl From<CLinger> for LingerOption {
         let is_on = value.l_onoff != 0;
         let timeout = Duration::new(value.l_linger as _, 0);
         LingerOption::new(is_on, timeout)
+    }
+}
+
+/// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/linux/filter.h#L31>.
+#[derive(Clone, Copy, Debug, Pod)]
+#[repr(C)]
+struct CSockFprog {
+    len: u16,
+    filter_addr: Vaddr,
+}
+
+impl ReadFromUser for FilterProgram {
+    fn read_from_user(addr: Vaddr, max_len: u32) -> Result<Self> {
+        if (max_len as usize) < core::mem::size_of::<CSockFprog>() {
+            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
+        };
+
+        let csock_fprg = current_userspace!().read_val::<CSockFprog>(addr)?;
+        FilterProgram::read_from_user(csock_fprg.filter_addr, csock_fprg.len as usize)
     }
 }
