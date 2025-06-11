@@ -6,3 +6,4 @@ mod stream;
 
 pub use addr::UnixSocketAddr;
 pub use stream::UnixStreamSocket;
+pub(super) use stream::UNIX_STREAM_DEFAULT_BUF_SIZE;

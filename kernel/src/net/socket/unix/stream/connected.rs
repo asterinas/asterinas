@@ -30,9 +30,11 @@ impl Connected {
         writer_pollee: Option<Pollee>,
     ) -> (Connected, Connected) {
         let (writer_peer, reader_this) =
-            Channel::with_capacity_and_pollees(DEFAULT_BUF_SIZE, None, reader_pollee).split();
+            Channel::with_capacity_and_pollees(UNIX_STREAM_DEFAULT_BUF_SIZE, None, reader_pollee)
+                .split();
         let (writer_this, reader_peer) =
-            Channel::with_capacity_and_pollees(DEFAULT_BUF_SIZE, writer_pollee, None).split();
+            Channel::with_capacity_and_pollees(UNIX_STREAM_DEFAULT_BUF_SIZE, writer_pollee, None)
+                .split();
 
         let (addr_this, addr_peer) = AddrView::new_pair(addr, peer_addr);
 
@@ -156,4 +158,4 @@ impl AddrView {
     }
 }
 
-const DEFAULT_BUF_SIZE: usize = 65536;
+pub(in crate::net) const UNIX_STREAM_DEFAULT_BUF_SIZE: usize = 65536;
