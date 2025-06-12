@@ -17,6 +17,7 @@ use super::{
     task_set::TaskSet,
 };
 use crate::{
+    fs::cgroupfs::CgroupNormalNode,
     prelude::*,
     sched::{AtomicNice, Nice},
     thread::{AsThread, Thread},
@@ -79,6 +80,10 @@ pub struct Process {
     pub(super) process_group: Mutex<Weak<ProcessGroup>>,
     /// resource limits
     resource_limits: ResourceLimits,
+    /// The bound cgroup of the process.
+    ///
+    /// If this field is `None`, the process is bound to the root cgroup.
+    cgroup: Mutex<Option<Weak<CgroupNormalNode>>>,
     /// Scheduling priority nice value
     /// According to POSIX.1, the nice value is a per-process attribute,
     /// the threads in a process should share a nice value.
@@ -214,6 +219,7 @@ impl Process {
             parent_death_signal: AtomicSigNum::new_empty(),
             exit_signal: AtomicSigNum::new_empty(),
             resource_limits,
+            cgroup: Mutex::new(None),
             nice: AtomicNice::new(nice),
             timer_manager: PosixTimerManager::new(&prof_clock, process_ref),
             prof_clock,
@@ -704,5 +710,34 @@ impl Process {
                 }
             }
         }
+    }
+
+    // ******************* cgroup ********************
+
+    /// Returns the cgroup of the process.
+    ///
+    /// If returns `None`, it means that the process is bound to the root cgroup.
+    pub fn cgroup(&self) -> Option<Arc<CgroupNormalNode>> {
+        self.cgroup
+            .lock()
+            .as_ref()
+            .map(|cgroup| cgroup.upgrade().unwrap())
+    }
+
+    /// Binds the process to a cgroup.
+    ///
+    /// Returns the old cgroup if it exists.
+    pub fn bind_cgroup(
+        &self,
+        cgroup: Option<Weak<CgroupNormalNode>>,
+    ) -> Option<Arc<CgroupNormalNode>> {
+        let mut cgroup_guard = self.cgroup.lock();
+        let res = cgroup_guard
+            .as_ref()
+            .map(|old_cgroup| old_cgroup.upgrade().unwrap());
+
+        *cgroup_guard = cgroup;
+
+        res
     }
 }

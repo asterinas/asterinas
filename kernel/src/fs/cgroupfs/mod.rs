@@ -5,18 +5,26 @@ use alloc::sync::Arc;
 use fs::CgroupFs;
 pub use inode::CgroupInode;
 use spin::Once;
-
-use crate::fs::cgroupfs::systree_node::CgroupUnifiedNode;
+pub use systree_node::CgroupNormalNode;
+use systree_node::CgroupUnifiedNode;
 
 mod fs;
 mod inode;
 mod systree_node;
 
+static CGROUP_ROOT_NODE: Once<Arc<CgroupUnifiedNode>> = Once::new();
 static CGROUP_SINGLETON: Once<Arc<CgroupFs>> = Once::new();
 
 /// Returns a reference to the global CgroupFs instance. Panics if not initialized.
 pub fn singleton() -> &'static Arc<CgroupFs> {
     CGROUP_SINGLETON.get().expect("CgroupFs is not initialized")
+}
+
+/// Returns a reference to the root node of the cgroup unified hierarchy.
+pub fn root_node() -> &'static Arc<CgroupUnifiedNode> {
+    CGROUP_ROOT_NODE
+        .get()
+        .expect("cgroup root node is not initialized")
 }
 
 /// Initializes the CgroupFs singleton.
@@ -31,5 +39,6 @@ pub fn init() {
         .expect("Failed to add cgroup directory to SysTree");
 
     // Ensure systree is initialized first. This should be handled by the kernel's init order.
-    CGROUP_SINGLETON.call_once(|| CgroupFs::new(cgroup_dir));
+    CGROUP_SINGLETON.call_once(|| CgroupFs::new(cgroup_dir.clone()));
+    CGROUP_ROOT_NODE.call_once(|| cgroup_dir);
 }
