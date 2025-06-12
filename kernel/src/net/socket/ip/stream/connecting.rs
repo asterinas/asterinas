@@ -13,19 +13,19 @@ use crate::{
     prelude::*,
 };
 
-pub struct ConnectingStream {
+pub(super) struct ConnectingStream {
     tcp_conn: TcpConnection,
     remote_endpoint: IpEndpoint,
 }
 
-pub enum ConnResult {
+pub(super) enum ConnResult {
     Connecting(ConnectingStream),
     Connected(ConnectedStream),
     Refused(InitStream),
 }
 
 impl ConnectingStream {
-    pub fn new(
+    pub(super) fn new(
         bound_port: BoundPort,
         remote_endpoint: IpEndpoint,
         option: &RawTcpOption,
@@ -64,7 +64,7 @@ impl ConnectingStream {
         })
     }
 
-    pub fn has_result(&self) -> bool {
+    pub(super) fn has_result(&self) -> bool {
         match self.tcp_conn.connect_state() {
             ConnectState::Connecting => false,
             ConnectState::Connected => true,
@@ -72,7 +72,7 @@ impl ConnectingStream {
         }
     }
 
-    pub fn into_result(self) -> ConnResult {
+    pub(super) fn into_result(self) -> ConnResult {
         let next_state = self.tcp_conn.connect_state();
 
         match next_state {
@@ -88,15 +88,15 @@ impl ConnectingStream {
         }
     }
 
-    pub fn local_endpoint(&self) -> IpEndpoint {
+    pub(super) fn local_endpoint(&self) -> IpEndpoint {
         self.tcp_conn.local_endpoint().unwrap()
     }
 
-    pub fn remote_endpoint(&self) -> IpEndpoint {
+    pub(super) fn remote_endpoint(&self) -> IpEndpoint {
         self.remote_endpoint
     }
 
-    pub fn iface(&self) -> &Arc<Iface> {
+    pub(super) fn iface(&self) -> &Arc<Iface> {
         self.tcp_conn.iface()
     }
 
