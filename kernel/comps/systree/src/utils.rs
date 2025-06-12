@@ -5,6 +5,7 @@
 use alloc::{collections::BTreeMap, string::String, sync::Arc};
 
 use ostd::sync::RwLock;
+use spin::Once;
 
 use super::{
     attr::SysAttrSet,
@@ -16,6 +17,7 @@ use super::{
 pub struct SysObjFields {
     id: SysNodeId,
     name: SysStr,
+    parent_path: Once<SysStr>,
 }
 
 impl SysObjFields {
@@ -23,6 +25,7 @@ impl SysObjFields {
         Self {
             id: SysNodeId::new(),
             name,
+            parent_path: Once::new(),
         }
     }
 
@@ -32,6 +35,18 @@ impl SysObjFields {
 
     pub fn name(&self) -> &SysStr {
         &self.name
+    }
+
+    pub fn set_parent_path(&self, path: SysStr) {
+        self.parent_path.call_once(|| path);
+    }
+
+    pub fn path(&self) -> SysStr {
+        if let Some(parent_path) = self.parent_path.get() {
+            return SysStr::from(parent_path.clone().into_owned() + "/" + self.name.deref());
+        }
+
+        self.name().clone()
     }
 }
 
@@ -59,6 +74,14 @@ impl SysNormalNodeFields {
 
     pub fn attr_set(&self) -> &SysAttrSet {
         &self.attr_set
+    }
+
+    pub fn set_parent_path(&self, path: SysStr) {
+        self.base.set_parent_path(path);
+    }
+
+    pub fn path(&self) -> SysStr {
+        self.base.path()
     }
 }
 
@@ -88,6 +111,14 @@ impl<C: SysObj + ?Sized> SysBranchNodeFields<C> {
         self.base.attr_set()
     }
 
+    pub fn set_parent_path(&self, path: SysStr) {
+        self.base.set_parent_path(path);
+    }
+
+    pub fn path(&self) -> SysStr {
+        self.base.path()
+    }
+
     pub fn contains(&self, child_name: &str) -> bool {
         let children = self.children.read();
         children.contains_key(child_name)
@@ -99,6 +130,8 @@ impl<C: SysObj + ?Sized> SysBranchNodeFields<C> {
         if children.contains_key(name) {
             return Err(Error::PermissionDenied);
         }
+
+        new_child.set_parent_path(self.path());
         children.insert(name.clone(), new_child);
         Ok(())
     }
@@ -152,6 +185,14 @@ impl SymlinkNodeFields {
 
     pub fn name(&self) -> &SysStr {
         self.base.name()
+    }
+
+    pub fn set_parent_path(&self, path: SysStr) {
+        self.base.set_parent_path(path);
+    }
+
+    pub fn path(&self) -> SysStr {
+        self.base.path()
     }
 
     pub fn target_path(&self) -> &str {

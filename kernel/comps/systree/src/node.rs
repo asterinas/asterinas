@@ -218,6 +218,14 @@ pub trait SysObj: Any + Send + Sync + Debug + 'static {
         false
     }
 
+    /// Sets the parent path of a node.
+    ///
+    /// This method is usually called when a node is added to a `SysTree`.
+    /// Once the path is set, the node's path will not change.
+    fn set_parent_path(&self, _path: SysStr) {
+        // This method is a no-op by default.
+    }
+
     /// Returns the path from the root to this node.
     ///
     /// The path of a node is the names of all the ancestors concatenated
