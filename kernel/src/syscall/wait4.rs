@@ -3,12 +3,12 @@
 use super::{getrusage::rusage_t, SyscallReturn};
 use crate::{
     prelude::*,
-    process::{wait_child_exit, ProcessFilter, WaitOptions},
+    process::{do_wait, ProcessFilter, WaitOptions},
 };
 
 pub fn sys_wait4(
     wait_pid: u64,
-    exit_status_ptr: u64,
+    status_ptr: u64,
     wait_options: u32,
     rusage_addr: Vaddr,
     ctx: &Context,
@@ -16,31 +16,30 @@ pub fn sys_wait4(
     let wait_options = WaitOptions::from_bits(wait_options)
         .ok_or_else(|| Error::with_message(Errno::EINVAL, "unknown wait option"))?;
     debug!(
-        "pid = {}, exit_status_ptr = {}, wait_options: {:?}",
-        wait_pid as i32, exit_status_ptr, wait_options
+        "pid = {}, status_ptr = {}, wait_options: {:?}",
+        wait_pid as i32, status_ptr, wait_options
     );
     debug!("wait4 current pid = {}", ctx.process.pid());
     let process_filter = ProcessFilter::from_id(wait_pid as _);
 
-    let waited_process =
-        wait_child_exit(process_filter, wait_options, ctx).map_err(|err| match err.error() {
+    let wait_status =
+        do_wait(process_filter, wait_options, ctx).map_err(|err| match err.error() {
             Errno::EINTR => Error::new(Errno::ERESTARTSYS),
             _ => err,
         })?;
-    let Some(process) = waited_process else {
+    let Some(wait_status) = wait_status else {
         return Ok(SyscallReturn::Return(0 as _));
     };
 
-    let (return_pid, exit_code) = (process.pid(), process.status().exit_code());
-    if exit_status_ptr != 0 {
-        ctx.user_space()
-            .write_val(exit_status_ptr as _, &exit_code)?;
+    let (return_pid, status_code) = (wait_status.pid(), wait_status.status_code());
+    if status_ptr != 0 {
+        ctx.user_space().write_val(status_ptr as _, &status_code)?;
     }
 
     if rusage_addr != 0 {
         let rusage = rusage_t {
-            ru_utime: process.prof_clock().user_clock().read_time().into(),
-            ru_stime: process.prof_clock().kernel_clock().read_time().into(),
+            ru_utime: wait_status.prof_clock().user_clock().read_time().into(),
+            ru_stime: wait_status.prof_clock().kernel_clock().read_time().into(),
             ..Default::default()
         };
 

@@ -543,11 +543,12 @@ fn create_child_process(
 }
 
 fn set_parent_and_group(parent: &Process, child: &Arc<Process>) {
-    // Lock order: process table -> children -> group of process
+    // Lock order: children of process -> process table -> group of process
     // -> group inner -> session inner
+    let mut children_mut = parent.children().lock();
+
     let mut process_table_mut = process_table::process_table_mut();
 
-    let mut children_mut = parent.children().lock();
     let process_group_mut = parent.process_group.lock();
 
     let process_group = process_group_mut.upgrade().unwrap();
