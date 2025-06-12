@@ -4,8 +4,8 @@
 
 set -e
 
-cp /benchmark/nginx/nginx.conf /usr/local/nginx/conf/
+cp /benchmark/nginx/nginx.conf /benchmark/nginx/conf/
 /benchmark/nginx/generate_random_html.sh 16384
 
 echo "Running nginx server"
-/usr/local/nginx/sbin/nginx
+/benchmark/bin/nginx -e /benchmark/nginx/error.log -c /benchmark/nginx/conf/nginx.conf
