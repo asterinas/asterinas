@@ -126,7 +126,7 @@ impl PosixThread {
 
     /// Returns whether the signal is blocked by the thread.
     pub(in crate::process) fn has_signal_blocked(&self, signum: SigNum) -> bool {
-        // FIMXE: Some signals cannot be blocked, even set in sig_mask.
+        // FIXME: Some signals cannot be blocked, even set in sig_mask.
         self.sig_mask.contains(signum, Ordering::Relaxed)
     }
 
