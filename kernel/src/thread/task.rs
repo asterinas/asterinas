@@ -90,7 +90,7 @@ pub fn create_new_user_task(
             }
             handle_pending_signal(user_ctx, &ctx, syscall_number);
             // If current is suspended, wait for a signal to wake up self
-            while current_thread.is_stopped() {
+            while current_posix_thread.status().lock().is_stopped() {
                 Thread::yield_now();
                 debug!("{} is suspended.", current_posix_thread.tid());
                 handle_pending_signal(user_ctx, &ctx, None);

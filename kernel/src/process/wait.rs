@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-#![expect(dead_code)]
-
 use super::{
     process_filter::ProcessFilter,
     signal::{constants::SIGCHLD, with_sigmask_changed},
@@ -10,9 +8,11 @@ use super::{
 use crate::{
     prelude::*,
     process::{
-        posix_thread::{thread_table, AsPosixThread},
+        posix_thread::{thread_table, AsPosixThread, ThreadWaitStatus},
         process_table,
     },
+    thread::{AsThread, Thread},
+    time::clocks::ProfClock,
 };
 
 // The definition of WaitOptions is from Occlum
@@ -31,26 +31,35 @@ bitflags! {
 }
 
 impl WaitOptions {
-    pub fn supported(&self) -> bool {
-        let unsupported_flags = WaitOptions::all() - WaitOptions::WNOHANG;
-        !self.intersects(unsupported_flags)
+    pub fn is_all_supported(&self) -> bool {
+        let supported_args = WaitOptions::WNOHANG
+            | WaitOptions::WSTOPPED
+            | WaitOptions::WCONTINUED
+            | WaitOptions::WNOWAIT;
+        supported_args.contains(*self)
     }
 }
 
-pub fn wait_child_exit(
+pub fn do_wait(
     child_filter: ProcessFilter,
     wait_options: WaitOptions,
     ctx: &Context,
-) -> Result<Option<Arc<Process>>> {
-    let current = ctx.process;
+) -> Result<Option<WaitStatus>> {
+    if !wait_options.is_all_supported() {
+        warn!("unsupported wait options is found: {:?}", wait_options);
+    }
+
     let zombie_child = with_sigmask_changed(
         ctx,
         |sigmask| sigmask + SIGCHLD,
         || {
-            current.children_wait_queue().pause_until(|| {
-                let unwaited_children = current
-                    .children()
-                    .lock()
+            ctx.process.children_wait_queue().pause_until(|| {
+                // Acquire the children lock initially to prevent race conditions.
+                // We want to ensure that multiple waiting threads
+                // do not return the same waited process/thread status.
+                let mut children_lock = ctx.process.children().lock();
+
+                let unwaited_children = children_lock
                     .values()
                     .filter(|child| match child_filter {
                         ProcessFilter::Any => true,
@@ -67,20 +76,16 @@ pub fn wait_child_exit(
                     )));
                 }
 
-                // return immediately if we find a zombie child
-                let zombie_child = unwaited_children
-                    .iter()
-                    .find(|child| child.status().is_zombie());
+                if let Some(zombie_child) =
+                    wait_child_zombie(&unwaited_children, wait_options, &mut children_lock)
+                {
+                    return Some(Ok(Some(zombie_child)));
+                }
 
-                if let Some(zombie_child) = zombie_child {
-                    let zombie_pid = zombie_child.pid();
-                    if wait_options.contains(WaitOptions::WNOWAIT) {
-                        // does not reap child, directly return
-                        return Some(Ok(Some(zombie_child.clone())));
-                    } else {
-                        reap_zombie_child(current, zombie_pid);
-                        return Some(Ok(Some(zombie_child.clone())));
-                    }
+                if let Some(status) =
+                    wait_thread(&unwaited_children, wait_options, &mut children_lock)
+                {
+                    return Some(Ok(Some(status)));
                 }
 
                 if wait_options.contains(WaitOptions::WNOHANG) {
@@ -96,16 +101,84 @@ pub fn wait_child_exit(
     Ok(zombie_child)
 }
 
+pub enum WaitStatus {
+    Process(Arc<Process>),
+    Thread(Arc<Thread>, ThreadWaitStatus),
+}
+
+impl WaitStatus {
+    pub fn id(&self) -> u32 {
+        match self {
+            WaitStatus::Process(process) => process.pid(),
+            WaitStatus::Thread(thread, _) => thread.as_posix_thread().unwrap().tid(),
+        }
+    }
+
+    pub fn exit_status(&self) -> u32 {
+        match self {
+            WaitStatus::Process(process) => process.status().exit_code(),
+            WaitStatus::Thread(_, thread_wait_status) => thread_wait_status.as_u32(),
+        }
+    }
+
+    pub fn prof_clock(&self) -> &Arc<ProfClock> {
+        match self {
+            WaitStatus::Process(process) => process.prof_clock(),
+            WaitStatus::Thread(thread, _) => thread.as_posix_thread().unwrap().prof_clock(),
+        }
+    }
+}
+
+fn wait_child_zombie(
+    unwaited_children: &[Arc<Process>],
+    wait_options: WaitOptions,
+    children_lock: &mut BTreeMap<Pid, Arc<Process>>,
+) -> Option<WaitStatus> {
+    let zombie_child = unwaited_children
+        .iter()
+        .find(|child| child.status().is_zombie())?;
+
+    let wait_status = WaitStatus::Process(zombie_child.clone());
+    if wait_options.contains(WaitOptions::WNOWAIT) {
+        Some(wait_status)
+    } else {
+        let zombie_pid = zombie_child.pid();
+        reap_zombie_child(zombie_pid, children_lock);
+        Some(wait_status)
+    }
+}
+
+fn wait_thread(
+    unwaited_children: &[Arc<Process>],
+    wait_options: WaitOptions,
+    _children_lock: &mut BTreeMap<Pid, Arc<Process>>,
+) -> Option<WaitStatus> {
+    // Lock order: Children of process -> Tasks of process ->
+    for process in unwaited_children.iter() {
+        for task in process.tasks().lock().as_slice() {
+            let posix_thread = task.as_posix_thread().unwrap();
+            if let Some(thread_status) = posix_thread.status().lock().wait(wait_options) {
+                return Some(WaitStatus::Thread(
+                    task.as_thread().unwrap().clone(),
+                    thread_status,
+                ));
+            }
+        }
+    }
+
+    None
+}
+
 /// Free zombie child with pid, returns the exit code of child process.
-fn reap_zombie_child(process: &Process, pid: Pid) -> ExitCode {
-    let child_process = process.children().lock().remove(&pid).unwrap();
+fn reap_zombie_child(pid: Pid, children_lock: &mut BTreeMap<Pid, Arc<Process>>) -> ExitCode {
+    let child_process = children_lock.remove(&pid).unwrap();
     assert!(child_process.status().is_zombie());
 
     for task in child_process.tasks().lock().as_slice() {
         thread_table::remove_thread(task.as_posix_thread().unwrap().tid());
     }
 
-    // Lock order: session table -> group table -> process table -> group of process
+    // Lock order: children of process -> session table -> group table -> process table -> group of process
     // -> group inner -> session inner
     let mut session_table_mut = process_table::session_table_mut();
     let mut group_table_mut = process_table::group_table_mut();

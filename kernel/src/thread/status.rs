@@ -27,10 +27,6 @@ impl ThreadStatus {
     pub fn is_exited(&self) -> bool {
         *self == ThreadStatus::Exited
     }
-
-    pub fn is_stopped(&self) -> bool {
-        *self == ThreadStatus::Stopped
-    }
 }
 
 impl From<ThreadStatus> for u8 {
