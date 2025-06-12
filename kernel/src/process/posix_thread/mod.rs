@@ -199,6 +199,13 @@ impl PosixThread {
         *self.signalled_waker.lock() = None;
     }
 
+    /// Wakes up the signalled waker.
+    pub fn wake_signalled_waker(&self) {
+        if let Some(waker) = &*self.signalled_waker.lock() {
+            waker.wake_up();
+        }
+    }
+
     /// Enqueues a thread-directed signal.
     ///
     /// This method does not perform permission checks on user signals. Therefore, unless the
@@ -233,9 +240,7 @@ impl PosixThread {
         _sig_dispositions: MutexGuard<SigDispositions>,
     ) {
         self.sig_queues.enqueue(signal);
-        if let Some(waker) = &*self.signalled_waker.lock() {
-            waker.wake_up();
-        }
+        self.wake_signalled_waker();
     }
 
     /// Returns a reference to the profiling clock of the current thread.

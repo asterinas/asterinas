@@ -2,6 +2,7 @@
 
 use ostd::{
     cpu::context::UserContext,
+    sync::Waiter,
     task::{Task, TaskOptions},
     user::{ReturnReason, UserContextApi, UserMode},
 };
@@ -32,6 +33,7 @@ pub fn create_new_user_task(
         let current_posix_thread = current_thread.as_posix_thread().unwrap();
         let current_thread_local = current_task.as_thread_local().unwrap();
         let current_process = current_posix_thread.process();
+        let (stop_waiter, _) = Waiter::new_pair();
 
         let user_ctx = current_task
             .user_ctx()
@@ -71,11 +73,13 @@ pub fn create_new_user_task(
             task: &current_task,
         };
 
-        loop {
+        while !current_thread.is_exited() {
+            // Execute the user code
             let return_reason = user_mode.execute(has_kernel_event_fn);
+
+            // Handle user events
             let user_ctx = user_mode.context_mut();
             let mut syscall_number = None;
-            // handle user event:
             match return_reason {
                 ReturnReason::UserException => handle_exception(&ctx, user_ctx),
                 ReturnReason::UserSyscall => {
@@ -85,22 +89,26 @@ pub fn create_new_user_task(
                 ReturnReason::KernelEvent => {}
             };
 
+            // Exit if the thread terminates
             if current_thread.is_exited() {
                 break;
             }
+
+            // Handle signals
             handle_pending_signal(user_ctx, &ctx, syscall_number);
-            // If current is suspended, wait for a signal to wake up self
-            while current_thread.is_stopped() {
-                Thread::yield_now();
-                debug!("{} is suspended.", current_posix_thread.tid());
+
+            // Handle signals while the thread is stopped
+            // FIXME: Currently, we handle all signals when the process is stopped.
+            // However, when the process is stopped, at least signals with user-provided handlers
+            // should not be handled; these signals should only be handled when the process is continued.
+            // Certain signals, such as SIGKILL, should be handled even if the process is stopped.
+            // We need to further investigate Linux behavior regarding which signals should be handled
+            // when the thread is stopped.
+            while !current_thread.is_exited() && current_process.is_stopped() {
+                let _ = stop_waiter.pause_until(|| (!current_process.is_stopped()).then_some(()));
                 handle_pending_signal(user_ctx, &ctx, None);
             }
-            if current_thread.is_exited() {
-                debug!("exit due to signal");
-                break;
-            }
         }
-        debug!("exit user loop");
     }
 
     TaskOptions::new(|| {
