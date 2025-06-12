@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     fs::file_table::{get_file_fast, FileDesc},
-    net::socket::SendRecvFlags,
+    net::socket::util::SendRecvFlags,
     prelude::*,
     util::net::write_socket_addr_to_user,
 };

@@ -6,7 +6,7 @@ use aster_bigtcp::{
     wire::IpEndpoint,
 };
 
-use super::{connected::ConnectedStream, StreamObserver};
+use super::{connected::ConnectedStream, observer::StreamObserver};
 use crate::{
     events::IoEvents,
     net::iface::{BoundPort, Iface, TcpListener},

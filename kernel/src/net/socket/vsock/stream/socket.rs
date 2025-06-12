@@ -8,8 +8,9 @@ use crate::{
     fs::file_handle::FileLike,
     net::socket::{
         private::SocketPrivate,
+        util::{MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr},
         vsock::{addr::VsockSocketAddr, VSOCK_GLOBAL},
-        MessageHeader, SendRecvFlags, SockShutdownCmd, Socket, SocketAddr,
+        Socket,
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Poller},

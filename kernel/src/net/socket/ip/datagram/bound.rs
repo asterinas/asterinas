@@ -9,7 +9,7 @@ use crate::{
     events::IoEvents,
     net::{
         iface::{Iface, UdpSocket},
-        socket::util::{datagram_common, send_recv_flags::SendRecvFlags},
+        socket::util::{datagram_common, SendRecvFlags},
     },
     prelude::*,
     util::{MultiRead, MultiWrite},

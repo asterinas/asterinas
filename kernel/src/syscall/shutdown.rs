@@ -3,7 +3,7 @@
 use super::SyscallReturn;
 use crate::{
     fs::file_table::{get_file_fast, FileDesc},
-    net::socket::SockShutdownCmd,
+    net::socket::util::SockShutdownCmd,
     prelude::*,
 };
 

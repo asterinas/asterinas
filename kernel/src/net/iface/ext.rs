@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::sched::PollScheduler;
-use crate::net::socket::ip::{datagram::DatagramObserver, stream::StreamObserver};
+use crate::net::socket::ip::{DatagramObserver, StreamObserver};
 
 pub struct BigtcpExt;
 

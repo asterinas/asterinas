@@ -2,7 +2,7 @@
 
 use super::read_socket_addr_from_user;
 use crate::{
-    net::socket::SocketAddr,
+    net::socket::util::SocketAddr,
     prelude::*,
     util::{net::write_socket_addr_with_max_len, VmReaderArray, VmWriterArray},
 };

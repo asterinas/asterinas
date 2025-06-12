@@ -14,7 +14,7 @@ use crate::{
     fs::file_handle::FileLike,
     net::socket::{
         unix::addr::{UnixSocketAddrBound, UnixSocketAddrKey},
-        SockShutdownCmd, SocketAddr,
+        util::{SockShutdownCmd, SocketAddr},
     },
     prelude::*,
     process::signal::{PollHandle, Pollee},

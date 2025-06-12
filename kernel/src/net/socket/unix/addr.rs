@@ -5,7 +5,7 @@ use keyable_arc::KeyableArc;
 use super::ns::{self, AbstractHandle};
 use crate::{
     fs::{path::Dentry, utils::Inode},
-    net::socket::util::socket_addr::SocketAddr,
+    net::socket::util::SocketAddr,
     prelude::*,
 };
 

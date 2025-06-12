@@ -2,7 +2,7 @@
 
 use ostd::sync::RwMutex;
 
-use super::send_recv_flags::SendRecvFlags;
+use super::SendRecvFlags;
 use crate::{
     events::IoEvents,
     process::signal::Pollee,

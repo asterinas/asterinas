@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use super::util::LingerOption;
 use crate::{impl_socket_options, prelude::*};
-mod macros;
 
-use super::LingerOption;
+mod macros;
 
 /// Socket options. This trait represents all options that can be set or got for a socket, including
 /// socket level options and options for specific socket type like tcp socket.

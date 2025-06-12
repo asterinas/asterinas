@@ -2,6 +2,7 @@
 
 use aster_bigtcp::time::Duration;
 
+use super::options::CongestionControl;
 use crate::prelude::*;
 
 #[derive(Debug, Clone, Copy, CopyGetters, Setters)]
@@ -100,33 +101,5 @@ impl Retrans {
         }
 
         period
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum CongestionControl {
-    Reno,
-    Cubic,
-}
-
-impl CongestionControl {
-    const RENO: &'static str = "reno";
-    const CUBIC: &'static str = "cubic";
-
-    pub fn new(name: &str) -> Result<Self> {
-        let congestion = match name {
-            Self::RENO => Self::Reno,
-            Self::CUBIC => Self::Cubic,
-            _ => return_errno_with_message!(Errno::ENOENT, "unsupported congestion name"),
-        };
-
-        Ok(congestion)
-    }
-
-    pub fn name(&self) -> &'static str {
-        match self {
-            Self::Reno => Self::RENO,
-            Self::Cubic => Self::CUBIC,
-        }
     }
 }

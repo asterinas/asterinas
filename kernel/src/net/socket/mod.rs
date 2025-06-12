@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use self::options::SocketOption;
-pub use self::util::{
-    options::LingerOption, send_recv_flags::SendRecvFlags, shutdown_cmd::SockShutdownCmd,
-    socket_addr::SocketAddr, MessageHeader,
-};
+use options::SocketOption;
+use util::{MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr};
+
 use crate::{
     fs::{
         file_handle::FileLike,
@@ -18,7 +16,7 @@ pub mod ip;
 pub mod netlink;
 pub mod options;
 pub mod unix;
-mod util;
+pub mod util;
 pub mod vsock;
 
 mod private {
