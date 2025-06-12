@@ -2,7 +2,7 @@
 
 use aster_bigtcp::wire::{IpAddress, IpEndpoint, Ipv4Address};
 
-use crate::{net::socket::SocketAddr, prelude::*, return_errno_with_message};
+use crate::{net::socket::util::SocketAddr, prelude::*, return_errno_with_message};
 
 impl TryFrom<SocketAddr> for IpEndpoint {
     type Error = Error;

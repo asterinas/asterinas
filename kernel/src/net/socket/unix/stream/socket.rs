@@ -15,8 +15,8 @@ use crate::{
     net::socket::{
         private::SocketPrivate,
         unix::UnixSocketAddr,
-        util::{send_recv_flags::SendRecvFlags, socket_addr::SocketAddr, MessageHeader},
-        SockShutdownCmd, Socket,
+        util::{MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr},
+        Socket,
     },
     prelude::*,
     process::signal::{PollHandle, Pollable},

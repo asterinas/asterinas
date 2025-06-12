@@ -4,7 +4,7 @@ mod multicast;
 
 pub use multicast::{GroupIdSet, MAX_GROUPS};
 
-use crate::{net::socket::SocketAddr, prelude::*};
+use crate::{net::socket::util::SocketAddr, prelude::*};
 
 /// The socket address of a netlink socket.
 ///

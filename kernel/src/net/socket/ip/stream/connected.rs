@@ -6,15 +6,12 @@ use aster_bigtcp::{
     wire::IpEndpoint,
 };
 
-use super::StreamObserver;
+use super::observer::StreamObserver;
 use crate::{
     events::IoEvents,
     net::{
         iface::{Iface, RawTcpSocketExt, TcpConnection},
-        socket::{
-            util::{send_recv_flags::SendRecvFlags, shutdown_cmd::SockShutdownCmd},
-            LingerOption,
-        },
+        socket::util::{LingerOption, SendRecvFlags, SockShutdownCmd},
     },
     prelude::*,
     process::signal::{Pollee, Poller},

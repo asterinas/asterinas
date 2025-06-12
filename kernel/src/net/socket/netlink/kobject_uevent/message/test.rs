@@ -18,7 +18,8 @@ use crate::{
             table::{NetlinkUeventProtocol, SupportedNetlinkProtocol},
             GroupIdSet, NetlinkSocketAddr, NetlinkUeventSocket,
         },
-        SendRecvFlags, Socket, SocketAddr,
+        util::{SendRecvFlags, SocketAddr},
+        Socket,
     },
     prelude::*,
 };

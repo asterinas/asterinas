@@ -6,8 +6,8 @@ use super::connecting::Connecting;
 use crate::{
     events::IoEvents,
     net::socket::{
+        util::{SendRecvFlags, SockShutdownCmd},
         vsock::{addr::VsockSocketAddr, VSOCK_GLOBAL},
-        SendRecvFlags, SockShutdownCmd,
     },
     prelude::*,
     process::signal::{PollHandle, Pollee},

@@ -13,8 +13,11 @@ use crate::{
         netlink::{table::SupportedNetlinkProtocol, AddMembership, DropMembership},
         options::SocketOption,
         private::SocketPrivate,
-        util::datagram_common::{select_remote_and_bind, Bound, Inner},
-        MessageHeader, SendRecvFlags, Socket, SocketAddr,
+        util::{
+            datagram_common::{select_remote_and_bind, Bound, Inner},
+            MessageHeader, SendRecvFlags, SocketAddr,
+        },
+        Socket,
     },
     prelude::*,
     process::signal::{PollHandle, Pollable, Pollee},

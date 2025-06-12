@@ -3,7 +3,7 @@
 use super::RawSocketOption;
 use crate::{
     impl_raw_socket_option,
-    net::socket::ip::stream::options::{
+    net::socket::ip::stream_options::{
         Congestion, DeferAccept, Inq, KeepIdle, MaxSegment, NoDelay, SynCnt, UserTimeout,
         WindowClamp,
     },

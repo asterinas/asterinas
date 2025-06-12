@@ -5,7 +5,7 @@ use core::cmp::min;
 use ostd::task::Task;
 
 use super::{ip::CSocketAddrInet, netlink::CSocketAddrNetlink, unix, vsock::CSocketAddrVm};
-use crate::{current_userspace, net::socket::SocketAddr, prelude::*};
+use crate::{current_userspace, net::socket::util::SocketAddr, prelude::*};
 
 /// Address family.
 ///

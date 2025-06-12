@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::socket_addr::SocketAddr;
+use super::SocketAddr;
 use crate::prelude::*;
 
 /// Message header used for sendmsg/recvmsg.

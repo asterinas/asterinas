@@ -7,14 +7,14 @@ use core::{
 
 use aster_bigtcp::{socket::RawTcpOption, wire::IpEndpoint};
 
-use super::{connecting::ConnectingStream, listen::ListenStream, StreamObserver};
+use super::{connecting::ConnectingStream, listen::ListenStream, observer::StreamObserver};
 use crate::{
     events::IoEvents,
     net::{
         iface::BoundPort,
         socket::{
             ip::common::{bind_port, get_ephemeral_endpoint},
-            SocketAddr,
+            util::SocketAddr,
         },
     },
     prelude::*,

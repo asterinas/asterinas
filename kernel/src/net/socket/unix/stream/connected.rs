@@ -9,7 +9,7 @@ use crate::{
     fs::utils::{Channel, Consumer, Producer},
     net::socket::{
         unix::{addr::UnixSocketAddrBound, UnixSocketAddr},
-        SockShutdownCmd,
+        util::SockShutdownCmd,
     },
     prelude::*,
     process::signal::{PollHandle, Pollee},

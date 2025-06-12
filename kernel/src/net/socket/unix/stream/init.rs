@@ -10,7 +10,7 @@ use crate::{
     events::IoEvents,
     net::socket::{
         unix::addr::{UnixSocketAddr, UnixSocketAddrBound},
-        SockShutdownCmd,
+        util::SockShutdownCmd,
     },
     prelude::*,
     process::signal::{PollHandle, Pollee},

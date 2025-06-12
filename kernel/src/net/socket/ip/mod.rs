@@ -2,8 +2,11 @@
 
 mod addr;
 mod common;
-pub mod datagram;
+mod datagram;
 pub mod options;
-pub mod stream;
+mod stream;
 
-use addr::UNSPECIFIED_LOCAL_ENDPOINT;
+pub(in crate::net) use datagram::observer::DatagramObserver;
+pub use datagram::DatagramSocket;
+pub(in crate::net) use stream::observer::StreamObserver;
+pub use stream::{options as stream_options, StreamSocket};

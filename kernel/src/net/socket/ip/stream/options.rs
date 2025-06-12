@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::CongestionControl;
-use crate::impl_socket_options;
+use crate::{impl_socket_options, prelude::*};
 
 impl_socket_options!(
     pub struct NoDelay(bool);
@@ -14,6 +13,34 @@ impl_socket_options!(
     pub struct UserTimeout(u32);
     pub struct Inq(bool);
 );
+
+#[derive(Debug, Clone, Copy)]
+pub enum CongestionControl {
+    Reno,
+    Cubic,
+}
+
+impl CongestionControl {
+    const RENO: &'static str = "reno";
+    const CUBIC: &'static str = "cubic";
+
+    pub fn new(name: &str) -> Result<Self> {
+        let congestion = match name {
+            Self::RENO => Self::Reno,
+            Self::CUBIC => Self::Cubic,
+            _ => return_errno_with_message!(Errno::ENOENT, "unsupported congestion name"),
+        };
+
+        Ok(congestion)
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Reno => Self::RENO,
+            Self::Cubic => Self::CUBIC,
+        }
+    }
+}
 
 /// The keepalive interval.
 ///

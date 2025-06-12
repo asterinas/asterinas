@@ -10,6 +10,7 @@ use connected::{close_and_linger, ConnectedStream};
 use connecting::{ConnResult, ConnectingStream};
 use init::InitStream;
 use listen::ListenStream;
+use observer::StreamObserver;
 use options::{
     Congestion, DeferAccept, Inq, KeepIdle, MaxSegment, NoDelay, SynCnt, UserTimeout, WindowClamp,
     KEEPALIVE_INTERVAL,
@@ -19,8 +20,8 @@ use takeable::Takeable;
 use util::{Retrans, TcpOptionSet};
 
 use super::{
+    addr::UNSPECIFIED_LOCAL_ENDPOINT,
     options::{IpOptionSet, SetIpLevelOption},
-    UNSPECIFIED_LOCAL_ENDPOINT,
 };
 use crate::{
     events::IoEvents,
@@ -33,10 +34,7 @@ use crate::{
             private::SocketPrivate,
             util::{
                 options::{SetSocketLevelOption, SocketOptionSet},
-                send_recv_flags::SendRecvFlags,
-                shutdown_cmd::SockShutdownCmd,
-                socket_addr::SocketAddr,
-                MessageHeader,
+                MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr,
             },
             Socket,
         },
@@ -50,12 +48,9 @@ mod connected;
 mod connecting;
 mod init;
 mod listen;
-mod observer;
+pub(super) mod observer;
 pub mod options;
 mod util;
-
-pub(in crate::net) use self::observer::StreamObserver;
-pub use self::util::CongestionControl;
 
 pub struct StreamSocket {
     // Lock order: `state` first, `options` second

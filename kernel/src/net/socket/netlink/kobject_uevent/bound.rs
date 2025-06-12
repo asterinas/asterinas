@@ -7,8 +7,7 @@ use crate::{
     events::IoEvents,
     net::socket::{
         netlink::{common::BoundNetlink, NetlinkSocketAddr},
-        util::datagram_common,
-        SendRecvFlags,
+        util::{datagram_common, SendRecvFlags},
     },
     prelude::*,
     util::{MultiRead, MultiWrite},

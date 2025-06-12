@@ -2,7 +2,7 @@
 
 use aster_bigtcp::{socket::UdpSocket, wire::IpEndpoint};
 
-use super::{bound::BoundDatagram, DatagramObserver};
+use super::{bound::BoundDatagram, observer::DatagramObserver};
 use crate::{
     events::IoEvents,
     net::socket::{
