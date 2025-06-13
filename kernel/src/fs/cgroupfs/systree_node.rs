@@ -49,6 +49,7 @@ impl Debug for CgroupNormalNode {
     }
 }
 
+#[inherit_methods(from = "self.fields")]
 impl CgroupUnifiedNode {
     /// Adds a child node to this `CgroupUnifiedNode`.
     pub fn add_child(&self, new_child: Arc<dyn SysObj>) -> Result<()> {
@@ -62,12 +63,16 @@ impl CgroupUnifiedNode {
         children_guard.insert(name.clone(), new_child);
         Ok(())
     }
+
+    pub fn remove_child(&self, child_name: &str) -> Option<Arc<dyn SysObj>>;
 }
 
 #[inherit_methods(from = "self.fields")]
 impl CgroupNormalNode {
     /// Adds a child node to this `CgroupNormalNode`.
     pub fn add_child(&self, new_child: Arc<dyn SysObj>) -> Result<()>;
+
+    pub fn remove_child(&self, child_name: &str) -> Option<Arc<dyn SysObj>>;
 }
 
 impl CgroupUnifiedNode {
@@ -151,6 +156,11 @@ impl CgroupNormalNode {
     /// Removes a process from this cgroup node.
     pub fn remove_process(&self, pid: Pid) {
         self.processes.lock().remove(&pid);
+    }
+
+    /// Whether this cgroup node has any processes bound to it.
+    pub fn have_processes(&self) -> bool {
+        !self.processes.lock().is_empty()
     }
 
     /// Reads the PID of the processes bound to this cgroup node.

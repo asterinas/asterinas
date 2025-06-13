@@ -11,6 +11,7 @@ use crate::{
     error::Errno,
     fs::{
         cgroupfs::systree_node::{CgroupNormalNode, CgroupUnifiedNode},
+        path::{is_dot, is_dotdot},
         utils::{
             FileSystem, InnerNode, Inode, InodeMode, InodeType, KernelFsInode, Metadata, NAME_MAX,
         },
@@ -112,5 +113,49 @@ impl Inode for CgroupInode {
 
         let new_inode = Self::new_branch_dir(InnerNode::Branch(new_child), self.parent.clone());
         Ok(new_inode)
+    }
+
+    fn rmdir(&self, name: &str) -> Result<()> {
+        if is_dot(name) {
+            return_errno_with_message!(Errno::EINVAL, "rmdir on .");
+        }
+        if is_dotdot(name) {
+            return_errno_with_message!(Errno::ENOTEMPTY, "rmdir on ..");
+        }
+
+        let InnerNode::Branch(branch_node) = self.inner_node() else {
+            return_errno_with_message!(Errno::ENOTDIR, "current node is not a branch node");
+        };
+
+        let target_node = branch_node
+            .child(name)
+            .ok_or(crate::Error::new(Errno::ENOENT))?;
+        if target_node.cast_to_branch().unwrap().count_children() != 0 {
+            return_errno_with_message!(
+                Errno::ENOTEMPTY,
+                "only an empty cgroup hierarchy can be removed"
+            );
+        }
+
+        let target_cgroup_node = Arc::downcast::<CgroupNormalNode>(target_node).unwrap();
+        if target_cgroup_node.have_processes() {
+            return_errno_with_message!(Errno::EBUSY, "the cgroup hierarchy still has processes");
+        }
+
+        if branch_node.is_root() {
+            branch_node
+                .as_any()
+                .downcast_ref::<CgroupUnifiedNode>()
+                .unwrap()
+                .remove_child(name);
+        } else {
+            branch_node
+                .as_any()
+                .downcast_ref::<CgroupNormalNode>()
+                .unwrap()
+                .remove_child(name);
+        }
+
+        Ok(())
     }
 }

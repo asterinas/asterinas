@@ -411,6 +411,10 @@ impl<KInode: KernelFsInode + Send + Sync + 'static> Inode for KInode {
         Err(Error::new(Errno::EPERM))
     }
 
+    default fn rmdir(&self, _name: &str) -> Result<()> {
+        Err(Error::new(Errno::EPERM))
+    }
+
     default fn rename(
         &self,
         _old_name: &str,
