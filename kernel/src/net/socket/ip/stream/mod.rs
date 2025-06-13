@@ -541,14 +541,14 @@ impl Socket for StreamSocket {
         }
 
         let MessageHeader {
-            control_message, ..
+            control_messages, ..
         } = message_header;
 
         // According to the Linux man pages, `EISCONN` _may_ be returned when the destination
         // address is specified for a connection-mode socket. In practice, the destination address
         // is simply ignored. We follow the same behavior as the Linux implementation to ignore it.
 
-        if control_message.is_some() {
+        if !control_messages.is_empty() {
             // TODO: Support sending control message
             warn!("sending control message is not supported");
         }
@@ -574,7 +574,7 @@ impl Socket for StreamSocket {
 
         // According to <https://elixir.bootlin.com/linux/v6.0.9/source/net/ipv4/tcp.c#L2645>,
         // peer address is ignored for connected socket.
-        let message_header = MessageHeader::new(None, None);
+        let message_header = MessageHeader::new(None, Vec::new());
 
         Ok((received_bytes, message_header))
     }

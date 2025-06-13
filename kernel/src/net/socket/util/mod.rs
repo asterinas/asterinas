@@ -9,7 +9,8 @@ mod shutdown_cmd;
 mod socket_addr;
 
 pub use linger_option::LingerOption;
-pub use message_header::MessageHeader;
+pub(super) use message_header::CControlHeader;
+pub use message_header::{ControlMessage, MessageHeader};
 pub use send_recv_flags::SendRecvFlags;
 pub use shutdown_cmd::SockShutdownCmd;
 pub use socket_addr::SocketAddr;
