@@ -17,10 +17,10 @@ use crate::{
     net::socket::{
         options::{PeerCred, PeerGroups, SocketOption},
         private::SocketPrivate,
-        unix::{cred::SocketCred, CUserCred, UnixSocketAddr},
+        unix::{cred::SocketCred, ctrl_msg::AuxiliaryData, CUserCred, UnixSocketAddr},
         util::{
             options::{GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet},
-            MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr,
+            ControlMessage, MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr,
         },
         Socket,
     },
@@ -176,16 +176,25 @@ impl UnixStreamSocket {
         )
     }
 
-    fn try_send(&self, buf: &mut dyn MultiRead, _flags: SendRecvFlags) -> Result<usize> {
+    fn try_send(
+        &self,
+        buf: &mut dyn MultiRead,
+        aux_data: &mut AuxiliaryData,
+        _flags: SendRecvFlags,
+    ) -> Result<usize> {
         match self.state.read().as_ref() {
-            State::Connected(connected) => connected.try_write(buf),
+            State::Connected(connected) => connected.try_write(buf, aux_data),
             State::Init(_) | State::Listen(_) => {
                 return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected")
             }
         }
     }
 
-    fn try_recv(&self, buf: &mut dyn MultiWrite, _flags: SendRecvFlags) -> Result<usize> {
+    fn try_recv(
+        &self,
+        buf: &mut dyn MultiWrite,
+        _flags: SendRecvFlags,
+    ) -> Result<(usize, Vec<ControlMessage>)> {
         match self.state.read().as_ref() {
             State::Connected(connected) => connected.try_read(buf),
             State::Init(_) | State::Listen(_) => {
@@ -371,7 +380,7 @@ impl Socket for UnixStreamSocket {
         }
 
         let MessageHeader {
-            control_message,
+            control_messages,
             addr,
         } = message_header;
 
@@ -390,13 +399,11 @@ impl Socket for UnixStreamSocket {
                 ),
             }
         }
+        let mut auxiliary_data = AuxiliaryData::from_control(control_messages)?;
 
-        if control_message.is_some() {
-            // TODO: Support sending control message
-            warn!("sending control message is not supported");
-        }
-
-        self.block_on(IoEvents::OUT, || self.try_send(reader, flags))
+        self.block_on(IoEvents::OUT, || {
+            self.try_send(reader, &mut auxiliary_data, flags)
+        })
     }
 
     fn recvmsg(
@@ -409,11 +416,10 @@ impl Socket for UnixStreamSocket {
             warn!("unsupported flags: {:?}", flags);
         }
 
-        let received_bytes = self.block_on(IoEvents::IN, || self.try_recv(writer, flags))?;
+        let (received_bytes, control_messages) =
+            self.block_on(IoEvents::IN, || self.try_recv(writer, flags))?;
 
-        // TODO: Receive control message
-
-        let message_header = MessageHeader::new(None, None);
+        let message_header = MessageHeader::new(None, control_messages);
 
         Ok((received_bytes, message_header))
     }
