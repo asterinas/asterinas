@@ -1,0 +1,3 @@
+# See https://github.com/asterinas/asterinas/issues/2152
+kill02
+kill08

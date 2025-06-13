@@ -9,11 +9,12 @@ RUN_BASH := $(CUR_DIR)/run_ltp_test.sh
 ALL_TESTS := $(CUR_DIR)/testcases/all.txt
 EXT2_BLOCKLIST := $(CUR_DIR)/testcases/blocked/ext2.txt
 EXFAT_BLOCKLIST := $(CUR_DIR)/testcases/blocked/exfat.txt
+SMP_BLOCKLIST := $(CUR_DIR)/testcases/blocked/smp.txt
 
 .PHONY: all
 all: $(TARGET_DIR)
 
-$(TARGET_DIR): $(RUN_BASH) $(ALL_TESTS) $(EXT2_BLOCKLIST) $(EXFAT_BLOCKLIST)
+$(TARGET_DIR): $(RUN_BASH) $(ALL_TESTS) $(EXT2_BLOCKLIST) $(EXFAT_BLOCKLIST) $(SMP_BLOCKLIST)
 	@rm -rf $@ && mkdir -p $@
 	@# Prepare tests dir for test binaries
 	@mkdir -p $@/testcases/bin
@@ -25,6 +26,10 @@ $(TARGET_DIR): $(RUN_BASH) $(ALL_TESTS) $(EXT2_BLOCKLIST) $(EXFAT_BLOCKLIST)
 		grep -vxF -f $(EXFAT_BLOCKLIST) $@/all.txt > $@/filtered.txt; \
 	else \
 		cp -f $@/all.txt $@/filtered.txt; \
+	fi;
+	@if [ "$(SMP)" != "1" ]; then \
+		grep -vxF -f $(SMP_BLOCKLIST) $@/filtered.txt > $@/filtered.txt.tmp; \
+		mv $@/filtered.txt.tmp $@/filtered.txt; \
 	fi;
 	@# Process syscall testcases and copy binaries
 	@while read -r syscall binary params; do \
