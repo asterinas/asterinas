@@ -50,6 +50,7 @@ SHELL := /bin/bash
 CARGO_OSDK := ~/.cargo/bin/cargo-osdk
 
 CARGO_OSDK_ARGS := --target-arch=$(ARCH) --kcmd-args="ostd.log_level=$(LOG_LEVEL)"
+KTEST_CARGO_OSDK_ARGS =  --target-arch=$(ARCH)
 
 ifeq ($(AUTO_TEST), syscall)
 BUILD_SYSCALL_TEST := 1
@@ -71,9 +72,11 @@ endif
 
 ifeq ($(RELEASE_LTO), 1)
 CARGO_OSDK_ARGS += --profile release-lto
+KTEST_CARGO_OSDK_ARGS += --profile release-lto
 OSTD_TASK_STACK_SIZE_IN_PAGES = 8
 else ifeq ($(RELEASE), 1)
 CARGO_OSDK_ARGS += --release
+KTEST_CARGO_OSDK_ARGS += --release
 OSTD_TASK_STACK_SIZE_IN_PAGES = 8
 endif
 
@@ -86,6 +89,7 @@ ifeq ($(INTEL_TDX), 1)
 BOOT_METHOD = grub-qcow2
 BOOT_PROTOCOL = linux-efi-handover64
 CARGO_OSDK_ARGS += --scheme tdx
+KTEST_CARGO_OSDK_ARGS += --scheme tdx
 endif
 
 ifeq ($(BOOT_PROTOCOL), linux-legacy32)
@@ -96,44 +100,55 @@ BOOT_METHOD = qemu-direct
 OVMF = off
 endif
 
+ifeq ($(ARCH), riscv64)
+SCHEME = riscv
+endif
+
 ifneq ($(SCHEME), "")
 CARGO_OSDK_ARGS += --scheme $(SCHEME)
+KTEST_CARGO_OSDK_ARGS += --scheme $(SCHEME)
 else
 CARGO_OSDK_ARGS += --boot-method="$(BOOT_METHOD)"
+KTEST_CARGO_OSDK_ARGS += --boot-method="$(BOOT_METHOD)"
 endif
 
 ifdef FEATURES
 CARGO_OSDK_ARGS += --features="$(FEATURES)"
+KTEST_CARGO_OSDK_ARGS += --features="$(FEATURES)"
 endif
 ifeq ($(NO_DEFAULT_FEATURES), 1)
 CARGO_OSDK_ARGS += --no-default-features
+KTEST_CARGO_OSDK_ARGS += --no-default-features
 endif
 
 # To test the linux-efi-handover64 boot protocol, we need to use Debian's
 # GRUB release, which is installed in /usr/bin in our Docker image.
 ifeq ($(BOOT_PROTOCOL), linux-efi-handover64)
-CARGO_OSDK_ARGS += --grub-mkrescue=/usr/bin/grub-mkrescue
-CARGO_OSDK_ARGS += --grub-boot-protocol="linux"
-# FIXME: GZIP self-decompression (--encoding gzip) triggers CPU faults
-CARGO_OSDK_ARGS += --encoding raw
+CARGO_OSDK_ARGS += --grub-mkrescue=/usr/bin/grub-mkrescue --grub-boot-protocol="linux"
+KTEST_CARGO_OSDK_ARGS += --grub-mkrescue=/usr/bin/grub-mkrescue --grub-boot-protocol="linux"
 else ifeq ($(BOOT_PROTOCOL), linux-efi-pe64)
 CARGO_OSDK_ARGS += --grub-boot-protocol="linux"
-CARGO_OSDK_ARGS += --encoding raw
+KTEST_CARGO_OSDK_ARGS += --grub-boot-protocol="linux"
 else ifeq ($(BOOT_PROTOCOL), linux-legacy32)
-CARGO_OSDK_ARGS += --linux-x86-legacy-boot
-CARGO_OSDK_ARGS += --grub-boot-protocol="linux"
+CARGO_OSDK_ARGS += --linux-x86-legacy-boot --grub-boot-protocol="linux"
+KTEST_CARGO_OSDK_ARGS += --linux-x86-legacy-boot --grub-boot-protocol="linux"
 else
 CARGO_OSDK_ARGS += --grub-boot-protocol=$(BOOT_PROTOCOL)
+KTEST_CARGO_OSDK_ARGS += --grub-boot-protocol=$(BOOT_PROTOCOL)
 endif
 
 ifeq ($(ENABLE_KVM), 1)
-CARGO_OSDK_ARGS += --qemu-args="-accel kvm"
+	ifeq ($(ARCH), x86_64)
+		CARGO_OSDK_ARGS += --qemu-args="-accel kvm"
+		KTEST_CARGO_OSDK_ARGS += --qemu-args="-accel kvm"
+	endif
 endif
 
 # Skip GZIP to make encoding and decoding of initramfs faster
 ifeq ($(INITRAMFS_SKIP_GZIP),1)
 CARGO_OSDK_INITRAMFS_OPTION := --initramfs=$(realpath test/build/initramfs.cpio)
 CARGO_OSDK_ARGS += $(CARGO_OSDK_INITRAMFS_OPTION)
+KTEST_CARGO_OSDK_ARGS += $(CARGO_OSDK_INITRAMFS_OPTION)
 endif
 
 # Pass make variables to all subdirectory makes
@@ -272,7 +287,7 @@ ktest: initramfs $(CARGO_OSDK)
 	@for dir in $(OSDK_CRATES); do \
 		[ $$dir = "ostd/libs/linux-bzimage/setup" ] && continue; \
 		echo "[make] Testing $$dir"; \
-		(cd $$dir && OVMF=off cargo osdk test $(CARGO_OSDK_INITRAMFS_OPTION)) || exit 1; \
+		(cd $$dir && cargo osdk test $(KTEST_CARGO_OSDK_ARGS)) || exit 1; \
 		tail --lines 10 qemu.log | grep -q "^\\[ktest runner\\] All crates tested." \
 			|| (echo "Test failed" && exit 1); \
 	done

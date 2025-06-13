@@ -25,9 +25,6 @@ init_args = ["sh", "-l"]
 initramfs = "test/build/initramfs.cpio.gz"
 
 # Special options for testing
-[test.boot]
-method = "qemu-direct"
-
 [test.qemu]
 args = "$(./tools/qemu_args.sh test)"
 
