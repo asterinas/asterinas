@@ -49,43 +49,47 @@ SHELL := /bin/bash
 
 CARGO_OSDK := ~/.cargo/bin/cargo-osdk
 
-CARGO_OSDK_ARGS := --target-arch=$(ARCH) --kcmd-args="ostd.log_level=$(LOG_LEVEL)"
+# Common arguments for `cargo osdk` `build`, `run` and `test` commands.
+CARGO_OSDK_COMMON_ARGS := --target-arch=$(ARCH)
+# The build arguments also apply to the `cargo osdk run` command.
+CARGO_OSDK_BUILD_ARGS := --kcmd-args="ostd.log_level=$(LOG_LEVEL)"
+CARGO_OSDK_TEST_ARGS :=
 
 ifeq ($(AUTO_TEST), syscall)
 BUILD_SYSCALL_TEST := 1
-CARGO_OSDK_ARGS += --kcmd-args="SYSCALL_TEST_SUITE=$(SYSCALL_TEST_SUITE)"
-CARGO_OSDK_ARGS += --kcmd-args="SYSCALL_TEST_WORKDIR=$(SYSCALL_TEST_WORKDIR)"
-CARGO_OSDK_ARGS += --kcmd-args="EXTRA_BLOCKLISTS_DIRS=$(EXTRA_BLOCKLISTS_DIRS)"
-CARGO_OSDK_ARGS += --init-args="/opt/syscall_test/run_syscall_test.sh"
+CARGO_OSDK_BUILD_ARGS += --kcmd-args="SYSCALL_TEST_SUITE=$(SYSCALL_TEST_SUITE)"
+CARGO_OSDK_BUILD_ARGS += --kcmd-args="SYSCALL_TEST_WORKDIR=$(SYSCALL_TEST_WORKDIR)"
+CARGO_OSDK_BUILD_ARGS += --kcmd-args="EXTRA_BLOCKLISTS_DIRS=$(EXTRA_BLOCKLISTS_DIRS)"
+CARGO_OSDK_BUILD_ARGS += --init-args="/opt/syscall_test/run_syscall_test.sh"
 else ifeq ($(AUTO_TEST), test)
 	ifneq ($(SMP), 1)
-		CARGO_OSDK_ARGS += --kcmd-args="BLOCK_UNSUPPORTED_SMP_TESTS=1"
+		CARGO_OSDK_BUILD_ARGS += --kcmd-args="BLOCK_UNSUPPORTED_SMP_TESTS=1"
 	endif
-CARGO_OSDK_ARGS += --init-args="/test/run_general_test.sh"
+CARGO_OSDK_BUILD_ARGS += --init-args="/test/run_general_test.sh"
 else ifeq ($(AUTO_TEST), boot)
-CARGO_OSDK_ARGS += --init-args="/test/boot_hello.sh"
+CARGO_OSDK_BUILD_ARGS += --init-args="/test/boot_hello.sh"
 else ifeq ($(AUTO_TEST), vsock)
 export VSOCK=on
-CARGO_OSDK_ARGS += --init-args="/test/run_vsock_test.sh"
+CARGO_OSDK_BUILD_ARGS += --init-args="/test/run_vsock_test.sh"
 endif
 
 ifeq ($(RELEASE_LTO), 1)
-CARGO_OSDK_ARGS += --profile release-lto
+CARGO_OSDK_COMMON_ARGS += --profile release-lto
 OSTD_TASK_STACK_SIZE_IN_PAGES = 8
 else ifeq ($(RELEASE), 1)
-CARGO_OSDK_ARGS += --release
+CARGO_OSDK_COMMON_ARGS += --release
 OSTD_TASK_STACK_SIZE_IN_PAGES = 8
 endif
 
 # If the BENCHMARK is set, we will run the benchmark in the kernel mode.
 ifneq ($(BENCHMARK), none)
-CARGO_OSDK_ARGS += --init-args="/benchmark/common/bench_runner.sh $(BENCHMARK) asterinas"
+CARGO_OSDK_BUILD_ARGS += --init-args="/benchmark/common/bench_runner.sh $(BENCHMARK) asterinas"
 endif
 
 ifeq ($(INTEL_TDX), 1)
 BOOT_METHOD = grub-qcow2
 BOOT_PROTOCOL = linux-efi-handover64
-CARGO_OSDK_ARGS += --scheme tdx
+CARGO_OSDK_COMMON_ARGS += --scheme tdx
 endif
 
 ifeq ($(BOOT_PROTOCOL), linux-legacy32)
@@ -96,45 +100,49 @@ BOOT_METHOD = qemu-direct
 OVMF = off
 endif
 
+ifeq ($(ARCH), riscv64)
+SCHEME = riscv
+endif
+
 ifneq ($(SCHEME), "")
-CARGO_OSDK_ARGS += --scheme $(SCHEME)
+CARGO_OSDK_COMMON_ARGS += --scheme $(SCHEME)
 else
-CARGO_OSDK_ARGS += --boot-method="$(BOOT_METHOD)"
+CARGO_OSDK_COMMON_ARGS += --boot-method="$(BOOT_METHOD)"
 endif
 
 ifdef FEATURES
-CARGO_OSDK_ARGS += --features="$(FEATURES)"
+CARGO_OSDK_COMMON_ARGS += --features="$(FEATURES)"
 endif
 ifeq ($(NO_DEFAULT_FEATURES), 1)
-CARGO_OSDK_ARGS += --no-default-features
+CARGO_OSDK_COMMON_ARGS += --no-default-features
 endif
 
 # To test the linux-efi-handover64 boot protocol, we need to use Debian's
 # GRUB release, which is installed in /usr/bin in our Docker image.
 ifeq ($(BOOT_PROTOCOL), linux-efi-handover64)
-CARGO_OSDK_ARGS += --grub-mkrescue=/usr/bin/grub-mkrescue
-CARGO_OSDK_ARGS += --grub-boot-protocol="linux"
-# FIXME: GZIP self-decompression (--encoding gzip) triggers CPU faults
-CARGO_OSDK_ARGS += --encoding raw
+CARGO_OSDK_COMMON_ARGS += --grub-mkrescue=/usr/bin/grub-mkrescue --grub-boot-protocol="linux"
 else ifeq ($(BOOT_PROTOCOL), linux-efi-pe64)
-CARGO_OSDK_ARGS += --grub-boot-protocol="linux"
-CARGO_OSDK_ARGS += --encoding raw
+CARGO_OSDK_COMMON_ARGS += --grub-boot-protocol="linux"
 else ifeq ($(BOOT_PROTOCOL), linux-legacy32)
-CARGO_OSDK_ARGS += --linux-x86-legacy-boot
-CARGO_OSDK_ARGS += --grub-boot-protocol="linux"
+CARGO_OSDK_COMMON_ARGS += --linux-x86-legacy-boot --grub-boot-protocol="linux"
 else
-CARGO_OSDK_ARGS += --grub-boot-protocol=$(BOOT_PROTOCOL)
+CARGO_OSDK_COMMON_ARGS += --grub-boot-protocol=$(BOOT_PROTOCOL)
 endif
 
 ifeq ($(ENABLE_KVM), 1)
-CARGO_OSDK_ARGS += --qemu-args="-accel kvm"
+	ifeq ($(ARCH), x86_64)
+		CARGO_OSDK_COMMON_ARGS += --qemu-args="-accel kvm"
+	endif
 endif
 
 # Skip GZIP to make encoding and decoding of initramfs faster
 ifeq ($(INITRAMFS_SKIP_GZIP),1)
 CARGO_OSDK_INITRAMFS_OPTION := --initramfs=$(realpath test/build/initramfs.cpio)
-CARGO_OSDK_ARGS += $(CARGO_OSDK_INITRAMFS_OPTION)
+CARGO_OSDK_COMMON_ARGS += $(CARGO_OSDK_INITRAMFS_OPTION)
 endif
+
+CARGO_OSDK_BUILD_ARGS += $(CARGO_OSDK_COMMON_ARGS)
+CARGO_OSDK_TEST_ARGS += $(CARGO_OSDK_COMMON_ARGS)
 
 # Pass make variables to all subdirectory makes
 export
@@ -219,7 +227,7 @@ initramfs:
 
 .PHONY: build
 build: initramfs $(CARGO_OSDK)
-	@cd kernel && cargo osdk build $(CARGO_OSDK_ARGS)
+	@cd kernel && cargo osdk build $(CARGO_OSDK_BUILD_ARGS)
 
 .PHONY: tools
 tools:
@@ -227,7 +235,7 @@ tools:
 
 .PHONY: run
 run: initramfs $(CARGO_OSDK)
-	@cd kernel && cargo osdk run $(CARGO_OSDK_ARGS)
+	@cd kernel && cargo osdk run $(CARGO_OSDK_BUILD_ARGS)
 # Check the running status of auto tests from the QEMU log
 ifeq ($(AUTO_TEST), syscall)
 	@tail --lines 100 qemu.log | grep -q "^All syscall tests passed." \
@@ -245,19 +253,19 @@ endif
 
 .PHONY: gdb_server
 gdb_server: initramfs $(CARGO_OSDK)
-	@cd kernel && cargo osdk run $(CARGO_OSDK_ARGS) --gdb-server wait-client,vscode,addr=:$(GDB_TCP_PORT)
+	@cd kernel && cargo osdk run $(CARGO_OSDK_BUILD_ARGS) --gdb-server wait-client,vscode,addr=:$(GDB_TCP_PORT)
 
 .PHONY: gdb_client
 gdb_client: initramfs $(CARGO_OSDK)
-	@cd kernel && cargo osdk debug $(CARGO_OSDK_ARGS) --remote :$(GDB_TCP_PORT)
+	@cd kernel && cargo osdk debug $(CARGO_OSDK_BUILD_ARGS) --remote :$(GDB_TCP_PORT)
 
 .PHONY: profile_server
 profile_server: initramfs $(CARGO_OSDK)
-	@cd kernel && cargo osdk run $(CARGO_OSDK_ARGS) --gdb-server addr=:$(GDB_TCP_PORT)
+	@cd kernel && cargo osdk run $(CARGO_OSDK_BUILD_ARGS) --gdb-server addr=:$(GDB_TCP_PORT)
 
 .PHONY: profile_client
 profile_client: initramfs $(CARGO_OSDK)
-	@cd kernel && cargo osdk profile $(CARGO_OSDK_ARGS) --remote :$(GDB_TCP_PORT) \
+	@cd kernel && cargo osdk profile $(CARGO_OSDK_BUILD_ARGS) --remote :$(GDB_TCP_PORT) \
 		--samples $(GDB_PROFILE_COUNT) --interval $(GDB_PROFILE_INTERVAL) --format $(GDB_PROFILE_FORMAT)
 
 .PHONY: test
@@ -272,7 +280,7 @@ ktest: initramfs $(CARGO_OSDK)
 	@for dir in $(OSDK_CRATES); do \
 		[ $$dir = "ostd/libs/linux-bzimage/setup" ] && continue; \
 		echo "[make] Testing $$dir"; \
-		(cd $$dir && OVMF=off cargo osdk test $(CARGO_OSDK_INITRAMFS_OPTION)) || exit 1; \
+		(cd $$dir && cargo osdk test $(CARGO_OSDK_TEST_ARGS)) || exit 1; \
 		tail --lines 10 qemu.log | grep -q "^\\[ktest runner\\] All crates tested." \
 			|| (echo "Test failed" && exit 1); \
 	done
