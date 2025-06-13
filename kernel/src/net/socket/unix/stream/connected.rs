@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use core::{
+    num::Wrapping,
+    sync::atomic::{AtomicBool, Ordering},
+};
+
 use crate::{
     events::IoEvents,
     fs::utils::{ChannelPollee, Peered},
     net::socket::{
-        unix::{addr::UnixSocketAddrBound, UnixSocketAddr},
+        unix::{addr::UnixSocketAddrBound, UnixControlMessage, UnixSocketAddr},
         util::SockShutdownCmd,
     },
     prelude::*,
@@ -37,10 +42,14 @@ impl Connected {
         let this_inner = Inner {
             addr: SpinLock::new(addr),
             pollee: ChannelPollee::with_pollee(pollee, is_write_shutdown),
+            all_ctrl_msgs: Mutex::new(VecDeque::new()),
+            has_ctrl_msgs: AtomicBool::new(false),
         };
         let peer_inner = Inner {
             addr: SpinLock::new(peer_addr),
             pollee: ChannelPollee::with_pollee(Pollee::new(), is_read_shutdown),
+            all_ctrl_msgs: Mutex::new(VecDeque::new()),
+            has_ctrl_msgs: AtomicBool::new(false),
         };
 
         let (this_inner, peer_inner) = Peered::new_pair(this_inner, peer_inner);
@@ -80,23 +89,67 @@ impl Connected {
         Ok(())
     }
 
-    pub(super) fn try_read(&self, writer: &mut dyn MultiWrite) -> Result<usize> {
+    pub(super) fn try_read(
+        &self,
+        writer: &mut dyn MultiWrite,
+    ) -> Result<(usize, Vec<UnixControlMessage>)> {
         if writer.is_empty() {
             if self.reader.lock().is_empty() {
                 return_errno_with_message!(Errno::EAGAIN, "the channel is empty");
             }
-            return Ok(0);
+            return Ok((0, Vec::new()));
         }
 
-        let read = || {
-            let mut reader = self.reader.lock();
-            reader.read_fallible(writer)
-        };
+        let mut reader = self.reader.lock();
+        // `reader.len()` is an `Acquire` operation. So it can guarantee that the `has_ctrl_msgs`
+        // check below sees the up-to-date value.
+        let no_ctrl_len = reader.len();
 
-        self.inner.read_with(read)
+        let peer_end = self.inner.peer_end();
+
+        // Fast path: There are no control messages to receive.
+        if !peer_end.has_ctrl_msgs.load(Ordering::Relaxed) {
+            let read_len = self
+                .inner
+                .read_with(move || reader.read_fallible_with_max_len(writer, no_ctrl_len))?;
+            return Ok((read_len, Vec::new()));
+        }
+
+        let mut all_ctrl_msgs = peer_end.all_ctrl_msgs.lock();
+
+        let head = reader.head();
+        let len_to_ctrl = all_ctrl_msgs
+            .front()
+            .map(|range| (range.start - head).0)
+            .unwrap_or(usize::MAX);
+        let len_to_ctrl_end = all_ctrl_msgs
+            .front()
+            .map(|range| (range.end - head).0)
+            .unwrap_or(usize::MAX);
+
+        // It is not allowed to receive two sets of control messages in one `recvmsg`. So we cannot
+        // read more than `len_to_ctrl_end` bytes.
+        let read_len = self
+            .inner
+            .read_with(move || reader.read_fallible_with_max_len(writer, len_to_ctrl_end))?;
+
+        if read_len > len_to_ctrl {
+            // We have received the first set of control messages.
+            let ctrl_msgs = all_ctrl_msgs.pop_front().unwrap().msgs;
+            peer_end
+                .has_ctrl_msgs
+                .store(!all_ctrl_msgs.is_empty(), Ordering::Relaxed);
+            Ok((read_len, ctrl_msgs))
+        } else {
+            Ok((read_len, Vec::new()))
+        }
     }
 
-    pub(super) fn try_write(&self, reader: &mut dyn MultiRead) -> Result<usize> {
+    pub(super) fn try_write(
+        &self,
+        reader: &mut dyn MultiRead,
+        ctrl_msgs: &mut Vec<UnixControlMessage>,
+    ) -> Result<usize> {
         if reader.is_empty() {
             if self.inner.is_shutdown() {
                 return_errno_with_message!(Errno::EPIPE, "the channel is shut down");
@@ -104,12 +157,45 @@ impl Connected {
             return Ok(0);
         }
 
-        let write = || {
-            let mut writer = self.writer.lock();
-            writer.write_fallible(reader)
-        };
+        // Fast path: There are no control messages to transmit.
+        if ctrl_msgs.is_empty() {
+            let write = || {
+                let mut writer = self.writer.lock();
+                writer.write_fallible(reader)
+            };
 
-        self.inner.write_with(write)
+            return self.inner.write_with(write);
+        }
+
+        let this_end = self.inner.this_end();
+
+        let mut all_ctrl_msgs = this_end.all_ctrl_msgs.lock();
+
+        // No matter we succeed later or not, set the flag first to ensure that the control
+        // messages are always visible to `try_recv`.
+        this_end.has_ctrl_msgs.store(true, Ordering::Relaxed);
+
+        let mut writer = self.writer.lock();
+        let tail = writer.tail();
+        let res = self.inner.write_with(move || writer.write_fallible(reader));
+
+        match &res {
+            Ok(write_len) => {
+                let range = ControlMessageRange {
+                    msgs: core::mem::take(ctrl_msgs),
+                    start: tail,
+                    end: tail + Wrapping(*write_len),
+                };
+                all_ctrl_msgs.push_back(range);
+            }
+            Err(_) => {
+                this_end
+                    .has_ctrl_msgs
+                    .store(!all_ctrl_msgs.is_empty(), Ordering::Relaxed);
+            }
+        }
+
+        res
     }
 
     pub(super) fn shutdown(&self, cmd: SockShutdownCmd) {
@@ -159,12 +245,21 @@ impl Drop for Connected {
 struct Inner {
     addr: SpinLock<Option<UnixSocketAddrBound>>,
     pollee: ChannelPollee,
+    // Lock order: `reader` -> `all_ctrl_msgs` & `all_ctrl_msgs` -> `writer`
+    all_ctrl_msgs: Mutex<VecDeque<ControlMessageRange>>,
+    has_ctrl_msgs: AtomicBool,
 }
 
 impl AsRef<ChannelPollee> for Inner {
     fn as_ref(&self) -> &ChannelPollee {
         &self.pollee
     }
+}
+
+struct ControlMessageRange {
+    msgs: Vec<UnixControlMessage>,
+    start: Wrapping<usize>, // inclusive
+    end: Wrapping<usize>,   // exclusive
 }
 
 const DEFAULT_BUF_SIZE: usize = 65536;

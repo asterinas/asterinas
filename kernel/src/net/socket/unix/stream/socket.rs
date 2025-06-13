@@ -14,8 +14,8 @@ use crate::{
     fs::file_handle::FileLike,
     net::socket::{
         private::SocketPrivate,
-        unix::UnixSocketAddr,
-        util::{MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr},
+        unix::{UnixControlMessage, UnixSocketAddr},
+        util::{ControlMessage, MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr},
         Socket,
     },
     prelude::*,
@@ -94,16 +94,25 @@ impl UnixStreamSocket {
         )
     }
 
-    fn try_send(&self, buf: &mut dyn MultiRead, _flags: SendRecvFlags) -> Result<usize> {
+    fn try_send(
+        &self,
+        buf: &mut dyn MultiRead,
+        ctrl_msgs: &mut Vec<UnixControlMessage>,
+        _flags: SendRecvFlags,
+    ) -> Result<usize> {
         match self.state.read().as_ref() {
-            State::Connected(connected) => connected.try_write(buf),
+            State::Connected(connected) => connected.try_write(buf, ctrl_msgs),
             State::Init(_) | State::Listen(_) => {
                 return_errno_with_message!(Errno::ENOTCONN, "the socket is not connected")
             }
         }
     }
 
-    fn try_recv(&self, buf: &mut dyn MultiWrite, _flags: SendRecvFlags) -> Result<usize> {
+    fn try_recv(
+        &self,
+        buf: &mut dyn MultiWrite,
+        _flags: SendRecvFlags,
+    ) -> Result<(usize, Vec<UnixControlMessage>)> {
         match self.state.read().as_ref() {
             State::Connected(connected) => connected.try_read(buf),
             State::Init(_) | State::Listen(_) => {
@@ -316,15 +325,20 @@ impl Socket for UnixStreamSocket {
         }
 
         let MessageHeader {
-            control_message, ..
+            control_messages, ..
         } = message_header;
 
-        if control_message.is_some() {
-            // TODO: Support sending control message
-            warn!("sending control message is not supported");
-        }
+        let mut unix_ctrl_msgs = control_messages
+            .into_iter()
+            .flat_map(|msg| match msg {
+                ControlMessage::Unix(unix_msg) => Some(unix_msg),
+                // TODO: What should we do if there are control messages of other protocols?
+            })
+            .collect();
 
-        self.block_on(IoEvents::OUT, || self.try_send(reader, flags))
+        self.block_on(IoEvents::OUT, || {
+            self.try_send(reader, &mut unix_ctrl_msgs, flags)
+        })
     }
 
     fn recvmsg(
@@ -337,11 +351,15 @@ impl Socket for UnixStreamSocket {
             warn!("unsupported flags: {:?}", flags);
         }
 
-        let received_bytes = self.block_on(IoEvents::IN, || self.try_recv(writer, flags))?;
+        let (received_bytes, unix_ctrl_msgs) =
+            self.block_on(IoEvents::IN, || self.try_recv(writer, flags))?;
 
-        // TODO: Receive control message
+        let control_messages = unix_ctrl_msgs
+            .into_iter()
+            .map(ControlMessage::Unix)
+            .collect();
 
-        let message_header = MessageHeader::new(None, None);
+        let message_header = MessageHeader::new(None, control_messages);
 
         Ok((received_bytes, message_header))
     }
