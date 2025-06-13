@@ -42,6 +42,7 @@ TESTS ?= \
 	rlimits_test \
 	sched_test \
 	sched_yield_test \
+	seccomp_test \
 	semaphore_test \
 	sendfile_test \
 	sigaction_test \
