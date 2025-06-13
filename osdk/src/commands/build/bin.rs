@@ -4,7 +4,6 @@ use std::{
     fs::{File, OpenOptions},
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
-    process::Command,
 };
 
 use linux_bzimage_builder::{
@@ -17,7 +16,7 @@ use crate::{
         bin::{AsterBin, AsterBinType, AsterBzImageMeta, AsterElfMeta},
         file::BundleFile,
     },
-    util::{get_current_crates, hard_link_or_copy},
+    util::{get_current_crates, hard_link_or_copy, new_command_checked_exists},
 };
 
 pub fn make_install_bzimage(
@@ -95,7 +94,7 @@ pub fn make_elf_for_qemu(install_dir: impl AsRef<Path>, elf: &AsterBin, strip: b
 
     if strip {
         // We use rust-strip to reduce the kernel image size.
-        let status = Command::new("rust-strip")
+        let status = new_command_checked_exists("rust-strip")
             .arg(elf.path())
             .arg("-o")
             .arg(result_elf_path.as_os_str())
@@ -170,7 +169,7 @@ fn install_setup_with_arch(
     }
     let target_dir = std::fs::canonicalize(target_dir).unwrap();
 
-    let mut cmd = Command::new("cargo");
+    let mut cmd = new_command_checked_exists("cargo");
     let mut rustflags = vec![
         "-Cdebuginfo=2",
         "-Ccode-model=kernel",
