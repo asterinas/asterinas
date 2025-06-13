@@ -29,6 +29,7 @@ use crate::{
     config::unix_args::apply_kv_array,
     error::Errno,
     error_msg,
+    util::new_command_checked_exists,
 };
 
 /// The global configuration for the OSDK actions.
@@ -155,7 +156,7 @@ fn canonicalize_and_eval(action_scheme: &mut ActionScheme, workdir: &PathBuf) {
 /// This function is used to evaluate the string using the host's shell recursively
 /// in order.
 pub fn eval(cwd: impl AsRef<Path>, s: &String) -> io::Result<String> {
-    let mut eval = process::Command::new("bash");
+    let mut eval = new_command_checked_exists("bash");
     eval.arg("-c");
     eval.arg(format!("echo \"{}\"", s));
     eval.current_dir(cwd.as_ref());

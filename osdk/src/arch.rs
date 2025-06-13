@@ -80,7 +80,7 @@ impl Display for Arch {
 
 /// Get the default architecture implied by the host rustc's default architecture.
 pub fn get_default_arch() -> Arch {
-    let output = std::process::Command::new("rustc")
+    let output = crate::util::new_command_checked_exists("rustc")
         .arg("-vV")
         .output()
         .expect("Failed to run rustc to get the host target");

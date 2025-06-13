@@ -11,7 +11,6 @@ use vm_image::{AsterVmImage, AsterVmImageType};
 
 use std::{
     path::{Path, PathBuf},
-    process::Command,
     time::SystemTime,
 };
 
@@ -22,7 +21,7 @@ use crate::{
     },
     error::Errno,
     error_msg,
-    util::DirGuard,
+    util::{new_command_checked_exists, DirGuard},
 };
 
 /// The osdk bundle artifact that stores as `bundle` directory.
@@ -199,8 +198,8 @@ impl Bundle {
             ActionChoice::Run => &config.run,
             ActionChoice::Test => &config.test,
         };
-        let mut qemu_cmd = Command::new(&action.qemu.path);
 
+        let mut qemu_cmd = new_command_checked_exists(&action.qemu.path);
         qemu_cmd.current_dir(&config.work_dir);
 
         match action.boot.method {

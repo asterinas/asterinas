@@ -71,8 +71,14 @@ impl TomlManifest {
             process::exit(Errno::GetMetadata as _);
         };
 
+        // Running and testing configs should inherit from the global configs.
+        current_manifest
+            .default_scheme
+            .run_and_test_inherit_from_global();
+
         // All the schemes should inherit from the default scheme.
         for scheme in current_manifest.map.values_mut() {
+            scheme.run_and_test_inherit_from_global();
             scheme.inherit(&current_manifest.default_scheme);
         }
 
@@ -82,13 +88,17 @@ impl TomlManifest {
     /// Get the scheme given the scheme from the command line arguments.
     pub fn get_scheme(&self, scheme: Option<impl ToString>) -> &Scheme {
         if let Some(scheme) = scheme {
-            let selected_scheme = self.map.get(&scheme.to_string());
-            if selected_scheme.is_none() {
+            log::info!("Using scheme `{}`", scheme.to_string());
+
+            let Some(selected_scheme) = self.map.get(&scheme.to_string()) else {
                 error_msg!("Scheme `{}` not found in `OSDK.toml`", scheme.to_string());
                 process::exit(Errno::ParseMetadata as _);
-            }
-            selected_scheme.unwrap()
+            };
+
+            selected_scheme
         } else {
+            log::info!("Using default scheme");
+
             &self.default_scheme
         }
     }
