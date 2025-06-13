@@ -10,7 +10,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 #= Install packages for Docker building ====================================
 
 # Please keep the list sorted by name
-RUN apt update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     apache2-utils \
     clang \
     cmake \
@@ -37,10 +37,13 @@ FROM build-base AS build-benchmarks
 
 # Download the source files of benchmarks
 WORKDIR /root
-RUN apt install -y automake \
+RUN apt-get install -y --no-install-recommends \
+    automake \
     libtool \
     pkg-config \
-    libntirpc-dev
+    liburcu-dev \
+    libnsl-dev \
+    libkrb5-dev
 
 RUN wget https://github.com/akopytov/sysbench/archive/1.0.20.tar.gz \
     && tar -zxvf 1.0.20.tar.gz \
@@ -48,6 +51,7 @@ RUN wget https://github.com/akopytov/sysbench/archive/1.0.20.tar.gz \
 RUN git clone https://github.com/nicktehrany/membench.git
 RUN git clone https://github.com/esnet/iperf.git
 RUN git clone https://github.com/kdlucas/byte-unixbench.git
+RUN git clone -b v3.5 https://github.com/nfs-ganesha/ntirpc.git
 RUN git clone https://github.com/asterinas/lmbench.git
 RUN wget https://www.iozone.org/src/current/iozone3_506.tar
 RUN tar -x -f iozone3_506.tar
@@ -78,11 +82,25 @@ RUN ./configure --prefix=/usr/local/benchmark/iperf \
     && make install
 
 # Build lmbench
+WORKDIR /root/ntirpc
+RUN mkdir build \
+    && cd build \
+    && cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local .. \
+    && make -j \
+    && make install
 WORKDIR /root/lmbench
+ENV CPATH="/usr/local/include/ntirpc:${CPATH}"
+RUN apt-get update && apt-get install gcc-11 g++-11 -y && \
+    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 50 && \
+    update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 50 && \
+    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 60 && \
+    update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 60
 RUN make -j \
     && mv bin/x86_64-linux-gnu /usr/local/benchmark/lmbench \
     && rm /usr/local/benchmark/lmbench/*.o \
     && rm /usr/local/benchmark/lmbench/*.a
+RUN update-alternatives --remove gcc /usr/bin/gcc-11 \
+    && update-alternatives --remove g++ /usr/bin/g++-11
 
 # Build unixbench
 WORKDIR /root/byte-unixbench/UnixBench
@@ -138,7 +156,7 @@ FROM build-base AS build-applications
 
 # Install SQLite
 WORKDIR /root
-RUN apt-get install -y sqlite sqlite3
+RUN apt-get install -y sqlite3
 RUN wget https://www.sqlite.org/2024/sqlite-amalgamation-3460100.zip \
     && unzip sqlite-amalgamation-3460100.zip \
     && cd sqlite-amalgamation-3460100 \
@@ -279,7 +297,7 @@ RUN mkdir -p /root/bazel
 COPY tools/install_bazel.sh /root/bazel/
 WORKDIR /root/bazel
 RUN ./install_bazel.sh
-RUN apt clean && rm -rf /var/lib/apt/lists/*
+RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 WORKDIR /root
 RUN rm -rf bazel
 
@@ -288,15 +306,22 @@ FROM build-bazel AS build-gvisor
 # Build the gvisor syscall test binaries
 COPY test/syscall_test/gvisor /root/gvisor
 WORKDIR /root/gvisor
+RUN apt-get update && apt-get install gcc-11 g++-11 -y && \
+    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 50 && \
+    update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 50 && \
+    update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 60 && \
+    update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 60
 RUN export BUILD_DIR=build && \
     make ${BUILD_DIR}/syscall_test_bins
+RUN update-alternatives --remove gcc /usr/bin/gcc-11 \
+    && update-alternatives --remove g++ /usr/bin/g++-11
 
 #= Build syscall test of Linux Test Project====================================
 
 FROM build-base AS build-ltp
 
 WORKDIR /root
-RUN apt update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     autoconf \
     automake \
     pkg-config
@@ -317,32 +342,14 @@ RUN make autotools \
     && install -m 00755 ./ver_linux /opt/ltp/ver_linux \
     && install -m 00755 ./IDcheck.sh /opt/ltp/IDcheck.sh
 
-#= Build busybox ==============================================================
-
-FROM build-base AS build-busybox
-
-RUN apt clean && rm -rf /var/lib/apt/lists/*
-
-FROM build-busybox AS busybox
-
-WORKDIR /root
-RUN wget -O busybox.tar.bz2 https://busybox.net/downloads/busybox-1.35.0.tar.bz2 \
-    && mkdir /root/busybox \
-    && tar xf busybox.tar.bz2 --strip-components=1 -C /root/busybox \
-    && rm busybox.tar.bz2
-WORKDIR /root/busybox
-RUN make defconfig \
-    && sed -i "s/# CONFIG_STATIC is not set/CONFIG_STATIC=y/g" .config \
-    && sed -i "s/# CONFIG_FEATURE_SH_STANDALONE is not set/CONFIG_FEATURE_SH_STANDALONE=y/g" .config \
-    && make -j
-
 #= The final stages to produce the Asterinas development image ====================
 
 FROM build-base
 
 # Install all Asterinas dependent packages
-RUN apt update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     bridge-utils \
+    busybox-static \
     clang-format       `# formatting general tests` \
     cpio \
     cpuid \
@@ -362,17 +369,15 @@ RUN apt update && apt-get install -y --no-install-recommends \
     sudo \
     unzip \
     vim \
+    yq \
     zip
 # Clean apt cache
-RUN apt clean && rm -rf /var/lib/apt/lists/*
+RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Prepare the system call test suite
 COPY --from=build-ltp /opt/ltp /opt/ltp
 COPY --from=build-gvisor /root/gvisor/build/syscall_test_bins /root/syscall_test_bins
 ENV ASTER_PREBUILT_SYSCALL_TEST=/root/syscall_test_bins
-
-# Install Busybox built from the previous stages
-COPY --from=busybox /root/busybox/busybox /bin/busybox
 
 # Install benchmarks built from the previous stages
 COPY --from=build-benchmarks /usr/local/benchmark /usr/local/benchmark
