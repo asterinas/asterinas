@@ -3,7 +3,7 @@
 //! VFS components
 
 pub use access_mode::AccessMode;
-pub use channel::{Channel, Consumer, Producer};
+pub use channel::{ChannelPollee, Peered};
 pub use creation_flags::CreationFlags;
 pub use dirent_visitor::DirentVisitor;
 pub use direntry_vec::DirEntryVecExt;
