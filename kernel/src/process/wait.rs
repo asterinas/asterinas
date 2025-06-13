@@ -43,19 +43,27 @@ pub fn wait_child_exit(
     ctx: &Context,
 ) -> Result<Option<Arc<Process>>> {
     let current = ctx.process;
+    let is_nonblocking = if let ProcessFilter::WithPidfd(pid_file) = &child_filter {
+        pid_file.is_nonblocking()
+    } else {
+        false
+    };
     let zombie_child = with_sigmask_changed(
         ctx,
         |sigmask| sigmask + SIGCHLD,
         || {
-            current.children_wait_queue().pause_until(|| {
+            current.children_wait_queue().pause_until(move || {
                 let unwaited_children = current
                     .children()
                     .lock()
                     .values()
-                    .filter(|child| match child_filter {
+                    .filter(|child| match &child_filter {
                         ProcessFilter::Any => true,
-                        ProcessFilter::WithPid(pid) => child.pid() == pid,
-                        ProcessFilter::WithPgid(pgid) => child.pgid() == pgid,
+                        ProcessFilter::WithPid(pid) => child.pid() == *pid,
+                        ProcessFilter::WithPgid(pgid) => child.pgid() == *pgid,
+                        ProcessFilter::WithPidfd(pid_file) => {
+                            Arc::ptr_eq(pid_file.process(), *child)
+                        }
                     })
                     .cloned()
                     .collect::<Vec<_>>();
@@ -85,6 +93,13 @@ pub fn wait_child_exit(
 
                 if wait_options.contains(WaitOptions::WNOHANG) {
                     return Some(Ok(None));
+                }
+
+                if is_nonblocking {
+                    return Some(Err(Error::with_message(
+                        Errno::EAGAIN,
+                        "The process has no child to wait and the PID file is nonblocking",
+                    )));
                 }
 
                 // wait
