@@ -16,7 +16,10 @@ impl SignalContext for UserContext {
 
 impl From<&CpuExceptionInfo> for FaultSignal {
     fn from(trap_info: &CpuExceptionInfo) -> Self {
-        let exception = CpuException::to_cpu_exception(trap_info.id as u16).unwrap();
+        let Some(exception) = CpuException::to_cpu_exception(trap_info.id as u16) else {
+            panic!("Unknown CPU exception ID in {trap_info:?}");
+        };
+
         let (num, code, addr) = match exception {
             CpuException::DIVIDE_BY_ZERO => (SIGFPE, FPE_INTDIV, None),
             CpuException::X87_FLOATING_POINT_EXCEPTION
@@ -35,8 +38,9 @@ impl From<&CpuExceptionInfo> for FaultSignal {
                 let addr = Some(trap_info.page_fault_addr as u64);
                 (SIGSEGV, code, addr)
             }
-            _ => panic!("Exception cannot be a signal"),
+            e => panic!("{e:?} cannot be handled via signals ({trap_info:?})"),
         };
+
         FaultSignal::new(num, code, addr)
     }
 }
