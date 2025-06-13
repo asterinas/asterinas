@@ -4,7 +4,7 @@ use core::sync::atomic::{AtomicU32, Ordering};
 
 use super::{
     file_handle::FileLike,
-    utils::{AccessMode, Channel, Consumer, InodeMode, InodeType, Metadata, Producer, StatusFlags},
+    utils::{AccessMode, Endpoint, EndpointState, InodeMode, InodeType, Metadata, StatusFlags},
 };
 use crate::{
     events::IoEvents,
@@ -14,47 +14,85 @@ use crate::{
         Gid, Uid,
     },
     time::clocks::RealTimeCoarseClock,
+    util::ring_buffer::{RbConsumer, RbProducer, RingBuffer},
 };
 
 const DEFAULT_PIPE_BUF_SIZE: usize = 65536;
 
-pub fn new_pair() -> Result<(Arc<PipeReader>, Arc<PipeWriter>)> {
-    let (producer, consumer) = Channel::with_capacity(DEFAULT_PIPE_BUF_SIZE).split();
+/// Maximum number of bytes guaranteed to be written to a pipe atomically.
+///
+/// If the number of bytes to be written is less than the threshold, the write must be atomic.
+/// A non-blocking atomic write may fail with `EAGAIN`, even if there is room for a partial write.
+/// In other words, a partial write is not allowed for an atomic write.
+///
+/// For more details, see the description of `PIPE_BUF` in
+/// <https://man7.org/linux/man-pages/man7/pipe.7.html>.
+#[cfg(not(ktest))]
+const PIPE_BUF: usize = 4096;
+#[cfg(ktest)]
+const PIPE_BUF: usize = 2;
 
-    Ok((
-        PipeReader::new(consumer, StatusFlags::empty())?,
-        PipeWriter::new(producer, StatusFlags::empty())?,
-    ))
+pub fn new_pair() -> Result<(Arc<PipeReader>, Arc<PipeWriter>)> {
+    new_pair_with_capacity(DEFAULT_PIPE_BUF_SIZE)
 }
 
 pub fn new_pair_with_capacity(capacity: usize) -> Result<(Arc<PipeReader>, Arc<PipeWriter>)> {
-    let (producer, consumer) = Channel::with_capacity(capacity).split();
+    let (producer, consumer) = RingBuffer::new(capacity).split();
+    let (producer_state, consumer_state) =
+        Endpoint::new_pair(EndpointState::default(), EndpointState::default());
 
     Ok((
-        PipeReader::new(consumer, StatusFlags::empty())?,
-        PipeWriter::new(producer, StatusFlags::empty())?,
+        PipeReader::new(consumer, consumer_state, StatusFlags::empty())?,
+        PipeWriter::new(producer, producer_state, StatusFlags::empty())?,
     ))
 }
 
 pub struct PipeReader {
-    consumer: Consumer<u8>,
+    consumer: Mutex<RbConsumer<u8>>,
+    state: Endpoint<EndpointState>,
     status_flags: AtomicU32,
 }
 
 impl PipeReader {
-    pub fn new(consumer: Consumer<u8>, status_flags: StatusFlags) -> Result<Arc<Self>> {
+    fn new(
+        consumer: RbConsumer<u8>,
+        state: Endpoint<EndpointState>,
+        status_flags: StatusFlags,
+    ) -> Result<Arc<Self>> {
         check_status_flags(status_flags)?;
 
         Ok(Arc::new(Self {
-            consumer,
+            consumer: Mutex::new(consumer),
+            state,
             status_flags: AtomicU32::new(status_flags.bits()),
         }))
+    }
+
+    fn try_read(&self, writer: &mut VmWriter) -> Result<usize> {
+        let read = || {
+            let mut consumer = self.consumer.lock();
+            consumer.read_fallible(writer)
+        };
+
+        self.state.read_with(read)
+    }
+
+    fn check_io_events(&self) -> IoEvents {
+        let mut events = IoEvents::empty();
+        if self.state.is_peer_shutdown() {
+            events |= IoEvents::HUP;
+        }
+        if !self.consumer.lock().is_empty() {
+            events |= IoEvents::IN;
+        }
+        events
     }
 }
 
 impl Pollable for PipeReader {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        self.consumer.poll(mask, poller)
+        self.state
+            .poll_with(mask, poller, || self.check_io_events())
     }
 }
 
@@ -67,9 +105,9 @@ impl FileLike for PipeReader {
         }
 
         if self.status_flags().contains(StatusFlags::O_NONBLOCK) {
-            self.consumer.try_read(writer)
+            self.try_read(writer)
         } else {
-            self.wait_events(IoEvents::IN, None, || self.consumer.try_read(writer))
+            self.wait_events(IoEvents::IN, None, || self.try_read(writer))
         }
     }
 
@@ -111,25 +149,61 @@ impl FileLike for PipeReader {
     }
 }
 
+impl Drop for PipeReader {
+    fn drop(&mut self) {
+        self.state.peer_shutdown();
+    }
+}
+
 pub struct PipeWriter {
-    producer: Producer<u8>,
+    producer: Mutex<RbProducer<u8>>,
+    state: Endpoint<EndpointState>,
     status_flags: AtomicU32,
 }
 
 impl PipeWriter {
-    pub fn new(producer: Producer<u8>, status_flags: StatusFlags) -> Result<Arc<Self>> {
+    fn new(
+        producer: RbProducer<u8>,
+        state: Endpoint<EndpointState>,
+        status_flags: StatusFlags,
+    ) -> Result<Arc<Self>> {
         check_status_flags(status_flags)?;
 
         Ok(Arc::new(Self {
-            producer,
+            producer: Mutex::new(producer),
+            state,
             status_flags: AtomicU32::new(status_flags.bits()),
         }))
+    }
+
+    fn try_write(&self, reader: &mut VmReader) -> Result<usize> {
+        let write = || {
+            let mut producer = self.producer.lock();
+            if reader.remain() <= PIPE_BUF && producer.free_len() < reader.remain() {
+                // No sufficient space for an atomic write
+                return Ok(0);
+            }
+            producer.write_fallible(reader)
+        };
+
+        self.state.write_with(write)
+    }
+
+    fn check_io_events(&self) -> IoEvents {
+        if self.state.is_shutdown() {
+            IoEvents::ERR | IoEvents::OUT
+        } else if self.producer.lock().free_len() >= PIPE_BUF {
+            IoEvents::OUT
+        } else {
+            IoEvents::empty()
+        }
     }
 }
 
 impl Pollable for PipeWriter {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        self.producer.poll(mask, poller)
+        self.state
+            .poll_with(mask, poller, || self.check_io_events())
     }
 }
 
@@ -142,9 +216,9 @@ impl FileLike for PipeWriter {
         }
 
         if self.status_flags().contains(StatusFlags::O_NONBLOCK) {
-            self.producer.try_write(reader)
+            self.try_write(reader)
         } else {
-            self.wait_events(IoEvents::OUT, None, || self.producer.try_write(reader))
+            self.wait_events(IoEvents::OUT, None, || self.try_write(reader))
         }
     }
 
@@ -201,6 +275,12 @@ fn check_status_flags(status_flags: StatusFlags) -> Result<()> {
     Ok(())
 }
 
+impl Drop for PipeWriter {
+    fn drop(&mut self) {
+        self.state.shutdown();
+    }
+}
+
 #[cfg(ktest)]
 mod test {
     use alloc::sync::Arc;
@@ -209,10 +289,7 @@ mod test {
     use ostd::prelude::*;
 
     use super::*;
-    use crate::{
-        fs::utils::Channel,
-        thread::{kernel_thread::ThreadOptions, Thread},
-    };
+    use crate::thread::{kernel_thread::ThreadOptions, Thread};
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     enum Ordering {
@@ -225,11 +302,7 @@ mod test {
         W: FnOnce(Arc<PipeWriter>) + Send + 'static,
         R: FnOnce(Arc<PipeReader>) + Send + 'static,
     {
-        let channel = Channel::with_capacity(2);
-        let (writer, readr) = channel.split();
-
-        let writer = PipeWriter::new(writer, StatusFlags::empty()).unwrap();
-        let reader = PipeReader::new(readr, StatusFlags::empty()).unwrap();
+        let (reader, writer) = new_pair_with_capacity(2).unwrap();
 
         let signal_writer = Arc::new(AtomicBool::new(false));
         let signal_reader = signal_writer.clone();

@@ -1,65 +1,71 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use core::ops::Deref;
-
-use ostd::sync::PreemptDisabled;
-
 use crate::{
     events::IoEvents,
-    fs::utils::{Channel, Consumer, Producer},
+    fs::utils::{Endpoint, EndpointState},
     net::socket::{
         unix::{addr::UnixSocketAddrBound, UnixSocketAddr},
         util::SockShutdownCmd,
     },
     prelude::*,
-    process::signal::{PollHandle, Pollee},
-    util::{MultiRead, MultiWrite},
+    process::signal::Pollee,
+    util::{
+        ring_buffer::{RbConsumer, RbProducer, RingBuffer},
+        MultiRead, MultiWrite,
+    },
 };
 
 pub(super) struct Connected {
-    addr: AddrView,
-    reader: Consumer<u8>,
-    writer: Producer<u8>,
+    inner: Endpoint<Inner>,
+    reader: Mutex<RbConsumer<u8>>,
+    writer: Mutex<RbProducer<u8>>,
 }
 
 impl Connected {
     pub(super) fn new_pair(
         addr: Option<UnixSocketAddrBound>,
         peer_addr: Option<UnixSocketAddrBound>,
-        reader_pollee: Option<Pollee>,
-        writer_pollee: Option<Pollee>,
+        state: EndpointState,
+        peer_state: EndpointState,
     ) -> (Connected, Connected) {
-        let (writer_peer, reader_this) =
-            Channel::with_capacity_and_pollees(DEFAULT_BUF_SIZE, None, reader_pollee).split();
-        let (writer_this, reader_peer) =
-            Channel::with_capacity_and_pollees(DEFAULT_BUF_SIZE, writer_pollee, None).split();
+        let (this_writer, peer_reader) = RingBuffer::new(DEFAULT_BUF_SIZE).split();
+        let (peer_writer, this_reader) = RingBuffer::new(DEFAULT_BUF_SIZE).split();
 
-        let (addr_this, addr_peer) = AddrView::new_pair(addr, peer_addr);
+        let this_inner = Inner {
+            addr: SpinLock::new(addr),
+            state,
+        };
+        let peer_inner = Inner {
+            addr: SpinLock::new(peer_addr),
+            state: peer_state,
+        };
+
+        let (this_inner, peer_inner) = Endpoint::new_pair(this_inner, peer_inner);
 
         let this = Connected {
-            addr: addr_this,
-            reader: reader_this,
-            writer: writer_this,
+            inner: this_inner,
+            reader: Mutex::new(this_reader),
+            writer: Mutex::new(this_writer),
         };
         let peer = Connected {
-            addr: addr_peer,
-            reader: reader_peer,
-            writer: writer_peer,
+            inner: peer_inner,
+            reader: Mutex::new(peer_reader),
+            writer: Mutex::new(peer_writer),
         };
 
         (this, peer)
     }
 
     pub(super) fn addr(&self) -> Option<UnixSocketAddrBound> {
-        self.addr.addr().deref().as_ref().cloned()
+        self.inner.this_end().addr.lock().clone()
     }
 
     pub(super) fn peer_addr(&self) -> Option<UnixSocketAddrBound> {
-        self.addr.peer_addr()
+        self.inner.peer_end().addr.lock().clone()
     }
 
     pub(super) fn bind(&self, addr_to_bind: UnixSocketAddr) -> Result<()> {
-        let mut addr = self.addr.addr();
+        let mut addr = self.inner.this_end().addr.lock();
 
         if addr.is_some() {
             return addr_to_bind.bind_unnamed();
@@ -73,100 +79,88 @@ impl Connected {
 
     pub(super) fn try_read(&self, writer: &mut dyn MultiWrite) -> Result<usize> {
         if writer.is_empty() {
-            if self.reader.is_empty() {
+            if self.reader.lock().is_empty() {
                 return_errno_with_message!(Errno::EAGAIN, "the channel is empty");
             }
             return Ok(0);
         }
 
-        self.reader.try_read(writer)
+        let read = || {
+            let mut reader = self.reader.lock();
+            reader.read_fallible(writer)
+        };
+
+        self.inner.read_with(read)
     }
 
     pub(super) fn try_write(&self, reader: &mut dyn MultiRead) -> Result<usize> {
         if reader.is_empty() {
-            if self.writer.is_shutdown() {
+            if self.inner.is_shutdown() {
                 return_errno_with_message!(Errno::EPIPE, "the channel is shut down");
             }
             return Ok(0);
         }
 
-        self.writer.try_write(reader)
+        let write = || {
+            let mut writer = self.writer.lock();
+            writer.write_fallible(reader)
+        };
+
+        self.inner.write_with(write)
     }
 
     pub(super) fn shutdown(&self, cmd: SockShutdownCmd) {
         if cmd.shut_read() {
-            self.reader.shutdown();
+            self.inner.peer_shutdown();
         }
 
         if cmd.shut_write() {
-            self.writer.shutdown();
+            self.inner.shutdown();
         }
     }
 
-    pub(super) fn poll(&self, mask: IoEvents, mut poller: Option<&mut PollHandle>) -> IoEvents {
-        // Note that `mask | IoEvents::ALWAYS_POLL` contains all the events we care about.
-        let reader_events = self.reader.poll(mask, poller.as_deref_mut());
-        let writer_events = self.writer.poll(mask, poller);
-
-        combine_io_events(mask, reader_events, writer_events)
+    pub(super) fn is_read_shutdown(&self) -> bool {
+        self.inner.is_peer_shutdown()
     }
-}
 
-pub(super) fn combine_io_events(
-    mask: IoEvents,
-    reader_events: IoEvents,
-    writer_events: IoEvents,
-) -> IoEvents {
-    let mut events = IoEvents::empty();
+    pub(super) fn is_write_shutdown(&self) -> bool {
+        self.inner.is_shutdown()
+    }
 
-    if reader_events.contains(IoEvents::HUP) {
-        // The socket is shut down in one direction: the remote socket has shut down for
-        // writing or the local socket has shut down for reading.
-        events |= IoEvents::RDHUP | IoEvents::IN;
+    pub(super) fn check_io_events(&self) -> IoEvents {
+        let mut events = IoEvents::empty();
 
-        if writer_events.contains(IoEvents::ERR) {
-            // The socket is shut down in both directions. Neither reading nor writing is
-            // possible.
-            events |= IoEvents::HUP;
+        if !self.reader.lock().is_empty() {
+            events |= IoEvents::IN;
         }
+
+        if !self.writer.lock().is_full() {
+            events |= IoEvents::OUT;
+        }
+
+        events
     }
 
-    events |= (reader_events & IoEvents::IN) | (writer_events & IoEvents::OUT);
-
-    events & (mask | IoEvents::ALWAYS_POLL)
+    pub(super) fn cloned_pollee(&self) -> Pollee {
+        self.inner.this_end().state.cloned_pollee()
+    }
 }
 
-struct AddrView {
-    addr: Arc<SpinLock<Option<UnixSocketAddrBound>>>,
-    peer: Arc<SpinLock<Option<UnixSocketAddrBound>>>,
+impl Drop for Connected {
+    fn drop(&mut self) {
+        self.inner.shutdown();
+        self.inner.peer_shutdown();
+    }
 }
 
-impl AddrView {
-    fn new_pair(
-        first: Option<UnixSocketAddrBound>,
-        second: Option<UnixSocketAddrBound>,
-    ) -> (AddrView, AddrView) {
-        let first = Arc::new(SpinLock::new(first));
-        let second = Arc::new(SpinLock::new(second));
+struct Inner {
+    addr: SpinLock<Option<UnixSocketAddrBound>>,
+    state: EndpointState,
+}
 
-        let view1 = AddrView {
-            addr: first.clone(),
-            peer: second.clone(),
-        };
-        let view2 = AddrView {
-            addr: second,
-            peer: first,
-        };
-
-        (view1, view2)
-    }
-
-    fn addr(&self) -> SpinLockGuard<Option<UnixSocketAddrBound>, PreemptDisabled> {
-        self.addr.lock()
-    }
-
-    fn peer_addr(&self) -> Option<UnixSocketAddrBound> {
-        self.peer.lock().as_ref().cloned()
+impl AsRef<EndpointState> for Inner {
+    fn as_ref(&self) -> &EndpointState {
+        &self.state
     }
 }
 
