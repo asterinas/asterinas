@@ -61,6 +61,11 @@ impl CapSet {
         self.bits() as u32
     }
 
+    /// Converts the capability set to a `u64`.
+    pub fn as_u64(&self) -> u64 {
+        self.bits()
+    }
+
     /// Creates a new `CapSet` with a full capability set, typically for a root user.
     pub const fn new_root() -> Self {
         CapSet::all()
