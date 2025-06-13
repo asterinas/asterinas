@@ -11,7 +11,7 @@ use super::{
 };
 use crate::{
     events::IoEvents,
-    fs::file_handle::FileLike,
+    fs::{file_handle::FileLike, utils::EndpointState},
     net::socket::{
         private::SocketPrivate,
         unix::UnixSocketAddr,
@@ -19,12 +19,14 @@ use crate::{
         Socket,
     },
     prelude::*,
-    process::signal::{PollHandle, Pollable},
+    process::signal::{PollHandle, Pollable, Pollee},
     util::{MultiRead, MultiWrite},
 };
 
 pub struct UnixStreamSocket {
     state: RwMutex<Takeable<State>>,
+
+    pollee: Pollee,
     is_nonblocking: AtomicBool,
 }
 
@@ -32,13 +34,16 @@ impl UnixStreamSocket {
     pub(super) fn new_init(init: Init, is_nonblocking: bool) -> Arc<Self> {
         Arc::new(Self {
             state: RwMutex::new(Takeable::new(State::Init(init))),
+            pollee: Pollee::new(),
             is_nonblocking: AtomicBool::new(is_nonblocking),
         })
     }
 
     pub(super) fn new_connected(connected: Connected, is_nonblocking: bool) -> Arc<Self> {
+        let cloned_pollee = connected.cloned_pollee();
         Arc::new(Self {
             state: RwMutex::new(Takeable::new(State::Connected(connected))),
+            pollee: cloned_pollee,
             is_nonblocking: AtomicBool::new(is_nonblocking),
         })
     }
@@ -50,13 +55,69 @@ enum State {
     Connected(Connected),
 }
 
+impl State {
+    pub(self) fn check_io_events(&self) -> IoEvents {
+        let mut events = IoEvents::empty();
+
+        let is_read_shutdown = self.is_read_shutdown();
+        let is_write_shutdown = self.is_write_shutdown();
+
+        if is_read_shutdown {
+            // The socket is shut down in one direction: the remote socket has shut down for
+            // writing or the local socket has shut down for reading.
+            events |= IoEvents::RDHUP | IoEvents::IN;
+
+            if is_write_shutdown {
+                // The socket is shut down in both directions. Neither reading nor writing is
+                // possible.
+                events |= IoEvents::HUP;
+            }
+        }
+
+        if is_write_shutdown && !matches!(self, State::Listen(_)) {
+            // The socket is shut down in another direction: The remote socket has shut down for
+            // reading or the local socket has shut down for writing.
+            events |= IoEvents::OUT;
+        }
+
+        events |= match self {
+            State::Init(init) => init.check_io_events(),
+            State::Listen(listener) => listener.check_io_events(),
+            State::Connected(connected) => connected.check_io_events(),
+        };
+
+        events
+    }
+
+    fn is_read_shutdown(&self) -> bool {
+        match self {
+            State::Init(init) => init.is_read_shutdown(),
+            State::Listen(listener) => listener.is_read_shutdown(),
+            State::Connected(connected) => connected.is_read_shutdown(),
+        }
+    }
+
+    fn is_write_shutdown(&self) -> bool {
+        match self {
+            State::Init(init) => init.is_write_shutdown(),
+            State::Listen(listener) => listener.is_write_shutdown(),
+            State::Connected(connected) => connected.is_write_shutdown(),
+        }
+    }
+}
+
 impl UnixStreamSocket {
     pub fn new(is_nonblocking: bool) -> Arc<Self> {
         Self::new_init(Init::new(), is_nonblocking)
     }
 
     pub fn new_pair(is_nonblocking: bool) -> (Arc<Self>, Arc<Self>) {
-        let (conn_a, conn_b) = Connected::new_pair(None, None, None, None);
+        let (conn_a, conn_b) = Connected::new_pair(
+            None,
+            None,
+            EndpointState::default(),
+            EndpointState::default(),
+        );
         (
             Self::new_connected(conn_a, is_nonblocking),
             Self::new_connected(conn_b, is_nonblocking),
@@ -107,7 +168,7 @@ impl UnixStreamSocket {
                 }
             };
 
-            let connected = match backlog.push_incoming(init) {
+            let connected = match backlog.push_incoming(init, self.pollee.clone()) {
                 Ok(connected) => connected,
                 Err((err, init)) => return (State::Init(init), Err(err)),
             };
@@ -126,14 +187,14 @@ impl UnixStreamSocket {
     }
 }
 
+pub(super) const SHUT_READ_EVENTS: IoEvents =
+    IoEvents::RDHUP.union(IoEvents::IN).union(IoEvents::HUP);
+pub(super) const SHUT_WRITE_EVENTS: IoEvents = IoEvents::OUT.union(IoEvents::HUP);
+
 impl Pollable for UnixStreamSocket {
     fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
-        let inner = self.state.read();
-        match inner.as_ref() {
-            State::Init(init) => init.poll(mask, poller),
-            State::Listen(listen) => listen.poll(mask, poller),
-            State::Connected(connected) => connected.poll(mask, poller),
-        }
+        self.pollee
+            .poll_with(mask, poller, || self.state.read().check_io_events())
     }
 }
 
@@ -200,7 +261,7 @@ impl Socket for UnixStreamSocket {
                 }
             };
 
-            let listener = match init.listen(backlog) {
+            let listener = match init.listen(backlog, self.pollee.clone()) {
                 Ok(listener) => listener,
                 Err((err, init)) => {
                     return (State::Init(init), Err(err));
@@ -217,8 +278,8 @@ impl Socket for UnixStreamSocket {
 
     fn shutdown(&self, cmd: SockShutdownCmd) -> Result<()> {
         match self.state.read().as_ref() {
-            State::Init(init) => init.shutdown(cmd),
-            State::Listen(listen) => listen.shutdown(cmd),
+            State::Init(init) => init.shutdown(cmd, &self.pollee),
+            State::Listen(listen) => listen.shutdown(cmd, &self.pollee),
             State::Connected(connected) => connected.shutdown(cmd),
         }
 

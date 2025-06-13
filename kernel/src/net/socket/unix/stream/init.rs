@@ -3,23 +3,23 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use super::{
-    connected::{combine_io_events, Connected},
+    connected::Connected,
     listener::Listener,
+    socket::{SHUT_READ_EVENTS, SHUT_WRITE_EVENTS},
 };
 use crate::{
     events::IoEvents,
+    fs::utils::EndpointState,
     net::socket::{
         unix::addr::{UnixSocketAddr, UnixSocketAddrBound},
         util::SockShutdownCmd,
     },
     prelude::*,
-    process::signal::{PollHandle, Pollee},
+    process::signal::Pollee,
 };
 
 pub(super) struct Init {
     addr: Option<UnixSocketAddrBound>,
-    reader_pollee: Pollee,
-    writer_pollee: Pollee,
     is_read_shutdown: AtomicBool,
     is_write_shutdown: AtomicBool,
 }
@@ -28,8 +28,6 @@ impl Init {
     pub(super) fn new() -> Self {
         Self {
             addr: None,
-            reader_pollee: Pollee::new(),
-            writer_pollee: Pollee::new(),
             is_read_shutdown: AtomicBool::new(false),
             is_write_shutdown: AtomicBool::new(false),
         }
@@ -46,34 +44,33 @@ impl Init {
         Ok(())
     }
 
-    pub(super) fn into_connected(self, peer_addr: UnixSocketAddrBound) -> (Connected, Connected) {
+    pub(super) fn into_connected(
+        self,
+        peer_addr: UnixSocketAddrBound,
+        pollee: Pollee,
+    ) -> (Connected, Connected) {
         let Init {
             addr,
-            reader_pollee,
-            writer_pollee,
             is_read_shutdown,
             is_write_shutdown,
         } = self;
 
+        pollee.invalidate();
         let (this_conn, peer_conn) = Connected::new_pair(
             addr,
             Some(peer_addr),
-            Some(reader_pollee),
-            Some(writer_pollee),
+            EndpointState::new(pollee, is_read_shutdown.into_inner()),
+            EndpointState::new(Pollee::new(), is_write_shutdown.into_inner()),
         );
-
-        if is_read_shutdown.into_inner() {
-            this_conn.shutdown(SockShutdownCmd::SHUT_RD);
-        }
-
-        if is_write_shutdown.into_inner() {
-            this_conn.shutdown(SockShutdownCmd::SHUT_WR)
-        }
 
         (this_conn, peer_conn)
     }
 
-    pub(super) fn listen(self, backlog: usize) -> core::result::Result<Listener, (Error, Self)> {
+    pub(super) fn listen(
+        self,
+        backlog: usize,
+        pollee: Pollee,
+    ) -> core::result::Result<Listener, (Error, Self)> {
         let Some(addr) = self.addr else {
             return Err((
                 Error::with_message(Errno::EINVAL, "the socket is not bound"),
@@ -81,31 +78,25 @@ impl Init {
             ));
         };
 
+        pollee.invalidate();
         Ok(Listener::new(
             addr,
-            self.reader_pollee,
-            self.writer_pollee,
             backlog,
             self.is_read_shutdown.into_inner(),
             self.is_write_shutdown.into_inner(),
+            pollee,
         ))
     }
 
-    pub(super) fn shutdown(&self, cmd: SockShutdownCmd) {
-        match cmd {
-            SockShutdownCmd::SHUT_WR | SockShutdownCmd::SHUT_RDWR => {
-                self.is_write_shutdown.store(true, Ordering::Relaxed);
-                self.writer_pollee.notify(IoEvents::ERR);
-            }
-            SockShutdownCmd::SHUT_RD => (),
+    pub(super) fn shutdown(&self, cmd: SockShutdownCmd, pollee: &Pollee) {
+        if cmd.shut_read() {
+            self.is_read_shutdown.store(true, Ordering::Relaxed);
+            pollee.notify(SHUT_READ_EVENTS);
         }
 
-        match cmd {
-            SockShutdownCmd::SHUT_RD | SockShutdownCmd::SHUT_RDWR => {
-                self.is_read_shutdown.store(true, Ordering::Relaxed);
-                self.reader_pollee.notify(IoEvents::HUP);
-            }
-            SockShutdownCmd::SHUT_WR => (),
+        if cmd.shut_write() {
+            self.is_write_shutdown.store(true, Ordering::Relaxed);
+            pollee.notify(SHUT_WRITE_EVENTS);
         }
     }
 
@@ -113,28 +104,17 @@ impl Init {
         self.addr.as_ref()
     }
 
-    pub(super) fn poll(&self, mask: IoEvents, mut poller: Option<&mut PollHandle>) -> IoEvents {
-        // To avoid loss of events, this must be compatible with
-        // `Connected::poll`/`Listener::poll`.
-        let reader_events = self
-            .reader_pollee
-            .poll_with(mask, poller.as_deref_mut(), || {
-                if self.is_read_shutdown.load(Ordering::Relaxed) {
-                    IoEvents::HUP
-                } else {
-                    IoEvents::empty()
-                }
-            });
-        let writer_events = self.writer_pollee.poll_with(mask, poller, || {
-            if self.is_write_shutdown.load(Ordering::Relaxed) {
-                IoEvents::OUT | IoEvents::ERR
-            } else {
-                IoEvents::OUT
-            }
-        });
+    pub(super) fn is_read_shutdown(&self) -> bool {
+        self.is_read_shutdown.load(Ordering::Relaxed)
+    }
 
-        // According to the Linux implementation, we always have `IoEvents::HUP` in this state.
-        // Meanwhile, it is in `IoEvents::ALWAYS_POLL`, so we always return it.
-        combine_io_events(mask, reader_events, writer_events) | IoEvents::HUP
+    pub(super) fn is_write_shutdown(&self) -> bool {
+        self.is_write_shutdown.load(Ordering::Relaxed)
+    }
+
+    pub(super) fn check_io_events(&self) -> IoEvents {
+        // According to the Linux implementation, we always have `IoEvents::HUP` and
+        // `IoEvents::HUP` in this state.
+        IoEvents::OUT | IoEvents::HUP
     }
 }
