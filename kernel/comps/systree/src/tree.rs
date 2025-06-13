@@ -15,7 +15,7 @@ use super::{
     node::{SysBranchNode, SysNode, SysNodeId, SysNodeType, SysObj},
     Error, Result, SysStr,
 };
-use crate::{impl_cast_methods_for_branch, SysBranchNodeFields};
+use crate::{impl_cast_methods_for_branch, SysBranchNodeFields, SysMode};
 
 #[derive(Debug)]
 pub struct SysTree {
@@ -64,6 +64,8 @@ impl RootNode {
         if children_guard.contains_key(name) {
             return Err(Error::PermissionDenied);
         }
+
+        new_child.set_parent_path(SysStr::from(""));
         children_guard.insert(name.clone(), new_child);
         Ok(())
     }
@@ -97,6 +99,10 @@ impl SysNode for RootNode {
 
     fn write_attr(&self, _name: &str, _reader: &mut VmReader) -> Result<usize> {
         Err(Error::AttributeError)
+    }
+
+    fn mode(&self) -> SysMode {
+        SysMode::DEFAULT_RO_MODE
     }
 }
 

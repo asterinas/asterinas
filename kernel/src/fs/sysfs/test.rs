@@ -14,8 +14,8 @@ use core::fmt::Debug;
 use aster_systree::{
     impl_cast_methods_for_branch, impl_cast_methods_for_node, impl_cast_methods_for_symlink,
     init_for_ktest, singleton as systree_singleton, Error as SysTreeError, Result as SysTreeResult,
-    SysAttrFlags, SysAttrSet, SysAttrSetBuilder, SysBranchNode, SysBranchNodeFields, SysNode,
-    SysNodeId, SysNodeType, SysNormalNodeFields, SysObj, SysStr, SysSymlink, SysTree,
+    SysAttrSet, SysAttrSetBuilder, SysBranchNode, SysBranchNodeFields, SysMode, SysNode, SysNodeId,
+    SysNodeType, SysNormalNodeFields, SysObj, SysStr, SysSymlink, SysTree,
 };
 use inherit_methods_macro::inherit_methods;
 use ostd::{
@@ -52,13 +52,16 @@ impl MockLeafNode {
         let mut builder = SysAttrSetBuilder::new();
         let mut data = BTreeMap::new();
         for &attr_name in read_attrs {
-            builder.add(Cow::Owned(attr_name.to_string()), SysAttrFlags::CAN_READ);
+            builder.add(
+                Cow::Owned(attr_name.to_string()),
+                SysMode::DEFAULT_RO_ATTR_MODE,
+            );
             data.insert(attr_name.to_string(), format!("val_{}", attr_name)); // Initial value
         }
         for &attr_name in write_attrs {
             builder.add(
                 Cow::Owned(attr_name.to_string()),
-                SysAttrFlags::CAN_READ | SysAttrFlags::CAN_WRITE,
+                SysMode::DEFAULT_RW_ATTR_MODE,
             );
             data.insert(attr_name.to_string(), format!("val_{}", attr_name)); // Initial value
         }
@@ -97,7 +100,7 @@ impl SysNode for MockLeafNode {
             .attr_set()
             .get(name)
             .ok_or(SysTreeError::AttributeError)?;
-        if !attr.flags().contains(SysAttrFlags::CAN_READ) {
+        if !attr.mode().can_read() {
             return Err(SysTreeError::PermissionDenied);
         }
         let data = self.data.read();
@@ -114,7 +117,7 @@ impl SysNode for MockLeafNode {
             .attr_set()
             .get(name)
             .ok_or(SysTreeError::AttributeError)?;
-        if !attr.flags().contains(SysAttrFlags::CAN_WRITE) {
+        if !attr.mode().can_write() {
             return Err(SysTreeError::PermissionDenied);
         }
 
@@ -131,6 +134,10 @@ impl SysNode for MockLeafNode {
 
         Ok(read_len)
     }
+
+    fn mode(&self) -> SysMode {
+        SysMode::DEFAULT_RW_MODE
+    }
 }
 
 // Refactor MockBranchNode to use SysBranchNodeFields
@@ -145,7 +152,7 @@ impl MockBranchNode {
         let name_owned: SysStr = name.to_string().into(); // Convert to owned SysStr
 
         let mut builder = SysAttrSetBuilder::new();
-        builder.add(Cow::Borrowed("branch_attr"), SysAttrFlags::CAN_READ);
+        builder.add(Cow::Borrowed("branch_attr"), SysMode::DEFAULT_RO_ATTR_MODE);
         let attrs = builder
             .build()
             .expect("Failed to build branch attribute set");
@@ -186,7 +193,7 @@ impl SysNode for MockBranchNode {
             .attr_set()
             .get(name)
             .ok_or(SysTreeError::AttributeError)?;
-        if !attr.flags().contains(SysAttrFlags::CAN_READ) {
+        if !attr.mode().can_read() {
             return Err(SysTreeError::PermissionDenied);
         }
         let value = match name {
@@ -205,11 +212,15 @@ impl SysNode for MockBranchNode {
             .attr_set()
             .get(name)
             .ok_or(SysTreeError::AttributeError)?;
-        if !attr.flags().contains(SysAttrFlags::CAN_WRITE) {
+        if !attr.mode().can_write() {
             return Err(SysTreeError::PermissionDenied);
         }
         // No writable attrs in this mock for now
         Err(SysTreeError::AttributeError)
+    }
+
+    fn mode(&self) -> SysMode {
+        SysMode::DEFAULT_RW_MODE
     }
 }
 
@@ -439,7 +450,7 @@ fn test_sysfs_write_attr() {
 
     // Verification: Write to the sysfs files and check if the operation
     // is correctly delegated to the underlying mock systree node's write_attr method,
-    // respecting read/write permissions derived from SysAttrFlags.
+    // respecting read/write permissions derived from SysMode.
 
     // Write to rw_attr1
     let new_val = "new_value";
@@ -561,17 +572,17 @@ fn test_sysfs_mode_permissions() {
     let rw_attr_inode = leaf1_dir_inode.lookup("rw_attr1").unwrap(); // Sysfs file for read-write attr
 
     // Verification: Check that the default mode (permissions) of the sysfs files/dirs
-    // correctly reflects the SysAttrFlags of the underlying systree attributes/nodes.
+    // correctly reflects the SysMode of the underlying systree attributes/nodes.
     // Also test that set_mode works on the sysfs inode.
 
-    // Check default modes based on SysAttrFlags
+    // Check default modes based on SysMode
     let r_mode = r_attr_inode.mode().unwrap();
     assert!(r_mode.contains(InodeMode::S_IRUSR | InodeMode::S_IRGRP | InodeMode::S_IROTH)); // 0o444
-    assert!(!r_mode.contains(InodeMode::S_IWUSR | InodeMode::S_IWGRP | InodeMode::S_IWOTH)); // Not 0o222
+    assert!(!r_mode.contains(InodeMode::S_IWUSR)); // Not 0o200
 
     let rw_mode = rw_attr_inode.mode().unwrap();
     assert!(rw_mode.contains(InodeMode::S_IRUSR | InodeMode::S_IRGRP | InodeMode::S_IROTH)); // 0o444
-    assert!(rw_mode.contains(InodeMode::S_IWUSR | InodeMode::S_IWGRP | InodeMode::S_IWOTH)); // 0o222
+    assert!(rw_mode.contains(InodeMode::S_IWUSR)); // 0o200
 
     // Test set_mode
     let new_mode = InodeMode::from_bits_truncate(0o600); // rw-------
