@@ -14,6 +14,7 @@ pub enum Errno {
     BadCrateName = 9,
     NoKernelCrate = 10,
     TooManyCrates = 11,
+    ExecutableNotFound = 12,
 }
 
 /// Print error message to console

@@ -16,7 +16,7 @@ use crate::{
         scheme::{ActionChoice, BootProtocol},
         Config,
     },
-    util::{get_current_crates, hard_link_or_copy},
+    util::{get_current_crates, hard_link_or_copy, new_command_checked_exists},
 };
 
 pub fn create_bootdev_image(
@@ -84,7 +84,7 @@ pub fn create_bootdev_image(
 
     // Make the boot device CDROM image using `grub-mkrescue`.
     let iso_path = &target_dir.as_ref().join(target_name.to_string() + ".iso");
-    let mut grub_mkrescue_cmd = std::process::Command::new(action.grub.grub_mkrescue.as_os_str());
+    let mut grub_mkrescue_cmd = new_command_checked_exists(action.grub.grub_mkrescue.as_os_str());
     grub_mkrescue_cmd
         .arg(iso_root.as_os_str())
         .arg("-o")
@@ -166,7 +166,7 @@ fn generate_grub_cfg(
 }
 
 fn get_grub_mkrescue_version(grub_mkrescue: &PathBuf) -> String {
-    let mut cmd = std::process::Command::new(grub_mkrescue);
+    let mut cmd = new_command_checked_exists(grub_mkrescue);
     cmd.arg("--version");
     let output = cmd.output().unwrap();
     String::from_utf8(output.stdout).unwrap()
