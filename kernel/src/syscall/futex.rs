@@ -7,7 +7,7 @@ use crate::{
     prelude::*,
     process::posix_thread::futex::{
         futex_op_and_flags_from_u32, futex_requeue, futex_wait, futex_wait_bitset, futex_wake,
-        futex_wake_bitset, FutexFlags, FutexOp,
+        futex_wake_bitset, futex_wake_op, FutexFlags, FutexOp,
     },
     syscall::SyscallReturn,
     time::{
@@ -117,6 +117,19 @@ pub fn sys_futex(
                 max_nwakes,
                 max_nrequeues,
                 futex_new_addr as _,
+                pid,
+            )
+        }
+        FutexOp::FUTEX_WAKE_OP => {
+            let futex_val_2 = utime_addr as u32;
+
+            futex_wake_op(
+                futex_addr,
+                futex_new_addr,
+                futex_val_to_max_count(futex_val),
+                futex_val_to_max_count(futex_val_2),
+                bitset,
+                ctx,
                 pid,
             )
         }
