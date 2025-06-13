@@ -30,7 +30,7 @@ pub fn sys_sendto(
     let file = get_file_fast!(&mut file_table, sockfd);
     let socket = file.as_socket_or_err()?;
 
-    let message_header = MessageHeader::new(socket_addr, None);
+    let message_header = MessageHeader::new(socket_addr, Vec::new());
 
     let user_space = ctx.user_space();
     let mut reader = user_space.reader(buf, len)?;

@@ -2,7 +2,7 @@
 
 use super::read_socket_addr_from_user;
 use crate::{
-    net::socket::util::SocketAddr,
+    net::socket::util::{ControlMessage, SocketAddr},
     prelude::*,
     util::{net::write_socket_addr_with_max_len, VmReaderArray, VmWriterArray},
 };
@@ -103,13 +103,42 @@ impl CUserMsgHdr {
         Ok(Some(socket_addr))
     }
 
-    pub fn write_socket_addr_to_user(&self, addr: &SocketAddr) -> Result<()> {
+    pub fn write_socket_addr_to_user(&self, addr: &SocketAddr) -> Result<i32> {
         if self.msg_name == 0 {
-            return Ok(());
+            // Should we return zero or return the actual length of the socket address here?
+            return Ok(self.msg_namelen);
         }
 
-        write_socket_addr_with_max_len(addr, self.msg_name, self.msg_namelen)?;
-        Ok(())
+        let actual_len = write_socket_addr_with_max_len(addr, self.msg_name, self.msg_namelen)?;
+        Ok(actual_len)
+    }
+
+    pub fn read_control_messages_from_user(
+        &self,
+        user_space: &CurrentUserSpace,
+    ) -> Result<Vec<ControlMessage>> {
+        if self.msg_control == 0 {
+            return Ok(Vec::new());
+        }
+
+        let mut reader = user_space.reader(self.msg_control, self.msg_controllen as usize)?;
+        let control_messages = ControlMessage::read_all_from(&mut reader)?;
+        Ok(control_messages)
+    }
+
+    pub fn write_control_messages_to_user(
+        &self,
+        control_messages: &[ControlMessage],
+        user_space: &CurrentUserSpace,
+    ) -> Result<u32> {
+        if self.msg_control == 0 {
+            // Should we return zero or return the actual length of the control messages here?
+            return Ok(self.msg_controllen);
+        }
+
+        let mut writer = user_space.writer(self.msg_control, self.msg_controllen as usize)?;
+        let write_len = ControlMessage::write_all_to(control_messages, &mut writer) as u32;
+        Ok(write_len)
     }
 
     pub fn copy_reader_array_from_user<'a>(

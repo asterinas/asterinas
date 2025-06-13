@@ -139,10 +139,7 @@ impl<T: Socket + 'static> FileLike for T {
         // TODO: Set correct flags
         self.sendmsg(
             reader,
-            MessageHeader {
-                addr: None,
-                control_message: None,
-            },
+            MessageHeader::new(None, Vec::new()),
             SendRecvFlags::empty(),
         )
     }
