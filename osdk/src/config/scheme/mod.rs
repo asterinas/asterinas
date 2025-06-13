@@ -16,17 +16,37 @@ pub use qemu::*;
 /// All the configurable fields within a scheme.
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Scheme {
-    // The user is not allowed to set this field. However,
-    // the manifest loader set this and all actions such
-    // as running, testing, and building will use this field.
+    /// The working directory.
+    ///
+    /// The user is not allowed to set this field. However,
+    /// the manifest loader set this and all actions such
+    /// as running, testing, and building will use this field.
     pub work_dir: Option<PathBuf>,
     #[serde(default)]
     pub supported_archs: Vec<Arch>,
+    /// The boot configs.
+    ///
+    /// Building, running, and testing would consult on these configs.
     pub boot: Option<BootScheme>,
+    /// The GRUB configs.
+    ///
+    /// Building, running, and testing would consult on these configs.
     pub grub: Option<GrubScheme>,
+    /// The QEMU configs.
+    ///
+    /// Building, running, and testing would consult on these configs.
     pub qemu: Option<QemuScheme>,
+    /// Other build configs.
+    ///
+    /// Building, running, and testing would consult on these configs.
     pub build: Option<BuildScheme>,
+    /// Running specific configs.
+    ///
+    /// These values, if exists, overrides global boot/GRUB/QEMU/build configs.
     pub run: Option<ActionScheme>,
+    /// Testing specific configs.
+    ///
+    /// These values, if exists, overrides global boot/GRUB/QEMU/build configs.
     pub test: Option<ActionScheme>,
 }
 
@@ -80,6 +100,40 @@ impl Scheme {
         } else {
             self.qemu.clone_from(&from.qemu);
             self.work_dir.clone_from(&from.work_dir);
+        }
+    }
+
+    /// Produces a scheme in which `run` and `test` action settings inherit
+    /// from the default settings in the provided scheme.
+    pub fn run_and_test_inherit_from_global(&mut self) {
+        let old_scheme = self.clone();
+
+        if let Some(run) = &mut self.run {
+            inherit_optional!(old_scheme, run, .boot);
+            inherit_optional!(old_scheme, run, .grub);
+            inherit_optional!(old_scheme, run, .qemu);
+            inherit_optional!(old_scheme, run, .build);
+        } else {
+            self.run = Some(ActionScheme {
+                boot: self.boot.clone(),
+                grub: self.grub.clone(),
+                qemu: self.qemu.clone(),
+                build: self.build.clone(),
+            });
+        }
+
+        if let Some(test) = &mut self.test {
+            inherit_optional!(old_scheme, test, .boot);
+            inherit_optional!(old_scheme, test, .grub);
+            inherit_optional!(old_scheme, test, .qemu);
+            inherit_optional!(old_scheme, test, .build);
+        } else {
+            self.test = Some(ActionScheme {
+                boot: self.boot.clone(),
+                grub: self.grub.clone(),
+                qemu: self.qemu.clone(),
+                build: self.build.clone(),
+            });
         }
     }
 }

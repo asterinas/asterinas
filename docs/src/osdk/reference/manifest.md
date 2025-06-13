@@ -28,7 +28,7 @@ the available configurations in the manifest.
 ```toml
 project_type = "kernel"                     # <1> 
 
-# --------------------------- the default schema settings -------------------------------
+# --------------------------- the default scheme settings -------------------------------
 supported_archs = ["x86_64", "riscv64"]     # <2>
 
 # The common options for all build, run and test subcommands 
@@ -63,13 +63,13 @@ args = "-machine q35 -m 2G"                 # <19>
 [test.boot]                                 # <8>
 [test.grub]                                 # <13>
 [test.qemu]                                 # <17>
-# ----------------------- end of the default schema settings ----------------------------
+# ----------------------- end of the default scheme settings ----------------------------
 
-# A customized schema settings
-[schema."custom"]                           # <22>
-[schema."custom".build]                     # <3>
-[schema."custom".run]                       # <20>
-[schema."custom".test]                      # <21>
+# A customized scheme settings
+[scheme."custom"]                           # <22>
+[scheme."custom".build]                     # <3>
+[scheme."custom".run]                       # <20>
+[scheme."custom".test]                      # <21>
 ```
 
 Here are some additional notes for the fields:
@@ -201,10 +201,10 @@ can include any POSIX shell compliant separators.
 
     Similar to `20`, but only take effect when running `cargo osdk test`.
 
-22. The definition of customized schema. 
+22. The definition of customized scheme. 
 
-    A customized schema has the same fields as the default schema. 
-    By default, a customized schema will inherit all options from the default schema,
+    A customized scheme has the same fields as the default scheme. 
+    By default, a customized scheme will inherit all options from the default scheme,
     unless overridden by new options.
 
 ### Example
@@ -221,10 +221,20 @@ used to determine the actual set of qemu arguments.
 
 ### Scheme
 
-Scheme is an advanced feature to create multiple profiles for
-the same actions under different scenarios. Scheme allows any
-user-defined keys and can be selected by the `--scheme` CLI
-argument. The key `scheme` can be used to create special settings
-(especially special QEMU configurations). If a scheme action is
-matched, unspecified and required arguments will be inherited
-from the default scheme.
+Scheme is an advanced feature that allows you to create multiple profiles for
+the same action (`build`, `run`, or `test`) under different scenarios (e.g.,
+x86 vs. RISC-V). Schemes support any user-defined keys (see the 22nd
+configuration) and can be selected using the `--scheme` CLI argument.
+
+If a scheme `<s>` is selected for an action (such as `test`), the value of an
+unspecified but required configuration `key` will be determined by the
+following rules:
+ - If the general config (`scheme.<s>.key`) exists for the selected scheme, use
+   this value.
+ - Otherwise, if the default scheme has this configuration for the action
+   (`test.key`), use this value.
+ - Otherwise, if the default scheme has this configuration (`key`), use this
+   value.
+
+If the value is still not found, either the default value for the key will be
+used or an error will be thrown.
