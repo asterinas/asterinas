@@ -4,14 +4,15 @@
 
 # This script is used to generate QEMU arguments for OSDK.
 # Usage: `qemu_args.sh [scheme]`
-#  - scheme: "normal", "microvm" or "iommu";
+#  - scheme: "normal", "test", "microvm" or "iommu";
 # Other arguments are configured via environmental variables:
 #  - OVMF: "on" or "off";
+#  - BOOT_METHOD: "qemu-direct", "grub-rescue-iso", "linux-efi-pe64" or "linux-efi-handover64";
 #  - NETDEV: "user" or "tap";
 #  - VHOST: "off" or "on";
 #  - VSOCK: "off" or "on";
 #  - SMP: number of CPUs;
-#  - MEM: amount of memory, e.g. "8G".
+#  - MEM: amount of memory, e.g. "8G";
 #  - VNC_PORT: VNC port, default is "42".
 
 OVMF=${OVMF:-"on"}
@@ -153,8 +154,8 @@ if [ "$1" = "microvm" ]; then
 fi
 
 if [ "$OVMF" = "on" ]; then
-    if [ "$1" = "test" ]; then
-        echo "We use QEMU direct boot for testing, which does not support OVMF, ignoring OVMF" 1>&2
+    if [ "$BOOT_METHOD" = "qemu-direct" ]; then
+        echo "QEMU direct boot is not compatible with OVMF, ignoring OVMF" 1>&2
     else
         OVMF_PATH="/root/ovmf/release"
         QEMU_ARGS="${QEMU_ARGS} \
