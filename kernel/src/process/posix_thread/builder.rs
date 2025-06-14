@@ -11,7 +11,7 @@ use crate::{
     fs::{file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
     process::{
-        posix_thread::name::ThreadName,
+        posix_thread::{name::ThreadName, status::ThreadStatus},
         signal::{sig_mask::AtomicSigMask, sig_queues::SigQueues},
         Credentials, Process,
     },
@@ -136,6 +136,7 @@ impl PosixThreadBuilder {
                     sig_mask,
                     sig_queues,
                     signalled_waker: SpinLock::new(None),
+                    status: SpinLock::new(ThreadStatus::new()),
                     prof_clock,
                     virtual_timer_manager,
                     prof_timer_manager,

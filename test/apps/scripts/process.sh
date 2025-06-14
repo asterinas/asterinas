@@ -33,6 +33,7 @@ mmap/mmap_readahead
 mmap/mmap_vmrss
 process/group_session
 process/job_control
+process/wait4
 pthread/pthread_test
 pty/open_pty
 pty/pty_blocking
