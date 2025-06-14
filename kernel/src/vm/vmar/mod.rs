@@ -16,6 +16,7 @@ use ostd::{
     mm::{
         tlb::TlbFlushOp, vm_space::CursorMut, PageFlags, PageProperty, VmSpace, MAX_USERSPACE_VADDR,
     },
+    sync::RwMutexWriteGuard,
     task::disable_preempt,
 };
 
@@ -93,7 +94,7 @@ impl<R> Vmar<R> {
     /// mapping and the extra part overlaps with existing mapping, resizing
     /// will fail and return `Err`.
     pub fn resize_mapping(&self, map_addr: Vaddr, old_size: usize, new_size: usize) -> Result<()> {
-        self.0.resize_mapping(map_addr, old_size, new_size)
+        self.0.resize_mapping(map_addr, old_size, new_size, None)
     }
 }
 
@@ -410,9 +411,122 @@ impl Vmar_ {
         Ok(())
     }
 
+    /// Remaps a mapping from `old_range` to a new size.
+    ///
+    /// Returns the address of the new mapping.
+    pub fn remap(
+        &self,
+        old_range: Range<usize>,
+        new_size: usize,
+        flags: MremapFlags,
+        new_addr: Vaddr,
+    ) -> Result<Vaddr> {
+        let mut old_range = old_range;
+        let mut old_size = old_range.end - old_range.start;
+        let mut inner = self.inner.write();
+
+        let old_mapping_addr = if let Some(vm_mapping) = inner
+            .vm_mappings
+            .find_one(&old_range.start)
+            .filter(|vm_mapping| vm_mapping.map_end() >= old_range.end)
+        {
+            vm_mapping.map_to_addr()
+        } else {
+            return_errno_with_message!(
+                Errno::EFAULT,
+                "remap: the old range must lie in a single mapping"
+            );
+        };
+
+        if !flags.contains(MremapFlags::MREMAP_FIXED) {
+            if new_size == old_size {
+                return Ok(old_range.start);
+            }
+            if !flags.contains(MremapFlags::MREMAP_MAYMOVE) || new_size < old_size {
+                // FIXME: According to <https://man7.org/linux/man-pages/man2/mremap.2.html>,
+                // if the `MREMAP_MAYMOVE` flag is not set, and the mapping cannot
+                // be expanded at the current `Vaddr`, we should return an `ENOMEM`.
+                // However, `resize_mapping` returns a `EACCES` in this case.
+                self.resize_mapping(old_range.start, old_size, new_size, Some(inner))?;
+                return Ok(old_range.start);
+            }
+        }
+
+        let vmspace = self.vm_space();
+
+        // Create a new `VmMapping` that does not overlap with the old one.
+        let mut rss_delta = RssDelta::new();
+        let new_range = {
+            if flags.contains(MremapFlags::MREMAP_FIXED) {
+                inner.alloc_free_region_exact_truncate(
+                    vmspace,
+                    new_addr,
+                    new_size,
+                    &mut rss_delta,
+                )?
+            } else {
+                inner.alloc_free_region(new_size, PAGE_SIZE)?
+            }
+        };
+        let old_mapping = {
+            let vm_mapping = inner.remove(&old_mapping_addr).unwrap();
+            let (left, old_mapping, right) = vm_mapping.split_range(&old_range)?;
+            if let Some(left) = left {
+                inner.insert(left);
+            }
+            if let Some(right) = right {
+                inner.insert(right);
+            }
+            if new_size < old_size {
+                let (old_mapping, taken) = old_mapping.split(old_range.start + new_size)?;
+                rss_delta.add(taken.rss_type(), -(taken.unmap(vmspace)? as isize));
+                old_size = new_size;
+                old_range = old_range.start..(old_range.start + old_size);
+                old_mapping
+            } else {
+                old_mapping
+            }
+        };
+        self.add_rss_delta(rss_delta);
+        // Now we can ensure that `new_size >= old_size`.
+        let new_mapping = old_mapping.new_fork_at(new_range.start)?;
+        inner.insert(new_mapping.enlarge(new_size - old_size));
+
+        // Move the mapping.
+        let preempt_guard = disable_preempt();
+        let total_range = old_range.start.min(new_range.start)..old_range.end.max(new_range.end);
+        let mut cursor = vmspace.cursor_mut(&preempt_guard, &total_range).unwrap();
+        let mut current_offset = 0;
+        cursor.jump(old_range.start).unwrap();
+        while let Some(mapped_va) = cursor.find_next(old_size - current_offset) {
+            let (va, Some((frame, prop))) = cursor.query().unwrap() else {
+                panic!("Found mapped page but query failed");
+            };
+            debug_assert_eq!(mapped_va, va.start);
+            cursor.unmap(PAGE_SIZE);
+
+            let offset = mapped_va - old_range.start;
+            cursor.jump(new_range.start + offset).unwrap();
+            cursor.map(frame, prop);
+
+            current_offset = offset + PAGE_SIZE;
+            cursor.jump(old_range.start + current_offset).unwrap();
+        }
+        cursor.flusher().dispatch_tlb_flush();
+        cursor.flusher().sync_tlb_flush();
+
+        Ok(new_range.start)
+    }
+
     // Split and unmap the found mapping if resize smaller.
     // Enlarge the last mapping if resize larger.
-    fn resize_mapping(&self, map_addr: Vaddr, old_size: usize, new_size: usize) -> Result<()> {
+    fn resize_mapping(
+        &self,
+        map_addr: Vaddr,
+        old_size: usize,
+        new_size: usize,
+        inner_guard: Option<RwMutexWriteGuard<VmarInner>>,
+    ) -> Result<()> {
         debug_assert!(map_addr % PAGE_SIZE == 0);
         debug_assert!(old_size % PAGE_SIZE == 0);
         debug_assert!(new_size % PAGE_SIZE == 0);
@@ -433,7 +547,8 @@ impl Vmar_ {
             return Ok(());
         }
 
-        let mut inner = self.inner.write();
+        let mut inner = inner_guard.unwrap_or_else(|| self.inner.write());
+
         let last_mapping = inner.vm_mappings.find_one(&(old_map_end - 1)).unwrap();
         let last_mapping_addr = last_mapping.map_to_addr();
         let extra_mapping_start = last_mapping.map_end();
@@ -871,6 +986,14 @@ impl RssDelta {
 
     pub(self) fn get(&self, rss_type: RssType) -> isize {
         self.0[rss_type as usize]
+    }
+}
+
+bitflags! {
+    pub struct MremapFlags: i32 {
+        const MREMAP_MAYMOVE = 1 << 0;
+        const MREMAP_FIXED = 1 << 1;
+        const MREMAP_DONTUNMAP = 1 << 2;
     }
 }
 

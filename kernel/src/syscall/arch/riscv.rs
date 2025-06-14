@@ -60,6 +60,7 @@ use crate::syscall::{
     mmap::sys_mmap,
     mount::sys_mount,
     mprotect::sys_mprotect,
+    mremap::sys_mremap,
     msync::sys_msync,
     munmap::sys_munmap,
     nanosleep::{sys_clock_nanosleep, sys_nanosleep},
@@ -277,6 +278,7 @@ impl_syscall_nums_and_dispatch_fn! {
     SYS_RECVMSG = 212            => sys_recvmsg(args[..3]);
     SYS_BRK = 214                => sys_brk(args[..1]);
     SYS_MUNMAP = 215             => sys_munmap(args[..2]);
+    SYS_MREMAP = 216           => sys_mremap(args[..5]);
     SYS_CLONE = 220              => sys_clone(args[..5], &user_ctx);
     SYS_EXECVE = 221             => sys_execve(args[..3], &mut user_ctx);
     SYS_MMAP = 222               => sys_mmap(args[..6]);

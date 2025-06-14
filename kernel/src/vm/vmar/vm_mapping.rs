@@ -104,6 +104,12 @@ impl VmMapping {
         })
     }
 
+    pub(super) fn new_fork_at(&self, va: Vaddr) -> Result<VmMapping> {
+        let mut vm_mapping = self.new_fork()?;
+        vm_mapping.map_to_addr = va;
+        Ok(vm_mapping)
+    }
+
     /// Returns the mapping's start address.
     pub fn map_to_addr(&self) -> Vaddr {
         self.map_to_addr
@@ -385,7 +391,7 @@ impl VmMapping {
     ///
     /// The address must be within the mapping and page-aligned. The address
     /// must not be either the start or the end of the mapping.
-    fn split(self, at: Vaddr) -> Result<(Self, Self)> {
+    pub fn split(self, at: Vaddr) -> Result<(Self, Self)> {
         debug_assert!(self.map_to_addr < at && at < self.map_end());
         debug_assert!(at % PAGE_SIZE == 0);
 

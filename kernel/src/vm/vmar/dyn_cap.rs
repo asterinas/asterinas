@@ -6,7 +6,9 @@ use aster_rights::Rights;
 
 use super::{VmPerms, Vmar, VmarMapOptions, VmarRightsOp, Vmar_};
 use crate::{
-    prelude::*, thread::exception::PageFaultInfo, vm::page_fault_handler::PageFaultHandler,
+    prelude::*,
+    thread::exception::PageFaultInfo,
+    vm::{page_fault_handler::PageFaultHandler, vmar::MremapFlags},
 };
 
 impl Vmar<Rights> {
@@ -91,6 +93,19 @@ impl Vmar<Rights> {
     /// portions of the mappings are unmapped.
     pub fn remove_mapping(&self, range: Range<usize>) -> Result<()> {
         self.0.remove_mapping(range)
+    }
+
+    /// Remaps a mapping from `old_range` to a new size.
+    ///
+    /// Returns the address of the new mapping.
+    pub fn remap(
+        &self,
+        old_range: Range<usize>,
+        new_size: usize,
+        flags: MremapFlags,
+        new_addr: Vaddr,
+    ) -> Result<Vaddr> {
+        self.0.remap(old_range, new_size, flags, new_addr)
     }
 
     /// Duplicates the capability.
