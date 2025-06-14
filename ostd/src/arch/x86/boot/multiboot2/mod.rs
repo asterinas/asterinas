@@ -14,8 +14,6 @@ use crate::{
 
 global_asm!(include_str!("header.S"));
 
-const MULTIBOOT2_ENTRY_MAGIC: u32 = 0x36d76289;
-
 fn parse_bootloader_name(mb2_info: &BootInformation) -> Option<&'static str> {
     let name = mb2_info.boot_loader_name_tag()?.name().ok()?;
 
@@ -142,7 +140,7 @@ fn parse_memory_regions(mb2_info: &BootInformation) -> MemoryRegionArray {
 /// The entry point of Rust code called by inline asm.
 #[no_mangle]
 unsafe extern "sysv64" fn __multiboot2_entry(boot_magic: u32, boot_params: u64) -> ! {
-    assert_eq!(boot_magic, MULTIBOOT2_ENTRY_MAGIC);
+    assert_eq!(boot_magic, multiboot2::MAGIC);
     let mb2_info =
         unsafe { BootInformation::load(boot_params as *const BootInformationHeader).unwrap() };
 
