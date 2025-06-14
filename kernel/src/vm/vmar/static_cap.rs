@@ -104,6 +104,11 @@ impl<R: TRights> Vmar<TRightSet<R>> {
         self.0.remove_mapping(range)
     }
 
+    /// Get the shared memory ID for the given address.
+    pub fn get_shm_id(&self, addr: usize) -> Result<u64> {
+        self.0.get_shm_id(addr)
+    }
+
     /// Duplicates the capability.
     ///
     /// # Access rights

@@ -228,6 +228,16 @@ impl VmarInner {
         Ok(offset..(offset + size))
     }
 
+    /// Get the shared memory ID for the given address.
+    fn get_shm_id(&mut self, addr: Vaddr) -> Result<u64> {
+        if let Some(vm_mapping) = self.vm_mappings.find_one(&addr) {
+            if let Some(shmid) = vm_mapping.shared_mem_id() {
+                return Ok(shmid);
+            }
+        }
+        return_errno_with_message!(Errno::EINVAL, "No shared memory ID found for the address");
+    }
+
     /// Allocates a free region for mapping.
     ///
     /// If no such region is found, return an error.
@@ -410,6 +420,12 @@ impl Vmar_ {
         Ok(())
     }
 
+    pub fn get_shm_id(&self, addr: usize) -> Result<u64> {
+        let mut inner = self.inner.write();
+        let shmid = inner.get_shm_id(addr)?;
+        Ok(shmid)
+    }
+
     // Split and unmap the found mapping if resize smaller.
     // Enlarge the last mapping if resize larger.
     fn resize_mapping(&self, map_addr: Vaddr, old_size: usize, new_size: usize) -> Result<()> {
@@ -586,6 +602,7 @@ impl<R> Vmar<R> {
 pub struct VmarMapOptions<'a, R1, R2> {
     parent: &'a Vmar<R1>,
     vmo: Option<Vmo<R2>>,
+    shared_mem_id: Option<u64>,
     perms: VmPerms,
     vmo_offset: usize,
     vmo_limit: usize,
@@ -610,6 +627,7 @@ impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
         Self {
             parent,
             vmo: None,
+            shared_mem_id: None,
             perms,
             vmo_offset: 0,
             vmo_limit: usize::MAX,
@@ -640,6 +658,12 @@ impl<'a, R1, R2> VmarMapOptions<'a, R1, R2> {
     pub fn vmo(mut self, vmo: Vmo<R2>) -> Self {
         self.vmo = Some(vmo);
 
+        self
+    }
+
+    /// Binds a shared memory object to the mapping.
+    pub fn shared_mem_id(mut self, shmid: u64) -> Self {
+        self.shared_mem_id = Some(shmid);
         self
     }
 
@@ -726,6 +750,7 @@ where
         let Self {
             parent,
             vmo,
+            shared_mem_id,
             perms,
             vmo_offset,
             vmo_limit,
@@ -784,6 +809,7 @@ where
             NonZeroUsize::new(map_size).unwrap(),
             map_to_addr,
             vmo,
+            shared_mem_id,
             is_shared,
             handle_page_faults_around,
             perms,
@@ -826,7 +852,6 @@ where
         let Some(vmo) = &self.vmo else {
             return Ok(());
         };
-
         let perm_rights = Rights::from(self.perms);
         vmo.check_rights(perm_rights)
     }

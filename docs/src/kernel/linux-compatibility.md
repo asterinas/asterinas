@@ -49,9 +49,9 @@ provided by Linux on x86-64 architecture.
 | 26      | msync            | ❌              |
 | 27      | mincore          | ❌              |
 | 28      | madvise          | ✅              |
-| 29      | shmget           | ❌              |
-| 30      | shmat            | ❌              |
-| 31      | shmctl           | ❌              |
+| 29      | shmget           | ✅              |
+| 30      | shmat            | ✅              |
+| 31      | shmctl           | ✅              |
 | 32      | dup              | ✅              |
 | 33      | dup2             | ✅              |
 | 34      | pause            | ✅              |
@@ -87,7 +87,7 @@ provided by Linux on x86-64 architecture.
 | 64      | semget           | ✅              |
 | 65      | semop            | ✅              |
 | 66      | semctl           | ✅              |
-| 67      | shmdt            | ❌              |
+| 67      | shmdt            | ✅              |
 | 68      | msgget           | ❌              |
 | 69      | msgsnd           | ❌              |
 | 70      | msgrcv           | ❌              |

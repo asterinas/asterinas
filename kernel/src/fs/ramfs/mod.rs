@@ -2,7 +2,7 @@
 
 //! Ramfs based on PageCache
 
-pub use fs::RamFS;
+pub use fs::{RamFS, RamInode};
 
 mod fs;
 mod xattr;
