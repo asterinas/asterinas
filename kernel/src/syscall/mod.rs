@@ -69,6 +69,7 @@ mod listen;
 mod listxattr;
 mod lseek;
 mod madvise;
+mod memfd_create;
 mod mkdir;
 mod mknod;
 mod mmap;
