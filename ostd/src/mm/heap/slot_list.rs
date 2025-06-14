@@ -16,6 +16,9 @@ pub struct SlabSlotList<const SLOT_SIZE: usize> {
     head: Option<NonNull<u8>>,
 }
 
+unsafe impl<const SLOT_SIZE: usize> Sync for SlabSlotList<SLOT_SIZE> {}
+unsafe impl<const SLOT_SIZE: usize> Send for SlabSlotList<SLOT_SIZE> {}
+
 impl<const SLOT_SIZE: usize> Default for SlabSlotList<SLOT_SIZE> {
     fn default() -> Self {
         Self::new()
