@@ -3,8 +3,11 @@
 //! Utility definitions and helper structs for implementing `SysTree` nodes.
 
 use alloc::{collections::BTreeMap, string::String, sync::Arc};
+use core::ops::Deref;
 
+use bitflags::bitflags;
 use ostd::sync::RwLock;
+use spin::Once;
 
 use super::{
     attr::SysAttrSet,
@@ -16,6 +19,7 @@ use super::{
 pub struct SysObjFields {
     id: SysNodeId,
     name: SysStr,
+    parent_path: Once<SysStr>,
 }
 
 impl SysObjFields {
@@ -23,6 +27,7 @@ impl SysObjFields {
         Self {
             id: SysNodeId::new(),
             name,
+            parent_path: Once::new(),
         }
     }
 
@@ -32,6 +37,18 @@ impl SysObjFields {
 
     pub fn name(&self) -> &SysStr {
         &self.name
+    }
+
+    pub fn set_parent_path(&self, path: SysStr) {
+        self.parent_path.call_once(|| path);
+    }
+
+    pub fn path(&self) -> SysStr {
+        if let Some(parent_path) = self.parent_path.get() {
+            return SysStr::from(parent_path.clone().into_owned() + "/" + self.name.deref());
+        }
+
+        self.name().clone()
     }
 }
 
@@ -59,6 +76,14 @@ impl SysNormalNodeFields {
 
     pub fn attr_set(&self) -> &SysAttrSet {
         &self.attr_set
+    }
+
+    pub fn set_parent_path(&self, path: SysStr) {
+        self.base.set_parent_path(path);
+    }
+
+    pub fn path(&self) -> SysStr {
+        self.base.path()
     }
 }
 
@@ -88,6 +113,14 @@ impl<C: SysObj + ?Sized> SysBranchNodeFields<C> {
         self.base.attr_set()
     }
 
+    pub fn set_parent_path(&self, path: SysStr) {
+        self.base.set_parent_path(path);
+    }
+
+    pub fn path(&self) -> SysStr {
+        self.base.path()
+    }
+
     pub fn contains(&self, child_name: &str) -> bool {
         let children = self.children.read();
         children.contains_key(child_name)
@@ -99,6 +132,8 @@ impl<C: SysObj + ?Sized> SysBranchNodeFields<C> {
         if children.contains_key(name) {
             return Err(Error::PermissionDenied);
         }
+
+        new_child.set_parent_path(self.path());
         children.insert(name.clone(), new_child);
         Ok(())
     }
@@ -152,6 +187,14 @@ impl SymlinkNodeFields {
 
     pub fn name(&self) -> &SysStr {
         self.base.name()
+    }
+
+    pub fn set_parent_path(&self, path: SysStr) {
+        self.base.set_parent_path(path);
+    }
+
+    pub fn path(&self) -> SysStr {
+        self.base.path()
     }
 
     pub fn target_path(&self) -> &str {
@@ -230,4 +273,61 @@ macro_rules! impl_cast_methods_for_symlink {
             SysNodeType::Symlink
         }
     };
+}
+
+bitflags! {
+    /// Mode and permission representation for the nodes and attributes in the `SysTree`.
+    ///
+    /// This struct is mainly used to provide the initial permissions for nodes and attributes.
+    ///
+    /// The concepts of "owner"/"group"/"others" mentioned here are not explicitly represented in
+    /// systree. They exist primarily to enable finer-grained permission management at
+    /// the "view" and "control" parts for users. Users can provide permission modification functionality
+    /// through additional abstractions at the upper layers. Correspondingly, it is the users' responsibility
+    /// to do the permission verification at the "view" and "control" parts.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub struct SysMode: u16 {
+        /// Read permission for owner
+        const S_IRUSR = 0o0400;
+        /// Write permission for owner
+        const S_IWUSR = 0o0200;
+        /// Execute/search permission for owner
+        const S_IXUSR = 0o0100;
+        /// Read permission for group
+        const S_IRGRP = 0o0040;
+        /// Write permission for group
+        const S_IWGRP = 0o0020;
+        /// Execute/search permission for group
+        const S_IXGRP = 0o0010;
+        /// Read permission for others
+        const S_IROTH = 0o0004;
+        /// Write permission for others
+        const S_IWOTH = 0o0002;
+        /// Execute/search permission for others
+        const S_IXOTH = 0o0001;
+    }
+}
+
+impl SysMode {
+    /// Default read-only mode for nodes (owner/group/others can read+execute)
+    pub const DEFAULT_RO_MODE: Self = Self::from_bits_truncate(0o555);
+
+    /// Default read-write mode for nodes (owner has full, group/others read+execute)
+    pub const DEFAULT_RW_MODE: Self = Self::from_bits_truncate(0o755);
+
+    /// Default read-only mode for attributes (owner/group/others can read)
+    pub const DEFAULT_RO_ATTR_MODE: Self = Self::from_bits_truncate(0o444);
+
+    /// Default read-write mode for attributes (owner read+write, group/others read)
+    pub const DEFAULT_RW_ATTR_MODE: Self = Self::from_bits_truncate(0o644);
+
+    /// Returns whether this mode has a read permission.
+    pub fn can_read(&self) -> bool {
+        self.intersects(Self::S_IRUSR | Self::S_IRGRP | Self::S_IROTH)
+    }
+
+    /// Returns whether this mode has a write permission.
+    pub fn can_write(&self) -> bool {
+        self.intersects(Self::S_IWUSR | Self::S_IWGRP | Self::S_IWOTH)
+    }
 }
