@@ -125,6 +125,11 @@ pub trait Socket: private::SocketPrivate + Send + Sync {
 
 impl<T: Socket + 'static> FileLike for T {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
+        if !writer.has_avail() {
+            // Linux always returns `Ok(0)` in this case, so we follow it.
+            return Ok(0);
+        }
+
         // TODO: Set correct flags
         self.recvmsg(writer, SendRecvFlags::empty())
             .map(|(len, _)| len)

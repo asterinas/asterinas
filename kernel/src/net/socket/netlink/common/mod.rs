@@ -142,6 +142,11 @@ where
             warn!("sending control message is not supported");
         }
 
+        if reader.is_empty() {
+            // Based on how Linux behaves, zero-sized messages are not allowed for netlink sockets.
+            return_errno_with_message!(Errno::ENODATA, "there are no data to send");
+        }
+
         // TODO: Make sure our blocking behavior matches that of Linux
         self.try_send(reader, remote.as_ref(), flags)
     }

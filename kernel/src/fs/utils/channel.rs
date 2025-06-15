@@ -95,6 +95,14 @@ macro_rules! impl_common_methods_for_channel {
             self.0.common.is_shutdown()
         }
 
+        pub fn is_full(&self) -> bool {
+            self.this_end().rb().is_full()
+        }
+
+        pub fn is_empty(&self) -> bool {
+            self.this_end().rb().is_empty()
+        }
+
         pub fn poll(&self, mask: IoEvents, poller: Option<&mut PollHandle>) -> IoEvents {
             self.this_end()
                 .pollee
@@ -134,11 +142,10 @@ impl Producer<u8> {
     /// - Returns `Ok(_)` with the number of bytes written if successful.
     /// - Returns `Err(EPIPE)` if the channel is shut down.
     /// - Returns `Err(EAGAIN)` if the channel is full.
+    ///
+    /// The caller should not pass an empty `reader` to this method.
     pub fn try_write(&self, reader: &mut dyn MultiRead) -> Result<usize> {
-        if reader.is_empty() {
-            // Even after shutdown, writing an empty buffer is still fine.
-            return Ok(0);
-        }
+        debug_assert!(!reader.is_empty());
 
         if self.is_shutdown() {
             return_errno_with_message!(Errno::EPIPE, "the channel is shut down");
@@ -217,10 +224,10 @@ impl Consumer<u8> {
     /// - Returns `Ok(_)` with the number of bytes read if successful.
     /// - Returns `Ok(0)` if the channel is shut down and there is no data left.
     /// - Returns `Err(EAGAIN)` if the channel is empty.
+    ///
+    /// The caller should not pass an empty `writer` to this method.
     pub fn try_read(&self, writer: &mut dyn MultiWrite) -> Result<usize> {
-        if writer.is_empty() {
-            return Ok(0);
-        }
+        debug_assert!(!writer.is_empty());
 
         // This must be recorded before the actual operation to avoid race conditions.
         let is_shutdown = self.is_shutdown();

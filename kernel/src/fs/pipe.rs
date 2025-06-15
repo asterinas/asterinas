@@ -60,12 +60,17 @@ impl Pollable for PipeReader {
 
 impl FileLike for PipeReader {
     fn read(&self, writer: &mut VmWriter) -> Result<usize> {
-        let read_len = if self.status_flags().contains(StatusFlags::O_NONBLOCK) {
-            self.consumer.try_read(writer)?
+        if !writer.has_avail() {
+            // Even the peer endpoint (`PipeWriter`) has been closed, reading an empty buffer is
+            // still fine.
+            return Ok(0);
+        }
+
+        if self.status_flags().contains(StatusFlags::O_NONBLOCK) {
+            self.consumer.try_read(writer)
         } else {
-            self.wait_events(IoEvents::IN, None, || self.consumer.try_read(writer))?
-        };
-        Ok(read_len)
+            self.wait_events(IoEvents::IN, None, || self.consumer.try_read(writer))
+        }
     }
 
     fn status_flags(&self) -> StatusFlags {
@@ -130,6 +135,12 @@ impl Pollable for PipeWriter {
 
 impl FileLike for PipeWriter {
     fn write(&self, reader: &mut VmReader) -> Result<usize> {
+        if !reader.has_remain() {
+            // Even the peer endpoint (`PipeReader`) has been closed, writing an empty buffer is
+            // still fine.
+            return Ok(0);
+        }
+
         if self.status_flags().contains(StatusFlags::O_NONBLOCK) {
             self.producer.try_write(reader)
         } else {
