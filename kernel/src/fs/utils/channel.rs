@@ -146,6 +146,7 @@ impl Producer<u8> {
 
         let written_len = self.0.write(reader)?;
         self.peer_end().pollee.notify(IoEvents::IN);
+        self.this_end().pollee.invalidate();
 
         if written_len > 0 {
             Ok(written_len)
@@ -172,6 +173,7 @@ impl<T: Pod> Producer<T> {
             (err, item)
         })?;
         self.peer_end().pollee.notify(IoEvents::IN);
+        self.this_end().pollee.invalidate();
 
         Ok(())
     }

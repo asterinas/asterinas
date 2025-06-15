@@ -336,7 +336,6 @@ impl StreamSocket {
         let remote_endpoint = connected_stream.remote_endpoint();
 
         drop(state);
-        self.pollee.invalidate();
         if let Some(iface) = iface_to_poll {
             iface.poll();
         }
