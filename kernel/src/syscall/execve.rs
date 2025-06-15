@@ -122,23 +122,17 @@ fn do_execve(
     let program_to_load =
         ProgramToLoad::build_from_file(elf_file.clone(), fs_resolver, argv, envp, 1)?;
 
-    let process_vm = process.vm();
-    if process.status().is_vfork_child() {
-        renew_vm_and_map(ctx);
+    renew_vm_and_map(ctx);
 
+    if process.status().is_vfork_child() {
         // Resumes the parent process.
         process.status().set_vfork_child(false);
         let parent = process.parent().lock().process().upgrade().unwrap();
         parent.children_wait_queue().wake_all();
-    } else {
-        // FIXME: Currently, the efficiency of replacing the VMAR is lower than that
-        // of directly clearing the VMAR. Therefore, if not in vfork case we will only
-        // clear the VMAR.
-        process_vm.clear_and_map();
     }
 
     let (new_executable_path, elf_load_info) =
-        program_to_load.load_to_vm(process_vm, fs_resolver)?;
+        program_to_load.load_to_vm(process.vm(), fs_resolver)?;
 
     // After the program has been successfully loaded, the virtual memory of the current process
     // is initialized. Hence, it is necessary to clear the previously recorded robust list.
