@@ -13,6 +13,12 @@
 
 #include "test.h"
 
+FN_SETUP(general)
+{
+	signal(SIGPIPE, SIG_IGN);
+}
+END_SETUP()
+
 #define PATH_OFFSET offsetof(struct sockaddr_un, sun_path)
 
 FN_TEST(socket_addresses)
@@ -114,13 +120,13 @@ static int sk_accepted;
 
 FN_SETUP(unbound)
 {
-	sk_unbound = CHECK(socket(PF_UNIX, SOCK_STREAM, 0));
+	sk_unbound = CHECK(socket(PF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0));
 }
 END_SETUP()
 
 FN_SETUP(bound)
 {
-	sk_bound = CHECK(socket(PF_UNIX, SOCK_STREAM, 0));
+	sk_bound = CHECK(socket(PF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0));
 
 	CHECK(bind(sk_bound, (struct sockaddr *)&BOUND_ADDR, BOUND_ADDRLEN));
 }
@@ -128,7 +134,7 @@ END_SETUP()
 
 FN_SETUP(listen)
 {
-	sk_listen = CHECK(socket(PF_UNIX, SOCK_STREAM, 0));
+	sk_listen = CHECK(socket(PF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0));
 
 	CHECK(bind(sk_listen, (struct sockaddr *)&LISTEN_ADDR, LISTEN_ADDRLEN));
 
@@ -138,7 +144,7 @@ END_SETUP()
 
 FN_SETUP(connected)
 {
-	sk_connected = CHECK(socket(PF_UNIX, SOCK_STREAM, 0));
+	sk_connected = CHECK(socket(PF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0));
 
 	CHECK(connect(sk_connected, (struct sockaddr *)&LISTEN_ADDR2,
 		      LISTEN_ADDRLEN2));
@@ -321,10 +327,19 @@ FN_TEST(send)
 	char buf[1] = { 'z' };
 
 	TEST_ERRNO(send(sk_unbound, buf, 1, 0), ENOTCONN);
+	TEST_ERRNO(send(sk_unbound, buf, 0, 0), ENOTCONN);
+	TEST_ERRNO(write(sk_unbound, buf, 1), ENOTCONN);
+	TEST_ERRNO(write(sk_unbound, buf, 0), ENOTCONN);
 
 	TEST_ERRNO(send(sk_bound, buf, 1, 0), ENOTCONN);
+	TEST_ERRNO(send(sk_bound, buf, 0, 0), ENOTCONN);
+	TEST_ERRNO(write(sk_bound, buf, 1), ENOTCONN);
+	TEST_ERRNO(write(sk_bound, buf, 0), ENOTCONN);
 
 	TEST_ERRNO(send(sk_listen, buf, 1, 0), ENOTCONN);
+	TEST_ERRNO(send(sk_listen, buf, 0, 0), ENOTCONN);
+	TEST_ERRNO(write(sk_listen, buf, 1), ENOTCONN);
+	TEST_ERRNO(write(sk_listen, buf, 0), ENOTCONN);
 }
 END_TEST()
 
@@ -333,10 +348,24 @@ FN_TEST(recv)
 	char buf[1] = { 'z' };
 
 	TEST_ERRNO(recv(sk_unbound, buf, 1, 0), EINVAL);
+	TEST_ERRNO(recv(sk_unbound, buf, 0, 0), EINVAL);
+	TEST_ERRNO(read(sk_unbound, buf, 1), EINVAL);
+	TEST_SUCC(read(sk_unbound, buf, 0));
 
 	TEST_ERRNO(recv(sk_bound, buf, 1, 0), EINVAL);
+	TEST_ERRNO(recv(sk_bound, buf, 0, 0), EINVAL);
+	TEST_ERRNO(read(sk_bound, buf, 1), EINVAL);
+	TEST_SUCC(read(sk_bound, buf, 0));
 
 	TEST_ERRNO(recv(sk_listen, buf, 1, 0), EINVAL);
+	TEST_ERRNO(recv(sk_listen, buf, 0, 0), EINVAL);
+	TEST_ERRNO(read(sk_listen, buf, 1), EINVAL);
+	TEST_SUCC(read(sk_listen, buf, 0));
+
+	TEST_ERRNO(recv(sk_connected, buf, 1, 0), EAGAIN);
+	TEST_ERRNO(recv(sk_connected, buf, 0, 0), EAGAIN);
+	TEST_ERRNO(read(sk_connected, buf, 1), EAGAIN);
+	TEST_SUCC(read(sk_connected, buf, 0));
 }
 END_TEST()
 
@@ -655,3 +684,38 @@ FN_SETUP(cleanup)
 	CHECK(unlink(LISTEN_ADDR.sun_path));
 }
 END_SETUP()
+
+// See also `zero_reads_always_succeed` in `pipe_err.c`
+FN_TEST(zero_recvs_may_fail)
+{
+	int fildes[2];
+	char buf[1] = { 'z' };
+
+	TEST_SUCC(socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, fildes));
+
+	TEST_ERRNO(recv(fildes[0], buf, 0, 0), EAGAIN);
+
+	TEST_RES(send(fildes[1], buf, 1, 0), _ret == 1);
+	TEST_SUCC(recv(fildes[0], buf, 0, 0));
+
+	TEST_SUCC(close(fildes[0]));
+	TEST_SUCC(close(fildes[1]));
+}
+END_TEST()
+
+// See also `zero_writes_always_succeed` in `pipe_err.c`
+FN_TEST(zero_sends_may_fail)
+{
+	int fildes[2];
+	char buf[1] = { 'z' };
+
+	TEST_SUCC(socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, fildes));
+
+	TEST_SUCC(send(fildes[1], buf, 0, 0));
+
+	TEST_SUCC(close(fildes[0]));
+	TEST_ERRNO(send(fildes[1], buf, 0, 0), EPIPE);
+
+	TEST_SUCC(close(fildes[1]));
+}
+END_TEST()
