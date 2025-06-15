@@ -303,7 +303,10 @@ impl Socket for VsockStreamSocket {
 
 impl Drop for VsockStreamSocket {
     fn drop(&mut self) {
-        let vsockspace = VSOCK_GLOBAL.get().unwrap();
+        let Some(vsockspace) = VSOCK_GLOBAL.get() else {
+            return;
+        };
+
         let inner = self.status.get_mut();
         match inner {
             Status::Init(init) => {
