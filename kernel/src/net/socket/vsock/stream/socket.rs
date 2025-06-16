@@ -29,12 +29,19 @@ pub enum Status {
 }
 
 impl VsockStreamSocket {
-    pub fn new(nonblocking: bool) -> Self {
+    pub fn new(nonblocking: bool) -> Result<Self> {
+        if VSOCK_GLOBAL.get().is_none() {
+            return_errno_with_message!(
+                Errno::EINVAL,
+                "cannot create vsock socket since no vsock device is found"
+            );
+        }
+
         let init = Arc::new(Init::new());
-        Self {
+        Ok(Self {
             status: RwLock::new(Status::Init(init)),
             is_nonblocking: AtomicBool::new(nonblocking),
-        }
+        })
     }
 
     pub(super) fn new_from_connected(connected: Arc<Connected>) -> Self {
