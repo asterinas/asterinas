@@ -86,16 +86,48 @@ impl<R> Vmar<R> {
     /// The range of the mapping goes from `map_addr..map_addr + old_size` to
     /// `map_addr..map_addr + new_size`.
     ///
-    /// The range of the original mapping does not have to solely map to a
-    /// whole [`VmMapping`], but it must ensure that all existing ranges have a
-    /// mapping. Otherwise, this method will return `Err`.
-    ///
     /// If the new mapping size is smaller than the original mapping size, the
     /// extra part will be unmapped. If the new mapping is larger than the old
     /// mapping and the extra part overlaps with existing mapping, resizing
     /// will fail and return `Err`.
-    pub fn resize_mapping(&self, map_addr: Vaddr, old_size: usize, new_size: usize) -> Result<()> {
-        self.0.resize_mapping(map_addr, old_size, new_size)
+    ///
+    /// - When `check_single_mapping` is `true`, this method will check whether
+    ///   the range of the original mapping is covered by a single [`VmMapping`].
+    ///   If not, this method will return an `Err`.
+    /// - When `check_single_mapping` is `false`, The range of the original
+    ///   mapping does not have to solely map to a whole [`VmMapping`], but it
+    ///   must ensure that all existing ranges have a mapping. Otherwise, this
+    ///   method will return an `Err`.
+    pub fn resize_mapping(
+        &self,
+        map_addr: Vaddr,
+        old_size: usize,
+        new_size: usize,
+        check_single_mapping: bool,
+    ) -> Result<()> {
+        self.0
+            .resize_mapping(map_addr, old_size, new_size, check_single_mapping)
+    }
+
+    /// Remaps the original mapping to a new address and/or size.
+    ///
+    /// If the new mapping size is smaller than the original mapping size, the
+    /// extra part will be unmapped.
+    ///
+    /// - If `new_addr` is `Some(new_addr)`, this method attempts to move the
+    ///   mapping from `old_addr..old_addr + old_size` to `new_addr..new_addr +
+    ///   new_size`. If any existing mappings lie within the target range,
+    ///   they will be unmapped before the move.
+    /// - If `new_addr` is `None`, a new range of size `new_size` will be
+    ///   allocated, and the original mapping will be moved there.
+    pub fn remap(
+        &self,
+        old_addr: Vaddr,
+        old_size: usize,
+        new_addr: Option<Vaddr>,
+        new_size: usize,
+    ) -> Result<Vaddr> {
+        self.0.remap(old_addr, old_size, new_addr, new_size)
     }
 }
 
@@ -129,7 +161,7 @@ impl VmarInner {
 
     /// Returns `Ok` if the calling process may expand its mapped
     /// memory by the passed size.
-    fn check_expand_size(&mut self, expand_size: usize) -> Result<()> {
+    fn check_extra_size_fits_rlimit(&self, expand_size: usize) -> Result<()> {
         let Some(process) = Process::current() else {
             // When building a `Process`, the kernel task needs to build
             // some `VmMapping`s, in which case this branch is reachable.
@@ -149,6 +181,23 @@ impl VmarInner {
             return_errno_with_message!(Errno::ENOMEM, "address space limit overflow");
         }
         Ok(())
+    }
+
+    /// Checks whether `addr..addr + size` is covered by a single `VmMapping`,
+    /// and returns the address of the single `VmMapping` if successful.
+    fn check_lies_in_single_mapping(&self, addr: Vaddr, size: usize) -> Result<Vaddr> {
+        if let Some(vm_mapping) = self
+            .vm_mappings
+            .find_one(&addr)
+            .filter(|vm_mapping| vm_mapping.map_end() - addr >= size)
+        {
+            Ok(vm_mapping.map_to_addr())
+        } else {
+            // FIXME: In Linux, two adjacent mappings created by `mmap` with
+            // identical properties can be `mremap`ed together. Fix this by
+            // adding an auto-merge mechanism for adjacent `VmMapping`s.
+            return_errno_with_message!(Errno::EFAULT, "The range must lie in a single mapping");
+        }
     }
 
     /// Inserts a `VmMapping` into the `Vmar`.
@@ -276,6 +325,61 @@ impl VmarInner {
         }
 
         return_errno_with_message!(Errno::ENOMEM, "Cannot find free region for mapping");
+    }
+
+    /// Splits and unmaps the found mapping if the new size is smaller.
+    /// Enlarges the last mapping if the new size is larger.
+    fn resize_mapping(
+        &mut self,
+        vm_space: &VmSpace,
+        map_addr: Vaddr,
+        old_size: usize,
+        new_size: usize,
+        rss_delta: &mut RssDelta,
+    ) -> Result<()> {
+        debug_assert_eq!(map_addr % PAGE_SIZE, 0);
+        debug_assert_eq!(old_size % PAGE_SIZE, 0);
+        debug_assert_eq!(new_size % PAGE_SIZE, 0);
+
+        // FIXME: We should check whether all existing ranges in
+        // `map_addr..map_addr + old_size` have a mapping. If not,
+        // we should return a `Err`.
+
+        if new_size == 0 {
+            return_errno_with_message!(Errno::EINVAL, "can not resize a mapping to 0 size");
+        }
+
+        if new_size == old_size {
+            return Ok(());
+        }
+
+        let old_map_end = map_addr + old_size;
+        let new_map_end = map_addr.checked_add(new_size).ok_or(Errno::EINVAL)?;
+        if !is_userspace_vaddr(new_map_end) {
+            return_errno_with_message!(Errno::EINVAL, "resize to a invalid new size");
+        }
+
+        if new_size < old_size {
+            self.alloc_free_region_exact_truncate(
+                vm_space,
+                new_map_end,
+                old_map_end - new_map_end,
+                rss_delta,
+            )?;
+            return Ok(());
+        }
+
+        self.alloc_free_region_exact(old_map_end, new_map_end - old_map_end)?;
+
+        let last_mapping = self.vm_mappings.find_one(&(old_map_end - 1)).unwrap();
+        let last_mapping_addr = last_mapping.map_to_addr();
+        debug_assert_eq!(last_mapping.map_end(), old_map_end);
+
+        self.check_extra_size_fits_rlimit(new_map_end - old_map_end)?;
+        let last_mapping = self.remove(&last_mapping_addr).unwrap();
+        let last_mapping = last_mapping.enlarge(new_map_end - old_map_end);
+        self.insert(last_mapping);
+        Ok(())
     }
 }
 
@@ -422,41 +526,112 @@ impl Vmar_ {
         Ok(())
     }
 
-    // Split and unmap the found mapping if resize smaller.
-    // Enlarge the last mapping if resize larger.
-    fn resize_mapping(&self, map_addr: Vaddr, old_size: usize, new_size: usize) -> Result<()> {
-        debug_assert!(map_addr % PAGE_SIZE == 0);
-        debug_assert!(old_size % PAGE_SIZE == 0);
-        debug_assert!(new_size % PAGE_SIZE == 0);
-
-        if new_size == 0 {
-            return_errno_with_message!(Errno::EINVAL, "can not resize a mapping to 0 size");
-        }
-
-        if new_size == old_size {
-            return Ok(());
-        }
-
-        let old_map_end = map_addr + old_size;
-        let new_map_end = map_addr + new_size;
-
-        if new_size < old_size {
-            self.remove_mapping(new_map_end..old_map_end)?;
-            return Ok(());
-        }
-
+    /// Splits and unmaps the found mapping if the new size is smaller.
+    /// Enlarges the last mapping if the new size is larger.
+    fn resize_mapping(
+        &self,
+        map_addr: Vaddr,
+        old_size: usize,
+        new_size: usize,
+        check_single_mapping: bool,
+    ) -> Result<()> {
+        let mut rss_delta = RssDelta::new(self);
         let mut inner = self.inner.write();
-        let last_mapping = inner.vm_mappings.find_one(&(old_map_end - 1)).unwrap();
-        let last_mapping_addr = last_mapping.map_to_addr();
-        let extra_mapping_start = last_mapping.map_end();
-
-        inner.check_expand_size(new_map_end - extra_mapping_start)?;
-
-        let last_mapping = inner.remove(&last_mapping_addr).unwrap();
-        inner.alloc_free_region_exact(extra_mapping_start, new_map_end - extra_mapping_start)?;
-        let last_mapping = last_mapping.enlarge(new_map_end - extra_mapping_start);
-        inner.insert(last_mapping);
+        if check_single_mapping {
+            inner.check_lies_in_single_mapping(map_addr, old_size)?;
+        }
+        inner.resize_mapping(&self.vm_space, map_addr, old_size, new_size, &mut rss_delta)?;
         Ok(())
+    }
+
+    fn remap(
+        &self,
+        old_addr: Vaddr,
+        old_size: usize,
+        new_addr: Option<Vaddr>,
+        new_size: usize,
+    ) -> Result<Vaddr> {
+        let mut inner = self.inner.write();
+        let old_mapping_addr = inner.check_lies_in_single_mapping(old_addr, old_size)?;
+
+        let mut old_range = old_addr..old_addr + old_size;
+        let mut old_size = old_size;
+        let mut rss_delta = RssDelta::new(self);
+
+        // Allocate a new free region that does not overlap with the old range.
+        let new_range = if let Some(new_addr) = new_addr {
+            let new_range = new_addr..new_addr.checked_add(new_size).ok_or(Errno::EINVAL)?;
+            if new_addr % PAGE_SIZE != 0
+                || !is_userspace_vaddr(new_addr)
+                || !is_userspace_vaddr(new_range.end)
+            {
+                return_errno_with_message!(Errno::EINVAL, "remap: invalid fixed new addr");
+            }
+            if is_intersected(&old_range, &new_range) {
+                return_errno_with_message!(
+                    Errno::EINVAL,
+                    "remap: the new range overlaps with the old one"
+                );
+            }
+            inner.alloc_free_region_exact_truncate(
+                &self.vm_space,
+                new_addr,
+                new_size,
+                &mut rss_delta,
+            )?
+        } else {
+            inner.alloc_free_region(new_size, PAGE_SIZE)?
+        };
+
+        // Create a new `VmMapping`.
+        let old_mapping = {
+            let vm_mapping = inner.remove(&old_mapping_addr).unwrap();
+            let (left, old_mapping, right) = vm_mapping.split_range(&old_range)?;
+            if let Some(left) = left {
+                inner.insert(left);
+            }
+            if let Some(right) = right {
+                inner.insert(right);
+            }
+            if new_size < old_size {
+                let (old_mapping, taken) = old_mapping.split(old_range.start + new_size)?;
+                rss_delta.add(taken.rss_type(), -(taken.unmap(&self.vm_space)? as isize));
+                old_size = new_size;
+                old_range = old_range.start..(old_range.start + old_size);
+                old_mapping
+            } else {
+                old_mapping
+            }
+        };
+        // Now we can ensure that `new_size >= old_size`.
+        let new_mapping = old_mapping.clone_for_remap_at(new_range.start)?;
+        inner.insert(new_mapping.enlarge(new_size - old_size));
+
+        // Move the mapping.
+        let preempt_guard = disable_preempt();
+        let total_range = old_range.start.min(new_range.start)..old_range.end.max(new_range.end);
+        let vmspace = self.vm_space();
+        let mut cursor = vmspace.cursor_mut(&preempt_guard, &total_range).unwrap();
+        let mut current_offset = 0;
+        cursor.jump(old_range.start).unwrap();
+        while let Some(mapped_va) = cursor.find_next(old_size - current_offset) {
+            let (va, Some((frame, prop))) = cursor.query().unwrap() else {
+                panic!("Found mapped page but query failed");
+            };
+            debug_assert_eq!(mapped_va, va.start);
+            cursor.unmap(PAGE_SIZE);
+
+            let offset = mapped_va - old_range.start;
+            cursor.jump(new_range.start + offset).unwrap();
+            cursor.map(frame, prop);
+
+            current_offset = offset + PAGE_SIZE;
+            cursor.jump(old_range.start + current_offset).unwrap();
+        }
+        cursor.flusher().dispatch_tlb_flush();
+        cursor.flusher().sync_tlb_flush();
+
+        Ok(new_range.start)
     }
 
     /// Returns the attached `VmSpace`.
@@ -783,7 +958,7 @@ where
 
         let mut inner = parent.0.inner.write();
 
-        inner.check_expand_size(map_size).or_else(|e| {
+        inner.check_extra_size_fits_rlimit(map_size).or_else(|e| {
             if can_overwrite {
                 let offset = offset.ok_or(Error::with_message(
                     Errno::EINVAL,
@@ -791,7 +966,7 @@ where
                 ))?;
                 // MAP_FIXED may remove pages overlapped with requested mapping.
                 let expand_size = map_size - inner.count_overlap_size(offset..offset + map_size);
-                inner.check_expand_size(expand_size)
+                inner.check_extra_size_fits_rlimit(expand_size)
             } else {
                 Err(e)
             }

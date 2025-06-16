@@ -883,11 +883,11 @@ mprotect05
 # mq_timedsend01
 # mq_unlink01
 
-# mremap01
-# mremap02
-# mremap03
+mremap01
+mremap02
+mremap03
 # mremap04
-# mremap05
+mremap05
 # mremap06
 
 # mseal01
