@@ -498,6 +498,7 @@ pub fn init_aux_vec(
     aux_vec.set(AuxKey::AT_PHDR, ph_addr as u64)?;
     aux_vec.set(AuxKey::AT_PHNUM, elf.ph_count() as u64)?;
     aux_vec.set(AuxKey::AT_PHENT, elf.ph_ent() as u64)?;
+    aux_vec.set(AuxKey::AT_SECURE, 0)?;
     let elf_entry = if elf.is_shared_object() {
         let base_load_offset = elf.base_load_address_offset();
         elf.entry_point() + elf_map_addr - base_load_offset as usize
