@@ -21,10 +21,10 @@ use crate::{
 pub fn sys_futex(
     futex_addr: Vaddr,
     futex_op: i32,
-    futex_val: u64,
+    futex_val: u32,
     utime_addr: Vaddr,
-    futex_new_addr: u64,
-    bitset: u64,
+    futex_new_addr: Vaddr,
+    bitset: u32,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
     let (futex_op, futex_flags) = futex_op_and_flags_from_u32(futex_op as _)?;
@@ -32,13 +32,6 @@ pub fn sys_futex(
         "futex_op = {:?}, futex_flags = {:?}, futex_addr = 0x{:x}, futex_val = 0x{:x}",
         futex_op, futex_flags, futex_addr, futex_val
     );
-
-    let get_futex_val = |val: i32| -> Result<usize> {
-        if val < 0 {
-            return_errno_with_message!(Errno::EINVAL, "the futex val must not be negative");
-        }
-        Ok(val as usize)
-    };
 
     let get_futex_timeout = |timeout_addr: Vaddr| -> Result<Option<ManagedTimeout<'static>>> {
         if timeout_addr == 0 {
@@ -107,21 +100,18 @@ pub fn sys_futex(
             .map(|_| 0)
         }
         FutexOp::FUTEX_WAKE => {
-            // From gVisor/test/syscalls/linux/futex.cc:260: "The Linux kernel wakes one waiter even if val is 0 or negative."
-            // To be consistent with Linux, we set the max_count to 1 if it is 0 or negative.
-            let max_count = (futex_val as i32).max(1) as usize;
-            futex_wake(futex_addr as _, max_count, pid).map(|count| count as isize)
+            let max_count = futex_val_to_max_count(futex_val);
+            futex_wake(futex_addr as _, max_count, pid)
         }
         FutexOp::FUTEX_WAKE_BITSET => {
-            // From gVisor/test/syscalls/linux/futex.cc:260: "The Linux kernel wakes one waiter even if val is 0 or negative."
-            // To be consistent with Linux, we set the max_count to 1 if it is 0 or negative.
-            let max_count = (futex_val as i32).max(1) as usize;
+            let max_count = futex_val_to_max_count(futex_val);
             futex_wake_bitset(futex_addr as _, max_count, bitset as _, pid)
-                .map(|count| count as isize)
         }
         FutexOp::FUTEX_REQUEUE => {
-            let max_nwakes = get_futex_val(futex_val as i32)?;
-            let max_nrequeues = get_futex_val(utime_addr as i32)?;
+            let max_nwakes = futex_val_to_max_count(futex_val);
+            // The `utime_addr` is used as the maximum number of requeues in this case.
+            // When `utime_addr` is 0 or negative, it means no requeues.
+            let max_nrequeues = (utime_addr as i32).max(0) as usize;
             futex_requeue(
                 futex_addr as _,
                 max_nwakes,
@@ -129,7 +119,6 @@ pub fn sys_futex(
                 futex_new_addr as _,
                 pid,
             )
-            .map(|nwakes| nwakes as _)
         }
         _ => {
             warn!("futex op = {:?}", futex_op);
@@ -144,4 +133,11 @@ pub fn sys_futex(
 
     debug!("futex returns, tid= {} ", ctx.posix_thread.tid());
     Ok(SyscallReturn::Return(res as _))
+}
+
+fn futex_val_to_max_count(futex_val: u32) -> usize {
+    // From gVisor/test/syscalls/linux/futex.cc:260: "The Linux kernel wakes one
+    // waiter even if val is 0 or negative." To be consistent with Linux, we set
+    // the max_count to 1 if it is 0 or negative.
+    (futex_val as i32).max(1) as usize
 }
