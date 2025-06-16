@@ -651,9 +651,9 @@ getxattr01
 # iopl01
 # iopl02
 
-# ioprio_get01
-# ioprio_set01
-# ioprio_set02
+ioprio_get01
+ioprio_set01
+ioprio_set02
 # ioprio_set03
 
 # io_cancel01
