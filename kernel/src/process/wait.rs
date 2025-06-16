@@ -48,9 +48,10 @@ pub fn wait_child_exit(
         |sigmask| sigmask + SIGCHLD,
         || {
             current.children_wait_queue().pause_until(|| {
-                let unwaited_children = current
-                    .children()
-                    .lock()
+                // Hold the children lock at first to avoid race conditions.
+                let mut children_lock = ctx.process.children().lock();
+
+                let unwaited_children = children_lock
                     .values()
                     .filter(|child| match child_filter {
                         ProcessFilter::Any => true,
@@ -67,20 +68,10 @@ pub fn wait_child_exit(
                     )));
                 }
 
-                // return immediately if we find a zombie child
-                let zombie_child = unwaited_children
-                    .iter()
-                    .find(|child| child.status().is_zombie());
-
-                if let Some(zombie_child) = zombie_child {
-                    let zombie_pid = zombie_child.pid();
-                    if wait_options.contains(WaitOptions::WNOWAIT) {
-                        // does not reap child, directly return
-                        return Some(Ok(Some(zombie_child.clone())));
-                    } else {
-                        reap_zombie_child(current, zombie_pid);
-                        return Some(Ok(Some(zombie_child.clone())));
-                    }
+                if let Some(zombie_child) =
+                    wait_child_zombie(unwaited_children, wait_options, &mut children_lock)
+                {
+                    return Some(Ok(Some(zombie_child)));
                 }
 
                 if wait_options.contains(WaitOptions::WNOHANG) {
@@ -96,9 +87,27 @@ pub fn wait_child_exit(
     Ok(zombie_child)
 }
 
+fn wait_child_zombie(
+    unwaited_children: Vec<Arc<Process>>,
+    wait_options: WaitOptions,
+    children_lock: &mut BTreeMap<Pid, Arc<Process>>,
+) -> Option<Arc<Process>> {
+    let zombie_child = unwaited_children
+        .iter()
+        .find(|child| child.status().is_zombie())?;
+
+    if wait_options.contains(WaitOptions::WNOWAIT) {
+        Some(zombie_child.clone())
+    } else {
+        let zombie_pid = zombie_child.pid();
+        reap_zombie_child(zombie_pid, children_lock);
+        Some(zombie_child.clone())
+    }
+}
+
 /// Free zombie child with pid, returns the exit code of child process.
-fn reap_zombie_child(process: &Process, pid: Pid) -> ExitCode {
-    let child_process = process.children().lock().remove(&pid).unwrap();
+fn reap_zombie_child(pid: Pid, children_lock: &mut BTreeMap<Pid, Arc<Process>>) -> ExitCode {
+    let child_process = children_lock.remove(&pid).unwrap();
     assert!(child_process.status().is_zombie());
 
     for task in child_process.tasks().lock().as_slice() {

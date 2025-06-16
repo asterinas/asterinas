@@ -6,9 +6,11 @@ use crate::{
     current_userspace,
     net::socket::{
         ip::{options::IpTtl, stream_options::CongestionControl},
-        util::LingerOption,
+        unix::CUserCred,
+        util::{FilterProgram, LingerOption},
     },
     prelude::*,
+    process::Gid,
 };
 
 /// Create an object by reading its C counterpart from the user space.
@@ -223,5 +225,56 @@ impl From<CLinger> for LingerOption {
         let is_on = value.l_onoff != 0;
         let timeout = Duration::new(value.l_linger as _, 0);
         LingerOption::new(is_on, timeout)
+    }
+}
+
+/// Reference: <https://elixir.bootlin.com/linux/v6.0.9/source/include/uapi/linux/filter.h#L31>.
+#[derive(Clone, Copy, Debug, Pod)]
+#[repr(C)]
+struct CSockFprog {
+    len: u16,
+    filter_addr: Vaddr,
+}
+
+impl ReadFromUser for FilterProgram {
+    fn read_from_user(addr: Vaddr, max_len: u32) -> Result<Self> {
+        if (max_len as usize) < core::mem::size_of::<CSockFprog>() {
+            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
+        };
+
+        let csock_fprg = current_userspace!().read_val::<CSockFprog>(addr)?;
+        FilterProgram::read_from_user(csock_fprg.filter_addr, csock_fprg.len as usize)
+    }
+}
+
+impl WriteToUser for CUserCred {
+    fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
+        let write_len = core::mem::size_of::<CUserCred>();
+
+        if (max_len as usize) < write_len {
+            return_errno_with_message!(Errno::EINVAL, "max_len is too short");
+        };
+
+        current_userspace!().write_val(addr, self)?;
+
+        Ok(write_len)
+    }
+}
+
+impl WriteToUser for Arc<[Gid]> {
+    fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
+        let write_len = core::mem::size_of::<Gid>() * self.len();
+
+        if (max_len as usize) < write_len {
+            // FIXME: We should update `max_len` in user space to `write_len` in this case
+            return_errno_with_message!(Errno::ERANGE, "max_len is too short");
+        }
+
+        for (i, gid) in self.iter().enumerate() {
+            let dst = addr + i * core::mem::size_of::<Gid>();
+            current_userspace!().write_val(dst, gid)?;
+        }
+
+        Ok(write_len)
     }
 }
