@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+use int_to_c_enum::TryFromInt;
 use ostd::{
     cpu::num_cpus,
     sync::{Waiter, Waker},
@@ -113,6 +114,154 @@ pub fn futex_wake_bitset(
     let (_, futex_bucket_ref) = get_futex_bucket(futex_key);
     let mut futex_bucket = futex_bucket_ref.lock();
     let res = futex_bucket.remove_and_wake_items(futex_key, max_count);
+
+    Ok(res)
+}
+
+/// This struct encodes the operation and comparison that are to be performed during
+/// the futex operation with `FUTEX_WAKE_OP`.
+///
+/// The encoding is as follows:
+///
+/// +---+---+-----------+-----------+
+/// |op |cmp|   oparg   |  cmparg   |
+/// +---+---+-----------+-----------+
+///   4   4       12          12    <== # of bits
+///
+/// Reference: https://man7.org/linux/man-pages/man2/futex.2.html.
+struct FutexWakeOpEncode {
+    op: FutexWakeOp,
+    /// A flag indicating that the operation will use `1 << oparg`
+    /// as the operand instead of `oparg` when it is set `true`.
+    ///
+    /// e.g. With this flag, [`FutexWakeOp::FUTEX_OP_ADD`] will be interpreted
+    /// as `res = (1 << oparg) + oldval`.
+    is_oparg_shift: bool,
+    cmp: FutexWakeCmp,
+    oparg: u32,
+    cmparg: u32,
+}
+
+#[derive(Debug, Copy, Clone, TryFromInt, PartialEq)]
+#[repr(u32)]
+#[expect(non_camel_case_types)]
+enum FutexWakeOp {
+    /// Calculate `res = oparg`.
+    FUTEX_OP_SET = 0,
+    /// Calculate `res = oparg + oldval`.
+    FUTEX_OP_ADD = 1,
+    /// Calculate `res = oparg | oldval`.
+    FUTEX_OP_OR = 2,
+    /// Calculate `res = oparg & !oldval`.
+    FUTEX_OP_ANDN = 3,
+    /// Calculate `res = oparg ^ oldval`.
+    FUTEX_OP_XOR = 4,
+}
+
+#[derive(Debug, Copy, Clone, TryFromInt, PartialEq)]
+#[repr(u32)]
+#[expect(non_camel_case_types)]
+enum FutexWakeCmp {
+    /// If (oldval == cmparg) do wake.
+    FUTEX_OP_CMP_EQ = 0,
+    /// If (oldval != cmparg) do wake.
+    FUTEX_OP_CMP_NE = 1,
+    /// If (oldval < cmparg) do wake.
+    FUTEX_OP_CMP_LT = 2,
+    /// If (oldval <= cmparg) do wake.
+    FUTEX_OP_CMP_LE = 3,
+    /// If (oldval > cmparg) do wake.
+    FUTEX_OP_CMP_GT = 4,
+    /// If (oldval >= cmparg) do wake.
+    FUTEX_OP_CMP_GE = 5,
+}
+
+impl FutexWakeOpEncode {
+    fn from_u32(bits: u32) -> Result<Self> {
+        let is_oparg_shift = (bits >> 31) & 1 == 1;
+        let op = FutexWakeOp::try_from((bits >> 28) & 0x7)?;
+        let cmp = FutexWakeCmp::try_from((bits >> 24) & 0xf)?;
+        let oparg = (bits >> 12) & 0xfff;
+        let cmparg = bits & 0xfff;
+
+        Ok(FutexWakeOpEncode {
+            op,
+            is_oparg_shift,
+            cmp,
+            oparg,
+            cmparg,
+        })
+    }
+
+    fn calculate_new_val(&self, old_val: u32) -> u32 {
+        let oparg = if self.is_oparg_shift {
+            1 << self.oparg
+        } else {
+            self.oparg
+        };
+
+        match self.op {
+            FutexWakeOp::FUTEX_OP_SET => oparg,
+            FutexWakeOp::FUTEX_OP_ADD => oparg.wrapping_add(old_val),
+            FutexWakeOp::FUTEX_OP_OR => oparg | old_val,
+            FutexWakeOp::FUTEX_OP_ANDN => oparg & !old_val,
+            FutexWakeOp::FUTEX_OP_XOR => oparg ^ old_val,
+        }
+    }
+
+    fn should_wake(&self, old_val: u32) -> bool {
+        match self.cmp {
+            FutexWakeCmp::FUTEX_OP_CMP_EQ => old_val == self.cmparg,
+            FutexWakeCmp::FUTEX_OP_CMP_NE => old_val != self.cmparg,
+            FutexWakeCmp::FUTEX_OP_CMP_LT => old_val < self.cmparg,
+            FutexWakeCmp::FUTEX_OP_CMP_LE => old_val <= self.cmparg,
+            FutexWakeCmp::FUTEX_OP_CMP_GT => old_val > self.cmparg,
+            FutexWakeCmp::FUTEX_OP_CMP_GE => old_val >= self.cmparg,
+        }
+    }
+}
+
+pub fn futex_wake_op(
+    futex_addr_1: Vaddr,
+    futex_addr_2: Vaddr,
+    max_count_1: usize,
+    max_count_2: usize,
+    wake_op_bits: u32,
+    ctx: &Context,
+    pid: Option<Pid>,
+) -> Result<usize> {
+    let wake_op = FutexWakeOpEncode::from_u32(wake_op_bits)?;
+
+    let futex_key_1 = FutexKey::new(futex_addr_1, FUTEX_BITSET_MATCH_ANY, pid);
+    let futex_key_2 = FutexKey::new(futex_addr_2, FUTEX_BITSET_MATCH_ANY, pid);
+    let (index_1, futex_bucket_ref_1) = get_futex_bucket(futex_key_1);
+    let (index_2, futex_bucket_ref_2) = get_futex_bucket(futex_key_2);
+
+    let (mut futex_bucket_1, mut futex_bucket_2) = if index_1 == index_2 {
+        (futex_bucket_ref_1.lock(), None)
+    } else {
+        // Ensure that we always lock the buckets in a consistent order to avoid deadlocks.
+        if index_1 < index_2 {
+            let bucket_1 = futex_bucket_ref_1.lock();
+            let bucket_2 = futex_bucket_ref_2.lock();
+            (bucket_1, Some(bucket_2))
+        } else {
+            let bucket_2 = futex_bucket_ref_2.lock();
+            let bucket_1 = futex_bucket_ref_1.lock();
+            (bucket_1, Some(bucket_2))
+        }
+    };
+
+    // FIXME: This should be an atomic read-modify-write memory access here.
+    let old_val = ctx.user_space().read_val(futex_addr_2)?;
+    let new_val = wake_op.calculate_new_val(old_val);
+    ctx.user_space().write_val(futex_addr_2, &new_val)?;
+
+    let mut res = futex_bucket_1.remove_and_wake_items(futex_key_1, max_count_1);
+    if wake_op.should_wake(old_val) {
+        let bucket = futex_bucket_2.as_mut().unwrap_or(&mut futex_bucket_1);
+        res += bucket.remove_and_wake_items(futex_key_2, max_count_2);
+    }
 
     Ok(res)
 }
