@@ -43,7 +43,7 @@ bitvec = { version = "1.0", default-features = false, features = ["alloc"] }
 x86_64 = "0.14.13"
 x86 = "0.52.0"
 acpi = "=5.2.0" # This upstream often bump minor versions with API changes
-multiboot2 = "0.23.0"
+multiboot2 = "0.24.0"
 iced-x86 = { version = "1.21.0", default-features = false, features = [
     "no_std",
     "decoder",
