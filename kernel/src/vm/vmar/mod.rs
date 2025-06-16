@@ -385,9 +385,8 @@ impl Vmar_ {
         if let Some(vm_mapping) = inner.vm_mappings.find_one(&address) {
             debug_assert!(vm_mapping.range().contains(&address));
 
-            let rss_increment = vm_mapping.handle_page_fault(&self.vm_space, page_fault_info)?;
-            self.add_rss_counter(vm_mapping.rss_type(), rss_increment as isize);
-            return Ok(());
+            let mut rss_delta = RssDelta::new(self);
+            return vm_mapping.handle_page_fault(&self.vm_space, page_fault_info, &mut rss_delta);
         }
 
         return_errno_with_message!(Errno::EACCES, "page fault addr is not in current vmar");
@@ -413,14 +412,13 @@ impl Vmar_ {
 
     pub fn remove_mapping(&self, range: Range<usize>) -> Result<()> {
         let mut inner = self.inner.write();
-        let mut rss_delta = RssDelta::new();
+        let mut rss_delta = RssDelta::new(self);
         inner.alloc_free_region_exact_truncate(
             &self.vm_space,
             range.start,
             range.len(),
             &mut rss_delta,
         )?;
-        self.add_rss_delta(rss_delta);
         Ok(())
     }
 
@@ -490,7 +488,7 @@ impl Vmar_ {
             let mut new_cursor = new_vmspace.cursor_mut(&preempt_guard, &range).unwrap();
             let cur_vmspace = self.vm_space();
             let mut cur_cursor = cur_vmspace.cursor_mut(&preempt_guard, &range).unwrap();
-            let mut rss_delta = RssDelta::new();
+            let mut rss_delta = RssDelta::new(&new_vmar_);
 
             for vm_mapping in inner.vm_mappings.iter() {
                 let base = vm_mapping.map_to_addr();
@@ -508,7 +506,6 @@ impl Vmar_ {
 
                 rss_delta.add(vm_mapping.rss_type(), num_copied as isize);
             }
-            new_vmar_.add_rss_delta(rss_delta);
 
             cur_cursor.flusher().issue_tlb_flush(TlbFlushOp::All);
             cur_cursor.flusher().dispatch_tlb_flush();
@@ -526,14 +523,6 @@ impl Vmar_ {
         // There are races but updating a remote counter won't cause any problems.
         let cpu_id = CpuId::current_racy();
         self.rss_counters[rss_type as usize].add(cpu_id, val);
-    }
-
-    fn add_rss_delta(&self, rss_delta: RssDelta) {
-        for i in 0..NUM_RSS_COUNTERS {
-            let rss_type = RssType::try_from(i).unwrap();
-            let delta = rss_delta.get(rss_type);
-            self.add_rss_counter(rss_type, delta);
-        }
     }
 }
 
@@ -816,14 +805,13 @@ where
                 Errno::EINVAL,
                 "offset cannot be None since can overwrite is set",
             ))?;
-            let mut rss_delta = RssDelta::new();
+            let mut rss_delta = RssDelta::new(&parent.0);
             inner.alloc_free_region_exact_truncate(
                 parent.vm_space(),
                 offset,
                 map_size,
                 &mut rss_delta,
             )?;
-            parent.0.add_rss_delta(rss_delta);
             offset
         } else if let Some(offset) = offset {
             inner.alloc_free_region_exact(offset, map_size)?;
@@ -918,7 +906,7 @@ pub fn get_intersected_range(range1: &Range<usize>, range2: &Range<usize>) -> Ra
 /// The type representing categories of Resident Set Size (RSS).
 ///
 /// See <https://github.com/torvalds/linux/blob/fac04efc5c793dccbd07e2d59af9f90b7fc0dca4/include/linux/mm_types_task.h#L26..L32>
-#[repr(usize)]
+#[repr(u32)]
 #[expect(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, TryFromInt)]
 pub enum RssType {
@@ -928,19 +916,35 @@ pub enum RssType {
 
 const NUM_RSS_COUNTERS: usize = 2;
 
-struct RssDelta([isize; NUM_RSS_COUNTERS]);
+pub(super) struct RssDelta<'a> {
+    delta: [isize; NUM_RSS_COUNTERS],
+    operated_vmar: &'a Vmar_,
+}
 
-impl RssDelta {
-    pub(self) fn new() -> Self {
-        Self([0; NUM_RSS_COUNTERS])
+impl<'a> RssDelta<'a> {
+    pub(self) fn new(operated_vmar: &'a Vmar_) -> Self {
+        Self {
+            delta: [0; NUM_RSS_COUNTERS],
+            operated_vmar,
+        }
     }
 
     pub(self) fn add(&mut self, rss_type: RssType, increment: isize) {
-        self.0[rss_type as usize] += increment;
+        self.delta[rss_type as usize] += increment;
     }
 
-    pub(self) fn get(&self, rss_type: RssType) -> isize {
-        self.0[rss_type as usize]
+    fn get(&self, rss_type: RssType) -> isize {
+        self.delta[rss_type as usize]
+    }
+}
+
+impl Drop for RssDelta<'_> {
+    fn drop(&mut self) {
+        for i in 0..NUM_RSS_COUNTERS {
+            let rss_type = RssType::try_from(i as u32).unwrap();
+            let delta = self.get(rss_type);
+            self.operated_vmar.add_rss_counter(rss_type, delta);
+        }
     }
 }
 
