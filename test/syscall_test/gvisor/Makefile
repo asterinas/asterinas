@@ -25,6 +25,7 @@ TESTS ?= \
 	mknod_test \
 	mmap_test \
 	mount_test \
+	mremap_test \
 	msync_test \
 	open_create_test \
 	open_test \

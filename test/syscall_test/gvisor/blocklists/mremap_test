@@ -1,0 +1,6 @@
+MremapDeathTest.SharedAnon
+MremapTest.InPlace_Copy
+MremapTest.MayMove_Copy
+MremapTest.MustMove_Copy
+PrivateShared/MremapParamTest.InPlace_ExpansionFailure/*
+PrivateShared/MremapParamTest.Fixed_ShrinkingAcrossVMAs/*
