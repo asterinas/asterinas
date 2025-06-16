@@ -176,3 +176,37 @@ FN_TEST(close_second_then_poll)
 	TEST_SUCC(close(fildes[0]));
 }
 END_TEST()
+
+// See also `zero_recvs_may_fail` in `unix_err.c`
+FN_TEST(zero_reads_always_succeed)
+{
+	int fildes[2];
+	char buf[1] = { 'z' };
+
+	CHECK(pipe(fildes));
+
+	TEST_SUCC(read(fildes[0], buf, 0));
+
+	TEST_RES(write(fildes[1], buf, 1), _ret == 1);
+	TEST_SUCC(read(fildes[0], buf, 0));
+
+	TEST_SUCC(close(fildes[0]));
+}
+END_TEST()
+
+// See also `zero_sends_may_fail` in `unix_err.c`
+FN_TEST(zero_writes_always_succeed)
+{
+	int fildes[2];
+	char buf[1] = { 'z' };
+
+	CHECK(pipe(fildes));
+
+	TEST_SUCC(write(fildes[1], buf, 0));
+
+	TEST_SUCC(close(fildes[0]));
+	TEST_SUCC(write(fildes[1], buf, 0));
+
+	TEST_SUCC(close(fildes[1]));
+}
+END_TEST()

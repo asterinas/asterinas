@@ -129,7 +129,7 @@ where
     ) -> Result<usize> {
         let MessageHeader {
             addr,
-            control_message,
+            control_messages,
         } = message_header;
 
         let remote = match addr {
@@ -137,9 +137,14 @@ where
             Some(addr) => Some(addr.try_into()?),
         };
 
-        if control_message.is_some() {
+        if !control_messages.is_empty() {
             // TODO: Support sending control message
             warn!("sending control message is not supported");
+        }
+
+        if reader.is_empty() {
+            // Based on how Linux behaves, zero-sized messages are not allowed for netlink sockets.
+            return_errno_with_message!(Errno::ENODATA, "there are no data to send");
         }
 
         // TODO: Make sure our blocking behavior matches that of Linux
@@ -155,7 +160,7 @@ where
 
         // TODO: Receive control message
 
-        let message_header = MessageHeader::new(Some(addr), None);
+        let message_header = MessageHeader::new(Some(addr), Vec::new());
 
         Ok((received_len, message_header))
     }

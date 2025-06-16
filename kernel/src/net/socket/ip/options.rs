@@ -103,6 +103,6 @@ impl IpTtl {
     }
 }
 
-pub trait SetIpLevelOption {
+pub(super) trait SetIpLevelOption {
     fn set_hdrincl(&self, _hdrincl: bool) -> Result<()>;
 }
