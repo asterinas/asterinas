@@ -16,6 +16,11 @@ pub(super) fn exit_process(current_process: &Process) {
     current_process.status().set_zombie();
     current_process.status().set_vfork_child(false);
 
+    if let Some(cgroup) = current_process.cgroup() {
+        // Remove the process from the cgroup.
+        cgroup.remove_process(current_process.pid());
+    }
+
     // Drop fields in `Process`.
     current_process.lock_root_vmar().set_vmar(None);
 

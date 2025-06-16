@@ -3,29 +3,8 @@
 use alloc::collections::BTreeMap;
 use core::fmt::Debug;
 
-use bitflags::bitflags;
-
 use super::{Error, Result, SysStr};
-
-bitflags! {
-    /// Flags defining the properties and permissions of a `SysAttr`.
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-    pub struct SysAttrFlags: u32 {
-        /// Indicates whether the attribute can be read.
-        const CAN_READ = 1 << 0;
-        /// Indicates whether the attribute can be written to.
-        const CAN_WRITE = 1 << 1;
-        /// Indicates whether an attribute is a binary one
-        /// (rather than a textual one).
-        const IS_BINARY = 1 << 4;
-    }
-}
-
-impl Default for SysAttrFlags {
-    fn default() -> Self {
-        Self::CAN_READ
-    }
-}
+use crate::SysMode;
 
 /// An attribute may be fetched or updated via the methods of `SysNode`
 /// such as `SysNode::read_attr` and  `SysNode::write_attr`.
@@ -35,14 +14,14 @@ pub struct SysAttr {
     id: u8,
     /// The name of the attribute. Used to look up the attribute in a `SysAttrSet`.
     name: SysStr,
-    /// Flags defining the behavior and permissions of the attribute.
-    flags: SysAttrFlags,
+    /// The mode defining the initial permissions of the attribute.
+    mode: SysMode,
 }
 
 impl SysAttr {
     /// Creates a new attribute.
-    pub fn new(id: u8, name: SysStr, flags: SysAttrFlags) -> Self {
-        Self { id, name, flags }
+    pub fn new(id: u8, name: SysStr, mode: SysMode) -> Self {
+        Self { id, name, mode }
     }
 
     /// Returns the unique ID of the attribute within its set.
@@ -55,9 +34,9 @@ impl SysAttr {
         &self.name
     }
 
-    /// Returns the flags associated with the attribute.
-    pub fn flags(&self) -> SysAttrFlags {
-        self.flags
+    /// Returns the [`SysMode`] representing the initial permissions of the attribute.
+    pub fn mode(&self) -> SysMode {
+        self.mode
     }
 }
 
@@ -123,14 +102,14 @@ impl SysAttrSetBuilder {
     /// Adds an attribute definition to the builder.
     ///
     /// If an attribute with the same name already exists, this is a no-op.
-    pub fn add(&mut self, name: SysStr, flags: SysAttrFlags) -> &mut Self {
+    pub fn add(&mut self, name: SysStr, mode: SysMode) -> &mut Self {
         if self.attrs.contains_key(&name) {
             return self;
         }
 
         let id = self.next_id;
         self.next_id += 1;
-        let new_attr = SysAttr::new(id, name.clone(), flags);
+        let new_attr = SysAttr::new(id, name.clone(), mode);
         self.attrs.insert(name, new_attr);
         self
     }
