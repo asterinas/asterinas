@@ -113,7 +113,6 @@ pub fn futex_wake_bitset(
     let (_, futex_bucket_ref) = get_futex_bucket(futex_key);
     let mut futex_bucket = futex_bucket_ref.lock();
     let res = futex_bucket.remove_and_wake_items(futex_key, max_count);
-    drop(futex_bucket);
 
     Ok(res)
 }
