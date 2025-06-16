@@ -3,10 +3,7 @@ PrivateFutexTest.*
 RobustFutexTest.*
 SharedFutexTest.WakeInterprocessFile_NoRandomSave
 
-SharedPrivate/PrivateAndSharedFutexTest.WakeOpCondSuccess_NoRandomSave/*
-SharedPrivate/PrivateAndSharedFutexTest.WakeOpCondFailure_NoRandomSave/*
 SharedPrivate/PrivateAndSharedFutexTest.NoWakeInterprocessPrivateAnon_NoRandomSave/*
-SharedPrivate/PrivateAndSharedFutexTest.WakeWrongKind_NoRandomSave/1
 
 SharedPrivate/PrivateAndSharedFutexTest.PIBasic/*
 SharedPrivate/PrivateAndSharedFutexTest.PIConcurrency_NoRandomSave/*
