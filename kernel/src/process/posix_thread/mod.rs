@@ -21,7 +21,7 @@ use crate::{
     events::Observer,
     fs::{file_table::FileTable, thread_info::ThreadFsInfo},
     prelude::*,
-    process::signal::constants::SIGCONT,
+    process::{posix_thread::status::ThreadStatus, signal::constants::SIGCONT},
     thread::{Thread, Tid},
     time::{clocks::ProfClock, Timer, TimerManager},
 };
@@ -32,6 +32,7 @@ pub mod futex;
 mod name;
 mod posix_thread_ext;
 mod robust_list;
+mod status;
 mod thread_local;
 pub mod thread_table;
 
@@ -40,6 +41,7 @@ pub use exit::{do_exit, do_exit_group};
 pub use name::{ThreadName, MAX_THREAD_NAME_LEN};
 pub use posix_thread_ext::AsPosixThread;
 pub use robust_list::RobustListHead;
+pub use status::ThreadWaitStatus;
 pub use thread_local::{AsThreadLocal, FileTableRefMut, ThreadLocal};
 
 pub struct PosixThread {
@@ -67,6 +69,7 @@ pub struct PosixThread {
     /// The per-thread signal [`Waker`], which will be used to wake up the thread
     /// when enqueuing a signal.
     signalled_waker: SpinLock<Option<Arc<Waker>>>,
+    status: SpinLock<ThreadStatus>,
 
     /// A profiling clock measures the user CPU time and kernel CPU time in the thread.
     prof_clock: Arc<ProfClock>,
@@ -177,6 +180,35 @@ impl PosixThread {
         }
 
         return_errno_with_message!(Errno::EPERM, "sending signal to the thread is not allowed.");
+    }
+
+    /// Stops the thread.
+    pub fn stop(&self, signum: SigNum) {
+        let status_changed = self.status.lock().stop(signum);
+        if status_changed {
+            self.wake_parent_children_wait_queue();
+        }
+    }
+
+    /// Resumes the thread.
+    pub fn resume(&self) {
+        let status_changed = self.status.lock().resume();
+        if status_changed {
+            self.wake_parent_children_wait_queue();
+        }
+    }
+
+    fn wake_parent_children_wait_queue(&self) {
+        let parent_process = {
+            let process = self.process.upgrade().unwrap();
+            let parent = process.parent.lock();
+            parent.process().upgrade().unwrap()
+        };
+        parent_process.children_wait_queue().wake_all();
+    }
+
+    pub fn status(&self) -> &SpinLock<ThreadStatus> {
+        &self.status
     }
 
     /// Sets the input [`Waker`] as the signalled waker of this thread.

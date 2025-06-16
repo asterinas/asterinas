@@ -100,48 +100,6 @@ impl Thread {
         self.status.load(Ordering::Acquire).is_exited()
     }
 
-    /// Returns whether the thread is stopped.
-    pub fn is_stopped(&self) -> bool {
-        self.status.load(Ordering::Acquire).is_stopped()
-    }
-
-    /// Stops the thread if it is running.
-    ///
-    /// If the previous status is not [`ThreadStatus::Running`], this function
-    /// returns [`Err`] with the previous state. Otherwise, it sets the status
-    /// to [`ThreadStatus::Stopped`] and returns [`Ok`] with the previous state.
-    ///
-    /// This function only sets the status to [`ThreadStatus::Stopped`],
-    /// without initiating a reschedule.
-    pub fn stop(&self) -> core::result::Result<ThreadStatus, ThreadStatus> {
-        self.status.compare_exchange(
-            ThreadStatus::Running,
-            ThreadStatus::Stopped,
-            Ordering::AcqRel,
-            Ordering::Acquire,
-        )
-    }
-
-    /// Resumes running the thread if it is stopped.
-    ///
-    /// If the previous status is not [`ThreadStatus::Stopped`], this function
-    /// returns [`None`]. Otherwise, it sets the status to
-    /// [`ThreadStatus::Running`] and returns [`Some(())`].
-    ///
-    /// This function only sets the status to [`ThreadStatus::Running`],
-    /// without initiating a reschedule.
-    pub fn resume(&self) -> Option<()> {
-        self.status
-            .compare_exchange(
-                ThreadStatus::Stopped,
-                ThreadStatus::Running,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            )
-            .ok()
-            .map(|_| ())
-    }
-
     pub(super) fn exit(&self) {
         self.status.store(ThreadStatus::Exited, Ordering::Release);
     }
