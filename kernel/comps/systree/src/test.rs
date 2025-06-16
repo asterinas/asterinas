@@ -15,8 +15,8 @@ use ostd::{
 };
 
 use super::{
-    impl_cast_methods_for_branch, impl_cast_methods_for_symlink, Error, Result, SysAttrFlags,
-    SysAttrSet, SysAttrSetBuilder, SysBranchNode, SysBranchNodeFields, SysNode, SysNodeId,
+    impl_cast_methods_for_branch, impl_cast_methods_for_symlink, Error, Result, SysAttrSet,
+    SysAttrSetBuilder, SysBranchNode, SysBranchNodeFields, SysMode, SysNode, SysNodeId,
     SysNodeType, SysObj, SysStr, SysSymlink, SysTree,
 };
 
@@ -30,12 +30,9 @@ impl DeviceNode {
     fn new(name: &str) -> Arc<Self> {
         let mut builder = SysAttrSetBuilder::new();
         builder
-            .add(Cow::Borrowed("model"), SysAttrFlags::CAN_READ)
-            .add(Cow::Borrowed("vendor"), SysAttrFlags::CAN_READ)
-            .add(
-                Cow::Borrowed("status"),
-                SysAttrFlags::CAN_READ | SysAttrFlags::CAN_WRITE,
-            );
+            .add(Cow::Borrowed("model"), SysMode::DEFAULT_RO_ATTR_MODE)
+            .add(Cow::Borrowed("vendor"), SysMode::DEFAULT_RO_ATTR_MODE)
+            .add(Cow::Borrowed("status"), SysMode::DEFAULT_RW_ATTR_MODE);
 
         let attrs = builder.build().expect("Failed to build attribute set");
         let name_owned: SysStr = name.to_string().into();
@@ -73,7 +70,7 @@ impl SysNode for DeviceNode {
 
         let attr = self.fields.attr_set().get(name).unwrap();
         // Check if attribute is readable
-        if !attr.flags().contains(SysAttrFlags::CAN_READ) {
+        if !attr.mode().can_read() {
             return Err(Error::PermissionDenied);
         }
         let value = match name {
@@ -98,7 +95,7 @@ impl SysNode for DeviceNode {
             .ok_or(Error::AttributeError)?;
 
         // Check if attribute is writable
-        if !attr.flags().contains(SysAttrFlags::CAN_WRITE) {
+        if !attr.mode().can_write() {
             return Err(Error::PermissionDenied);
         }
 
@@ -110,6 +107,10 @@ impl SysNode for DeviceNode {
             .map_err(|_| Error::AttributeError)?;
 
         Ok(read_len)
+    }
+
+    fn mode(&self) -> SysMode {
+        SysMode::DEFAULT_RW_MODE
     }
 }
 
