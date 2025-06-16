@@ -112,7 +112,7 @@ impl FsResolver {
             );
         }
 
-        if creation_flags.contains(CreationFlags::O_TRUNC) {
+        if inode_type.is_regular_file() && creation_flags.contains(CreationFlags::O_TRUNC) {
             target_dentry.resize(0)?;
         }
         InodeHandle::new(target_dentry, open_args.access_mode, open_args.status_flags)
