@@ -360,3 +360,29 @@ FN_TEST(ip_hdrincl)
 		   ENOPROTOOPT);
 }
 END_TEST()
+
+FN_TEST(ip_recverr)
+{
+	int val = 0;
+	socklen_t len = sizeof(val);
+
+	// 1. Check default value
+	TEST_RES(getsockopt(sk_unbound, IPPROTO_IP, IP_RECVERR, &val, &len),
+		 val == 0 && len == 4);
+
+	// 2. Set value
+	val = 100;
+	TEST_SUCC(setsockopt(sk_unbound, IPPROTO_IP, IP_RECVERR, &val, len));
+	TEST_RES(getsockopt(sk_unbound, IPPROTO_IP, IP_RECVERR, &val, &len),
+		 val == 1 && len == 4);
+}
+END_TEST()
+
+FN_SETUP(cleanup)
+{
+	CHECK(close(sk_unbound));
+	CHECK(close(sk_listen));
+	CHECK(close(sk_connected));
+	CHECK(close(sk_accepted));
+}
+END_SETUP()
