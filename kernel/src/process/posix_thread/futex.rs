@@ -5,7 +5,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use int_to_c_enum::TryFromInt;
 use ostd::{
     cpu::num_cpus,
-    sync::{Waiter, Waker},
+    sync::{PreemptDisabled, Waiter, Waker},
 };
 use spin::Once;
 
@@ -285,26 +285,11 @@ pub fn futex_wake_op(
 
     let futex_key_1 = FutexKey::new(futex_addr_1, FUTEX_BITSET_MATCH_ANY, pid)?;
     let futex_key_2 = FutexKey::new(futex_addr_2, FUTEX_BITSET_MATCH_ANY, pid)?;
-    let (index_1, futex_bucket_ref_1) = get_futex_bucket(&futex_key_1);
-    let (index_2, futex_bucket_ref_2) = get_futex_bucket(&futex_key_2);
 
     let user_space = ctx.user_space();
 
     let (mut futex_bucket_1, mut futex_bucket_2, old_val) = loop {
-        let (futex_bucket_1, futex_bucket_2) = if index_1 == index_2 {
-            (futex_bucket_ref_1.lock(), None)
-        } else {
-            // Ensure that we always lock the buckets in a consistent order to avoid deadlocks.
-            if index_1 < index_2 {
-                let bucket_1 = futex_bucket_ref_1.lock();
-                let bucket_2 = futex_bucket_ref_2.lock();
-                (bucket_1, Some(bucket_2))
-            } else {
-                let bucket_2 = futex_bucket_ref_2.lock();
-                let bucket_1 = futex_bucket_ref_1.lock();
-                (bucket_1, Some(bucket_2))
-            }
-        };
+        let (futex_bucket_1, futex_bucket_2) = lock_bucket_pairs(&futex_key_1, &futex_key_2);
 
         let pf_result = ctx.thread_local.with_page_fault_disabled(|| {
             user_space
@@ -355,39 +340,22 @@ pub fn futex_requeue(
 
     let futex_key = FutexKey::new(futex_addr, FUTEX_BITSET_MATCH_ANY, pid)?;
     let futex_new_key = FutexKey::new(futex_new_addr, FUTEX_BITSET_MATCH_ANY, pid)?;
-    let (bucket_idx, futex_bucket_ref) = get_futex_bucket(&futex_key);
-    let (new_bucket_idx, futex_new_bucket_ref) = get_futex_bucket(&futex_new_key);
 
     let nwakes = {
-        if bucket_idx == new_bucket_idx {
-            let mut futex_bucket = futex_bucket_ref.lock();
-            let nwakes = futex_bucket.remove_and_wake_items(&futex_key, max_nwakes);
-            futex_bucket.update_item_keys(&futex_key, &futex_new_key, max_nrequeues);
-            drop(futex_bucket);
-            nwakes
-        } else {
-            let (mut futex_bucket, mut futex_new_bucket) = {
-                if bucket_idx < new_bucket_idx {
-                    let futex_bucket = futex_bucket_ref.lock();
-                    let futext_new_bucket = futex_new_bucket_ref.lock();
-                    (futex_bucket, futext_new_bucket)
-                } else {
-                    // bucket_idx > new_bucket_idx
-                    let futex_new_bucket = futex_new_bucket_ref.lock();
-                    let futex_bucket = futex_bucket_ref.lock();
-                    (futex_bucket, futex_new_bucket)
-                }
-            };
+        let (mut futex_bucket, futex_new_bucket) = lock_bucket_pairs(&futex_key, &futex_new_key);
+        let nwakes = futex_bucket.remove_and_wake_items(&futex_key, max_nwakes);
 
-            let nwakes = futex_bucket.remove_and_wake_items(&futex_key, max_nwakes);
+        if let Some(mut futex_new_bucket) = futex_new_bucket {
             futex_bucket.requeue_items_to_another_bucket(
                 &futex_key,
                 &mut futex_new_bucket,
                 &futex_new_key,
                 max_nrequeues,
             );
-            nwakes
+        } else {
+            futex_bucket.update_item_keys(&futex_key, &futex_new_key, max_nrequeues);
         }
+        nwakes
     };
     Ok(nwakes)
 }
@@ -404,6 +372,37 @@ fn get_bucket_count() -> usize {
 
 fn get_futex_bucket(key: &FutexKey) -> (usize, &'static SpinLock<FutexBucket>) {
     FUTEX_BUCKETS.get().unwrap().get_bucket(key)
+}
+
+/// Locks the futex buckets associated with a given pair of keys in a consistent
+/// order to avoid deadlock.
+///
+/// The order is defined by comparing the respective bucket indices and then locking
+/// the one with the lowest index first. If both keys belong to the same bucket,
+/// lock it and return the second lock guard as `None`.
+fn lock_bucket_pairs(
+    futex_key_1: &FutexKey,
+    futex_key_2: &FutexKey,
+) -> (
+    SpinLockGuard<'static, FutexBucket, PreemptDisabled>,
+    Option<SpinLockGuard<'static, FutexBucket, PreemptDisabled>>,
+) {
+    let (index_1, futex_bucket_ref_1) = get_futex_bucket(futex_key_1);
+    let (index_2, futex_bucket_ref_2) = get_futex_bucket(futex_key_2);
+
+    match index_1.cmp(&index_2) {
+        core::cmp::Ordering::Equal => (futex_bucket_ref_1.lock(), None),
+        core::cmp::Ordering::Less => {
+            let bucket_1 = futex_bucket_ref_1.lock();
+            let bucket_2 = futex_bucket_ref_2.lock();
+            (bucket_1, Some(bucket_2))
+        }
+        core::cmp::Ordering::Greater => {
+            let bucket_2 = futex_bucket_ref_2.lock();
+            let bucket_1 = futex_bucket_ref_1.lock();
+            (bucket_1, Some(bucket_2))
+        }
+    }
 }
 
 /// Initialize the futex system.
