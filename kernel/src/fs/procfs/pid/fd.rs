@@ -27,12 +27,13 @@ impl FdDirOps {
             .parent(parent)
             .build()
             .unwrap();
-        file_table
-            .lock()
-            .as_ref()
-            .unwrap()
-            .read()
-            .register_observer(Arc::downgrade(&fd_inode) as _);
+        // Guard against the race condition when procfs is being accessed for an exiting process,
+        // whose file table may have already been released.
+        if let Some(file_table_ref) = file_table.lock().as_ref() {
+            file_table_ref
+                .read()
+                .register_observer(Arc::downgrade(&fd_inode) as _);
+        }
 
         fd_inode
     }
