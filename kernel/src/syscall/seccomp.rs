@@ -9,49 +9,45 @@ pub fn sys_seccomp(
     uargs: Vaddr,
     ctx: &Context,
 ) -> Result<SyscallReturn> {
-    let operation = SeccompOperation::from_bits(operation)
-        .ok_or(Error::with_message(Errno::EINVAL, "invalid operation"))?;
+    let operation = SeccompOperation::try_from_raw(operation, flags, uargs)?;
 
-    let flags = SeccompFlags::from_bits(flags)
-        .ok_or(Error::with_message(Errno::EINVAL, "invalid flags"))?;
     match operation {
-        SeccompOperation::SECCOMP_SET_MODE_STRICT => {
-            if flags.bits() != 0 || uargs != 0 {
-                return_errno_with_message!(Errno::EINVAL, "invalid flags or uargs");
-            }
+        SeccompOperation::EnterStrictMode => {
             seccomp_set_mode_strict(ctx)?;
         }
-        SeccompOperation::SECCOMP_SET_MODE_FILTER => seccomp_set_mode_filter(flags, uargs, ctx)?,
-        SeccompOperation::SECCOMP_GET_ACTION_AVAIL => {
-            if flags.bits() != 0 {
-                return_errno_with_message!(Errno::EINVAL, "invalid uargs");
-            }
-            seccomp_get_action_avail(uargs)?;
+        SeccompOperation::EnterFilterMode(flags, filter) => {
+            seccomp_set_mode_filter(flags, filter, ctx)?
         }
-        SeccompOperation::SECCOMP_GET_NOTIF_SIZES => {
-            if flags.bits() != 0 {
-                return_errno_with_message!(Errno::EINVAL, "invalid flags");
-            }
+        SeccompOperation::GetFilterReturnAction(uargs) => {
+            seccomp_get_action_avail(uargs, ctx)?;
+        }
+        SeccompOperation::GetNotificationStructSizes(uargs) => {
             seccomp_get_notif_sizes(uargs, ctx)?;
         }
-        _ => return_errno_with_message!(Errno::EINVAL, "invalid operation"),
     }
     Ok(SyscallReturn::Return(0))
 }
 
 fn seccomp_set_mode_strict(_ctx: &Context) -> Result<()> {
     // TODO: Implement this functionality.
+    warn!("seccomp_set_mode_strict is not implemented");
     Ok(())
 }
 
-fn seccomp_set_mode_filter(_flags: SeccompFlags, _uargs: Vaddr, _ctx: &Context) -> Result<()> {
+fn seccomp_set_mode_filter(
+    _flags: SeccompFilterFlags,
+    _uargs: Vaddr,
+    _ctx: &Context,
+) -> Result<()> {
     // TODO: Implement this functionality.
+    warn!("seccomp_set_mode_filter is not implemented");
     Ok(())
 }
 
 /// Test to see if an action is supported by the kernel.
-fn seccomp_get_action_avail(uargs: Vaddr) -> Result<()> {
-    let action = uargs as u32;
+fn seccomp_get_action_avail(uargs: Vaddr, ctx: &Context) -> Result<()> {
+    let user_space = ctx.user_space();
+    let action = user_space.read_val::<u32>(uargs)?;
 
     if action == SeccompAction::SECCOMP_RET_KILL_PROCESS.bits()
         || action == SeccompAction::SECCOMP_RET_KILL_THREAD.bits()
@@ -89,15 +85,48 @@ fn seccomp_get_notif_sizes(usizes: Vaddr, ctx: &Context) -> Result<()> {
     Ok(())
 }
 
-bitflags! {
-    /// Valid operations for seccomp syscall.
-    ///
-    /// Reference: <https://elixir.bootlin.com/linux/v6.15/source/include/uapi/linux/seccomp.h#L15>.
-    struct SeccompOperation: u32 {
-        const SECCOMP_SET_MODE_STRICT  = 0;
-        const SECCOMP_SET_MODE_FILTER  = 1;
-        const SECCOMP_GET_ACTION_AVAIL = 2;
-        const SECCOMP_GET_NOTIF_SIZES  = 3;
+/// Valid operations for seccomp syscall.
+///
+/// Reference: <https://elixir.bootlin.com/linux/v6.15/source/include/uapi/linux/seccomp.h#L15>.
+enum SeccompOperation {
+    /// Enters into the strict mode.
+    EnterStrictMode,
+    /// Enters into the filter mode.
+    EnterFilterMode(/*flags :*/ SeccompFilterFlags, /*filter :*/ Vaddr),
+    /// Gets all available filter return action.
+    GetFilterReturnAction(/* output: */ Vaddr),
+    /// Gets the sizes of user-space notification structs.
+    GetNotificationStructSizes(/* output: */ Vaddr),
+}
+
+impl SeccompOperation {
+    pub fn try_from_raw(op: u32, flags: u32, uargs: Vaddr) -> Result<Self> {
+        match op {
+            0 => {
+                if flags != 0 || uargs != 0 {
+                    return_errno_with_message!(Errno::EINVAL, "invalid flags or uargs");
+                }
+                Ok(SeccompOperation::EnterStrictMode)
+            }
+            1 => {
+                let flags = SeccompFilterFlags::from_bits(flags)
+                    .ok_or(Error::with_message(Errno::EINVAL, "invalid flags"))?;
+                Ok(SeccompOperation::EnterFilterMode(flags, uargs))
+            }
+            2 => {
+                if flags != 0 {
+                    return_errno_with_message!(Errno::EINVAL, "invalid flags");
+                }
+                Ok(SeccompOperation::GetFilterReturnAction(uargs))
+            }
+            3 => {
+                if flags != 0 {
+                    return_errno_with_message!(Errno::EINVAL, "invalid flags");
+                }
+                Ok(SeccompOperation::GetNotificationStructSizes(uargs))
+            }
+            _ => return_errno_with_message!(Errno::EINVAL, "invalid operation"),
+        }
     }
 }
 
@@ -105,7 +134,7 @@ bitflags! {
     /// Valid flags for SECCOMP_SET_MODE_FILTER.
     ///
     /// Reference: https://elixir.bootlin.com/linux/v6.15/source/include/uapi/linux/seccomp.h#L21
-    struct SeccompFlags: u32 {
+    struct SeccompFilterFlags: u32 {
         const SECCOMP_FILTER_FLAG_TSYNC             = 1 << 0;
         const SECCOMP_FILTER_FLAG_LOG               = 1 << 1;
         const SECCOMP_FILTER_FLAG_SPEC_ALLOW        = 1 << 2;

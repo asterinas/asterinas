@@ -59,30 +59,36 @@ END_TEST()
 FN_TEST(get_action_avail_with_valid_actions)
 {
 	// All these tests should pass with zero flags
-	TEST_SUCC(syscall(SYS_seccomp, SECCOMP_GET_ACTION_AVAIL, 0,
-			  SECCOMP_RET_KILL_PROCESS));
-	TEST_SUCC(syscall(SYS_seccomp, SECCOMP_GET_ACTION_AVAIL, 0,
-			  SECCOMP_RET_KILL_THREAD));
-	TEST_SUCC(syscall(SYS_seccomp, SECCOMP_GET_ACTION_AVAIL, 0,
-			  SECCOMP_RET_TRAP));
-	TEST_SUCC(syscall(SYS_seccomp, SECCOMP_GET_ACTION_AVAIL, 0,
-			  SECCOMP_RET_ERRNO));
-	TEST_SUCC(syscall(SYS_seccomp, SECCOMP_GET_ACTION_AVAIL, 0,
-			  SECCOMP_RET_USER_NOTIF));
-	TEST_SUCC(syscall(SYS_seccomp, SECCOMP_GET_ACTION_AVAIL, 0,
-			  SECCOMP_RET_TRACE));
-	TEST_SUCC(syscall(SYS_seccomp, SECCOMP_GET_ACTION_AVAIL, 0,
-			  SECCOMP_RET_LOG));
-	TEST_SUCC(syscall(SYS_seccomp, SECCOMP_GET_ACTION_AVAIL, 0,
-			  SECCOMP_RET_ALLOW));
+	unsigned int action[8] = { 0 };
+	action[0] = SECCOMP_RET_KILL_PROCESS;
+	action[1] = SECCOMP_RET_KILL_THREAD;
+	action[2] = SECCOMP_RET_TRAP;
+	action[3] = SECCOMP_RET_ERRNO;
+	action[4] = SECCOMP_RET_USER_NOTIF;
+	action[5] = SECCOMP_RET_TRACE;
+	action[6] = SECCOMP_RET_LOG;
+	action[7] = SECCOMP_RET_ALLOW;
+
+	for (int i = 0; i < 8; i++) {
+		TEST_SUCC(syscall(SYS_seccomp, SECCOMP_GET_ACTION_AVAIL, 0,
+				  &action[i]));
+	}
 }
 END_TEST()
 
 FN_TEST(get_action_avail_with_invalid_action)
 {
+	unsigned int action = 0x12345678;
+	TEST_ERRNO(syscall(SYS_seccomp, SECCOMP_GET_ACTION_AVAIL, 0, &action),
+		   EOPNOTSUPP);
+}
+END_TEST()
+
+FN_TEST(get_action_avail_with_valid_action)
+{
 	TEST_ERRNO(syscall(SYS_seccomp, SECCOMP_GET_ACTION_AVAIL, 0,
 			   0x12345678),
-		   EOPNOTSUPP);
+		   EFAULT);
 }
 END_TEST()
 
