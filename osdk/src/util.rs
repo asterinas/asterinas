@@ -273,7 +273,7 @@ fn parse_package_id_string(package_id: &str) -> ParsedID {
 pub fn trace_panic_from_log(qemu_log: File, bin_path: PathBuf) {
     // We read last 500 lines since more than 100 layers of stack trace is unlikely.
     let reader = rev_buf_reader::RevBufReader::new(qemu_log);
-    let lines: Vec<String> = reader.lines().take(500).map(|l| l.unwrap()).collect();
+    let lines: Vec<String> = reader.lines().take(500).filter_map(|l| l.ok()).collect();
     let mut trace_exists = false;
     let mut stack_num = 0;
     let pc_matcher = regex::Regex::new(r" - pc (0x[0-9a-fA-F]+)").unwrap();
