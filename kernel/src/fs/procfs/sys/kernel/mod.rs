@@ -3,7 +3,7 @@
 use crate::{
     fs::{
         procfs::{
-            sys::kernel::cap_last_cap::CapLastCapFileOps,
+            sys::kernel::{cap_last_cap::CapLastCapFileOps, pid_max::PidMaxFileOps},
             template::{DirOps, ProcDirBuilder},
             ProcDir,
         },
@@ -13,6 +13,7 @@ use crate::{
 };
 
 mod cap_last_cap;
+mod pid_max;
 
 /// Represents the inode at `/proc/sys/kernel`.
 pub struct KernelDirOps;
@@ -27,6 +28,7 @@ impl DirOps for KernelDirOps {
     fn lookup_child(&self, this_ptr: Weak<dyn Inode>, name: &str) -> Result<Arc<dyn Inode>> {
         let inode = match name {
             "cap_last_cap" => CapLastCapFileOps::new_inode(this_ptr.clone()),
+            "pid_max" => PidMaxFileOps::new_inode(this_ptr.clone()),
             _ => return_errno!(Errno::ENOENT),
         };
         Ok(inode)
@@ -41,5 +43,7 @@ impl DirOps for KernelDirOps {
         cached_children.put_entry_if_not_found("cap_last_cap", || {
             CapLastCapFileOps::new_inode(this_ptr.clone())
         });
+        cached_children
+            .put_entry_if_not_found("pid_max", || PidMaxFileOps::new_inode(this_ptr.clone()));
     }
 }
