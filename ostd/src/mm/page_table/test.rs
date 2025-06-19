@@ -433,6 +433,41 @@ mod navigation {
     }
 
     #[ktest]
+    fn jump_from_end_and_query_huge_middle() {
+        let page_table = PageTable::<TestPtConfig>::empty();
+
+        const HUGE_PAGE_SIZE: usize = PAGE_SIZE * 512; // 2M
+
+        let virt_range = 0..HUGE_PAGE_SIZE * 2; // lock at level 2
+        let map_va = virt_range.end - HUGE_PAGE_SIZE;
+        let map_item = (
+            0,
+            2,
+            PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback),
+        );
+
+        let preempt_guard = disable_preempt();
+        let mut cursor = page_table.cursor_mut(&preempt_guard, &virt_range).unwrap();
+
+        cursor.jump(map_va).unwrap();
+        unsafe { cursor.map(map_item).unwrap() };
+
+        // Now the cursor is at the end of the range with level 2.
+        assert!(cursor.query().is_err());
+
+        // Jump from the end.
+        cursor.jump(virt_range.start).unwrap();
+        assert!(cursor.query().unwrap().1.is_none());
+
+        // Query in the middle of the huge page.
+        cursor.jump(virt_range.end - HUGE_PAGE_SIZE / 2).unwrap();
+        assert_eq!(
+            cursor.query().unwrap().0,
+            virt_range.end - HUGE_PAGE_SIZE..virt_range.end
+        );
+    }
+
+    #[ktest]
     fn find_next() {
         let (page_table, _, _) = setup_page_table_with_two_frames();
         let preempt_guard = disable_preempt();
