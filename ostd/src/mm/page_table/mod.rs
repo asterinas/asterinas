@@ -341,8 +341,11 @@ impl PageTable<KernelPtConfig> {
             // See also `<PageTablePageMeta as AnyFrameMeta>::on_drop`.
             let pt_addr = pt.start_paddr();
             let pte = PageTableEntry::new_pt(pt_addr);
-            // SAFETY: The index is within the bounds and the level of the new
-            // PTE matches the node.
+            // SAFETY: The index is within the bounds and the PTE is at the
+            // correct paging level. However, neither it's a `UserPtConfig`
+            // child nor the node has the ownership of the child. It is
+            // still safe because `UserPtConfig::TOP_LEVEL_INDEX_RANGE`
+            // guarantees that the cursor won't access it.
             unsafe { new_node.write_pte(i, pte) };
         }
         drop(new_node);
@@ -446,23 +449,27 @@ impl<C: PageTableConfig> PageTable<C> {
 }
 
 /// A software emulation of the MMU address translation process.
-/// It returns the physical address of the given virtual address and the mapping info
-/// if a valid mapping exists for the given virtual address.
+///
+/// This method returns the physical address of the given virtual address and
+/// the page property if a valid mapping exists for the given virtual address.
 ///
 /// # Safety
 ///
-/// The caller must ensure that the root_paddr is a valid pointer to the root
+/// The caller must ensure that the `root_paddr` is a pointer to a valid root
 /// page table node.
 ///
-/// # Notes on the page table free-reuse-then-read problem
+/// # Notes on the page table use-after-free problem
 ///
-/// Because neither the hardware MMU nor the software page walk method
-/// would get the locks of the page table while reading, they can enter
-/// a to-be-recycled page table node and read the page table entries
-/// after the node is recycled and reused.
+/// Neither the hardware MMU nor the software page walk method acquires the page
+/// table locks while reading. They can enter a to-be-recycled page table node
+/// and read the page table entries after the node is recycled and reused.
 ///
-/// To mitigate this problem, the page table nodes are by default not
-/// actively recycled, until we find an appropriate solution.
+/// For the hardware MMU page walk, we mitigate this problem by dropping the page
+/// table nodes only after the TLBs have been flushed on all the CPUs that
+/// activate the page table.
+///
+/// For the software page walk, we only need to disable preemption at the beginning
+/// since the page table nodes won't be recycled in the RCU critical section.
 #[cfg(ktest)]
 pub(super) unsafe fn page_walk<C: PageTableConfig>(
     root_paddr: Paddr,
@@ -470,43 +477,34 @@ pub(super) unsafe fn page_walk<C: PageTableConfig>(
 ) -> Option<(Paddr, PageProperty)> {
     use super::paddr_to_vaddr;
 
-    let _guard = crate::trap::disable_local();
+    let _rcu_guard = disable_preempt();
 
-    let mut cur_level = C::NR_LEVELS;
-    let mut cur_pte = {
-        let node_addr = paddr_to_vaddr(root_paddr);
+    let mut pt_addr = paddr_to_vaddr(root_paddr);
+    for cur_level in (1..=C::NR_LEVELS).rev() {
         let offset = pte_index::<C>(vaddr, cur_level);
-        // SAFETY: The offset does not exceed the value of PAGE_SIZE.
-        unsafe { (node_addr as *const C::E).add(offset).read() }
-    };
+        // SAFETY:
+        //  - The page table node is alive because (1) the root node is alive and
+        //    (2) all child nodes cannot be recycled because we're in the RCU critical section.
+        //  - The index is inside the bound, so the page table entry is valid.
+        //  - All page table entries are aligned and accessed with atomic operations only.
+        let cur_pte = unsafe { load_pte((pt_addr as *mut C::E).add(offset), Ordering::Acquire) };
 
-    while cur_level > 1 {
         if !cur_pte.is_present() {
             return None;
         }
 
         if cur_pte.is_last(cur_level) {
             debug_assert!(cur_level <= C::HIGHEST_TRANSLATION_LEVEL);
-            break;
+            return Some((
+                cur_pte.paddr() + (vaddr & (page_size::<C>(cur_level) - 1)),
+                cur_pte.prop(),
+            ));
         }
 
-        cur_level -= 1;
-        cur_pte = {
-            let node_addr = paddr_to_vaddr(cur_pte.paddr());
-            let offset = pte_index::<C>(vaddr, cur_level);
-            // SAFETY: The offset does not exceed the value of PAGE_SIZE.
-            unsafe { (node_addr as *const C::E).add(offset).read() }
-        };
+        pt_addr = paddr_to_vaddr(cur_pte.paddr());
     }
 
-    if cur_pte.is_present() {
-        Some((
-            cur_pte.paddr() + (vaddr & (page_size::<C>(cur_level) - 1)),
-            cur_pte.prop(),
-        ))
-    } else {
-        None
-    }
+    unreachable!("All present PTEs at the level 1 must be last-level PTEs");
 }
 
 /// The interface for defining architecture-specific page table entries.
