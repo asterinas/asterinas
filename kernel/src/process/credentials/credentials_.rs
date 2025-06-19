@@ -7,7 +7,11 @@ use ostd::sync::{PreemptDisabled, RwLockReadGuard, RwLockWriteGuard};
 use super::{group::AtomicGid, user::AtomicUid, Gid, Uid};
 use crate::{
     prelude::*,
-    process::credentials::capabilities::{AtomicCapSet, CapSet},
+    process::credentials::{
+        capabilities::{AtomicCapSet, CapSet},
+        secure::AtomicSecurebits,
+        Securebits,
+    },
 };
 
 #[derive(Debug)]
@@ -30,6 +34,9 @@ pub(super) struct Credentials_ {
     /// Group id used for file system checks.
     fsgid: AtomicGid,
 
+    /// SUID-less security management
+    securebits: AtomicSecurebits,
+
     /// A set of additional groups to which a process belongs.
     supplementary_gids: RwLock<BTreeSet<Gid>>,
 
@@ -46,6 +53,12 @@ pub(super) struct Credentials_ {
 
     /// Capability that we can actually use
     effective_capset: AtomicCapSet,
+
+    /// Capability bounding set
+    bounding_capset: AtomicCapSet,
+
+    /// Ambient capability set
+    ambient_capset: AtomicCapSet,
 
     /// Keep capabilities flag
     keep_capabilities: AtomicBool,
@@ -66,10 +79,13 @@ impl Credentials_ {
             egid: AtomicGid::new(gid),
             sgid: AtomicGid::new(gid),
             fsgid: AtomicGid::new(gid),
+            securebits: AtomicSecurebits::new(0),
             supplementary_gids: RwLock::new(supplementary_gids),
             inheritable_capset: AtomicCapSet::new(capset),
             permitted_capset: AtomicCapSet::new(capset),
             effective_capset: AtomicCapSet::new(capset),
+            bounding_capset: AtomicCapSet::new(capset),
+            ambient_capset: AtomicCapSet::new(capset),
             keep_capabilities: AtomicBool::new(false),
         }
     }
@@ -344,6 +360,16 @@ impl Credentials_ {
         self.egid.store(egid, Ordering::Relaxed);
     }
 
+    // *********** Securebits methods **********
+
+    pub(super) fn securebits(&self) -> Securebits {
+        self.securebits.load(Ordering::Relaxed)
+    }
+
+    pub(super) fn set_securebits(&self, securebits: Securebits) {
+        self.securebits.store(securebits, Ordering::Relaxed);
+    }
+
     pub(super) fn set_sgid(&self, sgid: Gid) {
         self.sgid.store(sgid, Ordering::Relaxed);
     }
@@ -440,6 +466,14 @@ impl Credentials_ {
         self.effective_capset.load(Ordering::Relaxed)
     }
 
+    pub(super) fn bounding_capset(&self) -> CapSet {
+        self.bounding_capset.load(Ordering::Relaxed)
+    }
+
+    pub(super) fn ambient_capset(&self) -> CapSet {
+        self.ambient_capset.load(Ordering::Relaxed)
+    }
+
     pub(super) fn set_inheritable_capset(&self, inheritable_capset: CapSet) {
         self.inheritable_capset
             .store(inheritable_capset, Ordering::Relaxed);
@@ -454,6 +488,15 @@ impl Credentials_ {
         self.effective_capset
             .store(effective_capset, Ordering::Relaxed);
     }
+
+    pub(super) fn set_bounding_capset(&self, bounding_capset: CapSet) {
+        self.bounding_capset
+            .store(bounding_capset, Ordering::Relaxed);
+    }
+
+    pub(super) fn set_ambient_capset(&self, ambient_capset: CapSet) {
+        self.ambient_capset.store(ambient_capset, Ordering::Relaxed);
+    }
 }
 
 impl Clone for Credentials_ {
@@ -467,10 +510,13 @@ impl Clone for Credentials_ {
             egid: self.egid.clone(),
             sgid: self.sgid.clone(),
             fsgid: self.fsgid.clone(),
+            securebits: self.securebits.clone(),
             supplementary_gids: RwLock::new(self.supplementary_gids.read().clone()),
             inheritable_capset: self.inheritable_capset.clone(),
             permitted_capset: self.permitted_capset.clone(),
             effective_capset: self.effective_capset.clone(),
+            bounding_capset: self.bounding_capset.clone(),
+            ambient_capset: self.ambient_capset.clone(),
             keep_capabilities: AtomicBool::new(self.keep_capabilities.load(Ordering::Relaxed)),
         }
     }
