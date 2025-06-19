@@ -10,7 +10,7 @@ use super::{AnyStorage, CpuLocal};
 use crate::{
     cpu::{all_cpus, num_cpus, CpuId, PinCurrentCpu},
     mm::{paddr_to_vaddr, FrameAllocOptions, Segment, Vaddr, PAGE_SIZE},
-    trap::DisabledLocalIrqGuard,
+    trap::irq::DisabledLocalIrqGuard,
     Result,
 };
 

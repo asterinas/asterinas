@@ -470,7 +470,7 @@ pub(super) unsafe fn page_walk<C: PageTableConfig>(
 ) -> Option<(Paddr, PageProperty)> {
     use super::paddr_to_vaddr;
 
-    let _guard = crate::trap::disable_local();
+    let _guard = crate::trap::irq::disable_local();
 
     let mut cur_level = C::NR_LEVELS;
     let mut cur_pte = {

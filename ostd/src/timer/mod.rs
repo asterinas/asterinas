@@ -22,7 +22,7 @@ pub fn register_callback<F>(func: F)
 where
     F: Fn() + Sync + Send + 'static,
 {
-    let irq_guard = trap::disable_local();
+    let irq_guard = trap::irq::disable_local();
     INTERRUPT_CALLBACKS
         .get_with(&irq_guard)
         .borrow_mut()
