@@ -76,6 +76,10 @@ pub enum Error {
     PermissionDenied,
     /// Other internal error
     InternalError(&'static str),
+    /// Child node already exists
+    ChildExisted,
+    /// Cannot find the child node
+    ChildNotFound,
     /// Arithmetic overflow occurred
     Overflow,
 }
@@ -90,6 +94,8 @@ impl core::fmt::Display for Error {
             Error::AttributeError => write!(f, "Attribute error"),
             Error::PermissionDenied => write!(f, "Permission denied for operation"),
             Error::InternalError(msg) => write!(f, "Internal error: {}", msg),
+            Error::ChildExisted => write!(f, "Child node already exists"),
+            Error::ChildNotFound => write!(f, "Cannot find the child node"),
             Error::Overflow => write!(f, "Numerical overflow occurred"),
         }
     }
