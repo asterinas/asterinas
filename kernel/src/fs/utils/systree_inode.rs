@@ -68,7 +68,7 @@ pub(in crate::fs) trait KernelFsInode: Send + Sync + 'static {
     {
         let inner_node = InnerNode::Branch(root_node);
         let parent = Weak::new();
-        Self::new_branch_dir(inner_node, parent)
+        Self::new_branch_dir(inner_node, None, parent)
     }
 
     fn new_metadata(ino: u64, type_: InodeType) -> Metadata {
@@ -116,6 +116,7 @@ pub(in crate::fs) trait KernelFsInode: Send + Sync + 'static {
 
     fn new_branch_dir(
         inner_node: InnerNode, // Must be InnerNode::Branch
+        mode: Option<InodeMode>,
         parent: Weak<Self>,
     ) -> Arc<Self>
     where
@@ -127,7 +128,7 @@ pub(in crate::fs) trait KernelFsInode: Send + Sync + 'static {
             panic!("new_branch_dir called with non-branch InnerNode");
         };
 
-        let mode = branch_node.mode().into();
+        let mode = mode.unwrap_or_else(|| branch_node.mode().into());
         Self::new_arc(inner_node, metadata, mode, parent)
     }
 
@@ -163,6 +164,7 @@ pub(in crate::fs) trait KernelFsInode: Send + Sync + 'static {
                         .ok_or(Error::new(Errno::EIO))?;
                     let inode = Self::new_branch_dir(
                         InnerNode::Branch(child_branch),
+                        None,
                         Arc::downgrade(&self.this()),
                     );
                     Ok(inode)
