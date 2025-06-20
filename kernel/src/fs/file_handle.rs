@@ -4,6 +4,8 @@
 
 //! Opened File Handle
 
+use ostd::io::IoMem;
+
 use super::inode_handle::InodeHandle;
 use crate::{
     fs::utils::{AccessMode, FallocMode, InodeMode, IoctlCmd, Metadata, SeekFrom, StatusFlags},
@@ -45,6 +47,15 @@ pub trait FileLike: Pollable + Send + Sync + Any {
 
     fn ioctl(&self, cmd: IoctlCmd, arg: usize) -> Result<i32> {
         return_errno_with_message!(Errno::EINVAL, "ioctl is not supported");
+    }
+
+    /// Get the corresponding I/O memory region when the file is a
+    /// memory-mapped device.
+    ///
+    /// If the file is a memory-mapped device, this function
+    /// returns the [`IoMem`], else returns `None`.
+    fn get_io_mem(&self) -> Option<IoMem> {
+        None
     }
 
     fn resize(&self, new_size: usize) -> Result<()> {
