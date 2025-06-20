@@ -321,10 +321,10 @@ provided by Linux on x86-64 architecture.
 | 298     | perf_event_open  | ❌              |
 | 299     | recvmmsg         | ❌              |
 | 300     | fanotify_init    | ❌              |
-| 301     | fanotify_mark    | ❌              | 
+| 301     | fanotify_mark    | ❌              |
 | 302	  | prlimit64        | ✅              |
 | 303	  | name_to_handle_at | ❌              |
-| 304	  | open_by_handle_at | ❌              |	
+| 304	  | open_by_handle_at | ❌              |
 | 305	  | clock_adjtime    | ❌              |
 | 306	  | syncfs           | ❌              |
 | 307	  | sendmmsg         | ❌              |
@@ -337,6 +337,7 @@ provided by Linux on x86-64 architecture.
 | 314	  | sched_setattr    | ✅              |
 | 315	  | sched_getattr    | ✅              |
 | 318	  | getrandom        | ✅              |
+| 319	  | memfd_create     | ✅              |
 | 322	  | execveat         | ✅              |
 | 327	  | preadv2          | ✅              |
 | 328	  | pwritev2         | ✅              |

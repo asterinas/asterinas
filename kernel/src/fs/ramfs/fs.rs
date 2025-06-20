@@ -70,6 +70,19 @@ impl RamFS {
     fn alloc_id(&self) -> u64 {
         self.inode_allocator.fetch_add(1, Ordering::SeqCst)
     }
+
+    pub fn create_detached(
+        self: &Arc<Self>,
+        type_: InodeType,
+        mode: InodeMode,
+    ) -> Result<Arc<dyn Inode>> {
+        Ok(match type_ {
+            InodeType::File => RamInode::new_file(self, mode, Uid::new_root(), Gid::new_root()),
+            _ => {
+                panic!("unsupported inode type");
+            }
+        })
+    }
 }
 
 impl FileSystem for RamFS {
