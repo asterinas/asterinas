@@ -69,16 +69,26 @@ impl TryFrom<SchedPolicy> for LinuxSchedAttr {
                 ..Default::default()
             },
 
+            // The SCHED_IDLE policy is mapped to the highest nice value of
+            // `SchedPolicy::Fair` instead of `SchedPolicy::Idle`. Tasks of the
+            // latter policy are invisible to the user API.
+            SchedPolicy::Fair(Nice::MAX) => LinuxSchedAttr {
+                sched_policy: SCHED_IDLE,
+                ..Default::default()
+            },
+
             SchedPolicy::Fair(nice) => LinuxSchedAttr {
                 sched_policy: SCHED_NORMAL,
                 sched_nice: nice.value().get().into(),
                 ..Default::default()
             },
 
-            SchedPolicy::Idle => LinuxSchedAttr {
-                sched_policy: SCHED_IDLE,
-                ..Default::default()
-            },
+            SchedPolicy::Idle => {
+                return Err(Error::with_message(
+                    Errno::EACCES,
+                    "attr for idle tasks are not accessible",
+                ))
+            }
         })
     }
 }
@@ -112,7 +122,10 @@ impl TryFrom<LinuxSchedAttr> for SchedPolicy {
                     .map_err(|msg| Error::with_message(Errno::EINVAL, msg))?,
             )),
 
-            SCHED_IDLE => SchedPolicy::Idle,
+            // The SCHED_IDLE policy is mapped to the highest nice value of
+            // `SchedPolicy::Fair` instead of `SchedPolicy::Idle`. Tasks of the
+            // latter policy are invisible to the user API.
+            SCHED_IDLE => SchedPolicy::Fair(Nice::MAX),
 
             _ => {
                 return Err(Error::with_message(
