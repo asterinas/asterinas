@@ -195,7 +195,13 @@ impl FutexWakeOpEncode {
 
     fn calculate_new_val(&self, old_val: u32) -> u32 {
         let oparg = if self.is_oparg_shift {
-            1 << self.oparg
+            if self.oparg > 31 {
+                // Linux might return EINVAL in the future
+                // Reference: https://elixir.bootlin.com/linux/v6.15.2/source/kernel/futex/waitwake.c#L211-L222
+                warn!("futex_wake_op: program tries to shift op by {}", self.oparg);
+            }
+
+            1 << (self.oparg & 31)
         } else {
             self.oparg
         };
