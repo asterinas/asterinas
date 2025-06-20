@@ -14,7 +14,7 @@ use crate::{
 };
 
 fn default_prop() -> PageProperty {
-    PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback)
+    PageProperty::new_user(PageFlags::RW, 0, CachePolicy::Writeback)
 }
 
 #[ktest]

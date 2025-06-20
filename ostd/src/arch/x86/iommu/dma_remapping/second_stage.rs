@@ -50,6 +50,7 @@ impl PagingConstsTrait for PagingConsts {
     const VA_SIGN_EXT: bool = true;
     const HIGHEST_TRANSLATION_LEVEL: PagingLevel = 1;
     const PTE_SIZE: usize = core::mem::size_of::<PageTableEntry>();
+    const PROTECTION_KEY_RANGE: Option<Range<u8>> = None;
 }
 
 bitflags::bitflags! {
@@ -143,6 +144,7 @@ impl PageTableEntryTrait for PageTableEntry {
 
         PageProperty {
             flags,
+            pkey: 0,
             cache,
             priv_flags: PrivFlags::empty(),
         }

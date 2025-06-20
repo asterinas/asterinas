@@ -137,6 +137,7 @@ impl<C: PageTableConfig> PagingConstsTrait for C {
     const PTE_SIZE: usize = C::C::PTE_SIZE;
     const ADDRESS_WIDTH: usize = C::C::ADDRESS_WIDTH;
     const VA_SIGN_EXT: bool = C::C::VA_SIGN_EXT;
+    const PROTECTION_KEY_RANGE: Option<Range<u8>> = C::C::PROTECTION_KEY_RANGE;
 }
 
 /// Splits the address range into largest page table items.

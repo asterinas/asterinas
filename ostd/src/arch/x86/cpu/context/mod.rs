@@ -23,7 +23,7 @@ use x86_64::registers::{
 };
 
 use crate::{
-    arch::CPU_FEATURES,
+    arch::{CPU_FEATURES, EXTENDED_CPU_FEATURES},
     task::scheduler,
     trap::call_irq_callback_functions,
     user::{ReturnReason, UserContextApi, UserContextApiInternal},
@@ -458,8 +458,10 @@ struct XSaveArea {
     features: u64,
     compaction: u64,
     reserved: [u64; 6],
-    extended_state_area: [u8; MAX_XSAVE_AREA_SIZE - size_of::<FxSaveArea>() - 64],
+    extended_state_area: [u8; EXTENDED_XSAVE_AREA_SIZE],
 }
+
+const EXTENDED_XSAVE_AREA_SIZE: usize = MAX_XSAVE_AREA_SIZE - size_of::<FxSaveArea>() - 64;
 
 impl XSaveArea {
     fn init() -> Box<Self> {
@@ -471,7 +473,18 @@ impl XSaveArea {
 
         let mut xsave_area = Box::<Self>::new_uninit();
         let ptr = xsave_area.as_mut_ptr();
-        // SAFETY: it's safe to initialize the XSaveArea field then return the instance.
+
+        if EXTENDED_CPU_FEATURES.get().unwrap().has_pku() {
+            let pkru_offset = Self::ext_state_pkru_offset();
+            // Sets the initial value of PKRU as "only pkey 0 is accessible".
+            // SAFETY: The destination is valid to write.
+            unsafe {
+                ((&mut (*ptr).extended_state_area as *mut u8).add(pkru_offset) as *mut u32)
+                    .write(u32::MAX ^ 0b11)
+            };
+        }
+
+        // FIXME: This `assume_init` is not sound at all.
         unsafe {
             core::ptr::write_bytes(ptr, 0, 1);
             (*ptr).fxsave_area.control = 0x37F;
@@ -479,6 +492,19 @@ impl XSaveArea {
             (*ptr).features = features;
             xsave_area.assume_init()
         }
+    }
+
+    /// Returns the byte offset of the PKRU register in the extended state area.
+    fn ext_state_pkru_offset() -> usize {
+        // From Intel SDM Vol. 1 Section 13.5.7, `CPUID.(EAX=0DH,ECX=9):EBX`
+        // enumerates the offset.
+        let cpuid = cpuid::cpuid!(0x0D, 0x9);
+        let offset = cpuid.ebx as usize;
+
+        debug_assert!(offset + 4 <= EXTENDED_XSAVE_AREA_SIZE);
+        debug_assert_eq!(offset % 4, 0);
+
+        offset
     }
 }
 

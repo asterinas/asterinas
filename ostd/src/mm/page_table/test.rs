@@ -20,7 +20,7 @@ mod test_utils {
         let page_table = PageTable::<UserPtConfig>::empty();
 
         let frame = FrameAllocOptions::new().alloc_frame().unwrap();
-        let page_property = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+        let page_property = PageProperty::new_user(PageFlags::RW, 0, CachePolicy::Writeback);
 
         // Maps the virtual range to the physical frame.
         let preempt_guard = disable_preempt();
@@ -84,6 +84,7 @@ mod test_utils {
         const VA_SIGN_EXT: bool = true;
         const HIGHEST_TRANSLATION_LEVEL: PagingLevel = 3;
         const PTE_SIZE: usize = core::mem::size_of::<PageTableEntry>();
+        const PROTECTION_KEY_RANGE: Option<Range<u8>> = Some(0..16);
     }
 
     #[derive(Clone, Debug)]
@@ -238,7 +239,7 @@ mod range_checks {
 }
 
 mod page_properties {
-    use super::*;
+    use super::{test_utils::*, *};
     use crate::mm::PrivilegedPageFlags;
 
     /// Helper function to map a single page with given properties and verify the properties.
@@ -287,14 +288,17 @@ mod page_properties {
             let priv_flag_subsets = SubsetIter::new(PrivilegedPageFlags::all().bits())
                 .map(|f| PrivilegedPageFlags::from_bits(f).unwrap());
             for priv_flags in priv_flag_subsets {
-                // We do not supporting other cache policies yet. So just test them.
-                let cache_policies = [CachePolicy::Writeback, CachePolicy::Uncacheable];
-                for cache in cache_policies {
-                    check_map_with_property(PageProperty {
-                        flags,
-                        cache,
-                        priv_flags,
-                    });
+                for pkey in TestPtConfig::PROTECTION_KEY_RANGE.clone().unwrap() {
+                    // We do not supporting other cache policies yet. So just test them.
+                    let cache_policies = [CachePolicy::Writeback, CachePolicy::Uncacheable];
+                    for cache in cache_policies {
+                        check_map_with_property(PageProperty {
+                            flags,
+                            pkey,
+                            cache,
+                            priv_flags,
+                        });
+                    }
                 }
             }
         }
@@ -311,7 +315,7 @@ mod overlapping_mappings {
         let prange1 = (PAGE_SIZE * 100)..(PAGE_SIZE * 101);
         let vrange2 = PAGE_SIZE..(PAGE_SIZE * 3);
         let prange2 = (PAGE_SIZE * 200)..(PAGE_SIZE * 202);
-        let page_property = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+        let page_property = PageProperty::new_user(PageFlags::RW, 0, CachePolicy::Writeback);
         let preempt_guard = disable_preempt();
 
         // Maps the first range.
@@ -349,7 +353,7 @@ mod overlapping_mappings {
         let page_table = PageTable::<TestPtConfig>::empty();
         let virt_range = (PAGE_SIZE + 512)..(PAGE_SIZE * 2 + 512);
         let phys_range = (PAGE_SIZE * 100 + 512)..(PAGE_SIZE * 101 + 512);
-        let page_property = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+        let page_property = PageProperty::new_user(PageFlags::RW, 0, CachePolicy::Writeback);
         let preempt_guard = disable_preempt();
 
         // Attempts to map an unaligned virtual address range (expected to panic).
@@ -371,7 +375,7 @@ mod navigation {
 
     fn setup_page_table_with_two_frames() -> (PageTable<UserPtConfig>, Frame<()>, Frame<()>) {
         let page_table = PageTable::<UserPtConfig>::empty();
-        let page_property = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+        let page_property = PageProperty::new_user(PageFlags::RW, 0, CachePolicy::Writeback);
         let preempt_guard = disable_preempt();
 
         // Allocates and maps two frames.
@@ -428,7 +432,7 @@ mod navigation {
         );
         assert_eq!(
             prop,
-            PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback)
+            PageProperty::new_user(PageFlags::RW, 0, CachePolicy::Writeback)
         );
     }
 
@@ -469,7 +473,7 @@ mod unmap {
 
         let virt_range = PAGE_SIZE..(PAGE_SIZE * 2);
         let phys_addr = PAGE_SIZE * 100;
-        let page_property = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+        let page_property = PageProperty::new_user(PageFlags::RW, 0, CachePolicy::Writeback);
 
         {
             let mut cursor = page_table.cursor_mut(&preempt_guard, &virt_range).unwrap();
@@ -498,7 +502,7 @@ mod unmap {
         let preempt_guard = disable_preempt();
 
         let virt_range = PAGE_SIZE * 513..PAGE_SIZE * 514;
-        let page_property = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+        let page_property = PageProperty::new_user(PageFlags::RW, 0, CachePolicy::Writeback);
 
         {
             let mut cursor = page_table.cursor_mut(&preempt_guard, &virt_range).unwrap();
@@ -537,7 +541,7 @@ mod mapping {
         let preempt_guard = disable_preempt();
 
         let virt_range = PAGE_SIZE..(PAGE_SIZE * 2);
-        let page_property = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+        let page_property = PageProperty::new_user(PageFlags::RW, 0, CachePolicy::Writeback);
 
         let frame = FrameAllocOptions::new().alloc_frame().unwrap();
         unsafe {
@@ -570,7 +574,7 @@ mod mapping {
         let virtual_range = (PAGE_SIZE * from_ppn.start)..(PAGE_SIZE * from_ppn.end);
         let physical_range = (PAGE_SIZE * to_ppn.start)..(PAGE_SIZE * to_ppn.end);
 
-        let page_property = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+        let page_property = PageProperty::new_user(PageFlags::RW, 0, CachePolicy::Writeback);
         map_untracked(
             &pt,
             virtual_range.start,
@@ -647,7 +651,7 @@ mod mapping {
         let to = PAGE_SIZE * to_ppn.start..PAGE_SIZE * to_ppn.end;
 
         let mapped_pa_of_va = |va: Vaddr| va - (from.start - to.start);
-        let prop = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+        let prop = PageProperty::new_user(PageFlags::RW, 0, CachePolicy::Writeback);
 
         map_untracked(&pt, from.start, to.clone(), prop);
 
@@ -696,7 +700,7 @@ mod mapping {
             assert_eq!(va_low_pa, mapped_pa_of_va(va_low));
             assert_eq!(
                 prop_low,
-                PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback)
+                PageProperty::new_user(PageFlags::RW, 0, CachePolicy::Writeback)
             );
         }
 
@@ -721,7 +725,7 @@ mod mapping {
             assert_eq!(va_high_pa, mapped_pa_of_va(va_high));
             assert_eq!(
                 prop_high,
-                PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback)
+                PageProperty::new_user(PageFlags::RW, 0, CachePolicy::Writeback)
             );
         }
     }
@@ -738,7 +742,7 @@ mod protection_and_query {
 
         // Allocates and maps multiple frames.
         let phys_range = 0..PAGE_SIZE * 999;
-        let page_property = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+        let page_property = PageProperty::new_user(PageFlags::RW, 0, CachePolicy::Writeback);
 
         map_untracked(
             &page_table,
@@ -804,7 +808,7 @@ mod protection_and_query {
         // Maps a page in a sub-range.
         let sub_range = 0x1000..0x2000;
         let frame_range = 0x2000..0x3000;
-        let prop = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+        let prop = PageProperty::new_user(PageFlags::RW, 0, CachePolicy::Writeback);
         unsafe {
             page_table
                 .cursor_mut(&preempt_guard, &sub_range)
@@ -841,7 +845,7 @@ mod boot_pt {
 
         let from_virt = 0x1000;
         let to_phys = 0x2;
-        let page_property = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+        let page_property = PageProperty::new_user(PageFlags::RW, 0, CachePolicy::Writeback);
 
         unsafe {
             boot_pt.map_base_page(from_virt, to_phys, page_property);
@@ -867,7 +871,7 @@ mod boot_pt {
         let from_virt = 0x1000;
         let to_phys1 = 0x2;
         let to_phys2 = 0x3;
-        let page_property = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+        let page_property = PageProperty::new_user(PageFlags::RW, 0, CachePolicy::Writeback);
 
         unsafe {
             boot_pt.map_base_page(from_virt, to_phys1, page_property);
@@ -904,7 +908,7 @@ mod boot_pt {
         // Maps page 1.
         let from1 = 0x2000;
         let to_phys1 = 0x2;
-        let prop1 = PageProperty::new_user(PageFlags::RW, CachePolicy::Writeback);
+        let prop1 = PageProperty::new_user(PageFlags::RW, 0, CachePolicy::Writeback);
         unsafe { boot_pt.map_base_page(from1, to_phys1, prop1) };
         assert_eq!(
             unsafe { page_walk::<KernelPtConfig>(root_paddr, from1 + 1) },
@@ -914,7 +918,7 @@ mod boot_pt {
         // Protects page 1.
         unsafe { boot_pt.protect_base_page(from1, |prop| prop.flags = PageFlags::RX) };
         let expected_prop1_protected =
-            PageProperty::new_user(PageFlags::RX, CachePolicy::Writeback);
+            PageProperty::new_user(PageFlags::RX, 0, CachePolicy::Writeback);
         assert_eq!(
             unsafe { page_walk::<KernelPtConfig>(root_paddr, from1 + 1) },
             Some((to_phys1 * PAGE_SIZE + 1, expected_prop1_protected))
@@ -923,7 +927,7 @@ mod boot_pt {
         // Maps page 2.
         let from2 = 0x3000;
         let to_phys2 = 0x3;
-        let prop2 = PageProperty::new_user(PageFlags::RX, CachePolicy::Uncacheable);
+        let prop2 = PageProperty::new_user(PageFlags::RX, 0, CachePolicy::Uncacheable);
         unsafe { boot_pt.map_base_page(from2, to_phys2, prop2) };
         assert_eq!(
             unsafe { page_walk::<KernelPtConfig>(root_paddr, from2 + 2) },
@@ -933,7 +937,7 @@ mod boot_pt {
         // Protects page 2.
         unsafe { boot_pt.protect_base_page(from2, |prop| prop.flags = PageFlags::RW) };
         let expected_prop2_protected =
-            PageProperty::new_user(PageFlags::RW, CachePolicy::Uncacheable);
+            PageProperty::new_user(PageFlags::RW, 0, CachePolicy::Uncacheable);
         assert_eq!(
             unsafe { page_walk::<KernelPtConfig>(root_paddr, from2 + 2) },
             Some((to_phys2 * PAGE_SIZE + 2, expected_prop2_protected))

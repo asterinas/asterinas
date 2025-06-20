@@ -873,7 +873,7 @@ mprotect03
 # mprotect04
 mprotect05
 
-# pkey01
+pkey01
 
 # mq_notify01
 # mq_notify02

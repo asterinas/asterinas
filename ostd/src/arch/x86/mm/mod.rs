@@ -33,6 +33,7 @@ impl PagingConstsTrait for PagingConsts {
     const VA_SIGN_EXT: bool = true;
     const HIGHEST_TRANSLATION_LEVEL: PagingLevel = 2;
     const PTE_SIZE: usize = core::mem::size_of::<PageTableEntry>();
+    const PROTECTION_KEY_RANGE: Option<Range<u8>> = Some(0..16);
 }
 
 bitflags::bitflags! {
@@ -71,6 +72,13 @@ bitflags::bitflags! {
         const HIGH_IGN1 =       1 << 52;
         /// Ignored by the hardware. Free to use.
         const HIGH_IGN2 =       1 << 53;
+
+        /// Memory protection key. 62:59 (4 bits).
+        const PKEY1 =           1 << 59;
+        const PKEY2 =           1 << 60;
+        const PKEY3 =           1 << 61;
+        const PKEY4 =           1 << 62;
+        const PKEY_MASK =       0b1111 << 59;
 
         /// Forbid execute codes on the page. The NXE bits in EFER msr must be set.
         const NO_EXECUTE =      1 << 63;
@@ -205,11 +213,16 @@ impl PageTableEntryTrait for PageTableEntry {
             | (parse_flags!(self.0, PageTableFlags::DIRTY, PageFlags::DIRTY))
             | (parse_flags!(self.0, PageTableFlags::HIGH_IGN1, PageFlags::AVAIL1))
             | (parse_flags!(self.0, PageTableFlags::HIGH_IGN2, PageFlags::AVAIL2));
+
+        let pkey =
+            (self.0 & PageTableFlags::PKEY_MASK.bits()) >> PageTableFlags::PKEY1.bits().ilog2();
+
         let priv_flags = (parse_flags!(self.0, PageTableFlags::USER, PrivFlags::USER))
             | (parse_flags!(self.0, PageTableFlags::GLOBAL, PrivFlags::GLOBAL));
         #[cfg(feature = "cvm_guest")]
         let priv_flags =
             priv_flags | (parse_flags!(self.0, PageTableFlags::SHARED, PrivFlags::SHARED));
+
         let cache = if self.0 & PageTableFlags::NO_CACHE.bits() != 0 {
             CachePolicy::Uncacheable
         } else if self.0 & PageTableFlags::WRITE_THROUGH.bits() != 0 {
@@ -217,8 +230,10 @@ impl PageTableEntryTrait for PageTableEntry {
         } else {
             CachePolicy::Writeback
         };
+
         PageProperty {
             flags: PageFlags::from_bits(flags as u8).unwrap(),
+            pkey: pkey as u8,
             cache,
             priv_flags: PrivFlags::from_bits(priv_flags as u8).unwrap(),
         }
@@ -258,6 +273,10 @@ impl PageTableEntryTrait for PageTableEntry {
                 PrivFlags::GLOBAL,
                 PageTableFlags::GLOBAL
             ));
+
+        flags |= ((prop.pkey as usize) << PageTableFlags::PKEY1.bits().ilog2())
+            & PageTableFlags::PKEY_MASK.bits();
+
         #[cfg(feature = "cvm_guest")]
         {
             flags |= parse_flags!(
@@ -266,6 +285,7 @@ impl PageTableEntryTrait for PageTableEntry {
                 PageTableFlags::SHARED
             );
         }
+
         match prop.cache {
             CachePolicy::Writeback => {}
             CachePolicy::Writethrough => {

@@ -367,6 +367,7 @@ fn handle_kernel_page_fault(f: &TrapFrame, page_fault_vaddr: u64) {
     });
     let prop = PageProperty {
         flags: PageFlags::RW,
+        pkey: 0,
         cache: CachePolicy::Uncacheable,
         priv_flags,
     };

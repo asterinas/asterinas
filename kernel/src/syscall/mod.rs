@@ -80,6 +80,7 @@ mod nanosleep;
 mod open;
 mod pause;
 mod pipe;
+mod pkeys;
 mod poll;
 mod ppoll;
 mod prctl;

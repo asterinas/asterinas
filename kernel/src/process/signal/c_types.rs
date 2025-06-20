@@ -12,6 +12,7 @@ use crate::{
     arch::cpu::GpRegs,
     prelude::*,
     process::{Pid, Uid},
+    vm::vmar::PKey,
 };
 
 pub type sigset_t = u64;
@@ -147,7 +148,7 @@ struct siginfo_sigfault_t {
 #[repr(C)]
 union siginfo_sigfault_first_t {
     addr_bnd: siginfo_addr_bnd_t,
-    pkey: u32,
+    pkey: PKey,
 }
 
 #[derive(Clone, Copy, Pod)]

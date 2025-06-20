@@ -14,7 +14,7 @@ use ostd::{
     task::disable_preempt,
 };
 
-use super::{interval_set::Interval, RssType};
+use super::{interval_set::Interval, pkeys::PKey, RssType};
 use crate::{
     fs::utils::Inode,
     prelude::*,
@@ -74,6 +74,10 @@ pub struct VmMapping {
     ///
     /// All pages within the same `VmMapping` have the same permissions.
     perms: VmPerms,
+    /// The protection key of the mapping.
+    ///
+    /// See [`super::pkeys`] for more details.
+    pkey: PKey,
 }
 
 impl Interval<Vaddr> for VmMapping {
@@ -85,6 +89,7 @@ impl Interval<Vaddr> for VmMapping {
 /***************************** Basic methods *********************************/
 
 impl VmMapping {
+    #[expect(clippy::too_many_arguments)]
     pub(super) fn new(
         map_size: NonZeroUsize,
         map_to_addr: Vaddr,
@@ -93,6 +98,7 @@ impl VmMapping {
         is_shared: bool,
         handle_page_faults_around: bool,
         perms: VmPerms,
+        pkey: PKey,
     ) -> Self {
         Self {
             map_size,
@@ -102,6 +108,7 @@ impl VmMapping {
             is_shared,
             handle_page_faults_around,
             perms,
+            pkey,
         }
     }
 
@@ -267,9 +274,11 @@ impl VmMapping {
                     if is_write {
                         page_flags |= PageFlags::DIRTY;
                     }
-                    let map_prop = PageProperty::new_user(page_flags, CachePolicy::Writeback);
+                    let map_prop =
+                        PageProperty::new_user(page_flags, self.pkey as u8, CachePolicy::Writeback);
 
                     cursor.map(frame, map_prop);
+
                     rss_increment += 1;
                 }
             }
@@ -345,26 +354,28 @@ impl VmMapping {
             };
 
             let rss_increment_ref = &mut rss_increment;
-            let operate =
-                move |commit_fn: &mut dyn FnMut()
-                    -> core::result::Result<UFrame, VmoCommitError>| {
-                    if let (_, None) = cursor.query().unwrap() {
-                        // We regard all the surrounding pages as accessed, no matter
-                        // if it is really so. Then the hardware won't bother to update
-                        // the accessed bit of the page table on following accesses.
-                        let page_flags = PageFlags::from(vm_perms) | PageFlags::ACCESSED;
-                        let page_prop = PageProperty::new_user(page_flags, CachePolicy::Writeback);
-                        let frame = commit_fn()?;
-                        cursor.map(frame, page_prop);
-                        *rss_increment_ref += 1;
-                    } else {
-                        let next_addr = cursor.virt_addr() + PAGE_SIZE;
-                        if next_addr < end_addr {
-                            let _ = cursor.jump(next_addr);
-                        }
+            let operate = move |commit_fn: &mut dyn FnMut() -> core::result::Result<
+                UFrame,
+                VmoCommitError,
+            >| {
+                if let (_, None) = cursor.query().unwrap() {
+                    // We regard all the surrounding pages as accessed, no matter
+                    // if it is really so. Then the hardware won't bother to update
+                    // the accessed bit of the page table on following accesses.
+                    let page_flags = PageFlags::from(vm_perms) | PageFlags::ACCESSED;
+                    let page_prop =
+                        PageProperty::new_user(page_flags, self.pkey as u8, CachePolicy::Writeback);
+                    let frame = commit_fn()?;
+                    cursor.map(frame, page_prop);
+                    *rss_increment_ref += 1;
+                } else {
+                    let next_addr = cursor.virt_addr() + PAGE_SIZE;
+                    if next_addr < end_addr {
+                        let _ = cursor.jump(next_addr);
                     }
-                    Ok(())
-                };
+                }
+                Ok(())
+            };
 
             let start_offset = start_addr - self.map_to_addr;
             let end_offset = end_addr - self.map_to_addr;
@@ -491,12 +502,15 @@ impl VmMapping {
     }
 
     /// Change the perms of the mapping.
-    pub(super) fn protect(self, vm_space: &VmSpace, perms: VmPerms) -> Self {
+    pub(super) fn protect(self, vm_space: &VmSpace, perms: VmPerms, pkey: PKey) -> Self {
         let preempt_guard = disable_preempt();
         let range = self.range();
         let mut cursor = vm_space.cursor_mut(&preempt_guard, &range).unwrap();
 
-        let op = |p: &mut PageProperty| p.flags = perms.into();
+        let op = |p: &mut PageProperty| {
+            p.flags = perms.into();
+            p.pkey = pkey as u8;
+        };
         while cursor.virt_addr() < range.end {
             if let Some(va) = cursor.protect_next(range.end - cursor.virt_addr(), op) {
                 cursor.flusher().issue_tlb_flush(TlbFlushOp::Range(va));
@@ -507,7 +521,11 @@ impl VmMapping {
         cursor.flusher().dispatch_tlb_flush();
         cursor.flusher().sync_tlb_flush();
 
-        Self { perms, ..self }
+        Self {
+            perms,
+            pkey,
+            ..self
+        }
     }
 }
 

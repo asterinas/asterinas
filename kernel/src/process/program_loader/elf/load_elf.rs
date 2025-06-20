@@ -29,7 +29,7 @@ use crate::{
     vm::{
         perms::VmPerms,
         util::duplicate_frame,
-        vmar::Vmar,
+        vmar::{PKey, Vmar},
         vmo::{CommitFlags, VmoRightsOp},
     },
 };
@@ -334,7 +334,7 @@ fn map_segment_vmo(
             };
             cursor.map(
                 new_frame.into(),
-                PageProperty::new_user(page_flags, CachePolicy::Writeback),
+                PageProperty::new_user(page_flags, 0, CachePolicy::Writeback),
             );
         }
 
@@ -359,7 +359,7 @@ fn map_segment_vmo(
             cursor.jump(tail_page_addr)?;
             cursor.map(
                 new_frame.into(),
-                PageProperty::new_user(page_flags, CachePolicy::Writeback),
+                PageProperty::new_user(page_flags, 0, CachePolicy::Writeback),
             );
         }
     }
@@ -446,10 +446,18 @@ fn map_vdso_to_vm(process_vm: &ProcessVm) -> Option<Vaddr> {
     let data_perms = VmPerms::READ | VmPerms::WRITE;
     let text_perms = VmPerms::READ | VmPerms::EXEC;
     root_vmar
-        .protect(data_perms, vdso_data_base..vdso_data_base + PAGE_SIZE)
+        .protect(
+            data_perms,
+            PKey::default(),
+            vdso_data_base..vdso_data_base + PAGE_SIZE,
+        )
         .unwrap();
     root_vmar
-        .protect(text_perms, vdso_text_base..vdso_text_base + PAGE_SIZE)
+        .protect(
+            text_perms,
+            PKey::default(),
+            vdso_text_base..vdso_text_base + PAGE_SIZE,
+        )
         .unwrap();
     Some(vdso_text_base)
 }

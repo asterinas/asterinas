@@ -11,6 +11,8 @@ use bitflags::bitflags;
 pub struct PageProperty {
     /// The flags associated with the page,
     pub flags: PageFlags,
+    /// The protection key for the page.
+    pub pkey: u8,
     /// The cache policy for the page.
     pub cache: CachePolicy,
     pub(crate) priv_flags: PrivilegedPageFlags,
@@ -18,9 +20,10 @@ pub struct PageProperty {
 
 impl PageProperty {
     /// Creates a new `PageProperty` with the given flags and cache policy for the user.
-    pub fn new_user(flags: PageFlags, cache: CachePolicy) -> Self {
+    pub fn new_user(flags: PageFlags, pkey: u8, cache: CachePolicy) -> Self {
         Self {
             flags,
+            pkey,
             cache,
             priv_flags: PrivilegedPageFlags::USER,
         }
@@ -30,6 +33,7 @@ impl PageProperty {
     pub fn new_absent() -> Self {
         Self {
             flags: PageFlags::empty(),
+            pkey: 0,
             cache: CachePolicy::Writeback,
             priv_flags: PrivilegedPageFlags::empty(),
         }

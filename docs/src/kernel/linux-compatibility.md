@@ -340,6 +340,9 @@ provided by Linux on x86-64 architecture.
 | 322	  | execveat         | ✅              |
 | 327	  | preadv2          | ✅              |
 | 328	  | pwritev2         | ✅              |
+| 329     | pkey_mprotect    | ✅              |
+| 330     | pkey_alloc       | ✅              |
+| 331     | pkey_free        | ✅              |
 | 332     | statx            | ✅              |
 | 435	  | clone3           | ✅              |
 | 436	  | close_range      | ✅              |
