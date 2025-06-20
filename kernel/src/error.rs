@@ -339,6 +339,8 @@ impl From<aster_systree::Error> for Error {
             AttributeError => Error::new(Errno::EIO),
             PermissionDenied => Error::new(Errno::EACCES),
             InternalError(msg) => Error::with_message(Errno::EIO, msg),
+            ChildExisted => Error::new(Errno::EEXIST),
+            ChildNotFound => Error::new(Errno::ENOENT),
             Overflow => Error::new(Errno::EOVERFLOW),
         }
     }
