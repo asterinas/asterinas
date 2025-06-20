@@ -1,18 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::{Pgid, Pid};
-use crate::prelude::*;
+use crate::{fs::file_table::get_file_fast, prelude::*, process::PidFile};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub enum ProcessFilter {
     Any,
     WithPid(Pid),
     WithPgid(Pgid),
+    WithPidfd(Arc<PidFile>),
 }
 
 impl ProcessFilter {
     // For `waitpid`.
-    pub fn from_which_and_id(which: u64, id: u32) -> Result<Self> {
+    pub fn from_which_and_id(which: u64, id: u32, ctx: &Context) -> Result<Self> {
         // Reference:
         // <https://elixir.bootlin.com/linux/v6.14.4/source/include/uapi/linux/wait.h#L16-L20>
         const P_ALL: u64 = 0;
@@ -25,11 +26,14 @@ impl ProcessFilter {
             P_PID => Ok(ProcessFilter::WithPid(id)),
             P_PGID => Ok(ProcessFilter::WithPgid(id)),
             P_PIDFD => {
-                warn!("the process filter `P_PIDFD` is not supported");
-                return_errno_with_message!(
-                    Errno::EINVAL,
-                    "the process filter `P_PIDFD` is not supported"
-                );
+                let file = {
+                    let mut file_table = ctx.thread_local.borrow_file_table_mut();
+                    get_file_fast!(&mut file_table, id.cast_signed()).into_owned()
+                };
+                let pid_file = Arc::downcast(file).map_err(|_| {
+                    Error::with_message(Errno::EINVAL, "the file is not a PID file")
+                })?;
+                Ok(ProcessFilter::WithPidfd(pid_file))
             }
             _ => return_errno_with_message!(Errno::EINVAL, "the process filter is invalid"),
         }

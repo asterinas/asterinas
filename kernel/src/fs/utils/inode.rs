@@ -24,6 +24,7 @@ use crate::{
 #[repr(u16)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, TryFromInt)]
 pub enum InodeType {
+    Unknown = 0o000000,
     NamedPipe = 0o010000,
     CharDevice = 0o020000,
     Dir = 0o040000,

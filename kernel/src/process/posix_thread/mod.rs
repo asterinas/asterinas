@@ -309,10 +309,27 @@ static POSIX_TID_ALLOCATOR: AtomicU32 = AtomicU32::new(1);
 
 /// Allocates a new tid for the new posix thread
 pub fn allocate_posix_tid() -> Tid {
-    POSIX_TID_ALLOCATOR.fetch_add(1, Ordering::SeqCst)
+    let tid = POSIX_TID_ALLOCATOR.fetch_add(1, Ordering::SeqCst);
+    if tid >= PID_MAX {
+        // When the kernel's next PID value reaches `PID_MAX`,
+        // it should wrap back to a minimum PID value.
+        // PIDs with a value of `PID_MAX` or larger should not be allocated.
+        // Reference: <https://docs.kernel.org/admin-guide/sysctl/kernel.html#pid-max>.
+        //
+        // FIXME: Currently, we cannot determine which PID is recycled,
+        // so we are unable to allocate smaller PIDs.
+        warn!("the allocated ID is greater than the maximum allowed PID");
+    }
+    tid
 }
 
 /// Returns the last allocated tid
 pub fn last_tid() -> Tid {
     POSIX_TID_ALLOCATOR.load(Ordering::SeqCst) - 1
 }
+
+/// The maximum allowed process ID.
+//
+// FIXME: The current value is chosen arbitrarily.
+// This value can be modified by the user by writing to `/proc/sys/kernel/pid_max`.
+pub const PID_MAX: u32 = u32::MAX / 2;
