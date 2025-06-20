@@ -23,7 +23,7 @@ use crate::{
     },
     prelude::{VmReader, VmWriter},
     process::{signal::PollHandle, Gid, Uid},
-    return_errno_with_message,
+    return_errno, return_errno_with_message,
     time::{clocks::RealTimeCoarseClock, Clock},
     Errno, Error, Result,
 };
@@ -134,6 +134,7 @@ pub(in crate::fs) trait KernelFsInode: Send + Sync + 'static {
 
     fn new_leaf_dir(
         inner_node: InnerNode, // Must be InnerNode::Leaf
+        mode: Option<InodeMode>,
         parent: Weak<Self>,
     ) -> Arc<Self>
     where
@@ -146,7 +147,7 @@ pub(in crate::fs) trait KernelFsInode: Send + Sync + 'static {
             panic!("new_leaf_dir called with non-leaf InnerNode");
         };
 
-        let mode = leaf_node.mode().into();
+        let mode = mode.unwrap_or_else(|| leaf_node.mode().into());
         Self::new_arc(inner_node, metadata, mode, parent)
     }
 
@@ -174,6 +175,7 @@ pub(in crate::fs) trait KernelFsInode: Send + Sync + 'static {
                         child_sysnode.cast_to_node().ok_or(Error::new(Errno::EIO))?;
                     let inode = Self::new_leaf_dir(
                         InnerNode::Leaf(child_leaf_node),
+                        None,
                         Arc::downgrade(&self.this()),
                     );
                     Ok(inode)
@@ -387,11 +389,35 @@ impl<KInode: KernelFsInode + Send + Sync + 'static> Inode for KInode {
 
     default fn create(
         &self,
-        _name: &str,
+        name: &str,
         _type_: InodeType,
-        _mode: InodeMode,
+        mode: InodeMode,
     ) -> Result<Arc<dyn Inode>> {
-        Err(Error::new(Errno::EPERM))
+        if name.len() > super::NAME_MAX {
+            return_errno!(Errno::ENAMETOOLONG);
+        }
+
+        let InnerNode::Branch(branch_node) = &self.inner_node() else {
+            return_errno_with_message!(Errno::ENOTDIR, "self is not a dir");
+        };
+
+        let new_child = branch_node.create_child(name)?;
+
+        let new_inode = if let Some(branch_child) = new_child.cast_to_branch() {
+            Self::new_branch_dir(
+                InnerNode::Branch(branch_child),
+                Some(mode),
+                self.parent().clone(),
+            )
+        } else {
+            Self::new_leaf_dir(
+                InnerNode::Leaf(new_child.cast_to_node().unwrap()),
+                Some(mode),
+                self.parent().clone(),
+            )
+        };
+
+        Ok(new_inode)
     }
 
     default fn mknod(

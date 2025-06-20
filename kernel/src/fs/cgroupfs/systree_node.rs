@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::sync::{Arc, Weak};
+use alloc::{
+    string::ToString,
+    sync::{Arc, Weak},
+};
 use core::fmt::Debug;
 
 use aster_systree::{
@@ -26,27 +29,6 @@ pub struct CgroupUnifiedNode {
 pub struct CgroupNormalNode {
     fields: SysBranchNodeFields<dyn SysObj>,
     weak_self: Weak<Self>,
-}
-
-impl CgroupUnifiedNode {
-    /// Adds a child node to this `CgroupUnifiedNode`.
-    pub fn add_child(&self, new_child: Arc<dyn SysObj>) -> Result<()> {
-        let name = new_child.name();
-        let mut children_guard = self.fields.children.write();
-        if children_guard.contains_key(name) {
-            return Err(Error::PermissionDenied);
-        }
-
-        new_child.set_parent_path(SysStr::from(""));
-        children_guard.insert(name.clone(), new_child);
-        Ok(())
-    }
-}
-
-#[inherit_methods(from = "self.fields")]
-impl CgroupNormalNode {
-    /// Adds a child node to this `CgroupNormalNode`.
-    pub fn add_child(&self, new_child: Arc<dyn SysObj>) -> Result<()>;
 }
 
 impl CgroupUnifiedNode {
@@ -189,6 +171,26 @@ impl SysBranchNode for CgroupUnifiedNode {
     fn visit_children_with(&self, _min_id: u64, f: &mut dyn FnMut(&Arc<dyn SysObj>) -> Option<()>);
 
     fn child(&self, name: &str) -> Option<Arc<dyn SysObj>>;
+
+    fn add_child(&self, new_child: Arc<dyn SysObj>) -> Result<()> {
+        let name = new_child.name();
+        let mut children_guard = self.fields.children.write();
+        if children_guard.contains_key(name) {
+            return Err(Error::ChildExisted);
+        }
+
+        new_child.set_parent_path(SysStr::from(""));
+        children_guard.insert(name.clone(), new_child);
+        Ok(())
+    }
+
+    fn create_child(&self, name: &str) -> Result<Arc<dyn SysObj>> {
+        let new_child = CgroupNormalNode::new(name.to_string().into());
+        self.add_child(new_child.clone())?;
+        Ok(new_child)
+    }
+
+    fn remove_child(&self, name: &str) -> Result<Arc<dyn SysObj>>;
 }
 
 #[inherit_methods(from = "self.fields")]
@@ -198,4 +200,14 @@ impl SysBranchNode for CgroupNormalNode {
     fn visit_children_with(&self, _min_id: u64, f: &mut dyn FnMut(&Arc<dyn SysObj>) -> Option<()>);
 
     fn child(&self, name: &str) -> Option<Arc<dyn SysObj>>;
+
+    fn add_child(&self, new_child: Arc<dyn SysObj>) -> Result<()>;
+
+    fn create_child(&self, name: &str) -> Result<Arc<dyn SysObj>> {
+        let new_child = CgroupNormalNode::new(name.to_string().into());
+        self.add_child(new_child.clone())?;
+        Ok(new_child)
+    }
+
+    fn remove_child(&self, name: &str) -> Result<Arc<dyn SysObj>>;
 }

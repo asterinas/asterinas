@@ -1,21 +1,12 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use alloc::{
-    string::ToString,
-    sync::{Arc, Weak},
-};
+use alloc::sync::{Arc, Weak};
 
 use ostd::sync::RwLock;
 
 use crate::{
-    error::Errno,
-    fs::{
-        cgroupfs::systree_node::{CgroupNormalNode, CgroupUnifiedNode},
-        utils::{
-            FileSystem, InnerNode, Inode, InodeMode, InodeType, KernelFsInode, Metadata, NAME_MAX,
-        },
-    },
-    return_errno, return_errno_with_message, Result,
+    fs::utils::{FileSystem, InnerNode, Inode, InodeMode, KernelFsInode, Metadata},
+    Result,
 };
 
 /// An inode abstraction used in the cgroup filesystem.
@@ -80,43 +71,5 @@ impl KernelFsInode for CgroupInode {
 impl Inode for CgroupInode {
     fn fs(&self) -> Arc<dyn FileSystem> {
         super::singleton().clone()
-    }
-
-    fn create(&self, name: &str, _type_: InodeType, mode: InodeMode) -> Result<Arc<dyn Inode>> {
-        if name.len() > NAME_MAX {
-            return_errno!(Errno::ENAMETOOLONG);
-        }
-
-        let InnerNode::Branch(branch_node) = &self.inner_node else {
-            return_errno_with_message!(Errno::ENOTDIR, "self is not dir");
-        };
-
-        if branch_node.child(name).is_some() {
-            return_errno_with_message!(Errno::EEXIST, "entry exists");
-        }
-
-        let new_child = CgroupNormalNode::new(name.to_string().into());
-        if branch_node.is_root() {
-            let tree_node = branch_node
-                .as_any()
-                .downcast_ref::<CgroupUnifiedNode>()
-                .unwrap();
-            tree_node.add_child(new_child.clone())?;
-        } else {
-            let tree_node = branch_node
-                .as_any()
-                .downcast_ref::<CgroupNormalNode>()
-                .unwrap();
-            tree_node.add_child(new_child.clone())?;
-        };
-
-        let new_inode = Self::new_branch_dir(
-            InnerNode::Branch(new_child),
-            Some(mode),
-            self.parent.clone(),
-        );
-        *new_inode.mode.write() = mode;
-
-        Ok(new_inode)
     }
 }

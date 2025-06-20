@@ -2,6 +2,7 @@
 
 use alloc::sync::Arc;
 
+use aster_systree::SysBranchNode;
 use fs::CgroupFs;
 pub use inode::CgroupInode;
 use spin::Once;

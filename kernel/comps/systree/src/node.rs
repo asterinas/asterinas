@@ -102,6 +102,23 @@ pub trait SysBranchNode: SysNode {
         });
         count
     }
+
+    /// Adds a child node to this branch node.
+    fn add_child(&self, _child: Arc<dyn SysObj>) -> Result<()> {
+        Err(Error::PermissionDenied)
+    }
+
+    /// Creates a new child node with the given name.
+    ///
+    /// This new child will be added to this branch node.
+    fn create_child(&self, _name: &str) -> Result<Arc<dyn SysObj>> {
+        Err(Error::PermissionDenied)
+    }
+
+    /// Removes a child node with the given name.
+    fn remove_child(&self, _name: &str) -> Result<Arc<dyn SysObj>> {
+        Err(Error::PermissionDenied)
+    }
 }
 
 /// The trait that abstracts a "normal" node in a `SysTree`.

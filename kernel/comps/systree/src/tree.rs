@@ -56,21 +56,6 @@ pub struct RootNode {
     weak_self: Weak<Self>,
 }
 
-impl RootNode {
-    /// Adds a child node to this `RootNode`.
-    pub fn add_child(&self, new_child: Arc<dyn SysObj>) -> Result<()> {
-        let name = new_child.name();
-        let mut children_guard = self.fields.children.write();
-        if children_guard.contains_key(name) {
-            return Err(Error::PermissionDenied);
-        }
-
-        new_child.set_parent_path(SysStr::from(""));
-        children_guard.insert(name.clone(), new_child);
-        Ok(())
-    }
-}
-
 #[inherit_methods(from = "self.fields")]
 impl SysObj for RootNode {
     impl_cast_methods_for_branch!();
@@ -113,4 +98,16 @@ impl SysBranchNode for RootNode {
     fn visit_children_with(&self, _min_id: u64, f: &mut dyn FnMut(&Arc<dyn SysObj>) -> Option<()>);
 
     fn child(&self, name: &str) -> Option<Arc<dyn SysObj>>;
+
+    fn add_child(&self, new_child: Arc<dyn SysObj>) -> Result<()> {
+        let name = new_child.name();
+        let mut children_guard = self.fields.children.write();
+        if children_guard.contains_key(name) {
+            return Err(Error::ChildExisted);
+        }
+
+        new_child.set_parent_path(SysStr::from(""));
+        children_guard.insert(name.clone(), new_child);
+        Ok(())
+    }
 }

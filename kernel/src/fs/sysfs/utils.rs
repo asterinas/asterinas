@@ -31,9 +31,6 @@ impl BasicBranchNode {
             weak_self: weak_self.clone(),
         })
     }
-
-    /// Adds a child node to this `BasicBranchNode`.
-    pub fn add_child(&self, new_child: Arc<dyn SysObj>) -> Result<()>;
 }
 
 #[inherit_methods(from = "self.fields")]
@@ -78,4 +75,6 @@ impl SysBranchNode for BasicBranchNode {
     fn visit_children_with(&self, _min_id: u64, f: &mut dyn FnMut(&Arc<dyn SysObj>) -> Option<()>);
 
     fn child(&self, name: &str) -> Option<Arc<dyn SysObj>>;
+
+    fn add_child(&self, new_child: Arc<dyn SysObj>) -> Result<()>;
 }
