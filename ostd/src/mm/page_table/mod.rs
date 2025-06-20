@@ -507,59 +507,61 @@ pub(super) unsafe fn page_walk<C: PageTableConfig>(
     unreachable!("All present PTEs at the level 1 must be last-level PTEs");
 }
 
-/// The interface for defining architecture-specific page table entries.
+/// A trait that abstracts architecture-specific page table entries (PTEs).
 ///
 /// Note that a default PTE should be a PTE that points to nothing.
 pub trait PageTableEntryTrait:
     Clone + Copy + Debug + Default + Pod + PodOnce + SameSizeAs<usize> + Sized + Send + Sync + 'static
 {
-    /// Create a set of new invalid page table flags that indicates an absent page.
+    /// Creates a PTE that points to nothing.
     ///
-    /// Note that currently the implementation requires an all zero PTE to be an absent PTE.
+    /// Note that currently the implementation requires a zeroed PTE to be an absent PTE.
     fn new_absent() -> Self {
         Self::default()
     }
 
-    /// If the flags are present with valid mappings.
+    /// Returns if the PTE points to something.
     ///
     /// For PTEs created by [`Self::new_absent`], this method should return
-    /// false. And for PTEs created by [`Self::new_page`] or [`Self::new_pt`]
-    /// and modified with [`Self::set_prop`] this method should return true.
+    /// false. For PTEs created by [`Self::new_page`] or [`Self::new_pt`]
+    /// and modified with [`Self::set_prop`], this method should return true.
     fn is_present(&self) -> bool;
 
-    /// Create a new PTE with the given physical address and flags that map to a page.
+    /// Creates a new PTE that maps to a page.
     fn new_page(paddr: Paddr, level: PagingLevel, prop: PageProperty) -> Self;
 
-    /// Create a new PTE that map to a child page table.
+    /// Creates a new PTE that maps to a child page table.
     fn new_pt(paddr: Paddr) -> Self;
 
-    /// Get the physical address from the PTE.
+    /// Returns the physical address from the PTE.
+    ///
     /// The physical address recorded in the PTE is either:
-    /// - the physical address of the next level page table;
-    /// - or the physical address of the page it maps to.
+    /// - the physical address of the next-level page table, or
+    /// - the physical address of the page that the PTE maps to.
     fn paddr(&self) -> Paddr;
 
+    /// Returns the page property of the PTE.
     fn prop(&self) -> PageProperty;
 
-    /// Set the page property of the PTE.
+    /// Sets the page property of the PTE.
     ///
-    /// This will be only done if the PTE is present. If not, this method will
-    /// do nothing.
+    /// This methold has an impact only if the PTE is present. If not, this
+    /// method will do nothing.
     fn set_prop(&mut self, prop: PageProperty);
 
-    /// If the PTE maps a page rather than a child page table.
+    /// Returns if the PTE maps a page rather than a child page table.
     ///
-    /// The level of the page table the entry resides is given since architectures
-    /// like amd64 only uses a huge bit in intermediate levels.
+    /// The method needs to know the level of the page table where the PTE resides,
+    /// since architectures like x86-64 have a huge bit only in intermediate levels.
     fn is_last(&self, level: PagingLevel) -> bool;
 
-    /// Converts the PTE into its corresponding `usize` value.
+    /// Converts the PTE into a raw `usize` value.
     fn as_usize(self) -> usize {
         // SAFETY: `Self` is `Pod` and has the same memory representation as `usize`.
         unsafe { transmute_unchecked(self) }
     }
 
-    /// Converts a usize `pte_raw` into a PTE.
+    /// Converts the raw `usize` value into a PTE.
     fn from_usize(pte_raw: usize) -> Self {
         // SAFETY: `Self` is `Pod` and has the same memory representation as `usize`.
         unsafe { transmute_unchecked(pte_raw) }
