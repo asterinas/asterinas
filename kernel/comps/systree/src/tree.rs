@@ -62,7 +62,7 @@ impl RootNode {
         let name = new_child.name();
         let mut children_guard = self.fields.children.write();
         if children_guard.contains_key(name) {
-            return Err(Error::PermissionDenied);
+            return Err(Error::ChildExisted);
         }
 
         new_child.set_parent_path(SysStr::from(""));
