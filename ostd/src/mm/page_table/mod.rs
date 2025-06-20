@@ -14,7 +14,6 @@ use super::{
 use crate::{
     arch::mm::{PageTableEntry, PagingConsts},
     task::{atomic_mode::AsAtomicModeGuard, disable_preempt},
-    util::marker::SameSizeAs,
     Pod,
 };
 
@@ -511,7 +510,7 @@ pub(super) unsafe fn page_walk<C: PageTableConfig>(
 ///
 /// Note that a default PTE should be a PTE that points to nothing.
 pub trait PageTableEntryTrait:
-    Clone + Copy + Debug + Default + Pod + PodOnce + SameSizeAs<usize> + Sized + Send + Sync + 'static
+    Clone + Copy + Debug + Default + Pod + PodOnce + Sized + Send + Sync + 'static
 {
     /// Creates a PTE that points to nothing.
     ///
@@ -557,12 +556,16 @@ pub trait PageTableEntryTrait:
 
     /// Converts the PTE into a raw `usize` value.
     fn as_usize(self) -> usize {
+        const { assert!(size_of::<Self>() == size_of::<usize>()) };
+
         // SAFETY: `Self` is `Pod` and has the same memory representation as `usize`.
         unsafe { transmute_unchecked(self) }
     }
 
     /// Converts the raw `usize` value into a PTE.
     fn from_usize(pte_raw: usize) -> Self {
+        const { assert!(size_of::<Self>() == size_of::<usize>()) };
+
         // SAFETY: `Self` is `Pod` and has the same memory representation as `usize`.
         unsafe { transmute_unchecked(pte_raw) }
     }
