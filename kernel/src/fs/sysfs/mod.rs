@@ -2,13 +2,14 @@
 
 mod fs;
 mod inode;
+pub mod kernel;
 #[cfg(ktest)]
 mod test;
 mod utils;
 
 use alloc::sync::Arc;
 
-use aster_systree::SysMode;
+use aster_systree::{SysBranchNode, SysMode};
 use spin::Once;
 
 pub use self::{fs::SysFs, inode::SysFsInode, utils::BasicBranchNode};
@@ -26,13 +27,20 @@ pub fn singleton() -> &'static Arc<SysFs> {
 pub fn init() {
     let systree = aster_systree::singleton();
 
+    // Inits child nodes.
     let fs_dir = BasicBranchNode::new("fs".into(), SysMode::DEFAULT_RW_MODE);
+    FS_SYS_TREE_NODE.call_once(|| fs_dir.clone());
+    kernel::init();
 
+    // Add child nodes to the SysTree.
     systree
         .root()
-        .add_child(fs_dir.clone())
+        .add_child(fs_dir)
         .expect("Failed to add fs directory to SysTree");
-    FS_SYS_TREE_NODE.call_once(|| fs_dir);
+    systree
+        .root()
+        .add_child(kernel::singleton().clone())
+        .expect("Failed to add fs directory to SysTree");
 
     // Ensure systree is initialized first. This should be handled by the kernel's init order.
     SYSFS_SINGLETON.call_once(SysFs::new);
