@@ -112,6 +112,9 @@ impl ConsoleState {
         } else if ch == b'\r' {
             self.carriage_return();
             return;
+        } else if ch == b'\x08' {
+            self.backspace();
+            return;
         }
 
         if self.x_pos > self.backend.width() - self.font.width() {
@@ -144,6 +147,16 @@ impl ConsoleState {
 
     fn carriage_return(&mut self) {
         self.x_pos = 0;
+    }
+
+    fn backspace(&mut self) {
+        if self.x_pos < self.font.width() {
+            // TODO: What should we do if we're at the beginning of the line?
+            return;
+        }
+
+        self.x_pos -= self.font.width();
+        self.draw_char(b' ');
     }
 
     fn draw_char(&mut self, ch: u8) {
