@@ -47,7 +47,7 @@ long get_vm_rss_kb(rss_type type)
 		target_field = "VmRSS:";
 		break;
 	default:
-		perror("Unknown rss_type\n");
+		fprintf(stderr, "Unknown rss_type\n");
 		exit(1);
 	}
 
@@ -68,14 +68,12 @@ long get_vm_rss_kb(rss_type type)
 	return rss_kb;
 }
 
+#define CHECK_MM(func) CHECK_WITH(func, _ret != MAP_FAILED)
+
 FN_TEST(rss_anon)
 {
-	void *mem = mmap(NULL, TOTAL_SIZE, PROT_READ | PROT_WRITE,
-			 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	if (mem == MAP_FAILED) {
-		perror("mmap");
-		exit(1);
-	}
+	void *mem = CHECK_MM(mmap(NULL, TOTAL_SIZE, PROT_READ | PROT_WRITE,
+				  MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
 
 	// The first call to `TEST_SUCC` and `get_vm_rss_kb()` may trigger
 	// lazy mapping of additional pages, such as shared libraries or files.
@@ -122,11 +120,8 @@ FN_TEST(rss_file)
 	long rss_file_before = TEST_SUCC(get_vm_rss_kb(file));
 	long rss_before = TEST_SUCC(get_vm_rss_kb(total));
 
-	void *mem = mmap(NULL, TOTAL_SIZE, PROT_READ, MAP_PRIVATE, fd, 0);
-	if (mem == MAP_FAILED) {
-		perror("mmap");
-		exit(1);
-	}
+	void *mem =
+		CHECK_MM(mmap(NULL, TOTAL_SIZE, PROT_READ, MAP_PRIVATE, fd, 0));
 
 	// Trigger page faults
 	for (int i = 0; i < NUM_PAGES; ++i) {
@@ -146,7 +141,7 @@ FN_TEST(rss_file)
 	TEST_RES(get_vm_rss_kb(file), _ret == rss_file_before);
 	TEST_RES(get_vm_rss_kb(total), _ret == rss_before);
 
-	close(fd);
-	unlink(filename);
+	TEST_SUCC(close(fd));
+	TEST_SUCC(unlink(filename));
 }
 END_TEST()

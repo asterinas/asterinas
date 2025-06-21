@@ -47,7 +47,7 @@
 
 #define __CHECK(func, cond)                                                   \
 	errno = 0;                                                            \
-	long _ret = (func);                                                   \
+	__auto_type _ret = (func);                                            \
 	if (!(cond)) {                                                        \
 		fprintf(stderr,                                               \
 			"fatal error: %s: `" #cond "` is false after `" #func \
@@ -100,7 +100,7 @@ static int __total_failures;
 
 #define __TEST(func, err, cond)                                                \
 	errno = 0;                                                             \
-	long _ret = (func);                                                    \
+	__auto_type _ret = (func);                                             \
 	if (errno != (err)) {                                                  \
 		__tests_failed++;                                              \
 		fprintf(stderr,                                                \
