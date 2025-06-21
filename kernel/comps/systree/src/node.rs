@@ -10,6 +10,7 @@ use core::{
 use ostd::mm::{FallibleVmWrite, VmReader, VmWriter};
 
 use super::{Error, Result, SysAttrSet, SysStr};
+use crate::utils::SysMode;
 
 pub const MAX_ATTR_SIZE: usize = 4096;
 
@@ -101,6 +102,18 @@ pub trait SysBranchNode: SysNode {
         });
         count
     }
+
+    /// Creates a new child node with the given name.
+    ///
+    /// This new child will be added to this branch node.
+    fn create_child(&self, _name: &str) -> Result<Arc<dyn SysObj>> {
+        Err(Error::PermissionDenied)
+    }
+
+    /// Removes a child node with the given name.
+    fn remove_child(&self, _name: &str) -> Result<Arc<dyn SysObj>> {
+        Err(Error::PermissionDenied)
+    }
 }
 
 /// The trait that abstracts a "normal" node in a `SysTree`.
@@ -148,7 +161,7 @@ pub trait SysNode: SysObj {
 
     /// Shows the string value of an attribute.
     ///
-    /// Most attributes are textual, rather binary (see `SysAttrFlags::IS_BINARY`).
+    /// Most attributes are textual, rather binary.
     /// So using this `show_attr` method is more convenient than
     /// the `read_attr` method.
     fn show_attr(&self, name: &str) -> Result<String> {
@@ -163,13 +176,16 @@ pub trait SysNode: SysObj {
 
     /// Stores the string value of an attribute.
     ///
-    /// Most attributes are textual, rather binary (see `SysAttrFlags::IS_BINARY`).
+    /// Most attributes are textual, rather binary.
     /// So using this `store_attr` method is more convenient than
     /// the `write_attr` method.
     fn store_attr(&self, name: &str, new_val: &str) -> Result<usize> {
         let mut reader = VmReader::from(new_val.as_bytes()).to_fallible();
         self.write_attr(name, &mut reader)
     }
+
+    /// Returns the initial [`SysMode`] of a node.
+    fn mode(&self) -> SysMode;
 }
 
 /// A trait that abstracts any symlink node in a `SysTree`.
@@ -216,6 +232,14 @@ pub trait SysObj: Any + Send + Sync + Debug + 'static {
     /// Returns whether a node is the root of a `SysTree`.
     fn is_root(&self) -> bool {
         false
+    }
+
+    /// Sets the parent path of a node.
+    ///
+    /// This method is usually called when a node is added to a `SysTree`.
+    /// Once the path is set, the node's path will not change.
+    fn set_parent_path(&self, _path: SysStr) {
+        // This method is a no-op by default.
     }
 
     /// Returns the path from the root to this node.
