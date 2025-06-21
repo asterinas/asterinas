@@ -27,6 +27,7 @@ sleep 0.2
 
 ./socketpair
 ./sockoption
+./sockoption2
 ./listen_backlog
 ./send_buf_full
 ./tcp_err

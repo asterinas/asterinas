@@ -33,7 +33,7 @@ use crate::{
             options::{Error as SocketError, SocketOption},
             private::SocketPrivate,
             util::{
-                options::{SetSocketLevelOption, SocketOptionSet},
+                options::{GetSocketLevelOption, SetSocketLevelOption, SocketOptionSet},
                 MessageHeader, SendRecvFlags, SockShutdownCmd, SocketAddr,
             },
             Socket,
@@ -588,10 +588,11 @@ impl Socket for StreamSocket {
             _ => ()
         });
 
+        let state = self.state.read();
         let options = self.options.read();
 
         // Deal with socket-level options
-        match options.socket.get_option(option) {
+        match options.socket.get_option(option, state.as_ref()) {
             Err(err) if err.error() == Errno::ENOPROTOOPT => (),
             res => return res,
         }
@@ -665,10 +666,10 @@ impl Socket for StreamSocket {
         let mut options = self.options.write();
 
         // Deal with socket-level options
-        let need_iface_poll = match options.socket.set_option(option, state.as_mut()) {
+        let need_iface_poll = match options.socket.set_option(option, state.as_ref()) {
             Err(err) if err.error() == Errno::ENOPROTOOPT => {
                 // Deal with IP-level options
-                match options.ip.set_option(option, state.as_mut()) {
+                match options.ip.set_option(option, state.as_ref()) {
                     Err(err) if err.error() == Errno::ENOPROTOOPT => {
                         // Deal with TCP-level options
                         do_tcp_setsockopt(option, &mut options, state.as_mut())?
@@ -797,6 +798,12 @@ impl State {
             State::Connected(ref connected_stream) => Some(connected_stream.iface()),
             State::Listen(ref listen_stream) => Some(listen_stream.iface()),
         }
+    }
+}
+
+impl GetSocketLevelOption for State {
+    fn is_listening(&self) -> bool {
+        matches!(self, Self::Listen(_))
     }
 }
 

@@ -2,6 +2,8 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use aster_rights::ReadOp;
+
 use super::{
     connected::{combine_io_events, Connected},
     listener::Listener,
@@ -9,7 +11,10 @@ use super::{
 use crate::{
     events::IoEvents,
     net::socket::{
-        unix::addr::{UnixSocketAddr, UnixSocketAddrBound},
+        unix::{
+            addr::{UnixSocketAddr, UnixSocketAddrBound},
+            cred::SocketCred,
+        },
         util::SockShutdownCmd,
     },
     prelude::*,
@@ -46,7 +51,11 @@ impl Init {
         Ok(())
     }
 
-    pub(super) fn into_connected(self, peer_addr: UnixSocketAddrBound) -> (Connected, Connected) {
+    pub(super) fn into_connected(
+        self,
+        peer_addr: UnixSocketAddrBound,
+        peer_cred: SocketCred,
+    ) -> (Connected, Connected) {
         let Init {
             addr,
             reader_pollee,
@@ -55,11 +64,15 @@ impl Init {
             is_write_shutdown,
         } = self;
 
+        let cred = SocketCred::<ReadOp>::new();
+
         let (this_conn, peer_conn) = Connected::new_pair(
             addr,
             Some(peer_addr),
             Some(reader_pollee),
             Some(writer_pollee),
+            cred,
+            peer_cred,
         );
 
         if is_read_shutdown.into_inner() {

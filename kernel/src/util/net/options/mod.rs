@@ -67,7 +67,7 @@ use self::{socket::new_socket_option, tcp::new_tcp_option};
 pub trait RawSocketOption: SocketOption {
     fn read_from_user(&mut self, addr: Vaddr, max_len: u32) -> Result<()>;
 
-    fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize>;
+    fn write_to_user(&self, addr: Vaddr, max_len: &mut u32) -> Result<usize>;
 
     fn as_sock_option_mut(&mut self) -> &mut dyn SocketOption;
 
@@ -87,11 +87,11 @@ macro_rules! impl_raw_socket_option {
                 Ok(())
             }
 
-            fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
+            fn write_to_user(&self, addr: Vaddr, max_len: &mut u32) -> Result<usize> {
                 use $crate::util::net::options::utils::WriteToUser;
 
                 let output = self.get().unwrap();
-                output.write_to_user(addr, max_len)
+                output.write_to_user(addr, *max_len)
             }
 
             fn as_sock_option_mut(&mut self) -> &mut dyn SocketOption {
@@ -114,11 +114,11 @@ macro_rules! impl_raw_sock_option_get_only {
                 return_errno_with_message!(Errno::ENOPROTOOPT, "the option is getter-only");
             }
 
-            fn write_to_user(&self, addr: Vaddr, max_len: u32) -> Result<usize> {
+            fn write_to_user(&self, addr: Vaddr, max_len: &mut u32) -> Result<usize> {
                 use $crate::util::net::options::utils::WriteToUser;
 
                 let output = self.get().unwrap();
-                output.write_to_user(addr, max_len)
+                output.write_to_user(addr, *max_len)
             }
 
             fn as_sock_option_mut(&mut self) -> &mut dyn SocketOption {
@@ -145,7 +145,7 @@ macro_rules! impl_raw_sock_option_set_only {
                 Ok(())
             }
 
-            fn write_to_user(&self, _addr: Vaddr, _max_len: u32) -> Result<usize> {
+            fn write_to_user(&self, _addr: Vaddr, _max_len: &mut u32) -> Result<usize> {
                 return_errno_with_message!(Errno::ENOPROTOOPT, "the option is setter-only");
             }
 
