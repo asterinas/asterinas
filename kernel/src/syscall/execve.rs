@@ -158,11 +158,11 @@ fn do_execve(
     // to the user-registered signal handlers.
     user_context.fpu_state().restore();
     // set new entry point
-    user_context.set_instruction_pointer(elf_load_info.entry_point() as _);
-    debug!("entry_point: 0x{:x}", elf_load_info.entry_point());
+    user_context.set_instruction_pointer(elf_load_info.entry_point as _);
+    debug!("entry_point: 0x{:x}", elf_load_info.entry_point);
     // set new user stack top
-    user_context.set_stack_pointer(elf_load_info.user_stack_top() as _);
-    debug!("user stack top: 0x{:x}", elf_load_info.user_stack_top());
+    user_context.set_stack_pointer(elf_load_info.user_stack_top as _);
+    debug!("user stack top: 0x{:x}", elf_load_info.user_stack_top);
     Ok(())
 }
 
