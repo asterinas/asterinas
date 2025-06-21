@@ -2,7 +2,7 @@
 
 #define _GNU_SOURCE
 
-#include "../network/test.h"
+#include "../test.h"
 
 #include <fcntl.h>
 #include <sched.h>

@@ -2,7 +2,7 @@
 
 #define _GNU_SOURCE
 
-#include "../network/test.h"
+#include "../test.h"
 #include <signal.h>
 #include <string.h>
 #include <sys/poll.h>

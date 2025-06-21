@@ -4,7 +4,7 @@
 #include <sys/mman.h>
 #include <stdio.h>
 
-#include "../network/test.h"
+#include "../test.h"
 
 #define PAGE_SIZE 4096
 
