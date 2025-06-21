@@ -35,10 +35,10 @@ use component::{init_component, ComponentInitError};
 use spin::Once;
 
 pub use self::{
-    attr::{SysAttr, SysAttrFlags, SysAttrSet, SysAttrSetBuilder},
+    attr::{SysAttr, SysAttrSet, SysAttrSetBuilder},
     node::{SysBranchNode, SysNode, SysNodeId, SysNodeType, SysObj, SysSymlink},
     tree::SysTree,
-    utils::{SymlinkNodeFields, SysBranchNodeFields, SysNormalNodeFields, SysObjFields},
+    utils::{SymlinkNodeFields, SysBranchNodeFields, SysMode, SysNormalNodeFields, SysObjFields},
 };
 
 static SINGLETON: Once<Arc<SysTree>> = Once::new();
