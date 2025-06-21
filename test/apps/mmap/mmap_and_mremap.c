@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
+#include <fcntl.h>
 #include "../network/test.h"
 
 #define PAGE_SIZE 4096
@@ -76,5 +77,65 @@ FN_TEST(mmap_and_mremap_fixed)
 
 	TEST_RES(strcmp(new_addr, content), _ret == 0);
 	TEST_SUCC(munmap(new_addr, PAGE_SIZE));
+}
+END_TEST()
+
+FN_TEST(mmap_and_mremap_auto_merge_anon)
+{
+	char *addr = x_mmap(NULL, 6 * PAGE_SIZE, PROT_READ | PROT_WRITE,
+			    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	TEST_SUCC(munmap(addr, 6 * PAGE_SIZE));
+
+	x_mmap(addr, PAGE_SIZE, PROT_READ | PROT_WRITE,
+	       MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+	strcpy(addr, content);
+	x_mmap(addr + 2 * PAGE_SIZE, PAGE_SIZE, PROT_READ | PROT_WRITE,
+	       MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+	x_mmap(addr + PAGE_SIZE, PAGE_SIZE, PROT_READ | PROT_WRITE,
+	       MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0);
+
+	char *new_addr = mremap(addr, 3 * PAGE_SIZE, 3 * PAGE_SIZE,
+				MREMAP_MAYMOVE | MREMAP_FIXED,
+				addr + 3 * PAGE_SIZE);
+	if (new_addr == MAP_FAILED) {
+		perror("mremap");
+		exit(EXIT_FAILURE);
+	}
+
+	TEST_RES(strcmp(new_addr, content), _ret == 0);
+	TEST_SUCC(munmap(new_addr, 3 * PAGE_SIZE));
+}
+END_TEST()
+
+FN_TEST(mmap_and_mremap_auto_merge_file)
+{
+	const char *filename = "mremap_test_file";
+	int fd = TEST_SUCC(open(filename, O_CREAT | O_RDWR, 0600));
+	TEST_SUCC(ftruncate(fd, 6 * PAGE_SIZE));
+
+	char *addr = x_mmap(NULL, 6 * PAGE_SIZE, PROT_READ | PROT_WRITE,
+			    MAP_PRIVATE, fd, 0);
+	TEST_SUCC(munmap(addr, 6 * PAGE_SIZE));
+
+	x_mmap(addr, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_FIXED,
+	       fd, 0);
+	strcpy(addr, content);
+	x_mmap(addr + 2 * PAGE_SIZE, PAGE_SIZE, PROT_READ | PROT_WRITE,
+	       MAP_PRIVATE | MAP_FIXED, fd, 2 * PAGE_SIZE);
+	x_mmap(addr + PAGE_SIZE, PAGE_SIZE, PROT_READ | PROT_WRITE,
+	       MAP_PRIVATE | MAP_FIXED, fd, PAGE_SIZE);
+
+	char *new_addr = mremap(addr, 3 * PAGE_SIZE, 3 * PAGE_SIZE,
+				MREMAP_MAYMOVE | MREMAP_FIXED,
+				addr + 3 * PAGE_SIZE);
+	if (new_addr == MAP_FAILED) {
+		perror("mremap");
+		exit(EXIT_FAILURE);
+	}
+
+	TEST_RES(strcmp(new_addr, content), _ret == 0);
+	TEST_SUCC(munmap(new_addr, 3 * PAGE_SIZE));
+	close(fd);
+	unlink(filename);
 }
 END_TEST()

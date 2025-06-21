@@ -22,6 +22,7 @@ use crate::{
     vm::{
         perms::VmPerms,
         util::duplicate_frame,
+        vmar::is_intersected,
         vmo::{CommitFlags, Vmo, VmoCommitError},
     },
 };
@@ -466,6 +467,28 @@ impl VmMapping {
         }
         panic!("The mapping does not contain the splitting range.");
     }
+
+    /// Attempts to merge `self` with the given `vm_mapping` if they are
+    /// adjacent and compatible.
+    ///
+    /// - Returns the merged mapping along with the address of the mapping
+    ///   to be removed if successful.
+    /// - Returns the original `self` and a `None` otherwise.
+    pub fn try_merge_with(self, vm_mapping: &VmMapping) -> (Self, Option<Vaddr>) {
+        debug_assert!(!is_intersected(&self.range(), &vm_mapping.range()));
+
+        let (left, right) = if self.map_to_addr < vm_mapping.map_to_addr {
+            (&self, vm_mapping)
+        } else {
+            (vm_mapping, &self)
+        };
+
+        if let Some(merged) = try_merge(left, right) {
+            (merged, Some(vm_mapping.map_to_addr))
+        } else {
+            (self, None)
+        }
+    }
 }
 
 /************************** VM Space operations ******************************/
@@ -579,4 +602,45 @@ impl MappedVmo {
             range: self.range.clone(),
         })
     }
+}
+
+/// Attempts to merge two [`VmMapping`]s into a single mapping if they are
+/// adjacent and compatible.
+///
+/// - Returns the merged [`VmMapping`] if successful. The caller should
+///   remove the original mappings before inserting the merged mapping
+///   into the [`Vmar`].
+/// - Returns `None` otherwise.
+fn try_merge(left: &VmMapping, right: &VmMapping) -> Option<VmMapping> {
+    if left.map_end() != right.map_to_addr()
+        || left.is_shared != right.is_shared
+        || left.handle_page_faults_around != right.handle_page_faults_around
+        || left.perms != right.perms
+    {
+        return None;
+    }
+    let vmo = match (&left.vmo, &right.vmo) {
+        (None, None) => None,
+        (Some(l_vmo), Some(r_vmo))
+            if Arc::ptr_eq(&l_vmo.vmo.0, &r_vmo.vmo.0)
+                && r_vmo.range.start - l_vmo.range.start == left.map_size()
+                && l_vmo.range.end - l_vmo.range.start >= left.map_size() =>
+        {
+            let range = l_vmo.range.start..l_vmo.range.end.max(r_vmo.range.end);
+            Some(MappedVmo::new(l_vmo.vmo.dup().ok()?, range))
+        }
+        _ => return None,
+    };
+
+    let map_size = NonZeroUsize::new(left.map_size() + right.map_size()).unwrap();
+
+    Some(VmMapping {
+        map_size,
+        map_to_addr: left.map_to_addr,
+        vmo,
+        inode: left.inode.clone(),
+        is_shared: left.is_shared,
+        handle_page_faults_around: left.handle_page_faults_around,
+        perms: left.perms,
+    })
 }

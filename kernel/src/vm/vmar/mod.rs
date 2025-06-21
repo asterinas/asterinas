@@ -208,6 +208,32 @@ impl VmarInner {
         self.vm_mappings.insert(vm_mapping);
     }
 
+    /// Inserts a modified `VmMapping` into the `Vmar`.
+    ///
+    /// This method will try to merge the `VmMapping` with surrounding mappings
+    /// that are adjacent and compatible, in order to reduce fragmentation.
+    ///
+    /// Make sure the insertion doesn't exceed address space limit.
+    fn insert_modified(&mut self, vm_mapping: VmMapping) {
+        self.total_vm += vm_mapping.map_size();
+        let mut vm_mapping = vm_mapping;
+        let addr = vm_mapping.map_to_addr();
+
+        if let Some(prev) = self.vm_mappings.find_prev(&addr) {
+            let (new_mapping, to_remove) = vm_mapping.try_merge_with(prev);
+            vm_mapping = new_mapping;
+            to_remove.map(|addr| self.vm_mappings.remove(&addr));
+        }
+
+        if let Some(next) = self.vm_mappings.find_next(&addr) {
+            let (new_mapping, to_remove) = vm_mapping.try_merge_with(next);
+            vm_mapping = new_mapping;
+            to_remove.map(|addr| self.vm_mappings.remove(&addr));
+        }
+
+        self.vm_mappings.insert(vm_mapping);
+    }
+
     /// Removes a `VmMapping` based on the provided key from the `Vmar`.
     fn remove(&mut self, key: &Vaddr) -> Option<VmMapping> {
         let vm_mapping = self.vm_mappings.remove(key)?;
@@ -378,7 +404,7 @@ impl VmarInner {
         self.check_extra_size_fits_rlimit(new_map_end - old_map_end)?;
         let last_mapping = self.remove(&last_mapping_addr).unwrap();
         let last_mapping = last_mapping.enlarge(new_map_end - old_map_end);
-        self.insert(last_mapping);
+        self.insert_modified(last_mapping);
         Ok(())
     }
 }
@@ -459,19 +485,19 @@ impl Vmar_ {
             let vm_mapping_range = vm_mapping.range();
             let intersected_range = get_intersected_range(&range, &vm_mapping_range);
 
-            // Protects part of the taken `VmMapping`.
             let (left, taken, right) = vm_mapping.split_range(&intersected_range)?;
 
-            let taken = taken.protect(vm_space.as_ref(), perms);
-            inner.insert(taken);
-
-            // And put the rest back.
+            // Puts the rest back.
             if let Some(left) = left {
                 inner.insert(left);
             }
             if let Some(right) = right {
                 inner.insert(right);
             }
+
+            // Protects part of the `VmMapping`.
+            let taken = taken.protect(vm_space.as_ref(), perms);
+            inner.insert_modified(taken);
         }
 
         Ok(())
@@ -605,7 +631,7 @@ impl Vmar_ {
         };
         // Now we can ensure that `new_size >= old_size`.
         let new_mapping = old_mapping.clone_for_remap_at(new_range.start)?;
-        inner.insert(new_mapping.enlarge(new_size - old_size));
+        inner.insert_modified(new_mapping.enlarge(new_size - old_size));
 
         // Move the mapping.
         let preempt_guard = disable_preempt();
@@ -1009,7 +1035,7 @@ where
         );
 
         // Add the mapping to the VMAR.
-        inner.insert(vm_mapping);
+        inner.insert_modified(vm_mapping);
 
         Ok(map_to_addr)
     }
