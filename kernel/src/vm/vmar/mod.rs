@@ -146,6 +146,10 @@ pub(super) struct Vmar_ {
 
 struct VmarInner {
     /// The mapped pages and associated metadata.
+    ///
+    /// When inserting a `VmMapping` into this set, use `insert_try_merge` to
+    /// auto-merge adjacent and compatible mappings, or `insert_without_try_merge`
+    /// if the mapping is known not mergeable with any neighboring mappings.
     vm_mappings: IntervalSet<Vaddr, VmMapping>,
     /// The total mapped memory in bytes.
     total_vm: usize,
@@ -193,18 +197,50 @@ impl VmarInner {
         {
             Ok(vm_mapping.map_to_addr())
         } else {
-            // FIXME: In Linux, two adjacent mappings created by `mmap` with
-            // identical properties can be `mremap`ed together. Fix this by
-            // adding an auto-merge mechanism for adjacent `VmMapping`s.
             return_errno_with_message!(Errno::EFAULT, "The range must lie in a single mapping");
         }
     }
 
-    /// Inserts a `VmMapping` into the `Vmar`.
+    /// Inserts a `VmMapping` into the `Vmar`, without attempting to merge with
+    /// neighboring mappings.
+    ///
+    /// The caller must ensure that the given `VmMapping` is not mergeable with
+    /// any neighboring mappings.
     ///
     /// Make sure the insertion doesn't exceed address space limit.
-    fn insert(&mut self, vm_mapping: VmMapping) {
+    fn insert_without_try_merge(&mut self, vm_mapping: VmMapping) {
         self.total_vm += vm_mapping.map_size();
+        self.vm_mappings.insert(vm_mapping);
+    }
+
+    /// Inserts a `VmMapping` into the `Vmar`, and attempts to merge it with
+    /// neighboring mappings.
+    ///
+    /// This method will try to merge the `VmMapping` with neighboring mappings
+    /// that are adjacent and compatible, in order to reduce fragmentation.
+    ///
+    /// Make sure the insertion doesn't exceed address space limit.
+    fn insert_try_merge(&mut self, vm_mapping: VmMapping) {
+        self.total_vm += vm_mapping.map_size();
+        let mut vm_mapping = vm_mapping;
+        let addr = vm_mapping.map_to_addr();
+
+        if let Some(prev) = self.vm_mappings.find_prev(&addr) {
+            let (new_mapping, to_remove) = vm_mapping.try_merge_with(prev);
+            vm_mapping = new_mapping;
+            if let Some(addr) = to_remove {
+                self.vm_mappings.remove(&addr);
+            }
+        }
+
+        if let Some(next) = self.vm_mappings.find_next(&addr) {
+            let (new_mapping, to_remove) = vm_mapping.try_merge_with(next);
+            vm_mapping = new_mapping;
+            if let Some(addr) = to_remove {
+                self.vm_mappings.remove(&addr);
+            }
+        }
+
         self.vm_mappings.insert(vm_mapping);
     }
 
@@ -272,10 +308,10 @@ impl VmarInner {
 
             let (left, taken, right) = vm_mapping.split_range(&intersected_range);
             if let Some(left) = left {
-                self.insert(left);
+                self.insert_without_try_merge(left);
             }
             if let Some(right) = right {
-                self.insert(right);
+                self.insert_without_try_merge(right);
             }
 
             rss_delta.add(taken.rss_type(), -(taken.unmap(vm_space) as isize));
@@ -378,7 +414,7 @@ impl VmarInner {
         self.check_extra_size_fits_rlimit(new_map_end - old_map_end)?;
         let last_mapping = self.remove(&last_mapping_addr).unwrap();
         let last_mapping = last_mapping.enlarge(new_map_end - old_map_end);
-        self.insert(last_mapping);
+        self.insert_try_merge(last_mapping);
         Ok(())
     }
 }
@@ -462,16 +498,17 @@ impl Vmar_ {
             // Protects part of the taken `VmMapping`.
             let (left, taken, right) = vm_mapping.split_range(&intersected_range);
 
-            let taken = taken.protect(vm_space.as_ref(), perms);
-            inner.insert(taken);
-
-            // And put the rest back.
+            // Puts the rest back.
             if let Some(left) = left {
-                inner.insert(left);
+                inner.insert_without_try_merge(left);
             }
             if let Some(right) = right {
-                inner.insert(right);
+                inner.insert_without_try_merge(right);
             }
+
+            // Protects part of the `VmMapping`.
+            let taken = taken.protect(vm_space.as_ref(), perms);
+            inner.insert_try_merge(taken);
         }
 
         Ok(())
@@ -592,10 +629,10 @@ impl Vmar_ {
             let vm_mapping = inner.remove(&old_mapping_addr).unwrap();
             let (left, old_mapping, right) = vm_mapping.split_range(&old_range);
             if let Some(left) = left {
-                inner.insert(left);
+                inner.insert_without_try_merge(left);
             }
             if let Some(right) = right {
-                inner.insert(right);
+                inner.insert_without_try_merge(right);
             }
             if new_size < old_size {
                 let (old_mapping, taken) = old_mapping.split(old_range.start + new_size).unwrap();
@@ -609,7 +646,7 @@ impl Vmar_ {
         };
         // Now we can ensure that `new_size >= old_size`.
         let new_mapping = old_mapping.clone_for_remap_at(new_range.start).unwrap();
-        inner.insert(new_mapping.enlarge(new_size - old_size));
+        inner.insert_try_merge(new_mapping.enlarge(new_size - old_size));
 
         let preempt_guard = disable_preempt();
         let total_range = old_range.start.min(new_range.start)..old_range.end.max(new_range.end);
@@ -678,7 +715,7 @@ impl Vmar_ {
 
                 // Clone the `VmMapping` to the new VMAR.
                 let new_mapping = vm_mapping.new_fork()?;
-                new_inner.insert(new_mapping);
+                new_inner.insert_without_try_merge(new_mapping);
 
                 // Protect the mapping and copy to the new page table for COW.
                 cur_cursor.jump(base).unwrap();
@@ -1017,7 +1054,7 @@ where
         );
 
         // Add the mapping to the VMAR.
-        inner.insert(vm_mapping);
+        inner.insert_try_merge(vm_mapping);
 
         Ok(map_to_addr)
     }

@@ -22,6 +22,7 @@ use crate::{
     vm::{
         perms::VmPerms,
         util::duplicate_frame,
+        vmar::is_intersected,
         vmo::{CommitFlags, Vmo, VmoCommitError},
     },
 };
@@ -467,6 +468,40 @@ impl VmMapping {
             panic!("The mapping does not contain the splitting range");
         }
     }
+
+    /// Attempts to merge `self` with the given `vm_mapping` if they are
+    /// adjacent and compatible.
+    ///
+    /// Two mappings are considered *adjacent* if the end address of `self`
+    /// equals to the start address of `vm_mapping`, or vice versa.
+    ///
+    /// Two mappings are considered *compatible* if all of the following
+    /// conditions are met:
+    /// - They have the same access permissions.
+    /// - They are both anonymous or share the same backing file.
+    /// - Their file offsets are contiguous if file-backed.
+    /// - Other attributes (e.g., shared/private flags, whether need to handle
+    ///   page faults around, etc.) must also match.
+    ///
+    /// This method returns:
+    /// - the merged mapping along with the address of the mapping
+    ///   to be removed if successful.
+    /// - the original `self` and a `None` otherwise.
+    pub fn try_merge_with(self, vm_mapping: &VmMapping) -> (Self, Option<Vaddr>) {
+        debug_assert!(!is_intersected(&self.range(), &vm_mapping.range()));
+
+        let (left, right) = if self.map_to_addr < vm_mapping.map_to_addr {
+            (&self, vm_mapping)
+        } else {
+            (vm_mapping, &self)
+        };
+
+        if let Some(merged) = try_merge(left, right) {
+            (merged, Some(vm_mapping.map_to_addr))
+        } else {
+            (self, None)
+        }
+    }
 }
 
 /************************** VM Space operations ******************************/
@@ -580,4 +615,45 @@ impl MappedVmo {
             range: self.range.clone(),
         })
     }
+}
+
+/// Attempts to merge two [`VmMapping`]s into a single mapping if they are
+/// adjacent and compatible.
+///
+/// - Returns the merged [`VmMapping`] if successful. The caller should
+///   remove the original mappings before inserting the merged mapping
+///   into the [`Vmar`].
+/// - Returns `None` otherwise.
+fn try_merge(left: &VmMapping, right: &VmMapping) -> Option<VmMapping> {
+    let is_adjacent = left.map_end() == right.map_to_addr();
+    let is_type_equal = left.is_shared == right.is_shared
+        && left.handle_page_faults_around == right.handle_page_faults_around
+        && left.perms == right.perms;
+
+    if !is_adjacent || !is_type_equal {
+        return None;
+    }
+
+    let vmo = match (&left.vmo, &right.vmo) {
+        (None, None) => None,
+        (Some(l_vmo), Some(r_vmo)) if Arc::ptr_eq(&l_vmo.vmo.0, &r_vmo.vmo.0) => {
+            let is_offset_contiguous = r_vmo.range.start - l_vmo.range.start == left.map_size()
+                && l_vmo.range.end - l_vmo.range.start >= left.map_size();
+            if !is_offset_contiguous {
+                return None;
+            }
+            let range = l_vmo.range.start..l_vmo.range.end.max(r_vmo.range.end);
+            Some(MappedVmo::new(l_vmo.vmo.dup().ok()?, range))
+        }
+        _ => return None,
+    };
+
+    let map_size = NonZeroUsize::new(left.map_size() + right.map_size()).unwrap();
+
+    Some(VmMapping {
+        map_size,
+        vmo,
+        inode: left.inode.clone(),
+        ..*left
+    })
 }
