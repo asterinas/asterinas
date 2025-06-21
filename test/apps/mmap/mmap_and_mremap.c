@@ -10,6 +10,44 @@
 
 #define PAGE_SIZE 4096
 
+FN_TEST(mremap)
+{
+	char *addr = TEST_SUCC(mmap(NULL, 3 * PAGE_SIZE, PROT_READ | PROT_WRITE,
+				    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
+	TEST_SUCC(munmap(addr + 2 * PAGE_SIZE, PAGE_SIZE));
+
+	// The old address is not page-aligned.
+	TEST_ERRNO(mremap(addr + 1, PAGE_SIZE, PAGE_SIZE, 0), EINVAL);
+
+	// The old size or the new size is not page-aligned.
+	TEST_RES(mremap(addr, 1, PAGE_SIZE, 0), _ret == addr);
+	TEST_RES(mremap(addr, PAGE_SIZE, 1, 0), _ret == addr);
+
+	// The new address is not page-aligned.
+	TEST_ERRNO(mremap(addr, PAGE_SIZE, PAGE_SIZE,
+			  MREMAP_MAYMOVE | MREMAP_FIXED,
+			  addr + 2 * PAGE_SIZE + 1),
+		   EINVAL);
+
+	// The flags or the combination of the flags is invalid.
+	TEST_ERRNO(mremap(addr, PAGE_SIZE, PAGE_SIZE, MREMAP_FIXED,
+			  addr + 2 * PAGE_SIZE),
+		   EINVAL);
+	TEST_ERRNO(mremap(addr, PAGE_SIZE, PAGE_SIZE, ~0, addr + 2 * PAGE_SIZE),
+		   EINVAL);
+
+	// Copying a private mapping should not be allowed. See the "BUGS" section at
+	// <https://man7.org/linux/man-pages/man2/mremap.2.html>.
+	TEST_ERRNO(mremap(addr, 0, PAGE_SIZE, 0), EINVAL);
+
+	// There is no enough room to expand the mapping.
+	// FIXME: Asterinas returns EACCESS here, which is not a correct error code.
+	// TEST_ERRNO(mremap(addr, PAGE_SIZE, 2 * PAGE_SIZE, 0), ENOMEM);
+
+	TEST_SUCC(munmap(addr, 2 * PAGE_SIZE));
+}
+END_TEST()
+
 const char *content = "kjfkljk*wigo&h";
 
 #define CHECK_MM(func) CHECK_WITH(func, _ret != MAP_FAILED)
