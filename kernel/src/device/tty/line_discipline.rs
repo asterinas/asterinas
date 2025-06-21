@@ -167,8 +167,8 @@ impl LineDiscipline {
             b'\n' => echo_callback(b"\n"),
             b'\r' => echo_callback(b"\r\n"),
             ch if ch == self.termios.special_char(CCtrlCharId::VERASE) => {
-                // Write a space to overwrite the current character
-                echo_callback(b"\x08 \x08");
+                // The driver should erase the current character
+                echo_callback(b"\x08");
             }
             ch if is_printable_char(ch) => echo_callback(&[ch]),
             ch if is_ctrl_char(ch) && self.termios.contains_echo_ctl() => {
