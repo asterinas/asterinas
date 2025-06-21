@@ -6,7 +6,7 @@
 #include <unistd.h>
 #include <string.h>
 
-#include "../network/test.h"
+#include "../test.h"
 
 #define PAGE_SIZE 4096
 

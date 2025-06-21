@@ -2,7 +2,7 @@
 
 #define _GNU_SOURCE
 
-#include "../network/test.h"
+#include "../test.h"
 
 #include <stdio.h>
 #include <stdlib.h>

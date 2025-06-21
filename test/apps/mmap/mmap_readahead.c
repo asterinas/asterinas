@@ -4,7 +4,7 @@
 #include <sys/fcntl.h>
 #include <unistd.h>
 
-#include "../network/test.h"
+#include "../test.h"
 
 #define FILE_NAME "/tmp/mmap_readahead.txt"
 
