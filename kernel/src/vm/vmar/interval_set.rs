@@ -96,6 +96,26 @@ where
         }
     }
 
+    /// Finds the last interval item before the given point.
+    ///
+    /// If no such item exists, returns [`None`].
+    pub fn find_prev(&self, point: &K) -> Option<&V> {
+        self.btree
+            .upper_bound(core::ops::Bound::Excluded(point))
+            .peek_prev()
+            .map(|(_, v)| v)
+    }
+
+    /// Finds the first interval item after the given point.
+    ///
+    /// If no such item exists, returns [`None`].
+    pub fn find_next(&self, point: &K) -> Option<&V> {
+        self.btree
+            .lower_bound(core::ops::Bound::Excluded(point))
+            .peek_next()
+            .map(|(_, v)| v)
+    }
+
     /// Takes an interval item that contains the given point.
     ///
     /// If no such item exists, returns [`None`]. Otherwise, returns the item
