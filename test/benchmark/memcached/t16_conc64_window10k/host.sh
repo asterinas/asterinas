@@ -16,6 +16,6 @@ trap stop_guest EXIT
 
 # Run memaslap bench
 echo "Running memaslap bench connected to $GUEST_SERVER_IP_ADDRESS"
-/usr/local/benchmark/libmemcached/bin/memaslap -s $GUEST_SERVER_IP_ADDRESS:11211 -t 30s -T 16 -c 64 -w 10k -S 1s
+memaslap -s $GUEST_SERVER_IP_ADDRESS:11211 -t 30s -T 16 -c 64 -w 10k -S 1s
 
 # The trap will automatically stop the guest VM when the script exits

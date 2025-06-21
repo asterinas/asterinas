@@ -40,8 +40,6 @@ prepare_system() {
         mkdir /tmp
     fi
 
-    /sbin/ldconfig
-    
     # System-specific preparation
     if [ "$SYSTEM" = "linux" ]; then
         # Mount necessary fs
