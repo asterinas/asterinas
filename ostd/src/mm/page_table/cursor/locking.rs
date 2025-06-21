@@ -63,8 +63,10 @@ pub(super) fn unlock_range<C: PageTableConfig>(cursor: &mut Cursor<'_, C>) {
         }
     }
     let guard_node = cursor.path[cursor.guard_level as usize - 1].take().unwrap();
-    let cur_node_va = cursor.barrier_va.start / page_size::<C>(cursor.guard_level + 1)
-        * page_size::<C>(cursor.guard_level + 1);
+    let cur_node_va = cursor
+        .barrier_va
+        .start
+        .align_down(page_size::<C>(cursor.guard_level + 1));
 
     // SAFETY: A cursor maintains that its corresponding sub-tree is locked.
     unsafe {
